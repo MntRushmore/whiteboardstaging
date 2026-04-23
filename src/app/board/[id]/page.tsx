@@ -792,6 +792,30 @@ function VoiceAgentControls({
   );
 }
 
+type AIModel = "gemini" | "gpt";
+
+const MODEL_LABELS: Record<AIModel, string> = {
+  gemini: "Nano Banana Pro",
+  gpt: "GPT-5.4 Image 2",
+};
+
+function ModelBadge({ model, onClick }: { model: AIModel; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title={`Switch model (current: ${MODEL_LABELS[model]})`}
+      className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border shadow-sm bg-white hover:bg-gray-50 transition-colors cursor-pointer select-none"
+      style={{ lineHeight: 1.4 }}
+    >
+      <span
+        className="w-2 h-2 rounded-full flex-shrink-0"
+        style={{ background: model === "gemini" ? "#F4B400" : "#10a37f" }}
+      />
+      {MODEL_LABELS[model]}
+    </button>
+  );
+}
+
 function BoardContent({ id }: { id: string }) {
   const editor = useEditor();
   const router = useRouter();
@@ -801,6 +825,7 @@ function BoardContent({ id }: { id: string }) {
   const [statusMessage, setStatusMessage] = useState<string>("");
   const [isVoiceSessionActive, setIsVoiceSessionActive] = useState(false);
   const [assistanceMode, setAssistanceMode] = useState<"off" | "feedback" | "suggest" | "answer">("off");
+  const [aiModel, setAiModel] = useState<AIModel>("gemini");
   const isProcessingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastCanvasImageRef = useRef<string | null>(null);
@@ -915,6 +940,7 @@ function BoardContent({ id }: { id: string }) {
         const body: Record<string, unknown> = {
           image: base64,
           mode,
+          model: aiModel,
         };
 
         if (options?.promptOverride) {
@@ -1071,7 +1097,7 @@ function BoardContent({ id }: { id: string }) {
         abortControllerRef.current = null;
       }
     },
-    [editor, pendingImageIds, isVoiceSessionActive, assistanceMode, getStatusMessage],
+    [editor, pendingImageIds, isVoiceSessionActive, assistanceMode, aiModel, getStatusMessage],
   );
 
   const handleAutoGeneration = useCallback(() => {
@@ -1433,8 +1459,8 @@ function BoardContent({ id }: { id: string }) {
             <ArrowLeft01Icon size={20} strokeWidth={2} />
           </Button>
           <div className="flex items-center gap-2">
-            <Tabs 
-              value={assistanceMode} 
+            <Tabs
+              value={assistanceMode}
               onValueChange={(value) => setAssistanceMode(value as "off" | "feedback" | "suggest" | "answer")}
               className="w-auto shadow-sm rounded-lg"
             >
@@ -1446,6 +1472,10 @@ function BoardContent({ id }: { id: string }) {
               </TabsList>
             </Tabs>
             <ModeInfoDialog />
+            <ModelBadge
+              model={aiModel}
+              onClick={() => setAiModel((m) => (m === "gemini" ? "gpt" : "gemini"))}
+            />
           </div>
         </div>
       )}

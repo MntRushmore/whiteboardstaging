@@ -14,7 +14,15 @@ export async function POST(req: NextRequest) {
       prompt,
       mode = 'suggest',
       source = 'auto',
+      model: modelParam = 'gemini',
     } = await req.json();
+
+    // Map frontend model keys to OpenRouter model IDs
+    const MODEL_IDS: Record<string, string> = {
+      gemini: 'google/gemini-3-pro-image-preview',
+      gpt: 'openai/gpt-image-1',
+    };
+    const selectedModel = MODEL_IDS[modelParam] ?? MODEL_IDS['gemini'];
 
     if (!image) {
       solutionLogger.warn({ requestId }, 'No image provided in request');
@@ -89,9 +97,9 @@ export async function POST(req: NextRequest) {
       ? `${basePrompt}\n\nAdditional drawing instructions from the tutor:\n${prompt}`
       : basePrompt;
 
-    solutionLogger.info({ requestId, mode }, 'Calling OpenRouter Gemini API for image generation');
+    solutionLogger.info({ requestId, mode, selectedModel }, 'Calling OpenRouter API for image generation');
 
-    // Call Gemini image generation model via OpenRouter
+    // Call image generation model via OpenRouter
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -101,7 +109,7 @@ export async function POST(req: NextRequest) {
         'X-Title': 'Madhacks AI Canvas',
       },
       body: JSON.stringify({
-        model: 'google/gemini-3-pro-image-preview',
+        model: selectedModel,
         messages: [
           {
             role: 'user',
@@ -204,8 +212,8 @@ export async function POST(req: NextRequest) {
           rawResponseSnippet: JSON.stringify(data).slice(0, 2000),
         },
         effectiveSource === 'voice'
-          ? 'Solution generation completed without image in voice mode (Gemini returned text-only response)'
-          : 'Solution generation completed without image (Gemini returned text-only response)'
+          ? 'Solution generation completed without image in voice mode (model returned text-only response)'
+          : 'Solution generation completed without image (model returned text-only response)'
       );
 
       // Return a successful response with text content (if any), but no image.
