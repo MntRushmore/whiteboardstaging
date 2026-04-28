@@ -3,16 +3,19 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { 
-  Plus, 
-  Trash2, 
-  Clock, 
-  FileIcon, 
-  Search, 
-  LayoutGrid, 
-  List as ListIcon, 
+import { useAuth } from '@/components/AuthProvider';
+import {
+  Plus,
+  Trash2,
+  Clock,
+  FileIcon,
+  Search,
+  LayoutGrid,
+  List as ListIcon,
   Edit2,
-  MoreHorizontal
+  MoreHorizontal,
+  LogOut,
+  Loader2,
 } from 'lucide-react';
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -50,19 +53,29 @@ type Whiteboard = {
 
 export default function Dashboard() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [whiteboards, setWhiteboards] = useState<Whiteboard[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
-  
+
   // Rename state
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameTitle, setRenameTitle] = useState('');
 
+  // Auth gate: redirect to login if not authenticated
   useEffect(() => {
-    fetchWhiteboards();
-  }, []);
+    if (!authLoading && !user) {
+      router.replace('/login');
+    }
+  }, [user, authLoading, router]);
+
+  useEffect(() => {
+    if (user) {
+      fetchWhiteboards();
+    }
+  }, [user]);
 
   async function fetchWhiteboards() {
     try {
@@ -82,13 +95,13 @@ export default function Dashboard() {
   }
 
   async function createWhiteboard() {
-    if (creating) return;
+    if (creating || !user) return;
     setCreating(true);
     try {
       const { data, error } = await supabase
         .from('whiteboards')
         .insert([
-          { title: 'Untitled Whiteboard', data: {} }
+          { title: 'Untitled Whiteboard', data: {}, user_id: user.id }
         ])
         .select()
         .single();
@@ -101,6 +114,15 @@ export default function Dashboard() {
       toast.error('Failed to create whiteboard');
       setCreating(false);
     }
+  }
+
+  async function handleSignOut() {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      toast.error('Failed to sign out');
+      return;
+    }
+    router.replace('/login');
   }
 
   async function deleteWhiteboard(id: string) {
@@ -141,16 +163,38 @@ export default function Dashboard() {
     }
   }
 
-  const filteredWhiteboards = whiteboards.filter(board => 
+  const filteredWhiteboards = whiteboards.filter(board =>
     board.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  if (authLoading || !user) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
+      <header className="absolute top-0 right-0 p-4 flex items-center gap-3 z-10">
+        <span className="text-sm text-muted-foreground hidden sm:inline">
+          {user.email}
+        </span>
+        <Button variant="outline" size="sm" onClick={handleSignOut}>
+          <LogOut className="w-4 h-4 mr-1.5" />
+          Sign out
+        </Button>
+      </header>
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-32 pb-6">
         {/* Header Section */}
         <div className="space-y-4 mb-4">
-          <h1 className="text-4xl font-bold tracking-tight">My Whiteboards</h1>
+          <div>
+            <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
+              Agathon Classroom · Staging
+            </p>
+            <h1 className="text-4xl font-bold tracking-tight">My Whiteboards</h1>
+          </div>
           
           <div className="flex flex-col sm:flex-row items-center gap-2 w-full">
             <div className="relative flex-1 w-full">

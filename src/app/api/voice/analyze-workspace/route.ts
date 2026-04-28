@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
         Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-        'X-Title': 'Madhacks AI Canvas - Voice Workspace Analysis',
+        'X-Title': 'Agathon Classroom Staging - Voice Workspace Analysis',
       },
       body: JSON.stringify({
         // Model name may vary; adjust if needed in configuration.

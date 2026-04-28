@@ -48,6 +48,7 @@ import { supabase } from "@/lib/supabase";
 import { useParams, useRouter } from "next/navigation";
 import { Loader2, Volume2, VolumeX, Info } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/components/AuthProvider";
 
 // Ensure the tldraw canvas background is pure white in both light and dark modes
 DefaultColorThemePalette.lightMode.background = "#FFFFFF";
@@ -931,7 +932,7 @@ function BoardContent({ id }: { id: string }) {
         }
         lastCanvasImageRef.current = base64;
 
-        if (signal.aborted) return;
+        if (signal.aborted) return false;
 
         // Step 2: Generate solution (Gemini decides if help is needed)
         setStatus("generating");
@@ -1004,7 +1005,7 @@ function BoardContent({ id }: { id: string }) {
           img.src = processedImageUrl;
         });
 
-        if (signal.aborted) return;
+        if (signal.aborted) return false;
 
         logger.info('Creating asset and shape...');
 
@@ -1512,11 +1513,20 @@ function BoardContent({ id }: { id: string }) {
 
 export default function BoardPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
+  const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [initialData, setInitialData] = useState<any>(null);
 
   useEffect(() => {
+    if (!authLoading && !user) {
+      router.replace("/login");
+    }
+  }, [user, authLoading, router]);
+
+  useEffect(() => {
+    if (!user) return;
     async function loadBoard() {
       try {
         const { data, error } = await supabase
@@ -1540,9 +1550,9 @@ export default function BoardPage() {
       }
     }
     loadBoard();
-  }, [id]);
+  }, [id, user]);
 
-  if (loading) {
+  if (authLoading || !user || loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50">
         <div className="flex flex-col items-center gap-4">
@@ -1557,6 +1567,7 @@ export default function BoardPage() {
     <div style={{ position: "fixed", inset: 0 }}>
       <Tldraw
         overrides={hugeIconsOverrides}
+        licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
         components={{
           MenuPanel: null,
           NavigationPanel: null,
