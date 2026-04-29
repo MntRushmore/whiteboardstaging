@@ -53,6 +53,7 @@ import { CreditsBanner } from "@/components/CreditsBanner";
 import { StickerLibrary } from "@/components/StickerLibrary";
 import { WorksheetGenerator } from "@/components/WorksheetGenerator";
 import { PdfUpload } from "@/components/PdfUpload";
+import { BugReportButton } from "@/components/BugReportButton";
 import { useFeatureLabs } from "@/lib/featureLabs";
 import { useAIPerfSettings } from "@/lib/aiPerfSettings";
 import { downscaleBlob } from "@/utils/downscaleImage";
@@ -1763,6 +1764,18 @@ function BoardContent({ id }: { id: string }) {
           }}
         >
           <CreditsBanner />
+        </div>
+      )}
+      {!isVoiceSessionActive && (
+        <div
+          style={{
+            position: "absolute",
+            top: "16px",
+            right: "16px",
+            zIndex: 1000,
+          }}
+        >
+          <BugReportButton boardId={id} />
         </div>
       )}
       <ImageActionButtons

@@ -3,6 +3,11 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { installClientLogCapture } from "@/lib/logger";
+
+if (typeof window !== "undefined") {
+  installClientLogCapture();
+}
 
 type AuthContextValue = {
   user: User | null;
