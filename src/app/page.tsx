@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
 import { CreditsBanner } from '@/components/CreditsBanner';
+import { FeatureLabsPanel } from '@/components/FeatureLabsPanel';
 import {
   Plus,
   Trash2,
@@ -182,6 +183,7 @@ export default function Dashboard() {
         <span className="text-sm text-muted-foreground hidden sm:inline">
           {user.email}
         </span>
+        <FeatureLabsPanel />
         <Button variant="outline" size="sm" onClick={handleSignOut}>
           <LogOut className="w-4 h-4 mr-1.5" />
           Sign out

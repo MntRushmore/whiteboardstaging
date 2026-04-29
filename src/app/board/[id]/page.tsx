@@ -50,6 +50,10 @@ import { Loader2, Volume2, VolumeX, Info } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import { CreditsBanner } from "@/components/CreditsBanner";
+import { StickerLibrary } from "@/components/StickerLibrary";
+import { WorksheetGenerator } from "@/components/WorksheetGenerator";
+import { PdfUpload } from "@/components/PdfUpload";
+import { useFeatureLabs } from "@/lib/featureLabs";
 
 // Ensure the tldraw canvas background is pure white in both light and dark modes
 DefaultColorThemePalette.lightMode.background = "#FFFFFF";
@@ -821,6 +825,7 @@ function ModelBadge({ model, onClick }: { model: AIModel; onClick: () => void })
 function BoardContent({ id }: { id: string }) {
   const editor = useEditor();
   const router = useRouter();
+  const { features } = useFeatureLabs();
   const [pendingImageIds, setPendingImageIds] = useState<TLShapeId[]>([]);
   const [status, setStatus] = useState<StatusIndicatorState>("idle");
   const [errorMessage, setErrorMessage] = useState<string>("");
@@ -895,17 +900,29 @@ function BoardContent({ id }: { id: string }) {
       const signal = abortControllerRef.current.signal;
 
       try {
-        // Step 1: Capture viewport (excluding pending generated images)
+        // Step 1: Capture viewport (excluding pending generated images and
+        // any "protected" shapes — worksheets, PDFs, stickers — so the AI
+        // never sees them and can't try to redraw them).
         const viewportBounds = editor.getViewportPageBounds();
-        
-        // Filter out pending generated images from the capture
-        // so that accepting/rejecting them doesn't change the canvas hash
-        const shapesToCapture = [...shapeIds].filter(id => !pendingImageIds.includes(id));
-        
+
+        const protectedIds = new Set<TLShapeId>();
+        for (const sid of shapeIds) {
+          const shape = editor.getShape(sid);
+          if ((shape?.meta as any)?.isProtected) {
+            protectedIds.add(sid);
+          }
+        }
+
+        const shapesToCapture = [...shapeIds].filter(
+          (id) => !pendingImageIds.includes(id) && !protectedIds.has(id),
+        );
+
         if (shapesToCapture.length === 0) {
           isProcessingRef.current = false;
           return false;
         }
+
+        const hasProtectedShapes = protectedIds.size > 0;
         
         const { blob } = await editor.toImage(shapesToCapture, {
           format: "png",
@@ -952,6 +969,13 @@ function BoardContent({ id }: { id: string }) {
         // Let the backend know whether this was triggered automatically or
         // explicitly by the voice tutor.
         body.source = options?.source ?? "auto";
+
+        // If the canvas has a protected worksheet/PDF/sticker, tell the
+        // backend so it can adjust the prompt and we render the annotation
+        // underneath the protected layer.
+        if (hasProtectedShapes) {
+          body.hasWorksheet = true;
+        }
 
         const solutionResponse = await fetch('/api/generate-solution', {
           method: 'POST',
@@ -1068,6 +1092,17 @@ function BoardContent({ id }: { id: string }) {
             assetId: assetId,
           },
         });
+
+        // If the canvas has worksheet/PDF/sticker protected shapes, push the
+        // new annotation behind them so the worksheet always renders on top.
+        if (hasProtectedShapes) {
+          try {
+            editor.sendToBack([shapeId]);
+          } catch (e) {
+            // Non-fatal: z-ordering is best-effort.
+            logger.warn({ error: e }, "Failed to send annotation to back");
+          }
+        }
 
         // Only add to pending list if not in feedback mode
         if (!isFeedbackMode) {
@@ -1491,6 +1526,9 @@ function BoardContent({ id }: { id: string }) {
               model={aiModel}
               onClick={() => setAiModel((m) => (m === "gemini" ? "gpt" : "gemini"))}
             />
+            {features.stickers && <StickerLibrary />}
+            {features.worksheetGen && <WorksheetGenerator model={aiModel} />}
+            {features.pdfUpload && <PdfUpload />}
           </div>
         </div>
       )}

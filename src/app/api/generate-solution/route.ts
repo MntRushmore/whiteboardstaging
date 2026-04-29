@@ -15,6 +15,7 @@ export async function POST(req: NextRequest) {
       mode = 'suggest',
       source = 'auto',
       model: modelParam = 'gemini',
+      hasWorksheet = false,
     } = await req.json();
 
     // Map frontend model keys to OpenRouter model IDs
@@ -93,9 +94,20 @@ export async function POST(req: NextRequest) {
 
     const basePrompt = getModePrompt(mode, effectiveSource);
 
+    // When the canvas has a printed worksheet attached (uploaded PDF, generated
+    // worksheet, or sticker scaffold), the image we send the model has those
+    // elements REMOVED — only student strokes are visible. The model must not
+    // try to reconstruct the worksheet itself; it should only draw additions.
+    const worksheetPreamble = hasWorksheet
+      ? '\n\nIMPORTANT WORKSHEET CONTEXT:\n' +
+        '- A printed worksheet exists on the user\'s canvas, but it has been removed from the image you see; you are looking only at the student\'s handwritten work, in isolation, on a white background.\n' +
+        '- DO NOT redraw, recreate, or reference any printed worksheet content — you cannot see it. Only respond to the handwritten work that IS visible.\n' +
+        '- Your output image will be composited behind the printed worksheet, so keep your annotations near the student\'s strokes (do not draw across the whole canvas).'
+      : '';
+
     const finalPrompt = prompt
-      ? `${basePrompt}\n\nAdditional drawing instructions from the tutor:\n${prompt}`
-      : basePrompt;
+      ? `${basePrompt}${worksheetPreamble}\n\nAdditional drawing instructions from the tutor:\n${prompt}`
+      : `${basePrompt}${worksheetPreamble}`;
 
     solutionLogger.info({ requestId, mode, selectedModel }, 'Calling OpenRouter API for image generation');
 
