@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
 
     const MODEL_IDS: Record<string, string> = {
       gemini: 'google/gemini-3-pro-image-preview',
+      'gemini-fast': 'google/gemini-2.5-flash-image',
       gpt: 'openai/gpt-image-1',
     };
     const selectedModel = MODEL_IDS[modelParam] ?? MODEL_IDS['gemini'];

@@ -54,6 +54,16 @@ import { StickerLibrary } from "@/components/StickerLibrary";
 import { WorksheetGenerator } from "@/components/WorksheetGenerator";
 import { PdfUpload } from "@/components/PdfUpload";
 import { useFeatureLabs } from "@/lib/featureLabs";
+import { useAIPerfSettings } from "@/lib/aiPerfSettings";
+import { downscaleBlob } from "@/utils/downscaleImage";
+import { Switch } from "@/components/ui/switch";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Settings } from "lucide-react";
+import { GenerationSkeleton } from "@/components/GenerationSkeleton";
 
 // Ensure the tldraw canvas background is pure white in both light and dark modes
 DefaultColorThemePalette.lightMode.background = "#FFFFFF";
@@ -822,6 +832,161 @@ function ModelBadge({ model, onClick }: { model: AIModel; onClick: () => void })
   );
 }
 
+function PerfSettingsPopover({
+  fastMode,
+  onFastModeChange,
+  downscaleEnabled,
+  onDownscaleEnabledChange,
+  downscaleMaxEdge,
+  onDownscaleMaxEdgeChange,
+  downscaleQuality,
+  onDownscaleQualityChange,
+  skeletonEnabled,
+  onSkeletonEnabledChange,
+}: {
+  fastMode: boolean;
+  onFastModeChange: (v: boolean) => void;
+  downscaleEnabled: boolean;
+  onDownscaleEnabledChange: (v: boolean) => void;
+  downscaleMaxEdge: number;
+  onDownscaleMaxEdgeChange: (v: number) => void;
+  downscaleQuality: number;
+  onDownscaleQualityChange: (v: number) => void;
+  skeletonEnabled: boolean;
+  onSkeletonEnabledChange: (v: boolean) => void;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          title="AI performance settings"
+          className="flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium border shadow-sm bg-white hover:bg-gray-50 transition-colors cursor-pointer select-none"
+          style={{ lineHeight: 1.4 }}
+        >
+          <Settings size={14} strokeWidth={1.75} />
+          {fastMode || downscaleEnabled || !skeletonEnabled ? (
+            <span className="text-[10px] text-amber-600 font-semibold">
+              {[
+                fastMode && "Fast",
+                downscaleEnabled && `${downscaleMaxEdge}px`,
+                !skeletonEnabled && "No skel",
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          ) : (
+            <span>Speed</span>
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-80">
+        <div className="space-y-4">
+          <div>
+            <div className="text-sm font-semibold mb-1">AI performance</div>
+            <div className="text-xs text-gray-500">
+              Toggles for testing generation speed. Stored locally.
+            </div>
+          </div>
+
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1">
+              <Label htmlFor="perf-fast-mode" className="text-sm font-medium">
+                Fast mode
+              </Label>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Use Gemini 2.5 Flash Image (~3–6s) instead of Gemini 3 Pro (~15–20s).
+                Lower quality, much faster. Only applies when Gemini is selected.
+              </p>
+            </div>
+            <Switch
+              id="perf-fast-mode"
+              checked={fastMode}
+              onCheckedChange={onFastModeChange}
+            />
+          </div>
+
+          <div className="border-t pt-4 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1">
+                <Label htmlFor="perf-downscale" className="text-sm font-medium">
+                  Downscale canvas
+                </Label>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Resize the captured canvas before upload. Cuts upload time and
+                  often inference time, at some loss of fine detail.
+                </p>
+              </div>
+              <Switch
+                id="perf-downscale"
+                checked={downscaleEnabled}
+                onCheckedChange={onDownscaleEnabledChange}
+              />
+            </div>
+
+            <div className={downscaleEnabled ? "opacity-100" : "opacity-50 pointer-events-none"}>
+              <div className="flex items-center justify-between mb-1">
+                <Label htmlFor="perf-max-edge" className="text-xs">
+                  Max edge
+                </Label>
+                <span className="text-xs font-mono text-gray-700">
+                  {downscaleMaxEdge}px
+                </span>
+              </div>
+              <input
+                id="perf-max-edge"
+                type="range"
+                min={512}
+                max={2048}
+                step={64}
+                value={downscaleMaxEdge}
+                onChange={(e) => onDownscaleMaxEdgeChange(Number(e.target.value))}
+                className="w-full"
+              />
+              <div className="flex items-center justify-between mt-3 mb-1">
+                <Label htmlFor="perf-quality" className="text-xs">
+                  JPEG quality
+                </Label>
+                <span className="text-xs font-mono text-gray-700">
+                  {Math.round(downscaleQuality * 100)}%
+                </span>
+              </div>
+              <input
+                id="perf-quality"
+                type="range"
+                min={0.5}
+                max={0.95}
+                step={0.05}
+                value={downscaleQuality}
+                onChange={(e) => onDownscaleQualityChange(Number(e.target.value))}
+                className="w-full"
+              />
+            </div>
+          </div>
+
+          <div className="border-t pt-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1">
+                <Label htmlFor="perf-skeleton" className="text-sm font-medium">
+                  Loading skeleton
+                </Label>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Show a shimmering placeholder where the AI image will land while
+                  it&apos;s generating. Doesn&apos;t change the actual speed.
+                </p>
+              </div>
+              <Switch
+                id="perf-skeleton"
+                checked={skeletonEnabled}
+                onCheckedChange={onSkeletonEnabledChange}
+              />
+            </div>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function BoardContent({ id }: { id: string }) {
   const editor = useEditor();
   const router = useRouter();
@@ -833,6 +998,7 @@ function BoardContent({ id }: { id: string }) {
   const [isVoiceSessionActive, setIsVoiceSessionActive] = useState(false);
   const [assistanceMode, setAssistanceMode] = useState<"off" | "feedback" | "suggest" | "answer">("off");
   const [aiModel, setAiModel] = useState<AIModel>("gemini");
+  const { settings: aiPerf, update: updateAiPerf } = useAIPerfSettings();
   const isProcessingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastCanvasImageRef = useRef<string | null>(null);
@@ -924,6 +1090,7 @@ function BoardContent({ id }: { id: string }) {
 
         const hasProtectedShapes = protectedIds.size > 0;
         
+        const captureStart = performance.now();
         const { blob } = await editor.toImage(shapesToCapture, {
           format: "png",
           bounds: viewportBounds,
@@ -934,11 +1101,39 @@ function BoardContent({ id }: { id: string }) {
 
         if (!blob || signal.aborted) return false;
 
-        const base64 = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(blob);
-        });
+        let base64: string;
+        if (aiPerf.downscaleEnabled) {
+          const result = await downscaleBlob(
+            blob,
+            aiPerf.downscaleMaxEdge,
+            aiPerf.downscaleQuality,
+          );
+          base64 = result.dataUrl;
+          logger.info(
+            {
+              originalBytes: blob.size,
+              outputBytes: result.bytes,
+              outputWidth: result.width,
+              outputHeight: result.height,
+              scaled: result.scaled,
+              captureMs: Math.round(performance.now() - captureStart),
+            },
+            "Canvas captured (downscale enabled)",
+          );
+        } else {
+          base64 = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(blob);
+          });
+          logger.info(
+            {
+              originalBytes: blob.size,
+              captureMs: Math.round(performance.now() - captureStart),
+            },
+            "Canvas captured (downscale disabled)",
+          );
+        }
 
         // If the canvas image hasn't changed since the last successful check,
         // don't run the expensive OCR / help-check / generation pipeline again.
@@ -956,10 +1151,12 @@ function BoardContent({ id }: { id: string }) {
         setStatus("generating");
         setStatusMessage(getStatusMessage(mode, "generating"));
 
+        const effectiveModel =
+          aiPerf.fastMode && aiModel === "gemini" ? "gemini-fast" : aiModel;
         const body: Record<string, unknown> = {
           image: base64,
           mode,
-          model: aiModel,
+          model: effectiveModel,
         };
 
         if (options?.promptOverride) {
@@ -1147,7 +1344,7 @@ function BoardContent({ id }: { id: string }) {
         abortControllerRef.current = null;
       }
     },
-    [editor, pendingImageIds, isVoiceSessionActive, assistanceMode, aiModel, getStatusMessage],
+    [editor, pendingImageIds, isVoiceSessionActive, assistanceMode, aiModel, aiPerf, getStatusMessage],
   );
 
   const handleAutoGeneration = useCallback(() => {
@@ -1488,6 +1685,8 @@ function BoardContent({ id }: { id: string }) {
 
   return (
     <>
+      <GenerationSkeleton visible={aiPerf.skeletonEnabled && status === "generating"} />
+
       {/* Tabs at top left */}
       {!isVoiceSessionActive && (
         <div
@@ -1525,6 +1724,18 @@ function BoardContent({ id }: { id: string }) {
             <ModelBadge
               model={aiModel}
               onClick={() => setAiModel((m) => (m === "gemini" ? "gpt" : "gemini"))}
+            />
+            <PerfSettingsPopover
+              fastMode={aiPerf.fastMode}
+              onFastModeChange={(v) => updateAiPerf({ fastMode: v })}
+              downscaleEnabled={aiPerf.downscaleEnabled}
+              onDownscaleEnabledChange={(v) => updateAiPerf({ downscaleEnabled: v })}
+              downscaleMaxEdge={aiPerf.downscaleMaxEdge}
+              onDownscaleMaxEdgeChange={(v) => updateAiPerf({ downscaleMaxEdge: v })}
+              downscaleQuality={aiPerf.downscaleQuality}
+              onDownscaleQualityChange={(v) => updateAiPerf({ downscaleQuality: v })}
+              skeletonEnabled={aiPerf.skeletonEnabled}
+              onSkeletonEnabledChange={(v) => updateAiPerf({ skeletonEnabled: v })}
             />
             {features.stickers && <StickerLibrary />}
             {features.worksheetGen && <WorksheetGenerator model={aiModel} />}
