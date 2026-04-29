@@ -139,13 +139,33 @@ export async function POST(req: NextRequest) {
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
+      const errorData = await response.json().catch(() => ({}));
       solutionLogger.error({
         requestId,
         status: response.status,
         error: errorData
       }, 'OpenRouter API error');
-      throw new Error(errorData.error?.message || 'OpenRouter API error');
+
+      const errMsg = (errorData?.error?.message || '').toString().toLowerCase();
+      const isOutOfCredits =
+        response.status === 402 ||
+        errorData?.error?.code === 402 ||
+        /insufficient (credit|balance|fund)|out of credit|exceeded.*credit|payment required/i.test(
+          errMsg,
+        );
+
+      if (isOutOfCredits) {
+        return NextResponse.json(
+          {
+            error: 'credits_exhausted',
+            message:
+              'Account credits depleted — please talk to Rushil to refill your account!',
+          },
+          { status: 402 },
+        );
+      }
+
+      throw new Error(errorData?.error?.message || 'OpenRouter API error');
     }
 
     const data = await response.json();

@@ -49,6 +49,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Loader2, Volume2, VolumeX, Info } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
+import { CreditsBanner } from "@/components/CreditsBanner";
 
 // Ensure the tldraw canvas background is pure white in both light and dark modes
 DefaultColorThemePalette.lightMode.background = "#FFFFFF";
@@ -959,8 +960,21 @@ function BoardContent({ id }: { id: string }) {
           signal,
         });
 
-        if (!solutionResponse.ok || signal.aborted) {
-          throw new Error('Solution generation failed');
+        if (signal.aborted) return false;
+
+        if (!solutionResponse.ok) {
+          const errBody = await solutionResponse.json().catch(() => ({}));
+          if (
+            solutionResponse.status === 402 ||
+            errBody?.error === 'credits_exhausted'
+          ) {
+            const msg =
+              errBody?.message ||
+              'Account credits depleted — please talk to Rushil to refill your account!';
+            toast.error(msg, { duration: 8000 });
+            throw new Error(msg);
+          }
+          throw new Error(errBody?.error || 'Solution generation failed');
         }
 
         const solutionData = await solutionResponse.json();
@@ -1488,6 +1502,19 @@ function BoardContent({ id }: { id: string }) {
           errorMessage={errorMessage}
           customMessage={statusMessage}
         />
+      )}
+      {!isVoiceSessionActive && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: "16px",
+            right: "16px",
+            zIndex: 1000,
+            maxWidth: "360px",
+          }}
+        >
+          <CreditsBanner />
+        </div>
       )}
       <ImageActionButtons
         pendingImageIds={pendingImageIds}

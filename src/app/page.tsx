@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/AuthProvider';
+import { CreditsBanner } from '@/components/CreditsBanner';
 import {
   Plus,
   Trash2,
@@ -187,6 +188,7 @@ export default function Dashboard() {
         </Button>
       </header>
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-32 pb-6">
+        <CreditsBanner className="mb-4" />
         {/* Header Section */}
         <div className="space-y-4 mb-4">
           <div>
