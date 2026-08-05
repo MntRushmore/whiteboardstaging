@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ocrLogger } from '@/lib/logger';
+import { requireKey } from '@/lib/aiConfig';
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
@@ -20,12 +21,11 @@ export async function POST(req: NextRequest) {
 
     ocrLogger.debug({ requestId, imageSize: image.length }, 'Image received');
 
-    if (!process.env.MISTRAL_API_KEY) {
-      ocrLogger.error({ requestId }, 'MISTRAL_API_KEY not configured');
-      return NextResponse.json(
-        { error: 'MISTRAL_API_KEY not configured' },
-        { status: 500 }
-      );
+    // BYOK: the operator of this deployment supplies their own key.
+    const mistralKey = requireKey('mistral');
+    if (!mistralKey.ok) {
+      ocrLogger.error({ requestId }, 'MISTRAL_API_KEY is not configured');
+      return mistralKey.response;
     }
 
     ocrLogger.info({ requestId }, 'Calling Mistral Pixtral API for OCR');
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.MISTRAL_API_KEY}`,
+        'Authorization': `Bearer ${mistralKey.key}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({

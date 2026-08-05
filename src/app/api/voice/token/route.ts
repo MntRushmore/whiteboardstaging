@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { voiceLogger } from '@/lib/logger';
+import { requireKey } from '@/lib/aiConfig';
 
 /**
  * Creates an ephemeral Realtime session with OpenAI and returns the client secret
  * that the browser can use to establish a WebRTC connection.
  */
 export async function POST(_req: NextRequest) {
-  if (!process.env.OPENAI_API_KEY) {
-    voiceLogger.error('OPENAI_API_KEY not configured for Realtime voice token route');
-    return NextResponse.json(
-      { error: 'OPENAI_API_KEY not configured' },
-      { status: 500 },
-    );
+  // BYOK: the operator of this deployment supplies their own key.
+  const openaiKey = requireKey('openai');
+  if (!openaiKey.ok) {
+    voiceLogger.error('OPENAI_API_KEY is not configured');
+    return openaiKey.response;
   }
 
   try {
@@ -20,7 +20,7 @@ export async function POST(_req: NextRequest) {
     const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${openaiKey.key}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({

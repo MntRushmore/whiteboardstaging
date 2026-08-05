@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { solutionLogger } from '@/lib/logger';
+import { requireKey, getSiteUrl } from '@/lib/aiConfig';
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
@@ -39,12 +40,11 @@ export async function POST(req: NextRequest) {
       imageSize: image.length
     }, 'Request payload received');
 
-    if (!process.env.OPENROUTER_API_KEY) {
-      solutionLogger.error({ requestId }, 'OPENROUTER_API_KEY not configured');
-      return NextResponse.json(
-        { error: 'OPENROUTER_API_KEY not configured' },
-        { status: 500 }
-      );
+    // BYOK: the operator of this deployment supplies their own key.
+    const openrouterKey = requireKey('openrouter');
+    if (!openrouterKey.ok) {
+      solutionLogger.error({ requestId }, 'OPENROUTER_API_KEY is not configured');
+      return openrouterKey.response;
     }
 
     // Generate mode-specific prompt.
@@ -116,9 +116,9 @@ export async function POST(req: NextRequest) {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'Authorization': `Bearer ${openrouterKey.key}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+        'HTTP-Referer': getSiteUrl(),
         'X-Title': 'Agathon Classroom Staging',
       },
       body: JSON.stringify({

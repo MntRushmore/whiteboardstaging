@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { voiceLogger } from '@/lib/logger';
+import { requireKey, getSiteUrl } from '@/lib/aiConfig';
 
 /**
  * Uses Gemini 2.5 Flash (via OpenRouter) to analyze the current whiteboard image
@@ -19,12 +20,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!process.env.OPENROUTER_API_KEY) {
-      voiceLogger.error('OPENROUTER_API_KEY not configured');
-      return NextResponse.json(
-        { error: 'OPENROUTER_API_KEY not configured' },
-        { status: 500 },
-      );
+    // BYOK: the operator of this deployment supplies their own key.
+    const openrouterKey = requireKey('openrouter');
+    if (!openrouterKey.ok) {
+      voiceLogger.error('OPENROUTER_API_KEY is not configured');
+      return openrouterKey.response;
     }
 
     const systemPrompt =
@@ -42,9 +42,9 @@ export async function POST(req: NextRequest) {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        Authorization: `Bearer ${openrouterKey.key}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+        'HTTP-Referer': getSiteUrl(),
         'X-Title': 'Agathon Classroom Staging - Voice Workspace Analysis',
       },
       body: JSON.stringify({
