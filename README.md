@@ -1,3 +1,20 @@
+# Whiteboard
+
+An AI-assisted infinite-canvas whiteboard for learning: hint/solution
+generation, worksheet generation, handwriting OCR, and a realtime voice tutor.
+
+> **Bring your own keys.** No AI credentials ship with this source. See
+> **[SETUP.md](./SETUP.md)** to configure your own.
+
+> **License:** FSL-1.1-ALv2. You may read, modify, and self-host this freely;
+> you may not offer it as a competing product or service. Each published
+> version becomes Apache-2.0 two years after release. See [LICENSE](./LICENSE),
+> [NOTICE](./NOTICE), [CONTRIBUTING.md](./CONTRIBUTING.md), and
+> [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md) — the tldraw SDK is
+> licensed separately and needs its own key in production.
+
+---
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
