@@ -1,0 +1,34 @@
+Copyright 2026 Rushil Chopra. All rights reserved.
+
+This software is made available under the Functional Source License,
+Version 1.1, with an Apache License 2.0 future license (FSL-1.1-ALv2).
+See the LICENSE file for the full terms.
+
+SUMMARY (not a substitute for the LICENSE):
+
+  You may read, copy, modify, self-host, and redistribute this software for
+  any purpose EXCEPT providing a product or service that competes with it.
+  Two years after each version is published, that version becomes available
+  to you under the Apache License 2.0.
+
+ATTRIBUTION
+
+  This copyright notice and the LICENSE file must be preserved in all copies
+  and substantial portions of the software, including modified versions.
+  Redistributed or modified versions must not be presented as the original
+  work, and must clearly state that they have been modified.
+
+TRADEMARKS
+
+  The license grants rights to the code only. It grants no rights to any
+  name, logo, or brand associated with this project. Forks and derivative
+  works must be distributed under a different name and must not imply
+  endorsement by or affiliation with the copyright holder.
+
+THIRD-PARTY COMPONENTS
+
+  This project depends on third-party software that is licensed separately
+  and is NOT covered by the LICENSE file above. In particular, the tldraw
+  SDK is distributed under the tldraw license, which requires each user to
+  obtain their own license key for production use. See
+  THIRD-PARTY-NOTICES.md for details.
