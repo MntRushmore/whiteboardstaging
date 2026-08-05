@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireKey } from '@/lib/aiConfig';
 
 // Cache credit results for 30s so we don't hammer OpenRouter on every dashboard load.
 let cache: { data: CreditPayload; expiresAt: number } | null = null;
@@ -11,11 +12,10 @@ type CreditPayload = {
 };
 
 export async function GET() {
-  if (!process.env.OPENROUTER_API_KEY) {
-    return NextResponse.json(
-      { error: 'OPENROUTER_API_KEY not configured' },
-      { status: 500 },
-    );
+  // BYOK: the operator of this deployment supplies their own key.
+  const openrouterKey = requireKey('openrouter');
+  if (!openrouterKey.ok) {
+    return openrouterKey.response;
   }
 
   if (cache && cache.expiresAt > Date.now()) {
@@ -25,7 +25,7 @@ export async function GET() {
   try {
     const res = await fetch('https://openrouter.ai/api/v1/credits', {
       headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        Authorization: `Bearer ${openrouterKey.key}`,
       },
       cache: 'no-store',
     });
