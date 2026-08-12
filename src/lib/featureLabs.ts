@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthProvider";
 
 export type FeatureKey = "stickers" | "worksheetGen" | "pdfUpload";
@@ -71,16 +71,15 @@ function writeCache(features: Record<FeatureKey, boolean>) {
 }
 
 export function useFeatureLabs() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [features, setFeatures] = useState<Record<FeatureKey, boolean>>(
     () => readCache() ?? DEFAULT_FEATURES,
   );
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(isSupabaseConfigured);
 
   // Pull authoritative state from Supabase on mount / user change.
   useEffect(() => {
-    if (!user) {
-      setLoading(false);
+    if (!user || !isSupabaseConfigured) {
       return;
     }
     let cancelled = false;
@@ -115,7 +114,7 @@ export function useFeatureLabs() {
         return next;
       });
 
-      if (!user) return;
+      if (!user || !isSupabaseConfigured) return;
 
       const next = { ...features, [key]: enabled };
       const { error } = await supabase.from("user_settings").upsert({
@@ -130,5 +129,9 @@ export function useFeatureLabs() {
     [features, user],
   );
 
-  return { features, setFeature, loading };
+  const effectiveLoading = isSupabaseConfigured
+    ? authLoading || (Boolean(user) && loading)
+    : false;
+
+  return { features, setFeature, loading: effectiveLoading };
 }

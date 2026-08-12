@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { installClientLogCapture } from "@/lib/logger";
 
 if (typeof window !== "undefined") {
@@ -21,11 +21,25 @@ const AuthContext = createContext<AuthContextValue>({
   loading: true,
 });
 
+const LOCAL_DEMO_USER = {
+  id: "local-demo",
+  aud: "authenticated",
+  role: "authenticated",
+  email: "Local demo",
+  created_at: new Date(0).toISOString(),
+  app_metadata: {},
+  user_metadata: {},
+} as User;
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(isSupabaseConfigured);
 
   useEffect(() => {
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setLoading(false);
@@ -42,7 +56,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user: session?.user ?? null, session, loading }}
+      value={{
+        user: isSupabaseConfigured ? session?.user ?? null : LOCAL_DEMO_USER,
+        session,
+        loading,
+      }}
     >
       {children}
     </AuthContext.Provider>
