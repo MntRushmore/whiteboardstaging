@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import {
+  createLocalWhiteboard,
+  deleteLocalWhiteboard,
+  listLocalWhiteboards,
+  renameLocalWhiteboard,
+} from '@/lib/localWhiteboards';
 import { useAuth } from '@/components/AuthProvider';
 import { CreditsBanner } from '@/components/CreditsBanner';
 import { FeatureLabsPanel } from '@/components/FeatureLabsPanel';
@@ -81,6 +87,11 @@ export default function Dashboard() {
 
   async function fetchWhiteboards() {
     try {
+      if (!isSupabaseConfigured) {
+        setWhiteboards(listLocalWhiteboards());
+        return;
+      }
+
       const { data, error } = await supabase
         .from('whiteboards')
         .select('id, title, created_at, updated_at, preview')
@@ -100,6 +111,13 @@ export default function Dashboard() {
     if (creating || !user) return;
     setCreating(true);
     try {
+      if (!isSupabaseConfigured) {
+        const board = createLocalWhiteboard();
+        toast.success('Local whiteboard created');
+        router.push(`/board/${board.id}`);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('whiteboards')
         .insert([
@@ -119,6 +137,7 @@ export default function Dashboard() {
   }
 
   async function handleSignOut() {
+    if (!isSupabaseConfigured) return;
     const { error } = await supabase.auth.signOut();
     if (error) {
       toast.error('Failed to sign out');
@@ -129,6 +148,13 @@ export default function Dashboard() {
 
   async function deleteWhiteboard(id: string) {
     try {
+      if (!isSupabaseConfigured) {
+        deleteLocalWhiteboard(id);
+        setWhiteboards(whiteboards.filter(w => w.id !== id));
+        toast.success('Whiteboard deleted');
+        return;
+      }
+
       const { error } = await supabase
         .from('whiteboards')
         .delete()
@@ -147,6 +173,16 @@ export default function Dashboard() {
     if (!renameId) return;
     
     try {
+      if (!isSupabaseConfigured) {
+        renameLocalWhiteboard(renameId, renameTitle);
+        setWhiteboards(whiteboards.map(w =>
+          w.id === renameId ? { ...w, title: renameTitle } : w
+        ));
+        toast.success('Whiteboard renamed');
+        setRenameId(null);
+        return;
+      }
+
       const { error } = await supabase
         .from('whiteboards')
         .update({ title: renameTitle })
@@ -184,10 +220,16 @@ export default function Dashboard() {
           {user.email}
         </span>
         <FeatureLabsPanel />
-        <Button variant="outline" size="sm" onClick={handleSignOut}>
-          <LogOut className="w-4 h-4 mr-1.5" />
-          Sign out
-        </Button>
+        {isSupabaseConfigured ? (
+          <Button variant="outline" size="sm" onClick={handleSignOut}>
+            <LogOut className="w-4 h-4 mr-1.5" />
+            Sign out
+          </Button>
+        ) : (
+          <span className="rounded-full border bg-card px-3 py-1.5 text-xs font-medium">
+            Local demo
+          </span>
+        )}
       </header>
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-32 pb-6">
         <CreditsBanner className="mb-4" />

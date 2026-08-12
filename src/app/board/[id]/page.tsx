@@ -44,7 +44,11 @@ import {
 import { useDebounceActivity } from "@/hooks/useDebounceActivity";
 import { StatusIndicator, type StatusIndicatorState } from "@/components/StatusIndicator";
 import { logger } from "@/lib/logger";
-import { supabase } from "@/lib/supabase";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import {
+  readLocalWhiteboardSnapshot,
+  saveLocalWhiteboardSnapshot,
+} from "@/lib/localWhiteboards";
 import { useParams, useRouter } from "next/navigation";
 import { Loader2, Volume2, VolumeX, Info } from "lucide-react";
 import { toast } from "sonner";
@@ -1551,6 +1555,12 @@ function BoardContent({ id }: { id: string }) {
             }
           }
 
+          if (!isSupabaseConfigured) {
+            saveLocalWhiteboardSnapshot(id, safeSnapshot, previewUrl);
+            logger.info({ id }, "Board auto-saved to local storage");
+            return;
+          }
+
           // Validate Supabase client and configuration
           if (!supabase) {
             throw new Error("Supabase client not initialized");
@@ -1818,6 +1828,11 @@ export default function BoardPage() {
     if (!user) return;
     async function loadBoard() {
       try {
+        if (!isSupabaseConfigured) {
+          setInitialData(readLocalWhiteboardSnapshot(id));
+          return;
+        }
+
         const { data, error } = await supabase
           .from('whiteboards')
           .select('data')
