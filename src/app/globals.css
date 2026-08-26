@@ -123,10 +123,20 @@
   }
 }
 
-/* Force tldraw canvas to be completely white; overlay notes use Geist via --tl-font-sans. */
+/* Force tldraw canvas to be completely white. Rail/mode words use Geist; tutor notes are ink. */
 .tldraw__editor {
   background-color: #ffffff !important;
   --tl-font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.tutor-katex,
+.tutor-katex .katex {
+  color: #e11d48;
+  font-size: 14px;
+  line-height: 1.2;
+  background: none;
+  border: none;
+  box-shadow: none;
 }
 
 .tl-background {

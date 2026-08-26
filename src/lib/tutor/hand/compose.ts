@@ -1,0 +1,173 @@
+import { ATLAS, EM_HEIGHT, glyphKey, type Glyph } from "./atlas";
+import { mulberry32, samplePath, withTremor, type Pt } from "./path";
+
+export type InkSegment = {
+  type: "free" | "straight";
+  points: { x: number; y: number; z?: number }[];
+};
+
+export const HAND_SIZE = 14;
+export const LINE_HEIGHT = 18;
+export const TRACKING = 1.4;
+
+export type ComposedInk = {
+  segments: InkSegment[];
+  width: number;
+  height: number;
+};
+
+function pickGlyph(ch: string, rng: () => number, prev: { key: string; alt: number }): Glyph | null {
+  const key = glyphKey(ch);
+  const alts = ATLAS[key];
+  if (!alts?.length) return null;
+  if (alts.length === 1) {
+    prev.key = key;
+    prev.alt = 0;
+    return alts[0];
+  }
+  let i = Math.floor(rng() * alts.length);
+  if (prev.key === key && i === prev.alt) i = (i + 1) % alts.length;
+  prev.key = key;
+  prev.alt = i;
+  return alts[i];
+}
+
+function wordWidth(word: string, scale: number): number {
+  let w = 0;
+  for (const ch of word) {
+    const g = ATLAS[glyphKey(ch)]?.[0];
+    w += ((g?.advance ?? 4) * scale) + TRACKING;
+  }
+  return w;
+}
+
+function strokeToLocal(points: Pt[], ox: number, oy: number, scale: number, seed: number): InkSegment {
+  const scaled = points.map((p) => ({ x: p.x * scale + ox, y: p.y * scale + oy }));
+  return {
+    type: "free",
+    points: withTremor(scaled, seed),
+  };
+}
+
+/** Compose a teacher-hand string as tldraw draw segments (local coords). */
+export function composeHandwriting(
+  text: string,
+  opts: { maxWidth: number; seed?: number; size?: number },
+): ComposedInk {
+  const scale = (opts.size ?? HAND_SIZE) / EM_HEIGHT;
+  const rng = mulberry32(opts.seed ?? 1);
+  const prev = { key: "", alt: -1 };
+  const segments: InkSegment[] = [];
+  let x = 0;
+  let y = 0;
+  let maxX = 0;
+  let seed = opts.seed ?? 1;
+
+  const words = text.replace(/\s+/g, " ").trim().split(" ");
+  for (let w = 0; w < words.length; w++) {
+    const word = words[w];
+    if (!word) continue;
+    const ww = wordWidth(word, scale);
+    if (x > 0 && x + ww > opts.maxWidth) {
+      x = 0;
+      y += LINE_HEIGHT;
+    }
+
+    for (const ch of word) {
+      const glyph = pickGlyph(ch, rng, prev);
+      seed += 17;
+      if (!glyph) continue;
+      const jitter = (rng() - 0.5) * 1.1;
+      for (const path of glyph.paths) {
+        const pts = samplePath(path);
+        if (pts.length < 2) continue;
+        segments.push(strokeToLocal(pts, x, y + jitter, scale, seed));
+        seed += 3;
+      }
+      x += glyph.advance * scale + TRACKING;
+      if (x > maxX) maxX = x;
+    }
+
+    if (w < words.length - 1) {
+      const space = ATLAS[" "]?.[0]?.advance ?? 4;
+      x += space * scale;
+      if (x > maxX) maxX = x;
+    }
+  }
+
+  return {
+    segments,
+    width: Math.max(8, maxX),
+    height: y + LINE_HEIGHT,
+  };
+}
+
+export function composeCircle(w: number, h: number, seed: number): ComposedInk {
+  const n = 48;
+  const rx = Math.max(8, w / 2);
+  const ry = Math.max(8, h / 2);
+  const raw: Pt[] = [];
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const wobble = 1 + Math.sin(a * 3 + seed * 0.01) * 0.028;
+    raw.push({
+      x: rx + Math.cos(a) * rx * wobble,
+      y: ry + Math.sin(a) * ry * wobble,
+    });
+  }
+  return {
+    segments: [{ type: "free", points: withTremor(raw, seed, 0.55) }],
+    width: rx * 2,
+    height: ry * 2,
+  };
+}
+
+export function composeCaret(seed: number): ComposedInk {
+  const raw: Pt[] = [
+    { x: 0, y: 11 },
+    { x: 5.2, y: 1.2 },
+    { x: 10.2, y: 11 },
+  ];
+  return {
+    segments: [{ type: "free", points: withTremor(raw, seed, 0.4) }],
+    width: 10,
+    height: 12,
+  };
+}
+
+export function composeUnderline(w: number, seed: number): ComposedInk {
+  const raw: Pt[] = [
+    { x: 0, y: 2 },
+    { x: Math.max(16, w) * 0.35, y: 1.4 },
+    { x: Math.max(16, w) * 0.7, y: 2.3 },
+    { x: Math.max(16, w), y: 1.6 },
+  ];
+  return {
+    segments: [{ type: "free", points: withTremor(raw, seed, 0.35) }],
+    width: Math.max(16, w),
+    height: 4,
+  };
+}
+
+export function composeArrow(w: number, h: number, seed: number): ComposedInk {
+  const len = Math.max(24, w);
+  const mid = h / 2;
+  const shaft: Pt[] = [
+    { x: 0, y: mid },
+    { x: len * 0.5, y: mid - 0.6 },
+    { x: len, y: mid },
+  ];
+  const head: Pt[] = [
+    { x: len - 8, y: mid - 5 },
+    { x: len, y: mid },
+    { x: len - 8, y: mid + 5 },
+  ];
+  return {
+    segments: [
+      { type: "free", points: withTremor(shaft, seed, 0.35) },
+      { type: "free", points: withTremor(head, seed + 9, 0.35) },
+    ],
+    width: len,
+    height: Math.max(14, h),
+  };
+}

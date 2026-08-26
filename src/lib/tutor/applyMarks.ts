@@ -1,7 +1,20 @@
-import { createShapeId, toRichText, type Editor, type TLShapeId } from "tldraw";
+import { createShapeId, type Editor, type TLShapeId } from "tldraw";
 import { isTutorShape } from "./cluster";
-import { CIRCLE_STROKE_SCALE, NOTE_FONT_SCALE, unscaledTextWidth } from "./layout";
-import { PROBLEM_META, TUTOR_LAYER_META, type TutorMark } from "./types";
+import { planTutorInk } from "./hand/plan";
+import { PROBLEM_META, TUTOR_LAYER_META, type TutorMark, type TutorMode } from "./types";
+
+export { planTutorInk } from "./hand/plan";
+export type { InkPlan } from "./hand/plan";
+
+const TUTOR_DRAW = {
+  color: "red" as const,
+  fill: "none" as const,
+  dash: "draw" as const,
+  size: "s" as const,
+  isComplete: true,
+  isPen: true,
+  scale: 1,
+};
 
 export function getTutorShapeIds(editor: Editor, problemId?: number): TLShapeId[] {
   return editor
@@ -31,17 +44,18 @@ export function clearTutorMarks(editor: Editor, problemId?: number): void {
   );
 }
 
-function tutorMeta(mark: TutorMark) {
+function tutorMeta(mark: TutorMark, extra?: Record<string, unknown>) {
   return {
     [TUTOR_LAYER_META]: true,
     [PROBLEM_META]: mark.problemId,
     latex: mark.latex,
     bbox: mark.bbox,
     markKind: mark.kind,
+    ...extra,
   };
 }
 
-export function applyTutorMarks(editor: Editor, marks: TutorMark[]): TLShapeId[] {
+export function applyTutorMarks(editor: Editor, marks: TutorMark[], mode?: TutorMode): TLShapeId[] {
   const created: TLShapeId[] = [];
   const problemId = marks[0]?.problemId;
 
@@ -50,99 +64,45 @@ export function applyTutorMarks(editor: Editor, marks: TutorMark[]): TLShapeId[]
       if (problemId != null) clearTutorMarks(editor, problemId);
 
       for (const mark of marks) {
-        const id = createShapeId();
-        const common = {
-          id,
-          x: mark.x,
-          y: mark.y,
-          opacity: 0,
-          isLocked: true,
-          meta: tutorMeta(mark),
-        };
+        for (const plan of planTutorInk(mark, mode)) {
+          const id = createShapeId();
+          const meta = tutorMeta(mark, { ink: plan.kind });
 
-        if (mark.kind === "circle") {
-          editor.createShape({
-            ...common,
-            type: "geo",
-            props: {
-              geo: "ellipse",
-              w: mark.w,
-              h: mark.h,
-              color: "red",
-              fill: "none",
-              dash: "solid",
-              size: "s",
-              scale: CIRCLE_STROKE_SCALE,
-            },
-          });
-        } else if (mark.kind === "caret") {
-          editor.createShape({
-            ...common,
-            x: mark.x - mark.w / 2,
-            type: "text",
-            props: {
-              color: "red",
-              size: "s",
-              font: "sans",
-              textAlign: "middle",
-              w: unscaledTextWidth(mark.w),
-              richText: toRichText("^"),
-              scale: NOTE_FONT_SCALE,
-              autoSize: true,
-            },
-          });
-        } else if (mark.kind === "underline") {
-          editor.createShape({
-            ...common,
-            type: "line",
-            y: mark.y + mark.h,
-            props: {
-              color: "orange",
-              dash: "solid",
-              size: "m",
-              spline: "line",
-              points: {
-                a1: { id: "a1", index: "a1", x: 0, y: 0 },
-                a2: { id: "a2", index: "a2", x: Math.max(16, mark.w), y: 0 },
+          if (plan.kind === "draw") {
+            if (plan.segments.length === 0) continue;
+            editor.createShape({
+              id,
+              type: "draw",
+              x: plan.x,
+              y: plan.y,
+              opacity: 0,
+              isLocked: true,
+              meta,
+              props: {
+                ...TUTOR_DRAW,
+                isClosed: plan.closed,
+                segments: plan.segments,
               },
-            },
-          });
-        } else if (mark.kind === "arrow") {
-          editor.createShape({
-            ...common,
-            type: "arrow",
-            props: {
-              color: "blue",
-              fill: "none",
-              dash: "solid",
-              size: "m",
-              kind: "arc",
-              arrowheadStart: "none",
-              arrowheadEnd: "arrow",
-              start: { x: 0, y: mark.h / 2 },
-              end: { x: Math.max(24, mark.w), y: mark.h / 2 },
-            },
-          });
-        } else {
-          const text = mark.text?.trim();
-          if (!text) continue;
-          editor.createShape({
-            ...common,
-            type: "text",
-            props: {
-              color: "red",
-              size: "s",
-              font: "sans",
-              textAlign: "start",
-              w: unscaledTextWidth(mark.w),
-              richText: toRichText(text),
-              scale: NOTE_FONT_SCALE,
-              autoSize: false,
-            },
-          });
-        }
+            });
+          } else {
+            editor.createShape({
+              id,
+              type: "tutor-katex",
+              x: plan.x,
+              y: plan.y,
+              opacity: 0,
+              isLocked: true,
+              meta,
+              props: {
+                w: plan.w,
+                h: plan.h,
+                latex: plan.latex,
+              },
+            });
+          }
 
-        created.push(id);
+          created.push(id);
+        }
       }
     },
     { ignoreShapeLock: true },

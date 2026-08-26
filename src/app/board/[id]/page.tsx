@@ -46,6 +46,7 @@ import { ProblemRail } from "@/components/ProblemRail";
 import { ModeWords } from "@/components/ModeWords";
 import { TUTOR_RED } from "@/lib/tutor/layout";
 import { ensureProblemPages, lockPaperCamera } from "@/lib/tutor/pages";
+import { TutorKatexShapeUtil } from "@/lib/tutor/TutorKatexShape";
 import { StatusIndicator, type StatusIndicatorState } from "@/components/StatusIndicator";
 import { logger } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
@@ -1777,6 +1778,7 @@ export default function BoardPage() {
     <div style={{ position: "fixed", inset: 0 }}>
       <Tldraw
         overrides={hugeIconsOverrides}
+        shapeUtils={[TutorKatexShapeUtil]}
         licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
         components={{
           MenuPanel: null,

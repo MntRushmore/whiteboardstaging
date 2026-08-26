@@ -211,7 +211,7 @@ export function useTutorEngine({
         }
 
         applyingRef.current = true;
-        const ids = applyTutorMarks(editor, result.marks);
+        const ids = applyTutorMarks(editor, result.marks, result.mode);
         fadeInTutorShapes(editor, ids);
         setHasMarks(ids.length > 0);
         queueMicrotask(() => {
