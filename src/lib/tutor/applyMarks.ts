@@ -2,6 +2,7 @@ import { createShapeId, type Editor, type TLShapeId } from "tldraw";
 import { isTutorShape } from "./cluster";
 import { composeDiagram } from "./hand/diagrams";
 import { planTutorInk } from "./hand/plan";
+import { HAND_NIB_PX, TUTOR_RED } from "./layout";
 import { getDemoProblem } from "./problems";
 import {
   PROBLEM_META,
@@ -202,7 +203,31 @@ export function applyTutorMarks(editor: Editor, marks: TutorMark[], mode?: Tutor
           const id = createShapeId();
           const meta = tutorMeta(mark, { ink: plan.kind });
 
-          if (plan.kind === "draw") {
+          if (plan.kind === "hand") {
+            if (plan.segments.length === 0) continue;
+            editor.createShape({
+              id,
+              type: "tutor-hand",
+              x: plan.x,
+              y: plan.y,
+              opacity: 0,
+              isLocked: true,
+              meta,
+              props: {
+                w: plan.w,
+                h: plan.h,
+                color: TUTOR_RED,
+                stroke: HAND_NIB_PX,
+                segments: plan.segments.map((segment) => ({
+                  points: segment.points.map((point) => ({
+                    x: point.x,
+                    y: point.y,
+                    z: point.z,
+                  })),
+                })),
+              },
+            });
+          } else if (plan.kind === "draw") {
             if (plan.segments.length === 0) continue;
             editor.createShape({
               id,

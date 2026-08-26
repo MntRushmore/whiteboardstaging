@@ -24,6 +24,15 @@ export type InkPlan =
       markKind: TutorMark["kind"];
     }
   | {
+      kind: "hand";
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      segments: InkSegment[];
+      markKind: TutorMark["kind"];
+    }
+  | {
       kind: "katex";
       x: number;
       y: number;
@@ -121,12 +130,15 @@ export function planTutorInk(mark: TutorMark, mode?: TutorMode): InkPlan[] {
   }
 
   const hand = composeHandwriting(text, { maxWidth: mark.w, seed: seedFor(mark, 6) });
+  // Atlas compositor only. Do not emit a tldraw draw — dash:"draw"
+  // concatenates every glyph path and runs freehand (the red scribble).
   return [
     {
-      kind: "draw",
+      kind: "hand",
       x: mark.x,
       y: mark.y,
-      closed: false,
+      w: hand.width,
+      h: hand.height,
       segments: hand.segments,
       markKind: "note",
     },

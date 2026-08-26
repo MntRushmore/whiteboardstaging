@@ -7,6 +7,8 @@ import {
   composeHandwriting,
   pickAlternates,
 } from "./hand/compose";
+import { polylineToSvgD } from "./hand/path";
+import { HAND_NIB_PX } from "./layout";
 import { ATLAS, ATLAS_CALC_EXTRAS, COMMON_LETTERS, hasGlyph, isGreekChar } from "./hand/atlas";
 import { composeDiagram, DIAGRAM_KINDS } from "./hand/diagrams";
 import { DEMO_PROBLEMS, socraticOpener } from "./problems";
@@ -134,15 +136,39 @@ describe("splitSolveNote", () => {
   });
 });
 
+describe("polylineToSvgD", () => {
+  it("keeps each atlas stroke as its own path", () => {
+    assert.equal(polylineToSvgD([]), "");
+    assert.equal(
+      polylineToSvgD([
+        { x: 0, y: 1 },
+        { x: 2, y: 3 },
+        { x: 4, y: 5 },
+      ]),
+      "M 0 1 L 2 3 L 4 5",
+    );
+  });
+});
+
 describe("planTutorInk", () => {
-  it("turns socratic copy into draw strokes only", () => {
+  it("emits an atlas hand plan, not a tldraw freehand draw", () => {
     const [note] = constrainMarks("socratic", [
       mark("note", "What is the coefficient of x?"),
     ]);
     const plans = planTutorInk(note!, "socratic");
     assert.equal(plans.length, 1);
-    assert.equal(plans[0]?.kind, "draw");
-    assert.ok(plans[0]?.kind === "draw" && plans[0].segments.length > 0);
+    const [hand] = plans;
+    assert.equal(hand?.kind, "hand");
+    if (hand?.kind !== "hand") return;
+    assert.equal(hand.x, note?.x);
+    assert.ok(hand.segments.length > 8);
+    assert.ok((hand.segments[0]?.points[0]?.x ?? 99) < 12);
+    const ds = hand.segments.map((segment) => polylineToSvgD(segment.points));
+    assert.ok(ds.every((d) => d.startsWith("M ") && (d.match(/M /g) ?? []).length === 1));
+    assert.equal(HAND_NIB_PX, 1.4);
+    const firstX = hand.segments[0]?.points[0]?.x ?? 0;
+    const laterX = hand.segments[4]?.points[0]?.x ?? 0;
+    assert.ok(laterX - firstX > 8);
   });
 
   it("splits solve notes into hand lead-in and katex", () => {

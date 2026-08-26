@@ -24,6 +24,7 @@ import {
   CIRCLE_PAD_PX,
   CIRCLE_STROKE_PX,
   CIRCLE_STROKE_SCALE,
+  HAND_NIB_PX,
   NOTE_FONT_SCALE,
   SOCRATIC_FONT_PX,
   SOCRATIC_GAP_PX,
@@ -65,6 +66,7 @@ describe("overlay spacing lock", () => {
     assert.equal(SOCRATIC_FONT_PX, 14);
     assert.equal(SOCRATIC_WIDTH_PX, 28 * 14 * 0.6);
     assert.equal(CIRCLE_STROKE_PX, 1.5);
+    assert.equal(HAND_NIB_PX, 1.4);
     assert.equal(CIRCLE_PAD_PX, 6);
     assert.equal(CARET_GAP_PX, 8);
     assert.equal(SOLVE_WIDTH_PX, 280);

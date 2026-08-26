@@ -48,6 +48,7 @@ import { useTldrawLicense } from "@/components/TldrawLicense";
 import { DEFAULT_ASSISTANCE_MODE } from "@/lib/tutor/types";
 import { ensureProblemPages, lockPaperCamera } from "@/lib/tutor/pages";
 import { TutorKatexShapeUtil } from "@/lib/tutor/TutorKatexShape";
+import { TutorHandShapeUtil } from "@/lib/tutor/TutorHandShape";
 import { StatusIndicator, type StatusIndicatorState } from "@/components/StatusIndicator";
 import { logger } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
@@ -1721,7 +1722,7 @@ export function PaperBoard({
       <PersistentTldraw
         hideUi
         overrides={hugeIconsOverrides}
-        shapeUtils={[TutorKatexShapeUtil]}
+        shapeUtils={[TutorKatexShapeUtil, TutorHandShapeUtil]}
         licenseKey={key}
         components={{
           MenuPanel: null,

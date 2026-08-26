@@ -101,6 +101,18 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
+/** One SVG path per atlas stroke. Never join glyph paths into one polyline. */
+export function polylineToSvgD(points: Pt[]): string {
+  if (points.length === 0) return "";
+  const [first, ...rest] = points;
+  if (!first) return "";
+  let d = `M ${first.x} ${first.y}`;
+  for (const point of rest) {
+    d += ` L ${point.x} ${point.y}`;
+  }
+  return d;
+}
+
 /** Slight tremor + dry-nib pressure. First/last points stay almost pinned. */
 export function withTremor(points: Pt[], seed: number, amount = 0.45): { x: number; y: number; z: number }[] {
   if (points.length === 0) return [];

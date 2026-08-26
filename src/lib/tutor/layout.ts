@@ -10,6 +10,8 @@ export const CARET_GAP_PX = 8;
 export const SOLVE_WIDTH_PX = 280;
 export const SOLVE_GAP_PX = 16;
 export const TUTOR_RED = "#E11D48";
+/** Dry atlas nib. Not tldraw freehand. */
+export const HAND_NIB_PX = 1.4;
 /** Warm paper. Not cold white. */
 export const PAPER = "#F4EFE6";
 
