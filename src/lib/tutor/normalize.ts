@@ -68,6 +68,8 @@ export function mapNormalizedMarkToPage(
   mark: NormalizedMark,
   pageId: string,
   bounds: ClusterBounds,
+  problemId: number,
+  latex: string,
 ): TutorMark {
   return {
     kind: mark.kind,
@@ -77,33 +79,43 @@ export function mapNormalizedMarkToPage(
     w: Math.max(12, mark.nw * bounds.w),
     h: Math.max(10, mark.nh * bounds.h),
     text: mark.text,
+    problemId,
+    latex,
+    bbox: bounds,
   };
 }
 
 /**
- * Product constraints:
- * - socratic: at most one question note + optional circle
- * - solve: step notes only (no bitmap, no circles/underlines)
- * - feedback: circles/underlines + one short margin note
+ * Simon's overlay lock:
+ * - socratic: one margin question
+ * - solve: stepped notes pinned right of the work
+ * - feedback: circle and caret only
  */
 export function constrainMarks(mode: TutorMode, marks: TutorMark[]): TutorMark[] {
   if (mode === "socratic") {
     const note = marks.find((m) => m.kind === "note" && m.text);
-    const circle = marks.find((m) => m.kind === "circle");
-    return [circle, note].filter((m): m is TutorMark => Boolean(m));
+    return note ? [note] : [];
   }
 
   if (mode === "solve") {
-    return marks
-      .filter((m) => m.kind === "note" && m.text)
-      .slice(0, 5);
+    return pinSolveNotes(
+      marks.filter((m) => m.kind === "note" && m.text).slice(0, 5),
+    );
   }
 
-  const decorations = marks
-    .filter((m) => m.kind === "circle" || m.kind === "underline")
-    .slice(0, 4);
-  const note = marks.find((m) => m.kind === "note" && m.text);
-  return note ? [...decorations, note] : decorations;
+  const circle = marks.find((m) => m.kind === "circle");
+  const caret = marks.find((m) => m.kind === "caret");
+  return [circle, caret].filter((m): m is TutorMark => Boolean(m));
+}
+
+export function pinSolveNotes(marks: TutorMark[]): TutorMark[] {
+  return marks.map((mark, i) => ({
+    ...mark,
+    x: mark.bbox.x + mark.bbox.w + 20,
+    y: mark.bbox.y + i * 32,
+    w: Math.max(mark.w, 160),
+    h: Math.max(mark.h, 22),
+  }));
 }
 
 export function downsamplePoints(
@@ -130,4 +142,8 @@ export function richTextToPlain(value: unknown): string {
     return rec.content.map(richTextToPlain).join("");
   }
   return "";
+}
+
+export function isUsableLatex(latex: string): boolean {
+  return latex.trim().length > 0;
 }

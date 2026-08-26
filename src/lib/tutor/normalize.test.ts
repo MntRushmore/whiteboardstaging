@@ -11,10 +11,27 @@ import {
   richTextToPlain,
 } from "./normalize";
 import { expandCluster, padBounds, unionBounds } from "./geometry";
+import {
+  assignClusterToProblem,
+  canSelectProblem,
+  createProblemSet,
+  extractLatex,
+} from "./problems";
 import type { TutorMark } from "./types";
 
 function mark(kind: TutorMark["kind"], text?: string): TutorMark {
-  return { kind, pageId: "page:1", x: 10, y: 20, w: 40, h: 16, text };
+  return {
+    kind,
+    pageId: "page:1",
+    x: 10,
+    y: 20,
+    w: 40,
+    h: 16,
+    text,
+    problemId: 1,
+    latex: "2x+3=7",
+    bbox: { x: 0, y: 0, w: 100, h: 40 },
+  };
 }
 
 describe("parseTutorMode", () => {
@@ -26,62 +43,66 @@ describe("parseTutorMode", () => {
 });
 
 describe("constrainMarks", () => {
-  it("limits socratic to one note and optional circle", () => {
+  it("limits socratic to one margin question", () => {
     const result = constrainMarks("socratic", [
       mark("underline"),
       mark("circle"),
-      mark("circle"),
       mark("note", "What is the coefficient of x?"),
       mark("note", "Second question"),
-      mark("arrow"),
+      mark("caret"),
     ]);
     assert.deepEqual(
       result.map((m) => m.kind),
-      ["circle", "note"],
+      ["note"],
     );
-    assert.equal(result[1]?.text, "What is the coefficient of x?");
+    assert.equal(result[0]?.text, "What is the coefficient of x?");
   });
 
-  it("keeps only step notes in solve mode", () => {
+  it("pins solve notes to the right of the work", () => {
     const result = constrainMarks("solve", [
       mark("circle"),
       mark("note", "x = 2"),
-      mark("underline"),
+      mark("caret"),
       mark("note", "check: 2+2=4"),
     ]);
     assert.deepEqual(
       result.map((m) => m.kind),
       ["note", "note"],
     );
+    assert.equal(result[0]?.x, 120);
+    assert.equal(result[1]?.y, 32);
   });
 
-  it("keeps feedback decorations plus one note", () => {
+  it("keeps only a circle and caret in feedback", () => {
     const result = constrainMarks("feedback", [
       mark("circle"),
       mark("underline"),
-      mark("underline"),
-      mark("arrow"),
+      mark("caret"),
       mark("note", "Sign error here"),
-      mark("note", "Also this"),
     ]);
-    assert.equal(result.filter((m) => m.kind === "note").length, 1);
-    assert.ok(result.every((m) => m.kind !== "arrow"));
-    assert.equal(result[result.length - 1]?.text, "Sign error here");
+    assert.deepEqual(
+      result.map((m) => m.kind),
+      ["circle", "caret"],
+    );
   });
 });
 
 describe("mapNormalizedMarkToPage", () => {
-  it("maps 0-1 crop boxes onto page bounds", () => {
+  it("maps 0-1 crop boxes onto page bounds and keeps problem payload", () => {
     const page = mapNormalizedMarkToPage(
       { kind: "circle", nx: 0.25, ny: 0.5, nw: 0.2, nh: 0.1 },
       "page:abc",
       { x: 100, y: 200, w: 400, h: 100 },
+      3,
+      "x^2",
     );
     assert.equal(page.pageId, "page:abc");
     assert.equal(page.x, 200);
     assert.equal(page.y, 250);
     assert.equal(page.w, 80);
     assert.equal(page.h, 10);
+    assert.equal(page.problemId, 3);
+    assert.equal(page.latex, "x^2");
   });
 });
 
@@ -91,16 +112,14 @@ describe("parse helpers", () => {
     assert.equal(obj.latex, "x=2");
     assert.equal(clampConfidence(1.4), 1);
     assert.equal(clampConfidence("nope"), 0);
-    const mark = parseNormalizedMark({
-      kind: "note",
-      nx: 0.8,
-      ny: 0.1,
-      nw: 0.2,
-      nh: 0.2,
-      text: "Why?",
+    const parsed = parseNormalizedMark({
+      kind: "caret",
+      nx: 0.1,
+      ny: 0.8,
+      nw: 0.05,
+      nh: 0.1,
     });
-    assert.equal(mark?.kind, "note");
-    assert.equal(mark?.text, "Why?");
+    assert.equal(parsed?.kind, "caret");
   });
 
   it("extracts plain text from tldraw rich text", () => {
@@ -144,5 +163,64 @@ describe("expandCluster", () => {
     assert.deepEqual(union, { x: 0, y: 0, w: 30, h: 15 });
     const padded = padBounds({ x: 10, y: 10, w: 20, h: 20 }, 4);
     assert.deepEqual(padded, { x: 6, y: 6, w: 28, h: 28 });
+  });
+});
+
+describe("problem rail assignment", () => {
+  it("unlocks problem 1 on first ink, not by tapping ahead", () => {
+    const set = createProblemSet();
+    assert.equal(canSelectProblem(set, 2), false);
+    const first = assignClusterToProblem(
+      set,
+      1,
+      { x: 0, y: 0, w: 40, h: 20 },
+      "2x+3=7",
+    );
+    assert.equal(first.problemId, 1);
+    assert.equal(first.problems[0]?.unlocked, true);
+    assert.equal(first.problems[0]?.latex, "2x+3=7");
+    assert.equal(canSelectProblem(first.problems, 2), false);
+  });
+
+  it("keeps incremental ink on the same problem when nearby", () => {
+    const first = assignClusterToProblem(
+      createProblemSet(),
+      1,
+      { x: 0, y: 0, w: 40, h: 20 },
+      "2x",
+    );
+    const next = assignClusterToProblem(
+      first.problems,
+      first.activeId,
+      { x: 20, y: 0, w: 40, h: 20 },
+      "2x+3=7",
+    );
+    assert.equal(next.problemId, 1);
+    assert.equal(next.problems[0]?.latex, "2x+3=7");
+    assert.equal(next.problems[1]?.unlocked, false);
+  });
+
+  it("unlocks the next problem when ink is far from the current work", () => {
+    const first = assignClusterToProblem(
+      createProblemSet(),
+      1,
+      { x: 0, y: 0, w: 40, h: 20 },
+      "2x+3=7",
+    );
+    const next = assignClusterToProblem(
+      first.problems,
+      first.activeId,
+      { x: 400, y: 0, w: 40, h: 20 },
+      "5+5=10",
+    );
+    assert.equal(next.problemId, 2);
+    assert.equal(next.problems[0]?.finished, true);
+    assert.equal(next.problems[1]?.unlocked, true);
+    assert.equal(next.problems[1]?.latex, "5+5=10");
+  });
+
+  it("reuses previous latex when the new cluster has no text", () => {
+    assert.equal(extractLatex("", "x=2"), "x=2");
+    assert.equal(extractLatex(" y=3 ", "x=2"), "y=3");
   });
 });

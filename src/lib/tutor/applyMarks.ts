@@ -1,16 +1,20 @@
 import { createShapeId, toRichText, type Editor, type TLShapeId } from "tldraw";
-import { TUTOR_LAYER_META, type TutorMark } from "./types";
+import { PROBLEM_META, TUTOR_LAYER_META, type TutorMark } from "./types";
 import { isTutorShape } from "./cluster";
 
-export function getTutorShapeIds(editor: Editor): TLShapeId[] {
+export function getTutorShapeIds(editor: Editor, problemId?: number): TLShapeId[] {
   return editor
     .getCurrentPageShapes()
-    .filter(isTutorShape)
+    .filter((shape) => {
+      if (!isTutorShape(shape)) return false;
+      if (problemId == null) return true;
+      return (shape.meta as Record<string, unknown> | undefined)?.[PROBLEM_META] === problemId;
+    })
     .map((shape) => shape.id);
 }
 
-export function clearTutorMarks(editor: Editor): void {
-  const ids = getTutorShapeIds(editor);
+export function clearTutorMarks(editor: Editor, problemId?: number): void {
+  const ids = getTutorShapeIds(editor, problemId);
   if (ids.length === 0) return;
 
   editor.run(
@@ -26,16 +30,22 @@ export function clearTutorMarks(editor: Editor): void {
   );
 }
 
-function tutorMeta() {
-  return { [TUTOR_LAYER_META]: true };
+function tutorMeta(mark: TutorMark) {
+  return {
+    [TUTOR_LAYER_META]: true,
+    [PROBLEM_META]: mark.problemId,
+    latex: mark.latex,
+    bbox: mark.bbox,
+  };
 }
 
 export function applyTutorMarks(editor: Editor, marks: TutorMark[]): TLShapeId[] {
   const created: TLShapeId[] = [];
+  const problemId = marks[0]?.problemId;
 
   editor.run(
     () => {
-      clearTutorMarks(editor);
+      if (problemId != null) clearTutorMarks(editor, problemId);
 
       for (const mark of marks) {
         const id = createShapeId();
@@ -45,7 +55,7 @@ export function applyTutorMarks(editor: Editor, marks: TutorMark[]): TLShapeId[]
           y: mark.y,
           opacity: 0,
           isLocked: true,
-          meta: tutorMeta(),
+          meta: tutorMeta(mark),
         };
 
         if (mark.kind === "circle") {
@@ -60,6 +70,21 @@ export function applyTutorMarks(editor: Editor, marks: TutorMark[]): TLShapeId[]
               fill: "none",
               dash: "solid",
               size: "m",
+            },
+          });
+        } else if (mark.kind === "caret") {
+          editor.createShape({
+            ...common,
+            type: "text",
+            props: {
+              color: "orange",
+              size: "s",
+              font: "sans",
+              textAlign: "start",
+              w: 32,
+              richText: toRichText("^"),
+              scale: 1,
+              autoSize: true,
             },
           });
         } else if (mark.kind === "underline") {
@@ -138,4 +163,27 @@ export function fadeInTutorShapes(editor: Editor, ids: TLShapeId[]): void {
       );
     });
   });
+}
+
+export function stampStudentProblemId(
+  editor: Editor,
+  shapeIds: TLShapeId[],
+  problemId: number,
+): void {
+  editor.run(
+    () => {
+      for (const id of shapeIds) {
+        const shape = editor.getShape(id);
+        if (!shape || isTutorShape(shape)) continue;
+        const meta = (shape.meta ?? {}) as Record<string, unknown>;
+        if (meta[PROBLEM_META] === problemId) continue;
+        editor.updateShape({
+          id,
+          type: shape.type,
+          meta: { ...meta, [PROBLEM_META]: problemId },
+        });
+      }
+    },
+    { history: "ignore" },
+  );
 }

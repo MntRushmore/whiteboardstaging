@@ -4,21 +4,34 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Editor, TLShapeId } from "tldraw";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
-import { applyTutorMarks, clearTutorMarks, fadeInTutorShapes } from "@/lib/tutor/applyMarks";
+import {
+  applyTutorMarks,
+  clearTutorMarks,
+  fadeInTutorShapes,
+  stampStudentProblemId,
+} from "@/lib/tutor/applyMarks";
 import {
   allChangesAreTutorLayer,
   clusterFromSeeds,
   collectAllStudentText,
   collectStudentInk,
-  cropCluster,
   studentInkIdsFromDiff,
 } from "@/lib/tutor/cluster";
+import {
+  assignClusterToProblem,
+  canSelectProblem,
+  createProblemSet,
+  extractLatex,
+  finishProblemsBehind,
+} from "@/lib/tutor/problems";
+import { isUsableLatex } from "@/lib/tutor/normalize";
 import {
   CONFIDENCE_THRESHOLD,
   TUTOR_DEBOUNCE_MS,
   assistanceToTutorMode,
   type AssistanceMode,
   type ClusterBounds,
+  type ProblemRecord,
   type TutorResponse,
 } from "@/lib/tutor/types";
 
@@ -40,6 +53,8 @@ export function useTutorEngine({
   const [lastResult, setLastResult] = useState<TutorResponse | null>(null);
   const [clusterBounds, setClusterBounds] = useState<ClusterBounds | null>(null);
   const [hasMarks, setHasMarks] = useState(false);
+  const [problems, setProblems] = useState<ProblemRecord[]>(() => createProblemSet());
+  const [activeProblemId, setActiveProblemId] = useState(1);
 
   const applyingRef = useRef(false);
   const processingRef = useRef(false);
@@ -50,11 +65,15 @@ export function useTutorEngine({
   const autoRef = useRef(autoEnabled);
   const lastResultRef = useRef<TutorResponse | null>(null);
   const onStatusRef = useRef(onStatus);
+  const problemsRef = useRef(problems);
+  const activeRef = useRef(activeProblemId);
 
   modeRef.current = assistanceMode;
   autoRef.current = autoEnabled;
   lastResultRef.current = lastResult;
   onStatusRef.current = onStatus;
+  problemsRef.current = problems;
+  activeRef.current = activeProblemId;
 
   const setBusy = useCallback((status: TutorEngineStatus, message: string) => {
     onStatusRef.current?.(status, message);
@@ -64,7 +83,7 @@ export function useTutorEngine({
     if (!editor) return;
     applyingRef.current = true;
     try {
-      clearTutorMarks(editor);
+      clearTutorMarks(editor, activeRef.current);
       setHasMarks(false);
     } finally {
       queueMicrotask(() => {
@@ -73,18 +92,22 @@ export function useTutorEngine({
     }
   }, [editor]);
 
+  const selectProblem = useCallback((id: number) => {
+    if (!canSelectProblem(problemsRef.current, id)) return;
+    setActiveProblemId(id);
+    setProblems((prev) => finishProblemsBehind(prev, id));
+  }, []);
+
   const runCluster = useCallback(
     async (options?: {
       seedIds?: TLShapeId[];
       modeOverride?: AssistanceMode;
-      instructions?: string;
       force?: boolean;
     }): Promise<boolean> => {
       if (!editor || processingRef.current) return false;
 
       const uiMode = options?.modeOverride ?? modeRef.current;
       const mode = assistanceToTutorMode(uiMode);
-      if (!mode) return false;
 
       const seedIds =
         options?.seedIds && options.seedIds.length > 0
@@ -94,14 +117,35 @@ export function useTutorEngine({
       const cluster = clusterFromSeeds(editor, seedIds);
       if (!cluster) return false;
 
-      const drawOrText = cluster.shapeIds
-        .map((id) => editor.getShape(id))
-        .filter(Boolean);
-      const hasDraw = drawOrText.some(
-        (s) => s!.type === "draw" || s!.type === "highlight",
+      const assigned = assignClusterToProblem(
+        problemsRef.current,
+        activeRef.current,
+        cluster.bounds,
+        extractLatex(cluster.nearbyText),
       );
-      const hasText = Boolean(cluster.nearbyText.trim());
-      if (!hasDraw && !hasText) return false;
+      problemsRef.current = assigned.problems;
+      activeRef.current = assigned.activeId;
+      setProblems(assigned.problems);
+      setActiveProblemId(assigned.activeId);
+      setClusterBounds(assigned.problems[assigned.problemId - 1]?.bbox ?? cluster.bounds);
+
+      applyingRef.current = true;
+      try {
+        stampStudentProblemId(editor, cluster.shapeIds, assigned.problemId);
+      } finally {
+        queueMicrotask(() => {
+          applyingRef.current = false;
+        });
+      }
+
+      const latex = assigned.problems[assigned.problemId - 1]?.latex ?? "";
+      const bbox = assigned.problems[assigned.problemId - 1]?.bbox ?? cluster.bounds;
+
+      if (!mode) return false;
+      if (!isUsableLatex(latex)) {
+        logger.info({ problemId: assigned.problemId }, "No latex on cluster; skip tutor");
+        return false;
+      }
 
       processingRef.current = true;
       abortRef.current?.abort();
@@ -110,25 +154,18 @@ export function useTutorEngine({
 
       try {
         setBusy("generating", "Reading your work...");
-        const crop = await cropCluster(editor, cluster.shapeIds, cluster.bounds);
-        if (!crop || abort.signal.aborted) {
-          setBusy("idle", "");
-          return false;
-        }
 
-        const response = await fetch("/api/tutor", {
+        const payload = {
+          problemId: assigned.problemId,
+          latex,
+          bbox,
+        };
+
+        const response = await fetch(`/api/tutor?mode=${mode}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: abort.signal,
-          body: JSON.stringify({
-            crop,
-            nearbyText: cluster.nearbyText,
-            strokes: cluster.strokes,
-            mode,
-            pageId: editor.getCurrentPageId(),
-            clusterBounds: cluster.bounds,
-            instructions: options?.instructions,
-          }),
+          body: JSON.stringify(payload),
         });
 
         if (abort.signal.aborted) {
@@ -151,11 +188,10 @@ export function useTutorEngine({
         const result = (await response.json()) as TutorResponse;
         lastResultRef.current = result;
         setLastResult(result);
-        setClusterBounds(cluster.bounds);
 
         if (result.confidence < CONFIDENCE_THRESHOLD) {
           logger.info(
-            { confidence: result.confidence, latex: result.latex },
+            { confidence: result.confidence, latex: result.latex, problemId: result.problemId },
             "Tutor confidence too low; leaving ink untouched",
           );
           setBusy("idle", "");
@@ -214,8 +250,6 @@ export function useTutorEngine({
     const dispose = editor.store.listen(
       (entry) => {
         if (applyingRef.current || processingRef.current) return;
-        if (!autoRef.current) return;
-        if (assistanceToTutorMode(modeRef.current) == null) return;
         if (allChangesAreTutorLayer(entry.changes)) return;
 
         const { addedOrUpdated } = studentInkIdsFromDiff(entry.changes);
@@ -240,7 +274,8 @@ export function useTutorEngine({
   }, [editor, schedule, setBusy]);
 
   const getWorkspaceContext = useCallback(() => {
-    const latex = lastResultRef.current?.latex ?? "";
+    const active = problemsRef.current[activeRef.current - 1];
+    const latex = active?.latex || lastResultRef.current?.latex || "";
     const text = editor ? collectAllStudentText(editor) : "";
     return { latex, text };
   }, [editor]);
@@ -252,6 +287,9 @@ export function useTutorEngine({
     clearMarks,
     runNow: runCluster,
     getWorkspaceContext,
+    problems,
+    activeProblemId,
+    selectProblem,
   };
 }
 

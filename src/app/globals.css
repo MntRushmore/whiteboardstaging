@@ -148,3 +148,45 @@
   overflow-x: auto;
   white-space: nowrap;
 }
+
+.problem-rail-item {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #fff;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+
+.problem-rail-item.is-unlocked {
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.problem-rail-item.is-active {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+  color: #1d4ed8;
+}
+
+.problem-rail-check {
+  position: absolute;
+  top: -5px;
+  right: -4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #16a34a;
+  color: #fff;
+  font-size: 8px;
+  line-height: 12px;
+  text-align: center;
+}

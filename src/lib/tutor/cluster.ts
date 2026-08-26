@@ -1,12 +1,7 @@
 import { Box, type Editor, type TLShape, type TLShapeId } from "tldraw";
 import { downsamplePoints, richTextToPlain } from "./normalize";
-import { expandCluster, padBounds, unionBounds } from "./geometry";
-import {
-  CROP_MAX_EDGE,
-  TUTOR_LAYER_META,
-  type ClusterBounds,
-  type StrokeSample,
-} from "./types";
+import { expandCluster, unionBounds } from "./geometry";
+import { TUTOR_LAYER_META, type ClusterBounds, type StrokeSample } from "./types";
 
 export function isTutorShape(shape: TLShape | undefined | null): boolean {
   if (!shape) return false;
@@ -176,31 +171,4 @@ export function collectAllStudentText(editor: Editor): string {
     .map(shapePlainText)
     .filter(Boolean)
     .join("\n");
-}
-
-export async function cropCluster(
-  editor: Editor,
-  shapeIds: TLShapeId[],
-  bounds: ClusterBounds,
-): Promise<string | null> {
-  const padded = padBounds(bounds);
-  const box = new Box(padded.x, padded.y, padded.w, padded.h);
-  const longest = Math.max(padded.w, padded.h, 1);
-  const scale = Math.min(2, CROP_MAX_EDGE / longest);
-
-  const { blob } = await editor.toImage(shapeIds, {
-    format: "png",
-    bounds: box,
-    background: true,
-    scale,
-    padding: 0,
-  });
-  if (!blob) return null;
-
-  return await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error ?? new Error("Failed to read crop"));
-    reader.readAsDataURL(blob);
-  });
 }

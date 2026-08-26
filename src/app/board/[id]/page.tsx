@@ -43,6 +43,7 @@ import {
 } from "hugeicons-react";
 import { useTutorEngine } from "@/hooks/useTutorEngine";
 import { LatexStrip } from "@/components/LatexStrip";
+import { ProblemRail } from "@/components/ProblemRail";
 import { CONFIDENCE_THRESHOLD } from "@/lib/tutor/types";
 import { StatusIndicator, type StatusIndicatorState } from "@/components/StatusIndicator";
 import { logger } from "@/lib/logger";
@@ -161,7 +162,7 @@ function ModeInfoDialog() {
             />
             <p className="text-sm font-medium mb-1">Feedback</p>
             <p className="text-sm text-muted-foreground">
-              Circles and underlines on mistakes, plus a short margin note. Your ink stays.
+              A circle and a caret only. Your ink stays.
             </p>
           </div>
 
@@ -173,7 +174,7 @@ function ModeInfoDialog() {
             />
             <p className="text-sm font-medium mb-1">Socratic</p>
             <p className="text-sm text-muted-foreground">
-              One guiding question and an optional circle — never the answer, never a redraw.
+              One margin question. Never the answer, never a redraw.
             </p>
           </div>
 
@@ -185,7 +186,7 @@ function ModeInfoDialog() {
             />
             <p className="text-sm font-medium mb-1">Solve</p>
             <p className="text-sm text-muted-foreground">
-              Step notes beside your work. Student handwriting is never replaced.
+              Stepped notes pinned to the right of your work. Ink is never replaced.
             </p>
           </div>
         </div>
@@ -1010,7 +1011,7 @@ function BoardContent({ id }: { id: string }) {
   const tutor = useTutorEngine({
     editor,
     assistanceMode,
-    autoEnabled: assistanceMode !== "off",
+    autoEnabled: true,
     onStatus: (next, message) => {
       setStatus(next);
       setStatusMessage(message);
@@ -1767,13 +1768,23 @@ function BoardContent({ id }: { id: string }) {
         </div>
       )}
 
+      {!isVoiceSessionActive && (
+        <ProblemRail
+          problems={tutor.problems}
+          activeProblemId={tutor.activeProblemId}
+          onSelect={tutor.selectProblem}
+        />
+      )}
+
       {/* When a voice session is active, let the voice banner own the top-center space. */}
       {!isVoiceSessionActive && (
-        <StatusIndicator
-          status={status}
-          errorMessage={errorMessage}
-          customMessage={statusMessage}
-        />
+        <div style={{ position: "absolute", top: "100px", left: 0, right: 0, zIndex: 1000 }}>
+          <StatusIndicator
+            status={status}
+            errorMessage={errorMessage}
+            customMessage={statusMessage}
+          />
+        </div>
       )}
       {!isVoiceSessionActive && (
         <div
@@ -1819,10 +1830,9 @@ function BoardContent({ id }: { id: string }) {
       <VoiceAgentControls
         onSessionChange={setIsVoiceSessionActive}
         getWorkspaceContext={tutor.getWorkspaceContext}
-        onSolveWithPrompt={async (mode, instructions) => {
+        onSolveWithPrompt={async (mode) => {
           return tutor.runNow({
             modeOverride: mode,
-            instructions,
             force: true,
           });
         }}
