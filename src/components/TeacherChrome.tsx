@@ -4,8 +4,8 @@ import { useState } from "react";
 import type { Editor } from "tldraw";
 import { MarkActions } from "@/components/MarkActions";
 import { ModeWords } from "@/components/ModeWords";
-import { ProblemPrompt } from "@/components/ProblemPrompt";
 import { ProblemRail } from "@/components/ProblemRail";
+import { TryThese } from "@/components/TryThese";
 import { useTutorEngine } from "@/hooks/useTutorEngine";
 import { DEFAULT_ASSISTANCE_MODE } from "@/lib/tutor/types";
 
@@ -25,7 +25,6 @@ export function TeacherChrome({ editor }: { editor: Editor }) {
         activeProblemId={tutor.activeProblemId}
         onSelect={tutor.selectProblem}
       />
-      <ProblemPrompt problem={tutor.problems[tutor.activeProblemId - 1]} />
       <MarkActions
         editor={editor}
         problemId={tutor.activeProblemId}
@@ -36,6 +35,7 @@ export function TeacherChrome({ editor }: { editor: Editor }) {
         value={assistanceMode}
         onChange={(mode) => setAssistanceMode(mode)}
       />
+      <TryThese />
     </div>
   );
 }

@@ -10,7 +10,6 @@ import {
   parseNormalizedMark,
   parseTutorMode,
 } from "@/lib/tutor/normalize";
-import { socraticOpenerMark } from "@/lib/tutor/problems";
 import {
   isProblemId,
   TUTOR_BACKUP_MODEL,
@@ -130,30 +129,6 @@ export async function POST(req: NextRequest) {
       ![bbox.x, bbox.y, bbox.w, bbox.h].every((n) => Number.isFinite(n))
     ) {
       return NextResponse.json({ error: "bbox is required" }, { status: 400 });
-    }
-
-    if (mode === "socratic") {
-      const opener = socraticOpenerMark(problemId, latex, bbox);
-      const marks = constrainMarks(mode, opener ? [opener] : []);
-      const result: TutorResponse = {
-        problemId,
-        latex,
-        bbox,
-        confidence: marks.length ? 1 : 0,
-        mode,
-        marks,
-      };
-      tutorLogger.info(
-        {
-          requestId,
-          duration: Date.now() - startTime,
-          problemId,
-          mode,
-          markCount: marks.length,
-        },
-        "Tutor socratic opener applied",
-      );
-      return NextResponse.json(result);
     }
 
     if (!isUsableLatex(latex)) {

@@ -175,7 +175,7 @@ describe("planTutorInk", () => {
 });
 
 describe("demo set", () => {
-  it("lands Simon's 12 verbatim with Socratic default", () => {
+  it("keeps Simon's 12 as optional try-these copy, Socratic default", () => {
     assert.equal(DEMO_PROBLEMS.length, 12);
     assert.deepEqual(
       DEMO_PROBLEMS.map((p) => [p.id, p.subject, p.title, p.socratic, p.diagram ?? ""]),

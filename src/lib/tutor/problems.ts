@@ -14,7 +14,7 @@ export type DemoProblem = {
   diagram?: DiagramKind;
 };
 
-/** Simon's 12 — titles + socratic openers verbatim. */
+/** Simon's 12 — optional “try these” copy only. Not printed on the paper. */
 export const DEMO_PROBLEMS: DemoProblem[] = [
   {
     id: 1,

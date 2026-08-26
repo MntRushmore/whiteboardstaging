@@ -12,7 +12,6 @@ import {
   getPendingTutorShapeIds,
   rejectTutorMarks,
   stampStudentProblemId,
-  syncGeometryDiagram,
 } from "@/lib/tutor/applyMarks";
 import {
   allChangesAreTutorLayer,
@@ -158,17 +157,7 @@ export function useTutorEngine({
     setActiveProblemId(id);
     if (editor) {
       goToProblemPage(editor, id);
-      applyingRef.current = true;
-      try {
-        syncGeometryDiagram(editor, id, {
-          skip: rejectedDiagramsRef.current.has(id),
-        });
-        refreshPending();
-      } finally {
-        queueMicrotask(() => {
-          applyingRef.current = false;
-        });
-      }
+      refreshPending();
     }
   }, [editor, refreshPending]);
 
@@ -232,7 +221,7 @@ export function useTutorEngine({
 
         const bbox = nextProblems[problemId - 1]?.bbox ?? cluster.bounds;
 
-        if (mode !== "socratic" && !isUsableLatex(latex)) {
+        if (!isUsableLatex(latex)) {
           logger.info({ problemId }, "No Mathpix latex; skip tutor");
           setBusy("idle", "");
           return false;
@@ -359,17 +348,7 @@ export function useTutorEngine({
 
   useEffect(() => {
     if (!editor) return;
-    applyingRef.current = true;
-    try {
-      syncGeometryDiagram(editor, activeProblemId, {
-        skip: rejectedDiagramsRef.current.has(activeProblemId),
-      });
-      refreshPending();
-    } finally {
-      queueMicrotask(() => {
-        applyingRef.current = false;
-      });
-    }
+    refreshPending();
   }, [editor, activeProblemId, refreshPending]);
 
   const getWorkspaceContext = useCallback(() => {
