@@ -97,6 +97,10 @@ export const TUTOR_BACKUP_MODEL = "openai/gpt-4.1-mini";
 export type ProblemSubject = "algebra" | "calculus" | "geometry";
 export const CLUSTER_GAP_PX = 96;
 export const CROP_PADDING_PX = 28;
+/** Same-line arithmetic: vertical overlap + a modest x gap. */
+export const WRITE_LINE_X_GAP_PX = 72;
+export const WRITE_LINE_Y_PAD_PX = 12;
+export const MATH_NOTES_SCAN_MAX = 6;
 
 export function assistanceToTutorMode(mode: AssistanceMode): TutorMode | null {
   if (mode === "off") return null;

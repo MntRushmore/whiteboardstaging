@@ -130,3 +130,22 @@ export function evaluateMathNotes(latex: string): string | null {
   if (value == null) return null;
   return formatMathNotesResult(value);
 }
+
+/**
+ * Math Notes only fires on a line that ends in `=`.
+ * A stray `7` must not consume the solve slot.
+ */
+export function mathNotesLineResult(latex: string): string | null {
+  if (!/[=＝]/.test(latex)) return null;
+  return evaluateMathNotes(latex);
+}
+
+export function firstMathNotesLine<T extends { latex: string }>(
+  candidates: T[],
+): (T & { result: string }) | null {
+  for (const candidate of candidates) {
+    const result = mathNotesLineResult(candidate.latex);
+    if (result) return { ...candidate, result };
+  }
+  return null;
+}

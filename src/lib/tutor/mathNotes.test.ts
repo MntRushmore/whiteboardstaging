@@ -1,6 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { evaluateMathNotes, expressionToEvaluate } from "./mathNotes";
+import {
+  evaluateMathNotes,
+  expressionToEvaluate,
+  firstMathNotesLine,
+  mathNotesLineResult,
+} from "./mathNotes";
 import { MATH_NOTES_GAP_PX, pinMathNotesResult } from "./layout";
 import type { TutorMark } from "./types";
 
@@ -15,6 +20,19 @@ describe("evaluateMathNotes", () => {
   it("recomputes when a number changes", () => {
     assert.equal(evaluateMathNotes("36 + 3 ="), "39");
     assert.equal(evaluateMathNotes("36 + 2 = 38"), "38");
+  });
+
+  it("does not spend the solve slot on a stray digit without equals", () => {
+    assert.equal(mathNotesLineResult("7"), null);
+    assert.equal(mathNotesLineResult("36 + 2"), null);
+    assert.equal(mathNotesLineResult("36 + 2 ="), "38");
+    const picked = firstMathNotesLine([
+      { latex: "7", id: "stray" },
+      { latex: "36 + 2 =", id: "line" },
+      { latex: "4", id: "tap" },
+    ]);
+    assert.equal(picked?.id, "line");
+    assert.equal(picked?.result, "38");
   });
 
   it("stays quiet on empty latex, algebra, or unreadable work", () => {

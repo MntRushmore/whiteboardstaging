@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { studentInkIdsFromDiff, strokeSamplesFromSegments } from "./cluster";
-import { expandClusterOrLatest } from "./geometry";
+import { expandClusterOrLatest, partitionWriteLines } from "./geometry";
 import { readStrokePoint } from "./strokes";
 
 describe("readStrokePoint", () => {
@@ -64,6 +64,29 @@ describe("studentInkIdsFromDiff", () => {
       removed: {},
     });
     assert.deepEqual(addedOrUpdated, ["shape:ink"]);
+  });
+});
+
+describe("partitionWriteLines", () => {
+  it("keeps a stray stroke off the 36+2= line", () => {
+    const items = [
+      { id: "shape:3", bounds: { x: 200, y: 220, w: 18, h: 28 } },
+      { id: "shape:6", bounds: { x: 222, y: 222, w: 16, h: 26 } },
+      { id: "shape:plus", bounds: { x: 244, y: 228, w: 14, h: 14 } },
+      { id: "shape:2", bounds: { x: 264, y: 221, w: 16, h: 28 } },
+      { id: "shape:eq", bounds: { x: 288, y: 230, w: 16, h: 10 } },
+      { id: "shape:stray", bounds: { x: 80, y: 80, w: 12, h: 20 } },
+    ];
+    const lines = partitionWriteLines(items);
+    const equation = lines.find((line) => line.includes("shape:eq"));
+    const stray = lines.find((line) => line.includes("shape:stray"));
+    assert.ok(equation);
+    assert.ok(stray);
+    assert.notEqual(equation, stray);
+    assert.ok(equation!.includes("shape:3"));
+    assert.ok(equation!.includes("shape:2"));
+    assert.equal(equation!.includes("shape:stray"), false);
+    assert.equal(lines[0]?.includes("shape:stray"), true);
   });
 });
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { tutorLogger } from "@/lib/logger";
 import { getSiteUrl, requireKey } from "@/lib/aiConfig";
 import { pinMathNotesResult, pinSocraticNote } from "@/lib/tutor/layout";
-import { evaluateMathNotes } from "@/lib/tutor/mathNotes";
+import { mathNotesLineResult } from "@/lib/tutor/mathNotes";
 import {
   clampConfidence,
   constrainMarks,
@@ -152,7 +152,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (mode === "solve") {
-      const resultText = evaluateMathNotes(latex);
+      const resultText = mathNotesLineResult(latex);
       const mark = resultText
         ? pinMathNotesResult(
             {

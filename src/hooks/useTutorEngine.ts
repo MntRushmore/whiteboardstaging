@@ -18,6 +18,7 @@ import {
   clusterFromSeeds,
   collectAllStudentText,
   lastStudentClusterSeeds,
+  solveLineClusters,
   studentInkIdsFromDiff,
 } from "@/lib/tutor/cluster";
 import {
@@ -29,10 +30,11 @@ import {
 import { getPageProblemId, goToProblemPage } from "@/lib/tutor/pages";
 import { decideSocraticAnswer } from "@/lib/tutor/answer";
 import { pinMathNotesResult, pinSocraticNote } from "@/lib/tutor/layout";
-import { evaluateMathNotes } from "@/lib/tutor/mathNotes";
+import { mathNotesLineResult } from "@/lib/tutor/mathNotes";
 import { isUsableLatex } from "@/lib/tutor/normalize";
 import { recognizeStrokes } from "@/lib/tutor/recognize";
 import {
+  MATH_NOTES_SCAN_MAX,
   TUTOR_DEBOUNCE_MS,
   assistanceToTutorMode,
   type AssistanceMode,
@@ -218,6 +220,86 @@ export function useTutorEngine({
           return false;
         }
 
+        if (mode === "solve") {
+          const lines = solveLineClusters(editor, seedIds).slice(0, MATH_NOTES_SCAN_MAX);
+          const candidates = lines.length > 0 ? lines : [cluster];
+          let solved = false;
+          for (const line of candidates) {
+            if (line.strokes.length === 0) continue;
+            logger.info(
+              {
+                problemId,
+                strokeCount: line.strokes.length,
+                bbox: line.bounds,
+              },
+              "POST /api/recognize write line",
+            );
+            const lineLatex = await recognizeStrokes(line.strokes, abort.signal);
+            if (abort.signal.aborted) {
+              setBusy("idle", "");
+              return false;
+            }
+            if (!isUsableLatex(lineLatex)) continue;
+            const resultText = mathNotesLineResult(lineLatex);
+            if (!resultText) {
+              logger.info({ problemId, latex: lineLatex }, "skip stray; not expr=");
+              continue;
+            }
+
+            const nextProblems = recordInkOnProblem(
+              problemsRef.current,
+              problemId,
+              line.bounds,
+              lineLatex,
+            );
+            problemsRef.current = nextProblems;
+            setProblems(nextProblems);
+            setClusterBounds(line.bounds);
+
+            if (lastSolveLatexRef.current === lineLatex) {
+              setBusy("idle", "");
+              return false;
+            }
+            lastSolveLatexRef.current = lineLatex;
+
+            applyingRef.current = true;
+            try {
+              const mark = pinMathNotesResult(
+                {
+                  kind: "note",
+                  pageId: "",
+                  x: line.bounds.x,
+                  y: line.bounds.y,
+                  w: line.bounds.w,
+                  h: line.bounds.h,
+                  text: resultText,
+                  problemId,
+                  latex: lineLatex,
+                  bbox: line.bounds,
+                },
+                line.bounds,
+              );
+              const ids = applyTutorMarks(editor, [mark], "solve");
+              fadeInTutorShapes(editor, ids);
+              setHasMarks(ids.length > 0);
+              setHasPending(false);
+            } finally {
+              queueMicrotask(() => {
+                applyingRef.current = false;
+              });
+            }
+            setBusy("success", "Result added");
+            setTimeout(() => setBusy("idle", ""), 1600);
+            solved = true;
+            break;
+          }
+          if (!solved) {
+            logger.info({ problemId }, "Math Notes miss; stay quiet");
+            setBusy("idle", "");
+          }
+          return solved;
+        }
+
         logger.info(
           {
             problemId,
@@ -232,7 +314,7 @@ export function useTutorEngine({
           setBusy("idle", "");
           return false;
         }
-        if (mode !== "solve") ranClusterKeysRef.current.add(clusterKey);
+        ranClusterKeysRef.current.add(clusterKey);
 
         const nextProblems = recordInkOnProblem(
           problemsRef.current,
@@ -249,49 +331,6 @@ export function useTutorEngine({
           logger.info({ problemId, latex }, "Mathpix miss; stay quiet");
           setBusy("idle", "");
           return false;
-        }
-
-        if (mode === "solve") {
-          const resultText = evaluateMathNotes(latex);
-          if (!resultText) {
-            logger.info({ problemId, latex }, "Math Notes miss; stay quiet");
-            setBusy("idle", "");
-            return false;
-          }
-          if (lastSolveLatexRef.current === latex) {
-            setBusy("idle", "");
-            return false;
-          }
-          lastSolveLatexRef.current = latex;
-          applyingRef.current = true;
-          try {
-            const mark = pinMathNotesResult(
-              {
-                kind: "note",
-                pageId: "",
-                x: bbox.x,
-                y: bbox.y,
-                w: bbox.w,
-                h: bbox.h,
-                text: resultText,
-                problemId,
-                latex,
-                bbox,
-              },
-              cluster.bounds,
-            );
-            const ids = applyTutorMarks(editor, [mark], "solve");
-            fadeInTutorShapes(editor, ids);
-            setHasMarks(ids.length > 0);
-            setHasPending(false);
-          } finally {
-            queueMicrotask(() => {
-              applyingRef.current = false;
-            });
-          }
-          setBusy("success", "Result added");
-          setTimeout(() => setBusy("idle", ""), 1600);
-          return true;
         }
 
         const response = await fetch(`/api/tutor?mode=${mode}`, {

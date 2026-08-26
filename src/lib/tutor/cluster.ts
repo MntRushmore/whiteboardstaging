@@ -1,6 +1,6 @@
 import { Box, type Editor, type TLShape, type TLShapeId } from "tldraw";
 import { downsamplePoints, richTextToPlain } from "./normalize";
-import { expandClusterOrLatest, unionBounds } from "./geometry";
+import { expandClusterOrLatest, partitionWriteLines, unionBounds } from "./geometry";
 import { readStrokePoint } from "./strokes";
 import { TUTOR_LAYER_META, type ClusterBounds, type StrokeSample } from "./types";
 
@@ -141,17 +141,18 @@ export function collectStudentInk(editor: Editor): TLShape[] {
   return editor.getCurrentPageShapes().filter(isStudentInkShape);
 }
 
-export function clusterFromSeeds(editor: Editor, seedIds: TLShapeId[]): {
+export type InkCluster = {
   shapeIds: TLShapeId[];
   bounds: ClusterBounds;
   nearbyText: string;
   strokes: StrokeSample[];
-} | null {
-  const uniqueSeeds = [...new Set(seedIds)];
-  if (uniqueSeeds.length === 0) return null;
+};
 
-  const ink = collectStudentInk(editor);
-  const items = ink
+function shapeItems(
+  editor: Editor,
+  shapes: TLShape[],
+): { id: TLShapeId; bounds: ClusterBounds }[] {
+  return shapes
     .map((shape) => {
       const box = editor.getShapePageBounds(shape);
       if (!box) return null;
@@ -161,14 +162,14 @@ export function clusterFromSeeds(editor: Editor, seedIds: TLShapeId[]): {
       };
     })
     .filter((item): item is { id: TLShapeId; bounds: ClusterBounds } => Boolean(item));
+}
 
-  // Stale listen ids (remount / missing bounds) still tutor the last ink on the page.
-  const clusteredIds = expandClusterOrLatest(items, uniqueSeeds);
+function clusterFromIds(editor: Editor, clusteredIds: TLShapeId[]): InkCluster | null {
   if (clusteredIds.length === 0) return null;
-
   const clustered = clusteredIds
     .map((id) => editor.getShape(id))
     .filter((s): s is TLShape => Boolean(s));
+  if (clustered.length === 0) return null;
 
   const bounds = unionBounds(
     clustered
@@ -178,14 +179,46 @@ export function clusterFromSeeds(editor: Editor, seedIds: TLShapeId[]): {
   );
   if (!bounds) return null;
 
-  const nearbyText = clustered
-    .map(shapePlainText)
-    .filter(Boolean)
-    .join("\n");
+  return {
+    shapeIds: clusteredIds,
+    bounds,
+    nearbyText: clustered.map(shapePlainText).filter(Boolean).join("\n"),
+    strokes: clustered.flatMap((shape) => extractStrokes(editor, shape)),
+  };
+}
 
-  const strokes = clustered.flatMap((shape) => extractStrokes(editor, shape));
+export function clusterFromSeeds(editor: Editor, seedIds: TLShapeId[]): InkCluster | null {
+  const uniqueSeeds = [...new Set(seedIds)];
+  if (uniqueSeeds.length === 0) return null;
 
-  return { shapeIds: clusteredIds, bounds, nearbyText, strokes };
+  const items = shapeItems(editor, collectStudentInk(editor));
+  // Stale listen ids (remount / missing bounds) still tutor the last ink on the page.
+  const clusteredIds = expandClusterOrLatest(items, uniqueSeeds);
+  return clusterFromIds(editor, clusteredIds);
+}
+
+/** Newest-first horizontal write lines on the current page. */
+export function collectWriteLineClusters(editor: Editor): InkCluster[] {
+  const items = shapeItems(
+    editor,
+    collectStudentInk(editor).filter((shape) => shape.type === "draw" || shape.type === "highlight"),
+  );
+  return partitionWriteLines(items)
+    .map((ids) => clusterFromIds(editor, ids))
+    .filter((cluster): cluster is InkCluster => Boolean(cluster));
+}
+
+/**
+ * Solve: try the seeded line first (last pen-up), then every other
+ * write line on the page so a stray `7` cannot hide `36 + 2 =`.
+ */
+export function solveLineClusters(editor: Editor, seedIds: TLShapeId[]): InkCluster[] {
+  const lines = collectWriteLineClusters(editor);
+  if (seedIds.length === 0) return lines;
+  const seeds = new Set(seedIds);
+  const seeded = lines.filter((line) => line.shapeIds.some((id) => seeds.has(id)));
+  const rest = lines.filter((line) => !line.shapeIds.some((id) => seeds.has(id)));
+  return [...seeded, ...rest];
 }
 
 function extractStrokes(editor: Editor, shape: TLShape): StrokeSample[] {
