@@ -9,6 +9,7 @@ import {
   clearTutorMarks,
   fadeInTutorShapes,
   stampStudentProblemId,
+  syncGeometryDiagram,
 } from "@/lib/tutor/applyMarks";
 import {
   allChangesAreTutorLayer,
@@ -105,7 +106,17 @@ export function useTutorEngine({
     }
     activeRef.current = id;
     setActiveProblemId(id);
-    if (editor) goToProblemPage(editor, id);
+    if (editor) {
+      goToProblemPage(editor, id);
+      applyingRef.current = true;
+      try {
+        syncGeometryDiagram(editor, id);
+      } finally {
+        queueMicrotask(() => {
+          applyingRef.current = false;
+        });
+      }
+    }
   }, [editor]);
 
   const runCluster = useCallback(
@@ -284,6 +295,18 @@ export function useTutorEngine({
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [editor, schedule, setBusy]);
+
+  useEffect(() => {
+    if (!editor) return;
+    applyingRef.current = true;
+    try {
+      syncGeometryDiagram(editor, activeProblemId);
+    } finally {
+      queueMicrotask(() => {
+        applyingRef.current = false;
+      });
+    }
+  }, [editor, activeProblemId]);
 
   const getWorkspaceContext = useCallback(() => {
     const active = problemsRef.current[activeRef.current - 1];

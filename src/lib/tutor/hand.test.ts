@@ -8,6 +8,7 @@ import {
   pickAlternates,
 } from "./hand/compose";
 import { ATLAS, ATLAS_CALC_EXTRAS, COMMON_LETTERS, hasGlyph, isGreekChar } from "./hand/atlas";
+import { composeDiagram, DIAGRAM_KINDS } from "./hand/diagrams";
 import { DEMO_PROBLEMS } from "./problems";
 import { DEFAULT_ASSISTANCE_MODE, TUTOR_DEBOUNCE_MS } from "./types";
 import { mulberry32 } from "./hand/path";
@@ -164,17 +165,84 @@ describe("planTutorInk", () => {
 });
 
 describe("demo set", () => {
-  it("is three subjects of four problems, Socratic default, ~2s pen-up", () => {
+  it("lands Simon's 12 verbatim with Socratic default", () => {
     assert.equal(DEMO_PROBLEMS.length, 12);
     assert.deepEqual(
-      DEMO_PROBLEMS.map((p) => p.subject),
+      DEMO_PROBLEMS.map((p) => [p.id, p.subject, p.title, p.socratic, p.diagram ?? ""]),
       [
-        ...Array(4).fill("algebra"),
-        ...Array(4).fill("calculus"),
-        ...Array(4).fill("geometry"),
+        [1, "algebra", "Solve for x: 3(x - 2) = 2x + 5", "What happens if you distribute the 3 first?", ""],
+        [2, "algebra", "Factor: x^2 - x - 12", "Which two numbers multiply to -12 and add to -1?", ""],
+        [
+          3,
+          "algebra",
+          "A rectangle is 3 more than twice its width. The perimeter is 46. Find the sides.",
+          "If width is w, how do you write the length?",
+          "",
+        ],
+        [
+          4,
+          "algebra",
+          "Solve: (x + 1) / (x - 2) = 3",
+          "What value of x would make this fraction undefined?",
+          "",
+        ],
+        [5, "calculus", "Find d/dx [x^3 - 4x]", "What is the derivative of x^n?", ""],
+        [
+          6,
+          "calculus",
+          "If f(x) = (2x + 1)(x^2), find f'(x).",
+          "Product, or do you want to expand first?",
+          "",
+        ],
+        [
+          7,
+          "calculus",
+          "Evaluate ∫ (3x^2 - 2) dx",
+          "What power do you add when you undo a derivative?",
+          "",
+        ],
+        [
+          8,
+          "calculus",
+          "Water drains from an inverted cone. Height is 3 times the radius. When h = 6, dh/dt = -2. Find dr/dt.",
+          "What is the volume of a cone, and which two quantities are changing?",
+          "",
+        ],
+        [
+          9,
+          "geometry",
+          "Triangle ABC has angle A = 47° and angle B = 62°. Find angle C.",
+          "What do the three angles of a triangle add to?",
+          "triangle",
+        ],
+        [
+          10,
+          "geometry",
+          "Line l is parallel to line m, transversal t. One interior angle is 118°. Find the alternate interior angle.",
+          "If the lines are parallel, what is true of alternate interior angles?",
+          "parallel-transversal",
+        ],
+        [
+          11,
+          "geometry",
+          "A right triangle has legs 6 and 8. Find the hypotenuse.",
+          "Which side is across from the right angle?",
+          "right-triangle",
+        ],
+        [
+          12,
+          "geometry",
+          "Two similar triangles have scale factor 2:3. The smaller has a side of 10. Find the matching side on the larger.",
+          "Which triangle gets the 3 in 2:3?",
+          "similar-triangles",
+        ],
       ],
     );
     assert.equal(DEFAULT_ASSISTANCE_MODE, "suggest");
     assert.equal(TUTOR_DEBOUNCE_MS, 2000);
+    for (const kind of DIAGRAM_KINDS) {
+      const ink = composeDiagram(kind);
+      assert.ok(ink.segments.length >= 3, kind);
+    }
   });
 });

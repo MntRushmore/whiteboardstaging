@@ -4,28 +4,97 @@ import {
   type ProblemRecord,
   type ProblemSubject,
 } from "./types";
+import type { DiagramKind } from "./hand/diagrams";
 
 export type DemoProblem = {
   id: number;
   subject: ProblemSubject;
   title: string;
   socratic: string;
+  diagram?: DiagramKind;
 };
 
-/** Three sets, four problems each. Stub titles — Simon can replace wording. */
+/** Simon's 12 — titles + socratic openers verbatim. */
 export const DEMO_PROBLEMS: DemoProblem[] = [
-  { id: 1, subject: "algebra", title: "expand (x+2)^2", socratic: "What do you get if you foil first?" },
-  { id: 2, subject: "algebra", title: "factor x^2-5x+6", socratic: "Which two numbers multiply to 6 and add to -5?" },
-  { id: 3, subject: "algebra", title: "solve 2x+3=7", socratic: "What happens if you move the 3 first?" },
-  { id: 4, subject: "algebra", title: "simplify (x^2-1)/(x-1)", socratic: "Can you factor the top?" },
-  { id: 5, subject: "calculus", title: "d/dx x^2", socratic: "What is the derivative of x^n?" },
-  { id: 6, subject: "calculus", title: "d/dx (x^3-4x)", socratic: "Can you take it term by term?" },
-  { id: 7, subject: "calculus", title: "∫ 2x dx", socratic: "What power do you add when you undo a derivative?" },
-  { id: 8, subject: "calculus", title: "related rates (cone)", socratic: "Which two quantities are changing?" },
-  { id: 9, subject: "geometry", title: "find the angle", socratic: "What do the three angles of a triangle add to?" },
-  { id: 10, subject: "geometry", title: "parallel lines", socratic: "If the lines are parallel, what stays equal?" },
-  { id: 11, subject: "geometry", title: "right triangle", socratic: "Which side is across from the right angle?" },
-  { id: 12, subject: "geometry", title: "similar triangles", socratic: "Which triangle gets the larger scale number?" },
+  {
+    id: 1,
+    subject: "algebra",
+    title: "Solve for x: 3(x - 2) = 2x + 5",
+    socratic: "What happens if you distribute the 3 first?",
+  },
+  {
+    id: 2,
+    subject: "algebra",
+    title: "Factor: x^2 - x - 12",
+    socratic: "Which two numbers multiply to -12 and add to -1?",
+  },
+  {
+    id: 3,
+    subject: "algebra",
+    title: "A rectangle is 3 more than twice its width. The perimeter is 46. Find the sides.",
+    socratic: "If width is w, how do you write the length?",
+  },
+  {
+    id: 4,
+    subject: "algebra",
+    title: "Solve: (x + 1) / (x - 2) = 3",
+    socratic: "What value of x would make this fraction undefined?",
+  },
+  {
+    id: 5,
+    subject: "calculus",
+    title: "Find d/dx [x^3 - 4x]",
+    socratic: "What is the derivative of x^n?",
+  },
+  {
+    id: 6,
+    subject: "calculus",
+    title: "If f(x) = (2x + 1)(x^2), find f'(x).",
+    socratic: "Product, or do you want to expand first?",
+  },
+  {
+    id: 7,
+    subject: "calculus",
+    title: "Evaluate ∫ (3x^2 - 2) dx",
+    socratic: "What power do you add when you undo a derivative?",
+  },
+  {
+    id: 8,
+    subject: "calculus",
+    title:
+      "Water drains from an inverted cone. Height is 3 times the radius. When h = 6, dh/dt = -2. Find dr/dt.",
+    socratic: "What is the volume of a cone, and which two quantities are changing?",
+  },
+  {
+    id: 9,
+    subject: "geometry",
+    title: "Triangle ABC has angle A = 47° and angle B = 62°. Find angle C.",
+    socratic: "What do the three angles of a triangle add to?",
+    diagram: "triangle",
+  },
+  {
+    id: 10,
+    subject: "geometry",
+    title:
+      "Line l is parallel to line m, transversal t. One interior angle is 118°. Find the alternate interior angle.",
+    socratic: "If the lines are parallel, what is true of alternate interior angles?",
+    diagram: "parallel-transversal",
+  },
+  {
+    id: 11,
+    subject: "geometry",
+    title: "A right triangle has legs 6 and 8. Find the hypotenuse.",
+    socratic: "Which side is across from the right angle?",
+    diagram: "right-triangle",
+  },
+  {
+    id: 12,
+    subject: "geometry",
+    title:
+      "Two similar triangles have scale factor 2:3. The smaller has a side of 10. Find the matching side on the larger.",
+    socratic: "Which triangle gets the 3 in 2:3?",
+    diagram: "similar-triangles",
+  },
 ];
 
 export function getDemoProblem(id: number): DemoProblem | undefined {
@@ -46,6 +115,7 @@ export function createProblemSet(): ProblemRecord[] {
     subject: demo.subject,
     title: demo.title,
     socratic: demo.socratic,
+    diagram: demo.diagram,
   }));
 }
 

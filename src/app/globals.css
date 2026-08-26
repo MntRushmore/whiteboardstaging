@@ -201,10 +201,12 @@
   top: 56px;
   left: 20px;
   z-index: 900;
+  max-width: 520px;
   pointer-events: none;
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   font-size: 13px;
   font-weight: 400;
+  line-height: 1.35;
   color: #111111;
 }
 

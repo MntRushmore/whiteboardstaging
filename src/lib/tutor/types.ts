@@ -1,5 +1,6 @@
 export const TUTOR_LAYER_META = "tutorLayer" as const;
 export const PROBLEM_META = "problemId" as const;
+export const TUTOR_DIAGRAM_META = "tutorDiagram" as const;
 
 export const PROBLEM_COUNT = 12;
 
@@ -57,6 +58,7 @@ export type ProblemRecord = {
   subject: ProblemSubject;
   title: string;
   socratic: string;
+  diagram?: string;
 };
 
 /** Model output uses bbox-normalized boxes (0–1) before we map to page space. */
