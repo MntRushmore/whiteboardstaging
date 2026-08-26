@@ -1,12 +1,51 @@
-import { PROBLEM_COUNT, type ClusterBounds, type ProblemRecord } from "./types";
+import {
+  PROBLEM_COUNT,
+  type ClusterBounds,
+  type ProblemRecord,
+  type ProblemSubject,
+} from "./types";
+
+export type DemoProblem = {
+  id: number;
+  subject: ProblemSubject;
+  title: string;
+  socratic: string;
+};
+
+/** Three sets, four problems each. Stub titles — Simon can replace wording. */
+export const DEMO_PROBLEMS: DemoProblem[] = [
+  { id: 1, subject: "algebra", title: "expand (x+2)^2", socratic: "What do you get if you foil first?" },
+  { id: 2, subject: "algebra", title: "factor x^2-5x+6", socratic: "Which two numbers multiply to 6 and add to -5?" },
+  { id: 3, subject: "algebra", title: "solve 2x+3=7", socratic: "What happens if you move the 3 first?" },
+  { id: 4, subject: "algebra", title: "simplify (x^2-1)/(x-1)", socratic: "Can you factor the top?" },
+  { id: 5, subject: "calculus", title: "d/dx x^2", socratic: "What is the derivative of x^n?" },
+  { id: 6, subject: "calculus", title: "d/dx (x^3-4x)", socratic: "Can you take it term by term?" },
+  { id: 7, subject: "calculus", title: "∫ 2x dx", socratic: "What power do you add when you undo a derivative?" },
+  { id: 8, subject: "calculus", title: "related rates (cone)", socratic: "Which two quantities are changing?" },
+  { id: 9, subject: "geometry", title: "find the angle", socratic: "What do the three angles of a triangle add to?" },
+  { id: 10, subject: "geometry", title: "parallel lines", socratic: "If the lines are parallel, what stays equal?" },
+  { id: 11, subject: "geometry", title: "right triangle", socratic: "Which side is across from the right angle?" },
+  { id: 12, subject: "geometry", title: "similar triangles", socratic: "Which triangle gets the larger scale number?" },
+];
+
+export function getDemoProblem(id: number): DemoProblem | undefined {
+  return DEMO_PROBLEMS.find((p) => p.id === id);
+}
+
+export function isGeometryProblem(id: number): boolean {
+  return getDemoProblem(id)?.subject === "geometry";
+}
 
 export function createProblemSet(): ProblemRecord[] {
-  return Array.from({ length: PROBLEM_COUNT }, (_, i) => ({
-    id: i + 1,
+  return DEMO_PROBLEMS.map((demo) => ({
+    id: demo.id,
     unlocked: true,
     finished: false,
     latex: "",
     bbox: null,
+    subject: demo.subject,
+    title: demo.title,
+    socratic: demo.socratic,
   }));
 }
 

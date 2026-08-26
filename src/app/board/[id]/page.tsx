@@ -44,7 +44,9 @@ import {
 import { useTutorEngine } from "@/hooks/useTutorEngine";
 import { ProblemRail } from "@/components/ProblemRail";
 import { ModeWords } from "@/components/ModeWords";
+import { ProblemPrompt } from "@/components/ProblemPrompt";
 import { TUTOR_RED } from "@/lib/tutor/layout";
+import { DEFAULT_ASSISTANCE_MODE } from "@/lib/tutor/types";
 import { ensureProblemPages, lockPaperCamera } from "@/lib/tutor/pages";
 import { TutorKatexShapeUtil } from "@/lib/tutor/TutorKatexShape";
 import { StatusIndicator, type StatusIndicatorState } from "@/components/StatusIndicator";
@@ -1005,7 +1007,9 @@ function BoardContent({ id }: { id: string }) {
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [statusMessage, setStatusMessage] = useState<string>("");
   const [isVoiceSessionActive, setIsVoiceSessionActive] = useState(false);
-  const [assistanceMode, setAssistanceMode] = useState<"off" | "feedback" | "suggest" | "answer">("suggest");
+  const [assistanceMode, setAssistanceMode] = useState<"off" | "feedback" | "suggest" | "answer">(
+    DEFAULT_ASSISTANCE_MODE,
+  );
   const [aiModel, setAiModel] = useState<AIModel>("gemini");
   const { settings: aiPerf, update: updateAiPerf } = useAIPerfSettings();
   const isProcessingRef = useRef(false);
@@ -1714,6 +1718,7 @@ function BoardContent({ id }: { id: string }) {
         activeProblemId={tutor.activeProblemId}
         onSelect={tutor.selectProblem}
       />
+      <ProblemPrompt problem={tutor.problems[tutor.activeProblemId - 1]} />
       <ModeWords
         value={assistanceMode}
         onChange={(mode) => setAssistanceMode(mode)}

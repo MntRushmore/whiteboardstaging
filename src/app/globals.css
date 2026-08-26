@@ -196,6 +196,23 @@
   pointer-events: none;
 }
 
+.problem-prompt {
+  position: absolute;
+  top: 56px;
+  left: 20px;
+  z-index: 900;
+  pointer-events: none;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  color: #111111;
+}
+
+.problem-prompt-subject {
+  margin-right: 8px;
+  color: rgba(17, 17, 17, 0.38);
+}
+
 .mode-words {
   position: absolute;
   left: 16px;

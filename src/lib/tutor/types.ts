@@ -54,6 +54,9 @@ export type ProblemRecord = {
   finished: boolean;
   latex: string;
   bbox: ClusterBounds | null;
+  subject: ProblemSubject;
+  title: string;
+  socratic: string;
 };
 
 /** Model output uses bbox-normalized boxes (0–1) before we map to page space. */
@@ -71,7 +74,11 @@ export type StrokeSample = {
 };
 
 export const CONFIDENCE_THRESHOLD = 0.6;
-export const TUTOR_DEBOUNCE_MS = 400;
+/** First mark ~2s after pen-up. Never a generated page. */
+export const TUTOR_DEBOUNCE_MS = 2000;
+export const DEFAULT_ASSISTANCE_MODE: AssistanceMode = "suggest";
+
+export type ProblemSubject = "algebra" | "calculus" | "geometry";
 export const CLUSTER_GAP_PX = 96;
 export const CROP_PADDING_PX = 28;
 

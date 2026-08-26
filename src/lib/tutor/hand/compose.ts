@@ -1,4 +1,4 @@
-import { ATLAS, EM_HEIGHT, glyphKey, type Glyph } from "./atlas";
+import { ATLAS, EM_HEIGHT, glyphKey, tokenizeHand, type Glyph } from "./atlas";
 import { mulberry32, samplePath, withTremor, type Pt } from "./path";
 
 export type InkSegment = {
@@ -44,7 +44,8 @@ function pickGlyph(ch: string, rng: () => number, prev: { key: string; alt: numb
 
 function wordWidth(word: string, scale: number): number {
   let w = 0;
-  for (const ch of word) {
+  for (const ch of tokenizeHand(word)) {
+    if (ch === " ") continue;
     const g = ATLAS[glyphKey(ch)]?.[0];
     w += (g?.advance ?? 4) * scale + ADVANCE_PX;
   }
@@ -83,7 +84,7 @@ export function composeHandwriting(
       y += LINE_HEIGHT;
     }
 
-    for (const ch of word) {
+    for (const ch of tokenizeHand(word)) {
       const glyph = pickGlyph(ch, rng, prev);
       seed += 17;
       if (!glyph) continue;
@@ -116,7 +117,7 @@ export function pickAlternates(text: string, seed = 1): number[] {
   const rng = mulberry32(seed);
   const prev = { key: "", alt: -1 };
   const out: number[] = [];
-  for (const ch of text) {
+  for (const ch of tokenizeHand(text)) {
     if (ch === " ") continue;
     pickGlyph(ch, rng, prev);
     out.push(prev.alt);
@@ -168,6 +169,41 @@ export function composeUnderline(w: number, seed: number): ComposedInk {
     segments: [{ type: "free", points: withTremor(raw, seed, 0.35) }],
     width: Math.max(16, w),
     height: 4,
+  };
+}
+
+/** Geometry: angle arc in the same dry red nib — not letters. */
+export function composeAngleArc(w: number, h: number, seed: number): ComposedInk {
+  const r = Math.max(14, Math.min(w, h) * 0.32);
+  const cx = 10;
+  const cy = Math.max(r + 4, h - 8);
+  const raw: Pt[] = [];
+  const n = 18;
+  for (let i = 0; i <= n; i++) {
+    const a = -Math.PI / 2 + (i / n) * (Math.PI / 2);
+    raw.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
+  }
+  return {
+    segments: [{ type: "free", points: withTremor(raw, seed, 0.4) }],
+    width: cx + r + 4,
+    height: cy + 4,
+  };
+}
+
+/** Geometry: tick marks on a side, same nib. */
+export function composeTickMarks(w: number, seed: number): ComposedInk {
+  const mid = Math.max(16, w) / 2;
+  const segments = [-5, 0, 5].map((dx, i) => {
+    const raw: Pt[] = [
+      { x: mid + dx - 1.2, y: -3 },
+      { x: mid + dx + 1.4, y: 5 },
+    ];
+    return { type: "free" as const, points: withTremor(raw, seed + i * 11, 0.3) };
+  });
+  return {
+    segments,
+    width: Math.max(16, w),
+    height: 8,
   };
 }
 

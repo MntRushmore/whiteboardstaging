@@ -7,7 +7,9 @@ import {
   composeHandwriting,
   pickAlternates,
 } from "./hand/compose";
-import { ATLAS, COMMON_LETTERS, hasGlyph, isGreekChar } from "./hand/atlas";
+import { ATLAS, ATLAS_CALC_EXTRAS, COMMON_LETTERS, hasGlyph, isGreekChar } from "./hand/atlas";
+import { DEMO_PROBLEMS } from "./problems";
+import { DEFAULT_ASSISTANCE_MODE, TUTOR_DEBOUNCE_MS } from "./types";
 import { mulberry32 } from "./hand/path";
 import { splitSolveNote } from "./hand/solve";
 import { constrainMarks } from "./normalize";
@@ -37,9 +39,20 @@ describe("teacher-hand atlas", () => {
     for (const ch of "0123456789+−×÷=().,?→←↑↓") {
       assert.equal(hasGlyph(ch), true, `missing glyph ${ch}`);
     }
+    for (const extra of ATLAS_CALC_EXTRAS) {
+      assert.equal(hasGlyph(extra), true, `missing calc extra ${extra}`);
+    }
+    const allowed = new Set<string>(ATLAS_CALC_EXTRAS);
     for (const key of Object.keys(ATLAS)) {
+      if (allowed.has(key)) continue;
       assert.equal(isGreekChar(key), false, `Greek slipped into atlas: ${key}`);
     }
+  });
+
+  it("composes d/dx as one ligature", () => {
+    const ink = composeHandwriting("d/dx", { maxWidth: 400, seed: 2, size: 14 });
+    assert.ok(ink.segments.length >= 3);
+    assert.ok(ink.width < 40);
   });
 
   it("gives common letters 2–3 alternates and never stamps the same twice in a row", () => {
@@ -139,5 +152,29 @@ describe("planTutorInk", () => {
     assert.equal(circle[0]?.kind === "draw" && circle[0].closed, true);
     assert.equal(caret[0]?.kind, "draw");
     assert.equal(caret[0]?.kind === "draw" && caret[0].closed, false);
+  });
+
+  it("adds angle arcs and tick marks on geometry feedback, not extra letters", () => {
+    const geo = mark("circle");
+    geo.problemId = 9;
+    const plans = planTutorInk(geo, "feedback");
+    assert.ok(plans.length >= 3);
+    assert.ok(plans.every((p) => p.kind === "draw"));
+  });
+});
+
+describe("demo set", () => {
+  it("is three subjects of four problems, Socratic default, ~2s pen-up", () => {
+    assert.equal(DEMO_PROBLEMS.length, 12);
+    assert.deepEqual(
+      DEMO_PROBLEMS.map((p) => p.subject),
+      [
+        ...Array(4).fill("algebra"),
+        ...Array(4).fill("calculus"),
+        ...Array(4).fill("geometry"),
+      ],
+    );
+    assert.equal(DEFAULT_ASSISTANCE_MODE, "suggest");
+    assert.equal(TUTOR_DEBOUNCE_MS, 2000);
   });
 });

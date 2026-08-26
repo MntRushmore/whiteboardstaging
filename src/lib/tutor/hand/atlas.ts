@@ -241,7 +241,25 @@ export const ATLAS: Record<string, Glyph[]> = {
   "←": [g(9.0, "M 7.6 8.0 L 1.2 8.0 M 3.2 5.8 L 1.0 8.0 L 3.2 10.2")],
   "↑": [g(6.4, "M 3.2 11.2 L 3.2 3.0 M 1.4 5.2 L 3.2 2.8 L 5.0 5.2")],
   "↓": [g(6.4, "M 3.2 2.8 L 3.2 11.0 M 1.4 8.8 L 3.2 11.2 L 5.0 8.8")],
+  "∫": [g(6.2, "M 4.6 1.4 C 3.0 1.6 3.2 3.2 3.4 7.0 C 3.6 11.2 3.4 13.4 1.6 13.6")],
+  "π": [g(8.2, "M 1.4 6.6 L 7.4 6.5 M 3.0 6.6 L 2.8 11.3 M 6.0 6.5 L 6.2 11.3")],
+  "θ": [g(7.4, "M 4.6 6.4 C 7.4 6.4 7.6 12.2 4.6 12.2 C 1.8 12.2 1.6 6.4 4.6 6.4 M 2.4 9.2 L 6.8 9.1")],
+  "Δ": [g(8.8, "M 4.6 2.6 L 8.0 11.3 L 1.4 11.2 Z")],
+  "√": [g(9.4, "M 1.0 8.4 L 2.4 8.2 L 3.6 11.4 L 5.2 3.4 L 9.0 3.5")],
+  "d/dx": [
+    g(
+      18,
+      "M 2.4 2.8 L 2.4 11.2 M 2.5 7.4 C 3.4 6.6 5.4 6.6 5.6 8.6 C 5.6 11.0 3.4 12.0 2.5 10.6",
+      "M 7.0 4.2 L 8.6 11.0",
+      "M 10.6 2.8 L 10.6 11.2 M 10.7 7.4 C 11.6 6.6 13.6 6.6 13.8 8.6 C 13.8 11.0 11.6 12.0 10.7 10.6",
+      "M 15.2 6.8 L 17.2 11.2 M 17.4 6.8 L 15.4 11.2",
+    ),
+  ],
 };
+
+/** Calc extras only — not a Greek alphabet. */
+export const ATLAS_CALC_EXTRAS = ["∫", "d/dx", "π", "θ", "Δ", "√"] as const;
+export const LIGATURES = ["d/dx"] as const;
 
 /** Frequent letters that must have 2–3 alternates. */
 export const COMMON_LETTERS = "etaoinshrdlucm";
@@ -266,4 +284,20 @@ export function glyphKey(ch: string): string {
 
 export function hasGlyph(ch: string): boolean {
   return Boolean(ATLAS[glyphKey(ch)]);
+}
+
+export function tokenizeHand(text: string): string[] {
+  const out: string[] = [];
+  let i = 0;
+  while (i < text.length) {
+    const lig = LIGATURES.find((item) => text.startsWith(item, i));
+    if (lig) {
+      out.push(lig);
+      i += lig.length;
+      continue;
+    }
+    out.push(text[i]!);
+    i += 1;
+  }
+  return out;
 }

@@ -1,13 +1,16 @@
+import { isGeometryProblem } from "../problems";
+import type { TutorMark, TutorMode } from "../types";
 import {
+  composeAngleArc,
   composeArrow,
   composeCaret,
   composeCircle,
   composeHandwriting,
+  composeTickMarks,
   composeUnderline,
   type ComposedInk,
 } from "./compose";
 import { estimateKatexSize, splitSolveNote } from "./solve";
-import type { TutorMark, TutorMode } from "../types";
 
 export type InkSegment = ComposedInk["segments"][number];
 
@@ -38,7 +41,18 @@ function seedFor(mark: TutorMark, salt: number): number {
 export function planTutorInk(mark: TutorMark, mode?: TutorMode): InkPlan[] {
   if (mark.kind === "circle") {
     const ink = composeCircle(mark.w, mark.h, seedFor(mark, 1));
-    return [{ kind: "draw", x: mark.x, y: mark.y, closed: true, segments: ink.segments, markKind: "circle" }];
+    const plans: InkPlan[] = [
+      { kind: "draw", x: mark.x, y: mark.y, closed: true, segments: ink.segments, markKind: "circle" },
+    ];
+    if (isGeometryProblem(mark.problemId)) {
+      const arc = composeAngleArc(mark.w, mark.h, seedFor(mark, 11));
+      const ticks = composeTickMarks(mark.w, seedFor(mark, 12));
+      plans.push(
+        { kind: "draw", x: mark.x, y: mark.y, closed: false, segments: arc.segments, markKind: "circle" },
+        { kind: "draw", x: mark.x, y: mark.y + mark.h - 2, closed: false, segments: ticks.segments, markKind: "circle" },
+      );
+    }
+    return plans;
   }
 
   if (mark.kind === "caret") {
