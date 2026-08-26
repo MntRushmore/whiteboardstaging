@@ -1,6 +1,6 @@
 import { PaperBoard } from "./board/[id]/page";
 
-/** Preview root is the paper. License comes from the server env, not a stale client bundle. */
+/** `/` is the paper on every host, including production. No login wall. */
 export default function Home() {
   return (
     <PaperBoard

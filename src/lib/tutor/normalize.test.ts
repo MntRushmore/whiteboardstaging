@@ -18,6 +18,7 @@ import {
   markProblemFinished,
   recordInkOnProblem,
 } from "./problems";
+import { goToProblemPage } from "./pages";
 import {
   CARET_GAP_PX,
   CIRCLE_PAD_PX,
@@ -223,8 +224,36 @@ describe("expandCluster", () => {
 describe("problem pages", () => {
   it("treats every number as a page you can open", () => {
     assert.equal(canSelectProblem(1), true);
+    assert.equal(canSelectProblem(2), true);
     assert.equal(canSelectProblem(12), true);
     assert.equal(canSelectProblem(13), false);
+  });
+
+  it("rail tap switches the current page and does not create shapes", () => {
+    const pages = [
+      { id: "page:1", name: "1", meta: { problemId: 1 } },
+      { id: "page:2", name: "2", meta: { problemId: 2 } },
+    ];
+    let current = "page:1";
+    const createdShapes: unknown[] = [];
+    const editor = {
+      getPages: () => pages,
+      getCurrentPageId: () => current,
+      setCurrentPage: (id: string) => {
+        current = id;
+      },
+      updatePage: () => {},
+      createPage: (page: { name: string; meta?: object }) => {
+        const id = `page:${page.name}`;
+        pages.push({ id, name: page.name, meta: { problemId: Number(page.name) } });
+      },
+      createShape: (shape: unknown) => {
+        createdShapes.push(shape);
+      },
+    };
+    goToProblemPage(editor as never, 2);
+    assert.equal(current, "page:2");
+    assert.equal(createdShapes.length, 0);
   });
 
   it("records ink on the current page only", () => {

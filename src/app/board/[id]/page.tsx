@@ -8,6 +8,7 @@ import {
   AssetRecordType,
   TLShapeId,
   DefaultColorThemePalette,
+  type Editor,
   type TLUiOverrides,
   getSnapshot,
 } from "tldraw";
@@ -41,11 +42,7 @@ import {
   MicOff02Icon,
   Loading03Icon,
 } from "hugeicons-react";
-import { useTutorEngine } from "@/hooks/useTutorEngine";
-import { ProblemRail } from "@/components/ProblemRail";
-import { ModeWords } from "@/components/ModeWords";
-import { ProblemPrompt } from "@/components/ProblemPrompt";
-import { MarkActions } from "@/components/MarkActions";
+import { TeacherChrome } from "@/components/TeacherChrome";
 import { PAPER, TUTOR_RED } from "@/lib/tutor/layout";
 import { TldrawErrorBoundary } from "@/components/TldrawErrorBoundary";
 import { useTldrawLicense } from "@/components/TldrawLicense";
@@ -1015,18 +1012,6 @@ function BoardContent({ id }: { id: string }) {
   const isUpdatingImageRef = useRef(false);
   const [imageOverlayBusy, setImageOverlayBusy] = useState(false);
 
-  const tutor = useTutorEngine({
-    editor,
-    assistanceMode,
-    autoEnabled: true,
-    onStatus: (next, message) => {
-      setStatus(next);
-      setStatusMessage(message);
-      if (next === "error") setErrorMessage(message);
-      if (next === "idle") setErrorMessage("");
-    },
-  });
-
   const getStatusMessage = useCallback((mode: "off" | "feedback" | "suggest" | "answer", statusType: "generating" | "success") => {
     if (statusType === "generating") {
       switch (mode) {
@@ -1709,26 +1694,7 @@ function BoardContent({ id }: { id: string }) {
     editor.setCurrentTool("draw");
   }, [editor]);
 
-  return (
-    <>
-      <ProblemRail
-        problems={tutor.problems}
-        activeProblemId={tutor.activeProblemId}
-        onSelect={tutor.selectProblem}
-      />
-      <ProblemPrompt problem={tutor.problems[tutor.activeProblemId - 1]} />
-      <MarkActions
-        editor={editor}
-        problemId={tutor.activeProblemId}
-        onAccept={tutor.acceptMarks}
-        onReject={tutor.rejectMarks}
-      />
-      <ModeWords
-        value={assistanceMode}
-        onChange={(mode) => setAssistanceMode(mode)}
-      />
-    </>
-  );
+  return null;
 }
 
 function resolveLicenseKey(passed?: string, injected?: string): string | undefined {
@@ -1746,6 +1712,7 @@ export function PaperBoard({
 }) {
   const injected = useTldrawLicense();
   const key = resolveLicenseKey(licenseKey, injected);
+  const [editor, setEditor] = useState<Editor | null>(null);
 
   return (
     <div
@@ -1773,15 +1740,17 @@ export function PaperBoard({
             Minimap: null,
             ZoomMenu: null,
           }}
-          onMount={(editor) => {
-            ensureProblemPages(editor);
-            lockPaperCamera(editor);
-            editor.setCurrentTool("draw");
+          onMount={(next) => {
+            ensureProblemPages(next);
+            lockPaperCamera(next);
+            next.setCurrentTool("draw");
+            setEditor(next);
           }}
         >
           <BoardContent id={boardId} />
         </Tldraw>
       </TldrawErrorBoundary>
+      {editor ? <TeacherChrome editor={editor} /> : null}
     </div>
   );
 }

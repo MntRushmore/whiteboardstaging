@@ -1,6 +1,11 @@
 "use client";
 
+import type { PointerEvent } from "react";
 import { PROBLEM_COUNT, type ProblemRecord } from "@/lib/tutor/types";
+
+function ignoreCanvas(event: PointerEvent) {
+  event.stopPropagation();
+}
 
 export function ProblemRail({
   problems,
@@ -12,7 +17,13 @@ export function ProblemRail({
   onSelect: (id: number) => void;
 }) {
   return (
-    <nav className="problem-rail" aria-label="Problems 1 to 12">
+    <nav
+      className="problem-rail"
+      data-testid="problem-rail"
+      aria-label="Problems 1 to 12"
+      onPointerDown={ignoreCanvas}
+      onPointerUp={ignoreCanvas}
+    >
       {Array.from({ length: PROBLEM_COUNT }, (_, i) => {
         const id = i + 1;
         const finished = Boolean(problems[i]?.finished);
@@ -21,8 +32,10 @@ export function ProblemRail({
           <button
             key={id}
             type="button"
+            data-testid={`problem-rail-${id}`}
             className={`problem-rail-item${active ? " is-current" : ""}`}
             aria-current={active ? "page" : undefined}
+            onPointerDown={ignoreCanvas}
             onClick={() => onSelect(id)}
           >
             {id}

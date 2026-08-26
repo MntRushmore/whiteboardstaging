@@ -139,6 +139,14 @@ export function useTutorEngine({
   const selectProblem = useCallback((id: number) => {
     if (!canSelectProblem(id)) return;
     const prevId = activeRef.current;
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    pendingIdsRef.current.clear();
+    abortRef.current?.abort();
+    abortRef.current = null;
+    processingRef.current = false;
     if (prevId !== id) {
       setProblems((prev) => {
         const next = markProblemFinished(prev, prevId);

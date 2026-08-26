@@ -152,6 +152,19 @@
   display: none !important;
 }
 
+.teacher-chrome {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.teacher-chrome .problem-rail,
+.teacher-chrome .mode-words,
+.teacher-chrome .mark-actions {
+  pointer-events: auto;
+}
+
 .problem-rail {
   position: absolute;
   top: 0;

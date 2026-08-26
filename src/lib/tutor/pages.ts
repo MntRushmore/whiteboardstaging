@@ -56,8 +56,10 @@ export function getPageProblemId(editor: Editor): number {
 
 export function goToProblemPage(editor: Editor, problemId: number): void {
   if (!isProblemId(problemId)) return;
+  ensureProblemPages(editor);
   const page = editor.getPages().find((p) => problemIdFromPage(p) === problemId);
-  if (page && page.id !== editor.getCurrentPageId()) {
+  if (!page) return;
+  if (page.id !== editor.getCurrentPageId()) {
     editor.setCurrentPage(page.id);
   }
 }
