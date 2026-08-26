@@ -130,6 +130,13 @@
   --tl-font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
+/* tldraw is height:100%. An unstyled remount wrapper collapses the canvas. */
+[data-testid="persistent-tldraw"],
+[data-testid="tldraw-error-boundary"] {
+  width: 100%;
+  height: 100%;
+}
+
 .tutor-katex,
 .tutor-katex .katex {
   color: #e11d48;

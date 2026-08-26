@@ -23,6 +23,14 @@ export class TldrawErrorBoundary extends Component<Props, State> {
   }
 
   render() {
-    return <div key={this.state.gen}>{this.props.children}</div>;
+    return (
+      <div
+        key={this.state.gen}
+        data-testid="tldraw-error-boundary"
+        style={{ position: "absolute", inset: 0 }}
+      >
+        {this.props.children}
+      </div>
+    );
   }
 }
