@@ -1,7 +1,7 @@
 /**
- * Apple Calculator Math Notes: write an expression, add `=`,
- * and the value appears inline. Arithmetic only — no algebra, no LLM.
+ * Apple Calculator Math Notes + locked algebra on the orange Solve path.
  */
+import { algebraNextStep, looksLikeAlgebra } from "./algebra";
 
 export function expressionToEvaluate(latex: string): string | null {
   let s = latex.trim();
@@ -132,7 +132,7 @@ export function evaluateMathNotes(latex: string): string | null {
 }
 
 /**
- * Math Notes only fires on a line that ends in `=`.
+ * Arithmetic Math Notes only fires on a line that ends in `=`.
  * A stray `7` must not consume the solve slot.
  */
 export function mathNotesLineResult(latex: string): string | null {
@@ -140,12 +140,27 @@ export function mathNotesLineResult(latex: string): string | null {
   return evaluateMathNotes(latex);
 }
 
-export function firstMathNotesLine<T extends { latex: string }>(
+/** Arithmetic `expr=` first, then one-variable algebra (letters are allowed). */
+export function solveNextStep(latex: string): string | null {
+  const arith = mathNotesLineResult(latex);
+  if (arith) return arith;
+  return algebraNextStep(latex);
+}
+
+export function firstSolveLine<T extends { latex: string }>(
   candidates: T[],
 ): (T & { result: string }) | null {
   for (const candidate of candidates) {
-    const result = mathNotesLineResult(candidate.latex);
+    const result = solveNextStep(candidate.latex);
     if (result) return { ...candidate, result };
   }
   return null;
 }
+
+export function firstMathNotesLine<T extends { latex: string }>(
+  candidates: T[],
+): (T & { result: string }) | null {
+  return firstSolveLine(candidates);
+}
+
+export { looksLikeAlgebra };

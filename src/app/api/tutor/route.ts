@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { tutorLogger } from "@/lib/logger";
 import { getSiteUrl, requireKey } from "@/lib/aiConfig";
 import { pinMathNotesResult, pinSocraticNote } from "@/lib/tutor/layout";
-import { mathNotesLineResult } from "@/lib/tutor/mathNotes";
+import { looksLikeAlgebra, solveNextStep } from "@/lib/tutor/mathNotes";
 import {
   clampConfidence,
   constrainMarks,
@@ -102,6 +102,27 @@ async function callOpenRouter(
   return parseJsonObject(typeof text === "string" ? text : JSON.stringify(text));
 }
 
+async function flashAlgebraStep(key: string, latex: string): Promise<string | null> {
+  try {
+    const raw = await callTextModel(
+      key,
+      [
+        'Return JSON only: { "step": "..." }',
+        "step is the next compact algebra rewrite as latex or plain math.",
+        "Factor, expand, or solve for the one variable. No words. No question.",
+        "Examples: x^2-x-12 -> (x-4)(x+3). 3(x-2)=2x+5 -> x=11.",
+        `Input: ${latex}`,
+      ].join("\n"),
+    );
+    const rawStep = typeof raw.step === "string" ? raw.step : "";
+    const step = rawStep.replace(/[`$]/g, "").trim().split("\n")[0]?.trim() ?? "";
+    if (!step || step.length > 48 || /[?]/.test(step)) return null;
+    return step;
+  } catch {
+    return null;
+  }
+}
+
 async function callTextModel(key: string, prompt: string): Promise<Record<string, unknown>> {
   try {
     return await callOpenRouter(key, TUTOR_FLASH_MODEL, prompt);
@@ -152,7 +173,13 @@ export async function POST(req: NextRequest) {
     }
 
     if (mode === "solve") {
-      const resultText = mathNotesLineResult(latex);
+      let resultText = solveNextStep(latex);
+      if (!resultText && looksLikeAlgebra(latex)) {
+        const openrouterKey = requireKey("openrouter");
+        if (openrouterKey.ok) {
+          resultText = await flashAlgebraStep(openrouterKey.key, latex);
+        }
+      }
       const mark = resultText
         ? pinMathNotesResult(
             {
@@ -181,7 +208,7 @@ export async function POST(req: NextRequest) {
       };
       tutorLogger.info(
         { requestId, problemId, latex, resultText, markCount: result.marks.length },
-        mark ? "Math Notes result" : "Math Notes miss; stay quiet",
+        mark ? "Solve result" : "Solve miss; stay quiet",
       );
       return NextResponse.json(result);
     }

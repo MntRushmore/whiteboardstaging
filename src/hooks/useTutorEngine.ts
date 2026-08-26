@@ -30,7 +30,7 @@ import {
 import { getPageProblemId, goToProblemPage } from "@/lib/tutor/pages";
 import { decideSocraticAnswer } from "@/lib/tutor/answer";
 import { pinMathNotesResult, pinSocraticNote } from "@/lib/tutor/layout";
-import { mathNotesLineResult } from "@/lib/tutor/mathNotes";
+import { looksLikeAlgebra, solveNextStep } from "@/lib/tutor/mathNotes";
 import { isUsableLatex } from "@/lib/tutor/normalize";
 import { recognizeStrokes } from "@/lib/tutor/recognize";
 import {
@@ -240,9 +240,30 @@ export function useTutorEngine({
               return false;
             }
             if (!isUsableLatex(lineLatex)) continue;
-            const resultText = mathNotesLineResult(lineLatex);
+            let resultText = solveNextStep(lineLatex);
+            if (!resultText && looksLikeAlgebra(lineLatex)) {
+              const response = await fetch("/api/tutor?mode=solve", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                signal: abort.signal,
+                body: JSON.stringify({
+                  problemId,
+                  latex: lineLatex,
+                  bbox: line.bounds,
+                  mode: "solve",
+                }),
+              });
+              if (abort.signal.aborted) {
+                setBusy("idle", "");
+                return false;
+              }
+              if (response.ok) {
+                const payload = (await response.json()) as TutorResponse;
+                resultText = payload.marks[0]?.text?.trim() || "";
+              }
+            }
             if (!resultText) {
-              logger.info({ problemId, latex: lineLatex }, "skip stray; not expr=");
+              logger.info({ problemId, latex: lineLatex }, "skip stray; not a solve line");
               continue;
             }
 

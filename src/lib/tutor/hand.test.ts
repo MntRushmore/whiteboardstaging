@@ -49,7 +49,7 @@ describe("teacher-hand atlas", () => {
       if (ch === " ") continue;
       assert.equal(hasGlyph(ch), true, `missing glyph ${ch}`);
     }
-    for (const ch of "0123456789+−×÷=().,?→←↑↓") {
+    for (const ch of "0123456789+−×÷=().,?^→←↑↓") {
       assert.equal(hasGlyph(ch), true, `missing glyph ${ch}`);
     }
     for (const extra of ATLAS_CALC_EXTRAS) {
@@ -169,6 +169,17 @@ describe("planTutorInk", () => {
     const firstX = hand.segments[0]?.points[0]?.x ?? 0;
     const laterX = hand.segments[4]?.points[0]?.x ?? 0;
     assert.ok(laterX - firstX > 8);
+  });
+
+  it("draws algebra Solve results with readable letters, not a squiggle", () => {
+    for (const ch of "(x-4)(x+3)x = 11") {
+      assert.equal(hasGlyph(ch), true, `missing glyph ${ch}`);
+    }
+    const [note] = constrainMarks("solve", [mark("note", "(x-4)(x+3)")]);
+    const plans = planTutorInk(note!, "solve");
+    assert.equal(plans[0]?.kind, "hand");
+    if (plans[0]?.kind !== "hand") return;
+    assert.ok(plans[0].segments.length >= 8);
   });
 
   it("draws the Math Notes result as atlas digits, not a freehand scribble", () => {
