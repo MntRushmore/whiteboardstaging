@@ -1,7 +1,10 @@
 import { Box, type Editor, type TLShape, type TLShapeId } from "tldraw";
 import { downsamplePoints, richTextToPlain } from "./normalize";
-import { expandCluster, unionBounds } from "./geometry";
+import { expandClusterOrLatest, unionBounds } from "./geometry";
+import { readStrokePoint } from "./strokes";
 import { TUTOR_LAYER_META, type ClusterBounds, type StrokeSample } from "./types";
+
+export { readStrokePoint } from "./strokes";
 
 export function isTutorShape(shape: TLShape | undefined | null): boolean {
   if (!shape) return false;
@@ -41,9 +44,55 @@ export function shapePlainText(shape: TLShape): string {
 
 function shapeRecord(value: unknown): TLShape | null {
   if (!value || typeof value !== "object") return null;
-  const rec = value as { typeName?: string; type?: string };
-  if (rec.typeName !== "shape") return null;
-  return value as TLShape;
+  const rec = value as { typeName?: string; type?: string; id?: string };
+  if (rec.typeName === "shape") return value as TLShape;
+  // Some store diffs omit typeName. A draw/highlight/text id is still ink.
+  if (typeof rec.id === "string" && rec.id.startsWith("shape:") && typeof rec.type === "string") {
+    return value as TLShape;
+  }
+  return null;
+}
+
+export function strokeSamplesFromSegments(
+  segments: unknown,
+  applyPoint: (point: { x: number; y: number }) => { x: number; y: number } = (point) => point,
+): StrokeSample[] {
+  if (!Array.isArray(segments)) return [];
+  const samples: StrokeSample[] = [];
+  for (const segment of segments) {
+    const rawPoints = (segment as { points?: unknown } | null)?.points;
+    if (!Array.isArray(rawPoints)) continue;
+    const points = rawPoints
+      .map((point) => {
+        const parsed = readStrokePoint(point);
+        if (!parsed) return null;
+        try {
+          const page = applyPoint(parsed);
+          if (!Number.isFinite(page.x) || !Number.isFinite(page.y)) return null;
+          return { x: page.x, y: page.y };
+        } catch {
+          return parsed;
+        }
+      })
+      .filter((point): point is { x: number; y: number } => Boolean(point));
+    if (points.length === 1 && points[0]) {
+      // A tap / i-dot / equals tick is still a stroke. Duplicate so Mathpix sees it.
+      points.push({ x: points[0].x + 0.5, y: points[0].y });
+    }
+    if (points.length >= 2) {
+      samples.push({ points: downsamplePoints(points) });
+    }
+  }
+  return samples;
+}
+
+/** Newest student draw/highlight on this page — last stroke cluster seed. */
+export function lastStudentClusterSeeds(editor: Editor): TLShapeId[] {
+  const ink = collectStudentInk(editor).filter(
+    (shape) => shape.type === "draw" || shape.type === "highlight",
+  );
+  if (ink.length === 0) return [];
+  return [ink[ink.length - 1]!.id];
 }
 
 export function studentInkIdsFromDiff(changes: {
@@ -113,7 +162,8 @@ export function clusterFromSeeds(editor: Editor, seedIds: TLShapeId[]): {
     })
     .filter((item): item is { id: TLShapeId; bounds: ClusterBounds } => Boolean(item));
 
-  const clusteredIds = expandCluster(items, uniqueSeeds);
+  // Stale listen ids (remount / missing bounds) still tutor the last ink on the page.
+  const clusteredIds = expandClusterOrLatest(items, uniqueSeeds);
   if (clusteredIds.length === 0) return null;
 
   const clustered = clusteredIds
@@ -140,23 +190,15 @@ export function clusterFromSeeds(editor: Editor, seedIds: TLShapeId[]): {
 
 function extractStrokes(editor: Editor, shape: TLShape): StrokeSample[] {
   if (shape.type !== "draw" && shape.type !== "highlight") return [];
-  const props = shape.props as {
-    segments?: { points?: { x: number; y: number }[] }[];
-  };
+  const props = shape.props as { segments?: unknown };
   const transform = editor.getShapePageTransform(shape);
-  const samples: StrokeSample[] = [];
-  for (const segment of props.segments ?? []) {
-    const points = (segment.points ?? [])
-      .map((p) => {
-        const page = transform.applyToPoint(p);
-        return { x: page.x, y: page.y };
-      })
-      .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
-    if (points.length >= 2) {
-      samples.push({ points: downsamplePoints(points) });
+  return strokeSamplesFromSegments(props.segments, (point) => {
+    const page = transform?.applyToPoint?.(point);
+    if (page && Number.isFinite(page.x) && Number.isFinite(page.y)) {
+      return { x: page.x, y: page.y };
     }
-  }
-  return samples;
+    return point;
+  });
 }
 
 export function collectAllStudentText(editor: Editor): string {

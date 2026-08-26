@@ -39,6 +39,19 @@ export function expandCluster<Id extends string>(
   return [...included];
 }
 
+/** If listen seeds vanished, take the newest ink on the page as the last cluster. */
+export function expandClusterOrLatest<Id extends string>(
+  items: { id: Id; bounds: ClusterBounds }[],
+  seedIds: Id[],
+  gap = CLUSTER_GAP_PX,
+): Id[] {
+  const clustered = expandCluster(items, seedIds, gap);
+  if (clustered.length > 0) return clustered;
+  const newest = items.at(-1);
+  if (!newest) return [];
+  return expandCluster(items, [newest.id], gap);
+}
+
 export function unionBounds(boxes: ClusterBounds[]): ClusterBounds | null {
   if (boxes.length === 0) return null;
   let minX = Infinity;

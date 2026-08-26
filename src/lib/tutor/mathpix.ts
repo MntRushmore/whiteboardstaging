@@ -1,3 +1,4 @@
+import { readStrokePoint } from "./strokes";
 import type { StrokeSample } from "./types";
 
 /** Mathpix v3/strokes body: one inner array per continuous stroke. */
@@ -20,14 +21,11 @@ export function parseStrokeSamples(raw: unknown): StrokeSample[] {
     const points = (item as { points?: unknown }).points;
     if (!Array.isArray(points)) continue;
     const parsed = points
-      .map((point) => {
-        if (!point || typeof point !== "object") return null;
-        const x = Number((point as { x?: unknown }).x);
-        const y = Number((point as { y?: unknown }).y);
-        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-        return { x, y };
-      })
+      .map((point) => readStrokePoint(point))
       .filter((point): point is { x: number; y: number } => Boolean(point));
+    if (parsed.length === 1 && parsed[0]) {
+      parsed.push({ x: parsed[0].x + 0.5, y: parsed[0].y });
+    }
     if (parsed.length >= 2) out.push({ points: parsed });
   }
   return out;

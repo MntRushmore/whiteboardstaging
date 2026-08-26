@@ -17,6 +17,7 @@ import {
   allChangesAreTutorLayer,
   clusterFromSeeds,
   collectAllStudentText,
+  lastStudentClusterSeeds,
   studentInkIdsFromDiff,
 } from "@/lib/tutor/cluster";
 import {
@@ -71,6 +72,7 @@ export function useTutorEngine({
   const problemsRef = useRef(problems);
   const activeRef = useRef(activeProblemId);
   const rejectedDiagramsRef = useRef(new Set<number>());
+  const ranClusterKeysRef = useRef(new Set<string>());
 
   modeRef.current = assistanceMode;
   autoRef.current = autoEnabled;
@@ -142,9 +144,11 @@ export function useTutorEngine({
       timerRef.current = null;
     }
     pendingIdsRef.current.clear();
+    ranClusterKeysRef.current.clear();
     abortRef.current?.abort();
     abortRef.current = null;
     processingRef.current = false;
+    applyingRef.current = false;
     if (prevId !== id) {
       setProblems((prev) => {
         const next = markProblemFinished(prev, prevId);
@@ -171,6 +175,9 @@ export function useTutorEngine({
       const cluster = clusterFromSeeds(editor, seedIds);
       if (!cluster) return false;
 
+      const clusterKey = [...cluster.shapeIds].sort().join(",");
+      if (clusterKey && ranClusterKeysRef.current.has(clusterKey)) return false;
+
       const problemId = getPageProblemId(editor);
       activeRef.current = problemId;
       setActiveProblemId(problemId);
@@ -192,11 +199,30 @@ export function useTutorEngine({
       try {
         setBusy("generating", "Reading your work...");
 
+        if (cluster.strokes.length === 0) {
+          logger.info(
+            { problemId, seedCount: seedIds.length, shapeIds: cluster.shapeIds.length },
+            "Mathpix miss; stay quiet",
+          );
+          setBusy("idle", "");
+          return false;
+        }
+
+        logger.info(
+          {
+            problemId,
+            strokeCount: cluster.strokes.length,
+            pointCounts: cluster.strokes.map((stroke) => stroke.points.length),
+            bbox: cluster.bounds,
+          },
+          "POST /api/recognize last cluster",
+        );
         const latex = await recognizeStrokes(cluster.strokes, abort.signal);
         if (abort.signal.aborted) {
           setBusy("idle", "");
           return false;
         }
+        ranClusterKeysRef.current.add(clusterKey);
 
         const nextProblems = recordInkOnProblem(
           problemsRef.current,
@@ -268,13 +294,16 @@ export function useTutorEngine({
         }
 
         applyingRef.current = true;
-        const ids = applyTutorMarks(editor, decision.marks, "socratic");
-        fadeInTutorShapes(editor, ids);
-        setHasMarks(ids.length > 0);
-        setHasPending(ids.length > 0);
-        queueMicrotask(() => {
-          applyingRef.current = false;
-        });
+        try {
+          const ids = applyTutorMarks(editor, decision.marks, "socratic");
+          fadeInTutorShapes(editor, ids);
+          setHasMarks(ids.length > 0);
+          setHasPending(ids.length > 0);
+        } finally {
+          queueMicrotask(() => {
+            applyingRef.current = false;
+          });
+        }
 
         setBusy("success", "Question added");
         setTimeout(() => setBusy("idle", ""), 1600);
@@ -338,6 +367,37 @@ export function useTutorEngine({
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [editor, schedule, setBusy]);
+
+  // Pen-up backup: if store.listen missed the stroke, still POST the last cluster.
+  useEffect(() => {
+    if (!editor) return;
+    const root = editor.getContainer();
+
+    const queueLastCluster = () => {
+      applyingRef.current = false;
+      window.setTimeout(() => {
+        if (!autoRef.current || processingRef.current) return;
+        if (pendingIdsRef.current.size === 0) {
+          for (const id of lastStudentClusterSeeds(editor)) {
+            pendingIdsRef.current.add(id);
+          }
+        }
+        if (pendingIdsRef.current.size === 0) return;
+        schedule();
+      }, 80);
+    };
+
+    const onPointerUp = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (!target.closest(".tl-canvas")) return;
+      queueLastCluster();
+    };
+
+    root.addEventListener("pointerup", onPointerUp);
+    return () => root.removeEventListener("pointerup", onPointerUp);
+  }, [editor, schedule]);
 
   useEffect(() => {
     if (!editor) return;
