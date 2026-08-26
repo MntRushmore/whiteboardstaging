@@ -29,14 +29,14 @@ export const PROVIDERS: Record<ProviderId, ProviderSpec> = {
     envVar: 'OPENROUTER_API_KEY',
     signupUrl: 'https://openrouter.ai/keys',
     features: [
-      'Realtime math tutor (text-only, per-problem marks)',
+      'Realtime math tutor (OpenRouter Flash on recognized LaTeX)',
       'Legacy image overlay fallback',
       'Worksheet generation',
       'Automatic "needs help" detection',
       'Voice workspace analysis',
       'Credit balance display',
     ],
-    required: true,
+    required: false,
   },
   openai: {
     id: 'openai',
@@ -59,7 +59,7 @@ export const PROVIDERS: Record<ProviderId, ProviderSpec> = {
     label: 'Mathpix',
     envVar: 'MATHPIX_APP_KEY',
     signupUrl: 'https://mathpix.com/ocr',
-    features: ['Optional handwriting-to-LaTeX (not used on the live tutor API)'],
+    features: ['Stroke-to-LaTeX for the live tutor (Mathpix /v3/strokes)'],
     required: false,
   },
 };

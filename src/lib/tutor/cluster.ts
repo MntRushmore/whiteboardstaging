@@ -133,16 +133,12 @@ export function clusterFromSeeds(editor: Editor, seedIds: TLShapeId[]): {
     .filter(Boolean)
     .join("\n");
 
-  const strokes = clustered.flatMap((shape) => extractStrokes(editor, shape, bounds));
+  const strokes = clustered.flatMap((shape) => extractStrokes(editor, shape));
 
   return { shapeIds: clusteredIds, bounds, nearbyText, strokes };
 }
 
-function extractStrokes(
-  editor: Editor,
-  shape: TLShape,
-  bounds: ClusterBounds,
-): StrokeSample[] {
+function extractStrokes(editor: Editor, shape: TLShape): StrokeSample[] {
   if (shape.type !== "draw" && shape.type !== "highlight") return [];
   const props = shape.props as {
     segments?: { points?: { x: number; y: number }[] }[];
@@ -153,10 +149,7 @@ function extractStrokes(
     const points = (segment.points ?? [])
       .map((p) => {
         const page = transform.applyToPoint(p);
-        return {
-          x: bounds.w <= 0 ? 0 : (page.x - bounds.x) / bounds.w,
-          y: bounds.h <= 0 ? 0 : (page.y - bounds.y) / bounds.h,
-        };
+        return { x: page.x, y: page.y };
       })
       .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
     if (points.length >= 2) {

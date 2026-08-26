@@ -9,9 +9,17 @@ import {
 } from "./hand/compose";
 import { ATLAS, ATLAS_CALC_EXTRAS, COMMON_LETTERS, hasGlyph, isGreekChar } from "./hand/atlas";
 import { composeDiagram, DIAGRAM_KINDS } from "./hand/diagrams";
-import { DEMO_PROBLEMS } from "./problems";
-import { TUTOR_LAYER_META, TUTOR_PENDING_META, isPendingTutorMeta } from "./types";
-import { DEFAULT_ASSISTANCE_MODE, TUTOR_DEBOUNCE_MS } from "./types";
+import { DEMO_PROBLEMS, socraticOpener } from "./problems";
+import {
+  DEFAULT_ASSISTANCE_MODE,
+  TUTOR_BACKUP_MODEL,
+  TUTOR_DEBOUNCE_MS,
+  TUTOR_FLASH_MODEL,
+  TUTOR_LAYER_META,
+  TUTOR_PENDING_META,
+  isPendingTutorMeta,
+} from "./types";
+import { latexFromMathpix, toMathpixStrokePayload } from "./mathpix";
 import { mulberry32 } from "./hand/path";
 import { splitSolveNote } from "./hand/solve";
 import { constrainMarks } from "./normalize";
@@ -241,6 +249,20 @@ describe("demo set", () => {
     );
     assert.equal(DEFAULT_ASSISTANCE_MODE, "suggest");
     assert.equal(TUTOR_DEBOUNCE_MS, 2000);
+    assert.equal(TUTOR_FLASH_MODEL, "google/gemini-2.5-flash");
+    assert.equal(TUTOR_BACKUP_MODEL, "openai/gpt-4.1-mini");
+    assert.equal(socraticOpener(1), "What happens if you distribute the 3 first?");
+    assert.equal(
+      socraticOpener(8),
+      "What is the volume of a cone, and which two quantities are changing?",
+    );
+    const payload = toMathpixStrokePayload([
+      { points: [{ x: 1, y: 2 }, { x: 3, y: 4 }] },
+    ]);
+    assert.deepEqual(payload.strokes.strokes.x, [[1, 3]]);
+    assert.deepEqual(payload.strokes.strokes.y, [[2, 4]]);
+    assert.equal(latexFromMathpix({ latex_styled: "3x^{2}" }), "3x^{2}");
+    assert.equal(latexFromMathpix({ text: "\\( 3 x^{2} \\)" }), "3 x^{2}");
     assert.equal(DEMO_PROBLEMS[7]?.title.startsWith("Water drains from an inverted cone."), true);
     assert.equal(
       isPendingTutorMeta({ [TUTOR_LAYER_META]: true, [TUTOR_PENDING_META]: true }),

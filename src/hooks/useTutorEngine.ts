@@ -24,12 +24,12 @@ import {
 import {
   canSelectProblem,
   createProblemSet,
-  extractLatex,
   markProblemFinished,
   recordInkOnProblem,
 } from "@/lib/tutor/problems";
 import { getPageProblemId, goToProblemPage } from "@/lib/tutor/pages";
 import { isUsableLatex } from "@/lib/tutor/normalize";
+import { recognizeStrokes } from "@/lib/tutor/recognize";
 import {
   CONFIDENCE_THRESHOLD,
   TUTOR_DEBOUNCE_MS,
@@ -187,16 +187,6 @@ export function useTutorEngine({
       activeRef.current = problemId;
       setActiveProblemId(problemId);
 
-      const nextProblems = recordInkOnProblem(
-        problemsRef.current,
-        problemId,
-        cluster.bounds,
-        extractLatex(cluster.nearbyText),
-      );
-      problemsRef.current = nextProblems;
-      setProblems(nextProblems);
-      setClusterBounds(nextProblems[problemId - 1]?.bbox ?? cluster.bounds);
-
       applyingRef.current = true;
       try {
         stampStudentProblemId(editor, cluster.shapeIds, problemId);
@@ -206,14 +196,7 @@ export function useTutorEngine({
         });
       }
 
-      const latex = nextProblems[problemId - 1]?.latex ?? "";
-      const bbox = nextProblems[problemId - 1]?.bbox ?? cluster.bounds;
-
       if (!mode) return false;
-      if (!isUsableLatex(latex)) {
-        logger.info({ problemId }, "No latex on cluster; skip tutor");
-        return false;
-      }
 
       processingRef.current = true;
       abortRef.current?.abort();
@@ -222,6 +205,30 @@ export function useTutorEngine({
 
       try {
         setBusy("generating", "Reading your work...");
+
+        const latex = await recognizeStrokes(cluster.strokes, abort.signal);
+        if (abort.signal.aborted) {
+          setBusy("idle", "");
+          return false;
+        }
+
+        const nextProblems = recordInkOnProblem(
+          problemsRef.current,
+          problemId,
+          cluster.bounds,
+          latex,
+        );
+        problemsRef.current = nextProblems;
+        setProblems(nextProblems);
+        setClusterBounds(nextProblems[problemId - 1]?.bbox ?? cluster.bounds);
+
+        const bbox = nextProblems[problemId - 1]?.bbox ?? cluster.bounds;
+
+        if (mode !== "socratic" && !isUsableLatex(latex)) {
+          logger.info({ problemId }, "No Mathpix latex; skip tutor");
+          setBusy("idle", "");
+          return false;
+        }
 
         const payload = {
           problemId,

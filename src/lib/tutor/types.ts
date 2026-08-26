@@ -85,6 +85,10 @@ export const CONFIDENCE_THRESHOLD = 0.6;
 export const TUTOR_DEBOUNCE_MS = 2000;
 export const DEFAULT_ASSISTANCE_MODE: AssistanceMode = "suggest";
 
+/** OpenRouter Flash on recognized LaTeX. Backup is GPT-4.1-mini. */
+export const TUTOR_FLASH_MODEL = "google/gemini-2.5-flash";
+export const TUTOR_BACKUP_MODEL = "openai/gpt-4.1-mini";
+
 export type ProblemSubject = "algebra" | "calculus" | "geometry";
 export const CLUSTER_GAP_PX = 96;
 export const CROP_PADDING_PX = 28;

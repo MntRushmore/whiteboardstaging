@@ -10,11 +10,18 @@ import {
   parseNormalizedMark,
   parseTutorMode,
 } from "@/lib/tutor/normalize";
-import { isProblemId, type ClusterBounds, type NormalizedMark, type TutorMode, type TutorResponse } from "@/lib/tutor/types";
+import { socraticOpenerMark } from "@/lib/tutor/problems";
+import {
+  isProblemId,
+  TUTOR_BACKUP_MODEL,
+  TUTOR_FLASH_MODEL,
+  type ClusterBounds,
+  type NormalizedMark,
+  type TutorMode,
+  type TutorResponse,
+} from "@/lib/tutor/types";
 
 export const maxDuration = 15;
-
-const TEXT_MODEL = "google/gemini-2.5-flash-lite";
 
 function modeInstructions(mode: TutorMode): string {
   switch (mode) {
@@ -50,7 +57,11 @@ function buildPrompt(opts: {
   ].join("\n");
 }
 
-async function callTextModel(key: string, prompt: string): Promise<Record<string, unknown>> {
+async function callOpenRouter(
+  key: string,
+  model: string,
+  prompt: string,
+): Promise<Record<string, unknown>> {
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -60,7 +71,7 @@ async function callTextModel(key: string, prompt: string): Promise<Record<string
       "X-Title": "Agathon Classroom Staging - Tutor",
     },
     body: JSON.stringify({
-      model: TEXT_MODEL,
+      model,
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
     }),
@@ -89,6 +100,15 @@ async function callTextModel(key: string, prompt: string): Promise<Record<string
   return parseJsonObject(typeof text === "string" ? text : JSON.stringify(text));
 }
 
+async function callTextModel(key: string, prompt: string): Promise<Record<string, unknown>> {
+  try {
+    return await callOpenRouter(key, TUTOR_FLASH_MODEL, prompt);
+  } catch (error) {
+    if ((error as { credits?: boolean })?.credits) throw error;
+    return await callOpenRouter(key, TUTOR_BACKUP_MODEL, prompt);
+  }
+}
+
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
   const requestId = crypto.randomUUID();
@@ -112,6 +132,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "bbox is required" }, { status: 400 });
     }
 
+    if (mode === "socratic") {
+      const opener = socraticOpenerMark(problemId, latex, bbox);
+      const marks = constrainMarks(mode, opener ? [opener] : []);
+      const result: TutorResponse = {
+        problemId,
+        latex,
+        bbox,
+        confidence: marks.length ? 1 : 0,
+        mode,
+        marks,
+      };
+      tutorLogger.info(
+        {
+          requestId,
+          duration: Date.now() - startTime,
+          problemId,
+          mode,
+          markCount: marks.length,
+        },
+        "Tutor socratic opener applied",
+      );
+      return NextResponse.json(result);
+    }
+
     if (!isUsableLatex(latex)) {
       const empty: TutorResponse = {
         problemId,
@@ -126,8 +170,15 @@ export async function POST(req: NextRequest) {
 
     const openrouterKey = requireKey("openrouter");
     if (!openrouterKey.ok) {
-      tutorLogger.error({ requestId }, "OPENROUTER_API_KEY is not configured");
-      return openrouterKey.response;
+      tutorLogger.info({ requestId }, "OPENROUTER_API_KEY missing; skip marks");
+      return NextResponse.json({
+        problemId,
+        latex,
+        bbox,
+        confidence: 0,
+        mode,
+        marks: [],
+      });
     }
 
     const raw = await callTextModel(

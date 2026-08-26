@@ -125,6 +125,31 @@ export function extractLatex(nearbyText: string, previous = ""): string {
   return previous.trim();
 }
 
+export function socraticOpener(problemId: number): string {
+  return getDemoProblem(problemId)?.socratic ?? "";
+}
+
+export function socraticOpenerMark(
+  problemId: number,
+  latex: string,
+  bbox: ClusterBounds,
+) {
+  const text = socraticOpener(problemId);
+  if (!text) return null;
+  return {
+    kind: "note" as const,
+    pageId: "",
+    x: bbox.x,
+    y: bbox.y,
+    w: 40,
+    h: 16,
+    text,
+    problemId,
+    latex,
+    bbox,
+  };
+}
+
 export function unionOrReplace(
   prev: ClusterBounds | null,
   next: ClusterBounds,
