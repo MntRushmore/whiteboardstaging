@@ -12,54 +12,41 @@ export function ProblemRail({
   onSelect: (id: number) => void;
 }) {
   return (
-    <div
-      className="problem-rail"
-      role="tablist"
-      aria-label="Problems 1 to 12"
-      style={{
-        position: "absolute",
-        top: "64px",
-        left: "50%",
-        transform: "translateX(-50%)",
-        zIndex: 1000,
-        display: "flex",
-        gap: "4px",
-        padding: "4px",
-        pointerEvents: "auto",
-      }}
-    >
+    <nav className="problem-rail" aria-label="Problems 1 to 12">
       {Array.from({ length: PROBLEM_COUNT }, (_, i) => {
         const id = i + 1;
-        const problem = problems[i];
-        const unlocked = Boolean(problem?.unlocked);
-        const finished = Boolean(problem?.finished);
+        const finished = Boolean(problems[i]?.finished);
         const active = id === activeProblemId;
         return (
           <button
             key={id}
             type="button"
-            role="tab"
-            aria-selected={active}
-            aria-disabled={!unlocked}
-            title={
-              unlocked
-                ? finished
-                  ? `Problem ${id} (done)`
-                  : `Problem ${id}`
-                : `Problem ${id} unlocks when you write`
-            }
-            onClick={() => {
-              if (unlocked) onSelect(id);
-            }}
-            className={`problem-rail-item${active ? " is-active" : ""}${
-              unlocked ? " is-unlocked" : ""
-            }${finished ? " is-finished" : ""}`}
+            className={`problem-rail-item${active ? " is-current" : ""}`}
+            aria-current={active ? "page" : undefined}
+            onClick={() => onSelect(id)}
           >
-            <span>{id}</span>
-            {finished && <span className="problem-rail-check" aria-hidden>✓</span>}
+            {id}
+            {finished && (
+              <svg
+                className="problem-rail-check"
+                width="10"
+                height="10"
+                viewBox="0 0 10 10"
+                aria-label="Done"
+              >
+                <path
+                  d="M1.5 5.2L3.8 7.5L8.5 2.4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
           </button>
         );
       })}
-    </div>
+    </nav>
   );
 }

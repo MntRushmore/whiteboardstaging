@@ -18,12 +18,13 @@ import {
   studentInkIdsFromDiff,
 } from "@/lib/tutor/cluster";
 import {
-  assignClusterToProblem,
   canSelectProblem,
   createProblemSet,
   extractLatex,
-  finishProblemsBehind,
+  markProblemFinished,
+  recordInkOnProblem,
 } from "@/lib/tutor/problems";
+import { getPageProblemId, goToProblemPage } from "@/lib/tutor/pages";
 import { isUsableLatex } from "@/lib/tutor/normalize";
 import {
   CONFIDENCE_THRESHOLD,
@@ -93,10 +94,19 @@ export function useTutorEngine({
   }, [editor]);
 
   const selectProblem = useCallback((id: number) => {
-    if (!canSelectProblem(problemsRef.current, id)) return;
+    if (!canSelectProblem(id)) return;
+    const prevId = activeRef.current;
+    if (prevId !== id) {
+      setProblems((prev) => {
+        const next = markProblemFinished(prev, prevId);
+        problemsRef.current = next;
+        return next;
+      });
+    }
+    activeRef.current = id;
     setActiveProblemId(id);
-    setProblems((prev) => finishProblemsBehind(prev, id));
-  }, []);
+    if (editor) goToProblemPage(editor, id);
+  }, [editor]);
 
   const runCluster = useCallback(
     async (options?: {
@@ -117,33 +127,35 @@ export function useTutorEngine({
       const cluster = clusterFromSeeds(editor, seedIds);
       if (!cluster) return false;
 
-      const assigned = assignClusterToProblem(
+      const problemId = getPageProblemId(editor);
+      activeRef.current = problemId;
+      setActiveProblemId(problemId);
+
+      const nextProblems = recordInkOnProblem(
         problemsRef.current,
-        activeRef.current,
+        problemId,
         cluster.bounds,
         extractLatex(cluster.nearbyText),
       );
-      problemsRef.current = assigned.problems;
-      activeRef.current = assigned.activeId;
-      setProblems(assigned.problems);
-      setActiveProblemId(assigned.activeId);
-      setClusterBounds(assigned.problems[assigned.problemId - 1]?.bbox ?? cluster.bounds);
+      problemsRef.current = nextProblems;
+      setProblems(nextProblems);
+      setClusterBounds(nextProblems[problemId - 1]?.bbox ?? cluster.bounds);
 
       applyingRef.current = true;
       try {
-        stampStudentProblemId(editor, cluster.shapeIds, assigned.problemId);
+        stampStudentProblemId(editor, cluster.shapeIds, problemId);
       } finally {
         queueMicrotask(() => {
           applyingRef.current = false;
         });
       }
 
-      const latex = assigned.problems[assigned.problemId - 1]?.latex ?? "";
-      const bbox = assigned.problems[assigned.problemId - 1]?.bbox ?? cluster.bounds;
+      const latex = nextProblems[problemId - 1]?.latex ?? "";
+      const bbox = nextProblems[problemId - 1]?.bbox ?? cluster.bounds;
 
       if (!mode) return false;
       if (!isUsableLatex(latex)) {
-        logger.info({ problemId: assigned.problemId }, "No latex on cluster; skip tutor");
+        logger.info({ problemId }, "No latex on cluster; skip tutor");
         return false;
       }
 
@@ -156,7 +168,7 @@ export function useTutorEngine({
         setBusy("generating", "Reading your work...");
 
         const payload = {
-          problemId: assigned.problemId,
+          problemId,
           latex,
           bbox,
         };

@@ -12,10 +12,11 @@ import {
 } from "./normalize";
 import { expandCluster, padBounds, unionBounds } from "./geometry";
 import {
-  assignClusterToProblem,
   canSelectProblem,
   createProblemSet,
   extractLatex,
+  markProblemFinished,
+  recordInkOnProblem,
 } from "./problems";
 import type { TutorMark } from "./types";
 
@@ -166,57 +167,41 @@ describe("expandCluster", () => {
   });
 });
 
-describe("problem rail assignment", () => {
-  it("unlocks problem 1 on first ink, not by tapping ahead", () => {
-    const set = createProblemSet();
-    assert.equal(canSelectProblem(set, 2), false);
-    const first = assignClusterToProblem(
-      set,
-      1,
-      { x: 0, y: 0, w: 40, h: 20 },
-      "2x+3=7",
-    );
-    assert.equal(first.problemId, 1);
-    assert.equal(first.problems[0]?.unlocked, true);
-    assert.equal(first.problems[0]?.latex, "2x+3=7");
-    assert.equal(canSelectProblem(first.problems, 2), false);
+describe("problem pages", () => {
+  it("treats every number as a page you can open", () => {
+    assert.equal(canSelectProblem(1), true);
+    assert.equal(canSelectProblem(12), true);
+    assert.equal(canSelectProblem(13), false);
   });
 
-  it("keeps incremental ink on the same problem when nearby", () => {
-    const first = assignClusterToProblem(
-      createProblemSet(),
-      1,
-      { x: 0, y: 0, w: 40, h: 20 },
-      "2x",
-    );
-    const next = assignClusterToProblem(
-      first.problems,
-      first.activeId,
-      { x: 20, y: 0, w: 40, h: 20 },
-      "2x+3=7",
-    );
-    assert.equal(next.problemId, 1);
-    assert.equal(next.problems[0]?.latex, "2x+3=7");
-    assert.equal(next.problems[1]?.unlocked, false);
-  });
-
-  it("unlocks the next problem when ink is far from the current work", () => {
-    const first = assignClusterToProblem(
+  it("records ink on the current page only", () => {
+    const first = recordInkOnProblem(
       createProblemSet(),
       1,
       { x: 0, y: 0, w: 40, h: 20 },
       "2x+3=7",
     );
-    const next = assignClusterToProblem(
-      first.problems,
-      first.activeId,
+    assert.equal(first[0]?.latex, "2x+3=7");
+    const farOnSamePage = recordInkOnProblem(
+      first,
+      1,
       { x: 400, y: 0, w: 40, h: 20 },
-      "5+5=10",
+      "",
     );
-    assert.equal(next.problemId, 2);
-    assert.equal(next.problems[0]?.finished, true);
-    assert.equal(next.problems[1]?.unlocked, true);
-    assert.equal(next.problems[1]?.latex, "5+5=10");
+    assert.equal(farOnSamePage[0]?.latex, "2x+3=7");
+    assert.equal(farOnSamePage[1]?.latex, "");
+  });
+
+  it("marks a page done when leaving it after work", () => {
+    const written = recordInkOnProblem(
+      createProblemSet(),
+      1,
+      { x: 0, y: 0, w: 40, h: 20 },
+      "2x+3=7",
+    );
+    const left = markProblemFinished(written, 1);
+    assert.equal(left[0]?.finished, true);
+    assert.equal(left[1]?.finished, false);
   });
 
   it("reuses previous latex when the new cluster has no text", () => {

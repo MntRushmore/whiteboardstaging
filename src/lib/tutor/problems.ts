@@ -1,10 +1,9 @@
-import { boxesNear } from "./geometry";
-import { CLUSTER_GAP_PX, PROBLEM_COUNT, type ClusterBounds, type ProblemRecord } from "./types";
+import { PROBLEM_COUNT, type ClusterBounds, type ProblemRecord } from "./types";
 
 export function createProblemSet(): ProblemRecord[] {
   return Array.from({ length: PROBLEM_COUNT }, (_, i) => ({
     id: i + 1,
-    unlocked: false,
+    unlocked: true,
     finished: false,
     latex: "",
     bbox: null,
@@ -29,51 +28,33 @@ export function unionOrReplace(
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
-/**
- * Ink unlocks a problem. Tapping a locked number must not advance.
- * A new cluster far from the active work finishes the current problem
- * and unlocks the next one.
- */
-export function assignClusterToProblem(
+/** Ink on the current page belongs to that problem only. */
+export function recordInkOnProblem(
   problems: ProblemRecord[],
-  activeId: number,
+  problemId: number,
   bbox: ClusterBounds,
   latex: string,
-): { problemId: number; activeId: number; problems: ProblemRecord[] } {
-  const next = problems.map((p) => ({ ...p }));
-  const active = next[activeId - 1];
-  if (!active) {
-    return { problemId: 1, activeId: 1, problems: next };
-  }
-
-  const nearActive = Boolean(active.bbox && boxesNear(active.bbox, bbox, CLUSTER_GAP_PX));
-  const continueActive = !active.unlocked || nearActive || !active.bbox;
-
-  let problemId = active.id;
-  if (!continueActive) {
-    const nextLocked =
-      next.find((p) => !p.unlocked && p.id > active.id) ?? next.find((p) => !p.unlocked);
-    if (nextLocked) {
-      active.finished = true;
-      problemId = nextLocked.id;
-    }
-  }
-
-  const target = next[problemId - 1];
-  target.unlocked = true;
-  target.latex = extractLatex(latex, target.latex);
-  target.bbox = unionOrReplace(nearActive || problemId === active.id ? target.bbox : null, bbox);
-
-  return { problemId, activeId: problemId, problems: next };
-}
-
-export function canSelectProblem(problems: ProblemRecord[], id: number): boolean {
-  const problem = problems[id - 1];
-  return Boolean(problem?.unlocked);
-}
-
-export function finishProblemsBehind(problems: ProblemRecord[], activeId: number): ProblemRecord[] {
+): ProblemRecord[] {
   return problems.map((p) =>
-    p.unlocked && p.id < activeId && !p.finished ? { ...p, finished: true } : p,
+    p.id === problemId
+      ? {
+          ...p,
+          latex: extractLatex(latex, p.latex),
+          bbox: unionOrReplace(p.bbox, bbox),
+        }
+      : p,
   );
+}
+
+export function markProblemFinished(
+  problems: ProblemRecord[],
+  problemId: number,
+): ProblemRecord[] {
+  return problems.map((p) =>
+    p.id === problemId && (p.latex || p.bbox) ? { ...p, finished: true } : p,
+  );
+}
+
+export function canSelectProblem(id: number): boolean {
+  return Number.isInteger(id) && id >= 1 && id <= PROBLEM_COUNT;
 }

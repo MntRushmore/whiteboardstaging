@@ -42,9 +42,9 @@ import {
   Loading03Icon,
 } from "hugeicons-react";
 import { useTutorEngine } from "@/hooks/useTutorEngine";
-import { LatexStrip } from "@/components/LatexStrip";
 import { ProblemRail } from "@/components/ProblemRail";
-import { CONFIDENCE_THRESHOLD } from "@/lib/tutor/types";
+import { ModeWords } from "@/components/ModeWords";
+import { ensureProblemPages, lockPaperCamera } from "@/lib/tutor/pages";
 import { StatusIndicator, type StatusIndicatorState } from "@/components/StatusIndicator";
 import { logger } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
@@ -999,7 +999,7 @@ function BoardContent({ id }: { id: string }) {
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [statusMessage, setStatusMessage] = useState<string>("");
   const [isVoiceSessionActive, setIsVoiceSessionActive] = useState(false);
-  const [assistanceMode, setAssistanceMode] = useState<"off" | "feedback" | "suggest" | "answer">("off");
+  const [assistanceMode, setAssistanceMode] = useState<"off" | "feedback" | "suggest" | "answer">("suggest");
   const [aiModel, setAiModel] = useState<AIModel>("gemini");
   const { settings: aiPerf, update: updateAiPerf } = useAIPerfSettings();
   const isProcessingRef = useRef(false);
@@ -1694,148 +1694,23 @@ function BoardContent({ id }: { id: string }) {
     };
   }, [editor, id]);
 
+  useEffect(() => {
+    if (!editor) return;
+    ensureProblemPages(editor);
+    lockPaperCamera(editor);
+    editor.setCurrentTool("draw");
+  }, [editor]);
+
   return (
     <>
-      <GenerationSkeleton visible={aiPerf.skeletonEnabled && imageOverlayBusy} />
-
-      {/* Tabs at top left */}
-      {!isVoiceSessionActive && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '16px',
-            left: '16px',
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-          }}
-        >
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => router.back()}
-          >
-            <ArrowLeft01Icon size={20} strokeWidth={2} />
-          </Button>
-          <div className="flex items-center gap-2">
-            <Tabs
-              value={assistanceMode}
-              onValueChange={(value) => setAssistanceMode(value as "off" | "feedback" | "suggest" | "answer")}
-              className="w-auto shadow-sm rounded-lg"
-            >
-              <TabsList>
-                <TabsTrigger value="off">Off</TabsTrigger>
-                <TabsTrigger value="feedback">Feedback</TabsTrigger>
-                <TabsTrigger value="suggest">Socratic</TabsTrigger>
-                <TabsTrigger value="answer">Solve</TabsTrigger>
-              </TabsList>
-            </Tabs>
-            <ModeInfoDialog />
-            {tutor.hasMarks && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="shadow-sm bg-white"
-                onClick={tutor.clearMarks}
-              >
-                Clear marks
-              </Button>
-            )}
-            <ModelBadge
-              model={aiModel}
-              onClick={() => setAiModel((m) => (m === "gemini" ? "gpt" : "gemini"))}
-            />
-            <PerfSettingsPopover
-              fastMode={aiPerf.fastMode}
-              onFastModeChange={(v) => updateAiPerf({ fastMode: v })}
-              downscaleEnabled={aiPerf.downscaleEnabled}
-              onDownscaleEnabledChange={(v) => updateAiPerf({ downscaleEnabled: v })}
-              downscaleMaxEdge={aiPerf.downscaleMaxEdge}
-              onDownscaleMaxEdgeChange={(v) => updateAiPerf({ downscaleMaxEdge: v })}
-              downscaleQuality={aiPerf.downscaleQuality}
-              onDownscaleQualityChange={(v) => updateAiPerf({ downscaleQuality: v })}
-              skeletonEnabled={aiPerf.skeletonEnabled}
-              onSkeletonEnabledChange={(v) => updateAiPerf({ skeletonEnabled: v })}
-              onLegacyImageOverlay={() => {
-                void generateSolution({ source: "auto", force: true });
-              }}
-            />
-            {features.stickers && <StickerLibrary />}
-            {features.worksheetGen && <WorksheetGenerator model={aiModel} />}
-            {features.pdfUpload && <PdfUpload />}
-          </div>
-        </div>
-      )}
-
-      {!isVoiceSessionActive && (
-        <ProblemRail
-          problems={tutor.problems}
-          activeProblemId={tutor.activeProblemId}
-          onSelect={tutor.selectProblem}
-        />
-      )}
-
-      {/* When a voice session is active, let the voice banner own the top-center space. */}
-      {!isVoiceSessionActive && (
-        <div style={{ position: "absolute", top: "100px", left: 0, right: 0, zIndex: 1000 }}>
-          <StatusIndicator
-            status={status}
-            errorMessage={errorMessage}
-            customMessage={statusMessage}
-          />
-        </div>
-      )}
-      {!isVoiceSessionActive && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: "16px",
-            right: "16px",
-            zIndex: 1000,
-            maxWidth: "360px",
-          }}
-        >
-          <CreditsBanner />
-        </div>
-      )}
-      {!isVoiceSessionActive && (
-        <div
-          style={{
-            position: "absolute",
-            top: "16px",
-            right: "16px",
-            zIndex: 1000,
-          }}
-        >
-          <BugReportButton boardId={id} />
-        </div>
-      )}
-      <ImageActionButtons
-        pendingImageIds={pendingImageIds}
-        isVoiceSessionActive={isVoiceSessionActive}
-        onAccept={handleAccept}
-        onReject={handleReject}
+      <ProblemRail
+        problems={tutor.problems}
+        activeProblemId={tutor.activeProblemId}
+        onSelect={tutor.selectProblem}
       />
-      {tutor.lastResult &&
-        tutor.lastResult.confidence >= CONFIDENCE_THRESHOLD &&
-        tutor.lastResult.latex && (
-          <LatexStrip
-            editor={editor}
-            latex={tutor.lastResult.latex}
-            confidence={tutor.lastResult.confidence}
-            bounds={tutor.clusterBounds}
-          />
-        )}
-      <VoiceAgentControls
-        onSessionChange={setIsVoiceSessionActive}
-        getWorkspaceContext={tutor.getWorkspaceContext}
-        onSolveWithPrompt={async (mode) => {
-          return tutor.runNow({
-            modeOverride: mode,
-            force: true,
-          });
-        }}
+      <ModeWords
+        value={assistanceMode}
+        onChange={(mode) => setAssistanceMode(mode)}
       />
     </>
   );
@@ -1902,6 +1777,9 @@ export default function BoardPage() {
           MenuPanel: null,
           NavigationPanel: null,
           HelperButtons: null,
+          MainMenu: null,
+          PageMenu: null,
+          StylePanel: null,
         }}
         onMount={(editor) => {
           if (initialData) {
@@ -1912,6 +1790,9 @@ export default function BoardPage() {
               toast.error("Failed to restore canvas state");
             }
           }
+          ensureProblemPages(editor);
+          lockPaperCamera(editor);
+          editor.setCurrentTool("draw");
         }}
       >
         <BoardContent id={id} />
