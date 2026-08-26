@@ -135,6 +135,7 @@ export function useTutorEngine({
 
   const selectProblem = useCallback((id: number) => {
     if (!canSelectProblem(id)) return;
+    if (id === activeRef.current) return;
     const prevId = activeRef.current;
     if (timerRef.current) {
       clearTimeout(timerRef.current);
@@ -329,7 +330,7 @@ export function useTutorEngine({
         }
         schedule();
       },
-      { source: "user", scope: "document" },
+      { source: "all", scope: "document" },
     );
 
     return () => {

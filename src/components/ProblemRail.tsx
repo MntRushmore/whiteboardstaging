@@ -4,6 +4,7 @@ import type { PointerEvent } from "react";
 import { PROBLEM_COUNT, type ProblemRecord } from "@/lib/tutor/types";
 
 function ignoreCanvas(event: PointerEvent) {
+  event.preventDefault();
   event.stopPropagation();
 }
 
@@ -35,8 +36,10 @@ export function ProblemRail({
             data-testid={`problem-rail-${id}`}
             className={`problem-rail-item${active ? " is-current" : ""}`}
             aria-current={active ? "page" : undefined}
-            onPointerDown={ignoreCanvas}
-            onClick={() => onSelect(id)}
+            onPointerDown={(event) => {
+              ignoreCanvas(event);
+              onSelect(id);
+            }}
           >
             {id}
             {finished && (

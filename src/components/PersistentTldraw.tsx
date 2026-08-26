@@ -23,10 +23,11 @@ export function PersistentTldraw(props: Props) {
 
     const tick = () => {
       const canvas = host.querySelector(".tl-canvas");
-      const gated = host.querySelector('[data-testid="tl-license-expired"]');
       if (canvas) seenCanvas.current = true;
       if (!seenCanvas.current) return;
-      if ((!canvas || gated) && remounts.current < 8) {
+      // A license gate on the apex host must not remount — that wipes ink
+      // and kills the recognize debounce. Keep-alive already leaves the canvas.
+      if (!canvas && remounts.current < 8) {
         seenCanvas.current = false;
         remounts.current += 1;
         setEpoch((value) => value + 1);
