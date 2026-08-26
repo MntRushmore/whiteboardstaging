@@ -1,5 +1,6 @@
 "use client";
 
+import "@/lib/tldraw/keepEditorAlive";
 import { createContext, useContext, type ReactNode } from "react";
 
 const TldrawLicenseContext = createContext<string | undefined>(undefined);

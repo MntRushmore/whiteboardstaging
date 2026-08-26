@@ -1,5 +1,6 @@
 "use client";
 
+import "@/lib/tldraw/keepEditorAlive";
 import {
   Tldraw,
   useEditor,
@@ -46,6 +47,7 @@ import { ModeWords } from "@/components/ModeWords";
 import { ProblemPrompt } from "@/components/ProblemPrompt";
 import { MarkActions } from "@/components/MarkActions";
 import { PAPER, TUTOR_RED } from "@/lib/tutor/layout";
+import { TldrawErrorBoundary } from "@/components/TldrawErrorBoundary";
 import { useTldrawLicense } from "@/components/TldrawLicense";
 import { DEFAULT_ASSISTANCE_MODE } from "@/lib/tutor/types";
 import { ensureProblemPages, lockPaperCamera } from "@/lib/tutor/pages";
@@ -1730,7 +1732,7 @@ function BoardContent({ id }: { id: string }) {
 }
 
 function resolveLicenseKey(passed?: string, injected?: string): string | undefined {
-  const key = passed?.trim() || injected?.trim() || process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY?.trim();
+  const key = passed?.trim() || injected?.trim();
   return key || undefined;
 }
 
@@ -1746,35 +1748,40 @@ export function PaperBoard({
   const key = resolveLicenseKey(licenseKey, injected);
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: PAPER }}>
-      <Tldraw
-        hideUi
-        overrides={hugeIconsOverrides}
-        shapeUtils={[TutorKatexShapeUtil]}
-        licenseKey={key}
-        components={{
-          MenuPanel: null,
-          NavigationPanel: null,
-          HelperButtons: null,
-          MainMenu: null,
-          PageMenu: null,
-          StylePanel: null,
-          Toolbar: null,
-          ActionsMenu: null,
-          QuickActions: null,
-          TopPanel: null,
-          SharePanel: null,
-          Minimap: null,
-          ZoomMenu: null,
-        }}
-        onMount={(editor) => {
-          ensureProblemPages(editor);
-          lockPaperCamera(editor);
-          editor.setCurrentTool("draw");
-        }}
-      >
-        <BoardContent id={boardId} />
-      </Tldraw>
+    <div
+      data-testid="paper-board"
+      style={{ position: "fixed", inset: 0, background: PAPER }}
+    >
+      <TldrawErrorBoundary>
+        <Tldraw
+          hideUi
+          overrides={hugeIconsOverrides}
+          shapeUtils={[TutorKatexShapeUtil]}
+          licenseKey={key}
+          components={{
+            MenuPanel: null,
+            NavigationPanel: null,
+            HelperButtons: null,
+            MainMenu: null,
+            PageMenu: null,
+            StylePanel: null,
+            Toolbar: null,
+            ActionsMenu: null,
+            QuickActions: null,
+            TopPanel: null,
+            SharePanel: null,
+            Minimap: null,
+            ZoomMenu: null,
+          }}
+          onMount={(editor) => {
+            ensureProblemPages(editor);
+            lockPaperCamera(editor);
+            editor.setCurrentTool("draw");
+          }}
+        >
+          <BoardContent id={boardId} />
+        </Tldraw>
+      </TldrawErrorBoundary>
     </div>
   );
 }

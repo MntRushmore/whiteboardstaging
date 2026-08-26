@@ -1,5 +1,6 @@
 "use client";
 
+import "@/lib/tldraw/keepEditorAlive";
 import {
   Tldraw,
   useEditor,
@@ -17,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/components/AuthProvider";
+import { useTldrawLicense } from "@/components/TldrawLicense";
 import { supabase } from "@/lib/supabase";
 
 const TRAINER_EMAIL = "rushilchopra123@gmail.com";
@@ -434,6 +436,7 @@ function TrainContent({
 export default function TrainPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
+  const licenseKey = useTldrawLicense();
 
   useEffect(() => {
     if (loading) return;
@@ -468,7 +471,7 @@ export default function TrainPage() {
   return (
     <div style={{ position: "fixed", inset: 0 }}>
       <Tldraw
-        licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
+        licenseKey={licenseKey}
         components={{
           MenuPanel: null,
           NavigationPanel: null,
