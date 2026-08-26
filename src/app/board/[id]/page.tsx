@@ -2,7 +2,6 @@
 
 import "@/lib/tldraw/keepEditorAlive";
 import {
-  Tldraw,
   useEditor,
   createShapeId,
   AssetRecordType,
@@ -43,8 +42,8 @@ import {
   Loading03Icon,
 } from "hugeicons-react";
 import { TeacherChrome } from "@/components/TeacherChrome";
+import { PersistentTldraw } from "@/components/PersistentTldraw";
 import { PAPER, TUTOR_RED } from "@/lib/tutor/layout";
-import { TldrawErrorBoundary } from "@/components/TldrawErrorBoundary";
 import { useTldrawLicense } from "@/components/TldrawLicense";
 import { DEFAULT_ASSISTANCE_MODE } from "@/lib/tutor/types";
 import { ensureProblemPages, lockPaperCamera } from "@/lib/tutor/pages";
@@ -1719,37 +1718,36 @@ export function PaperBoard({
       data-testid="paper-board"
       style={{ position: "fixed", inset: 0, background: PAPER }}
     >
-      <TldrawErrorBoundary>
-        <Tldraw
-          hideUi
-          overrides={hugeIconsOverrides}
-          shapeUtils={[TutorKatexShapeUtil]}
-          licenseKey={key}
-          components={{
-            MenuPanel: null,
-            NavigationPanel: null,
-            HelperButtons: null,
-            MainMenu: null,
-            PageMenu: null,
-            StylePanel: null,
-            Toolbar: null,
-            ActionsMenu: null,
-            QuickActions: null,
-            TopPanel: null,
-            SharePanel: null,
-            Minimap: null,
-            ZoomMenu: null,
-          }}
-          onMount={(next) => {
-            ensureProblemPages(next);
-            lockPaperCamera(next);
-            next.setCurrentTool("draw");
-            setEditor(next);
-          }}
-        >
-          <BoardContent id={boardId} />
-        </Tldraw>
-      </TldrawErrorBoundary>
+      <PersistentTldraw
+        hideUi
+        overrides={hugeIconsOverrides}
+        shapeUtils={[TutorKatexShapeUtil]}
+        licenseKey={key}
+        components={{
+          MenuPanel: null,
+          NavigationPanel: null,
+          HelperButtons: null,
+          MainMenu: null,
+          PageMenu: null,
+          StylePanel: null,
+          Toolbar: null,
+          ActionsMenu: null,
+          QuickActions: null,
+          TopPanel: null,
+          SharePanel: null,
+          Minimap: null,
+          ZoomMenu: null,
+        }}
+        onMount={(next) => {
+          ensureProblemPages(next);
+          lockPaperCamera(next);
+          next.setCurrentTool("draw");
+          setEditor(next);
+          return () => {
+            setEditor((current) => (current === next ? null : current));
+          };
+        }}
+      />
       {editor ? <TeacherChrome editor={editor} /> : null}
     </div>
   );

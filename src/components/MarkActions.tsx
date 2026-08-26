@@ -17,21 +17,25 @@ export function MarkActions({
   const pos = useValue(
     "tutor-mark-actions",
     () => {
-      const ids = getPendingTutorShapeIds(editor, problemId);
-      if (ids.length === 0) return null;
-      let minX = Infinity;
-      let minY = Infinity;
-      let maxX = -Infinity;
-      for (const id of ids) {
-        const box = editor.getShapePageBounds(id);
-        if (!box) continue;
-        minX = Math.min(minX, box.x);
-        minY = Math.min(minY, box.y);
-        maxX = Math.max(maxX, box.x + box.w);
+      try {
+        const ids = getPendingTutorShapeIds(editor, problemId);
+        if (ids.length === 0) return null;
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        for (const id of ids) {
+          const box = editor.getShapePageBounds(id);
+          if (!box) continue;
+          minX = Math.min(minX, box.x);
+          minY = Math.min(minY, box.y);
+          maxX = Math.max(maxX, box.x + box.w);
+        }
+        if (!Number.isFinite(maxX)) return null;
+        const screen = editor.pageToViewport({ x: maxX + 12, y: minY });
+        return { left: screen.x, top: screen.y };
+      } catch {
+        return null;
       }
-      if (!Number.isFinite(maxX)) return null;
-      const screen = editor.pageToViewport({ x: maxX + 12, y: minY });
-      return { left: screen.x, top: screen.y };
     },
     [editor, problemId],
   );

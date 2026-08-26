@@ -17,7 +17,6 @@ import {
   allChangesAreTutorLayer,
   clusterFromSeeds,
   collectAllStudentText,
-  collectStudentInk,
   studentInkIdsFromDiff,
 } from "@/lib/tutor/cluster";
 import {
@@ -172,10 +171,8 @@ export function useTutorEngine({
       const uiMode = options?.modeOverride ?? modeRef.current;
       const mode = assistanceToTutorMode(uiMode);
 
-      const seedIds =
-        options?.seedIds && options.seedIds.length > 0
-          ? options.seedIds
-          : collectStudentInk(editor).map((s) => s.id);
+      const seedIds = options?.seedIds ?? [];
+      if (seedIds.length === 0) return false;
 
       const cluster = clusterFromSeeds(editor, seedIds);
       if (!cluster) return false;
@@ -222,7 +219,7 @@ export function useTutorEngine({
         const bbox = nextProblems[problemId - 1]?.bbox ?? cluster.bounds;
 
         if (!isUsableLatex(latex)) {
-          logger.info({ problemId }, "No Mathpix latex; skip tutor");
+          logger.info({ problemId }, "Mathpix miss; stay quiet");
           setBusy("idle", "");
           return false;
         }
