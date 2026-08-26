@@ -9,7 +9,6 @@ import {
   DefaultColorThemePalette,
   type TLUiOverrides,
   getSnapshot,
-  loadSnapshot,
 } from "tldraw";
 import React, { useCallback, useState, useRef, useEffect, type ReactElement } from "react";
 import "tldraw/tldraw.css";
@@ -53,16 +52,13 @@ import { TutorKatexShapeUtil } from "@/lib/tutor/TutorKatexShape";
 import { StatusIndicator, type StatusIndicatorState } from "@/components/StatusIndicator";
 import { logger } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
-import { useParams, useRouter } from "next/navigation";
-import { Loader2, Volume2, VolumeX, Info } from "lucide-react";
+import { useParams } from "next/navigation";
+import { Volume2, VolumeX, Info } from "lucide-react";
 import { toast } from "sonner";
-import { useAuth } from "@/components/AuthProvider";
-import { CreditsBanner } from "@/components/CreditsBanner";
 import { StickerLibrary } from "@/components/StickerLibrary";
 import { WorksheetGenerator } from "@/components/WorksheetGenerator";
 import { PdfUpload } from "@/components/PdfUpload";
 import { BugReportButton } from "@/components/BugReportButton";
-import { useFeatureLabs } from "@/lib/featureLabs";
 import { useAIPerfSettings } from "@/lib/aiPerfSettings";
 import { downscaleBlob } from "@/utils/downscaleImage";
 import { Switch } from "@/components/ui/switch";
@@ -1001,8 +997,6 @@ function PerfSettingsPopover({
 
 function BoardContent({ id }: { id: string }) {
   const editor = useEditor();
-  const router = useRouter();
-  const { features } = useFeatureLabs();
   const [pendingImageIds, setPendingImageIds] = useState<TLShapeId[]>([]);
   const [status, setStatus] = useState<StatusIndicatorState>("idle");
   const [errorMessage, setErrorMessage] = useState<string>("");
@@ -1470,6 +1464,7 @@ function BoardContent({ id }: { id: string }) {
   // Auto-save logic
   useEffect(() => {
     if (!editor) return;
+    if (id === "demo") return;
 
     let saveTimeout: NodeJS.Timeout;
 
@@ -1734,58 +1729,8 @@ function BoardContent({ id }: { id: string }) {
   );
 }
 
-export default function BoardPage() {
-  const params = useParams();
-  const router = useRouter();
-  const id = params.id as string;
-  const { user, loading: authLoading } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [initialData, setInitialData] = useState<any>(null);
-
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.replace("/login");
-    }
-  }, [user, authLoading, router]);
-
-  useEffect(() => {
-    if (!user) return;
-    async function loadBoard() {
-      try {
-        const { data, error } = await supabase
-          .from('whiteboards')
-          .select('data')
-          .eq('id', id)
-          .single();
-
-        if (error) throw error;
-
-        if (data) {
-          if (data.data && Object.keys(data.data).length > 0) {
-            setInitialData(data.data);
-          }
-        }
-      } catch (e) {
-        console.error("Error loading board:", e);
-        toast.error("Failed to load board");
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadBoard();
-  }, [id, user]);
-
-  if (authLoading || !user || loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-gray-50">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-          <p className="text-gray-500 font-medium animate-pulse">Loading your canvas...</p>
-        </div>
-      </div>
-    );
-  }
-
+/** Live teacher paper. No session check, no login hop, no banners. */
+export function PaperBoard({ boardId }: { boardId: string }) {
   return (
     <div style={{ position: "fixed", inset: 0 }}>
       <Tldraw
@@ -1801,21 +1746,19 @@ export default function BoardPage() {
           StylePanel: null,
         }}
         onMount={(editor) => {
-          if (initialData) {
-            try {
-              loadSnapshot(editor.store, initialData);
-            } catch (e) {
-              console.error("Failed to load snapshot:", e);
-              toast.error("Failed to restore canvas state");
-            }
-          }
           ensureProblemPages(editor);
           lockPaperCamera(editor);
           editor.setCurrentTool("draw");
         }}
       >
-        <BoardContent id={id} />
+        <BoardContent id={boardId} />
       </Tldraw>
     </div>
   );
+}
+
+export default function BoardPage() {
+  const params = useParams();
+  const id = (params?.id as string) || "demo";
+  return <PaperBoard boardId={id} />;
 }

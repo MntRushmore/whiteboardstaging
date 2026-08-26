@@ -26,16 +26,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoading(false);
-    });
+    let cancelled = false;
+    const failOpen = setTimeout(() => {
+      if (!cancelled) setLoading(false);
+    }, 400);
+
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (cancelled) return;
+        setSession(data.session);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!cancelled) setLoading(false);
+      });
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
+      if (!cancelled) setSession(s);
     });
 
     return () => {
+      cancelled = true;
+      clearTimeout(failOpen);
       sub.subscription.unsubscribe();
     };
   }, []);
