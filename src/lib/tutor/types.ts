@@ -1,6 +1,11 @@
 export const TUTOR_LAYER_META = "tutorLayer" as const;
 export const PROBLEM_META = "problemId" as const;
 export const TUTOR_DIAGRAM_META = "tutorDiagram" as const;
+export const TUTOR_PENDING_META = "tutorPending" as const;
+
+export function isPendingTutorMeta(meta: Record<string, unknown> | undefined): boolean {
+  return meta?.[TUTOR_LAYER_META] === true && meta?.[TUTOR_PENDING_META] === true;
+}
 
 export const PROBLEM_COUNT = 12;
 

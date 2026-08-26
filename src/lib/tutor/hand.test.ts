@@ -10,6 +10,7 @@ import {
 import { ATLAS, ATLAS_CALC_EXTRAS, COMMON_LETTERS, hasGlyph, isGreekChar } from "./hand/atlas";
 import { composeDiagram, DIAGRAM_KINDS } from "./hand/diagrams";
 import { DEMO_PROBLEMS } from "./problems";
+import { TUTOR_LAYER_META, TUTOR_PENDING_META, isPendingTutorMeta } from "./types";
 import { DEFAULT_ASSISTANCE_MODE, TUTOR_DEBOUNCE_MS } from "./types";
 import { mulberry32 } from "./hand/path";
 import { splitSolveNote } from "./hand/solve";
@@ -240,6 +241,15 @@ describe("demo set", () => {
     );
     assert.equal(DEFAULT_ASSISTANCE_MODE, "suggest");
     assert.equal(TUTOR_DEBOUNCE_MS, 2000);
+    assert.equal(DEMO_PROBLEMS[7]?.title.startsWith("Water drains from an inverted cone."), true);
+    assert.equal(
+      isPendingTutorMeta({ [TUTOR_LAYER_META]: true, [TUTOR_PENDING_META]: true }),
+      true,
+    );
+    assert.equal(
+      isPendingTutorMeta({ [TUTOR_LAYER_META]: true, [TUTOR_PENDING_META]: false }),
+      false,
+    );
     for (const kind of DIAGRAM_KINDS) {
       const ink = composeDiagram(kind);
       assert.ok(ink.segments.length >= 3, kind);

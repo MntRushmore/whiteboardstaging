@@ -215,6 +215,32 @@
   color: rgba(17, 17, 17, 0.38);
 }
 
+.mark-actions {
+  position: absolute;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.mark-actions-item {
+  height: 32px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  color: #111111;
+  cursor: pointer;
+}
+
+.mark-actions-item.is-reject {
+  color: rgba(17, 17, 17, 0.38);
+}
+
 .mode-words {
   position: absolute;
   left: 16px;

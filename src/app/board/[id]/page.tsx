@@ -45,6 +45,7 @@ import { useTutorEngine } from "@/hooks/useTutorEngine";
 import { ProblemRail } from "@/components/ProblemRail";
 import { ModeWords } from "@/components/ModeWords";
 import { ProblemPrompt } from "@/components/ProblemPrompt";
+import { MarkActions } from "@/components/MarkActions";
 import { TUTOR_RED } from "@/lib/tutor/layout";
 import { DEFAULT_ASSISTANCE_MODE } from "@/lib/tutor/types";
 import { ensureProblemPages, lockPaperCamera } from "@/lib/tutor/pages";
@@ -1719,6 +1720,12 @@ function BoardContent({ id }: { id: string }) {
         onSelect={tutor.selectProblem}
       />
       <ProblemPrompt problem={tutor.problems[tutor.activeProblemId - 1]} />
+      <MarkActions
+        editor={editor}
+        problemId={tutor.activeProblemId}
+        onAccept={tutor.acceptMarks}
+        onReject={tutor.rejectMarks}
+      />
       <ModeWords
         value={assistanceMode}
         onChange={(mode) => setAssistanceMode(mode)}

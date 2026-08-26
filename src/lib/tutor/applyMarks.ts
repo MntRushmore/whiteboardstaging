@@ -7,6 +7,8 @@ import {
   PROBLEM_META,
   TUTOR_DIAGRAM_META,
   TUTOR_LAYER_META,
+  TUTOR_PENDING_META,
+  isPendingTutorMeta,
   type TutorMark,
   type TutorMode,
 } from "./types";
@@ -26,6 +28,21 @@ const TUTOR_DRAW = {
 
 function isDiagramShape(shape: { meta?: Record<string, unknown> }): boolean {
   return shape.meta?.[TUTOR_DIAGRAM_META] === true;
+}
+
+export function isPendingTutorShape(shape: { meta?: Record<string, unknown> }): boolean {
+  return isPendingTutorMeta(shape.meta);
+}
+
+export function getPendingTutorShapeIds(editor: Editor, problemId?: number): TLShapeId[] {
+  return editor
+    .getCurrentPageShapes()
+    .filter((shape) => {
+      if (!isPendingTutorShape(shape)) return false;
+      if (problemId == null) return true;
+      return (shape.meta as Record<string, unknown> | undefined)?.[PROBLEM_META] === problemId;
+    })
+    .map((shape) => shape.id);
 }
 
 export function getTutorShapeIds(
@@ -68,11 +85,54 @@ function tutorMeta(mark: TutorMark, extra?: Record<string, unknown>) {
     latex: mark.latex,
     bbox: mark.bbox,
     markKind: mark.kind,
+    [TUTOR_PENDING_META]: true,
     ...extra,
   };
 }
 
-export function syncGeometryDiagram(editor: Editor, problemId: number): TLShapeId[] {
+export function acceptTutorMarks(editor: Editor, problemId?: number): void {
+  const ids = getPendingTutorShapeIds(editor, problemId);
+  if (ids.length === 0) return;
+  editor.run(
+    () => {
+      for (const id of ids) {
+        const shape = editor.getShape(id);
+        if (!shape) continue;
+        const meta = (shape.meta ?? {}) as Record<string, unknown>;
+        editor.updateShape({
+          id,
+          type: shape.type,
+          meta: { ...meta, [TUTOR_PENDING_META]: false },
+        });
+      }
+    },
+    { history: "ignore", ignoreShapeLock: true },
+  );
+}
+
+export function rejectTutorMarks(editor: Editor, problemId?: number): TLShapeId[] {
+  const ids = getPendingTutorShapeIds(editor, problemId);
+  if (ids.length === 0) return [];
+  editor.run(
+    () => {
+      for (const id of ids) {
+        const shape = editor.getShape(id);
+        if (!shape) continue;
+        editor.updateShape({ id, type: shape.type, isLocked: false });
+      }
+      editor.deleteShapes(ids);
+    },
+    { ignoreShapeLock: true },
+  );
+  return ids;
+}
+
+export function syncGeometryDiagram(
+  editor: Editor,
+  problemId: number,
+  opts?: { skip?: boolean },
+): TLShapeId[] {
+  if (opts?.skip) return [];
   const demo = getDemoProblem(problemId);
   const existing = editor.getCurrentPageShapes().filter((shape) => isTutorShape(shape) && isDiagramShape(shape));
 
@@ -114,6 +174,7 @@ export function syncGeometryDiagram(editor: Editor, problemId: number): TLShapeI
           [TUTOR_LAYER_META]: true,
           [PROBLEM_META]: problemId,
           [TUTOR_DIAGRAM_META]: true,
+          [TUTOR_PENDING_META]: true,
           diagram: demo.diagram,
         },
         props: {

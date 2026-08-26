@@ -5,9 +5,12 @@ import type { Editor, TLShapeId } from "tldraw";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
 import {
+  acceptTutorMarks,
   applyTutorMarks,
   clearTutorMarks,
   fadeInTutorShapes,
+  getPendingTutorShapeIds,
+  rejectTutorMarks,
   stampStudentProblemId,
   syncGeometryDiagram,
 } from "@/lib/tutor/applyMarks";
@@ -55,6 +58,7 @@ export function useTutorEngine({
   const [lastResult, setLastResult] = useState<TutorResponse | null>(null);
   const [clusterBounds, setClusterBounds] = useState<ClusterBounds | null>(null);
   const [hasMarks, setHasMarks] = useState(false);
+  const [hasPending, setHasPending] = useState(false);
   const [problems, setProblems] = useState<ProblemRecord[]>(() => createProblemSet());
   const [activeProblemId, setActiveProblemId] = useState(1);
 
@@ -69,6 +73,7 @@ export function useTutorEngine({
   const onStatusRef = useRef(onStatus);
   const problemsRef = useRef(problems);
   const activeRef = useRef(activeProblemId);
+  const rejectedDiagramsRef = useRef(new Set<number>());
 
   modeRef.current = assistanceMode;
   autoRef.current = autoEnabled;
@@ -81,12 +86,49 @@ export function useTutorEngine({
     onStatusRef.current?.(status, message);
   }, []);
 
+  const refreshPending = useCallback(() => {
+    if (!editor) {
+      setHasPending(false);
+      return;
+    }
+    setHasPending(getPendingTutorShapeIds(editor, activeRef.current).length > 0);
+  }, [editor]);
+
   const clearMarks = useCallback(() => {
     if (!editor) return;
     applyingRef.current = true;
     try {
       clearTutorMarks(editor, activeRef.current);
       setHasMarks(false);
+      refreshPending();
+    } finally {
+      queueMicrotask(() => {
+        applyingRef.current = false;
+      });
+    }
+  }, [editor, refreshPending]);
+
+  const acceptMarks = useCallback(() => {
+    if (!editor) return;
+    applyingRef.current = true;
+    try {
+      acceptTutorMarks(editor, activeRef.current);
+      setHasPending(false);
+    } finally {
+      queueMicrotask(() => {
+        applyingRef.current = false;
+      });
+    }
+  }, [editor]);
+
+  const rejectMarks = useCallback(() => {
+    if (!editor) return;
+    applyingRef.current = true;
+    try {
+      const removed = rejectTutorMarks(editor, activeRef.current);
+      if (removed.length > 0) rejectedDiagramsRef.current.add(activeRef.current);
+      setHasMarks(false);
+      setHasPending(false);
     } finally {
       queueMicrotask(() => {
         applyingRef.current = false;
@@ -110,14 +152,17 @@ export function useTutorEngine({
       goToProblemPage(editor, id);
       applyingRef.current = true;
       try {
-        syncGeometryDiagram(editor, id);
+        syncGeometryDiagram(editor, id, {
+          skip: rejectedDiagramsRef.current.has(id),
+        });
+        refreshPending();
       } finally {
         queueMicrotask(() => {
           applyingRef.current = false;
         });
       }
     }
-  }, [editor]);
+  }, [editor, refreshPending]);
 
   const runCluster = useCallback(
     async (options?: {
@@ -225,6 +270,7 @@ export function useTutorEngine({
         const ids = applyTutorMarks(editor, result.marks, result.mode);
         fadeInTutorShapes(editor, ids);
         setHasMarks(ids.length > 0);
+        setHasPending(ids.length > 0);
         queueMicrotask(() => {
           applyingRef.current = false;
         });
@@ -300,13 +346,16 @@ export function useTutorEngine({
     if (!editor) return;
     applyingRef.current = true;
     try {
-      syncGeometryDiagram(editor, activeProblemId);
+      syncGeometryDiagram(editor, activeProblemId, {
+        skip: rejectedDiagramsRef.current.has(activeProblemId),
+      });
+      refreshPending();
     } finally {
       queueMicrotask(() => {
         applyingRef.current = false;
       });
     }
-  }, [editor, activeProblemId]);
+  }, [editor, activeProblemId, refreshPending]);
 
   const getWorkspaceContext = useCallback(() => {
     const active = problemsRef.current[activeRef.current - 1];
@@ -319,7 +368,10 @@ export function useTutorEngine({
     lastResult,
     clusterBounds,
     hasMarks,
+    hasPending,
     clearMarks,
+    acceptMarks,
+    rejectMarks,
     runNow: runCluster,
     getWorkspaceContext,
     problems,
