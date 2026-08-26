@@ -123,9 +123,10 @@
   }
 }
 
-/* Force tldraw canvas to be completely white */
+/* Force tldraw canvas to be completely white; overlay notes use Geist via --tl-font-sans. */
 .tldraw__editor {
   background-color: #ffffff !important;
+  --tl-font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
 .tl-background {

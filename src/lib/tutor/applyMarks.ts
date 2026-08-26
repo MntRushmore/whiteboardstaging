@@ -1,6 +1,7 @@
 import { createShapeId, toRichText, type Editor, type TLShapeId } from "tldraw";
-import { PROBLEM_META, TUTOR_LAYER_META, type TutorMark } from "./types";
 import { isTutorShape } from "./cluster";
+import { CIRCLE_STROKE_SCALE, NOTE_FONT_SCALE, unscaledTextWidth } from "./layout";
+import { PROBLEM_META, TUTOR_LAYER_META, type TutorMark } from "./types";
 
 export function getTutorShapeIds(editor: Editor, problemId?: number): TLShapeId[] {
   return editor
@@ -36,6 +37,7 @@ function tutorMeta(mark: TutorMark) {
     [PROBLEM_META]: mark.problemId,
     latex: mark.latex,
     bbox: mark.bbox,
+    markKind: mark.kind,
   };
 }
 
@@ -64,26 +66,28 @@ export function applyTutorMarks(editor: Editor, marks: TutorMark[]): TLShapeId[]
             type: "geo",
             props: {
               geo: "ellipse",
-              w: Math.max(24, mark.w),
-              h: Math.max(24, mark.h),
-              color: "light-blue",
+              w: mark.w,
+              h: mark.h,
+              color: "red",
               fill: "none",
               dash: "solid",
-              size: "m",
+              size: "s",
+              scale: CIRCLE_STROKE_SCALE,
             },
           });
         } else if (mark.kind === "caret") {
           editor.createShape({
             ...common,
+            x: mark.x - mark.w / 2,
             type: "text",
             props: {
-              color: "orange",
+              color: "red",
               size: "s",
               font: "sans",
-              textAlign: "start",
-              w: 32,
+              textAlign: "middle",
+              w: unscaledTextWidth(mark.w),
               richText: toRichText("^"),
-              scale: 1,
+              scale: NOTE_FONT_SCALE,
               autoSize: true,
             },
           });
@@ -126,14 +130,14 @@ export function applyTutorMarks(editor: Editor, marks: TutorMark[]): TLShapeId[]
             ...common,
             type: "text",
             props: {
-              color: "blue",
+              color: "red",
               size: "s",
               font: "sans",
               textAlign: "start",
-              w: Math.max(140, mark.w),
+              w: unscaledTextWidth(mark.w),
               richText: toRichText(text),
-              scale: 1,
-              autoSize: true,
+              scale: NOTE_FONT_SCALE,
+              autoSize: false,
             },
           });
         }

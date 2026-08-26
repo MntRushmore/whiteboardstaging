@@ -18,6 +18,19 @@ import {
   markProblemFinished,
   recordInkOnProblem,
 } from "./problems";
+import {
+  CARET_GAP_PX,
+  CIRCLE_PAD_PX,
+  CIRCLE_STROKE_PX,
+  CIRCLE_STROKE_SCALE,
+  NOTE_FONT_SCALE,
+  SOCRATIC_FONT_PX,
+  SOCRATIC_GAP_PX,
+  SOCRATIC_MAX_CH,
+  SOCRATIC_WIDTH_PX,
+  SOLVE_GAP_PX,
+  SOLVE_WIDTH_PX,
+} from "./layout";
 import type { TutorMark } from "./types";
 
 function mark(kind: TutorMark["kind"], text?: string): TutorMark {
@@ -43,8 +56,24 @@ describe("parseTutorMode", () => {
   });
 });
 
+describe("overlay spacing lock", () => {
+  it("keeps Simon's overlay constants", () => {
+    assert.equal(SOCRATIC_GAP_PX, 12);
+    assert.equal(SOCRATIC_MAX_CH, 28);
+    assert.equal(SOCRATIC_FONT_PX, 14);
+    assert.equal(SOCRATIC_WIDTH_PX, 28 * 14 * 0.6);
+    assert.equal(CIRCLE_STROKE_PX, 1.5);
+    assert.equal(CIRCLE_PAD_PX, 6);
+    assert.equal(CARET_GAP_PX, 8);
+    assert.equal(SOLVE_WIDTH_PX, 280);
+    assert.equal(SOLVE_GAP_PX, 16);
+    assert.equal(CIRCLE_STROKE_SCALE, 1.5 / 2);
+    assert.equal(NOTE_FONT_SCALE, 14 / 18);
+  });
+});
+
 describe("constrainMarks", () => {
-  it("limits socratic to one margin question", () => {
+  it("places one socratic question 12px right of the bbox, max 28ch", () => {
     const result = constrainMarks("socratic", [
       mark("underline"),
       mark("circle"),
@@ -57,9 +86,12 @@ describe("constrainMarks", () => {
       ["note"],
     );
     assert.equal(result[0]?.text, "What is the coefficient of x?");
+    assert.equal(result[0]?.x, 0 + 100 + 12);
+    assert.equal(result[0]?.y, 0);
+    assert.equal(result[0]?.w, 28 * 14 * 0.6);
   });
 
-  it("pins solve notes to the right of the work", () => {
+  it("pins the solve column 16px right of the bbox at 280px wide", () => {
     const result = constrainMarks("solve", [
       mark("circle"),
       mark("note", "x = 2"),
@@ -70,11 +102,14 @@ describe("constrainMarks", () => {
       result.map((m) => m.kind),
       ["note", "note"],
     );
-    assert.equal(result[0]?.x, 120);
-    assert.equal(result[1]?.y, 32);
+    assert.equal(result[0]?.x, 0 + 100 + 16);
+    assert.equal(result[0]?.w, 280);
+    assert.equal(result[1]?.x, 0 + 100 + 16);
+    assert.equal(result[1]?.w, 280);
+    assert.equal(result[1]?.y, 22);
   });
 
-  it("keeps only a circle and caret in feedback", () => {
+  it("pads the feedback circle 6px around the ink and drops the caret 8px under", () => {
     const result = constrainMarks("feedback", [
       mark("circle"),
       mark("underline"),
@@ -85,6 +120,24 @@ describe("constrainMarks", () => {
       result.map((m) => m.kind),
       ["circle", "caret"],
     );
+    const circle = result[0]!;
+    const caret = result[1]!;
+    assert.equal(circle.x, 0 - 6);
+    assert.equal(circle.y, 0 - 6);
+    assert.equal(circle.w, 100 + 12);
+    assert.equal(circle.h, 40 + 12);
+    assert.equal(caret.x, 50);
+    assert.equal(caret.y, 0 + 40 + 8);
+  });
+
+  it("emits a circle and caret from the bbox when feedback omits them", () => {
+    const result = constrainMarks("feedback", [mark("note", "Sign error here")]);
+    assert.deepEqual(
+      result.map((m) => m.kind),
+      ["circle", "caret"],
+    );
+    assert.equal(result[0]?.x, -6);
+    assert.equal(result[1]?.y, 48);
   });
 });
 

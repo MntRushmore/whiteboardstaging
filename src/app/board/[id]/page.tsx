@@ -44,6 +44,7 @@ import {
 import { useTutorEngine } from "@/hooks/useTutorEngine";
 import { ProblemRail } from "@/components/ProblemRail";
 import { ModeWords } from "@/components/ModeWords";
+import { TUTOR_RED } from "@/lib/tutor/layout";
 import { ensureProblemPages, lockPaperCamera } from "@/lib/tutor/pages";
 import { StatusIndicator, type StatusIndicatorState } from "@/components/StatusIndicator";
 import { logger } from "@/lib/logger";
@@ -72,6 +73,10 @@ import { GenerationSkeleton } from "@/components/GenerationSkeleton";
 // Ensure the tldraw canvas background is pure white in both light and dark modes
 DefaultColorThemePalette.lightMode.background = "#FFFFFF";
 DefaultColorThemePalette.darkMode.background = "#FFFFFF";
+DefaultColorThemePalette.lightMode.red.solid = TUTOR_RED;
+DefaultColorThemePalette.lightMode.red.fill = TUTOR_RED;
+DefaultColorThemePalette.darkMode.red.solid = TUTOR_RED;
+DefaultColorThemePalette.darkMode.red.fill = TUTOR_RED;
 
 const hugeIconsOverrides: TLUiOverrides = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

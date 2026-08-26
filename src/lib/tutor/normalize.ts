@@ -1,3 +1,4 @@
+import { applyOverlayLayout } from "./layout";
 import {
   MARK_KINDS,
   TUTOR_MODES,
@@ -94,28 +95,26 @@ export function mapNormalizedMarkToPage(
 export function constrainMarks(mode: TutorMode, marks: TutorMark[]): TutorMark[] {
   if (mode === "socratic") {
     const note = marks.find((m) => m.kind === "note" && m.text);
-    return note ? [note] : [];
+    return applyOverlayLayout("socratic", note ? [note] : []);
   }
 
   if (mode === "solve") {
-    return pinSolveNotes(
+    return applyOverlayLayout(
+      "solve",
       marks.filter((m) => m.kind === "note" && m.text).slice(0, 5),
     );
   }
 
   const circle = marks.find((m) => m.kind === "circle");
   const caret = marks.find((m) => m.kind === "caret");
-  return [circle, caret].filter((m): m is TutorMark => Boolean(m));
-}
-
-export function pinSolveNotes(marks: TutorMark[]): TutorMark[] {
-  return marks.map((mark, i) => ({
-    ...mark,
-    x: mark.bbox.x + mark.bbox.w + 20,
-    y: mark.bbox.y + i * 32,
-    w: Math.max(mark.w, 160),
-    h: Math.max(mark.h, 22),
-  }));
+  const seed = marks[0];
+  if (!seed) return [];
+  return applyOverlayLayout(
+    "feedback",
+    [circle, caret].filter((m): m is TutorMark => Boolean(m)).length
+      ? [circle, caret].filter((m): m is TutorMark => Boolean(m))
+      : [seed],
+  );
 }
 
 export function downsamplePoints(
