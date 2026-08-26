@@ -3,8 +3,8 @@ import { solutionLogger } from '@/lib/logger';
 import { requireKey, getSiteUrl } from '@/lib/aiConfig';
 
 /**
- * Hidden / manual fallback: redraws the board as a generated bitmap.
- * The live pencil loop uses POST /api/tutor (JSON marks) instead.
+ * Hidden / manual bitmap redraw. Not a fallback for the live pencil loop.
+ * Empty LaTeX is a Mathpix miss. A bad mark is a Flash miss. Stay quiet.
  */
 export async function POST(req: NextRequest) {
   const startTime = Date.now();

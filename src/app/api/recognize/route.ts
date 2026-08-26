@@ -55,10 +55,14 @@ export async function POST(req: NextRequest) {
     const latex = latexFromMathpix(data);
     const confidence = clampConfidence(data.confidence ?? data.confidence_rate ?? 0);
 
-    tutorLogger.info(
-      { requestId, latexChars: latex.length, confidence },
-      "Mathpix strokes recognized",
-    );
+    if (!latex) {
+      tutorLogger.info({ requestId, confidence }, "Mathpix miss; stay quiet");
+    } else {
+      tutorLogger.info(
+        { requestId, latexChars: latex.length, confidence },
+        "Mathpix strokes recognized",
+      );
+    }
 
     return NextResponse.json({ latex, confidence });
   } catch (error) {

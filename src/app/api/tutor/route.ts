@@ -8,7 +8,6 @@ import {
   mapNormalizedMarkToPage,
   parseJsonObject,
   parseNormalizedMark,
-  parseTutorMode,
 } from "@/lib/tutor/normalize";
 import {
   isProblemId,
@@ -119,7 +118,8 @@ export async function POST(req: NextRequest) {
     const problemId = Number(body.problemId);
     const latex = typeof body.latex === "string" ? body.latex.trim() : "";
     const bbox = body.bbox as ClusterBounds | undefined;
-    const mode = parseTutorMode(req.nextUrl.searchParams.get("mode"), "socratic");
+    // Live lock: one Socratic mark. Ignore Solve/Feedback query params.
+    const mode = "socratic" as const;
 
     if (!isProblemId(problemId)) {
       return NextResponse.json({ error: "problemId must be 1–12" }, { status: 400 });
@@ -139,13 +139,15 @@ export async function POST(req: NextRequest) {
         confidence: 0,
         mode,
         marks: [],
+        miss: "mathpix",
       };
+      tutorLogger.info({ requestId, problemId }, "Mathpix miss; stay quiet");
       return NextResponse.json(empty);
     }
 
     const openrouterKey = requireKey("openrouter");
     if (!openrouterKey.ok) {
-      tutorLogger.info({ requestId }, "OPENROUTER_API_KEY missing; skip marks");
+      tutorLogger.info({ requestId }, "Flash miss; stay quiet");
       return NextResponse.json({
         problemId,
         latex,
@@ -153,6 +155,7 @@ export async function POST(req: NextRequest) {
         confidence: 0,
         mode,
         marks: [],
+        miss: "flash",
       });
     }
 
@@ -171,13 +174,15 @@ export async function POST(req: NextRequest) {
         .map((m) => mapNormalizedMarkToPage(m, "", bbox, problemId, latex)),
     );
 
+    const usableNote = marks[0]?.kind === "note" && Boolean(marks[0]?.text?.trim());
     const result: TutorResponse = {
       problemId,
       latex,
       bbox,
       confidence,
       mode,
-      marks,
+      marks: usableNote ? marks.slice(0, 1) : [],
+      miss: usableNote ? undefined : "flash",
     };
 
     tutorLogger.info(
@@ -187,10 +192,11 @@ export async function POST(req: NextRequest) {
         problemId,
         mode,
         confidence,
-        markCount: marks.length,
+        markCount: result.marks.length,
         latexChars: latex.length,
+        miss: result.miss,
       },
-      "Tutor request completed",
+      result.miss ? "Flash miss; stay quiet" : "Tutor request completed",
     );
 
     return NextResponse.json(result);

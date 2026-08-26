@@ -26,12 +26,11 @@ import {
   recordInkOnProblem,
 } from "@/lib/tutor/problems";
 import { getPageProblemId, goToProblemPage } from "@/lib/tutor/pages";
+import { decideSocraticAnswer } from "@/lib/tutor/answer";
 import { isUsableLatex } from "@/lib/tutor/normalize";
 import { recognizeStrokes } from "@/lib/tutor/recognize";
 import {
-  CONFIDENCE_THRESHOLD,
   TUTOR_DEBOUNCE_MS,
-  assistanceToTutorMode,
   type AssistanceMode,
   type ClusterBounds,
   type ProblemRecord,
@@ -160,16 +159,10 @@ export function useTutorEngine({
     }
   }, [editor, refreshPending]);
 
+  /** Last stroke cluster → Mathpix → one Socratic mark. No picture fallback. */
   const runCluster = useCallback(
-    async (options?: {
-      seedIds?: TLShapeId[];
-      modeOverride?: AssistanceMode;
-      force?: boolean;
-    }): Promise<boolean> => {
+    async (options?: { seedIds?: TLShapeId[] }): Promise<boolean> => {
       if (!editor || processingRef.current) return false;
-
-      const uiMode = options?.modeOverride ?? modeRef.current;
-      const mode = assistanceToTutorMode(uiMode);
 
       const seedIds = options?.seedIds ?? [];
       if (seedIds.length === 0) return false;
@@ -189,8 +182,6 @@ export function useTutorEngine({
           applyingRef.current = false;
         });
       }
-
-      if (!mode) return false;
 
       processingRef.current = true;
       abortRef.current?.abort();
@@ -217,24 +208,17 @@ export function useTutorEngine({
         setClusterBounds(nextProblems[problemId - 1]?.bbox ?? cluster.bounds);
 
         const bbox = nextProblems[problemId - 1]?.bbox ?? cluster.bounds;
-
         if (!isUsableLatex(latex)) {
-          logger.info({ problemId }, "Mathpix miss; stay quiet");
+          logger.info({ problemId, latex }, "Mathpix miss; stay quiet");
           setBusy("idle", "");
           return false;
         }
 
-        const payload = {
-          problemId,
-          latex,
-          bbox,
-        };
-
-        const response = await fetch(`/api/tutor?mode=${mode}`, {
+        const response = await fetch("/api/tutor?mode=socratic", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: abort.signal,
-          body: JSON.stringify(payload),
+          body: JSON.stringify({ problemId, latex, bbox }),
         });
 
         if (abort.signal.aborted) {
@@ -249,26 +233,41 @@ export function useTutorEngine({
               errBody?.message ||
               "Account credits depleted — please talk to Rushil to refill your account!";
             toast.error(msg, { duration: 8000 });
-            throw new Error(msg);
+            logger.info({ problemId, latex }, "Flash miss; stay quiet");
+            setBusy("idle", "");
+            return false;
           }
-          throw new Error(errBody?.error || "Tutor request failed");
+          logger.info(
+            { problemId, latex, status: response.status },
+            "Flash miss; stay quiet",
+          );
+          setBusy("idle", "");
+          return false;
         }
 
         const result = (await response.json()) as TutorResponse;
         lastResultRef.current = result;
         setLastResult(result);
 
-        if (result.confidence < CONFIDENCE_THRESHOLD) {
+        const decision = decideSocraticAnswer(seedIds.length, result.latex, result.marks);
+        if (decision.action === "quiet") {
           logger.info(
-            { confidence: result.confidence, latex: result.latex, problemId: result.problemId },
-            "Tutor confidence too low; leaving ink untouched",
+            {
+              problemId: result.problemId,
+              latex: result.latex,
+              miss: result.miss,
+              reason: decision.reason,
+            },
+            decision.reason === "mathpix-miss"
+              ? "Mathpix miss; stay quiet"
+              : "Flash miss; stay quiet",
           );
           setBusy("idle", "");
           return false;
         }
 
         applyingRef.current = true;
-        const ids = applyTutorMarks(editor, result.marks, result.mode);
+        const ids = applyTutorMarks(editor, decision.marks, "socratic");
         fadeInTutorShapes(editor, ids);
         setHasMarks(ids.length > 0);
         setHasPending(ids.length > 0);
@@ -276,7 +275,7 @@ export function useTutorEngine({
           applyingRef.current = false;
         });
 
-        setBusy("success", successMessage(uiMode));
+        setBusy("success", "Question added");
         setTimeout(() => setBusy("idle", ""), 1600);
         return true;
       } catch (error) {
@@ -284,12 +283,8 @@ export function useTutorEngine({
           setBusy("idle", "");
           return false;
         }
-        logger.error({ error }, "Tutor engine error");
-        setBusy(
-          "error",
-          error instanceof Error ? error.message : "Tutor failed",
-        );
-        setTimeout(() => setBusy("idle", ""), 3000);
+        logger.info({ error, problemId }, "Flash miss; stay quiet");
+        setBusy("idle", "");
         return false;
       } finally {
         processingRef.current = false;
@@ -369,17 +364,4 @@ export function useTutorEngine({
     activeProblemId,
     selectProblem,
   };
-}
-
-function successMessage(mode: AssistanceMode): string {
-  switch (mode) {
-    case "feedback":
-      return "Feedback added";
-    case "suggest":
-      return "Question added";
-    case "answer":
-      return "Steps added";
-    default:
-      return "";
-  }
 }

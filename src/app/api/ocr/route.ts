@@ -3,8 +3,8 @@ import { ocrLogger } from '@/lib/logger';
 import { requireKey } from '@/lib/aiConfig';
 
 /**
- * Whole-board Pixtral OCR. Not used by the live pencil tutor loop
- * (that path crops recent strokes and calls POST /api/tutor).
+ * Whole-board Pixtral OCR. Never a fallback for the live pencil loop.
+ * That path is last-cluster strokes → Mathpix → one Socratic mark, or silence.
  */
 export async function POST(req: NextRequest) {
   const startTime = Date.now();

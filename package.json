@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test src/lib/tutor/normalize.test.ts src/lib/tutor/hand.test.ts src/lib/tldraw/keepEditorAlive.test.ts",
+    "test": "tsx --test src/lib/tutor/normalize.test.ts src/lib/tutor/hand.test.ts src/lib/tutor/answer.test.ts src/lib/tldraw/keepEditorAlive.test.ts",
     "postinstall": "patch-package"
   },
   "dependencies": {

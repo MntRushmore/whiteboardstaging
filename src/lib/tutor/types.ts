@@ -45,6 +45,8 @@ export type TutorMark = {
   bbox: ClusterBounds;
 };
 
+export type TutorMiss = "mathpix" | "flash";
+
 export type TutorResponse = {
   problemId: number;
   latex: string;
@@ -52,6 +54,8 @@ export type TutorResponse = {
   confidence: number;
   mode: TutorMode;
   marks: TutorMark[];
+  /** Set when a teacher write dies: empty LaTeX = Mathpix, bad mark = Flash. */
+  miss?: TutorMiss;
 };
 
 export type ProblemRecord = {
