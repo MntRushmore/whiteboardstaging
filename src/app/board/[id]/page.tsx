@@ -45,7 +45,8 @@ import { ProblemRail } from "@/components/ProblemRail";
 import { ModeWords } from "@/components/ModeWords";
 import { ProblemPrompt } from "@/components/ProblemPrompt";
 import { MarkActions } from "@/components/MarkActions";
-import { TUTOR_RED } from "@/lib/tutor/layout";
+import { PAPER, TUTOR_RED } from "@/lib/tutor/layout";
+import { useTldrawLicense } from "@/components/TldrawLicense";
 import { DEFAULT_ASSISTANCE_MODE } from "@/lib/tutor/types";
 import { ensureProblemPages, lockPaperCamera } from "@/lib/tutor/pages";
 import { TutorKatexShapeUtil } from "@/lib/tutor/TutorKatexShape";
@@ -70,9 +71,8 @@ import {
 import { Settings } from "lucide-react";
 import { GenerationSkeleton } from "@/components/GenerationSkeleton";
 
-// Ensure the tldraw canvas background is pure white in both light and dark modes
-DefaultColorThemePalette.lightMode.background = "#FFFFFF";
-DefaultColorThemePalette.darkMode.background = "#FFFFFF";
+DefaultColorThemePalette.lightMode.background = PAPER;
+DefaultColorThemePalette.darkMode.background = PAPER;
 DefaultColorThemePalette.lightMode.red.solid = TUTOR_RED;
 DefaultColorThemePalette.lightMode.red.fill = TUTOR_RED;
 DefaultColorThemePalette.darkMode.red.solid = TUTOR_RED;
@@ -1729,14 +1729,29 @@ function BoardContent({ id }: { id: string }) {
   );
 }
 
+function resolveLicenseKey(passed?: string, injected?: string): string | undefined {
+  const key = passed?.trim() || injected?.trim() || process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY?.trim();
+  return key || undefined;
+}
+
 /** Live teacher paper. No session check, no login hop, no banners. */
-export function PaperBoard({ boardId }: { boardId: string }) {
+export function PaperBoard({
+  boardId,
+  licenseKey,
+}: {
+  boardId: string;
+  licenseKey?: string;
+}) {
+  const injected = useTldrawLicense();
+  const key = resolveLicenseKey(licenseKey, injected);
+
   return (
-    <div style={{ position: "fixed", inset: 0 }}>
+    <div style={{ position: "fixed", inset: 0, background: PAPER }}>
       <Tldraw
+        hideUi
         overrides={hugeIconsOverrides}
         shapeUtils={[TutorKatexShapeUtil]}
-        licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
+        licenseKey={key}
         components={{
           MenuPanel: null,
           NavigationPanel: null,
@@ -1744,6 +1759,13 @@ export function PaperBoard({ boardId }: { boardId: string }) {
           MainMenu: null,
           PageMenu: null,
           StylePanel: null,
+          Toolbar: null,
+          ActionsMenu: null,
+          QuickActions: null,
+          TopPanel: null,
+          SharePanel: null,
+          Minimap: null,
+          ZoomMenu: null,
         }}
         onMount={(editor) => {
           ensureProblemPages(editor);

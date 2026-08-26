@@ -119,13 +119,14 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    background: #f4efe6;
   }
 }
 
-/* Force tldraw canvas to be completely white. Rail/mode words use Geist; tutor notes are ink. */
+/* Warm paper. Rail/mode words use Geist; tutor notes are ink. */
 .tldraw__editor {
-  background-color: #ffffff !important;
+  background-color: #f4efe6 !important;
   --tl-font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -139,12 +140,16 @@
   box-shadow: none;
 }
 
-.tl-background {
-  background-color: #ffffff !important;
+.tl-background,
+.tl-canvas {
+  background-color: #f4efe6 !important;
 }
 
-.tl-canvas {
-  background-color: #ffffff !important;
+/* Default tldraw tool capsule stays off the teacher paper. */
+.tlui-main-toolbar,
+.tlui-toolbar,
+.tlui-layout__top {
+  display: none !important;
 }
 
 .problem-rail {
@@ -158,7 +163,7 @@
   align-items: center;
   justify-content: center;
   gap: 18px;
-  background: #ffffff;
+  background: #f4efe6;
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   font-size: 13px;
   font-weight: 400;

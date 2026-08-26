@@ -10,6 +10,8 @@ export const CARET_GAP_PX = 8;
 export const SOLVE_WIDTH_PX = 280;
 export const SOLVE_GAP_PX = 16;
 export const TUTOR_RED = "#E11D48";
+/** Warm paper. Not cold white. */
+export const PAPER = "#F4EFE6";
 
 /** Geist 14, 1ch ≈ 0.6em → max-width 28ch. */
 export const SOCRATIC_WIDTH_PX = SOCRATIC_MAX_CH * SOCRATIC_FONT_PX * 0.6;

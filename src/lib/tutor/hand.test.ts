@@ -23,6 +23,7 @@ import { latexFromMathpix, toMathpixStrokePayload } from "./mathpix";
 import { mulberry32 } from "./hand/path";
 import { splitSolveNote } from "./hand/solve";
 import { constrainMarks } from "./normalize";
+import { PAPER } from "./layout";
 import type { TutorMark } from "./types";
 
 function mark(kind: TutorMark["kind"], text?: string): TutorMark {
@@ -248,6 +249,7 @@ describe("demo set", () => {
       ],
     );
     assert.equal(DEFAULT_ASSISTANCE_MODE, "suggest");
+    assert.equal(PAPER, "#F4EFE6");
     assert.equal(TUTOR_DEBOUNCE_MS, 2000);
     assert.equal(TUTOR_FLASH_MODEL, "google/gemini-2.5-flash");
     assert.equal(TUTOR_BACKUP_MODEL, "openai/gpt-4.1-mini");
