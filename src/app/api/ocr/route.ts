@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ocrLogger } from '@/lib/logger';
 import { requireKey } from '@/lib/aiConfig';
 
+/**
+ * Whole-board Pixtral OCR. Never a fallback for the live pencil loop.
+ * That path is last-cluster strokes → Mathpix → one Socratic mark, or silence.
+ */
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
   const requestId = crypto.randomUUID();

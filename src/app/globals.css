@@ -119,19 +119,230 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    background: #f4efe6;
   }
 }
 
-/* Force tldraw canvas to be completely white */
+/* Warm paper. Rail/mode words use Geist; tutor notes are ink. */
 .tldraw__editor {
-  background-color: #ffffff !important;
+  background-color: #f4efe6 !important;
+  --tl-font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
-.tl-background {
-  background-color: #ffffff !important;
+/* tldraw is height:100%. An unstyled remount wrapper collapses the canvas. */
+[data-testid="persistent-tldraw"],
+[data-testid="tldraw-error-boundary"] {
+  width: 100%;
+  height: 100%;
 }
 
+.tutor-katex,
+.tutor-katex .katex {
+  color: #e11d48;
+  font-size: 14px;
+  line-height: 1.2;
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
+.tl-background,
 .tl-canvas {
-  background-color: #ffffff !important;
+  background-color: #f4efe6 !important;
+}
+
+/* Default tldraw tool capsule stays off the teacher paper. */
+.tlui-main-toolbar,
+.tlui-toolbar,
+.tlui-layout__top {
+  display: none !important;
+}
+
+.teacher-chrome {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.teacher-chrome .problem-rail,
+.teacher-chrome .mode-words,
+.teacher-chrome .mark-actions,
+.teacher-chrome .try-these {
+  pointer-events: auto;
+}
+
+.problem-rail {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #f4efe6;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  color: #111111;
+  touch-action: none;
+}
+
+.problem-rail-item {
+  position: relative;
+  height: 56px;
+  min-width: 36px;
+  padding: 0 8px;
+  touch-action: none;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 56px;
+  color: inherit;
+  cursor: pointer;
+}
+
+.problem-rail-item.is-current {
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 #111111;
+}
+
+.problem-rail-check {
+  position: absolute;
+  top: 8px;
+  right: -9px;
+  width: 10px;
+  height: 10px;
+  color: #111111;
+  pointer-events: none;
+}
+
+.problem-prompt {
+  position: absolute;
+  top: 56px;
+  left: 20px;
+  z-index: 900;
+  max-width: 520px;
+  pointer-events: none;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: #111111;
+}
+
+.problem-prompt-subject {
+  margin-right: 8px;
+  color: rgba(17, 17, 17, 0.38);
+}
+
+.mark-actions {
+  position: absolute;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.mark-actions-item {
+  height: 32px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  color: #111111;
+  cursor: pointer;
+}
+
+.mark-actions-item.is-reject {
+  color: rgba(17, 17, 17, 0.38);
+}
+
+.mode-words {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.mode-words-item {
+  height: 32px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  color: rgba(17, 17, 17, 0.28);
+  cursor: pointer;
+}
+
+.mode-words-item.is-active {
+  color: #111111;
+}
+
+.try-these {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1000;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.try-these-toggle {
+  height: 32px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  color: rgba(17, 17, 17, 0.28);
+  cursor: pointer;
+}
+
+.try-these-toggle.is-open {
+  color: #111111;
+}
+
+.try-these-list {
+  position: absolute;
+  right: 0;
+  bottom: 36px;
+  width: 280px;
+  max-height: min(52vh, 420px);
+  overflow: auto;
+  padding: 6px 0;
+  background: #f4efe6;
+}
+
+.try-these-item {
+  margin: 0;
+  padding: 5px 2px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: #111111;
+}
+
+.try-these-num {
+  display: inline-block;
+  width: 18px;
+  margin-right: 6px;
+  color: rgba(17, 17, 17, 0.38);
 }

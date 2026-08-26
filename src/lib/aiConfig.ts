@@ -8,7 +8,7 @@
 
 import { NextResponse } from 'next/server';
 
-export type ProviderId = 'openrouter' | 'openai' | 'mistral';
+export type ProviderId = 'openrouter' | 'openai' | 'mistral' | 'mathpix';
 
 export interface ProviderSpec {
   id: ProviderId;
@@ -29,13 +29,14 @@ export const PROVIDERS: Record<ProviderId, ProviderSpec> = {
     envVar: 'OPENROUTER_API_KEY',
     signupUrl: 'https://openrouter.ai/keys',
     features: [
-      'Solution / hint generation',
+      'Realtime math tutor (OpenRouter Flash on recognized LaTeX)',
+      'Legacy image overlay fallback',
       'Worksheet generation',
       'Automatic "needs help" detection',
       'Voice workspace analysis',
       'Credit balance display',
     ],
-    required: true,
+    required: false,
   },
   openai: {
     id: 'openai',
@@ -50,10 +51,27 @@ export const PROVIDERS: Record<ProviderId, ProviderSpec> = {
     label: 'Mistral',
     envVar: 'MISTRAL_API_KEY',
     signupUrl: 'https://console.mistral.ai/api-keys',
-    features: ['Handwriting / PDF OCR'],
+    features: ['Handwriting / PDF OCR (not used on the live board loop)'],
+    required: false,
+  },
+  mathpix: {
+    id: 'mathpix',
+    label: 'Mathpix',
+    envVar: 'MATHPIX_APP_KEY',
+    signupUrl: 'https://mathpix.com/ocr',
+    features: ['Stroke-to-LaTeX for the live tutor (Mathpix /v3/strokes)'],
     required: false,
   },
 };
+
+/** Mathpix needs both app id and key. */
+export function getMathpixCredentials(): { appId: string; appKey: string } | null {
+  const appId = process.env.MATHPIX_APP_ID?.trim() ?? '';
+  const appKey = getKey('mathpix');
+  if (!appId || !appKey) return null;
+  if (/^(your|replace|changeme|xxx)/i.test(appId)) return null;
+  return { appId, appKey };
+}
 
 /** Public site URL used for provider referer headers. */
 export function getSiteUrl(): string {

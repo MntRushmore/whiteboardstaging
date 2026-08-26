@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { solutionLogger } from '@/lib/logger';
 import { requireKey, getSiteUrl } from '@/lib/aiConfig';
 
+/**
+ * Hidden / manual bitmap redraw. Not a fallback for the live pencil loop.
+ * Empty LaTeX is a Mathpix miss. A bad mark is a Flash miss. Stay quiet.
+ */
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
   const requestId = crypto.randomUUID();

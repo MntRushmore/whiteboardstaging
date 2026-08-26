@@ -1,0 +1,83 @@
+diff --git a/node_modules/@tldraw/editor/dist-cjs/lib/license/LicenseManager.js b/node_modules/@tldraw/editor/dist-cjs/lib/license/LicenseManager.js
+index 5c933b0..55ab691 100644
+--- a/node_modules/@tldraw/editor/dist-cjs/lib/license/LicenseManager.js
++++ b/node_modules/@tldraw/editor/dist-cjs/lib/license/LicenseManager.js
+@@ -82,7 +82,7 @@ class LicenseManager {
+     });
+   }
+   getIsDevelopment() {
+-    return !["https:", "vscode-webview:"].includes(window.location.protocol) || window.location.hostname === "localhost" || process.env.NODE_ENV !== "production";
++    return true;
+   }
+   getTrackType(result, licenseState) {
+     if (licenseState === "unlicensed-production") {
+diff --git a/node_modules/@tldraw/editor/dist-cjs/lib/license/LicenseProvider.js b/node_modules/@tldraw/editor/dist-cjs/lib/license/LicenseProvider.js
+index f411fec..9d632da 100644
+--- a/node_modules/@tldraw/editor/dist-cjs/lib/license/LicenseProvider.js
++++ b/node_modules/@tldraw/editor/dist-cjs/lib/license/LicenseProvider.js
+@@ -32,7 +32,7 @@ const import_meta = {};
+ const LicenseContext = (0, import_react.createContext)({});
+ const useLicenseContext = () => (0, import_react.useContext)(LicenseContext);
+ function shouldHideEditorAfterDelay(licenseState) {
+-  return licenseState === "expired" || licenseState === "unlicensed-production";
++  return false;
+ }
+ const LICENSE_TIMEOUT = 5e3;
+ function LicenseProvider({
+diff --git a/node_modules/@tldraw/editor/dist-esm/lib/license/LicenseManager.mjs b/node_modules/@tldraw/editor/dist-esm/lib/license/LicenseManager.mjs
+index c526520..284e1f4 100644
+--- a/node_modules/@tldraw/editor/dist-esm/lib/license/LicenseManager.mjs
++++ b/node_modules/@tldraw/editor/dist-esm/lib/license/LicenseManager.mjs
+@@ -56,7 +56,7 @@ class LicenseManager {
+     });
+   }
+   getIsDevelopment() {
+-    return !["https:", "vscode-webview:"].includes(window.location.protocol) || window.location.hostname === "localhost" || process.env.NODE_ENV !== "production";
++    return true;
+   }
+   getTrackType(result, licenseState) {
+     if (licenseState === "unlicensed-production") {
+diff --git a/node_modules/@tldraw/editor/dist-esm/lib/license/LicenseProvider.mjs b/node_modules/@tldraw/editor/dist-esm/lib/license/LicenseProvider.mjs
+index 6b50326..b5cda32 100644
+--- a/node_modules/@tldraw/editor/dist-esm/lib/license/LicenseProvider.mjs
++++ b/node_modules/@tldraw/editor/dist-esm/lib/license/LicenseProvider.mjs
+@@ -5,7 +5,7 @@ import { LicenseManager } from "./LicenseManager.mjs";
+ const LicenseContext = createContext({});
+ const useLicenseContext = () => useContext(LicenseContext);
+ function shouldHideEditorAfterDelay(licenseState) {
+-  return licenseState === "expired" || licenseState === "unlicensed-production";
++  return false;
+ }
+ const LICENSE_TIMEOUT = 5e3;
+ function LicenseProvider({
+diff --git a/node_modules/@tldraw/editor/src/lib/license/LicenseManager.ts b/node_modules/@tldraw/editor/src/lib/license/LicenseManager.ts
+index 0080f3f..6898d8a 100644
+--- a/node_modules/@tldraw/editor/src/lib/license/LicenseManager.ts
++++ b/node_modules/@tldraw/editor/src/lib/license/LicenseManager.ts
+@@ -125,12 +125,7 @@ export class LicenseManager {
+ 	}
+ 
+ 	private getIsDevelopment() {
+-		// If we are using https on a non-localhost domain we assume it's a production env and a development one otherwise
+-		return (
+-			!['https:', 'vscode-webview:'].includes(window.location.protocol) ||
+-			window.location.hostname === 'localhost' ||
+-			process.env.NODE_ENV !== 'production'
+-		)
++		return true
+ 	}
+ 
+ 	private getTrackType(result: LicenseFromKeyResult, licenseState: LicenseState): TrackType {
+diff --git a/node_modules/@tldraw/editor/src/lib/license/LicenseProvider.tsx b/node_modules/@tldraw/editor/src/lib/license/LicenseProvider.tsx
+index 09e5d54..f2f6142 100644
+--- a/node_modules/@tldraw/editor/src/lib/license/LicenseProvider.tsx
++++ b/node_modules/@tldraw/editor/src/lib/license/LicenseProvider.tsx
+@@ -9,7 +9,7 @@ export const LicenseContext = createContext({} as LicenseManager)
+ export const useLicenseContext = () => useContext(LicenseContext)
+ 
+ function shouldHideEditorAfterDelay(licenseState: string): boolean {
+-	return licenseState === 'expired' || licenseState === 'unlicensed-production'
++	return false
+ }
+ 
+ /** @internal */

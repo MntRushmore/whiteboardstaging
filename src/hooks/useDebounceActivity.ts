@@ -2,9 +2,9 @@ import React, { useEffect, useRef } from "react";
 import { Editor } from "tldraw";
 
 /**
- * Hook that detects when the user stops drawing/writing on the canvas
- * for a specified duration (debounce period).
- * Now uses tldraw's editor events to only trigger on actual canvas edits.
+ * Whole-document idle debounce. Not used by the live pencil tutor
+ * (`useTutorEngine` debounces ~400ms after a stroke cluster instead).
+ * Kept for any non-tutor callers.
  */
 export function useDebounceActivity(
   callback: () => void,

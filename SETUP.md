@@ -20,7 +20,8 @@ Then fill in `.env.local`:
 | --- | --- | --- | --- |
 | `OPENROUTER_API_KEY` | **Yes** | <https://openrouter.ai/keys> | Hints/solutions, worksheets, help detection, voice analysis, credit display |
 | `OPENAI_API_KEY` | No | <https://platform.openai.com/api-keys> | Realtime voice tutor |
-| `MISTRAL_API_KEY` | No | <https://console.mistral.ai/api-keys> | Handwriting / PDF OCR |
+| `MISTRAL_API_KEY` | No | <https://console.mistral.ai/api-keys> | Handwriting / PDF OCR (not on the live board loop) |
+| `MATHPIX_APP_ID` + `MATHPIX_APP_KEY` | No | <https://mathpix.com/ocr> | Optional fast LaTeX recognition for the tutor |
 | `NEXT_PUBLIC_SUPABASE_URL` | **Yes** | your own Supabase project | Boards, auth, storage |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | **Yes** | your own Supabase project | Boards, auth, storage |
 | `NEXT_PUBLIC_TLDRAW_LICENSE_KEY` | Production only | <https://tldraw.dev/community/license> | Canvas SDK (see below) |

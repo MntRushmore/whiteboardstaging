@@ -1,15 +1,15 @@
 "use client";
 
+import "@/lib/tldraw/keepEditorAlive";
 import {
-  Tldraw,
   useEditor,
   createShapeId,
   AssetRecordType,
   TLShapeId,
   DefaultColorThemePalette,
+  type Editor,
   type TLUiOverrides,
   getSnapshot,
-  loadSnapshot,
 } from "tldraw";
 import React, { useCallback, useState, useRef, useEffect, type ReactElement } from "react";
 import "tldraw/tldraw.css";
@@ -41,20 +41,24 @@ import {
   MicOff02Icon,
   Loading03Icon,
 } from "hugeicons-react";
-import { useDebounceActivity } from "@/hooks/useDebounceActivity";
+import { TeacherChrome } from "@/components/TeacherChrome";
+import { PersistentTldraw } from "@/components/PersistentTldraw";
+import { PAPER, TUTOR_RED } from "@/lib/tutor/layout";
+import { useTldrawLicense } from "@/components/TldrawLicense";
+import { DEFAULT_ASSISTANCE_MODE } from "@/lib/tutor/types";
+import { ensureProblemPages, lockPaperCamera } from "@/lib/tutor/pages";
+import { TutorKatexShapeUtil } from "@/lib/tutor/TutorKatexShape";
+import { TutorHandShapeUtil } from "@/lib/tutor/TutorHandShape";
 import { StatusIndicator, type StatusIndicatorState } from "@/components/StatusIndicator";
 import { logger } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
-import { useParams, useRouter } from "next/navigation";
-import { Loader2, Volume2, VolumeX, Info } from "lucide-react";
+import { useParams } from "next/navigation";
+import { Volume2, VolumeX, Info } from "lucide-react";
 import { toast } from "sonner";
-import { useAuth } from "@/components/AuthProvider";
-import { CreditsBanner } from "@/components/CreditsBanner";
 import { StickerLibrary } from "@/components/StickerLibrary";
 import { WorksheetGenerator } from "@/components/WorksheetGenerator";
 import { PdfUpload } from "@/components/PdfUpload";
 import { BugReportButton } from "@/components/BugReportButton";
-import { useFeatureLabs } from "@/lib/featureLabs";
 import { useAIPerfSettings } from "@/lib/aiPerfSettings";
 import { downscaleBlob } from "@/utils/downscaleImage";
 import { Switch } from "@/components/ui/switch";
@@ -66,9 +70,12 @@ import {
 import { Settings } from "lucide-react";
 import { GenerationSkeleton } from "@/components/GenerationSkeleton";
 
-// Ensure the tldraw canvas background is pure white in both light and dark modes
-DefaultColorThemePalette.lightMode.background = "#FFFFFF";
-DefaultColorThemePalette.darkMode.background = "#FFFFFF";
+DefaultColorThemePalette.lightMode.background = PAPER;
+DefaultColorThemePalette.darkMode.background = PAPER;
+DefaultColorThemePalette.lightMode.red.solid = TUTOR_RED;
+DefaultColorThemePalette.lightMode.red.fill = TUTOR_RED;
+DefaultColorThemePalette.darkMode.red.solid = TUTOR_RED;
+DefaultColorThemePalette.darkMode.red.fill = TUTOR_RED;
 
 const hugeIconsOverrides: TLUiOverrides = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -159,19 +166,19 @@ function ModeInfoDialog() {
             />
             <p className="text-sm font-medium mb-1">Feedback</p>
             <p className="text-sm text-muted-foreground">
-              Light annotations pointing out mistakes without giving away answers.
+              A circle and a caret only. Your ink stays.
             </p>
           </div>
 
           <div className="flex-1 flex flex-col items-start">
             <img
               src="/modes/suggest.png"
-              alt="Suggest mode example"
+              alt="Socratic mode example"
               className="h-48 w-auto rounded-md border bg-muted object-contain mb-3"
             />
-            <p className="text-sm font-medium mb-1">Suggest</p>
+            <p className="text-sm font-medium mb-1">Socratic</p>
             <p className="text-sm text-muted-foreground">
-              Hints and partial steps to nudge you in the right direction.
+              One margin question. Never the answer, never a redraw.
             </p>
           </div>
 
@@ -183,7 +190,7 @@ function ModeInfoDialog() {
             />
             <p className="text-sm font-medium mb-1">Solve</p>
             <p className="text-sm text-muted-foreground">
-              Full worked solution overlaid on your canvas for comparison.
+              Stepped notes pinned to the right of your work. Ink is never replaced.
             </p>
           </div>
         </div>
@@ -256,11 +263,13 @@ interface VoiceAgentControlsProps {
     mode: "feedback" | "suggest" | "answer",
     instructions?: string
   ) => Promise<boolean>;
+  getWorkspaceContext: () => { latex?: string; text?: string };
 }
 
 function VoiceAgentControls({
   onSessionChange,
   onSolveWithPrompt,
+  getWorkspaceContext,
 }: VoiceAgentControlsProps) {
   const editor = useEditor();
   const [isSessionActive, setIsSessionActive] = useState(false);
@@ -314,30 +323,6 @@ function VoiceAgentControls({
     onSessionChange(false);
   }, [cleanupSession, onSessionChange]);
 
-  const captureCanvasImage = useCallback(async (): Promise<string | null> => {
-    if (!editor) return null;
-
-    const shapeIds = editor.getCurrentPageShapeIds();
-    if (shapeIds.size === 0) return null;
-
-    const viewportBounds = editor.getViewportPageBounds();
-    const { blob } = await editor.toImage([...shapeIds], {
-      format: "png",
-      bounds: viewportBounds,
-      background: true,
-      scale: 1,
-      padding: 0,
-    });
-
-    if (!blob) return null;
-
-    return await new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.readAsDataURL(blob);
-    });
-  }, [editor]);
-
   const handleFunctionCall = useCallback(
     async (name: string, argsJson: string, callId: string) => {
       const dc = dcRef.current;
@@ -356,16 +341,17 @@ function VoiceAgentControls({
           setStatus("callingTool");
           setStatusDetail("Analyzing your canvas...");
 
-          const image = await captureCanvasImage();
-          if (!image) {
-            throw new Error("Canvas is empty or could not be captured");
+          const ctx = getWorkspaceContext();
+          if (!ctx.latex && !ctx.text) {
+            throw new Error("Nothing to analyze yet — write on the board first");
           }
 
           const res = await fetch("/api/voice/analyze-workspace", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              image,
+              latex: ctx.latex ?? null,
+              text: ctx.text ?? null,
               focus: args.focus ?? null,
             }),
           });
@@ -468,7 +454,7 @@ function VoiceAgentControls({
         );
       }
     },
-    [captureCanvasImage, onSolveWithPrompt, setErrorStatus],
+    [getWorkspaceContext, onSolveWithPrompt, setErrorStatus],
   );
 
   const handleServerEvent = useCallback(
@@ -582,7 +568,7 @@ function VoiceAgentControls({
             type: "function",
             name: "draw_on_canvas",
             description:
-              "Use the Gemini 3 Pro canvas solver to add feedback, hints, or full solutions directly onto the whiteboard image.",
+              "Add tutor marks (circles, underlines, margin notes) as canvas shapes. Never redraw or replace the student's ink.",
             parameters: {
               type: "object",
               properties: {
@@ -844,6 +830,7 @@ function PerfSettingsPopover({
   onDownscaleQualityChange,
   skeletonEnabled,
   onSkeletonEnabledChange,
+  onLegacyImageOverlay,
 }: {
   fastMode: boolean;
   onFastModeChange: (v: boolean) => void;
@@ -855,6 +842,7 @@ function PerfSettingsPopover({
   onDownscaleQualityChange: (v: number) => void;
   skeletonEnabled: boolean;
   onSkeletonEnabledChange: (v: boolean) => void;
+  onLegacyImageOverlay?: () => void;
 }) {
   return (
     <Popover>
@@ -982,6 +970,24 @@ function PerfSettingsPopover({
               />
             </div>
           </div>
+
+          {onLegacyImageOverlay && (
+            <div className="border-t pt-4 space-y-2">
+              <div className="text-xs text-gray-500">
+                Hidden fallback. Pastes a generated bitmap over the board.
+                The live pencil loop never does this.
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={onLegacyImageOverlay}
+              >
+                Generate image overlay
+              </Button>
+            </div>
+          )}
         </div>
       </PopoverContent>
     </Popover>
@@ -990,22 +996,22 @@ function PerfSettingsPopover({
 
 function BoardContent({ id }: { id: string }) {
   const editor = useEditor();
-  const router = useRouter();
-  const { features } = useFeatureLabs();
   const [pendingImageIds, setPendingImageIds] = useState<TLShapeId[]>([]);
   const [status, setStatus] = useState<StatusIndicatorState>("idle");
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [statusMessage, setStatusMessage] = useState<string>("");
   const [isVoiceSessionActive, setIsVoiceSessionActive] = useState(false);
-  const [assistanceMode, setAssistanceMode] = useState<"off" | "feedback" | "suggest" | "answer">("off");
+  const [assistanceMode, setAssistanceMode] = useState<"off" | "feedback" | "suggest" | "answer">(
+    DEFAULT_ASSISTANCE_MODE,
+  );
   const [aiModel, setAiModel] = useState<AIModel>("gemini");
   const { settings: aiPerf, update: updateAiPerf } = useAIPerfSettings();
   const isProcessingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastCanvasImageRef = useRef<string | null>(null);
   const isUpdatingImageRef = useRef(false);
+  const [imageOverlayBusy, setImageOverlayBusy] = useState(false);
 
-  // Helper function to get mode-aware status messages
   const getStatusMessage = useCallback((mode: "off" | "feedback" | "suggest" | "answer", statusType: "generating" | "success") => {
     if (statusType === "generating") {
       switch (mode) {
@@ -1061,6 +1067,7 @@ function BoardContent({ id }: { id: string }) {
       }
 
       isProcessingRef.current = true;
+      setImageOverlayBusy(true);
     
       // Create abort controller for this request chain
       abortControllerRef.current = new AbortController();
@@ -1342,20 +1349,15 @@ function BoardContent({ id }: { id: string }) {
         return false;
       } finally {
         isProcessingRef.current = false;
+        setImageOverlayBusy(false);
         abortControllerRef.current = null;
       }
     },
     [editor, pendingImageIds, isVoiceSessionActive, assistanceMode, aiModel, aiPerf, getStatusMessage],
   );
 
-  const handleAutoGeneration = useCallback(() => {
-    void generateSolution({ source: "auto" });
-  }, [generateSolution]);
-
-  // Listen for user activity and trigger auto-generation after 2 seconds of inactivity
-  useDebounceActivity(handleAutoGeneration, 2000, editor, isUpdatingImageRef, isProcessingRef);
-
-  // Cancel in-flight requests when user edits the canvas
+  // Cancel in-flight legacy image-overlay requests when the student edits.
+  // The live tutor loop is stroke-cluster debounce in useTutorEngine.
   useEffect(() => {
     if (!editor) return;
 
@@ -1449,6 +1451,7 @@ function BoardContent({ id }: { id: string }) {
   // Auto-save logic
   useEffect(() => {
     if (!editor) return;
+    if (id === "demo") return;
 
     let saveTimeout: NodeJS.Timeout;
 
@@ -1684,197 +1687,75 @@ function BoardContent({ id }: { id: string }) {
     };
   }, [editor, id]);
 
+  useEffect(() => {
+    if (!editor) return;
+    ensureProblemPages(editor);
+    lockPaperCamera(editor);
+    editor.setCurrentTool("draw");
+  }, [editor]);
+
+  return null;
+}
+
+function resolveLicenseKey(passed?: string, injected?: string): string | undefined {
+  const key = passed?.trim() || injected?.trim();
+  return key || undefined;
+}
+
+/** Live teacher paper. No session check, no login hop, no banners. */
+export function PaperBoard({
+  boardId,
+  licenseKey,
+}: {
+  boardId: string;
+  licenseKey?: string;
+}) {
+  const injected = useTldrawLicense();
+  const key = resolveLicenseKey(licenseKey, injected);
+  const [editor, setEditor] = useState<Editor | null>(null);
+
   return (
-    <>
-      <GenerationSkeleton visible={aiPerf.skeletonEnabled && status === "generating"} />
-
-      {/* Tabs at top left */}
-      {!isVoiceSessionActive && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '16px',
-            left: '16px',
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-          }}
-        >
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => router.back()}
-          >
-            <ArrowLeft01Icon size={20} strokeWidth={2} />
-          </Button>
-          <div className="flex items-center gap-2">
-            <Tabs
-              value={assistanceMode}
-              onValueChange={(value) => setAssistanceMode(value as "off" | "feedback" | "suggest" | "answer")}
-              className="w-auto shadow-sm rounded-lg"
-            >
-              <TabsList>
-                <TabsTrigger value="off">Off</TabsTrigger>
-                <TabsTrigger value="feedback">Feedback</TabsTrigger>
-                <TabsTrigger value="suggest">Suggest</TabsTrigger>
-                <TabsTrigger value="answer">Solve</TabsTrigger>
-              </TabsList>
-            </Tabs>
-            <ModeInfoDialog />
-            <ModelBadge
-              model={aiModel}
-              onClick={() => setAiModel((m) => (m === "gemini" ? "gpt" : "gemini"))}
-            />
-            <PerfSettingsPopover
-              fastMode={aiPerf.fastMode}
-              onFastModeChange={(v) => updateAiPerf({ fastMode: v })}
-              downscaleEnabled={aiPerf.downscaleEnabled}
-              onDownscaleEnabledChange={(v) => updateAiPerf({ downscaleEnabled: v })}
-              downscaleMaxEdge={aiPerf.downscaleMaxEdge}
-              onDownscaleMaxEdgeChange={(v) => updateAiPerf({ downscaleMaxEdge: v })}
-              downscaleQuality={aiPerf.downscaleQuality}
-              onDownscaleQualityChange={(v) => updateAiPerf({ downscaleQuality: v })}
-              skeletonEnabled={aiPerf.skeletonEnabled}
-              onSkeletonEnabledChange={(v) => updateAiPerf({ skeletonEnabled: v })}
-            />
-            {features.stickers && <StickerLibrary />}
-            {features.worksheetGen && <WorksheetGenerator model={aiModel} />}
-            {features.pdfUpload && <PdfUpload />}
-          </div>
-        </div>
-      )}
-
-      {/* When a voice session is active, let the voice banner own the top-center space. */}
-      {!isVoiceSessionActive && (
-        <StatusIndicator
-          status={status}
-          errorMessage={errorMessage}
-          customMessage={statusMessage}
-        />
-      )}
-      {!isVoiceSessionActive && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: "16px",
-            right: "16px",
-            zIndex: 1000,
-            maxWidth: "360px",
-          }}
-        >
-          <CreditsBanner />
-        </div>
-      )}
-      {!isVoiceSessionActive && (
-        <div
-          style={{
-            position: "absolute",
-            top: "16px",
-            right: "16px",
-            zIndex: 1000,
-          }}
-        >
-          <BugReportButton boardId={id} />
-        </div>
-      )}
-      <ImageActionButtons
-        pendingImageIds={pendingImageIds}
-        isVoiceSessionActive={isVoiceSessionActive}
-        onAccept={handleAccept}
-        onReject={handleReject}
-      />
-      <VoiceAgentControls
-        onSessionChange={setIsVoiceSessionActive}
-        onSolveWithPrompt={async (mode, instructions) => {
-          const success = await generateSolution({
-            modeOverride: mode,
-            promptOverride: instructions,
-            force: true,
-            source: "voice",
-          });
-          return success;
+    <div
+      data-testid="paper-board"
+      style={{ position: "fixed", inset: 0, background: PAPER }}
+    >
+      <PersistentTldraw
+        hideUi
+        overrides={hugeIconsOverrides}
+        shapeUtils={[TutorKatexShapeUtil, TutorHandShapeUtil]}
+        licenseKey={key}
+        components={{
+          MenuPanel: null,
+          NavigationPanel: null,
+          HelperButtons: null,
+          MainMenu: null,
+          PageMenu: null,
+          StylePanel: null,
+          Toolbar: null,
+          ActionsMenu: null,
+          QuickActions: null,
+          TopPanel: null,
+          SharePanel: null,
+          Minimap: null,
+          ZoomMenu: null,
+        }}
+        onMount={(next) => {
+          ensureProblemPages(next);
+          lockPaperCamera(next);
+          next.setCurrentTool("draw");
+          setEditor(next);
+          return () => {
+            setEditor((current) => (current === next ? null : current));
+          };
         }}
       />
-    </>
+      {editor ? <TeacherChrome editor={editor} /> : null}
+    </div>
   );
 }
 
 export default function BoardPage() {
   const params = useParams();
-  const router = useRouter();
-  const id = params.id as string;
-  const { user, loading: authLoading } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [initialData, setInitialData] = useState<any>(null);
-
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.replace("/login");
-    }
-  }, [user, authLoading, router]);
-
-  useEffect(() => {
-    if (!user) return;
-    async function loadBoard() {
-      try {
-        const { data, error } = await supabase
-          .from('whiteboards')
-          .select('data')
-          .eq('id', id)
-          .single();
-
-        if (error) throw error;
-
-        if (data) {
-          if (data.data && Object.keys(data.data).length > 0) {
-            setInitialData(data.data);
-          }
-        }
-      } catch (e) {
-        console.error("Error loading board:", e);
-        toast.error("Failed to load board");
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadBoard();
-  }, [id, user]);
-
-  if (authLoading || !user || loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-gray-50">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-          <p className="text-gray-500 font-medium animate-pulse">Loading your canvas...</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ position: "fixed", inset: 0 }}>
-      <Tldraw
-        overrides={hugeIconsOverrides}
-        licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
-        components={{
-          MenuPanel: null,
-          NavigationPanel: null,
-          HelperButtons: null,
-        }}
-        onMount={(editor) => {
-          if (initialData) {
-            try {
-              loadSnapshot(editor.store, initialData);
-            } catch (e) {
-              console.error("Failed to load snapshot:", e);
-              toast.error("Failed to restore canvas state");
-            }
-          }
-        }}
-      >
-        <BoardContent id={id} />
-      </Tldraw>
-    </div>
-  );
+  const id = (params?.id as string) || "demo";
+  return <PaperBoard boardId={id} />;
 }
