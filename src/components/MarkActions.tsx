@@ -44,6 +44,7 @@ export function MarkActions({
       style={{ left: pos.left, top: pos.top }}
       role="group"
       aria-label="Tutor mark"
+      onPointerDown={(event) => event.stopPropagation()}
     >
       <button type="button" className="mark-actions-item" onClick={onAccept}>
         Accept
