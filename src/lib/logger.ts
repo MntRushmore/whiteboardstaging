@@ -14,6 +14,7 @@ export const ocrLogger = logger.child({ module: 'ocr' });
 export const helpCheckLogger = logger.child({ module: 'help-check' });
 export const solutionLogger = logger.child({ module: 'solution-generation' });
 export const voiceLogger = logger.child({ module: 'voice' });
+export const tutorLogger = logger.child({ module: 'tutor' });
 
 // Client-side console log ring buffer for bug reports.
 // Captures the most recent N console messages so users can attach them when

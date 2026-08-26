@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ocrLogger } from '@/lib/logger';
 import { requireKey } from '@/lib/aiConfig';
 
+/**
+ * Whole-board Pixtral OCR. Not used by the live pencil tutor loop
+ * (that path crops recent strokes and calls POST /api/tutor).
+ */
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
   const requestId = crypto.randomUUID();

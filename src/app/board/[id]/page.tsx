@@ -41,7 +41,9 @@ import {
   MicOff02Icon,
   Loading03Icon,
 } from "hugeicons-react";
-import { useDebounceActivity } from "@/hooks/useDebounceActivity";
+import { useTutorEngine } from "@/hooks/useTutorEngine";
+import { LatexStrip } from "@/components/LatexStrip";
+import { CONFIDENCE_THRESHOLD } from "@/lib/tutor/types";
 import { StatusIndicator, type StatusIndicatorState } from "@/components/StatusIndicator";
 import { logger } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
@@ -159,19 +161,19 @@ function ModeInfoDialog() {
             />
             <p className="text-sm font-medium mb-1">Feedback</p>
             <p className="text-sm text-muted-foreground">
-              Light annotations pointing out mistakes without giving away answers.
+              Circles and underlines on mistakes, plus a short margin note. Your ink stays.
             </p>
           </div>
 
           <div className="flex-1 flex flex-col items-start">
             <img
               src="/modes/suggest.png"
-              alt="Suggest mode example"
+              alt="Socratic mode example"
               className="h-48 w-auto rounded-md border bg-muted object-contain mb-3"
             />
-            <p className="text-sm font-medium mb-1">Suggest</p>
+            <p className="text-sm font-medium mb-1">Socratic</p>
             <p className="text-sm text-muted-foreground">
-              Hints and partial steps to nudge you in the right direction.
+              One guiding question and an optional circle — never the answer, never a redraw.
             </p>
           </div>
 
@@ -183,7 +185,7 @@ function ModeInfoDialog() {
             />
             <p className="text-sm font-medium mb-1">Solve</p>
             <p className="text-sm text-muted-foreground">
-              Full worked solution overlaid on your canvas for comparison.
+              Step notes beside your work. Student handwriting is never replaced.
             </p>
           </div>
         </div>
@@ -256,11 +258,13 @@ interface VoiceAgentControlsProps {
     mode: "feedback" | "suggest" | "answer",
     instructions?: string
   ) => Promise<boolean>;
+  getWorkspaceContext: () => { latex?: string; text?: string };
 }
 
 function VoiceAgentControls({
   onSessionChange,
   onSolveWithPrompt,
+  getWorkspaceContext,
 }: VoiceAgentControlsProps) {
   const editor = useEditor();
   const [isSessionActive, setIsSessionActive] = useState(false);
@@ -314,30 +318,6 @@ function VoiceAgentControls({
     onSessionChange(false);
   }, [cleanupSession, onSessionChange]);
 
-  const captureCanvasImage = useCallback(async (): Promise<string | null> => {
-    if (!editor) return null;
-
-    const shapeIds = editor.getCurrentPageShapeIds();
-    if (shapeIds.size === 0) return null;
-
-    const viewportBounds = editor.getViewportPageBounds();
-    const { blob } = await editor.toImage([...shapeIds], {
-      format: "png",
-      bounds: viewportBounds,
-      background: true,
-      scale: 1,
-      padding: 0,
-    });
-
-    if (!blob) return null;
-
-    return await new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.readAsDataURL(blob);
-    });
-  }, [editor]);
-
   const handleFunctionCall = useCallback(
     async (name: string, argsJson: string, callId: string) => {
       const dc = dcRef.current;
@@ -356,16 +336,17 @@ function VoiceAgentControls({
           setStatus("callingTool");
           setStatusDetail("Analyzing your canvas...");
 
-          const image = await captureCanvasImage();
-          if (!image) {
-            throw new Error("Canvas is empty or could not be captured");
+          const ctx = getWorkspaceContext();
+          if (!ctx.latex && !ctx.text) {
+            throw new Error("Nothing to analyze yet — write on the board first");
           }
 
           const res = await fetch("/api/voice/analyze-workspace", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              image,
+              latex: ctx.latex ?? null,
+              text: ctx.text ?? null,
               focus: args.focus ?? null,
             }),
           });
@@ -468,7 +449,7 @@ function VoiceAgentControls({
         );
       }
     },
-    [captureCanvasImage, onSolveWithPrompt, setErrorStatus],
+    [getWorkspaceContext, onSolveWithPrompt, setErrorStatus],
   );
 
   const handleServerEvent = useCallback(
@@ -582,7 +563,7 @@ function VoiceAgentControls({
             type: "function",
             name: "draw_on_canvas",
             description:
-              "Use the Gemini 3 Pro canvas solver to add feedback, hints, or full solutions directly onto the whiteboard image.",
+              "Add tutor marks (circles, underlines, margin notes) as canvas shapes. Never redraw or replace the student's ink.",
             parameters: {
               type: "object",
               properties: {
@@ -844,6 +825,7 @@ function PerfSettingsPopover({
   onDownscaleQualityChange,
   skeletonEnabled,
   onSkeletonEnabledChange,
+  onLegacyImageOverlay,
 }: {
   fastMode: boolean;
   onFastModeChange: (v: boolean) => void;
@@ -855,6 +837,7 @@ function PerfSettingsPopover({
   onDownscaleQualityChange: (v: number) => void;
   skeletonEnabled: boolean;
   onSkeletonEnabledChange: (v: boolean) => void;
+  onLegacyImageOverlay?: () => void;
 }) {
   return (
     <Popover>
@@ -982,6 +965,24 @@ function PerfSettingsPopover({
               />
             </div>
           </div>
+
+          {onLegacyImageOverlay && (
+            <div className="border-t pt-4 space-y-2">
+              <div className="text-xs text-gray-500">
+                Hidden fallback. Pastes a generated bitmap over the board.
+                The live pencil loop never does this.
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={onLegacyImageOverlay}
+              >
+                Generate image overlay
+              </Button>
+            </div>
+          )}
         </div>
       </PopoverContent>
     </Popover>
@@ -1004,8 +1005,20 @@ function BoardContent({ id }: { id: string }) {
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastCanvasImageRef = useRef<string | null>(null);
   const isUpdatingImageRef = useRef(false);
+  const [imageOverlayBusy, setImageOverlayBusy] = useState(false);
 
-  // Helper function to get mode-aware status messages
+  const tutor = useTutorEngine({
+    editor,
+    assistanceMode,
+    autoEnabled: assistanceMode !== "off",
+    onStatus: (next, message) => {
+      setStatus(next);
+      setStatusMessage(message);
+      if (next === "error") setErrorMessage(message);
+      if (next === "idle") setErrorMessage("");
+    },
+  });
+
   const getStatusMessage = useCallback((mode: "off" | "feedback" | "suggest" | "answer", statusType: "generating" | "success") => {
     if (statusType === "generating") {
       switch (mode) {
@@ -1061,6 +1074,7 @@ function BoardContent({ id }: { id: string }) {
       }
 
       isProcessingRef.current = true;
+      setImageOverlayBusy(true);
     
       // Create abort controller for this request chain
       abortControllerRef.current = new AbortController();
@@ -1342,20 +1356,15 @@ function BoardContent({ id }: { id: string }) {
         return false;
       } finally {
         isProcessingRef.current = false;
+        setImageOverlayBusy(false);
         abortControllerRef.current = null;
       }
     },
     [editor, pendingImageIds, isVoiceSessionActive, assistanceMode, aiModel, aiPerf, getStatusMessage],
   );
 
-  const handleAutoGeneration = useCallback(() => {
-    void generateSolution({ source: "auto" });
-  }, [generateSolution]);
-
-  // Listen for user activity and trigger auto-generation after 2 seconds of inactivity
-  useDebounceActivity(handleAutoGeneration, 2000, editor, isUpdatingImageRef, isProcessingRef);
-
-  // Cancel in-flight requests when user edits the canvas
+  // Cancel in-flight legacy image-overlay requests when the student edits.
+  // The live tutor loop is stroke-cluster debounce in useTutorEngine.
   useEffect(() => {
     if (!editor) return;
 
@@ -1686,7 +1695,7 @@ function BoardContent({ id }: { id: string }) {
 
   return (
     <>
-      <GenerationSkeleton visible={aiPerf.skeletonEnabled && status === "generating"} />
+      <GenerationSkeleton visible={aiPerf.skeletonEnabled && imageOverlayBusy} />
 
       {/* Tabs at top left */}
       {!isVoiceSessionActive && (
@@ -1717,11 +1726,21 @@ function BoardContent({ id }: { id: string }) {
               <TabsList>
                 <TabsTrigger value="off">Off</TabsTrigger>
                 <TabsTrigger value="feedback">Feedback</TabsTrigger>
-                <TabsTrigger value="suggest">Suggest</TabsTrigger>
+                <TabsTrigger value="suggest">Socratic</TabsTrigger>
                 <TabsTrigger value="answer">Solve</TabsTrigger>
               </TabsList>
             </Tabs>
             <ModeInfoDialog />
+            {tutor.hasMarks && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="shadow-sm bg-white"
+                onClick={tutor.clearMarks}
+              >
+                Clear marks
+              </Button>
+            )}
             <ModelBadge
               model={aiModel}
               onClick={() => setAiModel((m) => (m === "gemini" ? "gpt" : "gemini"))}
@@ -1737,6 +1756,9 @@ function BoardContent({ id }: { id: string }) {
               onDownscaleQualityChange={(v) => updateAiPerf({ downscaleQuality: v })}
               skeletonEnabled={aiPerf.skeletonEnabled}
               onSkeletonEnabledChange={(v) => updateAiPerf({ skeletonEnabled: v })}
+              onLegacyImageOverlay={() => {
+                void generateSolution({ source: "auto", force: true });
+              }}
             />
             {features.stickers && <StickerLibrary />}
             {features.worksheetGen && <WorksheetGenerator model={aiModel} />}
@@ -1784,16 +1806,25 @@ function BoardContent({ id }: { id: string }) {
         onAccept={handleAccept}
         onReject={handleReject}
       />
+      {tutor.lastResult &&
+        tutor.lastResult.confidence >= CONFIDENCE_THRESHOLD &&
+        tutor.lastResult.latex && (
+          <LatexStrip
+            editor={editor}
+            latex={tutor.lastResult.latex}
+            confidence={tutor.lastResult.confidence}
+            bounds={tutor.clusterBounds}
+          />
+        )}
       <VoiceAgentControls
         onSessionChange={setIsVoiceSessionActive}
+        getWorkspaceContext={tutor.getWorkspaceContext}
         onSolveWithPrompt={async (mode, instructions) => {
-          const success = await generateSolution({
+          return tutor.runNow({
             modeOverride: mode,
-            promptOverride: instructions,
+            instructions,
             force: true,
-            source: "voice",
           });
-          return success;
         }}
       />
     </>

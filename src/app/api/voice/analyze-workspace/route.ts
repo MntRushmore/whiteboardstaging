@@ -3,24 +3,26 @@ import { voiceLogger } from '@/lib/logger';
 import { requireKey, getSiteUrl } from '@/lib/aiConfig';
 
 /**
- * Uses Gemini 2.5 Flash (via OpenRouter) to analyze the current whiteboard image
- * and return a natural language description / analysis of the workspace.
+ * Analyze the current board from recognized LaTeX / nearby text.
+ * The live tutor no longer sends a full-board PNG here.
  */
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
 
   try {
-    const { image, focus } = await req.json();
+    const { image, latex, text, focus } = await req.json();
 
-    if (!image) {
-      voiceLogger.warn('No image provided to analyze-workspace route');
+    const latexText = typeof latex === 'string' ? latex.trim() : '';
+    const nearby = typeof text === 'string' ? text.trim() : '';
+
+    if (!latexText && !nearby && !image) {
+      voiceLogger.warn('No latex, text, or image provided to analyze-workspace');
       return NextResponse.json(
-        { error: 'No image provided' },
+        { error: 'No workspace text provided' },
         { status: 400 },
       );
     }
 
-    // BYOK: the operator of this deployment supplies their own key.
     const openrouterKey = requireKey('openrouter');
     if (!openrouterKey.ok) {
       voiceLogger.error('OPENROUTER_API_KEY is not configured');
@@ -28,16 +30,36 @@ export async function POST(req: NextRequest) {
     }
 
     const systemPrompt =
-      'You are analyzing a student whiteboard canvas. Describe what the user is working on, ' +
-      'how far along they are, any apparent mistakes or gaps, and where they might need help. ' +
-      'Be concrete and concise. You are only returning analysis for a voice assistant; ' +
-      'do not invent actions or drawings.';
+      'You are analyzing a student whiteboard from recognized math and typed text. ' +
+      'Describe what the user is working on, how far along they are, any apparent mistakes or gaps, ' +
+      'and where they might need help. Be concrete and concise. You are only returning analysis ' +
+      'for a voice assistant; do not invent actions or drawings.';
 
-    const userPrompt = focus
-      ? `Here is a snapshot of the user canvas. Focus on: ${focus}`
-      : 'Here is a snapshot of the user canvas. Describe what they are working on and how you could help.';
+    const parts: string[] = [];
+    if (latexText) parts.push(`Recognized LaTeX:\n${latexText}`);
+    if (nearby) parts.push(`Nearby typed / extracted text:\n${nearby}`);
+    parts.push(
+      focus
+        ? `Focus on: ${focus}`
+        : 'Describe what they are working on and how you could help.',
+    );
 
-    voiceLogger.info('Calling OpenRouter Gemini 2.5 Flash for workspace analysis');
+    const userContent: Array<Record<string, unknown>> = [
+      { type: 'text', text: parts.join('\n\n') },
+    ];
+
+    // Image is optional leftover; prefer latex/text.
+    if (!latexText && !nearby && typeof image === 'string') {
+      userContent.unshift({
+        type: 'image_url',
+        image_url: { url: image },
+      });
+    }
+
+    voiceLogger.info(
+      { hasLatex: Boolean(latexText), hasText: Boolean(nearby), hasImage: Boolean(image) },
+      'Calling OpenRouter Gemini 2.5 Flash for workspace analysis',
+    );
 
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -48,7 +70,6 @@ export async function POST(req: NextRequest) {
         'X-Title': 'Agathon Classroom Staging - Voice Workspace Analysis',
       },
       body: JSON.stringify({
-        // Model name may vary; adjust if needed in configuration.
         model: 'google/gemini-2.5-flash',
         messages: [
           {
@@ -57,18 +78,7 @@ export async function POST(req: NextRequest) {
           },
           {
             role: 'user',
-            content: [
-              {
-                type: 'image_url',
-                image_url: {
-                  url: image,
-                },
-              },
-              {
-                type: 'text',
-                text: userPrompt,
-              },
-            ],
+            content: userContent,
           },
         ],
       }),
@@ -128,5 +138,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-
-

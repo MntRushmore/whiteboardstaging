@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { solutionLogger } from '@/lib/logger';
 import { requireKey, getSiteUrl } from '@/lib/aiConfig';
 
+/**
+ * Hidden / manual fallback: redraws the board as a generated bitmap.
+ * The live pencil loop uses POST /api/tutor (JSON marks) instead.
+ */
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
   const requestId = crypto.randomUUID();
