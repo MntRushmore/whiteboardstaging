@@ -1,4 +1,4 @@
-import { LicenseManager } from "@tldraw/editor";
+import * as TldrawEditor from "@tldraw/editor";
 import { patchLicenseManagerClass } from "./patchLicenseManager";
 
 /**
@@ -10,8 +10,18 @@ import { patchLicenseManagerClass } from "./patchLicenseManager";
  *
  * Treat the runtime as development so a missing/mismatched host cannot hide
  * the canvas. Watermarks may still appear. Do not add a license key here.
+ *
+ * LicenseManager is a runtime export; the published types mark it internal.
  */
+type LicenseManagerCtor = {
+  prototype: { getIsDevelopment?: () => boolean };
+};
+
+const LicenseManager = (TldrawEditor as { LicenseManager?: LicenseManagerCtor })
+  .LicenseManager;
+
 export function keepTldrawEditorAlive(): void {
+  if (!LicenseManager) return;
   patchLicenseManagerClass(LicenseManager);
 }
 
