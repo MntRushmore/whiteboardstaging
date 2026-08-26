@@ -8,13 +8,23 @@ export type InkSegment = {
 
 export const HAND_SIZE = 14;
 export const LINE_HEIGHT = 18;
-export const TRACKING = 1.4;
+/** Simon lock: 4px advance between glyphs. */
+export const ADVANCE_PX = 4;
+export const WORD_GAP_PX = ADVANCE_PX * 2;
+/** Never sit on the ruled line. */
+export const JITTER_MIN = 0.4;
+export const JITTER_SPAN = 0.85;
 
 export type ComposedInk = {
   segments: InkSegment[];
   width: number;
   height: number;
 };
+
+export function baselineJitter(rng: () => number): number {
+  const sign = rng() < 0.5 ? -1 : 1;
+  return sign * (JITTER_MIN + rng() * JITTER_SPAN);
+}
 
 function pickGlyph(ch: string, rng: () => number, prev: { key: string; alt: number }): Glyph | null {
   const key = glyphKey(ch);
@@ -36,7 +46,7 @@ function wordWidth(word: string, scale: number): number {
   let w = 0;
   for (const ch of word) {
     const g = ATLAS[glyphKey(ch)]?.[0];
-    w += ((g?.advance ?? 4) * scale) + TRACKING;
+    w += (g?.advance ?? 4) * scale + ADVANCE_PX;
   }
   return w;
 }
@@ -77,20 +87,19 @@ export function composeHandwriting(
       const glyph = pickGlyph(ch, rng, prev);
       seed += 17;
       if (!glyph) continue;
-      const jitter = (rng() - 0.5) * 1.1;
+      const jitter = baselineJitter(rng);
       for (const path of glyph.paths) {
         const pts = samplePath(path);
         if (pts.length < 2) continue;
         segments.push(strokeToLocal(pts, x, y + jitter, scale, seed));
         seed += 3;
       }
-      x += glyph.advance * scale + TRACKING;
+      x += glyph.advance * scale + ADVANCE_PX;
       if (x > maxX) maxX = x;
     }
 
     if (w < words.length - 1) {
-      const space = ATLAS[" "]?.[0]?.advance ?? 4;
-      x += space * scale;
+      x += WORD_GAP_PX;
       if (x > maxX) maxX = x;
     }
   }
@@ -100,6 +109,19 @@ export function composeHandwriting(
     width: Math.max(8, maxX),
     height: y + LINE_HEIGHT,
   };
+}
+
+/** Alternate index per non-space character. Never repeats the same alt twice in a row. */
+export function pickAlternates(text: string, seed = 1): number[] {
+  const rng = mulberry32(seed);
+  const prev = { key: "", alt: -1 };
+  const out: number[] = [];
+  for (const ch of text) {
+    if (ch === " ") continue;
+    pickGlyph(ch, rng, prev);
+    out.push(prev.alt);
+  }
+  return out;
 }
 
 export function composeCircle(w: number, h: number, seed: number): ComposedInk {

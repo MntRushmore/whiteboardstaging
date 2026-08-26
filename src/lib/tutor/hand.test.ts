@@ -1,8 +1,14 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { planTutorInk } from "./hand/plan";
-import { composeHandwriting } from "./hand/compose";
-import { hasGlyph } from "./hand/atlas";
+import {
+  ADVANCE_PX,
+  baselineJitter,
+  composeHandwriting,
+  pickAlternates,
+} from "./hand/compose";
+import { ATLAS, COMMON_LETTERS, hasGlyph, isGreekChar } from "./hand/atlas";
+import { mulberry32 } from "./hand/path";
 import { splitSolveNote } from "./hand/solve";
 import { constrainMarks } from "./normalize";
 import type { TutorMark } from "./types";
@@ -23,13 +29,39 @@ function mark(kind: TutorMark["kind"], text?: string): TutorMark {
 }
 
 describe("teacher-hand atlas", () => {
-  it("covers latin, digits, and the locked punctuation", () => {
+  it("covers latin, digits, locked punctuation, and a few arrows — no Greek", () => {
     for (const ch of "What happens if you distribute the 3 first?") {
       if (ch === " ") continue;
       assert.equal(hasGlyph(ch), true, `missing glyph ${ch}`);
     }
-    for (const ch of "0123456789+−×÷=().,?") {
+    for (const ch of "0123456789+−×÷=().,?→←↑↓") {
       assert.equal(hasGlyph(ch), true, `missing glyph ${ch}`);
+    }
+    for (const key of Object.keys(ATLAS)) {
+      assert.equal(isGreekChar(key), false, `Greek slipped into atlas: ${key}`);
+    }
+  });
+
+  it("gives common letters 2–3 alternates and never stamps the same twice in a row", () => {
+    for (const ch of COMMON_LETTERS) {
+      const n = ATLAS[ch]?.length ?? 0;
+      assert.ok(n >= 2 && n <= 3, `${ch} has ${n} alts`);
+    }
+    const alts = pickAlternates("eeeeeeee", 11);
+    for (let i = 1; i < alts.length; i++) {
+      assert.notEqual(alts[i], alts[i - 1]);
+    }
+  });
+
+  it("advances 4px and never sits dead on the line", () => {
+    assert.equal(ADVANCE_PX, 4);
+    const ink = composeHandwriting("+", { maxWidth: 400, seed: 1, size: 14 });
+    assert.equal(ink.width, ATLAS["+"][0]!.advance + ADVANCE_PX);
+    const rng = mulberry32(99);
+    for (let i = 0; i < 80; i++) {
+      const j = baselineJitter(rng);
+      assert.notEqual(j, 0);
+      assert.ok(Math.abs(j) >= 0.4);
     }
   });
 

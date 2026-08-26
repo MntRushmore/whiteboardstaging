@@ -1,4 +1,4 @@
-/** Baked teacher-hand. Em box is 10×14, baseline ≈ 11. No Greek. */
+/** One teacher-hand. Em box is 10×14, baseline ≈ 11. No Greek until a problem needs it. */
 
 export type Glyph = { advance: number; paths: string[] };
 
@@ -239,7 +239,16 @@ export const ATLAS: Record<string, Glyph[]> = {
   "]": [g(4.2, "M 1.2 2.6 L 3.0 2.6 L 3.0 11.3 L 1.2 11.3")],
   "→": [g(9.0, "M 1.0 8.0 L 7.4 8.0 M 5.4 5.8 L 7.6 8.0 L 5.4 10.2")],
   "←": [g(9.0, "M 7.6 8.0 L 1.2 8.0 M 3.2 5.8 L 1.0 8.0 L 3.2 10.2")],
+  "↑": [g(6.4, "M 3.2 11.2 L 3.2 3.0 M 1.4 5.2 L 3.2 2.8 L 5.0 5.2")],
+  "↓": [g(6.4, "M 3.2 2.8 L 3.2 11.0 M 1.4 8.8 L 3.2 11.2 L 5.0 8.8")],
 };
+
+/** Frequent letters that must have 2–3 alternates. */
+export const COMMON_LETTERS = "etaoinshrdlucm";
+
+export function isGreekChar(ch: string): boolean {
+  return /[\u0370-\u03FF\u1F00-\u1FFF]/.test(ch);
+}
 
 const ALIASES: Record<string, string> = {
   "—": "-",
