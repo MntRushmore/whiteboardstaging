@@ -31,6 +31,7 @@ import {
   SOCRATIC_WIDTH_PX,
   SOLVE_GAP_PX,
   SOLVE_WIDTH_PX,
+  pinSocraticNote,
 } from "./layout";
 import type { TutorMark } from "./types";
 
@@ -92,6 +93,28 @@ describe("constrainMarks", () => {
     assert.equal(result[0]?.w, 28 * 14 * 0.6);
   });
 
+  it("pins a far-right model note back to the last cluster", () => {
+    const cluster = { x: 220, y: 220, w: 151, h: 52 };
+    const pinned = pinSocraticNote(
+      {
+        kind: "note",
+        pageId: "",
+        x: 972,
+        y: 40,
+        w: 200,
+        h: 20,
+        text: "What is x?",
+        problemId: 1,
+        latex: "3x=9",
+        bbox: { x: 0, y: 0, w: 1024, h: 768 },
+      },
+      cluster,
+    );
+    assert.equal(pinned.x, 220 + 151 + 12);
+    assert.equal(pinned.y, 220);
+    assert.deepEqual(pinned.bbox, cluster);
+  });
+
   it("pins the solve column 16px right of the bbox at 280px wide", () => {
     const result = constrainMarks("solve", [
       mark("circle"),
@@ -143,7 +166,7 @@ describe("constrainMarks", () => {
 });
 
 describe("mapNormalizedMarkToPage", () => {
-  it("maps 0-1 crop boxes onto page bounds and keeps problem payload", () => {
+  it("maps 0-1 crop boxes onto the given bounds and keeps problem payload", () => {
     const page = mapNormalizedMarkToPage(
       { kind: "circle", nx: 0.25, ny: 0.5, nw: 0.2, nh: 0.1 },
       "page:abc",
@@ -158,6 +181,17 @@ describe("mapNormalizedMarkToPage", () => {
     assert.equal(page.h, 10);
     assert.equal(page.problemId, 3);
     assert.equal(page.latex, "x^2");
+  });
+
+  it("puts nx~0.95 on the cluster, not the page — page bounds are the far-right miss", () => {
+    const cluster = { x: 220, y: 220, w: 151, h: 52 };
+    const page = { x: 0, y: 0, w: 1024, h: 768 };
+    const note = { kind: "note" as const, nx: 0.95, ny: 0, nw: 0.2, nh: 0.2, text: "What is x?" };
+    const onCluster = mapNormalizedMarkToPage(note, "", cluster, 1, "3x=9");
+    const onPage = mapNormalizedMarkToPage(note, "", page, 1, "3x=9");
+    assert.equal(onCluster.x, 220 + 0.95 * 151);
+    assert.ok(onCluster.x < cluster.x + cluster.w);
+    assert.ok(onPage.x > 900);
   });
 });
 
@@ -175,6 +209,15 @@ describe("parse helpers", () => {
       nh: 0.1,
     });
     assert.equal(parsed?.kind, "caret");
+    const outside = parseNormalizedMark({
+      kind: "note",
+      nx: 1.05,
+      ny: 0,
+      nw: 0.2,
+      nh: 0.2,
+      text: "What is x?",
+    });
+    assert.equal(outside?.nx, 1.05);
   });
 
   it("extracts plain text from tldraw rich text", () => {

@@ -250,7 +250,7 @@ describe("demo set", () => {
     );
     assert.equal(DEFAULT_ASSISTANCE_MODE, "suggest");
     assert.equal(PAPER, "#F4EFE6");
-    assert.equal(TUTOR_DEBOUNCE_MS, 2000);
+    assert.equal(TUTOR_DEBOUNCE_MS, 400);
     assert.equal(TUTOR_FLASH_MODEL, "google/gemini-2.5-flash");
     assert.equal(TUTOR_BACKUP_MODEL, "openai/gpt-4.1-mini");
     assert.equal(socraticOpener(1), "What happens if you distribute the 3 first?");

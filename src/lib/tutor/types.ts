@@ -85,8 +85,8 @@ export type StrokeSample = {
 };
 
 export const CONFIDENCE_THRESHOLD = 0.6;
-/** First mark ~2s after pen-up. Never a generated page. */
-export const TUTOR_DEBOUNCE_MS = 2000;
+/** First mark ~400ms after pen-up so recognize+tutor can land in ~3s. */
+export const TUTOR_DEBOUNCE_MS = 400;
 export const DEFAULT_ASSISTANCE_MODE: AssistanceMode = "suggest";
 
 /** OpenRouter Flash on recognized LaTeX. Backup is GPT-4.1-mini. */

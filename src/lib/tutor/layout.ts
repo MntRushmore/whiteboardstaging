@@ -43,6 +43,12 @@ export function layoutSocraticQuestion(bbox: ClusterBounds, text: string): {
   };
 }
 
+/** Last stroke cluster only. Ignore model nx / page-margin x. */
+export function pinSocraticNote(mark: TutorMark, cluster: ClusterBounds): TutorMark {
+  const laid = layoutSocraticQuestion(cluster, mark.text?.trim() ?? "");
+  return { ...mark, kind: "note", ...laid, bbox: cluster };
+}
+
 export function layoutFeedbackCircle(bbox: ClusterBounds): ClusterBounds {
   return {
     x: bbox.x - CIRCLE_PAD_PX,
@@ -80,8 +86,7 @@ export function applyOverlayLayout(mode: "socratic" | "solve" | "feedback", mark
   if (mode === "socratic") {
     const note = marks.find((m) => m.kind === "note" && m.text);
     if (!note) return [];
-    const laid = layoutSocraticQuestion(bbox, note.text!);
-    return [{ ...note, ...laid }];
+    return [pinSocraticNote(note, bbox)];
   }
 
   if (mode === "solve") {

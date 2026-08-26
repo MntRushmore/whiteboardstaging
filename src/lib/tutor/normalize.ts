@@ -55,16 +55,22 @@ export function parseNormalizedMark(raw: unknown): NormalizedMark | null {
   if (![nx, ny, nw, nh].every(Number.isFinite)) return null;
 
   const text = typeof rec.text === "string" ? rec.text.trim() : undefined;
+  // Cluster-normalized: 0–1 is on the work, >1 is just outside that cluster.
+  // Do not treat nx>=1 as a page-margin coordinate, and do not zero it.
   return {
     kind: rec.kind,
-    nx: clamp01(nx > 1 ? 0 : nx),
-    ny: clamp01(ny > 1 ? 0 : ny),
+    nx: Number.isFinite(nx) ? Math.min(1.25, Math.max(-0.1, nx)) : 0,
+    ny: Number.isFinite(ny) ? Math.min(1.25, Math.max(-0.1, ny)) : 0,
     nw: Math.min(1, Math.max(0.02, nw > 1 ? 0.2 : nw)),
     nh: Math.min(1, Math.max(0.02, nh > 1 ? 0.12 : nh)),
     text,
   };
 }
 
+/**
+ * Map nx/ny onto the given bounds. Those bounds must be the last stroke
+ * cluster, never the page. nx~0.95 × page width is the far-right miss.
+ */
 export function mapNormalizedMarkToPage(
   mark: NormalizedMark,
   pageId: string,

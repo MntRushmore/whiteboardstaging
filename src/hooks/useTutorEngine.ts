@@ -28,6 +28,7 @@ import {
 } from "@/lib/tutor/problems";
 import { getPageProblemId, goToProblemPage } from "@/lib/tutor/pages";
 import { decideSocraticAnswer } from "@/lib/tutor/answer";
+import { pinSocraticNote } from "@/lib/tutor/layout";
 import { isUsableLatex } from "@/lib/tutor/normalize";
 import { recognizeStrokes } from "@/lib/tutor/recognize";
 import {
@@ -232,9 +233,9 @@ export function useTutorEngine({
         );
         problemsRef.current = nextProblems;
         setProblems(nextProblems);
-        setClusterBounds(nextProblems[problemId - 1]?.bbox ?? cluster.bounds);
+        setClusterBounds(cluster.bounds);
 
-        const bbox = nextProblems[problemId - 1]?.bbox ?? cluster.bounds;
+        const bbox = cluster.bounds;
         if (!isUsableLatex(latex)) {
           logger.info({ problemId, latex }, "Mathpix miss; stay quiet");
           setBusy("idle", "");
@@ -295,7 +296,8 @@ export function useTutorEngine({
 
         applyingRef.current = true;
         try {
-          const ids = applyTutorMarks(editor, decision.marks, "socratic");
+          const pinned = decision.marks.map((mark) => pinSocraticNote(mark, cluster.bounds));
+          const ids = applyTutorMarks(editor, pinned, "socratic");
           fadeInTutorShapes(editor, ids);
           setHasMarks(ids.length > 0);
           setHasPending(ids.length > 0);

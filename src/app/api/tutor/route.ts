@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { tutorLogger } from "@/lib/logger";
 import { getSiteUrl, requireKey } from "@/lib/aiConfig";
+import { pinSocraticNote } from "@/lib/tutor/layout";
 import {
   clampConfidence,
   constrainMarks,
@@ -43,8 +44,8 @@ function buildPrompt(opts: {
     "Never request or describe an image. Never replace student ink.",
     "Return JSON only:",
     '{ "confidence": number, "marks": [{ "kind": "circle"|"caret"|"note", "nx": number, "ny": number, "nw": number, "nh": number, "text"?: string }] }',
-    "- marks use bbox-normalized coordinates: (0,0) top-left of the work, (1,1) bottom-right.",
-    "- Notes sit in the right margin (nx >= 1.0 is fine conceptually; use nx ~ 0.95).",
+    "- marks use last-cluster coordinates: (0,0) top-left of that stroke bbox, (1,1) bottom-right of that bbox. Never the page.",
+    "- The Socratic note is pinned just outside that cluster (a few px to the right). Do not place it in a page margin. Do not use nx ~ 0.95 of the page.",
     "- If the LaTeX is empty or unreadable, confidence < 0.5 and marks [].",
     "",
     modeInstructions(opts.mode),
@@ -172,7 +173,9 @@ export async function POST(req: NextRequest) {
         .map(parseNormalizedMark)
         .filter((m): m is NormalizedMark => Boolean(m))
         .map((m) => mapNormalizedMarkToPage(m, "", bbox, problemId, latex)),
-    );
+    )
+      .slice(0, 1)
+      .map((mark) => pinSocraticNote(mark, bbox));
 
     const usableNote = marks[0]?.kind === "note" && Boolean(marks[0]?.text?.trim());
     const result: TutorResponse = {
