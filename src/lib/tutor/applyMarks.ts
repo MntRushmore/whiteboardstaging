@@ -2,7 +2,7 @@ import { createShapeId, type Editor, type TLShapeId } from "tldraw";
 import { isTutorShape } from "./cluster";
 import { composeDiagram } from "./hand/diagrams";
 import { planTutorInk } from "./hand/plan";
-import { HAND_NIB_PX, TUTOR_RED } from "./layout";
+import { HAND_NIB_PX, MATH_NOTES_ORANGE, TUTOR_RED } from "./layout";
 import { getDemoProblem } from "./problems";
 import {
   PROBLEM_META,
@@ -201,7 +201,8 @@ export function applyTutorMarks(editor: Editor, marks: TutorMark[], mode?: Tutor
       for (const mark of marks) {
         for (const plan of planTutorInk(mark, mode)) {
           const id = createShapeId();
-          const meta = tutorMeta(mark, { ink: plan.kind });
+          const pending = mode !== "solve";
+          const meta = tutorMeta(mark, { ink: plan.kind, [TUTOR_PENDING_META]: pending });
 
           if (plan.kind === "hand") {
             if (plan.segments.length === 0) continue;
@@ -216,8 +217,11 @@ export function applyTutorMarks(editor: Editor, marks: TutorMark[], mode?: Tutor
               props: {
                 w: plan.w,
                 h: plan.h,
-                color: TUTOR_RED,
-                stroke: HAND_NIB_PX,
+                color: mode === "solve" ? MATH_NOTES_ORANGE : TUTOR_RED,
+                stroke:
+                  mode === "solve"
+                    ? Math.max(HAND_NIB_PX, plan.h / 10)
+                    : HAND_NIB_PX,
                 segments: plan.segments.map((segment) => ({
                   points: segment.points.map((point) => ({
                     x: point.x,

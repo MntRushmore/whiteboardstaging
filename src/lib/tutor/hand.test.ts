@@ -165,20 +165,22 @@ describe("planTutorInk", () => {
     assert.ok((hand.segments[0]?.points[0]?.x ?? 99) < 12);
     const ds = hand.segments.map((segment) => polylineToSvgD(segment.points));
     assert.ok(ds.every((d) => d.startsWith("M ") && (d.match(/M /g) ?? []).length === 1));
-    assert.equal(HAND_NIB_PX, 1.4);
+    assert.equal(HAND_NIB_PX, 2.2);
     const firstX = hand.segments[0]?.points[0]?.x ?? 0;
     const laterX = hand.segments[4]?.points[0]?.x ?? 0;
     assert.ok(laterX - firstX > 8);
   });
 
-  it("splits solve notes into hand lead-in and katex", () => {
-    const [note] = constrainMarks("solve", [mark("note", "check: x=2")]);
+  it("draws the Math Notes result as atlas digits, not a freehand scribble", () => {
+    const [note] = constrainMarks("solve", [mark("note", "38")]);
     const plans = planTutorInk(note!, "solve");
-    assert.deepEqual(
-      plans.map((p) => p.kind),
-      ["draw", "katex"],
-    );
-    assert.equal(plans[1]?.kind === "katex" && plans[1].latex, "x=2");
+    assert.equal(plans.length, 1);
+    assert.equal(plans[0]?.kind, "hand");
+    if (plans[0]?.kind !== "hand") return;
+    assert.ok(plans[0].segments.length >= 2);
+    assert.ok(plans[0].h >= 18);
+    const ds = plans[0].segments.map((segment) => polylineToSvgD(segment.points));
+    assert.ok(ds.every((d) => d.startsWith("M ") && (d.match(/M /g) ?? []).length === 1));
   });
 
   it("draws the feedback circle and caret as strokes", () => {

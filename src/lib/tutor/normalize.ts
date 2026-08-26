@@ -107,7 +107,7 @@ export function constrainMarks(mode: TutorMode, marks: TutorMark[]): TutorMark[]
   if (mode === "solve") {
     return applyOverlayLayout(
       "solve",
-      marks.filter((m) => m.kind === "note" && m.text).slice(0, 5),
+      marks.filter((m) => m.kind === "note" && m.text).slice(0, 4),
     );
   }
 
@@ -151,4 +151,42 @@ export function richTextToPlain(value: unknown): string {
 
 export function isUsableLatex(latex: string): boolean {
   return latex.trim().length > 0;
+}
+
+const LATEX_COMMAND = /\\[a-zA-Z]+\*?/g;
+const QUOTED_LETTER = /['"‘’“”]([A-Za-z])['"‘’“”]/g;
+const NAMED_LETTER = /\b(?:variable|letter|unknown|term|coefficient of)\s+([A-Za-z])\b/gi;
+const LETTER_REPRESENTS = /\b([A-Za-z])\s+represent/gi;
+
+/** Letters that actually appear in the recognized latex (commands stripped). */
+export function lettersInLatex(latex: string): Set<string> {
+  const stripped = latex.replace(LATEX_COMMAND, " ").replace(/[{}]/g, " ");
+  return new Set((stripped.match(/[A-Za-z]/g) ?? []).map((ch) => ch.toLowerCase()));
+}
+
+/**
+ * Drop leftover openers that talk about a variable not in this latex.
+ * "What does 'a' represent" against `36+2=` is the bug.
+ */
+export function noteTextFitsLatex(text: string, latex: string): boolean {
+  const allowed = lettersInLatex(latex);
+  const mentioned = new Set<string>();
+  for (const re of [QUOTED_LETTER, NAMED_LETTER, LETTER_REPRESENTS]) {
+    re.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(text))) {
+      mentioned.add(match[1]!.toLowerCase());
+    }
+  }
+  for (const ch of mentioned) {
+    if (!allowed.has(ch)) return false;
+  }
+  return true;
+}
+
+export function notesAboutLatex(marks: TutorMark[], latex: string): TutorMark[] {
+  return marks.filter((mark) => {
+    if (mark.kind !== "note" || !mark.text?.trim()) return true;
+    return noteTextFitsLatex(mark.text, latex);
+  });
 }

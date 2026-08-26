@@ -30,6 +30,7 @@ export type TutorRequest = {
   problemId: number;
   latex: string;
   bbox: ClusterBounds;
+  mode?: TutorMode;
 };
 
 export type TutorMark = {

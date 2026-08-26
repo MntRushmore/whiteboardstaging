@@ -9,9 +9,13 @@ export const CIRCLE_PAD_PX = 6;
 export const CARET_GAP_PX = 8;
 export const SOLVE_WIDTH_PX = 280;
 export const SOLVE_GAP_PX = 16;
+/** Gap after `=` so the Math Notes result sits on the same line. */
+export const MATH_NOTES_GAP_PX = 6;
+/** Apple Math Notes warm orange. */
+export const MATH_NOTES_ORANGE = "#E8833A";
 export const TUTOR_RED = "#E11D48";
-/** Dry atlas nib. Not tldraw freehand. */
-export const HAND_NIB_PX = 1.4;
+/** Dry atlas nib at note size. Not tldraw freehand. */
+export const HAND_NIB_PX = 2.2;
 /** Warm paper. Not cold white. */
 export const PAPER = "#F4EFE6";
 
@@ -81,6 +85,22 @@ export function layoutSolveColumn(
   }));
 }
 
+/** Math Notes: result immediately after the equals, same baseline and height. */
+export function pinMathNotesResult(mark: TutorMark, cluster: ClusterBounds): TutorMark {
+  const text = mark.text?.trim() ?? "";
+  const h = Math.max(18, cluster.h);
+  return {
+    ...mark,
+    kind: "note",
+    x: cluster.x + cluster.w + MATH_NOTES_GAP_PX,
+    y: cluster.y,
+    w: Math.max(h, text.length * h * 0.7),
+    h,
+    text,
+    bbox: cluster,
+  };
+}
+
 export function applyOverlayLayout(mode: "socratic" | "solve" | "feedback", marks: TutorMark[]): TutorMark[] {
   const bbox = marks[0]?.bbox;
   if (!bbox) return marks;
@@ -92,11 +112,9 @@ export function applyOverlayLayout(mode: "socratic" | "solve" | "feedback", mark
   }
 
   if (mode === "solve") {
-    const notes = marks.filter((m) => m.kind === "note" && m.text).map((m) => m.text!);
-    return layoutSolveColumn(bbox, notes).map((laid, i) => ({
-      ...marks.filter((m) => m.kind === "note" && m.text)[i]!,
-      ...laid,
-    }));
+    const note = marks.find((m) => m.kind === "note" && m.text?.trim());
+    if (!note) return [];
+    return [pinMathNotesResult(note, bbox)];
   }
 
   const circleBox = layoutFeedbackCircle(bbox);

@@ -8,9 +8,9 @@ import {
   composeHandwriting,
   composeTickMarks,
   composeUnderline,
+  NOTE_HAND_SIZE,
   type ComposedInk,
 } from "./compose";
-import { estimateKatexSize, splitSolveNote } from "./solve";
 
 export type InkSegment = ComposedInk["segments"][number];
 
@@ -91,45 +91,13 @@ export function planTutorInk(mark: TutorMark, mode?: TutorMode): InkPlan[] {
   const text = mark.text?.trim();
   if (!text) return [];
 
-  if (mode === "solve") {
-    const { leadIn, math } = splitSolveNote(text);
-    const plans: InkPlan[] = [];
-    let nextX = mark.x;
-    let nextY = mark.y;
-    if (leadIn) {
-      const hand = composeHandwriting(leadIn, { maxWidth: mark.w, seed: seedFor(mark, 5) });
-      plans.push({
-        kind: "draw",
-        x: mark.x,
-        y: mark.y,
-        closed: false,
-        segments: hand.segments,
-        markKind: "note",
-      });
-      if (hand.width + 90 > mark.w) {
-        nextX = mark.x;
-        nextY = mark.y + hand.height;
-      } else {
-        nextX = mark.x + hand.width + 6;
-        nextY = mark.y;
-      }
-    }
-    if (math) {
-      const size = estimateKatexSize(math);
-      plans.push({
-        kind: "katex",
-        x: nextX,
-        y: nextY,
-        w: size.w,
-        h: size.h,
-        latex: math,
-        markKind: "note",
-      });
-    }
-    return plans;
-  }
-
-  const hand = composeHandwriting(text, { maxWidth: mark.w, seed: seedFor(mark, 6) });
+  const size =
+    mode === "solve" ? Math.max(18, mark.h) : NOTE_HAND_SIZE;
+  const hand = composeHandwriting(text, {
+    maxWidth: Math.max(mark.w, size * Math.max(2, text.length)),
+    seed: seedFor(mark, mode === "solve" ? 5 : 6),
+    size,
+  });
   // Atlas compositor only. Do not emit a tldraw draw — dash:"draw"
   // concatenates every glyph path and runs freehand (the red scribble).
   return [
@@ -137,8 +105,8 @@ export function planTutorInk(mark: TutorMark, mode?: TutorMode): InkPlan[] {
       kind: "hand",
       x: mark.x,
       y: mark.y,
-      w: hand.width,
-      h: hand.height,
+      w: Math.max(8, hand.width),
+      h: Math.max(16, hand.height),
       segments: hand.segments,
       markKind: "note",
     },

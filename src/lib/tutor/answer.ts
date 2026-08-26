@@ -1,4 +1,4 @@
-import { constrainMarks, isUsableLatex } from "./normalize";
+import { constrainMarks, isUsableLatex, noteTextFitsLatex } from "./normalize";
 import type { TutorMark } from "./types";
 
 export type AnswerQuietReason = "no-cluster" | "mathpix-miss" | "flash-miss";
@@ -8,9 +8,9 @@ export type AnswerDecision =
   | { action: "socratic"; marks: TutorMark[] };
 
 /**
- * Live answering lock: last cluster → Mathpix → one Socratic mark.
+ * Live Socratic lock: last cluster → Mathpix → one Socratic mark.
  * Empty LaTeX is a Mathpix miss. Unusable marks are a Flash miss.
- * Never invent a picture.
+ * Never invent a picture. Solve does not use this — see evaluateMathNotes.
  */
 export function decideSocraticAnswer(
   seedCount: number,
@@ -20,7 +20,8 @@ export function decideSocraticAnswer(
   if (seedCount <= 0) return { action: "quiet", reason: "no-cluster" };
   if (!isUsableLatex(latex)) return { action: "quiet", reason: "mathpix-miss" };
   const one = constrainMarks("socratic", marks).slice(0, 1);
-  if (one.length === 0 || !one[0]?.text?.trim()) {
+  const text = one[0]?.text?.trim() ?? "";
+  if (!text || !noteTextFitsLatex(text, latex)) {
     return { action: "quiet", reason: "flash-miss" };
   }
   return { action: "socratic", marks: one };

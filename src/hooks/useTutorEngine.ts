@@ -28,11 +28,13 @@ import {
 } from "@/lib/tutor/problems";
 import { getPageProblemId, goToProblemPage } from "@/lib/tutor/pages";
 import { decideSocraticAnswer } from "@/lib/tutor/answer";
-import { pinSocraticNote } from "@/lib/tutor/layout";
+import { pinMathNotesResult, pinSocraticNote } from "@/lib/tutor/layout";
+import { evaluateMathNotes } from "@/lib/tutor/mathNotes";
 import { isUsableLatex } from "@/lib/tutor/normalize";
 import { recognizeStrokes } from "@/lib/tutor/recognize";
 import {
   TUTOR_DEBOUNCE_MS,
+  assistanceToTutorMode,
   type AssistanceMode,
   type ClusterBounds,
   type ProblemRecord,
@@ -74,6 +76,7 @@ export function useTutorEngine({
   const activeRef = useRef(activeProblemId);
   const rejectedDiagramsRef = useRef(new Set<number>());
   const ranClusterKeysRef = useRef(new Set<string>());
+  const lastSolveLatexRef = useRef("");
 
   modeRef.current = assistanceMode;
   autoRef.current = autoEnabled;
@@ -146,6 +149,7 @@ export function useTutorEngine({
     }
     pendingIdsRef.current.clear();
     ranClusterKeysRef.current.clear();
+    lastSolveLatexRef.current = "";
     abortRef.current?.abort();
     abortRef.current = null;
     processingRef.current = false;
@@ -176,8 +180,13 @@ export function useTutorEngine({
       const cluster = clusterFromSeeds(editor, seedIds);
       if (!cluster) return false;
 
+      const mode = assistanceToTutorMode(modeRef.current);
+      if (!mode) return false;
+
       const clusterKey = [...cluster.shapeIds].sort().join(",");
-      if (clusterKey && ranClusterKeysRef.current.has(clusterKey)) return false;
+      if (mode !== "solve" && clusterKey && ranClusterKeysRef.current.has(clusterKey)) {
+        return false;
+      }
 
       const problemId = getPageProblemId(editor);
       activeRef.current = problemId;
@@ -223,7 +232,7 @@ export function useTutorEngine({
           setBusy("idle", "");
           return false;
         }
-        ranClusterKeysRef.current.add(clusterKey);
+        if (mode !== "solve") ranClusterKeysRef.current.add(clusterKey);
 
         const nextProblems = recordInkOnProblem(
           problemsRef.current,
@@ -242,11 +251,54 @@ export function useTutorEngine({
           return false;
         }
 
-        const response = await fetch("/api/tutor?mode=socratic", {
+        if (mode === "solve") {
+          const resultText = evaluateMathNotes(latex);
+          if (!resultText) {
+            logger.info({ problemId, latex }, "Math Notes miss; stay quiet");
+            setBusy("idle", "");
+            return false;
+          }
+          if (lastSolveLatexRef.current === latex) {
+            setBusy("idle", "");
+            return false;
+          }
+          lastSolveLatexRef.current = latex;
+          applyingRef.current = true;
+          try {
+            const mark = pinMathNotesResult(
+              {
+                kind: "note",
+                pageId: "",
+                x: bbox.x,
+                y: bbox.y,
+                w: bbox.w,
+                h: bbox.h,
+                text: resultText,
+                problemId,
+                latex,
+                bbox,
+              },
+              cluster.bounds,
+            );
+            const ids = applyTutorMarks(editor, [mark], "solve");
+            fadeInTutorShapes(editor, ids);
+            setHasMarks(ids.length > 0);
+            setHasPending(false);
+          } finally {
+            queueMicrotask(() => {
+              applyingRef.current = false;
+            });
+          }
+          setBusy("success", "Result added");
+          setTimeout(() => setBusy("idle", ""), 1600);
+          return true;
+        }
+
+        const response = await fetch(`/api/tutor?mode=${mode}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: abort.signal,
-          body: JSON.stringify({ problemId, latex, bbox }),
+          body: JSON.stringify({ problemId, latex, bbox, mode }),
         });
 
         if (abort.signal.aborted) {

@@ -7,6 +7,8 @@ export type InkSegment = {
 };
 
 export const HAND_SIZE = 14;
+/** Live notes: large enough to read next to student ink. Atlas em is 14. */
+export const NOTE_HAND_SIZE = 22;
 export const LINE_HEIGHT = 18;
 /** Simon lock: 4px advance between glyphs. */
 export const ADVANCE_PX = 4;
@@ -66,6 +68,7 @@ export function composeHandwriting(
   opts: { maxWidth: number; seed?: number; size?: number },
 ): ComposedInk {
   const scale = (opts.size ?? HAND_SIZE) / EM_HEIGHT;
+  const lineHeight = LINE_HEIGHT * scale;
   const rng = mulberry32(opts.seed ?? 1);
   const prev = { key: "", alt: -1 };
   const segments: InkSegment[] = [];
@@ -81,7 +84,7 @@ export function composeHandwriting(
     const ww = wordWidth(word, scale);
     if (x > 0 && x + ww > opts.maxWidth) {
       x = 0;
-      y += LINE_HEIGHT;
+      y += lineHeight;
     }
 
     for (const ch of tokenizeHand(word)) {
@@ -108,7 +111,7 @@ export function composeHandwriting(
   return {
     segments,
     width: Math.max(8, maxX),
-    height: y + LINE_HEIGHT,
+    height: y + lineHeight,
   };
 }
 

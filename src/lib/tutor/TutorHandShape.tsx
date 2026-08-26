@@ -61,7 +61,12 @@ export class TutorHandShapeUtil extends BaseBoxShapeUtil<TutorHandShape> {
 
   component(shape: TutorHandShape) {
     return (
-      <SVGContainer>
+      <SVGContainer
+        width={shape.props.w}
+        height={shape.props.h}
+        overflow="visible"
+        style={{ overflow: "visible" }}
+      >
         <g
           fill="none"
           stroke={shape.props.color}

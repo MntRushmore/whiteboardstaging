@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { tutorLogger } from "@/lib/logger";
 import { getSiteUrl, requireKey } from "@/lib/aiConfig";
-import { pinSocraticNote } from "@/lib/tutor/layout";
+import { pinMathNotesResult, pinSocraticNote } from "@/lib/tutor/layout";
+import { evaluateMathNotes } from "@/lib/tutor/mathNotes";
 import {
   clampConfidence,
   constrainMarks,
   isUsableLatex,
   mapNormalizedMarkToPage,
+  noteTextFitsLatex,
   parseJsonObject,
   parseNormalizedMark,
+  parseTutorMode,
 } from "@/lib/tutor/normalize";
 import {
   isProblemId,
@@ -119,8 +122,10 @@ export async function POST(req: NextRequest) {
     const problemId = Number(body.problemId);
     const latex = typeof body.latex === "string" ? body.latex.trim() : "";
     const bbox = body.bbox as ClusterBounds | undefined;
-    // Live lock: one Socratic mark. Ignore Solve/Feedback query params.
-    const mode = "socratic" as const;
+    const mode = parseTutorMode(
+      body.mode ?? req.nextUrl.searchParams.get("mode"),
+      "socratic",
+    );
 
     if (!isProblemId(problemId)) {
       return NextResponse.json({ error: "problemId must be 1–12" }, { status: 400 });
@@ -144,6 +149,41 @@ export async function POST(req: NextRequest) {
       };
       tutorLogger.info({ requestId, problemId }, "Mathpix miss; stay quiet");
       return NextResponse.json(empty);
+    }
+
+    if (mode === "solve") {
+      const resultText = evaluateMathNotes(latex);
+      const mark = resultText
+        ? pinMathNotesResult(
+            {
+              kind: "note",
+              pageId: "",
+              x: bbox.x,
+              y: bbox.y,
+              w: bbox.w,
+              h: bbox.h,
+              text: resultText,
+              problemId,
+              latex,
+              bbox,
+            },
+            bbox,
+          )
+        : null;
+      const result: TutorResponse = {
+        problemId,
+        latex,
+        bbox,
+        confidence: mark ? 1 : 0,
+        mode,
+        marks: mark ? [mark] : [],
+        miss: mark ? undefined : "flash",
+      };
+      tutorLogger.info(
+        { requestId, problemId, latex, resultText, markCount: result.marks.length },
+        mark ? "Math Notes result" : "Math Notes miss; stay quiet",
+      );
+      return NextResponse.json(result);
     }
 
     const openrouterKey = requireKey("openrouter");
@@ -175,7 +215,8 @@ export async function POST(req: NextRequest) {
         .map((m) => mapNormalizedMarkToPage(m, "", bbox, problemId, latex)),
     )
       .slice(0, 1)
-      .map((mark) => pinSocraticNote(mark, bbox));
+      .map((mark) => pinSocraticNote(mark, bbox))
+      .filter((mark) => Boolean(mark.text?.trim()) && noteTextFitsLatex(mark.text!, latex));
 
     const usableNote = marks[0]?.kind === "note" && Boolean(marks[0]?.text?.trim());
     const result: TutorResponse = {

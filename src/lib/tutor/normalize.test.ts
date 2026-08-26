@@ -66,7 +66,7 @@ describe("overlay spacing lock", () => {
     assert.equal(SOCRATIC_FONT_PX, 14);
     assert.equal(SOCRATIC_WIDTH_PX, 28 * 14 * 0.6);
     assert.equal(CIRCLE_STROKE_PX, 1.5);
-    assert.equal(HAND_NIB_PX, 1.4);
+    assert.equal(HAND_NIB_PX, 2.2);
     assert.equal(CIRCLE_PAD_PX, 6);
     assert.equal(CARET_GAP_PX, 8);
     assert.equal(SOLVE_WIDTH_PX, 280);
@@ -117,22 +117,21 @@ describe("constrainMarks", () => {
     assert.deepEqual(pinned.bbox, cluster);
   });
 
-  it("pins the solve column 16px right of the bbox at 280px wide", () => {
+  it("pins the Math Notes result just after the equals on the same baseline", () => {
     const result = constrainMarks("solve", [
       mark("circle"),
-      mark("note", "x = 2"),
+      mark("note", "38"),
       mark("caret"),
-      mark("note", "check: 2+2=4"),
+      mark("note", "What does 'a' represent?"),
     ]);
     assert.deepEqual(
       result.map((m) => m.kind),
-      ["note", "note"],
+      ["note"],
     );
-    assert.equal(result[0]?.x, 0 + 100 + 16);
-    assert.equal(result[0]?.w, 280);
-    assert.equal(result[1]?.x, 0 + 100 + 16);
-    assert.equal(result[1]?.w, 280);
-    assert.equal(result[1]?.y, 22);
+    assert.equal(result[0]?.text, "38");
+    assert.equal(result[0]?.x, 0 + 100 + 6);
+    assert.equal(result[0]?.y, 0);
+    assert.equal(result[0]?.h, 40);
   });
 
   it("pads the feedback circle 6px around the ink and drops the caret 8px under", () => {

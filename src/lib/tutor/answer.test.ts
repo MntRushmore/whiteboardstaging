@@ -63,4 +63,11 @@ describe("decideSocraticAnswer", () => {
     assert.equal(decision.marks[0]?.kind, "note");
     assert.equal(decision.marks[0]?.text, "What happens if you divide first?");
   });
+
+  it("drops a leftover question about a letter that is not in the latex", () => {
+    const decision = decideSocraticAnswer(2, "36 + 2 =", [
+      note("What does 'a' represent in this context?"),
+    ]);
+    assert.deepEqual(decision, { action: "quiet", reason: "flash-miss" });
+  });
 });
