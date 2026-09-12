@@ -124,9 +124,15 @@ function shouldJoin(a: Rect, b: Rect, medianH: number): boolean {
 }
 
 function barCovers(bar: Rect, other: Rect, medianH: number): boolean {
-  const xOverlap = overlap1d(bar.x, bar.x + bar.w, other.x, other.x + other.w);
-  if (other.w <= 0) return false;
-  if (xOverlap / Math.max(1, other.w) < CLUSTER_RULES.barCoverRatio) return false;
+  if (other.w < 1) {
+    // A thin vertical stroke (a "1", the stem of a "+") has no width to overlap:
+    // it is covered when its centre falls inside the bar's x-range.
+    const cx = other.x + other.w / 2;
+    if (cx < bar.x - 1 || cx > bar.x + bar.w + 1) return false;
+  } else {
+    const xOverlap = overlap1d(bar.x, bar.x + bar.w, other.x, other.x + other.w);
+    if (xOverlap / other.w < CLUSTER_RULES.barCoverRatio) return false;
+  }
   const vGap = gap1d(bar.y, bar.y + bar.h, other.y, other.y + other.h);
   return vGap <= CLUSTER_RULES.barReachFactor * medianH;
 }

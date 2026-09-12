@@ -144,3 +144,27 @@ CI (`.github/workflows/ci.yml`) runs typecheck, lint, tests and a build on every
 | `npx supabase start` fails | Docker is not running, or ports 54321-54329 are taken (`npx supabase stop --no-backup` then retry). |
 
 All error responses from `/api/*` have the shape `{ "error": "<code>", "message": "<human text>" }`.
+
+## Live Math (realtime math & STEM)
+
+Live Math is an always-on layer on the board (toggle next to the Off / Feedback / Suggest / Solve tabs, persisted per device in `localStorage` under `agathon.live.v1`). It turns each handwritten line into a native, editable KaTeX **math** shape about a second after pen-up and runs an offline mathjs engine for instant checks; a streaming LLM is used only for the *why* and for hints, and only when the help mode allows it.
+
+What a student sees after writing a line:
+
+| When | What |
+| --- | --- |
+| ~0.6 s | Quiet gate ends; strokes are clustered into lines and sent to `POST /api/live/recognize` (Mathpix `v3/strokes`, ~300 ms; vision-model fallback when Mathpix keys are absent). |
+| ~1.2 s | A gray typeset "echo" appears right of the ink. The local engine adds a result chip (calculator rule), a green check or amber dot versus the previous line, a "Solved" chip on a correct final line, or a graph card for `y = f(x)`. |
+| ~2–3 s | In Suggest/Solve, a mismatch triggers `POST /api/live/check` (SSE); the first hint card streams in below the echo. "Solve steps" streams worked steps from `POST /api/live/solve`. |
+
+Modes: **Off** = echoes and results only, never an LLM call. **Feedback** = location-only marks. **Suggest** = one Socratic hint per line. **Solve** = steps and full solutions on request. The legacy image-overlay pipeline is kept for non-math ink (diagrams) and via "Draw help" in the Live menu; its idle trigger is 4 s while Live is on.
+
+What runs where:
+
+- Browser: stroke clustering, payload normalization, KaTeX, the mathjs engine (evaluate, simplify, solve linear/quadratic/cubic, derivatives, numeric integrals, units and physical constants, step equivalence, chemistry balancing, graph sampling), placement and the silence policy (`src/lib/live/**`, `src/shapes/**`, `src/components/live/**`).
+- Server: `src/app/api/live/{recognize,check,solve}/route.ts` behind the same auth, zod validation and per-user rate limits as every other route; prompts in `src/lib/server/prompts/`; streaming helpers in `src/lib/server/sse.ts` and `openrouter.ts`. Model ids default from `LIVE_MODELS` in `src/lib/live/contracts.ts` and can be overridden with `LIVE_MODEL_CHECK`, `LIVE_MODEL_SOLVE`, `LIVE_MODEL_VISION`.
+- Persistence: math and graph shapes are ordinary tldraw records, so the existing snapshot autosave stores them. The shape utils are registered on both `<Tldraw>` mounts (board and train) so any saved board loads; `NEXT_PUBLIC_LIVE_MATH=0` hides the pipeline and UI without unregistering the shapes.
+
+Keyboard: `m` selects the Math tool to type a LaTeX shape; double-click an echo to fix a misread line (the engine re-checks it without calling Mathpix).
+
+Testing: `npm test` (356 unit tests incl. engine, clustering, policy, placement, shapes round-trip, SSE parsing), `node scripts/live-smoke.mjs` against a dev server + local Supabase (auth, recognition, streaming, rate limits), and the manual checklist in `docs/LIVE-MATH-SPEC.md` §10.3. Voice tools for Live (`read_live_math`, `place_math`, `plot_function`) are implemented and unit-tested but not yet wired into the voice session.

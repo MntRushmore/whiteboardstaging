@@ -55,7 +55,7 @@ export async function POST(req: Request) {
           reasoningEffort: "low",
           maxTokens: 1500,
           requestId,
-          title: "Agathon Live — solve",
+          title: "Agathon Live - solve",
         },
         SOLVE_WATCHDOG_MS,
       );

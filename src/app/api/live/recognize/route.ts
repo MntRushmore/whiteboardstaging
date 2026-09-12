@@ -81,7 +81,7 @@ export async function POST(req: Request) {
         signal: req.signal,
         requestId,
         maxTokens: 400,
-        title: "Agathon Live — recognize",
+        title: "Agathon Live - recognize",
       });
       const latex = vision.latex.replace(/^\$+|\$+$/g, "").trim();
       result = {

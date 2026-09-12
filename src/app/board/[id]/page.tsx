@@ -1834,6 +1834,10 @@ function BoardContent({ id }: { id: string }) {
             display: 'flex',
             alignItems: 'center',
             gap: '12px',
+            // Wrap on narrow screens (400 px) so the Live toggle/pill stay reachable;
+            // leave room for the Report button pinned at the top-right.
+            flexWrap: 'wrap',
+            maxWidth: 'calc(100% - 130px)',
           }}
         >
           <Button
@@ -1844,7 +1848,7 @@ function BoardContent({ id }: { id: string }) {
           >
             <ArrowLeft01Icon size={20} strokeWidth={2} />
           </Button>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Tabs
               value={assistanceMode}
               onValueChange={(value) => setAssistanceMode(value as "off" | "feedback" | "suggest" | "answer")}
@@ -1874,6 +1878,15 @@ function BoardContent({ id }: { id: string }) {
                 <ListOrdered className="h-4 w-4" />
                 <span className="ml-1.5">{LIVE_COPY.solve.steps}</span>
               </Button>
+            )}
+            {liveEnabled && (
+              <LiveErrorBoundary>
+                <LiveStatusPill
+                  editor={editor}
+                  onDrawHelp={() => void generateSolution({ force: true, source: "auto" })}
+                  onClearMarks={() => controller.clearMarks()}
+                />
+              </LiveErrorBoundary>
             )}
             <ModelBadge
               model={aiModel}
@@ -1933,20 +1946,6 @@ function BoardContent({ id }: { id: string }) {
       )}
       {!isVoiceSessionActive && liveEnabled && (
         <LiveErrorBoundary>
-          <div
-            style={{
-              position: "absolute",
-              bottom: "16px",
-              left: "16px",
-              zIndex: 1000,
-            }}
-          >
-            <LiveStatusPill
-              editor={editor}
-              onDrawHelp={() => void generateSolution({ force: true, source: "auto" })}
-              onClearMarks={() => controller.clearMarks()}
-            />
-          </div>
           <LiveHintLayer editor={editor} controller={controller} />
         </LiveErrorBoundary>
       )}

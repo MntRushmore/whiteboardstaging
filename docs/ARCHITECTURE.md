@@ -69,3 +69,21 @@ The client maps `unauthorized` to a redirect to `/login`, `rate_limited` to a re
 - **Voice depends on `OPENAI_API_KEY`.** No key (or a revoked one) disables the voice tutor entirely; the rest of the app is unaffected.
 - **Handwriting OCR is optional.** Without Mathpix the vision model reads the raw image, which is noticeably worse on dense handwriting.
 - **Single-user boards.** There is no sharing or realtime collaboration; a board has exactly one owner and the last writer wins across tabs (the `version` column enables optimistic concurrency but the client does not use it yet).
+
+## Live Math flow
+
+```
+pen-up (draw.isComplete false→true, source 'user')
+  → quiet gate 600 ms (450 ms on rewrite)      src/lib/live/liveLoop.ts
+  → clusterLines → InkLine[]                    strokeClusters.ts (union-find, fraction bars, columns)
+  → buildPayload → normalized ints + sha-1      strokePayload.ts (cache hit → skip network)
+  → POST /api/live/recognize                    Mathpix v3/strokes ▸ vision fallback
+  → engine.analyzeLine (mathjs, offline)        src/lib/live/engine/**
+  → policy.decide(mode, verdict, voice, idle)   policy.ts (silence rules, hint ladder)
+  → placement → scheduleLiveWrite(createShapes) math / graph shapes with meta.live
+  → (ladder permits) POST /api/live/check|solve SSE: meta → annotation*/step* → done
+```
+
+All Live writes go through `editor.store.mergeRemoteChanges` (source `remote`): they are not in the undo stack and invisible to the legacy `source:'user'` listeners; the autosave listener uses `source:'all'` so they persist. The legacy image pipeline skips bursts that Live handled (`legacyShouldSkip`) and excludes `meta.live` shapes from its capture.
+
+Live routes reuse the shared preamble (`requireUser` → `checkRateLimit` → zod) and add `X-Request-Id`. Streams are `text/event-stream` with `: ping` keepalives; model output is JSON Lines validated per line with zod before it is forwarded, and `expected` claims are re-verified by the local engine before an annotation is shown.

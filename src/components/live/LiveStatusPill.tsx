@@ -52,13 +52,20 @@ function hideShapes(editor: Editor, shapes: TLShape[]): void {
 
 function showShapes(editor: Editor, shapes: TLShape[]): void {
   // only shapes we hid ourselves (remembered opacity) or that are fully transparent
-  const updates = shapes.filter((s) => HIDDEN_OPACITY_KEY in s.meta || s.opacity === 0).map((s) => {
-    const { [HIDDEN_OPACITY_KEY]: remembered, ...rest } = s.meta as Record<string, unknown>;
-    const opacity = typeof remembered === "number" && remembered > 0 ? remembered : s.opacity > 0 ? s.opacity : 1;
-    return { id: s.id, type: s.type, opacity, meta: rest as TLShape["meta"] };
+  const targets = shapes.filter((s) => HIDDEN_OPACITY_KEY in s.meta || s.opacity === 0);
+  if (targets.length === 0) return;
+  // editor.updateShapes shallow-merges `meta`, so a dropped key would survive; rewrite the
+  // record through store.update to actually remove the remembered opacity.
+  scheduleLiveWrite(editor, () => {
+    for (const s of targets) {
+      editor.store.update(s.id, (rec) => {
+        const { [HIDDEN_OPACITY_KEY]: remembered, ...rest } = rec.meta as Record<string, unknown>;
+        const opacity =
+          typeof remembered === "number" && remembered > 0 ? remembered : rec.opacity > 0 ? rec.opacity : 1;
+        return { ...rec, opacity, meta: rest as TLShape["meta"] };
+      });
+    }
   });
-  if (updates.length === 0) return;
-  scheduleLiveWrite(editor, () => editor.updateShapes(updates));
 }
 
 /**
@@ -163,7 +170,7 @@ export function LiveStatusPill({ editor, onDrawHelp, onClearMarks }: LiveStatusP
             <MoreHorizontal size={14} strokeWidth={2} />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" side="top" className="w-56">
+        <DropdownMenuContent align="start" side="bottom" className="w-56">
           <DropdownMenuLabel className="text-xs text-gray-500">{LIVE_COPY.pill.menuLabel}</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={onDrawHelp} title={LIVE_COPY.pill.drawHelpHint}>

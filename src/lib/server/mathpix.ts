@@ -3,7 +3,7 @@ import type { StrokePayload } from "@/lib/live/contracts";
 
 /**
  * Mathpix handwriting recognition over the strokes API.
- * Docs: https://mathpix.com/docs/reference/post-v3-strokes
+ * Docs: https://docs.mathpix.com/reference/post-v3-strokes (shape re-verified against the docs + a live call on 2026-09-12)
  * Request shape (verified with a real call on 2026-09-11):
  *   { strokes: { strokes: { x: number[][], y: number[][] } }, formats: ["latex_styled", "text"] }
  * Response: { latex_styled, text, confidence, confidence_rate, is_handwritten, ... }

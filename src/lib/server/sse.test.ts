@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { jsonlToEvents, sseFrame, sseResponse, stripCodeFences } from "@/lib/server/sse";
+import { jsonlToEvents, repairJsonEscapes, sseFrame, sseResponse, stripCodeFences } from "@/lib/server/sse";
 import { AnnotationSchema } from "@/lib/live/contracts";
 
 async function* chunks(parts: string[]): AsyncGenerator<string> {
@@ -87,6 +87,34 @@ describe("jsonlToEvents", () => {
     expect(items).toHaveLength(1);
     expect(items[0].confidence).toBe(0.8);
     expect(items[0].expected).toBe("11-3");
+  });
+});
+
+describe("repairJsonEscapes", () => {
+  it("keeps single-backslash LaTeX commands intact through JSON.parse", () => {
+    const raw = '{"latex":"\\boxed{x=4}","b":"\\frac{1}{2} \\times 3 \\neq \\rightarrow \\theta","c":"\\cdot \\left( \\sqrt{2} \\right) \\underline{u}"}';
+    const parsed = JSON.parse(repairJsonEscapes(raw)) as Record<string, string>;
+    expect(parsed.latex).toBe("\\boxed{x=4}");
+    expect(parsed.b).toBe("\\frac{1}{2} \\times 3 \\neq \\rightarrow \\theta");
+    expect(parsed.c).toBe("\\cdot \\left( \\sqrt{2} \\right) \\underline{u}");
+  });
+
+  it("leaves already-escaped JSON alone", () => {
+    const raw = '{"latex":"\\\\frac{1}{2}","q":"say \\"hi\\"","u":"\\u00e9","nl":"a\\n b","slash":"a\\/b"}';
+    expect(repairJsonEscapes(raw)).toBe(raw);
+    const parsed = JSON.parse(repairJsonEscapes(raw)) as Record<string, string>;
+    expect(parsed.latex).toBe("\\frac{1}{2}");
+    expect(parsed.q).toBe('say "hi"');
+    expect(parsed.u).toBe("é");
+    expect(parsed.nl).toBe("a\n b");
+  });
+
+  it("is applied inside jsonlToEvents", async () => {
+    const seen: string[] = [];
+    await jsonlToEvents(chunks(['{"id":1,"name":"\\boxed{x=4}"}\n']), ItemSchema, (item) => {
+      seen.push(item.name);
+    });
+    expect(seen).toEqual(["\\boxed{x=4}"]);
   });
 });
 

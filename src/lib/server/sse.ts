@@ -109,6 +109,22 @@ export function stripCodeFences(line: string): string {
 }
 
 /**
+ * Models write LaTeX inside JSON strings with single backslashes (`"\boxed{x}"`, `"\frac12"`,
+ * `"\times"`, `"\neq"`, `"\rightarrow"`). JSON.parse would silently turn `\b \f \t \n \r` into
+ * control bytes and reject `\c`, `\l`, `\u`+non-hex outright. Repair before parsing:
+ * - keep `\\`, `\"`, `\/` and valid `\uXXXX`
+ * - a `\b \f \n \r \t` escape immediately followed by a letter is LaTeX -> `\\b` etc.
+ * - any other `\x` that is not a JSON escape -> `\\x`
+ * Trade-off: a literal newline escape followed directly by a letter (`"a\nb"`) becomes `\n` text;
+ * the prompts never ask for multi-line strings, so this is the right default for math output.
+ */
+export function repairJsonEscapes(line: string): string {
+  return line.replace(/\\\\|\\(?:([bfnrt])(?=[a-zA-Z])|u(?![0-9a-fA-F]{4})|(?=[^"\\/bfnrtu]))/g, (m) =>
+    m === "\\\\" ? m : `\\${m}`,
+  );
+}
+
+/**
  * Consume a stream of text deltas containing JSON Lines. Buffers partial lines across chunks,
  * strips code fences, `JSON.parse`s each complete line and validates it with `schema`. Valid
  * items are handed to `onItem` (which may stop the stream by returning `false`); invalid lines
@@ -139,7 +155,7 @@ export async function jsonlToEvents<S extends z.ZodTypeAny>(
     }
     let parsed: unknown;
     try {
-      parsed = JSON.parse(candidate);
+      parsed = JSON.parse(repairJsonEscapes(candidate));
     } catch {
       invalid++;
       onInvalid?.(rawLine, "invalid JSON");

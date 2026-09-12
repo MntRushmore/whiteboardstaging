@@ -1,0 +1,201 @@
+{
+  "document": {
+    "store": {
+      "shape:legacy_draw": {
+        "id": "shape:legacy_draw",
+        "type": "draw",
+        "x": 120,
+        "y": 80,
+        "index": "a1",
+        "typeName": "shape",
+        "rotation": 0,
+        "parentId": "page:page",
+        "isLocked": false,
+        "opacity": 1,
+        "meta": {},
+        "props": {
+          "color": "black",
+          "fill": "none",
+          "dash": "draw",
+          "size": "m",
+          "isComplete": true,
+          "isClosed": false,
+          "isPen": false,
+          "scale": 1,
+          "segments": [
+            {
+              "type": "free",
+              "points": [
+                {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0.5
+                },
+                {
+                  "x": 6,
+                  "y": 2,
+                  "z": 0.5
+                },
+                {
+                  "x": 14,
+                  "y": 9,
+                  "z": 0.5
+                },
+                {
+                  "x": 25,
+                  "y": 20,
+                  "z": 0.5
+                },
+                {
+                  "x": 31,
+                  "y": 34,
+                  "z": 0.5
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "shape:legacy_text": {
+        "id": "shape:legacy_text",
+        "type": "text",
+        "x": 300,
+        "y": 80,
+        "index": "a2",
+        "typeName": "shape",
+        "rotation": 0,
+        "parentId": "page:page",
+        "isLocked": false,
+        "opacity": 1,
+        "meta": {},
+        "props": {
+          "color": "black",
+          "size": "m",
+          "font": "draw",
+          "textAlign": "start",
+          "w": 160,
+          "richText": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "2x + 3 = 11"
+                  }
+                ]
+              }
+            ]
+          },
+          "scale": 1,
+          "autoSize": true
+        }
+      },
+      "shape:legacy_geo": {
+        "id": "shape:legacy_geo",
+        "type": "geo",
+        "x": 120,
+        "y": 200,
+        "index": "a3",
+        "typeName": "shape",
+        "rotation": 0,
+        "parentId": "page:page",
+        "isLocked": false,
+        "opacity": 1,
+        "meta": {},
+        "props": {
+          "geo": "rectangle",
+          "w": 120,
+          "h": 80,
+          "color": "blue",
+          "labelColor": "black",
+          "fill": "none",
+          "dash": "draw",
+          "size": "m",
+          "font": "draw",
+          "align": "middle",
+          "verticalAlign": "middle",
+          "growY": 0,
+          "url": "",
+          "scale": 1,
+          "richText": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph"
+              }
+            ]
+          }
+        }
+      },
+      "page:page": {
+        "meta": {},
+        "id": "page:page",
+        "name": "Page 1",
+        "index": "a1",
+        "typeName": "page"
+      },
+      "document:document": {
+        "gridSize": 10,
+        "name": "",
+        "meta": {},
+        "id": "document:document",
+        "typeName": "document"
+      }
+    },
+    "schema": {
+      "schemaVersion": 2,
+      "sequences": {
+        "com.tldraw.store": 5,
+        "com.tldraw.asset": 1,
+        "com.tldraw.camera": 1,
+        "com.tldraw.document": 2,
+        "com.tldraw.instance": 25,
+        "com.tldraw.instance_page_state": 5,
+        "com.tldraw.page": 1,
+        "com.tldraw.instance_presence": 6,
+        "com.tldraw.pointer": 1,
+        "com.tldraw.shape": 4,
+        "com.tldraw.asset.bookmark": 2,
+        "com.tldraw.asset.image": 5,
+        "com.tldraw.asset.video": 5,
+        "com.tldraw.shape.group": 0,
+        "com.tldraw.shape.text": 3,
+        "com.tldraw.shape.bookmark": 2,
+        "com.tldraw.shape.draw": 2,
+        "com.tldraw.shape.geo": 10,
+        "com.tldraw.shape.note": 9,
+        "com.tldraw.shape.line": 5,
+        "com.tldraw.shape.frame": 1,
+        "com.tldraw.shape.arrow": 7,
+        "com.tldraw.shape.highlight": 1,
+        "com.tldraw.shape.embed": 4,
+        "com.tldraw.shape.image": 5,
+        "com.tldraw.shape.video": 4,
+        "com.tldraw.binding.arrow": 1
+      }
+    }
+  },
+  "session": {
+    "version": 0,
+    "currentPageId": "page:page",
+    "exportBackground": true,
+    "isFocusMode": false,
+    "isDebugMode": false,
+    "isToolLocked": false,
+    "isGridMode": false,
+    "pageStates": [
+      {
+        "pageId": "page:page",
+        "camera": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "selectedShapeIds": [],
+        "focusedGroupId": null
+      }
+    ]
+  }
+}

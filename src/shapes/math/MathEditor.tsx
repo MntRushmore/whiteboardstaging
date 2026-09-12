@@ -14,8 +14,9 @@ export function MathEditor({ shape, fontSize }: { shape: MathShape; fontSize: nu
   const editor = useEditor();
   const [value, setValue] = useState(shape.props.latex);
   const ref = useRef<HTMLTextAreaElement>(null);
-  const committedRef = useRef(false);
-  const initialRef = useRef(shape.props.latex);
+  /** last LaTeX written to the store (starts at the shape's current value) */
+  const lastCommitted = useRef(shape.props.latex);
+  const cancelled = useRef(false);
 
   useEffect(() => {
     const el = ref.current;
@@ -26,24 +27,25 @@ export function MathEditor({ shape, fontSize }: { shape: MathShape; fontSize: nu
 
   const commit = useCallback(
     (next: string) => {
-      if (committedRef.current) return;
-      committedRef.current = true;
+      if (cancelled.current) return;
       const latex = next.trim();
-      if (latex === initialRef.current) return;
+      if (latex === lastCommitted.current) return;
+      lastCommitted.current = latex;
+      // user-sourced on purpose: undoable, and WP-D's listener re-analyzes the edited line
       editor.updateShape<MathShape>({
         id: shape.id,
         type: "math",
-        props: { latex, source: shape.props.source === "echo" ? "echo" : "student" },
+        props: { latex },
         meta: { ...shape.meta, edited: true },
       });
     },
-    [editor, shape.id, shape.meta, shape.props.source],
+    [editor, shape.id, shape.meta],
   );
 
   const finish = useCallback(
     (save: boolean) => {
       if (save) commit(value);
-      else committedRef.current = true;
+      else cancelled.current = true;
       // leaves select.editing_shape (the select tool handles the complete/cancel event)
       if (save) editor.complete();
       else editor.cancel();

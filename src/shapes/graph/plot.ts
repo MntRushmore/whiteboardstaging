@@ -202,11 +202,25 @@ export function buildPlot(input: PlotInput): PlotOutput {
     let segments = 0;
     let open = false;
     let prevY = NaN;
+    let prevDir = 0;
     for (let i = 0; i <= samples; i++) {
       const y = ys[i];
       const finite = Number.isFinite(y);
-      const jump = open && finite && Math.abs(y - prevY) > BREAK_FACTOR * ySpan;
-      // both sides far outside the view in opposite directions -> asymptote too
+      let jump = false;
+      if (open && finite) {
+        const dy = y - prevY;
+        const dir = Math.sign(dy);
+        // asymptote: a jump wider than the whole view that also reverses direction
+        // (tan, 1/x: rising to +inf then re-entering from -inf), or an absurd jump.
+        jump =
+          Math.abs(dy) > BREAK_FACTOR * ySpan ||
+          (Math.abs(dy) > ySpan && prevDir !== 0 && dir !== 0 && dir !== prevDir) ||
+          (prevY > yMax && y < yMin && dir !== prevDir) ||
+          (prevY < yMin && y > yMax && dir !== prevDir);
+        prevDir = jump ? 0 : dir;
+      } else {
+        prevDir = 0;
+      }
       if (!finite || jump) {
         open = false;
         prevY = NaN;

@@ -55,7 +55,7 @@ export async function POST(req: Request) {
           reasoningEffort: "minimal",
           maxTokens: 600,
           requestId,
-          title: "Agathon Live — check",
+          title: "Agathon Live - check",
         },
         LIVE_TIMING.checkWatchdogMs,
       );
