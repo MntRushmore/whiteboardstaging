@@ -6,14 +6,25 @@ if (typeof window !== "undefined") {
   throw new Error("src/lib/env.ts is server-only and must not be imported from client code.");
 }
 
-/** Treat empty / whitespace-only values as unset so `FOO=` in .env does not pass. */
+/**
+ * Values copied straight out of .env.example (e.g. `sk-or-...`, `your-key`) are
+ * treated as unset so a half-filled env fails loudly instead of at the first API call.
+ * Shared with the BYOK provider registry in src/lib/aiConfig.ts.
+ */
+export const PLACEHOLDER_VALUE = /^(your|replace|changeme|xxx|sk-or-\.\.\.|sk-\.\.\.|\.\.\.)/i;
+
+export function isPlaceholderValue(v: unknown): boolean {
+  return typeof v === "string" && (v.trim() === "" || PLACEHOLDER_VALUE.test(v.trim()));
+}
+
+/** Treat empty / whitespace-only / placeholder values as unset so `FOO=` in .env does not pass. */
 const optionalString = z.preprocess(
-  (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+  (v) => (isPlaceholderValue(v) ? undefined : v),
   z.string().optional(),
 );
 
 const requiredString = z.preprocess(
-  (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+  (v) => (isPlaceholderValue(v) ? undefined : v),
   z.string({ required_error: "missing" }).min(1, "missing"),
 );
 

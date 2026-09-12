@@ -1,5 +1,9 @@
 # Agathon Classroom
 
+> **Bring your own keys.** No AI credentials ship with this source; whoever runs an instance supplies their own keys (see [SETUP.md](./SETUP.md)).
+>
+> **License:** FSL-1.1-ALv2. Read, modify and self-host freely; do not offer it as a competing service. Each version becomes Apache-2.0 two years after release. See [LICENSE](./LICENSE), [NOTICE](./NOTICE), [CONTRIBUTING.md](./CONTRIBUTING.md) and [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md). The tldraw SDK is licensed separately and needs its own key in production.
+
 An AI whiteboard that tutors students in real time. Students draw on a tldraw canvas; after a short idle pause the app captures the viewport, sends it to a vision model and draws feedback, hints or a worked solution back onto the canvas. Handwritten math is recognised with Mathpix, and an optional voice tutor (OpenAI Realtime) can look at the workspace and talk the student through it.
 
 ## Architecture
@@ -76,7 +80,7 @@ Other scripts: `npm run typecheck`, `npm run lint`, `npm test` (vitest), `npm ru
 | `NEXT_PUBLIC_SITE_URL` | no | Sent as `HTTP-Referer` to OpenRouter |
 | `LOG_LEVEL` | no | Pino level, default `info` |
 
-`MISTRAL_API_KEY` is no longer used (the Pixtral OCR route was removed); delete it from any environment.
+`MISTRAL_API_KEY` is no longer used: `/api/ocr` now runs on OpenRouter (Gemini Flash) because Mistral retired the Pixtral model. Delete it from any environment.
 
 ## Creating a new Supabase project
 

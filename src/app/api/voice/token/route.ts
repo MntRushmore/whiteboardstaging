@@ -53,6 +53,12 @@ export async function POST(req: Request) {
       503,
       "voice_unavailable",
       "The voice tutor isn't available right now. Please try again later or use the drawing tools.",
+      {
+        code: "MISSING_API_KEY",
+        provider: "openai",
+        envVar: "OPENAI_API_KEY",
+        signupUrl: "https://platform.openai.com/api-keys",
+      },
     );
   }
 

@@ -28,8 +28,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (.env.example is committed on purpose)
+# env files — never commit real credentials.
 .env*
+# ...but the template belongs in the repo.
 !.env.example
 
 # vercel
