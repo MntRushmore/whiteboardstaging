@@ -1,7 +1,18 @@
 "use client";
 
 import { useMemo } from "react";
-import { computed, getIndexBetween, useValue, type Editor, type IndexKey, type TLShape, type TLShapeId } from "tldraw";
+import {
+  computed,
+  getIndexBetween,
+  useValue,
+  type Editor,
+  type IndexKey,
+  type JsonObject,
+  type TLPageId,
+  type TLParentId,
+  type TLShape,
+  type TLShapeId,
+} from "tldraw";
 import { isLiveMeta } from "@/lib/live/contracts";
 
 /**
@@ -16,12 +27,13 @@ export type AiOverlayMode = "feedback" | "suggest" | "answer";
 /** meta key every legacy AI overlay image carries */
 export const AI_OVERLAY_META_KEY = "aiOverlay";
 
-export interface AiOverlayMeta {
+/** intersected with JsonObject so it is assignable to tldraw's `meta` (index signature) */
+export type AiOverlayMeta = JsonObject & {
   aiOverlay: true;
   mode: AiOverlayMode;
   /** set when the student accepted a suggest/answer overlay (it stays on the canvas) */
   accepted?: boolean;
-}
+};
 
 export function aiOverlayMeta(mode: AiOverlayMode): AiOverlayMeta {
   return { aiOverlay: true, mode };
@@ -90,8 +102,8 @@ export function useAiOverlayShapes(editor: Editor): AiOverlayIds {
 
 /** the subset of Editor that overlayIndexBelowLive needs (keeps it testable headless) */
 export interface ZOrderReader {
-  getCurrentPageId(): string;
-  getSortedChildIdsForParent(parentId: string): readonly TLShapeId[];
+  getCurrentPageId(): TLPageId;
+  getSortedChildIdsForParent(parent: TLParentId): readonly TLShapeId[];
   getShape(id: TLShapeId): TLShape | undefined;
 }
 

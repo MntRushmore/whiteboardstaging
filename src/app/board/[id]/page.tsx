@@ -14,6 +14,8 @@ import {
   getSnapshot,
   loadSnapshot,
   type Editor,
+  type HistoryEntry,
+  type TLRecord,
 } from "tldraw";
 import React, { useCallback, useState, useRef, useEffect } from "react";
 import "tldraw/tldraw.css";
@@ -45,7 +47,7 @@ import {
   MicOff02Icon,
   Loading03Icon,
 } from "hugeicons-react";
-import { useDebounceActivity } from "@/hooks/useDebounceActivity";
+import { isStudentActivity, useDebounceActivity } from "@/hooks/useDebounceActivity";
 import { aiOverlayMeta, overlayIndexBelowLive, useAiOverlayShapes } from "@/hooks/useAiOverlayShapes";
 import { useAssistanceMode, type AssistanceMode } from "@/hooks/useAssistanceMode";
 import { StatusIndicator, type StatusIndicatorState } from "@/components/StatusIndicator";
@@ -1485,9 +1487,13 @@ function BoardContent({ id }: { id: string }) {
   useEffect(() => {
     if (!editor) return;
 
-    const handleEditorChange = () => {
+    const handleEditorChange = (entry: HistoryEntry<TLRecord>) => {
       // Ignore if we're just updating accepted/rejected images
       if (isUpdatingImageRef.current) {
+        return;
+      }
+      // Live echo/graph writes and AI overlays are not student edits (B1).
+      if (!isStudentActivity(entry)) {
         return;
       }
 

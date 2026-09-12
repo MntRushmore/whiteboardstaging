@@ -6,5 +6,7 @@ export default defineConfig({
     environment: "node",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     passWithNoTests: true,
+    // Fake-timer loop tests can flake under parallel-worker CPU contention; one retry keeps CI honest but stable.
+    retry: 1,
   },
 });

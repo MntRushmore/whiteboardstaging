@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
   createShapeId,
   createTLStore,
@@ -143,13 +143,13 @@ describe("isStudentActivity", () => {
 describe("startActivityDebouncer (headless store + fake timers)", () => {
   let store: TLStore;
   let pageId: TLPageId;
-  let callback: ReturnType<typeof vi.fn>;
+  let callback: Mock<() => void>;
   let dispose: (() => void) | null = null;
 
   beforeEach(() => {
     vi.useFakeTimers();
     ({ store, pageId } = headlessStore());
-    callback = vi.fn();
+    callback = vi.fn<() => void>();
   });
 
   afterEach(() => {

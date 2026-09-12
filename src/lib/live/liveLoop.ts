@@ -893,8 +893,16 @@ export class LiveLoop implements LiveController {
     const resultLatex = decision.showResult && analysis ? analysis.resultLatex : "";
     let note = "";
     if (status === "warn") note = localNoteFor(analysis, this.opts.mode);
-    if (analysis?.chem && !analysis.chem.balanced && this.opts.mode !== "off") {
-      note = decision.revealChemBalance ? `Balanced: ${analysis.chem.balancedLatex}` : localNoteFor(analysis, this.opts.mode);
+    if (analysis?.chem && this.opts.mode !== "off") {
+      if (!analysis.chem.balanced) {
+        // The balanced equation is an answer: only Solve reveals it; the other modes get
+        // the local "Count the atoms" nudge, as does Solve when the balancer had no result.
+        const balanced = analysis.chem.balancedLatex.trim();
+        note =
+          decision.revealChemBalance && balanced ? `Balanced: ${balanced}` : localNoteFor(analysis, this.opts.mode);
+      } else if (status === "ok") {
+        note = analysis.note;
+      }
     }
     this.upsertEcho(lineId, { latex: state.latex, status, resultLatex, note }, { keepStatus: opts.keepStatus });
     if (analysis?.plot && !decision.capped) {
@@ -1126,7 +1134,9 @@ export class LiveLoop implements LiveController {
         if (s.type !== "math" || !isLiveMeta(s.meta) || s.meta.source !== "ai" || s.meta.lineId !== lineId) continue;
         const b = this.editor.getShapePageBounds(s);
         if (!b || !rectsIntersect(echo, boxToRect(b))) continue;
-        const slot = findFreeSlot(boxToRect(b), this.avoidRects(lineId, new Set([s.id])), st.line.bounds);
+        // avoidRects() leaves out this line's own echo; here the echo is exactly the obstacle.
+        const avoid = [echo, ...this.avoidRects(lineId, new Set([s.id]))];
+        const slot = findFreeSlot(boxToRect(b), avoid, st.line.bounds);
         if (slot.x !== b.x || slot.y !== b.y) updates.push({ id: s.id, type: "math", x: slot.x, y: slot.y });
       }
       if (updates.length > 0) this.editor.updateShapes(updates);
@@ -1269,7 +1279,9 @@ export class LiveLoop implements LiveController {
       this.setEchoNote(lineId, NOTATION_NOTE);
       return;
     }
-    if (rt.shownHintTexts.has(a.message)) return;
+    // An explicit escalation (badge tap / "More help") re-shows the hint even when the model repeats itself,
+    // so the card never just vanishes with no new help.
+    if (!forceHint && rt.shownHintTexts.has(a.message)) return;
 
     if (a.verdict === "warn") {
       this.setEchoNote(lineId, a.message, "warn");

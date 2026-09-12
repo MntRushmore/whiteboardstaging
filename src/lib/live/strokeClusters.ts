@@ -147,7 +147,7 @@ export function inflationFor(medianH: number): number {
 /**
  * `small` is a superscript of `base` when it is short, sits with its bottom just above
  * (or barely below) the base's top, starts higher than the base and is horizontally
- * adjacent. Rects are the inflated ones.
+ * adjacent. Takes the raw (un-inflated) stroke bounds.
  */
 export function isSuperscriptOf(small: Rect, base: Rect, medianH: number): boolean {
   if (!(small.h < CLUSTER_RULES.superMaxHeightFactor * medianH)) return false;
@@ -182,11 +182,12 @@ export function clusterStrokeGroups(strokes: InkStroke[]): number[][] {
   const uf = new UnionFind(n);
   const bars = strokes.map((s) => isFractionBar(s, strokes, medianH));
   const by = inflationFor(medianH);
-  // Inflated rects for the join tests; bar detection above used the raw bounds.
+  // Inflated rects for the overlap / gap / bar tests; bar detection above used the raw bounds.
   const rects = strokes.map((s) => inflateRect(s.bounds, by));
-  // Inflation must not make a flat bar "taller" than its neighbours for the superscript
-  // test, so that test uses the raw heights.
-  const rawH = strokes.map((s) => s.bounds.h);
+  // The superscript test compares heights and the small stroke's bottom against the base's
+  // top, so it works on the raw bounds: inflation would make a 60 %-size glyph "taller"
+  // than 0.7 x median and hide the raise. Flat bars (h < 1) are never superscripts.
+  const raw = strokes.map((s) => s.bounds);
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
       const a = rects[i];
@@ -200,8 +201,8 @@ export function clusterStrokeGroups(strokes: InkStroke[]): number[][] {
         continue;
       }
       if (
-        (rawH[i] >= 1 && isSuperscriptOf(a, b, medianH)) ||
-        (rawH[j] >= 1 && isSuperscriptOf(b, a, medianH))
+        (raw[i].h >= 1 && isSuperscriptOf(raw[i], raw[j], medianH)) ||
+        (raw[j].h >= 1 && isSuperscriptOf(raw[j], raw[i], medianH))
       ) {
         uf.union(i, j);
       }

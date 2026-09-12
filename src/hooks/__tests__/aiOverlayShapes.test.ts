@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createShapeId, type IndexKey, type TLShape, type TLShapeId } from "tldraw";
+import { createShapeId, type IndexKey, type TLPageId, type TLShape, type TLShapeId } from "tldraw";
 import {
   aiOverlayMeta,
   isAiOverlayShape,
@@ -73,7 +73,7 @@ describe("overlayIndexBelowLive", () => {
     const sorted = [...shapes].sort((x, y) => (x.index < y.index ? -1 : 1));
     const byId = new Map<TLShapeId, TLShape>(shapes.map((s) => [s.id, s]));
     return {
-      getCurrentPageId: () => "page:p",
+      getCurrentPageId: () => "page:p" as TLPageId,
       getSortedChildIdsForParent: () => sorted.map((s) => s.id),
       getShape: (id) => byId.get(id),
     };

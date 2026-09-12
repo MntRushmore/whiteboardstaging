@@ -43,10 +43,12 @@ export function rectMaxY(r: Rect): number {
 /**
  * Rough KaTeX width before the shape's ResizeObserver corrects it. Deliberately
  * generous (measured `y=x^{2}-4` at size m is ~129 px) so a graph placed in the same
- * write batch as its echo does not overlap it.
+ * write batch as its echo does not overlap it. Each command counts as one glyph; a
+ * script marker (`^`/`_`) also counts as one, because the raised/lowered glyph plus its
+ * kerning takes about a full character of width.
  */
 export function estimateEchoWidth(latex: string, size: MathSize = "m"): number {
-  const visible = latex.replace(/\\[a-zA-Z]+/g, "x").replace(/[{}^_\s]/g, "");
+  const visible = latex.replace(/\\[a-zA-Z]+/g, "x").replace(/[{}\s]/g, "");
   return Math.max(48, Math.round(CHAR_WIDTH[size] * visible.length + PLACEMENT.echoPadding));
 }
 
