@@ -13,6 +13,7 @@ import {
   type TLStoreSnapshot,
   getSnapshot,
   loadSnapshot,
+  type Editor,
 } from "tldraw";
 import React, { useCallback, useState, useRef, useEffect } from "react";
 import "tldraw/tldraw.css";
@@ -68,8 +69,18 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Settings } from "lucide-react";
+import { Settings, ListOrdered } from "lucide-react";
 import { GenerationSkeleton } from "@/components/GenerationSkeleton";
+import { liveShapeUtils, liveTools, liveUiOverrides, LiveToolbar } from "@/shapes";
+import { isLiveMeta, LIVE_KILL_SWITCH, LIVE_TIMING } from "@/lib/live/contracts";
+import { legacyShouldSkip } from "@/lib/live/liveStore";
+import { useLiveMath } from "@/lib/live/useLiveMath";
+import { useLiveSettings } from "@/lib/live/liveSettings";
+import { LiveToggle } from "@/components/live/LiveToggle";
+import { LiveStatusPill } from "@/components/live/LiveStatusPill";
+import { LiveHintLayer } from "@/components/live/LiveHintLayer";
+import { LiveErrorBoundary } from "@/components/live/LiveErrorBoundary";
+import { LIVE_COPY } from "@/components/live/copy";
 
 // Ensure the tldraw canvas background is pure white in both light and dark modes
 DefaultColorThemePalette.lightMode.background = "#FFFFFF";
@@ -135,6 +146,15 @@ const hugeIconsOverrides: TLUiOverrides = {
   },
 };
 
+// Live's tool overrides (Math tool, kbd "m") layered on top of the icon overrides above.
+const boardOverrides: TLUiOverrides = {
+  ...hugeIconsOverrides,
+  tools(editor, tools, helpers) {
+    const withIcons = hugeIconsOverrides.tools ? hugeIconsOverrides.tools(editor, tools, helpers) : tools;
+    return liveUiOverrides.tools ? liveUiOverrides.tools(editor, withIcons, helpers) : withIcons;
+  },
+};
+
 function ModeInfoDialog() {
   return (
     <Dialog>
@@ -189,6 +209,17 @@ function ModeInfoDialog() {
             <p className="text-sm text-muted-foreground">
               Full worked solution overlaid on your canvas for comparison.
             </p>
+          </div>
+
+          <div className="flex-1 flex flex-col items-start">
+            <div
+              aria-hidden
+              className="h-48 w-full rounded-md border bg-muted mb-3 flex items-center justify-center text-4xl font-serif text-gray-400"
+            >
+              Σ
+            </div>
+            <p className="text-sm font-medium mb-1">{LIVE_COPY.modeInfo.title}</p>
+            <p className="text-sm text-muted-foreground">{LIVE_COPY.modeInfo.body}</p>
           </div>
         </div>
       </DialogContent>
@@ -1068,6 +1099,16 @@ function BoardContent({ id }: { id: string }) {
   const lastCanvasImageRef = useRef<string | null>(null);
   const isUpdatingImageRef = useRef(false);
 
+  // Live Math layer: per-device switch (localStorage) gated by the deploy-time kill switch.
+  const { settings: live, update: updateLive } = useLiveSettings();
+  const liveEnabled = live.enabled && !LIVE_KILL_SWITCH;
+  const controller = useLiveMath(editor, {
+    boardId: id,
+    mode: assistanceMode,
+    enabled: liveEnabled,
+    voiceActive: isVoiceSessionActive,
+  });
+
   // Helper function to get mode-aware status messages
   const getStatusMessage = useCallback((mode: "off" | "feedback" | "suggest" | "answer", statusType: "generating" | "success") => {
     if (statusType === "generating") {
@@ -1136,15 +1177,20 @@ function BoardContent({ id }: { id: string }) {
         const viewportBounds = editor.getViewportPageBounds();
 
         const protectedIds = new Set<TLShapeId>();
+        // Live echoes / graphs / AI steps are hidden from the capture too, but they do
+        // not count as a "worksheet" layer (hasProtectedShapes stays isProtected-only).
+        const liveIds = new Set<TLShapeId>();
         for (const sid of shapeIds) {
           const shape = editor.getShape(sid);
           if (shape?.meta?.isProtected) {
             protectedIds.add(sid);
+          } else if (isLiveMeta(shape?.meta)) {
+            liveIds.add(sid);
           }
         }
 
         const shapesToCapture = [...shapeIds].filter(
-          (id) => !pendingImageIds.includes(id) && !protectedIds.has(id),
+          (id) => !pendingImageIds.includes(id) && !protectedIds.has(id) && !liveIds.has(id),
         );
 
         if (shapesToCapture.length === 0) {
@@ -1407,11 +1453,23 @@ function BoardContent({ id }: { id: string }) {
     if (typeof document !== "undefined" && document.visibilityState !== "visible") {
       return;
     }
+    // While Live owns the latest ink burst (recognized or still pending), the image
+    // pipeline stays quiet; it still runs for non-math ink and on "Draw help".
+    if (liveEnabled && legacyShouldSkip(LIVE_TIMING.legacyIdleMs)) {
+      return;
+    }
     void generateSolution({ source: "auto" });
-  }, [generateSolution]);
+  }, [generateSolution, liveEnabled]);
 
-  // Listen for user activity and trigger auto-generation after 2 seconds of inactivity
-  useDebounceActivity(handleAutoGeneration, 2000, editor, isUpdatingImageRef, isProcessingRef);
+  // Listen for user activity and trigger auto-generation after idle
+  // (2 s today; 4 s while Live is on so echoes land first).
+  useDebounceActivity(
+    handleAutoGeneration,
+    liveEnabled ? LIVE_TIMING.legacyIdleMs : 2000,
+    editor,
+    isUpdatingImageRef,
+    isProcessingRef,
+  );
 
   // Cancel in-flight requests when user edits the canvas
   useEffect(() => {
@@ -1748,8 +1806,10 @@ function BoardContent({ id }: { id: string }) {
       }, 2000);
     };
 
+    // source 'all' so Live's mergeRemoteChanges writes (echoes, graphs, AI steps) are
+    // persisted too; the isUpdatingImageRef guard above still skips overlay bookkeeping.
     const dispose = editor.store.listen(handleChange, {
-      source: 'user',
+      source: 'all',
       scope: 'document'
     });
 
@@ -1798,6 +1858,23 @@ function BoardContent({ id }: { id: string }) {
               </TabsList>
             </Tabs>
             <ModeInfoDialog />
+            <LiveToggle
+              checked={live.enabled}
+              disabled={LIVE_KILL_SWITCH}
+              onCheckedChange={(v) => updateLive({ enabled: v })}
+            />
+            {liveEnabled && assistanceMode === "answer" && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-white shadow-sm"
+                title={LIVE_COPY.solve.stepsHint}
+                onClick={() => controller.requestSolve()}
+              >
+                <ListOrdered className="h-4 w-4" />
+                <span className="ml-1.5">{LIVE_COPY.solve.steps}</span>
+              </Button>
+            )}
             <ModelBadge
               model={aiModel}
               onClick={() => setAiModel((m) => (m === "gemini" ? "gpt" : "gemini"))}
@@ -1853,6 +1930,25 @@ function BoardContent({ id }: { id: string }) {
         >
           <BugReportButton boardId={id} />
         </div>
+      )}
+      {!isVoiceSessionActive && liveEnabled && (
+        <LiveErrorBoundary>
+          <div
+            style={{
+              position: "absolute",
+              bottom: "16px",
+              left: "16px",
+              zIndex: 1000,
+            }}
+          >
+            <LiveStatusPill
+              editor={editor}
+              onDrawHelp={() => void generateSolution({ force: true, source: "auto" })}
+              onClearMarks={() => controller.clearMarks()}
+            />
+          </div>
+          <LiveHintLayer editor={editor} controller={controller} />
+        </LiveErrorBoundary>
       )}
       <ImageActionButtons
         pendingImageIds={pendingImageIds}
@@ -1940,12 +2036,15 @@ export default function BoardPage() {
   return (
     <div style={{ position: "fixed", inset: 0 }}>
       <Tldraw
-        overrides={hugeIconsOverrides}
+        shapeUtils={liveShapeUtils}
+        tools={liveTools}
+        overrides={boardOverrides}
         licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
         components={{
           MenuPanel: null,
           NavigationPanel: null,
           HelperButtons: null,
+          Toolbar: LiveToolbar,
         }}
         onMount={(editor) => {
           if (initialData) {
@@ -1955,6 +2054,10 @@ export default function BoardPage() {
               console.error("Failed to load snapshot:", e);
               toast.error("Failed to restore canvas state");
             }
+          }
+          if (process.env.NODE_ENV !== "production") {
+            // Dev-only handle for recording fixtures / poking the store from devtools.
+            (window as unknown as { __agathonEditor?: Editor }).__agathonEditor = editor;
           }
         }}
       >

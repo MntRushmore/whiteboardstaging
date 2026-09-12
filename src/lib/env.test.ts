@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { REQUIRED_ENV_VARS, getServerEnv, hasMathpix, hasOpenAI, resetServerEnvCache } from "@/lib/env";
+import { REQUIRED_ENV_VARS, getLiveModels, getServerEnv, hasMathpix, hasOpenAI, resetServerEnvCache } from "@/lib/env";
+import { LIVE_MODELS } from "@/lib/live/contracts";
 
 const ALL_VARS = [
   ...REQUIRED_ENV_VARS,
@@ -9,6 +10,9 @@ const ALL_VARS = [
   "SUPABASE_SERVICE_ROLE_KEY",
   "NEXT_PUBLIC_SITE_URL",
   "LOG_LEVEL",
+  "LIVE_MODEL_CHECK",
+  "LIVE_MODEL_SOLVE",
+  "LIVE_MODEL_VISION",
 ] as const;
 
 const saved: Record<string, string | undefined> = {};
@@ -92,5 +96,38 @@ describe("optional feature flags", () => {
     resetServerEnvCache();
     process.env.MATHPIX_APP_KEY = "key";
     expect(hasMathpix()).toBe(true);
+  });
+});
+
+describe("getLiveModels", () => {
+  it("defaults to LIVE_MODELS from the contracts", () => {
+    setRequired();
+    expect(getLiveModels()).toEqual({
+      check: LIVE_MODELS.check,
+      checkFallback: LIVE_MODELS.checkFallback,
+      solve: LIVE_MODELS.solve,
+      solveFallback: LIVE_MODELS.solveFallback,
+      vision: LIVE_MODELS.vision,
+    });
+  });
+
+  it("honours LIVE_MODEL_* overrides and ignores placeholders", () => {
+    setRequired();
+    process.env.LIVE_MODEL_CHECK = "openai/gpt-5.4-nano";
+    process.env.LIVE_MODEL_SOLVE = "   ";
+    process.env.LIVE_MODEL_VISION = "google/gemini-3.5-flash";
+    const models = getLiveModels();
+    expect(models.check).toBe("openai/gpt-5.4-nano");
+    expect(models.checkFallback).toBe(LIVE_MODELS.checkFallback);
+    expect(models.solve).toBe(LIVE_MODELS.solve);
+    expect(models.vision).toBe("google/gemini-3.5-flash");
+  });
+
+  it("never returns a fallback equal to the primary", () => {
+    setRequired();
+    process.env.LIVE_MODEL_CHECK = LIVE_MODELS.checkFallback;
+    const models = getLiveModels();
+    expect(models.check).toBe(LIVE_MODELS.checkFallback);
+    expect(models.checkFallback).toBe(LIVE_MODELS.check);
   });
 });

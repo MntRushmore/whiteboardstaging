@@ -136,3 +136,98 @@
 .tl-canvas {
   background-color: #ffffff !important;
 }
+
+/* ---------------------------------------------------------------------------
+ * Live Math layer (src/components/live, src/shapes). Tailwind utilities cover
+ * layout; these rules hold only what utilities cannot: keyframes, the pill
+ * fade, verdict badge colours shared by the math/graph shapes.
+ * ------------------------------------------------------------------------- */
+@keyframes live-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.live-pill {
+  animation: live-fade-in 200ms ease-out;
+}
+.live-pill__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: #9ca3af; /* idle: gray */
+  transition: background-color 200ms ease;
+}
+.live-pill[data-status="reading"] .live-pill__dot,
+.live-pill[data-status="checking"] .live-pill__dot {
+  background: #f59e0b; /* amber while working */
+  animation: live-pulse 1.2s ease-in-out infinite;
+}
+.live-pill[data-status="offline"] .live-pill__dot,
+.live-pill[data-status="error"] .live-pill__dot {
+  background: #d1d5db;
+}
+.live-pill[data-status="paused"] .live-pill__dot {
+  background: #a5b4fc;
+}
+.live-pill__label {
+  transition: opacity 1500ms ease; /* = LIVE_TIMING.pillFadeMs */
+}
+.live-pill__label--fading {
+  opacity: 0.35;
+}
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.live-hint-card {
+  animation: live-fade-in 180ms ease-out;
+  max-width: calc(100vw - 16px);
+}
+.live-hint-card__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: #f59e0b;
+}
+
+/* Verdict badges rendered inside the math / graph shapes (WP-A reads these classes). */
+.live-math,
+.live-graph {
+  --live-ok: #16a34a;
+  --live-warn: #f59e0b;
+  --live-muted: #9ca3af;
+}
+.live-math__badge,
+.live-graph__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--live-muted);
+}
+.live-math__badge[data-status="ok"] {
+  color: var(--live-ok);
+}
+.live-math__badge[data-status="warn"] {
+  color: var(--live-warn);
+}
+.live-math__badge[data-status="solved"] {
+  color: var(--live-ok);
+  font-weight: 600;
+}
+.live-math__badge[data-status="pending"] {
+  animation: live-pulse 1.2s ease-in-out infinite;
+}

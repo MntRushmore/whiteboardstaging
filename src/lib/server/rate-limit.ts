@@ -16,6 +16,8 @@
  * just need to `await` the call, which they already do).
  */
 
+import { LIVE_RATE_LIMITS } from "@/lib/live/contracts";
+
 export type RateLimitOptions = { limit: number; windowMs: number };
 
 export type RateLimitResult = {
@@ -36,6 +38,10 @@ export const LIMITS = {
   ocr: { limit: 30, windowMs: MINUTE },
   checkHelp: { limit: 30, windowMs: MINUTE },
   credits: { limit: 30, windowMs: MINUTE },
+  // Live Math routes (budgets are defined once, in the shared contracts).
+  liveRecognize: LIVE_RATE_LIMITS.liveRecognize,
+  liveCheck: LIVE_RATE_LIMITS.liveCheck,
+  liveSolve: LIVE_RATE_LIMITS.liveSolve,
 } as const satisfies Record<string, RateLimitOptions>;
 
 export type RateLimitBucket = keyof typeof LIMITS;

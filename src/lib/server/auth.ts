@@ -9,7 +9,8 @@ export type ApiErrorCode =
   | "upstream_error"
   | "voice_unavailable"
   | "feature_unavailable"
-  | "internal_error";
+  | "internal_error"
+  | "recognizer_failed";
 
 /**
  * Build a JSON error response following the shared API contract:

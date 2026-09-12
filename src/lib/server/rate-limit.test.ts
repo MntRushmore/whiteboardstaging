@@ -90,6 +90,12 @@ describe("LIMITS", () => {
     expect(LIMITS.checkHelp).toEqual({ limit: 30, windowMs: 60_000 });
     expect(LIMITS.credits).toEqual({ limit: 30, windowMs: 60_000 });
   });
+
+  it("includes the Live Math buckets from the shared contracts", () => {
+    expect(LIMITS.liveRecognize).toEqual({ limit: 120, windowMs: 60_000 });
+    expect(LIMITS.liveCheck).toEqual({ limit: 30, windowMs: 60_000 });
+    expect(LIMITS.liveSolve).toEqual({ limit: 10, windowMs: 60_000 });
+  });
 });
 
 describe("rateLimitedResponse", () => {

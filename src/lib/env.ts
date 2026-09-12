@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LIVE_MODELS } from "@/lib/live/contracts";
 
 // Server-only env accessor. `server-only` is not installed, so guard at runtime:
 // importing this module in a browser bundle is a programming error.
@@ -39,6 +40,11 @@ const envSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: optionalString,
   NEXT_PUBLIC_SITE_URL: optionalString,
   LOG_LEVEL: optionalString,
+
+  // Live Math model overrides (OpenRouter ids). Defaults come from LIVE_MODELS.
+  LIVE_MODEL_CHECK: optionalString,
+  LIVE_MODEL_SOLVE: optionalString,
+  LIVE_MODEL_VISION: optionalString,
 });
 
 export type ServerEnv = z.infer<typeof envSchema>;
@@ -88,4 +94,30 @@ export function hasOpenAI(): boolean {
 export function hasMathpix(): boolean {
   const env = getServerEnv();
   return Boolean(env.MATHPIX_APP_ID && env.MATHPIX_APP_KEY);
+}
+
+export type LiveModels = {
+  check: string;
+  checkFallback: string;
+  solve: string;
+  solveFallback: string;
+  vision: string;
+};
+
+/**
+ * Model ids used by the Live Math routes. `LIVE_MODEL_CHECK/SOLVE/VISION` override the
+ * primaries; the fallbacks always come from LIVE_MODELS (a fallback equal to the primary
+ * would be pointless, so an override that matches a fallback swaps the two).
+ */
+export function getLiveModels(): LiveModels {
+  const env = getServerEnv();
+  const check = env.LIVE_MODEL_CHECK || LIVE_MODELS.check;
+  const solve = env.LIVE_MODEL_SOLVE || LIVE_MODELS.solve;
+  return {
+    check,
+    checkFallback: check === LIVE_MODELS.checkFallback ? LIVE_MODELS.check : LIVE_MODELS.checkFallback,
+    solve,
+    solveFallback: solve === LIVE_MODELS.solveFallback ? LIVE_MODELS.solve : LIVE_MODELS.solveFallback,
+    vision: env.LIVE_MODEL_VISION || LIVE_MODELS.vision,
+  };
 }

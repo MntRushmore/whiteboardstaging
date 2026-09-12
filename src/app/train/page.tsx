@@ -8,6 +8,7 @@ import {
   getSnapshot,
 } from "tldraw";
 import "tldraw/tldraw.css";
+import { liveShapeUtils } from "@/shapes";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, ArrowLeft, Lock, Save, RotateCcw, Check } from "lucide-react";
@@ -499,6 +500,7 @@ export default function TrainPage() {
   return (
     <div style={{ position: "fixed", inset: 0 }}>
       <Tldraw
+        shapeUtils={liveShapeUtils}
         licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
         components={{
           MenuPanel: null,
