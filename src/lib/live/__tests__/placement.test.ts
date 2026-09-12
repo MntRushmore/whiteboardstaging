@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { Rect } from "../contracts";
 import {
+  CHAR_WIDTH,
   ECHO_HEIGHTS,
+  ECHO_WIDTH_RELAYOUT_PX,
   echoSizeFor,
   estimateEchoWidth,
   findFreeSlot,
@@ -113,5 +115,25 @@ describe("placeGraph / placeStep / placeFloating", () => {
     expect(x1).toBeCloseTo(204 / 400);
     expect(y1).toBeCloseTo(64 / 200);
     expect(normalizeBBox({ x: -999, y: -999, w: 5000, h: 5000 }, region)).toEqual([0, 0, 1, 1]);
+  });
+});
+
+describe("estimateEchoWidth (B5: graph must not overlap the echo)", () => {
+  it("is at least the measured KaTeX width of typical echoes at size m", () => {
+    // Measured in the browser QA: `y=x^{2}-4` rendered 129 px wide at size m (24 px font).
+    expect(estimateEchoWidth("y=x^{2}-4", "m")).toBeGreaterThanOrEqual(129);
+    // `2 x+3=11` measured ~143 px.
+    expect(estimateEchoWidth("2 x+3=11", "m")).toBeGreaterThanOrEqual(130);
+  });
+
+  it("scales with size using ~10 / 13 / 17 px per character plus 40 px padding", () => {
+    expect(CHAR_WIDTH).toEqual({ s: 10, m: 13, l: 17 });
+    expect(estimateEchoWidth("x=4", "m")).toBe(13 * 3 + 40);
+    expect(estimateEchoWidth("x=4", "s")).toBe(10 * 3 + 40);
+    expect(estimateEchoWidth("x=4", "l")).toBe(17 * 3 + 40);
+  });
+
+  it("exposes the relayout threshold used by the loop", () => {
+    expect(ECHO_WIDTH_RELAYOUT_PX).toBe(8);
   });
 });

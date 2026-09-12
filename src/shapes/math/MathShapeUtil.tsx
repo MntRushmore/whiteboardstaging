@@ -8,6 +8,7 @@ import {
   T,
   createShapePropsMigrationIds,
   createShapePropsMigrationSequence,
+  stopEventPropagation,
   useEditor,
   useIsEditing,
   type Editor,
@@ -24,8 +25,11 @@ import {
   type MathSize,
 } from "@/lib/live/contracts";
 import { scheduleLiveWrite } from "@/lib/live/liveWrite";
+import { badgeLabel, badgeTitle, dispatchBadgeTap, isBadgeStatus, noteLineFor } from "./badge";
 import { renderLatex } from "./katex";
 import { MathEditor } from "./MathEditor";
+
+export { BADGE_TAP_EVENT, type BadgeTapDetail } from "./badge";
 
 export const MATH_FONT_PX: Record<MathSize, number> = { s: 18, m: 24, l: 32 };
 export const MATH_COLORS = {
@@ -116,10 +120,15 @@ const STYLE = `
 .live-math[data-tone="muted"] .live-math__inner{color:#374151;opacity:.6}
 .live-math[data-tone="accent"] .live-math__inner{color:#1e3a8a;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.35)}
 .live-math__ai{position:absolute;right:-2px;top:-8px;font:600 9px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.04em;color:#fff;background:${MATH_COLORS.accent};border-radius:4px;padding:2px 4px}
-.live-math__badge{display:inline-flex;align-items:center;justify-content:center;flex:none;font:600 12px/1 ui-sans-serif,system-ui,sans-serif}
+.live-math__badge{all:unset;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;flex:none;font:600 12px/1 ui-sans-serif,system-ui,sans-serif;cursor:pointer;pointer-events:all;touch-action:manipulation}
+.live-math__badge:focus-visible{outline:2px solid ${MATH_COLORS.accent};outline-offset:2px;border-radius:999px}
 .live-math__badge--ok{color:${MATH_COLORS.ok}}
 .live-math__badge--warn{width:9px;height:9px;border-radius:50%;background:${MATH_COLORS.warn}}
 .live-math__badge--solved{color:${MATH_COLORS.ok};background:rgba(22,163,74,.12);border-radius:999px;padding:3px 8px;font-size:11px}
+.live-math__body{display:flex;flex-direction:column;align-items:stretch;width:max-content;min-width:0}
+.live-math__main{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.live-math__note{width:0;min-width:100%;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:12px/1.3 ui-sans-serif,system-ui,sans-serif;color:${MATH_COLORS.muted}}
+.live-math__note .katex{font-size:1.05em}
 .live-math__result{color:${MATH_COLORS.muted};font-size:.85em}
 .live-math__unreadable{color:#9ca3af;font:italic 13px/1.3 ui-sans-serif,system-ui,sans-serif;white-space:nowrap}
 .live-math__editor{position:absolute;left:0;top:0;display:flex;flex-direction:column;gap:6px;width:max-content;min-width:220px;max-width:640px;padding:6px 10px;background:#fff;border:1px solid #3b82f6;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.12);box-sizing:border-box}
@@ -132,13 +141,14 @@ const STYLE = `
 function MathShapeView({ shape }: { shape: MathShape }) {
   const editor = useEditor();
   const isEditing = useIsEditing(shape.id);
-  const { latex, status, source, tone, size, resultLatex } = shape.props;
+  const { latex, status, source, tone, size, resultLatex, note } = shape.props;
   const fontSize = MATH_FONT_PX[size];
   const innerRef = useRef<HTMLDivElement>(null);
 
   useMeasuredSize(editor, shape.id, innerRef, shape.props.w, shape.props.h, isEditing);
 
   const unreadable = status === "unknown" && latex.trim() === "";
+  const noteLine = noteLineFor(status, note);
 
   return (
     <HTMLContainer
@@ -157,39 +167,75 @@ function MathShapeView({ shape }: { shape: MathShape }) {
       ) : (
         <div ref={innerRef} className="live-math__inner">
           {tone === "accent" ? <span className="live-math__ai">AI</span> : null}
-          <Badge status={status} />
-          {unreadable ? (
-            <span className="live-math__unreadable">{UNREADABLE_COPY}</span>
-          ) : (
-            <span className="live-math__latex" dangerouslySetInnerHTML={{ __html: renderLatex(latex) }} />
-          )}
-          {resultLatex ? (
-            <span
-              className="live-math__result"
-              dangerouslySetInnerHTML={{ __html: renderLatex(resultLatex.startsWith("=") ? resultLatex : `= ${resultLatex}`) }}
-            />
-          ) : null}
+          <Badge status={status} note={note} lineId={shape.props.lineId} shapeId={shape.id} />
+          <div className="live-math__body">
+            <div className="live-math__main">
+              {unreadable ? (
+                <span className="live-math__unreadable">{UNREADABLE_COPY}</span>
+              ) : (
+                <span className="live-math__latex" dangerouslySetInnerHTML={{ __html: renderLatex(latex) }} />
+              )}
+              {resultLatex ? (
+                <span
+                  className="live-math__result"
+                  dangerouslySetInnerHTML={{ __html: renderLatex(resultLatex.startsWith("=") ? resultLatex : `= ${resultLatex}`) }}
+                />
+              ) : null}
+            </div>
+            {noteLine ? <NoteLine line={noteLine} title={note} /> : null}
+          </div>
         </div>
       )}
     </HTMLContainer>
   );
 }
 
-function Badge({ status }: { status: MathShape["props"]["status"] }) {
-  switch (status) {
-    case "ok":
-      return (
-        <span className="live-math__badge live-math__badge--ok" aria-label="checks out" title="Checks out">
-          ✓
-        </span>
-      );
-    case "warn":
-      return <span className="live-math__badge live-math__badge--warn" aria-label="look here" title="Look here" />;
-    case "solved":
-      return <span className="live-math__badge live-math__badge--solved">Solved</span>;
-    default:
-      return null;
-  }
+export interface BadgeProps {
+  status: MathShape["props"]["status"];
+  note: string;
+  lineId: string;
+  shapeId: string;
+}
+
+/**
+ * ok: green check; warn: amber dot; solved: "Solved" chip. A real button: tapping it stops the
+ * pointer event before the canvas (no select/drag) and dispatches `live:badge-tap` for the loop.
+ */
+export function Badge({ status, note, lineId, shapeId }: BadgeProps) {
+  if (!isBadgeStatus(status)) return null;
+  return (
+    <button
+      type="button"
+      className={`live-math__badge live-math__badge--${status}`}
+      data-testid="live-math-badge"
+      aria-label={badgeLabel(status, note)}
+      title={badgeTitle(status, note)}
+      onPointerDown={stopEventPropagation}
+      onPointerUp={stopEventPropagation}
+      onTouchStart={stopEventPropagation}
+      onClick={(e) => {
+        e.stopPropagation();
+        dispatchBadgeTap({ lineId, shapeId });
+      }}
+    >
+      {status === "ok" ? "✓" : status === "solved" ? "Solved" : null}
+    </button>
+  );
+}
+
+/** One muted line under the LaTeX (ellipsis when wider than the echo); `Balanced: …` renders its equation with KaTeX. */
+export function NoteLine({ line, title }: { line: { text: string; latex: string }; title: string }) {
+  return (
+    <div className="live-math__note" data-testid="live-math-note" title={title}>
+      {line.text}
+      {line.latex ? (
+        <>
+          {" "}
+          <span dangerouslySetInnerHTML={{ __html: renderLatex(line.latex) }} />
+        </>
+      ) : null}
+    </div>
+  );
 }
 
 /**

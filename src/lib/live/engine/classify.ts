@@ -5,7 +5,7 @@
  * function `y = f(x)` / `f(x) = ...`, and prose.
  * The final LineKind (expression / equation / assignment / inequality) is decided in index.ts.
  */
-import { FUNCTION_WORDS, preprocessLatex, splitRelations } from "./latex";
+import { FUNCTION_WORDS, GREEK, GREEK_ALIAS, preprocessLatex, splitRelations } from "./latex";
 import { looksLikeChemEquation, looksLikeChemFormula } from "./chem";
 
 export type PreKind = "empty" | "label" | "incomplete" | "chem" | "chemFormula" | "point" | "function" | "text";
@@ -48,10 +48,78 @@ const LABEL_PATTERNS: RegExp[] = [
   /^#\s*\d+$/,
 ];
 
-export function isLabel(latex: string): boolean {
-  const s = preprocessLatex(latex).replace(/\\text\{([^}]*)\}/g, "$1").replace(/\s+/g, " ").trim();
+/**
+ * Symbol commands that, written alone, are annotations rather than math: geometry marks
+ * (`\triangle`, `\angle`), logic marks (`\therefore`), ellipses and lone constants.
+ */
+const LONE_SYMBOL_COMMANDS: ReadonlySet<string> = new Set([
+  "triangle",
+  "angle",
+  "measuredangle",
+  "therefore",
+  "because",
+  "infty",
+  "pi",
+  "emptyset",
+  "varnothing",
+  "star",
+  "bullet",
+  "circ",
+  "degree",
+  "cdots",
+  "ldots",
+  "dots",
+  "vdots",
+  "ddots",
+  "hbar",
+  "partial",
+  "nabla",
+  "prime",
+  "dagger",
+  "ast",
+  "sum",
+  "prod",
+  "int",
+]);
+/** One unicode Greek letter or a single geometry/logic mark (vision transcriptions). */
+const LONE_UNICODE_SYMBOL = /^[\u0391-\u03A9\u03B1-\u03C9∆△▲∠∴∵∞°]$/;
+const LONE_COMMAND = /^\(?\\([a-zA-Z]+)\s*[.):]?\)?$/;
+
+/**
+ * `\Delta`, `\alpha`, `\therefore`, `\triangle`, `Δ`: a single symbol with no digits, relations or
+ * operators is a mark on the page (a diagram label, a "therefore"), never a line to check.
+ */
+export function isLoneSymbol(latex: string): boolean {
+  const s = preprocessLatex(latex);
   if (!s) return false;
-  return LABEL_PATTERNS.some((re) => re.test(s));
+  if (LONE_UNICODE_SYMBOL.test(s) || /^\^\{?\\circ\}?$/.test(s)) return true;
+  const m = LONE_COMMAND.exec(s);
+  if (!m) return false;
+  const name = m[1];
+  return GREEK.has(name) || name in GREEK_ALIAS || LONE_SYMBOL_COMMANDS.has(name);
+}
+
+const TEXT_GROUP_RE = /\\(?:text|textrm|textit|textbf|textsf|texttt|mbox)\s*\{[^{}]*\}/g;
+const TEXT_GROUP_START = /\\(?:text|textrm|textit|textbf|textsf|texttt|mbox)\s*\{/;
+
+/**
+ * The whole line is `\text{...}` groups (plus punctuation): a caption or a word, not math.
+ * `\mathrm{...}` is deliberately excluded because it carries units (`3 \mathrm{kg}`).
+ */
+export function isTextOnly(latex: string): boolean {
+  const s = preprocessLatex(latex);
+  if (!s || !TEXT_GROUP_START.test(s)) return false;
+  const rest = s.replace(TEXT_GROUP_RE, " ").replace(/[\s.,:;!?'"()\-]/g, "");
+  return rest === "";
+}
+
+export function isLabel(latex: string): boolean {
+  const s = preprocessLatex(latex)
+    .replace(/\\text\s*\{([^}]*)\}/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!s) return false;
+  return LABEL_PATTERNS.some((re) => re.test(s)) || isLoneSymbol(s);
 }
 
 /** `{ ( [ | \left` balance, ignoring escaped braces. */
@@ -227,8 +295,10 @@ export function looksLikeProse(latex: string): boolean {
 
 export function preClassify(latex: string): PreClassification {
   const s = preprocessLatex(latex);
-  if (!s) return { kind: "empty", latex: s };
+  // decorations only (`\checkmark`, `\square`, `$$`) strip to nothing: a mark on the page, not an empty line
+  if (!s) return { kind: latex.trim() ? "label" : "empty", latex: s };
   if (isLabel(s)) return { kind: "label", latex: s };
+  if (isTextOnly(s)) return { kind: "text", latex: s };
   const inc = incompleteInfo(s);
   if (inc.incomplete) return { kind: "incomplete", latex: s, trailingEquals: inc.trailingEquals, lhs: inc.lhs };
   if (looksLikeChemEquation(s)) return { kind: "chem", latex: s };

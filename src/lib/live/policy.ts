@@ -24,6 +24,8 @@ export interface PolicyInput {
   openHintCount: number;
   rewritesWithWarn: number;
   liveShapeCount: number;
+  /** raw recognized LaTeX; lone symbols (`\\Delta`, `\\checkmark`, one letter) are silent */
+  latex?: string;
 }
 
 export interface PolicyDecision {
@@ -39,7 +41,49 @@ export interface PolicyDecision {
   capped: boolean;
 }
 
-const SILENT_KINDS: ReadonlySet<LineKind> = new Set<LineKind>(["label", "incomplete"]);
+const SILENT_KINDS: ReadonlySet<LineKind> = new Set<LineKind>(["label", "incomplete", "text"]);
+
+/** Greek letters and decorations that, alone on a line, are a diagram/label, not math. */
+const LONE_SYMBOL_COMMANDS: ReadonlySet<string> = new Set([
+  "alpha", "beta", "gamma", "delta", "epsilon", "varepsilon", "zeta", "eta", "theta", "vartheta",
+  "iota", "kappa", "lambda", "mu", "nu", "xi", "pi", "varpi", "rho", "varrho", "sigma", "varsigma",
+  "tau", "upsilon", "phi", "varphi", "chi", "psi", "omega",
+  "Gamma", "Delta", "Theta", "Lambda", "Xi", "Pi", "Sigma", "Upsilon", "Phi", "Psi", "Omega",
+  "checkmark", "square", "blacksquare", "triangle", "triangledown", "bigtriangleup", "circ", "bullet",
+  "cdot", "cdots", "ldots", "dots", "vdots", "star", "bigstar", "dagger", "ast", "times", "div",
+  "pm", "mp", "infty", "angle", "measuredangle", "parallel", "perp", "nabla", "partial", "prime",
+  "rightarrow", "leftarrow", "leftrightarrow", "Rightarrow", "Leftarrow", "uparrow", "downarrow",
+  "to", "hbar", "ell", "wp", "Re", "Im", "aleph", "emptyset", "varnothing", "top", "bot", "neg", "lnot",
+  "sim", "approx", "equiv", "propto", "therefore", "because", "S", "P", "copyright", "quad", "qquad",
+]);
+
+/**
+ * True when the LaTeX is a single symbol: one Greek letter / decoration command, one
+ * character, or only decorations (e.g. `\\checkmark`, `\\Delta`, `\\text { I }`, `\\cdots`).
+ * Such lines are drawings or labels and never get an echo.
+ */
+export function isSingleSymbolLatex(latex: string): boolean {
+  const s = latex
+    .replace(/\\(?:text|mathrm|mathbf|mathit|textrm|textbf|operatorname)\s*\{([^{}]*)\}/g, " $1 ")
+    .replace(/\\(?:left|right|,|;|:|!|quad|qquad)\b/g, " ")
+    .replace(/[{}~]/g, " ")
+    .trim();
+  if (!s) return false;
+  // Tokens: commands or single characters.
+  const tokens = s.match(/\\[a-zA-Z]+|[^\s]/g) ?? [];
+  if (tokens.length === 0) return false;
+  if (tokens.length === 1) {
+    const t = tokens[0];
+    if (t.startsWith("\\")) return LONE_SYMBOL_COMMANDS.has(t.slice(1));
+    return /^[a-zA-Z0-9.\-+*/=|:'"`^_,;?!()[\]<>]$/.test(t);
+  }
+  // Only decorations (no letters, digits or relations) -> silent.
+  return tokens.every((t) => {
+    if (t.startsWith("\\")) return LONE_SYMBOL_COMMANDS.has(t.slice(1));
+    return /^[.\-+*/|:'"`^_,;?!()\[\]<>]$/.test(t);
+  });
+}
+
 const CHECKABLE_KINDS: ReadonlySet<LineKind> = new Set<LineKind>([
   "equation",
   "expression",
@@ -66,8 +110,9 @@ export function decide(input: PolicyInput): PolicyDecision {
   const verdict = analysis?.verdict ?? "unknown";
   const capped = input.liveShapeCount >= LIVE_LIMITS.maxLiveShapesPerBoard;
 
-  // 2. echo
-  const echo = !SILENT_KINDS.has(kind) && confidence >= LIVE_LIMITS.minConfidence;
+  // 2. echo (labels, incomplete lines, prose and lone symbols are silent)
+  const loneSymbol = input.latex !== undefined && isSingleSymbolLatex(input.latex);
+  const echo = !SILENT_KINDS.has(kind) && !loneSymbol && confidence >= LIVE_LIMITS.minConfidence;
 
   // 3. badge (never warn from unknown)
   const badge: LiveVerdict = echo && !capped ? badgeFor(mode, analysis) : "none";

@@ -92,12 +92,13 @@ export const FUNCTION_WORDS: Record<string, string> = {
 
 const INVERSE: Record<string, string> = { sin: "asin", cos: "acos", tan: "atan", sec: "asec", csc: "acsc", cot: "acot" };
 
-const GREEK = new Set([
+/** Greek letter commands (exported for the lone-symbol label rule in classify.ts). */
+export const GREEK: ReadonlySet<string> = new Set([
   "alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa", "lambda", "mu", "nu", "xi",
   "omicron", "rho", "sigma", "tau", "upsilon", "phi", "chi", "psi", "omega", "Gamma", "Delta", "Theta", "Lambda", "Xi",
   "Pi", "Sigma", "Upsilon", "Phi", "Psi", "Omega",
 ]);
-const GREEK_ALIAS: Record<string, string> = { varepsilon: "epsilon", vartheta: "theta", varphi: "phi", varrho: "rho", varsigma: "sigma", ell: "l", imath: "i" };
+export const GREEK_ALIAS: Record<string, string> = { varepsilon: "epsilon", vartheta: "theta", varphi: "phi", varrho: "rho", varsigma: "sigma", ell: "l", imath: "i" };
 
 /** `~` marks an approximate equality (\approx, ≈): compared with rounding tolerance. */
 export const APPROX_OP = "~";

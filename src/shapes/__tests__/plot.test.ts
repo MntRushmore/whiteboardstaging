@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoYRange, buildPlot, niceStep, niceTicks, percentile, type PlotInput } from "../graph/plot";
+import { autoYRange, buildPlot, clampTickLabelX, niceStep, niceTicks, percentile, tickLabelWidth, type PlotInput } from "../graph/plot";
 
 function input(over: Partial<PlotInput> = {}): PlotInput {
   return {
@@ -159,6 +159,42 @@ describe("buildPlot", () => {
     );
     expect(out.gridLines).toEqual([]);
     expect(out.paths.map((p) => p.id)).toEqual(["a", "b"]);
+  });
+
+  it("keeps every tick label inside the svg (the left '-10' used to be clipped to '10')", () => {
+    const out = buildPlot(input());
+    const xLabels = out.tickLabels.filter((t) => t.axis === "x");
+    const left = xLabels.find((t) => t.text === "-10");
+    expect(left).toBeDefined();
+    // centred label: its left edge must be at or right of x = 0
+    expect(left!.x - tickLabelWidth("-10") / 2).toBeGreaterThanOrEqual(0);
+    expect(left!.x).toBeGreaterThan(4);
+    for (const t of xLabels) {
+      const half = tickLabelWidth(t.text) / 2;
+      expect(t.x - half, t.text).toBeGreaterThanOrEqual(0);
+      expect(t.x + half, t.text).toBeLessThanOrEqual(out.w);
+      expect(t.y).toBeLessThanOrEqual(out.h);
+    }
+    // interior labels are not moved
+    const zeroish = xLabels.find((t) => t.text === "5");
+    expect(zeroish?.x).toBeCloseTo(4 + (15 / 20) * (out.w - 8), 5);
+    // start-anchored y labels stay left of the right edge and below the top
+    for (const t of out.tickLabels.filter((t) => t.axis === "y")) {
+      expect(t.x + tickLabelWidth(t.text), t.text).toBeLessThanOrEqual(out.w);
+      expect(t.y).toBeGreaterThanOrEqual(9);
+    }
+    // y labels on a right-edge axis (xMax = 0) are pulled inside too
+    const right = buildPlot(input({ xMin: -20, xMax: 0 }));
+    for (const t of right.tickLabels.filter((t) => t.axis === "y")) {
+      expect(t.x + tickLabelWidth(t.text), t.text).toBeLessThanOrEqual(right.w);
+    }
+  });
+
+  it("clampTickLabelX pins to the edges and centres when the svg is narrower than the label", () => {
+    expect(clampTickLabelX(4, "-10", 240)).toBe(tickLabelWidth("-10") / 2 + 1);
+    expect(clampTickLabelX(236, "10", 240)).toBe(240 - tickLabelWidth("10") / 2 - 1);
+    expect(clampTickLabelX(120, "5", 240)).toBe(120);
+    expect(clampTickLabelX(2, "-1000000", 10)).toBe(5);
   });
 
   it("never throws on degenerate input", () => {

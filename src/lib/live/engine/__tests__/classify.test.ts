@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bracketsBalanced, functionInfo, incompleteInfo, isLabel, looksLikeProse, pointInfo, preClassify } from "../classify";
+import { bracketsBalanced, functionInfo, incompleteInfo, isLabel, isLoneSymbol, isTextOnly, looksLikeProse, pointInfo, preClassify } from "../classify";
 
 describe("classify: labels", () => {
   it.each(["1)", "2.", "(3)", "12:", "a)", "b.", "(c)", "x", "3", "42", "1a", "Q3", "Problem 2", "#4", "iv)"])("label %s", (s) => {
@@ -8,6 +8,73 @@ describe("classify: labels", () => {
   });
   it.each(["2x + 3", "100", "3 + 4", "x = 4", "\\frac{1}{2}", "3.5"])("not a label %s", (s) => {
     expect(isLabel(s)).toBe(false);
+  });
+  it("accepts a spaced \\text group around a single letter (Mathpix style)", () => {
+    expect(isLabel("\\text { I }")).toBe(true);
+    expect(preClassify("\\text { I }").kind).toBe("label");
+    expect(isLabel("\\text{I}")).toBe(true);
+  });
+});
+
+describe("classify: lone symbols are labels (B2)", () => {
+  it.each([
+    "\\Delta",
+    "\\alpha",
+    "\\theta",
+    "\\varepsilon",
+    "\\Omega",
+    "\\pi",
+    "\\infty",
+    "\\triangle",
+    "\\angle",
+    "\\therefore",
+    "\\because",
+    "\\cdots",
+    "\\Delta.",
+    "(\\alpha)",
+    "Δ",
+    "θ",
+    "∴",
+    "△",
+    "°",
+  ])("lone symbol %s", (s) => {
+    expect(isLoneSymbol(s)).toBe(true);
+    expect(isLabel(s)).toBe(true);
+    expect(preClassify(s).kind).toBe("label");
+  });
+  it.each(["\\Delta x", "\\alpha + \\beta", "\\Delta = 4", "\\sigma^2", "\\Delta_x", "2\\pi", "\\pi r^2", "\\sin", "\\frac", "\\mathrm{kg}", "\\theta \\phi"])(
+    "not a lone symbol %s",
+    (s) => {
+      expect(isLoneSymbol(s)).toBe(false);
+      expect(preClassify(s).kind).not.toBe("label");
+    },
+  );
+  it("decoration-only lines are labels, a blank line is empty", () => {
+    for (const s of ["\\checkmark", "\\square", "\\checkmark \\checkmark", "✓", "$$", "\\Delta \\checkmark"]) {
+      expect(preClassify(s).kind, s).toBe("label");
+    }
+    expect(preClassify("").kind).toBe("empty");
+    expect(preClassify("   ").kind).toBe("empty");
+  });
+});
+
+describe("classify: text-only lines (B8)", () => {
+  it.each(["\\text{hi}", "\\text { hello }", "\\text{Answer}", "\\text{Answer:}", "\\text{or}", "\\text{yes} \\checkmark", "\\text{Find} \\text{the slope}", "\\textbf{Note}."])(
+    "text-only %s",
+    (s) => {
+      expect(isTextOnly(s)).toBe(true);
+      expect(preClassify(s).kind).toBe("text");
+    },
+  );
+  it.each(["\\text{I} = 3", "x = 2 \\text{ or } x = -2", "\\text{Answer:} 4", "3 \\mathrm{~kg}", "\\mathrm{kg}", "2x + 3"])("not text-only %s", (s) => {
+    expect(isTextOnly(s)).toBe(false);
+  });
+  it.each(["\\text{I} = 3", "x = 2 \\text{ or } x = -2", "3 \\mathrm{~kg}", "\\mathrm{kg}", "2x + 3"])("math with text groups is not kind text: %s", (s) => {
+    expect(preClassify(s).kind).not.toBe("text");
+  });
+  it("still classifies prose with math as text via looksLikeProse", () => {
+    expect(preClassify("\\text{solve for } x").kind).toBe("text");
+    expect(preClassify("\\text{Answer:} 4").kind).toBe("text");
   });
 });
 

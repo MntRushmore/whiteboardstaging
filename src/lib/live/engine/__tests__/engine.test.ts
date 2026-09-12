@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { LINE_KINDS, ENGINE_VERDICTS, type LiveEngine } from "../../contracts";
-import { getEngine } from "..";
+import { CHEM_BALANCED_NOTE, CHEM_UNBALANCED_NOTE, getEngine } from "..";
 
 let engine: LiveEngine;
 beforeAll(async () => {
@@ -72,19 +72,52 @@ describe("engine: analyzeLine kinds and the calculator rule", () => {
     const x = engine.analyzeLine("x = 4", feedback);
     expect(x.kind).toBe("assignment");
   });
-  it("chem lines", () => {
+  it("chem lines: unbalanced equations are a mismatch with a local hint, balanced ones are ok", () => {
+    // no coefficients attempted yet: still a mismatch so the amber dot shows (B3)
     const a = engine.analyzeLine("Fe + O_2 \\rightarrow Fe_2O_3", feedback);
     expect(a.kind).toBe("chem");
     expect(a.chem).toEqual({ balanced: false, balancedLatex: "4\\,\\mathrm{Fe} + 3\\,\\mathrm{O_{2}} \\rightarrow 2\\,\\mathrm{Fe_{2}O_{3}}" });
-    expect(a.verdict).toBe("none");
+    expect(a.verdict).toBe("mismatch");
+    expect(a.note).toBe(CHEM_UNBALANCED_NOTE);
+    expect(a.note).toBe("Count the atoms on each side");
     const b = engine.analyzeLine("4Fe + 3O_2 \\rightarrow 2Fe_2O_3", feedback);
-    expect(b.chem?.balanced).toBe(true);
+    expect(b.chem).toEqual({ balanced: true, balancedLatex: "4\\,\\mathrm{Fe} + 3\\,\\mathrm{O_{2}} \\rightarrow 2\\,\\mathrm{Fe_{2}O_{3}}" });
     expect(b.verdict).toBe("ok");
+    expect(b.note).toBe(CHEM_BALANCED_NOTE);
+    expect(b.note.startsWith("Balanced")).toBe(true);
+    // wrong coefficients
     const c = engine.analyzeLine("2Fe + 3O_2 \\rightarrow 2Fe_2O_3", feedback);
     expect(c.verdict).toBe("mismatch");
+    expect(c.note).toBe(CHEM_UNBALANCED_NOTE);
+    // the same in every mode: the loop decides what to reveal
+    expect(engine.analyzeLine("Fe + O_2 \\rightarrow Fe_2O_3", answer).verdict).toBe("mismatch");
+    expect(engine.analyzeLine("2H_2 + O_2 \\to 2H_2O", { mode: "suggest" }).verdict).toBe("ok");
+    // parses as chemistry but no integer coefficients exist: still a mismatch, balancedLatex empty
+    const imp = engine.analyzeLine("H_2 \\rightarrow O_2", feedback);
+    expect(imp.kind).toBe("chem");
+    expect(imp.verdict).toBe("mismatch");
+    expect(imp.chem).toEqual({ balanced: false, balancedLatex: "" });
+    // a lone formula is chemistry but not an equation: verdict none, molar mass shown
     const w = engine.analyzeLine("H_2O", feedback);
     expect(w.kind).toBe("chem");
+    expect(w.verdict).toBe("none");
+    expect(w.chem).toBeUndefined();
     expect(w.resultLatex).toBe("18.015\\,\\mathrm{g/mol}");
+    // not chemistry at all
+    expect(engine.analyzeLine("x + y \\rightarrow z", feedback).kind).not.toBe("chem");
+  });
+  it("lone symbols and text-only lines are silent kinds (B2/B8)", () => {
+    for (const s of ["\\Delta", "\\alpha", "\\theta", "\\triangle", "\\therefore", "\\checkmark", "\\square", "\\Delta \\checkmark", "Δ", "\\text { I }"]) {
+      expect(engine.analyzeLine(s, feedback).kind, s).toBe("label");
+    }
+    for (const s of ["\\text{hi}", "\\text{Answer}", "\\text{yes} \\checkmark", "\\text{Find the slope}"]) {
+      expect(engine.analyzeLine(s, feedback).kind, s).toBe("text");
+    }
+    // symbols inside real math still analyze
+    expect(engine.analyzeLine("\\Delta x = 4", feedback).kind).toBe("assignment");
+    expect(engine.analyzeLine("\\therefore x = 4", feedback).kind).toBe("assignment");
+    expect(engine.analyzeLine("2\\pi", feedback).resultLatex).toBe("6.283");
+    expect(engine.analyzeLine("\\text{I} = 3", feedback).kind).toBe("assignment");
   });
   it("never throws and always returns contract-valid kinds/verdicts", () => {
     const inputs = ["", "\\sum_{i=1}^n i", "f'(x)", "\\frac{dy}{dx} = 2x", "\\begin{matrix}1\\end{matrix}", "?", "&&&", "\\frac{", "\\left(", "x = ", "= =", "\\text{}", "\\pm", "|", "2,3,4", "\\lim_{x \\to 0}", "\\infty", "1/0", "0^0", "\\sqrt{-1}", "\\log 0", "x^x = 2", "\\sin", "\\frac{1}{x} = 0"];

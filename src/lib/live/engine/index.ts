@@ -28,6 +28,10 @@ import { evaluateUnits, unitValueToLatex, valuesMatch } from "./units";
 
 const UNKNOWN: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
 
+/** Notes attached to parsed chemical equations (the shape renders `Balanced…` notes as a secondary line). */
+export const CHEM_BALANCED_NOTE = "Balanced";
+export const CHEM_UNBALANCED_NOTE = "Count the atoms on each side";
+
 function base(kind: LineAnalysis["kind"], math = "", verdict: EngineVerdict = "none"): LineAnalysis {
   return { kind, math, resultLatex: "", verdict, note: "" };
 }
@@ -377,13 +381,14 @@ export function createEngine(mod: MathModule): LiveEngine {
     if (!eq) return { ...UNKNOWN };
     const coeffs = balanceEquation(eq);
     const balanced = isBalanced(eq);
-    const attempted = [...eq.reactants, ...eq.products].some((f) => f.coefficient !== 1);
+    // A parsed equation is either balanced (ok, "Balanced") or not (mismatch -> amber dot with a
+    // local hint). 'none' is reserved for lines that are chemistry but not an equation (formulas).
     const out: LineAnalysis = {
       kind: "chem",
       math: normalizeChemText(latex),
       resultLatex: "",
-      verdict: balanced ? "ok" : attempted && coeffs ? "mismatch" : coeffs ? "none" : "unknown",
-      note: "",
+      verdict: balanced ? "ok" : "mismatch",
+      note: balanced ? CHEM_BALANCED_NOTE : CHEM_UNBALANCED_NOTE,
       chem: { balanced, balancedLatex: coeffs ? equationLatex(eq, coeffs) : "" },
     };
     return out;

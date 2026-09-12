@@ -236,3 +236,42 @@ export function toInkStrokes(shapes: TLDrawShape[]): InkStroke[] {
 export function translateShapes(shapes: TLDrawShape[], dx: number, dy: number): TLDrawShape[] {
   return shapes.map((s) => ({ ...s, x: s.x + dx, y: s.y + dy }));
 }
+
+/**
+ * An `F` whose top cross-bar is a zero-height stroke 2 px ABOVE the stem's top (no
+ * vertical overlap with anything), followed by two small `x`s so the median stroke
+ * height is small (16 px) and the centre-distance rule cannot rescue the bar: 1 line, 5 strokes.
+ */
+export function fixtureDetachedCrossbar(): TLDrawShape[] {
+  const shapes: TLDrawShape[] = [];
+  // stem: x = 100, y 200..240
+  for (const s of glyphs.one(93, 200, 14, 40)) shapes.push(drawShapeFromPoints(s));
+  // top bar: y = 198, x 100..128 (detached, above the stem)
+  for (const s of glyphs.bar(100, 198, 28)) shapes.push(drawShapeFromPoints(s));
+  // middle bar: y = 218, x 100..120
+  for (const s of glyphs.bar(100, 218, 20)) shapes.push(drawShapeFromPoints(s));
+  // two small lowercase-like glyphs on the baseline
+  for (const s of glyphs.x(140, 224, 14, 16)) shapes.push(drawShapeFromPoints(s));
+  return shapes;
+}
+
+/**
+ * `x` with a raised, 60 %-size `2` whose bottom sits 4 px ABOVE the x's top (a real
+ * superscript), nothing else on the line: 1 line, 3 strokes.
+ */
+export function fixtureSuperscript(): TLDrawShape[] {
+  const shapes: TLDrawShape[] = [];
+  // x: 100..128 wide, y 212..240 (28 tall)
+  for (const s of glyphs.x(100, 212, 28, 28)) shapes.push(drawShapeFromPoints(s));
+  // 2: 132..145 wide, y 190..208 (18 tall) -> bottom 208 is 4 px above the x's top (212)
+  for (const s of glyphs.two(132, 190, 13, 18)) shapes.push(drawShapeFromPoints(s));
+  return shapes;
+}
+
+/** Same `x`, but the small `2` floats far above (a stray mark): 2 lines. */
+export function fixtureFloatingMark(): TLDrawShape[] {
+  const shapes: TLDrawShape[] = [];
+  for (const s of glyphs.x(100, 212, 28, 28)) shapes.push(drawShapeFromPoints(s));
+  for (const s of glyphs.two(132, 150, 13, 18)) shapes.push(drawShapeFromPoints(s));
+  return shapes;
+}

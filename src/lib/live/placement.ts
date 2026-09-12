@@ -18,9 +18,16 @@ export const PLACEMENT = {
   graphGap: 16,
   stepGap: 16,
   stepPitch: 52,
-  charWidth: 8.5,
-  echoPadding: 32,
+  /** measured KaTeX at 24 px runs ~13 px per visible character (s: 18 px, l: 32 px font) */
+  charWidth: 13,
+  echoPadding: 40,
 } as const;
+
+/** px per visible character by echo size (KaTeX 18 / 24 / 32 px). */
+export const CHAR_WIDTH: Record<MathSize, number> = { s: 10, m: PLACEMENT.charWidth, l: 17 };
+
+/** A graph / step anchored to an echo is re-placed when the echo's measured width moves by more than this. */
+export const ECHO_WIDTH_RELAYOUT_PX = 8;
 
 export function rectsIntersect(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
@@ -33,11 +40,14 @@ export function rectMaxY(r: Rect): number {
   return r.y + r.h;
 }
 
-/** Rough KaTeX width before the shape's ResizeObserver corrects it. */
+/**
+ * Rough KaTeX width before the shape's ResizeObserver corrects it. Deliberately
+ * generous (measured `y=x^{2}-4` at size m is ~129 px) so a graph placed in the same
+ * write batch as its echo does not overlap it.
+ */
 export function estimateEchoWidth(latex: string, size: MathSize = "m"): number {
-  const visible = latex.replace(/\\[a-zA-Z]+/g, "x").replace(/[{}^_]/g, "");
-  const factor = size === "s" ? 0.8 : size === "l" ? 1.25 : 1;
-  return Math.max(48, Math.round((PLACEMENT.charWidth * visible.length + PLACEMENT.echoPadding) * factor));
+  const visible = latex.replace(/\\[a-zA-Z]+/g, "x").replace(/[{}^_\s]/g, "");
+  return Math.max(48, Math.round(CHAR_WIDTH[size] * visible.length + PLACEMENT.echoPadding));
 }
 
 /** Echo size from the ink height: small ink -> s, tall ink -> l. */

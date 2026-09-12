@@ -50,6 +50,7 @@ import { liveStore, markBurst, removeLine, setLine } from "./liveStore";
 import { scheduleLiveWrite } from "./liveWrite";
 import {
   ECHO_HEIGHTS,
+  ECHO_WIDTH_RELAYOUT_PX,
   echoSizeFor,
   estimateEchoWidth,
   expandRect,
@@ -59,6 +60,7 @@ import {
   placeFloating,
   placeGraph,
   placeStep,
+  rectsIntersect,
 } from "./placement";
 import { badgeFor, decide, localNoteFor, type PolicyDecision } from "./policy";
 import {
@@ -111,6 +113,12 @@ interface LineRuntime {
   shownHintTexts: Set<string>;
   escalation: number;
   processing: number;
+  /**
+   * Plot expression whose graph the student closed (header x / delete). The graph is not
+   * re-created for this line until its plot expression changes. Persisted on the echo's
+   * meta (`graphDismissed`) so a reload does not bring the card back.
+   */
+  graphDismissedExpr: string | null;
 }
 
 const CHECK_PATH = "/api/live/check";
@@ -118,6 +126,16 @@ const SOLVE_PATH = "/api/live/solve";
 const OFFLINE_QUEUE_MAX = 5;
 const UNREADABLE_NOTE = "Couldn't read this — tap to type it";
 const NOTATION_NOTE = "Not what you wrote? Tap to fix.";
+/** Dispatched on window by the math shape's warn/ok badge: `detail: { lineId, shapeId }`. */
+export const BADGE_TAP_EVENT = "live:badge-tap";
+/** Echo meta key recording a dismissed graph's plot expression. */
+const GRAPH_DISMISSED_META = "graphDismissed";
+
+function graphDismissedOf(meta: unknown): string | null {
+  if (typeof meta !== "object" || meta === null) return null;
+  const v = (meta as Record<string, unknown>)[GRAPH_DISMISSED_META];
+  return typeof v === "string" && v ? v : null;
+}
 
 function isShapeRecord(r: unknown): r is TLShape {
   return typeof r === "object" && r !== null && (r as { typeName?: string }).typeName === "shape";
@@ -184,6 +202,7 @@ export class LiveLoop implements LiveController {
   private readonly deps: LiveLoopDeps;
   private engine: LiveEngine | null = null;
   private unsubscribe: (() => void) | null = null;
+  private unsubscribeRemote: (() => void) | null = null;
   private quietTimer: ReturnType<typeof setTimeout> | null = null;
   private dirtyStrokeIds = new Set<string>();
   private pendingRewrite = false;
@@ -193,6 +212,18 @@ export class LiveLoop implements LiveController {
   private started = false;
   private readonly onOnline = () => this.replayOffline();
   private readonly onOffline = () => liveStore.status.set("offline");
+  private readonly onBadgeTap = (e: Event): void => {
+    const detail = ((e as CustomEvent<{ lineId?: unknown; shapeId?: unknown }>).detail ?? {}) as {
+      lineId?: unknown;
+      shapeId?: unknown;
+    };
+    let lineId = typeof detail.lineId === "string" ? detail.lineId : "";
+    if (!lineId && typeof detail.shapeId === "string") {
+      const found = Object.values(liveStore.lines.get()).find((st) => st.mathShapeId === detail.shapeId);
+      lineId = found?.line.id ?? "";
+    }
+    if (lineId) this.handleBadgeTap(lineId);
+  };
 
   constructor(editor: LiveEditorLike, opts: UseLiveMathOptions, deps: Partial<LiveLoopDeps> = {}) {
     this.editor = editor;
@@ -205,8 +236,16 @@ export class LiveLoop implements LiveController {
     if (this.started) return;
     this.started = true;
     this.unsubscribe = this.editor.store.listen((entry) => this.onChange(entry), { source: "user", scope: "document" });
+    // Our own writes and the shapes' measured-size writes arrive as 'remote'. We only read
+    // them to re-place shapes anchored to an echo whose width changed and to notice a
+    // graph closed from its header; nothing here ever marks a burst or recognizes.
+    this.unsubscribeRemote = this.editor.store.listen((entry) => this.onRemoteChange(entry), {
+      source: "remote",
+      scope: "document",
+    });
     this.deps.events?.addEventListener("online", this.onOnline);
     this.deps.events?.addEventListener("offline", this.onOffline);
+    this.deps.events?.addEventListener(BADGE_TAP_EVENT, this.onBadgeTap);
     this.rebuild();
     this.recount();
     void this.deps
@@ -230,8 +269,11 @@ export class LiveLoop implements LiveController {
     this.started = false;
     this.unsubscribe?.();
     this.unsubscribe = null;
+    this.unsubscribeRemote?.();
+    this.unsubscribeRemote = null;
     this.deps.events?.removeEventListener("online", this.onOnline);
     this.deps.events?.removeEventListener("offline", this.onOffline);
+    this.deps.events?.removeEventListener(BADGE_TAP_EVENT, this.onBadgeTap);
     if (this.quietTimer) clearTimeout(this.quietTimer);
     this.quietTimer = null;
     this.deps.recognizer.abortAll();
@@ -255,7 +297,68 @@ export class LiveLoop implements LiveController {
         for (const r of this.rt.values()) r.checkAbort?.abort();
       }
     }
-    if (prev.mode !== next.mode) this.reanalyzeAll();
+    if (prev.mode !== next.mode) {
+      this.reanalyzeAll();
+      const hintsMode = (m: UseLiveMathOptions["mode"]) => m === "suggest" || m === "answer";
+      if (hintsMode(next.mode) && !hintsMode(prev.mode)) this.checkMismatchesAfterLadderRise();
+    }
+  }
+
+  /**
+   * The dial moved up to Suggest/Solve: lines already flagged amber get their check now
+   * (spec ladder: mismatch + no hint yet), one per column with the lowest amber line as
+   * focus, and none while a hint card is open (one-open-hint rule).
+   */
+  private checkMismatchesAfterLadderRise(): void {
+    if (!this.engine || !this.opts.enabled || this.opts.voiceActive) return;
+    if (liveStore.openHints.get().length > 0) return;
+    const focusByColumn = new Map<number, LiveLineState>();
+    const all = Object.values(liveStore.lines.get()).sort(
+      (a, b) => a.line.column - b.line.column || a.line.row - b.line.row,
+    );
+    for (const st of all) {
+      if (!st.latex || st.analysis?.verdict !== "mismatch") continue;
+      if (st.hintsShown >= LIVE_LIMITS.maxHintsPerLine) continue;
+      if (!this.decisionFor(st).runLlmCheck) continue;
+      focusByColumn.set(st.line.column, st);
+    }
+    for (const st of focusByColumn.values()) this.startCheck(st.line.column, st.line.id, { userAsked: false });
+  }
+
+  /** Badge tapped on an echo: a check in every mode; a second tap in Suggest/Solve escalates. */
+  private handleBadgeTap(lineId: string): void {
+    const st = liveStore.lines.get()[lineId];
+    if (!st?.latex || !this.opts.enabled) return;
+    const mode = this.opts.mode;
+    if (mode === "off") return;
+    const rt = this.runtime(lineId);
+    if ((mode === "suggest" || mode === "answer") && st.hintsShown > 0 && rt.escalation < 2) {
+      this.escalate(lineId);
+      return;
+    }
+    this.requestCheck(lineId);
+  }
+
+  /** Remote-sourced changes: measured echo widths and graphs closed from their header. */
+  private onRemoteChange(entry: HistoryEntry<TLRecord>): void {
+    if (!this.started) return;
+    const lines = liveStore.lines.get();
+    for (const [from, to] of Object.values(entry.changes.updated)) {
+      if (!isShapeRecord(to) || !isShapeRecord(from) || to.type !== "math" || !isLiveMeta(to.meta)) continue;
+      const fp = from.props as MathShapeProps;
+      const tp = to.props as MathShapeProps;
+      if (Math.abs(tp.w - fp.w) <= ECHO_WIDTH_RELAYOUT_PX) continue;
+      const lineId = tp.lineId || to.meta.lineId;
+      if (lines[lineId]?.mathShapeId === to.id) this.relayoutForEcho(lineId);
+    }
+    for (const rec of Object.values(entry.changes.removed)) {
+      if (!isShapeRecord(rec) || rec.type !== "graph" || !isLiveMeta(rec.meta)) continue;
+      const lineId = (rec.props as GraphShapeProps).lineId || rec.meta.lineId;
+      const st = lines[lineId];
+      // Our own deletes null the id inside the same write; a still-recorded id means the
+      // student closed the card.
+      if (st?.graphShapeId === rec.id) this.markGraphDismissed(lineId);
+    }
   }
 
   getOptions(): UseLiveMathOptions {
@@ -319,7 +422,7 @@ export class LiveLoop implements LiveController {
         const st = liveStore.lines.get()[lineId];
         if (!st) continue;
         if (st.mathShapeId === rec.id) setLine(lineId, { mathShapeId: null });
-        if (st.graphShapeId === rec.id) setLine(lineId, { graphShapeId: null });
+        if (st.graphShapeId === rec.id) this.markGraphDismissed(lineId);
       }
     }
 
@@ -410,6 +513,8 @@ export class LiveLoop implements LiveController {
         graphShapeId: graphs.get(r.line.id) ?? null,
         hintsShown: props?.note ? 1 : 0,
       };
+      const dismissed = graphDismissedOf(shape?.meta);
+      if (dismissed && !graphs.has(r.line.id)) this.runtime(r.line.id).graphDismissedExpr = dismissed;
     }
     liveStore.lines.set(next);
   }
@@ -426,6 +531,7 @@ export class LiveLoop implements LiveController {
         shownHintTexts: new Set(),
         escalation: 0,
         processing: 0,
+        graphDismissedExpr: null,
       };
       this.rt.set(lineId, r);
     }
@@ -671,6 +777,7 @@ export class LiveLoop implements LiveController {
       mode: this.opts.mode,
       voiceActive: this.opts.voiceActive,
       analysis: state.analysis,
+      latex: state.latex,
       confidence: state.confidence,
       idleMs: extra.idleMs ?? this.deps.now() - state.updatedAt,
       userAsked: extra.userAsked ?? false,
@@ -734,8 +841,14 @@ export class LiveLoop implements LiveController {
     }, LIVE_TIMING.unknownIdleMs);
   }
 
+  /**
+   * Re-runs the engine for every line (mount, mode change). In mode 'off' the persisted
+   * badges/notes of existing echoes are left untouched: the dial resets to Off on every
+   * load and must not wipe the student's green checks (only new lines get badge none).
+   */
   private reanalyzeAll(): void {
     if (!this.engine) return;
+    const keepStatus = this.opts.mode === "off";
     const all = Object.values(liveStore.lines.get()).sort(
       (a, b) => a.line.column - b.line.column || a.line.row - b.line.row,
     );
@@ -744,11 +857,15 @@ export class LiveLoop implements LiveController {
       const analysis = this.analyze(st);
       setLine(st.line.id, { analysis });
       const fresh = liveStore.lines.get()[st.line.id];
-      if (fresh) this.render(fresh, this.decisionFor(fresh), { quiet: true });
+      if (fresh) this.render(fresh, this.decisionFor(fresh), { quiet: true, keepStatus });
     }
   }
 
-  private render(state: LiveLineState, decision: PolicyDecision, opts: { quiet?: boolean } = {}): void {
+  private render(
+    state: LiveLineState,
+    decision: PolicyDecision,
+    opts: { quiet?: boolean; keepStatus?: boolean } = {},
+  ): void {
     const lineId = state.line.id;
     const rt = this.runtime(lineId);
     if (!decision.echo) {
@@ -779,9 +896,11 @@ export class LiveLoop implements LiveController {
     if (analysis?.chem && !analysis.chem.balanced && this.opts.mode !== "off") {
       note = decision.revealChemBalance ? `Balanced: ${analysis.chem.balancedLatex}` : localNoteFor(analysis, this.opts.mode);
     }
-    this.upsertEcho(lineId, { latex: state.latex, status, resultLatex, note });
-    if (analysis?.plot && !decision.capped) this.upsertGraph(lineId, analysis.plot);
-    else if (state.graphShapeId) this.deleteGraph(lineId);
+    this.upsertEcho(lineId, { latex: state.latex, status, resultLatex, note }, { keepStatus: opts.keepStatus });
+    if (analysis?.plot && !decision.capped) {
+      if (rt.graphDismissedExpr !== null && rt.graphDismissedExpr !== analysis.plot.expr) this.clearGraphDismissed(lineId);
+      if (rt.graphDismissedExpr === null) this.upsertGraph(lineId, analysis.plot);
+    } else if (state.graphShapeId) this.deleteGraph(lineId);
   }
 
   // ---------------------------------------------------------------- shape writes
@@ -799,19 +918,23 @@ export class LiveLoop implements LiveController {
     liveStore.liveShapeCount.set(n);
   }
 
-  private avoidRects(lineId: string): Rect[] {
+  private avoidRects(lineId: string, exclude?: ReadonlySet<string>): Rect[] {
     const st = liveStore.lines.get()[lineId];
     const own = new Set<string>(st ? [...st.line.strokeIds, st.mathShapeId ?? "", st.graphShapeId ?? ""] : []);
     const out: Rect[] = [];
     for (const s of this.editor.getCurrentPageShapes()) {
-      if (own.has(s.id)) continue;
+      if (own.has(s.id) || exclude?.has(s.id)) continue;
       const b = this.editor.getShapePageBounds(s);
       if (b) out.push(boxToRect(b));
     }
     return out;
   }
 
-  private upsertEcho(lineId: string, props: Pick<MathShapeProps, "latex" | "status" | "resultLatex" | "note">): void {
+  private upsertEcho(
+    lineId: string,
+    wanted: Pick<MathShapeProps, "latex" | "status" | "resultLatex" | "note">,
+    opts: { keepStatus?: boolean } = {},
+  ): void {
     this.write(() => {
       const st = liveStore.lines.get()[lineId];
       if (!st) return;
@@ -820,6 +943,7 @@ export class LiveLoop implements LiveController {
       const existing = st.mathShapeId ? this.editor.getShape(st.mathShapeId) : undefined;
       if (existing && existing.type === "math") {
         const cur = existing.props as MathShapeProps;
+        const props = opts.keepStatus ? { ...wanted, status: cur.status, note: cur.note } : wanted;
         const changed =
           cur.latex !== props.latex ||
           cur.status !== props.status ||
@@ -837,6 +961,7 @@ export class LiveLoop implements LiveController {
         ]);
         return;
       }
+      const props = wanted;
       if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard && props.latex === "") return;
       const viewport = boxToRect(this.editor.getViewportPageBounds());
       const candidate = placeEcho(st.line.bounds, props.latex || UNREADABLE_NOTE, size, viewport);
@@ -897,6 +1022,11 @@ export class LiveLoop implements LiveController {
       if (!st) return;
       const fn = { id: `f_${lineId}`, expr: plot.expr, latex: plot.latex, color: GRAPH_COLORS[0] };
       const existing = st.graphShapeId ? this.editor.getShape(st.graphShapeId) : undefined;
+      if (st.graphShapeId && !existing) {
+        // Recorded id is gone from the store and we did not delete it: the student closed it.
+        this.markGraphDismissed(lineId, plot.expr);
+        return;
+      }
       if (existing && existing.type === "graph") {
         const cur = existing.props as GraphShapeProps;
         if (cur.fns[0]?.expr === plot.expr) return;
@@ -935,6 +1065,71 @@ export class LiveLoop implements LiveController {
       if (!st?.graphShapeId) return;
       if (this.editor.getShape(st.graphShapeId)) this.editor.deleteShapes([st.graphShapeId]);
       setLine(lineId, { graphShapeId: null });
+    });
+  }
+
+  /**
+   * The student closed the graph: remember the plot expression so the card is not
+   * re-created on the next render of this line (cascade, mode switch, reload).
+   */
+  private markGraphDismissed(lineId: string, expr?: string): void {
+    const st = liveStore.lines.get()[lineId];
+    if (!st) return;
+    const dismissed = expr ?? st.analysis?.plot?.expr ?? "";
+    this.runtime(lineId).graphDismissedExpr = dismissed;
+    if (st.graphShapeId) setLine(lineId, { graphShapeId: null });
+    this.writeGraphDismissedMeta(lineId, dismissed);
+  }
+
+  private clearGraphDismissed(lineId: string): void {
+    const rt = this.rt.get(lineId);
+    if (rt) rt.graphDismissedExpr = null;
+    this.writeGraphDismissedMeta(lineId, "");
+  }
+
+  private writeGraphDismissedMeta(lineId: string, value: string): void {
+    this.write(() => {
+      const st = liveStore.lines.get()[lineId];
+      if (!st?.mathShapeId) return;
+      const echo = this.editor.getShape(st.mathShapeId);
+      if (!echo || echo.type !== "math") return;
+      if ((graphDismissedOf(echo.meta) ?? "") === value) return;
+      this.editor.updateShapes([{ id: echo.id, type: "math", meta: { ...echo.meta, [GRAPH_DISMISSED_META]: value } }]);
+    });
+  }
+
+  /**
+   * The echo's measured width moved by more than ECHO_WIDTH_RELAYOUT_PX (KaTeX measured
+   * after the estimate): re-place the graph to its right and push away AI shapes anchored
+   * to this line that the wider echo now covers.
+   */
+  private relayoutForEcho(lineId: string): void {
+    this.write(() => {
+      const st = liveStore.lines.get()[lineId];
+      if (!st?.mathShapeId) return;
+      const echoBounds = this.editor.getShapePageBounds(st.mathShapeId);
+      if (!echoBounds) return;
+      const echo = boxToRect(echoBounds);
+      const viewport = boxToRect(this.editor.getViewportPageBounds());
+      const updates: TLShapePartial[] = [];
+      if (st.graphShapeId) {
+        const g = this.editor.getShape(st.graphShapeId);
+        if (g && g.type === "graph") {
+          const gp = g.props as GraphShapeProps;
+          const gr = placeGraph(st.line.bounds, echo, { w: gp.w, h: gp.h }, viewport);
+          if (Math.abs(gr.x - g.x) > 0.5 || Math.abs(gr.y - g.y) > 0.5) {
+            updates.push({ id: g.id, type: "graph", x: gr.x, y: gr.y });
+          }
+        }
+      }
+      for (const s of this.editor.getCurrentPageShapes()) {
+        if (s.type !== "math" || !isLiveMeta(s.meta) || s.meta.source !== "ai" || s.meta.lineId !== lineId) continue;
+        const b = this.editor.getShapePageBounds(s);
+        if (!b || !rectsIntersect(echo, boxToRect(b))) continue;
+        const slot = findFreeSlot(boxToRect(b), this.avoidRects(lineId, new Set([s.id])), st.line.bounds);
+        if (slot.x !== b.x || slot.y !== b.y) updates.push({ id: s.id, type: "math", x: slot.x, y: slot.y });
+      }
+      if (updates.length > 0) this.editor.updateShapes(updates);
     });
   }
 

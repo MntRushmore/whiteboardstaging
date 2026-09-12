@@ -9,7 +9,11 @@ import type { InkLine, InkStroke, Rect } from "./contracts";
  *  - the horizontal gap is < 1.2 x median stroke height while their vertical
  *    centres differ by < 0.6 x median height;
  *  - a fraction bar (wide, flat stroke) joins every stroke whose x-range it
- *    covers >= 50 % within 1.5 x median height above or below it.
+ *    covers >= 50 % within 1.5 x median height above or below it;
+ *  - a superscript (small stroke sitting just above a neighbour's top, horizontally
+ *    adjacent) joins that neighbour.
+ * Every stroke rect is inflated by max(3 px, 0.1 x median height) before the overlap /
+ * gap tests so zero-height bars (F/E/T cross-bars, minus signs) join their letters.
  * Lines are then sorted top-to-bottom into columns by x-overlap >= 40 %.
  */
 
@@ -26,6 +30,14 @@ export const CLUSTER_RULES = {
   barCoverRatio: 0.5,
   columnOverlapRatio: 0.4,
   idReuseRatio: 0.5,
+  /** rect inflation before the join tests: max(inflateMinPx, inflateFactor x median) */
+  inflateMinPx: 3,
+  inflateFactor: 0.1,
+  /** superscript: h < 0.7 x median, bottom within [top - 0.5 x median, top + 0.25 x median], gap < 0.8 x median */
+  superMaxHeightFactor: 0.7,
+  superRaiseFactor: 0.5,
+  superDropFactor: 0.25,
+  superGapFactor: 0.8,
 } as const;
 
 export function unionRects(rects: Rect[]): Rect {
@@ -123,6 +135,31 @@ function shouldJoin(a: Rect, b: Rect, medianH: number): boolean {
   return hGap < CLUSTER_RULES.gapFactor * medianH && centerDiff < CLUSTER_RULES.centerFactor * medianH;
 }
 
+/** Inflates a rect by `by` on every side (zero-height bars get a body to overlap with). */
+export function inflateRect(r: Rect, by: number): Rect {
+  return { x: r.x - by, y: r.y - by, w: r.w + 2 * by, h: r.h + 2 * by };
+}
+
+export function inflationFor(medianH: number): number {
+  return Math.max(CLUSTER_RULES.inflateMinPx, CLUSTER_RULES.inflateFactor * medianH);
+}
+
+/**
+ * `small` is a superscript of `base` when it is short, sits with its bottom just above
+ * (or barely below) the base's top, starts higher than the base and is horizontally
+ * adjacent. Rects are the inflated ones.
+ */
+export function isSuperscriptOf(small: Rect, base: Rect, medianH: number): boolean {
+  if (!(small.h < CLUSTER_RULES.superMaxHeightFactor * medianH)) return false;
+  if (!(small.h < base.h)) return false;
+  if (!(small.y < base.y)) return false;
+  const bottom = small.y + small.h;
+  if (bottom < base.y - CLUSTER_RULES.superRaiseFactor * medianH) return false;
+  if (bottom > base.y + CLUSTER_RULES.superDropFactor * medianH) return false;
+  const hGap = gap1d(small.x, small.x + small.w, base.x, base.x + base.w);
+  return hGap < CLUSTER_RULES.superGapFactor * medianH;
+}
+
 function barCovers(bar: Rect, other: Rect, medianH: number): boolean {
   if (other.w < 1) {
     // A thin vertical stroke (a "1", the stem of a "+") has no width to overlap:
@@ -144,15 +181,28 @@ export function clusterStrokeGroups(strokes: InkStroke[]): number[][] {
   const medianH = medianStrokeHeight(strokes);
   const uf = new UnionFind(n);
   const bars = strokes.map((s) => isFractionBar(s, strokes, medianH));
+  const by = inflationFor(medianH);
+  // Inflated rects for the join tests; bar detection above used the raw bounds.
+  const rects = strokes.map((s) => inflateRect(s.bounds, by));
+  // Inflation must not make a flat bar "taller" than its neighbours for the superscript
+  // test, so that test uses the raw heights.
+  const rawH = strokes.map((s) => s.bounds.h);
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      const a = strokes[i].bounds;
-      const b = strokes[j].bounds;
+      const a = rects[i];
+      const b = rects[j];
       if (shouldJoin(a, b, medianH)) {
         uf.union(i, j);
         continue;
       }
       if ((bars[i] && barCovers(a, b, medianH)) || (bars[j] && barCovers(b, a, medianH))) {
+        uf.union(i, j);
+        continue;
+      }
+      if (
+        (rawH[i] >= 1 && isSuperscriptOf(a, b, medianH)) ||
+        (rawH[j] >= 1 && isSuperscriptOf(b, a, medianH))
+      ) {
         uf.union(i, j);
       }
     }

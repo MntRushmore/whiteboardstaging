@@ -1,13 +1,24 @@
 import { describe, expect, it } from "vitest";
 import {
+  fixtureDetachedCrossbar,
+  fixtureFloatingMark,
   fixtureFraction,
   fixtureSingleLine,
+  fixtureSuperscript,
   fixtureTwoColumns,
   fixtureTwoLines,
   toInkStrokes,
   translateShapes,
 } from "../__fixtures__/strokes";
-import { clusterLines, isFractionBar, medianStrokeHeight, rebuildFromMathShapes } from "../strokeClusters";
+import {
+  clusterLines,
+  inflateRect,
+  inflationFor,
+  isFractionBar,
+  isSuperscriptOf,
+  medianStrokeHeight,
+  rebuildFromMathShapes,
+} from "../strokeClusters";
 import type { Rect } from "../contracts";
 
 describe("clusterLines", () => {
@@ -101,5 +112,56 @@ describe("rebuildFromMathShapes", () => {
     expect(rebuilt[0].line.row).toBe(0);
     expect(rebuilt[1].line.row).toBe(1);
     expect(rebuilt[1].latex).toBe("x");
+  });
+});
+
+describe("clusterLines — inflation and superscripts (B7)", () => {
+  it("joins a zero-height cross-bar drawn 2 px above the stem's top (F/E/T bars)", () => {
+    const strokes = toInkStrokes(fixtureDetachedCrossbar());
+    const medianH = medianStrokeHeight(strokes);
+    // The bar has no height at all and no vertical overlap with the stem.
+    const bar = strokes[1];
+    expect(bar.bounds.h).toBeLessThan(1);
+    expect(medianH).toBeLessThan(20);
+    const lines = clusterLines(strokes);
+    expect(lines).toHaveLength(1);
+    expect(lines[0].strokeIds).toHaveLength(strokes.length);
+  });
+
+  it("inflates rects by at least 3 px", () => {
+    expect(inflationFor(8)).toBe(3);
+    expect(inflationFor(40)).toBe(4);
+    expect(inflateRect({ x: 10, y: 20, w: 30, h: 0 }, 3)).toEqual({ x: 7, y: 17, w: 36, h: 6 });
+  });
+
+  it("joins a raised superscript '2' whose bottom sits above the x's top", () => {
+    const strokes = toInkStrokes(fixtureSuperscript());
+    const lines = clusterLines(strokes);
+    expect(lines).toHaveLength(1);
+    expect(lines[0].strokeIds).toHaveLength(3);
+  });
+
+  it("recognizes the superscript geometry directly", () => {
+    const medianH = 28;
+    const base: Rect = { x: 100, y: 212, w: 28, h: 28 };
+    expect(isSuperscriptOf({ x: 132, y: 190, w: 13, h: 18 }, base, medianH)).toBe(true);
+    // too tall to be a superscript
+    expect(isSuperscriptOf({ x: 132, y: 184, w: 13, h: 26 }, base, medianH)).toBe(false);
+    // far above: a stray mark, not a superscript
+    expect(isSuperscriptOf({ x: 132, y: 150, w: 13, h: 18 }, base, medianH)).toBe(false);
+    // far to the right
+    expect(isSuperscriptOf({ x: 170, y: 190, w: 13, h: 18 }, base, medianH)).toBe(false);
+    // below the base's top by more than a quarter: a normal glyph, not raised
+    expect(isSuperscriptOf({ x: 132, y: 210, w: 13, h: 18 }, base, medianH)).toBe(false);
+  });
+
+  it("keeps a small mark floating far above the line separate", () => {
+    const lines = clusterLines(toInkStrokes(fixtureFloatingMark()));
+    expect(lines).toHaveLength(2);
+  });
+
+  it("does not merge stacked lines or side-by-side columns after inflation", () => {
+    expect(clusterLines(toInkStrokes(fixtureTwoLines()))).toHaveLength(2);
+    expect(clusterLines(toInkStrokes(fixtureTwoColumns()))).toHaveLength(4);
   });
 });

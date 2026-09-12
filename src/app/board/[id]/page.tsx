@@ -46,6 +46,8 @@ import {
   Loading03Icon,
 } from "hugeicons-react";
 import { useDebounceActivity } from "@/hooks/useDebounceActivity";
+import { aiOverlayMeta, overlayIndexBelowLive, useAiOverlayShapes } from "@/hooks/useAiOverlayShapes";
+import { useAssistanceMode, type AssistanceMode } from "@/hooks/useAssistanceMode";
 import { StatusIndicator, type StatusIndicatorState } from "@/components/StatusIndicator";
 import { logger } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
@@ -171,7 +173,9 @@ function ModeInfoDialog() {
         <DialogHeader>
           <DialogTitle>Help modes</DialogTitle>
           <DialogDescription>
-            Choose how strongly the tutor helps on your canvas.
+            Choose how strongly the tutor helps on your canvas. New boards start in
+            Feedback; your choice is remembered for this board on this device. Off
+            pauses all help.
           </DialogDescription>
         </DialogHeader>
         <div className="flex gap-6">
@@ -248,10 +252,10 @@ function ImageActionButtons({
     <div
       style={{
         position: 'absolute',
-        // In normal mode, sit at the top-center like before.
-        // When voice is active, shift down a bit so it doesn't clash
-        // with the voice status banner at the very top.
-        top: isVoiceSessionActive ? '56px' : '10px',
+        // Sit at the top-center just below the mode bar so it never covers the
+        // Live pill; when voice is active the bar is hidden and the voice status
+        // banner owns the very top instead.
+        top: isVoiceSessionActive ? '56px' : '64px',
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 1000,
@@ -1051,9 +1055,10 @@ function ClearFeedbackButton({
 }) {
   if (feedbackImageIds.length === 0) return null;
 
-  // Sit at the top-center; step down when the voice banner and/or the
-  // Accept/Reject buttons already occupy that spot.
-  const top = 10 + (isVoiceSessionActive ? 46 : 0) + (hasPendingImages ? 46 : 0);
+  // Sit at the top-center below the mode bar (64 px; 10 px when voice hides the
+  // bar); step down when the voice banner and/or the Accept/Reject buttons
+  // already occupy that spot.
+  const top = (isVoiceSessionActive ? 10 + 46 : 64) + (hasPendingImages ? 46 : 0);
 
   return (
     <div
@@ -1084,14 +1089,16 @@ function BoardContent({ id }: { id: string }) {
   const router = useRouter();
   const handleApiError = useApiErrorHandler();
   const { features } = useFeatureLabs();
-  const [pendingImageIds, setPendingImageIds] = useState<TLShapeId[]>([]);
-  // Locked "feedback" overlays (no accept/reject) so they can be removed later.
-  const [feedbackImageIds, setFeedbackImageIds] = useState<TLShapeId[]>([]);
+  // Legacy AI overlays are found by `meta.aiOverlay` in the store (not React state) so
+  // Accept/Reject and "Clear feedback" come back after a reload. `pending` = suggest/answer
+  // overlays awaiting Accept/Reject; `feedback` = locked full-opacity feedback overlays.
+  const { pending: pendingImageIds, feedback: feedbackImageIds } = useAiOverlayShapes(editor);
   const [status, setStatus] = useState<StatusIndicatorState>("idle");
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [statusMessage, setStatusMessage] = useState<string>("");
   const [isVoiceSessionActive, setIsVoiceSessionActive] = useState(false);
-  const [assistanceMode, setAssistanceMode] = useState<"off" | "feedback" | "suggest" | "answer">("off");
+  // Help mode is remembered per board on this device (default Feedback).
+  const [assistanceMode, setAssistanceMode] = useAssistanceMode(id);
   const [aiModel, setAiModel] = useState<AIModel>("gemini");
   const { settings: aiPerf, update: updateAiPerf } = useAIPerfSettings();
   const isProcessingRef = useRef(false);
@@ -1110,7 +1117,7 @@ function BoardContent({ id }: { id: string }) {
   });
 
   // Helper function to get mode-aware status messages
-  const getStatusMessage = useCallback((mode: "off" | "feedback" | "suggest" | "answer", statusType: "generating" | "success") => {
+  const getStatusMessage = useCallback((mode: AssistanceMode, statusType: "generating" | "success") => {
     if (statusType === "generating") {
       switch (mode) {
         case "off":
@@ -1370,7 +1377,14 @@ function BoardContent({ id }: { id: string }) {
         // In "feedback" mode, show at full opacity without accept/reject
         // In "suggest" and "answer" modes, show at reduced opacity with accept/reject
         const isFeedbackMode = mode === "feedback";
-        
+
+        // Render the overlay BELOW every Live shape (echoes, graphs, AI steps) so a
+        // full-viewport annotation never hides them. Computed before creation because
+        // reorder calls skip locked shapes.
+        const overlayIndex = overlayIndexBelowLive(editor);
+
+        // `meta.aiOverlay` marks the shape for useAiOverlayShapes: feedback overlays feed
+        // "Clear feedback", suggest/answer overlays feed Accept/Reject (also after reload).
         editor.createShape({
           id: shapeId,
           type: "image",
@@ -1378,6 +1392,8 @@ function BoardContent({ id }: { id: string }) {
           y: viewportBounds.y + (viewportBounds.height - shapeHeight) / 2,
           opacity: isFeedbackMode ? 1.0 : 0.3,
           isLocked: true,
+          ...(overlayIndex ? { index: overlayIndex } : {}),
+          meta: aiOverlayMeta(mode),
           props: {
             w: shapeWidth,
             h: shapeHeight,
@@ -1389,21 +1405,15 @@ function BoardContent({ id }: { id: string }) {
         // new annotation behind them so the worksheet always renders on top.
         if (hasProtectedShapes) {
           try {
-            editor.sendToBack([shapeId]);
+            // sendToBack ignores locked shapes unless the lock is bypassed.
+            editor.run(() => editor.sendToBack([shapeId]), { ignoreShapeLock: true });
           } catch (e) {
             // Non-fatal: z-ordering is best-effort.
             logger.warn({ error: e }, "Failed to send annotation to back");
           }
         }
 
-        // Suggest/answer overlays wait for Accept/Reject; feedback overlays are
-        // tracked separately so the user can clear them later.
-        if (isFeedbackMode) {
-          setFeedbackImageIds((prev) => [...prev, shapeId]);
-        } else {
-          setPendingImageIds((prev) => [...prev, shapeId]);
-        }
-        
+
         // Show success message briefly, then return to idle
         setStatus("success");
         setStatusMessage(getStatusMessage(mode, "success"));
@@ -1509,12 +1519,17 @@ function BoardContent({ id }: { id: string }) {
       // Set flag to prevent triggering activity detection
       isUpdatingImageRef.current = true;
 
-      // First unlock to ensure we can update opacity
+      const current = editor.getShape(shapeId);
+      if (!current) return;
+
+      // First unlock to ensure we can update opacity; `accepted` takes the overlay out of
+      // the pending list (useAiOverlayShapes) and keeps it out after a reload.
       editor.updateShape({
         id: shapeId,
         type: "image",
         isLocked: false,
         opacity: 1,
+        meta: { ...current.meta, accepted: true },
       });
 
       // Then immediately lock it again to make it non-selectable
@@ -1523,9 +1538,6 @@ function BoardContent({ id }: { id: string }) {
         type: "image",
         isLocked: true,
       });
-
-      // Remove this shape from the pending list
-      setPendingImageIds((prev) => prev.filter((id) => id !== shapeId));
 
       // Reset flag after a brief delay
       setTimeout(() => {
@@ -1551,9 +1563,6 @@ function BoardContent({ id }: { id: string }) {
       
       editor.deleteShape(shapeId);
 
-      // Remove from pending list
-      setPendingImageIds((prev) => prev.filter((id) => id !== shapeId));
-
       // Reset flag after a brief delay
       setTimeout(() => {
         isUpdatingImageRef.current = false;
@@ -1578,8 +1587,6 @@ function BoardContent({ id }: { id: string }) {
       );
       editor.deleteShapes(ids);
     }
-
-    setFeedbackImageIds([]);
 
     // Reset flag after a brief delay
     setTimeout(() => {
@@ -1835,9 +1842,9 @@ function BoardContent({ id }: { id: string }) {
             alignItems: 'center',
             gap: '12px',
             // Wrap on narrow screens (400 px) so the Live toggle/pill stay reachable;
-            // leave room for the Report button pinned at the top-right.
+            // leave room for tldraw's style panel pinned at the top-right.
             flexWrap: 'wrap',
-            maxWidth: 'calc(100% - 130px)',
+            maxWidth: 'calc(100% - 180px)',
           }}
         >
           <Button
@@ -1851,7 +1858,7 @@ function BoardContent({ id }: { id: string }) {
           <div className="flex flex-wrap items-center gap-2">
             <Tabs
               value={assistanceMode}
-              onValueChange={(value) => setAssistanceMode(value as "off" | "feedback" | "suggest" | "answer")}
+              onValueChange={(value) => setAssistanceMode(value as AssistanceMode)}
               className="w-auto shadow-sm rounded-lg"
             >
               <TabsList>
@@ -1907,6 +1914,9 @@ function BoardContent({ id }: { id: string }) {
             {features.stickers && <StickerLibrary />}
             {features.worksheetGen && <WorksheetGenerator model={aiModel} />}
             {features.pdfUpload && <PdfUpload />}
+            {/* Report lives in the bar (after the Live pill) so it never overlaps
+                tldraw's style panel at the top-right. */}
+            <BugReportButton boardId={id} />
           </div>
         </div>
       )}
@@ -1930,18 +1940,6 @@ function BoardContent({ id }: { id: string }) {
           }}
         >
           <CreditsBanner />
-        </div>
-      )}
-      {!isVoiceSessionActive && (
-        <div
-          style={{
-            position: "absolute",
-            top: "16px",
-            right: "16px",
-            zIndex: 1000,
-          }}
-        >
-          <BugReportButton boardId={id} />
         </div>
       )}
       {!isVoiceSessionActive && liveEnabled && (

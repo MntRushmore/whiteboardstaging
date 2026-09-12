@@ -65,6 +65,20 @@ export const BREAK_FACTOR = 8;
 export const DEFAULT_SAMPLES = 240;
 /** inner padding so strokes on the edge are not clipped */
 const PAD = 4;
+/** font size of tick labels (must match `PlotSvgBody`) */
+export const TICK_FONT_PX = 9;
+
+/** Approximate rendered width of a tick label at TICK_FONT_PX (sans-serif digits are ~0.6 em). */
+export function tickLabelWidth(text: string): number {
+  return text.length * TICK_FONT_PX * 0.6;
+}
+
+/** Keeps a centred x tick label inside [0, w] so "-10" at the left edge does not lose its sign. */
+export function clampTickLabelX(x: number, text: string, w: number): number {
+  const half = tickLabelWidth(text) / 2 + 1;
+  if (w <= half * 2) return w / 2;
+  return Math.min(w - half, Math.max(half, x));
+}
 
 export function niceStep(rawStep: number): number {
   if (!(rawStep > 0) || !Number.isFinite(rawStep)) return 1;
@@ -256,11 +270,15 @@ export function buildPlot(input: PlotInput): PlotOutput {
   const tickLabels: PlotOutput["tickLabels"] = [];
   for (const t of xTicks) {
     if (t === 0 && x0 !== null && y0 !== null) continue;
-    tickLabels.push({ x: sx(t), y: Math.min(h - 2, labelY + 11), text: fmtTick(t), axis: "x" });
+    const text = fmtTick(t);
+    tickLabels.push({ x: clampTickLabelX(sx(t), text, w), y: Math.min(h - 2, labelY + 11), text, axis: "x" });
   }
   for (const t of yTicks) {
     if (t === 0 && x0 !== null && y0 !== null) continue;
-    tickLabels.push({ x: Math.max(2, labelX + 3), y: sy(t) - 2, text: fmtTick(t), axis: "y" });
+    const text = fmtTick(t);
+    // start-anchored: keep the whole label left of the right edge and its cap height below the top
+    const x = Math.min(Math.max(2, labelX + 3), Math.max(2, w - 1 - tickLabelWidth(text)));
+    tickLabels.push({ x, y: Math.max(TICK_FONT_PX, sy(t) - 2), text, axis: "y" });
   }
 
   const points: PlotPoint[] = input.points

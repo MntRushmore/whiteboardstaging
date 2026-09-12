@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HELP_MODES, LIVE_TIMING, type EngineVerdict, type HelpMode, type LineAnalysis, type LineKind } from "../contracts";
-import { badgeFor, decide, localNoteFor, type PolicyInput } from "../policy";
+import { badgeFor, decide, isSingleSymbolLatex, localNoteFor, type PolicyInput } from "../policy";
 
 function analysis(verdict: EngineVerdict, kind: LineKind = "equation", extra: Partial<LineAnalysis> = {}): LineAnalysis {
   return { kind, math: "2x+3=11", resultLatex: "", verdict, note: "", ...extra };
@@ -162,5 +162,35 @@ describe("localNoteFor", () => {
     expect(localNoteFor(chem, "answer")).toBe("Not balanced yet");
     const units = analysis("mismatch", "expression", { units: { ok: false }, note: "" });
     expect(localNoteFor(units, "feedback")).toBe("These units don't add together");
+  });
+});
+
+describe("decide — silent kinds and lone symbols (B2/B8)", () => {
+  it("is silent for prose ('text') lines", () => {
+    const d = decide(input({ mode: "feedback", analysis: analysis("ok", "text") }));
+    expect(d.echo).toBe(false);
+    expect(d.badge).toBe("none");
+    expect(d.runLlmCheck).toBe(false);
+  });
+
+  it("is silent for a lone Greek letter, a single character or decorations only", () => {
+    for (const latex of ["\\Delta", "\\theta", "\\triangle", "x", "5", "\\checkmark", "\\text { I }", "\\mathrm{I}", "\\cdots", "\\rightarrow", "-", "="]) {
+      expect(isSingleSymbolLatex(latex), latex).toBe(true);
+      const d = decide(input({ analysis: analysis("ok", "expression"), latex }));
+      expect(d.echo, latex).toBe(false);
+      expect(d.badge, latex).toBe("none");
+    }
+  });
+
+  it("still echoes real math, including lines that start with a Greek letter", () => {
+    for (const latex of ["2x+3=11", "x^{2}", "\\Delta x = 5", "\\pi r^{2}", "3.2 \\mathrm{~kg} \\cdot 9.8", "y=x^{2}-4", "\\frac{1}{2}", "ab", "12"]) {
+      expect(isSingleSymbolLatex(latex), latex).toBe(false);
+      expect(decide(input({ latex })).echo, latex).toBe(true);
+    }
+  });
+
+  it("treats an undefined latex as not-a-lone-symbol (kind decides)", () => {
+    expect(decide(input({ latex: undefined })).echo).toBe(true);
+    expect(decide(input({ latex: "" })).echo).toBe(true);
   });
 });
