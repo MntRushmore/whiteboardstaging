@@ -18,6 +18,13 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { FileText, Loader2, Wand2 } from "lucide-react";
 import { toast } from "sonner";
+import { apiJson } from "@/lib/api-client";
+import { useApiErrorHandler } from "@/hooks/useApiErrorHandler";
+
+type WorksheetResponse = {
+  imageUrl?: string | null;
+  message?: string;
+};
 
 const SUGGESTIONS = [
   "5 long division problems for grade 4, with showing-your-work space",
@@ -35,6 +42,7 @@ type Props = {
 
 export function WorksheetGenerator({ model }: Props) {
   const editor = useEditor();
+  const handleApiError = useApiErrorHandler();
   const [open, setOpen] = useState(false);
   const [topic, setTopic] = useState("");
   const [generating, setGenerating] = useState(false);
@@ -49,28 +57,11 @@ export function WorksheetGenerator({ model }: Props) {
 
     setGenerating(true);
     try {
-      const res = await fetch("/api/generate-worksheet", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: trimmed, model }),
+      const data = await apiJson<WorksheetResponse>("/api/generate-worksheet", {
+        topic: trimmed,
+        model,
       });
-
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        if (res.status === 402 || errBody?.error === "credits_exhausted") {
-          toast.error(
-            errBody?.message ||
-              "Account credits depleted — please talk to Rushil to refill your account!",
-            { duration: 8000 },
-          );
-          return;
-        }
-        toast.error(errBody?.message || "Couldn't generate worksheet");
-        return;
-      }
-
-      const data = await res.json();
-      const imageUrl: string | undefined = data.imageUrl;
+      const imageUrl = data.imageUrl ?? undefined;
       if (!imageUrl) {
         toast.error(data?.message || "No worksheet returned");
         return;
@@ -127,9 +118,10 @@ export function WorksheetGenerator({ model }: Props) {
       toast.success("Worksheet added to canvas");
     } catch (e) {
       console.error("Worksheet generation failed", e);
-      toast.error(
-        e instanceof Error ? e.message : "Worksheet generation failed",
-      );
+      handleApiError(e, {
+        fallback: "Couldn't generate worksheet",
+        toastOthers: true,
+      });
     } finally {
       setGenerating(false);
     }

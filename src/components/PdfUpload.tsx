@@ -77,7 +77,7 @@ export function PdfUpload() {
     if (!editor || !file || inserting) return;
     setInserting(true);
     try {
-      const { dataUrl, width, height } = await renderPdfPage(
+      const { dataUrl } = await renderPdfPage(
         file,
         selectedPage,
       );

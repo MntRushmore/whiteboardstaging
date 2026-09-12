@@ -18,6 +18,7 @@ import {
   MoreHorizontal,
   LogOut,
   Loader2,
+  Sparkles,
 } from 'lucide-react';
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -65,6 +66,10 @@ export default function Dashboard() {
   // Rename state
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameTitle, setRenameTitle] = useState('');
+
+  // Delete confirmation state
+  const [deleteTarget, setDeleteTarget] = useState<Whiteboard | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Auth gate: redirect to login if not authenticated
   useEffect(() => {
@@ -128,6 +133,8 @@ export default function Dashboard() {
   }
 
   async function deleteWhiteboard(id: string) {
+    if (deleting) return;
+    setDeleting(true);
     try {
       const { error } = await supabase
         .from('whiteboards')
@@ -135,11 +142,14 @@ export default function Dashboard() {
         .eq('id', id);
 
       if (error) throw error;
-      setWhiteboards(whiteboards.filter(w => w.id !== id));
+      setWhiteboards((prev) => prev.filter(w => w.id !== id));
       toast.success('Whiteboard deleted');
+      setDeleteTarget(null);
     } catch (error) {
       console.error('Error deleting whiteboard:', error);
       toast.error('Failed to delete whiteboard');
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -195,7 +205,7 @@ export default function Dashboard() {
         <div className="space-y-4 mb-4">
           <div>
             <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
-              Agathon Classroom · Staging
+              Agathon Classroom
             </p>
             <h1 className="text-4xl font-bold tracking-tight">My Whiteboards</h1>
           </div>
@@ -255,9 +265,31 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
+        ) : whiteboards.length === 0 ? (
+          <div className="flex flex-col items-center justify-center text-center bg-card border rounded-xl shadow-sm px-6 py-14">
+            <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+              <Sparkles className="w-8 h-8 text-muted-foreground" />
+            </div>
+            <h3 className="text-lg font-semibold">Welcome to Agathon Classroom</h3>
+            <p className="text-muted-foreground mt-2 max-w-md">
+              Create a board, write a math problem, and the tutor helps in real time.
+            </p>
+            <Button
+              onClick={createWhiteboard}
+              disabled={creating}
+              className="mt-6"
+            >
+              {creating ? (
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+              ) : (
+                <Plus className="w-4 h-4 mr-2" />
+              )}
+              Create your first board
+            </Button>
+          </div>
         ) : (
           <div className={cn(
-            viewMode === 'grid' 
+            viewMode === 'grid'
               ? "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4"
               : "flex flex-col gap-3"
           )}>
@@ -351,7 +383,7 @@ export default function Dashboard() {
                             <DropdownMenuSeparator />
                             <DropdownMenuItem 
                                 className="text-destructive focus:text-destructive"
-                                onClick={() => deleteWhiteboard(board.id)}
+                                onClick={() => setDeleteTarget(board)}
                             >
                                 <Trash2 className="w-4 h-4 mr-2" />
                                 Delete
@@ -396,6 +428,39 @@ export default function Dashboard() {
             <DialogFooter>
                 <Button variant="outline" onClick={() => setRenameId(null)}>Cancel</Button>
                 <Button onClick={handleRename}>Save Changes</Button>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}
+      >
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Delete board?</DialogTitle>
+                <DialogDescription>
+                    {deleteTarget
+                      ? `"${deleteTarget.title}" and everything on it will be permanently deleted. This can't be undone.`
+                      : ''}
+                </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setDeleteTarget(null)}
+                  disabled={deleting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => deleteTarget && deleteWhiteboard(deleteTarget.id)}
+                  disabled={deleting}
+                >
+                  {deleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Delete
+                </Button>
             </DialogFooter>
         </DialogContent>
       </Dialog>

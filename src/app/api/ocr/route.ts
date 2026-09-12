@@ -1,107 +1,72 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { ocrLogger } from '@/lib/logger';
+import { z } from "zod";
+import { ocrLogger } from "@/lib/logger";
+import { requireUser } from "@/lib/server/auth";
+import { LIMITS, checkRateLimit, rateLimitKey, rateLimitedResponse } from "@/lib/server/rate-limit";
+import { TEXT_MODELS, openrouterChat } from "@/lib/server/openrouter";
+import { errorResponse, imageDataUrlSchema, parseJsonBody } from "@/lib/server/request";
 
-export async function POST(req: NextRequest) {
+const bodySchema = z.object({
+  image: imageDataUrlSchema,
+});
+
+const OCR_PROMPT =
+  "Extract all handwritten and typed text from this image. Return only the extracted text, preserving the structure and layout as much as possible. If there are mathematical equations, preserve them in a readable format.";
+
+/**
+ * OCR via a fast vision model on OpenRouter.
+ * (Mistral retired pixtral-12b-2409, which this route used to call directly.)
+ */
+export async function POST(req: Request) {
   const startTime = Date.now();
   const requestId = crypto.randomUUID();
 
-  ocrLogger.info({ requestId }, 'OCR request started');
+  const auth = await requireUser(req);
+  if ("response" in auth) return auth.response;
+  const { user } = auth;
+
+  const log = ocrLogger.child({ requestId, userId: user.id });
+
+  const rl = checkRateLimit(rateLimitKey(user.id, "ocr"), LIMITS.ocr);
+  if (!rl.ok) {
+    log.warn({ retryAfterMs: rl.retryAfterMs }, "OCR rate limited");
+    return rateLimitedResponse(rl.retryAfterMs);
+  }
+
+  const parsed = await parseJsonBody(req, bodySchema);
+  if ("response" in parsed) {
+    log.warn("Invalid OCR request");
+    return parsed.response;
+  }
+  const { image } = parsed.data;
+
+  log.info({ imageSize: image.length, model: TEXT_MODELS.fast }, "OCR request started");
 
   try {
-    const { image } = await req.json();
-
-    if (!image) {
-      ocrLogger.warn({ requestId }, 'No image provided in request');
-      return NextResponse.json(
-        { error: 'No image provided' },
-        { status: 400 }
-      );
-    }
-
-    ocrLogger.debug({ requestId, imageSize: image.length }, 'Image received');
-
-    if (!process.env.MISTRAL_API_KEY) {
-      ocrLogger.error({ requestId }, 'MISTRAL_API_KEY not configured');
-      return NextResponse.json(
-        { error: 'MISTRAL_API_KEY not configured' },
-        { status: 500 }
-      );
-    }
-
-    ocrLogger.info({ requestId }, 'Calling Mistral Pixtral API for OCR');
-
-    // Call Mistral Pixtral model for OCR via their API
-    const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.MISTRAL_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'pixtral-12b-2409',
+    const data = await openrouterChat(
+      {
+        model: TEXT_MODELS.fast,
         messages: [
           {
-            role: 'user',
+            role: "user",
             content: [
-              {
-                type: 'image_url',
-                image_url: image, // base64 data URL
-              },
-              {
-                type: 'text',
-                text: 'Extract all handwritten and typed text from this image. Return only the extracted text, preserving the structure and layout as much as possible. If there are mathematical equations, preserve them in a readable format.',
-              },
+              { type: "image_url", image_url: { url: image } },
+              { type: "text", text: OCR_PROMPT },
             ],
           },
         ],
         max_tokens: 1000,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      ocrLogger.error({
-        requestId,
-        status: response.status,
-        error: errorData
-      }, 'Mistral API error');
-      throw new Error(errorData.error?.message || 'Mistral API error');
-    }
-
-    const data = await response.json();
-    const extractedText = data.choices?.[0]?.message?.content || '';
-
-    const duration = Date.now() - startTime;
-    ocrLogger.info({
-      requestId,
-      duration,
-      textLength: extractedText.length,
-      tokensUsed: data.usage?.total_tokens
-    }, 'OCR completed successfully');
-
-    return NextResponse.json({
-      success: true,
-      text: extractedText,
-    });
-  } catch (error) {
-    const duration = Date.now() - startTime;
-    ocrLogger.error({
-      requestId,
-      duration,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined
-    }, 'Error performing OCR');
-
-    return NextResponse.json(
-      {
-        error: 'Failed to perform OCR',
-        details: error instanceof Error ? error.message : 'Unknown error',
       },
-      { status: 500 }
+      { requestId, signal: req.signal, title: "Agathon Classroom Staging - OCR" },
     );
+
+    const rawContent = data.choices?.[0]?.message?.content;
+    const extractedText = typeof rawContent === "string" ? rawContent : "";
+
+    const duration = Date.now() - startTime;
+    log.info({ duration, textLength: extractedText.length, tokensUsed: data.usage?.total_tokens }, "OCR completed successfully");
+
+    return Response.json({ success: true, text: extractedText });
+  } catch (error) {
+    return errorResponse(error, log, { duration: Date.now() - startTime });
   }
 }
-
-
-
-

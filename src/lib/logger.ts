@@ -1,13 +1,28 @@
 import pino from 'pino';
 
-export const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  formatters: {
-    level: (label) => {
-      return { level: label };
-    },
-  },
-});
+// This module is imported from both server code (API routes) and client
+// components (bug-report log capture). Bundlers resolve `pino` to its
+// dependency-free browser build (`pino/browser.js`, via the package's
+// "browser" field) on the client, so nothing node-only is pulled in as long as
+// we never configure `transport` / `destination` here. Server-side, pino is
+// externalized via `serverExternalPackages` in next.config.ts.
+const isServer = typeof window === 'undefined';
+
+export const logger = pino(
+  isServer
+    ? {
+        level: process.env.LOG_LEVEL || 'info',
+        formatters: {
+          level: (label) => {
+            return { level: label };
+          },
+        },
+      }
+    : {
+        // The browser build logs straight to console; keep it quiet by default.
+        level: process.env.NEXT_PUBLIC_LOG_LEVEL || 'info',
+      },
+);
 
 // Create child loggers for different modules
 export const ocrLogger = logger.child({ module: 'ocr' });

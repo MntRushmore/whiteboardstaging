@@ -1,93 +1,114 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { voiceLogger } from '@/lib/logger';
+import { voiceLogger } from "@/lib/logger";
+import { getServerEnv, hasOpenAI } from "@/lib/env";
+import { json, requireUser } from "@/lib/server/auth";
+import { LIMITS, checkRateLimit, rateLimitKey, rateLimitedResponse } from "@/lib/server/rate-limit";
+import { UpstreamError } from "@/lib/server/openrouter";
+import { errorResponse } from "@/lib/server/request";
+
+const REALTIME_MODEL = "gpt-realtime";
+const CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets";
+const LEGACY_SESSIONS_URL = "https://api.openai.com/v1/realtime/sessions";
+
+type RealtimeTokenResponse = {
+  value?: unknown;
+  client_secret?: { value?: unknown } | string;
+  client_secret_key?: unknown;
+};
+
+/** Pull the ephemeral secret out of either response shape. */
+function extractClientSecret(data: RealtimeTokenResponse | null | undefined): string | null {
+  if (!data) return null;
+  const candidates: unknown[] = [
+    data.value,
+    typeof data.client_secret === "object" && data.client_secret ? data.client_secret.value : undefined,
+    data.client_secret,
+    data.client_secret_key,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.length > 0) return c;
+  }
+  return null;
+}
 
 /**
  * Creates an ephemeral Realtime session with OpenAI and returns the client secret
  * that the browser can use to establish a WebRTC connection.
+ *
+ * Tries the current `/v1/realtime/client_secrets` endpoint first and falls
+ * back to the legacy `/v1/realtime/sessions` endpoint if OpenAI rejects it.
  */
-export async function POST(_req: NextRequest) {
-  if (!process.env.OPENAI_API_KEY) {
-    voiceLogger.error('OPENAI_API_KEY not configured for Realtime voice token route');
-    return NextResponse.json(
-      { error: 'OPENAI_API_KEY not configured' },
-      { status: 500 },
+export async function POST(req: Request) {
+  const startTime = Date.now();
+  const requestId = crypto.randomUUID();
+
+  const auth = await requireUser(req);
+  if ("response" in auth) return auth.response;
+  const { user } = auth;
+
+  const log = voiceLogger.child({ requestId, userId: user.id, task: "token" });
+
+  if (!hasOpenAI()) {
+    log.warn("OPENAI_API_KEY not configured; voice tutor unavailable");
+    return json(
+      503,
+      "voice_unavailable",
+      "The voice tutor isn't available right now. Please try again later or use the drawing tools.",
     );
   }
 
+  const rl = checkRateLimit(rateLimitKey(user.id, "voiceToken"), LIMITS.voiceToken);
+  if (!rl.ok) {
+    log.warn({ retryAfterMs: rl.retryAfterMs }, "Voice token rate limited");
+    return rateLimitedResponse(rl.retryAfterMs);
+  }
+
+  const headers = {
+    Authorization: `Bearer ${getServerEnv().OPENAI_API_KEY}`,
+    "Content-Type": "application/json",
+  };
+
   try {
-    const startTime = Date.now();
-
-    const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-realtime',
-      }),
+    // 1) Current contract: POST /v1/realtime/client_secrets
+    let response = await fetch(CLIENT_SECRETS_URL, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ session: { type: "realtime", model: REALTIME_MODEL } }),
+      signal: req.signal,
     });
+    let endpoint: "client_secrets" | "sessions" = "client_secrets";
 
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => '');
-      voiceLogger.error(
-        {
-          status: response.status,
-          error: errorText?.slice(0, 1000),
-        },
-        'Failed to create Realtime session',
-      );
-      return NextResponse.json(
-        { error: 'Failed to create Realtime session' },
-        { status: 500 },
-      );
+    // 2) Legacy fallback: POST /v1/realtime/sessions
+    if (response.status === 404 || response.status === 400) {
+      const rejected = await response.text().catch(() => "");
+      log.info({ status: response.status, body: rejected.slice(0, 500) }, "client_secrets endpoint rejected; falling back to legacy sessions endpoint");
+      response = await fetch(LEGACY_SESSIONS_URL, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model: REALTIME_MODEL }),
+        signal: req.signal,
+      });
+      endpoint = "sessions";
     }
 
-    const data = await response.json();
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      log.error({ endpoint, status: response.status, error: errorText.slice(0, 1000) }, "Failed to create Realtime session");
+      throw new UpstreamError(response.status, `OpenAI Realtime ${endpoint} request failed (${response.status})`);
+    }
 
-    // The Realtime API currently returns a client_secret object; prefer .value if present.
-    const clientSecret =
-      data?.client_secret?.value ??
-      data?.client_secret ??
-      data?.client_secret_key ??
-      null;
+    const data = (await response.json()) as RealtimeTokenResponse;
+    const clientSecret = extractClientSecret(data);
 
-    if (!clientSecret || typeof clientSecret !== 'string') {
-      voiceLogger.error(
-        {
-          rawResponseSnippet: JSON.stringify(data).slice(0, 1000),
-        },
-        'Realtime session created but client secret missing or invalid',
-      );
-      return NextResponse.json(
-        { error: 'Realtime session created but client secret missing' },
-        { status: 500 },
-      );
+    if (!clientSecret) {
+      log.error({ endpoint, rawResponseSnippet: JSON.stringify(data).slice(0, 1000) }, "Realtime session created but client secret missing or invalid");
+      throw new UpstreamError(502, "Realtime session created but client secret missing");
     }
 
     const duration = Date.now() - startTime;
-    voiceLogger.info(
-      { duration },
-      'Realtime session token created successfully',
-    );
+    log.info({ endpoint, duration }, "Realtime session token created successfully");
 
-    return NextResponse.json({ client_secret: clientSecret });
+    return Response.json({ client_secret: clientSecret });
   } catch (error) {
-    voiceLogger.error(
-      {
-        error:
-          error instanceof Error
-            ? { message: error.message, name: error.name, stack: error.stack }
-            : error,
-      },
-      'Error creating Realtime session token',
-    );
-
-    return NextResponse.json(
-      { error: 'Error creating Realtime session token' },
-      { status: 500 },
-    );
+    return errorResponse(error, log, { duration: Date.now() - startTime });
   }
 }
-
-

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
@@ -15,8 +15,23 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Agathon Classroom Staging",
-  description: "Agathon Classroom — staging environment.",
+  title: {
+    default: "Agathon Classroom",
+    template: "%s · Agathon Classroom",
+  },
+  description:
+    "An AI whiteboard that tutors students in real time — handwriting-aware math, science and STEM help.",
+  applicationName: "Agathon Classroom",
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#ffffff",
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({

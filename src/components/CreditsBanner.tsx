@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AlertTriangle, OctagonAlert } from "lucide-react";
+import { authedFetch } from "@/lib/api-client";
 
 type Credits = {
   total: number;
@@ -19,12 +20,16 @@ export function CreditsBanner({ className = "" }: { className?: string }) {
 
     async function fetchCredits() {
       try {
-        const res = await fetch("/api/credits", { cache: "no-store" });
+        const res = await authedFetch("/api/credits", {
+          method: "GET",
+          cache: "no-store",
+        });
         if (!res.ok) return;
         const data = (await res.json()) as Credits;
         if (!cancelled) setCredits(data);
       } catch {
-        // Silent — banner just hides.
+        // Silent — banner just hides (also when signed out: authedFetch
+        // throws ApiError(401) and there is nothing to show).
       }
     }
 

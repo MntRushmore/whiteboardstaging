@@ -46,7 +46,6 @@ export async function correctYellowedWhites(
         // or where R and G are very high but B is slightly lower (yellowish)
 
         const minChannel = Math.min(r, g, b);
-        const maxChannel = Math.max(r, g, b);
 
         // If all channels are above threshold, push to white
         if (minChannel >= threshold) {

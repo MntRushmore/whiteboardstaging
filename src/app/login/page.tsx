@@ -75,9 +75,6 @@ export default function LoginPage() {
           <h1 className="text-2xl font-bold tracking-tight">
             Agathon Classroom
           </h1>
-          <p className="text-xs uppercase tracking-wider text-muted-foreground mt-0.5">
-            Staging
-          </p>
           <p className="text-sm text-muted-foreground mt-3">
             Sign in to your AI whiteboard.
           </p>

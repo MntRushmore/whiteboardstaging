@@ -1,98 +1,97 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { solutionLogger } from '@/lib/logger';
+import { z } from "zod";
+import { solutionLogger } from "@/lib/logger";
+import { requireUser } from "@/lib/server/auth";
+import { LIMITS, checkRateLimit, rateLimitKey, rateLimitedResponse } from "@/lib/server/rate-limit";
+import { IMAGE_MODELS, extractImageUrl, openrouterChat } from "@/lib/server/openrouter";
+import {
+  errorResponse,
+  imageDataUrlSchema,
+  modeSchema,
+  modelSchema,
+  parseJsonBody,
+  promptSchema,
+  sourceSchema,
+} from "@/lib/server/request";
 
-export async function POST(req: NextRequest) {
+const bodySchema = z.object({
+  image: imageDataUrlSchema,
+  prompt: promptSchema.nullish(),
+  mode: modeSchema.default("suggest"),
+  source: sourceSchema.default("auto"),
+  model: modelSchema.default("gemini"),
+  hasWorksheet: z.boolean().default(false),
+});
+
+// Generate mode-specific prompt.
+// The `source` controls whether this was triggered automatically ("auto")
+// or explicitly by the voice tutor ("voice").
+function getModePrompt(mode: string, source: "auto" | "voice" = "auto"): string {
+  const effectiveSource = source === "voice" ? "voice" : "auto";
+
+  const baseAnalysis =
+    "Analyze the user's writing in the image carefully. Look for incomplete work or any indication that the user is working through something challenging and might benefit from some form of assistance.";
+
+  const noHelpInstruction =
+    "\n\nIf the user does NOT seem to need help:\n- Simply respond concisely with text explaining why help isn't needed. Do not generate an image.\n\nBe thoughtful about when to offer help - look for clear signs of incomplete problems or questions.";
+
+  // For voice-triggered generations, we always want an updated image,
+  // not a text-only answer.
+  const alwaysImageRule =
+    effectiveSource === "voice"
+      ? "\n- ALWAYS generate an updated image of the canvas; do not respond with text-only."
+      : "";
+
+  const coreRules =
+    "\n\n**CRITICAL:**\n- DO NOT remove, modify, move, transform, edit, or touch ANY of the image's existing content. Leave EVERYTHING in the image EXACTLY as it is in its current state, and *only* add to it.\n- Try to match the user's exact handwriting style.\n- NEVER update the background color of the image. Keep it white, unless directed otherwise." +
+    alwaysImageRule;
+
+  // For automatic generations, allow the model to decide no help is needed
+  // and respond with text only. For voice, we omit this escape hatch.
+  const noHelpBlock = effectiveSource === "auto" ? noHelpInstruction : "";
+
+  switch (mode) {
+    case "feedback":
+      return `${baseAnalysis}\n\nIf the user needs help:\n- Provide the least intrusive assistance - think of adding visual annotations\n- Add visual feedback elements: highlighting, underlining, arrows, circles, light margin notes, etc.\n- Try to use colors that stand out but complement the work\n- Write in a natural style that matches the user's handwriting${coreRules}${noHelpBlock}`;
+
+    case "suggest":
+      return `${baseAnalysis}\n\nIf the user needs help:\n- Provide a HELPFUL HINT or guide them to the next step - don't give them the end solution.\n- Add suggestions for what to try next, guiding questions, etc.\n- Point out which direction to go without giving the full answer${coreRules}${noHelpBlock}`;
+
+    case "answer":
+      return `${baseAnalysis}\n\nIf the user needs help:\n- Provide COMPLETE, DETAILED assistance - fully solve the problem or answer the question\n- Try to make it comprehensive and educational${coreRules}${noHelpBlock}`;
+
+    default:
+      return `${baseAnalysis}\n\nIf the user needs help:\n- Provide a helpful hint or guide them to the next step${coreRules}${noHelpBlock}`;
+  }
+}
+
+export async function POST(req: Request) {
   const startTime = Date.now();
   const requestId = crypto.randomUUID();
 
-  solutionLogger.info({ requestId }, 'Solution generation request started');
+  const auth = await requireUser(req);
+  if ("response" in auth) return auth.response;
+  const { user } = auth;
+
+  const log = solutionLogger.child({ requestId, userId: user.id });
+
+  const rl = checkRateLimit(rateLimitKey(user.id, "generateSolution"), LIMITS.generateSolution);
+  if (!rl.ok) {
+    log.warn({ retryAfterMs: rl.retryAfterMs }, "Solution generation rate limited");
+    return rateLimitedResponse(rl.retryAfterMs);
+  }
+
+  const parsed = await parseJsonBody(req, bodySchema);
+  if ("response" in parsed) {
+    log.warn("Invalid solution generation request");
+    return parsed.response;
+  }
+  const { image, prompt, mode, source, model, hasWorksheet } = parsed.data;
+
+  log.info({ mode, source, model, hasWorksheet, imageSize: image.length }, "Solution generation request started");
 
   try {
-    // Parse the request body
-    const {
-      image,
-      prompt,
-      mode = 'suggest',
-      source = 'auto',
-      model: modelParam = 'gemini',
-      hasWorksheet = false,
-    } = await req.json();
-
-    // Map frontend model keys to OpenRouter model IDs
-    const MODEL_IDS: Record<string, string> = {
-      gemini: 'google/gemini-3-pro-image-preview',
-      'gemini-fast': 'google/gemini-2.5-flash-image',
-      gpt: 'openai/gpt-image-1',
-    };
-    const selectedModel = MODEL_IDS[modelParam] ?? MODEL_IDS['gemini'];
-
-    if (!image) {
-      solutionLogger.warn({ requestId }, 'No image provided in request');
-      return NextResponse.json(
-        { error: 'No image provided' },
-        { status: 400 }
-      );
-    }
-
-    solutionLogger.debug({
-      requestId,
-      imageSize: image.length
-    }, 'Request payload received');
-
-    if (!process.env.OPENROUTER_API_KEY) {
-      solutionLogger.error({ requestId }, 'OPENROUTER_API_KEY not configured');
-      return NextResponse.json(
-        { error: 'OPENROUTER_API_KEY not configured' },
-        { status: 500 }
-      );
-    }
-
-    // Generate mode-specific prompt.
-    // The `source` controls whether this was triggered automatically ("auto")
-    // or explicitly by the voice tutor ("voice").
-    const getModePrompt = (
-      mode: string,
-      source: 'auto' | 'voice' = 'auto',
-    ): string => {
-      const effectiveSource = source === 'voice' ? 'voice' : 'auto';
-
-      const baseAnalysis = 'Analyze the user\'s writing in the image carefully. Look for incomplete work or any indication that the user is working through something challenging and might benefit from some form of assistance.';
-      
-      const noHelpInstruction = '\n\nIf the user does NOT seem to need help:\n- Simply respond concisely with text explaining why help isn\'t needed. Do not generate an image.\n\nBe thoughtful about when to offer help - look for clear signs of incomplete problems or questions.';
-      
-      // For voice-triggered generations, we always want an updated image,
-      // not a text-only answer.
-      const alwaysImageRule =
-        effectiveSource === 'voice'
-          ? '\n- ALWAYS generate an updated image of the canvas; do not respond with text-only.'
-          : '';
-
-      const coreRules = // REMOVED: \n\n- Be **thoughtful** in how you style your annotations, handwriting, and diagrams. Use colors, highlighting, underlining, arrows, etc. if it helps improve clarity and organization.
-        '\n\n**CRITICAL:**\n- DO NOT remove, modify, move, transform, edit, or touch ANY of the image\'s existing content. Leave EVERYTHING in the image EXACTLY as it is in its current state, and *only* add to it.\n- Try to match the user\'s exact handwriting style.\n- NEVER update the background color of the image. Keep it white, unless directed otherwise.' +
-        alwaysImageRule;
-
-      // For automatic generations, allow the model to decide no help is needed
-      // and respond with text only. For voice, we omit this escape hatch.
-      const noHelpBlock = effectiveSource === 'auto' ? noHelpInstruction : '';
-
-      switch (mode) {
-        case 'feedback':
-          return `${baseAnalysis}\n\nIf the user needs help:\n- Provide the least intrusive assistance - think of adding visual annotations\n- Add visual feedback elements: highlighting, underlining, arrows, circles, light margin notes, etc.\n- Try to use colors that stand out but complement the work\n- Write in a natural style that matches the user\'s handwriting${coreRules}${noHelpBlock}`;
-        
-        case 'suggest':
-          return `${baseAnalysis}\n\nIf the user needs help:\n- Provide a HELPFUL HINT or guide them to the next step - don\'t give them the end solution.\n- Add suggestions for what to try next, guiding questions, etc.\n- Point out which direction to go without giving the full answer${coreRules}${noHelpBlock}`;
-        
-        case 'answer':
-          return `${baseAnalysis}\n\nIf the user needs help:\n- Provide COMPLETE, DETAILED assistance - fully solve the problem or answer the question\n- Try to make it comprehensive and educational${coreRules}${noHelpBlock}`;
-        
-        default:
-          return `${baseAnalysis}\n\nIf the user needs help:\n- Provide a helpful hint or guide them to the next step${coreRules}${noHelpBlock}`;
-      }
-    };
-
-    const effectiveSource: 'auto' | 'voice' =
-      source === 'voice' ? 'voice' : 'auto';
-
+    const selectedModel = IMAGE_MODELS[model];
+    const effectiveSource: "auto" | "voice" = source === "voice" ? "voice" : "auto";
     const basePrompt = getModePrompt(mode, effectiveSource);
 
     // When the canvas has a printed worksheet attached (uploaded PDF, generated
@@ -100,194 +99,83 @@ export async function POST(req: NextRequest) {
     // elements REMOVED — only student strokes are visible. The model must not
     // try to reconstruct the worksheet itself; it should only draw additions.
     const worksheetPreamble = hasWorksheet
-      ? '\n\nIMPORTANT WORKSHEET CONTEXT:\n' +
-        '- A printed worksheet exists on the user\'s canvas, but it has been removed from the image you see; you are looking only at the student\'s handwritten work, in isolation, on a white background.\n' +
-        '- DO NOT redraw, recreate, or reference any printed worksheet content — you cannot see it. Only respond to the handwritten work that IS visible.\n' +
-        '- Your output image will be composited behind the printed worksheet, so keep your annotations near the student\'s strokes (do not draw across the whole canvas).'
-      : '';
+      ? "\n\nIMPORTANT WORKSHEET CONTEXT:\n" +
+        "- A printed worksheet exists on the user's canvas, but it has been removed from the image you see; you are looking only at the student's handwritten work, in isolation, on a white background.\n" +
+        "- DO NOT redraw, recreate, or reference any printed worksheet content — you cannot see it. Only respond to the handwritten work that IS visible.\n" +
+        "- Your output image will be composited behind the printed worksheet, so keep your annotations near the student's strokes (do not draw across the whole canvas)."
+      : "";
 
     const finalPrompt = prompt
       ? `${basePrompt}${worksheetPreamble}\n\nAdditional drawing instructions from the tutor:\n${prompt}`
       : `${basePrompt}${worksheetPreamble}`;
 
-    solutionLogger.info({ requestId, mode, selectedModel }, 'Calling OpenRouter API for image generation');
+    log.info({ mode, selectedModel }, "Calling OpenRouter API for image generation");
 
-    // Call image generation model via OpenRouter
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-        'X-Title': 'Agathon Classroom Staging',
-      },
-      body: JSON.stringify({
+    const data = await openrouterChat(
+      {
         model: selectedModel,
         messages: [
           {
-            role: 'user',
+            role: "user",
             content: [
-              {
-                type: 'image_url',
-                image_url: {
-                  url: image, // base64 data URL
-                },
-              },
-              {
-                type: 'text',
-                text: finalPrompt,
-              },
+              { type: "image_url", image_url: { url: image } },
+              { type: "text", text: finalPrompt },
             ],
           },
         ],
-        /*
-        provider: {
-          order: ['google-ai-studio'],
-          allow_fallbacks: false
-        },
-        */
-        modalities: ['image', 'text'], // Required for image generation
-        reasoning_effort: 'minimal',
-      }),
-    });
+        modalities: ["image", "text"], // Required for image generation
+        reasoning_effort: "minimal",
+      },
+      { requestId, signal: req.signal },
+    );
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      solutionLogger.error({
-        requestId,
-        status: response.status,
-        error: errorData
-      }, 'OpenRouter API error');
-
-      const errMsg = (errorData?.error?.message || '').toString().toLowerCase();
-      const isOutOfCredits =
-        response.status === 402 ||
-        errorData?.error?.code === 402 ||
-        /insufficient (credit|balance|fund)|out of credit|exceeded.*credit|payment required/i.test(
-          errMsg,
-        );
-
-      if (isOutOfCredits) {
-        return NextResponse.json(
-          {
-            error: 'credits_exhausted',
-            message:
-              'Account credits depleted — please talk to Rushil to refill your account!',
-          },
-          { status: 402 },
-        );
-      }
-
-      throw new Error(errorData?.error?.message || 'OpenRouter API error');
-    }
-
-    const data = await response.json();
-
-    // Try to extract a generated image from the response as flexibly as possible.
-    // Different providers / models can structure image outputs differently.
     const message = data.choices?.[0]?.message;
-
-    let imageUrl: string | null = null;
-
-    // 1) Legacy / hypothetical format: message.images[0].image_url.url
-    const legacyImages = (message as any)?.images;
-    if (Array.isArray(legacyImages) && legacyImages.length > 0) {
-      const first = legacyImages[0];
-      imageUrl =
-        first?.image_url?.url ??
-        first?.url ??
-        null;
-    }
-
-    // 2) OpenAI-style content array: look for any image-like item
-    if (!imageUrl) {
-      const content = (message as any)?.content;
-
-      if (Array.isArray(content)) {
-        for (const part of content) {
-          if (part?.type === 'image_url' && part.image_url?.url) {
-            imageUrl = part.image_url.url;
-            break;
-          }
-          if (part?.type === 'output_image' && (part.url || part.image_url?.url)) {
-            imageUrl = part.url || part.image_url?.url;
-            break;
-          }
-        }
-      } else if (typeof content === 'string') {
-        // 3) Fallback: scan text content for a plausible image URL or data URL
-        const text: string = content;
-        const dataUrlMatch = text.match(/data:image\/[a-zA-Z+]+;base64,[^\s")'}]+/);
-        const httpUrlMatch = text.match(/https?:\/\/[^\s")'}]+?\.(?:png|jpg|jpeg|gif|webp)/i);
-
-        if (dataUrlMatch) {
-          imageUrl = dataUrlMatch[0];
-        } else if (httpUrlMatch) {
-          imageUrl = httpUrlMatch[0];
-        }
-      }
-    }
+    const imageUrl = extractImageUrl(message);
+    const duration = Date.now() - startTime;
 
     if (!imageUrl) {
       // This is an expected path in auto mode: Gemini may decide that no help is needed
       // and return only text. In voice mode we strongly discouraged this in the prompt,
       // but still handle it gracefully.
-      const textContent = (message as any)?.content || '';
+      const textContent = message?.content || "";
 
-      const duration = Date.now() - startTime;
-      solutionLogger.info(
+      log.info(
         {
-          requestId,
           duration,
           generatedImageSize: 0,
           hasTextContent: !!textContent,
           tokensUsed: data.usage?.total_tokens,
           rawResponseSnippet: JSON.stringify(data).slice(0, 2000),
         },
-        effectiveSource === 'voice'
-          ? 'Solution generation completed without image in voice mode (model returned text-only response)'
-          : 'Solution generation completed without image (model returned text-only response)'
+        effectiveSource === "voice"
+          ? "Solution generation completed without image in voice mode (model returned text-only response)"
+          : "Solution generation completed without image (model returned text-only response)",
       );
 
-      // Return a successful response with text content (if any), but no image.
-      // The frontend should gracefully handle the absence of imageUrl.
-      return NextResponse.json({
+      return Response.json({
         success: false,
         imageUrl: null,
         textContent,
-        reason: 'Model did not return an image (likely decided help was not needed).',
+        reason: "Model did not return an image (likely decided help was not needed).",
       });
     }
 
-    const duration = Date.now() - startTime;
-    solutionLogger.info({
-      requestId,
-      duration,
-      generatedImageSize: imageUrl.length,
-      hasTextContent: !!(message as any)?.content,
-      tokensUsed: data.usage?.total_tokens
-    }, 'Solution generation completed successfully');
+    log.info(
+      {
+        duration,
+        generatedImageSize: imageUrl.length,
+        hasTextContent: !!message?.content,
+        tokensUsed: data.usage?.total_tokens,
+      },
+      "Solution generation completed successfully",
+    );
 
-    return NextResponse.json({
+    return Response.json({
       success: true,
       imageUrl,
-      textContent: (message as any)?.content || '',
+      textContent: message?.content || "",
     });
   } catch (error) {
-    const duration = Date.now() - startTime;
-    solutionLogger.error({
-      requestId,
-      duration,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined
-    }, 'Error generating solution');
-
-    return NextResponse.json(
-      {
-        error: 'Failed to generate solution',
-        details: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
-    );
+    return errorResponse(error, log, { duration: Date.now() - startTime });
   }
 }

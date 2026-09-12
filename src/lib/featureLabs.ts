@@ -75,20 +75,21 @@ export function useFeatureLabs() {
   const [features, setFeatures] = useState<Record<FeatureKey, boolean>>(
     () => readCache() ?? DEFAULT_FEATURES,
   );
-  const [loading, setLoading] = useState(true);
+  // The user id whose settings have been fetched from Supabase. `loading` is
+  // derived from it so the effect never needs a synchronous setState.
+  const [loadedUserId, setLoadedUserId] = useState<string | null>(null);
+  const loading = !!user && loadedUserId !== user.id;
 
   // Pull authoritative state from Supabase on mount / user change.
   useEffect(() => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
+    if (!user) return;
+    const userId = user.id;
     let cancelled = false;
     (async () => {
       const { data, error } = await supabase
         .from("user_settings")
         .select("features")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .maybeSingle();
 
       if (cancelled) return;
@@ -98,7 +99,7 @@ export function useFeatureLabs() {
         setFeatures(merged);
         writeCache(merged);
       }
-      setLoading(false);
+      setLoadedUserId(userId);
     })();
 
     return () => {

@@ -8,10 +8,13 @@ import {
   TLShapeId,
   DefaultColorThemePalette,
   type TLUiOverrides,
+  type TLUiIconJsx,
+  type TLEditorSnapshot,
+  type TLStoreSnapshot,
   getSnapshot,
   loadSnapshot,
 } from "tldraw";
-import React, { useCallback, useState, useRef, useEffect, type ReactElement } from "react";
+import React, { useCallback, useState, useRef, useEffect } from "react";
 import "tldraw/tldraw.css";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -45,6 +48,8 @@ import { useDebounceActivity } from "@/hooks/useDebounceActivity";
 import { StatusIndicator, type StatusIndicatorState } from "@/components/StatusIndicator";
 import { logger } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
+import { apiJson } from "@/lib/api-client";
+import { isAbortError, useApiErrorHandler } from "@/hooks/useApiErrorHandler";
 import { useParams, useRouter } from "next/navigation";
 import { Loader2, Volume2, VolumeX, Info } from "lucide-react";
 import { toast } from "sonner";
@@ -71,9 +76,8 @@ DefaultColorThemePalette.lightMode.background = "#FFFFFF";
 DefaultColorThemePalette.darkMode.background = "#FFFFFF";
 
 const hugeIconsOverrides: TLUiOverrides = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tools(_editor: unknown, tools: Record<string, any>) {
-    const toolIconMap: Record<string, ReactElement> = {
+  tools(_editor, tools) {
+    const toolIconMap: Record<string, TLUiIconJsx> = {
       select: (
         <div>
           <Cursor02Icon size={22} strokeWidth={1.5} />
@@ -250,6 +254,35 @@ type VoiceStatus =
   | "callingTool"
   | "error";
 
+/** Arguments the Realtime model may pass to our tools. */
+type VoiceToolArgs = {
+  focus?: string | null;
+  mode?: string;
+  instructions?: string | null;
+};
+
+/** Subset of OpenAI Realtime server events we react to. */
+type RealtimeServerEvent = {
+  type?: string;
+  message?: string;
+  error?: { message?: string };
+  response?: {
+    output?: Array<{
+      type?: string;
+      name?: string;
+      arguments?: string;
+      call_id?: string;
+    }>;
+  };
+};
+
+type AnalyzeWorkspaceResponse = { analysis?: string | null };
+type VoiceTokenResponse = { client_secret?: string | null };
+type GenerateSolutionResponse = {
+  imageUrl?: string | null;
+  textContent?: string | null;
+};
+
 interface VoiceAgentControlsProps {
   onSessionChange: (active: boolean) => void;
   onSolveWithPrompt: (
@@ -263,6 +296,7 @@ function VoiceAgentControls({
   onSolveWithPrompt,
 }: VoiceAgentControlsProps) {
   const editor = useEditor();
+  const handleApiError = useApiErrorHandler();
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [status, setStatus] = useState<VoiceStatus>("idle");
   const [statusDetail, setStatusDetail] = useState<string | null>(null);
@@ -343,10 +377,10 @@ function VoiceAgentControls({
       const dc = dcRef.current;
       if (!dc) return;
 
-      let args: any = {};
+      let args: VoiceToolArgs = {};
       try {
-        args = argsJson ? JSON.parse(argsJson) : {};
-      } catch (e) {
+        args = argsJson ? (JSON.parse(argsJson) as VoiceToolArgs) : {};
+      } catch {
         setErrorStatus(`Failed to parse tool arguments for ${name}`);
         return;
       }
@@ -361,20 +395,13 @@ function VoiceAgentControls({
             throw new Error("Canvas is empty or could not be captured");
           }
 
-          const res = await fetch("/api/voice/analyze-workspace", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
+          const data = await apiJson<AnalyzeWorkspaceResponse>(
+            "/api/voice/analyze-workspace",
+            {
               image,
               focus: args.focus ?? null,
-            }),
-          });
-
-          if (!res.ok) {
-            throw new Error("Workspace analysis request failed");
-          }
-
-          const data = await res.json();
+            },
+          );
           const analysis = data.analysis ?? "";
 
           dc.send(
@@ -441,16 +468,17 @@ function VoiceAgentControls({
       } catch (error) {
         console.error("[Voice Agent] Tool error", error);
 
+        const message = handleApiError(error, {
+          fallback: "Tool execution failed",
+        });
+
         dc.send(
           JSON.stringify({
             type: "conversation.item.create",
             item: {
               type: "function_call_output",
               call_id: callId,
-              output: JSON.stringify({
-                error:
-                  error instanceof Error ? error.message : "Tool execution failed",
-              }),
+              output: JSON.stringify({ error: message }),
             },
           }),
         );
@@ -461,18 +489,14 @@ function VoiceAgentControls({
           }),
         );
 
-        setErrorStatus(
-          `Tool ${name} failed: ${
-            error instanceof Error ? error.message : "Unknown error"
-          }`,
-        );
+        setErrorStatus(`Tool ${name} failed: ${message}`);
       }
     },
-    [captureCanvasImage, onSolveWithPrompt, setErrorStatus],
+    [captureCanvasImage, onSolveWithPrompt, setErrorStatus, handleApiError],
   );
 
   const handleServerEvent = useCallback(
-    (event: any) => {
+    (event: RealtimeServerEvent) => {
       if (!event || typeof event !== "object") return;
 
       switch (event.type) {
@@ -486,7 +510,7 @@ function VoiceAgentControls({
         case "response.done": {
           const output = event.response?.output ?? [];
           for (const item of output) {
-            if (item.type === "function_call") {
+            if (item.type === "function_call" && item.name && item.call_id) {
               handleFunctionCall(
                 item.name,
                 item.arguments ?? "{}",
@@ -623,7 +647,7 @@ function VoiceAgentControls({
 
       dc.onmessage = (event) => {
         try {
-          const serverEvent = JSON.parse(event.data);
+          const serverEvent = JSON.parse(event.data) as RealtimeServerEvent;
           handleServerEvent(serverEvent);
         } catch (e) {
           console.error("[Voice Agent] Failed to parse server event", e);
@@ -660,15 +684,10 @@ function VoiceAgentControls({
         pc.addEventListener("icegatheringstatechange", checkState);
       });
 
-      const tokenRes = await fetch("/api/voice/token", {
-        method: "POST",
-      });
-
-      if (!tokenRes.ok) {
-        throw new Error("Failed to obtain Realtime session token");
-      }
-
-      const { client_secret } = await tokenRes.json();
+      const { client_secret } = await apiJson<VoiceTokenResponse>(
+        "/api/voice/token",
+        {},
+      );
       if (!client_secret) {
         throw new Error("Realtime token missing client_secret");
       }
@@ -704,11 +723,11 @@ function VoiceAgentControls({
     } catch (error) {
       console.error("[Voice Agent] Failed to start session", error);
       setErrorStatus(
-        error instanceof Error ? error.message : "Failed to start voice session",
+        handleApiError(error, { fallback: "Failed to start voice session" }),
       );
       stopSession();
     }
-  }, [editor, isSessionActive, handleServerEvent, onSessionChange, setErrorStatus, stopSession]);
+  }, [editor, isSessionActive, handleServerEvent, onSessionChange, setErrorStatus, stopSession, handleApiError]);
 
   const handleClick = () => {
     if (isSessionActive) {
@@ -988,11 +1007,55 @@ function PerfSettingsPopover({
   );
 }
 
+function ClearFeedbackButton({
+  feedbackImageIds,
+  onClear,
+  isVoiceSessionActive,
+  hasPendingImages,
+}: {
+  feedbackImageIds: TLShapeId[];
+  onClear: () => void;
+  isVoiceSessionActive: boolean;
+  hasPendingImages: boolean;
+}) {
+  if (feedbackImageIds.length === 0) return null;
+
+  // Sit at the top-center; step down when the voice banner and/or the
+  // Accept/Reject buttons already occupy that spot.
+  const top = 10 + (isVoiceSessionActive ? 46 : 0) + (hasPendingImages ? 46 : 0);
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: `${top}px`,
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 1000,
+      }}
+    >
+      <Button
+        variant="outline"
+        size="sm"
+        className="bg-white shadow-sm"
+        onClick={onClear}
+        title="Remove the tutor's feedback annotations from the canvas"
+      >
+        <Cancel01Icon size={16} strokeWidth={2.5} />
+        <span className="ml-1.5">Clear feedback</span>
+      </Button>
+    </div>
+  );
+}
+
 function BoardContent({ id }: { id: string }) {
   const editor = useEditor();
   const router = useRouter();
+  const handleApiError = useApiErrorHandler();
   const { features } = useFeatureLabs();
   const [pendingImageIds, setPendingImageIds] = useState<TLShapeId[]>([]);
+  // Locked "feedback" overlays (no accept/reject) so they can be removed later.
+  const [feedbackImageIds, setFeedbackImageIds] = useState<TLShapeId[]>([]);
   const [status, setStatus] = useState<StatusIndicatorState>("idle");
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [statusMessage, setStatusMessage] = useState<string>("");
@@ -1075,7 +1138,7 @@ function BoardContent({ id }: { id: string }) {
         const protectedIds = new Set<TLShapeId>();
         for (const sid of shapeIds) {
           const shape = editor.getShape(sid);
-          if ((shape?.meta as any)?.isProtected) {
+          if (shape?.meta?.isProtected) {
             protectedIds.add(sid);
           }
         }
@@ -1175,32 +1238,15 @@ function BoardContent({ id }: { id: string }) {
           body.hasWorksheet = true;
         }
 
-        const solutionResponse = await fetch('/api/generate-solution', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-          signal,
-        });
+        const solutionData = await apiJson<GenerateSolutionResponse>(
+          "/api/generate-solution",
+          body,
+          { signal },
+        );
 
         if (signal.aborted) return false;
 
-        if (!solutionResponse.ok) {
-          const errBody = await solutionResponse.json().catch(() => ({}));
-          if (
-            solutionResponse.status === 402 ||
-            errBody?.error === 'credits_exhausted'
-          ) {
-            const msg =
-              errBody?.message ||
-              'Account credits depleted — please talk to Rushil to refill your account!';
-            toast.error(msg, { duration: 8000 });
-            throw new Error(msg);
-          }
-          throw new Error(errBody?.error || 'Solution generation failed');
-        }
-
-        const solutionData = await solutionResponse.json();
-        const imageUrl = solutionData.imageUrl as string | null | undefined;
+        const imageUrl = solutionData.imageUrl;
         const textContent = solutionData.textContent || '';
 
         logger.info({ 
@@ -1211,11 +1257,13 @@ function BoardContent({ id }: { id: string }) {
         }, 'Solution data received');
 
         // If the model didn't return an image, it means Gemini decided help isn't needed.
-        // Log the reason and gracefully stop.
+        // Log the reason and gracefully stop. Returning to "idle" also hides the
+        // generation skeleton (it is only visible while status === "generating").
         if (!imageUrl || signal.aborted) {
           logger.info({ textContent }, 'Gemini decided help is not needed');
           setStatus("idle");
           setStatusMessage("");
+          setErrorMessage("");
           isProcessingRef.current = false;
           return false;
         }
@@ -1302,8 +1350,11 @@ function BoardContent({ id }: { id: string }) {
           }
         }
 
-        // Only add to pending list if not in feedback mode
-        if (!isFeedbackMode) {
+        // Suggest/answer overlays wait for Accept/Reject; feedback overlays are
+        // tracked separately so the user can clear them later.
+        if (isFeedbackMode) {
+          setFeedbackImageIds((prev) => [...prev, shapeId]);
+        } else {
           setPendingImageIds((prev) => [...prev, shapeId]);
         }
         
@@ -1322,14 +1373,16 @@ function BoardContent({ id }: { id: string }) {
 
         return true;
       } catch (error) {
-        if (signal.aborted) {
+        if (signal.aborted || isAbortError(error)) {
           setStatus("idle");
           setStatusMessage("");
           return false;
         }
-        
+
         logger.error({ error }, 'Auto-generation error');
-        setErrorMessage(error instanceof Error ? error.message : 'Generation failed');
+        // 401 / 429 / 402 are toasted (and 401 redirects) by the handler;
+        // everything else is shown inline in the status indicator.
+        setErrorMessage(handleApiError(error, { fallback: "Generation failed" }));
         setStatus("error");
         setStatusMessage("");
         
@@ -1345,10 +1398,15 @@ function BoardContent({ id }: { id: string }) {
         abortControllerRef.current = null;
       }
     },
-    [editor, pendingImageIds, isVoiceSessionActive, assistanceMode, aiModel, aiPerf, getStatusMessage],
+    [editor, pendingImageIds, isVoiceSessionActive, assistanceMode, aiModel, aiPerf, getStatusMessage, handleApiError],
   );
 
   const handleAutoGeneration = useCallback(() => {
+    // Don't burn credits while the tab is in the background; the next edit
+    // after the user comes back will schedule a fresh run.
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+      return;
+    }
     void generateSolution({ source: "auto" });
   }, [generateSolution]);
 
@@ -1446,6 +1504,31 @@ function BoardContent({ id }: { id: string }) {
     [editor]
   );
 
+  const handleClearFeedback = useCallback(() => {
+    if (!editor) return;
+
+    // Only touch shapes that still exist (the user may have undone some).
+    const ids = feedbackImageIds.filter((sid) => editor.getShape(sid));
+
+    // Set flag to prevent triggering activity detection
+    isUpdatingImageRef.current = true;
+
+    if (ids.length > 0) {
+      // Unlock first, then delete (locked shapes are not deletable).
+      editor.updateShapes(
+        ids.map((sid) => ({ id: sid, type: "image" as const, isLocked: false })),
+      );
+      editor.deleteShapes(ids);
+    }
+
+    setFeedbackImageIds([]);
+
+    // Reset flag after a brief delay
+    setTimeout(() => {
+      isUpdatingImageRef.current = false;
+    }, 100);
+  }, [editor, feedbackImageIds]);
+
   // Auto-save logic
   useEffect(() => {
     if (!editor) return;
@@ -1497,17 +1580,19 @@ function BoardContent({ id }: { id: string }) {
             return;
           }
           
-          // Generate a thumbnail
-          let previewUrl = null;
+          // Generate a small JPEG thumbnail. The DB caps `preview` at 20000
+          // chars, so keep the export tiny (quarter scale, lossy).
+          let previewUrl: string | null = null;
           try {
             const shapeIds = editor.getCurrentPageShapeIds();
             if (shapeIds.size > 0) {
               const viewportBounds = editor.getViewportPageBounds();
               const { blob } = await editor.toImage([...shapeIds], {
-                format: "png",
+                format: "jpeg",
+                quality: 0.6,
                 bounds: viewportBounds,
-                background: false,
-                scale: 0.5,
+                background: true,
+                scale: 0.25,
               });
               
               if (blob) {
@@ -1532,14 +1617,19 @@ function BoardContent({ id }: { id: string }) {
             );
           }
 
-          const updateData: any = { 
+          const updateData: {
+            data: unknown;
+            updated_at: string;
+            preview?: string;
+          } = {
             data: safeSnapshot,
             updated_at: new Date().toISOString()
           };
 
           if (previewUrl) {
-            // Guard against oversized previews that may violate DB column limits
-            const MAX_PREVIEW_LENGTH = 8000;
+            // Guard against oversized previews: whiteboards.preview is
+            // constrained to 20000 chars in the database.
+            const MAX_PREVIEW_LENGTH = 20000;
             if (previewUrl.length > MAX_PREVIEW_LENGTH) {
               console.warn(`Preview too large (${previewUrl.length} bytes), skipping`);
               logger.warn(
@@ -1551,25 +1641,8 @@ function BoardContent({ id }: { id: string }) {
             }
           }
 
-          // Validate Supabase client and configuration
-          if (!supabase) {
-            throw new Error("Supabase client not initialized");
-          }
-
-          // Check if Supabase is properly configured
-          if (typeof window !== 'undefined') {
-            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-            const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-            
-            if (!supabaseUrl || supabaseUrl === 'https://placeholder.supabase.co') {
-              throw new Error("Supabase URL is not configured. Please set NEXT_PUBLIC_SUPABASE_URL in your environment variables.");
-            }
-            
-            if (!supabaseKey || supabaseKey === 'placeholder-key') {
-              throw new Error("Supabase anon key is not configured. Please set NEXT_PUBLIC_SUPABASE_ANON_KEY in your environment variables.");
-            }
-          }
-
+          // (Supabase env vars are validated at module load in @/lib/supabase,
+          // which throws in the browser when they are missing.)
           console.log(`Attempting to save board ${id}...`);
           
           const { error, data } = await supabase
@@ -1584,20 +1657,20 @@ function BoardContent({ id }: { id: string }) {
             // the database is briefly under load. Treat them as non-fatal and
             // avoid noisy console errors.
             const isTimeoutError =
-              (error as any)?.code === "57014" ||
+              error.code === "57014" ||
               /statement timeout/i.test(error.message ?? "");
 
             if (isTimeoutError) {
               console.warn("Supabase auto-save timed out, skipping noisy error log.", {
                 id,
-                code: (error as any)?.code,
+                code: error.code,
                 message: error.message,
               });
 
               logger.warn(
                 {
                   id,
-                  code: (error as any)?.code,
+                  code: error.code,
                   message: error.message,
                 },
                 "Supabase auto-save timed out (often due to navigation away); ignoring.",
@@ -1608,22 +1681,23 @@ function BoardContent({ id }: { id: string }) {
             }
 
             // For all other errors, log detailed information and surface a clear message.
-            const errorDetails = {
+            const errorRecord = error as unknown as Record<string, unknown>;
+            const errorDetails: Record<string, unknown> = {
               message: error.message,
-              code: (error as any)?.code,
-              details: (error as any)?.details,
-              hint: (error as any)?.hint,
+              code: error.code,
+              details: error.details,
+              hint: error.hint,
               // Capture all properties for richer debugging
               ...Object.getOwnPropertyNames(error).reduce((acc, key) => {
-                acc[key] = (error as any)[key];
+                acc[key] = errorRecord[key];
                 return acc;
-              }, {} as Record<string, any>),
+              }, {} as Record<string, unknown>),
             };
 
             console.error("Supabase update error:", errorDetails);
             throw new Error(
               `Supabase error: ${error.message || "Unknown error"} (code: ${
-                (error as any)?.code || "N/A"
+                error.code || "N/A"
               })`,
             );
           }
@@ -1635,7 +1709,7 @@ function BoardContent({ id }: { id: string }) {
           logger.info({ id }, "Board auto-saved successfully");
         } catch (error) {
           // Extract all error properties for proper logging
-          const errorInfo: Record<string, any> = {
+          const errorInfo: Record<string, unknown> = {
             id,
             errorType: typeof error,
             errorConstructor: error?.constructor?.name,
@@ -1647,10 +1721,11 @@ function BoardContent({ id }: { id: string }) {
             errorInfo.stack = error.stack;
           } else if (error && typeof error === 'object') {
             // Extract all enumerable and non-enumerable properties
+            const errorRecord = error as Record<string, unknown>;
             Object.getOwnPropertyNames(error).forEach(key => {
               try {
-                errorInfo[key] = (error as any)[key];
-              } catch (e) {
+                errorInfo[key] = errorRecord[key];
+              } catch {
                 errorInfo[key] = '[Unable to access property]';
               }
             });
@@ -1704,7 +1779,8 @@ function BoardContent({ id }: { id: string }) {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => router.back()}
+            aria-label="Back to my whiteboards"
+            onClick={() => router.push("/")}
           >
             <ArrowLeft01Icon size={20} strokeWidth={2} />
           </Button>
@@ -1784,6 +1860,12 @@ function BoardContent({ id }: { id: string }) {
         onAccept={handleAccept}
         onReject={handleReject}
       />
+      <ClearFeedbackButton
+        feedbackImageIds={feedbackImageIds}
+        isVoiceSessionActive={isVoiceSessionActive}
+        hasPendingImages={pendingImageIds.length > 0}
+        onClear={handleClearFeedback}
+      />
       <VoiceAgentControls
         onSessionChange={setIsVoiceSessionActive}
         onSolveWithPrompt={async (mode, instructions) => {
@@ -1806,7 +1888,9 @@ export default function BoardPage() {
   const id = params.id as string;
   const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [initialData, setInitialData] = useState<any>(null);
+  const [initialData, setInitialData] = useState<
+    Partial<TLEditorSnapshot> | TLStoreSnapshot | null
+  >(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -1828,7 +1912,8 @@ export default function BoardPage() {
 
         if (data) {
           if (data.data && Object.keys(data.data).length > 0) {
-            setInitialData(data.data);
+            // `data` is a jsonb column holding a tldraw snapshot.
+            setInitialData(data.data as Partial<TLEditorSnapshot> | TLStoreSnapshot);
           }
         }
       } catch (e) {
