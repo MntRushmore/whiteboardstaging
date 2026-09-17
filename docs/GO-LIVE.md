@@ -2,9 +2,28 @@
 
 Everything on `feat/production-hardening` builds, typechecks, lints, and passes 472 unit tests plus the route smoke script against a local Supabase stack. Three things still need a human with account access before production works.
 
-## 1. Database (blocking)
+## 1. Database — done
 
-The previous Supabase project was deleted; no cloud project exists yet, so login and saving are broken in production until one does. Follow [`RUNBOOK-supabase.md`](./RUNBOOK-supabase.md) end to end (~30 min): create the project (section 1), `npx supabase login` / `link` / `npm run db:push` (2), dashboard Auth settings that the migration cannot set (3), storage sanity (4), Vercel env vars for all three environments (5), trainer allow-list (6), and verification with `npm run db:verify` + `RUN_DB_TESTS=1 npm test` (7). Turn on backups before the first cohort (10).
+The Supabase project **agathon-classroom** is provisioned through the Vercel Marketplace
+(`vercel integration add supabase`) and connected to `whiteboardstaging` in Production, Preview and
+Development, so the integration owns the credentials and rotates them with the resource. All five
+migrations are applied (`npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING"`, no Supabase
+login needed) and `node scripts/verify-rls.mjs` reports **132/132** against the live project:
+tables, RLS, storage buckets (`board-assets` public, `training-data` private), the credit ledger
+and its RPCs are all in place, with `free` / `plus` / `pro` seeded.
+
+Two settings live only in the Supabase dashboard, so they still need you (open it with
+`vercel integration open supabase`, then Authentication -> URL configuration / Providers):
+
+1. **Site URL and redirect URLs.** A new project defaults to `http://localhost:3000`, which is what
+   confirmation links point at. Set the Site URL to `https://whiteboard.rushilchopra.com` and add
+   `https://whiteboard.rushilchopra.com/**` (plus any preview host you use) to the redirect list.
+2. **Email confirmations.** They are ON, so a new student must click a link before their first
+   sign-in, and open sign-up is enabled. For a closed cohort, turn sign-ups off and invite users;
+   for a demo, turn confirmations off. Either way it is a product decision, not a code change.
+
+Everything else about the backend — schema changes, plan numbers, manual credit grants, backups,
+key rotation, restore drill — is in [`RUNBOOK-supabase.md`](./RUNBOOK-supabase.md).
 
 ## 2. Environment variables
 

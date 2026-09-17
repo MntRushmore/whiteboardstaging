@@ -33,7 +33,7 @@ suite(title, () => {
           "or start the local stack with `npx supabase start` so `npx supabase status -o env` can supply them.",
       );
     }
-    if (!(await waitForHealth(url, { timeoutMs: 180_000 }))) {
+    if (!(await waitForHealth(url, { timeoutMs: 180_000, anonKey }))) {
       throw new Error(`Supabase at ${url} (from ${source}) did not answer /auth/v1/health within 3 minutes`);
     }
     const boot = await bootstrapVerifyContext({

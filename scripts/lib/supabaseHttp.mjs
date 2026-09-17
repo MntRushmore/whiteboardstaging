@@ -129,20 +129,26 @@ export async function toResult(res) {
 const sleep = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * Poll GET {url}/auth/v1/health until it answers 200 or the timeout elapses.
+ * Poll GET {url}/auth/v1/health until the service answers or the timeout elapses.
+ * Pass `anonKey` for a hosted project: it rejects an unauthenticated probe with 401,
+ * while the local stack answers 200 either way.
  * @param {string} url
- * @param {{ timeoutMs?: number, intervalMs?: number, fetchImpl?: typeof fetch }} [opts]
+ * @param {{ timeoutMs?: number, intervalMs?: number, anonKey?: string | null, fetchImpl?: typeof fetch }} [opts]
  * @returns {Promise<boolean>}
  */
 export async function waitForHealth(url, opts = {}) {
   const timeoutMs = opts.timeoutMs ?? 180_000;
   const intervalMs = opts.intervalMs ?? 3_000;
   const fetchImpl = opts.fetchImpl ?? fetch;
+  // Hosted projects reject an unauthenticated probe with 401; the local stack answers 200
+  // either way. Send the anon key when the caller has one so both behave the same.
+  const headers = opts.anonKey ? { apikey: opts.anonKey } : undefined;
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     try {
-      const res = await fetchImpl(`${url}/auth/v1/health`, { signal: AbortSignal.timeout(5_000) });
-      if (res.status === 200) return true;
+      const res = await fetchImpl(`${url}/auth/v1/health`, { headers, signal: AbortSignal.timeout(5_000) });
+      // 401 means the service is up and simply wants a key we were not given.
+      if (res.status === 200 || res.status === 401) return true;
     } catch {
       /* not up yet */
     }

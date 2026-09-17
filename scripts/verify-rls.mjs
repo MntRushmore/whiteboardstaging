@@ -41,7 +41,7 @@ if (!url || !anonKey) {
 const healthTimeout = 180_000;
 console.log(`Target: ${url} (config from ${source}${serviceKey ? ", service role available" : ", no service role"})`);
 process.stdout.write("Waiting for /auth/v1/health ... ");
-if (!(await waitForHealth(url, { timeoutMs: healthTimeout }))) {
+if (!(await waitForHealth(url, { timeoutMs: healthTimeout, anonKey }))) {
   console.error(`\nSupabase at ${url} did not report healthy within ${healthTimeout} ms.`);
   process.exit(2);
 }

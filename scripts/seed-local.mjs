@@ -28,7 +28,7 @@ if (!isLoopbackUrl(url)) {
 }
 
 process.stdout.write(`Waiting for ${url}/auth/v1/health ... `);
-if (!(await waitForHealth(url, { timeoutMs: 180_000 }))) {
+if (!(await waitForHealth(url, { timeoutMs: 180_000, anonKey }))) {
   console.error("\nlocal Supabase did not become healthy; is Docker running?");
   process.exit(2);
 }

@@ -4,6 +4,16 @@ Target: a working backend (Postgres + Auth + Storage) for Agathon Classroom in u
 
 Prereqs: Node 22+, `npx supabase --version` >= 2.x (bundled, no global install), the `vercel` CLI logged in, an account that owns the Supabase org. No local Postgres tools are required.
 
+
+> **This project is already provisioned.** `agathon-classroom` was created with
+> `vercel integration add supabase` (Vercel Marketplace), which also injects the credentials into
+> Production, Preview and Development and bills through Vercel. Sections 1-2 below describe creating
+> a project from scratch — follow them only for a *new* environment. To apply migrations to a
+> Marketplace-provisioned project you do not need `supabase login`: pull the credentials with
+> `vercel env pull` and run
+> `npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING" --include-all`, then verify with
+> `NEXT_PUBLIC_SUPABASE_URL=… NEXT_PUBLIC_SUPABASE_ANON_KEY=… SUPABASE_SERVICE_ROLE_KEY=… node scripts/verify-rls.mjs`.
+
 ## 1. Create the project (dashboard, ~3 min)
 
 1. <https://supabase.com/dashboard/new> -> **New project**.
