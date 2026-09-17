@@ -4,20 +4,18 @@ import {
   Tldraw,
   useEditor,
   createShapeId,
-  AssetRecordType,
   TLShapeId,
   DefaultColorThemePalette,
   type TLUiOverrides,
   type TLUiIconJsx,
   type TLEditorSnapshot,
   type TLStoreSnapshot,
-  getSnapshot,
   loadSnapshot,
   type Editor,
   type HistoryEntry,
   type TLRecord,
 } from "tldraw";
-import React, { useCallback, useState, useRef, useEffect } from "react";
+import React, { useCallback, useState, useRef, useEffect, useMemo } from "react";
 import "tldraw/tldraw.css";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -50,6 +48,9 @@ import {
 import { isStudentActivity, useDebounceActivity } from "@/hooks/useDebounceActivity";
 import { aiOverlayMeta, overlayIndexBelowLive, useAiOverlayShapes } from "@/hooks/useAiOverlayShapes";
 import { useAssistanceMode, type AssistanceMode } from "@/hooks/useAssistanceMode";
+import { offloadAssetsOnce, useSnapshotSave, warnInlineAssetFallbackOnce } from "@/hooks/useSnapshotSave";
+import { createBoardAssetStore } from "@/lib/assets/boardAssetStore";
+import { uploadDataUrlAsset } from "@/lib/assets/uploadDataUrl";
 import { StatusIndicator, type StatusIndicatorState } from "@/components/StatusIndicator";
 import { logger } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
@@ -84,7 +85,7 @@ import { LiveToggle } from "@/components/live/LiveToggle";
 import { LiveStatusPill } from "@/components/live/LiveStatusPill";
 import { LiveHintLayer } from "@/components/live/LiveHintLayer";
 import { LiveErrorBoundary } from "@/components/live/LiveErrorBoundary";
-import { LIVE_COPY } from "@/components/live/copy";
+import { ASSET_COPY, LIVE_COPY } from "@/components/live/copy";
 
 // Ensure the tldraw canvas background is pure white in both light and dark modes
 DefaultColorThemePalette.lightMode.background = "#FFFFFF";
@@ -1328,7 +1329,6 @@ function BoardContent({ id }: { id: string }) {
         if (signal.aborted) return false;
 
         // Create asset and shape
-        const assetId = AssetRecordType.createId();
         const img = new Image();
         logger.info('Loading image into asset...');
         
@@ -1351,22 +1351,26 @@ function BoardContent({ id }: { id: string }) {
         // Set flag to prevent these shape additions from triggering activity detection
         isUpdatingImageRef.current = true;
 
-        editor.createAssets([
-          {
-            id: assetId,
-            type: 'image',
-            typeName: 'asset',
-            props: {
-              name: 'generated-solution.png',
-              src: processedImageUrl,
-              w: img.width,
-              h: img.height,
-              mimeType: 'image/png',
-              isAnimated: false,
-            },
-            meta: {},
-          },
-        ]);
+        // The PNG is uploaded to Storage (board-assets bucket) and the asset record only
+        // holds its URL, so the snapshot stays small. On upload failure the asset falls
+        // back to the inline data URL (warned once) and the board still works.
+        const { assetId, inline } = await uploadDataUrlAsset(editor, {
+          dataUrl: processedImageUrl,
+          name: 'generated-solution.png',
+          width: img.width,
+          height: img.height,
+          source: 'ai',
+          signal,
+        });
+        if (inline) warnInlineAssetFallbackOnce();
+
+        if (signal.aborted) {
+          // The student kept drawing while the image uploaded: drop the orphaned asset
+          // (the asset store removes the Storage object) and release the activity guard.
+          editor.deleteAssets([assetId]);
+          isUpdatingImageRef.current = false;
+          return false;
+        }
 
         const shapeId = createShapeId();
         const scale = Math.min(
@@ -1431,6 +1435,8 @@ function BoardContent({ id }: { id: string }) {
 
         return true;
       } catch (error) {
+        // The guard is set right before the (awaited) asset upload; never leave it stuck on.
+        isUpdatingImageRef.current = false;
         if (signal.aborted || isAbortError(error)) {
           setStatus("idle");
           setStatusMessage("");
@@ -1600,237 +1606,8 @@ function BoardContent({ id }: { id: string }) {
     }, 100);
   }, [editor, feedbackImageIds]);
 
-  // Auto-save logic
-  useEffect(() => {
-    if (!editor) return;
-
-    let saveTimeout: NodeJS.Timeout;
-
-    const handleChange = () => {
-      // Don't save during image updates
-      if (isUpdatingImageRef.current) return;
-
-      clearTimeout(saveTimeout);
-      saveTimeout = setTimeout(async () => {
-        // If we're offline, skip auto-save to avoid noisy errors
-        if (typeof window !== "undefined" && window.navigator && !window.navigator.onLine) {
-          logger.warn({ id }, "Skipping auto-save while offline");
-          return;
-        }
-
-        try {
-          // Validate editor state
-          if (!editor || !editor.store) {
-            console.warn("Editor or store not available for auto-save");
-            return;
-          }
-
-          const snapshot = getSnapshot(editor.store);
-          
-          if (!snapshot) {
-            console.warn("Failed to get snapshot from editor");
-            return;
-          }
-
-          // Ensure the snapshot is JSON-serializable before sending to Supabase
-          let safeSnapshot: unknown = snapshot;
-          try {
-            safeSnapshot = JSON.parse(JSON.stringify(snapshot));
-          } catch (e) {
-            console.error("Failed to serialize board snapshot:", e);
-            logger.error(
-              {
-                error:
-                  e instanceof Error
-                    ? { message: e.message, name: e.name, stack: e.stack }
-                    : String(e),
-                id,
-              },
-              "Failed to serialize board snapshot for auto-save"
-            );
-            return;
-          }
-          
-          // Generate a small JPEG thumbnail. The DB caps `preview` at 20000
-          // chars, so keep the export tiny (quarter scale, lossy).
-          let previewUrl: string | null = null;
-          try {
-            const shapeIds = editor.getCurrentPageShapeIds();
-            if (shapeIds.size > 0) {
-              const viewportBounds = editor.getViewportPageBounds();
-              const { blob } = await editor.toImage([...shapeIds], {
-                format: "jpeg",
-                quality: 0.6,
-                bounds: viewportBounds,
-                background: true,
-                scale: 0.25,
-              });
-              
-              if (blob) {
-                previewUrl = await new Promise<string>((resolve) => {
-                  const reader = new FileReader();
-                  reader.onloadend = () => resolve(reader.result as string);
-                  reader.readAsDataURL(blob);
-                });
-              }
-            }
-          } catch (e) {
-            console.warn("Thumbnail generation failed:", e);
-            logger.warn(
-              {
-                error:
-                  e instanceof Error
-                    ? { message: e.message, name: e.name, stack: e.stack }
-                    : String(e),
-                id,
-              },
-              "Thumbnail generation failed, continuing without preview"
-            );
-          }
-
-          const updateData: {
-            data: unknown;
-            updated_at: string;
-            preview?: string;
-          } = {
-            data: safeSnapshot,
-            updated_at: new Date().toISOString()
-          };
-
-          if (previewUrl) {
-            // Guard against oversized previews: whiteboards.preview is
-            // constrained to 20000 chars in the database.
-            const MAX_PREVIEW_LENGTH = 20000;
-            if (previewUrl.length > MAX_PREVIEW_LENGTH) {
-              console.warn(`Preview too large (${previewUrl.length} bytes), skipping`);
-              logger.warn(
-                { id, length: previewUrl.length, maxLength: MAX_PREVIEW_LENGTH },
-                "Preview too large, skipping storing preview in database"
-              );
-            } else {
-              updateData.preview = previewUrl;
-            }
-          }
-
-          // (Supabase env vars are validated at module load in @/lib/supabase,
-          // which throws in the browser when they are missing.)
-          console.log(`Attempting to save board ${id}...`);
-          
-          const { error, data } = await supabase
-            .from("whiteboards")
-            .update(updateData)
-            .eq("id", id)
-            .select();
-
-          if (error) {
-            // Special-case Supabase statement timeouts (code 57014).
-            // These can happen if the user navigates away mid-request or if
-            // the database is briefly under load. Treat them as non-fatal and
-            // avoid noisy console errors.
-            const isTimeoutError =
-              error.code === "57014" ||
-              /statement timeout/i.test(error.message ?? "");
-
-            if (isTimeoutError) {
-              console.warn("Supabase auto-save timed out, skipping noisy error log.", {
-                id,
-                code: error.code,
-                message: error.message,
-              });
-
-              logger.warn(
-                {
-                  id,
-                  code: error.code,
-                  message: error.message,
-                },
-                "Supabase auto-save timed out (often due to navigation away); ignoring.",
-              );
-
-              // Don't throw so the outer catch block doesn't treat this as a hard error.
-              return;
-            }
-
-            // For all other errors, log detailed information and surface a clear message.
-            const errorRecord = error as unknown as Record<string, unknown>;
-            const errorDetails: Record<string, unknown> = {
-              message: error.message,
-              code: error.code,
-              details: error.details,
-              hint: error.hint,
-              // Capture all properties for richer debugging
-              ...Object.getOwnPropertyNames(error).reduce((acc, key) => {
-                acc[key] = errorRecord[key];
-                return acc;
-              }, {} as Record<string, unknown>),
-            };
-
-            console.error("Supabase update error:", errorDetails);
-            throw new Error(
-              `Supabase error: ${error.message || "Unknown error"} (code: ${
-                error.code || "N/A"
-              })`,
-            );
-          }
-          
-          if (!data || data.length === 0) {
-            console.warn("No rows updated - board may not exist:", id);
-          }
-          
-          logger.info({ id }, "Board auto-saved successfully");
-        } catch (error) {
-          // Extract all error properties for proper logging
-          const errorInfo: Record<string, unknown> = {
-            id,
-            errorType: typeof error,
-            errorConstructor: error?.constructor?.name,
-          };
-
-          if (error instanceof Error) {
-            errorInfo.message = error.message;
-            errorInfo.name = error.name;
-            errorInfo.stack = error.stack;
-          } else if (error && typeof error === 'object') {
-            // Extract all enumerable and non-enumerable properties
-            const errorRecord = error as Record<string, unknown>;
-            Object.getOwnPropertyNames(error).forEach(key => {
-              try {
-                errorInfo[key] = errorRecord[key];
-              } catch {
-                errorInfo[key] = '[Unable to access property]';
-              }
-            });
-          } else {
-            errorInfo.value = String(error);
-          }
-
-          // Use console.error for proper browser error logging
-          console.error("Error auto-saving board:", errorInfo);
-          
-          // Also log with logger for consistency
-          logger.error(
-            {
-              error: errorInfo,
-              id,
-            },
-            "Error auto-saving board"
-          );
-        }
-      }, 2000);
-    };
-
-    // source 'all' so Live's mergeRemoteChanges writes (echoes, graphs, AI steps) are
-    // persisted too; the isUpdatingImageRef guard above still skips overlay bookkeeping.
-    const dispose = editor.store.listen(handleChange, {
-      source: 'all',
-      scope: 'document'
-    });
-
-    return () => {
-      clearTimeout(saveTimeout);
-      dispose();
-    };
-  }, [editor, id]);
+  // Auto-save (2 s debounce, offline skip, size guard + Storage offload): src/hooks/useSnapshotSave.ts
+  const { blockedMessage: saveBlockedMessage } = useSnapshotSave(editor, id, isUpdatingImageRef);
 
   return (
     <>
@@ -1900,6 +1677,16 @@ function BoardContent({ id }: { id: string }) {
                   onClearMarks={() => controller.clearMarks()}
                 />
               </LiveErrorBoundary>
+            )}
+            {saveBlockedMessage && (
+              <span
+                role="status"
+                data-testid="save-blocked"
+                title={saveBlockedMessage}
+                className="inline-flex h-9 items-center rounded-md border border-red-200 bg-red-50 px-2.5 text-xs font-medium text-red-700 shadow-sm"
+              >
+                {saveBlockedMessage}
+              </span>
             )}
             <ModelBadge
               model={aiModel}
@@ -1990,6 +1777,24 @@ export default function BoardPage() {
   const [initialData, setInitialData] = useState<
     Partial<TLEditorSnapshot> | TLStoreSnapshot | null
   >(null);
+  // tldraw's own paste/drop/upload of images goes to Storage ('<uid>/<boardId>/<assetId>.<ext>')
+  // instead of being embedded as a data URL in the snapshot.
+  // `getAsset` lets the store derive object paths for assets restored from the snapshot
+  // (not uploaded this session) so `editor.deleteAssets` also removes the Storage object.
+  const editorRef = useRef<Editor | null>(null);
+  const userId = user?.id;
+  const assetStore = useMemo(
+    () =>
+      userId
+        ? createBoardAssetStore({
+            supabase,
+            userId,
+            boardId: id,
+            getAsset: (assetId) => editorRef.current?.getAsset(assetId),
+          })
+        : undefined,
+    [userId, id],
+  );
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -2043,6 +1848,7 @@ export default function BoardPage() {
         tools={liveTools}
         overrides={boardOverrides}
         licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
+        assets={assetStore}
         components={{
           MenuPanel: null,
           NavigationPanel: null,
@@ -2050,6 +1856,7 @@ export default function BoardPage() {
           Toolbar: LiveToolbar,
         }}
         onMount={(editor) => {
+          editorRef.current = editor;
           if (initialData) {
             try {
               loadSnapshot(editor.store, initialData);
@@ -2058,6 +1865,32 @@ export default function BoardPage() {
               toast.error("Failed to restore canvas state");
             }
           }
+          // Boards saved before the asset store shipped still carry base64 images: move
+          // them to Storage in the background. The rewrite is a store change, so the
+          // autosave persists the new URLs; only failures are surfaced.
+          void offloadAssetsOnce(editor)
+            .then((result) => {
+              if (result.migrated > 0 || result.failed.length > 0) {
+                logger.info(
+                  {
+                    id,
+                    migrated: result.migrated,
+                    failed: result.failed.length,
+                    bytesBefore: result.bytesBefore,
+                    bytesAfter: result.bytesAfter,
+                  },
+                  "On-load asset offload finished",
+                );
+              }
+              if (result.failed.length > 0) {
+                logger.warn({ id, failed: result.failed }, "On-load asset offload left images inline");
+                toast.warning(ASSET_COPY.offloadPartial);
+              }
+            })
+            .catch((e) => {
+              logger.warn({ id, error: e instanceof Error ? e.message : String(e) }, "On-load asset offload failed");
+              toast.warning(ASSET_COPY.offloadPartial);
+            });
           if (process.env.NODE_ENV !== "production") {
             // Dev-only handle for recording fixtures / poking the store from devtools.
             (window as unknown as { __agathonEditor?: Editor }).__agathonEditor = editor;

@@ -54,7 +54,8 @@ Note: production is currently aliased to a deployment of the `cursor/realtime-ma
 
 ## Known follow-ups (not blocking)
 
-- Store generated images and PDF pages in the `board-assets` bucket instead of base64 inside the snapshot (design in `docs/LIVE-MATH-SPEC.md` §8.6; bucket + policies already in the migration).
+- Images now go to the `board-assets` bucket (`docs/ARCHITECTURE.md` flow 2b). If the new project is restored from a backup that contains boards saved by the old client, run `node scripts/offload-assets.mjs --dry-run` then without the flag (runbook section 12) once, with the service role key, before students open those boards. A fresh project has nothing to migrate.
+- Storage garbage collection is manual (runbook section 12 queries); schedule it (`pg_cron` or a Vercel cron) before the second cohort.
 - Rate limiter is per-instance in memory; swap in Upstash Redis for multi-region.
 - Wire the Live voice tools (`read_live_math`, `place_math`, `plot_function`) into the Realtime session once a valid OpenAI key exists.
 - Systems of equations, summations, and limits go to the LLM path today; a local `lusolve` path is a small addition.

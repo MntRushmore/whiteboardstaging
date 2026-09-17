@@ -1,11 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import {
-  useEditor,
-  createShapeId,
-  AssetRecordType,
-} from "tldraw";
+import { useEditor, createShapeId } from "tldraw";
 import {
   Dialog,
   DialogContent,
@@ -18,6 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Upload, Loader2, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { loadPdfThumbnails, renderPdfPage, type PdfPagePreview } from "@/lib/pdf";
+import { uploadDataUrlAsset } from "@/lib/assets/uploadDataUrl";
+import { warnInlineAssetFallbackOnce } from "@/hooks/useSnapshotSave";
 
 const MAX_BYTES = 25 * 1024 * 1024; // 25 MB
 
@@ -89,23 +87,15 @@ export function PdfUpload() {
         i.src = dataUrl;
       });
 
-      const assetId = AssetRecordType.createId();
-      editor.createAssets([
-        {
-          id: assetId,
-          type: "image",
-          typeName: "asset",
-          props: {
-            name: `${file.name.replace(/\.pdf$/i, "")}-p${selectedPage}.png`,
-            src: dataUrl,
-            w: img.width,
-            h: img.height,
-            mimeType: "image/png",
-            isAnimated: false,
-          },
-          meta: {},
-        },
-      ]);
+      // The rendered page goes to Storage; the asset record holds only its URL.
+      const { assetId, inline } = await uploadDataUrlAsset(editor, {
+        dataUrl,
+        name: `${file.name.replace(/\.pdf$/i, "")}-p${selectedPage}.png`,
+        width: img.width,
+        height: img.height,
+        source: "pdf",
+      });
+      if (inline) warnInlineAssetFallbackOnce();
 
       const vb = editor.getViewportPageBounds();
       const scale = Math.min(

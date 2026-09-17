@@ -64,3 +64,16 @@ export function pillLabelFor(status: LiveStatus, recognizer: RecognizerKind): st
       return LIVE_COPY.pill.idle;
   }
 }
+
+/**
+ * Student-facing strings for asset persistence (images moved from the snapshot into
+ * Storage) and the autosave size guard. Same tone rules as LIVE_COPY.
+ */
+export const ASSET_COPY = {
+  /** on-load / autosave offload could not move every inline image */
+  offloadPartial: "Some images could not be moved to storage; the board still saves.",
+  /** autosave refused (snapshot over the hard limit) or the DB rejected the row */
+  boardTooLarge: "Board too large to save — remove some images",
+  /** an upload fell back to embedding the image in the board (shown once per session) */
+  inlineFallback: "Couldn't upload this image to storage; it was saved inside the board instead.",
+} as const;

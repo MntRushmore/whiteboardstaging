@@ -10,9 +10,9 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "db:start": "supabase start",
-    "db:reset": "supabase db reset",
-    "db:push": "supabase db push",
+    "db:start": "npx supabase start",
+    "db:reset": "npx supabase db reset",
+    "db:push": "npx supabase db push",
     "db:verify": "node scripts/verify-rls.mjs",
     "db:seed": "node scripts/seed-local.mjs",
     "test:db": "RUN_DB_TESTS=1 vitest run src/__tests__/db-rls.integration.test.ts"

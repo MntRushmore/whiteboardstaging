@@ -122,7 +122,7 @@ npx supabase stop                     # keeps data; add --no-backup to wipe volu
 | Key | Where | Impact |
 | --- | --- | --- |
 | anon / publishable | *Project Settings -> API Keys -> Create new / Revoke* | Update `NEXT_PUBLIC_SUPABASE_ANON_KEY` in Vercel (section 5) and redeploy, then revoke the old key. Sessions survive: user JWTs are signed by the JWT secret, not the anon key. |
-| service_role / secret | same page | Nothing in this repo uses it; rotate freely. If a future admin job uses it, rotate it there too. |
+| service_role / secret | same page | Only `scripts/offload-assets.mjs` (one-off admin migration, run from an operator's machine) uses it; it is never deployed to Vercel. Rotate freely; re-export `SUPABASE_SERVICE_ROLE_KEY` before the next run. |
 | JWT secret / signing key | *Project Settings -> JWT Keys* | Invalidates every user session and every legacy `anon`/`service_role` JWT-style key at once. Do it in a maintenance window: rotate, copy the new anon key to Vercel, redeploy, tell users to sign in again. Prefer the newer `sb_publishable_...` key, which is not derived from the JWT secret. |
 | DB password | *Project Settings -> Database -> Reset* | Only affects `supabase link`, `pg_dump`, `psql`. Re-run `npx supabase link` afterwards. |
 
@@ -143,7 +143,8 @@ npx supabase stop                     # keeps data; add --no-backup to wipe volu
 | Symptom | Meaning | Fix |
 | --- | --- | --- |
 | `PGRST303` / `JWT expired` right after sign-in | Clock skew between the client machine and Supabase, or a token from another project | Sync the OS clock (NTP); sign out/in; check `NEXT_PUBLIC_SUPABASE_URL` matches the project that issued the token. |
-| `57014 canceling statement due to statement timeout` on save | `whiteboards.data` row is multi-MB (base64 images); PostgREST `authenticated` timeout is 8 s | Delete large pasted images from the board; long-term fix is the `board-assets` offload (`docs/ARCHITECTURE.md`). Do not raise the role timeout. |
+| `57014 canceling statement due to statement timeout` on save | `whiteboards.data` row is multi-MB (legacy base64 images); PostgREST `authenticated` timeout is 8 s | Run `node scripts/offload-assets.mjs --board <id>` (section 12) to move the inline images to the `board-assets` bucket. Do not raise the role timeout. |
+| `23514 ... violates check constraint "whiteboards_data_size"` on save | Snapshot is over the 8 MB cap (`20260917010000_snapshot_size_cap.sql`) - a legacy board with big base64 images, or a client bypassing the 4 MB soft limit | Same fix: `node scripts/offload-assets.mjs --board <id>`; the constraint only checks new tuples, so the board loads fine and saves again once its assets are URLs. |
 | `42501 permission denied for table ...` | Missing `grant ... to authenticated` (or the table was created outside the migration) | Re-run `npm run db:push` (idempotent) or paste the init migration into the SQL editor. `anon` is denied on purpose. |
 | `42P01 relation "public.whiteboards" does not exist` | Migration never ran on this project | Section 2. |
 | Storage upload -> `403` / `new row violates row-level security policy` | Object path does not start with the caller's `auth.uid()`, caller is not in `trainers` (training-data), wrong MIME type, or bucket missing | Check the path prefix, the trainer row (section 6), and `select * from storage.buckets`. |
@@ -152,3 +153,49 @@ npx supabase stop                     # keeps data; add --no-backup to wipe volu
 | Sign-up succeeds but user cannot sign in | Email confirmations are on without SMTP | Section 3: turn confirmations off or configure SMTP; confirm the user manually under *Authentication -> Users*. |
 | `supabase link` fails with `SASL auth` / `password authentication failed` | Wrong DB password | Reset it (*Project Settings -> Database*) and link again. |
 | `npx supabase start` fails | Docker not running or ports 54321-54329 busy | Start Docker; `npx supabase stop --no-backup`; retry. |
+
+## 12. Assets: storage, migration of old boards, garbage collection
+
+**Where images live.** Every image on a board (pasted, AI-generated, sticker, PDF page, worksheet) is an object in the public bucket `board-assets` at `<uid>/<boardId>/<assetId>.<ext>`, registered in `public.board_assets`, and referenced from `whiteboards.data` by its public URL `<SUPABASE_URL>/storage/v1/object/public/board-assets/<path>` (`docs/ARCHITECTURE.md` flow 2b). Snapshot columns are capped at 8 MB by check constraints (`whiteboards_data_size`, `whiteboard_snapshots_data_size`, `training_samples_tldraw_snapshot_size`); the client stops autosaving at 4 MB (`SNAPSHOT_LIMITS` in `scripts/lib/snapshotAssets.mjs`).
+
+**Migrating boards saved before the offload shipped (once per project, ~5 min + upload time).** Those rows still embed `data:` URLs. Run the admin script with the service role; it never runs without it because it writes into every user's folder and bypasses RLS:
+
+```bash
+# cloud project: copy the service_role key from Project Settings -> API Keys for this shell only
+export NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co
+export SUPABASE_SERVICE_ROLE_KEY=<service_role key>          # never put this in .env.local that gets committed / deployed
+node scripts/offload-assets.mjs --dry-run                     # lists every board with inline assets, before/after bytes, no writes
+node scripts/offload-assets.mjs                               # uploads (upsert), registers board_assets rows, rewrites src, saves with id+version
+node scripts/offload-assets.mjs --board <uuid>                # one board, e.g. after a 57014 / 23514 report
+node scripts/offload-assets.mjs --limit 50 --page-size 10     # batch on a big project; rerun until "0 offloaded" - the script is idempotent
+
+# local stack
+eval "$(npx supabase status -o env | sed 's/^/export /')"
+NEXT_PUBLIC_SUPABASE_URL=$API_URL SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY node scripts/offload-assets.mjs --dry-run
+```
+
+Expected output per board: `board <id> (v3): 2 inline asset(s), 5.31 MB -> 12.4 KB`, one `uploaded <path>` line per asset, `saved board <id>`, then a summary `scanned N board(s): X offloaded, Y without inline assets, Z failed`. Exit code is `1` if any board failed (the row is left untouched when an upload or registry insert fails; a `version` conflict with a live client is re-read and retried 3 times), `2` for a configuration error. Boards saved by the new client are skipped as "without inline assets". Order of operations when a project already has oversized rows: `npm run db:push` first (the constraint is added `NOT VALID`, so existing rows do not block it; `validate constraint` will fail on such a project - rerun the migration file's `validate` statements after the script), then the script, then deploy the client.
+
+**Garbage collection (manual today).** Deleting a board cascades its `board_assets` rows but Storage objects have no FK, so they become orphans. Find and remove them from the SQL editor:
+
+```sql
+-- objects in board-assets that no registry row references (orphans)
+select o.name, o.created_at, (o.metadata->>'size')::bigint as bytes
+from storage.objects o
+left join public.board_assets a on a.object_path = o.name
+where o.bucket_id = 'board-assets' and a.id is null
+order by o.created_at;
+
+-- objects whose board folder no longer exists
+select o.name
+from storage.objects o
+where o.bucket_id = 'board-assets'
+  and not exists (select 1 from public.whiteboards w where w.id::text = (storage.foldername(o.name))[2]);
+
+-- registry rows whose object is gone (should be empty; the client registers after a successful upload)
+select a.object_path from public.board_assets a
+left join storage.objects o on o.bucket_id = 'board-assets' and o.name = a.object_path
+where o.id is null;
+```
+
+Delete orphans with `delete from storage.objects where bucket_id = 'board-assets' and name in (...)` (the storage API also accepts `DELETE /storage/v1/object/board-assets/<path>` with the service role). Assets removed from a board *without* deleting the board (undo, delete shape) are not reclaimed either; the registry row stays until a GC pass compares `board_assets.object_path` against the asset `src`s inside `whiteboards.data`. A scheduled job (`pg_cron` or a Vercel cron hitting an admin route) that runs these three queries nightly is the intended follow-up; until then run them after cohort clean-ups.

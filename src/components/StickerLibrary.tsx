@@ -1,11 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import {
-  useEditor,
-  createShapeId,
-  AssetRecordType,
-} from "tldraw";
+import { useEditor, createShapeId } from "tldraw";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -20,6 +16,8 @@ import {
   type StickerDef,
 } from "@/lib/stickers";
 import { toast } from "sonner";
+import { uploadDataUrlAsset } from "@/lib/assets/uploadDataUrl";
+import { warnInlineAssetFallbackOnce } from "@/hooks/useSnapshotSave";
 
 const CATEGORIES: { id: StickerCategory; label: string }[] = [
   { id: "math", label: "Math" },
@@ -43,23 +41,15 @@ export function StickerLibrary() {
       const svg = sticker.svg(sticker.width, sticker.height);
       const dataUrl = await svgToPng(svg, sticker.width, sticker.height, 2);
 
-      const assetId = AssetRecordType.createId();
-      editor.createAssets([
-        {
-          id: assetId,
-          type: "image",
-          typeName: "asset",
-          props: {
-            name: `${sticker.id}.png`,
-            src: dataUrl,
-            w: sticker.width,
-            h: sticker.height,
-            mimeType: "image/png",
-            isAnimated: false,
-          },
-          meta: {},
-        },
-      ]);
+      // The PNG goes to Storage (board-assets bucket); the asset record holds only its URL.
+      const { assetId, inline } = await uploadDataUrlAsset(editor, {
+        dataUrl,
+        name: `${sticker.id}.png`,
+        width: sticker.width,
+        height: sticker.height,
+        source: "sticker",
+      });
+      if (inline) warnInlineAssetFallbackOnce();
 
       const vb = editor.getViewportPageBounds();
       const shapeId = createShapeId();

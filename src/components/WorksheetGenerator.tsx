@@ -1,11 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import {
-  useEditor,
-  createShapeId,
-  AssetRecordType,
-} from "tldraw";
+import { useEditor, createShapeId } from "tldraw";
 import {
   Dialog,
   DialogContent,
@@ -20,6 +16,8 @@ import { FileText, Loader2, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { apiJson } from "@/lib/api-client";
 import { useApiErrorHandler } from "@/hooks/useApiErrorHandler";
+import { uploadDataUrlAsset } from "@/lib/assets/uploadDataUrl";
+import { warnInlineAssetFallbackOnce } from "@/hooks/useSnapshotSave";
 
 type WorksheetResponse = {
   imageUrl?: string | null;
@@ -74,23 +72,15 @@ export function WorksheetGenerator({ model }: Props) {
         i.src = imageUrl;
       });
 
-      const assetId = AssetRecordType.createId();
-      editor.createAssets([
-        {
-          id: assetId,
-          type: "image",
-          typeName: "asset",
-          props: {
-            name: "worksheet.png",
-            src: imageUrl,
-            w: img.width,
-            h: img.height,
-            mimeType: "image/png",
-            isAnimated: false,
-          },
-          meta: {},
-        },
-      ]);
+      // The generated PNG goes to Storage; the asset record holds only its URL.
+      const { assetId, inline } = await uploadDataUrlAsset(editor, {
+        dataUrl: imageUrl,
+        name: "worksheet.png",
+        width: img.width,
+        height: img.height,
+        source: "worksheet",
+      });
+      if (inline) warnInlineAssetFallbackOnce();
 
       const vb = editor.getViewportPageBounds();
       // Fit the worksheet inside the viewport at most.
