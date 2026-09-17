@@ -1,29 +1,10 @@
 # Go-live checklist
 
-Everything on `feat/production-hardening` builds, typechecks, lints, and passes 356 unit tests plus the route smoke script against a local Supabase stack. Three things still need a human with account access before production works.
+Everything on `feat/production-hardening` builds, typechecks, lints, and passes 472 unit tests plus the route smoke script against a local Supabase stack. Three things still need a human with account access before production works.
 
 ## 1. Database (blocking)
 
-The Supabase project referenced by the old env vars (`toauidbkxpyfeazvlltl.supabase.co`) no longer resolves in DNS. Login and saving are broken in production until a new project exists.
-
-1. Create a project at <https://supabase.com/dashboard> (any region; free tier is fine to start).
-2. Link and push the schema (tables, RLS policies, storage buckets `board-assets` and `training-data`):
-   ```bash
-   npx supabase login
-   npx supabase link --project-ref <new-project-ref>
-   npm run db:push
-   ```
-3. Copy the project URL and anon key into Vercel for **all three** environments (Preview and Development currently have no Supabase vars at all):
-   ```bash
-   vercel env add NEXT_PUBLIC_SUPABASE_URL production
-   vercel env add NEXT_PUBLIC_SUPABASE_URL preview
-   vercel env add NEXT_PUBLIC_SUPABASE_URL development
-   vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production   # repeat for preview, development
-   ```
-4. Optional: after your account exists, allow-list yourself as a trainer for `/train`:
-   ```sql
-   insert into public.trainers (user_id) select id from auth.users where email = 'you@example.com';
-   ```
+The previous Supabase project was deleted; no cloud project exists yet, so login and saving are broken in production until one does. Follow [`RUNBOOK-supabase.md`](./RUNBOOK-supabase.md) end to end (~30 min): create the project (section 1), `npx supabase login` / `link` / `npm run db:push` (2), dashboard Auth settings that the migration cannot set (3), storage sanity (4), Vercel env vars for all three environments (5), trainer allow-list (6), and verification with `npm run db:verify` + `RUN_DB_TESTS=1 npm test` (7). Turn on backups before the first cohort (10).
 
 ## 2. Environment variables
 
@@ -37,6 +18,11 @@ The Supabase project referenced by the old env vars (`toauidbkxpyfeazvlltl.supab
 | `OPENAI_API_KEY` | absent | absent | Only for the voice tutor. The key in the old `.env.local` is revoked (401). Voice returns 503 until a valid key is added. |
 | `MISTRAL_API_KEY` | not needed | not needed | Removed; OCR runs on OpenRouter now. |
 | `NEXT_PUBLIC_LIVE_MATH` | optional | optional | Set to `0` to hide Live Math without unregistering its shapes. |
+| `LIVE_MODEL_CHECK` / `_SOLVE` / `_VISION` | optional | optional | OpenRouter model overrides for Live routes. |
+| `LOG_LEVEL` / `NEXT_PUBLIC_LOG_LEVEL` | optional | optional | Server / browser pino levels, default `info`. |
+| `SUPABASE_SERVICE_ROLE_KEY` | do not add | do not add | Read by nothing today; keep it out of Vercel (runbook section 5). |
+
+Full per-variable notes: `.env.example` (kept in sync with the code by `src/__tests__/envExample.test.ts`).
 
 ## 3. tldraw license hosts
 

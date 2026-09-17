@@ -68,17 +68,30 @@ Other scripts: `npm run typecheck`, `npm run lint`, `npm test` (vitest), `npm ru
 
 ### Environment variables (`.env.local`)
 
+Mirrors `.env.example` (which carries per-variable comments, sources and local defaults; `src/__tests__/envExample.test.ts` keeps the two in step with the code). Cloud/Vercel placement: [`docs/RUNBOOK-supabase.md`](./docs/RUNBOOK-supabase.md) section 5.
+
 | Name | Required? | Used for |
 | --- | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | yes | Supabase project URL (client + server JWT verification) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes | Supabase anon key (client + server) |
-| `OPENROUTER_API_KEY` | yes | All image/vision model calls and the credits banner |
+| `NEXT_PUBLIC_SUPABASE_URL` | yes | Supabase project URL (browser client + server JWT verification + scripts) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes | Supabase anon/publishable key (same users) |
+| `OPENROUTER_API_KEY` | yes | All image/vision/Live model calls and the credits banner |
 | `OPENAI_API_KEY` | no | Voice tutor (Realtime API). Missing -> `/api/voice/token` returns 503 |
-| `MATHPIX_APP_ID` / `MATHPIX_APP_KEY` | no | Handwritten math -> LaTeX. Missing -> vision-only fallback |
-| `SUPABASE_SERVICE_ROLE_KEY` | no | Server-only; reserved for future admin jobs, unused today |
-| `NEXT_PUBLIC_TLDRAW_LICENSE_KEY` | no | Removes the tldraw watermark |
-| `NEXT_PUBLIC_SITE_URL` | no | Sent as `HTTP-Referer` to OpenRouter |
-| `LOG_LEVEL` | no | Pino level, default `info` |
+| `MATHPIX_APP_ID` | no | Handwritten math -> LaTeX (with `MATHPIX_APP_KEY`). Missing -> vision-only fallback |
+| `MATHPIX_APP_KEY` | no | See above; both must be set |
+| `SUPABASE_SERVICE_ROLE_KEY` | no | Server-only; declared in `src/lib/env.ts` but read by no route or script today |
+| `NEXT_PUBLIC_TLDRAW_LICENSE_KEY` | no | Removes the tldraw watermark (host-bound) |
+| `NEXT_PUBLIC_SITE_URL` | no | Sent as `HTTP-Referer` to OpenRouter; default `http://localhost:3000` |
+| `LOG_LEVEL` | no | Server pino level, default `info` |
+| `NEXT_PUBLIC_LOG_LEVEL` | no | Browser pino level (console + bug-report log buffer), default `info` |
+| `NEXT_PUBLIC_LIVE_MATH` | no | `0` hides the Live Math pipeline/UI; default on |
+| `LIVE_MODEL_CHECK` | no | OpenRouter id override for Live check; default in `src/lib/live/contracts.ts` |
+| `LIVE_MODEL_SOLVE` | no | Same for Live solve |
+| `LIVE_MODEL_VISION` | no | Same for Live vision fallback |
+| `BASE_URL` | no (scripts) | `scripts/live-smoke.mjs`: dev server origin, default `http://localhost:3113` |
+| `SMOKE_EMAIL` | no (scripts) | `scripts/live-smoke.mjs`: throwaway local user, default `qa-student@example.com` |
+| `SMOKE_PASSWORD` | no (scripts) | `scripts/live-smoke.mjs`: its password, default `password123` |
+| `SMOKE_SKIP_LLM` | no (scripts) | `scripts/live-smoke.mjs`: `1` skips the LLM streams (no OpenRouter spend) |
+| `RUN_DB_TESTS` | no (tests) | `1` runs the DB/RLS integration tests in `npm test` against the local stack |
 
 `MISTRAL_API_KEY` is no longer used: `/api/ocr` now runs on OpenRouter (Gemini Flash) because Mistral retired the Pixtral model. Delete it from any environment.
 
