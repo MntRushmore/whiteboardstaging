@@ -37,11 +37,17 @@ function fakeClient(opts: {
   removeError?: (batch: string[]) => string | null;
   rpcError?: string;
   storageKey?: string;
+  signOutError?: string;
 }): { client: DeleteAccountClient; calls: Calls } {
   const calls: Calls = { removed: [], buckets: [], rpc: [], order: [] };
   const client: DeleteAccountClient & { storageKey?: string } = {
     storageKey: opts.storageKey,
     auth: {
+      signOut: (o: { scope: "local" }) => {
+        calls.order.push(`signOut:${o.scope}`);
+        if (opts.signOutError) return Promise.reject(new Error(opts.signOutError));
+        return Promise.resolve({ error: null });
+      },
       getSession: () => {
         calls.order.push("getSession");
         return Promise.resolve({ data: { session: null }, error: null });
@@ -149,15 +155,17 @@ describe("readStorageKey", () => {
 });
 
 describe("clearLocalSession", () => {
-  it("removes the session keys and then reloads the session, without throwing", async () => {
+  it("removes the session keys and then signs out locally, without throwing", async () => {
     const { client, calls } = fakeClient({ storageKey: "sb-abc-auth-token" });
     const storage = fakeStorage({ "sb-abc-auth-token": "{}", "sb-abc-auth-token-user": "{}", theme: "dark" });
     await expect(clearLocalSession(client, storage)).resolves.toEqual(["sb-abc-auth-token", "sb-abc-auth-token-user"]);
     expect([...storage.data.keys()]).toEqual(["theme"]);
-    expect(calls.order).toEqual(["getSession"]);
+    // Keys are dropped BEFORE the sign-out, so auth-js finds no access token and never
+    // posts to /auth/v1/logout — but it still emits SIGNED_OUT for AuthProvider.
+    expect(calls.order).toEqual(["signOut:local"]);
   });
 
-  it("still reloads the session when storage is unavailable or throws", async () => {
+  it("still settles the client when storage is unavailable or throws", async () => {
     const { client, calls } = fakeClient({});
     await expect(clearLocalSession(client, null)).resolves.toEqual([]);
     const broken: KeyValueStorage = {
@@ -168,26 +176,36 @@ describe("clearLocalSession", () => {
       removeItem: () => undefined,
     };
     await expect(clearLocalSession(client, broken)).resolves.toEqual([]);
-    expect(calls.order).toEqual(["getSession", "getSession"]);
+    expect(calls.order).toEqual(["signOut:local", "signOut:local"]);
   });
 
-  it("swallows a getSession failure", async () => {
-    const client = { auth: { getSession: () => Promise.reject(new Error("boom")) } };
+  it("falls back to getSession when signOut throws", async () => {
+    const { client, calls } = fakeClient({ signOutError: "boom" });
+    await expect(clearLocalSession(client, fakeStorage({}))).resolves.toEqual([]);
+    expect(calls.order).toEqual(["signOut:local", "getSession"]);
+  });
+
+  it("swallows a failure from both settle paths", async () => {
+    const client = {
+      auth: {
+        signOut: () => Promise.reject(new Error("boom")),
+        getSession: () => Promise.reject(new Error("boom")),
+      },
+    };
     await expect(clearLocalSession(client, fakeStorage({}))).resolves.toEqual([]);
   });
 });
 
 describe("deleteOwnAccount", () => {
-  it("removes assets, then calls the RPC, then clears the local session (no auth.signOut)", async () => {
+  it("removes assets, then calls the RPC, then clears the local session", async () => {
     const { client, calls } = fakeClient({ rows: [{ object_path: "u/b/1.png" }], storageKey: "sb-abc-auth-token" });
     const storage = fakeStorage({ "sb-abc-auth-token": "{}", "sb-abc-auth-token-code-verifier": "x", theme: "dark" });
     await expect(deleteOwnAccount(client, { storage })).resolves.toEqual({
       assets: { found: 1, removed: 1, error: null },
       clearedKeys: ["sb-abc-auth-token", "sb-abc-auth-token-code-verifier"],
     });
-    expect(calls.order).toEqual(["remove", "rpc", "getSession"]);
+    expect(calls.order).toEqual(["remove", "rpc", "signOut:local"]);
     expect(calls.rpc).toEqual(["delete_own_account"]);
-    expect("signOut" in client.auth).toBe(false);
     expect([...storage.data.keys()]).toEqual(["theme"]);
   });
 
@@ -197,7 +215,7 @@ describe("deleteOwnAccount", () => {
       assets: { found: 0, removed: 0, error: null },
       clearedKeys: [],
     });
-    expect(calls.order).toEqual(["rpc", "getSession"]);
+    expect(calls.order).toEqual(["rpc", "signOut:local"]);
   });
 
   it("still calls the RPC when asset removal fails, throws the RPC error and keeps the session", async () => {

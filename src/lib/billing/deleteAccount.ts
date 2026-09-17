@@ -39,7 +39,13 @@ export type DeleteAccountClient = {
   };
   rpc: (fn: "delete_own_account") => QueryResult<unknown>;
   auth: {
-    /** Reloads the session from storage; used as a no-network way to settle state after the keys are gone. */
+    /**
+     * Drops the session locally. Called only AFTER the persisted keys are gone, so auth-js
+     * finds no access token, skips the `/auth/v1/logout` round-trip (which would 403 for a
+     * deleted user) and still emits `SIGNED_OUT` so `AuthProvider` stops holding the user.
+     */
+    signOut: (opts: { scope: "local" }) => PromiseLike<unknown>;
+    /** Fallback used only if `signOut` is unavailable or throws: re-reads storage (no network). */
     getSession: () => PromiseLike<unknown>;
   };
 };
@@ -97,8 +103,11 @@ function defaultStorage(): KeyValueStorage | null {
 }
 
 /**
- * Forget the session locally without talking to the auth server: remove the
- * persisted keys, then let the client reload (and find nothing). Never throws.
+ * Forget the session locally without talking to the auth server: remove the persisted keys
+ * first, then ask auth-js for a local sign-out. Because the keys are already gone it finds no
+ * access token, so it issues no `/auth/v1/logout` request (that 403s once the user is deleted)
+ * and still notifies subscribers with `SIGNED_OUT` — which is what makes `AuthProvider` drop
+ * the deleted user instead of leaving `/login` bouncing back to the dashboard. Never throws.
  * Returns the keys that were removed.
  */
 export async function clearLocalSession(
@@ -115,9 +124,14 @@ export async function clearLocalSession(
     }
   }
   try {
-    await client.auth.getSession();
+    await client.auth.signOut({ scope: "local" });
   } catch {
-    // Nothing left to do: state is best-effort settled.
+    // Older auth-js or a client without signOut: re-reading storage still settles state.
+    try {
+      await client.auth.getSession();
+    } catch {
+      // Nothing left to do: state is best-effort settled.
+    }
   }
   return cleared;
 }

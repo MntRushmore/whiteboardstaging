@@ -52,7 +52,11 @@ export function DangerZone({ email }: { email: string }) {
       // RPC, then the local session is dropped without a /logout round-trip.
       const { assets } = await deleteOwnAccount(supabase);
       if (assets.error) console.warn("Some saved images could not be removed:", assets);
-      router.replace("/login");
+      // Full page load, not router.replace: the account is gone, so a fresh provider (and a
+      // fresh React tree) is the only state we can trust. Falls back to the router when
+      // `window` is unavailable.
+      if (typeof window !== "undefined") window.location.replace("/login");
+      else router.replace("/login");
     } catch (err) {
       console.warn("Account deletion failed:", err);
       setError(describeError(err, ACCOUNT_COPY.deleteFallback));
