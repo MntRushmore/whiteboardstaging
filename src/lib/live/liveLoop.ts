@@ -46,7 +46,18 @@ import {
   type UseLiveMathOptions,
 } from "./contracts";
 import { getEngine as defaultGetEngine } from "./engine";
-import { liveStore, markBurst, removeLine, setLine } from "./liveStore";
+import { LIVE_COPY } from "@/components/live/copy";
+import { classifyLiveFailure, sseFailure, type ClassifyContext } from "@/components/live/errorView";
+import {
+  clearLiveError,
+  liveStore,
+  markBurst,
+  removeLine,
+  setLine,
+  setLiveError,
+  type LiveError,
+  type LiveErrorKind,
+} from "./liveStore";
 import { scheduleLiveWrite } from "./liveWrite";
 import {
   ECHO_HEIGHTS,
@@ -120,6 +131,19 @@ interface LineRuntime {
    */
   graphDismissedExpr: string | null;
 }
+
+type CheckOpts = { userAsked: boolean; modeOverride?: "feedback" | "suggest"; forceHint?: boolean };
+type SolveOpts = { onlyFirstStep?: boolean; lineId: string };
+
+/** What `retryLastError` re-runs; captured at the moment a call fails. */
+type RetryContext =
+  | { kind: "capabilities" }
+  | { kind: "recognize"; lineId: string }
+  | { kind: "check"; lineId: string; opts: CheckOpts }
+  | { kind: "solve"; lineId: string; fromLineId: string | undefined; opts: SolveOpts };
+
+/** Recognition failures that leave a chip under the ink (the pill carries the rest). */
+const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream", "timeout", "unknown"]);
 
 const CHECK_PATH = "/api/live/check";
 const SOLVE_PATH = "/api/live/solve";
@@ -216,6 +240,13 @@ export class LiveLoop implements LiveController {
   private lastOnline: boolean | null = null;
   private lastTouchedLineId: string | null = null;
   private started = false;
+  /** the failed call the pill's Retry re-runs */
+  private retryContext: RetryContext | null = null;
+  /** `${kind}:${lineId}` of the call whose retries are being counted */
+  private retryKey: string | null = null;
+  /** how many times the student pressed Retry for `retryKey` */
+  private retryAttempt = 0;
+  private readonly retryHandler = () => this.retryLastError();
   private readonly onOnline = () => this.setOnline(true);
   private readonly onOffline = () => this.setOnline(false);
   private readonly onBadgeTap = (e: Event): void => {
@@ -262,13 +293,25 @@ export class LiveLoop implements LiveController {
         this.reanalyzeAll();
       })
       .catch((e) => console.warn("[live] engine failed to load", e));
+    liveStore.retryHandler.set(this.retryHandler);
+    this.fetchCaps();
+    liveStore.status.set(this.opts.enabled ? "idle" : "paused");
+  }
+
+  /** GET /api/live/recognize: recognizer kind + warmup. A failure while online is shown and retryable. */
+  private fetchCaps(): void {
     void this.deps
       .fetchCapabilities()
-      .then((caps) => liveStore.recognizer.set(caps.recognizer))
-      .catch(() => {
-        /* offline or unauthenticated: recognizer stays 'unknown' */
+      .then((caps) => {
+        // a loop stopped while the request was in flight must not write to the store
+        if (!this.started) return;
+        liveStore.recognizer.set(caps.recognizer);
+        this.noteSuccess("capabilities");
+      })
+      .catch((err: unknown) => {
+        // offline: recognizer stays 'unknown' and nothing is shown (classify returns null)
+        if (this.started) this.fail(err, { kind: "capabilities" }, { kind: "capabilities" });
       });
-    liveStore.status.set(this.opts.enabled ? "idle" : "paused");
   }
 
   stop(): void {
@@ -297,6 +340,103 @@ export class LiveLoop implements LiveController {
     this.pendingChecks.clear();
     this.pendingSolve = null;
     liveStore.offlineQueued.set(0);
+    liveStore.solving.set(0);
+    if (liveStore.retryHandler.get() === this.retryHandler) liveStore.retryHandler.set(null);
+    this.resetRetry();
+  }
+
+  // ---------------------------------------------------------------- errors + retry
+  /**
+   * Records a failed call as the visible error (unless it is a plain network failure while
+   * offline, which the offline queue owns) and remembers how to retry it. Repeated failures
+   * of the same call after Retry carry the attempt count in the message.
+   */
+  private fail(err: unknown, ctx: Omit<ClassifyContext, "online" | "attempts">, retry: RetryContext): LiveError | null {
+    const key = `${ctx.kind}:${ctx.lineId ?? ""}`;
+    const attempts = this.retryKey === key ? this.retryAttempt + 1 : 1;
+    const fields = classifyLiveFailure(err, { ...ctx, online: this.deps.isOnline(), attempts });
+    if (!fields) return null;
+    if (this.retryKey !== key) {
+      this.retryKey = key;
+      this.retryAttempt = 0;
+    }
+    this.retryContext = retry;
+    return setLiveError(fields);
+  }
+
+  /** The call succeeded: drop its error (if it is the one showing) and its retry state. */
+  private noteSuccess(kind: LiveErrorKind, lineId?: string): void {
+    const cur = liveStore.lastError.get();
+    if (cur && cur.kind === kind && cur.lineId === lineId) clearLiveError();
+    if (this.retryKey === `${kind}:${lineId ?? ""}`) this.resetRetry();
+  }
+
+  private resetRetry(): void {
+    this.retryContext = null;
+    this.retryKey = null;
+    this.retryAttempt = 0;
+  }
+
+  /** New ink or typed text on a line makes any error about it stale. */
+  private clearErrorsForLine(lineId: string): void {
+    if (liveStore.lastError.get()?.lineId === lineId) clearLiveError();
+  }
+
+  /**
+   * Re-runs the failed call behind `liveStore.lastError`: recognition flushes the line now
+   * (no quiet gate), check/solve reopen one stream with the same options, capabilities
+   * re-fetch. Success clears the error; another failure updates it with the attempt count.
+   */
+  retryLastError(): void {
+    const err = liveStore.lastError.get();
+    const ctx = this.retryContext;
+    if (!err || !ctx || !this.started) return;
+    this.retryAttempt++;
+    const lines = liveStore.lines.get();
+    switch (ctx.kind) {
+      case "capabilities":
+        this.fetchCaps();
+        return;
+      case "recognize":
+        this.recognizeNow(ctx.lineId);
+        return;
+      case "check": {
+        const st = lines[ctx.lineId];
+        if (!st?.latex) {
+          clearLiveError();
+          return;
+        }
+        this.pendingChecks.delete(ctx.lineId);
+        this.startCheck(st.line.column, ctx.lineId, ctx.opts);
+        return;
+      }
+      case "solve": {
+        const st = lines[ctx.lineId];
+        if (!st?.latex) {
+          clearLiveError();
+          return;
+        }
+        if (this.pendingSolve === ctx.lineId) this.pendingSolve = null;
+        this.startSolve(st.line.column, ctx.fromLineId, ctx.opts);
+        return;
+      }
+    }
+  }
+
+  /** Recognizes one line immediately with its current ink, bypassing the quiet gate. */
+  private recognizeNow(lineId: string): void {
+    const st = liveStore.lines.get()[lineId];
+    if (!st) {
+      clearLiveError();
+      return;
+    }
+    if (this.quietTimer) clearTimeout(this.quietTimer);
+    this.quietTimer = null;
+    this.pendingRewrite = false;
+    if (this.offlineQueue.delete(lineId)) liveStore.offlineQueued.set(this.offlineQueue.size);
+    for (const sid of st.line.strokeIds) this.dirtyStrokeIds.add(sid);
+    this.forceRecognize.add(lineId);
+    this.flush();
   }
 
   setOptions(next: UseLiveMathOptions): void {
@@ -633,8 +773,9 @@ export class LiveLoop implements LiveController {
       return Boolean(state.mathShapeId);
     }
 
-    // New or changed ink: recognize.
+    // New or changed ink: recognize. Whatever failed for this line before is stale now.
     this.abortLlm(lineId);
+    this.clearErrorsForLine(lineId);
     const startedAt = this.deps.now();
     const readingTimer = setTimeout(() => {
       if (liveStore.status.get() === "idle") liveStore.status.set("reading");
@@ -658,32 +799,23 @@ export class LiveLoop implements LiveController {
       const res = await this.deps.recognizer.recognize(req, hash);
       if (rt.processing !== ticket) return Boolean(liveStore.lines.get()[lineId]?.mathShapeId);
       const applied = await this.applyRecognition(lineId, res);
+      this.noteSuccess("recognize", lineId);
       console.info("[live] live.echo.total.ms", this.deps.now() - startedAt, { provider: res.provider, lineId });
       return applied;
     } catch (err) {
       if (isAbortLike(err) && !(err instanceof RecognizeTimeoutError)) return false;
       if (rt.processing !== ticket) return false;
-      if (err instanceof RecognizeTimeoutError) {
-        this.applyUnknown(lineId, "");
-        return false;
-      }
-      if (isApiError(err)) {
-        if (err.status === 401 || err.status === 429) {
-          liveStore.status.set("error");
-          setTimeout(() => {
-            if (liveStore.status.get() === "error") liveStore.status.set("idle");
-          }, LIVE_TIMING.pillFadeMs * 2);
-        }
-        this.applyUnknown(lineId, "");
-        return false;
-      }
-      // Network failure: fetch throws TypeError.
-      if (err instanceof TypeError || !this.deps.isOnline()) {
-        this.queueOffline(lineId);
-        return false;
-      }
-      console.warn("[live] recognize failed", err);
-      this.applyUnknown(lineId, "");
+      // Network failure (fetch throws TypeError) or the browser says offline: the offline
+      // queue replays the line on reconnect. Offline, that is the whole story.
+      const network = !(err instanceof RecognizeTimeoutError) && !isApiError(err) && (err instanceof TypeError || !this.deps.isOnline());
+      if (network) this.queueOffline(lineId);
+      if (network && !this.deps.isOnline()) return false;
+      if (!network) console.warn("[live] recognize failed", err);
+      const failure = this.fail(err, { kind: "recognize", lineId }, { kind: "recognize", lineId });
+      // Never a silent blank: transport/model trouble leaves a chip pointing at Retry; sign-in,
+      // rate-limit and credit problems are the pill's job (their message is not about the line).
+      if (failure && CHIP_CODES.has(failure.code)) this.applyFailedRead(lineId, LIVE_COPY.errors.recognizeChip);
+      else this.applyUnknown(lineId, "");
       return false;
     } finally {
       clearTimeout(readingTimer);
@@ -824,6 +956,20 @@ export class LiveLoop implements LiveController {
       analysis: { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note },
     });
     this.deleteLineShapes(lineId, { keepAi: true });
+  }
+
+  /** Recognition failed for reasons a retry can fix: keep the line, show a chip that says so. */
+  private applyFailedRead(lineId: string, note: string): void {
+    const state = liveStore.lines.get()[lineId];
+    if (!state) return;
+    setLine(lineId, {
+      latex: "",
+      confidence: 0,
+      provider: "none",
+      analysis: { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note },
+    });
+    if (state.graphShapeId) this.deleteGraph(lineId);
+    this.upsertEcho(lineId, { latex: "", status: "unknown", resultLatex: "", note });
   }
 
   private columnLines(column: number): LiveLineState[] {
@@ -1254,6 +1400,7 @@ export class LiveLoop implements LiveController {
     }
     this.deleteLineShapes(lineId);
     removeLine(lineId);
+    if (this.retryContext && "lineId" in this.retryContext && this.retryContext.lineId === lineId) this.resetRetry();
   }
 
   private abortLlm(lineId: string): void {
@@ -1289,11 +1436,7 @@ export class LiveLoop implements LiveController {
     return { lines, region, states };
   }
 
-  private startCheck(
-    column: number,
-    focusLineId: string,
-    opts: { userAsked: boolean; modeOverride?: "feedback" | "suggest"; forceHint?: boolean },
-  ): void {
+  private startCheck(column: number, focusLineId: string, opts: CheckOpts): void {
     const mode = this.opts.mode;
     if (mode === "off" || this.opts.voiceActive || !this.opts.enabled) return;
     const checkMode: "feedback" | "suggest" = opts.modeOverride ?? (mode === "feedback" ? "feedback" : "suggest");
@@ -1316,9 +1459,12 @@ export class LiveLoop implements LiveController {
       userAsked: opts.userAsked,
     };
     const startedAt = this.deps.now();
+    const errCtx = { kind: "check" as const, lineId: focusLineId, userAsked: opts.userAsked };
+    const retry: RetryContext = { kind: "check", lineId: focusLineId, opts };
     liveStore.status.set("checking");
     void (async () => {
       let first = true;
+      let failed = false;
       try {
         for await (const ev of this.deps.stream(CHECK_PATH, req, { signal: ctrl.signal })) {
           if (ctrl.signal.aborted) break;
@@ -1329,28 +1475,23 @@ export class LiveLoop implements LiveController {
             }
             this.applyAnnotation(ev.data, focusLineId, checkMode, opts.forceHint ?? false);
           } else if (ev.event === "error") {
+            failed = true;
             console.warn("[live] check error", ev.data);
-            liveStore.status.set("error");
+            this.fail(sseFailure(ev.data), errCtx, retry);
           }
         }
       } catch (err) {
         if (!isAbortLike(err) && !ctrl.signal.aborted) {
-          if (this.isNetworkFailure(err)) {
-            this.deferLlm("check", focusLineId, opts.userAsked);
-          } else {
-            console.warn("[live] check failed", err);
-            liveStore.status.set("error");
-          }
+          failed = true;
+          // A network failure is also deferred so a reconnect replays it once, as before.
+          if (this.isNetworkFailure(err)) this.deferLlm("check", focusLineId, opts.userAsked);
+          else console.warn("[live] check failed", err);
+          if (this.deps.isOnline()) this.fail(err, errCtx, retry);
         }
       } finally {
         if (rt.checkAbort === ctrl) rt.checkAbort = null;
-        const s = liveStore.status.get();
-        if (s === "checking") liveStore.status.set("idle");
-        else if (s === "error") {
-          setTimeout(() => {
-            if (liveStore.status.get() === "error") liveStore.status.set("idle");
-          }, LIVE_TIMING.pillFadeMs);
-        }
+        if (!failed && !ctrl.signal.aborted) this.noteSuccess("check", focusLineId);
+        if (liveStore.status.get() === "checking") liveStore.status.set("idle");
       }
     })();
   }
@@ -1416,7 +1557,7 @@ export class LiveLoop implements LiveController {
   }
 
   // ---------------------------------------------------------------- solve
-  private startSolve(column: number, fromLineId: string | undefined, opts: { onlyFirstStep?: boolean; lineId: string }): void {
+  private startSolve(column: number, fromLineId: string | undefined, opts: SolveOpts): void {
     if (!this.opts.enabled || this.opts.voiceActive) return;
     const built = this.buildCheckLines(column);
     if (!built) return;
@@ -1436,32 +1577,41 @@ export class LiveLoop implements LiveController {
     };
     const lastLine = built.states[built.states.length - 1].line;
     const columnRect = unionRects(built.states.map((s) => s.line.bounds));
+    // Every solve is asked for (Solve steps, More help, the voice tutor).
+    const errCtx = { kind: "solve" as const, lineId: opts.lineId, userAsked: true };
+    const retry: RetryContext = { kind: "solve", lineId: opts.lineId, fromLineId, opts };
     liveStore.status.set("checking");
+    liveStore.solving.set(liveStore.solving.get() + 1);
     void (async () => {
+      let failed = false;
+      let doneEarly = false;
       try {
         for await (const ev of this.deps.stream(SOLVE_PATH, req, { signal: ctrl.signal })) {
           if (ctrl.signal.aborted) break;
           if (ev.event === "step") {
             this.placeSolutionStep(columnRect, lastLine.bounds, ev.data.index, ev.data.latex, ev.data.explanation, opts.lineId);
             if (opts.onlyFirstStep) {
+              doneEarly = true;
               ctrl.abort();
               break;
             }
           } else if (ev.event === "error") {
-            liveStore.status.set("error");
+            failed = true;
+            console.warn("[live] solve error", ev.data);
+            this.fail(sseFailure(ev.data), errCtx, retry);
           }
         }
       } catch (err) {
         if (!isAbortLike(err) && !ctrl.signal.aborted) {
-          if (this.isNetworkFailure(err)) {
-            this.deferLlm("solve", opts.lineId);
-          } else {
-            console.warn("[live] solve failed", err);
-            liveStore.status.set("error");
-          }
+          failed = true;
+          if (this.isNetworkFailure(err)) this.deferLlm("solve", opts.lineId);
+          else console.warn("[live] solve failed", err);
+          if (this.deps.isOnline()) this.fail(err, errCtx, retry);
         }
       } finally {
         if (rt.solveAbort === ctrl) rt.solveAbort = null;
+        liveStore.solving.set(Math.max(0, liveStore.solving.get() - 1));
+        if (!failed && (doneEarly || !ctrl.signal.aborted)) this.noteSuccess("solve", opts.lineId);
         if (liveStore.status.get() !== "offline") liveStore.status.set("idle");
       }
     })();
@@ -1683,6 +1833,7 @@ export class LiveLoop implements LiveController {
     this.deps.recognizer.abortLine(lineId);
     this.abortLlm(lineId);
     this.closeHintsFor(lineId);
+    this.clearErrorsForLine(lineId);
     setLine(lineId, { latex, provider: "typed", edited: true, confidence: latex.trim() ? 1 : 0 });
     void this.ensureEngine().then(() => {
       if (liveStore.lines.get()[lineId]?.latex !== latex) return;

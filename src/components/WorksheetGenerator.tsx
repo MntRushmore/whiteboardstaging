@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { FileText, Loader2, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { apiJson } from "@/lib/api-client";
-import { useApiErrorHandler } from "@/hooks/useApiErrorHandler";
+import { useApiErrorDescriber } from "@/hooks/useApiErrorHandler";
 import { uploadDataUrlAsset } from "@/lib/assets/uploadDataUrl";
 import { warnInlineAssetFallbackOnce } from "@/hooks/useSnapshotSave";
 
@@ -23,6 +23,16 @@ type WorksheetResponse = {
   imageUrl?: string | null;
   message?: string;
 };
+
+export const WORKSHEET_COPY = {
+  emptyTopic: "Describe what the worksheet should cover",
+  noImage: "No worksheet came back. Try a more specific description.",
+  failed: "Couldn't generate this worksheet",
+  generating: "Generating…",
+  retry: "Retry",
+} as const;
+
+type InlineError = { message: string; retryable: boolean };
 
 const SUGGESTIONS = [
   "5 long division problems for grade 4, with showing-your-work space",
@@ -40,20 +50,23 @@ type Props = {
 
 export function WorksheetGenerator({ model }: Props) {
   const editor = useEditor();
-  const handleApiError = useApiErrorHandler();
+  const describeError = useApiErrorDescriber();
   const [open, setOpen] = useState(false);
   const [topic, setTopic] = useState("");
   const [generating, setGenerating] = useState(false);
+  // Failures stay inside the dialog (with Retry for the same topic) instead of a toast.
+  const [error, setError] = useState<InlineError | null>(null);
 
   async function generate() {
     if (!editor || generating) return;
     const trimmed = topic.trim();
     if (!trimmed) {
-      toast.error("Describe what the worksheet should cover");
+      setError({ message: WORKSHEET_COPY.emptyTopic, retryable: false });
       return;
     }
 
     setGenerating(true);
+    setError(null);
     try {
       const data = await apiJson<WorksheetResponse>("/api/generate-worksheet", {
         topic: trimmed,
@@ -61,7 +74,7 @@ export function WorksheetGenerator({ model }: Props) {
       });
       const imageUrl = data.imageUrl ?? undefined;
       if (!imageUrl) {
-        toast.error(data?.message || "No worksheet returned");
+        setError({ message: data?.message || WORKSHEET_COPY.noImage, retryable: true });
         return;
       }
 
@@ -108,17 +121,24 @@ export function WorksheetGenerator({ model }: Props) {
       toast.success("Worksheet added to canvas");
     } catch (e) {
       console.error("Worksheet generation failed", e);
-      handleApiError(e, {
-        fallback: "Couldn't generate worksheet",
-        toastOthers: true,
-      });
+      // 401 redirects to /login inside the describer; everything else stays in the dialog.
+      const described = describeError(e, { fallback: WORKSHEET_COPY.failed });
+      if (described.aborted) return;
+      setError({ message: described.message, retryable: described.retryable });
     } finally {
       setGenerating(false);
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !generating && setOpen(v)}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (generating) return;
+        setOpen(v);
+        if (!v) setError(null);
+      }}
+    >
       <DialogTrigger asChild>
         <Button
           variant="outline"
@@ -142,7 +162,7 @@ export function WorksheetGenerator({ model }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-4" aria-busy={generating}>
           <Textarea
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
@@ -171,13 +191,32 @@ export function WorksheetGenerator({ model }: Props) {
             </div>
           </div>
 
+          {error && !generating && (
+            <div
+              role="alert"
+              data-testid="worksheet-error"
+              className="flex items-start justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+            >
+              <span>{error.message}</span>
+              {error.retryable && (
+                <button
+                  type="button"
+                  onClick={generate}
+                  className="shrink-0 rounded bg-white/70 px-2 py-0.5 text-xs font-semibold hover:bg-white"
+                >
+                  {WORKSHEET_COPY.retry}
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center justify-between pt-2 border-t">
             <p className="text-[11px] text-muted-foreground">
               Worksheets are protected — the AI tutor won&apos;t modify them.
             </p>
             <Button onClick={generate} disabled={generating || !topic.trim()}>
               {generating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {generating ? "Generating…" : "Generate"}
+              {generating ? WORKSHEET_COPY.generating : "Generate"}
             </Button>
           </div>
         </div>

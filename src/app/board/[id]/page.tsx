@@ -5,12 +5,16 @@ import {
   useEditor,
   createShapeId,
   TLShapeId,
+  type TLAssetId,
   DefaultColorThemePalette,
   type TLUiOverrides,
   type TLUiIconJsx,
   type TLEditorSnapshot,
   type TLStoreSnapshot,
   loadSnapshot,
+  createTLStore,
+  defaultShapeUtils,
+  defaultBindingUtils,
   type Editor,
   type HistoryEntry,
   type TLRecord,
@@ -51,13 +55,26 @@ import { useAssistanceMode, type AssistanceMode } from "@/hooks/useAssistanceMod
 import { offloadAssetsOnce, useSnapshotSave, warnInlineAssetFallbackOnce } from "@/hooks/useSnapshotSave";
 import { createBoardAssetStore } from "@/lib/assets/boardAssetStore";
 import { uploadDataUrlAsset } from "@/lib/assets/uploadDataUrl";
-import { StatusIndicator, type StatusIndicatorState } from "@/components/StatusIndicator";
+import {
+  GENERATION_COPY,
+  INFO_CLEAR_MS,
+  StatusIndicator,
+  SUCCESS_CLEAR_MS,
+  type GenerationState,
+} from "@/components/StatusIndicator";
+import {
+  BOARD_LOAD_COPY,
+  BoardLoadError,
+  BoardLoading,
+  loadStateFor,
+  type BoardLoadState,
+} from "@/components/BoardLoadError";
 import { logger } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
 import { apiJson } from "@/lib/api-client";
-import { isAbortError, useApiErrorHandler } from "@/hooks/useApiErrorHandler";
+import { describeApiError, isAbortError, useApiErrorHandler } from "@/hooks/useApiErrorHandler";
 import { useParams, useRouter } from "next/navigation";
-import { Loader2, Volume2, VolumeX, Info } from "lucide-react";
+import { Volume2, VolumeX, Info } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import { CreditsBanner } from "@/components/CreditsBanner";
@@ -1088,18 +1105,42 @@ function ClearFeedbackButton({
   );
 }
 
+type LegacyMode = "feedback" | "suggest" | "answer";
+type GenerationRequest = { mode: LegacyMode; promptOverride?: string; source: "auto" | "voice" };
+
 function BoardContent({ id, initialVersion }: { id: string; initialVersion: number | null }) {
   const editor = useEditor();
   const router = useRouter();
-  const handleApiError = useApiErrorHandler();
   const { features } = useFeatureLabs();
   // Legacy AI overlays are found by `meta.aiOverlay` in the store (not React state) so
   // Accept/Reject and "Clear feedback" come back after a reload. `pending` = suggest/answer
   // overlays awaiting Accept/Reject; `feedback` = locked full-opacity feedback overlays.
   const { pending: pendingImageIds, feedback: feedbackImageIds } = useAiOverlayShapes(editor);
-  const [status, setStatus] = useState<StatusIndicatorState>("idle");
-  const [errorMessage, setErrorMessage] = useState<string>("");
-  const [statusMessage, setStatusMessage] = useState<string>("");
+  // Legacy pipeline status pill: loading/confirmations fade on their own, failures stay
+  // until Retry/Dismiss (see generationStatusView in StatusIndicator.tsx).
+  const [generation, setGeneration] = useState<GenerationState>({ kind: "idle" });
+  const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The last request's shape so Retry re-runs the same mode/prompt.
+  const lastRequestRef = useRef<GenerationRequest | null>(null);
+  const showGeneration = useCallback((next: GenerationState, clearAfterMs?: number) => {
+    if (clearTimerRef.current) {
+      clearTimeout(clearTimerRef.current);
+      clearTimerRef.current = null;
+    }
+    setGeneration(next);
+    if (clearAfterMs) {
+      clearTimerRef.current = setTimeout(() => {
+        clearTimerRef.current = null;
+        setGeneration({ kind: "idle" });
+      }, clearAfterMs);
+    }
+  }, []);
+  useEffect(
+    () => () => {
+      if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
+    },
+    [],
+  );
   const [isVoiceSessionActive, setIsVoiceSessionActive] = useState(false);
   // Help mode is remembered per board on this device (default Feedback).
   const [assistanceMode, setAssistanceMode] = useAssistanceMode(id);
@@ -1169,12 +1210,24 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
       const mode = options?.modeOverride ?? assistanceMode;
       if (mode === "off") return false;
 
+      // Never start a model call while offline; only say so when the student asked
+      // explicitly (Draw help / voice) — the idle trigger stays quiet.
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        if (options?.force) showGeneration({ kind: "offline" });
+        return false;
+      }
+
       // Check if canvas has content
       const shapeIds = editor.getCurrentPageShapeIds();
       if (shapeIds.size === 0) {
         return false;
       }
 
+      lastRequestRef.current = {
+        mode,
+        promptOverride: options?.promptOverride,
+        source: options?.source ?? "auto",
+      };
       isProcessingRef.current = true;
     
       // Create abort controller for this request chain
@@ -1260,8 +1313,6 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
         // don't run the expensive OCR / help-check / generation pipeline again.
         if (!options?.force && lastCanvasImageRef.current === base64) {
           isProcessingRef.current = false;
-          setStatus("idle");
-          setStatusMessage("");
           return false;
         }
         lastCanvasImageRef.current = base64;
@@ -1269,8 +1320,7 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
         if (signal.aborted) return false;
 
         // Step 2: Generate solution (Gemini decides if help is needed)
-        setStatus("generating");
-        setStatusMessage(getStatusMessage(mode, "generating"));
+        showGeneration({ kind: "generating", label: getStatusMessage(mode, "generating") });
 
         const effectiveModel =
           aiPerf.fastMode && aiModel === "gemini" ? "gemini-fast" : aiModel;
@@ -1314,13 +1364,15 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
         }, 'Solution data received');
 
         // If the model didn't return an image, it means Gemini decided help isn't needed.
-        // Log the reason and gracefully stop. Returning to "idle" also hides the
-        // generation skeleton (it is only visible while status === "generating").
+        // Say so briefly (the pill leaves "generating", which also hides the skeleton) so
+        // the wait never ends in silence.
         if (!imageUrl || signal.aborted) {
           logger.info({ textContent }, 'Gemini decided help is not needed');
-          setStatus("idle");
-          setStatusMessage("");
-          setErrorMessage("");
+          if (signal.aborted) {
+            showGeneration({ kind: "idle" });
+          } else {
+            showGeneration({ kind: "info", label: GENERATION_COPY.nothingToAdd }, INFO_CLEAR_MS);
+          }
           isProcessingRef.current = false;
           return false;
         }
@@ -1422,12 +1474,7 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
 
 
         // Show success message briefly, then return to idle
-        setStatus("success");
-        setStatusMessage(getStatusMessage(mode, "success"));
-        setTimeout(() => {
-          setStatus("idle");
-          setStatusMessage("");
-        }, 2000);
+        showGeneration({ kind: "success", label: getStatusMessage(mode, "success") }, SUCCESS_CLEAR_MS);
 
         // Reset flag after a brief delay
         setTimeout(() => {
@@ -1439,23 +1486,23 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
         // The guard is set right before the (awaited) asset upload; never leave it stuck on.
         isUpdatingImageRef.current = false;
         if (signal.aborted || isAbortError(error)) {
-          setStatus("idle");
-          setStatusMessage("");
+          // The student kept drawing: not an error, the next idle run picks it up.
+          showGeneration({ kind: "idle" });
           return false;
         }
 
         logger.error({ error }, 'Auto-generation error');
-        // 401 / 429 / 402 are toasted (and 401 redirects) by the handler;
-        // everything else is shown inline in the status indicator.
-        setErrorMessage(handleApiError(error, { fallback: "Generation failed" }));
-        setStatus("error");
-        setStatusMessage("");
-        
-        // Clear error after 3 seconds
-        setTimeout(() => {
-          setStatus("idle");
-          setErrorMessage("");
-        }, 3000);
+        // The pill keeps the failure until Retry/Dismiss: 402 has no Retry, 429 carries the
+        // server's wait hint, 401 sends the student back to sign in.
+        const described = describeApiError(error, { fallback: GENERATION_COPY.failed });
+        showGeneration({
+          kind: "error",
+          message: described.message,
+          retryable: described.retryable,
+          retryAfterMs: described.retryAfterMs,
+          signIn: described.signIn,
+        });
+        if (described.signIn) router.replace("/login");
 
         return false;
       } finally {
@@ -1463,8 +1510,20 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
         abortControllerRef.current = null;
       }
     },
-    [editor, pendingImageIds, isVoiceSessionActive, assistanceMode, aiModel, aiPerf, getStatusMessage, handleApiError],
+    [editor, pendingImageIds, isVoiceSessionActive, assistanceMode, aiModel, aiPerf, getStatusMessage, showGeneration, router],
   );
+
+  const retryGeneration = useCallback(() => {
+    const last = lastRequestRef.current;
+    void generateSolution({
+      force: true,
+      source: "auto",
+      modeOverride: last?.mode,
+      promptOverride: last?.promptOverride,
+    });
+  }, [generateSolution]);
+
+  const dismissGeneration = useCallback(() => showGeneration({ kind: "idle" }), [showGeneration]);
 
   const handleAutoGeneration = useCallback(() => {
     // Don't burn credits while the tab is in the background; the next edit
@@ -1508,8 +1567,7 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
-        setStatus("idle");
-        setStatusMessage("");
+        showGeneration({ kind: "idle" });
         isProcessingRef.current = false;
       }
     };
@@ -1523,7 +1581,7 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
     return () => {
       dispose();
     };
-  }, [editor]);
+  }, [editor, showGeneration]);
 
   const handleAccept = useCallback(
     (shapeId: TLShapeId) => {
@@ -1613,7 +1671,7 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
 
   return (
     <>
-      <GenerationSkeleton visible={aiPerf.skeletonEnabled && status === "generating"} />
+      <GenerationSkeleton visible={aiPerf.skeletonEnabled && generation.kind === "generating"} />
 
       {/* Tabs at top left */}
       {!isVoiceSessionActive && (
@@ -1710,9 +1768,9 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
       {/* When a voice session is active, let the voice banner own the top-center space. */}
       {!isVoiceSessionActive && (
         <StatusIndicator
-          status={status}
-          errorMessage={errorMessage}
-          customMessage={statusMessage}
+          state={generation}
+          onRetry={retryGeneration}
+          onDismiss={dismissGeneration}
         />
       )}
       {!isVoiceSessionActive && (
@@ -1761,35 +1819,66 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
   );
 }
 
+type BoardSnapshot = Partial<TLEditorSnapshot> | TLStoreSnapshot;
+
+/**
+ * Restore the snapshot on a throwaway store with the same shape/binding utils as the real
+ * editor. Returns the thrown error (never throws) so the page can refuse to mount <Tldraw>
+ * instead of leaving an empty editor that the autosave could write back.
+ */
+function snapshotRestoreError(snapshot: BoardSnapshot): unknown {
+  let probe: ReturnType<typeof createTLStore> | null = null;
+  try {
+    probe = createTLStore({
+      shapeUtils: [...defaultShapeUtils, ...liveShapeUtils],
+      bindingUtils: defaultBindingUtils,
+    });
+    loadSnapshot(probe, snapshot);
+    return null;
+  } catch (e) {
+    return e ?? new Error("snapshot restore failed");
+  } finally {
+    probe?.dispose();
+  }
+}
+
+type PageLoadState = { kind: "loading" } | BoardLoadState;
+
 export default function BoardPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
   const { user, loading: authLoading } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [initialData, setInitialData] = useState<
-    Partial<TLEditorSnapshot> | TLStoreSnapshot | null
-  >(null);
+  const [loadState, setLoadState] = useState<PageLoadState>({ kind: "loading" });
+  // Bumped by Retry; the load effect depends on it so it re-runs.
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [initialData, setInitialData] = useState<BoardSnapshot | null>(null);
   // `whiteboards.version` at load time: the autosave's optimistic-concurrency baseline.
   const [initialVersion, setInitialVersion] = useState<number | null>(null);
   // tldraw's own paste/drop/upload of images goes to Storage ('<uid>/<boardId>/<assetId>.<ext>')
   // instead of being embedded as a data URL in the snapshot.
   // `getAsset` lets the store derive object paths for assets restored from the snapshot
   // (not uploaded this session) so `editor.deleteAssets` also removes the Storage object.
-  const editorRef = useRef<Editor | null>(null);
   const userId = user?.id;
-  const assetStore = useMemo(
-    () =>
-      userId
-        ? createBoardAssetStore({
-            supabase,
-            userId,
-            boardId: id,
-            getAsset: (assetId) => editorRef.current?.getAsset(assetId),
-          })
-        : undefined,
-    [userId, id],
-  );
+  // The store is created before the editor exists; `attach` (called from onMount) gives its
+  // `getAsset` the mounted editor. A closure variable rather than a ref so nothing reads a
+  // ref during render.
+  const assetStoreBundle = useMemo(() => {
+    if (!userId) return undefined;
+    let mounted: Editor | null = null;
+    const store = createBoardAssetStore({
+      supabase,
+      userId,
+      boardId: id,
+      getAsset: (assetId: TLAssetId) => mounted?.getAsset(assetId),
+    });
+    return {
+      store,
+      attach(editor: Editor) {
+        mounted = editor;
+      },
+    };
+  }, [userId, id]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -1797,9 +1886,20 @@ export default function BoardPage() {
     }
   }, [user, authLoading, router]);
 
+  const retryLoad = useCallback(() => {
+    setInitialData(null);
+    setInitialVersion(null);
+    setLoadState({ kind: "loading" });
+    setLoadAttempt((n) => n + 1);
+  }, []);
+
   useEffect(() => {
     if (!user) return;
+    let cancelled = false;
     async function loadBoard() {
+      let result: BoardLoadState;
+      let snapshot: BoardSnapshot | null = null;
+      let version: number | null = null;
       try {
         const { data, error } = await supabase
           .from('whiteboards')
@@ -1807,36 +1907,46 @@ export default function BoardPage() {
           .eq('id', id)
           .single();
 
-        if (error) throw error;
-
-        if (data) {
+        result = loadStateFor({ error, row: data });
+        if (result.kind === "ready" && data) {
           if (data.data && Object.keys(data.data).length > 0) {
-            // `data` is a jsonb column holding a tldraw snapshot.
-            setInitialData(data.data as Partial<TLEditorSnapshot> | TLStoreSnapshot);
+            // `data` is a jsonb column holding a tldraw snapshot. Prove it restores before
+            // the editor exists: a snapshot that throws must never leave an empty canvas.
+            snapshot = data.data as BoardSnapshot;
+            const restoreError = snapshotRestoreError(snapshot);
+            if (restoreError) result = loadStateFor({ row: data, restoreError });
           }
           // bigint arrives as a JSON number (PostgREST); tolerate a string just in case.
           const v = typeof data.version === "string" ? Number(data.version) : data.version;
-          setInitialVersion(typeof v === "number" && Number.isFinite(v) ? v : null);
+          version = typeof v === "number" && Number.isFinite(v) ? v : null;
         }
       } catch (e) {
-        console.error("Error loading board:", e);
-        toast.error("Failed to load board");
-      } finally {
-        setLoading(false);
+        // supabase-js only throws for transport failures (offline, DNS, aborted).
+        result = loadStateFor({ error: { message: e instanceof Error ? e.message : String(e) } });
       }
+      if (cancelled) return;
+      if (result.kind !== "ready") {
+        logger.warn({ id, kind: result.kind, detail: result.detail }, "Board load failed");
+        setLoadState(result);
+        return;
+      }
+      setInitialData(snapshot);
+      setInitialVersion(version);
+      setLoadState({ kind: "ready", message: "" });
     }
-    loadBoard();
-  }, [id, user]);
+    void loadBoard();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, user, loadAttempt]);
 
-  if (authLoading || !user || loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-gray-50">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-          <p className="text-gray-500 font-medium animate-pulse">Loading your canvas...</p>
-        </div>
-      </div>
-    );
+  if (authLoading || !user || loadState.kind === "loading") {
+    return <BoardLoading label={loadAttempt > 0 ? BOARD_LOAD_COPY.retrying : BOARD_LOAD_COPY.loading} />;
+  }
+
+  if (loadState.kind !== "ready") {
+    // Never mount <Tldraw> here: an empty editor plus autosave could overwrite the board.
+    return <BoardLoadError state={loadState} onRetry={retryLoad} />;
   }
 
   return (
@@ -1846,7 +1956,7 @@ export default function BoardPage() {
         tools={liveTools}
         overrides={boardOverrides}
         licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
-        assets={assetStore}
+        assets={assetStoreBundle?.store}
         components={{
           MenuPanel: null,
           NavigationPanel: null,
@@ -1854,13 +1964,16 @@ export default function BoardPage() {
           Toolbar: LiveToolbar,
         }}
         onMount={(editor) => {
-          editorRef.current = editor;
+          assetStoreBundle?.attach(editor);
           if (initialData) {
             try {
               loadSnapshot(editor.store, initialData);
             } catch (e) {
-              console.error("Failed to load snapshot:", e);
-              toast.error("Failed to restore canvas state");
+              // Already validated on a probe store, so this is a last line of defense:
+              // unmount the editor before anything can be saved from it.
+              logger.error({ id, error: e instanceof Error ? e.message : String(e) }, "Failed to load snapshot");
+              setLoadState(loadStateFor({ row: initialData, restoreError: e }));
+              return;
             }
           }
           // Boards saved before the asset store shipped still carry base64 images: move

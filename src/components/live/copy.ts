@@ -13,6 +13,7 @@ export const LIVE_COPY = {
     reading: "Reading…",
     readingSlow: "Reading (slower)…",
     checking: "Checking…",
+    solving: "Solving…",
     offline: "Offline",
     /** offline with N lines waiting to be recognized once the network is back */
     offlineWaiting: (count: number) => `Offline — ${count} ${count === 1 ? "line" : "lines"} waiting`,
@@ -46,15 +47,41 @@ export const LIVE_COPY = {
 
   errors: {
     boundary: "Live paused for this session.",
+    /** transport could not reach the server although the browser reports being online */
+    network: "Couldn't reach the tutor service",
+    unauthorized: "Please sign in again",
+    /** seconds until the rate limit lifts */
+    rateLimited: (seconds: number) => `Slowing down — try again in ${seconds} s`,
+    rateLimitedReady: "You can try again now",
+    /** 402 without a usable server message */
+    credits: "This account is out of credits",
+    upstream: "The tutor service had a hiccup",
+    timeout: "Reading took too long",
+    unknown: "Something went sideways",
+    /** appended once the same call has failed more than once */
+    attempts: (n: number) => `tried ${n} times`,
+    /** echo chip under ink whose recognition failed (low confidence keeps its own chip) */
+    recognizeChip: "Couldn't read this line — tap Retry",
+    /** inline card when a hint the student asked for could not be fetched */
+    hintCard: "Couldn't get a hint right now",
+    retry: "Retry",
+    dismiss: "Dismiss",
+    signIn: "Sign in",
+    /** aria label of the error region */
+    region: "Live needs attention",
   },
 } as const;
 
-export function pillLabelFor(status: LiveStatus, recognizer: RecognizerKind, offlineQueued = 0): string {
+/**
+ * @param solving true while a solve stream is open (status stays 'checking' because
+ *   LiveStatus is frozen; the label says "Solving…" instead)
+ */
+export function pillLabelFor(status: LiveStatus, recognizer: RecognizerKind, offlineQueued = 0, solving = false): string {
   switch (status) {
     case "reading":
       return recognizer === "vision" ? LIVE_COPY.pill.readingSlow : LIVE_COPY.pill.reading;
     case "checking":
-      return LIVE_COPY.pill.checking;
+      return solving ? LIVE_COPY.pill.solving : LIVE_COPY.pill.checking;
     case "offline":
       return offlineQueued > 0 ? LIVE_COPY.pill.offlineWaiting(offlineQueued) : LIVE_COPY.pill.offline;
     case "paused":

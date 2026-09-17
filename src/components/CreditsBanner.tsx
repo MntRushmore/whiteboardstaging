@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, OctagonAlert } from "lucide-react";
 import { authedFetch } from "@/lib/api-client";
+import { creditsBannerStateFor } from "@/lib/bannerState";
+import { CREDITS_EXHAUSTED_MESSAGE } from "@/hooks/useApiErrorHandler";
 
 type Credits = {
   total: number;
@@ -14,6 +16,7 @@ const LOW_THRESHOLD = 3.0; // dollars
 
 export function CreditsBanner({ className = "" }: { className?: string }) {
   const [credits, setCredits] = useState<Credits | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,12 +27,21 @@ export function CreditsBanner({ className = "" }: { className?: string }) {
           method: "GET",
           cache: "no-store",
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (!cancelled) setFailed(true);
+          return;
+        }
         const data = (await res.json()) as Credits;
-        if (!cancelled) setCredits(data);
+        if (!cancelled) {
+          setCredits(data);
+          setFailed(false);
+        }
       } catch {
-        // Silent — banner just hides (also when signed out: authedFetch
-        // throws ApiError(401) and there is nothing to show).
+        // By design the banner hides on failure: it is advisory only, and the
+        // request also fails when signed out (authedFetch throws ApiError(401)).
+        // The state is still made explicit as data-state="hidden-error" so the
+        // DOM shows *why* nothing is rendered; the next 60 s poll retries.
+        if (!cancelled) setFailed(true);
       }
     }
 
@@ -41,8 +53,11 @@ export function CreditsBanner({ className = "" }: { className?: string }) {
     };
   }, []);
 
-  if (!credits) return null;
-  if (credits.remaining > LOW_THRESHOLD) return null;
+  const state = creditsBannerStateFor(credits, failed, LOW_THRESHOLD);
+  if (state === "hidden-error") {
+    return <span hidden data-state="hidden-error" data-banner="credits" />;
+  }
+  if (state !== "visible" || !credits) return null;
 
   const isExhausted = credits.remaining <= 0;
 
@@ -54,6 +69,7 @@ export function CreditsBanner({ className = "" }: { className?: string }) {
           : "bg-yellow-50 border-yellow-200 text-yellow-900"
       } ${className}`}
       role="alert"
+      data-state="visible"
     >
       {isExhausted ? (
         <OctagonAlert className="w-4 h-4 flex-shrink-0" />
@@ -62,7 +78,7 @@ export function CreditsBanner({ className = "" }: { className?: string }) {
       )}
       <span>
         {isExhausted
-          ? "Account credits depleted — please talk to Rushil to refill your account!"
+          ? CREDITS_EXHAUSTED_MESSAGE
           : `Low credits: $${credits.remaining.toFixed(
               2,
             )} left — talk to Rushil to refill before things stop working.`}

@@ -1,6 +1,6 @@
 "use client";
 
-import { ApiError, authedFetch } from "@/lib/api-client";
+import { apiErrorFromResponse, authedFetch } from "@/lib/api-client";
 import {
   AnnotationSchema,
   SolveStepSchema,
@@ -134,15 +134,7 @@ export async function* streamLiveSse(
     body: JSON.stringify(body),
     signal: opts.signal,
   });
-  if (!res.ok) {
-    const errBody = (await res.json().catch(() => ({}))) as { error?: string; message?: string; details?: unknown };
-    throw new ApiError(
-      errBody.message || errBody.error || `Request failed (${res.status})`,
-      res.status,
-      errBody.error,
-      errBody.details,
-    );
-  }
+  if (!res.ok) throw await apiErrorFromResponse(res);
   if (!res.body) return;
   const reader = res.body.getReader();
   const decoder = new TextDecoder();

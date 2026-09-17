@@ -11,14 +11,52 @@ export class ApiError extends Error {
   status: number;
   code?: string;
   details?: unknown;
+  /** 429 only: how long the server asked us to wait (from the body or the Retry-After header). */
+  retryAfterMs?: number;
 
-  constructor(message: string, status: number, code?: string, details?: unknown) {
+  constructor(message: string, status: number, code?: string, details?: unknown, retryAfterMs?: number) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.details = details;
+    if (retryAfterMs !== undefined) this.retryAfterMs = retryAfterMs;
   }
+}
+
+/** Shape of the error body every /api/* route returns on failure. */
+export interface ApiErrorBody {
+  error?: string;
+  message?: string;
+  details?: unknown;
+  retryAfterMs?: number;
+}
+
+/**
+ * Builds an ApiError from a non-2xx response. Keeps the server's `retryAfterMs` (or the
+ * Retry-After header, in seconds) so rate-limit countdowns are exact instead of a guess.
+ */
+export async function apiErrorFromResponse(res: Response): Promise<ApiError> {
+  const errBody = (await res.json().catch(() => ({}))) as ApiErrorBody;
+  return new ApiError(
+    errBody.message || errBody.error || `Request failed (${res.status})`,
+    res.status,
+    errBody.error,
+    errBody.details,
+    retryAfterMsFrom(errBody, res.headers),
+  );
+}
+
+function retryAfterMsFrom(body: ApiErrorBody, headers: Headers): number | undefined {
+  if (typeof body.retryAfterMs === "number" && Number.isFinite(body.retryAfterMs) && body.retryAfterMs > 0) {
+    return body.retryAfterMs;
+  }
+  const header = headers.get("Retry-After");
+  if (!header) return undefined;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000;
+  const at = Date.parse(header);
+  return Number.isFinite(at) && at > Date.now() ? at - Date.now() : undefined;
 }
 
 /**
@@ -53,19 +91,7 @@ export async function apiJson<T = unknown>(
     signal: init.signal,
   });
 
-  if (!res.ok) {
-    const errBody = (await res.json().catch(() => ({}))) as {
-      error?: string;
-      message?: string;
-      details?: unknown;
-    };
-    throw new ApiError(
-      errBody.message || errBody.error || `Request failed (${res.status})`,
-      res.status,
-      errBody.error,
-      errBody.details,
-    );
-  }
+  if (!res.ok) throw await apiErrorFromResponse(res);
 
   return (await res.json()) as T;
 }

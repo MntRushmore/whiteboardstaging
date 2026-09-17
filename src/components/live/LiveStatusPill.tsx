@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { atom, react, useValue, type Editor, type TLShape } from "tldraw";
 import { MoreHorizontal } from "lucide-react";
 import {
@@ -13,10 +14,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { isLiveMeta, LIVE_LIMITS, LIVE_TIMING, type LiveStatus } from "@/lib/live/contracts";
-import { liveStore } from "@/lib/live/liveStore";
+import { clearLiveError, liveStore, retryLiveError, type LiveError } from "@/lib/live/liveStore";
 import { scheduleLiveWrite } from "@/lib/live/liveWrite";
 import { useLiveSettings } from "@/lib/live/liveSettings";
 import { LIVE_COPY, pillLabelFor } from "./copy";
+import { liveErrorView, secondsLeftFor } from "./errorView";
 
 interface LiveStatusPillProps {
   editor: Editor;
@@ -97,11 +99,74 @@ function useLingeringStatus(): LiveStatus {
   return useValue(shown);
 }
 
+/**
+ * Wall clock for the rate-limit countdown: ticks once a second only while a rate_limited
+ * error still has seconds left, otherwise stays put (no re-render churn). Atom-based like
+ * the linger above.
+ */
+export function useLiveErrorClock(error: LiveError | null): number {
+  const [now] = useState(() => atom("live.errorNow", Date.now()));
+  const current = useValue(now);
+  const ticking = error?.code === "rate_limited" && secondsLeftFor(error, current) > 0;
+  const errorId = error?.id;
+  useEffect(() => {
+    now.set(Date.now());
+    if (!ticking) return;
+    const timer = setInterval(() => now.set(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [now, ticking, errorId]);
+  return current;
+}
+
+const ERROR_BUTTON = "rounded-full px-2 py-0.5 text-[11px] font-medium";
+
+/** The pill's error face: message + the one way out (Retry / Sign in) + Dismiss. */
+function LiveErrorFace({ error, now, canRetry }: { error: LiveError; now: number; canRetry: boolean }) {
+  const view = liveErrorView(error, now);
+  return (
+    <>
+      <span className="live-pill__label max-w-[260px] truncate text-red-700" title={view.title}>
+        {view.title}
+      </span>
+      {view.primary === "retry" && canRetry && (
+        <button
+          type="button"
+          className={`${ERROR_BUTTON} ml-1 bg-red-50 text-red-700 hover:bg-red-100 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-red-50`}
+          onClick={retryLiveError}
+          disabled={!view.retryEnabled}
+          aria-disabled={!view.retryEnabled}
+          data-testid="live-error-retry"
+        >
+          {LIVE_COPY.errors.retry}
+          {view.secondsLeft ? ` (${view.secondsLeft})` : ""}
+        </button>
+      )}
+      {view.primary === "signin" && (
+        <Link href="/login" className={`${ERROR_BUTTON} ml-1 bg-red-50 text-red-700 hover:bg-red-100`} data-testid="live-error-signin">
+          {LIVE_COPY.errors.signIn}
+        </Link>
+      )}
+      <button
+        type="button"
+        className={`${ERROR_BUTTON} text-gray-500 hover:bg-gray-100 hover:text-gray-800`}
+        onClick={clearLiveError}
+        data-testid="live-error-dismiss"
+      >
+        {LIVE_COPY.errors.dismiss}
+      </button>
+    </>
+  );
+}
+
 export function LiveStatusPill({ editor, onDrawHelp, onClearMarks }: LiveStatusPillProps) {
   const status = useValue(liveStore.status);
   const recognizer = useValue(liveStore.recognizer);
   const shapeCount = useValue(liveStore.liveShapeCount);
   const offlineQueued = useValue(liveStore.offlineQueued);
+  const solving = useValue(liveStore.solving);
+  const lastError = useValue(liveStore.lastError);
+  const canRetry = useValue(liveStore.retryHandler) !== null;
+  const now = useLiveErrorClock(lastError);
   const shown = useLingeringStatus();
   const { settings, update } = useLiveSettings();
   const hidden = settings.hideAiShapes;
@@ -139,20 +204,30 @@ export function LiveStatusPill({ editor, onDrawHelp, onClearMarks }: LiveStatusP
 
   const active = status !== "idle";
   const fading = !active && shown !== "idle";
-  const label = pillLabelFor(active ? status : shown, recognizer, offlineQueued);
+  const label = pillLabelFor(active ? status : shown, recognizer, offlineQueued, solving > 0);
   const atCap = shapeCount >= LIVE_LIMITS.maxLiveShapesPerBoard;
+  // An error outranks every other state and stays until retried, superseded or dismissed.
+  const showingError = lastError !== null;
 
   return (
     <div
-      className="live-pill flex items-center gap-1.5 rounded-full border bg-white pl-2.5 pr-1 py-1 text-xs font-medium text-gray-700 shadow-sm"
-      data-status={active ? status : "idle"}
-      role="status"
-      aria-live="polite"
-      title={atCap ? LIVE_COPY.pill.shapeCap : LIVE_COPY.toggleHint}
+      className={`live-pill flex items-center gap-1.5 rounded-full border bg-white pl-2.5 pr-1 py-1 text-xs font-medium text-gray-700 shadow-sm ${
+        showingError ? "border-red-200" : ""
+      }`}
+      data-status={showingError ? "error" : active ? status : "idle"}
+      data-error-code={lastError?.code}
+      role={showingError ? "alert" : "status"}
+      aria-live={showingError ? "assertive" : "polite"}
+      aria-label={showingError ? LIVE_COPY.errors.region : undefined}
+      title={showingError ? undefined : atCap ? LIVE_COPY.pill.shapeCap : LIVE_COPY.toggleHint}
     >
       <span className="live-pill__dot" aria-hidden />
-      <span className={`live-pill__label ${fading ? "live-pill__label--fading" : ""}`}>{label}</span>
-      {atCap && !active && (
+      {showingError ? (
+        <LiveErrorFace error={lastError} now={now} canRetry={canRetry} />
+      ) : (
+        <span className={`live-pill__label ${fading ? "live-pill__label--fading" : ""}`}>{label}</span>
+      )}
+      {atCap && !active && !showingError && (
         <button
           type="button"
           className="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 hover:bg-amber-100"
