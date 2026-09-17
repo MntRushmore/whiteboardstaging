@@ -15,7 +15,11 @@
     "db:push": "npx supabase db push",
     "db:verify": "node scripts/verify-rls.mjs",
     "db:seed": "node scripts/seed-local.mjs",
-    "test:db": "RUN_DB_TESTS=1 vitest run src/__tests__/db-rls.integration.test.ts"
+    "test:db": "RUN_DB_TESTS=1 vitest run src/__tests__/db-rls.integration.test.ts",
+    "env:check": "node scripts/check-vercel-env.mjs",
+    "bundle:check": "node scripts/check-bundle.mjs",
+    "dead-code": "node scripts/find-dead-code.mjs",
+    "smoke:live": "node scripts/live-smoke.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^1.0.0",
@@ -24,7 +28,6 @@
     "@radix-ui/react-label": "^2.1.8",
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-tabs": "^1.1.13",
-    "@radix-ui/react-tooltip": "^1.2.8",
     "@supabase/supabase-js": "^2.84.0",
     "ai": "^4.0.0",
     "class-variance-authority": "^0.7.1",

@@ -12,6 +12,7 @@ import type {
   TLShapePartial,
 } from "tldraw";
 import { isApiError } from "@/lib/api-client";
+import { clientMetric } from "@/lib/logger";
 import {
   GRAPH_COLORS,
   GRAPH_SHAPE_DEFAULTS,
@@ -800,7 +801,7 @@ export class LiveLoop implements LiveController {
       if (rt.processing !== ticket) return Boolean(liveStore.lines.get()[lineId]?.mathShapeId);
       const applied = await this.applyRecognition(lineId, res);
       this.noteSuccess("recognize", lineId);
-      console.info("[live] live.echo.total.ms", this.deps.now() - startedAt, { provider: res.provider, lineId });
+      clientMetric("live.echo.total.ms", { ms: this.deps.now() - startedAt, provider: res.provider, lineId });
       return applied;
     } catch (err) {
       if (isAbortLike(err) && !(err instanceof RecognizeTimeoutError)) return false;
@@ -1471,7 +1472,7 @@ export class LiveLoop implements LiveController {
           if (ev.event === "annotation") {
             if (first) {
               first = false;
-              console.info("[live] live.check.ttfa.ms", this.deps.now() - startedAt);
+              clientMetric("live.check.ttfa.ms", { ms: this.deps.now() - startedAt, lineId: focusLineId });
             }
             this.applyAnnotation(ev.data, focusLineId, checkMode, opts.forceHint ?? false);
           } else if (ev.event === "error") {

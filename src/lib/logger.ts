@@ -43,6 +43,48 @@ const MAX_CLIENT_LOGS = 200;
 const clientLogBuffer: ClientLogEntry[] = [];
 let clientLogsInstalled = false;
 
+/** Console prefix for client metrics so they are easy to filter in DevTools and bug reports. */
+export const CLIENT_METRIC_PREFIX = '[metric]';
+
+/**
+ * Whether client-side debug output is on: `NEXT_PUBLIC_LOG_LEVEL=debug|trace` at build time,
+ * or `window.__agathonDebug = true` flipped at runtime from the DevTools console.
+ */
+export function isClientDebugEnabled(): boolean {
+  const level = process.env.NEXT_PUBLIC_LOG_LEVEL;
+  if (level === 'debug' || level === 'trace') return true;
+  if (typeof window === 'undefined') return false;
+  return (window as unknown as { __agathonDebug?: unknown }).__agathonDebug === true;
+}
+
+function recordClientLog(level: ClientLogEntry['level'], args: unknown[]) {
+  try {
+    clientLogBuffer.push({ level, time: new Date().toISOString(), args: args.map(safeStringify) });
+    if (clientLogBuffer.length > MAX_CLIENT_LOGS) {
+      clientLogBuffer.splice(0, clientLogBuffer.length - MAX_CLIENT_LOGS);
+    }
+  } catch {
+    // Never let log capture break the app.
+  }
+}
+
+/**
+ * Record a client-side timing/counter metric (e.g. `live.echo.total.ms`).
+ *
+ * Always lands in the bug-report ring buffer so it ships with diagnostics; only echoes to
+ * the console when {@link isClientDebugEnabled} — production consoles stay quiet.
+ */
+export function clientMetric(name: string, fields: Record<string, unknown> = {}): void {
+  const label = `${CLIENT_METRIC_PREFIX} ${name}`;
+  if (isClientDebugEnabled()) {
+    // The console hook (when installed) copies this into the ring buffer; otherwise do it here.
+    if (!clientLogsInstalled) recordClientLog('debug', [label, fields]);
+    console.debug(label, fields);
+    return;
+  }
+  recordClientLog('debug', [label, fields]);
+}
+
 function safeStringify(arg: unknown): string {
   if (typeof arg === 'string') return arg;
   if (arg instanceof Error) {
@@ -68,18 +110,7 @@ export function installClientLogCapture() {
   for (const level of levels) {
     const original = console[level].bind(console);
     console[level] = (...args: unknown[]) => {
-      try {
-        clientLogBuffer.push({
-          level,
-          time: new Date().toISOString(),
-          args: args.map(safeStringify),
-        });
-        if (clientLogBuffer.length > MAX_CLIENT_LOGS) {
-          clientLogBuffer.splice(0, clientLogBuffer.length - MAX_CLIENT_LOGS);
-        }
-      } catch {
-        // Never let log capture break the app.
-      }
+      recordClientLog(level, args);
       original(...args);
     };
   }

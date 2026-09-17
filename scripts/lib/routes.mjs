@@ -1,0 +1,163 @@
+/**
+ * Static registry of every Next.js route handler under src/app/api.
+ *
+ * Shared by scripts/live-smoke.mjs (which probes each route over HTTP) and
+ * src/__tests__/routeProtection.test.ts (which asserts this list matches the
+ * filesystem and that every file honours the auth / rate-limit / zod invariants).
+ *
+ * Adding a route: create src/app/api/<path>/route.ts AND add an entry here, or the
+ * unit test fails. Never delete or rename a path that shipped: mark it deprecated.
+ *
+ * Fields
+ *   path        URL path
+ *   file        repo-relative route file
+ *   methods     exported HTTP handlers
+ *   auth        "user"   -> requireUser (401 unauthorized without a bearer token)
+ *               "public" -> no auth; response must carry no secrets (booleans only)
+ *   limit       rate-limit bucket (LIMITS key) or an ip:* pseudo-bucket for public routes
+ *   body        "zod"  -> JSON body validated with a zod schema
+ *               "none" -> the handler never reads a body (GET, or POST with an empty body)
+ *   status      "active" | "deprecated: <reason>" (deprecated routes keep working)
+ */
+export const PUBLIC_ROUTES = Object.freeze([
+  // Boolean-only provider status for the setup screen; never returns key material.
+  "src/app/api/config/status/route.ts",
+]);
+
+/** Routes whose handlers legitimately have no zod body schema. */
+export const NO_BODY_ROUTES = Object.freeze([
+  "src/app/api/credits/route.ts", // GET only
+  "src/app/api/config/status/route.ts", // GET only
+  "src/app/api/voice/token/route.ts", // POST with an empty body; the model is fixed server-side
+]);
+
+export const API_ROUTES = Object.freeze([
+  {
+    path: "/api/check-help-needed",
+    file: "src/app/api/check-help-needed/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "checkHelp",
+    body: "zod",
+    purpose: "Text/image heuristic: does the student look stuck?",
+    status: "deprecated: unused by the client",
+  },
+  {
+    path: "/api/config/status",
+    file: "src/app/api/config/status/route.ts",
+    methods: ["GET"],
+    auth: "public",
+    limit: "ip:configStatus",
+    body: "none",
+    purpose: "Which provider keys are configured (booleans only)",
+    status: "active",
+  },
+  {
+    path: "/api/credits",
+    file: "src/app/api/credits/route.ts",
+    methods: ["GET"],
+    auth: "user",
+    limit: "credits",
+    body: "none",
+    purpose: "OpenRouter balance for the low-credit banner",
+    status: "active",
+  },
+  {
+    path: "/api/generate-solution",
+    file: "src/app/api/generate-solution/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "generateSolution",
+    body: "zod",
+    purpose: "Canvas PNG -> AI overlay image (feedback/suggest/answer)",
+    status: "active",
+  },
+  {
+    path: "/api/generate-worksheet",
+    file: "src/app/api/generate-worksheet/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "generateWorksheet",
+    body: "zod",
+    purpose: "Topic -> worksheet image",
+    status: "active",
+  },
+  {
+    path: "/api/live/check",
+    file: "src/app/api/live/check/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "liveCheck",
+    body: "zod",
+    purpose: "Live Math: SSE annotations for recognized lines",
+    status: "active",
+  },
+  {
+    path: "/api/live/recognize",
+    file: "src/app/api/live/recognize/route.ts",
+    methods: ["GET", "POST"],
+    auth: "user",
+    limit: "liveRecognize",
+    body: "zod",
+    purpose: "Live Math: GET capabilities; POST strokes -> LaTeX",
+    status: "active",
+  },
+  {
+    path: "/api/live/solve",
+    file: "src/app/api/live/solve/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "liveSolve",
+    body: "zod",
+    purpose: "Live Math: SSE worked solution steps",
+    status: "active",
+  },
+  {
+    path: "/api/ocr",
+    file: "src/app/api/ocr/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "ocr",
+    body: "zod",
+    purpose: "Image -> plain text via a vision model",
+    status: "deprecated: unused by the client",
+  },
+  {
+    path: "/api/voice/analyze-workspace",
+    file: "src/app/api/voice/analyze-workspace/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "analyzeWorkspace",
+    body: "zod",
+    purpose: "Voice tutor tool: describe the current canvas",
+    status: "active",
+  },
+  {
+    path: "/api/voice/token",
+    file: "src/app/api/voice/token/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "voiceToken",
+    body: "none",
+    purpose: "Mint an ephemeral OpenAI Realtime client secret",
+    status: "active",
+  },
+]);
+
+/** Routes that must answer 401 unauthorized without a bearer token. */
+export function protectedRoutes(routes = API_ROUTES) {
+  return routes.filter((r) => r.auth === "user");
+}
+
+/** One (method, path) probe per exported handler. */
+export function routeProbes(routes = API_ROUTES) {
+  return routes.flatMap((r) => r.methods.map((method) => ({ method, path: r.path, route: r })));
+}
+
+/** Convert a repo-relative route file into its URL path. */
+export function routeFileToPath(file) {
+  const normalized = file.replace(/\\/g, "/");
+  const match = /^src\/app(\/api(?:\/[^/]+)*)\/route\.ts$/.exec(normalized);
+  if (!match) throw new Error(`not an API route file: ${file}`);
+  return match[1];
+}

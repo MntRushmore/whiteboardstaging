@@ -10,9 +10,15 @@
  *   NEXT_PUBLIC_SUPABASE_ANON_KEY
  *   SMOKE_EMAIL / SMOKE_PASSWORD  qa-student@example.com / password123
  *   SMOKE_SKIP_LLM=1              skip the check/solve streams (no OpenRouter spend)
+ *
+ * Besides the Live Math contract it walks every route in scripts/lib/routes.mjs
+ * (kept in sync with src/app/api by src/__tests__/routeProtection.test.ts):
+ * 401 unauthorized without a token, 200 for the public config/status route, and
+ * a cheap 429 probe on /api/credits.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { API_ROUTES, protectedRoutes, routeProbes } from "./lib/routes.mjs";
 
 // ---------------------------------------------------------------- env
 function loadDotEnvLocal() {
@@ -208,13 +214,8 @@ function isValidStep(s) {
 async function main() {
   console.log(`Live smoke against ${BASE_URL} (supabase ${SUPABASE_URL}, user ${EMAIL})`);
 
-  section("401 without a bearer token");
-  for (const [method, path] of [
-    ["GET", "/api/live/recognize"],
-    ["POST", "/api/live/recognize"],
-    ["POST", "/api/live/check"],
-    ["POST", "/api/live/solve"],
-  ]) {
+  section(`401 without a bearer token (every protected route in scripts/lib/routes.mjs: ${protectedRoutes().length} files)`);
+  for (const { method, path } of routeProbes(protectedRoutes())) {
     const res = await fetch(`${BASE_URL}${path}`, {
       method,
       headers: { "Content-Type": "application/json" },
@@ -222,7 +223,28 @@ async function main() {
     });
     const body = await res.json().catch(() => ({}));
     ok(res.status === 401 && body.error === "unauthorized", `${method} ${path} -> 401 unauthorized`, `status ${res.status}`);
-    ok(Boolean(res.headers.get("x-request-id")), `${method} ${path} carries X-Request-Id`);
+    ok(res.headers.get("www-authenticate") === "Bearer", `${method} ${path} sets WWW-Authenticate: Bearer`);
+    // X-Request-Id is part of the Live contract only (see docs/ARCHITECTURE.md routes table).
+    if (path.startsWith("/api/live/")) {
+      ok(Boolean(res.headers.get("x-request-id")), `${method} ${path} carries X-Request-Id`);
+    }
+  }
+
+  section("public routes answer without a token");
+  for (const route of API_ROUTES.filter((r) => r.auth === "public")) {
+    for (const method of route.methods) {
+      const res = await fetch(`${BASE_URL}${route.path}`, { method });
+      const body = await res.json().catch(() => null);
+      ok(res.status === 200, `${method} ${route.path} -> 200 without a token`, `status ${res.status}`);
+      if (route.path === "/api/config/status") {
+        ok(body && typeof body.configured === "boolean" && Array.isArray(body.providers), "config/status body is { configured, providers[] }");
+        ok(
+          Boolean(body) && body.providers.every((p) => typeof p.present === "boolean" && !("value" in p)),
+          "config/status providers expose booleans only (no key material)",
+        );
+        ok(res.headers.get("cache-control") === "no-store", "config/status is Cache-Control: no-store", res.headers.get("cache-control"));
+      }
+    }
   }
 
   const token = await signIn();
@@ -345,6 +367,22 @@ async function main() {
       ok(names[names.length - 1] === "done", "last event is done", names[names.length - 1]);
       for (const s of steps) console.log(`  step ${s.data.index}${s.data.final ? " (final)" : ""}: ${s.data.latex}  -- ${s.data.explanation}`);
     }
+  }
+
+  section("429 on /api/credits after a burst (credits bucket: 30/min)");
+  {
+    const results = await Promise.all(
+      Array.from({ length: 31 }, () => fetch(`${BASE_URL}/api/credits`, { headers: authHeaders(token) })),
+    );
+    const statuses = results.map((r) => r.status);
+    const limited = results.find((r) => r.status === 429);
+    ok(Boolean(limited), "at least one 429 within 31 GETs", `statuses: ${[...new Set(statuses)].join(",")}`);
+    if (limited) {
+      const body = await limited.json();
+      ok(body.error === "rate_limited" && typeof body.retryAfterMs === "number", "429 body is rate_limited + retryAfterMs", JSON.stringify(body));
+      ok(/^\d+$/.test(limited.headers.get("retry-after") || ""), "Retry-After header (seconds)", limited.headers.get("retry-after"));
+    }
+    ok(statuses.every((s) => s !== 401), "no 401 while signed in");
   }
 
   section("429 after a burst (recognize bucket: 120/min; bad bodies still consume slots)");

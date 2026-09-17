@@ -8,21 +8,43 @@ The previous Supabase project was deleted; no cloud project exists yet, so login
 
 ## 2. Environment variables
 
-| Variable | Production | Preview / Development | Notes |
-| --- | --- | --- | --- |
-| `OPENROUTER_API_KEY` | present | present | Required. ~$58 of credit remained on 2026-09-11. |
-| `NEXT_PUBLIC_SUPABASE_URL` / `_ANON_KEY` | **replace** | **add** | See step 1. |
-| `MATHPIX_APP_ID` / `MATHPIX_APP_KEY` | present | present | Realtime handwriting recognition; verified working. |
-| `NEXT_PUBLIC_TLDRAW_LICENSE_KEY` | present | present | See section 3. |
-| `NEXT_PUBLIC_SITE_URL` | present | add (optional) | Referer header for OpenRouter. |
-| `OPENAI_API_KEY` | absent | absent | Only for the voice tutor. The key in the old `.env.local` is revoked (401). Voice returns 503 until a valid key is added. |
-| `MISTRAL_API_KEY` | not needed | not needed | Removed; OCR runs on OpenRouter now. |
-| `NEXT_PUBLIC_LIVE_MATH` | optional | optional | Set to `0` to hide Live Math without unregistering its shapes. |
-| `LIVE_MODEL_CHECK` / `_SOLVE` / `_VISION` | optional | optional | OpenRouter model overrides for Live routes. |
-| `LOG_LEVEL` / `NEXT_PUBLIC_LOG_LEVEL` | optional | optional | Server / browser pino levels, default `info`. |
-| `SUPABASE_SERVICE_ROLE_KEY` | do not add | do not add | Read by nothing today; keep it out of Vercel (runbook section 5). |
+State measured with `vercel env ls` on 2026-09-17 (saved as `src/__tests__/fixtures/vercel-env-ls.txt`). Classification comes from the `# ─── …` section headers in `.env.example`: **Required** keys must be set in every Vercel environment, everything under **Scripts and tests** must never be.
 
-Full per-variable notes: `.env.example` (kept in sync with the code by `src/__tests__/envExample.test.ts`).
+| Variable | Class | Production | Preview | Development | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | required | present (**replace**, old project deleted) | **MISSING** | **MISSING** | See step 1. |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | required | present (**replace**) | **MISSING** | **MISSING** | See step 1. |
+| `OPENROUTER_API_KEY` | required | present | present | present | ~$58 of credit remained on 2026-09-11. |
+| `MATHPIX_APP_ID` / `MATHPIX_APP_KEY` | optional | present | present | present | Realtime handwriting recognition; verified working. |
+| `NEXT_PUBLIC_TLDRAW_LICENSE_KEY` | optional | present | present | absent | Development absent is fine (watermark only). See section 3. |
+| `NEXT_PUBLIC_SITE_URL` | optional | present | absent | absent | Referer header for OpenRouter; defaults to `http://localhost:3000`. Add for Preview. |
+| `OPENAI_API_KEY` | optional | absent | absent | absent | Only for the voice tutor. The key in the old `.env.local` is revoked (401). Voice returns 503 until a valid key is added. |
+| `NEXT_PUBLIC_LIVE_MATH` | optional | absent = on | absent = on | absent = on | Set to `0` to hide Live Math without unregistering its shapes. |
+| `LIVE_MODEL_CHECK` / `_SOLVE` / `_VISION` | optional | absent = defaults | absent = defaults | absent = defaults | OpenRouter model overrides for Live routes. |
+| `LOG_LEVEL` / `NEXT_PUBLIC_LOG_LEVEL` | optional | absent = `info` | absent = `info` | absent = `info` | Server / browser pino levels. |
+| `SUPABASE_SERVICE_ROLE_KEY` | optional (do not add) | absent | absent | absent | Read by nothing deployed; keep it out of Vercel (runbook section 5). |
+| `BASE_URL`, `SMOKE_*`, `RUN_DB_TESTS`, `VERIFY_EMAIL_DOMAIN` | scripts-only | absent | absent | absent | Correct: the checker fails if any of these appear in Vercel. |
+| `MISTRAL_API_KEY` | removed | absent | absent | absent | Not in `.env.example`; OCR runs on OpenRouter now. |
+
+Fix the four failures (each `vercel env add` takes one environment and reads the value from stdin; use the new project's values from step 1):
+
+```bash
+URL=https://<project-ref>.supabase.co
+ANON=<anon or sb_publishable_ key>
+for env in preview development; do
+  printf '%s' "$URL"  | vercel env add NEXT_PUBLIC_SUPABASE_URL      "$env"
+  printf '%s' "$ANON" | vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY "$env"
+done
+# Production: replace the values that point at the deleted project
+vercel env rm NEXT_PUBLIC_SUPABASE_URL production -y      && printf '%s' "$URL"  | vercel env add NEXT_PUBLIC_SUPABASE_URL      production
+vercel env rm NEXT_PUBLIC_SUPABASE_ANON_KEY production -y && printf '%s' "$ANON" | vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production
+# Optional but recommended for Preview (Referer sent to OpenRouter):
+printf '%s' "https://staging.whiteboard.rushilchopra.com" | vercel env add NEXT_PUBLIC_SITE_URL preview
+```
+
+Verify with `npm run env:check` (runs `node scripts/check-vercel-env.mjs`, which calls the read-only `vercel env ls` and compares it with `.env.example`). It exits 0 only when every required key is set in all three environments, no scripts-only key is deployed, and every Vercel key is documented. Current output ends with `FAILED: 4 failure(s)` (the two Supabase keys in Preview and Development); `--env Production` passes today. Use `--json` for machine output and `--from <saved vercel env ls output>` offline. Redeploy after changing env vars: existing deployments keep their old values.
+
+Full per-variable notes: `.env.example` (kept in sync with the code by `src/__tests__/envExample.test.ts`; its section headers drive `scripts/check-vercel-env.mjs`, tested by `src/__tests__/checkVercelEnv.test.ts`).
 
 ## 3. tldraw license hosts
 

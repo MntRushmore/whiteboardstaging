@@ -321,7 +321,7 @@ export async function runSnapshotSave(deps: SnapshotSaveDeps): Promise<SaveOutco
   if (built.kind !== "update") return built;
 
   try {
-    console.log(`Attempting to save board ${boardId}...`);
+    logger.debug({ id: boardId }, "Attempting to save board");
     const { error, rowCount } = await deps.persist(built.update);
 
     if (error) {

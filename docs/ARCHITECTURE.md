@@ -49,6 +49,31 @@ Garbage collection: deleting a board cascades `board_assets` rows but **not** st
 - `/api/credits`: reads the OpenRouter balance for the low-credit banner.
 - `/train`: trainer-only; before/after PNGs go to the `training-data` bucket and metadata to `training_samples`, both gated by `is_trainer()` in RLS.
 
+## Routes
+
+Every handler under `src/app/api/**` follows the same preamble: `requireUser` (JWT) -> `checkRateLimit` (per-user sliding window, see `LIMITS` in `src/lib/server/rate-limit.ts`) -> `parseJsonBody` (zod). The Live routes get the same three steps from `livePreamble` and additionally echo a `X-Request-Id` header. The table is the source of truth mirrored by `scripts/lib/routes.mjs`; `src/__tests__/routeProtection.test.ts` fails when a route file is added, removed, or drops one of the helpers, and `scripts/live-smoke.mjs` probes every row over HTTP (401 without a token, 200 for the public route, a 429 on `/api/credits`).
+
+| Path | Methods | Auth | Limit (per min) | Body schema | Purpose | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| `/api/config/status` | GET | **public** (only unauthenticated route) | `ip:<x-forwarded-for>:configStatus` 60 | none | Which provider keys are configured, booleans only; needed by the setup screen before sign-in | active |
+| `/api/credits` | GET | `requireUser` | `credits` 30 | none | OpenRouter balance for the low-credit banner (30 s shared cache) | active |
+| `/api/generate-solution` | POST | `requireUser` | `generateSolution` 12 | `{ image, prompt?, mode, source, model, hasWorksheet }` | Canvas PNG -> AI overlay image | active |
+| `/api/generate-worksheet` | POST | `requireUser` | `generateWorksheet` 4 | `{ topic, model }` | Topic -> worksheet image | active |
+| `/api/live/recognize` | GET, POST | `requireUser` / `livePreamble` | `liveRecognize` 120 | GET none; POST `RecognizeRequestSchema` | GET capabilities + warmup; POST strokes -> LaTeX (Mathpix, vision fallback) | active |
+| `/api/live/check` | POST | `livePreamble` | `liveCheck` 30 | `CheckRequestSchema` | SSE annotations for recognized lines | active |
+| `/api/live/solve` | POST | `livePreamble` | `liveSolve` 10 | `SolveRequestSchema` | SSE worked-solution steps | active |
+| `/api/voice/token` | POST | `requireUser` | `voiceToken` 6 | none (empty body; model fixed server-side) | Mint an ephemeral OpenAI Realtime client secret; `503 voice_unavailable` without `OPENAI_API_KEY` | active |
+| `/api/voice/analyze-workspace` | POST | `requireUser` | `analyzeWorkspace` 30 | `{ image, focus? }` | Voice tutor tool: describe the current canvas | active |
+| `/api/check-help-needed` | POST | `requireUser` | `checkHelp` 30 | `{ text?, image? }` (at least one) | Text/image heuristic: does the student look stuck? | **deprecated: unused by the client** (kept working; do not remove) |
+| `/api/ocr` | POST | `requireUser` | `ocr` 30 | `{ image }` | Image -> plain text via a vision model | **deprecated: unused by the client** (kept working; do not remove) |
+
+Notes:
+
+- Non-Live routes mint a `requestId` for their log lines but do not return it as a header; only `/api/live/*` sets `X-Request-Id` (via `withRequestId`). Extending the header to the other routes is a follow-up, not a contract today.
+- Rate-limit keys are `${userId}:${bucket}`; the public route has no user, so it keys on the first hop of `x-forwarded-for` (falling back to `x-real-ip`, then `unknown`).
+- No route reads `process.env` directly; provider keys come from `getServerEnv()` (`src/lib/env.ts`) or `src/lib/aiConfig.ts`, which both reject `.env.example` placeholder values.
+- Deprecated routes stay on their paths with the same contract until a documented removal; marking them deprecated here (and in `scripts/lib/routes.mjs`) is the only change.
+
 ## Error contract
 
 Every route returns JSON `{ error: <code>, message: <text> }` on failure:

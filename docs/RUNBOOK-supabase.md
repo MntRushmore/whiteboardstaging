@@ -79,7 +79,9 @@ vercel env ls                        # expect both names listed 3x
 vercel env pull .env.local           # optional: sync development values locally
 ```
 
-Also required: `OPENROUTER_API_KEY` (all envs). Optional: `OPENAI_API_KEY`, `MATHPIX_APP_ID`/`MATHPIX_APP_KEY`, `NEXT_PUBLIC_TLDRAW_LICENSE_KEY`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_LIVE_MATH`, `LIVE_MODEL_*`, `LOG_LEVEL`, `NEXT_PUBLIC_LOG_LEVEL`. Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to Vercel: no route reads it. Redeploy (`vercel --prod`) after changing env vars; existing deployments keep their old values.
+Also required: `OPENROUTER_API_KEY` (all envs). Optional: `OPENAI_API_KEY`, `MATHPIX_APP_ID`/`MATHPIX_APP_KEY`, `NEXT_PUBLIC_TLDRAW_LICENSE_KEY`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_LIVE_MATH`, `LIVE_MODEL_*`, `LOG_LEVEL`, `NEXT_PUBLIC_LOG_LEVEL`. Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to Vercel: no route reads it. Never add the `# ─── Scripts and tests` keys from `.env.example` (`BASE_URL`, `SMOKE_*`, `RUN_DB_TESTS`, `VERIFY_EMAIL_DOMAIN`). Redeploy (`vercel --prod`) after changing env vars; existing deployments keep their old values.
+
+Check the result with `npm run env:check` (`node scripts/check-vercel-env.mjs`): it runs the read-only `vercel env ls`, classifies every key by its `.env.example` section, and exits 1 on a missing required key, a deployed scripts-only key, or a Vercel key that `.env.example` does not document. `--env Preview` limits it to one environment, `--json` prints the report as JSON, `--from <file>` reads saved `vercel env ls` output (CI uses `src/__tests__/fixtures/vercel-env-ls.txt`). The current per-environment state and the exact `vercel env add` commands are in `docs/GO-LIVE.md` section 2.
 
 ## 6. Trainer allow-list (SQL editor, after the trainer has signed up once)
 
