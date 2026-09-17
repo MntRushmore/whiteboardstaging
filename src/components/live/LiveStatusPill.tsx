@@ -101,6 +101,7 @@ export function LiveStatusPill({ editor, onDrawHelp, onClearMarks }: LiveStatusP
   const status = useValue(liveStore.status);
   const recognizer = useValue(liveStore.recognizer);
   const shapeCount = useValue(liveStore.liveShapeCount);
+  const offlineQueued = useValue(liveStore.offlineQueued);
   const shown = useLingeringStatus();
   const { settings, update } = useLiveSettings();
   const hidden = settings.hideAiShapes;
@@ -138,7 +139,7 @@ export function LiveStatusPill({ editor, onDrawHelp, onClearMarks }: LiveStatusP
 
   const active = status !== "idle";
   const fading = !active && shown !== "idle";
-  const label = pillLabelFor(active ? status : shown, recognizer);
+  const label = pillLabelFor(active ? status : shown, recognizer, offlineQueued);
   const atCap = shapeCount >= LIVE_LIMITS.maxLiveShapesPerBoard;
 
   return (

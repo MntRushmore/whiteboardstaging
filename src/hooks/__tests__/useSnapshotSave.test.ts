@@ -2,16 +2,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ASSET_COPY } from "@/components/live/copy";
 import {
   MAX_PREVIEW_LENGTH,
+  SAVE_COPY,
   blockedMessageFor,
+  blockedMessageForSync,
+  buildSnapshotUpdate,
   classifySaveError,
+  idleSyncState,
+  isNetworkFailure,
   measureSnapshot,
+  persistErrorResult,
+  persistResultFromThrown,
   resetInlineAssetFallbackWarning,
+  resolvePersistResult,
   runSnapshotSave,
   singleFlight,
+  storeSnapshotOf,
+  toBuildResult,
   warnInlineAssetFallbackOnce,
   type SaveUpdate,
   type SnapshotSaveDeps,
 } from "../useSnapshotSave";
+import type { SyncState } from "@/lib/sync";
 import type { SaveDecision, SaveDecisionInput } from "@/lib/assets/savePolicy";
 import { SNAPSHOT_LIMITS } from "../../../scripts/lib/snapshotAssets.mjs";
 
@@ -314,5 +325,217 @@ describe("warnInlineAssetFallbackOnce", () => {
     expect(warnInlineAssetFallbackOnce()).toBe(false);
     expect(toast.warning).toHaveBeenCalledTimes(1);
     expect(toast.warning).toHaveBeenCalledWith(ASSET_COPY.inlineFallback);
+  });
+});
+
+describe("buildSnapshotUpdate", () => {
+  it("returns the row update plus the snapshot it was built from, without persisting", async () => {
+    const deps = fakeDeps();
+    const built = await buildSnapshotUpdate(deps);
+    expect(built.kind).toBe("update");
+    if (built.kind !== "update") return;
+    expect(built.update.updated_at).toBe("2026-09-17T10:00:00.000Z");
+    expect(built.update.preview).toBe("data:image/jpeg;base64,AAAA");
+    expect(built.update.data).toEqual(deps.takeSnapshot());
+    expect(built.snapshot).toEqual(deps.takeSnapshot());
+    expect(built.offloaded).toBe(false);
+    expect(built.bytes).toBe(measureSnapshot(deps.takeSnapshot()).bytes);
+    expect(deps.persist).not.toHaveBeenCalled();
+  });
+
+  it("does not consult isOnline: the queue decides that before building", async () => {
+    const deps = fakeDeps({ isOnline: () => false });
+    expect((await buildSnapshotUpdate(deps)).kind).toBe("update");
+  });
+
+  it("refuses over the hard limit and reports skipped for a missing snapshot", async () => {
+    expect(await buildSnapshotUpdate(fakeDeps({ decide: () => ok("refuse", "error") }))).toMatchObject({
+      kind: "refused",
+      inlineAssets: 1,
+    });
+    expect(await buildSnapshotUpdate(fakeDeps({ takeSnapshot: () => undefined }))).toEqual({
+      kind: "skipped",
+      reason: "no-snapshot",
+    });
+  });
+
+  it("offloads then re-snapshots (the update carries the rewritten data)", async () => {
+    const deps = fakeDeps({ decide: ({ inlineAssets }) => ok(inlineAssets > 0 ? "offload-then-save" : "save", "warn") });
+    const built = await buildSnapshotUpdate(deps);
+    expect(built).toMatchObject({ kind: "update", offloaded: true });
+    expect(JSON.stringify((built as { update: SaveUpdate }).update.data)).not.toContain("data:image");
+  });
+
+  it("never throws: a crashing takeSnapshot becomes an error outcome", async () => {
+    const built = await buildSnapshotUpdate(
+      fakeDeps({
+        takeSnapshot: () => {
+          throw new Error("store gone");
+        },
+      }),
+    );
+    expect(built.kind).toBe("error");
+  });
+});
+
+describe("toBuildResult / storeSnapshotOf", () => {
+  it("hands the queue the document half of an editor snapshot", () => {
+    const editorSnap = editorSnapshot([]);
+    const built = { kind: "update", update: { data: editorSnap, updated_at: "t" }, snapshot: editorSnap, bytes: 1, offloaded: false } as const;
+    const result = toBuildResult(built);
+    expect(result.kind).toBe("update");
+    if (result.kind !== "update") return;
+    expect(result.snapshot).toBe(editorSnap.document);
+    // the row still stores the full editor snapshot (format unchanged)
+    expect(result.update.data).toBe(editorSnap);
+  });
+
+  it("passes a bare store snapshot through unchanged", () => {
+    const bare = { store: {}, schema: { schemaVersion: 2 } };
+    expect(storeSnapshotOf(bare)).toBe(bare);
+    expect(storeSnapshotOf(null)).toBeNull();
+  });
+
+  it("maps refused to the too-large copy and skipped/error to the cannot-prepare copy", () => {
+    expect(toBuildResult({ kind: "refused", bytes: 1, inlineAssets: 0 })).toEqual({
+      kind: "refused",
+      message: ASSET_COPY.boardTooLarge,
+    });
+    expect(toBuildResult({ kind: "skipped", reason: "unserializable" })).toEqual({
+      kind: "refused",
+      message: SAVE_COPY.cannotPrepare,
+    });
+    expect(toBuildResult({ kind: "error", error: new Error("x") })).toEqual({
+      kind: "refused",
+      message: SAVE_COPY.cannotPrepare,
+    });
+  });
+});
+
+describe("isNetworkFailure", () => {
+  it("recognises fetch TypeErrors, supabase-js wrapped fetch failures and PGRST0xx", () => {
+    expect(isNetworkFailure(new TypeError("Failed to fetch"))).toBe(true);
+    expect(isNetworkFailure({ message: "TypeError: Failed to fetch", details: "TypeError: Failed to fetch", hint: "", code: "" })).toBe(true);
+    expect(isNetworkFailure({ name: "TypeError", message: "Load failed" })).toBe(true);
+    expect(isNetworkFailure({ code: "PGRST000", message: "could not connect to the database" })).toBe(true);
+    expect(isNetworkFailure({ code: "PGRST003", message: "timed out acquiring connection" })).toBe(true);
+  });
+
+  it("does not treat request-level errors as network problems", () => {
+    expect(isNetworkFailure({ code: "PGRST301", message: "JWT expired" })).toBe(false);
+    expect(isNetworkFailure({ code: "PGRST116", message: "JSON object requested, multiple (or no) rows returned" })).toBe(false);
+    expect(isNetworkFailure({ code: "42501", message: "permission denied" })).toBe(false);
+    expect(isNetworkFailure(new Error("boom"))).toBe(false);
+    expect(isNetworkFailure(null)).toBe(false);
+    expect(isNetworkFailure("string")).toBe(false);
+  });
+});
+
+describe("persistErrorResult / persistResultFromThrown", () => {
+  it("maps 57014 to timeout and 23514 to too-large", () => {
+    expect(persistErrorResult({ code: "57014", message: "canceling statement due to statement timeout" }, true)).toEqual({
+      ok: false,
+      kind: "timeout",
+    });
+    expect(persistErrorResult({ code: "23514", message: "violates check constraint" }, true)).toEqual({
+      ok: false,
+      kind: "too-large",
+    });
+  });
+
+  it("maps transport failures and navigator.onLine === false to offline", () => {
+    expect(persistErrorResult({ code: "", message: "TypeError: Failed to fetch" }, true)).toEqual({ ok: false, kind: "offline" });
+    expect(persistErrorResult({ code: "42501", message: "permission denied" }, false)).toEqual({ ok: false, kind: "offline" });
+    expect(persistResultFromThrown(new TypeError("Failed to fetch"), true)).toEqual({ ok: false, kind: "offline" });
+    expect(persistResultFromThrown(new Error("anything"), false)).toEqual({ ok: false, kind: "offline" });
+  });
+
+  it("everything else is other, with the message and code kept", () => {
+    expect(persistErrorResult({ code: "42501", message: "permission denied" }, true)).toEqual({
+      ok: false,
+      kind: "other",
+      message: "permission denied (code: 42501)",
+    });
+    expect(persistErrorResult({}, true)).toEqual({ ok: false, kind: "other", message: "Unknown error" });
+    expect(persistResultFromThrown(new Error("bug"), true)).toEqual({ ok: false, kind: "other", message: "bug" });
+    expect(persistResultFromThrown("weird", true)).toEqual({ ok: false, kind: "other", message: "weird" });
+  });
+});
+
+describe("resolvePersistResult", () => {
+  const ctx = (over: Partial<Parameters<typeof resolvePersistResult>[1]> = {}) => ({
+    expectedVersion: 7 as number | null,
+    online: true,
+    exists: async () => true,
+    ...over,
+  });
+
+  it("returns the version the trigger bumped to", async () => {
+    expect(await resolvePersistResult({ error: null, rows: [{ version: 8 }] }, ctx())).toEqual({ ok: true, version: 8 });
+    // PostgREST may serialize bigint as a string in some configurations
+    expect(await resolvePersistResult({ error: null, rows: [{ version: "9" }] }, ctx())).toEqual({ ok: true, version: 9 });
+  });
+
+  it("zero rows with a version filter -> conflict when the row still exists, gone when it does not", async () => {
+    expect(await resolvePersistResult({ error: null, rows: [] }, ctx())).toEqual({ ok: false, kind: "conflict" });
+    expect(await resolvePersistResult({ error: null, rows: [] }, ctx({ exists: async () => false }))).toEqual({
+      ok: false,
+      kind: "gone",
+    });
+    expect(await resolvePersistResult({ error: null, rows: null }, ctx())).toEqual({ ok: false, kind: "conflict" });
+  });
+
+  it("zero rows without a version filter can only mean the row is gone (no existence probe)", async () => {
+    const exists = vi.fn(async () => true);
+    expect(await resolvePersistResult({ error: null, rows: [] }, ctx({ expectedVersion: null, exists }))).toEqual({
+      ok: false,
+      kind: "gone",
+    });
+    expect(exists).not.toHaveBeenCalled();
+  });
+
+  it("a failing existence probe is treated as a conflict so the queue re-fetches", async () => {
+    expect(
+      await resolvePersistResult(
+        { error: null, rows: [] },
+        ctx({
+          exists: async () => {
+            throw new TypeError("Failed to fetch");
+          },
+        }),
+      ),
+    ).toEqual({ ok: false, kind: "conflict" });
+  });
+
+  it("errors take precedence over rows and go through the error mapping", async () => {
+    expect(await resolvePersistResult({ error: { code: "57014", message: "statement timeout" }, rows: null }, ctx())).toEqual({
+      ok: false,
+      kind: "timeout",
+    });
+    expect(await resolvePersistResult({ error: { code: "42501", message: "denied" }, rows: null }, ctx({ online: false }))).toEqual({
+      ok: false,
+      kind: "offline",
+    });
+  });
+
+  it("a row without a version is reported instead of pretending success", async () => {
+    expect(await resolvePersistResult({ error: null, rows: [{}] }, ctx())).toMatchObject({ ok: false, kind: "other" });
+  });
+});
+
+describe("blockedMessageForSync / idleSyncState", () => {
+  const base: SyncState = { status: "saved", message: null, lastSavedAt: null, version: 3, pending: false, attempt: 0 };
+
+  it("only refused blocks; the queue's message wins over the default copy", () => {
+    expect(blockedMessageForSync({ ...base, status: "refused", message: null })).toBe(ASSET_COPY.boardTooLarge);
+    expect(blockedMessageForSync({ ...base, status: "refused", message: SAVE_COPY.cannotPrepare })).toBe(SAVE_COPY.cannotPrepare);
+    for (const status of ["saved", "dirty", "saving", "offline", "merging", "error"] as const) {
+      expect(blockedMessageForSync({ ...base, status, message: "x" })).toBeNull();
+    }
+  });
+
+  it("idle state carries the loaded version and no lastSavedAt", () => {
+    expect(idleSyncState(42)).toEqual({ status: "saved", message: null, lastSavedAt: null, version: 42, pending: false, attempt: 0 });
+    expect(idleSyncState(null).version).toBeNull();
   });
 });

@@ -14,6 +14,8 @@ export const LIVE_COPY = {
     readingSlow: "Reading (slower)…",
     checking: "Checking…",
     offline: "Offline",
+    /** offline with N lines waiting to be recognized once the network is back */
+    offlineWaiting: (count: number) => `Offline — ${count} ${count === 1 ? "line" : "lines"} waiting`,
     paused: "Paused",
     error: "Live is taking a break",
     menuLabel: "Live options",
@@ -47,14 +49,14 @@ export const LIVE_COPY = {
   },
 } as const;
 
-export function pillLabelFor(status: LiveStatus, recognizer: RecognizerKind): string {
+export function pillLabelFor(status: LiveStatus, recognizer: RecognizerKind, offlineQueued = 0): string {
   switch (status) {
     case "reading":
       return recognizer === "vision" ? LIVE_COPY.pill.readingSlow : LIVE_COPY.pill.reading;
     case "checking":
       return LIVE_COPY.pill.checking;
     case "offline":
-      return LIVE_COPY.pill.offline;
+      return offlineQueued > 0 ? LIVE_COPY.pill.offlineWaiting(offlineQueued) : LIVE_COPY.pill.offline;
     case "paused":
       return LIVE_COPY.pill.paused;
     case "error":

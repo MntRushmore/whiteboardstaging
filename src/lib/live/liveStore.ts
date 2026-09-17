@@ -11,6 +11,8 @@ export const liveStore = {
   openHints: atom<OpenHint[]>("live.openHints", []),
   lastBurst: atom<LiveBurst | null>("live.lastBurst", null),
   liveShapeCount: atom<number>("live.shapeCount", 0),
+  /** lines whose recognition is waiting for the network to come back */
+  offlineQueued: atom<number>("live.offlineQueued", 0),
 };
 
 export function setLine(id: string, patch: Partial<LiveLineState>): void {
@@ -46,4 +48,5 @@ export function resetLiveStore(): void {
   liveStore.openHints.set([]);
   liveStore.lastBurst.set(null);
   liveStore.liveShapeCount.set(0);
+  liveStore.offlineQueued.set(0);
 }

@@ -123,7 +123,6 @@ interface LineRuntime {
 
 const CHECK_PATH = "/api/live/check";
 const SOLVE_PATH = "/api/live/solve";
-const OFFLINE_QUEUE_MAX = 5;
 const UNREADABLE_NOTE = "Couldn't read this — tap to type it";
 const NOTATION_NOTE = "Not what you wrote? Tap to fix.";
 /** Dispatched on window by the math shape's warn/ok badge: `detail: { lineId, shapeId }`. */
@@ -207,11 +206,18 @@ export class LiveLoop implements LiveController {
   private dirtyStrokeIds = new Set<string>();
   private pendingRewrite = false;
   private readonly rt = new Map<string, LineRuntime>();
-  private offlineQueue: string[] = [];
+  /** lines whose recognition could not reach the network; replayed on reconnect (no cap) */
+  private readonly offlineQueue = new Set<string>();
+  /** lines the next flush must recognize even when their stroke set is unchanged */
+  private readonly forceRecognize = new Set<string>();
+  /** LLM checks asked for while offline (focus line id -> userAsked); re-run once after reconnect */
+  private readonly pendingChecks = new Map<string, boolean>();
+  private pendingSolve: string | null = null;
+  private lastOnline: boolean | null = null;
   private lastTouchedLineId: string | null = null;
   private started = false;
-  private readonly onOnline = () => this.replayOffline();
-  private readonly onOffline = () => liveStore.status.set("offline");
+  private readonly onOnline = () => this.setOnline(true);
+  private readonly onOffline = () => this.setOnline(false);
   private readonly onBadgeTap = (e: Event): void => {
     const detail = ((e as CustomEvent<{ lineId?: unknown; shapeId?: unknown }>).detail ?? {}) as {
       lineId?: unknown;
@@ -246,6 +252,7 @@ export class LiveLoop implements LiveController {
     this.deps.events?.addEventListener("online", this.onOnline);
     this.deps.events?.addEventListener("offline", this.onOffline);
     this.deps.events?.addEventListener(BADGE_TAP_EVENT, this.onBadgeTap);
+    this.lastOnline = this.deps.isOnline();
     this.rebuild();
     this.recount();
     void this.deps
@@ -285,11 +292,19 @@ export class LiveLoop implements LiveController {
     }
     this.rt.clear();
     this.dirtyStrokeIds.clear();
+    this.forceRecognize.clear();
+    this.offlineQueue.clear();
+    this.pendingChecks.clear();
+    this.pendingSolve = null;
+    liveStore.offlineQueued.set(0);
   }
 
   setOptions(next: UseLiveMathOptions): void {
     const prev = this.opts;
     this.opts = next;
+    // navigator.onLine may have flipped without a window event reaching us (tests, or a
+    // hook re-render after a failed fetch): treat the current answer as the truth.
+    this.setOnline(this.deps.isOnline());
     if (prev.enabled !== next.enabled) {
       liveStore.status.set(next.enabled ? "idle" : "paused");
       if (!next.enabled) {
@@ -544,8 +559,13 @@ export class LiveLoop implements LiveController {
       this.dirtyStrokeIds.clear();
       return;
     }
+    // Queued-while-offline lines ride along with the next flush once the network is back
+    // (a failed fetch queues a line without any 'online' event ever following).
+    if (this.offlineQueue.size > 0 && this.deps.isOnline()) this.absorbOfflineQueue();
     const dirty = new Set(this.dirtyStrokeIds);
     this.dirtyStrokeIds.clear();
+    const force = new Set(this.forceRecognize);
+    this.forceRecognize.clear();
     const ink = this.collectInk();
     const prevStates = liveStore.lines.get();
     const prevLines = Object.values(prevStates).map((s) => s.line);
@@ -563,9 +583,10 @@ export class LiveLoop implements LiveController {
         continue;
       }
       const same = sameStrokeSet(prev.line.strokeIds, line.strokeIds);
-      const touched = line.strokeIds.some((id) => dirty.has(id)) || !same;
+      const forced = force.has(line.id);
+      const touched = forced || line.strokeIds.some((id) => dirty.has(id)) || !same;
       setLine(line.id, { line: { ...line, hash: same ? prev.line.hash : "" } });
-      if (touched) affected.push({ line: { ...line, hash: same ? prev.line.hash : "" }, moveOnly: same });
+      if (touched) affected.push({ line: { ...line, hash: same ? prev.line.hash : "" }, moveOnly: same && !forced });
     }
 
     if (affected.length === 0) {
@@ -619,7 +640,8 @@ export class LiveLoop implements LiveController {
       if (liveStore.status.get() === "idle") liveStore.status.set("reading");
     }, LIVE_TIMING.readingLabelDelayMs);
     try {
-      if (!this.deps.isOnline()) {
+      // A hash the client already knows resolves from the cache even offline.
+      if (!this.deps.isOnline() && !this.deps.recognizer.peek(hash)) {
         this.queueOffline(lineId);
         return false;
       }
@@ -693,26 +715,88 @@ export class LiveLoop implements LiveController {
     }
   }
 
+  // ---------------------------------------------------------------- offline queue
   private queueOffline(lineId: string): void {
     liveStore.status.set("offline");
-    if (!this.offlineQueue.includes(lineId)) {
-      this.offlineQueue.push(lineId);
-      if (this.offlineQueue.length > OFFLINE_QUEUE_MAX) this.offlineQueue.shift();
-    }
+    this.offlineQueue.add(lineId);
+    liveStore.offlineQueued.set(this.offlineQueue.size);
   }
 
+  /** Connectivity changed (window event, or `isOnline()` read in setOptions). */
+  setOnline(online: boolean): void {
+    if (this.lastOnline === online) return;
+    this.lastOnline = online;
+    if (online) this.replayOffline();
+    else liveStore.status.set("offline");
+  }
+
+  /**
+   * Back online: every queued line and every still-unrecognized line goes through the
+   * normal pipeline again (re-clustered, re-hashed, cache first), then the pending LLM
+   * work runs for lines the current policy still allows.
+   */
   private replayOffline(): void {
-    const queued = this.offlineQueue;
-    this.offlineQueue = [];
-    liveStore.status.set("idle");
-    if (queued.length === 0) return;
+    const replaying = this.absorbOfflineQueue();
+    if (liveStore.status.get() === "offline") liveStore.status.set("idle");
+    if (this.dirtyStrokeIds.size > 0) this.armQuietTimer();
+    this.replayPendingLlm(replaying);
+  }
+
+  /**
+   * Moves the offline queue (plus unrecognized lines) into the dirty set for the next
+   * flush. Lines whose ink was erased while offline are dropped with their echo.
+   * Returns the ids that will be recognized.
+   */
+  private absorbOfflineQueue(): Set<string> {
     const lines = liveStore.lines.get();
-    for (const id of queued) {
+    const candidates = new Set(this.offlineQueue);
+    for (const st of Object.values(lines)) if (st.provider === "none" && st.latex === "") candidates.add(st.line.id);
+    this.offlineQueue.clear();
+    liveStore.offlineQueued.set(0);
+    const replaying = new Set<string>();
+    for (const id of candidates) {
       const st = lines[id];
       if (!st) continue;
-      st.line.strokeIds.forEach((sid) => this.dirtyStrokeIds.add(sid));
+      const alive = st.line.strokeIds.filter((sid) => {
+        const shape = this.editor.getShape(sid);
+        return Boolean(shape && isStudentInk(shape));
+      });
+      if (alive.length === 0) {
+        this.dropLine(id);
+        continue;
+      }
+      for (const sid of alive) this.dirtyStrokeIds.add(sid);
+      this.forceRecognize.add(id);
+      replaying.add(id);
     }
-    if (this.dirtyStrokeIds.size > 0) this.armQuietTimer();
+    return replaying;
+  }
+
+  /** Runs the LLM work asked for while offline, once, for lines the policy still allows. */
+  private replayPendingLlm(skip: ReadonlySet<string>): void {
+    const checks = [...this.pendingChecks];
+    this.pendingChecks.clear();
+    const solve = this.pendingSolve;
+    this.pendingSolve = null;
+    if (!this.opts.enabled || this.opts.voiceActive || this.opts.mode === "off") return;
+    const lines = liveStore.lines.get();
+    for (const [id, userAsked] of checks) {
+      // A line about to be re-recognized gets its check from the normal pipeline.
+      if (skip.has(id)) continue;
+      const st = lines[id];
+      if (!st?.latex || st.analysis?.verdict !== "mismatch") continue;
+      // The policy (mode, hints already shown, voice, cap) decides as if asked right now.
+      if (!this.decisionFor(st, { userAsked }).runLlmCheck) continue;
+      this.startCheck(st.line.column, id, { userAsked });
+    }
+    if (solve && !skip.has(solve) && this.opts.mode === "answer" && lines[solve]?.latex) this.requestSolve(solve);
+  }
+
+  /** LLM stream could not start (offline / fetch TypeError): remember it, never spin. */
+  private deferLlm(kind: "check" | "solve", lineId: string, userAsked = false): void {
+    if (kind === "check") this.pendingChecks.set(lineId, userAsked || (this.pendingChecks.get(lineId) ?? false));
+    else this.pendingSolve = lineId;
+    liveStore.status.set("offline");
   }
 
   // ---------------------------------------------------------------- analysis + render
@@ -1215,6 +1299,10 @@ export class LiveLoop implements LiveController {
     const checkMode: "feedback" | "suggest" = opts.modeOverride ?? (mode === "feedback" ? "feedback" : "suggest");
     const built = this.buildCheckLines(column);
     if (!built) return;
+    if (!this.deps.isOnline()) {
+      this.deferLlm("check", focusLineId, opts.userAsked);
+      return;
+    }
     const rt = this.runtime(focusLineId);
     rt.checkAbort?.abort();
     const ctrl = new AbortController();
@@ -1247,8 +1335,12 @@ export class LiveLoop implements LiveController {
         }
       } catch (err) {
         if (!isAbortLike(err) && !ctrl.signal.aborted) {
-          console.warn("[live] check failed", err);
-          liveStore.status.set("error");
+          if (this.isNetworkFailure(err)) {
+            this.deferLlm("check", focusLineId, opts.userAsked);
+          } else {
+            console.warn("[live] check failed", err);
+            liveStore.status.set("error");
+          }
         }
       } finally {
         if (rt.checkAbort === ctrl) rt.checkAbort = null;
@@ -1328,6 +1420,10 @@ export class LiveLoop implements LiveController {
     if (!this.opts.enabled || this.opts.voiceActive) return;
     const built = this.buildCheckLines(column);
     if (!built) return;
+    if (!this.deps.isOnline()) {
+      this.deferLlm("solve", opts.lineId);
+      return;
+    }
     const rt = this.runtime(opts.lineId);
     rt.solveAbort?.abort();
     const ctrl = new AbortController();
@@ -1357,14 +1453,23 @@ export class LiveLoop implements LiveController {
         }
       } catch (err) {
         if (!isAbortLike(err) && !ctrl.signal.aborted) {
-          console.warn("[live] solve failed", err);
-          liveStore.status.set("error");
+          if (this.isNetworkFailure(err)) {
+            this.deferLlm("solve", opts.lineId);
+          } else {
+            console.warn("[live] solve failed", err);
+            liveStore.status.set("error");
+          }
         }
       } finally {
         if (rt.solveAbort === ctrl) rt.solveAbort = null;
         if (liveStore.status.get() !== "offline") liveStore.status.set("idle");
       }
     })();
+  }
+
+  /** fetch rejects with a TypeError when the network is unreachable. */
+  private isNetworkFailure(err: unknown): boolean {
+    return err instanceof TypeError || !this.deps.isOnline();
   }
 
   private placeSolutionStep(column: Rect, lastLine: Rect, index: number, latex: string, explanation: string, lineId: string): void {

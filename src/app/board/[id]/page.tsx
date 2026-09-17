@@ -83,6 +83,7 @@ import { useLiveMath } from "@/lib/live/useLiveMath";
 import { useLiveSettings } from "@/lib/live/liveSettings";
 import { LiveToggle } from "@/components/live/LiveToggle";
 import { LiveStatusPill } from "@/components/live/LiveStatusPill";
+import { SaveStatus } from "@/components/live/SaveStatus";
 import { LiveHintLayer } from "@/components/live/LiveHintLayer";
 import { LiveErrorBoundary } from "@/components/live/LiveErrorBoundary";
 import { ASSET_COPY, LIVE_COPY } from "@/components/live/copy";
@@ -1087,7 +1088,7 @@ function ClearFeedbackButton({
   );
 }
 
-function BoardContent({ id }: { id: string }) {
+function BoardContent({ id, initialVersion }: { id: string; initialVersion: number | null }) {
   const editor = useEditor();
   const router = useRouter();
   const handleApiError = useApiErrorHandler();
@@ -1606,8 +1607,9 @@ function BoardContent({ id }: { id: string }) {
     }, 100);
   }, [editor, feedbackImageIds]);
 
-  // Auto-save (2 s debounce, offline skip, size guard + Storage offload): src/hooks/useSnapshotSave.ts
-  const { blockedMessage: saveBlockedMessage } = useSnapshotSave(editor, id, isUpdatingImageRef);
+  // Auto-save through the SaveQueue (2 s debounce, offline backup + replay, optimistic
+  // concurrency on `version`, size guard + Storage offload): src/hooks/useSnapshotSave.ts
+  const { sync, retry: retrySave } = useSnapshotSave(editor, id, isUpdatingImageRef, initialVersion);
 
   return (
     <>
@@ -1678,16 +1680,7 @@ function BoardContent({ id }: { id: string }) {
                 />
               </LiveErrorBoundary>
             )}
-            {saveBlockedMessage && (
-              <span
-                role="status"
-                data-testid="save-blocked"
-                title={saveBlockedMessage}
-                className="inline-flex h-9 items-center rounded-md border border-red-200 bg-red-50 px-2.5 text-xs font-medium text-red-700 shadow-sm"
-              >
-                {saveBlockedMessage}
-              </span>
-            )}
+            <SaveStatus sync={sync} onRetry={() => void retrySave()} />
             <ModelBadge
               model={aiModel}
               onClick={() => setAiModel((m) => (m === "gemini" ? "gpt" : "gemini"))}
@@ -1777,6 +1770,8 @@ export default function BoardPage() {
   const [initialData, setInitialData] = useState<
     Partial<TLEditorSnapshot> | TLStoreSnapshot | null
   >(null);
+  // `whiteboards.version` at load time: the autosave's optimistic-concurrency baseline.
+  const [initialVersion, setInitialVersion] = useState<number | null>(null);
   // tldraw's own paste/drop/upload of images goes to Storage ('<uid>/<boardId>/<assetId>.<ext>')
   // instead of being embedded as a data URL in the snapshot.
   // `getAsset` lets the store derive object paths for assets restored from the snapshot
@@ -1808,7 +1803,7 @@ export default function BoardPage() {
       try {
         const { data, error } = await supabase
           .from('whiteboards')
-          .select('data')
+          .select('data, version')
           .eq('id', id)
           .single();
 
@@ -1819,6 +1814,9 @@ export default function BoardPage() {
             // `data` is a jsonb column holding a tldraw snapshot.
             setInitialData(data.data as Partial<TLEditorSnapshot> | TLStoreSnapshot);
           }
+          // bigint arrives as a JSON number (PostgREST); tolerate a string just in case.
+          const v = typeof data.version === "string" ? Number(data.version) : data.version;
+          setInitialVersion(typeof v === "number" && Number.isFinite(v) ? v : null);
         }
       } catch (e) {
         console.error("Error loading board:", e);
@@ -1897,7 +1895,7 @@ export default function BoardPage() {
           }
         }}
       >
-        <BoardContent id={id} />
+        <BoardContent id={id} initialVersion={initialVersion} />
       </Tldraw>
     </div>
   );
