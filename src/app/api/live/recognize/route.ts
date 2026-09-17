@@ -9,6 +9,7 @@ import {
 } from "@/lib/live/contracts";
 import { getLiveModels } from "@/lib/env";
 import { json, requireUser } from "@/lib/server/auth";
+import { enforceCredits } from "@/lib/server/billing";
 import { errorResponse } from "@/lib/server/request";
 import { isMathpixConfigured, recognizeStrokes } from "@/lib/server/mathpix";
 import { chatJson } from "@/lib/server/openrouter";
@@ -49,7 +50,14 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const ctx = await livePreamble(req, "recognize", "liveRecognize", RecognizeRequestSchema);
   if ("response" in ctx) return ctx.response;
-  const { requestId, log, data, startedAt } = ctx;
+  const { requestId, token, log, data, startedAt } = ctx;
+
+  // Charge credits before any recognizer call (see src/lib/server/billing.ts). GET is free.
+  const billing = await enforceCredits(
+    { token, route: "live/recognize", requestId, model: isMathpixConfigured() ? "mathpix" : getLiveModels().vision },
+    log,
+  );
+  if ("response" in billing) return withRequestId(billing.response, requestId);
 
   const payload: StrokePayload = { x: data.strokes.x, y: data.strokes.y, w: data.bounds.w, h: data.bounds.h };
 

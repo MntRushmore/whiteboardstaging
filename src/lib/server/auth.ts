@@ -59,12 +59,13 @@ const UNAUTHORIZED = () =>
  * Require a signed-in Supabase user. Reads `Authorization: Bearer <access token>`
  * and verifies it against Supabase Auth (`auth.getUser(token)`).
  *
- * Returns `{ user }` on success or `{ response }` (a ready-to-return 401 JSON
- * response) on any failure.
+ * Returns `{ user, token }` on success (`token` is the verified access token, so
+ * callers can act AS the user against Supabase, e.g. `consumeCredits`) or
+ * `{ response }` (a ready-to-return 401 JSON response) on any failure.
  */
 export async function requireUser(
   req: Request,
-): Promise<{ user: AuthedUser } | { response: Response }> {
+): Promise<{ user: AuthedUser; token: string } | { response: Response }> {
   const token = extractBearerToken(req);
   if (!token) return { response: UNAUTHORIZED() };
 
@@ -85,7 +86,7 @@ export async function requireUser(
   try {
     const { data, error } = await client.auth.getUser(token);
     if (error || !data?.user) return { response: UNAUTHORIZED() };
-    return { user: { id: data.user.id, email: data.user.email ?? null } };
+    return { user: { id: data.user.id, email: data.user.email ?? null }, token };
   } catch {
     return { response: UNAUTHORIZED() };
   }

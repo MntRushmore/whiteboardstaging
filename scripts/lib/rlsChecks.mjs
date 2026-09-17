@@ -16,7 +16,9 @@
  *   publicRead: (bucket: string, path: string) => Promise<HttpResult>,
  *   storageDelete: (bucket: string, path: string) => Promise<HttpResult>,
  * }} RlsClient
- * @typedef {{ anon: RlsClient, a: RlsClient, b: RlsClient }} CheckContext
+ * `newUser` provisions one more throwaway user (needed by the delete_own_account
+ * check, which destroys the account it runs as). Optional: without it that check fails.
+ * @typedef {{ anon: RlsClient, a: RlsClient, b: RlsClient, newUser?: () => Promise<RlsClient> }} CheckContext
  * @typedef {{ name: string, pass: boolean, detail: string }} CheckResult
  * @typedef {{ name: string, run: (ctx: CheckContext) => Promise<CheckResult[]> }} CheckDef
  */
@@ -29,6 +31,24 @@ export const PUBLIC_TABLES = [
   "training_samples",
   "whiteboard_snapshots",
   "board_assets",
+  // accounts & billing (20260917020000_accounts_billing.sql)
+  "plans",
+  "profiles",
+  "usage_events",
+  "credit_grants",
+  "billing_events",
+];
+
+/** Keys every credit_summary() / credit_balance() payload must carry. */
+export const CREDIT_SUMMARY_KEYS = [
+  "plan_id",
+  "plan_name",
+  "monthly_credits",
+  "used",
+  "granted",
+  "remaining",
+  "period_start",
+  "period_end",
 ];
 
 export const ASSETS_BUCKET = "board-assets";
@@ -134,9 +154,45 @@ export function minimalInsert(table, userId = ZERO_UUID) {
       return { whiteboard_id: ZERO_UUID, user_id: userId, version: 1, data: {} };
     case "board_assets":
       return { whiteboard_id: ZERO_UUID, user_id: userId, object_path: `${userId}/x/${uuid()}.png`, mime_type: "image/png" };
+    case "plans":
+      return { id: "rls-verify", name: "rls-verify", monthly_credits: 1 };
+    case "profiles":
+      return { user_id: userId, display_name: "rls-verify" };
+    case "usage_events":
+      return { user_id: userId, route: "rls-verify", units: 1 };
+    case "credit_grants":
+      return { user_id: userId, units: 1, reason: "rls-verify" };
+    case "billing_events":
+      return { id: `rls-verify-${uuid()}`, type: "rls-verify", payload: {} };
     default:
       return {};
   }
+}
+
+/**
+ * PostgREST RPC helper: POST /rest/v1/rpc/<fn> with named arguments.
+ * @param {RlsClient} client
+ * @param {string} fn
+ * @param {Record<string, unknown>} [args]
+ */
+export async function rpc(client, fn, args = {}) {
+  return client.rest("POST", `rpc/${fn}`, { body: args });
+}
+
+/** @param {unknown} body */
+function asObject(body) {
+  return body && typeof body === "object" && !Array.isArray(body) ? /** @type {Record<string, any>} */ (body) : null;
+}
+
+/** True when `body` looks like a credit_summary() payload with consistent numbers. */
+export function isCreditSummary(body) {
+  const o = asObject(body);
+  if (!o) return false;
+  if (!CREDIT_SUMMARY_KEYS.every((k) => k in o)) return false;
+  const nums = ["monthly_credits", "used", "granted", "remaining"];
+  if (!nums.every((k) => Number.isInteger(o[k]))) return false;
+  if (o.remaining !== Math.max(0, o.monthly_credits + o.granted - o.used)) return false;
+  return typeof o.plan_id === "string" && typeof o.period_start === "string" && typeof o.period_end === "string";
 }
 
 /**
@@ -536,6 +592,231 @@ export async function checkVersionTrigger({ a }) {
   return out;
 }
 
+/**
+ * Accounts & billing tables: plans are read-only, a profile is visible and
+ * (display_name only) editable by its owner, ledgers are read-only for owners,
+ * billing_events is invisible to every authenticated user.
+ * @param {CheckContext} ctx
+ */
+export async function checkBillingTables({ a, b }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+
+  const plans = await a.rest("GET", "plans", { query: { select: "id,monthly_credits,active", order: "sort.asc" } });
+  out.push(
+    result(
+      "plans: A reads the catalogue (includes 'free')",
+      isOk(plans) && rows(plans).length >= 1 && rows(plans).some((p) => p.id === "free"),
+      describe(plans),
+    ),
+  );
+  const planIns = await a.rest("POST", "plans", { body: minimalInsert("plans"), prefer: "return=minimal" });
+  out.push(result("plans: A cannot insert a plan", isDenied(planIns), describe(planIns)));
+  const planUpd = await a.rest("PATCH", "plans", {
+    query: { id: "eq.free" },
+    body: { monthly_credits: 999999 },
+    prefer: "return=representation",
+  });
+  out.push(result("plans: A cannot update a plan", isDenied(planUpd), describe(planUpd)));
+
+  const own = await a.rest("GET", "profiles", { query: { select: "user_id,plan_id,display_name" } });
+  out.push(
+    result(
+      "profiles: A sees exactly own profile (auto-created on sign-up)",
+      isOk(own) && rows(own).length === 1 && rows(own)[0].user_id === a.userId && typeof rows(own)[0].plan_id === "string",
+      describe(own),
+    ),
+  );
+  const other = await a.rest("GET", "profiles", { query: { user_id: `eq.${b.userId}`, select: "user_id" } });
+  out.push(result("profiles: A cannot read B's profile (select returns [])", affectedNoRows(other), describe(other)));
+
+  const rename = await a.rest("PATCH", "profiles", {
+    query: { user_id: `eq.${a.userId}` },
+    body: { display_name: "rls-verify" },
+    prefer: "return=representation",
+  });
+  out.push(
+    result(
+      "profiles: A updates own display_name",
+      isOk(rename) && rows(rename).length === 1 && rows(rename)[0].display_name === "rls-verify",
+      describe(rename),
+    ),
+  );
+  const planChange = await a.rest("PATCH", "profiles", {
+    query: { user_id: `eq.${a.userId}` },
+    body: { plan_id: "pro" },
+    prefer: "return=representation",
+  });
+  const code = String(asObject(planChange.body)?.code ?? "");
+  out.push(result("profiles: A cannot update own plan_id (42501)", isDenied(planChange) && code === "42501", describe(planChange)));
+  const foreignRename = await a.rest("PATCH", "profiles", {
+    query: { user_id: `eq.${b.userId}` },
+    body: { display_name: "hijacked" },
+    prefer: "return=representation",
+  });
+  out.push(result("profiles: A cannot update B's display_name (denied or 0 rows)", deniedOrEmpty(foreignRename), describe(foreignRename)));
+  const profIns = await a.rest("POST", "profiles", { body: minimalInsert("profiles", a.userId ?? ZERO_UUID), prefer: "return=minimal" });
+  out.push(result("profiles: A cannot insert a profile", isDenied(profIns), describe(profIns)));
+  const profDel = await a.rest("DELETE", "profiles", { query: { user_id: `eq.${a.userId}` }, prefer: "return=representation" });
+  out.push(result("profiles: A cannot delete own profile", deniedOrEmpty(profDel), describe(profDel)));
+  const still = await a.rest("GET", "profiles", { query: { select: "user_id,plan_id" } });
+  out.push(
+    result(
+      "profiles: A's profile intact (plan unchanged) after the attempts",
+      isOk(still) && rows(still).length === 1 && rows(still)[0].plan_id !== "pro",
+      describe(still),
+    ),
+  );
+
+  const usageIns = await a.rest("POST", "usage_events", { body: minimalInsert("usage_events", a.userId ?? ZERO_UUID), prefer: "return=minimal" });
+  out.push(result("usage_events: A cannot insert directly", isDenied(usageIns), describe(usageIns)));
+  const grantIns = await a.rest("POST", "credit_grants", { body: minimalInsert("credit_grants", a.userId ?? ZERO_UUID), prefer: "return=minimal" });
+  out.push(result("credit_grants: A cannot insert (nothing lets a user add credits)", isDenied(grantIns), describe(grantIns)));
+  const usageSel = await a.rest("GET", "usage_events", { query: { select: "id", limit: "1" } });
+  out.push(result("usage_events: A may read own ledger", isOk(usageSel), describe(usageSel)));
+  const grantSel = await a.rest("GET", "credit_grants", { query: { select: "id", limit: "1" } });
+  out.push(result("credit_grants: A may read own grants", isOk(grantSel), describe(grantSel)));
+
+  const billing = await a.rest("GET", "billing_events", { query: { select: "id", limit: "1" } });
+  out.push(result("billing_events: not readable by authenticated users", isDenied(billing), describe(billing)));
+  const billingIns = await a.rest("POST", "billing_events", { body: minimalInsert("billing_events"), prefer: "return=minimal" });
+  out.push(result("billing_events: not writable by authenticated users", isDenied(billingIns), describe(billingIns)));
+  return out;
+}
+
+/**
+ * consume_credits()/credit_summary(): a user spends only their own credits,
+ * cannot overspend, and B's balance never moves when A consumes.
+ * @param {CheckContext} ctx
+ */
+export async function checkCreditsConsumption({ a, b, anon }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const route = `rls-verify-${uuid().slice(0, 8)}`;
+
+  const sumA0 = await rpc(a, "credit_summary");
+  out.push(result("credit_summary: A gets a well-formed summary", isOk(sumA0) && isCreditSummary(sumA0.body), describe(sumA0)));
+  const sumB0 = await rpc(b, "credit_summary");
+  out.push(result("credit_summary: B gets a well-formed summary", isOk(sumB0) && isCreditSummary(sumB0.body), describe(sumB0)));
+  const a0 = asObject(sumA0.body);
+  const b0 = asObject(sumB0.body);
+  if (!a0 || !b0) return out;
+
+  const spend = await rpc(a, "consume_credits", { p_route: route, p_units: 2, p_request_id: "rls-verify", p_model: "rls-verify" });
+  const spent = asObject(spend.body);
+  out.push(
+    result(
+      "consume_credits: A spends 2 units (ok:true, remaining decremented)",
+      isOk(spend) && spent?.ok === true && spent.remaining === a0.remaining - 2,
+      describe(spend),
+    ),
+  );
+
+  const sumA1 = await rpc(a, "credit_summary");
+  const a1 = asObject(sumA1.body);
+  out.push(
+    result(
+      "credit_summary: A's used +2 and remaining -2 after consuming",
+      isOk(sumA1) && a1?.used === a0.used + 2 && a1.remaining === a0.remaining - 2,
+      describe(sumA1),
+    ),
+  );
+  const sumB1 = await rpc(b, "credit_summary");
+  const b1 = asObject(sumB1.body);
+  out.push(
+    result(
+      "credit_summary: B's balance unchanged by A's consumption",
+      isOk(sumB1) && b1?.used === b0.used && b1.remaining === b0.remaining,
+      describe(sumB1),
+    ),
+  );
+
+  const aUsage = await a.rest("GET", "usage_events", { query: { route: `eq.${route}`, select: "user_id,route,units" } });
+  out.push(
+    result(
+      "usage_events: A sees the usage row written by consume_credits",
+      isOk(aUsage) && rows(aUsage).length === 1 && rows(aUsage)[0].user_id === a.userId && rows(aUsage)[0].units === 2,
+      describe(aUsage),
+    ),
+  );
+  const bUsage = await b.rest("GET", "usage_events", { query: { route: `eq.${route}`, select: "id" } });
+  out.push(result("usage_events: B cannot see A's usage rows", affectedNoRows(bUsage), describe(bUsage)));
+
+  const remaining = a1?.remaining ?? a0.remaining - 2;
+  const over = await rpc(a, "consume_credits", { p_route: route, p_units: Math.min(1000, remaining + 1) });
+  const overBody = asObject(over.body);
+  out.push(
+    result(
+      "consume_credits: spending beyond remaining returns ok:false insufficient_credits",
+      isOk(over) && overBody?.ok === false && overBody.reason === "insufficient_credits" && overBody.remaining === remaining,
+      describe(over),
+    ),
+  );
+  const afterOver = await a.rest("GET", "usage_events", { query: { route: `eq.${route}`, select: "id" } });
+  const sumA2 = await rpc(a, "credit_summary");
+  out.push(
+    result(
+      "consume_credits: refused spend writes no usage row and leaves the balance",
+      isOk(afterOver) && rows(afterOver).length === 1 && asObject(sumA2.body)?.remaining === remaining,
+      `${describe(afterOver)} / ${describe(sumA2)}`,
+    ),
+  );
+
+  const zero = await rpc(a, "consume_credits", { p_route: route, p_units: 0 });
+  out.push(result("consume_credits: p_units 0 is rejected", !isOk(zero), describe(zero)));
+  const huge = await rpc(a, "consume_credits", { p_route: route, p_units: 1001 });
+  out.push(result("consume_credits: p_units 1001 is rejected", !isOk(huge), describe(huge)));
+
+  const anonSpend = await rpc(anon, "consume_credits", { p_route: route, p_units: 1 });
+  out.push(result("consume_credits: anon cannot call it", isDenied(anonSpend), describe(anonSpend)));
+  const anonSum = await rpc(anon, "credit_summary");
+  out.push(result("credit_summary: anon cannot call it", isDenied(anonSum), describe(anonSum)));
+  return out;
+}
+
+/**
+ * delete_own_account(): a throwaway user C deletes itself; the profile, boards
+ * and ledger rows vanish and the (still signature-valid) JWT can no longer spend.
+ * Storage objects are out of scope here: the RPC cannot remove them (see the
+ * migration); the integration test covers the Storage-API garbage collection.
+ * @param {CheckContext} ctx
+ */
+export async function checkDeleteOwnAccount(ctx) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  if (!ctx.newUser) {
+    out.push(result("delete_own_account: context provides newUser()", false, "CheckContext.newUser is missing"));
+    return out;
+  }
+  const c = await ctx.newUser();
+  await createBoard(c, "rls-verify delete-account");
+  const spend = await rpc(c, "consume_credits", { p_route: "rls-verify-delete", p_units: 1 });
+  out.push(result("delete_own_account: C can spend before deleting", isOk(spend) && asObject(spend.body)?.ok === true, describe(spend)));
+
+  const del = await rpc(c, "delete_own_account");
+  out.push(result("delete_own_account: C deletes own account", isOk(del), describe(del)));
+
+  const prof = await c.rest("GET", "profiles", { query: { select: "user_id" } });
+  out.push(result("delete_own_account: C's profile is gone", affectedNoRows(prof), describe(prof)));
+  const boards = await c.rest("GET", "whiteboards", { query: { select: "id" } });
+  out.push(result("delete_own_account: C's boards are gone", affectedNoRows(boards), describe(boards)));
+  const usage = await c.rest("GET", "usage_events", { query: { select: "id" } });
+  out.push(result("delete_own_account: C's usage rows are gone", affectedNoRows(usage), describe(usage)));
+  const after = await rpc(c, "consume_credits", { p_route: "rls-verify-delete", p_units: 1 });
+  out.push(result("delete_own_account: deleted user's JWT cannot spend (auth.users row gone)", isDenied(after), describe(after)));
+
+  const aProf = await ctx.a.rest("GET", "profiles", { query: { select: "user_id" } });
+  const bProf = await ctx.b.rest("GET", "profiles", { query: { select: "user_id" } });
+  out.push(
+    result(
+      "delete_own_account: only the caller is affected (A and B still have profiles)",
+      isOk(aProf) && rows(aProf).length === 1 && isOk(bProf) && rows(bProf).length === 1,
+      `${describe(aProf)} / ${describe(bProf)}`,
+    ),
+  );
+  return out;
+}
+
 // ---------------------------------------------------------------- registry / runner
 
 /** @type {CheckDef[]} */
@@ -551,6 +832,9 @@ export const ALL_CHECKS = [
   { name: "board_assets are isolated", run: checkBoardAssets },
   { name: "storage bucket policies", run: checkStorage },
   { name: "version trigger and optimistic concurrency", run: checkVersionTrigger },
+  { name: "accounts & billing tables (plans, profiles, ledgers, billing_events)", run: checkBillingTables },
+  { name: "credits: consume_credits / credit_summary spend only the caller's balance", run: checkCreditsConsumption },
+  { name: "delete_own_account removes the caller's account and data", run: checkDeleteOwnAccount },
 ];
 
 /**

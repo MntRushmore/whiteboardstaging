@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { solutionLogger } from "@/lib/logger";
 import { requireUser } from "@/lib/server/auth";
+import { enforceCredits } from "@/lib/server/billing";
 import { LIMITS, checkRateLimit, rateLimitKey, rateLimitedResponse } from "@/lib/server/rate-limit";
 import { IMAGE_MODELS, extractImageUrl, openrouterChat } from "@/lib/server/openrouter";
 import {
@@ -70,7 +71,7 @@ export async function POST(req: Request) {
 
   const auth = await requireUser(req);
   if ("response" in auth) return auth.response;
-  const { user } = auth;
+  const { user, token } = auth;
 
   const log = solutionLogger.child({ requestId, userId: user.id });
 
@@ -86,6 +87,10 @@ export async function POST(req: Request) {
     return parsed.response;
   }
   const { image, prompt, mode, source, model, hasWorksheet } = parsed.data;
+
+  // Charge credits before the provider call (see src/lib/server/billing.ts).
+  const billing = await enforceCredits({ token, route: "generate-solution", requestId, model: IMAGE_MODELS[model] }, log);
+  if ("response" in billing) return billing.response;
 
   log.info({ mode, source, model, hasWorksheet, imageSize: image.length }, "Solution generation request started");
 

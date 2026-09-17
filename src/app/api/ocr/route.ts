@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ocrLogger } from "@/lib/logger";
 import { requireUser } from "@/lib/server/auth";
+import { enforceCredits } from "@/lib/server/billing";
 import { LIMITS, checkRateLimit, rateLimitKey, rateLimitedResponse } from "@/lib/server/rate-limit";
 import { TEXT_MODELS, openrouterChat } from "@/lib/server/openrouter";
 import { errorResponse, imageDataUrlSchema, parseJsonBody } from "@/lib/server/request";
@@ -22,7 +23,7 @@ export async function POST(req: Request) {
 
   const auth = await requireUser(req);
   if ("response" in auth) return auth.response;
-  const { user } = auth;
+  const { user, token } = auth;
 
   const log = ocrLogger.child({ requestId, userId: user.id });
 
@@ -38,6 +39,10 @@ export async function POST(req: Request) {
     return parsed.response;
   }
   const { image } = parsed.data;
+
+  // Charge credits before the provider call (see src/lib/server/billing.ts).
+  const billing = await enforceCredits({ token, route: "ocr", requestId, model: TEXT_MODELS.fast }, log);
+  if ("response" in billing) return billing.response;
 
   log.info({ imageSize: image.length, model: TEXT_MODELS.fast }, "OCR request started");
 

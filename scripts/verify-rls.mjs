@@ -5,6 +5,12 @@
  *
  *   node scripts/verify-rls.mjs
  *
+ * Covers every public table (including the accounts & billing tables: plans,
+ * profiles, usage_events, credit_grants, billing_events), the storage buckets,
+ * the version trigger and the credit RPCs (consume_credits, credit_summary,
+ * delete_own_account). Two throwaway users A and B are created up front; the
+ * delete_own_account check creates a third (C) and deletes it through the RPC.
+ *
  * Env (read from .env.local when not already set):
  *   NEXT_PUBLIC_SUPABASE_URL        project URL (falls back to `npx supabase status` for the local stack)
  *   NEXT_PUBLIC_SUPABASE_ANON_KEY   anon / publishable key

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api-client";
 import {
+  CREDITS_ACCOUNT_PATH,
   CREDITS_EXHAUSTED_MESSAGE,
   NETWORK_MESSAGE,
   OFFLINE_MESSAGE,
@@ -25,11 +26,15 @@ describe("describeApiError", () => {
   });
 
   it("402 shows the credits message with no Retry, preferring the server's human text", () => {
-    expect(describeApiError(new ApiError("credits_exhausted", 402, "credits_exhausted"))).toMatchObject({
+    expect(describeApiError(new ApiError("credits_exhausted", 402, "credits_exhausted"))).toEqual({
       message: CREDITS_EXHAUSTED_MESSAGE,
       retryable: false,
+      aborted: false,
       kind: "credits",
+      accountHref: CREDITS_ACCOUNT_PATH,
     });
+    expect(CREDITS_ACCOUNT_PATH).toBe("/account");
+    expect(CREDITS_EXHAUSTED_MESSAGE).not.toMatch(/rushil/i);
     expect(describeApiError(new ApiError("Out of credits for today", 402, "credits_exhausted")).message).toBe(
       "Out of credits for today",
     );

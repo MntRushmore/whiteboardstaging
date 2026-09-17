@@ -1,5 +1,6 @@
 import { LIVE_LIMITS, LIVE_TIMING, SolveRequestSchema, SolveStepSchema, type SolveStep } from "@/lib/live/contracts";
 import { getLiveModels } from "@/lib/env";
+import { enforceCredits } from "@/lib/server/billing";
 import { streamWithFallback } from "@/lib/server/openrouter";
 import { jsonlToEvents, sseResponse, type SseEmit } from "@/lib/server/sse";
 import { buildSolveMessages } from "@/lib/server/prompts/solve";
@@ -34,9 +35,14 @@ async function* textDeltas(
 export async function POST(req: Request) {
   const ctx = await livePreamble(req, "solve", "liveSolve", SolveRequestSchema);
   if ("response" in ctx) return ctx.response;
-  const { requestId, log, data, startedAt } = ctx;
+  const { requestId, token, log, data, startedAt } = ctx;
 
   const models = getLiveModels();
+
+  // Charge credits before opening the stream (a 402/503 JSON body, not SSE).
+  const billing = await enforceCredits({ token, route: "live/solve", requestId, model: models.solve }, log);
+  if ("response" in billing) return withRequestId(billing.response, requestId);
+
   const messages = buildSolveMessages(data);
 
   const res = sseResponse(

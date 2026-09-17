@@ -104,7 +104,7 @@ export interface LiveErrorView {
   title: string;
   detail?: string;
   /** which button leads out of the error; null when only Dismiss makes sense */
-  primary: "retry" | "signin" | null;
+  primary: "retry" | "signin" | "account" | null;
   /** rate_limited: whole seconds until Retry becomes available (0 = now) */
   secondsLeft?: number;
   /** false while a rate-limit countdown is still running */
@@ -128,7 +128,8 @@ export function liveErrorView(err: LiveError, now: number): LiveErrorView {
       return { title, primary: "retry", secondsLeft, retryEnabled: secondsLeft === 0 };
     }
     case "credits":
-      return { title: err.message, primary: null, retryEnabled: false };
+      // 402: retrying cannot help; the way out is the account page (plan, reset date).
+      return { title: err.message, primary: "account", retryEnabled: false };
     default:
       return { title: err.message, primary: "retry", retryEnabled: true };
   }

@@ -45,6 +45,12 @@ const envSchema = z.object({
   LIVE_MODEL_CHECK: optionalString,
   LIVE_MODEL_SOLVE: optionalString,
   LIVE_MODEL_VISION: optionalString,
+
+  // Billing (all optional; see docs/ARCHITECTURE.md "Billing").
+  BILLING_ENFORCE: optionalString,
+  STRIPE_WEBHOOK_SECRET: optionalString,
+  BILLING_PRICE_MAP: optionalString,
+  NEXT_PUBLIC_BILLING_LINKS: optionalString,
 });
 
 export type ServerEnv = z.infer<typeof envSchema>;
@@ -120,4 +126,88 @@ export function getLiveModels(): LiveModels {
     solveFallback: solve === LIVE_MODELS.solveFallback ? LIVE_MODELS.solve : LIVE_MODELS.solveFallback,
     vision: env.LIVE_MODEL_VISION || LIVE_MODELS.vision,
   };
+}
+
+/* ------------------------------------------------------------------------- */
+/* Billing                                                                    */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Credit metering is on unless `BILLING_ENFORCE=0` (dev/staging escape hatch).
+ * Anything other than the literal string "0" (including unset) enforces.
+ */
+export function billingEnforced(): boolean {
+  return getServerEnv().BILLING_ENFORCE !== "0";
+}
+
+/** `BILLING_PRICE_MAP`: provider price id -> plan id, e.g. `{"price_123":"plus"}`. */
+const priceMapSchema = z.record(z.string().min(1), z.string().min(1));
+
+export type BillingPriceMap = Record<string, string>;
+
+/**
+ * Parse a `BILLING_PRICE_MAP` value. Returns `{ map }` (empty when unset) or
+ * `{ error }` describing why the JSON is unusable. Pure; no env access.
+ */
+export function parseBillingPriceMap(raw: string | undefined): { map: BillingPriceMap } | { error: string } {
+  if (!raw || raw.trim() === "") return { map: {} };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { error: "BILLING_PRICE_MAP is not valid JSON." };
+  }
+  const result = priceMapSchema.safeParse(parsed);
+  if (!result.success) {
+    return { error: 'BILLING_PRICE_MAP must be a JSON object of {"<price id>": "<plan id>"} strings.' };
+  }
+  return { map: result.data };
+}
+
+/** Lazily validated `BILLING_PRICE_MAP`; throws with a clear message when malformed. */
+export function getBillingPriceMap(): BillingPriceMap {
+  const parsed = parseBillingPriceMap(getServerEnv().BILLING_PRICE_MAP);
+  if ("error" in parsed) throw new Error(parsed.error);
+  return parsed.map;
+}
+
+/** Absolute http(s) URL only: a bad env must not be able to inject `javascript:` links. */
+const httpUrl = z.string().refine((v) => {
+  try {
+    const u = new URL(v);
+    return u.protocol === "https:" || u.protocol === "http:";
+  } catch {
+    return false;
+  }
+}, "must be an absolute http(s) URL");
+
+const BILLING_LINK_KEYS = ["plus", "pro", "portal"] as const;
+
+export type BillingLinks = Partial<Record<(typeof BILLING_LINK_KEYS)[number], string>>;
+
+/**
+ * Parse a `NEXT_PUBLIC_BILLING_LINKS` value (`{"plus":"https://…","pro":"https://…","portal":"https://…"}`).
+ * Lenient on purpose: an unset or malformed value yields `{}` so the app keeps serving and
+ * the UI falls back to "Coming soon". Unknown keys are dropped; non-URL values are dropped.
+ */
+export function parseBillingLinks(raw: string | undefined): BillingLinks {
+  if (!raw || raw.trim() === "") return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  const out: BillingLinks = {};
+  for (const key of BILLING_LINK_KEYS) {
+    const single = httpUrl.safeParse((parsed as Record<string, unknown>)[key]);
+    if (single.success) out[key] = single.data;
+  }
+  return out;
+}
+
+/** Checkout / portal links from `NEXT_PUBLIC_BILLING_LINKS` (server side). */
+export function getBillingLinks(): BillingLinks {
+  return parseBillingLinks(getServerEnv().NEXT_PUBLIC_BILLING_LINKS);
 }

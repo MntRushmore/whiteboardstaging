@@ -27,6 +27,8 @@ export function withRequestId(res: Response, requestId: string): Response {
 export type LiveContext<T> = {
   requestId: string;
   user: AuthedUser;
+  /** Verified access token (for acting as the user, e.g. `enforceCredits`). */
+  token: string;
   log: pino.Logger;
   data: T;
   startedAt: number;
@@ -47,7 +49,7 @@ export async function livePreamble<S extends z.ZodTypeAny>(
 
   const auth = await requireUser(req);
   if ("response" in auth) return { response: withRequestId(auth.response, requestId) };
-  const { user } = auth;
+  const { user, token } = auth;
   const log = liveLogger.child({ requestId, route, userId: user.id });
 
   const rl = checkRateLimit(rateLimitKey(user.id, bucket), LIMITS[bucket]);
@@ -62,7 +64,7 @@ export async function livePreamble<S extends z.ZodTypeAny>(
     return { response: withRequestId(parsed.response, requestId) };
   }
 
-  return { requestId, user, log, data: parsed.data, startedAt };
+  return { requestId, user, token, log, data: parsed.data, startedAt };
 }
 
 /** Map a thrown error to the SSE `error` frame payload (same codes as the JSON error contract). */

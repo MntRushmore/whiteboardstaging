@@ -235,7 +235,8 @@ async function main() {
     for (const method of route.methods) {
       const res = await fetch(`${BASE_URL}${route.path}`, { method });
       const body = await res.json().catch(() => null);
-      ok(res.status === 200, `${method} ${route.path} -> 200 without a token`, `status ${res.status}`);
+      const expected = route.withoutTokenStatus ?? [200];
+      ok(expected.includes(res.status), `${method} ${route.path} -> ${expected.join("/")} without a token`, `status ${res.status}`);
       if (route.path === "/api/config/status") {
         ok(body && typeof body.configured === "boolean" && Array.isArray(body.providers), "config/status body is { configured, providers[] }");
         ok(

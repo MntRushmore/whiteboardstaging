@@ -1,5 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { REQUIRED_ENV_VARS, getLiveModels, getServerEnv, hasMathpix, hasOpenAI, resetServerEnvCache } from "@/lib/env";
+import {
+  REQUIRED_ENV_VARS,
+  billingEnforced,
+  getBillingLinks,
+  getBillingPriceMap,
+  getLiveModels,
+  getServerEnv,
+  hasMathpix,
+  hasOpenAI,
+  parseBillingLinks,
+  parseBillingPriceMap,
+  resetServerEnvCache,
+} from "@/lib/env";
 import { LIVE_MODELS } from "@/lib/live/contracts";
 
 const ALL_VARS = [
@@ -13,6 +25,10 @@ const ALL_VARS = [
   "LIVE_MODEL_CHECK",
   "LIVE_MODEL_SOLVE",
   "LIVE_MODEL_VISION",
+  "BILLING_ENFORCE",
+  "STRIPE_WEBHOOK_SECRET",
+  "BILLING_PRICE_MAP",
+  "NEXT_PUBLIC_BILLING_LINKS",
 ] as const;
 
 const saved: Record<string, string | undefined> = {};
@@ -129,5 +145,65 @@ describe("getLiveModels", () => {
     const models = getLiveModels();
     expect(models.check).toBe(LIVE_MODELS.checkFallback);
     expect(models.checkFallback).toBe(LIVE_MODELS.check);
+  });
+});
+
+describe("billing env", () => {
+  it("the billing variables are optional and placeholders count as unset", () => {
+    setRequired();
+    process.env.STRIPE_WEBHOOK_SECRET = "your-webhook-secret";
+    const env = getServerEnv();
+    expect(env.BILLING_ENFORCE).toBeUndefined();
+    expect(env.STRIPE_WEBHOOK_SECRET).toBeUndefined();
+    expect(env.BILLING_PRICE_MAP).toBeUndefined();
+    expect(env.NEXT_PUBLIC_BILLING_LINKS).toBeUndefined();
+  });
+
+  it("billingEnforced is true unless BILLING_ENFORCE is exactly '0'", () => {
+    setRequired();
+    expect(billingEnforced()).toBe(true);
+    resetServerEnvCache();
+    process.env.BILLING_ENFORCE = "0";
+    expect(billingEnforced()).toBe(false);
+    resetServerEnvCache();
+    process.env.BILLING_ENFORCE = "false";
+    expect(billingEnforced()).toBe(true);
+  });
+
+  it("parseBillingPriceMap validates lazily: unset -> {}, valid -> map, bad -> error", () => {
+    expect(parseBillingPriceMap(undefined)).toEqual({ map: {} });
+    expect(parseBillingPriceMap("  ")).toEqual({ map: {} });
+    expect(parseBillingPriceMap('{"price_1":"plus","price_2":"pro"}')).toEqual({ map: { price_1: "plus", price_2: "pro" } });
+    expect(parseBillingPriceMap("{oops")).toEqual({ error: expect.stringMatching(/valid JSON/) });
+    expect(parseBillingPriceMap('["plus"]')).toEqual({ error: expect.stringMatching(/JSON object/) });
+    expect(parseBillingPriceMap('{"price_1": 3}')).toEqual({ error: expect.stringMatching(/JSON object/) });
+  });
+
+  it("getBillingPriceMap reads the env and throws only when malformed", () => {
+    setRequired();
+    expect(getBillingPriceMap()).toEqual({});
+    resetServerEnvCache();
+    process.env.BILLING_PRICE_MAP = '{"price_x":"pro"}';
+    expect(getBillingPriceMap()).toEqual({ price_x: "pro" });
+    resetServerEnvCache();
+    process.env.BILLING_PRICE_MAP = "nope";
+    expect(() => getBillingPriceMap()).toThrowError(/BILLING_PRICE_MAP/);
+  });
+
+  it("parseBillingLinks is lenient and keeps only http(s) URLs for plus/pro/portal", () => {
+    expect(parseBillingLinks(undefined)).toEqual({});
+    expect(parseBillingLinks("{bad")).toEqual({});
+    expect(parseBillingLinks('["https://a"]')).toEqual({});
+    expect(
+      parseBillingLinks('{"plus":"https://buy.example/plus","pro":"javascript:alert(1)","portal":"https://billing.example/p","other":"https://x"}'),
+    ).toEqual({ plus: "https://buy.example/plus", portal: "https://billing.example/p" });
+  });
+
+  it("getBillingLinks reads NEXT_PUBLIC_BILLING_LINKS", () => {
+    setRequired();
+    expect(getBillingLinks()).toEqual({});
+    resetServerEnvCache();
+    process.env.NEXT_PUBLIC_BILLING_LINKS = '{"portal":"https://billing.example/p"}';
+    expect(getBillingLinks()).toEqual({ portal: "https://billing.example/p" });
   });
 });

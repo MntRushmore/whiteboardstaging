@@ -23,6 +23,7 @@ import {
   API_ROUTES,
   NO_BODY_ROUTES,
   PUBLIC_ROUTES,
+  PUBLIC_ROUTE_REASONS,
   protectedRoutes,
   routeFileToPath,
   routeProbes,
@@ -89,10 +90,29 @@ describe("route discovery", () => {
 });
 
 describe("allow-lists", () => {
-  it("PUBLIC_ROUTES is exactly config/status", () => {
-    // Public by design: it reports which provider keys exist as booleans (never values,
+  it("PUBLIC_ROUTES is exactly config/status and the billing webhook", () => {
+    // config/status: reports which provider keys exist as booleans (never values,
     // prefixes or lengths) so the setup screen can render before sign-in.
-    expect([...PUBLIC_ROUTES]).toEqual(["src/app/api/config/status/route.ts"]);
+    // billing/webhook: the provider has no user JWT; the Stripe-Signature HMAC is the auth.
+    expect([...PUBLIC_ROUTES].sort()).toEqual(["src/app/api/billing/webhook/route.ts", "src/app/api/config/status/route.ts"]);
+  });
+
+  it("every public route documents why it may skip requireUser", () => {
+    for (const file of PUBLIC_ROUTES) {
+      expect(PUBLIC_ROUTE_REASONS[file], file).toMatch(/\S/);
+    }
+    expect(PUBLIC_ROUTE_REASONS["src/app/api/billing/webhook/route.ts"]).toBe("signature-verified provider webhook");
+  });
+
+  it("the billing webhook verifies the provider signature over the raw body", () => {
+    // The real invariant behind its PUBLIC_ROUTES entry: auth is the HMAC, computed over the
+    // exact bytes, so the handler must read req.text() (never req.json()) and call
+    // verifyStripeSignature before it trusts anything in the payload.
+    const src = sources.get("src/app/api/billing/webhook/route.ts") ?? "";
+    expect(/\bverifyStripeSignature\s*\(/.test(src)).toBe(true);
+    expect(/req\.text\s*\(/.test(src)).toBe(true);
+    expect(/req\.json\s*\(/.test(src)).toBe(false);
+    expect(NO_BODY_ROUTES).not.toContain("src/app/api/billing/webhook/route.ts");
   });
 
   it("allow-listed files exist on disk", () => {
@@ -196,6 +216,8 @@ describe("scripts/lib/routes.mjs registry matches the filesystem", () => {
     for (const route of API_ROUTES) {
       if (route.auth === "public") {
         expect(route.limit, route.file).toMatch(/^ip:/);
+        expect(sources.get(route.file)!, `${route.file} should key its limiter on ${route.limit}`).toContain(route.limit.slice("ip:".length));
+        expect(route.withoutTokenStatus, `${route.file} must say what an unauthenticated probe gets`).toEqual(expect.arrayContaining([expect.any(Number)]));
       } else {
         expect(rateLimitSrc, `${route.file}: LIMITS.${route.limit} missing`).toMatch(new RegExp(`^\\s+${route.limit}:`, "m"));
         expect(sources.get(route.file)!, `${route.file} should use bucket "${route.limit}"`).toContain(`"${route.limit}"`);

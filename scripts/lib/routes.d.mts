@@ -15,6 +15,8 @@ export interface ApiRoute {
   body: RouteBody;
   purpose: string;
   status: string;
+  /** Public routes only: statuses an unauthenticated probe may receive (smoke test). */
+  withoutTokenStatus?: readonly number[];
 }
 
 export interface RouteProbe {
@@ -24,6 +26,8 @@ export interface RouteProbe {
 }
 
 export declare const PUBLIC_ROUTES: readonly string[];
+/** Reason each PUBLIC_ROUTES file may skip requireUser. */
+export declare const PUBLIC_ROUTE_REASONS: Readonly<Record<string, string>>;
 export declare const NO_BODY_ROUTES: readonly string[];
 export declare const API_ROUTES: readonly ApiRoute[];
 

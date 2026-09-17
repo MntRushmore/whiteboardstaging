@@ -79,7 +79,7 @@ vercel env ls                        # expect both names listed 3x
 vercel env pull .env.local           # optional: sync development values locally
 ```
 
-Also required: `OPENROUTER_API_KEY` (all envs). Optional: `OPENAI_API_KEY`, `MATHPIX_APP_ID`/`MATHPIX_APP_KEY`, `NEXT_PUBLIC_TLDRAW_LICENSE_KEY`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_LIVE_MATH`, `LIVE_MODEL_*`, `LOG_LEVEL`, `NEXT_PUBLIC_LOG_LEVEL`. Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to Vercel: no route reads it. Never add the `# ─── Scripts and tests` keys from `.env.example` (`BASE_URL`, `SMOKE_*`, `RUN_DB_TESTS`, `VERIFY_EMAIL_DOMAIN`). Redeploy (`vercel --prod`) after changing env vars; existing deployments keep their old values.
+Also required: `OPENROUTER_API_KEY` (all envs). Optional: `OPENAI_API_KEY`, `MATHPIX_APP_ID`/`MATHPIX_APP_KEY`, `NEXT_PUBLIC_TLDRAW_LICENSE_KEY`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_LIVE_MATH`, `LIVE_MODEL_*`, `LOG_LEVEL`, `NEXT_PUBLIC_LOG_LEVEL`. Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to Vercel unless you enable billing: the only route that reads it is `POST /api/billing/webhook` (section 13), everything else runs with the caller's JWT. Never add the `# ─── Scripts and tests` keys from `.env.example` (`BASE_URL`, `SMOKE_*`, `RUN_DB_TESTS`, `VERIFY_EMAIL_DOMAIN`). Redeploy (`vercel --prod`) after changing env vars; existing deployments keep their old values.
 
 Check the result with `npm run env:check` (`node scripts/check-vercel-env.mjs`): it runs the read-only `vercel env ls`, classifies every key by its `.env.example` section, and exits 1 on a missing required key, a deployed scripts-only key, or a Vercel key that `.env.example` does not document. `--env Preview` limits it to one environment, `--json` prints the report as JSON, `--from <file>` reads saved `vercel env ls` output (CI uses `src/__tests__/fixtures/vercel-env-ls.txt`). The current per-environment state and the exact `vercel env add` commands are in `docs/GO-LIVE.md` section 2.
 
@@ -124,7 +124,7 @@ npx supabase stop                     # keeps data; add --no-backup to wipe volu
 | Key | Where | Impact |
 | --- | --- | --- |
 | anon / publishable | *Project Settings -> API Keys -> Create new / Revoke* | Update `NEXT_PUBLIC_SUPABASE_ANON_KEY` in Vercel (section 5) and redeploy, then revoke the old key. Sessions survive: user JWTs are signed by the JWT secret, not the anon key. |
-| service_role / secret | same page | Only `scripts/offload-assets.mjs` (one-off admin migration, run from an operator's machine) uses it; it is never deployed to Vercel. Rotate freely; re-export `SUPABASE_SERVICE_ROLE_KEY` before the next run. |
+| service_role / secret | same page | Used by `scripts/offload-assets.mjs` (one-off admin migration, run from an operator's machine) and, once billing is enabled, by `POST /api/billing/webhook` (section 13). Rotate freely; re-export `SUPABASE_SERVICE_ROLE_KEY` before the next script run and update the Vercel Production variable + redeploy if the webhook is live. |
 | JWT secret / signing key | *Project Settings -> JWT Keys* | Invalidates every user session and every legacy `anon`/`service_role` JWT-style key at once. Do it in a maintenance window: rotate, copy the new anon key to Vercel, redeploy, tell users to sign in again. Prefer the newer `sb_publishable_...` key, which is not derived from the JWT secret. |
 | DB password | *Project Settings -> Database -> Reset* | Only affects `supabase link`, `pg_dump`, `psql`. Re-run `npx supabase link` afterwards. |
 
@@ -200,4 +200,99 @@ left join storage.objects o on o.bucket_id = 'board-assets' and o.name = a.objec
 where o.id is null;
 ```
 
-Delete orphans with `delete from storage.objects where bucket_id = 'board-assets' and name in (...)` (the storage API also accepts `DELETE /storage/v1/object/board-assets/<path>` with the service role). Assets removed from a board *without* deleting the board (undo, delete shape) are not reclaimed either; the registry row stays until a GC pass compares `board_assets.object_path` against the asset `src`s inside `whiteboards.data`. A scheduled job (`pg_cron` or a Vercel cron hitting an admin route) that runs these three queries nightly is the intended follow-up; until then run them after cohort clean-ups.
+Delete orphans through the Storage API with the service role (`DELETE /storage/v1/object/board-assets` with `{"prefixes":["<path>", ...]}`, or `DELETE /storage/v1/object/board-assets/<path>` one at a time). Do **not** `delete from storage.objects` in SQL: storage-api >= 1.7x installs a `BEFORE DELETE` trigger (`storage.protect_delete`) that rejects it with `42501 Direct deletion from storage tables is not allowed`, because removing the row leaves the file itself behind in the backing store. Assets removed from a board *without* deleting the board (undo, delete shape) are not reclaimed either; the registry row stays until a GC pass compares `board_assets.object_path` against the asset `src`s inside `whiteboards.data`. A scheduled job (`pg_cron` or a Vercel cron hitting an admin route) that runs these three queries nightly is the intended follow-up; until then run them after cohort clean-ups.
+
+## 13. Accounts & billing
+
+Migration `supabase/migrations/20260917020000_accounts_billing.sql` (idempotent; `npm run db:push`). Credits are the unit: every user is on a plan with a monthly allowance, and for the current **UTC calendar month**
+
+```
+remaining = plans.monthly_credits + sum(credit_grants.units this month) - sum(usage_events.units this month)   (clamped at 0)
+```
+
+Nothing resets or rolls over; the window simply moves on the 1st at 00:00 UTC. Metering runs *as the user*: the API routes call `consume_credits()` with the caller's own JWT, so a user can only ever spend their own balance and nothing reachable with a user token can add credits or change a plan.
+
+**What the migration creates**
+
+| Kind | Objects |
+| --- | --- |
+| Tables (RLS on, no `anon` grants) | `plans` (catalogue; `select` for authenticated), `profiles` (one per `auth.users` row; owner `select`, owner `update` of **`display_name` only** via a column-level grant, so `PATCH {plan_id}` fails with `42501`), `usage_events` (spent credits; owner `select` only), `credit_grants` (extra credits; owner `select` only), `billing_events` (webhook idempotency log; **no** authenticated access, service role only) |
+| Functions (`security definer`, `set search_path = public`, `execute` only for `authenticated`) | `credit_summary()` -> `{plan_id, plan_name, monthly_credits, used, granted, remaining, period_start, period_end}`; `consume_credits(p_route, p_units, p_request_id?, p_model?)` -> `{ok, remaining, reason}` (locks the caller's `profiles` row `FOR UPDATE`, so parallel calls serialize; `ok:false, reason:'insufficient_credits'` writes nothing; `p_units` must be 1..1000, else `400`); `delete_own_account()` -> deletes the caller's `auth.users` row (cascades below). Internal, not callable by users: `credit_period()`, `credit_balance(uuid)`, `handle_new_user()` |
+| Triggers | `on_auth_user_created` (`auth.users` AFTER INSERT -> `profiles` row with `plan_id='free'`; never blocks sign-up - a failure is logged as a warning and `consume_credits()` creates the missing row on first use); `profiles_set_updated_at` |
+| Seed | `plans` rows `free` (300 credits, $0), `plus` (3,000, $9.00), `pro` (12,000, $29.00) - **placeholders**, re-applied with `on conflict do update` on every migration run |
+| Backfill | a `profiles` row for every pre-existing user |
+
+The per-route cost (credits per call) is defined in the server code next to the route registry (see the routes table in `docs/ARCHITECTURE.md`); the database only records what it is told in `usage_events.units`. Verify the whole thing with `npm run db:verify` (checks named `plans:`, `profiles:`, `usage_events:`, `credit_grants:`, `billing_events:`, `credit_summary:`, `consume_credits:`, `delete_own_account:`) and `RUN_DB_TESTS=1 npx vitest run src/__tests__/db-billing.integration.test.ts` (month window, 10-way concurrency, deletion cascade).
+
+**Change the plan numbers** (SQL editor; takes effect on the next `credit_summary()` / `consume_credits()` call, no deploy):
+
+```sql
+update public.plans set monthly_credits = 500, price_cents = 0 where id = 'free';
+update public.plans set monthly_credits = 5000, price_cents = 1200, features = '["5,000 credits / month","Worksheets"]' where id = 'plus';
+update public.plans set active = false where id = 'pro';      -- hide from the pricing UI; existing subscribers keep it
+select id, name, monthly_credits, price_cents, active from public.plans order by sort;
+```
+
+Keep the migration's seed in sync when you change numbers permanently (it re-applies on every `db push`; otherwise the next push reverts your UPDATE). New plan ids must match `^[a-z][a-z0-9_-]{0,31}$`.
+
+**Grant credits to a user by hand** (a refund, a classroom pilot, a bug apology). Grants count for the month of their `created_at`, so a grant made today is gone on the 1st:
+
+```sql
+insert into public.credit_grants (user_id, units, reason)
+select id, 500, 'pilot cohort 2026-09' from auth.users where lower(email) = lower('student@example.com');
+-- negative units are allowed for corrections
+insert into public.credit_grants (user_id, units, reason) values ('<uuid>', -100, 'double-counted refund');
+-- what the student now sees (as postgres you cannot call credit_summary(); use the internal helper)
+select public.credit_balance((select id from auth.users where email = 'student@example.com'));
+```
+
+**Set a user's plan by hand** (comped account, or the webhook missed an event):
+
+```sql
+update public.profiles
+set plan_id = 'plus', billing_status = 'comped', current_period_end = null
+where user_id = (select id from auth.users where lower(email) = lower('student@example.com'));
+select u.email, p.plan_id, p.billing_status, p.billing_customer_id, p.current_period_end
+from public.profiles p join auth.users u on u.id = p.user_id where u.email = 'student@example.com';
+```
+
+**How the webhook updates it.** `POST /api/billing/webhook` verifies the provider signature (`STRIPE_WEBHOOK_SECRET`) and then, with `SUPABASE_SERVICE_ROLE_KEY` (the only route that uses it; add it to Vercel *Production* only, as a sensitive variable, when you enable billing), does two writes: `insert into billing_events (id, type, payload)` keyed by the provider's event id (`on conflict do nothing`; a duplicate delivery is dropped there) and `update profiles set plan_id, billing_customer_id, billing_subscription_id, billing_status, current_period_end where user_id = ...` (the user id travels in the checkout session's `client_reference_id` / subscription metadata). Without both env vars the route answers `503 feature_unavailable` and nothing changes. `BILLING_ENFORCE=0` makes the API routes skip `consume_credits()` entirely (dev/staging escape hatch; never in production). Checkout / portal links come from `NEXT_PUBLIC_BILLING_LINKS`; without it the pricing UI shows the plans with disabled buttons. Inspect what arrived with `select id, type, received_at from public.billing_events order by received_at desc limit 20;`.
+
+**Usage questions**
+
+```sql
+-- this month's spend per user
+select u.email, sum(e.units) as credits, count(*) as calls
+from public.usage_events e join auth.users u on u.id = e.user_id
+where e.created_at >= date_trunc('month', now() at time zone 'utc') at time zone 'utc'
+group by u.email order by credits desc;
+-- most expensive routes this month
+select route, sum(units) as credits, count(*) as calls from public.usage_events
+where created_at >= date_trunc('month', now() at time zone 'utc') at time zone 'utc'
+group by route order by credits desc;
+```
+
+`usage_events` is append-only and grows with every AI call (one row per call, ~100 bytes). Prune rows older than the retention you want (`delete from public.usage_events where created_at < now() - interval '13 months';`) - only the current month is ever consulted for balances.
+
+**Account deletion and storage garbage collection.** `delete_own_account()` deletes the caller's `auth.users` row. That cascades (`on delete cascade`) to `profiles`, `whiteboards` (-> `whiteboard_snapshots`, `board_assets`), `user_settings`, `trainers`, `training_samples`, `usage_events` and `credit_grants`; `bug_reports` keeps its rows with `user_id = null`; Auth removes identities, sessions and refresh tokens itself. The user's JWT stays signature-valid until it expires, but every table is empty for it and `consume_credits()` answers `403 account not found`.
+
+Storage objects are **not** removed by the RPC: `storage.objects` has no FK to `auth.users`, and the Storage trigger described in section 12 rejects direct row deletes because the file behind the row would stay in the backing store. So: (1) the client does this itself — `src/components/account/DangerZone.tsx` calls `deleteOwnAccount()` from `src/lib/billing/deleteAccount.ts`, which reads its own `board_assets.object_path` rows and calls `storage.from('board-assets').remove(paths)` *before* the RPC (the owner-delete policy allows it; a Storage failure is logged and does not block the deletion; `training-data` has no delete policy on purpose), and (2) the operator runs this after deletions, because `board-assets` is a public bucket and an orphaned image stays reachable by URL until it is removed:
+
+```sql
+-- objects whose owner folder (<uid>/...) no longer matches an existing user
+select o.bucket_id, o.name, o.created_at
+from storage.objects o
+where o.bucket_id in ('board-assets', 'training-data')
+  and not exists (select 1 from auth.users u where u.id::text = (storage.foldername(o.name))[1])
+order by o.bucket_id, o.name;
+```
+
+then delete them through the Storage API with the service role (never via SQL):
+
+```bash
+curl -X DELETE "$NEXT_PUBLIC_SUPABASE_URL/storage/v1/object/board-assets" \
+  -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+  -H "Content-Type: application/json" -d '{"prefixes":["<uid>/<boardId>/<assetId>.png", "..."]}'
+```
+
+`src/__tests__/db-billing.integration.test.ts` exercises exactly this sequence (delete account -> object still served -> service-role API delete -> 404). Wiring the query above into the nightly GC job from section 12 is the intended follow-up.

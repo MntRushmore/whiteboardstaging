@@ -17,6 +17,7 @@ import { isLiveMeta, LIVE_LIMITS, LIVE_TIMING, type LiveStatus } from "@/lib/liv
 import { clearLiveError, liveStore, retryLiveError, type LiveError } from "@/lib/live/liveStore";
 import { scheduleLiveWrite } from "@/lib/live/liveWrite";
 import { useLiveSettings } from "@/lib/live/liveSettings";
+import { ACCOUNT_PATH } from "@/lib/billing/viewModel";
 import { LIVE_COPY, pillLabelFor } from "./copy";
 import { liveErrorView, secondsLeftFor } from "./errorView";
 
@@ -144,6 +145,11 @@ function LiveErrorFace({ error, now, canRetry }: { error: LiveError; now: number
       {view.primary === "signin" && (
         <Link href="/login" className={`${ERROR_BUTTON} ml-1 bg-red-50 text-red-700 hover:bg-red-100`} data-testid="live-error-signin">
           {LIVE_COPY.errors.signIn}
+        </Link>
+      )}
+      {view.primary === "account" && (
+        <Link href={ACCOUNT_PATH} className={`${ERROR_BUTTON} ml-1 bg-red-50 text-red-700 hover:bg-red-100`} data-testid="live-error-account">
+          {LIVE_COPY.errors.viewPlan}
         </Link>
       )}
       <button

@@ -4,9 +4,12 @@ import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { isApiError } from "@/lib/api-client";
+import { ACCOUNT_PATH, BILLING_COPY } from "@/lib/billing/viewModel";
 
-export const CREDITS_EXHAUSTED_MESSAGE =
-  "Account credits are used up — ask Rushil to refill your account.";
+/** 402 without a usable server message. The toast links to /account (plans, reset date). */
+export const CREDITS_EXHAUSTED_MESSAGE = BILLING_COPY.exhausted;
+/** Where a 402 sends the user: their plan, remaining credits and the reset date. */
+export const CREDITS_ACCOUNT_PATH = ACCOUNT_PATH;
 export const SIGN_IN_AGAIN_MESSAGE = "Please sign in again";
 export const RATE_LIMITED_MESSAGE =
   "Slow down a little — try again in a few seconds";
@@ -50,6 +53,8 @@ export interface ApiErrorDescription {
   /** True for a fetch abort (the user edited mid-request) — not an error to show. */
   aborted: boolean;
   kind: ApiErrorKind;
+  /** Present on 402: the in-app route where the user can see their plan and credits. */
+  accountHref?: string;
 }
 
 export interface DescribeApiErrorOptions {
@@ -128,6 +133,7 @@ export function describeApiError(
         retryable: false,
         aborted: false,
         kind: "credits",
+        accountHref: CREDITS_ACCOUNT_PATH,
       };
     }
     if (err.status === 429 || err.code === "rate_limited") {
@@ -183,7 +189,7 @@ type HandleOptions = {
  * Uniform handling for errors thrown by `apiJson` / `authedFetch`:
  *   401 -> toast "Please sign in again" and redirect to /login
  *   429 -> toast the server's retry hint
- *   402 / credits_exhausted -> the credits toast
+ *   402 / credits_exhausted -> the credits toast with a "View plan" action to /account
  *   anything else -> the server's human message (toasted if `toastOthers`)
  *
  * Returns the human-readable message so callers can also show it inline.
@@ -206,7 +212,15 @@ export function useApiErrorHandler() {
 
       const wellKnown = described.kind === "credits" || described.kind === "rate-limited";
       if (showToast && (wellKnown || options.toastOthers)) {
-        toast.error(described.message, described.kind === "credits" ? { duration: 8000 } : undefined);
+        if (described.kind === "credits" && described.accountHref) {
+          const href = described.accountHref;
+          toast.error(described.message, {
+            duration: 8000,
+            action: { label: BILLING_COPY.viewAccount, onClick: () => router.push(href) },
+          });
+        } else {
+          toast.error(described.message);
+        }
       }
       return described.message;
     },

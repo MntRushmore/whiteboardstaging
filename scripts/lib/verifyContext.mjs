@@ -46,11 +46,33 @@ export async function bootstrapVerifyContext(cfg) {
   const clientA = mk(a);
   const clientB = mk(b);
 
+  /**
+   * Extra throwaway users created on demand by checks that destroy the account
+   * they run as (delete_own_account). Tracked so cleanup can remove leftovers
+   * when such a check fails half-way.
+   * @type {Array<{ session: typeof a, client: ReturnType<typeof mk> }>}
+   */
+  const extras = [];
+  async function newUser() {
+    const session = await provisionUser({
+      url,
+      anonKey: cfg.anonKey,
+      serviceKey: cfg.serviceKey ?? null,
+      email: `rls-verify-${tag}-c${extras.length + 1}@${domain}`,
+      password,
+      fetchImpl: cfg.fetchImpl,
+    });
+    const client = mk(session);
+    extras.push({ session, client });
+    return client;
+  }
+
   /** Remove everything the checks may have left behind. Returns human-readable notes. */
   async function cleanup() {
     /** @type {string[]} */
     const notes = [];
-    for (const c of [clientA, clientB]) {
+    const extraClients = extras.map((e) => e.client);
+    for (const c of [clientA, clientB, ...extraClients]) {
       // Owners may delete their own boards (cascades snapshots + board_assets rows).
       await c.rest("DELETE", "whiteboards", { query: { user_id: `eq.${c.userId}` } });
       for (const key of c.uploaded) {
@@ -66,23 +88,25 @@ export async function bootstrapVerifyContext(cfg) {
         userId: null,
         fetchImpl: cfg.fetchImpl,
       });
-      const ids = `(${a.userId},${b.userId})`;
+      const allSessions = [a, b, ...extras.map((e) => e.session)];
+      const ids = `(${allSessions.map((s) => s.userId).join(",")})`;
       // bug_reports.user_id is ON DELETE SET NULL, so remove them before the users.
       await service.rest("DELETE", "bug_reports", { query: { user_id: `in.${ids}` } });
-      for (const c of [clientA, clientB]) {
+      for (const c of [clientA, clientB, ...extraClients]) {
         for (const key of c.uploaded) {
           const slash = key.indexOf("/");
           await service.storageDelete(key.slice(0, slash), key.slice(slash + 1));
         }
       }
-      for (const s of [a, b]) {
+      for (const s of allSessions) {
         const res = await adminDeleteUser(url, cfg.serviceKey, s.userId, cfg.fetchImpl);
-        if (res.status >= 300) notes.push(`could not delete user ${s.email}: ${res.status}`);
+        // 404: the user already deleted itself (delete_own_account check) - not a problem.
+        if (res.status >= 300 && res.status !== 404) notes.push(`could not delete user ${s.email}: ${res.status}`);
       }
-      if (!notes.length) notes.push(`deleted throwaway users ${a.email}, ${b.email}`);
+      if (!notes.length) notes.push(`deleted throwaway users ${allSessions.map((s) => s.email).join(", ")}`);
     } else {
       notes.push(
-        `throwaway users ${a.email} and ${b.email} (and their user_settings/bug_reports rows) were left in place; ` +
+        `throwaway users ${a.email} and ${b.email} (and their profiles/usage_events/user_settings/bug_reports rows) were left in place; ` +
           "set SUPABASE_SERVICE_ROLE_KEY to have them removed automatically.",
       );
     }
@@ -90,7 +114,7 @@ export async function bootstrapVerifyContext(cfg) {
   }
 
   return {
-    ctx: { anon, a: clientA, b: clientB },
+    ctx: { anon, a: clientA, b: clientB, newUser },
     users: [
       { email: a.email, userId: a.userId },
       { email: b.email, userId: b.userId },

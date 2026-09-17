@@ -1,5 +1,6 @@
 import { AnnotationSchema, CheckRequestSchema, LIVE_TIMING } from "@/lib/live/contracts";
 import { getLiveModels } from "@/lib/env";
+import { enforceCredits } from "@/lib/server/billing";
 import { streamWithFallback } from "@/lib/server/openrouter";
 import { jsonlToEvents, sseResponse, type SseEmit } from "@/lib/server/sse";
 import { buildCheckMessages } from "@/lib/server/prompts/check";
@@ -34,9 +35,14 @@ async function* textDeltas(
 export async function POST(req: Request) {
   const ctx = await livePreamble(req, "check", "liveCheck", CheckRequestSchema);
   if ("response" in ctx) return ctx.response;
-  const { requestId, log, data, startedAt } = ctx;
+  const { requestId, token, log, data, startedAt } = ctx;
 
   const models = getLiveModels();
+
+  // Charge credits before opening the stream (a 402/503 JSON body, not SSE).
+  const billing = await enforceCredits({ token, route: "live/check", requestId, model: models.check }, log);
+  if ("response" in billing) return withRequestId(billing.response, requestId);
+
   const messages = buildCheckMessages(data);
 
   const res = sseResponse(

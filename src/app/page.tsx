@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { AuthErrorBanner, useAuth } from '@/components/AuthProvider';
 import { DASHBOARD_COPY, dashboardStateFor } from '@/app/dashboardState';
 import { describeError } from '@/lib/errorMessage';
 import { CreditsBanner } from '@/components/CreditsBanner';
+import { PlanBadge } from '@/components/account/PlanBadge';
 import { FeatureLabsPanel } from '@/components/FeatureLabsPanel';
 import {
   Plus,
@@ -288,9 +290,10 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-background">
       <header className="absolute top-0 right-0 p-4 flex items-center gap-3 z-10">
-        <span className="text-sm text-muted-foreground hidden sm:inline">
+        <Link href="/account" className="text-sm text-muted-foreground hidden sm:inline hover:text-foreground hover:underline">
           {user.email}
-        </span>
+        </Link>
+        <PlanBadge />
         <FeatureLabsPanel />
         <Button variant="outline" size="sm" onClick={handleSignOut}>
           <LogOut className="w-4 h-4 mr-1.5" />

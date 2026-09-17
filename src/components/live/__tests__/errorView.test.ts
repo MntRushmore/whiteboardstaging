@@ -97,8 +97,8 @@ describe("liveErrorView", () => {
     expect(secondsLeftFor({ at: 0 }, 5)).toBe(0);
   });
 
-  it("credits -> only Dismiss; everything else -> Retry enabled", () => {
-    expect(liveErrorView(err({ code: "credits", message: "Out of credits" }), 0)).toEqual({ title: "Out of credits", primary: null, retryEnabled: false });
+  it("credits -> View plan link (no Retry); everything else -> Retry enabled", () => {
+    expect(liveErrorView(err({ code: "credits", message: "Out of credits" }), 0)).toEqual({ title: "Out of credits", primary: "account", retryEnabled: false });
     for (const code of ["network", "upstream", "timeout", "unknown"] as const) {
       expect(liveErrorView(err({ code, message: "m" }), 0)).toEqual({ title: "m", primary: "retry", retryEnabled: true });
     }

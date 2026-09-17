@@ -22,7 +22,15 @@
 export const PUBLIC_ROUTES = Object.freeze([
   // Boolean-only provider status for the setup screen; never returns key material.
   "src/app/api/config/status/route.ts",
+  // Billing provider webhook: no user JWT exists; the Stripe-Signature HMAC is the auth.
+  "src/app/api/billing/webhook/route.ts",
 ]);
+
+/** Why each public route may skip requireUser (enforced by routeProtection.test.ts). */
+export const PUBLIC_ROUTE_REASONS = Object.freeze({
+  "src/app/api/config/status/route.ts": "booleans-only setup status",
+  "src/app/api/billing/webhook/route.ts": "signature-verified provider webhook",
+});
 
 /** Routes whose handlers legitimately have no zod body schema. */
 export const NO_BODY_ROUTES = Object.freeze([
@@ -32,6 +40,19 @@ export const NO_BODY_ROUTES = Object.freeze([
 ]);
 
 export const API_ROUTES = Object.freeze([
+  {
+    path: "/api/billing/webhook",
+    file: "src/app/api/billing/webhook/route.ts",
+    methods: ["POST"],
+    auth: "public",
+    limit: "ip:billingWebhook",
+    body: "zod",
+    // Reads the raw text (the signature covers the bytes), then zod-validates the parsed event.
+    // Without a valid Stripe-Signature it answers 400; without the secrets, 503.
+    withoutTokenStatus: [400, 503],
+    purpose: "Stripe-compatible billing webhook: plan changes via the service role",
+    status: "active",
+  },
   {
     path: "/api/check-help-needed",
     file: "src/app/api/check-help-needed/route.ts",
@@ -49,6 +70,7 @@ export const API_ROUTES = Object.freeze([
     auth: "public",
     limit: "ip:configStatus",
     body: "none",
+    withoutTokenStatus: [200],
     purpose: "Which provider keys are configured (booleans only)",
     status: "active",
   },

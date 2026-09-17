@@ -53,8 +53,8 @@ export const LIVE_COPY = {
     /** seconds until the rate limit lifts */
     rateLimited: (seconds: number) => `Slowing down — try again in ${seconds} s`,
     rateLimitedReady: "You can try again now",
-    /** 402 without a usable server message */
-    credits: "This account is out of credits",
+    /** 402 without a usable server message; the account page shows the plan and reset date */
+    credits: "This month's credits are used up — see your account",
     upstream: "The tutor service had a hiccup",
     timeout: "Reading took too long",
     unknown: "Something went sideways",
@@ -67,6 +67,8 @@ export const LIVE_COPY = {
     retry: "Retry",
     dismiss: "Dismiss",
     signIn: "Sign in",
+    /** 402: link to /account (plan, remaining credits, reset date) */
+    viewPlan: "View plan",
     /** aria label of the error region */
     region: "Live needs attention",
   },
