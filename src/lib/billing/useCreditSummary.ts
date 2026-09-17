@@ -9,6 +9,53 @@ import { initialSection, sectionReducer, type SectionState } from "@/lib/billing
 
 export const CREDIT_SUMMARY_FALLBACK = "Couldn't read your credits. Retry in a moment.";
 
+/** How long to wait before the single retry of a transient auth failure. */
+export const AUTH_RETRY_DELAY_MS = 700;
+
+/**
+ * True for the auth failures that resolve themselves: a token that was minted moments ago and
+ * has not propagated yet (a fresh sign-in, or a background refresh), and PostgREST's PGRST303
+ * "JWT issued at future" when its clock trails the auth server's. These used to surface as a
+ * 401 in the console on every sign-in, which is noise, not information.
+ */
+export function isRetryableAuthError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const e = error as { code?: unknown; status?: unknown; message?: unknown };
+  if (e.code === "PGRST303" || e.code === "PGRST301") return true;
+  if (e.status === 401) return true;
+  return typeof e.message === "string" && /\bjwt\b/i.test(e.message);
+}
+
+export type CreditSummaryRpc = () => PromiseLike<{ data: unknown; error: unknown }>;
+export type ReadCreditSummaryResult = { summary: CreditSummary } | { error: string };
+
+/**
+ * One credit-summary read, retried once when the failure is a transient auth error.
+ * Pure apart from the injected rpc/sleep so it is unit-tested without a browser.
+ */
+export async function readCreditSummary(
+  rpc: CreditSummaryRpc,
+  opts: { retryDelayMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<ReadCreditSummaryResult> {
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const delay = opts.retryDelayMs ?? AUTH_RETRY_DELAY_MS;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { data, error } = await rpc();
+    if (error) {
+      if (attempt === 0 && isRetryableAuthError(error)) {
+        await sleep(delay);
+        continue;
+      }
+      return { error: describeError(error, CREDIT_SUMMARY_FALLBACK) };
+    }
+    const summary = parseCreditSummary(data);
+    if (summary) return { summary };
+    return { error: CREDIT_SUMMARY_FALLBACK };
+  }
+  return { error: CREDIT_SUMMARY_FALLBACK };
+}
+
 /** The summary is re-read on mount, on window focus, on reload(), and every `pollMs` when set. */
 export type UseCreditSummaryOptions = {
   /** Re-read on an interval (ms). 0 / undefined = only on mount, focus and reload(). */
@@ -42,18 +89,13 @@ export function useCreditSummary(options: UseCreditSummaryOptions = {}) {
     let cancelled = false;
 
     async function read() {
-      const { data, error } = await supabase.rpc("credit_summary");
+      const result = await readCreditSummary(() => supabase.rpc("credit_summary"));
       if (cancelled) return;
-      if (error) {
-        dispatch({ type: "failed", message: describeError(error, CREDIT_SUMMARY_FALLBACK) });
+      if ("error" in result) {
+        dispatch({ type: "failed", message: result.error });
         return;
       }
-      const summary = parseCreditSummary(data);
-      if (!summary) {
-        dispatch({ type: "failed", message: CREDIT_SUMMARY_FALLBACK });
-        return;
-      }
-      dispatch({ type: "loaded", data: summary });
+      dispatch({ type: "loaded", data: result.summary });
     }
 
     void read();
