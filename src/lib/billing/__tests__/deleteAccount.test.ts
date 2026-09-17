@@ -2,21 +2,51 @@ import { describe, expect, it } from "vitest";
 import {
   BOARD_ASSETS_BUCKET,
   REMOVE_BATCH_SIZE,
+  clearLocalSession,
   deleteOwnAccount,
+  readStorageKey,
   removeOwnBoardAssets,
+  selectAuthStorageKeys,
   type DeleteAccountClient,
+  type KeyValueStorage,
 } from "@/lib/billing/deleteAccount";
 
-type Calls = { removed: string[][]; buckets: string[]; rpc: string[] };
+/** Ordered log of every side effect so tests can assert sequencing. */
+type Calls = { removed: string[][]; buckets: string[]; rpc: string[]; order: string[] };
+
+function fakeStorage(initial: Record<string, string>): KeyValueStorage & { data: Map<string, string>; removed: string[] } {
+  const data = new Map(Object.entries(initial));
+  const removed: string[] = [];
+  return {
+    data,
+    removed,
+    get length() {
+      return data.size;
+    },
+    key: (i) => [...data.keys()][i] ?? null,
+    removeItem: (k) => {
+      removed.push(k);
+      data.delete(k);
+    },
+  };
+}
 
 function fakeClient(opts: {
   rows?: Array<{ object_path: string | null }> | null;
   selectError?: string;
   removeError?: (batch: string[]) => string | null;
   rpcError?: string;
+  storageKey?: string;
 }): { client: DeleteAccountClient; calls: Calls } {
-  const calls: Calls = { removed: [], buckets: [], rpc: [] };
-  const client: DeleteAccountClient = {
+  const calls: Calls = { removed: [], buckets: [], rpc: [], order: [] };
+  const client: DeleteAccountClient & { storageKey?: string } = {
+    storageKey: opts.storageKey,
+    auth: {
+      getSession: () => {
+        calls.order.push("getSession");
+        return Promise.resolve({ data: { session: null }, error: null });
+      },
+    },
     from: () => ({
       select: () =>
         Promise.resolve(
@@ -29,6 +59,7 @@ function fakeClient(opts: {
         return {
           remove: (paths) => {
             calls.removed.push(paths);
+            calls.order.push("remove");
             const msg = opts.removeError?.(paths) ?? null;
             return Promise.resolve({ data: null, error: msg ? { message: msg } : null });
           },
@@ -37,6 +68,7 @@ function fakeClient(opts: {
     },
     rpc: (fn) => {
       calls.rpc.push(fn);
+      calls.order.push("rpc");
       return Promise.resolve({ data: null, error: opts.rpcError ? { message: opts.rpcError } : null });
     },
   };
@@ -71,17 +103,114 @@ describe("removeOwnBoardAssets", () => {
   });
 });
 
-describe("deleteOwnAccount", () => {
-  it("removes assets first, then calls the RPC", async () => {
-    const { client, calls } = fakeClient({ rows: [{ object_path: "u/b/1.png" }] });
-    await expect(deleteOwnAccount(client)).resolves.toEqual({ assets: { found: 1, removed: 1, error: null } });
-    expect(calls.removed).toHaveLength(1);
-    expect(calls.rpc).toEqual(["delete_own_account"]);
+describe("selectAuthStorageKeys", () => {
+  const keys = [
+    "theme",
+    "sb-abc-auth-token",
+    "sb-abc-auth-token-code-verifier",
+    "sb-abc-auth-token-user",
+    "sb-other-auth-token",
+    "custom-key",
+    "custom-key-user",
+    "custom-key-code-verifier",
+    "custom-key-extra",
+    "prefix-sb-abc-auth-token",
+  ];
+
+  it("selects exactly the client's storage key and its auth-js companions when known", () => {
+    expect(selectAuthStorageKeys(keys, "custom-key")).toEqual(["custom-key", "custom-key-user", "custom-key-code-verifier"]);
+    expect(selectAuthStorageKeys(keys, "sb-abc-auth-token")).toEqual([
+      "sb-abc-auth-token",
+      "sb-abc-auth-token-code-verifier",
+      "sb-abc-auth-token-user",
+    ]);
   });
 
-  it("still calls the RPC when asset removal fails, and throws the RPC error", async () => {
-    const { client, calls } = fakeClient({ rows: [{ object_path: "u/b/1.png" }], removeError: () => "storage down", rpcError: "not authenticated" });
-    await expect(deleteOwnAccount(client)).rejects.toEqual({ message: "not authenticated" });
+  it("falls back to every sb-*-auth-token* key when the storage key is unknown", () => {
+    const expected = ["sb-abc-auth-token", "sb-abc-auth-token-code-verifier", "sb-abc-auth-token-user", "sb-other-auth-token"];
+    expect(selectAuthStorageKeys(keys)).toEqual(expected);
+    expect(selectAuthStorageKeys(keys, null)).toEqual(expected);
+    expect(selectAuthStorageKeys(keys, "")).toEqual(expected);
+  });
+
+  it("returns nothing for an empty or unrelated key list", () => {
+    expect(selectAuthStorageKeys([])).toEqual([]);
+    expect(selectAuthStorageKeys(["theme", "draft"], "sb-abc-auth-token")).toEqual([]);
+  });
+});
+
+describe("readStorageKey", () => {
+  it("reads a non-empty string storageKey and ignores anything else", () => {
+    expect(readStorageKey({ storageKey: "sb-abc-auth-token" })).toBe("sb-abc-auth-token");
+    expect(readStorageKey({ storageKey: "" })).toBeNull();
+    expect(readStorageKey({ storageKey: 42 })).toBeNull();
+    expect(readStorageKey({})).toBeNull();
+  });
+});
+
+describe("clearLocalSession", () => {
+  it("removes the session keys and then reloads the session, without throwing", async () => {
+    const { client, calls } = fakeClient({ storageKey: "sb-abc-auth-token" });
+    const storage = fakeStorage({ "sb-abc-auth-token": "{}", "sb-abc-auth-token-user": "{}", theme: "dark" });
+    await expect(clearLocalSession(client, storage)).resolves.toEqual(["sb-abc-auth-token", "sb-abc-auth-token-user"]);
+    expect([...storage.data.keys()]).toEqual(["theme"]);
+    expect(calls.order).toEqual(["getSession"]);
+  });
+
+  it("still reloads the session when storage is unavailable or throws", async () => {
+    const { client, calls } = fakeClient({});
+    await expect(clearLocalSession(client, null)).resolves.toEqual([]);
+    const broken: KeyValueStorage = {
+      get length(): number {
+        throw new Error("blocked");
+      },
+      key: () => null,
+      removeItem: () => undefined,
+    };
+    await expect(clearLocalSession(client, broken)).resolves.toEqual([]);
+    expect(calls.order).toEqual(["getSession", "getSession"]);
+  });
+
+  it("swallows a getSession failure", async () => {
+    const client = { auth: { getSession: () => Promise.reject(new Error("boom")) } };
+    await expect(clearLocalSession(client, fakeStorage({}))).resolves.toEqual([]);
+  });
+});
+
+describe("deleteOwnAccount", () => {
+  it("removes assets, then calls the RPC, then clears the local session (no auth.signOut)", async () => {
+    const { client, calls } = fakeClient({ rows: [{ object_path: "u/b/1.png" }], storageKey: "sb-abc-auth-token" });
+    const storage = fakeStorage({ "sb-abc-auth-token": "{}", "sb-abc-auth-token-code-verifier": "x", theme: "dark" });
+    await expect(deleteOwnAccount(client, { storage })).resolves.toEqual({
+      assets: { found: 1, removed: 1, error: null },
+      clearedKeys: ["sb-abc-auth-token", "sb-abc-auth-token-code-verifier"],
+    });
+    expect(calls.order).toEqual(["remove", "rpc", "getSession"]);
     expect(calls.rpc).toEqual(["delete_own_account"]);
+    expect("signOut" in client.auth).toBe(false);
+    expect([...storage.data.keys()]).toEqual(["theme"]);
+  });
+
+  it("works without any storage (SSR / blocked) and still settles the client", async () => {
+    const { client, calls } = fakeClient({ rows: [] });
+    await expect(deleteOwnAccount(client, { storage: null })).resolves.toEqual({
+      assets: { found: 0, removed: 0, error: null },
+      clearedKeys: [],
+    });
+    expect(calls.order).toEqual(["rpc", "getSession"]);
+  });
+
+  it("still calls the RPC when asset removal fails, throws the RPC error and keeps the session", async () => {
+    const { client, calls } = fakeClient({
+      rows: [{ object_path: "u/b/1.png" }],
+      removeError: () => "storage down",
+      rpcError: "not authenticated",
+      storageKey: "sb-abc-auth-token",
+    });
+    const storage = fakeStorage({ "sb-abc-auth-token": "{}" });
+    await expect(deleteOwnAccount(client, { storage })).rejects.toEqual({ message: "not authenticated" });
+    expect(calls.order).toEqual(["remove", "rpc"]);
+    expect(storage.removed).toEqual([]);
+    expect(storage.data.has("sb-abc-auth-token")).toBe(true);
   });
 });

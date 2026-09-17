@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { solutionLogger } from "@/lib/logger";
 import { json, requireUser } from "@/lib/server/auth";
-import { enforceCredits } from "@/lib/server/billing";
-import { LIMITS, checkRateLimit, rateLimitKey, rateLimitedResponse } from "@/lib/server/rate-limit";
+import { enforceCredits, runCharged } from "@/lib/server/billing";
+import { checkRateLimitDistributed, rateLimitedResponse } from "@/lib/server/rate-limit";
 import { IMAGE_MODELS, extractImageUrl, openrouterChat } from "@/lib/server/openrouter";
 import { errorResponse, modelSchema, parseJsonBody, topicSchema } from "@/lib/server/request";
 
@@ -21,10 +21,10 @@ export async function POST(req: Request) {
 
   const log = solutionLogger.child({ requestId, userId: user.id, task: "worksheet" });
 
-  const rl = checkRateLimit(rateLimitKey(user.id, "generateWorksheet"), LIMITS.generateWorksheet);
+  const rl = await checkRateLimitDistributed({ token, userId: user.id, bucket: "generateWorksheet" });
   if (!rl.ok) {
-    log.warn({ retryAfterMs: rl.retryAfterMs }, "Worksheet generation rate limited");
-    return rateLimitedResponse(rl.retryAfterMs);
+    log.warn({ retryAfterMs: rl.retryAfterMs, backend: rl.backend }, "Worksheet generation rate limited");
+    return rateLimitedResponse(rl.retryAfterMs, rl.backend);
   }
 
   const parsed = await parseJsonBody(req, bodySchema);
@@ -34,13 +34,13 @@ export async function POST(req: Request) {
   }
   const { topic, model } = parsed.data;
 
-  // Charge credits before the provider call (see src/lib/server/billing.ts).
+  // Charge credits before the provider call; runCharged refunds them on any non-2xx (see src/lib/server/billing.ts).
   const billing = await enforceCredits({ token, route: "generate-worksheet", requestId, model: IMAGE_MODELS[model] }, log);
   if ("response" in billing) return billing.response;
 
   log.info({ topicLength: topic.length, model }, "Worksheet generation request started");
 
-  try {
+  return runCharged({ token, requestId }, log, async () => {
     const selectedModel = IMAGE_MODELS[model];
 
     const prompt = [
@@ -86,7 +86,5 @@ export async function POST(req: Request) {
     log.info({ duration, tokensUsed: data.usage?.total_tokens }, "Worksheet generated successfully");
 
     return Response.json({ success: true, imageUrl });
-  } catch (error) {
-    return errorResponse(error, log, { duration: Date.now() - startTime });
-  }
+  }, (error) => errorResponse(error, log, { duration: Date.now() - startTime }));
 }

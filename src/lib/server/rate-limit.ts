@@ -1,22 +1,27 @@
 /**
- * In-memory sliding-window rate limiter.
+ * Rate limiting.
  *
- * Scope: PER INSTANCE. Every server instance (or Vercel Fluid Compute function
- * instance) keeps its own Map, so the effective limit is `limit * instances`.
- * For a single-region app with a handful of warm instances this is plenty to
- * stop runaway loops and casual abuse, which is all we need today.
+ * Two limiters share the `RateLimitResult` shape:
  *
- * To make it global, swap `checkRateLimit` for a Redis-backed implementation:
- *   - Upstash: `npm i @upstash/ratelimit @upstash/redis`, then
- *       const rl = new Ratelimit({ redis: Redis.fromEnv(), limiter: Ratelimit.slidingWindow(limit, `${windowMs} ms`) });
- *       const { success, remaining, reset } = await rl.limit(key);
- *     and return { ok: success, remaining, retryAfterMs: reset - Date.now() }.
- *   - Plain Redis: ZADD <key> <now> <now>; ZREMRANGEBYSCORE <key> 0 <now-window>; ZCARD <key>; PEXPIRE <key> <window>.
- * Keep the `RateLimitResult` shape and the callers stay untouched (they would
- * just need to `await` the call, which they already do).
+ *  - `checkRateLimit` — in-memory sliding window, PER INSTANCE. Every server instance
+ *    (or Vercel Fluid Compute function instance) keeps its own Map, so the effective
+ *    limit is `limit * instances`. Used for the public, IP-keyed buckets (config/status,
+ *    billing/webhook) where there is no user to key a database row on, and as the
+ *    fallback below.
+ *
+ *  - `checkRateLimitDistributed` — the per-user buckets. With `RATE_LIMIT_BACKEND=db`
+ *    (the default) it calls the SECURITY DEFINER RPC `rate_limit_hit(p_bucket, p_limit,
+ *    p_window_ms)` AS THE USER (supabase/migrations/20260917030000_refunds_ratelimit.sql):
+ *    one fixed window per (auth.uid(), bucket, window_start), incremented atomically, so a
+ *    budget holds across every instance. When the RPC is missing or errors the call falls
+ *    back to the in-memory limiter (logged once per process) — a degraded limiter, never an
+ *    open gate. `RATE_LIMIT_BACKEND=memory` skips the database entirely.
  */
 
 import { LIVE_RATE_LIMITS } from "@/lib/live/contracts";
+import { getRateLimitBackend, type RateLimitBackend } from "@/lib/env";
+import { logger } from "@/lib/logger";
+import { userClient, type RpcClient } from "@/lib/server/billing";
 
 export type RateLimitOptions = { limit: number; windowMs: number };
 
@@ -101,14 +106,102 @@ export function rateLimitKey(userId: string, bucket: RateLimitBucket): string {
   return `${userId}:${bucket}`;
 }
 
-/** 429 response following the shared error contract, with a Retry-After header. */
-export function rateLimitedResponse(retryAfterMs: number): Response {
+/* ------------------------------------------------------------------------- */
+/* Distributed (database-backed) limiter                                      */
+/* ------------------------------------------------------------------------- */
+
+export const RATE_LIMIT_HIT_RPC = "rate_limit_hit";
+
+export type DistributedRateLimitResult = RateLimitResult & {
+  /** Which limiter answered: `db` (shared counters) or `memory` (per instance). */
+  backend: RateLimitBackend;
+};
+
+export type DistributedRateLimitInput = {
+  /** The caller's verified Supabase access token (from `requireUser`). */
+  token: string;
+  userId: string;
+  bucket: RateLimitBucket;
+  /** Defaults to `LIMITS[bucket]`. */
+  cfg?: RateLimitOptions;
+};
+
+const rateLimitLogger = logger.child({ module: "rate-limit" });
+
+let warnedFallback = false;
+
+/**
+ * Parse the `rate_limit_hit` payload `{ allowed, remaining, retry_after_ms, backend }`.
+ * Returns null for anything unexpected so the caller falls back. Exported for tests.
+ */
+export function normalizeRateLimitHit(data: unknown, { limit, windowMs }: RateLimitOptions): DistributedRateLimitResult | null {
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || typeof row !== "object") return null;
+  const r = row as Record<string, unknown>;
+  if (typeof r.allowed !== "boolean") return null;
+  const remaining = typeof r.remaining === "number" && Number.isFinite(r.remaining) ? Math.max(0, r.remaining) : r.allowed ? limit : 0;
+  const retryRaw = typeof r.retry_after_ms === "number" && Number.isFinite(r.retry_after_ms) ? r.retry_after_ms : windowMs;
+  return {
+    ok: r.allowed,
+    remaining: r.allowed ? remaining : 0,
+    retryAfterMs: r.allowed ? 0 : Math.max(1, Math.min(windowMs, Math.round(retryRaw))),
+    backend: "db",
+  };
+}
+
+function memoryFallback(userId: string, bucket: RateLimitBucket, cfg: RateLimitOptions, reason: string | null): DistributedRateLimitResult {
+  if (reason !== null && !warnedFallback) {
+    warnedFallback = true;
+    rateLimitLogger.warn({ bucket, error: reason }, "rate_limit_hit unavailable; falling back to the in-memory limiter for this process");
+  }
+  return { ...checkRateLimit(rateLimitKey(userId, bucket), cfg), backend: "memory" };
+}
+
+/**
+ * Record one hit for `userId` in `bucket` across every instance (see the module comment).
+ * Never throws and never answers "open": any database problem degrades to `checkRateLimit`.
+ */
+export async function checkRateLimitDistributed(input: DistributedRateLimitInput, client?: RpcClient): Promise<DistributedRateLimitResult> {
+  const cfg = input.cfg ?? LIMITS[input.bucket];
+  if (getRateLimitBackend() === "memory") return memoryFallback(input.userId, input.bucket, cfg, null);
+
+  try {
+    const rpcClient = client ?? userClient(input.token);
+    const { data, error } = await rpcClient.rpc(RATE_LIMIT_HIT_RPC, {
+      p_bucket: input.bucket,
+      p_limit: cfg.limit,
+      p_window_ms: cfg.windowMs,
+    });
+    if (error) return memoryFallback(input.userId, input.bucket, cfg, `rate_limit_hit failed: ${error.message}`);
+    const result = normalizeRateLimitHit(data, cfg);
+    if (!result) return memoryFallback(input.userId, input.bucket, cfg, "rate_limit_hit returned an unexpected shape");
+    return result;
+  } catch (err) {
+    return memoryFallback(input.userId, input.bucket, cfg, `rate_limit_hit threw: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/** Tests only: forget that the fallback warning was already logged. */
+export function resetRateLimitFallbackWarning(): void {
+  warnedFallback = false;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Responses                                                                  */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * 429 response following the shared error contract, with a Retry-After header.
+ * `backend` (additive) tells which limiter answered, when known.
+ */
+export function rateLimitedResponse(retryAfterMs: number, backend?: RateLimitBackend): Response {
   const retryAfterSec = Math.max(1, Math.ceil(retryAfterMs / 1000));
   return Response.json(
     {
       error: "rate_limited",
       message: `You're doing that too fast. Try again in ${retryAfterSec} second${retryAfterSec === 1 ? "" : "s"}.`,
       retryAfterMs,
+      ...(backend ? { backend } : {}),
     },
     {
       status: 429,

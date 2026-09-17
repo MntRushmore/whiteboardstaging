@@ -10,11 +10,15 @@
  *   NEXT_PUBLIC_SUPABASE_ANON_KEY
  *   SMOKE_EMAIL / SMOKE_PASSWORD  qa-student@example.com / password123
  *   SMOKE_SKIP_LLM=1              skip the check/solve streams (no OpenRouter spend)
+ *   RATE_LIMIT_BACKEND=memory     set this too when the DEV SERVER runs with it, so the
+ *                                 429 `backend` assertion expects 'memory' instead of 'db'
  *
  * Besides the Live Math contract it walks every route in scripts/lib/routes.mjs
  * (kept in sync with src/app/api by src/__tests__/routeProtection.test.ts):
  * 401 unauthorized without a token, 200 for the public config/status route, and
- * a cheap 429 probe on /api/credits.
+ * a cheap 429 probe on /api/credits whose body must name the rate-limit backend:
+ * 'db' when the target database has the rate_limit_hit RPC (migration
+ * 20260917030000_refunds_ratelimit.sql), 'memory' otherwise.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -84,6 +88,23 @@ async function signIn() {
 
 function authHeaders(token) {
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+}
+
+/**
+ * Which `backend` the 429 body should report. 'memory' when this process is told the dev
+ * server runs with RATE_LIMIT_BACKEND=memory; otherwise 'db' exactly when the database
+ * exposes the rate_limit_hit RPC to this user (PostgREST answers 404 for a missing function).
+ * The probe itself counts one hit in a throwaway bucket.
+ */
+async function expectedRateLimitBackend(token) {
+  if (process.env.RATE_LIMIT_BACKEND === "memory") return "memory";
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/rate_limit_hit`, {
+    method: "POST",
+    headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ p_bucket: "smoke-probe", p_limit: 1000000, p_window_ms: 1000 }),
+  });
+  await res.arrayBuffer();
+  return res.status === 404 ? "memory" : "db";
 }
 
 async function postJson(path, body, token) {
@@ -370,7 +391,8 @@ async function main() {
     }
   }
 
-  section("429 on /api/credits after a burst (credits bucket: 30/min)");
+  const expectedBackend = await expectedRateLimitBackend(token);
+  section(`429 on /api/credits after a burst (credits bucket: 30/min; expected backend '${expectedBackend}')`);
   {
     const results = await Promise.all(
       Array.from({ length: 31 }, () => fetch(`${BASE_URL}/api/credits`, { headers: authHeaders(token) })),
@@ -382,8 +404,13 @@ async function main() {
       const body = await limited.json();
       ok(body.error === "rate_limited" && typeof body.retryAfterMs === "number", "429 body is rate_limited + retryAfterMs", JSON.stringify(body));
       ok(/^\d+$/.test(limited.headers.get("retry-after") || ""), "Retry-After header (seconds)", limited.headers.get("retry-after"));
+      ok(body.backend === expectedBackend, `429 body carries backend '${expectedBackend}'`, `backend ${JSON.stringify(body.backend)}`);
     }
     ok(statuses.every((s) => s !== 401), "no 401 while signed in");
+    if (expectedBackend === "db") {
+      // A shared fixed window admits exactly 30 of the 31 parallel calls; the memory limiter is per instance.
+      ok(statuses.filter((s) => s === 200).length === 30 && statuses.filter((s) => s === 429).length === 1, "db backend: exactly 30 x 200 + 1 x 429", `statuses: ${statuses.sort().join(",")}`);
+    }
   }
 
   section("429 after a burst (recognize bucket: 120/min; bad bodies still consume slots)");
@@ -403,6 +430,7 @@ async function main() {
       ok(body.error === "rate_limited" && typeof body.retryAfterMs === "number", "429 body is rate_limited + retryAfterMs", JSON.stringify(body));
       ok(/^\d+$/.test(got429.headers.get("retry-after") || ""), "Retry-After header (seconds)", got429.headers.get("retry-after"));
       ok(Boolean(got429.headers.get("x-request-id")), "X-Request-Id on the 429");
+      ok(body.backend === expectedBackend, `429 body carries backend '${expectedBackend}'`, `backend ${JSON.stringify(body.backend)}`);
     }
   }
 

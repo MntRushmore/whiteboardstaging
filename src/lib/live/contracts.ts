@@ -386,7 +386,13 @@ export interface OpenHint {
   level: number;
   createdAt: number;
 }
-export type BurstState = "pending" | "handled" | "unhandled";
+/**
+ * pending: ink landed, recognition still running · handled: an echo landed · unhandled:
+ * Live read the ink and has nothing to show (non-math, low confidence): the legacy image
+ * pipeline may run · failed: recognition itself failed (server / network / capabilities);
+ * the legacy pipeline stays quiet so an outage never turns into paid image generations.
+ */
+export type BurstState = "pending" | "handled" | "unhandled" | "failed";
 export interface LiveBurst {
   at: number;
   state: BurstState;

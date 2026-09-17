@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { voiceLogger } from "@/lib/logger";
 import { requireUser } from "@/lib/server/auth";
-import { enforceCredits } from "@/lib/server/billing";
-import { LIMITS, checkRateLimit, rateLimitKey, rateLimitedResponse } from "@/lib/server/rate-limit";
+import { enforceCredits, runCharged } from "@/lib/server/billing";
+import { checkRateLimitDistributed, rateLimitedResponse } from "@/lib/server/rate-limit";
 import { TEXT_MODELS, openrouterChat } from "@/lib/server/openrouter";
 import { errorResponse, focusSchema, imageDataUrlSchema, parseJsonBody } from "@/lib/server/request";
 
@@ -31,10 +31,10 @@ export async function POST(req: Request) {
 
   const log = voiceLogger.child({ requestId, userId: user.id, task: "analyze-workspace" });
 
-  const rl = checkRateLimit(rateLimitKey(user.id, "analyzeWorkspace"), LIMITS.analyzeWorkspace);
+  const rl = await checkRateLimitDistributed({ token, userId: user.id, bucket: "analyzeWorkspace" });
   if (!rl.ok) {
-    log.warn({ retryAfterMs: rl.retryAfterMs }, "Workspace analysis rate limited");
-    return rateLimitedResponse(rl.retryAfterMs);
+    log.warn({ retryAfterMs: rl.retryAfterMs, backend: rl.backend }, "Workspace analysis rate limited");
+    return rateLimitedResponse(rl.retryAfterMs, rl.backend);
   }
 
   const parsed = await parseJsonBody(req, bodySchema);
@@ -44,13 +44,13 @@ export async function POST(req: Request) {
   }
   const { image, focus } = parsed.data;
 
-  // Charge credits before the provider call (see src/lib/server/billing.ts).
+  // Charge credits before the provider call; runCharged refunds them on any non-2xx (see src/lib/server/billing.ts).
   const billing = await enforceCredits({ token, route: "voice/analyze-workspace", requestId, model: TEXT_MODELS.fast }, log);
   if ("response" in billing) return billing.response;
 
   log.info({ imageSize: image.length, hasFocus: !!focus }, "Workspace analysis request started");
 
-  try {
+  return runCharged({ token, requestId }, log, async () => {
     const userPrompt = focus
       ? `Here is a snapshot of the user canvas. Focus on: ${focus}`
       : "Here is a snapshot of the user canvas. Describe what they are working on and how you could help.";
@@ -88,7 +88,5 @@ export async function POST(req: Request) {
     );
 
     return Response.json({ success: true, analysis });
-  } catch (error) {
-    return errorResponse(error, log, { duration: Date.now() - startTime });
-  }
+  }, (error) => errorResponse(error, log, { duration: Date.now() - startTime }));
 }

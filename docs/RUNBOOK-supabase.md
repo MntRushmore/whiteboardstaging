@@ -178,29 +178,53 @@ NEXT_PUBLIC_SUPABASE_URL=$API_URL SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY no
 
 Expected output per board: `board <id> (v3): 2 inline asset(s), 5.31 MB -> 12.4 KB`, one `uploaded <path>` line per asset, `saved board <id>`, then a summary `scanned N board(s): X offloaded, Y without inline assets, Z failed`. Exit code is `1` if any board failed (the row is left untouched when an upload or registry insert fails; a `version` conflict with a live client is re-read and retried 3 times), `2` for a configuration error. Boards saved by the new client are skipped as "without inline assets". Order of operations when a project already has oversized rows: `npm run db:push` first (the constraint is added `NOT VALID`, so existing rows do not block it; `validate constraint` will fail on such a project - rerun the migration file's `validate` statements after the script), then the script, then deploy the client.
 
-**Garbage collection (manual today).** Deleting a board cascades its `board_assets` rows but Storage objects have no FK, so they become orphans. Find and remove them from the SQL editor:
+**Garbage collection.** Storage objects have no FK, so three things leave orphans behind: deleting a board (cascades `board_assets`, not the files), removing an image from a board without deleting it (tldraw's `remove()` is best effort), and an upload whose registry insert failed. Three layers reclaim them, all sharing one planner (`scripts/lib/storageGc.mjs`, unit-tested in `src/__tests__/storageGc.test.ts`):
+
+*Definition of an orphan.* An object in `board-assets` that is at least **24 h old** (so an upload racing its own registry insert / autosave is never collected) and is neither in `board_assets.object_path` nor the `props.src` of any asset record inside `whiteboards.data` (URL suffix match on `/board-assets/<path>`, so boards saved before the registry existed are safe). An object in `training-data` is an orphan when no `training_samples.before_url` / `after_full_url` names it (paths or full URLs both count). Anything in any other bucket is never touched.
+
+1. **On board delete (client).** The dashboard's delete (`src/app/page.tsx` -> `deleteBoardWithAssets` in `src/lib/assets/deleteBoard.ts`) reads the board's `board_assets.object_path` rows, deletes the `whiteboards` row, then calls `storage.from('board-assets').remove(paths)` in batches of 100 as the signed-in user (the `board-assets: owner delete own folder` policy authorises it). Object removal is best effort: a failure shows up as the toast "Whiteboard deleted, but some images could not be removed" plus a `console.warn`, and the nightly GC finishes the job. The row is deleted first so a failed delete never leaves a live board pointing at missing images.
+
+2. **Operator script** (service role; refuses to run without it):
+
+   ```bash
+   # cloud: export NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY for this shell only (never into a committed / deployed .env)
+   node scripts/gc-storage.mjs                        # dry run (default): table of orphans per bucket + totals, deletes nothing
+   node scripts/gc-storage.mjs --apply                # delete them in batches of 100 (DELETE /storage/v1/object/<bucket> {"prefixes":[...]})
+   node scripts/gc-storage.mjs --bucket training-data --min-age-hours 72 --dry-run
+   node scripts/gc-storage.mjs --min-age-hours 0 --apply   # e.g. right after a cohort clean-up; 0 collects everything unreferenced
+   node scripts/gc-storage.mjs --json                 # machine-readable summary
+
+   # local stack
+   eval "$(npx supabase status -o env | sed 's/^/export /')"
+   NEXT_PUBLIC_SUPABASE_URL=$API_URL SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY node scripts/gc-storage.mjs --dry-run
+   ```
+
+   It lists every bucket level by level through the Storage API (`POST /storage/v1/object/list/<bucket>`, paginated), pages through `board_assets`, `whiteboards.data` and `training_samples` with PostgREST, prints one line per orphan (`BUCKET OBJECT SIZE CREATED REASON`) and a summary `scanned N object(s) in board-assets, training-data: X orphan(s) (Y MB) deleted - X deleted, Z failed (min age 24 h)`. Exit code `0` when nothing failed (or dry run), `1` when a delete batch failed or a listing errored (it stops before deleting anything if the reference set could not be loaded), `2` for usage / missing service role.
+
+3. **Nightly cron** (`vercel.json` -> `"crons": [{ "path": "/api/admin/gc", "schedule": "0 4 * * *" }]`, i.e. 04:00 UTC). `GET|POST /api/admin/gc` (`src/app/api/admin/gc/route.ts`, `src/lib/server/storageGc.ts`) runs the same plan with the service role. It is public in the routes registry with reason "Vercel cron; requires Authorization: Bearer CRON_SECRET": Vercel attaches `Authorization: Bearer <CRON_SECRET>` automatically once the `CRON_SECRET` env var exists on the project; the route compares it in constant time and answers `401 unauthorized` otherwise, `503 feature_unavailable` when `CRON_SECRET` or `SUPABASE_SERVICE_ROLE_KEY` is unset, `429` above 10 requests/min per IP, `500 internal_error` when a listing fails. Response: `{ scanned, orphans, deleted, bytes, dryRun, failed, buckets }`; the same numbers are logged as `storage gc summary` (module `storage-gc`) with `durationMs`, and failed batches as `storage gc: some deletes failed`. **The nightly cron collects.** Vercel requests the bare path with the `vercel-cron/1.0` user agent and an `x-vercel-cron-schedule` header (both documented), and the route treats that as `dryRun=0`; the same URL fetched by hand reports only, so an operator poking at it cannot delete by accident. Overrides: `?dryRun=1` pauses collection (set it on the cron path), `?dryRun=0` forces it for a manual call. Verify a run in the Vercel logs (`storage gc summary`, `dryRun: false`). `maxDuration` is 60 s; a project with tens of thousands of objects should prefer the script. Set both variables in Vercel before deploying:
+
+   ```bash
+   openssl rand -hex 24 | vercel env add CRON_SECRET production            # any random string (>= 16 chars)
+   printf '%s' "<service_role key>" | vercel env add SUPABASE_SERVICE_ROLE_KEY production
+   # trigger once by hand (dry run) and read the JSON:
+   curl -sS -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/admin/gc | jq
+   ```
+
+Do **not** `delete from storage.objects` in SQL: storage-api >= 1.7x installs a `BEFORE DELETE` trigger (`storage.protect_delete`) that rejects it with `42501 Direct deletion from storage tables is not allowed`, because removing the row leaves the file itself behind in the backing store. Every layer above goes through the Storage API. For an ad-hoc look without running anything, the SQL below matches what the planner does (minus the age and snapshot-src checks):
 
 ```sql
--- objects in board-assets that no registry row references (orphans)
+-- objects in board-assets that no registry row references
 select o.name, o.created_at, (o.metadata->>'size')::bigint as bytes
 from storage.objects o
 left join public.board_assets a on a.object_path = o.name
 where o.bucket_id = 'board-assets' and a.id is null
 order by o.created_at;
 
--- objects whose board folder no longer exists
-select o.name
-from storage.objects o
-where o.bucket_id = 'board-assets'
-  and not exists (select 1 from public.whiteboards w where w.id::text = (storage.foldername(o.name))[2]);
-
 -- registry rows whose object is gone (should be empty; the client registers after a successful upload)
 select a.object_path from public.board_assets a
 left join storage.objects o on o.bucket_id = 'board-assets' and o.name = a.object_path
 where o.id is null;
 ```
-
-Delete orphans through the Storage API with the service role (`DELETE /storage/v1/object/board-assets` with `{"prefixes":["<path>", ...]}`, or `DELETE /storage/v1/object/board-assets/<path>` one at a time). Do **not** `delete from storage.objects` in SQL: storage-api >= 1.7x installs a `BEFORE DELETE` trigger (`storage.protect_delete`) that rejects it with `42501 Direct deletion from storage tables is not allowed`, because removing the row leaves the file itself behind in the backing store. Assets removed from a board *without* deleting the board (undo, delete shape) are not reclaimed either; the registry row stays until a GC pass compares `board_assets.object_path` against the asset `src`s inside `whiteboards.data`. A scheduled job (`pg_cron` or a Vercel cron hitting an admin route) that runs these three queries nightly is the intended follow-up; until then run them after cohort clean-ups.
 
 ## 13. Accounts & billing
 
@@ -296,3 +320,38 @@ curl -X DELETE "$NEXT_PUBLIC_SUPABASE_URL/storage/v1/object/board-assets" \
 ```
 
 `src/__tests__/db-billing.integration.test.ts` exercises exactly this sequence (delete account -> object still served -> service-role API delete -> 404). Wiring the query above into the nightly GC job from section 12 is the intended follow-up.
+
+### 13.1 Refunds and database-backed rate limits
+
+Migration `supabase/migrations/20260917030000_refunds_ratelimit.sql` (idempotent; `npm run db:push`). Two more `security definer` RPCs, `execute` for `authenticated` only (anon gets `42501` / HTTP 401), both keyed on `auth.uid()`:
+
+| RPC | Returns | What it does |
+| --- | --- | --- |
+| `refund_credits(p_request_id text)` | `{refunded, remaining}` | Deletes the caller's **own** `usage_events` rows with that `request_id` whose `created_at` is within the last **15 minutes**, then returns `refunded` (credits removed, i.e. the sum of `units`; `0` when nothing matched) and the new `remaining` from the normal balance logic. Takes the same `profiles` row lock as `consume_credits()`, so a refund and a spend for one user never interleave. Idempotent: calling it twice refunds `0` the second time. Another user's request id, an unknown id and a row older than 15 minutes all return `refunded: 0` and touch nothing. `p_request_id` must be 1..100 characters (else `400`). The API routes call it when the upstream provider fails *after* the charge; the 15-minute cap means a request id can never be replayed later to erase spend |
+| `rate_limit_hit(p_bucket text, p_limit int, p_window_ms int)` | `{allowed, remaining, retry_after_ms, backend: 'db'}` | Fixed window aligned to the Unix epoch (`window_start = now - now mod p_window_ms`), counter row `(user_id, bucket, window_start)` in `public.rate_limit_counters`, incremented with one atomic `insert ... on conflict do update`. `allowed = hits <= p_limit`; `remaining = max(0, p_limit - hits)`; `retry_after_ms` is the time until the window ends when denied and `0` when allowed. Parallel calls serialise on the row, so 20 simultaneous hits with `p_limit = 10` allow exactly 10 (integration-tested). Limits: `p_bucket` 1..100 chars, `p_limit` 1..1,000,000, `p_window_ms` 1..86,400,000 (else `400`) |
+
+`rate_limit_counters` (`user_id uuid, bucket text, window_start timestamptz, hits int, expires_at timestamptz`, PK `(user_id, bucket, window_start)`) has RLS enabled with **no policies and no grants** for `anon` or `authenticated`: users reach it through the function only (`GET /rest/v1/rate_limit_counters` -> `403`). It is not a ledger: `expires_at = window_start + 2 * window`, every call deletes the caller's expired rows for that bucket, and about 2% of calls sweep every expired row of every user, so the table stays at roughly `active users x buckets x 2` rows. There is deliberately no FK to `auth.users` (rows age out within two windows anyway, and a deleted user's still-valid JWT must not turn a rate-limit check into a constraint error). Compared with the in-memory limiter in `src/lib/server/rate-limit.ts` (per server instance, so the effective limit is `limit x instances`), this one is global; the `backend` field tells the route which implementation answered.
+
+Verify with `npm run db:verify` (checks named `refund_credits:`, `rate_limit_hit:`, `rate_limit_counters:`; the "row older than 15 minutes" case needs `SUPABASE_SERVICE_ROLE_KEY` to plant a back-dated row and is reported as skipped otherwise) and `RUN_DB_TESTS=1 npx vitest run src/__tests__/db-billing.integration.test.ts` (refund idempotency, foreign/stale ids, 1-second window rollover and cleanup, 20-way concurrency).
+
+**Operator questions**
+
+```sql
+-- who is being throttled right now (live windows only)
+select u.email, c.bucket, c.hits, c.window_start, c.expires_at
+from public.rate_limit_counters c join auth.users u on u.id = c.user_id
+where c.expires_at > now() order by c.hits desc limit 50;
+
+-- reset one user's counters (they get a fresh window immediately)
+delete from public.rate_limit_counters
+where user_id = (select id from auth.users where lower(email) = lower('student@example.com'));
+
+-- refunds are deletions, so "how much was refunded" is not in the ledger; look at the API logs
+-- (event `credits refunded`, fields route/requestId/refunded). Manual make-goods stay in credit_grants:
+insert into public.credit_grants (user_id, units, reason) values ('<uuid>', 25, 'refund: provider outage 2026-09-17');
+
+-- a request id that was charged but not refunded (e.g. to decide on a manual grant)
+select user_id, route, units, model, created_at from public.usage_events where request_id = '<request id>';
+```
+
+`rate_limit_counters` can be truncated at any time (`truncate public.rate_limit_counters;`) - the only effect is that everyone gets a fresh window.

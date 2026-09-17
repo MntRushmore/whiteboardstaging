@@ -18,7 +18,11 @@
  * }} RlsClient
  * `newUser` provisions one more throwaway user (needed by the delete_own_account
  * check, which destroys the account it runs as). Optional: without it that check fails.
- * @typedef {{ anon: RlsClient, a: RlsClient, b: RlsClient, newUser?: () => Promise<RlsClient> }} CheckContext
+ * `service` is a client bound to the service role (RLS bypassed). Optional: only the
+ * refund check's "row older than 15 minutes" case needs it (nothing reachable with a
+ * user token can back-date a ledger row); without it that single case is reported as
+ * skipped.
+ * @typedef {{ anon: RlsClient, a: RlsClient, b: RlsClient, newUser?: () => Promise<RlsClient>, service?: RlsClient }} CheckContext
  * @typedef {{ name: string, pass: boolean, detail: string }} CheckResult
  * @typedef {{ name: string, run: (ctx: CheckContext) => Promise<CheckResult[]> }} CheckDef
  */
@@ -37,7 +41,12 @@ export const PUBLIC_TABLES = [
   "usage_events",
   "credit_grants",
   "billing_events",
+  // refunds & rate limits (20260917030000_refunds_ratelimit.sql)
+  "rate_limit_counters",
 ];
+
+/** Keys every rate_limit_hit() payload must carry. */
+export const RATE_LIMIT_KEYS = ["allowed", "remaining", "retry_after_ms", "backend"];
 
 /** Keys every credit_summary() / credit_balance() payload must carry. */
 export const CREDIT_SUMMARY_KEYS = [
@@ -164,6 +173,8 @@ export function minimalInsert(table, userId = ZERO_UUID) {
       return { user_id: userId, units: 1, reason: "rls-verify" };
     case "billing_events":
       return { id: `rls-verify-${uuid()}`, type: "rls-verify", payload: {} };
+    case "rate_limit_counters":
+      return { user_id: userId, bucket: "rls-verify", window_start: new Date().toISOString(), hits: 1, expires_at: new Date().toISOString() };
     default:
       return {};
   }
@@ -193,6 +204,23 @@ export function isCreditSummary(body) {
   if (!nums.every((k) => Number.isInteger(o[k]))) return false;
   if (o.remaining !== Math.max(0, o.monthly_credits + o.granted - o.used)) return false;
   return typeof o.plan_id === "string" && typeof o.period_start === "string" && typeof o.period_end === "string";
+}
+
+/**
+ * True when `body` looks like a rate_limit_hit() payload: every key present,
+ * integers where expected, `backend` = 'db', and retry_after_ms consistent with
+ * `allowed` (0 when allowed; in (0, windowMs] when denied).
+ * @param {unknown} body
+ * @param {number} windowMs
+ */
+export function isRateLimitResult(body, windowMs) {
+  const o = asObject(body);
+  if (!o) return false;
+  if (!RATE_LIMIT_KEYS.every((k) => k in o)) return false;
+  if (typeof o.allowed !== "boolean" || !Number.isInteger(o.remaining) || !Number.isInteger(o.retry_after_ms)) return false;
+  if (o.backend !== "db" || o.remaining < 0) return false;
+  if (o.allowed) return o.retry_after_ms === 0;
+  return o.remaining === 0 && o.retry_after_ms > 0 && o.retry_after_ms <= windowMs;
 }
 
 /**
@@ -817,6 +845,181 @@ export async function checkDeleteOwnAccount(ctx) {
   return out;
 }
 
+/**
+ * refund_credits(): a user gets back exactly what one of their own recent
+ * requests charged, once; another user's request id and rows older than 15
+ * minutes (only plantable with the service role) refund nothing and touch nothing.
+ * @param {CheckContext} ctx
+ */
+export async function checkRefunds({ a, b, anon, service }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const tag = uuid().slice(0, 8);
+  const route = `rls-verify-refund-${tag}`;
+  const reqOwn = `rls-verify-req-${tag}-own`;
+  const reqForeign = `rls-verify-req-${tag}-foreign`;
+  const reqStale = `rls-verify-req-${tag}-stale`;
+
+  const a0 = asObject((await rpc(a, "credit_summary")).body);
+  const spend = await rpc(a, "consume_credits", { p_route: route, p_units: 5, p_request_id: reqOwn });
+  if (!a0 || !isOk(spend) || asObject(spend.body)?.ok !== true) {
+    out.push(result("refund_credits: setup spend of 5 units succeeded", false, `${describe(spend)}`));
+    return out;
+  }
+
+  const refund = await rpc(a, "refund_credits", { p_request_id: reqOwn });
+  const r = asObject(refund.body);
+  out.push(
+    result(
+      "refund_credits: A refunds own request (refunded 5, remaining restored)",
+      isOk(refund) && r?.refunded === 5 && r.remaining === a0.remaining,
+      describe(refund),
+    ),
+  );
+  const gone = await a.rest("GET", "usage_events", { query: { request_id: `eq.${reqOwn}`, select: "id" } });
+  out.push(result("refund_credits: the refunded usage row is deleted", affectedNoRows(gone), describe(gone)));
+  const sumA1 = asObject((await rpc(a, "credit_summary")).body);
+  out.push(
+    result(
+      "credit_summary: A's used/remaining back to the pre-spend values",
+      sumA1?.used === a0.used && sumA1.remaining === a0.remaining,
+      JSON.stringify(sumA1).slice(0, 200),
+    ),
+  );
+  const again = await rpc(a, "refund_credits", { p_request_id: reqOwn });
+  const r2 = asObject(again.body);
+  out.push(
+    result("refund_credits: refunding the same request again refunds 0", isOk(again) && r2?.refunded === 0 && r2.remaining === a0.remaining, describe(again)),
+  );
+
+  // A spends again; B tries to refund A's request id.
+  const spend2 = await rpc(a, "consume_credits", { p_route: route, p_units: 3, p_request_id: reqForeign });
+  const b0 = asObject((await rpc(b, "credit_summary")).body);
+  const foreign = await rpc(b, "refund_credits", { p_request_id: reqForeign });
+  const rf = asObject(foreign.body);
+  out.push(
+    result(
+      "refund_credits: B refunding A's request id refunds 0 and B's balance is unchanged",
+      isOk(spend2) && isOk(foreign) && rf?.refunded === 0 && rf.remaining === b0?.remaining,
+      describe(foreign),
+    ),
+  );
+  const still = await a.rest("GET", "usage_events", { query: { request_id: `eq.${reqForeign}`, select: "units" } });
+  const sumA2 = asObject((await rpc(a, "credit_summary")).body);
+  out.push(
+    result(
+      "refund_credits: A's usage row and balance untouched by B's attempt",
+      isOk(still) && rows(still).length === 1 && rows(still)[0].units === 3 && sumA2?.remaining === a0.remaining - 3,
+      `${describe(still)} / remaining ${sumA2?.remaining}`,
+    ),
+  );
+
+  if (service) {
+    const old = new Date(Date.now() - 16 * 60_000).toISOString();
+    const planted = await service.rest("POST", "usage_events", {
+      body: { user_id: a.userId, route, units: 4, request_id: reqStale, created_at: old },
+      prefer: "return=minimal",
+    });
+    const before = asObject((await rpc(a, "credit_summary")).body);
+    const stale = await rpc(a, "refund_credits", { p_request_id: reqStale });
+    const rs = asObject(stale.body);
+    const staleRow = await service.rest("GET", "usage_events", { query: { request_id: `eq.${reqStale}`, select: "units" } });
+    out.push(
+      result(
+        "refund_credits: a row older than 15 minutes refunds 0 and stays",
+        isOk(planted) && isOk(stale) && rs?.refunded === 0 && rs.remaining === before?.remaining && rows(staleRow).length === 1,
+        `${describe(planted)} / ${describe(stale)} / ${describe(staleRow)}`,
+      ),
+    );
+  } else {
+    out.push(result("refund_credits: a row older than 15 minutes refunds 0 and stays (skipped: no service role client)", true));
+  }
+
+  const empty = await rpc(a, "refund_credits", { p_request_id: "" });
+  out.push(result("refund_credits: empty p_request_id is rejected", !isOk(empty), describe(empty)));
+  const anonRefund = await rpc(anon, "refund_credits", { p_request_id: reqForeign });
+  out.push(result("refund_credits: anon cannot call it", isDenied(anonRefund), describe(anonRefund)));
+  return out;
+}
+
+/**
+ * rate_limit_hit(): p_limit hits per window are allowed, the next is denied
+ * with a retry hint inside the window, users do not share counters, and the
+ * backing table is reachable through the function only.
+ * @param {CheckContext} ctx
+ */
+export async function checkRateLimit({ a, b, anon }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const bucket = `rls-verify-${uuid().slice(0, 8)}`;
+  const limit = 3;
+  const windowMs = 60_000; // long enough that the window cannot roll over mid-check
+  const args = { p_bucket: bucket, p_limit: limit, p_window_ms: windowMs };
+
+  /** @type {Array<Record<string, any> | null>} */
+  const hits = [];
+  /** @type {HttpResult[]} */
+  const raw = [];
+  for (let i = 0; i < limit; i++) {
+    const res = await rpc(a, "rate_limit_hit", args);
+    raw.push(res);
+    hits.push(asObject(res.body));
+  }
+  out.push(
+    result(
+      `rate_limit_hit: first ${limit} hits allowed with remaining ${limit - 1}..0 (backend 'db')`,
+      raw.every(isOk) &&
+        hits.every((h, i) => h && isRateLimitResult(h, windowMs) && h.allowed === true && h.remaining === limit - 1 - i),
+      raw.map(describe).join(" | "),
+    ),
+  );
+
+  const denied = await rpc(a, "rate_limit_hit", args);
+  const d = asObject(denied.body);
+  out.push(
+    result(
+      "rate_limit_hit: next hit denied with retry_after_ms in (0, window]",
+      isOk(denied) && d?.allowed === false && isRateLimitResult(d, windowMs),
+      describe(denied),
+    ),
+  );
+  const deniedAgain = await rpc(a, "rate_limit_hit", args);
+  const d2 = asObject(deniedAgain.body);
+  out.push(result("rate_limit_hit: stays denied within the window", isOk(deniedAgain) && d2?.allowed === false && d2.remaining === 0, describe(deniedAgain)));
+
+  const bHit = await rpc(b, "rate_limit_hit", args);
+  const bh = asObject(bHit.body);
+  out.push(
+    result(
+      "rate_limit_hit: B has an independent counter for the same bucket",
+      isOk(bHit) && bh?.allowed === true && bh.remaining === limit - 1,
+      describe(bHit),
+    ),
+  );
+
+  const otherBucket = await rpc(a, "rate_limit_hit", { ...args, p_bucket: `${bucket}-other` });
+  const ob = asObject(otherBucket.body);
+  out.push(result("rate_limit_hit: A's other bucket is not affected", isOk(otherBucket) && ob?.allowed === true, describe(otherBucket)));
+
+  const badLimit = await rpc(a, "rate_limit_hit", { ...args, p_limit: 0 });
+  out.push(result("rate_limit_hit: p_limit 0 is rejected", !isOk(badLimit), describe(badLimit)));
+  const badWindow = await rpc(a, "rate_limit_hit", { ...args, p_window_ms: 0 });
+  out.push(result("rate_limit_hit: p_window_ms 0 is rejected", !isOk(badWindow), describe(badWindow)));
+
+  const anonHit = await rpc(anon, "rate_limit_hit", args);
+  out.push(result("rate_limit_hit: anon cannot call it", isDenied(anonHit), describe(anonHit)));
+
+  const sel = await a.rest("GET", "rate_limit_counters", { query: { select: "hits", limit: "1" } });
+  out.push(result("rate_limit_counters: not readable by authenticated users", isDenied(sel), describe(sel)));
+  const ins = await a.rest("POST", "rate_limit_counters", { body: minimalInsert("rate_limit_counters", a.userId ?? ZERO_UUID), prefer: "return=minimal" });
+  out.push(result("rate_limit_counters: not writable by authenticated users", isDenied(ins), describe(ins)));
+  const del = await a.rest("DELETE", "rate_limit_counters", { query: { user_id: `eq.${a.userId}` }, prefer: "return=representation" });
+  out.push(result("rate_limit_counters: A cannot reset own counters by deleting rows", isDenied(del), describe(del)));
+  const afterDel = await rpc(a, "rate_limit_hit", args);
+  out.push(result("rate_limit_hit: A is still denied after the delete attempt", isOk(afterDel) && asObject(afterDel.body)?.allowed === false, describe(afterDel)));
+  return out;
+}
+
 // ---------------------------------------------------------------- registry / runner
 
 /** @type {CheckDef[]} */
@@ -834,6 +1037,8 @@ export const ALL_CHECKS = [
   { name: "version trigger and optimistic concurrency", run: checkVersionTrigger },
   { name: "accounts & billing tables (plans, profiles, ledgers, billing_events)", run: checkBillingTables },
   { name: "credits: consume_credits / credit_summary spend only the caller's balance", run: checkCreditsConsumption },
+  { name: "refund_credits gives back only the caller's own recent charge", run: checkRefunds },
+  { name: "rate_limit_hit: per-user fixed window, function-only table", run: checkRateLimit },
   { name: "delete_own_account removes the caller's account and data", run: checkDeleteOwnAccount },
 ];
 

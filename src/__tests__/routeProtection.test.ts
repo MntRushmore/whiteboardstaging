@@ -17,6 +17,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
+import { createGcHandler } from "@/app/api/admin/gc/route";
 import { GET as configStatusGet } from "@/app/api/config/status/route";
 import { resetRateLimits } from "@/lib/server/rate-limit";
 import {
@@ -90,11 +91,16 @@ describe("route discovery", () => {
 });
 
 describe("allow-lists", () => {
-  it("PUBLIC_ROUTES is exactly config/status and the billing webhook", () => {
+  it("PUBLIC_ROUTES is exactly config/status, the billing webhook and the GC cron", () => {
     // config/status: reports which provider keys exist as booleans (never values,
     // prefixes or lengths) so the setup screen can render before sign-in.
     // billing/webhook: the provider has no user JWT; the Stripe-Signature HMAC is the auth.
-    expect([...PUBLIC_ROUTES].sort()).toEqual(["src/app/api/billing/webhook/route.ts", "src/app/api/config/status/route.ts"]);
+    // admin/gc: Vercel cron has no user JWT; the shared CRON_SECRET bearer token is the auth.
+    expect([...PUBLIC_ROUTES].sort()).toEqual([
+      "src/app/api/admin/gc/route.ts",
+      "src/app/api/billing/webhook/route.ts",
+      "src/app/api/config/status/route.ts",
+    ]);
   });
 
   it("every public route documents why it may skip requireUser", () => {
@@ -102,6 +108,28 @@ describe("allow-lists", () => {
       expect(PUBLIC_ROUTE_REASONS[file], file).toMatch(/\S/);
     }
     expect(PUBLIC_ROUTE_REASONS["src/app/api/billing/webhook/route.ts"]).toBe("signature-verified provider webhook");
+    expect(PUBLIC_ROUTE_REASONS["src/app/api/admin/gc/route.ts"]).toBe("Vercel cron; requires Authorization: Bearer CRON_SECRET");
+  });
+
+  it("the GC cron route authenticates with CRON_SECRET and answers 401 without it", async () => {
+    // The real invariant behind its PUBLIC_ROUTES entry: the file must name the secret it
+    // checks (via the env helper; process.env itself is forbidden in route files) and an
+    // unauthenticated request must be refused before any storage work happens.
+    const src = sources.get("src/app/api/admin/gc/route.ts") ?? "";
+    expect(src).toMatch(/CRON_SECRET/);
+    expect(/\bbearerMatches\s*\(/.test(src)).toBe(true);
+    expect(/\brunStorageGc\b/.test(src)).toBe(true);
+    const handler = createGcHandler({
+      getEnv: () => ({ url: "https://proj.supabase.co", serviceKey: "svc", cronSecret: "unit-secret" }),
+      run: async () => {
+        throw new Error("must not run without the secret");
+      },
+    });
+    const res = await handler(new Request("http://localhost/api/admin/gc", { headers: { "x-forwarded-for": "192.0.2.1" } }));
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: string }).error).toBe("unauthorized");
+    const wrong = await handler(new Request("http://localhost/api/admin/gc", { headers: { Authorization: "Bearer nope", "x-forwarded-for": "192.0.2.1" } }));
+    expect(wrong.status).toBe(401);
   });
 
   it("the billing webhook verifies the provider signature over the raw body", () => {

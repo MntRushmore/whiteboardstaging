@@ -22,7 +22,8 @@ State measured with `vercel env ls` on 2026-09-17 (saved as `src/__tests__/fixtu
 | `NEXT_PUBLIC_LIVE_MATH` | optional | absent = on | absent = on | absent = on | Set to `0` to hide Live Math without unregistering its shapes. |
 | `LIVE_MODEL_CHECK` / `_SOLVE` / `_VISION` | optional | absent = defaults | absent = defaults | absent = defaults | OpenRouter model overrides for Live routes. |
 | `LOG_LEVEL` / `NEXT_PUBLIC_LOG_LEVEL` | optional | absent = `info` | absent = `info` | absent = `info` | Server / browser pino levels. |
-| `SUPABASE_SERVICE_ROLE_KEY` | optional (do not add) | absent | absent | absent | Read by nothing deployed; keep it out of Vercel (runbook section 5). |
+| `SUPABASE_SERVICE_ROLE_KEY` | optional | absent | absent | absent | Needed in **Production only** by two non-user-facing routes: `POST /api/billing/webhook` (plan changes) and the storage GC cron `GET /api/admin/gc` (both answer `503` without it). Every user-facing route acts as the user. Keep it out of Preview/Development unless you are testing those two paths. |
+| `CRON_SECRET` | optional | absent | absent | absent | Bearer token Vercel sends to `/api/admin/gc` (nightly storage GC, `vercel.json` crons). Random string, >= 16 chars (`openssl rand -hex 24`). Without it the route answers `503` and the cron does nothing. Production only; runbook section 12. |
 | `BASE_URL`, `SMOKE_*`, `RUN_DB_TESTS`, `VERIFY_EMAIL_DOMAIN` | scripts-only | absent | absent | absent | Correct: the checker fails if any of these appear in Vercel. |
 | `MISTRAL_API_KEY` | removed | absent | absent | absent | Not in `.env.example`; OCR runs on OpenRouter now. |
 
@@ -77,7 +78,7 @@ Note: production is currently aliased to a deployment of the `cursor/realtime-ma
 ## Known follow-ups (not blocking)
 
 - Images now go to the `board-assets` bucket (`docs/ARCHITECTURE.md` flow 2b). If the new project is restored from a backup that contains boards saved by the old client, run `node scripts/offload-assets.mjs --dry-run` then without the flag (runbook section 12) once, with the service role key, before students open those boards. A fresh project has nothing to migrate.
-- Storage garbage collection is manual (runbook section 12 queries); schedule it (`pg_cron` or a Vercel cron) before the second cohort.
+- Storage garbage collection ships in three layers (runbook section 12): board delete removes the board's own objects, `node scripts/gc-storage.mjs` is the operator tool, and the Vercel cron `0 4 * * *` -> `/api/admin/gc` runs nightly once `CRON_SECRET` + `SUPABASE_SERVICE_ROLE_KEY` are set in Production. The nightly cron **collects** (Vercel's own invocation is recognised by its `vercel-cron/1.0` user agent and `x-vercel-cron-schedule` header; a manual `curl` to the same URL only reports unless you pass `?dryRun=0`). Before the first cohort, run `node scripts/gc-storage.mjs` once and read the table, then watch a few nightly `storage gc summary` log lines; pause collection by setting the cron path to `/api/admin/gc?dryRun=1`.
 - Rate limiter is per-instance in memory; swap in Upstash Redis for multi-region.
 - Wire the Live voice tools (`read_live_math`, `place_math`, `plot_function`) into the Realtime session once a valid OpenAI key exists.
 - Systems of equations, summations, and limits go to the LLM path today; a local `lusolve` path is a small addition.

@@ -51,6 +51,12 @@ const envSchema = z.object({
   STRIPE_WEBHOOK_SECRET: optionalString,
   BILLING_PRICE_MAP: optionalString,
   NEXT_PUBLIC_BILLING_LINKS: optionalString,
+
+  // Rate limiting: 'db' (default; shared counters via rate_limit_hit RPC) or 'memory' (per instance).
+  RATE_LIMIT_BACKEND: optionalString,
+
+  // Storage GC cron (GET|POST /api/admin/gc): Vercel sends `Authorization: Bearer <CRON_SECRET>`.
+  CRON_SECRET: optionalString,
 });
 
 export type ServerEnv = z.infer<typeof envSchema>;
@@ -89,6 +95,19 @@ export function getServerEnv(): ServerEnv {
 /** Drop the cached env (used by tests and after process.env is mutated). */
 export function resetServerEnvCache(): void {
   cached = null;
+}
+
+export type RateLimitBackend = "db" | "memory";
+
+/**
+ * `RATE_LIMIT_BACKEND`: where per-user rate-limit counters live. `"memory"` selects the
+ * per-instance limiter; anything else (including unset) selects the database-backed one
+ * (`rate_limit_hit` RPC), which still falls back to memory when the RPC is unavailable.
+ * Lenient on purpose: a typo must fail towards the stricter, shared backend.
+ */
+export function getRateLimitBackend(): RateLimitBackend {
+  const raw = getServerEnv().RATE_LIMIT_BACKEND;
+  return raw?.trim().toLowerCase() === "memory" ? "memory" : "db";
 }
 
 /** True when the OpenAI key is configured (voice tutor / Realtime API). */

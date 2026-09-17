@@ -4,7 +4,7 @@ import { enforceCredits } from "@/lib/server/billing";
 import { streamWithFallback } from "@/lib/server/openrouter";
 import { jsonlToEvents, sseResponse, type SseEmit } from "@/lib/server/sse";
 import { buildSolveMessages } from "@/lib/server/prompts/solve";
-import { livePreamble, sseErrorPayload, withRequestId } from "@/lib/server/live-route";
+import { livePreamble, runChargedStream, sseErrorPayload, withRequestId } from "@/lib/server/live-route";
 import { normalizeStep } from "@/lib/server/live-rules";
 
 export const runtime = "nodejs";
@@ -39,7 +39,8 @@ export async function POST(req: Request) {
 
   const models = getLiveModels();
 
-  // Charge credits before opening the stream (a 402/503 JSON body, not SSE).
+  // Charge credits before opening the stream (a 402/503 JSON body, not SSE). The charge is
+  // refunded if the stream fails before the first step (runChargedStream), never after.
   const billing = await enforceCredits({ token, route: "live/solve", requestId, model: models.solve }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
@@ -48,56 +49,58 @@ export async function POST(req: Request) {
   const res = sseResponse(
     req,
     async (emit, signal) => {
-      let model = models.solve;
-      emit("meta", { requestId, model });
-
-      const events = streamWithFallback(
-        models.solve,
-        models.solveFallback,
-        {
-          messages,
-          signal,
-          temperature: 0.2,
-          reasoningEffort: "low",
-          maxTokens: 1500,
-          requestId,
-          title: "Agathon Live - solve",
-        },
-        SOLVE_WATCHDOG_MS,
-      );
-
       let sent = 0;
-      let pending: SolveStep | null = null;
-      const flush = (isLast: boolean) => {
-        if (!pending) return;
-        const step = isLast ? { ...pending, final: true } : pending;
-        emit("step", normalizeStep(step, sent + 1));
-        sent++;
-        pending = null;
-      };
+      await runChargedStream({ token, requestId }, log, () => sent > 0, async () => {
+        let model = models.solve;
+        emit("meta", { requestId, model });
 
-      const { count, invalid } = await jsonlToEvents(
-        textDeltas(events, emit, requestId, (m) => {
-          model = m;
-        }),
-        SolveStepSchema,
-        (step) => {
-          // Hold one step back so the final one can be forced `final: true` at the cap / end of stream.
-          flush(false);
-          pending = step;
-          if (sent + 1 >= LIVE_LIMITS.maxSolveSteps) {
-            flush(true);
-            return false;
-          }
-          return true;
-        },
-        (line, reason) => log.debug({ reason, line: line.slice(0, 200) }, "dropped invalid step line"),
-      );
-      flush(true);
+        const events = streamWithFallback(
+          models.solve,
+          models.solveFallback,
+          {
+            messages,
+            signal,
+            temperature: 0.2,
+            reasoningEffort: "low",
+            maxTokens: 1500,
+            requestId,
+            title: "Agathon Live - solve",
+          },
+          SOLVE_WATCHDOG_MS,
+        );
 
-      const ms = Date.now() - startedAt;
-      log.info({ model, ms, sent, parsed: count, invalid, lines: data.lines.length }, "solve completed");
-      emit("done", { count: sent, ms });
+        let pending: SolveStep | null = null;
+        const flush = (isLast: boolean) => {
+          if (!pending) return;
+          const step = isLast ? { ...pending, final: true } : pending;
+          emit("step", normalizeStep(step, sent + 1));
+          sent++;
+          pending = null;
+        };
+
+        const { count, invalid } = await jsonlToEvents(
+          textDeltas(events, emit, requestId, (m) => {
+            model = m;
+          }),
+          SolveStepSchema,
+          (step) => {
+            // Hold one step back so the final one can be forced `final: true` at the cap / end of stream.
+            flush(false);
+            pending = step;
+            if (sent + 1 >= LIVE_LIMITS.maxSolveSteps) {
+              flush(true);
+              return false;
+            }
+            return true;
+          },
+          (line, reason) => log.debug({ reason, line: line.slice(0, 200) }, "dropped invalid step line"),
+        );
+        flush(true);
+
+        const ms = Date.now() - startedAt;
+        log.info({ model, ms, sent, parsed: count, invalid, lines: data.lines.length }, "solve completed");
+        emit("done", { count: sent, ms });
+      });
     },
     {
       headers: { "X-Request-Id": requestId },

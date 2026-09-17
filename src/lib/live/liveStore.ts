@@ -18,6 +18,8 @@ export interface LiveError {
   code: LiveErrorCode;
   /** student-facing, second person, calm */
   message: string;
+  /** optional second line (recognize/capabilities: the legacy image pipeline is paused) */
+  detail?: string;
   lineId?: string;
   /** rate_limited: how long after `at` a retry makes sense */
   retryAfterMs?: number;
@@ -88,7 +90,13 @@ export function markBurst(state: LiveBurst["state"]): void {
   liveStore.lastBurst.set({ at: Date.now(), state });
 }
 
-/** true when the legacy image pipeline should stay silent for the current idle window */
+/**
+ * true when the legacy image pipeline should stay silent for the current idle window:
+ * the latest ink burst is recent and Live still owns it ('pending'), already answered it
+ * ('handled') or could not read it because recognition failed ('failed'). Only 'unhandled'
+ * (Live read the ink and has nothing to say: non-math, low confidence) lets the image
+ * pipeline run. A user-forced "Draw help" bypasses this gate in the page.
+ */
 export function legacyShouldSkip(idleMs: number): boolean {
   const b = liveStore.lastBurst.get();
   return !!b && Date.now() - b.at <= idleMs + 1000 && b.state !== "unhandled";

@@ -10,6 +10,7 @@ import { describeError } from '@/lib/errorMessage';
 import { CreditsBanner } from '@/components/CreditsBanner';
 import { PlanBadge } from '@/components/account/PlanBadge';
 import { FeatureLabsPanel } from '@/components/FeatureLabsPanel';
+import { asDeleteBoardClient, deleteBoardWithAssets } from '@/lib/assets/deleteBoard';
 import {
   Plus,
   Trash2,
@@ -203,14 +204,16 @@ export default function Dashboard() {
     setDeleting(true);
     setDeleteError(null);
     try {
-      const { error } = await supabase
-        .from('whiteboards')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      // Removes the board's Storage objects too (registered in board_assets); a
+      // failure there is reported, not fatal - the nightly GC reclaims what is left.
+      const result = await deleteBoardWithAssets(asDeleteBoardClient(supabase), id);
       setWhiteboards((prev) => prev.filter(w => w.id !== id));
-      toast.success('Whiteboard deleted');
+      if (result.assetErrors.length > 0) {
+        console.warn('Some board images could not be removed:', result.assetErrors);
+        toast.warning('Whiteboard deleted, but some images could not be removed');
+      } else {
+        toast.success('Whiteboard deleted');
+      }
       setDeleteTarget(null);
     } catch (error) {
       console.error('Error deleting whiteboard:', error);

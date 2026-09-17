@@ -25,7 +25,8 @@ import { deleteOwnAccount } from "@/lib/billing/deleteAccount";
  * Delete account: a dialog that arms only once the user types DELETE, then
  * removes the user's own board-assets objects from Storage and calls the
  * SECURITY DEFINER RPC `delete_own_account()` (the user can only delete
- * themselves), signs out locally and goes to /login.
+ * themselves), forgets the session locally (no server call — the user is gone)
+ * and goes to /login.
  */
 export function DangerZone({ email }: { email: string }) {
   const router = useRouter();
@@ -47,12 +48,10 @@ export function DangerZone({ email }: { email: string }) {
     setDeleting(true);
     setError(null);
     try {
-      // Own Storage objects go first (the DB cascade cannot remove files), then the RPC.
+      // Own Storage objects go first (the DB cascade cannot remove files), then the
+      // RPC, then the local session is dropped without a /logout round-trip.
       const { assets } = await deleteOwnAccount(supabase);
       if (assets.error) console.warn("Some saved images could not be removed:", assets);
-      // The auth user is gone; clear the local session even if the server
-      // round-trip fails (the token is dead either way) and leave.
-      await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
       router.replace("/login");
     } catch (err) {
       console.warn("Account deletion failed:", err);

@@ -24,12 +24,15 @@ export const PUBLIC_ROUTES = Object.freeze([
   "src/app/api/config/status/route.ts",
   // Billing provider webhook: no user JWT exists; the Stripe-Signature HMAC is the auth.
   "src/app/api/billing/webhook/route.ts",
+  // Storage GC cron: no user JWT exists; the shared CRON_SECRET bearer token is the auth.
+  "src/app/api/admin/gc/route.ts",
 ]);
 
 /** Why each public route may skip requireUser (enforced by routeProtection.test.ts). */
 export const PUBLIC_ROUTE_REASONS = Object.freeze({
   "src/app/api/config/status/route.ts": "booleans-only setup status",
   "src/app/api/billing/webhook/route.ts": "signature-verified provider webhook",
+  "src/app/api/admin/gc/route.ts": "Vercel cron; requires Authorization: Bearer CRON_SECRET",
 });
 
 /** Routes whose handlers legitimately have no zod body schema. */
@@ -37,9 +40,22 @@ export const NO_BODY_ROUTES = Object.freeze([
   "src/app/api/credits/route.ts", // GET only
   "src/app/api/config/status/route.ts", // GET only
   "src/app/api/voice/token/route.ts", // POST with an empty body; the model is fixed server-side
+  "src/app/api/admin/gc/route.ts", // GET (Vercel cron) or POST with an empty body; options are query params
 ]);
 
 export const API_ROUTES = Object.freeze([
+  {
+    path: "/api/admin/gc",
+    file: "src/app/api/admin/gc/route.ts",
+    methods: ["GET", "POST"],
+    auth: "public",
+    limit: "ip:adminGc",
+    body: "none",
+    // 401 without `Authorization: Bearer <CRON_SECRET>`; 503 when CRON_SECRET / the service role key are unset.
+    withoutTokenStatus: [401, 503],
+    purpose: "Storage garbage collection (Vercel cron): orphaned board-assets / training-data objects; ?dryRun=1 default",
+    status: "active",
+  },
   {
     path: "/api/billing/webhook",
     file: "src/app/api/billing/webhook/route.ts",

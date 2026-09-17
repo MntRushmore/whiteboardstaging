@@ -16,9 +16,16 @@
  *   - rows dated outside the current month are not counted
  *   - concurrency: 10 parallel 1-unit spends with 5 remaining -> exactly 5 succeed
  *   - delete_own_account(): auth.users row, profile, boards, usage, storage rows all gone
+ *
+ * Covered (migration 20260917030000_refunds_ratelimit.sql):
+ *   - refund_credits(): own recent request restored + row deleted, idempotent,
+ *     another user's request id and rows older than 15 minutes refund nothing
+ *   - rate_limit_hit(): p_limit hits then denial with a retry hint, independent
+ *     per user, window rollover (1 s window), expired-row cleanup, 20 parallel
+ *     hits with limit 10 -> exactly 10 allowed, table unreadable by users
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ASSETS_BUCKET, TINY_PNG, isCreditSummary, rows, rpc } from "../../scripts/lib/rlsChecks.mjs";
+import { ASSETS_BUCKET, TINY_PNG, isCreditSummary, isRateLimitResult, rows, rpc } from "../../scripts/lib/rlsChecks.mjs";
 import type { CheckContext, RlsClient } from "../../scripts/lib/rlsChecks.mjs";
 import { createSupabaseHttp, resolveSupabaseEnv, waitForHealth } from "../../scripts/lib/supabaseHttp.mjs";
 import { bootstrapVerifyContext } from "../../scripts/lib/verifyContext.mjs";
@@ -40,6 +47,17 @@ type Summary = {
   period_end: string;
 };
 type Consume = { ok: boolean; remaining: number; reason: string | null };
+type Refund = { refunded: number; remaining: number };
+type RateLimit = { allowed: boolean; remaining: number; retry_after_ms: number; backend: string };
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function hit(client: RlsClient, bucket: string, limit: number, windowMs: number): Promise<RateLimit> {
+  const res = await rpc(client, "rate_limit_hit", { p_bucket: bucket, p_limit: limit, p_window_ms: windowMs });
+  expect(res.status, `rate_limit_hit -> ${JSON.stringify(res.body)}`).toBe(200);
+  expect(isRateLimitResult(res.body, windowMs), JSON.stringify(res.body)).toBe(true);
+  return res.body as RateLimit;
+}
 
 async function summary(client: RlsClient): Promise<Summary> {
   const res = await rpc(client, "credit_summary");
@@ -239,6 +257,148 @@ suite(title, () => {
     expect(after.used).toBe(start.used + fill + 5);
     const written = await ctx.b.rest("GET", "usage_events", { query: { route: "eq.rls-billing/concurrency", select: "id" } });
     expect(rows(written).length).toBe(5);
+  }, 60_000);
+
+  // ------------------------------------------------------------ refund_credits
+
+  it("refund_credits restores remaining, deletes the usage row, and is idempotent", async () => {
+    const before = await summary(ctx.a);
+    const spend = await consume(ctx.a, 7, "rls-billing/refund", { p_request_id: "req-refund-own" });
+    expect((spend.body as Consume).ok).toBe(true);
+    expect((await summary(ctx.a)).remaining).toBe(before.remaining - 7);
+
+    const refund = await rpc(ctx.a, "refund_credits", { p_request_id: "req-refund-own" });
+    expect(refund.status, JSON.stringify(refund.body)).toBe(200);
+    expect(refund.body as Refund).toEqual({ refunded: 7, remaining: before.remaining });
+
+    const after = await summary(ctx.a);
+    expect(after.used).toBe(before.used);
+    expect(after.remaining).toBe(before.remaining);
+    expect(rows(await ctx.a.rest("GET", "usage_events", { query: { request_id: "eq.req-refund-own", select: "id" } }))).toEqual([]);
+
+    const again = await rpc(ctx.a, "refund_credits", { p_request_id: "req-refund-own" });
+    expect(again.body as Refund).toEqual({ refunded: 0, remaining: before.remaining });
+    const unknown = await rpc(ctx.a, "refund_credits", { p_request_id: "req-never-existed" });
+    expect(unknown.body as Refund).toEqual({ refunded: 0, remaining: before.remaining });
+  }, 30_000);
+
+  it("refund_credits with another user's request id refunds 0 and touches nothing", async () => {
+    const aBefore = await summary(ctx.a);
+    const bBefore = await summary(ctx.b);
+    expect(((await consume(ctx.a, 2, "rls-billing/refund-foreign", { p_request_id: "req-refund-foreign" })).body as Consume).ok).toBe(true);
+
+    const foreign = await rpc(ctx.b, "refund_credits", { p_request_id: "req-refund-foreign" });
+    expect(foreign.status).toBe(200);
+    expect(foreign.body as Refund).toEqual({ refunded: 0, remaining: bBefore.remaining });
+
+    const still = await ctx.a.rest("GET", "usage_events", { query: { request_id: "eq.req-refund-foreign", select: "user_id,units" } });
+    expect(rows(still)).toEqual([{ user_id: ctx.a.userId, units: 2 }]);
+    expect((await summary(ctx.a)).remaining).toBe(aBefore.remaining - 2);
+    expect((await summary(ctx.b)).remaining).toBe(bBefore.remaining);
+  }, 30_000);
+
+  it("refund_credits ignores rows older than 15 minutes but still honours a 14-minute-old one", async () => {
+    const stale = new Date(Date.now() - 16 * 60_000).toISOString();
+    const fresh = new Date(Date.now() - 14 * 60_000).toISOString();
+    // Planted with the service role: nothing reachable with a user token can back-date a ledger row.
+    for (const body of [
+      { user_id: ctx.a.userId, route: "rls-billing/refund-stale", units: 9, request_id: "req-refund-stale", created_at: stale },
+      { user_id: ctx.a.userId, route: "rls-billing/refund-fresh", units: 5, request_id: "req-refund-fresh", created_at: fresh },
+    ]) {
+      const res = await service.rest("POST", "usage_events", { body, prefer: "return=minimal" });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+    }
+    const before = await summary(ctx.a);
+
+    const tooOld = await rpc(ctx.a, "refund_credits", { p_request_id: "req-refund-stale" });
+    expect(tooOld.body as Refund).toEqual({ refunded: 0, remaining: before.remaining });
+    expect(rows(await service.rest("GET", "usage_events", { query: { request_id: "eq.req-refund-stale", select: "units" } }))).toEqual([{ units: 9 }]);
+
+    const inWindow = await rpc(ctx.a, "refund_credits", { p_request_id: "req-refund-fresh" });
+    expect(inWindow.body as Refund).toEqual({ refunded: 5, remaining: before.remaining + 5 });
+    expect(rows(await service.rest("GET", "usage_events", { query: { request_id: "eq.req-refund-fresh", select: "units" } }))).toEqual([]);
+  }, 30_000);
+
+  it("refund_credits rejects an empty request id (400) and anon (401)", async () => {
+    for (const args of [{ p_request_id: "" }, { p_request_id: "x".repeat(101) }]) {
+      expect((await rpc(ctx.a, "refund_credits", args)).status, JSON.stringify(args)).toBe(400);
+    }
+    const anon = await rpc(ctx.anon, "refund_credits", { p_request_id: "req-refund-own" });
+    expect(anon.status).toBe(401);
+  }, 30_000);
+
+  // ------------------------------------------------------------ rate_limit_hit
+
+  it("rate_limit_hit allows p_limit hits per window, then denies with a retry hint; counters are per user", async () => {
+    const bucket = `rls-billing-${Date.now().toString(36)}`;
+    const results: RateLimit[] = [];
+    for (let i = 0; i < 3; i++) results.push(await hit(ctx.a, bucket, 3, 60_000));
+    expect(results).toEqual([
+      { allowed: true, remaining: 2, retry_after_ms: 0, backend: "db" },
+      { allowed: true, remaining: 1, retry_after_ms: 0, backend: "db" },
+      { allowed: true, remaining: 0, retry_after_ms: 0, backend: "db" },
+    ]);
+    const denied = await hit(ctx.a, bucket, 3, 60_000);
+    expect(denied.allowed).toBe(false);
+    expect(denied.remaining).toBe(0);
+    expect(denied.retry_after_ms).toBeGreaterThan(0);
+    expect(denied.retry_after_ms).toBeLessThanOrEqual(60_000);
+
+    // B is unaffected by A's exhausted counter; A's other bucket is unaffected too.
+    expect(await hit(ctx.b, bucket, 3, 60_000)).toEqual({ allowed: true, remaining: 2, retry_after_ms: 0, backend: "db" });
+    expect((await hit(ctx.a, `${bucket}-other`, 1, 60_000)).allowed).toBe(true);
+
+    // The table is function-only for users; the service role sees the counter (4 hits: 3 allowed + 1 denied).
+    const asUser = await ctx.a.rest("GET", "rate_limit_counters", { query: { select: "hits" } });
+    expect(asUser.status).toBe(403);
+    expect((await ctx.a.rest("POST", "rate_limit_counters", { body: { user_id: ctx.a.userId, bucket, window_start: new Date().toISOString(), hits: 0, expires_at: new Date().toISOString() } })).status).toBe(403);
+    const asService = await service.rest("GET", "rate_limit_counters", { query: { user_id: `eq.${ctx.a.userId}`, bucket: `eq.${bucket}`, select: "hits" } });
+    expect(asService.status).toBe(200);
+    expect(rows(asService)).toEqual([{ hits: 4 }]);
+
+    for (const args of [{ p_bucket: "", p_limit: 1, p_window_ms: 1000 }, { p_bucket: "x", p_limit: 0, p_window_ms: 1000 }, { p_bucket: "x", p_limit: 1, p_window_ms: 0 }]) {
+      expect((await rpc(ctx.a, "rate_limit_hit", args)).status, JSON.stringify(args)).toBe(400);
+    }
+    expect((await rpc(ctx.anon, "rate_limit_hit", { p_bucket: bucket, p_limit: 3, p_window_ms: 60_000 })).status).toBe(401);
+  }, 30_000);
+
+  it("rate_limit_hit rolls over after the window and cleans up expired counters", async () => {
+    const bucket = `rls-billing-roll-${Date.now().toString(36)}`;
+    const windowMs = 1000;
+    // The first hit may land right before an epoch-aligned boundary, so hit until denied (at most 2 windows' worth).
+    let denied: RateLimit | null = null;
+    for (let i = 0; i < 6 && !denied; i++) {
+      const r = await hit(ctx.a, bucket, 2, windowMs);
+      if (!r.allowed) denied = r;
+    }
+    expect(denied, "never denied within 6 hits at limit 2").not.toBeNull();
+    expect(denied!.retry_after_ms).toBeGreaterThan(0);
+    expect(denied!.retry_after_ms).toBeLessThanOrEqual(windowMs);
+
+    await sleep(denied!.retry_after_ms + 150);
+    const fresh = await hit(ctx.a, bucket, 2, windowMs);
+    expect(fresh).toEqual({ allowed: true, remaining: 1, retry_after_ms: 0, backend: "db" });
+
+    // Rows expire two windows after their start; the next call for this bucket removes them.
+    await sleep(2 * windowMs + 200);
+    expect((await hit(ctx.a, bucket, 2, windowMs)).allowed).toBe(true);
+    const left = await service.rest("GET", "rate_limit_counters", { query: { user_id: `eq.${ctx.a.userId}`, bucket: `eq.${bucket}`, select: "hits,window_start,expires_at" } });
+    expect(left.status).toBe(200);
+    expect(rows(left).length).toBe(1);
+    expect(rows(left)[0].hits).toBe(1);
+    expect(Date.parse(rows(left)[0].expires_at) - Date.parse(rows(left)[0].window_start)).toBe(2 * windowMs);
+  }, 30_000);
+
+  it("20 parallel hits with limit 10 allow exactly 10", async () => {
+    const bucket = `rls-billing-par-${Date.now().toString(36)}`;
+    const results = await Promise.all(Array.from({ length: 20 }, () => hit(ctx.b, bucket, 10, 60_000)));
+    const allowed = results.filter((r) => r.allowed);
+    const refused = results.filter((r) => !r.allowed);
+    expect(allowed.length).toBe(10);
+    expect(new Set(allowed.map((r) => r.remaining))).toEqual(new Set([9, 8, 7, 6, 5, 4, 3, 2, 1, 0]));
+    expect(refused.every((r) => r.remaining === 0 && r.retry_after_ms > 0 && r.retry_after_ms <= 60_000)).toBe(true);
+    const counter = await service.rest("GET", "rate_limit_counters", { query: { user_id: `eq.${ctx.b.userId}`, bucket: `eq.${bucket}`, select: "hits" } });
+    expect(rows(counter)).toEqual([{ hits: 20 }]);
   }, 60_000);
 
   it("delete_own_account removes the auth user, profile, boards, ledger and storage rows", async () => {

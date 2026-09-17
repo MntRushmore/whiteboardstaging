@@ -45,6 +45,12 @@ export async function bootstrapVerifyContext(cfg) {
   const anon = mk(null);
   const clientA = mk(a);
   const clientB = mk(b);
+  // Service-role client for checks that must plant rows a user cannot (e.g. an old
+  // usage_events row for the refund window). Absent without SUPABASE_SERVICE_ROLE_KEY,
+  // in which case those checks report themselves as skipped.
+  const service = cfg.serviceKey
+    ? createSupabaseHttp({ url, anonKey: cfg.anonKey, accessToken: cfg.serviceKey, userId: null, fetchImpl: cfg.fetchImpl })
+    : undefined;
 
   /**
    * Extra throwaway users created on demand by checks that destroy the account
@@ -114,7 +120,7 @@ export async function bootstrapVerifyContext(cfg) {
   }
 
   return {
-    ctx: { anon, a: clientA, b: clientB, newUser },
+    ctx: { anon, a: clientA, b: clientB, newUser, ...(service ? { service } : {}) },
     users: [
       { email: a.email, userId: a.userId },
       { email: b.email, userId: b.userId },

@@ -1531,8 +1531,10 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
     if (typeof document !== "undefined" && document.visibilityState !== "visible") {
       return;
     }
-    // While Live owns the latest ink burst (recognized or still pending), the image
-    // pipeline stays quiet; it still runs for non-math ink and on "Draw help".
+    // While Live owns the latest ink burst (recognized, still pending, or failed to read
+    // because the recognizer is down), the image pipeline stays quiet so an outage never
+    // turns into paid image generations; it still runs for non-math ink ('unhandled') and
+    // on "Draw help", which calls generateSolution({ force: true }) and skips this gate.
     if (liveEnabled && legacyShouldSkip(LIVE_TIMING.legacyIdleMs)) {
       return;
     }

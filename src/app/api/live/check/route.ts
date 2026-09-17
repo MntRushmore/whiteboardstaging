@@ -4,7 +4,7 @@ import { enforceCredits } from "@/lib/server/billing";
 import { streamWithFallback } from "@/lib/server/openrouter";
 import { jsonlToEvents, sseResponse, type SseEmit } from "@/lib/server/sse";
 import { buildCheckMessages } from "@/lib/server/prompts/check";
-import { livePreamble, sseErrorPayload, withRequestId } from "@/lib/server/live-route";
+import { livePreamble, runChargedStream, sseErrorPayload, withRequestId } from "@/lib/server/live-route";
 import { filterAnnotation } from "@/lib/server/live-rules";
 
 export const runtime = "nodejs";
@@ -39,7 +39,8 @@ export async function POST(req: Request) {
 
   const models = getLiveModels();
 
-  // Charge credits before opening the stream (a 402/503 JSON body, not SSE).
+  // Charge credits before opening the stream (a 402/503 JSON body, not SSE). The charge is
+  // refunded if the stream fails before the first annotation (runChargedStream), never after.
   const billing = await enforceCredits({ token, route: "live/check", requestId, model: models.check }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
@@ -48,52 +49,54 @@ export async function POST(req: Request) {
   const res = sseResponse(
     req,
     async (emit, signal) => {
-      let model = models.check;
-      emit("meta", { requestId, model });
-
-      const events = streamWithFallback(
-        models.check,
-        models.checkFallback,
-        {
-          messages,
-          signal,
-          temperature: 0,
-          reasoningEffort: "minimal",
-          maxTokens: 600,
-          requestId,
-          title: "Agathon Live - check",
-        },
-        LIVE_TIMING.checkWatchdogMs,
-      );
-
       let sent = 0;
-      let dropped = 0;
-      let firstAt: number | null = null;
-      const { count, invalid } = await jsonlToEvents(
-        textDeltas(events, emit, requestId, (m) => {
-          model = m;
-        }),
-        AnnotationSchema,
-        (annotation) => {
-          const kept = filterAnnotation(annotation, data);
-          if (!kept) {
-            dropped++;
-            return true;
-          }
-          if (firstAt === null) firstAt = Date.now();
-          emit("annotation", kept);
-          sent++;
-          return sent < MAX_ANNOTATIONS;
-        },
-        (line, reason) => log.debug({ reason, line: line.slice(0, 200) }, "dropped invalid annotation line"),
-      );
+      await runChargedStream({ token, requestId }, log, () => sent > 0, async () => {
+        let model = models.check;
+        emit("meta", { requestId, model });
 
-      const ms = Date.now() - startedAt;
-      log.info(
-        { model, ms, ttfaMs: firstAt === null ? null : firstAt - startedAt, sent, dropped, parsed: count, invalid, lines: data.lines.length, mode: data.mode },
-        "check completed",
-      );
-      emit("done", { count: sent, ms });
+        const events = streamWithFallback(
+          models.check,
+          models.checkFallback,
+          {
+            messages,
+            signal,
+            temperature: 0,
+            reasoningEffort: "minimal",
+            maxTokens: 600,
+            requestId,
+            title: "Agathon Live - check",
+          },
+          LIVE_TIMING.checkWatchdogMs,
+        );
+
+        let dropped = 0;
+        let firstAt: number | null = null;
+        const { count, invalid } = await jsonlToEvents(
+          textDeltas(events, emit, requestId, (m) => {
+            model = m;
+          }),
+          AnnotationSchema,
+          (annotation) => {
+            const kept = filterAnnotation(annotation, data);
+            if (!kept) {
+              dropped++;
+              return true;
+            }
+            if (firstAt === null) firstAt = Date.now();
+            emit("annotation", kept);
+            sent++;
+            return sent < MAX_ANNOTATIONS;
+          },
+          (line, reason) => log.debug({ reason, line: line.slice(0, 200) }, "dropped invalid annotation line"),
+        );
+
+        const ms = Date.now() - startedAt;
+        log.info(
+          { model, ms, ttfaMs: firstAt === null ? null : firstAt - startedAt, sent, dropped, parsed: count, invalid, lines: data.lines.length, mode: data.mode },
+          "check completed",
+        );
+        emit("done", { count: sent, ms });
+      });
     },
     {
       headers: { "X-Request-Id": requestId },

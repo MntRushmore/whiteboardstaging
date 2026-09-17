@@ -14,8 +14,14 @@ import { json } from "@/lib/server/auth";
  * the billing webhook (service role) or SQL.
  *
  * Placement in a route: after auth + rate limit + body validation and BEFORE the
- * upstream provider call. Charging up-front is the simple, documented choice for
- * now; refunding a failed upstream call is a follow-up.
+ * upstream provider call. Charging up-front keeps the check atomic; when the paid
+ * work then fails, `refundCredits` (RPC `refund_credits`) gives the charge back:
+ *   - non-streaming routes run their provider call inside `runCharged`, which refunds
+ *     whenever the response handed to the client is not a 2xx;
+ *   - the SSE routes (live/check, live/solve) refund only when the stream fails before
+ *     the first annotation/step was emitted (see `runChargedStream` in live-route.ts).
+ * The refund uses the SAME requestId the charge used; the RPC only touches the
+ * caller's own usage_events rows younger than 15 minutes.
  */
 
 export const billingLogger = logger.child({ module: "billing" });
@@ -64,6 +70,12 @@ export type RpcError = { message: string; code?: string | null; details?: string
  * -> `{ ok: boolean, remaining: int, reason: 'insufficient_credits' | null }`.
  */
 export const CONSUME_CREDITS_RPC = "consume_credits";
+
+/**
+ * The SECURITY DEFINER function from supabase/migrations/20260917030000_refunds_ratelimit.sql:
+ * `refund_credits(p_request_id text) returns jsonb` -> `{ refunded: int, remaining: int }`.
+ */
+export const REFUND_CREDITS_RPC = "refund_credits";
 
 /**
  * A supabase-js client that acts as the user: anon key + `Authorization: Bearer <token>`,
@@ -145,6 +157,99 @@ export async function consumeCredits(input: ConsumeInput, client?: RpcClient): P
       message: `consume_credits threw: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
+}
+
+/* ------------------------------------------------------------------------- */
+/* Refunds                                                                    */
+/* ------------------------------------------------------------------------- */
+
+export type RefundInput = {
+  /** The caller's verified Supabase access token (from `requireUser`). */
+  token: string;
+  /** Must be the very requestId that was passed to `consumeCredits` / `enforceCredits`. */
+  requestId: string;
+};
+
+export type RefundResult =
+  | { refunded: number; remaining: number }
+  | { refunded: 0; reason: string };
+
+/** Minimal logger surface the billing helpers need (pino child loggers satisfy it). */
+export type BillingLog = {
+  warn: (obj: object, msg: string) => void;
+  info?: (obj: object, msg: string) => void;
+};
+
+/** Normalise the `refund_credits` payload (object, one-row set or jsonb). Exported for tests. */
+export function normalizeRefundResult(data: unknown): RefundResult {
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || typeof row !== "object") return { refunded: 0, reason: "refund_credits returned no row." };
+  const r = row as Record<string, unknown>;
+  const refunded = asNumber(r.refunded);
+  const remaining = asNumber(r.remaining);
+  if (refunded === null || remaining === null) return { refunded: 0, reason: "refund_credits returned an unexpected shape." };
+  return { refunded: Math.max(0, refunded), remaining: Math.max(0, remaining) };
+}
+
+/**
+ * Give back what `consumeCredits` charged for `requestId`. Never throws; a refund that
+ * cannot happen is logged and reported as `{ refunded: 0, reason }` so the route can
+ * still answer the client. With `BILLING_ENFORCE=0` nothing was charged, so nothing
+ * is refunded and the database is not touched.
+ */
+export async function refundCredits(input: RefundInput, log: BillingLog = billingLogger, client?: RpcClient): Promise<RefundResult> {
+  if (!billingEnforced()) return { refunded: 0, reason: "not_enforced" };
+
+  let result: RefundResult;
+  try {
+    const rpcClient = client ?? userClient(input.token);
+    const { data, error } = await rpcClient.rpc(REFUND_CREDITS_RPC, { p_request_id: input.requestId });
+    if (error) {
+      const text = `${error.message ?? ""} ${error.details ?? ""} ${error.hint ?? ""}`;
+      result =
+        error.code === "42883" || error.code === "PGRST202" || MISSING_FUNCTION_RE.test(text)
+          ? { refunded: 0, reason: "refund_credits RPC is missing (run the migrations)." }
+          : { refunded: 0, reason: `refund_credits failed: ${error.message}` };
+    } else {
+      result = normalizeRefundResult(data);
+    }
+  } catch (err) {
+    result = { refunded: 0, reason: `refund_credits threw: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
+  if ("reason" in result) {
+    log.warn({ requestId: input.requestId, error: result.reason }, "credit refund failed");
+  } else {
+    log.info?.({ requestId: input.requestId, refunded: result.refunded, remaining: result.remaining }, "credits refunded");
+  }
+  return result;
+}
+
+const isSuccess = (res: Response) => res.status >= 200 && res.status < 300;
+
+/**
+ * Run the paid part of a non-streaming route after `enforceCredits` succeeded.
+ * `run` returns the Response for the client; a thrown error is turned into one by
+ * `onError` (normally `errorResponse`). Whenever that Response is NOT a 2xx — upstream
+ * error, provider credits exhausted, recognizer failure, timeout, abort — the charge
+ * for `input.requestId` is refunded before the Response is returned. A 2xx is never
+ * refunded, even when the model answered with text instead of an image.
+ */
+export async function runCharged(
+  input: RefundInput,
+  log: BillingLog,
+  run: () => Promise<Response>,
+  onError: (err: unknown) => Response,
+  client?: RpcClient,
+): Promise<Response> {
+  let res: Response;
+  try {
+    res = await run();
+  } catch (err) {
+    res = onError(err);
+  }
+  if (!isSuccess(res)) await refundCredits(input, log, client);
+  return res;
 }
 
 /* ------------------------------------------------------------------------- */

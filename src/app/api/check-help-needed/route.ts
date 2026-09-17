@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { helpCheckLogger } from "@/lib/logger";
 import { requireUser } from "@/lib/server/auth";
-import { enforceCredits } from "@/lib/server/billing";
-import { LIMITS, checkRateLimit, rateLimitKey, rateLimitedResponse } from "@/lib/server/rate-limit";
+import { enforceCredits, runCharged } from "@/lib/server/billing";
+import { checkRateLimitDistributed, rateLimitedResponse } from "@/lib/server/rate-limit";
 import { TEXT_MODELS, openrouterChat } from "@/lib/server/openrouter";
 import { errorResponse, imageDataUrlSchema, parseJsonBody, textSchema } from "@/lib/server/request";
 
@@ -29,10 +29,10 @@ export async function POST(req: Request) {
 
   const log = helpCheckLogger.child({ requestId, userId: user.id });
 
-  const rl = checkRateLimit(rateLimitKey(user.id, "checkHelp"), LIMITS.checkHelp);
+  const rl = await checkRateLimitDistributed({ token, userId: user.id, bucket: "checkHelp" });
   if (!rl.ok) {
-    log.warn({ retryAfterMs: rl.retryAfterMs }, "Help check rate limited");
-    return rateLimitedResponse(rl.retryAfterMs);
+    log.warn({ retryAfterMs: rl.retryAfterMs, backend: rl.backend }, "Help check rate limited");
+    return rateLimitedResponse(rl.retryAfterMs, rl.backend);
   }
 
   const parsed = await parseJsonBody(req, bodySchema);
@@ -42,13 +42,13 @@ export async function POST(req: Request) {
   }
   const { text, image } = parsed.data;
 
-  // Charge credits before the provider call (see src/lib/server/billing.ts).
+  // Charge credits before the provider call; runCharged refunds them on any non-2xx (see src/lib/server/billing.ts).
   const billing = await enforceCredits({ token, route: "check-help-needed", requestId, model: TEXT_MODELS.helpCheck }, log);
   if ("response" in billing) return billing.response;
 
   log.info({ hasText: !!text, textLength: text?.length || 0, hasImage: !!image }, "Help check request started");
 
-  try {
+  return runCharged({ token, requestId }, log, async () => {
     // Build the message content
     const content: Array<Record<string, unknown>> = [];
 
@@ -91,7 +91,5 @@ export async function POST(req: Request) {
     log.info({ duration, needsHelp, confidence, reason, tokensUsed: data.usage?.total_tokens }, "Help check completed");
 
     return Response.json({ success: true, needsHelp, confidence, reason });
-  } catch (error) {
-    return errorResponse(error, log, { duration: Date.now() - startTime });
-  }
+  }, (error) => errorResponse(error, log, { duration: Date.now() - startTime }));
 }

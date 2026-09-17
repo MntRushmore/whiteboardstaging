@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { solutionLogger } from "@/lib/logger";
 import { requireUser } from "@/lib/server/auth";
-import { enforceCredits } from "@/lib/server/billing";
-import { LIMITS, checkRateLimit, rateLimitKey, rateLimitedResponse } from "@/lib/server/rate-limit";
+import { enforceCredits, runCharged } from "@/lib/server/billing";
+import { checkRateLimitDistributed, rateLimitedResponse } from "@/lib/server/rate-limit";
 import { IMAGE_MODELS, extractImageUrl, openrouterChat } from "@/lib/server/openrouter";
 import {
   errorResponse,
@@ -75,10 +75,10 @@ export async function POST(req: Request) {
 
   const log = solutionLogger.child({ requestId, userId: user.id });
 
-  const rl = checkRateLimit(rateLimitKey(user.id, "generateSolution"), LIMITS.generateSolution);
+  const rl = await checkRateLimitDistributed({ token, userId: user.id, bucket: "generateSolution" });
   if (!rl.ok) {
-    log.warn({ retryAfterMs: rl.retryAfterMs }, "Solution generation rate limited");
-    return rateLimitedResponse(rl.retryAfterMs);
+    log.warn({ retryAfterMs: rl.retryAfterMs, backend: rl.backend }, "Solution generation rate limited");
+    return rateLimitedResponse(rl.retryAfterMs, rl.backend);
   }
 
   const parsed = await parseJsonBody(req, bodySchema);
@@ -88,13 +88,13 @@ export async function POST(req: Request) {
   }
   const { image, prompt, mode, source, model, hasWorksheet } = parsed.data;
 
-  // Charge credits before the provider call (see src/lib/server/billing.ts).
+  // Charge credits before the provider call; runCharged refunds them on any non-2xx (see src/lib/server/billing.ts).
   const billing = await enforceCredits({ token, route: "generate-solution", requestId, model: IMAGE_MODELS[model] }, log);
   if ("response" in billing) return billing.response;
 
   log.info({ mode, source, model, hasWorksheet, imageSize: image.length }, "Solution generation request started");
 
-  try {
+  return runCharged({ token, requestId }, log, async () => {
     const selectedModel = IMAGE_MODELS[model];
     const effectiveSource: "auto" | "voice" = source === "voice" ? "voice" : "auto";
     const basePrompt = getModePrompt(mode, effectiveSource);
@@ -180,7 +180,5 @@ export async function POST(req: Request) {
       imageUrl,
       textContent: message?.content || "",
     });
-  } catch (error) {
-    return errorResponse(error, log, { duration: Date.now() - startTime });
-  }
+  }, (error) => errorResponse(error, log, { duration: Date.now() - startTime }));
 }

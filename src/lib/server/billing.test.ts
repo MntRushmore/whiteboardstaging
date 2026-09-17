@@ -11,7 +11,10 @@ import {
   creditsExhaustedResponse,
   enforceCredits,
   normalizeConsumeResult,
+  normalizeRefundResult,
+  refundCredits,
   resetBillingWarnings,
+  runCharged,
   type RpcClient,
   type RpcError,
 } from "@/lib/server/billing";
@@ -224,5 +227,122 @@ describe("enforceCredits", () => {
     await expect(enforceCredits(input, quiet, client)).resolves.toEqual({ remaining: null });
     await expect(enforceCredits(input, quiet, client)).resolves.toEqual({ remaining: null });
     expect(client.calls).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------------- */
+/* Refunds                                                                    */
+/* ------------------------------------------------------------------------- */
+
+/** Records what the billing helpers log so tests can assert "only logged". */
+function recordingLog() {
+  const lines: string[] = [];
+  return {
+    lines,
+    warn: (_obj: object, msg: string) => void lines.push(`warn:${msg}`),
+    info: (_obj: object, msg: string) => void lines.push(`info:${msg}`),
+  };
+}
+
+describe("normalizeRefundResult", () => {
+  it("reads the jsonb shape the migration returns (object, one-row set, numeric strings)", () => {
+    expect(normalizeRefundResult({ refunded: 3, remaining: 297 })).toEqual({ refunded: 3, remaining: 297 });
+    expect(normalizeRefundResult([{ refunded: "10", remaining: "40" }])).toEqual({ refunded: 10, remaining: 40 });
+    expect(normalizeRefundResult({ refunded: 0, remaining: 5 })).toEqual({ refunded: 0, remaining: 5 });
+  });
+
+  it("treats an unexpected payload as refunded 0 with a reason (never throws)", () => {
+    for (const payload of [null, undefined, 7, "ok", {}, { refunded: 1 }, { refunded: "x", remaining: 1 }, []]) {
+      expect(normalizeRefundResult(payload), JSON.stringify(payload)).toMatchObject({ refunded: 0, reason: expect.stringMatching(/refund_credits/) });
+    }
+  });
+});
+
+describe("refundCredits", () => {
+  const input = { token: "jwt", requestId: "req-42" };
+
+  it("calls refund_credits with exactly the request id and reports refunded + remaining", async () => {
+    const client = fakeRpc({ data: { refunded: 25, remaining: 300 } });
+    const log = recordingLog();
+    await expect(refundCredits(input, log, client)).resolves.toEqual({ refunded: 25, remaining: 300 });
+    expect(client.calls).toEqual([{ fn: "refund_credits", args: { p_request_id: "req-42" } }]);
+    expect(log.lines).toEqual(["info:credits refunded"]);
+  });
+
+  it("a refund that matched nothing is refunded 0 without a reason (idempotent, not an error)", async () => {
+    const log = recordingLog();
+    await expect(refundCredits(input, log, fakeRpc({ data: { refunded: 0, remaining: 12 } }))).resolves.toEqual({ refunded: 0, remaining: 12 });
+    expect(log.lines).toEqual(["info:credits refunded"]);
+  });
+
+  it("maps a missing function, an RPC error and a thrown error to refunded 0 + reason, only logging", async () => {
+    const missing = recordingLog();
+    await expect(refundCredits(input, missing, fakeRpc({ error: { message: "Could not find the function public.refund_credits in the schema cache", code: "PGRST202" } }))).resolves.toEqual({
+      refunded: 0,
+      reason: "refund_credits RPC is missing (run the migrations).",
+    });
+    expect(missing.lines).toEqual(["warn:credit refund failed"]);
+
+    await expect(refundCredits(input, recordingLog(), fakeRpc({ error: { message: "deadlock detected" } }))).resolves.toEqual({
+      refunded: 0,
+      reason: "refund_credits failed: deadlock detected",
+    });
+    await expect(refundCredits(input, recordingLog(), fakeRpc(new Error("network down")))).resolves.toEqual({
+      refunded: 0,
+      reason: "refund_credits threw: network down",
+    });
+  });
+
+  it("skips the database when BILLING_ENFORCE=0 (nothing was charged)", async () => {
+    process.env.BILLING_ENFORCE = "0";
+    resetServerEnvCache();
+    const client = fakeRpc({ data: { refunded: 99, remaining: 99 } });
+    await expect(refundCredits(input, recordingLog(), client)).resolves.toEqual({ refunded: 0, reason: "not_enforced" });
+    expect(client.calls).toEqual([]);
+  });
+});
+
+describe("runCharged", () => {
+  const input = { token: "jwt", requestId: "req-7" };
+  const onError = (err: unknown) => Response.json({ error: "upstream_error", message: String(err) }, { status: 502 });
+
+  it("returns a 2xx untouched and never refunds (a text-only model answer is still a 2xx)", async () => {
+    const client = fakeRpc({ data: { refunded: 1, remaining: 1 } });
+    const res = await runCharged(input, recordingLog(), async () => Response.json({ success: false, imageUrl: null }), onError, client);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: false, imageUrl: null });
+    expect(client.calls).toEqual([]);
+  });
+
+  it("refunds the same request id when run resolves to a non-2xx response", async () => {
+    const client = fakeRpc({ data: { refunded: 20, remaining: 120 } });
+    const log = recordingLog();
+    const res = await runCharged(input, log, async () => Response.json({ error: "recognizer_failed" }, { status: 502 }), onError, client);
+    expect(res.status).toBe(502);
+    expect(client.calls).toEqual([{ fn: "refund_credits", args: { p_request_id: "req-7" } }]);
+    expect(log.lines).toEqual(["info:credits refunded"]);
+  });
+
+  it("maps a thrown error through onError and refunds", async () => {
+    const client = fakeRpc({ data: { refunded: 2, remaining: 2 } });
+    const res = await runCharged(
+      input,
+      recordingLog(),
+      async () => {
+        throw new Error("timeout");
+      },
+      onError,
+      client,
+    );
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({ error: "upstream_error", message: "Error: timeout" });
+    expect(client.calls.map((c) => c.fn)).toEqual(["refund_credits"]);
+  });
+
+  it("still returns the error response when the refund itself fails (only logged)", async () => {
+    const log = recordingLog();
+    const res = await runCharged(input, log, async () => Response.json({}, { status: 500 }), onError, fakeRpc(new Error("db gone")));
+    expect(res.status).toBe(500);
+    expect(log.lines).toEqual(["warn:credit refund failed"]);
   });
 });

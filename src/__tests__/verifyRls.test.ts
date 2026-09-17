@@ -9,6 +9,7 @@ import {
   ALL_CHECKS,
   CREDIT_SUMMARY_KEYS,
   PUBLIC_TABLES,
+  RATE_LIMIT_KEYS,
   affectedNoRows,
   checkAnonDenied,
   checkBillingTables,
@@ -17,6 +18,8 @@ import {
   checkCreditsConsumption,
   checkCrossUserIsolation,
   checkDeleteOwnAccount,
+  checkRateLimit,
+  checkRefunds,
   checkSnapshots,
   checkStorage,
   checkTrainersNotWritable,
@@ -28,6 +31,7 @@ import {
   formatResults,
   isCreditSummary,
   isDenied,
+  isRateLimitResult,
   isStorageDenied,
   minimalInsert,
   rpc,
@@ -81,10 +85,21 @@ type Leak =
   | "overspendAllowed"
   | "summaryMissingField"
   | "anonRpc"
-  | "deleteNoop";
+  | "deleteNoop"
+  // refunds & rate limits
+  | "refundOthers"
+  | "refundStale"
+  | "refundKeepsRow"
+  | "rateLimitNeverDenies"
+  | "rateLimitShared"
+  | "rateLimitBadRetry"
+  | "countersReadable";
 
 const USER_A = "aaaaaaaa-0000-4000-8000-000000000001";
 const USER_B = "bbbbbbbb-0000-4000-8000-000000000002";
+/** Pseudo identity for the service-role client (RLS bypassed in the fake). */
+const SERVICE = "service-role";
+const REFUND_WINDOW_MS = 15 * 60_000;
 const FILTER_KEYS = new Set(["select", "limit", "order", "on_conflict"]);
 const PLANS: Row[] = [
   { id: "free", name: "Free", monthly_credits: 300, price_cents: 0, sort: 0, active: true },
@@ -106,6 +121,8 @@ function makeWorld(leaks: Leak[] = []) {
   const usage: Row[] = [];
   const grants: Row[] = [];
   const billingEvents: Row[] = [];
+  // "<uid>:<bucket>:<windowStartMs>" -> counter row (public.rate_limit_counters)
+  const counters = new Map<string, { user_id: string; bucket: string; window_start: number; hits: number; expires_at: number }>();
   const uuid = () => globalThis.crypto.randomUUID();
 
   const ok = (body: unknown, status = 200): HttpResult => ({ status, body });
@@ -155,10 +172,60 @@ function makeWorld(leaks: Leak[] = []) {
         if (!users.has(uid)) return denied(uid); // auth.users row gone -> 'account not found' (42501)
         const { remaining } = balance(uid);
         if (remaining < units && !leak("overspendAllowed")) return ok({ ok: false, remaining, reason: "insufficient_credits" });
-        const row: Row = { id: usage.length + 1, user_id: uid, route: args.p_route, units, model: args.p_model ?? null, request_id: args.p_request_id ?? null };
+        const row: Row = {
+          id: usage.length + 1,
+          user_id: uid,
+          route: args.p_route,
+          units,
+          model: args.p_model ?? null,
+          request_id: args.p_request_id ?? null,
+          created_at: new Date().toISOString(),
+        };
         usage.push(row);
         if (leak("consumeChargesOther")) for (const other of users) if (other !== uid) usage.push({ ...row, id: usage.length + 1, user_id: other });
         return ok({ ok: true, remaining: remaining - units, reason: null });
+      }
+      case "refund_credits": {
+        const requestId = args.p_request_id;
+        if (typeof requestId !== "string" || requestId.length < 1 || requestId.length > 100) {
+          return { status: 400, body: { code: "22023", message: "p_request_id must be 1..100 characters" } };
+        }
+        const cutoff = Date.now() - REFUND_WINDOW_MS;
+        let refunded = 0;
+        for (let i = usage.length - 1; i >= 0; i--) {
+          const r = usage[i];
+          if (r.request_id !== requestId) continue;
+          if (r.user_id !== uid && !leak("refundOthers")) continue;
+          if (Date.parse(String(r.created_at)) <= cutoff && !leak("refundStale")) continue;
+          refunded += Number(r.units);
+          if (!leak("refundKeepsRow")) usage.splice(i, 1);
+        }
+        return ok({ refunded, remaining: balance(uid).remaining });
+      }
+      case "rate_limit_hit": {
+        const bucket = args.p_bucket;
+        const limit = Number(args.p_limit);
+        const windowMs = Number(args.p_window_ms);
+        if (typeof bucket !== "string" || bucket.length < 1 || bucket.length > 100) {
+          return { status: 400, body: { code: "22023", message: "p_bucket must be 1..100 characters" } };
+        }
+        if (!Number.isInteger(limit) || limit < 1 || limit > 1_000_000) {
+          return { status: 400, body: { code: "22023", message: "p_limit must be between 1 and 1000000" } };
+        }
+        if (!Number.isInteger(windowMs) || windowMs < 1 || windowMs > 86_400_000) {
+          return { status: 400, body: { code: "22023", message: "p_window_ms must be between 1 and 86400000" } };
+        }
+        const now = Date.now();
+        const windowStart = now - (now % windowMs);
+        const owner = leak("rateLimitShared") ? "shared" : uid;
+        for (const [k, c] of counters) if (c.user_id === owner && c.bucket === bucket && c.expires_at <= now) counters.delete(k);
+        const key = `${owner}:${bucket}:${windowStart}`;
+        const row = counters.get(key) ?? { user_id: owner, bucket, window_start: windowStart, hits: 0, expires_at: windowStart + 2 * windowMs };
+        row.hits += 1;
+        counters.set(key, row);
+        const allowed = leak("rateLimitNeverDenies") || row.hits <= limit;
+        const retryAfter = allowed ? 0 : leak("rateLimitBadRetry") ? windowMs + 1 : windowStart + windowMs - now;
+        return ok({ allowed, remaining: Math.max(0, limit - row.hits), retry_after_ms: retryAfter, backend: "db" });
       }
       case "delete_own_account": {
         if (leak("deleteNoop")) return ok(null, 204);
@@ -206,6 +273,7 @@ function makeWorld(leaks: Leak[] = []) {
       if (method === "GET") return leak("anonSelect") ? ok([]) : denied(null);
       return leak("anonInsert") ? ok(null, 201) : denied(null);
     }
+    if (uid === SERVICE) return serviceRest(method, table, query, body);
     if (table.startsWith("rpc/")) return rpcCall(uid, table.slice(4), body);
 
     switch (table) {
@@ -342,8 +410,35 @@ function makeWorld(leaks: Leak[] = []) {
         if (method === "GET") return leak("billingEventsReadable") ? ok(billingEvents) : denied(uid);
         return denied(uid);
       }
+      case "rate_limit_counters": {
+        // Function-only table: no grants for authenticated at all.
+        if (method === "GET" && leak("countersReadable")) return ok([...counters.values()].filter((c) => c.user_id === uid));
+        return denied(uid);
+      }
     }
     return { status: 404, body: { message: `fake: unsupported ${method} ${table}` } };
+  }
+
+  /** The service role bypasses RLS and holds every grant; only what the checks use is modelled. */
+  function serviceRest(method: string, table: string, query: Record<string, string>, body: Row): HttpResult {
+    switch (table) {
+      case "usage_events": {
+        if (method === "POST") {
+          usage.push({ id: usage.length + 1, created_at: new Date().toISOString(), ...body });
+          return ok(null, 201);
+        }
+        if (method === "GET") return ok(usage.filter((r) => matches(r, query)));
+        break;
+      }
+      case "rate_limit_counters": {
+        if (method === "GET") {
+          const list: Row[] = [...counters.values()].map((c) => ({ ...c, window_start: new Date(c.window_start).toISOString() }));
+          return ok(list.filter((r) => matches(r, query)));
+        }
+        break;
+      }
+    }
+    return { status: 404, body: { message: `fake: unsupported service ${method} ${table}` } };
   }
 
   function upload(uid: string | null, bucket: string, path: string): HttpResult {
@@ -388,8 +483,8 @@ function makeWorld(leaks: Leak[] = []) {
     return client(uid);
   };
 
-  const ctx: CheckContext = { anon: client(null), a: client(USER_A), b: client(USER_B), newUser };
-  return { ctx, state: { boards, settings, bugReports, snapshots, assets, objects, users, profiles, usage, grants } };
+  const ctx: CheckContext = { anon: client(null), a: client(USER_A), b: client(USER_B), newUser, service: client(SERVICE) };
+  return { ctx, state: { boards, settings, bugReports, snapshots, assets, objects, users, profiles, usage, grants, counters } };
 }
 
 const failures = (results: CheckResult[]) => results.filter((r) => !r.pass).map((r) => r.name);
@@ -410,8 +505,8 @@ describe("rlsChecks against a correctly secured fake", () => {
       expect(results.map((r) => r.name)).toContain(`anon: select ${table} denied`);
       expect(results.map((r) => r.name)).toContain(`anon: insert ${table} denied`);
     }
-    expect(PUBLIC_TABLES).toHaveLength(12);
-    for (const table of ["plans", "profiles", "usage_events", "credit_grants", "billing_events"]) {
+    expect(PUBLIC_TABLES).toHaveLength(13);
+    for (const table of ["plans", "profiles", "usage_events", "credit_grants", "billing_events", "rate_limit_counters"]) {
       expect(PUBLIC_TABLES).toContain(table);
     }
   });
@@ -438,6 +533,39 @@ describe("rlsChecks against a correctly secured fake", () => {
     await checkCreditsConsumption(ctx);
     expect(state.usage.length).toBeGreaterThan(0);
     expect(state.usage.every((r) => r.user_id === USER_A)).toBe(true);
+  });
+
+  it("the refund check leaves A's un-refundable rows (foreign attempt, stale) in the ledger and nothing of B's", async () => {
+    const { ctx, state } = makeWorld();
+    const results = await checkRefunds(ctx);
+    expect(failures(results)).toEqual([]);
+    expect(results.map((r) => r.name)).toContain("refund_credits: a row older than 15 minutes refunds 0 and stays");
+    const requestIds = state.usage.map((r) => String(r.request_id));
+    expect(requestIds.some((id) => id.endsWith("-foreign"))).toBe(true);
+    expect(requestIds.some((id) => id.endsWith("-stale"))).toBe(true);
+    expect(requestIds.some((id) => id.endsWith("-own"))).toBe(false);
+    expect(state.usage.every((r) => r.user_id === USER_A)).toBe(true);
+  });
+
+  it("the refund check reports the stale case as skipped (still passing) without a service client", async () => {
+    const { ctx } = makeWorld();
+    const results = await checkRefunds({ anon: ctx.anon, a: ctx.a, b: ctx.b });
+    expect(failures(results)).toEqual([]);
+    expect(results.map((r) => r.name)).toContain(
+      "refund_credits: a row older than 15 minutes refunds 0 and stays (skipped: no service role client)",
+    );
+    expect(results.map((r) => r.name)).not.toContain("refund_credits: a row older than 15 minutes refunds 0 and stays");
+  });
+
+  it("the rate limit check keeps counters per user and never lets a user token read them", async () => {
+    const { ctx, state } = makeWorld();
+    const results = await checkRateLimit(ctx);
+    expect(failures(results)).toEqual([]);
+    const owners = new Set([...state.counters.values()].map((c) => c.user_id));
+    expect(owners).toEqual(new Set([USER_A, USER_B]));
+    const aRows = [...state.counters.values()].filter((c) => c.user_id === USER_A);
+    // other bucket: 1 hit; main bucket: 3 allowed + 2 denied + 1 after the delete attempt = 6
+    expect(aRows.map((c) => c.hits).sort((x, y) => x - y)).toEqual([1, 6]);
   });
 });
 
@@ -482,6 +610,21 @@ describe("rlsChecks detect individual leaks", () => {
     ["anonRpc", checkCreditsConsumption, "consume_credits: anon cannot call it"],
     ["deleteNoop", checkDeleteOwnAccount, "delete_own_account: C's profile is gone"],
     ["deleteNoop", checkDeleteOwnAccount, "delete_own_account: deleted user's JWT cannot spend (auth.users row gone)"],
+    // refunds & rate limits
+    ["anonSelect", checkAnonDenied, "anon: select rate_limit_counters denied"],
+    ["anonInsert", checkAnonDenied, "anon: insert rate_limit_counters denied"],
+    ["refundOthers", checkRefunds, "refund_credits: B refunding A's request id refunds 0 and B's balance is unchanged"],
+    ["refundOthers", checkRefunds, "refund_credits: A's usage row and balance untouched by B's attempt"],
+    ["refundStale", checkRefunds, "refund_credits: a row older than 15 minutes refunds 0 and stays"],
+    ["refundKeepsRow", checkRefunds, "refund_credits: the refunded usage row is deleted"],
+    ["refundKeepsRow", checkRefunds, "refund_credits: A refunds own request (refunded 5, remaining restored)"],
+    ["anonRpc", checkRefunds, "refund_credits: anon cannot call it"],
+    ["rateLimitNeverDenies", checkRateLimit, "rate_limit_hit: next hit denied with retry_after_ms in (0, window]"],
+    ["rateLimitNeverDenies", checkRateLimit, "rate_limit_hit: A is still denied after the delete attempt"],
+    ["rateLimitShared", checkRateLimit, "rate_limit_hit: B has an independent counter for the same bucket"],
+    ["rateLimitBadRetry", checkRateLimit, "rate_limit_hit: next hit denied with retry_after_ms in (0, window]"],
+    ["anonRpc", checkRateLimit, "rate_limit_hit: anon cannot call it"],
+    ["countersReadable", checkRateLimit, "rate_limit_counters: not readable by authenticated users"],
   ];
 
   it.each(cases)("leak %s makes '%s' fail", async (leak, check, failingName) => {
@@ -493,6 +636,36 @@ describe("rlsChecks detect individual leaks", () => {
     const { ctx } = makeWorld();
     const results = await checkDeleteOwnAccount({ anon: ctx.anon, a: ctx.a, b: ctx.b });
     expect(failures(results)).toEqual(["delete_own_account: context provides newUser()"]);
+  });
+
+  it("refund check fails when refund_credits reports the credits but does not restore remaining", async () => {
+    const { ctx } = makeWorld();
+    const real = ctx.a.rest;
+    ctx.a.rest = async (method, table, opts) => {
+      const res = await real(method, table, opts);
+      if (table === "rpc/refund_credits" && res.status === 200) {
+        return { status: 200, body: { ...(res.body as Row), remaining: 0 } };
+      }
+      return res;
+    };
+    const results = await checkRefunds(ctx);
+    expect(failures(results)).toContain("refund_credits: A refunds own request (refunded 5, remaining restored)");
+    expect(failures(results)).toContain("refund_credits: refunding the same request again refunds 0");
+  });
+
+  it("rate limit check fails when the backend is not 'db' or remaining does not count down", async () => {
+    const { ctx } = makeWorld();
+    const real = ctx.a.rest;
+    ctx.a.rest = async (method, table, opts) => {
+      const res = await real(method, table, opts);
+      if (table === "rpc/rate_limit_hit" && res.status === 200) {
+        return { status: 200, body: { ...(res.body as Row), backend: "memory" } };
+      }
+      return res;
+    };
+    const results = await checkRateLimit(ctx);
+    expect(failures(results)).toContain("rate_limit_hit: first 3 hits allowed with remaining 2..0 (backend 'db')");
+    expect(failures(results)).toContain("rate_limit_hit: next hit denied with retry_after_ms in (0, window]");
   });
 
   it("credits check fails when consume_credits does not decrement remaining", async () => {
@@ -616,6 +789,26 @@ describe("predicates", () => {
     expect(isCreditSummary(missing)).toBe(false);
     expect(isCreditSummary([good])).toBe(false);
     expect(isCreditSummary(null)).toBe(false);
+  });
+
+  it("isRateLimitResult ties retry_after_ms to `allowed` and the window", () => {
+    expect(RATE_LIMIT_KEYS).toEqual(["allowed", "remaining", "retry_after_ms", "backend"]);
+    const ok = { allowed: true, remaining: 2, retry_after_ms: 0, backend: "db" };
+    const denied = { allowed: false, remaining: 0, retry_after_ms: 1500, backend: "db" };
+    expect(isRateLimitResult(ok, 60_000)).toBe(true);
+    expect(isRateLimitResult(denied, 60_000)).toBe(true);
+    expect(isRateLimitResult(denied, 1_000)).toBe(false); // retry beyond the window
+    expect(isRateLimitResult({ ...denied, retry_after_ms: 0 }, 60_000)).toBe(false);
+    expect(isRateLimitResult({ ...denied, remaining: 1 }, 60_000)).toBe(false);
+    expect(isRateLimitResult({ ...ok, retry_after_ms: 5 }, 60_000)).toBe(false);
+    expect(isRateLimitResult({ ...ok, backend: "memory" }, 60_000)).toBe(false);
+    expect(isRateLimitResult({ ...ok, remaining: "2" }, 60_000)).toBe(false);
+    expect(isRateLimitResult({ ...ok, remaining: -1 }, 60_000)).toBe(false);
+    const missing: Partial<typeof ok> = { ...ok };
+    delete missing.backend;
+    expect(isRateLimitResult(missing, 60_000)).toBe(false);
+    expect(isRateLimitResult([ok], 60_000)).toBe(false);
+    expect(isRateLimitResult(null, 60_000)).toBe(false);
   });
 
   it("rpc posts to /rest/v1/rpc/<fn> with the arguments as the body", async () => {

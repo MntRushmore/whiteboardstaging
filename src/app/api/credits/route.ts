@@ -1,6 +1,6 @@
 import { logger } from "@/lib/logger";
 import { requireUser } from "@/lib/server/auth";
-import { LIMITS, checkRateLimit, rateLimitKey, rateLimitedResponse } from "@/lib/server/rate-limit";
+import { checkRateLimitDistributed, rateLimitedResponse } from "@/lib/server/rate-limit";
 import { OPENROUTER_CREDITS_URL, UpstreamError, openrouterHeaders } from "@/lib/server/openrouter";
 import { errorResponse } from "@/lib/server/request";
 
@@ -22,12 +22,12 @@ export async function GET(req: Request) {
 
   const auth = await requireUser(req);
   if ("response" in auth) return auth.response;
-  const { user } = auth;
+  const { user, token } = auth;
 
   const log = creditsLogger.child({ requestId, userId: user.id });
 
-  const rl = checkRateLimit(rateLimitKey(user.id, "credits"), LIMITS.credits);
-  if (!rl.ok) return rateLimitedResponse(rl.retryAfterMs);
+  const rl = await checkRateLimitDistributed({ token, userId: user.id, bucket: "credits" });
+  if (!rl.ok) return rateLimitedResponse(rl.retryAfterMs, rl.backend);
 
   if (cache && cache.expiresAt > Date.now()) {
     return Response.json(cache.data, { headers: { "Cache-Control": "private, no-store" } });

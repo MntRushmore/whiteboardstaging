@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { ocrLogger } from "@/lib/logger";
 import { requireUser } from "@/lib/server/auth";
-import { enforceCredits } from "@/lib/server/billing";
-import { LIMITS, checkRateLimit, rateLimitKey, rateLimitedResponse } from "@/lib/server/rate-limit";
+import { enforceCredits, runCharged } from "@/lib/server/billing";
+import { checkRateLimitDistributed, rateLimitedResponse } from "@/lib/server/rate-limit";
 import { TEXT_MODELS, openrouterChat } from "@/lib/server/openrouter";
 import { errorResponse, imageDataUrlSchema, parseJsonBody } from "@/lib/server/request";
 
@@ -27,10 +27,10 @@ export async function POST(req: Request) {
 
   const log = ocrLogger.child({ requestId, userId: user.id });
 
-  const rl = checkRateLimit(rateLimitKey(user.id, "ocr"), LIMITS.ocr);
+  const rl = await checkRateLimitDistributed({ token, userId: user.id, bucket: "ocr" });
   if (!rl.ok) {
-    log.warn({ retryAfterMs: rl.retryAfterMs }, "OCR rate limited");
-    return rateLimitedResponse(rl.retryAfterMs);
+    log.warn({ retryAfterMs: rl.retryAfterMs, backend: rl.backend }, "OCR rate limited");
+    return rateLimitedResponse(rl.retryAfterMs, rl.backend);
   }
 
   const parsed = await parseJsonBody(req, bodySchema);
@@ -40,13 +40,13 @@ export async function POST(req: Request) {
   }
   const { image } = parsed.data;
 
-  // Charge credits before the provider call (see src/lib/server/billing.ts).
+  // Charge credits before the provider call; runCharged refunds them on any non-2xx (see src/lib/server/billing.ts).
   const billing = await enforceCredits({ token, route: "ocr", requestId, model: TEXT_MODELS.fast }, log);
   if ("response" in billing) return billing.response;
 
   log.info({ imageSize: image.length, model: TEXT_MODELS.fast }, "OCR request started");
 
-  try {
+  return runCharged({ token, requestId }, log, async () => {
     const data = await openrouterChat(
       {
         model: TEXT_MODELS.fast,
@@ -71,7 +71,5 @@ export async function POST(req: Request) {
     log.info({ duration, textLength: extractedText.length, tokensUsed: data.usage?.total_tokens }, "OCR completed successfully");
 
     return Response.json({ success: true, text: extractedText });
-  } catch (error) {
-    return errorResponse(error, log, { duration: Date.now() - startTime });
-  }
+  }, (error) => errorResponse(error, log, { duration: Date.now() - startTime }));
 }

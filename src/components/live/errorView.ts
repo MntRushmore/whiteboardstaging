@@ -119,6 +119,12 @@ export function secondsLeftFor(err: Pick<LiveError, "at" | "retryAfterMs">, now:
 
 /** What the pill (and the inline hint card) shows for an error at time `now`. */
 export function liveErrorView(err: LiveError, now: number): LiveErrorView {
+  const view = liveErrorViewBase(err, now);
+  // Second line set by the loop (e.g. "Drawn help is paused…" after a failed read).
+  return err.detail ? { ...view, detail: err.detail } : view;
+}
+
+function liveErrorViewBase(err: LiveError, now: number): LiveErrorView {
   switch (err.code) {
     case "unauthorized":
       return { title: err.message, primary: "signin", retryEnabled: false };

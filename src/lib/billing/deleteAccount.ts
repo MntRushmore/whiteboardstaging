@@ -11,6 +11,13 @@
  *
  * Removal is best effort: a Storage failure is reported to the caller but must not
  * block deletion (the runbook's GC query catches leftovers).
+ *
+ * After the RPC succeeds the auth user no longer exists, so `auth.signOut()` —
+ * even with `scope: 'local'` (auth-js 2.84 still POSTs /auth/v1/logout first and
+ * only ignores the resulting 403 afterwards) — would make a doomed network call
+ * that the browser reports as a console error. Instead the persisted session is
+ * removed from storage directly (the keys auth-js itself uses) and `getSession()`
+ * is called once so the client reloads the now-empty state without any request.
  */
 
 export const BOARD_ASSETS_BUCKET = "board-assets";
@@ -31,7 +38,89 @@ export type DeleteAccountClient = {
     };
   };
   rpc: (fn: "delete_own_account") => QueryResult<unknown>;
+  auth: {
+    /** Reloads the session from storage; used as a no-network way to settle state after the keys are gone. */
+    getSession: () => PromiseLike<unknown>;
+  };
 };
+
+/** The slice of Web Storage this module needs (lets tests pass a fake). */
+export type KeyValueStorage = {
+  readonly length: number;
+  key: (index: number) => string | null;
+  removeItem: (key: string) => void;
+};
+
+/** supabase-js persists sessions under `sb-<project-ref>-auth-token` by default. */
+export const AUTH_TOKEN_KEY_PREFIX = "sb-";
+export const AUTH_TOKEN_KEY_MARKER = "-auth-token";
+/** auth-js writes the session itself plus these two companions next to it. */
+export const SESSION_KEY_SUFFIXES = ["", "-code-verifier", "-user"] as const;
+
+/**
+ * Pick the storage keys that hold the local auth session (pure).
+ *
+ * With the client's `storageKey` known, only that key and its auth-js companions
+ * are selected. Without it, fall back to supabase-js's default naming: every key
+ * starting with `sb-` and containing `-auth-token` (which also matches the
+ * companions). Order follows `keys`.
+ */
+export function selectAuthStorageKeys(keys: readonly string[], storageKey?: string | null): string[] {
+  if (storageKey) {
+    const wanted = new Set(SESSION_KEY_SUFFIXES.map((suffix) => `${storageKey}${suffix}`));
+    return keys.filter((key) => wanted.has(key));
+  }
+  return keys.filter((key) => key.startsWith(AUTH_TOKEN_KEY_PREFIX) && key.includes(AUTH_TOKEN_KEY_MARKER));
+}
+
+/** `SupabaseClient.storageKey` is protected in the typings but present at runtime. */
+export function readStorageKey(client: object): string | null {
+  const value = (client as { storageKey?: unknown }).storageKey;
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function listKeys(storage: KeyValueStorage): string[] {
+  const keys: string[] = [];
+  for (let i = 0; i < storage.length; i += 1) {
+    const key = storage.key(i);
+    if (key !== null) keys.push(key);
+  }
+  return keys;
+}
+
+function defaultStorage(): KeyValueStorage | null {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Forget the session locally without talking to the auth server: remove the
+ * persisted keys, then let the client reload (and find nothing). Never throws.
+ * Returns the keys that were removed.
+ */
+export async function clearLocalSession(
+  client: Pick<DeleteAccountClient, "auth">,
+  storage: KeyValueStorage | null = defaultStorage(),
+): Promise<string[]> {
+  let cleared: string[] = [];
+  if (storage) {
+    try {
+      cleared = selectAuthStorageKeys(listKeys(storage), readStorageKey(client));
+      for (const key of cleared) storage.removeItem(key);
+    } catch {
+      // Storage may be blocked (private mode); the token is dead server-side regardless.
+    }
+  }
+  try {
+    await client.auth.getSession();
+  } catch {
+    // Nothing left to do: state is best-effort settled.
+  }
+  return cleared;
+}
 
 export type RemoveAssetsResult = {
   /** Object paths the registry listed for this user. */
@@ -65,12 +154,18 @@ export async function removeOwnBoardAssets(client: DeleteAccountClient): Promise
 }
 
 /**
- * Remove own Storage objects (best effort), then delete the account via the RPC.
- * Throws the RPC error so the caller can show it; asset problems come back in `assets`.
+ * Remove own Storage objects (best effort), delete the account via the RPC, then
+ * forget the session locally (no network — the user no longer exists).
+ * Throws the RPC error so the caller can show it; on that path the session is kept
+ * so the user can retry. Asset problems come back in `assets`.
  */
-export async function deleteOwnAccount(client: DeleteAccountClient): Promise<{ assets: RemoveAssetsResult }> {
+export async function deleteOwnAccount(
+  client: DeleteAccountClient,
+  options: { storage?: KeyValueStorage | null } = {},
+): Promise<{ assets: RemoveAssetsResult; clearedKeys: string[] }> {
   const assets = await removeOwnBoardAssets(client);
   const { error } = await client.rpc("delete_own_account");
   if (error) throw error;
-  return { assets };
+  const clearedKeys = await clearLocalSession(client, options.storage === undefined ? defaultStorage() : options.storage);
+  return { assets, clearedKeys };
 }

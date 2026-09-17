@@ -2,8 +2,9 @@ import type { z } from "zod";
 import type pino from "pino";
 import { logger } from "@/lib/logger";
 import { requireUser, type AuthedUser } from "@/lib/server/auth";
-import { LIMITS, checkRateLimit, rateLimitKey, rateLimitedResponse, type RateLimitBucket } from "@/lib/server/rate-limit";
+import { checkRateLimitDistributed, rateLimitedResponse, type RateLimitBucket } from "@/lib/server/rate-limit";
 import { parseJsonBody } from "@/lib/server/request";
+import { refundCredits, type RefundInput, type RpcClient } from "@/lib/server/billing";
 import { CreditsExhaustedError, UpstreamError } from "@/lib/server/openrouter";
 
 /** Shared plumbing for the /api/live/* route handlers. */
@@ -35,7 +36,7 @@ export type LiveContext<T> = {
 };
 
 /**
- * Route preamble: requireUser -> checkRateLimit -> parseJsonBody.
+ * Route preamble: requireUser -> checkRateLimitDistributed -> parseJsonBody.
  * Returns `{ response }` (already carrying X-Request-Id) on any failure.
  */
 export async function livePreamble<S extends z.ZodTypeAny>(
@@ -52,10 +53,10 @@ export async function livePreamble<S extends z.ZodTypeAny>(
   const { user, token } = auth;
   const log = liveLogger.child({ requestId, route, userId: user.id });
 
-  const rl = checkRateLimit(rateLimitKey(user.id, bucket), LIMITS[bucket]);
+  const rl = await checkRateLimitDistributed({ token, userId: user.id, bucket });
   if (!rl.ok) {
-    log.warn({ retryAfterMs: rl.retryAfterMs }, "rate limited");
-    return { response: withRequestId(rateLimitedResponse(rl.retryAfterMs), requestId) };
+    log.warn({ retryAfterMs: rl.retryAfterMs, backend: rl.backend }, "rate limited");
+    return { response: withRequestId(rateLimitedResponse(rl.retryAfterMs, rl.backend), requestId) };
   }
 
   const parsed = await parseJsonBody(req, schema);
@@ -65,6 +66,32 @@ export async function livePreamble<S extends z.ZodTypeAny>(
   }
 
   return { requestId, user, token, log, data: parsed.data, startedAt };
+}
+
+/**
+ * Run the body of a charged SSE route. When `run` rejects BEFORE anything billable was
+ * delivered (`delivered()` is false: no annotation / no step emitted yet), the charge for
+ * `input.requestId` is refunded and the error is rethrown so `sseResponse` still emits the
+ * `error` frame. A failure after the first item is NOT refunded: the user received
+ * (and keeps) partial output, and the model was paid for it.
+ */
+export async function runChargedStream(
+  input: RefundInput,
+  log: pino.Logger,
+  delivered: () => boolean,
+  run: () => Promise<void>,
+  client?: RpcClient,
+): Promise<void> {
+  try {
+    await run();
+  } catch (err) {
+    if (delivered()) {
+      log.info({ requestId: input.requestId }, "stream failed after partial output; charge kept");
+    } else {
+      await refundCredits(input, log, client);
+    }
+    throw err;
+  }
 }
 
 /** Map a thrown error to the SSE `error` frame payload (same codes as the JSON error contract). */

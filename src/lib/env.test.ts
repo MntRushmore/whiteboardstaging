@@ -5,6 +5,7 @@ import {
   getBillingLinks,
   getBillingPriceMap,
   getLiveModels,
+  getRateLimitBackend,
   getServerEnv,
   hasMathpix,
   hasOpenAI,
@@ -29,6 +30,7 @@ const ALL_VARS = [
   "STRIPE_WEBHOOK_SECRET",
   "BILLING_PRICE_MAP",
   "NEXT_PUBLIC_BILLING_LINKS",
+  "RATE_LIMIT_BACKEND",
 ] as const;
 
 const saved: Record<string, string | undefined> = {};
@@ -205,5 +207,26 @@ describe("billing env", () => {
     resetServerEnvCache();
     process.env.NEXT_PUBLIC_BILLING_LINKS = '{"portal":"https://billing.example/p"}';
     expect(getBillingLinks()).toEqual({ portal: "https://billing.example/p" });
+  });
+});
+
+describe("getRateLimitBackend", () => {
+  it("defaults to db when RATE_LIMIT_BACKEND is unset, empty or a placeholder", () => {
+    setRequired();
+    expect(getRateLimitBackend()).toBe("db");
+    for (const value of ["", "   ", "your-backend"]) {
+      process.env.RATE_LIMIT_BACKEND = value;
+      resetServerEnvCache();
+      expect(getRateLimitBackend(), JSON.stringify(value)).toBe("db");
+    }
+  });
+
+  it("selects memory only for the literal 'memory' (case/whitespace-insensitive); typos fail towards db", () => {
+    setRequired();
+    for (const [value, expected] of [["memory", "memory"], [" Memory ", "memory"], ["MEMORY", "memory"], ["db", "db"], ["redis", "db"], ["mem", "db"]] as const) {
+      process.env.RATE_LIMIT_BACKEND = value;
+      resetServerEnvCache();
+      expect(getRateLimitBackend(), JSON.stringify(value)).toBe(expected);
+    }
   });
 });

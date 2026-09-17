@@ -1,7 +1,7 @@
 import { voiceLogger } from "@/lib/logger";
 import { getServerEnv, hasOpenAI } from "@/lib/env";
 import { json, requireUser } from "@/lib/server/auth";
-import { LIMITS, checkRateLimit, rateLimitKey, rateLimitedResponse } from "@/lib/server/rate-limit";
+import { checkRateLimitDistributed, rateLimitedResponse } from "@/lib/server/rate-limit";
 import { UpstreamError } from "@/lib/server/openrouter";
 import { errorResponse } from "@/lib/server/request";
 
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
 
   const auth = await requireUser(req);
   if ("response" in auth) return auth.response;
-  const { user } = auth;
+  const { user, token } = auth;
 
   const log = voiceLogger.child({ requestId, userId: user.id, task: "token" });
 
@@ -62,10 +62,10 @@ export async function POST(req: Request) {
     );
   }
 
-  const rl = checkRateLimit(rateLimitKey(user.id, "voiceToken"), LIMITS.voiceToken);
+  const rl = await checkRateLimitDistributed({ token, userId: user.id, bucket: "voiceToken" });
   if (!rl.ok) {
-    log.warn({ retryAfterMs: rl.retryAfterMs }, "Voice token rate limited");
-    return rateLimitedResponse(rl.retryAfterMs);
+    log.warn({ retryAfterMs: rl.retryAfterMs, backend: rl.backend }, "Voice token rate limited");
+    return rateLimitedResponse(rl.retryAfterMs, rl.backend);
   }
 
   const headers = {

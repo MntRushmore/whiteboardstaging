@@ -126,8 +126,15 @@ function LiveErrorFace({ error, now, canRetry }: { error: LiveError; now: number
   const view = liveErrorView(error, now);
   return (
     <>
-      <span className="live-pill__label max-w-[260px] truncate text-red-700" title={view.title}>
-        {view.title}
+      <span className="flex min-w-0 flex-col leading-tight">
+        <span className="live-pill__label max-w-[260px] truncate text-red-700" title={view.title}>
+          {view.title}
+        </span>
+        {view.detail && (
+          <span className="max-w-[260px] truncate text-[10px] font-normal text-red-600/80" title={view.detail} data-testid="live-error-detail">
+            {view.detail}
+          </span>
+        )}
       </span>
       {view.primary === "retry" && canRetry && (
         <button

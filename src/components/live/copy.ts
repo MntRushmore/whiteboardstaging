@@ -60,6 +60,8 @@ export const LIVE_COPY = {
     unknown: "Something went sideways",
     /** appended once the same call has failed more than once */
     attempts: (n: number) => `tried ${n} times`,
+    /** second line of the pill's recognize error: the burst is 'failed', so the image pipeline waits */
+    recognizePaused: "Drawn help is paused until reading works again — use Draw help to force it",
     /** echo chip under ink whose recognition failed (low confidence keeps its own chip) */
     recognizeChip: "Couldn't read this line — tap Retry",
     /** inline card when a hint the student asked for could not be fetched */

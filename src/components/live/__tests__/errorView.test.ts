@@ -103,6 +103,20 @@ describe("liveErrorView", () => {
       expect(liveErrorView(err({ code, message: "m" }), 0)).toEqual({ title: "m", primary: "retry", retryEnabled: true });
     }
   });
+
+  it("carries the loop's second line (detail) through unchanged, for every code", () => {
+    const detail = "Drawn help is paused until reading works again — use Draw help to force it";
+    expect(liveErrorView(err({ code: "upstream", message: "Reading failed", detail }), 0)).toEqual({
+      title: "Reading failed",
+      detail,
+      primary: "retry",
+      retryEnabled: true,
+    });
+    expect(liveErrorView(err({ code: "unauthorized", message: "Sign in", detail }), 0)).toMatchObject({ detail, primary: "signin" });
+    expect(liveErrorView(err({ code: "rate_limited", retryAfterMs: 1000, message: "slow", detail }), 0)).toMatchObject({ detail, primary: "retry" });
+    // no detail on the error -> no detail key at all (the pill renders nothing extra)
+    expect(liveErrorView(err({ code: "upstream", message: "m" }), 0)).not.toHaveProperty("detail");
+  });
 });
 
 describe("showsHintCard", () => {
