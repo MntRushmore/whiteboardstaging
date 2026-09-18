@@ -173,6 +173,25 @@ type LineOutcome = "echoed" | "silent" | "failed";
 /** Recognition failures that leave a chip under the ink (the pill carries the rest). */
 const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream", "timeout", "unknown"]);
 
+/**
+ * How long the whole canvas must go without student ink before the tutor will write an
+ * ANSWER (`contracts.ts` is frozen, so the constant lives with the timer that arms it).
+ *
+ * `LIVE_TIMING.quietMs` (600 ms) is a different question: it asks "is this line finished",
+ * which is all recognition and a badge need. This one asks "has the student stopped", which
+ * is what the answer needs — writing `38` under someone's nose while they are three lines
+ * into a derivation answers the step they were about to take themselves.
+ *
+ * 2.5 s, from watching real writing: glyph-to-glyph gaps are ~0.1-0.3 s, the pen-lift between
+ * lines of a derivation runs to ~1-1.5 s once you count re-positioning and a moment's thought,
+ * and the quiet gate already proves 600 ms is not enough to mean "done". 2 s still caught a
+ * mid-derivation pause; 5 s (the old per-line `unknownIdleMs` this replaces) is far too long
+ * to wait after deliberately stopping. 2.5 s clears the natural in-flow pause and still reads
+ * as "a beat later" when you put the pen down. The asymmetry is deliberate: firing late costs
+ * a moment's wait, firing early takes the problem out of the student's hands.
+ */
+export const ANSWER_SETTLE_MS = 2500;
+
 const CHECK_PATH = "/api/live/check";
 const SOLVE_PATH = "/api/live/solve";
 const UNREADABLE_NOTE = "Couldn't read this — tap to type it";
@@ -313,6 +332,14 @@ export class LiveLoop implements LiveController {
   private unsubscribe: (() => void) | null = null;
   private unsubscribeRemote: (() => void) | null = null;
   private quietTimer: ReturnType<typeof setTimeout> | null = null;
+  /** the canvas-level settle clock: running means the student is still considered to be working */
+  private settleTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * True once no student ink has touched the canvas for `ANSWER_SETTLE_MS`. Starts false so a
+   * mount / reload renders exactly as it does today: nothing is answered until the student
+   * has written something and then stopped.
+   */
+  private settled = false;
   private dirtyStrokeIds = new Set<string>();
   private pendingRewrite = false;
   private readonly rt = new Map<string, LineRuntime>();
@@ -416,6 +443,9 @@ export class LiveLoop implements LiveController {
     this.deps.events?.removeEventListener(BADGE_TAP_EVENT, this.onBadgeTap);
     if (this.quietTimer) clearTimeout(this.quietTimer);
     this.quietTimer = null;
+    if (this.settleTimer) clearTimeout(this.settleTimer);
+    this.settleTimer = null;
+    this.settled = false;
     // Leaving the board / unmounting must not freeze a half-written step on the canvas.
     this.cancelHandwriting();
     this.deps.recognizer.abortAll();
@@ -630,13 +660,15 @@ export class LiveLoop implements LiveController {
     let penUp = false;
     let inkChanged = false;
     let erased = false;
+    /** the pen is down: a stroke in progress, which is working just as much as a finished one */
+    let penDown = false;
 
     for (const rec of Object.values(entry.changes.added)) {
       if (!isShapeRecord(rec) || !isStudentInk(rec)) continue;
       if ((rec as TLDrawShape).props.isComplete) {
         this.dirtyStrokeIds.add(rec.id);
         penUp = true;
-      }
+      } else penDown = true;
     }
 
     for (const [from, to] of Object.values(entry.changes.updated)) {
@@ -644,6 +676,7 @@ export class LiveLoop implements LiveController {
       if (isDraw(to)) {
         if (!isStudentInk(to)) continue;
         const f = from as TLDrawShape;
+        if (!to.props.isComplete) penDown = true;
         if (!f.props.isComplete && to.props.isComplete) {
           this.dirtyStrokeIds.add(to.id);
           penUp = true;
@@ -685,6 +718,10 @@ export class LiveLoop implements LiveController {
       }
     }
 
+    // Any ink at all — a stroke in progress, a finished one, ink dragged somewhere else, ink
+    // rubbed out — means the student is still working, wherever on the canvas it happened.
+    if (penUp || inkChanged || erased || penDown) this.markUnsettled();
+
     if (penUp || inkChanged || erased) {
       // The student is working again: the tutor puts the pen down (finishing what it started).
       this.cancelHandwriting();
@@ -706,6 +743,39 @@ export class LiveLoop implements LiveController {
       this.pendingRewrite = false;
       this.flush();
     }, delay);
+  }
+
+  /**
+   * The student touched the canvas: restart the settle clock.
+   *
+   * An answer that was waiting for the clock is CANCELLED, not queued — the timer is simply
+   * re-armed from now, so there is no backlog of answers to land in a rush when they finally
+   * stop. (An answer already being written is stopped by `cancelHandwriting` on the same
+   * change, which finishes the stroke it is mid-way through rather than leaving half a glyph.)
+   */
+  private markUnsettled(): void {
+    this.settled = false;
+    if (this.settleTimer) clearTimeout(this.settleTimer);
+    this.settleTimer = setTimeout(() => {
+      this.settleTimer = null;
+      this.settled = true;
+      this.renderSettled();
+    }, ANSWER_SETTLE_MS);
+  }
+
+  /**
+   * The student has stopped writing everywhere: render the lines that were holding an answer.
+   *
+   * Only `render` re-runs. Nothing here re-recognizes, re-analyses or opens a model call — a
+   * settle cannot make the tutor say something NEW, it can only place the answer the local
+   * engine already had and the ladder was keeping back.
+   */
+  private renderSettled(): void {
+    if (!this.opts.enabled || !this.engine) return;
+    for (const state of Object.values(liveStore.lines.get())) {
+      if (!state.latex || !state.analysis?.resultLatex) continue;
+      this.render(state, this.decisionFor(state));
+    }
   }
 
   private lineOfStroke(strokeId: string): InkLine | null {
@@ -1152,6 +1222,7 @@ export class LiveLoop implements LiveController {
       latex: state.latex,
       confidence: state.confidence,
       idleMs: extra.idleMs ?? this.deps.now() - state.updatedAt,
+      settled: this.settled,
       userAsked: extra.userAsked ?? false,
       hintsShownForLine: state.hintsShown,
       openHintCount: liveStore.openHints.get().length,
@@ -1199,9 +1270,11 @@ export class LiveLoop implements LiveController {
     if (this.opts.mode === "off") return;
     const state = liveStore.lines.get()[lineId];
     if (!state?.analysis) return;
-    const wants =
-      state.analysis.verdict === "unknown" || (this.opts.mode === "answer" && Boolean(state.analysis.resultLatex));
-    if (!wants) return;
+    // Only the LLM check waits on this timer now. The answer used to as well ('answer' mode
+    // plus a resultLatex, after `unknownIdleMs`), but a per-line idle is the wrong clock for
+    // it: it kept running while the student wrote the next three lines, and then answered the
+    // first one under them. The canvas-level settle (`markUnsettled`) owns the answer instead.
+    if (state.analysis.verdict !== "unknown") return;
     // `updatedAt` is bumped by every setLine (including our own scheduled writes), so the
     // per-line processing ticket is the "ink or text changed since" signal.
     const ticket = rt.processing;
@@ -2236,6 +2309,9 @@ export class LiveLoop implements LiveController {
     const target = lineId ? liveStore.lines.get()[lineId] : this.latestLine();
     if (!target || !target.latex) return;
     if (this.opts.mode === "off") return;
+    // Asking means now: a result this line was holding back for the settle is written at once
+    // (the mode gate still applies — asking in Feedback asks for feedback, not for the answer).
+    if (target.analysis?.resultLatex) this.render(target, this.decisionFor(target, { userAsked: true }));
     this.startCheck(target.line.column, target.line.id, { userAsked: true });
   }
 
@@ -2246,9 +2322,27 @@ export class LiveLoop implements LiveController {
       this.requestCheck(target.line.id);
       return;
     }
+    // A line the student ended with `=` is finished where they left off, not restated under
+    // their work. Normally that waits for them to stop writing; pressing Solve IS stopping,
+    // so it is written now. Ahead of `startSolve`, which would otherwise not yet see it
+    // (live writes land on a microtask) and would draw a second copy underneath.
+    if (this.answerLineNow(target)) return;
     const col = this.columnLines(target.line.column).filter((s) => s.latex);
     const lastOk = [...col].reverse().find((s) => s.analysis?.verdict === "ok" || s.analysis?.solved);
     this.startSolve(target.line.column, lastOk?.line.id ?? target.line.id, { lineId: target.line.id });
+  }
+
+  /**
+   * The student asked for the answer to a line they ended with `=`: no settle wait, no model.
+   *
+   * True when the line is answered — or already was — so the caller has nothing left to do.
+   * False when there is no local answer, or the hand cannot place one beside their work; both
+   * fall through to the ordinary Solve path, which types it or writes it underneath instead.
+   */
+  private answerLineNow(state: LiveLineState): boolean {
+    if (!state.analysis?.resultLatex) return false;
+    const decision = this.decisionFor(state, { userAsked: true });
+    return decision.showResult && this.inlineAnswer(state, decision);
   }
 
   /** feedback -> suggest -> one solve step for THIS line; the global mode never changes. */

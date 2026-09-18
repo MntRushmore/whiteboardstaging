@@ -1,3 +1,4 @@
+import { endsWithRelation } from "./answer";
 import {
   LIVE_LIMITS,
   LIVE_TIMING,
@@ -9,7 +10,13 @@ import {
 
 /**
  * Silence rules and the help ladder (spec §6.5). Pure and exhaustively tested.
- * The caller guarantees rule 1 (never called while the pen is down / before the quiet gate).
+ * The caller guarantees rule 1 (never called while the pen is down / before the quiet gate)
+ * and supplies `settled` — whether the student has stopped writing across the whole canvas.
+ *
+ * The line this file draws: **marks may be immediate; answers must wait.** A badge, a note
+ * and a hint are about work the student has already done, so they land on the per-line
+ * cadence. A result is the next thing they were going to write, so it waits for them to put
+ * the pen down — and, being the work rather than a comment on it, only Solve shows it at all.
  */
 
 export interface PolicyInput {
@@ -19,6 +26,14 @@ export interface PolicyInput {
   confidence: number;
   /** ms since the line last changed */
   idleMs: number;
+  /**
+   * Canvas-level: no student ink ANYWHERE for the settle period (`ANSWER_SETTLE_MS`).
+   *
+   * The per-line quiet gate says "this line is finished"; this says "the student has
+   * stopped". They are not the same thing halfway down a derivation, and only the second
+   * one licenses an answer — see `showResult` below.
+   */
+  settled: boolean;
   userAsked: boolean;
   hintsShownForLine: number;
   openHintCount: number;
@@ -117,14 +132,29 @@ export function decide(input: PolicyInput): PolicyDecision {
   // 3. badge (never warn from unknown)
   const badge: LiveVerdict = echo && !capped ? badgeFor(mode, analysis) : "none";
 
-  // 4. showResult: calculator rule everywhere; answer mode reveals trailing-= after idle.
+  // 4. showResult — marks may be immediate; ANSWERS wait. Two independent gates:
+  //
+  //  - mode. A bare answer finishes the student's work for them, and that is Solve's job.
+  //    Feedback points at mistakes and Suggest nudges: a line the student ended with `=` gets
+  //    its mark and its hint in those modes, never its value. (The engine agrees — it only
+  //    fills `resultLatex` for a trailing `=` in answer mode — but the rule belongs here with
+  //    the rest of the ladder, not only as a side effect of how a line was analysed.)
+  //  - settle. Mid-derivation, answering the step the student was about to take themselves is
+  //    the one thing a good teacher does not do. So a result waits until they have stopped
+  //    writing ANYWHERE on the canvas, not merely on this line. Badges, hints and the solved
+  //    chip do not wait: they are marks on work already done.
+  //
+  // An explicit request (Solve steps, a badge tap, the voice tutor) means "now": `userAsked`
+  // bypasses the settle wait entirely. It does not bypass the mode gate — asking in Feedback
+  // asks for feedback.
   const hasResult = Boolean(analysis?.resultLatex);
-  const trailingEquals = kind === "incomplete" || /=\s*$/.test(analysis?.math ?? "");
-  let showResult = false;
-  if (echo && hasResult) {
-    if (!trailingEquals) showResult = true;
-    else if (mode === "answer" && idleMs >= LIVE_TIMING.unknownIdleMs) showResult = true;
-  }
+  // `analysis.math` is the TRANSLATED line, and the translator drops the trailing `=` (it is
+  // passed to the engine as a flag, not as syntax) — so this test alone read `36 + 2 =` as an
+  // ordinary expression and the mode gate below never bit. The recognized LaTeX still has it.
+  const trailingEquals =
+    kind === "incomplete" || /=\s*$/.test(analysis?.math ?? "") || endsWithRelation(input.latex ?? "");
+  const answerAllowedHere = !trailingEquals || mode === "answer";
+  const showResult = echo && hasResult && answerAllowedHere && (userAsked || input.settled);
 
   // 5. runLlmCheck
   let runLlmCheck = false;

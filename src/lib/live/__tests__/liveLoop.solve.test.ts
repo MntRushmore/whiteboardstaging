@@ -187,10 +187,11 @@ describe("live loop — Solve answers locally, and checks the model when it cann
 
   // ------------------------------------------------------------ 1. the local answer
 
-  it("has already finished `36 + 2 =` by the time Solve is pressed, and never opens the stream", async () => {
-    // A line the student ended with `=` is answered where they left off as soon as it is read
-    // (liveLoop.answer.test.ts owns that). Solve then finds its own answer already on the page:
-    // it must not write a second copy, and it still has nothing to ask a model.
+  it("finishes `36 + 2 =` where the student left off, and never opens the stream", async () => {
+    // A line the student ended with `=` is answered where they left off, not restated under
+    // their work (liveLoop.answer.test.ts owns that). Pressing Solve inside the settle window
+    // writes it there and then (liveLoop.settle.test.ts owns the wait); either way Solve must
+    // not add a second copy underneath, and it still has nothing to ask a model.
     await solve("36+2=");
 
     const lineId = Object.keys(liveStore.lines.get())[0];

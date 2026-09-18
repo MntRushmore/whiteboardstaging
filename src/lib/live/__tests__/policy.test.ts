@@ -13,6 +13,7 @@ function input(over: Partial<PolicyInput> = {}): PolicyInput {
     analysis: analysis("ok"),
     confidence: 0.95,
     idleMs: 0,
+    settled: false,
     userAsked: false,
     hintsShownForLine: 0,
     openHintCount: 0,
@@ -110,13 +111,49 @@ describe("decide — runLlmCheck ladder", () => {
 });
 
 describe("decide — results, hints, steps, chem, cap", () => {
-  it("shows calculator results in every mode but hides trailing-= until idle in answer mode", () => {
-    const calc = analysis("none", "expression", { math: "3.2*4.5", resultLatex: "14.4" });
-    for (const mode of HELP_MODES) expect(decide(input({ mode, analysis: calc })).showResult).toBe(true);
-    const trailing = analysis("none", "expression", { math: "3+4=", resultLatex: "7" });
-    expect(decide(input({ mode: "answer", analysis: trailing, idleMs: 0 })).showResult).toBe(false);
-    expect(decide(input({ mode: "answer", analysis: trailing, idleMs: LIVE_TIMING.unknownIdleMs })).showResult).toBe(true);
-    expect(decide(input({ mode: "suggest", analysis: trailing, idleMs: LIVE_TIMING.unknownIdleMs })).showResult).toBe(false);
+  const calc = analysis("none", "expression", { math: "3.2*4.5", resultLatex: "14.4" });
+  const trailing = analysis("none", "expression", { math: "3+4=", resultLatex: "7" });
+
+  it("shows calculator results in every mode, but only once the student has settled", () => {
+    for (const mode of HELP_MODES) {
+      expect(decide(input({ mode, analysis: calc, settled: true })).showResult).toBe(true);
+      expect(decide(input({ mode, analysis: calc, settled: false })).showResult).toBe(false);
+    }
+  });
+
+  it("answers a trailing `=` in Solve only, and only once settled", () => {
+    expect(decide(input({ mode: "answer", analysis: trailing, settled: false })).showResult).toBe(false);
+    expect(decide(input({ mode: "answer", analysis: trailing, settled: true })).showResult).toBe(true);
+  });
+
+  it("never hands over a bare answer in Feedback or Suggest, however long the student waits", () => {
+    for (const mode of ["off", "feedback", "suggest"] as const) {
+      for (const settled of [false, true]) {
+        for (const userAsked of [false, true]) {
+          const d = decide(input({ mode, analysis: trailing, settled, userAsked, idleMs: LIVE_TIMING.unknownIdleMs }));
+          expect(d.showResult).toBe(false);
+        }
+      }
+    }
+  });
+
+  it("an explicit ask bypasses the settle wait but not the mode gate", () => {
+    expect(decide(input({ mode: "answer", analysis: trailing, settled: false, userAsked: true })).showResult).toBe(true);
+    expect(decide(input({ mode: "feedback", analysis: calc, settled: false, userAsked: true })).showResult).toBe(true);
+    expect(decide(input({ mode: "suggest", analysis: trailing, settled: false, userAsked: true })).showResult).toBe(false);
+  });
+
+  it("settling never turns a silent line into a spoken one", () => {
+    // the settle gate only ever *permits* a result; it cannot create an echo, a badge or a check
+    const silent = input({ analysis: analysis("mismatch", "incomplete"), settled: true });
+    expect(decide(silent).echo).toBe(false);
+    expect(decide(silent).showResult).toBe(false);
+    for (const settled of [false, true]) {
+      const d = decide(input({ mode: "suggest", analysis: analysis("mismatch"), settled }));
+      expect(d.badge).toBe("warn");
+      expect(d.allowHint).toBe(true);
+      expect(d.runLlmCheck).toBe(true);
+    }
   });
 
   it("allows one hint per line in suggest/answer only, and none while a card is open", () => {

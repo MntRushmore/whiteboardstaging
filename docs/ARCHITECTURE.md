@@ -167,10 +167,31 @@ pen-up (draw.isComplete false→true, source 'user')
   → buildPayload → normalized ints + sha-1      strokePayload.ts (cache hit → skip network)
   → POST /api/live/recognize                    Mathpix v3/strokes ▸ vision fallback
   → engine.analyzeLine (mathjs, offline)        src/lib/live/engine/**
-  → policy.decide(mode, verdict, voice, idle)   policy.ts (silence rules, hint ladder)
+  → policy.decide(mode, verdict, voice, settled) policy.ts (silence rules, hint ladder)
   → placement → scheduleLiveWrite(createShapes) math / graph shapes with meta.live
   → (ladder permits) POST /api/live/check|solve SSE: meta → annotation*/step* → done
+
+any student ink, anywhere (incl. pen-down, drag, erase)
+  → settle gate 2.5 s (ANSWER_SETTLE_MS)        liveLoop.markUnsettled → renderSettled
+  → re-render only → the held-back ANSWER lands  (no re-recognition, no model call)
 ```
+
+**Marks may be immediate; answers must wait.** Two clocks, because "this line is finished" and
+"the student has stopped" are different questions. `LIVE_TIMING.quietMs` (600 ms, per line) gates
+recognition and everything that comments on work already done — the green check, the amber dot,
+the solved chip, the note and the Feedback/Suggest hint ladder all keep that cadence.
+`ANSWER_SETTLE_MS` (2.5 s, whole canvas, `liveLoop.ts`) gates every "here is the result" output:
+the handwritten calculator answer and the echo's `resultLatex`. Any student ink restarts it — a
+stroke in progress, a finished one, ink dragged elsewhere, ink rubbed out — so writing `36 + 2 =`
+and carrying on down the page produces nothing until the pen stops, and a pending answer is
+**cancelled, not queued** (the timer is re-armed, so nothing lands in a rush afterwards). Settling
+re-runs `render` only: it can place an answer the local engine already had, never say something
+new. A bare answer is also **Solve-only** — Feedback points at mistakes and Suggest nudges, so
+neither ever finishes the student's line for them (`answerAllowedHere` in `policy.ts`, backed by
+the engine only filling `resultLatex` for a trailing `=` in answer mode). An explicit request
+skips the wait entirely: Solve steps (`requestSolve` → `answerLineNow`), a badge tap
+(`requestCheck`) and the voice tools all pass `userAsked`, which bypasses the settle but not the
+mode gate.
 
 **Deterministic maths never goes through a model.** `LiveLoop.startSolve` (`src/lib/live/liveLoop.ts`) asks the local engine twice before it will open `/api/live/solve`: `engine.solveLatex` for a relation with an unknown (`2x + 3 = 11` → `2x = 8`, `x = 4`), and then `localAnswerFor` (`src/lib/live/solveSteps.ts`) for a line the engine can simply evaluate — `analyzeLine(latex, { mode: 'answer' }).resultLatex` covers a trailing `=`, units, a conversion, a derivative, a definite integral, a finite sum and a percentage, and `engine.calculate` covers bare arithmetic whose result the echo's calculator rule suppresses. Either way the steps are written under the student's work in the tutor's hand (`planHandwriting` + `HandWriter`), with no model, no credits and no network. An answer the hand atlas cannot draw, or a device with the handwriting switch off, is typeset locally instead of being asked for: only a line the engine has nothing to say about (a word problem, an equation the CAS declines) reaches the stream. Regression: `36 + 2 =` used to fall through `solveLatex` and be answered `= r + 9\varepsilon` by the model.
 
