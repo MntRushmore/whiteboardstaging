@@ -56,10 +56,27 @@ function collectDiagnostics(boardId?: string): Diagnostics {
   };
 }
 
-export function BugReportButton({ boardId }: { boardId?: string }) {
+interface BugReportButtonProps {
+  boardId?: string;
+  /**
+   * Controlled mode. Reporting a bug is rare, so the board opens this dialog from its
+   * "Board options" menu instead of spending a slot in the top bar on it; pass `open` and
+   * the component renders the dialog only, with no trigger of its own.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+export function BugReportButton({ boardId, open: openProp, onOpenChange }: BugReportButtonProps) {
   const editor = useEditor();
   const { user } = useAuth();
-  const [open, setOpen] = useState(false);
+  const controlled = openProp !== undefined;
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlled ? openProp : uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    if (!controlled) setUncontrolledOpen(next);
+    onOpenChange?.(next);
+  };
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   // Inline failure shown in the dialog (which stays open) with a Retry.
@@ -133,17 +150,19 @@ export function BugReportButton({ boardId }: { boardId?: string }) {
         if (!next) setSendError(null);
       }}
     >
-      <DialogTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="rounded-full shadow-md bg-white hover:bg-gray-50 gap-1.5 h-8 px-3"
-          aria-label="Report a problem"
-        >
-          <Bug className="w-3.5 h-3.5" />
-          <span className="text-xs font-medium">Report</span>
-        </Button>
-      </DialogTrigger>
+      {!controlled && (
+        <DialogTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-full shadow-md bg-white hover:bg-gray-50 gap-1.5 h-8 px-3"
+            aria-label="Report a problem"
+          >
+            <Bug className="w-3.5 h-3.5" />
+            <span className="text-xs font-medium">Report</span>
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Report a problem</DialogTitle>

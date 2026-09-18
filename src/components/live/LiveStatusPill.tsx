@@ -18,14 +18,25 @@ import { clearLiveError, liveStore, retryLiveError, type LiveError } from "@/lib
 import { scheduleLiveWrite } from "@/lib/live/liveWrite";
 import { useLiveSettings } from "@/lib/live/liveSettings";
 import { ACCOUNT_PATH } from "@/lib/billing/viewModel";
-import { LIVE_COPY, pillLabelFor } from "./copy";
+import { LIVE_COPY } from "./copy";
 import { liveErrorView, secondsLeftFor } from "./errorView";
+import { boardMenuView, statusPillView } from "./toolbar";
 
 interface LiveStatusPillProps {
   editor: Editor;
+  /** Live is switched on AND allowed by the build (kill switch off) */
+  liveRunning: boolean;
+  /** false when the deploy-time kill switch has taken Live away entirely */
+  liveAvailable: boolean;
+  /** the Live preference used to be a switch in the bar; it is a menu item now */
+  onLiveEnabledChange: (enabled: boolean) => void;
   /** forces the legacy image-overlay generation */
   onDrawHelp: () => void;
   onClearMarks: () => void;
+  /** opens the "How help modes work" dialog (the old (i) button in the bar) */
+  onShowModeInfo: () => void;
+  /** opens the bug report dialog (the old Report button in the bar) */
+  onReportProblem: () => void;
 }
 
 /** meta key that remembers a shape's opacity while "Hide AI shapes" is on */
@@ -171,7 +182,16 @@ function LiveErrorFace({ error, now, canRetry }: { error: LiveError; now: number
   );
 }
 
-export function LiveStatusPill({ editor, onDrawHelp, onClearMarks }: LiveStatusPillProps) {
+export function LiveStatusPill({
+  editor,
+  liveRunning,
+  liveAvailable,
+  onLiveEnabledChange,
+  onDrawHelp,
+  onClearMarks,
+  onShowModeInfo,
+  onReportProblem,
+}: LiveStatusPillProps) {
   const status = useValue(liveStore.status);
   const recognizer = useValue(liveStore.recognizer);
   const shapeCount = useValue(liveStore.liveShapeCount);
@@ -215,32 +235,39 @@ export function LiveStatusPill({ editor, onDrawHelp, onClearMarks }: LiveStatusP
     return dispose;
   }, [editor, hidden]);
 
-  const active = status !== "idle";
-  const fading = !active && shown !== "idle";
-  const label = pillLabelFor(active ? status : shown, recognizer, offlineQueued, solving > 0);
+  const view = statusPillView({
+    liveRunning,
+    liveAvailable,
+    status,
+    shownStatus: shown,
+    recognizer,
+    offlineQueued,
+    solving: solving > 0,
+    error: lastError,
+    atCap: shapeCount >= LIVE_LIMITS.maxLiveShapesPerBoard,
+  });
+  const menu = boardMenuView({ liveEnabled: liveRunning, liveAvailable });
   const atCap = shapeCount >= LIVE_LIMITS.maxLiveShapesPerBoard;
-  // An error outranks every other state and stays until retried, superseded or dismissed.
-  const showingError = lastError !== null;
 
   return (
     <div
       className={`live-pill flex items-center gap-1.5 rounded-full border bg-white pl-2.5 pr-1 py-1 text-xs font-medium text-gray-700 shadow-sm ${
-        showingError ? "border-red-200" : ""
-      }`}
-      data-status={showingError ? "error" : active ? status : "idle"}
-      data-error-code={lastError?.code}
-      role={showingError ? "alert" : "status"}
-      aria-live={showingError ? "assertive" : "polite"}
-      aria-label={showingError ? LIVE_COPY.errors.region : undefined}
-      title={showingError ? undefined : atCap ? LIVE_COPY.pill.shapeCap : LIVE_COPY.toggleHint}
+        view.showError ? "border-red-200" : ""
+      } ${view.dataStatus === "off" ? "text-gray-400" : ""}`}
+      data-status={view.dataStatus}
+      data-error-code={view.showError ? lastError?.code : undefined}
+      role={view.showError ? "alert" : "status"}
+      aria-live={view.showError ? "assertive" : "polite"}
+      aria-label={view.showError ? LIVE_COPY.errors.region : undefined}
+      title={view.showError ? undefined : atCap ? LIVE_COPY.pill.shapeCap : view.hint}
     >
       <span className="live-pill__dot" aria-hidden />
-      {showingError ? (
+      {view.showError && lastError ? (
         <LiveErrorFace error={lastError} now={now} canRetry={canRetry} />
       ) : (
-        <span className={`live-pill__label ${fading ? "live-pill__label--fading" : ""}`}>{label}</span>
+        <span className={`live-pill__label ${view.fading ? "live-pill__label--fading" : ""}`}>{view.label}</span>
       )}
-      {atCap && !active && !showingError && (
+      {view.showClearMarks && (
         <button
           type="button"
           className="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 hover:bg-amber-100"
@@ -255,31 +282,55 @@ export function LiveStatusPill({ editor, onDrawHelp, onClearMarks }: LiveStatusP
             type="button"
             className="ml-0.5 flex h-6 w-6 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-800"
             aria-label={LIVE_COPY.pill.menuLabel}
+            data-testid="board-menu-trigger"
           >
             <MoreHorizontal size={14} strokeWidth={2} />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" side="bottom" className="w-56">
-          <DropdownMenuLabel className="text-xs text-gray-500">{LIVE_COPY.pill.menuLabel}</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={onDrawHelp} title={LIVE_COPY.pill.drawHelpHint}>
+        <DropdownMenuContent align="start" side="bottom" className="w-60" data-testid="board-menu">
+          <DropdownMenuLabel className="text-xs text-gray-500">{LIVE_COPY.pill.groupCanvas}</DropdownMenuLabel>
+          <DropdownMenuItem className="pl-8" onSelect={onDrawHelp} title={LIVE_COPY.pill.drawHelpHint}>
             {LIVE_COPY.pill.drawHelp}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onClearMarks}>{LIVE_COPY.pill.clearMarks}</DropdownMenuItem>
-          <DropdownMenuSeparator />
+          <DropdownMenuItem className="pl-8" onSelect={onClearMarks}>
+            {LIVE_COPY.pill.clearMarks}
+          </DropdownMenuItem>
           <DropdownMenuCheckboxItem
             checked={hidden}
             onCheckedChange={(v) => update({ hideAiShapes: v === true })}
           >
             {LIVE_COPY.pill.hideAiShapes}
           </DropdownMenuCheckboxItem>
+
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel className="text-xs text-gray-500">{LIVE_COPY.pill.groupLive}</DropdownMenuLabel>
           <DropdownMenuCheckboxItem
-            checked={settings.handwriting}
-            onCheckedChange={(v) => update({ handwriting: v === true })}
-            title={LIVE_COPY.pill.handwritingHint}
+            checked={menu.liveChecked}
+            disabled={menu.liveDisabled}
+            onCheckedChange={(v) => onLiveEnabledChange(v === true)}
+            title={menu.liveHint}
+            data-testid="live-enabled-item"
           >
-            {LIVE_COPY.pill.handwriting}
+            {LIVE_COPY.pill.liveOn}
           </DropdownMenuCheckboxItem>
+          {menu.showHandwriting && (
+            <DropdownMenuCheckboxItem
+              checked={settings.handwriting}
+              onCheckedChange={(v) => update({ handwriting: v === true })}
+              title={LIVE_COPY.pill.handwritingHint}
+            >
+              {LIVE_COPY.pill.handwriting}
+            </DropdownMenuCheckboxItem>
+          )}
+
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel className="text-xs text-gray-500">{LIVE_COPY.pill.groupHelp}</DropdownMenuLabel>
+          <DropdownMenuItem className="pl-8" onSelect={onShowModeInfo}>
+            {LIVE_COPY.pill.modeInfo}
+          </DropdownMenuItem>
+          <DropdownMenuItem className="pl-8" onSelect={onReportProblem}>
+            {LIVE_COPY.pill.report}
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

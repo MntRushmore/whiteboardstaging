@@ -10,6 +10,10 @@ export const LIVE_COPY = {
 
   pill: {
     idle: "Live",
+    /** resting label when the student has switched the Live layer off in the menu */
+    off: "Live off",
+    /** resting label when the deploy-time kill switch has taken Live away */
+    unavailable: "Live unavailable",
     reading: "Reading…",
     readingSlow: "Reading (slower)…",
     checking: "Checking…",
@@ -19,13 +23,25 @@ export const LIVE_COPY = {
     offlineWaiting: (count: number) => `Offline — ${count} ${count === 1 ? "line" : "lines"} waiting`,
     paused: "Paused",
     error: "Live is taking a break",
-    menuLabel: "Live options",
+    /** the pill's "…" button: the board's one overflow menu */
+    menuLabel: "Board options",
+    /** menu section headings */
+    groupCanvas: "This canvas",
+    groupLive: "Live",
+    groupHelp: "Help",
     drawHelp: "Draw help",
     drawHelpHint: "Ask the tutor to sketch on the canvas",
     clearMarks: "Clear marks",
     hideAiShapes: "Hide AI shapes",
     handwriting: "Tutor writes by hand",
     handwritingHint: "Worked steps appear as handwriting instead of typeset text",
+    /** the Live switch, moved out of the top bar: says what it does, not what it is called */
+    liveOn: "Check my steps as I write",
+    liveOffHint: "Live is switched off for this build",
+    /** hover text on the resting pill once the student has switched Live off themselves */
+    offHint: "Switch checking back on under Board options",
+    modeInfo: "How help modes work",
+    report: "Report a problem",
     shapeCap: "Lots of marks on this page. Clear marks to keep going.",
   },
 
@@ -44,7 +60,7 @@ export const LIVE_COPY = {
   modeInfo: {
     title: "Live",
     body:
-      "A typeset echo of each line appears as you write, with instant checks against the previous step. Hints only appear in Suggest and Solve.",
+      "Underneath all three modes, your handwriting is typeset into neat maths as you write. In Feedback, Suggest and Solve each new line is also checked against the one above it. You can switch this off under Board options.",
   },
 
   errors: {

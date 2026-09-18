@@ -29,9 +29,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import {
   Tick01Icon,
   Cancel01Icon,
@@ -74,7 +72,7 @@ import { supabase } from "@/lib/supabase";
 import { apiJson } from "@/lib/api-client";
 import { describeApiError, isAbortError, useApiErrorHandler } from "@/hooks/useApiErrorHandler";
 import { useParams, useRouter } from "next/navigation";
-import { Volume2, VolumeX, Info } from "lucide-react";
+import { Volume2, VolumeX } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import { CreditsBanner } from "@/components/CreditsBanner";
@@ -83,27 +81,19 @@ import { WorksheetGenerator } from "@/components/WorksheetGenerator";
 import { PdfUpload } from "@/components/PdfUpload";
 import { BugReportButton } from "@/components/BugReportButton";
 import { useFeatureLabs } from "@/lib/featureLabs";
-import { useAIPerfSettings } from "@/lib/aiPerfSettings";
-import { downscaleBlob } from "@/utils/downscaleImage";
-import { Switch } from "@/components/ui/switch";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Settings, ListOrdered } from "lucide-react";
+import { ListOrdered } from "lucide-react";
 import { GenerationSkeleton } from "@/components/GenerationSkeleton";
 import { liveShapeUtils, liveTools, liveUiOverrides, LiveToolbar } from "@/shapes";
 import { isLiveMeta, LIVE_KILL_SWITCH, LIVE_TIMING } from "@/lib/live/contracts";
 import { legacyShouldSkip } from "@/lib/live/liveStore";
 import { useLiveMath } from "@/lib/live/useLiveMath";
 import { useLiveSettings } from "@/lib/live/liveSettings";
-import { LiveToggle } from "@/components/live/LiveToggle";
 import { LiveStatusPill } from "@/components/live/LiveStatusPill";
 import { SaveStatus } from "@/components/live/SaveStatus";
 import { LiveHintLayer } from "@/components/live/LiveHintLayer";
 import { LiveErrorBoundary } from "@/components/live/LiveErrorBoundary";
 import { ASSET_COPY, LIVE_COPY } from "@/components/live/copy";
+import { boardToolbarView } from "@/components/live/toolbar";
 
 // Ensure the tldraw canvas background is pure white in both light and dark modes
 DefaultColorThemePalette.lightMode.background = "#FFFFFF";
@@ -178,29 +168,32 @@ const boardOverrides: TLUiOverrides = {
   },
 };
 
-function ModeInfoDialog() {
+/**
+ * The one image model the legacy overlay pipeline uses. The board used to carry a
+ * "Nano Banana Pro" / "GPT-5.4 Image 2" badge that flipped this on a single click, plus a
+ * "Speed" popover of fast-mode / downscale / skeleton knobs. Both were developer controls
+ * in a student's way; the defaults they shipped with are now simply the behaviour.
+ */
+const IMAGE_MODEL = "gemini";
+
+/**
+ * The (i) explainer, opened from Board options rather than from a button in the bar: it is
+ * help, not chrome. Copy tracks what the tabs actually do today, Live included.
+ */
+function ModeInfoDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="How the help modes work"
-        >
-          <Info className="h-4 w-4" />
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl">
         <DialogHeader>
           <DialogTitle>Help modes</DialogTitle>
           <DialogDescription>
-            Choose how strongly the tutor helps on your canvas. New boards start in
-            Feedback; your choice is remembered for this board on this device. Off
-            pauses all help.
+            The tabs at the top of your board set how much the tutor helps. New boards start
+            in Feedback, and your choice is remembered for this board on this device. Off
+            stops every check, hint and solution.
           </DialogDescription>
         </DialogHeader>
-        <div className="flex gap-6">
-          <div className="flex-1 flex flex-col items-start">
+        <div className="flex flex-wrap gap-6">
+          <div className="flex-1 min-w-[200px] flex flex-col items-start">
             <img
               src="/modes/feedback.png"
               alt="Feedback mode example"
@@ -212,7 +205,7 @@ function ModeInfoDialog() {
             </p>
           </div>
 
-          <div className="flex-1 flex flex-col items-start">
+          <div className="flex-1 min-w-[200px] flex flex-col items-start">
             <img
               src="/modes/suggest.png"
               alt="Suggest mode example"
@@ -224,7 +217,7 @@ function ModeInfoDialog() {
             </p>
           </div>
 
-          <div className="flex-1 flex flex-col items-start">
+          <div className="flex-1 min-w-[200px] flex flex-col items-start">
             <img
               src="/modes/solve.png"
               alt="Solve mode example"
@@ -236,13 +229,13 @@ function ModeInfoDialog() {
             </p>
           </div>
 
-          <div className="flex-1 flex flex-col items-start">
-            <div
-              aria-hidden
-              className="h-48 w-full rounded-md border bg-muted mb-3 flex items-center justify-center text-4xl font-serif text-gray-400"
-            >
-              Σ
-            </div>
+        </div>
+        {/* Live is not a fourth mode: it runs underneath all three, so it reads as a note. */}
+        <div className="flex items-start gap-3 rounded-md border bg-muted/40 p-3">
+          <span aria-hidden className="font-serif text-3xl leading-none text-gray-400">
+            &Sigma;
+          </span>
+          <div>
             <p className="text-sm font-medium mb-1">{LIVE_COPY.modeInfo.title}</p>
             <p className="text-sm text-muted-foreground">{LIVE_COPY.modeInfo.body}</p>
           </div>
@@ -884,185 +877,6 @@ function VoiceAgentControls({
   );
 }
 
-type AIModel = "gemini" | "gpt";
-
-const MODEL_LABELS: Record<AIModel, string> = {
-  gemini: "Nano Banana Pro",
-  gpt: "GPT-5.4 Image 2",
-};
-
-function ModelBadge({ model, onClick }: { model: AIModel; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      title={`Switch model (current: ${MODEL_LABELS[model]})`}
-      className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border shadow-sm bg-white hover:bg-gray-50 transition-colors cursor-pointer select-none"
-      style={{ lineHeight: 1.4 }}
-    >
-      <span
-        className="w-2 h-2 rounded-full flex-shrink-0"
-        style={{ background: model === "gemini" ? "#F4B400" : "#10a37f" }}
-      />
-      {MODEL_LABELS[model]}
-    </button>
-  );
-}
-
-function PerfSettingsPopover({
-  fastMode,
-  onFastModeChange,
-  downscaleEnabled,
-  onDownscaleEnabledChange,
-  downscaleMaxEdge,
-  onDownscaleMaxEdgeChange,
-  downscaleQuality,
-  onDownscaleQualityChange,
-  skeletonEnabled,
-  onSkeletonEnabledChange,
-}: {
-  fastMode: boolean;
-  onFastModeChange: (v: boolean) => void;
-  downscaleEnabled: boolean;
-  onDownscaleEnabledChange: (v: boolean) => void;
-  downscaleMaxEdge: number;
-  onDownscaleMaxEdgeChange: (v: number) => void;
-  downscaleQuality: number;
-  onDownscaleQualityChange: (v: number) => void;
-  skeletonEnabled: boolean;
-  onSkeletonEnabledChange: (v: boolean) => void;
-}) {
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          title="AI performance settings"
-          className="flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium border shadow-sm bg-white hover:bg-gray-50 transition-colors cursor-pointer select-none"
-          style={{ lineHeight: 1.4 }}
-        >
-          <Settings size={14} strokeWidth={1.75} />
-          {fastMode || downscaleEnabled || !skeletonEnabled ? (
-            <span className="text-[10px] text-amber-600 font-semibold">
-              {[
-                fastMode && "Fast",
-                downscaleEnabled && `${downscaleMaxEdge}px`,
-                !skeletonEnabled && "No skel",
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </span>
-          ) : (
-            <span>Speed</span>
-          )}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-80">
-        <div className="space-y-4">
-          <div>
-            <div className="text-sm font-semibold mb-1">AI performance</div>
-            <div className="text-xs text-gray-500">
-              Toggles for testing generation speed. Stored locally.
-            </div>
-          </div>
-
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex-1">
-              <Label htmlFor="perf-fast-mode" className="text-sm font-medium">
-                Fast mode
-              </Label>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Use Gemini 2.5 Flash Image (~3–6s) instead of Gemini 3 Pro (~15–20s).
-                Lower quality, much faster. Only applies when Gemini is selected.
-              </p>
-            </div>
-            <Switch
-              id="perf-fast-mode"
-              checked={fastMode}
-              onCheckedChange={onFastModeChange}
-            />
-          </div>
-
-          <div className="border-t pt-4 space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex-1">
-                <Label htmlFor="perf-downscale" className="text-sm font-medium">
-                  Downscale canvas
-                </Label>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Resize the captured canvas before upload. Cuts upload time and
-                  often inference time, at some loss of fine detail.
-                </p>
-              </div>
-              <Switch
-                id="perf-downscale"
-                checked={downscaleEnabled}
-                onCheckedChange={onDownscaleEnabledChange}
-              />
-            </div>
-
-            <div className={downscaleEnabled ? "opacity-100" : "opacity-50 pointer-events-none"}>
-              <div className="flex items-center justify-between mb-1">
-                <Label htmlFor="perf-max-edge" className="text-xs">
-                  Max edge
-                </Label>
-                <span className="text-xs font-mono text-gray-700">
-                  {downscaleMaxEdge}px
-                </span>
-              </div>
-              <input
-                id="perf-max-edge"
-                type="range"
-                min={512}
-                max={2048}
-                step={64}
-                value={downscaleMaxEdge}
-                onChange={(e) => onDownscaleMaxEdgeChange(Number(e.target.value))}
-                className="w-full"
-              />
-              <div className="flex items-center justify-between mt-3 mb-1">
-                <Label htmlFor="perf-quality" className="text-xs">
-                  JPEG quality
-                </Label>
-                <span className="text-xs font-mono text-gray-700">
-                  {Math.round(downscaleQuality * 100)}%
-                </span>
-              </div>
-              <input
-                id="perf-quality"
-                type="range"
-                min={0.5}
-                max={0.95}
-                step={0.05}
-                value={downscaleQuality}
-                onChange={(e) => onDownscaleQualityChange(Number(e.target.value))}
-                className="w-full"
-              />
-            </div>
-          </div>
-
-          <div className="border-t pt-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex-1">
-                <Label htmlFor="perf-skeleton" className="text-sm font-medium">
-                  Loading skeleton
-                </Label>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Show a shimmering placeholder where the AI image will land while
-                  it&apos;s generating. Doesn&apos;t change the actual speed.
-                </p>
-              </div>
-              <Switch
-                id="perf-skeleton"
-                checked={skeletonEnabled}
-                onCheckedChange={onSkeletonEnabledChange}
-              />
-            </div>
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 function ClearFeedbackButton({
   feedbackImageIds,
   onClear,
@@ -1144,8 +958,10 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
   const [isVoiceSessionActive, setIsVoiceSessionActive] = useState(false);
   // Help mode is remembered per board on this device (default Feedback).
   const [assistanceMode, setAssistanceMode] = useAssistanceMode(id);
-  const [aiModel, setAiModel] = useState<AIModel>("gemini");
-  const { settings: aiPerf, update: updateAiPerf } = useAIPerfSettings();
+  // The (i) explainer and the bug report both used to be buttons in the bar; they open from
+  // Board options now, so the page owns their open state.
+  const [modeInfoOpen, setModeInfoOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const isProcessingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastCanvasImageRef = useRef<string | null>(null);
@@ -1275,39 +1091,18 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
 
         if (!blob || signal.aborted) return false;
 
-        let base64: string;
-        if (aiPerf.downscaleEnabled) {
-          const result = await downscaleBlob(
-            blob,
-            aiPerf.downscaleMaxEdge,
-            aiPerf.downscaleQuality,
-          );
-          base64 = result.dataUrl;
-          logger.info(
-            {
-              originalBytes: blob.size,
-              outputBytes: result.bytes,
-              outputWidth: result.width,
-              outputHeight: result.height,
-              scaled: result.scaled,
-              captureMs: Math.round(performance.now() - captureStart),
-            },
-            "Canvas captured (downscale enabled)",
-          );
-        } else {
-          base64 = await new Promise<string>((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.readAsDataURL(blob);
-          });
-          logger.info(
-            {
-              originalBytes: blob.size,
-              captureMs: Math.round(performance.now() - captureStart),
-            },
-            "Canvas captured (downscale disabled)",
-          );
-        }
+        const base64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+        logger.info(
+          {
+            originalBytes: blob.size,
+            captureMs: Math.round(performance.now() - captureStart),
+          },
+          "Canvas captured",
+        );
 
         // If the canvas image hasn't changed since the last successful check,
         // don't run the expensive OCR / help-check / generation pipeline again.
@@ -1322,12 +1117,10 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
         // Step 2: Generate solution (Gemini decides if help is needed)
         showGeneration({ kind: "generating", label: getStatusMessage(mode, "generating") });
 
-        const effectiveModel =
-          aiPerf.fastMode && aiModel === "gemini" ? "gemini-fast" : aiModel;
         const body: Record<string, unknown> = {
           image: base64,
           mode,
-          model: effectiveModel,
+          model: IMAGE_MODEL,
         };
 
         if (options?.promptOverride) {
@@ -1510,7 +1303,7 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
         abortControllerRef.current = null;
       }
     },
-    [editor, pendingImageIds, isVoiceSessionActive, assistanceMode, aiModel, aiPerf, getStatusMessage, showGeneration, router],
+    [editor, pendingImageIds, isVoiceSessionActive, assistanceMode, getStatusMessage, showGeneration, router],
   );
 
   const retryGeneration = useCallback(() => {
@@ -1671,12 +1464,25 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
   // concurrency on `version`, size guard + Storage offload): src/hooks/useSnapshotSave.ts
   const { sync, retry: retrySave } = useSnapshotSave(editor, id, isUpdatingImageRef, initialVersion);
 
+  // One place decides what the bar shows (see src/components/live/toolbar.ts).
+  const toolbar = boardToolbarView({
+    mode: assistanceMode,
+    liveEnabled: live.enabled,
+    liveAvailable: !LIVE_KILL_SWITCH,
+    voiceActive: isVoiceSessionActive,
+  });
+
   return (
     <>
-      <GenerationSkeleton visible={aiPerf.skeletonEnabled && generation.kind === "generating"} />
+      <GenerationSkeleton visible={generation.kind === "generating"} />
 
-      {/* Tabs at top left */}
-      {!isVoiceSessionActive && (
+      {/*
+        The board's one primary row: go back, choose how much help, see what the tutor is
+        doing, and (in Solve) ask for the worked steps. Everything rare — the Live
+        preference, the help-mode explainer, Report a problem — hangs off the status pill's
+        "…" menu rather than competing with them.
+      */}
+      {toolbar.showTopBar && (
         <div
           style={{
             position: 'absolute',
@@ -1686,7 +1492,7 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
             display: 'flex',
             alignItems: 'center',
             gap: '12px',
-            // Wrap on narrow screens (400 px) so the Live toggle/pill stay reachable;
+            // Wrap on narrow screens (400 px) so the status pill stays reachable;
             // leave room for tldraw's style panel pinned at the top-right.
             flexWrap: 'wrap',
             maxWidth: 'calc(100% - 180px)',
@@ -1706,20 +1512,14 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
               onValueChange={(value) => setAssistanceMode(value as AssistanceMode)}
               className="w-auto shadow-sm rounded-lg"
             >
-              <TabsList>
+              <TabsList aria-label="How much help">
                 <TabsTrigger value="off">Off</TabsTrigger>
                 <TabsTrigger value="feedback">Feedback</TabsTrigger>
                 <TabsTrigger value="suggest">Suggest</TabsTrigger>
                 <TabsTrigger value="answer">Solve</TabsTrigger>
               </TabsList>
             </Tabs>
-            <ModeInfoDialog />
-            <LiveToggle
-              checked={live.enabled}
-              disabled={LIVE_KILL_SWITCH}
-              onCheckedChange={(v) => updateLive({ enabled: v })}
-            />
-            {liveEnabled && assistanceMode === "answer" && (
+            {toolbar.showSolveSteps && (
               <Button
                 variant="outline"
                 size="sm"
@@ -1731,41 +1531,31 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
                 <span className="ml-1.5">{LIVE_COPY.solve.steps}</span>
               </Button>
             )}
-            {liveEnabled && (
+            {toolbar.showStatusPill && (
               <LiveErrorBoundary>
                 <LiveStatusPill
                   editor={editor}
+                  liveRunning={toolbar.liveRunning}
+                  liveAvailable={!LIVE_KILL_SWITCH}
+                  onLiveEnabledChange={(enabled) => updateLive({ enabled })}
                   onDrawHelp={() => void generateSolution({ force: true, source: "auto" })}
                   onClearMarks={() => controller.clearMarks()}
+                  onShowModeInfo={() => setModeInfoOpen(true)}
+                  onReportProblem={() => setReportOpen(true)}
                 />
               </LiveErrorBoundary>
             )}
             <SaveStatus sync={sync} onRetry={() => void retrySave()} />
-            <ModelBadge
-              model={aiModel}
-              onClick={() => setAiModel((m) => (m === "gemini" ? "gpt" : "gemini"))}
-            />
-            <PerfSettingsPopover
-              fastMode={aiPerf.fastMode}
-              onFastModeChange={(v) => updateAiPerf({ fastMode: v })}
-              downscaleEnabled={aiPerf.downscaleEnabled}
-              onDownscaleEnabledChange={(v) => updateAiPerf({ downscaleEnabled: v })}
-              downscaleMaxEdge={aiPerf.downscaleMaxEdge}
-              onDownscaleMaxEdgeChange={(v) => updateAiPerf({ downscaleMaxEdge: v })}
-              downscaleQuality={aiPerf.downscaleQuality}
-              onDownscaleQualityChange={(v) => updateAiPerf({ downscaleQuality: v })}
-              skeletonEnabled={aiPerf.skeletonEnabled}
-              onSkeletonEnabledChange={(v) => updateAiPerf({ skeletonEnabled: v })}
-            />
             {features.stickers && <StickerLibrary />}
-            {features.worksheetGen && <WorksheetGenerator model={aiModel} />}
+            {features.worksheetGen && <WorksheetGenerator model={IMAGE_MODEL} />}
             {features.pdfUpload && <PdfUpload />}
-            {/* Report lives in the bar (after the Live pill) so it never overlaps
-                tldraw's style panel at the top-right. */}
-            <BugReportButton boardId={id} />
           </div>
         </div>
       )}
+
+      {/* Opened from Board options; neither owns a button in the bar any more. */}
+      <ModeInfoDialog open={modeInfoOpen} onOpenChange={setModeInfoOpen} />
+      <BugReportButton boardId={id} open={reportOpen} onOpenChange={setReportOpen} />
 
       {/* When a voice session is active, let the voice banner own the top-center space. */}
       {!isVoiceSessionActive && (
@@ -1788,7 +1578,7 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
           <CreditsBanner />
         </div>
       )}
-      {!isVoiceSessionActive && liveEnabled && (
+      {toolbar.showHintLayer && (
         <LiveErrorBoundary>
           <LiveHintLayer editor={editor} controller={controller} />
         </LiveErrorBoundary>

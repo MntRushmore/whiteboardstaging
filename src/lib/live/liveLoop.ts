@@ -87,6 +87,7 @@ import {
   rectsIntersect,
 } from "./placement";
 import { badgeFor, decide, localNoteFor, type PolicyDecision } from "./policy";
+import { createSolveStepGuard, engineParsesStep, localAnswerFor, localAnswerStep } from "./solveSteps";
 import {
   RecognizeClient,
   RecognizeTimeoutError,
@@ -169,6 +170,12 @@ const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream
 const CHECK_PATH = "/api/live/check";
 const SOLVE_PATH = "/api/live/solve";
 const UNREADABLE_NOTE = "Couldn't read this — tap to type it";
+/**
+ * Shown when every step the solve stream sent failed the local interlock. It goes through the
+ * same path as a server-sent solve error, so the student gets the pill, the inline card and
+ * the Retry they already know — and nothing is drawn.
+ */
+const UNUSABLE_SOLUTION = "Couldn't work this out";
 const NOTATION_NOTE = "Not what you wrote? Tap to fix.";
 /** Dispatched on window by the math shape's warn/ok badge: `detail: { lineId, shapeId }`. */
 export const BADGE_TAP_EVENT = "live:badge-tap";
@@ -1711,6 +1718,10 @@ export class LiveLoop implements LiveController {
     // The engine can solve most school lines itself, and the tutor can write that out by hand:
     // no model, no credits, no network. Anything it cannot draw falls through to the stream.
     if (this.writeSolutionByHand(built, opts)) return;
+    // ...and where the line is not an equation at all but a sum with an answer (`36 + 2 =`),
+    // the engine still has that answer. It is written locally whatever the hand switch says:
+    // deterministic maths NEVER goes through a model.
+    if (this.writeLocalAnswer(built, opts)) return;
     if (!this.deps.isOnline()) {
       this.deferLlm("solve", opts.lineId);
       return;
@@ -1730,15 +1741,33 @@ export class LiveLoop implements LiveController {
     // Every solve is asked for (Solve steps, More help, the voice tutor).
     const errCtx = { kind: "solve" as const, lineId: opts.lineId, userAsked: true };
     const retry: RetryContext = { kind: "solve", lineId: opts.lineId, fromLineId, opts };
+    // Nothing the model says is drawn on the student's page until the local engine has read it.
+    const engine = this.engine;
+    const guard = createSolveStepGuard({
+      sourceLatex: built.states.map((s) => s.latex),
+      // No engine yet (it loads with the first recognition) means nothing to check with: the
+      // step is not held back on a technicality, the symbol rule still applies.
+      parses: engine ? (latex) => engineParsesStep(engine, latex) : () => true,
+    });
     liveStore.status.set("checking");
     liveStore.solving.set(liveStore.solving.get() + 1);
     void (async () => {
       let failed = false;
       let doneEarly = false;
+      let drawn = 0;
+      let discarded = 0;
       try {
         for await (const ev of this.deps.stream(SOLVE_PATH, req, { signal: ctrl.signal })) {
           if (ctrl.signal.aborted) break;
           if (ev.event === "step") {
+            const verdict = guard.check(ev.data.latex);
+            if (!verdict.ok) {
+              discarded++;
+              console.warn("[live] solve step discarded", { reason: verdict.reason, introduced: verdict.introduced, latex: ev.data.latex });
+              clientMetric("live.solve.step.discarded", { reason: verdict.reason ?? "", lineId: opts.lineId });
+              continue;
+            }
+            drawn++;
             this.placeSolutionStep(columnRect, lastLine.bounds, ev.data.index, ev.data.latex, ev.data.explanation, opts.lineId);
             if (opts.onlyFirstStep) {
               doneEarly = true;
@@ -1750,6 +1779,12 @@ export class LiveLoop implements LiveController {
             console.warn("[live] solve error", ev.data);
             this.fail(sseFailure(ev.data), errCtx, retry);
           }
+        }
+        // The model answered, but nothing it said survived the interlock. Better to say so than
+        // to leave the student staring at a page where Solve visibly did nothing.
+        if (!failed && drawn === 0 && discarded > 0) {
+          failed = true;
+          this.fail(sseFailure({ error: "unusable_steps", message: UNUSABLE_SOLUTION }), errCtx, retry);
         }
       } catch (err) {
         if (!isAbortLike(err) && !ctrl.signal.aborted) {
@@ -1790,7 +1825,47 @@ export class LiveLoop implements LiveController {
     }
     if (!solved || solved.steps.length === 0) return false;
     const steps = (opts.onlyFirstStep ? solved.steps.slice(0, 1) : solved.steps).slice(0, LIVE_LIMITS.maxSolveSteps);
+    return this.drawStepsByHand(built, opts, state, steps);
+  }
 
+  /**
+   * Finishes a line the engine can simply evaluate — `36 + 2 =` → `= 38`, and the same for
+   * units, a conversion or a derivative.
+   *
+   * `solveLatex` covers relations with an unknown and nothing else, so before this existed a
+   * plain sum fell through to `/api/live/solve`, and what the model answered was drawn on the
+   * student's page as fact. There is no reason to ask anyone: `analyzeLine(..., { mode:
+   * 'answer' })` already knows. Returns true whenever an answer was found, whether it was
+   * written by hand or typeset — never false in a way that lets arithmetic reach the model.
+   */
+  private writeLocalAnswer(built: { states: LiveLineState[] }, opts: SolveOpts): boolean {
+    if (!this.engine) return false;
+    const state = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
+    if (!state?.latex) return false;
+    const answer = localAnswerFor(this.engine, state.latex, this.columnContext(state));
+    if (!answer) return false;
+    // At the shape cap nothing more is drawn — but a model call would be just as capped, and
+    // this answer is already known, so the stream is still not worth opening.
+    if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return true;
+
+    const step = localAnswerStep(answer);
+    if (this.deps.handwritingEnabled() && this.drawStepsByHand(built, opts, state, [step])) return true;
+    // The hand switch is off, or the answer needs a glyph the hand atlas has no stroke for.
+    // The answer is still the engine's, so it is typeset locally rather than asked for.
+    const lastLine = built.states[built.states.length - 1].line.bounds;
+    this.placeSolutionStep(unionRects(built.states.map((s) => s.line.bounds)), lastLine, 0, step, "", opts.lineId);
+    clientMetric("live.solve.local.typeset", { lineId: opts.lineId });
+    return true;
+  }
+
+  /**
+   * Lays `steps` out under the student's last line and starts the reveal.
+   *
+   * Returns false when the hand engine reports ANY `unsupported` construct for the block —
+   * the safety interlock: a dropped `\frac` would show the student wrong maths, so the block
+   * is never drawn partly.
+   */
+  private drawStepsByHand(built: { states: LiveLineState[] }, opts: SolveOpts, state: LiveLineState, steps: readonly string[]): boolean {
     const size = handSizeFor(state.line.bounds.h);
     const { plan, unsupported } = planHandwriting(steps, { size, seed: handSeedFor(opts.lineId) });
     if (!plan || unsupported.length > 0) return false;

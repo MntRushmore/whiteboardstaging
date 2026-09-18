@@ -40,3 +40,24 @@ export async function settleUntil(done: () => boolean, maxTicks = 400): Promise<
     await tick();
   }
 }
+
+/**
+ * Turn the event loop until `signature()` stops changing for `stableTurns` consecutive turns.
+ *
+ * Use when a test cannot name a single condition to wait for because the helper is shared by
+ * paths with different outcomes — a Solve that answers locally places a shape immediately, while
+ * one that reaches the model starts a detached async generator that has not even incremented its
+ * in-flight counter yet. Waiting for "nothing has changed lately" covers both without guessing a
+ * tick count, which raced under full-suite load.
+ */
+export async function settleStable(signature: () => string, stableTurns = 4, maxTicks = 600): Promise<void> {
+  let last = signature();
+  let stable = 0;
+  for (let i = 0; i < maxTicks; i++) {
+    await tick();
+    const next = signature();
+    stable = next === last ? stable + 1 : 0;
+    last = next;
+    if (stable >= stableTurns) return;
+  }
+}
