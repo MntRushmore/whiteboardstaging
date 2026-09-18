@@ -19,6 +19,7 @@ import { createLiveLoop, type LiveLoop } from "../liveLoop";
 import { clearLiveError, legacyShouldSkip, liveStore, resetLiveStore, retryLiveError } from "../liveStore";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
 import { settle, settleUntil } from "@/lib/live/__fixtures__/settle";
+import { useSyncHash } from "@/lib/live/__fixtures__/syncHash";
 
 /**
  * Visible errors + retry paths of the live loop (owner's rule: no silent failure in the
@@ -48,6 +49,9 @@ function ok(latex: string): RecognizeResponse {
 }
 
 describe("live loop — visible errors and retry", () => {
+  // Deterministic, synchronous stroke hashing: see the fixture for why.
+  useSyncHash();
+
   let editor: FakeEditor;
   let fetchJson: Mock<FetchJson>;
   let recognizer: RecognizeClient;

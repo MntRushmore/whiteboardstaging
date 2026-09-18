@@ -16,6 +16,7 @@ import { liveStore, resetLiveStore } from "../liveStore";
 import { liveWrite } from "../liveWrite";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
 import { settle, settleUntil } from "@/lib/live/__fixtures__/settle";
+import { useSyncHash } from "@/lib/live/__fixtures__/syncHash";
 
 /**
  * Regression: the Live loop must never react to its own (remote-sourced) writes, and
@@ -39,6 +40,9 @@ const engine: LiveEngine = {
 };
 
 describe("useLiveMath loop isolation (noLoop)", () => {
+  // Deterministic, synchronous stroke hashing: see the fixture for why.
+  useSyncHash();
+
   let editor: FakeEditor;
   let fetchJson: Mock<FetchJson>;
   let streamCalls: number;

@@ -18,6 +18,7 @@ import { liveStore, resetLiveStore } from "../liveStore";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
 import { buildPayload, hashPayload } from "../strokePayload";
 import { settle } from "@/lib/live/__fixtures__/settle";
+import { useSyncHash } from "@/lib/live/__fixtures__/syncHash";
 
 /**
  * Offline behaviour of the live loop: recognition queued while offline is replayed in
@@ -42,6 +43,9 @@ const engine: LiveEngine = {
 const QUIET = LIVE_TIMING.rewriteQuietMs + LIVE_TIMING.quietMs + 1;
 
 describe("live loop — offline queue and replay", () => {
+  // Deterministic, synchronous stroke hashing: see the fixture for why.
+  useSyncHash();
+
   let editor: FakeEditor;
   let fetchJson: Mock<FetchJson>;
   let recognizer: RecognizeClient;

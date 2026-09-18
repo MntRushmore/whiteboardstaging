@@ -18,6 +18,7 @@ import { createLiveLoop, isAiNote, type LiveLoop } from "../liveLoop";
 import { liveStore, resetLiveStore } from "../liveStore";
 import { RecognizeClient, recognizeFailureHints, type FetchJson } from "../recognizeClient";
 import { settle } from "@/lib/live/__fixtures__/settle";
+import { useSyncHash } from "@/lib/live/__fixtures__/syncHash";
 
 /**
  * BUG-2 — a broken Mathpix must degrade to the vision recognizer instead of failing every
@@ -79,6 +80,9 @@ class FakeFileReader {
 }
 
 describe("live loop — vision fallback (BUG-2) and note provenance (BUG-4)", () => {
+  // Deterministic, synchronous stroke hashing: see the fixture for why.
+  useSyncHash();
+
   let editor: FakeEditor;
   let fetchJson: Mock<FetchJson>;
   let loop: LiveLoop;

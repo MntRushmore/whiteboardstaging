@@ -20,6 +20,7 @@ import { liveWrite } from "../liveWrite";
 import { ECHO_WIDTH_RELAYOUT_PX, PLACEMENT, estimateEchoWidth } from "../placement";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
 import { settle } from "@/lib/live/__fixtures__/settle";
+import { useSyncHash } from "@/lib/live/__fixtures__/syncHash";
 
 /**
  * Regressions from the browser QA (QA-REPORT B1, B2, B4, B5, B6 and the chemistry note):
@@ -66,6 +67,9 @@ function annotation(lineId: string, message: string, question = "What do you get
 }
 
 describe("live loop — QA regressions", () => {
+  // Deterministic, synchronous stroke hashing: see the fixture for why.
+  useSyncHash();
+
   let editor: FakeEditor;
   let fetchJson: Mock<FetchJson>;
   let loop: LiveLoop;
