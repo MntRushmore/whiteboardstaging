@@ -81,6 +81,7 @@ import {
   createRecognizeClient,
   fetchCapabilities as defaultFetchCapabilities,
   isAbortLike,
+  recognizeFailureHints,
 } from "./recognizeClient";
 import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient";
 import { clusterLines, rebuildFromMathShapes, unionRects, type EchoShapeSeed } from "./strokeClusters";
@@ -157,11 +158,23 @@ const NOTATION_NOTE = "Not what you wrote? Tap to fix.";
 export const BADGE_TAP_EVENT = "live:badge-tap";
 /** Echo meta key recording a dismissed graph's plot expression. */
 const GRAPH_DISMISSED_META = "graphDismissed";
+/**
+ * Echo meta key marking `props.note` as LLM-authored (a check/solve annotation), as opposed
+ * to the local engine's note. `meta` is a free-form JsonObject, so this needs no change to
+ * MathShapeProps or contracts.ts. An AI note survives every local re-render — mount,
+ * cascade, mode switch — and is dropped only when the line's latex changes.
+ */
+const AI_NOTE_META = "aiNote";
 
 function graphDismissedOf(meta: unknown): string | null {
   if (typeof meta !== "object" || meta === null) return null;
   const v = (meta as Record<string, unknown>)[GRAPH_DISMISSED_META];
   return typeof v === "string" && v ? v : null;
+}
+
+/** True when this echo's `props.note` came from the model and must outlive a re-analysis. */
+export function isAiNote(meta: unknown): boolean {
+  return typeof meta === "object" && meta !== null && (meta as Record<string, unknown>)[AI_NOTE_META] === true;
 }
 
 function isShapeRecord(r: unknown): r is TLShape {
@@ -818,7 +831,7 @@ export class LiveLoop implements LiveController {
         const crop = await this.captureCrop(line);
         if (crop) req.crop = crop;
       }
-      const res = await this.deps.recognizer.recognize(req, hash);
+      const res = await this.recognizeWithCropFallback(line, req, hash);
       if (rt.processing !== ticket) return liveStore.lines.get()[lineId]?.mathShapeId ? "echoed" : "silent";
       const applied = await this.applyRecognition(lineId, res);
       this.noteSuccess("recognize", lineId);
@@ -842,6 +855,34 @@ export class LiveLoop implements LiveController {
     } finally {
       clearTimeout(readingTimer);
       if (this.deps.recognizer.inFlight === 0 && liveStore.status.get() === "reading") liveStore.status.set("idle");
+    }
+  }
+
+  /**
+   * One recognize call, plus at most ONE retry carrying a crop.
+   *
+   * The server answers `recognizer_failed` + `needsCrop` when its stroke recognizer produced
+   * nothing and we sent no image to fall back on — the case a broken Mathpix used to turn
+   * into a dead end (every line 502, no vision fallback ever reachable). `recognizerDown`
+   * (Mathpix rejected our credentials) additionally flips the recognizer for the rest of the
+   * session so the next line attaches its crop on the FIRST attempt instead of paying a
+   * failed round-trip each time. A retry that also fails is rethrown and lands in the normal
+   * failure path ("Couldn't read this line — tap Retry"); there is never a second retry.
+   */
+  private async recognizeWithCropFallback(
+    line: InkLine,
+    req: RecognizeRequest,
+    hash: string,
+  ): Promise<RecognizeResponse> {
+    try {
+      return await this.deps.recognizer.recognize(req, hash);
+    } catch (err) {
+      const hints = recognizeFailureHints(err);
+      if (hints.recognizerDown && liveStore.recognizer.get() !== "vision") liveStore.recognizer.set("vision");
+      if (!hints.needsCrop || req.crop) throw err;
+      const crop = await this.captureCrop(line);
+      if (!crop) throw err;
+      return await this.deps.recognizer.recognize({ ...req, crop }, hash);
     }
   }
 
@@ -1203,7 +1244,18 @@ export class LiveLoop implements LiveController {
       const existing = st.mathShapeId ? this.editor.getShape(st.mathShapeId) : undefined;
       if (existing && existing.type === "math") {
         const cur = existing.props as MathShapeProps;
-        const props = opts.keepStatus ? { ...wanted, status: cur.status, note: cur.note } : wanted;
+        // BUG-4: a note the model wrote is not something the local engine can reproduce.
+        // Keep it while the line reads the same — otherwise `reanalyzeAll` on mount wrote
+        // note:"" over the persisted hint and the autosave made the loss permanent.
+        const wasAiNote = isAiNote(existing.meta);
+        const keepAiNote = wasAiNote && Boolean(wanted.latex) && cur.latex === wanted.latex;
+        // mode 'off' keeps status AND note untouched, so the provenance flag rides along too
+        const aiNoteNow = opts.keepStatus ? wasAiNote : keepAiNote;
+        const props = opts.keepStatus
+          ? { ...wanted, status: cur.status, note: cur.note }
+          : keepAiNote
+            ? { ...wanted, note: cur.note }
+            : wanted;
         const changed =
           cur.latex !== props.latex ||
           cur.status !== props.status ||
@@ -1216,7 +1268,8 @@ export class LiveLoop implements LiveController {
             id: existing.id,
             type: "math",
             props: { ...props, anchorIds, lineId, tone: "muted", source: "echo" },
-            meta: { ...(existing.meta as LiveShapeMeta), edited: st.edited },
+            // `false` (not a delete) because tldraw merges meta patches shallowly.
+            meta: { ...(existing.meta as LiveShapeMeta), edited: st.edited, [AI_NOTE_META]: aiNoteNow },
           } satisfies TLShapePartial<MathShape>,
         ]);
         return;
@@ -1565,7 +1618,11 @@ export class LiveLoop implements LiveController {
     }
   }
 
-  /** Persists the shown text into the echo's note (work log) and optionally its status. */
+  /**
+   * Persists the shown text into the echo's note (work log) and optionally its status.
+   * Every caller is an LLM annotation (warn / praise / notation / hint), so the note is
+   * stamped `meta.aiNote`: the local engine must not overwrite it on the next re-analysis.
+   */
   private setEchoNote(lineId: string, note: string, status?: MathShapeProps["status"]): void {
     this.write(() => {
       const st = liveStore.lines.get()[lineId];
@@ -1574,7 +1631,36 @@ export class LiveLoop implements LiveController {
       if (!shape || shape.type !== "math") return;
       const props: Partial<MathShapeProps> = { note };
       if (status) props.status = status;
-      this.editor.updateShapes([{ id: shape.id, type: "math", props } satisfies TLShapePartial<MathShape>]);
+      this.editor.updateShapes([
+        {
+          id: shape.id,
+          type: "math",
+          props,
+          meta: { ...shape.meta, [AI_NOTE_META]: Boolean(note) },
+        } satisfies TLShapePartial<MathShape>,
+      ]);
+    });
+  }
+
+  /**
+   * The student rewrote this line's text themselves, so a model note about the old text is
+   * stale. (A re-recognition drops it through `upsertEcho`'s latex comparison; a retype
+   * cannot, because the student's edit already changed `props.latex` in place.)
+   */
+  private clearAiNote(lineId: string): void {
+    this.write(() => {
+      const st = liveStore.lines.get()[lineId];
+      if (!st?.mathShapeId) return;
+      const shape = this.editor.getShape(st.mathShapeId);
+      if (!shape || shape.type !== "math" || !isAiNote(shape.meta)) return;
+      this.editor.updateShapes([
+        {
+          id: shape.id,
+          type: "math",
+          props: { note: "" },
+          meta: { ...shape.meta, [AI_NOTE_META]: false },
+        } satisfies TLShapePartial<MathShape>,
+      ]);
     });
   }
 
@@ -1837,7 +1923,13 @@ export class LiveLoop implements LiveController {
         else if (s.type === "math") {
           const p = s.props as MathShapeProps;
           if (p.note || (p.status !== "none" && p.status !== "solved" && p.status !== "ok")) {
-            resets.push({ id: s.id, type: "math", props: { note: "", status: p.status === "warn" ? "none" : p.status } });
+            resets.push({
+              id: s.id,
+              type: "math",
+              props: { note: "", status: p.status === "warn" ? "none" : p.status },
+              // the note is gone, so its provenance must go with it
+              meta: { ...s.meta, [AI_NOTE_META]: false },
+            });
           }
         }
       }
@@ -1856,6 +1948,7 @@ export class LiveLoop implements LiveController {
     this.abortLlm(lineId);
     this.closeHintsFor(lineId);
     this.clearErrorsForLine(lineId);
+    this.clearAiNote(lineId);
     setLine(lineId, { latex, provider: "typed", edited: true, confidence: latex.trim() ? 1 : 0 });
     void this.ensureEngine().then(() => {
       if (liveStore.lines.get()[lineId]?.latex !== latex) return;

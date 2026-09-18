@@ -13,6 +13,12 @@ export class ApiError extends Error {
   details?: unknown;
   /** 429 only: how long the server asked us to wait (from the body or the Retry-After header). */
   retryAfterMs?: number;
+  /**
+   * The parsed JSON error body, verbatim. Routes are allowed to add fields to their own
+   * error responses (e.g. `needsCrop` on /api/live/recognize); `details` only carries the
+   * one conventional field, so keep the whole body for callers that know their route.
+   */
+  body?: Record<string, unknown>;
 
   constructor(message: string, status: number, code?: string, details?: unknown, retryAfterMs?: number) {
     super(message);
@@ -38,13 +44,15 @@ export interface ApiErrorBody {
  */
 export async function apiErrorFromResponse(res: Response): Promise<ApiError> {
   const errBody = (await res.json().catch(() => ({}))) as ApiErrorBody;
-  return new ApiError(
+  const err = new ApiError(
     errBody.message || errBody.error || `Request failed (${res.status})`,
     res.status,
     errBody.error,
     errBody.details,
     retryAfterMsFrom(errBody, res.headers),
   );
+  if (errBody && typeof errBody === "object") err.body = errBody as Record<string, unknown>;
+  return err;
 }
 
 function retryAfterMsFrom(body: ApiErrorBody, headers: Headers): number | undefined {

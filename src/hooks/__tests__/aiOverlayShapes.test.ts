@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import { createShapeId, type IndexKey, type TLPageId, type TLShape, type TLShapeId } from "tldraw";
 import {
   aiOverlayMeta,
+  dropPendingAiOverlays,
   isAiOverlayShape,
   overlayIndexBelowLive,
   partitionAiOverlays,
   sameOverlayIds,
+  type OverlayWriter,
   type ZOrderReader,
 } from "../useAiOverlayShapes";
 
@@ -55,6 +57,70 @@ describe("partitionAiOverlays", () => {
 
   it("returns empty lists when there are no overlays", () => {
     expect(partitionAiOverlays([shape("draw", "a1")])).toEqual({ feedback: [], pending: [] });
+  });
+});
+
+/**
+ * BUG-5: a suggest/answer overlay the student never accepted used to come back on reload and
+ * cover the canvas. Accept is what makes an overlay durable (`meta.accepted`); an undecided
+ * proposal is dropped on load, which is the same outcome as Reject.
+ */
+describe("dropPendingAiOverlays", () => {
+  function store(shapes: TLShape[]): OverlayWriter & { shapes: TLShape[]; unlocked: TLShapeId[] } {
+    const state = {
+      shapes: [...shapes],
+      unlocked: [] as TLShapeId[],
+      getCurrentPageShapeIds: () => state.shapes.map((s) => s.id),
+      getShape: (id: TLShapeId) => state.shapes.find((s) => s.id === id),
+      updateShapes: (partials: Array<{ id: TLShapeId; isLocked?: boolean }>) => {
+        for (const p of partials) {
+          if (p.isLocked === false) state.unlocked.push(p.id);
+          state.shapes = state.shapes.map((s) => (s.id === p.id ? { ...s, isLocked: false } : s));
+        }
+      },
+      deleteShapes: (ids: TLShapeId[]) => {
+        state.shapes = state.shapes.filter((s) => !ids.includes(s.id));
+      },
+    };
+    return state;
+  }
+
+  it("removes pending overlays (unlocking them first) and keeps everything else", () => {
+    const ink = shape("draw", "a1");
+    const worksheet = shape("image", "a2", { isProtected: true, kind: "worksheet" });
+    const feedback = { ...shape("image", "a3", aiOverlayMeta("feedback")), isLocked: true };
+    const accepted = { ...shape("image", "a4", { ...aiOverlayMeta("answer"), accepted: true }), isLocked: true };
+    const pending = { ...shape("image", "a5", aiOverlayMeta("suggest")), isLocked: true };
+    const s = store([ink, worksheet, feedback, accepted, pending]);
+
+    expect(dropPendingAiOverlays(s)).toEqual([pending.id]);
+    // locked shapes are not deletable: unlock first, exactly like Reject
+    expect(s.unlocked).toEqual([pending.id]);
+    expect(s.shapes.map((x) => x.id)).toEqual([ink.id, worksheet.id, feedback.id, accepted.id]);
+  });
+
+  it("removes every pending overlay when several piled up", () => {
+    const first = shape("image", "a1", aiOverlayMeta("suggest"));
+    const second = shape("image", "a2", aiOverlayMeta("answer"));
+    const s = store([first, second]);
+    expect(dropPendingAiOverlays(s)).toEqual([first.id, second.id]);
+    expect(s.shapes).toEqual([]);
+  });
+
+  it("is a no-op (no writes) when nothing is pending", () => {
+    const s = store([shape("draw", "a1"), shape("image", "a2", aiOverlayMeta("feedback"))]);
+    expect(dropPendingAiOverlays(s)).toEqual([]);
+    expect(s.unlocked).toEqual([]);
+    expect(s.shapes).toHaveLength(2);
+  });
+
+  it("leaves nothing pending, so the Accept/Reject bar stays hidden after a reload", () => {
+    const pending = shape("image", "a1", aiOverlayMeta("suggest"));
+    const s = store([pending, shape("image", "a2", aiOverlayMeta("feedback"))]);
+    dropPendingAiOverlays(s);
+    const after = partitionAiOverlays(s.shapes);
+    expect(after.pending).toEqual([]);
+    expect(after.feedback).toHaveLength(1);
   });
 });
 

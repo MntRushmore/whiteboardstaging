@@ -12,6 +12,17 @@ export function isLiveManagedShape(shape: Pick<TLShape, "type" | "meta">): boole
   return shape.type === "math" || shape.type === "graph" || isLiveMeta(shape.meta) || isAiOverlayShape(shape);
 }
 
+/**
+ * Content inserted *for* the student rather than written *by* them: stickers, uploaded PDF
+ * pages and generated worksheets all carry `meta.isProtected` (StickerLibrary, PdfUpload,
+ * WorksheetGenerator). Dropping one on the canvas is not student work, so it must not start
+ * the idle timer — otherwise the legacy image pipeline fires an unrequested 25-credit
+ * `/api/generate-solution` call. Same rule as `isStudentInk` in src/lib/live/liveLoop.ts.
+ */
+export function isProtectedShape(shape: Pick<TLShape, "meta">): boolean {
+  return Boolean(shape.meta?.isProtected);
+}
+
 function changedRecords(entry: HistoryEntry<TLRecord>): TLRecord[] {
   const out: TLRecord[] = [];
   for (const rec of Object.values(entry.changes.added)) out.push(rec);
@@ -25,11 +36,14 @@ function changedRecords(entry: HistoryEntry<TLRecord>): TLRecord[] {
 
 /**
  * true when the entry adds/updates/removes student ink or content shapes. Entries whose
- * changed shapes are all math/graph/live-meta/AI-overlay shapes are ignored, and so are
- * entries that touch no shape at all (assets, pages, document meta).
+ * changed shapes are all math/graph/live-meta/AI-overlay or protected (sticker, PDF page,
+ * worksheet) shapes are ignored, and so are entries that touch no shape at all (assets,
+ * pages, document meta).
  */
 export function isStudentActivity(entry: HistoryEntry<TLRecord>): boolean {
-  return changedRecords(entry).some((rec) => rec.typeName === "shape" && !isLiveManagedShape(rec));
+  return changedRecords(entry).some(
+    (rec) => rec.typeName === "shape" && !isLiveManagedShape(rec) && !isProtectedShape(rec),
+  );
 }
 
 export interface ActivityDebouncerOptions {

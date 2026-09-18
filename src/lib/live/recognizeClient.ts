@@ -1,6 +1,6 @@
 "use client";
 
-import { apiJson } from "@/lib/api-client";
+import { apiJson, isApiError } from "@/lib/api-client";
 import {
   CapabilitiesResponseSchema,
   LIVE_LIMITS,
@@ -44,6 +44,36 @@ export class RecognizeTimeoutError extends Error {
 
 export function isAbortLike(err: unknown): boolean {
   return err instanceof Error && err.name === "AbortError";
+}
+
+/**
+ * Additive hints the recognize route puts on its `recognizer_failed` 502 (see
+ * `recognizeFailureHints` in src/app/api/live/recognize/route.ts). They are read from the
+ * error itself, its raw body and its `details` so the shape of the transport never matters.
+ *
+ *  - `needsCrop`      the server had nothing to fall back on: send the same line again with
+ *                     a crop and the vision recognizer can still read it (one retry).
+ *  - `recognizerDown` Mathpix rejected our credentials, so every following line would fail
+ *                     the same way: switch to the vision recognizer now.
+ */
+export interface RecognizeFailureHints {
+  needsCrop: boolean;
+  recognizerDown: boolean;
+}
+
+const NO_HINTS: RecognizeFailureHints = { needsCrop: false, recognizerDown: false };
+
+function flagOn(obj: unknown, key: string): boolean {
+  return typeof obj === "object" && obj !== null && (obj as Record<string, unknown>)[key] === true;
+}
+
+export function recognizeFailureHints(err: unknown): RecognizeFailureHints {
+  if (!isApiError(err, "recognizer_failed")) return NO_HINTS;
+  const bags: unknown[] = [err, err.body, err.details];
+  return {
+    needsCrop: bags.some((b) => flagOn(b, "needsCrop")),
+    recognizerDown: bags.some((b) => flagOn(b, "recognizerDown")),
+  };
 }
 
 class Limiter {

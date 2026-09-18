@@ -14,7 +14,7 @@ import {
   type TLShape,
   type TLStore,
 } from "tldraw";
-import { isLiveManagedShape, isStudentActivity, startActivityDebouncer } from "../useDebounceActivity";
+import { isLiveManagedShape, isProtectedShape, isStudentActivity, startActivityDebouncer } from "../useDebounceActivity";
 
 /**
  * B1: the legacy image pipeline's idle timer must only restart on student ink/content
@@ -109,6 +109,15 @@ describe("isLiveManagedShape", () => {
   });
 });
 
+describe("isProtectedShape", () => {
+  it("is true for the sticker / PDF page / worksheet meta and nothing else", () => {
+    expect(isProtectedShape({ meta: { isProtected: true, kind: "sticker", stickerId: "s1" } })).toBe(true);
+    expect(isProtectedShape({ meta: { isProtected: true, kind: "worksheet", topic: "fractions" } })).toBe(true);
+    expect(isProtectedShape({ meta: {} })).toBe(false);
+    expect(isProtectedShape({ meta: { isProtected: false } })).toBe(false);
+  });
+});
+
 describe("isStudentActivity", () => {
   const pageId = "page:p" as TLPageId;
 
@@ -137,6 +146,23 @@ describe("isStudentActivity", () => {
     const math = mathRecord();
     const ink = drawShape(pageId);
     expect(isStudentActivity(entry({ added: { [math.id]: math, [ink.id]: ink } }))).toBe(true);
+  });
+
+  // BUG-3: inserting a sticker / PDF page / worksheet is content dropped *for* the student.
+  // Counting it as activity fired an unrequested 25-credit /api/generate-solution call.
+  it("ignores protected shapes (sticker, PDF page, worksheet) in every change kind", () => {
+    const sticker = imageShape(pageId, { isProtected: true, kind: "sticker", stickerId: "s1" });
+    const page = imageShape(pageId, { isProtected: true, kind: "pdf" });
+    expect(isStudentActivity(entry({ added: { [sticker.id]: sticker } }))).toBe(false);
+    expect(isStudentActivity(entry({ updated: { [sticker.id]: [sticker, { ...sticker, x: 30 }] } }))).toBe(false);
+    expect(isStudentActivity(entry({ removed: { [page.id]: page } }))).toBe(false);
+    expect(isStudentActivity(entry({ added: { [sticker.id]: sticker, [page.id]: page } }))).toBe(false);
+  });
+
+  it("is still activity when a protected shape and a real draw stroke land together", () => {
+    const sticker = imageShape(pageId, { isProtected: true, kind: "sticker", stickerId: "s1" });
+    const ink = drawShape(pageId);
+    expect(isStudentActivity(entry({ added: { [sticker.id]: sticker, [ink.id]: ink } }))).toBe(true);
   });
 });
 
@@ -193,6 +219,37 @@ describe("startActivityDebouncer (headless store + fake timers)", () => {
     store.put([echo]);
     store.put([{ ...echo, x: 99, y: 12 }]);
     vi.advanceTimersByTime(500);
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
+
+  // BUG-3: two of these in one session spent 50 of 58 credits on unrequested generations.
+  it("does not start a timer when a sticker-like protected shape is inserted", () => {
+    dispose = startActivityDebouncer(store, callback, { delay: 2000 });
+    const sticker = imageShape(pageId, { isProtected: true, kind: "sticker", stickerId: "s1" });
+    const worksheet = imageShape(pageId, { isProtected: true, kind: "worksheet", topic: "fractions" });
+    store.put([sticker, worksheet]);
+    // moving/resizing the worksheet is still not student work
+    store.put([{ ...worksheet, x: 120, y: 40 }]);
+    store.remove([sticker.id]);
+    vi.advanceTimersByTime(10_000);
+    expect(callback).not.toHaveBeenCalled();
+  });
+
+  it("still fires when a protected shape lands together with a real draw stroke", () => {
+    dispose = startActivityDebouncer(store, callback, { delay: 2000 });
+    const sticker = imageShape(pageId, { isProtected: true, kind: "sticker", stickerId: "s1" });
+    const base = drawShape(pageId);
+    const ink = { ...base, props: { ...base.props, isComplete: true } };
+    store.put([sticker, ink]);
+    vi.advanceTimersByTime(2000);
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
+
+  it("still fires for a plain draw stroke", () => {
+    dispose = startActivityDebouncer(store, callback, { delay: 2000 });
+    const base = drawShape(pageId);
+    store.put([{ ...base, props: { ...base.props, isComplete: true } }]);
+    vi.advanceTimersByTime(2000);
     expect(callback).toHaveBeenCalledTimes(1);
   });
 

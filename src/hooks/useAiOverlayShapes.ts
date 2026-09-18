@@ -79,13 +79,48 @@ export function sameOverlayIds(a: AiOverlayIds, b: AiOverlayIds): boolean {
   return sameIds(a.feedback, b.feedback) && sameIds(a.pending, b.pending);
 }
 
-export function collectAiOverlays(editor: Editor): AiOverlayIds {
+/** The slice of Editor the overlay readers need (keeps them drivable headless in tests). */
+export interface OverlayReader {
+  getCurrentPageShapeIds(): Iterable<TLShapeId>;
+  getShape(id: TLShapeId): TLShape | undefined;
+}
+
+export function collectAiOverlays(editor: OverlayReader): AiOverlayIds {
   const shapes: TLShape[] = [];
   for (const id of editor.getCurrentPageShapeIds()) {
     const shape = editor.getShape(id);
     if (shape) shapes.push(shape);
   }
   return partitionAiOverlays(shapes);
+}
+
+/** OverlayReader plus the two writes `dropPendingAiOverlays` performs. */
+export interface OverlayWriter extends OverlayReader {
+  updateShapes(partials: Array<{ id: TLShapeId; type: "image"; isLocked?: boolean }>): unknown;
+  deleteShapes(ids: TLShapeId[]): unknown;
+}
+
+/**
+ * Removes every overlay still waiting for Accept/Reject. Call it once, right after a board
+ * snapshot is loaded.
+ *
+ * A suggest/answer overlay is a proposal about the current moment, not part of the
+ * document: Accept is what makes it durable (it sets `meta.accepted`, full opacity, and
+ * takes it out of the pending list forever) and Reject deletes it. An undecided proposal
+ * that comes back after a reload is neither — it reopens full-canvas over work the student
+ * has since moved on from, and nothing on screen explains where it came from. Dropping it
+ * on load is the same outcome as Reject, which is the decision the student implied by
+ * leaving. Accepted overlays and full-opacity feedback overlays are untouched.
+ *
+ * Returns the ids it removed.
+ */
+export function dropPendingAiOverlays(editor: OverlayWriter): TLShapeId[] {
+  const { pending } = collectAiOverlays(editor);
+  if (pending.length === 0) return [];
+  // Overlays are created locked; unlock before deleting, exactly like Reject does.
+  editor.updateShapes(pending.map((id) => ({ id, type: "image" as const, isLocked: false })));
+  editor.deleteShapes(pending);
+  return pending;
 }
 
 /**
