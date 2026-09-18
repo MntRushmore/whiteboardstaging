@@ -281,6 +281,25 @@ describe("live loop — the answer waits for the student to stop writing", () =>
     expect(streamCalls).toEqual([]);
   });
 
+  /**
+   * The whole point of waiting: a student working down a page leaves SEVERAL finished lines
+   * behind them, and the settle is the one moment all of them are allowed to be answered. A
+   * settle that only finished the line the pen last touched would leave the earlier ones
+   * silently unanswered — the tutor would look like it had marked one and ignored the rest.
+   */
+  it("answers every finished line, not just the last, when they stop mid-problem", async () => {
+    await penLine(0, "36+2=");
+    await penLine(1, "3+4=");
+    await penLine(2, "8+1=");
+    expect(answersOnPage()).toEqual([]);
+
+    await stopWriting();
+
+    expect(answersOnPage()).toEqual(["38", "7", "9"]);
+    expect(handBlocks()).toBe(3);
+    expect(streamCalls).toEqual([]);
+  });
+
   // ------------------------------------------------------------ 3. cancelled, never queued
 
   it("cancels the pending answer when more ink arrives, rather than queueing it", async () => {
