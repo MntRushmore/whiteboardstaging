@@ -92,10 +92,14 @@ export function markBurst(state: LiveBurst["state"]): void {
 
 /**
  * true when the legacy image pipeline should stay silent for the current idle window:
- * the latest ink burst is recent and Live still owns it ('pending'), already answered it
+ * the latest ink burst is recent and Live still owns it ('pending'), has claimed it
  * ('handled') or could not read it because recognition failed ('failed'). Only 'unhandled'
- * (Live read the ink and has nothing to say: non-math, low confidence) lets the image
- * pipeline run. A user-forced "Draw help" bypasses this gate in the page.
+ * — Live read the ink and it is not maths at all (prose, a diagram label), or it could not
+ * be read — lets the image pipeline run. A user-forced "Draw help" bypasses this gate.
+ *
+ * 'handled' means Live OWNS the line, not that it drew something on it. A half-written line
+ * (`3a + 6 =`) is deliberately silent, and while it was reported as unclaimed the image
+ * model was invited to guess the rest of the student's working, slowly and in its own ink.
  */
 export function legacyShouldSkip(idleMs: number): boolean {
   const b = liveStore.lastBurst.get();

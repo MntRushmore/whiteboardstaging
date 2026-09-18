@@ -35,6 +35,39 @@ describe("decide — echo", () => {
   });
 });
 
+/**
+ * `owned` answers a different question from `echo`: not "does the tutor say something here"
+ * but "is this line Live's". The legacy image pipeline runs on an idle timer over any burst
+ * Live leaves unclaimed, so a line that is silent AND unclaimed is handed to an image model
+ * — which is how `32 + 6 =` came back as a drawn `3(a+2)`.
+ */
+describe("decide — owned (what the legacy image pipeline may touch)", () => {
+  it("claims a half-written line even though it stays silent", () => {
+    const d = decide(input({ analysis: analysis("none", "incomplete") }));
+    expect(d.echo).toBe(false);
+    expect(d.owned).toBe(true);
+  });
+
+  it("leaves genuinely non-mathematical ink to the image pipeline", () => {
+    for (const kind of ["label", "text"] as const) {
+      const d = decide(input({ analysis: analysis("none", kind) }));
+      expect(d.owned).toBe(false);
+    }
+    // a drawn Greek letter is a diagram annotation, not a line of working
+    expect(decide(input({ latex: "\\Delta" })).owned).toBe(false);
+    // and ink Live could not read stays available too
+    expect(decide(input({ confidence: 0.59 })).owned).toBe(false);
+  });
+
+  it("claims everything it echoes, in every mode", () => {
+    for (const mode of HELP_MODES) {
+      const d = decide(input({ mode }));
+      expect(d.echo).toBe(true);
+      expect(d.owned).toBe(true);
+    }
+  });
+});
+
 describe("decide — badge table", () => {
   const verdicts: EngineVerdict[] = ["ok", "mismatch", "unknown", "none"];
   const expected: Record<EngineVerdict, string> = { ok: "ok", mismatch: "warn", unknown: "none", none: "none" };

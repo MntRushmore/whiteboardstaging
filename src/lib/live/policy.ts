@@ -45,6 +45,17 @@ export interface PolicyInput {
 
 export interface PolicyDecision {
   echo: boolean;
+  /**
+   * Live read this line as mathematics, whether or not it had anything to SAY about it.
+   *
+   * Distinct from `echo`, and the difference is the whole point: an `incomplete` line — the
+   * student mid-working, `3a + 6 =` with nothing after the sign yet — is silent but is NOT
+   * spare. The legacy image pipeline runs on an idle timer whenever Live leaves a burst
+   * unclaimed, so treating "said nothing" as "has nothing" handed exactly those half-written
+   * lines to an image model to guess the rest of. Only ink that is not maths at all (prose, a
+   * diagram label) or that could not be read goes on.
+   */
+  owned: boolean;
   badge: LiveVerdict;
   showResult: boolean;
   runLlmCheck: boolean;
@@ -128,6 +139,8 @@ export function decide(input: PolicyInput): PolicyDecision {
   // 2. echo (labels, incomplete lines, prose and lone symbols are silent)
   const loneSymbol = input.latex !== undefined && isSingleSymbolLatex(input.latex);
   const echo = !SILENT_KINDS.has(kind) && !loneSymbol && confidence >= LIVE_LIMITS.minConfidence;
+  // 2b. owned — everything `echo` claims, plus the half-written maths it deliberately skips.
+  const owned = echo || kind === "incomplete";
 
   // 3. badge (never warn from unknown)
   const badge: LiveVerdict = echo && !capped ? badgeFor(mode, analysis) : "none";
@@ -184,6 +197,7 @@ export function decide(input: PolicyInput): PolicyDecision {
 
   return {
     echo,
+    owned,
     badge,
     showResult,
     runLlmCheck,

@@ -28,7 +28,9 @@ import { useSyncHash } from "@/lib/live/__fixtures__/syncHash";
 
 const engine: LiveEngine = {
   analyzeLine: (latex): LineAnalysis => ({
-    kind: "equation",
+    // A line still ending in its relation is half-written, which is what the real engine
+    // calls `incomplete` — the state the burst gate used to mishandle.
+    kind: latex.endsWith("=") ? "incomplete" : "equation",
     math: latex,
     resultLatex: "",
     verdict: latex === "x=5" ? "mismatch" : latex === "x=4" ? "ok" : "unknown",
@@ -508,6 +510,27 @@ describe("live loop — visible errors and retry", () => {
       expect(editor.shapesOfType("math")).toHaveLength(0);
       expect(liveStore.lastBurst.get()?.state).toBe("unhandled");
       expect(legacyShouldSkip(LIVE_TIMING.legacyIdleMs)).toBe(false);
+    });
+
+    /**
+     * Reported from production: the student wrote `32 + 6 =`, the recognizer read the 2 as an
+     * a, and a slow image model drew `3(a+2)` on the page in its own black ink — a correct
+     * factorisation of a line the student never wrote, presented as their answer.
+     *
+     * The line reached the image model because Live was silent about it, and the gate read
+     * silence as "nothing to offer". A half-written line is the opposite: it is maths Live is
+     * deliberately holding, because the student has not finished the thought.
+     */
+    it("a half-written line is Live's to hold, not the image model's to finish", async () => {
+      recognizeScript.push("3a+6=");
+      await penUp(fixtureSingleLine());
+
+      // silent, as it should be: nothing is drawn on a line still being written
+      expect(editor.shapesOfType("math")).toHaveLength(0);
+      expect(liveStore.lastError.get()).toBeNull();
+      // but claimed, so the paid image pipeline does not offer to finish it for them
+      expect(liveStore.lastBurst.get()?.state).toBe("handled");
+      expect(legacyShouldSkip(LIVE_TIMING.legacyIdleMs)).toBe(true);
     });
 
     it("a successful Retry turns the failed burst into 'handled'", async () => {

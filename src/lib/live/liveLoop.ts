@@ -168,7 +168,12 @@ type RetryContext =
   | { kind: "solve"; lineId: string; fromLineId: string | undefined; opts: SolveOpts };
 
 /** How one line's recognition ended, folded into the burst state by `flush`. */
-type LineOutcome = "echoed" | "silent" | "failed";
+/**
+ * What a processed line means for the LEGACY image pipeline, which runs on an idle timer
+ * whenever Live leaves the burst unclaimed. 'owned' = Live read maths here (even if it chose
+ * to stay quiet, as it does for a half-written line); 'silent' = not maths, or unreadable.
+ */
+type LineOutcome = "owned" | "silent" | "failed";
 
 /** Recognition failures that leave a chip under the ink (the pill carries the rest). */
 const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream", "timeout", "unknown"]);
@@ -909,24 +914,24 @@ export class LiveLoop implements LiveController {
       if (liveStore.lastBurst.get()?.state === "pending") markBurst("unhandled");
       return;
     }
-    let echoed = false;
+    let owned = false;
     let failed = false;
     void Promise.all(
       affected.map(async ({ line, moveOnly }) => {
         const outcome = await this.processLine(line, ink, moveOnly);
-        echoed = echoed || outcome === "echoed";
+        owned = owned || outcome === "owned";
         failed = failed || outcome === "failed";
       }),
     ).then(() => {
       // 'failed' is re-evaluated here so a successful Retry turns it into 'handled' (or
       // 'unhandled' when the retried read is non-math) and hands the legacy pipeline back.
       const cur = liveStore.lastBurst.get()?.state;
-      if (cur === "pending" || cur === "failed") markBurst(echoed ? "handled" : failed ? "failed" : "unhandled");
+      if (cur === "pending" || cur === "failed") markBurst(owned ? "handled" : failed ? "failed" : "unhandled");
     });
   }
 
   /**
-   * 'echoed' when the line ended up with an echo, 'failed' when recognition itself failed
+   * 'owned' when Live read maths on this line, 'failed' when recognition itself failed
    * (a visible recognize error was recorded), otherwise 'silent'.
    */
   private async processLine(line: InkLine, ink: InkStroke[], moveOnly: boolean): Promise<LineOutcome> {
@@ -947,14 +952,14 @@ export class LiveLoop implements LiveController {
     }
     const hash = await hashPayload(payload);
     const state = liveStore.lines.get()[lineId];
-    if (!state || rt.processing !== ticket) return state?.mathShapeId ? "echoed" : "silent";
+    if (!state || rt.processing !== ticket) return state?.mathShapeId ? "owned" : "silent";
 
     const prevHash = state.line.hash;
     const isMove = moveOnly && Boolean(state.latex) && (prevHash === hash || prevHash === "");
     setLine(lineId, { line: { ...line, hash } });
     if (isMove) {
       this.replaceEcho(lineId);
-      return state.mathShapeId ? "echoed" : "silent";
+      return state.mathShapeId ? "owned" : "silent";
     }
 
     // New or changed ink: recognize. Whatever failed for this line before is stale now.
@@ -981,11 +986,11 @@ export class LiveLoop implements LiveController {
         if (crop) req.crop = crop;
       }
       const res = await this.recognizeWithCropFallback(line, req, hash);
-      if (rt.processing !== ticket) return liveStore.lines.get()[lineId]?.mathShapeId ? "echoed" : "silent";
-      const applied = await this.applyRecognition(lineId, res);
+      if (rt.processing !== ticket) return liveStore.lines.get()[lineId]?.mathShapeId ? "owned" : "silent";
+      const owned = await this.applyRecognition(lineId, res);
       this.noteSuccess("recognize", lineId);
       clientMetric("live.echo.total.ms", { ms: this.deps.now() - startedAt, provider: res.provider, lineId });
-      return applied ? "echoed" : "silent";
+      return owned ? "owned" : "silent";
     } catch (err) {
       if (isAbortLike(err) && !(err instanceof RecognizeTimeoutError)) return "silent";
       if (rt.processing !== ticket) return "silent";
@@ -1261,7 +1266,9 @@ export class LiveLoop implements LiveController {
 
     if (decision.echo && !opts.fromIdle) this.armIdleTimer(lineId);
     if (decision.runLlmCheck) this.startCheck(fresh.line.column, lineId, { userAsked: false });
-    return decision.echo;
+    // Ownership, not visibility: a silent half-written line is still Live's, and saying
+    // otherwise is what handed it to the legacy image model.
+    return decision.owned;
   }
 
   private armIdleTimer(lineId: string): void {
