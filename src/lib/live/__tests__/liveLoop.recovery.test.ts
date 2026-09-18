@@ -17,6 +17,7 @@ import {
 import { createLiveLoop, isAiNote, type LiveLoop } from "../liveLoop";
 import { liveStore, resetLiveStore } from "../liveStore";
 import { RecognizeClient, recognizeFailureHints, type FetchJson } from "../recognizeClient";
+import { settle } from "@/lib/live/__fixtures__/settle";
 
 /**
  * BUG-2 — a broken Mathpix must degrade to the vision recognizer instead of failing every
@@ -53,13 +54,6 @@ const CAPS: CapabilitiesResponse = {
 const QUIET = LIVE_TIMING.rewriteQuietMs + LIVE_TIMING.quietMs + 1;
 const CROP = "data:image/jpeg;base64,ZmFrZQ==";
 const LLM_NOTE = "Check your division on the right side of line 3.";
-
-async function settle(ticks = 8): Promise<void> {
-  for (let i = 0; i < ticks; i++) {
-    await new Promise<void>((r) => setImmediate(r));
-    await Promise.resolve();
-  }
-}
 
 function ok(latex: string, provider: RecognizeResponse["provider"] = "mathpix"): RecognizeResponse {
   return { latex, text: latex, kind: "math", confidence: 0.97, provider, ms: 120 };

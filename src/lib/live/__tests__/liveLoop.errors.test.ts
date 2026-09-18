@@ -18,6 +18,7 @@ import {
 import { createLiveLoop, type LiveLoop } from "../liveLoop";
 import { clearLiveError, legacyShouldSkip, liveStore, resetLiveStore, retryLiveError } from "../liveStore";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
+import { settle, settleUntil } from "@/lib/live/__fixtures__/settle";
 
 /**
  * Visible errors + retry paths of the live loop (owner's rule: no silent failure in the
@@ -41,13 +42,6 @@ const engine: LiveEngine = {
 
 const CAPS: CapabilitiesResponse = { recognizer: "mathpix", liveEnabled: true, models: { check: "c", solve: "s", vision: "v" } };
 const QUIET = LIVE_TIMING.rewriteQuietMs + LIVE_TIMING.quietMs + 1;
-
-async function settle(ticks = 4): Promise<void> {
-  for (let i = 0; i < ticks; i++) {
-    await new Promise<void>((r) => setImmediate(r));
-    await Promise.resolve();
-  }
-}
 
 function ok(latex: string): RecognizeResponse {
   return { latex, text: "", kind: "math", confidence: 0.97, provider: "mathpix", ms: 300 };
@@ -96,9 +90,13 @@ describe("live loop — visible errors and retry", () => {
   }
 
   async function penUp(shapes: TLDrawShape[]): Promise<void> {
+    // The recognize call is gated on a real async digest, not just the fake timers, so wait
+    // for the call itself rather than a fixed number of event-loop turns (that raced on CI).
+    const before = fetchJson.mock.calls.length;
     editor.putUser(shapes);
     await vi.advanceTimersByTimeAsync(QUIET);
-    await settle(8);
+    await settleUntil(() => fetchJson.mock.calls.length > before);
+    await settle(2);
   }
 
   function echoOf(lineId: string): MathShapeProps | null {

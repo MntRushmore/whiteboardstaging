@@ -19,6 +19,7 @@ import { liveStore, resetLiveStore } from "../liveStore";
 import { liveWrite } from "../liveWrite";
 import { ECHO_WIDTH_RELAYOUT_PX, PLACEMENT, estimateEchoWidth } from "../placement";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
+import { settle } from "@/lib/live/__fixtures__/settle";
 
 /**
  * Regressions from the browser QA (QA-REPORT B1, B2, B4, B5, B6 and the chemistry note):
@@ -56,13 +57,6 @@ const engine: LiveEngine = {
   balance: () => null,
   calculate: () => null,
 };
-
-async function settle(ticks = 4): Promise<void> {
-  for (let i = 0; i < ticks; i++) {
-    await new Promise<void>((r) => setImmediate(r));
-    await Promise.resolve();
-  }
-}
 
 function annotation(lineId: string, message: string, question = "What do you get when you divide 8 by 2?"): LiveSseEvent {
   return {

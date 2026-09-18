@@ -16,6 +16,7 @@ import { createLiveLoop, type LiveLoop } from "../liveLoop";
 import { liveStore, resetLiveStore } from "../liveStore";
 import { rectsIntersect } from "../placement";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
+import { settle, settleUntil } from "@/lib/live/__fixtures__/settle";
 
 /**
  * The tutor writes the worked steps by hand (WP-H). Everything here is the node-side
@@ -42,13 +43,6 @@ function engineWith(steps: string[] | null): LiveEngine {
     balance: () => null,
     calculate: () => null,
   };
-}
-
-async function settle(ticks = 4): Promise<void> {
-  for (let i = 0; i < ticks; i++) {
-    await new Promise<void>((r) => setImmediate(r));
-    await Promise.resolve();
-  }
 }
 
 describe("handwriting: planning and the unsupported interlock", () => {
@@ -178,9 +172,13 @@ describe("handwriting: wired into Solve", () => {
 
   async function writeStudentLine(): Promise<TLDrawShape[]> {
     const strokes = fixtureSingleLine();
+    const before = fetchJson.mock.calls.length;
     editor.putUser(strokes);
     await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 1);
-    await settle(8);
+    // Wait for the recognize call and then for the echo it produces: both hang off a real
+    // async digest, so a fixed tick count raced on slower CI runners.
+    await settleUntil(() => fetchJson.mock.calls.length > before);
+    await settleUntil(() => editor.shapesOfType("math").length > 0);
     return strokes;
   }
 

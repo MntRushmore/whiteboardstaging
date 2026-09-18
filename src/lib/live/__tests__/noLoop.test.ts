@@ -15,6 +15,7 @@ import { createLiveLoop, type LiveLoop } from "../liveLoop";
 import { liveStore, resetLiveStore } from "../liveStore";
 import { liveWrite } from "../liveWrite";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
+import { settle, settleUntil } from "@/lib/live/__fixtures__/settle";
 
 /**
  * Regression: the Live loop must never react to its own (remote-sourced) writes, and
@@ -36,13 +37,6 @@ const engine: LiveEngine = {
   balance: () => null,
   calculate: () => null,
 };
-
-async function settle(ticks = 4): Promise<void> {
-  for (let i = 0; i < ticks; i++) {
-    await new Promise<void>((r) => setImmediate(r));
-    await Promise.resolve();
-  }
-}
 
 describe("useLiveMath loop isolation (noLoop)", () => {
   let editor: FakeEditor;
@@ -142,7 +136,7 @@ describe("useLiveMath loop isolation (noLoop)", () => {
     expect(fetchJson).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(2);
-    await settle(8);
+    await settleUntil(() => fetchJson.mock.calls.length >= 1);
     expect(fetchJson).toHaveBeenCalledTimes(1);
     const body = fetchJson.mock.calls[0][1] as { boardId: string; strokes: { x: number[][] }; bounds: { h: number } };
     expect(body.boardId).toBe("board-1");

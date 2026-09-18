@@ -18,10 +18,6 @@ const IGNORED_PREFIXES = ["VERCEL_"];
 
 const REQUIRED = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY"];
 
-/** The anon JWT every local `supabase start` issues (iss "supabase-demo"). Public by design. */
-const LOCAL_DEMO_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0";
-
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".mjs", ".cjs"]);
 const SKIP_DIRS = new Set(["node_modules", ".next", "__snapshots__"]);
 
@@ -123,15 +119,16 @@ describe(".env.example", () => {
     for (const { label, re } of SECRET_PATTERNS) {
       expect(envText, `looks like a ${label}`).not.toMatch(re);
     }
-    const jwts = envText.match(JWT_RE) ?? [];
-    const suspicious = jwts.filter((jwt) => jwt.length > 60 && jwt !== LOCAL_DEMO_ANON_KEY);
-    expect(suspicious, "a JWT other than the local demo anon key is present").toEqual([]);
   });
 
-  it("only uses the local demo anon key for the anon variable", () => {
-    for (const e of entries) {
-      if (e.value === LOCAL_DEMO_ANON_KEY) expect(e.name).toBe("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-    }
+  /**
+   * No JWT at all, not even the public local demo anon key. Secret scanners cannot tell a
+   * harmless demo token from a live one, and a check that goes red on every pull request is a
+   * check people stop reading. Point at `npx supabase status` in a comment instead.
+   */
+  it("contains no JWT, not even a public one", () => {
+    const jwts = (envText.match(JWT_RE) ?? []).filter((jwt) => jwt.length > 60);
+    expect(jwts, "a JWT literal is present; reference `npx supabase status -o env` instead").toEqual([]);
   });
 
   it("uses local/placeholder values for provider keys", () => {
