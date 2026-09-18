@@ -273,6 +273,13 @@ export function LiveStatusPill({ editor, onDrawHelp, onClearMarks }: LiveStatusP
           >
             {LIVE_COPY.pill.hideAiShapes}
           </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={settings.handwriting}
+            onCheckedChange={(v) => update({ handwriting: v === true })}
+            title={LIVE_COPY.pill.handwritingHint}
+          >
+            {LIVE_COPY.pill.handwriting}
+          </DropdownMenuCheckboxItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

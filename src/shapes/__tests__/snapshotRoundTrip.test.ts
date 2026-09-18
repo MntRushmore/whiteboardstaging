@@ -132,6 +132,31 @@ function drawRecord(parentId: TLPageId): TLDrawShape {
   };
 }
 
+/**
+ * The tutor's handwriting (`src/lib/live/handwriting.ts`): a native `draw` shape whose
+ * segments are the hand engine's strokes, tagged `meta.live` so the loop, the legacy image
+ * capture and the idle trigger ignore it. Deliberately NOT a custom shape — see the last
+ * test in this file for what a custom shape costs a snapshot.
+ */
+function handwritingRecord(parentId: TLPageId): TLDrawShape {
+  const draw = drawRecord(parentId);
+  return {
+    ...draw,
+    id: createShapeId(),
+    props: {
+      ...draw.props,
+      color: "blue",
+      size: "s",
+      isPen: true,
+      segments: [
+        { type: "free", points: [{ x: 0, y: 0, z: 0.42 }, { x: 6, y: -9, z: 0.5 }, { x: 12, y: 0, z: 0.38 }] },
+        { type: "free", points: [{ x: 3, y: -4, z: 0.4 }, { x: 9, y: -4, z: 0.45 }] },
+      ],
+    },
+    meta: liveMeta("ai", "ln_1"),
+  };
+}
+
 function textRecord(parentId: TLPageId): TLTextShape {
   return {
     id: createShapeId(),
@@ -216,6 +241,31 @@ describe("snapshot round trip", () => {
     const loadedMath = after.find((s) => s.type === "math" && (s as MathShape).props.status === "ok") as MathShape;
     expect(loadedMath.meta).toEqual(liveMeta("echo", "ln_1"));
     expect(loadedMath.props.anchorIds).toEqual(["shape:a1", "shape:a2"]);
+  });
+
+  it("the tutor's handwriting round-trips, and loads even in a store without the live utils", () => {
+    const a = liveStore();
+    const pageId = pageIdOf(a);
+    const hand = handwritingRecord(pageId);
+    a.put([mathRecord(pageId, { latex: "2x+3=11" }), hand]);
+    const snapshot = JSON.parse(JSON.stringify(getSnapshot(a))) as ReturnType<typeof getSnapshot>;
+
+    const b = liveStore();
+    expect(() => loadSnapshot(b, snapshot)).not.toThrow();
+    const loaded = shapesOf(b).find((s) => s.id === hand.id) as TLDrawShape;
+    expect(loaded).toEqual(hand);
+    expect(loaded.props.segments).toHaveLength(2);
+    expect(loaded.props.segments[0].points[0].z).toBe(0.42);
+    expect(loaded.meta).toEqual(liveMeta("ai", "ln_1"));
+
+    // and, because it is a plain draw shape, a store with no live utils reads it too
+    const plain = legacyStore();
+    const plainPage = pageIdOf(plain);
+    plain.put([handwritingRecord(plainPage)]);
+    const plainSnapshot = JSON.parse(JSON.stringify(getSnapshot(plain))) as ReturnType<typeof getSnapshot>;
+    const c = legacyStore();
+    expect(() => loadSnapshot(c, plainSnapshot)).not.toThrow();
+    expect(shapesOf(c)).toHaveLength(1);
   });
 
   it("a legacy snapshot (store without live utils) loads into a live store and keeps its shapes", () => {

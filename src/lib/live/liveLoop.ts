@@ -60,6 +60,16 @@ import {
   type LiveErrorKind,
 } from "./liveStore";
 import { scheduleLiveWrite } from "./liveWrite";
+import { getLiveSettings } from "./liveSettings";
+import {
+  HandWriter,
+  handBlockOf,
+  handSeedFor,
+  handSizeFor,
+  placeHandPlan,
+  planHandwriting,
+  type HandPlan,
+} from "./handwriting";
 import {
   ECHO_HEIGHTS,
   ECHO_WIDTH_RELAYOUT_PX,
@@ -72,6 +82,8 @@ import {
   placeFloating,
   placeGraph,
   placeStep,
+  PLACEMENT,
+  rectMaxY,
   rectsIntersect,
 } from "./placement";
 import { badgeFor, decide, localNoteFor, type PolicyDecision } from "./policy";
@@ -115,6 +127,10 @@ export interface LiveLoopDeps {
   /** window-like event target for online/offline; null in tests */
   events: Pick<EventTarget, "addEventListener" | "removeEventListener"> | null;
   isOnline: () => boolean;
+  /** per-device "tutor writes by hand" switch; off falls back to the typeset solve steps */
+  handwritingEnabled: () => boolean;
+  /** prefers-reduced-motion: the finished handwriting appears with no reveal animation */
+  reducedMotion: () => boolean;
 }
 
 interface LineRuntime {
@@ -217,6 +233,9 @@ function defaultDeps(): LiveLoopDeps {
     now: () => Date.now(),
     events: hasWindow ? window : null,
     isOnline: () => (typeof navigator === "undefined" ? true : navigator.onLine !== false),
+    handwritingEnabled: () => getLiveSettings().handwriting,
+    reducedMotion: () =>
+      hasWindow && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   };
 }
 
@@ -254,6 +273,8 @@ export class LiveLoop implements LiveController {
   /** LLM checks asked for while offline (focus line id -> userAsked); re-run once after reconnect */
   private readonly pendingChecks = new Map<string, boolean>();
   private pendingSolve: string | null = null;
+  /** the handwriting reveal in flight, if any (one block at a time) */
+  private writer: HandWriter | null = null;
   private lastOnline: boolean | null = null;
   private lastTouchedLineId: string | null = null;
   private started = false;
@@ -343,6 +364,8 @@ export class LiveLoop implements LiveController {
     this.deps.events?.removeEventListener(BADGE_TAP_EVENT, this.onBadgeTap);
     if (this.quietTimer) clearTimeout(this.quietTimer);
     this.quietTimer = null;
+    // Leaving the board / unmounting must not freeze a half-written step on the canvas.
+    this.cancelHandwriting();
     this.deps.recognizer.abortAll();
     for (const r of this.rt.values()) {
       r.checkAbort?.abort();
@@ -477,9 +500,11 @@ export class LiveLoop implements LiveController {
       if (!next.enabled) {
         this.deps.recognizer.abortAll();
         for (const r of this.rt.values()) r.checkAbort?.abort();
+        this.cancelHandwriting();
       }
     }
     if (prev.mode !== next.mode) {
+      this.cancelHandwriting();
       this.reanalyzeAll();
       const hintsMode = (m: UseLiveMathOptions["mode"]) => m === "suggest" || m === "answer";
       if (hintsMode(next.mode) && !hintsMode(prev.mode)) this.checkMismatchesAfterLadderRise();
@@ -609,6 +634,8 @@ export class LiveLoop implements LiveController {
     }
 
     if (penUp || inkChanged || erased) {
+      // The student is working again: the tutor puts the pen down (finishing what it started).
+      this.cancelHandwriting();
       if (penUp) markBurst("pending");
       const rewrite = [...this.dirtyStrokeIds].some((id) => {
         const line = this.lineOfStroke(id);
@@ -1213,10 +1240,21 @@ export class LiveLoop implements LiveController {
     });
   }
 
+  /**
+   * Live shapes on the page, for the cap and the pill's "lots of marks" warning. The tutor's
+   * handwriting is one draw shape per stroke, so a written block counts as ONE mark (its
+   * `meta.handBlock` key), not as its thirteen strokes.
+   */
   private recount(): void {
     let n = 0;
-    for (const s of this.editor.getCurrentPageShapes()) if (isLiveMeta(s.meta)) n++;
-    liveStore.liveShapeCount.set(n);
+    const blocks = new Set<string>();
+    for (const s of this.editor.getCurrentPageShapes()) {
+      if (!isLiveMeta(s.meta)) continue;
+      const block = handBlockOf(s.meta);
+      if (block) blocks.add(block);
+      else n++;
+    }
+    liveStore.liveShapeCount.set(n + blocks.size);
   }
 
   private avoidRects(lineId: string, exclude?: ReadonlySet<string>): Rect[] {
@@ -1467,6 +1505,7 @@ export class LiveLoop implements LiveController {
 
   private dropLine(lineId: string): void {
     this.abortLlm(lineId);
+    this.cancelHandwriting();
     const rt = this.rt.get(lineId);
     if (rt) {
       if (rt.unreadableTimer) clearTimeout(rt.unreadableTimer);
@@ -1669,6 +1708,9 @@ export class LiveLoop implements LiveController {
     if (!this.opts.enabled || this.opts.voiceActive) return;
     const built = this.buildCheckLines(column);
     if (!built) return;
+    // The engine can solve most school lines itself, and the tutor can write that out by hand:
+    // no model, no credits, no network. Anything it cannot draw falls through to the stream.
+    if (this.writeSolutionByHand(built, opts)) return;
     if (!this.deps.isOnline()) {
       this.deferLlm("solve", opts.lineId);
       return;
@@ -1723,6 +1765,86 @@ export class LiveLoop implements LiveController {
         if (liveStore.status.get() !== "offline") liveStore.status.set("idle");
       }
     })();
+  }
+
+  /**
+   * Writes the worked steps under the student's last line in the tutor's hand.
+   *
+   * Returns false — and the caller falls back to today's typeset solve stream — when the
+   * per-device switch is off, the local engine cannot solve this line, or the hand engine
+   * reports ANY `unsupported` construct for the block. That last one is the safety interlock:
+   * a dropped `\frac` would show the student wrong maths, so the block is never drawn partly.
+   */
+  private writeSolutionByHand(built: { states: LiveLineState[] }, opts: SolveOpts): boolean {
+    if (!this.deps.handwritingEnabled() || !this.engine) return false;
+    if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
+    const state = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
+    if (!state?.latex) return false;
+
+    let solved: { latex: string; steps: string[] } | null = null;
+    try {
+      solved = this.engine.solveLatex(state.latex);
+    } catch (e) {
+      console.warn("[live] solveLatex threw", e);
+      return false;
+    }
+    if (!solved || solved.steps.length === 0) return false;
+    const steps = (opts.onlyFirstStep ? solved.steps.slice(0, 1) : solved.steps).slice(0, LIVE_LIMITS.maxSolveSteps);
+
+    const size = handSizeFor(state.line.bounds.h);
+    const { plan, unsupported } = planHandwriting(steps, { size, seed: handSeedFor(opts.lineId) });
+    if (!plan || unsupported.length > 0) return false;
+
+    const lastLine = built.states[built.states.length - 1].line.bounds;
+    const column = unionRects(built.states.map((s) => s.line.bounds));
+    const candidate: Rect = {
+      x: column.x,
+      y: rectMaxY(lastLine) + PLACEMENT.stepGap,
+      w: plan.bounds.w,
+      h: plan.bounds.h,
+    };
+    // avoidRects skips this line's own ink and echo; for a block written *under* the work they
+    // are obstacles like any other, so they go back in.
+    const avoid = this.avoidRects(opts.lineId);
+    avoid.push(state.line.bounds);
+    const echo = this.echoRect(opts.lineId);
+    if (echo) avoid.push(echo);
+    const slot = findFreeSlot(candidate, avoid, lastLine);
+
+    this.startHandwriting(placeHandPlan(plan, { x: slot.x, y: slot.y }), opts.lineId);
+    clientMetric("live.solve.hand.ms", { ms: Math.round(plan.totalMs), lineId: opts.lineId });
+    return true;
+  }
+
+  private startHandwriting(plan: HandPlan, lineId: string): void {
+    this.cancelHandwriting();
+    const meta = makeMeta("ai", lineId, this.deps.now());
+    const writer = new HandWriter(
+      {
+        write: (fn) => this.write(fn),
+        createShapes: (shapes) => this.editor.createShapes(shapes),
+        updateShapes: (shapes) => this.editor.updateShapes(shapes),
+        getShape: (id) => this.editor.getShape(id),
+      },
+      {
+        now: this.deps.now,
+        reducedMotion: this.deps.reducedMotion,
+      },
+    );
+    this.writer = writer;
+    writer.start(plan, {
+      meta,
+      onDone: () => {
+        if (this.writer === writer) this.writer = null;
+      },
+    });
+  }
+
+  /** Ends any reveal in flight, completing the lines it had started. Never leaves half a step. */
+  private cancelHandwriting(): void {
+    const writer = this.writer;
+    this.writer = null;
+    writer?.cancel();
   }
 
   /** fetch rejects with a TypeError when the network is unreachable. */
@@ -1907,6 +2029,7 @@ export class LiveLoop implements LiveController {
 
   /** Removes AI shapes and hint text; echoes stay (their badges reset). */
   clearMarks(): void {
+    this.cancelHandwriting();
     liveStore.openHints.set([]);
     for (const r of this.rt.values()) {
       r.shownHintTexts.clear();

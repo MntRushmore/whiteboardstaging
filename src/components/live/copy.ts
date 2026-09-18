@@ -24,6 +24,8 @@ export const LIVE_COPY = {
     drawHelpHint: "Ask the tutor to sketch on the canvas",
     clearMarks: "Clear marks",
     hideAiShapes: "Hide AI shapes",
+    handwriting: "Tutor writes by hand",
+    handwritingHint: "Worked steps appear as handwriting instead of typeset text",
     shapeCap: "Lots of marks on this page. Clear marks to keep going.",
   },
 

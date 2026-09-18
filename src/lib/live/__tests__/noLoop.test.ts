@@ -106,6 +106,31 @@ describe("useLiveMath loop isolation (noLoop)", () => {
     expect(Object.keys(liveStore.lines.get())).toHaveLength(0);
   });
 
+  it("the tutor's handwriting (a live-meta draw shape) triggers no recognize and no line", async () => {
+    // What HandWriter puts on the canvas: real ink, but tagged live, so the loop, the legacy
+    // image capture and the idle trigger all look straight through it.
+    const [stroke] = fixtureSingleLine();
+    liveWrite(editor as unknown as Editor, () => {
+      editor.createShapes([
+        {
+          id: createShapeId(),
+          type: "draw",
+          x: stroke.x,
+          y: stroke.y,
+          props: { ...stroke.props },
+          meta: { live: true, source: "ai", lineId: "ln_1", createdAt: 1 },
+        },
+      ]);
+    });
+    await settle();
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs * 5);
+    await settle();
+    expect(fetchJson).not.toHaveBeenCalled();
+    expect(Object.keys(liveStore.lines.get())).toHaveLength(0);
+    expect(liveStore.lastBurst.get()).toBeNull();
+    expect(streamCalls).toBe(0);
+  });
+
   it("a completed user draw triggers exactly one recognize after the quiet gate and creates one echo", async () => {
     const strokes = fixtureSingleLine();
     editor.putUser(strokes);

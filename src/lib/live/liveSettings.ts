@@ -7,9 +7,15 @@ export type LiveSettings = {
   enabled: boolean;
   /** hide echoes/graphs/AI steps without deleting them */
   hideAiShapes: boolean;
+  /**
+   * The tutor writes worked steps as handwriting on the canvas instead of placing a typeset
+   * math shape. Off falls back to the typeset steps, as does any line the hand engine cannot
+   * draw (see `unsupported` in src/lib/hand).
+   */
+  handwriting: boolean;
 };
 
-export const DEFAULT_LIVE_SETTINGS: LiveSettings = { enabled: true, hideAiShapes: false };
+export const DEFAULT_LIVE_SETTINGS: LiveSettings = { enabled: true, hideAiShapes: false, handwriting: true };
 
 const STORAGE_KEY = "agathon.live.v1";
 const listeners = new Set<() => void>();
