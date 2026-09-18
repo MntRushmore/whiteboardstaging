@@ -96,7 +96,9 @@ describe("live loop — visible errors and retry", () => {
     editor.putUser(shapes);
     await vi.advanceTimersByTimeAsync(QUIET);
     await settleUntil(() => fetchJson.mock.calls.length > before);
-    await settle(2);
+    // Then the original flush budget, so everything downstream of the call (apply, render,
+    // policy) gets at least as many turns as before this helper waited on a condition.
+    await settle(8);
   }
 
   function echoOf(lineId: string): MathShapeProps | null {

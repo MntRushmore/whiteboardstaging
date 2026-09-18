@@ -19,10 +19,13 @@ async function tick(): Promise<void> {
 }
 
 /**
- * Flush `ticks` event-loop turns. Use only where there is nothing specific to wait for
- * (asserting that something did NOT happen); otherwise use `settleUntil`.
+ * Flush exactly `ticks` event-loop turns. The default is deliberately small and MUST NOT be
+ * raised: several tests assert on partial progress (a burst still 'pending', an echo not yet
+ * placed), so letting more async work through changes what they observe. Use only where there
+ * is nothing specific to wait for — asserting that something did NOT happen. Everywhere else,
+ * use `settleUntil`.
  */
-export async function settle(ticks = 24): Promise<void> {
+export async function settle(ticks = 4): Promise<void> {
   for (let i = 0; i < ticks; i++) await tick();
 }
 
