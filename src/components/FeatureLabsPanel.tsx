@@ -11,12 +11,13 @@ import {
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { Beaker, Sparkles, FileText, Upload } from "lucide-react";
+import { Beaker, Sparkles, FileText, Upload, Loader2, RefreshCw } from "lucide-react";
 import {
   FEATURES,
   useFeatureLabs,
   type FeatureKey,
 } from "@/lib/featureLabs";
+import { FEATURE_SAVE_FAILED_MESSAGE } from "@/lib/featureLabsState";
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   Sparkles,
@@ -26,7 +27,8 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
 
 export function FeatureLabsPanel() {
   const [open, setOpen] = useState(false);
-  const { features, setFeature, loading } = useFeatureLabs();
+  const { features, setFeature, loading, saving, saveFailure, retrySave } =
+    useFeatureLabs();
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -52,10 +54,15 @@ export function FeatureLabsPanel() {
           {FEATURES.map((feature) => {
             const Icon = ICONS[feature.icon] ?? Sparkles;
             const enabled = features[feature.key as FeatureKey] ?? false;
+            const isSaving = saving === feature.key;
+            const failed = saveFailure?.key === feature.key ? saveFailure : null;
             return (
               <div
                 key={feature.key}
-                className="border rounded-lg p-4 hover:bg-accent/30 transition-colors"
+                data-state={failed ? "save-error" : isSaving ? "saving" : "idle"}
+                className={`border rounded-lg p-4 hover:bg-accent/30 transition-colors ${
+                  failed ? "border-amber-300" : ""
+                }`}
               >
                 <div className="flex items-start gap-3">
                   <div className="p-2 rounded-md bg-muted shrink-0">
@@ -73,14 +80,43 @@ export function FeatureLabsPanel() {
                       >
                         {feature.status}
                       </span>
+                      {isSaving && (
+                        <Loader2
+                          className="w-3 h-3 animate-spin text-muted-foreground"
+                          aria-label="Saving"
+                        />
+                      )}
                     </div>
                     <p className="text-xs text-muted-foreground leading-relaxed">
                       {feature.description}
                     </p>
+                    {failed && (
+                      <div
+                        role="alert"
+                        className="mt-2 flex flex-wrap items-center gap-2 text-xs text-amber-900"
+                      >
+                        <span>
+                          {FEATURE_SAVE_FAILED_MESSAGE}
+                          {failed.message && failed.message !== FEATURE_SAVE_FAILED_MESSAGE
+                            ? ` — ${failed.message}`
+                            : ""}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-6 px-2 text-xs"
+                          onClick={retrySave}
+                          disabled={isSaving}
+                        >
+                          <RefreshCw className="w-3 h-3 mr-1" />
+                          Retry
+                        </Button>
+                      </div>
+                    )}
                   </div>
                   <Switch
                     checked={enabled}
-                    disabled={loading}
+                    disabled={loading || isSaving}
                     onCheckedChange={(v) => setFeature(feature.key, v)}
                     aria-label={`Toggle ${feature.title}`}
                   />

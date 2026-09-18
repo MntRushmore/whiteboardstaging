@@ -1,129 +1,95 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { helpCheckLogger } from '@/lib/logger';
-import { requireKey, getSiteUrl } from '@/lib/aiConfig';
+import { z } from "zod";
+import { helpCheckLogger } from "@/lib/logger";
+import { requireUser } from "@/lib/server/auth";
+import { enforceCredits, runCharged } from "@/lib/server/billing";
+import { checkRateLimitDistributed, rateLimitedResponse } from "@/lib/server/rate-limit";
+import { TEXT_MODELS, openrouterChat } from "@/lib/server/openrouter";
+import { errorResponse, imageDataUrlSchema, parseJsonBody, textSchema } from "@/lib/server/request";
 
-export async function POST(req: NextRequest) {
+const bodySchema = z
+  .object({
+    text: textSchema.nullish(),
+    image: imageDataUrlSchema.nullish(),
+  })
+  .refine((b) => Boolean(b.text?.trim()) || Boolean(b.image), {
+    message: "Provide at least one of `text` or `image`.",
+    path: ["body"],
+  });
+
+const RESPONSE_FORMAT_INSTRUCTIONS =
+  'Respond with a JSON object containing:\n- "needsHelp": true or false\n- "confidence": a number between 0 and 1 indicating your confidence\n- "reason": a brief explanation of your decision\n\nExample: {"needsHelp": true, "confidence": 0.85, "reason": "User has written an incomplete math problem with no solution"}';
+
+export async function POST(req: Request) {
   const startTime = Date.now();
   const requestId = crypto.randomUUID();
 
-  helpCheckLogger.info({ requestId }, 'Help check request started');
+  const auth = await requireUser(req);
+  if ("response" in auth) return auth.response;
+  const { user, token } = auth;
 
-  try {
-    const { text, image } = await req.json();
+  const log = helpCheckLogger.child({ requestId, userId: user.id });
 
-    if (!text && !image) {
-      helpCheckLogger.warn({ requestId }, 'No text or image provided in request');
-      return NextResponse.json(
-        { error: 'No text or image provided' },
-        { status: 400 }
-      );
-    }
+  const rl = await checkRateLimitDistributed({ token, userId: user.id, bucket: "checkHelp" });
+  if (!rl.ok) {
+    log.warn({ retryAfterMs: rl.retryAfterMs, backend: rl.backend }, "Help check rate limited");
+    return rateLimitedResponse(rl.retryAfterMs, rl.backend);
+  }
 
-    helpCheckLogger.debug({
-      requestId,
-      hasText: !!text,
-      textLength: text?.length || 0,
-      hasImage: !!image
-    }, 'Request payload received');
+  const parsed = await parseJsonBody(req, bodySchema);
+  if ("response" in parsed) {
+    log.warn("Invalid help check request");
+    return parsed.response;
+  }
+  const { text, image } = parsed.data;
 
-    // BYOK: the operator of this deployment supplies their own key.
-    const openrouterKey = requireKey('openrouter');
-    if (!openrouterKey.ok) {
-      helpCheckLogger.error({ requestId }, 'OPENROUTER_API_KEY is not configured');
-      return openrouterKey.response;
-    }
+  // Charge credits before the provider call; runCharged refunds them on any non-2xx (see src/lib/server/billing.ts).
+  const billing = await enforceCredits({ token, route: "check-help-needed", requestId, model: TEXT_MODELS.helpCheck }, log);
+  if ("response" in billing) return billing.response;
 
+  log.info({ hasText: !!text, textLength: text?.length || 0, hasImage: !!image }, "Help check request started");
+
+  return runCharged({ token, requestId }, log, async () => {
     // Build the message content
-    const content: any[] = [];
+    const content: Array<Record<string, unknown>> = [];
 
     if (image) {
-      content.push({
-        type: 'image_url',
-        image_url: {
-          url: image, // base64 data URL
-        },
-      });
+      content.push({ type: "image_url", image_url: { url: image } });
     }
 
     const promptText = text
-      ? `Here is the extracted text from the user's canvas:\n\n${text}\n\nBased on this text and/or the image, does this user appear to need help with a problem? Look for incomplete work, questions, stuck points, math problems, coding problems, or any indication that they're working through something challenging and might benefit from a solution or hint.\n\nRespond with a JSON object containing:\n- "needsHelp": true or false\n- "confidence": a number between 0 and 1 indicating your confidence\n- "reason": a brief explanation of your decision\n\nExample: {"needsHelp": true, "confidence": 0.85, "reason": "User has written an incomplete math problem with no solution"}`
-      : `Based on the image, does this user appear to need help with a problem? Look for incomplete work, questions, stuck points, math problems, coding problems, or any indication that they're working through something challenging and might benefit from a solution or hint.\n\nRespond with a JSON object containing:\n- "needsHelp": true or false\n- "confidence": a number between 0 and 1 indicating your confidence\n- "reason": a brief explanation of your decision\n\nExample: {"needsHelp": true, "confidence": 0.85, "reason": "User has written an incomplete math problem with no solution"}`;
+      ? `Here is the extracted text from the user's canvas:\n\n${text}\n\nBased on this text and/or the image, does this user appear to need help with a problem? Look for incomplete work, questions, stuck points, math problems, coding problems, or any indication that they're working through something challenging and might benefit from a solution or hint.\n\n${RESPONSE_FORMAT_INSTRUCTIONS}`
+      : `Based on the image, does this user appear to need help with a problem? Look for incomplete work, questions, stuck points, math problems, coding problems, or any indication that they're working through something challenging and might benefit from a solution or hint.\n\n${RESPONSE_FORMAT_INSTRUCTIONS}`;
 
-    content.push({
-      type: 'text',
-      text: promptText,
-    });
+    content.push({ type: "text", text: promptText });
 
-    helpCheckLogger.info({ requestId }, 'Calling OpenRouter GPT-4.1-mini API');
+    log.info({ model: TEXT_MODELS.helpCheck }, "Calling OpenRouter for help check");
 
-    // Call GPT-4.1-mini via OpenRouter
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openrouterKey.key}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': getSiteUrl(),
-        'X-Title': 'Agathon Classroom Staging',
+    const data = await openrouterChat(
+      {
+        model: TEXT_MODELS.helpCheck,
+        messages: [{ role: "user", content }],
+        response_format: { type: "json_object" },
       },
-      body: JSON.stringify({
-        model: 'openai/gpt-4.1-mini',
-        messages: [
-          {
-            role: 'user',
-            content: content,
-          },
-        ],
-        response_format: { type: 'json_object' },
-      }),
-    });
+      { requestId, signal: req.signal },
+    );
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      helpCheckLogger.error({
-        requestId,
-        status: response.status,
-        error: errorData
-      }, 'OpenRouter API error');
-      throw new Error(errorData.error?.message || 'OpenRouter API error');
+    const rawContent = data.choices?.[0]?.message?.content;
+    const responseText = typeof rawContent === "string" && rawContent ? rawContent : "{}";
+
+    let decision: { needsHelp?: unknown; confidence?: unknown; reason?: unknown } = {};
+    try {
+      decision = JSON.parse(responseText);
+    } catch {
+      log.warn({ responseText: responseText.slice(0, 500) }, "Help check model returned non-JSON");
     }
 
-    const data = await response.json();
-    const responseText = data.choices?.[0]?.message?.content || '{}';
-
-    // Parse the JSON response
-    const decision = JSON.parse(responseText);
+    const needsHelp = decision.needsHelp === true;
+    const confidence = typeof decision.confidence === "number" ? decision.confidence : 0;
+    const reason = typeof decision.reason === "string" ? decision.reason : "";
 
     const duration = Date.now() - startTime;
-    helpCheckLogger.info({
-      requestId,
-      duration,
-      needsHelp: decision.needsHelp,
-      confidence: decision.confidence,
-      reason: decision.reason,
-      tokensUsed: data.usage?.total_tokens
-    }, 'Help check completed');
+    log.info({ duration, needsHelp, confidence, reason, tokensUsed: data.usage?.total_tokens }, "Help check completed");
 
-    return NextResponse.json({
-      success: true,
-      needsHelp: decision.needsHelp || false,
-      confidence: decision.confidence || 0,
-      reason: decision.reason || '',
-    });
-  } catch (error) {
-    const duration = Date.now() - startTime;
-    helpCheckLogger.error({
-      requestId,
-      duration,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined
-    }, 'Error checking if help is needed');
-
-    return NextResponse.json(
-      {
-        error: 'Failed to check if help is needed',
-        details: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
-    );
-  }
+    return Response.json({ success: true, needsHelp, confidence, reason });
+  }, (error) => errorResponse(error, log, { duration: Date.now() - startTime }));
 }

@@ -4,14 +4,22 @@ import {
   Tldraw,
   useEditor,
   createShapeId,
-  AssetRecordType,
   TLShapeId,
+  type TLAssetId,
   DefaultColorThemePalette,
   type TLUiOverrides,
-  getSnapshot,
+  type TLUiIconJsx,
+  type TLEditorSnapshot,
+  type TLStoreSnapshot,
   loadSnapshot,
+  createTLStore,
+  defaultShapeUtils,
+  defaultBindingUtils,
+  type Editor,
+  type HistoryEntry,
+  type TLRecord,
 } from "tldraw";
-import React, { useCallback, useState, useRef, useEffect, type ReactElement } from "react";
+import React, { useCallback, useState, useRef, useEffect, useMemo } from "react";
 import "tldraw/tldraw.css";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -41,12 +49,32 @@ import {
   MicOff02Icon,
   Loading03Icon,
 } from "hugeicons-react";
-import { useDebounceActivity } from "@/hooks/useDebounceActivity";
-import { StatusIndicator, type StatusIndicatorState } from "@/components/StatusIndicator";
+import { isStudentActivity, useDebounceActivity } from "@/hooks/useDebounceActivity";
+import { aiOverlayMeta, dropPendingAiOverlays, overlayIndexBelowLive, useAiOverlayShapes } from "@/hooks/useAiOverlayShapes";
+import { useAssistanceMode, type AssistanceMode } from "@/hooks/useAssistanceMode";
+import { offloadAssetsOnce, useSnapshotSave, warnInlineAssetFallbackOnce } from "@/hooks/useSnapshotSave";
+import { createBoardAssetStore } from "@/lib/assets/boardAssetStore";
+import { uploadDataUrlAsset } from "@/lib/assets/uploadDataUrl";
+import {
+  GENERATION_COPY,
+  INFO_CLEAR_MS,
+  StatusIndicator,
+  SUCCESS_CLEAR_MS,
+  type GenerationState,
+} from "@/components/StatusIndicator";
+import {
+  BOARD_LOAD_COPY,
+  BoardLoadError,
+  BoardLoading,
+  loadStateFor,
+  type BoardLoadState,
+} from "@/components/BoardLoadError";
 import { logger } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
+import { apiJson } from "@/lib/api-client";
+import { describeApiError, isAbortError, useApiErrorHandler } from "@/hooks/useApiErrorHandler";
 import { useParams, useRouter } from "next/navigation";
-import { Loader2, Volume2, VolumeX, Info } from "lucide-react";
+import { Volume2, VolumeX, Info } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import { CreditsBanner } from "@/components/CreditsBanner";
@@ -63,17 +91,27 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Settings } from "lucide-react";
+import { Settings, ListOrdered } from "lucide-react";
 import { GenerationSkeleton } from "@/components/GenerationSkeleton";
+import { liveShapeUtils, liveTools, liveUiOverrides, LiveToolbar } from "@/shapes";
+import { isLiveMeta, LIVE_KILL_SWITCH, LIVE_TIMING } from "@/lib/live/contracts";
+import { legacyShouldSkip } from "@/lib/live/liveStore";
+import { useLiveMath } from "@/lib/live/useLiveMath";
+import { useLiveSettings } from "@/lib/live/liveSettings";
+import { LiveToggle } from "@/components/live/LiveToggle";
+import { LiveStatusPill } from "@/components/live/LiveStatusPill";
+import { SaveStatus } from "@/components/live/SaveStatus";
+import { LiveHintLayer } from "@/components/live/LiveHintLayer";
+import { LiveErrorBoundary } from "@/components/live/LiveErrorBoundary";
+import { ASSET_COPY, LIVE_COPY } from "@/components/live/copy";
 
 // Ensure the tldraw canvas background is pure white in both light and dark modes
 DefaultColorThemePalette.lightMode.background = "#FFFFFF";
 DefaultColorThemePalette.darkMode.background = "#FFFFFF";
 
 const hugeIconsOverrides: TLUiOverrides = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tools(_editor: unknown, tools: Record<string, any>) {
-    const toolIconMap: Record<string, ReactElement> = {
+  tools(_editor, tools) {
+    const toolIconMap: Record<string, TLUiIconJsx> = {
       select: (
         <div>
           <Cursor02Icon size={22} strokeWidth={1.5} />
@@ -131,6 +169,15 @@ const hugeIconsOverrides: TLUiOverrides = {
   },
 };
 
+// Live's tool overrides (Math tool, kbd "m") layered on top of the icon overrides above.
+const boardOverrides: TLUiOverrides = {
+  ...hugeIconsOverrides,
+  tools(editor, tools, helpers) {
+    const withIcons = hugeIconsOverrides.tools ? hugeIconsOverrides.tools(editor, tools, helpers) : tools;
+    return liveUiOverrides.tools ? liveUiOverrides.tools(editor, withIcons, helpers) : withIcons;
+  },
+};
+
 function ModeInfoDialog() {
   return (
     <Dialog>
@@ -147,7 +194,9 @@ function ModeInfoDialog() {
         <DialogHeader>
           <DialogTitle>Help modes</DialogTitle>
           <DialogDescription>
-            Choose how strongly the tutor helps on your canvas.
+            Choose how strongly the tutor helps on your canvas. New boards start in
+            Feedback; your choice is remembered for this board on this device. Off
+            pauses all help.
           </DialogDescription>
         </DialogHeader>
         <div className="flex gap-6">
@@ -186,6 +235,17 @@ function ModeInfoDialog() {
               Full worked solution overlaid on your canvas for comparison.
             </p>
           </div>
+
+          <div className="flex-1 flex flex-col items-start">
+            <div
+              aria-hidden
+              className="h-48 w-full rounded-md border bg-muted mb-3 flex items-center justify-center text-4xl font-serif text-gray-400"
+            >
+              Σ
+            </div>
+            <p className="text-sm font-medium mb-1">{LIVE_COPY.modeInfo.title}</p>
+            <p className="text-sm text-muted-foreground">{LIVE_COPY.modeInfo.body}</p>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -213,10 +273,10 @@ function ImageActionButtons({
     <div
       style={{
         position: 'absolute',
-        // In normal mode, sit at the top-center like before.
-        // When voice is active, shift down a bit so it doesn't clash
-        // with the voice status banner at the very top.
-        top: isVoiceSessionActive ? '56px' : '10px',
+        // Sit at the top-center just below the mode bar so it never covers the
+        // Live pill; when voice is active the bar is hidden and the voice status
+        // banner owns the very top instead.
+        top: isVoiceSessionActive ? '56px' : '64px',
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 1000,
@@ -250,6 +310,35 @@ type VoiceStatus =
   | "callingTool"
   | "error";
 
+/** Arguments the Realtime model may pass to our tools. */
+type VoiceToolArgs = {
+  focus?: string | null;
+  mode?: string;
+  instructions?: string | null;
+};
+
+/** Subset of OpenAI Realtime server events we react to. */
+type RealtimeServerEvent = {
+  type?: string;
+  message?: string;
+  error?: { message?: string };
+  response?: {
+    output?: Array<{
+      type?: string;
+      name?: string;
+      arguments?: string;
+      call_id?: string;
+    }>;
+  };
+};
+
+type AnalyzeWorkspaceResponse = { analysis?: string | null };
+type VoiceTokenResponse = { client_secret?: string | null };
+type GenerateSolutionResponse = {
+  imageUrl?: string | null;
+  textContent?: string | null;
+};
+
 interface VoiceAgentControlsProps {
   onSessionChange: (active: boolean) => void;
   onSolveWithPrompt: (
@@ -263,6 +352,7 @@ function VoiceAgentControls({
   onSolveWithPrompt,
 }: VoiceAgentControlsProps) {
   const editor = useEditor();
+  const handleApiError = useApiErrorHandler();
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [status, setStatus] = useState<VoiceStatus>("idle");
   const [statusDetail, setStatusDetail] = useState<string | null>(null);
@@ -343,10 +433,10 @@ function VoiceAgentControls({
       const dc = dcRef.current;
       if (!dc) return;
 
-      let args: any = {};
+      let args: VoiceToolArgs = {};
       try {
-        args = argsJson ? JSON.parse(argsJson) : {};
-      } catch (e) {
+        args = argsJson ? (JSON.parse(argsJson) as VoiceToolArgs) : {};
+      } catch {
         setErrorStatus(`Failed to parse tool arguments for ${name}`);
         return;
       }
@@ -361,20 +451,13 @@ function VoiceAgentControls({
             throw new Error("Canvas is empty or could not be captured");
           }
 
-          const res = await fetch("/api/voice/analyze-workspace", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
+          const data = await apiJson<AnalyzeWorkspaceResponse>(
+            "/api/voice/analyze-workspace",
+            {
               image,
               focus: args.focus ?? null,
-            }),
-          });
-
-          if (!res.ok) {
-            throw new Error("Workspace analysis request failed");
-          }
-
-          const data = await res.json();
+            },
+          );
           const analysis = data.analysis ?? "";
 
           dc.send(
@@ -441,16 +524,17 @@ function VoiceAgentControls({
       } catch (error) {
         console.error("[Voice Agent] Tool error", error);
 
+        const message = handleApiError(error, {
+          fallback: "Tool execution failed",
+        });
+
         dc.send(
           JSON.stringify({
             type: "conversation.item.create",
             item: {
               type: "function_call_output",
               call_id: callId,
-              output: JSON.stringify({
-                error:
-                  error instanceof Error ? error.message : "Tool execution failed",
-              }),
+              output: JSON.stringify({ error: message }),
             },
           }),
         );
@@ -461,18 +545,14 @@ function VoiceAgentControls({
           }),
         );
 
-        setErrorStatus(
-          `Tool ${name} failed: ${
-            error instanceof Error ? error.message : "Unknown error"
-          }`,
-        );
+        setErrorStatus(`Tool ${name} failed: ${message}`);
       }
     },
-    [captureCanvasImage, onSolveWithPrompt, setErrorStatus],
+    [captureCanvasImage, onSolveWithPrompt, setErrorStatus, handleApiError],
   );
 
   const handleServerEvent = useCallback(
-    (event: any) => {
+    (event: RealtimeServerEvent) => {
       if (!event || typeof event !== "object") return;
 
       switch (event.type) {
@@ -486,7 +566,7 @@ function VoiceAgentControls({
         case "response.done": {
           const output = event.response?.output ?? [];
           for (const item of output) {
-            if (item.type === "function_call") {
+            if (item.type === "function_call" && item.name && item.call_id) {
               handleFunctionCall(
                 item.name,
                 item.arguments ?? "{}",
@@ -623,7 +703,7 @@ function VoiceAgentControls({
 
       dc.onmessage = (event) => {
         try {
-          const serverEvent = JSON.parse(event.data);
+          const serverEvent = JSON.parse(event.data) as RealtimeServerEvent;
           handleServerEvent(serverEvent);
         } catch (e) {
           console.error("[Voice Agent] Failed to parse server event", e);
@@ -660,15 +740,10 @@ function VoiceAgentControls({
         pc.addEventListener("icegatheringstatechange", checkState);
       });
 
-      const tokenRes = await fetch("/api/voice/token", {
-        method: "POST",
-      });
-
-      if (!tokenRes.ok) {
-        throw new Error("Failed to obtain Realtime session token");
-      }
-
-      const { client_secret } = await tokenRes.json();
+      const { client_secret } = await apiJson<VoiceTokenResponse>(
+        "/api/voice/token",
+        {},
+      );
       if (!client_secret) {
         throw new Error("Realtime token missing client_secret");
       }
@@ -704,11 +779,11 @@ function VoiceAgentControls({
     } catch (error) {
       console.error("[Voice Agent] Failed to start session", error);
       setErrorStatus(
-        error instanceof Error ? error.message : "Failed to start voice session",
+        handleApiError(error, { fallback: "Failed to start voice session" }),
       );
       stopSession();
     }
-  }, [editor, isSessionActive, handleServerEvent, onSessionChange, setErrorStatus, stopSession]);
+  }, [editor, isSessionActive, handleServerEvent, onSessionChange, setErrorStatus, stopSession, handleApiError]);
 
   const handleClick = () => {
     if (isSessionActive) {
@@ -988,16 +1063,87 @@ function PerfSettingsPopover({
   );
 }
 
-function BoardContent({ id }: { id: string }) {
+function ClearFeedbackButton({
+  feedbackImageIds,
+  onClear,
+  isVoiceSessionActive,
+  hasPendingImages,
+}: {
+  feedbackImageIds: TLShapeId[];
+  onClear: () => void;
+  isVoiceSessionActive: boolean;
+  hasPendingImages: boolean;
+}) {
+  if (feedbackImageIds.length === 0) return null;
+
+  // Sit at the top-center below the mode bar (64 px; 10 px when voice hides the
+  // bar); step down when the voice banner and/or the Accept/Reject buttons
+  // already occupy that spot.
+  const top = (isVoiceSessionActive ? 10 + 46 : 64) + (hasPendingImages ? 46 : 0);
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: `${top}px`,
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 1000,
+      }}
+    >
+      <Button
+        variant="outline"
+        size="sm"
+        className="bg-white shadow-sm"
+        onClick={onClear}
+        title="Remove the tutor's feedback annotations from the canvas"
+      >
+        <Cancel01Icon size={16} strokeWidth={2.5} />
+        <span className="ml-1.5">Clear feedback</span>
+      </Button>
+    </div>
+  );
+}
+
+type LegacyMode = "feedback" | "suggest" | "answer";
+type GenerationRequest = { mode: LegacyMode; promptOverride?: string; source: "auto" | "voice" };
+
+function BoardContent({ id, initialVersion }: { id: string; initialVersion: number | null }) {
   const editor = useEditor();
   const router = useRouter();
   const { features } = useFeatureLabs();
-  const [pendingImageIds, setPendingImageIds] = useState<TLShapeId[]>([]);
-  const [status, setStatus] = useState<StatusIndicatorState>("idle");
-  const [errorMessage, setErrorMessage] = useState<string>("");
-  const [statusMessage, setStatusMessage] = useState<string>("");
+  // Legacy AI overlays are found by `meta.aiOverlay` in the store (not React state) so
+  // Accept/Reject and "Clear feedback" come back after a reload. `pending` = suggest/answer
+  // overlays awaiting Accept/Reject; `feedback` = locked full-opacity feedback overlays.
+  const { pending: pendingImageIds, feedback: feedbackImageIds } = useAiOverlayShapes(editor);
+  // Legacy pipeline status pill: loading/confirmations fade on their own, failures stay
+  // until Retry/Dismiss (see generationStatusView in StatusIndicator.tsx).
+  const [generation, setGeneration] = useState<GenerationState>({ kind: "idle" });
+  const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The last request's shape so Retry re-runs the same mode/prompt.
+  const lastRequestRef = useRef<GenerationRequest | null>(null);
+  const showGeneration = useCallback((next: GenerationState, clearAfterMs?: number) => {
+    if (clearTimerRef.current) {
+      clearTimeout(clearTimerRef.current);
+      clearTimerRef.current = null;
+    }
+    setGeneration(next);
+    if (clearAfterMs) {
+      clearTimerRef.current = setTimeout(() => {
+        clearTimerRef.current = null;
+        setGeneration({ kind: "idle" });
+      }, clearAfterMs);
+    }
+  }, []);
+  useEffect(
+    () => () => {
+      if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
+    },
+    [],
+  );
   const [isVoiceSessionActive, setIsVoiceSessionActive] = useState(false);
-  const [assistanceMode, setAssistanceMode] = useState<"off" | "feedback" | "suggest" | "answer">("off");
+  // Help mode is remembered per board on this device (default Feedback).
+  const [assistanceMode, setAssistanceMode] = useAssistanceMode(id);
   const [aiModel, setAiModel] = useState<AIModel>("gemini");
   const { settings: aiPerf, update: updateAiPerf } = useAIPerfSettings();
   const isProcessingRef = useRef(false);
@@ -1005,8 +1151,18 @@ function BoardContent({ id }: { id: string }) {
   const lastCanvasImageRef = useRef<string | null>(null);
   const isUpdatingImageRef = useRef(false);
 
+  // Live Math layer: per-device switch (localStorage) gated by the deploy-time kill switch.
+  const { settings: live, update: updateLive } = useLiveSettings();
+  const liveEnabled = live.enabled && !LIVE_KILL_SWITCH;
+  const controller = useLiveMath(editor, {
+    boardId: id,
+    mode: assistanceMode,
+    enabled: liveEnabled,
+    voiceActive: isVoiceSessionActive,
+  });
+
   // Helper function to get mode-aware status messages
-  const getStatusMessage = useCallback((mode: "off" | "feedback" | "suggest" | "answer", statusType: "generating" | "success") => {
+  const getStatusMessage = useCallback((mode: AssistanceMode, statusType: "generating" | "success") => {
     if (statusType === "generating") {
       switch (mode) {
         case "off":
@@ -1054,12 +1210,24 @@ function BoardContent({ id }: { id: string }) {
       const mode = options?.modeOverride ?? assistanceMode;
       if (mode === "off") return false;
 
+      // Never start a model call while offline; only say so when the student asked
+      // explicitly (Draw help / voice) — the idle trigger stays quiet.
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        if (options?.force) showGeneration({ kind: "offline" });
+        return false;
+      }
+
       // Check if canvas has content
       const shapeIds = editor.getCurrentPageShapeIds();
       if (shapeIds.size === 0) {
         return false;
       }
 
+      lastRequestRef.current = {
+        mode,
+        promptOverride: options?.promptOverride,
+        source: options?.source ?? "auto",
+      };
       isProcessingRef.current = true;
     
       // Create abort controller for this request chain
@@ -1073,15 +1241,20 @@ function BoardContent({ id }: { id: string }) {
         const viewportBounds = editor.getViewportPageBounds();
 
         const protectedIds = new Set<TLShapeId>();
+        // Live echoes / graphs / AI steps are hidden from the capture too, but they do
+        // not count as a "worksheet" layer (hasProtectedShapes stays isProtected-only).
+        const liveIds = new Set<TLShapeId>();
         for (const sid of shapeIds) {
           const shape = editor.getShape(sid);
-          if ((shape?.meta as any)?.isProtected) {
+          if (shape?.meta?.isProtected) {
             protectedIds.add(sid);
+          } else if (isLiveMeta(shape?.meta)) {
+            liveIds.add(sid);
           }
         }
 
         const shapesToCapture = [...shapeIds].filter(
-          (id) => !pendingImageIds.includes(id) && !protectedIds.has(id),
+          (id) => !pendingImageIds.includes(id) && !protectedIds.has(id) && !liveIds.has(id),
         );
 
         if (shapesToCapture.length === 0) {
@@ -1140,8 +1313,6 @@ function BoardContent({ id }: { id: string }) {
         // don't run the expensive OCR / help-check / generation pipeline again.
         if (!options?.force && lastCanvasImageRef.current === base64) {
           isProcessingRef.current = false;
-          setStatus("idle");
-          setStatusMessage("");
           return false;
         }
         lastCanvasImageRef.current = base64;
@@ -1149,8 +1320,7 @@ function BoardContent({ id }: { id: string }) {
         if (signal.aborted) return false;
 
         // Step 2: Generate solution (Gemini decides if help is needed)
-        setStatus("generating");
-        setStatusMessage(getStatusMessage(mode, "generating"));
+        showGeneration({ kind: "generating", label: getStatusMessage(mode, "generating") });
 
         const effectiveModel =
           aiPerf.fastMode && aiModel === "gemini" ? "gemini-fast" : aiModel;
@@ -1175,32 +1345,15 @@ function BoardContent({ id }: { id: string }) {
           body.hasWorksheet = true;
         }
 
-        const solutionResponse = await fetch('/api/generate-solution', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-          signal,
-        });
+        const solutionData = await apiJson<GenerateSolutionResponse>(
+          "/api/generate-solution",
+          body,
+          { signal },
+        );
 
         if (signal.aborted) return false;
 
-        if (!solutionResponse.ok) {
-          const errBody = await solutionResponse.json().catch(() => ({}));
-          if (
-            solutionResponse.status === 402 ||
-            errBody?.error === 'credits_exhausted'
-          ) {
-            const msg =
-              errBody?.message ||
-              'Account credits depleted — please talk to Rushil to refill your account!';
-            toast.error(msg, { duration: 8000 });
-            throw new Error(msg);
-          }
-          throw new Error(errBody?.error || 'Solution generation failed');
-        }
-
-        const solutionData = await solutionResponse.json();
-        const imageUrl = solutionData.imageUrl as string | null | undefined;
+        const imageUrl = solutionData.imageUrl;
         const textContent = solutionData.textContent || '';
 
         logger.info({ 
@@ -1211,11 +1364,15 @@ function BoardContent({ id }: { id: string }) {
         }, 'Solution data received');
 
         // If the model didn't return an image, it means Gemini decided help isn't needed.
-        // Log the reason and gracefully stop.
+        // Say so briefly (the pill leaves "generating", which also hides the skeleton) so
+        // the wait never ends in silence.
         if (!imageUrl || signal.aborted) {
           logger.info({ textContent }, 'Gemini decided help is not needed');
-          setStatus("idle");
-          setStatusMessage("");
+          if (signal.aborted) {
+            showGeneration({ kind: "idle" });
+          } else {
+            showGeneration({ kind: "info", label: GENERATION_COPY.nothingToAdd }, INFO_CLEAR_MS);
+          }
           isProcessingRef.current = false;
           return false;
         }
@@ -1225,7 +1382,6 @@ function BoardContent({ id }: { id: string }) {
         if (signal.aborted) return false;
 
         // Create asset and shape
-        const assetId = AssetRecordType.createId();
         const img = new Image();
         logger.info('Loading image into asset...');
         
@@ -1248,22 +1404,26 @@ function BoardContent({ id }: { id: string }) {
         // Set flag to prevent these shape additions from triggering activity detection
         isUpdatingImageRef.current = true;
 
-        editor.createAssets([
-          {
-            id: assetId,
-            type: 'image',
-            typeName: 'asset',
-            props: {
-              name: 'generated-solution.png',
-              src: processedImageUrl,
-              w: img.width,
-              h: img.height,
-              mimeType: 'image/png',
-              isAnimated: false,
-            },
-            meta: {},
-          },
-        ]);
+        // The PNG is uploaded to Storage (board-assets bucket) and the asset record only
+        // holds its URL, so the snapshot stays small. On upload failure the asset falls
+        // back to the inline data URL (warned once) and the board still works.
+        const { assetId, inline } = await uploadDataUrlAsset(editor, {
+          dataUrl: processedImageUrl,
+          name: 'generated-solution.png',
+          width: img.width,
+          height: img.height,
+          source: 'ai',
+          signal,
+        });
+        if (inline) warnInlineAssetFallbackOnce();
+
+        if (signal.aborted) {
+          // The student kept drawing while the image uploaded: drop the orphaned asset
+          // (the asset store removes the Storage object) and release the activity guard.
+          editor.deleteAssets([assetId]);
+          isUpdatingImageRef.current = false;
+          return false;
+        }
 
         const shapeId = createShapeId();
         const scale = Math.min(
@@ -1276,7 +1436,14 @@ function BoardContent({ id }: { id: string }) {
         // In "feedback" mode, show at full opacity without accept/reject
         // In "suggest" and "answer" modes, show at reduced opacity with accept/reject
         const isFeedbackMode = mode === "feedback";
-        
+
+        // Render the overlay BELOW every Live shape (echoes, graphs, AI steps) so a
+        // full-viewport annotation never hides them. Computed before creation because
+        // reorder calls skip locked shapes.
+        const overlayIndex = overlayIndexBelowLive(editor);
+
+        // `meta.aiOverlay` marks the shape for useAiOverlayShapes: feedback overlays feed
+        // "Clear feedback", suggest/answer overlays feed Accept/Reject (also after reload).
         editor.createShape({
           id: shapeId,
           type: "image",
@@ -1284,6 +1451,8 @@ function BoardContent({ id }: { id: string }) {
           y: viewportBounds.y + (viewportBounds.height - shapeHeight) / 2,
           opacity: isFeedbackMode ? 1.0 : 0.3,
           isLocked: true,
+          ...(overlayIndex ? { index: overlayIndex } : {}),
+          meta: aiOverlayMeta(mode),
           props: {
             w: shapeWidth,
             h: shapeHeight,
@@ -1295,25 +1464,17 @@ function BoardContent({ id }: { id: string }) {
         // new annotation behind them so the worksheet always renders on top.
         if (hasProtectedShapes) {
           try {
-            editor.sendToBack([shapeId]);
+            // sendToBack ignores locked shapes unless the lock is bypassed.
+            editor.run(() => editor.sendToBack([shapeId]), { ignoreShapeLock: true });
           } catch (e) {
             // Non-fatal: z-ordering is best-effort.
             logger.warn({ error: e }, "Failed to send annotation to back");
           }
         }
 
-        // Only add to pending list if not in feedback mode
-        if (!isFeedbackMode) {
-          setPendingImageIds((prev) => [...prev, shapeId]);
-        }
-        
+
         // Show success message briefly, then return to idle
-        setStatus("success");
-        setStatusMessage(getStatusMessage(mode, "success"));
-        setTimeout(() => {
-          setStatus("idle");
-          setStatusMessage("");
-        }, 2000);
+        showGeneration({ kind: "success", label: getStatusMessage(mode, "success") }, SUCCESS_CLEAR_MS);
 
         // Reset flag after a brief delay
         setTimeout(() => {
@@ -1322,22 +1483,26 @@ function BoardContent({ id }: { id: string }) {
 
         return true;
       } catch (error) {
-        if (signal.aborted) {
-          setStatus("idle");
-          setStatusMessage("");
+        // The guard is set right before the (awaited) asset upload; never leave it stuck on.
+        isUpdatingImageRef.current = false;
+        if (signal.aborted || isAbortError(error)) {
+          // The student kept drawing: not an error, the next idle run picks it up.
+          showGeneration({ kind: "idle" });
           return false;
         }
-        
+
         logger.error({ error }, 'Auto-generation error');
-        setErrorMessage(error instanceof Error ? error.message : 'Generation failed');
-        setStatus("error");
-        setStatusMessage("");
-        
-        // Clear error after 3 seconds
-        setTimeout(() => {
-          setStatus("idle");
-          setErrorMessage("");
-        }, 3000);
+        // The pill keeps the failure until Retry/Dismiss: 402 has no Retry, 429 carries the
+        // server's wait hint, 401 sends the student back to sign in.
+        const described = describeApiError(error, { fallback: GENERATION_COPY.failed });
+        showGeneration({
+          kind: "error",
+          message: described.message,
+          retryable: described.retryable,
+          retryAfterMs: described.retryAfterMs,
+          signIn: described.signIn,
+        });
+        if (described.signIn) router.replace("/login");
 
         return false;
       } finally {
@@ -1345,23 +1510,58 @@ function BoardContent({ id }: { id: string }) {
         abortControllerRef.current = null;
       }
     },
-    [editor, pendingImageIds, isVoiceSessionActive, assistanceMode, aiModel, aiPerf, getStatusMessage],
+    [editor, pendingImageIds, isVoiceSessionActive, assistanceMode, aiModel, aiPerf, getStatusMessage, showGeneration, router],
   );
 
-  const handleAutoGeneration = useCallback(() => {
-    void generateSolution({ source: "auto" });
+  const retryGeneration = useCallback(() => {
+    const last = lastRequestRef.current;
+    void generateSolution({
+      force: true,
+      source: "auto",
+      modeOverride: last?.mode,
+      promptOverride: last?.promptOverride,
+    });
   }, [generateSolution]);
 
-  // Listen for user activity and trigger auto-generation after 2 seconds of inactivity
-  useDebounceActivity(handleAutoGeneration, 2000, editor, isUpdatingImageRef, isProcessingRef);
+  const dismissGeneration = useCallback(() => showGeneration({ kind: "idle" }), [showGeneration]);
+
+  const handleAutoGeneration = useCallback(() => {
+    // Don't burn credits while the tab is in the background; the next edit
+    // after the user comes back will schedule a fresh run.
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+      return;
+    }
+    // While Live owns the latest ink burst (recognized, still pending, or failed to read
+    // because the recognizer is down), the image pipeline stays quiet so an outage never
+    // turns into paid image generations; it still runs for non-math ink ('unhandled') and
+    // on "Draw help", which calls generateSolution({ force: true }) and skips this gate.
+    if (liveEnabled && legacyShouldSkip(LIVE_TIMING.legacyIdleMs)) {
+      return;
+    }
+    void generateSolution({ source: "auto" });
+  }, [generateSolution, liveEnabled]);
+
+  // Listen for user activity and trigger auto-generation after idle
+  // (2 s today; 4 s while Live is on so echoes land first).
+  useDebounceActivity(
+    handleAutoGeneration,
+    liveEnabled ? LIVE_TIMING.legacyIdleMs : 2000,
+    editor,
+    isUpdatingImageRef,
+    isProcessingRef,
+  );
 
   // Cancel in-flight requests when user edits the canvas
   useEffect(() => {
     if (!editor) return;
 
-    const handleEditorChange = () => {
+    const handleEditorChange = (entry: HistoryEntry<TLRecord>) => {
       // Ignore if we're just updating accepted/rejected images
       if (isUpdatingImageRef.current) {
+        return;
+      }
+      // Live echo/graph writes and AI overlays are not student edits (B1).
+      if (!isStudentActivity(entry)) {
         return;
       }
 
@@ -1369,8 +1569,7 @@ function BoardContent({ id }: { id: string }) {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
-        setStatus("idle");
-        setStatusMessage("");
+        showGeneration({ kind: "idle" });
         isProcessingRef.current = false;
       }
     };
@@ -1384,7 +1583,7 @@ function BoardContent({ id }: { id: string }) {
     return () => {
       dispose();
     };
-  }, [editor]);
+  }, [editor, showGeneration]);
 
   const handleAccept = useCallback(
     (shapeId: TLShapeId) => {
@@ -1393,12 +1592,17 @@ function BoardContent({ id }: { id: string }) {
       // Set flag to prevent triggering activity detection
       isUpdatingImageRef.current = true;
 
-      // First unlock to ensure we can update opacity
+      const current = editor.getShape(shapeId);
+      if (!current) return;
+
+      // First unlock to ensure we can update opacity; `accepted` takes the overlay out of
+      // the pending list (useAiOverlayShapes) and keeps it out after a reload.
       editor.updateShape({
         id: shapeId,
         type: "image",
         isLocked: false,
         opacity: 1,
+        meta: { ...current.meta, accepted: true },
       });
 
       // Then immediately lock it again to make it non-selectable
@@ -1407,9 +1611,6 @@ function BoardContent({ id }: { id: string }) {
         type: "image",
         isLocked: true,
       });
-
-      // Remove this shape from the pending list
-      setPendingImageIds((prev) => prev.filter((id) => id !== shapeId));
 
       // Reset flag after a brief delay
       setTimeout(() => {
@@ -1435,9 +1636,6 @@ function BoardContent({ id }: { id: string }) {
       
       editor.deleteShape(shapeId);
 
-      // Remove from pending list
-      setPendingImageIds((prev) => prev.filter((id) => id !== shapeId));
-
       // Reset flag after a brief delay
       setTimeout(() => {
         isUpdatingImageRef.current = false;
@@ -1446,247 +1644,36 @@ function BoardContent({ id }: { id: string }) {
     [editor]
   );
 
-  // Auto-save logic
-  useEffect(() => {
+  const handleClearFeedback = useCallback(() => {
     if (!editor) return;
 
-    let saveTimeout: NodeJS.Timeout;
+    // Only touch shapes that still exist (the user may have undone some).
+    const ids = feedbackImageIds.filter((sid) => editor.getShape(sid));
 
-    const handleChange = () => {
-      // Don't save during image updates
-      if (isUpdatingImageRef.current) return;
+    // Set flag to prevent triggering activity detection
+    isUpdatingImageRef.current = true;
 
-      clearTimeout(saveTimeout);
-      saveTimeout = setTimeout(async () => {
-        // If we're offline, skip auto-save to avoid noisy errors
-        if (typeof window !== "undefined" && window.navigator && !window.navigator.onLine) {
-          logger.warn({ id }, "Skipping auto-save while offline");
-          return;
-        }
+    if (ids.length > 0) {
+      // Unlock first, then delete (locked shapes are not deletable).
+      editor.updateShapes(
+        ids.map((sid) => ({ id: sid, type: "image" as const, isLocked: false })),
+      );
+      editor.deleteShapes(ids);
+    }
 
-        try {
-          // Validate editor state
-          if (!editor || !editor.store) {
-            console.warn("Editor or store not available for auto-save");
-            return;
-          }
+    // Reset flag after a brief delay
+    setTimeout(() => {
+      isUpdatingImageRef.current = false;
+    }, 100);
+  }, [editor, feedbackImageIds]);
 
-          const snapshot = getSnapshot(editor.store);
-          
-          if (!snapshot) {
-            console.warn("Failed to get snapshot from editor");
-            return;
-          }
-
-          // Ensure the snapshot is JSON-serializable before sending to Supabase
-          let safeSnapshot: unknown = snapshot;
-          try {
-            safeSnapshot = JSON.parse(JSON.stringify(snapshot));
-          } catch (e) {
-            console.error("Failed to serialize board snapshot:", e);
-            logger.error(
-              {
-                error:
-                  e instanceof Error
-                    ? { message: e.message, name: e.name, stack: e.stack }
-                    : String(e),
-                id,
-              },
-              "Failed to serialize board snapshot for auto-save"
-            );
-            return;
-          }
-          
-          // Generate a thumbnail
-          let previewUrl = null;
-          try {
-            const shapeIds = editor.getCurrentPageShapeIds();
-            if (shapeIds.size > 0) {
-              const viewportBounds = editor.getViewportPageBounds();
-              const { blob } = await editor.toImage([...shapeIds], {
-                format: "png",
-                bounds: viewportBounds,
-                background: false,
-                scale: 0.5,
-              });
-              
-              if (blob) {
-                previewUrl = await new Promise<string>((resolve) => {
-                  const reader = new FileReader();
-                  reader.onloadend = () => resolve(reader.result as string);
-                  reader.readAsDataURL(blob);
-                });
-              }
-            }
-          } catch (e) {
-            console.warn("Thumbnail generation failed:", e);
-            logger.warn(
-              {
-                error:
-                  e instanceof Error
-                    ? { message: e.message, name: e.name, stack: e.stack }
-                    : String(e),
-                id,
-              },
-              "Thumbnail generation failed, continuing without preview"
-            );
-          }
-
-          const updateData: any = { 
-            data: safeSnapshot,
-            updated_at: new Date().toISOString()
-          };
-
-          if (previewUrl) {
-            // Guard against oversized previews that may violate DB column limits
-            const MAX_PREVIEW_LENGTH = 8000;
-            if (previewUrl.length > MAX_PREVIEW_LENGTH) {
-              console.warn(`Preview too large (${previewUrl.length} bytes), skipping`);
-              logger.warn(
-                { id, length: previewUrl.length, maxLength: MAX_PREVIEW_LENGTH },
-                "Preview too large, skipping storing preview in database"
-              );
-            } else {
-              updateData.preview = previewUrl;
-            }
-          }
-
-          // Validate Supabase client and configuration
-          if (!supabase) {
-            throw new Error("Supabase client not initialized");
-          }
-
-          // Check if Supabase is properly configured
-          if (typeof window !== 'undefined') {
-            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-            const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-            
-            if (!supabaseUrl || supabaseUrl === 'https://placeholder.supabase.co') {
-              throw new Error("Supabase URL is not configured. Please set NEXT_PUBLIC_SUPABASE_URL in your environment variables.");
-            }
-            
-            if (!supabaseKey || supabaseKey === 'placeholder-key') {
-              throw new Error("Supabase anon key is not configured. Please set NEXT_PUBLIC_SUPABASE_ANON_KEY in your environment variables.");
-            }
-          }
-
-          console.log(`Attempting to save board ${id}...`);
-          
-          const { error, data } = await supabase
-            .from("whiteboards")
-            .update(updateData)
-            .eq("id", id)
-            .select();
-
-          if (error) {
-            // Special-case Supabase statement timeouts (code 57014).
-            // These can happen if the user navigates away mid-request or if
-            // the database is briefly under load. Treat them as non-fatal and
-            // avoid noisy console errors.
-            const isTimeoutError =
-              (error as any)?.code === "57014" ||
-              /statement timeout/i.test(error.message ?? "");
-
-            if (isTimeoutError) {
-              console.warn("Supabase auto-save timed out, skipping noisy error log.", {
-                id,
-                code: (error as any)?.code,
-                message: error.message,
-              });
-
-              logger.warn(
-                {
-                  id,
-                  code: (error as any)?.code,
-                  message: error.message,
-                },
-                "Supabase auto-save timed out (often due to navigation away); ignoring.",
-              );
-
-              // Don't throw so the outer catch block doesn't treat this as a hard error.
-              return;
-            }
-
-            // For all other errors, log detailed information and surface a clear message.
-            const errorDetails = {
-              message: error.message,
-              code: (error as any)?.code,
-              details: (error as any)?.details,
-              hint: (error as any)?.hint,
-              // Capture all properties for richer debugging
-              ...Object.getOwnPropertyNames(error).reduce((acc, key) => {
-                acc[key] = (error as any)[key];
-                return acc;
-              }, {} as Record<string, any>),
-            };
-
-            console.error("Supabase update error:", errorDetails);
-            throw new Error(
-              `Supabase error: ${error.message || "Unknown error"} (code: ${
-                (error as any)?.code || "N/A"
-              })`,
-            );
-          }
-          
-          if (!data || data.length === 0) {
-            console.warn("No rows updated - board may not exist:", id);
-          }
-          
-          logger.info({ id }, "Board auto-saved successfully");
-        } catch (error) {
-          // Extract all error properties for proper logging
-          const errorInfo: Record<string, any> = {
-            id,
-            errorType: typeof error,
-            errorConstructor: error?.constructor?.name,
-          };
-
-          if (error instanceof Error) {
-            errorInfo.message = error.message;
-            errorInfo.name = error.name;
-            errorInfo.stack = error.stack;
-          } else if (error && typeof error === 'object') {
-            // Extract all enumerable and non-enumerable properties
-            Object.getOwnPropertyNames(error).forEach(key => {
-              try {
-                errorInfo[key] = (error as any)[key];
-              } catch (e) {
-                errorInfo[key] = '[Unable to access property]';
-              }
-            });
-          } else {
-            errorInfo.value = String(error);
-          }
-
-          // Use console.error for proper browser error logging
-          console.error("Error auto-saving board:", errorInfo);
-          
-          // Also log with logger for consistency
-          logger.error(
-            {
-              error: errorInfo,
-              id,
-            },
-            "Error auto-saving board"
-          );
-        }
-      }, 2000);
-    };
-
-    const dispose = editor.store.listen(handleChange, {
-      source: 'user',
-      scope: 'document'
-    });
-
-    return () => {
-      clearTimeout(saveTimeout);
-      dispose();
-    };
-  }, [editor, id]);
+  // Auto-save through the SaveQueue (2 s debounce, offline backup + replay, optimistic
+  // concurrency on `version`, size guard + Storage offload): src/hooks/useSnapshotSave.ts
+  const { sync, retry: retrySave } = useSnapshotSave(editor, id, isUpdatingImageRef, initialVersion);
 
   return (
     <>
-      <GenerationSkeleton visible={aiPerf.skeletonEnabled && status === "generating"} />
+      <GenerationSkeleton visible={aiPerf.skeletonEnabled && generation.kind === "generating"} />
 
       {/* Tabs at top left */}
       {!isVoiceSessionActive && (
@@ -1699,19 +1686,24 @@ function BoardContent({ id }: { id: string }) {
             display: 'flex',
             alignItems: 'center',
             gap: '12px',
+            // Wrap on narrow screens (400 px) so the Live toggle/pill stay reachable;
+            // leave room for tldraw's style panel pinned at the top-right.
+            flexWrap: 'wrap',
+            maxWidth: 'calc(100% - 180px)',
           }}
         >
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => router.back()}
+            aria-label="Back to my whiteboards"
+            onClick={() => router.push("/")}
           >
             <ArrowLeft01Icon size={20} strokeWidth={2} />
           </Button>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Tabs
               value={assistanceMode}
-              onValueChange={(value) => setAssistanceMode(value as "off" | "feedback" | "suggest" | "answer")}
+              onValueChange={(value) => setAssistanceMode(value as AssistanceMode)}
               className="w-auto shadow-sm rounded-lg"
             >
               <TabsList>
@@ -1722,6 +1714,33 @@ function BoardContent({ id }: { id: string }) {
               </TabsList>
             </Tabs>
             <ModeInfoDialog />
+            <LiveToggle
+              checked={live.enabled}
+              disabled={LIVE_KILL_SWITCH}
+              onCheckedChange={(v) => updateLive({ enabled: v })}
+            />
+            {liveEnabled && assistanceMode === "answer" && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-white shadow-sm"
+                title={LIVE_COPY.solve.stepsHint}
+                onClick={() => controller.requestSolve()}
+              >
+                <ListOrdered className="h-4 w-4" />
+                <span className="ml-1.5">{LIVE_COPY.solve.steps}</span>
+              </Button>
+            )}
+            {liveEnabled && (
+              <LiveErrorBoundary>
+                <LiveStatusPill
+                  editor={editor}
+                  onDrawHelp={() => void generateSolution({ force: true, source: "auto" })}
+                  onClearMarks={() => controller.clearMarks()}
+                />
+              </LiveErrorBoundary>
+            )}
+            <SaveStatus sync={sync} onRetry={() => void retrySave()} />
             <ModelBadge
               model={aiModel}
               onClick={() => setAiModel((m) => (m === "gemini" ? "gpt" : "gemini"))}
@@ -1741,6 +1760,9 @@ function BoardContent({ id }: { id: string }) {
             {features.stickers && <StickerLibrary />}
             {features.worksheetGen && <WorksheetGenerator model={aiModel} />}
             {features.pdfUpload && <PdfUpload />}
+            {/* Report lives in the bar (after the Live pill) so it never overlaps
+                tldraw's style panel at the top-right. */}
+            <BugReportButton boardId={id} />
           </div>
         </div>
       )}
@@ -1748,9 +1770,9 @@ function BoardContent({ id }: { id: string }) {
       {/* When a voice session is active, let the voice banner own the top-center space. */}
       {!isVoiceSessionActive && (
         <StatusIndicator
-          status={status}
-          errorMessage={errorMessage}
-          customMessage={statusMessage}
+          state={generation}
+          onRetry={retryGeneration}
+          onDismiss={dismissGeneration}
         />
       )}
       {!isVoiceSessionActive && (
@@ -1766,23 +1788,22 @@ function BoardContent({ id }: { id: string }) {
           <CreditsBanner />
         </div>
       )}
-      {!isVoiceSessionActive && (
-        <div
-          style={{
-            position: "absolute",
-            top: "16px",
-            right: "16px",
-            zIndex: 1000,
-          }}
-        >
-          <BugReportButton boardId={id} />
-        </div>
+      {!isVoiceSessionActive && liveEnabled && (
+        <LiveErrorBoundary>
+          <LiveHintLayer editor={editor} controller={controller} />
+        </LiveErrorBoundary>
       )}
       <ImageActionButtons
         pendingImageIds={pendingImageIds}
         isVoiceSessionActive={isVoiceSessionActive}
         onAccept={handleAccept}
         onReject={handleReject}
+      />
+      <ClearFeedbackButton
+        feedbackImageIds={feedbackImageIds}
+        isVoiceSessionActive={isVoiceSessionActive}
+        hasPendingImages={pendingImageIds.length > 0}
+        onClear={handleClearFeedback}
       />
       <VoiceAgentControls
         onSessionChange={setIsVoiceSessionActive}
@@ -1800,13 +1821,66 @@ function BoardContent({ id }: { id: string }) {
   );
 }
 
+type BoardSnapshot = Partial<TLEditorSnapshot> | TLStoreSnapshot;
+
+/**
+ * Restore the snapshot on a throwaway store with the same shape/binding utils as the real
+ * editor. Returns the thrown error (never throws) so the page can refuse to mount <Tldraw>
+ * instead of leaving an empty editor that the autosave could write back.
+ */
+function snapshotRestoreError(snapshot: BoardSnapshot): unknown {
+  let probe: ReturnType<typeof createTLStore> | null = null;
+  try {
+    probe = createTLStore({
+      shapeUtils: [...defaultShapeUtils, ...liveShapeUtils],
+      bindingUtils: defaultBindingUtils,
+    });
+    loadSnapshot(probe, snapshot);
+    return null;
+  } catch (e) {
+    return e ?? new Error("snapshot restore failed");
+  } finally {
+    probe?.dispose();
+  }
+}
+
+type PageLoadState = { kind: "loading" } | BoardLoadState;
+
 export default function BoardPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
   const { user, loading: authLoading } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [initialData, setInitialData] = useState<any>(null);
+  const [loadState, setLoadState] = useState<PageLoadState>({ kind: "loading" });
+  // Bumped by Retry; the load effect depends on it so it re-runs.
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [initialData, setInitialData] = useState<BoardSnapshot | null>(null);
+  // `whiteboards.version` at load time: the autosave's optimistic-concurrency baseline.
+  const [initialVersion, setInitialVersion] = useState<number | null>(null);
+  // tldraw's own paste/drop/upload of images goes to Storage ('<uid>/<boardId>/<assetId>.<ext>')
+  // instead of being embedded as a data URL in the snapshot.
+  // `getAsset` lets the store derive object paths for assets restored from the snapshot
+  // (not uploaded this session) so `editor.deleteAssets` also removes the Storage object.
+  const userId = user?.id;
+  // The store is created before the editor exists; `attach` (called from onMount) gives its
+  // `getAsset` the mounted editor. A closure variable rather than a ref so nothing reads a
+  // ref during render.
+  const assetStoreBundle = useMemo(() => {
+    if (!userId) return undefined;
+    let mounted: Editor | null = null;
+    const store = createBoardAssetStore({
+      supabase,
+      userId,
+      boardId: id,
+      getAsset: (assetId: TLAssetId) => mounted?.getAsset(assetId),
+    });
+    return {
+      store,
+      attach(editor: Editor) {
+        mounted = editor;
+      },
+    };
+  }, [userId, id]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -1814,66 +1888,134 @@ export default function BoardPage() {
     }
   }, [user, authLoading, router]);
 
+  const retryLoad = useCallback(() => {
+    setInitialData(null);
+    setInitialVersion(null);
+    setLoadState({ kind: "loading" });
+    setLoadAttempt((n) => n + 1);
+  }, []);
+
   useEffect(() => {
     if (!user) return;
+    let cancelled = false;
     async function loadBoard() {
+      let result: BoardLoadState;
+      let snapshot: BoardSnapshot | null = null;
+      let version: number | null = null;
       try {
         const { data, error } = await supabase
           .from('whiteboards')
-          .select('data')
+          .select('data, version')
           .eq('id', id)
           .single();
 
-        if (error) throw error;
-
-        if (data) {
+        result = loadStateFor({ error, row: data });
+        if (result.kind === "ready" && data) {
           if (data.data && Object.keys(data.data).length > 0) {
-            setInitialData(data.data);
+            // `data` is a jsonb column holding a tldraw snapshot. Prove it restores before
+            // the editor exists: a snapshot that throws must never leave an empty canvas.
+            snapshot = data.data as BoardSnapshot;
+            const restoreError = snapshotRestoreError(snapshot);
+            if (restoreError) result = loadStateFor({ row: data, restoreError });
           }
+          // bigint arrives as a JSON number (PostgREST); tolerate a string just in case.
+          const v = typeof data.version === "string" ? Number(data.version) : data.version;
+          version = typeof v === "number" && Number.isFinite(v) ? v : null;
         }
       } catch (e) {
-        console.error("Error loading board:", e);
-        toast.error("Failed to load board");
-      } finally {
-        setLoading(false);
+        // supabase-js only throws for transport failures (offline, DNS, aborted).
+        result = loadStateFor({ error: { message: e instanceof Error ? e.message : String(e) } });
       }
+      if (cancelled) return;
+      if (result.kind !== "ready") {
+        logger.warn({ id, kind: result.kind, detail: result.detail }, "Board load failed");
+        setLoadState(result);
+        return;
+      }
+      setInitialData(snapshot);
+      setInitialVersion(version);
+      setLoadState({ kind: "ready", message: "" });
     }
-    loadBoard();
-  }, [id, user]);
+    void loadBoard();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, user, loadAttempt]);
 
-  if (authLoading || !user || loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-gray-50">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-          <p className="text-gray-500 font-medium animate-pulse">Loading your canvas...</p>
-        </div>
-      </div>
-    );
+  if (authLoading || !user || loadState.kind === "loading") {
+    return <BoardLoading label={loadAttempt > 0 ? BOARD_LOAD_COPY.retrying : BOARD_LOAD_COPY.loading} />;
+  }
+
+  if (loadState.kind !== "ready") {
+    // Never mount <Tldraw> here: an empty editor plus autosave could overwrite the board.
+    return <BoardLoadError state={loadState} onRetry={retryLoad} />;
   }
 
   return (
     <div style={{ position: "fixed", inset: 0 }}>
       <Tldraw
-        overrides={hugeIconsOverrides}
+        shapeUtils={liveShapeUtils}
+        tools={liveTools}
+        overrides={boardOverrides}
         licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
+        assets={assetStoreBundle?.store}
         components={{
           MenuPanel: null,
           NavigationPanel: null,
           HelperButtons: null,
+          Toolbar: LiveToolbar,
         }}
         onMount={(editor) => {
+          assetStoreBundle?.attach(editor);
           if (initialData) {
             try {
               loadSnapshot(editor.store, initialData);
             } catch (e) {
-              console.error("Failed to load snapshot:", e);
-              toast.error("Failed to restore canvas state");
+              // Already validated on a probe store, so this is a last line of defense:
+              // unmount the editor before anything can be saved from it.
+              logger.error({ id, error: e instanceof Error ? e.message : String(e) }, "Failed to load snapshot");
+              setLoadState(loadStateFor({ row: initialData, restoreError: e }));
+              return;
             }
+          }
+          // An overlay the student never accepted is a proposal, not part of the board: it
+          // would otherwise reopen full-canvas over work they have moved on from. Dropping
+          // it here is the same outcome as Reject (see dropPendingAiOverlays).
+          const dropped = dropPendingAiOverlays(editor);
+          if (dropped.length > 0) logger.info({ id, count: dropped.length }, "Dropped pending AI overlays on load");
+          // Boards saved before the asset store shipped still carry base64 images: move
+          // them to Storage in the background. The rewrite is a store change, so the
+          // autosave persists the new URLs; only failures are surfaced.
+          void offloadAssetsOnce(editor)
+            .then((result) => {
+              if (result.migrated > 0 || result.failed.length > 0) {
+                logger.info(
+                  {
+                    id,
+                    migrated: result.migrated,
+                    failed: result.failed.length,
+                    bytesBefore: result.bytesBefore,
+                    bytesAfter: result.bytesAfter,
+                  },
+                  "On-load asset offload finished",
+                );
+              }
+              if (result.failed.length > 0) {
+                logger.warn({ id, failed: result.failed }, "On-load asset offload left images inline");
+                toast.warning(ASSET_COPY.offloadPartial);
+              }
+            })
+            .catch((e) => {
+              logger.warn({ id, error: e instanceof Error ? e.message : String(e) }, "On-load asset offload failed");
+              toast.warning(ASSET_COPY.offloadPartial);
+            });
+          if (process.env.NODE_ENV !== "production") {
+            // Dev-only handle for recording fixtures / poking the store from devtools.
+            (window as unknown as { __agathonEditor?: Editor }).__agathonEditor = editor;
           }
         }}
       >
-        <BoardContent id={id} />
+        <BoardContent id={id} initialVersion={initialVersion} />
       </Tldraw>
     </div>
   );

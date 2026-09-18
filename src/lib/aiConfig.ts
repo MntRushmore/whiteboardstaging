@@ -7,13 +7,16 @@
  */
 
 import { NextResponse } from 'next/server';
+import { isPlaceholderValue } from '@/lib/env';
 
-export type ProviderId = 'openrouter' | 'openai' | 'mistral';
+export type ProviderId = 'openrouter' | 'openai' | 'mathpix';
 
 export interface ProviderSpec {
   id: ProviderId;
   label: string;
   envVar: string;
+  /** Additional variables that must also be set for this provider to count as configured. */
+  extraEnvVars?: string[];
   /** Where the operator gets a key. */
   signupUrl: string;
   /** Which product features stop working without this key. */
@@ -32,6 +35,7 @@ export const PROVIDERS: Record<ProviderId, ProviderSpec> = {
       'Solution / hint generation',
       'Worksheet generation',
       'Automatic "needs help" detection',
+      'Handwriting OCR (and the fallback math recognizer)',
       'Voice workspace analysis',
       'Credit balance display',
     ],
@@ -45,12 +49,13 @@ export const PROVIDERS: Record<ProviderId, ProviderSpec> = {
     features: ['Realtime voice tutor'],
     required: false,
   },
-  mistral: {
-    id: 'mistral',
-    label: 'Mistral',
-    envVar: 'MISTRAL_API_KEY',
-    signupUrl: 'https://console.mistral.ai/api-keys',
-    features: ['Handwriting / PDF OCR'],
+  mathpix: {
+    id: 'mathpix',
+    label: 'Mathpix',
+    envVar: 'MATHPIX_APP_KEY',
+    extraEnvVars: ['MATHPIX_APP_ID'],
+    signupUrl: 'https://console.mathpix.com/',
+    features: ['Realtime handwritten math recognition (falls back to OpenRouter vision when absent)'],
     required: false,
   },
 };
@@ -62,11 +67,16 @@ export function getSiteUrl(): string {
 
 /** Returns the operator's key for a provider, or null if unset. */
 export function getKey(provider: ProviderId): string | null {
-  const raw = process.env[PROVIDERS[provider].envVar];
+  const spec = PROVIDERS[provider];
+  const raw = process.env[spec.envVar];
   if (!raw) return null;
   const trimmed = raw.trim();
   // Guard against placeholder values copied straight out of .env.example.
-  if (!trimmed || /^(your|replace|changeme|xxx)/i.test(trimmed)) return null;
+  if (!trimmed || isPlaceholderValue(trimmed)) return null;
+  for (const extra of spec.extraEnvVars ?? []) {
+    const extraRaw = process.env[extra];
+    if (!extraRaw || isPlaceholderValue(extraRaw)) return null;
+  }
   return trimmed;
 }
 

@@ -1,0 +1,17 @@
+-- Local seed (applied by `npx supabase db reset` after every migration).
+--
+-- Intentionally contains no rows: every application table references
+-- auth.users, and users cannot be created safely from SQL. Create the local
+-- QA account with the Auth API instead:
+--
+--   node scripts/seed-local.mjs      # qa-student@example.com / password123
+--
+-- and verify the policies with:
+--
+--   node scripts/verify-rls.mjs
+--
+-- To allow-list yourself as a trainer locally after signing up:
+--   insert into public.trainers (user_id)
+--   select id from auth.users where email = 'you@example.com'
+--   on conflict do nothing;
+select 1;

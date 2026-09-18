@@ -1,132 +1,92 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { voiceLogger } from '@/lib/logger';
-import { requireKey, getSiteUrl } from '@/lib/aiConfig';
+import { z } from "zod";
+import { voiceLogger } from "@/lib/logger";
+import { requireUser } from "@/lib/server/auth";
+import { enforceCredits, runCharged } from "@/lib/server/billing";
+import { checkRateLimitDistributed, rateLimitedResponse } from "@/lib/server/rate-limit";
+import { TEXT_MODELS, openrouterChat } from "@/lib/server/openrouter";
+import { errorResponse, focusSchema, imageDataUrlSchema, parseJsonBody } from "@/lib/server/request";
+
+const bodySchema = z.object({
+  image: imageDataUrlSchema,
+  focus: focusSchema.nullish(),
+});
+
+const SYSTEM_PROMPT =
+  "You are analyzing a student whiteboard canvas. Describe what the user is working on, " +
+  "how far along they are, any apparent mistakes or gaps, and where they might need help. " +
+  "Be concrete and concise. You are only returning analysis for a voice assistant; " +
+  "do not invent actions or drawings.";
 
 /**
- * Uses Gemini 2.5 Flash (via OpenRouter) to analyze the current whiteboard image
- * and return a natural language description / analysis of the workspace.
+ * Uses a fast vision model (via OpenRouter) to analyze the current whiteboard
+ * image and return a natural language description / analysis of the workspace.
  */
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   const startTime = Date.now();
+  const requestId = crypto.randomUUID();
 
-  try {
-    const { image, focus } = await req.json();
+  const auth = await requireUser(req);
+  if ("response" in auth) return auth.response;
+  const { user, token } = auth;
 
-    if (!image) {
-      voiceLogger.warn('No image provided to analyze-workspace route');
-      return NextResponse.json(
-        { error: 'No image provided' },
-        { status: 400 },
-      );
-    }
+  const log = voiceLogger.child({ requestId, userId: user.id, task: "analyze-workspace" });
 
-    // BYOK: the operator of this deployment supplies their own key.
-    const openrouterKey = requireKey('openrouter');
-    if (!openrouterKey.ok) {
-      voiceLogger.error('OPENROUTER_API_KEY is not configured');
-      return openrouterKey.response;
-    }
+  const rl = await checkRateLimitDistributed({ token, userId: user.id, bucket: "analyzeWorkspace" });
+  if (!rl.ok) {
+    log.warn({ retryAfterMs: rl.retryAfterMs, backend: rl.backend }, "Workspace analysis rate limited");
+    return rateLimitedResponse(rl.retryAfterMs, rl.backend);
+  }
 
-    const systemPrompt =
-      'You are analyzing a student whiteboard canvas. Describe what the user is working on, ' +
-      'how far along they are, any apparent mistakes or gaps, and where they might need help. ' +
-      'Be concrete and concise. You are only returning analysis for a voice assistant; ' +
-      'do not invent actions or drawings.';
+  const parsed = await parseJsonBody(req, bodySchema);
+  if ("response" in parsed) {
+    log.warn("Invalid analyze-workspace request");
+    return parsed.response;
+  }
+  const { image, focus } = parsed.data;
 
+  // Charge credits before the provider call; runCharged refunds them on any non-2xx (see src/lib/server/billing.ts).
+  const billing = await enforceCredits({ token, route: "voice/analyze-workspace", requestId, model: TEXT_MODELS.fast }, log);
+  if ("response" in billing) return billing.response;
+
+  log.info({ imageSize: image.length, hasFocus: !!focus }, "Workspace analysis request started");
+
+  return runCharged({ token, requestId }, log, async () => {
     const userPrompt = focus
       ? `Here is a snapshot of the user canvas. Focus on: ${focus}`
-      : 'Here is a snapshot of the user canvas. Describe what they are working on and how you could help.';
+      : "Here is a snapshot of the user canvas. Describe what they are working on and how you could help.";
 
-    voiceLogger.info('Calling OpenRouter Gemini 2.5 Flash for workspace analysis');
+    log.info({ model: TEXT_MODELS.fast }, "Calling OpenRouter for workspace analysis");
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${openrouterKey.key}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': getSiteUrl(),
-        'X-Title': 'Agathon Classroom Staging - Voice Workspace Analysis',
-      },
-      body: JSON.stringify({
-        // Model name may vary; adjust if needed in configuration.
-        model: 'google/gemini-2.5-flash',
+    const data = await openrouterChat(
+      {
+        model: TEXT_MODELS.fast,
         messages: [
+          { role: "system", content: SYSTEM_PROMPT },
           {
-            role: 'system',
-            content: systemPrompt,
-          },
-          {
-            role: 'user',
+            role: "user",
             content: [
-              {
-                type: 'image_url',
-                image_url: {
-                  url: image,
-                },
-              },
-              {
-                type: 'text',
-                text: userPrompt,
-              },
+              { type: "image_url", image_url: { url: image } },
+              { type: "text", text: userPrompt },
             ],
           },
         ],
-      }),
-    });
+      },
+      { requestId, signal: req.signal, title: "Agathon Classroom Staging - Voice Workspace Analysis" },
+    );
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => null);
-      voiceLogger.error(
-        {
-          status: response.status,
-          error: errorData,
-        },
-        'OpenRouter Gemini 2.5 Flash API error',
-      );
-      return NextResponse.json(
-        { error: 'Workspace analysis failed' },
-        { status: 500 },
-      );
-    }
-
-    const data = await response.json();
-    const analysis =
-      data.choices?.[0]?.message?.content ??
-      data.choices?.[0]?.message?.text ??
-      '';
+    const message = data.choices?.[0]?.message;
+    const analysis = message?.content ?? message?.text ?? "";
 
     const duration = Date.now() - startTime;
-    voiceLogger.info(
+    log.info(
       {
         duration,
-        textLength: typeof analysis === 'string' ? analysis.length : 0,
+        textLength: typeof analysis === "string" ? analysis.length : 0,
         tokensUsed: data.usage?.total_tokens,
       },
-      'Workspace analysis completed successfully',
+      "Workspace analysis completed successfully",
     );
 
-    return NextResponse.json({
-      success: true,
-      analysis,
-    });
-  } catch (error) {
-    const duration = Date.now() - startTime;
-    voiceLogger.error(
-      {
-        duration,
-        error:
-          error instanceof Error
-            ? { message: error.message, name: error.name, stack: error.stack }
-            : error,
-      },
-      'Error analyzing workspace',
-    );
-
-    return NextResponse.json(
-      { error: 'Error analyzing workspace' },
-      { status: 500 },
-    );
-  }
+    return Response.json({ success: true, analysis });
+  }, (error) => errorResponse(error, log, { duration: Date.now() - startTime }));
 }
-
-

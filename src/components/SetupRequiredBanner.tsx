@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { KeyRound } from "lucide-react";
+import { setupBannerStateFor } from "@/lib/bannerState";
 
 type Provider = {
   id: string;
@@ -24,17 +25,25 @@ type Status = {
  */
 export function SetupRequiredBanner({ className = "" }: { className?: string }) {
   const [status, setStatus] = useState<Status | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch("/api/config/status", { cache: "no-store" });
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (!cancelled) setFailed(true);
+          return;
+        }
         const data = (await res.json()) as Status;
         if (!cancelled) setStatus(data);
       } catch {
-        // Silent — banner just hides.
+        // By design the banner hides when the status probe fails: it is an
+        // operator hint, not something a student can act on. The state is
+        // still explicit as data-state="hidden-error" so the DOM shows why
+        // nothing rendered.
+        if (!cancelled) setFailed(true);
       }
     })();
     return () => {
@@ -42,10 +51,13 @@ export function SetupRequiredBanner({ className = "" }: { className?: string }) 
     };
   }, []);
 
-  if (!status) return null;
+  const state = setupBannerStateFor(status, failed);
+  if (state === "hidden-error") {
+    return <span hidden data-state="hidden-error" data-banner="setup" />;
+  }
+  if (state !== "visible" || !status) return null;
 
   const missing = status.providers.filter((p) => !p.present);
-  if (missing.length === 0) return null;
 
   const blocking = missing.some((p) => p.required);
 
@@ -58,7 +70,10 @@ export function SetupRequiredBanner({ className = "" }: { className?: string }) 
     : "Some optional AI features are disabled.";
 
   return (
-    <div className={"rounded-lg border px-4 py-3 text-sm " + tone + " " + className}>
+    <div
+      data-state="visible"
+      className={"rounded-lg border px-4 py-3 text-sm " + tone + " " + className}
+    >
       <div className="flex items-start gap-3">
         <KeyRound className="mt-0.5 h-4 w-4 shrink-0" />
         <div className="space-y-2">

@@ -1,0 +1,26 @@
+<claude-code-hint v="1" type="plugin" value="vercel@claude-plugins-official" />
+Vercel CLI 56.3.0 (Node.js 22.14.0)
+Retrieving project…
+> Environment Variables found for rushmore/whiteboardstaging [135ms]
+
+ name                               value               environments        created     
+ NEXT_PUBLIC_TLDRAW_LICENSE_KEY     Encrypted           Development         22d ago     
+ NEXT_PUBLIC_TLDRAW_LICENSE_KEY     Encrypted           Preview             22d ago     
+ MATHPIX_APP_KEY                    Encrypted           Development         22d ago     
+ MATHPIX_APP_ID                     Encrypted           Development         22d ago     
+ MATHPIX_APP_KEY                    Encrypted           Preview             22d ago     
+ MATHPIX_APP_ID                     Encrypted           Preview             22d ago     
+ MATHPIX_APP_KEY                    Encrypted           Production          22d ago     
+ MATHPIX_APP_ID                     Encrypted           Production          22d ago     
+ OPENROUTER_API_KEY                 Encrypted           Development         22d ago     
+ OPENROUTER_API_KEY                 Encrypted           Preview             22d ago     
+ NEXT_PUBLIC_SITE_URL               Encrypted           Production          142d ago    
+ NEXT_PUBLIC_TLDRAW_LICENSE_KEY     Encrypted           Production          142d ago    
+ OPENROUTER_API_KEY                 Encrypted           Production          142d ago    
+ NEXT_PUBLIC_SUPABASE_ANON_KEY      Encrypted           Production          142d ago    
+ NEXT_PUBLIC_SUPABASE_URL           Encrypted           Production          142d ago    
+
+Common next commands:
+- `vercel env add`
+- `vercel env rm`
+- `vercel env pull`

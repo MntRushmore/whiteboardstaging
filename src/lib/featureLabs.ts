@@ -1,8 +1,18 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useReducer, useCallback, useRef } from "react";
+import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthProvider";
+import { describeError } from "@/lib/errorMessage";
+import {
+  FEATURE_SAVE_FAILED_MESSAGE,
+  FEATURE_SAVE_FAILED_TOAST,
+  canFetchSettings,
+  featureLabsReducer,
+  type FeatureLabsState,
+  type SaveFailure,
+} from "@/lib/featureLabsState";
 
 export type FeatureKey = "stickers" | "worksheetGen" | "pdfUpload";
 
@@ -70,54 +80,82 @@ function writeCache(features: Record<FeatureKey, boolean>) {
   }
 }
 
-export function useFeatureLabs() {
-  const { user } = useAuth();
-  const [features, setFeatures] = useState<Record<FeatureKey, boolean>>(
-    () => readCache() ?? DEFAULT_FEATURES,
-  );
-  const [loading, setLoading] = useState(true);
+export type FeatureSaveFailure = SaveFailure<FeatureKey>;
 
-  // Pull authoritative state from Supabase on mount / user change.
+export function useFeatureLabs() {
+  const { user, session } = useAuth();
+  const [state, dispatch] = useReducer(
+    featureLabsReducer<FeatureKey>,
+    undefined,
+    (): FeatureLabsState<FeatureKey> => ({
+      features: readCache() ?? DEFAULT_FEATURES,
+      saving: null,
+      failure: null,
+    }),
+  );
+  // Latest features for the persist call, without re-creating setFeature on
+  // every render (which would also re-run consumers' effects).
+  const featuresRef = useRef(state.features);
   useEffect(() => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
+    featuresRef.current = state.features;
+  }, [state.features]);
+
+  // The user id whose settings have been fetched from Supabase. `loading` is
+  // derived from it so the effect never needs a synchronous setState.
+  const [loadedUserId, markLoaded] = useReducer(
+    (_: string | null, id: string | null) => id,
+    null,
+  );
+  const loading = !!user && loadedUserId !== user.id;
+
+  // user_settings is RLS-protected: only ask once the session carries a bearer
+  // token, otherwise the request is a guaranteed 401 (one per page load).
+  const accessToken = session?.access_token ?? null;
+  const userId = session?.user?.id ?? null;
+  const ready = canFetchSettings(session);
+
+  useEffect(() => {
+    if (!ready || !userId) return;
     let cancelled = false;
     (async () => {
       const { data, error } = await supabase
         .from("user_settings")
         .select("features")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .maybeSingle();
 
       if (cancelled) return;
 
       if (!error && data?.features) {
         const merged = { ...DEFAULT_FEATURES, ...data.features };
-        setFeatures(merged);
+        dispatch({ type: "loaded", features: merged });
         writeCache(merged);
+      } else if (error) {
+        // Keep the cached copy; the panel still works and persists will retry.
+        console.warn("Feature Labs settings not loaded:", error);
       }
-      setLoading(false);
+      markLoaded(userId);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [user]);
+    // accessToken is listed so a fresh token after a retry re-triggers the load.
+  }, [ready, userId, accessToken]);
 
   const setFeature = useCallback(
     async (key: FeatureKey, enabled: boolean) => {
+      const previous = featuresRef.current[key];
+      const next = { ...featuresRef.current, [key]: enabled };
       // Optimistic update + cache.
-      setFeatures((prev) => {
-        const next = { ...prev, [key]: enabled };
-        writeCache(next);
-        return next;
-      });
+      dispatch({ type: "toggle", key, enabled });
+      writeCache(next);
 
-      if (!user) return;
+      if (!user) {
+        dispatch({ type: "persisted", key });
+        return;
+      }
 
-      const next = { ...features, [key]: enabled };
       const { error } = await supabase.from("user_settings").upsert({
         user_id: user.id,
         features: next,
@@ -125,10 +163,39 @@ export function useFeatureLabs() {
       });
       if (error) {
         console.error("Failed to persist feature toggle", error);
+        const reverted = { ...featuresRef.current, [key]: previous };
+        writeCache(reverted);
+        dispatch({
+          type: "persistFailed",
+          key,
+          wanted: enabled,
+          previous,
+          message: describeError(error, FEATURE_SAVE_FAILED_MESSAGE),
+        });
+        toast.error(FEATURE_SAVE_FAILED_TOAST);
+        return;
       }
+      dispatch({ type: "persisted", key });
     },
-    [features, user],
+    [user],
   );
 
-  return { features, setFeature, loading };
+  /** Re-sends the toggle that failed, if any. */
+  const retrySave = useCallback(() => {
+    const f = state.failure;
+    if (!f) return;
+    void setFeature(f.key, f.wanted);
+  }, [state.failure, setFeature]);
+
+  const dismissSaveFailure = useCallback(() => dispatch({ type: "dismissFailure" }), []);
+
+  return {
+    features: state.features,
+    setFeature,
+    loading,
+    saving: state.saving,
+    saveFailure: state.failure,
+    retrySave,
+    dismissSaveFailure,
+  };
 }

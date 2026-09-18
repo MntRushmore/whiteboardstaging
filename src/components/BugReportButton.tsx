@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useEditor } from "tldraw";
-import { Bug, Loader2 } from "lucide-react";
+import { Bug, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,6 +19,9 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { getClientLogs } from "@/lib/logger";
 import { useAuth } from "@/components/AuthProvider";
+import { describeError } from "@/lib/errorMessage";
+
+const SEND_FAILED_FALLBACK = "The report didn't reach us. Retry in a moment.";
 
 type Diagnostics = {
   boardId?: string;
@@ -59,6 +62,8 @@ export function BugReportButton({ boardId }: { boardId?: string }) {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Inline failure shown in the dialog (which stays open) with a Retry.
+  const [sendError, setSendError] = useState<string | null>(null);
 
   const captureScreenshot = async (): Promise<string | null> => {
     if (!editor) return null;
@@ -85,7 +90,9 @@ export function BugReportButton({ boardId }: { boardId?: string }) {
   };
 
   const handleSubmit = async () => {
+    if (submitting) return;
     setSubmitting(true);
+    setSendError(null);
     try {
       const screenshot = await captureScreenshot();
       const diagnostics = collectDiagnostics(boardId);
@@ -105,19 +112,27 @@ export function BugReportButton({ boardId }: { boardId?: string }) {
 
       toast.success("Report sent — thanks!");
       setMessage("");
+      setSendError(null);
       setOpen(false);
     } catch (e) {
       console.error("Bug report failed:", e);
-      toast.error(
-        `Couldn't send report: ${e instanceof Error ? e.message : "Unknown error"}`,
-      );
+      const detail = describeError(e, SEND_FAILED_FALLBACK);
+      setSendError(detail);
+      toast.error(`Couldn't send the report: ${detail}`);
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && submitting) return;
+        setOpen(next);
+        if (!next) setSendError(null);
+      }}
+    >
       <DialogTrigger asChild>
         <Button
           variant="outline"
@@ -153,6 +168,28 @@ export function BugReportButton({ boardId }: { boardId?: string }) {
             Sent: your message, a canvas screenshot, recent console logs, your
             browser info, and your account email.
           </p>
+          {sendError && (
+            <div
+              role="alert"
+              data-state="send-error"
+              className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800"
+            >
+              <span className="flex-1">
+                <span className="font-medium">Couldn&apos;t send the report.</span>{" "}
+                {sendError}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs bg-white"
+                onClick={handleSubmit}
+                disabled={submitting}
+              >
+                <RefreshCw className="w-3 h-3 mr-1" />
+                Retry
+              </Button>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button
@@ -168,6 +205,8 @@ export function BugReportButton({ boardId }: { boardId?: string }) {
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 Sending...
               </>
+            ) : sendError ? (
+              "Send again"
             ) : (
               "Send report"
             )}

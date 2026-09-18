@@ -8,7 +8,7 @@ async function loadPdfjs() {
   if (!pdfjsPromise) {
     pdfjsPromise = (async () => {
       const pdfjs = await import("pdfjs-dist");
-      const version = (pdfjs as any).version as string;
+      const version: string = pdfjs.version;
       // Use the matching version from the unpkg CDN. The .mjs is required
       // for pdfjs-dist v4+ ESM workers.
       pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.mjs`;

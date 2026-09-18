@@ -5,5 +5,11 @@
       "framework": "nextjs",
       "buildCommand": "npm run build"
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/admin/gc",
+      "schedule": "0 4 * * *"
+    }
+  ]
 }

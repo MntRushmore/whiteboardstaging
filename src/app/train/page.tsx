@@ -8,6 +8,7 @@ import {
   getSnapshot,
 } from "tldraw";
 import "tldraw/tldraw.css";
+import { liveShapeUtils } from "@/shapes";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, ArrowLeft, Lock, Save, RotateCcw, Check } from "lucide-react";
@@ -19,7 +20,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 
-const TRAINER_EMAIL = "rushilchopra123@gmail.com";
 const STORAGE_BUCKET = "training-data";
 
 DefaultColorThemePalette.lightMode.background = "#FFFFFF";
@@ -431,22 +431,54 @@ function TrainContent({
   );
 }
 
+type TrainerGate = "checking" | "authorized" | "denied";
+
 export default function TrainPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
+  // Trainer access is a row in public.trainers (RLS lets a user read only
+  // their own row), keyed by the user id we have checked so far.
+  const [gate, setGate] = useState<{ userId: string; status: TrainerGate } | null>(null);
+  const gateStatus: TrainerGate =
+    user && gate?.userId === user.id ? gate.status : "checking";
 
   useEffect(() => {
     if (loading) return;
     if (!user) {
       router.replace("/login");
-      return;
-    }
-    if (user.email !== TRAINER_EMAIL) {
-      router.replace("/");
     }
   }, [user, loading, router]);
 
-  if (loading || !user) {
+  useEffect(() => {
+    if (!user) return;
+    const userId = user.id;
+    let cancelled = false;
+
+    supabase
+      .from("trainers")
+      .select("user_id")
+      .eq("user_id", userId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.error("Trainer lookup failed:", error);
+        }
+        setGate({ userId, status: data && !error ? "authorized" : "denied" });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (gateStatus === "denied") {
+      router.replace("/");
+    }
+  }, [gateStatus, router]);
+
+  if (loading || !user || gateStatus === "checking") {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50">
         <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
@@ -454,7 +486,7 @@ export default function TrainPage() {
     );
   }
 
-  if (user.email !== TRAINER_EMAIL) {
+  if (gateStatus === "denied") {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50">
         <div className="text-center">
@@ -468,6 +500,7 @@ export default function TrainPage() {
   return (
     <div style={{ position: "fixed", inset: 0 }}>
       <Tldraw
+        shapeUtils={liveShapeUtils}
         licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
         components={{
           MenuPanel: null,

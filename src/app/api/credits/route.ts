@@ -1,9 +1,10 @@
-import { NextResponse } from 'next/server';
-import { requireKey } from '@/lib/aiConfig';
+import { logger } from "@/lib/logger";
+import { requireUser } from "@/lib/server/auth";
+import { checkRateLimitDistributed, rateLimitedResponse } from "@/lib/server/rate-limit";
+import { OPENROUTER_CREDITS_URL, UpstreamError, openrouterHeaders } from "@/lib/server/openrouter";
+import { errorResponse } from "@/lib/server/request";
 
-// Cache credit results for 30s so we don't hammer OpenRouter on every dashboard load.
-let cache: { data: CreditPayload; expiresAt: number } | null = null;
-const TTL_MS = 30_000;
+const creditsLogger = logger.child({ module: "credits" });
 
 type CreditPayload = {
   total: number;
@@ -11,50 +12,51 @@ type CreditPayload = {
   remaining: number;
 };
 
-export async function GET() {
-  // BYOK: the operator of this deployment supplies their own key.
-  const openrouterKey = requireKey('openrouter');
-  if (!openrouterKey.ok) {
-    return openrouterKey.response;
-  }
+// Cache credit results for 30s so we don't hammer OpenRouter on every dashboard load.
+// Shared across users on purpose: the balance is account-wide, not per user.
+let cache: { data: CreditPayload; expiresAt: number } | null = null;
+const TTL_MS = 30_000;
+
+export async function GET(req: Request) {
+  const requestId = crypto.randomUUID();
+
+  const auth = await requireUser(req);
+  if ("response" in auth) return auth.response;
+  const { user, token } = auth;
+
+  const log = creditsLogger.child({ requestId, userId: user.id });
+
+  const rl = await checkRateLimitDistributed({ token, userId: user.id, bucket: "credits" });
+  if (!rl.ok) return rateLimitedResponse(rl.retryAfterMs, rl.backend);
 
   if (cache && cache.expiresAt > Date.now()) {
-    return NextResponse.json(cache.data);
+    return Response.json(cache.data, { headers: { "Cache-Control": "private, no-store" } });
   }
 
   try {
-    const res = await fetch('https://openrouter.ai/api/v1/credits', {
-      headers: {
-        Authorization: `Bearer ${openrouterKey.key}`,
-      },
-      cache: 'no-store',
+    const res = await fetch(OPENROUTER_CREDITS_URL, {
+      headers: { Authorization: openrouterHeaders().Authorization },
+      cache: "no-store",
+      signal: req.signal,
     });
 
     if (!res.ok) {
-      return NextResponse.json(
-        { error: 'Failed to fetch credits' },
-        { status: 502 },
-      );
+      throw new UpstreamError(res.status, `OpenRouter credits request failed (${res.status})`);
     }
 
-    const json = await res.json();
-    const total = Number(json?.data?.total_credits ?? 0);
-    const used = Number(json?.data?.total_usage ?? 0);
+    const body = (await res.json()) as { data?: { total_credits?: unknown; total_usage?: unknown } };
+    const total = Number(body?.data?.total_credits ?? 0);
+    const used = Number(body?.data?.total_usage ?? 0);
     const payload: CreditPayload = {
-      total,
-      used,
-      remaining: Math.max(0, total - used),
+      total: Number.isFinite(total) ? total : 0,
+      used: Number.isFinite(used) ? used : 0,
+      remaining: Math.max(0, (Number.isFinite(total) ? total : 0) - (Number.isFinite(used) ? used : 0)),
     };
 
     cache = { data: payload, expiresAt: Date.now() + TTL_MS };
-    return NextResponse.json(payload);
+    log.debug({ remaining: payload.remaining }, "Credits refreshed");
+    return Response.json(payload, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error: 'Failed to fetch credits',
-        details: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 },
-    );
+    return errorResponse(error, log);
   }
 }

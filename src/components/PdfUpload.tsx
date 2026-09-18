@@ -1,11 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import {
-  useEditor,
-  createShapeId,
-  AssetRecordType,
-} from "tldraw";
+import { useEditor, createShapeId } from "tldraw";
 import {
   Dialog,
   DialogContent,
@@ -18,8 +14,38 @@ import { Button } from "@/components/ui/button";
 import { Upload, Loader2, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { loadPdfThumbnails, renderPdfPage, type PdfPagePreview } from "@/lib/pdf";
+import { uploadDataUrlAsset } from "@/lib/assets/uploadDataUrl";
+import { warnInlineAssetFallbackOnce } from "@/hooks/useSnapshotSave";
 
 const MAX_BYTES = 25 * 1024 * 1024; // 25 MB
+
+export const PDF_COPY = {
+  notPdf: "That doesn't look like a PDF file",
+  tooLarge: "This PDF is too large (max 25 MB)",
+  passwordProtected: "This PDF is password-protected. Remove the password and try again.",
+  unreadable: "Couldn't read this PDF. It may be damaged, or the reader did not load.",
+  insertFailed: "Couldn't add this page to the canvas",
+  reading: "Reading PDF…",
+  adding: "Adding…",
+  retry: "Retry",
+  chooseAnother: "Choose a different file",
+} as const;
+
+export interface PdfInlineError {
+  message: string;
+  retryable: boolean;
+  /** which step failed, so Retry knows what to re-run */
+  step: "read" | "insert";
+}
+
+/** Pure: map a `loadPdfThumbnails` failure to the inline message and whether Retry helps. */
+export function pdfReadErrorFor(e: unknown): PdfInlineError {
+  const msg = e instanceof Error ? e.message : typeof e === "string" ? e : "";
+  if (/password|encrypt/i.test(msg)) {
+    return { message: PDF_COPY.passwordProtected, retryable: false, step: "read" };
+  }
+  return { message: PDF_COPY.unreadable, retryable: true, step: "read" };
+}
 
 export function PdfUpload() {
   const editor = useEditor();
@@ -29,7 +55,10 @@ export function PdfUpload() {
   const [selectedPage, setSelectedPage] = useState<number>(1);
   const [loading, setLoading] = useState(false);
   const [inserting, setInserting] = useState(false);
+  const [error, setError] = useState<PdfInlineError | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // The file whose read failed, so Retry can re-run it after `reset()` cleared `file`.
+  const lastFileRef = useRef<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
 
   function reset() {
@@ -38,18 +67,21 @@ export function PdfUpload() {
     setSelectedPage(1);
     setLoading(false);
     setInserting(false);
+    setError(null);
   }
 
   async function handleFile(f: File) {
     if (!f) return;
     if (f.type !== "application/pdf" && !f.name.toLowerCase().endsWith(".pdf")) {
-      toast.error("That doesn't look like a PDF file");
+      setError({ message: PDF_COPY.notPdf, retryable: false, step: "read" });
       return;
     }
     if (f.size > MAX_BYTES) {
-      toast.error("PDF is too large (max 25 MB)");
+      setError({ message: PDF_COPY.tooLarge, retryable: false, step: "read" });
       return;
     }
+    lastFileRef.current = f;
+    setError(null);
     setFile(f);
     setLoading(true);
     setThumbs([]);
@@ -60,14 +92,10 @@ export function PdfUpload() {
       setThumbs(previews);
     } catch (e) {
       console.error("PDF load failed", e);
-      const msg =
-        e instanceof Error ? e.message : "Couldn't read this PDF";
-      toast.error(
-        /password|encrypt/i.test(msg)
-          ? "This PDF is password-protected. Remove the password and try again."
-          : "Couldn't read this PDF — it may be corrupt.",
-      );
-      reset();
+      // Back to the drop zone, with the reason and (for transient failures) a Retry.
+      setFile(null);
+      setThumbs([]);
+      setError(pdfReadErrorFor(e));
     } finally {
       setLoading(false);
     }
@@ -76,8 +104,9 @@ export function PdfUpload() {
   async function insertPage() {
     if (!editor || !file || inserting) return;
     setInserting(true);
+    setError(null);
     try {
-      const { dataUrl, width, height } = await renderPdfPage(
+      const { dataUrl } = await renderPdfPage(
         file,
         selectedPage,
       );
@@ -89,23 +118,15 @@ export function PdfUpload() {
         i.src = dataUrl;
       });
 
-      const assetId = AssetRecordType.createId();
-      editor.createAssets([
-        {
-          id: assetId,
-          type: "image",
-          typeName: "asset",
-          props: {
-            name: `${file.name.replace(/\.pdf$/i, "")}-p${selectedPage}.png`,
-            src: dataUrl,
-            w: img.width,
-            h: img.height,
-            mimeType: "image/png",
-            isAnimated: false,
-          },
-          meta: {},
-        },
-      ]);
+      // The rendered page goes to Storage; the asset record holds only its URL.
+      const { assetId, inline } = await uploadDataUrlAsset(editor, {
+        dataUrl,
+        name: `${file.name.replace(/\.pdf$/i, "")}-p${selectedPage}.png`,
+        width: img.width,
+        height: img.height,
+        source: "pdf",
+      });
+      if (inline) warnInlineAssetFallbackOnce();
 
       const vb = editor.getViewportPageBounds();
       const scale = Math.min(
@@ -141,12 +162,21 @@ export function PdfUpload() {
       reset();
     } catch (e) {
       console.error("PDF page insert failed", e);
-      toast.error(
-        e instanceof Error ? e.message : "Couldn't insert that PDF page",
-      );
+      // The page grid stays so Retry re-renders the same page.
+      setError({ message: PDF_COPY.insertFailed, retryable: true, step: "insert" });
     } finally {
       setInserting(false);
     }
+  }
+
+  function retry() {
+    if (!error) return;
+    if (error.step === "insert") {
+      void insertPage();
+      return;
+    }
+    const f = lastFileRef.current;
+    if (f) void handleFile(f);
   }
 
   function onDrop(e: React.DragEvent<HTMLDivElement>) {
@@ -155,6 +185,26 @@ export function PdfUpload() {
     const f = e.dataTransfer.files?.[0];
     if (f) handleFile(f);
   }
+
+  const errorBanner = error && (
+    <div
+      role="alert"
+      data-testid="pdf-error"
+      className="flex items-start justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+    >
+      <span>{error.message}</span>
+      {error.retryable && (
+        <button
+          type="button"
+          onClick={retry}
+          disabled={loading || inserting}
+          className="shrink-0 rounded bg-white/70 px-2 py-0.5 text-xs font-semibold hover:bg-white disabled:opacity-50"
+        >
+          {PDF_COPY.retry}
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <Dialog
@@ -176,7 +226,7 @@ export function PdfUpload() {
           PDF
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl" aria-busy={loading || inserting}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="w-4 h-4" />
@@ -189,45 +239,48 @@ export function PdfUpload() {
         </DialogHeader>
 
         {!file && (
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={onDrop}
-            onClick={() => inputRef.current?.click()}
-            className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
-              dragOver
-                ? "border-foreground bg-accent/50"
-                : "border-muted-foreground/30 hover:border-foreground/50 hover:bg-accent/30"
-            }`}
-          >
-            <Upload className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
-            <p className="text-sm font-medium mb-1">
-              Drop a PDF here, or click to browse
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Up to 25 MB · Single or multi-page · Page 1 selected by default
-            </p>
-            <input
-              ref={inputRef}
-              type="file"
-              accept="application/pdf,.pdf"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleFile(f);
-                e.currentTarget.value = "";
+          <div className="space-y-3">
+            {errorBanner}
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(true);
               }}
-            />
+              onDragLeave={() => setDragOver(false)}
+              onDrop={onDrop}
+              onClick={() => inputRef.current?.click()}
+              className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+                dragOver
+                  ? "border-foreground bg-accent/50"
+                  : "border-muted-foreground/30 hover:border-foreground/50 hover:bg-accent/30"
+              }`}
+            >
+              <Upload className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
+              <p className="text-sm font-medium mb-1">
+                Drop a PDF here, or click to browse
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Up to 25 MB · Single or multi-page · Page 1 selected by default
+              </p>
+              <input
+                ref={inputRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleFile(f);
+                  e.currentTarget.value = "";
+                }}
+              />
+            </div>
           </div>
         )}
 
         {file && loading && (
-          <div className="flex flex-col items-center justify-center py-12">
+          <div className="flex flex-col items-center justify-center py-12" role="status" aria-live="polite">
             <Loader2 className="w-6 h-6 animate-spin text-blue-600 mb-3" />
-            <p className="text-sm text-muted-foreground">Reading PDF…</p>
+            <p className="text-sm text-muted-foreground">{PDF_COPY.reading}</p>
           </div>
         )}
 
@@ -246,7 +299,7 @@ export function PdfUpload() {
                 disabled={inserting}
                 className="text-xs text-muted-foreground hover:text-foreground"
               >
-                Choose a different file
+                {PDF_COPY.chooseAnother}
               </button>
             </div>
 
@@ -280,6 +333,8 @@ export function PdfUpload() {
               ))}
             </div>
 
+            {errorBanner}
+
             <div className="flex items-center justify-end gap-2 pt-2 border-t">
               <Button
                 variant="outline"
@@ -293,7 +348,7 @@ export function PdfUpload() {
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 )}
                 {inserting
-                  ? "Adding…"
+                  ? PDF_COPY.adding
                   : thumbs.length > 1
                     ? `Add page ${selectedPage}`
                     : "Add to canvas"}

@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Dummy values so `next build` can run without real secrets.
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-dummy-anon-key
+      OPENROUTER_API_KEY: ci-dummy-openrouter-key
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint (warnings allowed, errors fail)
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # Fails the job when a client chunk exceeds its budget. Guarded so the
+      # workflow stays green on branches that do not carry the script yet.
+      - name: Bundle budget
+        continue-on-error: false
+        run: |
+          if [ -f scripts/check-bundle.mjs ]; then
+            node scripts/check-bundle.mjs
+          else
+            echo "scripts/check-bundle.mjs not present; skipping bundle budget"
+          fi
+
+      # Offline check of the saved `vercel env ls` fixture against .env.example.
+      # The live `npm run env:check` needs a logged-in Vercel CLI and is a release step, not CI.
+      - name: Env contract (offline fixture)
+        run: node scripts/check-vercel-env.mjs --from src/__tests__/fixtures/vercel-env-ls.txt --env Production
+
+  route-protection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Every /api route must go through requireUser + rate limiting (+ zod for bodies).
+      - name: Route protection
+        run: |
+          if [ -f src/__tests__/routeProtection.test.ts ]; then
+            npx vitest run src/__tests__/routeProtection.test.ts
+          else
+            echo "src/__tests__/routeProtection.test.ts not present; skipping route-protection"
+          fi

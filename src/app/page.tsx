@@ -1,11 +1,16 @@
 "use client";
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/components/AuthProvider';
+import { AuthErrorBanner, useAuth } from '@/components/AuthProvider';
+import { DASHBOARD_COPY, dashboardStateFor } from '@/app/dashboardState';
+import { describeError } from '@/lib/errorMessage';
 import { CreditsBanner } from '@/components/CreditsBanner';
+import { PlanBadge } from '@/components/account/PlanBadge';
 import { FeatureLabsPanel } from '@/components/FeatureLabsPanel';
+import { asDeleteBoardClient, deleteBoardWithAssets } from '@/lib/assets/deleteBoard';
 import {
   Plus,
   Trash2,
@@ -18,6 +23,9 @@ import {
   MoreHorizontal,
   LogOut,
   Loader2,
+  Sparkles,
+  RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -53,25 +61,82 @@ type Whiteboard = {
   preview?: string;
 };
 
+/**
+ * Inline error row with a Retry button. Used for every dashboard mutation so
+ * a failure is visible next to the thing you clicked, not only as a toast.
+ */
+function InlineError({
+  title,
+  message,
+  onRetry,
+  retrying = false,
+  className,
+}: {
+  title: string;
+  message: string;
+  onRetry?: () => void;
+  retrying?: boolean;
+  className?: string;
+}) {
+  return (
+    <div
+      role="alert"
+      data-state="error"
+      className={cn(
+        "flex flex-col sm:flex-row sm:items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800",
+        className,
+      )}
+    >
+      <AlertTriangle className="w-4 h-4 shrink-0 hidden sm:block" />
+      <div className="flex-1 min-w-0">
+        <span className="font-medium">{title}.</span> <span>{message}</span>
+      </div>
+      {onRetry && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="bg-white"
+          onClick={onRetry}
+          disabled={retrying}
+        >
+          <RefreshCw className={cn("w-3.5 h-3.5 mr-1.5", retrying && "animate-spin")} />
+          {DASHBOARD_COPY.retry}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, authError } = useAuth();
   const [whiteboards, setWhiteboards] = useState<Whiteboard[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Rename state
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameTitle, setRenameTitle] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
 
-  // Auth gate: redirect to login if not authenticated
+  // Delete confirmation state
+  const [deleteTarget, setDeleteTarget] = useState<Whiteboard | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Auth gate: redirect to login if not authenticated. When the sign-in
+  // service could not be reached we show a banner with Retry instead, so a
+  // flaky connection does not bounce a signed-in student to /login.
   useEffect(() => {
-    if (!authLoading && !user) {
+    if (!authLoading && !user && !authError) {
       router.replace('/login');
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, authError, router]);
 
   useEffect(() => {
     if (user) {
@@ -80,6 +145,8 @@ export default function Dashboard() {
   }, [user]);
 
   async function fetchWhiteboards() {
+    setLoading(true);
+    setFetchError(null);
     try {
       const { data, error } = await supabase
         .from('whiteboards')
@@ -90,7 +157,10 @@ export default function Dashboard() {
       setWhiteboards(data || []);
     } catch (error) {
       console.error('Error fetching whiteboards:', error);
-      toast.error('Failed to fetch whiteboards');
+      // Rendered as an inline panel with Retry (see dashboardStateFor). A
+      // "JWT issued at future" rejection is local clock skew; describeError
+      // names that instead of echoing the raw token error.
+      setFetchError(describeError(error, DASHBOARD_COPY.loadFallback));
     } finally {
       setLoading(false);
     }
@@ -99,6 +169,7 @@ export default function Dashboard() {
   async function createWhiteboard() {
     if (creating || !user) return;
     setCreating(true);
+    setCreateError(null);
     try {
       const { data, error } = await supabase
         .from('whiteboards')
@@ -113,7 +184,8 @@ export default function Dashboard() {
       router.push(`/board/${data.id}`);
     } catch (error) {
       console.error('Error creating whiteboard:', error);
-      toast.error('Failed to create whiteboard');
+      // Button stays enabled; the error sits right under it with Retry.
+      setCreateError(describeError(error, DASHBOARD_COPY.createFallback));
       setCreating(false);
     }
   }
@@ -121,31 +193,41 @@ export default function Dashboard() {
   async function handleSignOut() {
     const { error } = await supabase.auth.signOut();
     if (error) {
-      toast.error('Failed to sign out');
+      toast.error("Couldn't sign you out. Try again in a moment.");
       return;
     }
     router.replace('/login');
   }
 
   async function deleteWhiteboard(id: string) {
+    if (deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
     try {
-      const { error } = await supabase
-        .from('whiteboards')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-      setWhiteboards(whiteboards.filter(w => w.id !== id));
-      toast.success('Whiteboard deleted');
+      // Removes the board's Storage objects too (registered in board_assets); a
+      // failure there is reported, not fatal - the nightly GC reclaims what is left.
+      const result = await deleteBoardWithAssets(asDeleteBoardClient(supabase), id);
+      setWhiteboards((prev) => prev.filter(w => w.id !== id));
+      if (result.assetErrors.length > 0) {
+        console.warn('Some board images could not be removed:', result.assetErrors);
+        toast.warning('Whiteboard deleted, but some images could not be removed');
+      } else {
+        toast.success('Whiteboard deleted');
+      }
+      setDeleteTarget(null);
     } catch (error) {
       console.error('Error deleting whiteboard:', error);
-      toast.error('Failed to delete whiteboard');
+      // Dialog stays open with the message and a Retry.
+      setDeleteError(describeError(error, DASHBOARD_COPY.deleteFallback));
+    } finally {
+      setDeleting(false);
     }
   }
 
   async function handleRename() {
-    if (!renameId) return;
-    
+    if (!renameId || renaming) return;
+    setRenaming(true);
+    setRenameError(null);
     try {
       const { error } = await supabase
         .from('whiteboards')
@@ -161,13 +243,44 @@ export default function Dashboard() {
       setRenameId(null);
     } catch (error) {
       console.error('Error renaming whiteboard:', error);
-      toast.error('Failed to rename whiteboard');
+      // Dialog stays open with the message and a Retry.
+      setRenameError(describeError(error, DASHBOARD_COPY.renameFallback));
+    } finally {
+      setRenaming(false);
     }
   }
+
+  function closeRename() {
+    if (renaming) return;
+    setRenameId(null);
+    setRenameError(null);
+  }
+
+  function closeDelete() {
+    if (deleting) return;
+    setDeleteTarget(null);
+    setDeleteError(null);
+  }
+
+  const dashboardState = dashboardStateFor({
+    loading,
+    error: fetchError,
+    boards: whiteboards,
+  });
 
   const filteredWhiteboards = whiteboards.filter(board =>
     board.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  if (!user && authError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
+        <div className="w-full max-w-md">
+          <AuthErrorBanner />
+        </div>
+      </div>
+    );
+  }
 
   if (authLoading || !user) {
     return (
@@ -180,9 +293,10 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-background">
       <header className="absolute top-0 right-0 p-4 flex items-center gap-3 z-10">
-        <span className="text-sm text-muted-foreground hidden sm:inline">
+        <Link href="/account" className="text-sm text-muted-foreground hidden sm:inline hover:text-foreground hover:underline">
           {user.email}
-        </span>
+        </Link>
+        <PlanBadge />
         <FeatureLabsPanel />
         <Button variant="outline" size="sm" onClick={handleSignOut}>
           <LogOut className="w-4 h-4 mr-1.5" />
@@ -190,12 +304,13 @@ export default function Dashboard() {
         </Button>
       </header>
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-32 pb-6">
+        <AuthErrorBanner className="mb-4" />
         <CreditsBanner className="mb-4" />
         {/* Header Section */}
         <div className="space-y-4 mb-4">
           <div>
             <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
-              Agathon Classroom · Staging
+              Agathon Classroom
             </p>
             <h1 className="text-4xl font-bold tracking-tight">My Whiteboards</h1>
           </div>
@@ -241,9 +356,17 @@ export default function Dashboard() {
               </Button>
             </div>
           </div>
+          {createError && (
+            <InlineError
+              title={DASHBOARD_COPY.createFailedTitle}
+              message={createError}
+              onRetry={createWhiteboard}
+              retrying={creating}
+            />
+          )}
         </div>
 
-        {loading ? (
+        {dashboardState === 'loading' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             {[1, 2, 3, 4].map((i) => (
               <div key={i} className="h-64 bg-card rounded-xl border shadow-sm animate-pulse">
@@ -255,9 +378,47 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
+        ) : dashboardState === 'error' ? (
+          <div
+            role="alert"
+            data-state="error"
+            className="flex flex-col items-center justify-center text-center bg-card border border-red-200 rounded-xl shadow-sm px-6 py-14"
+          >
+            <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mb-4">
+              <AlertTriangle className="w-8 h-8 text-red-600" />
+            </div>
+            <h3 className="text-lg font-semibold">{DASHBOARD_COPY.loadFailedTitle}</h3>
+            <p className="text-muted-foreground mt-2 max-w-md">{fetchError}</p>
+            <Button onClick={fetchWhiteboards} className="mt-6" variant="outline">
+              <RefreshCw className="w-4 h-4 mr-2" />
+              {DASHBOARD_COPY.retry}
+            </Button>
+          </div>
+        ) : dashboardState === 'empty' ? (
+          <div className="flex flex-col items-center justify-center text-center bg-card border rounded-xl shadow-sm px-6 py-14">
+            <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+              <Sparkles className="w-8 h-8 text-muted-foreground" />
+            </div>
+            <h3 className="text-lg font-semibold">Welcome to Agathon Classroom</h3>
+            <p className="text-muted-foreground mt-2 max-w-md">
+              Create a board, write a math problem, and the tutor helps in real time.
+            </p>
+            <Button
+              onClick={createWhiteboard}
+              disabled={creating}
+              className="mt-6"
+            >
+              {creating ? (
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+              ) : (
+                <Plus className="w-4 h-4 mr-2" />
+              )}
+              Create your first board
+            </Button>
+          </div>
         ) : (
           <div className={cn(
-            viewMode === 'grid' 
+            viewMode === 'grid'
               ? "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4"
               : "flex flex-col gap-3"
           )}>
@@ -351,7 +512,7 @@ export default function Dashboard() {
                             <DropdownMenuSeparator />
                             <DropdownMenuItem 
                                 className="text-destructive focus:text-destructive"
-                                onClick={() => deleteWhiteboard(board.id)}
+                                onClick={() => setDeleteTarget(board)}
                             >
                                 <Trash2 className="w-4 h-4 mr-2" />
                                 Delete
@@ -375,7 +536,7 @@ export default function Dashboard() {
         )}
       </main>
 
-      <Dialog open={!!renameId} onOpenChange={(open) => !open && setRenameId(null)}>
+      <Dialog open={!!renameId} onOpenChange={(open) => !open && closeRename()}>
         <DialogContent>
             <DialogHeader>
                 <DialogTitle>Rename Board</DialogTitle>
@@ -391,11 +552,64 @@ export default function Dashboard() {
                     onChange={(e) => setRenameTitle(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleRename()}
                     autoFocus
+                    disabled={renaming}
+                    aria-invalid={renameError ? true : undefined}
                 />
+                {renameError && (
+                  <InlineError
+                    className="mt-3"
+                    title={DASHBOARD_COPY.renameFailedTitle}
+                    message={renameError}
+                    onRetry={handleRename}
+                    retrying={renaming}
+                  />
+                )}
             </div>
             <DialogFooter>
-                <Button variant="outline" onClick={() => setRenameId(null)}>Cancel</Button>
-                <Button onClick={handleRename}>Save Changes</Button>
+                <Button variant="outline" onClick={closeRename} disabled={renaming}>Cancel</Button>
+                <Button onClick={handleRename} disabled={renaming}>
+                  {renaming && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  {renameError ? 'Try again' : 'Save Changes'}
+                </Button>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && closeDelete()}
+      >
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Delete board?</DialogTitle>
+                <DialogDescription>
+                    {deleteTarget
+                      ? `"${deleteTarget.title}" and everything on it will be permanently deleted. This can't be undone.`
+                      : ''}
+                </DialogDescription>
+            </DialogHeader>
+            {deleteError && (
+              <InlineError
+                title={DASHBOARD_COPY.deleteFailedTitle}
+                message={deleteError}
+              />
+            )}
+            <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={closeDelete}
+                  disabled={deleting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => deleteTarget && deleteWhiteboard(deleteTarget.id)}
+                  disabled={deleting}
+                >
+                  {deleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  {deleteError ? 'Retry delete' : 'Delete'}
+                </Button>
             </DialogFooter>
         </DialogContent>
       </Dialog>
