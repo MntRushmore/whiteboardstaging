@@ -17,6 +17,7 @@ import {
   totalDurationMs,
   type Stroke,
 } from "@/lib/hand";
+import { TUTOR_INK_COLOR } from "./answer";
 import type { LiveShapeMeta, Rect } from "./contracts";
 
 /**
@@ -66,12 +67,21 @@ export const HAND_WRITE = {
   minSize: 18,
   maxSize: 40,
   sizeFactor: 1,
+  /**
+   * Height of a plain digit as a fraction of `size`: a `8` laid out at size 100 is 63 px
+   * tall. Glyphs are authored on a 14-unit em box with the baseline at 11, and a digit fills
+   * neither — so `size` is NOT the height of what gets written. An answer that has to come
+   * out the height of the student's own glyphs divides by this. Pinned by handwriting.test.ts.
+   */
+  digitRatio: 0.63,
+  /** ceiling for an answer written INTO the student's line, where their size is the target */
+  maxInlineSize: 96,
   /** animation tick; a frame that arrives late catches up, it never falls behind */
   frameMs: 32,
   /** the pause between two lines of a worked solution — someone thinking, not a print-out */
   lineGapMs: 450,
   /** tldraw draw-shape style of the tutor's ink (the accent tone of the AI shapes, never red) */
-  color: "blue",
+  color: TUTOR_INK_COLOR,
   size: "s",
 } as const;
 
@@ -98,6 +108,19 @@ export function handSizeFor(lineHeight: number): number {
   return Math.min(HAND_WRITE.maxSize, Math.max(HAND_WRITE.minSize, Number.isFinite(n) ? n : HAND_WRITE.minSize));
 }
 
+/**
+ * Hand size for an answer written INTO the student's own line, so the tutor's digits come out
+ * the height of theirs.
+ *
+ * `handSizeFor` sizes a block written UNDER the work, where a slightly smaller hand reads as a
+ * margin note and a 40 px ceiling keeps a worked solution compact. Beside the student's own
+ * glyphs that same hand reads as an afterthought instead of as the end of their line.
+ */
+export function inlineHandSizeFor(lineHeight: number): number {
+  const n = Math.round(lineHeight / HAND_WRITE.digitRatio);
+  return Math.min(HAND_WRITE.maxInlineSize, Math.max(HAND_WRITE.minSize, Number.isFinite(n) && n > 0 ? n : HAND_WRITE.minSize));
+}
+
 /** Stable per-line seed so re-rendering the same line does not re-write it in another hand. */
 export function handSeedFor(key: string): number {
   let h = 2166136261;
@@ -116,6 +139,15 @@ export interface HandLinePlan {
   y: number;
   /** strokes relative to (x, y), in drawing order */
   strokes: Stroke[];
+  /**
+   * The writing line of this line of text, measured DOWN FROM `y`.
+   *
+   * `y` is the top of the ink, which is wherever this line's tallest glyph happens to reach;
+   * the baseline is what two lines of writing have in common. A tutor finishing the student's
+   * own line needs it — the answer has to sit on the student's writing line, not have its box
+   * top-aligned with their ink.
+   */
+  baseline: number;
   /** ms from the start of the block at which this line starts being written */
   startMs: number;
   /** ms this line takes to write */
@@ -168,7 +200,7 @@ export function planHandwriting(
       points: densify(st.points, HAND_WRITE.resampleStepPx),
     }));
     const durationMs = totalDurationMs(strokes);
-    lines.push({ latex: line.latex, x, y, strokes, startMs: t, durationMs });
+    lines.push({ latex: line.latex, x, y, baseline: line.y - b.minY, strokes, startMs: t, durationMs });
     t += durationMs + HAND_WRITE.lineGapMs;
     minX = Math.min(minX, x);
     minY = Math.min(minY, y);
@@ -186,6 +218,16 @@ export function planHandwriting(
     },
     unsupported: [],
   };
+}
+
+/**
+ * Moves a plan so its ink starts at `at.x` and its FIRST line sits on the writing line
+ * `at.baselineY` — how you continue someone else's line rather than starting your own.
+ */
+export function placeHandPlanOnBaseline(plan: HandPlan, at: { x: number; baselineY: number }): HandPlan {
+  const first = plan.lines[0];
+  if (!first) return plan;
+  return placeHandPlan(plan, { x: at.x, y: at.baselineY - (first.y - plan.bounds.y) - first.baseline });
 }
 
 /** Moves a plan so its bounding box starts at `at` (page coordinates). */
@@ -245,6 +287,11 @@ export interface HandWriterDeps {
 export interface HandWriteOptions {
   /** meta stamped on every stroke shape; `handBlockMeta` adds the block key */
   meta: LiveShapeMeta;
+  /**
+   * Extra meta merged in after `meta`. The loop marks an answer block with the line it
+   * answers, so re-rendering that line replaces its answer instead of writing a second one.
+   */
+  extraMeta?: JsonObject;
   onDone?: () => void;
 }
 
@@ -318,7 +365,7 @@ export class HandWriter {
 
   start(plan: HandPlan, opts: HandWriteOptions): void {
     this.plan = plan;
-    this.meta = { ...opts.meta, [HAND_BLOCK_META]: `hb_${++blockSeq}_${this.deps.now().toString(36)}` };
+    this.meta = { ...opts.meta, ...opts.extraMeta, [HAND_BLOCK_META]: `hb_${++blockSeq}_${this.deps.now().toString(36)}` };
     this.onDone = opts.onDone;
     this.ids = plan.lines.map((l) => l.strokes.map(() => null));
     this.dropped = plan.lines.map((l) => l.strokes.map(() => false));

@@ -8,7 +8,7 @@
 import { FUNCTION_WORDS, GREEK, GREEK_ALIAS, preprocessLatex, splitRelations } from "./latex";
 import { looksLikeChemEquation, looksLikeChemFormula } from "./chem";
 
-export type PreKind = "empty" | "label" | "incomplete" | "chem" | "chemFormula" | "point" | "function" | "text";
+export type PreKind = "empty" | "label" | "incomplete" | "chem" | "chemFormula" | "point" | "function" | "text" | "unsupported";
 
 export interface FunctionInfo {
   /** 'y' or the function name (f) */
@@ -111,6 +111,17 @@ export function isTextOnly(latex: string): boolean {
   if (!s || !TEXT_GROUP_START.test(s)) return false;
   const rest = s.replace(TEXT_GROUP_RE, " ").replace(/[\s.,:;!?'"()\-]/g, "");
   return rest === "";
+}
+
+/**
+ * Matrix / array / cases environments. The engine has no linear algebra, so these must read as
+ * `unknown` ("we cannot do this") rather than as prose ("this is a caption"): a matrix is maths,
+ * and silently calling it text is exactly the kind of pretending that produces invented answers.
+ */
+const UNSUPPORTED_ENVIRONMENT = /\\begin\s*\{\s*(?:[pbBvV]?matrix\*?|smallmatrix|array|cases|dcases)\s*\}/;
+
+export function isUnsupportedEnvironment(latex: string): boolean {
+  return UNSUPPORTED_ENVIRONMENT.test(preprocessLatex(latex));
 }
 
 export function isLabel(latex: string): boolean {
@@ -299,6 +310,7 @@ export function preClassify(latex: string): PreClassification {
   if (!s) return { kind: latex.trim() ? "label" : "empty", latex: s };
   if (isLabel(s)) return { kind: "label", latex: s };
   if (isTextOnly(s)) return { kind: "text", latex: s };
+  if (isUnsupportedEnvironment(s)) return { kind: "unsupported", latex: s };
   const inc = incompleteInfo(s);
   if (inc.incomplete) return { kind: "incomplete", latex: s, trailingEquals: inc.trailingEquals, lhs: inc.lhs };
   if (looksLikeChemEquation(s)) return { kind: "chem", latex: s };

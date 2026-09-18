@@ -4,6 +4,7 @@ import { Box, createShapeId } from "tldraw";
 import type {
   Editor,
   HistoryEntry,
+  JsonObject,
   Mat,
   TLDrawShape,
   TLRecord,
@@ -46,6 +47,7 @@ import {
   type SolveRequest,
   type UseLiveMathOptions,
 } from "./contracts";
+import { endsWithRelation } from "./answer";
 import { getEngine as defaultGetEngine } from "./engine";
 import { LIVE_COPY } from "@/components/live/copy";
 import { classifyLiveFailure, sseFailure, type ClassifyContext } from "@/components/live/errorView";
@@ -66,7 +68,9 @@ import {
   handBlockOf,
   handSeedFor,
   handSizeFor,
+  inlineHandSizeFor,
   placeHandPlan,
+  placeHandPlanOnBaseline,
   planHandwriting,
   type HandPlan,
 } from "./handwriting";
@@ -77,12 +81,14 @@ import {
   estimateEchoWidth,
   expandRect,
   findFreeSlot,
+  inlineAnswerGap,
   normalizeBBox,
   placeEcho,
   placeFloating,
   placeGraph,
   placeStep,
   PLACEMENT,
+  rectMaxX,
   rectMaxY,
   rectsIntersect,
 } from "./placement";
@@ -189,6 +195,43 @@ const GRAPH_DISMISSED_META = "graphDismissed";
  */
 const AI_NOTE_META = "aiNote";
 
+/**
+ * Meta of the tutor's ANSWER ink — the handwriting that finishes a line the student ended with
+ * `=`. Three keys, all on the same stroke shapes the hand writer creates:
+ *
+ *  - `answerFor`  the student's line, exactly as it was read, at the moment it was answered.
+ *                 A line that now reads differently has been rewritten, so its answer is stale
+ *                 and is erased rather than joined by a second one.
+ *  - `answerLatex` what was written, so pressing Solve again recognises its own answer.
+ *  - `answerAnchors` the student strokes the answer was placed against. A line answered this
+ *                 way has no echo, and echoes are what `rebuild()` seeds line ids from — so
+ *                 after a reload the line id is new and only the stroke ids still match.
+ */
+const ANSWER_SRC_META = "answerFor";
+const ANSWER_LATEX_META = "answerLatex";
+const ANSWER_ANCHORS_META = "answerAnchors";
+
+function metaString(meta: unknown, key: string): string {
+  if (typeof meta !== "object" || meta === null) return "";
+  const v = (meta as Record<string, unknown>)[key];
+  return typeof v === "string" ? v : "";
+}
+
+/** The student line this shape is the tutor's answer to, or "" when it is not answer ink. */
+function answerSrcOf(meta: unknown): string {
+  return metaString(meta, ANSWER_SRC_META);
+}
+
+function answerLatexOf(meta: unknown): string {
+  return metaString(meta, ANSWER_LATEX_META);
+}
+
+function answerAnchorsOf(meta: unknown): string[] {
+  if (typeof meta !== "object" || meta === null) return [];
+  const v = (meta as Record<string, unknown>)[ANSWER_ANCHORS_META];
+  return Array.isArray(v) ? v.filter((id): id is string => typeof id === "string") : [];
+}
+
 function graphDismissedOf(meta: unknown): string | null {
   if (typeof meta !== "object" || meta === null) return null;
   const v = (meta as Record<string, unknown>)[GRAPH_DISMISSED_META];
@@ -282,6 +325,8 @@ export class LiveLoop implements LiveController {
   private pendingSolve: string | null = null;
   /** the handwriting reveal in flight, if any (one block at a time) */
   private writer: HandWriter | null = null;
+  /** any answer ink on the page at all; kept by `recount` so the common render costs nothing */
+  private hasAnswerInk = false;
   private lastOnline: boolean | null = null;
   private lastTouchedLineId: string | null = null;
   private started = false;
@@ -1195,6 +1240,8 @@ export class LiveLoop implements LiveController {
   ): void {
     const lineId = state.line.id;
     const rt = this.runtime(lineId);
+    // The line changed under an answer the tutor had already written: that answer is stale.
+    this.dropStaleAnswer(state);
     if (!decision.echo) {
       if (state.mathShapeId || state.graphShapeId) this.deleteLineShapes(lineId, { keepAi: true });
       if (
@@ -1215,6 +1262,8 @@ export class LiveLoop implements LiveController {
       }
       return;
     }
+    // A finished sum does not want its own line read back at it — it wants the answer.
+    if (this.inlineAnswer(state, decision)) return;
     const analysis = state.analysis;
     const status = decision.capped ? "none" : decision.badge;
     const resultLatex = decision.showResult && analysis ? analysis.resultLatex : "";
@@ -1254,13 +1303,16 @@ export class LiveLoop implements LiveController {
    */
   private recount(): void {
     let n = 0;
+    let answers = false;
     const blocks = new Set<string>();
     for (const s of this.editor.getCurrentPageShapes()) {
       if (!isLiveMeta(s.meta)) continue;
+      if (answerSrcOf(s.meta)) answers = true;
       const block = handBlockOf(s.meta);
       if (block) blocks.add(block);
       else n++;
     }
+    this.hasAnswerInk = answers;
     liveStore.liveShapeCount.set(n + blocks.size);
   }
 
@@ -1710,6 +1762,114 @@ export class LiveLoop implements LiveController {
     });
   }
 
+  // ---------------------------------------------------------------- the answer at the end of a line
+  /**
+   * The calculator case: a line the local engine can evaluate that the student finished with
+   * `=`. That trailing `=` is a question, not a statement — so the tutor answers it, in its own
+   * hand, in its own colour, continuing their line. It does NOT read the line back to them:
+   * for a finished sum the answer *is* the confirmation that it was read right.
+   *
+   * Returns true when the typeset echo must stand down — the answer is on the page, or it is
+   * about to be and a restatement would only flash and vanish. False falls through to today's
+   * echo (with the result composed by `answerContinuation`, so never a doubled `=`): the hand
+   * switch is off, the hand engine cannot draw this answer, or there is no room beside their
+   * work. The student is never left with nothing where they asked for an answer.
+   */
+  private inlineAnswer(state: LiveLineState, decision: PolicyDecision): boolean {
+    if (!this.engine || decision.capped || !this.deps.handwritingEnabled()) return false;
+    const answer = this.calculatorAnswerFor(state);
+    if (!answer) return false;
+    const lineId = state.line.id;
+    if (this.answerBlocksFor(lineId).length === 0) {
+      // Planned even while the reveal is still waiting, so a line whose answer the hand cannot
+      // draw keeps its echo from the start rather than showing nothing for the idle delay.
+      const plan = this.planInlineAnswer(state, answer);
+      if (!plan) return false;
+      if (decision.showResult) {
+        this.dropEcho(lineId);
+        this.startHandwriting(plan, lineId, this.answerMeta(state, answer));
+        clientMetric("live.answer.hand", { lineId });
+        return true;
+      }
+    }
+    this.dropEcho(lineId);
+    return true;
+  }
+
+  /**
+   * The answer to a line the student ended with `=`, when the local engine already has one.
+   *
+   * Only a plain `expression`: an equation is a claim to check, not a sum to finish, and its
+   * echo (badge included) is exactly the feedback that is still wanted. `analysis.resultLatex`
+   * carries the mode gate — the engine only fills it in for a trailing `=` in Solve.
+   */
+  private calculatorAnswerFor(state: LiveLineState): string | null {
+    if (!this.engine || !state.latex) return null;
+    const analysis = state.analysis;
+    if (!analysis || analysis.kind !== "expression" || !analysis.resultLatex) return null;
+    if (!endsWithRelation(state.latex)) return null;
+    return localAnswerFor(this.engine, state.latex, this.columnContext(state));
+  }
+
+  /**
+   * Where the answer goes: after the student's last glyph, on their writing line, in a hand
+   * the size of their own. Null when the hand cannot draw it, when it would run off the
+   * viewport, or when something is already there — continuing their line means writing in
+   * exactly that spot, so there is no second-choice slot to fall back on, only the echo.
+   */
+  private planInlineAnswer(state: LiveLineState, answer: string): HandPlan | null {
+    const ink = state.line.bounds;
+    const size = inlineHandSizeFor(ink.h);
+    const { plan, unsupported } = planHandwriting([answer], { size, seed: handSeedFor(`${state.line.id}:answer`) });
+    if (!plan || unsupported.length > 0) return null;
+    const placed = placeHandPlanOnBaseline(plan, {
+      x: rectMaxX(ink) + inlineAnswerGap(ink.h),
+      baselineY: rectMaxY(ink),
+    });
+    const viewport = boxToRect(this.editor.getViewportPageBounds());
+    if (rectMaxX(placed.bounds) > rectMaxX(viewport) - PLACEMENT.viewportMargin) return null;
+    if (this.avoidRects(state.line.id).some((r) => rectsIntersect(r, placed.bounds))) return null;
+    return placed;
+  }
+
+  private answerMeta(state: LiveLineState, answer: string): JsonObject {
+    return {
+      [ANSWER_SRC_META]: state.latex,
+      [ANSWER_LATEX_META]: answer,
+      [ANSWER_ANCHORS_META]: [...state.line.strokeIds],
+    };
+  }
+
+  /** The tutor's answer ink for this line: by line id, or by the student strokes it was hung on. */
+  private answerBlocksFor(lineId: string): TLShape[] {
+    if (!this.hasAnswerInk) return [];
+    const own = new Set<string>(liveStore.lines.get()[lineId]?.line.strokeIds ?? []);
+    const out: TLShape[] = [];
+    for (const s of this.editor.getCurrentPageShapes()) {
+      if (!isLiveMeta(s.meta) || !answerSrcOf(s.meta)) continue;
+      if (s.meta.lineId === lineId || answerAnchorsOf(s.meta).some((id) => own.has(id))) out.push(s);
+    }
+    return out;
+  }
+
+  /** Rewriting the line replaces its answer: the old one goes before the new one is written. */
+  private dropStaleAnswer(state: LiveLineState): void {
+    if (!this.hasAnswerInk) return;
+    const stale = this.answerBlocksFor(state.line.id).filter((s) => answerSrcOf(s.meta) !== state.latex);
+    if (stale.length === 0) return;
+    this.write(() => {
+      const ids = stale.map((s) => s.id).filter((id) => this.editor.getShape(id));
+      if (ids.length > 0) this.editor.deleteShapes(ids);
+    });
+  }
+
+  /** The tutor answered this line instead of restating it: the typeset echo stands down. */
+  private dropEcho(lineId: string): void {
+    const st = liveStore.lines.get()[lineId];
+    if (!st?.mathShapeId && !st?.graphShapeId) return;
+    this.deleteLineShapes(lineId, { keepAi: true });
+  }
+
   // ---------------------------------------------------------------- solve
   private startSolve(column: number, fromLineId: string | undefined, opts: SolveOpts): void {
     if (!this.opts.enabled || this.opts.voiceActive) return;
@@ -1844,12 +2004,17 @@ export class LiveLoop implements LiveController {
     if (!state?.latex) return false;
     const answer = localAnswerFor(this.engine, state.latex, this.columnContext(state));
     if (!answer) return false;
+    // The tutor has already written this answer — the line finished itself as the student
+    // wrote it, or Solve was pressed twice. Answering again would stack a second copy; there
+    // is still nothing to ask a model.
+    if (this.answerBlocksFor(opts.lineId).some((s) => answerLatexOf(s.meta) === answer)) return true;
     // At the shape cap nothing more is drawn — but a model call would be just as capped, and
     // this answer is already known, so the stream is still not worth opening.
     if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return true;
 
     const step = localAnswerStep(answer);
-    if (this.deps.handwritingEnabled() && this.drawStepsByHand(built, opts, state, [step])) return true;
+    const meta = this.answerMeta(state, answer);
+    if (this.deps.handwritingEnabled() && this.drawStepsByHand(built, opts, state, [step], meta)) return true;
     // The hand switch is off, or the answer needs a glyph the hand atlas has no stroke for.
     // The answer is still the engine's, so it is typeset locally rather than asked for.
     const lastLine = built.states[built.states.length - 1].line.bounds;
@@ -1865,7 +2030,13 @@ export class LiveLoop implements LiveController {
    * the safety interlock: a dropped `\frac` would show the student wrong maths, so the block
    * is never drawn partly.
    */
-  private drawStepsByHand(built: { states: LiveLineState[] }, opts: SolveOpts, state: LiveLineState, steps: readonly string[]): boolean {
+  private drawStepsByHand(
+    built: { states: LiveLineState[] },
+    opts: SolveOpts,
+    state: LiveLineState,
+    steps: readonly string[],
+    extraMeta?: JsonObject,
+  ): boolean {
     const size = handSizeFor(state.line.bounds.h);
     const { plan, unsupported } = planHandwriting(steps, { size, seed: handSeedFor(opts.lineId) });
     if (!plan || unsupported.length > 0) return false;
@@ -1886,12 +2057,12 @@ export class LiveLoop implements LiveController {
     if (echo) avoid.push(echo);
     const slot = findFreeSlot(candidate, avoid, lastLine);
 
-    this.startHandwriting(placeHandPlan(plan, { x: slot.x, y: slot.y }), opts.lineId);
+    this.startHandwriting(placeHandPlan(plan, { x: slot.x, y: slot.y }), opts.lineId, extraMeta);
     clientMetric("live.solve.hand.ms", { ms: Math.round(plan.totalMs), lineId: opts.lineId });
     return true;
   }
 
-  private startHandwriting(plan: HandPlan, lineId: string): void {
+  private startHandwriting(plan: HandPlan, lineId: string, extraMeta?: JsonObject): void {
     this.cancelHandwriting();
     const meta = makeMeta("ai", lineId, this.deps.now());
     const writer = new HandWriter(
@@ -1909,6 +2080,7 @@ export class LiveLoop implements LiveController {
     this.writer = writer;
     writer.start(plan, {
       meta,
+      extraMeta,
       onDone: () => {
         if (this.writer === writer) this.writer = null;
       },

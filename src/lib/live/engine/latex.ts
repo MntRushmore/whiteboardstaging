@@ -3,8 +3,14 @@
  *
  * Handles \frac, \sqrt[n], \cdot/\times/\div, ^{}, subscripts as identifiers, greek, trig/log,
  * ^\circ -> deg, \left( \right), \text{kg}/\mathrm{m/s^2} -> units, \pm -> two branches,
- * \le \ge \ne, |x| -> abs, \int_a^b ... dx -> integral(), \frac{d}{dx} -> derivative().
+ * \le \ge \ne, |x| -> abs, \int_a^b ... dx -> integral(), \frac{d}{dx} -> derivative(),
+ * \frac{d^2}{dx^2} -> derivative(derivative(...)), \sum_{i=a}^{b} -> summation(),
+ * `%` -> /100 and `of` -> `*` (15% of 80).
  * Anything else throws UnsupportedLatex (the LLM path). Pure TypeScript, no mathjs import.
+ *
+ * Bound variables stay bound: the `dx` of an integral and the index of a sum are removed from
+ * `variables` unless the letter is also used free elsewhere on the line, so `\int_0^1 x^2 dx`
+ * is a closed expression the engine can evaluate rather than an expression in x.
  */
 
 export class UnsupportedLatex extends Error {
@@ -40,6 +46,8 @@ export interface Translated {
   hasDegrees: boolean;
   hasText: boolean;
   hasPm: boolean;
+  /** a `%` was read as /100: results are shown as decimals, never as fractions */
+  hasPercent: boolean;
 }
 
 type TokenKind = "num" | "id" | "unit" | "const" | "group" | "op" | "rel" | "open" | "close" | "pm" | "comma" | "fac" | "fnname";
@@ -108,7 +116,7 @@ const RELATION_COMMANDS: Record<string, string> = {
 };
 const IMPLICATION_COMMANDS = new Set(["Rightarrow", "implies", "therefore", "Longrightarrow", "iff", "Leftrightarrow"]);
 const UNSUPPORTED_COMMANDS = new Set([
-  "sum", "prod", "lim", "begin", "end", "dots", "ldots", "cdots", "vdots", "forall", "exists", "in", "notin", "subset",
+  "prod", "lim", "begin", "end", "dots", "ldots", "cdots", "vdots", "forall", "exists", "in", "notin", "subset",
   "cup", "cap", "partial", "nabla", "prime", "dot", "ddot", "oint", "iint", "iiint", "binom", "choose", "matrix", "pmatrix",
   "bmatrix", "cases", "emptyset", "mid", "parallel", "perp", "angle", "triangle", "sim", "propto",
 ]);
@@ -550,11 +558,10 @@ class Scanner {
         return;
       case "%":
         this.i++;
-        if (this.opts.plain) this.emit("op", "%");
-        else {
-          this.emit("op", "/");
-          this.emit("num", "100");
-        }
+        // `%` is a percentage everywhere except calculator text, where it stays modulo -- unless
+        // the very next word is `of` (`15% of 80`), which is only ever a percentage.
+        if (this.opts.plain && !/^\s*of\b/.test(this.src.slice(this.i))) this.emit("op", "%");
+        else this.emitPercent();
         return;
       case ":":
         this.i++;
@@ -597,6 +604,11 @@ class Scanner {
         this.emit("op", "to");
         return;
       }
+      if (run === "of") {
+        this.i += 2;
+        this.emitOf();
+        return;
+      }
       if (FUNCTION_WORDS[run]) {
         this.i += run.length;
         this.parseFunction(FUNCTION_WORDS[run]);
@@ -624,6 +636,10 @@ class Scanner {
       this.emit("op", "to");
       return;
     }
+    if (word === "of") {
+      this.emitOf();
+      return;
+    }
     if (FUNCTION_WORDS[word]) {
       this.parseFunction(FUNCTION_WORDS[word]);
       return;
@@ -646,6 +662,26 @@ class Scanner {
       return;
     }
     this.emitIdentifier(word);
+  }
+
+  /** `15\%` -> `15 / 100`; the flag keeps percentage answers decimal (0.45, never 9/20). */
+  private emitPercent(): void {
+    this.meta.hasPercent = true;
+    this.emit("op", "/");
+    this.emit("num", "100");
+  }
+
+  /**
+   * `of` between two quantities is multiplication in school maths (`15% of 80`, `\frac{1}{2}
+   * of 40`). Only after something to multiply: a stray `of` is prose.
+   */
+  private emitOf(): void {
+    const last = this.lastToken();
+    if (!last || !VALUE_END.has(last.kind)) {
+      this.meta.hasText = true;
+      return;
+    }
+    this.emit("op", "*");
   }
 
   private emitIdentifier(name: string): void {
@@ -733,10 +769,7 @@ class Scanner {
       return;
     }
     if (name === "%") {
-      if (this.lastToken() && this.lastToken()!.kind !== "op") {
-        this.emit("op", "/");
-        this.emit("num", "100");
-      }
+      if (this.lastToken() && this.lastToken()!.kind !== "op") this.emitPercent();
       return;
     }
     if (name === "#" || name === "_" || name === "$" || name === "colon") return;
@@ -842,6 +875,10 @@ class Scanner {
       this.parseIntegral();
       return;
     }
+    if (name === "sum") {
+      this.parseSum();
+      return;
+    }
     if (name === "hspace" || name === "vspace" || name === "phantom") {
       this.readGroup();
       return;
@@ -860,6 +897,10 @@ class Scanner {
     }
     if (content === "to" || content === "in") {
       this.emit("op", "to");
+      return;
+    }
+    if (content === "of") {
+      this.emitOf();
       return;
     }
     if (FUNCTION_WORDS[content]) {
@@ -926,20 +967,73 @@ class Scanner {
     const num = numRaw.trim();
     const den = denRaw.trim();
     const dm = /^(?:\\mathrm\{d\}|d)\s*(\\?[a-zA-Z]+)$/.exec(den);
+    // `\frac{dy}{dx}`: the engine cannot know y here. index.ts rewrites it against an earlier
+    // `y = ...` line before translation; anything else stays unsupported.
     if (dm && /^(?:\\mathrm\{d\}|d)\s*(?:\^\{?\d\}?)?\s*(\\?[a-zA-Z]+)$/.test(num)) {
       throw new UnsupportedLatex("Leibniz derivative notation");
     }
     if ((num === "d" || num === "\\mathrm{d}") && dm) {
-      const variable = this.sub(dm[1]);
-      const operandRaw = this.readOperandRest();
-      if (!operandRaw.trim()) throw new UnsupportedLatex("derivative without operand");
-      const operand = this.sub(operandRaw);
-      this.meta.functions.add("derivative");
-      this.emit("group", `derivative(${JSON.stringify(operand)}, ${JSON.stringify(variable)})`);
+      this.emitDerivative(this.sub(dm[1]), 1);
+      return;
+    }
+    // \frac{d^2}{dx^2}, \frac{d^{3}}{dx^{3}}: repeated differentiation in the same variable
+    const nth = /^(?:\\mathrm\{d\}|d)\s*\^\s*\{?\s*([2-9])\s*\}?$/.exec(num);
+    const dnth = nth && /^(?:\\mathrm\{d\}|d)\s*(\\?[a-zA-Z]+)\s*\^\s*\{?\s*([2-9])\s*\}?$/.exec(den);
+    if (nth && dnth && dnth[2] === nth[1]) {
+      this.emitDerivative(this.sub(dnth[1]), Number(nth[1]));
       return;
     }
     if (!num || !den) throw new UnsupportedLatex("empty fraction");
     this.emit("group", `((${this.sub(num)})/(${this.sub(den)}))`);
+  }
+
+  /** `\frac{d}{dx} <rest>` -> `derivative("<rest>", "x")`, nested `order` times. */
+  private emitDerivative(variable: string, order: number): void {
+    const operandRaw = this.readOperandRest();
+    if (!operandRaw.trim()) throw new UnsupportedLatex("derivative without operand");
+    // `\frac{d}{dx} f(x)`: juxtaposition would read f as a constant factor and answer `f`.
+    // A function the engine does not know cannot be differentiated, so it is refused instead.
+    if (unknownFunctionCall(operandRaw)) throw new UnsupportedLatex("derivative of an unknown function");
+    const operand = this.sub(operandRaw);
+    this.meta.functions.add("derivative");
+    const name = JSON.stringify(variable);
+    let call = `derivative(${JSON.stringify(operand)}, ${name})`;
+    for (let k = 1; k < order; k++) call = `derivative(${call}, ${name})`;
+    this.emit("group", call);
+  }
+
+  /**
+   * `\sum_{i=1}^{10} i` -> `summation("i", "i", 1, 10)`. The summand runs to the end of the
+   * current group; a summand with a top-level `+`/`-` (`\sum_{i=1}^{3} i + 1`) is ambiguous on
+   * paper, so it is refused rather than guessed.
+   */
+  private parseSum(): void {
+    let index: string | null = null;
+    let lower: string | null = null;
+    let upper: string | null = null;
+    for (let guard = 0; guard < 2; guard++) {
+      this.skipSpaces();
+      if (this.peek() === "_") {
+        this.i++;
+        const raw = this.readScriptArg().replace(/\\[,;:! ]/g, " ").trim();
+        const m = /^([a-zA-Z])\s*=\s*(\S[\s\S]*)$/.exec(raw);
+        if (!m) throw new UnsupportedLatex("sum without an index");
+        index = m[1];
+        lower = this.sub(m[2]);
+      } else if (this.peek() === "^") {
+        this.i++;
+        upper = this.sub(this.readScriptArg());
+      }
+    }
+    if (index === null || lower === null || upper === null) throw new UnsupportedLatex("sum without limits");
+    const bodyRaw = this.readOperandRest();
+    if (!bodyRaw.trim()) throw new UnsupportedLatex("sum without a summand");
+    if (hasTopLevelAddition(bodyRaw)) throw new UnsupportedLatex("ambiguous summand");
+    const bound = !this.meta.variables.has(index);
+    const body = this.sub(bodyRaw);
+    if (bound) this.meta.variables.delete(index);
+    this.meta.functions.add("summation");
+    this.emit("group", `summation(${JSON.stringify(body)}, ${JSON.stringify(index)}, ${lower}, ${upper})`);
   }
 
   /** raw text from the cursor to the end of this level (stops at an unmatched `)`), consumed */
@@ -1032,8 +1126,11 @@ class Scanner {
     const integrandEnd = m.index + (m[0].startsWith("d") || m[0].startsWith("\\") || m[0].startsWith(" ") ? 0 : 1);
     const integrandRaw = rest.slice(0, integrandEnd);
     if (!integrandRaw.trim()) throw new UnsupportedLatex("integral without integrand");
+    const seen = new Set(this.meta.variables);
     const variable = this.sub(m[1]);
     const integrand = this.sub(integrandRaw);
+    // the integration variable is bound by `dx` unless the line also uses it free
+    if (!seen.has(variable)) this.meta.variables.delete(variable);
     this.i += m.index + m[0].length;
     this.meta.functions.add("integral");
     this.emit("group", `integral(${JSON.stringify(integrand)}, ${JSON.stringify(variable)}, ${lower}, ${upper})`);
@@ -1048,6 +1145,43 @@ interface Meta {
   hasText: boolean;
   hasDegrees: boolean;
   hasPm: boolean;
+  hasPercent: boolean;
+}
+
+const FUNCTION_CALL = /(?:^|[^a-zA-Z\\])(?:([fgh])|\\([a-zA-Z]+))\s*(?:\\left\s*)?\(/g;
+
+/**
+ * `f(x)`, `g(t)`, `\Gamma(x)`: a name the engine has no definition for, applied to an argument.
+ * Everywhere else juxtaposition is multiplication (`2(x+1)`, `a(x+1)`), so this is limited to the
+ * f/g/h convention the rest of the engine already uses plus Greek names -- `\sin(x)` and
+ * `\left(...\right)` are known and stay.
+ */
+function unknownFunctionCall(src: string): boolean {
+  const re = new RegExp(FUNCTION_CALL.source, "g");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src)) !== null) {
+    if (m[1]) return true;
+    const name = m[2] ?? "";
+    if (GREEK.has(name) || name in GREEK_ALIAS) return true;
+    re.lastIndex = m.index + 1; // matches may overlap: `\left(f(x)\right)`
+  }
+  return false;
+}
+
+/** `+` or `-` outside every bracket, with something before it (a leading sign does not count). */
+function hasTopLevelAddition(src: string): boolean {
+  let depth = 0;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === "\\") {
+      i++;
+      continue;
+    }
+    if (ch === "{" || ch === "(" || ch === "[") depth++;
+    else if (ch === "}" || ch === ")" || ch === "]") depth--;
+    else if ((ch === "+" || ch === "-") && depth === 0 && src.slice(0, i).trim() !== "") return true;
+  }
+  return false;
 }
 
 function sanitizeSubscript(sub: string): string {
@@ -1156,7 +1290,7 @@ function collectVariables(tokens: Token[]): string[] {
  */
 export function latexToMath(latex: string, opts: TranslateOptions = {}): Translated {
   const src = opts.plain ? preprocessPlain(latex) : preprocessLatex(latex);
-  const meta: Meta = { variables: new Set(), units: new Set(), functions: new Set(), constants: new Set(), hasText: false, hasDegrees: false, hasPm: false };
+  const meta: Meta = { variables: new Set(), units: new Set(), functions: new Set(), constants: new Set(), hasText: false, hasDegrees: false, hasPm: false, hasPercent: false };
   const scanner = new Scanner(src, opts, meta);
   scanner.parseAll();
   const tokens = scanner.tokens;
@@ -1188,5 +1322,6 @@ export function latexToMath(latex: string, opts: TranslateOptions = {}): Transla
     hasDegrees: meta.hasDegrees,
     hasText: meta.hasText,
     hasPm: meta.hasPm,
+    hasPercent: meta.hasPercent,
   };
 }

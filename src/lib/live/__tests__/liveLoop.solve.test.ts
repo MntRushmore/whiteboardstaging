@@ -13,7 +13,7 @@ import {
   type SolveStep,
 } from "../contracts";
 import { getEngine } from "../engine";
-import { handSeedFor, handSizeFor, planHandwriting } from "../handwriting";
+import { handSeedFor, handSizeFor, inlineHandSizeFor, planHandwriting } from "../handwriting";
 import { createLiveLoop, type LiveLoop } from "../liveLoop";
 import { liveStore, resetLiveStore } from "../liveStore";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
@@ -87,10 +87,18 @@ describe("live loop — Solve answers locally, and checks the model when it cann
       .join("|");
   }
 
-  /** The same fingerprint for the block these steps SHOULD produce, in this line's hand. */
-  function expectedWriting(steps: string[]): string {
+  /**
+   * The same fingerprint for the block these steps SHOULD produce, in this line's hand.
+   *
+   * `seedKey` is the line id for a worked solution written under the line, and `<id>:answer`
+   * for the answer the tutor writes at the end of the student's own line — a different hand,
+   * and a different size, for a different piece of writing.
+   */
+  function expectedWriting(steps: string[], seedKey?: string): string {
     const st = Object.values(liveStore.lines.get())[0];
-    const plan = planHandwriting(steps, { size: handSizeFor(st.line.bounds.h), seed: handSeedFor(st.line.id) }).plan;
+    const h = st.line.bounds.h;
+    const size = seedKey?.endsWith(":answer") ? inlineHandSizeFor(h) : handSizeFor(h);
+    const plan = planHandwriting(steps, { size, seed: handSeedFor(seedKey ?? st.line.id) }).plan;
     if (!plan) throw new Error(`the hand engine cannot draw ${steps.join(" / ")}`);
     return plan.lines
       .flatMap((l) => l.strokes.map((s) => s.points.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ")))
@@ -179,11 +187,15 @@ describe("live loop — Solve answers locally, and checks the model when it cann
 
   // ------------------------------------------------------------ 1. the local answer
 
-  it("finishes `36 + 2 =` by hand with `= 38`, and never opens the stream", async () => {
+  it("has already finished `36 + 2 =` by the time Solve is pressed, and never opens the stream", async () => {
+    // A line the student ended with `=` is answered where they left off as soon as it is read
+    // (liveLoop.answer.test.ts owns that). Solve then finds its own answer already on the page:
+    // it must not write a second copy, and it still has nothing to ask a model.
     await solve("36+2=");
 
+    const lineId = Object.keys(liveStore.lines.get())[0];
     expect(handShapes().length).toBeGreaterThan(0);
-    expect(handWriting()).toBe(expectedWriting(["= 38"]));
+    expect(handWriting()).toBe(expectedWriting(["38"], `${lineId}:answer`));
     // the whole point: a sum the engine can do is never sent to a model
     expect(streamCalls).toEqual([]);
     expect(typesetSteps()).toEqual([]);
@@ -195,12 +207,23 @@ describe("live loop — Solve answers locally, and checks the model when it cann
     ["3.2 kg \\cdot 9.8 m/s^2", "= 31.36\\,\\mathrm{N}"], // units
     ["5 km/h \\text{ to } m/s", "= 1.389\\,\\mathrm{m/s}"], // a conversion
     ["\\frac{d}{dx} x^3", "= 3\\cdot{x}^{2}"], // a derivative
-    ["\\frac{1}{2}+\\frac{1}{3}=", "= \\frac{5}{6}"], // an exact fraction
     ["100-45", "= 55"], // bare arithmetic the echo's calculator rule keeps quiet about
   ])("answers %s locally too", async (line, written) => {
     await solve(line);
 
     expect(handWriting()).toBe(expectedWriting([written]));
+    expect(streamCalls).toEqual([]);
+  });
+
+  it.each([
+    // a line the student finished with `=`: the answer continues it, bare
+    ["36+2=", "38"],
+    ["\\frac{1}{2}+\\frac{1}{3}=", "\\frac{5}{6}"],
+  ])("answers %s at the end of the student's own line", async (line, written) => {
+    await solve(line);
+
+    const lineId = Object.keys(liveStore.lines.get())[0];
+    expect(handWriting()).toBe(expectedWriting([written], `${lineId}:answer`));
     expect(streamCalls).toEqual([]);
   });
 

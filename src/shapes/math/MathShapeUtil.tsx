@@ -15,6 +15,7 @@ import {
   type RecordProps,
   type TLShapeId,
 } from "tldraw";
+import { TUTOR_INK_HEX, answerContinuation, composeAnswer } from "@/lib/live/answer";
 import {
   LIVE_VERDICTS,
   MATH_SHAPE_DEFAULTS,
@@ -35,7 +36,8 @@ export const MATH_FONT_PX: Record<MathSize, number> = { s: 18, m: 24, l: 32 };
 export const MATH_COLORS = {
   ok: "#16a34a",
   warn: "#d97706",
-  accent: "#3b82f6",
+  /** the tutor's colour, shared with the handwriting (`TUTOR_INK_COLOR`) */
+  accent: TUTOR_INK_HEX,
   muted: "#6b7280",
 } as const;
 export const UNREADABLE_COPY = "Couldn't read this — tap to type it";
@@ -97,7 +99,7 @@ export class MathShapeUtil extends ShapeUtil<MathShape> {
 
   override toSvg(shape: MathShape) {
     const { latex, resultLatex, tone, size } = shape.props;
-    const text = resultLatex ? `${latex}  ${resultLatex}` : latex;
+    const text = resultLatex ? composeAnswer(latex, resultLatex) : latex;
     return (
       <text
         fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
@@ -178,7 +180,8 @@ function MathShapeView({ shape }: { shape: MathShape }) {
               {resultLatex ? (
                 <span
                   className="live-math__result"
-                  dangerouslySetInnerHTML={{ __html: renderLatex(resultLatex.startsWith("=") ? resultLatex : `= ${resultLatex}`) }}
+                  // `36 + 2 =` already ends in a relation: what follows is `38`, not `= 38`.
+                  dangerouslySetInnerHTML={{ __html: renderLatex(answerContinuation(latex, resultLatex)) }}
                 />
               ) : null}
             </div>

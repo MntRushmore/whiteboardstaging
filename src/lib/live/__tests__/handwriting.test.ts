@@ -11,7 +11,15 @@ import {
   type Rect,
   type RecognizeResponse,
 } from "../contracts";
-import { HAND_WRITE, handBlockOf, handSeedFor, handSizeFor, planHandwriting, revealCounts } from "../handwriting";
+import {
+  HAND_WRITE,
+  handBlockOf,
+  handSeedFor,
+  handSizeFor,
+  inlineHandSizeFor,
+  planHandwriting,
+  revealCounts,
+} from "../handwriting";
 import { createLiveLoop, type LiveLoop } from "../liveLoop";
 import { liveStore, resetLiveStore } from "../liveStore";
 import { rectsIntersect } from "../placement";
@@ -102,6 +110,25 @@ describe("handwriting: planning and the unsupported interlock", () => {
     expect(handSizeFor(40)).toBe(40);
     expect(handSizeFor(4)).toBe(HAND_WRITE.minSize);
     expect(handSizeFor(400)).toBe(HAND_WRITE.maxSize);
+  });
+
+  it("pins `digitRatio`: `size` is not the height of what gets written", () => {
+    // A digit fills neither the 14-unit em box nor the 11 units above the baseline. An answer
+    // written into the student's own line divides by this to come out the height of theirs,
+    // so a change to the atlas that moves it has to move the constant with it.
+    const plan = planHandwriting(["8"], { size: 100, seed: 1 }).plan;
+    expect(plan!.bounds.h / 100).toBeCloseTo(HAND_WRITE.digitRatio, 1);
+  });
+
+  it("writes an answer into the line at the student's own glyph height", () => {
+    for (const h of [24, 40, 60]) {
+      const plan = planHandwriting(["38"], { size: inlineHandSizeFor(h), seed: 1 }).plan;
+      expect(plan!.bounds.h).toBeGreaterThan(h * 0.85);
+      expect(plan!.bounds.h).toBeLessThan(h * 1.15);
+    }
+    // ...but never so large that one answer takes over the board
+    expect(inlineHandSizeFor(4000)).toBe(HAND_WRITE.maxInlineSize);
+    expect(inlineHandSizeFor(0)).toBe(HAND_WRITE.minSize);
   });
 });
 

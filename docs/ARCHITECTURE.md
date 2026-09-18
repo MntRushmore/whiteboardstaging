@@ -172,7 +172,30 @@ pen-up (draw.isComplete false→true, source 'user')
   → (ladder permits) POST /api/live/check|solve SSE: meta → annotation*/step* → done
 ```
 
-**Deterministic maths never goes through a model.** `LiveLoop.startSolve` (`src/lib/live/liveLoop.ts`) asks the local engine twice before it will open `/api/live/solve`: `engine.solveLatex` for a relation with an unknown (`2x + 3 = 11` → `2x = 8`, `x = 4`), and then `localAnswerFor` (`src/lib/live/solveSteps.ts`) for a line the engine can simply evaluate — `analyzeLine(latex, { mode: 'answer' }).resultLatex` covers a trailing `=`, units, a conversion and a derivative, and `engine.calculate` covers bare arithmetic whose result the echo's calculator rule suppresses. Either way the steps are written under the student's work in the tutor's hand (`planHandwriting` + `HandWriter`), with no model, no credits and no network. An answer the hand atlas cannot draw, or a device with the handwriting switch off, is typeset locally instead of being asked for: only a line the engine has nothing to say about (a word problem, an equation the CAS declines) reaches the stream. Regression: `36 + 2 =` used to fall through `solveLatex` and be answered `= r + 9\varepsilon` by the model.
+**Deterministic maths never goes through a model.** `LiveLoop.startSolve` (`src/lib/live/liveLoop.ts`) asks the local engine twice before it will open `/api/live/solve`: `engine.solveLatex` for a relation with an unknown (`2x + 3 = 11` → `2x = 8`, `x = 4`), and then `localAnswerFor` (`src/lib/live/solveSteps.ts`) for a line the engine can simply evaluate — `analyzeLine(latex, { mode: 'answer' }).resultLatex` covers a trailing `=`, units, a conversion, a derivative, a definite integral, a finite sum and a percentage, and `engine.calculate` covers bare arithmetic whose result the echo's calculator rule suppresses. Either way the steps are written under the student's work in the tutor's hand (`planHandwriting` + `HandWriter`), with no model, no credits and no network. An answer the hand atlas cannot draw, or a device with the handwriting switch off, is typeset locally instead of being asked for: only a line the engine has nothing to say about (a word problem, an equation the CAS declines) reaches the stream. Regression: `36 + 2 =` used to fall through `solveLatex` and be answered `= r + 9\varepsilon` by the model.
+
+**What the local engine can and cannot do (`src/lib/live/engine/**`).** The table is the contract the tests in `engine/__tests__` hold it to. The rule behind it: the engine either produces the answer a teacher would write, or it produces none — a line it cannot do comes back `kind: 'unknown'` with an empty `resultLatex`, never an approximation presented as an answer.
+
+| Local, with an answer | Example in → answer out |
+|---|---|
+| Arithmetic, exact fractions, powers, roots | `\frac{3}{4} + \frac{1}{6}` → `\frac{11}{12}`, `\sqrt{144}` → `12` |
+| Trig (degrees and radians), logs, exponentials | `\sin(30^\circ)` → `0.5`, `\log_{2}(8)` → `3`, `\ln(e^2)` → `2` |
+| Percentages and "of" | `15\% \text{ of } 80 =` → `12` (percent answers stay decimal: `12\%` of `3` → `0.36`) |
+| Units, conversions, physical constants | `5 km/h \text{ to } m/s` → `1.389\,\mathrm{m/s}` |
+| Derivatives: `\frac{d}{dx}`, `\frac{d^2}{dx^2}`, and `\frac{dy}{dx}` / `f'(x)` when an earlier line defined `y`/`f` | `\frac{d}{dx}(3x^2 + 2x) =` → `6\cdot x+2`, `\frac{d}{dx} 7 =` → `0` |
+| Definite integrals: exact for a polynomial over rational limits, otherwise Simpson (1000 panels) to 4 s.f. | `\int_0^1 x^2 dx =` → `\frac{1}{3}`, `\int_0^{\pi} \sin x \, dx =` → `2` |
+| Finite sums `\sum_{i=a}^{b}` (integer limits, ≤ 10 000 terms) | `\sum_{i=1}^{10} i =` → `55`, `\sum_{i=1}^{3} \frac{1}{i} =` → `\frac{11}{6}` |
+| Single-variable equations (linear/quadratic/cubic exact, else numeric), step equivalence, chemistry balancing | `x^2 - 5x + 6 = 0` → `x = 2 \text{ or } x = 3` |
+
+| Refused (`kind: 'unknown'`, no result) | Why |
+|---|---|
+| `\lim_{x \to 0} \frac{\sin x}{x}` | A CAS this size cannot decide a limit; sampling near the point would be a guess, not an answer |
+| Matrices, `\begin{array}`, `\begin{cases}` | No linear algebra. Classified `unknown` rather than `text`, so it reads as "cannot do this", not as a caption |
+| Indefinite integrals, improper/divergent/singular definite ones, an integrand whose variable is not the `dx` | No symbolic integration; a Simpson sum over a singularity is meaningless |
+| `\frac{d}{dx} f(x)`, `\frac{d}{dx} \Gamma(x)`, `\frac{dy}{dx}` with no definition in scope | An unknown function would otherwise be read as a constant factor and "differentiated" to `f` |
+| `\sum_{i=1}^{3} i + 1` (ambiguous summand), infinite or symbolic limits | Two readings on paper; the engine refuses rather than picking one |
+
+Bound variables are bound: the `dx` of an integral and the index of a sum are removed from a line's free variables, so `\int_0^1 x^2 dx =` is a closed expression the engine answers, not an expression in `x`. A trailing `=` on any of the above follows the same rule as `36 + 2 =` — the value is revealed in answer mode only.
 
 **The model's steps are checked before they are drawn.** A solve step that does reach the client goes through `createSolveStepGuard` (`solveSteps.ts`) first: it must parse with the local engine (prose, an empty fragment and a broken `\frac` do not), and it must introduce no free variable that neither the student's own lines nor an earlier accepted step contain — unless the step is the assignment defining it (`v = 60/2` in a word problem is fine; `= r + 9\varepsilon` is not). Steps that fail are discarded, and if none survives the student sees the ordinary solve failure ("Couldn't work this out" plus Retry) rather than nonsense on their page. LLM steps are typeset `math` shapes, never handwriting: the tutor's hand is reserved for maths the engine derived.
 

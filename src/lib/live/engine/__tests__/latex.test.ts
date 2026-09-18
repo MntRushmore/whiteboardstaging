@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { create, all } from "mathjs";
 import { latexToMath, preprocessLatex, splitRelations, UnsupportedLatex } from "../latex";
+import { exactIntegral, polynomialCoefficients } from "../math";
 import { valueToLatex } from "../format";
 
 const math = create(all);
@@ -70,6 +71,8 @@ describe("latexToMath: LaTeX -> value", () => {
     ["-\\frac{1}{2} + 1", 0.5],
     ["2(3+1)", 8],
     ["\\frac{10}{4} \\cdot 2", 5],
+    ["15\\% \\text{ of } 80", 12],
+    ["\\frac{1}{2} \\text{ of } 40", 20],
   ];
   it.each(cases)("%s", (latex, expected) => {
     expect(num(latex)).toBeCloseTo(expected, 9);
@@ -160,7 +163,7 @@ describe("latexToMath: calculus, plain mode and failures", () => {
     expect(math.evaluate(t.source)).toBe(6);
   });
   it("throws UnsupportedLatex for constructs the LLM must handle", () => {
-    for (const bad of ["\\sum_{i=1}^{n} i", "f'(x)", "\\frac{dy}{dx}", "\\begin{matrix} 1 \\end{matrix}", "\\lim_{x \\to 0} x"]) {
+    for (const bad of ["\\sum x_i", "\\prod_{i=1}^{3} i", "f'(x)", "\\frac{dy}{dx}", "\\begin{matrix} 1 \\end{matrix}", "\\lim_{x \\to 0} x"]) {
       expect(() => latexToMath(bad, { isUnit })).toThrow(UnsupportedLatex);
     }
   });
@@ -190,5 +193,73 @@ describe("format", () => {
   it("formats fractions and complex numbers", () => {
     expect(valueToLatex(math.fraction(3, 4))).toBe("\\frac{3}{4}");
     expect(valueToLatex(math.complex(1, -2))).toBe("1 - 2i");
+  });
+});
+
+describe("latexToMath: calculus notation, bound variables and percentages", () => {
+  const t = (latex: string) => latexToMath(latex, { isUnit });
+
+  it("binds the integration variable so the line is a closed expression", () => {
+    expect(t("\\int_{0}^{1} x^2 \\, dx").source).toBe('integral("x ^ 2", "x", 0, 1)');
+    expect(t("\\int_{0}^{1} x^2 \\, dx").variables).toEqual([]);
+    expect(t("\\int_0^1 x^2 dx").variables).toEqual([]);
+    expect(t("\\int_{0}^{\\pi} \\sin x \\, dx").source).toBe('integral("sin(x)", "x", 0, pi)');
+    // a letter used free elsewhere on the line is still a variable
+    expect(t("x + \\int_{0}^{1} t^2 \\, dt").variables).toEqual(["x"]);
+    expect(t("\\int_{0}^{1} t^2 \\, dt + x").variables).toEqual(["x"]);
+  });
+  it("translates \\sum with its index bound", () => {
+    expect(t("\\sum_{i=1}^{10} i").source).toBe('summation("i", "i", 1, 10)');
+    expect(t("\\sum_{k=1}^{4} k^2").source).toBe('summation("k ^ 2", "k", 1, 4)');
+    expect(t("\\sum_{k=1}^{4} k^2").variables).toEqual([]);
+    // an upper limit that is a symbol stays a variable: the sum is read but not evaluable
+    expect(t("\\sum_{k=1}^{n} k").variables).toEqual(["n"]);
+  });
+  it("translates repeated differentiation", () => {
+    expect(t("\\frac{d^2}{dx^2} x^4").source).toBe('derivative(derivative("x ^ 4", "x"), "x")');
+    expect(t("\\frac{d}{dt} 3t^2").source).toBe('derivative("3 * t ^ 2", "t")');
+  });
+  it("reads `of` as multiplication and flags percentages", () => {
+    const p = t("15\\% \\text{ of } 80");
+    expect(p.source).toBe("15 / 100 * 80");
+    expect(p.hasPercent).toBe(true);
+    expect(t("15% of 80").source).toBe("15 / 100 * 80");
+    expect(t("\\frac{1}{4} \\text{ of } 60").source).toBe("((1)/(4)) * 60");
+    expect(t("2 + 3").hasPercent).toBe(false);
+  });
+  it("refuses notation it cannot read rather than guessing", () => {
+    for (const bad of ["\\sum_{i=1}^{3} i + 1", "\\sum_{i=1}^{3}", "\\sum x", "\\frac{d}{dx} f(x)", "\\frac{d}{dx} \\Gamma(x)", "\\frac{d}{dx}"]) {
+      expect(() => latexToMath(bad, { isUnit }), bad).toThrow(UnsupportedLatex);
+    }
+  });
+});
+
+describe("exact definite integrals", () => {
+  const coeffs = (source: string, variable = "x") => polynomialCoefficients(math.parse(source), variable);
+
+  it("reads polynomial coefficients", () => {
+    expect(coeffs("x ^ 2")).toEqual([0, 0, 1]);
+    expect(coeffs("3 * x ^ 2 + 2 * x")).toEqual([0, 2, 3]);
+    expect(coeffs("4")).toEqual([4]);
+    expect(coeffs("(x + 1) ^ 2")).toEqual([1, 2, 1]);
+    expect(coeffs("x / 2")).toEqual([0, 0.5]);
+    expect(coeffs("-x")?.map((c) => c + 0)).toEqual([0, -1]);
+  });
+  it("refuses everything that is not a polynomial in the variable", () => {
+    for (const source of ["sin(x)", "1 / x", "x ^ (-2)", "x ^ x", "2 ^ x", "sqrt(x)", "x * y", "log(x)", "x ^ 0.5", "3 m"]) {
+      expect(coeffs(source), source).toBeNull();
+    }
+  });
+  it("integrates polynomials over rational limits exactly, and refuses the rest", () => {
+    expect(exactIntegral(math, "x ^ 2", "x", 0, 1)).toBeCloseTo(1 / 3, 12);
+    expect(exactIntegral(math, "2 * x", "x", 1, 3)).toBe(8);
+    expect(exactIntegral(math, "4", "x", 2, 5)).toBe(12);
+    expect(exactIntegral(math, "x ^ 3", "x", -1, 1)).toBe(0);
+    expect(exactIntegral(math, "x", "x", 3, 1)).toBe(-4);
+    // irrational limits and non-polynomials fall back to the numeric integrator
+    expect(exactIntegral(math, "x", "x", 0, Math.PI)).toBeNull();
+    expect(exactIntegral(math, "sin(x)", "x", 0, 1)).toBeNull();
+    expect(exactIntegral(math, "1 / x", "x", 1, 2)).toBeNull();
+    expect(exactIntegral(math, "x", "x", 0, Infinity)).toBeNull();
   });
 });

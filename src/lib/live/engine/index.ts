@@ -23,7 +23,7 @@ import {
 import { asSmallFraction, complexToLatex, formatNumberLatex, nodeToLatex, valueToLatex, type NumberFormatOptions } from "./format";
 import { compileExpr, plotFor } from "./graph";
 import { APPROX_OP, latexToMath, preprocessLatex, splitRelations, UnsupportedLatex, type Translated } from "./latex";
-import { countOperations, createMathInstance, isComplexValue, isNodeValue, isUnitValue, safeEvaluate, toNumber, translate, type MathModule } from "./math";
+import { countOperations, createMathInstance, integralsExact, isComplexValue, isNodeValue, isUnitValue, safeEvaluate, safeParse, toNumber, translate, type MathModule } from "./math";
 import { evaluateUnits, unitValueToLatex, valuesMatch } from "./units";
 
 const UNKNOWN: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
@@ -46,11 +46,31 @@ function normalizeLatex(s: string): string {
 
 const TRIG = new Set(["sin", "cos", "tan", "sec", "csc", "cot", "asin", "acos", "atan", "sinh", "cosh", "tanh"]);
 
-function formatOptions(t: Translated, latex: string): NumberFormatOptions {
+/**
+ * Calculus/aggregate calls the engine evaluates even when the line still mentions a variable:
+ * `\frac{d}{dx} x^3` is an answerable line whose answer contains x.
+ */
+const SYMBOLIC_FUNCTIONS: ReadonlySet<string> = new Set(["derivative", "integral", "summation"]);
+
+function isSymbolic(t: Translated): boolean {
+  return t.functions.some((f) => SYMBOLIC_FUNCTIONS.has(f));
+}
+
+/** `\frac{dy}{dx}`, `\frac{d\theta}{dt}` — the function name and the variable it varies with. */
+const LEIBNIZ = /\\frac\s*\{\s*(?:\\mathrm\s*\{\s*d\s*\}|d)\s*([a-zA-Z])\s*\}\s*\{\s*(?:\\mathrm\s*\{\s*d\s*\}|d)\s*([a-zA-Z])\s*\}/;
+/** `f'(x)`, `y'` — the function name and, when written, the variable. */
+const PRIME = /(^|[^a-zA-Z\\])([a-zA-Z])\s*(?:'|\\prime|\^\{?\\prime\}?)\s*(?:\(\s*([a-zA-Z])\s*\))?/;
+
+/**
+ * `exactIntegral` is true when every integral on the line was integrated exactly (a polynomial
+ * over rational limits): only then may `\int_0^1 x^2 dx` be shown as `\frac{1}{3}` instead of a
+ * 4-significant-figure decimal. A Simpson approximation is never dressed up as an exact value.
+ */
+function formatOptions(t: Translated, latex: string, exactIntegral: boolean): NumberFormatOptions {
   const decimals = /\d\.\d/.test(latex);
   const trig = t.functions.some((f) => TRIG.has(f));
-  const numeric = t.functions.includes("integral");
-  return { preferFraction: !decimals && !t.hasDegrees && !trig && !t.hasUnits && !numeric };
+  const numeric = t.functions.includes("integral") && !exactIntegral;
+  return { preferFraction: !decimals && !t.hasDegrees && !trig && !t.hasUnits && !numeric && !t.hasPercent };
 }
 
 function rootLatex(r: RootValue, opts: NumberFormatOptions = { preferFraction: true }): string {
@@ -117,7 +137,8 @@ export function createEngine(mod: MathModule): LiveEngine {
   const tr = (latex: string, plain = false): Translated => translate(math, latex, { plain });
 
   const evaluateTranslated = (t: Translated, latex: string): { value: unknown; latex: string; ok: boolean; note: string; error?: string } => {
-    const opts = formatOptions(t, latex);
+    const exact = t.functions.includes("integral") && integralsExact(math, t.source);
+    const opts = formatOptions(t, latex, exact);
     const scope = t.hasUnits ? physicsScope(math) : undefined;
     if (t.hasUnits) {
       const ev = evaluateUnits(math, t.source, scope, opts);
@@ -137,7 +158,9 @@ export function createEngine(mod: MathModule): LiveEngine {
     if (!resultLatex) return false;
     const ops = countOperations(t.source);
     const conversion = /\bto\b/.test(t.source);
-    const interesting = t.hasUnits || t.constants.length > 0 || t.functions.length > 0 || ops >= 3 || conversion;
+    // `15% of 80` is worth answering (>= 2 operations once `%` became /100); a bare `50%` is not
+    const percentOf = t.hasPercent && ops >= 2;
+    const interesting = t.hasUnits || t.constants.length > 0 || t.functions.length > 0 || ops >= 3 || conversion || percentOf;
     if (!interesting) return false;
     if (t.hasUnits && ops === 0 && !conversion && t.functions.length === 0) return false;
     if (normalizeLatex(resultLatex) === normalizeLatex(latex)) return false;
@@ -149,7 +172,7 @@ export function createEngine(mod: MathModule): LiveEngine {
     const t = tr(latex);
     if (!t.source.trim()) return t.hasText ? base("text") : base("incomplete");
     const unknowns = unknownsOf(t);
-    const symbolic = t.functions.includes("derivative") || t.functions.includes("integral");
+    const symbolic = isSymbolic(t);
     if (unknowns.length === 0 || symbolic) {
       const ev = evaluateTranslated(t, latex);
       const out: LineAnalysis = { kind: "expression", math: t.source, resultLatex: "", verdict: "none", note: ev.note };
@@ -299,15 +322,15 @@ export function createEngine(mod: MathModule): LiveEngine {
     return out;
   };
 
-  /** `\frac{d}{dx} x^2` on one side of a relation becomes its evaluated form (`2 * x`). */
+  /** `\frac{d}{dx} x^2` (or `\int`, `\sum`) on one side of a relation becomes its evaluated form (`2 * x`). */
   const resolveSymbolicSide = (t: Translated): Translated => {
-    if (!t.functions.includes("derivative") && !t.functions.includes("integral")) return t;
+    if (!isSymbolic(t)) return t;
     const res = safeEvaluate(math, t.source);
     if (!res.ok) return t;
     if (isNodeValue(res.value)) {
       const node = res.value;
       const vars = safeVars(node.toString()) ?? t.variables;
-      return { ...t, source: node.toString(), variables: vars, functions: t.functions.filter((f) => f !== "derivative" && f !== "integral") };
+      return { ...t, source: node.toString(), variables: vars, functions: t.functions.filter((f) => !SYMBOLIC_FUNCTIONS.has(f)) };
     }
     if (typeof res.value === "number") return { ...t, source: String(res.value), variables: [], functions: [] };
     return t;
@@ -375,6 +398,46 @@ export function createEngine(mod: MathModule): LiveEngine {
     return out;
   };
 
+  // --- derivative notation that needs an earlier line -----------------------
+  /** `y = 2x + 1` / `f(t) = t^2` from an earlier line, as LaTeX the scanner can read again. */
+  const definitionLatex = (ctx: AnalyzeContext, name: string, variable?: string): { latex: string; param: string } | null => {
+    for (const a of [ctx.previous, ctx.original]) {
+      if (!a || a.kind !== "function" || !a.math) continue;
+      const m = /^([a-zA-Z])(?:\(([a-zA-Z])\))?\s*=\s*([\s\S]+)$/.exec(a.math);
+      if (!m || m[1] !== name) continue;
+      const param = m[2] ?? a.variable ?? "x";
+      if (variable && param !== variable) continue;
+      const node = safeParse(math, m[3]);
+      if (!node) continue;
+      const latex = nodeToLatex(node);
+      if (latex) return { latex, param };
+    }
+    return null;
+  };
+
+  /**
+   * `\frac{dy}{dx}` and `f'(x)` only mean something next to a definition, so they are rewritten
+   * to `\frac{d}{dx}(...)` when an earlier line defined the function and left alone otherwise
+   * (where they stay unsupported rather than becoming a guess).
+   */
+  const expandDerivativeNotation = (latex: string, ctx: AnalyzeContext): string => {
+    if (!ctx.previous && !ctx.original) return latex;
+    const leibniz = LEIBNIZ.exec(latex);
+    if (leibniz) {
+      const def = definitionLatex(ctx, leibniz[1], leibniz[2]);
+      if (!def) return latex;
+      return `${latex.slice(0, leibniz.index)}\\frac{d}{d${leibniz[2]}}\\left(${def.latex}\\right)${latex.slice(leibniz.index + leibniz[0].length)}`;
+    }
+    const prime = PRIME.exec(latex);
+    if (prime) {
+      const def = definitionLatex(ctx, prime[2], prime[3]);
+      if (!def) return latex;
+      const head = prime.index + prime[1].length;
+      return `${latex.slice(0, head)}\\frac{d}{d${def.param}}\\left(${def.latex}\\right)${latex.slice(prime.index + prime[0].length)}`;
+    }
+    return latex;
+  };
+
   // --- chemistry -----------------------------------------------------------
   const analyzeChem = (latex: string): LineAnalysis => {
     const eq = parseEquation(latex);
@@ -396,7 +459,11 @@ export function createEngine(mod: MathModule): LiveEngine {
 
   // --- entry points --------------------------------------------------------
   const analyze = (latex: string, ctx: AnalyzeContext): LineAnalysis => {
-    const pre = preClassify(latex);
+    // preClassify needs the raw line (it tells "decorations only" from "empty"), so the rewritten
+    // form is only substituted when a rewrite actually happened.
+    const cleaned = preprocessLatex(latex);
+    const expanded = expandDerivativeNotation(cleaned, ctx);
+    const pre = preClassify(expanded === cleaned ? latex : expanded);
     switch (pre.kind) {
       case "empty":
         return { ...UNKNOWN };
@@ -404,16 +471,20 @@ export function createEngine(mod: MathModule): LiveEngine {
         return base("label");
       case "text":
         return base("text");
+      case "unsupported":
+        return { ...UNKNOWN };
       case "incomplete": {
         if (pre.trailingEquals && pre.lhs) {
           try {
             const t = tr(pre.lhs);
-            if (t.source.trim() && unknownsOf(t).length === 0 && splitRelations(pre.lhs).ops.length === 0) {
+            // a bound-variable line (`\int_0^1 x^2 dx =`, `\frac{d}{dx} x^3 =`) is answerable
+            if (t.source.trim() && (unknownsOf(t).length === 0 || isSymbolic(t)) && splitRelations(pre.lhs).ops.length === 0) {
               const a = analyzeExpression(pre.lhs, ctx, true);
               if (a.kind === "expression" && !a.error) return a;
             }
-          } catch {
-            // fall through: incomplete
+          } catch (e) {
+            // `\lim ... =`, `\begin{pmatrix} ... =`: not an unfinished line, a line we cannot read
+            if (e instanceof UnsupportedLatex) return { ...UNKNOWN, error: errorMessage(e) };
           }
         }
         return base("incomplete");

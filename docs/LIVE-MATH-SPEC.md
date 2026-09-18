@@ -654,14 +654,16 @@ Quiet gate 600 / 450 ms per line; one recognize per line per burst (cache by con
 | Simplify, expand, factor ≤ cubic | Local | `simplify`, `rationalize`, roots via `polynomialRoot` |
 | Solve single-variable equations (linear/quadratic/cubic exact, else numeric) | Local | `rationalize` coefficients → `polynomialRoot`; bisection scan fallback |
 | Step equivalence between consecutive lines; final-answer "Solved" | Local | `equivalence.ts` (root comparison / substitution) |
-| Derivatives, numeric definite integrals (Simpson, 1000 panels) | Local | `derivative`; `\int_a^b` numeric |
+| Derivatives (`\frac{d}{dx}`, `\frac{d^2}{dx^2}`, `\frac{dy}{dx}` / `f'(x)` against an earlier definition) | Local | `derivative`; unknown functions refused, never read as a constant factor |
+| Definite integrals: exact for polynomials over rational limits, else Simpson (1000 panels, 4 s.f.) | Local | `\int_a^b ... dx`; indefinite, improper and singular ones are refused |
+| Finite sums `\sum_{i=a}^{b}` (integer limits, ≤ 10 000 terms) | Local | `summation()` on the instance; infinite/symbolic limits and ambiguous summands refused |
 | Units, conversions, unit-aware physics formulas, dimensional mismatch | Local | mathjs `unit`, `to`, `preferUnit` |
 | Physical constants g, c, h, ħ, k_B, N_A, e, G, R, ε₀, μ₀ | Local | `constants.ts` registered on the mathjs instance |
 | Graphs of y = f(x), points, multiple functions, asymptote breaks | Local | `graph` shape + `plot.ts` sampling via `compileExpr` |
 | Chemistry: formula parsing, molar mass, equation balancing, balanced verdict | Local | `chem.ts` rational nullspace, 118-element table |
 | Statistics on lists (mean/median/std), vector magnitude/dot | Local | mathjs |
 | 2–3 variable linear systems | Local | `lusolve` (verdict `unknown` on failure) |
-| Word problems → equations, proofs, concept/setup errors, symbolic integrals, stoichiometry narratives, anything the parser rejects | LLM | `/api/live/check` (gemini-3.5-flash ▸ haiku-4.5) and `/api/live/solve` (claude-sonnet-5 ▸ gpt-5.4-mini) with local verdicts as ground truth; numeric claims (`expected`) re-verified locally |
+| Word problems → equations, proofs, concept/setup errors, limits, matrices, symbolic integrals, stoichiometry narratives, anything the parser rejects | LLM | `/api/live/check` (gemini-3.5-flash ▸ haiku-4.5) and `/api/live/solve` (claude-sonnet-5 ▸ gpt-5.4-mini) with local verdicts as ground truth; numeric claims (`expected`) re-verified locally |
 | Handwriting → LaTeX | Mathpix ▸ vision LLM | `/api/live/recognize` |
 Decision rule: if mathjs can produce a deterministic answer in < 100 ms it is local; the LLM explains, never overrides an `ok`.
 

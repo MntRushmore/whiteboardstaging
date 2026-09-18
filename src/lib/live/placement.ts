@@ -21,6 +21,13 @@ export const PLACEMENT = {
   /** measured KaTeX at 24 px runs ~13 px per visible character (s: 18 px, l: 32 px font) */
   charWidth: 13,
   echoPadding: 40,
+  /**
+   * The space the tutor leaves between the student's own `=` and the answer it writes after
+   * it, as a fraction of the height of their writing: the gap a person leaves when they
+   * finish someone else's line, not the 24 px a separate card is set off by.
+   */
+  answerGapFactor: 0.4,
+  answerGapMin: 10,
 } as const;
 
 /** px per visible character by echo size (KaTeX 18 / 24 / 32 px). */
@@ -50,6 +57,11 @@ export function rectMaxY(r: Rect): number {
 export function estimateEchoWidth(latex: string, size: MathSize = "m"): number {
   const visible = latex.replace(/\\[a-zA-Z]+/g, "x").replace(/[{}\s]/g, "");
   return Math.max(48, Math.round(CHAR_WIDTH[size] * visible.length + PLACEMENT.echoPadding));
+}
+
+/** Gap between the student's last glyph and the answer the tutor writes on the same line. */
+export function inlineAnswerGap(inkHeight: number): number {
+  return Math.max(PLACEMENT.answerGapMin, Math.round(inkHeight * PLACEMENT.answerGapFactor));
 }
 
 /** Echo size from the ink height: small ink -> s, tall ink -> l. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bracketsBalanced, functionInfo, incompleteInfo, isLabel, isLoneSymbol, isTextOnly, looksLikeProse, pointInfo, preClassify } from "../classify";
+import { bracketsBalanced, functionInfo, incompleteInfo, isLabel, isLoneSymbol, isTextOnly, isUnsupportedEnvironment, looksLikeProse, pointInfo, preClassify } from "../classify";
 
 describe("classify: labels", () => {
   it.each(["1)", "2.", "(3)", "12:", "a)", "b.", "(c)", "x", "3", "42", "1a", "Q3", "Problem 2", "#4", "iv)"])("label %s", (s) => {
@@ -124,6 +124,14 @@ describe("classify: functions, points, chem, prose", () => {
     expect(looksLikeProse("3 \\mathrm{~kg}")).toBe(false);
     expect(looksLikeProse("\\sin x + \\cos x")).toBe(false);
     expect(preClassify("\\text{Find the area of the circle}").kind).toBe("text");
+  });
+  it("marks matrix, array and cases environments unsupported rather than prose", () => {
+    for (const s of ["\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}", "\\begin{bmatrix}1\\end{bmatrix}", "\\begin{vmatrix}1&2\\\\3&4\\end{vmatrix}", "\\begin{array}{cc}1&2\\end{array}", "\\begin{cases}x>0\\\\x<5\\end{cases}"]) {
+      expect(isUnsupportedEnvironment(s), s).toBe(true);
+      expect(preClassify(s).kind, s).toBe("unsupported");
+    }
+    expect(isUnsupportedEnvironment("2x + 3 = 11")).toBe(false);
+    expect(isUnsupportedEnvironment("\\text{matrix}")).toBe(false);
   });
   it("leaves ordinary math unclassified for the engine", () => {
     expect(preClassify("2x + 3 = 11").kind).toBeNull();
