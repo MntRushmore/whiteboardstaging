@@ -26,6 +26,7 @@ import { compileExpr, plotFor } from "./graph";
 import { APPROX_OP, latexToMath, preprocessLatex, splitRelations, UnsupportedLatex, type Translated } from "./latex";
 import { countOperations, createMathInstance, integralsExact, isComplexValue, isNodeValue, isUnitValue, safeEvaluate, safeParse, toNumber, translate, type MathModule } from "./math";
 import { evaluateUnits, unitValueToLatex, valuesMatch } from "./units";
+import { solveFromLines, type SystemDeps } from "./systems";
 
 const UNKNOWN: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
 
@@ -308,11 +309,12 @@ export function createEngine(mod: MathModule): LiveEngine {
       if (claim) out.verdict = expressionsEquivalent(math, L.source, R.source, unknowns);
       else if (!anyUnits) {
         // Two or more unknowns (`2x + 3y = 12` → `3y = 12 - 2x`): a step is checked against the
-        // line above by solution set. A first line stays `unknown` (a formula such as
-        // `KE = 1/2 m v^2` is still the model's to comment on in Feedback).
+        // line above by solution set. A first line (`x + y = 18`, `KE = 1/2 m v^2`) is a
+        // statement, not a step: nothing to check, so `none` — as `unknown` it sent the model a
+        // line with nothing wrong in it, and the student got "a great starting equation".
         const rel: Relation = { op: "==", lhs: L.source, rhs: R.source, source, variables: unknowns };
         const prevRel = multiRelationFromAnalysis(math, ctx.previous) ?? multiRelationFromAnalysis(math, ctx.original);
-        if (prevRel) out.verdict = compareMultiRelations(math, prevRel, rel);
+        out.verdict = prevRel ? compareMultiRelations(math, prevRel, rel) : "none";
       }
       if (anyUnits) out.units = { ok: true };
       return out;
@@ -633,6 +635,8 @@ export function createEngine(mod: MathModule): LiveEngine {
         else if (Math.abs(c0) > 1e-12 && !/^-?\d/.test(pre) && !new RegExp(`^${variable}\\s*=`).test(pre)) steps.push(`${variable} = ${fmt(-c0)}`);
         const root = -c0 / c1;
         const final = `${variable} = ${fmt(root)}`;
+        // `y = 9` is already solved: writing it again under itself says nothing.
+        if (normalizeLatex(final) === normalizeLatex(pre)) return null;
         if (steps[steps.length - 1] !== final) steps.push(final);
         return { latex: final, steps };
       }
@@ -793,8 +797,46 @@ export function createEngine(mod: MathModule): LiveEngine {
     }
   };
 
+  const systemDeps: SystemDeps = {
+    parse: (latex) => {
+      try {
+        const pre = preprocessLatex(latex);
+        const split = splitRelations(pre);
+        if (split.sides.length !== 2 || split.ops[0] !== "==") return null;
+        const [L, R] = split.sides.map((side) => tr(side));
+        if (L.hasUnits || R.hasUnits || isSymbolic(L) || isSymbolic(R)) return null;
+        return { lhs: L.source, rhs: R.source, unknowns: [...new Set([...unknownsOf(L), ...unknownsOf(R)])], latex: pre };
+      } catch {
+        return null;
+      }
+    },
+    solveOne: (latex) => solveLatex(latex),
+    singleRoot: (latex, variable) => {
+      const rel = systemDeps.parse(latex);
+      if (!rel || rel.unknowns.length !== 1 || rel.unknowns[0] !== variable) return null;
+      const info = equationRoots(math, { op: "==", lhs: rel.lhs, rhs: rel.rhs, source: `${rel.lhs} == ${rel.rhs}`, variables: [variable] }, variable);
+      if (!info.roots || info.identity || info.roots.length !== 1) return null;
+      return rootToNumber(info.roots[0]);
+    },
+    evalG: (lhs, rhs, scope) => {
+      const res = safeEvaluate(math, `(${lhs}) - (${rhs})`, scope);
+      if (!res.ok) return null;
+      const n = toNumber(res.value);
+      return n === null || !Number.isFinite(n) ? null : n;
+    },
+    fmt: (n) => formatNumberLatex(n, { preferFraction: true }),
+    normalize: normalizeLatex,
+  };
+
   return {
     analyzeLine,
+    solveFromLines: (lines: readonly string[]) => {
+      try {
+        return solveFromLines(lines, systemDeps);
+      } catch {
+        return null;
+      }
+    },
     compileExpr: (expr: string) => {
       try {
         return compileExpr(math, expr);
@@ -814,6 +856,7 @@ const stub: LiveEngine = {
   analyzeLine: () => ({ ...UNKNOWN }),
   compileExpr: () => null,
   solveLatex: () => null,
+  solveFromLines: () => null,
   verifyExpected: () => "unknown",
   balance: () => null,
   calculate: () => null,

@@ -253,7 +253,7 @@ describe("live loop — Solve answers locally, and checks the model when it cann
     await solve("\\text{A train travels 60 km in 2 h. How fast is it going?}");
 
     expect(solveCalls()).toEqual(["/api/live/solve"]);
-    expect(typesetSteps()).toEqual(["60 \\div 2 = 30", "\\boxed{30\\,\\mathrm{km/h}}"]);
+    expect(typesetSteps()).toEqual(["60 \\div 2 = 30", "30\\,\\mathrm{km/h}"]);
     expect(liveStore.lastError.get()).toBeNull();
   });
 
@@ -292,7 +292,7 @@ describe("live loop — Solve answers locally, and checks the model when it cann
     await solve("2x + y = 8");
 
     expect(solveCalls()).toEqual(["/api/live/solve"]);
-    expect(typesetSteps()).toEqual(["2x = 8", "\\boxed{x = 4}"]);
+    expect(typesetSteps()).toEqual(["2x = 8", "x = 4"]);
   });
 
   it("takes the first step that survives when Live escalates one rung", async () => {

@@ -235,6 +235,7 @@ lines as the question and asks for assignment steps (`v = \frac{60}{2}`, then `v
 | Finite sums `\sum_{i=a}^{b}` (integer limits, ≤ 10 000 terms) | `\sum_{i=1}^{10} i =` → `55`, `\sum_{i=1}^{3} \frac{1}{i} =` → `\frac{11}{6}` |
 | Single-variable equations (linear/quadratic/cubic exact, else numeric), step equivalence, chemistry balancing | `x^2 - 5x + 6 = 0` → `x = 2 \text{ or } x = 3` |
 | Steps in two or more unknowns (same solution set: pin all but one unknown, solve along it, check both ways; `compareMultiRelations`). Checks the step, does not solve the system | `x + y = 10` → `y = 10 - x` ✓, `y = 5 - x` flagged, `(x+y)^2 = 100` flagged |
+| Solving from the lines above (`solveFromLines`, `engine/systems.ts`): a known value substituted in, or two linear equations by substitution; `x = ?` / `x =` names the unknown. Written by hand, no model | `x + y = 18`, `y = 9`, `x = ?` → `x + 9 = 18`, `x = 9`; `x + y = 18`, `x - y = 4` → `y = 18 - x` … `x = 11`, `y = 7` |
 
 | Refused (`kind: 'unknown'`, no result) | Why |
 |---|---|

@@ -260,7 +260,7 @@ describe("live loop — Help (and Ask about this)", () => {
     const req = solves()[0];
     expect(req.lines).toEqual([expect.objectContaining({ id: lineId, latex: WORD_PROBLEM, local: expect.objectContaining({ kind: "text" }) })]);
     // the guard lets the solution name its own quantity, and use it afterwards
-    expect(aiShapes().map((p) => p.latex)).toEqual(["v = \\frac{60}{2}", "\\boxed{v = 30}"]);
+    expect(aiShapes().map((p) => p.latex)).toEqual(["v = \\frac{60}{2}", "v = 30"]);
     expect(liveStore.lastError.get()).toBeNull();
   });
 });

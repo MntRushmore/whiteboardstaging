@@ -2024,6 +2024,9 @@ export class LiveLoop implements LiveController {
     // The engine can solve most school lines itself, and the tutor can write that out by hand:
     // no model, no credits, no network. Anything it cannot draw falls through to the stream.
     if (!wordProblem && this.writeSolutionByHand(built, opts)) return;
+    // A line that needs the ones above it — `x = ?` under `x + y = 18` and `y = 9`, or two
+    // equations in x and y — is solved from the column, still by hand and still locally.
+    if (!wordProblem && this.writeContextSolution(built, opts)) return;
     // ...and where the line is not an equation at all but a sum with an answer (`36 + 2 =`),
     // the engine still has that answer. It is written locally whatever the hand switch says:
     // deterministic maths NEVER goes through a model.
@@ -2055,6 +2058,7 @@ export class LiveLoop implements LiveController {
       // step is not held back on a technicality, the symbol rule still applies.
       parses: engine ? (latex) => engineParsesStep(engine, latex) : () => true,
     });
+    const restated = new Set(built.states.map((st) => normalizeStep(st.latex)));
     liveStore.status.set("checking");
     liveStore.solving.set(liveStore.solving.get() + 1);
     void (async () => {
@@ -2066,7 +2070,13 @@ export class LiveLoop implements LiveController {
         for await (const ev of this.deps.stream(SOLVE_PATH, req, { signal: ctrl.signal })) {
           if (ctrl.signal.aborted) break;
           if (ev.event === "step") {
-            const verdict = guard.check(ev.data.latex);
+            const latex = unwrapBoxed(ev.data.latex);
+            // The student's own line read back to them is not a step, and neither is the step
+            // before it again (the model boxes its last line as the answer, often a repeat).
+            const norm = normalizeStep(latex);
+            if (restated.has(norm)) continue;
+            restated.add(norm);
+            const verdict = guard.check(latex);
             if (!verdict.ok) {
               discarded++;
               console.warn("[live] solve step discarded", { reason: verdict.reason, introduced: verdict.introduced, latex: ev.data.latex });
@@ -2074,7 +2084,8 @@ export class LiveLoop implements LiveController {
               continue;
             }
             drawn++;
-            this.placeSolutionStep(columnRect, lastLine.bounds, ev.data.index, ev.data.latex, ev.data.explanation, opts.lineId);
+            if (drawn === 1) this.clearSolveOutput(built.states);
+            this.placeSolutionStep(columnRect, lastLine.bounds, drawn, latex, ev.data.explanation, opts.lineId);
             if (opts.onlyFirstStep) {
               doneEarly = true;
               ctrl.abort();
@@ -2134,7 +2145,51 @@ export class LiveLoop implements LiveController {
     // Solve (or Help) pressed again on a line the tutor has already worked out by hand: the
     // steps are on the page, and drawing them a second time beside the first says nothing new.
     if (!opts.onlyFirstStep && this.hasHandSolution(opts.lineId, state.latex)) return true;
+    // A new solution replaces the last one for this work; it never stacks beside it.
+    this.clearSolveOutput(built.states);
     return this.drawStepsByHand(built, opts, state, steps, opts.onlyFirstStep ? undefined : { [SOLVED_META]: state.latex });
+  }
+
+  /** `solveFromLines` over the column down to the asked-for line; see the call site. */
+  private writeContextSolution(built: { states: LiveLineState[] }, opts: SolveOpts): boolean {
+    const engine = this.engine;
+    if (!engine?.solveFromLines) return false;
+    const idx = built.states.findIndex((s) => s.line.id === opts.lineId);
+    const upto = idx === -1 ? built.states : built.states.slice(0, idx + 1);
+    const state = upto[upto.length - 1];
+    if (!state?.latex || upto.length < 2) return false;
+    let solved: { latex: string; steps: string[] } | null = null;
+    try {
+      solved = engine.solveFromLines(upto.map((s) => s.latex));
+    } catch (e) {
+      console.warn("[live] solveFromLines threw", e);
+      return false;
+    }
+    if (!solved || solved.steps.length === 0) return false;
+    const steps = (opts.onlyFirstStep ? solved.steps.slice(0, 1) : solved.steps).slice(0, LIVE_LIMITS.maxSolveSteps);
+    const key = steps.join(" ; ");
+    if (!opts.onlyFirstStep && this.hasHandSolution(opts.lineId, key)) return true;
+    // Known, so never worth a model call — even at the shape cap, where nothing more is drawn.
+    if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return true;
+    this.clearSolveOutput(built.states);
+    const meta = opts.onlyFirstStep ? undefined : { [SOLVED_META]: key };
+    if (this.deps.handwritingEnabled() && this.drawStepsByHand(built, opts, state, steps, meta)) return true;
+    // The hand is off, or cannot draw a glyph here: still the engine's answer, typeset locally.
+    const column = unionRects(built.states.map((s) => s.line.bounds));
+    const lastLine = built.states[built.states.length - 1].line.bounds;
+    steps.forEach((step, i) => this.placeSolutionStep(column, lastLine, i + 1, step, "", opts.lineId));
+    clientMetric("live.solve.context", { lineId: opts.lineId, steps: steps.length });
+    return true;
+  }
+
+  /** Deletes the tutor's worked output for this work (hand blocks and typeset steps), never echoes or inline answers. */
+  private clearSolveOutput(states: readonly LiveLineState[]): void {
+    const lineIds = new Set(states.map((s) => s.line.id));
+    const ids = this.editor
+      .getCurrentPageShapes()
+      .filter((s) => isLiveMeta(s.meta) && s.meta.source === "ai" && lineIds.has(s.meta.lineId) && !answerSrcOf(s.meta))
+      .map((s) => s.id);
+    if (ids.length > 0) this.write(() => this.editor.deleteShapes(ids));
   }
 
   /**
@@ -2538,6 +2593,20 @@ export class LiveLoop implements LiveController {
       this.analyzeAndRender(lineId, { cascade: true });
     });
   }
+}
+
+/** `\boxed{x = 9}` → `x = 9`: the card is the frame; a box inside it is a second one. */
+export function unwrapBoxed(latex: string): string {
+  const m = /^\s*\\boxed\s*\{([\s\S]*)\}\s*$/.exec(latex);
+  return m ? m[1].trim() : latex;
+}
+
+/** Comparable form of a step: spacing, `\left`/`\right` and `\cdot` vs juxtaposition ignored. */
+export function normalizeStep(latex: string): string {
+  return unwrapBoxed(latex)
+    .replace(/\\(?:left|right|,|;|!|quad|qquad)|~|\s/g, "")
+    .replace(/[{}]/g, "")
+    .replace(/\\cdot|\\times|\*/g, "");
 }
 
 /** Words a line of prose must have before it reads as a question rather than a scrap. */

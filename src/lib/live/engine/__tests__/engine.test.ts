@@ -530,8 +530,8 @@ describe("engine: steps with two or more unknowns (x and y)", () => {
     expect(step(prev, line).verdict).toBe("mismatch");
   });
 
-  it("a first line in two unknowns has nothing to be checked against (left to the model)", () => {
-    expect(engine.analyzeLine("x+y=10", { mode: "feedback" }).verdict).toBe("unknown");
+  it("a first line in two unknowns has nothing to be checked against (and is not sent to the model)", () => {
+    expect(engine.analyzeLine("x+y=10", { mode: "feedback" }).verdict).toBe("none");
   });
 
   it("a step that brings in a new unknown is not guessed at", () => {

@@ -186,6 +186,12 @@ export interface LiveEngine {
   compileExpr(expr: string): ((x: number) => number) | null;
   /** local solve of a single-variable equation; null when unsupported (LLM path) */
   solveLatex(latex: string): { latex: string; steps: string[] } | null;
+  /**
+   * Solve for an unknown using the lines above it (a known value substituted in, or two
+   * linear equations); `x = ?` names the unknown. Null when that is not possible locally.
+   * Optional so engine doubles in tests need not implement it.
+   */
+  solveFromLines?(lines: readonly string[]): { latex: string; steps: string[] } | null;
   /** verifies an LLM `expected` claim (mathjs expr) against the student's line */
   verifyExpected(expected: string, latex: string): "equal" | "unequal" | "unknown";
   balance(equation: string): { coeffs: number[]; latex: string } | null;

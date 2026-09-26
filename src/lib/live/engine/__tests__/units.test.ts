@@ -106,9 +106,9 @@ describe("units: student notation edge cases", () => {
   it("ALL-CAPS symbols are algebra, not prefixed units", () => {
     const a = engine.analyzeLine("\\mathrm{PV} = \\mathrm{nRT}", feedback);
     expect(a.kind).toBe("equation");
-    expect(a.verdict).toBe("unknown");
+    expect(a.verdict).toBe("none");
     expect(a.math).toBe("PV == nRT");
-    expect(engine.analyzeLine("KE = \\frac{1}{2} m v^2", feedback).verdict).toBe("unknown");
+    expect(engine.analyzeLine("KE = \\frac{1}{2} m v^2", feedback).verdict).toBe("none");
     expect(engine.analyzeLine("3 \\mathrm{~MJ} + 500 \\mathrm{~kJ}", feedback).resultLatex).toBe("3.5\\,\\mathrm{MJ}");
   });
   it("physics assignments evaluate with units and chain", () => {
