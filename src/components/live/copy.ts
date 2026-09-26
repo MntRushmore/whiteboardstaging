@@ -29,8 +29,11 @@ export const LIVE_COPY = {
     groupCanvas: "This canvas",
     groupLive: "Live",
     groupHelp: "Help",
-    drawHelp: "Draw help",
-    drawHelpHint: "Ask the tutor to sketch on the canvas",
+    /** the board's one explicit ask: Solve writes the steps, Feedback / Suggest give a hint */
+    help: "Help",
+    helpHint: "Ask the tutor about your latest line",
+    /** Help is greyed out while there is nothing to ask (help set to Off, or Live off) */
+    helpOffHint: "Pick Feedback, Suggest or Solve to ask for help",
     clearMarks: "Clear marks",
     hideAiShapes: "Hide AI shapes",
     handwriting: "Tutor writes by hand",
@@ -78,8 +81,6 @@ export const LIVE_COPY = {
     unknown: "Something went sideways",
     /** appended once the same call has failed more than once */
     attempts: (n: number) => `tried ${n} times`,
-    /** second line of the pill's recognize error: the burst is 'failed', so the image pipeline waits */
-    recognizePaused: "Drawn help is paused until reading works again — use Draw help to force it",
     /** echo chip under ink whose recognition failed (low confidence keeps its own chip) */
     recognizeChip: "Couldn't read this line — tap Retry",
     /** inline card when a hint the student asked for could not be fetched */

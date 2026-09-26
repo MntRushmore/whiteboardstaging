@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TLShapeId } from "tldraw";
 import type { LiveController, LiveLineState } from "../contracts";
 import { liveStore, resetLiveStore } from "../liveStore";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   ANALYZE_WORKSPACE,
   LIVE_VOICE_TOOLS,
@@ -174,5 +176,12 @@ describe("voice tools", () => {
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
+    it("the board page registers these tools and dispatches through runVoiceTool", () => {
+      const page = readFileSync(join(process.cwd(), "src", "app", "board", "[id]", "page.tsx"), "utf8");
+      expect(page).toContain("voiceSessionTools()");
+      expect(page).toContain("runVoiceTool(name, args,");
+      expect(page).toContain("VOICE_SESSION_INSTRUCTIONS");
+      expect(page).not.toMatch(/draw_on_canvas|generate-solution|generateSolution|onSolveWithPrompt/);
+    });
   });
 });

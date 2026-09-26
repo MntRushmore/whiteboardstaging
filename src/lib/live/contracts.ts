@@ -352,7 +352,6 @@ export const LIVE_TIMING = {
   rewriteQuietMs: 450, // when the line already has an echo
   unknownIdleMs: 5000, // Feedback: LLM check for 'unknown' only after this idle
   unreadableChipMs: 3000, // low confidence: "Couldn't read this" chip only after this
-  legacyIdleMs: 4000, // legacy image pipeline debounce while Live is on (2000 when off)
   recognizeTimeoutMs: 6000,
   checkWatchdogMs: 4000, // no model bytes -> fallback model
   pillFadeMs: 1500,
@@ -396,17 +395,6 @@ export interface OpenHint {
   question: string;
   level: number;
   createdAt: number;
-}
-/**
- * pending: ink landed, recognition still running · handled: an echo landed · unhandled:
- * Live read the ink and has nothing to show (non-math, low confidence): the legacy image
- * pipeline may run · failed: recognition itself failed (server / network / capabilities);
- * the legacy pipeline stays quiet so an outage never turns into paid image generations.
- */
-export type BurstState = "pending" | "handled" | "unhandled" | "failed";
-export interface LiveBurst {
-  at: number;
-  state: BurstState;
 }
 export interface LiveTranscriptLine {
   id: string;

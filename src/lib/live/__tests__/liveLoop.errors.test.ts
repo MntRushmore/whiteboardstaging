@@ -16,7 +16,7 @@ import {
   type UseLiveMathOptions,
 } from "../contracts";
 import { createLiveLoop, type LiveLoop } from "../liveLoop";
-import { clearLiveError, legacyShouldSkip, liveStore, resetLiveStore, retryLiveError } from "../liveStore";
+import { clearLiveError, liveStore, resetLiveStore, retryLiveError } from "../liveStore";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
 import { settle, settleUntil } from "@/lib/live/__fixtures__/settle";
 import { useSyncHash } from "@/lib/live/__fixtures__/syncHash";
@@ -445,142 +445,16 @@ describe("live loop — visible errors and retry", () => {
     expect(liveStore.lastError.get()).toBeNull();
   });
 
-  // ------------------------------------------------------------------ burst gate (legacy pipeline)
-  describe("a failed read marks the burst 'failed' so the paid image pipeline stays quiet", () => {
-    const PAUSED = "Drawn help is paused until reading works again — use Draw help to force it";
-
-    it("recognizer 500 -> lastBurst 'failed', legacyShouldSkip true, second line on the error", async () => {
+  // ------------------------------------------------------------------ no image pipeline behind Live
+  describe("a failed read is Live's alone: there is no image pipeline to pause or hand off to", () => {
+    it("recognizer 500 -> one error, no second line about 'drawn help'", async () => {
       recognizeScript.push(new ApiError("boom", 500, "internal_error"));
       await penUp(fixtureSingleLine());
-      expect(liveStore.lastBurst.get()?.state).toBe("failed");
-      expect(legacyShouldSkip(LIVE_TIMING.legacyIdleMs)).toBe(true);
-      expect(liveStore.lastError.get()).toMatchObject({ kind: "recognize", code: "upstream", detail: PAUSED });
+      expect(liveStore.lastError.get()).toMatchObject({ kind: "recognize", code: "upstream" });
+      expect(liveStore.lastError.get()?.detail).toBeUndefined();
     });
 
-    it("a fetch TypeError while online (network) is a failure too", async () => {
-      recognizeScript.push(new TypeError("Failed to fetch"));
-      await penUp(fixtureSingleLine());
-      expect(liveStore.lastBurst.get()?.state).toBe("failed");
-      expect(liveStore.lastError.get()?.detail).toBe(PAUSED);
-    });
-
-    it("a recognition timeout is a failure: 'pending' while the read hangs, 'failed' once it times out", async () => {
-      loop.stop();
-      loop = makeLoop("feedback", 200);
-      loop.start();
-      recognizeScript.push("<hang>");
-      editor.putUser(fixtureSingleLine());
-      // advance just past the quiet gate: the 200 ms recognizer timeout must not be able to
-      // fire inside this same advance (the payload hash resolves on a real thread)
-      await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 1);
-      await settle(8);
-      expect(fetchJson).toHaveBeenCalledTimes(1);
-      expect(liveStore.lastBurst.get()?.state).toBe("pending");
-      expect(legacyShouldSkip(LIVE_TIMING.legacyIdleMs)).toBe(true);
-      await vi.advanceTimersByTimeAsync(250);
-      await settle(8);
-      expect(liveStore.lastError.get()).toMatchObject({ code: "timeout", detail: PAUSED });
-      expect(liveStore.lastBurst.get()?.state).toBe("failed");
-    });
-
-    it("401 / 429 / 402 are failures as well (the pill carries them, the image pipeline waits)", async () => {
-      recognizeScript.push(new ApiError("Too many requests", 429, "rate_limited"));
-      await penUp(fixtureSingleLine());
-      expect(liveStore.lastError.get()?.code).toBe("rate_limited");
-      expect(liveStore.lastBurst.get()?.state).toBe("failed");
-      expect(legacyShouldSkip(LIVE_TIMING.legacyIdleMs)).toBe(true);
-    });
-
-    it("a low-confidence read is not a failure: the burst ends 'unhandled' as before", async () => {
-      fetchJson.mockImplementationOnce(async () => ({ latex: "2x+?", text: "", kind: "math", confidence: 0.3, provider: "mathpix", ms: 300 }));
-      await penUp(fixtureSingleLine());
-      expect(fetchJson).toHaveBeenCalledTimes(1);
-      expect(liveStore.lastError.get()).toBeNull();
-      expect(editor.shapesOfType("math")).toHaveLength(0);
-      expect(liveStore.lastBurst.get()?.state).toBe("unhandled");
-      expect(legacyShouldSkip(LIVE_TIMING.legacyIdleMs)).toBe(false);
-    });
-
-    // prose (kind 'text') is covered by liveLoop.qa.test.ts B2/B8 with an engine that knows \\text
-    it("lone-symbol ink (a drawn \\Delta) stays 'unhandled' so diagrams keep the image overlay", async () => {
-      recognizeScript.push("\\Delta");
-      await penUp(fixtureSingleLine());
-      expect(fetchJson).toHaveBeenCalledTimes(1);
-      expect(liveStore.lastError.get()).toBeNull();
-      expect(editor.shapesOfType("math")).toHaveLength(0);
-      expect(liveStore.lastBurst.get()?.state).toBe("unhandled");
-      expect(legacyShouldSkip(LIVE_TIMING.legacyIdleMs)).toBe(false);
-    });
-
-    /**
-     * Reported from production: the student wrote `32 + 6 =`, the recognizer read the 2 as an
-     * a, and a slow image model drew `3(a+2)` on the page in its own black ink — a correct
-     * factorisation of a line the student never wrote, presented as their answer.
-     *
-     * The line reached the image model because Live was silent about it, and the gate read
-     * silence as "nothing to offer". A half-written line is the opposite: it is maths Live is
-     * deliberately holding, because the student has not finished the thought.
-     */
-    it("a half-written line is Live's to hold, not the image model's to finish", async () => {
-      recognizeScript.push("3a+6=");
-      await penUp(fixtureSingleLine());
-
-      // silent, as it should be: nothing is drawn on a line still being written
-      expect(editor.shapesOfType("math")).toHaveLength(0);
-      expect(liveStore.lastError.get()).toBeNull();
-      // but claimed, so the paid image pipeline does not offer to finish it for them
-      expect(liveStore.lastBurst.get()?.state).toBe("handled");
-      expect(legacyShouldSkip(LIVE_TIMING.legacyIdleMs)).toBe(true);
-    });
-
-    it("a successful Retry turns the failed burst into 'handled'", async () => {
-      recognizeScript.push(new ApiError("boom", 502, "upstream_error"));
-      await penUp(fixtureSingleLine());
-      expect(liveStore.lastBurst.get()?.state).toBe("failed");
-
-      recognizeScript.push("2x=8");
-      retryLiveError();
-      await settle(8);
-      expect(liveStore.lastError.get()).toBeNull();
-      expect(editor.shapesOfType("math")).toHaveLength(1);
-      expect(liveStore.lastBurst.get()?.state).toBe("handled");
-      expect(legacyShouldSkip(LIVE_TIMING.legacyIdleMs)).toBe(true);
-    });
-
-    it("a Retry that fails again keeps the burst 'failed'; new ink starts a fresh 'pending' burst", async () => {
-      recognizeScript.push(new ApiError("boom", 502, "upstream_error"), new ApiError("boom", 502, "upstream_error"));
-      const strokes = fixtureSingleLine();
-      await penUp(strokes.slice(0, -1));
-      retryLiveError();
-      await settle(8);
-      expect(liveStore.lastBurst.get()?.state).toBe("failed");
-      expect(liveStore.lastError.get()?.detail).toBe(PAUSED);
-
-      recognizeScript.push("2x+3=11");
-      editor.putUser(strokes.slice(-1));
-      expect(liveStore.lastBurst.get()?.state).toBe("pending");
-      await vi.advanceTimersByTimeAsync(QUIET);
-      await settle(8);
-      expect(liveStore.lastBurst.get()?.state).toBe("handled");
-    });
-
-    it("a mixed burst where one line echoes and another fails stays gated ('handled')", async () => {
-      recognizeScript.push("2x=8", new ApiError("boom", 500, "internal_error"));
-      await penUp([...writeLine("2x=8", 100, 200, 40), ...writeLine("x=4", 100, 300, 40)]);
-      expect(fetchJson).toHaveBeenCalledTimes(2);
-      expect(liveStore.lastBurst.get()?.state).toBe("handled");
-      expect(legacyShouldSkip(LIVE_TIMING.legacyIdleMs)).toBe(true);
-    });
-
-    it("offline is unchanged: a queued line is not a failure and carries no second line", async () => {
-      online = false;
-      loop.setOptions({ ...opts });
-      await penUp(fixtureSingleLine());
-      expect(liveStore.lastError.get()).toBeNull();
-      expect(liveStore.lastBurst.get()?.state).not.toBe("failed");
-    });
-
-    it("a capabilities failure with no burst yet leaves the burst alone and adds no second line", async () => {
+    it("a capabilities failure carries no second line either", async () => {
       loop.stop();
       resetLiveStore();
       capsScript.push(new ApiError("boom", 502, "upstream_error"));
@@ -589,7 +463,22 @@ describe("live loop — visible errors and retry", () => {
       await settle(4);
       expect(liveStore.lastError.get()).toMatchObject({ kind: "capabilities", code: "upstream" });
       expect(liveStore.lastError.get()?.detail).toBeUndefined();
-      expect(liveStore.lastBurst.get()).toBeNull();
+    });
+
+    /**
+     * Reported from production: the student wrote `32 + 6 =`, the recognizer read the 2 as an
+     * a, and the (since removed) image model drew `3(a+2)` on the page in its own ink. A
+     * half-written line is maths Live is deliberately holding: it stays silent, and nothing
+     * else is allowed to finish it.
+     */
+    it("a half-written line stays silent: no echo, no error, no model call", async () => {
+      recognizeScript.push("3a+6=");
+      await penUp(fixtureSingleLine());
+      await vi.advanceTimersByTimeAsync(10_000);
+      await settle(8);
+      expect(editor.shapesOfType("math")).toHaveLength(0);
+      expect(liveStore.lastError.get()).toBeNull();
+      expect(streamCalls).toHaveLength(0);
     });
   });
 

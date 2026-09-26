@@ -38,6 +38,11 @@ export interface BoardToolbarView {
   showHintLayer: boolean;
   /** Live is switched on AND allowed by the build */
   liveRunning: boolean;
+  /**
+   * "Help" in the board menu does something: every answer comes from Live (the image
+   * pipeline is gone), so it needs Live running and a help mode other than Off.
+   */
+  canHelp: boolean;
 }
 
 export function boardToolbarView(state: BoardToolbarState): BoardToolbarView {
@@ -51,6 +56,7 @@ export function boardToolbarView(state: BoardToolbarState): BoardToolbarView {
     showStatusPill: showTopBar,
     showHintLayer: !state.voiceActive && liveRunning,
     liveRunning,
+    canHelp: liveRunning && state.mode !== "off",
   };
 }
 

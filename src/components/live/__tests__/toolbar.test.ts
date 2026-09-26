@@ -85,6 +85,19 @@ describe("boardToolbarView", () => {
     expect(toolbar({ liveEnabled: false }).showHintLayer).toBe(false);
     expect(toolbar({ voiceActive: true }).showHintLayer).toBe(false);
   });
+  it("Help (the menu's one ask) works in every help mode but Off, and only with Live running", () => {
+    for (const mode of ["feedback", "suggest", "answer"] as const) expect(toolbar({ mode }).canHelp).toBe(true);
+    expect(toolbar({ mode: "off" }).canHelp).toBe(false);
+    // there is no image pipeline to fall back on: without Live, Help has nothing to call
+    expect(toolbar({ mode: "answer", liveEnabled: false }).canHelp).toBe(false);
+    expect(toolbar({ mode: "answer", liveAvailable: false }).canHelp).toBe(false);
+  });
+
+  it("names the action Help, never Draw help", () => {
+    expect(LIVE_COPY.pill.help).toBe("Help");
+    const strings = JSON.stringify(LIVE_COPY);
+    expect(strings).not.toMatch(/draw help|drawn help|sketch/i);
+  });
 });
 
 describe("statusPillView", () => {
@@ -166,7 +179,7 @@ describe("boardMenuView", () => {
     expect(boardMenuView({ liveEnabled: true, liveAvailable: false }).showHandwriting).toBe(false);
   });
 
-  it("gates nothing else: Draw help, Clear marks and Hide AI shapes act on the canvas, not on Live", () => {
+  it("gates nothing else: Clear marks and Hide AI shapes act on the canvas, not on Live", () => {
     // A student who switched Live off with their marks hidden must still be able to get
     // them back, so the view exposes exactly one conditional item.
     const off = boardMenuView({ liveEnabled: false, liveAvailable: true });

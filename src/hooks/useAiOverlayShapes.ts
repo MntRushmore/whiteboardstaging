@@ -1,31 +1,19 @@
-"use client";
-
-import { useMemo } from "react";
-import {
-  computed,
-  getIndexBetween,
-  useValue,
-  type Editor,
-  type IndexKey,
-  type JsonObject,
-  type TLPageId,
-  type TLParentId,
-  type TLShape,
-  type TLShapeId,
-} from "tldraw";
-import { isLiveMeta } from "@/lib/live/contracts";
+import type { JsonObject, TLShape, TLShapeId } from "tldraw";
 
 /**
- * Bookkeeping for the legacy image pipeline's overlays ("AI overlays": the generated
- * annotation images). Every overlay is stamped with `meta.aiOverlay` so the Accept/Reject
- * and "Clear feedback" controls can be rebuilt from the store after a reload instead of
- * living only in React state.
+ * Leftovers of the retired image pipeline on boards saved before it was removed.
+ *
+ * The app used to paint help as a full-canvas PNG ("AI overlays", stamped `meta.aiOverlay`):
+ * feedback overlays stayed locked until "Clear feedback", suggest/answer overlays waited for
+ * Accept/Reject. Nothing creates them any more and those controls are gone, so on load the
+ * board tidies them up once: an undecided proposal is dropped (see below) and every overlay
+ * that stays is unlocked, so the student can select and delete it like any other image.
  */
 
 export type AiOverlayMode = "feedback" | "suggest" | "answer";
 
 /** meta key every legacy AI overlay image carries */
-export const AI_OVERLAY_META_KEY = "aiOverlay";
+const AI_OVERLAY_META_KEY = "aiOverlay";
 
 /** intersected with JsonObject so it is assignable to tldraw's `meta` (index signature) */
 export type AiOverlayMeta = JsonObject & {
@@ -35,6 +23,7 @@ export type AiOverlayMeta = JsonObject & {
   accepted?: boolean;
 };
 
+/** The stamp the pipeline put on its overlays (kept to describe old boards, e.g. in tests). */
 export function aiOverlayMeta(mode: AiOverlayMode): AiOverlayMeta {
   return { aiOverlay: true, mode };
 }
@@ -44,15 +33,15 @@ export function isAiOverlayShape(shape: Pick<TLShape, "meta">): boolean {
 }
 
 export interface AiOverlayIds {
-  /** full-opacity feedback overlays; removed together by "Clear feedback" */
+  /** full-opacity feedback overlays */
   feedback: TLShapeId[];
-  /** suggest/answer overlays still waiting for Accept/Reject (oldest first) */
+  /** suggest/answer overlays that were never accepted (oldest first) */
   pending: TLShapeId[];
 }
 
 const EMPTY_IDS: AiOverlayIds = { feedback: [], pending: [] };
 
-/** pure: split overlay images into "Clear feedback" targets and Accept/Reject candidates */
+/** pure: split overlay images into feedback overlays and undecided proposals */
 export function partitionAiOverlays(shapes: Iterable<TLShape>): AiOverlayIds {
   const overlays: TLShape[] = [];
   for (const shape of shapes) {
@@ -71,27 +60,19 @@ export function partitionAiOverlays(shapes: Iterable<TLShape>): AiOverlayIds {
   return { feedback, pending };
 }
 
-function sameIds(a: TLShapeId[], b: TLShapeId[]): boolean {
-  return a.length === b.length && a.every((id, i) => id === b[i]);
-}
-
-export function sameOverlayIds(a: AiOverlayIds, b: AiOverlayIds): boolean {
-  return sameIds(a.feedback, b.feedback) && sameIds(a.pending, b.pending);
-}
-
 /** The slice of Editor the overlay readers need (keeps them drivable headless in tests). */
 export interface OverlayReader {
   getCurrentPageShapeIds(): Iterable<TLShapeId>;
   getShape(id: TLShapeId): TLShape | undefined;
 }
 
-export function collectAiOverlays(editor: OverlayReader): AiOverlayIds {
+function overlayShapes(editor: OverlayReader): TLShape[] {
   const shapes: TLShape[] = [];
   for (const id of editor.getCurrentPageShapeIds()) {
     const shape = editor.getShape(id);
-    if (shape) shapes.push(shape);
+    if (shape && shape.type === "image" && isAiOverlayShape(shape)) shapes.push(shape);
   }
-  return partitionAiOverlays(shapes);
+  return shapes;
 }
 
 /** OverlayReader plus the two writes `dropPendingAiOverlays` performs. */
@@ -101,60 +82,22 @@ export interface OverlayWriter extends OverlayReader {
 }
 
 /**
- * Removes every overlay still waiting for Accept/Reject. Call it once, right after a board
- * snapshot is loaded.
+ * Call once, right after a board snapshot is loaded. Removes every overlay still waiting for
+ * Accept/Reject and unlocks the overlays that stay. Returns the ids it removed.
  *
- * A suggest/answer overlay is a proposal about the current moment, not part of the
- * document: Accept is what makes it durable (it sets `meta.accepted`, full opacity, and
- * takes it out of the pending list forever) and Reject deletes it. An undecided proposal
- * that comes back after a reload is neither — it reopens full-canvas over work the student
- * has since moved on from, and nothing on screen explains where it came from. Dropping it
- * on load is the same outcome as Reject, which is the decision the student implied by
- * leaving. Accepted overlays and full-opacity feedback overlays are untouched.
- *
- * Returns the ids it removed.
+ * A suggest/answer overlay is a proposal about the moment it was made, not part of the
+ * document: an undecided one reopens full-canvas over work the student has moved on from,
+ * so it is dropped (the old Reject). Accepted and feedback overlays are the student's to
+ * keep — but with Accept/Reject and "Clear feedback" gone, a LOCKED one could never be
+ * removed again, so each is unlocked and becomes an ordinary image on the board.
  */
 export function dropPendingAiOverlays(editor: OverlayWriter): TLShapeId[] {
-  const { pending } = collectAiOverlays(editor);
-  if (pending.length === 0) return [];
-  // Overlays are created locked; unlock before deleting, exactly like Reject does.
-  editor.updateShapes(pending.map((id) => ({ id, type: "image" as const, isLocked: false })));
-  editor.deleteShapes(pending);
+  const shapes = overlayShapes(editor);
+  if (shapes.length === 0) return [];
+  const { pending } = partitionAiOverlays(shapes);
+  // Locked shapes are neither deletable nor selectable: unlock first.
+  const locked = shapes.filter((s) => s.isLocked).map((s) => s.id);
+  if (locked.length > 0) editor.updateShapes(locked.map((id) => ({ id, type: "image" as const, isLocked: false })));
+  if (pending.length > 0) editor.deleteShapes(pending);
   return pending;
-}
-
-/**
- * Overlay ids derived reactively from the store, so they survive reload and undo. The
- * result keeps its identity while the id lists are unchanged (safe as a hook dependency).
- */
-export function useAiOverlayShapes(editor: Editor): AiOverlayIds {
-  const $ids = useMemo(
-    () => computed("aiOverlays", () => collectAiOverlays(editor), { isEqual: sameOverlayIds }),
-    [editor],
-  );
-  return useValue($ids);
-}
-
-/** the subset of Editor that overlayIndexBelowLive needs (keeps it testable headless) */
-export interface ZOrderReader {
-  getCurrentPageId(): TLPageId;
-  getSortedChildIdsForParent(parent: TLParentId): readonly TLShapeId[];
-  getShape(id: TLShapeId): TLShape | undefined;
-}
-
-/**
- * Index for a new overlay so it renders just BELOW every Live shape (echoes, graphs, AI
- * steps) on the current page. Returns undefined when the page has no Live shapes (the
- * overlay then takes the default top index).
- */
-export function overlayIndexBelowLive(editor: ZOrderReader): IndexKey | undefined {
-  const siblings: TLShape[] = [];
-  for (const id of editor.getSortedChildIdsForParent(editor.getCurrentPageId())) {
-    const shape = editor.getShape(id);
-    if (shape) siblings.push(shape);
-  }
-  const lowestLive = siblings.findIndex((shape) => isLiveMeta(shape.meta));
-  if (lowestLive < 0) return undefined;
-  const below = lowestLive > 0 ? siblings[lowestLive - 1].index : undefined;
-  return getIndexBetween(below, siblings[lowestLive].index);
 }

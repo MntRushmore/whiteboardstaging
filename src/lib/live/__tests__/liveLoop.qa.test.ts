@@ -156,8 +156,8 @@ describe("live loop — QA regressions", () => {
   });
 
   // ------------------------------------------------------------------ B1
-  describe("B1 — lastBurst reflects student ink only", () => {
-    it("live-created shapes and student edits/deletes of live shapes never mark a burst", async () => {
+  describe("B1 — only student ink is read", () => {
+    it("live-created shapes and student edits/deletes of live shapes never trigger a read", async () => {
       liveWrite(editor as unknown as Editor, () => {
         editor.createShapes([
           {
@@ -171,11 +171,11 @@ describe("live loop — QA regressions", () => {
         ]);
       });
       await settle();
-      expect(liveStore.lastBurst.get()).toBeNull();
+      await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs * 2);
+      expect(fetchJson).not.toHaveBeenCalled();
 
       const lineId = await write(fixtureSingleLine(), "x=4");
-      const burst = liveStore.lastBurst.get();
-      expect(burst?.state).toBe("handled");
+      expect(fetchJson).toHaveBeenCalledTimes(1);
 
       // Student retypes the echo (user-sourced update of a live shape).
       const echo = echoOf(lineId);
@@ -184,7 +184,7 @@ describe("live loop — QA regressions", () => {
       await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs * 2);
       await settle(4);
       expect(liveStore.lines.get()[lineId].latex).toBe("x=5");
-      expect(liveStore.lastBurst.get()).toBe(burst);
+      expect(fetchJson).toHaveBeenCalledTimes(1);
 
       // Student moves and then deletes the echo.
       editor.updateUser(echo.id, (s) => ({ ...s, x: s.x + 50 }));
@@ -192,38 +192,34 @@ describe("live loop — QA regressions", () => {
       await settle(6);
       await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs * 2);
       await settle(4);
-      expect(liveStore.lastBurst.get()).toBe(burst);
       expect(fetchJson).toHaveBeenCalledTimes(1);
     });
   });
 
   // ------------------------------------------------------------------ B2 / B8
-  describe("B2/B8 — non-math ink stays silent and hands the burst to the legacy pipeline", () => {
-    it("a lone \\Delta (a drawn triangle) gets no echo and the burst ends 'unhandled'", async () => {
+  describe("B2/B8 — non-math ink stays silent (and nothing else picks it up)", () => {
+    it("a lone \\Delta (a drawn triangle) gets no echo and no model call", async () => {
       latexQueue.push("\\Delta");
       editor.putUser(fixtureSingleLine());
-      expect(liveStore.lastBurst.get()?.state).toBe("pending");
       await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 1);
       await settle(8);
       expect(fetchJson).toHaveBeenCalledTimes(1);
       expect(editor.shapesOfType("math")).toHaveLength(0);
-      expect(liveStore.lastBurst.get()?.state).toBe("unhandled");
       expect(checkRequests).toHaveLength(0);
     });
 
-    it("a prose line (kind 'text') gets no echo and the burst ends 'unhandled'", async () => {
+    it("a prose line (kind 'text') gets no echo and no model call", async () => {
       latexQueue.push("\\text { hello there }");
       editor.putUser(fixtureSingleLine());
       await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 1);
       await settle(8);
       expect(editor.shapesOfType("math")).toHaveLength(0);
-      expect(liveStore.lastBurst.get()?.state).toBe("unhandled");
+      expect(checkRequests).toHaveLength(0);
     });
 
-    it("a real equation in the same burst keeps it 'handled'", async () => {
+    it("a real equation gets its echo", async () => {
       await write(fixtureSingleLine(), "2x=8");
       expect(editor.shapesOfType("math")).toHaveLength(1);
-      expect(liveStore.lastBurst.get()?.state).toBe("handled");
     });
   });
 
