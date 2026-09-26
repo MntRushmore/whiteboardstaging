@@ -184,6 +184,8 @@ moves beside the work (`keepOnScreen`). Within a screen, a line separated from t
 blank gap of more than max(120 px, 3 × line height) starts a new column (`assignColumns`), so a
 second problem further down is never checked as the next step of the first.
 
+**No words on the board.** Everything the tutor puts on the page is maths in its animated hand (`HandWriter`, blue) or a hand-drawn mark (`src/lib/live/marks.ts`): a tick after a step the engine verified, a ring round a wrong one (the engine's `mismatch`, or a model annotation with `verdict: warn`, remembered on the echo as `meta.aiWarnLatex`), a question mark beside ink it cannot read. There are no hint cards and no prose notes. In Suggest and Solve, once the student stops (the settle), the right next step is written by hand beside a ringed line, computed by the engine from the last good line above (`suggestNextStep`); Help does it at once in any mode, and only asks the model for one step when the engine has none. The model's Solve steps are written as one handwritten block when the stream ends (typeset only if the hand lacks a symbol). The grey echo (the readback of what Mathpix read) shows only on hover, or while its ink is hovered or selected, and always when the device has the hand switched off. The dev "Mathpix" panel still shows every read.
+
 **Marks may be immediate; answers must wait.** Two clocks, because "this line is finished" and
 "the student has stopped" are different questions. `LIVE_TIMING.quietMs` (600 ms, per line) gates
 recognition and everything that comments on work already done — the green check, the amber dot,

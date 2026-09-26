@@ -62,7 +62,7 @@ import {
 } from "./liveStore";
 import { scheduleLiveWrite } from "./liveWrite";
 import { recordRecognition } from "./liveDebug";
-import { MARKS, markKey, markStrokes, type MarkKind } from "./marks";
+import { markKey, markStrokes, ringRect, type MarkKind } from "./marks";
 import { readScreenMeta } from "@/lib/screens/screens";
 import { getLiveSettings } from "./liveSettings";
 import {
@@ -2611,7 +2611,7 @@ export class LiveLoop implements LiveController {
     if (!plan || unsupported.length > 0) return false;
     const ink = state.line.bounds;
     const candidate: Rect = {
-      x: ink.x + ink.w + MARKS.ringPadX + PLACEMENT.sideGap / 2,
+      x: rectMaxX(ringRect(ink)) + PLACEMENT.sideGap / 2,
       y: ink.y + ink.h / 2 - plan.bounds.h / 2,
       w: plan.bounds.w,
       h: plan.bounds.h,

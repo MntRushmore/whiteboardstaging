@@ -51,6 +51,22 @@ function stroke(points: Pt[], order: number): Stroke {
   return { points, order, kind: "glyph" };
 }
 
+/**
+ * The ring's radii. An ellipse through the corners of the ink box has radii √2 × the
+ * half-sizes: anything smaller cuts through the first and last glyph (the `1` of `x = 1`).
+ */
+export function ringRadii(line: Rect): { rx: number; ry: number } {
+  return { rx: (line.w / 2) * Math.SQRT2 + MARKS.ringPadX / 2, ry: (line.h / 2) * Math.SQRT2 + MARKS.ringPadY / 2 };
+}
+
+/** The box the ring round `line` takes up (for placing anything beside it). */
+export function ringRect(line: Rect): Rect {
+  const { rx, ry } = ringRadii(line);
+  const cx = line.x + line.w / 2;
+  const cy = line.y + line.h / 2;
+  return { x: cx - rx, y: cy - ry, w: rx * 2, h: ry * 2 };
+}
+
 /** Where a tick / question mark sits: after the ink, centred on it. */
 export function markAnchor(line: Rect): { x: number; y: number; h: number } {
   const h = Math.min(MARKS.checkMax, Math.max(MARKS.checkMin, line.h * MARKS.checkFactor));
@@ -65,8 +81,7 @@ export function markStrokes(kind: MarkKind, line: Rect, seed: number): Stroke[] 
     // where it started, slightly tilted.
     const cx = line.x + line.w / 2;
     const cy = line.y + line.h / 2;
-    const rx = line.w / 2 + MARKS.ringPadX;
-    const ry = line.h / 2 + MARKS.ringPadY;
+    const { rx, ry } = ringRadii(line);
     const tilt = (j() - 0.5) * 0.06;
     const start = Math.PI * 1.08;
     const sweep = Math.PI * 2.12;
