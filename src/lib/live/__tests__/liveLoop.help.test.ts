@@ -5,7 +5,7 @@ import { fixtureSingleLine, writeLine } from "../__fixtures__/strokes";
 import { settle, settleStable, settleUntil } from "@/lib/live/__fixtures__/settle";
 import { useSyncHash } from "@/lib/live/__fixtures__/syncHash";
 import {
-  CheckRequestSchema,
+  isLiveMeta,
   type CheckRequest,
   type LiveEngine,
   type LiveSseEvent,
@@ -16,19 +16,18 @@ import {
   type UseLiveMathOptions,
 } from "../contracts";
 import { getEngine } from "../engine";
-import { createLiveLoop, needsLook, NOTE_WRAP_CHARS, proseWordCount, textAsLatex, wrapWords, type LiveLoop } from "../liveLoop";
+import { createLiveLoop, needsLook, proseWordCount, type LiveLoop } from "../liveLoop";
 import { liveStore, resetLiveStore } from "../liveStore";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
 
 /**
- * "Help" — the board's one explicit ask, which replaced "Draw help" when the image pipeline
- * was removed. Everything it does is text/LaTeX the client renders; nothing is painted.
+ * "Help" — the board's one explicit ask. No words on the board: everything the tutor puts
+ * there is maths in its hand or a mark.
  *
  *  - Solve: the worked solution (word problems go to /api/live/solve with the prose as the
- *    question);
- *  - Feedback / Suggest: the next hint for the latest line;
- *  - ink Live cannot read as maths: "Ask about this" — a crop of that ink rides along on a
- *    normal check, and ONLY then: an automatic check never carries a picture.
+ *    question), written by hand;
+ *  - Feedback / Suggest: on a wrong line, the right next step by hand;
+ *  - ink Live cannot read as maths: a question mark beside it. No model, no picture.
  */
 
 let engine: LiveEngine;
@@ -51,9 +50,6 @@ class FakeFileReader {
   }
 }
 
-function annotation(lineId: string | null, message: string, question?: string): LiveSseEvent {
-  return { event: "annotation", data: { lineId, verdict: "info", kind: "concept", message, question, confidence: 0.8 } };
-}
 function step(index: number, latex: string, final = false): LiveSseEvent {
   return { event: "step", data: { index, latex, explanation: "", final } satisfies SolveStep };
 }
@@ -153,74 +149,38 @@ describe("live loop — Help (and Ask about this)", () => {
     vi.useRealTimers();
   });
 
-  // ------------------------------------------------------------ Ask about this
-  it("unreadable ink: Help sends ONE check with a crop of that line and shows the answer as a typeset note", async () => {
+  const tutorInk = () => editor.shapesOfType("draw").filter((s) => isLiveMeta(s.meta) && s.meta.source === "ai");
+  const marksOf = (kind: "check" | "circle" | "question") =>
+    tutorInk().filter((s) => String((s.meta as Record<string, unknown>).mark ?? "").startsWith(`${kind}:`));
+  const suggestions = () => tutorInk().filter((s) => typeof (s.meta as Record<string, unknown>).suggestFor === "string");
+
+  // ------------------------------------------------------------ ink it cannot read
+  it("unreadable ink: Help draws a question mark beside it — no model, no picture, no words", async () => {
     reads = [{ latex: "2x+?", confidence: 0.3 }];
-    const lineId = await write();
+    await write();
     expect(editor.shapesOfType("math")).toHaveLength(0); // low confidence: no echo
+    await help();
     expect(calls).toEqual([]);
-    expect(crops).toBe(0); // nothing is captured until the student asks
-
-    script = [[annotation(lineId, "This looks like 2x + 7; rewrite the last symbol more clearly.")]];
-    await help();
-
-    expect(crops).toBe(1);
-    expect(checks()).toHaveLength(1);
-    const req = checks()[0];
-    expect(req).toMatchObject({ crop: CROP, userAsked: true, focusLineId: lineId, mode: "feedback" });
-    expect(req.lines.map((l) => l.id)).toContain(lineId);
-    // what the loop sends is exactly what the route accepts
-    expect(CheckRequestSchema.safeParse(req).success).toBe(true);
-    expect(solves()).toEqual([]);
-
-    expect(aiShapes()).toHaveLength(1);
-    expect(aiShapes()[0]).toMatchObject({
-      latex: textAsLatex("This looks like 2x + 7; rewrite the last symbol more clearly."),
-      tone: "muted",
-      lineId,
-    });
+    expect(crops).toBe(0);
+    expect(marksOf("question").length).toBeGreaterThan(0);
+    expect(editor.shapesOfType("math").filter((s) => (s.props as MathShapeProps).source === "ai")).toEqual([]);
   });
 
-  it("a read that FAILED (no LaTeX at all) is asked about too: the focus line goes along empty", async () => {
+  it("a read that FAILED gets the same question mark", async () => {
     reads = [new ApiError("boom", 502, "upstream_error")];
-    const lineId = await write();
-    expect(liveStore.lines.get()[lineId].latex).toBe("");
-
-    script = [[annotation(lineId, "I can't make this out; try writing it a little larger.")]];
+    await write();
     await help();
-
-    const req = checks()[0];
-    expect(req.crop).toBe(CROP);
-    expect(req.lines.find((l) => l.id === lineId)).toMatchObject({ latex: "", local: { kind: "unknown" } });
-    expect(CheckRequestSchema.safeParse(req).success).toBe(true);
-    expect(aiShapes().map((p) => p.latex)).toEqual([textAsLatex("I can't make this out; try writing it a little larger.")]);
+    expect(calls).toEqual([]);
+    expect(marksOf("question").length).toBeGreaterThan(0);
   });
 
-  it("a lone symbol (a drawn \\Delta) in Suggest: the crop goes along and the question joins the note", async () => {
+  it("a lone symbol (a drawn \\Delta) in Suggest: a question mark, not a paragraph about triangles", async () => {
     start("suggest");
     reads = [{ latex: "\\Delta" }];
-    const lineId = await write();
-    script = [[annotation(lineId, "That triangle has no side lengths yet.", "Which side do you know?")]];
+    await write();
     await help();
-
-    expect(checks()[0]).toMatchObject({ crop: CROP, mode: "suggest", userAsked: true });
-    expect(aiShapes().map((p) => p.latex)).toEqual([textAsLatex("That triangle has no side lengths yet. Which side do you know?")]);
-  });
-
-  it("never fires on its own: automatic checks carry no crop and capture nothing", async () => {
-    start("suggest");
-    reads = [{ latex: "2x+3=11" }, { latex: "x=5" }, { latex: "2x+?", confidence: 0.3 }];
-    await write(writeLine("2x+3=11", 100, 200, 40));
-    await write(writeLine("x=3", 100, 300, 40)); // read as x=5: a mismatch: Suggest checks it by itself
-    await write(writeLine("2x+1", 100, 400, 40)); // unreadable, but nobody asked
-    await vi.advanceTimersByTimeAsync(30_000);
-    await settle(8);
-
-    expect(checks().length).toBeGreaterThan(0);
-    for (const req of checks()) {
-      expect(req.crop).toBeUndefined();
-    }
-    expect(crops).toBe(0);
+    expect(calls).toEqual([]);
+    expect(marksOf("question").length).toBeGreaterThan(0);
   });
 
   it("does nothing with help set to Off", async () => {
@@ -229,24 +189,49 @@ describe("live loop — Help (and Ask about this)", () => {
     await write();
     await help();
     expect(calls).toEqual([]);
-    expect(crops).toBe(0);
+    expect(tutorInk()).toEqual([]);
+  });
+
+  // ------------------------------------------------------------ marks
+  it("marks instead of words: a tick after a right step, a ring round a wrong one", async () => {
+    reads = [{ latex: "2x+3=11" }, { latex: "2x=8" }, { latex: "x=5" }];
+    await write(writeLine("2x+3=11", 100, 200, 40));
+    await write(writeLine("x=4", 100, 300, 40)); // read as 2x=8: right
+    await write(writeLine("x=3", 100, 400, 40)); // read as x=5: wrong
+    await settle(8);
+    expect(marksOf("check").length).toBeGreaterThan(0);
+    expect(marksOf("circle").length).toBeGreaterThan(0);
+    // Feedback marks only: nothing written beside the wrong line, and no model asked
+    expect(suggestions()).toEqual([]);
+    expect(calls).toEqual([]);
+    expect(liveStore.openHints.get()).toEqual([]);
+  });
+
+  it("Suggest: once the student stops, the right next step is written beside the ringed line", async () => {
+    start("suggest");
+    reads = [{ latex: "2x+3=11" }, { latex: "x=5" }];
+    await write(writeLine("2x+3=11", 100, 200, 40));
+    const wrong = await write(writeLine("x=3", 100, 300, 40)); // read as x=5
+    await vi.advanceTimersByTimeAsync(3_000); // the settle
+    await settle(8);
+    expect(suggestions().length).toBeGreaterThan(0);
+    expect(new Set(suggestions().map((s) => s.meta.lineId))).toEqual(new Set([wrong]));
+    expect(calls).toEqual([]);
   });
 
   // ------------------------------------------------------------ readable maths
-  it("Feedback on a readable line: the next hint for it, with no picture", async () => {
+  it("Help on a wrong line in Feedback: the right next step by hand, straight away, from the engine", async () => {
     reads = [{ latex: "2x+3=11" }, { latex: "x=5" }];
     await write(writeLine("2x+3=11", 100, 200, 40));
-    const lineId = await write(writeLine("x=3", 100, 300, 40)); // read as x=5
+    await write(writeLine("x=3", 100, 300, 40)); // read as x=5
     await help();
-
-    expect(checks()).toHaveLength(1);
-    expect(checks()[0]).toMatchObject({ focusLineId: lineId, userAsked: true, mode: "suggest" });
-    expect(checks()[0].crop).toBeUndefined();
+    expect(calls).toEqual([]);
+    expect(suggestions().length).toBeGreaterThan(0);
     expect(crops).toBe(0);
   });
 
   // ------------------------------------------------------------ word problems
-  it("Solve on a word problem: the prose goes to /api/live/solve as the question, and assignment steps are drawn", async () => {
+  it("Solve on a word problem: the prose goes to /api/live/solve, and the steps are written by hand", async () => {
     start("answer");
     reads = [{ latex: WORD_PROBLEM }];
     const lineId = await write();
@@ -259,13 +244,14 @@ describe("live loop — Help (and Ask about this)", () => {
     expect(solves()).toHaveLength(1);
     const req = solves()[0];
     expect(req.lines).toEqual([expect.objectContaining({ id: lineId, latex: WORD_PROBLEM, local: expect.objectContaining({ kind: "text" }) })]);
-    // the guard lets the solution name its own quantity, and use it afterwards
-    expect(aiShapes().map((p) => p.latex)).toEqual(["v = \\frac{60}{2}", "v = 30"]);
+    // the guard lets the solution name its own quantity; the result is ink, not cards
+    expect(aiShapes()).toEqual([]);
+    expect(tutorInk().length).toBeGreaterThan(0);
     expect(liveStore.lastError.get()).toBeNull();
   });
 });
 
-describe("needsLook / textAsLatex", () => {
+describe("needsLook", () => {
   const st = (latex: string, confidence = 0.95, kind: "label" | "text" | "equation" = "equation") => ({
     latex,
     confidence,
@@ -292,26 +278,5 @@ describe("needsLook / textAsLatex", () => {
   it("counts prose words through \\text and commands", () => {
     expect(proseWordCount("\\text { is }")).toBe(1);
     expect(proseWordCount("\\text{A train travels } 60 \\mathrm{~km}")).toBe(5);
-  });
-
-  it("escapes what KaTeX's \\text would choke on", () => {
-    expect(textAsLatex("Use 50% of {x} & y_1 \\ ^ ~ #")).toBe("\\text{Use 50\\% of \\{x\\} \\& y\\_1 \\#}");
-  });
-
-  it("wraps a long note into a left-aligned block instead of one line off the screen", () => {
-    const note =
-      "This looks like a drawn triangle or a delta symbol with a curved side. Could you rewrite this symbol more clearly?";
-    const lines = wrapWords(note);
-    expect(lines.length).toBeGreaterThan(1);
-    for (const l of lines) expect(l.length).toBeLessThanOrEqual(NOTE_WRAP_CHARS);
-    expect(lines.join(" ")).toBe(note);
-    const tex = textAsLatex(note);
-    expect(tex.startsWith("\\begin{array}{l}\\text{")).toBe(true);
-    expect(tex.endsWith("}\\end{array}")).toBe(true);
-    expect(tex.split("\\\\").length).toBe(lines.length);
-  });
-
-  it("keeps a word longer than the limit whole", () => {
-    expect(wrapWords(`a ${"x".repeat(60)} b`, 10)).toEqual(["a", "x".repeat(60), "b"]);
   });
 });

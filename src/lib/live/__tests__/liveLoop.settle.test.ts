@@ -348,32 +348,29 @@ describe("live loop — the answer waits for the student to stop writing", () =>
     expect(echoOf(solvedLine)).toMatchObject({ latex: "x=4", status: "solved" });
   });
 
-  it("flags a wrong line and opens its hint without waiting for the settle", async () => {
+  it("rings a wrong line at once, and writes the right next step only once the student stops", async () => {
     loop.stop();
     resetLiveStore();
     loop = makeLoop("suggest");
     loop.start();
 
     await penLine(0, "2x=8");
-    streamQueue.push([
-      (req) => ({
-        event: "annotation",
-        data: {
-          lineId: req.lines[req.lines.length - 1].id,
-          verdict: "warn",
-          kind: "arithmetic",
-          message: "Look again at the right side",
-          question: "What is 8 / 2?",
-          confidence: 0.9,
-        },
-      }),
-    ]);
     const wrong = await penLine(1, "x=5");
-    await settleUntil(() => liveStore.openHints.get().length > 0);
+    const tutorInk = () => editor.shapesOfType("draw").filter((s) => isLiveMeta(s.meta));
+    const ring = () => tutorInk().filter((s) => String((s.meta as Record<string, unknown>).mark ?? "").startsWith("circle:"));
+    const beside = () => tutorInk().filter((s) => (s.meta as Record<string, unknown>).suggestFor === "x=5");
 
+    // a mark: immediate
     expect(echoOf(wrong)).toMatchObject({ latex: "x=5", status: "warn" });
-    expect(streamCalls).toEqual(["/api/live/check"]);
-    expect(liveStore.openHints.get()).toHaveLength(1);
+    expect(ring().length).toBeGreaterThan(0);
+    // an answer: not while they are writing
+    expect(beside()).toEqual([]);
+
+    await stopWriting();
+    expect(beside().length).toBeGreaterThan(0);
+    // the engine knew both the mistake and the fix: nobody was asked
+    expect(streamCalls).toEqual([]);
+    expect(liveStore.openHints.get()).toEqual([]);
   });
 
   // ------------------------------------------------------------ 5. asking means now

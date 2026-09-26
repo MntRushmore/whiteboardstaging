@@ -13,6 +13,7 @@ import {
   type SolveStep,
 } from "../contracts";
 import { getEngine } from "../engine";
+import { handLinesOf } from "../handwriting";
 import { handSeedFor, handSizeFor, inlineHandSizeFor, planHandwriting } from "../handwriting";
 import { createLiveLoop, type LiveLoop } from "../liveLoop";
 import { liveStore, resetLiveStore } from "../liveStore";
@@ -116,12 +117,19 @@ describe("live loop — Solve answers locally, and checks the model when it cann
    * is what made this file flake — the values were always right, the order was not.
    */
   function typesetSteps(): string[] {
-    return editor
+    const typeset = editor
       .shapesOfType("math")
       .filter((s) => (s.props as MathShapeProps).source === "ai")
       .slice()
       .sort((a, b) => a.y - b.y || a.x - b.x)
       .map((s) => (s.props as MathShapeProps).latex);
+    // the model's steps are written by hand now: the lines of the tutor's ink (marks excluded)
+    const written = handLinesOf(
+      editor
+        .shapesOfType("draw")
+        .filter((s) => isLiveMeta(s.meta) && s.meta.source === "ai" && !(s.meta as Record<string, unknown>).mark && !(s.meta as Record<string, unknown>).answerFor),
+    );
+    return [...typeset, ...written];
   }
 
   function solveCalls(): string[] {
@@ -269,7 +277,8 @@ describe("live loop — Solve answers locally, and checks the model when it cann
     await solve("\\text{A train travels 60 km in 2 h. How fast is it going?}");
 
     expect(typesetSteps()).toEqual(["60 \\div 2 = 30"]);
-    expect(handShapes()).toHaveLength(0);
+    // the one step that survived is written by hand, not dealt out as a card
+    expect(handShapes().length).toBeGreaterThan(0);
     // one step survived, so this is not a failure
     expect(liveStore.lastError.get()).toBeNull();
   });

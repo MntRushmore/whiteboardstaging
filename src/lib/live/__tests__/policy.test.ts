@@ -66,12 +66,13 @@ describe("decide — runLlmCheck ladder", () => {
     ["feedback", "unknown", false, 0, false, 0, false],
     ["feedback", "unknown", false, idle, false, 0, true],
     ["feedback", "ok", false, idle, false, 0, false],
-    ["suggest", "mismatch", false, 0, false, 0, true],
+    // a mismatch the engine found is ringed and answered locally: no model hint
+    ["suggest", "mismatch", false, 0, false, 0, false],
     ["suggest", "mismatch", false, 0, false, 1, false],
     ["suggest", "mismatch", false, 0, true, 1, true],
     ["suggest", "unknown", false, idle, false, 0, true],
     ["suggest", "ok", false, idle, false, 0, false],
-    ["answer", "mismatch", false, 0, false, 0, true],
+    ["answer", "mismatch", false, 0, false, 0, false],
     ["answer", "unknown", false, idle - 1, false, 0, false],
     ["suggest", "mismatch", true, 0, false, 0, false],
     ["answer", "mismatch", true, idle, true, 0, false],
@@ -152,7 +153,7 @@ describe("decide — results, hints, steps, chem, cap", () => {
       const d = decide(input({ mode: "suggest", analysis: analysis("mismatch"), settled }));
       expect(d.badge).toBe("warn");
       expect(d.allowHint).toBe(true);
-      expect(d.runLlmCheck).toBe(true);
+      expect(d.runLlmCheck).toBe(false);
     }
   });
 

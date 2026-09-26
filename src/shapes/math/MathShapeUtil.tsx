@@ -11,6 +11,7 @@ import {
   stopEventPropagation,
   useEditor,
   useIsEditing,
+  useValue,
   type Editor,
   type RecordProps,
   type TLShapeId,
@@ -26,6 +27,7 @@ import {
   type MathSize,
 } from "@/lib/live/contracts";
 import { scheduleLiveWrite } from "@/lib/live/liveWrite";
+import { getLiveSettings } from "@/lib/live/liveSettings";
 import { badgeLabel, badgeTitle, dispatchBadgeTap, isBadgeStatus, noteLineFor } from "./badge";
 import { renderLatex } from "./katex";
 import { MathEditor } from "./MathEditor";
@@ -138,6 +140,9 @@ const STYLE = `
 .live-math__textarea:focus{border-color:#3b82f6}
 .live-math__preview{min-height:1.4em;color:#111827}
 .live-math .katex{font-size:1em;line-height:1.2}
+.live-math[data-source="echo"] .live-math__inner{pointer-events:all;transition:opacity .15s ease}
+.live-math[data-source="echo"][data-reveal="hover"] .live-math__inner{opacity:0}
+.live-math[data-source="echo"][data-reveal="hover"] .live-math__inner:hover{opacity:1}
 `;
 
 function MathShapeView({ shape }: { shape: MathShape }) {
@@ -151,6 +156,19 @@ function MathShapeView({ shape }: { shape: MathShape }) {
 
   const unreadable = status === "unknown" && latex.trim() === "";
   const noteLine = noteLineFor(status, note);
+  // The readback of the student's line only shows on hover, or while its ink is hovered or
+  // selected: the board is their ink and the tutor's hand. Always shown when it carries a
+  // typeset answer or the tutor's hand is off on this device (then it IS the feedback).
+  const anchors = shape.props.anchorIds;
+  const touched = useValue(
+    "echo touched",
+    () => {
+      const ids = [editor.getHoveredShapeId(), ...editor.getSelectedShapeIds()];
+      return ids.some((id) => id === shape.id || (id !== null && anchors.includes(id)));
+    },
+    [editor, shape.id, anchors],
+  );
+  const reveal = source !== "echo" || isEditing || touched || Boolean(resultLatex) || !getLiveSettings().handwriting ? "always" : "hover";
 
   return (
     <HTMLContainer
@@ -159,6 +177,7 @@ function MathShapeView({ shape }: { shape: MathShape }) {
       data-source={source}
       data-tone={tone}
       data-size={size}
+      data-reveal={reveal}
       style={{ fontSize }}
     >
       <style>{STYLE}</style>

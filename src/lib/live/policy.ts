@@ -162,8 +162,10 @@ export function decide(input: PolicyInput): PolicyDecision {
     const feedbackRule =
       userAsked ||
       (verdict === "unknown" && idleMs >= LIVE_TIMING.unknownIdleMs && CHECKABLE_KINDS.has(kind));
-    if (mode === "feedback") runLlmCheck = feedbackRule;
-    else runLlmCheck = feedbackRule || (verdict === "mismatch" && input.hintsShownForLine < 1);
+    // A step the engine already calls wrong needs no model to say so: the ring is drawn and
+    // (Suggest / Solve) the right next step is written by hand from the engine. The model is
+    // only asked about lines the engine cannot judge, or when the student asks.
+    runLlmCheck = feedbackRule;
   }
 
   // 6. allowHint

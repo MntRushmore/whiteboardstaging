@@ -14,7 +14,7 @@ import {
   type RecognizeResponse,
 } from "../contracts";
 import { getEngine } from "../engine";
-import { handBlockOf } from "../handwriting";
+import { handBlockOf, handLinesOf } from "../handwriting";
 import { createLiveLoop, normalizeStep, unwrapBoxed, type LiveLoop } from "../liveLoop";
 import { liveStore, resetLiveStore } from "../liveStore";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
@@ -54,7 +54,10 @@ describe("live loop — solving from the lines above", () => {
 
   const tutor = (): TLShape[] => editor.store.allRecords().filter((r): r is TLShape => r.typeName === "shape" && isLiveMeta((r as TLShape).meta) && (r as TLShape).meta.source === "ai");
   const handBlocks = () => new Set(tutor().map((s) => handBlockOf(s.meta)).filter(Boolean)).size;
-  const typesetSteps = () => tutor().filter((s) => s.type === "math").map((s) => (s.props as MathShapeProps).latex);
+  const typesetSteps = () => [
+    ...tutor().filter((s) => s.type === "math").map((s) => (s.props as MathShapeProps).latex),
+    ...handLinesOf(tutor().filter((s) => s.type === "draw" && !(s.meta as Record<string, unknown>).mark)),
+  ];
   const quiesce = () => settleStable(() => `${tutor().length}|${streamCalls.length}`);
 
   beforeEach(() => {

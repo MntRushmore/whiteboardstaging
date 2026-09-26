@@ -221,6 +221,26 @@ export function planHandwriting(
 }
 
 /**
+ * A one-line plan from strokes already in page coordinates — the tutor's marks (a tick, a
+ * ring, a question mark), which are drawn, not typeset, but revealed by the same writer.
+ */
+export function planFromStrokes(label: string, strokes: readonly Stroke[], size: number): HandPlan | null {
+  const b = strokeBounds(strokes as Stroke[]);
+  if (!b || strokes.length === 0) return null;
+  const placed = placeStrokes(strokes as Stroke[], { x: -b.minX, y: -b.minY }).map((st) => ({
+    ...st,
+    points: densify(st.points, HAND_WRITE.resampleStepPx),
+  }));
+  const durationMs = totalDurationMs(placed);
+  return {
+    lines: [{ latex: label, x: b.minX, y: b.minY, baseline: b.height, strokes: placed, startMs: 0, durationMs }],
+    bounds: { x: b.minX, y: b.minY, w: b.width, h: b.height },
+    size,
+    totalMs: durationMs,
+  };
+}
+
+/**
  * Moves a plan so its ink starts at `at.x` and its FIRST line sits on the writing line
  * `at.baselineY` — how you continue someone else's line rather than starting your own.
  */
@@ -299,6 +319,19 @@ export interface HandWriteOptions {
 export const HAND_BLOCK_META = "handBlock";
 
 /** The block key of a live shape, or "" when it is not handwriting. */
+/** On each stroke of the tutor's writing: the LaTeX of the line it belongs to. */
+export const HAND_LINE_META = "handLine";
+
+/** The written lines of a set of tutor strokes, in writing order, each once. */
+export function handLinesOf(shapes: readonly { meta: unknown; y: number }[]): string[] {
+  const seen = new Map<string, number>();
+  for (const s of shapes) {
+    const tex = (s.meta as Record<string, unknown> | null)?.[HAND_LINE_META];
+    if (typeof tex === "string" && !seen.has(tex)) seen.set(tex, s.y);
+  }
+  return [...seen.entries()].sort((a, b) => a[1] - b[1]).map(([tex]) => tex);
+}
+
 export function handBlockOf(meta: unknown): string {
   if (typeof meta !== "object" || meta === null) return "";
   const v = (meta as Record<string, unknown>)[HAND_BLOCK_META];
@@ -457,7 +490,8 @@ export class HandWriter {
                 isPen: true,
                 scale: 1,
               },
-              meta: { ...meta },
+              // the line of maths this stroke belongs to, as LaTeX (debugging, tests, a future readback)
+              meta: { ...meta, [HAND_LINE_META]: line.latex },
             } satisfies TLShapePartial<TLDrawShape>);
             continue;
           }

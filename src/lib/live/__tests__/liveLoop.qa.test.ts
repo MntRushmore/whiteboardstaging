@@ -53,7 +53,8 @@ const engine: LiveEngine = {
     return base;
   },
   compileExpr: () => () => 0,
-  solveLatex: () => null,
+  // the one step the scripted lines need: after `2x=8`, `x = 4`
+  solveLatex: (latex) => (latex === "2x=8" ? { latex: "x = 4", steps: ["x = 4"] } : null),
   verifyExpected: () => "unknown",
   balance: () => null,
   calculate: () => null,
@@ -225,7 +226,7 @@ describe("live loop — QA regressions", () => {
 
   // ------------------------------------------------------------------ B4
   describe("B4 — raising the dial and tapping the badge start checks", () => {
-    it("switching Feedback -> Suggest checks every amber line (once per column, focus = lowest amber)", async () => {
+    it("switching Feedback -> Suggest writes the right next step beside every ringed line, with no model call", async () => {
       const [top, bottom] = [fixtureTwoLines().slice(0, 6), fixtureTwoLines().slice(6)];
       const okLine = await write(top, "2x=8");
       const warnLine = await write(bottom, "x=5");
@@ -234,16 +235,15 @@ describe("live loop — QA regressions", () => {
       // Feedback never asks the model about a local mismatch by itself.
       expect(checkRequests).toHaveLength(0);
 
+      // Up to Suggest: no model call — the engine writes the right next step beside the
+      // ringed line once the student has stopped (here they already have).
       loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: false });
-      await settle(4);
-      expect(checkRequests).toHaveLength(1);
-      expect(checkRequests[0]).toMatchObject({ mode: "suggest", focusLineId: warnLine, userAsked: false });
-      expect(checkRequests[0].lines.map((l) => l.id)).toEqual([okLine, warnLine]);
-
-      // Suggest -> Solve is not a rise onto the hint rungs: no second check.
-      loop.setOptions({ boardId: "board-1", mode: "answer", enabled: true, voiceActive: false });
-      await settle(4);
-      expect(checkRequests).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(3_000);
+      await settle(6);
+      expect(checkRequests).toHaveLength(0);
+      const beside = editor.shapesOfType("draw").filter((s) => (s.meta as Record<string, unknown>).suggestFor === "x=5");
+      expect(beside.length).toBeGreaterThan(0);
+      expect(new Set(beside.map((s) => (s.meta as Record<string, unknown>).lineId))).toEqual(new Set([warnLine]));
     });
 
     it("does not start a ladder-rise check while a hint card is open, while voice is active, or for ok lines", async () => {
@@ -267,7 +267,7 @@ describe("live loop — QA regressions", () => {
       expect(checkRequests).toHaveLength(0);
     });
 
-    it("a badge tap requests a location-only check in Feedback; the same tap escalates after a hint in Suggest", async () => {
+    it("a badge tap requests a location-only check in Feedback, and a check in Suggest — never a hint card", async () => {
       const lineId = await write(fixtureSingleLine(), "x=5");
       const echo = echoOf(lineId);
 
@@ -277,29 +277,17 @@ describe("live loop — QA regressions", () => {
       expect(checkRequests[0]).toMatchObject({ mode: "feedback", focusLineId: lineId, userAsked: true });
       expect(liveStore.openHints.get()).toHaveLength(0);
 
-      // Suggest: the tap runs a check whose annotation opens the hint card.
+      // Suggest: the tap still runs a check — but no card opens: the board has no words on it.
+      // (Raising the dial asks the model nothing: the engine already rings a wrong line.)
       loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: false });
       await settle(4);
-      // The ladder rise itself fired one (empty) check.
-      expect(checkRequests).toHaveLength(2);
+      expect(checkRequests).toHaveLength(1);
       streamQueue.push([annotation(lineId, "Look again at the right side of line 1")]);
       events.dispatchEvent(new CustomEvent(BADGE_TAP_EVENT, { detail: { lineId, shapeId: echo.id } }));
       await settle(6);
-      expect(checkRequests).toHaveLength(3);
-      expect(checkRequests[2]).toMatchObject({ mode: "suggest", userAsked: true });
-      expect(liveStore.openHints.get()).toHaveLength(1);
-      expect(liveStore.openHints.get()[0]).toMatchObject({ lineId, level: 0 });
-      expect(liveStore.lines.get()[lineId].hintsShown).toBe(1);
-
-      // Second tap with a hint already shown: escalate (a new, level-1 hint for THIS line).
-      streamQueue.push([annotation(lineId, "Divide both sides by the same number")]);
-      events.dispatchEvent(new CustomEvent(BADGE_TAP_EVENT, { detail: { lineId, shapeId: echo.id } }));
-      await settle(6);
-      expect(checkRequests).toHaveLength(4);
-      expect(checkRequests[3]).toMatchObject({ mode: "suggest", userAsked: true });
-      const hints = liveStore.openHints.get();
-      expect(hints).toHaveLength(1);
-      expect(hints[0]).toMatchObject({ lineId, level: 1, message: "Divide both sides by the same number" });
+      expect(checkRequests).toHaveLength(2);
+      expect(checkRequests[1]).toMatchObject({ mode: "suggest", userAsked: true });
+      expect(liveStore.openHints.get()).toHaveLength(0);
     });
 
     it("resolves the line from shapeId alone, ignores taps in Off, and stops listening after stop()", async () => {

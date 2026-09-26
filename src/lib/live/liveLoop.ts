@@ -41,7 +41,6 @@ import {
   type MathShape,
   type MathShapeProps,
   type MathTone,
-  type OpenHint,
   type RecognizeRequest,
   type RecognizeResponse,
   type Rect,
@@ -63,6 +62,7 @@ import {
 } from "./liveStore";
 import { scheduleLiveWrite } from "./liveWrite";
 import { recordRecognition } from "./liveDebug";
+import { MARKS, markKey, markStrokes, type MarkKind } from "./marks";
 import { readScreenMeta } from "@/lib/screens/screens";
 import { getLiveSettings } from "./liveSettings";
 import {
@@ -73,7 +73,9 @@ import {
   inlineHandSizeFor,
   placeHandPlan,
   placeHandPlanOnBaseline,
+  planFromStrokes,
   planHandwriting,
+  HAND_WRITE,
   type HandPlan,
 } from "./handwriting";
 import {
@@ -161,17 +163,15 @@ interface LineRuntime {
    * meta (`graphDismissed`) so a reload does not bring the card back.
    */
   graphDismissedExpr: string | null;
+  /** the tutor's mark wanted on this line (`markKey`), null for none; undefined until first render */
+  markKey?: string | null;
+  markWriter?: HandWriter | null;
 }
 
 type CheckOpts = {
   userAsked: boolean;
   modeOverride?: "feedback" | "suggest";
   forceHint?: boolean;
-  /**
-   * "Ask about this": a crop of the focus line's ink for the check model. Only ever set by
-   * `requestHelp` on ink Live could not read as maths; the answer is a typeset note.
-   */
-  crop?: string;
 };
 type SolveOpts = { onlyFirstStep?: boolean; lineId: string };
 
@@ -213,7 +213,6 @@ const UNREADABLE_NOTE = "Couldn't read this — tap to type it";
  * the Retry they already know — and nothing is drawn.
  */
 const UNUSABLE_SOLUTION = "Couldn't work this out";
-const NOTATION_NOTE = "Not what you wrote? Tap to fix.";
 /** Dispatched on window by the math shape's warn/ok badge: `detail: { lineId, shapeId }`. */
 export const BADGE_TAP_EVENT = "live:badge-tap";
 /** Echo meta key recording a dismissed graph's plot expression. */
@@ -242,6 +241,12 @@ const ANSWER_SRC_META = "answerFor";
 const ANSWER_LATEX_META = "answerLatex";
 /** on the tutor's handwritten worked solution: the line LaTeX it solves */
 const SOLVED_META = "solvedLatex";
+/** on an echo: the line LaTeX the model flagged as wrong (a ring stays while the line reads the same) */
+const AI_WARN_META = "aiWarnLatex";
+/** on the tutor's handwritten next step beside a wrong line: the wrong line's LaTeX it answers */
+const SUGGEST_META = "suggestFor";
+/** on the strokes of a tutor's mark (tick / ring / question mark): its `markKey` */
+const MARK_META = "mark";
 const ANSWER_ANCHORS_META = "answerAnchors";
 
 function metaString(meta: unknown, key: string): string {
@@ -365,6 +370,8 @@ export class LiveLoop implements LiveController {
   /** LLM checks asked for while offline (focus line id -> userAsked); re-run once after reconnect */
   private readonly pendingChecks = new Map<string, boolean>();
   private pendingSolve: string | null = null;
+  /** wrong lines waiting for the student to stop before the tutor writes the right next step */
+  private pendingSuggestions = new Set<string>();
   /** the handwriting reveal in flight, if any (one block at a time) */
   private writer: HandWriter | null = null;
   /** any answer ink on the page at all; kept by `recount` so the common render costs nothing */
@@ -577,7 +584,7 @@ export class LiveLoop implements LiveController {
         return;
       case "check": {
         const st = lines[ctx.lineId];
-        if (!st || (!st.latex && !ctx.opts.crop)) {
+        if (!st?.latex) {
           clearLiveError();
           return;
         }
@@ -641,20 +648,16 @@ export class LiveLoop implements LiveController {
    * (spec ladder: mismatch + no hint yet), one per column with the lowest amber line as
    * focus, and none while a hint card is open (one-open-hint rule).
    */
+  /**
+   * The dial went up to Suggest / Solve: every ringed line gets the right next step written
+   * beside it — from the engine, once the student has stopped. No model call: the engine
+   * already knows these lines are wrong, and usually what should have come instead.
+   */
   private checkMismatchesAfterLadderRise(): void {
     if (!this.engine || !this.opts.enabled || this.opts.voiceActive) return;
-    if (liveStore.openHints.get().length > 0) return;
-    const focusByColumn = new Map<number, LiveLineState>();
-    const all = Object.values(liveStore.lines.get()).sort(
-      (a, b) => a.line.column - b.line.column || a.line.row - b.line.row,
-    );
-    for (const st of all) {
-      if (!st.latex || st.analysis?.verdict !== "mismatch") continue;
-      if (st.hintsShown >= LIVE_LIMITS.maxHintsPerLine) continue;
-      if (!this.decisionFor(st).runLlmCheck) continue;
-      focusByColumn.set(st.line.column, st);
+    for (const st of Object.values(liveStore.lines.get())) {
+      if (st.latex && (st.analysis?.verdict === "mismatch" || this.modelFlagged(st))) this.suggestNextStep(st.line.id);
     }
-    for (const st of focusByColumn.values()) this.startCheck(st.line.column, st.line.id, { userAsked: false });
   }
 
   /** Badge tapped on an echo: a check in every mode; a second tap in Suggest/Solve escalates. */
@@ -818,6 +821,10 @@ export class LiveLoop implements LiveController {
       if (!state.latex || !state.analysis?.resultLatex) continue;
       this.render(state, this.decisionFor(state));
     }
+    // The right next step is an answer too: it waited for the pen to stop.
+    const waiting = [...this.pendingSuggestions];
+    this.pendingSuggestions.clear();
+    for (const lineId of waiting) this.suggestNextStep(lineId);
   }
 
   private lineOfStroke(strokeId: string): InkLine | null {
@@ -1337,6 +1344,7 @@ export class LiveLoop implements LiveController {
     this.dropStaleAnswer(state);
     if (!decision.echo) {
       if (state.mathShapeId || state.graphShapeId) this.deleteLineShapes(lineId, { keepAi: true });
+      if (!opts.quiet) this.syncMark(state, null);
       if (
         state.latex !== "" &&
         state.confidence < LIVE_LIMITS.minConfidence &&
@@ -1351,12 +1359,16 @@ export class LiveLoop implements LiveController {
           if (!cur || rt.processing !== ticket || !this.opts.enabled) return;
           rt.unreadableShown = true;
           this.upsertEcho(lineId, { latex: "", status: "unknown", resultLatex: "", note: UNREADABLE_NOTE });
+          if (this.opts.mode !== "off") this.syncMark(cur, "question");
         }, LIVE_TIMING.unreadableChipMs);
       }
       return;
     }
     // A finished sum does not want its own line read back at it — it wants the answer.
-    if (this.inlineAnswer(state, decision)) return;
+    if (this.inlineAnswer(state, decision)) {
+      this.syncMark(state, null);
+      return;
+    }
     const analysis = state.analysis;
     const status = decision.capped ? "none" : decision.badge;
     const resultLatex = decision.showResult && analysis ? analysis.resultLatex : "";
@@ -1374,6 +1386,14 @@ export class LiveLoop implements LiveController {
       }
     }
     this.upsertEcho(lineId, { latex: state.latex, status, resultLatex, note }, { keepStatus: opts.keepStatus });
+    // The mark IS the feedback now: a tick after a right step, a ring round a wrong one. The
+    // echo that used to carry the badge only shows on hover. Mode off keeps what is there.
+    if (!opts.keepStatus) {
+      const ring = status === "warn" || (status !== "ok" && status !== "solved" && this.modelFlagged(state));
+      this.syncMark(state, ring ? "circle" : status === "ok" || status === "solved" ? "check" : null);
+      this.dropStaleSuggestion(state, ring);
+      if (ring && !opts.quiet) this.suggestNextStep(lineId);
+    }
     if (analysis?.plot && !decision.capped) {
       if (rt.graphDismissedExpr !== null && rt.graphDismissedExpr !== analysis.plot.expr) this.clearGraphDismissed(lineId);
       if (rt.graphDismissedExpr === null) this.upsertGraph(lineId, analysis.plot);
@@ -1407,6 +1427,12 @@ export class LiveLoop implements LiveController {
     }
     this.hasAnswerInk = answers;
     liveStore.liveShapeCount.set(n + blocks.size);
+  }
+
+  /** The model called this line wrong, and the line still reads the way it did then. */
+  private modelFlagged(state: LiveLineState): boolean {
+    const shape = state.mathShapeId ? this.editor.getShape(state.mathShapeId) : undefined;
+    return Boolean(shape && state.latex && metaString(shape.meta, AI_WARN_META) === state.latex);
   }
 
   /** The current screen's rect, or null on an editor without screens. */
@@ -1511,6 +1537,10 @@ export class LiveLoop implements LiveController {
 
   /** Line moved: keep content, move the echo (and graph) to the new slot. */
   private replaceEcho(lineId: string): void {
+    // The ink moved: its mark goes with it (redrawn at the new place, same kind).
+    const moved = liveStore.lines.get()[lineId];
+    const kind = this.runtime(lineId).markKey?.split(":")[0] as MarkKind | undefined;
+    if (moved && kind) this.syncMark(moved, kind);
     this.write(() => {
       const st = liveStore.lines.get()[lineId];
       if (!st?.mathShapeId) return;
@@ -1698,9 +1728,8 @@ export class LiveLoop implements LiveController {
   }
 
   // ---------------------------------------------------------------- LLM check
-  /** `withLineId` keeps that line even with no LaTeX (the "Ask about this" crop's line). */
-  private buildCheckLines(column: number, withLineId?: string): { lines: CheckLine[]; region: Rect; states: LiveLineState[] } | null {
-    const states = this.columnLines(column).filter((s) => s.latex || s.line.id === withLineId);
+  private buildCheckLines(column: number): { lines: CheckLine[]; region: Rect; states: LiveLineState[] } | null {
+    const states = this.columnLines(column).filter((s) => s.latex);
     if (states.length === 0) return null;
     const region = expandRect(unionRects(states.map((s) => s.line.bounds)), 24);
     const lines: CheckLine[] = states.slice(-LIVE_LIMITS.maxLinesPerCheck).map((s) => ({
@@ -1721,12 +1750,10 @@ export class LiveLoop implements LiveController {
     const mode = this.opts.mode;
     if (mode === "off" || this.opts.voiceActive || !this.opts.enabled) return;
     const checkMode: "feedback" | "suggest" = opts.modeOverride ?? (mode === "feedback" ? "feedback" : "suggest");
-    const built = this.buildCheckLines(column, opts.crop ? focusLineId : undefined);
+    const built = this.buildCheckLines(column);
     if (!built) return;
     if (!this.deps.isOnline()) {
-      // A crop is a picture of this moment's ink: it is not queued for a reconnect.
-      if (!opts.crop) this.deferLlm("check", focusLineId, opts.userAsked);
-      else liveStore.status.set("offline");
+      this.deferLlm("check", focusLineId, opts.userAsked);
       return;
     }
     const rt = this.runtime(focusLineId);
@@ -1741,9 +1768,6 @@ export class LiveLoop implements LiveController {
       focusLineId,
       userAsked: opts.userAsked,
     };
-    // Never on an automatic check: the schema refuses a crop without userAsked, and only
-    // requestHelp (an explicit tap) ever sets one.
-    if (opts.crop && opts.userAsked) req.crop = opts.crop;
     const startedAt = this.deps.now();
     const errCtx = { kind: "check" as const, lineId: focusLineId, userAsked: opts.userAsked };
     const retry: RetryContext = { kind: "check", lineId: focusLineId, opts };
@@ -1759,8 +1783,7 @@ export class LiveLoop implements LiveController {
               first = false;
               clientMetric("live.check.ttfa.ms", { ms: this.deps.now() - startedAt, lineId: focusLineId });
             }
-            if (req.crop) this.applyAskNote(ev.data, focusLineId, checkMode);
-            else this.applyAnnotation(ev.data, focusLineId, checkMode, opts.forceHint ?? false);
+            this.applyAnnotation(ev.data, focusLineId);
           } else if (ev.event === "error") {
             failed = true;
             console.warn("[live] check error", ev.data);
@@ -1771,7 +1794,7 @@ export class LiveLoop implements LiveController {
         if (!isAbortLike(err) && !ctrl.signal.aborted) {
           failed = true;
           // A network failure is also deferred so a reconnect replays it once, as before.
-          if (this.isNetworkFailure(err) && !req.crop) this.deferLlm("check", focusLineId, opts.userAsked);
+          if (this.isNetworkFailure(err)) this.deferLlm("check", focusLineId, opts.userAsked);
           else console.warn("[live] check failed", err);
           if (this.deps.isOnline()) this.fail(err, errCtx, retry);
         }
@@ -1783,73 +1806,25 @@ export class LiveLoop implements LiveController {
     })();
   }
 
-  private applyAnnotation(a: Annotation, focusLineId: string, checkMode: "feedback" | "suggest", forceHint: boolean): void {
+  /**
+   * A model's comment on a line becomes a MARK, never words on the board: a mistake rings the
+   * line (the words stay on its echo, which shows on hover), and in Suggest / Solve the tutor
+   * then writes the right next step by hand once the student has stopped. Praise changes
+   * nothing — a tick is only ever what the engine verified.
+   */
+  private applyAnnotation(a: Annotation, focusLineId: string): void {
     const lineId = a.lineId ?? focusLineId;
     const state = liveStore.lines.get()[lineId];
     if (!state) return;
     const rt = this.runtime(lineId);
     if (a.verdict === "warn" && state.analysis?.verdict === "ok") return;
     if (a.expected && this.engine && this.engine.verifyExpected(a.expected, state.latex) === "equal") return;
-
-    if (a.kind === "praise") {
-      if (state.analysis?.verdict === "ok" || state.analysis?.solved) this.setEchoNote(lineId, a.message);
-      return;
-    }
-    if (a.kind === "notation") {
-      this.setEchoNote(lineId, NOTATION_NOTE);
-      return;
-    }
-    // An explicit escalation (badge tap / "More help") re-shows the hint even when the model repeats itself,
-    // so the card never just vanishes with no new help.
-    if (!forceHint && rt.shownHintTexts.has(a.message)) return;
-
-    if (a.verdict === "warn") {
-      this.setEchoNote(lineId, a.message, "warn");
-    } else if (checkMode === "feedback") {
-      this.setEchoNote(lineId, a.message);
-    }
-
-    if (checkMode === "suggest") {
-      const decision = this.decisionFor(state, { userAsked: true });
-      const allow = forceHint ? liveStore.openHints.get().every((h) => h.lineId !== lineId) : decision.allowHint;
-      if (!allow) return;
-      const hint: OpenHint = {
-        id: `h_${lineId}_${this.deps.now().toString(36)}`,
-        lineId,
-        message: a.message,
-        question: a.question ?? "",
-        level: rt.escalation,
-        createdAt: this.deps.now(),
-      };
-      liveStore.openHints.set([...liveStore.openHints.get(), hint]);
-      rt.shownHintTexts.add(a.message);
-      setLine(lineId, { hintsShown: state.hintsShown + 1 });
-      if (a.verdict !== "warn") this.setEchoNote(lineId, a.message);
-    } else {
-      rt.shownHintTexts.add(a.message);
-    }
-  }
-
-  /**
-   * The answer to "Ask about this" (Help on ink Live could not read as maths): each annotation
-   * becomes a typeset note beside the ink. There is usually no echo to carry it — a diagram or
-   * an unreadable line has none — and the chip on a failed read belongs to Retry.
-   */
-  private applyAskNote(a: Annotation, focusLineId: string, checkMode: "feedback" | "suggest"): void {
-    const lineId = a.lineId ?? focusLineId;
-    if (!liveStore.lines.get()[lineId]) return;
-    const text = checkMode === "suggest" && a.question ? `${a.message} ${a.question}` : a.message;
-    const rt = this.runtime(lineId);
-    if (rt.shownHintTexts.has(text)) return;
-    rt.shownHintTexts.add(text);
-    const lines = wrapWords(text);
-    const longest = lines.reduce((a, b) => (b.length > a.length ? b : a), "");
-    this.placeMath({
-      latex: textAsLatex(text),
-      nearLineId: lineId,
-      tone: "muted",
-      size: { w: estimateEchoWidth(`\\text{${longest}}`), h: ECHO_HEIGHTS.m + (lines.length - 1) * NOTE_LINE_PX },
-    });
+    if (a.kind === "praise" || a.kind === "notation") return;
+    if (a.verdict !== "warn") return;
+    rt.shownHintTexts.add(a.message);
+    this.setEchoNote(lineId, a.message, "warn");
+    this.syncMark(state, "circle");
+    this.suggestNextStep(lineId);
   }
 
   /**
@@ -1865,12 +1840,13 @@ export class LiveLoop implements LiveController {
       if (!shape || shape.type !== "math") return;
       const props: Partial<MathShapeProps> = { note };
       if (status) props.status = status;
+      const warned = status === "warn" ? st.latex : metaString(shape.meta, AI_WARN_META);
       this.editor.updateShapes([
         {
           id: shape.id,
           type: "math",
           props,
-          meta: { ...shape.meta, [AI_NOTE_META]: Boolean(note) },
+          meta: { ...shape.meta, [AI_NOTE_META]: Boolean(note), [AI_WARN_META]: warned },
         } satisfies TLShapePartial<MathShape>,
       ]);
     });
@@ -2066,6 +2042,7 @@ export class LiveLoop implements LiveController {
       let doneEarly = false;
       let drawn = 0;
       let discarded = 0;
+      const accepted: string[] = [];
       try {
         for await (const ev of this.deps.stream(SOLVE_PATH, req, { signal: ctrl.signal })) {
           if (ctrl.signal.aborted) break;
@@ -2084,8 +2061,9 @@ export class LiveLoop implements LiveController {
               continue;
             }
             drawn++;
-            if (drawn === 1) this.clearSolveOutput(built.states);
-            this.placeSolutionStep(columnRect, lastLine.bounds, drawn, latex, ev.data.explanation, opts.lineId);
+            // Collected, then written as ONE handwritten block when the stream ends: the tutor
+            // writes a solution, it does not deal out cards. No explanations — maths only.
+            accepted.push(latex);
             if (opts.onlyFirstStep) {
               doneEarly = true;
               ctrl.abort();
@@ -2097,6 +2075,7 @@ export class LiveLoop implements LiveController {
             this.fail(sseFailure(ev.data), errCtx, retry);
           }
         }
+        if (accepted.length > 0 && (doneEarly || !ctrl.signal.aborted)) this.writeModelSteps(built, opts, accepted, columnRect, lastLine.bounds);
         // The model answered, but nothing it said survived the interlock. Better to say so than
         // to leave the student staring at a page where Solve visibly did nothing.
         if (!failed && drawn === 0 && discarded > 0) {
@@ -2117,6 +2096,17 @@ export class LiveLoop implements LiveController {
         if (liveStore.status.get() !== "offline") liveStore.status.set("idle");
       }
     })();
+  }
+
+  /**
+   * The model's verified steps, replacing any earlier solution for this work: in the tutor's
+   * hand when every step can be drawn, typeset only when the hand lacks a symbol.
+   */
+  private writeModelSteps(built: { states: LiveLineState[] }, opts: SolveOpts, steps: string[], column: Rect, lastLine: Rect): void {
+    const state = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
+    this.clearSolveOutput(built.states);
+    if (this.deps.handwritingEnabled() && state && this.drawStepsByHand(built, opts, state, steps)) return;
+    steps.forEach((step, i) => this.placeSolutionStep(column, lastLine, i + 1, step, "", opts.lineId));
   }
 
   /**
@@ -2187,7 +2177,7 @@ export class LiveLoop implements LiveController {
     const lineIds = new Set(states.map((s) => s.line.id));
     const ids = this.editor
       .getCurrentPageShapes()
-      .filter((s) => isLiveMeta(s.meta) && s.meta.source === "ai" && lineIds.has(s.meta.lineId) && !answerSrcOf(s.meta))
+      .filter((s) => isLiveMeta(s.meta) && s.meta.source === "ai" && lineIds.has(s.meta.lineId) && !answerSrcOf(s.meta) && !metaString(s.meta, MARK_META))
       .map((s) => s.id);
     if (ids.length > 0) this.write(() => this.editor.deleteShapes(ids));
   }
@@ -2266,10 +2256,8 @@ export class LiveLoop implements LiveController {
     return true;
   }
 
-  private startHandwriting(plan: HandPlan, lineId: string, extraMeta?: JsonObject): void {
-    this.cancelHandwriting();
-    const meta = makeMeta("ai", lineId, this.deps.now());
-    const writer = new HandWriter(
+  private makeWriter(): HandWriter {
+    return new HandWriter(
       {
         write: (fn) => this.write(fn),
         createShapes: (shapes) => this.editor.createShapes(shapes),
@@ -2281,6 +2269,41 @@ export class LiveLoop implements LiveController {
         reducedMotion: this.deps.reducedMotion,
       },
     );
+  }
+
+  /**
+   * Puts the tutor's mark for this line on the page (tick, ring, question mark) or takes it
+   * off. Redrawn only when the kind or the line's place changes; one already on the page with
+   * the same key (after a reload) is kept, not written again.
+   */
+  private syncMark(state: LiveLineState, kind: MarkKind | null): void {
+    const lineId = state.line.id;
+    const rt = this.runtime(lineId);
+    const want = kind && this.deps.handwritingEnabled() ? markKey(kind, state.line.bounds) : null;
+    if (rt.markKey === want) return;
+    rt.markKey = want;
+    rt.markWriter?.cancel();
+    rt.markWriter = null;
+    this.write(() => {
+      if (this.runtime(lineId).markKey !== want) return; // superseded before it ran
+      const marks = this.editor
+        .getCurrentPageShapes()
+        .filter((s) => isLiveMeta(s.meta) && s.meta.lineId === lineId && metaString(s.meta, MARK_META) !== "");
+      const stale = marks.filter((s) => metaString(s.meta, MARK_META) !== want).map((s) => s.id);
+      if (stale.length > 0) this.editor.deleteShapes(stale);
+      if (!want || !kind || marks.some((s) => metaString(s.meta, MARK_META) === want)) return;
+      const plan = planFromStrokes(kind, markStrokes(kind, state.line.bounds, handSeedFor(`${lineId}:${want}`)), HAND_WRITE.minSize);
+      if (!plan) return;
+      const writer = this.makeWriter();
+      this.runtime(lineId).markWriter = writer;
+      writer.start(plan, { meta: makeMeta("ai", lineId, this.deps.now()), extraMeta: { [MARK_META]: want } });
+    });
+  }
+
+  private startHandwriting(plan: HandPlan, lineId: string, extraMeta?: JsonObject): void {
+    this.cancelHandwriting();
+    const meta = makeMeta("ai", lineId, this.deps.now());
+    const writer = this.makeWriter();
     this.writer = writer;
     writer.start(plan, {
       meta,
@@ -2496,46 +2519,121 @@ export class LiveLoop implements LiveController {
     const target = this.latestLine();
     if (!target) return;
     if (needsLook(target)) {
-      this.askAboutInk(target);
+      // No sentences on the board: ink the tutor cannot read as maths gets a "?" beside it
+      // (write it again, larger or clearer) — not a model's paragraph about the picture.
+      this.syncMark(target, "question");
       return;
     }
     if (this.opts.mode === "answer") this.requestSolve(target.line.id);
     else this.escalate(target.line.id);
   }
 
-  private askAboutInk(state: LiveLineState): void {
-    if (this.opts.voiceActive) return;
-    if (!this.deps.isOnline()) {
-      liveStore.status.set("offline");
-      return;
+  /** The last line above `state` in its column that is not itself wrong: where the work was still right. */
+  private lastGoodLineAbove(state: LiveLineState): LiveLineState | undefined {
+    const above = this.columnLines(state.line.column).filter((s) => s.latex && s.line.row < state.line.row);
+    return [...above].reverse().find((s) => s.analysis?.verdict !== "mismatch" && !this.modelFlagged(s));
+  }
+
+  /**
+   * The step that should have come after the last good line, from the engine alone — the
+   * student's own lines are never offered back. Null when the engine cannot say.
+   */
+  private rightNextStep(state: LiveLineState): string | null {
+    const engine = this.engine;
+    const good = this.lastGoodLineAbove(state);
+    if (!engine || !good) return null;
+    const upto = this.columnLines(state.line.column).filter((s) => s.latex && s.line.row <= good.line.row);
+    const own = new Set(this.columnLines(state.line.column).map((s) => normalizeStep(s.latex)));
+    let steps: string[] = [];
+    try {
+      steps = engine.solveLatex(good.latex)?.steps ?? engine.solveFromLines?.(upto.map((s) => s.latex))?.steps ?? [];
+    } catch {
+      return null;
     }
+    return steps.find((st) => !own.has(normalizeStep(st))) ?? null;
+  }
+
+  /**
+   * Suggest (and Solve): beside a ringed line, the tutor writes the step that should have been
+   * there. It is an answer, so it waits for the student to stop writing unless they asked
+   * (`now`). Engine only — a model is only asked when the student asks (`escalate`).
+   * Returns whether a step was written or is waiting to be.
+   */
+  private suggestNextStep(lineId: string, opts: { now?: boolean } = {}): boolean {
+    // Unasked, only Suggest and Solve write the step; asked (Help), any mode but Off does.
+    if (!this.opts.enabled || this.opts.mode === "off") return false;
+    if (!opts.now && this.opts.mode !== "suggest" && this.opts.mode !== "answer") return false;
+    const state = liveStore.lines.get()[lineId];
+    if (!state?.latex) return false;
+    if (this.hasSuggestion(lineId, state.latex)) return true;
+    const step = this.rightNextStep(state);
+    if (!step) return false;
+    if (!opts.now && !this.settled) {
+      this.pendingSuggestions.add(lineId);
+      return true;
+    }
+    if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
+    const { plan, unsupported } = planHandwriting([step], { size: handSizeFor(state.line.bounds.h), seed: handSeedFor(`${lineId}:suggest`) });
+    if (!plan || unsupported.length > 0) return false;
+    const ink = state.line.bounds;
+    const candidate: Rect = {
+      x: ink.x + ink.w + MARKS.ringPadX + PLACEMENT.sideGap / 2,
+      y: ink.y + ink.h / 2 - plan.bounds.h / 2,
+      w: plan.bounds.w,
+      h: plan.bounds.h,
+    };
+    const slot = findFreeSlot(keepInsideX(candidate, this.placementBounds()), this.avoidRects(lineId), ink);
+    const writer = this.makeWriter();
+    writer.start(placeHandPlan(plan, { x: slot.x, y: slot.y }), {
+      meta: makeMeta("ai", lineId, this.deps.now()),
+      extraMeta: { [SUGGEST_META]: state.latex },
+    });
+    clientMetric("live.suggest.hand", { lineId });
+    return true;
+  }
+
+  private hasSuggestion(lineId: string, latex: string): boolean {
+    return this.editor
+      .getCurrentPageShapes()
+      .some((s) => isLiveMeta(s.meta) && s.meta.lineId === lineId && metaString(s.meta, SUGGEST_META) === latex);
+  }
+
+  /** The line was rewritten or put right: the step written beside it no longer applies. */
+  private dropStaleSuggestion(state: LiveLineState, stillWrong: boolean): void {
     const lineId = state.line.id;
-    const checkMode: "feedback" | "suggest" = this.opts.mode === "feedback" ? "feedback" : "suggest";
-    void this.captureCrop(state.line).then((crop) => {
-      const cur = liveStore.lines.get()[lineId];
-      // No picture (no renderer, or over the size cap): nothing the model could look at.
-      if (!crop || !cur || !this.started) return;
-      this.startCheck(cur.line.column, lineId, { userAsked: true, modeOverride: checkMode, crop });
+    if (!stillWrong) this.pendingSuggestions.delete(lineId);
+    this.write(() => {
+      const stale = this.editor
+        .getCurrentPageShapes()
+        .filter((s) => {
+          if (!isLiveMeta(s.meta) || s.meta.lineId !== lineId) return false;
+          const forLatex = metaString(s.meta, SUGGEST_META);
+          return forLatex !== "" && (!stillWrong || forLatex !== state.latex);
+        })
+        .map((s) => s.id);
+      if (stale.length > 0) this.editor.deleteShapes(stale);
     });
   }
 
-  /** feedback -> suggest -> one solve step for THIS line; the global mode never changes. */
+  /**
+   * More help on a line: the right next step by hand from the engine, straight away; when the
+   * engine has none, one model step for this line (still checked, still drawn by hand).
+   */
   escalate(lineId: string): void {
     const target = liveStore.lines.get()[lineId];
     if (!target || !target.latex || this.opts.mode === "off") return;
-    const rt = this.runtime(lineId);
     this.closeHintsFor(lineId);
-    if (rt.escalation === 0) {
-      rt.escalation = 1;
-      this.startCheck(target.line.column, lineId, { userAsked: true, modeOverride: "suggest", forceHint: true });
-      return;
+    const wrong = target.analysis?.verdict === "mismatch" || this.modelFlagged(target);
+    if (wrong) {
+      if (this.suggestNextStep(lineId, { now: true })) return;
+      const good = this.lastGoodLineAbove(target);
+      if (good) {
+        this.startSolve(target.line.column, good.line.id, { onlyFirstStep: true, lineId: good.line.id });
+        return;
+      }
     }
-    if (rt.escalation === 1) {
-      rt.escalation = 2;
-      const col = this.columnLines(target.line.column).filter((s) => s.latex && s.line.row < target.line.row);
-      const lastOk = [...col].reverse().find((s) => s.analysis?.verdict === "ok");
-      this.startSolve(target.line.column, lastOk?.line.id ?? lineId, { onlyFirstStep: true, lineId });
-    }
+    // Stuck on a line that is fine: the next step after it.
+    this.startSolve(target.line.column, lineId, { onlyFirstStep: true, lineId });
   }
 
   dismissHint(hintId: string): void {
@@ -2634,39 +2732,6 @@ export function needsLook(state: Pick<LiveLineState, "latex" | "confidence" | "a
   if (state.analysis?.kind === "label") return true;
   if (state.analysis?.kind === "text" && proseWordCount(state.latex) < WORD_PROBLEM_MIN_WORDS) return true;
   return isSingleSymbolLatex(state.latex);
-}
-
-/** Plain text as KaTeX `\text{...}`: groups and specials escaped, the rest dropped. */
-export function textAsLatex(text: string, max = NOTE_WRAP_CHARS): string {
-  const body = text
-    .replace(/[\\^~]/g, " ")
-    .replace(/[{}$&#_%]/g, (c) => `\\${c}`)
-    .replace(/\s+/g, " ")
-    .trim();
-  // KaTeX never wraps `\text{}`: a sentence from the model becomes a left-aligned block
-  // beside the ink instead of one line running off the screen.
-  const lines = wrapWords(body, max);
-  if (lines.length <= 1) return `\\text{${body}}`;
-  return `\\begin{array}{l}${lines.map((l) => `\\text{${l}}`).join(" \\\\ ")}\\end{array}`;
-}
-
-/** A note wider than this many characters wraps. */
-export const NOTE_WRAP_CHARS = 44;
-/** extra height per wrapped note line (a KaTeX array row at the echo's 24 px) */
-const NOTE_LINE_PX = 30;
-
-/** Greedy word wrap; a single word longer than the limit keeps a line of its own. */
-export function wrapWords(text: string, max = NOTE_WRAP_CHARS): string[] {
-  const lines: string[] = [];
-  let cur = "";
-  for (const word of text.split(/\s+/).filter(Boolean)) {
-    if (cur && cur.length + 1 + word.length > max) {
-      lines.push(cur);
-      cur = word;
-    } else cur = cur ? `${cur} ${word}` : word;
-  }
-  if (cur) lines.push(cur);
-  return lines;
 }
 
 export function createLiveLoop(editor: LiveEditorLike, opts: UseLiveMathOptions, deps: Partial<LiveLoopDeps> = {}): LiveLoop {
