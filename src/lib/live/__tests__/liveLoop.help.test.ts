@@ -16,7 +16,7 @@ import {
   type UseLiveMathOptions,
 } from "../contracts";
 import { getEngine } from "../engine";
-import { createLiveLoop, needsLook, textAsLatex, type LiveLoop } from "../liveLoop";
+import { createLiveLoop, needsLook, NOTE_WRAP_CHARS, proseWordCount, textAsLatex, wrapWords, type LiveLoop } from "../liveLoop";
 import { liveStore, resetLiveStore } from "../liveStore";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
 
@@ -175,7 +175,7 @@ describe("live loop — Help (and Ask about this)", () => {
 
     expect(aiShapes()).toHaveLength(1);
     expect(aiShapes()[0]).toMatchObject({
-      latex: "\\text{This looks like 2x + 7; rewrite the last symbol more clearly.}",
+      latex: textAsLatex("This looks like 2x + 7; rewrite the last symbol more clearly."),
       tone: "muted",
       lineId,
     });
@@ -193,7 +193,7 @@ describe("live loop — Help (and Ask about this)", () => {
     expect(req.crop).toBe(CROP);
     expect(req.lines.find((l) => l.id === lineId)).toMatchObject({ latex: "", local: { kind: "unknown" } });
     expect(CheckRequestSchema.safeParse(req).success).toBe(true);
-    expect(aiShapes().map((p) => p.latex)).toEqual(["\\text{I can't make this out; try writing it a little larger.}"]);
+    expect(aiShapes().map((p) => p.latex)).toEqual([textAsLatex("I can't make this out; try writing it a little larger.")]);
   });
 
   it("a lone symbol (a drawn \\Delta) in Suggest: the crop goes along and the question joins the note", async () => {
@@ -204,7 +204,7 @@ describe("live loop — Help (and Ask about this)", () => {
     await help();
 
     expect(checks()[0]).toMatchObject({ crop: CROP, mode: "suggest", userAsked: true });
-    expect(aiShapes().map((p) => p.latex)).toEqual(["\\text{That triangle has no side lengths yet. Which side do you know?}"]);
+    expect(aiShapes().map((p) => p.latex)).toEqual([textAsLatex("That triangle has no side lengths yet. Which side do you know?")]);
   });
 
   it("never fires on its own: automatic checks carry no crop and capture nothing", async () => {
@@ -282,7 +282,36 @@ describe("needsLook / textAsLatex", () => {
     expect(needsLook(st(WORD_PROBLEM, 0.95, "text"))).toBe(false);
   });
 
+  it("a doodle read as a scrap of prose is a picture, not a word problem", () => {
+    // what Mathpix made of a hand-drawn star
+    expect(needsLook(st("\\text { is }", 0.9, "text"))).toBe(true);
+    expect(needsLook(st("\\text{Sn a}", 0.9, "text"))).toBe(true);
+    expect(needsLook(st("\\text{Find the area of the triangle}", 0.9, "text"))).toBe(false);
+  });
+
+  it("counts prose words through \\text and commands", () => {
+    expect(proseWordCount("\\text { is }")).toBe(1);
+    expect(proseWordCount("\\text{A train travels } 60 \\mathrm{~km}")).toBe(5);
+  });
+
   it("escapes what KaTeX's \\text would choke on", () => {
     expect(textAsLatex("Use 50% of {x} & y_1 \\ ^ ~ #")).toBe("\\text{Use 50\\% of \\{x\\} \\& y\\_1 \\#}");
+  });
+
+  it("wraps a long note into a left-aligned block instead of one line off the screen", () => {
+    const note =
+      "This looks like a drawn triangle or a delta symbol with a curved side. Could you rewrite this symbol more clearly?";
+    const lines = wrapWords(note);
+    expect(lines.length).toBeGreaterThan(1);
+    for (const l of lines) expect(l.length).toBeLessThanOrEqual(NOTE_WRAP_CHARS);
+    expect(lines.join(" ")).toBe(note);
+    const tex = textAsLatex(note);
+    expect(tex.startsWith("\\begin{array}{l}\\text{")).toBe(true);
+    expect(tex.endsWith("}\\end{array}")).toBe(true);
+    expect(tex.split("\\\\").length).toBe(lines.length);
+  });
+
+  it("keeps a word longer than the limit whole", () => {
+    expect(wrapWords(`a ${"x".repeat(60)} b`, 10)).toEqual(["a", "x".repeat(60), "b"]);
   });
 });

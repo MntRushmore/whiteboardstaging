@@ -83,6 +83,7 @@ import {
   expandRect,
   findFreeSlot,
   inlineAnswerGap,
+  keepInsideX,
   keepOnScreen,
   normalizeBBox,
   placeEcho,
@@ -238,6 +239,8 @@ const AI_NOTE_META = "aiNote";
  */
 const ANSWER_SRC_META = "answerFor";
 const ANSWER_LATEX_META = "answerLatex";
+/** on the tutor's handwritten worked solution: the line LaTeX it solves */
+const SOLVED_META = "solvedLatex";
 const ANSWER_ANCHORS_META = "answerAnchors";
 
 function metaString(meta: unknown, key: string): string {
@@ -1836,7 +1839,14 @@ export class LiveLoop implements LiveController {
     const rt = this.runtime(lineId);
     if (rt.shownHintTexts.has(text)) return;
     rt.shownHintTexts.add(text);
-    this.placeMath({ latex: textAsLatex(text), nearLineId: lineId, tone: "muted" });
+    const lines = wrapWords(text);
+    const longest = lines.reduce((a, b) => (b.length > a.length ? b : a), "");
+    this.placeMath({
+      latex: textAsLatex(text),
+      nearLineId: lineId,
+      tone: "muted",
+      size: { w: estimateEchoWidth(`\\text{${longest}}`), h: ECHO_HEIGHTS.m + (lines.length - 1) * NOTE_LINE_PX },
+    });
   }
 
   /**
@@ -1964,6 +1974,12 @@ export class LiveLoop implements LiveController {
   }
 
   /** The tutor's answer ink for this line: by line id, or by the student strokes it was hung on. */
+  private hasHandSolution(lineId: string, latex: string): boolean {
+    return this.editor
+      .getCurrentPageShapes()
+      .some((s) => isLiveMeta(s.meta) && s.meta.lineId === lineId && metaString(s.meta, SOLVED_META) === latex);
+  }
+
   private answerBlocksFor(lineId: string): TLShape[] {
     if (!this.hasAnswerInk) return [];
     const own = new Set<string>(liveStore.lines.get()[lineId]?.line.strokeIds ?? []);
@@ -2112,7 +2128,10 @@ export class LiveLoop implements LiveController {
     }
     if (!solved || solved.steps.length === 0) return false;
     const steps = (opts.onlyFirstStep ? solved.steps.slice(0, 1) : solved.steps).slice(0, LIVE_LIMITS.maxSolveSteps);
-    return this.drawStepsByHand(built, opts, state, steps);
+    // Solve (or Help) pressed again on a line the tutor has already worked out by hand: the
+    // steps are on the page, and drawing them a second time beside the first says nothing new.
+    if (!opts.onlyFirstStep && this.hasHandSolution(opts.lineId, state.latex)) return true;
+    return this.drawStepsByHand(built, opts, state, steps, opts.onlyFirstStep ? undefined : { [SOLVED_META]: state.latex });
   }
 
   /**
@@ -2282,7 +2301,7 @@ export class LiveLoop implements LiveController {
     return { lines, summary };
   }
 
-  placeMath(args: { latex: string; nearLineId?: string; tone?: MathTone }): TLShapeId | null {
+  placeMath(args: { latex: string; nearLineId?: string; tone?: MathTone; size?: { w: number; h: number } }): TLShapeId | null {
     const latex = args.latex.trim();
     if (!latex) return null;
     if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return null;
@@ -2291,9 +2310,9 @@ export class LiveLoop implements LiveController {
     this.write(() => {
       const anchor = this.anchorRect(args.nearLineId);
       const viewport = this.placementBounds();
-      const size = { w: estimateEchoWidth(latex), h: ECHO_HEIGHTS.m };
-      const candidate = placeFloating(anchor, size, viewport);
-      const rect = anchor ? findFreeSlot(candidate, this.avoidRects(lineId), anchor) : candidate;
+      const size = args.size ?? { w: estimateEchoWidth(latex), h: ECHO_HEIGHTS.m };
+      const candidate = keepInsideX(placeFloating(anchor, size, viewport), viewport);
+      const rect = keepInsideX(anchor ? findFreeSlot(candidate, this.avoidRects(lineId), anchor) : candidate, viewport);
       this.editor.createShapes([
         {
           id,
@@ -2518,26 +2537,64 @@ export class LiveLoop implements LiveController {
   }
 }
 
+/** Words a line of prose must have before it reads as a question rather than a scrap. */
+export const WORD_PROBLEM_MIN_WORDS = 4;
+
+/** Words in recognized prose: `\text{...}` unwrapped, other commands and braces dropped. */
+export function proseWordCount(latex: string): number {
+  const plain = latex
+    .replace(/\\(?:text|mathrm|textrm|textbf|mathbf|operatorname)\s*\{([^{}]*)\}/g, " $1 ")
+    .replace(/\\[a-zA-Z]+/g, " ")
+    .replace(/[{}]/g, " ");
+  return (plain.match(/[A-Za-z0-9]+/g) ?? []).length;
+}
+
 /**
  * Ink Live has nothing to reason about as maths: it could not be read (failed or
- * low-confidence), or it reads as a diagram label or a lone symbol. Prose (`text`) is not in
- * this list — a word problem is readable, and its words are the question.
+ * low-confidence), or it reads as a diagram label or a lone symbol. Prose (`text`) is a word
+ * problem — readable, and its words are the question — but only when it reads like a
+ * sentence: a doodle the recognizer turned into `\text{is}` is a picture, and sending it to
+ * Solve as a question pays for a model to reason about nothing.
  */
 export function needsLook(state: Pick<LiveLineState, "latex" | "confidence" | "analysis">): boolean {
   if (!state.latex.trim()) return true;
   if (state.confidence < LIVE_LIMITS.minConfidence) return true;
   if (state.analysis?.kind === "label") return true;
+  if (state.analysis?.kind === "text" && proseWordCount(state.latex) < WORD_PROBLEM_MIN_WORDS) return true;
   return isSingleSymbolLatex(state.latex);
 }
 
 /** Plain text as KaTeX `\text{...}`: groups and specials escaped, the rest dropped. */
-export function textAsLatex(text: string): string {
+export function textAsLatex(text: string, max = NOTE_WRAP_CHARS): string {
   const body = text
     .replace(/[\\^~]/g, " ")
     .replace(/[{}$&#_%]/g, (c) => `\\${c}`)
     .replace(/\s+/g, " ")
     .trim();
-  return `\\text{${body}}`;
+  // KaTeX never wraps `\text{}`: a sentence from the model becomes a left-aligned block
+  // beside the ink instead of one line running off the screen.
+  const lines = wrapWords(body, max);
+  if (lines.length <= 1) return `\\text{${body}}`;
+  return `\\begin{array}{l}${lines.map((l) => `\\text{${l}}`).join(" \\\\ ")}\\end{array}`;
+}
+
+/** A note wider than this many characters wraps. */
+export const NOTE_WRAP_CHARS = 44;
+/** extra height per wrapped note line (a KaTeX array row at the echo's 24 px) */
+const NOTE_LINE_PX = 30;
+
+/** Greedy word wrap; a single word longer than the limit keeps a line of its own. */
+export function wrapWords(text: string, max = NOTE_WRAP_CHARS): string[] {
+  const lines: string[] = [];
+  let cur = "";
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    if (cur && cur.length + 1 + word.length > max) {
+      lines.push(cur);
+      cur = word;
+    } else cur = cur ? `${cur} ${word}` : word;
+  }
+  if (cur) lines.push(cur);
+  return lines;
 }
 
 export function createLiveLoop(editor: LiveEditorLike, opts: UseLiveMathOptions, deps: Partial<LiveLoopDeps> = {}): LiveLoop {

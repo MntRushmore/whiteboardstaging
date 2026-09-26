@@ -138,6 +138,20 @@ describe("live loop — screens", () => {
     expect(streamCalls).toEqual([]);
   });
 
+  it("does not write the same worked solution twice when Solve / Help is pressed again", async () => {
+    start("answer");
+    const line = await penLine("2x=8", 200, "2x=8");
+    const tutorInk = () => editor.shapesOfType("draw").filter((s) => (s.meta as { live?: unknown }).live !== undefined).length;
+    loop.requestSolve(line);
+    await settleUntil(() => tutorInk() > 0);
+    await vi.advanceTimersByTimeAsync(100);
+    const once = tutorInk();
+    loop.requestSolve(line);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(tutorInk()).toBe(once);
+    expect(streamCalls).toEqual([]);
+  });
+
   it("places a solve step that would run off the bottom of the screen beside the work", async () => {
     start("answer");
     editor.store.put([{ ...editor.getCurrentPage(), meta: { screen: { x: 0, y: 0, w: 1600, h: 330 } } }]);

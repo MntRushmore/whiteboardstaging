@@ -146,6 +146,13 @@ export function keepOnScreen(rect: Rect, screen: Rect | null, column: Rect, offs
   return rect;
 }
 
+/** Slides `rect` left so it does not run past the right edge of `bounds` (never past its left edge). */
+export function keepInsideX(rect: Rect, bounds: Rect): Rect {
+  const maxX = rectMaxX(bounds) - PLACEMENT.viewportMargin;
+  if (rectMaxX(rect) <= maxX) return rect;
+  return { ...rect, x: Math.max(bounds.x + PLACEMENT.viewportMargin, maxX - rect.w) };
+}
+
 /** Somewhere sensible for a shape placed by voice/AI without a line: below the anchor or viewport centre. */
 export function placeFloating(anchor: Rect | null, size: { w: number; h: number }, viewport: Rect): Rect {
   if (anchor) {

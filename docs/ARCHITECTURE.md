@@ -169,6 +169,19 @@ any student ink, anywhere (incl. pen-down, drag, erase)
   → re-render only → the held-back ANSWER lands  (no re-recognition, no model call)
 ```
 
+**Screens, not an infinite canvas (`src/lib/screens/**`).** A board is a stack of fixed 16:9
+screens, one tldraw page each, whose rect lives in `page.meta.screen` (1600×900 page units). The
+camera is held inside it (`cameraOptions.constraints`, `behavior: 'contain'`, `fit-max`), the strip
+in the NavigationPanel slot moves between screens and adds them (cap 50), and `OnTheCanvas` draws the
+whiteboard. A page saved before screens gets a screen grown (16:9) around its existing ink the first
+time it is shown (`ensureScreen`). One screen is one context: `LiveLoop` listens for
+`instance.currentPageId` changes and `switchScreen` drops the lines, timers and in-flight calls of the
+screen left behind, then rebuilds the new one from its echoes (no re-recognition, no model call).
+Placement uses the screen's edges instead of the viewport, and a block that would run off the bottom
+moves beside the work (`keepOnScreen`). Within a screen, a line separated from the column above by a
+blank gap of more than max(120 px, 3 × line height) starts a new column (`assignColumns`), so a
+second problem further down is never checked as the next step of the first.
+
 **Marks may be immediate; answers must wait.** Two clocks, because "this line is finished" and
 "the student has stopped" are different questions. `LIVE_TIMING.quietMs` (600 ms, per line) gates
 recognition and everything that comments on work already done — the green check, the amber dot,
@@ -189,11 +202,14 @@ mode gate.
 **Help (Board options → Help, `LiveController.requestHelp`).** The board's one explicit ask, on the
 line touched last: in Solve it is `requestSolve`; in Feedback / Suggest it is `escalate` (the next
 hint for that line). Ink Live cannot read as maths — a failed or low-confidence read, a diagram
-label, a lone symbol (`needsLook` in `liveLoop.ts`) — takes the **Ask about this** path instead: the
+label, a lone symbol, or prose shorter than 4 words (a doodle Mathpix read as `\text{is}` is a
+picture, not a question; `needsLook` in `liveLoop.ts`) — takes the **Ask about this** path instead: the
 loop captures a small JPEG crop of that line (`captureCrop`, ≤ 200 KB, the same capture the vision
 recognizer uses) and sends one ordinary `/api/live/check` with `crop` set; the route passes it to the
 check model (`google/gemini-3.5-flash`) as an `image_url` part, and each annotation comes back as a
-muted typeset note (`\text{…}`) beside the ink. Same price as any check (3 credits). It never fires by
+muted typeset note beside the ink (`\text{…}`, wrapped into a left-aligned block past 44
+characters and kept inside the screen). Pressing Solve or Help again on a line the tutor has already
+worked out by hand draws nothing new (the block carries `meta.solvedLatex`). Same price as any check (3 credits). It never fires by
 itself: only `requestHelp` sets a crop, and the schema refuses one without `userAsked` + `focusLineId`.
 
 **Word problems.** Mathpix returns prose as `\text{…}` and the engine classifies it `kind: 'text'`

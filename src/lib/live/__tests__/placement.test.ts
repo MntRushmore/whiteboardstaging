@@ -7,6 +7,7 @@ import {
   echoSizeFor,
   estimateEchoWidth,
   findFreeSlot,
+  keepInsideX,
   keepOnScreen,
   normalizeBBox,
   PLACEMENT,
@@ -168,5 +169,20 @@ describe("keepOnScreen", () => {
   it("does nothing without a screen", () => {
     const r: Rect = { x: 100, y: 5000, w: 120, h: 44 };
     expect(keepOnScreen(r, null, column)).toEqual(r);
+  });
+});
+
+describe("keepInsideX", () => {
+  const screen: Rect = { x: 0, y: 0, w: 1600, h: 900 };
+  it("slides a shape that runs past the right edge back inside", () => {
+    const r = keepInsideX({ x: 1400, y: 10, w: 400, h: 44 }, screen);
+    expect(r.x + r.w).toBe(1600 - PLACEMENT.viewportMargin);
+  });
+  it("never past the left edge", () => {
+    expect(keepInsideX({ x: 100, y: 10, w: 3000, h: 44 }, screen).x).toBe(PLACEMENT.viewportMargin);
+  });
+  it("leaves a shape that fits", () => {
+    const r = { x: 100, y: 10, w: 400, h: 44 };
+    expect(keepInsideX(r, screen)).toEqual(r);
   });
 });
