@@ -27,6 +27,7 @@ import { APPROX_OP, latexToMath, preprocessLatex, splitRelations, UnsupportedLat
 import { countOperations, createMathInstance, integralsExact, isComplexValue, isNodeValue, isUnitValue, safeEvaluate, safeParse, toNumber, translate, type MathModule } from "./math";
 import { evaluateUnits, unitValueToLatex, valuesMatch } from "./units";
 import { solveFromLines, type SystemDeps } from "./systems";
+import { linearSolveSteps, simplifyExpressionSteps, type LinearSteps, type RelOp } from "./algebra";
 
 const UNKNOWN: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
 
@@ -45,6 +46,21 @@ function errorMessage(e: unknown): string {
 function normalizeLatex(s: string): string {
   return s.replace(/\\,|\\;|\\!|\\ |~/g, "").replace(/\\mathrm|\\text|\\left|\\right|[{}\s]/g, "");
 }
+
+/** Two step lines are the same line: `\leq` is `\le`, `2 \cdot x` is `2x`, spacing never counts. */
+function stepKey(s: string): string {
+  return normalizeLatex(
+    s
+      .replace(/\\leqslant|\\leq\b/g, "\\le")
+      .replace(/\\geqslant|\\geq\b/g, "\\ge")
+      .replace(/\\lt\b/g, "<")
+      .replace(/\\gt\b/g, ">")
+      .replace(/\\cdot|\\times|\*/g, ""),
+  );
+}
+
+const REL_OPS: ReadonlySet<string> = new Set(["==", "<", ">", "<=", ">="]);
+const isRelOp = (op: string | undefined): op is RelOp => op !== undefined && REL_OPS.has(op);
 
 const TRIG = new Set(["sin", "cos", "tan", "sec", "csc", "cot", "asin", "acos", "atan", "sinh", "cosh", "tanh"]);
 
@@ -612,8 +628,35 @@ export function createEngine(mod: MathModule): LiveEngine {
     return out || "0";
   };
 
+  /**
+   * The teacher-style steps for a linear equation or inequality in one unknown (`algebra.ts`),
+   * or null when the line is not one — the caller then keeps the CAS path below.
+   */
+  const linearSteps = (latex: string): (LinearSteps & { pre: string }) | null => {
+    const pre = preprocessLatex(latex);
+    if (/\d\.\d/.test(pre)) return null; // decimals stay on the CAS path: no `\frac{1}{2}` for `0.5`
+    const split = splitRelations(pre);
+    if (split.sides.length !== 2 || !isRelOp(split.ops[0])) return null;
+    const [L, R] = split.sides.map((s) => tr(s));
+    if (L.hasUnits || R.hasUnits || isSymbolic(L) || isSymbolic(R) || L.functions.length > 0 || R.functions.length > 0) return null;
+    const unknowns = [...new Set([...unknownsOf(L), ...unknownsOf(R)])];
+    if (unknowns.length !== 1 || !/^[a-zA-Z]$/.test(unknowns[0])) return null;
+    const lhs = safeParse(math, L.source);
+    const rhs = safeParse(math, R.source);
+    if (!lhs || !rhs) return null;
+    const out = linearSolveSteps(lhs, rhs, split.ops[0] as RelOp, unknowns[0], pre, stepKey);
+    return out ? { ...out, pre } : null;
+  };
+
   const solveLatex = (latex: string): { latex: string; steps: string[] } | null => {
     try {
+      const linear = linearSteps(latex);
+      if (linear) {
+        if (linear.outcome !== "solved" || linear.steps.length === 0) return null;
+        // `x = 4` / `x > 4` is already solved: writing it again under itself says nothing.
+        if (stepKey(linear.final) === stepKey(linear.pre)) return null;
+        return { latex: linear.final, steps: linear.steps };
+      }
       const pre = preprocessLatex(latex);
       const split = splitRelations(pre);
       if (split.sides.length !== 2 || split.ops[0] !== "==") return null;
@@ -670,6 +713,24 @@ export function createEngine(mod: MathModule): LiveEngine {
       const final = finalLatex(variable, info.roots, { preferFraction: false }, false);
       steps.push(final);
       return { latex: final, steps };
+    } catch {
+      return null;
+    }
+  };
+
+  /** `3(x+2) - x` (or `3(x+2) - x =`) → `3x + 6 - x`, `2x + 6`; null when there is nothing to simplify. */
+  const simplifySteps = (latex: string): string[] | null => {
+    try {
+      const pre = preprocessLatex(latex).trim().replace(/=\s*$/, "").trim();
+      if (!pre || /\d\.\d/.test(pre)) return null;
+      if (splitRelations(pre).ops.length > 0) return null;
+      const t = tr(pre);
+      if (t.hasUnits || t.hasText || t.hasPercent || t.functions.length > 0 || isSymbolic(t)) return null;
+      const unknowns = unknownsOf(t);
+      if (unknowns.length === 0 || unknowns.some((v) => !/^[a-zA-Z]$/.test(v))) return null;
+      const node = safeParse(math, t.source);
+      if (!node) return null;
+      return simplifyExpressionSteps(node, unknowns, pre, stepKey);
     } catch {
       return null;
     }
@@ -811,6 +872,15 @@ export function createEngine(mod: MathModule): LiveEngine {
       }
     },
     solveOne: (latex) => solveLatex(latex),
+    cancelled: (latex) => {
+      try {
+        const linear = linearSteps(latex);
+        if (!linear || linear.outcome === "solved") return null;
+        return { steps: linear.steps, outcome: linear.outcome };
+      } catch {
+        return null;
+      }
+    },
     singleRoot: (latex, variable) => {
       const rel = systemDeps.parse(latex);
       if (!rel || rel.unknowns.length !== 1 || rel.unknowns[0] !== variable) return null;
@@ -845,6 +915,7 @@ export function createEngine(mod: MathModule): LiveEngine {
       }
     },
     solveLatex,
+    simplifySteps,
     verifyExpected,
     balance,
     calculate,
@@ -857,6 +928,7 @@ const stub: LiveEngine = {
   compileExpr: () => null,
   solveLatex: () => null,
   solveFromLines: () => null,
+  simplifySteps: () => null,
   verifyExpected: () => "unknown",
   balance: () => null,
   calculate: () => null,
