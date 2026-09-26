@@ -11,6 +11,8 @@ const nextConfig: NextConfig = {
   // chunks so `node scripts/check-bundle.mjs --by-package` can attribute bytes to packages.
   // Never on by default (maps are served publicly and slow the build). See docs/BUNDLE.md.
   productionBrowserSourceMaps: process.env.BUNDLE_SOURCEMAPS === "1",
+  // The board's screen strip owns the bottom-left corner; keep the dev badge off it.
+  devIndicators: { position: "bottom-right" },
 };
 
 export default nextConfig;

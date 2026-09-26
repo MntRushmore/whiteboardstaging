@@ -5,6 +5,7 @@ import type {
   Editor,
   HistoryEntry,
   JsonObject,
+  TLPage,
   Mat,
   TLDrawShape,
   TLRecord,
@@ -62,6 +63,7 @@ import {
   type LiveErrorKind,
 } from "./liveStore";
 import { scheduleLiveWrite } from "./liveWrite";
+import { readScreenMeta } from "@/lib/screens/screens";
 import { getLiveSettings } from "./liveSettings";
 import {
   HandWriter,
@@ -82,6 +84,7 @@ import {
   expandRect,
   findFreeSlot,
   inlineAnswerGap,
+  keepOnScreen,
   normalizeBBox,
   placeEcho,
   placeFloating,
@@ -117,6 +120,8 @@ export interface LiveEditorLike {
   getShapePageBounds(shape: TLShape | TLShapeId): Box | undefined;
   getShapePageTransform(shape: TLShape | TLShapeId): Mat;
   getViewportPageBounds(): Box;
+  /** the board's current screen lives in its page meta (optional: test editors have no pages) */
+  getCurrentPage?(): TLPage;
   createShapes(shapes: TLShapePartial[]): unknown;
   updateShapes(shapes: TLShapePartial[]): unknown;
   deleteShapes(ids: TLShapeId[]): unknown;
@@ -336,6 +341,7 @@ export class LiveLoop implements LiveController {
   private engine: LiveEngine | null = null;
   private unsubscribe: (() => void) | null = null;
   private unsubscribeRemote: (() => void) | null = null;
+  private unsubscribeSession: (() => void) | null = null;
   private quietTimer: ReturnType<typeof setTimeout> | null = null;
   /** the canvas-level settle clock: running means the student is still considered to be working */
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -402,6 +408,8 @@ export class LiveLoop implements LiveController {
       source: "remote",
       scope: "document",
     });
+    // Switching screens (tldraw pages) is a session change, not a document one.
+    this.unsubscribeSession = this.editor.store.listen((entry) => this.onSessionChange(entry), { scope: "session" });
     this.deps.events?.addEventListener("online", this.onOnline);
     this.deps.events?.addEventListener("offline", this.onOffline);
     this.deps.events?.addEventListener(BADGE_TAP_EVENT, this.onBadgeTap);
@@ -443,9 +451,18 @@ export class LiveLoop implements LiveController {
     this.unsubscribe = null;
     this.unsubscribeRemote?.();
     this.unsubscribeRemote = null;
+    this.unsubscribeSession?.();
+    this.unsubscribeSession = null;
     this.deps.events?.removeEventListener("online", this.onOnline);
     this.deps.events?.removeEventListener("offline", this.onOffline);
     this.deps.events?.removeEventListener(BADGE_TAP_EVENT, this.onBadgeTap);
+    this.resetRuntime();
+    if (liveStore.retryHandler.get() === this.retryHandler) liveStore.retryHandler.set(null);
+    this.resetRetry();
+  }
+
+  /** Timers, in-flight calls and per-line runtime: everything that belongs to the ink on screen. */
+  private resetRuntime(): void {
     if (this.quietTimer) clearTimeout(this.quietTimer);
     this.quietTimer = null;
     if (this.settleTimer) clearTimeout(this.settleTimer);
@@ -468,8 +485,35 @@ export class LiveLoop implements LiveController {
     this.pendingSolve = null;
     liveStore.offlineQueued.set(0);
     liveStore.solving.set(0);
-    if (liveStore.retryHandler.get() === this.retryHandler) liveStore.retryHandler.set(null);
-    this.resetRetry();
+  }
+
+  private onSessionChange(entry: HistoryEntry<TLRecord>): void {
+    for (const [from, to] of Object.values(entry.changes.updated)) {
+      if (to.typeName !== "instance" || from.typeName !== "instance") continue;
+      if (from.currentPageId !== to.currentPageId) {
+        this.switchScreen();
+        return;
+      }
+    }
+  }
+
+  /**
+   * The student moved to another screen: Live forgets the one they left and reads this one.
+   *
+   * One screen is one context. Nothing on the screen they left is checked, answered or sent
+   * to a model alongside this one, and a reply still streaming for it is dropped rather than
+   * drawn here. This screen's lines come back from its echoes, as on a reload.
+   */
+  private switchScreen(): void {
+    if (!this.started) return;
+    this.resetRuntime();
+    liveStore.lines.set({});
+    liveStore.openHints.set([]);
+    clearLiveError();
+    this.rebuild();
+    this.recount();
+    this.reanalyzeAll();
+    if (liveStore.status.get() !== "offline") liveStore.status.set(this.opts.enabled ? "idle" : "paused");
   }
 
   // ---------------------------------------------------------------- errors + retry
@@ -1396,6 +1440,20 @@ export class LiveLoop implements LiveController {
     liveStore.liveShapeCount.set(n + blocks.size);
   }
 
+  /** The current screen's rect, or null on an editor without screens. */
+  private screenRect(): Rect | null {
+    const page = this.editor.getCurrentPage?.();
+    return page ? readScreenMeta(page.meta) : null;
+  }
+
+  /**
+   * The edges placement keeps inside: the screen (the whiteboard's own edge, whatever the
+   * zoom), else the viewport.
+   */
+  private placementBounds(): Rect {
+    return this.screenRect() ?? boxToRect(this.editor.getViewportPageBounds());
+  }
+
   private avoidRects(lineId: string, exclude?: ReadonlySet<string>): Rect[] {
     const st = liveStore.lines.get()[lineId];
     const own = new Set<string>(st ? [...st.line.strokeIds, st.mathShapeId ?? "", st.graphShapeId ?? ""] : []);
@@ -1453,7 +1511,7 @@ export class LiveLoop implements LiveController {
       }
       const props = wanted;
       if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard && props.latex === "") return;
-      const viewport = boxToRect(this.editor.getViewportPageBounds());
+      const viewport = this.placementBounds();
       const candidate = placeEcho(st.line.bounds, props.latex || UNREADABLE_NOTE, size, viewport);
       const rect = findFreeSlot(candidate, this.avoidRects(lineId), st.line.bounds);
       const id = createShapeId();
@@ -1490,7 +1548,7 @@ export class LiveLoop implements LiveController {
       const shape = this.editor.getShape(st.mathShapeId);
       if (!shape || shape.type !== "math") return;
       const props = shape.props as MathShapeProps;
-      const viewport = boxToRect(this.editor.getViewportPageBounds());
+      const viewport = this.placementBounds();
       const candidate = placeEcho(st.line.bounds, props.latex, props.size, viewport);
       const rect = findFreeSlot({ ...candidate, w: props.w, h: props.h }, this.avoidRects(lineId), st.line.bounds);
       const updates: TLShapePartial[] = [{ id: shape.id, type: "math", x: rect.x, y: rect.y }];
@@ -1526,7 +1584,7 @@ export class LiveLoop implements LiveController {
         return;
       }
       if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return;
-      const viewport = boxToRect(this.editor.getViewportPageBounds());
+      const viewport = this.placementBounds();
       const echo = st.mathShapeId ? this.editor.getShapePageBounds(st.mathShapeId) : undefined;
       const rect = placeGraph(
         st.line.bounds,
@@ -1600,7 +1658,7 @@ export class LiveLoop implements LiveController {
       const echoBounds = this.editor.getShapePageBounds(st.mathShapeId);
       if (!echoBounds) return;
       const echo = boxToRect(echoBounds);
-      const viewport = boxToRect(this.editor.getViewportPageBounds());
+      const viewport = this.placementBounds();
       const updates: TLShapePartial[] = [];
       if (st.graphShapeId) {
         const g = this.editor.getShape(st.graphShapeId);
@@ -1906,7 +1964,7 @@ export class LiveLoop implements LiveController {
       x: rectMaxX(ink) + inlineAnswerGap(ink.h),
       baselineY: rectMaxY(ink),
     });
-    const viewport = boxToRect(this.editor.getViewportPageBounds());
+    const viewport = this.placementBounds();
     if (rectMaxX(placed.bounds) > rectMaxX(viewport) - PLACEMENT.viewportMargin) return null;
     if (this.avoidRects(state.line.id).some((r) => rectsIntersect(r, placed.bounds))) return null;
     return placed;
@@ -2135,7 +2193,7 @@ export class LiveLoop implements LiveController {
     avoid.push(state.line.bounds);
     const echo = this.echoRect(opts.lineId);
     if (echo) avoid.push(echo);
-    const slot = findFreeSlot(candidate, avoid, lastLine);
+    const slot = findFreeSlot(keepOnScreen(candidate, this.screenRect(), column), avoid, lastLine);
 
     this.startHandwriting(placeHandPlan(plan, { x: slot.x, y: slot.y }), opts.lineId, extraMeta);
     clientMetric("live.solve.hand.ms", { ms: Math.round(plan.totalMs), lineId: opts.lineId });
@@ -2182,7 +2240,12 @@ export class LiveLoop implements LiveController {
   private placeSolutionStep(column: Rect, lastLine: Rect, index: number, latex: string, explanation: string, lineId: string): void {
     this.write(() => {
       if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return;
-      const rect = placeStep(column, lastLine, index, latex);
+      const rect = keepOnScreen(
+        placeStep(column, lastLine, index, latex),
+        this.screenRect(),
+        column,
+        Math.max(0, index - 1) * PLACEMENT.stepPitch,
+      );
       const slot = findFreeSlot(rect, this.avoidRects(lineId), lastLine);
       this.editor.createShapes([
         {
@@ -2238,7 +2301,7 @@ export class LiveLoop implements LiveController {
     const lineId = args.nearLineId ?? "";
     this.write(() => {
       const anchor = this.anchorRect(args.nearLineId);
-      const viewport = boxToRect(this.editor.getViewportPageBounds());
+      const viewport = this.placementBounds();
       const size = { w: estimateEchoWidth(latex), h: ECHO_HEIGHTS.m };
       const candidate = placeFloating(anchor, size, viewport);
       const rect = anchor ? findFreeSlot(candidate, this.avoidRects(lineId), anchor) : candidate;
@@ -2268,7 +2331,7 @@ export class LiveLoop implements LiveController {
     if (!(xMax > xMin)) return null;
     this.write(() => {
       const anchor = this.anchorRect(args.nearLineId);
-      const viewport = boxToRect(this.editor.getViewportPageBounds());
+      const viewport = this.placementBounds();
       const size = { w: GRAPH_SHAPE_DEFAULTS.w, h: GRAPH_SHAPE_DEFAULTS.h };
       const rect = anchor ? placeGraph(anchor, this.echoRect(args.nearLineId), size, viewport) : placeFloating(null, size, viewport);
       this.editor.createShapes([

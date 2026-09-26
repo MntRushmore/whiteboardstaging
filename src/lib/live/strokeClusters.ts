@@ -14,7 +14,8 @@ import type { InkLine, InkStroke, Rect } from "./contracts";
  *    adjacent) joins that neighbour.
  * Every stroke rect is inflated by max(3 px, 0.1 x median height) before the overlap /
  * gap tests so zero-height bars (F/E/T cross-bars, minus signs) join their letters.
- * Lines are then sorted top-to-bottom into columns by x-overlap >= 40 %.
+ * Lines are then sorted top-to-bottom into columns by x-overlap >= 40 %, and a line
+ * separated from the column above it by a wide blank gap starts a column of its own.
  */
 
 export const CLUSTER_RULES = {
@@ -29,6 +30,13 @@ export const CLUSTER_RULES = {
   barReachFactor: 1.5,
   barCoverRatio: 0.5,
   columnOverlapRatio: 0.4,
+  /**
+   * A blank gap taller than max(columnBreakMinPx, columnBreakFactor x the taller of the two
+   * lines) between a line and the bottom of the column above it ends that column: a problem
+   * written further down is a new problem, not the next step of the one above.
+   */
+  columnBreakFactor: 3,
+  columnBreakMinPx: 120,
   idReuseRatio: 0.5,
   /** rect inflation before the join tests: max(inflateMinPx, inflateFactor x median) */
   inflateMinPx: 3,
@@ -229,13 +237,19 @@ export function newLineId(): string {
 /** Assigns `column`/`row` to lines sorted top-to-bottom; mutates and returns `lines`. */
 export function assignColumns(lines: InkLine[]): InkLine[] {
   const sorted = [...lines].sort((a, b) => a.bounds.y - b.bounds.y || a.bounds.x - b.bounds.x);
-  const columns: Array<{ x0: number; x1: number; rows: number }> = [];
+  const columns: Array<{ x0: number; x1: number; rows: number; bottom: number; lastH: number; y0: number }> = [];
   for (const line of sorted) {
     const x0 = line.bounds.x;
     const x1 = line.bounds.x + line.bounds.w;
     let best = -1;
     let bestOverlap = 0;
     columns.forEach((col, idx) => {
+      const gap = line.bounds.y - col.bottom;
+      const breakAt = Math.max(
+        CLUSTER_RULES.columnBreakMinPx,
+        CLUSTER_RULES.columnBreakFactor * Math.max(line.bounds.h, col.lastH),
+      );
+      if (gap > breakAt) return;
       const ov = overlap1d(x0, x1, col.x0, col.x1);
       const smaller = Math.max(1, Math.min(x1 - x0, col.x1 - col.x0));
       const ratio = ov / smaller;
@@ -244,23 +258,27 @@ export function assignColumns(lines: InkLine[]): InkLine[] {
         bestOverlap = ratio;
       }
     });
+    const lineBottom = line.bounds.y + line.bounds.h;
     if (best === -1) {
-      columns.push({ x0, x1, rows: 1 });
+      columns.push({ x0, x1, rows: 1, bottom: lineBottom, lastH: line.bounds.h, y0: line.bounds.y });
       line.column = columns.length - 1;
       line.row = 0;
     } else {
       const col = columns[best];
       col.x0 = Math.min(col.x0, x0);
       col.x1 = Math.max(col.x1, x1);
+      col.bottom = Math.max(col.bottom, lineBottom);
+      col.lastH = line.bounds.h;
       line.column = best;
       line.row = col.rows;
       col.rows += 1;
     }
   }
   // Re-number columns left to right for stable reading order.
+  // Columns stacked in the same band read top to bottom.
   const order = columns
-    .map((c, i) => ({ i, x0: c.x0 }))
-    .sort((a, b) => a.x0 - b.x0)
+    .map((c, i) => ({ i, x0: c.x0, y0: c.y0 }))
+    .sort((a, b) => a.x0 - b.x0 || a.y0 - b.y0)
     .map((c) => c.i);
   const remap = new Map(order.map((oldIdx, newIdx) => [oldIdx, newIdx]));
   for (const line of sorted) line.column = remap.get(line.column) ?? line.column;

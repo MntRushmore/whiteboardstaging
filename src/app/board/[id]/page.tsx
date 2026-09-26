@@ -88,6 +88,10 @@ import { isLiveMeta, LIVE_KILL_SWITCH, LIVE_TIMING } from "@/lib/live/contracts"
 import { legacyShouldSkip } from "@/lib/live/liveStore";
 import { useLiveMath } from "@/lib/live/useLiveMath";
 import { useLiveSettings } from "@/lib/live/liveSettings";
+import { ScreenStrip } from "@/components/screens/ScreenStrip";
+import { ScreenBackground, ScreenFrame } from "@/components/screens/ScreenFrame";
+import { applyScreenCamera } from "@/lib/screens/screens";
+import { useScreenCamera } from "@/lib/screens/useScreenCamera";
 import { LiveStatusPill } from "@/components/live/LiveStatusPill";
 import { SaveStatus } from "@/components/live/SaveStatus";
 import { LiveHintLayer } from "@/components/live/LiveHintLayer";
@@ -924,6 +928,7 @@ type GenerationRequest = { mode: LegacyMode; promptOverride?: string; source: "a
 
 function BoardContent({ id, initialVersion }: { id: string; initialVersion: number | null }) {
   const editor = useEditor();
+  useScreenCamera(editor);
   const router = useRouter();
   const { features } = useFeatureLabs();
   // Legacy AI overlays are found by `meta.aiOverlay` in the store (not React state) so
@@ -1751,8 +1756,10 @@ export default function BoardPage() {
         assets={assetStoreBundle?.store}
         components={{
           MenuPanel: null,
-          NavigationPanel: null,
+          NavigationPanel: ScreenStrip,
           HelperButtons: null,
+          Background: ScreenBackground,
+          OnTheCanvas: ScreenFrame,
           Toolbar: LiveToolbar,
         }}
         onMount={(editor) => {
@@ -1799,6 +1806,9 @@ export default function BoardPage() {
               logger.warn({ id, error: e instanceof Error ? e.message : String(e) }, "On-load asset offload failed");
               toast.warning(ASSET_COPY.offloadPartial);
             });
+          // The board is a stack of fixed screens: hold the camera on the current one (a page
+          // saved before screens gets a screen that fits its existing ink, see ensureScreen).
+          applyScreenCamera(editor);
           if (process.env.NODE_ENV !== "production") {
             // Dev-only handle for recording fixtures / poking the store from devtools.
             (window as unknown as { __agathonEditor?: Editor }).__agathonEditor = editor;

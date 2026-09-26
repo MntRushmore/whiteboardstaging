@@ -28,6 +28,8 @@ export const PLACEMENT = {
    */
   answerGapFactor: 0.4,
   answerGapMin: 10,
+  /** a block moved beside the work (it would run off the bottom of the screen) sits this far right of it */
+  sideGap: 48,
 } as const;
 
 /** px per visible character by echo size (KaTeX 18 / 24 / 32 px). */
@@ -127,6 +129,21 @@ export function placeStep(column: Rect, lastLine: Rect, index: number, latex: st
     w: estimateEchoWidth(latex, size),
     h: ECHO_HEIGHTS[size],
   };
+}
+
+/**
+ * A screen has a bottom edge. A block that would run past it moves beside the work instead:
+ * right of `column`, level with its top (plus `offsetY`, for the n-th step of a list). Left
+ * where it was when it fits, when there is no screen, or when beside does not fit either —
+ * on a full screen, below is still better than nowhere.
+ */
+export function keepOnScreen(rect: Rect, screen: Rect | null, column: Rect, offsetY = 0): Rect {
+  if (!screen) return rect;
+  const bottom = rectMaxY(screen) - PLACEMENT.viewportMargin;
+  if (rectMaxY(rect) <= bottom) return rect;
+  const beside: Rect = { ...rect, x: rectMaxX(column) + PLACEMENT.sideGap, y: column.y + offsetY };
+  if (rectMaxX(beside) <= rectMaxX(screen) - PLACEMENT.viewportMargin && rectMaxY(beside) <= bottom) return beside;
+  return rect;
 }
 
 /** Somewhere sensible for a shape placed by voice/AI without a line: below the anchor or viewport centre. */

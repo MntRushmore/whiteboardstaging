@@ -9,7 +9,12 @@ import {
   defaultShapeUtils,
   getIndexAbove,
   loadSnapshot,
+  PageRecordType,
+  TLINSTANCE_ID,
   type IndexKey,
+  type JsonObject,
+  type TLInstance,
+  type TLPage,
   type RecordProps,
   type TLDrawShape,
   type TLPageId,
@@ -139,11 +144,16 @@ export interface FakeEditor extends LiveEditorLike {
   removeUser(ids: TLShapeId[]): void;
   updateUser(id: TLShapeId, fn: (shape: TLShape) => TLShape): void;
   shapesOfType(type: string): TLShape[];
+  getCurrentPage(): TLPage;
+  /** adds a page (a board screen) after the others; does not switch to it */
+  addPage(meta?: JsonObject): TLPageId;
+  /** what the screen strip does: changes the instance's current page */
+  switchPage(id: TLPageId): void;
 }
 
 /** An editor double over a headless store implementing exactly what LiveLoop uses. */
 export function createFakeEditor(store: TLStore = createHeadlessStore(), viewport = new Box(0, 0, 1600, 1000)): FakeEditor {
-  const pageId = pageIdOf(store);
+  const currentPageId = (): TLPageId => (store.get(TLINSTANCE_ID) as TLInstance | undefined)?.currentPageId ?? pageIdOf(store);
   const resolve = (s: TLShape | TLShapeId): TLShape | undefined => (typeof s === "string" ? (store.get(s) as TLShape | undefined) : s);
   const defaults: Record<string, object> = {
     math: MATH_SHAPE_DEFAULTS,
@@ -153,7 +163,19 @@ export function createFakeEditor(store: TLStore = createHeadlessStore(), viewpor
 
   const editor: FakeEditor = {
     store,
-    getCurrentPageShapes: () => store.allRecords().filter(isShape).filter((s) => s.parentId === pageId),
+    getCurrentPageShapes: () => store.allRecords().filter(isShape).filter((s) => s.parentId === currentPageId()),
+    getCurrentPage: () => store.get(currentPageId()) as TLPage,
+    addPage: (meta = {}) => {
+      const pages = store.allRecords().filter((r) => r.typeName === "page") as TLPage[];
+      const last = pages.map((p) => p.index).sort().at(-1) ?? ("a1" as IndexKey);
+      const page = PageRecordType.create({ name: `Page ${pages.length + 1}`, index: getIndexAbove(last), meta });
+      store.put([page]);
+      return page.id;
+    },
+    switchPage: (id) => {
+      const instance = store.get(TLINSTANCE_ID) as TLInstance;
+      store.put([{ ...instance, currentPageId: id }]);
+    },
     getShape: (id) => store.get(id) as TLShape | undefined,
     getShapePageBounds: (s) => {
       const shape = resolve(s);
@@ -177,7 +199,7 @@ export function createFakeEditor(store: TLStore = createHeadlessStore(), viewpor
           y: p.y ?? 0,
           rotation: 0,
           index: lastIndex,
-          parentId: pageId,
+          parentId: currentPageId(),
           isLocked: false,
           opacity: 1,
           meta: (p.meta ?? {}) as TLShape["meta"],
@@ -202,7 +224,7 @@ export function createFakeEditor(store: TLStore = createHeadlessStore(), viewpor
       }
     },
     deleteShapes: (ids) => store.remove(ids),
-    putUser: (records) => store.put(records.map((r) => ({ ...r, parentId: pageId }) as TLShape)),
+    putUser: (records) => store.put(records.map((r) => ({ ...r, parentId: currentPageId() }) as TLShape)),
     removeUser: (ids) => store.remove(ids),
     updateUser: (id, fn) => {
       const cur = store.get(id) as TLShape | undefined;

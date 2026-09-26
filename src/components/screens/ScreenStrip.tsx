@@ -1,0 +1,52 @@
+"use client";
+
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { useEditor, useValue } from "tldraw";
+import { addScreen, goToScreen, MAX_SCREENS, screenPosition } from "@/lib/screens/screens";
+
+export const SCREEN_COPY = {
+  label: (index: number, count: number) => `Screen ${index} of ${count}`,
+  prev: "Previous screen",
+  next: "Next screen",
+  add: "New screen",
+  full: `A board holds up to ${MAX_SCREENS} screens`,
+} as const;
+
+const buttonClass =
+  "inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent dark:text-slate-200 dark:hover:bg-slate-800";
+
+/** ‹ 2 / 5 › + — moves between the board's fixed screens (tldraw pages). */
+export function ScreenStrip() {
+  const editor = useEditor();
+  const pageIds = useValue("screen ids", () => editor.getPages().map((p) => p.id), [editor]);
+  const current = useValue("current screen", () => editor.getCurrentPageId(), [editor]);
+  const { index, count } = screenPosition(pageIds, current);
+  const full = count >= MAX_SCREENS;
+
+  return (
+    <nav
+      aria-label="Screens"
+      className="pointer-events-auto m-2 flex items-center gap-1 rounded-lg border border-slate-200 bg-white/95 p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900/95"
+    >
+      <button type="button" className={buttonClass} aria-label={SCREEN_COPY.prev} title={SCREEN_COPY.prev} disabled={index <= 1} onClick={() => goToScreen(editor, -1)}>
+        <ChevronLeft className="h-4 w-4" />
+      </button>
+      <span className="min-w-12 px-1 text-center text-sm tabular-nums text-slate-700 dark:text-slate-200" aria-live="polite" aria-label={SCREEN_COPY.label(index, count)}>
+        {index} / {count}
+      </span>
+      <button type="button" className={buttonClass} aria-label={SCREEN_COPY.next} title={SCREEN_COPY.next} disabled={index >= count} onClick={() => goToScreen(editor, 1)}>
+        <ChevronRight className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        className={buttonClass}
+        aria-label={SCREEN_COPY.add}
+        title={full ? SCREEN_COPY.full : SCREEN_COPY.add}
+        disabled={full}
+        onClick={() => addScreen(editor)}
+      >
+        <Plus className="h-4 w-4" />
+      </button>
+    </nav>
+  );
+}

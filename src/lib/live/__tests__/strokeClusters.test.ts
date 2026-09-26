@@ -9,6 +9,7 @@ import {
   fixtureTwoLines,
   toInkStrokes,
   translateShapes,
+  writeLine,
 } from "../__fixtures__/strokes";
 import {
   clusterLines,
@@ -30,6 +31,29 @@ describe("clusterLines", () => {
     expect(lines[0].column).toBe(0);
     expect(lines[0].row).toBe(0);
     expect(lines[0].id).toMatch(/^ln_[0-9a-f]{8}$/);
+  });
+
+  it("starts a new column for a problem written well below the last one", () => {
+    // problem 1: two lines of working; problem 2 further down the page, same left edge
+    const ink = [
+      ...writeLine("2x=8", 100, 100),
+      ...writeLine("x=4", 100, 160),
+      ...writeLine("4x=8", 100, 520),
+      ...writeLine("x=1", 100, 580),
+    ];
+    const lines = clusterLines(toInkStrokes(ink));
+    expect(lines).toHaveLength(4);
+    expect(lines.map((l) => [l.column, l.row])).toEqual([
+      [0, 0],
+      [0, 1],
+      [1, 0],
+      [1, 1],
+    ]);
+  });
+
+  it("keeps an ordinary gap between steps in one column", () => {
+    const lines = clusterLines(toInkStrokes([...writeLine("2x=8", 100, 100), ...writeLine("x=4", 100, 200)]));
+    expect(lines.map((l) => l.column)).toEqual([0, 0]);
   });
 
   it("separates two stacked lines into rows of one column", () => {
