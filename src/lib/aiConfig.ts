@@ -32,10 +32,8 @@ export const PROVIDERS: Record<ProviderId, ProviderSpec> = {
     envVar: 'OPENROUTER_API_KEY',
     signupUrl: 'https://openrouter.ai/keys',
     features: [
-      'Solution / hint generation',
-      'Worksheet generation',
-      'Automatic "needs help" detection',
-      'Handwriting OCR (and the fallback math recognizer)',
+      'Live Math checks, hints and worked solutions',
+      'The fallback handwriting recognizer',
       'Voice workspace analysis',
       'Credit balance display',
     ],

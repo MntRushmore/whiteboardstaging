@@ -5,10 +5,10 @@ import {
   type FeatureLabsState,
 } from "../featureLabsState";
 
-type K = "stickers" | "worksheetGen";
+type K = "stickers" | "pdfUpload";
 
 const initial: FeatureLabsState<K> = {
-  features: { stickers: false, worksheetGen: false },
+  features: { stickers: false, pdfUpload: false },
   saving: null,
   failure: null,
 };
@@ -54,9 +54,9 @@ describe("featureLabsReducer", () => {
 
   it("ignores a stale 'persisted' for a different key and merges loaded settings", () => {
     const s1 = featureLabsReducer(initial, { type: "toggle", key: "stickers", enabled: true });
-    expect(featureLabsReducer(s1, { type: "persisted", key: "worksheetGen" })).toBe(s1);
-    const loaded = featureLabsReducer(initial, { type: "loaded", features: { worksheetGen: true } });
-    expect(loaded.features).toEqual({ stickers: false, worksheetGen: true });
+    expect(featureLabsReducer(s1, { type: "persisted", key: "pdfUpload" })).toBe(s1);
+    const loaded = featureLabsReducer(initial, { type: "loaded", features: { pdfUpload: true } });
+    expect(loaded.features).toEqual({ stickers: false, pdfUpload: true });
     expect(featureLabsReducer(initial, { type: "dismissFailure" })).toBe(initial);
   });
 });

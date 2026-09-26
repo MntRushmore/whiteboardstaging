@@ -5,7 +5,9 @@ import type { LiveController, MathTone } from "./contracts";
 /**
  * Voice tools over the Live layer (spec §2.3 #13). Pure client: they read the
  * transcript from liveStore via the controller and write typeset shapes; no
- * network. NOT wired into the Realtime session this round (voice is out of scope).
+ * network. The board's Realtime session registers `voiceSessionTools()` and runs
+ * these through `handleLiveVoiceTool`: the voice tutor reads and writes maths, it
+ * never paints an image onto the canvas.
  */
 
 /** Shape of a Realtime API function tool definition (session.update -> tools[]). */
@@ -63,6 +65,39 @@ export const LIVE_VOICE_TOOLS: RealtimeToolDef[] = [
     },
   },
 ];
+
+/** Vision read of the whole canvas (POST /api/voice/analyze-workspace): text back, nothing drawn. */
+export const ANALYZE_WORKSPACE = "analyze_workspace";
+
+const ANALYZE_WORKSPACE_TOOL: RealtimeToolDef = {
+  type: "function",
+  name: ANALYZE_WORKSPACE,
+  description:
+    "Look at the whole whiteboard (including drawings and diagrams) to understand what the student is working on. Returns a short text description; it draws nothing.",
+  parameters: {
+    type: "object",
+    properties: {
+      focus: {
+        type: "string",
+        description: "Optional focus for the analysis, e.g. 'find mistakes in the algebra' or 'summarize progress'.",
+      },
+    },
+    required: [],
+  },
+};
+
+/** Every tool the Realtime session registers: one read of the canvas plus the Live tools. */
+export function voiceSessionTools(): RealtimeToolDef[] {
+  return [ANALYZE_WORKSPACE_TOOL, ...LIVE_VOICE_TOOLS];
+}
+
+/** `session.update` instructions for the voice tutor. */
+export const VOICE_SESSION_INSTRUCTIONS =
+  "You are a realtime voice tutor for a handwritten whiteboard. Speak clearly and briefly. " +
+  `Call ${READ_LIVE_MATH} to read the student's maths exactly as recognized, and ${ANALYZE_WORKSPACE} ` +
+  `for anything that is not maths (a diagram, a sketch). To show something, write it with ${PLACE_MATH} ` +
+  `(one typeset step at a time) or graph it with ${PLOT_FUNCTION}; you never draw pictures. ` +
+  "Prefer gentle hints before full solutions.";
 
 export function isLiveVoiceTool(name: string): boolean {
   return LIVE_VOICE_TOOLS.some((t) => t.name === name);
@@ -126,4 +161,25 @@ export async function handleLiveVoiceTool(
   } catch (e) {
     return JSON.stringify({ error: e instanceof Error ? e.message : "Live tool failed" });
   }
+}
+
+export interface VoiceToolDeps {
+  controller: LiveController;
+  /** POST /api/voice/analyze-workspace with a viewport capture; resolves to the analysis text */
+  analyzeWorkspace: (focus: string | null) => Promise<string>;
+}
+
+/**
+ * Runs one Realtime function call and returns the `function_call_output.output` string.
+ * Live tools never touch the network; `analyze_workspace` is the one paid call (a read).
+ * Unknown names — `draw_on_canvas` from an older session included — are answered with an
+ * error rather than run: nothing here can paint on the board.
+ */
+export async function runVoiceTool(name: string, args: Record<string, unknown>, deps: VoiceToolDeps): Promise<string> {
+  if (isLiveVoiceTool(name)) return handleLiveVoiceTool(name, args, deps.controller);
+  if (name === ANALYZE_WORKSPACE) {
+    const analysis = await deps.analyzeWorkspace(str(args.focus) ?? null);
+    return JSON.stringify({ analysis });
+  }
+  return JSON.stringify({ error: `Unknown tool: ${name}` });
 }

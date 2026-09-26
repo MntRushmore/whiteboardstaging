@@ -244,11 +244,13 @@ export const ROUTE_LABELS: Readonly<Record<string, string>> = {
   "live-recognize": "Handwriting recognition",
   "live-check": "Hint check",
   "live-solve": "Worked solution",
-  "generate-solution": "Drawn help",
-  "generate-worksheet": "Worksheet",
   "voice-analyze-workspace": "Voice analysis",
-  ocr: "Text recognition",
-  "check-help-needed": "Help check",
+  // Retired routes (the image pipeline and its helpers were removed). No request is billed
+  // under these keys any more; they stay only so older usage history still reads as words.
+  "generate-solution": "Drawn help (retired)",
+  "generate-worksheet": "Worksheet (retired)",
+  ocr: "Text recognition (retired)",
+  "check-help-needed": "Help check (retired)",
 };
 
 export function canonicalRouteKey(route: string): string {

@@ -15,7 +15,7 @@ browser (Next.js App Router, React 19, tldraw 4)
   v
 Next.js route handlers (src/app/api/**, Node runtime on Vercel)
   |  verify JWT -> rate limit -> validate body (zod) -> call provider
-  +-> OpenRouter   image + vision models (solutions, feedback, worksheets, workspace analysis, credits)
+  +-> OpenRouter   text + vision models (Live checks, hints, worked steps, workspace analysis, credits); never image generation
   +-> Mathpix      handwritten math -> LaTeX (optional)
   +-> OpenAI       Realtime voice token (optional)
   v
@@ -93,7 +93,7 @@ Mirrors `.env.example` (which carries per-variable comments, sources and local d
 | `SMOKE_SKIP_LLM` | no (scripts) | `scripts/live-smoke.mjs`: `1` skips the LLM streams (no OpenRouter spend) |
 | `RUN_DB_TESTS` | no (tests) | `1` runs the DB/RLS integration tests in `npm test` against the local stack |
 
-`MISTRAL_API_KEY` is no longer used: `/api/ocr` now runs on OpenRouter (Gemini Flash) because Mistral retired the Pixtral model. Delete it from any environment.
+`MISTRAL_API_KEY` is no longer used (the `/api/ocr` route it once powered has been removed with the image pipeline). Delete it from any environment.
 
 ## Creating a new Supabase project
 

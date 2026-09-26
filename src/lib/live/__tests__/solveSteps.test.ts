@@ -111,6 +111,21 @@ describe("solveSteps: the interlock on a streamed step", () => {
     expect(guard.check("w = 3v").ok).toBe(true); // an assignment defines it
   });
 
+  it("a word problem's solution may introduce its quantity by assignment (train: v = 60/2, v = 30)", () => {
+    const guard = createSolveStepGuard({
+      sourceLatex: ["\\text{A train travels 60 km in 2 hours. What is its speed?}"],
+      parses,
+    });
+    // the prose contributes no names at all...
+    expect(guard.known()).toEqual([]);
+    // ...so the first step must be the assignment that names the unknown
+    expect(guard.check("v = \\frac{60}{2}")).toMatchObject({ ok: true, symbols: ["v"] });
+    expect(guard.check("v = 30")).toMatchObject({ ok: true });
+    expect(guard.check("\\boxed{v = 30}")).toMatchObject({ ok: true });
+    // a bare equation in a name nobody introduced is still refused
+    expect(guard.check("s = 2t")).toMatchObject({ ok: false, reason: "unknown-symbol", introduced: ["t"] });
+  });
+
   it("seeds the known names from every line of the student's column", () => {
     const guard = createSolveStepGuard({ sourceLatex: ["a = 3", "b = 4"], parses });
     expect(guard.check("= a + b").ok).toBe(true);

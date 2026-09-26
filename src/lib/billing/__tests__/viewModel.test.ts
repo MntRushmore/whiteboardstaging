@@ -201,11 +201,11 @@ describe("route labels", () => {
     expect(routeLabel("/api/live/recognize")).toBe("Handwriting recognition");
     expect(routeLabel("live/check")).toBe("Hint check");
     expect(routeLabel("live/solve")).toBe("Worked solution");
-    expect(routeLabel("generate-solution")).toBe("Drawn help");
-    expect(routeLabel("/api/generate-worksheet")).toBe("Worksheet");
+    expect(routeLabel("generate-solution")).toBe("Drawn help (retired)");
+    expect(routeLabel("/api/generate-worksheet")).toBe("Worksheet (retired)");
     expect(routeLabel("voice/analyze-workspace")).toBe("Voice analysis");
-    expect(routeLabel("ocr")).toBe("Text recognition");
-    expect(routeLabel("check-help-needed")).toBe("Help check");
+    expect(routeLabel("ocr")).toBe("Text recognition (retired)");
+    expect(routeLabel("check-help-needed")).toBe("Help check (retired)");
     expect(routeLabel("/api/something/new")).toBe("something-new");
     expect(routeLabel("")).toBe("Other");
   });
@@ -222,7 +222,7 @@ describe("usageRowsFor", () => {
     );
     expect(rows).toEqual([
       { id: "a", when: "Sep 17, 3:04 PM", whenIso: "2026-09-17T15:04:00.000Z", what: "Worked solution", credits: 10 },
-      { id: "7", when: "Sep 16, 9:30 AM", whenIso: "2026-09-16T09:30:00.000Z", what: "Worksheet", credits: 20 },
+      { id: "7", when: "Sep 16, 9:30 AM", whenIso: "2026-09-16T09:30:00.000Z", what: "Worksheet (retired)", credits: 20 },
     ]);
   });
   it("falls back to the cost table when a row has no credits, and survives missing fields", () => {

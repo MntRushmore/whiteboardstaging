@@ -2,7 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TLShapeId } from "tldraw";
 import type { LiveController, LiveLineState } from "../contracts";
 import { liveStore, resetLiveStore } from "../liveStore";
-import { LIVE_VOICE_TOOLS, handleLiveVoiceTool, isLiveVoiceTool } from "../voiceTools";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  ANALYZE_WORKSPACE,
+  LIVE_VOICE_TOOLS,
+  VOICE_SESSION_INSTRUCTIONS,
+  handleLiveVoiceTool,
+  isLiveVoiceTool,
+  runVoiceTool,
+  voiceSessionTools,
+} from "../voiceTools";
 
 function seedLine(id: string, latex: string, row: number, verdict: "ok" | "mismatch" | "unknown", solved = false): LiveLineState {
   return {
@@ -42,6 +52,7 @@ function controllerOverStore(): { controller: LiveController; placeMath: ReturnT
     plotFunction,
     requestCheck: () => {},
     requestSolve: () => {},
+    requestHelp: () => {},
     escalate: () => {},
     dismissHint: () => {},
     clearMarks: () => {},
@@ -119,5 +130,58 @@ describe("voice tools", () => {
     expect(JSON.parse(await handleLiveVoiceTool("nope", {}, controller))).toEqual({ error: "Unknown live tool: nope" });
     const boom: LiveController = { ...controller, getTranscript: () => { throw new Error("kaboom"); } };
     expect(JSON.parse(await handleLiveVoiceTool("read_live_math", {}, boom))).toEqual({ error: "kaboom" });
+  });
+
+  // ------------------------------------------------------------------ the Realtime session
+  describe("the Realtime session (draw_on_canvas replaced by the Live tools)", () => {
+    it("registers analyze_workspace plus the three Live tools, and nothing that paints", () => {
+      const names = voiceSessionTools().map((t) => t.name);
+      expect(names).toEqual([ANALYZE_WORKSPACE, "read_live_math", "place_math", "plot_function"]);
+      expect(names).not.toContain("draw_on_canvas");
+      const text = JSON.stringify(voiceSessionTools()) + VOICE_SESSION_INSTRUCTIONS;
+      expect(text).not.toMatch(/gemini|image model|nano banana/i);
+      expect(VOICE_SESSION_INSTRUCTIONS).toMatch(/read_live_math/);
+      expect(VOICE_SESSION_INSTRUCTIONS).toMatch(/never draw pictures/);
+    });
+
+    it("routes Live tools to the controller with no network", async () => {
+      const { controller, placeMath } = controllerOverStore();
+      const analyzeWorkspace = vi.fn(async () => "unused");
+      const out = JSON.parse(await runVoiceTool("place_math", { latex: "x = 4", nearLineId: "ln_c" }, { controller, analyzeWorkspace })) as { ok?: boolean };
+      expect(out.ok).toBe(true);
+      expect(placeMath).toHaveBeenCalledWith({ latex: "x = 4", nearLineId: "ln_c", tone: undefined });
+      const read = JSON.parse(await runVoiceTool("read_live_math", {}, { controller, analyzeWorkspace })) as { lines: unknown[] };
+      expect(read.lines).toHaveLength(3);
+      expect(analyzeWorkspace).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("analyze_workspace calls the read with the focus and returns its text", async () => {
+      const { controller } = controllerOverStore();
+      const analyzeWorkspace = vi.fn(async (focus: string | null) => `saw ${focus ?? "everything"}`);
+      expect(JSON.parse(await runVoiceTool(ANALYZE_WORKSPACE, { focus: "the algebra" }, { controller, analyzeWorkspace }))).toEqual({ analysis: "saw the algebra" });
+      expect(JSON.parse(await runVoiceTool(ANALYZE_WORKSPACE, {}, { controller, analyzeWorkspace }))).toEqual({ analysis: "saw everything" });
+      expect(analyzeWorkspace).toHaveBeenNthCalledWith(1, "the algebra");
+      expect(analyzeWorkspace).toHaveBeenNthCalledWith(2, null);
+    });
+
+    it("answers draw_on_canvas (an older session's tool) with an error and runs nothing", async () => {
+      const { controller, placeMath, plotFunction } = controllerOverStore();
+      const analyzeWorkspace = vi.fn(async () => "x");
+      const out = JSON.parse(await runVoiceTool("draw_on_canvas", { mode: "answer" }, { controller, analyzeWorkspace })) as { error?: string };
+      expect(out.error).toMatch(/Unknown tool: draw_on_canvas/);
+      expect(placeMath).not.toHaveBeenCalled();
+      expect(plotFunction).not.toHaveBeenCalled();
+      expect(analyzeWorkspace).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("the board page registers these tools and dispatches through runVoiceTool", () => {
+      const page = readFileSync(join(process.cwd(), "src", "app", "board", "[id]", "page.tsx"), "utf8");
+      expect(page).toContain("voiceSessionTools()");
+      expect(page).toContain("runVoiceTool(name, args,");
+      expect(page).toContain("VOICE_SESSION_INSTRUCTIONS");
+      expect(page).not.toMatch(/draw_on_canvas|generate-solution|generateSolution|onSolveWithPrompt/);
+    });
   });
 });

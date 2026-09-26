@@ -65,10 +65,10 @@ describe("checkRateLimit", () => {
   });
 
   it("isolates keys from each other (different users and buckets)", () => {
-    for (let i = 0; i < 3; i++) checkRateLimit(rateLimitKey("alice", "ocr"), opts);
-    expect(checkRateLimit(rateLimitKey("alice", "ocr"), opts).ok).toBe(false);
+    for (let i = 0; i < 3; i++) checkRateLimit(rateLimitKey("alice", "liveCheck"), opts);
+    expect(checkRateLimit(rateLimitKey("alice", "liveCheck"), opts).ok).toBe(false);
 
-    expect(checkRateLimit(rateLimitKey("bob", "ocr"), opts)).toMatchObject({ ok: true, remaining: 2 });
+    expect(checkRateLimit(rateLimitKey("bob", "liveCheck"), opts)).toMatchObject({ ok: true, remaining: 2 });
     expect(checkRateLimit(rateLimitKey("alice", "credits"), opts)).toMatchObject({ ok: true, remaining: 2 });
   });
 
@@ -87,12 +87,8 @@ describe("checkRateLimit", () => {
 
 describe("LIMITS", () => {
   it("matches the documented per-route budget", () => {
-    expect(LIMITS.generateSolution).toEqual({ limit: 12, windowMs: 60_000 });
-    expect(LIMITS.generateWorksheet).toEqual({ limit: 4, windowMs: 60_000 });
     expect(LIMITS.voiceToken).toEqual({ limit: 6, windowMs: 60_000 });
     expect(LIMITS.analyzeWorkspace).toEqual({ limit: 30, windowMs: 60_000 });
-    expect(LIMITS.ocr).toEqual({ limit: 30, windowMs: 60_000 });
-    expect(LIMITS.checkHelp).toEqual({ limit: 30, windowMs: 60_000 });
     expect(LIMITS.credits).toEqual({ limit: 30, windowMs: 60_000 });
   });
 

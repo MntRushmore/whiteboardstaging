@@ -5,7 +5,8 @@ import type { ChatMessage } from "@/lib/server/openrouter";
 export const SOLVE_SYSTEM_PROMPT = [
   "You write the worked solution to a student's math or science problem as a short sequence of typeset steps.",
   "",
-  "INPUT: the student's lines as LaTeX in reading order with local verdicts, optionally a starting line id (the last correct line) and a goal.",
+  "INPUT: the student's lines as LaTeX in reading order with local verdicts and kinds, optionally a starting line id (the last correct line) and a goal.",
+  "Lines of kind text are prose written as \\text{...}: together they are the question (a word problem). Read the quantities and what is asked from them.",
   "",
   "OUTPUT: JSON Lines only. One step object per line, in order, at most 8 steps. No prose, no code fences, no arrays.",
   'Step fields: {"index": integer starting at 1, "latex": string, "explanation": string, "final": boolean}',
@@ -19,6 +20,9 @@ export const SOLVE_SYSTEM_PROMPT = [
   "6. latex must be KaTeX-renderable inline LaTeX with no surrounding $ delimiters.",
   "7. The last step has final true and its latex is wrapped in \\boxed{...}. Every other step has final false.",
   "8. Never mention LaTeX, OCR, handwriting recognition, or being an AI.",
+  "9. Word problems: the first step names each unknown by assigning it (for example v = \\frac{60}{2} for a speed from 60 km in 2 hours),",
+  "   then simplify. Use one short letter per quantity (v, t, d, m, F, ...), keep units in the explanation, and never restate the prose as a step.",
+  "   Every step's latex must be maths the student could write, never \\text{...} sentences.",
 ].join("\n");
 
 function describeLine(line: SolveRequest["lines"][number], index: number): string {
@@ -27,8 +31,10 @@ function describeLine(line: SolveRequest["lines"][number], index: number): strin
 
 /** Build the chat messages for a solve request. */
 export function buildSolveMessages(req: SolveRequest): ChatMessage[] {
+  const wordProblem = req.lines.some((l) => l.local.kind === "text");
   const user = [
     req.fromLineId ? `start from line id: ${req.fromLineId}` : "start from the problem statement",
+    wordProblem ? "the text lines are a word problem: set it up with assignment steps, then solve it" : null,
     req.goal ? `goal: ${req.goal}` : null,
     "",
     "lines:",

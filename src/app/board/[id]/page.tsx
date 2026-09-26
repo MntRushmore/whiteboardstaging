@@ -3,8 +3,6 @@
 import {
   Tldraw,
   useEditor,
-  createShapeId,
-  TLShapeId,
   type TLAssetId,
   DefaultColorThemePalette,
   type TLUiOverrides,
@@ -16,8 +14,6 @@ import {
   defaultShapeUtils,
   defaultBindingUtils,
   type Editor,
-  type HistoryEntry,
-  type TLRecord,
 } from "tldraw";
 import React, { useCallback, useState, useRef, useEffect, useMemo } from "react";
 import "tldraw/tldraw.css";
@@ -31,8 +27,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Tick01Icon,
-  Cancel01Icon,
   Cursor02Icon,
   ThreeFinger05Icon,
   PencilIcon,
@@ -47,19 +41,10 @@ import {
   MicOff02Icon,
   Loading03Icon,
 } from "hugeicons-react";
-import { isStudentActivity, useDebounceActivity } from "@/hooks/useDebounceActivity";
-import { aiOverlayMeta, dropPendingAiOverlays, overlayIndexBelowLive, useAiOverlayShapes } from "@/hooks/useAiOverlayShapes";
+import { dropPendingAiOverlays } from "@/hooks/useAiOverlayShapes";
 import { useAssistanceMode, type AssistanceMode } from "@/hooks/useAssistanceMode";
-import { offloadAssetsOnce, useSnapshotSave, warnInlineAssetFallbackOnce } from "@/hooks/useSnapshotSave";
+import { offloadAssetsOnce, useSnapshotSave } from "@/hooks/useSnapshotSave";
 import { createBoardAssetStore } from "@/lib/assets/boardAssetStore";
-import { uploadDataUrlAsset } from "@/lib/assets/uploadDataUrl";
-import {
-  GENERATION_COPY,
-  INFO_CLEAR_MS,
-  StatusIndicator,
-  SUCCESS_CLEAR_MS,
-  type GenerationState,
-} from "@/components/StatusIndicator";
 import {
   BOARD_LOAD_COPY,
   BoardLoadError,
@@ -70,23 +55,21 @@ import {
 import { logger } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
 import { apiJson } from "@/lib/api-client";
-import { describeApiError, isAbortError, useApiErrorHandler } from "@/hooks/useApiErrorHandler";
+import { useApiErrorHandler } from "@/hooks/useApiErrorHandler";
 import { useParams, useRouter } from "next/navigation";
 import { Volume2, VolumeX } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import { CreditsBanner } from "@/components/CreditsBanner";
 import { StickerLibrary } from "@/components/StickerLibrary";
-import { WorksheetGenerator } from "@/components/WorksheetGenerator";
 import { PdfUpload } from "@/components/PdfUpload";
 import { BugReportButton } from "@/components/BugReportButton";
 import { useFeatureLabs } from "@/lib/featureLabs";
 import { ListOrdered } from "lucide-react";
-import { GenerationSkeleton } from "@/components/GenerationSkeleton";
 import { liveShapeUtils, liveTools, liveUiOverrides, LiveToolbar } from "@/shapes";
-import { isLiveMeta, LIVE_KILL_SWITCH, LIVE_TIMING } from "@/lib/live/contracts";
-import { legacyShouldSkip } from "@/lib/live/liveStore";
+import { LIVE_KILL_SWITCH, type LiveController } from "@/lib/live/contracts";
 import { useLiveMath } from "@/lib/live/useLiveMath";
+import { runVoiceTool, voiceSessionTools, VOICE_SESSION_INSTRUCTIONS } from "@/lib/live/voiceTools";
 import { useLiveSettings } from "@/lib/live/liveSettings";
 import { ScreenStrip } from "@/components/screens/ScreenStrip";
 import { ScreenBackground, ScreenFrame } from "@/components/screens/ScreenFrame";
@@ -173,14 +156,6 @@ const boardOverrides: TLUiOverrides = {
 };
 
 /**
- * The one image model the legacy overlay pipeline uses. The board used to carry a
- * "Nano Banana Pro" / "GPT-5.4 Image 2" badge that flipped this on a single click, plus a
- * "Speed" popover of fast-mode / downscale / skeleton knobs. Both were developer controls
- * in a student's way; the defaults they shipped with are now simply the behaviour.
- */
-const IMAGE_MODEL = "gemini";
-
-/**
  * The (i) explainer, opened from Board options rather than from a button in the bar: it is
  * help, not chrome. Copy tracks what the tabs actually do today, Live included.
  */
@@ -229,7 +204,7 @@ function ModeInfoDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
             />
             <p className="text-sm font-medium mb-1">Solve</p>
             <p className="text-sm text-muted-foreground">
-              Full worked solution overlaid on your canvas for comparison.
+              Worked steps written under your last line, in the tutor&apos;s hand or typeset.
             </p>
           </div>
 
@@ -249,56 +224,6 @@ function ModeInfoDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
   );
 }
 
-function ImageActionButtons({
-  pendingImageIds,
-  onAccept,
-  onReject,
-  isVoiceSessionActive,
-}: {
-  pendingImageIds: TLShapeId[];
-  onAccept: (shapeId: TLShapeId) => void;
-  onReject: (shapeId: TLShapeId) => void;
-  isVoiceSessionActive: boolean;
-}) {
-  // Only show buttons when there's a pending image
-  if (pendingImageIds.length === 0) return null;
-
-  // For now, we'll just handle the most recent pending image
-  const currentImageId = pendingImageIds[pendingImageIds.length - 1];
-
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        // Sit at the top-center just below the mode bar so it never covers the
-        // Live pill; when voice is active the bar is hidden and the voice status
-        // banner owns the very top instead.
-        top: isVoiceSessionActive ? '56px' : '64px',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        zIndex: 1000,
-        display: 'flex',
-        gap: '8px',
-      }}
-    >
-      <Button
-        variant="default"
-        onClick={() => onAccept(currentImageId)}
-      >
-        <Tick01Icon size={20} strokeWidth={2.5} />
-        <span className="ml-2">Accept</span>
-      </Button>
-      <Button
-        variant="secondary"
-        onClick={() => onReject(currentImageId)}
-      >
-        <Cancel01Icon size={20} strokeWidth={2.5} />
-        <span className="ml-2">Reject</span>
-      </Button>
-    </div>
-  );
-}
-
 type VoiceStatus =
   | "idle"
   | "connecting"
@@ -306,13 +231,6 @@ type VoiceStatus =
   | "thinking"
   | "callingTool"
   | "error";
-
-/** Arguments the Realtime model may pass to our tools. */
-type VoiceToolArgs = {
-  focus?: string | null;
-  mode?: string;
-  instructions?: string | null;
-};
 
 /** Subset of OpenAI Realtime server events we react to. */
 type RealtimeServerEvent = {
@@ -331,22 +249,16 @@ type RealtimeServerEvent = {
 
 type AnalyzeWorkspaceResponse = { analysis?: string | null };
 type VoiceTokenResponse = { client_secret?: string | null };
-type GenerateSolutionResponse = {
-  imageUrl?: string | null;
-  textContent?: string | null;
-};
 
 interface VoiceAgentControlsProps {
   onSessionChange: (active: boolean) => void;
-  onSolveWithPrompt: (
-    mode: "feedback" | "suggest" | "answer",
-    instructions?: string
-  ) => Promise<boolean>;
+  /** the Live layer the voice tools read and write (read_live_math, place_math, plot_function) */
+  controller: LiveController;
 }
 
 function VoiceAgentControls({
   onSessionChange,
-  onSolveWithPrompt,
+  controller,
 }: VoiceAgentControlsProps) {
   const editor = useEditor();
   const handleApiError = useApiErrorHandler();
@@ -430,94 +342,55 @@ function VoiceAgentControls({
       const dc = dcRef.current;
       if (!dc) return;
 
-      let args: VoiceToolArgs = {};
+      let args: Record<string, unknown> = {};
       try {
-        args = argsJson ? (JSON.parse(argsJson) as VoiceToolArgs) : {};
+        const parsed: unknown = argsJson ? JSON.parse(argsJson) : {};
+        args = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
       } catch {
         setErrorStatus(`Failed to parse tool arguments for ${name}`);
         return;
       }
 
       try {
-        if (name === "analyze_workspace") {
-          setStatus("callingTool");
-          setStatusDetail("Analyzing your canvas...");
+        setStatus("callingTool");
+        setStatusDetail(name === "analyze_workspace" ? "Analyzing your canvas..." : "Working on your canvas...");
 
-          const image = await captureCanvasImage();
-          if (!image) {
-            throw new Error("Canvas is empty or could not be captured");
-          }
+        // Live tools read and write typeset maths through the controller (no network);
+        // analyze_workspace is a vision READ of the viewport. Nothing paints an image.
+        const output = await runVoiceTool(name, args, {
+          controller,
+          analyzeWorkspace: async (focus) => {
+            const image = await captureCanvasImage();
+            if (!image) {
+              throw new Error("Canvas is empty or could not be captured");
+            }
+            const data = await apiJson<AnalyzeWorkspaceResponse>(
+              "/api/voice/analyze-workspace",
+              { image, focus },
+            );
+            return data.analysis ?? "";
+          },
+        });
 
-          const data = await apiJson<AnalyzeWorkspaceResponse>(
-            "/api/voice/analyze-workspace",
-            {
-              image,
-              focus: args.focus ?? null,
+        dc.send(
+          JSON.stringify({
+            type: "conversation.item.create",
+            item: {
+              type: "function_call_output",
+              call_id: callId,
+              output,
             },
-          );
-          const analysis = data.analysis ?? "";
+          }),
+        );
 
-          dc.send(
-            JSON.stringify({
-              type: "conversation.item.create",
-              item: {
-                type: "function_call_output",
-                call_id: callId,
-                output: JSON.stringify({
-                  analysis,
-                }),
-              },
-            }),
-          );
+        dc.send(
+          JSON.stringify({
+            type: "response.create",
+          }),
+        );
 
-          dc.send(
-            JSON.stringify({
-              type: "response.create",
-            }),
-          );
-
-          setStatus("thinking");
-          setStatusDetail(null);
-        } else if (name === "draw_on_canvas") {
-          setStatus("callingTool");
-          setStatusDetail("Updating your canvas...");
-
-          const mode =
-            args.mode === "feedback" ||
-            args.mode === "suggest" ||
-            args.mode === "answer"
-              ? args.mode
-              : "suggest";
-
-          const success =
-            (await onSolveWithPrompt(
-              mode,
-              args.instructions ?? undefined,
-            )) ?? false;
-
-          dc.send(
-            JSON.stringify({
-              type: "conversation.item.create",
-              item: {
-                type: "function_call_output",
-                call_id: callId,
-                output: JSON.stringify({
-                  success,
-                  mode,
-                }),
-              },
-            }),
-          );
-
-          dc.send(
-            JSON.stringify({
-              type: "response.create",
-            }),
-          );
-
-          setStatus("thinking");
-          setStatusDetail(null);
-        }
+        setStatus("thinking");
+        setStatusDetail(null);
       } catch (error) {
         console.error("[Voice Agent] Tool error", error);
 
@@ -545,7 +418,7 @@ function VoiceAgentControls({
         setErrorStatus(`Tool ${name} failed: ${message}`);
       }
     },
-    [captureCanvasImage, onSolveWithPrompt, setErrorStatus, handleApiError],
+    [captureCanvasImage, controller, setErrorStatus, handleApiError],
   );
 
   const handleServerEvent = useCallback(
@@ -637,48 +510,7 @@ function VoiceAgentControls({
         setIsSessionActive(true);
         onSessionChange(true);
 
-        const tools = [
-          {
-            type: "function",
-            name: "analyze_workspace",
-            description:
-              "Analyze the current whiteboard canvas to understand what the user is working on and where they might need help.",
-            parameters: {
-              type: "object",
-              properties: {
-                focus: {
-                  type: "string",
-                  description:
-                    "Optional focus for the analysis, e.g. 'find mistakes in the algebra' or 'summarize progress'.",
-                },
-              },
-              required: [],
-            },
-          },
-          {
-            type: "function",
-            name: "draw_on_canvas",
-            description:
-              "Use the Gemini 3 Pro canvas solver to add feedback, hints, or full solutions directly onto the whiteboard image.",
-            parameters: {
-              type: "object",
-              properties: {
-                mode: {
-                  type: "string",
-                  enum: ["feedback", "suggest", "answer"],
-                  description:
-                    "How strong the help should be: 'feedback' for light annotations, 'suggest' for hints, 'answer' for full solutions.",
-                },
-                instructions: {
-                  type: "string",
-                  description:
-                    "Optional instructions about what to draw, which problem to focus on, or style preferences.",
-                },
-              },
-              required: ["mode"],
-            },
-          },
-        ];
+        const tools = voiceSessionTools();
 
         const sessionUpdate = {
           type: "session.update",
@@ -686,10 +518,7 @@ function VoiceAgentControls({
             // Model and core configuration are set when creating the session;
             // here we provide instructions and tools.
             modalities: ["audio", "text"],
-            instructions:
-              "You are a realtime voice tutor for a handwritten whiteboard canvas. " +
-              "Speak clearly and briefly. Use tools when you need to inspect the canvas " +
-              "or add visual help. Prefer gentle hints before full solutions.",
+            instructions: VOICE_SESSION_INSTRUCTIONS,
             tools,
             tool_choice: "auto",
           },
@@ -881,85 +710,11 @@ function VoiceAgentControls({
   );
 }
 
-function ClearFeedbackButton({
-  feedbackImageIds,
-  onClear,
-  isVoiceSessionActive,
-  hasPendingImages,
-}: {
-  feedbackImageIds: TLShapeId[];
-  onClear: () => void;
-  isVoiceSessionActive: boolean;
-  hasPendingImages: boolean;
-}) {
-  if (feedbackImageIds.length === 0) return null;
-
-  // Sit at the top-center below the mode bar (64 px; 10 px when voice hides the
-  // bar); step down when the voice banner and/or the Accept/Reject buttons
-  // already occupy that spot.
-  const top = (isVoiceSessionActive ? 10 + 46 : 64) + (hasPendingImages ? 46 : 0);
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        top: `${top}px`,
-        left: "50%",
-        transform: "translateX(-50%)",
-        zIndex: 1000,
-      }}
-    >
-      <Button
-        variant="outline"
-        size="sm"
-        className="bg-white shadow-sm"
-        onClick={onClear}
-        title="Remove the tutor's feedback annotations from the canvas"
-      >
-        <Cancel01Icon size={16} strokeWidth={2.5} />
-        <span className="ml-1.5">Clear feedback</span>
-      </Button>
-    </div>
-  );
-}
-
-type LegacyMode = "feedback" | "suggest" | "answer";
-type GenerationRequest = { mode: LegacyMode; promptOverride?: string; source: "auto" | "voice" };
-
 function BoardContent({ id, initialVersion }: { id: string; initialVersion: number | null }) {
   const editor = useEditor();
   useScreenCamera(editor);
   const router = useRouter();
   const { features } = useFeatureLabs();
-  // Legacy AI overlays are found by `meta.aiOverlay` in the store (not React state) so
-  // Accept/Reject and "Clear feedback" come back after a reload. `pending` = suggest/answer
-  // overlays awaiting Accept/Reject; `feedback` = locked full-opacity feedback overlays.
-  const { pending: pendingImageIds, feedback: feedbackImageIds } = useAiOverlayShapes(editor);
-  // Legacy pipeline status pill: loading/confirmations fade on their own, failures stay
-  // until Retry/Dismiss (see generationStatusView in StatusIndicator.tsx).
-  const [generation, setGeneration] = useState<GenerationState>({ kind: "idle" });
-  const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // The last request's shape so Retry re-runs the same mode/prompt.
-  const lastRequestRef = useRef<GenerationRequest | null>(null);
-  const showGeneration = useCallback((next: GenerationState, clearAfterMs?: number) => {
-    if (clearTimerRef.current) {
-      clearTimeout(clearTimerRef.current);
-      clearTimerRef.current = null;
-    }
-    setGeneration(next);
-    if (clearAfterMs) {
-      clearTimerRef.current = setTimeout(() => {
-        clearTimerRef.current = null;
-        setGeneration({ kind: "idle" });
-      }, clearAfterMs);
-    }
-  }, []);
-  useEffect(
-    () => () => {
-      if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
-    },
-    [],
-  );
   const [isVoiceSessionActive, setIsVoiceSessionActive] = useState(false);
   // Help mode is remembered per board on this device (default Feedback).
   const [assistanceMode, setAssistanceMode] = useAssistanceMode(id);
@@ -967,10 +722,6 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
   // Board options now, so the page owns their open state.
   const [modeInfoOpen, setModeInfoOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
-  const isProcessingRef = useRef(false);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const lastCanvasImageRef = useRef<string | null>(null);
-  const isUpdatingImageRef = useRef(false);
 
   // Live Math layer: per-device switch (localStorage) gated by the deploy-time kill switch.
   const { settings: live, update: updateLive } = useLiveSettings();
@@ -982,492 +733,9 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
     voiceActive: isVoiceSessionActive,
   });
 
-  // Helper function to get mode-aware status messages
-  const getStatusMessage = useCallback((mode: AssistanceMode, statusType: "generating" | "success") => {
-    if (statusType === "generating") {
-      switch (mode) {
-        case "off":
-          return "";
-        case "feedback":
-          return "Adding feedback...";
-        case "suggest":
-          return "Generating suggestion...";
-        case "answer":
-          return "Solving problem...";
-      }
-    } else if (statusType === "success") {
-      switch (mode) {
-        case "off":
-          return "";
-        case "feedback":
-          return "Feedback added";
-        case "suggest":
-          return "Suggestion added";
-        case "answer":
-          return "Solution added";
-      }
-    }
-    return "";
-  }, []);
-
-  const generateSolution = useCallback(
-    async (options?: {
-      modeOverride?: "feedback" | "suggest" | "answer";
-      promptOverride?: string;
-      force?: boolean;
-      source?: "auto" | "voice";
-    }): Promise<boolean> => {
-      // Block when we don't have an editor or a generation is already running.
-      // Also block auto generations while a voice session is active, but allow
-      // explicit voice-triggered generations to proceed.
-      if (
-        !editor ||
-        isProcessingRef.current ||
-        (isVoiceSessionActive && options?.source !== "voice")
-      ) {
-        return false;
-      }
-
-      const mode = options?.modeOverride ?? assistanceMode;
-      if (mode === "off") return false;
-
-      // Never start a model call while offline; only say so when the student asked
-      // explicitly (Draw help / voice) — the idle trigger stays quiet.
-      if (typeof navigator !== "undefined" && navigator.onLine === false) {
-        if (options?.force) showGeneration({ kind: "offline" });
-        return false;
-      }
-
-      // Check if canvas has content
-      const shapeIds = editor.getCurrentPageShapeIds();
-      if (shapeIds.size === 0) {
-        return false;
-      }
-
-      lastRequestRef.current = {
-        mode,
-        promptOverride: options?.promptOverride,
-        source: options?.source ?? "auto",
-      };
-      isProcessingRef.current = true;
-    
-      // Create abort controller for this request chain
-      abortControllerRef.current = new AbortController();
-      const signal = abortControllerRef.current.signal;
-
-      try {
-        // Step 1: Capture viewport (excluding pending generated images and
-        // any "protected" shapes — worksheets, PDFs, stickers — so the AI
-        // never sees them and can't try to redraw them).
-        const viewportBounds = editor.getViewportPageBounds();
-
-        const protectedIds = new Set<TLShapeId>();
-        // Live echoes / graphs / AI steps are hidden from the capture too, but they do
-        // not count as a "worksheet" layer (hasProtectedShapes stays isProtected-only).
-        const liveIds = new Set<TLShapeId>();
-        for (const sid of shapeIds) {
-          const shape = editor.getShape(sid);
-          if (shape?.meta?.isProtected) {
-            protectedIds.add(sid);
-          } else if (isLiveMeta(shape?.meta)) {
-            liveIds.add(sid);
-          }
-        }
-
-        const shapesToCapture = [...shapeIds].filter(
-          (id) => !pendingImageIds.includes(id) && !protectedIds.has(id) && !liveIds.has(id),
-        );
-
-        if (shapesToCapture.length === 0) {
-          isProcessingRef.current = false;
-          return false;
-        }
-
-        const hasProtectedShapes = protectedIds.size > 0;
-        
-        const captureStart = performance.now();
-        const { blob } = await editor.toImage(shapesToCapture, {
-          format: "png",
-          bounds: viewportBounds,
-          background: true,
-          scale: 1,
-          padding: 0,
-        });
-
-        if (!blob || signal.aborted) return false;
-
-        const base64 = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(blob);
-        });
-        logger.info(
-          {
-            originalBytes: blob.size,
-            captureMs: Math.round(performance.now() - captureStart),
-          },
-          "Canvas captured",
-        );
-
-        // If the canvas image hasn't changed since the last successful check,
-        // don't run the expensive OCR / help-check / generation pipeline again.
-        if (!options?.force && lastCanvasImageRef.current === base64) {
-          isProcessingRef.current = false;
-          return false;
-        }
-        lastCanvasImageRef.current = base64;
-
-        if (signal.aborted) return false;
-
-        // Step 2: Generate solution (Gemini decides if help is needed)
-        showGeneration({ kind: "generating", label: getStatusMessage(mode, "generating") });
-
-        const body: Record<string, unknown> = {
-          image: base64,
-          mode,
-          model: IMAGE_MODEL,
-        };
-
-        if (options?.promptOverride) {
-          body.prompt = options.promptOverride;
-        }
-
-        // Let the backend know whether this was triggered automatically or
-        // explicitly by the voice tutor.
-        body.source = options?.source ?? "auto";
-
-        // If the canvas has a protected worksheet/PDF/sticker, tell the
-        // backend so it can adjust the prompt and we render the annotation
-        // underneath the protected layer.
-        if (hasProtectedShapes) {
-          body.hasWorksheet = true;
-        }
-
-        const solutionData = await apiJson<GenerateSolutionResponse>(
-          "/api/generate-solution",
-          body,
-          { signal },
-        );
-
-        if (signal.aborted) return false;
-
-        const imageUrl = solutionData.imageUrl;
-        const textContent = solutionData.textContent || '';
-
-        logger.info({ 
-          hasImageUrl: !!imageUrl, 
-          imageUrlLength: imageUrl?.length,
-          imageUrlStart: imageUrl?.slice(0, 50),
-          textContent: textContent.slice(0, 100)
-        }, 'Solution data received');
-
-        // If the model didn't return an image, it means Gemini decided help isn't needed.
-        // Say so briefly (the pill leaves "generating", which also hides the skeleton) so
-        // the wait never ends in silence.
-        if (!imageUrl || signal.aborted) {
-          logger.info({ textContent }, 'Gemini decided help is not needed');
-          if (signal.aborted) {
-            showGeneration({ kind: "idle" });
-          } else {
-            showGeneration({ kind: "info", label: GENERATION_COPY.nothingToAdd }, INFO_CLEAR_MS);
-          }
-          isProcessingRef.current = false;
-          return false;
-        }
-
-        const processedImageUrl = imageUrl;
-
-        if (signal.aborted) return false;
-
-        // Create asset and shape
-        const img = new Image();
-        logger.info('Loading image into asset...');
-        
-        await new Promise((resolve, reject) => {
-          img.onload = () => {
-            logger.info({ width: img.width, height: img.height }, 'Image loaded successfully');
-            resolve(null);
-          };
-          img.onerror = (e) => {
-            logger.error({ error: e }, 'Image load failed');
-            reject(new Error('Failed to load generated image'));
-          };
-          img.src = processedImageUrl;
-        });
-
-        if (signal.aborted) return false;
-
-        logger.info('Creating asset and shape...');
-
-        // Set flag to prevent these shape additions from triggering activity detection
-        isUpdatingImageRef.current = true;
-
-        // The PNG is uploaded to Storage (board-assets bucket) and the asset record only
-        // holds its URL, so the snapshot stays small. On upload failure the asset falls
-        // back to the inline data URL (warned once) and the board still works.
-        const { assetId, inline } = await uploadDataUrlAsset(editor, {
-          dataUrl: processedImageUrl,
-          name: 'generated-solution.png',
-          width: img.width,
-          height: img.height,
-          source: 'ai',
-          signal,
-        });
-        if (inline) warnInlineAssetFallbackOnce();
-
-        if (signal.aborted) {
-          // The student kept drawing while the image uploaded: drop the orphaned asset
-          // (the asset store removes the Storage object) and release the activity guard.
-          editor.deleteAssets([assetId]);
-          isUpdatingImageRef.current = false;
-          return false;
-        }
-
-        const shapeId = createShapeId();
-        const scale = Math.min(
-          viewportBounds.width / img.width,
-          viewportBounds.height / img.height
-        );
-        const shapeWidth = img.width * scale;
-        const shapeHeight = img.height * scale;
-
-        // In "feedback" mode, show at full opacity without accept/reject
-        // In "suggest" and "answer" modes, show at reduced opacity with accept/reject
-        const isFeedbackMode = mode === "feedback";
-
-        // Render the overlay BELOW every Live shape (echoes, graphs, AI steps) so a
-        // full-viewport annotation never hides them. Computed before creation because
-        // reorder calls skip locked shapes.
-        const overlayIndex = overlayIndexBelowLive(editor);
-
-        // `meta.aiOverlay` marks the shape for useAiOverlayShapes: feedback overlays feed
-        // "Clear feedback", suggest/answer overlays feed Accept/Reject (also after reload).
-        editor.createShape({
-          id: shapeId,
-          type: "image",
-          x: viewportBounds.x + (viewportBounds.width - shapeWidth) / 2,
-          y: viewportBounds.y + (viewportBounds.height - shapeHeight) / 2,
-          opacity: isFeedbackMode ? 1.0 : 0.3,
-          isLocked: true,
-          ...(overlayIndex ? { index: overlayIndex } : {}),
-          meta: aiOverlayMeta(mode),
-          props: {
-            w: shapeWidth,
-            h: shapeHeight,
-            assetId: assetId,
-          },
-        });
-
-        // If the canvas has worksheet/PDF/sticker protected shapes, push the
-        // new annotation behind them so the worksheet always renders on top.
-        if (hasProtectedShapes) {
-          try {
-            // sendToBack ignores locked shapes unless the lock is bypassed.
-            editor.run(() => editor.sendToBack([shapeId]), { ignoreShapeLock: true });
-          } catch (e) {
-            // Non-fatal: z-ordering is best-effort.
-            logger.warn({ error: e }, "Failed to send annotation to back");
-          }
-        }
-
-
-        // Show success message briefly, then return to idle
-        showGeneration({ kind: "success", label: getStatusMessage(mode, "success") }, SUCCESS_CLEAR_MS);
-
-        // Reset flag after a brief delay
-        setTimeout(() => {
-          isUpdatingImageRef.current = false;
-        }, 100);
-
-        return true;
-      } catch (error) {
-        // The guard is set right before the (awaited) asset upload; never leave it stuck on.
-        isUpdatingImageRef.current = false;
-        if (signal.aborted || isAbortError(error)) {
-          // The student kept drawing: not an error, the next idle run picks it up.
-          showGeneration({ kind: "idle" });
-          return false;
-        }
-
-        logger.error({ error }, 'Auto-generation error');
-        // The pill keeps the failure until Retry/Dismiss: 402 has no Retry, 429 carries the
-        // server's wait hint, 401 sends the student back to sign in.
-        const described = describeApiError(error, { fallback: GENERATION_COPY.failed });
-        showGeneration({
-          kind: "error",
-          message: described.message,
-          retryable: described.retryable,
-          retryAfterMs: described.retryAfterMs,
-          signIn: described.signIn,
-        });
-        if (described.signIn) router.replace("/login");
-
-        return false;
-      } finally {
-        isProcessingRef.current = false;
-        abortControllerRef.current = null;
-      }
-    },
-    [editor, pendingImageIds, isVoiceSessionActive, assistanceMode, getStatusMessage, showGeneration, router],
-  );
-
-  const retryGeneration = useCallback(() => {
-    const last = lastRequestRef.current;
-    void generateSolution({
-      force: true,
-      source: "auto",
-      modeOverride: last?.mode,
-      promptOverride: last?.promptOverride,
-    });
-  }, [generateSolution]);
-
-  const dismissGeneration = useCallback(() => showGeneration({ kind: "idle" }), [showGeneration]);
-
-  const handleAutoGeneration = useCallback(() => {
-    // Don't burn credits while the tab is in the background; the next edit
-    // after the user comes back will schedule a fresh run.
-    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
-      return;
-    }
-    // While Live owns the latest ink burst (recognized, still pending, or failed to read
-    // because the recognizer is down), the image pipeline stays quiet so an outage never
-    // turns into paid image generations; it still runs for non-math ink ('unhandled') and
-    // on "Draw help", which calls generateSolution({ force: true }) and skips this gate.
-    if (liveEnabled && legacyShouldSkip(LIVE_TIMING.legacyIdleMs)) {
-      return;
-    }
-    void generateSolution({ source: "auto" });
-  }, [generateSolution, liveEnabled]);
-
-  // Listen for user activity and trigger auto-generation after idle
-  // (2 s today; 4 s while Live is on so echoes land first).
-  useDebounceActivity(
-    handleAutoGeneration,
-    liveEnabled ? LIVE_TIMING.legacyIdleMs : 2000,
-    editor,
-    isUpdatingImageRef,
-    isProcessingRef,
-  );
-
-  // Cancel in-flight requests when user edits the canvas
-  useEffect(() => {
-    if (!editor) return;
-
-    const handleEditorChange = (entry: HistoryEntry<TLRecord>) => {
-      // Ignore if we're just updating accepted/rejected images
-      if (isUpdatingImageRef.current) {
-        return;
-      }
-      // Live echo/graph writes and AI overlays are not student edits (B1).
-      if (!isStudentActivity(entry)) {
-        return;
-      }
-
-      // Only cancel if there's an active generation in progress
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-        abortControllerRef.current = null;
-        showGeneration({ kind: "idle" });
-        isProcessingRef.current = false;
-      }
-    };
-
-    // Listen to editor changes (actual edits)
-    const dispose = editor.store.listen(handleEditorChange, {
-      source: 'user',
-      scope: 'document'
-    });
-
-    return () => {
-      dispose();
-    };
-  }, [editor, showGeneration]);
-
-  const handleAccept = useCallback(
-    (shapeId: TLShapeId) => {
-      if (!editor) return;
-
-      // Set flag to prevent triggering activity detection
-      isUpdatingImageRef.current = true;
-
-      const current = editor.getShape(shapeId);
-      if (!current) return;
-
-      // First unlock to ensure we can update opacity; `accepted` takes the overlay out of
-      // the pending list (useAiOverlayShapes) and keeps it out after a reload.
-      editor.updateShape({
-        id: shapeId,
-        type: "image",
-        isLocked: false,
-        opacity: 1,
-        meta: { ...current.meta, accepted: true },
-      });
-
-      // Then immediately lock it again to make it non-selectable
-      editor.updateShape({
-        id: shapeId,
-        type: "image",
-        isLocked: true,
-      });
-
-      // Reset flag after a brief delay
-      setTimeout(() => {
-        isUpdatingImageRef.current = false;
-      }, 100);
-    },
-    [editor]
-  );
-
-  const handleReject = useCallback(
-    (shapeId: TLShapeId) => {
-      if (!editor) return;
-
-      // Set flag to prevent triggering activity detection
-      isUpdatingImageRef.current = true;
-
-      // Unlock the shape first, then delete it
-      editor.updateShape({
-        id: shapeId,
-        type: "image",
-        isLocked: false,
-      });
-      
-      editor.deleteShape(shapeId);
-
-      // Reset flag after a brief delay
-      setTimeout(() => {
-        isUpdatingImageRef.current = false;
-      }, 100);
-    },
-    [editor]
-  );
-
-  const handleClearFeedback = useCallback(() => {
-    if (!editor) return;
-
-    // Only touch shapes that still exist (the user may have undone some).
-    const ids = feedbackImageIds.filter((sid) => editor.getShape(sid));
-
-    // Set flag to prevent triggering activity detection
-    isUpdatingImageRef.current = true;
-
-    if (ids.length > 0) {
-      // Unlock first, then delete (locked shapes are not deletable).
-      editor.updateShapes(
-        ids.map((sid) => ({ id: sid, type: "image" as const, isLocked: false })),
-      );
-      editor.deleteShapes(ids);
-    }
-
-    // Reset flag after a brief delay
-    setTimeout(() => {
-      isUpdatingImageRef.current = false;
-    }, 100);
-  }, [editor, feedbackImageIds]);
-
   // Auto-save through the SaveQueue (2 s debounce, offline backup + replay, optimistic
   // concurrency on `version`, size guard + Storage offload): src/hooks/useSnapshotSave.ts
-  const { sync, retry: retrySave } = useSnapshotSave(editor, id, isUpdatingImageRef, initialVersion);
+  const { sync, retry: retrySave } = useSnapshotSave(editor, id, initialVersion);
 
   // One place decides what the bar shows (see src/components/live/toolbar.ts).
   const toolbar = boardToolbarView({
@@ -1479,8 +747,6 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
 
   return (
     <>
-      <GenerationSkeleton visible={generation.kind === "generating"} />
-
       {/*
         The board's one primary row: go back, choose how much help, see what the tutor is
         doing, and (in Solve) ask for the worked steps. Everything rare — the Live
@@ -1543,7 +809,8 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
                   liveRunning={toolbar.liveRunning}
                   liveAvailable={!LIVE_KILL_SWITCH}
                   onLiveEnabledChange={(enabled) => updateLive({ enabled })}
-                  onDrawHelp={() => void generateSolution({ force: true, source: "auto" })}
+                  onHelp={() => controller.requestHelp()}
+                  canHelp={toolbar.canHelp}
                   onClearMarks={() => controller.clearMarks()}
                   onShowModeInfo={() => setModeInfoOpen(true)}
                   onReportProblem={() => setReportOpen(true)}
@@ -1552,7 +819,6 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
             )}
             <SaveStatus sync={sync} onRetry={() => void retrySave()} />
             {features.stickers && <StickerLibrary />}
-            {features.worksheetGen && <WorksheetGenerator model={IMAGE_MODEL} />}
             {features.pdfUpload && <PdfUpload />}
           </div>
         </div>
@@ -1562,14 +828,6 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
       <ModeInfoDialog open={modeInfoOpen} onOpenChange={setModeInfoOpen} />
       <BugReportButton boardId={id} open={reportOpen} onOpenChange={setReportOpen} />
 
-      {/* When a voice session is active, let the voice banner own the top-center space. */}
-      {!isVoiceSessionActive && (
-        <StatusIndicator
-          state={generation}
-          onRetry={retryGeneration}
-          onDismiss={dismissGeneration}
-        />
-      )}
       {!isVoiceSessionActive && (
         <div
           style={{
@@ -1588,30 +846,7 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
           <LiveHintLayer editor={editor} controller={controller} />
         </LiveErrorBoundary>
       )}
-      <ImageActionButtons
-        pendingImageIds={pendingImageIds}
-        isVoiceSessionActive={isVoiceSessionActive}
-        onAccept={handleAccept}
-        onReject={handleReject}
-      />
-      <ClearFeedbackButton
-        feedbackImageIds={feedbackImageIds}
-        isVoiceSessionActive={isVoiceSessionActive}
-        hasPendingImages={pendingImageIds.length > 0}
-        onClear={handleClearFeedback}
-      />
-      <VoiceAgentControls
-        onSessionChange={setIsVoiceSessionActive}
-        onSolveWithPrompt={async (mode, instructions) => {
-          const success = await generateSolution({
-            modeOverride: mode,
-            promptOverride: instructions,
-            force: true,
-            source: "voice",
-          });
-          return success;
-        }}
-      />
+      <VoiceAgentControls onSessionChange={setIsVoiceSessionActive} controller={controller} />
     </>
   );
 }

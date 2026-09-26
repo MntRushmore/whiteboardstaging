@@ -55,7 +55,6 @@ import { classifyLiveFailure, sseFailure, type ClassifyContext } from "@/compone
 import {
   clearLiveError,
   liveStore,
-  markBurst,
   removeLine,
   setLine,
   setLiveError,
@@ -95,7 +94,7 @@ import {
   rectMaxY,
   rectsIntersect,
 } from "./placement";
-import { badgeFor, decide, localNoteFor, type PolicyDecision } from "./policy";
+import { badgeFor, decide, isSingleSymbolLatex, localNoteFor, type PolicyDecision } from "./policy";
 import { createSolveStepGuard, engineParsesStep, localAnswerFor, localAnswerStep } from "./solveSteps";
 import {
   RecognizeClient,
@@ -162,7 +161,16 @@ interface LineRuntime {
   graphDismissedExpr: string | null;
 }
 
-type CheckOpts = { userAsked: boolean; modeOverride?: "feedback" | "suggest"; forceHint?: boolean };
+type CheckOpts = {
+  userAsked: boolean;
+  modeOverride?: "feedback" | "suggest";
+  forceHint?: boolean;
+  /**
+   * "Ask about this": a crop of the focus line's ink for the check model. Only ever set by
+   * `requestHelp` on ink Live could not read as maths; the answer is a typeset note.
+   */
+  crop?: string;
+};
 type SolveOpts = { onlyFirstStep?: boolean; lineId: string };
 
 /** What `retryLastError` re-runs; captured at the moment a call fails. */
@@ -171,14 +179,6 @@ type RetryContext =
   | { kind: "recognize"; lineId: string }
   | { kind: "check"; lineId: string; opts: CheckOpts }
   | { kind: "solve"; lineId: string; fromLineId: string | undefined; opts: SolveOpts };
-
-/** How one line's recognition ended, folded into the burst state by `flush`. */
-/**
- * What a processed line means for the LEGACY image pipeline, which runs on an idle timer
- * whenever Live leaves the burst unclaimed. 'owned' = Live read maths here (even if it chose
- * to stay quiet, as it does for a half-written line); 'silent' = not maths, or unreadable.
- */
-type LineOutcome = "owned" | "silent" | "failed";
 
 /** Recognition failures that leave a chip under the ink (the pill carries the rest). */
 const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream", "timeout", "unknown"]);
@@ -532,16 +532,6 @@ export class LiveLoop implements LiveController {
       this.retryAttempt = 0;
     }
     this.retryContext = retry;
-    // Recognition (or the capabilities probe) failed for the ink Live owns: the burst is
-    // 'failed', so the legacy image pipeline waits instead of spending credits during an
-    // outage. Low confidence and non-math ink never get here (they end 'unhandled').
-    if (ctx.kind === "recognize" || ctx.kind === "capabilities") {
-      const burst = liveStore.lastBurst.get()?.state;
-      if (burst === "pending" || burst === "failed") {
-        markBurst("failed");
-        fields.detail = LIVE_COPY.errors.recognizePaused;
-      }
-    }
     return setLiveError(fields);
   }
 
@@ -583,7 +573,7 @@ export class LiveLoop implements LiveController {
         return;
       case "check": {
         const st = lines[ctx.lineId];
-        if (!st?.latex) {
+        if (!st || (!st.latex && !ctx.opts.crop)) {
           clearLiveError();
           return;
         }
@@ -774,7 +764,6 @@ export class LiveLoop implements LiveController {
     if (penUp || inkChanged || erased) {
       // The student is working again: the tutor puts the pen down (finishing what it started).
       this.cancelHandwriting();
-      if (penUp) markBurst("pending");
       const rewrite = [...this.dirtyStrokeIds].some((id) => {
         const line = this.lineOfStroke(id);
         return Boolean(line && liveStore.lines.get()[line.id]?.mathShapeId);
@@ -954,31 +943,11 @@ export class LiveLoop implements LiveController {
       if (touched) affected.push({ line: { ...line, hash: same ? prev.line.hash : "" }, moveOnly: same && !forced });
     }
 
-    if (affected.length === 0) {
-      if (liveStore.lastBurst.get()?.state === "pending") markBurst("unhandled");
-      return;
-    }
-    let owned = false;
-    let failed = false;
-    void Promise.all(
-      affected.map(async ({ line, moveOnly }) => {
-        const outcome = await this.processLine(line, ink, moveOnly);
-        owned = owned || outcome === "owned";
-        failed = failed || outcome === "failed";
-      }),
-    ).then(() => {
-      // 'failed' is re-evaluated here so a successful Retry turns it into 'handled' (or
-      // 'unhandled' when the retried read is non-math) and hands the legacy pipeline back.
-      const cur = liveStore.lastBurst.get()?.state;
-      if (cur === "pending" || cur === "failed") markBurst(owned ? "handled" : failed ? "failed" : "unhandled");
-    });
+    for (const { line, moveOnly } of affected) void this.processLine(line, ink, moveOnly);
   }
 
-  /**
-   * 'owned' when Live read maths on this line, 'failed' when recognition itself failed
-   * (a visible recognize error was recorded), otherwise 'silent'.
-   */
-  private async processLine(line: InkLine, ink: InkStroke[], moveOnly: boolean): Promise<LineOutcome> {
+  /** Recognizes (or, for a pure move, re-places) one line; failures are recorded, never thrown. */
+  private async processLine(line: InkLine, ink: InkStroke[], moveOnly: boolean): Promise<void> {
     const lineId = line.id;
     const rt = this.runtime(lineId);
     const ticket = ++rt.processing;
@@ -992,18 +961,18 @@ export class LiveLoop implements LiveController {
     const payload = buildPayload(line, ink);
     if (!payload) {
       this.applyUnknown(lineId, "Too much ink for one line");
-      return "silent";
+      return;
     }
     const hash = await hashPayload(payload);
     const state = liveStore.lines.get()[lineId];
-    if (!state || rt.processing !== ticket) return state?.mathShapeId ? "owned" : "silent";
+    if (!state || rt.processing !== ticket) return;
 
     const prevHash = state.line.hash;
     const isMove = moveOnly && Boolean(state.latex) && (prevHash === hash || prevHash === "");
     setLine(lineId, { line: { ...line, hash } });
     if (isMove) {
       this.replaceEcho(lineId);
-      return state.mathShapeId ? "owned" : "silent";
+      return;
     }
 
     // New or changed ink: recognize. Whatever failed for this line before is stale now.
@@ -1017,7 +986,7 @@ export class LiveLoop implements LiveController {
       // A hash the client already knows resolves from the cache even offline.
       if (!this.deps.isOnline() && !this.deps.recognizer.peek(hash)) {
         this.queueOffline(lineId);
-        return "silent";
+        return;
       }
       const req: RecognizeRequest = {
         boardId: this.opts.boardId,
@@ -1030,26 +999,24 @@ export class LiveLoop implements LiveController {
         if (crop) req.crop = crop;
       }
       const res = await this.recognizeWithCropFallback(line, req, hash);
-      if (rt.processing !== ticket) return liveStore.lines.get()[lineId]?.mathShapeId ? "owned" : "silent";
-      const owned = await this.applyRecognition(lineId, res);
+      if (rt.processing !== ticket) return;
+      await this.applyRecognition(lineId, res);
       this.noteSuccess("recognize", lineId);
       clientMetric("live.echo.total.ms", { ms: this.deps.now() - startedAt, provider: res.provider, lineId });
-      return owned ? "owned" : "silent";
     } catch (err) {
-      if (isAbortLike(err) && !(err instanceof RecognizeTimeoutError)) return "silent";
-      if (rt.processing !== ticket) return "silent";
+      if (isAbortLike(err) && !(err instanceof RecognizeTimeoutError)) return;
+      if (rt.processing !== ticket) return;
       // Network failure (fetch throws TypeError) or the browser says offline: the offline
       // queue replays the line on reconnect. Offline, that is the whole story.
       const network = !(err instanceof RecognizeTimeoutError) && !isApiError(err) && (err instanceof TypeError || !this.deps.isOnline());
       if (network) this.queueOffline(lineId);
-      if (network && !this.deps.isOnline()) return "silent";
+      if (network && !this.deps.isOnline()) return;
       if (!network) console.warn("[live] recognize failed", err);
       const failure = this.fail(err, { kind: "recognize", lineId }, { kind: "recognize", lineId });
       // Never a silent blank: transport/model trouble leaves a chip pointing at Retry; sign-in,
       // rate-limit and credit problems are the pill's job (their message is not about the line).
       if (failure && CHIP_CODES.has(failure.code)) this.applyFailedRead(lineId, LIVE_COPY.errors.recognizeChip);
       else this.applyUnknown(lineId, "");
-      return failure ? "failed" : "silent";
     } finally {
       clearTimeout(readingTimer);
       if (this.deps.recognizer.inFlight === 0 && liveStore.status.get() === "reading") liveStore.status.set("idle");
@@ -1199,12 +1166,12 @@ export class LiveLoop implements LiveController {
     return this.engine;
   }
 
-  private async applyRecognition(lineId: string, res: RecognizeResponse): Promise<boolean> {
+  private async applyRecognition(lineId: string, res: RecognizeResponse): Promise<void> {
     const state = liveStore.lines.get()[lineId];
-    if (!state) return false;
+    if (!state) return;
     setLine(lineId, { latex: res.latex, confidence: res.confidence, provider: res.provider });
     await this.ensureEngine();
-    return this.analyzeAndRender(lineId, { cascade: true });
+    this.analyzeAndRender(lineId, { cascade: true });
   }
 
   private applyUnknown(lineId: string, note: string): void {
@@ -1283,18 +1250,17 @@ export class LiveLoop implements LiveController {
   /**
    * Runs the engine for one line, renders the echo/graph, cascades to the rows below
    * (their `previous` changed) and starts an LLM check when the ladder permits.
-   * Returns true when the line has (or will have) an echo.
    */
-  private analyzeAndRender(lineId: string, opts: { cascade?: boolean; idleMs?: number; fromIdle?: boolean } = {}): boolean {
+  private analyzeAndRender(lineId: string, opts: { cascade?: boolean; idleMs?: number; fromIdle?: boolean } = {}): void {
     const state = liveStore.lines.get()[lineId];
-    if (!state) return false;
+    if (!state) return;
     const analysis = this.analyze(state);
     const wasWarn = state.analysis?.verdict === "mismatch";
     const isWarn = analysis?.verdict === "mismatch";
     const rewritesWithWarn = isWarn ? state.rewritesWithWarn + (wasWarn && !opts.fromIdle ? 1 : 0) : 0;
     setLine(lineId, { analysis, rewritesWithWarn });
     const fresh = liveStore.lines.get()[lineId];
-    if (!fresh) return false;
+    if (!fresh) return;
     const decision = this.decisionFor(fresh, { idleMs: opts.idleMs });
     this.render(fresh, decision);
 
@@ -1310,9 +1276,6 @@ export class LiveLoop implements LiveController {
 
     if (decision.echo && !opts.fromIdle) this.armIdleTimer(lineId);
     if (decision.runLlmCheck) this.startCheck(fresh.line.column, lineId, { userAsked: false });
-    // Ownership, not visibility: a silent half-written line is still Live's, and saying
-    // otherwise is what handed it to the legacy image model.
-    return decision.owned;
   }
 
   private armIdleTimer(lineId: string): void {
@@ -1729,8 +1692,9 @@ export class LiveLoop implements LiveController {
   }
 
   // ---------------------------------------------------------------- LLM check
-  private buildCheckLines(column: number): { lines: CheckLine[]; region: Rect; states: LiveLineState[] } | null {
-    const states = this.columnLines(column).filter((s) => s.latex);
+  /** `withLineId` keeps that line even with no LaTeX (the "Ask about this" crop's line). */
+  private buildCheckLines(column: number, withLineId?: string): { lines: CheckLine[]; region: Rect; states: LiveLineState[] } | null {
+    const states = this.columnLines(column).filter((s) => s.latex || s.line.id === withLineId);
     if (states.length === 0) return null;
     const region = expandRect(unionRects(states.map((s) => s.line.bounds)), 24);
     const lines: CheckLine[] = states.slice(-LIVE_LIMITS.maxLinesPerCheck).map((s) => ({
@@ -1751,10 +1715,12 @@ export class LiveLoop implements LiveController {
     const mode = this.opts.mode;
     if (mode === "off" || this.opts.voiceActive || !this.opts.enabled) return;
     const checkMode: "feedback" | "suggest" = opts.modeOverride ?? (mode === "feedback" ? "feedback" : "suggest");
-    const built = this.buildCheckLines(column);
+    const built = this.buildCheckLines(column, opts.crop ? focusLineId : undefined);
     if (!built) return;
     if (!this.deps.isOnline()) {
-      this.deferLlm("check", focusLineId, opts.userAsked);
+      // A crop is a picture of this moment's ink: it is not queued for a reconnect.
+      if (!opts.crop) this.deferLlm("check", focusLineId, opts.userAsked);
+      else liveStore.status.set("offline");
       return;
     }
     const rt = this.runtime(focusLineId);
@@ -1769,6 +1735,9 @@ export class LiveLoop implements LiveController {
       focusLineId,
       userAsked: opts.userAsked,
     };
+    // Never on an automatic check: the schema refuses a crop without userAsked, and only
+    // requestHelp (an explicit tap) ever sets one.
+    if (opts.crop && opts.userAsked) req.crop = opts.crop;
     const startedAt = this.deps.now();
     const errCtx = { kind: "check" as const, lineId: focusLineId, userAsked: opts.userAsked };
     const retry: RetryContext = { kind: "check", lineId: focusLineId, opts };
@@ -1784,7 +1753,8 @@ export class LiveLoop implements LiveController {
               first = false;
               clientMetric("live.check.ttfa.ms", { ms: this.deps.now() - startedAt, lineId: focusLineId });
             }
-            this.applyAnnotation(ev.data, focusLineId, checkMode, opts.forceHint ?? false);
+            if (req.crop) this.applyAskNote(ev.data, focusLineId, checkMode);
+            else this.applyAnnotation(ev.data, focusLineId, checkMode, opts.forceHint ?? false);
           } else if (ev.event === "error") {
             failed = true;
             console.warn("[live] check error", ev.data);
@@ -1795,7 +1765,7 @@ export class LiveLoop implements LiveController {
         if (!isAbortLike(err) && !ctrl.signal.aborted) {
           failed = true;
           // A network failure is also deferred so a reconnect replays it once, as before.
-          if (this.isNetworkFailure(err)) this.deferLlm("check", focusLineId, opts.userAsked);
+          if (this.isNetworkFailure(err) && !req.crop) this.deferLlm("check", focusLineId, opts.userAsked);
           else console.warn("[live] check failed", err);
           if (this.deps.isOnline()) this.fail(err, errCtx, retry);
         }
@@ -1852,6 +1822,21 @@ export class LiveLoop implements LiveController {
     } else {
       rt.shownHintTexts.add(a.message);
     }
+  }
+
+  /**
+   * The answer to "Ask about this" (Help on ink Live could not read as maths): each annotation
+   * becomes a typeset note beside the ink. There is usually no echo to carry it — a diagram or
+   * an unreadable line has none — and the chip on a failed read belongs to Retry.
+   */
+  private applyAskNote(a: Annotation, focusLineId: string, checkMode: "feedback" | "suggest"): void {
+    const lineId = a.lineId ?? focusLineId;
+    if (!liveStore.lines.get()[lineId]) return;
+    const text = checkMode === "suggest" && a.question ? `${a.message} ${a.question}` : a.message;
+    const rt = this.runtime(lineId);
+    if (rt.shownHintTexts.has(text)) return;
+    rt.shownHintTexts.add(text);
+    this.placeMath({ latex: textAsLatex(text), nearLineId: lineId, tone: "muted" });
   }
 
   /**
@@ -2013,13 +1998,17 @@ export class LiveLoop implements LiveController {
     if (!this.opts.enabled || this.opts.voiceActive) return;
     const built = this.buildCheckLines(column);
     if (!built) return;
+    // A word problem (prose the recognizer returned as `\text{...}`, kind 'text') has nothing
+    // for the engine to evaluate: the question itself goes to the model, which sets it up.
+    const target = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
+    const wordProblem = target?.analysis?.kind === "text";
     // The engine can solve most school lines itself, and the tutor can write that out by hand:
     // no model, no credits, no network. Anything it cannot draw falls through to the stream.
-    if (this.writeSolutionByHand(built, opts)) return;
+    if (!wordProblem && this.writeSolutionByHand(built, opts)) return;
     // ...and where the line is not an equation at all but a sum with an answer (`36 + 2 =`),
     // the engine still has that answer. It is written locally whatever the hand switch says:
     // deterministic maths NEVER goes through a model.
-    if (this.writeLocalAnswer(built, opts)) return;
+    if (!wordProblem && this.writeLocalAnswer(built, opts)) return;
     if (!this.deps.isOnline()) {
       this.deferLlm("solve", opts.lineId);
       return;
@@ -2415,6 +2404,44 @@ export class LiveLoop implements LiveController {
     return decision.showResult && this.inlineAnswer(state, decision);
   }
 
+  /**
+   * The board's one "Help" action, on the line the student touched last. Nothing here runs on
+   * a timer: every branch is an explicit request.
+   *
+   *  - ink Live could not read as maths (a failed or low-confidence read, a diagram label, a
+   *    lone symbol): "Ask about this" — a crop of that ink goes to the check model and the
+   *    answer comes back as a typeset note. Same price as any check.
+   *  - Solve: the worked solution (`requestSolve`), word problems included.
+   *  - Feedback / Suggest: that line's next hint (`escalate`).
+   */
+  requestHelp(): void {
+    if (!this.opts.enabled || this.opts.mode === "off") return;
+    const target = this.latestLine();
+    if (!target) return;
+    if (needsLook(target)) {
+      this.askAboutInk(target);
+      return;
+    }
+    if (this.opts.mode === "answer") this.requestSolve(target.line.id);
+    else this.escalate(target.line.id);
+  }
+
+  private askAboutInk(state: LiveLineState): void {
+    if (this.opts.voiceActive) return;
+    if (!this.deps.isOnline()) {
+      liveStore.status.set("offline");
+      return;
+    }
+    const lineId = state.line.id;
+    const checkMode: "feedback" | "suggest" = this.opts.mode === "feedback" ? "feedback" : "suggest";
+    void this.captureCrop(state.line).then((crop) => {
+      const cur = liveStore.lines.get()[lineId];
+      // No picture (no renderer, or over the size cap): nothing the model could look at.
+      if (!crop || !cur || !this.started) return;
+      this.startCheck(cur.line.column, lineId, { userAsked: true, modeOverride: checkMode, crop });
+    });
+  }
+
   /** feedback -> suggest -> one solve step for THIS line; the global mode never changes. */
   escalate(lineId: string): void {
     const target = liveStore.lines.get()[lineId];
@@ -2489,6 +2516,28 @@ export class LiveLoop implements LiveController {
       this.analyzeAndRender(lineId, { cascade: true });
     });
   }
+}
+
+/**
+ * Ink Live has nothing to reason about as maths: it could not be read (failed or
+ * low-confidence), or it reads as a diagram label or a lone symbol. Prose (`text`) is not in
+ * this list — a word problem is readable, and its words are the question.
+ */
+export function needsLook(state: Pick<LiveLineState, "latex" | "confidence" | "analysis">): boolean {
+  if (!state.latex.trim()) return true;
+  if (state.confidence < LIVE_LIMITS.minConfidence) return true;
+  if (state.analysis?.kind === "label") return true;
+  return isSingleSymbolLatex(state.latex);
+}
+
+/** Plain text as KaTeX `\text{...}`: groups and specials escaped, the rest dropped. */
+export function textAsLatex(text: string): string {
+  const body = text
+    .replace(/[\\^~]/g, " ")
+    .replace(/[{}$&#_%]/g, (c) => `\\${c}`)
+    .replace(/\s+/g, " ")
+    .trim();
+  return `\\text{${body}}`;
 }
 
 export function createLiveLoop(editor: LiveEditorLike, opts: UseLiveMathOptions, deps: Partial<LiveLoopDeps> = {}): LiveLoop {

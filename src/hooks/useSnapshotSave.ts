@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type RefObject } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { atom, getSnapshot, useValue, type Editor, type TLStoreSnapshot } from "tldraw";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -611,11 +611,8 @@ export interface UseSnapshotSaveResult {
 /**
  * Autosave of the editor snapshot to `whiteboards.data` through a `SaveQueue`.
  *
- * Every document change (`source: 'all'`, so Live echoes, AI overlays and Accept/Reject
- * bookkeeping are included) marks the queue dirty — there is deliberately no
- * `isUpdatingImageRef` skip here any more: that ref only gates the legacy AI trigger, and
- * skipping saves while it was set lost the overlay insert until the next user edit. The
- * parameter is kept for call-site compatibility and is not consulted.
+ * Every document change (`source: 'all'`, so Live echoes, graphs and the tutor's
+ * handwriting are included) marks the queue dirty.
  *
  * On mount the localStorage backup left by a previous session (offline, crash, closed tab
  * mid-save) is merged over the loaded board — this effect runs after tldraw's `onMount`
@@ -625,7 +622,6 @@ export interface UseSnapshotSaveResult {
 export function useSnapshotSave(
   editor: Editor | null,
   boardId: string,
-  _legacyTriggerGate: RefObject<boolean>,
   initialVersion: number | null = null,
 ): UseSnapshotSaveResult {
   // The queue is created in an effect (it needs the editor) but read reactively during
