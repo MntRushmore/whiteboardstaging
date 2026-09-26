@@ -155,7 +155,8 @@ describe("live loop — screens", () => {
   it("places a solve step that would run off the bottom of the screen beside the work", async () => {
     start("answer");
     editor.store.put([{ ...editor.getCurrentPage(), meta: { screen: { x: 0, y: 0, w: 1600, h: 330 } } }]);
-    const line = await penLine("2x=8", 200, "2x=8");
+    // two steps (`2x = 8`, `x = 4`): a block too tall for the space under the work
+    const line = await penLine("2x=8", 200, "2x+3=11");
     loop.requestSolve(line);
     await settleUntil(() => editor.shapesOfType("draw").some((s) => (s.meta as { live?: unknown }).live !== undefined));
     await vi.advanceTimersByTimeAsync(100);

@@ -90,6 +90,11 @@ export interface SystemDeps {
   parse(latex: string): { lhs: string; rhs: string; unknowns: string[]; latex: string } | null;
   /** single-unknown solve with steps (the engine's `solveLatex`) */
   solveOne(latex: string): { latex: string; steps: string[] } | null;
+  /**
+   * A linear equation whose unknown cancels: its steps down to `0 = 0` (identity) or `0 = 2`
+   * (contradiction). Null when the unknown does not cancel. Optional for test doubles.
+   */
+  cancelled?(latex: string): { steps: string[]; outcome: "identity" | "contradiction" } | null;
   /** the single real root of a one-unknown equation, when there is exactly one */
   singleRoot(latex: string, variable: string): number | null;
   /** evaluates `lhs - rhs` of a parsed relation at a scope */
@@ -124,6 +129,31 @@ function linearFormOf(deps: SystemDeps, lhs: string, rhs: string, vars: [string,
 function clean(n: number): number {
   const r = Math.round(n * 1e9) / 1e9;
   return Object.is(r, -0) ? 0 : r;
+}
+
+/** The empty set: two parallel lines have no point in common. Drawn by the hand as `∅`. */
+export const EMPTY_SET = "\\varnothing";
+
+/** The Solve block's line budget (`LIVE_LIMITS.maxSolveSteps`): the answer must survive the cut. */
+export const MAX_SYSTEM_STEPS = 8;
+
+/** Index of the `y = 18 - 11` back-substitution line, the first thing to drop when over budget. */
+function backIndex(steps: string[], other: string, otherFinal: string, backExpr: string, deps: SystemDeps): number {
+  const line = `${other} = ${backExpr}`;
+  if (deps.normalize(line) === deps.normalize(otherFinal)) return -1;
+  return steps.lastIndexOf(line);
+}
+
+/**
+ * Keeps a system's steps within the block budget without losing the answer: over budget, the
+ * back-substitution line goes first, then the working lines after the substitution, oldest
+ * first — the setup (the first `keepHead` lines) and the last three lines always stay.
+ */
+function fitSteps(steps: string[], keepHead: number, dropFirst = -1): string[] {
+  const out = [...steps];
+  if (out.length > MAX_SYSTEM_STEPS && dropFirst >= 0) out.splice(dropFirst, 1);
+  while (out.length > MAX_SYSTEM_STEPS && out.length - keepHead > 3) out.splice(keepHead, 1);
+  return out;
 }
 
 export function solveFromLines(lines: readonly string[], deps: SystemDeps): SystemSolution | null {
@@ -183,7 +213,7 @@ export function solveFromLines(lines: readonly string[], deps: SystemDeps): Syst
       if (!f1 || !f2) continue;
       const [a, b] = pair;
       const det = f1.coef[a] * f2.coef[b] - f1.coef[b] * f2.coef[a];
-      if (Math.abs(det) < 1e-9) continue; // parallel or the same line: no single solution
+      const singular = Math.abs(det) < 1e-9; // parallel or the same line: no single solution
 
       // Isolate the variable NOT asked for, from the equation where its coefficient is ±1 if any.
       const target = want ?? a;
@@ -201,6 +231,16 @@ export function solveFromLines(lines: readonly string[], deps: SystemDeps): Syst
       const expr = linearLatex(k0, k1, target, deps.fmt);
       const step1 = `${other} = ${expr}`;
       const step2 = substituteLatex(into.latex, { [other]: expr });
+      if (singular) {
+        // Substitute anyway, as a teacher would, until the unknown cancels: `0 = 0` means the
+        // two equations are one line (every point of `y = 18 - x`), `0 = 2` that they never meet.
+        const cancelled = deps.cancelled?.(step2);
+        if (!cancelled) continue;
+        const steps = [step1, step2, ...cancelled.steps.filter((s) => deps.normalize(s) !== deps.normalize(step2))];
+        const final = cancelled.outcome === "identity" ? step1 : EMPTY_SET;
+        steps.push(final);
+        return { latex: final, steps: fitSteps(steps, 2) };
+      }
       const solved = deps.solveOne(step2);
       if (!solved) continue;
       const tv = deps.singleRoot(step2, target);
@@ -212,7 +252,7 @@ export function solveFromLines(lines: readonly string[], deps: SystemDeps): Syst
       const otherFinal = `${other} = ${deps.fmt(oval)}`;
       if (deps.normalize(`${other} = ${backExpr}`) !== deps.normalize(otherFinal)) steps.push(`${other} = ${backExpr}`);
       steps.push(otherFinal);
-      return { latex: solved.latex, steps };
+      return { latex: solved.latex, steps: fitSteps(steps, 2, backIndex(steps, other, otherFinal, backExpr, deps)) };
     }
   }
   return null;
