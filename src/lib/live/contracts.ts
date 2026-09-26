@@ -222,6 +222,11 @@ export const RecognizeResponseSchema = z.object({
   confidence: z.number().min(0).max(1),
   provider: z.enum(["mathpix", "vision"]),
   ms: z.number(),
+  /**
+   * Dev only (never in production, see `liveDebugEnabled` in the recognize route): the
+   * recognizer's raw output, so the Live debug panel can show what Mathpix actually said.
+   */
+  debug: z.record(z.string(), z.unknown()).optional(),
 });
 export type RecognizeResponse = z.infer<typeof RecognizeResponseSchema>;
 export const CapabilitiesResponseSchema = z.object({

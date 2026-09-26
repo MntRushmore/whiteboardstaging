@@ -14,7 +14,7 @@ import { errorResponse } from "@/lib/server/request";
 import { isMathpixAuthFailure, isMathpixConfigured, recognizeStrokes, type MathpixFailure } from "@/lib/server/mathpix";
 import { chatJson } from "@/lib/server/openrouter";
 import { buildVisionMessages, VisionTranscriptionSchema } from "@/lib/server/prompts/recognizeVision";
-import { liveLogger, livePreamble, withRequestId } from "@/lib/server/live-route";
+import { liveDebugEnabled, liveLogger, livePreamble, withRequestId } from "@/lib/server/live-route";
 import { classifyKind } from "@/lib/server/live-rules";
 
 export const runtime = "nodejs";
@@ -100,6 +100,7 @@ export async function POST(req: Request) {
           confidence: mp.confidence,
           provider: "mathpix",
           ms: Date.now() - startedAt,
+          ...(liveDebugEnabled() ? { debug: { mathpix: mp.raw } } : {}),
         };
       } else {
         mathpixFailure = mp;
@@ -126,6 +127,7 @@ export async function POST(req: Request) {
         confidence: vision.confidence,
         provider: "vision",
         ms: Date.now() - startedAt,
+        ...(liveDebugEnabled() ? { debug: { vision, mathpixFailure } } : {}),
       };
     }
 

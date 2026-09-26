@@ -381,3 +381,70 @@ export function expressionsEquivalent(math: MathJsInstance, a: string, b: string
 export function rootToNumber(r: RootValue): number | null {
   return typeof r === "number" ? r : Math.abs(r.im) < 1e-9 ? r.re : null;
 }
+
+/** Values the other unknowns are pinned to while one is solved for (irregular, to dodge special cases). */
+const PIN_SETS = [1.37, -2.21, 3.9, 0.61, -5.3];
+
+function withScope(c: Compiled, fixed: Record<string, number>): Compiled {
+  return { evaluate: (scope) => c.evaluate({ ...fixed, ...scope }) };
+}
+
+function holdsAt(math: MathJsInstance, rel: Relation, scope: Record<string, number>, tol = 1e-6): boolean | null {
+  const l = compile(math, rel.lhs);
+  const r = compile(math, rel.rhs);
+  if (!l || !r) return null;
+  let lv: number | null;
+  let rv: number | null;
+  try {
+    lv = toNumber(l.evaluate(scope));
+    rv = toNumber(r.evaluate(scope));
+  } catch {
+    return null;
+  }
+  if (lv === null || rv === null || !Number.isFinite(lv) || !Number.isFinite(rv)) return null;
+  return Math.abs(lv - rv) <= tol * Math.max(1, Math.abs(lv), Math.abs(rv));
+}
+
+/**
+ * Equations in two or more unknowns (`x + y = 10` → `y = 10 - x`): same solution set, checked
+ * by pinning every unknown but one to a few sample values, finding where one equation holds
+ * along the remaining one, and requiring the other to hold there too — both ways round.
+ *
+ * `ok` needs at least three such points to agree; a point where one holds and the other
+ * clearly does not is `mismatch` (a wrong rearrangement, or squaring that adds solutions);
+ * anything else (different unknowns, nothing found in range) is `unknown`, never a guess.
+ */
+export function compareMultiRelations(math: MathJsInstance, prev: Relation, cur: Relation): EngineVerdict {
+  if (prev.op !== "==" || cur.op !== "==") return "unknown";
+  const vars = [...new Set(prev.variables)].sort();
+  const curVars = [...new Set(cur.variables)].sort();
+  if (vars.length < 2 || vars.join(",") !== curVars.join(",")) return "unknown";
+  // Solve along y when there is one (the variable a student isolates), else the last.
+  const along = vars.includes("y") ? "y" : vars[vars.length - 1];
+  const pinned = vars.filter((v) => v !== along);
+  const gPrev = compile(math, `(${prev.lhs}) - (${prev.rhs})`);
+  const gCur = compile(math, `(${cur.lhs}) - (${cur.rhs})`);
+  if (!gPrev || !gCur) return "unknown";
+
+  let agreed = 0;
+  for (let s = 0; s < PIN_SETS.length; s++) {
+    const fixed: Record<string, number> = {};
+    pinned.forEach((v, i) => {
+      fixed[v] = PIN_SETS[(s + i * 2) % PIN_SETS.length];
+    });
+    for (const [to, g] of [
+      [cur, gPrev],
+      [prev, gCur],
+    ] as const) {
+      const { roots, identity } = numericRoots(math, withScope(g, fixed), along);
+      if (identity) continue;
+      for (const root of roots) {
+        const ok = holdsAt(math, to, { ...fixed, [along]: root });
+        if (ok === null) continue;
+        if (!ok) return "mismatch";
+        agreed++;
+      }
+    }
+  }
+  return agreed >= 3 ? "ok" : "unknown";
+}

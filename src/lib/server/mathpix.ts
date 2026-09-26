@@ -17,6 +17,8 @@ export type MathpixStrokesResult = {
   text: string;
   /** 0..1 — Mathpix `confidence` (falls back to `confidence_rate`) */
   confidence: number;
+  /** Mathpix's whole response body, for the dev-only debug panel (never credentials: we only read the body) */
+  raw: MathpixStrokesResponse;
 };
 
 /**
@@ -197,7 +199,7 @@ export async function recognizeStrokes(
     const latex = latexFromMathpix(data);
     const text = typeof data.text === "string" ? stripMathDelimiters(data.text) : latex;
     const confidence = clamp01(data.confidence ?? data.confidence_rate ?? 0);
-    return { ok: true, latex, text, confidence };
+    return { ok: true, latex, text, confidence, raw: data };
   } catch (err) {
     if (timedOut) return fail({ ok: false, reason: "timeout" }, "mathpix timed out");
     if (signal?.aborted) return { ok: false, reason: "aborted" };

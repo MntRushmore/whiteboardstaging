@@ -62,6 +62,7 @@ import {
   type LiveErrorKind,
 } from "./liveStore";
 import { scheduleLiveWrite } from "./liveWrite";
+import { recordRecognition } from "./liveDebug";
 import { readScreenMeta } from "@/lib/screens/screens";
 import { getLiveSettings } from "./liveSettings";
 import {
@@ -1001,8 +1002,10 @@ export class LiveLoop implements LiveController {
         const crop = await this.captureCrop(line);
         if (crop) req.crop = crop;
       }
+      const cached = Boolean(this.deps.recognizer.peek(hash));
       const res = await this.recognizeWithCropFallback(line, req, hash);
       if (rt.processing !== ticket) return;
+      recordRecognition({ lineId, at: this.deps.now(), sent: { ...req.strokes, ...req.bounds }, cached, response: res });
       await this.applyRecognition(lineId, res);
       this.noteSuccess("recognize", lineId);
       clientMetric("live.echo.total.ms", { ms: this.deps.now() - startedAt, provider: res.provider, lineId });

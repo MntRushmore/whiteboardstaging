@@ -103,3 +103,12 @@ export function sseErrorPayload(err: unknown): { error: string; message: string 
   if (err instanceof Error && err.name === "AbortError") return { error: "internal_error", message: "Request was cancelled." };
   return { error: "internal_error", message: "Something went wrong on our side. Please try again." };
 }
+
+/**
+ * The raw recognizer output rides along on the recognize response in development (or with
+ * `LIVE_DEBUG=1`) for the board's Live debug panel. Never in a production build by default:
+ * it is noise on the wire and nothing the student needs.
+ */
+export function liveDebugEnabled(): boolean {
+  return process.env.NODE_ENV !== "production" || process.env.LIVE_DEBUG === "1";
+}

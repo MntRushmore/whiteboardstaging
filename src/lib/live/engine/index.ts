@@ -9,6 +9,7 @@ import { balance as balanceChem, balanceEquation, equationLatex, isBalanced, mol
 import { preClassify } from "./classify";
 import { PHYSICS_SCOPE_NAMES, physicsScope } from "./constants";
 import {
+  compareMultiRelations,
   compareRelations,
   compareValuesToRelation,
   decimalsIn,
@@ -129,6 +130,24 @@ function relationFromAnalysis(math: MathJsInstance, a: LineAnalysis | undefined,
   if (!own || !rel.variables.includes(own)) return null;
   if (variable && own !== variable) return null;
   return rel;
+}
+
+/**
+ * The previous line as an equation in two or more unknowns: an `equation` whose relation has
+ * several free symbols, or a `y = ...` line (kind `function`) read as the equation `y == ...`.
+ */
+function multiRelationFromAnalysis(math: MathJsInstance, a: LineAnalysis | undefined): Relation | null {
+  if (!a || !a.math) return null;
+  if (a.kind === "equation") {
+    const rel = parseRelation(math, a.math);
+    return rel && rel.op === "==" && new Set(rel.variables).size >= 2 ? rel : null;
+  }
+  if (a.kind === "function" && a.math.startsWith("y = ")) {
+    const rhs = a.math.slice(4);
+    const rel = parseRelation(math, `y == ${rhs}`);
+    return rel && new Set(rel.variables).size >= 2 ? rel : null;
+  }
+  return null;
 }
 
 export function createEngine(mod: MathModule): LiveEngine {
@@ -287,6 +306,14 @@ export function createEngine(mod: MathModule): LiveEngine {
       }
       const out: LineAnalysis = { kind: "equation", math: source, resultLatex: "", verdict: "unknown", note: "" };
       if (claim) out.verdict = expressionsEquivalent(math, L.source, R.source, unknowns);
+      else if (!anyUnits) {
+        // Two or more unknowns (`2x + 3y = 12` → `3y = 12 - 2x`): a step is checked against the
+        // line above by solution set. A first line stays `unknown` (a formula such as
+        // `KE = 1/2 m v^2` is still the model's to comment on in Feedback).
+        const rel: Relation = { op: "==", lhs: L.source, rhs: R.source, source, variables: unknowns };
+        const prevRel = multiRelationFromAnalysis(math, ctx.previous) ?? multiRelationFromAnalysis(math, ctx.original);
+        if (prevRel) out.verdict = compareMultiRelations(math, prevRel, rel);
+      }
       if (anyUnits) out.units = { ok: true };
       return out;
     }
@@ -528,6 +555,13 @@ export function createEngine(mod: MathModule): LiveEngine {
           const prev = ctx.previous;
           if (prev && prev.kind === "function" && prev.plot && out.plot) {
             out.verdict = expressionsEquivalent(math, prev.plot.expr, out.plot.expr, ["x"]);
+          }
+          // `x + y = 10` then `y = 10 - x`: the student isolated y — a step to check, not only
+          // a function to graph. (`y = ...` under another `y = ...` is the comparison above.)
+          const prevRel = fn.name === "y" && prev?.kind !== "function" ? multiRelationFromAnalysis(math, prev) : null;
+          if (prevRel) {
+            const cur = parseRelation(math, `y == ${t.source}`);
+            if (cur) out.verdict = compareMultiRelations(math, prevRel, cur);
           }
         } catch (e) {
           out.error = errorMessage(e);

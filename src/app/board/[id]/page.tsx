@@ -72,6 +72,7 @@ import { useLiveMath } from "@/lib/live/useLiveMath";
 import { runVoiceTool, voiceSessionTools, VOICE_SESSION_INSTRUCTIONS } from "@/lib/live/voiceTools";
 import { useLiveSettings } from "@/lib/live/liveSettings";
 import { ScreenStrip } from "@/components/screens/ScreenStrip";
+import { LiveDebugPanel } from "@/components/live/LiveDebugPanel";
 import { ScreenBackground, ScreenFrame } from "@/components/screens/ScreenFrame";
 import { applyScreenCamera } from "@/lib/screens/screens";
 import { useScreenCamera } from "@/lib/screens/useScreenCamera";
@@ -841,6 +842,7 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
           <CreditsBanner />
         </div>
       )}
+      <LiveDebugPanel />
       {toolbar.showHintLayer && (
         <LiveErrorBoundary>
           <LiveHintLayer editor={editor} controller={controller} />

@@ -504,3 +504,42 @@ describe("engine: regression net — everything that already worked", () => {
     expect(engine.calculate("5 km/h to m/s")).toEqual({ latex: "1.389\\,\\mathrm{m/s}" });
   });
 });
+
+describe("engine: steps with two or more unknowns (x and y)", () => {
+  const step = (prev: string, line: string) =>
+    engine.analyzeLine(line, { previous: engine.analyzeLine(prev, { mode: "feedback" }), mode: "feedback" });
+
+  it.each([
+    ["x+y=10", "y=10-x"],
+    ["2x+3y=12", "3y=12-2x"],
+    ["3y=12-2x", "y=4-\\frac{2}{3}x"],
+    ["2(x+y)=10", "x+y=5"],
+    ["xy=6", "y=\\frac{6}{x}"],
+    ["2x+3y=12", "x=\\frac{12-3y}{2}"],
+  ])("%s → %s is a correct step", (prev, line) => {
+    expect(step(prev, line).verdict).toBe("ok");
+  });
+
+  it.each([
+    ["x+y=10", "y=5-x"],
+    ["2x+3y=12", "3y=12+2x"],
+    ["2(x+y)=10", "x+y=4"],
+    // squaring both sides adds x + y = -10: not the same equation any more
+    ["x+y=10", "(x+y)^2=100"],
+  ])("%s → %s is flagged", (prev, line) => {
+    expect(step(prev, line).verdict).toBe("mismatch");
+  });
+
+  it("a first line in two unknowns has nothing to be checked against (left to the model)", () => {
+    expect(engine.analyzeLine("x+y=10", { mode: "feedback" }).verdict).toBe("unknown");
+  });
+
+  it("a step that brings in a new unknown is not guessed at", () => {
+    expect(step("x+y=10", "y=10-z").verdict).not.toBe("ok");
+    expect(step("x+y=10", "x+y+z=10").verdict).toBe("unknown");
+  });
+
+  it("isolating y still draws the graph", () => {
+    expect(step("x+y=10", "y=10-x").plot?.expr).toBe("10 - x");
+  });
+});

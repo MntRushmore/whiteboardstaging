@@ -169,6 +169,8 @@ any student ink, anywhere (incl. pen-down, drag, erase)
   → re-render only → the held-back ANSWER lands  (no re-recognition, no model call)
 ```
 
+**Dev: the Mathpix panel (`LiveDebugPanel`).** In development (or with `LIVE_DEBUG=1` on the server plus `localStorage["agathon.liveDebug"] = "1"` in the browser) `/api/live/recognize` returns the recognizer's raw JSON as `debug`, and a "Mathpix" button on the board opens a per-line view: the strokes exactly as sent, the LaTeX (raw and rendered), confidence, Mathpix's own `is_handwritten`, and the engine's kind, verdict, mathjs form and solutions. It separates "the pen / recognizer got it wrong" from "the maths engine could not check it".
+
 **Screens, not an infinite canvas (`src/lib/screens/**`).** A board is a stack of fixed 16:9
 screens, one tldraw page each, whose rect lives in `page.meta.screen` (1600×900 page units). The
 camera is held inside it (`cameraOptions.constraints`, `behavior: 'contain'`, `fit-max`), the strip
@@ -232,6 +234,7 @@ lines as the question and asks for assignment steps (`v = \frac{60}{2}`, then `v
 | Definite integrals: exact for a polynomial over rational limits, otherwise Simpson (1000 panels) to 4 s.f. | `\int_0^1 x^2 dx =` → `\frac{1}{3}`, `\int_0^{\pi} \sin x \, dx =` → `2` |
 | Finite sums `\sum_{i=a}^{b}` (integer limits, ≤ 10 000 terms) | `\sum_{i=1}^{10} i =` → `55`, `\sum_{i=1}^{3} \frac{1}{i} =` → `\frac{11}{6}` |
 | Single-variable equations (linear/quadratic/cubic exact, else numeric), step equivalence, chemistry balancing | `x^2 - 5x + 6 = 0` → `x = 2 \text{ or } x = 3` |
+| Steps in two or more unknowns (same solution set: pin all but one unknown, solve along it, check both ways; `compareMultiRelations`). Checks the step, does not solve the system | `x + y = 10` → `y = 10 - x` ✓, `y = 5 - x` flagged, `(x+y)^2 = 100` flagged |
 
 | Refused (`kind: 'unknown'`, no result) | Why |
 |---|---|
