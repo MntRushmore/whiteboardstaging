@@ -92,7 +92,7 @@ export async function POST(req: Request) {
 
         const ms = Date.now() - startedAt;
         log.info(
-          { model, ms, ttfaMs: firstAt === null ? null : firstAt - startedAt, sent, dropped, parsed: count, invalid, lines: data.lines.length, mode: data.mode },
+          { model, ms, ttfaMs: firstAt === null ? null : firstAt - startedAt, sent, dropped, parsed: count, invalid, lines: data.lines.length, mode: data.mode, crop: Boolean(data.crop) },
           "check completed",
         );
         emit("done", { count: sent, ms });

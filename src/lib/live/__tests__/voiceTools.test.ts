@@ -42,6 +42,7 @@ function controllerOverStore(): { controller: LiveController; placeMath: ReturnT
     plotFunction,
     requestCheck: () => {},
     requestSolve: () => {},
+    requestHelp: () => {},
     escalate: () => {},
     dismissHint: () => {},
     clearMarks: () => {},

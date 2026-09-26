@@ -92,7 +92,7 @@ import {
   rectMaxY,
   rectsIntersect,
 } from "./placement";
-import { badgeFor, decide, localNoteFor, type PolicyDecision } from "./policy";
+import { badgeFor, decide, isSingleSymbolLatex, localNoteFor, type PolicyDecision } from "./policy";
 import { createSolveStepGuard, engineParsesStep, localAnswerFor, localAnswerStep } from "./solveSteps";
 import {
   RecognizeClient,
@@ -157,7 +157,16 @@ interface LineRuntime {
   graphDismissedExpr: string | null;
 }
 
-type CheckOpts = { userAsked: boolean; modeOverride?: "feedback" | "suggest"; forceHint?: boolean };
+type CheckOpts = {
+  userAsked: boolean;
+  modeOverride?: "feedback" | "suggest";
+  forceHint?: boolean;
+  /**
+   * "Ask about this": a crop of the focus line's ink for the check model. Only ever set by
+   * `requestHelp` on ink Live could not read as maths; the answer is a typeset note.
+   */
+  crop?: string;
+};
 type SolveOpts = { onlyFirstStep?: boolean; lineId: string };
 
 /** What `retryLastError` re-runs; captured at the moment a call fails. */
@@ -539,7 +548,7 @@ export class LiveLoop implements LiveController {
         return;
       case "check": {
         const st = lines[ctx.lineId];
-        if (!st?.latex) {
+        if (!st || (!st.latex && !ctx.opts.crop)) {
           clearLiveError();
           return;
         }
@@ -1671,8 +1680,9 @@ export class LiveLoop implements LiveController {
   }
 
   // ---------------------------------------------------------------- LLM check
-  private buildCheckLines(column: number): { lines: CheckLine[]; region: Rect; states: LiveLineState[] } | null {
-    const states = this.columnLines(column).filter((s) => s.latex);
+  /** `withLineId` keeps that line even with no LaTeX (the "Ask about this" crop's line). */
+  private buildCheckLines(column: number, withLineId?: string): { lines: CheckLine[]; region: Rect; states: LiveLineState[] } | null {
+    const states = this.columnLines(column).filter((s) => s.latex || s.line.id === withLineId);
     if (states.length === 0) return null;
     const region = expandRect(unionRects(states.map((s) => s.line.bounds)), 24);
     const lines: CheckLine[] = states.slice(-LIVE_LIMITS.maxLinesPerCheck).map((s) => ({
@@ -1693,10 +1703,12 @@ export class LiveLoop implements LiveController {
     const mode = this.opts.mode;
     if (mode === "off" || this.opts.voiceActive || !this.opts.enabled) return;
     const checkMode: "feedback" | "suggest" = opts.modeOverride ?? (mode === "feedback" ? "feedback" : "suggest");
-    const built = this.buildCheckLines(column);
+    const built = this.buildCheckLines(column, opts.crop ? focusLineId : undefined);
     if (!built) return;
     if (!this.deps.isOnline()) {
-      this.deferLlm("check", focusLineId, opts.userAsked);
+      // A crop is a picture of this moment's ink: it is not queued for a reconnect.
+      if (!opts.crop) this.deferLlm("check", focusLineId, opts.userAsked);
+      else liveStore.status.set("offline");
       return;
     }
     const rt = this.runtime(focusLineId);
@@ -1711,6 +1723,9 @@ export class LiveLoop implements LiveController {
       focusLineId,
       userAsked: opts.userAsked,
     };
+    // Never on an automatic check: the schema refuses a crop without userAsked, and only
+    // requestHelp (an explicit tap) ever sets one.
+    if (opts.crop && opts.userAsked) req.crop = opts.crop;
     const startedAt = this.deps.now();
     const errCtx = { kind: "check" as const, lineId: focusLineId, userAsked: opts.userAsked };
     const retry: RetryContext = { kind: "check", lineId: focusLineId, opts };
@@ -1726,7 +1741,8 @@ export class LiveLoop implements LiveController {
               first = false;
               clientMetric("live.check.ttfa.ms", { ms: this.deps.now() - startedAt, lineId: focusLineId });
             }
-            this.applyAnnotation(ev.data, focusLineId, checkMode, opts.forceHint ?? false);
+            if (req.crop) this.applyAskNote(ev.data, focusLineId, checkMode);
+            else this.applyAnnotation(ev.data, focusLineId, checkMode, opts.forceHint ?? false);
           } else if (ev.event === "error") {
             failed = true;
             console.warn("[live] check error", ev.data);
@@ -1737,7 +1753,7 @@ export class LiveLoop implements LiveController {
         if (!isAbortLike(err) && !ctrl.signal.aborted) {
           failed = true;
           // A network failure is also deferred so a reconnect replays it once, as before.
-          if (this.isNetworkFailure(err)) this.deferLlm("check", focusLineId, opts.userAsked);
+          if (this.isNetworkFailure(err) && !req.crop) this.deferLlm("check", focusLineId, opts.userAsked);
           else console.warn("[live] check failed", err);
           if (this.deps.isOnline()) this.fail(err, errCtx, retry);
         }
@@ -1794,6 +1810,21 @@ export class LiveLoop implements LiveController {
     } else {
       rt.shownHintTexts.add(a.message);
     }
+  }
+
+  /**
+   * The answer to "Ask about this" (Help on ink Live could not read as maths): each annotation
+   * becomes a typeset note beside the ink. There is usually no echo to carry it — a diagram or
+   * an unreadable line has none — and the chip on a failed read belongs to Retry.
+   */
+  private applyAskNote(a: Annotation, focusLineId: string, checkMode: "feedback" | "suggest"): void {
+    const lineId = a.lineId ?? focusLineId;
+    if (!liveStore.lines.get()[lineId]) return;
+    const text = checkMode === "suggest" && a.question ? `${a.message} ${a.question}` : a.message;
+    const rt = this.runtime(lineId);
+    if (rt.shownHintTexts.has(text)) return;
+    rt.shownHintTexts.add(text);
+    this.placeMath({ latex: textAsLatex(text), nearLineId: lineId, tone: "muted" });
   }
 
   /**
@@ -1955,13 +1986,17 @@ export class LiveLoop implements LiveController {
     if (!this.opts.enabled || this.opts.voiceActive) return;
     const built = this.buildCheckLines(column);
     if (!built) return;
+    // A word problem (prose the recognizer returned as `\text{...}`, kind 'text') has nothing
+    // for the engine to evaluate: the question itself goes to the model, which sets it up.
+    const target = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
+    const wordProblem = target?.analysis?.kind === "text";
     // The engine can solve most school lines itself, and the tutor can write that out by hand:
     // no model, no credits, no network. Anything it cannot draw falls through to the stream.
-    if (this.writeSolutionByHand(built, opts)) return;
+    if (!wordProblem && this.writeSolutionByHand(built, opts)) return;
     // ...and where the line is not an equation at all but a sum with an answer (`36 + 2 =`),
     // the engine still has that answer. It is written locally whatever the hand switch says:
     // deterministic maths NEVER goes through a model.
-    if (this.writeLocalAnswer(built, opts)) return;
+    if (!wordProblem && this.writeLocalAnswer(built, opts)) return;
     if (!this.deps.isOnline()) {
       this.deferLlm("solve", opts.lineId);
       return;
@@ -2352,6 +2387,44 @@ export class LiveLoop implements LiveController {
     return decision.showResult && this.inlineAnswer(state, decision);
   }
 
+  /**
+   * The board's one "Help" action, on the line the student touched last. Nothing here runs on
+   * a timer: every branch is an explicit request.
+   *
+   *  - ink Live could not read as maths (a failed or low-confidence read, a diagram label, a
+   *    lone symbol): "Ask about this" — a crop of that ink goes to the check model and the
+   *    answer comes back as a typeset note. Same price as any check.
+   *  - Solve: the worked solution (`requestSolve`), word problems included.
+   *  - Feedback / Suggest: that line's next hint (`escalate`).
+   */
+  requestHelp(): void {
+    if (!this.opts.enabled || this.opts.mode === "off") return;
+    const target = this.latestLine();
+    if (!target) return;
+    if (needsLook(target)) {
+      this.askAboutInk(target);
+      return;
+    }
+    if (this.opts.mode === "answer") this.requestSolve(target.line.id);
+    else this.escalate(target.line.id);
+  }
+
+  private askAboutInk(state: LiveLineState): void {
+    if (this.opts.voiceActive) return;
+    if (!this.deps.isOnline()) {
+      liveStore.status.set("offline");
+      return;
+    }
+    const lineId = state.line.id;
+    const checkMode: "feedback" | "suggest" = this.opts.mode === "feedback" ? "feedback" : "suggest";
+    void this.captureCrop(state.line).then((crop) => {
+      const cur = liveStore.lines.get()[lineId];
+      // No picture (no renderer, or over the size cap): nothing the model could look at.
+      if (!crop || !cur || !this.started) return;
+      this.startCheck(cur.line.column, lineId, { userAsked: true, modeOverride: checkMode, crop });
+    });
+  }
+
   /** feedback -> suggest -> one solve step for THIS line; the global mode never changes. */
   escalate(lineId: string): void {
     const target = liveStore.lines.get()[lineId];
@@ -2426,6 +2499,28 @@ export class LiveLoop implements LiveController {
       this.analyzeAndRender(lineId, { cascade: true });
     });
   }
+}
+
+/**
+ * Ink Live has nothing to reason about as maths: it could not be read (failed or
+ * low-confidence), or it reads as a diagram label or a lone symbol. Prose (`text`) is not in
+ * this list — a word problem is readable, and its words are the question.
+ */
+export function needsLook(state: Pick<LiveLineState, "latex" | "confidence" | "analysis">): boolean {
+  if (!state.latex.trim()) return true;
+  if (state.confidence < LIVE_LIMITS.minConfidence) return true;
+  if (state.analysis?.kind === "label") return true;
+  return isSingleSymbolLatex(state.latex);
+}
+
+/** Plain text as KaTeX `\text{...}`: groups and specials escaped, the rest dropped. */
+export function textAsLatex(text: string): string {
+  const body = text
+    .replace(/[\\^~]/g, " ")
+    .replace(/[{}$&#_%]/g, (c) => `\\${c}`)
+    .replace(/\s+/g, " ")
+    .trim();
+  return `\\text{${body}}`;
 }
 
 export function createLiveLoop(editor: LiveEditorLike, opts: UseLiveMathOptions, deps: Partial<LiveLoopDeps> = {}): LiveLoop {

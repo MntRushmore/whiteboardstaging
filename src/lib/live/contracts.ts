@@ -245,15 +245,26 @@ export const CheckLineSchema = z.object({
 });
 export type CheckLine = z.infer<typeof CheckLineSchema>;
 export const SUBJECTS = ["algebra", "geometry", "calculus", "physics", "chemistry", "other"] as const;
-export const CheckRequestSchema = z.object({
-  boardId: z.string().min(1).max(64),
-  mode: z.enum(["feedback", "suggest"]),
-  subject: z.enum(SUBJECTS).optional(),
-  region: RectSchema,
-  lines: z.array(CheckLineSchema).min(1).max(40),
-  focusLineId: z.string().max(64).optional(),
-  userAsked: z.boolean().default(false),
-});
+export const CheckRequestSchema = z
+  .object({
+    boardId: z.string().min(1).max(64),
+    mode: z.enum(["feedback", "suggest"]),
+    subject: z.enum(SUBJECTS).optional(),
+    region: RectSchema,
+    lines: z.array(CheckLineSchema).min(1).max(40),
+    focusLineId: z.string().max(64).optional(),
+    userAsked: z.boolean().default(false),
+    /**
+     * "Ask about this": a data:image crop of the focus line's ink, sent only when the student
+     * pressed Help on ink Live could not read as maths (a diagram, a sketch, unreadable
+     * writing). Same size cap as RecognizeRequest's crop. Never on an automatic check.
+     */
+    crop: z.string().startsWith("data:image/").max(280_000).optional(),
+  })
+  .refine((r) => !r.crop || (r.userAsked && Boolean(r.focusLineId)), {
+    message: "crop is only accepted on an explicit request for a focus line",
+    path: ["crop"],
+  });
 export type CheckRequest = z.infer<typeof CheckRequestSchema>;
 export const ANNOTATION_KINDS = [
   "arithmetic",
@@ -415,6 +426,12 @@ export interface LiveController {
   plotFunction(args: { expr: string; xMin?: number; xMax?: number; nearLineId?: string }): TLShapeId | null;
   requestCheck(lineId?: string): void;
   requestSolve(lineId?: string): void;
+  /**
+   * The board's one "Help" action, on the latest line: Solve writes the solution, Feedback /
+   * Suggest escalate that line's hint. Ink Live could not read as maths goes to the check
+   * model with a crop of the ink ("Ask about this"). Always explicit; never fired on a timer.
+   */
+  requestHelp(): void;
   escalate(lineId: string): void;
   dismissHint(hintId: string): void;
   clearMarks(): void;

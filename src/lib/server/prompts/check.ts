@@ -28,6 +28,13 @@ export const CHECK_SYSTEM_PROMPT = [
   "6. If everything is correct, emit nothing at all, unless the chain of work is complete (a final solved line), then emit exactly one praise of at most 8 words (verdict ok, kind praise).",
   "7. lineId must be one of the given line ids or null.",
   "8. Only flag lines whose local verdict is mismatch or unknown; never contradict an ok verdict.",
+  "9. A line of kind text is prose (often the question of a word problem). Use it as context; do not grade its wording.",
+  "",
+  "WHEN AN IMAGE IS ATTACHED: the student pressed Help on ink that could not be read as maths - a diagram, a sketch, a label or",
+  "unclear handwriting. The image is that ink (the focus line). Look at it and answer about THAT ink: one or two annotations with",
+  "lineId set to the focus line id, verdict info (or warn for a clear mistake), kind concept (or notation when it is simply",
+  "unreadable, asking them to rewrite it more clearly). Say what you see and give one useful next step. The same rules apply:",
+  "at most 18 words, never the final answer, and in suggest mode one Socratic question.",
 ].join("\n");
 
 function describeLine(line: CheckRequest["lines"][number], index: number): string {
@@ -38,13 +45,19 @@ function describeLine(line: CheckRequest["lines"][number], index: number): strin
   return parts.join("\n");
 }
 
-/** Build the chat messages for a check request. */
+/**
+ * Build the chat messages for a check request. With `crop` ("Ask about this", an explicit
+ * Help on ink that is not readable maths) the user turn becomes multimodal: the text plus the
+ * crop as an `image_url` part, which the check model (a vision-capable Flash) reads. The
+ * model only ever answers in text.
+ */
 export function buildCheckMessages(req: CheckRequest): ChatMessage[] {
   const user = [
     `mode: ${req.mode}`,
     req.subject ? `subject: ${req.subject}` : null,
     req.focusLineId ? `focus line id: ${req.focusLineId}` : null,
     `user asked for help: ${req.userAsked ? "yes" : "no"}`,
+    req.crop ? "image attached: the focus line's ink, which could not be read as maths" : null,
     "",
     "lines:",
     ...req.lines.map(describeLine),
@@ -53,8 +66,14 @@ export function buildCheckMessages(req: CheckRequest): ChatMessage[] {
   ]
     .filter((s): s is string => s !== null)
     .join("\n");
+  const content: ChatMessage["content"] = req.crop
+    ? [
+        { type: "text", text: user },
+        { type: "image_url", image_url: { url: req.crop } },
+      ]
+    : user;
   return [
     { role: "system", content: CHECK_SYSTEM_PROMPT },
-    { role: "user", content: user },
+    { role: "user", content },
   ];
 }

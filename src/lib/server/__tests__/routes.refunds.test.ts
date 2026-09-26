@@ -384,6 +384,47 @@ describe.each([
 });
 
 /* ------------------------------------------------------------------------- */
+/* live/check: "Ask about this" (a crop on an explicit Help)                  */
+/* ------------------------------------------------------------------------- */
+
+describe("live/check with a crop (Ask about this)", () => {
+  const CROP = "data:image/jpeg;base64,ZmFrZQ==";
+  const body = { boardId: "board-1", mode: "feedback", region: REGION, lines: LINES, focusLineId: "l2", userAsked: true, crop: CROP };
+
+  it("hands the crop to the check model as an image part and charges the ordinary check price", async () => {
+    fakeStream([{ type: "model", model: "google/gemini-3.5-flash" }, { type: "text", text: ANNOTATION_LINE }]);
+    const res = await liveCheck(request("/api/live/check", body));
+    expect(res.status).toBe(200);
+    expect((await readSse(res)).map((e) => e.event)).toEqual(["meta", "annotation", "done"]);
+
+    const [primary, , opts] = vi.mocked(streamWithFallback).mock.calls[0];
+    expect(primary).toBe("google/gemini-3.5-flash");
+    const user = opts.messages.find((m) => m.role === "user");
+    expect(user?.content).toEqual([
+      { type: "text", text: expect.stringContaining("focus line id: l2") },
+      { type: "image_url", image_url: { url: CROP } },
+    ]);
+    expect(callsTo("consume_credits")[0].args).toMatchObject({ p_route: "live/check", p_units: 3 });
+  });
+
+  it("refuses a crop on an automatic check (400 before any charge or model call)", async () => {
+    const res = await liveCheck(request("/api/live/check", { ...body, userAsked: false }));
+    expect(res.status).toBe(400);
+    expect(streamWithFallback).not.toHaveBeenCalled();
+    expect(callsTo("consume_credits")).toEqual([]);
+  });
+
+  it("a check without a crop stays text-only", async () => {
+    fakeStream([{ type: "model", model: "m1" }, { type: "text", text: ANNOTATION_LINE }]);
+    const { crop: _c, ...plain } = body;
+    void _c;
+    await readSse(await liveCheck(request("/api/live/check", plain)));
+    const user = vi.mocked(streamWithFallback).mock.calls[0][2].messages.find((m) => m.role === "user");
+    expect(typeof user?.content).toBe("string");
+  });
+});
+
+/* ------------------------------------------------------------------------- */
 /* Distributed rate limits through the routes                                 */
 /* ------------------------------------------------------------------------- */
 
