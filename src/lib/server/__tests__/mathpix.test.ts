@@ -84,6 +84,8 @@ describe("pure helpers", () => {
     expect(buildStrokesBody(PAYLOAD)).toEqual({
       strokes: { strokes: { x: PAYLOAD.x, y: PAYLOAD.y } },
       formats: ["latex_styled", "text"],
+      // never let Mathpix turn a line upside down (it read `3(x+2)=21` as `1 e=(e+x)ε`)
+      auto_rotate_confidence_threshold: 1,
     });
     expect(stripMathDelimiters("\\( 2x = 8 \\)")).toBe("2x = 8");
     expect(latexFromMathpix({ latex_styled: "2x=8", text: "\\(2x=8\\)" })).toBe("2x=8");

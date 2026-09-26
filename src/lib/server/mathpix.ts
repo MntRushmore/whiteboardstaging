@@ -86,6 +86,10 @@ export function buildStrokesBody(payload: StrokePayload, dataOptions?: Record<st
   const body: Record<string, unknown> = {
     strokes: { strokes: { x: payload.x, y: payload.y } },
     formats: ["latex_styled", "text"],
+    // Ink on a whiteboard is never upside down, but Mathpix's auto-rotation can decide it is:
+    // a student's `3(x+2)=21` (flat-topped 3, looped 2s) came back rotated 180° as
+    // `1 e=(e+x) \varepsilon` at 93 % confidence, and the model then "solved" that. 1 = never.
+    auto_rotate_confidence_threshold: 1,
   };
   if (dataOptions) body.data_options = dataOptions;
   return body;

@@ -69,6 +69,9 @@ function LineCard({ state, record }: { state: LiveLineState; record: LiveDebugRe
           {record && record.response.text !== state.latex && <Row k="text" v={<code className="break-all">{record.response.text}</code>} />}
           <Row k="confidence" v={<Confidence value={state.confidence} />} />
           {raw && typeof raw.is_handwritten === "boolean" && <Row k="handwritten" v={String(raw.is_handwritten)} />}
+          {raw && typeof raw.auto_rotate_degrees === "number" && raw.auto_rotate_degrees !== 0 && (
+            <Row k="rotated" v={<span className="text-red-700">{raw.auto_rotate_degrees}° (Mathpix turned the ink)</span>} />
+          )}
           {record && <Row k="recognize kind" v={record.response.kind} />}
         </div>
       </div>
