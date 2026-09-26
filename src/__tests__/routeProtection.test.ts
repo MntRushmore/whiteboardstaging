@@ -258,7 +258,7 @@ describe("scripts/lib/routes.mjs registry matches the filesystem", () => {
       expect(route.status, route.file).toMatch(/^(active|deprecated: .+)$/);
     }
     const deprecated = API_ROUTES.filter((r) => r.status.startsWith("deprecated")).map((r) => r.path).sort();
-    expect(deprecated).toEqual(["/api/check-help-needed", "/api/ocr"]);
+    expect(deprecated).toEqual([]);
   });
 
   it("deprecated routes are not referenced by client code", () => {

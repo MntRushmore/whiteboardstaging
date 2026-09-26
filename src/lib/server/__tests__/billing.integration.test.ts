@@ -75,7 +75,7 @@ suite(title, () => {
   it("a user cannot call the RPC with someone else's token shape (anon is rejected)", async () => {
     const env = resolveSupabaseEnv(process.env);
     const anon = createClient(env.url!, env.anonKey!, { auth: { persistSession: false } });
-    const { error } = await anon.rpc("consume_credits", { p_route: "ocr", p_units: 1 });
+    const { error } = await anon.rpc("consume_credits", { p_route: "live/check", p_units: 1 });
     expect(error).not.toBeNull();
   });
 
@@ -89,7 +89,7 @@ suite(title, () => {
     expect(updErr).toBeNull();
 
     const { count: eventsBefore } = await admin.from("usage_events").select("id", { count: "exact", head: true }).eq("user_id", userId);
-    const result = await consumeCredits({ token, route: "generate-solution", requestId: `it-zero-${Date.now()}` });
+    const result = await consumeCredits({ token, route: "live/solve", requestId: `it-zero-${Date.now()}` });
     expect(result).toEqual({ ok: false, reason: "insufficient_credits", remaining: 0 });
     const { count: eventsAfter } = await admin.from("usage_events").select("id", { count: "exact", head: true }).eq("user_id", userId);
     expect(eventsAfter).toBe(eventsBefore);

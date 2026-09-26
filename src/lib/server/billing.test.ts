@@ -61,11 +61,7 @@ describe("ROUTE_COSTS", () => {
       "live/recognize": 1,
       "live/check": 3,
       "live/solve": 10,
-      "generate-solution": 25,
-      "generate-worksheet": 20,
       "voice/analyze-workspace": 3,
-      ocr: 2,
-      "check-help-needed": 2,
       credits: 0,
       "config/status": 0,
       "voice/token": 0,
@@ -121,20 +117,20 @@ describe("consumeErrorToResult", () => {
 });
 
 describe("consumeCredits", () => {
-  const input = { token: "jwt", route: "generate-solution" as const, requestId: "req-1", model: "google/gemini-3-pro-image-preview" };
+  const input = { token: "jwt", route: "live/solve" as const, requestId: "req-1", model: "anthropic/claude-sonnet-5" };
 
   it("calls consume_credits with the route cost and metadata", async () => {
     const client = fakeRpc({ data: { ok: true, remaining: 275, reason: null } });
     await expect(consumeCredits(input, client)).resolves.toEqual({ ok: true, remaining: 275 });
     expect(client.calls).toEqual([
-      { fn: "consume_credits", args: { p_route: "generate-solution", p_units: 25, p_request_id: "req-1", p_model: "google/gemini-3-pro-image-preview" } },
+      { fn: "consume_credits", args: { p_route: "live/solve", p_units: 10, p_request_id: "req-1", p_model: "anthropic/claude-sonnet-5" } },
     ]);
   });
 
   it("sends p_model null when no model is given", async () => {
     const client = fakeRpc({ data: { ok: true, remaining: 1 } });
-    await consumeCredits({ token: "jwt", route: "ocr", requestId: "r" }, client);
-    expect(client.calls[0].args).toMatchObject({ p_units: 2, p_model: null });
+    await consumeCredits({ token: "jwt", route: "live/check", requestId: "r" }, client);
+    expect(client.calls[0].args).toMatchObject({ p_units: 3, p_model: null });
   });
 
   it("short-circuits zero-cost routes without touching the database", async () => {

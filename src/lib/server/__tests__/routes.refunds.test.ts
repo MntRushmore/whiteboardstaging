@@ -5,7 +5,7 @@
  * is driven through its real handler so the requestId that is charged is provably the one
  * that is refunded.
  *
- *  - non-streaming routes: charged then refunded on any non-2xx; not refunded on a 2xx
+ *  - non-streaming routes (voice/analyze-workspace): charged then refunded on any non-2xx; not refunded on a 2xx
  *  - live/recognize: refunded on `recognizer_failed` and on a thrown upstream error
  *  - live/check + live/solve (SSE): refunded only when the stream fails before the first
  *    annotation / step; a later failure keeps the charge
@@ -54,10 +54,6 @@ import { resetServerEnvCache } from "@/lib/env";
 import { resetBillingWarnings } from "@/lib/server/billing";
 import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rate-limit";
 import { CreditsExhaustedError, UpstreamError, chatJson, openrouterChat, streamWithFallback, type FallbackStreamEvent } from "@/lib/server/openrouter";
-import { POST as generateSolution } from "@/app/api/generate-solution/route";
-import { POST as generateWorksheet } from "@/app/api/generate-worksheet/route";
-import { POST as checkHelpNeeded } from "@/app/api/check-help-needed/route";
-import { POST as ocr } from "@/app/api/ocr/route";
 import { POST as analyzeWorkspace } from "@/app/api/voice/analyze-workspace/route";
 import { POST as recognize } from "@/app/api/live/recognize/route";
 import { POST as liveCheck } from "@/app/api/live/check/route";
@@ -184,14 +180,9 @@ type Family = {
   okReply: unknown;
 };
 
-const IMAGE_REPLY = { choices: [{ message: { content: "", images: [{ image_url: { url: IMAGE } }] } }], usage: { total_tokens: 10 } };
-const TEXT_REPLY = { choices: [{ message: { content: '{"needsHelp":true,"confidence":0.7,"reason":"stuck"}' } }], usage: { total_tokens: 5 } };
+const TEXT_REPLY = { choices: [{ message: { content: "The student is solving 2x+3=11 and is on the last step." } }], usage: { total_tokens: 5 } };
 
 const FAMILIES: Family[] = [
-  { name: "generate-solution", handler: generateSolution, path: "/api/generate-solution", body: { image: IMAGE }, route: "generate-solution", cost: 25, okReply: IMAGE_REPLY },
-  { name: "generate-worksheet", handler: generateWorksheet, path: "/api/generate-worksheet", body: { topic: "fractions" }, route: "generate-worksheet", cost: 20, okReply: IMAGE_REPLY },
-  { name: "check-help-needed", handler: checkHelpNeeded, path: "/api/check-help-needed", body: { text: "2x+3=11" }, route: "check-help-needed", cost: 2, okReply: TEXT_REPLY },
-  { name: "ocr", handler: ocr, path: "/api/ocr", body: { image: IMAGE }, route: "ocr", cost: 2, okReply: TEXT_REPLY },
   { name: "voice/analyze-workspace", handler: analyzeWorkspace, path: "/api/voice/analyze-workspace", body: { image: IMAGE }, route: "voice/analyze-workspace", cost: 3, okReply: TEXT_REPLY },
 ];
 
@@ -248,24 +239,6 @@ describe.each(FAMILIES)("$name: charge + refund", (family) => {
     expect((await family.handler(request(family.path, family.body))).status).toBe(502);
     expect(callsTo("consume_credits")).toEqual([]);
     expect(callsTo("refund_credits")).toEqual([]);
-  });
-});
-
-describe("2xx edge cases are never refunded", () => {
-  it("generate-solution: a text-only model answer is a 200 `success: false` and keeps the charge", async () => {
-    vi.mocked(openrouterChat).mockResolvedValue({ choices: [{ message: { content: "No help needed." } }] } as never);
-    const res = await generateSolution(request("/api/generate-solution", { image: IMAGE }));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ success: false, imageUrl: null });
-    expectChargedNotRefunded();
-  });
-
-  it("generate-worksheet: a no-image answer is a 502 and IS refunded", async () => {
-    vi.mocked(openrouterChat).mockResolvedValue({ choices: [{ message: { content: "Here is a worksheet." } }] } as never);
-    const res = await generateWorksheet(request("/api/generate-worksheet", { topic: "fractions" }));
-    expect(res.status).toBe(502);
-    expect(await res.json()).toMatchObject({ error: "upstream_error", reason: "no_image" });
-    expectChargedAndRefunded();
   });
 });
 
@@ -447,7 +420,7 @@ describe("distributed rate limits through the routes", () => {
 
   it("the rate limit runs before the charge: a denied hit never calls consume_credits", async () => {
     fake.replies.rate_limit_hit = () => ({ data: { allowed: false, remaining: 0, retry_after_ms: 1_000 } });
-    const res = await generateWorksheet(request("/api/generate-worksheet", { topic: "fractions" }));
+    const res = await analyzeWorkspace(request("/api/voice/analyze-workspace", { image: IMAGE }));
     expect(res.status).toBe(429);
     expect(callsTo("consume_credits")).toEqual([]);
     expect(openrouterChat).not.toHaveBeenCalled();
@@ -463,15 +436,15 @@ describe("distributed rate limits through the routes", () => {
 
   it("when rate_limit_hit errors the in-memory limiter answers instead and still enforces the bucket (backend 'memory')", async () => {
     fake.replies.rate_limit_hit = () => ({ error: { message: "Could not find the function public.rate_limit_hit in the schema cache", code: "PGRST202" } });
-    vi.mocked(openrouterChat).mockResolvedValue(IMAGE_REPLY as never);
-    // generateWorksheet is 4/min: four succeed, the fifth is limited by the fallback.
-    for (let i = 0; i < 4; i++) {
-      expect((await generateWorksheet(request("/api/generate-worksheet", { topic: "fractions" }))).status).toBe(200);
+    vi.mocked(openrouterChat).mockResolvedValue(TEXT_REPLY as never);
+    // analyzeWorkspace is 30/min: thirty succeed, the 31st is limited by the fallback.
+    for (let i = 0; i < 30; i++) {
+      expect((await analyzeWorkspace(request("/api/voice/analyze-workspace", { image: IMAGE }))).status).toBe(200);
     }
-    const limited = await generateWorksheet(request("/api/generate-worksheet", { topic: "fractions" }));
+    const limited = await analyzeWorkspace(request("/api/voice/analyze-workspace", { image: IMAGE }));
     expect(limited.status).toBe(429);
     expect(await limited.json()).toMatchObject({ error: "rate_limited", backend: "memory" });
-    expect(callsTo("rate_limit_hit").length, "the RPC is retried on every request").toBe(5);
+    expect(callsTo("rate_limit_hit").length, "the RPC is retried on every request").toBe(31);
   });
 
   it("RATE_LIMIT_BACKEND=memory never calls the RPC and reports backend 'memory' on the 429", async () => {
@@ -514,13 +487,9 @@ describe("static: every route that charges credits refunds through runCharged / 
 
   it("finds the charged routes", () => {
     expect(charged).toEqual([
-      "src/app/api/check-help-needed/route.ts",
-      "src/app/api/generate-solution/route.ts",
-      "src/app/api/generate-worksheet/route.ts",
       "src/app/api/live/check/route.ts",
       "src/app/api/live/recognize/route.ts",
       "src/app/api/live/solve/route.ts",
-      "src/app/api/ocr/route.ts",
       "src/app/api/voice/analyze-workspace/route.ts",
     ]);
   });

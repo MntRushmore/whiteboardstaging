@@ -2,22 +2,11 @@ import type { z } from "zod";
 import { getServerEnv } from "@/lib/env";
 
 /**
- * Image-generation models on OpenRouter (verified against /api/v1/models on 2026-09-11).
- * Note: `openai/gpt-image-1` does NOT exist on OpenRouter; the GPT option maps to gpt-5.4-image-2.
+ * Text / vision models on OpenRouter for the non-Live routes. The app never calls an
+ * image-GENERATION model: AI output is always text/LaTeX the client renders ("read, never paint").
  */
-export const IMAGE_MODELS = {
-  gemini: "google/gemini-3-pro-image-preview",
-  "gemini-fast": "google/gemini-2.5-flash-image",
-  gpt: "openai/gpt-5.4-image-2",
-} as const;
-
-export type ImageModelKey = keyof typeof IMAGE_MODELS;
-
-/** Text / vision models on OpenRouter used by the non-image routes. */
 export const TEXT_MODELS = {
   fast: "google/gemini-3.5-flash",
-  cheap: "google/gemini-3.1-flash-lite",
-  helpCheck: "openai/gpt-4.1-mini",
 } as const;
 
 export const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -68,7 +57,6 @@ export type OpenRouterMessage = {
   role?: string;
   content?: unknown;
   text?: unknown;
-  images?: unknown;
 };
 
 export type OpenRouterChatResponse = {
@@ -112,55 +100,6 @@ export async function openrouterChat(
   }
 
   return (await response.json()) as OpenRouterChatResponse;
-}
-
-/**
- * Pull a generated image (data URL or https URL) out of a chat message as
- * flexibly as possible — providers structure image outputs differently.
- * Mirrors the extraction logic that generate-solution has always used.
- */
-export function extractImageUrl(message: OpenRouterMessage | undefined | null): string | null {
-  let imageUrl: string | null = null;
-
-  // 1) Legacy / hypothetical format: message.images[0].image_url.url
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const legacyImages = (message as any)?.images;
-  if (Array.isArray(legacyImages) && legacyImages.length > 0) {
-    const first = legacyImages[0];
-    imageUrl = first?.image_url?.url ?? first?.url ?? null;
-  }
-
-  // 2) OpenAI-style content array: look for any image-like item
-  if (!imageUrl) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const content = (message as any)?.content;
-
-    if (Array.isArray(content)) {
-      for (const part of content) {
-        if (part?.type === "image_url" && part.image_url?.url) {
-          imageUrl = part.image_url.url;
-          break;
-        }
-        if (part?.type === "output_image" && (part.url || part.image_url?.url)) {
-          imageUrl = part.url || part.image_url?.url;
-          break;
-        }
-      }
-    } else if (typeof content === "string") {
-      // 3) Fallback: scan text content for a plausible image URL or data URL
-      const text: string = content;
-      const dataUrlMatch = text.match(/data:image\/[a-zA-Z+]+;base64,[^\s")'}]+/);
-      const httpUrlMatch = text.match(/https?:\/\/[^\s")'}]+?\.(?:png|jpg|jpeg|gif|webp)/i);
-
-      if (dataUrlMatch) {
-        imageUrl = dataUrlMatch[0];
-      } else if (httpUrlMatch) {
-        imageUrl = httpUrlMatch[0];
-      }
-    }
-  }
-
-  return imageUrl;
 }
 
 /* ------------------------------------------------------------------------- */

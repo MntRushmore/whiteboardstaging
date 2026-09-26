@@ -6,7 +6,9 @@
  * filesystem and that every file honours the auth / rate-limit / zod invariants).
  *
  * Adding a route: create src/app/api/<path>/route.ts AND add an entry here, or the
- * unit test fails. Never delete or rename a path that shipped: mark it deprecated.
+ * unit test fails. Prefer marking a shipped path deprecated over renaming it; a route that is
+ * removed on purpose (the image pipeline: generate-solution, generate-worksheet, ocr,
+ * check-help-needed) leaves the filesystem and this list in the same change.
  *
  * Fields
  *   path        URL path
@@ -70,16 +72,6 @@ export const API_ROUTES = Object.freeze([
     status: "active",
   },
   {
-    path: "/api/check-help-needed",
-    file: "src/app/api/check-help-needed/route.ts",
-    methods: ["POST"],
-    auth: "user",
-    limit: "checkHelp",
-    body: "zod",
-    purpose: "Text/image heuristic: does the student look stuck?",
-    status: "deprecated: unused by the client",
-  },
-  {
     path: "/api/config/status",
     file: "src/app/api/config/status/route.ts",
     methods: ["GET"],
@@ -98,26 +90,6 @@ export const API_ROUTES = Object.freeze([
     limit: "credits",
     body: "none",
     purpose: "OpenRouter balance for the low-credit banner",
-    status: "active",
-  },
-  {
-    path: "/api/generate-solution",
-    file: "src/app/api/generate-solution/route.ts",
-    methods: ["POST"],
-    auth: "user",
-    limit: "generateSolution",
-    body: "zod",
-    purpose: "Canvas PNG -> AI overlay image (feedback/suggest/answer)",
-    status: "active",
-  },
-  {
-    path: "/api/generate-worksheet",
-    file: "src/app/api/generate-worksheet/route.ts",
-    methods: ["POST"],
-    auth: "user",
-    limit: "generateWorksheet",
-    body: "zod",
-    purpose: "Topic -> worksheet image",
     status: "active",
   },
   {
@@ -149,16 +121,6 @@ export const API_ROUTES = Object.freeze([
     body: "zod",
     purpose: "Live Math: SSE worked solution steps",
     status: "active",
-  },
-  {
-    path: "/api/ocr",
-    file: "src/app/api/ocr/route.ts",
-    methods: ["POST"],
-    auth: "user",
-    limit: "ocr",
-    body: "zod",
-    purpose: "Image -> plain text via a vision model",
-    status: "deprecated: unused by the client",
   },
   {
     path: "/api/voice/analyze-workspace",

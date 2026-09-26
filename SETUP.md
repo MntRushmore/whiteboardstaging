@@ -18,7 +18,7 @@ Then fill in `.env.local`:
 
 | Variable | Required? | Get it from | Powers |
 | --- | --- | --- | --- |
-| `OPENROUTER_API_KEY` | **Yes** | <https://openrouter.ai/keys> | Hints/solutions, worksheets, help detection, voice analysis, credit display |
+| `OPENROUTER_API_KEY` | **Yes** | <https://openrouter.ai/keys> | Live Math checks, hints and worked solutions, vision fallback recognizer, voice analysis, credit display |
 | `OPENAI_API_KEY` | No | <https://platform.openai.com/api-keys> | Realtime voice tutor |
 | `MATHPIX_APP_ID` + `MATHPIX_APP_KEY` | No | <https://console.mathpix.com/> | Realtime handwritten-math recognition (falls back to OpenRouter vision) |
 | `SUPABASE_SERVICE_ROLE_KEY` | No | your own Supabase project | Server-only admin tasks (never sent to the browser) |
