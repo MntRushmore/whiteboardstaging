@@ -133,6 +133,29 @@ describe("live loop — solving from the lines above", () => {
     expect((tutor()[0].meta as Record<string, unknown>).solvedLatex).toBe("x+9=18 ; x = 9");
   });
 
+  it("Solve on an expression in x simplifies it by hand, as a chain of `=` lines, no model", async () => {
+    const line = await penLine(0, "3(x+2)-x");
+    loop.requestSolve(line);
+    await quiesce();
+    expect(streamCalls).toEqual([]);
+    expect(handBlocks()).toBe(1);
+    expect((tutor()[0].meta as Record<string, unknown>).solvedLatex).toBe("= 3x + 6 - x ; = 2x + 6");
+    // pressed again: the same working is already on the page
+    const shapes = tutor().length;
+    loop.requestSolve(line);
+    await quiesce();
+    expect(tutor().length).toBe(shapes);
+  });
+
+  it("Solve on an inequality writes the steps by hand, no model", async () => {
+    const line = await penLine(0, "-2x+1<7");
+    loop.requestSolve(line);
+    await quiesce();
+    expect(streamCalls).toEqual([]);
+    expect(handBlocks()).toBe(1);
+    expect((tutor()[0].meta as Record<string, unknown>).solvedLatex).toBe("-2x+1<7");
+  });
+
   it("the model's steps: no copy of the student's line, no repeated boxed answer, and a second solve replaces the first", async () => {
     // three unknowns in one line: nothing the engine can solve, so the model is asked
     const line = await penLine(0, "x+y+z=6");

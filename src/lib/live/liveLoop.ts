@@ -2027,6 +2027,8 @@ export class LiveLoop implements LiveController {
     // A line that needs the ones above it — `x = ?` under `x + y = 18` and `y = 9`, or two
     // equations in x and y — is solved from the column, still by hand and still locally.
     if (!wordProblem && this.writeContextSolution(built, opts)) return;
+    // An expression in an unknown (`3(x+2) - x`) is simplified the way a teacher writes it.
+    if (!wordProblem && this.writeSimplification(built, opts)) return;
     // ...and where the line is not an equation at all but a sum with an answer (`36 + 2 =`),
     // the engine still has that answer. It is written locally whatever the hand switch says:
     // deterministic maths NEVER goes through a model.
@@ -2179,6 +2181,38 @@ export class LiveLoop implements LiveController {
     const lastLine = built.states[built.states.length - 1].line.bounds;
     steps.forEach((step, i) => this.placeSolutionStep(column, lastLine, i + 1, step, "", opts.lineId));
     clientMetric("live.solve.context", { lineId: opts.lineId, steps: steps.length });
+    return true;
+  }
+
+  /**
+   * `engine.simplifySteps` on the asked-for line: `3(x+2) - x` → `= 3x + 6 - x`, `= 2x + 6`,
+   * written under it as a student continues a chain. Same shape as `writeContextSolution`.
+   */
+  private writeSimplification(built: { states: LiveLineState[] }, opts: SolveOpts): boolean {
+    const engine = this.engine;
+    if (!engine?.simplifySteps) return false;
+    const state = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
+    if (!state?.latex) return false;
+    let simplified: string[] | null = null;
+    try {
+      simplified = engine.simplifySteps(state.latex);
+    } catch (e) {
+      console.warn("[live] simplifySteps threw", e);
+      return false;
+    }
+    if (!simplified || simplified.length === 0) return false;
+    const all = simplified.map(localAnswerStep);
+    const steps = (opts.onlyFirstStep ? all.slice(0, 1) : all).slice(0, LIVE_LIMITS.maxSolveSteps);
+    const key = steps.join(" ; ");
+    if (!opts.onlyFirstStep && this.hasHandSolution(opts.lineId, key)) return true;
+    if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return true;
+    this.clearSolveOutput(built.states);
+    const meta = opts.onlyFirstStep ? undefined : { [SOLVED_META]: key };
+    if (this.deps.handwritingEnabled() && this.drawStepsByHand(built, opts, state, steps, meta)) return true;
+    const column = unionRects(built.states.map((s) => s.line.bounds));
+    const lastLine = built.states[built.states.length - 1].line.bounds;
+    steps.forEach((step, i) => this.placeSolutionStep(column, lastLine, i + 1, step, "", opts.lineId));
+    clientMetric("live.solve.simplify", { lineId: opts.lineId, steps: steps.length });
     return true;
   }
 
