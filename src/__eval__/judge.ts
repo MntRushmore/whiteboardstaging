@@ -509,7 +509,7 @@ function listPieces(latex: string): string[] {
     const ch = latex[i];
     if (ch === "{" || ch === "(" || ch === "[") depth++;
     else if (ch === "}" || ch === ")" || ch === "]") depth--;
-    else if (ch === "," && depth === 0) {
+    else if (ch === "," && depth === 0 && latex[i - 1] !== "\\") {
       out.push(latex.slice(start, i));
       start = i + 1;
     }
@@ -578,7 +578,10 @@ function asideOf(latex: string, cur: Parsed, ctx: Asides, transition: Transition
       if (u && du && (named.has("u") || named.has("du"))) checks.push(isAntiderivative(u, du, x));
       if (v && dv && (named.has("v") || named.has("dv"))) checks.push(isAntiderivative(v, dv, x));
       if (checks.includes("different")) return { status: "broken", reason: "du is not u' dx, or v' is not dv" };
-      return checks.length > 0 && checks.every((c) => c === "equal") ? ok("the parts agree") : { status: "unverified", reason: "the parts of integration by parts" };
+      if (checks.length > 0 && checks.every((c) => c === "equal")) return ok("the parts agree");
+      // `u = x, \ dv = e^{x} \, dx` is a choice, not a claim: du and v are checked when they are written
+      if (checks.length === 0 && named.has("u") && named.has("dv")) return ok("the parts chosen");
+      return { status: "unverified", reason: "the parts of integration by parts" };
     }
     // `u = x^{2} + 1`: a substitution (a new letter, defined in the problem's own)
     if (cur.kind === "relation" && cur.alternatives.length === 1 && cur.alternatives[0].sides.length === 2 && isEquation(cur)) {

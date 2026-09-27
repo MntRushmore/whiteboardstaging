@@ -313,4 +313,20 @@ export const CORPUS: readonly EvalProblem[] = [
   { id: "t2-26", topic: "trig-identity", lines: ["\\frac{1 - \\cos 2x}{\\sin 2x}"], expect: { answer: "\\tan x" }, note: "the form of cos 2x that cancels" },
   { id: "t2-27", topic: "trig-identity", lines: ["\\tan x \\cos x"], expect: { answer: "\\sin x" } },
   { id: "t2-28", topic: "trig-identity", lines: ["\\sec^{2} x - 1"], expect: { answer: "\\tan^{2} x" } },
+
+  // ---------------------------------------------------------------- integration techniques
+  { id: "t2-29", topic: "integral-indefinite", lines: ["\\int 2x(x^{2}+1)^{5} \\, dx"], expect: { answer: "\\frac{(x^{2} + 1)^{6}}{6} + C", upToConstant: true }, note: "substitution u = x² + 1, shown" },
+  { id: "t2-30", topic: "integral-indefinite", lines: ["\\int x e^{x} \\, dx"], expect: { answer: "x e^{x} - e^{x} + C", upToConstant: true }, note: "by parts" },
+  { id: "t2-31", topic: "integral-indefinite", lines: ["\\int x \\sin x \\, dx"], expect: { answer: "-x\\cos x + \\sin x + C", upToConstant: true }, note: "by parts" },
+  { id: "t2-32", topic: "integral-indefinite", lines: ["\\int \\ln x \\, dx"], expect: { answer: "x\\ln x - x + C", upToConstant: true }, note: "by parts, dv = dx" },
+  { id: "t2-33", topic: "integral-indefinite", lines: ["\\int \\sin^{2} x \\, dx"], expect: { answer: "\\frac{x}{2} - \\frac{\\sin 2x}{4} + C", upToConstant: true }, note: "double angle first" },
+  { id: "t2-34", topic: "integral-indefinite", lines: ["\\int \\tan x \\, dx"], expect: { answer: "-\\ln|\\cos x| + C", upToConstant: true }, note: "sin/cos, then u = cos x" },
+  { id: "t2-35", topic: "integral-indefinite", lines: ["\\int \\frac{1}{1 + x^{2}} \\, dx"], expect: { answer: "\\tan^{-1} x + C", upToConstant: true } },
+  { id: "t2-36", topic: "integral-indefinite", lines: ["\\int \\frac{1}{x^{2} - 1} \\, dx"], expect: { answer: "\\frac{1}{2}\\ln|x - 1| - \\frac{1}{2}\\ln|x + 1| + C", upToConstant: true }, note: "partial fractions" },
+  { id: "t2-37", topic: "integral-indefinite", lines: ["\\int \\frac{2x}{x^{2} + 1} \\, dx"], expect: { answer: "\\ln(x^{2} + 1) + C", upToConstant: true }, note: "f'/f" },
+  { id: "t2-38", topic: "integral-indefinite", lines: ["\\int \\sin x \\cos x \\, dx"], expect: { answer: "\\frac{\\sin^{2} x}{2} + C", upToConstant: true } },
+  { id: "t2-39", topic: "integral-definite", lines: ["\\int_{0}^{1} 2x(x^{2}+1)^{5} \\, dx ="], expect: { answer: "\\frac{21}{2}" }, note: "substitution: the limits change" },
+  { id: "t2-40", topic: "integral-definite", lines: ["\\int_{0}^{1} x e^{x} \\, dx ="], expect: { answer: "1" }, note: "by parts with limits" },
+  { id: "t2-41", topic: "integral-definite", lines: ["\\int_{0}^{\\pi} \\sin^{2} x \\, dx ="], expect: { answer: "\\frac{\\pi}{2}" } },
+  { id: "t2-42", topic: "integral-definite", lines: ["\\int_{0}^{1} \\frac{1}{1 + x^{2}} \\, dx ="], expect: { answer: "\\frac{\\pi}{4}" } },
 ];

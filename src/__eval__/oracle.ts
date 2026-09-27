@@ -24,7 +24,25 @@ import { createMathInstance, translate } from "@/lib/live/engine/math";
 
 let instance: MathJsInstance | null = null;
 function M(): MathJsInstance {
-  if (!instance) instance = createMathInstance(mathjs);
+  if (!instance) {
+    const m = createMathInstance(mathjs);
+    // `\left[F\right]_{a}^{b}` is F(b) - F(a): the notation, defined here independently of the engine
+    m.import(
+      {
+        bracketEval: (expr: string, x: string, lo: number, hi: number) => {
+          const f = m.compile(expr);
+          const at = (v: number) => {
+            const y = f.evaluate({ [x]: v }) as unknown;
+            if (typeof y !== "number" || !Number.isFinite(y)) throw new Error("undefined at a limit");
+            return y;
+          };
+          return at(hi) - at(lo);
+        },
+      },
+      { override: true },
+    );
+    instance = m;
+  }
   return instance;
 }
 

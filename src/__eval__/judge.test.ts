@@ -114,6 +114,50 @@ describe("judge", () => {
     expect(wrongInterval.transitions[0].status).not.toBe("ok");
   });
 
+  it("follows a substitution: u and du checked, the integral in u compared with the one in x", () => {
+    const lines = ["\\int 2x(x^{2}+1)^{5} \\, dx"];
+    const p = problem({ topic: "integral-indefinite", lines, expect: { answer: "\\frac{(x^{2} + 1)^{6}}{6} + C", upToConstant: true } });
+    const good = judge(p, lines, solved(["u = x^{2} + 1", "du = 2x \\, dx", "= \\int u^{5} \\, du", "= \\frac{u^{6}}{6} + C", "= \\frac{(x^{2} + 1)^{6}}{6} + C"], "simplifySteps"), drawAll);
+    expect(good.transitions.map((t) => t.status)).toEqual(["ok", "ok", "ok", "ok", "ok"]);
+    expect(good.pass).toBe(true);
+    // the wrong derivative of u
+    expect(judge(p, lines, solved(["u = x^{2} + 1", "du = x \\, dx", "= \\int u^{5} \\, du"], "simplifySteps"), drawAll).transitions[1].status).toBe("broken");
+    // the integral in u that is not the one in x (the 2x is not accounted for twice)
+    expect(judge(p, lines, solved(["u = x^{2} + 1", "du = 2x \\, dx", "= \\int 2u^{5} \\, du"], "simplifySteps"), drawAll).transitions[2].status).toBe("broken");
+    // back in x, wrongly
+    expect(judge(p, lines, solved(["u = x^{2} + 1", "du = 2x \\, dx", "= \\int u^{5} \\, du", "= \\frac{u^{6}}{6} + C", "= \\frac{(x^{2} + 1)^{5}}{6} + C"], "simplifySteps"), drawAll).transitions[4].status).toBe("broken");
+  });
+
+  it("checks integration by parts: du against u, v against dv", () => {
+    const lines = ["\\int x e^{x} \\, dx"];
+    const p = problem({ topic: "integral-indefinite", lines, expect: { answer: "x e^{x} - e^{x} + C", upToConstant: true } });
+    const parts = ["\\int u \\, dv = uv - \\int v \\, du", "u = x, \\ dv = e^{x} \\, dx"];
+    const good = judge(p, lines, solved([...parts, "du = dx, \\ v = e^{x}", "= xe^{x} - \\int e^{x} \\, dx", "= xe^{x} - e^{x} + C"], "simplifySteps"), drawAll);
+    expect(good.pass).toBe(true);
+    expect(good.transitions.slice(0, 3).map((t) => t.status)).toEqual(["ok", "ok", "ok"]);
+    const badV = judge(p, lines, solved([...parts, "du = dx, \\ v = e^{2x}", "= xe^{x} - e^{x} + C"], "simplifySteps"), drawAll);
+    expect(badV.transitions[2].status).toBe("broken");
+    // a wrong answer is still wrong, whatever lines came before it
+    expect(judge(p, lines, solved([...parts, "du = dx, \\ v = e^{x}", "= xe^{x} + e^{x} + C"], "simplifySteps"), drawAll).stages.answer).toBe(false);
+  });
+
+  it("checks partial-fraction lines once the coefficients are written", () => {
+    const lines = ["\\int \\frac{1}{x^{2} - 1} \\, dx"];
+    const p = problem({ topic: "integral-indefinite", lines, expect: { answer: "\\frac{1}{2}\\ln|x - 1| - \\frac{1}{2}\\ln|x + 1| + C", upToConstant: true } });
+    const decl = ["\\frac{1}{(x - 1)(x + 1)} = \\frac{A}{x - 1} + \\frac{B}{x + 1}", "1 = A(x + 1) + B(x - 1)"];
+    const good = judge(p, lines, solved([...decl, "A = \\frac{1}{2}, \\ B = -\\frac{1}{2}", "= \\frac{1}{2}\\ln|x - 1| - \\frac{1}{2}\\ln|x + 1| + C"], "simplifySteps"), drawAll);
+    expect(good.transitions.map((t) => t.status)).toEqual(["ok", "ok", "ok", "ok"]);
+    const bad = judge(p, lines, solved([...decl, "A = \\frac{1}{2}, \\ B = \\frac{1}{2}", "= \\frac{1}{2}\\ln|x - 1| + \\frac{1}{2}\\ln|x + 1| + C"], "simplifySteps"), drawAll);
+    expect(bad.transitions.slice(0, 3).map((t) => t.status)).toEqual(["broken", "broken", "broken"]);
+  });
+
+  it("evaluates the bracket [F]_a^b itself", () => {
+    const lines = ["\\int_{0}^{2} 3x^{2} \\, dx ="];
+    const p = problem({ topic: "integral-definite", lines, expect: { answer: "8" } });
+    expect(judge(p, lines, solved(["= \\left[x^{3}\\right]_{0}^{2}", "= 8 - 0", "= 8"], "simplifySteps"), drawAll).transitions.map((t) => t.status)).toEqual(["ok", "ok", "ok"]);
+    expect(judge(p, lines, solved(["= \\left[x^{2}\\right]_{0}^{2}", "= 4"], "simplifySteps"), drawAll).transitions[0].status).toBe("broken");
+  });
+
   it("reads prose only from text macros with letters", () => {
     expect(wordsIn("x = 2 \\text{ or } x = 3")).toEqual(["or"]);
     expect(wordsIn("5\\,\\mathrm{m}")).toEqual([]);
