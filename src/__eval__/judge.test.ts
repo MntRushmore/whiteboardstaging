@@ -88,6 +88,62 @@ describe("judge", () => {
     expect(judge(p, lines, solved(["x = 4"]), { unsupported: () => ["\\foo"] }).stages.drawable).toBe(false);
   });
 
+  it("follows an unknown that cancels: a false statement is ∅, a true one every x", () => {
+    const none = ["3x + 7 = 3x - 2"];
+    const p = problem({ lines: none, expect: { answer: "\\varnothing" } });
+    expect(judge(p, none, solved(["3x - 3x = -2 - 7", "0 = -9", "\\varnothing"]), drawAll).transitions.map((t) => t.status)).toEqual(["ok", "ok", "ok"]);
+    expect(judge(p, none, solved(["3x - 3x = -2 - 7", "0 = -9", "x \\in \\mathbb{R}"]), drawAll).transitions[2].status).toBe("broken");
+    const all = ["2(x + 3) = 2x + 6"];
+    const q = problem({ lines: all, expect: { answer: "\\mathbb{R}" } });
+    expect(judge(q, all, solved(["2x + 6 = 2x + 6", "0 = 0", "x \\in \\mathbb{R}"]), drawAll).pass).toBe(true);
+    expect(judge(q, all, solved(["2x + 6 = 2x + 6", "0 = 0", "\\varnothing"]), drawAll).transitions[2].status).toBe("broken");
+  });
+
+  it("checks an inequality's critical values and the intervals built on them", () => {
+    const lines = ["x^{2} - 5x + 6 < 0"];
+    const p = problem({ topic: "inequality", lines, expect: { answer: "2 < x < 3" } });
+    const good = judge(p, lines, solved(["(x - 2)(x - 3) < 0", "x = 2, \\ x = 3", "2 < x < 3"]), drawAll);
+    expect(good.transitions.map((t) => t.status)).toEqual(["ok", "ok", "ok"]);
+    expect(good.pass).toBe(true);
+    // the wrong critical values, and the outside intervals for the inside ones
+    expect(judge(p, lines, solved(["(x - 2)(x - 3) < 0", "x = -2, \\ x = 3", "2 < x < 3"]), drawAll).transitions[1].status).toBe("broken");
+    const outside = judge(p, lines, solved(["(x - 2)(x - 3) < 0", "x = 2, \\ x = 3", "x < 2, \\ x > 3"]), drawAll);
+    expect(outside.transitions[2].status).toBe("broken");
+    expect(outside.answer.status).toBe("wrong");
+    // every number / no number, against the inequality
+    const never = ["x^{2} + 1 < 0"];
+    const n = problem({ topic: "inequality", lines: never, expect: { answer: "\\varnothing" } });
+    expect(judge(n, never, solved(["x^{2} + 1 = 0", "x^{2} = -1", "\\varnothing"]), drawAll).pass).toBe(true);
+    expect(judge(n, never, solved(["x^{2} + 1 = 0", "x^{2} = -1", "-\\infty < x < \\infty"]), drawAll).transitions[2].status).toBe("broken");
+  });
+
+  it("allows a denominator's zero dropped from the answer, and not a value the problem takes", () => {
+    const lines = ["\\frac{3 - x}{x + 1} \\ge 0"];
+    const p = problem({ topic: "inequality", lines, expect: { answer: "-1 < x \\le 3" } });
+    expect(judge(p, lines, solved(["x \\neq -1", "(x + 1)(x - 3) \\le 0", "x = -1, \\ x = 3", "-1 < x \\le 3"]), drawAll).pass).toBe(true);
+    expect(judge(p, lines, solved(["x \\neq -1", "(x + 1)(x - 3) \\le 0", "x = -1, \\ x = 3", "-1 < x < 3"]), drawAll).transitions[3].status).toBe("broken");
+    // an equation whose only candidate is excluded: ∅ is right; with a real root it is not
+    const ra = ["\\frac{x}{x - 2} = \\frac{2}{x - 2} + 3"];
+    const r = problem({ topic: "rational", lines: ra, expect: { values: { x: [] } } });
+    expect(judge(r, ra, solved(["x = 3x - 4", "x = 2", "\\varnothing"]), drawAll).transitions[2]).toMatchObject({ status: "ok", reason: "rejects the extraneous candidates" });
+    const lin = ["x + 2 = 4"];
+    expect(judge(problem({ lines: lin, expect: { values: { x: [2] } } }), lin, solved(["x = 2", "\\varnothing"]), drawAll).transitions[1].status).toBe("broken");
+  });
+
+  it("judges a system with several solution points: every line true at each, the values paired in order", () => {
+    const lines = ["x + y = 7", "xy = 12"];
+    const p = problem({ topic: "system-2x2", lines, expect: { values: { x: [3, 4], y: [4, 3] } } });
+    const good = judge(p, lines, solved(["y = 7 - x", "x(7 - x) = 12", "x^{2} - 7x + 12 = 0", "x = 3, \\ x = 4", "y = 4, \\ y = 3"], "solveFromLines"), drawAll);
+    expect(good.pass).toBe(true);
+    // the partners swapped: (3, 3) and (4, 4) are not solutions
+    const swapped = judge(p, lines, solved(["y = 7 - x", "x = 3, \\ x = 4", "y = 3, \\ y = 4"], "solveFromLines"), drawAll);
+    expect(swapped.answer.status).toBe("wrong");
+    // a root lost on the way
+    const lost = judge(p, lines, solved(["y = 7 - x", "x^{2} - 7x + 12 = 0", "x = 3", "y = 4"], "solveFromLines"), drawAll);
+    expect(lost.transitions[2].status).toBe("broken");
+    expect(lost.answer.status).toBe("wrong");
+  });
+
   it("reads prose only from text macros with letters", () => {
     expect(wordsIn("x = 2 \\text{ or } x = 3")).toEqual(["or"]);
     expect(wordsIn("5\\,\\mathrm{m}")).toEqual([]);

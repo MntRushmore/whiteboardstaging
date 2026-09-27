@@ -15,6 +15,7 @@ import type { LocalSolveResult } from "@/lib/live/localSolve";
 import type { EvalProblem, Expectation, Topic } from "./corpus";
 import {
   assignmentOf,
+  boundaries,
   closeTo,
   compareExprs,
   isAntiderivative,
@@ -31,6 +32,7 @@ import {
   solvedValues,
   subsetRoots,
   truthAt,
+  truthEverywhere,
   type Expr,
   type Parsed,
   type Relation,
@@ -184,16 +186,29 @@ function judgeAnswer(problem: EvalProblem, lines: readonly string[], steps: read
       }
       return { status: "wrong", reason: `gives ${reals.length === 0 ? "∅" : `{${reals.map(fmtNumber).join(", ")}}`}, want ${want.length === 0 ? "∅" : `{${want.map(fmtNumber).join(", ")}}`}` };
     }
-    // several unknowns: the last value each one is given anywhere in the steps
-    const found = new Map<string, { value: number; approx: boolean }>();
+    // several unknowns: the last value(s) each one is given anywhere in the steps — `v = c`, or a
+    // list `v = c1, \ v = c2` when the system has several solution points (paired in order)
+    const found = new Map<string, { values: number[]; approx: boolean }>();
     for (const s of steps) {
-      const a = assignmentOf(parseLine(s));
-      if (a) found.set(a.variable, { value: a.value, approx: a.approx });
+      const p = parseLine(s);
+      if (p.kind !== "relation" || p.vars.length !== 1) continue;
+      const sv = solvedValues(p, p.vars[0]);
+      if (!sv || sv.values.length === 0 || sv.values.some((c) => Math.abs(c.im) > 1e-9)) continue;
+      found.set(p.vars[0], { values: sv.values.map((c) => c.re), approx: sv.approx });
     }
     const missing = vars.filter((v) => !found.has(v));
     if (missing.length > 0) return { status: "unsolved", reason: `no line gives ${missing.join(", ")}` };
-    const wrong = vars.filter((v) => !closeTo(found.get(v)!.value, expect.values![v][0], 1e-6));
-    if (wrong.length > 0) return { status: "wrong", reason: wrong.map((v) => `${v} = ${fmtNumber(found.get(v)!.value)}, want ${fmtNumber(expect.values![v][0])}`).join("; ") };
+    const n = expect.values[vars[0]].length;
+    const short = vars.filter((v) => found.get(v)!.values.length !== n);
+    if (short.length > 0) return { status: "wrong", reason: short.map((v) => `${v} = {${found.get(v)!.values.map(fmtNumber).join(", ")}}, want {${expect.values![v].map(fmtNumber).join(", ")}}`).join("; ") };
+    const tuples = (at: (v: string, i: number) => number) => Array.from({ length: n }, (_, i) => vars.map((v) => at(v, i)));
+    const want = tuples((v, i) => expect.values![v][i]);
+    const got = tuples((v, i) => found.get(v)!.values[i]);
+    const same = (a: number[], b: number[]) => a.every((x, j) => closeTo(x, b[j], 1e-6));
+    if (!want.every((w) => got.some((g) => same(g, w))) || !got.every((g) => want.some((w) => same(g, w)))) {
+      const show = (ts: number[][]) => ts.map((t) => `(${t.map(fmtNumber).join(", ")})`).join(", ");
+      return { status: "wrong", reason: `(${vars.join(", ")}) = ${show(got)}, want ${show(want)}` };
+    }
     if (vars.some((v) => found.get(v)!.approx) && !approxOk) return { status: "approx", reason: "written with ≈" };
     return { status: "ok", reason: "" };
   }
@@ -261,7 +276,8 @@ function parseDecimals(p: Parsed): number | null {
 interface Truth {
   kind: "points" | "vacuous" | "unknown";
   points: Array<Record<string, number>>;
-  unique: boolean;
+  /** the points ARE the solution set (from `values`), not samples of a line of solutions */
+  exact: boolean;
 }
 
 /** Where a system is true: its solution point(s), from the expectation and the known values. */
@@ -273,14 +289,15 @@ function systemTruth(problem: EvalProblem, parsedLines: Parsed[]): Truth {
     if (a) known[a.variable] = a.value;
   }
   if (expect.values) {
+    // one solution point, or several (`values[v][i]` is the i-th point's v)
     const vars = Object.keys(expect.values);
-    if (vars.some((v) => expect.values![v].length !== 1)) return { kind: "unknown", points: [], unique: false };
-    const point = { ...known };
-    for (const v of vars) point[v] = expect.values[v][0];
-    return { kind: "points", points: [point], unique: true };
+    const n = expect.values[vars[0]]?.length ?? 0;
+    if (n === 0 || vars.some((v) => expect.values![v].length !== n)) return { kind: "unknown", points: [], exact: false };
+    const points = Array.from({ length: n }, (_, i) => ({ ...known, ...Object.fromEntries(vars.map((v) => [v, expect.values![v][i]])) }));
+    return { kind: "points", points, exact: true };
   }
   const want = parseLine(expect.answer ?? "");
-  if (want.kind === "empty-set") return { kind: "vacuous", points: [], unique: false };
+  if (want.kind === "empty-set") return { kind: "vacuous", points: [], exact: false };
   if (want.kind === "relation" && want.vars.length === 2) {
     const [x, y] = want.vars.includes("y") ? [want.vars.find((v) => v !== "y")!, "y"] : want.vars;
     const points: Array<Record<string, number>> = [];
@@ -288,9 +305,9 @@ function systemTruth(problem: EvalProblem, parsedLines: Parsed[]): Truth {
       const r = rootSet(want, y, [], { [x]: xv });
       if (r && !r.all) for (const yv of r.roots) points.push({ ...known, [x]: xv, [y]: yv });
     }
-    return { kind: "points", points, unique: false };
+    return { kind: "points", points, exact: false };
   }
-  return { kind: "unknown", points: [], unique: false };
+  return { kind: "unknown", points: [], exact: false };
 }
 
 function judgeSystemStep(step: string, p: Parsed, truth: Truth, candidates: number[]): Transition {
@@ -309,20 +326,21 @@ function judgeSystemStep(step: string, p: Parsed, truth: Truth, candidates: numb
     if (holds === false) return t("broken", `false at the solution (${Object.entries(point).map(([k, v]) => `${k} = ${fmtNumber(v)}`).join(", ")})`);
     if (holds === null) return t("unverified", "undefined at the solution");
   }
-  if (truth.unique && p.vars.length === 1 && isEquation(p)) {
+  if (truth.exact && p.vars.length === 1 && isEquation(p)) {
+    // a line in one unknown must have exactly that unknown's values at the solution points
     const v = p.vars[0];
-    const want = truth.points[0][v];
-    const rs = rootSet(p, v, [...candidates, want]);
+    const want = [...new Set(truth.points.map((pt) => pt[v]))];
+    const rs = rootSet(p, v, [...candidates, ...want]);
     if (!rs) return t("unverified", "cannot solve the step");
     if (rs.all) return t("widened", `true for every ${v}`);
-    if (!sameRoots(rs.roots, [want], setTol(p))) {
-      return subsetRoots([want], rs.roots, setTol(p)) ? t("widened", `also admits ${rootsText(rs)}`) : t("broken", `solutions ${rootsText(rs)}, the system says ${v} = ${fmtNumber(want)}`);
+    if (!sameRoots(rs.roots, want, setTol(p))) {
+      return subsetRoots(want, rs.roots, setTol(p)) ? t("widened", `also admits ${rootsText(rs)}`) : t("broken", `solutions ${rootsText(rs)}, the system says ${v} ∈ {${want.map(fmtNumber).join(", ")}}`);
     }
   }
   return t("ok");
 }
 
-function compareRelations(prev: Relation, cur: Relation, candidates: number[], cache: Map<string, RootSet | null>, origin: Relation | null): Omit<Transition, "from" | "to"> {
+function compareRelations(prev: Relation, cur: Relation, candidates: number[], cache: Map<string, RootSet | null>, origin: Relation | null, lastIneq: Relation | null): Omit<Transition, "from" | "to"> {
   const vars = [...new Set([...prev.vars, ...cur.vars])];
   if (vars.length === 0) {
     const a = truthAt(prev, {});
@@ -351,27 +369,62 @@ function compareRelations(prev: Relation, cur: Relation, candidates: number[], c
     if (o && !o.all && subsetRoots(b.roots, a.roots, tol) && sameRoots(o.roots, b.roots, tol)) return { status: "ok", reason: "rejects the extraneous candidates" };
     return { status: "broken", reason: `solutions ${rootsText(a)} → ${rootsText(b)}` };
   }
-  if (isInequality(prev) && isInequality(cur)) {
-    const t = sameTruth(prev, cur, v);
+  // an inequality's answer: the same solution set as the inequality it came from, or as the
+  // problem itself (a zero of a denominator dropped from `(x + 1)(x - 3) \le 0`)
+  const asInequality = (ref: Relation): Omit<Transition, "from" | "to"> => {
+    const t = sameTruth(ref, cur, v);
+    if (t !== "equal" && origin && origin !== ref && isInequality(origin) && origin.vars.length === 1 && origin.vars[0] === v && sameTruth(origin, cur, v) === "equal") return { status: "ok", reason: "the problem's own solution set" };
     return t === "equal" ? { status: "ok", reason: "" } : t === "different" ? { status: "broken", reason: "a different solution set" } : { status: "unverified", reason: "cannot sample" };
+  };
+  if (isInequality(prev) && isInequality(cur)) return asInequality(prev);
+  if (lastIneq && isInequality(prev) && isEquation(cur)) {
+    // (an inequality problem only: under an equation, `x > 2` is a domain, not a step to solve)
+    // the critical values: the equation's roots are exactly where the inequality's sides meet
+    const rs = rootSet(cur, v, candidates);
+    if (!rs || rs.all) return { status: "unverified", reason: "cannot solve" };
+    const edges = boundaries(prev, v);
+    if (sameRoots(rs.roots, edges, setTol(prev, cur))) return { status: "ok", reason: "the critical values" };
+    return { status: "broken", reason: `critical values ${rootsText(rs)}, the inequality turns at {${edges.map(fmtNumber).join(", ")}}` };
   }
+  // after the critical values (an equation) or an excluded value (`x \neq -1`): against the last inequality
+  if (!isInequality(prev) && isInequality(cur) && lastIneq && lastIneq.vars.length === 1 && lastIneq.vars[0] === v) return asInequality(lastIneq);
   return { status: "unverified", reason: "an equation and an inequality" };
 }
 
-function judgeChainStep(prev: Parsed, cur: Parsed, topic: Topic, candidates: number[], cache: Map<string, RootSet | null>, origin: Parsed): Omit<Transition, "from" | "to"> {
+function judgeChainStep(prev: Parsed, cur: Parsed, topic: Topic, candidates: number[], cache: Map<string, RootSet | null>, origin: Parsed, lastIneq: Relation | null = null): Omit<Transition, "from" | "to"> {
   if (cur.kind === "unreadable") return cur.reason === "empty" ? { status: "broken", reason: "empty step" } : { status: "unverified", reason: `unreadable step (${cur.reason})` };
   if (prev.kind === "unreadable") return { status: "unverified", reason: `the line before is unreadable (${prev.reason})` };
   if (prev.kind === "question" || cur.kind === "question") return { status: "unverified", reason: "a question line" };
-  if (prev.kind === "relation" && cur.kind === "relation") return compareRelations(prev, cur, candidates, cache, origin.kind === "relation" ? origin : null);
+  if (prev.kind === "relation" && cur.kind === "relation") return compareRelations(prev, cur, candidates, cache, origin.kind === "relation" ? origin : null, lastIneq);
   if (cur.kind === "empty-set" || cur.kind === "all-reals") {
     if (prev.kind !== "relation") return { status: "unverified", reason: "∅ / ℝ after a non-relation" };
+    if (prev.vars.length === 0) {
+      // the unknown cancelled: `0 = -9` is ∅, `0 = 0` (or `0 < 4`) is every number
+      const holds = truthAt(prev, {});
+      if (holds === null) return { status: "unverified", reason: "undefined" };
+      if (cur.kind === "empty-set") return holds ? { status: "broken", reason: "says ∅ after a true statement" } : { status: "ok", reason: "" };
+      return holds ? { status: "ok", reason: "" } : { status: "broken", reason: "says every value after a false statement" };
+    }
     const v = prev.vars[0];
     if (prev.vars.length !== 1) return { status: "unverified", reason: "several unknowns" };
+    if (lastIneq && lastIneq.vars.length === 1 && lastIneq.vars[0] === v) {
+      // an inequality's answer: ∅ where it never holds, every number where it always does
+      const e = truthEverywhere(lastIneq, v);
+      if (e === "unknown") return { status: "unverified", reason: "cannot sample" };
+      if (cur.kind === "empty-set") return e === "never" ? { status: "ok", reason: "" } : { status: "broken", reason: "says ∅, the inequality holds somewhere" };
+      return e === "always" ? { status: "ok", reason: "" } : { status: "broken", reason: `says every ${v}, the inequality fails somewhere` };
+    }
     if (isEquation(prev)) {
       const rs = rootSet(prev, v, candidates);
       if (!rs) return { status: "unverified", reason: "cannot solve" };
       const empty = !rs.all && rs.roots.length === 0;
-      if (cur.kind === "empty-set") return empty ? { status: "ok", reason: "" } : { status: "broken", reason: `says ∅, the line before has ${rootsText(rs)}` };
+      if (cur.kind === "empty-set") {
+        if (empty) return { status: "ok", reason: "" };
+        // every candidate dropped because the problem cannot take it (`x = 2` against `x \neq 2`)
+        const o = origin.kind === "relation" && origin.vars.length === 1 && origin.vars[0] === v && isEquation(origin) ? rootSet(origin, v, candidates) : null;
+        if (o && !o.all && o.roots.length === 0 && !rs.all) return { status: "ok", reason: "rejects the extraneous candidates" };
+        return { status: "broken", reason: `says ∅, the line before has ${rootsText(rs)}` };
+      }
       return rs.all ? { status: "ok", reason: "" } : { status: "broken", reason: `says every ${v}, the line before has ${rootsText(rs)}` };
     }
     return { status: "unverified", reason: "∅ / ℝ after an inequality" };
@@ -418,14 +471,16 @@ function judgeSteps(problem: EvalProblem, lines: readonly string[], steps: reado
   let prevLatex = targetLatex;
   let good: Parsed = origin;
   let goodLatex = targetLatex;
+  // the last inequality in the chain: what an answer after its critical values is checked against
+  let lastIneq: Relation | null = origin.kind === "relation" && isInequality(origin) ? origin : null;
   for (let i = 0; i < steps.length; i++) {
     const cur = parsedSteps[i];
-    let r = judgeChainStep(prev, cur, problem.topic, candidates, cache, origin);
+    let r = judgeChainStep(prev, cur, problem.topic, candidates, cache, origin, lastIneq);
     let from = prevLatex;
     // One mistake is blamed once: a line that follows from the wrong line before it is not a
     // second mistake, and a line that goes back to the last good line is not one either.
     if (good !== prev) {
-      const back = judgeChainStep(good, cur, problem.topic, candidates, cache, origin);
+      const back = judgeChainStep(good, cur, problem.topic, candidates, cache, origin, lastIneq);
       if (RANK[back.status] < RANK[r.status]) {
         r = back;
         from = goodLatex;
@@ -435,6 +490,7 @@ function judgeSteps(problem: EvalProblem, lines: readonly string[], steps: reado
     if (cur.kind === "unreadable") continue;
     prev = cur;
     prevLatex = steps[i];
+    if (lastIneq && r.status !== "broken" && cur.kind === "relation" && isInequality(cur)) lastIneq = cur;
     if (r.status !== "broken" && from === goodLatex) {
       good = cur;
       goodLatex = steps[i];

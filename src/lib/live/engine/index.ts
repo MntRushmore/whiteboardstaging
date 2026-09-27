@@ -3,7 +3,7 @@
  * Pure TypeScript: no DOM, no React, no tldraw. Every entry point catches and degrades to
  * kind 'unknown' / verdict 'unknown' / null — the engine never throws.
  */
-import type { MathJsInstance } from "mathjs";
+import type { MathJsInstance, MathNode } from "mathjs";
 import type { AnalyzeContext, EngineVerdict, LineAnalysis, LiveEngine } from "../contracts";
 import { balance as balanceChem, balanceEquation, equationLatex, isBalanced, molarMassLatex, normalizeChemText, parseEquation, looksLikeChemEquation } from "./chem";
 import { preClassify } from "./classify";
@@ -29,10 +29,10 @@ import { evaluateUnits, unitValueToLatex, valuesMatch } from "./units";
 import { solveFromLines, type SystemDeps } from "./systems";
 import { linearSolveSteps, simplifyExpressionSteps, type LinearSteps, type RelOp } from "./algebra";
 import { createCalculus } from "./calculus";
-import { solveAdvanced, type AdvancedDeps } from "./advanced";
-import { factorExpressionSteps } from "./polynomial";
+import { solveAdvanced, solveExactly, type AdvancedDeps } from "./advanced";
+import { factorExpressionSteps, rationalExpressionSteps } from "./polynomial";
 import { chainRelation, isSolutionSet, relaxVerdict, splitAtCommas, unionRelation, type Part } from "./compound";
-import { LIST_SEP, NO_SOLUTION } from "./solution";
+import { ALL_REALS, EVERY_REAL, LIST_SEP, NO_SOLUTION } from "./solution";
 
 const UNKNOWN: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
 
@@ -702,7 +702,7 @@ export function createEngine(mod: MathModule): LiveEngine {
    * The teacher-style steps for a linear equation or inequality in one unknown (`algebra.ts`),
    * or null when the line is not one — the caller then keeps the CAS path below.
    */
-  const linearSteps = (latex: string): (LinearSteps & { pre: string }) | null => {
+  const linearSteps = (latex: string): (LinearSteps & { pre: string; variable: string; op: RelOp }) | null => {
     const pre = preprocessLatex(latex);
     if (/\d\.\d/.test(pre)) return null; // decimals stay on the CAS path: no `\frac{1}{2}` for `0.5`
     const split = splitRelations(pre);
@@ -714,8 +714,9 @@ export function createEngine(mod: MathModule): LiveEngine {
     const lhs = safeParse(math, L.source);
     const rhs = safeParse(math, R.source);
     if (!lhs || !rhs) return null;
-    const out = linearSolveSteps(lhs, rhs, split.ops[0] as RelOp, unknowns[0], pre, stepKey);
-    return out ? { ...out, pre } : null;
+    const op = split.ops[0] as RelOp;
+    const out = linearSolveSteps(lhs, rhs, op, unknowns[0], pre, stepKey);
+    return out ? { ...out, pre, variable: unknowns[0], op } : null;
   };
 
   /** Functions a one-unknown line may use and still be solved exactly by `advanced.ts`. */
@@ -743,6 +744,24 @@ export function createEngine(mod: MathModule): LiveEngine {
         return null;
       }
     },
+    // `-3 < 2x + 1 < 7`: the same restrictions, three sides (inequality.ts)
+    chain: (latex) => {
+      try {
+        const pre = preprocessLatex(latex);
+        if (/\d\.\d/.test(pre)) return null;
+        const split = splitRelations(pre);
+        if (split.sides.length !== 3 || !split.ops.every(isRelOp)) return null;
+        const ts = split.sides.map((side) => tr(side));
+        if (ts.some((t) => t.hasUnits || t.hasText || t.hasPercent || t.hasPm || t.functions.length > 0)) return null;
+        const unknowns = [...new Set(ts.flatMap(unknownsOf))];
+        if (unknowns.length !== 1 || !/^[a-zA-Z]$/.test(unknowns[0])) return null;
+        const nodes = ts.map((t) => safeParse(math, t.source));
+        if (nodes.some((n) => !n)) return null;
+        return { sides: nodes as [MathNode, MathNode, MathNode], ops: split.ops as [RelOp, RelOp], variable: unknowns[0], latex: pre };
+      } catch {
+        return null;
+      }
+    },
     normalize: stepKey,
   };
 
@@ -750,7 +769,12 @@ export function createEngine(mod: MathModule): LiveEngine {
     try {
       const linear = linearSteps(latex);
       if (linear) {
-        if (linear.outcome !== "solved" || linear.steps.length === 0) return null;
+        if (linear.outcome !== "solved") {
+          // the unknown cancelled: `0 = -9` has no solution, `0 = 0` every one
+          const final = linear.outcome === "contradiction" ? NO_SOLUTION : linear.op === "==" ? EVERY_REAL(linear.variable) : ALL_REALS(linear.variable);
+          return { latex: final, steps: [...linear.steps, final] };
+        }
+        if (linear.steps.length === 0) return null;
         // `x = 4` / `x > 4` is already solved: writing it again under itself says nothing.
         if (stepKey(linear.final) === stepKey(linear.pre)) return null;
         return { latex: linear.final, steps: linear.steps };
@@ -769,13 +793,16 @@ export function createEngine(mod: MathModule): LiveEngine {
       const info = equationRoots(math, rel, variable);
       if (!info.roots || info.identity || info.contradiction) return null;
       const steps: string[] = [];
-      const opts: NumberFormatOptions = { preferFraction: true };
+      // a line written in decimals is worked in decimals (`0.2x = 1.6`, not `\frac{1}{5}x = \frac{8}{5}`)
+      const opts: NumberFormatOptions = { preferFraction: !/\d\.\d/.test(pre) };
       const fmt = (n: number) => formatNumberLatex(n, opts);
       const c = info.coefficients;
       const lastIsZero = R.source.trim() === "0";
       if (c && info.exact && c.length === 2) {
-        const [c0, c1] = c;
-        if (Math.abs(c0) > 1e-12 && Math.abs(c1 - 1) > 1e-12) steps.push(`${Math.abs(c1 + 1) < 1e-12 ? "-" : fmt(c1)}${variable} = ${fmt(-c0)}`);
+        // `ax = b` with a positive a (`2.5 = 0.5x` → `0.5x = 2.5`), never the input again
+        const [c0, c1] = c[1] < 0 ? [-c[0], -c[1]] : c;
+        const axb = `${Math.abs(c1 - 1) < 1e-12 ? "" : fmt(c1)}${variable} = ${fmt(-c0)}`;
+        if (Math.abs(c0) > 1e-12 && Math.abs(c1 - 1) > 1e-12 && normalizeLatex(axb) !== normalizeLatex(pre)) steps.push(axb);
         else if (Math.abs(c0) > 1e-12 && !/^-?\d/.test(pre) && !new RegExp(`^${variable}\\s*=`).test(pre)) steps.push(`${variable} = ${fmt(-c0)}`);
         const root = -c0 / c1;
         const final = `${variable} = ${fmt(root)}`;
@@ -813,12 +840,37 @@ export function createEngine(mod: MathModule): LiveEngine {
         return { latex: final, steps };
       }
       if (info.roots.length === 0) return null;
-      const final = finalLatex(variable, info.roots, { preferFraction: false }, false);
+      // a root the root-finder found that IS a whole number or a simple fraction (both sides agree
+      // there to the last bit) is written with `=`, not `\approx`
+      const exact = exactRoots(rel, variable, info.roots);
+      const final = exact ? finalLatex(variable, exact, { preferFraction: true }, true) : finalLatex(variable, info.roots, { preferFraction: false }, false);
       steps.push(final);
       return { latex: final, steps };
     } catch {
       return null;
     }
+  };
+
+  /** Every real root snapped to a whole number or a fraction (denominator ≤ 12) that satisfies `rel` exactly; null when one does not. */
+  const exactRoots = (rel: Relation, variable: string, roots: RootValue[]): number[] | null => {
+    const out: number[] = [];
+    for (const r of roots) {
+      const n = rootToNumber(r);
+      if (n === null) continue;
+      let hit: number | null = null;
+      for (let d = 1; d <= 12 && hit === null; d++) {
+        const c = Math.round(n * d) / d;
+        if (Math.abs(c - n) > 1e-6 * Math.max(1, Math.abs(n))) continue;
+        const l = safeEvaluate(math, rel.lhs, { [variable]: c });
+        const rr = safeEvaluate(math, rel.rhs, { [variable]: c });
+        const a = l.ok ? toNumber(l.value) : null;
+        const b = rr.ok ? toNumber(rr.value) : null;
+        if (a !== null && b !== null && Math.abs(a - b) <= 1e-12 * Math.max(1, Math.abs(a), Math.abs(b))) hit = c;
+      }
+      if (hit === null) return null;
+      out.push(hit);
+    }
+    return out.length > 0 ? out : null;
   };
 
   /** `3(x+2) - x` (or `3(x+2) - x =`) → `3x + 6 - x`, `2x + 6`; null when there is nothing to simplify. */
@@ -837,7 +889,7 @@ export function createEngine(mod: MathModule): LiveEngine {
       const node = safeParse(math, t.source);
       if (!node) return null;
       // simplify when there is something to expand or collect; otherwise factor it (polynomial.ts)
-      return simplifyExpressionSteps(node, unknowns, pre, stepKey) ?? factorExpressionSteps(node, unknowns, pre, stepKey);
+      return simplifyExpressionSteps(node, unknowns, pre, stepKey) ?? factorExpressionSteps(node, unknowns, pre, stepKey) ?? rationalExpressionSteps(node, unknowns, pre, stepKey);
     } catch {
       return null;
     }
@@ -981,7 +1033,8 @@ export function createEngine(mod: MathModule): LiveEngine {
         return null;
       }
     },
-    solveOne: (latex) => solveLatex(latex),
+    // a substituted line whose unknown cancels is the system's own case (`cancelled`), not an answer
+    solveOne: (latex) => (systemDeps.cancelled?.(latex) ? null : solveLatex(latex)),
     cancelled: (latex) => {
       try {
         const linear = linearSteps(latex);
@@ -1003,6 +1056,14 @@ export function createEngine(mod: MathModule): LiveEngine {
       if (!res.ok) return null;
       const n = toNumber(res.value);
       return n === null || !Number.isFinite(n) ? null : n;
+    },
+    // a substituted line with the unknown squared (`(w + 3)w = 40`): exact steps and roots
+    solveRoots: (latex) => {
+      try {
+        return solveExactly(latex, advancedDeps);
+      } catch {
+        return null;
+      }
     },
     fmt: (n) => formatNumberLatex(n, { preferFraction: true }),
     normalize: normalizeLatex,

@@ -55,6 +55,8 @@ describe("quadratics: standard form, factor, or the formula with the values in",
     ["x^2-3x+1=0", ["x = \\frac{3 \\pm \\sqrt{(-3)^{2} - 4 \\cdot 1 \\cdot 1}}{2 \\cdot 1}", "x = \\frac{3 \\pm \\sqrt{5}}{2}"]],
     // no real roots: the negative number under the root, then the empty set
     ["x^2+x+1=0", ["x = \\frac{-1 \\pm \\sqrt{1^{2} - 4 \\cdot 1 \\cdot 1}}{2 \\cdot 1}", "x = \\frac{-1 \\pm \\sqrt{-3}}{2}", "\\varnothing"]],
+    // the squares cancel on one side: expanded, then the linear steps (not the CAS alone)
+    ["x^{2} - (x - 1)^{2} = 5", ["x^{2} - x^{2} + 2x - 1 = 5", "2x - 1 = 5", "2x = 6", "x = 3"]],
     // ax^2 + c = 0 by square roots
     ["2x^2-18=0", ["2x^{2} = 18", "x^{2} = 9", "x = \\pm 3"]],
     ["x^2=8", ["x = \\pm \\sqrt{8}", "x = \\pm 2\\sqrt{2}"]],
@@ -122,6 +124,64 @@ describe("absolute value: isolate the bars, then split", () => {
     ["|x-1| < -2", ["\\varnothing"]],
   ])("inequality %s", (latex, steps) => {
     expect(solve(latex)).toEqual(steps);
+  });
+});
+
+describe("inequalities past linear: critical values, then the intervals (inequality.ts)", () => {
+  it.each([
+    // quadratic: factor, the critical values, the sign between them
+    ["x^{2} - 4 < 0", ["(x + 2)(x - 2) < 0", "x = -2, \\ x = 2", "-2 < x < 2"]],
+    ["x^2-5x+6>0", ["(x - 2)(x - 3) > 0", "x = 2, \\ x = 3", "x < 2, \\ x > 3"]],
+    ["x^2-5x+6 \\le 0", ["(x - 2)(x - 3) \\le 0", "x = 2, \\ x = 3", "2 \\le x \\le 3"]],
+    ["x^2 < 9", ["x^{2} - 9 < 0", "(x + 3)(x - 3) < 0", "x = -3, \\ x = 3", "-3 < x < 3"]],
+    // a negative leading coefficient: every term to the other side, the sign turned round
+    ["4 - x^2 > 0", ["x^{2} - 4 < 0", "(x + 2)(x - 2) < 0", "x = -2, \\ x = 2", "-2 < x < 2"]],
+    ["2x^2-8 \\ge 0", ["x^{2} - 4 \\ge 0", "(x + 2)(x - 2) \\ge 0", "x = -2, \\ x = 2", "x \\le -2, \\ x \\ge 2"]],
+    ["x(x+1) \\ge 6", ["x^{2} + x \\ge 6", "x^{2} + x - 6 \\ge 0", "(x + 3)(x - 2) \\ge 0", "x = -3, \\ x = 2", "x \\le -3, \\ x \\ge 2"]],
+    // no rational roots: the equation by the formula
+    [
+      "x^2-2x-1<0",
+      ["x^{2} - 2x - 1 = 0", "x = \\frac{2 \\pm \\sqrt{(-2)^{2} - 4 \\cdot 1 \\cdot (-1)}}{2 \\cdot 1}", "x = \\frac{2 \\pm \\sqrt{8}}{2}", "x = \\frac{2 \\pm 2\\sqrt{2}}{2}", "x = 1 \\pm \\sqrt{2}", "1 - \\sqrt{2} < x < 1 + \\sqrt{2}"],
+    ],
+    ["x^2+1>0", ["x^{2} + 1 = 0", "x^{2} = -1", "-\\infty < x < \\infty"]],
+    ["x^2+x+1<0", ["x^{2} + x + 1 = 0", "x = \\frac{-1 \\pm \\sqrt{1^{2} - 4 \\cdot 1 \\cdot 1}}{2 \\cdot 1}", "x = \\frac{-1 \\pm \\sqrt{-3}}{2}", "\\varnothing"]],
+    // already factored: straight to the critical values; a double root
+    ["(x-1)^2 > 0", ["x = 1", "x \\neq 1"]],
+    ["(x-1)^2 \\le 0", ["x = 1"]],
+    // the student's own factors are not rewritten, unless a sign turns or a number divides out
+    ["(x - 2)(x + 5) < 0", ["x = -5, \\ x = 2", "-5 < x < 2"]],
+    ["(2 - x)(x + 3) > 0", ["(x + 3)(x - 2) < 0", "x = -3, \\ x = 2", "-3 < x < 2"]],
+    ["2x(x - 4) \\le 0", ["x(x - 4) \\le 0", "x = 0, \\ x = 4", "0 \\le x \\le 4"]],
+    ["x^3-x>0", ["x(x + 1)(x - 1) > 0", "x = -1, \\ x = 0, \\ x = 1", "-1 < x < 0, \\ x > 1"]],
+    // one fraction: times the denominator squared, its zero excluded
+    ["\\frac{x-1}{x+2} > 0", ["x \\neq -2", "(x + 2)(x - 1) > 0", "x = -2, \\ x = 1", "x < -2, \\ x > 1"]],
+    ["\\frac{3-x}{x+1} \\ge 0", ["x \\neq -1", "(x + 1)(x - 3) \\le 0", "x = -1, \\ x = 3", "-1 < x \\le 3"]],
+    [
+      "\\frac{x+1}{x-3} \\le 2",
+      ["x \\neq 3", "(x + 1)(x - 3) \\le 2(x - 3)^{2}", "x^{2} - 2x - 3 \\le 2x^{2} - 12x + 18", "x^{2} - 10x + 21 \\ge 0", "(x - 3)(x - 7) \\ge 0", "x = 3, \\ x = 7", "x < 3, \\ x \\ge 7"],
+    ],
+    ["\\frac{1}{x} > 2", ["x \\neq 0", "x > 2x^{2}", "2x^{2} - x < 0", "x(2x - 1) < 0", "x = 0, \\ x = \\frac{1}{2}", "0 < x < \\frac{1}{2}"]],
+    // a zero side stays 0 when multiplied
+    ["\\frac{1}{x} + 1 > 0", ["x \\neq 0", "x + x^{2} > 0", "x^{2} + x > 0", "x(x + 1) > 0", "x = -1, \\ x = 0", "x < -1, \\ x > 0"]],
+  ])("%s", (latex, steps) => {
+    expect(solve(latex)).toEqual(steps);
+  });
+
+  it.each([
+    ["-3 < 2x + 1 < 7", ["-4 < 2x < 6", "-2 < x < 3"]],
+    // dividing by a negative turns the chain round
+    ["1 \\le 3 - 2x < 7", ["-2 \\le -2x < 4", "-2 < x \\le 1"]],
+    ["7 > 2x + 1 > -3", ["-3 < 2x + 1 < 7", "-4 < 2x < 6", "-2 < x < 3"]],
+    ["-1 < \\frac{x - 1}{2} \\le 3", ["-2 < x - 1 \\le 6", "-1 < x \\le 7"]],
+    ["-2 \\le \\frac{3 - x}{2} \\le 4", ["-4 \\le 3 - x \\le 8", "-7 \\le -x \\le 5", "-5 \\le x \\le 7"]],
+    ["5 < 2x < 3", ["\\frac{5}{2} < x < \\frac{3}{2}", "\\varnothing"]],
+  ])("a chain: %s", (latex, steps) => {
+    expect(solve(latex)).toEqual(steps);
+  });
+
+  it("the answer line is the last step", () => {
+    expect(engine.solveLatex("x^2-5x+6>0")?.latex).toBe("x < 2, \\ x > 3");
+    expect(engine.solveLatex("-3 < 2x + 1 < 7")?.latex).toBe("-2 < x < 3");
   });
 });
 
@@ -211,8 +271,25 @@ describe("exponential and log equations: exact answers", () => {
     ],
     ["\\log_2 x - \\log_2(x-2) = 1", ["x > 2", "\\log_{2} \\frac{x}{x - 2} = 1", "\\frac{x}{x - 2} = 2^{1}", "x = 2(x - 2)", "x = 2x - 4", "x - 2x = -4", "-x = -4", "x = 4"]],
     ["\\log_2(x+3)=\\log_2(2x)", ["x + 3 = 2x", "x - 2x = -3", "-x = -3", "x = 3"]],
+    // a log of a number that is not a whole power, and the power law for a coefficient
+    ["\\ln x = \\ln 9", ["x = 9"]],
+    ["2\\ln(x) = \\ln(9)", ["x > 0", "\\ln(x^{2}) = \\ln 9", "x^{2} = 9", "x = \\pm 3", "x = 3"]],
+    ["\\ln 9 = 2\\ln x", ["x > 0", "\\ln 9 = \\ln(x^{2})", "9 = x^{2}", "x^{2} = 9", "x = \\pm 3", "x = 3"]],
+    ["2\\log x = \\log(x + 2)", ["x > 0", "\\log(x^{2}) = \\log(x + 2)", "x^{2} = x + 2", "x^{2} - x - 2 = 0", "(x + 1)(x - 2) = 0", "x = -1, \\ x = 2", "x = 2"]],
+    ["2\\ln(x - 1) = \\ln(4)", ["x > 1", "\\ln((x - 1)^{2}) = \\ln 4", "(x - 1)^{2} = 4", "x - 1 = \\pm 2", "x = 1 \\pm 2", "x = -1, \\ x = 3", "x = 3"]],
+    // logs of numbers: moved across as one log (against a log), or folded inside (against a number)
+    ["\\ln(x + 1) - \\ln(x) = \\ln(2)", ["x > 0", "\\ln \\frac{x + 1}{x} = \\ln 2", "\\frac{x + 1}{x} = 2", "x + 1 = 2x", "x - 2x = -1", "-x = -1", "x = 1"]],
+    ["\\ln 2 = \\ln(x + 1) - \\ln x", ["x > 0", "\\ln \\frac{x + 1}{x} = \\ln 2", "\\frac{x + 1}{x} = 2", "x + 1 = 2x", "x - 2x = -1", "-x = -1", "x = 1"]],
+    ["\\ln x + \\ln 3 = \\ln 12", ["x > 0", "\\ln x = \\ln 4", "x = 4"]],
+    ["\\log(x) + \\log(x - 3) = \\log 4", ["x > 3", "\\log(x(x - 3)) = \\log 4", "x(x - 3) = 4", "x^{2} - 3x = 4", "x^{2} - 3x - 4 = 0", "(x + 1)(x - 4) = 0", "x = -1, \\ x = 4", "x = 4"]],
+    ["\\log_{2}(x) + \\log_{2}(3) = 4", ["x > 0", "\\log_{2}(3x) = 4", "3x = 2^{4}", "3x = 16", "x = \\frac{16}{3}"]],
   ])("%s", (latex, steps) => {
     expect(solve(latex)).toEqual(steps);
+  });
+
+  it("the numeric fallback writes `=` only for a root that is exact (both sides agree there)", () => {
+    expect(solve("x^{x} = 4")).toEqual(["x = 2"]);
+    expect(solve("x^3 + x - 1 = 0")).toEqual(["x \\approx 0.6823"]);
   });
 });
 
@@ -244,6 +321,24 @@ describe("polynomials: simplify when there is something to expand, otherwise fac
   it("writes nothing for what does not factor over the integers, or is not algebra", () => {
     for (const latex of ["2x + 3", "x^2 + 1", "x^2 + x + 1", "36 + 2 =", "x", "\\frac{x}{2} + 1", "\\sin(x) + x"]) expect(simplify(latex), latex).toBeNull();
   });
+
+  it.each([
+    ["\\frac{x^{2} - 1}{x - 1}", ["\\frac{(x + 1)(x - 1)}{x - 1}", "x + 1"]],
+    ["\\frac{x^2-5x+6}{x^2-4}", ["\\frac{(x - 2)(x - 3)}{(x + 2)(x - 2)}", "\\frac{x - 3}{x + 2}"]],
+    ["\\frac{2x+4}{x+2}", ["\\frac{2(x + 2)}{x + 2}", "2"]],
+    ["\\frac{x^2+3x}{x}", ["\\frac{x(x + 3)}{x}", "x + 3"]],
+    ["\\frac{1-x}{x-1}", ["\\frac{-(x - 1)}{x - 1}", "-1"]],
+    ["\\frac{2x+4}{4x+8} =", ["\\frac{2(x + 2)}{4(x + 2)}", "\\frac{1}{2}"]],
+    ["\\frac{x^3-8}{x-2}", ["\\frac{(x - 2)(x^{2} + 2x + 4)}{x - 2}", "x^{2} + 2x + 4"]],
+    ["\\frac{x+1}{x^2+2x+1}", ["\\frac{x + 1}{(x + 1)^{2}}", "\\frac{1}{x + 1}"]],
+  ])("a fraction: factor the top and the bottom, cancel — %s", (latex, steps) => {
+    expect(simplify(latex)).toEqual(steps);
+    expectDrawable(steps);
+  });
+
+  it("a fraction with nothing to cancel is left alone", () => {
+    for (const latex of ["\\frac{x^2+1}{x+1}", "\\frac{x}{x+1}", "\\frac{2}{x}"]) expect(simplify(latex), latex).toBeNull();
+  });
 });
 
 describe("systems: elimination where substitution would bring fractions, and three unknowns", () => {
@@ -272,6 +367,17 @@ describe("systems: elimination where substitution would bring fractions, and thr
     const s = system(["x+y=3", "y+z=5", "x+z=4"]);
     expect(s?.steps).toEqual(["x - y = -1", "2x = 2", "x = 1", "1+y=3", "y = 2", "2+z=5", "z = 3"]);
     expect(system(["x+2y+3z=14", "2x+y+z=7", "3x+2y+z=10"])?.latex).toBe("x = 1, \\ y = 2, \\ z = 3");
+  });
+
+  it("three equations with no common point: eliminated down to a false `0 = c`, then ∅", () => {
+    // two parallel planes: every unknown goes at once
+    const r = system(["x + y + z = 6", "x + y + z = 7", "x - y + z = 2"]);
+    expect(r?.steps).toEqual(["0 = 1", "\\varnothing"]);
+    expect(r?.latex).toBe("\\varnothing");
+    // the two equations left are parallel lines
+    expect(system(["x + y + z = 1", "x + y + 2z = 2", "2x + 2y + 3z = 5"])?.steps).toEqual(["z = 1", "z = 3", "0 = -2", "\\varnothing"]);
+    // the same plane twice is not a single answer: still refused
+    expect(system(["x + y + z = 6", "2x + 2y + 2z = 12", "x - y + z = 2"])).toBeNull();
   });
 
   it("stays within the block and refuses what it cannot do", () => {
@@ -381,6 +487,13 @@ describe("the hand can write every step", () => {
     "|2x+1| \\ge 5",
     "|x-3| > 0",
     "|x| \\ge -1",
+    "x^2-5x+6>0",
+    "x^2-2x-1<0",
+    "x^3-x>0",
+    "\\frac{x+1}{x-3} \\le 2",
+    "\\frac{3-x}{x+1} \\ge 0",
+    "1 \\le 3 - 2x < 7",
+    "(x-1)^2 > 0",
     "\\frac{1}{x}+\\frac{1}{2}=\\frac{3}{4}",
     "\\frac{3}{x}+\\frac{2}{x-2}=1",
     "\\frac{x}{x-1}=\\frac{1}{x-1}",
@@ -397,6 +510,10 @@ describe("the hand can write every step", () => {
     "\\ln(x+1)=1",
     "\\log x+\\log(x-3)=1",
     "\\log_2 x - \\log_2(x-2) = 1",
+    "2\\ln(x) = \\ln(9)",
+    "2\\ln(x - 1) = \\ln(4)",
+    "\\ln(x + 1) - \\ln(x) = \\ln(2)",
+    "\\log_{2}(x) + \\log_{2}(3) = 4",
   ];
   it.each(equations)("solveLatex(%s)", (latex) => {
     const r = engine.solveLatex(latex);

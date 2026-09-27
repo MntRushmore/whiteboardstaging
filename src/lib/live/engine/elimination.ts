@@ -21,7 +21,7 @@
  */
 import { gcdInt, q, qAdd, qDiv, qLatex, qMul, qNeg, termsLatex, type Q, type Term } from "./algebra";
 import { exactly, qFromNumber, qIsZero } from "./poly";
-import { LIST_SEP, MAX_STEPS, StepWriter } from "./solution";
+import { LIST_SEP, MAX_STEPS, NO_SOLUTION, StepWriter } from "./solution";
 import type { SystemDeps, SystemSolution } from "./systems";
 
 type Substitute = (latex: string, values: Record<string, string>) => string;
@@ -226,6 +226,12 @@ export function solveThreeByElimination(facts: readonly Fact[], want: string | n
   return null;
 }
 
+/** A contradiction was written (`0 = 1`): the system has no solution. */
+function noSolution(w: StepWriter): SystemSolution {
+  w.write(NO_SOLUTION);
+  return { latex: NO_SOLUTION, steps: w.lines(MAX_STEPS) };
+}
+
 function solveTrio(trio: Fact[], vars: string[], want: string | null, deps: SystemDeps, substitute: Substitute): SystemSolution | null {
   const eqs = trio.map((f) => exactForm(deps, f, vars));
   if (eqs.some((e) => !e)) return null;
@@ -247,9 +253,26 @@ function solveTrio(trio: Fact[], vars: string[], want: string | null, deps: Syst
     const same = Math.sign(a.n) === Math.sign(b.n);
     const e = reduced(combine(E[i], q(L / Math.abs(b.n)), E[p], q(((same ? -1 : 1) * L) / Math.abs(a.n)), vars), vars);
     w.write(e.latex);
+    // every unknown went at once: `0 = 1` (parallel planes, no solution) or `0 = 0` (the same plane)
+    if (vars.every((x) => !e.c[x] || qIsZero(e.c[x]))) return qIsZero(e.d) ? null : noSolution(w);
     pair.push(e);
   }
   const rest = vars.filter((x) => x !== v);
+  // the two equations left are parallel lines: eliminate one unknown and the other goes too
+  const [p0, p1] = pair;
+  const [r0, r1] = rest;
+  const cross = qAdd(qMul(p0.c[r0] ?? q(0), p1.c[r1] ?? q(0)), qNeg(qMul(p0.c[r1] ?? q(0), p1.c[r0] ?? q(0))));
+  if (qIsZero(cross)) {
+    const by = [r0, r1].find((x) => p0.c[x] && !qIsZero(p0.c[x]) && p1.c[x] && !qIsZero(p1.c[x]) && isInt(p0.c[x]) && isInt(p1.c[x]));
+    if (!by) return null;
+    const a = p0.c[by];
+    const b = p1.c[by];
+    const L = lcm(a.n, b.n);
+    const e = combine(p0, q(L / a.n), p1, q(-L / b.n), vars);
+    if (qIsZero(e.d)) return null;
+    w.write(e.latex);
+    return noSolution(w);
+  }
   const [target, other] = order(pair[0], pair[1], rest, want && rest.includes(want) ? want : null);
   const two = solveTwo(pair[0], pair[1], target, other, w, deps, substitute);
   if (!two) return null;

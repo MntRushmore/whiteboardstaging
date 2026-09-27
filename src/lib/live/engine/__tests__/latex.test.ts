@@ -140,6 +140,28 @@ describe("latexToMath: units and constants", () => {
     expect(t.hasPm).toBe(true);
     expect(t.branches.map((b) => math.evaluate(b))).toEqual([4, 2]);
   });
+  it("reads \\mathrm{min} as minutes after a number, a unit or `to`, and min() before its argument", () => {
+    const to = latexToMath("2.5 \\mathrm{~h} \\text{ to } \\mathrm{min}", { isUnit });
+    expect(to.functions).not.toContain("min");
+    expect((math.evaluate(to.source) as { toNumber: (u: string) => number }).toNumber("minute")).toBeCloseTo(150, 9);
+    expect(latexToMath("90 \\mathrm{min}", { isUnit }).units).toContain("minute");
+    expect(latexToMath("\\mathrm{min}", { isUnit }).units).toContain("minute");
+    const fn = latexToMath("\\mathrm{min}(3, 5)", { isUnit });
+    expect(fn.functions).toContain("min");
+    expect(math.evaluate(fn.source)).toBe(3);
+  });
+  it("reads a whole number straight before a proper numeric fraction as a mixed number", () => {
+    expect(num("2 \\frac{1}{2} + 1 \\frac{3}{4}")).toBeCloseTo(17 / 4, 12);
+    expect(num("2\\frac{1}{2}")).toBeCloseTo(2.5, 12);
+    expect(num("-1\\frac{1}{2} + 4")).toBeCloseTo(2.5, 12);
+    expect(num("2\\frac{1}{2} \\times 3")).toBeCloseTo(7.5, 12);
+    // not a mixed number: an improper fraction, a letter, a decimal, an operator, an exponent
+    expect(num("2\\frac{5}{3}")).toBeCloseTo(10 / 3, 12);
+    expect(num("2.5\\frac{1}{2}")).toBeCloseTo(1.25, 12);
+    expect(num("2 \\times \\frac{1}{2}")).toBeCloseTo(1, 12);
+    expect(num("3^{2}\\frac{1}{3}")).toBeCloseTo(3, 12);
+    expect(latexToMath("2\\frac{x}{3}", { isUnit }).source).toBe("2 * ((x)/(3))");
+  });
 });
 
 describe("latexToMath: calculus, plain mode and failures", () => {

@@ -19,7 +19,10 @@
  * and three equations in three unknowns always are (`elimination.ts`). Anything else is `null`:
  * never a guess, and the caller decides whether a model may try.
  */
+import { qAdd, qLatex, qMul, type Q } from "./algebra";
 import { eliminateTwo, solveThreeByElimination } from "./elimination";
+import { exactly, qFromNumber } from "./poly";
+import { LIST_SEP } from "./solution";
 
 /** `x = ?`, `x =`, `x = \text{?}` — the student asking for x. */
 export function questionVariable(latex: string): string | null {
@@ -50,9 +53,13 @@ export function substituteLatex(latex: string, values: Record<string, string>): 
     }
     const value = values[m[2]];
     const before = out.trimEnd().slice(-1);
+    const after = latex.slice(re.lastIndex).trimStart().charAt(0);
     const plain = /^\d+(?:\.\d+)?$/.test(value);
     const glued = /[0-9a-zA-Z)}]/.test(before);
-    out += plain && !glued ? value : `(${value})`;
+    // a whole side needs no bracket (`2x + 1 = x^{2}`), nor a negative number opening a sum (`-8 + 3`)
+    const wholeSide = (before === "" || before === "=") && (after === "" || after === "=");
+    const leadingNegative = /^-\d+(?:\.\d+)?$/.test(value) && (before === "" || before === "=") && ["", "+", "-", "="].includes(after);
+    out += (plain && !glued) || wholeSide || leadingNegative ? value : `(${value})`;
   }
   return out + latex.slice(last);
 }
@@ -100,6 +107,11 @@ export interface SystemDeps {
   cancelled?(latex: string): { steps: string[]; outcome: "identity" | "contradiction" } | null;
   /** the single real root of a one-unknown equation, when there is exactly one */
   singleRoot(latex: string, variable: string): number | null;
+  /**
+   * A one-unknown equation solved exactly, with its steps and real roots (`exact` when rational);
+   * null when no exact method applies. Optional for test doubles.
+   */
+  solveRoots?(latex: string): { steps: string[]; roots: Array<{ latex: string; value: number; exact?: Q }> | null } | null;
   /** evaluates `lhs - rhs` of a parsed relation at a scope */
   evalG(lhs: string, rhs: string, scope: Record<string, number>): number | null;
   fmt: NumFmt;
@@ -264,6 +276,81 @@ export function solveFromLines(lines: readonly string[], deps: SystemDeps): Syst
     }
   }
 
-  // 3. three linear equations in three unknowns, by elimination
-  return solveThreeByElimination(facts, want, deps, substituteLatex);
+  // 3. three linear equations in three unknowns, by elimination; 4. one linear, one not
+  return solveThreeByElimination(facts, want, deps, substituteLatex) ?? substituteIntoNonLinear(facts, want, deps);
+}
+
+/** `(w + 3) \cdot w` → `(w + 3)w`: a substituted bracket needs no dot. */
+function tidyProduct(latex: string): string {
+  return latex.replace(/\)\s*\\cdot\s*(?=[a-zA-Z(])/g, ")").replace(/([a-zA-Z])\s*\\cdot\s*\(/g, "$1(");
+}
+
+/**
+ * Two equations in the same two unknowns, one linear and one not (`l = w + 3`, `l \cdot w = 40`),
+ * by substitution, the way a teacher writes it:
+ *
+ *   l = w + 3, l \cdot w = 40     (the student's lines)
+ *   (w + 3)w = 40                 the linear one substituted into the other
+ *   w^{2} + 3w = 40 … (w + 8)(w - 5) = 0
+ *   w = -8, \ w = 5               the one-unknown equation's own exact steps
+ *   l = -8 + 3, \ l = 5 + 3       each root put back
+ *   l = -5, \ l = 8               the partner of each root, in the same order
+ *
+ * The unknown isolated is the one alone on a side of the linear line (else one with coefficient
+ * ±1) — the one asked for when there is one, so its values end the block. No real root is `\varnothing`. Null when the roots are not
+ * rational (a surd would need putting back symbolically) or no exact method solves the line.
+ */
+function substituteIntoNonLinear(facts: ReadonlyArray<{ lhs: string; rhs: string; unknowns: string[]; latex: string }>, want: string | null, deps: SystemDeps): SystemSolution | null {
+  if (!deps.solveRoots) return null;
+  for (let i = facts.length - 1; i >= 1; i--) {
+    for (let j = i - 1; j >= 0; j--) {
+      const pairVars = [...new Set(facts[j].unknowns)].sort();
+      if (pairVars.length !== 2 || [...new Set(facts[i].unknowns)].sort().join() !== pairVars.join()) continue;
+      if (want && !pairVars.includes(want)) continue;
+      const pair = pairVars as [string, string];
+      const forms = [facts[j], facts[i]].map((f) => linearFormOf(deps, f.lhs, f.rhs, pair));
+      if (forms[0] && forms[1]) continue; // both linear: substitution or elimination above
+      const k = forms[0] ? 0 : forms[1] ? 1 : -1;
+      if (k < 0) continue;
+      const lin = k === 0 ? facts[j] : facts[i];
+      const other = k === 0 ? facts[i] : facts[j];
+      const form = forms[k]!;
+      const alone = (v: string) => new RegExp(`(^|=)\\s*${v}\\s*(=|$)`).test(lin.latex.replace(/\s+/g, " "));
+      // the unknown put back last is the one whose values end the block: the one asked for
+      const choices = [...pair]
+        .reverse()
+        .filter((v) => Math.abs(form.coef[v]) > 1e-12)
+        .sort((a, b) => Number(b === want) - Number(a === want) || Number(alone(b)) - Number(alone(a)) || Number(Math.abs(Math.abs(form.coef[b]) - 1) < 1e-12) - Number(Math.abs(Math.abs(form.coef[a]) - 1) < 1e-12));
+      const iso = choices[0];
+      if (!iso) continue;
+      const keep = pair[0] === iso ? pair[1] : pair[0];
+      const k0 = clean(-form.constant / form.coef[iso]);
+      const k1 = clean(-form.coef[keep] / form.coef[iso]);
+      const q0 = qFromNumber(k0);
+      const q1 = qFromNumber(k1);
+      if (!q0 || !q1) continue;
+      const expr = linearLatex(k0, k1, keep, deps.fmt);
+      const isolated = `${iso} = ${expr}`;
+      const substituted = tidyProduct(substituteLatex(other.latex, { [iso]: expr }));
+      const sol = deps.solveRoots(substituted);
+      if (!sol || !sol.roots) continue;
+      const steps: string[] = [];
+      if (deps.normalize(isolated) !== deps.normalize(lin.latex)) steps.push(isolated);
+      steps.push(substituted, ...sol.steps.filter((s) => deps.normalize(s) !== deps.normalize(substituted)));
+      if (sol.roots.length === 0) {
+        if (steps[steps.length - 1] !== EMPTY_SET) steps.push(EMPTY_SET);
+        return { latex: EMPTY_SET, steps: fitSteps(steps, 1) };
+      }
+      const roots = [...sol.roots].sort((a, b) => a.value - b.value);
+      if (roots.some((r) => !r.exact)) continue;
+      const values = exactly(() => roots.map((r) => qAdd(q0, qMul(q1, r.exact!))));
+      if (!values) continue;
+      const back = `${roots.map((r) => `${iso} = ${substituteLatex(expr, { [keep]: qLatex(r.exact!) })}`).join(LIST_SEP)}`;
+      const final = values.map((v) => `${iso} = ${qLatex(v)}`).join(LIST_SEP);
+      if (deps.normalize(back) !== deps.normalize(final)) steps.push(back);
+      steps.push(final);
+      return { latex: final, steps: fitSteps(steps, 1, steps.lastIndexOf(back)) };
+    }
+  }
+  return null;
 }

@@ -371,7 +371,9 @@ export function polynomialEquationSteps(
     let P = polySub(pl, pr);
     const n = deg(P);
     const w = new StepWriter(normalize, inputLatex);
-    if (n === 1 && Math.max(deg(pl), deg(pr)) >= 2) return cancelledSquares(L, R, P, variable, inputLatex, w, rawSolve);
+    // the squares cancel: across the sides (`(x - 1)^2 = (x + 1)^2`) or on one (`x^2 - (x - 1)^2 = 5`)
+    const written = Math.max(0, ...[...L, ...R].map((t) => t.vars[variable] ?? 0));
+    if (n === 1 && written >= 2) return cancelledSquares(L, R, P, variable, inputLatex, w, rawSolve);
     if (n < 2 || n > 4) return null;
 
     const zp = zeroProductFactors(lhs, rhs, variable);

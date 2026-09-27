@@ -192,7 +192,7 @@ describe("engine: solveLatex", () => {
     expect(engine.solveLatex("x + y = 5")).toBeNull();
     expect(engine.solveLatex("2x + 3")).toBeNull();
     expect(engine.solveLatex("\\sum x = 1")).toBeNull();
-    expect(engine.solveLatex("x = x")).toBeNull();
+    // `x = x` is an identity (`x \in \mathbb{R}`), no longer refused: teacherSteps.test.ts
   });
 });
 

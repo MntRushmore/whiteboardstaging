@@ -6,6 +6,7 @@
  *   3^{x + 1} = 27        exponential / log → explog.ts
  *   \frac{1}{x} + 2 = 3   unknown below     → rationalEquation.ts
  *   x^2 - 5x + 6 = 0      polynomial        → quadratic.ts
+ *   x^2 - 4 < 0           inequality        → inequality.ts (polynomial, one fraction, a chain)
  *
  * Each turns the line into a simpler one (a branch, the squared line, the exponents, the line
  * with the denominators cleared) and hands it back through `SolveContext.solve`, so every
@@ -16,6 +17,7 @@ import type { MathNode } from "mathjs";
 import { linearSolveSteps, qDiv, qNeg, type RelOp } from "./algebra";
 import { absoluteSteps } from "./absolute";
 import { expLogSteps } from "./explog";
+import { chainSteps, inequalitySteps, type ParsedChain } from "./inequality";
 import { argsOf, fnOf, mentions, polyOf, some } from "./nodes";
 import { deg, exactly, polySub } from "./poly";
 import { polynomialEquationSteps, qRoot } from "./quadratic";
@@ -36,6 +38,8 @@ export interface ParsedRelation {
 export interface AdvancedDeps {
   /** a one-unknown relation without units, decimals or calculus; null otherwise */
   relation(latex: string): ParsedRelation | null;
+  /** `a < f < b` in one unknown, the same restrictions; null otherwise */
+  chain?(latex: string): ParsedChain | null;
   /** two step lines are the same line (`\leq` is `\le`, spacing never counts) */
   normalize(latex: string): string;
 }
@@ -89,7 +93,7 @@ function dispatch(rel: ParsedRelation, ctx: SolveContext): Solution | null {
   const sides = [rel.lhs, rel.rhs];
   const has = (pred: (n: MathNode) => boolean) => sides.some((s) => some(s, pred));
   if (has(isCall("abs"))) return absoluteSteps(rel, ctx);
-  if (rel.op !== "==") return null;
+  if (rel.op !== "==") return has(isCall("sqrt")) || has(isCall("nthRoot")) || has(isExpLog(rel.variable)) ? null : inequalitySteps(rel, ctx);
   if (has(isCall("sqrt")) || has(isCall("nthRoot"))) return radicalSteps(rel, ctx);
   if (has(isExpLog(rel.variable))) return expLogSteps(rel, ctx);
   if (has(isVariableDenominator(rel.variable))) return rationalEquationSteps(rel, ctx);
@@ -115,7 +119,18 @@ function context(deps: AdvancedDeps, depth: number): SolveContext {
  */
 export function solveAdvanced(latex: string, deps: AdvancedDeps): Solution | null {
   const rel = deps.relation(latex);
-  if (!rel) return null;
+  if (!rel) {
+    const chain = deps.chain?.(latex);
+    return chain ? chainSteps(chain, deps.normalize) : null;
+  }
   const out = dispatch(rel, context(deps, 1));
   return out && out.steps.length > 0 ? out : null;
+}
+
+/**
+ * Any one-unknown equation solved exactly — linear (`algebra.ts`) or by the methods above — with
+ * its roots: what a system's substituted line needs to back-substitute. Null otherwise.
+ */
+export function solveExactly(latex: string, deps: AdvancedDeps): Solution | null {
+  return context(deps, 0).solve(latex);
 }

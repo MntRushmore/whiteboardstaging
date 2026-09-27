@@ -5,46 +5,46 @@
 > paths of Solve, in `LiveLoop.startSolve`'s order) and the result is judged semantically by
 > `src/__eval__/oracle.ts`. A problem passes when all five stages pass. Corpus: `src/__eval__/corpus.ts`.
 
-**155 / 167 problems pass (93%).**
+**213 / 216 problems pass (99%).**
 
 ## Stages
 
 | stage | pass | of all | of those with a local solution |
 | --- | --- | --- | --- |
-| local solution | 161 | 96% | — |
-| answer correct | 157 | 94% | 98% |
-| steps consistent | 159 | 95% | 99% |
-| hand can draw | 161 | 96% | 100% |
-| no words | 161 | 96% | 100% |
+| local solution | 215 | 100% | — |
+| answer correct | 213 | 99% | 99% |
+| steps consistent | 215 | 100% | 100% |
+| hand can draw | 215 | 100% | 100% |
+| no words | 215 | 100% | 100% |
 
 Answer verdicts (`approx`: a decimal or ≈ where a teacher writes the exact value; `form`: right value, wrong shape; `unsolved`: the last line is not an answer yet; `missing`: no local solution):
 
 | ok | approx | form | unsolved | wrong | missing | unjudged |
 | --- | --- | --- | --- | --- | --- | --- |
-| 157 | 3 | 0 | 0 | 1 | 6 | 0 |
+| 213 | 2 | 0 | 0 | 0 | 1 | 0 |
 
 ## By topic
 
 | topic | n | pass | local solution | answer correct | steps consistent | hand can draw | no words |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| arithmetic | 13 | **12** (92%) | 13 | 12 | 13 | 13 | 13 |
-| linear | 13 | **11** (85%) | 11 | 11 | 11 | 11 | 11 |
-| inequality | 9 | **8** (89%) | 8 | 8 | 8 | 8 | 8 |
-| system-2x2 | 8 | **8** (100%) | 8 | 8 | 8 | 8 | 8 |
-| system-3x3 | 4 | **4** (100%) | 4 | 4 | 4 | 4 | 4 |
+| arithmetic | 19 | **19** (100%) | 19 | 19 | 19 | 19 | 19 |
+| linear | 19 | **19** (100%) | 19 | 19 | 19 | 19 | 19 |
+| inequality | 17 | **17** (100%) | 17 | 17 | 17 | 17 | 17 |
+| system-2x2 | 16 | **16** (100%) | 16 | 16 | 16 | 16 | 16 |
+| system-3x3 | 6 | **6** (100%) | 6 | 6 | 6 | 6 | 6 |
 | substitution | 5 | **5** (100%) | 5 | 5 | 5 | 5 | 5 |
 | quadratic | 14 | **14** (100%) | 14 | 14 | 14 | 14 | 14 |
-| absolute | 5 | **5** (100%) | 5 | 5 | 5 | 5 | 5 |
-| rational | 6 | **5** (83%) | 6 | 6 | 5 | 6 | 6 |
-| radical | 6 | **6** (100%) | 6 | 6 | 6 | 6 | 6 |
-| exponential | 7 | **7** (100%) | 7 | 7 | 7 | 7 | 7 |
-| logarithmic | 7 | **6** (86%) | 7 | 6 | 7 | 7 | 7 |
-| expand-factor | 13 | **12** (92%) | 12 | 12 | 12 | 12 | 12 |
-| derivative | 16 | **15** (94%) | 16 | 16 | 15 | 16 | 16 |
+| absolute | 7 | **7** (100%) | 7 | 7 | 7 | 7 | 7 |
+| rational | 8 | **8** (100%) | 8 | 8 | 8 | 8 | 8 |
+| radical | 8 | **8** (100%) | 8 | 8 | 8 | 8 | 8 |
+| exponential | 9 | **9** (100%) | 9 | 9 | 9 | 9 | 9 |
+| logarithmic | 9 | **9** (100%) | 9 | 9 | 9 | 9 | 9 |
+| expand-factor | 18 | **18** (100%) | 18 | 18 | 18 | 18 | 18 |
+| derivative | 16 | **16** (100%) | 16 | 16 | 16 | 16 | 16 |
 | integral-indefinite | 9 | **8** (89%) | 8 | 8 | 8 | 8 | 8 |
 | integral-definite | 8 | **8** (100%) | 8 | 8 | 8 | 8 | 8 |
 | limit | 8 | **8** (100%) | 8 | 8 | 8 | 8 | 8 |
-| units-percent | 8 | **7** (88%) | 7 | 7 | 7 | 7 | 7 |
+| units-percent | 12 | **12** (100%) | 12 | 12 | 12 | 12 | 12 |
 | trig | 8 | **6** (75%) | 8 | 6 | 8 | 8 | 8 |
 
 ## Failure patterns
@@ -53,113 +53,22 @@ Grouped by stage and reason (numbers and LaTeX blanked), most frequent first. On
 
 | # | stage | pattern | problems | example |
 | --- | --- | --- | --- | --- |
-| 1 | local | no local solution — linear | 2: li-10, li-11 |  |
-| 2 | answer | approx: a decimal where the exact value is wanted | 2: tr-04, tr-08 | `= 0.866` |
-| 3 | local | no local solution — inequality | 1: in-08 |  |
-| 4 | local | no local solution — expand-factor | 1: xf-13 |  |
-| 5 | local | no local solution — integral-indefinite | 1: ii-08 |  |
-| 6 | local | no local solution — units-percent | 1: up-04 |  |
-| 7 | answer | wrong: not the expected value | 1: ar-11 | `= \frac{7}{4}` |
-| 8 | answer | approx: written with ≈ although the value is exact | 1: lg-06 | `x \approx 3` |
-| 9 | steps | says {…}, the line before has {…} | 1: ra-05 | `\varnothing` |
-| 10 | steps | not equal to the line before | 1: de-14 | `= 4x^{3}` |
+| 1 | answer | approx: a decimal where the exact value is wanted | 2: tr-04, tr-08 | `= 0.866` |
+| 2 | local | no local solution — integral-indefinite | 1: ii-08 |  |
 
 ## Every failure
 
 | id | topic | problem | expected | stage | what went wrong | offending LaTeX |
 | --- | --- | --- | --- | --- | --- | --- |
-| ar-11 | arithmetic | `2 \frac{1}{2} + 1 \frac{3}{4} =` | `\frac{17}{4}` | answer | wrong: not the expected value | `= \frac{7}{4}` |
-| li-10 | linear | `3x + 7 = 3x - 2` | `\varnothing` | local | no local solution: Solve would ask the model |  |
-| li-11 | linear | `2(x + 3) = 2x + 6` | `\mathbb{R}` | local | no local solution: Solve would ask the model |  |
-| in-08 | inequality | `x^{2} - 4 < 0` | `-2 < x < 2` | local | no local solution: Solve would ask the model |  |
-| ra-05 | rational | `\frac{x}{x - 2} = \frac{2}{x - 2} + 3` | `\varnothing` | steps | says ∅, the line before has {2} | `\varnothing` |
-| lg-06 | logarithmic | `2\ln(x) = \ln(9)` | `x = 3` | answer | approx: written with ≈ although the value is exact | `x \approx 3` |
-| xf-13 | expand-factor | `\frac{x^{2} - 1}{x - 1}` | `x + 1` | local | no local solution: Solve would ask the model |  |
-| de-14 | derivative | `\frac{d^{2}}{dx^{2}}(x^{4}) =` | `12x^{2}` | steps | not equal to the line before | `= 4x^{3}` |
 | ii-08 | integral-indefinite | `\int x e^{x^{2}} \, dx` | `\frac{1}{2} e^{x^{2}} + C` | local | no local solution: Solve would ask the model |  |
-| up-04 | units-percent | `2.5 \mathrm{~h} \text{ to } \mathrm{min}` | `150 \mathrm{~min}` | local | no local solution: Solve would ask the model |  |
 | tr-04 | trig | `\sin(60^{\circ}) =` | `\frac{\sqrt{3}}{2}` | answer | approx: a decimal where the exact value is wanted | `= 0.866` |
 | tr-08 | trig | `\tan(60^{\circ}) =` | `\sqrt{3}` | answer | approx: a decimal where the exact value is wanted | `= 1.732` |
 
 ## Detail of every failing problem
 
-#### ar-11 · arithmetic
-
-- problem: `2 \frac{1}{2} + 1 \frac{3}{4} =` → expected `\frac{17}{4}` (mixed numbers: 2½ is 2 + ½, not 2 × ½)
-- local path: localAnswer
-- answer: **wrong** — not the expected value
-- steps:
-  1. `= \frac{7}{4}` ✓
-
-#### li-10 · linear
-
-- problem: `3x + 7 = 3x - 2` → expected `\varnothing` (no solution)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### li-11 · linear
-
-- problem: `2(x + 3) = 2x + 6` → expected `\mathbb{R}` (identity: every x)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### in-08 · inequality
-
-- problem: `x^{2} - 4 < 0` → expected `-2 < x < 2` (quadratic inequality)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### ra-05 · rational
-
-- problem: `\frac{x}{x - 2} = \frac{2}{x - 2} + 3` → expected `\varnothing` (x = 2 is extraneous)
-- local path: solveLatex
-- answer: **ok**
-- steps:
-  1. `x \neq 2` unverified: an equation and an inequality
-  2. `x = 2 + 3(x - 2)` unverified: an equation and an inequality
-  3. `x = 2 + 3x - 6` ✓
-  4. `x = 3x - 4` ✓
-  5. `x - 3x = -4` ✓
-  6. `-2x = -4` ✓
-  7. `x = 2` ✓
-  8. `\varnothing` ✗ says ∅, the line before has {2}
-- warnings: 8 lines: at the maxSolveSteps cap (working may have been cut); unverified: `x \neq 2` (an equation and an inequality); unverified: `x = 2 + 3(x - 2)` (an equation and an inequality)
-
-#### lg-06 · logarithmic
-
-- problem: `2\ln(x) = \ln(9)` → expected `x = 3`
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx 3` ✓
-- warnings: numeric root-finder: the answer with no working
-
-#### xf-13 · expand-factor
-
-- problem: `\frac{x^{2} - 1}{x - 1}` → expected `x + 1` (cancel a common factor)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### de-14 · derivative
-
-- problem: `\frac{d^{2}}{dx^{2}}(x^{4}) =` → expected `12x^{2}`
-- local path: simplifySteps
-- answer: **ok**
-- steps:
-  1. `= 4x^{3}` ✗ not equal to the line before
-  2. `= \frac{d}{dx} 4x^{3}` ✓
-  3. `= 4 \cdot 3x^{2}` ✓
-  4. `= 12x^{2}` ✓
-
 #### ii-08 · integral-indefinite
 
 - problem: `\int x e^{x^{2}} \, dx` → expected `\frac{1}{2} e^{x^{2}} + C` (substitution u = x²)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### up-04 · units-percent
-
-- problem: `2.5 \mathrm{~h} \text{ to } \mathrm{min}` → expected `150 \mathrm{~min}` (`\mathrm{min}` is read as the min() function)
 - local path: none (Solve would ask the model)
 - answer: **missing** — no local solution: Solve would ask the model
 
@@ -185,7 +94,6 @@ Grouped by stage and reason (numbers and LaTeX blanked), most frequent first. On
 | --- | --- |
 | sy-01 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
 | sy-02 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
-| sy-04 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
 | sy-05 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
 | s3-01 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
 | s3-02 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
@@ -196,9 +104,11 @@ Grouped by stage and reason (numbers and LaTeX blanked), most frequent first. On
 | ra-02 | unverified: `x \neq 1` (an equation and an inequality); unverified: `(x - 1) \cdot \frac{x + 2}{x - 1} = (x - 1) \cdot 4` (an equation and an inequality) |
 | ra-03 | unverified: `x \neq 0` (an equation and an inequality); unverified: `2x \cdot \frac{1}{x} + 2x \cdot \frac{1}{2} = 2x \cdot 1` (an equation and an inequality) |
 | ra-04 | unverified: `x \neq -1, \ x \neq 3` (unreadable step (untranslatable side)) |
+| ra-05 | 8 lines: at the maxSolveSteps cap (working may have been cut); unverified: `x \neq 2` (an equation and an inequality); unverified: `x = 2 + 3(x - 2)` (an equation and an inequality) |
 | ra-06 | 8 lines: at the maxSolveSteps cap (working may have been cut); widened: `x^{2} - 4 = 5(x - 2)` ({3} → {2, 3} (extraneous candidates)); unverified: `x \neq 2` (an equation and an inequality); unverified: `(x - 2) \cdot \frac{x^{2} - 4}{x - 2} = (x - 2) \cdot 5` (an equation and an inequality) |
 | rd-04 | widened: `x + 2 = x^{2}` ({2} → {-1, 2} (extraneous candidates)); unverified: `\sqrt{1} \neq -1` (an equation and an inequality); unverified: `x = 2` (an equation and an inequality) |
 | lg-05 | 8 lines: at the maxSolveSteps cap (working may have been cut); unverified: `x > 2` (an equation and an inequality); unverified: `\log_{2}(x(x - 2)) = 3` (an equation and an inequality) |
+| lg-06 | unverified: `x > 0` (an equation and an inequality); unverified: `\ln(x^{2}) = \ln 9` (an equation and an inequality) |
 | de-12 | unverified: `= 3x^{2} + 2` (the line before is unreadable (untranslatable)) |
 | de-13 | unverified: `= 2x - 3` (the line before is unreadable (untranslatable)) |
 | di-01 | unverified: `= \left[\frac{x^{3}}{3}\right]_{0}^{1}` (no sample point where both are defined); unverified: `= \frac{1}{3} - 0` (no sample point where both are defined) |
@@ -209,7 +119,20 @@ Grouped by stage and reason (numbers and LaTeX blanked), most frequent first. On
 | di-06 | unverified: `= \left[e^{x}\right]_{0}^{1}` (no sample point where both are defined); unverified: `= e - 1` (no sample point where both are defined) |
 | di-07 | unverified: `= \left[\frac{x^{4}}{4}\right]_{-1}^{1}` (no sample point where both are defined); unverified: `= \frac{1}{4} - \frac{1}{4}` (no sample point where both are defined) |
 | di-08 | unverified: `= \left[\sin x\right]_{0}^{\frac{\pi}{2}}` (no sample point where both are defined); unverified: `= 1 - 0` (no sample point where both are defined) |
+| g2-10 | unverified: `x \neq -1` (an equation and an inequality) |
+| g2-14 | unverified: `x \neq 1` (an equation and an inequality) |
+| g2-17 | widened: `x^{2} = 4` ({-2} → {-2, 2} (extraneous candidates)); unverified: `x \neq 2` (an equation and an inequality); unverified: `(x - 2) \cdot \frac{x^{2}}{x - 2} = (x - 2) \cdot \frac{4}{x - 2}` (an equation and an inequality) |
+| g2-18 | unverified: `x \neq -1, \ x \neq 0` (unreadable step (untranslatable side)) |
+| g2-19 | widened: `2x + 3 = x^{2}` ({3} → {-1, 3} (extraneous candidates)); unverified: `\sqrt{1} \neq -1` (an equation and an inequality); unverified: `x = 3` (an equation and an inequality) |
+| g2-20 | widened: `x + 5 = (x - 1)^{2}` ({4} → {-1, 4} (extraneous candidates)); unverified: `\sqrt{4} \neq -2` (an equation and an inequality); unverified: `x = 4` (an equation and an inequality) |
+| g2-23 | 8 lines: at the maxSolveSteps cap (working may have been cut); unverified: `x > 0` (an equation and an inequality); unverified: `\log_{3}(x(x + 6)) = 3` (an equation and an inequality) |
+| g2-24 | unverified: `x > 0` (an equation and an inequality); unverified: `\ln \frac{x + 1}{x} = \ln 2` (an equation and an inequality) |
+| g2-26 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
+| g2-27 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
+| g2-45 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
+| g2-46 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
+| g2-49 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
 
 ## Passing
 
-ar-01, ar-02, ar-03, ar-04, ar-05, ar-06, ar-07, ar-08, ar-09, ar-10, ar-12, ar-13, li-01, li-02, li-03, li-04, li-05, li-06, li-07, li-08, li-09, li-12, li-13, in-01, in-02, in-03, in-04, in-05, in-06, in-07, in-09, sy-01, sy-02, sy-03, sy-04, sy-05, sy-06, sy-07, sy-08, s3-01, s3-02, s3-03, s3-04, su-01, su-02, su-03, su-04, su-05, qu-01, qu-02, qu-03, qu-04, qu-05, qu-06, qu-07, qu-08, qu-09, qu-10, qu-11, qu-12, qu-13, qu-14, ab-01, ab-02, ab-03, ab-04, ab-05, ra-01, ra-02, ra-03, ra-04, ra-06, rd-01, rd-02, rd-03, rd-04, rd-05, rd-06, ex-01, ex-02, ex-03, ex-04, ex-05, ex-06, ex-07, lg-01, lg-02, lg-03, lg-04, lg-05, lg-07, xf-01, xf-02, xf-03, xf-04, xf-05, xf-06, xf-07, xf-08, xf-09, xf-10, xf-11, xf-12, de-01, de-02, de-03, de-04, de-05, de-06, de-07, de-08, de-09, de-10, de-11, de-12, de-13, de-15, de-16, ii-01, ii-02, ii-03, ii-04, ii-05, ii-06, ii-07, ii-09, di-01, di-02, di-03, di-04, di-05, di-06, di-07, di-08, lm-01, lm-02, lm-03, lm-04, lm-05, lm-06, lm-07, lm-08, up-01, up-02, up-03, up-05, up-06, up-07, up-08, tr-01, tr-02, tr-03, tr-05, tr-06, tr-07
+ar-01, ar-02, ar-03, ar-04, ar-05, ar-06, ar-07, ar-08, ar-09, ar-10, ar-11, ar-12, ar-13, li-01, li-02, li-03, li-04, li-05, li-06, li-07, li-08, li-09, li-10, li-11, li-12, li-13, in-01, in-02, in-03, in-04, in-05, in-06, in-07, in-08, in-09, sy-01, sy-02, sy-03, sy-04, sy-05, sy-06, sy-07, sy-08, s3-01, s3-02, s3-03, s3-04, su-01, su-02, su-03, su-04, su-05, qu-01, qu-02, qu-03, qu-04, qu-05, qu-06, qu-07, qu-08, qu-09, qu-10, qu-11, qu-12, qu-13, qu-14, ab-01, ab-02, ab-03, ab-04, ab-05, ra-01, ra-02, ra-03, ra-04, ra-05, ra-06, rd-01, rd-02, rd-03, rd-04, rd-05, rd-06, ex-01, ex-02, ex-03, ex-04, ex-05, ex-06, ex-07, lg-01, lg-02, lg-03, lg-04, lg-05, lg-06, lg-07, xf-01, xf-02, xf-03, xf-04, xf-05, xf-06, xf-07, xf-08, xf-09, xf-10, xf-11, xf-12, xf-13, de-01, de-02, de-03, de-04, de-05, de-06, de-07, de-08, de-09, de-10, de-11, de-12, de-13, de-14, de-15, de-16, ii-01, ii-02, ii-03, ii-04, ii-05, ii-06, ii-07, ii-09, di-01, di-02, di-03, di-04, di-05, di-06, di-07, di-08, lm-01, lm-02, lm-03, lm-04, lm-05, lm-06, lm-07, lm-08, up-01, up-02, up-03, up-04, up-05, up-06, up-07, up-08, tr-01, tr-02, tr-03, tr-05, tr-06, tr-07, g2-01, g2-02, g2-03, g2-04, g2-05, g2-06, g2-07, g2-08, g2-09, g2-10, g2-11, g2-12, g2-13, g2-14, g2-15, g2-16, g2-17, g2-18, g2-19, g2-20, g2-21, g2-22, g2-23, g2-24, g2-25, g2-26, g2-27, g2-28, g2-44, g2-45, g2-46, g2-47, g2-48, g2-49, g2-29, g2-30, g2-31, g2-32, g2-33, g2-34, g2-35, g2-36, g2-37, g2-38, g2-39, g2-40, g2-41, g2-42, g2-43

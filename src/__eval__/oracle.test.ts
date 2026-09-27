@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CORPUS, TOPICS } from "./corpus";
 import {
   compareExprs,
+  isInequality,
   isAntiderivative,
   isExpanded,
   isFactored,
@@ -10,6 +11,7 @@ import {
   sameTruth,
   solvedValues,
   truthAt,
+  truthEverywhere,
   type Expr,
   type Indefinite,
   type Relation,
@@ -159,9 +161,7 @@ describe("oracle: expressions", () => {
  * (which reads through the same translator) cannot confirm the expectation from the line. The
  * expectation is still right — these are exactly the misreadings the scoreboard should show.
  */
-const MISREAD_BY_TRANSLATOR: Record<string, string> = {
-  "ar-11": "mixed numbers: `2 \\frac{1}{2}` is read as 2 × ½",
-};
+const MISREAD_BY_TRANSLATOR: Record<string, string> = {};
 
 describe("eval corpus", () => {
   it("has ~150 problems with unique ids over every topic", () => {
@@ -196,14 +196,19 @@ describe("eval corpus", () => {
             problems.push(`${p.id}: roots ${JSON.stringify(rs)} vs ${JSON.stringify(e.values)}`);
           }
         } else {
-          // a system (or known values): the expected point satisfies every line
-          const point: Record<string, number> = {};
+          // a system (or known values): every expected point satisfies every line
+          const known: Record<string, number> = {};
           for (const l of relations) {
             const sv = l.vars.length === 1 ? solvedValues(l, l.vars[0]) : null;
-            if (sv && sv.values.length === 1) point[l.vars[0]] = sv.values[0].re;
+            if (sv && sv.values.length === 1) known[l.vars[0]] = sv.values[0].re;
           }
-          for (const v of vars) point[v] = e.values[v][0];
-          for (const l of relations) if (truthAt(l, point) !== true) problems.push(`${p.id}: ${l.latex} is not true at ${JSON.stringify(point)}`);
+          const n = e.values[vars[0]].length;
+          if (vars.some((v) => e.values![v].length !== n)) problems.push(`${p.id}: the unknowns have different numbers of values`);
+          for (let i = 0; i < n; i++) {
+            const point: Record<string, number> = { ...known };
+            for (const v of vars) point[v] = e.values[v][i];
+            for (const l of relations) if (truthAt(l, point) !== true) problems.push(`${p.id}: ${l.latex} is not true at ${JSON.stringify(point)}`);
+          }
         }
         continue;
       }
@@ -216,9 +221,13 @@ describe("eval corpus", () => {
         if (isAntiderivative(want, target.integrand, target.variable) !== "equal") problems.push(`${p.id}: ${e.answer} is not an antiderivative`);
       } else if (want.kind === "relation" && target.kind === "relation" && want.vars.length === 1) {
         if (sameTruth(target, want, want.vars[0]) !== "equal") problems.push(`${p.id}: ${p.lines.at(-1)} is not ${e.answer}`);
+      } else if (want.kind === "empty-set" && target.kind === "relation" && relations.length === 1 && isInequality(target)) {
+        if (truthEverywhere(target, target.vars[0]) !== "never") problems.push(`${p.id}: holds somewhere`);
       } else if (want.kind === "empty-set" && target.kind === "relation" && relations.length === 1) {
         const rs = rootSet(target, target.vars[0]);
         if (!rs || rs.all || rs.roots.length > 0) problems.push(`${p.id}: has solutions ${JSON.stringify(rs)}`);
+      } else if (want.kind === "all-reals" && target.kind === "relation" && isInequality(target)) {
+        if (truthEverywhere(target, target.vars[0]) !== "always") problems.push(`${p.id}: does not always hold`);
       } else if (want.kind === "all-reals" && target.kind === "relation") {
         if (!rootSet(target, target.vars[0])?.all) problems.push(`${p.id}: is not an identity`);
       } else unchecked.push(p.id);

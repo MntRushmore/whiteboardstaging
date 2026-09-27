@@ -138,6 +138,9 @@ const SPACING = new Set([",", ";", ":", "!", " ", "quad", "qquad", "enspace", "t
 const WRAPPERS = new Set(["vec", "hat", "bar", "overline", "underline", "mathbf", "boldsymbol", "mathbb", "mathcal", "tilde", "widetilde", "widehat", "overrightarrow", "mathit", "textit", "textbf", "mathsf"]);
 const TEXT_COMMANDS = new Set(["mathrm", "text", "textrm", "operatorname", "mbox", "textnormal", "mathop", "textup"]);
 
+/** Words that are a function and a unit (minutes, seconds): which one depends on what is around them. */
+const UNIT_OR_FUNCTION = new Set(["min", "sec"]);
+
 /** Units written inside \mathrm{} that collide with constants or other names on the instance. */
 const UNIT_ALIASES: Record<string, string> = { g: "gram", h: "hour", hr: "hour", hrs: "hour", sec: "second", min: "minute", mins: "minute", L: "L", l: "L", mL: "mL", ml: "mL", cc: "cm^3", "°C": "degC", "°F": "degF", ohm: "ohm", Ω: "ohm", u: "u", μ: "u", lbs: "lb", yr: "year", yrs: "year", mph: "mi/hour", kph: "km/hour", cal: "cal", kcal: "kcal", amu: "u", M: "mol/L" };
 
@@ -305,6 +308,8 @@ class Scanner {
   private i = 0;
   readonly tokens: Token[] = [];
   private absOpen = false;
+  /** index of the last number token read from the line itself (not an exponent, not `%`'s 100) */
+  private literalNumAt = -1;
 
   constructor(
     private readonly src: string,
@@ -524,6 +529,7 @@ class Scanner {
       const text = m ? m[0] : ch;
       this.i += text.length;
       this.emit("num", text.startsWith(".") ? `0${text}` : text);
+      this.literalNumAt = this.tokens.length - 1;
       return;
     }
     if (/[a-zA-Z]/.test(ch)) {
@@ -957,6 +963,14 @@ class Scanner {
       return;
     }
     if (FUNCTION_WORDS[content]) {
+      // `2.5 \mathrm{h} \text{ to } \mathrm{min}`, `90 \mathrm{min}`: after a number, a unit or
+      // `to` (or at the end of the line, with no argument) a unit word is the unit, not min() / sec()
+      const last = this.lastToken();
+      const unitContext = last?.kind === "num" || last?.kind === "unit" || (last?.kind === "op" && last.text === "to");
+      if (UNIT_OR_FUNCTION.has(content) && (unitContext || !this.src.slice(this.i).trim())) {
+        this.emitUnit(content);
+        return;
+      }
       this.parseFunction(FUNCTION_WORDS[content]);
       return;
     }
@@ -1037,6 +1051,15 @@ class Scanner {
       return;
     }
     if (!num || !den) throw new UnsupportedLatex("empty fraction");
+    // `2\frac{1}{2}`, `2 \frac{1}{2}`: a whole number written straight before a proper numeric
+    // fraction is a mixed number, 2 + ½ — never 2 × ½ (`2\frac{x}{3}` stays a product)
+    const last = this.lastToken();
+    if (last?.kind === "num" && this.literalNumAt === this.tokens.length - 1 && /^[1-9][0-9]*$/.test(last.text) && /^[0-9]+$/.test(num) && /^[0-9]+$/.test(den) && Number(num) > 0 && Number(num) < Number(den)) {
+      this.tokens.pop();
+      // one number, as an improper fraction: the algebra sees `\frac{3}{2}`, not `1 + \frac{1}{2}`
+      this.emit("group", `(${Number(last.text) * Number(den) + Number(num)} / ${den})`);
+      return;
+    }
     this.emit("group", `((${this.sub(num)})/(${this.sub(den)}))`);
   }
 

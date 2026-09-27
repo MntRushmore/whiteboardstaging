@@ -298,9 +298,11 @@ export function linearSolveSteps(
       op = FLIP[op];
     }
 
-    // clear fractions: multiply every term by the LCD of the coefficients
+    // clear fractions: multiply every term by the LCD of the coefficients — unless the unknown is
+    // already alone and only numbers are left to add (`x = 2\frac{1}{2} + 1` → `x = \frac{7}{2}`)
+    const alone = L.length === 1 && isX(L[0]) && qOne(L[0].c) && R.every(isC);
     let lcd = 1;
-    for (const t of [...L, ...R]) lcd = (lcd * t.c.d) / gcdInt(lcd, t.c.d);
+    if (!alone) for (const t of [...L, ...R]) lcd = (lcd * t.c.d) / gcdInt(lcd, t.c.d);
     if (lcd > 1) {
       const k = q(lcd);
       L = L.map((t) => ({ c: qMul(t.c, k), vars: t.vars }));
@@ -329,8 +331,19 @@ export function linearSolveSteps(
     const a = qAdd(aL, qNeg(aR));
     const b = qAdd(cR, qNeg(cL));
 
+    const xTerm = (c: Q): Term => ({ c, vars: { [variable]: 1 } });
+    const cTerm = (c: Q): Term => ({ c, vars: {} });
+    // unknowns left, numbers right: `5x - 2x = 9 + 3` (`3x - 3x = -2 - 7` when they cancel)
+    const moveAcross = () => {
+      if (qZero(aL) || qZero(aR)) return;
+      const left = [xTerm(aL), xTerm(qNeg(aR))];
+      const right = [cTerm(cR), cTerm(qNeg(cL))].filter((t) => !qZero(t.c));
+      write(`${termsLatex(left)} ${rel} ${termsLatex(right)}`);
+    };
+
     if (qZero(a)) {
       // the unknown cancelled: `0 = 0` (every value works) or `0 = 2` (none does)
+      moveAcross();
       const final = `0 ${rel} ${qLatex(b)}`;
       write(final);
       return { steps, final, outcome: holds(op, 0, b.n / b.d) ? "identity" : "contradiction" };
@@ -339,13 +352,7 @@ export function linearSolveSteps(
     const collected = Lc.length < L.length || Rc.length < R.length;
     if (collected) write(`${termsLatex(standardOrder(Lc))} ${rel} ${termsLatex(standardOrder(Rc))}`);
 
-    const xTerm = (c: Q): Term => ({ c, vars: { [variable]: 1 } });
-    const cTerm = (c: Q): Term => ({ c, vars: {} });
-    if (!qZero(aL) && !qZero(aR)) {
-      const left = [xTerm(aL), xTerm(qNeg(aR))];
-      const right = [cTerm(cR), cTerm(qNeg(cL))].filter((t) => !qZero(t.c));
-      write(`${termsLatex(left)} ${rel} ${termsLatex(right)}`);
-    }
+    moveAcross();
 
     const axb = `${termsLatex([xTerm(a)])} ${rel} ${qLatex(b)}`;
     write(axb);
