@@ -81,7 +81,7 @@ function pieces(latex: string): string[] {
     const ch = s[i];
     if (ch === "{" || ch === "(" || ch === "[") depth++;
     else if (ch === "}" || ch === ")" || ch === "]") depth--;
-    else if (ch === "," && depth === 0) {
+    else if (ch === "," && depth === 0 && s[i - 1] !== "\\") {
       out.push(s.slice(start, i));
       start = i + 1;
     }
