@@ -209,3 +209,16 @@ describe("the hand can write every step", () => {
     expectDrawable(r!.steps);
   });
 });
+
+describe("decimals are exact, never rounded to the display precision", () => {
+  it.each([
+    ["A = 2000(1.05)^{3}", "A = 2315.25"],
+    ["x = 1234.5 + 1", "x = 1235.5"],
+    ["2x = 4631.5", "x = 2315.75"],
+    ["y = 3.14159 \\cdot 2", "y = 6.28318"],
+    // no short terminating decimal: exact, as a fraction
+    ["0.3x = 0.1", "x = \\frac{1}{3}"],
+  ])("%s → %s", (latex, final) => {
+    expect(engine.solveLatex(latex)?.latex).toBe(final);
+  });
+});

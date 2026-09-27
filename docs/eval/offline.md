@@ -5,30 +5,30 @@
 > paths of Solve, in `LiveLoop.startSolve`'s order) and the result is judged semantically by
 > `src/__eval__/oracle.ts`. A problem passes when all five stages pass. Corpus: `src/__eval__/corpus.ts`.
 
-**213 / 216 problems pass (99%).**
+**217 / 220 problems pass (99%).**
 
 ## Stages
 
 | stage | pass | of all | of those with a local solution |
 | --- | --- | --- | --- |
-| local solution | 215 | 100% | — |
-| answer correct | 213 | 99% | 99% |
-| steps consistent | 215 | 100% | 100% |
-| hand can draw | 215 | 100% | 100% |
-| no words | 215 | 100% | 100% |
+| local solution | 219 | 100% | — |
+| answer correct | 217 | 99% | 99% |
+| steps consistent | 219 | 100% | 100% |
+| hand can draw | 219 | 100% | 100% |
+| no words | 219 | 100% | 100% |
 
 Answer verdicts (`approx`: a decimal or ≈ where a teacher writes the exact value; `form`: right value, wrong shape; `unsolved`: the last line is not an answer yet; `missing`: no local solution):
 
 | ok | approx | form | unsolved | wrong | missing | unjudged |
 | --- | --- | --- | --- | --- | --- | --- |
-| 213 | 2 | 0 | 0 | 0 | 1 | 0 |
+| 217 | 2 | 0 | 0 | 0 | 1 | 0 |
 
 ## By topic
 
 | topic | n | pass | local solution | answer correct | steps consistent | hand can draw | no words |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| arithmetic | 19 | **19** (100%) | 19 | 19 | 19 | 19 | 19 |
-| linear | 19 | **19** (100%) | 19 | 19 | 19 | 19 | 19 |
+| arithmetic | 20 | **20** (100%) | 20 | 20 | 20 | 20 | 20 |
+| linear | 22 | **22** (100%) | 22 | 22 | 22 | 22 | 22 |
 | inequality | 17 | **17** (100%) | 17 | 17 | 17 | 17 | 17 |
 | system-2x2 | 16 | **16** (100%) | 16 | 16 | 16 | 16 | 16 |
 | system-3x3 | 6 | **6** (100%) | 6 | 6 | 6 | 6 | 6 |
@@ -135,4 +135,4 @@ Grouped by stage and reason (numbers and LaTeX blanked), most frequent first. On
 
 ## Passing
 
-ar-01, ar-02, ar-03, ar-04, ar-05, ar-06, ar-07, ar-08, ar-09, ar-10, ar-11, ar-12, ar-13, li-01, li-02, li-03, li-04, li-05, li-06, li-07, li-08, li-09, li-10, li-11, li-12, li-13, in-01, in-02, in-03, in-04, in-05, in-06, in-07, in-08, in-09, sy-01, sy-02, sy-03, sy-04, sy-05, sy-06, sy-07, sy-08, s3-01, s3-02, s3-03, s3-04, su-01, su-02, su-03, su-04, su-05, qu-01, qu-02, qu-03, qu-04, qu-05, qu-06, qu-07, qu-08, qu-09, qu-10, qu-11, qu-12, qu-13, qu-14, ab-01, ab-02, ab-03, ab-04, ab-05, ra-01, ra-02, ra-03, ra-04, ra-05, ra-06, rd-01, rd-02, rd-03, rd-04, rd-05, rd-06, ex-01, ex-02, ex-03, ex-04, ex-05, ex-06, ex-07, lg-01, lg-02, lg-03, lg-04, lg-05, lg-06, lg-07, xf-01, xf-02, xf-03, xf-04, xf-05, xf-06, xf-07, xf-08, xf-09, xf-10, xf-11, xf-12, xf-13, de-01, de-02, de-03, de-04, de-05, de-06, de-07, de-08, de-09, de-10, de-11, de-12, de-13, de-14, de-15, de-16, ii-01, ii-02, ii-03, ii-04, ii-05, ii-06, ii-07, ii-09, di-01, di-02, di-03, di-04, di-05, di-06, di-07, di-08, lm-01, lm-02, lm-03, lm-04, lm-05, lm-06, lm-07, lm-08, up-01, up-02, up-03, up-04, up-05, up-06, up-07, up-08, tr-01, tr-02, tr-03, tr-05, tr-06, tr-07, g2-01, g2-02, g2-03, g2-04, g2-05, g2-06, g2-07, g2-08, g2-09, g2-10, g2-11, g2-12, g2-13, g2-14, g2-15, g2-16, g2-17, g2-18, g2-19, g2-20, g2-21, g2-22, g2-23, g2-24, g2-25, g2-26, g2-27, g2-28, g2-44, g2-45, g2-46, g2-47, g2-48, g2-49, g2-29, g2-30, g2-31, g2-32, g2-33, g2-34, g2-35, g2-36, g2-37, g2-38, g2-39, g2-40, g2-41, g2-42, g2-43
+ar-01, ar-02, ar-03, ar-04, ar-05, ar-06, ar-07, ar-08, ar-09, ar-10, ar-11, ar-12, ar-13, li-01, li-02, li-03, li-04, li-05, li-06, li-07, li-08, li-09, li-10, li-11, li-12, li-13, in-01, in-02, in-03, in-04, in-05, in-06, in-07, in-08, in-09, sy-01, sy-02, sy-03, sy-04, sy-05, sy-06, sy-07, sy-08, s3-01, s3-02, s3-03, s3-04, su-01, su-02, su-03, su-04, su-05, qu-01, qu-02, qu-03, qu-04, qu-05, qu-06, qu-07, qu-08, qu-09, qu-10, qu-11, qu-12, qu-13, qu-14, ab-01, ab-02, ab-03, ab-04, ab-05, ra-01, ra-02, ra-03, ra-04, ra-05, ra-06, rd-01, rd-02, rd-03, rd-04, rd-05, rd-06, ex-01, ex-02, ex-03, ex-04, ex-05, ex-06, ex-07, lg-01, lg-02, lg-03, lg-04, lg-05, lg-06, lg-07, xf-01, xf-02, xf-03, xf-04, xf-05, xf-06, xf-07, xf-08, xf-09, xf-10, xf-11, xf-12, xf-13, de-01, de-02, de-03, de-04, de-05, de-06, de-07, de-08, de-09, de-10, de-11, de-12, de-13, de-14, de-15, de-16, ii-01, ii-02, ii-03, ii-04, ii-05, ii-06, ii-07, ii-09, di-01, di-02, di-03, di-04, di-05, di-06, di-07, di-08, lm-01, lm-02, lm-03, lm-04, lm-05, lm-06, lm-07, lm-08, up-01, up-02, up-03, up-04, up-05, up-06, up-07, up-08, tr-01, tr-02, tr-03, tr-05, tr-06, tr-07, g2-01, g2-02, g2-03, g2-04, g2-05, g2-06, g2-07, g2-08, g2-09, g2-10, g2-11, g2-12, g2-13, g2-14, g2-15, g2-16, g2-17, g2-18, g2-19, g2-20, g2-21, g2-22, g2-23, g2-24, g2-25, g2-26, g2-27, g2-28, g2-44, g2-45, g2-46, g2-47, g2-48, g2-49, g2-29, g2-30, g2-31, g2-32, g2-33, g2-34, g2-35, g2-36, g2-37, g2-38, g2-39, g2-40, g2-41, g2-42, g2-43, d3-01, d3-02, d3-03, d3-04

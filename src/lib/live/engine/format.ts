@@ -65,6 +65,12 @@ export interface NumberFormatOptions {
   /** show 1/3 as \frac{1}{3} when the value is a small rational */
   preferFraction?: boolean;
   sigFigs?: number;
+  /**
+   * Write a terminating decimal exactly (`1235.5`) instead of to `sigFigs`. On for maths the
+   * student wrote in plain decimals; off for measurements (units, trig, numeric integrals),
+   * where significant figures are the convention (`5 mi/h` → `2.235 m/s`, not `2.2352`).
+   */
+  exactDecimals?: boolean;
 }
 
 /** Strip float noise: 31.360000000000003 -> 31.36 */
@@ -100,6 +106,12 @@ export function formatNumberLatex(value: number, opts: NumberFormatOptions = {})
     }
   }
   const abs = Math.abs(noiseFree);
+  // An exact decimal in plain maths is written exactly: significant-figure rounding is for
+  // measurements and values that do not terminate. It once wrote `1234.5 + 1` as `1236`.
+  if (opts.exactDecimals && abs >= 1e-4 && abs < 1e6) {
+    const exact = shortExactDecimal(noiseFree);
+    if (exact !== null) return exact;
+  }
   if (abs !== 0 && (abs >= 1e6 || abs < 1e-4)) {
     const exp = Math.floor(Math.log10(abs));
     const mantissa = roundSignificant(noiseFree / 10 ** exp, sig);
@@ -108,6 +120,17 @@ export function formatNumberLatex(value: number, opts: NumberFormatOptions = {})
     return `${trimZeros(mant.toPrecision(sig))} \\times 10^{${e}}`;
   }
   return trimZeros(roundSignificant(noiseFree, sig).toPrecision(sig));
+}
+
+/** `n` as a terminating decimal with at most 6 places, or null when it has none. */
+export function shortExactDecimal(n: number): string | null {
+  for (let k = 0; k <= 6; k++) {
+    const scaled = n * 10 ** k;
+    if (Math.abs(scaled - Math.round(scaled)) < 1e-9 * Math.max(1, Math.abs(scaled))) {
+      return trimZeros((Math.round(scaled) / 10 ** k).toFixed(k));
+    }
+  }
+  return null;
 }
 
 function trimZeros(s: string): string {

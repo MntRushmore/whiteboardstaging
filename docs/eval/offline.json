@@ -1,16 +1,16 @@
 {
   "summary": {
-    "total": 216,
-    "passed": 213,
+    "total": 220,
+    "passed": 217,
     "stages": {
-      "local": 215,
-      "answer": 213,
-      "steps": 215,
-      "drawable": 215,
-      "words": 215
+      "local": 219,
+      "answer": 217,
+      "steps": 219,
+      "drawable": 219,
+      "words": 219
     },
     "answers": {
-      "ok": 213,
+      "ok": 217,
       "approx": 2,
       "form": 0,
       "unsolved": 0,
@@ -21,26 +21,26 @@
     "byTopic": [
       {
         "topic": "arithmetic",
-        "total": 19,
-        "passed": 19,
+        "total": 20,
+        "passed": 20,
         "stages": {
-          "local": 19,
-          "answer": 19,
-          "steps": 19,
-          "drawable": 19,
-          "words": 19
+          "local": 20,
+          "answer": 20,
+          "steps": 20,
+          "drawable": 20,
+          "words": 20
         }
       },
       {
         "topic": "linear",
-        "total": 19,
-        "passed": 19,
+        "total": 22,
+        "passed": 22,
         "stages": {
-          "local": 19,
-          "answer": 19,
-          "steps": 19,
-          "drawable": 19,
-          "words": 19
+          "local": 22,
+          "answer": 22,
+          "steps": 22,
+          "drawable": 22,
+          "words": 22
         }
       },
       {
@@ -11104,6 +11104,157 @@
         {
           "from": "-4 \\times (-2.5) + 3 =",
           "to": "= 13",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "d3-01",
+      "topic": "linear",
+      "lines": [
+        "A = 2000(1.05)^{3}"
+      ],
+      "expected": "A = 2315.25",
+      "source": "solveLatex",
+      "steps": [
+        "A = 2315.25"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "A = 2000(1.05)^{3}",
+          "to": "A = 2315.25",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "d3-02",
+      "topic": "linear",
+      "lines": [
+        "2x = 4631.5"
+      ],
+      "expected": "x = 2315.75",
+      "source": "solveLatex",
+      "steps": [
+        "x = 2315.75"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "2x = 4631.5",
+          "to": "x = 2315.75",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "d3-03",
+      "topic": "arithmetic",
+      "lines": [
+        "1234.5 + 1 ="
+      ],
+      "expected": "1235.5",
+      "source": "localAnswer",
+      "steps": [
+        "= 1235.5"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "1234.5 + 1 =",
+          "to": "= 1235.5",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "d3-04",
+      "topic": "linear",
+      "lines": [
+        "0.04x + 12.5 = 100.9"
+      ],
+      "expected": "x = 2210",
+      "source": "solveLatex",
+      "steps": [
+        "0.04x = 88.4",
+        "x = 2210"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "0.04x + 12.5 = 100.9",
+          "to": "0.04x = 88.4",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "0.04x = 88.4",
+          "to": "x = 2210",
           "status": "ok",
           "reason": ""
         }

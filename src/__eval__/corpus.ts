@@ -339,4 +339,9 @@ export const CORPUS: readonly EvalProblem[] = [
   { id: "g2-41", topic: "arithmetic", lines: ["(-2)^{3} - (-3)^{2} ="], expect: { answer: "-17" } },
   { id: "g2-42", topic: "arithmetic", lines: ["\\frac{2}{3} \\div (-4) ="], expect: { answer: "-\\frac{1}{6}" } },
   { id: "g2-43", topic: "arithmetic", lines: ["-4 \\times (-2.5) + 3 ="], expect: { answer: "13" } },
+  // decimals must come out exact: a 4-significant-figure display once wrote 1234.5 + 1 as 1236
+  { id: "d3-01", topic: "linear", lines: ["A = 2000(1.05)^{3}"], expect: { values: { A: [2315.25] } } },
+  { id: "d3-02", topic: "linear", lines: ["2x = 4631.5"], expect: { values: { x: [2315.75] } } },
+  { id: "d3-03", topic: "arithmetic", lines: ["1234.5 + 1 ="], expect: { answer: "1235.5" } },
+  { id: "d3-04", topic: "linear", lines: ["0.04x + 12.5 = 100.9"], expect: { values: { x: [2210] } } },
 ];

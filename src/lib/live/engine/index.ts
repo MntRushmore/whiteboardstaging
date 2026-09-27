@@ -21,7 +21,7 @@ import {
   type Relation,
   type RootValue,
 } from "./equivalence";
-import { asSmallFraction, complexToLatex, formatNumberLatex, nodeToLatex, valueToLatex, type NumberFormatOptions } from "./format";
+import { asSmallFraction, complexToLatex, formatNumberLatex, shortExactDecimal, nodeToLatex, valueToLatex, type NumberFormatOptions } from "./format";
 import { compileExpr, plotFor } from "./graph";
 import { APPROX_OP, latexToMath, preprocessLatex, splitRelations, UnsupportedLatex, type Translated } from "./latex";
 import { countOperations, createMathInstance, integralsExact, isComplexValue, isNodeValue, isUnitValue, safeEvaluate, safeParse, toNumber, translate, type MathModule } from "./math";
@@ -95,7 +95,11 @@ function formatOptions(t: Translated, latex: string, exactIntegral: boolean): Nu
   const decimals = /\d\.\d/.test(latex);
   const trig = t.functions.some((f) => TRIG.has(f));
   const numeric = t.functions.includes("integral") && !exactIntegral;
-  return { preferFraction: !decimals && !t.hasDegrees && !trig && !t.hasUnits && !numeric && !t.hasPercent };
+  return {
+    preferFraction: !decimals && !t.hasDegrees && !trig && !t.hasUnits && !numeric && !t.hasPercent,
+    // plain arithmetic in decimals is exact (`1234.5 + 1 = 1235.5`); measurements keep 4 s.f.
+    exactDecimals: !t.hasUnits && !trig && !numeric && !t.hasDegrees,
+  };
 }
 
 function rootLatex(r: RootValue, opts: NumberFormatOptions = { preferFraction: true }): string {
@@ -174,6 +178,16 @@ function multiRelationFromAnalysis(math: MathJsInstance, a: LineAnalysis | undef
     return rel && new Set(rel.variables).size >= 2 ? rel : null;
   }
   return null;
+}
+
+/**
+ * A number written exactly for a line in decimals: a terminating decimal with at most 6 places
+ * as itself (`2315.25`, `3.75`), anything else as an exact fraction (`\frac{1}{3}`) — never
+ * rounded to the display precision, which silently wrote `1234.5 + 1` as `1236`.
+ */
+export function exactDecimalLatex(n: number): string {
+  if (!Number.isFinite(n)) return formatNumberLatex(n);
+  return shortExactDecimal(n) ?? formatNumberLatex(n, { preferFraction: true });
 }
 
 export function createEngine(mod: MathModule): LiveEngine {
@@ -794,8 +808,11 @@ export function createEngine(mod: MathModule): LiveEngine {
       if (!info.roots || info.identity || info.contradiction) return null;
       const steps: string[] = [];
       // a line written in decimals is worked in decimals (`0.2x = 1.6`, not `\frac{1}{5}x = \frac{8}{5}`)
-      const opts: NumberFormatOptions = { preferFraction: !/\d\.\d/.test(pre) };
-      const fmt = (n: number) => formatNumberLatex(n, opts);
+      // — EXACT decimals: `2000(1.05)^3` is 2315.25, not the 4-significant-figure 2315; a value
+      // with no short terminating decimal stays an exact fraction rather than being rounded.
+      const decimalLine = /\d\.\d/.test(pre);
+      const opts: NumberFormatOptions = { preferFraction: !decimalLine };
+      const fmt = (n: number) => (decimalLine ? exactDecimalLatex(n) : formatNumberLatex(n, opts));
       const c = info.coefficients;
       const lastIsZero = R.source.trim() === "0";
       if (c && info.exact && c.length === 2) {
