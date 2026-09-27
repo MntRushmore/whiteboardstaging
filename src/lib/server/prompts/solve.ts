@@ -23,6 +23,9 @@ export const SOLVE_SYSTEM_PROMPT = [
   "9. Word problems: the first step names each unknown by assigning it (for example v = \\frac{60}{2} for a speed from 60 km in 2 hours),",
   "   then simplify. Use one short letter per quantity (v, t, d, m, F, ...), keep units in the explanation, and never restate the prose as a step.",
   "   Every step's latex must be maths the student could write, never \\text{...} sentences.",
+  "10. NO WORDS in latex: the board shows only maths. Never \\text{...}, never \"or\", \"and\", \"so\", \"therefore\" or sentences inside latex (units as \\mathrm{m/s} are maths and fine).",
+  "    Several solutions are a comma list: x = 2, \\ x = 3 (or x = 1 \\pm \\sqrt{2}). No real solution: \\varnothing. Every real number: x \\in \\mathbb{R}.",
+  "    Inequalities: 2 < x < 3, or x < 2, \\ x > 3, or interval notation (2, \\infty). Antiderivatives end in + C. Exact values (\\frac{\\sqrt{3}}{2}, \\ln 2, \\pi), not decimals, unless the problem is in decimals.",
 ].join("\n");
 
 function describeLine(line: SolveRequest["lines"][number], index: number): string {

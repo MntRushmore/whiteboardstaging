@@ -100,7 +100,7 @@ import {
   rectsIntersect,
 } from "./placement";
 import { badgeFor, decide, isSingleSymbolLatex, localNoteFor, type PolicyDecision } from "./policy";
-import { createSolveStepGuard, engineParsesStep, localAnswerFor } from "./solveSteps";
+import { createSolveStepGuard, engineParsesStep, localAnswerFor, unwrapBoxed as unwrapBoxedAnywhere } from "./solveSteps";
 import {
   RecognizeClient,
   RecognizeTimeoutError,
@@ -2643,8 +2643,7 @@ export class LiveLoop implements LiveController {
 
 /** `\boxed{x = 9}` → `x = 9`: the card is the frame; a box inside it is a second one. */
 export function unwrapBoxed(latex: string): string {
-  const m = /^\s*\\boxed\s*\{([\s\S]*)\}\s*$/.exec(latex);
-  return m ? m[1].trim() : latex;
+  return unwrapBoxedAnywhere(latex);
 }
 
 /** Comparable form of a step: spacing, `\left`/`\right` and `\cdot` vs juxtaposition ignored. */

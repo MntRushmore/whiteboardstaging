@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import { getServerEnv } from "@/lib/env";
+import { repairJsonEscapes } from "./sse";
 
 /**
  * Text / vision models on OpenRouter for the non-Live routes. The app never calls an
@@ -333,7 +334,10 @@ export async function chatJson<S extends z.ZodTypeAny>(opts: ChatJsonOptions<S>)
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(extractJsonObject(text));
+    // Models write LaTeX in JSON with single backslashes: without the repair `\frac` parses as
+    // a form feed + "rac" and `\times` as a tab + "imes" — silently (5 of 225 replies in the
+    // model benchmark). The streaming routes already repair; this is the vision reader's path.
+    parsed = JSON.parse(repairJsonEscapes(extractJsonObject(text)));
   } catch {
     throw new UpstreamError(502, "Model returned non-JSON output");
   }
