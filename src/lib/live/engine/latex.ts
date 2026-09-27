@@ -669,7 +669,11 @@ class Scanner {
         this.parseFunction(FUNCTION_WORDS[run]);
         return;
       }
-      if (this.isUnitName(run) && !NOT_UNITS_AS_WORDS.has(run)) {
+      // a unit starts a word: the `rt` of `I = Prt` is r·t, not a ronto-tonne; and two letters
+      // that are only a unit with a prefix (`nt`, nano-tonne) are one only right after a number
+      const midWord = /[a-zA-Z]/.test(this.src[this.i - 1] ?? "");
+      const exoticPair = run.length === 2 && !DEFAULT_UNITS.has(run) && this.lastToken()?.kind !== "num";
+      if (!midWord && !exoticPair && this.isUnitName(run) && !NOT_UNITS_AS_WORDS.has(run)) {
         this.i += run.length;
         this.emitUnit(run);
         return;
