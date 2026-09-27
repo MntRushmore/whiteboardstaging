@@ -1050,3 +1050,106 @@ export function isExpanded(latex: string): boolean {
   });
   return ok;
 }
+
+/**
+ * A line in standard form `Ax + By = C`: whole numbers, the x term before the y term, A > 0 (B > 0
+ * when there is no x term), no common factor. `y = -\frac{2}{3}x + 2`, `4x + 6y = 12` and
+ * `-2x - 3y = -6` are the same line and not in standard form.
+ */
+export function isStandardLine(latex: string): boolean {
+  const s = cleanLatex(latex).replace(/\\[,;: !]|\s+/g, "");
+  const m = /^(?:([+-]?\d*)x)?(?:([+-]\d*|\d*)y)?=([+-]?\d+)$/.exec(s);
+  if (!m || (m[1] === undefined && m[2] === undefined)) return false;
+  // `2x3y` is not a sum: with both terms the y term carries its sign
+  if (m[1] !== undefined && m[2] !== undefined && !/^[+-]/.test(m[2])) return false;
+  const coef = (t: string | undefined) => (t === undefined ? 0 : t === "" || t === "+" ? 1 : t === "-" ? -1 : Number(t));
+  const [A, B, C] = [coef(m[1]), coef(m[2]), Number(m[3])];
+  if ((m[1] !== undefined && A === 0) || (m[2] !== undefined && B === 0)) return false;
+  const gcd = (a: number, b: number): number => (b === 0 ? Math.abs(a) : gcd(b, a % b));
+  return gcd(gcd(A, B), C) === 1 && (A > 0 || (A === 0 && B > 0));
+}
+
+/**
+ * A quadratic in vertex form: `y = a(x - h)^{2} + k` — one squared bracket with x alone in it
+ * (coefficient 1), a number in front, numbers beside it. `y = x^{2} + 6x + 5` is not.
+ */
+export function isVertexForm(latex: string): boolean {
+  const eq = cleanLatex(latex).split("=");
+  if (eq.length !== 2 || !/^(?:y|[a-zA-Z]\s*(?:\\left)?\(\s*x\s*(?:\\right)?\))$/.test(eq[0].trim())) return false;
+  const node = nodeOf(eq[1]);
+  if (!node) return false;
+  // the summands (a bracket round a lone sum is opened: `(x + 3)` alone is not a square)
+  const terms: MathNode[] = [];
+  const flatten = (n: MathNode) => {
+    const o = stripParens(n) as MathNode & { type: string; op?: string; args?: MathNode[] };
+    if (o.type === "OperatorNode" && (o.op === "+" || o.op === "-") && o.args?.length === 2) {
+      flatten(o.args[0]);
+      flatten(o.args[1]);
+    } else terms.push(o);
+  };
+  flatten(node);
+  let squares = 0;
+  for (const t of terms) {
+    if (!hasSymbol(t)) continue;
+    // k · (x ± c)^2, the bracket written
+    let core = t as MathNode & { type: string; op?: string; fn?: string; args?: MathNode[] };
+    if (core.type === "OperatorNode" && core.fn === "unaryMinus") core = core.args![0] as typeof core;
+    if (core.type === "OperatorNode" && core.op === "*" && core.args && !hasSymbol(core.args[0])) core = core.args[1] as typeof core;
+    if (core.type !== "OperatorNode" || core.op !== "^" || !core.args) return false;
+    const [base, exp] = core.args;
+    if ((base as MathNode & { type: string }).type !== "ParenthesisNode" || exp.toString().trim() !== "2") return false;
+    const inner = stripParens(base);
+    const at = (x: number) => {
+      try {
+        const v = inner.compile().evaluate({ x });
+        return typeof v === "number" ? v : NaN;
+      } catch {
+        return NaN;
+      }
+    };
+    // x alone in the bracket: slope 1
+    if (!closeTo(at(1) - at(0), 1, 1e-12) || !closeTo(at(2) - at(1), 1, 1e-12)) return false;
+    squares++;
+  }
+  return squares === 1;
+}
+
+/**
+ * The numbers a line lists, in order: the value side of its last `=` (or the whole line) split at
+ * its top-level commas — `3, \ 7, \ 10, \ 15, \ 20`, `\text{mode} = 3, \ 7`; `\varnothing` is none.
+ * Null when a piece is not a number.
+ */
+export function listedValues(latex: string): number[] | null {
+  const s = cleanLatex(latex);
+  let depth = 0;
+  let at = -1;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === "{" || ch === "(" || ch === "[") depth++;
+    else if (ch === "}" || ch === ")" || ch === "]") depth--;
+    else if (ch === "=" && depth === 0) at = i;
+  }
+  const side = s.slice(at + 1).trim();
+  if (/^(?:\\varnothing|\\emptyset|\\\{\s*\\\})$/.test(side)) return [];
+  const out: number[] = [];
+  let start = 0;
+  depth = 0;
+  const pieces: string[] = [];
+  for (let i = 0; i <= side.length; i++) {
+    const ch = side[i];
+    if (ch === "{" || ch === "(" || ch === "[") depth++;
+    else if (ch === "}" || ch === ")" || ch === "]") depth--;
+    else if ((ch === "," && depth === 0) || i === side.length) {
+      pieces.push(side.slice(start, i));
+      start = i + 1;
+    }
+  }
+  for (const p of pieces) {
+    const t = p.replace(/^\s*(?:\\\s)?/, "").replace(/\\[,;: !]|\\\s*$/g, " ").trim();
+    const e = t ? exprOf(t) : null;
+    const v = e && e.vars.length === 0 ? e.at({}) : null;
+    if (typeof v !== "number") return null;
+    out.push(v);
+  }
+  return out;
+}
