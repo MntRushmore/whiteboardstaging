@@ -198,6 +198,22 @@ export interface Written {
   latex: string;
 }
 
+/**
+ * A glyph's polyline resampled to `PEN.step` (geometry unchanged). tldraw's freehand smoothing
+ * pulls each point only part of the way to the next, so a sparse glyph loses its corners on the
+ * board — the flag of a small `4` collapses into a `1` (see `HAND_WRITE.resampleStepPx`).
+ */
+function resample(points: readonly InkPt[]): InkPt[] {
+  const out: InkPt[] = points.length ? [{ ...points[0] }] : [];
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / PEN.step));
+    for (let k = 1; k <= n; k++) out.push({ x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n, z: a.z + ((b.z - a.z) * k) / n });
+  }
+  return out;
+}
+
 /** Maths in the tutor's hand, placed by an anchor point and alignment. Null when the hand cannot write it. */
 export function writeMath(latex: string, at: Pt, align: Align, valign: VAlign, size: number, seed: number): Written | null {
   const laid = layoutMath(latex, { size, seed });
@@ -206,7 +222,7 @@ export function writeMath(latex: string, at: Pt, align: Align, valign: VAlign, s
   const y = valign === "top" ? at.y : valign === "middle" ? at.y - laid.height / 2 : at.y - laid.height;
   return {
     latex,
-    strokes: placeStrokes(laid.strokes, { x, y }).map((s) => ({ ...s, kind: "glyph" as const })),
+    strokes: placeStrokes(laid.strokes, { x, y }).map((s) => ({ ...s, points: resample(s.points), kind: "glyph" as const })),
     rect: { x, y, w: laid.width, h: laid.height },
   };
 }

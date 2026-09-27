@@ -42,15 +42,14 @@ export function placeGraphBlock(size: { w: number; h: number }, ctx: GraphPlaceC
     // under the work and its solution
     { x: ctx.column.x, y: rectMaxY(ctx.under) + PLACEMENT.stepGap * 2, ...size },
   ];
+  // Right before down: past the line's echo (hidden until hover, but it is there) at the same
+  // height, so a graph beside the work stays level with it rather than dropping under the line.
   for (const cand of candidates) {
-    for (let dx = 0; dx <= GRAPH_PLACE.maxSlideX; dx += GRAPH_PLACE.slideX) {
-      for (let y = cand.y; y <= lowest; y += GRAPH_PLACE.slideY) {
+    for (let y = cand.y; y <= lowest; y += GRAPH_PLACE.slideY) {
+      for (let dx = 0; dx <= GRAPH_PLACE.maxSlideX; dx += GRAPH_PLACE.slideX) {
         const r = { ...cand, x: cand.x + dx, y };
-        if (!inside(r)) {
-          if (rectMaxX(r) > rectMaxX(bounds) - m) break;
-          continue;
-        }
-        if (free(r)) return r;
+        if (rectMaxX(r) > rectMaxX(bounds) - m) break;
+        if (inside(r) && free(r)) return r;
       }
     }
   }

@@ -20,17 +20,17 @@ import { chooseWindow, fromPx, numberLineWindow, ticksIn, toPx, type GraphWindow
 
 export const GRAPH = {
   /** the plot box (axes span); labels may hang a little outside */
-  box: { w: 340, h: 280 },
+  box: { w: 380, h: 310 },
   /** smaller boxes tried when the big one does not fit on the screen */
   fallbackBoxes: [
-    { w: 290, h: 240 },
-    { w: 240, h: 200 },
+    { w: 320, h: 262 },
+    { w: 264, h: 216 },
   ],
   /** number line: the axis length and the height of the drawing */
-  line: { w: 340 },
+  line: { w: 380 },
   /** hand sizes (see HAND_WRITE.digitRatio: a digit is 0.63 of this) */
-  text: { tick: 19, label: 21, axis: 22 },
-  tickHalf: 4,
+  text: { tick: 30, label: 34, axis: 30 },
+  tickHalf: 5,
   /** ticks this close to an axis end are left out (the arrowhead lives there) */
   endClear: 22,
   hatchGap: 26,
@@ -82,6 +82,13 @@ export function planFromGroups(groups: readonly Group[], size: number): HandPlan
 export function tickLatex(v: number): string {
   const s = Number(v.toPrecision(10)).toString();
   return /e/.test(s) ? v.toExponential(1) : s;
+}
+
+/** The widest tick number, as the hand writes it (px). */
+function widestTick(values: readonly number[], size: number): number {
+  let w = 0;
+  for (const v of values) w = Math.max(w, writeMath(tickLatex(v), { x: 0, y: 0 }, "left", "top", size, 1)?.rect.w ?? 0);
+  return w;
 }
 
 export interface GraphPlanResult {
@@ -301,8 +308,7 @@ function planPlane(intent: PlaneGraphIntent, opts: PlanOptions): GraphPlanResult
   const yTicks = ticksIn(win.yMin, win.yMax, win.yStep).filter((v) => v !== 0 && clearOf(toPx(win, 0, v).y, 0) && toPx(win, 0, v).y < win.h - 4);
   const xSpacing = (win.xStep / (win.xMax - win.xMin)) * win.w;
   const ySpacing = (win.yStep / (win.yMax - win.yMin)) * win.h;
-  const widest = Math.max(1, ...xTicks.map((v) => tickLatex(v).length));
-  const xEvery = Math.max(1, Math.ceil((widest * T.tick * 0.55 + 10) / xSpacing));
+  const xEvery = Math.max(1, Math.ceil((widestTick(xTicks, T.tick) + 10) / xSpacing));
   const yEvery = Math.max(1, Math.ceil((T.tick * 0.9 + 6) / ySpacing));
   const labelled = (v: number, step: number, every: number) => Math.round(v / step) % every === 0;
   for (const v of xTicks) {
@@ -425,7 +431,7 @@ function placeLabel(
   if (!probe) return null;
   const { w, h } = probe.rect;
   const spots: Array<[number, number]> = [];
-  for (const d of [7, 16, 28]) {
+  for (const d of [8, 18, 30]) {
     spots.push(
       [q.x + d, q.y - d - h],
       [q.x - d - w, q.y - d - h],
@@ -478,8 +484,7 @@ function planNumberLine(intent: NumberLineIntent, opts: PlanOptions): GraphPlanR
   const rects: Rect[] = [];
   const values = ticksIn(nl.lo, nl.hi, nl.step);
   const spacing = (w - 2 * end) / Math.max(1, values.length - 1);
-  const widest = Math.max(1, ...values.map((v) => tickLatex(v).length));
-  const every = Math.max(1, Math.ceil((widest * T.tick * 0.55 + 8) / spacing));
+  const every = Math.max(1, Math.ceil((widestTick(values, T.tick) + 8) / spacing));
   const offTick = intent.marks.filter((m) => !values.some((v) => Math.abs(v - m.at) < 1e-9));
   // an answer's own values that fall between ticks are written first, so the ticks' numbers give way
   for (const m of offTick) {
