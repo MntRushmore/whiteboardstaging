@@ -50,10 +50,10 @@ describe("linear equations: expand, clear fractions, collect, divide", () => {
     expect(engine.solveLatex("2(x+1) = 2x + 2")).toBeNull();
   });
 
-  it("hands quadratics to their own exact steps; decimals and non-polynomials stay on the CAS path", () => {
+  it("hands quadratics and exponentials to their own exact steps; decimals stay on the CAS path", () => {
     expect(solve("x^2-5x+6=0")).toEqual(["(x - 2)(x - 3) = 0", "x = 2, \\ x = 3"]);
     expect(engine.solveLatex("0.5x + 1 = 3")?.latex).toBe("x = 4");
-    expect(engine.solveLatex("2^x = 8")?.latex).toBe("x \\approx 3");
+    expect(engine.solveLatex("2^x = 8")?.latex).toBe("x = 3");
   });
 });
 

@@ -181,9 +181,9 @@ describe("engine: solveLatex", () => {
     const c = engine.solveLatex("x^2 + 1 = 0");
     expect(c?.latex).toBe("\\varnothing");
   });
-  it("cubic and numeric fallback", () => {
+  it("cubic, exponential and numeric fallback", () => {
     expect(engine.solveLatex("x^3 - 6x^2 + 11x - 6 = 0")?.latex).toBe("x = 1, \\ x = 2, \\ x = 3");
-    expect(engine.solveLatex("2^x = 8")?.latex).toBe("x \\approx 3");
+    expect(engine.solveLatex("2^x = 8")?.latex).toBe("x = 3");
     expect(engine.solveLatex("\\sin x = 2")).toBeNull();
   });
   it("returns null when unsupported", () => {

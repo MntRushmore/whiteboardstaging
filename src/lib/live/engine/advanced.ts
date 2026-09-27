@@ -14,9 +14,13 @@
  */
 import type { MathNode } from "mathjs";
 import { linearSolveSteps, qDiv, qNeg, type RelOp } from "./algebra";
-import { mentions, polyOf } from "./nodes";
+import { absoluteSteps } from "./absolute";
+import { expLogSteps } from "./explog";
+import { argsOf, fnOf, mentions, polyOf, some } from "./nodes";
 import { deg, exactly, polySub } from "./poly";
 import { polynomialEquationSteps, qRoot } from "./quadratic";
+import { radicalSteps } from "./radical";
+import { rationalEquationSteps } from "./rationalEquation";
 import type { Solution } from "./solution";
 
 /** One relation in one unknown, translated: its sides as mathjs trees. */
@@ -44,6 +48,21 @@ export interface SolveContext {
 
 const MAX_DEPTH = 5;
 
+const isCall = (name: string) => (n: MathNode) => n.type === "FunctionNode" && fnOf(n) === name;
+
+/** The unknown in an exponent (`2^{x}`, `e^{x + 1}`) or under a log. */
+function isExpLog(variable: string) {
+  return (n: MathNode) => {
+    if (n.type === "FunctionNode" && ["log", "log10", "log2", "exp"].includes(fnOf(n))) return argsOf(n).some((a) => mentions(a, variable));
+    return n.type === "OperatorNode" && fnOf(n) === "pow" && mentions(argsOf(n)[1], variable);
+  };
+}
+
+/** A denominator with the unknown in it: `\frac{3}{x - 2}`. */
+function isVariableDenominator(variable: string) {
+  return (n: MathNode) => n.type === "OperatorNode" && fnOf(n) === "divide" && mentions(argsOf(n)[1], variable);
+}
+
 /**
  * A linear line, solved by `algebra.ts`: its steps, and the root when it is an equation. `0 = 2`
  * comes back with no roots; `0 = 0` (every number) as null — no caller here can use it.
@@ -67,7 +86,13 @@ function linearSolution(rel: ParsedRelation, normalize: (latex: string) => strin
 }
 
 function dispatch(rel: ParsedRelation, ctx: SolveContext): Solution | null {
+  const sides = [rel.lhs, rel.rhs];
+  const has = (pred: (n: MathNode) => boolean) => sides.some((s) => some(s, pred));
+  if (has(isCall("abs"))) return absoluteSteps(rel, ctx);
   if (rel.op !== "==") return null;
+  if (has(isCall("sqrt")) || has(isCall("nthRoot"))) return radicalSteps(rel, ctx);
+  if (has(isExpLog(rel.variable))) return expLogSteps(rel, ctx);
+  if (has(isVariableDenominator(rel.variable))) return rationalEquationSteps(rel, ctx);
   return polynomialEquationSteps(rel.lhs, rel.rhs, rel.variable, rel.latex, ctx.normalize, ctx.solve);
 }
 
