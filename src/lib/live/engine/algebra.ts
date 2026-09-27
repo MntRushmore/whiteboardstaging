@@ -23,20 +23,20 @@ export interface Q {
 
 const LIMIT = 1e12;
 
-class NotAlgebra extends Error {}
+export class NotAlgebra extends Error {}
 
 function fail(): never {
   throw new NotAlgebra();
 }
 
-function gcdInt(a: number, b: number): number {
+export function gcdInt(a: number, b: number): number {
   let x = Math.abs(a);
   let y = Math.abs(b);
   while (y) [x, y] = [y, x % y];
   return x || 1;
 }
 
-function q(n: number, d = 1): Q {
+export function q(n: number, d = 1): Q {
   if (!Number.isInteger(n) || !Number.isInteger(d) || d === 0) fail();
   if (Math.abs(n) > LIMIT || Math.abs(d) > LIMIT) fail();
   const g = gcdInt(n, d);
@@ -46,10 +46,10 @@ function q(n: number, d = 1): Q {
   return out;
 }
 
-const qAdd = (a: Q, b: Q): Q => q(a.n * b.d + b.n * a.d, a.d * b.d);
-const qMul = (a: Q, b: Q): Q => q(a.n * b.n, a.d * b.d);
-const qDiv = (a: Q, b: Q): Q => (b.n === 0 ? fail() : q(a.n * b.d, a.d * b.n));
-const qNeg = (a: Q): Q => q(-a.n, a.d);
+export const qAdd = (a: Q, b: Q): Q => q(a.n * b.d + b.n * a.d, a.d * b.d);
+export const qMul = (a: Q, b: Q): Q => q(a.n * b.n, a.d * b.d);
+export const qDiv = (a: Q, b: Q): Q => (b.n === 0 ? fail() : q(a.n * b.d, a.d * b.n));
+export const qNeg = (a: Q): Q => q(-a.n, a.d);
 const qZero = (a: Q): boolean => a.n === 0;
 const qOne = (a: Q): boolean => a.n === 1 && a.d === 1;
 
@@ -260,7 +260,7 @@ function holds(op: RelOp, lhs: number, rhs: number): boolean {
 }
 
 /** A line has something to expand: brackets (`3(x+2)`, `\left(`) as the student wrote them. */
-function hasBracket(latex: string): boolean {
+export function hasBracket(latex: string): boolean {
   return /\(/.test(latex);
 }
 

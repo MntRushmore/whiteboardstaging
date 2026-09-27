@@ -28,6 +28,8 @@ import { countOperations, createMathInstance, integralsExact, isComplexValue, is
 import { evaluateUnits, unitValueToLatex, valuesMatch } from "./units";
 import { solveFromLines, type SystemDeps } from "./systems";
 import { linearSolveSteps, simplifyExpressionSteps, type LinearSteps, type RelOp } from "./algebra";
+import { solveAdvanced, type AdvancedDeps } from "./advanced";
+import { LIST_SEP, NO_SOLUTION } from "./solution";
 
 const UNKNOWN: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
 
@@ -99,7 +101,8 @@ function rootLatex(r: RootValue, opts: NumberFormatOptions = { preferFraction: t
 
 /** Splits `2, -2` / `2 \text{ or } -2` / `x = 2 \text{ or } x = -2` into value LaTeX fragments. */
 function splitValueList(rhsLatex: string, variable: string): string[] {
-  const s = rhsLatex.replace(/\\text\s*\{\s*or\s*\}|\\quad|\\;|\\,|\bor\b/g, ",");
+  // `2, \ -2`: the space after a list comma is the tutor's own separator, not part of a value
+  const s = rhsLatex.replace(/,\s*\\ /g, ", ").replace(/\\text\s*\{\s*or\s*\}|\\quad|\\;|\\,|\bor\b/g, ",");
   const parts: string[] = [];
   let depth = 0;
   let start = 0;
@@ -122,7 +125,8 @@ function splitValueList(rhsLatex: string, variable: string): string[] {
 
 /** `x = 2 \text{ or } x = -2`, `x = 2, x = -2`, `x_1 = 2, x_2 = -2` -> { variable, values } */
 function solutionList(latex: string): { variable: string; values: string[] } | null {
-  const s = latex.replace(/\\text\s*\{\s*(?:or|and)\s*\}|\\quad|\\qquad|\\;|\bor\b/g, ",");
+  // `x = 2, \ x = 3` (the tutor's own answer lines) as well as `x = 2 \text{ or } x = 3`
+  const s = latex.replace(/,\s*\\ /g, ", ").replace(/\\text\s*\{\s*(?:or|and)\s*\}|\\quad|\\qquad|\\;|\bor\b/g, ",");
   if (!s.includes(",")) return null;
   const parts = s.split(",").map((p) => p.trim()).filter(Boolean);
   if (parts.length < 2) return null;
@@ -648,6 +652,34 @@ export function createEngine(mod: MathModule): LiveEngine {
     return out ? { ...out, pre } : null;
   };
 
+  /** Functions a one-unknown line may use and still be solved exactly by `advanced.ts`. */
+  const ADVANCED_FUNCTIONS: ReadonlySet<string> = new Set(["abs", "sqrt", "nthRoot", "log", "log10", "exp"]);
+
+  const advancedDeps: AdvancedDeps = {
+    relation: (latex) => {
+      try {
+        const pre = preprocessLatex(latex);
+        if (/\d\.\d/.test(pre)) return null; // exact answers only: decimals stay on the CAS path
+        const split = splitRelations(pre);
+        if (split.sides.length !== 2 || !isRelOp(split.ops[0])) return null;
+        const [L, R] = split.sides.map((side) => tr(side));
+        for (const t of [L, R]) {
+          if (t.hasUnits || t.hasText || t.hasPercent || t.hasPm || isSymbolic(t)) return null;
+          if (t.functions.some((f) => !ADVANCED_FUNCTIONS.has(f))) return null;
+        }
+        const unknowns = [...new Set([...unknownsOf(L), ...unknownsOf(R)])];
+        if (unknowns.length !== 1 || !/^[a-zA-Z]$/.test(unknowns[0])) return null;
+        const lhs = safeParse(math, L.source);
+        const rhs = safeParse(math, R.source);
+        if (!lhs || !rhs) return null;
+        return { lhs, rhs, op: split.ops[0] as RelOp, variable: unknowns[0], latex: pre };
+      } catch {
+        return null;
+      }
+    },
+    normalize: stepKey,
+  };
+
   const solveLatex = (latex: string): { latex: string; steps: string[] } | null => {
     try {
       const linear = linearSteps(latex);
@@ -657,6 +689,9 @@ export function createEngine(mod: MathModule): LiveEngine {
         if (stepKey(linear.final) === stepKey(linear.pre)) return null;
         return { latex: linear.final, steps: linear.steps };
       }
+      // quadratics, |x|, radicals, exponentials and logs, the unknown in a denominator (advanced.ts)
+      const advanced = solveAdvanced(latex, advancedDeps);
+      if (advanced) return { latex: advanced.final, steps: advanced.steps };
       const pre = preprocessLatex(latex);
       const split = splitRelations(pre);
       if (split.sides.length !== 2 || split.ops[0] !== "==") return null;
@@ -674,7 +709,7 @@ export function createEngine(mod: MathModule): LiveEngine {
       const lastIsZero = R.source.trim() === "0";
       if (c && info.exact && c.length === 2) {
         const [c0, c1] = c;
-        if (Math.abs(c0) > 1e-12 && Math.abs(c1 - 1) > 1e-12) steps.push(`${fmt(c1)}${variable} = ${fmt(-c0)}`);
+        if (Math.abs(c0) > 1e-12 && Math.abs(c1 - 1) > 1e-12) steps.push(`${Math.abs(c1 + 1) < 1e-12 ? "-" : fmt(c1)}${variable} = ${fmt(-c0)}`);
         else if (Math.abs(c0) > 1e-12 && !/^-?\d/.test(pre) && !new RegExp(`^${variable}\\s*=`).test(pre)) steps.push(`${variable} = ${fmt(-c0)}`);
         const root = -c0 / c1;
         const final = `${variable} = ${fmt(root)}`;
@@ -695,7 +730,9 @@ export function createEngine(mod: MathModule): LiveEngine {
           const factor = (r: number) => (r === 0 ? variable : `(${variable} ${r < 0 ? "+" : "-"} ${fmt(Math.abs(r))})`);
           steps.push(`${factor(r1)}${factor(r2)} = 0`);
         } else {
-          steps.push(`${variable} = \\frac{${fmt(-c1)} \\pm \\sqrt{${fmt(c1)}^{2} - 4 \\cdot ${fmt(c2)} \\cdot ${fmt(c0)}}}{2 \\cdot ${fmt(c2)}}`);
+          // a negative number squared or multiplied is bracketed: `(-2)^{2}`, not `-2^{2}`
+          const paren = (n: number) => (n < 0 ? `(${fmt(n)})` : fmt(n));
+          steps.push(`${variable} = \\frac{${fmt(-c1)} \\pm \\sqrt{${paren(c1)}^{2} - 4 \\cdot ${paren(c2)} \\cdot ${paren(c0)}}}{2 \\cdot ${paren(c2)}}`);
           steps.push(`${variable} = \\frac{${fmt(-c1)} \\pm \\sqrt{${fmt(disc)}}}{${fmt(2 * c2)}}`);
         }
         const final = finalLatex(variable, info.roots, opts, true);
@@ -751,7 +788,10 @@ export function createEngine(mod: MathModule): LiveEngine {
       return (a as { im: number }).im - (b as { im: number }).im;
     });
 
-  const finalLatex = (variable: string, roots: RootValue[], opts: NumberFormatOptions, exactHint: boolean): string => {
+  /** The answer line: real roots only, as a list (`x = 2, \ x = 3`), `\varnothing` when there is none. */
+  const finalLatex = (variable: string, allRoots: RootValue[], opts: NumberFormatOptions, exactHint: boolean): string => {
+    const roots = allRoots.filter((r) => rootToNumber(r) !== null);
+    if (roots.length === 0) return NO_SOLUTION;
     const exact = exactHint && roots.every(isExactValue);
     const seen: string[] = [];
     for (const r of sortRoots(roots)) {
@@ -759,7 +799,7 @@ export function createEngine(mod: MathModule): LiveEngine {
       if (!seen.includes(tex)) seen.push(tex);
     }
     const rel = exact ? "=" : "\\approx";
-    return seen.map((t) => `${variable} ${rel} ${t}`).join(" \\text{ or } ");
+    return seen.map((t) => `${variable} ${rel} ${t}`).join(LIST_SEP);
   };
 
   // --- verify / calculate ----------------------------------------------------
