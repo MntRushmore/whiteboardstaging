@@ -14,6 +14,8 @@
  * is a closed expression the engine can evaluate rather than an expression in x.
  */
 
+import { ANGLE_PREFIX, ARC_COMMANDS, ARC_PREFIX, markGeometry, readName, TRIANGLE_PREFIX } from "./geometryNotation";
+
 export class UnsupportedLatex extends Error {
   constructor(message: string) {
     super(message);
@@ -182,7 +184,11 @@ export function preprocessLatex(latex: string): string {
   s = s.replace(/∞/g, "\\infty ").replace(/≤/g, "\\le ").replace(/≥/g, "\\ge ").replace(/≠/g, "\\ne ").replace(/≈/g, "\\approx ");
   s = s.replace(/\\(?:checkmark|square|blacksquare|qed|hfill|newline|par|noindent|allowbreak)\b/g, " ").replace(/[✓✔☐■□]/g, " ");
   s = s.replace(/＝/g, "=");
+  // `5^{2} + 12^{2} \stackrel{?}{=} 13^{2}`: a check is an equation to test
+  s = s.replace(/\\(?:stackrel|overset)\s*\{\s*\?\s*\}\s*\{\s*=\s*\}/g, "=");
   s = s.replace(/\\text\s*\{\s*\}/g, " ");
+  // geometry names: `m\angle A` is `\angle A`, and `AB` in a geometry line is one length (`geometryNotation.ts`)
+  s = markGeometry(s.replace(/\s+/g, " ").trim());
   return s.replace(/\s+/g, " ").trim();
 }
 
@@ -475,6 +481,19 @@ class Scanner {
     const scanner = new Scanner(raw, this.opts, this.meta);
     scanner.parseAll();
     for (const v of collectVariables(scanner.tokens)) this.meta.variables.add(v);
+    return assemble(scanner.tokens);
+  }
+
+  /**
+   * A subscript is part of a name (`m_{AB}`, `v_{0}`, `m_{\perp}`): its letters are not unknowns
+   * of the line, so it is scanned on its own (they used to leak: `m_{AB}` had unknowns A and B).
+   */
+  private subscriptName(raw: string): string {
+    const mark = /^\s*\\(perp|parallel)\s*$/.exec(raw);
+    if (mark) return mark[1];
+    const probe: Meta = { variables: new Set(), units: new Set(), functions: new Set(), constants: new Set(), hasText: false, hasDegrees: false, hasPm: false, hasPercent: false };
+    const scanner = new Scanner(raw, this.opts, probe);
+    scanner.parseAll();
     return assemble(scanner.tokens);
   }
 
@@ -788,7 +807,7 @@ class Scanner {
   private parseSubscript(): void {
     const raw = this.readScriptArg();
     const last = this.lastToken();
-    const sub = sanitizeSubscript(this.sub(raw));
+    const sub = sanitizeSubscript(this.subscriptName(raw));
     if (!last || !sub) return;
     if (last.kind === "id" || last.kind === "const") {
       const merged = `${last.text}_${sub}`;
@@ -810,6 +829,7 @@ class Scanner {
   private parseCommand(): void {
     const name = this.readCommandName();
     if (SPACING.has(name)) return;
+    if (this.parseGeometryName(name)) return;
     if (name === "left" || name === "right") {
       this.skipSpaces();
       if (this.peek() === ".") this.i++;
@@ -948,6 +968,35 @@ class Scanner {
     }
     if (UNSUPPORTED_COMMANDS.has(name) || IMPLICATION_COMMANDS.has(name)) throw new UnsupportedLatex(`\\${name}`);
     throw new UnsupportedLatex(`\\${name}`);
+  }
+
+  /**
+   * `\angle ABC`, `\triangle ABC`, `\overline{AB}`, `\widehat{AB}`: one quantity each, as a single
+   * identifier (`geometryNotation.ts`). False (cursor untouched) for any other use of the command
+   * (`\overline{x}` is still the letter x).
+   */
+  private parseGeometryName(name: string): boolean {
+    if (name === "angle" || name === "measuredangle" || name === "triangle") {
+      const r = readName(this.src, this.i);
+      if (!r) throw new UnsupportedLatex(`\\${name} without a name`);
+      this.i = r.end;
+      this.emit("id", `${name === "triangle" ? TRIANGLE_PREFIX : ANGLE_PREFIX}${r.id}`);
+      return true;
+    }
+    if (name !== "overline" && !ARC_COMMANDS.has(name)) return false;
+    const save = this.i;
+    const raw = this.readGroup();
+    const letters = raw?.replace(/\s+/g, "") ?? "";
+    if (name === "overline" && /^[A-Z]{2}$/.test(letters)) {
+      this.emit("id", letters);
+      return true;
+    }
+    if (ARC_COMMANDS.has(name) && /^[A-Z]{2,3}$/.test(letters)) {
+      this.emit("id", `${ARC_PREFIX}${letters}`);
+      return true;
+    }
+    this.i = save;
+    return false;
   }
 
   /** words inside \mathrm{} / \text{}: units, function names, `to`, or prose */

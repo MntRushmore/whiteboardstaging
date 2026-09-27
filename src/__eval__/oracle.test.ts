@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CORPUS, TOPICS } from "./corpus";
+import { CORPUS, TOPICS, type EvalProblem } from "./corpus";
 import { definitionsOf, expandCalls } from "./functions";
 import { withDefinitions, withoutIntervalPiece } from "./judge";
 import {
@@ -18,10 +18,191 @@ import {
   truthAt,
   truthAtComplex,
   truthEverywhere,
+  tuplesIn,
   type Expr,
   type Indefinite,
   type Relation,
 } from "./oracle";
+
+// ---------------------------------------------------------------- geometry, checked independently
+
+/** `A(1, 2)`, `(1, 2)` on a line: name (or null) and coordinates, as written (integers). */
+function pointsOn(latex: string): Array<{ name: string | null; x: number; y: number }> {
+  return [...latex.matchAll(/(?:([A-Z])\s*=?\s*)?(?:\\left\s*)?\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*(?:\\right\s*)?\)/g)].map((m) => ({ name: m[1] ?? null, x: Number(m[2]), y: Number(m[3]) }));
+}
+
+/** a(x² + y²) + Dx + Ey + F by sampling a relation in x and y: its centre and radius. */
+function circleOf(r: Relation): { h: number; k: number; r: number } | null {
+  const [L, R] = r.alternatives[0].sides;
+  const f = (x: number, y: number) => {
+    const a = L.at({ x, y });
+    const b = R.at({ x, y });
+    return typeof a === "number" && typeof b === "number" ? a - b : NaN;
+  };
+  const F = f(0, 0);
+  const a = (f(1, 0) + f(-1, 0)) / 2 - F;
+  const D = (f(1, 0) - f(-1, 0)) / 2;
+  const E = (f(0, 1) - f(0, -1)) / 2;
+  if (!Number.isFinite(a) || a === 0) return null;
+  const h = -D / (2 * a);
+  const k = -E / (2 * a);
+  const r2 = h * h + k * k - F / a;
+  return r2 > 0 ? { h, k, r: Math.sqrt(r2) } : null;
+}
+
+/** The image of a point under `R_{90^{\circ}}`, `r_{y = x}`, `T_{\langle p, q \rangle}`, `D_{k}` (about the origin). */
+function transformed(latex: string, named: ReadonlyArray<{ name: string | null; x: number; y: number }>): number[] | null {
+  const m = /^([RrTD])_\{([^]*?)\}\s*(?:\\left\s*)?\(([^]*)\)$/.exec(latex.trim());
+  if (!m) return null;
+  const inner = m[3].replace(/\\right\s*$/, "").trim();
+  const byName = named.find((p) => p.name === inner);
+  const coords = byName ? [byName.x, byName.y] : inner.split(",").map((s) => exprOf(s)?.at({}));
+  if (coords.length !== 2 || coords.some((c) => typeof c !== "number")) return null;
+  const [x, y] = coords as number[];
+  const sub = m[2].replace(/\s+/g, "");
+  const angle = /^(-?\d+)\^\{?\\circ\}?$/.exec(sub);
+  if (m[1] === "R" && angle) {
+    const t = (Number(angle[1]) * Math.PI) / 180;
+    return [Math.round((x * Math.cos(t) - y * Math.sin(t)) * 1e9) / 1e9, Math.round((x * Math.sin(t) + y * Math.cos(t)) * 1e9) / 1e9];
+  }
+  if (m[1] === "r") {
+    if (sub === "y=x") return [y, x];
+    if (sub === "y=-x") return [-y, -x];
+    const line = /^([xy])=(-?\d+)$/.exec(sub);
+    if (line) return line[1] === "x" ? [2 * Number(line[2]) - x, y] : [x, 2 * Number(line[2]) - y];
+  }
+  if (m[1] === "T") {
+    const v = sub.replace(/\\langle|\\rangle/g, "").split(",").map(Number);
+    return [x + v[0], y + v[1]];
+  }
+  if (m[1] === "D") {
+    const k = exprOf(sub)?.at({});
+    return typeof k === "number" ? [k * x, k * y] : null;
+  }
+  return null;
+}
+
+const near = (a: number, b: number) => Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(b));
+
+/**
+ * The expectation of a geometry problem whose answer the one-equation / system checks cannot
+ * reach (a point, a distance between named points, a formula in x_{1}, …), recomputed here from
+ * the definitions: `undefined` when it is not one of these, `null` when it holds, else what is wrong.
+ */
+function geometryExpectation(p: EvalProblem): string | null | undefined {
+  const e = p.expect;
+  const target = p.lines[p.lines.length - 1];
+  const points = p.lines.slice(0, -1).flatMap(pointsOn);
+  const q = /^\s*([^=]+?)\s*=\s*\??\s*$/.exec(target)?.[1].replace(/\s+/g, "") ?? null;
+  const pair = () => {
+    const names = q ? /([A-Z])([A-Z])/.exec(q.replace(/^[dm]_\{?/, "")) : null;
+    const a = names ? points.find((pt) => pt.name === names[1]) : points[0];
+    const b = names ? points.find((pt) => pt.name === names[2]) : points[1];
+    return a && b ? [a, b] : null;
+  };
+  if (e.point) {
+    const got = ((): number[] | null => {
+      const circle = p.lines.map(parseLine).find((l): l is Relation => l.kind === "relation" && l.vars.length === 2 && l.vars.includes("x") && l.vars.includes("y"));
+      if (circle) {
+        const c = circleOf(circle);
+        if (!c) return null;
+        if (e.values?.r && !near(c.r, e.values.r[0])) return [NaN, NaN];
+        return [c.h, c.k];
+      }
+      const image = transformed(target, points);
+      if (image) return image;
+      const rule = p.lines.map((l) => /^\(\s*x\s*,\s*y\s*\)\s*\\to\s*\(([^,]+),([^)]+)\)$/.exec(l.trim())).find(Boolean);
+      const all = p.lines.flatMap(pointsOn);
+      if (rule && all.length === 1) return [exprOf(rule[1])!.at({ x: all[0].x, y: all[0].y }) as number, exprOf(rule[2])!.at({ x: all[0].x, y: all[0].y }) as number];
+      const ratio = p.lines.map((l) => /^[A-Z]{2}\s*:\s*[A-Z]{2}\s*=\s*(\d+)\s*:\s*(\d+)$/.exec(l.trim())).find(Boolean);
+      const two = pair();
+      if (q && /^[A-Z]$/.test(q) && two) {
+        const t = ratio ? Number(ratio[1]) / (Number(ratio[1]) + Number(ratio[2])) : 0.5;
+        return [two[0].x + t * (two[1].x - two[0].x), two[0].y + t * (two[1].y - two[0].y)];
+      }
+      // the midpoint formula written with x_{1}, …, or a point with its numbers in
+      const tuple = /=\s*\\left\s*\(([^]*)\\right\s*\)$/.exec(target) ?? /=\s*\(([^]*)\)$/.exec(target);
+      if (tuple) {
+        const scope: Record<string, number> = {};
+        pointsOn(p.lines.slice(0, -1).join(" ")).forEach((pt, i) => {
+          scope[`x_${i + 1}`] = pt.x;
+          scope[`y_${i + 1}`] = pt.y;
+        });
+        let depth = 0;
+        const body = tuple[1];
+        const at = [...body].findIndex((ch) => (ch === "{" || ch === "(" ? (depth++, false) : ch === "}" || ch === ")" ? (depth--, false) : ch === "," && depth === 0));
+        const xs = exprOf(body.slice(0, at))?.at(scope);
+        const ys = exprOf(body.slice(at + 1))?.at(scope);
+        return typeof xs === "number" && typeof ys === "number" ? [xs, ys] : null;
+      }
+      return tuplesIn(target).at(-1) ?? null;
+    })();
+    if (!got) return `${p.id}: cannot recompute the point`;
+    return got.every((v, i) => near(v, e.point![i])) ? null : `${p.id}: the point is (${got.join(", ")}), not (${e.point.join(", ")})`;
+  }
+  if (e.answer && !e.values) {
+    const want = parseLine(e.answer);
+    const t = parseLine(target);
+    // a check worked out (`169 = 169`, `85 \neq 81`): the same sides, and a true statement
+    if (want.kind === "relation" && want.vars.length === 0 && t.kind === "relation" && t.vars.length === 0) {
+      const a = t.alternatives[0].sides;
+      const b = want.alternatives[0].sides;
+      const same = a.length === b.length && a.every((s, i) => compareExprs(s, b[i]).exact);
+      return same && truthAt(want, {}) === true ? null : `${p.id}: ${e.answer} is not ${target} worked out`;
+    }
+    // a circle's equation from its centre and radius (`h`, `k`, `r` above, or the centre as a point)
+    if (want.kind === "relation" && want.vars.length === 2 && t.kind === "relation" && t.vars.includes("h")) {
+      const known: Record<string, number> = {};
+      for (const l of p.lines.slice(0, -1).map(parseLine)) {
+        const sv = l.kind === "relation" && l.vars.length === 1 ? solvedValues(l, l.vars[0]) : null;
+        if (sv) known[(l as Relation).vars[0]] = sv.values[0].re;
+      }
+      if (points.length === 1) Object.assign(known, { h: points[0].x, k: points[0].y });
+      for (const x of [0.3, 1.7, -1.1, 3.4]) {
+        const a = rootSet(t, "y", [], { ...known, x });
+        const b = rootSet(want, "y", [], { x });
+        if (!a || !b || a.all !== b.all || a.roots.length !== b.roots.length || !a.roots.every((r, i) => near(r, b.roots[i]))) return `${p.id}: not the circle at x = ${x}`;
+      }
+      return null;
+    }
+    // `r = 5 \mathrm{~cm}`, `A = \pi r^{2}`, `A = ?`: the formula with the known values (units and all) put in
+    if (want.kind === "expr" && q && /^[A-Za-z]$/.test(q)) {
+      const formula = p.lines.map((l) => new RegExp(`^\\s*${q}\\s*=\\s*(.*[a-zA-Z].*)$`).exec(l)).find((m) => m && !/\?/.test(m[1]));
+      if (!formula) return undefined;
+      let body = formula[1];
+      for (const l of p.lines) {
+        const k = /^\s*([a-zA-Z])\s*=\s*([^a-zA-Z=]*(?:\\mathrm\s*\{[^}]*\})?[^a-zA-Z=]*)$/.exec(l);
+        if (k && k[1] !== q) body = body.replace(new RegExp(`(?<![a-zA-Z\\\\])${k[1]}(?![a-zA-Z])`, "g"), `(${k[2].trim()})`);
+      }
+      const got = exprOf(body);
+      if (!got) return `${p.id}: cannot read ${body}`;
+      return compareExprs(got, want).exact ? null : `${p.id}: ${body} is not ${e.answer}`;
+    }
+    return undefined;
+  }
+  if (!e.values || points.length < 2) return undefined;
+  const two = pair();
+  const scope: Record<string, number> = {};
+  points.forEach((pt, i) => {
+    scope[`x_${i + 1}`] = pt.x;
+    scope[`y_${i + 1}`] = pt.y;
+  });
+  const want = Object.entries(e.values).map(([v, vs]) => [v, vs[0]] as const);
+  const t = parseLine(target);
+  if (t.kind === "relation") {
+    // a formula in x_{1}, …: true at the points with the expected value
+    const point = { ...scope, ...Object.fromEntries(want) };
+    return truthAt(t, point) === true ? null : `${p.id}: ${target} is not true at ${JSON.stringify(point)}`;
+  }
+  if (!two) return `${p.id}: which two points?`;
+  const [a, b] = two;
+  const slope = (b.y - a.y) / (b.x - a.x);
+  for (const [v, value] of want) {
+    const expected = /^[A-Z]{2}$|^d/.test(v) ? Math.hypot(b.x - a.x, b.y - a.y) : v === "m_perp" ? -1 / slope : v.startsWith("m") ? slope : NaN;
+    if (!near(expected, value)) return `${p.id}: ${v} is ${expected}, not ${value}`;
+  }
+  return null;
+}
 
 /**
  * The scoreboard is only as good as its judge. These pin the oracle on cases where the answer
@@ -200,8 +381,9 @@ describe("eval corpus", () => {
   it("states every expectation in a form the oracle reads", () => {
     for (const p of CORPUS) {
       const e = p.expect;
-      expect(Boolean(e.values || e.answer || e.complexValues), p.id).toBe(true);
-      if (!e.values) expect(parseLine(e.equivalentTo ?? e.answer ?? "").kind, p.id).not.toBe("unreadable");
+      expect(Boolean(e.values || e.answer || e.complexValues || e.point), p.id).toBe(true);
+      if (!e.values && !e.point) expect(parseLine(e.equivalentTo ?? e.answer ?? "").kind, p.id).not.toBe("unreadable");
+      if (e.point) expect(e.point.length, p.id).toBe(2);
     }
   });
 
@@ -212,6 +394,12 @@ describe("eval corpus", () => {
     for (const p of CORPUS) {
       if (MISREAD_BY_TRANSLATOR[p.id]) continue;
       const e = p.expect;
+      // points, distances between named points, formulas in x_{1}, …: recomputed from their definitions
+      const geometry = geometryExpectation(p);
+      if (geometry !== undefined) {
+        if (geometry) problems.push(geometry);
+        continue;
+      }
       // a problem the oracle cannot read as written (two points, a list of terms) carries its
       // restatement; a function defined above is applied where it is called (`f(4)`)
       const source = p.oracle ?? withDefinitions(p.lines, []).lines;
@@ -258,6 +446,15 @@ describe("eval corpus", () => {
           for (let i = 0; i < n; i++) {
             const point: Record<string, number> = { ...known };
             for (const v of vars) point[v] = e.values[v][i];
+            // a part defined on its own line (`m\angle 1 = 3x + 10`) takes its value from that line
+            for (let pass = 0; pass < 4; pass++) {
+              for (const l of relations) {
+                const missing = l.vars.filter((v) => !(v in point));
+                if (missing.length !== 1) continue;
+                const rs = rootSet(l, missing[0], [], point);
+                if (rs && !rs.all && rs.roots.length === 1) point[missing[0]] = rs.roots[0];
+              }
+            }
             for (const l of relations) if (truthAt(l, point) !== true) problems.push(`${p.id}: ${l.latex} is not true at ${JSON.stringify(point)}`);
           }
         }

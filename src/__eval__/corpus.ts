@@ -23,7 +23,9 @@
  *    writes `\frac{11}{12}` or `1 + \sqrt{2}` is scored `approx`, not `ok`).
  *  - `interval`: a trig equation's interval, in radians (`[0, 2π)` for 0° ≤ x < 360°): its steps
  *    are compared on the roots inside it, not on the infinitely many elsewhere. `values` are
- *    radians too — `x = 30^{\circ}` is read as π/6.
+ *    radians too — `x = 30^{\circ}` is read as π/6. A length is `(0, ∞)`: only its positive root.
+ *  - `point`: the answer is a point (a midpoint, an image, a circle's centre), the last one on the
+ *    final line; every step with a numeric point on it must be that point.
  *  - `complexValues`: the solution set when it is not real (`x = -1 \pm 2i`), as [re, im] pairs,
  *    for a column where the student is working with `i` (N-CN.7).
  *
@@ -36,6 +38,8 @@ import { COURSE_PROBLEMS } from "./courses";
 /** The school courses the scoreboard reports on (`docs/eval/courses.md` lists their skills). */
 export const COURSES = ["algebra-1", "algebra-2", "geometry", "precalc-calc", "general"] as const;
 export type Course = (typeof COURSES)[number];
+
+import { GEOMETRY_TOPICS } from "./courses/geometry";
 
 export const TOPICS = [
   "arithmetic",
@@ -78,6 +82,8 @@ export const TOPICS = [
   "series",
   "binomial",
   "variation",
+  // Geometry (src/__eval__/courses/geometry.ts)
+  ...GEOMETRY_TOPICS,
 ] as const;
 export type Topic = (typeof TOPICS)[number];
 
@@ -121,6 +127,7 @@ export const TOPIC_COURSE: Record<Topic, Course> = {
   series: "algebra-2",
   binomial: "algebra-2",
   variation: "algebra-2",
+  ...(Object.fromEntries(GEOMETRY_TOPICS.map((t) => [t, "geometry"])) as Record<(typeof GEOMETRY_TOPICS)[number], Course>),
 };
 
 export interface Expectation {
@@ -134,6 +141,8 @@ export interface Expectation {
   form?: "factored" | "expanded" | "radical";
   approxOk?: boolean;
   interval?: { lo: number; hi: number; loIn?: boolean; hiIn?: boolean };
+  /** the answer is a point (a midpoint, an image, a circle's centre): the last point on the final line */
+  point?: number[];
 }
 
 export interface EvalProblem {

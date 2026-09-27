@@ -28,8 +28,8 @@ at `0e1e1af`):
 | Algebra 2 | 135 (77 new) | 90 (67%) | **135 (100%)** |
 | Precalculus / calculus | 100 | 100 (100%) | 100 (100%) |
 | General (arithmetic, units) | 32 | 32 (100%) | 32 (100%) |
-| Geometry | — | — | (the Geometry set joins at `src/__eval__/courses/index.ts`) |
-| **all** | 443 | 329 (74%) | **443 (100%)** |
+| Geometry (`src/__eval__/courses/geometry.ts`, merged from feat/geometry) | 153 | — | **153 (100%)** |
+| **all** | 596 | — | **596 (100%)** |
 
 ## Algebra 1
 
