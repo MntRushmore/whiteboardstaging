@@ -123,6 +123,7 @@ import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient"
 import { clusterLines, rebuildFromMathShapes, unionRects, type EchoShapeSeed } from "./strokeClusters";
 import { buildPayload, hashPayload } from "./strokePayload";
 import { DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type InkSplit } from "./diagrams";
+import { figureAnswer, labelKey, looksLikeUnknown } from "./figure";
 
 /**
  * The client live loop (spec §6). Everything the hook does lives here so it can be
@@ -205,6 +206,12 @@ const FIGURE_REACH_PX = 120;
 const FIGURE_REACH_GLYPHS = 10;
 /** a figure's crop is wider than a line's (512): its labels must stay legible */
 const FIGURE_CROP_WIDTH = 768;
+/**
+ * Page meta key: the figure answers (`figureKey`) the student rubbed out on this screen — not
+ * written again unasked, also after a reload. The last `MAX_FIGURE_DISMISSALS` are kept.
+ */
+const FIGURES_DISMISSED_META = "liveFiguresDismissed";
+const MAX_FIGURE_DISMISSALS = 20;
 
 /** Recognition failures that leave a chip under the ink (the pill carries the rest). */
 const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream", "timeout", "unknown"]);
@@ -439,6 +446,16 @@ export class LiveLoop implements LiveController {
   private readonly labelsOf = new Map<string, string[]>();
   /** the ink touched last was a drawing or its labels, not a line: Help asks about the drawing */
   private lastTouchedDiagramId: string | null = null;
+  /**
+   * The figure route's reply per figure-and-labels version (`figureKey`): asking again, or the
+   * unasked path at the next stop, costs no second call. null: the call failed (not tried again
+   * unasked).
+   */
+  private readonly figureReplies = new Map<string, SetupResponse | null>();
+  /** figure versions whose call is in flight */
+  private readonly figuresInFlight = new Set<string>();
+  /** figure answers the student rubbed out (`figureKey`): not written again unasked (page meta) */
+  private readonly dismissedFigures = new Set<string>();
   private lastOnline: boolean | null = null;
   private lastTouchedLineId: string | null = null;
   private started = false;
@@ -554,6 +571,8 @@ export class LiveLoop implements LiveController {
     for (const ctrl of this.rereadAborts) ctrl.abort();
     this.rereadAborts.clear();
     this.dismissedGraphs.clear();
+    this.dismissedFigures.clear();
+    this.figuresInFlight.clear();
     this.diagrams = [];
     this.labelReading.clear();
     this.labelsOf.clear();
@@ -828,6 +847,12 @@ export class LiveLoop implements LiveController {
         this.dismissGraph(graphKey, (rec.meta as LiveShapeMeta).lineId);
         continue;
       }
+      // ...or of its answer about a figure: not written again unasked
+      const figureAnswerKey = isLiveMeta(rec.meta) ? metaString(rec.meta, SOLVED_META) : "";
+      if (figureAnswerKey.startsWith("figure:")) {
+        this.dismissFigure(figureAnswerKey);
+        continue;
+      }
       if (isDraw(rec)) {
         const line = this.lineOfStroke(rec.id);
         if (line) {
@@ -928,6 +953,8 @@ export class LiveLoop implements LiveController {
     // A drawing's labels are its context, not something to answer: read once the student has
     // stopped, one recognizer call per drawing (and only when its labels changed).
     for (const d of this.diagrams) if (d.labels.length > 0) void this.readLabels(d);
+    // ...and in Solve, a figure labelled with an unknown and left: worked out beside it, unasked
+    this.solveWantedFigures();
   }
 
   private lineOfStroke(strokeId: string): InkLine | null {
@@ -977,6 +1004,7 @@ export class LiveLoop implements LiveController {
     // The drawings come back from the ink itself (pure and local): a Solve or Help right after a
     // reload must still find the figure beside the work.
     this.splitDrawings(this.collectInk(), new Set());
+    this.loadFigureDismissals();
     const seeds: EchoShapeSeed[] = [];
     for (const shape of this.editor.getCurrentPageShapes()) {
       if (!isLiveMeta(shape.meta)) continue;
@@ -1961,6 +1989,7 @@ export class LiveLoop implements LiveController {
         this.write(() => {
           if (this.graphWriter === null && this.graphWriterKey === key) this.graphWriterKey = null;
           if (this.settled && this.graphWriter === null) this.drawWantedGraphs();
+          if (this.settled && this.graphWriter === null) this.solveWantedFigures();
         });
       },
     });
@@ -2418,16 +2447,23 @@ export class LiveLoop implements LiveController {
   }
 
   /**
-   * Solve / Help on a drawing, or on a line beside one: a crop of the drawing and its labels goes
-   * to `/api/live/setup` (a vision model; 2 credits, like a word problem), whose lines —
-   * `x^{2} = 3^{2} + 4^{2}`, `x + 40 + 65 = 180` — are checked like a word problem's
-   * (`validateSetupLines`), solved by the local engine and written by hand: under the work when
-   * asked from a line, beside the figure when asked from the drawing. The setup is written even
-   * when the engine cannot take it further: it is the reading of the figure. Only ever on an
-   * explicit ask. From a line, a figure that gives nothing falls back to the word problem / solve
-   * paths; asked on the drawing, the pill says it could not work it out, with Retry.
+   * Solve / Help on a drawing, or on a line beside one — or, in Solve, a figure the student labelled
+   * with an unknown and left (`solveWantedFigures`, `unasked`). A crop of the drawing and its labels
+   * goes to `/api/live/setup` (a vision model; 2 credits, like a word problem), which reads the
+   * figure as FACTS — which label is which angle or side, and what the drawing shows — and turns
+   * them into equations (`planFigure`: `x + 40 + 65 = 180`, `2x + 10 = 70`); when its read does not
+   * hold up, the model's own setup lines come instead. The board keeps nothing it cannot check
+   * (`figureAnswer`): the planner's equations must solve, in the engine, to the planner's own value;
+   * the model's lines must solve to a sensible size (positive; an angle under a full turn).
+   * Otherwise nothing is written. The block goes under the work when asked from a line, beside the
+   * figure otherwise.
+   *
+   * One model call per figure-and-labels version (`figureKey`): the reply is kept
+   * (`figureReplies`), so asking again, or the unasked path at the next settle, costs nothing. From
+   * a line, a figure that gives nothing falls back to the word problem / solve paths; asked on the
+   * drawing, the pill says it could not work it out, with Retry. Unasked, every failure is silent.
    */
-  private startFigure(diagram: Diagram, opts: SolveOpts, from?: { built: BuiltColumn; fromLineId: string | undefined }): void {
+  private startFigure(diagram: Diagram, opts: SolveOpts, from?: { built: BuiltColumn; fromLineId: string | undefined }, unasked = false): void {
     const engine = this.engine;
     if (!this.opts.enabled || this.opts.voiceActive) return;
     if (!engine || liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) {
@@ -2439,6 +2475,8 @@ export class LiveLoop implements LiveController {
       return;
     }
     const rt = this.runtime(opts.lineId);
+    // the unasked path never interrupts a solve of this figure already under way
+    if (unasked && rt.solveAbort) return;
     rt.solveAbort?.abort();
     const ctrl = new AbortController();
     rt.solveAbort = ctrl;
@@ -2451,24 +2489,52 @@ export class LiveLoop implements LiveController {
       /** written: on the page; fallback: nothing usable; stop: nothing more to do */
       let outcome: "written" | "fallback" | "stop" = "fallback";
       let reason = "";
+      let source = "";
+      let key = "";
+      let called = false;
       try {
         const labels = await this.readLabels(diagram);
         const column = from ? from.built.states.map((s) => s.latex) : [];
-        const key = figureKey(diagram, labels, column);
+        key = figureKey(diagram, labels, column);
         // this figure, with these labels and beside this work, already worked out on the page: free
         const solved = !opts.onlyFirstStep && this.hasHandSolution(opts.lineId, key);
-        const crop = solved ? undefined : await this.captureCrop([...diagram.strokeIds, ...diagram.labels.flat()], diagram.bounds, FIGURE_CROP_WIDTH);
         if (solved || ctrl.signal.aborted || !this.started) outcome = "stop";
-        else if (!crop) reason = "no crop";
+        // unasked: an answer the student rubbed out, a version already asked about and failed, or one in flight
+        else if (unasked && (this.dismissedFigures.has(key) || this.figureReplies.get(key) === null || this.figuresInFlight.has(key))) outcome = "stop";
         else {
-          const res = await this.deps.setup({ boardId: this.opts.boardId, lines: column, labels, crop }, { signal: ctrl.signal });
-          if (ctrl.signal.aborted || !this.started) outcome = "stop";
-          else {
-            const setup = validateSetupLines(engine, res.lines, [...labels, ...column]);
-            if (!setup) reason = "invalid";
+          let res = this.figureReplies.get(key) ?? null;
+          if (!res) {
+            const crop = await this.captureCrop([...diagram.strokeIds, ...diagram.labels.flat()], diagram.bounds, FIGURE_CROP_WIDTH);
+            if (ctrl.signal.aborted || !this.started) outcome = "stop";
+            else if (!crop) reason = "no crop";
             else {
-              this.writeFigureSolution(engine, diagram, from?.built ?? null, opts, setup, key);
-              outcome = "written";
+              this.figuresInFlight.add(key);
+              called = true;
+              try {
+                res = await this.deps.setup({ boardId: this.opts.boardId, lines: column, labels, crop }, { signal: ctrl.signal });
+                this.rememberFigureReply(key, res);
+              } catch (err) {
+                // a call that reached the model and failed is not repeated unasked; a dropped connection may be
+                if (!(ctrl.signal.aborted || isAbortLike(err) || this.isNetworkFailure(err))) this.rememberFigureReply(key, null);
+                throw err;
+              } finally {
+                this.figuresInFlight.delete(key);
+              }
+            }
+          }
+          if (res && outcome !== "stop") {
+            if (ctrl.signal.aborted || !this.started) outcome = "stop";
+            else {
+              const answer = figureAnswer(engine, res, [...labels, ...column]);
+              source = answer.source;
+              if (!answer.ok) reason = answer.reason;
+              // the student started again while it was being read: the reply waits for the next stop
+              else if (unasked && !this.unaskedFigureWelcome(diagram)) outcome = "stop";
+              else {
+                this.writeFigureSolution(diagram, from?.built ?? null, opts, answer.block, key);
+                if (!unasked) this.undismissFigure(key);
+                outcome = "written";
+              }
             }
           }
         }
@@ -2480,7 +2546,8 @@ export class LiveLoop implements LiveController {
           if (from) this.deferLlm("solve", opts.lineId);
         } else if (isApiError(err) && (err.code === "unauthorized" || err.code === "credits_exhausted" || err.code === "rate_limited")) {
           outcome = "stop";
-          this.fail(err, errCtx, retry);
+          // nothing the student asked for: no pill
+          if (!unasked) this.fail(err, errCtx, retry);
         } else {
           reason = "failed";
           console.warn("[live] reading the figure failed", err);
@@ -2489,8 +2556,8 @@ export class LiveLoop implements LiveController {
         if (rt.solveAbort === ctrl) rt.solveAbort = null;
         liveStore.solving.set(Math.max(0, liveStore.solving.get() - 1));
       }
-      clientMetric("live.figure", { outcome, reason, ms: this.deps.now() - startedAt, lineId: opts.lineId, kinds: diagram.kinds.join(","), fromLine: Boolean(from) });
-      if (outcome === "fallback" && !ctrl.signal.aborted && this.started) {
+      clientMetric("live.figure", { outcome, reason, source, called, unasked, ms: this.deps.now() - startedAt, lineId: opts.lineId, kinds: diagram.kinds.join(","), fromLine: Boolean(from) });
+      if (outcome === "fallback" && !ctrl.signal.aborted && this.started && !unasked) {
         if (from) {
           this.solveWithoutFigure(from.built, from.fromLineId, opts);
           return;
@@ -2502,28 +2569,123 @@ export class LiveLoop implements LiveController {
     })();
   }
 
+  /** A figure's reply, kept per figure-and-labels version (null: the call failed). */
+  private rememberFigureReply(key: string, res: SetupResponse | null): void {
+    this.figureReplies.set(key, res);
+    while (this.figureReplies.size > LIVE_LIMITS.cacheEntries) this.figureReplies.delete(this.figureReplies.keys().next().value as string);
+  }
+
   /**
-   * The figure's setup, then the engine's steps (when it can solve it), as one block in the tutor's
-   * hand: under the work when asked from a line, beside the figure when asked from the drawing;
-   * typeset where the hand lacks a glyph or is off. Replaces the last answer for the same work.
+   * The figure's setup and the engine's steps (`figureAnswer`'s block) as one block in the tutor's
+   * hand: under the work when asked from a line, beside the figure otherwise; typeset where the hand
+   * lacks a glyph or is off. Help in Feedback / Suggest writes the first line only. Replaces the last
+   * answer for the same work.
    */
-  private writeFigureSolution(engine: LiveEngine, diagram: Diagram, built: BuiltColumn | null, opts: SolveOpts, setup: string[], key: string): void {
-    const solved = localSolve(engine, setup, undefined, { handwriting: true });
-    const block = setupBlock(setup, solved.source ? solved.steps : [], opts.onlyFirstStep);
+  private writeFigureSolution(diagram: Diagram, built: BuiltColumn | null, opts: SolveOpts, block: readonly string[], key: string): void {
+    const lines = opts.onlyFirstStep ? block.slice(0, 1) : [...block];
     const meta = opts.onlyFirstStep ? undefined : { [SOLVED_META]: key };
     const hand = this.deps.handwritingEnabled();
     if (built) {
       const state = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
       this.clearSolveOutput(built.states.map((s) => s.line.id));
-      if (hand && state && this.drawStepsByHand(built, opts, state, block, meta)) return;
+      if (hand && state && this.drawStepsByHand(built, opts, state, lines, meta)) return;
       const lastLine = built.states[built.states.length - 1].line.bounds;
       const column = unionRects(built.states.map((s) => s.line.bounds));
-      block.forEach((step, i) => this.placeSolutionStep(column, lastLine, i + 1, step, "", opts.lineId, meta));
+      lines.forEach((step, i) => this.placeSolutionStep(column, lastLine, i + 1, step, "", opts.lineId, meta));
       return;
     }
     this.clearSolveOutput([diagram.id]);
-    if (hand && this.drawBesideFigure(diagram, block, meta)) return;
-    block.forEach((step, i) => this.placeSolutionStep(diagram.bounds, diagram.bounds, i + 1, step, "", diagram.id, meta));
+    if (hand && this.drawBesideFigure(diagram, lines, meta)) return;
+    lines.forEach((step, i) => this.placeSolutionStep(diagram.bounds, diagram.bounds, i + 1, step, "", diagram.id, meta));
+  }
+
+  // ---------------------------------------------------------------- figures worked out unasked
+  /**
+   * Solve, and the student has stopped (the settle, as for graphs): a figure with an unknown among
+   * its labels (`x`, `?`, `2x + 10`, `θ`) and nothing written beside it is worked out beside it
+   * without being asked. Guards: Solve only (Feedback / Suggest only on Help); a drawing, not axes
+   * or a number line (those are graphs); no line of writing within reach of it (`x = ?` beside it is
+   * asked for with Solve); no Given / Prove on the screen (a proof); not while the tutor's hand is
+   * busy (it comes after); once per figure-and-labels version — the reply is kept, and a version
+   * whose call failed is not tried again unasked — and never again after the student rubs the answer
+   * out (`dismissedFigures`, kept in the page's meta so a reload agrees). Asking brings it back.
+   */
+  private solveWantedFigures(): void {
+    if (!this.unaskedFiguresOn() || this.writer || this.graphWriter || !this.deps.isOnline()) return;
+    if (this.proofOnScreen()) return;
+    for (const d of this.diagrams) {
+      if (!this.figureWanted(d)) continue;
+      void this.readLabels(d).then((labels) => this.maybeSolveFigure(d, labels));
+    }
+  }
+
+  private unaskedFiguresOn(): boolean {
+    return this.started && this.opts.enabled && this.opts.mode === "answer" && !this.opts.voiceActive && this.settled && this.engine !== null;
+  }
+
+  /** A drawing the unasked path may look at: labelled, a figure (not a graph's axes), not being solved, nothing written beside it. */
+  private figureWanted(d: Diagram): boolean {
+    if (d.labels.length === 0 || d.kinds.includes("axes") || d.kinds.includes("numberLine")) return false;
+    return !this.runtime(d.id).solveAbort && this.nothingBeside(d);
+  }
+
+  /** No line of writing within reach of the drawing (`x = ?` beside it is a question for Solve). */
+  private nothingBeside(d: Diagram): boolean {
+    const reach = Math.max(FIGURE_REACH_PX, FIGURE_REACH_GLYPHS * this.glyph);
+    return !Object.values(liveStore.lines.get()).some((st) => diagramNear([d], st.line.bounds, reach) !== null);
+  }
+
+  /** Still Solve, still stopped, the tutor's hand free: an unasked figure answer may be written now. */
+  private unaskedFigureWelcome(d: Diagram): boolean {
+    return this.unaskedFiguresOn() && !this.writer && !this.graphWriter && this.diagrams.some((x) => x.id === d.id) && this.nothingBeside(d) && !this.proofOnScreen();
+  }
+
+  /** A line on this screen that reads like a proof's (`Given`, `Prove`): its figure is the proof's. */
+  private proofOnScreen(): boolean {
+    return Object.values(liveStore.lines.get()).some((st) => /\b(given|prove|proof)\b/i.test(st.latex));
+  }
+
+  private maybeSolveFigure(d: Diagram, labels: readonly string[]): void {
+    if (!this.unaskedFiguresOn()) return;
+    const current = this.diagrams.find((x) => x.id === d.id);
+    // it changed while its labels were being read: the next stop looks again
+    const inkOf = (x: Diagram) => [...x.strokeIds, ...x.labels.flat()];
+    if (!current || !sameStrokeSet(inkOf(current), inkOf(d))) return;
+    if (!labels.some(looksLikeUnknown) || labels.some((l) => /\b(given|prove)\b/i.test(l))) return;
+    const key = figureKey(d, labels, []);
+    if (this.dismissedFigures.has(key) || this.figureReplies.get(key) === null || this.figuresInFlight.has(key)) return;
+    if (this.hasHandSolution(d.id, key)) return;
+    // an answer about this drawing as it was (its strokes or labels have changed since) is stale
+    const stale = this.editor.getCurrentPageShapes().some((s) => isLiveMeta(s.meta) && s.meta.lineId === d.id && metaString(s.meta, SOLVED_META) !== "" && metaString(s.meta, SOLVED_META) !== key);
+    if (stale) this.clearSolveOutput([d.id]);
+    this.startFigure(d, { lineId: d.id }, undefined, true);
+  }
+
+  /** The student rubbed out (part of) the tutor's answer about a figure: not written again unasked, also after a reload. */
+  private dismissFigure(key: string): void {
+    if (this.dismissedFigures.has(key)) return;
+    this.dismissedFigures.add(key);
+    this.saveFigureDismissals();
+  }
+
+  /** Asked for again: the answer may come back unasked too. */
+  private undismissFigure(key: string): void {
+    if (this.dismissedFigures.delete(key)) this.saveFigureDismissals();
+  }
+
+  private loadFigureDismissals(): void {
+    const meta = this.editor.getCurrentPage?.()?.meta as Record<string, unknown> | undefined;
+    const list = meta?.[FIGURES_DISMISSED_META];
+    if (Array.isArray(list)) for (const k of list) if (typeof k === "string") this.dismissedFigures.add(k);
+  }
+
+  private saveFigureDismissals(): void {
+    const keys = [...this.dismissedFigures].slice(-MAX_FIGURE_DISMISSALS);
+    this.write(() => {
+      const page = this.editor.getCurrentPage?.();
+      if (!page) return;
+      this.editor.store.put([{ ...page, meta: { ...page.meta, [FIGURES_DISMISSED_META]: keys } }]);
+    });
   }
 
   /**
@@ -2967,6 +3129,8 @@ export class LiveLoop implements LiveController {
       extraMeta,
       onDone: () => {
         if (this.writer === writer) this.writer = null;
+        // a figure waiting for the hand to be free is written after it
+        if (this.settled && this.writer === null) this.solveWantedFigures();
       },
     });
   }
@@ -3382,12 +3546,16 @@ export function normalizeStep(latex: string): string {
 
 
 /**
- * The `meta.solvedLatex` of the tutor's answer about a figure: the drawing (its strokes), its labels
- * as read and the work beside it. Asking again about the same figure costs nothing; a new label or a
- * new line beside it asks again.
+ * The `meta.solvedLatex` of the tutor's answer about a figure, and the version the figure route's
+ * reply is kept under: the drawing's ink (its strokes, marks and labels together), its labels as
+ * read and the work beside it. Asking again about the same figure costs nothing; a new stroke, label
+ * or line beside it asks again. All the ink, and the labels compared loosely (`labelKey`), because
+ * the split between a label and a mark can move with the glyph scale when the student writes
+ * elsewhere (a degree sign touching a side): that is not a new figure.
  */
-export function figureKey(diagram: Pick<Diagram, "strokeIds">, labels: readonly string[], column: readonly string[]): string {
-  return `figure: ${handSeedFor([...diagram.strokeIds].sort().join(","))} | ${labels.join(", ")} | ${column.join(" ; ")}`;
+export function figureKey(diagram: Pick<Diagram, "strokeIds"> & Partial<Pick<Diagram, "labels">>, labels: readonly string[], column: readonly string[]): string {
+  const ink = [...diagram.strokeIds, ...(diagram.labels ?? []).flat()].sort().join(",");
+  return `figure: ${handSeedFor(ink)} | ${labels.map(labelKey).join(", ")} | ${column.join(" ; ")}`;
 }
 
 /**
