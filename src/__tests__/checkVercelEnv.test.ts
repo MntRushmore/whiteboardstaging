@@ -105,6 +105,10 @@ describe("envExample: section headers and classification", () => {
       "MODEL_BENCH_LIMIT",
       "MODEL_BENCH_MODELS",
       "MODEL_BENCH_JOBS",
+      "RUN_FIGURE_EVAL",
+      "FIGURE_EVAL_LIMIT",
+      "FIGURE_EVAL_MODELS",
+      "FIGURE_EVAL_BASELINE",
       "GRAPH_GALLERY",
       "VERIFY_EMAIL_DOMAIN",
     ]);

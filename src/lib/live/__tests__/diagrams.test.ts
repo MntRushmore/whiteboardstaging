@@ -256,6 +256,12 @@ describe("relations, and reading the labels", () => {
     ["\\begin{array}{l}\n\\text { A } \\\\\n5 \\\\\nB \\\\\nC \\\\\n7\n\\end{array}", ["A", "5", "B", "C", "7"]],
     ["\\begin{array}{l}\n40^{\\circ} \\\\\n\\times \\\\\n65^{\\circ}\n\\end{array}", ["40^{\\circ}", "x", "65^{\\circ}"]],
     ["\\begin{array}{l}\ny \\\\\n(2,3) \\\\\nx\n\\end{array}", ["y", "(2,3)", "x"]],
+    // what Mathpix sent back on the board for two-label stacks (the figure browser check)
+    ["\\underbrace{2 x+10}_{70^{\\circ}}", ["2 x+10", "70^{\\circ}"]],
+    ["70^{\\circ} \\) x", ["70^{\\circ}", "x"]],
+    ["\\overbrace{x}^{65^{\\circ}}", ["65^{\\circ}", "x"]],
+    ["\\underset{40^{\\circ}}{x}", ["x", "40^{\\circ}"]],
+    ["\\stackrel{130^{\\circ}}{x}", ["130^{\\circ}", "x"]],
     ["", []],
   ])("reads the stack %j as %j", (latex, rows) => {
     expect(parseLabelRead(latex)).toEqual(rows);

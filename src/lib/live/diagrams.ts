@@ -1141,6 +1141,9 @@ export function labelPayload(diagram: Diagram, strokes: readonly InkStroke[], gl
   return stack ? buildPayload(stack.line, stack.strokes) : null;
 }
 
+/** A brace group's contents, one level of nesting deep (`70^{\circ}`). */
+const GROUP = "(?:[^{}]|\\{[^{}]*\\})*";
+
 /**
  * The recognizer's read of a label stack as one LaTeX string per row: `\begin{array}{l} A \\ 3
  * \end{array}` → `["A", "3"]`; plain rows split on newlines. Empty rows dropped. A row that is a
@@ -1150,7 +1153,15 @@ export function labelPayload(diagram: Diagram, strokes: readonly InkStroke[], gl
 export function parseLabelRead(latex: string): string[] {
   const body = latex
     .replace(/\\begin\{(?:array|aligned|gathered|matrix|split)\}(?:\{[^{}]*\})?/g, "\n")
-    .replace(/\\end\{(?:array|aligned|gathered|matrix|split)\}/g, "\n");
+    .replace(/\\end\{(?:array|aligned|gathered|matrix|split)\}/g, "\n")
+    // two stacked labels read as one construct: `\underbrace{2 x+10}_{70^{\circ}}` (seen on the
+    // board: `2x + 10` over `70°`), `\overbrace`, `\underset`, `\overset`, `\stackrel`
+    .replace(new RegExp(`\\\\underbrace\\s*\\{(${GROUP})\\}\\s*_\\s*\\{(${GROUP})\\}`, "g"), "\n$1\n$2\n")
+    .replace(new RegExp(`\\\\overbrace\\s*\\{(${GROUP})\\}\\s*\\^\\s*\\{(${GROUP})\\}`, "g"), "\n$2\n$1\n")
+    .replace(new RegExp(`\\\\underset\\s*\\{(${GROUP})\\}\\s*\\{(${GROUP})\\}`, "g"), "\n$2\n$1\n")
+    .replace(new RegExp(`\\\\(?:overset|stackrel)\\s*\\{(${GROUP})\\}\\s*\\{(${GROUP})\\}`, "g"), "\n$1\n$2\n")
+    // a math delimiter inside the read (`70^{\circ} \) x`, seen on the board): a break between labels
+    .replace(/\\[()[\]]/g, "\n");
   return body
     .split(/\\\\|\n/)
     .map((row) =>

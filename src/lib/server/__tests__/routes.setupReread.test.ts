@@ -242,9 +242,12 @@ describe("live/setup with a figure crop", () => {
     expect(primary).toBe(LIVE_MODELS.figure);
     expect(fallback).toBe(LIVE_MODELS.figureFallback);
     expect(opts.reasoningFor?.(LIVE_MODELS.figure)).toBe("low");
-    expect(opts.reasoningFor?.(LIVE_MODELS.figureFallback)).toBeUndefined();
+    expect(opts.reasoningFor?.(LIVE_MODELS.figureFallback)).toBe("low");
+    // Anthropic's thinking starts at 1024 tokens: an Anthropic figure model (LIVE_MODEL_FIGURE) gets none
+    expect(opts.reasoningFor?.("anthropic/claude-haiku-4.5")).toBeUndefined();
     const system = opts.messages.find((m) => m.role === "system");
-    expect(system?.content).toContain("hand-drawn maths figure");
+    expect(system?.content).toContain("hand-drawn geometry figure");
+    expect(system?.content).toContain("You never calculate");
     const user = opts.messages.find((m) => m.role === "user");
     expect(user?.content).toEqual([
       { type: "image_url", image_url: { url: CROP } },
@@ -262,6 +265,52 @@ describe("live/setup with a figure crop", () => {
     expect(res.status).toBe(200);
     const text = ((vi.mocked(chatJsonWithFallback).mock.calls[0][2].messages[1].content as Array<{ text?: string }>)[1].text ?? "");
     expect(text).toContain("No lines beside it.");
+  });
+
+  it("the model describes the figure; the planner writes the equation (the model's own lines unused)", async () => {
+    vi.mocked(chatJsonWithFallback).mockResolvedValue({
+      data: {
+        unknown: "x",
+        quantities: [
+          { id: "a", what: "angle", label: "40°" },
+          { id: "b", what: "angle", label: "x" },
+          { id: "c", what: "angle", label: "65°" },
+        ],
+        facts: [{ type: "triangle", items: ["a", "b", "c"] }],
+        lines: ["x = 180 - 40 - 65"],
+      },
+      model: LIVE_MODELS.figure,
+    } as never);
+    const res = await setup(request("/api/live/setup", { boardId: "b", crop: CROP, labels: ["40^{\\circ}", "x", "65^{\\circ}"] }));
+    expect(res.status).toBe(200);
+    expect(SetupResponseSchema.parse(await res.json())).toMatchObject({
+      lines: ["x + 40 + 65 = 180"],
+      unknown: "x",
+      figure: { source: "facts", stages: [{ letter: "x", lines: ["x + 40 + 65 = 180"], value: 75, kind: "angle" }] },
+    });
+    expectChargedNotRefunded();
+  });
+
+  it("a description that does not hold up: the model's own lines, with why", async () => {
+    vi.mocked(chatJsonWithFallback).mockResolvedValue({
+      data: {
+        unknown: "x",
+        // a label the reader read as 65° is 76° here: a misread, so the read is not used
+        quantities: [
+          { id: "a", what: "angle", label: "40°" },
+          { id: "b", what: "angle", label: "x" },
+          { id: "c", what: "angle", label: "76°" },
+        ],
+        facts: [{ type: "triangle", items: ["a", "b", "c"] }],
+        lines: ["x + 40 + 65 = 180"],
+      },
+      model: LIVE_MODELS.figure,
+    } as never);
+    const res = await setup(request("/api/live/setup", { boardId: "b", crop: CROP, labels: ["40^{\\circ}", "x", "65^{\\circ}"] }));
+    expect(res.status).toBe(200);
+    const body = SetupResponseSchema.parse(await res.json());
+    expect(body).toMatchObject({ lines: ["x + 40 + 65 = 180"], figure: { source: "lines", kind: "angle" } });
+    expect(body.figure?.reason).toMatch(/not in the read|not on the figure/);
   });
 
   it("a figure that asks nothing is a failed call: 502 and refunded", async () => {

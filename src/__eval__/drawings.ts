@@ -129,6 +129,97 @@ export function labelAt(latex: string, cx: number, cy: number, variant: Variant 
   return writeAt(latex, cx - r.w / 2, cy - r.h / 2, variant, 0.8);
 }
 
+// ---------------------------------------------------------------- geometry marks (the figure corpus)
+
+/*
+ * The marks a geometry figure carries, drawn by the same pen: an arc in an angle, a right-angle box,
+ * tick marks on equal sides, arrow marks on parallel lines, and a label placed inside an angle. Used
+ * by the figure corpus (src/__eval__/figures/corpus.ts); `DRAWINGS` below does not use them, so the
+ * drawings scoreboard is unchanged.
+ */
+
+const unit = (a: Pt, b: Pt): Pt => {
+  const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  return { x: (b.x - a.x) / d, y: (b.y - a.y) / d };
+};
+
+/** The angle at `v` between the rays v→p and v→q, in radians (0..π). */
+export function angleAt(v: Pt, p: Pt, q: Pt): number {
+  const u1 = unit(v, p);
+  const u2 = unit(v, q);
+  return Math.acos(Math.max(-1, Math.min(1, u1.x * u2.x + u1.y * u2.y)));
+}
+
+/** A point `d` from `v` along the bisector of the angle between the rays v→p and v→q (inside it). */
+export function inAngle(v: Pt, p: Pt, q: Pt, d: number): Pt {
+  const u1 = unit(v, p);
+  const u2 = unit(v, q);
+  let bx = u1.x + u2.x;
+  let by = u1.y + u2.y;
+  const n = Math.hypot(bx, by);
+  // a straight angle: the bisector is square to the line (on p's left, turning towards q)
+  if (n < 1e-6) {
+    bx = -u1.y;
+    by = u1.x;
+  } else {
+    bx /= n;
+    by /= n;
+  }
+  return { x: v.x + bx * d, y: v.y + by * d };
+}
+
+/** An arc marking the angle at `v` between the rays v→p and v→q (the smaller way round), radius `r`. */
+export function angleArc(pen: Pen, v: Pt, p: Pt, q: Pt, r = 20): InkStroke {
+  const a1 = Math.atan2(p.y - v.y, p.x - v.x);
+  let diff = Math.atan2(q.y - v.y, q.x - v.x) - a1;
+  while (diff > Math.PI) diff -= 2 * Math.PI;
+  while (diff <= -Math.PI) diff += 2 * Math.PI;
+  return pen.arc(v.x, v.y, r, r, a1, a1 + diff);
+}
+
+/** A right-angle box in the corner at `v` between the rays v→p and v→q, `s` px a side. */
+export function rightAngleBox(pen: Pen, v: Pt, p: Pt, q: Pt, s = 16): InkStroke {
+  const u1 = unit(v, p);
+  const u2 = unit(v, q);
+  const a = { x: v.x + u1.x * s, y: v.y + u1.y * s };
+  const c = { x: v.x + u2.x * s, y: v.y + u2.y * s };
+  const b = { x: a.x + u2.x * s, y: a.y + u2.y * s };
+  return pen.stroke(a, b, c);
+}
+
+/** `k` short tick marks across the segment a–b at its middle (equal sides). */
+export function tickMarks(pen: Pen, a: Pt, b: Pt, k = 1, len = 16): InkStroke[] {
+  const u = unit(a, b);
+  const n = { x: -u.y, y: u.x };
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  const out: InkStroke[] = [];
+  for (let i = 0; i < k; i++) {
+    const off = (i - (k - 1) / 2) * 7;
+    const c = { x: mid.x + u.x * off, y: mid.y + u.y * off };
+    out.push(pen.stroke({ x: c.x - (n.x * len) / 2, y: c.y - (n.y * len) / 2 }, { x: c.x + (n.x * len) / 2, y: c.y + (n.y * len) / 2 }));
+  }
+  return out;
+}
+
+/** An arrow mark (a small `>` pointing a→b) on the segment a–b, `t` of the way along: parallel lines. */
+export function arrowMark(pen: Pen, a: Pt, b: Pt, t = 0.5, size = 11): InkStroke {
+  const u = unit(a, b);
+  const n = { x: -u.y, y: u.x };
+  const tip = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+  const back = { x: tip.x - u.x * size, y: tip.y - u.y * size };
+  return pen.stroke({ x: back.x + n.x * size * 0.7, y: back.y + n.y * size * 0.7 }, tip, { x: back.x - n.x * size * 0.7, y: back.y - n.y * size * 0.7 });
+}
+
+/** A label for the angle at `v` between v→p and v→q: centred inside it, further out for a narrow angle. */
+export function angleLabel(latex: string, v: Pt, p: Pt, q: Pt, d?: number, variant: Variant = VARIANTS[0]): InkStroke[] {
+  const half = angleAt(v, p, q) / 2;
+  // a wide label (`2x + 10`) sits further out, where the angle has room for it
+  const wide = latex.replace(/\^\{\\circ\}/g, "").replace(/\s/g, "").length > 3 ? 24 : 0;
+  const dist = d ?? Math.min(96, Math.max(40, 26 / Math.max(0.2, Math.sin(half))) + wide);
+  const at = inAngle(v, p, q, dist);
+  return labelAt(latex, at.x, at.y, variant);
+}
+
 // ---------------------------------------------------------------- drawings
 
 export interface Drawing {

@@ -91,7 +91,7 @@ Every handler under `src/app/api/**` follows the same preamble: `requireUser` (J
 | `/api/live/recognize` | GET, POST | `requireUser` / `livePreamble` | `liveRecognize` 120 | GET 0; POST 1 | GET none; POST `RecognizeRequestSchema` | GET capabilities + warmup; POST strokes -> LaTeX (Mathpix, vision fallback) | active |
 | `/api/live/check` | POST | `livePreamble` | `liveCheck` 30 | 3 | `CheckRequestSchema` (optional `crop` data:image ≤ 280 KB, only with `userAsked` + `focusLineId`) | SSE annotations for recognized lines; with `crop` ("Ask about this") the crop goes to the check model as an image part | active |
 | `/api/live/solve` | POST | `livePreamble` | `liveSolve` 10 | 10 | `SolveRequestSchema` | SSE worked-solution steps | active |
-| `/api/live/setup` | POST | `livePreamble` | `liveSetup` 10 | 2 | `SetupRequestSchema` (`lines` 0–40 strings; optional `crop` data:image ≤ 280 KB and `labels` ≤ 40, labels only with a crop; lines or a crop required) | A word problem → `{ lines, unknown?, model, ms }`: LaTeX assignments / equations only (no arithmetic, no words), which the client's engine then solves. `openai/gpt-5.4-mini`, fallback `deepseek/deepseek-v4.1-flash` (`LIVE_MODEL_SETUP`). With a `crop` it is a hand-drawn **figure** the student asked about: same reply, read by `google/gemini-3.1-flash-lite`, fallback `anthropic/claude-haiku-4.5` (`LIVE_MODEL_FIGURE`, prompt `prompts/figure.ts`). A reply with no lines is a 502 (refunded) | active |
+| `/api/live/setup` | POST | `livePreamble` | `liveSetup` 10 | 2 | `SetupRequestSchema` (`lines` 0–40 strings; optional `crop` data:image ≤ 280 KB and `labels` ≤ 40, labels only with a crop; lines or a crop required) | A word problem → `{ lines, unknown?, model, ms }`: LaTeX assignments / equations only (no arithmetic, no words), which the client's engine then solves. `openai/gpt-5.4-mini`, fallback `deepseek/deepseek-v4.1-flash` (`LIVE_MODEL_SETUP`). With a `crop` it is a hand-drawn **figure** (asked about, or in Solve left labelled with an unknown): the model describes what the figure shows and `planFigure` (`src/lib/live/figure`) writes the equations — `{ lines, unknown, figure: { source: "facts", stages: [{ letter, lines, value, kind }] } }` — or, when that read does not hold up, its own lines (`figure: { source: "lines", reason, kind? }`); read by `google/gemini-3.1-flash-lite`, fallback `google/gemini-3.5-flash-lite` (`LIVE_MODEL_FIGURE`, prompt `prompts/figure.ts`; chosen on `npm run eval:figures`). A reply with no lines is a 502 (refunded) | active |
 | `/api/live/reread` | POST | `livePreamble` | `liveReread` 30 | 1 | `RereadRequestSchema` (`crop` data:image ≤ 280 KB, Mathpix's `latex`, the column's `above` / `below`) | The second reader: one suspicious line's ink crop → `{ latex, changed, model, ms }`. `google/gemini-3.1-flash-lite`, fallback `anthropic/claude-haiku-4.5` (`LIVE_MODEL_REREAD`). Only sent on a signal, at most once per ink | active |
 | `/api/voice/token` | POST | `requireUser` | `voiceToken` 6 | 0 | none (empty body; model fixed server-side) | Mint an ephemeral OpenAI Realtime client secret; `503 voice_unavailable` without `OPENAI_API_KEY` | active |
 | `/api/voice/analyze-workspace` | POST | `requireUser` | `analyzeWorkspace` 30 | 3 | `{ image, focus? }` | Voice tutor tool: describe the current canvas | active |
@@ -181,12 +181,18 @@ Solve / Help on a column
   → otherwise, or setup unusable: POST /api/live/solve (SSE) → createSolveStepGuard → one block
 
 Solve / Help on a drawing (the last thing drawn)
-  → labels (one recognize call) + crop → POST /api/live/setup → validate → engine → by hand beside it
+  → labels (one recognize call) + crop → POST /api/live/setup   the model describes the figure (facts)
+      → planFigure: facts → equations (server)                 src/lib/live/figure/plan.ts
+      → figureAnswer: engine solves, answer checked → by hand beside it (else nothing)
+
+Solve, the student has stopped, a drawing labelled with an unknown and nothing written beside it
+  → solveWantedFigures (after any graph) → the same path, unasked: once per figure-and-labels version
 
 any student ink, anywhere (incl. pen-down, drag, erase)
   → settle gate 2.5 s (ANSWER_SETTLE_MS)        liveLoop.markUnsettled → renderSettled
   → re-render only → the held-back ANSWER lands  (no re-recognition, no model call)
   → each drawing's labels read, if they changed  one POST /api/live/recognize per drawing (label stack)
+  → Solve: a labelled figure left alone           solveWantedFigures → POST /api/live/setup (once per version)
 ```
 
 **Dev: the Mathpix panel (`LiveDebugPanel`).** In development (or with `LIVE_DEBUG=1` on the server plus `localStorage["agathon.liveDebug"] = "1"` in the browser) `/api/live/recognize` returns the recognizer's raw JSON as `debug`, and a "Mathpix" button on the board opens a per-line view: the strokes exactly as sent, the LaTeX (raw and rendered), confidence, Mathpix's own `is_handwritten`, the engine's kind, verdict, mathjs form and solutions, and — when the second reader was asked — both reads ("mathpix read", "second reader: <latex>"), why it was asked and whether its read was used. It separates "the pen / recognizer got it wrong" from "the maths engine could not check it". Below the lines, each drawing on the screen: what it was taken for (`triangle`, `numberLine`…), how many strokes and labels, the label stack exactly as sent and the labels as read (`liveStore.diagrams`).
@@ -211,7 +217,7 @@ second problem further down is never checked as the next step of the first.
 recognition and everything that comments on work already done — the green check, the amber dot,
 the solved chip, the note and the Feedback/Suggest hint ladder all keep that cadence.
 `ANSWER_SETTLE_MS` (2.5 s, whole canvas, `liveLoop.ts`) gates every "here is the result" output:
-the handwritten calculator answer, the echo's `resultLatex` and an unasked graph. Any student ink restarts it — a
+the handwritten calculator answer, the echo's `resultLatex`, an unasked graph and an unasked figure answer. Any student ink restarts it — a
 stroke in progress, a finished one, ink dragged elsewhere, ink rubbed out — so writing `36 + 2 =`
 and carrying on down the page produces nothing until the pen stops, and a pending answer is
 **cancelled, not queued** (the timer is re-armed, so nothing lands in a rush afterwards). Settling
@@ -341,7 +347,7 @@ prompt, 13 of the 20 misreads are fixed, every accepted change is a fix, and non
 correct-read controls is sent or changed. The two misreads the trigger cannot see are plausible
 lines in their own right (`b=20-3` for `b = 2a - 3`, `\int_{1}^{6}` for `\int_{1}^{e}`).
 
-**Drawings: kept out of the lines, read only when asked (`src/lib/live/diagrams.ts`).** Students
+**Drawings: kept out of the lines, read when asked — or, in Solve, when left labelled with an unknown (`src/lib/live/diagrams.ts`).** Students
 draw — a triangle with its sides labelled, a circle and its radius, a number line, axes with a line,
 an arrow. Every stroke used to be handwriting: a triangle beside `a^2 + b^2 = c^2` was clustered into
 that line (Mathpix read garbage), a drawing on its own became a line with a "?", and every label on
@@ -385,24 +391,77 @@ row, left-aligned, 0.6 of their own height apart (`labelStack`) — side by side
 7 generated drawings' stacks came back one row per label (24 of 25 labels right; `O` read as `0`).
 `parseLabelRead` splits the rows (a lone `\times` is the letter x). Reads are cached per label ink.
 
-**The tutor reads the figure (only on an explicit ask).** Solve or Help when the last ink was a
-drawing, or Solve on a line the engine cannot answer that is within 120 px (or 10 G) of one (`x = ?`
-beside a triangle), sends a crop of the drawing and its labels (≤ 768 px wide) with the labels as
+**The tutor reads the figure: the model perceives, the engine reasons (`src/lib/live/figure/**`).**
+Solve or Help when the last ink was a drawing, Solve on a line the engine cannot answer that is
+within 120 px (or 10 G) of one (`x = ?` beside a triangle), or — in Solve — a figure left labelled
+with an unknown (below) sends a crop of the drawing and its labels (≤ 768 px wide) with the labels as
 read and the column's lines to `POST /api/live/setup` (2 credits; `google/gemini-3.1-flash-lite`,
-fallback `anthropic/claude-haiku-4.5`; prompt `src/lib/server/prompts/figure.ts`: the figure's own
-single letters, no `\angle`, angles as plain degrees because the engine does not solve `40^{\circ}`,
-Pythagoras as the equation and then the unknown as a square root so a length comes out positive,
-never the arithmetic). The reply is validated exactly like a word problem's (`validateSetupLines`),
-solved by `localSolve`, and written by hand as one block — beside the figure when asked on the
-drawing (right of it, under it when the screen has no room), under the work when asked from a line;
-the setup alone when the engine cannot take it further (it is the reading of the figure). Help in
-Feedback / Suggest writes the first line of the setup only, as for a word problem.
-`meta.solvedLatex` is `figureKey` (the drawing, its labels, the work beside it), so asking again
-costs nothing; rubbing the drawing out removes the answer. From a line, a figure that gives nothing
-falls back to the word-problem and solve paths; on the drawing, the pill says "Couldn't work this
-out", with Retry. Live, in the browser: a right triangle labelled 3, 4, x → labels read `x, 3, 4` →
-`x^{2} = 3^{2} + 4^{2}`, `x = \sqrt{3^{2} + 4^{2}}` (1.2–1.9 s) → the engine writes `x = 5`; a
-triangle with 40° and 65° marked and x asked → `x + 40 + 65 = 180`, `x = 180 - 40 - 65` → `x = 75`.
+fallback `google/gemini-3.5-flash-lite`; prompt `src/lib/server/prompts/figure.ts`). The model does
+not write the equation. It describes what it SEES (`FigureReplySchema`, zod, `figure/schema.ts`):
+every labelled angle and side with its label as written and where it is, and the relationships the
+drawing shows — `triangle`, `exterior_angle`, `straight_line`, `around_point`, `right_angle_parts`,
+`vertical`, `transversal` (two angles at the crossings of a transversal with lines marked parallel),
+`isosceles`, `equal`, `equilateral`, `right_angle`, `right_triangle`, `polygon`, `regular_polygon`,
+`exterior_angles`, `inscribed_central`, `same_arc`, `tangent_radius`, `semicircle`,
+`cyclic_opposite`, `similar`, `midsegment` (synonyms mapped; a fact that does not validate is
+dropped). `planFigure` (`figure/plan.ts`, pure) turns the facts into the lines a student writes, one
+stage per unknown: `x + 40 + 65 = 180`, `2x + 10 = 70` (vertical), `x + 70 = 180` (co-interior),
+`2x + 40 = 180` (isosceles, base asked), `x + 2(50) = 180` (apex asked), `x^{2} = 3^{2} + 4^{2}`,
+`\frac{x}{6} = \frac{8}{12}`, `(6 - 2) \cdot 180 = 720` then `6x = 720`, `x = 2(35)` (central
+angle); an unlabelled angle it has to go through is found first on a line of its own
+(`180 - 70 = 110`, then `x + 110 + 50 = 180`). Equal-marked quantities are merged (union–find),
+labels are linear expressions in one letter (`2x + 10`, `(3x - 5)°`, `\frac{x}{2}`, `θ`, `?` → `x`),
+and a line beside that asks (`x = ?`, `m\angle A = ?`) narrows what is solved for. At a transversal
+the relation comes from where each angle is — `first/second crossing, between/outside the parallel
+lines, left/right of the transversal` — not from the name the model gives it: on the eval the models
+placed the angles right more often than they named the relation. The read is refused (and the
+model's own setup lines, which it also returns, are used instead) when a fact names a quantity that
+is not there or of the wrong kind, a value label read on the figure is missing from the read or the
+read has one the figure does not, a label is in no fact, or — once the unknowns are solved — a fact
+does not hold or an angle or side is not a sensible size (not positive, an angle of a triangle or a
+straight line at 180° or more, a base angle of an isosceles triangle at 90° or more, a leg longer
+than the hypotenuse). The board then keeps only what it can check (`figureAnswer`,
+`figure/answer.ts`, the same function the eval scores): the planner's stages are validated like a
+word problem's setup and solved by `localSolve`, and the engine's answer must equal the planner's
+own value (a Greek unknown is solved as a Latin stand-in and renamed back — the engine reads
+`\theta + 50 = 180` as `theta = 130`); the model's own lines must solve to a positive size, an angle
+under 360°. Otherwise nothing is written — no longer the bare setup when the engine cannot finish
+it. The block is written by hand beside the figure (right of it, level with its top; under it when
+the screen has no room), under the work when asked from a line; Help in Feedback / Suggest writes
+the first line only. From a line, a figure that gives nothing falls back to the word-problem and
+solve paths; asked on the drawing, the pill says "Couldn't work this out", with Retry.
+`meta.solvedLatex` is `figureKey` — a hash of ALL the figure's ink (drawing, marks and labels
+together, so a degree sign that moves between label and mark as the glyph scale shifts is not a new
+figure), its labels compared loosely, and the work beside it — and the route's reply is kept per key
+(`figureReplies`), so asking again costs nothing; rubbing the drawing out removes the answer.
+
+**…and, in Solve, without being asked (`solveWantedFigures`).** Once the student has stopped (the
+settle, as for graphs, and after any graph the settle draws), a drawing with an unknown among its
+labels (`looksLikeUnknown`: `?`, a lone letter that is not a line's name like `l`, `m`, `t`, an
+expression in a letter) and no line of writing within the figure reach is worked out beside it.
+Guards: Solve only — Feedback and Suggest stay quiet unless asked (Help); not axes or a number line
+(graphs); no line on the screen reading `Given` / `Prove` (a proof's figure is the proof's); not
+while the tutor's hand is writing or sketching (it follows, from the writer's `onDone`); once per
+figure-and-labels version (`figureKey`) — one model call, the reply kept; a version whose call failed
+is not tried again unasked; a reply that arrives after the student started writing again waits for
+the next stop instead of landing mid-work; an answer the student rubs out (any stroke of it) is not
+written again unasked, also after a reload (the keys in the page's `meta.liveFiguresDismissed`, last
+20), while asking brings it back. A figure whose strokes or labels changed loses its old answer and
+is read again. Unasked failures — a refused read, a failed call, no credits — are silent.
+
+Measured (`npm run eval:figures`, `docs/eval/figures.md`; real calls, gated by `RUN_FIGURE_EVAL=1`,
+cached, under a $0.90 cap): 47 figures drawn as strokes by the corpus pen across 19 configurations
+(`src/__eval__/figures/corpus.ts`), rendered as the board's crop (SVG → PNG with `rsvg-convert`) and
+sent with their labels. Gemini 3.1 Flash Lite 47/47 right and none wrong (1.1 s p50, ~$0.0009 a
+figure); 3.5 Flash Lite 45/47 (2 wrong); Haiku 4.5 42/47 (4 wrong); GPT-5.4 nano 37/47. The old
+free-form prompt on the same model: 44/47, 1 wrong, 2 with nothing. Offline in every run: each
+figure's gold read plans (and the engine solves) to its answer, and each is a drawing to `splitInk`.
+Live, in the browser, in Solve with nothing asked: parallel lines with 70° and x → `x = 70`; a straight
+line with 130° and x → `x + 130 = 180`, `x = 50`; an isosceles triangle with tick marks, 40° at the
+apex, x at the base → `2x + 40 = 180`, `2x = 140`, `x = 70`; crossing lines with `2x + 10` and 70° →
+`2x + 10 = 70`, `2x = 60`, `x = 30` — each beside the figure 4–5 s after the last stroke (the settle,
+the label read, ~1.1–2 s of model). There, two label stacks came back from Mathpix as one row
+(`\underbrace{2 x+10}_{70^{\circ}}`, `70^{\circ} \) x`); `parseLabelRead` now splits both.
 
 Measured offline by the drawings scoreboard (`npm run eval:drawings`, `docs/eval/drawings.md`): 8
 generated drawings × 3 sizes × 5 placements × 6 lines × 4 hands = 2880 scenes. Before, the maths
@@ -493,8 +552,8 @@ own shape tools (never read as ink anyway, but their labels still are lines).
 | `\sum_{i=1}^{3} i + 1` (ambiguous summand), symbolic limits, an infinite sum that is not a geometric series with \|r\| < 1 | Two readings on paper; the engine refuses rather than picking one |
 | `f(4)`, `f(3) = 9` with no definition of f above; `f^{-1}(x)` of an even power | A call is not a product (it used to be answered `= 4f`, `3f = 9`, `f = 3`); an even power has no inverse without a restricted domain |
 | A lone `2x + 3y = 6` (no `y = ?` under it) | It may be one equation of a word problem's setup in two unknowns: the model has the context |
-| A letter under a root (`\sqrt{18x^{2}}`), an asymptote or a hole, synthetic division's tableau, an infinite geometric series with \|r\| ≥ 1, a frequency table, the mode when every value repeats equally | \|x\| would be needed; no word-free way to ask; long division's lines are written instead of the tableau; no sum exists; a table is not read; texts disagree on that mode |
-| Geometry that needs the figure, not the maths written beside it: a missing angle or side never written as an equation, congruence and similarity proofs (the statements are read as labels; their maths lines are checked), constructions | The engine sees the ink's LaTeX, not the diagram (`strokeClusters.ts`' diagram-aware ink is separate work) |
+| A letter under a root (`\sqrt{18x^{2}}`), synthetic division's tableau, an infinite geometric series with \|r\| ≥ 1, a frequency table, the mode when every value repeats equally | \|x\| would be needed; long division's lines are written instead of the tableau; no sum exists; a table is not read; texts disagree on that mode |
+| Geometry that needs the figure beyond what `planFigure` knows (areas, perimeters, arc lengths, trig in a triangle, several unknowns tied together), congruence and similarity proofs (the statements are read as labels; their maths lines are checked), constructions | The figure path reads angles and sides and the relationships listed under "The tutor reads the figure"; anything else is the model's own lines, kept only when they solve to a sensible size |
 | The ambiguous case of the law of sines (a second triangle with the obtuse angle), an obtuse angle from a sine, a negative ratio for a triangle's angle, a vertical line's slope, a circle whose r² ≤ 0, a named angle or segment the steps cannot take | One principal value or nothing, never a list that may not fit the figure; a named quantity is refused outright (`solveLatex` / `solveFromLines` → null), so no other method writes its internal name (`angle_A = 50`) |
 | A trig equation in `x` at a non-special value (`\tan x = \frac{3}{4}`) | `x` is a trig equation's unknown (every angle in a turn); a capital, a named angle or a Greek letter (`\tan\theta = \frac{3}{4}`) is an angle of a triangle and gets its principal value |
 
