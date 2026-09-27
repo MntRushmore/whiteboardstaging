@@ -79,6 +79,12 @@ export const FALLBACK_CANDIDATES: readonly FallbackProblem[] = [
   { id: "fb-37", area: "limit", lines: ["\\lim_{x \\to 0} \\frac{\\tan x - x}{x^{3}}"], expect: { kind: "number", value: 1 / 3 }, answer: "\\frac{1}{3}" },
   { id: "fb-38", area: "sequence", lines: ["a_{1} = 3, \\ a_{n} = 2a_{n-1}", "a_{6} = ?"], expect: { kind: "number", value: 96 }, answer: "96" },
   { id: "fb-39", area: "optimization", lines: ["A = x(20 - 2x)", "\\text{maximum of } A"], expect: { kind: "number", value: 50 }, answer: "50" },
+  // harder ones, added when the engine learned Algebra 1 / 2 (sequences, inverses, logs over two bases, series)
+  { id: "fb-40", area: "integral", lines: ["\\int \\sec x \\, dx"], expect: { kind: "antiderivative", integrand: "\\sec(x)", variable: "x" }, answer: "\\ln|\\sec x + \\tan x| + C" },
+  { id: "fb-41", area: "series", lines: ["\\sum_{n=1}^{\\infty} \\frac{1}{n^{2}}"], expect: { kind: "number", value: (PI * PI) / 6 }, answer: "\\frac{\\pi^{2}}{6}" },
+  { id: "fb-42", area: "improper", lines: ["\\int_{0}^{\\infty} e^{-x} \\, dx"], expect: { kind: "number", value: 1 }, answer: "1" },
+  { id: "fb-43", area: "limit", lines: ["\\lim_{x \\to 0^{+}} x \\ln x"], expect: { kind: "number", value: 0 }, answer: "0" },
+  { id: "fb-44", area: "system", lines: ["\\log_{2} x + \\log_{2} y = 5", "x - y = 4"], expect: { kind: "values", values: { x: [8], y: [4] } }, answer: "x = 8, \\ y = 4" },
 ];
 
 export const FALLBACK_SIZE = 25;

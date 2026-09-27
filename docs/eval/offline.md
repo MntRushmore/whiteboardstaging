@@ -5,55 +5,84 @@
 > paths of Solve, in `LiveLoop.startSolve`'s order) and the result is judged semantically by
 > `src/__eval__/oracle.ts`. A problem passes when all five stages pass. Corpus: `src/__eval__/corpus.ts`.
 
-**424 / 424 problems pass (100%).**
+**596 / 596 problems pass (100%).**
 
 ## Stages
 
 | stage | pass | of all | of those with a local solution |
 | --- | --- | --- | --- |
-| local solution | 424 | 100% | — |
-| answer correct | 424 | 100% | 100% |
-| steps consistent | 424 | 100% | 100% |
-| hand can draw | 424 | 100% | 100% |
-| no words | 424 | 100% | 100% |
+| local solution | 596 | 100% | — |
+| answer correct | 596 | 100% | 100% |
+| steps consistent | 596 | 100% | 100% |
+| hand can draw | 596 | 100% | 100% |
+| no words | 596 | 100% | 100% |
 
 Answer verdicts (`approx`: a decimal or ≈ where a teacher writes the exact value; `form`: right value, wrong shape; `unsolved`: the last line is not an answer yet; `missing`: no local solution):
 
 | ok | approx | form | unsolved | wrong | missing | unjudged |
 | --- | --- | --- | --- | --- | --- | --- |
-| 424 | 0 | 0 | 0 | 0 | 0 | 0 |
+| 596 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+## By course
+
+Skills per course and what the engine covers: `docs/eval/courses.md`. Course problem sets: `src/__eval__/courses/`.
+
+| course | n | pass | local solution | answer correct | steps consistent | hand can draw | no words |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| algebra-1 | 176 | **176** (100%) | 176 | 176 | 176 | 176 | 176 |
+| algebra-2 | 135 | **135** (100%) | 135 | 135 | 135 | 135 | 135 |
+| geometry | 153 | **153** (100%) | 153 | 153 | 153 | 153 | 153 |
+| precalc-calc | 100 | **100** (100%) | 100 | 100 | 100 | 100 | 100 |
+| general | 32 | **32** (100%) | 32 | 32 | 32 | 32 | 32 |
 
 ## By topic
 
-| topic | n | pass | local solution | answer correct | steps consistent | hand can draw | no words |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| arithmetic | 20 | **20** (100%) | 20 | 20 | 20 | 20 | 20 |
-| linear | 22 | **22** (100%) | 22 | 22 | 22 | 22 | 22 |
-| inequality | 17 | **17** (100%) | 17 | 17 | 17 | 17 | 17 |
-| system-2x2 | 16 | **16** (100%) | 16 | 16 | 16 | 16 | 16 |
-| system-3x3 | 6 | **6** (100%) | 6 | 6 | 6 | 6 | 6 |
-| substitution | 5 | **5** (100%) | 5 | 5 | 5 | 5 | 5 |
-| quadratic | 14 | **14** (100%) | 14 | 14 | 14 | 14 | 14 |
-| absolute | 7 | **7** (100%) | 7 | 7 | 7 | 7 | 7 |
-| rational | 8 | **8** (100%) | 8 | 8 | 8 | 8 | 8 |
-| radical | 8 | **8** (100%) | 8 | 8 | 8 | 8 | 8 |
-| exponential | 9 | **9** (100%) | 9 | 9 | 9 | 9 | 9 |
-| logarithmic | 9 | **9** (100%) | 9 | 9 | 9 | 9 | 9 |
-| expand-factor | 18 | **18** (100%) | 18 | 18 | 18 | 18 | 18 |
-| derivative | 20 | **20** (100%) | 20 | 20 | 20 | 20 | 20 |
-| integral-indefinite | 19 | **19** (100%) | 19 | 19 | 19 | 19 | 19 |
-| integral-definite | 12 | **12** (100%) | 12 | 12 | 12 | 12 | 12 |
-| limit | 13 | **13** (100%) | 13 | 13 | 13 | 13 | 13 |
-| units-percent | 12 | **12** (100%) | 12 | 12 | 12 | 12 | 12 |
-| trig | 18 | **18** (100%) | 18 | 18 | 18 | 18 | 18 |
-| trig-equation | 13 | **13** (100%) | 13 | 13 | 13 | 13 | 13 |
-| trig-identity | 5 | **5** (100%) | 5 | 5 | 5 | 5 | 5 |
-| geometry-angles | 26 | **26** (100%) | 26 | 26 | 26 | 26 | 26 |
-| geometry-right-triangles | 32 | **32** (100%) | 32 | 32 | 32 | 32 | 32 |
-| geometry-measure | 29 | **29** (100%) | 29 | 29 | 29 | 29 | 29 |
-| geometry-circles | 21 | **21** (100%) | 21 | 21 | 21 | 21 | 21 |
-| geometry-coordinates | 29 | **29** (100%) | 29 | 29 | 29 | 29 | 29 |
-| geometry-similarity | 16 | **16** (100%) | 16 | 16 | 16 | 16 | 16 |
+| topic | course | n | pass | local solution | answer correct | steps consistent | hand can draw | no words |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| arithmetic | general | 20 | **20** (100%) | 20 | 20 | 20 | 20 | 20 |
+| linear | algebra-1 | 22 | **22** (100%) | 22 | 22 | 22 | 22 | 22 |
+| inequality | algebra-1 | 17 | **17** (100%) | 17 | 17 | 17 | 17 | 17 |
+| system-2x2 | algebra-1 | 16 | **16** (100%) | 16 | 16 | 16 | 16 | 16 |
+| system-3x3 | algebra-2 | 6 | **6** (100%) | 6 | 6 | 6 | 6 | 6 |
+| substitution | algebra-1 | 5 | **5** (100%) | 5 | 5 | 5 | 5 | 5 |
+| quadratic | algebra-1 | 14 | **14** (100%) | 14 | 14 | 14 | 14 | 14 |
+| absolute | algebra-1 | 7 | **7** (100%) | 7 | 7 | 7 | 7 | 7 |
+| rational | algebra-2 | 8 | **8** (100%) | 8 | 8 | 8 | 8 | 8 |
+| radical | algebra-2 | 8 | **8** (100%) | 8 | 8 | 8 | 8 | 8 |
+| exponential | algebra-2 | 9 | **9** (100%) | 9 | 9 | 9 | 9 | 9 |
+| logarithmic | algebra-2 | 9 | **9** (100%) | 9 | 9 | 9 | 9 | 9 |
+| expand-factor | algebra-1 | 18 | **18** (100%) | 18 | 18 | 18 | 18 | 18 |
+| derivative | precalc-calc | 20 | **20** (100%) | 20 | 20 | 20 | 20 | 20 |
+| integral-indefinite | precalc-calc | 19 | **19** (100%) | 19 | 19 | 19 | 19 | 19 |
+| integral-definite | precalc-calc | 12 | **12** (100%) | 12 | 12 | 12 | 12 | 12 |
+| limit | precalc-calc | 13 | **13** (100%) | 13 | 13 | 13 | 13 | 13 |
+| units-percent | general | 12 | **12** (100%) | 12 | 12 | 12 | 12 | 12 |
+| trig | precalc-calc | 18 | **18** (100%) | 18 | 18 | 18 | 18 | 18 |
+| trig-equation | precalc-calc | 13 | **13** (100%) | 13 | 13 | 13 | 13 | 13 |
+| trig-identity | precalc-calc | 5 | **5** (100%) | 5 | 5 | 5 | 5 | 5 |
+| linear-functions | algebra-1 | 18 | **18** (100%) | 18 | 18 | 18 | 18 | 18 |
+| function-notation | algebra-1 | 12 | **12** (100%) | 12 | 12 | 12 | 12 | 12 |
+| exponent-rules | algebra-1 | 14 | **14** (100%) | 14 | 14 | 14 | 14 | 14 |
+| radicals | algebra-1 | 16 | **16** (100%) | 16 | 16 | 16 | 16 | 16 |
+| polynomial-ops | algebra-1 | 6 | **6** (100%) | 6 | 6 | 6 | 6 | 6 |
+| literal-equations | algebra-1 | 12 | **12** (100%) | 12 | 12 | 12 | 12 | 12 |
+| sequences | algebra-1 | 10 | **10** (100%) | 10 | 10 | 10 | 10 | 10 |
+| exponential-models | algebra-1 | 8 | **8** (100%) | 8 | 8 | 8 | 8 | 8 |
+| statistics | algebra-1 | 4 | **4** (100%) | 4 | 4 | 4 | 4 | 4 |
+| complex-numbers | algebra-2 | 15 | **15** (100%) | 15 | 15 | 15 | 15 | 15 |
+| poly-division | algebra-2 | 9 | **9** (100%) | 9 | 9 | 9 | 9 | 9 |
+| function-ops | algebra-2 | 11 | **11** (100%) | 11 | 11 | 11 | 11 | 11 |
+| log-properties | algebra-2 | 12 | **12** (100%) | 12 | 12 | 12 | 12 | 12 |
+| rational-expressions | algebra-2 | 8 | **8** (100%) | 8 | 8 | 8 | 8 | 8 |
+| series | algebra-2 | 7 | **7** (100%) | 7 | 7 | 7 | 7 | 7 |
+| binomial | algebra-2 | 5 | **5** (100%) | 5 | 5 | 5 | 5 | 5 |
+| variation | algebra-2 | 5 | **5** (100%) | 5 | 5 | 5 | 5 | 5 |
+| geometry-angles | geometry | 26 | **26** (100%) | 26 | 26 | 26 | 26 | 26 |
+| geometry-right-triangles | geometry | 32 | **32** (100%) | 32 | 32 | 32 | 32 | 32 |
+| geometry-measure | geometry | 29 | **29** (100%) | 29 | 29 | 29 | 29 | 29 |
+| geometry-circles | geometry | 21 | **21** (100%) | 21 | 21 | 21 | 21 | 21 |
+| geometry-coordinates | geometry | 29 | **29** (100%) | 29 | 29 | 29 | 29 | 29 |
+| geometry-similarity | geometry | 16 | **16** (100%) | 16 | 16 | 16 | 16 | 16 |
 
 ## Failure patterns
 
@@ -113,6 +142,43 @@ Grouped by stage and reason (numbers and LaTeX blanked), most frequent first. On
 | t2-32 | unverified: `= x\ln x - \int 1 \, dx` (no sample point) |
 | t2-50 | unverified: `2x + 2y\frac{dy}{dx} = 0` (unreadable step (untranslatable side)); unverified: `2y\frac{dy}{dx} = -2x` (unreadable step (untranslatable side)); unverified: `\frac{dy}{dx} = -\frac{x}{y}` (the line before is unreadable (untranslatable)) |
 | t2-51 | unverified: `y = x^{x}` (switches between an expression and a relation); unverified: `\frac{1}{y}\frac{dy}{dx} = \ln x + 1` (unreadable step (untranslatable side)); unverified: `\frac{dy}{dx} = y(\ln x + 1)` (several unknowns (y, x, D_y)) |
+| a1-lf-04 | unverified: `m = \frac{9 - 3}{5 - 2}` (the line before is unreadable (untranslatable)); unverified: `y - 3 = 2(x - 2)` (several unknowns (m, y, x)) |
+| a1-lf-05 | unverified: `m = \frac{-4 - 4}{3 - (-1)}` (the line before is unreadable (untranslatable)); unverified: `y - 4 = -2(x + 1)` (several unknowns (m, y, x)) |
+| a1-lf-06 | unverified: `m = \frac{2 - (-1)}{4 - (-2)}` (the line before is unreadable (untranslatable)); unverified: `y + 1 = \frac{1}{2}(x + 2)` (several unknowns (m, y, x)) |
+| a1-lf-07 | unverified: `m = \frac{5 - 5}{4 - 1}` (the line before is unreadable (untranslatable)); unverified: `y = 5` (several unknowns (m, y)) |
+| a1-lf-08 | unverified: `m = \frac{7 - 3}{2 - 2}` (the line before is unreadable (untranslatable)); unverified: `x = 2` (several unknowns (m, x)) |
+| a1-lf-09 | unverified: `y - 3 = 2(x - 1)` (the line before is unreadable (untranslatable)) |
+| a1-lf-10 | unverified: `y + 1 = -\frac{1}{2}(x - 4)` (a question line) |
+| a1-sq-01 | unverified: `d = 7 - 3` (mentions d); unverified: `d = 4` (mentions d) |
+| a1-sq-02 | unverified: `d = 7 - 3` (a question line); unverified: `a_{n} = 3 + (n - 1) \cdot 4` (several unknowns (d, a_n, n)) |
+| a1-sq-03 | unverified: `r = \frac{6}{2}` (mentions r); unverified: `r = 3` (mentions r) |
+| a1-sq-04 | unverified: `d = 5` (mentions d) |
+| a1-sq-08 | unverified: `d = 7 - 10` (mentions d); unverified: `d = -3` (mentions d) |
+| a1-sq-09 | unverified: `r = 2` (mentions r) |
+| a1-sq-10 | unverified: `r = 1 \div \frac{1}{2}` (mentions r); unverified: `r = 2` (mentions r) |
+| a1-st-01 | unverified: `\bar{x} = \frac{3 + 5 + 7 + 9 + 11}{5}` (a question line) |
+| a1-st-02 | unverified: `\bar{x} = \frac{12 + 15 + 9 + 20}{4}` (a question line) |
+| a1-st-04 | unverified: `\bar{x} = \frac{2 + 4 + 4 + 5}{4}` (a question line) |
+| a2-cx-09 | machine-style `\cdot` between a number and a letter (`6\cdot x`) |
+| a2-fo-06 | unverified: `f^{-1}(x) = \frac{x - 3}{2}` (judged as the answer) |
+| a2-fo-07 | unverified: `f^{-1}(x) = \frac{x + 4}{3}` (judged as the answer) |
+| a2-fo-08 | 8 lines: at the maxSolveSteps cap (working may have been cut); unverified: `f^{-1}(x) = \frac{2x + 1}{x - 1}` (judged as the answer) |
+| a2-fo-09 | unverified: `f^{-1}(x) = \sqrt[3]{x + 1}` (judged as the answer) |
+| a2-re-01 | unverified: `x \neq -1, \ x \neq 0` (unreadable step (untranslatable side)) |
+| a2-re-02 | unverified: `x \neq -1, \ x \neq 1` (unreadable step (untranslatable side)) |
+| a2-re-03 | unverified: `x \neq -2, \ x \neq 0` (unreadable step (untranslatable side)) |
+| a2-re-04 | unverified: `x \neq -3, \ x \neq 2` (unreadable step (untranslatable side)) |
+| a2-re-05 | unverified: `x \neq -1, \ x \neq 0, \ x \neq 1` (unreadable step (untranslatable side)) |
+| a2-re-06 | unverified: `x \neq -1` (switches between an expression and a relation) |
+| a2-re-07 | unverified: `x \neq -3, \ x \neq 3` (unreadable step (untranslatable side)) |
+| a2-re-08 | unverified: `x \neq 2` (switches between an expression and a relation) |
+| a2-se-01 | unverified: `r = \frac{6}{2}` (mentions r); unverified: `r = 3` (mentions r); `-2^{2}`: a negative base without brackets reads as -(2²) |
+| a2-se-02 | unverified: `d = 7 - 3` (mentions d); unverified: `d = 4` (mentions d); unverified: `a_{10} = 3 + 36` (mentions a_10); unverified: `a_{10} = 39` (mentions a_10) |
+| a2-se-03 | unverified: `r = \frac{4}{8}` (mentions r); unverified: `r = \frac{1}{2}` (mentions r) |
+| a2-se-05 | `-2^{2}`: a negative base without brackets reads as -(2²) |
+| a2-se-06 | unverified: `= \frac{3}{1 - \frac{1}{2}}` (no sample point where both are defined) |
+| a2-se-07 | unverified: `r = \frac{9}{27}` (mentions r); unverified: `r = \frac{1}{3}` (mentions r) |
+| a2-le-02 | unverified: `e^{rt} = \frac{A}{P}` (a root of P gained or lost) |
 | ga-17 | unverified: `n \neq 0` (an equation and an inequality); unverified: `n \cdot \frac{360}{n} = n \cdot 24` (an equation and an inequality) |
 | ga-18 | unverified: `n \neq 0` (an equation and an inequality); unverified: `n \cdot \frac{180n - 360}{n} = n \cdot 150` (an equation and an inequality) |
 | ga-22 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
@@ -120,4 +186,4 @@ Grouped by stage and reason (numbers and LaTeX blanked), most frequent first. On
 
 ## Passing
 
-ar-01, ar-02, ar-03, ar-04, ar-05, ar-06, ar-07, ar-08, ar-09, ar-10, ar-11, ar-12, ar-13, li-01, li-02, li-03, li-04, li-05, li-06, li-07, li-08, li-09, li-10, li-11, li-12, li-13, in-01, in-02, in-03, in-04, in-05, in-06, in-07, in-08, in-09, sy-01, sy-02, sy-03, sy-04, sy-05, sy-06, sy-07, sy-08, s3-01, s3-02, s3-03, s3-04, su-01, su-02, su-03, su-04, su-05, qu-01, qu-02, qu-03, qu-04, qu-05, qu-06, qu-07, qu-08, qu-09, qu-10, qu-11, qu-12, qu-13, qu-14, ab-01, ab-02, ab-03, ab-04, ab-05, ra-01, ra-02, ra-03, ra-04, ra-05, ra-06, rd-01, rd-02, rd-03, rd-04, rd-05, rd-06, ex-01, ex-02, ex-03, ex-04, ex-05, ex-06, ex-07, lg-01, lg-02, lg-03, lg-04, lg-05, lg-06, lg-07, xf-01, xf-02, xf-03, xf-04, xf-05, xf-06, xf-07, xf-08, xf-09, xf-10, xf-11, xf-12, xf-13, de-01, de-02, de-03, de-04, de-05, de-06, de-07, de-08, de-09, de-10, de-11, de-12, de-13, de-14, de-15, de-16, ii-01, ii-02, ii-03, ii-04, ii-05, ii-06, ii-07, ii-08, ii-09, di-01, di-02, di-03, di-04, di-05, di-06, di-07, di-08, lm-01, lm-02, lm-03, lm-04, lm-05, lm-06, lm-07, lm-08, up-01, up-02, up-03, up-04, up-05, up-06, up-07, up-08, tr-01, tr-02, tr-03, tr-04, tr-05, tr-06, tr-07, tr-08, g2-01, g2-02, g2-03, g2-04, g2-05, g2-06, g2-07, g2-08, g2-09, g2-10, g2-11, g2-12, g2-13, g2-14, g2-15, g2-16, g2-17, g2-18, g2-19, g2-20, g2-21, g2-22, g2-23, g2-24, g2-25, g2-26, g2-27, g2-28, g2-44, g2-45, g2-46, g2-47, g2-48, g2-49, g2-29, g2-30, g2-31, g2-32, g2-33, g2-34, g2-35, g2-36, g2-37, g2-38, g2-39, g2-40, g2-41, g2-42, g2-43, d3-01, d3-02, d3-03, d3-04, t2-01, t2-02, t2-03, t2-04, t2-05, t2-06, t2-07, t2-08, t2-09, t2-10, t2-11, t2-12, t2-13, t2-14, t2-15, t2-16, t2-17, t2-18, t2-19, t2-20, t2-21, t2-22, t2-23, t2-24, t2-25, t2-26, t2-27, t2-28, t2-29, t2-30, t2-31, t2-32, t2-33, t2-34, t2-35, t2-36, t2-37, t2-38, t2-39, t2-40, t2-41, t2-42, t2-43, t2-44, t2-45, t2-46, t2-47, t2-48, t2-49, t2-50, t2-51, ga-01, ga-02, ga-03, ga-04, ga-05, ga-06, ga-07, ga-08, ga-09, ga-10, ga-11, ga-12, ga-13, ga-14, ga-15, ga-16, ga-17, ga-18, ga-19, ga-20, ga-21, ga-22, ga-23, ga-24, ga-25, ga-26, gr-01, gr-02, gr-03, gr-04, gr-05, gr-06, gr-07, gr-08, gr-09, gr-10, gr-11, gr-12, gr-13, gr-14, gr-15, gr-16, gr-17, gr-18, gr-19, gr-20, gr-21, gr-22, gr-23, gr-24, gr-25, gr-26, gr-27, gr-28, gr-29, gr-30, gr-31, gr-32, gm-01, gm-02, gm-03, gm-04, gm-05, gm-06, gm-07, gm-08, gm-09, gm-10, gm-11, gm-12, gm-13, gm-14, gm-15, gm-16, gm-17, gm-18, gm-19, gm-20, gm-21, gm-22, gm-23, gm-24, gm-25, gm-26, gm-27, gm-28, gm-29, gc-01, gc-02, gc-03, gc-04, gc-05, gc-06, gc-07, gc-08, gc-09, gc-10, gc-11, gc-12, gc-13, gc-14, gc-15, gc-16, gc-17, gc-18, gc-19, gc-20, gc-21, gx-01, gx-02, gx-03, gx-04, gx-05, gx-06, gx-07, gx-08, gx-09, gx-10, gx-11, gx-12, gx-13, gx-14, gx-15, gx-16, gx-17, gx-18, gx-19, gx-20, gx-21, gx-22, gx-23, gx-24, gx-25, gx-26, gx-27, gx-28, gx-29, gs-01, gs-02, gs-03, gs-04, gs-05, gs-06, gs-07, gs-08, gs-09, gs-10, gs-11, gs-12, gs-13, gs-14, gs-15, gs-16
+ar-01, ar-02, ar-03, ar-04, ar-05, ar-06, ar-07, ar-08, ar-09, ar-10, ar-11, ar-12, ar-13, li-01, li-02, li-03, li-04, li-05, li-06, li-07, li-08, li-09, li-10, li-11, li-12, li-13, in-01, in-02, in-03, in-04, in-05, in-06, in-07, in-08, in-09, sy-01, sy-02, sy-03, sy-04, sy-05, sy-06, sy-07, sy-08, s3-01, s3-02, s3-03, s3-04, su-01, su-02, su-03, su-04, su-05, qu-01, qu-02, qu-03, qu-04, qu-05, qu-06, qu-07, qu-08, qu-09, qu-10, qu-11, qu-12, qu-13, qu-14, ab-01, ab-02, ab-03, ab-04, ab-05, ra-01, ra-02, ra-03, ra-04, ra-05, ra-06, rd-01, rd-02, rd-03, rd-04, rd-05, rd-06, ex-01, ex-02, ex-03, ex-04, ex-05, ex-06, ex-07, lg-01, lg-02, lg-03, lg-04, lg-05, lg-06, lg-07, xf-01, xf-02, xf-03, xf-04, xf-05, xf-06, xf-07, xf-08, xf-09, xf-10, xf-11, xf-12, xf-13, de-01, de-02, de-03, de-04, de-05, de-06, de-07, de-08, de-09, de-10, de-11, de-12, de-13, de-14, de-15, de-16, ii-01, ii-02, ii-03, ii-04, ii-05, ii-06, ii-07, ii-08, ii-09, di-01, di-02, di-03, di-04, di-05, di-06, di-07, di-08, lm-01, lm-02, lm-03, lm-04, lm-05, lm-06, lm-07, lm-08, up-01, up-02, up-03, up-04, up-05, up-06, up-07, up-08, tr-01, tr-02, tr-03, tr-04, tr-05, tr-06, tr-07, tr-08, g2-01, g2-02, g2-03, g2-04, g2-05, g2-06, g2-07, g2-08, g2-09, g2-10, g2-11, g2-12, g2-13, g2-14, g2-15, g2-16, g2-17, g2-18, g2-19, g2-20, g2-21, g2-22, g2-23, g2-24, g2-25, g2-26, g2-27, g2-28, g2-44, g2-45, g2-46, g2-47, g2-48, g2-49, g2-29, g2-30, g2-31, g2-32, g2-33, g2-34, g2-35, g2-36, g2-37, g2-38, g2-39, g2-40, g2-41, g2-42, g2-43, d3-01, d3-02, d3-03, d3-04, t2-01, t2-02, t2-03, t2-04, t2-05, t2-06, t2-07, t2-08, t2-09, t2-10, t2-11, t2-12, t2-13, t2-14, t2-15, t2-16, t2-17, t2-18, t2-19, t2-20, t2-21, t2-22, t2-23, t2-24, t2-25, t2-26, t2-27, t2-28, t2-29, t2-30, t2-31, t2-32, t2-33, t2-34, t2-35, t2-36, t2-37, t2-38, t2-39, t2-40, t2-41, t2-42, t2-43, t2-44, t2-45, t2-46, t2-47, t2-48, t2-49, t2-50, t2-51, a1-lf-01, a1-lf-02, a1-lf-03, a1-lf-04, a1-lf-05, a1-lf-06, a1-lf-07, a1-lf-08, a1-lf-09, a1-lf-10, a1-lf-11, a1-lf-12, a1-lf-13, a1-lf-14, a1-lf-15, a1-lf-16, a1-lf-17, a1-lf-18, a1-fn-01, a1-fn-02, a1-fn-03, a1-fn-04, a1-fn-05, a1-fn-06, a1-fn-07, a1-fn-08, a1-fn-09, a1-fn-10, a1-fn-11, a1-fn-12, a1-ex-01, a1-ex-02, a1-ex-03, a1-ex-04, a1-ex-05, a1-ex-06, a1-ex-07, a1-ex-08, a1-ex-09, a1-ex-10, a1-ex-11, a1-ex-12, a1-ex-13, a1-ex-14, a1-rd-01, a1-rd-02, a1-rd-03, a1-rd-04, a1-rd-05, a1-rd-06, a1-rd-07, a1-rd-08, a1-rd-09, a1-rd-10, a1-rd-11, a1-rd-12, a1-rd-13, a1-po-01, a1-po-02, a1-po-03, a1-po-04, a1-po-05, a1-po-06, a1-le-01, a1-le-02, a1-le-03, a1-le-04, a1-le-05, a1-le-06, a1-le-07, a1-le-08, a1-le-09, a1-le-10, a1-sq-01, a1-sq-02, a1-sq-03, a1-sq-04, a1-sq-05, a1-sq-06, a1-sq-07, a1-sq-08, a1-sq-09, a1-sq-10, a1-em-01, a1-em-02, a1-em-03, a1-em-04, a1-em-05, a1-em-06, a1-em-07, a1-em-08, a1-st-01, a1-st-02, a1-st-03, a1-st-04, a2-cx-01, a2-cx-02, a2-cx-03, a2-cx-04, a2-cx-05, a2-cx-06, a2-cx-07, a2-cx-08, a2-cx-09, a2-cx-10, a2-cx-11, a2-cx-12, a2-cx-13, a2-cx-14, a2-cx-15, a2-pd-01, a2-pd-02, a2-pd-03, a2-pd-04, a2-pd-05, a2-pd-06, a2-pd-07, a2-pd-08, a2-pd-09, a2-fo-01, a2-fo-02, a2-fo-03, a2-fo-04, a2-fo-05, a2-fo-06, a2-fo-07, a2-fo-08, a2-fo-09, a2-fo-10, a2-fo-11, a2-lg-01, a2-lg-02, a2-lg-03, a2-lg-04, a2-lg-05, a2-lg-06, a2-lg-07, a2-lg-08, a2-lg-09, a2-lg-10, a2-lg-11, a2-lg-12, a2-re-01, a2-re-02, a2-re-03, a2-re-04, a2-re-05, a2-re-06, a2-re-07, a2-re-08, a2-se-01, a2-se-02, a2-se-03, a2-se-04, a2-se-05, a2-se-06, a2-se-07, a2-bn-01, a2-bn-02, a2-bn-03, a2-bn-04, a2-bn-05, a2-va-01, a2-va-02, a2-va-03, a2-va-04, a2-va-05, a2-le-01, a2-le-02, a2-rd-01, a2-rd-02, a2-rd-03, ga-01, ga-02, ga-03, ga-04, ga-05, ga-06, ga-07, ga-08, ga-09, ga-10, ga-11, ga-12, ga-13, ga-14, ga-15, ga-16, ga-17, ga-18, ga-19, ga-20, ga-21, ga-22, ga-23, ga-24, ga-25, ga-26, gr-01, gr-02, gr-03, gr-04, gr-05, gr-06, gr-07, gr-08, gr-09, gr-10, gr-11, gr-12, gr-13, gr-14, gr-15, gr-16, gr-17, gr-18, gr-19, gr-20, gr-21, gr-22, gr-23, gr-24, gr-25, gr-26, gr-27, gr-28, gr-29, gr-30, gr-31, gr-32, gm-01, gm-02, gm-03, gm-04, gm-05, gm-06, gm-07, gm-08, gm-09, gm-10, gm-11, gm-12, gm-13, gm-14, gm-15, gm-16, gm-17, gm-18, gm-19, gm-20, gm-21, gm-22, gm-23, gm-24, gm-25, gm-26, gm-27, gm-28, gm-29, gc-01, gc-02, gc-03, gc-04, gc-05, gc-06, gc-07, gc-08, gc-09, gc-10, gc-11, gc-12, gc-13, gc-14, gc-15, gc-16, gc-17, gc-18, gc-19, gc-20, gc-21, gx-01, gx-02, gx-03, gx-04, gx-05, gx-06, gx-07, gx-08, gx-09, gx-10, gx-11, gx-12, gx-13, gx-14, gx-15, gx-16, gx-17, gx-18, gx-19, gx-20, gx-21, gx-22, gx-23, gx-24, gx-25, gx-26, gx-27, gx-28, gx-29, gs-01, gs-02, gs-03, gs-04, gs-05, gs-06, gs-07, gs-08, gs-09, gs-10, gs-11, gs-12, gs-13, gs-14, gs-15, gs-16

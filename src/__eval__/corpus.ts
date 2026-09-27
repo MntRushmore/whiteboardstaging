@@ -26,9 +26,20 @@
  *    radians too — `x = 30^{\circ}` is read as π/6. A length is `(0, ∞)`: only its positive root.
  *  - `point`: the answer is a point (a midpoint, an image, a circle's centre), the last one on the
  *    final line; every step with a numeric point on it must be that point.
+ *  - `complexValues`: the solution set when it is not real (`x = -1 \pm 2i`), as [re, im] pairs,
+ *    for a column where the student is working with `i` (N-CN.7).
+ *
+ * Every problem belongs to a COURSE (`courseOf`): its topic's course (`TOPIC_COURSE`) unless it
+ * says otherwise. The course files (`src/__eval__/courses/*.ts`) hold the problems written for
+ * the school courses; this file holds the original scoreboard.
  */
+import { COURSE_PROBLEMS } from "./courses";
 
-import { GEOMETRY, GEOMETRY_TOPICS } from "./courses/geometry";
+/** The school courses the scoreboard reports on (`docs/eval/courses.md` lists their skills). */
+export const COURSES = ["algebra-1", "algebra-2", "geometry", "precalc-calc", "general"] as const;
+export type Course = (typeof COURSES)[number];
+
+import { GEOMETRY_TOPICS } from "./courses/geometry";
 
 export const TOPICS = [
   "arithmetic",
@@ -52,16 +63,82 @@ export const TOPICS = [
   "trig",
   "trig-equation",
   "trig-identity",
+  // Algebra 1 (src/__eval__/courses/algebra1.ts)
+  "linear-functions",
+  "function-notation",
+  "exponent-rules",
+  "radicals",
+  "polynomial-ops",
+  "literal-equations",
+  "sequences",
+  "exponential-models",
+  "statistics",
+  // Algebra 2 (src/__eval__/courses/algebra2.ts)
+  "complex-numbers",
+  "poly-division",
+  "function-ops",
+  "log-properties",
+  "rational-expressions",
+  "series",
+  "binomial",
+  "variation",
+  // Geometry (src/__eval__/courses/geometry.ts)
   ...GEOMETRY_TOPICS,
 ] as const;
 export type Topic = (typeof TOPICS)[number];
 
+/** The course a topic belongs to, unless a problem names its own (`EvalProblem.course`). */
+export const TOPIC_COURSE: Record<Topic, Course> = {
+  arithmetic: "general",
+  "units-percent": "general",
+  linear: "algebra-1",
+  inequality: "algebra-1",
+  "system-2x2": "algebra-1",
+  substitution: "algebra-1",
+  quadratic: "algebra-1",
+  absolute: "algebra-1",
+  "expand-factor": "algebra-1",
+  "system-3x3": "algebra-2",
+  rational: "algebra-2",
+  radical: "algebra-2",
+  exponential: "algebra-2",
+  logarithmic: "algebra-2",
+  derivative: "precalc-calc",
+  "integral-indefinite": "precalc-calc",
+  "integral-definite": "precalc-calc",
+  limit: "precalc-calc",
+  trig: "precalc-calc",
+  "trig-equation": "precalc-calc",
+  "trig-identity": "precalc-calc",
+  "linear-functions": "algebra-1",
+  "function-notation": "algebra-1",
+  "exponent-rules": "algebra-1",
+  radicals: "algebra-1",
+  "polynomial-ops": "algebra-1",
+  "literal-equations": "algebra-1",
+  sequences: "algebra-1",
+  "exponential-models": "algebra-1",
+  statistics: "algebra-1",
+  "complex-numbers": "algebra-2",
+  "poly-division": "algebra-2",
+  "function-ops": "algebra-2",
+  "log-properties": "algebra-2",
+  "rational-expressions": "algebra-2",
+  series: "algebra-2",
+  binomial: "algebra-2",
+  variation: "algebra-2",
+  ...(Object.fromEntries(GEOMETRY_TOPICS.map((t) => [t, "geometry"])) as Record<(typeof GEOMETRY_TOPICS)[number], Course>),
+};
+
 export interface Expectation {
   answer?: string;
   values?: Record<string, number[]>;
+  /** non-real solutions, [re, im] per value (`x = -1 \pm 2i` is [[-1, -2], [-1, 2]]) */
+  complexValues?: Record<string, Array<[number, number]>>;
   equivalentTo?: string;
   upToConstant?: boolean;
-  form?: "factored" | "expanded";
+  /** `radical`: simplest radical form — no square left under a root, no root below the bar */
+  form?: "factored" | "expanded" | "radical";
   approxOk?: boolean;
   interval?: { lo: number; hi: number; loIn?: boolean; hiIn?: boolean };
   /** the answer is a point (a midpoint, an image, a circle's centre): the last point on the final line */
@@ -71,16 +148,29 @@ export interface Expectation {
 export interface EvalProblem {
   id: string;
   topic: Topic;
+  /** the school course, when not its topic's (`TOPIC_COURSE`) */
+  course?: Course;
   /** LaTeX as the student writes it, one entry per line, top to bottom */
   lines: string[];
   expect: Expectation;
   note?: string;
+  /**
+   * The same question restated in lines the oracle can read, for a problem whose own lines it
+   * cannot (two points, a list of terms, a question under a formula): the corpus test checks the
+   * expectation against these instead. Never shown to the engine.
+   */
+  oracle?: string[];
+}
+
+export function courseOf(p: Pick<EvalProblem, "topic" | "course">): Course {
+  return p.course ?? TOPIC_COURSE[p.topic];
 }
 
 const SQRT2 = Math.SQRT2;
 const SQRT3 = Math.sqrt(3);
 
-export const CORPUS: readonly EvalProblem[] = [
+/** The original scoreboard (every course); the course files add to it. */
+export const BASE_CORPUS: readonly EvalProblem[] = [
   // ---------------------------------------------------------------- arithmetic & fractions
   { id: "ar-01", topic: "arithmetic", lines: ["36 + 2 ="], expect: { answer: "38" } },
   { id: "ar-02", topic: "arithmetic", lines: ["7 \\times 8"], expect: { answer: "56" }, note: "no trailing =" },
@@ -119,7 +209,7 @@ export const CORPUS: readonly EvalProblem[] = [
   { id: "in-05", topic: "inequality", lines: ["\\frac{x}{3} - 1 < 2"], expect: { answer: "x < 9" } },
   { id: "in-06", topic: "inequality", lines: ["-3(x - 2) > 9"], expect: { answer: "x < -1" } },
   { id: "in-07", topic: "inequality", lines: ["5 - 2x \\le -1"], expect: { answer: "x \\ge 3" } },
-  { id: "in-08", topic: "inequality", lines: ["x^{2} - 4 < 0"], expect: { answer: "-2 < x < 2" }, note: "quadratic inequality" },
+  { id: "in-08", topic: "inequality", course: "algebra-2", lines: ["x^{2} - 4 < 0"], expect: { answer: "-2 < x < 2" }, note: "quadratic inequality" },
   { id: "in-09", topic: "inequality", lines: ["|x - 1| < 3"], expect: { answer: "-2 < x < 4" }, note: "absolute-value inequality" },
 
   // ---------------------------------------------------------------- 2×2 systems
@@ -215,7 +305,7 @@ export const CORPUS: readonly EvalProblem[] = [
   { id: "xf-10", topic: "expand-factor", lines: ["x^{2} - 9"], expect: { answer: "(x - 3)(x + 3)", form: "factored" } },
   { id: "xf-11", topic: "expand-factor", lines: ["6x^{2} + 9x"], expect: { answer: "3x(2x + 3)", form: "factored" } },
   { id: "xf-12", topic: "expand-factor", lines: ["2x^{2} - 7x + 3"], expect: { answer: "(2x - 1)(x - 3)", form: "factored" } },
-  { id: "xf-13", topic: "expand-factor", lines: ["\\frac{x^{2} - 1}{x - 1}"], expect: { answer: "x + 1" }, note: "cancel a common factor" },
+  { id: "xf-13", topic: "expand-factor", course: "algebra-2", lines: ["\\frac{x^{2} - 1}{x - 1}"], expect: { answer: "x + 1" }, note: "cancel a common factor" },
 
   // ---------------------------------------------------------------- derivatives
   { id: "de-01", topic: "derivative", lines: ["\\frac{d}{dx}(3x^{2} + 2x) ="], expect: { answer: "6x + 2" } },
@@ -297,16 +387,16 @@ export const CORPUS: readonly EvalProblem[] = [
 
   // ---------------------------------------------------------------- inequalities
   { id: "g2-07", topic: "inequality", lines: ["-3 < 2x + 1 \\le 7"], expect: { answer: "-2 < x \\le 3" }, note: "compound (a chain)" },
-  { id: "g2-08", topic: "inequality", lines: ["x^{2} - x - 6 \\ge 0"], expect: { answer: "x \\le -2, \\ x \\ge 3" }, note: "quadratic, outside the roots" },
-  { id: "g2-09", topic: "inequality", lines: ["x^{2} + 2x < 8"], expect: { answer: "-4 < x < 2" }, note: "quadratic, not in standard form" },
-  { id: "g2-10", topic: "inequality", lines: ["\\frac{x - 3}{x + 1} \\le 0"], expect: { answer: "-1 < x \\le 3" }, note: "rational: the denominator's zero is excluded" },
+  { id: "g2-08", topic: "inequality", course: "algebra-2", lines: ["x^{2} - x - 6 \\ge 0"], expect: { answer: "x \\le -2, \\ x \\ge 3" }, note: "quadratic, outside the roots" },
+  { id: "g2-09", topic: "inequality", course: "algebra-2", lines: ["x^{2} + 2x < 8"], expect: { answer: "-4 < x < 2" }, note: "quadratic, not in standard form" },
+  { id: "g2-10", topic: "inequality", course: "algebra-2", lines: ["\\frac{x - 3}{x + 1} \\le 0"], expect: { answer: "-1 < x \\le 3" }, note: "rational: the denominator's zero is excluded" },
   { id: "g2-11", topic: "inequality", lines: ["2 - 3x > 8"], expect: { answer: "x < -2" }, note: "dividing by a negative" },
   { id: "g2-12", topic: "inequality", lines: ["|2x - 1| \\ge 3"], expect: { answer: "x \\le -1, \\ x \\ge 2" }, note: "absolute value, a union" },
-  { id: "g2-13", topic: "inequality", lines: ["x^{2} + 4 < 0"], expect: { answer: "\\varnothing" }, note: "never true" },
-  { id: "g2-14", topic: "inequality", lines: ["\\frac{2}{x - 1} > 1"], expect: { answer: "1 < x < 3" }, note: "rational against a number" },
+  { id: "g2-13", topic: "inequality", course: "algebra-2", lines: ["x^{2} + 4 < 0"], expect: { answer: "\\varnothing" }, note: "never true" },
+  { id: "g2-14", topic: "inequality", course: "algebra-2", lines: ["\\frac{2}{x - 1} > 1"], expect: { answer: "1 < x < 3" }, note: "rational against a number" },
 
   // ---------------------------------------------------------------- absolute value
-  { id: "g2-15", topic: "absolute", lines: ["|x + 2| = |x - 4|"], expect: { values: { x: [1] } }, note: "one branch has no solution" },
+  { id: "g2-15", topic: "absolute", course: "algebra-2", lines: ["|x + 2| = |x - 4|"], expect: { values: { x: [1] } }, note: "one branch has no solution" },
   { id: "g2-16", topic: "absolute", lines: ["2|x - 3| + 1 = 9"], expect: { values: { x: [-1, 7] } } },
 
   // ---------------------------------------------------------------- rational / radical / exponential / log, extraneous roots
@@ -325,19 +415,19 @@ export const CORPUS: readonly EvalProblem[] = [
   { id: "g2-27", topic: "system-3x3", lines: ["2x + y - z = 2", "x - y + 2z = 7", "3x + 2y + z = 11"], expect: { values: { x: [2], y: [1], z: [3] } } },
   { id: "g2-28", topic: "system-2x2", lines: ["2x - 3y = 7", "4x - 6y = 14"], expect: { answer: "y = \\frac{2x - 7}{3}" }, note: "dependent: the same line" },
   // one linear, one not: substitution, then every root put back (`values[v][i]` is the i-th point)
-  { id: "g2-44", topic: "system-2x2", lines: ["l = w + 3", "l \\cdot w = 40"], expect: { values: { w: [-8, 5], l: [-5, 8] } }, note: "a rectangle's sides: the maths has both points (the rectangle takes w = 5)" },
-  { id: "g2-45", topic: "system-2x2", lines: ["y = x + 1", "x^{2} + y^{2} = 25"], expect: { values: { x: [-4, 3], y: [-3, 4] } }, note: "a line and a circle" },
-  { id: "g2-46", topic: "system-2x2", lines: ["x + y = 7", "xy = 12"], expect: { values: { x: [3, 4], y: [4, 3] } } },
-  { id: "g2-47", topic: "system-2x2", lines: ["y = x^{2}", "y = 2x + 3"], expect: { values: { x: [-1, 3], y: [1, 9] } }, note: "a line and a parabola" },
-  { id: "g2-48", topic: "system-2x2", lines: ["y = x + 5", "x^{2} + y^{2} = 4"], expect: { answer: "\\varnothing" }, note: "the line misses the circle" },
-  { id: "g2-49", topic: "system-2x2", lines: ["x - y = 1", "x^{2} - y^{2} = 5"], expect: { values: { x: [3], y: [2] } }, note: "the squares cancel after substituting" },
+  { id: "g2-44", topic: "system-2x2", course: "algebra-2", lines: ["l = w + 3", "l \\cdot w = 40"], expect: { values: { w: [-8, 5], l: [-5, 8] } }, note: "a rectangle's sides: the maths has both points (the rectangle takes w = 5)" },
+  { id: "g2-45", topic: "system-2x2", course: "algebra-2", lines: ["y = x + 1", "x^{2} + y^{2} = 25"], expect: { values: { x: [-4, 3], y: [-3, 4] } }, note: "a line and a circle" },
+  { id: "g2-46", topic: "system-2x2", course: "algebra-2", lines: ["x + y = 7", "xy = 12"], expect: { values: { x: [3, 4], y: [4, 3] } } },
+  { id: "g2-47", topic: "system-2x2", course: "algebra-2", lines: ["y = x^{2}", "y = 2x + 3"], expect: { values: { x: [-1, 3], y: [1, 9] } }, note: "a line and a parabola" },
+  { id: "g2-48", topic: "system-2x2", course: "algebra-2", lines: ["y = x + 5", "x^{2} + y^{2} = 4"], expect: { answer: "\\varnothing" }, note: "the line misses the circle" },
+  { id: "g2-49", topic: "system-2x2", course: "algebra-2", lines: ["x - y = 1", "x^{2} - y^{2} = 5"], expect: { values: { x: [3], y: [2] } }, note: "the squares cancel after substituting" },
 
   // ---------------------------------------------------------------- factoring
-  { id: "g2-29", topic: "expand-factor", lines: ["x^{3} + 3x^{2} + 2x + 6"], expect: { answer: "(x + 3)(x^{2} + 2)", form: "factored" }, note: "grouping" },
-  { id: "g2-30", topic: "expand-factor", lines: ["27x^{3} - 8"], expect: { answer: "(3x - 2)(9x^{2} + 6x + 4)", form: "factored" }, note: "difference of cubes" },
-  { id: "g2-31", topic: "expand-factor", lines: ["x^{3} + 64"], expect: { answer: "(x + 4)(x^{2} - 4x + 16)", form: "factored" }, note: "sum of cubes" },
+  { id: "g2-29", topic: "expand-factor", course: "algebra-2", lines: ["x^{3} + 3x^{2} + 2x + 6"], expect: { answer: "(x + 3)(x^{2} + 2)", form: "factored" }, note: "grouping" },
+  { id: "g2-30", topic: "expand-factor", course: "algebra-2", lines: ["27x^{3} - 8"], expect: { answer: "(3x - 2)(9x^{2} + 6x + 4)", form: "factored" }, note: "difference of cubes" },
+  { id: "g2-31", topic: "expand-factor", course: "algebra-2", lines: ["x^{3} + 64"], expect: { answer: "(x + 4)(x^{2} - 4x + 16)", form: "factored" }, note: "sum of cubes" },
   { id: "g2-32", topic: "expand-factor", lines: ["3x^{2} - 12"], expect: { answer: "3(x - 2)(x + 2)", form: "factored" }, note: "common factor, then a difference of squares" },
-  { id: "g2-33", topic: "expand-factor", lines: ["\\frac{x^{2} - 9}{x^{2} + 6x + 9}"], expect: { answer: "\\frac{x - 3}{x + 3}" }, note: "cancel a common factor" },
+  { id: "g2-33", topic: "expand-factor", course: "algebra-2", lines: ["\\frac{x^{2} - 9}{x^{2} + 6x + 9}"], expect: { answer: "\\frac{x - 3}{x + 3}" }, note: "cancel a common factor" },
 
   // ---------------------------------------------------------------- units & percent
   { id: "g2-34", topic: "units-percent", lines: ["3.5 \\mathrm{~kg} \\text{ to } \\mathrm{g}"], expect: { answer: "3500 \\mathrm{~g}" } },
@@ -421,6 +511,7 @@ export const CORPUS: readonly EvalProblem[] = [
   { id: "t2-49", topic: "derivative", lines: ["\\frac{d^{3}}{dx^{3}} x^{5} ="], expect: { answer: "60x^{2}" }, note: "each earlier stage under the derivatives still to take" },
   { id: "t2-50", topic: "derivative", lines: ["x^{2} + y^{2} = 25", "\\frac{dy}{dx} ="], expect: { answer: "-\\frac{x}{y}" }, note: "implicit differentiation" },
   { id: "t2-51", topic: "derivative", lines: ["\\frac{d}{dx} x^{x} ="], expect: { answer: "x^{x}(\\ln x + 1)" }, note: "logarithmic differentiation" },
-  // ================================================================ courses
-  ...GEOMETRY,
 ];
+
+/** Every problem on the scoreboard: the original set, then the course files. */
+export const CORPUS: readonly EvalProblem[] = [...BASE_CORPUS, ...COURSE_PROBLEMS];

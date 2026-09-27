@@ -9,7 +9,7 @@ import type { LiveEngine } from "@/lib/live/contracts";
 import { getEngine } from "@/lib/live/engine";
 import { planHandwriting } from "@/lib/live/handwriting";
 import { localSolve } from "@/lib/live/localSolve";
-import { CORPUS, TOPICS, type EvalProblem, type Topic } from "./corpus";
+import { COURSES, CORPUS, TOPICS, type Course, type EvalProblem, type Topic } from "./corpus";
 import { ANSWER_STATUSES, judge, STAGES, type AnswerStatus, type Stage, type Verdict } from "./judge";
 
 /** The board's hand for a worked block is 18–40 px; the interlock does not depend on size. */
@@ -42,6 +42,7 @@ export interface StageCounts {
 export interface Summary extends StageCounts {
   answers: Record<AnswerStatus, number>;
   byTopic: Array<{ topic: Topic } & StageCounts>;
+  byCourse: Array<{ course: Course } & StageCounts>;
 }
 
 function counts(verdicts: readonly Verdict[]): StageCounts {
@@ -52,7 +53,8 @@ function counts(verdicts: readonly Verdict[]): StageCounts {
 export function summarize(verdicts: readonly Verdict[]): Summary {
   const answers = Object.fromEntries(ANSWER_STATUSES.map((s) => [s, verdicts.filter((v) => v.answer.status === s).length])) as Record<AnswerStatus, number>;
   const byTopic = TOPICS.map((topic) => ({ topic, ...counts(verdicts.filter((v) => v.topic === topic)) })).filter((t) => t.total > 0);
-  return { ...counts(verdicts), answers, byTopic };
+  const byCourse = COURSES.map((course) => ({ course, ...counts(verdicts.filter((v) => v.course === course)) })).filter((c) => c.total > 0);
+  return { ...counts(verdicts), answers, byTopic, byCourse };
 }
 
 export interface OfflineScoreboard {

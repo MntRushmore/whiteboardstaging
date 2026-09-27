@@ -15,7 +15,7 @@
 
 ## The writing stays writing
 
-Every line of the maths corpus (src/__eval__/corpus.ts) written in every hand (clean, slanted, steep, messy): 2236 lines — fraction bars, long `=`, radicals, integral signs, `\left( \right)`, matrices, cases — split on its own.
+Every line of the maths corpus (src/__eval__/corpus.ts) written in every hand (clean, slanted, steep, messy): 3132 lines — fraction bars, long `=`, radicals, integral signs, `\left( \right)`, matrices, cases — split on its own.
 
 | strokes taken for a drawing, mark or label | lines regrouped by the split |
 | --- | --- |

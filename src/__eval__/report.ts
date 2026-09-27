@@ -3,6 +3,7 @@
  * headline and per-topic rates first, then the failures grouped into patterns (fix one pattern,
  * move many problems), then every failure with the offending LaTeX, then the per-problem detail.
  */
+import { TOPIC_COURSE } from "./corpus";
 import { STAGE_LABEL, STAGES, type Verdict } from "./judge";
 import type { StageCounts, Summary } from "./offline";
 
@@ -40,8 +41,16 @@ export function stageTable(s: StageCounts): string {
 
 export function topicTable(summary: Summary): string {
   return table(
-    ["topic", "n", "pass", ...STAGES.map((s) => STAGE_LABEL[s])],
-    summary.byTopic.map((t) => [t.topic, String(t.total), `**${t.passed}** (${pct(t.passed, t.total)})`, ...STAGES.map((s) => `${t.stages[s]}`)]),
+    ["topic", "course", "n", "pass", ...STAGES.map((s) => STAGE_LABEL[s])],
+    summary.byTopic.map((t) => [t.topic, TOPIC_COURSE[t.topic], String(t.total), `**${t.passed}** (${pct(t.passed, t.total)})`, ...STAGES.map((s) => `${t.stages[s]}`)]),
+  );
+}
+
+/** One row per school course (a problem's course is its topic's unless it names one). */
+export function courseTable(summary: Summary): string {
+  return table(
+    ["course", "n", "pass", ...STAGES.map((s) => STAGE_LABEL[s])],
+    summary.byCourse.map((c) => [c.course, String(c.total), `**${c.passed}** (${pct(c.passed, c.total)})`, ...STAGES.map((s) => `${c.stages[s]}`)]),
   );
 }
 
@@ -142,6 +151,12 @@ export function renderOfflineMarkdown(board: { verdicts: Verdict[]; summary: Sum
     "Answer verdicts (`approx`: a decimal or ≈ where a teacher writes the exact value; `form`: right value, wrong shape; `unsolved`: the last line is not an answer yet; `missing`: no local solution):",
     "",
     answerTable(summary),
+    "",
+    "## By course",
+    "",
+    "Skills per course and what the engine covers: `docs/eval/courses.md`. Course problem sets: `src/__eval__/courses/`.",
+    "",
+    courseTable(summary),
     "",
     "## By topic",
     "",

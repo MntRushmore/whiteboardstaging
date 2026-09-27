@@ -60,6 +60,8 @@ export interface Expr {
   at(scope: Record<string, number>): Value | null;
   /** the raw value, complex allowed (for `x = -\frac{1}{2} + 0.866i`) */
   complexAt(scope: Record<string, number>): { re: number; im: number } | null;
+  /** the value with complex values put in (`x = -1 + 2i` into `x^{2} + 2x + 5`); absent where not readable */
+  complexAtC?(scope: Record<string, { re: number; im: number }>): { re: number; im: number } | null;
   /** most decimal places written in the LaTeX, null when none (rounding tolerance) */
   decimals: number | null;
   /** relative tolerance of an exact comparison (a numeric limit or integral is looser) */
@@ -347,6 +349,13 @@ export function exprBranches(latex: string): Expr[] | null {
       vars: [...t.variables],
       at: (scope) => realOf(angleAsNumber(raw(scope))),
       complexAt: (scope) => complexOf(angleAsNumber(raw(scope))),
+      complexAtC: (scope) => {
+        try {
+          return complexOf(compiled.evaluate(Object.fromEntries(Object.entries(scope).map(([k, v]) => [k, M().complex(v.re, v.im)]))));
+        } catch {
+          return null;
+        }
+      },
       decimals: decimalsIn(src),
       tol,
       source: branch.trim(),
@@ -651,6 +660,9 @@ export function rootSet(rel: Relation, variable: string, candidates: readonly nu
       const ma = magnitude(a);
       const mb = magnitude(b);
       if (!ma || !mb || ma.dim !== mb.dim) return null;
+      // both sides vanishing far out (`3^{x}` and `2^{x + 1}` at x = -1400 underflow to 0) is
+      // floating point, not a root
+      if (Math.abs(x) > 50 && Math.abs(ma.n) < 1e-100 && Math.abs(mb.n) < 1e-100) return null;
       return ma.n - mb.n;
     };
     const rs = rootsOf(g, candidates);
@@ -795,8 +807,37 @@ export function compareExprs(got: Expr, want: Expr, opts: { upToConstant?: boole
     if (Math.abs(d) > Math.max(tol * scale, rt)) approx = false;
   }
   const needed = vars.length === 0 ? 1 : 4;
+  if (n === 0 && vars.length === 0) {
+    // two closed values that are not real (`5 + i`): compared as complex numbers
+    const a = got.complexAt({});
+    const b = want.complexAt({});
+    if (a && b && (Math.abs(a.im) > EXACT_TOL || Math.abs(b.im) > EXACT_TOL)) {
+      const scale = Math.max(1, Math.hypot(a.re, a.im), Math.hypot(b.re, b.im));
+      const same = Math.abs(a.re - b.re) <= tol * scale && Math.abs(a.im - b.im) <= tol * scale;
+      return { exact: same, approx: same, unknown: false };
+    }
+  }
   if (n < needed) return { exact: false, approx: false, unknown: true };
   return { exact, approx: approx || exact, unknown: false };
+}
+
+/** Does the relation hold at this complex point (every alternative's sides evaluated with it)? */
+export function truthAtComplex(rel: Relation, scope: Record<string, { re: number; im: number }>, tol = 1e-7): boolean | null {
+  let anyDefined = false;
+  for (const alt of rel.alternatives) {
+    if (alt.ops.some((o) => o !== "==")) return null;
+    const values = alt.sides.map((s) => s.complexAtC?.(scope) ?? null);
+    if (values.some((v) => v === null)) continue;
+    anyDefined = true;
+    const ok = values.every((v, i) => {
+      if (i === 0) return true;
+      const a = values[0]!;
+      const scale = Math.max(1, Math.hypot(a.re, a.im), Math.hypot(v!.re, v!.im));
+      return Math.abs(a.re - v!.re) <= tol * scale && Math.abs(a.im - v!.im) <= tol * scale;
+    });
+    if (ok) return true;
+  }
+  return anyDefined ? false : null;
 }
 
 /** Is `F` an antiderivative of `f` (numerically: F' = f at the sample points)? */
@@ -955,6 +996,45 @@ export function isFactored(latex: string): boolean {
   }
   if (top.type === "OperatorNode" && top.op === "^" && top.args) return isSum(top.args[0]) && hasSymbol(top.args[0]);
   return false;
+}
+
+/** The text of the brace group opening at `open` (`{`), and the index after it; null when unbalanced. */
+function braceGroup(s: string, open: number): { text: string; end: number } | null {
+  if (s[open] !== "{") return null;
+  let depth = 0;
+  for (let i = open; i < s.length; i++) {
+    if (s[i] === "{") depth++;
+    else if (s[i] === "}" && --depth === 0) return { text: s.slice(open + 1, i), end: i + 1 };
+  }
+  return null;
+}
+
+/**
+ * Simplest radical form: no whole k-th power left under a k-th root (`\sqrt{50}` is not,
+ * `5\sqrt{2}` is) and no root below a fraction bar (`\frac{1}{\sqrt{2}}` is not).
+ */
+export function isSimplifiedRadical(latex: string): boolean {
+  const s = latex.replace(/\\left|\\right/g, "");
+  for (const m of s.matchAll(/\\sqrt\s*(?:\[\s*(\d+)\s*\])?\s*(?=\{)/g)) {
+    const k = m[1] ? Number(m[1]) : 2;
+    const group = braceGroup(s, m.index! + m[0].length);
+    if (!group) return false;
+    // the radicand's value (`\sqrt{25 \cdot 2}` is √50): a whole number with no k-th power in it
+    const e = exprOf(group.text);
+    const v = e && e.vars.length === 0 ? e.at({}) : null;
+    if (typeof v !== "number") continue;
+    if (!Number.isInteger(v) || /[^\d\s]/.test(group.text)) {
+      if (Number.isInteger(v)) return false; // a product or sum under the root: not simplified yet
+      continue;
+    }
+    for (let p = 2; p ** k <= v; p++) if (v % p ** k === 0) return false;
+  }
+  for (let i = s.indexOf("\\frac"); i !== -1; i = s.indexOf("\\frac", i + 1)) {
+    const top = braceGroup(s, s.indexOf("{", i));
+    const bottom = top ? braceGroup(s, top.end) : null;
+    if (bottom && /\\sqrt/.test(bottom.text)) return false;
+  }
+  return true;
 }
 
 /** No bracket around a sum in the unknowns is left multiplied or raised to a power. */

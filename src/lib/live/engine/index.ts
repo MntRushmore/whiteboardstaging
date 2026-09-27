@@ -4,7 +4,7 @@
  * kind 'unknown' / verdict 'unknown' / null — the engine never throws.
  */
 import type { MathJsInstance, MathNode } from "mathjs";
-import type { AnalyzeContext, EngineVerdict, LineAnalysis, LiveEngine } from "../contracts";
+import type { AnalyzeContext, EngineVerdict, LineAnalysis, LiveEngine, SolveOptions } from "../contracts";
 import { balance as balanceChem, balanceEquation, equationLatex, isBalanced, molarMassLatex, normalizeChemText, parseEquation, looksLikeChemEquation } from "./chem";
 import { preClassify } from "./classify";
 import { PHYSICS_SCOPE_NAMES, physicsScope } from "./constants";
@@ -40,6 +40,7 @@ import { solveAdvanced, solveExactly, type AdvancedDeps } from "./advanced";
 import { factorExpressionSteps, rationalExpressionSteps } from "./polynomial";
 import { chainRelation, isSolutionSet, relaxVerdict, splitAtCommas, unionRelation, type Part } from "./compound";
 import { ALL_REALS, EVERY_REAL, LIST_SEP, NO_SOLUTION } from "./solution";
+import { createCourses } from "./courses";
 import { createGeometry } from "./geometry";
 import { isGeometryName } from "./geometryNotation";
 
@@ -219,6 +220,13 @@ export function createEngine(mod: MathModule): LiveEngine {
   const trig = createTrig(math, { translate: (latex) => tr(latex) });
   // what to graph for a column of work (`graphIntent.ts`): the maths of the tutor's sketch
   const graphing = createGraphIntent(math, { translate: (latex) => tr(latex) });
+  // Algebra 1 / Algebra 2 methods (`courses.ts`): asked first at the hooks below, never instead of a path they do not own
+  const courses = createCourses({
+    math,
+    translate: (latex) => translate(math, latex, { letterUnits: false }),
+    normalize: (latex) => stepKey(latex),
+    solveOne: (latex) => solveLatex(latex),
+  });
   // the maths of a figure: angles in degrees, named angles and segments, Pythagoras, trig ratios,
   // formulas with their values, coordinates (`geometry.ts`)
   const geometry = createGeometry({ translate: (latex) => tr(latex), parse: (source) => safeParse(math, source), solveLatex: (latex) => solveLatex(latex) });
@@ -679,9 +687,18 @@ export function createEngine(mod: MathModule): LiveEngine {
     const m = /^=(?!=)\s*/.exec(cleaned);
     if (!m || ctx.previous?.kind !== "expression" || !ctx.previous.math) return null;
     const rest = cleaned.slice(m[0].length).trim();
-    if (!rest || splitRelations(rest).ops.length > 0 || preClassify(rest).kind !== null) return null;
+    const pre = preClassify(rest).kind;
+    // `= 5`, `= i`: after `=`, a lone number or letter is the value, not a label
+    if (!rest || splitRelations(rest).ops.length > 0 || (pre !== null && pre !== "label")) return null;
     // the student's own step: checked, never finished for them
-    return { ...analyzeExpression(rest, ctx, false), resultLatex: "" };
+    const out: LineAnalysis = { ...analyzeExpression(rest, ctx, false), resultLatex: "" };
+    // it claims the value of the line above: a closed value that differs is wrong (`\sqrt{50}`,
+    // `= 5\sqrt{5}`); a decimal is the calculator's rounding, not a claim, and stays unmarked
+    const closed = (source: string) => safeVars(source)?.length === 0;
+    if (out.verdict === "none" && out.math && !/\d\.\d/.test(rest) && closed(out.math) && closed(ctx.previous.math) && !/\d\.\d/.test(ctx.previous.math)) {
+      if (expressionsEquivalent(math, ctx.previous.math, out.math, []) === "mismatch") out.verdict = "mismatch";
+    }
+    return out;
   };
 
   // --- entry points --------------------------------------------------------
@@ -778,6 +795,9 @@ export function createEngine(mod: MathModule): LiveEngine {
         return out;
       }
       default: {
+        // `f(4) = 11` under `f(x) = 2x + 3`: a claim about the function, not `4f = 11`
+        const claim = courses.analyze(pre.latex, ctx);
+        if (claim) return claim;
         const orList = solutionList(pre.latex);
         if (orList) return analyzeSolvedOrAssignment(orList.variable, orList.values.join(", "), ctx);
         const branches = analyzeRelationList(pre.latex, ctx);
@@ -888,8 +908,12 @@ export function createEngine(mod: MathModule): LiveEngine {
     normalize: stepKey,
   };
 
-  const solveLatex = (latex: string): { latex: string; steps: string[] } | null => {
+  const solveLatex = (latex: string, solveOptions?: SolveOptions): { latex: string; steps: string[] } | null => {
     try {
+      // a function applied by name is refused (not `3f = 9`); a line in x and y, complex roots, …
+      const course = courses.solve(latex, solveOptions);
+      if (course === "refuse") return null;
+      if (course) return course;
       // a line with geometry in it: degrees, π, a root or a trig value among the numbers, a named angle or segment
       const geo = geometry.solveLine(latex);
       if (geo === "refuse") return null;
@@ -908,7 +932,8 @@ export function createEngine(mod: MathModule): LiveEngine {
       }
       // quadratics, |x|, radicals, exponentials and logs, the unknown in a denominator (advanced.ts)
       const advanced = solveAdvanced(latex, advancedDeps);
-      if (advanced) return { latex: advanced.final, steps: advanced.steps };
+      // `x = \log_{5} 7` gets its change of base (`courses.ts`)
+      if (advanced) return courses.polish({ latex: advanced.final, steps: advanced.steps });
       // the unknown inside sin / cos / tan: exact angles in an interval, or no answer at all —
       // never the numeric root-finder's thirty values in radians (`trigEquation.ts`)
       const trigEquation = solveTrigEquation(math, latex, { translate: (l) => tr(l), solveAlgebra: (l) => solveLatex(l) });
@@ -1017,6 +1042,10 @@ export function createEngine(mod: MathModule): LiveEngine {
       // exact trig values, the reference angle first (`trig.ts`)
       const trigSteps = trig.steps(latex);
       if (trigSteps) return trigSteps;
+      // exponent rules, radicals, complex numbers, log properties, … (`courses.ts`); `f(4)` alone is refused
+      const course = courses.simplify(latex);
+      if (course === "refuse") return null;
+      if (course) return course;
       // π, a root, degrees: worked out round by round, exact (`geometry.ts`)
       const geoSteps = geometry.simplify(latex);
       if (geoSteps) return geoSteps;
@@ -1030,7 +1059,7 @@ export function createEngine(mod: MathModule): LiveEngine {
       const node = safeParse(math, t.source);
       if (!node) return null;
       // simplify when there is something to expand or collect; otherwise factor it (polynomial.ts)
-      return simplifyExpressionSteps(node, unknowns, pre, stepKey) ?? factorExpressionSteps(node, unknowns, pre, stepKey) ?? rationalExpressionSteps(node, unknowns, pre, stepKey);
+      return simplifyExpressionSteps(node, unknowns, pre, stepKey) ?? factorExpressionSteps(node, unknowns, pre, stepKey) ?? rationalExpressionSteps(node, unknowns, pre, stepKey) ?? courses.simplifyLate(latex);
     } catch {
       return null;
     }
@@ -1218,11 +1247,15 @@ export function createEngine(mod: MathModule): LiveEngine {
         // `\frac{dy}{dx}` / `f'(2)` under a definition, or a calculus line under a system: calculus answers
         const calc = calculus.fromLines(lines);
         if (calc !== undefined) return calc;
+        // function notation, lines through points, sequences, … (`courses.ts`); then the systems; then a formula for a letter
+        const course = courses.fromLines(lines);
+        if (course === "refuse") return null;
+        if (course) return course;
         // a formula under its values, parts defined in x, coordinates (`geometry.ts`)
         const geo = geometry.fromLines(lines);
         if (geo === "refuse") return null;
         if (geo) return geo;
-        return solveFromLines(lines, systemDeps);
+        return solveFromLines(lines, systemDeps) ?? courses.fromLinesLate(lines);
       } catch {
         return null;
       }

@@ -249,7 +249,8 @@ describe("exponential and log equations: exact answers", () => {
     ["2\\cdot3^x=18", ["3^{x} = 9", "3^{x} = 3^{2}", "x = 2"]],
     ["2^{x+1}=4^x", ["2^{x + 1} = 2^{2x}", "x + 1 = 2x", "x - 2x = -1", "-x = -1", "x = 1"]],
     ["e^x=5", ["x = \\ln 5"]],
-    ["5^x=7", ["x = \\log_{5} 7"]],
+    // the exact log, then its change of base (the form a calculator takes)
+    ["5^x=7", ["x = \\log_{5} 7", "x = \\frac{\\ln 7}{\\ln 5}"]],
     ["e^{2x}=7", ["2x = \\ln 7", "x = \\frac{\\ln 7}{2}"]],
     ["3^{2x-1}=5", ["2x - 1 = \\log_{3} 5", "2x = \\log_{3} 5 + 1", "x = \\frac{\\log_{3} 5 + 1}{2}"]],
     ["2^x=-8", ["\\varnothing"]],
@@ -337,7 +338,11 @@ describe("polynomials: simplify when there is something to expand, otherwise fac
   });
 
   it("a fraction with nothing to cancel is left alone", () => {
-    for (const latex of ["\\frac{x^2+1}{x+1}", "\\frac{x}{x+1}", "\\frac{2}{x}"]) expect(simplify(latex), latex).toBeNull();
+    for (const latex of ["\\frac{x}{x+1}", "\\frac{2}{x}", "\\frac{x + 1}{x^{2} + 1}"]) expect(simplify(latex), latex).toBeNull();
+  });
+
+  it("a top of higher degree with nothing to cancel is divided out (long division, polynomialDivision.ts)", () => {
+    expect(simplify("\\frac{x^2+1}{x+1}")).toEqual(["\\frac{x(x + 1) - x + 1}{x + 1}", "x + \\frac{-x + 1}{x + 1}", "x + \\frac{-(x + 1) + 2}{x + 1}", "x - 1 + \\frac{2}{x + 1}"]);
   });
 });
 

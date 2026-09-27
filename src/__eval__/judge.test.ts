@@ -221,6 +221,63 @@ describe("judge", () => {
   });
 });
 
+describe("judge: the course problems (`src/__eval__/courses/`)", () => {
+  it("reads a function call from its definition, never as a product", () => {
+    const lines = ["f(x) = 2x + 3", "f(4) ="];
+    const p = problem({ topic: "function-notation", lines, expect: { answer: "11" } });
+    const v = judge(p, lines, solved(["= 2(4) + 3", "= 8 + 3", "= 11"], "solveFromLines"), drawAll);
+    expect(v.pass).toBe(true);
+    expect(v.transitions.map((t) => t.status)).toEqual(["ok", "ok", "ok"]);
+    // `= 4f` is what the engine used to write: wrong, and so is a slip in the arithmetic
+    expect(judge(p, lines, solved(["= 4f"], "simplifySteps"), drawAll).answer.status).not.toBe("ok");
+    expect(judge(p, lines, solved(["= 2(4) + 3", "= 8 + 4", "= 12"], "solveFromLines"), drawAll).transitions[1].status).toBe("broken");
+  });
+
+  it("compares a rearranged formula letter by letter, each other letter at its own value", () => {
+    const lines = ["A = \\frac{1}{2}bh", "h = ?"];
+    const p = problem({ topic: "literal-equations", lines, expect: { answer: "h = \\frac{2A}{b}" } });
+    expect(judge(p, lines, solved(["2A = bh", "h = \\frac{2A}{b}"], "solveFromLines"), drawAll).pass).toBe(true);
+    // A and b swapped agrees only where A = b: wrong
+    const swapped = judge(p, lines, solved(["2A = bh", "h = \\frac{2b}{A}"], "solveFromLines"), drawAll);
+    expect(swapped.answer.status).toBe("wrong");
+    expect(swapped.transitions[1].status).toBe("broken");
+  });
+
+  it("judges complex roots as complex numbers", () => {
+    const lines = ["i^{2} = -1", "x^{2} + 2x + 5 = 0"];
+    const p = problem({ topic: "complex-numbers", lines, expect: { complexValues: { x: [[-1, 2], [-1, -2]] }, answer: "x = -1 \\pm 2i" } });
+    expect(judge(p, lines, solved(["x = \\frac{-2 \\pm \\sqrt{-16}}{2}", "x = -1 \\pm 2i"]), drawAll).pass).toBe(true);
+    const wrong = judge(p, lines, solved(["x = \\frac{-2 \\pm \\sqrt{-16}}{2}", "x = 1 \\pm 2i"]), drawAll);
+    expect(wrong.answer.status).toBe("wrong");
+    expect(wrong.transitions[1].status).toBe("broken");
+    expect(judge(p, lines, solved(["\\varnothing"]), drawAll).stages.steps).toBe(false);
+    // closed complex expressions by value
+    const e = ["(2 + 3i)(1 - i)"];
+    const pe = problem({ topic: "complex-numbers", lines: e, expect: { answer: "5 + i" } });
+    expect(judge(pe, e, solved(["= 5 + i"], "simplifySteps"), drawAll).answer.status).toBe("ok");
+    expect(judge(pe, e, solved(["= 5 - i"], "simplifySteps"), drawAll).answer.status).toBe("wrong");
+  });
+
+  it("asks radicals for the simplest form", () => {
+    const lines = ["\\sqrt{50}"];
+    const p = problem({ topic: "radicals", lines, expect: { answer: "5\\sqrt{2}", form: "radical" } });
+    expect(judge(p, lines, solved(["= 5\\sqrt{2}"], "simplifySteps"), drawAll).answer.status).toBe("ok");
+    expect(judge(p, lines, solved(["= \\sqrt{25 \\cdot 2}"], "simplifySteps"), drawAll).answer.status).toBe("form");
+    const q = ["\\frac{1}{\\sqrt{2}}"];
+    expect(judge(problem({ lines: q, expect: { answer: "\\frac{\\sqrt{2}}{2}", form: "radical" } }), q, solved(["= \\frac{1}{\\sqrt{2}} \\cdot 1"], "simplifySteps"), drawAll).answer.status).toBe("form");
+  });
+
+  it("checks an inverse's lines against the function and its swap", () => {
+    const lines = ["f(x) = 2x + 3", "f^{-1}(x) ="];
+    const p = problem({ topic: "function-ops", lines, expect: { answer: "\\frac{x - 3}{2}" } });
+    const good = judge(p, lines, solved(["y = 2x + 3", "x = 2y + 3", "x - 3 = 2y", "y = \\frac{x - 3}{2}", "f^{-1}(x) = \\frac{x - 3}{2}"], "solveFromLines"), drawAll);
+    expect(good.pass).toBe(true);
+    const bad = judge(p, lines, solved(["y = 2x + 3", "x = 2y + 3", "x + 3 = 2y", "y = \\frac{x + 3}{2}", "f^{-1}(x) = \\frac{x + 3}{2}"], "solveFromLines"), drawAll);
+    expect(bad.transitions[2].status).toBe("broken");
+    expect(bad.answer.status).toBe("wrong");
+  });
+});
+
 describe("judge: geometry's answer shapes still catch wrong answers", () => {
   const LENGTH = { lo: 0, hi: Infinity };
   const deg = (d: number) => (d * Math.PI) / 180;
