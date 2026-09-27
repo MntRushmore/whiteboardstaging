@@ -163,7 +163,14 @@ export function figureFromInk(strokes: readonly InkStroke[], labels: readonly In
     if (!near) verts.push(p);
   }
   // letters name the nearest vertex (greedy by distance, one letter per vertex)
-  const letters = labels.map((l) => ({ ...l, text: l.text.replace(/[{}\s\\]|text|mathrm/g, "") })).filter((l) => /^[A-Z]$/.test(l.text));
+  // Mathpix reads a handwritten C, O, S or X as lowercase: the capital the proof names is meant
+  const capitals = new Set(names.filter((n) => /^[A-Z]$/.test(n)));
+  const letters = labels
+    .map((l) => {
+      const text = l.text.replace(/[{}\s\\]|text|mathrm/g, "");
+      return { ...l, text: /^[a-z]$/.test(text) && capitals.has(text.toUpperCase()) ? text.toUpperCase() : text };
+    })
+    .filter((l) => /^[A-Z]$/.test(l.text));
   const pairs: Array<{ li: number; vi: number; d: number }> = [];
   letters.forEach((l, li) =>
     verts.forEach((v, vi) => {

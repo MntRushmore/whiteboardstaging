@@ -39,6 +39,10 @@ describe("reading a proof's figure from its ink", () => {
     const read = figureFromInk(ink, read4, G, ["A", "B", "C", "D", "E"])!;
     expect(sortLines(read.lines)).toEqual(sortLines(["AED", "BEC", "AB", "CD"]));
     expect(buildFigure(read).vertical.length).toBeGreaterThan(0);
+    // Mathpix's `c` for a handwritten C is the proof's C (and E is still found on the crossing)
+    const lower = read4.map((l) => (l.text === "C" ? { ...l, text: "c" } : l));
+    expect(sortLines(figureFromInk(ink, lower, G, ["A", "B", "C", "D", "E"])!.lines)).toEqual(sortLines(["AED", "BEC", "AB", "CD"]));
+    expect(sortLines(figureFromInk(ink, lower, G)!.lines)).toEqual(sortLines(["AD", "AB"]));
     // two names missing: nothing is guessed
     expect(sortLines(figureFromInk(ink, read4, G, ["A", "B", "C", "D", "E", "F"])!.lines)).toEqual(sortLines(["AD", "BC", "AB", "CD"]));
   });
