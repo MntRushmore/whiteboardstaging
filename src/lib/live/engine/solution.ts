@@ -14,8 +14,11 @@ export const LIST_SEP = ", \\ ";
 /** No solution. Drawn by the hand as `∅`. */
 export const NO_SOLUTION = "\\varnothing";
 
-/** Every real number (`|x| \ge -1`): maths the hand can draw, no `\mathbb{R}`. */
+/** Every real number, as an inequality's answer (`|x| \ge -1`, `2x + 1 < 2x + 5`): an interval. */
 export const ALL_REALS = (variable: string): string => `-\\infty < ${variable} < \\infty`;
+
+/** Every real number, as an equation's answer (`2(x + 3) = 2x + 6` → `0 = 0`): the hand draws ∈ and ℝ. */
+export const EVERY_REAL = (variable: string): string => `${variable} \\in \\mathbb{R}`;
 
 /** The Solve block's line budget (`LIVE_LIMITS.maxSolveSteps`). */
 export const MAX_STEPS = 8;

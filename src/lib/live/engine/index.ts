@@ -32,7 +32,7 @@ import { createCalculus } from "./calculus";
 import { solveAdvanced, type AdvancedDeps } from "./advanced";
 import { factorExpressionSteps } from "./polynomial";
 import { chainRelation, isSolutionSet, relaxVerdict, splitAtCommas, unionRelation, type Part } from "./compound";
-import { LIST_SEP, NO_SOLUTION } from "./solution";
+import { ALL_REALS, EVERY_REAL, LIST_SEP, NO_SOLUTION } from "./solution";
 
 const UNKNOWN: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
 
@@ -702,7 +702,7 @@ export function createEngine(mod: MathModule): LiveEngine {
    * The teacher-style steps for a linear equation or inequality in one unknown (`algebra.ts`),
    * or null when the line is not one — the caller then keeps the CAS path below.
    */
-  const linearSteps = (latex: string): (LinearSteps & { pre: string }) | null => {
+  const linearSteps = (latex: string): (LinearSteps & { pre: string; variable: string; op: RelOp }) | null => {
     const pre = preprocessLatex(latex);
     if (/\d\.\d/.test(pre)) return null; // decimals stay on the CAS path: no `\frac{1}{2}` for `0.5`
     const split = splitRelations(pre);
@@ -714,8 +714,9 @@ export function createEngine(mod: MathModule): LiveEngine {
     const lhs = safeParse(math, L.source);
     const rhs = safeParse(math, R.source);
     if (!lhs || !rhs) return null;
-    const out = linearSolveSteps(lhs, rhs, split.ops[0] as RelOp, unknowns[0], pre, stepKey);
-    return out ? { ...out, pre } : null;
+    const op = split.ops[0] as RelOp;
+    const out = linearSolveSteps(lhs, rhs, op, unknowns[0], pre, stepKey);
+    return out ? { ...out, pre, variable: unknowns[0], op } : null;
   };
 
   /** Functions a one-unknown line may use and still be solved exactly by `advanced.ts`. */
@@ -750,7 +751,12 @@ export function createEngine(mod: MathModule): LiveEngine {
     try {
       const linear = linearSteps(latex);
       if (linear) {
-        if (linear.outcome !== "solved" || linear.steps.length === 0) return null;
+        if (linear.outcome !== "solved") {
+          // the unknown cancelled: `0 = -9` has no solution, `0 = 0` every one
+          const final = linear.outcome === "contradiction" ? NO_SOLUTION : linear.op === "==" ? EVERY_REAL(linear.variable) : ALL_REALS(linear.variable);
+          return { latex: final, steps: [...linear.steps, final] };
+        }
+        if (linear.steps.length === 0) return null;
         // `x = 4` / `x > 4` is already solved: writing it again under itself says nothing.
         if (stepKey(linear.final) === stepKey(linear.pre)) return null;
         return { latex: linear.final, steps: linear.steps };
@@ -981,7 +987,8 @@ export function createEngine(mod: MathModule): LiveEngine {
         return null;
       }
     },
-    solveOne: (latex) => solveLatex(latex),
+    // a substituted line whose unknown cancels is the system's own case (`cancelled`), not an answer
+    solveOne: (latex) => (systemDeps.cancelled?.(latex) ? null : solveLatex(latex)),
     cancelled: (latex) => {
       try {
         const linear = linearSteps(latex);

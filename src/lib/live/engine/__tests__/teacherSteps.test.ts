@@ -44,10 +44,23 @@ describe("linear equations: expand, clear fractions, collect, divide", () => {
     expect(engine.solveLatex("\\frac{2x-1}{3}=5")?.latex).toBe("x = 8");
   });
 
-  it("writes nothing for a line already solved, or one whose unknown cancels", () => {
+  it("writes nothing for a line already solved", () => {
     expect(engine.solveLatex("x = 4")).toBeNull();
-    expect(engine.solveLatex("2x + 1 = 2x + 3")).toBeNull();
-    expect(engine.solveLatex("2(x+1) = 2x + 2")).toBeNull();
+  });
+
+  it("an unknown that cancels: the false statement then ∅, the true one then every x", () => {
+    expect(solve("2x + 1 = 2x + 3")).toEqual(["2x - 2x = 3 - 1", "0 = 2", "\\varnothing"]);
+    expect(solve("3x + 7 = 3x - 2")).toEqual(["3x - 3x = -2 - 7", "0 = -9", "\\varnothing"]);
+    expect(solve("2(x+1) = 2x + 2")).toEqual(["2x + 2 = 2x + 2", "2x - 2x = 2 - 2", "0 = 0", "x \\in \\mathbb{R}"]);
+    expect(solve("2(x + 3) = 2x + 6")).toEqual(["2x + 6 = 2x + 6", "2x - 2x = 6 - 6", "0 = 0", "x \\in \\mathbb{R}"]);
+    expect(solve("x = x")).toEqual(["x - x = 0", "0 = 0", "x \\in \\mathbb{R}"]);
+    expect(engine.solveLatex("2x + 1 = 2x + 3")?.latex).toBe("\\varnothing");
+    // an inequality: every number is the interval, none is ∅
+    expect(solve("2x + 1 < 2x + 5")).toEqual(["2x - 2x < 5 - 1", "0 < 4", "-\\infty < x < \\infty"]);
+    expect(solve("2x + 1 > 2x + 5")).toEqual(["2x - 2x > 5 - 1", "0 > 4", "\\varnothing"]);
+    for (const latex of ["2x + 1 = 2x + 3", "2(x+1) = 2x + 2", "2x + 1 < 2x + 5"]) {
+      expect(planHandwriting(solve(latex)!, { size: 28, seed: 1 }).unsupported, latex).toEqual([]);
+    }
   });
 
   it("hands quadratics and exponentials to their own exact steps; decimals stay on the CAS path", () => {
