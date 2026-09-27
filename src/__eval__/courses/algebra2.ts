@@ -127,7 +127,7 @@ export const ALGEBRA_2: readonly EvalProblem[] = [
   { id: "a2-rf-09", topic: "rational-functions", lines: ["y = \\frac{2x^{2} - 3x - 2}{x - 2}"], expect: { rational: { domain: [2], holes: [[2, 5]], vertical: [], horizontal: null } } },
   { id: "a2-rf-10", topic: "rational-functions", lines: ["f(x) = \\frac{x^{2} - x - 6}{x + 1}"], expect: { rational: { domain: [-1], holes: [], vertical: [-1], horizontal: null, oblique: "x - 2" } } },
   { id: "a2-rf-11", topic: "rational-functions", lines: ["f(x) = \\frac{x^{3}}{x^{2} - 1}"], expect: { rational: { domain: [-1, 1], holes: [], vertical: [-1, 1], horizontal: null, oblique: "x" } } },
-  { id: "a2-rf-12", topic: "rational-functions", lines: ["y = \\frac{x^{2} + 2x - 3}{x^{2} - 1}"], expect: { rational: { domain: [-1, 1], holes: [[1, 2]], vertical: [-1], horizontal: 1 } } },
+  { id: "a2-rf-12", topic: "rational-functions", lines: ["y = \\frac{x^{2} - x - 2}{x^{2} - 4}"], expect: { rational: { domain: [-2, 2], holes: [[2, 0.75]], vertical: [-2], horizontal: 1 } } },
   { id: "a2-rf-13", topic: "rational-functions", lines: ["f(x) = \\frac{4x - 2}{2x + 1}"], expect: { rational: { domain: [-0.5], holes: [], vertical: [-0.5], horizontal: 2 } } },
   { id: "a2-rf-14", topic: "rational-functions", lines: [RF, "\\text{VA} = ?"], expect: { rational: { vertical: [-1] } }, note: "an ask under the function" },
   { id: "a2-rf-15", topic: "rational-functions", lines: [RF, "x = ?"], expect: { rational: { vertical: [-1] } }, note: "x = ? under a function with no value given: where it cannot be evaluated" },
