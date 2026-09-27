@@ -26,8 +26,8 @@ import {
   type CapabilitiesResponse,
   type CheckLine,
   type CheckRequest,
+  type GraphIntent,
   type GraphShape,
-  type GraphShapeProps,
   type InkLine,
   type InkStroke,
   type LineAnalysis,
@@ -73,9 +73,11 @@ import { isProblemProse, setupBlock, validateSetupLines, wordProblemKey } from "
 import { markKey, markStrokes, ringRect, type MarkKind } from "./marks";
 import { readScreenMeta } from "@/lib/screens/screens";
 import { getLiveSettings } from "./liveSettings";
+import { GRAPH, chooseWindow, placeGraphBlock, planGraph, type GraphPlaceContext } from "./graphing";
 import {
   HandWriter,
   handBlockOf,
+  handLinesOf,
   handSeedFor,
   handSizeFor,
   inlineHandSizeFor,
@@ -170,12 +172,6 @@ interface LineRuntime {
   shownHintTexts: Set<string>;
   escalation: number;
   processing: number;
-  /**
-   * Plot expression whose graph the student closed (header x / delete). The graph is not
-   * re-created for this line until its plot expression changes. Persisted on the echo's
-   * meta (`graphDismissed`) so a reload does not bring the card back.
-   */
-  graphDismissedExpr: string | null;
   /** the tutor's mark wanted on this line (`markKey`), null for none; undefined until first render */
   markKey?: string | null;
   markWriter?: HandWriter | null;
@@ -189,6 +185,8 @@ type CheckOpts = {
 type SolveOpts = { onlyFirstStep?: boolean; lineId: string };
 /** A column as `buildCheckLines` returns it: the lines with a read, their check payload, the region. */
 type BuiltColumn = { lines: CheckLine[]; region: Rect; states: LiveLineState[] };
+/** What Solve wrote locally: its lines, and where the block is being written (null: nothing new) and for how long. */
+type LocalWritten = { steps: string[]; block: Rect | null; wallMs: number };
 
 /** What `retryLastError` re-runs; captured at the moment a call fails. */
 type RetryContext =
@@ -230,8 +228,14 @@ const UNREADABLE_NOTE = "Couldn't read this — tap to type it";
 const UNUSABLE_SOLUTION = "Couldn't work this out";
 /** Dispatched on window by the math shape's warn/ok badge: `detail: { lineId, shapeId }`. */
 export const BADGE_TAP_EVENT = "live:badge-tap";
-/** Echo meta key recording a dismissed graph's plot expression. */
+/**
+ * Echo meta key recording a graph the student erased (its `graphFor` key): not drawn again
+ * unasked, also after a reload. (Boards from the typeset-card days carry a plot expression
+ * here, which matches no key.)
+ */
 const GRAPH_DISMISSED_META = "graphDismissed";
+/** on every stroke of a graph the tutor sketched: the graph's key (engine `graphFor`), so it is never drawn twice */
+const GRAPH_META = "graphFor";
 /**
  * Echo meta key marking `props.note` as LLM-authored (a check/solve annotation), as opposed
  * to the local engine's note. `meta` is a free-form JsonObject, so this needs no change to
@@ -391,6 +395,13 @@ export class LiveLoop implements LiveController {
   private pendingSuggestions = new Set<string>();
   /** the handwriting reveal in flight, if any (one block at a time) */
   private writer: HandWriter | null = null;
+  /** the graph being sketched, if any (one at a time), and its key */
+  private graphWriter: HandWriter | null = null;
+  private graphWriterKey: string | null = null;
+  /** `engine.graphFor` by column content */
+  private readonly graphMemo = new Map<string, GraphIntent | null>();
+  /** graph keys the student rubbed out on this screen: not drawn again unless asked */
+  private readonly dismissedGraphs = new Set<string>();
   /** any answer ink on the page at all; kept by `recount` so the common render costs nothing */
   private hasAnswerInk = false;
   /**
@@ -438,8 +449,8 @@ export class LiveLoop implements LiveController {
     this.started = true;
     this.unsubscribe = this.editor.store.listen((entry) => this.onChange(entry), { source: "user", scope: "document" });
     // Our own writes and the shapes' measured-size writes arrive as 'remote'. We only read
-    // them to re-place shapes anchored to an echo whose width changed and to notice a
-    // graph closed from its header; nothing here ever marks a burst or recognizes.
+    // them to re-place shapes anchored to an echo whose width changed; nothing here ever
+    // marks a burst or recognizes.
     this.unsubscribeRemote = this.editor.store.listen((entry) => this.onRemoteChange(entry), {
       source: "remote",
       scope: "document",
@@ -515,6 +526,7 @@ export class LiveLoop implements LiveController {
     }
     for (const ctrl of this.rereadAborts) ctrl.abort();
     this.rereadAborts.clear();
+    this.dismissedGraphs.clear();
     this.rt.clear();
     this.dirtyStrokeIds.clear();
     this.forceRecognize.clear();
@@ -701,7 +713,7 @@ export class LiveLoop implements LiveController {
     this.requestCheck(lineId);
   }
 
-  /** Remote-sourced changes: measured echo widths and graphs closed from their header. */
+  /** Remote-sourced changes: measured echo widths. */
   private onRemoteChange(entry: HistoryEntry<TLRecord>): void {
     if (!this.started) return;
     const lines = liveStore.lines.get();
@@ -712,14 +724,6 @@ export class LiveLoop implements LiveController {
       if (Math.abs(tp.w - fp.w) <= ECHO_WIDTH_RELAYOUT_PX) continue;
       const lineId = tp.lineId || to.meta.lineId;
       if (lines[lineId]?.mathShapeId === to.id) this.relayoutForEcho(lineId);
-    }
-    for (const rec of Object.values(entry.changes.removed)) {
-      if (!isShapeRecord(rec) || rec.type !== "graph" || !isLiveMeta(rec.meta)) continue;
-      const lineId = (rec.props as GraphShapeProps).lineId || rec.meta.lineId;
-      const st = lines[lineId];
-      // Our own deletes null the id inside the same write; a still-recorded id means the
-      // student closed the card.
-      if (st?.graphShapeId === rec.id) this.markGraphDismissed(lineId);
     }
   }
 
@@ -773,6 +777,12 @@ export class LiveLoop implements LiveController {
 
     for (const rec of Object.values(entry.changes.removed)) {
       if (!isShapeRecord(rec)) continue;
+      // the student rubbed out (part of) a graph the tutor sketched: not drawn again unasked
+      const graphKey = isLiveMeta(rec.meta) ? metaString(rec.meta, GRAPH_META) : "";
+      if (graphKey) {
+        this.dismissGraph(graphKey, (rec.meta as LiveShapeMeta).lineId);
+        continue;
+      }
       if (isDraw(rec)) {
         const line = this.lineOfStroke(rec.id);
         if (line) {
@@ -787,7 +797,6 @@ export class LiveLoop implements LiveController {
         const st = liveStore.lines.get()[lineId];
         if (!st) continue;
         if (st.mathShapeId === rec.id) setLine(lineId, { mathShapeId: null });
-        if (st.graphShapeId === rec.id) this.markGraphDismissed(lineId);
       }
     }
 
@@ -852,6 +861,8 @@ export class LiveLoop implements LiveController {
     const waiting = [...this.pendingSuggestions];
     this.pendingSuggestions.clear();
     for (const lineId of waiting) this.suggestNextStep(lineId);
+    // and so is a graph (Solve only): `y = 2x + 1`, a system, a finished inequality's number line
+    this.drawWantedGraphs();
   }
 
   private lineOfStroke(strokeId: string): InkLine | null {
@@ -893,15 +904,13 @@ export class LiveLoop implements LiveController {
   /** Seeds lines from existing echoes so a reload never re-recognizes. */
   private rebuild(): void {
     const seeds: EchoShapeSeed[] = [];
-    const graphs = new Map<string, TLShapeId>();
     for (const shape of this.editor.getCurrentPageShapes()) {
       if (!isLiveMeta(shape.meta)) continue;
       if (shape.type === "math" && shape.meta.source === "echo") {
         const props = shape.props as MathShapeProps;
         seeds.push({ shapeId: shape.id, lineId: props.lineId || shape.meta.lineId, anchorIds: props.anchorIds, latex: props.latex });
-      } else if (shape.type === "graph" && shape.meta.source === "echo") {
-        const props = shape.props as GraphShapeProps;
-        graphs.set(props.lineId || shape.meta.lineId, shape.id);
+        const erased = graphDismissedOf(shape.meta);
+        if (erased) this.dismissedGraphs.add(erased);
       }
     }
     if (seeds.length === 0) return;
@@ -917,11 +926,10 @@ export class LiveLoop implements LiveController {
         provider: shape && isLiveMeta(shape.meta) && shape.meta.edited ? "typed" : "none",
         edited: Boolean(shape && isLiveMeta(shape.meta) && shape.meta.edited),
         mathShapeId: r.mathShapeId,
-        graphShapeId: graphs.get(r.line.id) ?? null,
+        // a typeset graph card from before graphs were sketched by hand stays where it is, untracked
+        graphShapeId: null,
         hintsShown: props?.note ? 1 : 0,
       };
-      const dismissed = graphDismissedOf(shape?.meta);
-      if (dismissed && !graphs.has(r.line.id)) this.runtime(r.line.id).graphDismissedExpr = dismissed;
     }
     liveStore.lines.set(next);
   }
@@ -938,7 +946,6 @@ export class LiveLoop implements LiveController {
         shownHintTexts: new Set(),
         escalation: 0,
         processing: 0,
-        graphDismissedExpr: null,
       };
       this.rt.set(lineId, r);
     }
@@ -1320,7 +1327,6 @@ export class LiveLoop implements LiveController {
       provider: "none",
       analysis: { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note },
     });
-    if (state.graphShapeId) this.deleteGraph(lineId);
     this.upsertEcho(lineId, { latex: "", status: "unknown", resultLatex: "", note });
   }
 
@@ -1453,6 +1459,8 @@ export class LiveLoop implements LiveController {
     const rt = this.runtime(lineId);
     // The line changed under an answer the tutor had already written: that answer is stale.
     this.dropStaleAnswer(state);
+    // Its column's graph follows its maths: erased when that changed, sketched when wanted (Solve, settled).
+    if (!opts.keepStatus && !decision.capped) this.syncGraph(state.line.column);
     if (!decision.echo) {
       if (state.mathShapeId || state.graphShapeId) this.deleteLineShapes(lineId, { keepAi: true });
       if (!opts.quiet) this.syncMark(state, null);
@@ -1505,10 +1513,6 @@ export class LiveLoop implements LiveController {
       this.dropStaleSuggestion(state, ring);
       if (ring && !opts.quiet) this.suggestNextStep(lineId);
     }
-    if (analysis?.plot && !decision.capped) {
-      if (rt.graphDismissedExpr !== null && rt.graphDismissedExpr !== analysis.plot.expr) this.clearGraphDismissed(lineId);
-      if (rt.graphDismissedExpr === null) this.upsertGraph(lineId, analysis.plot);
-    } else if (state.graphShapeId) this.deleteGraph(lineId);
   }
 
   // ---------------------------------------------------------------- shape writes
@@ -1646,7 +1650,7 @@ export class LiveLoop implements LiveController {
     });
   }
 
-  /** Line moved: keep content, move the echo (and graph) to the new slot. */
+  /** Line moved: keep content, move the echo to the new slot. */
   private replaceEcho(lineId: string): void {
     // The ink moved: its mark goes with it (redrawn at the new place, same kind).
     const moved = liveStore.lines.get()[lineId];
@@ -1661,105 +1665,220 @@ export class LiveLoop implements LiveController {
       const viewport = this.placementBounds();
       const candidate = placeEcho(st.line.bounds, props.latex, props.size, viewport);
       const rect = findFreeSlot({ ...candidate, w: props.w, h: props.h }, this.avoidRects(lineId), st.line.bounds);
-      const updates: TLShapePartial[] = [{ id: shape.id, type: "math", x: rect.x, y: rect.y }];
-      if (st.graphShapeId) {
-        const g = this.editor.getShape(st.graphShapeId);
-        if (g) {
-          const gp = g.props as GraphShapeProps;
-          const gr = placeGraph(st.line.bounds, rect, { w: gp.w, h: gp.h }, viewport);
-          updates.push({ id: g.id, type: "graph", x: gr.x, y: gr.y });
-        }
-      }
-      this.editor.updateShapes(updates);
+      this.editor.updateShapes([{ id: shape.id, type: "math", x: rect.x, y: rect.y }]);
     });
   }
 
-  private upsertGraph(lineId: string, plot: { expr: string; latex: string }): void {
-    this.write(() => {
-      const st = liveStore.lines.get()[lineId];
-      if (!st) return;
-      const fn = { id: `f_${lineId}`, expr: plot.expr, latex: plot.latex, color: GRAPH_COLORS[0] };
-      const existing = st.graphShapeId ? this.editor.getShape(st.graphShapeId) : undefined;
-      if (st.graphShapeId && !existing) {
-        // Recorded id is gone from the store and we did not delete it: the student closed it.
-        this.markGraphDismissed(lineId, plot.expr);
-        return;
-      }
-      if (existing && existing.type === "graph") {
-        const cur = existing.props as GraphShapeProps;
-        if (cur.fns[0]?.expr === plot.expr) return;
-        this.editor.updateShapes([
-          { id: existing.id, type: "graph", props: { fns: [fn, ...cur.fns.slice(1)] } } satisfies TLShapePartial<GraphShape>,
-        ]);
-        return;
-      }
-      if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return;
-      const viewport = this.placementBounds();
-      const echo = st.mathShapeId ? this.editor.getShapePageBounds(st.mathShapeId) : undefined;
-      const rect = placeGraph(
-        st.line.bounds,
-        echo ? boxToRect(echo) : null,
-        { w: GRAPH_SHAPE_DEFAULTS.w, h: GRAPH_SHAPE_DEFAULTS.h },
-        viewport,
-      );
-      const id = createShapeId();
-      this.editor.createShapes([
-        {
-          id,
-          type: "graph",
-          x: rect.x,
-          y: rect.y,
-          props: { ...GRAPH_SHAPE_DEFAULTS, fns: [fn], lineId, title: "" },
-          meta: makeMeta("echo", lineId, this.deps.now()),
-        } satisfies TLShapePartial<GraphShape>,
-      ]);
-      setLine(lineId, { graphShapeId: id });
-    });
+  // ---------------------------------------------------------------- graphs, sketched by hand
+  /**
+   * The maths a column's graph is computed from: the student's lines, top to bottom, then the
+   * tutor's worked solution under them (its handwritten lines, its typeset steps) — so once
+   * `2x + 3 > 11` is solved, its answer `x > 4` is part of the column and its number line stays.
+   */
+  private columnGraphLines(column: number): { states: LiveLineState[]; lines: string[] } {
+    const states = this.columnLines(column).filter((s) => s.latex);
+    const ids = new Set<string>(states.map((s) => s.line.id));
+    const typeset: Array<{ latex: string; y: number }> = [];
+    const hand: TLShape[] = [];
+    for (const s of this.editor.getCurrentPageShapes()) {
+      if (!isLiveMeta(s.meta) || s.meta.source !== "ai" || !ids.has(s.meta.lineId)) continue;
+      if (s.type === "math") typeset.push({ latex: (s.props as MathShapeProps).latex, y: s.y });
+      else if (metaString(s.meta, SOLVED_META)) hand.push(s);
+    }
+    const solution = [...handLinesOf(hand), ...typeset.sort((a, b) => a.y - b.y).map((t) => t.latex)];
+    return { states, lines: [...states.map((s) => s.latex), ...solution] };
   }
 
-  private deleteGraph(lineId: string): void {
-    this.write(() => {
-      const st = liveStore.lines.get()[lineId];
-      if (!st?.graphShapeId) return;
-      if (this.editor.getShape(st.graphShapeId)) this.editor.deleteShapes([st.graphShapeId]);
-      setLine(lineId, { graphShapeId: null });
-    });
+  /** The engine's graph for these lines; memoised, because `graphFor` is pure and every render asks. */
+  private graphIntentFor(lines: readonly string[]): GraphIntent | null {
+    const engine = this.engine;
+    if (!engine?.graphFor || lines.length === 0) return null;
+    const key = lines.join("\n");
+    if (this.graphMemo.has(key)) return this.graphMemo.get(key) ?? null;
+    let intent: GraphIntent | null = null;
+    try {
+      intent = engine.graphFor(lines);
+    } catch (e) {
+      console.warn("[live] graphFor threw", e);
+    }
+    this.graphMemo.set(key, intent);
+    while (this.graphMemo.size > 64) this.graphMemo.delete(this.graphMemo.keys().next().value as string);
+    return intent;
+  }
+
+  /** The strokes (or the typeset card) of every graph the tutor drew for these lines. */
+  private graphShapesOn(lineIds: ReadonlySet<string>): TLShape[] {
+    return this.editor
+      .getCurrentPageShapes()
+      .filter((s) => isLiveMeta(s.meta) && lineIds.has(s.meta.lineId) && metaString(s.meta, GRAPH_META) !== "");
   }
 
   /**
-   * The student closed the graph: remember the plot expression so the card is not
-   * re-created on the next render of this line (cascade, mode switch, reload).
+   * Keeps a column's graph in step with its maths. A graph the column no longer wants (a line
+   * changed) is erased at once. The wanted graph is an ANSWER: drawn when the student asks
+   * (Solve / Help, `asked`), or unasked only in Solve once they have stopped writing, and never
+   * over one they rubbed out. A graph already on the page (same key) is never drawn again.
+   * Returns true when the wanted graph is on the page or on its way.
    */
-  private markGraphDismissed(lineId: string, expr?: string): void {
-    const st = liveStore.lines.get()[lineId];
-    if (!st) return;
-    const dismissed = expr ?? st.analysis?.plot?.expr ?? "";
-    this.runtime(lineId).graphDismissedExpr = dismissed;
-    if (st.graphShapeId) setLine(lineId, { graphShapeId: null });
-    this.writeGraphDismissedMeta(lineId, dismissed);
+  private syncGraph(
+    column: number,
+    opts: { asked?: boolean; intent?: GraphIntent | null; anchorLineId?: string; reserve?: Rect; delayMs?: number } = {},
+  ): boolean {
+    if (!this.engine?.graphFor || this.opts.mode === "off") return false;
+    const { states, lines } = this.columnGraphLines(column);
+    const wanted = opts.intent !== undefined ? opts.intent : this.graphIntentFor(lines);
+    const existing = this.graphShapesOn(new Set<string>(states.map((s) => s.line.id)));
+    // the sketch being drawn right now is not stale: its solution may still be being written above it
+    const stale = existing.filter((s) => {
+      const k = metaString(s.meta, GRAPH_META);
+      return k !== wanted?.key && k !== this.graphWriterKey;
+    });
+    if (stale.length > 0) {
+      this.write(() => {
+        const gone = stale.map((s) => s.id).filter((id) => this.editor.getShape(id));
+        if (gone.length > 0) this.editor.deleteShapes(gone);
+      });
+    }
+    if (!wanted || states.length === 0) return false;
+    if (this.graphWriterKey === wanted.key || existing.some((s) => metaString(s.meta, GRAPH_META) === wanted.key)) return true;
+    if (!this.opts.enabled || liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
+    if (opts.asked) this.undismissGraph(wanted.key, states);
+    else if (this.opts.mode !== "answer" || !this.settled || this.graphWriter || this.dismissedGraphs.has(wanted.key)) return false;
+    return this.drawGraph(wanted, states, opts);
   }
 
-  private clearGraphDismissed(lineId: string): void {
-    const rt = this.rt.get(lineId);
-    if (rt) rt.graphDismissedExpr = null;
-    this.writeGraphDismissedMeta(lineId, "");
+  /** Solve, and the student has stopped: every column that wants a graph gets one, one sketch at a time. */
+  private drawWantedGraphs(): void {
+    if (!this.started || !this.opts.enabled || this.opts.mode !== "answer" || !this.engine?.graphFor || this.graphWriter) return;
+    const columns = [...new Set(Object.values(liveStore.lines.get()).filter((s) => s.latex).map((s) => s.line.column))].sort((a, b) => a - b);
+    for (const column of columns) {
+      this.syncGraph(column);
+      if (this.graphWriter) return;
+    }
   }
 
-  private writeGraphDismissedMeta(lineId: string, value: string): void {
+  /**
+   * Sketches the graph beside the column's work (else under it and its solution), in the tutor's
+   * hand, never over anything on the page: smaller sketches are tried before giving up. With the
+   * hand switched off, a function graph is the typeset card instead.
+   */
+  private drawGraph(intent: GraphIntent, states: LiveLineState[], opts: { anchorLineId?: string; reserve?: Rect; delayMs?: number }): boolean {
+    const anchor = states.find((s) => s.line.id === opts.anchorLineId) ?? states[states.length - 1];
+    const column = unionRects(states.map((s) => s.line.bounds));
+    const under = opts.reserve ? unionRects([column, opts.reserve]) : column;
+    const avoid: Rect[] = [];
+    for (const s of this.editor.getCurrentPageShapes()) {
+      const b = this.editor.getShapePageBounds(s);
+      if (b) avoid.push(boxToRect(b));
+    }
+    if (opts.reserve) avoid.push(opts.reserve);
+    const bounds = this.placementBounds();
+    if (!this.deps.handwritingEnabled()) return this.placeGraphCard(intent, anchor, { column, under, bounds, avoid });
+    const seed = handSeedFor(`graph:${intent.key}`);
+    for (const box of [GRAPH.box, ...GRAPH.fallbackBoxes]) {
+      const planned = planGraph(intent, { seed, box });
+      if (!planned) return false;
+      const slot = placeGraphBlock({ w: planned.plan.bounds.w, h: planned.plan.bounds.h }, { column, under, bounds, avoid });
+      if (!slot) continue;
+      this.startGraphWriter(placeHandPlan(planned.plan, { x: slot.x, y: slot.y }), anchor.line.id, intent.key, opts.delayMs ?? 0);
+      clientMetric("live.graph.hand", { lineId: anchor.line.id, kind: intent.kind, ms: Math.round(wallMsOf(planned.plan)) });
+      return true;
+    }
+    clientMetric("live.graph.noRoom", { lineId: anchor.line.id, kind: intent.kind });
+    return false;
+  }
+
+  /**
+   * The hand is switched off: the typeset graph card, for what it can show (functions, their
+   * points). A region, a circle or a number line has no typeset form, so nothing is drawn.
+   */
+  private placeGraphCard(intent: GraphIntent, anchor: LiveLineState, place: GraphPlaceContext): boolean {
+    if (intent.kind !== "plane" || intent.curves.some((c) => c.kind !== "function" || c.op !== "=")) return false;
+    const size = { w: GRAPH_SHAPE_DEFAULTS.w, h: GRAPH_SHAPE_DEFAULTS.h };
+    const slot = placeGraphBlock(size, place);
+    if (!slot) return false;
+    const win = chooseWindow(intent, size);
+    const num = (v: number) => String(Number(v.toPrecision(4)));
+    const lineId = anchor.line.id;
+    this.write(() => {
+      this.editor.createShapes([
+        {
+          id: createShapeId(),
+          type: "graph",
+          x: slot.x,
+          y: slot.y,
+          props: {
+            ...GRAPH_SHAPE_DEFAULTS,
+            fns: intent.curves.map((c, i) => ({ id: `f_${lineId}_${i}`, expr: c.kind === "function" ? c.expr : "", latex: c.latex, color: GRAPH_COLORS[0] })),
+            points: intent.points.map((p) => ({ x: p.x, y: p.y, label: p.label ? `(${num(p.x)}, ${num(p.y)})` : "" })),
+            xMin: win.xMin,
+            xMax: win.xMax,
+            yMin: win.yMin,
+            yMax: win.yMax,
+            autoY: false,
+            lineId,
+          },
+          meta: { ...makeMeta("ai", lineId, this.deps.now()), [GRAPH_META]: intent.key },
+        } satisfies TLShapePartial<GraphShape>,
+      ]);
+    });
+    clientMetric("live.graph.typeset", { lineId });
+    return true;
+  }
+
+  private startGraphWriter(plan: HandPlan, lineId: string, key: string, delayMs: number): void {
+    // one sketch at a time: a sketch already under way is completed first (never left as bare axes)
+    const prev = this.graphWriter;
+    this.graphWriter = null;
+    prev?.cancel();
+    const writer = this.makeWriter();
+    this.graphWriter = writer;
+    this.graphWriterKey = key;
+    writer.start(plan, {
+      meta: makeMeta("ai", lineId, this.deps.now()),
+      extraMeta: { [GRAPH_META]: key },
+      delayMs,
+      whole: true,
+      onDone: () => {
+        if (this.graphWriter === writer) this.graphWriter = null;
+        // Its last strokes are in the write queued just before this one; after it the sketch is
+        // on the page under its own key, and the next column that wants one may have its turn.
+        this.write(() => {
+          if (this.graphWriter === null && this.graphWriterKey === key) this.graphWriterKey = null;
+          if (this.settled && this.graphWriter === null) this.drawWantedGraphs();
+        });
+      },
+    });
+  }
+
+  /** The student rubbed out (part of) a sketched graph: not drawn again unasked, also after a reload. */
+  private dismissGraph(key: string, lineId: string): void {
+    if (this.dismissedGraphs.has(key)) return;
+    this.dismissedGraphs.add(key);
+    this.writeGraphErased(lineId, key);
+  }
+
+  /** Asked for again: the graph may come back. */
+  private undismissGraph(key: string, states: readonly LiveLineState[]): void {
+    if (!this.dismissedGraphs.delete(key)) return;
+    for (const st of states) this.writeGraphErased(st.line.id, "", key);
+  }
+
+  private writeGraphErased(lineId: string, value: string, only?: string): void {
     this.write(() => {
       const st = liveStore.lines.get()[lineId];
-      if (!st?.mathShapeId) return;
-      const echo = this.editor.getShape(st.mathShapeId);
+      const echo = st?.mathShapeId ? this.editor.getShape(st.mathShapeId) : undefined;
       if (!echo || echo.type !== "math") return;
-      if ((graphDismissedOf(echo.meta) ?? "") === value) return;
+      const cur = graphDismissedOf(echo.meta) ?? "";
+      if (cur === value || (only !== undefined && cur !== only)) return;
       this.editor.updateShapes([{ id: echo.id, type: "math", meta: { ...echo.meta, [GRAPH_DISMISSED_META]: value } }]);
     });
   }
 
   /**
    * The echo's measured width moved by more than ECHO_WIDTH_RELAYOUT_PX (KaTeX measured
-   * after the estimate): re-place the graph to its right and push away AI shapes anchored
-   * to this line that the wider echo now covers.
+   * after the estimate): push away AI shapes anchored to this line that the wider echo now
+   * covers.
    */
   private relayoutForEcho(lineId: string): void {
     this.write(() => {
@@ -1768,18 +1887,7 @@ export class LiveLoop implements LiveController {
       const echoBounds = this.editor.getShapePageBounds(st.mathShapeId);
       if (!echoBounds) return;
       const echo = boxToRect(echoBounds);
-      const viewport = this.placementBounds();
       const updates: TLShapePartial[] = [];
-      if (st.graphShapeId) {
-        const g = this.editor.getShape(st.graphShapeId);
-        if (g && g.type === "graph") {
-          const gp = g.props as GraphShapeProps;
-          const gr = placeGraph(st.line.bounds, echo, { w: gp.w, h: gp.h }, viewport);
-          if (Math.abs(gr.x - g.x) > 0.5 || Math.abs(gr.y - g.y) > 0.5) {
-            updates.push({ id: g.id, type: "graph", x: gr.x, y: gr.y });
-          }
-        }
-      }
       for (const s of this.editor.getCurrentPageShapes()) {
         if (s.type !== "math" || !isLiveMeta(s.meta) || s.meta.source !== "ai" || s.meta.lineId !== lineId) continue;
         const b = this.editor.getShapePageBounds(s);
@@ -1811,6 +1919,7 @@ export class LiveLoop implements LiveController {
   }
 
   private dropLine(lineId: string): void {
+    const column = liveStore.lines.get()[lineId]?.line.column;
     this.abortLlm(lineId);
     this.cancelHandwriting();
     const rt = this.rt.get(lineId);
@@ -1821,6 +1930,8 @@ export class LiveLoop implements LiveController {
     }
     this.deleteLineShapes(lineId);
     removeLine(lineId);
+    // the rest of its column may have lost a relation its graph was drawn from
+    if (column !== undefined) this.syncGraph(column);
     if (this.retryContext && "lineId" in this.retryContext && this.retryContext.lineId === lineId) this.resetRetry();
   }
 
@@ -2107,7 +2218,11 @@ export class LiveLoop implements LiveController {
     // Everything the engine can answer is written locally — by hand where the hand can draw it,
     // typeset where it cannot — and never asked of a model. `localSolve` makes that decision;
     // it is the same function the maths scoreboard (src/__eval__) measures.
-    if (this.writeLocal(built, opts)) return;
+    const local = this.writeLocal(built, opts);
+    // A graph is part of the answer: sketched beside the steps once they are written, or on its
+    // own — `y = 2x + 1` has no steps, its graph IS the answer, and no model is asked for one.
+    const graphed = this.solveGraph(opts, local);
+    if (local || graphed) return;
     if (!this.deps.isOnline()) {
       this.deferLlm("solve", opts.lineId);
       return;
@@ -2119,6 +2234,27 @@ export class LiveLoop implements LiveController {
       return;
     }
     this.openSolveStream(built, fromLineId, opts);
+  }
+
+  /**
+   * Solve's graph for this work: the column's maths plus the solution just written (so an
+   * inequality's answer `x > 4` gets its number line), drawn after the steps, beside them.
+   */
+  private solveGraph(opts: SolveOpts, local: LocalWritten | null): boolean {
+    if (opts.onlyFirstStep || !this.engine?.graphFor) return false;
+    const target = liveStore.lines.get()[opts.lineId];
+    if (!target) return false;
+    const column = target.line.column;
+    const { states, lines } = this.columnGraphLines(column);
+    const intent = this.graphIntentFor(local ? [...states.map((s) => s.latex), ...local.steps] : lines);
+    if (!intent) return false;
+    return this.syncGraph(column, {
+      asked: true,
+      intent,
+      anchorLineId: opts.lineId,
+      reserve: local?.block ?? undefined,
+      delayMs: local?.block ? local.wallMs + 300 : 0,
+    });
   }
 
   /**
@@ -2341,11 +2477,11 @@ export class LiveLoop implements LiveController {
    * this work; at the shape cap nothing is drawn, but a known answer is still never asked of a
    * model.
    */
-  private writeLocal(built: { states: LiveLineState[] }, opts: SolveOpts): boolean {
+  private writeLocal(built: { states: LiveLineState[] }, opts: SolveOpts): LocalWritten | null {
     const engine = this.engine;
-    if (!engine) return false;
+    if (!engine) return null;
     const state = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
-    if (!state?.latex) return false;
+    if (!state?.latex) return null;
     const atCap = liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard;
     const hand = this.deps.handwritingEnabled();
     const idx = built.states.findIndex((s) => s.line.id === opts.lineId);
@@ -2360,39 +2496,61 @@ export class LiveLoop implements LiveController {
         canDraw: (steps) => planHandwriting(steps, { size: handSizeFor(state.line.bounds.h), seed: handSeedFor(opts.lineId) }).unsupported.length === 0,
       },
     );
-    if (!local.source) return false;
+    if (!local.source) return null;
     const steps = opts.onlyFirstStep ? local.steps.slice(0, 1) : local.steps;
     const lastLine = built.states[built.states.length - 1].line.bounds;
     const column = unionRects(built.states.map((s) => s.line.bounds));
+    const written = (block: { rect: Rect; wallMs: number } | null = null): LocalWritten => ({ steps, block: block?.rect ?? null, wallMs: block?.wallMs ?? 0 });
+    /** where typeset steps land (`placeStep`): kept clear of a graph drawn beside them */
+    const typesetBlock = (first: number): { rect: Rect; wallMs: number } => ({
+      rect: {
+        x: column.x,
+        y: rectMaxY(lastLine) + PLACEMENT.stepGap,
+        w: Math.max(...steps.map((st) => estimateEchoWidth(st))),
+        h: Math.max(1, steps.length + first) * PLACEMENT.stepPitch,
+      },
+      wallMs: 0,
+    });
 
     if (local.source === "localAnswer" && local.answer) {
       // `36 + 2 =`: the tutor may already have finished it (inline, or Solve pressed twice)
-      if (this.answerBlocksFor(opts.lineId).some((s) => answerLatexOf(s.meta) === local.answer)) return true;
-      if (atCap) return true;
-      if (hand && this.drawStepsByHand(built, opts, state, steps, this.answerMeta(state, local.answer))) return true;
+      if (this.answerBlocksFor(opts.lineId).some((s) => answerLatexOf(s.meta) === local.answer)) return written();
+      if (atCap) return written();
+      const handBlock = hand ? this.drawStepsByHand(built, opts, state, steps, this.answerMeta(state, local.answer)) : null;
+      if (handBlock) return written(handBlock);
       this.placeSolutionStep(column, lastLine, 0, steps[0], "", opts.lineId);
       clientMetric("live.solve.local.typeset", { lineId: opts.lineId });
-      return true;
+      return written(typesetBlock(0));
     }
 
     const key = local.source === "solveLatex" ? state.latex : steps.join(" ; ");
-    if (!opts.onlyFirstStep && this.hasHandSolution(opts.lineId, key)) return true;
-    if (atCap) return true;
+    if (!opts.onlyFirstStep && this.hasHandSolution(opts.lineId, key)) return written();
+    if (atCap) return written();
     // A new solution replaces the last one for this work; it never stacks beside it.
     this.clearSolveOutput(built.states);
     const meta = opts.onlyFirstStep ? undefined : { [SOLVED_META]: key };
-    if (hand && this.drawStepsByHand(built, opts, state, steps, meta)) return true;
+    const handBlock = hand ? this.drawStepsByHand(built, opts, state, steps, meta) : null;
+    if (handBlock) return written(handBlock);
     steps.forEach((step, i) => this.placeSolutionStep(column, lastLine, i + 1, step, "", opts.lineId));
     clientMetric("live.solve.local.typeset", { lineId: opts.lineId, source: local.source, steps: steps.length });
-    return true;
+    return written(typesetBlock(0));
   }
 
-  /** Deletes the tutor's worked output for this work (hand blocks and typeset steps), never echoes or inline answers. */
+  /** Deletes the tutor's worked output for this work (hand blocks and typeset steps), never echoes, inline answers, marks or graphs. */
   private clearSolveOutput(states: readonly LiveLineState[]): void {
     const lineIds = new Set(states.map((s) => s.line.id));
     const ids = this.editor
       .getCurrentPageShapes()
-      .filter((s) => isLiveMeta(s.meta) && s.meta.source === "ai" && lineIds.has(s.meta.lineId) && !answerSrcOf(s.meta) && !metaString(s.meta, MARK_META))
+      .filter(
+        (s) =>
+          isLiveMeta(s.meta) &&
+          s.meta.source === "ai" &&
+          lineIds.has(s.meta.lineId) &&
+          !answerSrcOf(s.meta) &&
+          !metaString(s.meta, MARK_META) &&
+          // a graph follows its own key (`syncGraph`), not the solution it was drawn with
+          !metaString(s.meta, GRAPH_META),
+      )
       .map((s) => s.id);
     if (ids.length > 0) this.write(() => this.editor.deleteShapes(ids));
   }
@@ -2400,9 +2558,9 @@ export class LiveLoop implements LiveController {
   /**
    * Lays `steps` out under the student's last line and starts the reveal.
    *
-   * Returns false when the hand engine reports ANY `unsupported` construct for the block —
+   * Returns null when the hand engine reports ANY `unsupported` construct for the block —
    * the safety interlock: a dropped `\frac` would show the student wrong maths, so the block
-   * is never drawn partly.
+   * is never drawn partly. Otherwise where the block is being written, and for how long.
    */
   private drawStepsByHand(
     built: { states: LiveLineState[] },
@@ -2410,10 +2568,10 @@ export class LiveLoop implements LiveController {
     state: LiveLineState,
     steps: readonly string[],
     extraMeta?: JsonObject,
-  ): boolean {
+  ): { rect: Rect; wallMs: number } | null {
     const size = handSizeFor(state.line.bounds.h);
     const { plan, unsupported } = planHandwriting(steps, { size, seed: handSeedFor(opts.lineId) });
-    if (!plan || unsupported.length > 0) return false;
+    if (!plan || unsupported.length > 0) return null;
 
     const lastLine = built.states[built.states.length - 1].line.bounds;
     const column = unionRects(built.states.map((s) => s.line.bounds));
@@ -2434,9 +2592,10 @@ export class LiveLoop implements LiveController {
     const placed = keepOnScreen(candidate, this.screenRect(), column);
     const slot = findFreeSlot(placed, avoid, lastLine, placed.x === candidate.x ? "below" : "right");
 
-    this.startHandwriting(placeHandPlan(plan, { x: slot.x, y: slot.y }), opts.lineId, extraMeta);
+    const block = placeHandPlan(plan, { x: slot.x, y: slot.y });
+    this.startHandwriting(block, opts.lineId, extraMeta);
     clientMetric("live.solve.hand.ms", { ms: Math.round(wallMsOf(plan)), lineId: opts.lineId });
-    return true;
+    return { rect: block.bounds, wallMs: this.deps.reducedMotion() ? 0 : wallMsOf(plan) };
   }
 
   private makeWriter(): HandWriter {
@@ -2502,6 +2661,10 @@ export class LiveLoop implements LiveController {
     const writer = this.writer;
     this.writer = null;
     writer?.cancel();
+    // a sketch under way is completed whole; one still waiting for its steps is not drawn
+    const graph = this.graphWriter;
+    this.graphWriter = null;
+    graph?.cancel();
   }
 
   /** fetch rejects with a TypeError when the network is unreachable. */
@@ -2812,7 +2975,9 @@ export class LiveLoop implements LiveController {
         return;
       }
     }
-    // Stuck on a line that is fine: the next step after it.
+    // Stuck on a line that is fine: when its work graphs (`y = 2x + 1`, a system, `x > 4`), the
+    // graph is the help — sketched from the engine, no model asked. Otherwise the next step.
+    if (this.syncGraph(target.line.column, { asked: true, anchorLineId: lineId })) return;
     this.startSolve(target.line.column, lineId, { onlyFirstStep: true, lineId });
   }
 

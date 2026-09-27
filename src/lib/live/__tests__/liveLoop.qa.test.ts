@@ -6,7 +6,6 @@ import {
   LIVE_TIMING,
   MATH_SHAPE_DEFAULTS,
   type CheckRequest,
-  type GraphShapeProps,
   type HelpMode,
   type LineAnalysis,
   type LiveEngine,
@@ -17,7 +16,6 @@ import {
 import { BADGE_TAP_EVENT, createLiveLoop, type LiveLoop } from "../liveLoop";
 import { liveStore, resetLiveStore } from "../liveStore";
 import { liveWrite } from "../liveWrite";
-import { ECHO_WIDTH_RELAYOUT_PX, PLACEMENT, estimateEchoWidth } from "../placement";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
 import { settle } from "@/lib/live/__fixtures__/settle";
 import { useSyncHash } from "@/lib/live/__fixtures__/syncHash";
@@ -120,11 +118,6 @@ describe("live loop — QA regressions", () => {
     const shape = editor.getShape(id);
     if (!shape) throw new Error(`echo ${id} is not in the store`);
     return shape;
-  }
-
-  function graphOf(lineId: string): TLShape | undefined {
-    const id = liveStore.lines.get()[lineId]?.graphShapeId;
-    return id ? editor.getShape(id) : undefined;
   }
 
   function remount(mode: HelpMode): void {
@@ -312,32 +305,16 @@ describe("live loop — QA regressions", () => {
   });
 
   // ------------------------------------------------------------------ B5
-  describe("B5 — graph placement follows the measured echo and stays closed once dismissed", () => {
-    it("places the graph right of the estimated echo, then re-places it when KaTeX measures wider", async () => {
-      const lineId = await write(fixtureSingleLine(), "y=x^{2}-4");
-      const echo = echoOf(lineId);
-      const graph = graphOf(lineId);
-      expect(graph).toBeDefined();
-      const estimate = estimateEchoWidth("y=x^{2}-4", "m");
-      expect((echo.props as MathShapeProps).w).toBe(estimate);
-      expect(estimate).toBeGreaterThanOrEqual(129);
-      expect(graph!.x).toBe(echo.x + estimate + PLACEMENT.graphGap);
-
-      // The shape util's ResizeObserver writes the measured size (source 'remote').
-      const measured = estimate + 40;
-      liveWrite(editor as unknown as Editor, () => {
-        editor.updateShapes([{ id: echo.id, type: "math", props: { w: measured } }]);
-      });
+  describe("B5 — no graph card unasked; a wider echo pushes AI shapes away", () => {
+    // The typeset graph card used to appear beside every `y = …` line in every mode. A graph is
+    // an answer now, sketched by hand only when asked (or in Solve once settled): liveLoop.graph.test.
+    it.each(["feedback", "suggest", "answer"] as const)("a `y = f(x)` line gets no graph card in %s", async (mode) => {
+      remount(mode);
+      await write(fixtureSingleLine(), "y=x^{2}-4");
+      await vi.advanceTimersByTimeAsync(5000);
       await settle(6);
-      expect(graphOf(lineId)!.x).toBe(echo.x + measured + PLACEMENT.graphGap);
-
-      // Sub-threshold jitter does not move the card.
-      liveWrite(editor as unknown as Editor, () => {
-        editor.updateShapes([{ id: echo.id, type: "math", props: { w: measured + ECHO_WIDTH_RELAYOUT_PX - 1 } }]);
-      });
-      await settle(6);
-      expect(graphOf(lineId)!.x).toBe(echo.x + measured + PLACEMENT.graphGap);
-      expect(fetchJson).toHaveBeenCalledTimes(1);
+      expect(editor.shapesOfType("graph")).toHaveLength(0);
+      expect(Object.values(liveStore.lines.get())[0].graphShapeId).toBeNull();
     });
 
     it("pushes an AI step shape that the wider echo now covers out of the way", async () => {
@@ -368,63 +345,6 @@ describe("live loop — QA regressions", () => {
       const echoNow = editor.getShape(echo.id)!;
       const echoRight = echoNow.x + (echoNow.props as MathShapeProps).w;
       expect(after.x >= echoRight || after.y >= echoNow.y + (echoNow.props as MathShapeProps).h).toBe(true);
-    });
-
-    it("a graph the student deleted is not re-created on later renders until the plot changes", async () => {
-      const lineId = await write(fixtureSingleLine(), "y=x^{2}-4");
-      const graph = graphOf(lineId)!;
-      editor.removeUser([graph.id]);
-      await settle(4);
-      expect(liveStore.lines.get()[lineId].graphShapeId).toBeNull();
-      expect(editor.getShape(echoOf(lineId).id)!.meta).toMatchObject({ graphDismissed: "x^{2}-4" });
-
-      // A mode switch re-renders every line: the card must stay closed.
-      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: false });
-      await settle(6);
-      expect(editor.shapesOfType("graph")).toHaveLength(0);
-
-      // A cascade from a retype of the same expression keeps it closed too.
-      loop.retypeLine(lineId, "y=x^{2}-4");
-      await settle(6);
-      expect(editor.shapesOfType("graph")).toHaveLength(0);
-
-      // A different plot brings a fresh card.
-      loop.retypeLine(lineId, "y=x^{3}");
-      await settle(6);
-      const graphs = editor.shapesOfType("graph");
-      expect(graphs).toHaveLength(1);
-      expect((graphs[0].props as GraphShapeProps).fns[0].expr).toBe("x^{3}");
-      expect(editor.getShape(echoOf(lineId).id)!.meta).toMatchObject({ graphDismissed: "" });
-    });
-
-    it("a graph closed from its header (remote delete) stays closed, also across a remount", async () => {
-      const lineId = await write(fixtureSingleLine(), "y=x^{2}-4");
-      const graph = graphOf(lineId)!;
-      liveWrite(editor as unknown as Editor, () => editor.deleteShapes([graph.id]));
-      await settle(6);
-      expect(liveStore.lines.get()[lineId].graphShapeId).toBeNull();
-      loop.setOptions({ boardId: "board-1", mode: "answer", enabled: true, voiceActive: false });
-      await settle(6);
-      expect(editor.shapesOfType("graph")).toHaveLength(0);
-
-      remount("feedback");
-      await settle(8);
-      const lines = Object.values(liveStore.lines.get());
-      expect(lines).toHaveLength(1);
-      expect(lines[0].latex).toBe("y=x^{2}-4");
-      expect(editor.shapesOfType("graph")).toHaveLength(0);
-      expect(fetchJson).toHaveBeenCalledTimes(1);
-    });
-
-    it("the loop's own graph deletes (plot gone) are not treated as a dismissal", async () => {
-      const lineId = await write(fixtureSingleLine(), "y=x^{2}-4");
-      expect(editor.shapesOfType("graph")).toHaveLength(1);
-      loop.retypeLine(lineId, "2x=8");
-      await settle(6);
-      expect(editor.shapesOfType("graph")).toHaveLength(0);
-      loop.retypeLine(lineId, "y=x^{2}-4");
-      await settle(6);
-      expect(editor.shapesOfType("graph")).toHaveLength(1);
     });
   });
 

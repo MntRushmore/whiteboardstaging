@@ -23,6 +23,7 @@ import {
 } from "./equivalence";
 import { asSmallFraction, complexToLatex, formatNumberLatex, shortExactDecimal, nodeToLatex, valueToLatex, type NumberFormatOptions } from "./format";
 import { compileExpr, plotFor } from "./graph";
+import { createGraphIntent } from "./graphIntent";
 import { APPROX_OP, latexToMath, preprocessLatex, splitRelations, UnsupportedLatex, type Translated } from "./latex";
 import { countOperations, createMathInstance, integralsExact, isComplexValue, isNodeValue, isUnitValue, safeEvaluate, safeParse, toNumber, translate, type MathModule } from "./math";
 import { evaluateUnits, unitValueToLatex, valuesMatch } from "./units";
@@ -212,6 +213,8 @@ export function createEngine(mod: MathModule): LiveEngine {
   });
   // exact trig values, identities and equations (`trig.ts`, `trigEquation.ts`)
   const trig = createTrig(math, { translate: (latex) => tr(latex) });
+  // what to graph for a column of work (`graphIntent.ts`): the maths of the tutor's sketch
+  const graphing = createGraphIntent(math, { translate: (latex) => tr(latex) });
 
   const evaluateTranslated = (t: Translated, latex: string): { value: unknown; latex: string; ok: boolean; note: string; error?: string } => {
     const exact = t.functions.includes("integral") && integralsExact(math, t.source);
@@ -1156,6 +1159,13 @@ export function createEngine(mod: MathModule): LiveEngine {
     },
     solveLatex,
     simplifySteps,
+    graphFor: (lines: readonly string[]) => {
+      try {
+        return graphing.graphFor(lines);
+      } catch {
+        return null;
+      }
+    },
     verifyExpected,
     balance,
     calculate,
@@ -1169,6 +1179,7 @@ const stub: LiveEngine = {
   solveLatex: () => null,
   solveFromLines: () => null,
   simplifySteps: () => null,
+  graphFor: () => null,
   verifyExpected: () => "unknown",
   balance: () => null,
   calculate: () => null,

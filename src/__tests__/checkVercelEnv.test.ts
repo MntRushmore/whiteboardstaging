@@ -105,6 +105,7 @@ describe("envExample: section headers and classification", () => {
       "MODEL_BENCH_LIMIT",
       "MODEL_BENCH_MODELS",
       "MODEL_BENCH_JOBS",
+      "GRAPH_GALLERY",
       "VERIFY_EMAIL_DOMAIN",
     ]);
     expect(keysByClassification(realEnvExample, "optional-deploy")).toContain("NEXT_PUBLIC_TLDRAW_LICENSE_KEY");

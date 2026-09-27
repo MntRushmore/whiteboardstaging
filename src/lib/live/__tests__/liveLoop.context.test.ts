@@ -150,13 +150,17 @@ describe("live loop — solving from the lines above", () => {
     expect(tutor().length).toBe(shapes);
   });
 
-  it("Solve on an inequality writes the steps by hand, no model", async () => {
+  it("Solve on an inequality writes the steps by hand, and its answer's number line, no model", async () => {
     const line = await penLine(0, "-2x+1<7");
     loop.requestSolve(line);
     await quiesce();
     expect(streamCalls).toEqual([]);
-    expect(handBlocks()).toBe(1);
-    expect((tutor()[0].meta as Record<string, unknown>).solvedLatex).toBe("-2x+1<7");
+    // the steps, then the number line of `x > -3` (graphing.test / liveLoop.graph.test own the sketch)
+    expect(handBlocks()).toBe(2);
+    const steps = tutor().filter((s) => (s.meta as Record<string, unknown>).solvedLatex);
+    expect((steps[0].meta as Record<string, unknown>).solvedLatex).toBe("-2x+1<7");
+    const graph = tutor().filter((s) => (s.meta as Record<string, unknown>).graphFor);
+    expect((graph[0].meta as Record<string, unknown>).graphFor).toBe("n:x:(-3,inf)");
   });
 
   it("the model's steps: no copy of the student's line, no repeated boxed answer, and a second solve replaces the first", async () => {
