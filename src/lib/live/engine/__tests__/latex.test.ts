@@ -163,9 +163,17 @@ describe("latexToMath: calculus, plain mode and failures", () => {
     expect(math.evaluate(t.source)).toBe(6);
   });
   it("throws UnsupportedLatex for constructs the LLM must handle", () => {
-    for (const bad of ["\\sum x_i", "\\prod_{i=1}^{3} i", "f'(x)", "\\frac{dy}{dx}", "\\begin{matrix} 1 \\end{matrix}", "\\lim_{x \\to 0} x"]) {
+    for (const bad of ["\\sum x_i", "\\prod_{i=1}^{3} i", "f'(x)", "\\frac{dy}{dx}", "\\begin{matrix} 1 \\end{matrix}", "\\lim_{x \\to 0^{+}} x", "\\lim x", "\\int_{0} x dx"]) {
       expect(() => latexToMath(bad, { isUnit })).toThrow(UnsupportedLatex);
     }
+  });
+  it("translates limits, indefinite integrals and evaluation brackets for calculus.ts", () => {
+    expect(latexToMath("\\lim_{x \\to 0} x", { isUnit }).source).toBe('limit("x", "x", 0)');
+    expect(latexToMath("\\lim_{x \\to 0} x", { isUnit }).variables).toEqual([]);
+    expect(latexToMath("\\int 2x \\, dx", { isUnit }).source).toBe('antiderivative("2 * x", "x")');
+    expect(latexToMath("\\int 2x \\, dx", { isUnit }).variables).toEqual(["x"]);
+    expect(latexToMath("\\left[x^{3}\\right]_{0}^{2}", { isUnit }).source).toBe('bracketEval("x ^ 3", "x", 0, 2)');
+    expect(latexToMath("\\ln|x|", { isUnit }).source).toBe("log(abs(x))");
   });
   it("splits relations at the top level only", () => {
     expect(splitRelations("2x + 3 = 11")).toEqual({ sides: ["2x + 3", "11"], ops: ["=="] });

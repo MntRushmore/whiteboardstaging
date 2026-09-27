@@ -3,9 +3,10 @@
  *
  * Handles \frac, \sqrt[n], \cdot/\times/\div, ^{}, subscripts as identifiers, greek, trig/log,
  * ^\circ -> deg, \left( \right), \text{kg}/\mathrm{m/s^2} -> units, \pm -> two branches,
- * \le \ge \ne, |x| -> abs, \int_a^b ... dx -> integral(), \frac{d}{dx} -> derivative(),
- * \frac{d^2}{dx^2} -> derivative(derivative(...)), \sum_{i=a}^{b} -> summation(),
- * `%` -> /100 and `of` -> `*` (15% of 80).
+ * \le \ge \ne, |x| -> abs, \int_a^b ... dx -> integral(), \int ... dx -> antiderivative(),
+ * \frac{d}{dx} -> derivative(), \frac{d^2}{dx^2} -> derivative(derivative(...)),
+ * \lim_{x \to a} -> limit(), \left[F\right]_a^b -> bracketEval(), \sum_{i=a}^{b} -> summation(),
+ * `%` -> /100 and `of` -> `*` (15% of 80). The calculus calls are evaluated by `calculus.ts`.
  * Anything else throws UnsupportedLatex (the LLM path). Pure TypeScript, no mathjs import.
  *
  * Bound variables stay bound: the `dx` of an integral and the index of a sum are removed from
@@ -115,8 +116,21 @@ const RELATION_COMMANDS: Record<string, string> = {
   approx: APPROX_OP, simeq: APPROX_OP, cong: APPROX_OP, doteq: APPROX_OP, equiv: "==",
 };
 const IMPLICATION_COMMANDS = new Set(["Rightarrow", "implies", "therefore", "Longrightarrow", "iff", "Leftrightarrow"]);
+/**
+ * The d of a derivative or of `dx`, as students and Mathpix write it: `d`, `\mathrm{d}`,
+ * `\mathrm{~d}`, `\operatorname{d}`, `\text{d}`. A regex source, shared with `calculus.ts`.
+ */
+export const DIFFERENTIAL_D = String.raw`(?:\\(?:mathrm|operatorname|text|mathit|rm)\s*\{\s*(?:~|\\[,;: ])?\s*d\s*\}|d)`;
+const D_ALONE = new RegExp(`^${DIFFERENTIAL_D}$`);
+const D_VARIABLE = new RegExp(String.raw`^${DIFFERENTIAL_D}\s*(\\?[a-zA-Z]+)$`);
+const D_LEIBNIZ_TOP = new RegExp(String.raw`^${DIFFERENTIAL_D}\s*(?:\^\{?\d\}?)?\s*(\\?[a-zA-Z]+)$`);
+const D_NTH_TOP = new RegExp(String.raw`^${DIFFERENTIAL_D}\s*\^\s*\{?\s*([2-9])\s*\}?$`);
+const D_NTH_BOTTOM = new RegExp(String.raw`^${DIFFERENTIAL_D}\s*(\\?[a-zA-Z]+)\s*\^\s*\{?\s*([2-9])\s*\}?$`);
+/** `dx` at the end of an integrand: `x^2 dx`, `x^{2} d x`, `2x\,dx`, `x \mathrm{d} x` */
+const INTEGRAL_DX = new RegExp(String.raw`(?:^|[^a-zA-Z\\])(?:\\[,;:! ]\s*|\s)*${DIFFERENTIAL_D}\s*(\\[a-zA-Z]+|[a-zA-Z])(?![a-zA-Z])`);
+
 const UNSUPPORTED_COMMANDS = new Set([
-  "prod", "lim", "begin", "end", "dots", "ldots", "cdots", "vdots", "forall", "exists", "in", "notin", "subset",
+  "prod", "begin", "end", "dots", "ldots", "cdots", "vdots", "forall", "exists", "in", "notin", "subset",
   "cup", "cap", "partial", "nabla", "prime", "dot", "ddot", "oint", "iint", "iiint", "binom", "choose", "matrix", "pmatrix",
   "bmatrix", "cases", "emptyset", "mid", "parallel", "perp", "angle", "triangle", "sim", "propto",
 ]);
@@ -391,6 +405,37 @@ class Scanner {
     throw new UnsupportedLatex("unbalanced parenthesis");
   }
 
+  /**
+   * `|x|` / `\left|2x + 1\right|` straight after a function name (`\ln|x|`), returned whole with
+   * its bars so it reads as `abs(...)`; null (cursor untouched) when no bar follows.
+   */
+  private readBars(): string | null {
+    this.skipSpaces();
+    const start = this.i;
+    let j = this.i;
+    const left = /^\\left\s*(?:\||\\vert\b|\\lvert\b)/.exec(this.src.slice(j));
+    if (left) j += left[0].length;
+    else if (this.src[j] === "|") j++;
+    else return null;
+    let depth = 0;
+    for (let k = j; k < this.src.length; k++) {
+      const ch = this.src[k];
+      if (ch === "{" || ch === "(") depth++;
+      else if (ch === "}" || ch === ")") depth--;
+      else if (depth === 0 && ch === "|") {
+        const inner = this.src.slice(j, k).replace(/\\right\s*$/, "");
+        this.i = k + 1;
+        return `|${inner}|`;
+      } else if (depth === 0 && /^\\(?:right\s*)?(?:vert|rvert)\b/.test(this.src.slice(k))) {
+        const m = /^\\(?:right\s*)?(?:vert|rvert)\b/.exec(this.src.slice(k))!;
+        this.i = k + m[0].length;
+        return `|${this.src.slice(j, k)}|`;
+      }
+    }
+    this.i = start;
+    return null;
+  }
+
   /** one-character or one-group script argument after ^ or _ ; returns raw */
   private readScriptArg(): string {
     this.skipSpaces();
@@ -505,8 +550,12 @@ class Scanner {
       case "}":
         this.i++;
         return;
-      case "(":
       case "[":
+        if (this.tryEvaluationBracket()) return;
+        this.i++;
+        this.emit("open", "(");
+        return;
+      case "(":
         this.i++;
         this.emit("open", "(");
         return;
@@ -875,6 +924,10 @@ class Scanner {
       this.parseIntegral();
       return;
     }
+    if (name === "lim") {
+      this.parseLimit();
+      return;
+    }
     if (name === "sum") {
       this.parseSum();
       return;
@@ -966,19 +1019,19 @@ class Scanner {
     if (numRaw === null || denRaw === null) throw new UnsupportedLatex("\\frac without two arguments");
     const num = numRaw.trim();
     const den = denRaw.trim();
-    const dm = /^(?:\\mathrm\{d\}|d)\s*(\\?[a-zA-Z]+)$/.exec(den);
+    const dm = D_VARIABLE.exec(den);
     // `\frac{dy}{dx}`: the engine cannot know y here. index.ts rewrites it against an earlier
     // `y = ...` line before translation; anything else stays unsupported.
-    if (dm && /^(?:\\mathrm\{d\}|d)\s*(?:\^\{?\d\}?)?\s*(\\?[a-zA-Z]+)$/.test(num)) {
+    if (dm && !D_ALONE.test(num) && D_LEIBNIZ_TOP.test(num)) {
       throw new UnsupportedLatex("Leibniz derivative notation");
     }
-    if ((num === "d" || num === "\\mathrm{d}") && dm) {
+    if (D_ALONE.test(num) && dm) {
       this.emitDerivative(this.sub(dm[1]), 1);
       return;
     }
     // \frac{d^2}{dx^2}, \frac{d^{3}}{dx^{3}}: repeated differentiation in the same variable
-    const nth = /^(?:\\mathrm\{d\}|d)\s*\^\s*\{?\s*([2-9])\s*\}?$/.exec(num);
-    const dnth = nth && /^(?:\\mathrm\{d\}|d)\s*(\\?[a-zA-Z]+)\s*\^\s*\{?\s*([2-9])\s*\}?$/.exec(den);
+    const nth = D_NTH_TOP.exec(num);
+    const dnth = nth && D_NTH_BOTTOM.exec(den);
     if (nth && dnth && dnth[2] === nth[1]) {
       this.emitDerivative(this.sub(dnth[1]), Number(nth[1]));
       return;
@@ -1097,7 +1150,7 @@ class Scanner {
       base = null;
     }
     const paren = this.readParenthesized();
-    const argRaw = paren !== null ? paren : this.readImplicitArgument();
+    const argRaw = paren !== null ? paren : (this.readBars() ?? this.readImplicitArgument());
     if (argRaw === null || !argRaw.trim()) throw new UnsupportedLatex(`${fn} without argument`);
     const arg = this.sub(argRaw);
     this.meta.functions.add(name);
@@ -1119,9 +1172,10 @@ class Scanner {
         upper = this.sub(this.readScriptArg());
       }
     }
-    if (lower === null || upper === null) throw new UnsupportedLatex("indefinite integral");
+    const indefinite = lower === null && upper === null;
+    if (!indefinite && (lower === null || upper === null)) throw new UnsupportedLatex("integral with one limit");
     const rest = this.src.slice(this.i);
-    const m = /(?:^|[^a-zA-Z\\])(?:\\[,;:! ]\s*|\s)*(?:\\mathrm\{\s*d\s*\}|d)\s*(\\[a-zA-Z]+|[a-zA-Z])(?![a-zA-Z])/.exec(rest);
+    const m = INTEGRAL_DX.exec(rest);
     if (!m) throw new UnsupportedLatex("integral without dx");
     const integrandEnd = m.index + (m[0].startsWith("d") || m[0].startsWith("\\") || m[0].startsWith(" ") ? 0 : 1);
     const integrandRaw = rest.slice(0, integrandEnd);
@@ -1129,11 +1183,100 @@ class Scanner {
     const seen = new Set(this.meta.variables);
     const variable = this.sub(m[1]);
     const integrand = this.sub(integrandRaw);
+    this.i += m.index + m[0].length;
+    if (indefinite) {
+      // `\int 2x \, dx` is a function of x (`x^2 + C`): the variable stays free
+      this.meta.variables.add(variable);
+      this.meta.functions.add("antiderivative");
+      this.emit("group", `antiderivative(${JSON.stringify(integrand)}, ${JSON.stringify(variable)})`);
+      return;
+    }
     // the integration variable is bound by `dx` unless the line also uses it free
     if (!seen.has(variable)) this.meta.variables.delete(variable);
-    this.i += m.index + m[0].length;
     this.meta.functions.add("integral");
     this.emit("group", `integral(${JSON.stringify(integrand)}, ${JSON.stringify(variable)}, ${lower}, ${upper})`);
+  }
+
+  /**
+   * `\lim_{x \to 2} <rest>` -> `limit("<rest>", "x", 2)`; `\infty` is `Infinity`. The limit
+   * variable is bound, like the `dx` of an integral. A one-sided limit (`x \to 0^{+}`) is refused.
+   */
+  private parseLimit(): void {
+    this.skipSpaces();
+    if (this.peek() !== "_") throw new UnsupportedLatex("limit without an approach");
+    this.i++;
+    const raw = this.readScriptArg().replace(/\\[,;:! ]/g, " ").trim();
+    const m = /^([a-zA-Z])\s*(?:\\to|\\rightarrow|\\longrightarrow|\\mapsto|->|→)\s*(\S[\s\S]*)$/.exec(raw);
+    if (!m) throw new UnsupportedLatex("limit without an approach");
+    const target = m[2].trim();
+    if (/\^\s*\{?\s*[+-]\s*\}?$/.test(target) || /[+-]$/.test(target)) throw new UnsupportedLatex("one-sided limit");
+    const operandRaw = this.readOperandRest();
+    if (!operandRaw.trim()) throw new UnsupportedLatex("limit without an expression");
+    if (unknownFunctionCall(operandRaw)) throw new UnsupportedLatex("limit of an unknown function");
+    const seen = new Set(this.meta.variables);
+    const variable = m[1];
+    const point = this.sub(target);
+    const operand = this.sub(operandRaw);
+    if (!seen.has(variable)) this.meta.variables.delete(variable);
+    this.meta.functions.add("limit");
+    this.emit("group", `limit(${JSON.stringify(operand)}, ${JSON.stringify(variable)}, ${point})`);
+  }
+
+  /**
+   * `[x^3]_0^2`, `\left[x^{3}\right]_{0}^{2}` -> `bracketEval("x ^ 3", "x", 0, 2)`: F(2) - F(0), the
+   * line a student writes after integrating. Returns false (cursor untouched) for any other `[`.
+   */
+  private tryEvaluationBracket(): boolean {
+    const open = this.i;
+    let depth = 0;
+    let close = -1;
+    for (let k = open; k < this.src.length; k++) {
+      const ch = this.src[k];
+      if (ch === "\\") {
+        k++;
+        continue;
+      }
+      if (ch === "[") depth++;
+      else if (ch === "]" && --depth === 0) {
+        close = k;
+        break;
+      }
+    }
+    if (close === -1) return false;
+    let j = close + 1;
+    while (this.src[j] === " ") j++;
+    if (this.src[j] !== "_" && this.src[j] !== "^") return false;
+    const inner = this.src
+      .slice(open + 1, close)
+      .replace(/\\right\s*$/, "")
+      .trim();
+    if (!inner) return false;
+    this.i = j;
+    let lower: string | null = null;
+    let upper: string | null = null;
+    for (let guard = 0; guard < 2; guard++) {
+      this.skipSpaces();
+      if (this.peek() === "_") {
+        this.i++;
+        lower = this.sub(this.readScriptArg());
+      } else if (this.peek() === "^") {
+        this.i++;
+        upper = this.sub(this.readScriptArg());
+      }
+    }
+    if (lower === null || upper === null) throw new UnsupportedLatex("evaluation bracket without both limits");
+    const probe: Meta = { variables: new Set(), units: new Set(), functions: new Set(), constants: new Set(), hasText: false, hasDegrees: false, hasPm: false, hasPercent: false };
+    const scan = new Scanner(inner, this.opts, probe);
+    scan.parseAll();
+    const own = [...new Set([...probe.variables, ...collectVariables(scan.tokens)])];
+    if (own.length > 1) throw new UnsupportedLatex("evaluation bracket in several variables");
+    const variable = own[0] ?? "x";
+    const seen = new Set(this.meta.variables);
+    const body = this.sub(inner);
+    if (!seen.has(variable)) this.meta.variables.delete(variable);
+    this.meta.functions.add("bracketEval");
+    this.emit("group", `bracketEval(${JSON.stringify(body)}, ${JSON.stringify(variable)}, ${lower}, ${upper})`);
+    return true;
   }
 }
 

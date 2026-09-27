@@ -172,7 +172,7 @@ describe("solveSteps: the answer the engine already has", () => {
     ["\\frac{1}{2}+\\frac{1}{3}=", "\\frac{5}{6}"],
     ["3.2 kg \\cdot 9.8 m/s^2", "31.36\\,\\mathrm{N}"],
     ["5 km/h \\text{ to } m/s", "1.389\\,\\mathrm{m/s}"],
-    ["\\frac{d}{dx} x^3", "3\\cdot{x}^{2}"],
+    ["\\frac{d}{dx} x^3", "3x^{2}"],
   ])("localAnswerFor(%s)", (latex, expected) => {
     expect(localAnswerFor(engine, latex)).toBe(expected);
   });
