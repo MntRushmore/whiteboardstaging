@@ -911,6 +911,16 @@ function ddx(x: string, body: string): string {
   return hasTopLevelSum(body) || body.startsWith("-") ? `\\frac{d}{d${x}}(${body})` : `\\frac{d}{d${x}} ${body}`;
 }
 
+/**
+ * `\frac{d^{2}}{dx^{2}} x^{\frac{1}{2}}`: the m-th derivative operator (`ddx` for m = 1). With
+ * `products`, a body with a `\cdot` is bracketed too: `\frac{d}{dx}(\cos(3x) \cdot 3)`.
+ */
+function dnx(x: string, m: number, body: string, products = false): string {
+  if (m === 1 && !products) return ddx(x, body);
+  const op = m === 1 ? `\\frac{d}{d${x}}` : `\\frac{d^{${m}}}{d${x}^{${m}}}`;
+  return hasTopLevelSum(body) || body.startsWith("-") || (products && /\\cdot/.test(body)) ? `${op}(${body})` : `${op} ${body}`;
+}
+
 /** `c^k`-style coefficient in front of a factor: `5(2x + 1)^{4}`, `-(x^{2} + 1)^{-2}`. */
 function coefJoin(k: Q, body: string): string {
   if (qOne(k)) return body;
@@ -1720,16 +1730,29 @@ export function createCalculus(math: MathJsInstance, deps: CalculusDeps): Calcul
     let result: Canon = [];
     let finalTex = "";
     let stageStart = 0;
+    // A higher derivative's early stages are still under the operators left to apply: the first
+    // line of `\frac{d^2}{dx^2} x^4` is `\frac{d}{dx} 4x^{3}`, never `4x^{3}` (which is not equal to it).
+    const push = (s: string) => {
+      if (lines.length === 0 || lineKey(lines[lines.length - 1]) !== lineKey(s)) lines.push(s);
+    };
     for (let k = 0; k < order; k++) {
+      const remaining = order - 1 - k;
       if (k > 0) {
-        lines.push(ddx(x, printCanon(result, "power", x)));
+        push(dnx(x, order - k, printCanon(result, "power", x)));
         stageStart = lines.length;
       }
       const rw = rewriteD(cur, x);
-      if (k === 0 && lineKey(tex(rw)) !== lineKey(tex(cur))) lines.push(ddx(x, tex(rw)));
+      if (k === 0 && lineKey(tex(rw)) !== lineKey(tex(cur))) push(dnx(x, order, tex(rw)));
       const D = d(rw);
       result = canon(D.val);
       if (!derivativeAgrees(cur, canonToExpr(result), x)) return null;
+      if (remaining > 0) {
+        // the rule, then the result in index form: what the next d/dx works on
+        push(dnx(x, remaining, D.tex, true));
+        push(dnx(x, remaining, printCanon(result, "power", x), true));
+        cur = canonToExpr(result);
+        continue;
+      }
       if (D.frac) {
         const top = printCanon(canon(D.frac.num), "display", x);
         finalTex = top === "0" ? "0" : fracTex(top, tex(D.frac.den));

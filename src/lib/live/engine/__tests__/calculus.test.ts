@@ -59,9 +59,13 @@ const DERIVATIVES: Array<[string, string[]]> = [
   ["\\frac{d}{dx}\\ln x", ["\\frac{1}{x}"]],
   ["\\frac{d}{dx}\\ln|x|", ["\\frac{1}{x}"]],
   ["\\frac{d}{dx} 2^{x}", ["2^{x}\\ln 2"]],
-  // second derivatives: differentiate, then differentiate the answer
-  ["\\frac{d^2}{dx^2}(x^3 + 2x^2)", ["3x^{2} + 2 \\cdot 2x", "3x^{2} + 4x", "\\frac{d}{dx}(3x^{2} + 4x)", "3 \\cdot 2x + 4", "6x + 4"]],
-  ["\\frac{d^2}{dx^2} x^4", ["4x^{3}", "\\frac{d}{dx} 4x^{3}", "4 \\cdot 3x^{2}", "12x^{2}"]],
+  // second (and third) derivatives: differentiate, then differentiate the answer — every line
+  // still under the d/dx left to apply, so each one equals the line above it
+  ["\\frac{d^2}{dx^2}(x^3 + 2x^2)", ["\\frac{d}{dx}(3x^{2} + 2 \\cdot 2x)", "\\frac{d}{dx}(3x^{2} + 4x)", "3 \\cdot 2x + 4", "6x + 4"]],
+  ["\\frac{d^2}{dx^2} x^4", ["\\frac{d}{dx} 4x^{3}", "4 \\cdot 3x^{2}", "12x^{2}"]],
+  ["\\frac{d^{2}}{dx^{2}} \\sin(3x)", ["\\frac{d}{dx}(\\cos(3x) \\cdot 3)", "\\frac{d}{dx} 3\\cos(3x)", "3 \\cdot (-\\sin(3x) \\cdot 3)", "-9\\sin(3x)"]],
+  ["\\frac{d^{2}}{dx^{2}} \\frac{1}{x}", ["\\frac{d^{2}}{dx^{2}} x^{-1}", "\\frac{d}{dx}(-x^{-2})", "2x^{-3}", "\\frac{2}{x^{3}}"]],
+  ["\\frac{d^{3}}{dx^{3}} x^{5}", ["\\frac{d^{2}}{dx^{2}} 5x^{4}", "\\frac{d}{dx}(5 \\cdot 4x^{3})", "\\frac{d}{dx} 20x^{3}", "20 \\cdot 3x^{2}", "60x^{2}"]],
 ];
 
 describe("derivatives: the rule applied, then simplified", () => {
@@ -239,7 +243,7 @@ describe("derivative notation against a definition above (solveFromLines)", () =
 
   it("f'(x), f''(x) and y' under their definitions", () => {
     expect(fromLines(["f(x) = x^3 - 2x", "f'(x) ="])?.steps).toEqual(["= 3x^{2} - 2"]);
-    expect(fromLines(["f(x) = x^3 - 2x", "f''(x)"])?.steps).toEqual(["= 3x^{2} - 2", "= \\frac{d}{dx}(3x^{2} - 2)", "= 3 \\cdot 2x", "= 6x"]);
+    expect(fromLines(["f(x) = x^3 - 2x", "f''(x)"])?.steps).toEqual(["= \\frac{d}{dx}(3x^{2} - 2)", "= 3 \\cdot 2x", "= 6x"]);
     expect(fromLines(["y = e^{3x}", "y'"])?.steps).toEqual(["= e^{3x} \\cdot 3", "= 3e^{3x}"]);
   });
 
@@ -315,7 +319,7 @@ describe("Mathpix variants read the same", () => {
     ["\\frac{d}{d x}\\left(3 x^{2}+2 x\\right)", ["3 \\cdot 2x + 2", "6x + 2"]],
     ["\\frac{\\mathrm{d}}{\\mathrm{d} x}\\left(x^{3}\\right)", ["3x^{2}"]],
     ["\\frac{\\operatorname{d}}{\\operatorname{d} x} x^{3}", ["3x^{2}"]],
-    ["\\frac{d^{2}}{d x^{2}} x^{4}", ["4x^{3}", "\\frac{d}{dx} 4x^{3}", "4 \\cdot 3x^{2}", "12x^{2}"]],
+    ["\\frac{d^{2}}{d x^{2}} x^{4}", ["\\frac{d}{dx} 4x^{3}", "4 \\cdot 3x^{2}", "12x^{2}"]],
     ["\\int e^{x} d x", ["e^{x} + C"]],
     ["\\int \\exp (x) d x", ["e^{x} + C"]],
     ["\\frac{d}{d x} \\exp (2 x)", ["e^{2x} \\cdot 2", "2e^{2x}"]],
