@@ -433,7 +433,8 @@ export class LiveLoop implements LiveController {
   /**
    * The drawings on this screen (`splitInk`, `src/lib/live/diagrams.ts`), refreshed by every flush.
    * A drawing is never recognized, marked or joined to a line; its labels are read together, once
-   * the student has stopped, as its context — and only an explicit Solve / Help sends it to a model.
+   * the student has stopped, as its context — and only Solve / Help, or in Solve a figure left labelled
+   * with an unknown (`solveWantedFigures`), sends it to a model.
    */
   private diagrams: Diagram[] = [];
   /** the glyph scale the last split measured (page px) */
