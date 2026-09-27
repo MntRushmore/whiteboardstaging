@@ -31,6 +31,10 @@ export const ROUTE_COSTS = {
   "live/recognize": 1,
   "live/check": 3,
   "live/solve": 10,
+  // A word problem's setup (the model writes the equations, the engine solves them): below solve.
+  "live/setup": 2,
+  // The second reader for a suspicious read: one line read again, priced like recognize.
+  "live/reread": 1,
   "voice/analyze-workspace": 3,
   credits: 0,
   "config/status": 0,

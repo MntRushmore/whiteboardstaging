@@ -16,6 +16,23 @@ export interface LiveDebugRecord {
   /** true when the answer came from the client's content cache (no network) */
   cached: boolean;
   response: RecognizeResponse;
+  /** the second reader, when a signal sent this line to it (`src/lib/live/readCheck.ts`) */
+  reread?: LiveRereadRecord;
+}
+
+export interface LiveRereadRecord {
+  /** why it was asked: `unreadable`, `low-confidence`, or the `suspiciousRead` rule */
+  signal: string;
+  /** Mathpix's LaTeX it was shown */
+  mathpix: string;
+  /** what the second reader returned ('' when the call failed) */
+  latex: string;
+  /** true when its LaTeX replaced Mathpix's on the board */
+  accepted: boolean;
+  model?: string;
+  ms?: number;
+  /** why there is no answer (no crop, network, upstream) */
+  error?: string;
 }
 
 const STORAGE_KEY = "agathon.liveDebug";
@@ -42,4 +59,12 @@ export function recordRecognition(rec: LiveDebugRecord): void {
     for (const id of ids.sort((a, b) => next[a].at - next[b].at).slice(0, ids.length - MAX_RECORDS)) delete next[id];
   }
   liveDebugStore.set(next);
+}
+
+/** Adds the second reader's answer to the line's record (both reads stay visible in the panel). */
+export function recordReread(lineId: string, reread: LiveRereadRecord): void {
+  if (!liveDebugEnabled()) return;
+  const cur = liveDebugStore.get()[lineId];
+  if (!cur) return;
+  liveDebugStore.set({ ...liveDebugStore.get(), [lineId]: { ...cur, reread } });
 }

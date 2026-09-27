@@ -45,6 +45,8 @@ const envSchema = z.object({
   LIVE_MODEL_CHECK: optionalString,
   LIVE_MODEL_SOLVE: optionalString,
   LIVE_MODEL_VISION: optionalString,
+  LIVE_MODEL_SETUP: optionalString,
+  LIVE_MODEL_REREAD: optionalString,
 
   // Billing (all optional; see docs/ARCHITECTURE.md "Billing").
   BILLING_ENFORCE: optionalString,
@@ -127,23 +129,38 @@ export type LiveModels = {
   solve: string;
   solveFallback: string;
   vision: string;
+  setup: string;
+  setupFallback: string;
+  reread: string;
+  rereadFallback: string;
 };
 
+/** The fallback for `primary`: never the primary itself (an override equal to the fallback swaps the two). */
+function fallbackFor(primary: string, defaultPrimary: string, defaultFallback: string): string {
+  return primary === defaultFallback ? defaultPrimary : defaultFallback;
+}
+
 /**
- * Model ids used by the Live Math routes. `LIVE_MODEL_CHECK/SOLVE/VISION` override the
- * primaries; the fallbacks always come from LIVE_MODELS (a fallback equal to the primary
+ * Model ids used by the Live Math routes. `LIVE_MODEL_CHECK/SOLVE/VISION/SETUP/REREAD` override
+ * the primaries; the fallbacks always come from LIVE_MODELS (a fallback equal to the primary
  * would be pointless, so an override that matches a fallback swaps the two).
  */
 export function getLiveModels(): LiveModels {
   const env = getServerEnv();
   const check = env.LIVE_MODEL_CHECK || LIVE_MODELS.check;
   const solve = env.LIVE_MODEL_SOLVE || LIVE_MODELS.solve;
+  const setup = env.LIVE_MODEL_SETUP || LIVE_MODELS.setup;
+  const reread = env.LIVE_MODEL_REREAD || LIVE_MODELS.reread;
   return {
     check,
-    checkFallback: check === LIVE_MODELS.checkFallback ? LIVE_MODELS.check : LIVE_MODELS.checkFallback,
+    checkFallback: fallbackFor(check, LIVE_MODELS.check, LIVE_MODELS.checkFallback),
     solve,
-    solveFallback: solve === LIVE_MODELS.solveFallback ? LIVE_MODELS.solve : LIVE_MODELS.solveFallback,
+    solveFallback: fallbackFor(solve, LIVE_MODELS.solve, LIVE_MODELS.solveFallback),
     vision: env.LIVE_MODEL_VISION || LIVE_MODELS.vision,
+    setup,
+    setupFallback: fallbackFor(setup, LIVE_MODELS.setup, LIVE_MODELS.setupFallback),
+    reread,
+    rereadFallback: fallbackFor(reread, LIVE_MODELS.reread, LIVE_MODELS.rereadFallback),
   };
 }
 

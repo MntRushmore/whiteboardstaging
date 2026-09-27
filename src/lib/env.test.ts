@@ -26,6 +26,8 @@ const ALL_VARS = [
   "LIVE_MODEL_CHECK",
   "LIVE_MODEL_SOLVE",
   "LIVE_MODEL_VISION",
+  "LIVE_MODEL_SETUP",
+  "LIVE_MODEL_REREAD",
   "BILLING_ENFORCE",
   "STRIPE_WEBHOOK_SECRET",
   "BILLING_PRICE_MAP",
@@ -126,6 +128,10 @@ describe("getLiveModels", () => {
       solve: LIVE_MODELS.solve,
       solveFallback: LIVE_MODELS.solveFallback,
       vision: LIVE_MODELS.vision,
+      setup: LIVE_MODELS.setup,
+      setupFallback: LIVE_MODELS.setupFallback,
+      reread: LIVE_MODELS.reread,
+      rereadFallback: LIVE_MODELS.rereadFallback,
     });
   });
 
@@ -139,6 +145,18 @@ describe("getLiveModels", () => {
     expect(models.checkFallback).toBe(LIVE_MODELS.checkFallback);
     expect(models.solve).toBe(LIVE_MODELS.solve);
     expect(models.vision).toBe("google/gemini-3.5-flash");
+  });
+
+  it("LIVE_MODEL_SETUP / LIVE_MODEL_REREAD override the setup and second-reader primaries", () => {
+    setRequired();
+    process.env.LIVE_MODEL_SETUP = "google/gemini-3.5-flash-lite";
+    process.env.LIVE_MODEL_REREAD = LIVE_MODELS.rereadFallback;
+    const models = getLiveModels();
+    expect(models.setup).toBe("google/gemini-3.5-flash-lite");
+    expect(models.setupFallback).toBe(LIVE_MODELS.setupFallback);
+    // an override equal to the fallback swaps the two
+    expect(models.reread).toBe(LIVE_MODELS.rereadFallback);
+    expect(models.rereadFallback).toBe(LIVE_MODELS.reread);
   });
 
   it("never returns a fallback equal to the primary", () => {
