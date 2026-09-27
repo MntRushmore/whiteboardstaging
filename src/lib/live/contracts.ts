@@ -403,11 +403,23 @@ export type SolveStep = z.infer<typeof SolveStepSchema>;
  * then solves the setup on the client exactly as Solve would, and only when it cannot does the
  * board fall back to /api/live/solve.
  */
-export const SetupRequestSchema = z.object({
-  boardId: z.string().min(1).max(64),
-  /** the column's lines top to bottom, as read: prose (`\text{…}`) and any maths the student wrote */
-  lines: z.array(z.string().max(2000)).min(1).max(40),
-});
+export const SetupRequestSchema = z
+  .object({
+    boardId: z.string().min(1).max(64),
+    /** the column's lines top to bottom, as read: prose (`\text{…}`) and any maths the student wrote */
+    lines: z.array(z.string().max(2000)).max(40).default([]),
+    /**
+     * "The tutor reads the figure": a data:image crop of a hand-drawn figure and its labels (the
+     * client's `captureCrop`, same cap as recognize), sent only when the student asks (Solve / Help
+     * on the drawing, or on a line beside it). With it the route reads the image with a vision
+     * model; `lines` are then the lines beside the figure, possibly none.
+     */
+    crop: z.string().startsWith("data:image/").max(280_000).optional(),
+    /** the figure's labels as the recognizer read them, one per label (`A`, `3`, `40^{\circ}`); only with `crop` */
+    labels: z.array(z.string().max(200)).max(40).optional(),
+  })
+  .refine((r) => r.lines.length > 0 || Boolean(r.crop), { message: "a problem needs lines or a figure", path: ["lines"] })
+  .refine((r) => !r.labels || Boolean(r.crop), { message: "labels only come with a figure crop", path: ["labels"] });
 export type SetupRequest = z.infer<typeof SetupRequestSchema>;
 export const SetupResponseSchema = z.object({
   /** LaTeX only: assignments / equations, one short letter per quantity, top to bottom */
@@ -494,6 +506,9 @@ export const LIVE_MODELS = {
   setupFallback: "deepseek/deepseek-v4.1-flash",
   reread: "google/gemini-3.1-flash-lite",
   rereadFallback: "anthropic/claude-haiku-4.5",
+  /** setup from a hand-drawn figure (a crop): the reread's vision pair, which already reads the student's ink well */
+  figure: "google/gemini-3.1-flash-lite",
+  figureFallback: "anthropic/claude-haiku-4.5",
 } as const;
 
 /** Per-user limits for the live routes (the existing LIMITS table in src/lib/server/rate-limit.ts covers the legacy routes). */

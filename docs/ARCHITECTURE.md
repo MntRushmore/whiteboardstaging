@@ -91,7 +91,7 @@ Every handler under `src/app/api/**` follows the same preamble: `requireUser` (J
 | `/api/live/recognize` | GET, POST | `requireUser` / `livePreamble` | `liveRecognize` 120 | GET 0; POST 1 | GET none; POST `RecognizeRequestSchema` | GET capabilities + warmup; POST strokes -> LaTeX (Mathpix, vision fallback) | active |
 | `/api/live/check` | POST | `livePreamble` | `liveCheck` 30 | 3 | `CheckRequestSchema` (optional `crop` data:image ≤ 280 KB, only with `userAsked` + `focusLineId`) | SSE annotations for recognized lines; with `crop` ("Ask about this") the crop goes to the check model as an image part | active |
 | `/api/live/solve` | POST | `livePreamble` | `liveSolve` 10 | 10 | `SolveRequestSchema` | SSE worked-solution steps | active |
-| `/api/live/setup` | POST | `livePreamble` | `liveSetup` 10 | 2 | `SetupRequestSchema` (`lines` 1–40 strings) | A word problem → `{ lines, unknown?, model, ms }`: LaTeX assignments / equations only (no arithmetic, no words), which the client's engine then solves. `openai/gpt-5.4-mini`, fallback `deepseek/deepseek-v4.1-flash` (`LIVE_MODEL_SETUP`); a reply with no lines is a 502 (refunded) | active |
+| `/api/live/setup` | POST | `livePreamble` | `liveSetup` 10 | 2 | `SetupRequestSchema` (`lines` 0–40 strings; optional `crop` data:image ≤ 280 KB and `labels` ≤ 40, labels only with a crop; lines or a crop required) | A word problem → `{ lines, unknown?, model, ms }`: LaTeX assignments / equations only (no arithmetic, no words), which the client's engine then solves. `openai/gpt-5.4-mini`, fallback `deepseek/deepseek-v4.1-flash` (`LIVE_MODEL_SETUP`). With a `crop` it is a hand-drawn **figure** the student asked about: same reply, read by `google/gemini-3.1-flash-lite`, fallback `anthropic/claude-haiku-4.5` (`LIVE_MODEL_FIGURE`, prompt `prompts/figure.ts`). A reply with no lines is a 502 (refunded) | active |
 | `/api/live/reread` | POST | `livePreamble` | `liveReread` 30 | 1 | `RereadRequestSchema` (`crop` data:image ≤ 280 KB, Mathpix's `latex`, the column's `above` / `below`) | The second reader: one suspicious line's ink crop → `{ latex, changed, model, ms }`. `google/gemini-3.1-flash-lite`, fallback `anthropic/claude-haiku-4.5` (`LIVE_MODEL_REREAD`). Only sent on a signal, at most once per ink | active |
 | `/api/voice/token` | POST | `requireUser` | `voiceToken` 6 | 0 | none (empty body; model fixed server-side) | Mint an ephemeral OpenAI Realtime client secret; `503 voice_unavailable` without `OPENAI_API_KEY` | active |
 | `/api/voice/analyze-workspace` | POST | `requireUser` | `analyzeWorkspace` 30 | 3 | `{ image, focus? }` | Voice tutor tool: describe the current canvas | active |
@@ -113,7 +113,7 @@ Credits are the unit; the schema is `supabase/migrations/20260917020000_accounts
 - **Metering runs as the user.** `requireUser` now also returns the verified access token; `enforceCredits({ token, route, requestId, model })` (`src/lib/server/billing.ts`) builds a supabase-js client with the anon key + `Authorization: Bearer <token>` and calls the SECURITY DEFINER RPC `consume_credits(p_route, p_units, p_request_id, p_model)`. The function locks the caller's profile row, checks the balance and appends a `usage_events` row atomically, so parallel requests cannot overspend; it returns `{ ok: false, reason: 'insufficient_credits', remaining }` without writing when short. A user can only spend their own credits and no API exposed to `authenticated` can add credits or change a plan (column-level grants: a user may update `display_name` only).
 - **Placement.** After auth + rate limit + body validation and **before** the upstream call, for every route — including the SSE routes (`check` / `solve`), where a refusal is a JSON `402` instead of a stream. Charging up-front keeps the balance check atomic (no window between "check" and "spend"); what the provider then fails to deliver is given back by a refund.
 - **Refunds.** `refundCredits({ token, requestId })` calls the SECURITY DEFINER RPC `refund_credits(p_request_id)` as the user (migration `20260917030000_refunds_ratelimit.sql`): it deletes the caller's own `usage_events` rows carrying that `request_id` and younger than 15 minutes, and returns `{ refunded, remaining }`; it never throws (a refund that cannot happen is logged and reported as `{ refunded: 0, reason }`), and with `BILLING_ENFORCE=0` it does nothing because nothing was charged. The `requestId` refunded is the very one passed to `enforceCredits` (asserted per route by `routes.refunds.test.ts`). Two wrappers apply it: non-streaming routes (`voice/analyze-workspace`, `live/recognize` POST, `live/setup`, `live/reread`) run their provider call inside `runCharged`, which refunds whenever the Response handed to the client is not a 2xx — `UpstreamError` (502), the provider's own `CreditsExhaustedError` (402), `recognizer_failed` (502), timeouts/aborts (500). A 2xx is never refunded. The SSE routes (`live/check`, `live/solve`) run inside `runChargedStream`, which refunds only when the stream fails **before the first annotation / step was emitted**; a failure after partial output keeps the charge (the user has the partial result and the model was paid), and the `error` frame is still sent either way.
-- **Prices** (`ROUTE_COSTS`, credits per call): recognize 1, check 3, solve 10, voice analysis 3; **setup 2** — a word problem's equations, below solve because the engine does the solving (when the setup is unusable the board then calls solve as well, 12 in all; a setup call that returns nothing is refunded); **reread 1** — the second reader reads one line again, priced like recognize. It is never asked for by the student: it fires only on a signal (a read the engine cannot read, a symbol implausible in its column, or a confidence below 0.6), at most once per ink, which on the handwriting scoreboard is 17 of 20 misreads and none of 704 correct reads — so in practice a few percent of lines at most. At ~$0.00035 per call the credit is about the rate limit and abuse, not cost.
+- **Prices** (`ROUTE_COSTS`, credits per call): recognize 1, check 3, solve 10, voice analysis 3; **setup 2** — a word problem's equations, or a drawn figure's (the same route with a crop), below solve because the engine does the solving (when the setup is unusable the board then calls solve as well, 12 in all; a setup call that returns nothing is refunded); **reread 1** — the second reader reads one line again, priced like recognize. It is never asked for by the student: it fires only on a signal (a read the engine cannot read, a symbol implausible in its column, or a confidence below 0.6), at most once per ink, which on the handwriting scoreboard is 17 of 20 misreads and none of 704 correct reads — so in practice a few percent of lines at most. At ~$0.00035 per call the credit is about the rate limit and abuse, not cost.
 - **Responses.** `402 { error: 'credits_exhausted', message, remaining, upgradeUrl }` (`upgradeUrl` is `NEXT_PUBLIC_BILLING_LINKS.portal` or `/account`). When metering is enforced but the RPC is missing or the database errors, the route fails closed with `503 feature_unavailable` ("Billing is not set up on this deployment — run the migrations."). `BILLING_ENFORCE=0` skips consumption entirely (logged once per process) — a dev/staging escape hatch, never for production.
 - **Plan changes** happen only through `POST /api/billing/webhook` (service role) or SQL. The webhook is Stripe-compatible without a payment SDK: `Stripe-Signature: t=…,v1=…` is HMAC-SHA256 over `${t}.${rawBody}` with `STRIPE_WEBHOOK_SECRET`, 5-minute tolerance, constant-time compare, Web Crypto only (`src/lib/server/webhookSignature.ts`). Every event id is inserted into `billing_events` first (duplicate -> `200 { received: true, duplicate: true }`), then `mapBillingEvent` (pure) turns the event into a `profiles` patch:
   `checkout.session.completed` -> `client_reference_id` (our user id) gets `plan_id` (from `metadata.plan_id`, else `BILLING_PRICE_MAP[price id]`), `billing_customer_id`, `billing_subscription_id`, `billing_status = 'active'`;
@@ -158,8 +158,9 @@ The client maps `unauthorized` to a redirect to `/login`, `rate_limited` to a re
 
 ```
 pen-up (draw.isComplete false→true, source 'user')
-  → quiet gate 600 ms (450 ms on rewrite)      src/lib/live/liveLoop.ts
-  → clusterLines → InkLine[]                    strokeClusters.ts (union-find, fraction bars, columns)
+  → quiet gate 600 ms (450 ms on rewrite)      src/lib/live/liveLoop.ts (a stroke plainly a drawing does not push it back)
+  → splitInk → drawings (+ marks, labels) out   diagrams.ts: only handwriting goes on
+  → clusterLines(writing) → InkLine[]           strokeClusters.ts (union-find, fraction bars, columns)
   → buildPayload → normalized ints + sha-1      strokePayload.ts (cache hit → skip network)
   → POST /api/live/recognize                    Mathpix v3/strokes ▸ vision fallback
   → engine.analyzeLine (mathjs, offline)        src/lib/live/engine/**
@@ -173,16 +174,22 @@ pen-up (draw.isComplete false→true, source 'user')
 Solve / Help on a column
   → localSolve (engine only)                    localSolve.ts → written by hand, no network
   → engine.graphFor(column + steps) → planGraph graphing/ → sketched beside the steps, after them
+  → a drawing beside it? POST /api/live/setup + crop   "the tutor reads the figure" (below)
+      → validateSetupLines → localSolve(setup) → setup + steps by hand under the work
   → word problem? POST /api/live/setup          wordProblem.ts: validateSetupLines
       → localSolve(setup) → setup + steps written as one hand block (no solve model)
   → otherwise, or setup unusable: POST /api/live/solve (SSE) → createSolveStepGuard → one block
 
+Solve / Help on a drawing (the last thing drawn)
+  → labels (one recognize call) + crop → POST /api/live/setup → validate → engine → by hand beside it
+
 any student ink, anywhere (incl. pen-down, drag, erase)
   → settle gate 2.5 s (ANSWER_SETTLE_MS)        liveLoop.markUnsettled → renderSettled
   → re-render only → the held-back ANSWER lands  (no re-recognition, no model call)
+  → each drawing's labels read, if they changed  one POST /api/live/recognize per drawing (label stack)
 ```
 
-**Dev: the Mathpix panel (`LiveDebugPanel`).** In development (or with `LIVE_DEBUG=1` on the server plus `localStorage["agathon.liveDebug"] = "1"` in the browser) `/api/live/recognize` returns the recognizer's raw JSON as `debug`, and a "Mathpix" button on the board opens a per-line view: the strokes exactly as sent, the LaTeX (raw and rendered), confidence, Mathpix's own `is_handwritten`, the engine's kind, verdict, mathjs form and solutions, and — when the second reader was asked — both reads ("mathpix read", "second reader: <latex>"), why it was asked and whether its read was used. It separates "the pen / recognizer got it wrong" from "the maths engine could not check it".
+**Dev: the Mathpix panel (`LiveDebugPanel`).** In development (or with `LIVE_DEBUG=1` on the server plus `localStorage["agathon.liveDebug"] = "1"` in the browser) `/api/live/recognize` returns the recognizer's raw JSON as `debug`, and a "Mathpix" button on the board opens a per-line view: the strokes exactly as sent, the LaTeX (raw and rendered), confidence, Mathpix's own `is_handwritten`, the engine's kind, verdict, mathjs form and solutions, and — when the second reader was asked — both reads ("mathpix read", "second reader: <latex>"), why it was asked and whether its read was used. It separates "the pen / recognizer got it wrong" from "the maths engine could not check it". Below the lines, each drawing on the screen: what it was taken for (`triangle`, `numberLine`…), how many strokes and labels, the label stack exactly as sent and the labels as read (`liveStore.diagrams`).
 
 **Screens, not an infinite canvas (`src/lib/screens/**`).** A board is a stack of fixed 16:9
 screens, one tldraw page each, whose rect lives in `page.meta.screen` (1600×900 page units). The
@@ -228,6 +235,8 @@ muted typeset note beside the ink (`\text{…}`, wrapped into a left-aligned blo
 characters and kept inside the screen). Pressing Solve or Help again on a line the tutor has already
 worked out by hand draws nothing new (the block carries `meta.solvedLatex`). Same price as any check (3 credits). It never fires by
 itself: only `requestHelp` sets a crop, and the schema refuses one without `userAsked` + `focusLineId`.
+When the ink touched last is a drawing or one of its labels (not a line), Help — and Solve steps —
+read the figure instead ("Drawings", below); a drawing never gets a "?".
 
 **Graphs, sketched by hand (`engine/graphIntent.ts`, `src/lib/live/graphing/**`).** A graph is an
 ANSWER, drawn by the tutor's hand in its blue, stroke by stroke, like its writing — never a card.
@@ -325,6 +334,79 @@ its 704 correct reads (lines above only, as the loop sees them); end to end with
 prompt, 13 of the 20 misreads are fixed, every accepted change is a fix, and none of the bench's 20
 correct-read controls is sent or changed. The two misreads the trigger cannot see are plausible
 lines in their own right (`b=20-3` for `b = 2a - 3`, `\int_{1}^{6}` for `\int_{1}^{e}`).
+
+**Drawings: kept out of the lines, read only when asked (`src/lib/live/diagrams.ts`).** Students
+draw — a triangle with its sides labelled, a circle and its radius, a number line, axes with a line,
+an arrow. Every stroke used to be handwriting: a triangle beside `a^2 + b^2 = c^2` was clustered into
+that line (Mathpix read garbage), a drawing on its own became a line with a "?", and every label on
+it a one-character line. `LiveLoop.flush` now runs `splitInk` over the screen's ink first and gives
+`clusterLines` only the handwriting. The rules, all measured in G, the screen's median stroke height
+(about the x-height; re-measured without strokes plainly bigger than it, capped at 30 px so a
+screen with only a drawing on it has a scale):
+
+- *By its own shape.* Under 3.5 G both ways a stroke is a glyph (a `0` is closed and a `1` straight:
+  size is what makes a drawing). A long diagonal, or a stroke big both ways (a circle, a triangle in
+  one stroke, a parabola), is a drawing — unless writing fills its box or sits under a long level top
+  (a radical over a fraction, a long-division bracket, a box or ring round an answer). A long level or
+  upright line, a tall thin stroke and a wide flat one are ambiguous: fraction bars, long `=`,
+  overbars, long division, `|…|`, integral signs and big brackets look exactly like that.
+- *By what is around it.* Writing evidence: writing covers half of its span on one side (gaps of a
+  glyph between glyphs bridged), or fills its box. Drawing evidence, which wins even over writing:
+  two long lines crossing or cornering (axes), short strokes going right through it (a number line's
+  ticks, which join it), an arrowhead at an end (its barbs join it), straight sides whose ends pair
+  into a closed polygon (a rectangle in four strokes), an end joined to a drawing (a triangle's base,
+  a right triangle's legs, a radius). With no writing evidence a line is also a drawing when it
+  touches one, has nothing within 2.5 G (the first side of a triangle, flushed before the rest), or
+  is 9 G long. Anything else stays writing.
+- *Marks and labels.* Drawing strokes that touch or nest are one drawing. What is left is clustered as
+  before; near a drawing, a small stroke ON it (crossing it, both ends on it, or a dot on it) is a
+  mark (an angle arc, a right-angle square, an open circle), and a small cluster within 2 G is a label
+  (a vertex letter, a side length, `40°`, the numbers under a number line, split at gaps wider than a
+  glyph) — unless it holds a relation (`=`, `<`, `>`): `x = ?` beside a triangle is a question, a
+  line of maths, and keeps every stroke. From such a line only labels the clusterer ran into it are
+  taken back: those inside the drawing's span with the line outside it, or one at the line's end on
+  the drawing's side cut off by a gap wider than any inside the line.
+
+Behaviour: a drawing is never recognized, never marked (no tick, ring or "?"), never joined to a
+line, and does not count as writing maths — a stroke plainly a drawing (a long diagonal, a big shape)
+does not push back the quiet gate of lines waiting to be read, though it restarts the settle clock
+like any ink. A label that was a line of its own (written before the drawing) stops being one: its
+echo and marks go. Drawings get stable ids (`dg_…`, kept while half their strokes remain) and are
+rebuilt from the ink on load. **Labels are read together, once the student stops** (the settle):
+ONE `/api/live/recognize` call per drawing whose labels changed, with the labels stacked one per
+row, left-aligned, 0.6 of their own height apart (`labelStack`) — side by side, Mathpix read `3` and
+`4` as `34` and `A B C 3 4 x` as `\text{ABC34X}` (2 of 6 label sets right); stacked, 6 of 6, and all
+7 generated drawings' stacks came back one row per label (24 of 25 labels right; `O` read as `0`).
+`parseLabelRead` splits the rows (a lone `\times` is the letter x). Reads are cached per label ink.
+
+**The tutor reads the figure (only on an explicit ask).** Solve or Help when the last ink was a
+drawing, or Solve on a line the engine cannot answer that is within 120 px (or 10 G) of one (`x = ?`
+beside a triangle), sends a crop of the drawing and its labels (≤ 768 px wide) with the labels as
+read and the column's lines to `POST /api/live/setup` (2 credits; `google/gemini-3.1-flash-lite`,
+fallback `anthropic/claude-haiku-4.5`; prompt `src/lib/server/prompts/figure.ts`: the figure's own
+single letters, no `\angle`, angles as plain degrees because the engine does not solve `40^{\circ}`,
+Pythagoras as the equation and then the unknown as a square root so a length comes out positive,
+never the arithmetic). The reply is validated exactly like a word problem's (`validateSetupLines`),
+solved by `localSolve`, and written by hand as one block — beside the figure when asked on the
+drawing (right of it, under it when the screen has no room), under the work when asked from a line;
+the setup alone when the engine cannot take it further (it is the reading of the figure). Help in
+Feedback / Suggest writes the first line of the setup only, as for a word problem.
+`meta.solvedLatex` is `figureKey` (the drawing, its labels, the work beside it), so asking again
+costs nothing; rubbing the drawing out removes the answer. From a line, a figure that gives nothing
+falls back to the word-problem and solve paths; on the drawing, the pill says "Couldn't work this
+out", with Retry. Live, in the browser: a right triangle labelled 3, 4, x → labels read `x, 3, 4` →
+`x^{2} = 3^{2} + 4^{2}`, `x = \sqrt{3^{2} + 4^{2}}` (1.2–1.9 s) → the engine writes `x = 5`; a
+triangle with 40° and 65° marked and x asked → `x + 40 + 65 = 180`, `x = 180 - 40 - 65` → `x = 75`.
+
+Measured offline by the drawings scoreboard (`npm run eval:drawings`, `docs/eval/drawings.md`): 8
+generated drawings × 3 sizes × 5 placements × 6 lines × 4 hands = 2880 scenes. Before, the maths
+line was intact (one line of exactly its strokes) in 1689, no drawing was kept out of the lines, and
+1809 lines held no maths at all; after, 2847 intact, 2880 drawings out, 18 stray lines, 8951 of 9000
+labels attached. The 33 left are a label written between the line and the drawing, nearer the line.
+Every corpus line in every hand (1276, plus radicals, long division, integrals, brackets, matrices,
+cases) keeps every stroke as writing — the scoreboard fails otherwise. Not handled: a drawing
+sketched in many short strokes (each is a glyph), a small rectangle or circle under ~3.5 G, tldraw's
+own shape tools (never read as ink anyway, but their labels still are lines).
 
 **Deterministic maths never goes through a model.** `LiveLoop.startSolve` (`src/lib/live/liveLoop.ts`) asks the local engine before it will open `/api/live/solve`: `engine.solveLatex` for a relation with an unknown (`2x + 3 = 11` → `2x = 8`, `x = 4`; linear inequalities too; quadratics, absolute value, rational, radical, exponential and log equations through `engine/advanced.ts`), `engine.solveFromLines` for a line that needs the ones above it, `engine.simplifySteps` for an expression in an unknown (`3(x+2) - x` → `= 3x + 6 - x`, `= 2x + 6`) or a derivative, integral or limit (`\frac{d}{dx}(3x^2+2x)` → `= 3 \cdot 2x + 2`, `= 6x + 2`; see "Calculus steps" below), and then `localAnswerFor` (`src/lib/live/solveSteps.ts`) for a line the engine can simply evaluate — `analyzeLine(latex, { mode: 'answer' }).resultLatex` covers a trailing `=`, units, a conversion, a derivative, an integral, a limit, a finite sum and a percentage, and `engine.calculate` covers bare arithmetic whose result the echo's calculator rule suppresses. Either way the steps are written under the student's work in the tutor's hand (`planHandwriting` + `HandWriter`), with no model, no credits and no network. An answer the hand atlas cannot draw, or a device with the handwriting switch off, is typeset locally instead of being asked for: only a line the engine has nothing to say about (an equation the CAS declines, a word problem whose setup the engine cannot solve) reaches the stream. Regression: `36 + 2 =` used to fall through `solveLatex` and be answered `= r + 9\varepsilon` by the model.
 

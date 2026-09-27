@@ -1,0 +1,348 @@
+{
+ "scenes": 2880,
+ "before": {
+  "mathIntact": 1689,
+  "drawingOut": 0,
+  "strayLines": 1809,
+  "labelsAttached": 0,
+  "labels": 9000
+ },
+ "after": {
+  "mathIntact": 2847,
+  "drawingOut": 2880,
+  "strayLines": 18,
+  "labelsAttached": 8951,
+  "labels": 9000
+ },
+ "byDrawing": [
+  {
+   "drawing": "triangle",
+   "name": "triangle, three strokes, vertices and sides labelled",
+   "scenes": 360,
+   "before": {
+    "mathIntact": 216,
+    "drawingOut": 0,
+    "strayLines": 336,
+    "labelsAttached": 0,
+    "labels": 1800
+   },
+   "after": {
+    "mathIntact": 360,
+    "drawingOut": 360,
+    "strayLines": 0,
+    "labelsAttached": 1800,
+    "labels": 1800
+   },
+   "kinds": [
+    "triangle"
+   ]
+  },
+  {
+   "drawing": "triangleOneStroke",
+   "name": "triangle in one stroke, angles labelled",
+   "scenes": 360,
+   "before": {
+    "mathIntact": 216,
+    "drawingOut": 0,
+    "strayLines": 216,
+    "labelsAttached": 0,
+    "labels": 1080
+   },
+   "after": {
+    "mathIntact": 360,
+    "drawingOut": 360,
+    "strayLines": 0,
+    "labelsAttached": 1080,
+    "labels": 1080
+   },
+   "kinds": [
+    "triangle"
+   ]
+  },
+  {
+   "drawing": "rightTriangle",
+   "name": "right triangle, square corner mark, sides 3, 4, x",
+   "scenes": 360,
+   "before": {
+    "mathIntact": 219,
+    "drawingOut": 0,
+    "strayLines": 219,
+    "labelsAttached": 0,
+    "labels": 1080
+   },
+   "after": {
+    "mathIntact": 343,
+    "drawingOut": 360,
+    "strayLines": 0,
+    "labelsAttached": 1065,
+    "labels": 1080
+   },
+   "kinds": [
+    "triangle"
+   ]
+  },
+  {
+   "drawing": "circle",
+   "name": "circle with a radius, centre and radius labelled",
+   "scenes": 360,
+   "before": {
+    "mathIntact": 216,
+    "drawingOut": 0,
+    "strayLines": 216,
+    "labelsAttached": 0,
+    "labels": 720
+   },
+   "after": {
+    "mathIntact": 360,
+    "drawingOut": 360,
+    "strayLines": 0,
+    "labelsAttached": 720,
+    "labels": 720
+   },
+   "kinds": [
+    "circle"
+   ]
+  },
+  {
+   "drawing": "numberLine",
+   "name": "number line: ticks, arrows, an open circle, numbers under it",
+   "scenes": 360,
+   "before": {
+    "mathIntact": 212,
+    "drawingOut": 0,
+    "strayLines": 212,
+    "labelsAttached": 0,
+    "labels": 2520
+   },
+   "after": {
+    "mathIntact": 360,
+    "drawingOut": 360,
+    "strayLines": 0,
+    "labelsAttached": 2520,
+    "labels": 2520
+   },
+   "kinds": [
+    "numberLine",
+    "arrow"
+   ]
+  },
+  {
+   "drawing": "axesAndLine",
+   "name": "axes with a line sketched on them",
+   "scenes": 360,
+   "before": {
+    "mathIntact": 261,
+    "drawingOut": 0,
+    "strayLines": 261,
+    "labelsAttached": 0,
+    "labels": 1080
+   },
+   "after": {
+    "mathIntact": 357,
+    "drawingOut": 360,
+    "strayLines": 17,
+    "labelsAttached": 1060,
+    "labels": 1080
+   },
+   "kinds": [
+    "axes"
+   ]
+  },
+  {
+   "drawing": "arrow",
+   "name": "an arrow",
+   "scenes": 360,
+   "before": {
+    "mathIntact": 204,
+    "drawingOut": 0,
+    "strayLines": 204,
+    "labelsAttached": 0,
+    "labels": 0
+   },
+   "after": {
+    "mathIntact": 360,
+    "drawingOut": 360,
+    "strayLines": 0,
+    "labelsAttached": 0,
+    "labels": 0
+   },
+   "kinds": [
+    "arrow"
+   ]
+  },
+  {
+   "drawing": "rectangle",
+   "name": "rectangle, four strokes, sides labelled",
+   "scenes": 360,
+   "before": {
+    "mathIntact": 145,
+    "drawingOut": 0,
+    "strayLines": 145,
+    "labelsAttached": 0,
+    "labels": 720
+   },
+   "after": {
+    "mathIntact": 347,
+    "drawingOut": 360,
+    "strayLines": 1,
+    "labelsAttached": 706,
+    "labels": 720
+   },
+   "kinds": [
+    "quadrilateral"
+   ]
+  }
+ ],
+ "byPlacement": [
+  {
+   "placement": "right, close",
+   "scenes": 576,
+   "before": {
+    "mathIntact": 23,
+    "drawingOut": 0,
+    "strayLines": 47,
+    "labelsAttached": 0,
+    "labels": 1800
+   },
+   "after": {
+    "mathIntact": 559,
+    "drawingOut": 576,
+    "strayLines": 0,
+    "labelsAttached": 1785,
+    "labels": 1800
+   }
+  },
+  {
+   "placement": "left, close",
+   "scenes": 576,
+   "before": {
+    "mathIntact": 26,
+    "drawingOut": 0,
+    "strayLines": 50,
+    "labelsAttached": 0,
+    "labels": 1800
+   },
+   "after": {
+    "mathIntact": 560,
+    "drawingOut": 576,
+    "strayLines": 18,
+    "labelsAttached": 1766,
+    "labels": 1800
+   }
+  },
+  {
+   "placement": "below, close",
+   "scenes": 576,
+   "before": {
+    "mathIntact": 488,
+    "drawingOut": 0,
+    "strayLines": 512,
+    "labelsAttached": 0,
+    "labels": 1800
+   },
+   "after": {
+    "mathIntact": 576,
+    "drawingOut": 576,
+    "strayLines": 0,
+    "labelsAttached": 1800,
+    "labels": 1800
+   }
+  },
+  {
+   "placement": "above, close",
+   "scenes": 576,
+   "before": {
+    "mathIntact": 576,
+    "drawingOut": 0,
+    "strayLines": 600,
+    "labelsAttached": 0,
+    "labels": 1800
+   },
+   "after": {
+    "mathIntact": 576,
+    "drawingOut": 576,
+    "strayLines": 0,
+    "labelsAttached": 1800,
+    "labels": 1800
+   }
+  },
+  {
+   "placement": "far",
+   "scenes": 576,
+   "before": {
+    "mathIntact": 576,
+    "drawingOut": 0,
+    "strayLines": 600,
+    "labelsAttached": 0,
+    "labels": 1800
+   },
+   "after": {
+    "mathIntact": 576,
+    "drawingOut": 576,
+    "strayLines": 0,
+    "labelsAttached": 1800,
+    "labels": 1800
+   }
+  }
+ ],
+ "writing": {
+  "lines": 1276,
+  "misread": [],
+  "regrouped": 0
+ },
+ "failures": [
+  "rightTriangle/right, close/x1.4/clean/a^{2} + b^{2} = c^{2}",
+  "rightTriangle/right, close/x1.4/clean/x + 40 + 65 = 180",
+  "rightTriangle/right, close/x1.4/clean/\\frac{x}{2} + 3 = 7",
+  "rectangle/left, close/x1.4/clean/a^{2} + b^{2} = c^{2}",
+  "rectangle/left, close/x1.4/clean/3^{2} + 4^{2} = x^{2}",
+  "rectangle/left, close/x1.4/clean/\\frac{x}{2} + 3 = 7",
+  "axesAndLine/left, close/x0.7/slanted/\\frac{x}{2} + 3 = 7",
+  "rightTriangle/right, close/x1.4/slanted/a^{2} + b^{2} = c^{2}",
+  "rightTriangle/right, close/x1.4/slanted/x + 40 + 65 = 180",
+  "rightTriangle/right, close/x1.4/slanted/3^{2} + 4^{2} = x^{2}",
+  "rightTriangle/right, close/x1.4/slanted/\\frac{x}{2} + 3 = 7",
+  "rightTriangle/right, close/x1.4/slanted/2x + 3 > 11",
+  "rectangle/left, close/x1.4/slanted/3^{2} + 4^{2} = x^{2}",
+  "rectangle/left, close/x1.4/slanted/\\frac{x}{2} + 3 = 7",
+  "axesAndLine/left, close/x0.7/steep/a^{2} + b^{2} = c^{2}",
+  "axesAndLine/left, close/x0.7/steep/\\frac{x}{2} + 3 = 7",
+  "rightTriangle/right, close/x1.4/steep/a^{2} + b^{2} = c^{2}",
+  "rightTriangle/right, close/x1.4/steep/x + 40 + 65 = 180",
+  "rightTriangle/right, close/x1.4/steep/3^{2} + 4^{2} = x^{2}",
+  "rightTriangle/right, close/x1.4/steep/x = ?",
+  "rightTriangle/right, close/x1.4/steep/\\frac{x}{2} + 3 = 7",
+  "rightTriangle/right, close/x1.4/steep/2x + 3 > 11",
+  "rectangle/left, close/x1.4/steep/a^{2} + b^{2} = c^{2}",
+  "rectangle/left, close/x1.4/steep/x + 40 + 65 = 180",
+  "rectangle/left, close/x1.4/steep/3^{2} + 4^{2} = x^{2}",
+  "rectangle/left, close/x1.4/steep/\\frac{x}{2} + 3 = 7",
+  "rectangle/left, close/x1.4/steep/2x + 3 > 11",
+  "rightTriangle/right, close/x1/messy/a^{2} + b^{2} = c^{2}",
+  "rightTriangle/right, close/x1.4/messy/a^{2} + b^{2} = c^{2}",
+  "rightTriangle/right, close/x1.4/messy/3^{2} + 4^{2} = x^{2}",
+  "rectangle/left, close/x1.4/messy/3^{2} + 4^{2} = x^{2}",
+  "rectangle/left, close/x1.4/messy/\\frac{x}{2} + 3 = 7",
+  "rectangle/left, close/x1.4/messy/2x + 3 > 11"
+ ],
+ "stray": [
+  "axesAndLine/left, close/x0.7/clean/a^{2} + b^{2} = c^{2}",
+  "axesAndLine/left, close/x0.7/clean/x + 40 + 65 = 180",
+  "axesAndLine/left, close/x0.7/clean/3^{2} + 4^{2} = x^{2}",
+  "axesAndLine/left, close/x0.7/clean/\\frac{x}{2} + 3 = 7",
+  "axesAndLine/left, close/x0.7/clean/2x + 3 > 11",
+  "axesAndLine/left, close/x0.7/slanted/a^{2} + b^{2} = c^{2}",
+  "axesAndLine/left, close/x0.7/slanted/x + 40 + 65 = 180",
+  "axesAndLine/left, close/x0.7/slanted/3^{2} + 4^{2} = x^{2}",
+  "axesAndLine/left, close/x0.7/slanted/x = ?",
+  "axesAndLine/left, close/x0.7/slanted/2x + 3 > 11",
+  "axesAndLine/left, close/x0.7/steep/3^{2} + 4^{2} = x^{2}",
+  "axesAndLine/left, close/x0.7/steep/2x + 3 > 11",
+  "axesAndLine/left, close/x0.7/messy/a^{2} + b^{2} = c^{2}",
+  "axesAndLine/left, close/x0.7/messy/x + 40 + 65 = 180",
+  "axesAndLine/left, close/x0.7/messy/3^{2} + 4^{2} = x^{2}",
+  "axesAndLine/left, close/x0.7/messy/\\frac{x}{2} + 3 = 7",
+  "axesAndLine/left, close/x0.7/messy/2x + 3 > 11",
+  "rectangle/left, close/x1.4/messy/x + 40 + 65 = 180"
+ ]
+}

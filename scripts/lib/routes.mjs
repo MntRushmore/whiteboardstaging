@@ -129,7 +129,7 @@ export const API_ROUTES = Object.freeze([
     auth: "user",
     limit: "liveSetup",
     body: "zod",
-    purpose: "Live Math: word problem -> equations (LaTeX only); the client's engine solves them",
+    purpose: "Live Math: word problem, or a hand-drawn figure (crop), -> equations (LaTeX only); the client's engine solves them",
     status: "active",
   },
   {

@@ -47,7 +47,7 @@ import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rat
 import { POST as setup } from "@/app/api/live/setup/route";
 import { POST as reread } from "@/app/api/live/reread/route";
 
-const ENV_VARS = ["BILLING_ENFORCE", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "LIVE_MODEL_SETUP", "LIVE_MODEL_REREAD"];
+const ENV_VARS = ["BILLING_ENFORCE", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "LIVE_MODEL_SETUP", "LIVE_MODEL_REREAD", "LIVE_MODEL_FIGURE"];
 const savedEnv: Record<string, string | undefined> = {};
 
 const CROP = "data:image/jpeg;base64,ZmFrZQ==";
@@ -219,6 +219,72 @@ describe("live/setup", () => {
   it("refuses an empty problem and more than 40 lines", async () => {
     expect((await setup(request("/api/live/setup", { boardId: "b", lines: [] }))).status).toBe(400);
     expect((await setup(request("/api/live/setup", { boardId: "b", lines: Array.from({ length: 41 }, () => "x") }))).status).toBe(400);
+  });
+});
+
+/* ------------------------------------------------------------------------- */
+/* live/setup with a figure: "the tutor reads the figure"                     */
+/* ------------------------------------------------------------------------- */
+
+describe("live/setup with a figure crop", () => {
+  const FIGURE_BODY = { boardId: "board-1", lines: ["x = ?"], labels: ["3", "4", "x"], crop: CROP };
+
+  it("reads the crop with the figure model: image first, then the labels and the lines beside it", async () => {
+    vi.mocked(chatJsonWithFallback).mockResolvedValue({
+      data: { unknown: "x", lines: ["x^{2} = 3^{2} + 4^{2}", "x = \\sqrt{3^{2} + 4^{2}}"] },
+      model: LIVE_MODELS.figure,
+    } as never);
+    const res = await setup(request("/api/live/setup", FIGURE_BODY));
+    expect(res.status).toBe(200);
+    expect(SetupResponseSchema.parse(await res.json())).toMatchObject({ lines: ["x^{2} = 3^{2} + 4^{2}", "x = \\sqrt{3^{2} + 4^{2}}"], unknown: "x", model: LIVE_MODELS.figure });
+
+    const [primary, fallback, opts] = vi.mocked(chatJsonWithFallback).mock.calls[0];
+    expect(primary).toBe(LIVE_MODELS.figure);
+    expect(fallback).toBe(LIVE_MODELS.figureFallback);
+    expect(opts.reasoningFor?.(LIVE_MODELS.figure)).toBe("low");
+    expect(opts.reasoningFor?.(LIVE_MODELS.figureFallback)).toBeUndefined();
+    const system = opts.messages.find((m) => m.role === "system");
+    expect(system?.content).toContain("hand-drawn maths figure");
+    const user = opts.messages.find((m) => m.role === "user");
+    expect(user?.content).toEqual([
+      { type: "image_url", image_url: { url: CROP } },
+      { type: "text", text: ["Labels read on the figure: 3, 4, x", "The student's lines beside it, top to bottom:\n1. x = ?", "JSON only."].join("\n") },
+    ]);
+    // same price and bucket as a word problem's setup, charged against the figure model
+    expect(callsTo("consume_credits")[0].args).toMatchObject({ p_route: "live/setup", p_units: 2, p_model: LIVE_MODELS.figure });
+    expect(callsTo("rate_limit_hit")[0].args).toMatchObject({ p_bucket: "liveSetup" });
+    expectChargedNotRefunded();
+  });
+
+  it("a figure needs no lines beside it", async () => {
+    vi.mocked(chatJsonWithFallback).mockResolvedValue({ data: { unknown: "x", lines: ["x + 40 + 65 = 180"] }, model: LIVE_MODELS.figure } as never);
+    const res = await setup(request("/api/live/setup", { boardId: "b", crop: CROP, labels: ["40^{\\circ}", "x", "65^{\\circ}"] }));
+    expect(res.status).toBe(200);
+    const text = ((vi.mocked(chatJsonWithFallback).mock.calls[0][2].messages[1].content as Array<{ text?: string }>)[1].text ?? "");
+    expect(text).toContain("No lines beside it.");
+  });
+
+  it("a figure that asks nothing is a failed call: 502 and refunded", async () => {
+    vi.mocked(chatJsonWithFallback).mockResolvedValue({ data: { unknown: "", lines: [] }, model: LIVE_MODELS.figure } as never);
+    expect((await setup(request("/api/live/setup", FIGURE_BODY))).status).toBe(502);
+    expectChargedAndRefunded();
+  });
+
+  it("LIVE_MODEL_FIGURE overrides the figure model, not the word-problem one", async () => {
+    process.env.LIVE_MODEL_FIGURE = "openai/gpt-5.4-mini";
+    resetServerEnvCache();
+    vi.mocked(chatJsonWithFallback).mockResolvedValue({ data: { unknown: "x", lines: ["x = 1"] }, model: "openai/gpt-5.4-mini" } as never);
+    await setup(request("/api/live/setup", FIGURE_BODY));
+    expect(vi.mocked(chatJsonWithFallback).mock.calls[0][0]).toBe("openai/gpt-5.4-mini");
+    await setup(request("/api/live/setup", SETUP_BODY));
+    expect(vi.mocked(chatJsonWithFallback).mock.calls[1][0]).toBe(LIVE_MODELS.setup);
+  });
+
+  it("refuses labels without a crop, and a crop that is not an image", async () => {
+    expect((await setup(request("/api/live/setup", { ...SETUP_BODY, labels: ["3"] }))).status).toBe(400);
+    expect((await setup(request("/api/live/setup", { ...FIGURE_BODY, crop: "https://example.com/x.png" }))).status).toBe(400);
+    expect((await setup(request("/api/live/setup", { ...FIGURE_BODY, crop: `data:image/jpeg;base64,${"A".repeat(280_001)}` }))).status).toBe(400);
+    expect(callsTo("consume_credits")).toEqual([]);
   });
 });
 

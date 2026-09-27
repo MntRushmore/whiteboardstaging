@@ -28,6 +28,7 @@ const ALL_VARS = [
   "LIVE_MODEL_VISION",
   "LIVE_MODEL_SETUP",
   "LIVE_MODEL_REREAD",
+  "LIVE_MODEL_FIGURE",
   "BILLING_ENFORCE",
   "STRIPE_WEBHOOK_SECRET",
   "BILLING_PRICE_MAP",
@@ -132,6 +133,8 @@ describe("getLiveModels", () => {
       setupFallback: LIVE_MODELS.setupFallback,
       reread: LIVE_MODELS.reread,
       rereadFallback: LIVE_MODELS.rereadFallback,
+      figure: LIVE_MODELS.figure,
+      figureFallback: LIVE_MODELS.figureFallback,
     });
   });
 
@@ -157,6 +160,14 @@ describe("getLiveModels", () => {
     // an override equal to the fallback swaps the two
     expect(models.reread).toBe(LIVE_MODELS.rereadFallback);
     expect(models.rereadFallback).toBe(LIVE_MODELS.reread);
+  });
+
+  it("LIVE_MODEL_FIGURE overrides the model that reads a drawn figure", () => {
+    setRequired();
+    process.env.LIVE_MODEL_FIGURE = "openai/gpt-5.4-mini";
+    const models = getLiveModels();
+    expect(models.figure).toBe("openai/gpt-5.4-mini");
+    expect(models.figureFallback).toBe(LIVE_MODELS.figureFallback);
   });
 
   it("never returns a fallback equal to the primary", () => {

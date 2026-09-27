@@ -1,7 +1,18 @@
 "use client";
 
 import { atom } from "tldraw";
-import type { LiveLineState, LiveStatus, OpenHint, RecognizerKind } from "./contracts";
+import type { LiveLineState, LiveStatus, OpenHint, RecognizerKind, Rect } from "./contracts";
+
+/** A drawing on the screen as the dev panel shows it (`src/lib/live/diagrams.ts`). */
+export interface LiveDiagram {
+  id: string;
+  kinds: string[];
+  bounds: Rect;
+  strokes: number;
+  labels: number;
+  /** its labels as the recognizer read them, one per label; null until read */
+  read: string[] | null;
+}
 
 /** Which network/model call of the Live layer failed. */
 export type LiveErrorKind = "capabilities" | "recognize" | "check" | "solve";
@@ -33,6 +44,8 @@ export const liveStore = {
   status: atom<LiveStatus>("live.status", "idle"),
   recognizer: atom<RecognizerKind>("live.recognizer", "unknown"),
   lines: atom<Record<string, LiveLineState>>("live.lines", {}),
+  /** the drawings on the screen: never recognized or marked; their labels are read as context */
+  diagrams: atom<LiveDiagram[]>("live.diagrams", []),
   openHints: atom<OpenHint[]>("live.openHints", []),
   liveShapeCount: atom<number>("live.shapeCount", 0),
   /** lines whose recognition is waiting for the network to come back */
@@ -89,6 +102,7 @@ export function resetLiveStore(): void {
   liveStore.status.set("idle");
   liveStore.recognizer.set("unknown");
   liveStore.lines.set({});
+  liveStore.diagrams.set([]);
   liveStore.openHints.set([]);
   liveStore.liveShapeCount.set(0);
   liveStore.offlineQueued.set(0);
