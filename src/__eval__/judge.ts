@@ -17,6 +17,7 @@ import {
   assignmentOf,
   closeTo,
   compareExprs,
+  exprOf,
   isAntiderivative,
   isBare,
   isEquation,
@@ -322,7 +323,30 @@ function judgeSystemStep(step: string, p: Parsed, truth: Truth, candidates: numb
   return t("ok");
 }
 
-function compareRelations(prev: Relation, cur: Relation, candidates: number[], cache: Map<string, RootSet | null>, origin: Relation | null): Omit<Transition, "from" | "to"> {
+/**
+ * The interval a trig equation is solved in (`expect.interval`): `\sin x = \frac{1}{2}` has
+ * infinitely many roots, the problem only the ones in [0, 2π). Roots outside it are not compared.
+ */
+interface Window {
+  lo: number;
+  hi: number;
+  loIn: boolean;
+  hiIn: boolean;
+}
+
+function inWindow(x: number, w: Window): boolean {
+  const eps = 1e-9 * Math.max(1, Math.abs(x));
+  const aboveLo = x > w.lo + eps || (w.loIn && Math.abs(x - w.lo) <= eps);
+  const belowHi = x < w.hi - eps || (w.hiIn && Math.abs(x - w.hi) <= eps);
+  return aboveLo && belowHi;
+}
+
+function windowed(r: RootSet | null, w: Window | null): RootSet | null {
+  if (!r || !w || r.all) return r;
+  return { all: false, roots: r.roots.filter((x) => inWindow(x, w)) };
+}
+
+function compareRelations(prev: Relation, cur: Relation, candidates: number[], cache: Map<string, RootSet | null>, origin: Relation | null, window: Window | null = null): Omit<Transition, "from" | "to"> {
   const vars = [...new Set([...prev.vars, ...cur.vars])];
   if (vars.length === 0) {
     const a = truthAt(prev, {});
@@ -336,7 +360,7 @@ function compareRelations(prev: Relation, cur: Relation, candidates: number[], c
     const rs = (r: Relation) => {
       const key = `${r.latex}|${v}`;
       if (!cache.has(key)) cache.set(key, rootSet(r, v, candidates));
-      return cache.get(key)!;
+      return windowed(cache.get(key)!, window);
     };
     const a = rs(prev);
     const b = rs(cur);
@@ -358,17 +382,71 @@ function compareRelations(prev: Relation, cur: Relation, candidates: number[], c
   return { status: "unverified", reason: "an equation and an inequality" };
 }
 
-function judgeChainStep(prev: Parsed, cur: Parsed, topic: Topic, candidates: number[], cache: Map<string, RootSet | null>, origin: Parsed): Omit<Transition, "from" | "to"> {
+/** `u = x^{2} + 1` in an integral: later lines in u are compared with the ones in x through it. */
+interface Subst {
+  u: string;
+  x: string;
+  g: Expr;
+}
+
+/** g'(x) by a central difference. */
+function slopeOf(g: Expr, x: string, scope: Record<string, number>): number | null {
+  const t = scope[x];
+  if (typeof t !== "number") return null;
+  const h = 1e-6 * Math.max(1, Math.abs(t));
+  const up = g.at({ ...scope, [x]: t + h });
+  const down = g.at({ ...scope, [x]: t - h });
+  return typeof up === "number" && typeof down === "number" ? (up - down) / (2 * h) : null;
+}
+
+/**
+ * An expression in u read back in x: F(g(x)) — or, for an integrand, f(g(x))·g'(x), so
+ * `\int u^{5} \, du` is compared with the `\int 2x(x^{2} + 1)^{5} \, dx` it came from.
+ */
+function pullBack(e: Expr, s: Subst, integrand: boolean): Expr {
+  const at = (scope: Record<string, number>): number | null => {
+    const gv = s.g.at(scope);
+    if (typeof gv !== "number") return null;
+    const v = e.at({ ...scope, [s.u]: gv });
+    if (typeof v !== "number") return null;
+    if (!integrand) return v;
+    const d = slopeOf(s.g, s.x, scope);
+    return d === null ? null : v * d;
+  };
+  return {
+    kind: "expr",
+    latex: e.latex,
+    vars: [...new Set([...e.vars.filter((v) => v !== s.u), ...s.g.vars])],
+    at,
+    complexAt: (scope) => {
+      const v = at(scope);
+      return v === null ? null : { re: v, im: 0 };
+    },
+    decimals: e.decimals,
+    tol: Math.max(e.tol, 1e-6),
+  };
+}
+
+function judgeChainStep(
+  prev: Parsed,
+  cur: Parsed,
+  topic: Topic,
+  candidates: number[],
+  cache: Map<string, RootSet | null>,
+  origin: Parsed,
+  window: Window | null = null,
+  subst: Subst | null = null,
+): Omit<Transition, "from" | "to"> {
   if (cur.kind === "unreadable") return cur.reason === "empty" ? { status: "broken", reason: "empty step" } : { status: "unverified", reason: `unreadable step (${cur.reason})` };
   if (prev.kind === "unreadable") return { status: "unverified", reason: `the line before is unreadable (${prev.reason})` };
   if (prev.kind === "question" || cur.kind === "question") return { status: "unverified", reason: "a question line" };
-  if (prev.kind === "relation" && cur.kind === "relation") return compareRelations(prev, cur, candidates, cache, origin.kind === "relation" ? origin : null);
+  if (prev.kind === "relation" && cur.kind === "relation") return compareRelations(prev, cur, candidates, cache, origin.kind === "relation" ? origin : null, window);
   if (cur.kind === "empty-set" || cur.kind === "all-reals") {
     if (prev.kind !== "relation") return { status: "unverified", reason: "∅ / ℝ after a non-relation" };
     const v = prev.vars[0];
     if (prev.vars.length !== 1) return { status: "unverified", reason: "several unknowns" };
     if (isEquation(prev)) {
-      const rs = rootSet(prev, v, candidates);
+      const rs = windowed(rootSet(prev, v, candidates), window);
       if (!rs) return { status: "unverified", reason: "cannot solve" };
       const empty = !rs.all && rs.roots.length === 0;
       if (cur.kind === "empty-set") return empty ? { status: "ok", reason: "" } : { status: "broken", reason: `says ∅, the line before has ${rootsText(rs)}` };
@@ -383,13 +461,17 @@ function judgeChainStep(prev: Parsed, cur: Parsed, topic: Topic, candidates: num
       return r === "equal" ? { status: "ok", reason: "" } : r === "different" ? { status: "broken", reason: "its derivative is not the integrand" } : { status: "unverified", reason: "no sample point" };
     }
     if (cur.kind === "indefinite") {
-      const c = compareExprs(cur.integrand, prev.integrand);
-      return c.unknown ? { status: "unverified", reason: "no sample point" } : c.exact ? { status: "ok", reason: "" } : { status: "broken", reason: "a different integrand" };
+      // `\int u^{5} \, du` under `\int 2x(x^{2} + 1)^{5} \, dx`, through `u = x^{2} + 1`
+      const through = cur.variable !== prev.variable && subst !== null && subst.u === cur.variable && subst.x === prev.variable;
+      const c = compareExprs(through ? pullBack(cur.integrand, subst!, true) : cur.integrand, prev.integrand);
+      return c.unknown ? { status: "unverified", reason: "no sample point" } : c.exact ? { status: "ok", reason: "" } : { status: "broken", reason: through ? `not the integral in ${subst!.u} it becomes` : "a different integrand" };
     }
     return { status: "unverified", reason: "a relation after an integral" };
   }
   if (prev.kind === "expr" && cur.kind === "expr") {
-    const c = compareExprs(cur, prev, { upToConstant: topic === "integral-indefinite" });
+    // `\frac{(x^{2} + 1)^{6}}{6}` under `\frac{u^{6}}{6}`: the line in u read back in x
+    const back = subst !== null && prev.vars.includes(subst.u) && !cur.vars.includes(subst.u);
+    const c = compareExprs(cur, back ? pullBack(prev, subst!, false) : prev, { upToConstant: topic === "integral-indefinite" });
     if (c.unknown) return { status: "unverified", reason: "no sample point where both are defined" };
     if (c.exact || c.approx) return { status: "ok", reason: "" };
     return { status: "broken", reason: "not equal to the line before" };
@@ -399,6 +481,170 @@ function judgeChainStep(prev: Parsed, cur: Parsed, topic: Topic, candidates: num
 }
 
 const RANK: Record<TransitionStatus, number> = { ok: 0, widened: 1, unverified: 2, broken: 3 };
+
+// ---------------------------------------------------------------- lines beside the working
+
+/**
+ * What the working has declared so far: a substitution, the parts of an integration by parts,
+ * partial-fraction lines waiting for their coefficients.
+ */
+interface Asides {
+  /** the problem's own letters (a new one on the left of `u = …` is a substitution) */
+  letters: Set<string>;
+  integral: boolean;
+  window: Window | null;
+  variable: string | null;
+  subst: Subst | null;
+  parts: Map<string, Expr>;
+  pending: Transition[];
+  pendingRelations: Relation[];
+}
+
+/** Top-level pieces of a list line: `u = x, \ dv = e^{x} \, dx` → [`u = x`, `dv = e^{x} \, dx`]. */
+function listPieces(latex: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < latex.length; i++) {
+    const ch = latex[i];
+    if (ch === "{" || ch === "(" || ch === "[") depth++;
+    else if (ch === "}" || ch === ")" || ch === "]") depth--;
+    else if (ch === "," && depth === 0) {
+      out.push(latex.slice(start, i));
+      start = i + 1;
+    }
+  }
+  out.push(latex.slice(start));
+  return out.map((p) => p.trim().replace(/^\\\s+/, "").replace(/\\[,;: ]\s*$/, "").trim()).filter(Boolean);
+}
+
+/** `2x \, dx` → `2x`; `dx` → `1`; null when the piece does not end in `d<x>`. */
+function withoutDifferential(latex: string, x: string): string | null {
+  const m = new RegExp(`^([\\s\\S]*?)\\s*(?:\\\\[,;: !]\\s*)*d\\s*${x}$`).exec(latex.trim());
+  if (!m) return null;
+  const coef = m[1].trim().replace(/\\cdot\s*$/, "").trim();
+  return coef || "1";
+}
+
+/** Letters written in a line, outside commands (`\int_{0}^{1} 2x \, dx` → x, d). */
+function lettersOf(latex: string): Set<string> {
+  const plain = latex.replace(/\\[a-zA-Z]+/g, " ");
+  return new Set(plain.match(/[a-zA-Z]/g) ?? []);
+}
+
+/**
+ * A line beside the working rather than a step of it, judged on its own and never the line the
+ * next step is compared with: a true calculation (`\sin^{-1}(\frac{1}{2}) = 30^{\circ}`), the
+ * interval of a trig equation, a substitution and its differential, the parts of an integration
+ * by parts and their formula, partial-fraction coefficients. Null when the line is a step.
+ */
+function asideOf(latex: string, cur: Parsed, ctx: Asides, transition: Transition): Omit<Transition, "from" | "to"> | null {
+  const ok = (reason: string) => ({ status: "ok" as const, reason });
+  const bare = latex.replace(/\\[,;: !]|\s|[{}]/g, "");
+  if (ctx.integral && bare === "\\intudv=uv-\\intvdu") return ok("the formula for integration by parts");
+
+  const x = ctx.variable;
+  const pieces = listPieces(latex);
+  if (ctx.integral && x) {
+    // `du = 2x \, dx` under `u = x^{2} + 1`: the derivative of the substitution
+    if (pieces.length === 1 && ctx.subst) {
+      const s = ctx.subst;
+      const m = /^d([a-zA-Z])\s*=\s*([\s\S]+)$/.exec(pieces[0]);
+      const coef = m && m[1] === s.u ? withoutDifferential(m[2], x) : null;
+      if (coef !== null) {
+        const e = exprOf(coef);
+        if (!e) return { status: "unverified", reason: "unreadable differential" };
+        const slope: Expr = { ...e, vars: s.g.vars, at: (scope) => slopeOf(s.g, x, scope), complexAt: () => null, tol: 1e-6 };
+        const c = compareExprs(e, slope);
+        return c.unknown ? { status: "unverified", reason: "no sample point" } : c.exact ? ok(`d${s.u} = ${s.u}' d${x}`) : { status: "broken", reason: `not the derivative of ${s.u}` };
+      }
+    }
+    // `u = x, \ dv = e^{x} \, dx` and `du = dx, \ v = e^{x}`: the parts, checked against each other
+    const partsM = pieces.map((p) => /^(du|dv|u|v)\s*=\s*([\s\S]+)$/.exec(p));
+    if (pieces.length >= 2 && partsM.every(Boolean)) {
+      for (const m of partsM) {
+        const name = m![1];
+        const body = name.startsWith("d") ? withoutDifferential(m![2], x) : m![2];
+        const e = body === null ? null : exprOf(body);
+        if (!e) return { status: "unverified", reason: `unreadable ${name}` };
+        ctx.parts.set(name, e);
+      }
+      const named = new Set(partsM.map((m) => m![1]));
+      const checks: Array<"equal" | "different" | "unknown"> = [];
+      const u = ctx.parts.get("u");
+      const du = ctx.parts.get("du");
+      const dv = ctx.parts.get("dv");
+      const v = ctx.parts.get("v");
+      if (u && du && (named.has("u") || named.has("du"))) checks.push(isAntiderivative(u, du, x));
+      if (v && dv && (named.has("v") || named.has("dv"))) checks.push(isAntiderivative(v, dv, x));
+      if (checks.includes("different")) return { status: "broken", reason: "du is not u' dx, or v' is not dv" };
+      return checks.length > 0 && checks.every((c) => c === "equal") ? ok("the parts agree") : { status: "unverified", reason: "the parts of integration by parts" };
+    }
+    // `u = x^{2} + 1`: a substitution (a new letter, defined in the problem's own)
+    if (cur.kind === "relation" && cur.alternatives.length === 1 && cur.alternatives[0].sides.length === 2 && isEquation(cur)) {
+      const [L, R] = cur.alternatives[0].sides;
+      const u = L.vars.length === 1 && isBare(L, L.vars[0]) ? L.vars[0] : null;
+      if (u && !ctx.letters.has(u) && R.vars.length > 0 && R.vars.every((v) => ctx.letters.has(v))) {
+        ctx.subst = { u, x, g: R };
+        return ok(`the substitution ${u}`);
+      }
+    }
+    // partial fractions: `\frac{1}{x^{2} - 1} = \frac{A}{x - 1} + \frac{B}{x + 1}` waits for A and B
+    const coefficients = pieces.map((p) => /^([A-Z])\s*=\s*([\s\S]+)$/.exec(p));
+    if (coefficients.every(Boolean) && ctx.pending.length > 0) {
+      const values: Record<string, number> = {};
+      for (const m of coefficients) {
+        const e = exprOf(m![2]);
+        const n = e && e.vars.length === 0 ? e.at({}) : null;
+        if (typeof n !== "number") return { status: "unverified", reason: "unreadable coefficient" };
+        values[m![1]] = n;
+      }
+      let allHold = true;
+      ctx.pendingRelations.forEach((rel, i) => {
+        const holds = [0.37, 1.61, -2.29, 3.13].every((t) => truthAt(rel, { ...values, [x]: t }, 1e-7) !== false);
+        ctx.pending[i].status = holds ? "ok" : "broken";
+        ctx.pending[i].reason = holds ? "holds with the coefficients" : "false with the coefficients";
+        allHold &&= holds;
+      });
+      ctx.pending = [];
+      ctx.pendingRelations = [];
+      return allHold ? ok("the coefficients") : { status: "broken", reason: "the coefficients do not satisfy the lines above" };
+    }
+    if (cur.kind === "relation" && cur.vars.some((v) => /^[A-Z]$/.test(v) && !ctx.letters.has(v))) {
+      ctx.pending.push(transition);
+      ctx.pendingRelations.push(cur);
+      return { status: "unverified", reason: "waits for its coefficients" };
+    }
+  }
+  // a calculation beside the working: `\sin^{-1}\left(\frac{1}{2}\right) = 30^{\circ}`, `\sqrt{4} \neq -2`
+  if (cur.kind === "relation" && cur.vars.length === 0 && truthAt(cur, {}) === true) return ok("a true statement beside the working");
+  // a bound true for every value: `-1 \le \sin x \le 1` (why sin x = 2 has no angle)
+  if (cur.kind === "relation" && isInequality(cur) && cur.vars.length === 1) {
+    const v1 = cur.vars[0];
+    const pts = Array.from({ length: 41 }, (_, i) => -10 + i * 0.4973);
+    if (pts.every((t) => truthAt(cur, { [v1]: t }, 1e-9) === true)) return ok(`true for every ${v1}`);
+  }
+  // the interval a trig equation is solved in, written as maths
+  const v0 = ctx.variable;
+  if (cur.kind === "relation" && ctx.window && v0 && isInequality(cur) && cur.vars.length === 1 && cur.vars[0] === v0) {
+    const w = ctx.window;
+    const samples = [w.lo, w.hi, w.lo - 0.5, w.hi + 0.5, ...[0.1, 0.3, 0.5, 0.7, 0.9].map((f) => w.lo + f * (w.hi - w.lo))];
+    if (samples.every((t) => truthAt(cur, { [v0]: t }, 1e-9) === inWindow(t, w))) return ok("the interval");
+  }
+  return null;
+}
+
+/** The line without a written interval (`, \ 0 \le x < 2\pi` or `\quad 0^{\circ} \le x < 360^{\circ}`). */
+export function withoutIntervalPiece(latex: string): string {
+  const pieces = listPieces(latex.replace(/\\q?quad\b/g, ","));
+  if (pieces.length !== 2) return latex;
+  const chain = (p: string) => {
+    const parsed = parseLine(p);
+    return parsed.kind === "relation" && isInequality(parsed) && parsed.alternatives.every((a) => a.sides.length === 3);
+  };
+  const kept = pieces.filter((p) => !chain(p));
+  return kept.length === 1 ? kept[0] : latex;
+}
 
 function judgeSteps(problem: EvalProblem, lines: readonly string[], steps: readonly string[]): Transition[] {
   const parsedLines = lines.filter(Boolean).map(parseLine);
@@ -413,23 +659,46 @@ function judgeSteps(problem: EvalProblem, lines: readonly string[], steps: reado
   const cache = new Map<string, RootSet | null>();
   const out: Transition[] = [];
   const targetLatex = [...lines].reverse().find(Boolean) ?? "";
-  const origin: Parsed = parseLine(targetLatex);
+  const interval = problem.expect.interval;
+  // `\sin x = \frac{1}{2}, \ 0 \le x < 2\pi`: the equation is the line, the interval is `expect.interval`
+  const originLatex = interval ? withoutIntervalPiece(targetLatex) : targetLatex;
+  const origin: Parsed = parseLine(originLatex);
+  const window: Window | null = interval ? { lo: interval.lo, hi: interval.hi, loIn: interval.loIn ?? true, hiIn: interval.hiIn ?? false } : null;
+  const integral = problem.topic === "integral-indefinite" || problem.topic === "integral-definite" || /\\int/.test(targetLatex);
+  const dx = /d\s*([a-zA-Z])\s*=?\s*$/.exec(targetLatex.trim());
+  const variable = origin.kind === "indefinite" ? origin.variable : integral && dx ? dx[1] : origin.kind === "relation" && origin.vars.length === 1 ? origin.vars[0] : null;
+  const ctx: Asides = { letters: lettersOf(targetLatex), integral, window, variable, subst: null, parts: new Map(), pending: [], pendingRelations: [] };
   let prev: Parsed = origin;
   let prevLatex = targetLatex;
   let good: Parsed = origin;
   let goodLatex = targetLatex;
   for (let i = 0; i < steps.length; i++) {
     const cur = parsedSteps[i];
-    let r = judgeChainStep(prev, cur, problem.topic, candidates, cache, origin);
+    const transition: Transition = { from: prevLatex, to: steps[i], status: "unverified", reason: "" };
+    const aside = asideOf(steps[i], cur, ctx, transition);
+    if (aside) {
+      transition.status = aside.status;
+      transition.reason = aside.reason;
+      out.push(transition);
+      continue;
+    }
+    let r = judgeChainStep(prev, cur, problem.topic, candidates, cache, origin, window, ctx.subst);
     let from = prevLatex;
     // One mistake is blamed once: a line that follows from the wrong line before it is not a
     // second mistake, and a line that goes back to the last good line is not one either.
     if (good !== prev) {
-      const back = judgeChainStep(good, cur, problem.topic, candidates, cache, origin);
+      const back = judgeChainStep(good, cur, problem.topic, candidates, cache, origin, window, ctx.subst);
       if (RANK[back.status] < RANK[r.status]) {
         r = back;
         from = goodLatex;
       }
+    }
+    // an antiderivative is checked against the problem itself when the line above cannot say
+    // (`x e^{x} - \int e^{x} \, dx` still has an integral in it)
+    if (origin.kind === "indefinite" && cur.kind === "expr" && r.status === "unverified") {
+      const direct = isAntiderivative(cur, origin.integrand, origin.variable);
+      if (direct === "equal") r = { status: "ok", reason: "an antiderivative of the integrand" };
+      else if (direct === "different" && cur.vars.every((v) => v === origin.variable || /^[CK]$/.test(v))) r = { status: "broken", reason: "its derivative is not the integrand" };
     }
     out.push({ from, to: steps[i], ...r });
     if (cur.kind === "unreadable") continue;
@@ -452,7 +721,8 @@ function styleWarnings(steps: readonly string[]): string[] {
     if (/\{\s*[a-zA-Z]\s*\}\s*\^/.test(s)) out.add("braced base (`{x}^{2}`)");
     if (/\\frac\s*\{\s*\\frac/.test(s)) out.add("a fraction over a fraction");
     if (/\\cdot\s*-\s*\d/.test(s)) out.add("a negative factor without brackets (`4 \\cdot -8`)");
-    if (/(^|[^\d}])-\s*\d+\s*\^/.test(s)) out.add("`-2^{2}`: a negative base without brackets reads as -(2²)");
+    // (`- 30^{\circ}` is a degree sign, not a power)
+    if (/(^|[^\d}])-\s*\d+\s*\^(?!\s*\{?\s*\\circ)/.test(s)) out.add("`-2^{2}`: a negative base without brackets reads as -(2²)");
   }
   return [...out];
 }

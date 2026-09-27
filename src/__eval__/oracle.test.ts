@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CORPUS, TOPICS } from "./corpus";
+import { withoutIntervalPiece } from "./judge";
 import {
   compareExprs,
   isAntiderivative,
@@ -190,8 +191,13 @@ describe("eval corpus", () => {
       if (e.values) {
         const vars = Object.keys(e.values);
         if (vars.length === 1 && relations.length === 1 && target.kind === "relation") {
-          // one equation: its whole real solution set is the expectation
-          const rs = rootSet(target, vars[0], e.values[vars[0]]);
+          // one equation: its whole real solution set is the expectation — within the interval,
+          // for a trig equation (the interval written on the line is not part of the equation)
+          const w = e.interval;
+          const equation = w ? parseLine(withoutIntervalPiece(p.lines[p.lines.length - 1])) : target;
+          const all = equation.kind === "relation" ? rootSet(equation, vars[0], e.values[vars[0]]) : null;
+          const inside = (x: number) => !w || (x > w.lo - 1e-9 && (x < w.hi - 1e-9 || (w.hiIn === true && Math.abs(x - w.hi) < 1e-9)));
+          const rs = all && !all.all ? { all: false, roots: all.roots.filter(inside) } : all;
           if (!rs || rs.all || rs.roots.length !== e.values[vars[0]].length || !e.values[vars[0]].every((v) => rs.roots.some((r) => Math.abs(r - v) < 1e-6))) {
             problems.push(`${p.id}: roots ${JSON.stringify(rs)} vs ${JSON.stringify(e.values)}`);
           }

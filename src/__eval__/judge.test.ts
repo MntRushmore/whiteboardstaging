@@ -88,6 +88,32 @@ describe("judge", () => {
     expect(judge(p, lines, solved(["x = 4"]), { unsupported: () => ["\\foo"] }).stages.drawable).toBe(false);
   });
 
+  it("judges a trig equation on its interval, degrees read as radians", () => {
+    const lines = ["\\sin x = \\frac{1}{2}"];
+    const p = problem({ topic: "trig-equation", lines, expect: { values: { x: [Math.PI / 6, (5 * Math.PI) / 6] }, interval: { lo: 0, hi: 2 * Math.PI } } });
+    const good = judge(p, lines, solved(["0^{\\circ} \\le x < 360^{\\circ}", "\\sin^{-1}\\left(\\frac{1}{2}\\right) = 30^{\\circ}", "x = 30^{\\circ}, \\ x = 180^{\\circ} - 30^{\\circ}", "x = 30^{\\circ}, \\ x = 150^{\\circ}"]), drawAll);
+    expect(good.pass).toBe(true);
+    expect(good.transitions.map((t) => t.status)).toEqual(["ok", "ok", "ok", "ok"]);
+    // the wrong quadrant: blamed, and the answer is wrong
+    const bad = judge(p, lines, solved(["x = 30^{\\circ}, \\ x = 360^{\\circ} - 30^{\\circ}", "x = 30^{\\circ}, \\ x = 330^{\\circ}"]), drawAll);
+    expect(bad.transitions[0].status).toBe("broken");
+    expect(bad.answer.status).toBe("wrong");
+    // one solution missing is a narrowing, not a step
+    expect(judge(p, lines, solved(["x = 30^{\\circ}"]), drawAll).transitions[0].status).toBe("broken");
+    // thirty radians is not thirty degrees
+    expect(judge(p, lines, solved(["x = 30, \\ x = 150"]), drawAll).answer.status).toBe("wrong");
+  });
+
+  it("a false statement beside the working is a mistake; the wrong interval is a step, and wrong", () => {
+    const lines = ["\\sin x = \\frac{1}{2}"];
+    const p = problem({ topic: "trig-equation", lines, expect: { values: { x: [Math.PI / 6, (5 * Math.PI) / 6] }, interval: { lo: 0, hi: 2 * Math.PI } } });
+    const falseAside = judge(p, lines, solved(["\\sin^{-1}\\left(\\frac{1}{2}\\right) = 60^{\\circ}", "x = 30^{\\circ}, \\ x = 150^{\\circ}"]), drawAll);
+    expect(falseAside.transitions[0].status).not.toBe("ok");
+    expect(falseAside.stages.steps).toBe(false);
+    const wrongInterval = judge(p, lines, solved(["0^{\\circ} \\le x < 180^{\\circ}", "x = 30^{\\circ}, \\ x = 150^{\\circ}"]), drawAll);
+    expect(wrongInterval.transitions[0].status).not.toBe("ok");
+  });
+
   it("reads prose only from text macros with letters", () => {
     expect(wordsIn("x = 2 \\text{ or } x = 3")).toEqual(["or"]);
     expect(wordsIn("5\\,\\mathrm{m}")).toEqual([]);
