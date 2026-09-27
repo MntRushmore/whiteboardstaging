@@ -93,6 +93,12 @@ describe("classify: incomplete", () => {
     expect(incompleteInfo("-3 + 4").incomplete).toBe(false);
     expect(incompleteInfo("x \\ne 3").incomplete).toBe(false);
   });
+  it("a line that starts with \\left( is a bracket, not a leading \\le", () => {
+    expect(incompleteInfo("\\left(x+1\\right)^2 = 9").incomplete).toBe(false);
+    expect(incompleteInfo("\\left[x^3\\right]_0^2 = 8").incomplete).toBe(false);
+    expect(incompleteInfo("\\le 3").incomplete).toBe(true);
+    expect(incompleteInfo("\\geq 3").incomplete).toBe(true);
+  });
 });
 
 describe("classify: functions, points, chem, prose", () => {
