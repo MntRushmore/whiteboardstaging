@@ -30,6 +30,19 @@ at `0e1e1af`):
 | General (arithmetic, units) | 32 | 32 (100%) | 32 (100%) |
 | Geometry (`src/__eval__/courses/geometry.ts`, merged from feat/geometry) | 153 | — | **153 (100%)** |
 | **all** | 596 | — | **596 (100%)** |
+| Geometry proofs (`src/__eval__/courses/geometryProofs.ts`, its own scoreboard: `npm run eval:proofs`, `docs/eval/proofs.md`) | 28 two-column proofs (147 rows) | — (not read before) | **147 / 147 rows ticked; 279 / 279 seeded errors ringed; 147 / 147 prefixes finished by the planner** |
+
+### Geometry proofs (G-CO.9, G-CO.10, G-SRT.5)
+
+| Skill | On the board | Status |
+| --- | --- | --- |
+| Reading a two-column proof | Given / Prove lines (also over two lines), an optional `Statements \| Reasons` header or drawn T-table, statement and reason paired by row (`src/lib/live/proof/read.ts`) | does it |
+| Checking each row | a tick after a verified row, a ring on SSA, the wrong postulate or correspondence, CPCTC too early or on parts that do not correspond, a Given that is not given, a missing prerequisite; nothing on what it cannot verify | does it |
+| Triangle congruence: SSS, SAS, ASA, AAS, HL; CPCTC; reflexive, transitive, substitution | checked and planned | does it |
+| Midpoint, angle and segment bisector, ⊥ → right angles, right angles ≅, isosceles triangle theorem and converse, third angles | checked; planned except third angles | does it |
+| Vertical angles, alternate interior / exterior and corresponding angles (and their converses), linear pairs | checked against the figure read (points and lines, derived relations); unmarked without it | does it, with a figure read |
+| The next row (Suggest, Help) and the rest of the proof (Solve) | the engine's planner (shortest proof, bounded); a model row only when it cannot finish, written only when the checker ticks it | does it |
+| Segment and angle addition, similarity (AA, SAS~, SSS~), proofs about quadrilaterals' properties by name | read as reasons, never marked; not planned | not yet |
 
 ## Algebra 1
 
