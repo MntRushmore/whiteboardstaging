@@ -308,6 +308,8 @@ class Scanner {
   private i = 0;
   readonly tokens: Token[] = [];
   private absOpen = false;
+  /** index of the last number token read from the line itself (not an exponent, not `%`'s 100) */
+  private literalNumAt = -1;
 
   constructor(
     private readonly src: string,
@@ -527,6 +529,7 @@ class Scanner {
       const text = m ? m[0] : ch;
       this.i += text.length;
       this.emit("num", text.startsWith(".") ? `0${text}` : text);
+      this.literalNumAt = this.tokens.length - 1;
       return;
     }
     if (/[a-zA-Z]/.test(ch)) {
@@ -1048,6 +1051,14 @@ class Scanner {
       return;
     }
     if (!num || !den) throw new UnsupportedLatex("empty fraction");
+    // `2\frac{1}{2}`, `2 \frac{1}{2}`: a whole number written straight before a proper numeric
+    // fraction is a mixed number, 2 + ½ — never 2 × ½ (`2\frac{x}{3}` stays a product)
+    const last = this.lastToken();
+    if (last?.kind === "num" && this.literalNumAt === this.tokens.length - 1 && /^[1-9][0-9]*$/.test(last.text) && /^[0-9]+$/.test(num) && /^[0-9]+$/.test(den) && Number(num) > 0 && Number(num) < Number(den)) {
+      this.tokens.pop();
+      this.emit("group", `(${last.text} + ${num} / ${den})`);
+      return;
+    }
     this.emit("group", `((${this.sub(num)})/(${this.sub(den)}))`);
   }
 

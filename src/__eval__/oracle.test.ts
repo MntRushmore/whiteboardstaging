@@ -159,9 +159,7 @@ describe("oracle: expressions", () => {
  * (which reads through the same translator) cannot confirm the expectation from the line. The
  * expectation is still right — these are exactly the misreadings the scoreboard should show.
  */
-const MISREAD_BY_TRANSLATOR: Record<string, string> = {
-  "ar-11": "mixed numbers: `2 \\frac{1}{2}` is read as 2 × ½",
-};
+const MISREAD_BY_TRANSLATOR: Record<string, string> = {};
 
 describe("eval corpus", () => {
   it("has ~150 problems with unique ids over every topic", () => {
