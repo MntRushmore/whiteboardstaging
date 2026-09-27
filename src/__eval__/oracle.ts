@@ -19,7 +19,7 @@
  */
 import * as mathjs from "mathjs";
 import type { MathJsInstance, MathNode, Unit } from "mathjs";
-import { splitRelations } from "@/lib/live/engine/latex";
+import { preprocessLatex, splitRelations } from "@/lib/live/engine/latex";
 import { createMathInstance, translate } from "@/lib/live/engine/math";
 
 let instance: MathJsInstance | null = null;
@@ -64,6 +64,8 @@ export interface Expr {
   decimals: number | null;
   /** relative tolerance of an exact comparison (a numeric limit or integral is looser) */
   tol: number;
+  /** the translated source (`angle_C` for `\angle C`): a side that is exactly its variable is bare */
+  source?: string;
 }
 
 export interface Indefinite {
@@ -136,8 +138,9 @@ function angleAsNumber(v: unknown): unknown {
   try {
     const dims = (v as unknown as { dimensions?: number[] }).dimensions ?? [];
     // mathjs base dimensions: MASS, LENGTH, TIME, CURRENT, TEMPERATURE, LUMINOUS_INTENSITY, AMOUNT_OF_SUBSTANCE, ANGLE, BIT
-    const angleOnly = dims.length >= 8 && dims[7] === 1 && dims.every((d, i) => i === 7 || d === 0);
-    return angleOnly ? (v as unknown as { toNumber(unit: string): number }).toNumber("rad") : v;
+    const angleOnly = dims.length >= 8 && dims[7] !== 0 && dims.every((d, i) => i === 7 || d === 0);
+    // any power of an angle in radians: `\frac{\theta}{360^{\circ}}` with θ = π/2 is ¼
+    return angleOnly ? (v as unknown as { value: number }).value : v;
   } catch {
     return v;
   }
@@ -346,6 +349,7 @@ export function exprBranches(latex: string): Expr[] | null {
       complexAt: (scope) => complexOf(angleAsNumber(raw(scope))),
       decimals: decimalsIn(src),
       tol,
+      source: branch.trim(),
     });
   }
   return out.length > 0 ? out : null;
@@ -402,6 +406,13 @@ export function parseLine(latex: string): Parsed {
   if (!src) return { kind: "unreadable", latex: original, reason: "empty" };
   const q = /^([a-zA-Z])\s*=\s*(?:\?|\\text\s*\{\s*\?\s*\})?$/.exec(src);
   if (q) return { kind: "question", latex: original, variable: q[1] };
+  // `AB = ?`, `\angle C =`, `m_{AB} = ?`: a name that translates to one unknown, asked for (read
+  // with its line, which is what makes `AB` one length)
+  const named = /^(.+?)\s*=\s*(?:\?|\\text\s*\{\s*\?\s*\})?$/.exec(preprocessLatex(src));
+  if (named && !/[=<>]/.test(named[1])) {
+    const e = exprBranches(named[1]);
+    if (e && e.length === 1 && e[0].vars.length === 1 && e[0].source === e[0].vars[0]) return { kind: "question", latex: original, variable: e[0].vars[0] };
+  }
   let leadingApprox = false;
   const lead = /^(=|\\approx)\s*/.exec(src);
   if (lead) {
@@ -808,11 +819,12 @@ export function isAntiderivative(F: Expr, f: Expr, variable: string): "equal" | 
 
 // ---------------------------------------------------------------- solved forms
 
-/** The side is the unknown and nothing else: `x`, `{x}`. */
+/** The side is the unknown and nothing else: `x`, `{x}`, `\theta`, `\angle C`, `AB`, `m_{AB}`. */
 export function isBare(e: Expr, variable: string): boolean {
   // a Greek unknown is written as its command: `\theta` is the variable theta
   const written = e.latex.replace(/\s|[{}]/g, "");
-  return e.vars.length === 1 && e.vars[0] === variable && (written === variable || written === `\\${variable}`);
+  // a named angle or segment translates to exactly its own identifier (`\angle C` → angle_C)
+  return e.vars.length === 1 && e.vars[0] === variable && (written === variable || written === `\\${variable}` || e.source === variable);
 }
 
 /** `x = 2 \text{ or } x = 3`: the values, when every alternative is `v = closed`. */
@@ -833,6 +845,43 @@ export function solvedValues(parsed: Parsed, variable: string): { values: Array<
     values.push(v);
   }
   return { values, approx: parsed.approx };
+}
+
+/**
+ * The numeric points `(a, b)` written on a line, in order: `(2, 3) \to (-3, 2)` → [[2, 3],
+ * [-3, 2]], `M = \left(\frac{5}{2}, 4\right)` → [[2.5, 4]]. A tuple with a letter in it (`(x, y)`,
+ * `(h, k)`) is not a point and is skipped.
+ */
+export function tuplesIn(latex: string): number[][] {
+  const s = cleanLatex(latex).replace(/\\left\s*\(/g, "(").replace(/\\right\s*\)/g, ")");
+  const out: number[][] = [];
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] !== "(") continue;
+    let depth = 0;
+    let end = -1;
+    const commas: number[] = [];
+    for (let j = i; j < s.length; j++) {
+      const ch = s[j];
+      if (ch === "(" || ch === "{" || ch === "[") depth++;
+      else if (ch === ")" || ch === "}" || ch === "]") {
+        depth--;
+        if (depth === 0) {
+          end = j;
+          break;
+        }
+      } else if (ch === "," && depth === 1) commas.push(j);
+    }
+    if (end < 0 || commas.length !== 1) continue;
+    const a = exprOf(s.slice(i + 1, commas[0]));
+    const b = exprOf(s.slice(commas[0] + 1, end));
+    if (!a || !b || a.vars.length > 0 || b.vars.length > 0) continue;
+    const av = a.at({});
+    const bv = b.at({});
+    if (typeof av !== "number" || typeof bv !== "number") continue;
+    out.push([av, bv]);
+    i = end;
+  }
+  return out;
 }
 
 /** `v = closed` with a single variable on the left: an assignment (for systems' answers). */

@@ -17,6 +17,8 @@ import {
   expressionsEquivalent,
   parseRelation,
   rootToNumber,
+  satisfies,
+  snapToRoots,
   solvesRelation,
   type Relation,
   type RootValue,
@@ -38,6 +40,8 @@ import { solveAdvanced, solveExactly, type AdvancedDeps } from "./advanced";
 import { factorExpressionSteps, rationalExpressionSteps } from "./polynomial";
 import { chainRelation, isSolutionSet, relaxVerdict, splitAtCommas, unionRelation, type Part } from "./compound";
 import { ALL_REALS, EVERY_REAL, LIST_SEP, NO_SOLUTION } from "./solution";
+import { createGeometry } from "./geometry";
+import { isGeometryName } from "./geometryNotation";
 
 const UNKNOWN: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
 
@@ -215,6 +219,9 @@ export function createEngine(mod: MathModule): LiveEngine {
   const trig = createTrig(math, { translate: (latex) => tr(latex) });
   // what to graph for a column of work (`graphIntent.ts`): the maths of the tutor's sketch
   const graphing = createGraphIntent(math, { translate: (latex) => tr(latex) });
+  // the maths of a figure: angles in degrees, named angles and segments, Pythagoras, trig ratios,
+  // formulas with their values, coordinates (`geometry.ts`)
+  const geometry = createGeometry({ translate: (latex) => tr(latex), parse: (source) => safeParse(math, source), solveLatex: (latex) => solveLatex(latex) });
 
   const evaluateTranslated = (t: Translated, latex: string): { value: unknown; latex: string; ok: boolean; note: string; error?: string } => {
     const exact = t.functions.includes("integral") && integralsExact(math, t.source);
@@ -267,7 +274,8 @@ export function createEngine(mod: MathModule): LiveEngine {
       if (t.hasUnits) out.units = { ok: ev.ok };
       if (ev.error) out.error = ev.error;
       if (ev.ok) {
-        if (trailingEquals) out.resultLatex = ctx.mode === "answer" ? ev.latex : "";
+        // `\pi(5)^{2} =` is `25\pi`, as Solve writes it (`geometry.ts`), not its decimal
+        if (trailingEquals) out.resultLatex = ctx.mode === "answer" ? ((!exact && trigValue?.kind !== "exact" ? geometry.exactAnswer(latex) : null) ?? ev.latex) : "";
         else if (symbolic || shouldShowResult(t, latex, ev.latex)) out.resultLatex = ev.latex;
       }
       const prev = ctx.previous;
@@ -393,6 +401,8 @@ export function createEngine(mod: MathModule): LiveEngine {
         const rel: Relation = { op: "==", lhs: L.source, rhs: R.source, source, variables: unknowns };
         const prevRel = multiRelationFromAnalysis(math, ctx.previous) ?? multiRelationFromAnalysis(math, ctx.original);
         out.verdict = prevRel ? compareMultiRelations(math, prevRel, rel) : "none";
+        // `BC = 3x - 1` under `AB = 2x + 3`: another fact about the figure, not a step of the line above
+        if (out.verdict === "unknown" && unknowns.some(isGeometryName)) out.verdict = "none";
       }
       if (anyUnits) out.units = { ok: true };
       return out;
@@ -451,6 +461,51 @@ export function createEngine(mod: MathModule): LiveEngine {
     return t;
   };
 
+  /** An angle (`30^{\circ}`) as its radian measure; null for any other quantity. */
+  const angleRadians = (v: unknown): number | null => {
+    try {
+      const u = v as { dimensions?: number[]; toNumber(unit: string): number };
+      const dims = u.dimensions ?? [];
+      // mathjs base dimensions: MASS, LENGTH, TIME, CURRENT, TEMPERATURE, LUMINOUS_INTENSITY, AMOUNT_OF_SUBSTANCE, ANGLE, BIT
+      return dims.length >= 8 && dims[7] === 1 && dims.every((d, i) => i === 7 || d === 0) ? u.toNumber("rad") : null;
+    } catch {
+      return null;
+    }
+  };
+
+  /** The unknown inside sin / cos / tan in this relation (a trig equation: a solution in every turn). */
+  const trigOfVariable = (rel: Relation, variable: string): boolean => {
+    const node = safeParse(math, rel.source);
+    if (!node) return false;
+    let hit = false;
+    node.traverse((n) => {
+      const f = n as MathNode & { fn?: { name?: string }; args?: MathNode[] };
+      if (hit || n.type !== "FunctionNode" || !TRIG.has(f.fn?.name ?? "")) return;
+      (f.args ?? []).forEach((a) =>
+        a.traverse((s) => {
+          if (s.type === "SymbolNode" && (s as MathNode & { name: string }).name === variable) hit = true;
+        }),
+      );
+    });
+    return hit;
+  };
+
+  /**
+   * A value line that does not give every root of the line above and is still right: one angle of
+   * a trig equation (it has one in every turn: `\theta = \tan^{-1}\left(\frac{3}{4}\right)`), or a
+   * length's positive root (`c = 13` under `5^{2} + 12^{2} = c^{2}`: a side is never -13).
+   */
+  const rightAnyway = (reference: Relation, refs: Array<Relation | null>, variable: string, values: RootValue[], decimals: number | null): boolean => {
+    const roots = equationRoots(math, reference, variable).roots ?? [];
+    const snapped = snapToRoots(values, roots, decimals);
+    if (!snapped.every((v) => satisfies(math, reference, variable, v) === true)) return false;
+    if (trigOfVariable(reference, variable)) return true;
+    const positive = roots.map(rootToNumber).filter((r): r is number => r !== null && r > 1e-12);
+    const vals = snapped.map(rootToNumber);
+    const lengthy = refs.some((r) => r !== null && geometry.lengthRelation(r.lhs, r.rhs, variable));
+    return lengthy && vals.length === 1 && positive.length === 1 && vals[0] !== null && Math.abs(vals[0] - positive[0]) <= 1e-9 * Math.max(1, positive[0]);
+  };
+
   /** `x = 4`, `x = \pm 2`, `x = 2, -2`, `F = 2 kg * 9.8 m/s^2` */
   const analyzeSolvedOrAssignment = (variable: string, rhsLatex: string, ctx: AnalyzeContext): LineAnalysis => {
     const decimals = decimalsIn(rhsLatex);
@@ -460,6 +515,7 @@ export function createEngine(mod: MathModule): LiveEngine {
     let unitsOk: boolean | undefined;
     let note = "";
     const translations = (fragments.length > 0 ? fragments : [rhsLatex]).map((f) => tr(f));
+    const angles: number[] = [];
     const R = translations[0];
     if (translations.some((t) => unknownsOf(t).length > 0)) return { kind: "equation", math: "", resultLatex: "", verdict: "unknown", note: "", variable };
     const productSource = (vals: RootValue[]) => vals.map((v) => `(${variable} - (${typeof v === "number" ? v : `${v.re} + ${v.im}i`}))`).join(" * ");
@@ -479,18 +535,25 @@ export function createEngine(mod: MathModule): LiveEngine {
         else {
           const n = toNumber(v);
           if (n !== null) values.push(n);
+          else if (isUnitValue(v)) {
+            const rad = angleRadians(v);
+            if (rad !== null) angles.push(rad);
+          }
         }
       }
     }
     const prevRel = relationFromAnalysis(math, ctx.previous, variable);
     const origRel = relationFromAnalysis(math, ctx.original, variable);
     const reference = prevRel ?? origRel;
+    // `x = 30^{\circ}` under `\sin x = \frac{1}{2}`: the angle's radian measure, as sin reads x
+    if (values.length === 0 && angles.length > 0 && reference && [prevRel, origRel].some((r) => r !== null && trigOfVariable(r, variable))) values.push(...angles);
     if (reference && values.length > 0) {
       const out: LineAnalysis = { kind: "equation", math: values.length > 1 ? `${productSource(values)} == 0` : `${variable} == ${R.source}`, resultLatex: "", verdict: "none", note: "", variable };
       out.solutions = values.map((v) => rootLatex(v));
       out.verdict = compareValuesToRelation(math, reference, variable, values, decimals);
       // the extraneous root dropped: exactly the first line's solutions is right whatever the line above
       if (out.verdict === "mismatch" && origRel && isSolutionSet(math, origRel, variable, values)) out.verdict = "ok";
+      if (out.verdict === "mismatch" && rightAnyway(reference, [prevRel, origRel], variable, values, decimals)) out.verdict = "ok";
       const target = origRel ?? prevRel;
       out.solved = out.verdict !== "mismatch" && target !== null && solvesRelation(math, target, variable, values, decimals);
       return out;
@@ -623,6 +686,9 @@ export function createEngine(mod: MathModule): LiveEngine {
 
   // --- entry points --------------------------------------------------------
   const analyze = (latex: string, ctx: AnalyzeContext): LineAnalysis => {
+    // statements about figures, angle equations in degrees (`geometry.ts`)
+    const geo = geometry.analyze(latex, ctx, analyze);
+    if (geo) return geo;
     // preClassify needs the raw line (it tells "decorations only" from "empty"), so the rewritten
     // form is only substituted when a rewrite actually happened.
     const cleaned = preprocessLatex(latex);
@@ -824,6 +890,10 @@ export function createEngine(mod: MathModule): LiveEngine {
 
   const solveLatex = (latex: string): { latex: string; steps: string[] } | null => {
     try {
+      // a line with geometry in it: degrees, π, a root or a trig value among the numbers, a named angle or segment
+      const geo = geometry.solveLine(latex);
+      if (geo === "refuse") return null;
+      if (geo) return geo;
       const linear = linearSteps(latex);
       if (linear) {
         if (linear.outcome !== "solved") {
@@ -947,6 +1017,9 @@ export function createEngine(mod: MathModule): LiveEngine {
       // exact trig values, the reference angle first (`trig.ts`)
       const trigSteps = trig.steps(latex);
       if (trigSteps) return trigSteps;
+      // π, a root, degrees: worked out round by round, exact (`geometry.ts`)
+      const geoSteps = geometry.simplify(latex);
+      if (geoSteps) return geoSteps;
       const pre = preprocessLatex(latex).trim().replace(/=\s*$/, "").trim();
       if (!pre || /\d\.\d/.test(pre)) return null;
       if (splitRelations(pre).ops.length > 0) return null;
@@ -1145,6 +1218,10 @@ export function createEngine(mod: MathModule): LiveEngine {
         // `\frac{dy}{dx}` / `f'(2)` under a definition, or a calculus line under a system: calculus answers
         const calc = calculus.fromLines(lines);
         if (calc !== undefined) return calc;
+        // a formula under its values, parts defined in x, coordinates (`geometry.ts`)
+        const geo = geometry.fromLines(lines);
+        if (geo === "refuse") return null;
+        if (geo) return geo;
         return solveFromLines(lines, systemDeps);
       } catch {
         return null;

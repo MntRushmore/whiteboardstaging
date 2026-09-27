@@ -5,23 +5,23 @@
 > paths of Solve, in `LiveLoop.startSolve`'s order) and the result is judged semantically by
 > `src/__eval__/oracle.ts`. A problem passes when all five stages pass. Corpus: `src/__eval__/corpus.ts`.
 
-**271 / 271 problems pass (100%).**
+**424 / 424 problems pass (100%).**
 
 ## Stages
 
 | stage | pass | of all | of those with a local solution |
 | --- | --- | --- | --- |
-| local solution | 271 | 100% | — |
-| answer correct | 271 | 100% | 100% |
-| steps consistent | 271 | 100% | 100% |
-| hand can draw | 271 | 100% | 100% |
-| no words | 271 | 100% | 100% |
+| local solution | 424 | 100% | — |
+| answer correct | 424 | 100% | 100% |
+| steps consistent | 424 | 100% | 100% |
+| hand can draw | 424 | 100% | 100% |
+| no words | 424 | 100% | 100% |
 
 Answer verdicts (`approx`: a decimal or ≈ where a teacher writes the exact value; `form`: right value, wrong shape; `unsolved`: the last line is not an answer yet; `missing`: no local solution):
 
 | ok | approx | form | unsolved | wrong | missing | unjudged |
 | --- | --- | --- | --- | --- | --- | --- |
-| 271 | 0 | 0 | 0 | 0 | 0 | 0 |
+| 424 | 0 | 0 | 0 | 0 | 0 | 0 |
 
 ## By topic
 
@@ -48,6 +48,12 @@ Answer verdicts (`approx`: a decimal or ≈ where a teacher writes the exact val
 | trig | 18 | **18** (100%) | 18 | 18 | 18 | 18 | 18 |
 | trig-equation | 13 | **13** (100%) | 13 | 13 | 13 | 13 | 13 |
 | trig-identity | 5 | **5** (100%) | 5 | 5 | 5 | 5 | 5 |
+| geometry-angles | 26 | **26** (100%) | 26 | 26 | 26 | 26 | 26 |
+| geometry-right-triangles | 32 | **32** (100%) | 32 | 32 | 32 | 32 | 32 |
+| geometry-measure | 29 | **29** (100%) | 29 | 29 | 29 | 29 | 29 |
+| geometry-circles | 21 | **21** (100%) | 21 | 21 | 21 | 21 | 21 |
+| geometry-coordinates | 29 | **29** (100%) | 29 | 29 | 29 | 29 | 29 |
+| geometry-similarity | 16 | **16** (100%) | 16 | 16 | 16 | 16 | 16 |
 
 ## Failure patterns
 
@@ -106,8 +112,12 @@ Grouped by stage and reason (numbers and LaTeX blanked), most frequent first. On
 | t2-31 | unverified: `= -x\cos x + \int \cos x \, dx` (no sample point) |
 | t2-32 | unverified: `= x\ln x - \int 1 \, dx` (no sample point) |
 | t2-50 | unverified: `2x + 2y\frac{dy}{dx} = 0` (unreadable step (untranslatable side)); unverified: `2y\frac{dy}{dx} = -2x` (unreadable step (untranslatable side)); unverified: `\frac{dy}{dx} = -\frac{x}{y}` (the line before is unreadable (untranslatable)) |
-| t2-51 | unverified: `y = x^{x}` (switches between an expression and a relation); unverified: `\ln y = x\ln x` (several unknowns (y, x)); unverified: `\frac{1}{y}\frac{dy}{dx} = \ln x + 1` (unreadable step (untranslatable side)); unverified: `\frac{dy}{dx} = y(\ln x + 1)` (several unknowns (y, x, D_y)) |
+| t2-51 | unverified: `y = x^{x}` (switches between an expression and a relation); unverified: `\frac{1}{y}\frac{dy}{dx} = \ln x + 1` (unreadable step (untranslatable side)); unverified: `\frac{dy}{dx} = y(\ln x + 1)` (several unknowns (y, x, D_y)) |
+| ga-17 | unverified: `n \neq 0` (an equation and an inequality); unverified: `n \cdot \frac{360}{n} = n \cdot 24` (an equation and an inequality) |
+| ga-18 | unverified: `n \neq 0` (an equation and an inequality); unverified: `n \cdot \frac{180n - 360}{n} = n \cdot 150` (an equation and an inequality) |
+| ga-22 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
+| gm-24 | unverified: `A = \pi(5\,\mathrm{cm})^{2}` (no solution point to check against); unverified: `A = \pi \cdot 25\,\mathrm{cm}^{2}` (no solution point to check against); unverified: `A = 25\pi\,\mathrm{cm}^{2}` (no solution point to check against) |
 
 ## Passing
 
-ar-01, ar-02, ar-03, ar-04, ar-05, ar-06, ar-07, ar-08, ar-09, ar-10, ar-11, ar-12, ar-13, li-01, li-02, li-03, li-04, li-05, li-06, li-07, li-08, li-09, li-10, li-11, li-12, li-13, in-01, in-02, in-03, in-04, in-05, in-06, in-07, in-08, in-09, sy-01, sy-02, sy-03, sy-04, sy-05, sy-06, sy-07, sy-08, s3-01, s3-02, s3-03, s3-04, su-01, su-02, su-03, su-04, su-05, qu-01, qu-02, qu-03, qu-04, qu-05, qu-06, qu-07, qu-08, qu-09, qu-10, qu-11, qu-12, qu-13, qu-14, ab-01, ab-02, ab-03, ab-04, ab-05, ra-01, ra-02, ra-03, ra-04, ra-05, ra-06, rd-01, rd-02, rd-03, rd-04, rd-05, rd-06, ex-01, ex-02, ex-03, ex-04, ex-05, ex-06, ex-07, lg-01, lg-02, lg-03, lg-04, lg-05, lg-06, lg-07, xf-01, xf-02, xf-03, xf-04, xf-05, xf-06, xf-07, xf-08, xf-09, xf-10, xf-11, xf-12, xf-13, de-01, de-02, de-03, de-04, de-05, de-06, de-07, de-08, de-09, de-10, de-11, de-12, de-13, de-14, de-15, de-16, ii-01, ii-02, ii-03, ii-04, ii-05, ii-06, ii-07, ii-08, ii-09, di-01, di-02, di-03, di-04, di-05, di-06, di-07, di-08, lm-01, lm-02, lm-03, lm-04, lm-05, lm-06, lm-07, lm-08, up-01, up-02, up-03, up-04, up-05, up-06, up-07, up-08, tr-01, tr-02, tr-03, tr-04, tr-05, tr-06, tr-07, tr-08, g2-01, g2-02, g2-03, g2-04, g2-05, g2-06, g2-07, g2-08, g2-09, g2-10, g2-11, g2-12, g2-13, g2-14, g2-15, g2-16, g2-17, g2-18, g2-19, g2-20, g2-21, g2-22, g2-23, g2-24, g2-25, g2-26, g2-27, g2-28, g2-44, g2-45, g2-46, g2-47, g2-48, g2-49, g2-29, g2-30, g2-31, g2-32, g2-33, g2-34, g2-35, g2-36, g2-37, g2-38, g2-39, g2-40, g2-41, g2-42, g2-43, d3-01, d3-02, d3-03, d3-04, t2-01, t2-02, t2-03, t2-04, t2-05, t2-06, t2-07, t2-08, t2-09, t2-10, t2-11, t2-12, t2-13, t2-14, t2-15, t2-16, t2-17, t2-18, t2-19, t2-20, t2-21, t2-22, t2-23, t2-24, t2-25, t2-26, t2-27, t2-28, t2-29, t2-30, t2-31, t2-32, t2-33, t2-34, t2-35, t2-36, t2-37, t2-38, t2-39, t2-40, t2-41, t2-42, t2-43, t2-44, t2-45, t2-46, t2-47, t2-48, t2-49, t2-50, t2-51
+ar-01, ar-02, ar-03, ar-04, ar-05, ar-06, ar-07, ar-08, ar-09, ar-10, ar-11, ar-12, ar-13, li-01, li-02, li-03, li-04, li-05, li-06, li-07, li-08, li-09, li-10, li-11, li-12, li-13, in-01, in-02, in-03, in-04, in-05, in-06, in-07, in-08, in-09, sy-01, sy-02, sy-03, sy-04, sy-05, sy-06, sy-07, sy-08, s3-01, s3-02, s3-03, s3-04, su-01, su-02, su-03, su-04, su-05, qu-01, qu-02, qu-03, qu-04, qu-05, qu-06, qu-07, qu-08, qu-09, qu-10, qu-11, qu-12, qu-13, qu-14, ab-01, ab-02, ab-03, ab-04, ab-05, ra-01, ra-02, ra-03, ra-04, ra-05, ra-06, rd-01, rd-02, rd-03, rd-04, rd-05, rd-06, ex-01, ex-02, ex-03, ex-04, ex-05, ex-06, ex-07, lg-01, lg-02, lg-03, lg-04, lg-05, lg-06, lg-07, xf-01, xf-02, xf-03, xf-04, xf-05, xf-06, xf-07, xf-08, xf-09, xf-10, xf-11, xf-12, xf-13, de-01, de-02, de-03, de-04, de-05, de-06, de-07, de-08, de-09, de-10, de-11, de-12, de-13, de-14, de-15, de-16, ii-01, ii-02, ii-03, ii-04, ii-05, ii-06, ii-07, ii-08, ii-09, di-01, di-02, di-03, di-04, di-05, di-06, di-07, di-08, lm-01, lm-02, lm-03, lm-04, lm-05, lm-06, lm-07, lm-08, up-01, up-02, up-03, up-04, up-05, up-06, up-07, up-08, tr-01, tr-02, tr-03, tr-04, tr-05, tr-06, tr-07, tr-08, g2-01, g2-02, g2-03, g2-04, g2-05, g2-06, g2-07, g2-08, g2-09, g2-10, g2-11, g2-12, g2-13, g2-14, g2-15, g2-16, g2-17, g2-18, g2-19, g2-20, g2-21, g2-22, g2-23, g2-24, g2-25, g2-26, g2-27, g2-28, g2-44, g2-45, g2-46, g2-47, g2-48, g2-49, g2-29, g2-30, g2-31, g2-32, g2-33, g2-34, g2-35, g2-36, g2-37, g2-38, g2-39, g2-40, g2-41, g2-42, g2-43, d3-01, d3-02, d3-03, d3-04, t2-01, t2-02, t2-03, t2-04, t2-05, t2-06, t2-07, t2-08, t2-09, t2-10, t2-11, t2-12, t2-13, t2-14, t2-15, t2-16, t2-17, t2-18, t2-19, t2-20, t2-21, t2-22, t2-23, t2-24, t2-25, t2-26, t2-27, t2-28, t2-29, t2-30, t2-31, t2-32, t2-33, t2-34, t2-35, t2-36, t2-37, t2-38, t2-39, t2-40, t2-41, t2-42, t2-43, t2-44, t2-45, t2-46, t2-47, t2-48, t2-49, t2-50, t2-51, ga-01, ga-02, ga-03, ga-04, ga-05, ga-06, ga-07, ga-08, ga-09, ga-10, ga-11, ga-12, ga-13, ga-14, ga-15, ga-16, ga-17, ga-18, ga-19, ga-20, ga-21, ga-22, ga-23, ga-24, ga-25, ga-26, gr-01, gr-02, gr-03, gr-04, gr-05, gr-06, gr-07, gr-08, gr-09, gr-10, gr-11, gr-12, gr-13, gr-14, gr-15, gr-16, gr-17, gr-18, gr-19, gr-20, gr-21, gr-22, gr-23, gr-24, gr-25, gr-26, gr-27, gr-28, gr-29, gr-30, gr-31, gr-32, gm-01, gm-02, gm-03, gm-04, gm-05, gm-06, gm-07, gm-08, gm-09, gm-10, gm-11, gm-12, gm-13, gm-14, gm-15, gm-16, gm-17, gm-18, gm-19, gm-20, gm-21, gm-22, gm-23, gm-24, gm-25, gm-26, gm-27, gm-28, gm-29, gc-01, gc-02, gc-03, gc-04, gc-05, gc-06, gc-07, gc-08, gc-09, gc-10, gc-11, gc-12, gc-13, gc-14, gc-15, gc-16, gc-17, gc-18, gc-19, gc-20, gc-21, gx-01, gx-02, gx-03, gx-04, gx-05, gx-06, gx-07, gx-08, gx-09, gx-10, gx-11, gx-12, gx-13, gx-14, gx-15, gx-16, gx-17, gx-18, gx-19, gx-20, gx-21, gx-22, gx-23, gx-24, gx-25, gx-26, gx-27, gx-28, gx-29, gs-01, gs-02, gs-03, gs-04, gs-05, gs-06, gs-07, gs-08, gs-09, gs-10, gs-11, gs-12, gs-13, gs-14, gs-15, gs-16

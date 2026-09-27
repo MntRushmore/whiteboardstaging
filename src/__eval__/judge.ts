@@ -35,6 +35,7 @@ import {
   subsetRoots,
   truthAt,
   truthEverywhere,
+  tuplesIn,
   type Expr,
   type Parsed,
   type Relation,
@@ -168,6 +169,25 @@ function judgeAnswer(problem: EvalProblem, lines: readonly string[], steps: read
   const final = parseLine(finalLatex);
   const approxOk = Boolean(expect.approxOk);
 
+  if (expect.point) {
+    // a point: the last one written on the final line (`(2, 3) \to (-3, 2)`, `M = (\frac{5}{2}, 4)`)
+    const pts = tuplesIn(finalLatex);
+    const got = pts[pts.length - 1];
+    const show = (p: readonly number[]) => `(${p.map(fmtNumber).join(", ")})`;
+    if (!got) return { status: "unsolved", reason: "the last line has no point" };
+    if (!got.every((v, i) => closeTo(v, expect.point![i], 1e-9))) return { status: "wrong", reason: `gives ${show(got)}, want ${show(expect.point)}` };
+    // what else the same line answers (a circle's radius beside its centre)
+    for (const [v, want] of Object.entries(expect.values ?? {})) {
+      const sv = listPieces(finalLatex)
+        .map((p) => solvedValues(parseLine(p), v))
+        .find(Boolean);
+      if (!sv) return { status: "unsolved", reason: `the last line does not give ${v}` };
+      if (!sameRoots(sv.values.map((c) => c.re), want, 1e-9)) return { status: "wrong", reason: `${v} = {${sv.values.map((c) => fmtNumber(c.re)).join(", ")}}, want {${want.map(fmtNumber).join(", ")}}` };
+      if (sv.approx && !approxOk) return { status: "approx", reason: "written with ≈ although the value is exact" };
+    }
+    return { status: "ok", reason: "" };
+  }
+
   if (expect.values) {
     const vars = Object.keys(expect.values);
     if (vars.length === 1) {
@@ -229,6 +249,20 @@ function judgeAnswer(problem: EvalProblem, lines: readonly string[], steps: read
   }
   if (want.kind === "relation") {
     if (final.kind !== "relation") return { status: "unsolved", reason: "the last line is not a relation" };
+    if (want.vars.length === 0) {
+      // a check worked out (`169 = 169`, `85 \neq 81`): the same statement, side by side
+      const target = lines[lines.length - 1] ?? "";
+      if (final.vars.length !== 0) return { status: "unsolved", reason: "the last line still has an unknown" };
+      if (normalizeForEquality(finalLatex) === normalizeForEquality(target)) return { status: "unsolved", reason: "the last line restates the problem" };
+      const [a, b] = [final.alternatives, want.alternatives];
+      if (a.length !== 1 || b.length !== 1 || a[0].sides.length !== b[0].sides.length || a[0].ops.join() !== b[0].ops.join()) return { status: "wrong", reason: "not the same statement" };
+      for (let i = 0; i < a[0].sides.length; i++) {
+        const c = compareExprs(a[0].sides[i], b[0].sides[i]);
+        if (c.unknown) return { status: "unjudged", reason: "a side has no value" };
+        if (!c.exact) return { status: "wrong", reason: `side ${i + 1} has a different value` };
+      }
+      return { status: "ok", reason: "" };
+    }
     if (want.vars.length === 1 && isInequality(want)) {
       const v = want.vars[0];
       if (!isSolvedInequality(final, v)) return { status: "unsolved", reason: `\`${v}\` is not alone on one side` };
@@ -263,7 +297,8 @@ function judgeAnswer(problem: EvalProblem, lines: readonly string[], steps: read
   if (UNSOLVED_MARKERS.test(answerSide)) return { status: "unsolved", reason: "the last line still has the operator in it" };
   const target = lines[lines.length - 1] ?? "";
   if (normalizeForEquality(finalLatex) === normalizeForEquality(target)) return { status: "unsolved", reason: "the last line restates the problem" };
-  const got = lastSideExpr(final);
+  // `m_{\perp} = -\frac{4}{3}`: a name the translator cannot read, a value it can
+  const got = lastSideExpr(final) ?? (final.kind === "unreadable" && answerSide !== finalLatex ? exprOf(answerSide) : null);
   if (!got) return { status: final.kind === "unreadable" ? "unjudged" : "unsolved", reason: final.kind === "unreadable" ? `cannot read the last line (${final.reason})` : "the last line is not a value" };
   const cmp = compareExprs(got, want, { upToConstant: expect.upToConstant });
   if (cmp.unknown) return { status: "unjudged", reason: "no sample point where both are defined" };
@@ -321,8 +356,10 @@ function systemTruth(problem: EvalProblem, parsedLines: Parsed[]): Truth {
   return { kind: "unknown", points: [], exact: false };
 }
 
-function judgeSystemStep(step: string, p: Parsed, truth: Truth, candidates: number[]): Transition {
+function judgeSystemStep(step: string, p: Parsed, truth: Truth, candidates: number[], window: Window | null = null): Transition {
   const t = (status: TransitionStatus, reason = ""): Transition => ({ from: "(the system)", to: step, status, reason });
+  // a line written to a few decimals (`r \approx 3.99`) holds to its own rounding
+  const snap = p.kind === "relation" && (p.approx || p.decimals !== null) ? 0.5 * 10 ** -(p.decimals ?? 0) + 1e-9 : 1e-9;
   if (p.kind === "unreadable") return p.reason === "empty" ? t("broken", "empty step") : t("unverified", `unreadable (${p.reason})`);
   if (truth.kind === "vacuous") {
     if (p.kind === "all-reals") return t("broken", "says every value works; the system has no solution");
@@ -333,15 +370,16 @@ function judgeSystemStep(step: string, p: Parsed, truth: Truth, candidates: numb
   if (p.kind !== "relation") return t("unverified", "not a relation");
   for (const point of truth.points) {
     if (!p.vars.every((v) => v in point)) return t("unverified", `mentions ${p.vars.filter((v) => !(v in point)).join(", ")}`);
-    const holds = truthAt(p, point);
+    const holds = truthAt(p, point, snap);
     if (holds === false) return t("broken", `false at the solution (${Object.entries(point).map(([k, v]) => `${k} = ${fmtNumber(v)}`).join(", ")})`);
     if (holds === null) return t("unverified", "undefined at the solution");
   }
   if (truth.exact && p.vars.length === 1 && isEquation(p)) {
-    // a line in one unknown must have exactly that unknown's values at the solution points
+    // a line in one unknown must have exactly that unknown's values at the solution points (a
+    // length's only in (0, ∞), when the problem says so)
     const v = p.vars[0];
     const want = [...new Set(truth.points.map((pt) => pt[v]))];
-    const rs = rootSet(p, v, [...candidates, ...want]);
+    const rs = windowed(rootSet(p, v, [...candidates, ...want]), window);
     if (!rs) return t("unverified", "cannot solve the step");
     if (rs.all) return t("widened", `true for every ${v}`);
     if (!sameRoots(rs.roots, want, setTol(p))) {
@@ -381,6 +419,19 @@ function compareRelations(prev: Relation, cur: Relation, candidates: number[], c
     const b = truthAt(cur, {});
     if (a === null || b === null) return { status: "unverified", reason: "undefined" };
     return a === b ? { status: "ok", reason: "" } : { status: "broken", reason: `turns a ${a ? "true" : "false"} statement ${b ? "true" : "false"}` };
+  }
+  if (vars.length === 2 && isEquation(prev) && isEquation(cur) && prev.vars.length === 2 && cur.vars.length === 2) {
+    // one curve in two unknowns rewritten (completing the square): the same y for every x
+    const [x, y] = vars.includes("y") ? [vars.find((w) => w !== "y")!, "y"] : vars;
+    let compared = 0;
+    for (const xv of [0.37, 1.13, -0.53, 2.29, 3.07, -1.61]) {
+      const a = rootSet(prev, y, [], { [x]: xv });
+      const b = rootSet(cur, y, [], { [x]: xv });
+      if (!a || !b) return { status: "unverified", reason: "cannot solve the curve" };
+      if (a.all !== b.all || !sameRoots(a.roots, b.roots, 1e-6)) return { status: "broken", reason: `a different curve at ${x} = ${xv}` };
+      if (a.all || a.roots.length > 0) compared++;
+    }
+    return compared >= 2 ? { status: "ok", reason: "" } : { status: "unverified", reason: "the curves have no common x to compare" };
   }
   if (vars.length > 1) return { status: "unverified", reason: `several unknowns (${vars.join(", ")})` };
   const v = vars[0];
@@ -713,15 +764,44 @@ export function withoutIntervalPiece(latex: string): string {
   return kept.length === 1 ? kept[0] : latex;
 }
 
+/**
+ * A step of a problem whose answer is a point: a numeric point on it (the last one, as in
+ * `(2, 3) \to (1 + 3, 4 - 2)`) must BE the answer; a tuple of letters (`(x, y) \to (-y, x)`,
+ * `(h, k)`) is the rule beside the working. Null for a step with no tuple (a circle's equation
+ * rewritten, a distance) — the ordinary checks apply.
+ */
+function pointStep(problem: EvalProblem, step: string): Omit<Transition, "from" | "to"> | null {
+  const want = problem.expect.point;
+  if (!want) return null;
+  const pts = tuplesIn(step);
+  const show = (p: readonly number[]) => `(${p.map(fmtNumber).join(", ")})`;
+  if (pts.length > 0) {
+    const got = pts[pts.length - 1];
+    return got.every((v, i) => closeTo(v, want[i], 1e-9)) ? { status: "ok", reason: "the point" } : { status: "broken", reason: `gives ${show(got)}, the point is ${show(want)}` };
+  }
+  if (/\(\s*[a-z]\s*,\s*[a-z]\s*\)/.test(step)) return { status: "ok", reason: "the rule" };
+  return null;
+}
+
 function judgeSteps(problem: EvalProblem, lines: readonly string[], steps: readonly string[]): Transition[] {
   const parsedLines = lines.filter(Boolean).map(parseLine);
   const parsedSteps = steps.map(parseLine);
   const candidates = numbersIn([...parsedLines, ...parsedSteps], problem.expect);
   const relationLines = parsedLines.filter((p) => p.kind === "relation");
-  const system = relationLines.length >= 2 || Object.keys(problem.expect.values ?? {}).length > 1;
+  // the unknown asked for is not the last line's own (`AB = ?` under two points, the distance
+  // formula in x_{1}, …): every step is checked at the expected value instead of along a chain
+  const wanted = Object.keys(problem.expect.values ?? {});
+  const last = parsedLines[parsedLines.length - 1];
+  const unanchored = !problem.expect.point && wanted.length === 1 && !(last && last.kind === "relation" && last.vars.length === 1 && last.vars[0] === wanted[0]);
+  const system = relationLines.length >= 2 || wanted.length > 1 || unanchored;
   if (system) {
     const truth = systemTruth(problem, parsedLines);
-    return steps.map((s, i) => judgeSystemStep(s, parsedSteps[i], truth, candidates));
+    const iv = problem.expect.interval;
+    const w: Window | null = iv ? { lo: iv.lo, hi: iv.hi, loIn: iv.loIn ?? true, hiIn: iv.hiIn ?? false } : null;
+    return steps.map((s, i) => {
+      const pt = pointStep(problem, s);
+      return pt ? { from: "(the system)", to: s, ...pt } : judgeSystemStep(s, parsedSteps[i], truth, candidates, w);
+    });
   }
   const cache = new Map<string, RootSet | null>();
   const out: Transition[] = [];
@@ -744,6 +824,11 @@ function judgeSteps(problem: EvalProblem, lines: readonly string[], steps: reado
   for (let i = 0; i < steps.length; i++) {
     const cur = parsedSteps[i];
     const transition: Transition = { from: prevLatex, to: steps[i], status: "unverified", reason: "" };
+    const pt = pointStep(problem, steps[i]);
+    if (pt) {
+      out.push({ ...transition, ...pt });
+      continue;
+    }
     const aside = asideOf(steps[i], cur, ctx, transition);
     if (aside) {
       transition.status = aside.status;
