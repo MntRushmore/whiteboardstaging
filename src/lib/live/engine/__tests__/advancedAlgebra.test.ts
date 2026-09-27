@@ -295,6 +295,24 @@ describe("polynomials: simplify when there is something to expand, otherwise fac
   it("writes nothing for what does not factor over the integers, or is not algebra", () => {
     for (const latex of ["2x + 3", "x^2 + 1", "x^2 + x + 1", "36 + 2 =", "x", "\\frac{x}{2} + 1", "\\sin(x) + x"]) expect(simplify(latex), latex).toBeNull();
   });
+
+  it.each([
+    ["\\frac{x^{2} - 1}{x - 1}", ["\\frac{(x + 1)(x - 1)}{x - 1}", "x + 1"]],
+    ["\\frac{x^2-5x+6}{x^2-4}", ["\\frac{(x - 2)(x - 3)}{(x + 2)(x - 2)}", "\\frac{x - 3}{x + 2}"]],
+    ["\\frac{2x+4}{x+2}", ["\\frac{2(x + 2)}{x + 2}", "2"]],
+    ["\\frac{x^2+3x}{x}", ["\\frac{x(x + 3)}{x}", "x + 3"]],
+    ["\\frac{1-x}{x-1}", ["\\frac{-(x - 1)}{x - 1}", "-1"]],
+    ["\\frac{2x+4}{4x+8} =", ["\\frac{2(x + 2)}{4(x + 2)}", "\\frac{1}{2}"]],
+    ["\\frac{x^3-8}{x-2}", ["\\frac{(x - 2)(x^{2} + 2x + 4)}{x - 2}", "x^{2} + 2x + 4"]],
+    ["\\frac{x+1}{x^2+2x+1}", ["\\frac{x + 1}{(x + 1)^{2}}", "\\frac{1}{x + 1}"]],
+  ])("a fraction: factor the top and the bottom, cancel — %s", (latex, steps) => {
+    expect(simplify(latex)).toEqual(steps);
+    expectDrawable(steps);
+  });
+
+  it("a fraction with nothing to cancel is left alone", () => {
+    for (const latex of ["\\frac{x^2+1}{x+1}", "\\frac{x}{x+1}", "\\frac{2}{x}"]) expect(simplify(latex), latex).toBeNull();
+  });
 });
 
 describe("systems: elimination where substitution would bring fractions, and three unknowns", () => {

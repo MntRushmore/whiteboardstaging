@@ -30,7 +30,7 @@ import { solveFromLines, type SystemDeps } from "./systems";
 import { linearSolveSteps, simplifyExpressionSteps, type LinearSteps, type RelOp } from "./algebra";
 import { createCalculus } from "./calculus";
 import { solveAdvanced, type AdvancedDeps } from "./advanced";
-import { factorExpressionSteps } from "./polynomial";
+import { factorExpressionSteps, rationalExpressionSteps } from "./polynomial";
 import { chainRelation, isSolutionSet, relaxVerdict, splitAtCommas, unionRelation, type Part } from "./compound";
 import { ALL_REALS, EVERY_REAL, LIST_SEP, NO_SOLUTION } from "./solution";
 
@@ -861,7 +861,7 @@ export function createEngine(mod: MathModule): LiveEngine {
       const node = safeParse(math, t.source);
       if (!node) return null;
       // simplify when there is something to expand or collect; otherwise factor it (polynomial.ts)
-      return simplifyExpressionSteps(node, unknowns, pre, stepKey) ?? factorExpressionSteps(node, unknowns, pre, stepKey);
+      return simplifyExpressionSteps(node, unknowns, pre, stepKey) ?? factorExpressionSteps(node, unknowns, pre, stepKey) ?? rationalExpressionSteps(node, unknowns, pre, stepKey);
     } catch {
       return null;
     }

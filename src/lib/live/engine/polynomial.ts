@@ -15,7 +15,7 @@
  * In two or more unknowns: the common factor and a difference of two squares.
  */
 import type { MathNode } from "mathjs";
-import { combineTerms, gcdInt, q, qDiv, qMul, standardOrder, termsLatex, termsOf, type Q, type Term } from "./algebra";
+import { combineTerms, gcdInt, q, qDiv, qLatex, qMul, standardOrder, termsLatex, termsOf, type Q, type Term } from "./algebra";
 import { X, deg, exactly, factorLinear, lead, polyDiv, polyFromTerms, polyLatex, primitive, productLatex, qEq, qIsZero, rootFactor, trim, type Poly } from "./poly";
 import { StepWriter } from "./solution";
 
@@ -183,5 +183,72 @@ export function factorExpressionSteps(node: MathNode, unknowns: readonly string[
     } else ok = multivariate(terms, w);
     const lines = w.lines();
     return ok && lines.length > 0 ? lines : null;
+  });
+}
+
+// --- one fraction of polynomials ------------------------------------------------------------
+
+/** A factorisation as it sits above or below a fraction bar: no bracket round a lone factor. */
+function fractionPartTex(content: Q, factors: readonly Factor[], v: string): string {
+  if (factors.length === 0) return qLatex(content);
+  if (factors.length === 1 && factors[0].mult === 1 && qEq(content, q(1))) return polyLatex(factors[0].f, v);
+  return productLatex(content, factors, v);
+}
+
+/** Every factor of `p`: its rational roots' linear factors, and what is left (kept whole). */
+function factorsOf(p: Poly): { content: Q; factors: Factor[] } {
+  const lf = factorLinear(p);
+  const factors: Factor[] = lf.roots.map((r) => ({ f: rootFactor(r.root), mult: r.mult }));
+  if (deg(lf.rest) >= 1) factors.push({ f: lf.rest, mult: 1 });
+  return { content: lf.content, factors };
+}
+
+const factorKey = (f: Poly): string => f.map((c) => `${c.n}/${c.d}`).join(",");
+
+/**
+ * `\frac{x^2 - 1}{x - 1}` → `\frac{(x + 1)(x - 1)}{x - 1}` → `x + 1`: the top and the bottom
+ * factored, the common factors cancelled. Null when nothing cancels, or the line is not one
+ * fraction of polynomials in one unknown.
+ */
+export function rationalExpressionSteps(node: MathNode, unknowns: readonly string[], inputLatex: string, normalize: Normalize): string[] | null {
+  return exactly(() => {
+    if (unknowns.length !== 1) return null;
+    const v = unknowns[0];
+    let top = node as MathNode & { type: string; content?: MathNode };
+    while (top.type === "ParenthesisNode" && top.content) top = top.content as typeof top;
+    const op = top as MathNode & { type: string; fn?: string; args?: MathNode[] };
+    if (op.type !== "OperatorNode" || op.fn !== "divide" || !op.args) return null;
+    const nt = termsOf(op.args[0], [v]);
+    const dt = termsOf(op.args[1], [v]);
+    const N = nt && polyFromTerms(nt, v);
+    const D = dt && polyFromTerms(dt, v);
+    if (!N || !D || N.length === 0 || deg(D) < 1) return null;
+    const above = factorsOf(N);
+    const below = factorsOf(D);
+    const aboveLeft: Factor[] = [];
+    const belowLeft = below.factors.map((f) => ({ ...f }));
+    let cancelled = false;
+    for (const f of above.factors) {
+      const match = belowLeft.find((b) => factorKey(b.f) === factorKey(f.f));
+      const k = match ? Math.min(match.mult, f.mult) : 0;
+      if (match && k > 0) {
+        cancelled = true;
+        match.mult -= k;
+      }
+      if (f.mult - k > 0) aboveLeft.push({ f: f.f, mult: f.mult - k });
+    }
+    if (!cancelled) return null;
+    const w = new StepWriter(normalize, inputLatex);
+    w.write(`\\frac{${fractionPartTex(above.content, above.factors, v)}}{${fractionPartTex(below.content, below.factors, v)}}`);
+    const c = qDiv(above.content, below.content);
+    const rest = belowLeft.filter((b) => b.mult > 0);
+    if (rest.length === 0 && c.d === 1) w.write(fractionPartTex(c, aboveLeft, v));
+    else {
+      const num = fractionPartTex(q(Math.abs(c.n)), aboveLeft, v);
+      const den = fractionPartTex(q(c.d), rest, v);
+      w.write(`${c.n < 0 ? "-" : ""}\\frac{${num}}{${den}}`);
+    }
+    const lines = w.lines();
+    return lines.length > 0 ? lines : null;
   });
 }
