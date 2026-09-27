@@ -30,6 +30,7 @@ import { solveFromLines, type SystemDeps } from "./systems";
 import { linearSolveSteps, simplifyExpressionSteps, type LinearSteps, type RelOp } from "./algebra";
 import { solveAdvanced, type AdvancedDeps } from "./advanced";
 import { factorExpressionSteps } from "./polynomial";
+import { chainRelation, isSolutionSet, relaxVerdict, splitAtCommas, unionRelation, type Part } from "./compound";
 import { LIST_SEP, NO_SOLUTION } from "./solution";
 
 const UNKNOWN: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
@@ -323,7 +324,11 @@ export function createEngine(mod: MathModule): LiveEngine {
         const prevRel = relationFromAnalysis(math, ctx.previous, variable) ?? relationFromAnalysis(math, ctx.original, variable);
         if (info.identity) out.verdict = "ok"; // a true identity such as (x+1)(x-1) = x^2 - 1 or d/dx x^2 = 2x
         else if (claim) out.verdict = "mismatch"; // d/dx x^2 = 3x
-        else if (prevRel) out.verdict = compareRelations(math, prevRel, rel, variable);
+        else if (prevRel) {
+          // squaring a root away or clearing a denominator may add a root: still a correct step (compound.ts)
+          const verdict = compareRelations(math, prevRel, rel, variable);
+          out.verdict = relaxVerdict(math, verdict, rel, variable, relationFromAnalysis(math, ctx.previous, variable), relationFromAnalysis(math, ctx.original, variable));
+        }
         return out;
       }
       const out: LineAnalysis = { kind: "equation", math: source, resultLatex: "", verdict: "unknown", note: "" };
@@ -355,6 +360,14 @@ export function createEngine(mod: MathModule): LiveEngine {
 
     // inequalities
     const out: LineAnalysis = { kind: "inequality", math: source, resultLatex: "", verdict: "unknown", note: "" };
+    if (sides.length === 3 && unknowns.length === 1 && !anyUnits) {
+      // `-3 < x - 1 < 3`: both halves at once, as `max(...) < 0` (compound.ts)
+      const chain = chainRelation(ts.map((t) => t.source), ops, unknowns[0]);
+      if (chain) {
+        const prevRel = relationFromAnalysis(math, ctx.previous, unknowns[0]) ?? relationFromAnalysis(math, ctx.original, unknowns[0]);
+        return { ...out, math: chain.source, variable: unknowns[0], verdict: prevRel ? compareRelations(math, prevRel, chain, unknowns[0]) : "none" };
+      }
+    }
     if (sides.length !== 2 || ops.includes("==")) return out;
     const op = ops[0] as Relation["op"];
     if (unknowns.length === 0) {
@@ -424,6 +437,8 @@ export function createEngine(mod: MathModule): LiveEngine {
       const out: LineAnalysis = { kind: "equation", math: values.length > 1 ? `${productSource(values)} == 0` : `${variable} == ${R.source}`, resultLatex: "", verdict: "none", note: "", variable };
       out.solutions = values.map((v) => rootLatex(v));
       out.verdict = compareValuesToRelation(math, reference, variable, values, decimals);
+      // the extraneous root dropped: exactly the first line's solutions is right whatever the line above
+      if (out.verdict === "mismatch" && origRel && isSolutionSet(math, origRel, variable, values)) out.verdict = "ok";
       const target = origRel ?? prevRel;
       out.solved = out.verdict !== "mismatch" && target !== null && solvesRelation(math, target, variable, values, decimals);
       return out;
@@ -445,6 +460,39 @@ export function createEngine(mod: MathModule): LiveEngine {
         out.verdict = eq === null ? "none" : eq ? "ok" : "mismatch";
       }
     }
+    return out;
+  };
+
+  /**
+   * `2x - 3 = 5, \ 2x - 3 = -5` or `x < -2, \ x > 4`: branches in one unknown on one line,
+   * checked as the one relation they amount to (`compound.ts`). Null when the line is not that.
+   */
+  const analyzeRelationList = (latex: string, ctx: AnalyzeContext): LineAnalysis | null => {
+    const pieces = splitAtCommas(latex);
+    if (!pieces) return null;
+    const parts: Part[] = [];
+    const vars = new Set<string>();
+    for (const piece of pieces) {
+      const split = splitRelations(piece);
+      if (split.sides.length !== 2 || !isRelOp(split.ops[0])) return null;
+      const [L, R] = split.sides.map((side) => tr(side));
+      if (L.hasUnits || R.hasUnits || isSymbolic(L) || isSymbolic(R)) return null;
+      for (const v of [...unknownsOf(L), ...unknownsOf(R)]) vars.add(v);
+      parts.push({ op: split.ops[0] as RelOp, lhs: L.source, rhs: R.source });
+    }
+    if (vars.size !== 1) return null;
+    const variable = [...vars][0];
+    const rel = unionRelation(parts, variable);
+    if (!rel) return null;
+    const out: LineAnalysis = { kind: rel.op === "==" ? "equation" : "inequality", math: rel.source, resultLatex: "", verdict: "none", note: "", variable };
+    if (rel.op === "==") {
+      const info = equationRoots(math, rel, variable);
+      if (info.roots) out.solutions = sortRoots(info.roots).slice(0, 8).map((r) => rootLatex(r));
+    }
+    const prevRel = relationFromAnalysis(math, ctx.previous, variable);
+    const origRel = relationFromAnalysis(math, ctx.original, variable);
+    const reference = prevRel ?? origRel;
+    if (reference) out.verdict = relaxVerdict(math, compareRelations(math, reference, rel, variable), rel, variable, prevRel, origRel, false);
     return out;
   };
 
@@ -594,6 +642,8 @@ export function createEngine(mod: MathModule): LiveEngine {
       default: {
         const orList = solutionList(pre.latex);
         if (orList) return analyzeSolvedOrAssignment(orList.variable, orList.values.join(", "), ctx);
+        const branches = analyzeRelationList(pre.latex, ctx);
+        if (branches) return branches;
         const split = splitRelations(pre.latex);
         if (split.ops.length === 0) return analyzeExpression(pre.latex, ctx, false);
         return analyzeRelation(pre.latex, ctx);
