@@ -31,7 +31,8 @@ import { buildPayload, rdp, type Pt } from "./strokePayload";
  *     number line — the ticks join it), an arrowhead at an end (its barbs join it), straight sides
  *     whose ends pair up into a closed polygon (a rectangle in four strokes), an END joined to a
  *     drawing (a triangle's base, a right triangle's legs, a radius). With no writing evidence, a
- *     rule also becomes a drawing by touching one, or by being `loneRuleFactor` glyphs long.
+ *     rule also becomes a drawing by touching one, by having nothing near it (the first side of
+ *     a triangle, drawn a moment before the rest), or by being `loneRuleFactor` glyphs long.
  *     Anything else stays writing.
  *  4. Drawing strokes that touch, or lie inside one another's box, are one drawing.
  *  5. What is left is clustered as before (`clusterStrokeGroups`). Near a drawing, a small stroke
@@ -98,6 +99,8 @@ export const DIAGRAM_RULES = {
   barbMaxDeg: 70,
   /** a rule or thin stroke this long (x G) with no writing about it is a drawing by itself */
   loneRuleFactor: 9,
+  /** ... and so is one with no other stroke within this many glyphs of it */
+  isolationFactor: 2.5,
   /** drawing strokes this close (x G), or one this much inside the other's box, are one drawing */
   groupReachFactor: 0.8,
   containShare: 0.7,
@@ -839,6 +842,10 @@ export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagr
       }
     }
     if (!drawing.has(g.i) && !evidenced.has(g.i) && g.size >= R.loneRuleFactor * G) draw(g, "long, with no writing about it");
+    // the first side of a triangle, drawn a moment before the others: a long line with nothing
+    // near it is not maths either (a bar drawn before its fraction is writing again at the next flush)
+    const alone = R.isolationFactor * G;
+    if (!drawing.has(g.i) && !evidenced.has(g.i) && !geos.some((o) => o.i !== g.i && rectGap(o.b, g.b) <= alone)) draw(g, "a long line on its own");
     if (!drawing.has(g.i) && evidence) reasons.set(g.i, evidence === "inside" ? "writing inside it" : "writing along it (a bar, an overbar, a bracket)");
   }
   for (const [i, reason] of structural) if (!drawing.has(i)) draw(geos[i], reason);

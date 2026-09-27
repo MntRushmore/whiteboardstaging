@@ -112,6 +112,20 @@ describe("splitInk: every generated drawing, alone", () => {
     });
   });
 
+  it("the first side of a triangle, drawn before the others, is already a drawing", () => {
+    const math = writeAt("a^{2} + b^{2} = c^{2}", 100, 300);
+    const side = DRAWINGS.rightTriangle(500, 250, 3).strokes[0];
+    const split = splitInk([...math, side]);
+    expect(roleOf(split, side)).toBe("drawing");
+    expect(split.writing).toHaveLength(math.length);
+    // ...while a bar drawn before its fraction is writing again once the fraction is there
+    const pen = new Pen("bar", 2);
+    const bar = pen.stroke({ x: 300, y: 600 }, { x: 420, y: 601 });
+    expect(roleOf(splitInk([...math, bar]), bar)).toBe("drawing");
+    const fraction = [...writeAt("x + 1", 320, 570), ...writeAt("x - 1", 322, 612)];
+    expect(roleOf(splitInk([...math, bar, ...fraction]), bar)).toBe("writing");
+  });
+
   it("measures a screen with nothing but a drawing against the glyph cap", () => {
     const d = DRAWINGS.triangle(300, 250, 3);
     expect(glyphScale(d.strokes)).toBe(DIAGRAM_RULES.glyphMax);
