@@ -251,7 +251,22 @@ function limitExpr(latex: string, variable: string, targetLatex: string, bodyLat
     const right = f(a + h);
     if (left === null && right === null) return null;
     if (left === null || right === null) return left ?? right; // one-sided (√x at 0)
-    return closeTo(left, right, 1e-4) ? (left + right) / 2 : null;
+    if (!closeTo(left, right, 1e-4)) return null;
+    const near = (left + right) / 2;
+    // 0/0 whose top cancels to second order (`\frac{1 - \cos x}{x^{2}}`) loses its digits at
+    // h = 10⁻⁶: a Richardson estimate from h = 10⁻³ and 10⁻⁴ decides when the two agree
+    const avg = (k: number): number | null => {
+      const l = f(a - k * Math.max(1, Math.abs(a)));
+      const r = f(a + k * Math.max(1, Math.abs(a)));
+      return l === null || r === null ? null : (l + r) / 2;
+    };
+    const a3 = avg(1e-3);
+    const a4 = avg(1e-4);
+    if (a3 !== null && a4 !== null) {
+      const richardson = (100 * a4 - a3) / 99;
+      if (!closeTo(near, richardson, 1e-5) && closeTo(a4, richardson, 1e-6)) return richardson;
+    }
+    return near;
   };
   return {
     kind: "expr",
@@ -268,6 +283,19 @@ function limitExpr(latex: string, variable: string, targetLatex: string, bodyLat
 }
 
 const LIMIT = /^\\lim\s*_\s*\{\s*([a-zA-Z])\s*(?:\\to|\\rightarrow|→)\s*(.+?)\s*\}\s*([\s\S]+)$/;
+
+/**
+ * `\frac{dy}{dx}` (or `y'`) as a whole side of a line: the derivative it names, an unknown of its
+ * own (`\frac{dy}{dx} = -\frac{x}{y}` gives it). Inside an expression it stays unreadable.
+ */
+function derivativeName(latex: string): Expr[] | null {
+  const s = cleanLatex(latex).replace(/\s+/g, "");
+  const m = /^\\frac\{(?:\\mathrm\{d\}|d)([a-zA-Z])\}\{(?:\\mathrm\{d\}|d)([a-zA-Z])\}$/.exec(s) ?? /^([a-zA-Z])'$/.exec(s);
+  if (!m) return null;
+  const name = `D_${m[1]}`;
+  const at = (scope: Record<string, number>) => (name in scope ? scope[name] : null);
+  return [{ kind: "expr", latex: s, vars: [name], at, complexAt: (scope) => (name in scope ? { re: scope[name], im: 0 } : null), decimals: null, tol: EXACT_TOL }];
+}
 
 /** One LaTeX expression → one `Expr` per ± branch; null when unreadable. */
 export function exprBranches(latex: string): Expr[] | null {
@@ -447,7 +475,7 @@ export function parseLine(latex: string): Parsed {
     if (split.sides.some((s) => !s.trim())) return { kind: "unreadable", latex: original, reason: "empty side" };
     const sideBranches: Expr[][] = [];
     for (const side of split.sides) {
-      const b = exprBranches(side);
+      const b = exprBranches(side) ?? derivativeName(side);
       if (!b) return { kind: "unreadable", latex: original, reason: "untranslatable side" };
       sideBranches.push(b);
     }

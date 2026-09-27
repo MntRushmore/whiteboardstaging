@@ -11,6 +11,7 @@
  *
  * Pure: the handwriting check is passed in, so this file needs neither tldraw nor an engine.
  */
+import { splitRelations } from "@/lib/live/engine/latex";
 import type { LocalSolveResult } from "@/lib/live/localSolve";
 import type { EvalProblem, Expectation, Topic } from "./corpus";
 import {
@@ -235,7 +236,16 @@ function judgeAnswer(problem: EvalProblem, lines: readonly string[], steps: read
   }
   if (want.kind !== "expr") return { status: "unjudged", reason: `the expectation \`${wantLatex}\` is unreadable` };
 
-  if (UNSOLVED_MARKERS.test(finalLatex)) return { status: "unsolved", reason: "the last line still has the operator in it" };
+  // on the answer side: `\frac{dy}{dx} = -\frac{x}{y}` names the derivative it gives
+  const answerSide = (() => {
+    try {
+      const split = splitRelations(finalLatex.replace(/^\s*=\s*/, ""));
+      return split.sides[split.sides.length - 1] ?? finalLatex;
+    } catch {
+      return finalLatex;
+    }
+  })();
+  if (UNSOLVED_MARKERS.test(answerSide)) return { status: "unsolved", reason: "the last line still has the operator in it" };
   const target = lines[lines.length - 1] ?? "";
   if (normalizeForEquality(finalLatex) === normalizeForEquality(target)) return { status: "unsolved", reason: "the last line restates the problem" };
   const got = lastSideExpr(final);
@@ -695,6 +705,12 @@ function judgeSteps(problem: EvalProblem, lines: readonly string[], steps: reado
         r = back;
         from = goodLatex;
       }
+    }
+    // an expression the line above cannot be compared with is compared with the question itself
+    // (every `= …` line of a derivative, a limit, a simplification equals it)
+    if (origin.kind === "expr" && cur.kind === "expr" && r.status === "unverified") {
+      const direct = compareExprs(cur, origin, { upToConstant: problem.topic === "integral-indefinite" });
+      if (!direct.unknown) r = direct.exact || direct.approx ? { status: "ok", reason: "equal to the question" } : { status: "broken", reason: "not equal to the question" };
     }
     // an antiderivative is checked against the problem itself when the line above cannot say
     // (`x e^{x} - \int e^{x} \, dx` still has an integral in it)

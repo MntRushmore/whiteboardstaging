@@ -329,4 +329,17 @@ export const CORPUS: readonly EvalProblem[] = [
   { id: "t2-40", topic: "integral-definite", lines: ["\\int_{0}^{1} x e^{x} \\, dx ="], expect: { answer: "1" }, note: "by parts with limits" },
   { id: "t2-41", topic: "integral-definite", lines: ["\\int_{0}^{\\pi} \\sin^{2} x \\, dx ="], expect: { answer: "\\frac{\\pi}{2}" } },
   { id: "t2-42", topic: "integral-definite", lines: ["\\int_{0}^{1} \\frac{1}{1 + x^{2}} \\, dx ="], expect: { answer: "\\frac{\\pi}{4}" } },
+
+  // ---------------------------------------------------------------- harder limits
+  { id: "t2-43", topic: "limit", lines: ["\\lim_{x \\to 0}\\frac{\\sqrt{x+4}-2}{x}"], expect: { answer: "\\frac{1}{4}" }, note: "the conjugate" },
+  { id: "t2-44", topic: "limit", lines: ["\\lim_{x \\to 4}\\frac{\\sqrt{x}-2}{x-4}"], expect: { answer: "\\frac{1}{4}" }, note: "the conjugate" },
+  { id: "t2-45", topic: "limit", lines: ["\\lim_{x \\to 0}\\frac{e^{x}-1}{x}"], expect: { answer: "1" }, note: "L'Hôpital" },
+  { id: "t2-46", topic: "limit", lines: ["\\lim_{x \\to 0}\\frac{1 - \\cos x}{x^{2}} ="], expect: { answer: "\\frac{1}{2}" }, note: "L'Hôpital twice" },
+  { id: "t2-47", topic: "limit", lines: ["\\lim_{x \\to 0}\\frac{\\sin 3x}{\\sin 2x}"], expect: { answer: "\\frac{3}{2}" } },
+
+  // ---------------------------------------------------------------- harder derivatives
+  { id: "t2-48", topic: "derivative", lines: ["\\frac{d}{dx}\\tan^{-1} x ="], expect: { answer: "\\frac{1}{1 + x^{2}}" } },
+  { id: "t2-49", topic: "derivative", lines: ["\\frac{d^{3}}{dx^{3}} x^{5} ="], expect: { answer: "60x^{2}" }, note: "each earlier stage under the derivatives still to take" },
+  { id: "t2-50", topic: "derivative", lines: ["x^{2} + y^{2} = 25", "\\frac{dy}{dx} ="], expect: { answer: "-\\frac{x}{y}" }, note: "implicit differentiation" },
+  { id: "t2-51", topic: "derivative", lines: ["\\frac{d}{dx} x^{x} ="], expect: { answer: "x^{x}(\\ln x + 1)" }, note: "logarithmic differentiation" },
 ];
