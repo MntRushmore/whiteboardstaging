@@ -99,6 +99,8 @@ describe("envExample: section headers and classification", () => {
       "SMOKE_PASSWORD",
       "SMOKE_SKIP_LLM",
       "RUN_DB_TESTS",
+      "RUN_LIVE_EVAL",
+      "EVAL_WRITE",
       "VERIFY_EMAIL_DOMAIN",
     ]);
     expect(keysByClassification(realEnvExample, "optional-deploy")).toContain("NEXT_PUBLIC_TLDRAW_LICENSE_KEY");
