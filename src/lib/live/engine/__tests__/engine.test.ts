@@ -171,19 +171,21 @@ describe("engine: solveLatex", () => {
     expect(engine.solveLatex("3x + 1 = 2")?.latex).toBe("x = \\frac{1}{3}");
     expect(engine.solveLatex("3\\left(x-2\\right)=2 x+5")?.latex).toBe("x = 11");
   });
+  // Answers are maths, never words: several roots are a list (`x = 2, \ x = 3`), not "or";
+  // irrational roots stay exact surds; no real root is the empty set (advancedAlgebra.test.ts).
   it("quadratics: factored steps and formula steps", () => {
     const r = engine.solveLatex("x^2 - 5x + 6 = 0");
-    expect(r?.latex).toBe("x = 2 \\text{ or } x = 3");
+    expect(r?.latex).toBe("x = 2, \\ x = 3");
     expect(r?.steps).toContain("(x - 2)(x - 3) = 0");
     const q = engine.solveLatex("x^2 - 2x - 1 = 0");
     expect(q?.steps.some((s) => s.includes("\\pm \\sqrt"))).toBe(true);
-    expect(q?.latex).toBe("x \\approx -0.4142 \\text{ or } x \\approx 2.414");
+    expect(q?.latex).toBe("x = 1 \\pm \\sqrt{2}");
     const c = engine.solveLatex("x^2 + 1 = 0");
-    expect(c?.latex).toBe("x = -i \\text{ or } x = i");
+    expect(c?.latex).toBe("\\varnothing");
   });
-  it("cubic and numeric fallback", () => {
-    expect(engine.solveLatex("x^3 - 6x^2 + 11x - 6 = 0")?.latex).toBe("x = 1 \\text{ or } x = 2 \\text{ or } x = 3");
-    expect(engine.solveLatex("2^x = 8")?.latex).toBe("x \\approx 3");
+  it("cubic, exponential and numeric fallback", () => {
+    expect(engine.solveLatex("x^3 - 6x^2 + 11x - 6 = 0")?.latex).toBe("x = 1, \\ x = 2, \\ x = 3");
+    expect(engine.solveLatex("2^x = 8")?.latex).toBe("x = 3");
     expect(engine.solveLatex("\\sin x = 2")).toBeNull();
   });
   it("returns null when unsupported", () => {
@@ -512,7 +514,7 @@ describe("engine: regression net — everything that already worked", () => {
     expect(engine.analyzeLine("2 + 2 = 5", feedback).verdict).toBe("mismatch");
   });
   it("keeps solveLatex, chemistry and the calculator", () => {
-    expect(engine.solveLatex("x^2 - 5x + 6 = 0")?.latex).toBe("x = 2 \\text{ or } x = 3");
+    expect(engine.solveLatex("x^2 - 5x + 6 = 0")?.latex).toBe("x = 2, \\ x = 3");
     expect(engine.solveLatex("2x+3=11")?.latex).toBe("x = 4");
     expect(engine.analyzeLine("Fe + O_2 \\rightarrow Fe_2O_3", feedback).kind).toBe("chem");
     expect(engine.balance("Fe+O2->Fe2O3")?.coeffs).toEqual([4, 3, 2]);

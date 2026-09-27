@@ -14,9 +14,12 @@
  *
  * Two cases, both the way a teacher writes them: a known value substituted into an equation
  * that then has one unknown left, or two linear equations in two unknowns by substitution
- * (isolate a variable whose coefficient is ±1 where there is one). Anything else is `null`:
+ * (isolate a variable whose coefficient is ±1 where there is one). Where no such coefficient
+ * exists substitution would write fractions, so two equations are solved by elimination instead,
+ * and three equations in three unknowns always are (`elimination.ts`). Anything else is `null`:
  * never a guess, and the caller decides whether a model may try.
  */
+import { eliminateTwo, solveThreeByElimination } from "./elimination";
 
 /** `x = ?`, `x =`, `x = \text{?}` — the student asking for x. */
 export function questionVariable(latex: string): string | null {
@@ -241,6 +244,11 @@ export function solveFromLines(lines: readonly string[], deps: SystemDeps): Syst
         steps.push(final);
         return { latex: final, steps: fitSteps(steps, 2) };
       }
+      // no coefficient ±1 to isolate, so substitution would write fractions: eliminate instead
+      if (!Number.isInteger(k0) || !Number.isInteger(k1)) {
+        const eliminated = eliminateTwo(e1, e2, pair, want, deps, substituteLatex);
+        if (eliminated) return eliminated;
+      }
       const solved = deps.solveOne(step2);
       if (!solved) continue;
       const tv = deps.singleRoot(step2, target);
@@ -255,5 +263,7 @@ export function solveFromLines(lines: readonly string[], deps: SystemDeps): Syst
       return { latex: solved.latex, steps: fitSteps(steps, 2, backIndex(steps, other, otherFinal, backExpr, deps)) };
     }
   }
-  return null;
+
+  // 3. three linear equations in three unknowns, by elimination
+  return solveThreeByElimination(facts, want, deps, substituteLatex);
 }
