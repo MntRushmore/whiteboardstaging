@@ -1,21 +1,21 @@
 {
   "summary": {
-    "total": 220,
-    "passed": 217,
+    "total": 271,
+    "passed": 271,
     "stages": {
-      "local": 219,
-      "answer": 217,
-      "steps": 219,
-      "drawable": 219,
-      "words": 219
+      "local": 271,
+      "answer": 271,
+      "steps": 271,
+      "drawable": 271,
+      "words": 271
     },
     "answers": {
-      "ok": 217,
-      "approx": 2,
+      "ok": 271,
+      "approx": 0,
       "form": 0,
       "unsolved": 0,
       "wrong": 0,
-      "missing": 1,
+      "missing": 0,
       "unjudged": 0
     },
     "byTopic": [
@@ -177,50 +177,50 @@
       },
       {
         "topic": "derivative",
-        "total": 16,
-        "passed": 16,
+        "total": 20,
+        "passed": 20,
         "stages": {
-          "local": 16,
-          "answer": 16,
-          "steps": 16,
-          "drawable": 16,
-          "words": 16
+          "local": 20,
+          "answer": 20,
+          "steps": 20,
+          "drawable": 20,
+          "words": 20
         }
       },
       {
         "topic": "integral-indefinite",
-        "total": 9,
-        "passed": 8,
+        "total": 19,
+        "passed": 19,
         "stages": {
-          "local": 8,
-          "answer": 8,
-          "steps": 8,
-          "drawable": 8,
-          "words": 8
+          "local": 19,
+          "answer": 19,
+          "steps": 19,
+          "drawable": 19,
+          "words": 19
         }
       },
       {
         "topic": "integral-definite",
-        "total": 8,
-        "passed": 8,
+        "total": 12,
+        "passed": 12,
         "stages": {
-          "local": 8,
-          "answer": 8,
-          "steps": 8,
-          "drawable": 8,
-          "words": 8
+          "local": 12,
+          "answer": 12,
+          "steps": 12,
+          "drawable": 12,
+          "words": 12
         }
       },
       {
         "topic": "limit",
-        "total": 8,
-        "passed": 8,
+        "total": 13,
+        "passed": 13,
         "stages": {
-          "local": 8,
-          "answer": 8,
-          "steps": 8,
-          "drawable": 8,
-          "words": 8
+          "local": 13,
+          "answer": 13,
+          "steps": 13,
+          "drawable": 13,
+          "words": 13
         }
       },
       {
@@ -237,14 +237,38 @@
       },
       {
         "topic": "trig",
-        "total": 8,
-        "passed": 6,
+        "total": 18,
+        "passed": 18,
         "stages": {
-          "local": 8,
-          "answer": 6,
-          "steps": 8,
-          "drawable": 8,
-          "words": 8
+          "local": 18,
+          "answer": 18,
+          "steps": 18,
+          "drawable": 18,
+          "words": 18
+        }
+      },
+      {
+        "topic": "trig-equation",
+        "total": 13,
+        "passed": 13,
+        "stages": {
+          "local": 13,
+          "answer": 13,
+          "steps": 13,
+          "drawable": 13,
+          "words": 13
+        }
+      },
+      {
+        "topic": "trig-identity",
+        "total": 5,
+        "passed": 5,
+        "stages": {
+          "local": 5,
+          "answer": 5,
+          "steps": 5,
+          "drawable": 5,
+          "words": 5
         }
       }
     ]
@@ -1251,10 +1275,10 @@
           "from": "2x - 2x = 6 - 6",
           "to": "0 = 0",
           "status": "ok",
-          "reason": ""
+          "reason": "a true statement beside the working"
         },
         {
-          "from": "0 = 0",
+          "from": "2x - 2x = 6 - 6",
           "to": "x \\in \\mathbb{R}",
           "status": "ok",
           "reason": ""
@@ -4557,22 +4581,20 @@
         {
           "from": "x = -1, \\ x = 2",
           "to": "\\sqrt{1} \\neq -1",
-          "status": "unverified",
-          "reason": "an equation and an inequality"
+          "status": "ok",
+          "reason": "a true statement beside the working"
         },
         {
-          "from": "\\sqrt{1} \\neq -1",
+          "from": "x = -1, \\ x = 2",
           "to": "x = 2",
-          "status": "unverified",
-          "reason": "an equation and an inequality"
+          "status": "ok",
+          "reason": "rejects the extraneous candidates"
         }
       ],
       "unsupported": [],
       "words": [],
       "warnings": [
-        "widened: `x + 2 = x^{2}` ({2} → {-1, 2} (extraneous candidates))",
-        "unverified: `\\sqrt{1} \\neq -1` (an equation and an inequality)",
-        "unverified: `x = 2` (an equation and an inequality)"
+        "widened: `x + 2 = x^{2}` ({2} → {-1, 2} (extraneous candidates))"
       ],
       "pass": true,
       "failures": []
@@ -6419,7 +6441,7 @@
       "expected": "12x^{2}",
       "source": "simplifySteps",
       "steps": [
-        "= \\frac{d}{dx} 4x^{3}",
+        "= \\frac{d}{dx}(4x^{3})",
         "= 4 \\cdot 3x^{2}",
         "= 12x^{2}"
       ],
@@ -6437,12 +6459,12 @@
       "transitions": [
         {
           "from": "\\frac{d^{2}}{dx^{2}}(x^{4}) =",
-          "to": "= \\frac{d}{dx} 4x^{3}",
+          "to": "= \\frac{d}{dx}(4x^{3})",
           "status": "ok",
           "reason": ""
         },
         {
-          "from": "= \\frac{d}{dx} 4x^{3}",
+          "from": "= \\frac{d}{dx}(4x^{3})",
           "to": "= 4 \\cdot 3x^{2}",
           "status": "ok",
           "reason": ""
@@ -6820,31 +6842,62 @@
       ],
       "expected": "\\frac{1}{2} e^{x^{2}} + C",
       "note": "substitution u = x²",
-      "source": null,
-      "steps": [],
+      "source": "simplifySteps",
+      "steps": [
+        "u = x^{2}",
+        "du = 2x \\, dx",
+        "= \\frac{1}{2}\\int e^{u} \\, du",
+        "= \\frac{e^{u}}{2} + C",
+        "= \\frac{e^{x^{2}}}{2} + C"
+      ],
       "stages": {
-        "local": false,
-        "answer": false,
-        "steps": false,
-        "drawable": false,
-        "words": false
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
       },
       "answer": {
-        "status": "missing",
-        "reason": "no local solution: Solve would ask the model"
+        "status": "ok",
+        "reason": ""
       },
-      "transitions": [],
+      "transitions": [
+        {
+          "from": "\\int x e^{x^{2}} \\, dx",
+          "to": "u = x^{2}",
+          "status": "ok",
+          "reason": "the substitution u"
+        },
+        {
+          "from": "\\int x e^{x^{2}} \\, dx",
+          "to": "du = 2x \\, dx",
+          "status": "ok",
+          "reason": "du = u' dx"
+        },
+        {
+          "from": "\\int x e^{x^{2}} \\, dx",
+          "to": "= \\frac{1}{2}\\int e^{u} \\, du",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{1}{2}\\int e^{u} \\, du",
+          "to": "= \\frac{e^{u}}{2} + C",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{e^{u}}{2} + C",
+          "to": "= \\frac{e^{x^{2}}}{2} + C",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
       "unsupported": [],
       "words": [],
       "warnings": [],
-      "pass": false,
-      "failures": [
-        {
-          "stage": "local",
-          "reason": "no local solution: Solve would ask the model",
-          "latex": ""
-        }
-      ]
+      "pass": true,
+      "failures": []
     },
     {
       "id": "ii-09",
@@ -6924,14 +6977,14 @@
         {
           "from": "\\int_{0}^{1} x^{2} \\, dx =",
           "to": "= \\left[\\frac{x^{3}}{3}\\right]_{0}^{1}",
-          "status": "unverified",
-          "reason": "no sample point where both are defined"
+          "status": "ok",
+          "reason": ""
         },
         {
           "from": "= \\left[\\frac{x^{3}}{3}\\right]_{0}^{1}",
           "to": "= \\frac{1}{3} - 0",
-          "status": "unverified",
-          "reason": "no sample point where both are defined"
+          "status": "ok",
+          "reason": ""
         },
         {
           "from": "= \\frac{1}{3} - 0",
@@ -6942,10 +6995,7 @@
       ],
       "unsupported": [],
       "words": [],
-      "warnings": [
-        "unverified: `= \\left[\\frac{x^{3}}{3}\\right]_{0}^{1}` (no sample point where both are defined)",
-        "unverified: `= \\frac{1}{3} - 0` (no sample point where both are defined)"
-      ],
+      "warnings": [],
       "pass": true,
       "failures": []
     },
@@ -6977,14 +7027,14 @@
         {
           "from": "\\int_{0}^{\\pi} \\sin x \\, dx =",
           "to": "= \\left[-\\cos x\\right]_{0}^{\\pi}",
-          "status": "unverified",
-          "reason": "no sample point where both are defined"
+          "status": "ok",
+          "reason": ""
         },
         {
           "from": "= \\left[-\\cos x\\right]_{0}^{\\pi}",
           "to": "= 1 - (-1)",
-          "status": "unverified",
-          "reason": "no sample point where both are defined"
+          "status": "ok",
+          "reason": ""
         },
         {
           "from": "= 1 - (-1)",
@@ -6995,10 +7045,7 @@
       ],
       "unsupported": [],
       "words": [],
-      "warnings": [
-        "unverified: `= \\left[-\\cos x\\right]_{0}^{\\pi}` (no sample point where both are defined)",
-        "unverified: `= 1 - (-1)` (no sample point where both are defined)"
-      ],
+      "warnings": [],
       "pass": true,
       "failures": []
     },
@@ -7030,14 +7077,14 @@
         {
           "from": "\\int_{1}^{3} (2x + 1) \\, dx =",
           "to": "= \\left[x^{2} + x\\right]_{1}^{3}",
-          "status": "unverified",
-          "reason": "no sample point where both are defined"
+          "status": "ok",
+          "reason": ""
         },
         {
           "from": "= \\left[x^{2} + x\\right]_{1}^{3}",
           "to": "= 12 - 2",
-          "status": "unverified",
-          "reason": "no sample point where both are defined"
+          "status": "ok",
+          "reason": ""
         },
         {
           "from": "= 12 - 2",
@@ -7048,10 +7095,7 @@
       ],
       "unsupported": [],
       "words": [],
-      "warnings": [
-        "unverified: `= \\left[x^{2} + x\\right]_{1}^{3}` (no sample point where both are defined)",
-        "unverified: `= 12 - 2` (no sample point where both are defined)"
-      ],
+      "warnings": [],
       "pass": true,
       "failures": []
     },
@@ -7083,14 +7127,14 @@
         {
           "from": "\\int_{0}^{2} (x^{3} - x) \\, dx =",
           "to": "= \\left[\\frac{x^{4}}{4} - \\frac{x^{2}}{2}\\right]_{0}^{2}",
-          "status": "unverified",
-          "reason": "no sample point where both are defined"
+          "status": "ok",
+          "reason": ""
         },
         {
           "from": "= \\left[\\frac{x^{4}}{4} - \\frac{x^{2}}{2}\\right]_{0}^{2}",
           "to": "= 2 - 0",
-          "status": "unverified",
-          "reason": "no sample point where both are defined"
+          "status": "ok",
+          "reason": ""
         },
         {
           "from": "= 2 - 0",
@@ -7101,10 +7145,7 @@
       ],
       "unsupported": [],
       "words": [],
-      "warnings": [
-        "unverified: `= \\left[\\frac{x^{4}}{4} - \\frac{x^{2}}{2}\\right]_{0}^{2}` (no sample point where both are defined)",
-        "unverified: `= 2 - 0` (no sample point where both are defined)"
-      ],
+      "warnings": [],
       "pass": true,
       "failures": []
     },
@@ -7136,14 +7177,14 @@
         {
           "from": "\\int_{1}^{e} \\frac{1}{x} \\, dx =",
           "to": "= \\left[\\ln|x|\\right]_{1}^{e}",
-          "status": "unverified",
-          "reason": "no sample point where both are defined"
+          "status": "ok",
+          "reason": ""
         },
         {
           "from": "= \\left[\\ln|x|\\right]_{1}^{e}",
           "to": "= 1 - 0",
-          "status": "unverified",
-          "reason": "no sample point where both are defined"
+          "status": "ok",
+          "reason": ""
         },
         {
           "from": "= 1 - 0",
@@ -7154,10 +7195,7 @@
       ],
       "unsupported": [],
       "words": [],
-      "warnings": [
-        "unverified: `= \\left[\\ln|x|\\right]_{1}^{e}` (no sample point where both are defined)",
-        "unverified: `= 1 - 0` (no sample point where both are defined)"
-      ],
+      "warnings": [],
       "pass": true,
       "failures": []
     },
@@ -7189,22 +7227,19 @@
         {
           "from": "\\int_{0}^{1} e^{x} \\, dx =",
           "to": "= \\left[e^{x}\\right]_{0}^{1}",
-          "status": "unverified",
-          "reason": "no sample point where both are defined"
+          "status": "ok",
+          "reason": ""
         },
         {
           "from": "= \\left[e^{x}\\right]_{0}^{1}",
           "to": "= e - 1",
-          "status": "unverified",
-          "reason": "no sample point where both are defined"
+          "status": "ok",
+          "reason": ""
         }
       ],
       "unsupported": [],
       "words": [],
-      "warnings": [
-        "unverified: `= \\left[e^{x}\\right]_{0}^{1}` (no sample point where both are defined)",
-        "unverified: `= e - 1` (no sample point where both are defined)"
-      ],
+      "warnings": [],
       "pass": true,
       "failures": []
     },
@@ -7236,14 +7271,14 @@
         {
           "from": "\\int_{-1}^{1} x^{3} \\, dx =",
           "to": "= \\left[\\frac{x^{4}}{4}\\right]_{-1}^{1}",
-          "status": "unverified",
-          "reason": "no sample point where both are defined"
+          "status": "ok",
+          "reason": ""
         },
         {
           "from": "= \\left[\\frac{x^{4}}{4}\\right]_{-1}^{1}",
           "to": "= \\frac{1}{4} - \\frac{1}{4}",
-          "status": "unverified",
-          "reason": "no sample point where both are defined"
+          "status": "ok",
+          "reason": ""
         },
         {
           "from": "= \\frac{1}{4} - \\frac{1}{4}",
@@ -7254,10 +7289,7 @@
       ],
       "unsupported": [],
       "words": [],
-      "warnings": [
-        "unverified: `= \\left[\\frac{x^{4}}{4}\\right]_{-1}^{1}` (no sample point where both are defined)",
-        "unverified: `= \\frac{1}{4} - \\frac{1}{4}` (no sample point where both are defined)"
-      ],
+      "warnings": [],
       "pass": true,
       "failures": []
     },
@@ -7289,14 +7321,14 @@
         {
           "from": "\\int_{0}^{\\frac{\\pi}{2}} \\cos x \\, dx =",
           "to": "= \\left[\\sin x\\right]_{0}^{\\frac{\\pi}{2}}",
-          "status": "unverified",
-          "reason": "no sample point where both are defined"
+          "status": "ok",
+          "reason": ""
         },
         {
           "from": "= \\left[\\sin x\\right]_{0}^{\\frac{\\pi}{2}}",
           "to": "= 1 - 0",
-          "status": "unverified",
-          "reason": "no sample point where both are defined"
+          "status": "ok",
+          "reason": ""
         },
         {
           "from": "= 1 - 0",
@@ -7307,10 +7339,7 @@
       ],
       "unsupported": [],
       "words": [],
-      "warnings": [
-        "unverified: `= \\left[\\sin x\\right]_{0}^{\\frac{\\pi}{2}}` (no sample point where both are defined)",
-        "unverified: `= 1 - 0` (no sample point where both are defined)"
-      ],
+      "warnings": [],
       "pass": true,
       "failures": []
     },
@@ -7991,9 +8020,9 @@
         "\\sin(30^{\\circ}) ="
       ],
       "expected": "\\frac{1}{2}",
-      "source": "localAnswer",
+      "source": "simplifySteps",
       "steps": [
-        "= 0.5"
+        "= \\frac{1}{2}"
       ],
       "stages": {
         "local": true,
@@ -8009,7 +8038,7 @@
       "transitions": [
         {
           "from": "\\sin(30^{\\circ}) =",
-          "to": "= 0.5",
+          "to": "= \\frac{1}{2}",
           "status": "ok",
           "reason": ""
         }
@@ -8027,9 +8056,9 @@
         "\\cos(60^{\\circ}) ="
       ],
       "expected": "\\frac{1}{2}",
-      "source": "localAnswer",
+      "source": "simplifySteps",
       "steps": [
-        "= 0.5"
+        "= \\frac{1}{2}"
       ],
       "stages": {
         "local": true,
@@ -8045,7 +8074,7 @@
       "transitions": [
         {
           "from": "\\cos(60^{\\circ}) =",
-          "to": "= 0.5",
+          "to": "= \\frac{1}{2}",
           "status": "ok",
           "reason": ""
         }
@@ -8063,7 +8092,7 @@
         "\\tan(45^{\\circ}) ="
       ],
       "expected": "1",
-      "source": "localAnswer",
+      "source": "simplifySteps",
       "steps": [
         "= 1"
       ],
@@ -8100,25 +8129,25 @@
       ],
       "expected": "\\frac{\\sqrt{3}}{2}",
       "note": "exact value",
-      "source": "localAnswer",
+      "source": "simplifySteps",
       "steps": [
-        "= 0.866"
+        "= \\frac{\\sqrt{3}}{2}"
       ],
       "stages": {
         "local": true,
-        "answer": false,
+        "answer": true,
         "steps": true,
         "drawable": true,
         "words": true
       },
       "answer": {
-        "status": "approx",
-        "reason": "a decimal where the exact value is wanted"
+        "status": "ok",
+        "reason": ""
       },
       "transitions": [
         {
           "from": "\\sin(60^{\\circ}) =",
-          "to": "= 0.866",
+          "to": "= \\frac{\\sqrt{3}}{2}",
           "status": "ok",
           "reason": ""
         }
@@ -8126,14 +8155,8 @@
       "unsupported": [],
       "words": [],
       "warnings": [],
-      "pass": false,
-      "failures": [
-        {
-          "stage": "answer",
-          "reason": "approx: a decimal where the exact value is wanted",
-          "latex": "= 0.866"
-        }
-      ]
+      "pass": true,
+      "failures": []
     },
     {
       "id": "tr-05",
@@ -8142,7 +8165,7 @@
         "\\cos(\\pi) ="
       ],
       "expected": "-1",
-      "source": "localAnswer",
+      "source": "simplifySteps",
       "steps": [
         "= -1"
       ],
@@ -8178,9 +8201,9 @@
         "\\sin\\left(\\frac{\\pi}{6}\\right) ="
       ],
       "expected": "\\frac{1}{2}",
-      "source": "localAnswer",
+      "source": "simplifySteps",
       "steps": [
-        "= 0.5"
+        "= \\frac{1}{2}"
       ],
       "stages": {
         "local": true,
@@ -8196,7 +8219,7 @@
       "transitions": [
         {
           "from": "\\sin\\left(\\frac{\\pi}{6}\\right) =",
-          "to": "= 0.5",
+          "to": "= \\frac{1}{2}",
           "status": "ok",
           "reason": ""
         }
@@ -8214,8 +8237,10 @@
         "\\sin^{2}(30^{\\circ}) + \\cos^{2}(30^{\\circ}) ="
       ],
       "expected": "1",
-      "source": "localAnswer",
+      "source": "simplifySteps",
       "steps": [
+        "= \\left(\\frac{1}{2}\\right)^{2} + \\left(\\frac{\\sqrt{3}}{2}\\right)^{2}",
+        "= \\frac{1}{4} + \\frac{3}{4}",
         "= 1"
       ],
       "stages": {
@@ -8232,6 +8257,18 @@
       "transitions": [
         {
           "from": "\\sin^{2}(30^{\\circ}) + \\cos^{2}(30^{\\circ}) =",
+          "to": "= \\left(\\frac{1}{2}\\right)^{2} + \\left(\\frac{\\sqrt{3}}{2}\\right)^{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\left(\\frac{1}{2}\\right)^{2} + \\left(\\frac{\\sqrt{3}}{2}\\right)^{2}",
+          "to": "= \\frac{1}{4} + \\frac{3}{4}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{1}{4} + \\frac{3}{4}",
           "to": "= 1",
           "status": "ok",
           "reason": ""
@@ -8251,25 +8288,25 @@
       ],
       "expected": "\\sqrt{3}",
       "note": "exact value",
-      "source": "localAnswer",
+      "source": "simplifySteps",
       "steps": [
-        "= 1.732"
+        "= \\sqrt{3}"
       ],
       "stages": {
         "local": true,
-        "answer": false,
+        "answer": true,
         "steps": true,
         "drawable": true,
         "words": true
       },
       "answer": {
-        "status": "approx",
-        "reason": "a decimal where the exact value is wanted"
+        "status": "ok",
+        "reason": ""
       },
       "transitions": [
         {
           "from": "\\tan(60^{\\circ}) =",
-          "to": "= 1.732",
+          "to": "= \\sqrt{3}",
           "status": "ok",
           "reason": ""
         }
@@ -8277,14 +8314,8 @@
       "unsupported": [],
       "words": [],
       "warnings": [],
-      "pass": false,
-      "failures": [
-        {
-          "stage": "answer",
-          "reason": "approx: a decimal where the exact value is wanted",
-          "latex": "= 1.732"
-        }
-      ]
+      "pass": true,
+      "failures": []
     },
     {
       "id": "g2-01",
@@ -8552,10 +8583,10 @@
           "from": "x - x = 2 - 2",
           "to": "0 = 0",
           "status": "ok",
-          "reason": ""
+          "reason": "a true statement beside the working"
         },
         {
-          "from": "0 = 0",
+          "from": "x - x = 2 - 2",
           "to": "x \\in \\mathbb{R}",
           "status": "ok",
           "reason": ""
@@ -9379,22 +9410,20 @@
         {
           "from": "x = -1, \\ x = 3",
           "to": "\\sqrt{1} \\neq -1",
-          "status": "unverified",
-          "reason": "an equation and an inequality"
+          "status": "ok",
+          "reason": "a true statement beside the working"
         },
         {
-          "from": "\\sqrt{1} \\neq -1",
+          "from": "x = -1, \\ x = 3",
           "to": "x = 3",
-          "status": "unverified",
-          "reason": "an equation and an inequality"
+          "status": "ok",
+          "reason": "rejects the extraneous candidates"
         }
       ],
       "unsupported": [],
       "words": [],
       "warnings": [
-        "widened: `2x + 3 = x^{2}` ({3} → {-1, 3} (extraneous candidates))",
-        "unverified: `\\sqrt{1} \\neq -1` (an equation and an inequality)",
-        "unverified: `x = 3` (an equation and an inequality)"
+        "widened: `2x + 3 = x^{2}` ({3} → {-1, 3} (extraneous candidates))"
       ],
       "pass": true,
       "failures": []
@@ -9462,22 +9491,20 @@
         {
           "from": "x = -1, \\ x = 4",
           "to": "\\sqrt{4} \\neq -2",
-          "status": "unverified",
-          "reason": "an equation and an inequality"
+          "status": "ok",
+          "reason": "a true statement beside the working"
         },
         {
-          "from": "\\sqrt{4} \\neq -2",
+          "from": "x = -1, \\ x = 4",
           "to": "x = 4",
-          "status": "unverified",
-          "reason": "an equation and an inequality"
+          "status": "ok",
+          "reason": "rejects the extraneous candidates"
         }
       ],
       "unsupported": [],
       "words": [],
       "warnings": [
-        "widened: `x + 5 = (x - 1)^{2}` ({4} → {-1, 4} (extraneous candidates))",
-        "unverified: `\\sqrt{4} \\neq -2` (an equation and an inequality)",
-        "unverified: `x = 4` (an equation and an inequality)"
+        "widened: `x + 5 = (x - 1)^{2}` ({4} → {-1, 4} (extraneous candidates))"
       ],
       "pass": true,
       "failures": []
@@ -11262,6 +11289,2867 @@
       "unsupported": [],
       "words": [],
       "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-01",
+      "topic": "trig",
+      "lines": [
+        "\\sin(45^{\\circ}) ="
+      ],
+      "expected": "\\frac{\\sqrt{2}}{2}",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\frac{\\sqrt{2}}{2}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\sin(45^{\\circ}) =",
+          "to": "= \\frac{\\sqrt{2}}{2}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-02",
+      "topic": "trig",
+      "lines": [
+        "\\cos(150^{\\circ}) ="
+      ],
+      "expected": "-\\frac{\\sqrt{3}}{2}",
+      "note": "second quadrant: through the reference angle",
+      "source": "simplifySteps",
+      "steps": [
+        "= -\\cos 30^{\\circ}",
+        "= -\\frac{\\sqrt{3}}{2}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\cos(150^{\\circ}) =",
+          "to": "= -\\cos 30^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= -\\cos 30^{\\circ}",
+          "to": "= -\\frac{\\sqrt{3}}{2}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-03",
+      "topic": "trig",
+      "lines": [
+        "\\tan\\left(\\frac{\\pi}{3}\\right) ="
+      ],
+      "expected": "\\sqrt{3}",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\sqrt{3}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\tan\\left(\\frac{\\pi}{3}\\right) =",
+          "to": "= \\sqrt{3}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-04",
+      "topic": "trig",
+      "lines": [
+        "\\sin\\left(\\frac{5\\pi}{4}\\right) ="
+      ],
+      "expected": "-\\frac{\\sqrt{2}}{2}",
+      "source": "simplifySteps",
+      "steps": [
+        "= -\\sin\\frac{\\pi}{4}",
+        "= -\\frac{\\sqrt{2}}{2}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\sin\\left(\\frac{5\\pi}{4}\\right) =",
+          "to": "= -\\sin\\frac{\\pi}{4}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= -\\sin\\frac{\\pi}{4}",
+          "to": "= -\\frac{\\sqrt{2}}{2}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-05",
+      "topic": "trig",
+      "lines": [
+        "\\sec(60^{\\circ}) ="
+      ],
+      "expected": "2",
+      "note": "a reciprocal function",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\frac{1}{\\cos 60^{\\circ}}",
+        "= 2"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\sec(60^{\\circ}) =",
+          "to": "= \\frac{1}{\\cos 60^{\\circ}}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{1}{\\cos 60^{\\circ}}",
+          "to": "= 2",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-06",
+      "topic": "trig",
+      "lines": [
+        "\\cos(-60^{\\circ}) ="
+      ],
+      "expected": "\\frac{1}{2}",
+      "note": "a negative angle",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\cos 60^{\\circ}",
+        "= \\frac{1}{2}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\cos(-60^{\\circ}) =",
+          "to": "= \\cos 60^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\cos 60^{\\circ}",
+          "to": "= \\frac{1}{2}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-07",
+      "topic": "trig",
+      "lines": [
+        "\\sin(390^{\\circ}) ="
+      ],
+      "expected": "\\frac{1}{2}",
+      "note": "more than a turn",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\sin 30^{\\circ}",
+        "= \\frac{1}{2}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\sin(390^{\\circ}) =",
+          "to": "= \\sin 30^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\sin 30^{\\circ}",
+          "to": "= \\frac{1}{2}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-08",
+      "topic": "trig",
+      "lines": [
+        "\\sin^{-1}\\left(\\frac{1}{2}\\right) ="
+      ],
+      "expected": "30^{\\circ}",
+      "note": "inverse: degrees, the school default",
+      "source": "simplifySteps",
+      "steps": [
+        "= 30^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\sin^{-1}\\left(\\frac{1}{2}\\right) =",
+          "to": "= 30^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-09",
+      "topic": "trig",
+      "lines": [
+        "\\cos^{-1}\\left(-\\frac{1}{2}\\right) ="
+      ],
+      "expected": "120^{\\circ}",
+      "source": "simplifySteps",
+      "steps": [
+        "= 120^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\cos^{-1}\\left(-\\frac{1}{2}\\right) =",
+          "to": "= 120^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-10",
+      "topic": "trig",
+      "lines": [
+        "2\\sin(30^{\\circ})\\cos(30^{\\circ}) ="
+      ],
+      "expected": "\\frac{\\sqrt{3}}{2}",
+      "note": "values written in, then multiplied",
+      "source": "simplifySteps",
+      "steps": [
+        "= 2 \\cdot \\frac{1}{2} \\cdot \\frac{\\sqrt{3}}{2}",
+        "= \\frac{\\sqrt{3}}{2}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "2\\sin(30^{\\circ})\\cos(30^{\\circ}) =",
+          "to": "= 2 \\cdot \\frac{1}{2} \\cdot \\frac{\\sqrt{3}}{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= 2 \\cdot \\frac{1}{2} \\cdot \\frac{\\sqrt{3}}{2}",
+          "to": "= \\frac{\\sqrt{3}}{2}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-11",
+      "topic": "trig-equation",
+      "lines": [
+        "\\sin x = \\frac{1}{2}"
+      ],
+      "expected": "x = 30^{\\circ}, \\ x = 150^{\\circ}",
+      "note": "no interval written: 0° ≤ x < 360°",
+      "source": "solveLatex",
+      "steps": [
+        "0^{\\circ} \\le x < 360^{\\circ}",
+        "\\sin^{-1}\\left(\\frac{1}{2}\\right) = 30^{\\circ}",
+        "x = 30^{\\circ}, \\ x = 180^{\\circ} - 30^{\\circ}",
+        "x = 30^{\\circ}, \\ x = 150^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\sin x = \\frac{1}{2}",
+          "to": "0^{\\circ} \\le x < 360^{\\circ}",
+          "status": "ok",
+          "reason": "the interval"
+        },
+        {
+          "from": "\\sin x = \\frac{1}{2}",
+          "to": "\\sin^{-1}\\left(\\frac{1}{2}\\right) = 30^{\\circ}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\sin x = \\frac{1}{2}",
+          "to": "x = 30^{\\circ}, \\ x = 180^{\\circ} - 30^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "x = 30^{\\circ}, \\ x = 180^{\\circ} - 30^{\\circ}",
+          "to": "x = 30^{\\circ}, \\ x = 150^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-12",
+      "topic": "trig-equation",
+      "lines": [
+        "2\\cos x - 1 = 0"
+      ],
+      "expected": "x = 60^{\\circ}, \\ x = 300^{\\circ}",
+      "source": "solveLatex",
+      "steps": [
+        "0^{\\circ} \\le x < 360^{\\circ}",
+        "2\\cos x = 1",
+        "\\cos x = \\frac{1}{2}",
+        "\\cos^{-1}\\left(\\frac{1}{2}\\right) = 60^{\\circ}",
+        "x = 60^{\\circ}, \\ x = 360^{\\circ} - 60^{\\circ}",
+        "x = 60^{\\circ}, \\ x = 300^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "2\\cos x - 1 = 0",
+          "to": "0^{\\circ} \\le x < 360^{\\circ}",
+          "status": "ok",
+          "reason": "the interval"
+        },
+        {
+          "from": "2\\cos x - 1 = 0",
+          "to": "2\\cos x = 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "2\\cos x = 1",
+          "to": "\\cos x = \\frac{1}{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "\\cos x = \\frac{1}{2}",
+          "to": "\\cos^{-1}\\left(\\frac{1}{2}\\right) = 60^{\\circ}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\cos x = \\frac{1}{2}",
+          "to": "x = 60^{\\circ}, \\ x = 360^{\\circ} - 60^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "x = 60^{\\circ}, \\ x = 360^{\\circ} - 60^{\\circ}",
+          "to": "x = 60^{\\circ}, \\ x = 300^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-13",
+      "topic": "trig-equation",
+      "lines": [
+        "\\tan x = 1"
+      ],
+      "expected": "x = 45^{\\circ}, \\ x = 225^{\\circ}",
+      "source": "solveLatex",
+      "steps": [
+        "0^{\\circ} \\le x < 360^{\\circ}",
+        "\\tan^{-1}(1) = 45^{\\circ}",
+        "x = 45^{\\circ}, \\ x = 180^{\\circ} + 45^{\\circ}",
+        "x = 45^{\\circ}, \\ x = 225^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\tan x = 1",
+          "to": "0^{\\circ} \\le x < 360^{\\circ}",
+          "status": "ok",
+          "reason": "the interval"
+        },
+        {
+          "from": "\\tan x = 1",
+          "to": "\\tan^{-1}(1) = 45^{\\circ}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\tan x = 1",
+          "to": "x = 45^{\\circ}, \\ x = 180^{\\circ} + 45^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "x = 45^{\\circ}, \\ x = 180^{\\circ} + 45^{\\circ}",
+          "to": "x = 45^{\\circ}, \\ x = 225^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-14",
+      "topic": "trig-equation",
+      "lines": [
+        "\\sin^{2} x = \\frac{1}{4}"
+      ],
+      "expected": "x = 0.523599 \\text{ or } x = 2.617994 \\text{ or } x = 3.665191 \\text{ or } x = 5.759587",
+      "note": "± two values of sin x",
+      "source": "solveLatex",
+      "steps": [
+        "0^{\\circ} \\le x < 360^{\\circ}",
+        "4\\sin^{2} x = 1",
+        "\\sin x = \\frac{1}{2}, \\ \\sin x = -\\frac{1}{2}",
+        "\\sin^{-1}\\left(\\frac{1}{2}\\right) = 30^{\\circ}",
+        "x = 30^{\\circ}, \\ x = 180^{\\circ} - 30^{\\circ}, \\ x = 180^{\\circ} + 30^{\\circ}, \\ x = 360^{\\circ} - 30^{\\circ}",
+        "x = 30^{\\circ}, \\ x = 150^{\\circ}, \\ x = 210^{\\circ}, \\ x = 330^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\sin^{2} x = \\frac{1}{4}",
+          "to": "0^{\\circ} \\le x < 360^{\\circ}",
+          "status": "ok",
+          "reason": "the interval"
+        },
+        {
+          "from": "\\sin^{2} x = \\frac{1}{4}",
+          "to": "4\\sin^{2} x = 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "4\\sin^{2} x = 1",
+          "to": "\\sin x = \\frac{1}{2}, \\ \\sin x = -\\frac{1}{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "\\sin x = \\frac{1}{2}, \\ \\sin x = -\\frac{1}{2}",
+          "to": "\\sin^{-1}\\left(\\frac{1}{2}\\right) = 30^{\\circ}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\sin x = \\frac{1}{2}, \\ \\sin x = -\\frac{1}{2}",
+          "to": "x = 30^{\\circ}, \\ x = 180^{\\circ} - 30^{\\circ}, \\ x = 180^{\\circ} + 30^{\\circ}, \\ x = 360^{\\circ} - 30^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "x = 30^{\\circ}, \\ x = 180^{\\circ} - 30^{\\circ}, \\ x = 180^{\\circ} + 30^{\\circ}, \\ x = 360^{\\circ} - 30^{\\circ}",
+          "to": "x = 30^{\\circ}, \\ x = 150^{\\circ}, \\ x = 210^{\\circ}, \\ x = 330^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-15",
+      "topic": "trig-equation",
+      "lines": [
+        "2\\sin^{2} x - \\sin x - 1 = 0"
+      ],
+      "expected": "x = 1.570796 \\text{ or } x = 3.665191 \\text{ or } x = 5.759587",
+      "note": "a quadratic in sin x",
+      "source": "solveLatex",
+      "steps": [
+        "0^{\\circ} \\le x < 360^{\\circ}",
+        "(2\\sin x + 1)(\\sin x - 1) = 0",
+        "\\sin x = -\\frac{1}{2}, \\ \\sin x = 1",
+        "\\sin^{-1}\\left(\\frac{1}{2}\\right) = 30^{\\circ}",
+        "x = 90^{\\circ}, \\ x = 180^{\\circ} + 30^{\\circ}, \\ x = 360^{\\circ} - 30^{\\circ}",
+        "x = 90^{\\circ}, \\ x = 210^{\\circ}, \\ x = 330^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "2\\sin^{2} x - \\sin x - 1 = 0",
+          "to": "0^{\\circ} \\le x < 360^{\\circ}",
+          "status": "ok",
+          "reason": "the interval"
+        },
+        {
+          "from": "2\\sin^{2} x - \\sin x - 1 = 0",
+          "to": "(2\\sin x + 1)(\\sin x - 1) = 0",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(2\\sin x + 1)(\\sin x - 1) = 0",
+          "to": "\\sin x = -\\frac{1}{2}, \\ \\sin x = 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "\\sin x = -\\frac{1}{2}, \\ \\sin x = 1",
+          "to": "\\sin^{-1}\\left(\\frac{1}{2}\\right) = 30^{\\circ}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\sin x = -\\frac{1}{2}, \\ \\sin x = 1",
+          "to": "x = 90^{\\circ}, \\ x = 180^{\\circ} + 30^{\\circ}, \\ x = 360^{\\circ} - 30^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "x = 90^{\\circ}, \\ x = 180^{\\circ} + 30^{\\circ}, \\ x = 360^{\\circ} - 30^{\\circ}",
+          "to": "x = 90^{\\circ}, \\ x = 210^{\\circ}, \\ x = 330^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-16",
+      "topic": "trig-equation",
+      "lines": [
+        "\\sin x = \\frac{\\sqrt{3}}{2}, \\ 0 \\le x < 2\\pi"
+      ],
+      "expected": "x = \\frac{\\pi}{3}, \\ x = \\frac{2\\pi}{3}",
+      "note": "the interval written, in radians",
+      "source": "solveLatex",
+      "steps": [
+        "\\sin^{-1}\\left(\\frac{\\sqrt{3}}{2}\\right) = \\frac{\\pi}{3}",
+        "x = \\frac{\\pi}{3}, \\ x = \\pi - \\frac{\\pi}{3}",
+        "x = \\frac{\\pi}{3}, \\ x = \\frac{2\\pi}{3}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\sin x = \\frac{\\sqrt{3}}{2}, \\ 0 \\le x < 2\\pi",
+          "to": "\\sin^{-1}\\left(\\frac{\\sqrt{3}}{2}\\right) = \\frac{\\pi}{3}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\sin x = \\frac{\\sqrt{3}}{2}, \\ 0 \\le x < 2\\pi",
+          "to": "x = \\frac{\\pi}{3}, \\ x = \\pi - \\frac{\\pi}{3}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "x = \\frac{\\pi}{3}, \\ x = \\pi - \\frac{\\pi}{3}",
+          "to": "x = \\frac{\\pi}{3}, \\ x = \\frac{2\\pi}{3}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-17",
+      "topic": "trig-equation",
+      "lines": [
+        "2\\sin x + \\sqrt{3} = 0"
+      ],
+      "expected": "x = 4.18879 \\text{ or } x = 5.235988",
+      "note": "a surd: third and fourth quadrants",
+      "source": "solveLatex",
+      "steps": [
+        "0^{\\circ} \\le x < 360^{\\circ}",
+        "2\\sin x = -\\sqrt{3}",
+        "\\sin x = -\\frac{\\sqrt{3}}{2}",
+        "\\sin^{-1}\\left(\\frac{\\sqrt{3}}{2}\\right) = 60^{\\circ}",
+        "x = 180^{\\circ} + 60^{\\circ}, \\ x = 360^{\\circ} - 60^{\\circ}",
+        "x = 240^{\\circ}, \\ x = 300^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "2\\sin x + \\sqrt{3} = 0",
+          "to": "0^{\\circ} \\le x < 360^{\\circ}",
+          "status": "ok",
+          "reason": "the interval"
+        },
+        {
+          "from": "2\\sin x + \\sqrt{3} = 0",
+          "to": "2\\sin x = -\\sqrt{3}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "2\\sin x = -\\sqrt{3}",
+          "to": "\\sin x = -\\frac{\\sqrt{3}}{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "\\sin x = -\\frac{\\sqrt{3}}{2}",
+          "to": "\\sin^{-1}\\left(\\frac{\\sqrt{3}}{2}\\right) = 60^{\\circ}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\sin x = -\\frac{\\sqrt{3}}{2}",
+          "to": "x = 180^{\\circ} + 60^{\\circ}, \\ x = 360^{\\circ} - 60^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "x = 180^{\\circ} + 60^{\\circ}, \\ x = 360^{\\circ} - 60^{\\circ}",
+          "to": "x = 240^{\\circ}, \\ x = 300^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-18",
+      "topic": "trig-equation",
+      "lines": [
+        "\\cos\\theta = -\\frac{1}{2}"
+      ],
+      "expected": "theta = 2.094395 \\text{ or } theta = 4.18879",
+      "source": "solveLatex",
+      "steps": [
+        "0^{\\circ} \\le \\theta < 360^{\\circ}",
+        "\\cos^{-1}\\left(\\frac{1}{2}\\right) = 60^{\\circ}",
+        "\\theta = 180^{\\circ} - 60^{\\circ}, \\ \\theta = 180^{\\circ} + 60^{\\circ}",
+        "\\theta = 120^{\\circ}, \\ \\theta = 240^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\cos\\theta = -\\frac{1}{2}",
+          "to": "0^{\\circ} \\le \\theta < 360^{\\circ}",
+          "status": "ok",
+          "reason": "the interval"
+        },
+        {
+          "from": "\\cos\\theta = -\\frac{1}{2}",
+          "to": "\\cos^{-1}\\left(\\frac{1}{2}\\right) = 60^{\\circ}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\cos\\theta = -\\frac{1}{2}",
+          "to": "\\theta = 180^{\\circ} - 60^{\\circ}, \\ \\theta = 180^{\\circ} + 60^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "\\theta = 180^{\\circ} - 60^{\\circ}, \\ \\theta = 180^{\\circ} + 60^{\\circ}",
+          "to": "\\theta = 120^{\\circ}, \\ \\theta = 240^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-19",
+      "topic": "trig-equation",
+      "lines": [
+        "\\sin 2x = \\frac{\\sqrt{3}}{2}"
+      ],
+      "expected": "x = 0.523599 \\text{ or } x = 1.047198 \\text{ or } x = 3.665191 \\text{ or } x = 4.18879",
+      "note": "a double angle: 2x over two turns",
+      "source": "solveLatex",
+      "steps": [
+        "0^{\\circ} \\le x < 360^{\\circ}",
+        "\\sin^{-1}\\left(\\frac{\\sqrt{3}}{2}\\right) = 60^{\\circ}",
+        "2x = 60^{\\circ}, \\ 2x = 120^{\\circ}, \\ 2x = 420^{\\circ}, \\ 2x = 480^{\\circ}",
+        "x = 30^{\\circ}, \\ x = 60^{\\circ}, \\ x = 210^{\\circ}, \\ x = 240^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\sin 2x = \\frac{\\sqrt{3}}{2}",
+          "to": "0^{\\circ} \\le x < 360^{\\circ}",
+          "status": "ok",
+          "reason": "the interval"
+        },
+        {
+          "from": "\\sin 2x = \\frac{\\sqrt{3}}{2}",
+          "to": "\\sin^{-1}\\left(\\frac{\\sqrt{3}}{2}\\right) = 60^{\\circ}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\sin 2x = \\frac{\\sqrt{3}}{2}",
+          "to": "2x = 60^{\\circ}, \\ 2x = 120^{\\circ}, \\ 2x = 420^{\\circ}, \\ 2x = 480^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "2x = 60^{\\circ}, \\ 2x = 120^{\\circ}, \\ 2x = 420^{\\circ}, \\ 2x = 480^{\\circ}",
+          "to": "x = 30^{\\circ}, \\ x = 60^{\\circ}, \\ x = 210^{\\circ}, \\ x = 240^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-20",
+      "topic": "trig-equation",
+      "lines": [
+        "\\sin x = \\cos x"
+      ],
+      "expected": "x = 0.785398 \\text{ or } x = 3.926991",
+      "note": "through tan x = 1",
+      "source": "solveLatex",
+      "steps": [
+        "0^{\\circ} \\le x < 360^{\\circ}",
+        "\\tan x = 1",
+        "\\tan^{-1}(1) = 45^{\\circ}",
+        "x = 45^{\\circ}, \\ x = 180^{\\circ} + 45^{\\circ}",
+        "x = 45^{\\circ}, \\ x = 225^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\sin x = \\cos x",
+          "to": "0^{\\circ} \\le x < 360^{\\circ}",
+          "status": "ok",
+          "reason": "the interval"
+        },
+        {
+          "from": "\\sin x = \\cos x",
+          "to": "\\tan x = 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "\\tan x = 1",
+          "to": "\\tan^{-1}(1) = 45^{\\circ}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\tan x = 1",
+          "to": "x = 45^{\\circ}, \\ x = 180^{\\circ} + 45^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "x = 45^{\\circ}, \\ x = 180^{\\circ} + 45^{\\circ}",
+          "to": "x = 45^{\\circ}, \\ x = 225^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-21",
+      "topic": "trig-equation",
+      "lines": [
+        "2\\cos^{2} x + \\cos x - 1 = 0"
+      ],
+      "expected": "x = 1.047198 \\text{ or } x = 3.141593 \\text{ or } x = 5.235988",
+      "source": "solveLatex",
+      "steps": [
+        "0^{\\circ} \\le x < 360^{\\circ}",
+        "(\\cos x + 1)(2\\cos x - 1) = 0",
+        "\\cos x = -1, \\ \\cos x = \\frac{1}{2}",
+        "\\cos^{-1}\\left(\\frac{1}{2}\\right) = 60^{\\circ}",
+        "x = 60^{\\circ}, \\ x = 180^{\\circ}, \\ x = 360^{\\circ} - 60^{\\circ}",
+        "x = 60^{\\circ}, \\ x = 180^{\\circ}, \\ x = 300^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "2\\cos^{2} x + \\cos x - 1 = 0",
+          "to": "0^{\\circ} \\le x < 360^{\\circ}",
+          "status": "ok",
+          "reason": "the interval"
+        },
+        {
+          "from": "2\\cos^{2} x + \\cos x - 1 = 0",
+          "to": "(\\cos x + 1)(2\\cos x - 1) = 0",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(\\cos x + 1)(2\\cos x - 1) = 0",
+          "to": "\\cos x = -1, \\ \\cos x = \\frac{1}{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "\\cos x = -1, \\ \\cos x = \\frac{1}{2}",
+          "to": "\\cos^{-1}\\left(\\frac{1}{2}\\right) = 60^{\\circ}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\cos x = -1, \\ \\cos x = \\frac{1}{2}",
+          "to": "x = 60^{\\circ}, \\ x = 180^{\\circ}, \\ x = 360^{\\circ} - 60^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "x = 60^{\\circ}, \\ x = 180^{\\circ}, \\ x = 360^{\\circ} - 60^{\\circ}",
+          "to": "x = 60^{\\circ}, \\ x = 180^{\\circ}, \\ x = 300^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-22",
+      "topic": "trig-equation",
+      "lines": [
+        "\\cos(x - 30^{\\circ}) = \\frac{1}{2}"
+      ],
+      "expected": "x = 1.570796 \\text{ or } x = 5.759587",
+      "note": "a shifted angle",
+      "source": "solveLatex",
+      "steps": [
+        "0^{\\circ} \\le x < 360^{\\circ}",
+        "\\cos^{-1}\\left(\\frac{1}{2}\\right) = 60^{\\circ}",
+        "x - 30^{\\circ} = 60^{\\circ}, \\ x - 30^{\\circ} = 300^{\\circ}",
+        "x = 90^{\\circ}, \\ x = 330^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\cos(x - 30^{\\circ}) = \\frac{1}{2}",
+          "to": "0^{\\circ} \\le x < 360^{\\circ}",
+          "status": "ok",
+          "reason": "the interval"
+        },
+        {
+          "from": "\\cos(x - 30^{\\circ}) = \\frac{1}{2}",
+          "to": "\\cos^{-1}\\left(\\frac{1}{2}\\right) = 60^{\\circ}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\cos(x - 30^{\\circ}) = \\frac{1}{2}",
+          "to": "x - 30^{\\circ} = 60^{\\circ}, \\ x - 30^{\\circ} = 300^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "x - 30^{\\circ} = 60^{\\circ}, \\ x - 30^{\\circ} = 300^{\\circ}",
+          "to": "x = 90^{\\circ}, \\ x = 330^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-23",
+      "topic": "trig-equation",
+      "lines": [
+        "2\\sin^{2} x + 3\\cos x - 3 = 0"
+      ],
+      "expected": "x = 0 \\text{ or } x = 1.047198 \\text{ or } x = 5.235988",
+      "note": "sin² = 1 - cos² first",
+      "source": "solveLatex",
+      "steps": [
+        "0^{\\circ} \\le x < 360^{\\circ}",
+        "2(1 - \\cos^{2} x) + 3\\cos x - 3 = 0",
+        "2 - 2\\cos^{2} x + 3\\cos x - 3 = 0",
+        "2\\cos^{2} x - 3\\cos x + 1 = 0",
+        "\\cos x = \\frac{1}{2}, \\ \\cos x = 1",
+        "\\cos^{-1}\\left(\\frac{1}{2}\\right) = 60^{\\circ}",
+        "x = 0^{\\circ}, \\ x = 60^{\\circ}, \\ x = 360^{\\circ} - 60^{\\circ}",
+        "x = 0^{\\circ}, \\ x = 60^{\\circ}, \\ x = 300^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "2\\sin^{2} x + 3\\cos x - 3 = 0",
+          "to": "0^{\\circ} \\le x < 360^{\\circ}",
+          "status": "ok",
+          "reason": "the interval"
+        },
+        {
+          "from": "2\\sin^{2} x + 3\\cos x - 3 = 0",
+          "to": "2(1 - \\cos^{2} x) + 3\\cos x - 3 = 0",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "2(1 - \\cos^{2} x) + 3\\cos x - 3 = 0",
+          "to": "2 - 2\\cos^{2} x + 3\\cos x - 3 = 0",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "2 - 2\\cos^{2} x + 3\\cos x - 3 = 0",
+          "to": "2\\cos^{2} x - 3\\cos x + 1 = 0",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "2\\cos^{2} x - 3\\cos x + 1 = 0",
+          "to": "\\cos x = \\frac{1}{2}, \\ \\cos x = 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "\\cos x = \\frac{1}{2}, \\ \\cos x = 1",
+          "to": "\\cos^{-1}\\left(\\frac{1}{2}\\right) = 60^{\\circ}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\cos x = \\frac{1}{2}, \\ \\cos x = 1",
+          "to": "x = 0^{\\circ}, \\ x = 60^{\\circ}, \\ x = 360^{\\circ} - 60^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "x = 0^{\\circ}, \\ x = 60^{\\circ}, \\ x = 360^{\\circ} - 60^{\\circ}",
+          "to": "x = 0^{\\circ}, \\ x = 60^{\\circ}, \\ x = 300^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "8 lines: at the maxSolveSteps cap (working may have been cut)"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-24",
+      "topic": "trig-identity",
+      "lines": [
+        "\\frac{\\sin 2x}{\\sin x}"
+      ],
+      "expected": "2\\cos x",
+      "note": "double angle, then cancel",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\frac{2\\sin x \\cos x}{\\sin x}",
+        "= 2\\cos x"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\frac{\\sin 2x}{\\sin x}",
+          "to": "= \\frac{2\\sin x \\cos x}{\\sin x}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{2\\sin x \\cos x}{\\sin x}",
+          "to": "= 2\\cos x",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-25",
+      "topic": "trig-identity",
+      "lines": [
+        "1 - \\sin^{2} x"
+      ],
+      "expected": "\\cos^{2} x",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\cos^{2} x"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "1 - \\sin^{2} x",
+          "to": "= \\cos^{2} x",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-26",
+      "topic": "trig-identity",
+      "lines": [
+        "\\frac{1 - \\cos 2x}{\\sin 2x}"
+      ],
+      "expected": "\\tan x",
+      "note": "the form of cos 2x that cancels",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\frac{1 - (1 - 2\\sin^{2} x)}{2\\sin x \\cos x}",
+        "= \\frac{\\sin x}{\\cos x}",
+        "= \\tan x"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\frac{1 - \\cos 2x}{\\sin 2x}",
+          "to": "= \\frac{1 - (1 - 2\\sin^{2} x)}{2\\sin x \\cos x}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{1 - (1 - 2\\sin^{2} x)}{2\\sin x \\cos x}",
+          "to": "= \\frac{\\sin x}{\\cos x}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{\\sin x}{\\cos x}",
+          "to": "= \\tan x",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-27",
+      "topic": "trig-identity",
+      "lines": [
+        "\\tan x \\cos x"
+      ],
+      "expected": "\\sin x",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\frac{\\sin x}{\\cos x}\\cos x",
+        "= \\sin x"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\tan x \\cos x",
+          "to": "= \\frac{\\sin x}{\\cos x}\\cos x",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{\\sin x}{\\cos x}\\cos x",
+          "to": "= \\sin x",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-28",
+      "topic": "trig-identity",
+      "lines": [
+        "\\sec^{2} x - 1"
+      ],
+      "expected": "\\tan^{2} x",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\tan^{2} x"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\sec^{2} x - 1",
+          "to": "= \\tan^{2} x",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-29",
+      "topic": "integral-indefinite",
+      "lines": [
+        "\\int 2x(x^{2}+1)^{5} \\, dx"
+      ],
+      "expected": "\\frac{(x^{2} + 1)^{6}}{6} + C",
+      "note": "substitution u = x² + 1, shown",
+      "source": "simplifySteps",
+      "steps": [
+        "u = x^{2} + 1",
+        "du = 2x \\, dx",
+        "= \\int u^{5} \\, du",
+        "= \\frac{u^{6}}{6} + C",
+        "= \\frac{(x^{2} + 1)^{6}}{6} + C"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\int 2x(x^{2}+1)^{5} \\, dx",
+          "to": "u = x^{2} + 1",
+          "status": "ok",
+          "reason": "the substitution u"
+        },
+        {
+          "from": "\\int 2x(x^{2}+1)^{5} \\, dx",
+          "to": "du = 2x \\, dx",
+          "status": "ok",
+          "reason": "du = u' dx"
+        },
+        {
+          "from": "\\int 2x(x^{2}+1)^{5} \\, dx",
+          "to": "= \\int u^{5} \\, du",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\int u^{5} \\, du",
+          "to": "= \\frac{u^{6}}{6} + C",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{u^{6}}{6} + C",
+          "to": "= \\frac{(x^{2} + 1)^{6}}{6} + C",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-30",
+      "topic": "integral-indefinite",
+      "lines": [
+        "\\int x e^{x} \\, dx"
+      ],
+      "expected": "x e^{x} - e^{x} + C",
+      "note": "by parts",
+      "source": "simplifySteps",
+      "steps": [
+        "\\int u \\, dv = uv - \\int v \\, du",
+        "u = x, \\ dv = e^{x} \\, dx",
+        "du = dx, \\ v = e^{x}",
+        "= xe^{x} - \\int e^{x} \\, dx",
+        "= xe^{x} - e^{x} + C"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\int x e^{x} \\, dx",
+          "to": "\\int u \\, dv = uv - \\int v \\, du",
+          "status": "ok",
+          "reason": "the formula for integration by parts"
+        },
+        {
+          "from": "\\int x e^{x} \\, dx",
+          "to": "u = x, \\ dv = e^{x} \\, dx",
+          "status": "ok",
+          "reason": "the parts chosen"
+        },
+        {
+          "from": "\\int x e^{x} \\, dx",
+          "to": "du = dx, \\ v = e^{x}",
+          "status": "ok",
+          "reason": "the parts agree"
+        },
+        {
+          "from": "\\int x e^{x} \\, dx",
+          "to": "= xe^{x} - \\int e^{x} \\, dx",
+          "status": "unverified",
+          "reason": "no sample point"
+        },
+        {
+          "from": "= xe^{x} - \\int e^{x} \\, dx",
+          "to": "= xe^{x} - e^{x} + C",
+          "status": "ok",
+          "reason": "an antiderivative of the integrand"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `= xe^{x} - \\int e^{x} \\, dx` (no sample point)"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-31",
+      "topic": "integral-indefinite",
+      "lines": [
+        "\\int x \\sin x \\, dx"
+      ],
+      "expected": "-x\\cos x + \\sin x + C",
+      "note": "by parts",
+      "source": "simplifySteps",
+      "steps": [
+        "\\int u \\, dv = uv - \\int v \\, du",
+        "u = x, \\ dv = \\sin x \\, dx",
+        "du = dx, \\ v = -\\cos x",
+        "= -x\\cos x + \\int \\cos x \\, dx",
+        "= -x\\cos x + \\sin x + C"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\int x \\sin x \\, dx",
+          "to": "\\int u \\, dv = uv - \\int v \\, du",
+          "status": "ok",
+          "reason": "the formula for integration by parts"
+        },
+        {
+          "from": "\\int x \\sin x \\, dx",
+          "to": "u = x, \\ dv = \\sin x \\, dx",
+          "status": "ok",
+          "reason": "the parts chosen"
+        },
+        {
+          "from": "\\int x \\sin x \\, dx",
+          "to": "du = dx, \\ v = -\\cos x",
+          "status": "ok",
+          "reason": "the parts agree"
+        },
+        {
+          "from": "\\int x \\sin x \\, dx",
+          "to": "= -x\\cos x + \\int \\cos x \\, dx",
+          "status": "unverified",
+          "reason": "no sample point"
+        },
+        {
+          "from": "= -x\\cos x + \\int \\cos x \\, dx",
+          "to": "= -x\\cos x + \\sin x + C",
+          "status": "ok",
+          "reason": "an antiderivative of the integrand"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `= -x\\cos x + \\int \\cos x \\, dx` (no sample point)"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-32",
+      "topic": "integral-indefinite",
+      "lines": [
+        "\\int \\ln x \\, dx"
+      ],
+      "expected": "x\\ln x - x + C",
+      "note": "by parts, dv = dx",
+      "source": "simplifySteps",
+      "steps": [
+        "\\int u \\, dv = uv - \\int v \\, du",
+        "u = \\ln x, \\ dv = dx",
+        "du = \\frac{1}{x} \\, dx, \\ v = x",
+        "= x\\ln x - \\int 1 \\, dx",
+        "= x\\ln x - x + C"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\int \\ln x \\, dx",
+          "to": "\\int u \\, dv = uv - \\int v \\, du",
+          "status": "ok",
+          "reason": "the formula for integration by parts"
+        },
+        {
+          "from": "\\int \\ln x \\, dx",
+          "to": "u = \\ln x, \\ dv = dx",
+          "status": "ok",
+          "reason": "the parts chosen"
+        },
+        {
+          "from": "\\int \\ln x \\, dx",
+          "to": "du = \\frac{1}{x} \\, dx, \\ v = x",
+          "status": "ok",
+          "reason": "the parts agree"
+        },
+        {
+          "from": "\\int \\ln x \\, dx",
+          "to": "= x\\ln x - \\int 1 \\, dx",
+          "status": "unverified",
+          "reason": "no sample point"
+        },
+        {
+          "from": "= x\\ln x - \\int 1 \\, dx",
+          "to": "= x\\ln x - x + C",
+          "status": "ok",
+          "reason": "an antiderivative of the integrand"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `= x\\ln x - \\int 1 \\, dx` (no sample point)"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-33",
+      "topic": "integral-indefinite",
+      "lines": [
+        "\\int \\sin^{2} x \\, dx"
+      ],
+      "expected": "\\frac{x}{2} - \\frac{\\sin 2x}{4} + C",
+      "note": "double angle first",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\int \\frac{1 - \\cos(2x)}{2} \\, dx",
+        "= \\frac{1}{2}x - \\frac{1}{2} \\cdot \\frac{\\sin(2x)}{2} + C",
+        "= \\frac{x}{2} - \\frac{\\sin(2x)}{4} + C"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\int \\sin^{2} x \\, dx",
+          "to": "= \\int \\frac{1 - \\cos(2x)}{2} \\, dx",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\int \\frac{1 - \\cos(2x)}{2} \\, dx",
+          "to": "= \\frac{1}{2}x - \\frac{1}{2} \\cdot \\frac{\\sin(2x)}{2} + C",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{1}{2}x - \\frac{1}{2} \\cdot \\frac{\\sin(2x)}{2} + C",
+          "to": "= \\frac{x}{2} - \\frac{\\sin(2x)}{4} + C",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-34",
+      "topic": "integral-indefinite",
+      "lines": [
+        "\\int \\tan x \\, dx"
+      ],
+      "expected": "-\\ln|\\cos x| + C",
+      "note": "sin/cos, then u = cos x",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\int \\frac{\\sin x}{\\cos x} \\, dx",
+        "u = \\cos x",
+        "du = -\\sin x \\, dx",
+        "= -\\int \\frac{1}{u} \\, du",
+        "= -\\ln|u| + C",
+        "= -\\ln|\\cos x| + C"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\int \\tan x \\, dx",
+          "to": "= \\int \\frac{\\sin x}{\\cos x} \\, dx",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\int \\frac{\\sin x}{\\cos x} \\, dx",
+          "to": "u = \\cos x",
+          "status": "ok",
+          "reason": "the substitution u"
+        },
+        {
+          "from": "= \\int \\frac{\\sin x}{\\cos x} \\, dx",
+          "to": "du = -\\sin x \\, dx",
+          "status": "ok",
+          "reason": "du = u' dx"
+        },
+        {
+          "from": "= \\int \\frac{\\sin x}{\\cos x} \\, dx",
+          "to": "= -\\int \\frac{1}{u} \\, du",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= -\\int \\frac{1}{u} \\, du",
+          "to": "= -\\ln|u| + C",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= -\\ln|u| + C",
+          "to": "= -\\ln|\\cos x| + C",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-35",
+      "topic": "integral-indefinite",
+      "lines": [
+        "\\int \\frac{1}{1 + x^{2}} \\, dx"
+      ],
+      "expected": "\\tan^{-1} x + C",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\tan^{-1} x + C"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\int \\frac{1}{1 + x^{2}} \\, dx",
+          "to": "= \\tan^{-1} x + C",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-36",
+      "topic": "integral-indefinite",
+      "lines": [
+        "\\int \\frac{1}{x^{2} - 1} \\, dx"
+      ],
+      "expected": "\\frac{1}{2}\\ln|x - 1| - \\frac{1}{2}\\ln|x + 1| + C",
+      "note": "partial fractions",
+      "source": "simplifySteps",
+      "steps": [
+        "\\frac{1}{(x - 1)(x + 1)} = \\frac{A}{x - 1} + \\frac{B}{x + 1}",
+        "1 = A(x + 1) + B(x - 1)",
+        "A = \\frac{1}{2}, \\ B = -\\frac{1}{2}",
+        "= \\int \\left(\\frac{1}{2(x - 1)} - \\frac{1}{2(x + 1)}\\right) \\, dx",
+        "= \\frac{1}{2}\\ln|x - 1| - \\frac{1}{2}\\ln|x + 1| + C"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\int \\frac{1}{x^{2} - 1} \\, dx",
+          "to": "\\frac{1}{(x - 1)(x + 1)} = \\frac{A}{x - 1} + \\frac{B}{x + 1}",
+          "status": "ok",
+          "reason": "holds with the coefficients"
+        },
+        {
+          "from": "\\int \\frac{1}{x^{2} - 1} \\, dx",
+          "to": "1 = A(x + 1) + B(x - 1)",
+          "status": "ok",
+          "reason": "holds with the coefficients"
+        },
+        {
+          "from": "\\int \\frac{1}{x^{2} - 1} \\, dx",
+          "to": "A = \\frac{1}{2}, \\ B = -\\frac{1}{2}",
+          "status": "ok",
+          "reason": "the coefficients"
+        },
+        {
+          "from": "\\int \\frac{1}{x^{2} - 1} \\, dx",
+          "to": "= \\int \\left(\\frac{1}{2(x - 1)} - \\frac{1}{2(x + 1)}\\right) \\, dx",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\int \\left(\\frac{1}{2(x - 1)} - \\frac{1}{2(x + 1)}\\right) \\, dx",
+          "to": "= \\frac{1}{2}\\ln|x - 1| - \\frac{1}{2}\\ln|x + 1| + C",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-37",
+      "topic": "integral-indefinite",
+      "lines": [
+        "\\int \\frac{2x}{x^{2} + 1} \\, dx"
+      ],
+      "expected": "\\ln(x^{2} + 1) + C",
+      "note": "f'/f",
+      "source": "simplifySteps",
+      "steps": [
+        "u = x^{2} + 1",
+        "du = 2x \\, dx",
+        "= \\int \\frac{1}{u} \\, du",
+        "= \\ln|u| + C",
+        "= \\ln(x^{2} + 1) + C"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\int \\frac{2x}{x^{2} + 1} \\, dx",
+          "to": "u = x^{2} + 1",
+          "status": "ok",
+          "reason": "the substitution u"
+        },
+        {
+          "from": "\\int \\frac{2x}{x^{2} + 1} \\, dx",
+          "to": "du = 2x \\, dx",
+          "status": "ok",
+          "reason": "du = u' dx"
+        },
+        {
+          "from": "\\int \\frac{2x}{x^{2} + 1} \\, dx",
+          "to": "= \\int \\frac{1}{u} \\, du",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\int \\frac{1}{u} \\, du",
+          "to": "= \\ln|u| + C",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\ln|u| + C",
+          "to": "= \\ln(x^{2} + 1) + C",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-38",
+      "topic": "integral-indefinite",
+      "lines": [
+        "\\int \\sin x \\cos x \\, dx"
+      ],
+      "expected": "\\frac{\\sin^{2} x}{2} + C",
+      "source": "simplifySteps",
+      "steps": [
+        "u = \\sin x",
+        "du = \\cos x \\, dx",
+        "= \\int u \\, du",
+        "= \\frac{u^{2}}{2} + C",
+        "= \\frac{\\sin^{2} x}{2} + C"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\int \\sin x \\cos x \\, dx",
+          "to": "u = \\sin x",
+          "status": "ok",
+          "reason": "the substitution u"
+        },
+        {
+          "from": "\\int \\sin x \\cos x \\, dx",
+          "to": "du = \\cos x \\, dx",
+          "status": "ok",
+          "reason": "du = u' dx"
+        },
+        {
+          "from": "\\int \\sin x \\cos x \\, dx",
+          "to": "= \\int u \\, du",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\int u \\, du",
+          "to": "= \\frac{u^{2}}{2} + C",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{u^{2}}{2} + C",
+          "to": "= \\frac{\\sin^{2} x}{2} + C",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-39",
+      "topic": "integral-definite",
+      "lines": [
+        "\\int_{0}^{1} 2x(x^{2}+1)^{5} \\, dx ="
+      ],
+      "expected": "\\frac{21}{2}",
+      "note": "substitution: the limits change",
+      "source": "simplifySteps",
+      "steps": [
+        "u = x^{2} + 1",
+        "du = 2x \\, dx",
+        "= \\int_{1}^{2} u^{5} \\, du",
+        "= \\left[\\frac{u^{6}}{6}\\right]_{1}^{2}",
+        "= \\frac{32}{3} - \\frac{1}{6}",
+        "= \\frac{21}{2}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\int_{0}^{1} 2x(x^{2}+1)^{5} \\, dx =",
+          "to": "u = x^{2} + 1",
+          "status": "ok",
+          "reason": "the substitution u"
+        },
+        {
+          "from": "\\int_{0}^{1} 2x(x^{2}+1)^{5} \\, dx =",
+          "to": "du = 2x \\, dx",
+          "status": "ok",
+          "reason": "du = u' dx"
+        },
+        {
+          "from": "\\int_{0}^{1} 2x(x^{2}+1)^{5} \\, dx =",
+          "to": "= \\int_{1}^{2} u^{5} \\, du",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\int_{1}^{2} u^{5} \\, du",
+          "to": "= \\left[\\frac{u^{6}}{6}\\right]_{1}^{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\left[\\frac{u^{6}}{6}\\right]_{1}^{2}",
+          "to": "= \\frac{32}{3} - \\frac{1}{6}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{32}{3} - \\frac{1}{6}",
+          "to": "= \\frac{21}{2}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-40",
+      "topic": "integral-definite",
+      "lines": [
+        "\\int_{0}^{1} x e^{x} \\, dx ="
+      ],
+      "expected": "1",
+      "note": "by parts with limits",
+      "source": "simplifySteps",
+      "steps": [
+        "\\int u \\, dv = uv - \\int v \\, du",
+        "u = x, \\ dv = e^{x} \\, dx",
+        "du = dx, \\ v = e^{x}",
+        "= \\left[xe^{x}\\right]_{0}^{1} - \\int_{0}^{1} e^{x} \\, dx",
+        "= \\left[xe^{x} - e^{x}\\right]_{0}^{1}",
+        "= 0 - (-1)",
+        "= 1"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\int_{0}^{1} x e^{x} \\, dx =",
+          "to": "\\int u \\, dv = uv - \\int v \\, du",
+          "status": "ok",
+          "reason": "the formula for integration by parts"
+        },
+        {
+          "from": "\\int_{0}^{1} x e^{x} \\, dx =",
+          "to": "u = x, \\ dv = e^{x} \\, dx",
+          "status": "ok",
+          "reason": "the parts chosen"
+        },
+        {
+          "from": "\\int_{0}^{1} x e^{x} \\, dx =",
+          "to": "du = dx, \\ v = e^{x}",
+          "status": "ok",
+          "reason": "the parts agree"
+        },
+        {
+          "from": "\\int_{0}^{1} x e^{x} \\, dx =",
+          "to": "= \\left[xe^{x}\\right]_{0}^{1} - \\int_{0}^{1} e^{x} \\, dx",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\left[xe^{x}\\right]_{0}^{1} - \\int_{0}^{1} e^{x} \\, dx",
+          "to": "= \\left[xe^{x} - e^{x}\\right]_{0}^{1}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\left[xe^{x} - e^{x}\\right]_{0}^{1}",
+          "to": "= 0 - (-1)",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= 0 - (-1)",
+          "to": "= 1",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-41",
+      "topic": "integral-definite",
+      "lines": [
+        "\\int_{0}^{\\pi} \\sin^{2} x \\, dx ="
+      ],
+      "expected": "\\frac{\\pi}{2}",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\int_{0}^{\\pi} \\frac{1 - \\cos(2x)}{2} \\, dx",
+        "= \\left[\\frac{x}{2} - \\frac{\\sin(2x)}{4}\\right]_{0}^{\\pi}",
+        "= \\frac{\\pi}{2} - 0",
+        "= \\frac{\\pi}{2}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\int_{0}^{\\pi} \\sin^{2} x \\, dx =",
+          "to": "= \\int_{0}^{\\pi} \\frac{1 - \\cos(2x)}{2} \\, dx",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\int_{0}^{\\pi} \\frac{1 - \\cos(2x)}{2} \\, dx",
+          "to": "= \\left[\\frac{x}{2} - \\frac{\\sin(2x)}{4}\\right]_{0}^{\\pi}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\left[\\frac{x}{2} - \\frac{\\sin(2x)}{4}\\right]_{0}^{\\pi}",
+          "to": "= \\frac{\\pi}{2} - 0",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{\\pi}{2} - 0",
+          "to": "= \\frac{\\pi}{2}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-42",
+      "topic": "integral-definite",
+      "lines": [
+        "\\int_{0}^{1} \\frac{1}{1 + x^{2}} \\, dx ="
+      ],
+      "expected": "\\frac{\\pi}{4}",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\left[\\tan^{-1} x\\right]_{0}^{1}",
+        "= \\frac{\\pi}{4} - 0",
+        "= \\frac{\\pi}{4}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\int_{0}^{1} \\frac{1}{1 + x^{2}} \\, dx =",
+          "to": "= \\left[\\tan^{-1} x\\right]_{0}^{1}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\left[\\tan^{-1} x\\right]_{0}^{1}",
+          "to": "= \\frac{\\pi}{4} - 0",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{\\pi}{4} - 0",
+          "to": "= \\frac{\\pi}{4}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-43",
+      "topic": "limit",
+      "lines": [
+        "\\lim_{x \\to 0}\\frac{\\sqrt{x+4}-2}{x}"
+      ],
+      "expected": "\\frac{1}{4}",
+      "note": "the conjugate",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\lim_{x \\to 0} \\frac{(\\sqrt{x + 4} - 2)(\\sqrt{x + 4} + 2)}{x(\\sqrt{x + 4} + 2)}",
+        "= \\lim_{x \\to 0} \\frac{x + 4 - 4}{x(\\sqrt{x + 4} + 2)}",
+        "= \\lim_{x \\to 0} \\frac{1}{\\sqrt{x + 4} + 2}",
+        "= \\frac{1}{\\sqrt{0 + 4} + 2}",
+        "= \\frac{1}{4}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\lim_{x \\to 0}\\frac{\\sqrt{x+4}-2}{x}",
+          "to": "= \\lim_{x \\to 0} \\frac{(\\sqrt{x + 4} - 2)(\\sqrt{x + 4} + 2)}{x(\\sqrt{x + 4} + 2)}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\lim_{x \\to 0} \\frac{(\\sqrt{x + 4} - 2)(\\sqrt{x + 4} + 2)}{x(\\sqrt{x + 4} + 2)}",
+          "to": "= \\lim_{x \\to 0} \\frac{x + 4 - 4}{x(\\sqrt{x + 4} + 2)}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\lim_{x \\to 0} \\frac{x + 4 - 4}{x(\\sqrt{x + 4} + 2)}",
+          "to": "= \\lim_{x \\to 0} \\frac{1}{\\sqrt{x + 4} + 2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\lim_{x \\to 0} \\frac{1}{\\sqrt{x + 4} + 2}",
+          "to": "= \\frac{1}{\\sqrt{0 + 4} + 2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{1}{\\sqrt{0 + 4} + 2}",
+          "to": "= \\frac{1}{4}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-44",
+      "topic": "limit",
+      "lines": [
+        "\\lim_{x \\to 4}\\frac{\\sqrt{x}-2}{x-4}"
+      ],
+      "expected": "\\frac{1}{4}",
+      "note": "the conjugate",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\lim_{x \\to 4} \\frac{(\\sqrt{x} - 2)(\\sqrt{x} + 2)}{(x - 4)(\\sqrt{x} + 2)}",
+        "= \\lim_{x \\to 4} \\frac{x - 4}{(x - 4)(\\sqrt{x} + 2)}",
+        "= \\lim_{x \\to 4} \\frac{1}{\\sqrt{x} + 2}",
+        "= \\frac{1}{\\sqrt{4} + 2}",
+        "= \\frac{1}{4}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\lim_{x \\to 4}\\frac{\\sqrt{x}-2}{x-4}",
+          "to": "= \\lim_{x \\to 4} \\frac{(\\sqrt{x} - 2)(\\sqrt{x} + 2)}{(x - 4)(\\sqrt{x} + 2)}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\lim_{x \\to 4} \\frac{(\\sqrt{x} - 2)(\\sqrt{x} + 2)}{(x - 4)(\\sqrt{x} + 2)}",
+          "to": "= \\lim_{x \\to 4} \\frac{x - 4}{(x - 4)(\\sqrt{x} + 2)}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\lim_{x \\to 4} \\frac{x - 4}{(x - 4)(\\sqrt{x} + 2)}",
+          "to": "= \\lim_{x \\to 4} \\frac{1}{\\sqrt{x} + 2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\lim_{x \\to 4} \\frac{1}{\\sqrt{x} + 2}",
+          "to": "= \\frac{1}{\\sqrt{4} + 2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{1}{\\sqrt{4} + 2}",
+          "to": "= \\frac{1}{4}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-45",
+      "topic": "limit",
+      "lines": [
+        "\\lim_{x \\to 0}\\frac{e^{x}-1}{x}"
+      ],
+      "expected": "1",
+      "note": "L'Hôpital",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\lim_{x \\to 0} e^{x}",
+        "= e^{0}",
+        "= 1"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\lim_{x \\to 0}\\frac{e^{x}-1}{x}",
+          "to": "= \\lim_{x \\to 0} e^{x}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\lim_{x \\to 0} e^{x}",
+          "to": "= e^{0}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= e^{0}",
+          "to": "= 1",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-46",
+      "topic": "limit",
+      "lines": [
+        "\\lim_{x \\to 0}\\frac{1 - \\cos x}{x^{2}} ="
+      ],
+      "expected": "\\frac{1}{2}",
+      "note": "L'Hôpital twice",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\lim_{x \\to 0} \\frac{\\sin x}{2x}",
+        "= \\lim_{x \\to 0} \\frac{\\cos x}{2}",
+        "= \\frac{\\cos 0}{2}",
+        "= \\frac{1}{2}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\lim_{x \\to 0}\\frac{1 - \\cos x}{x^{2}} =",
+          "to": "= \\lim_{x \\to 0} \\frac{\\sin x}{2x}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\lim_{x \\to 0} \\frac{\\sin x}{2x}",
+          "to": "= \\lim_{x \\to 0} \\frac{\\cos x}{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\lim_{x \\to 0} \\frac{\\cos x}{2}",
+          "to": "= \\frac{\\cos 0}{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{\\cos 0}{2}",
+          "to": "= \\frac{1}{2}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-47",
+      "topic": "limit",
+      "lines": [
+        "\\lim_{x \\to 0}\\frac{\\sin 3x}{\\sin 2x}"
+      ],
+      "expected": "\\frac{3}{2}",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\lim_{x \\to 0} \\frac{3\\cos(3x)}{2\\cos(2x)}",
+        "= \\frac{3\\cos(3 \\cdot 0)}{2\\cos(2 \\cdot 0)}",
+        "= \\frac{3}{2}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\lim_{x \\to 0}\\frac{\\sin 3x}{\\sin 2x}",
+          "to": "= \\lim_{x \\to 0} \\frac{3\\cos(3x)}{2\\cos(2x)}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\lim_{x \\to 0} \\frac{3\\cos(3x)}{2\\cos(2x)}",
+          "to": "= \\frac{3\\cos(3 \\cdot 0)}{2\\cos(2 \\cdot 0)}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{3\\cos(3 \\cdot 0)}{2\\cos(2 \\cdot 0)}",
+          "to": "= \\frac{3}{2}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-48",
+      "topic": "derivative",
+      "lines": [
+        "\\frac{d}{dx}\\tan^{-1} x ="
+      ],
+      "expected": "\\frac{1}{1 + x^{2}}",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\frac{1}{1 + x^{2}}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\frac{d}{dx}\\tan^{-1} x =",
+          "to": "= \\frac{1}{1 + x^{2}}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-49",
+      "topic": "derivative",
+      "lines": [
+        "\\frac{d^{3}}{dx^{3}} x^{5} ="
+      ],
+      "expected": "60x^{2}",
+      "note": "each earlier stage under the derivatives still to take",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\frac{d^{2}}{dx^{2}}(5x^{4})",
+        "= \\frac{d}{dx}(5 \\cdot 4x^{3})",
+        "= \\frac{d}{dx}(20x^{3})",
+        "= 20 \\cdot 3x^{2}",
+        "= 60x^{2}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\frac{d^{3}}{dx^{3}} x^{5} =",
+          "to": "= \\frac{d^{2}}{dx^{2}}(5x^{4})",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{d^{2}}{dx^{2}}(5x^{4})",
+          "to": "= \\frac{d}{dx}(5 \\cdot 4x^{3})",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{d}{dx}(5 \\cdot 4x^{3})",
+          "to": "= \\frac{d}{dx}(20x^{3})",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{d}{dx}(20x^{3})",
+          "to": "= 20 \\cdot 3x^{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= 20 \\cdot 3x^{2}",
+          "to": "= 60x^{2}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-50",
+      "topic": "derivative",
+      "lines": [
+        "x^{2} + y^{2} = 25",
+        "\\frac{dy}{dx} ="
+      ],
+      "expected": "-\\frac{x}{y}",
+      "note": "implicit differentiation",
+      "source": "solveFromLines",
+      "steps": [
+        "2x + 2y\\frac{dy}{dx} = 0",
+        "2y\\frac{dy}{dx} = -2x",
+        "\\frac{dy}{dx} = -\\frac{x}{y}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\frac{dy}{dx} =",
+          "to": "2x + 2y\\frac{dy}{dx} = 0",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable side)"
+        },
+        {
+          "from": "\\frac{dy}{dx} =",
+          "to": "2y\\frac{dy}{dx} = -2x",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable side)"
+        },
+        {
+          "from": "\\frac{dy}{dx} =",
+          "to": "\\frac{dy}{dx} = -\\frac{x}{y}",
+          "status": "unverified",
+          "reason": "the line before is unreadable (untranslatable)"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `2x + 2y\\frac{dy}{dx} = 0` (unreadable step (untranslatable side))",
+        "unverified: `2y\\frac{dy}{dx} = -2x` (unreadable step (untranslatable side))",
+        "unverified: `\\frac{dy}{dx} = -\\frac{x}{y}` (the line before is unreadable (untranslatable))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-51",
+      "topic": "derivative",
+      "lines": [
+        "\\frac{d}{dx} x^{x} ="
+      ],
+      "expected": "x^{x}(\\ln x + 1)",
+      "note": "logarithmic differentiation",
+      "source": "simplifySteps",
+      "steps": [
+        "y = x^{x}",
+        "\\ln y = x\\ln x",
+        "\\frac{1}{y}\\frac{dy}{dx} = \\ln x + 1",
+        "\\frac{dy}{dx} = y(\\ln x + 1)",
+        "= x^{x}(\\ln x + 1)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\frac{d}{dx} x^{x} =",
+          "to": "y = x^{x}",
+          "status": "unverified",
+          "reason": "switches between an expression and a relation"
+        },
+        {
+          "from": "y = x^{x}",
+          "to": "\\ln y = x\\ln x",
+          "status": "unverified",
+          "reason": "several unknowns (y, x)"
+        },
+        {
+          "from": "\\ln y = x\\ln x",
+          "to": "\\frac{1}{y}\\frac{dy}{dx} = \\ln x + 1",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable side)"
+        },
+        {
+          "from": "\\ln y = x\\ln x",
+          "to": "\\frac{dy}{dx} = y(\\ln x + 1)",
+          "status": "unverified",
+          "reason": "several unknowns (y, x, D_y)"
+        },
+        {
+          "from": "\\frac{dy}{dx} = y(\\ln x + 1)",
+          "to": "= x^{x}(\\ln x + 1)",
+          "status": "ok",
+          "reason": "equal to the question"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `y = x^{x}` (switches between an expression and a relation)",
+        "unverified: `\\ln y = x\\ln x` (several unknowns (y, x))",
+        "unverified: `\\frac{1}{y}\\frac{dy}{dx} = \\ln x + 1` (unreadable step (untranslatable side))",
+        "unverified: `\\frac{dy}{dx} = y(\\ln x + 1)` (several unknowns (y, x, D_y))"
+      ],
       "pass": true,
       "failures": []
     }

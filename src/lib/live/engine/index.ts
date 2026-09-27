@@ -29,6 +29,10 @@ import { evaluateUnits, unitValueToLatex, valuesMatch } from "./units";
 import { solveFromLines, type SystemDeps } from "./systems";
 import { linearSolveSteps, simplifyExpressionSteps, type LinearSteps, type RelOp } from "./algebra";
 import { createCalculus } from "./calculus";
+import { createIntegration } from "./integration";
+import { createLimits } from "./limits";
+import { createTrig } from "./trig";
+import { solveTrigEquation } from "./trigEquation";
 import { solveAdvanced, solveExactly, type AdvancedDeps } from "./advanced";
 import { factorExpressionSteps, rationalExpressionSteps } from "./polynomial";
 import { chainRelation, isSolutionSet, relaxVerdict, splitAtCommas, unionRelation, type Part } from "./compound";
@@ -195,7 +199,19 @@ export function createEngine(mod: MathModule): LiveEngine {
 
   const tr = (latex: string, plain = false): Translated => translate(math, latex, { plain });
   // derivatives, integrals and limits with teacher-style steps; registers limit/antiderivative/bracketEval on `math`
-  const calculus = createCalculus(math, { translate: (latex) => tr(latex) });
+  // substitution, parts, identities, standard forms, partial fractions (`integration.ts`), tried
+  // when the term-by-term rules have nothing; they use those rules for the inner integral
+  const integration = createIntegration(() => ({ basic: (f, x) => calculus.basicIntegral(f, x) }));
+  // 0/0 beyond factorising: the conjugate, L'Hôpital (`limits.ts`)
+  const limits = createLimits();
+  const calculus = createCalculus(math, {
+    translate: (latex) => tr(latex),
+    integrate: (f, x, constant) => integration.integrate(f, x, constant),
+    integrateDefinite: (f, x, a, b) => integration.integrateDefinite(f, x, a, b),
+    limit: (operand, x, a, prefix) => limits.limit(operand, x, a, prefix),
+  });
+  // exact trig values, identities and equations (`trig.ts`, `trigEquation.ts`)
+  const trig = createTrig(math, { translate: (latex) => tr(latex) });
 
   const evaluateTranslated = (t: Translated, latex: string): { value: unknown; latex: string; ok: boolean; note: string; error?: string } => {
     const exact = t.functions.includes("integral") && integralsExact(math, t.source);
@@ -240,6 +256,10 @@ export function createEngine(mod: MathModule): LiveEngine {
       // the calculus answer as the steps end (`6x + 2`, `\ln 2`, `\frac{x^{3}}{3} + C`), not mathjs's rendering
       const exact = ev.ok && t.functions.length > 0 ? calculus.resultLatex(t.source) : null;
       if (exact) ev.latex = exact;
+      // `\sin 60^{\circ}` is `\frac{\sqrt{3}}{2}`, not 0.866; `\tan 90^{\circ}` has no value (not 1.633 × 10¹⁶)
+      const trigValue = !exact && ev.ok && t.functions.length > 0 ? trig.value(t.source) : null;
+      if (trigValue?.kind === "exact") ev.latex = trigValue.latex;
+      if (trigValue?.kind === "undefined") ev.ok = false;
       const out: LineAnalysis = { kind: "expression", math: t.source, resultLatex: "", verdict: "none", note: ev.note };
       if (t.hasUnits) out.units = { ok: ev.ok };
       if (ev.error) out.error = ev.error;
@@ -584,11 +604,27 @@ export function createEngine(mod: MathModule): LiveEngine {
     return out;
   };
 
+  /**
+   * `= 2\cos x` under `\frac{\sin 2x}{\sin x}`: the next line of a chain (a simplification, an
+   * identity proved one rewrite at a time), checked against the line above by sampling. Null
+   * when the line is not that, and the ordinary rules apply (a lone `=` stays incomplete).
+   */
+  const continuation = (cleaned: string, ctx: AnalyzeContext): LineAnalysis | null => {
+    const m = /^=(?!=)\s*/.exec(cleaned);
+    if (!m || ctx.previous?.kind !== "expression" || !ctx.previous.math) return null;
+    const rest = cleaned.slice(m[0].length).trim();
+    if (!rest || splitRelations(rest).ops.length > 0 || preClassify(rest).kind !== null) return null;
+    // the student's own step: checked, never finished for them
+    return { ...analyzeExpression(rest, ctx, false), resultLatex: "" };
+  };
+
   // --- entry points --------------------------------------------------------
   const analyze = (latex: string, ctx: AnalyzeContext): LineAnalysis => {
     // preClassify needs the raw line (it tells "decorations only" from "empty"), so the rewritten
     // form is only substituted when a rewrite actually happened.
     const cleaned = preprocessLatex(latex);
+    const chained = continuation(cleaned, ctx);
+    if (chained) return chained;
     const expanded = expandDerivativeNotation(cleaned, ctx);
     const pre = preClassify(expanded === cleaned ? latex : expanded);
     switch (pre.kind) {
@@ -796,6 +832,11 @@ export function createEngine(mod: MathModule): LiveEngine {
       // quadratics, |x|, radicals, exponentials and logs, the unknown in a denominator (advanced.ts)
       const advanced = solveAdvanced(latex, advancedDeps);
       if (advanced) return { latex: advanced.final, steps: advanced.steps };
+      // the unknown inside sin / cos / tan: exact angles in an interval, or no answer at all —
+      // never the numeric root-finder's thirty values in radians (`trigEquation.ts`)
+      const trigEquation = solveTrigEquation(math, latex, { translate: (l) => tr(l), solveAlgebra: (l) => solveLatex(l) });
+      if (trigEquation === "refuse") return null;
+      if (trigEquation) return trigEquation;
       const pre = preprocessLatex(latex);
       const split = splitRelations(pre);
       if (split.sides.length !== 2 || split.ops[0] !== "==") return null;
@@ -896,6 +937,9 @@ export function createEngine(mod: MathModule): LiveEngine {
       // a derivative, an integral or a limit: the rule applied, then simplified (`calculus.ts`)
       const calc = calculus.steps(latex);
       if (calc) return calc;
+      // exact trig values, the reference angle first (`trig.ts`)
+      const trigSteps = trig.steps(latex);
+      if (trigSteps) return trigSteps;
       const pre = preprocessLatex(latex).trim().replace(/=\s*$/, "").trim();
       if (!pre || /\d\.\d/.test(pre)) return null;
       if (splitRelations(pre).ops.length > 0) return null;
@@ -1029,6 +1073,7 @@ export function createEngine(mod: MathModule): LiveEngine {
         const tex = nodeToLatex(simplified);
         return tex ? { latex: tex } : null;
       }
+      if (trig.value(t.source)?.kind === "undefined") return null; // tan 90°: no value, not 1.633 × 10¹⁶
       const ev = evaluateTranslated(t, s);
       if (!ev.ok) return null;
       return ev.latex ? { latex: ev.latex } : null;

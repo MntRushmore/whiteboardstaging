@@ -59,13 +59,12 @@ const DERIVATIVES: Array<[string, string[]]> = [
   ["\\frac{d}{dx}\\ln x", ["\\frac{1}{x}"]],
   ["\\frac{d}{dx}\\ln|x|", ["\\frac{1}{x}"]],
   ["\\frac{d}{dx} 2^{x}", ["2^{x}\\ln 2"]],
-  // second (and third) derivatives: differentiate, then differentiate the answer — every line
-  // still under the d/dx left to apply, so each one equals the line above it
+  // second derivatives: differentiate under the derivative still to take, then differentiate
+  // the answer — every line equals the question (`= 4x^{3}` would be the FIRST derivative)
   ["\\frac{d^2}{dx^2}(x^3 + 2x^2)", ["\\frac{d}{dx}(3x^{2} + 2 \\cdot 2x)", "\\frac{d}{dx}(3x^{2} + 4x)", "3 \\cdot 2x + 4", "6x + 4"]],
-  ["\\frac{d^2}{dx^2} x^4", ["\\frac{d}{dx} 4x^{3}", "4 \\cdot 3x^{2}", "12x^{2}"]],
-  ["\\frac{d^{2}}{dx^{2}} \\sin(3x)", ["\\frac{d}{dx}(\\cos(3x) \\cdot 3)", "\\frac{d}{dx} 3\\cos(3x)", "3 \\cdot (-\\sin(3x) \\cdot 3)", "-9\\sin(3x)"]],
-  ["\\frac{d^{2}}{dx^{2}} \\frac{1}{x}", ["\\frac{d^{2}}{dx^{2}} x^{-1}", "\\frac{d}{dx}(-x^{-2})", "2x^{-3}", "\\frac{2}{x^{3}}"]],
-  ["\\frac{d^{3}}{dx^{3}} x^{5}", ["\\frac{d^{2}}{dx^{2}} 5x^{4}", "\\frac{d}{dx}(5 \\cdot 4x^{3})", "\\frac{d}{dx} 20x^{3}", "20 \\cdot 3x^{2}", "60x^{2}"]],
+  ["\\frac{d^2}{dx^2} x^4", ["\\frac{d}{dx}(4x^{3})", "4 \\cdot 3x^{2}", "12x^{2}"]],
+  ["\\frac{d^3}{dx^3} x^5", ["\\frac{d^{2}}{dx^{2}}(5x^{4})", "\\frac{d}{dx}(5 \\cdot 4x^{3})", "\\frac{d}{dx}(20x^{3})", "20 \\cdot 3x^{2}", "60x^{2}"]],
+  ["\\frac{d^2}{dx^2} \\frac{1}{x}", ["\\frac{d^{2}}{dx^{2}}(x^{-1})", "\\frac{d}{dx}(-x^{-2})", "2x^{-3}", "\\frac{2}{x^{3}}"]],
 ];
 
 describe("derivatives: the rule applied, then simplified", () => {
@@ -201,7 +200,7 @@ describe("limits: substitute, or factor and cancel, or divide by the highest pow
     for (const latex of [
       "\\lim_{x \\to 1}\\frac{1}{x-1}", // no finite limit
       "\\lim_{n \\to \\infty}(1 + \\frac{1}{n})^n", // e, not a rational function
-      "\\lim_{x \\to 4}\\frac{\\sqrt{x} - 2}{x - 4}", // needs the conjugate
+      "\\lim_{x \\to 0}\\frac{\\cos x}{x}", // not 0/0: no finite limit (the conjugate and L'Hôpital: limits.test.ts)
       "\\lim_{x \\to 0}\\frac{\\sin x}{x^2}",
       "\\lim_{x \\to 0^{+}}\\ln x", // one-sided
     ]) {
@@ -219,12 +218,13 @@ describe("the board's order of asking", () => {
 });
 
 describe("what the engine refuses stays refused (the model may try; nothing wrong is drawn)", () => {
+  // (parts, substitution, identities and arctan are answered now: integration.test.ts)
   it.each([
-    "\\int x e^{x} dx", // integration by parts
-    "\\int \\sin^2 x \\, dx", // an identity first
-    "\\int \\frac{1}{x^2+1} dx", // arctan
-    "\\int x\\cos(x^2) dx", // substitution
-    "\\frac{d}{dx} x^x",
+    "\\int e^{x^2} dx", // no elementary antiderivative
+    "\\int \\sin(x^2) dx", // no elementary antiderivative
+    "\\int \\frac{\\sin x}{x} dx", // no elementary antiderivative
+    "\\int e^{x} \\sin x \\, dx", // parts twice, round in a circle: not done
+    "\\frac{d}{dx} \\Gamma(x)", // (x^x is logarithmic differentiation now: limits.test.ts)
     "\\frac{d}{dx} f(x)",
   ])("%s", (latex) => {
     expect(steps(latex)).toBeNull();
@@ -319,7 +319,7 @@ describe("Mathpix variants read the same", () => {
     ["\\frac{d}{d x}\\left(3 x^{2}+2 x\\right)", ["3 \\cdot 2x + 2", "6x + 2"]],
     ["\\frac{\\mathrm{d}}{\\mathrm{d} x}\\left(x^{3}\\right)", ["3x^{2}"]],
     ["\\frac{\\operatorname{d}}{\\operatorname{d} x} x^{3}", ["3x^{2}"]],
-    ["\\frac{d^{2}}{d x^{2}} x^{4}", ["\\frac{d}{dx} 4x^{3}", "4 \\cdot 3x^{2}", "12x^{2}"]],
+    ["\\frac{d^{2}}{d x^{2}} x^{4}", ["\\frac{d}{dx}(4x^{3})", "4 \\cdot 3x^{2}", "12x^{2}"]],
     ["\\int e^{x} d x", ["e^{x} + C"]],
     ["\\int \\exp (x) d x", ["e^{x} + C"]],
     ["\\frac{d}{d x} \\exp (2 x)", ["e^{2x} \\cdot 2", "2e^{2x}"]],

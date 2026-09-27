@@ -186,7 +186,8 @@ describe("engine: solveLatex", () => {
   it("cubic, exponential and numeric fallback", () => {
     expect(engine.solveLatex("x^3 - 6x^2 + 11x - 6 = 0")?.latex).toBe("x = 1, \\ x = 2, \\ x = 3");
     expect(engine.solveLatex("2^x = 8")?.latex).toBe("x = 3");
-    expect(engine.solveLatex("\\sin x = 2")).toBeNull();
+    // no angle has sin x = 2: the bound, then no solution (trigEquation.ts), not a numeric scan
+    expect(engine.solveLatex("\\sin x = 2")?.latex).toBe("\\varnothing");
   });
   it("returns null when unsupported", () => {
     expect(engine.solveLatex("x + y = 5")).toBeNull();
@@ -362,8 +363,8 @@ describe("engine: definite integrals", () => {
   });
   it("gives no answer for integrals it cannot do", () => {
     const refused = [
-      "\\int x e^{x} dx =", // indefinite, needs integration by parts
-      "\\int \\sin^2 x \\, dx =", // indefinite, needs an identity first
+      "\\int e^{x^2} dx =", // indefinite, no elementary antiderivative
+      "\\int \\frac{\\sin x}{x} dx =", // indefinite, no elementary antiderivative
       "\\int_{-1}^{1} \\frac{1}{x} dx =", // singular inside the interval
       "\\int_{0}^{1} \\frac{1}{x} dx =", // divergent at the endpoint
       "\\int_{-1}^{1} \\sqrt{x} dx =", // not real on the whole interval
@@ -448,7 +449,7 @@ describe("engine: constructs the engine refuses", () => {
       "\\lim_{x \\to 1} \\frac{1}{x - 1} =", // no finite limit
       "\\lim_{x \\to 0} \\frac{\\sin x}{x^2} =",
       "\\lim_{x \\to 0^{+}} \\ln x =", // one-sided
-      "\\lim_{x \\to 4} \\frac{\\sqrt{x} - 2}{x - 4} =", // needs the conjugate
+      "\\lim_{x \\to 0} \\frac{\\cos x}{x} =", // not 0/0: no finite limit (the conjugate and L'Hôpital are limits.ts)
     ];
     for (const latex of refused) {
       const a = engine.analyzeLine(latex, answer);
@@ -467,7 +468,7 @@ describe("engine: constructs the engine refuses", () => {
     }
   });
   it("never answers a line it could not read, whatever the mode", () => {
-    const hostile = ["\\lim_{x \\to 0} \\frac{1}{x} =", "\\begin{matrix}1\\end{matrix} =", "\\frac{dy}{dx} =", "f'(x) =", "\\int x e^{x} dx =", "\\sum_{i=1}^{n} i =", "\\oint_C F dr =", "\\nabla \\cdot F ="];
+    const hostile = ["\\lim_{x \\to 0} \\frac{1}{x} =", "\\begin{matrix}1\\end{matrix} =", "\\frac{dy}{dx} =", "f'(x) =", "\\int e^{x^2} dx =", "\\sum_{i=1}^{n} i =", "\\oint_C F dr =", "\\nabla \\cdot F ="];
     for (const latex of hostile) {
       for (const ctx of [feedback, answer]) {
         const a = engine.analyzeLine(latex, ctx);
@@ -488,7 +489,7 @@ describe("engine: regression net — everything that already worked", () => {
     ["2^{10} =", "1024"],
     ["\\sqrt{144}", "12"],
     ["\\sqrt{16}", "4"],
-    ["\\sin(30^\\circ)", "0.5"],
+    ["\\sin(30^\\circ)", "\\frac{1}{2}"], // exact at the special angles (trig.ts)
     ["\\log_{2}(8)", "3"],
     ["\\ln(e^2)", "2"],
     ["2\\pi", "6.283"],

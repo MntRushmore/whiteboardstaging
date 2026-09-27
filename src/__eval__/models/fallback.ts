@@ -64,6 +64,21 @@ export const FALLBACK_CANDIDATES: readonly FallbackProblem[] = [
   { id: "fb-26", area: "integral", lines: ["\\int \\tan x \\, dx"], expect: { kind: "antiderivative", integrand: "\\tan(x)", variable: "x" }, answer: "-\\ln|\\cos x| + C" },
   { id: "fb-27", area: "limit", lines: ["\\lim_{x \\to 0} \\frac{\\ln(1 + x)}{x}"], expect: { kind: "number", value: 1 }, answer: "1" },
   { id: "fb-28", area: "inequality", lines: ["x^{2} - 5x + 6 < 0"], expect: { kind: "relation", latex: "2 < x < 3", variable: "x" }, answer: "2 < x < 3" },
+  // harder ones, added when the engine learned trig and integration techniques (2026-09-27)
+  { id: "fb-26", area: "integral", lines: ["\\int e^{x} \\sin x \\, dx"], expect: { kind: "antiderivative", integrand: "e^{x} \\sin(x)", variable: "x" }, answer: "\\frac{e^{x}(\\sin x - \\cos x)}{2} + C" },
+  { id: "fb-27", area: "integral", lines: ["\\int \\frac{1}{x^{2}(x + 1)} \\, dx"], expect: { kind: "antiderivative", integrand: "\\frac{1}{x^{2}(x + 1)}", variable: "x" }, answer: "-\\frac{1}{x} - \\ln|x| + \\ln|x + 1| + C" },
+  { id: "fb-28", area: "integral", lines: ["\\int \\frac{1}{x^{2} + 2x + 5} \\, dx"], expect: { kind: "antiderivative", integrand: "\\frac{1}{x^{2} + 2x + 5}", variable: "x" }, answer: "\\frac{1}{2}\\arctan\\frac{x + 1}{2} + C" },
+  { id: "fb-29", area: "integral", lines: ["\\int x^{2} e^{x} \\, dx"], expect: { kind: "antiderivative", integrand: "x^{2} e^{x}", variable: "x" }, answer: "e^{x}(x^{2} - 2x + 2) + C" },
+  { id: "fb-30", area: "trig", lines: ["\\sin x = \\frac{1}{3}, \\ 0 \\le x < 2\\pi"], expect: { kind: "values", values: { x: [Math.asin(1 / 3), PI - Math.asin(1 / 3)] } }, answer: "x = \\sin^{-1}\\frac{1}{3}, \\ x = \\pi - \\sin^{-1}\\frac{1}{3}" },
+  { id: "fb-31", area: "series", lines: ["\\sum_{n=0}^{\\infty} \\left(\\frac{1}{2}\\right)^{n}"], expect: { kind: "number", value: 2 }, answer: "2" },
+  { id: "fb-32", area: "series", lines: ["\\sum_{n=1}^{\\infty} \\frac{1}{n(n+1)}"], expect: { kind: "number", value: 1 }, answer: "1" },
+  { id: "fb-33", area: "function", lines: ["2^{x} = 3^{x - 1}"], expect: { kind: "values", values: { x: [Math.log(3) / (Math.log(3) - Math.log(2))] } }, answer: "x = \\frac{\\ln 3}{\\ln 3 - \\ln 2}" },
+  { id: "fb-34", area: "function", lines: ["e^{2x} - 3e^{x} + 2 = 0"], expect: { kind: "values", values: { x: [0, Math.log(2)] } }, answer: "x = 0, \\ x = \\ln 2" },
+  { id: "fb-35", area: "inequality", lines: ["|x - 1| + |x + 2| = 5"], expect: { kind: "values", values: { x: [-3, 2] } }, answer: "x = -3, \\ x = 2" },
+  { id: "fb-36", area: "counting", lines: ["\\binom{10}{3} ="], expect: { kind: "number", value: 120 }, answer: "120" },
+  { id: "fb-37", area: "limit", lines: ["\\lim_{x \\to 0} \\frac{\\tan x - x}{x^{3}}"], expect: { kind: "number", value: 1 / 3 }, answer: "\\frac{1}{3}" },
+  { id: "fb-38", area: "sequence", lines: ["a_{1} = 3, \\ a_{n} = 2a_{n-1}", "a_{6} = ?"], expect: { kind: "number", value: 96 }, answer: "96" },
+  { id: "fb-39", area: "optimization", lines: ["A = x(20 - 2x)", "\\text{maximum of } A"], expect: { kind: "number", value: 50 }, answer: "50" },
 ];
 
 export const FALLBACK_SIZE = 25;

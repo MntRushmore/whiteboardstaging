@@ -82,6 +82,40 @@ export class StepWriter {
   }
 }
 
+/**
+ * A relation at the top level of a line (`u = x^{2} + 1`, `du = 2x \, dx`, `0 \le x < 2\pi`):
+ * not inside braces or brackets (`\sum_{i=1}^{3}`, `\lim_{x \to 0}` are expressions).
+ */
+export function isRelationLine(latex: string): boolean {
+  let depth = 0;
+  for (let i = 0; i < latex.length; i++) {
+    const ch = latex[i];
+    if (ch === "\\") {
+      const m = /^\\([a-zA-Z]+)/.exec(latex.slice(i));
+      if (!m) {
+        i++;
+        continue;
+      }
+      if (depth === 0 && /^(?:le|leq|ge|geq|ne|neq|lt|gt|approx)$/.test(m[1])) return true;
+      i += m[0].length - 1;
+      continue;
+    }
+    if (ch === "{" || ch === "(" || ch === "[") depth++;
+    else if (ch === "}" || ch === ")" || ch === "]") depth--;
+    else if (depth === 0 && (ch === "=" || ch === "<" || ch === ">")) return true;
+  }
+  return false;
+}
+
+/**
+ * A line under a question the way a teacher writes it: an expression continues the one above
+ * (`= 2x + 6`), a relation stands on its own (`u = x^{2} + 1` beside a substitution).
+ */
+export function continueLine(latex: string): string {
+  const s = latex.trim();
+  return isRelationLine(s) ? s : `= ${s}`;
+}
+
 /** `x = -1, \ x = 4` (ascending), one root `x = 4`, none `\varnothing`. Same-value roots once. */
 export function rootsLine(variable: string, roots: readonly Root[]): string {
   const sorted = dedupeRoots(roots).sort((a, b) => a.value - b.value);

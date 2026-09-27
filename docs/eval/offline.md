@@ -5,23 +5,23 @@
 > paths of Solve, in `LiveLoop.startSolve`'s order) and the result is judged semantically by
 > `src/__eval__/oracle.ts`. A problem passes when all five stages pass. Corpus: `src/__eval__/corpus.ts`.
 
-**217 / 220 problems pass (99%).**
+**271 / 271 problems pass (100%).**
 
 ## Stages
 
 | stage | pass | of all | of those with a local solution |
 | --- | --- | --- | --- |
-| local solution | 219 | 100% | — |
-| answer correct | 217 | 99% | 99% |
-| steps consistent | 219 | 100% | 100% |
-| hand can draw | 219 | 100% | 100% |
-| no words | 219 | 100% | 100% |
+| local solution | 271 | 100% | — |
+| answer correct | 271 | 100% | 100% |
+| steps consistent | 271 | 100% | 100% |
+| hand can draw | 271 | 100% | 100% |
+| no words | 271 | 100% | 100% |
 
 Answer verdicts (`approx`: a decimal or ≈ where a teacher writes the exact value; `form`: right value, wrong shape; `unsolved`: the last line is not an answer yet; `missing`: no local solution):
 
 | ok | approx | form | unsolved | wrong | missing | unjudged |
 | --- | --- | --- | --- | --- | --- | --- |
-| 217 | 2 | 0 | 0 | 0 | 1 | 0 |
+| 271 | 0 | 0 | 0 | 0 | 0 | 0 |
 
 ## By topic
 
@@ -40,12 +40,14 @@ Answer verdicts (`approx`: a decimal or ≈ where a teacher writes the exact val
 | exponential | 9 | **9** (100%) | 9 | 9 | 9 | 9 | 9 |
 | logarithmic | 9 | **9** (100%) | 9 | 9 | 9 | 9 | 9 |
 | expand-factor | 18 | **18** (100%) | 18 | 18 | 18 | 18 | 18 |
-| derivative | 16 | **16** (100%) | 16 | 16 | 16 | 16 | 16 |
-| integral-indefinite | 9 | **8** (89%) | 8 | 8 | 8 | 8 | 8 |
-| integral-definite | 8 | **8** (100%) | 8 | 8 | 8 | 8 | 8 |
-| limit | 8 | **8** (100%) | 8 | 8 | 8 | 8 | 8 |
+| derivative | 20 | **20** (100%) | 20 | 20 | 20 | 20 | 20 |
+| integral-indefinite | 19 | **19** (100%) | 19 | 19 | 19 | 19 | 19 |
+| integral-definite | 12 | **12** (100%) | 12 | 12 | 12 | 12 | 12 |
+| limit | 13 | **13** (100%) | 13 | 13 | 13 | 13 | 13 |
 | units-percent | 12 | **12** (100%) | 12 | 12 | 12 | 12 | 12 |
-| trig | 8 | **6** (75%) | 8 | 6 | 8 | 8 | 8 |
+| trig | 18 | **18** (100%) | 18 | 18 | 18 | 18 | 18 |
+| trig-equation | 13 | **13** (100%) | 13 | 13 | 13 | 13 | 13 |
+| trig-identity | 5 | **5** (100%) | 5 | 5 | 5 | 5 | 5 |
 
 ## Failure patterns
 
@@ -53,40 +55,15 @@ Grouped by stage and reason (numbers and LaTeX blanked), most frequent first. On
 
 | # | stage | pattern | problems | example |
 | --- | --- | --- | --- | --- |
-| 1 | answer | approx: a decimal where the exact value is wanted | 2: tr-04, tr-08 | `= 0.866` |
-| 2 | local | no local solution — integral-indefinite | 1: ii-08 |  |
 
 ## Every failure
 
 | id | topic | problem | expected | stage | what went wrong | offending LaTeX |
 | --- | --- | --- | --- | --- | --- | --- |
-| ii-08 | integral-indefinite | `\int x e^{x^{2}} \, dx` | `\frac{1}{2} e^{x^{2}} + C` | local | no local solution: Solve would ask the model |  |
-| tr-04 | trig | `\sin(60^{\circ}) =` | `\frac{\sqrt{3}}{2}` | answer | approx: a decimal where the exact value is wanted | `= 0.866` |
-| tr-08 | trig | `\tan(60^{\circ}) =` | `\sqrt{3}` | answer | approx: a decimal where the exact value is wanted | `= 1.732` |
 
 ## Detail of every failing problem
 
-#### ii-08 · integral-indefinite
 
-- problem: `\int x e^{x^{2}} \, dx` → expected `\frac{1}{2} e^{x^{2}} + C` (substitution u = x²)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### tr-04 · trig
-
-- problem: `\sin(60^{\circ}) =` → expected `\frac{\sqrt{3}}{2}` (exact value)
-- local path: localAnswer
-- answer: **approx** — a decimal where the exact value is wanted
-- steps:
-  1. `= 0.866` ✓
-
-#### tr-08 · trig
-
-- problem: `\tan(60^{\circ}) =` → expected `\sqrt{3}` (exact value)
-- local path: localAnswer
-- answer: **approx** — a decimal where the exact value is wanted
-- steps:
-  1. `= 1.732` ✓
 
 ## Passing, with warnings
 
@@ -106,25 +83,17 @@ Grouped by stage and reason (numbers and LaTeX blanked), most frequent first. On
 | ra-04 | unverified: `x \neq -1, \ x \neq 3` (unreadable step (untranslatable side)) |
 | ra-05 | 8 lines: at the maxSolveSteps cap (working may have been cut); unverified: `x \neq 2` (an equation and an inequality); unverified: `x = 2 + 3(x - 2)` (an equation and an inequality) |
 | ra-06 | 8 lines: at the maxSolveSteps cap (working may have been cut); widened: `x^{2} - 4 = 5(x - 2)` ({3} → {2, 3} (extraneous candidates)); unverified: `x \neq 2` (an equation and an inequality); unverified: `(x - 2) \cdot \frac{x^{2} - 4}{x - 2} = (x - 2) \cdot 5` (an equation and an inequality) |
-| rd-04 | widened: `x + 2 = x^{2}` ({2} → {-1, 2} (extraneous candidates)); unverified: `\sqrt{1} \neq -1` (an equation and an inequality); unverified: `x = 2` (an equation and an inequality) |
+| rd-04 | widened: `x + 2 = x^{2}` ({2} → {-1, 2} (extraneous candidates)) |
 | lg-05 | 8 lines: at the maxSolveSteps cap (working may have been cut); unverified: `x > 2` (an equation and an inequality); unverified: `\log_{2}(x(x - 2)) = 3` (an equation and an inequality) |
 | lg-06 | unverified: `x > 0` (an equation and an inequality); unverified: `\ln(x^{2}) = \ln 9` (an equation and an inequality) |
 | de-12 | unverified: `= 3x^{2} + 2` (the line before is unreadable (untranslatable)) |
 | de-13 | unverified: `= 2x - 3` (the line before is unreadable (untranslatable)) |
-| di-01 | unverified: `= \left[\frac{x^{3}}{3}\right]_{0}^{1}` (no sample point where both are defined); unverified: `= \frac{1}{3} - 0` (no sample point where both are defined) |
-| di-02 | unverified: `= \left[-\cos x\right]_{0}^{\pi}` (no sample point where both are defined); unverified: `= 1 - (-1)` (no sample point where both are defined) |
-| di-03 | unverified: `= \left[x^{2} + x\right]_{1}^{3}` (no sample point where both are defined); unverified: `= 12 - 2` (no sample point where both are defined) |
-| di-04 | unverified: `= \left[\frac{x^{4}}{4} - \frac{x^{2}}{2}\right]_{0}^{2}` (no sample point where both are defined); unverified: `= 2 - 0` (no sample point where both are defined) |
-| di-05 | unverified: `= \left[\ln\|x\|\right]_{1}^{e}` (no sample point where both are defined); unverified: `= 1 - 0` (no sample point where both are defined) |
-| di-06 | unverified: `= \left[e^{x}\right]_{0}^{1}` (no sample point where both are defined); unverified: `= e - 1` (no sample point where both are defined) |
-| di-07 | unverified: `= \left[\frac{x^{4}}{4}\right]_{-1}^{1}` (no sample point where both are defined); unverified: `= \frac{1}{4} - \frac{1}{4}` (no sample point where both are defined) |
-| di-08 | unverified: `= \left[\sin x\right]_{0}^{\frac{\pi}{2}}` (no sample point where both are defined); unverified: `= 1 - 0` (no sample point where both are defined) |
 | g2-10 | unverified: `x \neq -1` (an equation and an inequality) |
 | g2-14 | unverified: `x \neq 1` (an equation and an inequality) |
 | g2-17 | widened: `x^{2} = 4` ({-2} → {-2, 2} (extraneous candidates)); unverified: `x \neq 2` (an equation and an inequality); unverified: `(x - 2) \cdot \frac{x^{2}}{x - 2} = (x - 2) \cdot \frac{4}{x - 2}` (an equation and an inequality) |
 | g2-18 | unverified: `x \neq -1, \ x \neq 0` (unreadable step (untranslatable side)) |
-| g2-19 | widened: `2x + 3 = x^{2}` ({3} → {-1, 3} (extraneous candidates)); unverified: `\sqrt{1} \neq -1` (an equation and an inequality); unverified: `x = 3` (an equation and an inequality) |
-| g2-20 | widened: `x + 5 = (x - 1)^{2}` ({4} → {-1, 4} (extraneous candidates)); unverified: `\sqrt{4} \neq -2` (an equation and an inequality); unverified: `x = 4` (an equation and an inequality) |
+| g2-19 | widened: `2x + 3 = x^{2}` ({3} → {-1, 3} (extraneous candidates)) |
+| g2-20 | widened: `x + 5 = (x - 1)^{2}` ({4} → {-1, 4} (extraneous candidates)) |
 | g2-23 | 8 lines: at the maxSolveSteps cap (working may have been cut); unverified: `x > 0` (an equation and an inequality); unverified: `\log_{3}(x(x + 6)) = 3` (an equation and an inequality) |
 | g2-24 | unverified: `x > 0` (an equation and an inequality); unverified: `\ln \frac{x + 1}{x} = \ln 2` (an equation and an inequality) |
 | g2-26 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
@@ -132,7 +101,13 @@ Grouped by stage and reason (numbers and LaTeX blanked), most frequent first. On
 | g2-45 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
 | g2-46 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
 | g2-49 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
+| t2-23 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
+| t2-30 | unverified: `= xe^{x} - \int e^{x} \, dx` (no sample point) |
+| t2-31 | unverified: `= -x\cos x + \int \cos x \, dx` (no sample point) |
+| t2-32 | unverified: `= x\ln x - \int 1 \, dx` (no sample point) |
+| t2-50 | unverified: `2x + 2y\frac{dy}{dx} = 0` (unreadable step (untranslatable side)); unverified: `2y\frac{dy}{dx} = -2x` (unreadable step (untranslatable side)); unverified: `\frac{dy}{dx} = -\frac{x}{y}` (the line before is unreadable (untranslatable)) |
+| t2-51 | unverified: `y = x^{x}` (switches between an expression and a relation); unverified: `\ln y = x\ln x` (several unknowns (y, x)); unverified: `\frac{1}{y}\frac{dy}{dx} = \ln x + 1` (unreadable step (untranslatable side)); unverified: `\frac{dy}{dx} = y(\ln x + 1)` (several unknowns (y, x, D_y)) |
 
 ## Passing
 
-ar-01, ar-02, ar-03, ar-04, ar-05, ar-06, ar-07, ar-08, ar-09, ar-10, ar-11, ar-12, ar-13, li-01, li-02, li-03, li-04, li-05, li-06, li-07, li-08, li-09, li-10, li-11, li-12, li-13, in-01, in-02, in-03, in-04, in-05, in-06, in-07, in-08, in-09, sy-01, sy-02, sy-03, sy-04, sy-05, sy-06, sy-07, sy-08, s3-01, s3-02, s3-03, s3-04, su-01, su-02, su-03, su-04, su-05, qu-01, qu-02, qu-03, qu-04, qu-05, qu-06, qu-07, qu-08, qu-09, qu-10, qu-11, qu-12, qu-13, qu-14, ab-01, ab-02, ab-03, ab-04, ab-05, ra-01, ra-02, ra-03, ra-04, ra-05, ra-06, rd-01, rd-02, rd-03, rd-04, rd-05, rd-06, ex-01, ex-02, ex-03, ex-04, ex-05, ex-06, ex-07, lg-01, lg-02, lg-03, lg-04, lg-05, lg-06, lg-07, xf-01, xf-02, xf-03, xf-04, xf-05, xf-06, xf-07, xf-08, xf-09, xf-10, xf-11, xf-12, xf-13, de-01, de-02, de-03, de-04, de-05, de-06, de-07, de-08, de-09, de-10, de-11, de-12, de-13, de-14, de-15, de-16, ii-01, ii-02, ii-03, ii-04, ii-05, ii-06, ii-07, ii-09, di-01, di-02, di-03, di-04, di-05, di-06, di-07, di-08, lm-01, lm-02, lm-03, lm-04, lm-05, lm-06, lm-07, lm-08, up-01, up-02, up-03, up-04, up-05, up-06, up-07, up-08, tr-01, tr-02, tr-03, tr-05, tr-06, tr-07, g2-01, g2-02, g2-03, g2-04, g2-05, g2-06, g2-07, g2-08, g2-09, g2-10, g2-11, g2-12, g2-13, g2-14, g2-15, g2-16, g2-17, g2-18, g2-19, g2-20, g2-21, g2-22, g2-23, g2-24, g2-25, g2-26, g2-27, g2-28, g2-44, g2-45, g2-46, g2-47, g2-48, g2-49, g2-29, g2-30, g2-31, g2-32, g2-33, g2-34, g2-35, g2-36, g2-37, g2-38, g2-39, g2-40, g2-41, g2-42, g2-43, d3-01, d3-02, d3-03, d3-04
+ar-01, ar-02, ar-03, ar-04, ar-05, ar-06, ar-07, ar-08, ar-09, ar-10, ar-11, ar-12, ar-13, li-01, li-02, li-03, li-04, li-05, li-06, li-07, li-08, li-09, li-10, li-11, li-12, li-13, in-01, in-02, in-03, in-04, in-05, in-06, in-07, in-08, in-09, sy-01, sy-02, sy-03, sy-04, sy-05, sy-06, sy-07, sy-08, s3-01, s3-02, s3-03, s3-04, su-01, su-02, su-03, su-04, su-05, qu-01, qu-02, qu-03, qu-04, qu-05, qu-06, qu-07, qu-08, qu-09, qu-10, qu-11, qu-12, qu-13, qu-14, ab-01, ab-02, ab-03, ab-04, ab-05, ra-01, ra-02, ra-03, ra-04, ra-05, ra-06, rd-01, rd-02, rd-03, rd-04, rd-05, rd-06, ex-01, ex-02, ex-03, ex-04, ex-05, ex-06, ex-07, lg-01, lg-02, lg-03, lg-04, lg-05, lg-06, lg-07, xf-01, xf-02, xf-03, xf-04, xf-05, xf-06, xf-07, xf-08, xf-09, xf-10, xf-11, xf-12, xf-13, de-01, de-02, de-03, de-04, de-05, de-06, de-07, de-08, de-09, de-10, de-11, de-12, de-13, de-14, de-15, de-16, ii-01, ii-02, ii-03, ii-04, ii-05, ii-06, ii-07, ii-08, ii-09, di-01, di-02, di-03, di-04, di-05, di-06, di-07, di-08, lm-01, lm-02, lm-03, lm-04, lm-05, lm-06, lm-07, lm-08, up-01, up-02, up-03, up-04, up-05, up-06, up-07, up-08, tr-01, tr-02, tr-03, tr-04, tr-05, tr-06, tr-07, tr-08, g2-01, g2-02, g2-03, g2-04, g2-05, g2-06, g2-07, g2-08, g2-09, g2-10, g2-11, g2-12, g2-13, g2-14, g2-15, g2-16, g2-17, g2-18, g2-19, g2-20, g2-21, g2-22, g2-23, g2-24, g2-25, g2-26, g2-27, g2-28, g2-44, g2-45, g2-46, g2-47, g2-48, g2-49, g2-29, g2-30, g2-31, g2-32, g2-33, g2-34, g2-35, g2-36, g2-37, g2-38, g2-39, g2-40, g2-41, g2-42, g2-43, d3-01, d3-02, d3-03, d3-04, t2-01, t2-02, t2-03, t2-04, t2-05, t2-06, t2-07, t2-08, t2-09, t2-10, t2-11, t2-12, t2-13, t2-14, t2-15, t2-16, t2-17, t2-18, t2-19, t2-20, t2-21, t2-22, t2-23, t2-24, t2-25, t2-26, t2-27, t2-28, t2-29, t2-30, t2-31, t2-32, t2-33, t2-34, t2-35, t2-36, t2-37, t2-38, t2-39, t2-40, t2-41, t2-42, t2-43, t2-44, t2-45, t2-46, t2-47, t2-48, t2-49, t2-50, t2-51

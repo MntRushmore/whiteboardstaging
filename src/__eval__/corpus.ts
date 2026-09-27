@@ -21,6 +21,9 @@
  *  - `form`: the answer must also LOOK like this (a factorisation must be a product).
  *  - `approxOk`: a decimal is an acceptable final answer (otherwise a decimal where the teacher
  *    writes `\frac{11}{12}` or `1 + \sqrt{2}` is scored `approx`, not `ok`).
+ *  - `interval`: a trig equation's interval, in radians (`[0, 2π)` for 0° ≤ x < 360°): its steps
+ *    are compared on the roots inside it, not on the infinitely many elsewhere. `values` are
+ *    radians too — `x = 30^{\circ}` is read as π/6.
  */
 
 export const TOPICS = [
@@ -43,6 +46,8 @@ export const TOPICS = [
   "limit",
   "units-percent",
   "trig",
+  "trig-equation",
+  "trig-identity",
 ] as const;
 export type Topic = (typeof TOPICS)[number];
 
@@ -53,6 +58,7 @@ export interface Expectation {
   upToConstant?: boolean;
   form?: "factored" | "expanded";
   approxOk?: boolean;
+  interval?: { lo: number; hi: number; loIn?: boolean; hiIn?: boolean };
 }
 
 export interface EvalProblem {
@@ -344,4 +350,68 @@ export const CORPUS: readonly EvalProblem[] = [
   { id: "d3-02", topic: "linear", lines: ["2x = 4631.5"], expect: { values: { x: [2315.75] } } },
   { id: "d3-03", topic: "arithmetic", lines: ["1234.5 + 1 ="], expect: { answer: "1235.5" } },
   { id: "d3-04", topic: "linear", lines: ["0.04x + 12.5 = 100.9"], expect: { values: { x: [2210] } } },
+
+  // ================================================================ t2: trig and deeper calculus
+  // ---------------------------------------------------------------- exact trig values
+  { id: "t2-01", topic: "trig", lines: ["\\sin(45^{\\circ}) ="], expect: { answer: "\\frac{\\sqrt{2}}{2}" } },
+  { id: "t2-02", topic: "trig", lines: ["\\cos(150^{\\circ}) ="], expect: { answer: "-\\frac{\\sqrt{3}}{2}" }, note: "second quadrant: through the reference angle" },
+  { id: "t2-03", topic: "trig", lines: ["\\tan\\left(\\frac{\\pi}{3}\\right) ="], expect: { answer: "\\sqrt{3}" } },
+  { id: "t2-04", topic: "trig", lines: ["\\sin\\left(\\frac{5\\pi}{4}\\right) ="], expect: { answer: "-\\frac{\\sqrt{2}}{2}" } },
+  { id: "t2-05", topic: "trig", lines: ["\\sec(60^{\\circ}) ="], expect: { answer: "2" }, note: "a reciprocal function" },
+  { id: "t2-06", topic: "trig", lines: ["\\cos(-60^{\\circ}) ="], expect: { answer: "\\frac{1}{2}" }, note: "a negative angle" },
+  { id: "t2-07", topic: "trig", lines: ["\\sin(390^{\\circ}) ="], expect: { answer: "\\frac{1}{2}" }, note: "more than a turn" },
+  { id: "t2-08", topic: "trig", lines: ["\\sin^{-1}\\left(\\frac{1}{2}\\right) ="], expect: { answer: "30^{\\circ}" }, note: "inverse: degrees, the school default" },
+  { id: "t2-09", topic: "trig", lines: ["\\cos^{-1}\\left(-\\frac{1}{2}\\right) ="], expect: { answer: "120^{\\circ}" } },
+  { id: "t2-10", topic: "trig", lines: ["2\\sin(30^{\\circ})\\cos(30^{\\circ}) ="], expect: { answer: "\\frac{\\sqrt{3}}{2}" }, note: "values written in, then multiplied" },
+
+  // ---------------------------------------------------------------- trig equations (radians in `values`)
+  { id: "t2-11", topic: "trig-equation", lines: ["\\sin x = \\frac{1}{2}"], expect: { values: { x: [Math.PI / 6, (5 * Math.PI) / 6] }, answer: "x = 30^{\\circ}, \\ x = 150^{\\circ}", interval: { lo: 0, hi: 2 * Math.PI } }, note: "no interval written: 0° ≤ x < 360°" },
+  { id: "t2-12", topic: "trig-equation", lines: ["2\\cos x - 1 = 0"], expect: { values: { x: [Math.PI / 3, (5 * Math.PI) / 3] }, answer: "x = 60^{\\circ}, \\ x = 300^{\\circ}", interval: { lo: 0, hi: 2 * Math.PI } } },
+  { id: "t2-13", topic: "trig-equation", lines: ["\\tan x = 1"], expect: { values: { x: [Math.PI / 4, (5 * Math.PI) / 4] }, answer: "x = 45^{\\circ}, \\ x = 225^{\\circ}", interval: { lo: 0, hi: 2 * Math.PI } } },
+  { id: "t2-14", topic: "trig-equation", lines: ["\\sin^{2} x = \\frac{1}{4}"], expect: { values: { x: [Math.PI / 6, (5 * Math.PI) / 6, (7 * Math.PI) / 6, (11 * Math.PI) / 6] }, interval: { lo: 0, hi: 2 * Math.PI } }, note: "± two values of sin x" },
+  { id: "t2-15", topic: "trig-equation", lines: ["2\\sin^{2} x - \\sin x - 1 = 0"], expect: { values: { x: [Math.PI / 2, (7 * Math.PI) / 6, (11 * Math.PI) / 6] }, interval: { lo: 0, hi: 2 * Math.PI } }, note: "a quadratic in sin x" },
+  { id: "t2-16", topic: "trig-equation", lines: ["\\sin x = \\frac{\\sqrt{3}}{2}, \\ 0 \\le x < 2\\pi"], expect: { values: { x: [Math.PI / 3, (2 * Math.PI) / 3] }, answer: "x = \\frac{\\pi}{3}, \\ x = \\frac{2\\pi}{3}", interval: { lo: 0, hi: 2 * Math.PI } }, note: "the interval written, in radians" },
+  { id: "t2-17", topic: "trig-equation", lines: ["2\\sin x + \\sqrt{3} = 0"], expect: { values: { x: [(4 * Math.PI) / 3, (5 * Math.PI) / 3] }, interval: { lo: 0, hi: 2 * Math.PI } }, note: "a surd: third and fourth quadrants" },
+  { id: "t2-18", topic: "trig-equation", lines: ["\\cos\\theta = -\\frac{1}{2}"], expect: { values: { theta: [(2 * Math.PI) / 3, (4 * Math.PI) / 3] }, interval: { lo: 0, hi: 2 * Math.PI } } },
+  { id: "t2-19", topic: "trig-equation", lines: ["\\sin 2x = \\frac{\\sqrt{3}}{2}"], expect: { values: { x: [Math.PI / 6, Math.PI / 3, (7 * Math.PI) / 6, (4 * Math.PI) / 3] }, interval: { lo: 0, hi: 2 * Math.PI } }, note: "a double angle: 2x over two turns" },
+  { id: "t2-20", topic: "trig-equation", lines: ["\\sin x = \\cos x"], expect: { values: { x: [Math.PI / 4, (5 * Math.PI) / 4] }, interval: { lo: 0, hi: 2 * Math.PI } }, note: "through tan x = 1" },
+  { id: "t2-21", topic: "trig-equation", lines: ["2\\cos^{2} x + \\cos x - 1 = 0"], expect: { values: { x: [Math.PI / 3, Math.PI, (5 * Math.PI) / 3] }, interval: { lo: 0, hi: 2 * Math.PI } } },
+  { id: "t2-22", topic: "trig-equation", lines: ["\\cos(x - 30^{\\circ}) = \\frac{1}{2}"], expect: { values: { x: [Math.PI / 2, (11 * Math.PI) / 6] }, interval: { lo: 0, hi: 2 * Math.PI } }, note: "a shifted angle" },
+  { id: "t2-23", topic: "trig-equation", lines: ["2\\sin^{2} x + 3\\cos x - 3 = 0"], expect: { values: { x: [0, Math.PI / 3, (5 * Math.PI) / 3] }, interval: { lo: 0, hi: 2 * Math.PI } }, note: "sin² = 1 - cos² first" },
+
+  // ---------------------------------------------------------------- simplifying with identities
+  { id: "t2-24", topic: "trig-identity", lines: ["\\frac{\\sin 2x}{\\sin x}"], expect: { answer: "2\\cos x" }, note: "double angle, then cancel" },
+  { id: "t2-25", topic: "trig-identity", lines: ["1 - \\sin^{2} x"], expect: { answer: "\\cos^{2} x" } },
+  { id: "t2-26", topic: "trig-identity", lines: ["\\frac{1 - \\cos 2x}{\\sin 2x}"], expect: { answer: "\\tan x" }, note: "the form of cos 2x that cancels" },
+  { id: "t2-27", topic: "trig-identity", lines: ["\\tan x \\cos x"], expect: { answer: "\\sin x" } },
+  { id: "t2-28", topic: "trig-identity", lines: ["\\sec^{2} x - 1"], expect: { answer: "\\tan^{2} x" } },
+
+  // ---------------------------------------------------------------- integration techniques
+  { id: "t2-29", topic: "integral-indefinite", lines: ["\\int 2x(x^{2}+1)^{5} \\, dx"], expect: { answer: "\\frac{(x^{2} + 1)^{6}}{6} + C", upToConstant: true }, note: "substitution u = x² + 1, shown" },
+  { id: "t2-30", topic: "integral-indefinite", lines: ["\\int x e^{x} \\, dx"], expect: { answer: "x e^{x} - e^{x} + C", upToConstant: true }, note: "by parts" },
+  { id: "t2-31", topic: "integral-indefinite", lines: ["\\int x \\sin x \\, dx"], expect: { answer: "-x\\cos x + \\sin x + C", upToConstant: true }, note: "by parts" },
+  { id: "t2-32", topic: "integral-indefinite", lines: ["\\int \\ln x \\, dx"], expect: { answer: "x\\ln x - x + C", upToConstant: true }, note: "by parts, dv = dx" },
+  { id: "t2-33", topic: "integral-indefinite", lines: ["\\int \\sin^{2} x \\, dx"], expect: { answer: "\\frac{x}{2} - \\frac{\\sin 2x}{4} + C", upToConstant: true }, note: "double angle first" },
+  { id: "t2-34", topic: "integral-indefinite", lines: ["\\int \\tan x \\, dx"], expect: { answer: "-\\ln|\\cos x| + C", upToConstant: true }, note: "sin/cos, then u = cos x" },
+  { id: "t2-35", topic: "integral-indefinite", lines: ["\\int \\frac{1}{1 + x^{2}} \\, dx"], expect: { answer: "\\tan^{-1} x + C", upToConstant: true } },
+  { id: "t2-36", topic: "integral-indefinite", lines: ["\\int \\frac{1}{x^{2} - 1} \\, dx"], expect: { answer: "\\frac{1}{2}\\ln|x - 1| - \\frac{1}{2}\\ln|x + 1| + C", upToConstant: true }, note: "partial fractions" },
+  { id: "t2-37", topic: "integral-indefinite", lines: ["\\int \\frac{2x}{x^{2} + 1} \\, dx"], expect: { answer: "\\ln(x^{2} + 1) + C", upToConstant: true }, note: "f'/f" },
+  { id: "t2-38", topic: "integral-indefinite", lines: ["\\int \\sin x \\cos x \\, dx"], expect: { answer: "\\frac{\\sin^{2} x}{2} + C", upToConstant: true } },
+  { id: "t2-39", topic: "integral-definite", lines: ["\\int_{0}^{1} 2x(x^{2}+1)^{5} \\, dx ="], expect: { answer: "\\frac{21}{2}" }, note: "substitution: the limits change" },
+  { id: "t2-40", topic: "integral-definite", lines: ["\\int_{0}^{1} x e^{x} \\, dx ="], expect: { answer: "1" }, note: "by parts with limits" },
+  { id: "t2-41", topic: "integral-definite", lines: ["\\int_{0}^{\\pi} \\sin^{2} x \\, dx ="], expect: { answer: "\\frac{\\pi}{2}" } },
+  { id: "t2-42", topic: "integral-definite", lines: ["\\int_{0}^{1} \\frac{1}{1 + x^{2}} \\, dx ="], expect: { answer: "\\frac{\\pi}{4}" } },
+
+  // ---------------------------------------------------------------- harder limits
+  { id: "t2-43", topic: "limit", lines: ["\\lim_{x \\to 0}\\frac{\\sqrt{x+4}-2}{x}"], expect: { answer: "\\frac{1}{4}" }, note: "the conjugate" },
+  { id: "t2-44", topic: "limit", lines: ["\\lim_{x \\to 4}\\frac{\\sqrt{x}-2}{x-4}"], expect: { answer: "\\frac{1}{4}" }, note: "the conjugate" },
+  { id: "t2-45", topic: "limit", lines: ["\\lim_{x \\to 0}\\frac{e^{x}-1}{x}"], expect: { answer: "1" }, note: "L'Hôpital" },
+  { id: "t2-46", topic: "limit", lines: ["\\lim_{x \\to 0}\\frac{1 - \\cos x}{x^{2}} ="], expect: { answer: "\\frac{1}{2}" }, note: "L'Hôpital twice" },
+  { id: "t2-47", topic: "limit", lines: ["\\lim_{x \\to 0}\\frac{\\sin 3x}{\\sin 2x}"], expect: { answer: "\\frac{3}{2}" } },
+
+  // ---------------------------------------------------------------- harder derivatives
+  { id: "t2-48", topic: "derivative", lines: ["\\frac{d}{dx}\\tan^{-1} x ="], expect: { answer: "\\frac{1}{1 + x^{2}}" } },
+  { id: "t2-49", topic: "derivative", lines: ["\\frac{d^{3}}{dx^{3}} x^{5} ="], expect: { answer: "60x^{2}" }, note: "each earlier stage under the derivatives still to take" },
+  { id: "t2-50", topic: "derivative", lines: ["x^{2} + y^{2} = 25", "\\frac{dy}{dx} ="], expect: { answer: "-\\frac{x}{y}" }, note: "implicit differentiation" },
+  { id: "t2-51", topic: "derivative", lines: ["\\frac{d}{dx} x^{x} ="], expect: { answer: "x^{x}(\\ln x + 1)" }, note: "logarithmic differentiation" },
 ];

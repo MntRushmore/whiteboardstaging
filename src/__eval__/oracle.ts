@@ -24,7 +24,25 @@ import { createMathInstance, translate } from "@/lib/live/engine/math";
 
 let instance: MathJsInstance | null = null;
 function M(): MathJsInstance {
-  if (!instance) instance = createMathInstance(mathjs);
+  if (!instance) {
+    const m = createMathInstance(mathjs);
+    // `\left[F\right]_{a}^{b}` is F(b) - F(a): the notation, defined here independently of the engine
+    m.import(
+      {
+        bracketEval: (expr: string, x: string, lo: number, hi: number) => {
+          const f = m.compile(expr);
+          const at = (v: number) => {
+            const y = f.evaluate({ [x]: v }) as unknown;
+            if (typeof y !== "number" || !Number.isFinite(y)) throw new Error("undefined at a limit");
+            return y;
+          };
+          return at(hi) - at(lo);
+        },
+      },
+      { override: true },
+    );
+    instance = m;
+  }
   return instance;
 }
 
@@ -106,6 +124,23 @@ function complexOf(v: unknown): { re: number; im: number } | null {
     }
   }
   return null;
+}
+
+/**
+ * An angle is a number: `30^{\circ}` is π/6, the value `\sin x` reads x as. A quantity whose
+ * only dimension is an angle becomes its radian measure, so `x = 30^{\circ}` solves `\sin x = \frac{1}{2}`
+ * and `x = 30` (thirty radians) does not.
+ */
+function angleAsNumber(v: unknown): unknown {
+  if (!isUnit(v)) return v;
+  try {
+    const dims = (v as unknown as { dimensions?: number[] }).dimensions ?? [];
+    // mathjs base dimensions: MASS, LENGTH, TIME, CURRENT, TEMPERATURE, LUMINOUS_INTENSITY, AMOUNT_OF_SUBSTANCE, ANGLE, BIT
+    const angleOnly = dims.length >= 8 && dims[7] === 1 && dims.every((d, i) => i === 7 || d === 0);
+    return angleOnly ? (v as unknown as { toNumber(unit: string): number }).toNumber("rad") : v;
+  } catch {
+    return v;
+  }
 }
 
 function realOf(v: unknown): Value | null {
@@ -216,7 +251,22 @@ function limitExpr(latex: string, variable: string, targetLatex: string, bodyLat
     const right = f(a + h);
     if (left === null && right === null) return null;
     if (left === null || right === null) return left ?? right; // one-sided (√x at 0)
-    return closeTo(left, right, 1e-4) ? (left + right) / 2 : null;
+    if (!closeTo(left, right, 1e-4)) return null;
+    const near = (left + right) / 2;
+    // 0/0 whose top cancels to second order (`\frac{1 - \cos x}{x^{2}}`) loses its digits at
+    // h = 10⁻⁶: a Richardson estimate from h = 10⁻³ and 10⁻⁴ decides when the two agree
+    const avg = (k: number): number | null => {
+      const l = f(a - k * Math.max(1, Math.abs(a)));
+      const r = f(a + k * Math.max(1, Math.abs(a)));
+      return l === null || r === null ? null : (l + r) / 2;
+    };
+    const a3 = avg(1e-3);
+    const a4 = avg(1e-4);
+    if (a3 !== null && a4 !== null) {
+      const richardson = (100 * a4 - a3) / 99;
+      if (!closeTo(near, richardson, 1e-5) && closeTo(a4, richardson, 1e-6)) return richardson;
+    }
+    return near;
   };
   return {
     kind: "expr",
@@ -233,6 +283,19 @@ function limitExpr(latex: string, variable: string, targetLatex: string, bodyLat
 }
 
 const LIMIT = /^\\lim\s*_\s*\{\s*([a-zA-Z])\s*(?:\\to|\\rightarrow|→)\s*(.+?)\s*\}\s*([\s\S]+)$/;
+
+/**
+ * `\frac{dy}{dx}` (or `y'`) as a whole side of a line: the derivative it names, an unknown of its
+ * own (`\frac{dy}{dx} = -\frac{x}{y}` gives it). Inside an expression it stays unreadable.
+ */
+function derivativeName(latex: string): Expr[] | null {
+  const s = cleanLatex(latex).replace(/\s+/g, "");
+  const m = /^\\frac\{(?:\\mathrm\{d\}|d)([a-zA-Z])\}\{(?:\\mathrm\{d\}|d)([a-zA-Z])\}$/.exec(s) ?? /^([a-zA-Z])'$/.exec(s);
+  if (!m) return null;
+  const name = `D_${m[1]}`;
+  const at = (scope: Record<string, number>) => (name in scope ? scope[name] : null);
+  return [{ kind: "expr", latex: s, vars: [name], at, complexAt: (scope) => (name in scope ? { re: scope[name], im: 0 } : null), decimals: null, tol: EXACT_TOL }];
+}
 
 /** One LaTeX expression → one `Expr` per ± branch; null when unreadable. */
 export function exprBranches(latex: string): Expr[] | null {
@@ -260,11 +323,18 @@ export function exprBranches(latex: string): Expr[] | null {
     } catch {
       return null;
     }
+    // `x - 30^{\circ}`: an unknown next to an angle is an angle (x radians), as `\sin x` reads it
+    const angles = /\bdeg\b/.test(branch);
     const raw = (scope: Record<string, number>): unknown => {
       try {
         return compiled.evaluate({ ...scope });
       } catch {
-        return null;
+        if (!angles) return null;
+        try {
+          return compiled.evaluate(Object.fromEntries(Object.entries(scope).map(([k, v]) => [k, M().unit(v, "rad")])));
+        } catch {
+          return null;
+        }
       }
     };
     const tol = /integral\(/.test(branch) ? 1e-7 : EXACT_TOL;
@@ -272,8 +342,8 @@ export function exprBranches(latex: string): Expr[] | null {
       kind: "expr",
       latex: src,
       vars: [...t.variables],
-      at: (scope) => realOf(raw(scope)),
-      complexAt: (scope) => complexOf(raw(scope)),
+      at: (scope) => realOf(angleAsNumber(raw(scope))),
+      complexAt: (scope) => complexOf(angleAsNumber(raw(scope))),
       decimals: decimalsIn(src),
       tol,
     });
@@ -307,7 +377,8 @@ function splitDisjuncts(src: string): string[] {
       }
     }
     pieces.push(p.slice(start));
-    const cleaned = pieces.map((x) => x.replace(/^\s*\\?\s*/, "").replace(/\\\s*$/, "").trim()).filter(Boolean);
+    // the `\ ` after a list comma goes; the backslash of `\theta` stays
+    const cleaned = pieces.map((x) => x.replace(/^\s*(?:\\(?![a-zA-Z]))?\s*/, "").replace(/\\\s*$/, "").trim()).filter(Boolean);
     if (cleaned.length > 1 && cleaned.every((x) => /=|<|>|\\[lg]e|\\approx/.test(x))) out.push(...cleaned);
     else out.push(p);
   }
@@ -343,10 +414,29 @@ export function parseLine(latex: string): Parsed {
   if (ALL_REALS.test(src)) return { kind: "all-reals", latex: original };
 
   const noC = dropConstant(src);
-  const ind = INDEFINITE.exec(noC);
-  if (ind) {
-    const integrand = exprOf(ind[1].replace(/^\((.*)\)$/, "$1"));
-    if (!integrand) return { kind: "unreadable", latex: original, reason: "integrand" };
+  // `\frac{1}{2}\int e^{u} \, du`: a constant times an integral is the integral of the multiple
+  const coefLead = /^(-?\s*(?:\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\}|\d+)?)\s*(\\int(?!\s*_)[\s\S]*)$/.exec(noC);
+  const ind = coefLead ? INDEFINITE.exec(coefLead[2]) : null;
+  if (coefLead && ind) {
+    const raw = exprOf(ind[1].replace(/^\((.*)\)$/, "$1"));
+    if (!raw) return { kind: "unreadable", latex: original, reason: "integrand" };
+    const k = coefLead[1].replace(/\s+/g, "");
+    const factor = k === "" ? 1 : k === "-" ? -1 : (exprOf(k)?.at({}) ?? null);
+    if (typeof factor !== "number") return { kind: "unreadable", latex: original, reason: "coefficient" };
+    const integrand: Expr =
+      factor === 1
+        ? raw
+        : {
+            ...raw,
+            at: (scope) => {
+              const v = raw.at(scope);
+              return typeof v === "number" ? factor * v : null;
+            },
+            complexAt: (scope) => {
+              const v = raw.complexAt(scope);
+              return v ? { re: factor * v.re, im: factor * v.im } : null;
+            },
+          };
     return { kind: "indefinite", latex: original, variable: ind[2], integrand, vars: integrand.vars.filter((v) => v !== ind[2]) };
   }
 
@@ -385,7 +475,7 @@ export function parseLine(latex: string): Parsed {
     if (split.sides.some((s) => !s.trim())) return { kind: "unreadable", latex: original, reason: "empty side" };
     const sideBranches: Expr[][] = [];
     for (const side of split.sides) {
-      const b = exprBranches(side);
+      const b = exprBranches(side) ?? derivativeName(side);
       if (!b) return { kind: "unreadable", latex: original, reason: "untranslatable side" };
       sideBranches.push(b);
     }
@@ -720,7 +810,9 @@ export function isAntiderivative(F: Expr, f: Expr, variable: string): "equal" | 
 
 /** The side is the unknown and nothing else: `x`, `{x}`. */
 export function isBare(e: Expr, variable: string): boolean {
-  return e.vars.length === 1 && e.vars[0] === variable && e.latex.replace(/\s|[{}]/g, "") === variable;
+  // a Greek unknown is written as its command: `\theta` is the variable theta
+  const written = e.latex.replace(/\s|[{}]/g, "");
+  return e.vars.length === 1 && e.vars[0] === variable && (written === variable || written === `\\${variable}`);
 }
 
 /** `x = 2 \text{ or } x = 3`: the values, when every alternative is `v = closed`. */

@@ -27,6 +27,7 @@ import type { MathJsInstance, MathNode } from "mathjs";
 import { usesSymbol } from "./classify";
 import { asSmallFraction } from "./format";
 import { DIFFERENTIAL_D, GREEK, preprocessLatex, splitRelations, type Translated } from "./latex";
+import { continueLine, isRelationLine } from "./solution";
 
 class NotCalculus extends Error {}
 /** An exact evaluation met a zero denominator: a limit may still exist (0/0); a value does not. */
@@ -126,7 +127,7 @@ function qLatex(a: Q): string {
 // Expressions
 // ---------------------------------------------------------------------------------------------
 
-type Fn = "sin" | "cos" | "tan" | "sec" | "csc" | "cot" | "ln" | "log10" | "exp" | "abs";
+type Fn = "sin" | "cos" | "tan" | "sec" | "csc" | "cot" | "ln" | "log10" | "exp" | "abs" | "asin" | "acos" | "atan";
 const TRIG: ReadonlySet<string> = new Set(["sin", "cos", "tan", "sec", "csc", "cot"]);
 
 type Expr =
@@ -263,7 +264,13 @@ const FUNCTION_NAMES: Record<string, Fn> = {
   log10: "log10",
   exp: "exp",
   abs: "abs",
+  asin: "asin",
+  acos: "acos",
+  atan: "atan",
 };
+
+/** `\sin^{-1}`: the inverse functions as a student writes them (the hand draws the index). */
+const INVERSE_TEX: Partial<Record<Fn, string>> = { asin: "\\sin^{-1}", acos: "\\cos^{-1}", atan: "\\tan^{-1}" };
 
 /** mathjs tree → Expr. Integers only: a decimal, a unit or an unknown function is refused. */
 function fromNode(node: MathNode): Expr {
@@ -408,6 +415,16 @@ function texFn(name: Fn, arg: Expr): string {
       return arg.t === "fn" && arg.name === "abs" ? `\\ln|${tex(arg.arg)}|` : `\\ln${fnArg(arg)}`;
     case "log10":
       return `\\log${fnArg(arg)}`;
+    case "asin":
+    case "acos":
+    case "atan": {
+      // `\tan^{-1}\frac{x}{2}`, not `\tan^{-1}(\frac{1}{2}x)`
+      if (arg.t === "mul" && arg.args.length === 2 && arg.args[1].t === "sym") {
+        const k = rationalValue(arg.args[0]);
+        if (k && k.n > 0 && !qInt(k)) return `${INVERSE_TEX[name]}\\frac{${joinProduct([k.n === 1 ? "" : String(k.n), tex(arg.args[1])])}}{${k.d}}`;
+      }
+      return `${INVERSE_TEX[name]}${fnArg(arg)}`;
+    }
     default:
       return `\\${name}${fnArg(arg)}`;
   }
@@ -583,7 +600,7 @@ function fnCanon(name: Fn, A: Canon): Canon {
   const c0 = canonRational(A);
   if (c0 && qZero(c0)) {
     if (name === "exp" || name === "cos" || name === "sec") return [UNIT];
-    if (name === "sin" || name === "tan" || name === "abs") return [];
+    if (name === "sin" || name === "tan" || name === "abs" || name === "asin" || name === "atan") return [];
     throw new ZeroDivision();
   }
   if (c0 && qOne(c0) && (name === "ln" || name === "log10")) return [];
@@ -732,7 +749,7 @@ function termBody(s: SplitTerm, mode: Mode): string {
     if (s.qd === 1) return nf.length ? joinProduct([lead, numTex]) : String(s.p);
     if (nf.length === 0) return `\\frac{${s.p}}{${s.qd}}`;
     // `\frac{2}{3}x^{\frac{3}{2}}`, `\frac{1}{2}\ln|2x + 1|`: the coefficient stays in front of an index or a log
-    if (nf.some((f) => indexNotation(f, mode) || (f.base.t === "fn" && (f.base.name === "ln" || f.base.name === "log10")))) {
+    if (nf.some((f) => indexNotation(f, mode) || (f.base.t === "fn" && ["ln", "log10", "asin", "acos", "atan"].includes(f.base.name)))) {
       return joinProduct([`\\frac{${s.p}}{${s.qd}}`, numTex]);
     }
     return `\\frac{${joinProduct([lead, numTex])}}{${s.qd}}`;
@@ -826,6 +843,12 @@ function evalNum(e: Expr, scope: Readonly<Record<string, number>>): number {
           return Math.exp(a);
         case "abs":
           return Math.abs(a);
+        case "asin":
+          return Math.asin(a);
+        case "acos":
+          return Math.acos(a);
+        case "atan":
+          return Math.atan(a);
       }
     }
   }
@@ -850,10 +873,13 @@ function paramScope(e: Expr[], x: string): Record<string, number> {
 const close = (a: number, b: number, tol: number): boolean => Math.abs(a - b) <= tol * Math.max(1, Math.abs(a), Math.abs(b));
 
 /** f' agrees with a central difference of f at the sample points where both are finite. */
+/** Points near 0 as well, for a function defined only there (`\sin^{-1}(2x)` needs |x| ≤ ½). */
+const SMALL_SAMPLES = [0.07, 0.13, 0.21, 0.29, 0.37, 0.43, -0.11, -0.19, -0.31, -0.41];
+
 function derivativeAgrees(f: Expr, fp: Expr, x: string): boolean {
   const scope = paramScope([f, fp], x);
   let checked = 0;
-  for (const p of SAMPLES) {
+  for (const p of [...SAMPLES, ...SMALL_SAMPLES]) {
     const h = 1e-5 * Math.max(1, Math.abs(p));
     const at = (v: number) => evalNum(f, { ...scope, [x]: v });
     const numeric = (at(p + h) - at(p - h)) / (2 * h);
@@ -909,16 +935,6 @@ function fracTex(top: string, bottom: string): string {
 /** `\frac{d}{dx}(x + x^{-1})`, `\frac{d}{dx} x^{\frac{1}{2}}`: brackets only round a sum or a sign. */
 function ddx(x: string, body: string): string {
   return hasTopLevelSum(body) || body.startsWith("-") ? `\\frac{d}{d${x}}(${body})` : `\\frac{d}{d${x}} ${body}`;
-}
-
-/**
- * `\frac{d^{2}}{dx^{2}} x^{\frac{1}{2}}`: the m-th derivative operator (`ddx` for m = 1). With
- * `products`, a body with a `\cdot` is bracketed too: `\frac{d}{dx}(\cos(3x) \cdot 3)`.
- */
-function dnx(x: string, m: number, body: string, products = false): string {
-  if (m === 1 && !products) return ddx(x, body);
-  const op = m === 1 ? `\\frac{d}{d${x}}` : `\\frac{d^{${m}}}{d${x}^{${m}}}`;
-  return hasTopLevelSum(body) || body.startsWith("-") || (products && /\\cdot/.test(body)) ? `${op}(${body})` : `${op} ${body}`;
 }
 
 /** `c^k`-style coefficient in front of a factor: `5(2x + 1)^{4}`, `-(x^{2} + 1)^{-2}`. */
@@ -1103,6 +1119,16 @@ function makeDiff(x: string) {
       }
       case "log10":
         return { tex: `\\frac{1}{${joinProduct([texFactor(g, false), "\\ln 10"])}}`, val: div(I(1), mul([g, fn("ln", I(10))])) };
+      case "atan": {
+        const g2 = pow(g, I(2));
+        return { tex: `\\frac{1}{1 + ${tex(g2)}}`, val: div(I(1), add([I(1), g2])) };
+      }
+      case "asin":
+      case "acos": {
+        const root = { t: "sqrt" as const, arg: add([I(1), neg(pow(g, I(2)))]) };
+        const t = `\\frac{1}{${tex(root)}}`;
+        return name === "asin" ? { tex: t, val: div(I(1), root) } : { tex: `-${t}`, val: neg(div(I(1), root)) };
+      }
       case "abs":
         return fail();
     }
@@ -1424,6 +1450,10 @@ function exFn(name: Fn, a: Ex): Ex {
     }
     case "abs":
       return exNum(a) < 0 ? exNeg(a) : a;
+    case "asin":
+    case "acos":
+    case "atan":
+      return exInverseTrig(name, a);
     default:
       if (exIsRational(a) && qZero(a.r)) {
         if (name === "sin" || name === "tan") return exQ(Q0);
@@ -1432,6 +1462,33 @@ function exFn(name: Fn, a: Ex): Ex {
       }
       return exTrig(name, a);
   }
+}
+
+/** sin⁻¹, cos⁻¹, tan⁻¹ at the values of the special angles (`\\tan^{-1} 1 = \\frac{\\pi}{4}`), else not exact. */
+function exInverseTrig(name: "asin" | "acos" | "atan", a: Ex): Ex {
+  const v = exNum(a);
+  const r2 = Math.SQRT2 / 2;
+  const r3 = Math.sqrt(3);
+  const table: Array<[number, Q]> =
+    name === "atan"
+      ? [
+          [0, Q0],
+          [r3 / 3, q(1, 6)],
+          [1, q(1, 4)],
+          [r3, q(1, 3)],
+        ]
+      : [
+          [0, Q0],
+          [0.5, q(1, 6)],
+          [r2, q(1, 4)],
+          [r3 / 2, q(1, 3)],
+          [1, QHALF],
+        ];
+  const hit = table.find(([t]) => Math.abs(Math.abs(v) - t) < 1e-12);
+  if (!hit) return fail();
+  const k = v < 0 ? qNeg(hit[1]) : hit[1];
+  const angle = name === "acos" ? qSub(QHALF, k) : k;
+  return qZero(angle) ? exQ(Q0) : exAtom(piAtom(1), angle);
 }
 
 function evalExact(e: Expr, env: ReadonlyMap<string, Ex>): Ex {
@@ -1602,9 +1659,43 @@ function linearOf(e: Expr, x: string): { a: Q; b: Q } | null {
 // The engine-facing module
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * An antiderivative found by a technique (`integration.ts`: substitution, parts, an identity,
+ * partial fractions), already checked by differentiating it back.
+ */
+export interface IntegralTechnique {
+  /**
+   * The working, as drawn: a relation (`u = x^{2} + 1`, `du = 2x \, dx`) stands on its own
+   * line, every other line continues the question with `=`. The last line is `F + C`.
+   */
+  lines: string[];
+  /** the antiderivative, without the constant */
+  F: Expr;
+  /** F as the teacher writes it (`\frac{(x^{2} + 1)^{6}}{6}`) */
+  display: string;
+}
+
+/** A definite integral done by a technique: the working and its exact value. */
+export interface DefiniteTechnique {
+  lines: string[];
+  value: Ex;
+}
+
+/** A limit the direct methods cannot do (`limits.ts`: the conjugate, a known limit). */
+export interface LimitTechnique {
+  lines: string[];
+  value: Ex;
+}
+
 export interface CalculusDeps {
   /** LaTeX → mathjs source (the engine's `translate`); throws on LaTeX it cannot read */
   translate(latex: string): Translated;
+  /** integration techniques, tried when the term-by-term rules cannot integrate (`integration.ts`) */
+  integrate?(integrand: Expr, x: string, constant: string): IntegralTechnique | null;
+  /** the same, over [a, b] (limits changed with a substitution, the bracket evaluated exactly) */
+  integrateDefinite?(integrand: Expr, x: string, a: Ex, b: Ex): DefiniteTechnique | null;
+  /** limits at a finite point that direct substitution and factorising cannot do */
+  limit?(operand: Expr, x: string, a: Ex, prefix: string): LimitTechnique | null;
 }
 
 export interface Calculus {
@@ -1628,6 +1719,19 @@ export interface Calculus {
    * engine could not have found itself is still checked). Null when the line is not such a claim.
    */
   claimVerdict(sources: readonly string[], ops: readonly string[]): "ok" | "mismatch" | "unknown" | null;
+  /**
+   * The term-by-term rules on an integrand (the inner integral of a substitution or of parts):
+   * the rule line, the antiderivative printed and as an Expr; null when they cannot. No `+ C`.
+   */
+  basicIntegral(integrand: Expr, x: string): BasicIntegral | null;
+}
+
+export interface BasicIntegral {
+  /** the integrand rewritten first (`x^{\frac{1}{2}}` for `\sqrt{x}`), or null */
+  rewrite: string | null;
+  rule: string;
+  display: string;
+  F: Expr;
 }
 
 const MAX_STEPS = 8;
@@ -1722,54 +1826,84 @@ export function createCalculus(math: MathJsInstance, deps: CalculusDeps): Calcul
     finalTex: string;
   }
 
+  /**
+   * A line of an earlier stage of a higher derivative, still under the derivatives left to take:
+   * `\frac{d^2}{dx^2}(x^4)` is `= \frac{d}{dx}(4x^{3})`, never `= 4x^{3}` (the first derivative
+   * is not equal to the second).
+   */
+  const underD = (x: string, body: string, m: number): string => {
+    if (m === 0) return body;
+    const op = m === 1 ? `\\frac{d}{d${x}}` : `\\frac{d^{${m}}}{d${x}^{${m}}}`;
+    return `${op}(${body})`;
+  };
+
+  /**
+   * f(x)^{g(x)} (`x^{x}`): logarithmic differentiation — name it y, take logs, differentiate
+   * both sides (y implicitly), then multiply back by y.
+   */
+  const logDifferentiation = (operand: Expr, x: string): DerivativeWork | null => {
+    if (operand.t !== "pow" || !hasVar(operand.base, x) || !hasVar(operand.exp, x)) return null;
+    const y = symbolsOf(operand).has("y") ? "w" : "y";
+    const lnY = mul([operand.exp, fn("ln", operand.base)]);
+    const D = makeDiff(x)(lnY);
+    const Dc = canon(D.val);
+    const result = canon(mul([operand, canonToExpr(Dc)]));
+    if (!derivativeAgrees(operand, canonToExpr(result), x)) return null;
+    const dydx = `\\frac{d${y}}{d${x}}`;
+    const inner = printCanon(Dc, "display", x);
+    const bracket = hasTopLevelSum(inner) ? `(${inner})` : inner;
+    const lines = [`${y} = ${tex(operand)}`, `\\ln ${y} = ${printCanon(canon(lnY), "display", x)}`, `\\frac{1}{${y}}${dydx} = ${D.tex}`];
+    if (lineKey(D.tex) !== lineKey(inner)) lines.push(`\\frac{1}{${y}}${dydx} = ${inner}`);
+    const finalTex = joinProduct([tex(operand), bracket]);
+    lines.push(`${dydx} = ${joinProduct([y, bracket])}`, finalTex);
+    return { steps: lines, result, finalTex };
+  };
+
   const derivativeWork = (operand: Expr, x: string, order: number): DerivativeWork | null => {
     orderVar = x;
+    if (order === 1) {
+      const logs = logDifferentiation(operand, x);
+      if (logs) return logs;
+    }
     const d = makeDiff(x);
     let cur = operand;
-    const lines: string[] = [];
+    const stages: string[][] = [];
     let result: Canon = [];
     let finalTex = "";
-    let stageStart = 0;
-    // A higher derivative's early stages are still under the operators left to apply: the first
-    // line of `\frac{d^2}{dx^2} x^4` is `\frac{d}{dx} 4x^{3}`, never `4x^{3}` (which is not equal to it).
-    const push = (s: string) => {
-      if (lines.length === 0 || lineKey(lines[lines.length - 1]) !== lineKey(s)) lines.push(s);
-    };
     for (let k = 0; k < order; k++) {
-      const remaining = order - 1 - k;
+      const m = order - 1 - k;
+      const lines: string[] = [];
       if (k > 0) {
-        push(dnx(x, order - k, printCanon(result, "power", x)));
-        stageStart = lines.length;
+        // the index form of the last stage's answer, when that is what gets differentiated next
+        const power = underD(x, printCanon(result, "power", x), m + 1);
+        const prev = stages[k - 1];
+        if (lineKey(power) !== lineKey(prev[prev.length - 1])) lines.push(power);
       }
       const rw = rewriteD(cur, x);
-      if (k === 0 && lineKey(tex(rw)) !== lineKey(tex(cur))) push(dnx(x, order, tex(rw)));
+      if (k === 0 && lineKey(tex(rw)) !== lineKey(tex(cur))) lines.push(m === 0 ? ddx(x, tex(rw)) : underD(x, tex(rw), m + 1));
       const D = d(rw);
       result = canon(D.val);
       if (!derivativeAgrees(cur, canonToExpr(result), x)) return null;
-      if (remaining > 0) {
-        // the rule, then the result in index form: what the next d/dx works on
-        push(dnx(x, remaining, D.tex, true));
-        push(dnx(x, remaining, printCanon(result, "power", x), true));
-        cur = canonToExpr(result);
-        continue;
-      }
       if (D.frac) {
         const top = printCanon(canon(D.frac.num), "display", x);
         finalTex = top === "0" ? "0" : fracTex(top, tex(D.frac.den));
-        lines.push(D.tex, finalTex);
+        lines.push(underD(x, D.tex, m), underD(x, finalTex, m));
       } else {
         finalTex = printCanon(result, "display", x);
-        // the index-form line only when it is a step between the rule and the answer
-        if (lineKey(D.tex) === lineKey(finalTex)) lines.push(D.tex);
-        else lines.push(D.tex, printCanon(result, "power", x), finalTex);
+        // the index-form line only when it is a step between the rule and the answer; an
+        // earlier stage stops at the index form, which is what gets differentiated next
+        const shown = m > 0 ? [D.tex, printCanon(result, "power", x)] : [D.tex, printCanon(result, "power", x), finalTex];
+        const kept = shown.filter((l, i) => i === 0 || lineKey(l) !== lineKey(shown[i - 1]));
+        if (m === 0 && lineKey(D.tex) === lineKey(finalTex)) lines.push(D.tex);
+        else lines.push(...kept.map((l) => underD(x, l, m)));
       }
+      stages.push(lines);
       cur = canonToExpr(result);
     }
-    // over the block's budget: the first stage's working lines go first
-    while (lines.length > MAX_STEPS && stageStart > 1) {
-      lines.splice(0, 1);
-      stageStart--;
-    }
+    const last = stages[stages.length - 1];
+    const lines = stages.flat();
+    // over the block's budget: the earlier stages' working lines go first
+    while (lines.length > MAX_STEPS && lines.length > last.length) lines.splice(0, 1);
     return { steps: lines, result, finalTex };
   };
 
@@ -1897,9 +2031,31 @@ export function createCalculus(math: MathJsInstance, deps: CalculusDeps): Calcul
     return { rewrite, rule, F, Fexpr, display: printCanon(F, "display", x), constant, domain };
   };
 
+  /** A technique's antiderivative (`integration.ts`), when the term-by-term rules have none. */
+  const techniqueFor = (integrand: Expr, x: string): IntegralTechnique | null => {
+    if (!deps.integrate) return null;
+    try {
+      const constant = symbolsOf(integrand).has("C") ? "K" : "C";
+      const t = deps.integrate(integrand, x, constant);
+      orderVar = x;
+      return t && derivativeAgrees(t.F, integrand, x) ? t : null;
+    } catch {
+      return null;
+    }
+  };
+
+  /** The term-by-term rules, or null (never a throw) when they cannot integrate this. */
+  const basicWork = (integrand: Expr, x: string): IntegralWork | null => {
+    try {
+      return integralWork(integrand, x);
+    } catch {
+      return null;
+    }
+  };
+
   const indefiniteSteps = (integrand: Expr, x: string): string[] | null => {
-    const w = integralWork(integrand, x);
-    if (!w) return null;
+    const w = basicWork(integrand, x);
+    if (!w) return techniqueFor(integrand, x)?.lines ?? null;
     const plusC = (s: string) => (s === "0" ? w.constant : `${s} + ${w.constant}`);
     const lines: string[] = [];
     if (w.rewrite) lines.push(`\\int ${hasTopLevelSum(w.rewrite) ? `(${w.rewrite})` : w.rewrite} \\, d${x}`);
@@ -1907,12 +2063,33 @@ export function createCalculus(math: MathJsInstance, deps: CalculusDeps): Calcul
     return lines;
   };
 
+  /** A technique over [a, b], checked against Simpson like every definite integral here. */
+  const definiteTechnique = (integrand: Expr, x: string, a: Ex, b: Ex): { steps: string[]; value: Ex } | null => {
+    if (!deps.integrateDefinite) return null;
+    try {
+      const na = exNum(a);
+      const nb = exNum(b);
+      const [left, right] = na <= nb ? [na, nb] : [nb, na];
+      const f = (v: number) => evalNum(integrand, { [x]: v });
+      for (let i = 0; i <= 400; i++) {
+        const y = f(left + ((right - left) * i) / 400);
+        if (!Number.isFinite(y) || Math.abs(y) > 1e9) return null;
+      }
+      const t = deps.integrateDefinite(integrand, x, a, b);
+      orderVar = x;
+      if (!t || !close(simpson(f, na, nb), exNum(t.value), 1e-4)) return null;
+      return { steps: t.lines, value: t.value };
+    } catch {
+      return null;
+    }
+  };
+
   const definiteSteps = (integrand: Expr, x: string, lo: MathNode, hi: MathNode): { steps: string[]; value: Ex } | null => {
-    const w = integralWork(integrand, x);
-    if (!w) return null;
     const a = targetOf(lo);
     const b = targetOf(hi);
     if (a.kind !== "finite" || b.kind !== "finite") return null;
+    const w = basicWork(integrand, x);
+    if (!w) return definiteTechnique(integrand, x, a.v, b.v);
     const na = exNum(a.v);
     const nb = exNum(b.v);
     const [left, right] = na <= nb ? [na, nb] : [nb, na];
@@ -2053,7 +2230,20 @@ export function createCalculus(math: MathJsInstance, deps: CalculusDeps): Calcul
     } catch (e) {
       if (!(e instanceof ZeroDivision)) return null;
     }
-    // 0/0 in a rational function: factor, cancel, substitute
+    const factored = rationalLimit(operand, x, t, prefix);
+    if (factored || !deps.limit) return factored;
+    // 0/0 that needs the conjugate or a known limit (`limits.ts`)
+    try {
+      const tech = deps.limit(operand, x, t.v, prefix);
+      orderVar = x;
+      return tech ? { steps: tech.lines, value: { kind: "finite", v: tech.value } } : null;
+    } catch {
+      return null;
+    }
+  };
+
+  /** 0/0 in a rational function: factor, cancel, substitute. */
+  const rationalLimit = (operand: Expr, x: string, t: { kind: "finite"; v: Ex }, prefix: string): { steps: string[]; value: LimitValue } | null => {
     if (!exIsRational(t.v)) return null;
     const a = t.v.r;
     const r = ratioOf(operand, x);
@@ -2293,6 +2483,51 @@ export function createCalculus(math: MathJsInstance, deps: CalculusDeps): Calcul
     return null;
   };
 
+  /**
+   * `x^{2} + y^{2} = 25`, then `\frac{dy}{dx}`: both sides differentiated with y a function of x
+   * (H = L - R: H_x + H_y y' = 0), y' collected, then alone.
+   */
+  const implicitFor = (lines: readonly string[], q0: Question, pre: string): { latex: string; steps: string[] } | null => {
+    if (q0.order !== 1 || q0.point) return null;
+    const y = q0.name;
+    const x = q0.variable ?? "x";
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = stripEquals(lines[i]);
+      const split = splitRelations(line);
+      if (split.ops.length !== 1 || split.ops[0] !== "==") continue;
+      try {
+        const [lSrc, rSrc] = split.sides.map(translateLine);
+        if (!lSrc || !rSrc) continue;
+        const H = add([parseExpr(lSrc), neg(parseExpr(rSrc))]);
+        const names = symbolsOf(H);
+        if (!names.has(x) || !names.has(y) || names.size !== 2) continue;
+        orderVar = x;
+        const Hx = canon(makeDiff(x)(H).val);
+        const Hy = canon(makeDiff(y)(H).val);
+        if (Hy.length === 0 || !derivativeAgrees(H, canonToExpr(Hx), x) || !derivativeAgrees(H, canonToExpr(Hy), y)) continue;
+        const dydx = `\\frac{d${y}}{d${x}}`;
+        const hyTex = printCanon(Hy, "display", x);
+        const hy = hyTex === "1" ? "" : hasTopLevelSum(hyTex) ? `(${hyTex})` : hyTex;
+        const withY = `${hy}${dydx}`;
+        const hxTex = printCanon(Hx, "display", x);
+        const minusHx = printCanon(scaleCanon(Hx, QM1), "display", x);
+        // one fraction: -H_x over H_y, cancelled when that leaves one term (`-\\frac{x}{y}`)
+        const cancelled = printCanon(canon(div(neg(canonToExpr(Hx)), canonToExpr(Hy))), "display", x);
+        const answer = hasTopLevelSum(cancelled) && !cancelled.startsWith("\\frac") ? fracTex(minusHx, hyTex) : cancelled;
+        const out = [
+          Hx.length === 0 ? `${withY} = 0` : joinTwo(hxTex, withY, "+") + " = 0",
+          `${withY} = ${minusHx}`,
+          `${dydx} = ${answer}`,
+        ];
+        const steps = out.filter((l, k) => k === 0 || lineKey(l) !== lineKey(out[k - 1]));
+        return { latex: `${pre} = ${answer}`, steps };
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  };
+
   const fromLines = (lines: readonly string[]): { latex: string; steps: string[] } | null | undefined => {
     if (!lines.length) return undefined;
     const pre = stripEquals(lines[lines.length - 1]);
@@ -2300,7 +2535,9 @@ export function createCalculus(math: MathJsInstance, deps: CalculusDeps): Calcul
     const question = questionOf(pre);
     if (question) {
       const def = definitionFor(lines.slice(0, -1), question);
-      if (!def || question.order < 1 || question.order > 4) return null;
+      // no `y = …` above, but a relation in x and y: implicit differentiation
+      if (!def) return implicitFor(lines.slice(0, -1), question, pre);
+      if (question.order < 1 || question.order > 4) return null;
       try {
         const source = translateLine(def.rhs);
         if (!source) return null;
@@ -2308,10 +2545,12 @@ export function createCalculus(math: MathJsInstance, deps: CalculusDeps): Calcul
         if (!w) return null;
         const derivSteps = tidySteps(w.steps, `\\frac{d}{d${def.x}}(${def.rhs})`);
         if (!question.point) {
-          const drawn = derivSteps.map((s) => `= ${s}`);
+          // `y = x^{x}` is the student's own line above: not written again
+          const drawn = derivSteps.filter((st) => !lines.some((l) => lineKey(stripEquals(l)) === lineKey(st))).map(continueLine);
           return { latex: `${pre} = ${w.finalTex}`, steps: drawn };
         }
-        // f'(2): the derivative first, then the value at the point
+        // f'(2): the derivative first, then the value at the point (not through y = …, logarithms)
+        if (derivSteps.some(isRelationLine)) return null;
         const pointSource = translateLine(question.point);
         if (!pointSource) return null;
         const pointExpr = parseExpr(pointSource);
@@ -2336,7 +2575,7 @@ export function createCalculus(math: MathJsInstance, deps: CalculusDeps): Calcul
     if (!CALCULUS_LINE.test(pre)) return undefined;
     const own = steps(pre);
     if (!own) return null;
-    return { latex: `${pre} = ${own[own.length - 1]}`, steps: own.map((s) => `= ${s}`) };
+    return { latex: `${pre} = ${own[own.length - 1]}`, steps: own.map(continueLine) };
   };
 
   const resultLatex = (source: string): string | null => {
@@ -2387,9 +2626,14 @@ export function createCalculus(math: MathJsInstance, deps: CalculusDeps): Calcul
         }
       },
       antiderivative: (expr: string, x: string) => {
-        let w: IntegralWork | null = null;
+        let w: { Fexpr: Expr; constant: string } | null = null;
         try {
-          w = integralWork(parseExpr(expr), x);
+          const integrand = parseExpr(expr);
+          w = basicWork(integrand, x);
+          if (!w) {
+            const t = techniqueFor(integrand, x);
+            if (t) w = { Fexpr: t.F, constant: symbolsOf(integrand).has("C") ? "K" : "C" };
+          }
         } catch {
           w = null;
         }
@@ -2409,7 +2653,12 @@ export function createCalculus(math: MathJsInstance, deps: CalculusDeps): Calcul
     { override: true },
   );
 
-  return { steps, fromLines, resultLatex, claimVerdict };
+  const basicIntegral = (integrand: Expr, x: string): BasicIntegral | null => {
+    const w = basicWork(integrand, x);
+    return w ? { rewrite: w.rewrite, rule: w.rule, display: w.display, F: w.Fexpr } : null;
+  };
+
+  return { steps, fromLines, resultLatex, claimVerdict, basicIntegral };
 }
 
 /** Expr → mathjs source (fully bracketed). */
@@ -2439,3 +2688,125 @@ function toMathjs(e: Expr): string {
     }
   }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Shared with the modules that extend this one: `trig.ts` (exact values, identities, equations),
+// `integration.ts` (substitution, parts, identities, partial fractions) and `limits.ts`. They
+// build on the same expression tree, printer, exact values and numerical checks, so a line they
+// write looks like a line written here, and is checked the same way.
+// ---------------------------------------------------------------------------------------------
+
+/** Sets the variable factors are ordered around (`2\pi x`, `x e^{x}`) when a Canon is printed. */
+export function setOrderVar(x: string): void {
+  orderVar = x;
+}
+
+export type { AnyNode, Atom, Canon, DRes, Expr, Ex, Factor, Fn, Mode, Poly, Q, Term };
+export {
+  add,
+  atomBody,
+  BARE_FN_END,
+  canon,
+  canonRational,
+  canonToExpr,
+  chainFactor,
+  close,
+  combine,
+  D0,
+  derivativeAgrees,
+  div,
+  evalExact,
+  evalNum,
+  exactFromNumber,
+  exAdd,
+  exAtom,
+  exFn,
+  exInv,
+  exIsRational,
+  exIsSum,
+  exLit,
+  exMul,
+  exNeg,
+  exNum,
+  exPowQ,
+  exQ,
+  exScale,
+  exSqrtQ,
+  exSub,
+  exTex,
+  factorOf,
+  fail,
+  fn,
+  fnArg,
+  fracTex,
+  fromNode,
+  hasTopLevelSum,
+  hasVar,
+  I,
+  invCanon,
+  isNegTerm,
+  isVar,
+  joinProduct,
+  joinSigned,
+  joinTwo,
+  lineKey,
+  linearOf,
+  makeDiff,
+  MAX_STEPS,
+  monomial,
+  mul,
+  mulCanon,
+  N,
+  neg,
+  negTex,
+  NotCalculus,
+  paramScope,
+  pDivRoot,
+  pEval,
+  piAtom,
+  polyCanon,
+  polyOf,
+  pow,
+  powCanon,
+  powMerge,
+  printCanon,
+  pScale,
+  pTex,
+  q,
+  Q0,
+  Q1,
+  qAbs,
+  qAdd,
+  qDiv,
+  qEq,
+  QHALF,
+  qInt,
+  qLatex,
+  QM1,
+  qMul,
+  qNeg,
+  qOne,
+  qPowInt,
+  qRoot,
+  qSub,
+  qVal,
+  qZero,
+  rationalValue,
+  S,
+  SAMPLES,
+  scaleCanon,
+  simpson,
+  sin12,
+  sqrtAtom,
+  substitute,
+  symbolsOf,
+  symTex,
+  termToExpr,
+  tex,
+  texFactor,
+  texFn,
+  tidySteps,
+  toMathjs,
+  trimPoly,
+  ZeroDivision,
+};
