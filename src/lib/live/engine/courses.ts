@@ -12,6 +12,10 @@
  *                 a point and a slope, sequences, a mean, a formula with every value known
  *   fromLinesLate after the systems have nothing — a formula solved for a letter
  *   analyze       `engine.analyzeLine` — a claim about a function (`f(4) = 11`) under its definition
+ *   analyzeFunction  a function written from the one above (`g(x) = f(x - 3) + 1`), or a rewrite
+ *                 of it (checked: a wrong one is ringed)
+ *   askLine       a question word under a function (`\text{holes}`): an ask, not prose
+ *   calculusOfDefined  `\lim_{x \to \infty} f(x) =` under `f(x) = …`: the definition put in first
  *
  * `"refuse"` means the line is one the older paths would misread (`f(4)` as `4f`): the engine
  * answers nothing rather than something wrong.
@@ -27,9 +31,11 @@ import { binomialSteps, rationalSteps } from "./rationalExpressions";
 import { formulaAnswer } from "./formulas";
 import { sequenceAnswer, sigmaSteps } from "./sequences";
 import { radicalSteps } from "./radicalExpr";
-import { checkClaim, definitionFromMath, definitionOf, definitionsIn, evaluateCalls, hasFunctionCall, inverseOf, solveFunctionEquation } from "./functionNotation";
+import { checkClaim, definitionFromMath, definitionOf, definitionsIn, evaluateCalls, hasFunctionCall, inverseOf, solveFunctionEquation, substituteCalls } from "./functionNotation";
 import { lineFromColumn, pointsOn, slopeIntercept } from "./linearFunctions";
 import { solveForLetter } from "./literalEquations";
+import { isWordAsk, rationalAskSteps, rationalFunctionSteps, readRationalFunction } from "./rationalFunctions";
+import { analyzeDerived, impliedSteps, transformSteps } from "./transformations";
 
 export type Refuse = "refuse";
 
@@ -45,6 +51,9 @@ export interface Courses {
   fromLines(lines: readonly string[]): Solved | null | Refuse;
   fromLinesLate(lines: readonly string[]): Solved | null;
   analyze(latex: string, ctx: AnalyzeContext): LineAnalysis | null;
+  analyzeFunction(latex: string, ctx: AnalyzeContext): LineAnalysis | null;
+  askLine(latex: string, ctx: AnalyzeContext): LineAnalysis | null;
+  calculusOfDefined(lines: readonly string[], calculus: (lines: readonly string[]) => Solved | null | undefined): Solved | null;
   /** an exact answer finished the way the course writes it (`x = \log_{5} 7` → its change of base) */
   polish<T extends Solved>(solved: T): T;
 }
@@ -63,6 +72,12 @@ export function createCourses(deps: CourseDeps): Courses {
     const above = lines.slice(0, -1);
     // function notation: a definition above and the target applies it
     const defs = definitionsIn(above);
+    // under a rational function: `\text{VA} = ?`, `x = ?`, `\text{holes}`, … (`rationalFunctions.ts`)
+    const asked = rationalAskSteps(deps, lines);
+    if (asked) return asked;
+    // `g(x) = f(x - 3) + 1` under f: g written out, the rule, the key point (`transformations.ts`)
+    const moved = defs.size > 0 ? transformSteps(deps, lines) : null;
+    if (moved) return moved;
     if (defs.size > 0) {
       const own = definitionOf(target);
       const redefined = own && defs.has(own.name) && !/[a-zA-Z]/.test(own.rhs.replace(/\\[a-zA-Z]+/g, ""));
@@ -99,6 +114,13 @@ export function createCourses(deps: CourseDeps): Courses {
 
   const solve = (latex: string, opts?: SolveOptions): Solved | null | Refuse => {
     const defs = definitionsIn(opts?.column ?? []);
+    // a function on its own: a rational one's holes and asymptotes, a school parent moved read
+    // against the parent (`rationalFunctions.ts`, `transformations.ts`)
+    if (!opts?.column || alone(latex, opts)) {
+      const rf = readRationalFunction(deps, latex);
+      const own = rf ? rationalFunctionSteps(deps, rf, "all", latex) : impliedSteps(deps, latex);
+      if (own) return own;
+    }
     if (hasFunctionCall(latex, defs.keys())) return "refuse";
     // no real roots, and the column already works with i: the complex ones (complexSetting.ts)
     if (opts?.complexRoots) {
@@ -167,6 +189,21 @@ export function createCourses(deps: CourseDeps): Courses {
     polish: (solved) => safely(() => withChangeOfBase(solved)) ?? solved,
     fromLines: (lines) => safely(() => fromLines(lines)) ?? null,
     fromLinesLate: (lines) => safely(() => fromLinesLate(lines)) ?? null,
+    analyzeFunction: (latex, ctx) => safely(() => analyzeDerived(deps, latex, ctx)) ?? null,
+    askLine: (latex, ctx) =>
+      safely(() => (ctx.previous?.kind === "function" && isWordAsk(latex) ? ({ kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" } satisfies LineAnalysis) : null)) ?? null,
+    calculusOfDefined: (lines, calculus) =>
+      safely(() => {
+        const target = lines[lines.length - 1] ?? "";
+        const defs = definitionsIn(lines.slice(0, -1));
+        if (defs.size === 0 || !/\\lim/.test(target) || !hasFunctionCall(target, defs.keys())) return null;
+        const put = substituteCalls(deps, target, defs);
+        if (!put || put === target) return null;
+        const done = calculus([...lines.slice(0, -1), put]);
+        if (!done || done.steps.length === 0) return null;
+        const first = `= ${put.replace(/\s*=\s*$/, "").trim()}`;
+        return { latex: done.latex, steps: [first, ...done.steps].slice(0, 8) };
+      }) ?? null,
     analyze: (latex, ctx) =>
       safely(() => {
         const prev = ctx.previous;

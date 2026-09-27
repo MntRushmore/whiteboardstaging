@@ -174,6 +174,12 @@ export interface LineAnalysis {
   units?: { ok: boolean };
   solved?: boolean;
   error?: string;
+  /**
+   * `g(x) = f(x - 3) + 1` under the definition of f, or a right rewrite of it: a function defined
+   * from another, so the next rewrite of it is checked — a wrong one is ringed
+   * (`engine/transformations.ts`).
+   */
+  derived?: boolean;
 }
 /**
  * What `solveLatex` may know about the column it is solving in (`localSolve` passes it; every
@@ -208,6 +214,10 @@ export interface GraphFunctionCurve {
   /** mathjs source of f in `x` (the typeset fallback compiles it) */
   expr: string;
   op: GraphRelOp;
+  /** a transformation's parent: drawn dotted, under its image */
+  role?: "parent";
+  /** the function's name (`f`, `g`), written beside its curve when there are two */
+  name?: string;
 }
 /** `(x - cx)^2 + (y - cy)^2 op r^2` */
 export interface GraphCircleCurve {
@@ -224,12 +234,16 @@ export interface GraphKeyPoint {
   y: number;
   /** `(0, 1)`, written beside the dot; '' when a coordinate is not exact (a dot only) */
   label: string;
-  role: "intercept" | "vertex" | "intersection" | "center" | "endpoint" | "turning";
+  /** a hole is drawn as an open circle, the curve broken round it */
+  role: "intercept" | "vertex" | "intersection" | "center" | "endpoint" | "turning" | "hole";
 }
 export interface GraphAsymptote {
-  /** vertical: `x = at`; horizontal: `y = at` (drawn dashed) */
-  axis: "vertical" | "horizontal";
+  /** vertical: `x = at`; horizontal: `y = at`; oblique: `y = slope·x + at` (drawn dashed, with its equation) */
+  axis: "vertical" | "horizontal" | "oblique";
   at: number;
+  slope?: number;
+  /** a transformation's parent's: its curve breaks there, but only the image's are drawn */
+  hidden?: boolean;
 }
 export interface PlaneGraphIntent {
   kind: "plane";
@@ -240,6 +254,8 @@ export interface PlaneGraphIntent {
   curves: GraphCurve[];
   points: GraphKeyPoint[];
   asymptotes: GraphAsymptote[];
+  /** a transformation: from the parent's key point to where it lands, drawn as an arrow */
+  arrows?: Array<{ from: { x: number; y: number }; to: { x: number; y: number } }>;
 }
 /** One piece of a one-variable solution set; null is ±∞. */
 export interface NumberLineInterval {
