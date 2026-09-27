@@ -1056,7 +1056,8 @@ class Scanner {
     const last = this.lastToken();
     if (last?.kind === "num" && this.literalNumAt === this.tokens.length - 1 && /^[1-9][0-9]*$/.test(last.text) && /^[0-9]+$/.test(num) && /^[0-9]+$/.test(den) && Number(num) > 0 && Number(num) < Number(den)) {
       this.tokens.pop();
-      this.emit("group", `(${last.text} + ${num} / ${den})`);
+      // one number, as an improper fraction: the algebra sees `\frac{3}{2}`, not `1 + \frac{1}{2}`
+      this.emit("group", `(${Number(last.text) * Number(den) + Number(num)} / ${den})`);
       return;
     }
     this.emit("group", `((${this.sub(num)})/(${this.sub(den)}))`);

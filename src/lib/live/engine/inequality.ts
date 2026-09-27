@@ -303,7 +303,9 @@ function rationalInequality(rel: ParsedRelation, op: IneqOp, ctx: SolveContext):
     return solvePolynomial(P, op, v, w, ctx, zeros, "product");
   }
   const rel2 = opLatex(op);
-  w.write(`${joinSigned(L.map((s) => timesSquare(s, D, v)))} ${rel2} ${joinSigned(R.map((s) => timesSquare(s, D, v)))}`);
+  // a zero side stays `0` (not `0x^{2}`)
+  const times = (ss: Summand[]) => joinSigned(ss.filter((s) => s.num.length > 0).map((s) => timesSquare(s, D, v)));
+  w.write(`${times(L)} ${rel2} ${times(R)}`);
   w.write(`${polyLatex(sideTimesSquare(L, D), v)} ${rel2} ${polyLatex(sideTimesSquare(R, D), v)}`, true);
   return solvePolynomial(P, op, v, w, ctx, zeros);
 }

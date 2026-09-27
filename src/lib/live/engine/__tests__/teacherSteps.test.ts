@@ -38,6 +38,9 @@ describe("linear equations: expand, clear fractions, collect, divide", () => {
     // the unknown already alone: the numbers are added, no fractions cleared
     ["x = \\frac{1}{2} + \\frac{1}{3}", ["x = \\frac{5}{6}"]],
     ["x = 2 \\frac{1}{2} + 1", ["x = \\frac{7}{2}"]],
+    // a mixed number is one number to the algebra
+    ["x + 1\\frac{1}{2} = 4", ["2x + 3 = 8", "2x = 5", "x = \\frac{5}{2}"]],
+    ["2\\frac{1}{2}x = 5", ["5x = 10", "x = 2"]],
   ])("%s", (latex, steps) => {
     expect(solve(latex)).toEqual(steps);
   });

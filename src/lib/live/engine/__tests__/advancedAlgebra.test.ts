@@ -161,6 +161,8 @@ describe("inequalities past linear: critical values, then the intervals (inequal
       ["x \\neq 3", "(x + 1)(x - 3) \\le 2(x - 3)^{2}", "x^{2} - 2x - 3 \\le 2x^{2} - 12x + 18", "x^{2} - 10x + 21 \\ge 0", "(x - 3)(x - 7) \\ge 0", "x = 3, \\ x = 7", "x < 3, \\ x \\ge 7"],
     ],
     ["\\frac{1}{x} > 2", ["x \\neq 0", "x > 2x^{2}", "2x^{2} - x < 0", "x(2x - 1) < 0", "x = 0, \\ x = \\frac{1}{2}", "0 < x < \\frac{1}{2}"]],
+    // a zero side stays 0 when multiplied
+    ["\\frac{1}{x} + 1 > 0", ["x \\neq 0", "x + x^{2} > 0", "x^{2} + x > 0", "x(x + 1) > 0", "x = -1, \\ x = 0", "x < -1, \\ x > 0"]],
   ])("%s", (latex, steps) => {
     expect(solve(latex)).toEqual(steps);
   });
