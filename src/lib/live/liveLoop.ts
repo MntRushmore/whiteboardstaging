@@ -76,6 +76,7 @@ import {
   placeHandPlanOnBaseline,
   planFromStrokes,
   planHandwriting,
+  wallMsOf,
   HAND_WRITE,
   type HandPlan,
 } from "./handwriting";
@@ -2203,7 +2204,7 @@ export class LiveLoop implements LiveController {
     const slot = findFreeSlot(keepOnScreen(candidate, this.screenRect(), column), avoid, lastLine);
 
     this.startHandwriting(placeHandPlan(plan, { x: slot.x, y: slot.y }), opts.lineId, extraMeta);
-    clientMetric("live.solve.hand.ms", { ms: Math.round(plan.totalMs), lineId: opts.lineId });
+    clientMetric("live.solve.hand.ms", { ms: Math.round(wallMsOf(plan)), lineId: opts.lineId });
     return true;
   }
 

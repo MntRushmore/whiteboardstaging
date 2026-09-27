@@ -80,6 +80,8 @@ export const HAND_WRITE = {
   frameMs: 32,
   /** the pause between two lines of a worked solution — someone thinking, not a print-out */
   lineGapMs: 450,
+  /** a long block is sped up so it is written within seconds (see `paceFor`) */
+  pacing: { naturalUpToMs: 4000, maxWallMs: 6000, maxPace: 5 },
   /** tldraw draw-shape style of the tutor's ink (the accent tone of the AI shapes, never red) */
   color: TUTOR_INK_COLOR,
   size: "s",
@@ -159,7 +161,34 @@ export interface HandPlan {
   /** page-space bounding box of the whole block */
   bounds: Rect;
   size: number;
+  /** the block at a natural writing pace; every `startMs` / `durationMs` is on this clock */
   totalMs: number;
+  /**
+   * How much faster than natural the pen moves (1 = natural). A long solution is written faster
+   * so it is on the board in seconds, not half a minute: see `paceFor`. Wall time = totalMs / pace.
+   */
+  pace?: number;
+}
+
+/**
+ * The pen's speed-up for a block that takes `naturalMs` to write at a human pace.
+ *
+ * Up to `naturalUpToMs` nothing changes — a one- or two-line answer keeps its handwriting feel.
+ * Past it the extra time is written three times faster, and the whole block never takes longer
+ * than `maxWallMs` unless that would need more than `maxPace` (then it is `maxPace`, so the pen
+ * never becomes a blur). Measured on the maths scoreboard: blocks took 4 s at the median but 16 s
+ * at p95 and 26 s at the longest — long after the answer was ready (the engine takes < 0.1 s).
+ */
+export function paceFor(naturalMs: number): number {
+  const { naturalUpToMs, maxWallMs, maxPace } = HAND_WRITE.pacing;
+  if (!(naturalMs > naturalUpToMs)) return 1;
+  const wall = Math.min(maxWallMs, naturalUpToMs + (naturalMs - naturalUpToMs) / 3);
+  return Math.min(maxPace, naturalMs / wall);
+}
+
+/** How long the block takes on the wall clock at its pace. */
+export function wallMsOf(plan: Pick<HandPlan, "totalMs" | "pace">): number {
+  return plan.totalMs / (plan.pace ?? 1);
 }
 
 export interface HandPlanResult {
@@ -215,6 +244,7 @@ export function planHandwriting(
       bounds: { x: minX, y: minY, w: maxX - minX, h: maxY - minY },
       size: opts.size,
       totalMs: Math.max(0, t - HAND_WRITE.lineGapMs),
+      pace: paceFor(Math.max(0, t - HAND_WRITE.lineGapMs)),
     },
     unsupported: [],
   };
@@ -426,7 +456,8 @@ export class HandWriter {
   private frame(): void {
     this.timer = null;
     if (!this.running || !this.plan) return;
-    const t = this.deps.now() - this.startedAt;
+    // natural-pace time: a long block's clock runs `pace` times faster (see `paceFor`)
+    const t = (this.deps.now() - this.startedAt) * (this.plan.pace ?? 1);
     this.apply(t, "reveal");
     if (t >= this.plan.totalMs) {
       this.finish("finishAll");
