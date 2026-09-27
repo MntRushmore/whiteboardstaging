@@ -82,6 +82,8 @@ export const TOPICS = [
   "series",
   "binomial",
   "variation",
+  "rational-functions",
+  "transformations",
   // Geometry (src/__eval__/courses/geometry.ts)
   ...GEOMETRY_TOPICS,
 ] as const;
@@ -127,6 +129,8 @@ export const TOPIC_COURSE: Record<Topic, Course> = {
   series: "algebra-2",
   binomial: "algebra-2",
   variation: "algebra-2",
+  "rational-functions": "algebra-2",
+  transformations: "algebra-2",
   ...(Object.fromEntries(GEOMETRY_TOPICS.map((t) => [t, "geometry"])) as Record<(typeof GEOMETRY_TOPICS)[number], Course>),
 };
 
@@ -143,6 +147,19 @@ export interface Expectation {
   interval?: { lo: number; hi: number; loIn?: boolean; hiIn?: boolean };
   /** the answer is a point (a midpoint, an image, a circle's centre): the last point on the final line */
   point?: number[];
+  /**
+   * A rational function's features (F-IF.7d), judged by `functionFeatures.ts`: each key given must
+   * be written in the steps and be exactly this — the values the domain leaves out, the holes
+   * (x, y), the vertical asymptotes, the horizontal one (null: there is none), the slant one
+   * (LaTeX in x). Every line is also checked against the function itself.
+   */
+  rational?: { domain?: number[]; holes?: Array<[number, number]>; vertical?: number[]; horizontal?: number | null; oblique?: string };
+  /**
+   * A transformation of a parent (F-BF.3), judged by `functionFeatures.ts`: g written out (compared
+   * by value at many x), the mapping rule `(x, y) \to (X, Y)` as [X, Y] in x and y, and a point of
+   * the parent with where it lands. Every line is also checked against the parent and g.
+   */
+  transform?: { image: string; rule?: [string, string]; point?: [[number, number], [number, number]] };
 }
 
 export interface EvalProblem {

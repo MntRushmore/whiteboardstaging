@@ -720,6 +720,9 @@ export function createEngine(mod: MathModule): LiveEngine {
     // statements about figures, angle equations in degrees (`geometry.ts`)
     const geo = geometry.analyze(latex, ctx, analyze);
     if (geo) return geo;
+    // `\text{holes}` under a function: an ask, not prose (`courses.ts`)
+    const ask = courses.askLine(latex, ctx);
+    if (ask) return ask;
     // preClassify needs the raw line (it tells "decorations only" from "empty"), so the rewritten
     // form is only substituted when a rewrite actually happened.
     const cleaned = preprocessLatex(latex);
@@ -785,6 +788,9 @@ export function createEngine(mod: MathModule): LiveEngine {
         return out;
       }
       case "function": {
+        // `g(x) = f(x - 3) + 1` under f, and a rewrite of it (checked) (`courses.ts`)
+        const derived = courses.analyzeFunction(pre.latex, ctx);
+        if (derived) return derived;
         const fn = pre.fn!;
         const out = base("function");
         out.variable = fn.param;
@@ -1271,6 +1277,8 @@ export function createEngine(mod: MathModule): LiveEngine {
       try {
         // `\frac{dy}{dx}` / `f'(2)` under a definition, or a calculus line under a system: calculus answers
         const calc = calculus.fromLines(lines);
+        // `\lim_{x \to \infty} f(x) =` under the definition of f: the definition put in, then the limit (`courses.ts`)
+        if (calc === null) return courses.calculusOfDefined(lines, calculus.fromLines);
         if (calc !== undefined) return calc;
         // function notation, lines through points, sequences, … (`courses.ts`); then the systems; then a formula for a letter
         const course = courses.fromLines(lines);

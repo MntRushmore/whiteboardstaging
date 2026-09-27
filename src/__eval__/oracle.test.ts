@@ -205,6 +205,98 @@ function geometryExpectation(p: EvalProblem): string | null | undefined {
 }
 
 /**
+ * A rational function's features or a transformation (`expect.rational` / `expect.transform`),
+ * recomputed here numerically from the problem's own lines: `undefined` when it is neither,
+ * `null` when it holds, else what is wrong.
+ */
+function featuresExpectation(p: EvalProblem): string | null | undefined {
+  const e = p.expect;
+  const fn = (latex: string) => {
+    const x = exprOf(latex);
+    if (!x) return null;
+    return (t: number) => {
+      const v = x.at({ x: t });
+      return typeof v === "number" && Number.isFinite(v) ? v : null;
+    };
+  };
+  const sameList = (a: readonly number[], b: readonly number[]) => a.length === b.length && a.every((x) => b.some((y) => near(x, y)));
+  if (e.rational) {
+    const r = e.rational;
+    const line = [...p.lines].reverse().map((l) => /^\s*(?:y|[a-zA-Z]\s*\(\s*x\s*\))\s*=\s*([^?]+)$/.exec(l)).find(Boolean);
+    const F = line ? fn(line[1]) : null;
+    if (!F) return `${p.id}: no function to recompute from`;
+    // where F has no value, among the simple fractions in [-12, 12]
+    const gaps: number[] = [];
+    for (let d = 1; d <= 6; d++) for (let n = -12 * d; n <= 12 * d; n++) if (F(n / d) === null && !gaps.some((g) => near(g, n / d))) gaps.push(n / d);
+    if (r.domain && !sameList(r.domain, gaps)) return `${p.id}: no value at ${JSON.stringify(gaps)}, not ${JSON.stringify(r.domain)}`;
+    const side = (a: number, s: number) => F(a + s * 1e-7);
+    const vertical = gaps.filter((a) => [1, -1].some((s) => Math.abs(side(a, s) ?? 0) > 1e4));
+    const holes = gaps.filter((a) => !vertical.includes(a)).map((a) => [a, ((side(a, 1) ?? NaN) + (side(a, -1) ?? NaN)) / 2]);
+    if (r.vertical && !sameList(r.vertical, vertical)) return `${p.id}: vertical asymptotes ${JSON.stringify(vertical)}, not ${JSON.stringify(r.vertical)}`;
+    if (r.holes && !(r.holes.length === holes.length && r.holes.every(([x, y]) => holes.some(([a, b]) => near(a, x) && Math.abs(b - y) < 1e-5)))) return `${p.id}: holes ${JSON.stringify(holes)}, not ${JSON.stringify(r.holes)}`;
+    const level = [1e6, 1e7, -1e6, -1e7].map((x) => F(x));
+    const levels = level.every((v) => v !== null) && Math.abs(level[1]! - level[0]!) < 1e-4 && Math.abs(level[3]! - level[2]!) < 1e-4 && Math.abs(level[1]! - level[3]!) < 1e-4;
+    if (r.horizontal === null && levels) return `${p.id}: it does level off at ${level[1]}`;
+    if (typeof r.horizontal === "number" && !(levels && Math.abs(level[1]! - r.horizontal) < 1e-5)) return `${p.id}: it does not level off at ${r.horizontal}`;
+    if (r.oblique) {
+      const O = fn(r.oblique);
+      if (!O || ![1e6, 1e7, -1e6, -1e7].every((x) => Math.abs((F(x) ?? NaN) - (O(x) ?? NaN)) < 1e-4)) return `${p.id}: y = ${r.oblique} is not its slant asymptote`;
+    }
+    return null;
+  }
+  if (e.transform) {
+    const t = e.transform;
+    const m = /^\s*([a-zA-Z])\s*(?:\(\s*x\s*\))?\s*=\s*([\s\S]+)$/.exec(p.lines[p.lines.length - 1]);
+    if (!m) return `${p.id}: no function`;
+    const defs = definitionsOf(p.lines.slice(0, -1));
+    const called = [...defs.keys()].find((n) => m[2].includes(`${n}(`));
+    const G = fn(expandCalls(m[2], defs) ?? "");
+    const image = fn(t.image);
+    if (!G || !image) return `${p.id}: unreadable g`;
+    const xs = Array.from({ length: 30 }, (_, i) => -7.1 + i * 0.49);
+    if (!xs.every((x) => (G(x) === null) === (image(x) === null) && (G(x) === null || near(G(x)!, image(x)!)))) return `${p.id}: ${t.image} is not g`;
+    // the parent: the one defined above, or the one the rule and g say it is — which must be a school parent
+    const rule = t.rule ? t.rule.map((s) => exprOf(s)) : null;
+    const Y = (y: number) => rule?.[1]?.at({ x: 0, y });
+    const X = (x: number) => rule?.[0]?.at({ x, y: 0 });
+    const parent = called
+      ? fn(defs.get(called)!.body)
+      : (s: number) => {
+          const a = Y(1);
+          const k = Y(0);
+          const xs2 = X(s);
+          const g = typeof xs2 === "number" ? G(xs2) : null;
+          return typeof a === "number" && typeof k === "number" && g !== null ? (g - k) / (a - k) : null;
+        };
+    if (!parent) return `${p.id}: no parent`;
+    if (rule) {
+      if (!rule[0] || !rule[1]) return `${p.id}: unreadable rule`;
+      let n = 0;
+      for (const s of xs) {
+        const y = parent(s);
+        const x2 = rule[0].at({ x: s, y: y ?? 0 });
+        const y2 = rule[1].at({ x: s, y: y ?? 0 });
+        if (y === null || typeof x2 !== "number" || typeof y2 !== "number" || G(x2) === null) continue;
+        if (!near(G(x2)!, y2)) return `${p.id}: the rule does not carry the parent onto g at ${s}`;
+        n++;
+      }
+      if (n < 3) return `${p.id}: the rule checked nowhere`;
+      if (!called) {
+        const school = [(s: number) => s * s, (s: number) => s ** 3, Math.abs, Math.sqrt, (s: number) => 1 / s, (s: number) => 2 ** s];
+        if (!school.some((P) => xs.every((s) => parent(s) === null || !Number.isFinite(P(s)) || near(parent(s)!, P(s))))) return `${p.id}: the parent is not a school parent`;
+      }
+    }
+    if (t.point) {
+      const [[a, b], [A, B]] = t.point;
+      if (parent(a) === null || !near(parent(a)!, b) || G(A) === null || !near(G(A)!, B)) return `${p.id}: the point pair is not a point of the parent and of g`;
+      if (rule && !(near(rule[0]!.at({ x: a, y: b }) as number, A) && near(rule[1]!.at({ x: a, y: b }) as number, B))) return `${p.id}: the rule does not take (${a}, ${b}) to (${A}, ${B})`;
+    }
+    return null;
+  }
+  return undefined;
+}
+
+/**
  * The scoreboard is only as good as its judge. These pin the oracle on cases where the answer
  * is known, and then check the CORPUS against the oracle: every expected answer must actually
  * solve its problem, so a typo in corpus.ts cannot turn into a fake engine failure.
@@ -381,8 +473,10 @@ describe("eval corpus", () => {
   it("states every expectation in a form the oracle reads", () => {
     for (const p of CORPUS) {
       const e = p.expect;
-      expect(Boolean(e.values || e.answer || e.complexValues || e.point), p.id).toBe(true);
-      if (!e.values && !e.point) expect(parseLine(e.equivalentTo ?? e.answer ?? "").kind, p.id).not.toBe("unreadable");
+      expect(Boolean(e.values || e.answer || e.complexValues || e.point || e.rational || e.transform), p.id).toBe(true);
+      if (!e.values && !e.point && !e.rational && !e.transform) expect(parseLine(e.equivalentTo ?? e.answer ?? "").kind, p.id).not.toBe("unreadable");
+      if (e.rational?.oblique) expect(exprOf(e.rational.oblique), p.id).not.toBeNull();
+      if (e.transform) for (const s of [e.transform.image, ...(e.transform.rule ?? [])]) expect(exprOf(s), `${p.id}: ${s}`).not.toBeNull();
       if (e.point) expect(e.point.length, p.id).toBe(2);
     }
   });
@@ -398,6 +492,12 @@ describe("eval corpus", () => {
       const geometry = geometryExpectation(p);
       if (geometry !== undefined) {
         if (geometry) problems.push(geometry);
+        continue;
+      }
+      // a rational function's features, a transformation: recomputed from the function
+      const features = featuresExpectation(p);
+      if (features !== undefined) {
+        if (features) problems.push(features);
         continue;
       }
       // a problem the oracle cannot read as written (two points, a list of terms) carries its

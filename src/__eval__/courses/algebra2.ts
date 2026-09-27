@@ -2,7 +2,9 @@
  * Algebra 2 on the scoreboard: complex numbers (N-CN), polynomial division and the remainder
  * theorem (A-APR), function composition and inverses (F-BF), logarithm properties and exponential
  * equations (F-LE, F-BF.5), rational expressions (A-APR.6/7), series (A-SSE.4), the binomial
- * theorem (A-APR.5) and variation (A-CED). The original corpus's rational, radical, exponential,
+ * theorem (A-APR.5), variation (A-CED), rational functions — domain, holes, asymptotes (F-IF.7d,
+ * `expect.rational`) — and transformations of functions (F-BF.3, `expect.transform`), both judged
+ * by `../functionFeatures.ts`. The original corpus's rational, radical, exponential,
  * log and 3×3 topics count towards Algebra 2 from `../corpus.ts`; this file adds the rest.
  * `complexValues` is a non-real solution set, [re, im] per root: complex roots are written only
  * when the column already uses `i` (`src/lib/live/engine/complexSetting.ts`).
@@ -13,6 +15,8 @@ const LN2 = Math.log(2);
 const LN3 = Math.log(3);
 const LN5 = Math.log(5);
 const SQRT2 = Math.SQRT2;
+/** the running example: a hole at (2, 4/3), x = -1, y = 1 */
+const RF = "f(x) = \\frac{x^{2} - 4}{x^{2} - x - 2}";
 
 export const ALGEBRA_2: readonly EvalProblem[] = [
   // ---------------------------------------------------------------- complex numbers (N-CN.1–2, N-CN.7)
@@ -110,4 +114,50 @@ export const ALGEBRA_2: readonly EvalProblem[] = [
   { id: "a2-rd-01", topic: "radicals", course: "algebra-2", lines: ["\\frac{3}{2 + \\sqrt{3}}"], expect: { answer: "6 - 3\\sqrt{3}", form: "radical" }, note: "times the conjugate" },
   { id: "a2-rd-02", topic: "radicals", course: "algebra-2", lines: ["(2 + \\sqrt{3})(1 - \\sqrt{3})"], expect: { answer: "-1 - \\sqrt{3}", form: "radical" } },
   { id: "a2-rd-03", topic: "radicals", course: "algebra-2", lines: ["\\frac{4}{\\sqrt{5} - 1}"], expect: { answer: "1 + \\sqrt{5}", form: "radical" } },
+
+  // ---------------------------------------------------------------- rational functions: domain, holes, asymptotes (F-IF.7d, A-APR.6)
+  { id: "a2-rf-01", topic: "rational-functions", lines: [RF], expect: { rational: { domain: [-1, 2], holes: [[2, 4 / 3]], vertical: [-1], horizontal: 1 } }, note: "Solve on the function: factor, cancel with x ≠ 2, the hole, the asymptotes" },
+  { id: "a2-rf-02", topic: "rational-functions", lines: ["y = \\frac{2x + 1}{x - 3}"], expect: { rational: { domain: [3], holes: [], vertical: [3], horizontal: 2 } } },
+  { id: "a2-rf-03", topic: "rational-functions", lines: ["f(x) = \\frac{x^{2} + 1}{x - 1}"], expect: { rational: { domain: [1], holes: [], vertical: [1], horizontal: null, oblique: "x + 1" } }, note: "a slant asymptote by division" },
+  { id: "a2-rf-04", topic: "rational-functions", lines: ["f(x) = \\frac{x^{2} - 4}{x - 2}"], expect: { rational: { domain: [2], holes: [[2, 4]], vertical: [], horizontal: null } }, note: "a line with a hole, no asymptote" },
+  { id: "a2-rf-05", topic: "rational-functions", lines: ["y = \\frac{3x^{2}}{x^{2} - 9}"], expect: { rational: { domain: [-3, 3], holes: [], vertical: [-3, 3], horizontal: 3 } } },
+  { id: "a2-rf-06", topic: "rational-functions", lines: ["y = \\frac{x + 1}{x^{2} + 1}"], expect: { rational: { domain: [], holes: [], vertical: [], horizontal: 0 } }, note: "the bottom never zero; the bottom's degree wins" },
+  { id: "a2-rf-07", topic: "rational-functions", lines: ["f(x) = \\frac{2x^{2} - 8}{x^{2} + x - 6}"], expect: { rational: { domain: [-3, 2], holes: [[2, 1.6]], vertical: [-3], horizontal: 2 } } },
+  { id: "a2-rf-08", topic: "rational-functions", lines: ["f(x) = \\frac{x - 3}{x^{2} - 9}"], expect: { rational: { domain: [-3, 3], holes: [[3, 1 / 6]], vertical: [-3], horizontal: 0 } } },
+  { id: "a2-rf-09", topic: "rational-functions", lines: ["y = \\frac{2x^{2} - 3x - 2}{x - 2}"], expect: { rational: { domain: [2], holes: [[2, 5]], vertical: [], horizontal: null } } },
+  { id: "a2-rf-10", topic: "rational-functions", lines: ["f(x) = \\frac{x^{2} - x - 6}{x + 1}"], expect: { rational: { domain: [-1], holes: [], vertical: [-1], horizontal: null, oblique: "x - 2" } } },
+  { id: "a2-rf-11", topic: "rational-functions", lines: ["f(x) = \\frac{x^{3}}{x^{2} - 1}"], expect: { rational: { domain: [-1, 1], holes: [], vertical: [-1, 1], horizontal: null, oblique: "x" } } },
+  { id: "a2-rf-12", topic: "rational-functions", lines: ["y = \\frac{x^{2} - x - 2}{x^{2} - 4}"], expect: { rational: { domain: [-2, 2], holes: [[2, 0.75]], vertical: [-2], horizontal: 1 } } },
+  { id: "a2-rf-13", topic: "rational-functions", lines: ["f(x) = \\frac{4x - 2}{2x + 1}"], expect: { rational: { domain: [-0.5], holes: [], vertical: [-0.5], horizontal: 2 } } },
+  { id: "a2-rf-14", topic: "rational-functions", lines: [RF, "\\text{VA} = ?"], expect: { rational: { vertical: [-1] } }, note: "an ask under the function" },
+  { id: "a2-rf-15", topic: "rational-functions", lines: [RF, "x = ?"], expect: { rational: { vertical: [-1] } }, note: "x = ? under a function with no value given: where it cannot be evaluated" },
+  { id: "a2-rf-16", topic: "rational-functions", lines: [RF, "\\text{HA} = ?"], expect: { rational: { horizontal: 1 } } },
+  { id: "a2-rf-17", topic: "rational-functions", lines: [RF, "\\text{holes}"], expect: { rational: { holes: [[2, 4 / 3]] } } },
+  { id: "a2-rf-18", topic: "rational-functions", lines: [RF, "D = ?"], expect: { rational: { domain: [-1, 2] } } },
+  { id: "a2-rf-19", topic: "rational-functions", lines: ["f(x) = \\frac{x^{2} + 3x}{x^{2} - 9}", "\\text{domain}"], expect: { rational: { domain: [-3, 3] } } },
+  { id: "a2-rf-20", topic: "rational-functions", lines: ["y = \\frac{5}{x + 4}", "\\text{HA} = ?"], expect: { rational: { horizontal: 0 } } },
+  { id: "a2-rf-21", topic: "rational-functions", lines: [RF, "\\lim_{x \\to \\infty} f(x) ="], expect: { answer: "1" }, note: "the limit at ∞ under the definition: the horizontal asymptote's level" },
+  { id: "a2-rf-22", topic: "rational-functions", lines: [RF, "\\lim_{x \\to 2} f(x) ="], expect: { answer: "\\frac{4}{3}" }, note: "the limit at the hole: its height" },
+
+  // ---------------------------------------------------------------- transformations of functions (F-BF.3)
+  { id: "a2-tr-01", topic: "transformations", lines: ["f(x) = x^{2}", "g(x) = f(x - 3) + 1"], expect: { transform: { image: "(x - 3)^{2} + 1", rule: ["x + 3", "y + 1"], point: [[0, 0], [3, 1]] } } },
+  { id: "a2-tr-02", topic: "transformations", lines: ["f(x) = x^{2}", "g(x) = -2f(x)"], expect: { transform: { image: "-2x^{2}", rule: ["x", "-2y"], point: [[1, 1], [1, -2]] } }, note: "the vertex stays put: (1, 1) shows the flip and the stretch" },
+  { id: "a2-tr-03", topic: "transformations", lines: ["f(x) = x^{2}", "g(x) = f(2x)"], expect: { transform: { image: "4x^{2}", rule: ["\\frac{1}{2}x", "y"], point: [[1, 1], [0.5, 1]] } }, note: "f(2x) shrinks by ½" },
+  { id: "a2-tr-04", topic: "transformations", lines: ["f(x) = x^{2}", "g(x) = \\frac{1}{2}f(x + 1) - 4"], expect: { transform: { image: "\\frac{1}{2}(x + 1)^{2} - 4", rule: ["x - 1", "\\frac{1}{2}y - 4"], point: [[0, 0], [-1, -4]] } } },
+  { id: "a2-tr-05", topic: "transformations", lines: ["f(x) = |x|", "g(x) = -f(x + 2) + 3"], expect: { transform: { image: "-|x + 2| + 3", rule: ["x - 2", "-y + 3"], point: [[0, 0], [-2, 3]] } } },
+  { id: "a2-tr-06", topic: "transformations", lines: ["f(x) = \\sqrt{x}", "g(x) = f(2x - 6)"], expect: { transform: { image: "\\sqrt{2x - 6}", rule: ["\\frac{1}{2}x + 3", "y"], point: [[0, 0], [3, 0]] } }, note: "f(2(x - 3)): three to the right, not six" },
+  { id: "a2-tr-07", topic: "transformations", lines: ["f(x) = \\frac{1}{x}", "g(x) = f(x - 2) + 3"], expect: { transform: { image: "\\frac{1}{x - 2} + 3", rule: ["x + 2", "y + 3"], point: [[1, 1], [3, 4]] } } },
+  { id: "a2-tr-08", topic: "transformations", lines: ["f(x) = 2^{x}", "g(x) = 3f(x) - 1"], expect: { transform: { image: "3 \\cdot 2^{x} - 1", rule: ["x", "3y - 1"], point: [[0, 1], [0, 2]] } } },
+  { id: "a2-tr-09", topic: "transformations", lines: ["f(x) = x^{3}", "g(x) = f(-x) + 2"], expect: { transform: { image: "-x^{3} + 2", rule: ["-x", "y + 2"], point: [[0, 0], [0, 2]] } } },
+  { id: "a2-tr-10", topic: "transformations", lines: ["f(x) = x^{2} - 4x", "g(x) = f(x + 1)"], expect: { transform: { image: "(x + 1)^{2} - 4(x + 1)", rule: ["x - 1", "y"], point: [[2, -4], [1, -4]] } }, note: "any quadratic parent: its vertex" },
+  { id: "a2-tr-11", topic: "transformations", lines: ["f(x) = x^{2}", "g(x) = f(\\frac{1}{2}x)"], expect: { transform: { image: "\\frac{1}{4}x^{2}", rule: ["2x", "y"], point: [[1, 1], [2, 1]] } }, note: "f(½x) stretches by 2" },
+  { id: "a2-tr-12", topic: "transformations", lines: ["f(x) = |x|", "g(x) = f(3x + 6)"], expect: { transform: { image: "|3x + 6|", rule: ["\\frac{1}{3}x - 2", "y"], point: [[0, 0], [-2, 0]] } }, note: "f(3(x + 2)): two to the left" },
+  { id: "a2-tr-13", topic: "transformations", lines: ["f(x) = \\sqrt{x}", "g(x) = -f(-x)"], expect: { transform: { image: "-\\sqrt{-x}", rule: ["-x", "-y"], point: [[1, 1], [-1, -1]] } } },
+  { id: "a2-tr-14", topic: "transformations", lines: ["y = 2(x - 1)^{2} + 3"], expect: { transform: { image: "2(x - 1)^{2} + 3", rule: ["x + 1", "2y + 3"], point: [[0, 0], [1, 3]] } }, note: "read directly against its parent x²" },
+  { id: "a2-tr-15", topic: "transformations", lines: ["y = -|x + 2| + 1"], expect: { transform: { image: "-|x + 2| + 1", rule: ["x - 2", "-y + 1"], point: [[0, 0], [-2, 1]] } } },
+  { id: "a2-tr-16", topic: "transformations", lines: ["y = \\sqrt{x - 4} + 1"], expect: { transform: { image: "\\sqrt{x - 4} + 1", rule: ["x + 4", "y + 1"], point: [[0, 0], [4, 1]] } } },
+  { id: "a2-tr-17", topic: "transformations", lines: ["y = 2^{x + 1} - 3"], expect: { transform: { image: "2^{x + 1} - 3", rule: ["x - 1", "y - 3"], point: [[0, 1], [-1, -2]] } } },
+  { id: "a2-tr-18", topic: "transformations", lines: ["y = \\frac{1}{x - 2} + 3"], expect: { transform: { image: "\\frac{1}{x - 2} + 3", rule: ["x + 2", "y + 3"], point: [[1, 1], [3, 4]] } } },
+  { id: "a2-tr-19", topic: "transformations", lines: ["g(x) = 4x^{2}"], expect: { transform: { image: "4x^{2}", rule: ["x", "4y"], point: [[1, 1], [1, 4]] } } },
+  { id: "a2-tr-20", topic: "transformations", lines: ["f(x) = x^{3}", "g(x) = \\frac{1}{2}f(x - 1) + 2"], expect: { transform: { image: "\\frac{1}{2}(x - 1)^{3} + 2", rule: ["x + 1", "\\frac{1}{2}y + 2"], point: [[0, 0], [1, 2]] } } },
 ];

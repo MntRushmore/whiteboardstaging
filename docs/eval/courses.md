@@ -25,11 +25,16 @@ at `0e1e1af`):
 | course | problems | before | after |
 | --- | --- | --- | --- |
 | Algebra 1 | 176 (95 new) | 107 (61%) | **176 (100%)** |
-| Algebra 2 | 135 (77 new) | 90 (67%) | **135 (100%)** |
+| Algebra 2 | 177 (119 new) | 90 (67%) | **177 (100%)** |
 | Precalculus / calculus | 100 | 100 (100%) | 100 (100%) |
 | General (arithmetic, units) | 32 | 32 (100%) | 32 (100%) |
 | Geometry (`src/__eval__/courses/geometry.ts`, merged from feat/geometry) | 153 | — | **153 (100%)** |
-| **all** | 596 | — | **596 (100%)** |
+| **all** | 640 | — | **640 (100%)** |
+
+Rational functions and transformations (42 of the Algebra 2 problems, `a2-rf-*`, `a2-tr-*`) were
+added later: before, at `0e57fc0`, none had a local answer (Solve asked the model on every one;
+`g(x) = f(x - 3) + 1` was even read as a product); after, 42/42. They are judged by
+`src/__eval__/functionFeatures.ts` (`expect.rational`, `expect.transform`).
 
 ## Algebra 1
 
@@ -64,7 +69,7 @@ at `0e1e1af`):
 | F-IF.6 | Average rate of change | `\frac{f(4) - f(1)}{4 - 1} =` → `= 2` | does it |
 | F-IF.8 | Rewrite to reveal features (vertex form) | — | not yet |
 | F-BF.1–2 | Sequences: arithmetic and geometric, nth term, explicit from recursive | `3, 7, 11, \ldots`, `a_{10} = ?` → `d = 4`, `a_{10} = 3 + (10 - 1) \cdot 4`, …, `39`; `a_{1} = 2`, `a_{n} = a_{n - 1} + 5`, `a_{n} = ?` → `a_{n} = 5n - 3` | does it |
-| F-BF.3 | Transformations | — | not yet (graphing) |
+| F-BF.3 | Transformations | see Algebra 2, F-BF.3 | does it |
 | F-LE.2 | Linear model from two points | the line through two points | does it |
 | F-LE.2 | Exponential model through two points (`y = ab^{x}`) | — | not yet |
 | F-LE.5 | Growth, decay, simple and compound interest | `A = P(1 + r)^{t}` with the values → `A = 1000(1 + 0.05)^{3}`, `A = 1000(1.05)^{3}`, …, `A = 1157.625`; compound interest `A \approx 1348.85` | does it (a value with no short decimal is written to the cent with ≈) |
@@ -91,8 +96,9 @@ at `0e1e1af`):
 | A-REI.11 | Where two functions meet | `f(x) = x^{2}`, `g(x) = x + 6`, `f(x) = g(x)` → `x = -2, \ x = 3` | does it (algebraically; graphing in parallel) |
 | A-CED.2 | Direct, inverse, joint variation | `y = \frac{k}{x}`, `x = 2`, `y = 6`, `k = ?` → `k = 12` | does it |
 | A-CED.4 | A formula with the letter below the bar or in an exponent | `\frac{1}{f} = \frac{1}{u} + \frac{1}{v}` → `f = \frac{uv}{u + v}`; `A = Pe^{rt}` → `t = \frac{\ln(\frac{A}{P})}{r}` | does it |
-| F-IF.7 | Graphs of polynomial, rational, exponential, log functions | — | (graphing, in parallel) |
-| F-IF.7 | Asymptotes and holes of a rational function | — | not yet (asking needs words; the limits at ±∞ are done in precalculus) |
+| F-IF.7 | Graphs of polynomial, rational, exponential, log functions | the tutor's sketch (`engine/graphIntent.ts`, `graphing/`): each asymptote dashed with its equation (`x = -1`, `y = 1`, `y = x + 1`), a hole an open circle with its coordinates, the curve broken at both | does it |
+| F-IF.7d, A-APR.6 | Asymptotes, holes and domain of a rational function | Solve on `f(x) = \frac{x^{2} - 4}{x^{2} - x - 2}` → `f(x) = \frac{(x + 2)(x - 2)}{(x + 1)(x - 2)}`, `x \neq -1, \ x \neq 2`, `f(x) = \frac{x + 2}{x + 1}, \ x \neq 2`, `\frac{2 + 2}{2 + 1} = \frac{4}{3}`, `(2, \frac{4}{3})`, `x = -1`, `y = 1`; `\frac{x^{2} + 1}{x - 1}` → `x + 1 + \frac{2}{x - 1}`, `y = x + 1`. Asks under the function: `\text{VA} = ?` or `x = ?`, `\text{HA} = ?`, `\text{holes}`, `\text{domain}` / `D = ?`; `\lim_{x \to \infty} f(x) =` and `\lim_{x \to 2} f(x) =` from the definition | does it (one fraction of polynomials in one letter; a bottom with an irrational zero is refused; intercepts are on the sketch, not written) |
+| F-BF.3 | Transformations of functions | `f(x) = x^{2}`, `g(x) = \frac{1}{2}f(x + 1) - 4` → `g(x) = \frac{1}{2}(x + 1)^{2} - 4`, `(x, y) \to (x - 1, \frac{1}{2}y - 4)`, `(0, 0) \to (-1, -4)`; `g(x) = f(2x)` → `g(x) = 4x^{2}`, `(x, y) \to (\frac{1}{2}x, y)`, `(1, 1) \to (\frac{1}{2}, 1)`; `y = 2(x - 1)^{2} + 3` read against its parent → `f(x) = x^{2}`, `y = 2f(x - 1) + 3`, …; sketched together, the parent dotted, each named, an arrow from its key point | does it (g = a·f(bx + c) + k of any parent defined above, or a school parent x², x³, \|x\|, √x, 1/x, bˣ read off the line); the reverse (`g(x) = f(?)`) not yet |
 | F-IF | Piecewise functions | `f(x) = \begin{cases} … \end{cases}`, `f(3) =` → `3 \ge 0`, `= 2(3) + 1`, `= 7` (Mathpix's `\left\{\begin{array}` too) | does it |
 | F-BF.1b–c | Combining and composing functions | `(f + g)(2)`, `f(g(x))` → `= f(x^{2})`, `= 2(x^{2}) + 3`, `= 2x^{2} + 3`; `(f \circ g)(x)` | does it |
 | F-BF.4 | Inverse functions | `f(x) = \frac{x + 1}{x - 2}`, `f^{-1}(x) =` → `y = …`, `x = \frac{y + 1}{y - 2}`, `x(y - 2) = y + 1`, …, `f^{-1}(x) = \frac{2x + 1}{x - 1}` | does it (linear, rational-linear, odd powers, roots, exp / log); an even power is refused (it needs a restricted domain) |
@@ -108,7 +114,8 @@ at `0e1e1af`):
 A student's line is compared with the line above it (`engine.analyzeLine`): an expression step by
 value at sample points (a closed value exactly — `\sqrt{50}` then `= 5\sqrt{5}` is ringed, a
 rounded decimal is never), an equation by its solution set, a claim `f(4) = 11` right under
-`f(x) = …` from the definition. In two or more letters (a formula, a line) a rearrangement is `ok`
+`f(x) = …` from the definition, and a rewrite of `g(x) = f(x - 3) + 1` right under it (`g(x) = (x -
+3)^{2} + 1` ✓, `g(x) = (x + 3)^{2} + 1` ringed — `engine/transformations.ts`). In two or more letters (a formula, a line) a rearrangement is `ok`
 when it has the same solutions; a *different* equation is only ringed when it is a sign or
 constant slip, because the next line may be a second equation of a system (the engine's existing
 rule). A complex answer `x = 1 \pm 2i` under `x^{2} + 2x + 5 = 0` is ringed; `x = -1 \pm 2i` ticked.

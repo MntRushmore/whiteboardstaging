@@ -1,7 +1,8 @@
 import { placeStrokes, strokeBounds, totalDurationMs, type Stroke } from "@/lib/hand";
-import type { GraphCurve, GraphIntent, GraphKeyPoint, NumberLineIntent, PlaneGraphIntent, Rect } from "../contracts";
+import type { GraphAsymptote, GraphCurve, GraphIntent, GraphKeyPoint, NumberLineIntent, PlaneGraphIntent, Rect } from "../contracts";
+import { niceLatex } from "../engine/graphIntent";
 import type { HandLinePlan, HandPlan } from "../handwriting";
-import { Pen, clipPolyline, inRect, rectsOverlap, writeMath, type Pt, type Written } from "./pen";
+import { Pen, clipPolyline, clipSegment, inRect, rectsOverlap, writeMath, type Pt, type Written } from "./pen";
 import { chooseWindow, fromPx, numberLineWindow, ticksIn, toPx, type GraphWindow } from "./window";
 
 /**
@@ -11,11 +12,15 @@ import { chooseWindow, fromPx, numberLineWindow, ticksIn, toPx, type GraphWindow
  *
  * The plan's lines are the sketch's parts in the order a teacher draws them: the axes (with
  * arrowheads and their letters), the tick marks, the numbers, any asymptotes (dashed), the
- * curves (a strict inequality's boundary dashed), the hatching of a region, the key points'
- * dots, and last the coordinates beside them. Everything is in the plot box's own px
- * (top-left 0, 0); the caller moves the plan onto the page with `placeHandPlan`.
+ * curves (a strict inequality's boundary dashed, a transformation's parent dotted), the hatching
+ * of a region, the key points' dots (a hole's open circle, the curve broken round it), a
+ * transformation's arrows, and last the writing beside them: coordinates, each asymptote's
+ * equation at its end (`x = -1`, `y = 1`), each curve's name (`f`, `g`). Everything is in the
+ * plot box's own px (top-left 0, 0); the caller moves the plan onto the page with
+ * `placeHandPlan`.
  *
- * No words: the only writing is numbers, the axis letters and coordinates like `(0, 1)`.
+ * No words: the only writing is numbers, the axis letters, coordinates like `(0, 1)`, an
+ * asymptote's equation and a function's name.
  */
 
 export const GRAPH = {
@@ -34,6 +39,14 @@ export const GRAPH = {
   /** ticks this close to an axis end are left out (the arrowhead lives there) */
   endClear: 22,
   hatchGap: 26,
+  /** a hole's open circle, and the gap the curve leaves round it */
+  holeR: 8,
+  /** a transformation's parent: dots this long, this far apart */
+  parentDash: { on: 3.5, off: 6 },
+  /** an arrow from a parent's point to its image stops this short of each dot */
+  arrowClear: 7,
+  /** a curve's name keeps this far from any other curve */
+  nameClear: 16,
   /** natural-pace pause between two parts of the sketch */
   groupGapMs: 180,
   /** the whole sketch takes about this long on the wall clock (see `graphPaceFor`) */
@@ -335,49 +348,66 @@ function planPlane(intent: PlaneGraphIntent, opts: PlanOptions): GraphPlanResult
   }
   groups.push({ label: "", strokes: ticks }, { label: "", strokes: numbers });
 
-  // 4. asymptotes (dashed), except where they are an axis already
+  // 4. asymptotes (dashed), except where they are an axis already; a parent's only break its curve
   const asym: Stroke[] = [];
   const poles = intent.asymptotes.filter((a) => a.axis === "vertical").map((a) => a.at);
+  /** each drawn asymptote's two ends in px, for its equation */
+  const drawnAsymptotes: Array<{ a: GraphAsymptote; ends: [Pt, Pt] }> = [];
   for (const a of intent.asymptotes) {
-    if (Math.abs(a.at) < 1e-12) continue;
-    if (a.axis === "vertical") {
-      if (a.at <= win.xMin || a.at >= win.xMax) continue;
-      const x = toPx(win, a.at, 0).x;
-      asym.push(...pen.dashed([{ x, y: 0 }, { x, y: win.h }]));
-      obstacles.push({ rect: { x: x - 1, y: 0, w: 2, h: win.h } });
-    } else {
-      if (a.at <= win.yMin || a.at >= win.yMax) continue;
-      const y = toPx(win, 0, a.at).y;
-      asym.push(...pen.dashed([{ x: 0, y }, { x: win.w, y }]));
-      obstacles.push({ rect: { x: 0, y: y - 1, w: win.w, h: 2 } });
-    }
+    if (a.hidden) continue;
+    const ends = asymptoteEnds(a, win);
+    if (!ends) continue;
+    asym.push(...pen.dashed(ends));
+    obstacles.push({ points: sampleSegment(ends[0], ends[1], 3) });
+    drawnAsymptotes.push({ a, ends });
   }
   // a dash never runs through a number
   const clearAsym = asym.filter((s) => !s.points.some((p) => textRects.some((r) => inRect(p, r, 2))));
   if (clearAsym.length) groups.push({ label: "", strokes: clearAsym });
 
-  // 5. the curves (a strict inequality's boundary is dashed)
-  for (const c of intent.curves) {
-    const runs = c.kind === "function" ? traceFunction(c.f, win, poles) : traceCircle(c, win, pen);
-    const strict = c.op === "<" || c.op === ">";
-    const strokes = runs.flatMap((r) => (strict ? pen.dashed(r) : pen.polyline(r)));
-    for (const r of runs) obstacles.push({ points: r.filter((_, i) => i % 2 === 0) });
-    if (strokes.length) groups.push({ label: c.latex, strokes });
-  }
-
-  // 6. the key points' dots, 7. their coordinates beside them
+  // 5. the curves (a strict inequality's boundary is dashed, a transformation's parent dotted),
+  //    each broken round a hole so its open circle stays open
   const shown = intent.points.filter((p) => {
     const q = toPx(win, p.x, p.y);
     return q.x >= 2 && q.x <= win.w - 2 && q.y >= 2 && q.y <= win.h - 2;
   });
+  const holes = shown.filter((p) => p.role === "hole").map((p) => toPx(win, p.x, p.y));
+  /** every curve's px runs, for its name */
+  const traced: Array<{ c: GraphCurve; runs: Pt[][] }> = [];
+  for (const c of intent.curves) {
+    const runs = breakAt(c.kind === "function" ? traceFunction(c.f, win, poles) : traceCircle(c, win, pen), holes, GRAPH.holeR + 1.5);
+    const strict = c.op === "<" || c.op === ">";
+    const parent = c.kind === "function" && c.role === "parent";
+    const strokes = runs.flatMap((r) => (parent ? pen.dashed(r, GRAPH.parentDash.on, GRAPH.parentDash.off) : strict ? pen.dashed(r) : pen.polyline(r)));
+    for (const r of runs) obstacles.push({ points: r.filter((_, i) => i % 2 === 0) });
+    traced.push({ c, runs });
+    if (strokes.length) groups.push({ label: c.latex, strokes });
+  }
+
+  // 6. the key points' dots (a hole's open circle), 7. their coordinates beside them
   const dots: Stroke[] = [];
   /** one group per label, so each reads back as its own line of maths */
   const labelGroups: Group[] = [];
-  const keep = (p: GraphKeyPoint) => p.role === "vertex" || p.role === "intersection" || p.role === "center";
+  const keep = (p: GraphKeyPoint) => p.role === "vertex" || p.role === "intersection" || p.role === "center" || p.role === "hole";
   for (const p of shown) {
     const q = toPx(win, p.x, p.y);
-    dots.push(...pen.dot(q));
-    obstacles.push({ rect: { x: q.x - 4, y: q.y - 4, w: 8, h: 8 } });
+    dots.push(...(p.role === "hole" ? pen.ring(q, GRAPH.holeR) : pen.dot(q)));
+    const r = p.role === "hole" ? GRAPH.holeR + 1 : 4;
+    obstacles.push({ rect: { x: q.x - r, y: q.y - r, w: 2 * r, h: 2 * r } });
+  }
+  // a transformation: from the parent's point to where it lands
+  const arrows: Stroke[] = [];
+  for (const arrow of intent.arrows ?? []) {
+    const a = toPx(win, arrow.from.x, arrow.from.y);
+    const b = toPx(win, arrow.to.x, arrow.to.y);
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (!shown.some((p) => p.x === arrow.to.x && p.y === arrow.to.y) || len < 2 * GRAPH.arrowClear + 10) continue;
+    const ux = (b.x - a.x) / len;
+    const uy = (b.y - a.y) / len;
+    const from = { x: a.x + ux * GRAPH.arrowClear, y: a.y + uy * GRAPH.arrowClear };
+    const to = { x: b.x - ux * GRAPH.arrowClear, y: b.y - uy * GRAPH.arrowClear };
+    arrows.push(...pen.line(from, to), ...pen.arrowhead(to, ux, uy, 9));
+    obstacles.push({ points: sampleSegment(from, to, 3) });
   }
   // the points that matter most get the first pick of a spot
   const byImportance = [...shown].sort((a, b) => Number(keep(b)) - Number(keep(a)));
@@ -389,6 +419,27 @@ function planPlane(intent: PlaneGraphIntent, opts: PlanOptions): GraphPlanResult
     labelGroups.push({ label: p.label, strokes: best.written.strokes });
     textRects.push(best.written.rect);
     obstacles.push({ rect: best.written.rect });
+  }
+  // each drawn asymptote's equation at one of its ends, where it is clear of the curves
+  for (const { a, ends } of drawnAsymptotes) {
+    const latex = asymptoteLatex(a, intent.variable);
+    const spot = latex ? labelAtEnd(latex, a, ends, win, obstacles, pen.seed()) : null;
+    if (!spot) continue;
+    labelGroups.push({ label: latex!, strokes: spot.strokes });
+    textRects.push(spot.rect);
+    obstacles.push({ rect: spot.rect });
+  }
+  // two curves of one sketch (a parent and its image): each one's name beside it
+  if (traced.length > 1) {
+    for (const { c, runs } of traced) {
+      if (c.kind !== "function" || !c.name) continue;
+      const others = traced.filter((t) => t.c !== c).flatMap((t) => t.runs);
+      const spot = nameBeside(c.name, runs, others, win, obstacles, pen.seed());
+      if (!spot) continue;
+      labelGroups.push({ label: c.name, strokes: spot.strokes });
+      textRects.push(spot.rect);
+      obstacles.push({ rect: spot.rect });
+    }
   }
 
   // 8. a region's hatching, drawn round the writing
@@ -404,11 +455,166 @@ function planPlane(intent: PlaneGraphIntent, opts: PlanOptions): GraphPlanResult
   }
   if (hatchStrokes.length) groups.push({ label: "", strokes: hatchStrokes });
   if (dots.length) groups.push({ label: "", strokes: dots });
+  if (arrows.length) groups.push({ label: "", strokes: arrows });
   groups.push(...labelGroups);
 
   const plan = planFromGroups(groups, T.label);
   if (!plan) return null;
   return { plan, box: { x: 0, y: 0, w: win.w, h: win.h }, window: win };
+}
+
+/**
+ * An asymptote's two ends in px, clipped to the box; null when it is an axis already (x = 0,
+ * y = 0) or out of view.
+ */
+function asymptoteEnds(a: GraphAsymptote, win: GraphWindow): [Pt, Pt] | null {
+  if (a.axis === "vertical") {
+    if (Math.abs(a.at) < 1e-12 || a.at <= win.xMin || a.at >= win.xMax) return null;
+    const x = toPx(win, a.at, 0).x;
+    return [
+      { x, y: 0 },
+      { x, y: win.h },
+    ];
+  }
+  if (a.axis === "horizontal") {
+    if (Math.abs(a.at) < 1e-12 || a.at <= win.yMin || a.at >= win.yMax) return null;
+    const y = toPx(win, 0, a.at).y;
+    return [
+      { x: 0, y },
+      { x: win.w, y },
+    ];
+  }
+  const m = a.slope ?? 0;
+  const c = clipSegment(toPx(win, win.xMin, m * win.xMin + a.at), toPx(win, win.xMax, m * win.xMax + a.at), { x: 0, y: 0, w: win.w, h: win.h });
+  return c && Math.hypot(c[1].x - c[0].x, c[1].y - c[0].y) > 20 ? [c[0], c[1]] : null;
+}
+
+/** Points every `step` px from a to b (an obstacle a label must keep off). */
+function sampleSegment(a: Pt, b: Pt, step: number): Pt[] {
+  const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step));
+  return Array.from({ length: n + 1 }, (_, i) => ({ x: a.x + ((b.x - a.x) * i) / n, y: a.y + ((b.y - a.y) * i) / n }));
+}
+
+/** The runs with every stretch inside a hole's circle left out, each cut exactly at the circle. */
+function breakAt(runs: readonly Pt[][], holes: readonly Pt[], r: number): Pt[][] {
+  if (holes.length === 0) return [...runs];
+  const inside = (p: Pt) => holes.some((h) => Math.hypot(p.x - h.x, p.y - h.y) < r);
+  /** where the segment from the outside point a to the inside point b crosses the circle */
+  const edge = (a: Pt, b: Pt): Pt => {
+    let lo = 0;
+    let hi = 1;
+    for (let k = 0; k < 24; k++) {
+      const t = (lo + hi) / 2;
+      if (inside({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })) hi = t;
+      else lo = t;
+    }
+    return { x: a.x + (b.x - a.x) * lo, y: a.y + (b.y - a.y) * lo };
+  };
+  const out: Pt[][] = [];
+  for (const run of runs) {
+    let cur: Pt[] = [];
+    for (let i = 0; i < run.length; i++) {
+      const p = run[i];
+      const prev = run[i - 1];
+      if (inside(p)) {
+        if (prev && !inside(prev)) cur.push(edge(prev, p));
+        if (cur.length >= 2) out.push(cur);
+        cur = [];
+        continue;
+      }
+      if (prev && inside(prev)) cur.push(edge(p, prev));
+      cur.push(p);
+    }
+    if (cur.length >= 2) out.push(cur);
+  }
+  return out;
+}
+
+/** `x = -1`, `y = \frac{3}{2}`, `y = 2x - 1`; null when a number in it is not exact. */
+export function asymptoteLatex(a: GraphAsymptote, variable: string): string | null {
+  const at = niceLatex(a.at);
+  if (at === null) return null;
+  if (a.axis === "vertical") return `${variable} = ${at}`;
+  if (a.axis === "horizontal") return `y = ${at}`;
+  const m = a.slope ?? 0;
+  const mTex = niceLatex(m);
+  if (mTex === null) return null;
+  const mx = m === 1 ? variable : m === -1 ? `-${variable}` : `${mTex}${variable}`;
+  const tail = a.at === 0 ? "" : a.at > 0 ? ` + ${at}` : ` - ${niceLatex(-a.at)}`;
+  return `y = ${mx}${tail}`;
+}
+
+/** The best clear spot among `spots` (top-left corners) for writing of size w × h inside the box. */
+function bestSpot(spots: ReadonlyArray<[number, number]>, w: number, h: number, win: GraphWindow, obstacles: readonly Obstacle[]): [number, number] | null {
+  let best: { at: [number, number]; hits: number } | null = null;
+  for (const [x, y] of spots) {
+    if (x < -4 || y < -4 || x + w > win.w + 4 || y + h > win.h + 4) continue;
+    const n = hits({ x, y, w, h }, obstacles);
+    if (!best || n < best.hits) best = { at: [x, y], hits: n };
+    if (n === 0) break;
+  }
+  return best && best.hits === 0 ? best.at : null;
+}
+
+/** An asymptote's equation at an end of its dashed line, on whichever side is clear of the curves. */
+function labelAtEnd(latex: string, a: GraphAsymptote, ends: [Pt, Pt], win: GraphWindow, obstacles: readonly Obstacle[], seed: number): Written | null {
+  const size = GRAPH.text.tick;
+  const probe = writeMath(latex, { x: 0, y: 0 }, "left", "top", size, seed);
+  if (!probe) return null;
+  const { w, h } = probe.rect;
+  const spots: Array<[number, number]> = [];
+  if (a.axis === "vertical") {
+    const x = ends[0].x;
+    for (const y of [4, win.h - h - 4, win.h * 0.25, win.h * 0.7]) spots.push([x + 7, y], [x - 7 - w, y]);
+  } else if (a.axis === "horizontal") {
+    const y = ends[0].y;
+    for (const x of [win.w - w - 6, 6, win.w * 0.62, win.w * 0.2]) spots.push([x, y - h - 6], [x, y + 6]);
+  } else {
+    const [p, q] = ends;
+    const len = Math.hypot(q.x - p.x, q.y - p.y);
+    const nx = -(q.y - p.y) / len;
+    const ny = (q.x - p.x) / len;
+    const off = Math.hypot(w, h) / 2 + 6;
+    for (const t of [0.86, 0.14, 0.72, 0.28]) {
+      const cx = p.x + (q.x - p.x) * t;
+      const cy = p.y + (q.y - p.y) * t;
+      for (const s of [1, -1]) spots.push([cx + s * nx * off - w / 2, cy + s * ny * off - h / 2]);
+    }
+  }
+  const at = bestSpot(spots, w, h, win, obstacles);
+  return at ? writeMath(latex, { x: at[0], y: at[1] }, "left", "top", size, seed) : null;
+}
+
+/**
+ * A curve's name written beside it, walking in from its right-hand end: the first spot clear of
+ * everything, and well clear of the OTHER curves — so `f` and `g` never sit where either could
+ * be meant.
+ */
+function nameBeside(name: string, runs: readonly Pt[][], others: readonly Pt[][], win: GraphWindow, obstacles: readonly Obstacle[], seed: number): Written | null {
+  const size = GRAPH.text.label;
+  const probe = writeMath(name, { x: 0, y: 0 }, "left", "top", size, seed);
+  if (!probe) return null;
+  const { w, h } = probe.rect;
+  const along = runs
+    .flatMap((r) => r)
+    .filter((p) => p.x > 14 && p.x < win.w - 14 && p.y > 14 && p.y < win.h - 14)
+    .sort((a, b) => b.x - a.x);
+  const theirs = others.flatMap((r) => r.filter((_, i) => i % 2 === 0));
+  const spots: Array<[number, number]> = [];
+  for (let i = 0; i < along.length; i += 10) {
+    const p = along[i];
+    for (const s of [
+      [p.x + 8, p.y - h - 4],
+      [p.x - w - 8, p.y - h - 4],
+      [p.x + 8, p.y + 4],
+      [p.x - w - 8, p.y + 4],
+    ] as Array<[number, number]>) {
+      const r = { x: s[0], y: s[1], w, h };
+      if (!theirs.some((q) => inRect(q, r, GRAPH.nameClear))) spots.push(s);
+    }
+  }
+  const at = bestSpot(spots, w, h, win, obstacles);
+  return at ? writeMath(name, { x: at[0], y: at[1] }, "left", "top", size, seed) : null;
 }
 
 /** Does the boundary rise left to right across the window (a positive slope)? */

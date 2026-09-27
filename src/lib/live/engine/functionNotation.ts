@@ -81,7 +81,7 @@ export function definitionsIn(lines: readonly string[]): Map<string, FunctionDef
 
 // ---------------------------------------------------------------- calls in a line
 
-interface Call {
+export interface Call {
   name: string;
   inverse: boolean;
   /** the argument as written */
@@ -136,7 +136,7 @@ function innerOf(s: string, open: number, end: number): string {
 }
 
 /** Calls of these names (`f(4)`, `f\left(x\right)`, `f^{-1}(x)`), in order of appearance. */
-function callsOf(s: string, names: ReadonlySet<string>): Call[] {
+export function callsOf(s: string, names: ReadonlySet<string>): Call[] {
   const out: Call[] = [];
   const re = /([a-zA-Z])\s*(\^\s*\{\s*-\s*1\s*\})?\s*(?:\\left\s*)?\(/g;
   let m: RegExpExecArray | null;
@@ -185,7 +185,7 @@ function expandCombinations(s: string, names: ReadonlySet<string>): string {
 const ATOM = /^(?:\d+(?:\.\d+)?|[a-zA-Z])$/;
 
 /** Top-level `+`/`-` after the first character: the text is a sum. */
-function isSumLatex(s: string): boolean {
+export function isSumLatex(s: string): boolean {
   let depth = 0;
   for (let i = 0; i < s.length; i++) {
     const ch = s[i];
@@ -520,7 +520,7 @@ function selfCheck(deps: CourseDeps, body: string, steps: readonly string[], def
 }
 
 /** Every call in a line replaced by its body, innermost first, bracketed inside a longer line. */
-function substituteCalls(deps: CourseDeps, latex: string, defs: ReadonlyMap<string, FunctionDef>): string | null {
+export function substituteCalls(deps: CourseDeps, latex: string, defs: ReadonlyMap<string, FunctionDef>): string | null {
   const names = new Set(defs.keys());
   let cur = expandCombinations(latex, names);
   for (let guard = 0; guard < 6; guard++) {

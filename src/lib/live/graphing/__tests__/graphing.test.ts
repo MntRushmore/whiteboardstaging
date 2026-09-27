@@ -270,6 +270,116 @@ describe("the sketch as the hand draws it", () => {
   });
 });
 
+describe("rational functions: dashed asymptotes with their equations, a hole's open circle", () => {
+  const F = "f(x) = \\frac{x^{2} - 4}{x^{2} - x - 2}";
+  const allStrokes = (lines: readonly HandLinePlan[]): Stroke[] => lines.flatMap((l) => l.strokes.map((s) => ({ ...s, points: s.points.map((p) => ({ ...p, x: p.x + l.x, y: p.y + l.y })) })));
+  /** short strokes lying on the line through a with direction d (px) */
+  const dashesAlong = (lines: readonly HandLinePlan[], on: (p: { x: number; y: number }) => boolean) =>
+    allStrokes(lines).filter((s) => s.points.every(on) && strokeLen(s) < 14 && strokeLen(s) > 2);
+
+  it("x = -1 and y = 1 are dashed at their places, each with its equation; the hole is an open circle the curve stops at", () => {
+    const planned = planGraph(intent([F]), { seed: 11 })!;
+    const w = planned.window!;
+    const lines = planned.plan.lines;
+    const vx = toPx(w, -1, 0).x;
+    const hy = toPx(w, 0, 1).y;
+    expect(dashesAlong(lines, (p) => Math.abs(p.x - vx) < 1.5).length).toBeGreaterThanOrEqual(10);
+    expect(dashesAlong(lines, (p) => Math.abs(p.y - hy) < 1.5).length).toBeGreaterThanOrEqual(10);
+    const written = lines.map((l) => l.latex);
+    expect(written).toEqual(expect.arrayContaining(["x = -1", "y = 1", "(2, \\frac{4}{3})"]));
+    // the hole: one closed ring round (2, 4/3), and no stroke of the curve inside it
+    const hole = toPx(w, 2, 4 / 3);
+    const rings = allStrokes(lines).filter((s) => {
+      const d = s.points.map((p) => Math.hypot(p.x - hole.x, p.y - hole.y));
+      return d.every((r) => Math.abs(r - GRAPH.holeR) < 1.5) && strokeLen(s) > 30;
+    });
+    expect(rings).toHaveLength(1);
+    const curve = lines.find((l) => l.latex === F)!;
+    for (const p of pointsOf(curve)) expect(Math.hypot(p.x - hole.x, p.y - hole.y)).toBeGreaterThan(GRAPH.holeR);
+    // and the curve comes right up to it from both sides
+    const near = pointsOf(curve).filter((p) => Math.hypot(p.x - hole.x, p.y - hole.y) < GRAPH.holeR + 3);
+    expect(near.some((p) => p.x < hole.x) && near.some((p) => p.x > hole.x)).toBe(true);
+  });
+
+  it("no stroke of the curve crosses the pole; each branch is in view", () => {
+    const planned = planGraph(intent(["y = \\frac{2x + 1}{x - 3}"]), { seed: 3 })!;
+    const w = planned.window!;
+    const wall = toPx(w, 3, 0).x;
+    const curve = planned.plan.lines.find((l) => l.latex === "y = \\frac{2x + 1}{x - 3}")!;
+    for (const s of curve.strokes) {
+      const xs = s.points.map((p) => p.x + curve.x);
+      expect(Math.max(...xs) <= wall + 0.5 || Math.min(...xs) >= wall - 0.5).toBe(true);
+    }
+    // a real stretch of the branch right of the asymptote, not a sliver in the corner
+    expect(w.xMax - 3).toBeGreaterThanOrEqual(2.5);
+    const right = pointsOf(curve).filter((p) => p.x > wall + 1);
+    expect(Math.max(...right.map((p) => p.x)) - Math.min(...right.map((p) => p.x))).toBeGreaterThan(60);
+  });
+
+  it("a slant asymptote is dashed along y = x + 1, with its equation", () => {
+    const planned = planGraph(intent(["f(x) = \\frac{x^{2} + 1}{x - 1}"]), { seed: 5 })!;
+    const w = planned.window!;
+    const on = (p: { x: number; y: number }) => {
+      const d = fromPx(w, p.x, p.y);
+      const py = toPx(w, d.x, d.x + 1).y;
+      return Math.abs(py - p.y) < 1.5;
+    };
+    expect(dashesAlong(planned.plan.lines, on).length).toBeGreaterThanOrEqual(10);
+    expect(planned.plan.lines.map((l) => l.latex)).toContain("y = x + 1");
+  });
+
+  it("an asymptote on an axis is not drawn again, and its equation is not written", () => {
+    const planned = planGraph(intent(["y = \\frac{1}{x}"]), { seed: 2 })!;
+    expect(planned.plan.lines.map((l) => l.latex)).not.toContain("x = 0");
+    expect(planned.plan.lines.map((l) => l.latex)).not.toContain("y = 0");
+  });
+});
+
+describe("transformations: the parent dotted, the image solid, each named, an arrow between", () => {
+  const lines = ["f(x) = x^{2}", "g(x) = f(x - 3) + 1"];
+
+  it("two curves told apart without words", () => {
+    const planned = planGraph(intent(lines), { seed: 21 })!;
+    const parent = planned.plan.lines.find((l) => l.latex === "f(x) = x^{2}")!;
+    const image = planned.plan.lines.find((l) => l.latex === "g(x) = f(x - 3) + 1")!;
+    expect(parent.strokes.length).toBeGreaterThan(20);
+    expect(Math.max(...parent.strokes.map(strokeLen))).toBeLessThan(GRAPH.parentDash.on + 3);
+    expect(Math.max(...image.strokes.map(strokeLen))).toBeGreaterThan(60);
+    const written = planned.plan.lines.map((l) => l.latex);
+    expect(written).toEqual(expect.arrayContaining(["f", "g", "(3, 1)"]));
+    // the parent is drawn before its image
+    expect(written.indexOf("f(x) = x^{2}")).toBeLessThan(written.indexOf("g(x) = f(x - 3) + 1"));
+  });
+
+  it("the arrow runs from the parent's vertex to the image's, stopping short of both dots", () => {
+    const planned = planGraph(intent(lines), { seed: 21 })!;
+    const w = planned.window!;
+    const from = toPx(w, 0, 0);
+    const to = toPx(w, 3, 1);
+    const shaft = planned.plan.lines
+      .flatMap((l) => l.strokes.map((s) => s.points.map((p) => ({ x: p.x + l.x, y: p.y + l.y }))))
+      .find((pts) => Math.hypot(pts[0].x - from.x, pts[0].y - from.y) < GRAPH.arrowClear + 1.5 && Math.hypot(pts[pts.length - 1].x - to.x, pts[pts.length - 1].y - to.y) < GRAPH.arrowClear + 1.5);
+    expect(shaft).toBeDefined();
+  });
+
+  it.each([
+    [["f(x) = x^{2}", "g(x) = f(2x)"]],
+    [["f(x) = \\frac{1}{x}", "g(x) = f(x - 2) + 3"]],
+    [["y = 2(x - 1)^{2} + 3", "f(x) = x^{2}", "y = 2f(x - 1) + 3"]],
+    [["f(x) = \\frac{x^{2} - 4}{x^{2} - x - 2}"]],
+    [["f(x) = \\frac{x^{2} + 1}{x - 1}"]],
+  ])("%j: no words, drawn within the pacing budget", (ls) => {
+    const plan = planGraph(intent(ls), { seed: 8 })!.plan;
+    // the writing: numbers, letters, coordinates, equations — a command (`\frac`) is not a word
+    for (const l of plan.lines) {
+      if (ls.includes(l.latex)) continue;
+      expect(l.latex).not.toMatch(/\\text/);
+      expect(l.latex.replace(/\\[a-zA-Z]+/g, "")).not.toMatch(/[a-wz]{2,}/);
+    }
+    expect(wallMsOf(plan)).toBeLessThanOrEqual(GRAPH.pace.maxWallMs + 1);
+  });
+});
+
 describe("placement", () => {
   const screen: Rect = { x: 0, y: 0, w: 1600, h: 900 };
   const size = { w: 360, h: 300 };
