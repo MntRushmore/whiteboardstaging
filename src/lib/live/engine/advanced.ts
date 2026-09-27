@@ -126,3 +126,11 @@ export function solveAdvanced(latex: string, deps: AdvancedDeps): Solution | nul
   const out = dispatch(rel, context(deps, 1));
   return out && out.steps.length > 0 ? out : null;
 }
+
+/**
+ * Any one-unknown equation solved exactly — linear (`algebra.ts`) or by the methods above — with
+ * its roots: what a system's substituted line needs to back-substitute. Null otherwise.
+ */
+export function solveExactly(latex: string, deps: AdvancedDeps): Solution | null {
+  return context(deps, 0).solve(latex);
+}

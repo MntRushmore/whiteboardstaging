@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import type { LiveEngine } from "../../contracts";
+import { planHandwriting } from "../../handwriting";
 import { getEngine } from "..";
 import { linearLatex, questionVariable, substituteLatex } from "../systems";
 
@@ -51,7 +52,47 @@ describe("solveFromLines: the lines above answer `x = ?`", () => {
   it("refuses what it cannot answer rather than guessing", () => {
     expect(solve(["x+y=18"])).toBeNull();
     expect(solve(["y=9"])).toBeNull();
-    expect(solve(["x^2+y^2=25", "x+y=7"])).toBeNull(); // not linear
+    // neither equation linear: nothing to substitute
+    expect(solve(["x^{2} + y^{2} = 25", "x^{2} - y^{2} = 7"])).toBeNull();
+    // surd roots would have to be put back symbolically
+    expect(solve(["y = x", "x^{2} + y^{2} = 4"])).toBeNull();
+  });
+});
+
+describe("solveFromLines: one linear equation and one not, by substitution", () => {
+  it.each([
+    [
+      ["l = w + 3", "l \\cdot w = 40"],
+      ["(w + 3)w = 40", "w^{2} + 3w = 40", "w^{2} + 3w - 40 = 0", "(w + 8)(w - 5) = 0", "w = -8, \\ w = 5", "l = -8 + 3, \\ l = 5 + 3", "l = -5, \\ l = 8"],
+    ],
+    [
+      ["x + y = 7", "xy = 12"],
+      ["y = 7 - x", "x(7 - x) = 12", "7x - x^{2} = 12", "x^{2} - 7x + 12 = 0", "(x - 3)(x - 4) = 0", "x = 3, \\ x = 4", "y = 7 - 3, \\ y = 7 - 4", "y = 4, \\ y = 3"],
+    ],
+    [
+      ["y = x^{2}", "y = 2x + 3"],
+      ["2x + 3 = x^{2}", "x^{2} - 2x - 3 = 0", "(x + 1)(x - 3) = 0", "x = -1, \\ x = 3", "y = 2(-1) + 3, \\ y = 2(3) + 3", "y = 1, \\ y = 9"],
+    ],
+    [
+      ["y = x + 1", "x^{2} + y^{2} = 25"],
+      ["x^{2} + (x + 1)^{2} = 25", "x^{2} + x^{2} + 2x + 1 = 25", "2x^{2} + 2x - 24 = 0", "x^{2} + x - 12 = 0", "(x + 4)(x - 3) = 0", "x = -4, \\ x = 3", "y = -4 + 1, \\ y = 3 + 1", "y = -3, \\ y = 4"],
+    ],
+    // the squares cancel: one point
+    [["x - y = 1", "x^{2} - y^{2} = 5"], ["y = x - 1", "x^{2} - (x - 1)^{2} = 5", "x^{2} - x^{2} + 2x - 1 = 5", "2x - 1 = 5", "2x = 6", "x = 3", "y = 3 - 1", "y = 2"]],
+    // no real root: the line misses the circle
+    [
+      ["y = x + 5", "x^{2} + y^{2} = 4"],
+      ["x^{2} + (x + 5)^{2} = 4", "x^{2} + x^{2} + 10x + 25 = 4", "2x^{2} + 10x + 21 = 0", "x = \\frac{-10 \\pm \\sqrt{10^{2} - 4 \\cdot 2 \\cdot 21}}{2 \\cdot 2}", "x = \\frac{-10 \\pm \\sqrt{-68}}{4}", "\\varnothing"],
+    ],
+  ])("%j", (lines, steps) => {
+    expect(solve(lines)).toEqual(steps);
+    expect(planHandwriting(steps, { size: 28, seed: 1 }).unsupported).toEqual([]);
+  });
+
+  it("puts back last the unknown asked for", () => {
+    const r = engine.solveFromLines!(["x + y = 7", "xy = 12", "x = ?"]);
+    expect(r?.steps[0]).toBe("x = 7 - y");
+    expect(r?.latex).toBe("x = 4, \\ x = 3");
   });
 });
 

@@ -29,7 +29,7 @@ import { evaluateUnits, unitValueToLatex, valuesMatch } from "./units";
 import { solveFromLines, type SystemDeps } from "./systems";
 import { linearSolveSteps, simplifyExpressionSteps, type LinearSteps, type RelOp } from "./algebra";
 import { createCalculus } from "./calculus";
-import { solveAdvanced, type AdvancedDeps } from "./advanced";
+import { solveAdvanced, solveExactly, type AdvancedDeps } from "./advanced";
 import { factorExpressionSteps, rationalExpressionSteps } from "./polynomial";
 import { chainRelation, isSolutionSet, relaxVerdict, splitAtCommas, unionRelation, type Part } from "./compound";
 import { ALL_REALS, EVERY_REAL, LIST_SEP, NO_SOLUTION } from "./solution";
@@ -1056,6 +1056,14 @@ export function createEngine(mod: MathModule): LiveEngine {
       if (!res.ok) return null;
       const n = toNumber(res.value);
       return n === null || !Number.isFinite(n) ? null : n;
+    },
+    // a substituted line with the unknown squared (`(w + 3)w = 40`): exact steps and roots
+    solveRoots: (latex) => {
+      try {
+        return solveExactly(latex, advancedDeps);
+      } catch {
+        return null;
+      }
     },
     fmt: (n) => formatNumberLatex(n, { preferFraction: true }),
     normalize: normalizeLatex,
