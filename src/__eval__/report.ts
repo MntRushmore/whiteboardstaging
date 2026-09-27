@@ -224,7 +224,9 @@ function readCounts(runs: readonly HandRunView[]) {
   };
 }
 
-function runStages(runs: readonly HandRunView[]) {
+/** Stage counts over the runs that were attempted: a run with a line never sent (budget, transport) says nothing. */
+function runStages(all: readonly HandRunView[]) {
+  const runs = all.filter((r) => !r.lines.some((l) => l.read === "skipped"));
   const verdicts = runs.map((r) => r.verdict).filter((v): v is Verdict => v !== null);
   const stage = (s: (typeof STAGES)[number]) => verdicts.filter((v) => v.stages[s]).length;
   return {
@@ -253,8 +255,8 @@ function groupDiffs(items: readonly ReadItem[]): Array<[string, { ids: string[];
 export function renderHandwritingMarkdown(input: {
   runs: readonly HandRunView[];
   offline: readonly Verdict[];
-  budget: { calls: number; hits: number; remaining: number };
-  variants: ReadonlyArray<{ name: string; slant: number; sx: number; sy: number; rotateDeg: number; jitter: number }>;
+  budget: { calls: number; hits: number; remaining: number; rateLimited?: number };
+  variants: ReadonlyArray<{ name: string; ink: string }>;
 }): string {
   const { runs, offline, budget, variants } = input;
   const offlinePass = new Map(offline.map((v) => [v.id, v.pass]));
@@ -285,10 +287,17 @@ export function renderHandwritingMarkdown(input: {
     const rs = runs.filter((r) => r.variant === v.name);
     const s = runStages(rs);
     const rc = readCounts(rs);
-    const plain = v.slant === 0 && v.sx === 1 && v.sy === 1 && v.rotateDeg === 0 && v.jitter === 0;
-    const ink = plain ? "as laid out" : `slant ${v.slant}, scale ${v.sx}×${v.sy}, rotate ${v.rotateDeg}°, wobble ${v.jitter}`;
-    return [v.name, ink, `${rc.exact}/${rc.sent}`, `${rc.exact + rc.semantic}/${rc.sent}`, `${rc.split}`, `**${s.passed}/${s.runs}** (${pct(s.passed, s.runs)})`];
+    return [v.name, v.ink, `${rc.exact}/${rc.sent}`, `${rc.exact + rc.semantic}/${rc.sent}`, `${rc.split}`, `**${s.passed}/${s.runs}** (${pct(s.passed, s.runs)})`];
   });
+
+  const readRates = variants.map((v) => {
+    const rc = readCounts(runs.filter((r) => r.variant === v.name));
+    return rc.sent === 0 ? 0 : (100 * (rc.exact + rc.semantic)) / rc.sent;
+  });
+  const spread =
+    readRates.length > 1
+      ? `Lines read as the maths written range from ${Math.min(...readRates).toFixed(0)}% to ${Math.max(...readRates).toFixed(0)}% across the variants: the perturbation ${Math.max(...readRates) - Math.min(...readRates) <= 5 ? "barely moves recognition of this hand" : "is a real recognition cost"}.`
+      : "";
 
   const wrongReads: ReadItem[] = runs.flatMap((r) => r.lines.filter((l) => l.read === "wrong" || l.read === "failed").map((l) => ({ r, l })));
   const semanticReads: ReadItem[] = runs.flatMap((r) => r.lines.filter((l) => l.read === "semantic").map((l) => ({ r, l })));
@@ -325,9 +334,9 @@ export function renderHandwritingMarkdown(input: {
     "> per variant, clustered and normalized exactly as the board does (`clusterLines` → `buildPayload`), read by",
     "> Mathpix `v3/strokes` (`recognizeStrokes`, `auto_rotate_confidence_threshold: 1`), and what Mathpix READ goes",
     "> through the same `localSolve` + judge as `offline.md`. A run is one problem in one variant.",
-    `> Mathpix this run: ${budget.calls} calls, ${budget.hits} answers from the on-disk cache (\`src/__eval__/.cache/\`, gitignored).`,
+    `> Mathpix this run: ${budget.calls} calls, ${budget.hits} answers from the on-disk cache (\`src/__eval__/.cache/\`, gitignored)${budget.rateLimited ? `, ${budget.rateLimited} told to slow down` : ""}.`,
     "",
-    `**${all.passed} / ${all.runs} runs pass end to end (${pct(all.passed, all.runs)}).** ${reads.exact + reads.semantic} of ${sent} lines sent were read as the maths written (${pct(reads.exact + reads.semantic, sent)}; ${reads.exact} character for character).`,
+    `**${all.passed} / ${all.runs} runs pass end to end (${pct(all.passed, all.runs)}).** ${reads.exact + reads.semantic} of ${sent} lines sent were read as the maths written (${pct(reads.exact + reads.semantic, sent)}; ${reads.exact} character for character).${reads.skipped > 0 ? ` ${reads.skipped} lines were NOT sent (call budget or transport errors) and their runs are left out of the solve stages.` : ""}`,
     "",
     "## Stages",
     "",
@@ -336,6 +345,8 @@ export function renderHandwritingMarkdown(input: {
     "## By variant",
     "",
     table(["variant", "ink", "read exactly", "read as the same maths", "lines split by the clusterer", "pass"], variantRows),
+    "",
+    spread,
     "",
     "## By topic",
     "",

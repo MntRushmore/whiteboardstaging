@@ -33,6 +33,7 @@ describe("eval: the tutor's hand as the student's ink", () => {
     expect(handInk("\\lim_{x \\to 2} (3x + 1)", clean).unsupported).toEqual(["\\lim"]);
     // Mathpix's `\mathrm{~km}` spacing is not ink
     expect(handLatex("5 \\mathrm{~km}")).toBe("5 \\,\\mathrm{km}");
+    expect(handLatex("9.8 \\mathrm{~m/s^{2}}")).toBe("9.8 \\,\\mathrm{m/s}^{2}");
     expect(handInk("5 \\mathrm{~km} \\text{ to } \\mathrm{m}", clean).unsupported).toEqual([]);
   });
 
@@ -70,6 +71,7 @@ describe("eval: judging what Mathpix read", () => {
     ["2x + 3 = 11", "2 x+3=17", "wrong"],
     ["2x + 3 > 11", "2 x+3<11", "wrong"],
     ["x = ?", "x=?", "exact"],
+    ["f'(x) =", "f^{\\prime}(x)=", "exact"],
     ["x = ?", "x=7", "wrong"],
     ["2x + 3 = 11", "", "wrong"],
   ])("%s read as %s: %s", (written, read, want) => {
@@ -117,6 +119,30 @@ describe("eval: Mathpix only through the cache and the budget", () => {
     expect(r).toMatchObject({ ok: false, reason: "timeout" });
     expect(mock).toHaveBeenCalledTimes(2);
     expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it("waits out Mathpix's request limit instead of burning the budget on it", async () => {
+    mock.mockResolvedValueOnce({ ok: false, reason: "http", status: 200, detail: "Limit exceeded for req (200) | http_max_requests" });
+    mock.mockResolvedValueOnce({ ok: true, latex: "2 x+3=11", text: "", confidence: 1, raw: {} });
+    const r = await recognizeCached(payload, budget, dir);
+    expect(r).toMatchObject({ ok: true, cached: false });
+    expect(budget.rateLimited).toBe(1);
+    expect(budget.calls).toBe(2);
+  });
+
+  it("does not retry an error that is not transient", async () => {
+    mock.mockResolvedValue({ ok: false, reason: "auth", status: 401 });
+    expect(await recognizeCached(payload, budget, dir)).toMatchObject({ ok: false, reason: "auth" });
+    expect(mock).toHaveBeenCalledTimes(1);
+  });
+
+  it("paces request starts", async () => {
+    mock.mockResolvedValue({ ok: true, latex: "x", text: "", confidence: 1, raw: {} });
+    budget = { remaining: 10, calls: 0, hits: 0, minIntervalMs: 30 };
+    const other = payloadFor(handInk("3x = 9", VARIANTS[0]).strokes).payload!;
+    const t0 = Date.now();
+    await Promise.all([recognizeCached(payload, budget, dir), recognizeCached(other, budget, dir)]);
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(25);
   });
 
   it("stops at the call budget", async () => {

@@ -4,13 +4,13 @@ import { describe, expect, it } from "vitest";
 import { getEngine } from "@/lib/live/engine";
 import { isMathpixConfigured } from "@/lib/server/mathpix";
 import { CORPUS } from "./corpus";
-import { loadEnvLocal, MAX_CALLS, runHandwritingEval, VARIANTS } from "./handwriting";
+import { describeVariant, loadEnvLocal, MAX_CALLS, runHandwritingEval, VARIANTS } from "./handwriting";
 import { runOfflineEval, summaryLine, summarize } from "./offline";
 import { renderHandwritingMarkdown } from "./report";
 
 /**
  * The handwriting scoreboard: the tutor's own hand writes every corpus line, Mathpix reads it,
- * and Solve runs on what Mathpix read. It spends Mathpix calls (≤ 400 per run, cached on disk
+ * and Solve runs on what Mathpix read. It spends Mathpix calls (≤ 1500 per run, cached on disk
  * under src/__eval__/.cache/ so a rerun is free), so it is skipped unless RUN_LIVE_EVAL=1.
  *
  *   npm run eval:live     RUN_LIVE_EVAL=1 EVAL_WRITE=1: runs it, writes docs/eval/handwriting.{md,json}
@@ -36,8 +36,8 @@ describe.skipIf(!LIVE)("eval: handwriting → Mathpix → Solve (RUN_LIVE_EVAL=1
       if (process.env.EVAL_WRITE === "1") {
         const dir = join(ROOT, "docs", "eval");
         mkdirSync(dir, { recursive: true });
-        writeFileSync(join(dir, "handwriting.md"), renderHandwritingMarkdown({ runs, offline: offline.verdicts, budget, variants: VARIANTS }));
-        writeFileSync(join(dir, "handwriting.json"), JSON.stringify({ budget: { calls: budget.calls, cached: budget.hits }, variants: VARIANTS, runs }, null, 2) + "\n");
+        writeFileSync(join(dir, "handwriting.md"), renderHandwritingMarkdown({ runs, offline: offline.verdicts, budget, variants: VARIANTS.map((v) => ({ name: v.name, ink: describeVariant(v) })) }));
+        writeFileSync(join(dir, "handwriting.json"), JSON.stringify({ budget: { calls: budget.calls, cached: budget.hits, rateLimited: budget.rateLimited ?? 0 }, variants: VARIANTS, runs }, null, 2) + "\n");
       }
     },
     30 * 60_000,

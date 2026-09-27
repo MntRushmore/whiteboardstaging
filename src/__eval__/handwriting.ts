@@ -7,7 +7,7 @@
  * through the same `localSolve` + `judge` as the offline scoreboard.
  *
  * Costs Mathpix calls, so it only runs with RUN_LIVE_EVAL=1 (src/__eval__/handwriting.test.ts):
- * at most 4 in flight, at most `MAX_CALLS` per run, and every answer cached on disk under
+ * at most `CONCURRENCY` in flight, paced, at most `MAX_CALLS` per run, and every answer cached on disk under
  * src/__eval__/.cache/ keyed by the sha-1 of the exact request body — a rerun is free.
  */
 import { createHash } from "node:crypto";
@@ -24,8 +24,8 @@ import type { Verdict } from "./judge";
 import { solveAndJudge } from "./offline";
 import { cleanLatex, compareExprs, parseLine, type Parsed } from "./oracle";
 
-export const MAX_CALLS = 400;
-export const CONCURRENCY = 4;
+export const MAX_CALLS = 1500;
+export const CONCURRENCY = 6;
 /** the student's line on a 1600×900 screen is ~40–60 px tall; the payload is normalized anyway */
 const HAND_SIZE = 44;
 
@@ -41,16 +41,48 @@ export interface Variant {
   rotateDeg: number;
   /** per-stroke random offset, as a fraction of the hand size */
   jitter: number;
+  /**
+   * Uneven glyph sizes: the local size swings by ±this fraction along the line (a smooth,
+   * monotone warp, so one glyph's strokes stay together while its neighbours grow and shrink).
+   */
+  sizeDrift?: number;
+  /** A wandering baseline: ±this fraction of the hand size, slowly along the line. */
+  wander?: number;
 }
 
+/**
+ * The student, three ways. The glyph shapes come from the hand atlas (the seed picks between
+ * its alternates); what changes here is how the pen moves across the line. `steep` is there to
+ * find where recognition breaks; `messy` is a hurried student: uneven sizes, a wandering
+ * baseline, strokes landing a little off.
+ */
 export const VARIANTS: readonly Variant[] = [
   { name: "clean", seed: 1, slant: 0, sx: 1, sy: 1, rotateDeg: 0, jitter: 0 },
   { name: "slanted", seed: 7, slant: 0.14, sx: 0.94, sy: 1.06, rotateDeg: -1.5, jitter: 0.035 },
+  { name: "steep", seed: 11, slant: 0.3, sx: 0.9, sy: 1.1, rotateDeg: -4, jitter: 0.06 },
+  { name: "messy", seed: 23, slant: 0.1, sx: 1, sy: 1, rotateDeg: 1, jitter: 0.05, sizeDrift: 0.2, wander: 0.12 },
 ];
 
-/** A line as a student WRITES it: Mathpix's `\mathrm{~km}` spacing is not ink. */
+export function describeVariant(v: Variant): string {
+  const parts: string[] = [];
+  if (v.slant) parts.push(`slant ${v.slant}`);
+  if (v.sx !== 1 || v.sy !== 1) parts.push(`scale ${v.sx}×${v.sy}`);
+  if (v.rotateDeg) parts.push(`rotate ${v.rotateDeg}°`);
+  if (v.jitter) parts.push(`stroke wobble ${v.jitter}`);
+  if (v.sizeDrift) parts.push(`glyph sizes ±${Math.round(v.sizeDrift * 100)}%`);
+  if (v.wander) parts.push(`baseline wander ±${v.wander}`);
+  return parts.length === 0 ? "as laid out" : parts.join(", ");
+}
+
+/**
+ * A line as a student WRITES it: Mathpix's `\mathrm{~km}` spacing is not ink, and the power in
+ * `\mathrm{m/s^{2}}` is a superscript on the page (inside `\mathrm` the hand draws a literal `^`).
+ */
 export function handLatex(latex: string): string {
-  return latex.replace(/\\mathrm\s*\{\s*~\s*/g, "\\,\\mathrm{").replace(/~/g, " ");
+  return latex
+    .replace(/\\mathrm\s*\{\s*~\s*/g, "\\,\\mathrm{")
+    .replace(/~/g, " ")
+    .replace(/\\mathrm\s*\{([^{}]*?)\^\{([^{}]*)\}\s*\}/g, "\\mathrm{$1}^{$2}");
 }
 
 export interface HandInk {
@@ -69,10 +101,24 @@ export function handInk(latex: string, variant: Variant): HandInk {
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
   const origin = { x: 240, y: 320 };
+  // uneven sizes: local scale s(x) = 1 + A·sin(kx + φ); x is warped by ∫s so widths follow it
+  const A = variant.sizeDrift ?? 0;
+  const W = (variant.wander ?? 0) * HAND_SIZE;
+  const warpRand = mulberry32(variant.seed * 104729 + latex.length);
+  const phi = warpRand() * 2 * Math.PI;
+  const psi = warpRand() * 2 * Math.PI;
+  const k = (2 * Math.PI) / (4 * HAND_SIZE);
+  const warp = (p: { x: number; y: number }): { x: number; y: number } => {
+    if (A === 0 && W === 0) return p;
+    const s = 1 + A * Math.sin(k * p.x + phi);
+    const x = A === 0 ? p.x : p.x - (A / k) * (Math.cos(k * p.x + phi) - Math.cos(phi));
+    return { x, y: layout.baseline + (p.y - layout.baseline) * s + W * Math.sin(((2 * Math.PI) / (7 * HAND_SIZE)) * p.x + psi) };
+  };
   const strokes: InkStroke[] = layout.strokes.map((st, i) => {
     const dx = (rand() - 0.5) * 2 * variant.jitter * HAND_SIZE;
     const dy = (rand() - 0.5) * 2 * variant.jitter * HAND_SIZE;
-    const points = st.points.map((p) => {
+    const points = st.points.map((raw) => {
+      const p = warp(raw);
       let x = p.x + variant.slant * (layout.baseline - p.y);
       let y = p.y;
       x = (x - cx) * variant.sx;
@@ -131,12 +177,43 @@ export function cacheKey(payload: StrokePayload): string {
 }
 
 export interface CallBudget {
+  /** calls still allowed this run (every request counts, retries included) */
   remaining: number;
   calls: number;
   hits: number;
+  /**
+   * Least ms between two request starts. Mathpix answers `http_max_requests` ("Limit exceeded
+   * for req (200)") past ~200 requests a minute — the first full run hit it at 4 in flight.
+   */
+  minIntervalMs?: number;
+  /** wait before retrying a timeout / network failure */
+  retryDelayMs?: number;
+  /** wait after Mathpix says too many requests */
+  rateLimitWaitMs?: number;
+  /** when the next request may start (the throttle's state) */
+  nextAt?: number;
+  /** how many times Mathpix said too many requests */
+  rateLimited?: number;
 }
 
-const TRANSIENT = new Set(["timeout", "network", "http"]);
+/** Pacing for a real run: ≤ ~500 requests a minute, halved on every 429, and a minute's pause after one. */
+export const PACING = { minIntervalMs: 120, retryDelayMs: 2_000, rateLimitWaitMs: 61_000 } as const;
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** Reserves the next start slot synchronously (so concurrent callers queue), then waits for it. */
+async function waitTurn(budget: CallBudget): Promise<void> {
+  const interval = budget.minIntervalMs ?? 0;
+  if (interval <= 0) return;
+  const now = Date.now();
+  const at = Math.max(now, budget.nextAt ?? 0);
+  budget.nextAt = at + interval;
+  if (at > now) await sleep(at - now);
+}
+
+function isRateLimit(o: MathpixOutcome): boolean {
+  return !o.ok && (o.status === 429 || /max_requests|limit exceeded|too many/i.test(o.detail ?? ""));
+}
 
 export async function recognizeCached(payload: StrokePayload, budget: CallBudget, cacheDir = CACHE_DIR): Promise<Recognition> {
   const file = join(cacheDir, `${cacheKey(payload)}.json`);
@@ -145,12 +222,28 @@ export async function recognizeCached(payload: StrokePayload, budget: CallBudget
     return { ...(JSON.parse(readFileSync(file, "utf8")) as Omit<Recognition, "cached">), cached: true };
   }
   let outcome: MathpixOutcome | null = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  let transient = 0;
+  let limited = 0;
+  for (;;) {
     if (budget.remaining <= 0) return { ok: false, latex: "", confidence: 0, reason: "budget", cached: false };
     budget.remaining--;
     budget.calls++;
+    await waitTurn(budget);
     outcome = await recognizeStrokes(payload, undefined, { timeoutMs: 15_000, log: { warn: () => {} } });
-    if (outcome.ok || !TRANSIENT.has(outcome.reason)) break;
+    if (outcome.ok) break;
+    if (isRateLimit(outcome)) {
+      budget.rateLimited = (budget.rateLimited ?? 0) + 1;
+      // slow down for the rest of the run, then wait the minute out
+      budget.minIntervalMs = Math.min(2_000, Math.max(250, (budget.minIntervalMs ?? 0) * 2));
+      if (++limited > 2) break;
+      await sleep(budget.rateLimitWaitMs ?? 0);
+      continue;
+    }
+    if ((outcome.reason === "timeout" || outcome.reason === "network") && ++transient <= 1) {
+      await sleep(budget.retryDelayMs ?? 0);
+      continue;
+    }
+    break;
   }
   const rec: Omit<Recognition, "cached"> = outcome?.ok
     ? { ok: true, latex: outcome.latex, confidence: outcome.confidence }
@@ -217,6 +310,7 @@ export function normalizeTex(latex: string): string {
     .replace(/\\leq(?![a-zA-Z])/g, "\\le")
     .replace(/\\geq(?![a-zA-Z])/g, "\\ge")
     .replace(/\\operatorname\s*\{\s*([a-z]+)\s*\}/g, "\\$1")
+    .replace(/\^\s*\{?\s*\\prime\s*\}?/g, "'")
     .replace(/\s+/g, "");
   for (let i = 0; i < 4; i++) s = s.replace(/\{([^{}\\]|\\[a-zA-Z]+)\}/g, "$1");
   return s;
@@ -305,7 +399,7 @@ export interface HandwritingResult {
 /** Writes, sends (cached, capped) and judges every problem in every variant. */
 export async function runHandwritingEval(engine: LiveEngine, problems: readonly EvalProblem[], opts: { variants?: readonly Variant[]; maxCalls?: number; cacheDir?: string } = {}): Promise<HandwritingResult> {
   const variants = opts.variants ?? VARIANTS;
-  const budget: CallBudget = { remaining: opts.maxCalls ?? MAX_CALLS, calls: 0, hits: 0 };
+  const budget: CallBudget = { remaining: opts.maxCalls ?? MAX_CALLS, calls: 0, hits: 0, ...PACING };
 
   type Prepared = { problem: EvalProblem; variant: Variant; lines: Array<{ original: string; ink: HandInk; lp: LinePayload | null; key: string | null }> };
   const prepared: Prepared[] = [];
@@ -334,7 +428,9 @@ export async function runHandwritingEval(engine: LiveEngine, problems: readonly 
       if (!lp || !key) return { original, unsupported: ink.unsupported, clusters: 0, recognized: "", confidence: 0, read: "unwritable" as const };
       const rec = byKey.get(key);
       if (!rec || !rec.ok) {
-        const skipped = rec?.reason === "budget";
+        // `api_error` is Mathpix saying it cannot read the ink: a recognition failure. Anything
+        // else (the budget, a timeout, a rate limit, credentials) says nothing about the ink.
+        const skipped = rec?.reason !== "api_error";
         return { original, unsupported: [], clusters: lp.clusters, recognized: "", confidence: 0, read: skipped ? ("skipped" as const) : ("failed" as const), error: rec ? [rec.reason, rec.detail].filter(Boolean).join(": ") : "no payload" };
       }
       return { original, unsupported: [], clusters: lp.clusters, recognized: rec.latex, confidence: rec.confidence, read: judgeRead(original, rec.latex) };
