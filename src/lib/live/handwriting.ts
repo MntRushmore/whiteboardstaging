@@ -343,6 +343,16 @@ export interface HandWriteOptions {
    */
   extraMeta?: JsonObject;
   onDone?: () => void;
+  /**
+   * The reveal starts this long after `start` (a graph drawn after the worked steps, by the same
+   * hand). Cancelled before then, nothing is written.
+   */
+  delayMs?: number;
+  /**
+   * The block is ONE picture (a graph): a cancel that finds it started completes all of it, not
+   * only the parts begun — axes without their curve are not a graph.
+   */
+  whole?: boolean;
 }
 
 /** meta key grouping the stroke shapes of one written block, so the shape cap counts it as one mark. */
@@ -411,6 +421,7 @@ export class HandWriter {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private startedAt = 0;
   private running = false;
+  private whole = false;
 
   constructor(canvas: HandCanvas, deps: Partial<HandWriterDeps> = {}) {
     this.canvas = canvas;
@@ -434,9 +445,15 @@ export class HandWriter {
     this.dropped = plan.lines.map((l) => l.strokes.map(() => false));
     this.revealed = plan.lines.map((l) => l.strokes.map(() => 0));
     this.running = true;
-    this.startedAt = this.deps.now();
+    this.whole = opts.whole ?? false;
+    const delay = Math.max(0, opts.delayMs ?? 0);
+    this.startedAt = this.deps.now() + delay;
     if (this.deps.reducedMotion()) {
       this.finish("finishAll");
+      return;
+    }
+    if (delay > 0) {
+      this.timer = this.deps.setTimer(() => this.frame(), delay);
       return;
     }
     this.apply(0, "reveal");
@@ -450,7 +467,8 @@ export class HandWriter {
    */
   cancel(): void {
     if (!this.running) return;
-    this.finish("finishStarted");
+    const started = this.ids.some((_, i) => this.startedLine(i));
+    this.finish(this.whole && started ? "finishAll" : "finishStarted");
   }
 
   private frame(): void {
@@ -458,6 +476,10 @@ export class HandWriter {
     if (!this.running || !this.plan) return;
     // natural-pace time: a long block's clock runs `pace` times faster (see `paceFor`)
     const t = (this.deps.now() - this.startedAt) * (this.plan.pace ?? 1);
+    if (t < 0) {
+      this.timer = this.deps.setTimer(() => this.frame(), Math.min(-t / (this.plan.pace ?? 1), HAND_WRITE.frameMs * 4));
+      return;
+    }
     this.apply(t, "reveal");
     if (t >= this.plan.totalMs) {
       this.finish("finishAll");
