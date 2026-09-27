@@ -701,6 +701,20 @@ export function createEngine(mod: MathModule): LiveEngine {
     return out;
   };
 
+  /**
+   * `A = \pi(5)^{2} =`: a named quantity, its value, and a trailing `=` asking for it. Returns the
+   * value side (`\pi(5)^{2}`), answered as if it were written alone before the `=`; null for
+   * anything else. The name is a lone quantity: `A`, `SA` (read as the segment `\overline{SA}`),
+ * `\theta`, `V_{1}`, `f(3)`.
+   */
+  const namedValue = (latex: string): string | null => {
+    const { sides, ops } = splitRelations(latex);
+    if (ops.length !== 2 || ops.some((op) => op !== "==") || sides[2]?.trim() || !sides[1]?.trim()) return null;
+    const name = sides[0].replace(/\s+/g, "");
+    if (!/^(?:[A-Za-z]{1,3}|\\[a-zA-Z]+|\\overline\{[A-Z]{2}\}|[A-Za-z]\([^()=]*\))(?:_\{[^{}]+\}|_[A-Za-z0-9])?$/.test(name)) return null;
+    return sides[1].trim();
+  };
+
   // --- entry points --------------------------------------------------------
   const analyze = (latex: string, ctx: AnalyzeContext): LineAnalysis => {
     // statements about figures, angle equations in degrees (`geometry.ts`)
@@ -734,6 +748,14 @@ export function createEngine(mod: MathModule): LiveEngine {
           } catch (e) {
             // `\lim ... =`, `\begin{pmatrix} ... =`: not an unfinished line, a line we cannot read
             if (e instanceof UnsupportedLatex) return { ...UNKNOWN, error: errorMessage(e) };
+          }
+        }
+        const value = pre.trailingEquals ? namedValue(expanded) : null;
+        if (value) {
+          const t = tr(value);
+          if (t.source.trim() && unknownsOf(t).length === 0) {
+            const a = analyzeExpression(value, ctx, true);
+            if (a.kind === "expression" && !a.error) return a;
           }
         }
         return base("incomplete");
@@ -1036,6 +1058,9 @@ export function createEngine(mod: MathModule): LiveEngine {
   /** `3(x+2) - x` (or `3(x+2) - x =`) → `3x + 6 - x`, `2x + 6`; null when there is nothing to simplify. */
   const simplifySteps = (latex: string): string[] | null => {
     try {
+      // `A = \pi(5)^{2} =`: the steps of its value, carrying on the student's `=` chain
+      const value = namedValue(latex);
+      if (value) return simplifySteps(`${value} =`);
       // a derivative, an integral or a limit: the rule applied, then simplified (`calculus.ts`)
       const calc = calculus.steps(latex);
       if (calc) return calc;

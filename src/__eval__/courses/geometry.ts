@@ -132,6 +132,8 @@ export const GEOMETRY: EvalProblem[] = [
   { id: "gm-27", topic: "geometry-measure", lines: ["V = \\pi (1.5)^{2}(4)"], expect: { values: { V: [9 * Math.PI] }, approxOk: true }, note: "a cylinder in decimals" },
   { id: "gm-28", topic: "geometry-measure", lines: ["V = \\frac{1}{3}\\pi(6)^{2}(10)"], expect: { values: { V: [120 * Math.PI] } }, note: "a cone with its values in" },
   { id: "gm-29", topic: "geometry-measure", lines: ["P = 2(12) + 2(7)"], expect: { values: { P: [38] } }, note: "a rectangle's perimeter" },
+  { id: "gm-30", topic: "geometry-measure", lines: ["A = \\pi (5)^{2} ="], expect: { answer: "25\\pi" }, note: "a named value with a trailing =: the value, exact" },
+  { id: "gm-31", topic: "geometry-measure", lines: ["SA = 2(3)(4) + 2(4)(5) + 2(3)(5) ="], expect: { answer: "94" }, note: "a box's surface area, a trailing =" },
 
   // ---------------------------------------------------------------- circles (G-C.2, G-C.5, G-GPE.1)
   { id: "gc-01", topic: "geometry-circles", lines: ["d = 10", "C = \\pi d", "C = ?"], expect: { values: { C: [10 * Math.PI] } }, note: "circumference from the diameter" },

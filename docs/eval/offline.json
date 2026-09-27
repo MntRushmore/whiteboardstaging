@@ -1,16 +1,16 @@
 {
   "summary": {
-    "total": 596,
-    "passed": 596,
+    "total": 598,
+    "passed": 598,
     "stages": {
-      "local": 596,
-      "answer": 596,
-      "steps": 596,
-      "drawable": 596,
-      "words": 596
+      "local": 598,
+      "answer": 598,
+      "steps": 598,
+      "drawable": 598,
+      "words": 598
     },
     "answers": {
-      "ok": 596,
+      "ok": 598,
       "approx": 0,
       "form": 0,
       "unsolved": 0,
@@ -501,14 +501,14 @@
       },
       {
         "topic": "geometry-measure",
-        "total": 29,
-        "passed": 29,
+        "total": 31,
+        "passed": 31,
         "stages": {
-          "local": 29,
-          "answer": 29,
-          "steps": 29,
-          "drawable": 29,
-          "words": 29
+          "local": 31,
+          "answer": 31,
+          "steps": 31,
+          "drawable": 31,
+          "words": 31
         }
       },
       {
@@ -575,14 +575,14 @@
       },
       {
         "course": "geometry",
-        "total": 153,
-        "passed": 153,
+        "total": 155,
+        "passed": 155,
         "stages": {
-          "local": 153,
-          "answer": 153,
-          "steps": 153,
-          "drawable": 153,
-          "words": 153
+          "local": 155,
+          "answer": 155,
+          "steps": 155,
+          "drawable": 155,
+          "words": 155
         }
       },
       {
@@ -28649,6 +28649,93 @@
       "unsupported": [],
       "words": [],
       "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "gm-30",
+      "topic": "geometry-measure",
+      "course": "geometry",
+      "lines": [
+        "A = \\pi (5)^{2} ="
+      ],
+      "expected": "25\\pi",
+      "note": "a named value with a trailing =: the value, exact",
+      "source": "simplifySteps",
+      "steps": [
+        "= \\pi(25)",
+        "= 25\\pi"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "A = \\pi (5)^{2} =",
+          "to": "= \\pi(25)",
+          "status": "unverified",
+          "reason": "switches between an expression and a relation"
+        },
+        {
+          "from": "= \\pi(25)",
+          "to": "= 25\\pi",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `= \\pi(25)` (switches between an expression and a relation)"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "gm-31",
+      "topic": "geometry-measure",
+      "course": "geometry",
+      "lines": [
+        "SA = 2(3)(4) + 2(4)(5) + 2(3)(5) ="
+      ],
+      "expected": "94",
+      "note": "a box's surface area, a trailing =",
+      "source": "localAnswer",
+      "steps": [
+        "= 94"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "SA = 2(3)(4) + 2(4)(5) + 2(3)(5) =",
+          "to": "= 94",
+          "status": "unverified",
+          "reason": "switches between an expression and a relation"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `= 94` (switches between an expression and a relation)"
+      ],
       "pass": true,
       "failures": []
     },

@@ -167,6 +167,20 @@ describe("geometry: checking the student's lines", () => {
     expect(engine.analyzeLine("2\\pi", { mode: "feedback" }).resultLatex).toBe("6.283");
   });
 
+  it("a named quantity, its value and a trailing =: the value is answered, and worked", () => {
+    const answer = (latex: string) => engine.analyzeLine(latex, { mode: "answer" }).resultLatex;
+    expect(answer("A = \\pi(5)^{2} =")).toBe("25\\pi");
+    expect(answer("V = \\frac{4}{3}\\pi(3)^{3} =")).toBe("36\\pi");
+    expect(answer("SA = 2(3)(4) + 2(4)(5) + 2(3)(5) =")).toBe("94");
+    expect(answer("c = \\sqrt{3^{2} + 4^{2}} =")).toBe("5");
+    expect(answer("f(3) = 2(3) + 1 =")).toBe("7");
+    expect(engine.simplifySteps!("A = \\pi(5)^{2} =")).toEqual(["= \\pi(25)", "= 25\\pi"]);
+    // an equation, or a value with a letter still in it, is not a quantity to work out
+    expect(engine.analyzeLine("2x + 3 = 11 =", { mode: "answer" }).kind).toBe("incomplete");
+    expect(engine.analyzeLine("A = \\pi r^{2} =", { mode: "answer" }).kind).toBe("incomplete");
+    expect(engine.simplifySteps!("2x + 3 = 11 =")).toBeNull();
+  });
+
   it("facts about a figure are read, not ringed", () => {
     expect(engine.analyzeLine("\\triangle ABC \\sim \\triangle DEF", { mode: "feedback" }).kind).toBe("label");
     expect(engine.analyzeLine("AB \\parallel CD", { mode: "feedback" }).kind).toBe("label");
