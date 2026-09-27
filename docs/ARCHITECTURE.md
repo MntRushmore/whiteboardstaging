@@ -6,7 +6,7 @@ Agathon Classroom is a single Next.js 16 App Router app. The browser talks to Su
 
 | Layer | Technology | Responsibility |
 | --- | --- | --- |
-| Canvas | tldraw 4 (`src/app/board/[id]/page.tsx`) | Drawing, the Live Math layer (typeset echoes, graphs, the tutor's handwriting), autosave |
+| Canvas | tldraw 4 (`src/app/board/[id]/page.tsx`) | Drawing, the Live Math layer (typeset echoes, the tutor's handwriting, marks and hand-sketched graphs), autosave |
 | Client API helper | `src/lib/api-client.ts` | `authedFetch` attaches the Supabase access token; `apiJson` parses the error contract into `ApiError` |
 | Route handlers | `src/app/api/**` (Node runtime) | JWT verification, rate limiting, zod validation, provider calls, logging |
 | Server helpers | `src/lib/server/**`, `src/lib/env.ts` | `requireUser`, rate limiter, env validation, provider clients |
@@ -39,7 +39,7 @@ Garbage collection: deleting a board cascades `board_assets` rows but **not** st
 
 ### 3. Voice tutor
 
-`POST /api/voice/token` (JWT + rate limit) mints a short-lived OpenAI Realtime client secret and returns it; the browser opens a WebRTC session directly with OpenAI. The session registers `voiceSessionTools()` (`src/lib/live/voiceTools.ts`): `analyze_workspace` (a vision READ of the viewport via `/api/voice/analyze-workspace`, text back) plus the Live tools `read_live_math`, `place_math` and `plot_function`, which the browser runs through `runVoiceTool` against the Live controller — no network, typeset shapes only. An unknown tool name (e.g. `draw_on_canvas` from an older session) is answered with an error, never run. Without `OPENAI_API_KEY` the token route returns `503 voice_unavailable`.
+`POST /api/voice/token` (JWT + rate limit) mints a short-lived OpenAI Realtime client secret and returns it; the browser opens a WebRTC session directly with OpenAI. The session registers `voiceSessionTools()` (`src/lib/live/voiceTools.ts`): `analyze_workspace` (a vision READ of the viewport via `/api/voice/analyze-workspace`, text back) plus the Live tools `read_live_math`, `place_math` and `plot_function`, which the browser runs through `runVoiceTool` against the Live controller — no network, typeset shapes only (`plot_function` still places the typeset graph card; the tutor's own graphs are sketched by hand, see "Graphs" under Live Math). An unknown tool name (e.g. `draw_on_canvas` from an older session) is answered with an error, never run. Without `OPENAI_API_KEY` the token route returns `503 voice_unavailable`.
 
 ### 4. Credits, training
 
@@ -164,13 +164,15 @@ pen-up (draw.isComplete false→true, source 'user')
   → POST /api/live/recognize                    Mathpix v3/strokes ▸ vision fallback
   → engine.analyzeLine (mathjs, offline)        src/lib/live/engine/**
   → policy.decide(mode, verdict, voice, settled) policy.ts (silence rules, hint ladder)
-  → placement → scheduleLiveWrite(createShapes) math / graph shapes with meta.live
+  → placement → scheduleLiveWrite(createShapes) math shapes / the tutor's strokes, meta.live
+  → syncGraph(column): engine.graphFor → the column's graph kept in step (Solve, settled; or asked)
   → (rereadTrigger fires) crop → POST /api/live/reread   readCheck.ts; once per ink hash
       → acceptReread ? replace the read (provider 'reread'), re-analyse, re-render
   → (ladder permits) POST /api/live/check|solve SSE: meta → annotation*/step* → done
 
 Solve / Help on a column
   → localSolve (engine only)                    localSolve.ts → written by hand, no network
+  → engine.graphFor(column + steps) → planGraph graphing/ → sketched beside the steps, after them
   → word problem? POST /api/live/setup          wordProblem.ts: validateSetupLines
       → localSolve(setup) → setup + steps written as one hand block (no solve model)
   → otherwise, or setup unusable: POST /api/live/solve (SSE) → createSolveStepGuard → one block
@@ -195,14 +197,14 @@ moves beside the work (`keepOnScreen`). Within a screen, a line separated from t
 blank gap of more than max(120 px, 3 × line height) starts a new column (`assignColumns`), so a
 second problem further down is never checked as the next step of the first.
 
-**No words on the board.** Everything the tutor puts on the page is maths in its animated hand (`HandWriter`, blue) or a hand-drawn mark (`src/lib/live/marks.ts`): a tick after a step the engine verified, a ring round a wrong one (the engine's `mismatch`, or a model annotation with `verdict: warn`, remembered on the echo as `meta.aiWarnLatex`), a question mark beside ink it cannot read. There are no hint cards and no prose notes. Not even "or": several answers are a list (`x = 2, \ x = 3`, an inequality's union `x < 2, \ x > 3`), no solution is `\varnothing`, every number is `x \in \mathbb{R}` for an equation (`0 = 0`) and `-\infty < x < \infty` for an inequality, an excluded value is `x \neq 1`, a failed check is `\sqrt{4} \neq -2`. In Suggest and Solve, once the student stops (the settle), the right next step is written by hand beside a ringed line, computed by the engine from the last good line above (`suggestNextStep`); Help does it at once in any mode, and only asks the model for one step when the engine has none. The model's Solve steps are written as one handwritten block when the stream ends (typeset only if the hand lacks a symbol). The grey echo (the readback of what Mathpix read) shows only on hover, or while its ink is hovered or selected, and always when the device has the hand switched off. The dev "Mathpix" panel still shows every read.
+**No words on the board.** Everything the tutor puts on the page is maths in its animated hand (`HandWriter`, blue), a hand-drawn mark (`src/lib/live/marks.ts`) or a graph sketched in the same hand (numbers, the axis letters and coordinates only; see "Graphs" below): a tick after a step the engine verified, a ring round a wrong one (the engine's `mismatch`, or a model annotation with `verdict: warn`, remembered on the echo as `meta.aiWarnLatex`), a question mark beside ink it cannot read. There are no hint cards and no prose notes. Not even "or": several answers are a list (`x = 2, \ x = 3`, an inequality's union `x < 2, \ x > 3`), no solution is `\varnothing`, every number is `x \in \mathbb{R}` for an equation (`0 = 0`) and `-\infty < x < \infty` for an inequality, an excluded value is `x \neq 1`, a failed check is `\sqrt{4} \neq -2`. In Suggest and Solve, once the student stops (the settle), the right next step is written by hand beside a ringed line, computed by the engine from the last good line above (`suggestNextStep`); Help does it at once in any mode, and only asks the model for one step when the engine has none. The model's Solve steps are written as one handwritten block when the stream ends (typeset only if the hand lacks a symbol). The grey echo (the readback of what Mathpix read) shows only on hover, or while its ink is hovered or selected, and always when the device has the hand switched off. The dev "Mathpix" panel still shows every read.
 
 **Marks may be immediate; answers must wait.** Two clocks, because "this line is finished" and
 "the student has stopped" are different questions. `LIVE_TIMING.quietMs` (600 ms, per line) gates
 recognition and everything that comments on work already done — the green check, the amber dot,
 the solved chip, the note and the Feedback/Suggest hint ladder all keep that cadence.
 `ANSWER_SETTLE_MS` (2.5 s, whole canvas, `liveLoop.ts`) gates every "here is the result" output:
-the handwritten calculator answer and the echo's `resultLatex`. Any student ink restarts it — a
+the handwritten calculator answer, the echo's `resultLatex` and an unasked graph. Any student ink restarts it — a
 stroke in progress, a finished one, ink dragged elsewhere, ink rubbed out — so writing `36 + 2 =`
 and carrying on down the page produces nothing until the pen stops, and a pending answer is
 **cancelled, not queued** (the timer is re-armed, so nothing lands in a rush afterwards). Settling
@@ -226,6 +228,49 @@ muted typeset note beside the ink (`\text{…}`, wrapped into a left-aligned blo
 characters and kept inside the screen). Pressing Solve or Help again on a line the tutor has already
 worked out by hand draws nothing new (the block carries `meta.solvedLatex`). Same price as any check (3 credits). It never fires by
 itself: only `requestHelp` sets a crop, and the schema refuses one without `userAsked` + `focusLineId`.
+
+**Graphs, sketched by hand (`engine/graphIntent.ts`, `src/lib/live/graphing/**`).** A graph is an
+ANSWER, drawn by the tutor's hand in its blue, stroke by stroke, like its writing — never a card.
+*What* to graph is the engine's (`LiveEngine.graphFor(lines)`, optional on the contract): the
+column's lines (the student's, then any solution written under them) give a plane graph when they
+hold relations in x and y — `y = f(x)` / `f(x) = …` (polynomials, `|…|`, roots, exponentials, logs,
+rational functions), a line in any form (`2x + 3y = 6`), a region (`y < 2x + 1`, `2x + 3y \ge 6`),
+a circle (`(x-1)^2 + (y+2)^2 = 9`, also expanded) — else a number line when the column's last
+one-variable inequality is an answer (`x > 3`, `-2 \le x < 3`, `x < 2, \ x \ge 3`, `x \neq 1`,
+`-\infty < x < \infty`; a later inequality that is not an answer withdraws it). Rewrites of one
+relation count once (each is fingerprinted by its values, which is also the graph's `key`); two or
+three different ones are a system, drawn with the points where they cross. One relation with a
+value substituted (`x + y = 18`, `y = 9`, `x = ?`) is substitution, not graphing. Key points are
+found numerically (roots, vertex, corners, end points, crossings, a circle's centre) and their
+coordinates written only when exact (`(0, 1)`, `(-\frac{1}{2}, 0)`); an irrational one is a dot
+alone. Asymptotes — where the function blows up, where it levels off — are dashed (not when they
+are an axis). *How it looks* is `graphing/`: `chooseWindow` keeps every key point and the origin in
+view with a margin, at least 6 units across, the same unit on both axes for lines and circles (a
+slope of 2 looks like 2) and each axis its own scale otherwise, ticks every 1-2-5 × 10ⁿ;
+`planGraph` draws axes with arrowheads and their letters, tick marks, numbers written by
+`layoutMath` (the tutor's digits), dashed asymptotes, the curves (sampled every 1.5 px, refined
+where they move fast, broken at asymptotes, clipped to the box; a strict inequality's boundary
+dashed), light 45° hatching on the shaded side (across the boundary, clear of every number), the
+dots, then the coordinates placed where they collide with nothing. A number line has arrows both
+ways, numbered ticks, and the answer above it: an open circle for an end point left out, a filled
+one for one included, a segment or a ray with an arrow. The sketch is one `HandPlan` whose lines are
+its parts in that order, paced to ~4–6 s (`graphPaceFor`); `placeGraphBlock` puts it beside the
+work (right of the column, level with its top), else under the work and any solution, sliding past
+whatever is there, inside the screen — and draws nothing rather than over ink (a smaller sketch is
+tried first). *When*: in Solve, once the student has stopped (`renderSettled` → `drawWantedGraphs`,
+one column at a time), or at once on Solve / Help, where Solve writes the steps under the work and
+the graph beside them after the steps (`HandWriter` `delayMs`); `y = 2x + 1` has no steps and its
+graph is the whole answer, so no model is asked. In Feedback / Suggest only Help draws it, and there
+the graph is the help (a line the engine calls wrong gets its next step instead). Every stroke
+carries `meta.graphFor` = the key: a graph already on the page is not drawn twice, a column whose
+maths changed loses its graph at once (`syncGraph` on every render), a sketch cut short by the
+student's pen is completed whole (`HandWriter` `whole`), and one the student rubs out is not drawn
+again unasked (the key is kept on the echo as `meta.graphDismissed`, so a reload agrees); asking
+brings it back. With the hand switched off, a function graph falls back to the typeset `graph` card
+(a region, circle or number line has no typeset form). The card no longer appears by itself beside
+every `y = …` line; its shape util stays registered so boards that have one still load, and those
+cards stay where they are. What the sketches look like: `docs/graph/gallery.png`
+(`GRAPH_GALLERY=1 npx vitest run src/lib/live/graphing/__tests__/gallery.test.ts`).
 
 **Word problems: the model sets up, the engine solves.** Mathpix returns prose as `\text{…}` and
 the engine classifies it `kind: 'text'` (silent: no echo). A column down to the asked-for line that
@@ -318,6 +363,7 @@ lines in their own right (`b=20-3` for `b = 2a - 3`, `\int_{1}^{6}` for `\int_{1
 | Two equations that are the same line, or parallel: substituted until the unknown cancels, in maths only | `x + y = 18`, `2x + 2y = 36` → … `0 = 0`, `y = 18 - x`; `x + y = 18`, `x + y = 20` → … `0 = 2`, `\varnothing` |
 | One linear equation and one not, in the same two unknowns (`engine/systems.ts`): the unknown alone on a side of the linear one (else a ±1 coefficient; the one asked for, with `x = ?`) substituted into the other, that line solved by the exact steps above, every root put back; the partners listed in the same order as the roots (each pair reads down the page), no real root `\varnothing`. Refused when a root is a surd | `l = w + 3`, `l \cdot w = 40` → `(w + 3)w = 40`, `w^{2} + 3w = 40`, `w^{2} + 3w - 40 = 0`, `(w + 8)(w - 5) = 0`, `w = -8, \ w = 5`, `l = -8 + 3, \ l = 5 + 3`, `l = -5, \ l = 8`; `x + y = 7`, `xy = 12` → `y = 7 - x`, `x(7 - x) = 12`, … `x = 3, \ x = 4`, `y = 4, \ y = 3` |
 | Two equations with no coefficient ±1 (substitution would write fractions): elimination (`engine/elimination.ts`) — the multiplied equations, the eliminated one, then back-substitution; the unknown asked for (`y = ?`) is solved first, otherwise the cheaper one to eliminate | `3x + 2y = 16`, `2x + 3y = 14` → `9x + 6y = 48`, `4x + 6y = 28`, `5x = 20`, `x = 4`, `3(4)+2y=16`, `12 + 2y = 16`, `2y = 4`, `y = 2` |
+| Graphs (`engine/graphIntent.ts`, `graphFor`; see "Graphs" above): lines in any form, `y = f(x)`, regions, circles, systems with their crossing, a one-variable inequality answer as a number line; exact coordinates only | `y = 2x + 1` → points `(0, 1)`, `(-\frac{1}{2}, 0)`; `x + y = 18`, `x - y = 4` → crossing `(11, 7)`; `y = \frac{2x+1}{x-1}` → asymptotes `x = 1`, `y = 2`; `2x + 3 > 11` → `2x > 8`, `x > 4` → number line, open circle at 4, ray right |
 | Three linear equations in three unknowns: one unknown eliminated from two pairs (the eliminated equations shown, divided by their common factor), the two-equation case, then back-substitution; the answer line is `x = 1, \ y = 2, \ z = 3`. Within the 8-line block the multiplied and back-substituted lines go first, never the values. No common point: eliminated down to a false `0 = c`, then `\varnothing` (the same plane twice is refused: no single answer) | `x + y + z = 6`, `2x - y + z = 3`, `x + 2y - z = 2` → `x - 2y = -3`, `2x + 3y = 8`, `2x - 4y = -6`, `7y = 14`, `y = 2`, `x - 2(2) = -3`, `x = 1`, `z = 3`; `x + y + z = 6`, `x + y + z = 7`, `x - y + z = 2` → `0 = 1`, `\varnothing` |
 
 | Refused (`kind: 'unknown'`, no result) | Why |
