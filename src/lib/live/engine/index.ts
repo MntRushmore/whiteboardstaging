@@ -29,6 +29,7 @@ import { evaluateUnits, unitValueToLatex, valuesMatch } from "./units";
 import { solveFromLines, type SystemDeps } from "./systems";
 import { linearSolveSteps, simplifyExpressionSteps, type LinearSteps, type RelOp } from "./algebra";
 import { solveAdvanced, type AdvancedDeps } from "./advanced";
+import { factorExpressionSteps } from "./polynomial";
 import { LIST_SEP, NO_SOLUTION } from "./solution";
 
 const UNKNOWN: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
@@ -767,7 +768,8 @@ export function createEngine(mod: MathModule): LiveEngine {
       if (unknowns.length === 0 || unknowns.some((v) => !/^[a-zA-Z]$/.test(v))) return null;
       const node = safeParse(math, t.source);
       if (!node) return null;
-      return simplifyExpressionSteps(node, unknowns, pre, stepKey);
+      // simplify when there is something to expand or collect; otherwise factor it (polynomial.ts)
+      return simplifyExpressionSteps(node, unknowns, pre, stepKey) ?? factorExpressionSteps(node, unknowns, pre, stepKey);
     } catch {
       return null;
     }
