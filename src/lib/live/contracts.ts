@@ -346,12 +346,19 @@ export const ApiErrorSchema = z.object({
 });
 export type ApiErrorBody = z.infer<typeof ApiErrorSchema>;
 
-// 6. Server configuration (model ids verified on OpenRouter 2026-09-11) ------
+// 6. Server configuration (model ids verified on OpenRouter 2026-09-27) ------
+/**
+ * Solve is only reached for maths the local engine cannot do, and every step it returns is
+ * checked by the engine before it is drawn. Chosen on the model benchmark (docs/eval/models.md,
+ * `npm run eval:models`): GPT-5.4 mini matched Sonnet 5 on right answers (22 vs 23 of 25 shown
+ * to the student) at 2.5 s p50 and about 40 % of the cost; DeepSeek v4.1 Flash is the fallback
+ * only when it fails (21/25, cheapest). The owner chose a US provider as primary.
+ */
 export const LIVE_MODELS = {
   check: "google/gemini-3.5-flash",
   checkFallback: "anthropic/claude-haiku-4.5",
-  solve: "anthropic/claude-sonnet-5",
-  solveFallback: "openai/gpt-5.4-mini",
+  solve: "openai/gpt-5.4-mini",
+  solveFallback: "deepseek/deepseek-v4.1-flash",
   vision: "google/gemini-3.1-flash-lite",
 } as const;
 
