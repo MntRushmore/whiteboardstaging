@@ -298,9 +298,11 @@ export function linearSolveSteps(
       op = FLIP[op];
     }
 
-    // clear fractions: multiply every term by the LCD of the coefficients
+    // clear fractions: multiply every term by the LCD of the coefficients — unless the unknown is
+    // already alone and only numbers are left to add (`x = 2\frac{1}{2} + 1` → `x = \frac{7}{2}`)
+    const alone = L.length === 1 && isX(L[0]) && qOne(L[0].c) && R.every(isC);
     let lcd = 1;
-    for (const t of [...L, ...R]) lcd = (lcd * t.c.d) / gcdInt(lcd, t.c.d);
+    if (!alone) for (const t of [...L, ...R]) lcd = (lcd * t.c.d) / gcdInt(lcd, t.c.d);
     if (lcd > 1) {
       const k = q(lcd);
       L = L.map((t) => ({ c: qMul(t.c, k), vars: t.vars }));

@@ -35,6 +35,9 @@ describe("linear equations: expand, clear fractions, collect, divide", () => {
     ["2x=8", ["x = 4"]],
     ["4 = x", ["x = 4"]],
     ["3x = -7", ["x = -\\frac{7}{3}"]],
+    // the unknown already alone: the numbers are added, no fractions cleared
+    ["x = \\frac{1}{2} + \\frac{1}{3}", ["x = \\frac{5}{6}"]],
+    ["x = 2 \\frac{1}{2} + 1", ["x = \\frac{7}{2}"]],
   ])("%s", (latex, steps) => {
     expect(solve(latex)).toEqual(steps);
   });
