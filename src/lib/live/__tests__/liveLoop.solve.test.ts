@@ -215,7 +215,7 @@ describe("live loop — Solve answers locally, and checks the model when it cann
     // the line the student wrote                what the tutor writes under it
     ["3.2 kg \\cdot 9.8 m/s^2", "= 31.36\\,\\mathrm{N}"], // units
     ["5 km/h \\text{ to } m/s", "= 1.389\\,\\mathrm{m/s}"], // a conversion
-    ["\\frac{d}{dx} x^3", "= 3\\cdot{x}^{2}"], // a derivative
+    ["\\frac{d}{dx} x^3", "= 3x^{2}"], // a derivative (engine/calculus.ts)
     ["100-45", "= 55"], // bare arithmetic the echo's calculator rule keeps quiet about
   ])("answers %s locally too", async (line, written) => {
     await solve(line);

@@ -28,6 +28,7 @@ import { countOperations, createMathInstance, integralsExact, isComplexValue, is
 import { evaluateUnits, unitValueToLatex, valuesMatch } from "./units";
 import { solveFromLines, type SystemDeps } from "./systems";
 import { linearSolveSteps, simplifyExpressionSteps, type LinearSteps, type RelOp } from "./algebra";
+import { createCalculus } from "./calculus";
 
 const UNKNOWN: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
 
@@ -68,7 +69,9 @@ const TRIG = new Set(["sin", "cos", "tan", "sec", "csc", "cot", "asin", "acos", 
  * Calculus/aggregate calls the engine evaluates even when the line still mentions a variable:
  * `\frac{d}{dx} x^3` is an answerable line whose answer contains x.
  */
-const SYMBOLIC_FUNCTIONS: ReadonlySet<string> = new Set(["derivative", "integral", "summation"]);
+const SYMBOLIC_FUNCTIONS: ReadonlySet<string> = new Set(["derivative", "integral", "summation", "antiderivative"]);
+/** Calculus the engine may be unable to do (`calculus.ts`): refused as `unknown`, never "keep writing". */
+const REFUSABLE_CALCULUS: ReadonlySet<string> = new Set(["limit", "antiderivative"]);
 
 function isSymbolic(t: Translated): boolean {
   return t.functions.some((f) => SYMBOLIC_FUNCTIONS.has(f));
@@ -171,6 +174,8 @@ export function createEngine(mod: MathModule): LiveEngine {
   const math = createMathInstance(mod);
 
   const tr = (latex: string, plain = false): Translated => translate(math, latex, { plain });
+  // derivatives, integrals and limits with teacher-style steps; registers limit/antiderivative/bracketEval on `math`
+  const calculus = createCalculus(math, { translate: (latex) => tr(latex) });
 
   const evaluateTranslated = (t: Translated, latex: string): { value: unknown; latex: string; ok: boolean; note: string; error?: string } => {
     const exact = t.functions.includes("integral") && integralsExact(math, t.source);
@@ -211,6 +216,10 @@ export function createEngine(mod: MathModule): LiveEngine {
     const symbolic = isSymbolic(t);
     if (unknowns.length === 0 || symbolic) {
       const ev = evaluateTranslated(t, latex);
+      if (!ev.ok && t.functions.some((f) => REFUSABLE_CALCULUS.has(f))) return { ...UNKNOWN, error: ev.error };
+      // the calculus answer as the steps end (`6x + 2`, `\ln 2`, `\frac{x^{3}}{3} + C`), not mathjs's rendering
+      const exact = ev.ok && t.functions.length > 0 ? calculus.resultLatex(t.source) : null;
+      if (exact) ev.latex = exact;
       const out: LineAnalysis = { kind: "expression", math: t.source, resultLatex: "", verdict: "none", note: ev.note };
       if (t.hasUnits) out.units = { ok: ev.ok };
       if (ev.error) out.error = ev.error;
@@ -269,6 +278,12 @@ export function createEngine(mod: MathModule): LiveEngine {
       return { kind: "equation", math: "", resultLatex: "", verdict: "unknown", note: "" };
     }
     const raw = sides.map((s) => tr(s));
+    // `\int 2x \, dx = x^2 + C`: checked by differentiating the right-hand side
+    const antiderivativeClaim = calculus.claimVerdict(
+      raw.map((t) => t.source),
+      ops,
+    );
+    if (antiderivativeClaim) return { kind: "equation", math: raw.map((t) => t.source).join(" == "), resultLatex: "", verdict: antiderivativeClaim, note: "" };
     const ts = raw.map(resolveSymbolicSide);
     /** a side was a derivative/integral: the line claims a result, which is checked on its own */
     const claim = ts.some((t, i) => t !== raw[i]);
@@ -525,7 +540,7 @@ export function createEngine(mod: MathModule): LiveEngine {
             // a bound-variable line (`\int_0^1 x^2 dx =`, `\frac{d}{dx} x^3 =`) is answerable
             if (t.source.trim() && (unknownsOf(t).length === 0 || isSymbolic(t)) && splitRelations(pre.lhs).ops.length === 0) {
               const a = analyzeExpression(pre.lhs, ctx, true);
-              if (a.kind === "expression" && !a.error) return a;
+              if ((a.kind === "expression" && !a.error) || a.kind === "unknown") return a;
             }
           } catch (e) {
             // `\lim ... =`, `\begin{pmatrix} ... =`: not an unfinished line, a line we cannot read
@@ -721,6 +736,9 @@ export function createEngine(mod: MathModule): LiveEngine {
   /** `3(x+2) - x` (or `3(x+2) - x =`) → `3x + 6 - x`, `2x + 6`; null when there is nothing to simplify. */
   const simplifySteps = (latex: string): string[] | null => {
     try {
+      // a derivative, an integral or a limit: the rule applied, then simplified (`calculus.ts`)
+      const calc = calculus.steps(latex);
+      if (calc) return calc;
       const pre = preprocessLatex(latex).trim().replace(/=\s*$/, "").trim();
       if (!pre || /\d\.\d/.test(pre)) return null;
       if (splitRelations(pre).ops.length > 0) return null;
@@ -902,6 +920,9 @@ export function createEngine(mod: MathModule): LiveEngine {
     analyzeLine,
     solveFromLines: (lines: readonly string[]) => {
       try {
+        // `\frac{dy}{dx}` / `f'(2)` under a definition, or a calculus line under a system: calculus answers
+        const calc = calculus.fromLines(lines);
+        if (calc !== undefined) return calc;
         return solveFromLines(lines, systemDeps);
       } catch {
         return null;
