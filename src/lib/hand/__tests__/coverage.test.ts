@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { planHandwriting } from "@/lib/live/handwriting";
 import { layoutMath, strokeBounds } from "@/lib/hand/mathLayout";
 import { layoutSteps } from "@/lib/hand/writeSteps";
+import { REASON_LATEX } from "@/lib/live/proof/vocab";
 
 /**
  * Everything the solver can emit must be drawable by the tutor's hand: a block with
@@ -299,6 +300,20 @@ const COVERAGE: Record<string, readonly string[]> = {
     "\\begin{array}{cc} 1 & 2 \\\\ 3 & 4 \\end{array}",
     "\\begin{aligned} x + y &= 5 \\\\ x &= 3 \\end{aligned}",
     "\\left\\{ \\begin{array}{l} x = 1 \\\\ y = 2 \\end{array} \\right.",
+  ],
+  // two-column proofs (`src/lib/live/proof`): every statement form the planner writes, and every
+  // reason in the fixed vocabulary — the only words the tutor writes, in the reason column
+  "geometry proofs": [
+    "\\overline{AB} \\cong \\overline{CD}",
+    "\\angle ABD \\cong \\angle CDB",
+    "\\angle 1 \\cong \\angle 2",
+    "\\triangle ABD \\cong \\triangle CDB",
+    "\\overline{AB} \\parallel \\overline{DC}",
+    "\\overline{BD} \\perp \\overline{AC}",
+    "m\\angle ADB = 90^{\\circ}",
+    "m\\angle 1 + m\\angle 2 = 180^{\\circ}",
+    "\\triangle ABC \\sim \\triangle DEF",
+    ...Object.values(REASON_LATEX),
   ],
   words: [
     "\\text{or}",
