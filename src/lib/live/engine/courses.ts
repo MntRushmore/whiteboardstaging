@@ -12,13 +12,14 @@
  *                 a point and a slope, sequences, a mean, a formula with every value known
  *   fromLinesLate after the systems have nothing — a formula solved for a letter
  *   analyze       `engine.analyzeLine` — a claim about a function (`f(4) = 11`) under its definition
- *   analyzeFirst  `engine.analyzeLine`, before its own rules — a form of the line or the quadratic
- *                 above asked for (`Ax + By = C`, `(h, k) = ?`), a vertex claimed
+ *   analyzeFirst  `engine.analyzeLine`, before its own rules — a line about the data list above
+ *                 (the data sorted, a statistic asked for or claimed), a form of the line or the
+ *                 quadratic above asked for (`Ax + By = C`, `(h, k) = ?`), a vertex claimed
  *
- * `fromLines` and `solve` also answer those asks first: a quadratic's vertex form, vertex or
- * standard form (`quadraticForms.ts`), a line's standard form (`linearFunctions.ts`) — asked
- * under the line, or above the line Solve is pressed on (then a line already in that form is
- * refused: there is nothing to write).
+ * `fromLines` and `solve` also answer those asks first: a statistic of a data list
+ * (`statistics.ts`), a quadratic's vertex form, vertex or standard form (`quadraticForms.ts`), a
+ * line's standard form (`linearFunctions.ts`) — asked under the line, or above the line Solve is
+ * pressed on (then a line already in that form is refused: there is nothing to write).
  *
  * `"refuse"` means the line is one the older paths would misread (`f(4)` as `4f`): the engine
  * answers nothing rather than something wrong.
@@ -37,6 +38,7 @@ import { radicalSteps } from "./radicalExpr";
 import { checkClaim, definitionFromMath, definitionOf, definitionsIn, evaluateCalls, hasFunctionCall, inverseOf, solveFunctionEquation } from "./functionNotation";
 import { isLineInXY, lineFormAbove, lineFormAnalysis, lineFormAnswer, lineFromColumn, lineIn, pointsOn, slopeIntercept } from "./linearFunctions";
 import { solveForLetter } from "./literalEquations";
+import { isStatisticClaim, statisticsAnalysis, statisticsAnswer } from "./statistics";
 import { quadraticAnalysis, quadraticAnswer, quadraticFormAbove, quadraticIn, quadraticOf } from "./quadraticForms";
 
 export type Refuse = "refuse";
@@ -53,7 +55,7 @@ export interface Courses {
   fromLines(lines: readonly string[]): Solved | null | Refuse;
   fromLinesLate(lines: readonly string[]): Solved | null;
   analyze(latex: string, ctx: AnalyzeContext): LineAnalysis | null;
-  /** a line asking for a form of the line / quadratic above, a vertex claimed (before the engine's own rules) */
+  /** a line about a data list, or asking for a form of the line / quadratic above (before the engine's own rules) */
   analyzeFirst(latex: string, ctx: AnalyzeContext): LineAnalysis | null;
   /** an exact answer finished the way the course writes it (`x = \log_{5} 7` → its change of base) */
   polish<T extends Solved>(solved: T): T;
@@ -85,9 +87,9 @@ export function createCourses(deps: CourseDeps): Courses {
   const fromLines = (lines: readonly string[]): Solved | null | Refuse => {
     const target = lines[lines.length - 1] ?? "";
     const above = lines.slice(0, -1);
-    // asked by name or template under what it is about: the quadratic's vertex (form), the
-    // line's standard form — then a form asked for above the line
-    const asked = quadraticAnswer(deps, lines) ?? lineFormAnswer(deps, lines);
+    // asked by name or template under what it is about: a statistic of the data list, the
+    // quadratic's vertex (form), the line's standard form — then a form asked for above the line
+    const asked = statisticsAnswer(deps, lines) ?? quadraticAnswer(deps, lines) ?? lineFormAnswer(deps, lines);
     if (asked) return asked;
     const wanted = formAbove(target, above);
     if (wanted) return wanted;
@@ -112,7 +114,7 @@ export function createCourses(deps: CourseDeps): Courses {
         if (si) return si;
       }
     }
-    // a list of terms or a rule above: the nth term, the formula, a sum; `\bar{x}`: the mean
+    // a list of terms or a rule above: the nth term, the formula, a sum (a list's mean: `statistics.ts`, above)
     const seq = sequenceAnswer(deps, lines);
     if (seq) return seq;
     // a formula with every value known in decimals: worked out in those decimals
@@ -133,6 +135,8 @@ export function createCourses(deps: CourseDeps): Courses {
     // a form asked for above the line (`Ax + By = C`, `\text{vertex form}`): the line in that form
     const wanted = opts?.column && opts.column.length > 1 ? formAbove(latex, opts.column.slice(0, -1)) : null;
     if (wanted) return wanted;
+    // `\bar{x} = 10` under a data list is a claim about the data, not `x = 10` to solve
+    if (opts?.column && isStatisticClaim(opts.column)) return "refuse";
     // no real roots, and the column already works with i: the complex ones (complexSetting.ts)
     if (opts?.complexRoots) {
       const c = complexQuadratic(deps, latex);
@@ -210,6 +214,6 @@ export function createCourses(deps: CourseDeps): Courses {
         if (!verdict) return null;
         return { kind: "equation", math: "", resultLatex: "", verdict, note: "" } satisfies LineAnalysis;
       }) ?? null,
-    analyzeFirst: (latex, ctx) => safely(() => quadraticAnalysis(deps, latex, ctx) ?? lineFormAnalysis(deps, latex, ctx)) ?? null,
+    analyzeFirst: (latex, ctx) => safely(() => statisticsAnalysis(deps, latex, ctx) ?? quadraticAnalysis(deps, latex, ctx) ?? lineFormAnalysis(deps, latex, ctx)) ?? null,
   };
 }
