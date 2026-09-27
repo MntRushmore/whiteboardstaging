@@ -473,6 +473,40 @@ cases) keeps every stroke as writing — the scoreboard fails otherwise. Not han
 sketched in many short strokes (each is a glyph), a small rectangle or circle under ~3.5 G, tldraw's
 own shape tools (never read as ink anyway, but their labels still are lines).
 
+**Two-column proofs (`src/lib/live/proof/**`).** A proof on the board is a `Given:` and a
+`Prove:` line, then rows of statement | reason in two columns, with or without a `Statements |
+Reasons` header or a drawn T-table.
+- **Reading (`read.ts`, `table.ts`, `facts.ts`, `vocab.ts`).** `readProofs` pairs each reason with
+  the statement level with it. The T-table's rules are set aside by `splitInk` (role `table`), so
+  the rows stay lines; a rule counts only with a row under its bar or the header over it, so a
+  figure's sides never do. Statements are parsed into facts: congruent segments, angles and
+  triangles, midpoints, bisectors, ∥, ⊥, right angles. Reasons are normalised from what Mathpix
+  returns (`\text{Vert. } \angle s`, `def of midpt`, `SAS \cong`, …) to one short vocabulary. That
+  vocabulary is the one place words are written on the board, and only in a proof's reason column.
+- **Checking (`checker.ts`).** Deterministic, row by row, against the rows above: Given against the
+  Given line; SSS / SAS / ASA / AAS / HL with the parts and their correspondence (SSA is wrong);
+  CPCTC after a congruence and on parts that correspond; reflexive, transitive, substitution; the
+  definitions. Vertical angles, linear pairs and angles at parallel lines need the figure: they are
+  checked against the figure read, and left unmarked without one. A row that is verified is ticked;
+  one that is provably wrong is ringed; a row it cannot verify gets no mark.
+- **The figure (`figureInk.ts`, then `/api/live/proof`).** Read first from its own ink: strokes cut
+  into straight pieces and joined into lines, the labelled points named, and each line is the
+  points on it. A letter written on a crossing touches the lines and stays a mark, so when exactly
+  one point the proof names is on no label and exactly one crossing is unlabelled, that crossing is
+  it. Only when the ink gives nothing does the model read the crop (points and lines), once per
+  drawing.
+- **The next row (`planner.ts`, `desk.ts`, `place.ts`).** On Help in Suggest (one row) or in Solve
+  (the rest), the engine's planner searches forward from the givens for the shortest proof,
+  bounded. When it cannot finish, one model row (`LIVE_MODELS.proof`, gpt-5.4-mini, deepseek
+  fallback; 2 credits, refunded on failure) is written only if the checker ticks it. Rows are
+  written in the tutor's hand, statement then reason, one row pitch under the last row. Their
+  reasons go in the student's reason column, or with none yet, one column just past the widest
+  statement. Sizes come from the Prove line when there are no rows yet: a Given can be two lines
+  read as one.
+- **Scoreboard.** `npm run eval:proofs` (`docs/eval/proofs.md`, 28 textbook proofs): every row of
+  every correct proof ticked, every seeded error ringed, and the planner finishing each proof from
+  every prefix.
+
 **Deterministic maths never goes through a model.** `LiveLoop.startSolve` (`src/lib/live/liveLoop.ts`) asks the local engine before it will open `/api/live/solve`: `engine.solveLatex` for a relation with an unknown (`2x + 3 = 11` → `2x = 8`, `x = 4`; linear inequalities too; quadratics, absolute value, rational, radical, exponential and log equations through `engine/advanced.ts`), `engine.solveFromLines` for a line that needs the ones above it, `engine.simplifySteps` for an expression in an unknown (`3(x+2) - x` → `= 3x + 6 - x`, `= 2x + 6`) or a derivative, integral or limit (`\frac{d}{dx}(3x^2+2x)` → `= 3 \cdot 2x + 2`, `= 6x + 2`; see "Calculus steps" below), and then `localAnswerFor` (`src/lib/live/solveSteps.ts`) for a line the engine can simply evaluate — `analyzeLine(latex, { mode: 'answer' }).resultLatex` covers a trailing `=`, units, a conversion, a derivative, an integral, a limit, a finite sum and a percentage, and `engine.calculate` covers bare arithmetic whose result the echo's calculator rule suppresses. Either way the steps are written under the student's work in the tutor's hand (`planHandwriting` + `HandWriter`), with no model, no credits and no network. An answer the hand atlas cannot draw, or a device with the handwriting switch off, is typeset locally instead of being asked for: only a line the engine has nothing to say about (an equation the CAS declines, a word problem whose setup the engine cannot solve) reaches the stream. Regression: `36 + 2 =` used to fall through `solveLatex` and be answered `= r + 9\varepsilon` by the model.
 
 **What the local engine can and cannot do (`src/lib/live/engine/**`).** The table is the contract the tests in `engine/__tests__` hold it to. The rule behind it: the engine either produces the answer a teacher would write, or it produces none — a line it cannot do comes back `kind: 'unknown'` with an empty `resultLatex`, never an approximation presented as an answer.
@@ -553,7 +587,7 @@ own shape tools (never read as ink anyway, but their labels still are lines).
 | `f(4)`, `f(3) = 9` with no definition of f above; `f^{-1}(x)` of an even power | A call is not a product (it used to be answered `= 4f`, `3f = 9`, `f = 3`); an even power has no inverse without a restricted domain |
 | A lone `2x + 3y = 6` (no `y = ?` under it) | It may be one equation of a word problem's setup in two unknowns: the model has the context |
 | A letter under a root (`\sqrt{18x^{2}}`), synthetic division's tableau, an infinite geometric series with \|r\| ≥ 1, a frequency table, the mode when every value repeats equally | \|x\| would be needed; long division's lines are written instead of the tableau; no sum exists; a table is not read; texts disagree on that mode |
-| Geometry that needs the figure beyond what `planFigure` knows (areas, perimeters, arc lengths, trig in a triangle, several unknowns tied together), congruence and similarity proofs (the statements are read as labels; their maths lines are checked), constructions | The figure path reads angles and sides and the relationships listed under "The tutor reads the figure"; anything else is the model's own lines, kept only when they solve to a sensible size |
+| Geometry that needs the figure beyond what `planFigure` knows (areas, perimeters, arc lengths, trig in a triangle, several unknowns tied together), similarity proofs, and proofs by segment or angle addition (read, their reasons never marked, not planned), constructions | The figure path reads angles and sides and the relationships listed under "The tutor reads the figure"; anything else is the model's own lines, kept only when they solve to a sensible size |
 | The ambiguous case of the law of sines (a second triangle with the obtuse angle), an obtuse angle from a sine, a negative ratio for a triangle's angle, a vertical line's slope, a circle whose r² ≤ 0, a named angle or segment the steps cannot take | One principal value or nothing, never a list that may not fit the figure; a named quantity is refused outright (`solveLatex` / `solveFromLines` → null), so no other method writes its internal name (`angle_A = 50`) |
 | A trig equation in `x` at a non-special value (`\tan x = \frac{3}{4}`) | `x` is a trig equation's unknown (every angle in a turn); a capital, a named angle or a Greek letter (`\tan\theta = \frac{3}{4}`) is an angle of a triangle and gets its principal value |
 

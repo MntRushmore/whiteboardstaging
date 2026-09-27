@@ -140,8 +140,13 @@ function rectDist(r: Rect, p: P): number {
   return Math.hypot(dx, dy);
 }
 
-/** Reads the figure from its strokes and labels (see the file comment). */
-export function figureFromInk(strokes: readonly InkStroke[], labels: readonly InkLabel[], G: number): FigureRead | null {
+/**
+ * Reads the figure from its strokes and labels (see the file comment). `names`: the points the proof
+ * speaks of. A letter written on a crossing touches the lines and is kept as a mark on the drawing,
+ * not a label, so it is never read; when exactly one of `names` is on no label and exactly one point
+ * where lines cross has no label, that point is it (`E` where `AD` and `BC` cross).
+ */
+export function figureFromInk(strokes: readonly InkStroke[], labels: readonly InkLabel[], G: number, names: readonly string[] = []): FigureRead | null {
   const ls = lines(pieces(strokes, G), G);
   if (ls.length < 2) return null;
   // vertices: every line's ends, every crossing or meeting
@@ -174,18 +179,21 @@ export function figureFromInk(strokes: readonly InkStroke[], labels: readonly In
     usedL.add(p.li);
     named.set(p.vi, letters[p.li].text);
   }
+  const slack = FIGURE_INK.onLineFactor * G;
+  const onLine = (l: Line, v: P) => {
+    const t = along(l, v);
+    return offLine(l, v) <= slack && t >= l.t0 - slack && t <= l.t1 + slack;
+  };
+  const missing = [...new Set(names)].filter((n) => /^[A-Z]$/.test(n) && ![...named.values()].includes(n));
+  const crossings = verts.map((_, vi) => vi).filter((vi) => !named.has(vi) && ls.filter((l) => onLine(l, verts[vi])).length >= 2);
+  if (missing.length === 1 && crossings.length === 1) named.set(crossings[0], missing[0]);
   if (named.size < 3) return null;
   const points: Record<string, [number, number]> = {};
   for (const [vi, name] of named) points[name] = [Math.round(verts[vi].x * 10) / 10, Math.round(verts[vi].y * 10) / 10];
   const out: string[] = [];
   for (const l of ls) {
     const on = [...named.entries()]
-      .filter(([vi]) => {
-        const v = verts[vi];
-        const t = along(l, v);
-        const slack = FIGURE_INK.onLineFactor * G;
-        return offLine(l, v) <= slack && t >= l.t0 - slack && t <= l.t1 + slack;
-      })
+      .filter(([vi]) => onLine(l, verts[vi]))
       .sort((a, b) => along(l, verts[a[0]]) - along(l, verts[b[0]]))
       .map(([, name]) => name);
     if (on.length >= 2) out.push(on.join(""));

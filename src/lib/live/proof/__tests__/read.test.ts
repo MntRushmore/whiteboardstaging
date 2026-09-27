@@ -117,6 +117,15 @@ describe("reading a proof off the board", () => {
     expect(readProofs([line("\\overline{AB} \\cong \\overline{CD}", 100, 100), line("\\text{Given}", 620, 104, 140, 36)])).toEqual([]);
   });
 
+  it("with no rows yet, sizes come from the Prove line: two givens read as one line do not double them", () => {
+    // `Given: E is the midpoint of AD` with `E is midpoint of BC` under it, read as one 100 px line
+    const [p] = readProofs([line("\\text{Given: } E \\text{ is the midpoint of } \\overline{AD} \\ E \\text{ is midpoint of } \\overline{BC}", 100, 100, 600, 100), line(PROVE, 100, 220, 400)]);
+    expect(p.lineHeight).toBe(40);
+    expect(p.rowPitch).toBe(72);
+    // the reason column starts near the statements, not a screen's width away (a figure drawn beside)
+    expect(p.reasonX).toBe(100 + 7 * 40);
+  });
+
   it("the tutor's rows come back as lines (a reason written twice in one block is two lines)", () => {
     const shapes = [
       { block: "hb_1", latex: "\\overline{BD} \\cong \\overline{BD}", bounds: { x: 100, y: 400, w: 120, h: 30 } },

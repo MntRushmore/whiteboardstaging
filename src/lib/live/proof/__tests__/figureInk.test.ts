@@ -30,6 +30,19 @@ describe("reading a proof's figure from its ink", () => {
     expect(fig.triangles.map((t) => [...t].sort().join("")).sort()).toEqual(expect.arrayContaining(["ABE", "CDE"]));
   });
 
+  it("a letter written on the crossing (kept as a mark, never read) is the one point the proof names that no label does", () => {
+    const P = { A: { x: 100, y: 100 }, B: { x: 100, y: 400 }, C: { x: 400, y: 100 }, D: { x: 400, y: 400 }, E: { x: 250, y: 250 } };
+    const { ink, labels } = figure(P, ["AD", "BC", "AB", "CD"], { C: [22, -22], D: [22, 22], B: [-22, 22] });
+    const read4 = labels.filter((l) => l.text !== "E");
+    // without the proof's names the crossing stays unnamed
+    expect(sortLines(figureFromInk(ink, read4, G)!.lines)).toEqual(sortLines(["AD", "BC", "AB", "CD"]));
+    const read = figureFromInk(ink, read4, G, ["A", "B", "C", "D", "E"])!;
+    expect(sortLines(read.lines)).toEqual(sortLines(["AED", "BEC", "AB", "CD"]));
+    expect(buildFigure(read).vertical.length).toBeGreaterThan(0);
+    // two names missing: nothing is guessed
+    expect(sortLines(figureFromInk(ink, read4, G, ["A", "B", "C", "D", "E", "F"])!.lines)).toEqual(sortLines(["AD", "BC", "AB", "CD"]));
+  });
+
   it("a triangle in one stroke, and a point on a side, and an altitude", () => {
     const P = { A: { x: 100, y: 400 }, B: { x: 250, y: 100 }, C: { x: 400, y: 400 }, D: { x: 250, y: 400 } };
     const { ink, labels } = figure(P, ["ABCA", "BD"], { A: [-22, 10], C: [22, 10], D: [0, 26], B: [0, -26] });

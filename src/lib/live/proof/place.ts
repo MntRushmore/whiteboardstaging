@@ -25,15 +25,17 @@ export function proofRowsPlan(read: Pick<ProofRead, "statementX" | "reasonX" | "
   let t = 0;
   // the first new row's writing line: one pitch under the last row's, which is about its bottom
   let baseline = read.bottom + Math.max(read.rowPitch, 1.2 * read.lineHeight) + (opts.shift ?? 0) - 0.15 * read.lineHeight;
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    const s = planHandwriting([row.statement], { size: opts.size, seed: opts.seed + 2 * i });
-    const r = planHandwriting([row.reasonLatex], { size: opts.size, seed: opts.seed + 2 * i + 1 });
-    if (!s.plan || !r.plan || s.unsupported.length > 0 || r.unsupported.length > 0) return null;
-    // the reason column: never over the statement
-    const sPlaced = placeHandPlanOnBaseline(s.plan, { x: read.statementX, baselineY: baseline });
-    const reasonX = Math.max(read.reasonX, sPlaced.bounds.x + sPlaced.bounds.w + 0.8 * opts.size);
-    const rPlaced = placeHandPlanOnBaseline(r.plan, { x: reasonX, baselineY: baseline });
+  const planned = rows.map((row, i) => ({
+    s: planHandwriting([row.statement], { size: opts.size, seed: opts.seed + 2 * i }),
+    r: planHandwriting([row.reasonLatex], { size: opts.size, seed: opts.seed + 2 * i + 1 }),
+  }));
+  if (planned.some(({ s, r }) => !s.plan || !r.plan || s.unsupported.length > 0 || r.unsupported.length > 0)) return null;
+  // the reason column: never over a statement, and one column for all the rows written at once
+  const widest = Math.max(0, ...planned.map(({ s }) => placeHandPlanOnBaseline(s.plan!, { x: read.statementX, baselineY: 0 }).bounds.w));
+  const reasonX = Math.max(read.reasonX, read.statementX + widest + 0.8 * opts.size);
+  for (const { s, r } of planned) {
+    const sPlaced = placeHandPlanOnBaseline(s.plan!, { x: read.statementX, baselineY: baseline });
+    const rPlaced = placeHandPlanOnBaseline(r.plan!, { x: reasonX, baselineY: baseline });
     for (const placed of [sPlaced, rPlaced]) {
       for (const line of placed.lines) {
         lines.push({ ...line, startMs: t });

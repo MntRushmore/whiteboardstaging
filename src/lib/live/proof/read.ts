@@ -238,7 +238,9 @@ export function readProofs(lines: readonly BoardLine[]): ProofRead[] {
     const lead = [...stmtLines, ...(prove ? [prove] : []), ...givenLines];
     const statementX = stmtLines.length > 0 ? Math.min(...stmtLines.map((l) => l.bounds.x)) : (prove ?? given)!.bounds.x;
     const heights = [...stmtLines, ...reasonLines].map((l) => l.bounds.h);
-    const lineHeight = median(heights.length > 0 ? heights : lead.map((l) => l.bounds.h)) || lh;
+    // no rows yet: the Prove line is one line of writing; a Given can be two read as one (a second
+    // given indented under the first), and would double every size below
+    const lineHeight = median(heights.length > 0 ? heights : prove ? [prove.bounds.h] : lead.map((l) => l.bounds.h)) || lh;
     const widest = Math.max(0, ...stmtLines.map((l) => rightOf(l.bounds) - statementX));
     const reasonHeader = header.find((h) => /reason/i.test(h.latex));
     const reasonX =
@@ -246,7 +248,9 @@ export function readProofs(lines: readonly BoardLine[]): ProofRead[] {
         ? Math.min(...reasonLines.map((l) => l.bounds.x))
         : reasonHeader && reasonHeader.bounds.x > statementX + lineHeight
           ? reasonHeader.bounds.x
-          : statementX + Math.max(widest + 2.5 * lineHeight, 12 * lineHeight);
+          : // no reason column yet: past the widest statement (the rows written widen it further,
+            // `proofRowsPlan`), not so far right that it lands on a figure drawn beside the proof
+            statementX + Math.max(widest + 2.5 * lineHeight, 7 * lineHeight);
     const centers = groupRows.map((r) => centerY(rowRect(r)));
     const gaps = centers.slice(1).map((c, i) => c - centers[i]);
     const rowPitch = gaps.length > 0 ? median(gaps) : 1.8 * lineHeight;

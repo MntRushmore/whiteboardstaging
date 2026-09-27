@@ -164,7 +164,7 @@ export class ProofDesk {
       const problem = proofProblem(read);
       const diagram = diagramNear(diagrams, read.bounds, FIGURE_REACH);
       // the figure as its own ink reads (deterministic, free); the model's read only when there is none
-      const fromInk = diagram ? (this.inkFigure(diagram)?.model ?? null) : null;
+      const fromInk = diagram ? (this.inkFigure(diagram, pointNames(problem))?.model ?? null) : null;
       const fromModel = diagram && !fromInk ? (this.figures.get(figureCacheKey(diagram))?.model ?? null) : null;
       const figure = fromInk ?? fromModel;
       const figureFrom = fromInk ? ("ink" as const) : fromModel ? ("model" as const) : null;
@@ -196,10 +196,10 @@ export class ProofDesk {
    * and label read; null when the labels are not read yet, their rows do not match the labels one
    * to one, or nothing readable comes out.
    */
-  private inkFigure(d: Diagram): { read: FigureReadWire; model: FigureModel } | null {
+  private inkFigure(d: Diagram, names: readonly string[]): { read: FigureReadWire; model: FigureModel } | null {
     const reads = this.host.labelReads(d);
     if (!reads || reads.length !== d.labels.length) return null;
-    const key = `${figureCacheKey(d)}|${reads.join("\u0001")}`;
+    const key = `${figureCacheKey(d)}|${reads.join("\u0001")}|${names.join("")}`;
     const known = this.inkFigures.get(key);
     if (known !== undefined) return known;
     const bounds = (ids: readonly string[]): Rect => {
@@ -209,7 +209,7 @@ export class ProofDesk {
       return { x: x0, y: y0, w: Math.max(...ink.map((s) => s.bounds.x + s.bounds.w)) - x0, h: Math.max(...ink.map((s) => s.bounds.y + s.bounds.h)) - y0 };
     };
     const labels = d.labels.map((ids, i) => ({ text: reads[i], bounds: bounds(ids) })).filter((l) => Number.isFinite(l.bounds.x));
-    const read = figureFromInk(this.host.ink(d.strokeIds), labels, this.host.glyph());
+    const read = figureFromInk(this.host.ink(d.strokeIds), labels, this.host.glyph(), names);
     const out = read ? { read: read as FigureReadWire, model: buildFigure(read) } : null;
     this.inkFigures.set(key, out);
     return out;
@@ -363,7 +363,7 @@ export class ProofDesk {
       .map((r) => ({ statement: (r.statement ?? r.merged)?.latex ?? "", reason: r.reason?.latex ?? "" }))
       .filter((r) => r.statement);
     // what the figure shows, as read (its ink first, the model's read otherwise)
-    const figure = view.diagram ? (this.inkFigure(view.diagram)?.read ?? this.figures.get(figureCacheKey(view.diagram))?.read) : undefined;
+    const figure = view.diagram ? (this.inkFigure(view.diagram, pointNames(view.problem))?.read ?? this.figures.get(figureCacheKey(view.diagram))?.read) : undefined;
     const crop = view.diagram ? await this.host.crop(view.diagram) : undefined;
     if (signal.aborted) return null;
     const res = await this.host.call(
@@ -389,4 +389,11 @@ export class ProofDesk {
     if (verdict?.verdict !== "ok") return null;
     return [{ facts: statement.facts, statement: written, reason, reasonLatex: reasonLatex(reason) }];
   }
+}
+
+/** The points a proof speaks of: every single capital in its parsed givens, prove and rows. */
+function pointNames(problem: ProofProblem): string[] {
+  const names = new Set<string>();
+  for (const m of JSON.stringify([problem.givens, problem.prove, problem.rows]).matchAll(/"([A-Z])"/g)) names.add(m[1]);
+  return [...names].sort();
 }
