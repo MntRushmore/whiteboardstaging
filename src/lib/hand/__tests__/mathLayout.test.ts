@@ -342,15 +342,15 @@ describe("layoutMath — fences and boxes", () => {
 });
 
 describe("layoutMath — unsupported reporting", () => {
-  it("refuses to pretend it can draw a sum", () => {
-    const layout = layoutMath("\\sum_{i=1}^{n} i", { seed: 5 });
-    expect(layout.unsupported).toContain("\\sum");
+  it("refuses to pretend it can draw a symbol it has no pen for", () => {
+    const layout = layoutMath("\\zeta(2) = \\frac{\\pi^{2}}{6}", { seed: 5 });
+    expect(layout.unsupported).toContain("\\zeta");
   });
 
-  it("refuses to pretend it can draw a matrix", () => {
-    const layout = layoutMath("\\begin{pmatrix}1 & 2 \\\\ 3 & 4\\end{pmatrix}", { seed: 5 });
+  it("refuses to pretend it can lay out an environment it does not know", () => {
+    const layout = layoutMath("\\begin{tikzcd} A \\arrow{r} & B \\end{tikzcd}", { seed: 5 });
     expect(layout.unsupported.length).toBeGreaterThan(0);
-    expect(layout.unsupported[0]).toContain("\\begin{pmatrix}");
+    expect(layout.unsupported[0]).toContain("\\begin{tikzcd}");
   });
 
   it("reports an unknown command and an undrawable character once each", () => {
