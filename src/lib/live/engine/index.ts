@@ -600,7 +600,8 @@ export function createEngine(mod: MathModule): LiveEngine {
     if (!m || ctx.previous?.kind !== "expression" || !ctx.previous.math) return null;
     const rest = cleaned.slice(m[0].length).trim();
     if (!rest || splitRelations(rest).ops.length > 0 || preClassify(rest).kind !== null) return null;
-    return analyzeExpression(rest, ctx, false);
+    // the student's own step: checked, never finished for them
+    return { ...analyzeExpression(rest, ctx, false), resultLatex: "" };
   };
 
   // --- entry points --------------------------------------------------------
