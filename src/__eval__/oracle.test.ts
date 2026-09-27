@@ -179,7 +179,8 @@ describe("eval corpus", () => {
     }
   });
 
-  it("every expected answer really solves its problem", () => {
+  // checks every corpus problem (1.7 s alone): generous under a loaded full-suite run
+  it("every expected answer really solves its problem", { timeout: 30_000 }, () => {
     const problems: string[] = [];
     const unchecked: string[] = [];
     for (const p of CORPUS) {
