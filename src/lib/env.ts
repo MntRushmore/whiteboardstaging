@@ -48,6 +48,7 @@ const envSchema = z.object({
   LIVE_MODEL_SETUP: optionalString,
   LIVE_MODEL_REREAD: optionalString,
   LIVE_MODEL_FIGURE: optionalString,
+  LIVE_MODEL_PROOF: optionalString,
 
   // Billing (all optional; see docs/ARCHITECTURE.md "Billing").
   BILLING_ENFORCE: optionalString,
@@ -137,6 +138,9 @@ export type LiveModels = {
   /** setup from a hand-drawn figure (POST /api/live/setup with a crop): a vision model */
   figure: string;
   figureFallback: string;
+  /** two-column proofs (POST /api/live/proof): a proof's figure read, a next row the planner could not find */
+  proof: string;
+  proofFallback: string;
 };
 
 /** The fallback for `primary`: never the primary itself (an override equal to the fallback swaps the two). */
@@ -145,7 +149,7 @@ function fallbackFor(primary: string, defaultPrimary: string, defaultFallback: s
 }
 
 /**
- * Model ids used by the Live Math routes. `LIVE_MODEL_CHECK/SOLVE/VISION/SETUP/REREAD/FIGURE`
+ * Model ids used by the Live Math routes. `LIVE_MODEL_CHECK/SOLVE/VISION/SETUP/REREAD/FIGURE/PROOF`
  * override the primaries; the fallbacks always come from LIVE_MODELS (a fallback equal to the
  * primary would be pointless, so an override that matches a fallback swaps the two).
  */
@@ -156,6 +160,7 @@ export function getLiveModels(): LiveModels {
   const setup = env.LIVE_MODEL_SETUP || LIVE_MODELS.setup;
   const reread = env.LIVE_MODEL_REREAD || LIVE_MODELS.reread;
   const figure = env.LIVE_MODEL_FIGURE || LIVE_MODELS.figure;
+  const proof = env.LIVE_MODEL_PROOF || LIVE_MODELS.proof;
   return {
     check,
     checkFallback: fallbackFor(check, LIVE_MODELS.check, LIVE_MODELS.checkFallback),
@@ -168,6 +173,8 @@ export function getLiveModels(): LiveModels {
     rereadFallback: fallbackFor(reread, LIVE_MODELS.reread, LIVE_MODELS.rereadFallback),
     figure,
     figureFallback: fallbackFor(figure, LIVE_MODELS.figure, LIVE_MODELS.figureFallback),
+    proof,
+    proofFallback: fallbackFor(proof, LIVE_MODELS.proof, LIVE_MODELS.proofFallback),
   };
 }
 

@@ -520,6 +520,14 @@ export const LIVE_MODELS = {
   /** setup from a hand-drawn figure (a crop): the reread's vision pair, which already reads the student's ink well */
   figure: "google/gemini-3.1-flash-lite",
   figureFallback: "anthropic/claude-haiku-4.5",
+  /**
+   * Two-column proofs (POST /api/live/proof, `src/lib/live/proof`): reading a proof's figure (which
+   * points lie on which lines) and, when the engine's planner cannot finish a proof, one next row —
+   * which the client's checker must tick before it is written. The setup pair: US primary, the
+   * cheapest capable fallback from another provider; both read images.
+   */
+  proof: "openai/gpt-5.4-mini",
+  proofFallback: "deepseek/deepseek-v4.1-flash",
 } as const;
 
 /** Per-user limits for the live routes (the existing LIMITS table in src/lib/server/rate-limit.ts covers the legacy routes). */
@@ -531,6 +539,8 @@ export const LIVE_RATE_LIMITS = {
   liveSetup: { limit: 10, windowMs: 60_000 },
   /** only on a suspicious read, at most once per ink; a quarter of the recognize budget is ample */
   liveReread: { limit: 30, windowMs: 60_000 },
+  /** a proof's figure read (once per figure) and a next row when the planner cannot finish: two per ask at most */
+  liveProof: { limit: 20, windowMs: 60_000 },
 } as const;
 export type LiveRateLimitRoute = keyof typeof LIVE_RATE_LIMITS;
 
