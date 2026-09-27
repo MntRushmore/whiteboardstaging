@@ -386,6 +386,12 @@ export function quadraticAnswer(deps: CourseDeps, lines: readonly string[]): Sol
   }
 }
 
+/** The line is this quadratic again, rewritten (the same a, b and c). */
+export function sameQuadratic(deps: CourseDeps, latex: string, quad: Quadratic): boolean {
+  const other = quadraticOf(deps, latex);
+  return other !== null && eq(other.a, quad.a) && eq(other.b, quad.b) && eq(other.c, quad.c);
+}
+
 /** A form of the quadratic asked for above the line (a template or its word): the form, or null. */
 export function quadraticFormAbove(lines: readonly string[]): QuadraticAsk | null {
   for (const l of lines) {

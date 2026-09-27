@@ -36,10 +36,10 @@ import { formulaAnswer } from "./formulas";
 import { sequenceAnswer, sigmaSteps } from "./sequences";
 import { radicalSteps } from "./radicalExpr";
 import { checkClaim, definitionFromMath, definitionOf, definitionsIn, evaluateCalls, hasFunctionCall, inverseOf, solveFunctionEquation } from "./functionNotation";
-import { isLineInXY, lineFormAbove, lineFormAnalysis, lineFormAnswer, lineFromColumn, lineIn, pointsOn, slopeIntercept } from "./linearFunctions";
+import { isLineInXY, lineFormAbove, lineFormAnalysis, lineFormAnswer, lineFormAsked, lineFromColumn, lineIn, pointsOn, sameLine, slopeIntercept } from "./linearFunctions";
 import { solveForLetter } from "./literalEquations";
 import { isStatisticClaim, statisticsAnalysis, statisticsAnswer } from "./statistics";
-import { quadraticAnalysis, quadraticAnswer, quadraticFormAbove, quadraticIn, quadraticOf } from "./quadraticForms";
+import { quadraticAnalysis, quadraticAnswer, quadraticAsk, quadraticFormAbove, quadraticIn, quadraticOf, sameQuadratic } from "./quadraticForms";
 
 export type Refuse = "refuse";
 
@@ -73,14 +73,16 @@ export function createCourses(deps: CourseDeps): Courses {
   /**
    * A form asked for above the target (`Ax + By = C`, `y = a(x - h)^{2} + k`, `\text{standard
    * form}`) and the target is that line / quadratic: its working, or "refuse" when it is already
-   * in that form (nothing to write — and not a system of the lines above).
+   * in that form (nothing to write — and not a system of the lines above). Only when every other
+   * line or quadratic above is the target rewritten: two different lines are a system.
    */
   const formAbove = (target: string, above: readonly string[]): Solved | Refuse | null => {
+    const others = above.filter((l) => !lineFormAsked(l) && !quadraticAsk(l) && (isLineInXY(deps, l) || quadraticOf(deps, l) !== null));
     const quadForm = quadraticFormAbove(above);
     const quad = quadForm ? quadraticOf(deps, target) : null;
-    if (quadForm && quad) return quadraticIn(deps, quad, quadForm, target) ?? "refuse";
+    if (quadForm && quad) return others.every((l) => sameQuadratic(deps, l, quad)) ? (quadraticIn(deps, quad, quadForm, target) ?? "refuse") : null;
     const lineForm = lineFormAbove(above);
-    if (lineForm && isLineInXY(deps, target)) return lineIn(deps, target, lineForm) ?? "refuse";
+    if (lineForm && isLineInXY(deps, target)) return others.every((l) => sameLine(deps, l, target)) ? (lineIn(deps, target, lineForm) ?? "refuse") : null;
     return null;
   };
 

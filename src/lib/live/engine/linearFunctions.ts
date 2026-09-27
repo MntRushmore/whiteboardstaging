@@ -304,6 +304,28 @@ export function isLineInXY(deps: CourseDeps, latex: string): boolean {
   return all.some((t) => t.vars.x === 1) && all.some((t) => t.vars.y === 1);
 }
 
+/** Two equations are the same line (`y = 2x - 1`, `-2x + y = -1`): their Ax + By = C proportional. */
+export function sameLine(deps: CourseDeps, a: string, b: string): boolean {
+  const abc = (latex: string): Q[] | null => {
+    const s = linearSides(deps, latex);
+    if (!s) return null;
+    const sum = (ts: Term[], pick: (t: Term) => boolean) => ts.filter(pick).reduce((acc, t) => qAdd(acc, t.c), q(0));
+    const isX = (t: Term) => t.vars.x === 1;
+    const isY = (t: Term) => t.vars.y === 1;
+    const isNumber = (t: Term) => Object.keys(t.vars).length === 0;
+    return exactly(() => [qAdd(sum(s.TL, isX), qNeg(sum(s.TR, isX))), qAdd(sum(s.TL, isY), qNeg(sum(s.TR, isY))), qAdd(sum(s.TR, isNumber), qNeg(sum(s.TL, isNumber)))]);
+  };
+  const u = abc(a);
+  const v = abc(b);
+  if (!u || !v) return false;
+  return (
+    exactly(() => {
+      for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++) if (!qIsZero(qAdd(qMul(u[i], v[j]), qNeg(qMul(u[j], v[i]))))) return false;
+      return true;
+    }) ?? false
+  );
+}
+
 /**
  * A linear equation in x and y written in standard form `Ax + By = C` — whole numbers, A > 0 (B > 0
  * when there is no x term), no common factor — the way a teacher does it: brackets expanded,

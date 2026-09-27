@@ -71,6 +71,13 @@ describe("standard form Ax + By = C, round by round", () => {
     expect(solveIn(["2x + 3y = 6", "y = ?"]).steps).toEqual(["3y = -2x + 6", "y = -\\frac{2}{3}x + 2"]);
   });
 
+  it("a form asked above two different lines is a system's heading: the system is still solved", () => {
+    expect(solveIn(["\\text{standard form}", "x + y = 10", "x - y = 2"]).steps.slice(-2)).toEqual(["y = 10 - 6", "y = 4"]);
+    expect(solveIn(["Ax + By = C", "y = 2x + 1", "y = -x + 4"]).steps.slice(-2)).toEqual(["y = 2(1) + 1", "y = 3"]);
+    // a slope and a point above are not a second line
+    expect(solveIn(["m = 2", "(1, 3)", "Ax + By = C", "y - 3 = 2(x - 1)"]).steps).toEqual(["y - 3 = 2x - 2", "-2x + y = 1", "2x - y = -1"]);
+  });
+
   it("writes nothing when the line is already in the form asked for (and not a system of the lines above)", () => {
     expect(solveIn(["2x + 3y = 6", "Ax + By = C"]).source).toBeNull();
     expect(solveIn(["y = -\\frac{2}{3}x + 2", "Ax + By = C", "3y = -2x + 6", "2x + 3y = 6"]).source).toBeNull();

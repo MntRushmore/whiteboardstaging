@@ -63,6 +63,8 @@ describe("vertex form by completing the square", () => {
     expect(solveIn(["y = x^{2} + 6x + 5", "y = a(x - h)^{2} + k", "y = (x^{2} + 6x + 9) - 9 + 5"]).steps).toEqual(["y = (x + 3)^{2} - 4"]);
     // already in vertex form: nothing to write
     expect(solveIn(["y = a(x - h)^{2} + k", "y = (x + 3)^{2} - 4"]).source).toBeNull();
+    // a parabola and a line under the template are a system: solved as one
+    expect(solveIn(["y = a(x - h)^{2} + k", "y = x^{2}", "y = 2x + 3"]).steps.at(-1)).toBe("y = 1, \\ y = 9");
   });
 });
 
