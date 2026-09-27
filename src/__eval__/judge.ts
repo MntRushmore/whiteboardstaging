@@ -386,7 +386,8 @@ function compareRelations(prev: Relation, cur: Relation, candidates: number[], c
     if (sameRoots(rs.roots, edges, setTol(prev, cur))) return { status: "ok", reason: "the critical values" };
     return { status: "broken", reason: `critical values ${rootsText(rs)}, the inequality turns at {${edges.map(fmtNumber).join(", ")}}` };
   }
-  if (isEquation(prev) && isInequality(cur) && lastIneq && lastIneq.vars.length === 1 && lastIneq.vars[0] === v) return asInequality(lastIneq);
+  // after the critical values (an equation) or an excluded value (`x \neq -1`): against the last inequality
+  if (!isInequality(prev) && isInequality(cur) && lastIneq && lastIneq.vars.length === 1 && lastIneq.vars[0] === v) return asInequality(lastIneq);
   return { status: "unverified", reason: "an equation and an inequality" };
 }
 
