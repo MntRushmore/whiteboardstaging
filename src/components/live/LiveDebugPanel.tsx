@@ -73,6 +73,7 @@ function LineCard({ state, record }: { state: LiveLineState; record: LiveDebugRe
             <Row k="rotated" v={<span className="text-red-700">{raw.auto_rotate_degrees}° (Mathpix turned the ink)</span>} />
           )}
           {record && <Row k="recognize kind" v={record.response.kind} />}
+          {record?.reread && <SecondReader reread={record.reread} />}
         </div>
       </div>
 
@@ -95,6 +96,29 @@ function LineCard({ state, record }: { state: LiveLineState; record: LiveDebugRe
         </details>
       )}
     </section>
+  );
+}
+
+/**
+ * Both reads, when the second reader was asked: what Mathpix said, what the second reader said,
+ * why it was asked, and whether its read replaced Mathpix's on the board.
+ */
+function SecondReader({ reread }: { reread: NonNullable<LiveDebugRecord["reread"]> }) {
+  const verdict = reread.error
+    ? `no answer: ${reread.error}`
+    : reread.accepted
+      ? "used (replaced Mathpix's read)"
+      : reread.latex && reread.latex !== reread.mathpix
+        ? "ignored (did not parse, had words, or changed too much)"
+        : "agreed with Mathpix";
+  return (
+    <div className="mt-1 rounded border border-sky-200 bg-sky-50 p-1 dark:border-sky-900 dark:bg-sky-950">
+      <Row k="mathpix read" v={<code className="break-all">{reread.mathpix}</code>} />
+      <Row k="second reader" v={<code className="break-all">{reread.latex || "—"}</code>} />
+      <Row k="why asked" v={reread.signal} />
+      <Row k="outcome" v={<span className={reread.accepted ? "text-emerald-700" : "text-slate-600"}>{verdict}</span>} />
+      {reread.model ? <Row k="model" v={`${reread.model}${reread.ms !== undefined ? ` · ${Math.round(reread.ms)} ms` : ""}`} /> : null}
+    </div>
   );
 }
 

@@ -44,6 +44,10 @@ import {
   type RecognizeRequest,
   type RecognizeResponse,
   type Rect,
+  type RereadRequest,
+  type RereadResponse,
+  type SetupRequest,
+  type SetupResponse,
   type SolveRequest,
   type UseLiveMathOptions,
 } from "./contracts";
@@ -61,8 +65,11 @@ import {
   type LiveErrorKind,
 } from "./liveStore";
 import { scheduleLiveWrite } from "./liveWrite";
-import { recordRecognition } from "./liveDebug";
+import { recordReread, recordRecognition } from "./liveDebug";
 import { localSolve } from "./localSolve";
+import { requestReread, requestSetup, type CallOptions } from "./modelCalls";
+import { acceptReread, rereadTrigger } from "./readCheck";
+import { isProblemProse, setupBlock, validateSetupLines, wordProblemKey } from "./wordProblem";
 import { markKey, markStrokes, ringRect, type MarkKind } from "./marks";
 import { readScreenMeta } from "@/lib/screens/screens";
 import { getLiveSettings } from "./liveSettings";
@@ -147,6 +154,10 @@ export interface LiveLoopDeps {
   handwritingEnabled: () => boolean;
   /** prefers-reduced-motion: the finished handwriting appears with no reveal animation */
   reducedMotion: () => boolean;
+  /** POST /api/live/setup: a word problem's equations, which the local engine then solves */
+  setup: (req: SetupRequest, opts: CallOptions) => Promise<SetupResponse>;
+  /** POST /api/live/reread: the second reader's LaTeX for one suspicious line */
+  reread: (req: RereadRequest, opts: CallOptions) => Promise<RereadResponse>;
 }
 
 interface LineRuntime {
@@ -175,6 +186,8 @@ type CheckOpts = {
   forceHint?: boolean;
 };
 type SolveOpts = { onlyFirstStep?: boolean; lineId: string };
+/** A column as `buildCheckLines` returns it: the lines with a read, their check payload, the region. */
+type BuiltColumn = { lines: CheckLine[]; region: Rect; states: LiveLineState[] };
 
 /** What `retryLastError` re-runs; captured at the moment a call fails. */
 type RetryContext =
@@ -325,6 +338,8 @@ function defaultDeps(): LiveLoopDeps {
     handwritingEnabled: () => getLiveSettings().handwriting,
     reducedMotion: () =>
       hasWindow && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    setup: (req, opts) => requestSetup(req, opts),
+    reread: (req, opts) => requestReread(req, opts),
   };
 }
 
@@ -377,6 +392,14 @@ export class LiveLoop implements LiveController {
   private writer: HandWriter | null = null;
   /** any answer ink on the page at all; kept by `recount` so the common render costs nothing */
   private hasAnswerInk = false;
+  /**
+   * The second reader, per ink version (payload hash): absent = never asked, null = asked and
+   * Mathpix's read stands, a string = its read replaced Mathpix's. Asked at most once per ink;
+   * the same ink read again (from the recognition cache) gets the accepted read straight away.
+   */
+  private readonly rereads = new Map<string, string | null>();
+  /** second readings in flight, aborted with the rest of the runtime */
+  private readonly rereadAborts = new Set<AbortController>();
   private lastOnline: boolean | null = null;
   private lastTouchedLineId: string | null = null;
   private started = false;
@@ -489,6 +512,8 @@ export class LiveLoop implements LiveController {
       if (r.unreadableTimer) clearTimeout(r.unreadableTimer);
       if (r.idleTimer) clearTimeout(r.idleTimer);
     }
+    for (const ctrl of this.rereadAborts) ctrl.abort();
+    this.rereadAborts.clear();
     this.rt.clear();
     this.dirtyStrokeIds.clear();
     this.forceRecognize.clear();
@@ -1014,9 +1039,13 @@ export class LiveLoop implements LiveController {
       const res = await this.recognizeWithCropFallback(line, req, hash);
       if (rt.processing !== ticket) return;
       recordRecognition({ lineId, at: this.deps.now(), sent: { ...req.strokes, ...req.bounds }, cached, response: res });
-      await this.applyRecognition(lineId, res);
+      // This very ink was read again before and the second reader's read was taken: use it now.
+      const reread = this.rereads.get(hash) ?? null;
+      await this.applyRecognition(lineId, res, reread);
       this.noteSuccess("recognize", lineId);
       clientMetric("live.echo.total.ms", { ms: this.deps.now() - startedAt, provider: res.provider, lineId });
+      // After the read is on the board: a read that looks wrong goes to the second reader.
+      if (!reread) void this.secondRead({ ...line, hash }, res);
     } catch (err) {
       if (isAbortLike(err) && !(err instanceof RecognizeTimeoutError)) return;
       if (rt.processing !== ticket) return;
@@ -1180,11 +1209,91 @@ export class LiveLoop implements LiveController {
     return this.engine;
   }
 
-  private async applyRecognition(lineId: string, res: RecognizeResponse): Promise<void> {
+  private async applyRecognition(lineId: string, res: RecognizeResponse, reread: string | null = null): Promise<void> {
     const state = liveStore.lines.get()[lineId];
     if (!state) return;
-    setLine(lineId, { latex: res.latex, confidence: res.confidence, provider: res.provider });
+    if (reread) setLine(lineId, { latex: reread, confidence: Math.max(res.confidence, LIVE_LIMITS.minConfidence), provider: "reread" });
+    else setLine(lineId, { latex: res.latex, confidence: res.confidence, provider: res.provider });
     await this.ensureEngine();
+    this.analyzeAndRender(lineId, { cascade: true });
+  }
+
+  // ---------------------------------------------------------------- the second reader
+  /** The column's other lines with a read, above and below this one, top to bottom. */
+  private columnNeighbours(state: LiveLineState): { above: string[]; below: string[] } {
+    const col = this.columnLines(state.line.column).filter((s) => s.line.id !== state.line.id && s.latex);
+    return {
+      above: col.filter((s) => s.line.row < state.line.row).map((s) => s.latex),
+      below: col.filter((s) => s.line.row >= state.line.row).map((s) => s.latex),
+    };
+  }
+
+  /**
+   * The second reader (`/api/live/reread`). Mathpix's read is already on the board; when it looks
+   * wrong (`rereadTrigger`: the engine cannot read it, a symbol is implausible in its column, or
+   * Mathpix was unsure), a crop of the ink goes to a vision model with that read and the column.
+   * Its answer replaces Mathpix's only when `acceptReread` says so. Once per ink version, whatever
+   * the outcome; never offline; never for a read that is not Mathpix's; silent when it fails.
+   */
+  private async secondRead(line: InkLine, res: RecognizeResponse): Promise<void> {
+    const engine = this.engine;
+    const hash = line.hash;
+    if (!engine || !hash || res.provider !== "mathpix" || this.rereads.has(hash) || !this.deps.isOnline()) return;
+    const lineId = line.id;
+    const state = liveStore.lines.get()[lineId];
+    if (!state || state.latex !== res.latex) return;
+    const { above, below } = this.columnNeighbours(state);
+    const signal = rereadTrigger({
+      latex: res.latex,
+      confidence: res.confidence,
+      analysis: state.analysis,
+      strokeCount: line.strokeIds.length,
+      others: [...above, ...below],
+    });
+    if (!signal) return;
+    this.rereads.set(hash, null);
+    while (this.rereads.size > LIVE_LIMITS.cacheEntries) this.rereads.delete(this.rereads.keys().next().value as string);
+    // the line must still read this way when the answer lands: new ink or a retype wins
+    const current = () => {
+      const cur = liveStore.lines.get()[lineId];
+      return Boolean(cur && cur.line.hash === hash && cur.latex === res.latex);
+    };
+    const record = (r: Omit<Parameters<typeof recordReread>[1], "signal" | "mathpix">) => recordReread(lineId, { signal, mathpix: res.latex, ...r });
+
+    const crop = await this.captureCrop(line);
+    if (!crop) {
+      record({ latex: "", accepted: false, error: "no crop" });
+      return;
+    }
+    if (!current()) return;
+    const ctrl = new AbortController();
+    this.rereadAborts.add(ctrl);
+    let reply: RereadResponse;
+    try {
+      reply = await this.deps.reread({ boardId: this.opts.boardId, lineId, crop, latex: res.latex, above, below }, { signal: ctrl.signal });
+    } catch (err) {
+      if (ctrl.signal.aborted) this.rereads.delete(hash);
+      else record({ latex: "", accepted: false, error: err instanceof Error ? err.message : String(err) });
+      clientMetric("live.reread.failed", { signal, lineId });
+      return;
+    } finally {
+      this.rereadAborts.delete(ctrl);
+    }
+    const accepted = acceptReread(engine, res.latex, reply.latex);
+    record({ latex: reply.latex, accepted: Boolean(accepted), model: reply.model, ms: reply.ms });
+    clientMetric("live.reread", { signal, accepted: Boolean(accepted), ms: reply.ms, lineId });
+    if (!accepted || !current() || !this.started) return;
+    this.rereads.set(hash, accepted);
+    this.applyReread(lineId, accepted, res.confidence);
+  }
+
+  /** The second reader's read replaces Mathpix's: re-analysed and re-rendered like any new read. */
+  private applyReread(lineId: string, latex: string, confidence: number): void {
+    const rt = this.runtime(lineId);
+    // a "couldn't read this" chip waiting for the low-confidence read is not wanted any more
+    if (rt.unreadableTimer) clearTimeout(rt.unreadableTimer);
+    rt.unreadableTimer = null;
+    setLine(lineId, { latex, provider: "reread", confidence: Math.max(confidence, LIVE_LIMITS.minConfidence) });
     this.analyzeAndRender(lineId, { cascade: true });
   }
 
@@ -2002,6 +2111,125 @@ export class LiveLoop implements LiveController {
       this.deferLlm("solve", opts.lineId);
       return;
     }
+    // A word problem: a model sets it up, the engine solves the setup (`startSetup`); the worked
+    // solution from the solve model is only the fallback.
+    if (this.wordProblemLines(built, opts)) {
+      this.startSetup(built, fromLineId, opts);
+      return;
+    }
+    this.openSolveStream(built, fromLineId, opts);
+  }
+
+  /**
+   * The problem's lines — the column down to the asked-for line — when they are a word problem
+   * (a line of prose that reads like a sentence), else null.
+   */
+  private wordProblemLines(built: { states: LiveLineState[] }, opts: SolveOpts): string[] | null {
+    const idx = built.states.findIndex((s) => s.line.id === opts.lineId);
+    const upto = idx === -1 ? built.states : built.states.slice(0, idx + 1);
+    return upto.some((s) => isProblemProse(s)) ? upto.map((s) => s.latex) : null;
+  }
+
+  /**
+   * Solve on a word problem: `/api/live/setup` writes the equations (LaTeX only), the local
+   * engine solves them (`localSolve`), and the tutor writes the setup followed by the engine's
+   * steps as ONE block under the problem — by hand, typeset where the hand lacks a glyph. A setup
+   * that fails, does not validate (`validateSetupLines`) or that the engine cannot solve falls
+   * back to the worked solution from `/api/live/solve`. A problem already worked out on the page
+   * (`meta.solvedLatex` is the problem itself) costs nothing the second time.
+   */
+  private startSetup(built: BuiltColumn, fromLineId: string | undefined, opts: SolveOpts): void {
+    const engine = this.engine;
+    const problem = this.wordProblemLines(built, opts) ?? built.states.map((s) => s.latex);
+    const key = wordProblemKey(problem);
+    if (!opts.onlyFirstStep && this.hasHandSolution(opts.lineId, key)) return;
+    // Nothing to check the setup with, or no room to write it: the worked solution, as before.
+    if (!engine || liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) {
+      this.openSolveStream(built, fromLineId, opts);
+      return;
+    }
+    const rt = this.runtime(opts.lineId);
+    rt.solveAbort?.abort();
+    const ctrl = new AbortController();
+    rt.solveAbort = ctrl;
+    const errCtx = { kind: "solve" as const, lineId: opts.lineId, userAsked: true };
+    const retry: RetryContext = { kind: "solve", lineId: opts.lineId, fromLineId, opts };
+    const startedAt = this.deps.now();
+    liveStore.status.set("checking");
+    liveStore.solving.set(liveStore.solving.get() + 1);
+    void (async () => {
+      /** written: the block is on the page; fallback: ask the solve model; stop: nothing more */
+      let outcome: "written" | "fallback" | "stop" = "fallback";
+      let reason = "";
+      try {
+        const res = await this.deps.setup({ boardId: this.opts.boardId, lines: problem }, { signal: ctrl.signal });
+        if (ctrl.signal.aborted || !this.started) {
+          outcome = "stop";
+        } else {
+          const setup = validateSetupLines(engine, res.lines, problem);
+          if (!setup) reason = "invalid";
+          else if (this.writeSetupSolution(engine, built, opts, setup, key)) outcome = "written";
+          else reason = "unsolved";
+        }
+      } catch (err) {
+        if (ctrl.signal.aborted || isAbortLike(err)) {
+          outcome = "stop";
+        } else if (this.isNetworkFailure(err)) {
+          // the same deferral as a solve that could not reach the network
+          outcome = "stop";
+          this.deferLlm("solve", opts.lineId);
+        } else if (isApiError(err) && (err.code === "unauthorized" || err.code === "credits_exhausted" || err.code === "rate_limited")) {
+          // not the setup's fault: the solve route would say exactly the same
+          outcome = "stop";
+          this.fail(err, errCtx, retry);
+        } else {
+          reason = "failed";
+          console.warn("[live] setup failed; asking for the worked solution", err);
+        }
+      } finally {
+        if (rt.solveAbort === ctrl) rt.solveAbort = null;
+        liveStore.solving.set(Math.max(0, liveStore.solving.get() - 1));
+      }
+      clientMetric("live.setup", { outcome, reason, ms: this.deps.now() - startedAt, lineId: opts.lineId });
+      if (outcome === "fallback" && !ctrl.signal.aborted && this.started) {
+        this.openSolveStream(built, fromLineId, opts);
+        return;
+      }
+      if (outcome === "written") this.noteSuccess("solve", opts.lineId);
+      if (liveStore.status.get() !== "offline") liveStore.status.set("idle");
+    })();
+  }
+
+  /**
+   * Solves a validated setup with the local engine and writes setup + steps as one block.
+   * False when the engine cannot solve it (nothing is written; the caller falls back).
+   */
+  private writeSetupSolution(engine: LiveEngine, built: { states: LiveLineState[] }, opts: SolveOpts, setup: string[], key: string): boolean {
+    const state = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
+    if (!state) return false;
+    const hand = this.deps.handwritingEnabled();
+    // Every local path may answer here, `solveLatex` included whatever the hand can draw: the block
+    // is written by hand when it can be and typeset when it cannot (`drawStepsByHand` decides),
+    // but an answer the engine has is never traded for a model's.
+    const solved = localSolve(engine, setup, undefined, { handwriting: true });
+    if (!solved.source) return false;
+    const block = setupBlock(setup, solved.steps, opts.onlyFirstStep);
+    // A new solution replaces the last one for this work; it never stacks beside it.
+    this.clearSolveOutput(built.states);
+    const meta = opts.onlyFirstStep ? undefined : { [SOLVED_META]: key };
+    if (hand && this.drawStepsByHand(built, opts, state, block, meta)) {
+      clientMetric("live.setup.hand", { lineId: opts.lineId, source: solved.source, lines: block.length });
+      return true;
+    }
+    const lastLine = built.states[built.states.length - 1].line.bounds;
+    const column = unionRects(built.states.map((s) => s.line.bounds));
+    block.forEach((step, i) => this.placeSolutionStep(column, lastLine, i + 1, step, "", opts.lineId, meta));
+    clientMetric("live.setup.typeset", { lineId: opts.lineId, source: solved.source, lines: block.length });
+    return true;
+  }
+
+  /** `/api/live/solve`: the model's worked solution, checked step by step, written when the stream ends. */
+  private openSolveStream(built: BuiltColumn, fromLineId: string | undefined, opts: SolveOpts): void {
     const rt = this.runtime(opts.lineId);
     rt.solveAbort?.abort();
     const ctrl = new AbortController();
@@ -2277,7 +2505,7 @@ export class LiveLoop implements LiveController {
     return err instanceof TypeError || !this.deps.isOnline();
   }
 
-  private placeSolutionStep(column: Rect, lastLine: Rect, index: number, latex: string, explanation: string, lineId: string): void {
+  private placeSolutionStep(column: Rect, lastLine: Rect, index: number, latex: string, explanation: string, lineId: string, extraMeta?: JsonObject): void {
     this.write(() => {
       if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return;
       const rect = keepOnScreen(
@@ -2304,7 +2532,7 @@ export class LiveLoop implements LiveController {
             lineId,
             anchorIds: [],
           },
-          meta: makeMeta("ai", lineId, this.deps.now()),
+          meta: { ...makeMeta("ai", lineId, this.deps.now()), ...extraMeta },
         } satisfies TLShapePartial<MathShape>,
       ]);
     });
@@ -2654,17 +2882,6 @@ export function normalizeStep(latex: string): string {
     .replace(/\\cdot|\\times|\*/g, "");
 }
 
-/** Words a line of prose must have before it reads as a question rather than a scrap. */
-export const WORD_PROBLEM_MIN_WORDS = 4;
-
-/** Words in recognized prose: `\text{...}` unwrapped, other commands and braces dropped. */
-export function proseWordCount(latex: string): number {
-  const plain = latex
-    .replace(/\\(?:text|mathrm|textrm|textbf|mathbf|operatorname)\s*\{([^{}]*)\}/g, " $1 ")
-    .replace(/\\[a-zA-Z]+/g, " ")
-    .replace(/[{}]/g, " ");
-  return (plain.match(/[A-Za-z0-9]+/g) ?? []).length;
-}
 
 /**
  * Ink Live has nothing to reason about as maths: it could not be read (failed or
@@ -2677,7 +2894,7 @@ export function needsLook(state: Pick<LiveLineState, "latex" | "confidence" | "a
   if (!state.latex.trim()) return true;
   if (state.confidence < LIVE_LIMITS.minConfidence) return true;
   if (state.analysis?.kind === "label") return true;
-  if (state.analysis?.kind === "text" && proseWordCount(state.latex) < WORD_PROBLEM_MIN_WORDS) return true;
+  if (state.analysis?.kind === "text" && !isProblemProse(state)) return true;
   return isSingleSymbolLatex(state.latex);
 }
 

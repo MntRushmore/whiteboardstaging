@@ -11,12 +11,15 @@ import {
   type LiveSseEvent,
   type MathShapeProps,
   type RecognizeResponse,
+  type RereadRequest,
+  type SetupRequest,
   type SolveRequest,
   type SolveStep,
   type UseLiveMathOptions,
 } from "../contracts";
 import { getEngine } from "../engine";
-import { createLiveLoop, needsLook, proseWordCount, type LiveLoop } from "../liveLoop";
+import { createLiveLoop, needsLook, type LiveLoop } from "../liveLoop";
+import { proseWordCount } from "../wordProblem";
 import { liveStore, resetLiveStore } from "../liveStore";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
 
@@ -65,6 +68,11 @@ describe("live loop — Help (and Ask about this)", () => {
   /** what the recognizer answers next (last one repeats); an Error rejects */
   let reads: Array<Partial<RecognizeResponse> | Error>;
   let crops: number;
+  /** what /api/live/setup answers for a word problem (an Error rejects) */
+  let setupReply: string[] | Error;
+  let setupBodies: SetupRequest[];
+  /** the second reader's calls; it agrees with Mathpix here (liveLoop.reread.test.ts owns the rest) */
+  let rereadBodies: RereadRequest[];
 
   function makeLoop(mode: UseLiveMathOptions["mode"]): LiveLoop {
     const stream = async function* (path: string, body: unknown): AsyncGenerator<LiveSseEvent, void, undefined> {
@@ -84,6 +92,15 @@ describe("live loop — Help (and Ask about this)", () => {
         // the hand is ON: a word problem must still skip the local paths and reach the model
         handwritingEnabled: () => true,
         reducedMotion: () => true,
+        setup: async (req) => {
+          setupBodies.push(req);
+          if (setupReply instanceof Error) throw setupReply;
+          return { lines: setupReply, model: "openai/gpt-5.4-mini", ms: 700 };
+        },
+        reread: async (req) => {
+          rereadBodies.push(req);
+          return { latex: req.latex, changed: false, model: "google/gemini-3.1-flash-lite", ms: 800 };
+        },
       },
     );
   }
@@ -134,6 +151,9 @@ describe("live loop — Help (and Ask about this)", () => {
     }) as unknown as FakeEditor["toImage"];
     calls = [];
     script = [];
+    setupReply = new ApiError("The AI service returned an error. Please try again.", 502, "upstream_error");
+    setupBodies = [];
+    rereadBodies = [];
     reads = [{ latex: "2x+3=11" }];
     fetchJson = vi.fn<FetchJson>(async (): Promise<RecognizeResponse> => {
       const next = reads.length > 1 ? reads.shift()! : reads[0];
@@ -159,9 +179,13 @@ describe("live loop — Help (and Ask about this)", () => {
     reads = [{ latex: "2x+?", confidence: 0.3 }];
     await write();
     expect(editor.shapesOfType("math")).toHaveLength(0); // low confidence: no echo
+    // the second reader looked once (it agreed with Mathpix); Help itself sends nothing
+    expect(rereadBodies).toHaveLength(1);
+    const cropsBefore = crops;
     await help();
     expect(calls).toEqual([]);
-    expect(crops).toBe(0);
+    expect(crops).toBe(cropsBefore);
+    expect(rereadBodies).toHaveLength(1);
     expect(marksOf("question").length).toBeGreaterThan(0);
     expect(editor.shapesOfType("math").filter((s) => (s.props as MathShapeProps).source === "ai")).toEqual([]);
   });
@@ -231,15 +255,32 @@ describe("live loop — Help (and Ask about this)", () => {
   });
 
   // ------------------------------------------------------------ word problems
-  it("Solve on a word problem: the prose goes to /api/live/solve, and the steps are written by hand", async () => {
+  it("Solve on a word problem: the setup is written with the engine's answer, by hand — no solve model", async () => {
     start("answer");
     reads = [{ latex: WORD_PROBLEM }];
     const lineId = await write();
     expect(liveStore.lines.get()[lineId].analysis?.kind).toBe("text");
 
+    setupReply = ["v = \\frac{60}{2}"];
+    await help();
+
+    expect(setupBodies).toEqual([{ boardId: "board-1", lines: [WORD_PROBLEM] }]);
+    expect(checks()).toEqual([]);
+    expect(solves()).toEqual([]);
+    expect(aiShapes()).toEqual([]);
+    expect(tutorInk().length).toBeGreaterThan(0);
+    expect(liveStore.lastError.get()).toBeNull();
+  });
+
+  it("Solve on a word problem whose setup fails: the prose goes to /api/live/solve, and the steps are written by hand", async () => {
+    start("answer");
+    reads = [{ latex: WORD_PROBLEM }];
+    const lineId = await write();
+
     script = [[step(1, "v = \\frac{60}{2}"), step(2, "\\boxed{v = 30}", true)]];
     await help();
 
+    expect(setupBodies).toHaveLength(1);
     expect(checks()).toEqual([]);
     expect(solves()).toHaveLength(1);
     const req = solves()[0];

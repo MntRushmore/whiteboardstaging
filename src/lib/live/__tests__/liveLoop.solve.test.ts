@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { TLDrawShape } from "tldraw";
+import { ApiError } from "@/lib/api-client";
 import { createFakeEditor, type FakeEditor } from "../__fixtures__/fakeEditor";
 import { fixtureSingleLine } from "../__fixtures__/strokes";
 import { settle, settleStable, settleUntil } from "@/lib/live/__fixtures__/settle";
@@ -53,6 +54,8 @@ describe("live loop — Solve answers locally, and checks the model when it cann
   /** events each solve stream yields, FIFO (an empty stream once exhausted) */
   let solveScript: LiveSseEvent[][];
   let latex: string;
+  /** word problems ask /api/live/setup first; here it always fails, so the stream is the subject */
+  let setupCalls: number;
 
   function makeLoop(): LiveLoop {
     const stream = async function* (path: string): AsyncGenerator<LiveSseEvent, void, undefined> {
@@ -71,6 +74,13 @@ describe("live loop — Solve answers locally, and checks the model when it cann
         isOnline: () => true,
         handwritingEnabled: () => handwriting,
         reducedMotion: () => true, // the reveal animation is handwriting.test.ts's subject, not this one
+        setup: async () => {
+          setupCalls++;
+          throw new ApiError("The AI service returned an error. Please try again.", 502, "upstream_error");
+        },
+        reread: async () => {
+          throw new Error("no second reader in this file");
+        },
       },
     );
   }
@@ -175,6 +185,7 @@ describe("live loop — Solve answers locally, and checks the model when it cann
     handwriting = true;
     streamCalls = [];
     solveScript = [];
+    setupCalls = 0;
     latex = "36+2=";
     fetchJson = vi.fn<FetchJson>(async (): Promise<RecognizeResponse> => ({
       latex,
@@ -256,10 +267,12 @@ describe("live loop — Solve answers locally, and checks the model when it cann
 
   // ------------------------------------------------------------ 2. guarding the model
 
-  it("a word problem still reaches the stream, and its steps are drawn", async () => {
+  it("a word problem whose setup fails still reaches the stream, and its steps are drawn", async () => {
     solveScript = [[step(1, "60 \\div 2 = 30"), step(2, "\\boxed{30\\,\\mathrm{km/h}}", true)]];
     await solve("\\text{A train travels 60 km in 2 h. How fast is it going?}");
 
+    // the setup was asked first (liveLoop.setup.test.ts owns what happens when it works)
+    expect(setupCalls).toBe(1);
     expect(solveCalls()).toEqual(["/api/live/solve"]);
     expect(typesetSteps()).toEqual(["60 \\div 2 = 30", "30\\,\\mathrm{km/h}"]);
     expect(liveStore.lastError.get()).toBeNull();
