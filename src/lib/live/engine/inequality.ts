@@ -23,7 +23,7 @@
  * point `x \neq 1`. Null for anything else. Pure: type-only mathjs import.
  */
 import type { MathNode } from "mathjs";
-import { gcdInt, hasBracket, opLatex, q, qAdd, qDiv, qLatex, qMul, termsLatex, type Q, type RelOp, type Term } from "./algebra";
+import { gcdInt, hasBracket, opLatex, q, qAdd, qDiv, qLatex, qMul, standardOrder, termsLatex, type Q, type RelOp, type Term } from "./algebra";
 import type { ParsedRelation, SolveContext } from "./advanced";
 import { argsOf, coefficientOf, constantValue, fnOf, mentions, polyTermsOf, stripParens, summands } from "./nodes";
 import { ONE, deg, exactly, factorLinear, lead, polyEvalNum, polyFromTerms, polyLatex, polyNeg, polyScale, polySub, primitive, productLatex, qEq, qIsZero, qNum, qSub, rootFactor, type Poly } from "./poly";
@@ -114,7 +114,7 @@ function discriminant(p: Poly): number {
  * positive leading coefficient, the content divided out, the factored form and critical values
  * (or the equation by the formula), then the intervals. `excluded`: zeros of a denominator.
  */
-function solvePolynomial(P0: Poly, op0: IneqOp, variable: string, w: StepWriter, ctx: SolveContext, excluded: readonly Q[], writeStandard = true): Solution | null {
+function solvePolynomial(P0: Poly, op0: IneqOp, variable: string, w: StepWriter, ctx: SolveContext, excluded: readonly Q[], from: "sum" | "product" | "given" = "sum"): Solution | null {
   let P = P0;
   let op = op0;
   if (deg(P) < 1) return null;
@@ -125,6 +125,9 @@ function solvePolynomial(P0: Poly, op0: IneqOp, variable: string, w: StepWriter,
   }
   const rel = opLatex(op);
   const { content, prim } = primitive(P);
+  const writeStandard = from === "sum";
+  // the student's own product, needing no sign turned or number divided out, is not rewritten
+  const factoredGiven = from === "given" && lead(P0).n > 0 && qEq(content, ONE);
   if (writeStandard) {
     w.write(`${polyLatex(P, variable)} ${rel} 0`);
     if (!qEq(content, ONE)) w.write(`${polyLatex(prim, variable)} ${rel} 0`);
@@ -136,8 +139,8 @@ function solvePolynomial(P0: Poly, op0: IneqOp, variable: string, w: StepWriter,
     // factors over the rationals (a leftover quadratic with no real roots is always positive)
     const factors = lf.roots.map((r) => ({ f: rootFactor(r.root), mult: r.mult }));
     if (deg(lf.rest) === 2) factors.push({ f: lf.rest, mult: 1 });
-    if (n >= 2) w.write(`${productLatex(ONE, factors, variable)} ${rel} 0`);
-    else if (!writeStandard) w.write(`${polyLatex(prim, variable)} ${rel} 0`);
+    if (n >= 2 && !factoredGiven) w.write(`${productLatex(ONE, factors, variable)} ${rel} 0`);
+    else if (n < 2 && !writeStandard) w.write(`${polyLatex(prim, variable)} ${rel} 0`);
     critical = lf.roots.map((r) => ({ latex: qLatex(r.root), value: qNum(r.root) }));
     if (n >= 2) w.write(rootsLine(variable, lf.roots.map((r) => qRoot(r.root))));
   } else if (n === 2) {
@@ -187,7 +190,7 @@ function polynomialInequality(rel: ParsedRelation, op: IneqOp, ctx: SolveContext
     return c !== null && qIsZero(c);
   };
   const product = (n: MathNode) => ["multiply", "pow"].includes(fnOf(stripParens(n)));
-  if ((isZero(rel.rhs) && product(rel.lhs)) || (isZero(rel.lhs) && product(rel.rhs))) return solvePolynomial(P, op, v, w, ctx, [], false);
+  if ((isZero(rel.rhs) && product(rel.lhs)) || (isZero(rel.lhs) && product(rel.rhs))) return solvePolynomial(P, op, v, w, ctx, [], "given");
   const lcd = lcdOf([...L, ...R]);
   if (lcd > 1) {
     L = scaled(L, q(lcd));
@@ -297,7 +300,7 @@ function rationalInequality(rel: ParsedRelation, op: IneqOp, ctx: SolveContext):
   const alone = (side: Summand[], other: Summand[]) => side.length === 1 && side[0].den !== null && other.every((s) => s.den === null && s.num.length === 0);
   if (alone(L, R) || alone(R, L)) {
     // `\frac{N}{D} > 0` times D²: `N D > 0`, written factored at once
-    return solvePolynomial(P, op, v, w, ctx, zeros, false);
+    return solvePolynomial(P, op, v, w, ctx, zeros, "product");
   }
   const rel2 = opLatex(op);
   w.write(`${joinSigned(L.map((s) => timesSquare(s, D, v)))} ${rel2} ${joinSigned(R.map((s) => timesSquare(s, D, v)))}`);
@@ -316,6 +319,15 @@ export function inequalitySteps(rel: ParsedRelation, ctx: SolveContext): Solutio
 }
 
 // --- chains ----------------------------------------------------------------------------------
+
+/** A linear middle as a student writes it: `2x + 1`, `3 - x` (a lone negative unknown after the number). */
+function middleTex(f: Poly, v: string): string {
+  const terms: Term[] = [
+    { c: f[1] ?? q(0), vars: { [v]: 1 } },
+    { c: f[0] ?? q(0), vars: {} },
+  ].filter((t) => !qIsZero(t.c));
+  return termsLatex(standardOrder(terms));
+}
 
 /** `a < f < b` in one unknown: three sides and two operators, as mathjs trees. */
 export interface ParsedChain {
@@ -353,7 +365,7 @@ export function chainSteps(ch: ParsedChain, normalize: (latex: string) => string
     const r1 = opLatex(op1);
     const r2 = opLatex(op2);
     const line = (a: Q, mid: string, b: Q) => `${qLatex(a)} ${r1} ${mid} ${r2} ${qLatex(b)}`;
-    if (descending) w.write(line(lo, polyLatex(f, v), hi));
+    if (descending) w.write(line(lo, middleTex(f, v), hi));
     // fractions cleared: every part times the LCD
     let lcd = 1;
     for (const c of [lo, hi, ...f]) lcd = (lcd * c.d) / gcdInt(lcd, c.d);
@@ -362,7 +374,7 @@ export function chainSteps(ch: ParsedChain, normalize: (latex: string) => string
       lo = qMul(lo, k);
       hi = qMul(hi, k);
       f = polyScale(f, k);
-      w.write(line(lo, polyLatex(f, v), hi));
+      w.write(line(lo, middleTex(f, v), hi));
     }
     const [beta, alpha] = [f[0] ?? q(0), f[1]];
     if (!qIsZero(beta)) {

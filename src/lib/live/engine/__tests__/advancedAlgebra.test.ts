@@ -146,6 +146,10 @@ describe("inequalities past linear: critical values, then the intervals (inequal
     // already factored: straight to the critical values; a double root
     ["(x-1)^2 > 0", ["x = 1", "x \\neq 1"]],
     ["(x-1)^2 \\le 0", ["x = 1"]],
+    // the student's own factors are not rewritten, unless a sign turns or a number divides out
+    ["(x - 2)(x + 5) < 0", ["x = -5, \\ x = 2", "-5 < x < 2"]],
+    ["(2 - x)(x + 3) > 0", ["(x + 3)(x - 2) < 0", "x = -3, \\ x = 2", "-3 < x < 2"]],
+    ["2x(x - 4) \\le 0", ["x(x - 4) \\le 0", "x = 0, \\ x = 4", "0 \\le x \\le 4"]],
     ["x^3-x>0", ["x(x + 1)(x - 1) > 0", "x = -1, \\ x = 0, \\ x = 1", "-1 < x < 0, \\ x > 1"]],
     // one fraction: times the denominator squared, its zero excluded
     ["\\frac{x-1}{x+2} > 0", ["x \\neq -2", "(x + 2)(x - 1) > 0", "x = -2, \\ x = 1", "x < -2, \\ x > 1"]],
@@ -165,6 +169,7 @@ describe("inequalities past linear: critical values, then the intervals (inequal
     ["1 \\le 3 - 2x < 7", ["-2 \\le -2x < 4", "-2 < x \\le 1"]],
     ["7 > 2x + 1 > -3", ["-3 < 2x + 1 < 7", "-4 < 2x < 6", "-2 < x < 3"]],
     ["-1 < \\frac{x - 1}{2} \\le 3", ["-2 < x - 1 \\le 6", "-1 < x \\le 7"]],
+    ["-2 \\le \\frac{3 - x}{2} \\le 4", ["-4 \\le 3 - x \\le 8", "-7 \\le -x \\le 5", "-5 \\le x \\le 7"]],
     ["5 < 2x < 3", ["\\frac{5}{2} < x < \\frac{3}{2}", "\\varnothing"]],
   ])("a chain: %s", (latex, steps) => {
     expect(solve(latex)).toEqual(steps);
