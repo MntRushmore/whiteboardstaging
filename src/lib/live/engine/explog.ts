@@ -92,11 +92,12 @@ function parseSide(node: MathNode, variable: string): Side | null {
       const poly = arg && polyFromTerms(arg, variable);
       if (!base || !arg || !poly) return null;
       if (deg(poly) < 1) {
-        // `\log_2 8` beside the unknown: a number, when it is a whole one
+        // `\log_2 8` beside the unknown: a number, when it is a whole one; `\ln 9` stays a log
         const value = poly[0] ?? q(0);
+        if (value.n <= 0) return null;
         const whole = exactLog(base, value);
-        if (whole === null) return null;
-        side.rest.push({ c: qMul(k, q(whole)), vars: {} });
+        if (whole === null) side.logs.push({ k, base, arg, poly });
+        else side.rest.push({ c: qMul(k, q(whole)), vars: {} });
         continue;
       }
       side.logs.push({ k, base, arg, poly });
@@ -372,20 +373,45 @@ function combinedLogs(logs: LogTerm[], C: Q, variable: string, ctx: SolveContext
   return done(w, kept);
 }
 
-/** `\log_b f = \log_b g` → `f = g`; a root outside the domain is dropped under the domain line. */
+/**
+ * A log's argument raised to its coefficient (the power law, `2\ln x = \ln x^{2}`): `x^{2}`,
+ * `(x - 1)^{2}`, a number worked out (`2\ln 3` → `9`). Null for a coefficient that is not a
+ * small positive whole number.
+ */
+function argToPower(l: LogTerm, variable: string): { tex: string; bare: boolean } | null {
+  if (qEq(l.k, ONE)) return { tex: termsAsWritten(l.arg), bare: isBare(l.arg) || deg(l.poly) < 1 };
+  if (l.k.d !== 1 || l.k.n < 2 || l.k.n > 4) return null;
+  if (deg(l.poly) < 1) {
+    const v = exactly(() => qPow(l.poly[0], l.k.n));
+    return v ? { tex: qLatex(v), bare: true } : null;
+  }
+  const f = termsAsWritten(l.arg);
+  return { tex: isBare(l.arg) ? `${variable}^{${l.k.n}}` : `(${f})^{${l.k.n}}`, bare: false };
+}
+
+/**
+ * `\log_b f = \log_b g` → `f = g`; `2\ln x = \ln 9` → `\ln(x^{2}) = \ln 9` → `x^{2} = 9` first
+ * (the power law). A root outside the domain is dropped under the domain line.
+ */
 function logEqualsLog(a: LogTerm, b: LogTerm, variable: string, ctx: SolveContext, normalize: (s: string) => string, input: string): Solution | null {
-  if (!sameBase(a.base, b.base) || !qEq(a.k, ONE) || !qEq(b.k, ONE)) return null;
-  const line = `${termsAsWritten(a.arg)} = ${termsAsWritten(b.arg)}`;
+  if (!sameBase(a.base, b.base)) return null;
+  const A = argToPower(a, variable);
+  const B = argToPower(b, variable);
+  if (!A || !B) return null;
+  const powerLaw = !qEq(a.k, ONE) || !qEq(b.k, ONE);
+  const line = `${A.tex} = ${B.tex}`;
   const sol = ctx.solve(line);
   if (!sol || !sol.roots) return null;
-  const valid = (x: number) => [a.poly, b.poly].every((p) => polyEvalNumber(p, x) > 1e-12);
+  const logs = [a, b].filter((l) => deg(l.poly) >= 1);
+  const valid = (x: number) => logs.every((l) => polyEvalNumber(l.poly, x) > 1e-12);
   const kept = sol.roots.filter((r) => valid(r.value));
   const w = new StepWriter(normalize, input);
   if (kept.length !== sol.roots.length) {
-    const domain = domainOf([a, b].filter((l) => deg(l.poly) >= 1), variable);
+    const domain = domainOf(logs, variable);
     if (!domain) return null;
     w.write(domain.line);
   }
+  if (powerLaw) w.write(`${logTex(a.base, A.tex, A.bare)} = ${logTex(b.base, B.tex, B.bare)}`);
   w.write(line);
   w.writeAll(sol.steps);
   if (kept.length !== sol.roots.length || kept.length === 0) w.write(rootsLine(variable, kept));

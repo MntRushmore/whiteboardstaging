@@ -837,12 +837,37 @@ export function createEngine(mod: MathModule): LiveEngine {
         return { latex: final, steps };
       }
       if (info.roots.length === 0) return null;
-      const final = finalLatex(variable, info.roots, { preferFraction: false }, false);
+      // a root the root-finder found that IS a whole number or a simple fraction (both sides agree
+      // there to the last bit) is written with `=`, not `\approx`
+      const exact = exactRoots(rel, variable, info.roots);
+      const final = exact ? finalLatex(variable, exact, { preferFraction: true }, true) : finalLatex(variable, info.roots, { preferFraction: false }, false);
       steps.push(final);
       return { latex: final, steps };
     } catch {
       return null;
     }
+  };
+
+  /** Every real root snapped to a whole number or a fraction (denominator ≤ 12) that satisfies `rel` exactly; null when one does not. */
+  const exactRoots = (rel: Relation, variable: string, roots: RootValue[]): number[] | null => {
+    const out: number[] = [];
+    for (const r of roots) {
+      const n = rootToNumber(r);
+      if (n === null) continue;
+      let hit: number | null = null;
+      for (let d = 1; d <= 12 && hit === null; d++) {
+        const c = Math.round(n * d) / d;
+        if (Math.abs(c - n) > 1e-6 * Math.max(1, Math.abs(n))) continue;
+        const l = safeEvaluate(math, rel.lhs, { [variable]: c });
+        const rr = safeEvaluate(math, rel.rhs, { [variable]: c });
+        const a = l.ok ? toNumber(l.value) : null;
+        const b = rr.ok ? toNumber(rr.value) : null;
+        if (a !== null && b !== null && Math.abs(a - b) <= 1e-12 * Math.max(1, Math.abs(a), Math.abs(b))) hit = c;
+      }
+      if (hit === null) return null;
+      out.push(hit);
+    }
+    return out.length > 0 ? out : null;
   };
 
   /** `3(x+2) - x` (or `3(x+2) - x =`) → `3x + 6 - x`, `2x + 6`; null when there is nothing to simplify. */

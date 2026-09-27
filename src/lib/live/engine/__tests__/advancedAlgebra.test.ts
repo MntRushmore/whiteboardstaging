@@ -262,8 +262,19 @@ describe("exponential and log equations: exact answers", () => {
     ],
     ["\\log_2 x - \\log_2(x-2) = 1", ["x > 2", "\\log_{2} \\frac{x}{x - 2} = 1", "\\frac{x}{x - 2} = 2^{1}", "x = 2(x - 2)", "x = 2x - 4", "x - 2x = -4", "-x = -4", "x = 4"]],
     ["\\log_2(x+3)=\\log_2(2x)", ["x + 3 = 2x", "x - 2x = -3", "-x = -3", "x = 3"]],
+    // a log of a number that is not a whole power, and the power law for a coefficient
+    ["\\ln x = \\ln 9", ["x = 9"]],
+    ["2\\ln(x) = \\ln(9)", ["x > 0", "\\ln(x^{2}) = \\ln 9", "x^{2} = 9", "x = \\pm 3", "x = 3"]],
+    ["\\ln 9 = 2\\ln x", ["x > 0", "\\ln 9 = \\ln(x^{2})", "9 = x^{2}", "x^{2} = 9", "x = \\pm 3", "x = 3"]],
+    ["2\\log x = \\log(x + 2)", ["x > 0", "\\log(x^{2}) = \\log(x + 2)", "x^{2} = x + 2", "x^{2} - x - 2 = 0", "(x + 1)(x - 2) = 0", "x = -1, \\ x = 2", "x = 2"]],
+    ["2\\ln(x - 1) = \\ln(4)", ["x > 1", "\\ln((x - 1)^{2}) = \\ln 4", "(x - 1)^{2} = 4", "x - 1 = \\pm 2", "x = 1 \\pm 2", "x = -1, \\ x = 3", "x = 3"]],
   ])("%s", (latex, steps) => {
     expect(solve(latex)).toEqual(steps);
+  });
+
+  it("the numeric fallback writes `=` only for a root that is exact (both sides agree there)", () => {
+    expect(solve("x^{x} = 4")).toEqual(["x = 2"]);
+    expect(solve("x^3 + x - 1 = 0")).toEqual(["x \\approx 0.6823"]);
   });
 });
 
@@ -473,6 +484,8 @@ describe("the hand can write every step", () => {
     "\\ln(x+1)=1",
     "\\log x+\\log(x-3)=1",
     "\\log_2 x - \\log_2(x-2) = 1",
+    "2\\ln(x) = \\ln(9)",
+    "2\\ln(x - 1) = \\ln(4)",
   ];
   it.each(equations)("solveLatex(%s)", (latex) => {
     const r = engine.solveLatex(latex);
