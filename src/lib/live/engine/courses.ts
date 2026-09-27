@@ -12,6 +12,12 @@
  *                 a point and a slope, sequences, a mean, a formula with every value known
  *   fromLinesLate after the systems have nothing — a formula solved for a letter
  *   analyze       `engine.analyzeLine` — a claim about a function (`f(4) = 11`) under its definition
+ *   analyzeFirst  `engine.analyzeLine`, before its own rules — a form of the line above asked for
+ *                 (`Ax + By = C`)
+ *
+ * `fromLines` and `solve` also answer those asks first: a line's standard form
+ * (`linearFunctions.ts`) — asked under the line, or above the line Solve is pressed on (then a
+ * line already in that form is refused: there is nothing to write).
  *
  * `"refuse"` means the line is one the older paths would misread (`f(4)` as `4f`): the engine
  * answers nothing rather than something wrong.
@@ -28,7 +34,7 @@ import { formulaAnswer } from "./formulas";
 import { sequenceAnswer, sigmaSteps } from "./sequences";
 import { radicalSteps } from "./radicalExpr";
 import { checkClaim, definitionFromMath, definitionOf, definitionsIn, evaluateCalls, hasFunctionCall, inverseOf, solveFunctionEquation } from "./functionNotation";
-import { lineFromColumn, pointsOn, slopeIntercept } from "./linearFunctions";
+import { isLineInXY, lineFormAbove, lineFormAnalysis, lineFormAnswer, lineFromColumn, lineIn, pointsOn, slopeIntercept } from "./linearFunctions";
 import { solveForLetter } from "./literalEquations";
 
 export type Refuse = "refuse";
@@ -45,6 +51,8 @@ export interface Courses {
   fromLines(lines: readonly string[]): Solved | null | Refuse;
   fromLinesLate(lines: readonly string[]): Solved | null;
   analyze(latex: string, ctx: AnalyzeContext): LineAnalysis | null;
+  /** a line asking for a form of the line above (before the engine's own rules) */
+  analyzeFirst(latex: string, ctx: AnalyzeContext): LineAnalysis | null;
   /** an exact answer finished the way the course writes it (`x = \log_{5} 7` → its change of base) */
   polish<T extends Solved>(solved: T): T;
 }
@@ -58,9 +66,26 @@ const safely = <T>(fn: () => T): T | null => {
 };
 
 export function createCourses(deps: CourseDeps): Courses {
+  /**
+   * A form asked for above the target (`Ax + By = C`, `\text{standard form}`) and the target is
+   * that line: its working, or "refuse" when it is already in that form (nothing to write — and
+   * not a system of the lines above).
+   */
+  const formAbove = (target: string, above: readonly string[]): Solved | Refuse | null => {
+    const lineForm = lineFormAbove(above);
+    if (lineForm && isLineInXY(deps, target)) return lineIn(deps, target, lineForm) ?? "refuse";
+    return null;
+  };
+
   const fromLines = (lines: readonly string[]): Solved | null | Refuse => {
     const target = lines[lines.length - 1] ?? "";
     const above = lines.slice(0, -1);
+    // asked by name or template under what it is about: the line's standard form — then a form
+    // asked for above the line
+    const asked = lineFormAnswer(deps, lines);
+    if (asked) return asked;
+    const wanted = formAbove(target, above);
+    if (wanted) return wanted;
     // function notation: a definition above and the target applies it
     const defs = definitionsIn(above);
     if (defs.size > 0) {
@@ -100,6 +125,9 @@ export function createCourses(deps: CourseDeps): Courses {
   const solve = (latex: string, opts?: SolveOptions): Solved | null | Refuse => {
     const defs = definitionsIn(opts?.column ?? []);
     if (hasFunctionCall(latex, defs.keys())) return "refuse";
+    // a form asked for above the line (`Ax + By = C`, `\text{standard form}`): the line in that form
+    const wanted = opts?.column && opts.column.length > 1 ? formAbove(latex, opts.column.slice(0, -1)) : null;
+    if (wanted) return wanted;
     // no real roots, and the column already works with i: the complex ones (complexSetting.ts)
     if (opts?.complexRoots) {
       const c = complexQuadratic(deps, latex);
@@ -177,5 +205,6 @@ export function createCourses(deps: CourseDeps): Courses {
         if (!verdict) return null;
         return { kind: "equation", math: "", resultLatex: "", verdict, note: "" } satisfies LineAnalysis;
       }) ?? null,
+    analyzeFirst: (latex, ctx) => safely(() => lineFormAnalysis(deps, latex, ctx)) ?? null,
   };
 }
