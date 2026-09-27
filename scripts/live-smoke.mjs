@@ -406,6 +406,9 @@ async function main() {
       ok(typeof body.model === "string" && typeof body.ms === "number", "model + ms", `${body.model} ${body.ms} ms, wall ${Date.now() - startedAt} ms`);
       const bad = await postJson("/api/live/setup", { boardId: "smoke-board", lines: [] }, token);
       ok(bad.status === 400, "empty problem -> 400", `status ${bad.status}`);
+      // a figure's labels only come with the figure's crop
+      const labelsOnly = await postJson("/api/live/setup", { boardId: "smoke-board", lines: ["x = ?"], labels: ["3", "4", "x"] }, token);
+      ok(labelsOnly.status === 400, "figure labels without a crop -> 400", `status ${labelsOnly.status}`);
     }
 
     section("POST /api/live/reread (the second reader)");
