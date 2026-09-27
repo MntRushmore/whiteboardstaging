@@ -429,6 +429,9 @@ describe("judge: Algebra 1's new answer shapes still catch wrong answers", () =>
     // a word the student did not write
     expect(judge(p, lines, solved(["\\text{middle} = 8"], "solveFromLines"), drawAll).stages.words).toBe(false);
     expect(judge(p, lines, solved(["\\text{median} = 8 \\text{ so done}"], "solveFromLines"), drawAll).stages.words).toBe(false);
+    // the same word, in another case or without the heading's colon
+    const colon = ["12, 3, 15, 7, 8", "\\text{Median:}"];
+    expect(judge(problem({ topic: "statistics", lines: colon, expect: { answer: "8" } }), colon, solved(["\\text{Median} = 8"], "solveFromLines"), drawAll).stages.words).toBe(true);
     const q = ["12, 3, 15, 7, 8", "Q_{2} = ?"];
     expect(judge(problem({ topic: "statistics", lines: q, expect: { answer: "8" } }), q, solved(["\\text{median} = 8"], "solveFromLines"), drawAll).stages.words).toBe(false);
   });

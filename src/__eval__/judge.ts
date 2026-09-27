@@ -126,8 +126,13 @@ export function wordsIn(latex: string): string[] {
   return [...latex.matchAll(/\\(?:text|textrm|textit|textbf|mbox)\s*\{([^}]*)\}/g)].map((m) => m[1]).filter((t) => /[A-Za-z]/.test(t)).map((t) => t.trim());
 }
 
-/** A label compared as written: case and spacing aside (`Median` is the student's `median`). */
-const labelKey = (word: string): string => word.toLowerCase().replace(/\s+/g, " ").trim();
+/** A label compared as written: case, spacing and a heading's colon aside (`Median` is the student's `median:`). */
+const labelKey = (word: string): string =>
+  word
+    .toLowerCase()
+    .replace(/[\s:.]+$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
 
 const UNSOLVED_MARKERS = /\\frac\s*\{\s*d(?:\^\{?\d\}?)?\s*\}\s*\{\s*d|\\int|\\lim|\\frac\s*\{\s*d[a-zA-Z]\s*\}|[a-zA-Z]'/;
 

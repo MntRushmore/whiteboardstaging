@@ -50,6 +50,21 @@ describe("median, mode, range", () => {
     expectDrawable(steps, lines);
   });
 
+  it("reads the names as Mathpix writes them", () => {
+    const last = (ask: string) => solveIn(["3, 7, 8, 12, 15", ask]).steps.at(-1);
+    expect(last("\\text { median }=?")).toBe("\\text{median} = 8");
+    expect(last("\\text{MEDIAN} =")).toBe("\\text{MEDIAN} = 8");
+    expect(last("\\text{median}:")).toBe("\\text{median} = 8");
+    expect(last("\\text{Median:}")).toBe("\\text{Median} = 8");
+    expect(last("Q1 = ?")).toBe("Q_{1} = 5");
+    expect(last("\\text{Q1} = ?")).toBe("\\text{Q1} = 5");
+    expect(last("\\mathrm{Q}_{3} = ?")).toBe("\\mathrm{Q}_{3} = 13.5");
+    expect(last("I Q R = ?")).toBe("I Q R = 8.5");
+    expect(last("\\bar x = ?")).toBe("\\bar{x} = 9");
+    expect(last("\\sigma_{x} = ?")).toBe("\\sigma_{x} \\approx 4.15");
+    expect(last("s_x = ?")).toBe("s_{x} \\approx 4.64");
+  });
+
   it("every value repeated equally often has no agreed mode: not answered", () => {
     expect(solveIn(["2, 2, 5, 5", "\\text{mode} = ?"]).source).toBeNull();
   });

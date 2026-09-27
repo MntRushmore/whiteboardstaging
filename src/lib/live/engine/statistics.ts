@@ -304,8 +304,9 @@ const WORDS: ReadonlyArray<[RegExp, Stat]> = [
   [/^mode$/, "mode"],
   [/^range$/, "range"],
   [/^(?:iqr|interquartilerange)$/, "iqr"],
-  [/^(?:lowerquartile|firstquartile)$/, "q1"],
-  [/^(?:upperquartile|thirdquartile)$/, "q3"],
+  [/^(?:lowerquartile|firstquartile|q1)$/, "q1"],
+  [/^(?:upperquartile|thirdquartile|q3)$/, "q3"],
+  [/^q2$/, "median"],
   [/^(?:five|5)numbersummary$/, "five"],
   [/^(?:mean|average|avg)$/, "mean"],
   [/^populationstandarddeviation$/, "sigma"],
@@ -338,12 +339,19 @@ export function statNameOf(latex: string): StatName | null {
   // a word: the text of `\text{…}` (and the like) or plain letters, any case, spaces and hyphens ignored
   const text = raw.replace(WRAPPER, " $1 ");
   if (/\\[a-zA-Z]/.test(text.replace(/\\[,;:! ]/g, " "))) return null;
-  const key = text.replace(/[\s{}\-–_]|\\[,;:! ]/g, "").toLowerCase();
+  // (a colon after the word, as a heading is written: `\text{median}:`)
+  const key = text
+    .replace(/[\s{}\-–_]|\\[,;:! ]/g, "")
+    .replace(/[:.]+$/, "")
+    .toLowerCase();
   if (!/^[a-z0-9]{2,}$/.test(key)) return null;
   for (const [re, stat] of WORDS) {
     if (re.test(key)) {
-      // the student's own label, tidied: `\text { median }` → `\text{median}`
-      const label = raw.replace(/\\(text|textrm|textit|textbf|mathrm|mathit|mathbf|operatorname)\s*\{\s*([^{}]*?)\s*\}/g, "\\$1{$2}").replace(/\s+/g, " ");
+      // the student's own label, tidied: `\text { median }` → `\text{median}`, a heading's colon dropped
+      const label = raw
+        .replace(/\\(text|textrm|textit|textbf|mathrm|mathit|mathbf|operatorname)\s*\{\s*([^{}]*?)[\s:.]*\}/g, "\\$1{$2}")
+        .replace(/[\s:.]+$/, "")
+        .replace(/\s+/g, " ");
       return { stat, label, word: true };
     }
   }
