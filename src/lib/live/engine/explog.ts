@@ -342,7 +342,7 @@ function oneLog(l: LogTerm, c: Q, d: Q, variable: string, ctx: SolveContext, w: 
 }
 
 /** Several logs of one base, coefficients ±1, equal to a number: domain, combine, exponential form. */
-function combinedLogs(logs: LogTerm[], C: Q, variable: string, ctx: SolveContext, w: StepWriter): Solution | null {
+function combinedLogs(logs: LogTerm[], C: Q, variable: string, ctx: SolveContext, w: StepWriter, K: Q = ONE): Solution | null {
   const base = logs[0].base;
   if (!logs.every((l) => sameBase(l.base, base) && (qEq(l.k, ONE) || qEq(l.k, q(-1))))) return null;
   const domain = domainOf(logs, variable);
@@ -353,7 +353,8 @@ function combinedLogs(logs: LogTerm[], C: Q, variable: string, ctx: SolveContext
   const top = logs.filter((l) => l.k.n > 0);
   const bottom = logs.filter((l) => l.k.n < 0);
   if (top.length === 0) return null;
-  const topTex = factorsTex(top.map(factor), variable);
+  // `K`: the logs of numbers folded in (`\log_2 x + \log_2 3` is `\log_2(3x)`)
+  const topTex = qEq(K, ONE) ? factorsTex(top.map(factor), variable) : productLatex(K, top.map(factor), variable);
   const exact = exactPower(base, C);
   if (!exact) return null;
   let line: string;
@@ -455,7 +456,75 @@ export function expLogSteps(rel: ParsedRelation, ctx: SolveContext): Solution | 
     const c = constantOf(L.rest);
     const d = constantOf(R.rest);
     if (!c || !d) return null;
+    if (all.some((l) => deg(l.poly) < 1)) return logsAgainstLogOfNumber(all, qSub(d, c), v, ctx, w);
     if (all.length === 1) return oneLog(all[0], c, d, v, ctx, w);
     return combinedLogs(all, qSub(d, c), v, ctx, w);
   });
+}
+
+/**
+ * `\ln(x + 1) - \ln x = \ln 2`: the logs of numbers (and any number beside them) moved across as
+ * ONE log of a number, the logs in x combined, then the arguments equal:
+ *
+ *   x > 0,  \ln \frac{x + 1}{x} = \ln 2,  \frac{x + 1}{x} = 2,  x + 1 = 2x,  …  x = 1
+ *
+ * `all` is every log moved to the left (Σ k log a = C). Null unless every log has one base, the
+ * logs in x have coefficient ±1 and linear arguments, and the number works out exactly.
+ */
+function logsAgainstLogOfNumber(all: LogTerm[], C: Q, variable: string, ctx: SolveContext, w: StepWriter): Solution | null {
+  const base = all[0].base;
+  if (!all.every((l) => sameBase(l.base, base))) return null;
+  let logs = all.filter((l) => deg(l.poly) >= 1);
+  const numbers = all.filter((l) => deg(l.poly) < 1);
+  if (logs.length === 0 || !logs.every((l) => qEq(l.k, ONE) || qEq(l.k, q(-1)))) return null;
+  if (!qIsZero(C)) {
+    // against a plain number: the logs of numbers go inside instead (`\log_2(3x) = 4`)
+    let K: Q = q(1);
+    for (const n of numbers) {
+      if (n.k.d !== 1 || Math.abs(n.k.n) > 4) return null;
+      const p = exactly(() => qPow(n.poly[0], n.k.n));
+      if (!p) return null;
+      K = qMul(K, p);
+    }
+    return combinedLogs(logs, C, variable, ctx, w, K);
+  }
+  // Σ k log f = C - Σ k' log c' = log(b^C · Π c'^(-k'))
+  let M = exactPower(base, C);
+  if (!M) return null;
+  for (const n of numbers) {
+    if (n.k.d !== 1 || Math.abs(n.k.n) > 4) return null;
+    const p = exactly(() => qPow(n.poly[0], -n.k.n));
+    if (!p) return null;
+    M = qMul(M, p);
+  }
+  if (M.n <= 0) return null;
+  // read the way it was written: the first log in x on top
+  if (logs[0].k.n < 0) {
+    logs = logs.map((l) => ({ ...l, k: qNeg(l.k) }));
+    M = qDiv(q(1), M);
+  }
+  const domain = domainOf(logs, variable);
+  if (!domain) return null;
+  w.write(domain.line);
+  if (domain.line === NO_SOLUTION) return done(w, []);
+  const factor = (l: LogTerm) => ({ f: l.poly, mult: 1 });
+  const top = logs.filter((l) => l.k.n > 0);
+  const bottom = logs.filter((l) => l.k.n < 0);
+  const topTex = factorsTex(top.map(factor), variable);
+  const right = logTex(base, qLatex(M), true);
+  let line: string;
+  if (bottom.length === 0) {
+    w.write(`${logTex(base, topTex, top.length === 1 && isBare(top[0].arg))} = ${right}`);
+    line = `${topTex} = ${qLatex(M)}`;
+  } else {
+    const bottomTex = factorsTex(bottom.map(factor), variable);
+    w.write(`${logName(base)} \\frac{${topTex}}{${bottomTex}} = ${right}`);
+    w.write(`\\frac{${topTex}}{${bottomTex}} = ${qLatex(M)}`);
+    line = `${topTex} = ${productLatex(M, bottom.map(factor), variable)}`;
+  }
+  const roots = follow(line, ctx, w);
+  if (!roots) return null;
+  const kept = roots.filter((r) => domain.ok(r.value));
+  if (kept.length !== roots.length) w.write(rootsLine(variable, kept));
+  return done(w, kept);
 }

@@ -268,6 +268,12 @@ describe("exponential and log equations: exact answers", () => {
     ["\\ln 9 = 2\\ln x", ["x > 0", "\\ln 9 = \\ln(x^{2})", "9 = x^{2}", "x^{2} = 9", "x = \\pm 3", "x = 3"]],
     ["2\\log x = \\log(x + 2)", ["x > 0", "\\log(x^{2}) = \\log(x + 2)", "x^{2} = x + 2", "x^{2} - x - 2 = 0", "(x + 1)(x - 2) = 0", "x = -1, \\ x = 2", "x = 2"]],
     ["2\\ln(x - 1) = \\ln(4)", ["x > 1", "\\ln((x - 1)^{2}) = \\ln 4", "(x - 1)^{2} = 4", "x - 1 = \\pm 2", "x = 1 \\pm 2", "x = -1, \\ x = 3", "x = 3"]],
+    // logs of numbers: moved across as one log (against a log), or folded inside (against a number)
+    ["\\ln(x + 1) - \\ln(x) = \\ln(2)", ["x > 0", "\\ln \\frac{x + 1}{x} = \\ln 2", "\\frac{x + 1}{x} = 2", "x + 1 = 2x", "x - 2x = -1", "-x = -1", "x = 1"]],
+    ["\\ln 2 = \\ln(x + 1) - \\ln x", ["x > 0", "\\ln \\frac{x + 1}{x} = \\ln 2", "\\frac{x + 1}{x} = 2", "x + 1 = 2x", "x - 2x = -1", "-x = -1", "x = 1"]],
+    ["\\ln x + \\ln 3 = \\ln 12", ["x > 0", "\\ln x = \\ln 4", "x = 4"]],
+    ["\\log(x) + \\log(x - 3) = \\log 4", ["x > 3", "\\log(x(x - 3)) = \\log 4", "x(x - 3) = 4", "x^{2} - 3x = 4", "x^{2} - 3x - 4 = 0", "(x + 1)(x - 4) = 0", "x = -1, \\ x = 4", "x = 4"]],
+    ["\\log_{2}(x) + \\log_{2}(3) = 4", ["x > 0", "\\log_{2}(3x) = 4", "3x = 2^{4}", "3x = 16", "x = \\frac{16}{3}"]],
   ])("%s", (latex, steps) => {
     expect(solve(latex)).toEqual(steps);
   });
@@ -486,6 +492,8 @@ describe("the hand can write every step", () => {
     "\\log_2 x - \\log_2(x-2) = 1",
     "2\\ln(x) = \\ln(9)",
     "2\\ln(x - 1) = \\ln(4)",
+    "\\ln(x + 1) - \\ln(x) = \\ln(2)",
+    "\\log_{2}(x) + \\log_{2}(3) = 4",
   ];
   it.each(equations)("solveLatex(%s)", (latex) => {
     const r = engine.solveLatex(latex);
