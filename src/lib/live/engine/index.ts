@@ -29,6 +29,7 @@ import { evaluateUnits, unitValueToLatex, valuesMatch } from "./units";
 import { solveFromLines, type SystemDeps } from "./systems";
 import { linearSolveSteps, simplifyExpressionSteps, type LinearSteps, type RelOp } from "./algebra";
 import { createCalculus } from "./calculus";
+import { createIntegration } from "./integration";
 import { createTrig } from "./trig";
 import { solveTrigEquation } from "./trigEquation";
 import { solveAdvanced, type AdvancedDeps } from "./advanced";
@@ -183,7 +184,14 @@ export function createEngine(mod: MathModule): LiveEngine {
 
   const tr = (latex: string, plain = false): Translated => translate(math, latex, { plain });
   // derivatives, integrals and limits with teacher-style steps; registers limit/antiderivative/bracketEval on `math`
-  const calculus = createCalculus(math, { translate: (latex) => tr(latex) });
+  // substitution, parts, identities, standard forms, partial fractions (`integration.ts`), tried
+  // when the term-by-term rules have nothing; they use those rules for the inner integral
+  const integration = createIntegration(() => ({ basic: (f, x) => calculus.basicIntegral(f, x) }));
+  const calculus = createCalculus(math, {
+    translate: (latex) => tr(latex),
+    integrate: (f, x, constant) => integration.integrate(f, x, constant),
+    integrateDefinite: (f, x, a, b) => integration.integrateDefinite(f, x, a, b),
+  });
   // exact trig values, identities and equations (`trig.ts`, `trigEquation.ts`)
   const trig = createTrig(math, { translate: (latex) => tr(latex) });
 

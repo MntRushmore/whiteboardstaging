@@ -127,7 +127,7 @@ function qLatex(a: Q): string {
 // Expressions
 // ---------------------------------------------------------------------------------------------
 
-type Fn = "sin" | "cos" | "tan" | "sec" | "csc" | "cot" | "ln" | "log10" | "exp" | "abs";
+type Fn = "sin" | "cos" | "tan" | "sec" | "csc" | "cot" | "ln" | "log10" | "exp" | "abs" | "asin" | "acos" | "atan";
 const TRIG: ReadonlySet<string> = new Set(["sin", "cos", "tan", "sec", "csc", "cot"]);
 
 type Expr =
@@ -264,7 +264,13 @@ const FUNCTION_NAMES: Record<string, Fn> = {
   log10: "log10",
   exp: "exp",
   abs: "abs",
+  asin: "asin",
+  acos: "acos",
+  atan: "atan",
 };
+
+/** `\sin^{-1}`: the inverse functions as a student writes them (the hand draws the index). */
+const INVERSE_TEX: Partial<Record<Fn, string>> = { asin: "\\sin^{-1}", acos: "\\cos^{-1}", atan: "\\tan^{-1}" };
 
 /** mathjs tree → Expr. Integers only: a decimal, a unit or an unknown function is refused. */
 function fromNode(node: MathNode): Expr {
@@ -409,6 +415,16 @@ function texFn(name: Fn, arg: Expr): string {
       return arg.t === "fn" && arg.name === "abs" ? `\\ln|${tex(arg.arg)}|` : `\\ln${fnArg(arg)}`;
     case "log10":
       return `\\log${fnArg(arg)}`;
+    case "asin":
+    case "acos":
+    case "atan": {
+      // `\tan^{-1}\frac{x}{2}`, not `\tan^{-1}(\frac{1}{2}x)`
+      if (arg.t === "mul" && arg.args.length === 2 && arg.args[1].t === "sym") {
+        const k = rationalValue(arg.args[0]);
+        if (k && k.n > 0 && !qInt(k)) return `${INVERSE_TEX[name]}\\frac{${joinProduct([k.n === 1 ? "" : String(k.n), tex(arg.args[1])])}}{${k.d}}`;
+      }
+      return `${INVERSE_TEX[name]}${fnArg(arg)}`;
+    }
     default:
       return `\\${name}${fnArg(arg)}`;
   }
@@ -584,7 +600,7 @@ function fnCanon(name: Fn, A: Canon): Canon {
   const c0 = canonRational(A);
   if (c0 && qZero(c0)) {
     if (name === "exp" || name === "cos" || name === "sec") return [UNIT];
-    if (name === "sin" || name === "tan" || name === "abs") return [];
+    if (name === "sin" || name === "tan" || name === "abs" || name === "asin" || name === "atan") return [];
     throw new ZeroDivision();
   }
   if (c0 && qOne(c0) && (name === "ln" || name === "log10")) return [];
@@ -733,7 +749,7 @@ function termBody(s: SplitTerm, mode: Mode): string {
     if (s.qd === 1) return nf.length ? joinProduct([lead, numTex]) : String(s.p);
     if (nf.length === 0) return `\\frac{${s.p}}{${s.qd}}`;
     // `\frac{2}{3}x^{\frac{3}{2}}`, `\frac{1}{2}\ln|2x + 1|`: the coefficient stays in front of an index or a log
-    if (nf.some((f) => indexNotation(f, mode) || (f.base.t === "fn" && (f.base.name === "ln" || f.base.name === "log10")))) {
+    if (nf.some((f) => indexNotation(f, mode) || (f.base.t === "fn" && ["ln", "log10", "asin", "acos", "atan"].includes(f.base.name)))) {
       return joinProduct([`\\frac{${s.p}}{${s.qd}}`, numTex]);
     }
     return `\\frac{${joinProduct([lead, numTex])}}{${s.qd}}`;
@@ -827,6 +843,12 @@ function evalNum(e: Expr, scope: Readonly<Record<string, number>>): number {
           return Math.exp(a);
         case "abs":
           return Math.abs(a);
+        case "asin":
+          return Math.asin(a);
+        case "acos":
+          return Math.acos(a);
+        case "atan":
+          return Math.atan(a);
       }
     }
   }
@@ -851,10 +873,13 @@ function paramScope(e: Expr[], x: string): Record<string, number> {
 const close = (a: number, b: number, tol: number): boolean => Math.abs(a - b) <= tol * Math.max(1, Math.abs(a), Math.abs(b));
 
 /** f' agrees with a central difference of f at the sample points where both are finite. */
+/** Points near 0 as well, for a function defined only there (`\sin^{-1}(2x)` needs |x| ≤ ½). */
+const SMALL_SAMPLES = [0.07, 0.13, 0.21, 0.29, 0.37, 0.43, -0.11, -0.19, -0.31, -0.41];
+
 function derivativeAgrees(f: Expr, fp: Expr, x: string): boolean {
   const scope = paramScope([f, fp], x);
   let checked = 0;
-  for (const p of SAMPLES) {
+  for (const p of [...SAMPLES, ...SMALL_SAMPLES]) {
     const h = 1e-5 * Math.max(1, Math.abs(p));
     const at = (v: number) => evalNum(f, { ...scope, [x]: v });
     const numeric = (at(p + h) - at(p - h)) / (2 * h);
@@ -1094,6 +1119,16 @@ function makeDiff(x: string) {
       }
       case "log10":
         return { tex: `\\frac{1}{${joinProduct([texFactor(g, false), "\\ln 10"])}}`, val: div(I(1), mul([g, fn("ln", I(10))])) };
+      case "atan": {
+        const g2 = pow(g, I(2));
+        return { tex: `\\frac{1}{1 + ${tex(g2)}}`, val: div(I(1), add([I(1), g2])) };
+      }
+      case "asin":
+      case "acos": {
+        const root = { t: "sqrt" as const, arg: add([I(1), neg(pow(g, I(2)))]) };
+        const t = `\\frac{1}{${tex(root)}}`;
+        return name === "asin" ? { tex: t, val: div(I(1), root) } : { tex: `-${t}`, val: neg(div(I(1), root)) };
+      }
       case "abs":
         return fail();
     }
@@ -1415,6 +1450,10 @@ function exFn(name: Fn, a: Ex): Ex {
     }
     case "abs":
       return exNum(a) < 0 ? exNeg(a) : a;
+    case "asin":
+    case "acos":
+    case "atan":
+      return exInverseTrig(name, a);
     default:
       if (exIsRational(a) && qZero(a.r)) {
         if (name === "sin" || name === "tan") return exQ(Q0);
@@ -1423,6 +1462,33 @@ function exFn(name: Fn, a: Ex): Ex {
       }
       return exTrig(name, a);
   }
+}
+
+/** sin⁻¹, cos⁻¹, tan⁻¹ at the values of the special angles (`\\tan^{-1} 1 = \\frac{\\pi}{4}`), else not exact. */
+function exInverseTrig(name: "asin" | "acos" | "atan", a: Ex): Ex {
+  const v = exNum(a);
+  const r2 = Math.SQRT2 / 2;
+  const r3 = Math.sqrt(3);
+  const table: Array<[number, Q]> =
+    name === "atan"
+      ? [
+          [0, Q0],
+          [r3 / 3, q(1, 6)],
+          [1, q(1, 4)],
+          [r3, q(1, 3)],
+        ]
+      : [
+          [0, Q0],
+          [0.5, q(1, 6)],
+          [r2, q(1, 4)],
+          [r3 / 2, q(1, 3)],
+          [1, QHALF],
+        ];
+  const hit = table.find(([t]) => Math.abs(Math.abs(v) - t) < 1e-12);
+  if (!hit) return fail();
+  const k = v < 0 ? qNeg(hit[1]) : hit[1];
+  const angle = name === "acos" ? qSub(QHALF, k) : k;
+  return qZero(angle) ? exQ(Q0) : exAtom(piAtom(1), angle);
 }
 
 function evalExact(e: Expr, env: ReadonlyMap<string, Ex>): Ex {
@@ -1653,6 +1719,19 @@ export interface Calculus {
    * engine could not have found itself is still checked). Null when the line is not such a claim.
    */
   claimVerdict(sources: readonly string[], ops: readonly string[]): "ok" | "mismatch" | "unknown" | null;
+  /**
+   * The term-by-term rules on an integrand (the inner integral of a substitution or of parts):
+   * the rule line, the antiderivative printed and as an Expr; null when they cannot. No `+ C`.
+   */
+  basicIntegral(integrand: Expr, x: string): BasicIntegral | null;
+}
+
+export interface BasicIntegral {
+  /** the integrand rewritten first (`x^{\frac{1}{2}}` for `\sqrt{x}`), or null */
+  rewrite: string | null;
+  rule: string;
+  display: string;
+  F: Expr;
 }
 
 const MAX_STEPS = 8;
@@ -2499,7 +2578,12 @@ export function createCalculus(math: MathJsInstance, deps: CalculusDeps): Calcul
     { override: true },
   );
 
-  return { steps, fromLines, resultLatex, claimVerdict };
+  const basicIntegral = (integrand: Expr, x: string): BasicIntegral | null => {
+    const w = basicWork(integrand, x);
+    return w ? { rewrite: w.rewrite, rule: w.rule, display: w.display, F: w.Fexpr } : null;
+  };
+
+  return { steps, fromLines, resultLatex, claimVerdict, basicIntegral };
 }
 
 /** Expr → mathjs source (fully bracketed). */

@@ -218,11 +218,12 @@ describe("the board's order of asking", () => {
 });
 
 describe("what the engine refuses stays refused (the model may try; nothing wrong is drawn)", () => {
+  // (parts, substitution, identities and arctan are answered now: integration.test.ts)
   it.each([
-    "\\int x e^{x} dx", // integration by parts
-    "\\int \\sin^2 x \\, dx", // an identity first
-    "\\int \\frac{1}{x^2+1} dx", // arctan
-    "\\int x\\cos(x^2) dx", // substitution
+    "\\int e^{x^2} dx", // no elementary antiderivative
+    "\\int \\sin(x^2) dx", // no elementary antiderivative
+    "\\int \\frac{\\sin x}{x} dx", // no elementary antiderivative
+    "\\int e^{x} \\sin x \\, dx", // parts twice, round in a circle: not done
     "\\frac{d}{dx} x^x",
     "\\frac{d}{dx} f(x)",
   ])("%s", (latex) => {

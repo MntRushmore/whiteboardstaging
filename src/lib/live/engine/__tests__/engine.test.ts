@@ -363,8 +363,8 @@ describe("engine: definite integrals", () => {
   });
   it("gives no answer for integrals it cannot do", () => {
     const refused = [
-      "\\int x e^{x} dx =", // indefinite, needs integration by parts
-      "\\int \\sin^2 x \\, dx =", // indefinite, needs an identity first
+      "\\int e^{x^2} dx =", // indefinite, no elementary antiderivative
+      "\\int \\frac{\\sin x}{x} dx =", // indefinite, no elementary antiderivative
       "\\int_{-1}^{1} \\frac{1}{x} dx =", // singular inside the interval
       "\\int_{0}^{1} \\frac{1}{x} dx =", // divergent at the endpoint
       "\\int_{-1}^{1} \\sqrt{x} dx =", // not real on the whole interval
@@ -468,7 +468,7 @@ describe("engine: constructs the engine refuses", () => {
     }
   });
   it("never answers a line it could not read, whatever the mode", () => {
-    const hostile = ["\\lim_{x \\to 0} \\frac{1}{x} =", "\\begin{matrix}1\\end{matrix} =", "\\frac{dy}{dx} =", "f'(x) =", "\\int x e^{x} dx =", "\\sum_{i=1}^{n} i =", "\\oint_C F dr =", "\\nabla \\cdot F ="];
+    const hostile = ["\\lim_{x \\to 0} \\frac{1}{x} =", "\\begin{matrix}1\\end{matrix} =", "\\frac{dy}{dx} =", "f'(x) =", "\\int e^{x^2} dx =", "\\sum_{i=1}^{n} i =", "\\oint_C F dr =", "\\nabla \\cdot F ="];
     for (const latex of hostile) {
       for (const ctx of [feedback, answer]) {
         const a = engine.analyzeLine(latex, ctx);
