@@ -567,8 +567,8 @@ export function subsetRoots(a: readonly number[], b: readonly number[], tol: num
   return a.every((x) => b.some((y) => closeTo(x, y, tol) || Math.abs(x - y) <= tol));
 }
 
-/** Boundaries of an inequality: the roots of every side difference. */
-function boundaries(rel: Relation, variable: string): number[] {
+/** Boundaries of an inequality: the roots of every side difference (its critical values). */
+export function boundaries(rel: Relation, variable: string): number[] {
   const out: number[] = [];
   for (const alt of rel.alternatives) {
     for (let i = 0; i + 1 < alt.sides.length; i++) {
@@ -578,10 +578,23 @@ function boundaries(rel: Relation, variable: string): number[] {
         const b = R.at({ [variable]: x });
         return a === null || b === null ? null : difference(a, b);
       };
-      out.push(...rootsOf(g).roots);
+      out.push(...rootsOf(g).roots.map(nearestSimple));
     }
   }
   return dedupe(out);
+}
+
+/**
+ * A boundary found by bisection is only good to the tie-snap of `difference` (~1e-9): a root that
+ * close to a simple fraction (denominator ≤ 12) IS that fraction, so the relation is sampled at
+ * the true edge — where a denominator's zero makes the line undefined, not a huge number.
+ */
+function nearestSimple(r: number): number {
+  for (let d = 1; d <= 12; d++) {
+    const n = Math.round(r * d);
+    if (Math.abs(n / d - r) <= 1e-8 * Math.max(1, Math.abs(r))) return n / d;
+  }
+  return r;
 }
 
 /** Do two one-variable relations hold at exactly the same points? */
@@ -604,6 +617,21 @@ export function sameTruth(a: Relation, b: Relation, variable: string): "equal" |
     if (ta !== tb) return "different";
   }
   return compared >= 20 ? "equal" : "unknown";
+}
+
+/** Is a one-variable relation true at every point where it is defined, at none, or at some? */
+export function truthEverywhere(rel: Relation, variable: string): "always" | "never" | "mixed" | "unknown" {
+  const edges = boundaries(rel, variable);
+  const pts = [...GRID.filter((_, i) => i % 4 === 0), ...edges.flatMap((r) => [r, r - 1e-4 * Math.max(1, Math.abs(r)), r + 1e-4 * Math.max(1, Math.abs(r))])];
+  let yes = 0;
+  let no = 0;
+  for (const x of pts) {
+    const t = truthAt(rel, { [variable]: x }, 1e-6);
+    if (t === true) yes++;
+    else if (t === false) no++;
+  }
+  if (yes + no < 20) return "unknown";
+  return no === 0 ? "always" : yes === 0 ? "never" : "mixed";
 }
 
 // ---------------------------------------------------------------- expressions: comparison

@@ -15,6 +15,7 @@ import type { LocalSolveResult } from "@/lib/live/localSolve";
 import type { EvalProblem, Expectation, Topic } from "./corpus";
 import {
   assignmentOf,
+  boundaries,
   closeTo,
   compareExprs,
   isAntiderivative,
@@ -31,6 +32,7 @@ import {
   solvedValues,
   subsetRoots,
   truthAt,
+  truthEverywhere,
   type Expr,
   type Parsed,
   type Relation,
@@ -322,7 +324,7 @@ function judgeSystemStep(step: string, p: Parsed, truth: Truth, candidates: numb
   return t("ok");
 }
 
-function compareRelations(prev: Relation, cur: Relation, candidates: number[], cache: Map<string, RootSet | null>, origin: Relation | null): Omit<Transition, "from" | "to"> {
+function compareRelations(prev: Relation, cur: Relation, candidates: number[], cache: Map<string, RootSet | null>, origin: Relation | null, lastIneq: Relation | null): Omit<Transition, "from" | "to"> {
   const vars = [...new Set([...prev.vars, ...cur.vars])];
   if (vars.length === 0) {
     const a = truthAt(prev, {});
@@ -351,27 +353,61 @@ function compareRelations(prev: Relation, cur: Relation, candidates: number[], c
     if (o && !o.all && subsetRoots(b.roots, a.roots, tol) && sameRoots(o.roots, b.roots, tol)) return { status: "ok", reason: "rejects the extraneous candidates" };
     return { status: "broken", reason: `solutions ${rootsText(a)} → ${rootsText(b)}` };
   }
-  if (isInequality(prev) && isInequality(cur)) {
-    const t = sameTruth(prev, cur, v);
+  // an inequality's answer: the same solution set as the inequality it came from, or as the
+  // problem itself (a zero of a denominator dropped from `(x + 1)(x - 3) \le 0`)
+  const asInequality = (ref: Relation): Omit<Transition, "from" | "to"> => {
+    const t = sameTruth(ref, cur, v);
+    if (t !== "equal" && origin && origin !== ref && isInequality(origin) && origin.vars.length === 1 && origin.vars[0] === v && sameTruth(origin, cur, v) === "equal") return { status: "ok", reason: "the problem's own solution set" };
     return t === "equal" ? { status: "ok", reason: "" } : t === "different" ? { status: "broken", reason: "a different solution set" } : { status: "unverified", reason: "cannot sample" };
+  };
+  if (isInequality(prev) && isInequality(cur)) return asInequality(prev);
+  if (lastIneq && isInequality(prev) && isEquation(cur)) {
+    // (an inequality problem only: under an equation, `x > 2` is a domain, not a step to solve)
+    // the critical values: the equation's roots are exactly where the inequality's sides meet
+    const rs = rootSet(cur, v, candidates);
+    if (!rs || rs.all) return { status: "unverified", reason: "cannot solve" };
+    const edges = boundaries(prev, v);
+    if (sameRoots(rs.roots, edges, setTol(prev, cur))) return { status: "ok", reason: "the critical values" };
+    return { status: "broken", reason: `critical values ${rootsText(rs)}, the inequality turns at {${edges.map(fmtNumber).join(", ")}}` };
   }
+  if (isEquation(prev) && isInequality(cur) && lastIneq && lastIneq.vars.length === 1 && lastIneq.vars[0] === v) return asInequality(lastIneq);
   return { status: "unverified", reason: "an equation and an inequality" };
 }
 
-function judgeChainStep(prev: Parsed, cur: Parsed, topic: Topic, candidates: number[], cache: Map<string, RootSet | null>, origin: Parsed): Omit<Transition, "from" | "to"> {
+function judgeChainStep(prev: Parsed, cur: Parsed, topic: Topic, candidates: number[], cache: Map<string, RootSet | null>, origin: Parsed, lastIneq: Relation | null = null): Omit<Transition, "from" | "to"> {
   if (cur.kind === "unreadable") return cur.reason === "empty" ? { status: "broken", reason: "empty step" } : { status: "unverified", reason: `unreadable step (${cur.reason})` };
   if (prev.kind === "unreadable") return { status: "unverified", reason: `the line before is unreadable (${prev.reason})` };
   if (prev.kind === "question" || cur.kind === "question") return { status: "unverified", reason: "a question line" };
-  if (prev.kind === "relation" && cur.kind === "relation") return compareRelations(prev, cur, candidates, cache, origin.kind === "relation" ? origin : null);
+  if (prev.kind === "relation" && cur.kind === "relation") return compareRelations(prev, cur, candidates, cache, origin.kind === "relation" ? origin : null, lastIneq);
   if (cur.kind === "empty-set" || cur.kind === "all-reals") {
     if (prev.kind !== "relation") return { status: "unverified", reason: "∅ / ℝ after a non-relation" };
+    if (prev.vars.length === 0) {
+      // the unknown cancelled: `0 = -9` is ∅, `0 = 0` (or `0 < 4`) is every number
+      const holds = truthAt(prev, {});
+      if (holds === null) return { status: "unverified", reason: "undefined" };
+      if (cur.kind === "empty-set") return holds ? { status: "broken", reason: "says ∅ after a true statement" } : { status: "ok", reason: "" };
+      return holds ? { status: "ok", reason: "" } : { status: "broken", reason: "says every value after a false statement" };
+    }
     const v = prev.vars[0];
     if (prev.vars.length !== 1) return { status: "unverified", reason: "several unknowns" };
+    if (lastIneq && lastIneq.vars.length === 1 && lastIneq.vars[0] === v) {
+      // an inequality's answer: ∅ where it never holds, every number where it always does
+      const e = truthEverywhere(lastIneq, v);
+      if (e === "unknown") return { status: "unverified", reason: "cannot sample" };
+      if (cur.kind === "empty-set") return e === "never" ? { status: "ok", reason: "" } : { status: "broken", reason: "says ∅, the inequality holds somewhere" };
+      return e === "always" ? { status: "ok", reason: "" } : { status: "broken", reason: `says every ${v}, the inequality fails somewhere` };
+    }
     if (isEquation(prev)) {
       const rs = rootSet(prev, v, candidates);
       if (!rs) return { status: "unverified", reason: "cannot solve" };
       const empty = !rs.all && rs.roots.length === 0;
-      if (cur.kind === "empty-set") return empty ? { status: "ok", reason: "" } : { status: "broken", reason: `says ∅, the line before has ${rootsText(rs)}` };
+      if (cur.kind === "empty-set") {
+        if (empty) return { status: "ok", reason: "" };
+        // every candidate dropped because the problem cannot take it (`x = 2` against `x \neq 2`)
+        const o = origin.kind === "relation" && origin.vars.length === 1 && origin.vars[0] === v && isEquation(origin) ? rootSet(origin, v, candidates) : null;
+        if (o && !o.all && o.roots.length === 0 && !rs.all) return { status: "ok", reason: "rejects the extraneous candidates" };
+        return { status: "broken", reason: `says ∅, the line before has ${rootsText(rs)}` };
+      }
       return rs.all ? { status: "ok", reason: "" } : { status: "broken", reason: `says every ${v}, the line before has ${rootsText(rs)}` };
     }
     return { status: "unverified", reason: "∅ / ℝ after an inequality" };
@@ -418,14 +454,16 @@ function judgeSteps(problem: EvalProblem, lines: readonly string[], steps: reado
   let prevLatex = targetLatex;
   let good: Parsed = origin;
   let goodLatex = targetLatex;
+  // the last inequality in the chain: what an answer after its critical values is checked against
+  let lastIneq: Relation | null = origin.kind === "relation" && isInequality(origin) ? origin : null;
   for (let i = 0; i < steps.length; i++) {
     const cur = parsedSteps[i];
-    let r = judgeChainStep(prev, cur, problem.topic, candidates, cache, origin);
+    let r = judgeChainStep(prev, cur, problem.topic, candidates, cache, origin, lastIneq);
     let from = prevLatex;
     // One mistake is blamed once: a line that follows from the wrong line before it is not a
     // second mistake, and a line that goes back to the last good line is not one either.
     if (good !== prev) {
-      const back = judgeChainStep(good, cur, problem.topic, candidates, cache, origin);
+      const back = judgeChainStep(good, cur, problem.topic, candidates, cache, origin, lastIneq);
       if (RANK[back.status] < RANK[r.status]) {
         r = back;
         from = goodLatex;
@@ -435,6 +473,7 @@ function judgeSteps(problem: EvalProblem, lines: readonly string[], steps: reado
     if (cur.kind === "unreadable") continue;
     prev = cur;
     prevLatex = steps[i];
+    if (lastIneq && r.status !== "broken" && cur.kind === "relation" && isInequality(cur)) lastIneq = cur;
     if (r.status !== "broken" && from === goodLatex) {
       good = cur;
       goodLatex = steps[i];
