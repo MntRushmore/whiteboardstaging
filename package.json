@@ -20,6 +20,7 @@
     "eval:drawings": "EVAL_WRITE=1 vitest run src/__eval__/drawings.test.ts",
     "eval:live": "RUN_LIVE_EVAL=1 EVAL_WRITE=1 vitest run src/__eval__/handwriting.test.ts",
     "eval:models": "RUN_MODEL_BENCH=1 EVAL_WRITE=1 vitest run src/__eval__/models/models.test.ts",
+    "eval:figures": "RUN_FIGURE_EVAL=1 EVAL_WRITE=1 vitest run src/__eval__/figures/figures.test.ts",
     "env:check": "node scripts/check-vercel-env.mjs",
     "bundle:check": "node scripts/check-bundle.mjs",
     "dead-code": "node scripts/find-dead-code.mjs",
