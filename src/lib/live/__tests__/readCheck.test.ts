@@ -238,6 +238,13 @@ describe("accepting the second reader's LaTeX", () => {
     expect(sameRead("2x + 3", "2x + 8")).toBe(false);
   });
 
+  it("refuses a 'correction' that itself looks misread (the benchmark's `0=5` → `\\sigma = 5`)", () => {
+    expect(acceptReread(engine, "0=5", "\\sigma = 5")).toBeNull();
+    expect(acceptReread(engine, "0=5", "\\sigma = 5", ["F = \\sigma A"])).toBe("\\sigma = 5");
+    expect(acceptReread(engine, "U=3", "V=3", ["v=u+a t"])).toBeNull();
+    expect(acceptReread(engine, "U=3", "u=3", ["v=u+a t"])).toBe("u=3");
+  });
+
   it("refuses words, a worked answer, and LaTeX the engine cannot read", () => {
     expect(acceptReread(engine, "0=5", "\\text{a equals five}")).toBeNull();
     expect(acceptReread(engine, "0=5", "Sorry, I cannot read this")).toBeNull();

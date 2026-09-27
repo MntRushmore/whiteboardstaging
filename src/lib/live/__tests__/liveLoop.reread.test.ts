@@ -181,6 +181,7 @@ describe("live loop — the second reader", () => {
     ["the same read", "0 = 5"],
     ["LaTeX the engine cannot read", "a=\\frac{5}{"],
     ["a worked answer instead of a transcription", "a = 5, \\ b = 2a - 3, \\ b = 7, \\ c = 12"],
+    ["itself a likely misread", "\\sigma = 5"],
   ])("an answer that is %s is ignored: Mathpix's read stands", async (_why, latex) => {
     answer = async () => reply(latex);
     const lineId = await write();

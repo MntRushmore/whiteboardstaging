@@ -289,15 +289,24 @@ export function sameRead(a: string, b: string): boolean {
 
 /**
  * The second reader's LaTeX when it should replace Mathpix's, else null: it must differ, carry no
- * words, be readable by the engine, and be a transcription of the same line (not a paragraph, not
- * a worked answer: within half to double Mathpix's length).
+ * words, be a transcription of the same line (not a paragraph, not a worked answer: within half to
+ * double Mathpix's length), be readable by the engine, and not itself look misread in its column
+ * (`suspiciousRead` — on the benchmark the model's only wrong "fix" was `0=5` → `\sigma = 5`).
+ *
+ * @param others the column's other lines, as `suspiciousRead` takes them
  */
-export function acceptReread(engine: Pick<LiveEngine, "analyzeLine">, mathpixLatex: string, candidate: string): string | null {
+export function acceptReread(
+  engine: Pick<LiveEngine, "analyzeLine">,
+  mathpixLatex: string,
+  candidate: string,
+  others: readonly string[] = [],
+): string | null {
   const next = (candidate ?? "").replace(/^\s*\$+|\$+\s*$/g, "").trim();
   if (!next || sameRead(next, mathpixLatex)) return null;
   if (hasWords(next)) return null;
   const len = (s: string) => s.replace(/\s/g, "").length;
   const was = len(mathpixLatex);
   if (len(next) > was * 2 + 4 || len(next) * 2 + 4 < was) return null;
+  if (suspiciousRead(next, others)) return null;
   return engineReads(engine, next) ? next : null;
 }

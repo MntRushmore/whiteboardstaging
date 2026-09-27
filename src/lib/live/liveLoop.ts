@@ -1279,7 +1279,7 @@ export class LiveLoop implements LiveController {
     } finally {
       this.rereadAborts.delete(ctrl);
     }
-    const accepted = acceptReread(engine, res.latex, reply.latex);
+    const accepted = acceptReread(engine, res.latex, reply.latex, [...above, ...below]);
     record({ latex: reply.latex, accepted: Boolean(accepted), model: reply.model, ms: reply.ms });
     clientMetric("live.reread", { signal, accepted: Boolean(accepted), ms: reply.ms, lineId });
     if (!accepted || !current() || !this.started) return;
