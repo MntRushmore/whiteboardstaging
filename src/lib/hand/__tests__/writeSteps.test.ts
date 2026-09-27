@@ -77,11 +77,11 @@ describe("layoutSteps", () => {
   });
 
   it("surfaces a line it could not draw, per line and for the block", () => {
-    const block = layoutSteps(["x = 4", "\\sum_{i=1}^{n} i"], { seed: 2 });
+    const block = layoutSteps(["x = 4", "\\zeta(2) = \\frac{\\pi^{2}}{6}"], { seed: 2 });
     expect(block.lines[0].unsupported).toEqual([]);
-    expect(block.lines[1].unsupported).toContain("\\sum");
-    expect(block.unsupported).toContain("\\sum");
-    expect(block.lines[1].latex).toBe("\\sum_{i=1}^{n} i");
+    expect(block.lines[1].unsupported).toContain("\\zeta");
+    expect(block.unsupported).toContain("\\zeta");
+    expect(block.lines[1].latex).toBe("\\zeta(2) = \\frac{\\pi^{2}}{6}");
   });
 
   it("handles an empty list", () => {

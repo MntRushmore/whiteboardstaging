@@ -81,12 +81,16 @@ describe("handwriting: planning and the unsupported interlock", () => {
   });
 
   it("refuses to draw anything when the hand engine reports an unsupported construct", () => {
-    const { plan, unsupported } = planHandwriting(["\\sum_{i=1}^{n} i = 5", "x = 4"], { size: 26, seed: 1 });
+    const { plan, unsupported } = planHandwriting(["\\zeta(2) = 5", "x = 4"], { size: 26, seed: 1 });
     expect(unsupported.length).toBeGreaterThan(0);
     expect(plan).toBeNull();
-    const matrix = planHandwriting(["\\begin{pmatrix}1&0\\end{pmatrix}"], { size: 26, seed: 1 });
-    expect(matrix.plan).toBeNull();
-    expect(matrix.unsupported.length).toBeGreaterThan(0);
+    const env = planHandwriting(["\\begin{tikzcd}A&B\\end{tikzcd}"], { size: 26, seed: 1 });
+    expect(env.plan).toBeNull();
+    expect(env.unsupported.length).toBeGreaterThan(0);
+    // prose is not maths: a sentence is never handwritten on the student's page
+    const prose = planHandwriting(["\\text{because the discriminant is negative}"], { size: 26, seed: 1 });
+    expect(prose.plan).toBeNull();
+    expect(prose.unsupported).toEqual(["\\text"]);
   });
 
   it("reveals strokes in order: one pen-down at a time, whole strokes behind it", () => {
@@ -375,7 +379,7 @@ describe("handwriting: wired into Solve", () => {
   });
 
   it("falls back to the typeset solve stream when a step is not drawable", async () => {
-    engine = engineWith(["\\sum_{i=1}^{4} i = 10", "x = 4"]);
+    engine = engineWith(["\\zeta(3) \\approx 1.202", "x = 4"]);
     loop.stop();
     resetLiveStore();
     editor = createFakeEditor();

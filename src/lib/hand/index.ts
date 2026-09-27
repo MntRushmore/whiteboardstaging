@@ -47,6 +47,19 @@
  * For a worked solution use `layoutSteps`, which stacks lines on a baseline grid; each
  * line carries its own `strokes` (already in block coordinates) and baseline `y`, so a
  * caller can reveal a line, pause, then reveal the next.
+ *
+ * ## What it can write
+ *
+ * Arithmetic, algebra (surds, `\pm`, absolute values, logs, trig, Greek, sets and
+ * intervals, `cases` and matrices), calculus (integrals with limits that grow with their
+ * integrand, `\lim`, `\sum`, primes, evaluation brackets and bars) and upright formulas
+ * and units (`\mathrm{Fe_{2}O_{3}}`, `\mathrm{m/s^{2}}`). The contract with the engine
+ * is the table in `__tests__/coverage.test.ts`; what the hand looks like is
+ * `docs/hand/gallery.png`, regenerated with `npx jiti src/lib/hand/__tests__/gallery.ts`.
+ *
+ * The board carries no words: `\text{…}` is written only while it is a short
+ * mathematical word ("or", "no solution", a unit). A sentence is reported in
+ * `unsupported`, like any other construct the hand will not draw.
  */
 
 export {
