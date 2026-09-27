@@ -309,12 +309,13 @@ describe("live loop — Solve answers locally, and checks the model when it cann
   });
 
   it("keeps the student's own names in scope, so the engine's continuation is not rejected", async () => {
-    solveScript = [[step(1, "2x = 8"), step(2, "\\boxed{x = 4}", true)]];
-    // a line the local CAS declines (two unknowns) so the stream is genuinely needed
-    await solve("2x + y = 8");
+    solveScript = [[step(1, "2a = 8"), step(2, "\\boxed{a = 4}", true)]];
+    // a line the local CAS declines (two unknowns) so the stream is genuinely needed — not in x
+    // and y, which would be a line to graph (its graph is Solve's answer, no model asked)
+    await solve("2a + b = 8");
 
     expect(solveCalls()).toEqual(["/api/live/solve"]);
-    expect(typesetSteps()).toEqual(["2x = 8", "x = 4"]);
+    expect(typesetSteps()).toEqual(["2a = 8", "a = 4"]);
   });
 
   it("takes the first step that survives when Live escalates one rung", async () => {
