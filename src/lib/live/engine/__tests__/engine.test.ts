@@ -186,7 +186,8 @@ describe("engine: solveLatex", () => {
   it("cubic, exponential and numeric fallback", () => {
     expect(engine.solveLatex("x^3 - 6x^2 + 11x - 6 = 0")?.latex).toBe("x = 1, \\ x = 2, \\ x = 3");
     expect(engine.solveLatex("2^x = 8")?.latex).toBe("x = 3");
-    expect(engine.solveLatex("\\sin x = 2")).toBeNull();
+    // no angle has sin x = 2: the bound, then no solution (trigEquation.ts), not a numeric scan
+    expect(engine.solveLatex("\\sin x = 2")?.latex).toBe("\\varnothing");
   });
   it("returns null when unsupported", () => {
     expect(engine.solveLatex("x + y = 5")).toBeNull();
@@ -488,7 +489,7 @@ describe("engine: regression net — everything that already worked", () => {
     ["2^{10} =", "1024"],
     ["\\sqrt{144}", "12"],
     ["\\sqrt{16}", "4"],
-    ["\\sin(30^\\circ)", "0.5"],
+    ["\\sin(30^\\circ)", "\\frac{1}{2}"], // exact at the special angles (trig.ts)
     ["\\log_{2}(8)", "3"],
     ["\\ln(e^2)", "2"],
     ["2\\pi", "6.283"],
