@@ -73,6 +73,8 @@ export const TOPICS = [
   "sequences",
   "exponential-models",
   "statistics",
+  "standard-form",
+  "vertex-form",
   // Algebra 2 (src/__eval__/courses/algebra2.ts)
   "complex-numbers",
   "poly-division",
@@ -119,6 +121,8 @@ export const TOPIC_COURSE: Record<Topic, Course> = {
   sequences: "algebra-1",
   "exponential-models": "algebra-1",
   statistics: "algebra-1",
+  "standard-form": "algebra-1",
+  "vertex-form": "algebra-1",
   "complex-numbers": "algebra-2",
   "poly-division": "algebra-2",
   "function-ops": "algebra-2",

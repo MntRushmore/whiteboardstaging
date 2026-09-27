@@ -31,6 +31,10 @@ at `0e1e1af`):
 | Geometry (`src/__eval__/courses/geometry.ts`, merged from feat/geometry) | 153 | — | **153 (100%)** |
 | **all** | 596 | — | **596 (100%)** |
 
+Algebra 1 standard form, vertex form and statistics (the engine at `0e57fc0` before): Algebra 1
+**176 → 237** problems (61 new: 16 standard form, 20 vertex form, 25 statistics), **237 / 237
+pass**; the whole scoreboard 598 → 659, all passing.
+
 ## Algebra 1
 
 | Standard | Skill | On the board (in → the answer) | Status |
@@ -42,14 +46,14 @@ at `0e1e1af`):
 | A-SSE.2 | Laws of exponents, one rule a line | `(2x^{3}y)^{2}` → `2^{2}x^{3 \cdot 2}y^{2}`, `4x^{6}y^{2}`; `\frac{12x^{5}y^{2}}{4x^{2}y^{5}}` → … `\frac{3x^{3}}{y^{3}}`; negative and zero exponents | does it |
 | A-SSE.2 | Factoring (common factor, trinomials, difference of squares, grouping) | `2x^{2} + 7x + 3` → split and group → `(x + 3)(2x + 1)` | does it |
 | A-SSE.3a | Factor a quadratic to find its zeros | `x^{2} - 5x + 6 = 0` → `(x - 2)(x - 3) = 0` → `x = 2, \ x = 3` | does it |
-| A-SSE.3b | Complete the square (vertex form) | `(x + 3)^{2} = 16` solved by square roots | partial: an expression is never rewritten into vertex form (asking for it needs words) |
+| A-SSE.3b | Complete the square (vertex form) | `y = 2x^{2} - 12x + 7`, `y = a(x - h)^{2} + k` (or `\text{vertex form}`) → `y = 2(x^{2} - 6x) + 7`, `\left(\frac{-6}{2}\right)^{2} = 9`, `y = 2(x^{2} - 6x + 9 - 9) + 7`, `y = 2(x^{2} - 6x + 9) - 18 + 7`, `y = 2(x - 3)^{2} - 11`; fractional h, k exact; `(x + 3)^{2} = 16` solved by square roots | does it (asked with the template or the student's own word under `y = …` / `f(x) = …`; a bare expression `x^{2} + 6x + 5` is not rewritten) |
 | A-SSE.3c | Rewrite exponentials (`1.15^{t} = (1.15^{\frac{1}{12}})^{12t}`) | — | not yet |
 | A-APR.1 | Add, subtract, multiply polynomials | `(3x^{2} + 2x - 1) - (x^{2} - 4x + 5)` → `2x^{2} + 6x - 6` | does it |
 | A-APR.3 | Zeros from factors | `(x - 3)(x + 4) = 0` → `x = -4, \ x = 3` | does it |
 | A-CED.1 | Equations from a context | a word problem: the model writes the setup, the engine solves it | partial (the setup is a model's) |
 | A-CED.2 | Lines: slope from two points, point-slope, slope-intercept | `(2, 3), (5, 9)` → `m = \frac{9 - 3}{5 - 2}`, `m = 2`, `y - 3 = 2(x - 2)`, `y = 2x - 1`; `m = 2`, `(1, 3)` → `y = 2x + 1`; `2x + 3y = 6`, `y = ?` → `y = -\frac{2}{3}x + 2` | does it |
 | A-CED.2 | Intercepts | `3x + 4y = 12`, `y = 0` → `x = 4` | does it |
-| A-CED.2 | Standard form from slope-intercept | — | not yet (no word-free way to ask for it) |
+| A-CED.2 | Standard form `Ax + By = C` (and back) | `y = -\frac{2}{3}x + 2`, `Ax + By = C` (or `\text{standard form}`) → `3y = -2x + 6`, `2x + 3y = 6`; `y - 3 = 2(x - 1)` → `y - 3 = 2x - 2`, `-2x + y = 1`, `2x - y = -1`; two points / a point and a slope → the slope, point-slope, standard form; `2x + 3y = 6`, `y = mx + b` → `y = -\frac{2}{3}x + 2` | does it (whole numbers, A > 0, gcd 1; a line already in the form asked is left alone) |
 | A-CED.3 | Constraints | — | n/a |
 | A-CED.4 | A formula solved for a letter | `A = \frac{1}{2}bh`, `h = ?` → `2A = bh`, `h = \frac{2A}{b}`; `A = P + Prt`, `P = ?` → `A = P(rt + 1)`, …; `A = \pi r^{2}`, `r = ?` → `r = \sqrt{\frac{A}{\pi}}` | does it (the letter linear once denominators are cleared, or once under a power / root / exp / log) |
 | A-REI.1 | Explain each step | the student's steps checked line by line | does it |
@@ -62,16 +66,54 @@ at `0e1e1af`):
 | F-IF.1 | Domain (a value outside it) | `f(x) = \frac{1}{x - 2}`, `f(2) =` → `= \frac{1}{2 - 2}`, `= \frac{1}{0}` (no value) | partial (only by evaluating there) |
 | F-IF.4–5 | Key features from a graph or a context | — | n/a / (graphing) |
 | F-IF.6 | Average rate of change | `\frac{f(4) - f(1)}{4 - 1} =` → `= 2` | does it |
-| F-IF.8 | Rewrite to reveal features (vertex form) | — | not yet |
+| F-IF.8 | Rewrite to reveal features (vertex form, the vertex) | `y = x^{2} + 6x + 5`, `(h, k) = ?` (or `\text{vertex}`) → `h = -\frac{6}{2(1)}`, `h = -3`, `k = (-3)^{2} + 6(-3) + 5`, `k = 9 - 18 + 5`, `k = -4`, `(h, k) = (-3, -4)`; read off `y = 2(x + 3)^{2} - 1` → `y = 2(x - (-3))^{2} - 1`, `(h, k) = (-3, -1)`; back: `y = 2(x - 3)^{2} + 1`, `y = ax^{2} + bx + c` → `y = 2(x^{2} - 6x + 9) + 1`, `y = 2x^{2} - 12x + 18 + 1`, `y = 2x^{2} - 12x + 19` | does it (the axis of symmetry and the zeros from vertex form are not asked separately) |
 | F-BF.1–2 | Sequences: arithmetic and geometric, nth term, explicit from recursive | `3, 7, 11, \ldots`, `a_{10} = ?` → `d = 4`, `a_{10} = 3 + (10 - 1) \cdot 4`, …, `39`; `a_{1} = 2`, `a_{n} = a_{n - 1} + 5`, `a_{n} = ?` → `a_{n} = 5n - 3` | does it |
 | F-BF.3 | Transformations | — | not yet (graphing) |
 | F-LE.2 | Linear model from two points | the line through two points | does it |
 | F-LE.2 | Exponential model through two points (`y = ab^{x}`) | — | not yet |
 | F-LE.5 | Growth, decay, simple and compound interest | `A = P(1 + r)^{t}` with the values → `A = 1000(1 + 0.05)^{3}`, `A = 1000(1.05)^{3}`, …, `A = 1157.625`; compound interest `A \approx 1348.85` | does it (a value with no short decimal is written to the cent with ≈) |
 | F-LE.5 | Percent change | `\frac{60 - 50}{50} \times 100 =` → `20` | does it (the value; no working) |
-| S-ID.2 | Mean of a list | `3, 5, 7, 9, 11`, `\bar{x} = ?` → `\bar{x} = \frac{35}{5}`, `\bar{x} = 7` | does it |
-| S-ID.2–3 | Median, IQR, standard deviation | — | not yet (no word-free notation on the board) |
+| S-ID.2 | Mean of a list | `3, 5, 7, 9, 11`, `\bar{x} = ?` (or `\mu`, `\text{mean}`) → `\bar{x} = \frac{3 + 5 + 7 + 9 + 11}{5}`, `\bar{x} = \frac{35}{5}`, `\bar{x} = 7`; decimal data stays in decimals | does it |
+| S-ID.2 | Median, mode, range | `12, 3, 15, 7, 8`, `\text{median} = ?` → `3, 7, 8, 12, 15`, `\text{median} = 8`; even n → `\frac{7 + 8}{2}`, `7.5`; `\text{mode} = ?` → `\text{mode} = 3, \ 7` / `\varnothing`; `\text{range} = ?` → `15 - 3`, `12` | does it (the student's own word is repeated on the answer line; every value repeated equally often: the mode is not answered) |
+| S-ID.2–3 | Quartiles, IQR, the five-number summary | `3, 7, 8, 12, 15, 20`, `IQR = ?` → `Q_{1} = 7`, `Q_{3} = 15`, `IQR = Q_{3} - Q_{1}`, `IQR = 15 - 7`, `IQR = 8`; `\text{five number summary}` → `Q_{2} = \frac{8 + 12}{2}`, `Q_{2} = 10`, `Q_{1} = 7`, `Q_{3} = 15`, `3, \ 7, \ 10, \ 15, \ 20` | does it (TI-84 quartiles — see "Statistics conventions") |
+| S-ID.2 | Standard deviation, population and sample | `3, 7, 8, 12, 15`, `\sigma = ?` → `\bar{x} = \frac{3 + 7 + 8 + 12 + 15}{5}`, `\bar{x} = 9`, `\sigma = \sqrt{\frac{(3 - 9)^{2} + … + (15 - 9)^{2}}{5}}`, `\sigma = \sqrt{\frac{36 + 4 + 1 + 9 + 36}{5}}`, `\sigma = \sqrt{\frac{86}{5}}`, `\sigma \approx 4.15`; `s = ?` → … `\sqrt{\frac{86}{4}}`, `s \approx 4.64` | does it (up to 12 values; each squared deviation written out for up to 6 values with a short mean) |
+| S-ID.2 | A frequency table | — | not yet (a table is not read; the values would have to be listed) |
 | S-ID.6–7 | Lines of fit, correlation | — | not yet |
+
+### How the student asks (no words on the board)
+
+The template or the student's own label, written under what it is about: `Ax + By = C` /
+`\text{standard form}` and `y = mx + b` / `\text{slope-intercept form}` under a line (or two
+points, or a point and a slope); `y = a(x - h)^{2} + k` / `\text{vertex form}`, `(h, k) = ?` /
+`\text{vertex}`, `y = ax^{2} + bx + c` / `\text{standard form}` under a quadratic; a statistic's
+symbol (`\bar{x}`, `\mu`, `Q_{1}`, `Q_{2}`, `Q_{3}`, `\sigma`, `s`) or word (`\text{median}`,
+`\operatorname{med}`, `\text{mode}`, `\text{range}`, `IQR`, `\text{SD}`, `\text{standard
+deviation}`, `\text{five number summary}`, any case) with `= ?`, `=`, or a word alone, under a data
+list. A template written ABOVE the line Solve is pressed on converts that line. Unasked, nothing
+changes: a lone `y = -\frac{2}{3}x + 2`, a lone quadratic and a lone list get no answer. The
+tutor repeats the student's own word on the answer line (`\text{median} = 8`) and adds only
+standard symbols of its own.
+
+### Statistics conventions
+
+- **Quartiles**: the median of each half of the sorted data, the median itself in **neither** half
+  when n is odd — the TI-84's 1-Var Stats and most US Algebra 1 texts ("method 1"). `3, 7, 8, 12,
+  15` has `Q_{1} = 5`, `Q_{3} = 13.5`. A student's quartile by another common method (the median
+  in both halves — Tukey's hinges; a spreadsheet's interpolation, QUARTILE.INC / .EXC) is left
+  unmarked, never ringed; any other value is ringed. Quartiles need at least 4 values.
+- **Standard deviation**: `\sigma` (`\sigma_{x}`) is the population's, ÷ n; `s` (`s_{x}`) the
+  sample's, ÷ (n − 1). A name that does not say (`\text{SD}`, `\text{standard deviation}`) is the
+  **population's**; a student's sample value under such a name is left unmarked. An exact root is
+  written exactly (`\sigma = 2`); otherwise `\approx` to 2 decimal places.
+- **Mode**: every most frequent value, ascending (`3, \ 7`); no value repeated is `\varnothing`;
+  every value repeated equally often (`2, 2, 5, 5`) is not answered (texts disagree), and a claim
+  there is left unmarked. Some of the modes (`3` for `3, 7`) is left unmarked, not ringed.
+- **Numbers**: exact. A median of two middle values is a short decimal (`7.5`); data written in
+  decimals is answered in decimals; a mean keeps the fraction the original `\bar{x}` wrote
+  (`\frac{15}{4}`) for whole-number data.
+- **Data list**: 3 to 30 numbers separated by commas, braces allowed; never with `\ldots` (a
+  sequence), a letter (points, `x = 2, 3`) or a bracket. Arithmetic sequences keep their own
+  questions (`a_{10} = ?`, `S_{6} = ?`); a list with `\ldots` has no statistics.
 
 ## Algebra 2
 
@@ -112,3 +154,15 @@ rounded decimal is never), an equation by its solution set, a claim `f(4) = 11` 
 when it has the same solutions; a *different* equation is only ringed when it is a sign or
 constant slip, because the next line may be a second equation of a system (the engine's existing
 rule). A complex answer `x = 1 \pm 2i` under `x^{2} + 2x + 5 = 0` is ringed; `x = -1 \pm 2i` ticked.
+
+Standard form, vertex form and statistics: a template or a word asking for a form is not a step
+(the line under it is compared with the line above it: `y = -\frac{2}{3}x + 2`, `Ax + By = C`,
+`3y = -2x + 6` ✓, `2x - 3y = 6` ringed). Under a quadratic, a rewrite that keeps a but slips in
+the constant (`y = (x + 3)^{2} + 4` for `y = x^{2} + 6x + 5`: 9 added and not taken away) or in
+the sign of h, while changing form (expanded ↔ bracketed), is ringed; any other different
+quadratic stays unmarked (a translation, the next exercise — `y = x^{2}` then `y = (x - 2)^{2} +
+3`). A vertex claim `(h, k) = (-3, -4)` under the quadratic is ticked or ringed. Under a data list:
+the data sorted is ticked (a list with other values is left alone — it may be a second data set);
+a statistic claimed (`Q_{1} = 5`, `\text{median} = 8`, `\sigma \approx 4.15` to the places
+written) is ticked or ringed, three lines down as well; a value right by another convention (see
+"Statistics conventions") is left unmarked.
