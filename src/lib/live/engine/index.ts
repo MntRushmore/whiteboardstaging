@@ -3,7 +3,7 @@
  * Pure TypeScript: no DOM, no React, no tldraw. Every entry point catches and degrades to
  * kind 'unknown' / verdict 'unknown' / null — the engine never throws.
  */
-import type { MathJsInstance } from "mathjs";
+import type { MathJsInstance, MathNode } from "mathjs";
 import type { AnalyzeContext, EngineVerdict, LineAnalysis, LiveEngine } from "../contracts";
 import { balance as balanceChem, balanceEquation, equationLatex, isBalanced, molarMassLatex, normalizeChemText, parseEquation, looksLikeChemEquation } from "./chem";
 import { preClassify } from "./classify";
@@ -740,6 +740,24 @@ export function createEngine(mod: MathModule): LiveEngine {
         const rhs = safeParse(math, R.source);
         if (!lhs || !rhs) return null;
         return { lhs, rhs, op: split.ops[0] as RelOp, variable: unknowns[0], latex: pre };
+      } catch {
+        return null;
+      }
+    },
+    // `-3 < 2x + 1 < 7`: the same restrictions, three sides (inequality.ts)
+    chain: (latex) => {
+      try {
+        const pre = preprocessLatex(latex);
+        if (/\d\.\d/.test(pre)) return null;
+        const split = splitRelations(pre);
+        if (split.sides.length !== 3 || !split.ops.every(isRelOp)) return null;
+        const ts = split.sides.map((side) => tr(side));
+        if (ts.some((t) => t.hasUnits || t.hasText || t.hasPercent || t.hasPm || t.functions.length > 0)) return null;
+        const unknowns = [...new Set(ts.flatMap(unknownsOf))];
+        if (unknowns.length !== 1 || !/^[a-zA-Z]$/.test(unknowns[0])) return null;
+        const nodes = ts.map((t) => safeParse(math, t.source));
+        if (nodes.some((n) => !n)) return null;
+        return { sides: nodes as [MathNode, MathNode, MathNode], ops: split.ops as [RelOp, RelOp], variable: unknowns[0], latex: pre };
       } catch {
         return null;
       }

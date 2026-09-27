@@ -125,6 +125,57 @@ describe("absolute value: isolate the bars, then split", () => {
   });
 });
 
+describe("inequalities past linear: critical values, then the intervals (inequality.ts)", () => {
+  it.each([
+    // quadratic: factor, the critical values, the sign between them
+    ["x^{2} - 4 < 0", ["(x + 2)(x - 2) < 0", "x = -2, \\ x = 2", "-2 < x < 2"]],
+    ["x^2-5x+6>0", ["(x - 2)(x - 3) > 0", "x = 2, \\ x = 3", "x < 2, \\ x > 3"]],
+    ["x^2-5x+6 \\le 0", ["(x - 2)(x - 3) \\le 0", "x = 2, \\ x = 3", "2 \\le x \\le 3"]],
+    ["x^2 < 9", ["x^{2} - 9 < 0", "(x + 3)(x - 3) < 0", "x = -3, \\ x = 3", "-3 < x < 3"]],
+    // a negative leading coefficient: every term to the other side, the sign turned round
+    ["4 - x^2 > 0", ["x^{2} - 4 < 0", "(x + 2)(x - 2) < 0", "x = -2, \\ x = 2", "-2 < x < 2"]],
+    ["2x^2-8 \\ge 0", ["x^{2} - 4 \\ge 0", "(x + 2)(x - 2) \\ge 0", "x = -2, \\ x = 2", "x \\le -2, \\ x \\ge 2"]],
+    ["x(x+1) \\ge 6", ["x^{2} + x \\ge 6", "x^{2} + x - 6 \\ge 0", "(x + 3)(x - 2) \\ge 0", "x = -3, \\ x = 2", "x \\le -3, \\ x \\ge 2"]],
+    // no rational roots: the equation by the formula
+    [
+      "x^2-2x-1<0",
+      ["x^{2} - 2x - 1 = 0", "x = \\frac{2 \\pm \\sqrt{(-2)^{2} - 4 \\cdot 1 \\cdot (-1)}}{2 \\cdot 1}", "x = \\frac{2 \\pm \\sqrt{8}}{2}", "x = \\frac{2 \\pm 2\\sqrt{2}}{2}", "x = 1 \\pm \\sqrt{2}", "1 - \\sqrt{2} < x < 1 + \\sqrt{2}"],
+    ],
+    ["x^2+1>0", ["x^{2} + 1 = 0", "x^{2} = -1", "-\\infty < x < \\infty"]],
+    ["x^2+x+1<0", ["x^{2} + x + 1 = 0", "x = \\frac{-1 \\pm \\sqrt{1^{2} - 4 \\cdot 1 \\cdot 1}}{2 \\cdot 1}", "x = \\frac{-1 \\pm \\sqrt{-3}}{2}", "\\varnothing"]],
+    // already factored: straight to the critical values; a double root
+    ["(x-1)^2 > 0", ["x = 1", "x \\neq 1"]],
+    ["(x-1)^2 \\le 0", ["x = 1"]],
+    ["x^3-x>0", ["x(x + 1)(x - 1) > 0", "x = -1, \\ x = 0, \\ x = 1", "-1 < x < 0, \\ x > 1"]],
+    // one fraction: times the denominator squared, its zero excluded
+    ["\\frac{x-1}{x+2} > 0", ["x \\neq -2", "(x + 2)(x - 1) > 0", "x = -2, \\ x = 1", "x < -2, \\ x > 1"]],
+    ["\\frac{3-x}{x+1} \\ge 0", ["x \\neq -1", "(x + 1)(x - 3) \\le 0", "x = -1, \\ x = 3", "-1 < x \\le 3"]],
+    [
+      "\\frac{x+1}{x-3} \\le 2",
+      ["x \\neq 3", "(x + 1)(x - 3) \\le 2(x - 3)^{2}", "x^{2} - 2x - 3 \\le 2x^{2} - 12x + 18", "x^{2} - 10x + 21 \\ge 0", "(x - 3)(x - 7) \\ge 0", "x = 3, \\ x = 7", "x < 3, \\ x \\ge 7"],
+    ],
+    ["\\frac{1}{x} > 2", ["x \\neq 0", "x > 2x^{2}", "2x^{2} - x < 0", "x(2x - 1) < 0", "x = 0, \\ x = \\frac{1}{2}", "0 < x < \\frac{1}{2}"]],
+  ])("%s", (latex, steps) => {
+    expect(solve(latex)).toEqual(steps);
+  });
+
+  it.each([
+    ["-3 < 2x + 1 < 7", ["-4 < 2x < 6", "-2 < x < 3"]],
+    // dividing by a negative turns the chain round
+    ["1 \\le 3 - 2x < 7", ["-2 \\le -2x < 4", "-2 < x \\le 1"]],
+    ["7 > 2x + 1 > -3", ["-3 < 2x + 1 < 7", "-4 < 2x < 6", "-2 < x < 3"]],
+    ["-1 < \\frac{x - 1}{2} \\le 3", ["-2 < x - 1 \\le 6", "-1 < x \\le 7"]],
+    ["5 < 2x < 3", ["\\frac{5}{2} < x < \\frac{3}{2}", "\\varnothing"]],
+  ])("a chain: %s", (latex, steps) => {
+    expect(solve(latex)).toEqual(steps);
+  });
+
+  it("the answer line is the last step", () => {
+    expect(engine.solveLatex("x^2-5x+6>0")?.latex).toBe("x < 2, \\ x > 3");
+    expect(engine.solveLatex("-3 < 2x + 1 < 7")?.latex).toBe("-2 < x < 3");
+  });
+});
+
 describe("rational equations: exclusions, the LCD shown, the extraneous root dropped", () => {
   it.each([
     [
@@ -381,6 +432,13 @@ describe("the hand can write every step", () => {
     "|2x+1| \\ge 5",
     "|x-3| > 0",
     "|x| \\ge -1",
+    "x^2-5x+6>0",
+    "x^2-2x-1<0",
+    "x^3-x>0",
+    "\\frac{x+1}{x-3} \\le 2",
+    "\\frac{3-x}{x+1} \\ge 0",
+    "1 \\le 3 - 2x < 7",
+    "(x-1)^2 > 0",
     "\\frac{1}{x}+\\frac{1}{2}=\\frac{3}{4}",
     "\\frac{3}{x}+\\frac{2}{x-2}=1",
     "\\frac{x}{x-1}=\\frac{1}{x-1}",
