@@ -63,7 +63,10 @@ function assignmentOf(latex: string): string | null {
  * nobody defined. A Greek letter must come from the problem itself.
  */
 export function validateSetupLines(engine: Pick<LiveEngine, "analyzeLine">, raw: readonly string[], problem: readonly string[]): string[] | null {
-  const lines = raw.map(cleanLine).filter(Boolean);
+  // A setup line is an equation, inequality or assignment. A bare expression (`w + 3`, which a
+  // model returned beside `w(w + 3) = 40`) says nothing and would be written on the board as
+  // clutter: it is dropped, and the rest of the setup still counts.
+  const lines = raw.map(cleanLine).filter(Boolean).filter((l) => /=|<|>|\\(?:le|ge|leq|geq|neq)(?![a-zA-Z])/.test(l));
   if (lines.length === 0 || lines.length > MAX_SETUP_LINES) return null;
   for (const line of lines) {
     if (hasWords(line) || !engineReads(engine, line)) return null;

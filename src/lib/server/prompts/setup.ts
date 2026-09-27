@@ -24,7 +24,7 @@ export const SETUP_SYSTEM_PROMPT = [
   "2. One short letter per quantity (x, n, t, v, p, ...). Keep any letter the problem or the student already uses. The unknown must appear in the lines.",
   "3. Never compute: leave the arithmetic unsimplified (v = \\frac{150}{2.5}, not v = 60). No line may state the answer.",
   "4. Numbers only: no units, no \\text, no words, no $ delimiters. Write percentages as decimals (15% is 0.15).",
-  "5. KaTeX-renderable LaTeX, one equation per line.",
+  "5. KaTeX-renderable LaTeX, one equation per line. EVERY line contains =, < or > (an equation, inequality or assignment); never a bare expression such as w + 3.",
   '6. If the lines are not a problem you can set up this way, answer {"unknown": "", "lines": []}.',
 ].join("\n");
 

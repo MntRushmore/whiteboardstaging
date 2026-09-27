@@ -274,6 +274,13 @@ describe("validateSetupLines", () => {
     expect(validateSetupLines(engine, ["\\boxed{c^{2} = 6^{2} + 8^{2}}"], [])).toEqual(["c^{2} = 6^{2} + 8^{2}"]);
   });
 
+  it("drops a bare expression beside the equation (a real model reply), keeps the rest", () => {
+    const rect = ["\\text{A rectangle is 3 cm longer than it is wide. Its area is 40 cm squared. Find its width.}"];
+    expect(validateSetupLines(engine, ["w+3", "w(w+3)=40"], rect)).toEqual(["w(w+3)=40"]);
+    // nothing but expressions: no setup at all
+    expect(validateSetupLines(engine, ["w+3"], rect)).toBeNull();
+  });
+
   it("refuses words, undefined letters, foreign Greek, unreadable LaTeX, nothing, and too much", () => {
     expect(validateSetupLines(engine, ["\\text{speed} = 60"], [])).toBeNull();
     expect(validateSetupLines(engine, ["v = \\frac{d}{t}"], [])).toBeNull();
