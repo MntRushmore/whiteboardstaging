@@ -480,6 +480,8 @@ export class LiveLoop implements LiveController {
 
   /** the two-column proofs on this screen: their marks, and the rows the tutor writes on an ask */
   private readonly proofs: ProofDesk;
+  /** the strokes of a proof's T-table (`splitInk` role `table`): the tutor's rows are written across them */
+  private tableStrokeIds = new Set<string>();
 
   constructor(editor: LiveEditorLike, opts: UseLiveMathOptions, deps: Partial<LiveLoopDeps> = {}) {
     this.editor = editor;
@@ -1103,6 +1105,7 @@ export class LiveLoop implements LiveController {
     const gone = this.diagrams.filter((d) => !split.diagrams.some((n) => n.id === d.id));
     this.diagrams = split.diagrams;
     this.glyph = split.glyph;
+    this.tableStrokeIds = new Set([...split.roles].filter(([, v]) => v.role === "table").map(([id]) => id));
     for (const d of gone) {
       this.labelsOf.delete(d.id);
       if (this.editor.getCurrentPageShapes().some((s) => isLiveMeta(s.meta) && s.meta.lineId === d.id)) this.deleteLineShapes(d.id);
@@ -2435,6 +2438,8 @@ export class LiveLoop implements LiveController {
           recordRecognition({ lineId: diagram.id, at: this.deps.now(), sent: { ...req.strokes, ...req.bounds }, cached, response: res });
           clientMetric("live.figure.labels", { diagramId: diagram.id, labels: diagram.labels.length, rows: rows.length, cached });
           if (this.started) this.publishDiagrams();
+          // a proof beside this figure can now read it from its ink: its figure rows may earn their ticks
+          if (this.started) this.proofs.sync();
           return rows;
         })
         .catch(() => [] as string[])
@@ -3057,6 +3062,12 @@ export class LiveLoop implements LiveController {
           .map((s) => ({ id: s.line.id, latex: s.latex, bounds: s.line.bounds })),
       tutorLines: () => this.proofTutorLines(),
       diagrams: () => this.diagrams,
+      labelReads: (d) => this.labelsOf.get(d.id) ?? null,
+      ink: (ids) => {
+        const want = new Set<string>(ids);
+        return this.collectInk().filter((s) => want.has(s.id));
+      },
+      glyph: () => this.glyph,
       enabled: () => this.started && this.opts.enabled && this.opts.mode !== "off" && !this.opts.voiceActive,
       online: () => this.deps.isOnline(),
       readLabels: (d) => this.readLabels(d),
@@ -3137,6 +3148,8 @@ export class LiveLoop implements LiveController {
     const avoid: Rect[] = [];
     for (const s of this.editor.getCurrentPageShapes()) {
       if (isLiveMeta(s.meta) && (s.meta.source === "echo" || metaString(s.meta, MARK_META))) continue;
+      // a row of a T-table crosses the table's rules
+      if (this.tableStrokeIds.has(s.id)) continue;
       const b = this.editor.getShapePageBounds(s);
       if (b) avoid.push(boxToRect(b));
     }

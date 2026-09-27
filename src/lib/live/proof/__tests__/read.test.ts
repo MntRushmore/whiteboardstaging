@@ -32,6 +32,8 @@ describe("reading a proof off the board", () => {
     expect(classifyLine(GIVEN).role).toBe("given");
     expect(classifyLine("\\text { Given : } \\overline{A B} \\cong \\overline{C B}").role).toBe("given");
     expect(classifyLine(PROVE).role).toBe("prove");
+    // text mode, as Mathpix returns a line of words and maths
+    expect(classifyLine("Given: \\( E \\) is the midpoint of \\( \\overline{A D} \\)")).toMatchObject({ role: "given", statement: { complete: true } });
     expect(classifyLine("\\text{Given}").role).toBe("reason");
     expect(classifyLine("SAS").role).toBe("reason");
     expect(classifyLine("\\text{Statements}").role).toBe("header");

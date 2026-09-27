@@ -95,6 +95,8 @@ function groupEnd(src: string, open: number): number {
 function preprocess(latex: string): string {
   return (
     latex
+      // Mathpix's text mode: `Given: \( E \) is the midpoint of \( \overline{A D} \)` — words outside, maths inside
+      .replace(/\\[()[\]]|\$/g, " ")
       .replace(/\\left|\\right|\\displaystyle|\\limits/g, "")
       .replace(/\\(?:Delta|bigtriangleup|vartriangle|triangle)(?![a-zA-Z])/g, "\\triangle ")
       .replace(/△|Δ/g, "\\triangle ")
@@ -489,8 +491,11 @@ function wordPattern(toks: readonly Tok[]): Fact[] | null {
   const refs: Tok[] = [];
   for (const t of toks) {
     switch (t.k) {
-      case "word": {
-        const w = WORD_ALIASES[t.w] ?? t.w;
+      case "word":
+      case "lower": {
+        // in text mode a lone `a` is the article, not a line named a
+        const raw = t.k === "word" ? t.w : t.s;
+        const w = WORD_ALIASES[raw] ?? raw;
         if (!ARTICLES.has(w)) symbols.push(w);
         break;
       }
@@ -617,7 +622,7 @@ function wordPattern(toks: readonly Tok[]): Fact[] | null {
   return null;
 }
 
-function parsePiece(toks: readonly Tok[]): Fact[] | null {
+function parsePiece(toks: readonly Tok[], split = true): Fact[] | null {
   const body = toks.filter((t) => t.k !== "colon");
   if (body.length === 0) return [];
   if (body.some((t) => t.k === "bad")) return null;
@@ -626,11 +631,21 @@ function parsePiece(toks: readonly Tok[]): Fact[] | null {
   const words = wordPattern(body);
   if (words) return words;
   // `A and B`: two statements joined by a word
-  const and = body.findIndex((t) => t.k === "word" && t.w === "and");
+  const and = body.findIndex((t) => (t.k === "word" && t.w === "and") || (t.k === "lower" && t.s === "and"));
   if (and > 0 && and < body.length - 1) {
     const left = parsePiece(body.slice(0, and));
     const right = parsePiece(body.slice(and + 1));
     if (left && right && left.length > 0 && right.length > 0) return [...left, ...right];
+  }
+  // two statements run together with nothing between them (a line continued on the next,
+  // clustered as one: `E is the midpoint of AD E is midpoint of BC`) — one split, no deeper
+  if (split) {
+    for (let k = 1; k < body.length; k++) {
+      const left = parsePiece(body.slice(0, k), false);
+      if (!left || left.length === 0) continue;
+      const right = parsePiece(body.slice(k), false);
+      if (right && right.length > 0) return [...left, ...right];
+    }
   }
   return null;
 }

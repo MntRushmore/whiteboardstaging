@@ -24,6 +24,7 @@ export const PROOF_FIGURE_SYSTEM_PROMPT = [
   "RULES:",
   "1. points: every labelled point (one capital letter) with roughly where it is in the image: x from the left, y from the top, each 0 to 100.",
   "2. lines: every straight line or segment drawn, as the labelled points ON it in order along it: \"ADC\" when D lies on segment AC between A and C. A triangle ABC is three lines: \"AB\", \"BC\", \"AC\". Put a point on a line only when it is drawn on it.",
+  "   Where two drawn lines cross at a labelled point, that point is on BOTH: segments AD and BC crossing at E are the lines \"AED\" and \"BEC\". A point where two segments meet is on both of them. Each drawn line once, with ALL its labelled points.",
   "3. angles: only when an angle is marked with a number or a Greek letter: that mark → the angle, three letters with the vertex in the middle (\"1\": \"ABD\"). Otherwise {}.",
   "4. Only letters written on the figure. No words, no explanations.",
 ].join("\n");

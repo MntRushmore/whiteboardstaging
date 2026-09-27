@@ -14,7 +14,8 @@
  *
  * The loop is reached only through `ProofHost`, so this file has no editor or network of its own.
  */
-import type { LiveVerdict, Rect } from "../contracts";
+import type { InkStroke, LiveVerdict, Rect } from "../contracts";
+import { figureFromInk } from "./figureInk";
 import type { Diagram } from "../diagrams";
 import { diagramNear } from "../diagrams";
 import type { MarkKind } from "../marks";
@@ -32,6 +33,12 @@ export interface ProofHost {
   /** the rows the tutor has written on this screen, as lines (`tutorLinesOf`) */
   tutorLines(): readonly BoardLine[];
   diagrams(): readonly Diagram[];
+  /** a drawing's labels as already read (one row per label), or null while they are not */
+  labelReads(d: Diagram): readonly string[] | null;
+  /** these strokes' ink (page coordinates) */
+  ink(ids: readonly string[]): InkStroke[];
+  /** the screen's glyph scale (page px) */
+  glyph(): number;
   /** Live is on, the mode is not Off and the voice tutor is not talking */
   enabled(): boolean;
   online(): boolean;
@@ -57,6 +64,8 @@ export interface ProofView {
   verdicts: RowVerdict[];
   diagram: Diagram | null;
   figure: FigureModel | null;
+  /** where the figure read came from: the ink and its labels (free), or the model */
+  figureFrom: "ink" | "model" | null;
   /** student lines of the proof → their mark */
   marks: Map<string, MarkKind | null>;
 }
@@ -116,8 +125,10 @@ export class ProofDesk {
   private memoKey = "";
   private views: ProofView[] = [];
   private byLine = new Map<string, ProofView>();
-  /** figure reads per drawing (its ink and labels), for this screen */
+  /** the model's figure reads per drawing (its ink and labels), for this screen */
   private readonly figures = new Map<string, { read: FigureReadWire; model: FigureModel }>();
+  /** figures read from their own ink and labels, per drawing and label read (null: nothing readable) */
+  private readonly inkFigures = new Map<string, { read: FigureReadWire; model: FigureModel } | null>();
   private readonly inflight = new Map<string, AbortController>();
   /** which proof each line belonged to at the last sync */
   private roles = new Map<string, string>();
@@ -131,6 +142,7 @@ export class ProofDesk {
     for (const c of this.inflight.values()) c.abort();
     this.inflight.clear();
     this.figures.clear();
+    this.inkFigures.clear();
     this.memoKey = "";
     this.views = [];
     this.byLine.clear();
@@ -143,7 +155,7 @@ export class ProofDesk {
     const diagrams = this.host.diagrams();
     const sig = JSON.stringify([
       lines.map((l) => [l.id, l.latex, Math.round(l.bounds.x), Math.round(l.bounds.y), Math.round(l.bounds.w), Math.round(l.bounds.h)]),
-      diagrams.map((d) => [d.id, figureCacheKey(d)]),
+      diagrams.map((d) => [d.id, figureCacheKey(d), this.host.labelReads(d)]),
       [...this.figures.keys()],
     ]);
     if (sig === this.memoKey) return this.views;
@@ -151,7 +163,11 @@ export class ProofDesk {
     this.views = readProofs(lines).map((read) => {
       const problem = proofProblem(read);
       const diagram = diagramNear(diagrams, read.bounds, FIGURE_REACH);
-      const figure = diagram ? (this.figures.get(figureCacheKey(diagram))?.model ?? null) : null;
+      // the figure as its own ink reads (deterministic, free); the model's read only when there is none
+      const fromInk = diagram ? (this.inkFigure(diagram)?.model ?? null) : null;
+      const fromModel = diagram && !fromInk ? (this.figures.get(figureCacheKey(diagram))?.model ?? null) : null;
+      const figure = fromInk ?? fromModel;
+      const figureFrom = fromInk ? ("ink" as const) : fromModel ? ("model" as const) : null;
       const verdicts = checkProof(problem, figure);
       const marks = new Map<string, MarkKind | null>();
       for (const id of read.lineIds) marks.set(id, null);
@@ -168,11 +184,35 @@ export class ProofDesk {
         }
       });
       const key = read.lineIds[0] ?? `proof:${Math.round(read.bounds.x)},${Math.round(read.bounds.y)}`;
-      return { key, read, problem, verdicts, diagram, figure, marks };
+      return { key, read, problem, verdicts, diagram, figure, figureFrom, marks };
     });
     this.byLine = new Map();
     for (const v of this.views) for (const id of v.read.lineIds) this.byLine.set(id, v);
     return this.views;
+  }
+
+  /**
+   * The figure read from its own ink and its labels as read (`figureFromInk`), cached per drawing
+   * and label read; null when the labels are not read yet, their rows do not match the labels one
+   * to one, or nothing readable comes out.
+   */
+  private inkFigure(d: Diagram): { read: FigureReadWire; model: FigureModel } | null {
+    const reads = this.host.labelReads(d);
+    if (!reads || reads.length !== d.labels.length) return null;
+    const key = `${figureCacheKey(d)}|${reads.join("\u0001")}`;
+    const known = this.inkFigures.get(key);
+    if (known !== undefined) return known;
+    const bounds = (ids: readonly string[]): Rect => {
+      const ink = this.host.ink(ids);
+      const x0 = Math.min(...ink.map((s) => s.bounds.x));
+      const y0 = Math.min(...ink.map((s) => s.bounds.y));
+      return { x: x0, y: y0, w: Math.max(...ink.map((s) => s.bounds.x + s.bounds.w)) - x0, h: Math.max(...ink.map((s) => s.bounds.y + s.bounds.h)) - y0 };
+    };
+    const labels = d.labels.map((ids, i) => ({ text: reads[i], bounds: bounds(ids) })).filter((l) => Number.isFinite(l.bounds.x));
+    const read = figureFromInk(this.host.ink(d.strokeIds), labels, this.host.glyph());
+    const out = read ? { read: read as FigureReadWire, model: buildFigure(read) } : null;
+    this.inkFigures.set(key, out);
+    return out;
   }
 
   /** Is this line part of a proof? */
@@ -234,20 +274,34 @@ export class ProofDesk {
     let source = "planner";
     try {
       let view = start;
-      let plan = planProof(this.trusted(view), view.figure);
-      if (plan === null && view.diagram && !view.figure && this.host.online()) {
+      // a figure whose labels are not read yet: read them (one recognizer call, cached), so the
+      // figure can be read from its own ink
+      if (view.diagram && !view.figure && this.host.online()) {
+        await this.host.readLabels(view.diagram);
+        if (ctrl.signal.aborted) return;
+        view = this.proofs().find((v) => v.key === key) ?? view;
+        if (view.figure) {
+          source = "planner+ink figure";
+          this.host.rerender(view.read.lineIds);
+        }
+      }
+      let figure = view.figure;
+      let plan = planProof(this.trusted(view), figure);
+      // still short: the model reads the figure (once per drawing), and the planner tries with that
+      if (plan === null && view.diagram && this.host.online()) {
         const read = await this.readFigure(view, ctrl.signal);
         if (ctrl.signal.aborted) return;
-        if (read) {
-          source = "planner+figure";
-          this.host.rerender(view.read.lineIds);
+        if (read && read !== figure) {
+          source = "planner+model figure";
           view = this.proofs().find((v) => v.key === key) ?? view;
-          plan = planProof(this.trusted(view), view.figure);
+          this.host.rerender(view.read.lineIds);
+          figure = read;
+          plan = planProof(this.trusted(view), figure);
         }
       }
       if (plan === null && this.host.online()) {
         source = "model";
-        plan = await this.modelRow(view, ctrl.signal);
+        plan = await this.modelRow(view, figure, ctrl.signal);
         if (ctrl.signal.aborted) return;
       }
       this.host.metric("live.proof.ask", { source: plan ? source : "none", rows: plan?.length ?? 0, all });
@@ -299,8 +353,8 @@ export class ProofDesk {
     return model;
   }
 
-  /** One model row, kept only when the checker ticks it. */
-  private async modelRow(view: ProofView, signal: AbortSignal): Promise<PlannedRow[] | null> {
+  /** One model row, kept only when the checker ticks it (with the best figure read there is). */
+  private async modelRow(view: ProofView, figureModel: FigureModel | null, signal: AbortSignal): Promise<PlannedRow[] | null> {
     const prove = stripLabel(view.read.prove[0]?.latex ?? "");
     if (!prove) return null;
     const trusted = this.trusted(view);
@@ -308,7 +362,8 @@ export class ProofDesk {
       .filter((_, i) => view.verdicts[i]?.verdict !== "wrong")
       .map((r) => ({ statement: (r.statement ?? r.merged)?.latex ?? "", reason: r.reason?.latex ?? "" }))
       .filter((r) => r.statement);
-    const figure = view.diagram ? this.figures.get(figureCacheKey(view.diagram))?.read : undefined;
+    // what the figure shows, as read (its ink first, the model's read otherwise)
+    const figure = view.diagram ? (this.inkFigure(view.diagram)?.read ?? this.figures.get(figureCacheKey(view.diagram))?.read) : undefined;
     const crop = view.diagram ? await this.host.crop(view.diagram) : undefined;
     if (signal.aborted) return null;
     const res = await this.host.call(
@@ -330,7 +385,7 @@ export class ProofDesk {
     this.host.metric("live.proof.step", { model: res.model, ms: res.ms, parsed: statement.complete && Boolean(reason), writable: Boolean(written) });
     if (!statement.complete || !reason || !written) return null;
     const next: ProofProblem = { ...trusted, rows: [...trusted.rows, { statement, reason }] };
-    const verdict = checkProof(next, view.figure)[next.rows.length - 1];
+    const verdict = checkProof(next, figureModel)[next.rows.length - 1];
     if (verdict?.verdict !== "ok") return null;
     return [{ facts: statement.facts, statement: written, reason, reasonLatex: reasonLatex(reason) }];
   }

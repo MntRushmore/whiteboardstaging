@@ -73,6 +73,15 @@ describe("proof statements: Mathpix's LaTeX → facts", () => {
     expect(parseStatement("\\overline{AB} \\cong \\overline{CD} \\text{ and } \\overline{AD} \\cong \\overline{CB}").facts).toHaveLength(2);
   });
 
+  it("Mathpix's text mode (words outside, maths in \\( \\)), and two facts run together with no comma", () => {
+    expect(one("\\( E \\) is the midpoint of \\( \\overline{A D} \\)")).toEqual({ t: "midpoint", m: "E", s: { k: "seg", a: "A", b: "D" } });
+    expect(one("\\( \\angle B \\) is a right angle")).toMatchObject({ t: "angMeasure", deg: 90 });
+    // a Given continued on the next line, clustered as one line
+    const both = parseStatement("\\( E \\) is the midpoint of \\( \\overline{A D} E \\) is midpoint of \\( \\overline{B C}");
+    expect(both.complete).toBe(true);
+    expect(both.facts.map((f) => (f.t === "midpoint" ? `${f.m}:${f.s.a}${f.s.b}` : f.t))).toEqual(["E:AD", "E:BC"]);
+  });
+
   it("what it cannot read makes the statement incomplete (so nothing is ringed on it)", () => {
     const partial = parseStatement("\\overline{AB} \\cong \\overline{CD}, \\ x^{2} + 3");
     expect(partial.complete).toBe(false);
