@@ -1,17 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { CORPUS, TOPICS } from "./corpus";
-import { withoutIntervalPiece } from "./judge";
+import { definitionsOf, expandCalls } from "./functions";
+import { withDefinitions, withoutIntervalPiece } from "./judge";
 import {
   compareExprs,
+  exprOf,
   isInequality,
   isAntiderivative,
   isExpanded,
   isFactored,
   parseLine,
   rootSet,
+  sameRoots,
   sameTruth,
+  subsetRoots,
   solvedValues,
   truthAt,
+  truthAtComplex,
   truthEverywhere,
   type Expr,
   type Indefinite,
@@ -164,6 +169,27 @@ describe("oracle: expressions", () => {
  */
 const MISREAD_BY_TRANSLATOR: Record<string, string> = {};
 
+/**
+ * Two relations in the same letters agree: every letter but one pinned (each at its own value),
+ * the last solved in both. `equal`: the same roots; `within`: `b`'s roots are among `a`'s (the
+ * principal root of `A = \pi r^{2}`).
+ */
+function sameLetters(a: Relation, b: Relation, how: "equal" | "within", solveFor?: string): boolean {
+  const v = solveFor ?? b.vars.find((x) => b.alternatives.every((alt) => alt.sides.some((s) => s.vars.length === 1 && s.vars[0] === x && s.latex.replace(/[\s{}]/g, "") === x.replace(/_(\w+)/, "_$1"))))
+    ?? b.vars[b.vars.length - 1];
+  const others = [...new Set([...a.vars, ...b.vars])].filter((x) => x !== v);
+  let compared = 0;
+  for (const t of [0.37, 1.13, 2.29, 0.71]) {
+    const fixed = Object.fromEntries(others.map((o, j) => [o, t * (1 + 0.37 * j) + 0.11 * j]));
+    const ra = rootSet(a, v, [], fixed);
+    const rb = rootSet(b, v, [], fixed);
+    if (!ra || !rb || ra.all || rb.all) continue;
+    compared++;
+    if (how === "equal" ? !sameRoots(ra.roots, rb.roots, 1e-6) : rb.roots.length === 0 || !subsetRoots(rb.roots, ra.roots, 1e-6)) return false;
+  }
+  return compared >= 3;
+}
+
 describe("eval corpus", () => {
   it("has ~150 problems with unique ids over every topic", () => {
     expect(CORPUS.length).toBeGreaterThanOrEqual(140);
@@ -174,7 +200,7 @@ describe("eval corpus", () => {
   it("states every expectation in a form the oracle reads", () => {
     for (const p of CORPUS) {
       const e = p.expect;
-      expect(Boolean(e.values || e.answer), p.id).toBe(true);
+      expect(Boolean(e.values || e.answer || e.complexValues), p.id).toBe(true);
       if (!e.values) expect(parseLine(e.equivalentTo ?? e.answer ?? "").kind, p.id).not.toBe("unreadable");
     }
   });
@@ -186,8 +212,26 @@ describe("eval corpus", () => {
     for (const p of CORPUS) {
       if (MISREAD_BY_TRANSLATOR[p.id]) continue;
       const e = p.expect;
-      const lines = p.lines.map(parseLine);
+      // a problem the oracle cannot read as written (two points, a list of terms) carries its
+      // restatement; a function defined above is applied where it is called (`f(4)`)
+      const source = p.oracle ?? withDefinitions(p.lines, []).lines;
+      const lines = source.map(parseLine);
       const target = lines[lines.length - 1];
+      // an inverse (`f^{-1}(x) =`): the answer undoes f — f of it is x again
+      const inverse = /([a-zA-Z])\s*\^\s*\{\s*-\s*1\s*\}\s*\(\s*([a-zA-Z])\s*\)/.exec(p.lines[p.lines.length - 1]);
+      if (inverse && !p.oracle && e.answer) {
+        const composed = expandCalls(`${inverse[1]}\\left(${e.answer}\\right)`, definitionsOf(p.lines.slice(0, -1)));
+        const back = composed ? exprOf(composed) : null;
+        const x = exprOf(inverse[2]);
+        const c = back && x ? compareExprs(back, x) : null;
+        if (!c || c.unknown || !c.exact) problems.push(`${p.id}: ${e.answer} does not undo ${inverse[1]}`);
+        continue;
+      }
+      if (e.complexValues) {
+        const [v, roots] = Object.entries(e.complexValues)[0];
+        if (target.kind !== "relation" || roots.some(([re, im]) => truthAtComplex(target, { [v]: { re, im } }) !== true)) problems.push(`${p.id}: ${JSON.stringify(roots)} do not solve it`);
+        continue;
+      }
       const relations = lines.filter((l): l is Relation => l.kind === "relation");
       if (e.values) {
         const vars = Object.keys(e.values);
@@ -195,7 +239,7 @@ describe("eval corpus", () => {
           // one equation: its whole real solution set is the expectation — within the interval,
           // for a trig equation (the interval written on the line is not part of the equation)
           const w = e.interval;
-          const equation = w ? parseLine(withoutIntervalPiece(p.lines[p.lines.length - 1])) : target;
+          const equation = w ? parseLine(withoutIntervalPiece(source[source.length - 1])) : target;
           const all = equation.kind === "relation" ? rootSet(equation, vars[0], e.values[vars[0]]) : null;
           const inside = (x: number) => !w || (x > w.lo - 1e-9 && (x < w.hi - 1e-9 || (w.hiIn === true && Math.abs(x - w.hi) < 1e-9)));
           const rs = all && !all.all ? { all: false, roots: all.roots.filter(inside) } : all;
@@ -223,11 +267,18 @@ describe("eval corpus", () => {
       if (want.kind === "expr" && target.kind === "expr") {
         // an `approxOk` answer is the rounded value: judge it by ITS decimals
         const c = e.approxOk ? compareExprs(want, target as Expr) : compareExprs(target as Expr, want, { upToConstant: e.upToConstant });
-        if (!c.unknown && !(e.approxOk ? c.approx : c.exact)) problems.push(`${p.id}: ${p.lines.at(-1)} ≠ ${e.answer}`);
+        if (!c.unknown && !(e.approxOk ? c.approx : c.exact)) problems.push(`${p.id}: ${source.at(-1)} ≠ ${e.answer}`);
       } else if (want.kind === "expr" && target.kind === "indefinite") {
         if (isAntiderivative(want, target.integrand, target.variable) !== "equal") problems.push(`${p.id}: ${e.answer} is not an antiderivative`);
       } else if (want.kind === "relation" && target.kind === "relation" && want.vars.length === 1) {
-        if (sameTruth(target, want, want.vars[0]) !== "equal") problems.push(`${p.id}: ${p.lines.at(-1)} is not ${e.answer}`);
+        if (sameTruth(target, want, want.vars[0]) !== "equal") problems.push(`${p.id}: ${source.at(-1)} is not ${e.answer}`);
+      } else if (want.kind === "relation" && target.kind === "relation" && want.vars.length >= 2 && target.vars.length === want.vars.length && want.vars.every((v) => target.vars.includes(v))) {
+        // a line in several letters (`y = 2x - 1`, `a_{n} = 4n - 1`): the same one as the problem's
+        if (!sameLetters(target, want, "equal")) problems.push(`${p.id}: ${source.at(-1)} is not the line ${e.answer}`);
+      } else if (want.kind === "relation" && target.kind === "question") {
+        // a formula solved for a letter: the answer solves the formula above it
+        const formula = [...lines].reverse().find((l): l is Relation => l.kind === "relation" && l.vars.includes(target.variable) && l.vars.length >= 2);
+        if (!formula || !sameLetters(formula, want, "within", target.variable)) problems.push(`${p.id}: ${e.answer} does not solve the formula`);
       } else if (want.kind === "empty-set" && target.kind === "relation" && relations.length === 1 && isInequality(target)) {
         if (truthEverywhere(target, target.vars[0]) !== "never") problems.push(`${p.id}: holds somewhere`);
       } else if (want.kind === "empty-set" && target.kind === "relation" && relations.length === 1) {

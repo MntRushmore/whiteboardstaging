@@ -13,7 +13,8 @@
  */
 import { splitRelations } from "@/lib/live/engine/latex";
 import type { LocalSolveResult } from "@/lib/live/localSolve";
-import type { EvalProblem, Expectation, Topic } from "./corpus";
+import { courseOf, type Course, type EvalProblem, type Expectation, type Topic } from "./corpus";
+import { definitionsOf, expandCalls } from "./functions";
 import {
   assignmentOf,
   boundaries,
@@ -26,6 +27,7 @@ import {
   isExpanded,
   isFactored,
   isInequality,
+  isSimplifiedRadical,
   isSolvedInequality,
   parseLine,
   rootSet,
@@ -34,6 +36,7 @@ import {
   solvedValues,
   subsetRoots,
   truthAt,
+  truthAtComplex,
   truthEverywhere,
   type Expr,
   type Parsed,
@@ -73,6 +76,7 @@ export interface Transition {
 export interface Verdict {
   id: string;
   topic: Topic;
+  course: Course;
   lines: string[];
   expected: string;
   note?: string;
@@ -168,6 +172,17 @@ function judgeAnswer(problem: EvalProblem, lines: readonly string[], steps: read
   const final = parseLine(finalLatex);
   const approxOk = Boolean(expect.approxOk);
 
+  if (expect.complexValues) {
+    // non-real roots (`x = -1 \pm 2i`): the last line gives exactly that set
+    const [v, want] = Object.entries(expect.complexValues)[0];
+    const got = solvedValues(final, v);
+    if (!got) return { status: "unsolved", reason: `the last line is not \`${v} = …\`` };
+    const close = (a: { re: number; im: number }, b: [number, number]) => closeTo(a.re, b[0], 1e-9) && closeTo(a.im, b[1], 1e-9);
+    const same = got.values.length === want.length && want.every((w) => got.values.some((g) => close(g, w))) && got.values.every((g) => want.some((w) => close(g, w)));
+    if (!same) return { status: "wrong", reason: `gives {${got.values.map((c) => `${fmtNumber(c.re)} ${c.im < 0 ? "-" : "+"} ${fmtNumber(Math.abs(c.im))}i`).join(", ")}}` };
+    return got.approx && !approxOk ? { status: "approx", reason: "written with ≈" } : { status: "ok", reason: "" };
+  }
+
   if (expect.values) {
     const vars = Object.keys(expect.values);
     if (vars.length === 1) {
@@ -241,7 +256,8 @@ function judgeAnswer(problem: EvalProblem, lines: readonly string[], steps: read
     const others = want.vars.filter((v) => v !== y);
     if (!others.every((o) => final.vars.includes(o)) || !final.vars.includes(y)) return { status: "wrong", reason: `a relation in ${final.vars.join(", ")}` };
     for (const x of [0.37, 1.13, -0.53, 2.29]) {
-      const fixed = Object.fromEntries(others.map((o) => [o, x]));
+      // each other letter at its own value (all at one value, h = \frac{2b}{A} would pass for h = \frac{2A}{b})
+      const fixed = Object.fromEntries(others.map((o, j) => [o, x * (1 + 0.37 * j) + 0.11 * j]));
       const a = rootSet(final, y, [], fixed);
       const b = rootSet(want, y, [], fixed);
       if (!a || !b) return { status: "unjudged", reason: "cannot solve the relation" };
@@ -271,6 +287,7 @@ function judgeAnswer(problem: EvalProblem, lines: readonly string[], steps: read
     if (/\\approx/.test(finalLatex) && !approxOk) return { status: "approx", reason: "written with ≈ although the value is exact" };
     if (expect.form === "factored" && !isFactored(finalLatex)) return { status: "form", reason: "right value, not factorised" };
     if (expect.form === "expanded" && !isExpanded(finalLatex)) return { status: "form", reason: "right value, not expanded" };
+    if (expect.form === "radical" && !isSimplifiedRadical(finalLatex)) return { status: "form", reason: "right value, not in simplest radical form" };
     return { status: "ok", reason: "" };
   }
   if (cmp.approx) return approxOk ? { status: "ok", reason: "" } : { status: "approx", reason: "a decimal where the exact value is wanted" };
@@ -333,7 +350,10 @@ function judgeSystemStep(step: string, p: Parsed, truth: Truth, candidates: numb
   if (p.kind !== "relation") return t("unverified", "not a relation");
   for (const point of truth.points) {
     if (!p.vars.every((v) => v in point)) return t("unverified", `mentions ${p.vars.filter((v) => !(v in point)).join(", ")}`);
-    const holds = truthAt(p, point);
+    // a line written to a few decimals (`A \approx 1348.85`) holds to its last written place
+    const scale = Math.max(1, ...Object.values(point).map((x) => Math.abs(x)));
+    const snap = p.approx || p.decimals !== null ? Math.max(1e-9, (0.5 * 10 ** -(p.decimals ?? 0) + 1e-9) / scale) : 1e-9;
+    const holds = truthAt(p, point, snap);
     if (holds === false) return t("broken", `false at the solution (${Object.entries(point).map(([k, v]) => `${k} = ${fmtNumber(v)}`).join(", ")})`);
     if (holds === null) return t("unverified", "undefined at the solution");
   }
@@ -382,7 +402,7 @@ function compareRelations(prev: Relation, cur: Relation, candidates: number[], c
     if (a === null || b === null) return { status: "unverified", reason: "undefined" };
     return a === b ? { status: "ok", reason: "" } : { status: "broken", reason: `turns a ${a ? "true" : "false"} statement ${b ? "true" : "false"}` };
   }
-  if (vars.length > 1) return { status: "unverified", reason: `several unknowns (${vars.join(", ")})` };
+  if (vars.length > 1) return compareSeveral(prev, cur, vars);
   const v = vars[0];
   if (isEquation(prev) && isEquation(cur)) {
     const rs = (r: Relation) => {
@@ -423,6 +443,41 @@ function compareRelations(prev: Relation, cur: Relation, candidates: number[], c
   // after the critical values (an equation) or an excluded value (`x \neq -1`): against the last inequality
   if (!isInequality(prev) && isInequality(cur) && lastIneq && lastIneq.vars.length === 1 && lastIneq.vars[0] === v) return asInequality(lastIneq);
   return { status: "unverified", reason: "an equation and an inequality" };
+}
+
+/**
+ * Two equations in the same letters (`A = \frac{1}{2}bh` → `2A = bh`, `y - 3 = 2(x - 2)` →
+ * `y = 2x - 1`): every letter but one pinned (each to its own value), the last solved in both —
+ * the same roots at every pin is `ok`, roots neither a subset nor a superset of the other is
+ * `broken`. A lost or gained root (`b = \sqrt{c^{2} - a^{2}}` from `b^{2} = …`) stays `unverified`:
+ * a formula's length takes the positive root, and that is not the judge's to call.
+ */
+function compareSeveral(prev: Relation, cur: Relation, vars: string[]): Omit<Transition, "from" | "to"> {
+  const several = { status: "unverified" as const, reason: `several unknowns (${vars.join(", ")})` };
+  if (!isEquation(prev) || !isEquation(cur) || vars.length > 4) return several;
+  const same = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
+  if (!same(prev.vars, cur.vars)) return several;
+  for (const solveFor of [...vars].reverse()) {
+    const others = vars.filter((x) => x !== solveFor);
+    let compared = 0;
+    let subset = false;
+    let bad = false;
+    for (const t of [0.37, 1.13, 2.29, 0.71]) {
+      const fixed = Object.fromEntries(others.map((o, j) => [o, t * (1 + 0.37 * j) + 0.11 * j]));
+      const a = rootSet(prev, solveFor, [], fixed);
+      const b = rootSet(cur, solveFor, [], fixed);
+      if (!a || !b || a.all || b.all || (a.roots.length === 0 && b.roots.length === 0)) continue;
+      compared++;
+      if (sameRoots(a.roots, b.roots, 1e-6)) continue;
+      if (subsetRoots(a.roots, b.roots, 1e-6) || subsetRoots(b.roots, a.roots, 1e-6)) subset = true;
+      else bad = true;
+    }
+    if (compared < 2) continue;
+    if (bad) return { status: "broken", reason: `not the same ${solveFor} for the other letters (${others.join(", ")})` };
+    if (subset) return { status: "unverified", reason: `a root of ${solveFor} gained or lost` };
+    return { status: "ok", reason: "" };
+  }
+  return several;
 }
 
 /** `u = x^{2} + 1` in an integral: later lines in u are compared with the ones in x through it. */
@@ -713,7 +768,30 @@ export function withoutIntervalPiece(latex: string): string {
   return kept.length === 1 ? kept[0] : latex;
 }
 
+/**
+ * A problem with non-real roots (`complexValues`): each equation step in the unknown must hold at
+ * every expected root (evaluated as complex numbers), and a solved line must give exactly them.
+ */
+function judgeComplexSteps(problem: EvalProblem, steps: readonly string[]): Transition[] {
+  const [v, want] = Object.entries(problem.expect.complexValues!)[0];
+  return steps.map((s) => {
+    const t = (status: TransitionStatus, reason = ""): Transition => ({ from: "(the equation)", to: s, status, reason });
+    const p = parseLine(s);
+    if (p.kind === "empty-set") return t("broken", "says no solution; there are complex roots");
+    if (p.kind !== "relation" || !isEquation(p) || p.vars.length !== 1 || p.vars[0] !== v) return t("unverified", "not an equation in the unknown");
+    for (const [re, im] of want) {
+      const holds = truthAtComplex(p, { [v]: { re, im } });
+      if (holds === false) return t("broken", `false at ${v} = ${fmtNumber(re)} ${im < 0 ? "-" : "+"} ${fmtNumber(Math.abs(im))}i`);
+      if (holds === null) return t("unverified", "cannot evaluate with a complex value");
+    }
+    const solved = solvedValues(p, v);
+    if (solved && solved.values.length !== want.length) return t("broken", "not every root");
+    return t("ok");
+  });
+}
+
 function judgeSteps(problem: EvalProblem, lines: readonly string[], steps: readonly string[]): Transition[] {
+  if (problem.expect.complexValues) return judgeComplexSteps(problem, steps);
   const parsedLines = lines.filter(Boolean).map(parseLine);
   const parsedSteps = steps.map(parseLine);
   const candidates = numbersIn([...parsedLines, ...parsedSteps], problem.expect);
@@ -728,8 +806,17 @@ function judgeSteps(problem: EvalProblem, lines: readonly string[], steps: reado
   const targetLatex = [...lines].reverse().find(Boolean) ?? "";
   const interval = problem.expect.interval;
   // `\sin x = \frac{1}{2}, \ 0 \le x < 2\pi`: the equation is the line, the interval is `expect.interval`
-  const originLatex = interval ? withoutIntervalPiece(targetLatex) : targetLatex;
-  const origin: Parsed = parseLine(originLatex);
+  let originLatex = interval ? withoutIntervalPiece(targetLatex) : targetLatex;
+  let origin: Parsed = parseLine(originLatex);
+  // `h = ?` under `A = \frac{1}{2}bh`: the working starts from the formula the letter is asked of
+  if (origin.kind === "question") {
+    const asked = origin.variable;
+    const formula = [...parsedLines].reverse().find((p): p is Relation => p.kind === "relation" && p.vars.includes(asked) && p.vars.length >= 2);
+    if (formula) {
+      origin = formula;
+      originLatex = formula.latex;
+    }
+  }
   const window: Window | null = interval ? { lo: interval.lo, hi: interval.hi, loIn: interval.loIn ?? true, hiIn: interval.hiIn ?? false } : null;
   const integral = problem.topic === "integral-indefinite" || problem.topic === "integral-definite" || /\\int/.test(targetLatex);
   const dx = /d\s*([a-zA-Z])\s*=?\s*$/.exec(targetLatex.trim());
@@ -810,11 +897,56 @@ export interface JudgeOptions {
   unsupported: (steps: readonly string[]) => string[];
 }
 
+/**
+ * The lines and steps as the judge reads them: a function defined above (`f(x) = 2x + 3`) is
+ * applied wherever it is called (`f(4)` is the value it asks for, not `4f`), and its definition
+ * line is a definition, not an equation of the problem (`functions.ts`, independent of the engine).
+ */
+export function withDefinitions(lines: readonly string[], steps: readonly string[]): { lines: string[]; steps: string[] } {
+  const above = lines.slice(0, -1);
+  const defs = definitionsOf(above);
+  if (defs.size === 0) return { lines: [...lines], steps: [...steps] };
+  const target = lines[lines.length - 1] ?? "";
+  const kept = above.filter((l) => definitionsOf([l]).size === 0);
+  return { lines: [...kept, expandCalls(target, defs) ?? target], steps: steps.map((s) => expandCalls(s, defs) ?? s) };
+}
+
+/**
+ * `f^{-1}(x) =` under `f(x) = …`: the lines in x and y are the function written as y
+ * (`y = f(x)`) or the swapped relation (`x = f(y)`) and what follows from it — each compared with
+ * those by value, pinning one letter. The last line (`f^{-1}(x) = …`) is judged as the answer.
+ */
+function judgeInverseSteps(lines: readonly string[], steps: readonly string[]): Transition[] | null {
+  const target = lines[lines.length - 1] ?? "";
+  const m = /^\s*([a-zA-Z])\s*\^\s*\{\s*-\s*1\s*\}\s*(?:\\left\s*)?\(\s*([a-zA-Z])\s*(?:\\right\s*)?\)\s*=?\s*(?:\?)?\s*$/.exec(target);
+  if (!m) return null;
+  const defs = definitionsOf(lines.slice(0, -1));
+  if (!defs.has(m[1])) return null;
+  const x = m[2];
+  const y = x === "y" ? "t" : "y";
+  const swappedLatex = expandCalls(`${x} = ${m[1]}(${y})`, defs);
+  const directLatex = expandCalls(`${y} = ${m[1]}(${x})`, defs);
+  const swapped = swappedLatex ? parseLine(swappedLatex) : null;
+  const direct = directLatex ? parseLine(directLatex) : null;
+  if (swapped?.kind !== "relation" || direct?.kind !== "relation") return null;
+  return steps.map((s) => {
+    const t = (status: TransitionStatus, reason = ""): Transition => ({ from: "(the inverse)", to: s, status, reason });
+    const p = parseLine(s);
+    if (p.kind !== "relation" || !p.vars.includes(x) || !p.vars.includes(y) || p.vars.length !== 2) return t("unverified", "judged as the answer");
+    const bySwap = compareSeveral(swapped, p, [x, y]);
+    if (bySwap.status === "ok") return t("ok", "the swapped relation");
+    if (compareSeveral(direct, p, [x, y]).status === "ok") return t("ok", "the function as y");
+    return bySwap.status === "broken" ? t("broken", "neither the function nor its swap") : t("unverified", bySwap.reason);
+  });
+}
+
 export function judge(problem: EvalProblem, lines: readonly string[], result: LocalSolveResult, opts: JudgeOptions): Verdict {
   const steps = result.steps;
   const found = result.source !== null && steps.length > 0;
-  const answer = judgeAnswer(problem, lines, steps);
-  const transitions = found ? judgeSteps(problem, lines, steps) : [];
+  const read = withDefinitions(lines, steps);
+  const answer = judgeAnswer(problem, read.lines, read.steps);
+  // judged as read, reported as written
+  const transitions = !found ? [] : (judgeInverseSteps(lines, steps) ?? judgeSteps(problem, read.lines, read.steps).map((t, i) => ({ ...t, to: steps[i] })));
   const unsupported = found ? opts.unsupported(steps) : [];
   const words = steps.flatMap(wordsIn);
   const broken = transitions.filter((t) => t.status === "broken");
@@ -846,6 +978,7 @@ export function judge(problem: EvalProblem, lines: readonly string[], result: Lo
   return {
     id: problem.id,
     topic: problem.topic,
+    course: courseOf(problem),
     lines: [...lines],
     expected: expectedLatex(problem.expect),
     note: problem.note,
