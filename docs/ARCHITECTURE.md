@@ -270,7 +270,11 @@ brings it back. With the hand switched off, a function graph falls back to the t
 (a region, circle or number line has no typeset form). The card no longer appears by itself beside
 every `y = …` line; its shape util stays registered so boards that have one still load, and those
 cards stay where they are. What the sketches look like: `docs/graph/gallery.png`
-(`GRAPH_GALLERY=1 npx vitest run src/lib/live/graphing/__tests__/gallery.test.ts`).
+(`GRAPH_GALLERY=1 npx vitest run src/lib/live/graphing/__tests__/gallery.test.ts`); on the real
+board, `docs/qa-screenshots/graph-solve-system.png` (Solve on a system: steps under, graph beside)
+and `graph-help-feedback.png` (Feedback: nothing unasked, Help sketches the parabola). Numbers are
+written at 30–34 px and every glyph resampled to 2 px like the worked steps — tldraw's freehand
+smoothing otherwise collapses a small `4` into a `1`.
 
 **Word problems: the model sets up, the engine solves.** Mathpix returns prose as `\text{…}` and
 the engine classifies it `kind: 'text'` (silent: no echo). A column down to the asked-for line that
