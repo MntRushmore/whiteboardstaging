@@ -1,9 +1,9 @@
 {
  "scenes": 2880,
  "before": {
-  "mathIntact": 1689,
+  "mathIntact": 1770,
   "drawingOut": 0,
-  "strayLines": 1809,
+  "strayLines": 1890,
   "labelsAttached": 0,
   "labels": 9000
  },
@@ -153,9 +153,9 @@
    "name": "an arrow",
    "scenes": 360,
    "before": {
-    "mathIntact": 204,
+    "mathIntact": 213,
     "drawingOut": 0,
-    "strayLines": 204,
+    "strayLines": 213,
     "labelsAttached": 0,
     "labels": 0
    },
@@ -175,9 +175,9 @@
    "name": "rectangle, four strokes, sides labelled",
    "scenes": 360,
    "before": {
-    "mathIntact": 145,
+    "mathIntact": 217,
     "drawingOut": 0,
-    "strayLines": 145,
+    "strayLines": 217,
     "labelsAttached": 0,
     "labels": 720
    },
@@ -234,9 +234,9 @@
    "placement": "below, close",
    "scenes": 576,
    "before": {
-    "mathIntact": 488,
+    "mathIntact": 569,
     "drawingOut": 0,
-    "strayLines": 512,
+    "strayLines": 593,
     "labelsAttached": 0,
     "labels": 1800
    },

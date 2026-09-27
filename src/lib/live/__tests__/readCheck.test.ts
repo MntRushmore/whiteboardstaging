@@ -291,5 +291,6 @@ describe("the handwriting scoreboard (docs/eval/handwriting.json)", () => {
     }
     expect(tally.wrong).toEqual([20, 17]);
     expect(tally.correct).toEqual([704, 0]);
-  });
+    // 724 lines through the engine: seconds on its own, longer under the full suite's load
+  }, 30_000);
 });

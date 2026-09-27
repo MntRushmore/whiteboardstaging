@@ -94,4 +94,19 @@ describe("a proof's T-table", () => {
       expect(tableRules(ink, 20).size, latex).toBe(0);
     }
   });
+
+  it("a quadrilateral with a side run on past a corner is not a table: its corner marks and labels are not rows", () => {
+    // the T: the top side, and the right side (slanted) hanging from it; the labels sit at the
+    // corners, one of them straddling the right side's middle x
+    const pen = new Pen("quad", 4);
+    const sides = [
+      pen.stroke({ x: 59, y: 220 }, { x: 86, y: 12 }),
+      pen.stroke({ x: 80, y: 60 }, { x: 327, y: 46 }),
+      pen.stroke({ x: 270, y: 50 }, { x: 308, y: 284 }),
+      pen.stroke({ x: 300, y: 229 }, { x: -12, y: 216 }),
+    ];
+    const marks = [pen.arc(91, 50, 8, 8), pen.arc(282, 59, 8, 10), pen.arc(292, 238, 11, 10), pen.arc(52, 210, 10, 9)];
+    const labels = [...writeAt("x", 104, 27), ...writeAt("100^{\\circ}", 277, 64), ...writeAt("90^{\\circ}", 254, 249), ...writeAt("80^{\\circ}", 15, 178)];
+    expect(tableRules([...sides, ...marks, ...labels], 18).size).toBe(0);
+  });
 });

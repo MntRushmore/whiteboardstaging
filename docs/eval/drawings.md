@@ -8,9 +8,9 @@
 
 |  | before | after |
 | --- | --- | --- |
-| maths line intact (one line, exactly its strokes) | 1689 / 2880 (59%) | 2847 / 2880 (99%) |
+| maths line intact (one line, exactly its strokes) | 1770 / 2880 (61%) | 2847 / 2880 (99%) |
 | drawing kept out of every line | 0 / 2880 (0%) | 2880 / 2880 (100%) |
-| stray lines (no maths in them: a wasted recognizer call each) | 1809 | 18 |
+| stray lines (no maths in them: a wasted recognizer call each) | 1890 | 18 |
 | labels attached to their drawing | — | 8951 / 9000 (99%) |
 
 ## The writing stays writing
@@ -32,8 +32,8 @@ Every line of the maths corpus (src/__eval__/corpus.ts) written in every hand (c
 | circle with a radius, centre and radius labelled | 360 | 216 → 360 | 0 → 360 | 216 → 0 | 720 / 720 | circle |
 | number line: ticks, arrows, an open circle, numbers under it | 360 | 212 → 360 | 0 → 360 | 212 → 0 | 2520 / 2520 | numberLine, arrow |
 | axes with a line sketched on them | 360 | 261 → 357 | 0 → 360 | 261 → 17 | 1060 / 1080 | axes |
-| an arrow | 360 | 204 → 360 | 0 → 360 | 204 → 0 | 0 / 0 | arrow |
-| rectangle, four strokes, sides labelled | 360 | 145 → 347 | 0 → 360 | 145 → 1 | 706 / 720 | quadrilateral |
+| an arrow | 360 | 213 → 360 | 0 → 360 | 213 → 0 | 0 / 0 | arrow |
+| rectangle, four strokes, sides labelled | 360 | 217 → 347 | 0 → 360 | 217 → 1 | 706 / 720 | quadrilateral |
 
 ## By placement
 
@@ -41,7 +41,7 @@ Every line of the maths corpus (src/__eval__/corpus.ts) written in every hand (c
 | --- | --- | --- | --- | --- |
 | right, close | 576 | 23 → 559 | 0 → 576 | 47 → 0 |
 | left, close | 576 | 26 → 560 | 0 → 576 | 50 → 18 |
-| below, close | 576 | 488 → 576 | 0 → 576 | 512 → 0 |
+| below, close | 576 | 569 → 576 | 0 → 576 | 593 → 0 |
 | above, close | 576 | 576 → 576 | 0 → 576 | 600 → 0 |
 | far | 576 | 576 → 576 | 0 → 576 | 600 → 0 |
 

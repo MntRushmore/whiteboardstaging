@@ -7,8 +7,8 @@
  *
  * A table rule is a long straight upright stroke that
  *  - has its TOP end on a long level stroke that runs on both sides of it (a T; the inverted T of a
- *    figure's altitude has its bottom end there), with writing beside it on both sides — rows under
- *    the bar, or the header over it; or
+ *    figure's altitude has its bottom end there), with a row under the bar (writing on the left
+ *    level with writing on the right) or the header over it on both sides; or
  *  - has writing on both sides in at least two rows level with each other (a divider with no bar).
  * Then every long level or upright stroke meeting a table rule is one too (the bar, row lines, a frame).
  * A line of maths never has such a stroke: a fraction bar is level and short of the rows, a radical,
@@ -116,25 +116,34 @@ export function tableRules(strokes: readonly InkStroke[], G: number): Set<string
     const cx = (s: InkStroke) => s.bounds.x + s.bounds.w / 2;
     const cy = (s: InkStroke) => s.bounds.y + s.bounds.h / 2;
     const inSpan = (s: InkStroke) => cy(s) >= y0 && cy(s) <= y1;
-    const left = glyphs.filter((s) => inSpan(s) && s.bounds.x + s.bounds.w < x && x - cx(s) <= beside);
-    const right = glyphs.filter((s) => inSpan(s) && s.bounds.x > x && cx(s) - x <= beside);
+    // the rule's x level with a glyph: a slanted rule (a figure's side) is not at its middle x there
+    const xAt = (y: number) => (y1 > y0 ? u.a.x + ((u.b.x - u.a.x) * (y - y0)) / (y1 - y0) : x);
+    const left = glyphs.filter((s) => inSpan(s) && s.bounds.x + s.bounds.w < xAt(cy(s)) && xAt(cy(s)) - cx(s) <= beside);
+    const right = glyphs.filter((s) => inSpan(s) && s.bounds.x > xAt(cy(s)) && cx(s) - xAt(cy(s)) <= beside);
     // the top of a T: a level bar through (or just over) the upright's top end, running on both sides
     const bar = levels.find((l) => {
       if (toSegment(u.a, l.a, l.b) > TABLE_RULES.junctionFactor * G) return false;
       return x - l.a.x >= TABLE_RULES.armFactor * G && l.b.x - x >= TABLE_RULES.armFactor * G;
     });
+    // rows: writing on the left level with writing on the right (a statement and its reason)
+    const rowsOf = (l: InkStroke[], r: InkStroke[]) => {
+      const lb = bands(l.map(cy), G);
+      const rb = bands(r.map(cy), G);
+      return { lb, rb, rows: lb.filter((y) => rb.some((z) => Math.abs(y - z) <= TABLE_RULES.bandGapFactor * G)).length };
+    };
     let table = false;
     if (bar) {
       const barY = (bar.a.y + bar.b.y) / 2;
       const header = glyphs.filter((s) => cy(s) < barY && barY - cy(s) <= 3 * G && Math.abs(cx(s) - x) <= beside);
       const headerBoth = header.some((s) => cx(s) < x) && header.some((s) => cx(s) > x);
-      table = (left.length > 0 && right.length > 0) || headerBoth;
+      // one row under the bar is enough. A figure makes the same T (a quadrilateral's side run on
+      // past a corner), but its corner marks and labels sit level with the bar, not rows below it
+      const below = (s: InkStroke) => cy(s) > barY + 0.5 * G;
+      table = rowsOf(left.filter(below), right.filter(below)).rows >= 1 || headerBoth;
     }
     if (!table) {
-      const lb = bands(left.map(cy), G);
-      const rb = bands(right.map(cy), G);
-      const level = lb.filter((y) => rb.some((z) => Math.abs(y - z) <= TABLE_RULES.bandGapFactor * G));
-      table = lb.length >= 2 && rb.length >= 2 && level.length >= 2;
+      const { lb, rb, rows } = rowsOf(left, right);
+      table = lb.length >= 2 && rb.length >= 2 && rows >= 2;
     }
     if (!table) continue;
     out.add(u.s.id);
