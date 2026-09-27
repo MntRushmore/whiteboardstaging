@@ -6,7 +6,8 @@ import type { NumberLineIntent, PlaneGraphIntent } from "../contracts";
  *
  * What a teacher does, as rules:
  *  - every key point is in view (intercepts, the vertex, where lines cross, a circle whole, an
- *    asymptote), and so is the origin — school graphs are drawn through their axes;
+ *    asymptote with a stretch of each branch beside it), and so is the origin — school graphs
+ *    are drawn through their axes;
  *  - never a tiny window: at least `MIN_SPAN` units across, with a margin round the key points;
  *  - the same unit on both axes when the two spans are comparable, so a slope of 2 LOOKS like 2
  *    and a circle is round; otherwise each axis gets its own scale (a parabola that climbs to 30
@@ -25,6 +26,8 @@ export const WINDOW = {
   curveEqualRatio: 1.35,
   /** ticks across one axis */
   tickTarget: 8,
+  /** at least this many units of a curve's branch either side of a vertical asymptote */
+  besideAsymptote: 2.5,
 } as const;
 
 export interface GraphWindow {
@@ -134,6 +137,17 @@ export function chooseWindow(intent: PlaneGraphIntent, box: { w: number; h: numb
     if (!line) continue;
     if (sane(line.b)) ys.push(line.b);
     if (Math.abs(line.m) > 1e-12 && sane(-line.b / line.m)) xs.push(-line.b / line.m);
+  }
+
+  // a vertical asymptote with room on each side the curve is defined on: every branch is part of
+  // the picture, not a sliver in a corner (a parent's hidden one only breaks its curve)
+  const span0 = Math.max(...xs) - Math.min(...xs);
+  for (const a of intent.asymptotes) {
+    if (a.axis !== "vertical" || a.hidden || !sane(a.at)) continue;
+    const d = Math.max(WINDOW.besideAsymptote, 0.3 * span0);
+    for (const s of [-1, 1]) {
+      if (intent.curves.some((c) => c.kind === "function" && Number.isFinite(c.f(a.at + s * d * 0.6)))) xs.push(a.at + s * d);
+    }
   }
 
   let xLo = Math.min(...xs);

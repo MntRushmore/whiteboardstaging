@@ -187,3 +187,93 @@ describe("coordinates", () => {
     expect(pointLabel(Math.SQRT2, 0)).toBe("");
   });
 });
+
+describe("graphFor — rational functions: holes, slant asymptotes, and the answers under them", () => {
+  const F = "f(x) = \\frac{x^{2} - 4}{x^{2} - x - 2}";
+
+  it("a hole: where a bottom is zero and both sides meet — an exact point, never also a dot", () => {
+    const g = plane([F]);
+    expect(g.points.filter((p) => p.role === "hole")).toEqual([{ x: 2, y: 4 / 3, label: "(2, \\frac{4}{3})", role: "hole" }]);
+    expect(g.points.filter((p) => p.x === 2)).toHaveLength(1);
+    expect(g.asymptotes).toEqual([
+      { axis: "vertical", at: -1 },
+      { axis: "horizontal", at: 1 },
+    ]);
+    expect(plane(["f(x) = \\frac{x^{2} - 4}{x - 2}"]).points.find((p) => p.role === "hole")).toMatchObject({ x: 2, y: 4 });
+    // a pole is not a hole
+    expect(plane(["y = \\frac{1}{x - 2}"]).points.some((p) => p.role === "hole")).toBe(false);
+  });
+
+  it("a slant asymptote when the top is one degree higher (both ends), none for a polynomial", () => {
+    expect(plane(["f(x) = \\frac{x^{2} + 1}{x - 1}"]).asymptotes).toEqual([
+      { axis: "vertical", at: 1 },
+      { axis: "oblique", at: 1, slope: 1 },
+    ]);
+    expect(plane(["y = x + \\frac{1}{x}"]).asymptotes).toEqual(expect.arrayContaining([{ axis: "oblique", at: 0, slope: 1 }]));
+    expect(plane(["y = x^{3} - 3x"]).asymptotes).toEqual([]);
+    expect(plane(["y = |x|"]).asymptotes).toEqual([]);
+  });
+
+  it("Solve's answer lines under the function are its asymptotes: the plane graph stays, one curve", () => {
+    const withSteps = plane([F, "f(x) = \\frac{(x + 2)(x - 2)}{(x + 1)(x - 2)}", "x \\neq -1, \\ x \\neq 2", "f(x) = \\frac{x + 2}{x + 1}, \\ x \\neq 2", "\\frac{2 + 2}{2 + 1} = \\frac{4}{3}", "(2, \\frac{4}{3})", "x = -1", "y = 1"]);
+    expect(withSteps.curves).toHaveLength(1);
+    expect(withSteps.key).toBe(plane([F]).key);
+    const slant = plane(["f(x) = \\frac{x^{2} + 1}{x - 1}", "x \\neq 1", "x = 1", "f(x) = x + 1 + \\frac{2}{x - 1}", "y = x + 1"]);
+    expect(slant.curves).toHaveLength(1);
+    // the ask `x = ?` answered by the asymptote's equation
+    expect(plane([F, "x = ?", "x = -1"]).curves).toHaveLength(1);
+  });
+
+  it("a value that is not an asymptote is still substitution", () => {
+    expect(engine.graphFor!(["y = \\frac{2x + 1}{x - 3}", "x = 5"])).toBeNull();
+    expect(engine.graphFor!([F, "x = ?"])).toBeNull();
+  });
+});
+
+describe("graphFor — transformations: the parent and its image together", () => {
+  it("g written from f: two curves, the parent marked, both named, and the key point's arrow", () => {
+    const g = plane(["f(x) = x^{2}", "g(x) = f(x - 3) + 1"]);
+    expect(g.curves).toHaveLength(2);
+    expect(g.curves[0]).toMatchObject({ kind: "function", role: "parent", name: "f" });
+    expect(g.curves[1]).toMatchObject({ kind: "function", name: "g" });
+    expect((g.curves[1] as { role?: string }).role).toBeUndefined();
+    expect(g.arrows).toEqual([{ from: { x: 0, y: 0 }, to: { x: 3, y: 1 } }]);
+    expect(labels(g)).toEqual(expect.arrayContaining(["(0, 0)", "(3, 1)"]));
+    // no intersection points: this is not a system
+    expect(g.points.some((p) => p.role === "intersection")).toBe(false);
+    // g as a function: its values
+    const image = g.curves[1];
+    if (image.kind !== "function") throw new Error("expected a function");
+    expect(image.f(5)).toBeCloseTo(5, 12);
+  });
+
+  it("Solve's lines keep the same graph; the implicit parent (after Solve) is drawn the same way", () => {
+    const a = plane(["f(x) = x^{2}", "g(x) = f(x - 3) + 1"]);
+    const b = plane(["f(x) = x^{2}", "g(x) = f(x - 3) + 1", "g(x) = (x - 3)^{2} + 1", "(x, y) \\to (x + 3, y + 1)", "(0, 0) \\to (3, 1)"]);
+    expect(b.key).toBe(a.key);
+    const implied = plane(["y = 2(x - 1)^{2} + 3", "f(x) = x^{2}", "y = 2f(x - 1) + 3", "(x, y) \\to (x + 1, 2y + 3)", "(0, 0) \\to (1, 3)"]);
+    expect(implied.curves.map((c) => (c.kind === "function" ? c.role ?? "image" : c.kind))).toEqual(["parent", "image"]);
+    expect(implied.arrows?.[0]).toEqual({ from: { x: 0, y: 0 }, to: { x: 1, y: 3 } });
+  });
+
+  it("a stretch: the point that moves shows it — f(2x) takes (1, 1) to (\\frac{1}{2}, 1)", () => {
+    const g = plane(["f(x) = x^{2}", "g(x) = f(2x)"]);
+    expect(g.arrows).toEqual([{ from: { x: 1, y: 1 }, to: { x: 0.5, y: 1 } }]);
+    expect(labels(g)).toEqual(expect.arrayContaining(["(\\frac{1}{2}, 1)"]));
+  });
+
+  it("the image's asymptotes are drawn; the parent's only break its curve", () => {
+    const g = plane(["f(x) = \\frac{1}{x}", "g(x) = f(x - 2) + 3"]);
+    expect(g.asymptotes).toEqual([
+      { axis: "vertical", at: 2 },
+      { axis: "horizontal", at: 3 },
+      { axis: "vertical", at: 0, hidden: true },
+    ]);
+  });
+
+  it("two unrelated functions are still a system", () => {
+    const g = plane(["f(x) = x^{2}", "g(x) = x + 6"]);
+    expect(g.curves.every((c) => c.kind === "function" && !c.role)).toBe(true);
+    expect(g.points.filter((p) => p.role === "intersection")).toHaveLength(2);
+  });
+});

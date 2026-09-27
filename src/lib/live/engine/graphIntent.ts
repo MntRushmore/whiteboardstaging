@@ -16,8 +16,16 @@
  * The key points are found numerically and written only when exact: a dot at every intercept,
  * vertex, crossing, centre or end point, and its coordinates `(0, 1)` beside it only when both
  * are whole numbers or simple fractions — a graph is not the place for `(1.414, 0)` presented
- * as fact. Asymptotes (vertical where the function blows up, horizontal where it levels off) are
- * returned so the sketch can draw them dashed.
+ * as fact. Asymptotes (vertical where the function blows up, horizontal where it levels off, slant
+ * where it runs along a line) are returned so the sketch can draw them dashed with their
+ * equations, and a hole (a zero of a bottom where both sides meet at one height: `(2, \frac{4}{3})`
+ * in `\frac{x^{2} - 4}{x^{2} - x - 2}`) so it can draw an open circle. The equation of an asymptote
+ * written under the function (`x = -1`, `y = 1`, `y = x + 1`: Solve's answer) names a line already
+ * drawn — it is neither a value put in nor a second relation.
+ *
+ * A function written from one defined above (`g(x) = f(x - 3) + 1`, or Solve's `y = 2f(x - 1) + 3`
+ * under `f(x) = x^{2}`) is a TRANSFORMATION: the parent and its image drawn together — the parent
+ * dotted, each named — with the parent's key point, where it lands, and an arrow between them.
  *
  * `key` identifies the graph by its maths, not its spelling (every relation is fingerprinted by
  * its values), so the board never draws the same graph twice and redraws it only when the maths
@@ -38,9 +46,14 @@ import type {
 } from "../contracts";
 import { functionInfo } from "./classify";
 import { splitAtCommas } from "./compound";
+import type { CourseDeps } from "./courseKit";
+import { callsOf } from "./functionNotation";
 import { compileExpr, toXExpression } from "./graph";
 import { preprocessLatex, splitRelations, type Translated } from "./latex";
 import { safeParse } from "./math";
+import { argsOf, fnOf } from "./nodes";
+import { qNum } from "./poly";
+import { affineCall, keyPointOf, tellingPoints, type Affine } from "./transformations";
 
 export interface GraphIntentDeps {
   /** LaTeX → mathjs (throws on what it cannot read) */
@@ -289,6 +302,67 @@ function levelAt(f: Sampler, dir: number): number | null {
   return snap(Math.abs(c) < 1e-6 ? 0 : c);
 }
 
+/**
+ * The line y = mx + b that f runs along at BOTH ends (a slant asymptote), with exact m ≠ 0 and b,
+ * or null. m and b are read at x = ±10⁶ and extrapolated (the gap shrinks like 1/x), then checked
+ * further out.
+ */
+function slantOf(f: Sampler): { m: number; b: number } | null {
+  let found: { m: number; b: number } | null = null;
+  for (const dir of [-1, 1]) {
+    const X = dir * 1e6;
+    const y1 = f(X);
+    const y2 = f(2 * X);
+    if (!Number.isFinite(y1) || !Number.isFinite(y2)) return null;
+    const m = snap(2 * (y2 / (2 * X)) - y1 / X);
+    const b = snap(2 * (y2 - m * 2 * X) - (y1 - m * X));
+    if (Math.abs(m) < 1e-9 || niceRational(m) === null || niceRational(b) === null) return null;
+    for (const x of [dir * 1e7, dir * 5e7]) {
+      const y = f(x);
+      if (!Number.isFinite(y) || Math.abs(y - (m * x + b)) > 1e-3) return null;
+    }
+    if (found && (found.m !== m || found.b !== b)) return null;
+    found = { m, b };
+  }
+  return found;
+}
+
+/**
+ * Removable gaps: where a bottom in `expr` is zero, f has no value, and the two sides meet at one
+ * height — `(2, \frac{4}{3})` for `\frac{x^{2} - 4}{x^{2} - x - 2}`. A pole is not one (its sides run off).
+ */
+function holesOf(math: MathJsInstance, expr: string, f: Sampler): Array<{ x: number; y: number }> {
+  const node = safeParse(math, expr);
+  if (!node) return [];
+  const bottoms: Sampler[] = [];
+  node.traverse((n: MathNode) => {
+    if (n.type !== "OperatorNode" || fnOf(n) !== "divide") return;
+    try {
+      const c = argsOf(n)[1].compile();
+      bottoms.push((x) => {
+        const v = c.evaluate({ x }) as unknown;
+        return typeof v === "number" ? v : Number.NaN;
+      });
+    } catch {
+      // a bottom that does not compile has no zeros to look at
+    }
+  });
+  const out: Array<{ x: number; y: number }> = [];
+  for (const bottom of bottoms) {
+    for (const r0 of features(bottom).roots) {
+      const r = snap(r0);
+      if (Number.isFinite(f(r)) || Math.abs(bottom(r)) > 1e-9) continue;
+      const h = 1e-6 * Math.max(1, Math.abs(r));
+      const a = f(r - h);
+      const b = f(r + h);
+      if (!Number.isFinite(a) || !Number.isFinite(b) || Math.abs(a - b) > 1e-4 * (1 + Math.abs(a))) continue;
+      const y = snap((a + b) / 2);
+      if (!out.some((o) => Math.abs(o.x - r) < 1e-9)) out.push({ x: r, y: Math.abs(y) < 1e-10 ? 0 : y });
+    }
+  }
+  return out;
+}
+
 /** Polynomial degree of `f` when it is a line (1) or a parabola (2) — finite differences — else null. */
 function lowDegree(f: Sampler): 0 | 1 | 2 | null {
   for (const x0 of [-1.37, 0.61]) {
@@ -315,9 +389,30 @@ interface PlaneRel {
   curve: GraphCurve;
   fingerprint: string;
   variable: string;
+  /** a function line's name (`f`, `g`, `y`) */
+  name?: string;
+  /** its right side as written (a parent's key point is read from it) */
+  body?: string;
+  /** written from a function defined above (`g(x) = f(x - 3) + 1`): that function's name … */
+  parent?: string;
+  /** … and the moves, when they are g = a·f(bx + c) + k */
+  affine?: Affine | null;
 }
 
 const FP_XS = [-3.1, -1.7, -0.6, 0.35, 1.2, 2.45, 4.3];
+
+function sameAsymptote(a: GraphAsymptote, b: GraphAsymptote): boolean {
+  return a.axis === b.axis && Math.abs(a.at - b.at) < 1e-9 && Math.abs((a.slope ?? 0) - (b.slope ?? 0)) < 1e-9;
+}
+
+/** Is the curve the straight line y = slope·x + at? */
+function sameLine(c: GraphFunctionCurve, a: GraphAsymptote): boolean {
+  const m = a.slope ?? 0;
+  return [-2.3, 0.4, 1.7, 5.9].every((x) => {
+    const y = c.f(x);
+    return Number.isFinite(y) && Math.abs(y - (m * x + a.at)) < 1e-9 * (1 + Math.abs(y));
+  });
+}
 
 function functionFingerprint(op: GraphRelOp, f: Sampler): string {
   return `f${op}:${FP_XS.map((x) => fingerprint(f(x))).join(",")}`;
@@ -343,7 +438,39 @@ export function createGraphIntent(math: MathJsInstance, deps: GraphIntentDeps): 
     // real somewhere near the origin, or it is not something to sketch
     if (!scan(f, -10, 10, 0.25).ys.some(Number.isFinite)) return null;
     const curve: GraphFunctionCurve = { kind: "function", latex: pre, f, expr, op: "=" };
-    return { curve, fingerprint: functionFingerprint("=", f), variable: fn.param };
+    return { curve, fingerprint: functionFingerprint("=", f), variable: fn.param, name: fn.name, body: fn.rhs };
+  };
+
+  const courseDeps: CourseDeps = { math, translate: (latex) => deps.translate(latex), normalize: (s) => s, solveOne: () => null };
+
+  /**
+   * `g(x) = f(x - 3) + 1`, `y = 2f(x - 1) + 3`: one call of a function named on a line above, put
+   * together as one function of x (the parent's expression with x → the argument, inside the rest).
+   */
+  const derivedRel = (pre: string, named: ReadonlyMap<string, PlaneRel>): PlaneRel | null => {
+    if (named.size === 0) return null;
+    const fn = functionInfo(pre);
+    if (!fn) return null;
+    const calls = callsOf(fn.rhs, new Set([...named.keys()].filter((n) => n !== fn.name)));
+    if (calls.length !== 1 || calls[0].inverse) return null;
+    const call = calls[0];
+    const parent = named.get(call.name)!;
+    if (parent.curve.kind !== "function" || parent.variable !== fn.param) return null;
+    const inner = deps.translate(call.arg);
+    const outer = deps.translate(`${fn.rhs.slice(0, call.start)} u ${fn.rhs.slice(call.end)}`);
+    if (inner.hasUnits || outer.hasUnits || inner.hasText || outer.hasText) return null;
+    if (inner.variables.some((v) => v !== fn.param) || outer.variables.some((v) => v !== "u")) return null;
+    const innerX = toXExpression(math, inner.source, fn.param);
+    const outerX = toXExpression(math, outer.source, "u");
+    if (!innerX || !outerX) return null;
+    const put = (node: MathNode, repl: MathNode): MathNode =>
+      node.transform((n: MathNode) => (n.type === "SymbolNode" && (n as MathNode & { name: string }).name === "x" ? new math.ParenthesisNode(repl) : n));
+    const expr = put(math.parse(outerX), put(math.parse(parent.curve.expr), math.parse(innerX))).toString();
+    const f = compileExpr(math, expr);
+    if (!f || !scan(f, -10, 10, 0.25).ys.some(Number.isFinite)) return null;
+    const curve: GraphFunctionCurve = { kind: "function", latex: pre, f, expr, op: "=" };
+    const affine = affineCall(courseDeps, fn.rhs, call.name, fn.param);
+    return { curve, fingerprint: functionFingerprint("=", f), variable: fn.param, name: fn.name, parent: call.name, affine };
   };
 
   /** Any relation in x and y: a line in any form, a region, a circle. */
@@ -558,11 +685,29 @@ export function createGraphIntent(math: MathJsInstance, deps: GraphIntentDeps): 
 
   // ---------------------------------------------------------------- key points
 
+  /** Where f blows up (vertical), levels off at ±∞ (horizontal) or runs along a line (oblique). */
+  const asymptotesOf = (f: Sampler, feat: Features = features(f)): GraphAsymptote[] => {
+    const asymptotes: GraphAsymptote[] = [];
+    for (const p of feat.poles) asymptotes.push({ axis: "vertical", at: snap(p) });
+    const levels = new Set<number>();
+    for (const dir of [-1, 1]) {
+      const l = levelAt(f, dir);
+      if (l !== null) levels.add(l);
+    }
+    if (lowDegree(f) !== null) return asymptotes;
+    for (const l of levels) asymptotes.push({ axis: "horizontal", at: l });
+    if (levels.size === 0) {
+      const slant = slantOf(f);
+      if (slant) asymptotes.push({ axis: "oblique", at: slant.b, slope: slant.m });
+    }
+    return asymptotes;
+  };
+
   const functionPoints = (curve: GraphFunctionCurve, single: boolean): { points: GraphKeyPoint[]; asymptotes: GraphAsymptote[] } => {
     const f = curve.f;
     const feat = features(f);
     const points: GraphKeyPoint[] = [];
-    const asymptotes: GraphAsymptote[] = [];
+    const asymptotes = asymptotesOf(f, feat);
     const add = (x: number, role: GraphKeyPoint["role"]) => {
       const sx = snap(x);
       const y = f(sx);
@@ -572,16 +717,11 @@ export function createGraphIntent(math: MathJsInstance, deps: GraphIntentDeps): 
       if (points.some((p) => Math.abs(p.x - sx) < 1e-9 && Math.abs(p.y - sy) < 1e-9)) return;
       points.push({ x: sx, y: sy, label: pointLabel(sx, sy), role });
     };
-    for (const p of feat.poles) asymptotes.push({ axis: "vertical", at: snap(p) });
-    const levels = new Set<number>();
-    for (const dir of [-1, 1]) {
-      const l = levelAt(f, dir);
-      if (l !== null) levels.add(l);
-    }
     const degree = lowDegree(f);
-    if (degree === null) for (const l of levels) asymptotes.push({ axis: "horizontal", at: l });
     if (!single) return { points: [], asymptotes };
 
+    // a hole first: an open circle, and never also a dot of the same point
+    for (const h of holesOf(math, curve.expr, f)) points.push({ x: h.x, y: h.y, label: pointLabel(h.x, h.y), role: "hole" });
     const nearest = (xs: number[], k: number) => [...xs].sort((a, b) => Math.abs(a) - Math.abs(b)).slice(0, k);
     if (degree === 2) for (const x of feat.extrema) add(x, "vertex");
     for (const x of nearest(feat.roots, 4)) add(x, "intercept");
@@ -642,9 +782,7 @@ export function createGraphIntent(math: MathJsInstance, deps: GraphIntentDeps): 
       }
       const found = functionPoints(c, single);
       points.push(...found.points);
-      for (const a of found.asymptotes) {
-        if (!asymptotes.some((o) => o.axis === a.axis && Math.abs(o.at - a.at) < 1e-9)) asymptotes.push(a);
-      }
+      for (const a of found.asymptotes) if (!asymptotes.some((o) => sameAsymptote(o, a))) asymptotes.push(a);
     }
     if (!single) {
       for (let i = 0; i < curves.length; i++) {
@@ -661,41 +799,109 @@ export function createGraphIntent(math: MathJsInstance, deps: GraphIntentDeps): 
     return { kind: "plane", key, variable: rels[0].variable, curves, points: points.slice(0, MAX_POINTS), asymptotes };
   };
 
-  /** `y = 9`, `x = -2`, `x = ?`: a value given (or asked for), not a relation to graph. */
-  const isValueLine = (latex: string): boolean => {
+  /**
+   * A transformation: the parent dotted and named, its image named, the image's own key points
+   * and asymptotes (the parent's only break its curve), and the parent's key point, where it
+   * lands, and an arrow between.
+   */
+  const transformation = (parent: PlaneRel, image: PlaneRel): PlaneGraphIntent | null => {
+    if (parent.curve.kind !== "function" || image.curve.kind !== "function") return null;
+    const named = (r: PlaneRel) => (r.name && r.name !== "y" ? { name: r.name } : {});
+    const curves: GraphCurve[] = [
+      { ...parent.curve, role: "parent", ...named(parent) },
+      { ...image.curve, ...named(image) },
+    ];
+    const own = functionPoints(image.curve, true);
+    const points: GraphKeyPoint[] = own.points.filter((p) => p.role !== "intercept");
+    const asymptotes: GraphAsymptote[] = [...own.asymptotes];
+    for (const a of asymptotesOf(parent.curve.f)) {
+      if (a.axis === "vertical" && !asymptotes.some((o) => sameAsymptote(o, a))) asymptotes.push({ ...a, hidden: true });
+    }
+    const arrows: NonNullable<PlaneGraphIntent["arrows"]> = [];
+    const pairs = parent.body && image.affine ? tellingPoints(courseDeps, parent.body, parent.variable, image.affine) : [];
+    const put = (p: { x: number; y: number }, role: GraphKeyPoint["role"]) => {
+      const at = points.findIndex((o) => Math.abs(o.x - p.x) < 1e-9 && Math.abs(o.y - p.y) < 1e-9);
+      if (at !== -1) points.splice(at, 1);
+      points.unshift({ ...p, label: pointLabel(p.x, p.y), role });
+    };
+    // the parent's key point and where it lands (the image's first in line for a label)
+    for (const [a, b] of [...pairs].reverse()) {
+      const from = { x: qNum(a[0]), y: qNum(a[1]) };
+      const to = { x: qNum(b[0]), y: qNum(b[1]) };
+      put(from, "turning");
+      put(to, "vertex");
+      arrows.unshift({ from, to });
+    }
+    // an image point that did not move (a stretch's vertex) still gets its dot
+    const still = parent.body ? keyPointOf(courseDeps, parent.body, parent.variable) : null;
+    if (still && !pairs.some(([a]) => qNum(a[0]) === qNum(still[0]) && qNum(a[1]) === qNum(still[1]))) put({ x: qNum(still[0]), y: qNum(still[1]) }, "turning");
+    const graphKey = `p:${image.variable}:t:${parent.fingerprint}>${image.fingerprint}`;
+    return { kind: "plane", key: graphKey, variable: image.variable, curves, points: points.slice(0, MAX_POINTS), asymptotes, ...(arrows.length ? { arrows } : {}) };
+  };
+
+  /** `y = 9`, `x = -2`, `x = ?`: a value given (or asked for), not a relation to graph. `?` is null. */
+  const valueLine = (latex: string): { variable: string; value: number | null } | null => {
     const split = splitRelations(preprocessLatex(latex));
-    if (split.sides.length !== 2 || split.ops[0] !== "==" || !isVariable(split.sides[0])) return false;
+    if (split.sides.length !== 2 || split.ops[0] !== "==") return null;
+    const variable = isVariable(split.sides[0]);
+    if (!variable) return null;
     const rhs = split.sides[1].trim();
-    if (rhs === "?" || rhs === "") return true;
+    if (rhs === "?" || rhs === "") return { variable, value: null };
     try {
-      return numberValue(rhs) !== null;
+      const v = numberValue(rhs);
+      return v === null ? null : { variable, value: v };
     } catch {
-      return false;
+      return null;
     }
   };
 
   const graphFor = (lines: readonly string[]): GraphIntent | null => {
     const rels: PlaneRel[] = [];
+    /** function lines by name, for a later line written from one (`g(x) = f(x - 3) + 1`) */
+    const named = new Map<string, PlaneRel>();
     let answer: NumberLineIntent | null = null;
-    let values = false;
+    const values: Array<{ variable: string; value: number | null }> = [];
     for (const line of lines) {
       if (!line || !line.trim()) continue;
-      const rel = planeRel(line);
+      const rel = planeRel(line) ?? derivedRel(preprocessLatex(line), named);
       if (rel) {
         const seen = rels.findIndex((r) => r.fingerprint === rel.fingerprint);
-        if (seen !== -1) rels.splice(seen, 1); // a rewrite: the latest spelling stands
+        if (seen !== -1) {
+          // a rewrite: the latest spelling stands, and keeps what the first one said it was
+          const old = rels.splice(seen, 1)[0];
+          if (!rel.parent && old.parent) Object.assign(rel, { parent: old.parent, affine: old.affine });
+          if ((!rel.name || rel.name === "y") && old.name && old.name !== "y") rel.name = old.name;
+        }
         rels.push(rel);
+        if (rel.name && rel.name !== "y") named.set(rel.name, rel);
         continue;
       }
-      if (isValueLine(line)) values = true;
+      const value = valueLine(line);
+      if (value) values.push(value);
       if (isInequality(line)) answer = numberLine(line);
     }
+    // The equation of an asymptote of one of the relations (`x = -1`, `y = 1`, `y = x + 1` under a
+    // rational function) is that dashed line, already drawn: not a value, not a second curve.
+    const asym = rels.flatMap((r) => (r.curve.kind === "function" ? asymptotesOf(r.curve.f).map((a) => ({ a, r })) : []));
+    const kept = rels.filter((r) => !(r.curve.kind === "function" && asym.some((x) => x.r !== r && x.a.axis === "oblique" && sameLine(r.curve as GraphFunctionCurve, x.a))));
+    const onAsymptote = (v: { variable: string; value: number | null }) =>
+      v.value !== null && asym.some(({ a, r }) => a.axis === (v.variable === "y" ? "horizontal" : v.variable === r.variable ? "vertical" : "") && Math.abs(a.at - v.value!) < 1e-9);
+    const asymptoteLines = values.filter(onAsymptote);
+    // `x = ?` answered by an asymptote's equation is that question, not a value asked for
+    const remaining = values.filter((v) => !onAsymptote(v) && !(v.value === null && asymptoteLines.some((n) => n.variable === v.variable)));
     // One relation with a value put into it (`x + y = 18`, `y = 9`, `x = ?`) is substitution, not
     // a graph; two or more are a system, whose worked answer (`x = 11`, `y = 7`) is just that.
-    if (rels.length === 1 && values) return answer;
-    if (rels.length > 0) {
-      const variable = rels[rels.length - 1].variable;
-      const same = rels.filter((r) => r.variable === variable);
+    if (kept.length === 1 && remaining.length > 0) return answer;
+    // a function written from another one on the page: the two together
+    const image = [...kept].reverse().find((r) => r.parent && r.affine && named.has(r.parent));
+    const parent = image ? kept.find((r) => r.name === image.parent) : undefined;
+    if (image && parent && kept.every((r) => r === image || r === parent)) {
+      const t = transformation(parent, image);
+      if (t) return t;
+    }
+    if (kept.length > 0) {
+      const variable = kept[kept.length - 1].variable;
+      const same = kept.filter((r) => r.variable === variable);
       return plane(same.slice(-MAX_GRAPH_CURVES));
     }
     return answer;

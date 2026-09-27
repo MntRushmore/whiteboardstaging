@@ -36,6 +36,12 @@ export const GRAPH_GALLERY: ReadonlyArray<{ title: string; lines: string[] }> = 
   { title: "2x + 3 > 11  ->  x > 4", lines: ["2x + 3 > 11", "2x > 8", "x > 4"] },
   { title: "-2 \\le x < 3", lines: ["-2 \\le x < 3"] },
   { title: "x < 2, x \\ge 3", lines: ["x < 2, \\ x \\ge 3"] },
+  { title: "f(x) = (x^2 - 4)/(x^2 - x - 2): a hole", lines: ["f(x) = \\frac{x^{2} - 4}{x^{2} - x - 2}"] },
+  { title: "f(x) = (x^2 + 1)/(x - 1): slant", lines: ["f(x) = \\frac{x^{2} + 1}{x - 1}"] },
+  { title: "y = 3x^2/(x^2 - 9)", lines: ["y = \\frac{3x^{2}}{x^{2} - 9}"] },
+  { title: "f = x^2,  g(x) = f(x - 3) + 1", lines: ["f(x) = x^{2}", "g(x) = f(x - 3) + 1"] },
+  { title: "f = 1/x,  g(x) = f(x - 2) + 3", lines: ["f(x) = \\frac{1}{x}", "g(x) = f(x - 2) + 3"] },
+  { title: "y = 2(x - 1)^2 + 3  (Solved)", lines: ["y = 2(x - 1)^{2} + 3", "f(x) = x^{2}", "y = 2f(x - 1) + 3"] },
 ];
 
 const PAD = 28;
