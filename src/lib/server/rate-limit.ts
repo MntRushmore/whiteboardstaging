@@ -43,6 +43,8 @@ export const LIMITS = {
   liveRecognize: LIVE_RATE_LIMITS.liveRecognize,
   liveCheck: LIVE_RATE_LIMITS.liveCheck,
   liveSolve: LIVE_RATE_LIMITS.liveSolve,
+  liveSetup: LIVE_RATE_LIMITS.liveSetup,
+  liveReread: LIVE_RATE_LIMITS.liveReread,
 } as const satisfies Record<string, RateLimitOptions>;
 
 export type RateLimitBucket = keyof typeof LIMITS;

@@ -323,6 +323,55 @@ export const SolveStepSchema = z.object({
 });
 export type SolveStep = z.infer<typeof SolveStepSchema>;
 
+/**
+ * POST /api/live/setup — a word problem turned into the maths a student writes under it. The
+ * model only SETS UP (assignments / equations, no arithmetic done, no words); the local engine
+ * then solves the setup on the client exactly as Solve would, and only when it cannot does the
+ * board fall back to /api/live/solve.
+ */
+export const SetupRequestSchema = z.object({
+  boardId: z.string().min(1).max(64),
+  /** the column's lines top to bottom, as read: prose (`\text{…}`) and any maths the student wrote */
+  lines: z.array(z.string().max(2000)).min(1).max(40),
+});
+export type SetupRequest = z.infer<typeof SetupRequestSchema>;
+export const SetupResponseSchema = z.object({
+  /** LaTeX only: assignments / equations, one short letter per quantity, top to bottom */
+  lines: z.array(z.string().min(1).max(500)).min(1).max(6),
+  /** the letter of the asked-for quantity, when the model named one */
+  unknown: z.string().max(20).optional(),
+  model: z.string(),
+  ms: z.number(),
+});
+export type SetupResponse = z.infer<typeof SetupResponseSchema>;
+
+/**
+ * POST /api/live/reread — the second reader: a vision model looks at the ink of ONE line that
+ * Mathpix may have misread, with Mathpix's LaTeX and the column's other lines, and returns what
+ * is written. Only ever sent on a signal (`src/lib/live/readCheck.ts`), at most once per ink.
+ */
+export const RereadRequestSchema = z.object({
+  boardId: z.string().min(1).max(64),
+  lineId: z.string().min(1).max(64),
+  /** data:image crop of the line's ink (the client's `captureCrop`), same cap as recognize */
+  crop: z.string().startsWith("data:image/").max(280_000),
+  /** Mathpix's LaTeX for the line */
+  latex: z.string().min(1).max(2000),
+  /** the column's lines above it, top to bottom, as read */
+  above: z.array(z.string().max(2000)).max(40).default([]),
+  /** the column's lines below it (a line rewritten mid-column), top to bottom */
+  below: z.array(z.string().max(2000)).max(40).default([]),
+});
+export type RereadRequest = z.input<typeof RereadRequestSchema>;
+export const RereadResponseSchema = z.object({
+  latex: z.string().max(2000),
+  /** the model's own claim that it changed the read (the client compares for itself) */
+  changed: z.boolean(),
+  model: z.string(),
+  ms: z.number(),
+});
+export type RereadResponse = z.infer<typeof RereadResponseSchema>;
+
 export const SseMetaSchema = z.object({ requestId: z.string(), model: z.string() });
 export const SseDoneSchema = z.object({ count: z.number(), ms: z.number() });
 export const SseErrorSchema = z.object({ error: z.string(), message: z.string() });
@@ -354,12 +403,23 @@ export type ApiErrorBody = z.infer<typeof ApiErrorSchema>;
  * to the student) at 2.5 s p50 and about 40 % of the cost; DeepSeek v4.1 Flash is the fallback
  * only when it fails (21/25, cheapest). The owner chose a US provider as primary.
  */
+/**
+ * Setup (word problem → equations) is benchmark job 1: every model scored 24–25/25, so latency,
+ * cost and a US primary decide — GPT-5.4 mini, with DeepSeek v4.1 Flash (25/25, cheapest) as the
+ * fallback from another provider. Reread (the second reader for messy ink) is job 3: Gemini 3.1
+ * Flash Lite fixed 14/18 real Mathpix misreads and broke 0/20 correct reads at ~0.9 s; Haiku 4.5
+ * (another provider, also 0 breaks) is its fallback.
+ */
 export const LIVE_MODELS = {
   check: "google/gemini-3.5-flash",
   checkFallback: "anthropic/claude-haiku-4.5",
   solve: "openai/gpt-5.4-mini",
   solveFallback: "deepseek/deepseek-v4.1-flash",
   vision: "google/gemini-3.1-flash-lite",
+  setup: "openai/gpt-5.4-mini",
+  setupFallback: "deepseek/deepseek-v4.1-flash",
+  reread: "google/gemini-3.1-flash-lite",
+  rereadFallback: "anthropic/claude-haiku-4.5",
 } as const;
 
 /** Per-user limits for the live routes (the existing LIMITS table in src/lib/server/rate-limit.ts covers the legacy routes). */
@@ -367,6 +427,10 @@ export const LIVE_RATE_LIMITS = {
   liveRecognize: { limit: 120, windowMs: 60_000 },
   liveCheck: { limit: 30, windowMs: 60_000 },
   liveSolve: { limit: 10, windowMs: 60_000 },
+  /** one per Solve on a word problem, like solve itself */
+  liveSetup: { limit: 10, windowMs: 60_000 },
+  /** only on a suspicious read, at most once per ink; a quarter of the recognize budget is ample */
+  liveReread: { limit: 30, windowMs: 60_000 },
 } as const;
 export type LiveRateLimitRoute = keyof typeof LIVE_RATE_LIMITS;
 
@@ -403,7 +467,8 @@ export interface LiveLineState {
   line: InkLine;
   latex: string;
   confidence: number;
-  provider: "mathpix" | "vision" | "typed" | "none";
+  /** `reread`: Mathpix's read was replaced by the second reader's (`/api/live/reread`) */
+  provider: "mathpix" | "vision" | "reread" | "typed" | "none";
   analysis: LineAnalysis | null;
   mathShapeId: TLShapeId | null;
   graphShapeId: TLShapeId | null;

@@ -96,6 +96,8 @@ describe("LIMITS", () => {
     expect(LIMITS.liveRecognize).toEqual({ limit: 120, windowMs: 60_000 });
     expect(LIMITS.liveCheck).toEqual({ limit: 30, windowMs: 60_000 });
     expect(LIMITS.liveSolve).toEqual({ limit: 10, windowMs: 60_000 });
+    expect(LIMITS.liveSetup).toEqual({ limit: 10, windowMs: 60_000 });
+    expect(LIMITS.liveReread).toEqual({ limit: 30, windowMs: 60_000 });
   });
 });
 

@@ -61,6 +61,8 @@ describe("ROUTE_COSTS", () => {
       "live/recognize": 1,
       "live/check": 3,
       "live/solve": 10,
+      "live/setup": 2,
+      "live/reread": 1,
       "voice/analyze-workspace": 3,
       credits: 0,
       "config/status": 0,

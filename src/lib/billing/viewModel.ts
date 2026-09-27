@@ -244,6 +244,8 @@ export const ROUTE_LABELS: Readonly<Record<string, string>> = {
   "live-recognize": "Handwriting recognition",
   "live-check": "Hint check",
   "live-solve": "Worked solution",
+  "live-setup": "Word problem setup",
+  "live-reread": "Second reading",
   "voice-analyze-workspace": "Voice analysis",
   // Retired routes (the image pipeline and its helpers were removed). No request is billed
   // under these keys any more; they stay only so older usage history still reads as words.

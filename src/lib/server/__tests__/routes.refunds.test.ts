@@ -489,6 +489,8 @@ describe("static: every route that charges credits refunds through runCharged / 
     expect(charged).toEqual([
       "src/app/api/live/check/route.ts",
       "src/app/api/live/recognize/route.ts",
+      "src/app/api/live/reread/route.ts",
+      "src/app/api/live/setup/route.ts",
       "src/app/api/live/solve/route.ts",
       "src/app/api/voice/analyze-workspace/route.ts",
     ]);

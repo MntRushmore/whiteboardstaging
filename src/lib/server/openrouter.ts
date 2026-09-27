@@ -312,6 +312,10 @@ export type ChatJsonOptions<S extends z.ZodTypeAny> = {
   maxTokens?: number;
   requestId?: string;
   title?: string;
+  /** OpenRouter unified reasoning control; omitted when unset (the model's default). */
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
+  /** `provider.sort: latency`, as the Live streams route (the model bench measured this way). */
+  latencyFirst?: boolean;
 };
 
 /**
@@ -326,6 +330,8 @@ export async function chatJson<S extends z.ZodTypeAny>(opts: ChatJsonOptions<S>)
     temperature: opts.temperature ?? 0,
   };
   if (opts.maxTokens !== undefined) body.max_tokens = opts.maxTokens;
+  if (opts.reasoningEffort) body.reasoning = { effort: opts.reasoningEffort };
+  if (opts.latencyFirst) body.provider = { sort: "latency" };
 
   const data = await openrouterChat(body, { signal: opts.signal, requestId: opts.requestId, title: opts.title });
   const raw = data.choices?.[0]?.message?.content;
@@ -346,4 +352,47 @@ export async function chatJson<S extends z.ZodTypeAny>(opts: ChatJsonOptions<S>)
     throw new UpstreamError(502, `Model output failed validation: ${result.error.issues[0]?.message ?? "invalid"}`);
   }
   return result.data;
+}
+
+export type ChatJsonFallbackOptions<S extends z.ZodTypeAny> = Omit<ChatJsonOptions<S>, "model" | "reasoningEffort"> & {
+  /** reasoning effort per model (Anthropic models take none: their thinking budget starts at 1024 tokens) */
+  reasoningFor?: (model: string) => ChatJsonOptions<S>["reasoningEffort"];
+  /** abort one attempt after this long and try the fallback (the caller's signal still ends both) */
+  attemptTimeoutMs: number;
+};
+
+/**
+ * `chatJson` on `primary`, then once on `fallback` when the primary fails or times out — the
+ * non-streaming twin of `streamWithFallback`. Out-of-credits and a caller abort are never
+ * retried. Resolves with the parsed reply and the model that produced it.
+ */
+export async function chatJsonWithFallback<S extends z.ZodTypeAny>(
+  primary: string,
+  fallback: string,
+  opts: ChatJsonFallbackOptions<S>,
+): Promise<{ data: z.infer<S>; model: string }> {
+  const { reasoningFor, attemptTimeoutMs, signal, ...rest } = opts;
+  const attempt = async (model: string) => {
+    const timeout = AbortSignal.timeout(attemptTimeoutMs);
+    try {
+      const data = await chatJson({
+        ...rest,
+        model,
+        reasoningEffort: reasoningFor?.(model),
+        signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      });
+      return { data, model };
+    } catch (err) {
+      // our own per-attempt timeout is the provider being slow (upstream), not the caller leaving
+      if (timeout.aborted && !signal?.aborted) throw new UpstreamError(504, `${model} did not answer within ${attemptTimeoutMs} ms`);
+      throw err;
+    }
+  };
+  try {
+    return await attempt(primary);
+  } catch (err) {
+    if (err instanceof CreditsExhaustedError || signal?.aborted) throw err;
+    if (!fallback || fallback === primary) throw err;
+    return attempt(fallback);
+  }
 }
