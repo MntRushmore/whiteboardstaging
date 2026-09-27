@@ -30,7 +30,9 @@ describe("eval: the tutor's hand as the student's ink", () => {
   });
 
   it("reports what the hand cannot draw instead of drawing half of it", () => {
-    expect(handInk("\\lim_{x \\to 2} (3x + 1)", clean).unsupported).toEqual(["\\lim"]);
+    // the hand writes \\lim now; \\zeta is one of the few symbols it still has no glyph for
+    expect(handInk("\\lim_{x \\to 2} (3x + 1)", clean).unsupported).toEqual([]);
+    expect(handInk("\\zeta + 1", clean).unsupported).toEqual(["\\zeta"]);
     // Mathpix's `\mathrm{~km}` spacing is not ink
     expect(handLatex("5 \\mathrm{~km}")).toBe("5 \\,\\mathrm{km}");
     expect(handLatex("9.8 \\mathrm{~m/s^{2}}")).toBe("9.8 \\,\\mathrm{m/s}^{2}");

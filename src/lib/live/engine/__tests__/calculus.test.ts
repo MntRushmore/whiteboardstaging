@@ -343,12 +343,9 @@ function expectDrawable(lines: readonly string[]): void {
   expect(plan).not.toBeNull();
 }
 
-/** Working lines of a limit are written `\lim_{x \to a} …`, which the hand does not draw yet. */
-const needsLim = (lines: readonly string[]) => lines.some((l) => l.includes("\\lim"));
-
 describe("the hand can write every step", () => {
   const all = [...DERIVATIVES, ...INDEFINITE, ...DEFINITE, ...LIMITS];
-  it.each(all.filter(([, s]) => !needsLim(s)))("%s, as written under the line", (latex) => {
+  it.each(all)("%s, as written under the line", (latex) => {
     const s = steps(latex);
     expect(s).not.toBeNull();
     expectDrawable(s!.map(localAnswerStep));
@@ -363,17 +360,5 @@ describe("the hand can write every step", () => {
     const r = fromLines(lines);
     expect(r).not.toBeNull();
     expectDrawable(r!.steps);
-  });
-
-  // The hand has no `\lim` yet (src/lib/hand/mathLayout.ts FUNCTION_CMD). Until it does, the board
-  // typesets these blocks locally (still the engine's answer, still no model). `\lim` must be the
-  // only thing missing, so the day the hand learns it, the whole block is drawable.
-  it.each(all.filter(([, s]) => needsLim(s)))("%s needs nothing from the hand but \\lim", (latex) => {
-    const s = steps(latex)!.map(localAnswerStep);
-    expect(unsupportedIn(s).every((u) => u === "\\lim")).toBe(true);
-  });
-
-  it.skip("limit working lines are drawn by hand (needs `\\lim` in the hand's FUNCTION_CMD)", () => {
-    for (const [latex] of LIMITS.filter(([, s]) => needsLim(s))) expectDrawable(steps(latex)!.map(localAnswerStep));
   });
 });

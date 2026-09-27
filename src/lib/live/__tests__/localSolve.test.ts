@@ -39,11 +39,12 @@ describe("localSolve — what each local path writes (real engine)", () => {
   });
 
   it("answers a derivative that needs the definition above it (column context)", () => {
-    expect(localSolve(engine, ["y = x^{3} + 2x", "\\frac{dy}{dx} ="])).toEqual({ source: "localAnswer", steps: ["= 3\\cdot{x}^{2}+2"] });
+    // calculus under a definition is answered from the column (solveFromLines), in the engine's notation
+    expect(localSolve(engine, ["y = x^{3} + 2x", "\\frac{dy}{dx} ="])).toEqual({ source: "solveFromLines", steps: ["= 3x^{2} + 2"] });
   });
 
-  it("has nothing local for a limit or a word problem: the loop would ask the model", () => {
-    expect(localSolve(engine, ["\\lim_{x \\to 0} \\frac{\\sin x}{x}"])).toEqual({ source: null, steps: [] });
+  it("answers a limit locally; has nothing local for a word problem (the loop would ask the model)", () => {
+    expect(localSolve(engine, ["\\lim_{x \\to 0} \\frac{\\sin x}{x}"])).toEqual({ source: "simplifySteps", steps: ["= 1"] });
     expect(localSolve(engine, ["\\text{A train travels 60 km in 2 hours. What is its speed?}"])).toEqual({ source: null, steps: [] });
     expect(localSolve(engine, [])).toEqual({ source: null, steps: [] });
   });
@@ -52,7 +53,7 @@ describe("localSolve — what each local path writes (real engine)", () => {
     const [first, second] = analyzeColumn(engine, ["f(x) = x^{2}", "f'(x) ="]);
     expect(first?.kind).toBe("function");
     // `f'(x) =` only means something next to its definition — and in answer mode it is answered
-    expect(second?.resultLatex).toBe("2\\cdot x");
+    expect(second?.resultLatex).toBe("2x");
   });
 });
 
