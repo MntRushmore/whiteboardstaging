@@ -441,10 +441,69 @@ export function compareMultiRelations(math: MathJsInstance, prev: Relation, cur:
       for (const root of roots) {
         const ok = holdsAt(math, to, { ...fixed, [along]: root });
         if (ok === null) continue;
-        if (!ok) return "mismatch";
+        if (!ok) return notEquivalent(math, prev, cur, vars);
         agreed++;
       }
     }
   }
   return agreed >= 3 ? "ok" : "unknown";
+}
+
+/** `sum(coef[v] * v) + constant` when `lhs - rhs` is linear in `vars` (checked at two more points). */
+function linearIn(math: MathJsInstance, rel: Relation, vars: readonly string[]): { coef: number[]; constant: number } | null {
+  const g = compile(math, `(${rel.lhs}) - (${rel.rhs})`);
+  if (!g) return null;
+  const at = (scope: Record<string, number>): number | null => {
+    try {
+      const v = toNumber(g.evaluate(scope));
+      return v !== null && Number.isFinite(v) ? v : null;
+    } catch {
+      return null;
+    }
+  };
+  const zero = Object.fromEntries(vars.map((v) => [v, 0]));
+  const constant = at(zero);
+  if (constant === null) return null;
+  const coef: number[] = [];
+  for (const v of vars) {
+    const one = at({ ...zero, [v]: 1 });
+    if (one === null) return null;
+    coef.push(one - constant);
+  }
+  for (const probe of [1.7, -2.3]) {
+    const scope = Object.fromEntries(vars.map((v, i) => [v, probe * (i + 1)]));
+    const val = at(scope);
+    const predicted = constant + coef.reduce((sum, c, i) => sum + c * scope[vars[i]], 0);
+    if (val === null || Math.abs(val - predicted) > 1e-7 * Math.max(1, Math.abs(val))) return null;
+  }
+  return { coef, constant };
+}
+
+/**
+ * Two lines in two or more unknowns that are NOT the same equation. Written one under the other
+ * this is usually the next equation of a SYSTEM (`x + y = 18`, then `x - y = 4`), not a step — and
+ * ringing a student's correct system is the worst thing the tutor can do. So a non-equivalent line
+ * is only `mismatch` when it carries the signature of a botched rearrangement of the line above:
+ *  - PARALLEL but a different constant (`x + y = 10` → `y = 5 - x`, `2(x + y) = 10` → `x + y = 4`):
+ *    as a system it would have no solution, which a student never sets up;
+ *  - every number the same size, only a sign flipped (`2x + 3y = 12` → `3y = 12 + 2x`): a term moved
+ *    across without changing its sign.
+ * Anything else is `none` — a new equation, nothing to check.
+ */
+function notEquivalent(math: MathJsInstance, prev: Relation, cur: Relation, vars: readonly string[]): EngineVerdict {
+  const a = linearIn(math, prev, vars);
+  const b = linearIn(math, cur, vars);
+  if (!a || !b) return "none";
+  const av = [...a.coef, a.constant];
+  const bv = [...b.coef, b.constant];
+  // the scale that maps a's first non-zero coefficient onto b's
+  const i = a.coef.findIndex((c) => Math.abs(c) > 1e-12);
+  if (i === -1 || Math.abs(b.coef[i]) < 1e-12) return "none";
+  const k = b.coef[i] / a.coef[i];
+  const close = (x: number, y: number) => Math.abs(x - y) <= 1e-9 * Math.max(1, Math.abs(x), Math.abs(y));
+  const parallel = a.coef.every((c, j) => close(c * k, b.coef[j]));
+  if (parallel && !close(a.constant * k, b.constant)) return "mismatch";
+  const sameSizes = av.every((c, j) => close(Math.abs(c * k), Math.abs(bv[j])));
+  if (sameSizes) return "mismatch";
+  return "none";
 }

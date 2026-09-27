@@ -690,7 +690,11 @@ export function createEngine(mod: MathModule): LiveEngine {
           }
           const prev = ctx.previous;
           if (prev && prev.kind === "function" && prev.plot && out.plot) {
-            out.verdict = expressionsEquivalent(math, prev.plot.expr, out.plot.expr, ["x"]);
+            // The same function rewritten (`y = 2(x + 1)` → `y = 2x + 2`) is a tick. A DIFFERENT
+            // function is a new line — two lines to graph, a system — never a ring: `y = 2x + 1`
+            // then `y = -x + 4` is correct work.
+            const same = expressionsEquivalent(math, prev.plot.expr, out.plot.expr, ["x"]);
+            out.verdict = same === "mismatch" ? "none" : same;
           }
           // `x + y = 10` then `y = 10 - x`: the student isolated y — a step to check, not only
           // a function to graph. (`y = ...` under another `y = ...` is the comparison above.)

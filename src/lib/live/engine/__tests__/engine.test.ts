@@ -543,10 +543,21 @@ describe("engine: steps with two or more unknowns (x and y)", () => {
     ["x+y=10", "y=5-x"],
     ["2x+3y=12", "3y=12+2x"],
     ["2(x+y)=10", "x+y=4"],
-    // squaring both sides adds x + y = -10: not the same equation any more
-    ["x+y=10", "(x+y)^2=100"],
   ])("%s → %s is flagged", (prev, line) => {
     expect(step(prev, line).verdict).toBe("mismatch");
+  });
+
+  // The next equation of a SYSTEM is not a step: a correct system must never be ringed. (The
+  // demo video caught `x - y = 4` under `x + y = 18` with a ring round it.)
+  it.each([
+    ["x+y=18", "x-y=4"],
+    ["2x+3y=12", "x-y=1"],
+    ["y=2x+1", "y=-x+4"],
+    ["3x+2y=16", "2x+3y=14"],
+    // squaring both sides is a real step (it adds a solution): not ringed, not ticked either
+    ["x+y=10", "(x+y)^2=100"],
+  ])("%s then %s is a new equation, not a wrong step", (prev, line) => {
+    expect(step(prev, line).verdict).toBe("none");
   });
 
   it("a first line in two unknowns has nothing to be checked against (and is not sent to the model)", () => {

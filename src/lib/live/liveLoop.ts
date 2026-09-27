@@ -2201,7 +2201,10 @@ export class LiveLoop implements LiveController {
     avoid.push(state.line.bounds);
     const echo = this.echoRect(opts.lineId);
     if (echo) avoid.push(echo);
-    const slot = findFreeSlot(keepOnScreen(candidate, this.screenRect(), column), avoid, lastLine);
+    // Under the work, a blocked block slides down past what is in the way; moved beside the work
+    // (no room below on this screen), it slides right as an echo does.
+    const placed = keepOnScreen(candidate, this.screenRect(), column);
+    const slot = findFreeSlot(placed, avoid, lastLine, placed.x === candidate.x ? "below" : "right");
 
     this.startHandwriting(placeHandPlan(plan, { x: slot.x, y: slot.y }), opts.lineId, extraMeta);
     clientMetric("live.solve.hand.ms", { ms: Math.round(wallMsOf(plan)), lineId: opts.lineId });
@@ -2287,7 +2290,7 @@ export class LiveLoop implements LiveController {
         column,
         Math.max(0, index - 1) * PLACEMENT.stepPitch,
       );
-      const slot = findFreeSlot(rect, this.avoidRects(lineId), lastLine);
+      const slot = findFreeSlot(rect, this.avoidRects(lineId), lastLine, "below");
       this.editor.createShapes([
         {
           id: createShapeId(),

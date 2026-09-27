@@ -88,26 +88,36 @@ export function placeEcho(line: Rect, latex: string, size: MathSize, viewport: R
 }
 
 /**
- * Scans for a slot that does not intersect `avoid`: the candidate shifted right by
- * i*40 for i = 0..5, then rows below the line at bounds.x, maxY + 12 + j*(h+8) for
- * j = 1..4, else the original candidate.
+ * Scans for a slot that does not intersect `avoid`.
+ *
+ * `right` (echoes, notes): the candidate shifted right by i*40 for i = 0..5, then below.
+ * `below` (a worked solution under the work): straight under the line first.
+ * Below means just under whatever is in the way — never jumps of the block's own height, which
+ * sent an 8-line solution to the bottom of the screen when a ring sat under the last line.
  */
-export function findFreeSlot(candidate: Rect, avoid: Rect[], line: Rect): Rect {
+export function findFreeSlot(candidate: Rect, avoid: Rect[], line: Rect, prefer: "right" | "below" = "right"): Rect {
   const free = (r: Rect) => !avoid.some((a) => rectsIntersect(r, a));
+  const below = (): Rect | null => {
+    let r: Rect = { ...candidate, x: prefer === "below" ? candidate.x : line.x, y: Math.max(candidate.y, rectMaxY(line) + PLACEMENT.belowGapY) };
+    if (prefer === "right") r = { ...r, y: rectMaxY(line) + PLACEMENT.belowGapY + candidate.h + PLACEMENT.rowGap };
+    // no further below the line than the old row search reached (4 rows of the block)
+    const limit = rectMaxY(line) + PLACEMENT.belowGapY + PLACEMENT.rowTries * (candidate.h + PLACEMENT.rowGap);
+    for (let k = 0; k < 12 && r.y <= limit; k++) {
+      const hits = avoid.filter((a) => rectsIntersect(r, a));
+      if (hits.length === 0) return r;
+      r = { ...r, y: Math.max(...hits.map(rectMaxY)) + PLACEMENT.rowGap };
+    }
+    return null;
+  };
+  if (prefer === "below") {
+    if (free(candidate)) return candidate;
+    return below() ?? candidate;
+  }
   for (let i = 0; i < PLACEMENT.slotTries; i++) {
     const r = { ...candidate, x: candidate.x + i * PLACEMENT.slotStepX };
     if (free(r)) return r;
   }
-  for (let j = 1; j <= PLACEMENT.rowTries; j++) {
-    const r: Rect = {
-      x: line.x,
-      y: rectMaxY(line) + PLACEMENT.belowGapY + j * (candidate.h + PLACEMENT.rowGap),
-      w: candidate.w,
-      h: candidate.h,
-    };
-    if (free(r)) return r;
-  }
-  return candidate;
+  return below() ?? candidate;
 }
 
 /** Graph: right of the echo at the line's top; overflow -> below both. */

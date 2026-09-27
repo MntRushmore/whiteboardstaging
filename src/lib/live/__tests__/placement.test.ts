@@ -186,3 +186,20 @@ describe("keepInsideX", () => {
     expect(keepInsideX(r, screen)).toEqual(r);
   });
 });
+
+describe("findFreeSlot below the work", () => {
+  it("a tall solution under a ringed line goes just under the ring, not a block-height further", () => {
+    const line: Rect = { x: 100, y: 200, w: 200, h: 40 };
+    const ring: Rect = { x: 60, y: 186, w: 280, h: 70 }; // the ring round the last line
+    const block: Rect = { x: 100, y: 252, w: 220, h: 400 }; // an 8-line worked solution
+    const slot = findFreeSlot(block, [ring], line, "below");
+    expect(slot.x).toBe(100);
+    expect(slot.y).toBe(ring.y + ring.h + PLACEMENT.rowGap);
+  });
+
+  it("stays where it is when nothing is in the way", () => {
+    const line: Rect = { x: 100, y: 200, w: 200, h: 40 };
+    const block: Rect = { x: 100, y: 252, w: 220, h: 400 };
+    expect(findFreeSlot(block, [], line, "below")).toEqual(block);
+  });
+});

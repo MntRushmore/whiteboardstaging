@@ -143,6 +143,7 @@ const STYLE = `
 .live-math[data-source="echo"] .live-math__inner{pointer-events:all;transition:opacity .15s ease}
 .live-math[data-source="echo"][data-reveal="hover"] .live-math__inner{opacity:0}
 .live-math[data-source="echo"][data-reveal="hover"] .live-math__inner:hover{opacity:1}
+.live-math[data-source="echo"][data-reveal="off"] .live-math__inner{opacity:0;pointer-events:none}
 `;
 
 function MathShapeView({ shape }: { shape: MathShape }) {
@@ -168,7 +169,11 @@ function MathShapeView({ shape }: { shape: MathShape }) {
     },
     [editor, shape.id, anchors],
   );
-  const reveal = source !== "echo" || isEditing || touched || Boolean(resultLatex) || !getLiveSettings().handwriting ? "always" : "hover";
+  // While the student writes (the pen or any tool but select), the cursor rests over the readback
+  // after every line: it must not pop up then, and must not catch the pen either.
+  const writing = useValue("echo: writing", () => editor.getCurrentToolId() !== "select", [editor]);
+  const reveal =
+    source !== "echo" || isEditing || touched || Boolean(resultLatex) || !getLiveSettings().handwriting ? "always" : writing ? "off" : "hover";
 
   return (
     <HTMLContainer
