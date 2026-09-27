@@ -180,6 +180,72 @@ export interface AnalyzeContext {
   original?: LineAnalysis;
   mode: HelpMode;
 }
+
+/**
+ * What the tutor graphs for a column of work (engine `graphFor`): the maths only, in data
+ * coordinates. `src/lib/live/graphing` turns it into the strokes of a hand-drawn sketch (the
+ * window, the ticks, the curves), so nothing here knows about the page.
+ */
+export type GraphRelOp = "=" | "<" | ">" | "<=" | ">=";
+/** `y op f(x)`: a function, a line in any form solved for y, or the boundary of a region */
+export interface GraphFunctionCurve {
+  kind: "function";
+  /** the relation as the student wrote it */
+  latex: string;
+  /** y as a function of the horizontal variable; NaN where it is not real */
+  f: (x: number) => number;
+  /** mathjs source of f in `x` (the typeset fallback compiles it) */
+  expr: string;
+  op: GraphRelOp;
+}
+/** `(x - cx)^2 + (y - cy)^2 op r^2` */
+export interface GraphCircleCurve {
+  kind: "circle";
+  latex: string;
+  cx: number;
+  cy: number;
+  r: number;
+  op: GraphRelOp;
+}
+export type GraphCurve = GraphFunctionCurve | GraphCircleCurve;
+export interface GraphKeyPoint {
+  x: number;
+  y: number;
+  /** `(0, 1)`, written beside the dot; '' when a coordinate is not exact (a dot only) */
+  label: string;
+  role: "intercept" | "vertex" | "intersection" | "center" | "endpoint" | "turning";
+}
+export interface GraphAsymptote {
+  /** vertical: `x = at`; horizontal: `y = at` (drawn dashed) */
+  axis: "vertical" | "horizontal";
+  at: number;
+}
+export interface PlaneGraphIntent {
+  kind: "plane";
+  /** stable across rewrites of the same maths: the page never draws one twice */
+  key: string;
+  /** the horizontal variable (`x`, or `t` for `g(t) = …`) */
+  variable: string;
+  curves: GraphCurve[];
+  points: GraphKeyPoint[];
+  asymptotes: GraphAsymptote[];
+}
+/** One piece of a one-variable solution set; null is ±∞. */
+export interface NumberLineInterval {
+  from: number | null;
+  to: number | null;
+  fromClosed: boolean;
+  toClosed: boolean;
+}
+export interface NumberLineIntent {
+  kind: "numberLine";
+  key: string;
+  variable: string;
+  intervals: NumberLineInterval[];
+  /** every finite endpoint, with its LaTeX as the answer wrote it (`\frac{3}{2}`) */
+  marks: Array<{ at: number; latex: string }>;
+}
+export type GraphIntent = PlaneGraphIntent | NumberLineIntent;
 export interface LiveEngine {
   analyzeLine(latex: string, ctx: AnalyzeContext): LineAnalysis;
   /** compiled y=f(x) sampler for graph shapes; null when the expression does not parse */
@@ -198,6 +264,14 @@ export interface LiveEngine {
    * when there is nothing to expand or collect. Optional so engine doubles need not implement it.
    */
   simplifySteps?(latex: string): string[] | null;
+  /**
+   * What to graph for a column of work (the student's lines, then any solution under them),
+   * top to bottom: `y = f(x)` / `f(x) = …`, a line in any form, two or three of them (with where
+   * they cross), a region (`y < 2x + 1`), a circle, or — from the last line — a one-variable
+   * inequality answer as a number line. Null when there is nothing to graph. Optional so engine
+   * doubles need not implement it.
+   */
+  graphFor?(lines: readonly string[]): GraphIntent | null;
   /** verifies an LLM `expected` claim (mathjs expr) against the student's line */
   verifyExpected(expected: string, latex: string): "equal" | "unequal" | "unknown";
   balance(equation: string): { coeffs: number[]; latex: string } | null;
