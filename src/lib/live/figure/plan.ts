@@ -62,6 +62,8 @@ interface Quantity {
   value: LabelValue | null;
   /** the label as the model wrote it */
   label: string | null;
+  /** where the model says it is (`first crossing, between, left`) */
+  at: string;
 }
 
 interface Term {
@@ -125,6 +127,47 @@ export function askedLetters(column: readonly string[]): string[] {
   return out;
 }
 
+/**
+ * Where an angle is at a transversal, as the model describes it: which crossing (the first or the
+ * second parallel line), whether it is between the parallel lines or outside them, and which side of
+ * the transversal (left / right, or above / below when the transversal runs across). Null when the
+ * description does not say all three.
+ */
+export function transversalPosition(at: string): { crossing: 1 | 2; between: boolean; side: string } | null {
+  const t = (at ?? "").toLowerCase();
+  // only a description of a crossing ("bottom left corner, inside" is a triangle's corner)
+  if (!/\b(crossing|intersection)s?\b/.test(t)) return null;
+  const first = /\b(first|1st|upper|top)\b/.test(t);
+  const second = /\b(second|2nd|lower|bottom)\b/.test(t);
+  const inside = /\b(between|interior|inside|inner)\b/.test(t);
+  const outside = /\b(outside|exterior|outer)\b/.test(t);
+  const sides = [...new Set(t.match(/\b(left|right|above|below)\b/g) ?? [])];
+  if (first === second || inside === outside || sides.length !== 1) return null;
+  return { crossing: first ? 1 : 2, between: inside, side: sides[0] };
+}
+
+/**
+ * Two angles where one transversal crosses two parallel lines: equal (corresponding, alternate,
+ * vertical) or adding to 180 (co-interior, a linear pair), worked out from where each one is. At the
+ * first crossing "between the lines" faces the second line, at the second it faces the first: in one
+ * frame, angles on the same side of both lines are equal, on opposite sides of both equal (vertical,
+ * alternate), and on the same side of one but not the other supplementary. Null when either position
+ * is not described.
+ */
+export function transversalRelation(a: string, b: string): "equal" | "supplementary" | "same" | null {
+  const p = transversalPosition(a);
+  const q = transversalPosition(b);
+  if (!p || !q) return null;
+  const sideKind = (s: string) => (s === "left" || s === "right" ? "lr" : "ab");
+  if (sideKind(p.side) !== sideKind(q.side)) return null;
+  // towards the second line (true) or away from it, in one frame for both crossings
+  const toward = (x: { crossing: 1 | 2; between: boolean }) => (x.crossing === 1 ? x.between : !x.between);
+  const lineSame = toward(p) === toward(q);
+  const sideSame = p.side === q.side;
+  if (lineSame && sideSame) return p.crossing === q.crossing ? "same" : "equal";
+  return lineSame !== sideSame ? "supplementary" : "equal";
+}
+
 interface Model {
   qs: Quantity[];
   cls: number[];
@@ -158,12 +201,21 @@ function build(read: FigureRead, opts: PlanOptions): { model: Model; letters: st
       if ((p.kind === "value" && p.value.degrees) || (p.kind === "unknown" && p.degrees)) kind = "angle";
     }
     index.set(q.id, qs.length);
-    qs.push({ id: q.id, kind, value, label: q.label });
+    qs.push({ id: q.id, kind, value, label: q.label, at: q.at ?? "" });
   }
 
   // the labels read on the figure and the labels in the read must be the same labels
   const onFigure = (opts.labels ?? []).map((l) => l.trim()).filter(Boolean);
   if (onFigure.length > 0) {
+    // a right-angle box the reader wrote down as "90°": the mark, not a label
+    const figureKeys0 = new Set(onFigure.map(labelKey));
+    const boxed = new Set(read.facts.filter((f) => f.type === "right_angle" || f.type === "tangent_radius" || f.type === "semicircle").flatMap((f) => f.items as string[]));
+    for (const q of qs) {
+      if (q.label !== null && boxed.has(q.id) && q.value && !q.value.letter && q.value.b === 90 && !figureKeys0.has(labelKey(q.label))) {
+        q.label = null;
+        q.value = null;
+      }
+    }
     const inRead = new Set(qs.filter((q) => q.label !== null).map((q) => labelKey(q.label!)));
     const figureKeys = new Set(onFigure.map(labelKey));
     for (const l of onFigure) if (isValueLabel(l) && !inRead.has(labelKey(l))) reject(`the label "${l}" is not in the read`);
@@ -202,7 +254,15 @@ function build(read: FigureRead, opts: PlanOptions): { model: Model; letters: st
     return r;
   };
 
-  read.facts.forEach((f: FigureFact, n) => {
+  /** facts about two angles that, placed at the crossings of a transversal, are what their places say */
+  const POSITIONAL: ReadonlySet<FactType> = new Set(["corresponding", "alternate_interior", "alternate_exterior", "co_interior", "equal", "vertical", "straight_line"]);
+
+  read.facts.forEach((raw: FigureFact, n) => {
+    let f = raw;
+    if (POSITIONAL.has(f.type) && f.items.length === 2 && typeof f.items[0] === "string") {
+      const [p, q] = (f.items as string[]).map((id) => qs[index.get(id) ?? -1]);
+      if (p?.kind === "angle" && q?.kind === "angle" && transversalRelation(p.at, q.at)) f = { ...f, type: "transversal" };
+    }
     const items = (f.type === "similar" ? (f.items as string[][]).flat() : (f.items as string[])).map(at);
     if (new Set(items).size !== items.length) reject(`a ${f.type} fact names the same quantity twice`);
     items.forEach((q) => named.add(q));
@@ -213,7 +273,6 @@ function build(read: FigureRead, opts: PlanOptions): { model: Model; letters: st
     switch (f.type) {
       case "triangle":
       case "straight_line":
-      case "co_interior":
       case "cyclic_opposite":
         sum(n, f.type, items, 180, 180);
         break;
@@ -223,10 +282,26 @@ function build(read: FigureRead, opts: PlanOptions): { model: Model; letters: st
       case "right_angle_parts":
         sum(n, f.type, items, 90, 90);
         break;
-      case "vertical":
+      case "transversal":
       case "corresponding":
       case "alternate_interior":
       case "alternate_exterior":
+      case "co_interior": {
+        // where the two angles are decides, not the name: a reader that places them right names
+        // the relation wrong more often than it misplaces them
+        const [p, q] = items;
+        const derived = transversalRelation(qs[p].at, qs[q].at);
+        const relation = derived ?? (f.type === "co_interior" ? "supplementary" : f.type === "transversal" ? null : "equal");
+        if (relation === null) reject("two angles at a transversal with no positions");
+        if (relation === "same") reject("two quantities at the same place");
+        if (relation === "supplementary") sum(n, "co_interior", items, 180, 180);
+        else {
+          uf.union(p, q);
+          for (const x of items) setUnder(x, 180);
+        }
+        break;
+      }
+      case "vertical":
       case "same_arc":
       case "equal":
         for (const q of items.slice(1)) uf.union(items[0], q);

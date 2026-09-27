@@ -439,6 +439,24 @@ export const SetupResponseSchema = z.object({
   unknown: z.string().max(20).optional(),
   model: z.string(),
   ms: z.number(),
+  /**
+   * With a figure crop: where `lines` came from. `facts`: the model's structured read of the figure,
+   * turned into equations by `planFigure` (src/lib/live/figure), one stage per unknown, each with
+   * the value the board's engine must agree with. `lines`: the model's own free-form setup (the
+   * read did not hold up: `reason`), kept by the board only when its engine solves it to a sensible
+   * size (`kind`: what the labels say is asked). Absent: a word problem, or an older server.
+   */
+  figure: z
+    .object({
+      source: z.enum(["facts", "lines"]),
+      reason: z.string().max(300).optional(),
+      kind: z.enum(["angle", "length"]).optional(),
+      stages: z
+        .array(z.object({ letter: z.string().min(1).max(20), lines: z.array(z.string().min(1).max(500)).min(1).max(6), value: z.number(), kind: z.enum(["angle", "length"]) }))
+        .max(3)
+        .optional(),
+    })
+    .optional(),
 });
 export type SetupResponse = z.infer<typeof SetupResponseSchema>;
 
@@ -517,9 +535,15 @@ export const LIVE_MODELS = {
   setupFallback: "deepseek/deepseek-v4.1-flash",
   reread: "google/gemini-3.1-flash-lite",
   rereadFallback: "anthropic/claude-haiku-4.5",
-  /** setup from a hand-drawn figure (a crop): the reread's vision pair, which already reads the student's ink well */
+  /**
+   * A hand-drawn figure (a crop) read as facts (`npm run eval:figures`, docs/eval/figures.md, 47
+   * figures): Gemini 3.1 Flash Lite 47/47 right, none wrong, 1.1 s p50, ~$0.0009 a figure; Gemini 3.5
+   * Flash Lite 45/47 (2 wrong) is the fallback — Haiku 4.5, the reread's fallback, wrote 4 wrong
+   * answers of 47 at nearly three times the cost. Both are Google's (a US provider); OpenRouter
+   * routes each to more than one Google endpoint.
+   */
   figure: "google/gemini-3.1-flash-lite",
-  figureFallback: "anthropic/claude-haiku-4.5",
+  figureFallback: "google/gemini-3.5-flash-lite",
 } as const;
 
 /** Per-user limits for the live routes (the existing LIMITS table in src/lib/server/rate-limit.ts covers the legacy routes). */

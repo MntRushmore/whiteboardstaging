@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { askedLetters, planFigure, readFromReply, type FigurePlan } from "..";
+import { transversalPosition, transversalRelation } from "../plan";
 
 /**
  * Facts → equations (`planFigure`), with no model and no engine: every configuration the figure
  * path knows, the lines it writes and the value it expects, and every way a read is refused.
  */
 
-type Q = { id: string; what: "angle" | "length"; label?: string | null };
+type Q = { id: string; what: "angle" | "length"; label?: string | null; at?: string };
 const A = (id: string, label: string | null = null): Q => ({ id, what: "angle", label });
 const S = (id: string, label: string | null = null): Q => ({ id, what: "length", label });
 const plan = (quantities: Q[], facts: unknown[], opts: { labels?: string[]; column?: string[] } = {}): FigurePlan =>
@@ -68,6 +69,41 @@ describe("planFigure: parallel lines cut by a transversal", () => {
   it("co-interior (same-side interior) angles add to 180", () => {
     expect(one(plan([A("a", "x"), A("b", "70")], [{ type: "same_side_interior", items: ["a", "b"] }]))).toEqual({ lines: ["x + 70 = 180"], value: 110 });
     expect(one(plan([A("a", "2x + 20"), A("b", "3x - 40")], [{ type: "co_interior", items: ["a", "b"] }]))).toEqual({ lines: ["2x + 20 + 3x - 40 = 180"], value: 40 });
+  });
+
+  it("the positions decide, not the name: equal or adding to 180", () => {
+    const at = (id: string, label: string, where: string) => ({ id, what: "angle" as const, label, at: where });
+    // both between the lines, on the same side: co-interior, whatever the reader called it
+    const coInterior = [at("a", "x", "first crossing, between, right"), at("b", "70°", "second crossing, between, right")];
+    expect(one(plan(coInterior, [{ type: "corresponding", items: ["a", "b"] }]))).toEqual({ lines: ["x + 70 = 180"], value: 110 });
+    // above the top line and below the bottom one, same side of the transversal: supplementary
+    const sameSideOut = [at("a", "70°", "first crossing, outside, left"), at("b", "x", "second crossing, outside, left")];
+    expect(one(plan(sameSideOut, [{ type: "transversal", items: ["a", "b"] }]))).toEqual({ lines: ["x + 70 = 180"], value: 110 });
+    // alternate exterior and interior, corresponding: equal
+    expect(one(plan([at("a", "3x - 20", "first crossing, outside, left"), at("b", "100°", "second crossing, outside, right")], [{ type: "co_interior", items: ["a", "b"] }]))).toEqual({ lines: ["3x - 20 = 100"], value: 40 });
+    expect(one(plan([at("a", "x", "upper crossing, between the lines, right"), at("b", "55°", "lower crossing, between the lines, left")], [{ type: "parallel", items: ["a", "b"] }]))).toEqual({ lines: ["x = 55"], value: 55 });
+    expect(one(plan([at("a", "70°", "first crossing, outside, right"), at("b", "x", "second crossing, between, right")], [{ type: "transversal", items: ["a", "b"] }]))).toEqual({ lines: ["x = 70"], value: 70 });
+    // a transversal running across: above / below it is its side
+    expect(one(plan([at("a", "x", "first crossing, between, above"), at("b", "65°", "second crossing, between, above")], [{ type: "transversal", items: ["a", "b"] }]))).toEqual({ lines: ["x + 65 = 180"], value: 115 });
+    // any fact about two angles placed at the crossings: `equal` for two co-interior angles is not believed
+    const said = [at("a", "2x + 20", "first crossing, between the parallel lines, left of the transversal"), at("b", "3x - 40", "second crossing, between the parallel lines, left of the transversal")];
+    expect(one(plan(said, [{ type: "equal", items: ["a", "b"] }]))).toEqual({ lines: ["2x + 20 + 3x - 40 = 180"], value: 40 });
+    // a triangle's corners are not crossings: base angles marked equal stay equal
+    const corners = [at("a", "40°", "top corner, inside"), at("b", "x", "bottom left corner, inside"), { id: "c", what: "angle" as const, label: null, at: "bottom right corner, inside" }];
+    expect(one(plan(corners, [{ type: "triangle", items: ["a", "b", "c"] }, { type: "equal", items: ["b", "c"] }]))).toEqual({ lines: ["2x + 40 = 180"], value: 70 });
+    // no positions: the name is used; a bare `transversal` cannot be
+    expect(one(plan([A("a", "x"), A("b", "70")], [{ type: "co_interior", items: ["a", "b"] }])).value).toBe(110);
+    expect(refused(plan([A("a", "x"), A("b", "70")], [{ type: "transversal", items: ["a", "b"] }]))).toMatch(/no positions/);
+  });
+
+  it("reads a position only when it says all three things", () => {
+    expect(transversalPosition("first crossing, between, left")).toEqual({ crossing: 1, between: true, side: "left" });
+    expect(transversalPosition("Second crossing, outside the parallels, below the transversal")).toEqual({ crossing: 2, between: false, side: "below" });
+    expect(transversalPosition("top intersection, upper left")).toBeNull();
+    expect(transversalPosition("first crossing, between, left and right")).toBeNull();
+    expect(transversalRelation("first crossing, between, left", "first crossing, outside, right")).toBe("equal");
+    expect(transversalRelation("first crossing, between, left", "first crossing, outside, left")).toBe("supplementary");
+    expect(transversalRelation("first crossing, between, left", "second crossing, between, above")).toBeNull();
   });
 
   it("a chain through an unlabelled angle: corresponding, then a linear pair", () => {
@@ -232,6 +268,13 @@ describe("planFigure: the labels read on the figure", () => {
 
   it("a number on the figure the read left out: refused", () => {
     expect(refused(plan(quantities, facts, { labels: ["70^{\\circ}", "x", "40^{\\circ}"] }))).toMatch(/"40\^\{\\circ\}" is not in the read/);
+  });
+
+  it("a right-angle box the reader wrote down as 90° is the mark, not a missing label", () => {
+    const s = one(plan([A("r", "90°"), A("a", "150°"), A("b", "x")], [{ type: "around_point", items: ["r", "a", "b"] }, { type: "right_angle", items: ["r"] }], { labels: ["150^{\\circ}", "x"] }));
+    expect(s).toEqual({ lines: ["x + 90 + 150 = 360"], value: 120 });
+    // a 90° that is not a box's is still a label that must be on the figure
+    expect(refused(plan([A("r", "90°"), A("a", "150°"), A("b", "x")], [{ type: "around_point", items: ["r", "a", "b"] }], { labels: ["150^{\\circ}", "x"] }))).toMatch(/not on the figure/);
   });
 
   it("a label in the read that is not on the figure (a misread): refused", () => {

@@ -6,5 +6,5 @@
  */
 export { FigureReplySchema, FigureQuantitySchema, FACT_TYPES, parseFact, readFromReply, type FactType, type FigureFact, type FigureQuantity, type FigureRead, type FigureReply } from "./schema";
 export { askedLetters, planFigure, type FigurePlan, type FigureStage, type PlanOptions, type QuantityKind } from "./plan";
-export { finalValue, numberValue, renameLetter, sensibleSize, solveFallbackLines, solveStages, type FigureSolve } from "./answer";
-export { formatNumber, isValueLabel, labelKey, looksLikeUnknown, parseLabel, type LabelValue, type ParsedLabel } from "./labels";
+export { figureAnswer, finalValue, numberValue, renameLetter, sensibleSize, solveFallbackLines, solveStages, type FigureAnswer, type FigureSolve } from "./answer";
+export { formatNumber, isValueLabel, labelKey, looksLikeUnknown, parseLabel, unicodeToLatex, type LabelValue, type ParsedLabel } from "./labels";

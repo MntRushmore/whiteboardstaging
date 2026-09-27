@@ -9,9 +9,9 @@
  *  - The model's free-form lines (the fallback) carry nothing: the engine must solve them to a
  *    number, and that number must be a sensible size — positive, and an angle less than 360°.
  */
-import type { LiveEngine } from "../contracts";
+import type { LiveEngine, SetupResponse } from "../contracts";
 import { localSolve } from "../localSolve";
-import { setupBlock } from "../wordProblem";
+import { setupBlock, validateSetupLines } from "../wordProblem";
 import type { FigureStage, QuantityKind } from "./plan";
 
 // ---------------------------------------------------------------- a number in LaTeX
@@ -237,4 +237,27 @@ export function solveFallbackLines(engine: LiveEngine, lines: readonly string[],
   const kind = opts.kind ?? (lines.some((l) => /\^\s*\{?2\}?|\\sqrt|\\frac\{[^{}]*\}\{[^{}]*\}\s*=\s*\\frac/.test(l)) ? "length" : null);
   if (!sensibleSize(value, kind)) return { ok: false, reason: `${letter} = ${value} is not a sensible ${kind ?? "size"}` };
   return { ok: true, block: setupBlock(lines, steps), values: [{ letter, value }] };
+}
+
+export type FigureAnswer = (FigureSolve & { source: "facts" | "lines" }) | { ok: false; source: "facts" | "lines"; reason: string };
+
+/**
+ * What the board writes for a figure's setup reply (`/api/live/setup` with a crop), or why it writes
+ * nothing. `context`: the figure's labels as read and the lines beside it (the letters the setup may
+ * use). The planner's stages when the reply has them — each checked like a word problem's setup
+ * (`validateSetupLines`) and solved to the planner's own value; otherwise the model's own lines,
+ * validated the same way and kept only when they solve to a sensible size. A reply from before
+ * figures were read as facts (no `figure`) is the model's lines.
+ */
+export function figureAnswer(engine: LiveEngine, res: Pick<SetupResponse, "lines" | "unknown" | "figure">, context: readonly string[]): FigureAnswer {
+  const stages = res.figure?.source === "facts" ? res.figure.stages : undefined;
+  if (stages && stages.length > 0) {
+    for (const s of stages) {
+      if (!validateSetupLines(engine, s.lines, context)) return { ok: false, source: "facts", reason: `the stage for ${s.letter} does not validate` };
+    }
+    return { ...solveStages(engine, stages), source: "facts" };
+  }
+  const setup = validateSetupLines(engine, res.lines, context);
+  if (!setup) return { ok: false, source: "lines", reason: "the lines do not validate" };
+  return { ...solveFallbackLines(engine, setup, { unknown: res.unknown, kind: res.figure?.kind ?? null }), source: "lines" };
 }

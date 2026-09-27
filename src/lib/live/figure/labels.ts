@@ -51,9 +51,32 @@ type Tok =
 const DEGREE = /\^\s*\{\s*\\circ\s*\}|\^\s*\\circ|\\circ|°|\\degree|\^\s*\{\s*[oO0]\s*\}\s*$|\^\s*[oO]\s*$/g;
 const UNITS = /\\(?:text|mathrm|textrm|mbox)\s*\{\s*(?:cm|mm|m|km|in|ft|units?|deg|degrees)\s*\}|\b(?:cm|mm|km|ft|in|units?)\b/g;
 
+const UNICODE: Record<string, string> = {
+  θ: "\\theta",
+  α: "\\alpha",
+  β: "\\beta",
+  γ: "\\gamma",
+  δ: "\\delta",
+  φ: "\\phi",
+  ψ: "\\psi",
+  ω: "\\omega",
+  "−": "-",
+  "–": "-",
+  "·": "\\cdot ",
+  "×": "\\times ",
+};
+
+/**
+ * Unicode a model writes for what the recognizer writes as LaTeX: `θ` is `\theta`, `−` is `-`. (A
+ * degree sign is left alone: the label parser reads it as one.)
+ */
+export function unicodeToLatex(s: string): string {
+  return (s ?? "").replace(/[θαβγδφψω−–·×]/g, (ch) => UNICODE[ch] ?? ch);
+}
+
 /** Degree marks and units off; `\left( … \right)`, `\,` and sizing gone. */
 function strip(raw: string): { s: string; degrees: boolean } {
-  let s = (raw ?? "").trim().replace(/^\$+|\$+$/g, "");
+  let s = unicodeToLatex(raw ?? "").trim().replace(/^\$+|\$+$/g, "");
   const degrees = /\\circ|°|\\degree|\^\s*\{\s*[oO0]\s*\}\s*$/.test(s);
   s = s.replace(DEGREE, "").replace(UNITS, "");
   s = s
