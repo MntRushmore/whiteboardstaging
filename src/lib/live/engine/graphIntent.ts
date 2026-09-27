@@ -818,7 +818,9 @@ export function createGraphIntent(math: MathJsInstance, deps: GraphIntentDeps): 
       if (a.axis === "vertical" && !asymptotes.some((o) => sameAsymptote(o, a))) asymptotes.push({ ...a, hidden: true });
     }
     const arrows: NonNullable<PlaneGraphIntent["arrows"]> = [];
-    const pairs = parent.body && image.affine ? tellingPoints(courseDeps, parent.body, parent.variable, image.affine) : [];
+    // the one pair Solve writes (`(0, 0) \to (3, 1)`, or `(1, 1) \to (\frac{1}{2}, 1)` for a stretch
+    // about the vertex): one arrow, as in the steps — two crowd the vertex
+    const pairs = parent.body && image.affine ? tellingPoints(courseDeps, parent.body, parent.variable, image.affine).slice(0, 1) : [];
     const put = (p: { x: number; y: number }, role: GraphKeyPoint["role"]) => {
       const at = points.findIndex((o) => Math.abs(o.x - p.x) < 1e-9 && Math.abs(o.y - p.y) < 1e-9);
       if (at !== -1) points.splice(at, 1);

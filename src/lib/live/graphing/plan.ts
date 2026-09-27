@@ -40,7 +40,7 @@ export const GRAPH = {
   endClear: 22,
   hatchGap: 26,
   /** a hole's open circle, and the gap the curve leaves round it */
-  holeR: 6,
+  holeR: 8,
   /** a transformation's parent: dots this long, this far apart */
   parentDash: { on: 3.5, off: 6 },
   /** an arrow from a parent's point to its image stops this short of each dot */
