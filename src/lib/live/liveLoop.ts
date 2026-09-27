@@ -123,6 +123,13 @@ import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient"
 import { clusterLines, rebuildFromMathShapes, unionRects, type EchoShapeSeed } from "./strokeClusters";
 import { buildPayload, hashPayload } from "./strokePayload";
 import { DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type InkSplit } from "./diagrams";
+import { HAND_LINE_META } from "./handwriting";
+import { requestProof } from "./proof/client";
+import type { ProofRequest, ProofResponse } from "./proof/contracts";
+import { ProofDesk, tutorLinesOf, type ProofHost } from "./proof/desk";
+import { PROOF_ROWS_META, proofRowsPlan } from "./proof/place";
+import type { PlannedRow } from "./proof/planner";
+import type { BoardLine, ProofRead } from "./proof/read";
 
 /**
  * The client live loop (spec §6). Everything the hook does lives here so it can be
@@ -162,6 +169,8 @@ export interface LiveLoopDeps {
   setup: (req: SetupRequest, opts: CallOptions) => Promise<SetupResponse>;
   /** POST /api/live/reread: the second reader's LaTeX for one suspicious line */
   reread: (req: RereadRequest, opts: CallOptions) => Promise<RereadResponse>;
+  /** POST /api/live/proof: a proof's figure read, or one next row the planner could not find */
+  proof: (req: ProofRequest, opts: CallOptions) => Promise<ProofResponse>;
 }
 
 interface LineRuntime {
@@ -195,7 +204,8 @@ type RetryContext =
   | { kind: "recognize"; lineId: string }
   | { kind: "check"; lineId: string; opts: CheckOpts }
   | { kind: "solve"; lineId: string; fromLineId: string | undefined; opts: SolveOpts }
-  | { kind: "figure"; diagramId: string; opts: SolveOpts };
+  | { kind: "figure"; diagramId: string; opts: SolveOpts }
+  | { kind: "proof"; lineId: string; all: boolean };
 
 /**
  * "The tutor reads the figure": how near a line must be to a drawing for Solve on it to read the
@@ -356,8 +366,12 @@ function defaultDeps(): LiveLoopDeps {
       hasWindow && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
     setup: (req, opts) => requestSetup(req, opts),
     reread: (req, opts) => requestReread(req, opts),
+    proof: (req, opts) => requestProof(req, opts),
   };
 }
+
+/** A line of a two-column proof, to the line-by-line paths: nothing to compute, ring or answer (`ProofDesk` marks it). */
+const PROOF_LINE: LineAnalysis = { kind: "label", math: "", resultLatex: "", verdict: "none", note: "" };
 
 function newLineState(line: InkLine): LiveLineState {
   return {
@@ -464,10 +478,14 @@ export class LiveLoop implements LiveController {
     if (lineId) this.handleBadgeTap(lineId);
   };
 
+  /** the two-column proofs on this screen: their marks, and the rows the tutor writes on an ask */
+  private readonly proofs: ProofDesk;
+
   constructor(editor: LiveEditorLike, opts: UseLiveMathOptions, deps: Partial<LiveLoopDeps> = {}) {
     this.editor = editor;
     this.opts = opts;
     this.deps = { ...defaultDeps(), ...deps };
+    this.proofs = new ProofDesk(this.proofHost());
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -559,6 +577,7 @@ export class LiveLoop implements LiveController {
     this.labelsOf.clear();
     this.lastTouchedDiagramId = null;
     liveStore.diagrams.set([]);
+    this.proofs.reset();
     this.rt.clear();
     this.dirtyStrokeIds.clear();
     this.forceRecognize.clear();
@@ -682,6 +701,9 @@ export class LiveLoop implements LiveController {
         this.startFigure(figure, ctx.opts);
         return;
       }
+      case "proof":
+        if (!this.proofs.ask(ctx.lineId, null, { all: ctx.all })) clearLiveError();
+        return;
     }
   }
 
@@ -1467,6 +1489,8 @@ export class LiveLoop implements LiveController {
 
   private analyze(state: LiveLineState): LineAnalysis | null {
     if (!this.engine || !state.latex) return null;
+    // a proof's statements and reasons are checked as a proof, not one by one
+    if (this.proofs.owns(state.line.id)) return PROOF_LINE;
     try {
       return this.engine.analyzeLine(state.latex, { ...this.columnContext(state), mode: this.opts.mode });
     } catch (e) {
@@ -1521,6 +1545,8 @@ export class LiveLoop implements LiveController {
 
     if (decision.echo && !opts.fromIdle) this.armIdleTimer(lineId);
     if (decision.runLlmCheck) this.startCheck(fresh.line.column, lineId, { userAsked: false });
+    // a new read can make a proof of lines around it (or change a row's verdict): re-mark them
+    this.proofs.sync();
   }
 
   private armIdleTimer(lineId: string): void {
@@ -1570,6 +1596,7 @@ export class LiveLoop implements LiveController {
     decision: PolicyDecision,
     opts: { quiet?: boolean; keepStatus?: boolean } = {},
   ): void {
+    if (this.renderProofLine(state, opts)) return;
     const lineId = state.line.id;
     const rt = this.runtime(lineId);
     // The line changed under an answer the tutor had already written: that answer is stale.
@@ -3020,6 +3047,110 @@ export class LiveLoop implements LiveController {
     });
   }
 
+  // ---------------------------------------------------------------- two-column proofs
+  /** What `ProofDesk` needs of the loop (see `src/lib/live/proof/desk.ts`). */
+  private proofHost(): ProofHost {
+    return {
+      lines: () =>
+        Object.values(liveStore.lines.get())
+          .filter((s) => s.latex && s.confidence >= LIVE_LIMITS.minConfidence)
+          .map((s) => ({ id: s.line.id, latex: s.latex, bounds: s.line.bounds })),
+      tutorLines: () => this.proofTutorLines(),
+      diagrams: () => this.diagrams,
+      enabled: () => this.started && this.opts.enabled && this.opts.mode !== "off" && !this.opts.voiceActive,
+      online: () => this.deps.isOnline(),
+      readLabels: (d) => this.readLabels(d),
+      crop: (d) => this.captureCrop([...d.strokeIds, ...d.labels.flat()], d.bounds, FIGURE_CROP_WIDTH),
+      call: (req, signal) => this.deps.proof(req, { signal }),
+      boardId: () => this.opts.boardId,
+      rerender: (ids) => this.rerenderLines(ids),
+      writeRows: (read, rows, anchor) => this.writeProofRows(read, rows, anchor),
+      busy: (on) => {
+        if (on) {
+          liveStore.status.set("checking");
+          liveStore.solving.set(liveStore.solving.get() + 1);
+          return;
+        }
+        liveStore.solving.set(Math.max(0, liveStore.solving.get() - 1));
+        if (liveStore.status.get() !== "offline") liveStore.status.set("idle");
+      },
+      failed: (err, lineId, all) => {
+        const errCtx = { kind: "solve" as const, lineId, userAsked: true };
+        const retry: RetryContext = { kind: "proof", lineId, all };
+        if (err === null) this.fail(sseFailure({ error: "unusable_steps", message: UNUSABLE_SOLUTION }), errCtx, retry);
+        else if (!this.isNetworkFailure(err)) this.fail(err, errCtx, retry);
+      },
+      succeeded: (lineId) => this.noteSuccess("solve", lineId),
+      metric: (name, data) => clientMetric(name, data),
+    };
+  }
+
+  /**
+   * A line of a two-column proof renders as the proof checker marks its row: a tick after a verified
+   * row's reason, a ring round the wrong half of a provably wrong row, nothing on the rest. Its echo
+   * (the read, on hover) stays. False when the line is not in a proof.
+   */
+  private renderProofLine(state: LiveLineState, opts: { keepStatus?: boolean }): boolean {
+    if (!state.latex || state.confidence < LIVE_LIMITS.minConfidence) return false;
+    const mark = this.proofs.lineMark(state.line.id);
+    if (!mark) return false;
+    const keep = Boolean(opts.keepStatus) || this.opts.mode === "off";
+    this.upsertEcho(state.line.id, { latex: state.latex, status: keep ? "none" : mark.status, resultLatex: "", note: "" }, { keepStatus: keep });
+    if (!keep) this.syncMark(state, mark.kind);
+    return true;
+  }
+
+  /** Analyses and renders these lines again (no cascade, no model): a proof formed or changed around them. */
+  private rerenderLines(ids: readonly string[]): void {
+    if (!this.engine) return;
+    for (const id of ids) {
+      const st = liveStore.lines.get()[id];
+      if (!st?.latex) continue;
+      setLine(id, { analysis: this.analyze(st) });
+      const fresh = liveStore.lines.get()[id];
+      if (fresh) this.render(fresh, this.decisionFor(fresh));
+    }
+  }
+
+  /** The rows the tutor wrote on this screen, as lines of the proof (each stroke carries its line's LaTeX). */
+  private proofTutorLines(): BoardLine[] {
+    const shapes: Array<{ block: string; latex: string; bounds: Rect }> = [];
+    for (const s of this.editor.getCurrentPageShapes()) {
+      if (!isLiveMeta(s.meta) || !metaString(s.meta, PROOF_ROWS_META)) continue;
+      const latex = metaString(s.meta, HAND_LINE_META);
+      const b = this.editor.getShapePageBounds(s);
+      if (latex && b) shapes.push({ block: handBlockOf(s.meta), latex, bounds: boxToRect(b) });
+    }
+    return tutorLinesOf(shapes);
+  }
+
+  /**
+   * Writes proof rows in the tutor's hand under the proof's last row: the statement in the statement
+   * column, the reason in the reason column, on one line (`proofRowsPlan`). Moved down a row at a time
+   * past anything in the way. False when the hand is off, at the shape cap, or there is no room.
+   */
+  private writeProofRows(read: ProofRead, rows: readonly PlannedRow[], anchor: string): boolean {
+    if (!this.deps.handwritingEnabled() || liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
+    const texts = rows.map((r) => ({ statement: r.statement, reasonLatex: r.reasonLatex }));
+    const size = handSizeFor(read.lineHeight);
+    const seed = handSeedFor(`proof:${anchor}:${read.rows.length}:${texts.map((t) => t.statement).join(";")}`);
+    const avoid: Rect[] = [];
+    for (const s of this.editor.getCurrentPageShapes()) {
+      if (isLiveMeta(s.meta) && (s.meta.source === "echo" || metaString(s.meta, MARK_META))) continue;
+      const b = this.editor.getShapePageBounds(s);
+      if (b) avoid.push(boxToRect(b));
+    }
+    for (let shift = 0; shift <= 3; shift++) {
+      const plan = proofRowsPlan(read, texts, { size, seed, shift: shift * read.rowPitch });
+      if (!plan) return false;
+      if (avoid.some((r) => rectsIntersect(r, plan.bounds))) continue;
+      this.startHandwriting(plan, anchor, { [PROOF_ROWS_META]: JSON.stringify(texts.map((t) => ({ s: t.statement, r: t.reasonLatex }))) });
+      clientMetric("live.proof.hand", { lineId: anchor, rows: rows.length });
+      return true;
+    }
+    return false;
+  }
+
   // ---------------------------------------------------------------- LiveController
   getTranscript(): LiveTranscript {
     const states = Object.values(liveStore.lines.get())
@@ -3129,6 +3260,8 @@ export class LiveLoop implements LiveController {
     const target = lineId ? liveStore.lines.get()[lineId] : this.latestLine();
     if (!target || !target.latex) return;
     if (this.opts.mode === "off") return;
+    // a proof line is checked by the proof checker (its mark is already there): no model check
+    if (this.proofs.owns(target.line.id)) return;
     // Asking means now: a result this line was holding back for the settle is written at once
     // (the mode gate still applies — asking in Feedback asks for feedback, not for the answer).
     if (target.analysis?.resultLatex) this.render(target, this.decisionFor(target, { userAsked: true }));
@@ -3136,6 +3269,8 @@ export class LiveLoop implements LiveController {
   }
 
   requestSolve(lineId?: string): void {
+    // A two-column proof: the rest of it in Solve, the next row otherwise (`ProofDesk`).
+    if (this.opts.enabled && this.proofs.ask(lineId ?? this.latestLine()?.line.id ?? null, lineId ? null : this.touchedDiagram(), { all: this.opts.mode === "answer" })) return;
     // Solve with a drawing the last thing drawn: the tutor reads the figure.
     const figure = lineId ? null : this.touchedDiagram();
     if (figure && this.opts.enabled && this.opts.mode === "answer") {
@@ -3183,6 +3318,8 @@ export class LiveLoop implements LiveController {
    */
   requestHelp(): void {
     if (!this.opts.enabled || this.opts.mode === "off") return;
+    // On a two-column proof (or its figure): the next row — in Solve, the rest of the proof.
+    if (this.proofs.ask(this.latestLine()?.line.id ?? null, this.touchedDiagram(), { all: this.opts.mode === "answer" })) return;
     // The student's last ink was a drawing (or its labels): the tutor reads the figure — in Solve
     // the whole setup and its answer, in Feedback / Suggest the first line of the setup. A drawing
     // never gets a "?": it is not ink that failed to read as maths.
@@ -3294,6 +3431,7 @@ export class LiveLoop implements LiveController {
   escalate(lineId: string): void {
     const target = liveStore.lines.get()[lineId];
     if (!target || !target.latex || this.opts.mode === "off") return;
+    if (this.proofs.ask(lineId, null, { all: false })) return;
     this.closeHintsFor(lineId);
     const wrong = target.analysis?.verdict === "mismatch" || this.modelFlagged(target);
     if (wrong) {
