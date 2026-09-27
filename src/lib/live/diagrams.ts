@@ -529,13 +529,14 @@ function numberLineTicks(g: Geo, all: readonly Geo[], G: number): number[] {
  * An arrowhead at one end of a rule: points reaching back from the tip along the shaft, on BOTH
  * sides of it — the stroke's own hooks, or short strokes (a `>` drawn at the tip, two barbs).
  * Returns the barb strokes (none when the head is the stroke's own), or null for no head.
+ * `touching`: a barb stroke must touch the tip, not just come near it (see the caller).
  */
-function arrowhead(g: Geo, small: readonly Geo[], G: number): number[] | null {
+function arrowhead(g: Geo, small: readonly Geo[], G: number, touching = false): number[] | null {
   const R = DIAGRAM_RULES;
   const cosMax = Math.cos((R.barbMaxDeg * Math.PI) / 180);
   const lo = R.barbMinFactor * G;
   const hi = R.barbMaxFactor * G;
-  const corner = R.cornerFactor * G;
+  const corner = touching ? Math.max(R.touchMinPx, R.touchFactor * G) : R.cornerFactor * G;
   const ends: Array<[Pt, Pt, Pt[]]> = [
     [g.main.b, g.main.a, g.shape.slice(g.main.k + 2)],
     [g.main.a, g.main.b, g.shape.slice(0, g.main.k)],
@@ -825,7 +826,9 @@ export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagr
     if (evidence) evidenced.set(g.i, evidence);
     if (g.cls === "levelRule" || g.cls === "uprightRule") {
       const ticks = numberLineTicks(g, geos, G);
-      const barbs = arrowhead(g, nonBig, G);
+      // with writing along the rule, a barb must touch its tip: the glyphs at the end of a fraction
+      // bar (`y_{1}` above, `x_{1}` below, leaning back along it) come near it but are not a head
+      const barbs = arrowhead(g, nonBig, G, evidence === "along");
       if (perpendicularPartner(g, rules, G)) {
         draw(g, "crosses or corners another long line (axes, a rectangle)");
         flags.axes.add(g.i);

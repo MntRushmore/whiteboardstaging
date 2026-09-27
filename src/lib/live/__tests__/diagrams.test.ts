@@ -39,6 +39,8 @@ describe("splitInk: writing that looks like a drawing stays writing", () => {
     ["a limit with its arrow", "\\lim_{x \\to 2} \\frac{x^{2} - 4}{x - 2}"],
     ["a sum", "\\sum_{i=1}^{10} i^{2}"],
     ["an overline", "\\overline{AB} = 5"],
+    // subscripts above and below the end of the bar, leaning back along it in a steep hand: not an arrowhead
+    ["the slope formula", "m = \\frac{y_{2} - y_{1}}{x_{2} - x_{1}}"],
   ];
 
   describe.each(VARIANTS.map((v) => [v.name, v] as const))("in the %s hand", (_name, variant) => {
