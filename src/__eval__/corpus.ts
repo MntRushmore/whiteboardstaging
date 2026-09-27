@@ -23,8 +23,12 @@
  *    writes `\frac{11}{12}` or `1 + \sqrt{2}` is scored `approx`, not `ok`).
  *  - `interval`: a trig equation's interval, in radians (`[0, 2π)` for 0° ≤ x < 360°): its steps
  *    are compared on the roots inside it, not on the infinitely many elsewhere. `values` are
- *    radians too — `x = 30^{\circ}` is read as π/6.
+ *    radians too — `x = 30^{\circ}` is read as π/6. A length is `(0, ∞)`: only its positive root.
+ *  - `point`: the answer is a point (a midpoint, an image, a circle's centre), the last one on the
+ *    final line; every step with a numeric point on it must be that point.
  */
+
+import { GEOMETRY, GEOMETRY_TOPICS } from "./courses/geometry";
 
 export const TOPICS = [
   "arithmetic",
@@ -48,6 +52,7 @@ export const TOPICS = [
   "trig",
   "trig-equation",
   "trig-identity",
+  ...GEOMETRY_TOPICS,
 ] as const;
 export type Topic = (typeof TOPICS)[number];
 
@@ -59,6 +64,8 @@ export interface Expectation {
   form?: "factored" | "expanded";
   approxOk?: boolean;
   interval?: { lo: number; hi: number; loIn?: boolean; hiIn?: boolean };
+  /** the answer is a point (a midpoint, an image, a circle's centre): the last point on the final line */
+  point?: number[];
 }
 
 export interface EvalProblem {
@@ -414,4 +421,6 @@ export const CORPUS: readonly EvalProblem[] = [
   { id: "t2-49", topic: "derivative", lines: ["\\frac{d^{3}}{dx^{3}} x^{5} ="], expect: { answer: "60x^{2}" }, note: "each earlier stage under the derivatives still to take" },
   { id: "t2-50", topic: "derivative", lines: ["x^{2} + y^{2} = 25", "\\frac{dy}{dx} ="], expect: { answer: "-\\frac{x}{y}" }, note: "implicit differentiation" },
   { id: "t2-51", topic: "derivative", lines: ["\\frac{d}{dx} x^{x} ="], expect: { answer: "x^{x}(\\ln x + 1)" }, note: "logarithmic differentiation" },
+  // ================================================================ courses
+  ...GEOMETRY,
 ];
