@@ -272,4 +272,71 @@ export const CORPUS: readonly EvalProblem[] = [
   { id: "tr-06", topic: "trig", lines: ["\\sin\\left(\\frac{\\pi}{6}\\right) ="], expect: { answer: "\\frac{1}{2}" } },
   { id: "tr-07", topic: "trig", lines: ["\\sin^{2}(30^{\\circ}) + \\cos^{2}(30^{\\circ}) ="], expect: { answer: "1" } },
   { id: "tr-08", topic: "trig", lines: ["\\tan(60^{\\circ}) ="], expect: { answer: "\\sqrt{3}" }, note: "exact value" },
+
+  // ================================================================ hardening (g2-): edge cases
+  // ---------------------------------------------------------------- linear edge cases
+  { id: "g2-01", topic: "linear", lines: ["\\frac{x}{3} + \\frac{x}{6} = 3"], expect: { values: { x: [6] } } },
+  { id: "g2-02", topic: "linear", lines: ["5(x - 2) = 3(x + 4)"], expect: { values: { x: [11] } } },
+  { id: "g2-03", topic: "linear", lines: ["4 - (x + 1) = 2x"], expect: { values: { x: [1] } }, note: "a minus in front of a bracket" },
+  { id: "g2-04", topic: "linear", lines: ["3(x - 1) - 3x = 5"], expect: { answer: "\\varnothing" }, note: "the unknown cancels after expanding" },
+  { id: "g2-05", topic: "linear", lines: ["\\frac{x + 2}{4} = \\frac{x}{4} + \\frac{1}{2}"], expect: { answer: "\\mathbb{R}" }, note: "identity once the fractions are cleared" },
+  { id: "g2-06", topic: "linear", lines: ["0.2x - 1 = 0.6"], expect: { values: { x: [8] } }, note: "decimals" },
+
+  // ---------------------------------------------------------------- inequalities
+  { id: "g2-07", topic: "inequality", lines: ["-3 < 2x + 1 \\le 7"], expect: { answer: "-2 < x \\le 3" }, note: "compound (a chain)" },
+  { id: "g2-08", topic: "inequality", lines: ["x^{2} - x - 6 \\ge 0"], expect: { answer: "x \\le -2, \\ x \\ge 3" }, note: "quadratic, outside the roots" },
+  { id: "g2-09", topic: "inequality", lines: ["x^{2} + 2x < 8"], expect: { answer: "-4 < x < 2" }, note: "quadratic, not in standard form" },
+  { id: "g2-10", topic: "inequality", lines: ["\\frac{x - 3}{x + 1} \\le 0"], expect: { answer: "-1 < x \\le 3" }, note: "rational: the denominator's zero is excluded" },
+  { id: "g2-11", topic: "inequality", lines: ["2 - 3x > 8"], expect: { answer: "x < -2" }, note: "dividing by a negative" },
+  { id: "g2-12", topic: "inequality", lines: ["|2x - 1| \\ge 3"], expect: { answer: "x \\le -1, \\ x \\ge 2" }, note: "absolute value, a union" },
+  { id: "g2-13", topic: "inequality", lines: ["x^{2} + 4 < 0"], expect: { answer: "\\varnothing" }, note: "never true" },
+  { id: "g2-14", topic: "inequality", lines: ["\\frac{2}{x - 1} > 1"], expect: { answer: "1 < x < 3" }, note: "rational against a number" },
+
+  // ---------------------------------------------------------------- absolute value
+  { id: "g2-15", topic: "absolute", lines: ["|x + 2| = |x - 4|"], expect: { values: { x: [1] } }, note: "one branch has no solution" },
+  { id: "g2-16", topic: "absolute", lines: ["2|x - 3| + 1 = 9"], expect: { values: { x: [-1, 7] } } },
+
+  // ---------------------------------------------------------------- rational / radical / exponential / log, extraneous roots
+  { id: "g2-17", topic: "rational", lines: ["\\frac{x^{2}}{x - 2} = \\frac{4}{x - 2}"], expect: { values: { x: [-2] } }, note: "x = 2 is extraneous" },
+  { id: "g2-18", topic: "rational", lines: ["\\frac{1}{x} + \\frac{1}{x + 1} = \\frac{5}{6}"], expect: { values: { x: [-0.6, 2] } }, note: "a quadratic after clearing" },
+  { id: "g2-19", topic: "radical", lines: ["\\sqrt{2x + 3} = x"], expect: { values: { x: [3] } }, note: "x = -1 is extraneous" },
+  { id: "g2-20", topic: "radical", lines: ["\\sqrt{x + 5} = x - 1"], expect: { values: { x: [4] } }, note: "x = -1 is extraneous" },
+  { id: "g2-21", topic: "exponential", lines: ["9^{x} = 27"], expect: { values: { x: [1.5] } }, note: "a common base 3" },
+  { id: "g2-22", topic: "exponential", lines: ["2^{x + 1} = 16"], expect: { values: { x: [3] } } },
+  { id: "g2-23", topic: "logarithmic", lines: ["\\log_{3}(x) + \\log_{3}(x + 6) = 3"], expect: { values: { x: [3] } }, note: "x = -9 is extraneous" },
+  { id: "g2-24", topic: "logarithmic", lines: ["\\ln(x + 1) - \\ln(x) = \\ln(2)"], expect: { values: { x: [1] } }, note: "a quotient of logs against a log" },
+
+  // ---------------------------------------------------------------- systems
+  { id: "g2-25", topic: "system-3x3", lines: ["x + y + z = 6", "x + y + z = 7", "x - y + z = 2"], expect: { answer: "\\varnothing" }, note: "inconsistent: two parallel planes" },
+  { id: "g2-26", topic: "system-2x2", lines: ["\\frac{x}{2} + \\frac{y}{3} = 4", "x - y = 3"], expect: { values: { x: [6], y: [3] } }, note: "fractions" },
+  { id: "g2-27", topic: "system-3x3", lines: ["2x + y - z = 2", "x - y + 2z = 7", "3x + 2y + z = 11"], expect: { values: { x: [2], y: [1], z: [3] } } },
+  { id: "g2-28", topic: "system-2x2", lines: ["2x - 3y = 7", "4x - 6y = 14"], expect: { answer: "y = \\frac{2x - 7}{3}" }, note: "dependent: the same line" },
+  // one linear, one not: substitution, then every root put back (`values[v][i]` is the i-th point)
+  { id: "g2-44", topic: "system-2x2", lines: ["l = w + 3", "l \\cdot w = 40"], expect: { values: { w: [-8, 5], l: [-5, 8] } }, note: "a rectangle's sides: the maths has both points (the rectangle takes w = 5)" },
+  { id: "g2-45", topic: "system-2x2", lines: ["y = x + 1", "x^{2} + y^{2} = 25"], expect: { values: { x: [-4, 3], y: [-3, 4] } }, note: "a line and a circle" },
+  { id: "g2-46", topic: "system-2x2", lines: ["x + y = 7", "xy = 12"], expect: { values: { x: [3, 4], y: [4, 3] } } },
+  { id: "g2-47", topic: "system-2x2", lines: ["y = x^{2}", "y = 2x + 3"], expect: { values: { x: [-1, 3], y: [1, 9] } }, note: "a line and a parabola" },
+  { id: "g2-48", topic: "system-2x2", lines: ["y = x + 5", "x^{2} + y^{2} = 4"], expect: { answer: "\\varnothing" }, note: "the line misses the circle" },
+  { id: "g2-49", topic: "system-2x2", lines: ["x - y = 1", "x^{2} - y^{2} = 5"], expect: { values: { x: [3], y: [2] } }, note: "the squares cancel after substituting" },
+
+  // ---------------------------------------------------------------- factoring
+  { id: "g2-29", topic: "expand-factor", lines: ["x^{3} + 3x^{2} + 2x + 6"], expect: { answer: "(x + 3)(x^{2} + 2)", form: "factored" }, note: "grouping" },
+  { id: "g2-30", topic: "expand-factor", lines: ["27x^{3} - 8"], expect: { answer: "(3x - 2)(9x^{2} + 6x + 4)", form: "factored" }, note: "difference of cubes" },
+  { id: "g2-31", topic: "expand-factor", lines: ["x^{3} + 64"], expect: { answer: "(x + 4)(x^{2} - 4x + 16)", form: "factored" }, note: "sum of cubes" },
+  { id: "g2-32", topic: "expand-factor", lines: ["3x^{2} - 12"], expect: { answer: "3(x - 2)(x + 2)", form: "factored" }, note: "common factor, then a difference of squares" },
+  { id: "g2-33", topic: "expand-factor", lines: ["\\frac{x^{2} - 9}{x^{2} + 6x + 9}"], expect: { answer: "\\frac{x - 3}{x + 3}" }, note: "cancel a common factor" },
+
+  // ---------------------------------------------------------------- units & percent
+  { id: "g2-34", topic: "units-percent", lines: ["3.5 \\mathrm{~kg} \\text{ to } \\mathrm{g}"], expect: { answer: "3500 \\mathrm{~g}" } },
+  { id: "g2-35", topic: "units-percent", lines: ["12\\% \\text{ of } 250 ="], expect: { answer: "30" } },
+  { id: "g2-36", topic: "units-percent", lines: ["90 \\mathrm{~min} \\text{ to } \\mathrm{h}"], expect: { answer: "1.5 \\mathrm{~h}" }, note: "`\\mathrm{min}` is minutes" },
+  { id: "g2-37", topic: "units-percent", lines: ["72 \\mathrm{~km/h} \\text{ to } \\mathrm{m/s}"], expect: { answer: "20 \\mathrm{~m/s}" } },
+
+  // ---------------------------------------------------------------- arithmetic: mixed numbers, negatives, decimals and fractions
+  { id: "g2-38", topic: "arithmetic", lines: ["3\\frac{1}{3} - 1\\frac{2}{3} ="], expect: { answer: "\\frac{5}{3}" }, note: "mixed numbers" },
+  { id: "g2-39", topic: "arithmetic", lines: ["1\\frac{1}{2} \\times 2\\frac{2}{3} ="], expect: { answer: "4" }, note: "mixed numbers" },
+  { id: "g2-40", topic: "arithmetic", lines: ["-\\frac{3}{4} + 0.5 ="], expect: { answer: "-\\frac{1}{4}" }, note: "a fraction and a decimal" },
+  { id: "g2-41", topic: "arithmetic", lines: ["(-2)^{3} - (-3)^{2} ="], expect: { answer: "-17" } },
+  { id: "g2-42", topic: "arithmetic", lines: ["\\frac{2}{3} \\div (-4) ="], expect: { answer: "-\\frac{1}{6}" } },
+  { id: "g2-43", topic: "arithmetic", lines: ["-4 \\times (-2.5) + 3 ="], expect: { answer: "13" } },
 ];

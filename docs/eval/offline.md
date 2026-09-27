@@ -5,46 +5,46 @@
 > paths of Solve, in `LiveLoop.startSolve`'s order) and the result is judged semantically by
 > `src/__eval__/oracle.ts`. A problem passes when all five stages pass. Corpus: `src/__eval__/corpus.ts`.
 
-**94 / 167 problems pass (56%).**
+**213 / 216 problems pass (99%).**
 
 ## Stages
 
 | stage | pass | of all | of those with a local solution |
 | --- | --- | --- | --- |
-| local solution | 134 | 80% | — |
-| answer correct | 105 | 63% | 78% |
-| steps consistent | 129 | 77% | 96% |
-| hand can draw | 134 | 80% | 100% |
-| no words | 117 | 70% | 87% |
+| local solution | 215 | 100% | — |
+| answer correct | 213 | 99% | 99% |
+| steps consistent | 215 | 100% | 100% |
+| hand can draw | 215 | 100% | 100% |
+| no words | 215 | 100% | 100% |
 
 Answer verdicts (`approx`: a decimal or ≈ where a teacher writes the exact value; `form`: right value, wrong shape; `unsolved`: the last line is not an answer yet; `missing`: no local solution):
 
 | ok | approx | form | unsolved | wrong | missing | unjudged |
 | --- | --- | --- | --- | --- | --- | --- |
-| 105 | 26 | 0 | 1 | 2 | 33 | 0 |
+| 213 | 2 | 0 | 0 | 0 | 1 | 0 |
 
 ## By topic
 
 | topic | n | pass | local solution | answer correct | steps consistent | hand can draw | no words |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| arithmetic | 13 | **12** (92%) | 13 | 12 | 13 | 13 | 13 |
-| linear | 13 | **11** (85%) | 11 | 11 | 11 | 11 | 11 |
-| inequality | 9 | **7** (78%) | 7 | 7 | 7 | 7 | 7 |
-| system-2x2 | 8 | **8** (100%) | 8 | 8 | 8 | 8 | 8 |
-| system-3x3 | 4 | **0** (0%) | 0 | 0 | 0 | 0 | 0 |
+| arithmetic | 19 | **19** (100%) | 19 | 19 | 19 | 19 | 19 |
+| linear | 19 | **19** (100%) | 19 | 19 | 19 | 19 | 19 |
+| inequality | 17 | **17** (100%) | 17 | 17 | 17 | 17 | 17 |
+| system-2x2 | 16 | **16** (100%) | 16 | 16 | 16 | 16 | 16 |
+| system-3x3 | 6 | **6** (100%) | 6 | 6 | 6 | 6 | 6 |
 | substitution | 5 | **5** (100%) | 5 | 5 | 5 | 5 | 5 |
-| quadratic | 14 | **0** (0%) | 14 | 10 | 11 | 14 | 1 |
-| absolute | 5 | **0** (0%) | 4 | 0 | 4 | 4 | 0 |
-| rational | 6 | **4** (67%) | 6 | 5 | 4 | 6 | 6 |
-| radical | 6 | **0** (0%) | 6 | 0 | 6 | 6 | 6 |
-| exponential | 7 | **2** (29%) | 7 | 2 | 7 | 7 | 7 |
-| logarithmic | 7 | **1** (14%) | 6 | 1 | 6 | 6 | 6 |
-| expand-factor | 13 | **8** (62%) | 8 | 8 | 8 | 8 | 8 |
+| quadratic | 14 | **14** (100%) | 14 | 14 | 14 | 14 | 14 |
+| absolute | 7 | **7** (100%) | 7 | 7 | 7 | 7 | 7 |
+| rational | 8 | **8** (100%) | 8 | 8 | 8 | 8 | 8 |
+| radical | 8 | **8** (100%) | 8 | 8 | 8 | 8 | 8 |
+| exponential | 9 | **9** (100%) | 9 | 9 | 9 | 9 | 9 |
+| logarithmic | 9 | **9** (100%) | 9 | 9 | 9 | 9 | 9 |
+| expand-factor | 18 | **18** (100%) | 18 | 18 | 18 | 18 | 18 |
 | derivative | 16 | **16** (100%) | 16 | 16 | 16 | 16 | 16 |
-| integral-indefinite | 9 | **0** (0%) | 0 | 0 | 0 | 0 | 0 |
-| integral-definite | 8 | **7** (88%) | 8 | 7 | 8 | 8 | 8 |
-| limit | 8 | **0** (0%) | 0 | 0 | 0 | 0 | 0 |
-| units-percent | 8 | **7** (88%) | 7 | 7 | 7 | 7 | 7 |
+| integral-indefinite | 9 | **8** (89%) | 8 | 8 | 8 | 8 | 8 |
+| integral-definite | 8 | **8** (100%) | 8 | 8 | 8 | 8 | 8 |
+| limit | 8 | **8** (100%) | 8 | 8 | 8 | 8 | 8 |
+| units-percent | 12 | **12** (100%) | 12 | 12 | 12 | 12 | 12 |
 | trig | 8 | **6** (75%) | 8 | 6 | 8 | 8 | 8 |
 
 ## Failure patterns
@@ -53,690 +53,22 @@ Grouped by stage and reason (numbers and LaTeX blanked), most frequent first. On
 
 | # | stage | pattern | problems | example |
 | --- | --- | --- | --- | --- |
-| 1 | answer | approx: written with ≈ although the value is exact | 19: ab-01, ab-02, ab-03, ab-05, rd-01, rd-02, rd-03, rd-04, rd-05, rd-06, ex-01, ex-02, ex-03, ex-04, ex-05, lg-01, lg-04, lg-05, lg-06 | `x \approx -2 \text{ or } x \approx 8` |
-| 2 | words | prose on the board: "or" | 17: qu-01, qu-02, qu-03, qu-04, qu-05, qu-06, qu-07, qu-08, qu-10, qu-11, qu-12, qu-13, qu-14, ab-01, ab-02, ab-03, ab-05 | `x = 2 \text{ or } x = 3` |
-| 3 | local | no local solution — integral-indefinite | 9: ii-01, ii-02, ii-03, ii-04, ii-05, ii-06, ii-07, ii-08, ii-09 |  |
-| 4 | local | no local solution — limit | 8: lm-01, lm-02, lm-03, lm-04, lm-05, lm-06, lm-07, lm-08 |  |
-| 5 | answer | approx: a decimal where the exact value is wanted | 7: qu-06, qu-07, qu-14, lg-03, di-06, tr-04, tr-08 | `x \approx -0.4142 \text{ or } x \approx 2.414` |
-| 6 | local | no local solution — expand-factor | 5: xf-09, xf-10, xf-11, xf-12, xf-13 |  |
-| 7 | local | no local solution — system-3x3 | 4: s3-01, s3-02, s3-03, s3-04 |  |
-| 8 | steps | solutions {…} → {…} | 4: qu-06, qu-09, qu-13, ra-06 | `x = \frac{2 \pm \sqrt{-2^{2} - 4 \cdot 1 \cdot -1}}{2 \cdot 1}` |
-| 9 | local | no local solution — linear | 2: li-10, li-11 |  |
-| 10 | local | no local solution — inequality | 2: in-08, in-09 |  |
-| 11 | local | no local solution — absolute | 1: ab-04 |  |
-| 12 | local | no local solution — logarithmic | 1: lg-02 |  |
-| 13 | local | no local solution — units-percent | 1: up-04 |  |
-| 14 | answer | wrong: not the expected value | 1: ar-11 | `= \frac{7}{4}` |
-| 15 | answer | wrong: gives complex roots; there is no real solution | 1: qu-08 | `x \approx -\frac{1}{2} - 0.866i \text{ or } x \approx -\frac{1}{2} + 0.866i` |
-| 16 | answer | unsolved: the last line is not `…` | 1: ra-05 |  |
-| 17 | steps | empty step | 1: ra-05 |  |
+| 1 | answer | approx: a decimal where the exact value is wanted | 2: tr-04, tr-08 | `= 0.866` |
+| 2 | local | no local solution — integral-indefinite | 1: ii-08 |  |
 
 ## Every failure
 
 | id | topic | problem | expected | stage | what went wrong | offending LaTeX |
 | --- | --- | --- | --- | --- | --- | --- |
-| ar-11 | arithmetic | `2 \frac{1}{2} + 1 \frac{3}{4} =` | `\frac{17}{4}` | answer | wrong: not the expected value | `= \frac{7}{4}` |
-| li-10 | linear | `3x + 7 = 3x - 2` | `\varnothing` | local | no local solution: Solve would ask the model |  |
-| li-11 | linear | `2(x + 3) = 2x + 6` | `\mathbb{R}` | local | no local solution: Solve would ask the model |  |
-| in-08 | inequality | `x^{2} - 4 < 0` | `-2 < x < 2` | local | no local solution: Solve would ask the model |  |
-| in-09 | inequality | `\|x - 1\| < 3` | `-2 < x < 4` | local | no local solution: Solve would ask the model |  |
-| s3-01 | system-3x3 | `x + y + z = 6` ⏎ `x - y + z = 2` ⏎ `2x + y - z = 1` | `x = 1, y = 2, z = 3` | local | no local solution: Solve would ask the model |  |
-| s3-02 | system-3x3 | `x + 2y + z = 8` ⏎ `2x - y + z = 3` ⏎ `x + y - z = 0` | `x = 1, y = 2, z = 3` | local | no local solution: Solve would ask the model |  |
-| s3-03 | system-3x3 | `a + b + c = 9` ⏎ `a - b = 1` ⏎ `b - c = 1` | `a = 4, b = 3, c = 2` | local | no local solution: Solve would ask the model |  |
-| s3-04 | system-3x3 | `x + y + z = 3` ⏎ `2x - y + 3z = 11` ⏎ `x + 2y - z = -2` | `x = 2, y = -1, z = 2` | local | no local solution: Solve would ask the model |  |
-| qu-01 | quadratic | `x^{2} - 5x + 6 = 0` | `x = 2 \text{ or } x = 3` | words | prose on the board: "or" | `x = 2 \text{ or } x = 3` |
-| qu-02 | quadratic | `x^{2} + 2x - 15 = 0` | `x = -5 \text{ or } x = 3` | words | prose on the board: "or" | `x = -5 \text{ or } x = 3` |
-| qu-03 | quadratic | `x^{2} - 9 = 0` | `x = -3 \text{ or } x = 3` | words | prose on the board: "or" | `x = -3 \text{ or } x = 3` |
-| qu-04 | quadratic | `2x^{2} - 8 = 0` | `x = -2 \text{ or } x = 2` | words | prose on the board: "or" | `x = -2 \text{ or } x = 2` |
-| qu-05 | quadratic | `x^{2} = 4x` | `x = 0 \text{ or } x = 4` | words | prose on the board: "or" | `x = 0 \text{ or } x = 4` |
-| qu-06 | quadratic | `x^{2} - 2x - 1 = 0` | `x = 1 \pm \sqrt{2}` | answer | approx: a decimal where the exact value is wanted | `x \approx -0.4142 \text{ or } x \approx 2.414` |
-| qu-06 | quadratic | `x^{2} - 2x - 1 = 0` | `x = 1 \pm \sqrt{2}` | steps | solutions {-0.414214, 2.414214} → {1} | `x = \frac{2 \pm \sqrt{-2^{2} - 4 \cdot 1 \cdot -1}}{2 \cdot 1}` |
-| qu-06 | quadratic | `x^{2} - 2x - 1 = 0` | `x = 1 \pm \sqrt{2}` | words | prose on the board: "or" | `x \approx -0.4142 \text{ or } x \approx 2.414` |
-| qu-07 | quadratic | `x^{2} + 4x + 1 = 0` | `x = -2 \pm \sqrt{3}` | answer | approx: a decimal where the exact value is wanted | `x \approx -3.732 \text{ or } x \approx -0.2679` |
-| qu-07 | quadratic | `x^{2} + 4x + 1 = 0` | `x = -2 \pm \sqrt{3}` | words | prose on the board: "or" | `x \approx -3.732 \text{ or } x \approx -0.2679` |
-| qu-08 | quadratic | `x^{2} + x + 1 = 0` | `\varnothing` | answer | wrong: gives complex roots; there is no real solution | `x \approx -\frac{1}{2} - 0.866i \text{ or } x \approx -\frac{1}{2} + 0.866i` |
-| qu-08 | quadratic | `x^{2} + x + 1 = 0` | `\varnothing` | words | prose on the board: "or" | `x \approx -\frac{1}{2} - 0.866i \text{ or } x \approx -\frac{1}{2} + 0.866i` |
-| qu-09 | quadratic | `x^{2} - 6x + 9 = 0` | `x = 3` | steps | solutions {3} → ∅ | `x = \frac{6 \pm \sqrt{-6^{2} - 4 \cdot 1 \cdot 9}}{2 \cdot 1}` |
-| qu-10 | quadratic | `2x^{2} + 3x - 2 = 0` | `x = -2 \text{ or } x = 0.5` | words | prose on the board: "or" | `x = -2 \text{ or } x = \frac{1}{2}` |
-| qu-11 | quadratic | `(x - 3)(x + 4) = 0` | `x = -4 \text{ or } x = 3` | words | prose on the board: "or" | `x = -4 \text{ or } x = 3` |
-| qu-12 | quadratic | `x^{2} + 5x = -6` | `x = -3 \text{ or } x = -2` | words | prose on the board: "or" | `x = -3 \text{ or } x = -2` |
-| qu-13 | quadratic | `3x^{2} - 5x - 2 = 0` | `x = -0.333333 \text{ or } x = 2` | steps | solutions {-0.333333, 2} → ∅ | `x = \frac{5 \pm \sqrt{-5^{2} - 4 \cdot 3 \cdot -2}}{2 \cdot 3}` |
-| qu-13 | quadratic | `3x^{2} - 5x - 2 = 0` | `x = -0.333333 \text{ or } x = 2` | words | prose on the board: "or" | `x = -\frac{1}{3} \text{ or } x = 2` |
-| qu-14 | quadratic | `x^{2} - 2 = 0` | `x = \pm \sqrt{2}` | answer | approx: a decimal where the exact value is wanted | `x \approx -1.414 \text{ or } x \approx 1.414` |
-| qu-14 | quadratic | `x^{2} - 2 = 0` | `x = \pm \sqrt{2}` | words | prose on the board: "or" | `x \approx -1.414 \text{ or } x \approx 1.414` |
-| ab-01 | absolute | `\|x - 3\| = 5` | `x = -2 \text{ or } x = 8` | answer | approx: written with ≈ although the value is exact | `x \approx -2 \text{ or } x \approx 8` |
-| ab-01 | absolute | `\|x - 3\| = 5` | `x = -2 \text{ or } x = 8` | words | prose on the board: "or" | `x \approx -2 \text{ or } x \approx 8` |
-| ab-02 | absolute | `\|2x + 1\| = 7` | `x = -4 \text{ or } x = 3` | answer | approx: written with ≈ although the value is exact | `x \approx -4 \text{ or } x \approx 3` |
-| ab-02 | absolute | `\|2x + 1\| = 7` | `x = -4 \text{ or } x = 3` | words | prose on the board: "or" | `x \approx -4 \text{ or } x \approx 3` |
-| ab-03 | absolute | `\|x\| + 2 = 6` | `x = -4 \text{ or } x = 4` | answer | approx: written with ≈ although the value is exact | `x \approx -4 \text{ or } x \approx 4` |
-| ab-03 | absolute | `\|x\| + 2 = 6` | `x = -4 \text{ or } x = 4` | words | prose on the board: "or" | `x \approx -4 \text{ or } x \approx 4` |
-| ab-04 | absolute | `\|x + 4\| = -2` | `\varnothing` | local | no local solution: Solve would ask the model |  |
-| ab-05 | absolute | `3\|x - 1\| = 12` | `x = -3 \text{ or } x = 5` | answer | approx: written with ≈ although the value is exact | `x \approx -3 \text{ or } x \approx 5` |
-| ab-05 | absolute | `3\|x - 1\| = 12` | `x = -3 \text{ or } x = 5` | words | prose on the board: "or" | `x \approx -3 \text{ or } x \approx 5` |
-| ra-05 | rational | `\frac{x}{x - 2} = \frac{2}{x - 2} + 3` | `\varnothing` | answer | unsolved: the last line is not `x = …` |  |
-| ra-05 | rational | `\frac{x}{x - 2} = \frac{2}{x - 2} + 3` | `\varnothing` | steps | empty step |  |
-| ra-06 | rational | `\frac{x^{2} - 4}{x - 2} = 5` | `x = 3` | steps | solutions {2, 3} → ∅ | `x = \frac{5 \pm \sqrt{-5^{2} - 4 \cdot 1 \cdot 6}}{2 \cdot 1}` |
-| rd-01 | radical | `\sqrt{x} = 5` | `x = 25` | answer | approx: written with ≈ although the value is exact | `x \approx 25` |
-| rd-02 | radical | `\sqrt{x + 3} = 4` | `x = 13` | answer | approx: written with ≈ although the value is exact | `x \approx 13` |
-| rd-03 | radical | `\sqrt{2x - 1} = 3` | `x = 5` | answer | approx: written with ≈ although the value is exact | `x \approx 5` |
-| rd-04 | radical | `\sqrt{x + 2} = x` | `x = 2` | answer | approx: written with ≈ although the value is exact | `x \approx 2` |
-| rd-05 | radical | `\sqrt{x} + 2 = 7` | `x = 25` | answer | approx: written with ≈ although the value is exact | `x \approx 25` |
-| rd-06 | radical | `\sqrt[3]{x} = 2` | `x = 8` | answer | approx: written with ≈ although the value is exact | `x \approx 8` |
-| ex-01 | exponential | `2^{x} = 32` | `x = 5` | answer | approx: written with ≈ although the value is exact | `x \approx 5` |
-| ex-02 | exponential | `3^{x + 1} = 81` | `x = 3` | answer | approx: written with ≈ although the value is exact | `x \approx 3` |
-| ex-03 | exponential | `5^{2x} = 125` | `x = 1.5` | answer | approx: written with ≈ although the value is exact | `x \approx 1.5` |
-| ex-04 | exponential | `4^{x} = 8` | `x = 1.5` | answer | approx: written with ≈ although the value is exact | `x \approx 1.5` |
-| ex-05 | exponential | `100 \cdot 2^{x} = 800` | `x = 3` | answer | approx: written with ≈ although the value is exact | `x \approx 3` |
-| lg-01 | logarithmic | `\log_{2}(x) = 5` | `x = 32` | answer | approx: written with ≈ although the value is exact | `x \approx 32` |
-| lg-02 | logarithmic | `\log(x) = 2` | `x = 100` | local | no local solution: Solve would ask the model |  |
-| lg-03 | logarithmic | `\ln(x) = 3` | `x = e^{3}` | answer | approx: a decimal where the exact value is wanted | `x \approx 20.09` |
-| lg-04 | logarithmic | `\log_{3}(x + 1) = 2` | `x = 8` | answer | approx: written with ≈ although the value is exact | `x \approx 8` |
-| lg-05 | logarithmic | `\log_{2}(x) + \log_{2}(x - 2) = 3` | `x = 4` | answer | approx: written with ≈ although the value is exact | `x \approx 4` |
-| lg-06 | logarithmic | `2\ln(x) = \ln(9)` | `x = 3` | answer | approx: written with ≈ although the value is exact | `x \approx 3` |
-| xf-09 | expand-factor | `x^{2} + 5x + 6` | `(x + 2)(x + 3)` | local | no local solution: Solve would ask the model |  |
-| xf-10 | expand-factor | `x^{2} - 9` | `(x - 3)(x + 3)` | local | no local solution: Solve would ask the model |  |
-| xf-11 | expand-factor | `6x^{2} + 9x` | `3x(2x + 3)` | local | no local solution: Solve would ask the model |  |
-| xf-12 | expand-factor | `2x^{2} - 7x + 3` | `(2x - 1)(x - 3)` | local | no local solution: Solve would ask the model |  |
-| xf-13 | expand-factor | `\frac{x^{2} - 1}{x - 1}` | `x + 1` | local | no local solution: Solve would ask the model |  |
-| ii-01 | integral-indefinite | `\int x^{2} \, dx` | `\frac{x^{3}}{3} + C` | local | no local solution: Solve would ask the model |  |
-| ii-02 | integral-indefinite | `\int (3x^{2} + 2x) \, dx` | `x^{3} + x^{2} + C` | local | no local solution: Solve would ask the model |  |
-| ii-03 | integral-indefinite | `\int \cos x \, dx` | `\sin x + C` | local | no local solution: Solve would ask the model |  |
-| ii-04 | integral-indefinite | `\int e^{x} \, dx` | `e^{x} + C` | local | no local solution: Solve would ask the model |  |
-| ii-05 | integral-indefinite | `\int \frac{1}{x} \, dx` | `\ln\|x\| + C` | local | no local solution: Solve would ask the model |  |
-| ii-06 | integral-indefinite | `\int (4x^{3} - 6x + 1) \, dx` | `x^{4} - 3x^{2} + x + C` | local | no local solution: Solve would ask the model |  |
-| ii-07 | integral-indefinite | `\int \sin(2x) \, dx` | `-\frac{1}{2}\cos(2x) + C` | local | no local solution: Solve would ask the model |  |
 | ii-08 | integral-indefinite | `\int x e^{x^{2}} \, dx` | `\frac{1}{2} e^{x^{2}} + C` | local | no local solution: Solve would ask the model |  |
-| ii-09 | integral-indefinite | `\int \sqrt{x} \, dx` | `\frac{2}{3} x^{\frac{3}{2}} + C` | local | no local solution: Solve would ask the model |  |
-| di-06 | integral-definite | `\int_{0}^{1} e^{x} \, dx =` | `e - 1` | answer | approx: a decimal where the exact value is wanted | `= 1.718` |
-| lm-01 | limit | `\lim_{x \to 2} (3x + 1)` | `7` | local | no local solution: Solve would ask the model |  |
-| lm-02 | limit | `\lim_{x \to 3} \frac{x^{2} - 9}{x - 3}` | `6` | local | no local solution: Solve would ask the model |  |
-| lm-03 | limit | `\lim_{x \to 1} \frac{x^{2} - 1}{x - 1} =` | `2` | local | no local solution: Solve would ask the model |  |
-| lm-04 | limit | `\lim_{x \to 2} \frac{x^{2} - 5x + 6}{x - 2}` | `-1` | local | no local solution: Solve would ask the model |  |
-| lm-05 | limit | `\lim_{x \to \infty} \frac{2x + 1}{x - 3}` | `2` | local | no local solution: Solve would ask the model |  |
-| lm-06 | limit | `\lim_{x \to \infty} \frac{3x^{2}}{x^{2} + 1}` | `3` | local | no local solution: Solve would ask the model |  |
-| lm-07 | limit | `\lim_{x \to 0} \frac{\sin x}{x}` | `1` | local | no local solution: Solve would ask the model |  |
-| lm-08 | limit | `\lim_{x \to 4} \sqrt{x}` | `2` | local | no local solution: Solve would ask the model |  |
-| up-04 | units-percent | `2.5 \mathrm{~h} \text{ to } \mathrm{min}` | `150 \mathrm{~min}` | local | no local solution: Solve would ask the model |  |
 | tr-04 | trig | `\sin(60^{\circ}) =` | `\frac{\sqrt{3}}{2}` | answer | approx: a decimal where the exact value is wanted | `= 0.866` |
 | tr-08 | trig | `\tan(60^{\circ}) =` | `\sqrt{3}` | answer | approx: a decimal where the exact value is wanted | `= 1.732` |
 
 ## Detail of every failing problem
 
-#### ar-11 · arithmetic
-
-- problem: `2 \frac{1}{2} + 1 \frac{3}{4} =` → expected `\frac{17}{4}` (mixed numbers: 2½ is 2 + ½, not 2 × ½)
-- local path: localAnswer
-- answer: **wrong** — not the expected value
-- steps:
-  1. `= \frac{7}{4}` ✓
-
-#### li-10 · linear
-
-- problem: `3x + 7 = 3x - 2` → expected `\varnothing` (no solution)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### li-11 · linear
-
-- problem: `2(x + 3) = 2x + 6` → expected `\mathbb{R}` (identity: every x)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### in-08 · inequality
-
-- problem: `x^{2} - 4 < 0` → expected `-2 < x < 2` (quadratic inequality)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### in-09 · inequality
-
-- problem: `\|x - 1\| < 3` → expected `-2 < x < 4` (absolute-value inequality)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### s3-01 · system-3x3
-
-- problem: `x + y + z = 6` ⏎ `x - y + z = 2` ⏎ `2x + y - z = 1` → expected `x = 1, y = 2, z = 3`
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### s3-02 · system-3x3
-
-- problem: `x + 2y + z = 8` ⏎ `2x - y + z = 3` ⏎ `x + y - z = 0` → expected `x = 1, y = 2, z = 3`
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### s3-03 · system-3x3
-
-- problem: `a + b + c = 9` ⏎ `a - b = 1` ⏎ `b - c = 1` → expected `a = 4, b = 3, c = 2`
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### s3-04 · system-3x3
-
-- problem: `x + y + z = 3` ⏎ `2x - y + 3z = 11` ⏎ `x + 2y - z = -2` → expected `x = 2, y = -1, z = 2`
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### qu-01 · quadratic
-
-- problem: `x^{2} - 5x + 6 = 0` → expected `x = 2 \text{ or } x = 3`
-- local path: solveLatex
-- answer: **ok**
-- steps:
-  1. `(x - 2)(x - 3) = 0` ✓
-  2. `x = 2 \text{ or } x = 3` ✓
-- words: "or"
-
-#### qu-02 · quadratic
-
-- problem: `x^{2} + 2x - 15 = 0` → expected `x = -5 \text{ or } x = 3`
-- local path: solveLatex
-- answer: **ok**
-- steps:
-  1. `(x + 5)(x - 3) = 0` ✓
-  2. `x = -5 \text{ or } x = 3` ✓
-- words: "or"
-
-#### qu-03 · quadratic
-
-- problem: `x^{2} - 9 = 0` → expected `x = -3 \text{ or } x = 3`
-- local path: solveLatex
-- answer: **ok**
-- steps:
-  1. `(x + 3)(x - 3) = 0` ✓
-  2. `x = -3 \text{ or } x = 3` ✓
-- words: "or"
-
-#### qu-04 · quadratic
-
-- problem: `2x^{2} - 8 = 0` → expected `x = -2 \text{ or } x = 2`
-- local path: solveLatex
-- answer: **ok**
-- steps:
-  1. `x = \frac{0 \pm \sqrt{0^{2} - 4 \cdot 2 \cdot -8}}{2 \cdot 2}` ✓
-  2. `x = \frac{0 \pm \sqrt{64}}{4}` ✓
-  3. `x = -2 \text{ or } x = 2` ✓
-- words: "or"
-- warnings: a negative factor without brackets (`4 \cdot -8`)
-
-#### qu-05 · quadratic
-
-- problem: `x^{2} = 4x` → expected `x = 0 \text{ or } x = 4`
-- local path: solveLatex
-- answer: **ok**
-- steps:
-  1. `x^{2} - 4x = 0` ✓
-  2. `x(x - 4) = 0` ✓
-  3. `x = 0 \text{ or } x = 4` ✓
-- words: "or"
-
-#### qu-06 · quadratic
-
-- problem: `x^{2} - 2x - 1 = 0` → expected `x = 1 \pm \sqrt{2}` (surd roots: 1 ± √2)
-- local path: solveLatex
-- answer: **approx** — a decimal where the exact value is wanted
-- steps:
-  1. `x = \frac{2 \pm \sqrt{-2^{2} - 4 \cdot 1 \cdot -1}}{2 \cdot 1}` ✗ solutions {-0.414214, 2.414214} → {1}
-  2. `x = \frac{2 \pm \sqrt{8}}{2}` ✓
-  3. `x \approx -0.4142 \text{ or } x \approx 2.414` ✓
-- words: "or"
-- warnings: a negative factor without brackets (`4 \cdot -8`); `-2^{2}`: a negative base without brackets reads as -(2²)
-
-#### qu-07 · quadratic
-
-- problem: `x^{2} + 4x + 1 = 0` → expected `x = -2 \pm \sqrt{3}` (surd roots: -2 ± √3)
-- local path: solveLatex
-- answer: **approx** — a decimal where the exact value is wanted
-- steps:
-  1. `x = \frac{-4 \pm \sqrt{4^{2} - 4 \cdot 1 \cdot 1}}{2 \cdot 1}` ✓
-  2. `x = \frac{-4 \pm \sqrt{12}}{2}` ✓
-  3. `x \approx -3.732 \text{ or } x \approx -0.2679` ✓
-- words: "or"
-
-#### qu-08 · quadratic
-
-- problem: `x^{2} + x + 1 = 0` → expected `\varnothing` (no real roots (complex roots are not a school answer))
-- local path: solveLatex
-- answer: **wrong** — gives complex roots; there is no real solution
-- steps:
-  1. `x = \frac{-1 \pm \sqrt{1^{2} - 4 \cdot 1 \cdot 1}}{2 \cdot 1}` ✓
-  2. `x = \frac{-1 \pm \sqrt{-3}}{2}` ✓
-  3. `x \approx -\frac{1}{2} - 0.866i \text{ or } x \approx -\frac{1}{2} + 0.866i` ✓
-- words: "or"
-
-#### qu-09 · quadratic
-
-- problem: `x^{2} - 6x + 9 = 0` → expected `x = 3` (double root)
-- local path: solveLatex
-- answer: **ok**
-- steps:
-  1. `x = \frac{6 \pm \sqrt{-6^{2} - 4 \cdot 1 \cdot 9}}{2 \cdot 1}` ✗ solutions {3} → ∅
-  2. `x = \frac{6 \pm \sqrt{0}}{2}` ✓
-  3. `x = 3` ✓
-- warnings: `-2^{2}`: a negative base without brackets reads as -(2²)
-
-#### qu-10 · quadratic
-
-- problem: `2x^{2} + 3x - 2 = 0` → expected `x = -2 \text{ or } x = 0.5`
-- local path: solveLatex
-- answer: **ok**
-- steps:
-  1. `x = \frac{-3 \pm \sqrt{3^{2} - 4 \cdot 2 \cdot -2}}{2 \cdot 2}` ✓
-  2. `x = \frac{-3 \pm \sqrt{25}}{4}` ✓
-  3. `x = -2 \text{ or } x = \frac{1}{2}` ✓
-- words: "or"
-- warnings: a negative factor without brackets (`4 \cdot -8`)
-
-#### qu-11 · quadratic
-
-- problem: `(x - 3)(x + 4) = 0` → expected `x = -4 \text{ or } x = 3`
-- local path: solveLatex
-- answer: **ok**
-- steps:
-  1. `x^{2} + x - 12 = 0` ✓
-  2. `(x + 4)(x - 3) = 0` ✓
-  3. `x = -4 \text{ or } x = 3` ✓
-- words: "or"
-
-#### qu-12 · quadratic
-
-- problem: `x^{2} + 5x = -6` → expected `x = -3 \text{ or } x = -2`
-- local path: solveLatex
-- answer: **ok**
-- steps:
-  1. `x^{2} + 5x + 6 = 0` ✓
-  2. `(x + 3)(x + 2) = 0` ✓
-  3. `x = -3 \text{ or } x = -2` ✓
-- words: "or"
-
-#### qu-13 · quadratic
-
-- problem: `3x^{2} - 5x - 2 = 0` → expected `x = -0.333333 \text{ or } x = 2`
-- local path: solveLatex
-- answer: **ok**
-- steps:
-  1. `x = \frac{5 \pm \sqrt{-5^{2} - 4 \cdot 3 \cdot -2}}{2 \cdot 3}` ✗ solutions {-0.333333, 2} → ∅
-  2. `x = \frac{5 \pm \sqrt{49}}{6}` ✓
-  3. `x = -\frac{1}{3} \text{ or } x = 2` ✓
-- words: "or"
-- warnings: a negative factor without brackets (`4 \cdot -8`); `-2^{2}`: a negative base without brackets reads as -(2²)
-
-#### qu-14 · quadratic
-
-- problem: `x^{2} - 2 = 0` → expected `x = \pm \sqrt{2}` (x = ±√2)
-- local path: solveLatex
-- answer: **approx** — a decimal where the exact value is wanted
-- steps:
-  1. `x = \frac{0 \pm \sqrt{0^{2} - 4 \cdot 1 \cdot -2}}{2 \cdot 1}` ✓
-  2. `x = \frac{0 \pm \sqrt{8}}{2}` ✓
-  3. `x \approx -1.414 \text{ or } x \approx 1.414` ✓
-- words: "or"
-- warnings: a negative factor without brackets (`4 \cdot -8`)
-
-#### ab-01 · absolute
-
-- problem: `\|x - 3\| = 5` → expected `x = -2 \text{ or } x = 8`
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx -2 \text{ or } x \approx 8` ✓
-- words: "or"
-- warnings: numeric root-finder: the answer with no working
-
-#### ab-02 · absolute
-
-- problem: `\|2x + 1\| = 7` → expected `x = -4 \text{ or } x = 3`
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx -4 \text{ or } x \approx 3` ✓
-- words: "or"
-- warnings: numeric root-finder: the answer with no working
-
-#### ab-03 · absolute
-
-- problem: `\|x\| + 2 = 6` → expected `x = -4 \text{ or } x = 4`
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx -4 \text{ or } x \approx 4` ✓
-- words: "or"
-- warnings: numeric root-finder: the answer with no working
-
-#### ab-04 · absolute
-
-- problem: `\|x + 4\| = -2` → expected `\varnothing` (an absolute value is never negative)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### ab-05 · absolute
-
-- problem: `3\|x - 1\| = 12` → expected `x = -3 \text{ or } x = 5`
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx -3 \text{ or } x \approx 5` ✓
-- words: "or"
-- warnings: numeric root-finder: the answer with no working
-
-#### ra-05 · rational
-
-- problem: `\frac{x}{x - 2} = \frac{2}{x - 2} + 3` → expected `\varnothing` (x = 2 is extraneous)
-- local path: solveLatex
-- answer: **unsolved** — the last line is not `x = …`
-- steps:
-  1. `-2x^{2} + 8x - 8 = 0` widened: ∅ → {2} (extraneous candidates)
-  2. `x = \frac{-8 \pm \sqrt{8^{2} - 4 \cdot -2 \cdot -8}}{2 \cdot -2}` ✓
-  3. `x = \frac{-8 \pm \sqrt{0}}{-4}` ✓
-  4.  ✗ empty step
-- warnings: widened: `-2x^{2} + 8x - 8 = 0` (∅ → {2} (extraneous candidates)); a negative factor without brackets (`4 \cdot -8`)
-
-#### ra-06 · rational
-
-- problem: `\frac{x^{2} - 4}{x - 2} = 5` → expected `x = 3`
-- local path: solveLatex
-- answer: **ok**
-- steps:
-  1. `x^{2} - 5x + 6 = 0` widened: {3} → {2, 3} (extraneous candidates)
-  2. `x = \frac{5 \pm \sqrt{-5^{2} - 4 \cdot 1 \cdot 6}}{2 \cdot 1}` ✗ solutions {2, 3} → ∅
-  3. `x = \frac{5 \pm \sqrt{1}}{2}` ✓
-  4. `x = 3` ✓
-- warnings: widened: `x^{2} - 5x + 6 = 0` ({3} → {2, 3} (extraneous candidates)); `-2^{2}`: a negative base without brackets reads as -(2²)
-
-#### rd-01 · radical
-
-- problem: `\sqrt{x} = 5` → expected `x = 25`
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx 25` ✓
-- warnings: numeric root-finder: the answer with no working
-
-#### rd-02 · radical
-
-- problem: `\sqrt{x + 3} = 4` → expected `x = 13`
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx 13` ✓
-- warnings: numeric root-finder: the answer with no working
-
-#### rd-03 · radical
-
-- problem: `\sqrt{2x - 1} = 3` → expected `x = 5`
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx 5` ✓
-- warnings: numeric root-finder: the answer with no working
-
-#### rd-04 · radical
-
-- problem: `\sqrt{x + 2} = x` → expected `x = 2` (x = -1 is extraneous)
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx 2` ✓
-- warnings: numeric root-finder: the answer with no working
-
-#### rd-05 · radical
-
-- problem: `\sqrt{x} + 2 = 7` → expected `x = 25`
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx 25` ✓
-- warnings: numeric root-finder: the answer with no working
-
-#### rd-06 · radical
-
-- problem: `\sqrt[3]{x} = 2` → expected `x = 8`
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx 8` ✓
-- warnings: numeric root-finder: the answer with no working
-
-#### ex-01 · exponential
-
-- problem: `2^{x} = 32` → expected `x = 5`
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx 5` ✓
-- warnings: numeric root-finder: the answer with no working
-
-#### ex-02 · exponential
-
-- problem: `3^{x + 1} = 81` → expected `x = 3`
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx 3` ✓
-- warnings: numeric root-finder: the answer with no working
-
-#### ex-03 · exponential
-
-- problem: `5^{2x} = 125` → expected `x = 1.5`
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx 1.5` ✓
-- warnings: numeric root-finder: the answer with no working
-
-#### ex-04 · exponential
-
-- problem: `4^{x} = 8` → expected `x = 1.5`
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx 1.5` ✓
-- warnings: numeric root-finder: the answer with no working
-
-#### ex-05 · exponential
-
-- problem: `100 \cdot 2^{x} = 800` → expected `x = 3`
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx 3` ✓
-- warnings: numeric root-finder: the answer with no working
-
-#### lg-01 · logarithmic
-
-- problem: `\log_{2}(x) = 5` → expected `x = 32`
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx 32` ✓
-- warnings: numeric root-finder: the answer with no working
-
-#### lg-02 · logarithmic
-
-- problem: `\log(x) = 2` → expected `x = 100` (log is base 10)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### lg-03 · logarithmic
-
-- problem: `\ln(x) = 3` → expected `x = e^{3}` (x = e^3)
-- local path: solveLatex
-- answer: **approx** — a decimal where the exact value is wanted
-- steps:
-  1. `x \approx 20.09` ✓
-- warnings: numeric root-finder: the answer with no working
-
-#### lg-04 · logarithmic
-
-- problem: `\log_{3}(x + 1) = 2` → expected `x = 8`
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx 8` ✓
-- warnings: numeric root-finder: the answer with no working
-
-#### lg-05 · logarithmic
-
-- problem: `\log_{2}(x) + \log_{2}(x - 2) = 3` → expected `x = 4` (x = -2 is extraneous)
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx 4` ✓
-- warnings: numeric root-finder: the answer with no working
-
-#### lg-06 · logarithmic
-
-- problem: `2\ln(x) = \ln(9)` → expected `x = 3`
-- local path: solveLatex
-- answer: **approx** — written with ≈ although the value is exact
-- steps:
-  1. `x \approx 3` ✓
-- warnings: numeric root-finder: the answer with no working
-
-#### xf-09 · expand-factor
-
-- problem: `x^{2} + 5x + 6` → expected `(x + 2)(x + 3)` (a bare quadratic: the teacher factorises it)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### xf-10 · expand-factor
-
-- problem: `x^{2} - 9` → expected `(x - 3)(x + 3)`
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### xf-11 · expand-factor
-
-- problem: `6x^{2} + 9x` → expected `3x(2x + 3)`
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### xf-12 · expand-factor
-
-- problem: `2x^{2} - 7x + 3` → expected `(2x - 1)(x - 3)`
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### xf-13 · expand-factor
-
-- problem: `\frac{x^{2} - 1}{x - 1}` → expected `x + 1` (cancel a common factor)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### ii-01 · integral-indefinite
-
-- problem: `\int x^{2} \, dx` → expected `\frac{x^{3}}{3} + C`
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### ii-02 · integral-indefinite
-
-- problem: `\int (3x^{2} + 2x) \, dx` → expected `x^{3} + x^{2} + C`
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### ii-03 · integral-indefinite
-
-- problem: `\int \cos x \, dx` → expected `\sin x + C`
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### ii-04 · integral-indefinite
-
-- problem: `\int e^{x} \, dx` → expected `e^{x} + C`
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### ii-05 · integral-indefinite
-
-- problem: `\int \frac{1}{x} \, dx` → expected `\ln\|x\| + C`
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### ii-06 · integral-indefinite
-
-- problem: `\int (4x^{3} - 6x + 1) \, dx` → expected `x^{4} - 3x^{2} + x + C`
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### ii-07 · integral-indefinite
-
-- problem: `\int \sin(2x) \, dx` → expected `-\frac{1}{2}\cos(2x) + C`
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
 #### ii-08 · integral-indefinite
 
 - problem: `\int x e^{x^{2}} \, dx` → expected `\frac{1}{2} e^{x^{2}} + C` (substitution u = x²)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### ii-09 · integral-indefinite
-
-- problem: `\int \sqrt{x} \, dx` → expected `\frac{2}{3} x^{\frac{3}{2}} + C`
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### di-06 · integral-definite
-
-- problem: `\int_{0}^{1} e^{x} \, dx =` → expected `e - 1` (exact: e - 1, not 1.718)
-- local path: localAnswer
-- answer: **approx** — a decimal where the exact value is wanted
-- steps:
-  1. `= 1.718` ✓
-
-#### lm-01 · limit
-
-- problem: `\lim_{x \to 2} (3x + 1)` → expected `7` (direct substitution)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### lm-02 · limit
-
-- problem: `\lim_{x \to 3} \frac{x^{2} - 9}{x - 3}` → expected `6` (0/0: factor and cancel)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### lm-03 · limit
-
-- problem: `\lim_{x \to 1} \frac{x^{2} - 1}{x - 1} =` → expected `2` (0/0: factor and cancel)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### lm-04 · limit
-
-- problem: `\lim_{x \to 2} \frac{x^{2} - 5x + 6}{x - 2}` → expected `-1` (0/0: factor and cancel)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### lm-05 · limit
-
-- problem: `\lim_{x \to \infty} \frac{2x + 1}{x - 3}` → expected `2` (at infinity)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### lm-06 · limit
-
-- problem: `\lim_{x \to \infty} \frac{3x^{2}}{x^{2} + 1}` → expected `3` (at infinity)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### lm-07 · limit
-
-- problem: `\lim_{x \to 0} \frac{\sin x}{x}` → expected `1` (standard limit)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### lm-08 · limit
-
-- problem: `\lim_{x \to 4} \sqrt{x}` → expected `2` (direct substitution)
-- local path: none (Solve would ask the model)
-- answer: **missing** — no local solution: Solve would ask the model
-
-#### up-04 · units-percent
-
-- problem: `2.5 \mathrm{~h} \text{ to } \mathrm{min}` → expected `150 \mathrm{~min}` (`\mathrm{min}` is read as the min() function)
 - local path: none (Solve would ask the model)
 - answer: **missing** — no local solution: Solve would ask the model
 
@@ -762,27 +94,45 @@ Grouped by stage and reason (numbers and LaTeX blanked), most frequent first. On
 | --- | --- |
 | sy-01 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
 | sy-02 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
-| sy-03 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
-| sy-04 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
 | sy-05 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
-| sy-08 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
-| ex-06 | numeric root-finder: the answer with no working |
-| ex-07 | numeric root-finder: the answer with no working |
-| de-01 | machine-style `\cdot` between a number and a letter (`6\cdot x`) |
-| de-02 | machine-style `\cdot` between a number and a letter (`6\cdot x`); braced base (`{x}^{2}`) |
-| de-03 | machine-style `\cdot` between a number and a letter (`6\cdot x`); braced base (`{x}^{2}`) |
-| de-04 | machine-style `\cdot` between a number and a letter (`6\cdot x`); braced base (`{x}^{2}`) |
-| de-06 | machine-style `\cdot` between a number and a letter (`6\cdot x`) |
-| de-07 | machine-style `\cdot` between a number and a letter (`6\cdot x`) |
-| de-08 | machine-style `\cdot` between a number and a letter (`6\cdot x`); braced base (`{x}^{2}`) |
-| de-09 | machine-style `\cdot` between a number and a letter (`6\cdot x`); braced base (`{x}^{2}`) |
-| de-10 | braced base (`{x}^{2}`) |
-| de-11 | a fraction over a fraction |
-| de-12 | unverified: `= 3\cdot{x}^{2}+2` (the line before is unreadable (untranslatable)); machine-style `\cdot` between a number and a letter (`6\cdot x`); braced base (`{x}^{2}`) |
-| de-13 | unverified: `= 2\cdot x-3` (the line before is unreadable (untranslatable)); machine-style `\cdot` between a number and a letter (`6\cdot x`) |
-| de-14 | machine-style `\cdot` between a number and a letter (`6\cdot x`); braced base (`{x}^{2}`) |
-| de-16 | braced base (`{x}^{2}`) |
+| s3-01 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
+| s3-02 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
+| s3-03 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
+| s3-04 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
+| qu-06 | machine-style `\cdot` between a number and a letter (`6\cdot x`) |
+| ra-01 | unverified: `x \neq 0` (an equation and an inequality); unverified: `x \cdot \frac{3}{x} = x \cdot 6` (an equation and an inequality) |
+| ra-02 | unverified: `x \neq 1` (an equation and an inequality); unverified: `(x - 1) \cdot \frac{x + 2}{x - 1} = (x - 1) \cdot 4` (an equation and an inequality) |
+| ra-03 | unverified: `x \neq 0` (an equation and an inequality); unverified: `2x \cdot \frac{1}{x} + 2x \cdot \frac{1}{2} = 2x \cdot 1` (an equation and an inequality) |
+| ra-04 | unverified: `x \neq -1, \ x \neq 3` (unreadable step (untranslatable side)) |
+| ra-05 | 8 lines: at the maxSolveSteps cap (working may have been cut); unverified: `x \neq 2` (an equation and an inequality); unverified: `x = 2 + 3(x - 2)` (an equation and an inequality) |
+| ra-06 | 8 lines: at the maxSolveSteps cap (working may have been cut); widened: `x^{2} - 4 = 5(x - 2)` ({3} → {2, 3} (extraneous candidates)); unverified: `x \neq 2` (an equation and an inequality); unverified: `(x - 2) \cdot \frac{x^{2} - 4}{x - 2} = (x - 2) \cdot 5` (an equation and an inequality) |
+| rd-04 | widened: `x + 2 = x^{2}` ({2} → {-1, 2} (extraneous candidates)); unverified: `\sqrt{1} \neq -1` (an equation and an inequality); unverified: `x = 2` (an equation and an inequality) |
+| lg-05 | 8 lines: at the maxSolveSteps cap (working may have been cut); unverified: `x > 2` (an equation and an inequality); unverified: `\log_{2}(x(x - 2)) = 3` (an equation and an inequality) |
+| lg-06 | unverified: `x > 0` (an equation and an inequality); unverified: `\ln(x^{2}) = \ln 9` (an equation and an inequality) |
+| de-12 | unverified: `= 3x^{2} + 2` (the line before is unreadable (untranslatable)) |
+| de-13 | unverified: `= 2x - 3` (the line before is unreadable (untranslatable)) |
+| di-01 | unverified: `= \left[\frac{x^{3}}{3}\right]_{0}^{1}` (no sample point where both are defined); unverified: `= \frac{1}{3} - 0` (no sample point where both are defined) |
+| di-02 | unverified: `= \left[-\cos x\right]_{0}^{\pi}` (no sample point where both are defined); unverified: `= 1 - (-1)` (no sample point where both are defined) |
+| di-03 | unverified: `= \left[x^{2} + x\right]_{1}^{3}` (no sample point where both are defined); unverified: `= 12 - 2` (no sample point where both are defined) |
+| di-04 | unverified: `= \left[\frac{x^{4}}{4} - \frac{x^{2}}{2}\right]_{0}^{2}` (no sample point where both are defined); unverified: `= 2 - 0` (no sample point where both are defined) |
+| di-05 | unverified: `= \left[\ln\|x\|\right]_{1}^{e}` (no sample point where both are defined); unverified: `= 1 - 0` (no sample point where both are defined) |
+| di-06 | unverified: `= \left[e^{x}\right]_{0}^{1}` (no sample point where both are defined); unverified: `= e - 1` (no sample point where both are defined) |
+| di-07 | unverified: `= \left[\frac{x^{4}}{4}\right]_{-1}^{1}` (no sample point where both are defined); unverified: `= \frac{1}{4} - \frac{1}{4}` (no sample point where both are defined) |
+| di-08 | unverified: `= \left[\sin x\right]_{0}^{\frac{\pi}{2}}` (no sample point where both are defined); unverified: `= 1 - 0` (no sample point where both are defined) |
+| g2-10 | unverified: `x \neq -1` (an equation and an inequality) |
+| g2-14 | unverified: `x \neq 1` (an equation and an inequality) |
+| g2-17 | widened: `x^{2} = 4` ({-2} → {-2, 2} (extraneous candidates)); unverified: `x \neq 2` (an equation and an inequality); unverified: `(x - 2) \cdot \frac{x^{2}}{x - 2} = (x - 2) \cdot \frac{4}{x - 2}` (an equation and an inequality) |
+| g2-18 | unverified: `x \neq -1, \ x \neq 0` (unreadable step (untranslatable side)) |
+| g2-19 | widened: `2x + 3 = x^{2}` ({3} → {-1, 3} (extraneous candidates)); unverified: `\sqrt{1} \neq -1` (an equation and an inequality); unverified: `x = 3` (an equation and an inequality) |
+| g2-20 | widened: `x + 5 = (x - 1)^{2}` ({4} → {-1, 4} (extraneous candidates)); unverified: `\sqrt{4} \neq -2` (an equation and an inequality); unverified: `x = 4` (an equation and an inequality) |
+| g2-23 | 8 lines: at the maxSolveSteps cap (working may have been cut); unverified: `x > 0` (an equation and an inequality); unverified: `\log_{3}(x(x + 6)) = 3` (an equation and an inequality) |
+| g2-24 | unverified: `x > 0` (an equation and an inequality); unverified: `\ln \frac{x + 1}{x} = \ln 2` (an equation and an inequality) |
+| g2-26 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
+| g2-27 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
+| g2-45 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
+| g2-46 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
+| g2-49 | 8 lines: at the maxSolveSteps cap (working may have been cut) |
 
 ## Passing
 
-ar-01, ar-02, ar-03, ar-04, ar-05, ar-06, ar-07, ar-08, ar-09, ar-10, ar-12, ar-13, li-01, li-02, li-03, li-04, li-05, li-06, li-07, li-08, li-09, li-12, li-13, in-01, in-02, in-03, in-04, in-05, in-06, in-07, sy-01, sy-02, sy-03, sy-04, sy-05, sy-06, sy-07, sy-08, su-01, su-02, su-03, su-04, su-05, ra-01, ra-02, ra-03, ra-04, ex-06, ex-07, lg-07, xf-01, xf-02, xf-03, xf-04, xf-05, xf-06, xf-07, xf-08, de-01, de-02, de-03, de-04, de-05, de-06, de-07, de-08, de-09, de-10, de-11, de-12, de-13, de-14, de-15, de-16, di-01, di-02, di-03, di-04, di-05, di-07, di-08, up-01, up-02, up-03, up-05, up-06, up-07, up-08, tr-01, tr-02, tr-03, tr-05, tr-06, tr-07
+ar-01, ar-02, ar-03, ar-04, ar-05, ar-06, ar-07, ar-08, ar-09, ar-10, ar-11, ar-12, ar-13, li-01, li-02, li-03, li-04, li-05, li-06, li-07, li-08, li-09, li-10, li-11, li-12, li-13, in-01, in-02, in-03, in-04, in-05, in-06, in-07, in-08, in-09, sy-01, sy-02, sy-03, sy-04, sy-05, sy-06, sy-07, sy-08, s3-01, s3-02, s3-03, s3-04, su-01, su-02, su-03, su-04, su-05, qu-01, qu-02, qu-03, qu-04, qu-05, qu-06, qu-07, qu-08, qu-09, qu-10, qu-11, qu-12, qu-13, qu-14, ab-01, ab-02, ab-03, ab-04, ab-05, ra-01, ra-02, ra-03, ra-04, ra-05, ra-06, rd-01, rd-02, rd-03, rd-04, rd-05, rd-06, ex-01, ex-02, ex-03, ex-04, ex-05, ex-06, ex-07, lg-01, lg-02, lg-03, lg-04, lg-05, lg-06, lg-07, xf-01, xf-02, xf-03, xf-04, xf-05, xf-06, xf-07, xf-08, xf-09, xf-10, xf-11, xf-12, xf-13, de-01, de-02, de-03, de-04, de-05, de-06, de-07, de-08, de-09, de-10, de-11, de-12, de-13, de-14, de-15, de-16, ii-01, ii-02, ii-03, ii-04, ii-05, ii-06, ii-07, ii-09, di-01, di-02, di-03, di-04, di-05, di-06, di-07, di-08, lm-01, lm-02, lm-03, lm-04, lm-05, lm-06, lm-07, lm-08, up-01, up-02, up-03, up-04, up-05, up-06, up-07, up-08, tr-01, tr-02, tr-03, tr-05, tr-06, tr-07, g2-01, g2-02, g2-03, g2-04, g2-05, g2-06, g2-07, g2-08, g2-09, g2-10, g2-11, g2-12, g2-13, g2-14, g2-15, g2-16, g2-17, g2-18, g2-19, g2-20, g2-21, g2-22, g2-23, g2-24, g2-25, g2-26, g2-27, g2-28, g2-44, g2-45, g2-46, g2-47, g2-48, g2-49, g2-29, g2-30, g2-31, g2-32, g2-33, g2-34, g2-35, g2-36, g2-37, g2-38, g2-39, g2-40, g2-41, g2-42, g2-43
