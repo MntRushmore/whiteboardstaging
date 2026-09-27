@@ -35,7 +35,7 @@ describe("localSolve — what each local path writes (real engine)", () => {
     [["36 + 2 ="], "localAnswer", ["= 38"]],
     [["7 \\times 8"], "localAnswer", ["= 56"]],
   ] as const)("%j → %s", (lines, source, steps) => {
-    expect(localSolve(engine, lines)).toEqual({ source, steps });
+    expect(localSolve(engine, lines)).toMatchObject({ source, steps });
   });
 
   it("answers a derivative that needs the definition above it (column context)", () => {
@@ -80,7 +80,7 @@ describe("localSolve — the loop's order and fall-through", () => {
     expect(localSolve(s.engine, ["2x + 3 = 11"], undefined, { handwriting: false }).source).toBeNull();
     expect(s.solveLatex).not.toHaveBeenCalled();
     // …but the other paths do not depend on the hand
-    expect(localSolve(s.engine, ["36 + 2 ="], undefined, { handwriting: false })).toEqual({ source: "localAnswer", steps: ["= 38"] });
+    expect(localSolve(s.engine, ["36 + 2 ="], undefined, { handwriting: false })).toEqual({ source: "localAnswer", steps: ["= 38"], answer: "38" });
   });
 
   it("hands solveFromLines the column down to the asked-for line, lines Mathpix could not read left out", () => {

@@ -4,8 +4,9 @@
  * store, no tldraw — so the same decision can be scored offline (`src/__eval__/**`) and, later,
  * called by the loop itself.
  *
- * MIRRORS `LiveLoop.startSolve` AND MUST BE KEPT IN SYNC WITH IT. The order, the line each
- * method is handed and the fall-through rules are exactly the loop's:
+ * `LiveLoop.startSolve` CALLS THIS: it is the one place the board decides what Solve writes
+ * locally, so the scoreboard (`src/__eval__/**`) measures exactly what a student gets. The
+ * order, the line each method is handed and the fall-through rules:
  *
  *   0. a word problem — the TARGET line reads as prose (`analyzeLine(...).kind === 'text'`) —
  *      skips every local path (the model sets it up);
@@ -36,6 +37,8 @@ export interface LocalSolveResult {
   source: LocalSolveSource | null;
   /** the lines the tutor writes, in order (empty when `source` is null) */
   steps: string[];
+  /** `localAnswer` only: the bare answer (`38`), which the board records on the ink it writes */
+  answer?: string;
 }
 
 export interface LocalSolveOptions {
@@ -150,7 +153,7 @@ export function localSolve(engine: LiveEngine, lines: readonly string[], targetI
 
   // 4. writeLocalAnswer
   const answer = localAnswerFor(engine, target, contextAbove(analyses, lines, index));
-  if (answer) return { source: "localAnswer", steps: [localAnswerStep(answer)] };
+  if (answer) return { source: "localAnswer", steps: [localAnswerStep(answer)], answer };
 
   return NONE;
 }

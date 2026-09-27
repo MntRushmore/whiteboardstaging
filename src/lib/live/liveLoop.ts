@@ -62,6 +62,7 @@ import {
 } from "./liveStore";
 import { scheduleLiveWrite } from "./liveWrite";
 import { recordRecognition } from "./liveDebug";
+import { localSolve } from "./localSolve";
 import { markKey, markStrokes, ringRect, type MarkKind } from "./marks";
 import { readScreenMeta } from "@/lib/screens/screens";
 import { getLiveSettings } from "./liveSettings";
@@ -99,7 +100,7 @@ import {
   rectsIntersect,
 } from "./placement";
 import { badgeFor, decide, isSingleSymbolLatex, localNoteFor, type PolicyDecision } from "./policy";
-import { createSolveStepGuard, engineParsesStep, localAnswerFor, localAnswerStep } from "./solveSteps";
+import { createSolveStepGuard, engineParsesStep, localAnswerFor } from "./solveSteps";
 import {
   RecognizeClient,
   RecognizeTimeoutError,
@@ -1993,22 +1994,10 @@ export class LiveLoop implements LiveController {
     if (!this.opts.enabled || this.opts.voiceActive) return;
     const built = this.buildCheckLines(column);
     if (!built) return;
-    // A word problem (prose the recognizer returned as `\text{...}`, kind 'text') has nothing
-    // for the engine to evaluate: the question itself goes to the model, which sets it up.
-    const target = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
-    const wordProblem = target?.analysis?.kind === "text";
-    // The engine can solve most school lines itself, and the tutor can write that out by hand:
-    // no model, no credits, no network. Anything it cannot draw falls through to the stream.
-    if (!wordProblem && this.writeSolutionByHand(built, opts)) return;
-    // A line that needs the ones above it — `x = ?` under `x + y = 18` and `y = 9`, or two
-    // equations in x and y — is solved from the column, still by hand and still locally.
-    if (!wordProblem && this.writeContextSolution(built, opts)) return;
-    // An expression in an unknown (`3(x+2) - x`) is simplified the way a teacher writes it.
-    if (!wordProblem && this.writeSimplification(built, opts)) return;
-    // ...and where the line is not an equation at all but a sum with an answer (`36 + 2 =`),
-    // the engine still has that answer. It is written locally whatever the hand switch says:
-    // deterministic maths NEVER goes through a model.
-    if (!wordProblem && this.writeLocalAnswer(built, opts)) return;
+    // Everything the engine can answer is written locally — by hand where the hand can draw it,
+    // typeset where it cannot — and never asked of a model. `localSolve` makes that decision;
+    // it is the same function the maths scoreboard (src/__eval__) measures.
+    if (this.writeLocal(built, opts)) return;
     if (!this.deps.isOnline()) {
       this.deferLlm("solve", opts.lineId);
       return;
@@ -2112,97 +2101,60 @@ export class LiveLoop implements LiveController {
   }
 
   /**
-   * Writes the worked steps under the student's last line in the tutor's hand.
+   * Solve's local answer for the asked-for line (`localSolve`: `solveLatex` → `solveFromLines` →
+   * `simplifySteps` → `localAnswerFor`), written under the work — by hand, or typeset when the
+   * hand is off or lacks a glyph. Returns false only when the engine has nothing, which is the
+   * one case the model is asked.
    *
-   * Returns false — and the caller falls back to today's typeset solve stream — when the
-   * per-device switch is off, the local engine cannot solve this line, or the hand engine
-   * reports ANY `unsupported` construct for the block. That last one is the safety interlock:
-   * a dropped `\frac` would show the student wrong maths, so the block is never drawn partly.
+   * What the page adds to the maths: a solution already on the page is not written twice (its
+   * key is on the ink, `meta.solvedLatex` — the line itself for `solveLatex`, the steps
+   * otherwise; for an answer, its `answerLatex`); a new solution replaces the previous one for
+   * this work; at the shape cap nothing is drawn, but a known answer is still never asked of a
+   * model.
    */
-  private writeSolutionByHand(built: { states: LiveLineState[] }, opts: SolveOpts): boolean {
-    if (!this.deps.handwritingEnabled() || !this.engine) return false;
-    if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
+  private writeLocal(built: { states: LiveLineState[] }, opts: SolveOpts): boolean {
+    const engine = this.engine;
+    if (!engine) return false;
     const state = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
     if (!state?.latex) return false;
+    const atCap = liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard;
+    const hand = this.deps.handwritingEnabled();
+    const idx = built.states.findIndex((s) => s.line.id === opts.lineId);
+    const local = localSolve(
+      engine,
+      built.states.map((s) => s.latex),
+      idx === -1 ? undefined : idx,
+      {
+        // `solveLatex` is only ever written by hand: with the hand off (or no room) its line
+        // goes to the paths that can also typeset.
+        handwriting: hand && !atCap,
+        canDraw: (steps) => planHandwriting(steps, { size: handSizeFor(state.line.bounds.h), seed: handSeedFor(opts.lineId) }).unsupported.length === 0,
+      },
+    );
+    if (!local.source) return false;
+    const steps = opts.onlyFirstStep ? local.steps.slice(0, 1) : local.steps;
+    const lastLine = built.states[built.states.length - 1].line.bounds;
+    const column = unionRects(built.states.map((s) => s.line.bounds));
 
-    let solved: { latex: string; steps: string[] } | null = null;
-    try {
-      solved = this.engine.solveLatex(state.latex);
-    } catch (e) {
-      console.warn("[live] solveLatex threw", e);
-      return false;
+    if (local.source === "localAnswer" && local.answer) {
+      // `36 + 2 =`: the tutor may already have finished it (inline, or Solve pressed twice)
+      if (this.answerBlocksFor(opts.lineId).some((s) => answerLatexOf(s.meta) === local.answer)) return true;
+      if (atCap) return true;
+      if (hand && this.drawStepsByHand(built, opts, state, steps, this.answerMeta(state, local.answer))) return true;
+      this.placeSolutionStep(column, lastLine, 0, steps[0], "", opts.lineId);
+      clientMetric("live.solve.local.typeset", { lineId: opts.lineId });
+      return true;
     }
-    if (!solved || solved.steps.length === 0) return false;
-    const steps = (opts.onlyFirstStep ? solved.steps.slice(0, 1) : solved.steps).slice(0, LIVE_LIMITS.maxSolveSteps);
-    // Solve (or Help) pressed again on a line the tutor has already worked out by hand: the
-    // steps are on the page, and drawing them a second time beside the first says nothing new.
-    if (!opts.onlyFirstStep && this.hasHandSolution(opts.lineId, state.latex)) return true;
+
+    const key = local.source === "solveLatex" ? state.latex : steps.join(" ; ");
+    if (!opts.onlyFirstStep && this.hasHandSolution(opts.lineId, key)) return true;
+    if (atCap) return true;
     // A new solution replaces the last one for this work; it never stacks beside it.
     this.clearSolveOutput(built.states);
-    return this.drawStepsByHand(built, opts, state, steps, opts.onlyFirstStep ? undefined : { [SOLVED_META]: state.latex });
-  }
-
-  /** `solveFromLines` over the column down to the asked-for line; see the call site. */
-  private writeContextSolution(built: { states: LiveLineState[] }, opts: SolveOpts): boolean {
-    const engine = this.engine;
-    if (!engine?.solveFromLines) return false;
-    const idx = built.states.findIndex((s) => s.line.id === opts.lineId);
-    const upto = idx === -1 ? built.states : built.states.slice(0, idx + 1);
-    const state = upto[upto.length - 1];
-    if (!state?.latex || upto.length < 2) return false;
-    let solved: { latex: string; steps: string[] } | null = null;
-    try {
-      solved = engine.solveFromLines(upto.map((s) => s.latex));
-    } catch (e) {
-      console.warn("[live] solveFromLines threw", e);
-      return false;
-    }
-    if (!solved || solved.steps.length === 0) return false;
-    const steps = (opts.onlyFirstStep ? solved.steps.slice(0, 1) : solved.steps).slice(0, LIVE_LIMITS.maxSolveSteps);
-    const key = steps.join(" ; ");
-    if (!opts.onlyFirstStep && this.hasHandSolution(opts.lineId, key)) return true;
-    // Known, so never worth a model call — even at the shape cap, where nothing more is drawn.
-    if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return true;
-    this.clearSolveOutput(built.states);
     const meta = opts.onlyFirstStep ? undefined : { [SOLVED_META]: key };
-    if (this.deps.handwritingEnabled() && this.drawStepsByHand(built, opts, state, steps, meta)) return true;
-    // The hand is off, or cannot draw a glyph here: still the engine's answer, typeset locally.
-    const column = unionRects(built.states.map((s) => s.line.bounds));
-    const lastLine = built.states[built.states.length - 1].line.bounds;
+    if (hand && this.drawStepsByHand(built, opts, state, steps, meta)) return true;
     steps.forEach((step, i) => this.placeSolutionStep(column, lastLine, i + 1, step, "", opts.lineId));
-    clientMetric("live.solve.context", { lineId: opts.lineId, steps: steps.length });
-    return true;
-  }
-
-  /**
-   * `engine.simplifySteps` on the asked-for line: `3(x+2) - x` → `= 3x + 6 - x`, `= 2x + 6`,
-   * written under it as a student continues a chain. Same shape as `writeContextSolution`.
-   */
-  private writeSimplification(built: { states: LiveLineState[] }, opts: SolveOpts): boolean {
-    const engine = this.engine;
-    if (!engine?.simplifySteps) return false;
-    const state = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
-    if (!state?.latex) return false;
-    let simplified: string[] | null = null;
-    try {
-      simplified = engine.simplifySteps(state.latex);
-    } catch (e) {
-      console.warn("[live] simplifySteps threw", e);
-      return false;
-    }
-    if (!simplified || simplified.length === 0) return false;
-    const all = simplified.map(localAnswerStep);
-    const steps = (opts.onlyFirstStep ? all.slice(0, 1) : all).slice(0, LIVE_LIMITS.maxSolveSteps);
-    const key = steps.join(" ; ");
-    if (!opts.onlyFirstStep && this.hasHandSolution(opts.lineId, key)) return true;
-    if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return true;
-    this.clearSolveOutput(built.states);
-    const meta = opts.onlyFirstStep ? undefined : { [SOLVED_META]: key };
-    if (this.deps.handwritingEnabled() && this.drawStepsByHand(built, opts, state, steps, meta)) return true;
-    const column = unionRects(built.states.map((s) => s.line.bounds));
-    const lastLine = built.states[built.states.length - 1].line.bounds;
-    steps.forEach((step, i) => this.placeSolutionStep(column, lastLine, i + 1, step, "", opts.lineId));
-    clientMetric("live.solve.simplify", { lineId: opts.lineId, steps: steps.length });
+    clientMetric("live.solve.local.typeset", { lineId: opts.lineId, source: local.source, steps: steps.length });
     return true;
   }
 
@@ -2214,41 +2166,6 @@ export class LiveLoop implements LiveController {
       .filter((s) => isLiveMeta(s.meta) && s.meta.source === "ai" && lineIds.has(s.meta.lineId) && !answerSrcOf(s.meta) && !metaString(s.meta, MARK_META))
       .map((s) => s.id);
     if (ids.length > 0) this.write(() => this.editor.deleteShapes(ids));
-  }
-
-  /**
-   * Finishes a line the engine can simply evaluate — `36 + 2 =` → `= 38`, and the same for
-   * units, a conversion or a derivative.
-   *
-   * `solveLatex` covers relations with an unknown and nothing else, so before this existed a
-   * plain sum fell through to `/api/live/solve`, and what the model answered was drawn on the
-   * student's page as fact. There is no reason to ask anyone: `analyzeLine(..., { mode:
-   * 'answer' })` already knows. Returns true whenever an answer was found, whether it was
-   * written by hand or typeset — never false in a way that lets arithmetic reach the model.
-   */
-  private writeLocalAnswer(built: { states: LiveLineState[] }, opts: SolveOpts): boolean {
-    if (!this.engine) return false;
-    const state = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
-    if (!state?.latex) return false;
-    const answer = localAnswerFor(this.engine, state.latex, this.columnContext(state));
-    if (!answer) return false;
-    // The tutor has already written this answer — the line finished itself as the student
-    // wrote it, or Solve was pressed twice. Answering again would stack a second copy; there
-    // is still nothing to ask a model.
-    if (this.answerBlocksFor(opts.lineId).some((s) => answerLatexOf(s.meta) === answer)) return true;
-    // At the shape cap nothing more is drawn — but a model call would be just as capped, and
-    // this answer is already known, so the stream is still not worth opening.
-    if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return true;
-
-    const step = localAnswerStep(answer);
-    const meta = this.answerMeta(state, answer);
-    if (this.deps.handwritingEnabled() && this.drawStepsByHand(built, opts, state, [step], meta)) return true;
-    // The hand switch is off, or the answer needs a glyph the hand atlas has no stroke for.
-    // The answer is still the engine's, so it is typeset locally rather than asked for.
-    const lastLine = built.states[built.states.length - 1].line.bounds;
-    this.placeSolutionStep(unionRects(built.states.map((s) => s.line.bounds)), lastLine, 0, step, "", opts.lineId);
-    clientMetric("live.solve.local.typeset", { lineId: opts.lineId });
-    return true;
   }
 
   /**
@@ -2576,15 +2493,12 @@ export class LiveLoop implements LiveController {
     const engine = this.engine;
     const good = this.lastGoodLineAbove(state);
     if (!engine || !good) return null;
-    const upto = this.columnLines(state.line.column).filter((s) => s.latex && s.line.row <= good.line.row);
-    const own = new Set(this.columnLines(state.line.column).map((s) => normalizeStep(s.latex)));
-    let steps: string[] = [];
-    try {
-      steps = engine.solveLatex(good.latex)?.steps ?? engine.solveFromLines?.(upto.map((s) => s.latex))?.steps ?? [];
-    } catch {
-      return null;
-    }
-    return steps.find((st) => !own.has(normalizeStep(st))) ?? null;
+    const column = this.columnLines(state.line.column).filter((s) => s.latex);
+    const upto = column.filter((s) => s.line.row <= good.line.row);
+    const own = new Set(column.map((s) => normalizeStep(s.latex)));
+    // The same local decision Solve makes, from the last good line: the step after it.
+    const local = localSolve(engine, upto.map((s) => s.latex), upto.length - 1);
+    return local.steps.find((st) => !own.has(normalizeStep(st))) ?? null;
   }
 
   /**
