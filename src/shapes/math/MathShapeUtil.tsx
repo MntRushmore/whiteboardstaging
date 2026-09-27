@@ -16,7 +16,7 @@ import {
   type RecordProps,
   type TLShapeId,
 } from "tldraw";
-import { TUTOR_INK_HEX, answerContinuation, composeAnswer } from "@/lib/live/answer";
+import { TUTOR_INK_HEX, answerContinuation, composeAnswer, endsWithRelation } from "@/lib/live/answer";
 import {
   LIVE_VERDICTS,
   MATH_SHAPE_DEFAULTS,
@@ -172,8 +172,12 @@ function MathShapeView({ shape }: { shape: MathShape }) {
   // While the student writes (the pen or any tool but select), the cursor rests over the readback
   // after every line: it must not pop up then, and must not catch the pen either.
   const writing = useValue("echo: writing", () => editor.getCurrentToolId() !== "select", [editor]);
+  // A result stays visible only when the student asked for it with a trailing `=` and the hand
+  // could not write it after their `=` (the typeset fallback). A result the engine merely knows
+  // (`\int_0^2 3x^2 dx` with no `=`) is not written unasked — Solve writes it by hand.
+  const askedResult = Boolean(resultLatex) && endsWithRelation(latex);
   const reveal =
-    source !== "echo" || isEditing || touched || Boolean(resultLatex) || !getLiveSettings().handwriting ? "always" : writing ? "off" : "hover";
+    source !== "echo" || isEditing || touched || askedResult || !getLiveSettings().handwriting ? "always" : writing ? "off" : "hover";
 
   return (
     <HTMLContainer
