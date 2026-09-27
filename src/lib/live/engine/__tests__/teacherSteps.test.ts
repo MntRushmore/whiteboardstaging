@@ -66,6 +66,10 @@ describe("linear equations: expand, clear fractions, collect, divide", () => {
   it("hands quadratics and exponentials to their own exact steps; decimals stay on the CAS path", () => {
     expect(solve("x^2-5x+6=0")).toEqual(["(x - 2)(x - 3) = 0", "x = 2, \\ x = 3"]);
     expect(engine.solveLatex("0.5x + 1 = 3")?.latex).toBe("x = 4");
+    // worked in decimals, `ax = b` with a positive a, the input never restated
+    expect(solve("0.2x - 1 = 0.6")).toEqual(["0.2x = 1.6", "x = 8"]);
+    expect(solve("2.5 = 0.5x")).toEqual(["0.5x = 2.5", "x = 5"]);
+    expect(solve("1.2x = 3.6")).toEqual(["x = 3"]);
     expect(engine.solveLatex("2^x = 8")?.latex).toBe("x = 3");
   });
 });

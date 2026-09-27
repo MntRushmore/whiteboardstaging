@@ -793,13 +793,16 @@ export function createEngine(mod: MathModule): LiveEngine {
       const info = equationRoots(math, rel, variable);
       if (!info.roots || info.identity || info.contradiction) return null;
       const steps: string[] = [];
-      const opts: NumberFormatOptions = { preferFraction: true };
+      // a line written in decimals is worked in decimals (`0.2x = 1.6`, not `\frac{1}{5}x = \frac{8}{5}`)
+      const opts: NumberFormatOptions = { preferFraction: !/\d\.\d/.test(pre) };
       const fmt = (n: number) => formatNumberLatex(n, opts);
       const c = info.coefficients;
       const lastIsZero = R.source.trim() === "0";
       if (c && info.exact && c.length === 2) {
-        const [c0, c1] = c;
-        if (Math.abs(c0) > 1e-12 && Math.abs(c1 - 1) > 1e-12) steps.push(`${Math.abs(c1 + 1) < 1e-12 ? "-" : fmt(c1)}${variable} = ${fmt(-c0)}`);
+        // `ax = b` with a positive a (`2.5 = 0.5x` → `0.5x = 2.5`), never the input again
+        const [c0, c1] = c[1] < 0 ? [-c[0], -c[1]] : c;
+        const axb = `${Math.abs(c1 - 1) < 1e-12 ? "" : fmt(c1)}${variable} = ${fmt(-c0)}`;
+        if (Math.abs(c0) > 1e-12 && Math.abs(c1 - 1) > 1e-12 && normalizeLatex(axb) !== normalizeLatex(pre)) steps.push(axb);
         else if (Math.abs(c0) > 1e-12 && !/^-?\d/.test(pre) && !new RegExp(`^${variable}\\s*=`).test(pre)) steps.push(`${variable} = ${fmt(-c0)}`);
         const root = -c0 / c1;
         const final = `${variable} = ${fmt(root)}`;
