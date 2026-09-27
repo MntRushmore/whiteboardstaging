@@ -353,7 +353,11 @@ function solve(L0: G, R0: G, u: string, opts: EquationOptions): EquationSolution
   // every term in degrees (`(2x + 10)^{\circ} = 70^{\circ}`): the unknown is a plain number
   const all = [...left, ...right];
   if (all.every((t) => (t.u ? t.g !== null && dimsOf(t.g).deg === 1 : t.g !== null && dimsOf(t.g).deg === 1))) {
-    const strip = (t: Term): Term => ({ ...t, g: t.g ? stripDegrees(t.g) : null });
+    const strip = (t: Term): Term => {
+      const g = t.g ? stripDegrees(t.g) : null;
+      // `x^{\circ}` is x: its coefficient was only the degree sign
+      return { ...t, g: t.u && g !== null && isOne(g) ? null : g };
+    };
     left = left.map(strip);
     right = right.map(strip);
     writer.write(print());

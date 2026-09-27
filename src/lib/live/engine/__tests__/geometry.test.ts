@@ -29,6 +29,7 @@ const WORKED: Array<[string, string[], string[]]> = [
   ["m∠ in the student's own style", ["m\\angle A + 50 + 60 = 180"], ["m\\angle A + 110 = 180", "m\\angle A = 180 - 110", "m\\angle A = 70"]],
   ["degree signs on the expressions: x is a number", ["(2x + 10)^{\\circ} + (3x - 5)^{\\circ} = 180^{\\circ}"], ["2x + 10 + 3x - 5 = 180", "5x + 5 = 180", "5x = 180 - 5", "5x = 175", "x = 35"]],
   ["an octagon's angle", ["\\frac{(8 - 2) \\cdot 180^{\\circ}}{8} ="], ["= \\frac{6 \\cdot 180^{\\circ}}{8}", "= \\frac{1080^{\\circ}}{8}", "= 135^{\\circ}"]],
+  ["x° is x degrees: x a number", ["x^{\\circ}+40^{\\circ}=90^{\\circ}"], ["x + 40 = 90", "x = 90 - 40", "x = 50"]],
   ["the knowns substituted", ["\\angle A = 50^{\\circ}", "\\angle B = 60^{\\circ}", "\\angle A + \\angle B + \\angle C = 180^{\\circ}", "\\angle C = ?"], ["50^{\\circ} + 60^{\\circ} + \\angle C = 180^{\\circ}", "110^{\\circ} + \\angle C = 180^{\\circ}", "\\angle C = 180^{\\circ} - 110^{\\circ}", "\\angle C = 70^{\\circ}"]],
   ["angles defined in x", ["m\\angle 1 = 3x + 10", "m\\angle 2 = 5x - 30", "m\\angle 1 = m\\angle 2"], ["3x + 10 = 5x - 30", "5x - 3x = 10 + 30", "2x = 40", "x = 20"]],
   // right triangles
@@ -41,6 +42,8 @@ const WORKED: Array<[string, string[], string[]]> = [
   ["a side from a special angle", ["\\sin 30^{\\circ} = \\frac{x}{10}"], ["x = 10\\sin 30^{\\circ}", "x = 10 \\cdot \\frac{1}{2}", "x = 5"]],
   ["a side from any angle: exact, then ≈", ["\\tan 40^{\\circ} = \\frac{x}{12}"], ["x = 12\\tan 40^{\\circ}", "x \\approx 10.07"]],
   ["the unknown in the denominator", ["\\cos 60^{\\circ} = \\frac{8}{x}"], ["x\\cos 60^{\\circ} = 8", "x = \\frac{8}{\\cos 60^{\\circ}}", "x = 16"]],
+  ["a rounded answer keeps its two places", ["\\tan 35^{\\circ}=\\frac{x}{20}"], ["x = 20\\tan 35^{\\circ}", "x \\approx 14.00"]],
+  ["a volume in the unit of its radius", ["r = 3 \\mathrm{~m}", "V = \\frac{4}{3}\\pi r^{3}", "V = ?"], ["V = \\frac{4}{3}\\pi(3\\,\\mathrm{m})^{3}", "V = \\frac{4}{3}\\pi \\cdot 27\\,\\mathrm{m}^{3}", "V = 36\\pi\\,\\mathrm{m}^{3}"]],
   ["an angle from its ratio", ["\\tan \\theta = \\frac{3}{4}"], ["\\theta = \\tan^{-1}\\left(\\frac{3}{4}\\right)", "\\theta \\approx 36.87^{\\circ}"]],
   ["a triangle's angle at a special value", ["\\sin A = \\frac{1}{2}"], ["A = \\sin^{-1}\\left(\\frac{1}{2}\\right)", "A = 30^{\\circ}"]],
   ["law of sines: isolate, then evaluate", ["\\frac{a}{\\sin 30^{\\circ}} = \\frac{10}{\\sin 45^{\\circ}}"], ["a\\sin 45^{\\circ} = 10\\sin 30^{\\circ}", "a = \\frac{10\\sin 30^{\\circ}}{\\sin 45^{\\circ}}", "a = 5\\sqrt{2}"]],

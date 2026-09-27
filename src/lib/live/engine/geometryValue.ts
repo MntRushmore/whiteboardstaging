@@ -360,9 +360,9 @@ export function unitLatex(unit: string, power: number): string {
   return power === 1 ? `\\mathrm{${unit}}` : `\\mathrm{${unit}}^{${power}}`;
 }
 
-/** A value's decimal to `places` (hundredths by default), trailing zeros dropped: `10.07`, `36.87`. */
+/** A value to `places` decimal places (hundredths by default), as a rounded answer is written: `10.07`, `36.87`, `14.00`. */
 export function decimalLatex(n: number, places = 2): string {
   const r = Math.round(n * 10 ** places) / 10 ** places;
-  const s = r.toFixed(places).replace(/\.?0+$/, "");
-  return s === "-0" ? "0" : s;
+  const s = r.toFixed(places);
+  return /^-0(?:\.0+)?$/.test(s) ? s.slice(1) : s;
 }
