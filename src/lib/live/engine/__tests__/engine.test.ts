@@ -449,7 +449,7 @@ describe("engine: constructs the engine refuses", () => {
       "\\lim_{x \\to 1} \\frac{1}{x - 1} =", // no finite limit
       "\\lim_{x \\to 0} \\frac{\\sin x}{x^2} =",
       "\\lim_{x \\to 0^{+}} \\ln x =", // one-sided
-      "\\lim_{x \\to 4} \\frac{\\sqrt{x} - 2}{x - 4} =", // needs the conjugate
+      "\\lim_{x \\to 0} \\frac{\\cos x}{x} =", // not 0/0: no finite limit (the conjugate and L'Hôpital are limits.ts)
     ];
     for (const latex of refused) {
       const a = engine.analyzeLine(latex, answer);

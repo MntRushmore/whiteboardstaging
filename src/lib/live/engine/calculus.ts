@@ -27,7 +27,7 @@ import type { MathJsInstance, MathNode } from "mathjs";
 import { usesSymbol } from "./classify";
 import { asSmallFraction } from "./format";
 import { DIFFERENTIAL_D, GREEK, preprocessLatex, splitRelations, type Translated } from "./latex";
-import { continueLine } from "./solution";
+import { continueLine, isRelationLine } from "./solution";
 
 class NotCalculus extends Error {}
 /** An exact evaluation met a zero denominator: a limit may still exist (0/0); a value does not. */
@@ -1837,8 +1837,34 @@ export function createCalculus(math: MathJsInstance, deps: CalculusDeps): Calcul
     return `${op}(${body})`;
   };
 
+  /**
+   * f(x)^{g(x)} (`x^{x}`): logarithmic differentiation — name it y, take logs, differentiate
+   * both sides (y implicitly), then multiply back by y.
+   */
+  const logDifferentiation = (operand: Expr, x: string): DerivativeWork | null => {
+    if (operand.t !== "pow" || !hasVar(operand.base, x) || !hasVar(operand.exp, x)) return null;
+    const y = symbolsOf(operand).has("y") ? "w" : "y";
+    const lnY = mul([operand.exp, fn("ln", operand.base)]);
+    const D = makeDiff(x)(lnY);
+    const Dc = canon(D.val);
+    const result = canon(mul([operand, canonToExpr(Dc)]));
+    if (!derivativeAgrees(operand, canonToExpr(result), x)) return null;
+    const dydx = `\\frac{d${y}}{d${x}}`;
+    const inner = printCanon(Dc, "display", x);
+    const bracket = hasTopLevelSum(inner) ? `(${inner})` : inner;
+    const lines = [`${y} = ${tex(operand)}`, `\\ln ${y} = ${printCanon(canon(lnY), "display", x)}`, `\\frac{1}{${y}}${dydx} = ${D.tex}`];
+    if (lineKey(D.tex) !== lineKey(inner)) lines.push(`\\frac{1}{${y}}${dydx} = ${inner}`);
+    const finalTex = joinProduct([tex(operand), bracket]);
+    lines.push(`${dydx} = ${joinProduct([y, bracket])}`, finalTex);
+    return { steps: lines, result, finalTex };
+  };
+
   const derivativeWork = (operand: Expr, x: string, order: number): DerivativeWork | null => {
     orderVar = x;
+    if (order === 1) {
+      const logs = logDifferentiation(operand, x);
+      if (logs) return logs;
+    }
     const d = makeDiff(x);
     let cur = operand;
     const stages: string[][] = [];
@@ -2457,6 +2483,51 @@ export function createCalculus(math: MathJsInstance, deps: CalculusDeps): Calcul
     return null;
   };
 
+  /**
+   * `x^{2} + y^{2} = 25`, then `\frac{dy}{dx}`: both sides differentiated with y a function of x
+   * (H = L - R: H_x + H_y y' = 0), y' collected, then alone.
+   */
+  const implicitFor = (lines: readonly string[], q0: Question, pre: string): { latex: string; steps: string[] } | null => {
+    if (q0.order !== 1 || q0.point) return null;
+    const y = q0.name;
+    const x = q0.variable ?? "x";
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = stripEquals(lines[i]);
+      const split = splitRelations(line);
+      if (split.ops.length !== 1 || split.ops[0] !== "==") continue;
+      try {
+        const [lSrc, rSrc] = split.sides.map(translateLine);
+        if (!lSrc || !rSrc) continue;
+        const H = add([parseExpr(lSrc), neg(parseExpr(rSrc))]);
+        const names = symbolsOf(H);
+        if (!names.has(x) || !names.has(y) || names.size !== 2) continue;
+        orderVar = x;
+        const Hx = canon(makeDiff(x)(H).val);
+        const Hy = canon(makeDiff(y)(H).val);
+        if (Hy.length === 0 || !derivativeAgrees(H, canonToExpr(Hx), x) || !derivativeAgrees(H, canonToExpr(Hy), y)) continue;
+        const dydx = `\\frac{d${y}}{d${x}}`;
+        const hyTex = printCanon(Hy, "display", x);
+        const hy = hyTex === "1" ? "" : hasTopLevelSum(hyTex) ? `(${hyTex})` : hyTex;
+        const withY = `${hy}${dydx}`;
+        const hxTex = printCanon(Hx, "display", x);
+        const minusHx = printCanon(scaleCanon(Hx, QM1), "display", x);
+        // one fraction: -H_x over H_y, cancelled when that leaves one term (`-\\frac{x}{y}`)
+        const cancelled = printCanon(canon(div(neg(canonToExpr(Hx)), canonToExpr(Hy))), "display", x);
+        const answer = hasTopLevelSum(cancelled) && !cancelled.startsWith("\\frac") ? fracTex(minusHx, hyTex) : cancelled;
+        const out = [
+          Hx.length === 0 ? `${withY} = 0` : joinTwo(hxTex, withY, "+") + " = 0",
+          `${withY} = ${minusHx}`,
+          `${dydx} = ${answer}`,
+        ];
+        const steps = out.filter((l, k) => k === 0 || lineKey(l) !== lineKey(out[k - 1]));
+        return { latex: `${pre} = ${answer}`, steps };
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  };
+
   const fromLines = (lines: readonly string[]): { latex: string; steps: string[] } | null | undefined => {
     if (!lines.length) return undefined;
     const pre = stripEquals(lines[lines.length - 1]);
@@ -2464,7 +2535,9 @@ export function createCalculus(math: MathJsInstance, deps: CalculusDeps): Calcul
     const question = questionOf(pre);
     if (question) {
       const def = definitionFor(lines.slice(0, -1), question);
-      if (!def || question.order < 1 || question.order > 4) return null;
+      // no `y = …` above, but a relation in x and y: implicit differentiation
+      if (!def) return implicitFor(lines.slice(0, -1), question, pre);
+      if (question.order < 1 || question.order > 4) return null;
       try {
         const source = translateLine(def.rhs);
         if (!source) return null;
@@ -2472,10 +2545,12 @@ export function createCalculus(math: MathJsInstance, deps: CalculusDeps): Calcul
         if (!w) return null;
         const derivSteps = tidySteps(w.steps, `\\frac{d}{d${def.x}}(${def.rhs})`);
         if (!question.point) {
-          const drawn = derivSteps.map((s) => `= ${s}`);
+          // `y = x^{x}` is the student's own line above: not written again
+          const drawn = derivSteps.filter((st) => !lines.some((l) => lineKey(stripEquals(l)) === lineKey(st))).map(continueLine);
           return { latex: `${pre} = ${w.finalTex}`, steps: drawn };
         }
-        // f'(2): the derivative first, then the value at the point
+        // f'(2): the derivative first, then the value at the point (not through y = …, logarithms)
+        if (derivSteps.some(isRelationLine)) return null;
         const pointSource = translateLine(question.point);
         if (!pointSource) return null;
         const pointExpr = parseExpr(pointSource);

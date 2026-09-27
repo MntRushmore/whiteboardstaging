@@ -200,7 +200,7 @@ describe("limits: substitute, or factor and cancel, or divide by the highest pow
     for (const latex of [
       "\\lim_{x \\to 1}\\frac{1}{x-1}", // no finite limit
       "\\lim_{n \\to \\infty}(1 + \\frac{1}{n})^n", // e, not a rational function
-      "\\lim_{x \\to 4}\\frac{\\sqrt{x} - 2}{x - 4}", // needs the conjugate
+      "\\lim_{x \\to 0}\\frac{\\cos x}{x}", // not 0/0: no finite limit (the conjugate and L'Hôpital: limits.test.ts)
       "\\lim_{x \\to 0}\\frac{\\sin x}{x^2}",
       "\\lim_{x \\to 0^{+}}\\ln x", // one-sided
     ]) {
@@ -224,7 +224,7 @@ describe("what the engine refuses stays refused (the model may try; nothing wron
     "\\int \\sin(x^2) dx", // no elementary antiderivative
     "\\int \\frac{\\sin x}{x} dx", // no elementary antiderivative
     "\\int e^{x} \\sin x \\, dx", // parts twice, round in a circle: not done
-    "\\frac{d}{dx} x^x",
+    "\\frac{d}{dx} \\Gamma(x)", // (x^x is logarithmic differentiation now: limits.test.ts)
     "\\frac{d}{dx} f(x)",
   ])("%s", (latex) => {
     expect(steps(latex)).toBeNull();

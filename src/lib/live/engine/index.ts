@@ -30,6 +30,7 @@ import { solveFromLines, type SystemDeps } from "./systems";
 import { linearSolveSteps, simplifyExpressionSteps, type LinearSteps, type RelOp } from "./algebra";
 import { createCalculus } from "./calculus";
 import { createIntegration } from "./integration";
+import { createLimits } from "./limits";
 import { createTrig } from "./trig";
 import { solveTrigEquation } from "./trigEquation";
 import { solveAdvanced, type AdvancedDeps } from "./advanced";
@@ -187,10 +188,13 @@ export function createEngine(mod: MathModule): LiveEngine {
   // substitution, parts, identities, standard forms, partial fractions (`integration.ts`), tried
   // when the term-by-term rules have nothing; they use those rules for the inner integral
   const integration = createIntegration(() => ({ basic: (f, x) => calculus.basicIntegral(f, x) }));
+  // 0/0 beyond factorising: the conjugate, L'Hôpital (`limits.ts`)
+  const limits = createLimits();
   const calculus = createCalculus(math, {
     translate: (latex) => tr(latex),
     integrate: (f, x, constant) => integration.integrate(f, x, constant),
     integrateDefinite: (f, x, a, b) => integration.integrateDefinite(f, x, a, b),
+    limit: (operand, x, a, prefix) => limits.limit(operand, x, a, prefix),
   });
   // exact trig values, identities and equations (`trig.ts`, `trigEquation.ts`)
   const trig = createTrig(math, { translate: (latex) => tr(latex) });
