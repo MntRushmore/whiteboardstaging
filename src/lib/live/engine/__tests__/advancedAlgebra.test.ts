@@ -360,6 +360,17 @@ describe("systems: elimination where substitution would bring fractions, and thr
     expect(system(["x+2y+3z=14", "2x+y+z=7", "3x+2y+z=10"])?.latex).toBe("x = 1, \\ y = 2, \\ z = 3");
   });
 
+  it("three equations with no common point: eliminated down to a false `0 = c`, then ∅", () => {
+    // two parallel planes: every unknown goes at once
+    const r = system(["x + y + z = 6", "x + y + z = 7", "x - y + z = 2"]);
+    expect(r?.steps).toEqual(["0 = 1", "\\varnothing"]);
+    expect(r?.latex).toBe("\\varnothing");
+    // the two equations left are parallel lines
+    expect(system(["x + y + z = 1", "x + y + 2z = 2", "2x + 2y + 3z = 5"])?.steps).toEqual(["z = 1", "z = 3", "0 = -2", "\\varnothing"]);
+    // the same plane twice is not a single answer: still refused
+    expect(system(["x + y + z = 6", "2x + 2y + 2z = 12", "x - y + z = 2"])).toBeNull();
+  });
+
   it("stays within the block and refuses what it cannot do", () => {
     const r = system(["2x+3y-z=5", "x-y+2z=3", "3x+y+z=10"]);
     expect(r?.steps.length).toBeLessThanOrEqual(8);
