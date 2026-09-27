@@ -9,7 +9,7 @@
  *   NEXT_PUBLIC_SUPABASE_URL      local Supabase (npx supabase start)
  *   NEXT_PUBLIC_SUPABASE_ANON_KEY
  *   SMOKE_EMAIL / SMOKE_PASSWORD  qa-student@example.com / password123
- *   SMOKE_SKIP_LLM=1              skip the check/solve streams (no OpenRouter spend)
+ *   SMOKE_SKIP_LLM=1              skip check / solve / setup / reread (no OpenRouter spend)
  *   RATE_LIMIT_BACKEND=memory     set this too when the DEV SERVER runs with it, so the
  *                                 429 `backend` assertion expects 'memory' instead of 'db'
  *
@@ -315,7 +315,7 @@ async function main() {
   }
 
   if (SKIP_LLM) {
-    console.log("\n(skipping check/solve streams: SMOKE_SKIP_LLM=1)");
+    console.log("\n(skipping check / solve / setup / reread: SMOKE_SKIP_LLM=1)");
   } else {
     section("POST /api/live/check (SSE)");
     {
@@ -388,6 +388,39 @@ async function main() {
       ok(steps.slice(0, -1).every((s) => s.data.final === false), "only the last step is final");
       ok(names[names.length - 1] === "done", "last event is done", names[names.length - 1]);
       for (const s of steps) console.log(`  step ${s.data.index}${s.data.final ? " (final)" : ""}: ${s.data.latex}  -- ${s.data.explanation}`);
+    }
+
+    section("POST /api/live/setup (word problem -> equations)");
+    {
+      const startedAt = Date.now();
+      const res = await postJson(
+        "/api/live/setup",
+        { boardId: "smoke-board", lines: ["\\text{A train travels 150 km in 2.5 hours.}", "\\text{What is its average speed in km/h?}"] },
+        token,
+      );
+      const body = await res.json();
+      ok(res.status === 200, "status 200", `status ${res.status} ${res.status !== 200 ? JSON.stringify(body) : ""}`);
+      ok(Boolean(res.headers.get("x-request-id")), "X-Request-Id header");
+      ok(Array.isArray(body.lines) && body.lines.length >= 1 && body.lines.length <= 6, "1..6 setup lines", JSON.stringify(body.lines));
+      ok((body.lines ?? []).every((l) => typeof l === "string" && l.length > 0 && !/\\text/.test(l)), "LaTeX only, no \\text");
+      ok(typeof body.model === "string" && typeof body.ms === "number", "model + ms", `${body.model} ${body.ms} ms, wall ${Date.now() - startedAt} ms`);
+      const bad = await postJson("/api/live/setup", { boardId: "smoke-board", lines: [] }, token);
+      ok(bad.status === 400, "empty problem -> 400", `status ${bad.status}`);
+    }
+
+    section("POST /api/live/reread (the second reader)");
+    {
+      // a 1x1 white PNG: the assertion is the contract, not a reading
+      const crop = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
+      const startedAt = Date.now();
+      const res = await postJson("/api/live/reread", { boardId: "smoke-board", lineId: "l1", crop, latex: "0=5", above: ["v=u+a t"] }, token);
+      const body = await res.json();
+      ok(res.status === 200, "status 200", `status ${res.status} ${res.status !== 200 ? JSON.stringify(body) : ""}`);
+      ok(Boolean(res.headers.get("x-request-id")), "X-Request-Id header");
+      ok(typeof body.latex === "string" && typeof body.changed === "boolean", "latex + changed", JSON.stringify({ latex: body.latex, changed: body.changed }));
+      ok(typeof body.model === "string" && typeof body.ms === "number", "model + ms", `${body.model} ${body.ms} ms, wall ${Date.now() - startedAt} ms`);
+      const noCrop = await postJson("/api/live/reread", { boardId: "smoke-board", lineId: "l1", latex: "0=5" }, token);
+      ok(noCrop.status === 400, "no crop -> 400", `status ${noCrop.status}`);
     }
   }
 

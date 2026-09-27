@@ -91,6 +91,8 @@ Every handler under `src/app/api/**` follows the same preamble: `requireUser` (J
 | `/api/live/recognize` | GET, POST | `requireUser` / `livePreamble` | `liveRecognize` 120 | GET 0; POST 1 | GET none; POST `RecognizeRequestSchema` | GET capabilities + warmup; POST strokes -> LaTeX (Mathpix, vision fallback) | active |
 | `/api/live/check` | POST | `livePreamble` | `liveCheck` 30 | 3 | `CheckRequestSchema` (optional `crop` data:image ≤ 280 KB, only with `userAsked` + `focusLineId`) | SSE annotations for recognized lines; with `crop` ("Ask about this") the crop goes to the check model as an image part | active |
 | `/api/live/solve` | POST | `livePreamble` | `liveSolve` 10 | 10 | `SolveRequestSchema` | SSE worked-solution steps | active |
+| `/api/live/setup` | POST | `livePreamble` | `liveSetup` 10 | 2 | `SetupRequestSchema` (`lines` 1–40 strings) | A word problem → `{ lines, unknown?, model, ms }`: LaTeX assignments / equations only (no arithmetic, no words), which the client's engine then solves. `openai/gpt-5.4-mini`, fallback `deepseek/deepseek-v4.1-flash` (`LIVE_MODEL_SETUP`); a reply with no lines is a 502 (refunded) | active |
+| `/api/live/reread` | POST | `livePreamble` | `liveReread` 30 | 1 | `RereadRequestSchema` (`crop` data:image ≤ 280 KB, Mathpix's `latex`, the column's `above` / `below`) | The second reader: one suspicious line's ink crop → `{ latex, changed, model, ms }`. `google/gemini-3.1-flash-lite`, fallback `anthropic/claude-haiku-4.5` (`LIVE_MODEL_REREAD`). Only sent on a signal, at most once per ink | active |
 | `/api/voice/token` | POST | `requireUser` | `voiceToken` 6 | 0 | none (empty body; model fixed server-side) | Mint an ephemeral OpenAI Realtime client secret; `503 voice_unavailable` without `OPENAI_API_KEY` | active |
 | `/api/voice/analyze-workspace` | POST | `requireUser` | `analyzeWorkspace` 30 | 3 | `{ image, focus? }` | Voice tutor tool: describe the current canvas | active |
 
@@ -110,7 +112,8 @@ Credits are the unit; the schema is `supabase/migrations/20260917020000_accounts
 - **Balance.** Each `profiles` row has a `plan_id` (`plans.monthly_credits`; placeholder numbers today: free 300, plus 3000 at $9, pro 12000 at $29). For the current calendar month (UTC) `remaining = monthly_credits + credit_grants − usage_events`. The client reads it with the RPC `credit_summary()`.
 - **Metering runs as the user.** `requireUser` now also returns the verified access token; `enforceCredits({ token, route, requestId, model })` (`src/lib/server/billing.ts`) builds a supabase-js client with the anon key + `Authorization: Bearer <token>` and calls the SECURITY DEFINER RPC `consume_credits(p_route, p_units, p_request_id, p_model)`. The function locks the caller's profile row, checks the balance and appends a `usage_events` row atomically, so parallel requests cannot overspend; it returns `{ ok: false, reason: 'insufficient_credits', remaining }` without writing when short. A user can only spend their own credits and no API exposed to `authenticated` can add credits or change a plan (column-level grants: a user may update `display_name` only).
 - **Placement.** After auth + rate limit + body validation and **before** the upstream call, for every route — including the SSE routes (`check` / `solve`), where a refusal is a JSON `402` instead of a stream. Charging up-front keeps the balance check atomic (no window between "check" and "spend"); what the provider then fails to deliver is given back by a refund.
-- **Refunds.** `refundCredits({ token, requestId })` calls the SECURITY DEFINER RPC `refund_credits(p_request_id)` as the user (migration `20260917030000_refunds_ratelimit.sql`): it deletes the caller's own `usage_events` rows carrying that `request_id` and younger than 15 minutes, and returns `{ refunded, remaining }`; it never throws (a refund that cannot happen is logged and reported as `{ refunded: 0, reason }`), and with `BILLING_ENFORCE=0` it does nothing because nothing was charged. The `requestId` refunded is the very one passed to `enforceCredits` (asserted per route by `routes.refunds.test.ts`). Two wrappers apply it: non-streaming routes (`voice/analyze-workspace`, `live/recognize` POST) run their provider call inside `runCharged`, which refunds whenever the Response handed to the client is not a 2xx — `UpstreamError` (502), the provider's own `CreditsExhaustedError` (402), `recognizer_failed` (502), timeouts/aborts (500). A 2xx is never refunded. The SSE routes (`live/check`, `live/solve`) run inside `runChargedStream`, which refunds only when the stream fails **before the first annotation / step was emitted**; a failure after partial output keeps the charge (the user has the partial result and the model was paid), and the `error` frame is still sent either way.
+- **Refunds.** `refundCredits({ token, requestId })` calls the SECURITY DEFINER RPC `refund_credits(p_request_id)` as the user (migration `20260917030000_refunds_ratelimit.sql`): it deletes the caller's own `usage_events` rows carrying that `request_id` and younger than 15 minutes, and returns `{ refunded, remaining }`; it never throws (a refund that cannot happen is logged and reported as `{ refunded: 0, reason }`), and with `BILLING_ENFORCE=0` it does nothing because nothing was charged. The `requestId` refunded is the very one passed to `enforceCredits` (asserted per route by `routes.refunds.test.ts`). Two wrappers apply it: non-streaming routes (`voice/analyze-workspace`, `live/recognize` POST, `live/setup`, `live/reread`) run their provider call inside `runCharged`, which refunds whenever the Response handed to the client is not a 2xx — `UpstreamError` (502), the provider's own `CreditsExhaustedError` (402), `recognizer_failed` (502), timeouts/aborts (500). A 2xx is never refunded. The SSE routes (`live/check`, `live/solve`) run inside `runChargedStream`, which refunds only when the stream fails **before the first annotation / step was emitted**; a failure after partial output keeps the charge (the user has the partial result and the model was paid), and the `error` frame is still sent either way.
+- **Prices** (`ROUTE_COSTS`, credits per call): recognize 1, check 3, solve 10, voice analysis 3; **setup 2** — a word problem's equations, below solve because the engine does the solving (when the setup is unusable the board then calls solve as well, 12 in all; a setup call that returns nothing is refunded); **reread 1** — the second reader reads one line again, priced like recognize. It is never asked for by the student: it fires only on a signal (a read the engine cannot read, a symbol implausible in its column, or a confidence below 0.6), at most once per ink, which on the handwriting scoreboard is 17 of 20 misreads and none of 704 correct reads — so in practice a few percent of lines at most. At ~$0.00035 per call the credit is about the rate limit and abuse, not cost.
 - **Responses.** `402 { error: 'credits_exhausted', message, remaining, upgradeUrl }` (`upgradeUrl` is `NEXT_PUBLIC_BILLING_LINKS.portal` or `/account`). When metering is enforced but the RPC is missing or the database errors, the route fails closed with `503 feature_unavailable` ("Billing is not set up on this deployment — run the migrations."). `BILLING_ENFORCE=0` skips consumption entirely (logged once per process) — a dev/staging escape hatch, never for production.
 - **Plan changes** happen only through `POST /api/billing/webhook` (service role) or SQL. The webhook is Stripe-compatible without a payment SDK: `Stripe-Signature: t=…,v1=…` is HMAC-SHA256 over `${t}.${rawBody}` with `STRIPE_WEBHOOK_SECRET`, 5-minute tolerance, constant-time compare, Web Crypto only (`src/lib/server/webhookSignature.ts`). Every event id is inserted into `billing_events` first (duplicate -> `200 { received: true, duplicate: true }`), then `mapBillingEvent` (pure) turns the event into a `profiles` patch:
   `checkout.session.completed` -> `client_reference_id` (our user id) gets `plan_id` (from `metadata.plan_id`, else `BILLING_PRICE_MAP[price id]`), `billing_customer_id`, `billing_subscription_id`, `billing_status = 'active'`;
@@ -162,14 +165,22 @@ pen-up (draw.isComplete false→true, source 'user')
   → engine.analyzeLine (mathjs, offline)        src/lib/live/engine/**
   → policy.decide(mode, verdict, voice, settled) policy.ts (silence rules, hint ladder)
   → placement → scheduleLiveWrite(createShapes) math / graph shapes with meta.live
+  → (rereadTrigger fires) crop → POST /api/live/reread   readCheck.ts; once per ink hash
+      → acceptReread ? replace the read (provider 'reread'), re-analyse, re-render
   → (ladder permits) POST /api/live/check|solve SSE: meta → annotation*/step* → done
+
+Solve / Help on a column
+  → localSolve (engine only)                    localSolve.ts → written by hand, no network
+  → word problem? POST /api/live/setup          wordProblem.ts: validateSetupLines
+      → localSolve(setup) → setup + steps written as one hand block (no solve model)
+  → otherwise, or setup unusable: POST /api/live/solve (SSE) → createSolveStepGuard → one block
 
 any student ink, anywhere (incl. pen-down, drag, erase)
   → settle gate 2.5 s (ANSWER_SETTLE_MS)        liveLoop.markUnsettled → renderSettled
   → re-render only → the held-back ANSWER lands  (no re-recognition, no model call)
 ```
 
-**Dev: the Mathpix panel (`LiveDebugPanel`).** In development (or with `LIVE_DEBUG=1` on the server plus `localStorage["agathon.liveDebug"] = "1"` in the browser) `/api/live/recognize` returns the recognizer's raw JSON as `debug`, and a "Mathpix" button on the board opens a per-line view: the strokes exactly as sent, the LaTeX (raw and rendered), confidence, Mathpix's own `is_handwritten`, and the engine's kind, verdict, mathjs form and solutions. It separates "the pen / recognizer got it wrong" from "the maths engine could not check it".
+**Dev: the Mathpix panel (`LiveDebugPanel`).** In development (or with `LIVE_DEBUG=1` on the server plus `localStorage["agathon.liveDebug"] = "1"` in the browser) `/api/live/recognize` returns the recognizer's raw JSON as `debug`, and a "Mathpix" button on the board opens a per-line view: the strokes exactly as sent, the LaTeX (raw and rendered), confidence, Mathpix's own `is_handwritten`, the engine's kind, verdict, mathjs form and solutions, and — when the second reader was asked — both reads ("mathpix read", "second reader: <latex>"), why it was asked and whether its read was used. It separates "the pen / recognizer got it wrong" from "the maths engine could not check it".
 
 **Screens, not an infinite canvas (`src/lib/screens/**`).** A board is a stack of fixed 16:9
 screens, one tldraw page each, whose rect lives in `page.meta.screen` (1600×900 page units). The
@@ -216,13 +227,57 @@ characters and kept inside the screen). Pressing Solve or Help again on a line t
 worked out by hand draws nothing new (the block carries `meta.solvedLatex`). Same price as any check (3 credits). It never fires by
 itself: only `requestHelp` sets a crop, and the schema refuses one without `userAsked` + `focusLineId`.
 
-**Word problems.** Mathpix returns prose as `\text{…}` and the engine classifies it `kind: 'text'`
-(silent: no echo). `buildCheckLines` still sends those lines, so Solve / Help on a word problem
-skips both local answer paths (`startSolve`) and goes to `/api/live/solve`, whose prompt treats text
-lines as the question and asks for assignment steps (`v = \frac{60}{2}`, then `v = 30`), which
-`createSolveStepGuard` accepts because an assignment defines its own symbol.
+**Word problems: the model sets up, the engine solves.** Mathpix returns prose as `\text{…}` and
+the engine classifies it `kind: 'text'` (silent: no echo). A column down to the asked-for line that
+has a line of prose reading like a sentence (≥ 4 words, `isProblemProse` in
+`src/lib/live/wordProblem.ts`) is a word problem. When the local paths have nothing (`localSolve`
+skips a prose target), `LiveLoop.startSetup` sends the column's lines to `POST /api/live/setup`
+(2 credits), whose model — `openai/gpt-5.4-mini`, fallback `deepseek/deepseek-v4.1-flash`; prompt
+`src/lib/server/prompts/setup.ts`, adapted from the model bench's job 1, where every model scored
+24–25/25 — returns only the maths a student would write under it: `v = \frac{150}{2.5}`, or
+`n + d = 25`, `5n + 10d = 185`; no arithmetic done, no words, one short letter per quantity. The
+client trusts none of it: `validateSetupLines` requires every line to be maths the engine reads
+(`x = ?` included), with no words, and every letter to be one the setup introduces (an assignment's
+name, an equation's unknowns) or the problem already uses. Then `localSolve` solves the setup, and
+the tutor writes the setup followed by the engine's steps as ONE block under the problem, by hand
+(`drawStepsByHand`; typeset when the hand lacks a glyph or is off). The block's `meta.solvedLatex`
+is the problem itself (`wordProblemKey`), so pressing Solve again draws nothing new and costs
+nothing. More help in Feedback / Suggest writes the first setup line only. When the setup call
+fails, the lines do not validate, or the engine cannot solve them, the board falls back to
+`/api/live/solve` exactly as before: its prompt treats text lines as the question and asks for
+assignment steps, which `createSolveStepGuard` accepts because an assignment defines its own
+symbol. Signed out, out of credits or rate limited on the setup shows that error and stops (solve
+would answer the same); offline defers the solve as before.
 
-**Deterministic maths never goes through a model.** `LiveLoop.startSolve` (`src/lib/live/liveLoop.ts`) asks the local engine before it will open `/api/live/solve`: `engine.solveLatex` for a relation with an unknown (`2x + 3 = 11` → `2x = 8`, `x = 4`; linear inequalities too; quadratics, absolute value, rational, radical, exponential and log equations through `engine/advanced.ts`), `engine.solveFromLines` for a line that needs the ones above it, `engine.simplifySteps` for an expression in an unknown (`3(x+2) - x` → `= 3x + 6 - x`, `= 2x + 6`) or a derivative, integral or limit (`\frac{d}{dx}(3x^2+2x)` → `= 3 \cdot 2x + 2`, `= 6x + 2`; see "Calculus steps" below), and then `localAnswerFor` (`src/lib/live/solveSteps.ts`) for a line the engine can simply evaluate — `analyzeLine(latex, { mode: 'answer' }).resultLatex` covers a trailing `=`, units, a conversion, a derivative, an integral, a limit, a finite sum and a percentage, and `engine.calculate` covers bare arithmetic whose result the echo's calculator rule suppresses. Either way the steps are written under the student's work in the tutor's hand (`planHandwriting` + `HandWriter`), with no model, no credits and no network. An answer the hand atlas cannot draw, or a device with the handwriting switch off, is typeset locally instead of being asked for: only a line the engine has nothing to say about (a word problem, an equation the CAS declines) reaches the stream. Regression: `36 + 2 =` used to fall through `solveLatex` and be answered `= r + 9\varepsilon` by the model.
+**The second reader (messy ink).** Mathpix misreads about 3 % of lines, and its confidence is no
+guide (`a = 2` came back as `0=2` at 0.99). After a line's read has been rendered,
+`rereadTrigger` (`src/lib/live/readCheck.ts`) decides whether it looks wrong: (a) the engine
+cannot read a line that looks like maths (not a construct it reads and declines — an integral it
+cannot do, a matrix, `\frac{dy}{dx}` without its definition — and not the board's own `x = ?`);
+(b) `suspiciousRead(latex, column)` finds a confusion Mathpix is known to make — a Greek letter,
+`\in` or `\ell` nowhere else in the column (θ is fine with trig, and any letter a trig function
+takes), a case flip of a letter that looks the same in both cases (`U` in a column that writes
+`u`), a letter from nowhere in a column that is one connected problem, `o` or a bare `e` glued to
+digits or a letter written before a number (`2o`, `1 e`, `x 2`), `6^{x}`, a lone digit equated to
+another number (`0=5`, unless a line above cancels its unknown), a zero denominator, a zero addend
+(`(0+b)`); (c) Mathpix's confidence is below 0.6, so the board would otherwise show nothing. Only
+Mathpix's reads are proofread, never offline, and at most once per ink version (payload hash). On
+a signal the loop captures the line's crop (`captureCrop`) and sends it with the read and the
+column's other lines to `POST /api/live/reread` (1 credit; `google/gemini-3.1-flash-lite`, fallback
+`anthropic/claude-haiku-4.5`; prompt `src/lib/server/prompts/reread.ts`, adapted from the bench's
+job 3). `acceptReread` takes the answer only when it differs, has no words, is a transcription of
+the same line (half to double the length), does not itself look misread, and the engine can read
+it; then the line's LaTeX is replaced (`provider: 'reread'`, confidence raised to at least 0.6),
+re-analysed and re-rendered, and the same ink read again from the recognition cache gets the
+accepted read without a second call. Otherwise Mathpix's read stands; a failed call is silent. The
+dev Mathpix panel shows both reads, the signal and the outcome. Measured on the handwriting
+scoreboard (`docs/eval/handwriting.json`): the trigger fires on 17 of its 20 misreads and on none of
+its 704 correct reads (lines above only, as the loop sees them); end to end with the production
+prompt, 13 of the 20 misreads are fixed, every accepted change is a fix, and none of the bench's 20
+correct-read controls is sent or changed. The two misreads the trigger cannot see are plausible
+lines in their own right (`b=20-3` for `b = 2a - 3`, `\int_{1}^{6}` for `\int_{1}^{e}`).
+
+**Deterministic maths never goes through a model.** `LiveLoop.startSolve` (`src/lib/live/liveLoop.ts`) asks the local engine before it will open `/api/live/solve`: `engine.solveLatex` for a relation with an unknown (`2x + 3 = 11` → `2x = 8`, `x = 4`; linear inequalities too; quadratics, absolute value, rational, radical, exponential and log equations through `engine/advanced.ts`), `engine.solveFromLines` for a line that needs the ones above it, `engine.simplifySteps` for an expression in an unknown (`3(x+2) - x` → `= 3x + 6 - x`, `= 2x + 6`) or a derivative, integral or limit (`\frac{d}{dx}(3x^2+2x)` → `= 3 \cdot 2x + 2`, `= 6x + 2`; see "Calculus steps" below), and then `localAnswerFor` (`src/lib/live/solveSteps.ts`) for a line the engine can simply evaluate — `analyzeLine(latex, { mode: 'answer' }).resultLatex` covers a trailing `=`, units, a conversion, a derivative, an integral, a limit, a finite sum and a percentage, and `engine.calculate` covers bare arithmetic whose result the echo's calculator rule suppresses. Either way the steps are written under the student's work in the tutor's hand (`planHandwriting` + `HandWriter`), with no model, no credits and no network. An answer the hand atlas cannot draw, or a device with the handwriting switch off, is typeset locally instead of being asked for: only a line the engine has nothing to say about (an equation the CAS declines, a word problem whose setup the engine cannot solve) reaches the stream. Regression: `36 + 2 =` used to fall through `solveLatex` and be answered `= r + 9\varepsilon` by the model.
 
 **What the local engine can and cannot do (`src/lib/live/engine/**`).** The table is the contract the tests in `engine/__tests__` hold it to. The rule behind it: the engine either produces the answer a teacher would write, or it produces none — a line it cannot do comes back `kind: 'unknown'` with an empty `resultLatex`, never an approximation presented as an answer.
 
