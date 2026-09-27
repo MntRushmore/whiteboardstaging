@@ -37,7 +37,16 @@ describe.skipIf(!LIVE)("eval: handwriting → Mathpix → Solve (RUN_LIVE_EVAL=1
         const dir = join(ROOT, "docs", "eval");
         mkdirSync(dir, { recursive: true });
         writeFileSync(join(dir, "handwriting.md"), renderHandwritingMarkdown({ runs, offline: offline.verdicts, budget, variants: VARIANTS.map((v) => ({ name: v.name, ink: describeVariant(v) })) }));
-        writeFileSync(join(dir, "handwriting.json"), JSON.stringify({ budget: { calls: budget.calls, cached: budget.hits, rateLimited: budget.rateLimited ?? 0 }, variants: VARIANTS, runs }, null, 2) + "\n");
+        writeFileSync(join(dir, "handwriting.json"), JSON.stringify(
+            {
+              budget: { calls: budget.calls, cached: budget.hits, rateLimited: budget.rateLimited ?? 0 },
+              variants: VARIANTS,
+              // step-by-step transitions live in offline.json; here they would only repeat per variant
+              runs: runs.map((r) => ({ ...r, verdict: r.verdict && { ...r.verdict, transitions: undefined, lines: undefined } })),
+            },
+            null,
+            1,
+          ) + "\n");
       }
     },
     30 * 60_000,
