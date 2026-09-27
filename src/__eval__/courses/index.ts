@@ -9,3 +9,6 @@ import { ALGEBRA_2 } from "./algebra2";
 import { GEOMETRY } from "./geometry";
 
 export const COURSE_PROBLEMS: readonly EvalProblem[] = [...ALGEBRA_1, ...ALGEBRA_2, ...GEOMETRY];
+
+/** Geometry's two-column proofs: their own scoreboard (`npm run eval:proofs`, `docs/eval/proofs.md`). */
+export { GEOMETRY_PROOFS } from "./geometryProofs";

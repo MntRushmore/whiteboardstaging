@@ -29,6 +29,7 @@ const ALL_VARS = [
   "LIVE_MODEL_SETUP",
   "LIVE_MODEL_REREAD",
   "LIVE_MODEL_FIGURE",
+  "LIVE_MODEL_PROOF",
   "BILLING_ENFORCE",
   "STRIPE_WEBHOOK_SECRET",
   "BILLING_PRICE_MAP",
@@ -135,7 +136,17 @@ describe("getLiveModels", () => {
       rereadFallback: LIVE_MODELS.rereadFallback,
       figure: LIVE_MODELS.figure,
       figureFallback: LIVE_MODELS.figureFallback,
+      proof: LIVE_MODELS.proof,
+      proofFallback: LIVE_MODELS.proofFallback,
     });
+  });
+
+  it("LIVE_MODEL_PROOF overrides the proof model", () => {
+    setRequired();
+    process.env.LIVE_MODEL_PROOF = "google/gemini-3.5-flash";
+    const models = getLiveModels();
+    expect(models.proof).toBe("google/gemini-3.5-flash");
+    expect(models.proofFallback).toBe(LIVE_MODELS.proofFallback);
   });
 
   it("honours LIVE_MODEL_* overrides and ignores placeholders", () => {

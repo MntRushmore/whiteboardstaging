@@ -103,6 +103,16 @@ export const API_ROUTES = Object.freeze([
     status: "active",
   },
   {
+    path: "/api/live/proof",
+    file: "src/app/api/live/proof/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "liveProof",
+    body: "zod",
+    purpose: "Live Math: two-column proofs — a proof's figure read (crop -> points and lines), or one next row the engine's planner could not find (checked on the client)",
+    status: "active",
+  },
+  {
     path: "/api/live/recognize",
     file: "src/app/api/live/recognize/route.ts",
     methods: ["GET", "POST"],

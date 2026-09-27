@@ -35,6 +35,8 @@ export const ROUTE_COSTS = {
   "live/setup": 2,
   // The second reader for a suspicious read: one line read again, priced like recognize.
   "live/reread": 1,
+  // A proof's figure read, or one next row when the engine's planner cannot finish: priced like setup.
+  "live/proof": 2,
   "voice/analyze-workspace": 3,
   credits: 0,
   "config/status": 0,
