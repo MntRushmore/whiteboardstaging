@@ -140,6 +140,16 @@ describe("latexToMath: units and constants", () => {
     expect(t.hasPm).toBe(true);
     expect(t.branches.map((b) => math.evaluate(b))).toEqual([4, 2]);
   });
+  it("reads \\mathrm{min} as minutes after a number, a unit or `to`, and min() before its argument", () => {
+    const to = latexToMath("2.5 \\mathrm{~h} \\text{ to } \\mathrm{min}", { isUnit });
+    expect(to.functions).not.toContain("min");
+    expect((math.evaluate(to.source) as { toNumber: (u: string) => number }).toNumber("minute")).toBeCloseTo(150, 9);
+    expect(latexToMath("90 \\mathrm{min}", { isUnit }).units).toContain("minute");
+    expect(latexToMath("\\mathrm{min}", { isUnit }).units).toContain("minute");
+    const fn = latexToMath("\\mathrm{min}(3, 5)", { isUnit });
+    expect(fn.functions).toContain("min");
+    expect(math.evaluate(fn.source)).toBe(3);
+  });
 });
 
 describe("latexToMath: calculus, plain mode and failures", () => {

@@ -138,6 +138,9 @@ const SPACING = new Set([",", ";", ":", "!", " ", "quad", "qquad", "enspace", "t
 const WRAPPERS = new Set(["vec", "hat", "bar", "overline", "underline", "mathbf", "boldsymbol", "mathbb", "mathcal", "tilde", "widetilde", "widehat", "overrightarrow", "mathit", "textit", "textbf", "mathsf"]);
 const TEXT_COMMANDS = new Set(["mathrm", "text", "textrm", "operatorname", "mbox", "textnormal", "mathop", "textup"]);
 
+/** Words that are a function and a unit (minutes, seconds): which one depends on what is around them. */
+const UNIT_OR_FUNCTION = new Set(["min", "sec"]);
+
 /** Units written inside \mathrm{} that collide with constants or other names on the instance. */
 const UNIT_ALIASES: Record<string, string> = { g: "gram", h: "hour", hr: "hour", hrs: "hour", sec: "second", min: "minute", mins: "minute", L: "L", l: "L", mL: "mL", ml: "mL", cc: "cm^3", "°C": "degC", "°F": "degF", ohm: "ohm", Ω: "ohm", u: "u", μ: "u", lbs: "lb", yr: "year", yrs: "year", mph: "mi/hour", kph: "km/hour", cal: "cal", kcal: "kcal", amu: "u", M: "mol/L" };
 
@@ -957,6 +960,14 @@ class Scanner {
       return;
     }
     if (FUNCTION_WORDS[content]) {
+      // `2.5 \mathrm{h} \text{ to } \mathrm{min}`, `90 \mathrm{min}`: after a number, a unit or
+      // `to` (or at the end of the line, with no argument) a unit word is the unit, not min() / sec()
+      const last = this.lastToken();
+      const unitContext = last?.kind === "num" || last?.kind === "unit" || (last?.kind === "op" && last.text === "to");
+      if (UNIT_OR_FUNCTION.has(content) && (unitContext || !this.src.slice(this.i).trim())) {
+        this.emitUnit(content);
+        return;
+      }
       this.parseFunction(FUNCTION_WORDS[content]);
       return;
     }

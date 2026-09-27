@@ -257,7 +257,7 @@ export const CORPUS: readonly EvalProblem[] = [
   { id: "up-01", topic: "units-percent", lines: ["15\\% \\text{ of } 80 ="], expect: { answer: "12" } },
   { id: "up-02", topic: "units-percent", lines: ["20\\% \\text{ of } 150"], expect: { answer: "30" } },
   { id: "up-03", topic: "units-percent", lines: ["5 \\mathrm{~km} \\text{ to } \\mathrm{m}"], expect: { answer: "5000 \\mathrm{~m}" } },
-  { id: "up-04", topic: "units-percent", lines: ["2.5 \\mathrm{~h} \\text{ to } \\mathrm{min}"], expect: { answer: "150 \\mathrm{~min}", equivalentTo: "9000 \\mathrm{~s}" }, note: "`\\mathrm{min}` is read as the min() function" },
+  { id: "up-04", topic: "units-percent", lines: ["2.5 \\mathrm{~h} \\text{ to } \\mathrm{min}"], expect: { answer: "150 \\mathrm{~min}", equivalentTo: "9000 \\mathrm{~s}" }, note: "`\\mathrm{min}` is minutes here, not the min() function" },
   { id: "up-05", topic: "units-percent", lines: ["60 \\mathrm{~km/h} \\text{ to } \\mathrm{m/s}"], expect: { answer: "16.67 \\mathrm{~m/s}", approxOk: true } },
   { id: "up-06", topic: "units-percent", lines: ["3 \\mathrm{~kg} \\times 9.8 \\mathrm{~m/s^{2}} ="], expect: { answer: "29.4 \\mathrm{~N}" } },
   { id: "up-07", topic: "units-percent", lines: ["80 \\times 1.15 ="], expect: { answer: "92" }, note: "a 15% increase as a multiplier" },
