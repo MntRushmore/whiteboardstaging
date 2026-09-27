@@ -18,6 +18,7 @@
  *     seen. `r` and `\varepsilon` appeared from nowhere; that is what this rejects.
  */
 import type { AnalyzeContext, LineAnalysis, LiveEngine } from "./contracts";
+import { continueLine } from "./engine/solution";
 
 // ---------------------------------------------------------------- LaTeX symbols
 
@@ -324,7 +325,10 @@ export function localAnswerFor(engine: LiveEngine, latex: string, ctx: Omit<Anal
   return usable(safely(() => engine.calculate(line))?.latex);
 }
 
-/** How a person finishes the line they just wrote: `36 + 2 =` becomes `= 38`. */
+/**
+ * How a person finishes the line they just wrote: `36 + 2 =` becomes `= 38`. A step that is a
+ * relation of its own — the `u = x^{2} + 1` beside a substitution — is written as it stands.
+ */
 export function localAnswerStep(answer: string): string {
-  return `= ${answer.trim()}`;
+  return continueLine(answer);
 }
