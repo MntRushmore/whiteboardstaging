@@ -186,16 +186,29 @@ function judgeAnswer(problem: EvalProblem, lines: readonly string[], steps: read
       }
       return { status: "wrong", reason: `gives ${reals.length === 0 ? "∅" : `{${reals.map(fmtNumber).join(", ")}}`}, want ${want.length === 0 ? "∅" : `{${want.map(fmtNumber).join(", ")}}`}` };
     }
-    // several unknowns: the last value each one is given anywhere in the steps
-    const found = new Map<string, { value: number; approx: boolean }>();
+    // several unknowns: the last value(s) each one is given anywhere in the steps — `v = c`, or a
+    // list `v = c1, \ v = c2` when the system has several solution points (paired in order)
+    const found = new Map<string, { values: number[]; approx: boolean }>();
     for (const s of steps) {
-      const a = assignmentOf(parseLine(s));
-      if (a) found.set(a.variable, { value: a.value, approx: a.approx });
+      const p = parseLine(s);
+      if (p.kind !== "relation" || p.vars.length !== 1) continue;
+      const sv = solvedValues(p, p.vars[0]);
+      if (!sv || sv.values.length === 0 || sv.values.some((c) => Math.abs(c.im) > 1e-9)) continue;
+      found.set(p.vars[0], { values: sv.values.map((c) => c.re), approx: sv.approx });
     }
     const missing = vars.filter((v) => !found.has(v));
     if (missing.length > 0) return { status: "unsolved", reason: `no line gives ${missing.join(", ")}` };
-    const wrong = vars.filter((v) => !closeTo(found.get(v)!.value, expect.values![v][0], 1e-6));
-    if (wrong.length > 0) return { status: "wrong", reason: wrong.map((v) => `${v} = ${fmtNumber(found.get(v)!.value)}, want ${fmtNumber(expect.values![v][0])}`).join("; ") };
+    const n = expect.values[vars[0]].length;
+    const short = vars.filter((v) => found.get(v)!.values.length !== n);
+    if (short.length > 0) return { status: "wrong", reason: short.map((v) => `${v} = {${found.get(v)!.values.map(fmtNumber).join(", ")}}, want {${expect.values![v].map(fmtNumber).join(", ")}}`).join("; ") };
+    const tuples = (at: (v: string, i: number) => number) => Array.from({ length: n }, (_, i) => vars.map((v) => at(v, i)));
+    const want = tuples((v, i) => expect.values![v][i]);
+    const got = tuples((v, i) => found.get(v)!.values[i]);
+    const same = (a: number[], b: number[]) => a.every((x, j) => closeTo(x, b[j], 1e-6));
+    if (!want.every((w) => got.some((g) => same(g, w))) || !got.every((g) => want.some((w) => same(g, w)))) {
+      const show = (ts: number[][]) => ts.map((t) => `(${t.map(fmtNumber).join(", ")})`).join(", ");
+      return { status: "wrong", reason: `(${vars.join(", ")}) = ${show(got)}, want ${show(want)}` };
+    }
     if (vars.some((v) => found.get(v)!.approx) && !approxOk) return { status: "approx", reason: "written with ≈" };
     return { status: "ok", reason: "" };
   }
@@ -263,7 +276,8 @@ function parseDecimals(p: Parsed): number | null {
 interface Truth {
   kind: "points" | "vacuous" | "unknown";
   points: Array<Record<string, number>>;
-  unique: boolean;
+  /** the points ARE the solution set (from `values`), not samples of a line of solutions */
+  exact: boolean;
 }
 
 /** Where a system is true: its solution point(s), from the expectation and the known values. */
@@ -275,14 +289,15 @@ function systemTruth(problem: EvalProblem, parsedLines: Parsed[]): Truth {
     if (a) known[a.variable] = a.value;
   }
   if (expect.values) {
+    // one solution point, or several (`values[v][i]` is the i-th point's v)
     const vars = Object.keys(expect.values);
-    if (vars.some((v) => expect.values![v].length !== 1)) return { kind: "unknown", points: [], unique: false };
-    const point = { ...known };
-    for (const v of vars) point[v] = expect.values[v][0];
-    return { kind: "points", points: [point], unique: true };
+    const n = expect.values[vars[0]]?.length ?? 0;
+    if (n === 0 || vars.some((v) => expect.values![v].length !== n)) return { kind: "unknown", points: [], exact: false };
+    const points = Array.from({ length: n }, (_, i) => ({ ...known, ...Object.fromEntries(vars.map((v) => [v, expect.values![v][i]])) }));
+    return { kind: "points", points, exact: true };
   }
   const want = parseLine(expect.answer ?? "");
-  if (want.kind === "empty-set") return { kind: "vacuous", points: [], unique: false };
+  if (want.kind === "empty-set") return { kind: "vacuous", points: [], exact: false };
   if (want.kind === "relation" && want.vars.length === 2) {
     const [x, y] = want.vars.includes("y") ? [want.vars.find((v) => v !== "y")!, "y"] : want.vars;
     const points: Array<Record<string, number>> = [];
@@ -290,9 +305,9 @@ function systemTruth(problem: EvalProblem, parsedLines: Parsed[]): Truth {
       const r = rootSet(want, y, [], { [x]: xv });
       if (r && !r.all) for (const yv of r.roots) points.push({ ...known, [x]: xv, [y]: yv });
     }
-    return { kind: "points", points, unique: false };
+    return { kind: "points", points, exact: false };
   }
-  return { kind: "unknown", points: [], unique: false };
+  return { kind: "unknown", points: [], exact: false };
 }
 
 function judgeSystemStep(step: string, p: Parsed, truth: Truth, candidates: number[]): Transition {
@@ -311,14 +326,15 @@ function judgeSystemStep(step: string, p: Parsed, truth: Truth, candidates: numb
     if (holds === false) return t("broken", `false at the solution (${Object.entries(point).map(([k, v]) => `${k} = ${fmtNumber(v)}`).join(", ")})`);
     if (holds === null) return t("unverified", "undefined at the solution");
   }
-  if (truth.unique && p.vars.length === 1 && isEquation(p)) {
+  if (truth.exact && p.vars.length === 1 && isEquation(p)) {
+    // a line in one unknown must have exactly that unknown's values at the solution points
     const v = p.vars[0];
-    const want = truth.points[0][v];
-    const rs = rootSet(p, v, [...candidates, want]);
+    const want = [...new Set(truth.points.map((pt) => pt[v]))];
+    const rs = rootSet(p, v, [...candidates, ...want]);
     if (!rs) return t("unverified", "cannot solve the step");
     if (rs.all) return t("widened", `true for every ${v}`);
-    if (!sameRoots(rs.roots, [want], setTol(p))) {
-      return subsetRoots([want], rs.roots, setTol(p)) ? t("widened", `also admits ${rootsText(rs)}`) : t("broken", `solutions ${rootsText(rs)}, the system says ${v} = ${fmtNumber(want)}`);
+    if (!sameRoots(rs.roots, want, setTol(p))) {
+      return subsetRoots(want, rs.roots, setTol(p)) ? t("widened", `also admits ${rootsText(rs)}`) : t("broken", `solutions ${rootsText(rs)}, the system says ${v} ∈ {${want.map(fmtNumber).join(", ")}}`);
     }
   }
   return t("ok");

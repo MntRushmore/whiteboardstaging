@@ -130,6 +130,20 @@ describe("judge", () => {
     expect(judge(problem({ lines: lin, expect: { values: { x: [2] } } }), lin, solved(["x = 2", "\\varnothing"]), drawAll).transitions[1].status).toBe("broken");
   });
 
+  it("judges a system with several solution points: every line true at each, the values paired in order", () => {
+    const lines = ["x + y = 7", "xy = 12"];
+    const p = problem({ topic: "system-2x2", lines, expect: { values: { x: [3, 4], y: [4, 3] } } });
+    const good = judge(p, lines, solved(["y = 7 - x", "x(7 - x) = 12", "x^{2} - 7x + 12 = 0", "x = 3, \\ x = 4", "y = 4, \\ y = 3"], "solveFromLines"), drawAll);
+    expect(good.pass).toBe(true);
+    // the partners swapped: (3, 3) and (4, 4) are not solutions
+    const swapped = judge(p, lines, solved(["y = 7 - x", "x = 3, \\ x = 4", "y = 3, \\ y = 4"], "solveFromLines"), drawAll);
+    expect(swapped.answer.status).toBe("wrong");
+    // a root lost on the way
+    const lost = judge(p, lines, solved(["y = 7 - x", "x^{2} - 7x + 12 = 0", "x = 3", "y = 4"], "solveFromLines"), drawAll);
+    expect(lost.transitions[2].status).toBe("broken");
+    expect(lost.answer.status).toBe("wrong");
+  });
+
   it("reads prose only from text macros with letters", () => {
     expect(wordsIn("x = 2 \\text{ or } x = 3")).toEqual(["or"]);
     expect(wordsIn("5\\,\\mathrm{m}")).toEqual([]);
