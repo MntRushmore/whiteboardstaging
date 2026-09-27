@@ -55,6 +55,8 @@ describe("quadratics: standard form, factor, or the formula with the values in",
     ["x^2-3x+1=0", ["x = \\frac{3 \\pm \\sqrt{(-3)^{2} - 4 \\cdot 1 \\cdot 1}}{2 \\cdot 1}", "x = \\frac{3 \\pm \\sqrt{5}}{2}"]],
     // no real roots: the negative number under the root, then the empty set
     ["x^2+x+1=0", ["x = \\frac{-1 \\pm \\sqrt{1^{2} - 4 \\cdot 1 \\cdot 1}}{2 \\cdot 1}", "x = \\frac{-1 \\pm \\sqrt{-3}}{2}", "\\varnothing"]],
+    // the squares cancel on one side: expanded, then the linear steps (not the CAS alone)
+    ["x^{2} - (x - 1)^{2} = 5", ["x^{2} - x^{2} + 2x - 1 = 5", "2x - 1 = 5", "2x = 6", "x = 3"]],
     // ax^2 + c = 0 by square roots
     ["2x^2-18=0", ["2x^{2} = 18", "x^{2} = 9", "x = \\pm 3"]],
     ["x^2=8", ["x = \\pm \\sqrt{8}", "x = \\pm 2\\sqrt{2}"]],
