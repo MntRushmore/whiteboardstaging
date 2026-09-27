@@ -61,19 +61,19 @@ export type StepReply = z.infer<typeof StepReplySchema>;
 /** The figure as the board receives it: capital points with two finite numbers, lines of known points, angle marks of three distinct points. */
 export function cleanFigureReply(reply: FigureReply): { points: Record<string, [number, number]>; lines: string[]; angles: Record<string, string> } {
   const points: Record<string, [number, number]> = {};
-  for (const [k, v] of Object.entries(reply.points)) {
+  for (const [k, v] of Object.entries(reply.points ?? {})) {
     const name = k.trim();
     if (!/^[A-Z]$/.test(name) || !Array.isArray(v) || v.length < 2) continue;
     const [x, y] = [Number(v[0]), Number(v[1])];
     if (Number.isFinite(x) && Number.isFinite(y)) points[name] = [x, y];
   }
-  const lines = reply.lines
+  const lines = (Array.isArray(reply.lines) ? reply.lines : [])
     .filter((l): l is string => typeof l === "string")
     .map((l) => [...new Set(l.replace(/[^A-Z]/g, ""))].join(""))
     .filter((l) => l.length >= 2 && l.length <= 12 && [...l].every((p) => p in points))
     .slice(0, 30);
   const angles: Record<string, string> = {};
-  for (const [k, v] of Object.entries(reply.angles)) {
+  for (const [k, v] of Object.entries(reply.angles ?? {})) {
     const mark = k.replace(/[\\{}\s$]/g, "").slice(0, 8);
     const name = typeof v === "string" ? v.replace(/[^A-Z]/g, "") : "";
     if (mark && name.length === 3 && new Set(name).size === 3) angles[mark] = name;
@@ -83,8 +83,8 @@ export function cleanFigureReply(reply: FigureReply): { points: Record<string, [
 
 /** The step as the board receives it: `$` off, trimmed; null when empty. */
 export function cleanStepReply(reply: StepReply): { statement: string; reason: string } | null {
-  const statement = reply.statement.replace(/^\s*\$+|\$+\s*$/g, "").trim();
-  const reason = reply.reason.replace(/^\s*\$+|\$+\s*$/g, "").trim();
+  const statement = String(reply.statement ?? "").replace(/^\s*\$+|\$+\s*$/g, "").trim();
+  const reason = String(reply.reason ?? "").replace(/^\s*\$+|\$+\s*$/g, "").trim();
   return statement && reason ? { statement, reason } : null;
 }
 
