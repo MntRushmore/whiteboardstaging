@@ -236,6 +236,10 @@ describe("relations, and reading the labels", () => {
     ["\\begin{array}{c}\n-2 \\\\\n-1 \\\\\n0\n\\end{array}", ["-2", "-1", "0"]],
     ["A\nB\nc", ["A", "B", "c"]],
     ["40^{\\circ}", ["40^{\\circ}"]],
+    // what Mathpix really sent back for the generated triangles' stacks
+    ["\\begin{array}{l}\n\\text { A } \\\\\n5 \\\\\nB \\\\\nC \\\\\n7\n\\end{array}", ["A", "5", "B", "C", "7"]],
+    ["\\begin{array}{l}\n40^{\\circ} \\\\\n\\times \\\\\n65^{\\circ}\n\\end{array}", ["40^{\\circ}", "x", "65^{\\circ}"]],
+    ["\\begin{array}{l}\ny \\\\\n(2,3) \\\\\nx\n\\end{array}", ["y", "(2,3)", "x"]],
     ["", []],
   ])("reads the stack %j as %j", (latex, rows) => {
     expect(parseLabelRead(latex)).toEqual(rows);

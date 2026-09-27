@@ -111,8 +111,8 @@ export const DIAGRAM_RULES = {
   labelZoneFactor: 3,
   /** a cluster of labels is split into separate labels at gaps this many glyphs wide (the taller of G and the labels' own glyphs) */
   labelSplitFactor: 1,
-  /** the labels are stacked one per row, this many glyphs apart, for the one recognizer call */
-  labelStackGapFactor: 1.5,
+  /** the labels are stacked one per row for the one recognizer call, this many of their own glyph heights apart */
+  labelStackGapFactor: 0.6,
   /** a previous drawing keeps its id when at least this share of its strokes are still in it */
   idReuseRatio: 0.5,
 } as const;
@@ -338,6 +338,17 @@ function geometry(stroke: InkStroke, i: number, G: number): Geo {
     cls = "big";
   }
   return { i, stroke, b: stroke.bounds, size, path, ends, shape, closed, main, rule, orient, cls };
+}
+
+/**
+ * A stroke that is a drawing by its own shape alone: a long diagonal, or big both ways. The loop's
+ * quick test at pen-up, before the next split — such a stroke does not hold back the lines waiting
+ * to be read. No writing evidence is looked for (a radical over a tall fraction passes); the split
+ * at the next flush decides.
+ */
+export function strokeLooksDrawn(stroke: InkStroke, glyph: number): boolean {
+  const cls = geometry(stroke, 0, glyph).cls;
+  return cls === "diagonal" || cls === "big";
 }
 
 /**
@@ -1079,18 +1090,23 @@ function kindsOf(members: readonly Geo[], flags: Flags, G: number): DiagramKind[
 // ---------------------------------------------------------------- reading the labels
 
 /**
- * The drawing's labels stacked one per row, left-aligned, `labelStackGapFactor` glyphs apart —
- * the layout the recognizer reads back as one row per label. (Laid side by side, `3` and `4`
- * came back as `34`: measured on six label sets, the stack split 6/6 into one read per label,
- * the row 2/6.) Null when the drawing has no labels.
+ * The drawing's labels stacked one per row, left-aligned, `labelStackGapFactor` of their own glyph height apart —
+ * the layout the recognizer reads back as one row per label. Laid side by side, `3` and `4` came
+ * back as `34` and `A B C 3 4 x` as `\text{ABC34X}` (2 of 6 label sets split right); stacked, 6 of 6
+ * did, and so did all seven generated drawings' stacks (25 labels, 24 read right; `O` came back as
+ * `0`). Null when the drawing has no labels.
  */
 export function labelStack(diagram: Diagram, strokes: readonly InkStroke[], glyph: number): { line: InkLine; strokes: InkStroke[] } | null {
   if (diagram.labels.length === 0) return null;
   const byId = new Map(strokes.map((s) => [s.id as string, s]));
+  const groups = diagram.labels.map((ids) => ids.map((id) => byId.get(id)).filter((s): s is InkStroke => Boolean(s)));
+  // the gap is measured on the labels' own glyphs, so the same label ink always makes the same
+  // payload (and hits the recognition cache) whatever else is written on the screen
+  const heights = groups.flat().map((s) => s.bounds.h).filter((h) => h >= 4);
+  const gap = DIAGRAM_RULES.labelStackGapFactor * (heights.length > 0 ? median(heights) : glyph);
   const out: InkStroke[] = [];
   let y = 0;
-  for (const ids of diagram.labels) {
-    const members = ids.map((id) => byId.get(id)).filter((s): s is InkStroke => Boolean(s));
+  for (const members of groups) {
     if (members.length === 0) continue;
     const r = unionRects(members.map((s) => s.bounds));
     const dx = -r.x;
@@ -1102,7 +1118,7 @@ export function labelStack(diagram: Diagram, strokes: readonly InkStroke[], glyp
         segments: s.segments.map((seg) => seg.map((p) => ({ x: p.x + dx, y: p.y + dy }))),
       });
     }
-    y += r.h + DIAGRAM_RULES.labelStackGapFactor * glyph;
+    y += r.h + gap;
   }
   if (out.length === 0) return null;
   const line: InkLine = { id: diagram.id, strokeIds: out.map((s) => s.id), bounds: unionRects(out.map((s) => s.bounds)), column: 0, row: 0, hash: "" };
@@ -1117,7 +1133,9 @@ export function labelPayload(diagram: Diagram, strokes: readonly InkStroke[], gl
 
 /**
  * The recognizer's read of a label stack as one LaTeX string per row: `\begin{array}{l} A \\ 3
- * \end{array}` → `["A", "3"]`; plain rows split on newlines. Empty rows dropped.
+ * \end{array}` → `["A", "3"]`; plain rows split on newlines. Empty rows dropped. A row that is a
+ * lone letter in `\text{}` is the letter, and a lone `\times` is the letter x: a label is never a
+ * multiplication sign on its own (Mathpix reads a lone handwritten x that way).
  */
 export function parseLabelRead(latex: string): string[] {
   const body = latex
@@ -1125,7 +1143,15 @@ export function parseLabelRead(latex: string): string[] {
     .replace(/\\end\{(?:array|aligned|gathered|matrix|split)\}/g, "\n");
   return body
     .split(/\\\\|\n/)
-    .map((row) => row.replace(/&/g, " ").replace(/\\(?:quad|qquad)\b/g, " ").replace(/\s+/g, " ").trim())
+    .map((row) =>
+      row
+        .replace(/&/g, " ")
+        .replace(/\\(?:quad|qquad)\b/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/^\\(?:text|mathrm)\s*\{\s*([A-Za-z])\s*\}$/, "$1")
+        .replace(/^\\times$/, "x"),
+    )
     .filter((row) => row.length > 0);
 }
 

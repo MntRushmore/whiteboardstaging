@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useValue } from "tldraw";
 import type { LiveLineState } from "@/lib/live/contracts";
 import { liveDebugEnabled, liveDebugStore, type LiveDebugRecord } from "@/lib/live/liveDebug";
-import { liveStore } from "@/lib/live/liveStore";
+import { liveStore, type LiveDiagram } from "@/lib/live/liveStore";
 import { renderLatex } from "@/shapes/math/katex";
 
 /**
@@ -15,6 +15,7 @@ import { renderLatex } from "@/shapes/math/katex";
 export function LiveDebugPanel() {
   const [open, setOpen] = useState(false);
   const lines = useValue("debug lines", () => liveStore.lines.get(), []);
+  const diagrams = useValue("debug diagrams", () => liveStore.diagrams.get(), []);
   const records = useValue("debug records", () => liveDebugStore.get(), []);
   if (!liveDebugEnabled()) return null;
 
@@ -29,14 +30,18 @@ export function LiveDebugPanel() {
         aria-expanded={open}
       >
         {open ? "Hide" : "Mathpix"} · {ordered.length} line{ordered.length === 1 ? "" : "s"}
+        {diagrams.length > 0 ? ` · ${diagrams.length} drawing${diagrams.length === 1 ? "" : "s"}` : ""}
       </button>
       {open && (
         <div className="w-[420px] max-w-[calc(100vw-24px)] overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-800 shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
-          {ordered.length === 0 ? (
+          {ordered.length === 0 && diagrams.length === 0 ? (
             <p className="p-2 text-slate-500">Write something on this screen.</p>
           ) : (
             ordered.map((st) => <LineCard key={st.line.id} state={st} record={records[st.line.id]} />)
           )}
+          {diagrams.map((d) => (
+            <DiagramCard key={d.id} diagram={d} record={records[d.id]} />
+          ))}
         </div>
       )}
     </div>
@@ -95,6 +100,30 @@ function LineCard({ state, record }: { state: LiveLineState; record: LiveDebugRe
           </pre>
         </details>
       )}
+    </section>
+  );
+}
+
+/**
+ * A drawing (`src/lib/live/diagrams.ts`): never sent as a line, never marked. Its labels go to the
+ * recognizer stacked one per row, once the student stops; the stack and the read are shown here.
+ */
+function DiagramCard({ diagram, record }: { diagram: LiveDiagram; record: LiveDebugRecord | undefined }) {
+  return (
+    <section className="mb-2 rounded-md border border-violet-200 p-2 last:mb-0 dark:border-violet-900">
+      <header className="mb-1 flex items-center justify-between text-[11px] text-slate-500">
+        <span>drawing · {diagram.kinds.join(", ")}</span>
+        <span>
+          {diagram.strokes} stroke{diagram.strokes === 1 ? "" : "s"} · {diagram.labels} label{diagram.labels === 1 ? "" : "s"}
+        </span>
+      </header>
+      <div className="flex gap-2">
+        {record && <InkPreview sent={record.sent} />}
+        <div className="min-w-0 flex-1">
+          <Row k="labels read" v={diagram.read ? <code className="break-all">{diagram.read.join(", ") || "—"}</code> : diagram.labels > 0 ? "when the student stops" : "none"} />
+          <Row k="not sent" v="as a line: no echo, no mark" />
+        </div>
+      </div>
     </section>
   );
 }
