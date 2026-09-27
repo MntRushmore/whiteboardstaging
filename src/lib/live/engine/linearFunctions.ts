@@ -13,9 +13,22 @@
  * through them, point-slope then slope-intercept. A vertical line (`\frac{6}{0}`) is `x = 2`; a
  * horizontal one `y = 3`. A lone linear equation in x and y is written in slope-intercept form.
  * Exact fractions throughout; every answer is checked on the points (or the line) it came from.
+ *
+ * Standard form `Ax + By = C` (whole numbers, A > 0, no common factor), asked for with the
+ * template `Ax + By = C` or the student's `\text{standard form}` under the line (or above the
+ * line Solve is pressed on); `y = mx + b` / `\text{slope-intercept form}` asks the other way:
+ *
+ *   y = -\frac{2}{3}x + 2        (2, 3), (5, 9)             2x + 3y = 6
+ *   Ax + By = C                  Ax + By = C                y = mx + b
+ *   3y = -2x + 6                 m = \frac{9 - 3}{5 - 2}    3y = -2x + 6
+ *   2x + 3y = 6                  …, y - 3 = 2(x - 2)        y = -\frac{2}{3}x + 2
+ *                                y - 3 = 2x - 4
+ *                                -2x + y = -1
+ *                                2x - y = 1
  */
-import { combineTerms, q, qAdd, qDiv, qMul, qNeg, termsOf, type Q, type Term } from "./algebra";
-import { evalLatex, lettersOf, parseExpr, questionName, splitEquation, type CourseDeps } from "./courseKit";
+import { combineTerms, gcdInt, q, qAdd, qDiv, qMul, qNeg, termsOf, type Q, type Term } from "./algebra";
+import type { AnalyzeContext, LineAnalysis } from "../contracts";
+import { evalLatex, exactNode, hasRelation, lcm, lettersOf, parseExpr, questionName, splitEquation, type CourseDeps } from "./courseKit";
 import { termsTex } from "./literalEquations";
 import { exactly, qFromNumber, qIsZero } from "./poly";
 import { StepWriter } from "./solution";
@@ -236,4 +249,200 @@ export function lineFromColumn(deps: CourseDeps, lines: readonly string[]): Line
   if (points.length === 2 && slope === null) return throughTwoPoints(points[0], points[1], asked === "m", deps.normalize);
   if (points.length === 1 && slope !== null && asked !== "m") return throughPointWithSlope(points[0], slope, deps.normalize);
   return null;
+}
+
+// ---------------------------------------------------------------- standard form
+
+export type LineForm = "standard" | "slope-intercept";
+
+const LINE_WORDS = /^\\(?:text|textrm|mathrm|operatorname)\s*\{\s*([a-zA-Z][a-zA-Z\s-]*?)\s*\}\s*(?:=\s*(?:\?|\\text\s*\{\s*\?\s*\})?)?\s*$/;
+
+/** The form of a line a line asks for: `Ax + By = C` / `\text{standard form}`, `y = mx + b` / `\text{slope-intercept form}`. */
+export function lineFormAsked(latex: string): LineForm | null {
+  const s = (latex ?? "").replace(/\\[,;:! ]|\\cdot|\s+/g, "");
+  if (/^Ax\+By=C$/.test(s)) return "standard";
+  if (/^y=mx\+b$/.test(s)) return "slope-intercept";
+  const w = LINE_WORDS.exec((latex ?? "").trim());
+  const key = w ? w[1].replace(/[\s-]+/g, "").toLowerCase() : "";
+  if (key === "standardform") return "standard";
+  if (key === "slopeinterceptform") return "slope-intercept";
+  return null;
+}
+
+/** A form of the line asked for above the line (a template or its name): the form, or null. */
+export function lineFormAbove(lines: readonly string[]): LineForm | null {
+  for (const l of lines) {
+    const form = lineFormAsked(l);
+    if (form) return form;
+  }
+  return null;
+}
+
+/** `ax + by = c` as its x, y and number terms on each side (decimals made exact), or null when not linear in x and y. */
+function linearSides(deps: CourseDeps, latex: string): { TL: Term[]; TR: Term[]; sides: [string, string] } | null {
+  const sides = splitEquation(latex);
+  if (!sides) return null;
+  const L0 = parseExpr(deps, sides[0]);
+  const R0 = parseExpr(deps, sides[1]);
+  const L = L0 && exactNode(deps, L0);
+  const R = R0 && exactNode(deps, R0);
+  if (!L || !R) return null;
+  const letters = [...new Set([...lettersOf(L), ...lettersOf(R)])];
+  if (letters.length === 0 || letters.some((v) => v !== "x" && v !== "y")) return null;
+  const TL = termsOf(L, ["x", "y"]);
+  const TR = termsOf(R, ["x", "y"]);
+  if (!TL || !TR) return null;
+  if ([...TL, ...TR].some((t) => (t.vars.x ?? 0) + (t.vars.y ?? 0) > 1)) return null;
+  return { TL, TR, sides };
+}
+
+/** A linear equation with both x and y in it (a line, not an equation in one unknown). */
+export function isLineInXY(deps: CourseDeps, latex: string): boolean {
+  const s = linearSides(deps, latex);
+  if (!s) return false;
+  const all = [...combineTerms(s.TL), ...combineTerms(s.TR)];
+  return all.some((t) => t.vars.x === 1) && all.some((t) => t.vars.y === 1);
+}
+
+/** Two equations are the same line (`y = 2x - 1`, `-2x + y = -1`): their Ax + By = C proportional. */
+export function sameLine(deps: CourseDeps, a: string, b: string): boolean {
+  const abc = (latex: string): Q[] | null => {
+    const s = linearSides(deps, latex);
+    if (!s) return null;
+    const sum = (ts: Term[], pick: (t: Term) => boolean) => ts.filter(pick).reduce((acc, t) => qAdd(acc, t.c), q(0));
+    const isX = (t: Term) => t.vars.x === 1;
+    const isY = (t: Term) => t.vars.y === 1;
+    const isNumber = (t: Term) => Object.keys(t.vars).length === 0;
+    return exactly(() => [qAdd(sum(s.TL, isX), qNeg(sum(s.TR, isX))), qAdd(sum(s.TL, isY), qNeg(sum(s.TR, isY))), qAdd(sum(s.TR, isNumber), qNeg(sum(s.TL, isNumber)))]);
+  };
+  const u = abc(a);
+  const v = abc(b);
+  if (!u || !v) return false;
+  return (
+    exactly(() => {
+      for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++) if (!qIsZero(qAdd(qMul(u[i], v[j]), qNeg(qMul(u[j], v[i]))))) return false;
+      return true;
+    }) ?? false
+  );
+}
+
+/**
+ * A linear equation in x and y written in standard form `Ax + By = C` — whole numbers, A > 0 (B > 0
+ * when there is no x term), no common factor — the way a teacher does it: brackets expanded,
+ * fractions and decimals cleared by their LCD, x and y collected on the left and the number on
+ * the right, then the line divided by its common factor (and by -1 when A is negative). Null when
+ * the line is already in standard form, or is not linear in x and y.
+ */
+export function standardForm(deps: CourseDeps, latex: string): LineAnswer | null {
+  const lin = linearSides(deps, latex);
+  if (!lin) return null;
+  return exactly(() => {
+    const { TL, TR, sides } = lin;
+    const w = new StepWriter(deps.normalize, `${sides[0]} = ${sides[1]}`);
+    let left = combineTerms(TL);
+    let right = combineTerms(TR);
+    if (/\(/.test(latex)) {
+      // brackets expanded as written, then like terms collected
+      w.write(`${termsTex(TL)} = ${termsTex(TR)}`);
+      w.write(`${termsTex(left)} = ${termsTex(right)}`);
+    }
+    const lcd = [...left, ...right].reduce((m, t) => lcm(m, t.c.d), 1);
+    if (lcd > 1) {
+      const scale = (ts: Term[]) => ts.map((t) => ({ c: qMul(t.c, q(lcd)), vars: t.vars }));
+      left = scale(left);
+      right = scale(right);
+      w.write(`${termsTex(left)} = ${termsTex(right)}`);
+    }
+    const coef = (ts: Term[], pick: (t: Term) => boolean) => ts.filter(pick).reduce((s, t) => qAdd(s, t.c), q(0));
+    const isX = (t: Term) => t.vars.x === 1;
+    const isY = (t: Term) => t.vars.y === 1;
+    const isNumber = (t: Term) => Object.keys(t.vars).length === 0;
+    let A = qAdd(coef(left, isX), qNeg(coef(right, isX)));
+    let B = qAdd(coef(left, isY), qNeg(coef(right, isY)));
+    let C = qAdd(coef(right, isNumber), qNeg(coef(left, isNumber)));
+    if (qIsZero(A) && qIsZero(B)) return null;
+    const lineOf = () => {
+      const xy: Term[] = [
+        { c: A, vars: { x: 1 } },
+        { c: B, vars: { y: 1 } },
+      ];
+      return `${termsTex(xy.filter((t) => !qIsZero(t.c)))} = ${qTex(C)}`;
+    };
+    // x and y on the left, the number on the right
+    w.write(lineOf());
+    const g = gcdInt(gcdInt(A.n, B.n), C.n) * (A.n < 0 || (A.n === 0 && B.n < 0) ? -1 : 1);
+    if (g !== 1) {
+      [A, B, C] = [A, B, C].map((v) => qDiv(v, q(g)));
+      w.write(lineOf());
+    }
+    const final = lineOf();
+    // the check: the same line (the coefficients a multiple of the ones written), in whole numbers, A > 0
+    const A0 = qAdd(coef(combineTerms(TL), isX), qNeg(coef(combineTerms(TR), isX)));
+    const B0 = qAdd(coef(combineTerms(TL), isY), qNeg(coef(combineTerms(TR), isY)));
+    const C0 = qAdd(coef(combineTerms(TR), isNumber), qNeg(coef(combineTerms(TL), isNumber)));
+    const cross = (u: Q, v: Q, s: Q, t: Q) => qAdd(qMul(u, t), qNeg(qMul(v, s)));
+    if (!qIsZero(cross(A, B, A0, B0)) || !qIsZero(cross(A, C, A0, C0)) || !qIsZero(cross(B, C, B0, C0))) return null;
+    if ([A, B, C].some((v) => v.d !== 1) || A.n < 0 || (A.n === 0 && B.n <= 0)) return null;
+    const steps = w.lines();
+    return steps.length > 0 ? { latex: final, steps } : null;
+  });
+}
+
+/** The line in the form asked for: standard form, or slope-intercept (`slopeIntercept`). */
+export function lineIn(deps: CourseDeps, latex: string, form: LineForm): LineAnswer | null {
+  return form === "standard" ? standardForm(deps, latex) : slopeIntercept(deps, latex);
+}
+
+/**
+ * The column's last line asks for a form of the line above it: the line through the points (or
+ * a point and a slope) above, or the nearest equation above, written in that form. Null when
+ * nothing above is a line, or it is already in that form.
+ */
+export function lineFormAnswer(deps: CourseDeps, lines: readonly string[]): LineAnswer | null {
+  const form = lineFormAsked(lines[lines.length - 1] ?? "");
+  if (!form) return null;
+  const above = lines.slice(0, -1);
+  const through = above.length > 0 ? lineFromColumn(deps, above) : null;
+  if (through) {
+    if (form === "slope-intercept") return through;
+    // from its point-slope line: its standard form follows it (the slope-intercept line is not needed)
+    const at = through.steps.findIndex((s) => /^\s*y\b/.test(s));
+    const sf = at === -1 ? null : standardForm(deps, through.steps[at]);
+    if (!sf) return through;
+    return { latex: sf.latex, steps: [...through.steps.slice(0, at + 1), ...sf.steps] };
+  }
+  for (let i = above.length - 1; i >= 0; i--) {
+    if (!hasRelation(above[i])) continue;
+    return isLineInXY(deps, above[i]) ? lineIn(deps, above[i], form) : null;
+  }
+  return null;
+}
+
+/** A line's analysis: a function `y = mx + b`, an equation linear in x and y, a point, or a slope `m = 2`. */
+function isLineAnalysis(deps: CourseDeps, a: LineAnalysis | undefined): boolean {
+  if (!a) return false;
+  if (a.kind === "point") return true;
+  if (a.kind === "assignment") return /^m\s*=/.test(a.math);
+  if ((a.kind !== "function" && a.kind !== "equation") || !a.math) return false;
+  const m = /^([^=]+?)\s*==?\s*([^=]+)$/.exec(a.math);
+  if (!m) return false;
+  try {
+    const nodes = [m[1], m[2]].map((s) => exactNode(deps, deps.math.parse(s)));
+    if (nodes.some((n) => !n)) return false;
+    const letters = new Set(nodes.flatMap((n) => lettersOf(n!)));
+    if (![...letters].every((v) => v === "x" || v === "y") || !letters.has("y")) return false;
+    return nodes.every((n) => termsOf(n!, ["x", "y"])?.every((t) => (t.vars.x ?? 0) + (t.vars.y ?? 0) <= 1) ?? false);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A form of the line asked for under a line (`Ax + By = C`, `y = mx + b`, `\text{standard form}`):
+ * not a step (kind `unknown`), so the student's next line is checked against the line above it,
+ * and Solve answers it. Null for any other line.
+ */
+export function lineFormAnalysis(deps: CourseDeps, latex: string, ctx: AnalyzeContext): LineAnalysis | null {
+  if (!lineFormAsked(latex) || !isLineAnalysis(deps, ctx.previous)) return null;
+  return { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
 }

@@ -1,5 +1,5 @@
 /**
- * Sequences and series (F-BF.2, F-LE.2, A-SSE.4) and a mean (S-ID.2), from the lines above:
+ * Sequences and series (F-BF.2, F-LE.2, A-SSE.4), from the lines above:
  *
  *   3, 7, 11, 15, \ldots        3, 7, 11, \ldots        2, 6, 18, \ldots         a_{1} = 2
  *   a_{10} = ?                  a_{n} = ?               S_{6} = ?                a_{n} = a_{n - 1} + 5
@@ -13,8 +13,8 @@
  * constant), from `a_{1}` with `d` / `r`, or from a recursive rule; the nth term, the explicit
  * formula, a finite sum (`S_{10}`), an infinite geometric sum (`S = \frac{a_{1}}{1 - r}`, only
  * when |r| < 1). A sum in sigma notation (`\sum_{n=1}^{10}(2n + 1)`, `\sum_{n=1}^{\infty} …`) is
- * the same sums. `\bar{x} = ?` under a list is its mean. Exact rationals; every answer is checked
- * against the terms themselves.
+ * the same sums. Exact rationals; every answer is checked against the terms themselves. (A list's
+ * mean, `\bar{x} = ?`, is a statistic: `statistics.ts`.)
  */
 import { q, qAdd, qDiv, qMul, qNeg, type Q } from "./algebra";
 import { evalLatex, questionName, splitEquation, type CourseDeps } from "./courseKit";
@@ -238,7 +238,7 @@ function checkSum(s: Sequence, k: number | null, claimed: Q): boolean {
 
 /**
  * The column's sequence question answered, or null: `a_{k} = ?`, `a_{n} = ?`, `S_{k} = ?`,
- * `S = ?` / `S_{\infty} = ?`, `d = ?`, `r = ?`, and `\bar{x} = ?` under a list (its mean).
+ * `S = ?` / `S_{\infty} = ?`, `d = ?`, `r = ?`.
  */
 export function sequenceAnswer(deps: CourseDeps, lines: readonly string[]): { latex: string; steps: string[] } | null {
   try {
@@ -247,17 +247,6 @@ export function sequenceAnswer(deps: CourseDeps, lines: readonly string[]): { la
       const asked = questionName(target);
       if (!asked) return null;
       const above = lines.slice(0, -1);
-      // the mean of a list
-      if (/^\\(?:bar|overline)\{([a-zA-Z])\}$/.test(asked)) {
-        if (above.length !== 1) return null;
-        const values = listOf(deps, above[0].replace(/\\(?:ldots|cdots|dots)/g, "")) ?? null;
-        if (!values || /\\(?:ldots|cdots|dots)/.test(above[0])) return null;
-        const total = values.reduce((a, b) => qAdd(a, b), q(0));
-        const mean = qDiv(total, q(values.length));
-        const sum = values.map((v, i) => (i === 0 ? qTex(v) : v.n < 0 ? ` - ${qTex(qNeg(v))}` : ` + ${qTex(v)}`)).join("");
-        const steps = dedupe(deps, [`${asked} = \\frac{${sum}}{${values.length}}`, `${asked} = \\frac{${qTex(total)}}{${values.length}}`, `${asked} = ${qTex(mean)}`]);
-        return { latex: steps[steps.length - 1], steps };
-      }
       const s = sequenceOf(deps, above);
       if (!s) return null;
       const sub = subscripted(asked);

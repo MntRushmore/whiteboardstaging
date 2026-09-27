@@ -73,6 +73,8 @@ export const TOPICS = [
   "sequences",
   "exponential-models",
   "statistics",
+  "standard-form",
+  "vertex-form",
   // Algebra 2 (src/__eval__/courses/algebra2.ts)
   "complex-numbers",
   "poly-division",
@@ -121,6 +123,8 @@ export const TOPIC_COURSE: Record<Topic, Course> = {
   sequences: "algebra-1",
   "exponential-models": "algebra-1",
   statistics: "algebra-1",
+  "standard-form": "algebra-1",
+  "vertex-form": "algebra-1",
   "complex-numbers": "algebra-2",
   "poly-division": "algebra-2",
   "function-ops": "algebra-2",
@@ -141,8 +145,14 @@ export interface Expectation {
   complexValues?: Record<string, Array<[number, number]>>;
   equivalentTo?: string;
   upToConstant?: boolean;
-  /** `radical`: simplest radical form — no square left under a root, no root below the bar */
-  form?: "factored" | "expanded" | "radical";
+  /**
+   * `radical`: simplest radical form — no square left under a root, no root below the bar;
+   * `standard`: a line as `Ax + By = C` (whole numbers, A > 0, no common factor); `vertex`: a
+   * quadratic as `y = a(x - h)^{2} + k`
+   */
+  form?: "factored" | "expanded" | "radical" | "standard" | "vertex";
+  /** the answer is a list of numbers, in order (a five-number summary, the modes); [] is `\varnothing` */
+  list?: number[];
   approxOk?: boolean;
   interval?: { lo: number; hi: number; loIn?: boolean; hiIn?: boolean };
   /** the answer is a point (a midpoint, an image, a circle's centre): the last point on the final line */

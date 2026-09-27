@@ -9,6 +9,9 @@ import {
   isAntiderivative,
   isExpanded,
   isFactored,
+  isStandardLine,
+  isVertexForm,
+  listedValues,
   parseLine,
   rootSet,
   sameRoots,
@@ -102,6 +105,16 @@ function geometryExpectation(p: EvalProblem): string | null | undefined {
   };
   if (e.point) {
     const got = ((): number[] | null => {
+      // a parabola y = f(x) (one y for every x): its vertex from three of its values
+      const parabola = p.lines.map(parseLine).find((l): l is Relation => l.kind === "relation" && l.vars.length === 2 && l.vars.includes("x") && l.vars.includes("y") && [-1, 0, 1, 2].every((x) => rootSet(l, "y", [], { x })?.roots.length === 1));
+      if (parabola) {
+        const f = (x: number) => rootSet(parabola, "y", [], { x })!.roots[0];
+        const a = (f(1) + f(-1)) / 2 - f(0);
+        const b = (f(1) - f(-1)) / 2;
+        if (Math.abs(a) < 1e-12) return null;
+        const h = -b / (2 * a);
+        return [h, a * h * h + b * h + f(0)];
+      }
       const circle = p.lines.map(parseLine).find((l): l is Relation => l.kind === "relation" && l.vars.length === 2 && l.vars.includes("x") && l.vars.includes("y"));
       if (circle) {
         const c = circleOf(circle);
@@ -151,7 +164,7 @@ function geometryExpectation(p: EvalProblem): string | null | undefined {
       return same && truthAt(want, {}) === true ? null : `${p.id}: ${e.answer} is not ${target} worked out`;
     }
     // a circle's equation from its centre and radius (`h`, `k`, `r` above, or the centre as a point)
-    if (want.kind === "relation" && want.vars.length === 2 && t.kind === "relation" && t.vars.includes("h")) {
+    if (want.kind === "relation" && want.vars.length === 2 && t.kind === "relation" && t.vars.includes("h") && t.vars.includes("r")) {
       const known: Record<string, number> = {};
       for (const l of p.lines.slice(0, -1).map(parseLine)) {
         const sv = l.kind === "relation" && l.vars.length === 1 ? solvedValues(l, l.vars[0]) : null;
@@ -431,6 +444,18 @@ describe("oracle: expressions", () => {
     expect(isExpanded("(x + 1)(x + 2)")).toBe(false);
     expect(isExpanded("2(x + 4) + 3")).toBe(false);
   });
+
+  it("reads a line's standard form, a quadratic's vertex form and a list of numbers", () => {
+    for (const s of ["2x + 3y = 6", "2x - y = 1", "x - 2y = -6", "3x - y = 0", "x = 2", "y = 5", "x + y = 7"]) expect(isStandardLine(s), s).toBe(true);
+    for (const s of ["y = -\\frac{2}{3}x + 2", "4x + 6y = 12", "-2x - 3y = -6", "3y = -2x + 6", "2x + 3y - 6 = 0", "\\frac{1}{2}x + y = 3", "2y = 6"]) expect(isStandardLine(s), s).toBe(false);
+    for (const s of ["y = (x + 3)^{2} - 4", "y = 2(x - 3)^{2} - 11", "y = -(x - 2)^{2} + 5", "y = 2(x + \\frac{3}{4})^{2} - \\frac{17}{8}", "y = \\frac{1}{2}(x - 4)^{2}", "f(x) = (x - 1)^{2} + 2"]) expect(isVertexForm(s), s).toBe(true);
+    for (const s of ["y = x^{2} + 6x + 5", "y = (2x - 6)^{2} + 1", "y = (x + 3)^{2} + (x - 1)^{2}", "y = 2(x^{2} - 6x + 9) - 11", "y = (x + 3)(x - 1)", "x^{2} + y^{2} = 25"]) expect(isVertexForm(s), s).toBe(false);
+    expect(listedValues("3, \\ 7, \\ 10, \\ 15, \\ 20")).toEqual([3, 7, 10, 15, 20]);
+    expect(listedValues("\\text{mode} = 3, \\ 7")).toEqual([3, 7]);
+    expect(listedValues("\\text{mode} = \\varnothing")).toEqual([]);
+    expect(listedValues("1, \\frac{1 + 4}{2}, 9")).toEqual([1, 2.5, 9]);
+    expect(listedValues("Q_{1} = x")).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------- the corpus, checked by the oracle
@@ -473,8 +498,8 @@ describe("eval corpus", () => {
   it("states every expectation in a form the oracle reads", () => {
     for (const p of CORPUS) {
       const e = p.expect;
-      expect(Boolean(e.values || e.answer || e.complexValues || e.point || e.rational || e.transform), p.id).toBe(true);
-      if (!e.values && !e.point && !e.rational && !e.transform) expect(parseLine(e.equivalentTo ?? e.answer ?? "").kind, p.id).not.toBe("unreadable");
+      expect(Boolean(e.values || e.answer || e.complexValues || e.point || e.rational || e.transform || e.list), p.id).toBe(true);
+      if (!e.values && !e.point && !e.rational && !e.transform && !e.list) expect(parseLine(e.equivalentTo ?? e.answer ?? "").kind, p.id).not.toBe("unreadable");
       if (e.rational?.oblique) expect(exprOf(e.rational.oblique), p.id).not.toBeNull();
       if (e.transform) for (const s of [e.transform.image, ...(e.transform.rule ?? [])]) expect(exprOf(s), `${p.id}: ${s}`).not.toBeNull();
       if (e.point) expect(e.point.length, p.id).toBe(2);
@@ -521,6 +546,12 @@ describe("eval corpus", () => {
         continue;
       }
       const relations = lines.filter((l): l is Relation => l.kind === "relation");
+      if (e.list) {
+        // a list answer (the modes, a five-number summary): its restatement lists the same numbers, in order
+        const got = listedValues(source[source.length - 1] ?? "");
+        if (!got || got.length !== e.list.length || got.some((v, i) => Math.abs(v - e.list![i]) > 1e-9)) problems.push(`${p.id}: ${source.at(-1)} is not ${JSON.stringify(e.list)}`);
+        continue;
+      }
       if (e.values) {
         const vars = Object.keys(e.values);
         if (vars.length === 1 && relations.length === 1 && target.kind === "relation") {

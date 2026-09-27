@@ -16,6 +16,14 @@
  *                 of it (checked: a wrong one is ringed)
  *   askLine       a question word under a function (`\text{holes}`): an ask, not prose
  *   calculusOfDefined  `\lim_{x \to \infty} f(x) =` under `f(x) = …`: the definition put in first
+ *   analyzeFirst  `engine.analyzeLine`, before its own rules — a line about the data list above
+ *                 (the data sorted, a statistic asked for or claimed), a form of the line or the
+ *                 quadratic above asked for (`Ax + By = C`, `(h, k) = ?`), a vertex claimed
+ *
+ * `fromLines` and `solve` also answer those asks first: a statistic of a data list
+ * (`statistics.ts`), a quadratic's vertex form, vertex or standard form (`quadraticForms.ts`), a
+ * line's standard form (`linearFunctions.ts`) — asked under the line, or above the line Solve is
+ * pressed on (then a line already in that form is refused: there is nothing to write).
  *
  * `"refuse"` means the line is one the older paths would misread (`f(4)` as `4f`): the engine
  * answers nothing rather than something wrong.
@@ -32,10 +40,12 @@ import { formulaAnswer } from "./formulas";
 import { sequenceAnswer, sigmaSteps } from "./sequences";
 import { radicalSteps } from "./radicalExpr";
 import { checkClaim, definitionFromMath, definitionOf, definitionsIn, evaluateCalls, hasFunctionCall, inverseOf, solveFunctionEquation, substituteCalls } from "./functionNotation";
-import { lineFromColumn, pointsOn, slopeIntercept } from "./linearFunctions";
+import { isLineInXY, lineFormAbove, lineFormAnalysis, lineFormAnswer, lineFormAsked, lineFromColumn, lineIn, pointsOn, sameLine, slopeIntercept } from "./linearFunctions";
 import { solveForLetter } from "./literalEquations";
 import { isWordAsk, rationalAskSteps, rationalFunctionSteps, readRationalFunction } from "./rationalFunctions";
 import { analyzeDerived, impliedSteps, transformSteps } from "./transformations";
+import { isStatisticClaim, statisticsAnalysis, statisticsAnswer } from "./statistics";
+import { quadraticAnalysis, quadraticAnswer, quadraticAsk, quadraticFormAbove, quadraticIn, quadraticOf, sameQuadratic } from "./quadraticForms";
 
 export type Refuse = "refuse";
 
@@ -54,6 +64,8 @@ export interface Courses {
   analyzeFunction(latex: string, ctx: AnalyzeContext): LineAnalysis | null;
   askLine(latex: string, ctx: AnalyzeContext): LineAnalysis | null;
   calculusOfDefined(lines: readonly string[], calculus: (lines: readonly string[]) => Solved | null | undefined): Solved | null;
+  /** a line about a data list, or asking for a form of the line / quadratic above (before the engine's own rules) */
+  analyzeFirst(latex: string, ctx: AnalyzeContext): LineAnalysis | null;
   /** an exact answer finished the way the course writes it (`x = \log_{5} 7` → its change of base) */
   polish<T extends Solved>(solved: T): T;
 }
@@ -67,14 +79,36 @@ const safely = <T>(fn: () => T): T | null => {
 };
 
 export function createCourses(deps: CourseDeps): Courses {
+  /**
+   * A form asked for above the target (`Ax + By = C`, `y = a(x - h)^{2} + k`, `\text{standard
+   * form}`) and the target is that line / quadratic: its working, or "refuse" when it is already
+   * in that form (nothing to write — and not a system of the lines above). Only when every other
+   * line or quadratic above is the target rewritten: two different lines are a system.
+   */
+  const formAbove = (target: string, above: readonly string[]): Solved | Refuse | null => {
+    const others = above.filter((l) => !lineFormAsked(l) && !quadraticAsk(l) && (isLineInXY(deps, l) || quadraticOf(deps, l) !== null));
+    const quadForm = quadraticFormAbove(above);
+    const quad = quadForm ? quadraticOf(deps, target) : null;
+    if (quadForm && quad) return others.every((l) => sameQuadratic(deps, l, quad)) ? (quadraticIn(deps, quad, quadForm, target) ?? "refuse") : null;
+    const lineForm = lineFormAbove(above);
+    if (lineForm && isLineInXY(deps, target)) return others.every((l) => sameLine(deps, l, target)) ? (lineIn(deps, target, lineForm) ?? "refuse") : null;
+    return null;
+  };
+
   const fromLines = (lines: readonly string[]): Solved | null | Refuse => {
     const target = lines[lines.length - 1] ?? "";
     const above = lines.slice(0, -1);
+    // asked by name or template under what it is about: a statistic of the data list, the
+    // quadratic's vertex (form), the line's standard form — then a form asked for above the line
+    const asked = statisticsAnswer(deps, lines) ?? quadraticAnswer(deps, lines) ?? lineFormAnswer(deps, lines);
+    if (asked) return asked;
+    const wanted = formAbove(target, above);
+    if (wanted) return wanted;
     // function notation: a definition above and the target applies it
     const defs = definitionsIn(above);
     // under a rational function: `\text{VA} = ?`, `x = ?`, `\text{holes}`, … (`rationalFunctions.ts`)
-    const asked = rationalAskSteps(deps, lines);
-    if (asked) return asked;
+    const rationalAsk = rationalAskSteps(deps, lines);
+    if (rationalAsk) return rationalAsk;
     // `g(x) = f(x - 3) + 1` under f: g written out, the rule, the key point (`transformations.ts`)
     const moved = defs.size > 0 ? transformSteps(deps, lines) : null;
     if (moved) return moved;
@@ -97,7 +131,7 @@ export function createCourses(deps: CourseDeps): Courses {
         if (si) return si;
       }
     }
-    // a list of terms or a rule above: the nth term, the formula, a sum; `\bar{x}`: the mean
+    // a list of terms or a rule above: the nth term, the formula, a sum (a list's mean: `statistics.ts`, above)
     const seq = sequenceAnswer(deps, lines);
     if (seq) return seq;
     // a formula with every value known in decimals: worked out in those decimals
@@ -122,6 +156,11 @@ export function createCourses(deps: CourseDeps): Courses {
       if (own) return own;
     }
     if (hasFunctionCall(latex, defs.keys())) return "refuse";
+    // a form asked for above the line (`Ax + By = C`, `\text{vertex form}`): the line in that form
+    const wanted = opts?.column && opts.column.length > 1 ? formAbove(latex, opts.column.slice(0, -1)) : null;
+    if (wanted) return wanted;
+    // `\bar{x} = 10` under a data list is a claim about the data, not `x = 10` to solve
+    if (opts?.column && isStatisticClaim(opts.column)) return "refuse";
     // no real roots, and the column already works with i: the complex ones (complexSetting.ts)
     if (opts?.complexRoots) {
       const c = complexQuadratic(deps, latex);
@@ -214,5 +253,6 @@ export function createCourses(deps: CourseDeps): Courses {
         if (!verdict) return null;
         return { kind: "equation", math: "", resultLatex: "", verdict, note: "" } satisfies LineAnalysis;
       }) ?? null,
+    analyzeFirst: (latex, ctx) => safely(() => statisticsAnalysis(deps, latex, ctx) ?? quadraticAnalysis(deps, latex, ctx) ?? lineFormAnalysis(deps, latex, ctx)) ?? null,
   };
 }

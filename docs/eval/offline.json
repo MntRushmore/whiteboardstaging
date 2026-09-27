@@ -1,16 +1,16 @@
 {
   "summary": {
-    "total": 640,
-    "passed": 640,
+    "total": 701,
+    "passed": 701,
     "stages": {
-      "local": 640,
-      "answer": 640,
-      "steps": 640,
-      "drawable": 640,
-      "words": 640
+      "local": 701,
+      "answer": 701,
+      "steps": 701,
+      "drawable": 701,
+      "words": 701
     },
     "answers": {
-      "ok": 640,
+      "ok": 701,
       "approx": 0,
       "form": 0,
       "unsolved": 0,
@@ -369,14 +369,38 @@
       },
       {
         "topic": "statistics",
-        "total": 4,
-        "passed": 4,
+        "total": 29,
+        "passed": 29,
         "stages": {
-          "local": 4,
-          "answer": 4,
-          "steps": 4,
-          "drawable": 4,
-          "words": 4
+          "local": 29,
+          "answer": 29,
+          "steps": 29,
+          "drawable": 29,
+          "words": 29
+        }
+      },
+      {
+        "topic": "standard-form",
+        "total": 16,
+        "passed": 16,
+        "stages": {
+          "local": 16,
+          "answer": 16,
+          "steps": 16,
+          "drawable": 16,
+          "words": 16
+        }
+      },
+      {
+        "topic": "vertex-form",
+        "total": 20,
+        "passed": 20,
+        "stages": {
+          "local": 20,
+          "answer": 20,
+          "steps": 20,
+          "drawable": 20,
+          "words": 20
         }
       },
       {
@@ -575,14 +599,14 @@
     "byCourse": [
       {
         "course": "algebra-1",
-        "total": 176,
-        "passed": 176,
+        "total": 237,
+        "passed": 237,
         "stages": {
-          "local": 176,
-          "answer": 176,
-          "steps": 176,
-          "drawable": 176,
-          "words": 176
+          "local": 237,
+          "answer": 237,
+          "steps": 237,
+          "drawable": 237,
+          "words": 237
         }
       },
       {
@@ -19654,6 +19678,3597 @@
       "warnings": [
         "unverified: `\\bar{x} = \\frac{2 + 4 + 4 + 5}{4}` (a question line)"
       ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-05",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "12, 3, 15, 7, 8",
+        "\\text{median} = ?"
+      ],
+      "expected": "8",
+      "note": "odd n: sorted, then the middle value",
+      "source": "solveFromLines",
+      "steps": [
+        "3, 7, 8, 12, 15",
+        "\\text{median} = 8"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\text{median} = ?",
+          "to": "3, 7, 8, 12, 15",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable)"
+        },
+        {
+          "from": "\\text{median} = ?",
+          "to": "\\text{median} = 8",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable side)"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `3, 7, 8, 12, 15` (unreadable step (untranslatable))",
+        "unverified: `\\text{median} = 8` (unreadable step (untranslatable side))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-06",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "3, 7, 8, 12",
+        "\\text{median} = ?"
+      ],
+      "expected": "7.5",
+      "note": "even n: the two middle values averaged",
+      "source": "solveFromLines",
+      "steps": [
+        "\\text{median} = \\frac{7 + 8}{2}",
+        "\\text{median} = 7.5"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\text{median} = ?",
+          "to": "\\text{median} = \\frac{7 + 8}{2}",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable side)"
+        },
+        {
+          "from": "\\text{median} = ?",
+          "to": "\\text{median} = 7.5",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable side)"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `\\text{median} = \\frac{7 + 8}{2}` (unreadable step (untranslatable side))",
+        "unverified: `\\text{median} = 7.5` (unreadable step (untranslatable side))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-07",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "\\{4, 1, 9, 6, 2, 8\\}",
+        "Q_{2} = ?"
+      ],
+      "expected": "Q_2 = 5",
+      "note": "in braces; Q2 is the median",
+      "source": "solveFromLines",
+      "steps": [
+        "1, 2, 4, 6, 8, 9",
+        "Q_{2} = \\frac{4 + 6}{2}",
+        "Q_{2} = 5"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "1, 2, 4, 6, 8, 9",
+          "status": "unverified",
+          "reason": "unreadable (untranslatable)"
+        },
+        {
+          "from": "(the system)",
+          "to": "Q_{2} = \\frac{4 + 6}{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "Q_{2} = 5",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `1, 2, 4, 6, 8, 9` (unreadable (untranslatable))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-08",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "1.5, 2.25, 0.75, 3",
+        "\\operatorname{med} ="
+      ],
+      "expected": "1.875",
+      "note": "decimals",
+      "source": "solveFromLines",
+      "steps": [
+        "0.75, 1.5, 2.25, 3",
+        "\\operatorname{med} = \\frac{1.5 + 2.25}{2}",
+        "\\operatorname{med} = 1.875"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\operatorname{med} =",
+          "to": "0.75, 1.5, 2.25, 3",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable)"
+        },
+        {
+          "from": "\\operatorname{med} =",
+          "to": "\\operatorname{med} = \\frac{1.5 + 2.25}{2}",
+          "status": "unverified",
+          "reason": "a question line"
+        },
+        {
+          "from": "\\operatorname{med} = \\frac{1.5 + 2.25}{2}",
+          "to": "\\operatorname{med} = 1.875",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `0.75, 1.5, 2.25, 3` (unreadable step (untranslatable))",
+        "unverified: `\\operatorname{med} = \\frac{1.5 + 2.25}{2}` (a question line)"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-09",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "7, 3, 2, 7, 3, 9, 5",
+        "\\text{mode} = ?"
+      ],
+      "expected": "3, \\ 7",
+      "note": "two modes",
+      "source": "solveFromLines",
+      "steps": [
+        "2, 3, 3, 5, 7, 7, 9",
+        "\\text{mode} = 3, \\ 7"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\text{mode} = ?",
+          "to": "2, 3, 3, 5, 7, 7, 9",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable)"
+        },
+        {
+          "from": "\\text{mode} = ?",
+          "to": "\\text{mode} = 3, \\ 7",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable side)"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `2, 3, 3, 5, 7, 7, 9` (unreadable step (untranslatable))",
+        "unverified: `\\text{mode} = 3, \\ 7` (unreadable step (untranslatable side))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-10",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "2, 3, 5, 7",
+        "\\text{mode} = ?"
+      ],
+      "expected": "\\varnothing",
+      "note": "no value repeats: no mode",
+      "source": "solveFromLines",
+      "steps": [
+        "\\text{mode} = \\varnothing"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\text{mode} = ?",
+          "to": "\\text{mode} = \\varnothing",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable side)"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `\\text{mode} = \\varnothing` (unreadable step (untranslatable side))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-11",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "4, 8, 8, 1, 8, 6",
+        "\\text{Mode} = ?"
+      ],
+      "expected": "8",
+      "source": "solveFromLines",
+      "steps": [
+        "1, 4, 6, 8, 8, 8",
+        "\\text{Mode} = 8"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\text{Mode} = ?",
+          "to": "1, 4, 6, 8, 8, 8",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable)"
+        },
+        {
+          "from": "\\text{Mode} = ?",
+          "to": "\\text{Mode} = 8",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable side)"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `1, 4, 6, 8, 8, 8` (unreadable step (untranslatable))",
+        "unverified: `\\text{Mode} = 8` (unreadable step (untranslatable side))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-12",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "-3, 5, 7, 2",
+        "\\text{range} = ?"
+      ],
+      "expected": "10",
+      "note": "a negative value",
+      "source": "solveFromLines",
+      "steps": [
+        "-3, 2, 5, 7",
+        "\\text{range} = 7 - (-3)",
+        "\\text{range} = 10"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\text{range} = ?",
+          "to": "-3, 2, 5, 7",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable)"
+        },
+        {
+          "from": "\\text{range} = ?",
+          "to": "\\text{range} = 7 - (-3)",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable side)"
+        },
+        {
+          "from": "\\text{range} = ?",
+          "to": "\\text{range} = 10",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable side)"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `-3, 2, 5, 7` (unreadable step (untranslatable))",
+        "unverified: `\\text{range} = 7 - (-3)` (unreadable step (untranslatable side))",
+        "unverified: `\\text{range} = 10` (unreadable step (untranslatable side))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-13",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "3, 7, 8, 12, 15",
+        "Q_{1} = ?"
+      ],
+      "expected": "Q_1 = 5",
+      "note": "odd n: the median in neither half",
+      "source": "solveFromLines",
+      "steps": [
+        "Q_{1} = \\frac{3 + 7}{2}",
+        "Q_{1} = 5"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "Q_{1} = \\frac{3 + 7}{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "Q_{1} = 5",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-14",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "3, 7, 8, 12, 15",
+        "Q_{3} = ?"
+      ],
+      "expected": "Q_3 = 13.5",
+      "source": "solveFromLines",
+      "steps": [
+        "Q_{3} = \\frac{12 + 15}{2}",
+        "Q_{3} = 13.5"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "Q_{3} = \\frac{12 + 15}{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "Q_{3} = 13.5",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-15",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "3, 7, 8, 12, 15, 20",
+        "IQR = ?"
+      ],
+      "expected": "8",
+      "note": "even n, odd halves",
+      "source": "solveFromLines",
+      "steps": [
+        "Q_{1} = 7",
+        "Q_{3} = 15",
+        "IQR = Q_{3} - Q_{1}",
+        "IQR = 15 - 7",
+        "IQR = 8"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "IQR = ?",
+          "to": "Q_{1} = 7",
+          "status": "unverified",
+          "reason": "the line before is unreadable (untranslatable side)"
+        },
+        {
+          "from": "Q_{1} = 7",
+          "to": "Q_{3} = 15",
+          "status": "unverified",
+          "reason": "several unknowns (Q_1, Q_3)"
+        },
+        {
+          "from": "Q_{3} = 15",
+          "to": "IQR = Q_{3} - Q_{1}",
+          "status": "unverified",
+          "reason": "several unknowns (Q_3, I, Q, R, Q_1)"
+        },
+        {
+          "from": "IQR = Q_{3} - Q_{1}",
+          "to": "IQR = 15 - 7",
+          "status": "unverified",
+          "reason": "several unknowns (I, Q, R, Q_3, Q_1)"
+        },
+        {
+          "from": "IQR = 15 - 7",
+          "to": "IQR = 8",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `Q_{1} = 7` (the line before is unreadable (untranslatable side))",
+        "unverified: `Q_{3} = 15` (several unknowns (Q_1, Q_3))",
+        "unverified: `IQR = Q_{3} - Q_{1}` (several unknowns (Q_3, I, Q, R, Q_1))",
+        "unverified: `IQR = 15 - 7` (several unknowns (I, Q, R, Q_3, Q_1))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-16",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "8, 1, 7, 2, 6, 3, 5, 4",
+        "IQR = ?"
+      ],
+      "expected": "4",
+      "note": "unsorted, even halves",
+      "source": "solveFromLines",
+      "steps": [
+        "1, 2, 3, 4, 5, 6, 7, 8",
+        "Q_{1} = \\frac{2 + 3}{2}",
+        "Q_{1} = 2.5",
+        "Q_{3} = \\frac{6 + 7}{2}",
+        "Q_{3} = 6.5",
+        "IQR = Q_{3} - Q_{1}",
+        "IQR = 6.5 - 2.5",
+        "IQR = 4"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "IQR = ?",
+          "to": "1, 2, 3, 4, 5, 6, 7, 8",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable)"
+        },
+        {
+          "from": "IQR = ?",
+          "to": "Q_{1} = \\frac{2 + 3}{2}",
+          "status": "unverified",
+          "reason": "the line before is unreadable (untranslatable side)"
+        },
+        {
+          "from": "Q_{1} = \\frac{2 + 3}{2}",
+          "to": "Q_{1} = 2.5",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "Q_{1} = 2.5",
+          "to": "Q_{3} = \\frac{6 + 7}{2}",
+          "status": "unverified",
+          "reason": "several unknowns (Q_1, Q_3)"
+        },
+        {
+          "from": "Q_{3} = \\frac{6 + 7}{2}",
+          "to": "Q_{3} = 6.5",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "Q_{3} = 6.5",
+          "to": "IQR = Q_{3} - Q_{1}",
+          "status": "unverified",
+          "reason": "several unknowns (Q_3, I, Q, R, Q_1)"
+        },
+        {
+          "from": "IQR = Q_{3} - Q_{1}",
+          "to": "IQR = 6.5 - 2.5",
+          "status": "unverified",
+          "reason": "several unknowns (I, Q, R, Q_3, Q_1)"
+        },
+        {
+          "from": "IQR = 6.5 - 2.5",
+          "to": "IQR = 4",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "8 lines: at the maxSolveSteps cap (working may have been cut)",
+        "unverified: `1, 2, 3, 4, 5, 6, 7, 8` (unreadable step (untranslatable))",
+        "unverified: `Q_{1} = \\frac{2 + 3}{2}` (the line before is unreadable (untranslatable side))",
+        "unverified: `Q_{3} = \\frac{6 + 7}{2}` (several unknowns (Q_1, Q_3))",
+        "unverified: `IQR = Q_{3} - Q_{1}` (several unknowns (Q_3, I, Q, R, Q_1))",
+        "unverified: `IQR = 6.5 - 2.5` (several unknowns (I, Q, R, Q_3, Q_1))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-17",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "10, 2, 5, 6, 8, 3, 9",
+        "\\text{IQR} = ?"
+      ],
+      "expected": "6",
+      "source": "solveFromLines",
+      "steps": [
+        "2, 3, 5, 6, 8, 9, 10",
+        "Q_{1} = 3",
+        "Q_{3} = 9",
+        "\\text{IQR} = Q_{3} - Q_{1}",
+        "\\text{IQR} = 9 - 3",
+        "\\text{IQR} = 6"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\text{IQR} = ?",
+          "to": "2, 3, 5, 6, 8, 9, 10",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable)"
+        },
+        {
+          "from": "\\text{IQR} = ?",
+          "to": "Q_{1} = 3",
+          "status": "unverified",
+          "reason": "a question line"
+        },
+        {
+          "from": "Q_{1} = 3",
+          "to": "Q_{3} = 9",
+          "status": "unverified",
+          "reason": "several unknowns (Q_1, Q_3)"
+        },
+        {
+          "from": "Q_{3} = 9",
+          "to": "\\text{IQR} = Q_{3} - Q_{1}",
+          "status": "unverified",
+          "reason": "several unknowns (Q_3, IQR, Q_1)"
+        },
+        {
+          "from": "\\text{IQR} = Q_{3} - Q_{1}",
+          "to": "\\text{IQR} = 9 - 3",
+          "status": "unverified",
+          "reason": "several unknowns (IQR, Q_3, Q_1)"
+        },
+        {
+          "from": "\\text{IQR} = 9 - 3",
+          "to": "\\text{IQR} = 6",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `2, 3, 5, 6, 8, 9, 10` (unreadable step (untranslatable))",
+        "unverified: `Q_{1} = 3` (a question line)",
+        "unverified: `Q_{3} = 9` (several unknowns (Q_1, Q_3))",
+        "unverified: `\\text{IQR} = Q_{3} - Q_{1}` (several unknowns (Q_3, IQR, Q_1))",
+        "unverified: `\\text{IQR} = 9 - 3` (several unknowns (IQR, Q_3, Q_1))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-18",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "4, 4, 6, 7, 9, 10, 12, 15, 20",
+        "Q_{1} = ?"
+      ],
+      "expected": "Q_1 = 5",
+      "note": "a repeated value",
+      "source": "solveFromLines",
+      "steps": [
+        "Q_{1} = \\frac{4 + 6}{2}",
+        "Q_{1} = 5"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "Q_{1} = \\frac{4 + 6}{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "Q_{1} = 5",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-19",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "3, 7, 8, 12, 15, 20",
+        "\\text{five number summary}"
+      ],
+      "expected": "3, \\ 7, \\ 10, \\ 15, \\ 20",
+      "note": "min, Q1, median, Q3, max",
+      "source": "solveFromLines",
+      "steps": [
+        "Q_{2} = \\frac{8 + 12}{2}",
+        "Q_{2} = 10",
+        "Q_{1} = 7",
+        "Q_{3} = 15",
+        "3, \\ 7, \\ 10, \\ 15, \\ 20"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\text{five number summary}",
+          "to": "Q_{2} = \\frac{8 + 12}{2}",
+          "status": "unverified",
+          "reason": "the line before is unreadable (untranslatable)"
+        },
+        {
+          "from": "Q_{2} = \\frac{8 + 12}{2}",
+          "to": "Q_{2} = 10",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "Q_{2} = 10",
+          "to": "Q_{1} = 7",
+          "status": "unverified",
+          "reason": "several unknowns (Q_2, Q_1)"
+        },
+        {
+          "from": "Q_{1} = 7",
+          "to": "Q_{3} = 15",
+          "status": "unverified",
+          "reason": "several unknowns (Q_1, Q_3)"
+        },
+        {
+          "from": "Q_{3} = 15",
+          "to": "3, \\ 7, \\ 10, \\ 15, \\ 20",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable)"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `Q_{2} = \\frac{8 + 12}{2}` (the line before is unreadable (untranslatable))",
+        "unverified: `Q_{1} = 7` (several unknowns (Q_2, Q_1))",
+        "unverified: `Q_{3} = 15` (several unknowns (Q_1, Q_3))",
+        "unverified: `3, \\ 7, \\ 10, \\ 15, \\ 20` (unreadable step (untranslatable))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-20",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "15, 1, 9, 4, 12",
+        "\\text{5-number summary}"
+      ],
+      "expected": "1, \\ 2.5, \\ 9, \\ 13.5, \\ 15",
+      "source": "solveFromLines",
+      "steps": [
+        "1, 4, 9, 12, 15",
+        "Q_{2} = 9",
+        "Q_{1} = \\frac{1 + 4}{2}",
+        "Q_{1} = 2.5",
+        "Q_{3} = \\frac{12 + 15}{2}",
+        "Q_{3} = 13.5",
+        "1, \\ 2.5, \\ 9, \\ 13.5, \\ 15"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\text{5-number summary}",
+          "to": "1, 4, 9, 12, 15",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable)"
+        },
+        {
+          "from": "\\text{5-number summary}",
+          "to": "Q_{2} = 9",
+          "status": "unverified",
+          "reason": "the line before is unreadable (untranslatable)"
+        },
+        {
+          "from": "Q_{2} = 9",
+          "to": "Q_{1} = \\frac{1 + 4}{2}",
+          "status": "unverified",
+          "reason": "several unknowns (Q_2, Q_1)"
+        },
+        {
+          "from": "Q_{1} = \\frac{1 + 4}{2}",
+          "to": "Q_{1} = 2.5",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "Q_{1} = 2.5",
+          "to": "Q_{3} = \\frac{12 + 15}{2}",
+          "status": "unverified",
+          "reason": "several unknowns (Q_1, Q_3)"
+        },
+        {
+          "from": "Q_{3} = \\frac{12 + 15}{2}",
+          "to": "Q_{3} = 13.5",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "Q_{3} = 13.5",
+          "to": "1, \\ 2.5, \\ 9, \\ 13.5, \\ 15",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable)"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `1, 4, 9, 12, 15` (unreadable step (untranslatable))",
+        "unverified: `Q_{2} = 9` (the line before is unreadable (untranslatable))",
+        "unverified: `Q_{1} = \\frac{1 + 4}{2}` (several unknowns (Q_2, Q_1))",
+        "unverified: `Q_{3} = \\frac{12 + 15}{2}` (several unknowns (Q_1, Q_3))",
+        "unverified: `1, \\ 2.5, \\ 9, \\ 13.5, \\ 15` (unreadable step (untranslatable))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-21",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "3, 5, 7, 9, 11",
+        "\\text{mean} = ?"
+      ],
+      "expected": "7",
+      "note": "the mean asked by name",
+      "source": "solveFromLines",
+      "steps": [
+        "\\text{mean} = \\frac{3 + 5 + 7 + 9 + 11}{5}",
+        "\\text{mean} = \\frac{35}{5}",
+        "\\text{mean} = 7"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\text{mean} = ?",
+          "to": "\\text{mean} = \\frac{3 + 5 + 7 + 9 + 11}{5}",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable side)"
+        },
+        {
+          "from": "\\text{mean} = ?",
+          "to": "\\text{mean} = \\frac{35}{5}",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable side)"
+        },
+        {
+          "from": "\\text{mean} = ?",
+          "to": "\\text{mean} = 7",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable side)"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `\\text{mean} = \\frac{3 + 5 + 7 + 9 + 11}{5}` (unreadable step (untranslatable side))",
+        "unverified: `\\text{mean} = \\frac{35}{5}` (unreadable step (untranslatable side))",
+        "unverified: `\\text{mean} = 7` (unreadable step (untranslatable side))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-22",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "2.5, 3.5, 1.5",
+        "\\bar{x} = ?"
+      ],
+      "expected": "2.5",
+      "note": "decimals stay decimals",
+      "source": "solveFromLines",
+      "steps": [
+        "\\bar{x} = \\frac{2.5 + 3.5 + 1.5}{3}",
+        "\\bar{x} = \\frac{7.5}{3}",
+        "\\bar{x} = 2.5"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\bar{x} = ?",
+          "to": "\\bar{x} = \\frac{2.5 + 3.5 + 1.5}{3}",
+          "status": "unverified",
+          "reason": "a question line"
+        },
+        {
+          "from": "\\bar{x} = \\frac{2.5 + 3.5 + 1.5}{3}",
+          "to": "\\bar{x} = \\frac{7.5}{3}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "\\bar{x} = \\frac{7.5}{3}",
+          "to": "\\bar{x} = 2.5",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `\\bar{x} = \\frac{2.5 + 3.5 + 1.5}{3}` (a question line)"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-23",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "3, 7, 8, 12, 15",
+        "\\sigma = ?"
+      ],
+      "expected": "sigma = 4.147288",
+      "note": "population: ÷ n, to 2 places",
+      "source": "solveFromLines",
+      "steps": [
+        "\\bar{x} = \\frac{3 + 7 + 8 + 12 + 15}{5}",
+        "\\bar{x} = 9",
+        "\\sigma = \\sqrt{\\frac{(3 - 9)^{2} + (7 - 9)^{2} + (8 - 9)^{2} + (12 - 9)^{2} + (15 - 9)^{2}}{5}}",
+        "\\sigma = \\sqrt{\\frac{36 + 4 + 1 + 9 + 36}{5}}",
+        "\\sigma = \\sqrt{\\frac{86}{5}}",
+        "\\sigma \\approx 4.15"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "\\bar{x} = \\frac{3 + 7 + 8 + 12 + 15}{5}",
+          "status": "unverified",
+          "reason": "mentions x"
+        },
+        {
+          "from": "(the system)",
+          "to": "\\bar{x} = 9",
+          "status": "unverified",
+          "reason": "mentions x"
+        },
+        {
+          "from": "(the system)",
+          "to": "\\sigma = \\sqrt{\\frac{(3 - 9)^{2} + (7 - 9)^{2} + (8 - 9)^{2} + (12 - 9)^{2} + (15 - 9)^{2}}{5}}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "\\sigma = \\sqrt{\\frac{36 + 4 + 1 + 9 + 36}{5}}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "\\sigma = \\sqrt{\\frac{86}{5}}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "\\sigma \\approx 4.15",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `\\bar{x} = \\frac{3 + 7 + 8 + 12 + 15}{5}` (mentions x)",
+        "unverified: `\\bar{x} = 9` (mentions x)"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-24",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "3, 7, 8, 12, 15",
+        "s = ?"
+      ],
+      "expected": "s = 4.636809",
+      "note": "sample: ÷ (n − 1)",
+      "source": "solveFromLines",
+      "steps": [
+        "\\bar{x} = \\frac{3 + 7 + 8 + 12 + 15}{5}",
+        "\\bar{x} = 9",
+        "s = \\sqrt{\\frac{(3 - 9)^{2} + (7 - 9)^{2} + (8 - 9)^{2} + (12 - 9)^{2} + (15 - 9)^{2}}{4}}",
+        "s = \\sqrt{\\frac{36 + 4 + 1 + 9 + 36}{4}}",
+        "s = \\sqrt{\\frac{86}{4}}",
+        "s = \\sqrt{\\frac{43}{2}}",
+        "s \\approx 4.64"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "\\bar{x} = \\frac{3 + 7 + 8 + 12 + 15}{5}",
+          "status": "unverified",
+          "reason": "mentions x"
+        },
+        {
+          "from": "(the system)",
+          "to": "\\bar{x} = 9",
+          "status": "unverified",
+          "reason": "mentions x"
+        },
+        {
+          "from": "(the system)",
+          "to": "s = \\sqrt{\\frac{(3 - 9)^{2} + (7 - 9)^{2} + (8 - 9)^{2} + (12 - 9)^{2} + (15 - 9)^{2}}{4}}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "s = \\sqrt{\\frac{36 + 4 + 1 + 9 + 36}{4}}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "s = \\sqrt{\\frac{86}{4}}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "s = \\sqrt{\\frac{43}{2}}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "s \\approx 4.64",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `\\bar{x} = \\frac{3 + 7 + 8 + 12 + 15}{5}` (mentions x)",
+        "unverified: `\\bar{x} = 9` (mentions x)"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-25",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "2, 4, 4, 4, 5, 5, 7, 9",
+        "\\sigma = ?"
+      ],
+      "expected": "sigma = 2",
+      "note": "an exact standard deviation",
+      "source": "solveFromLines",
+      "steps": [
+        "\\bar{x} = \\frac{2 + 4 + 4 + 4 + 5 + 5 + 7 + 9}{8}",
+        "\\bar{x} = 5",
+        "\\sigma = \\sqrt{\\frac{9 + 1 + 1 + 1 + 0 + 0 + 4 + 16}{8}}",
+        "\\sigma = \\sqrt{\\frac{32}{8}}",
+        "\\sigma = \\sqrt{4}",
+        "\\sigma = 2"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "\\bar{x} = \\frac{2 + 4 + 4 + 4 + 5 + 5 + 7 + 9}{8}",
+          "status": "unverified",
+          "reason": "mentions x"
+        },
+        {
+          "from": "(the system)",
+          "to": "\\bar{x} = 5",
+          "status": "unverified",
+          "reason": "mentions x"
+        },
+        {
+          "from": "(the system)",
+          "to": "\\sigma = \\sqrt{\\frac{9 + 1 + 1 + 1 + 0 + 0 + 4 + 16}{8}}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "\\sigma = \\sqrt{\\frac{32}{8}}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "\\sigma = \\sqrt{4}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "\\sigma = 2",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `\\bar{x} = \\frac{2 + 4 + 4 + 4 + 5 + 5 + 7 + 9}{8}` (mentions x)",
+        "unverified: `\\bar{x} = 5` (mentions x)"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-26",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "3, 7, 8, 12, 15",
+        "\\text{standard deviation} = ?"
+      ],
+      "expected": "\\sqrt{\\frac{86}{5}}",
+      "note": "not named σ or s: the population's",
+      "source": "solveFromLines",
+      "steps": [
+        "\\bar{x} = \\frac{3 + 7 + 8 + 12 + 15}{5}",
+        "\\bar{x} = 9",
+        "\\text{standard deviation} = \\sqrt{\\frac{(3 - 9)^{2} + (7 - 9)^{2} + (8 - 9)^{2} + (12 - 9)^{2} + (15 - 9)^{2}}{5}}",
+        "\\text{standard deviation} = \\sqrt{\\frac{36 + 4 + 1 + 9 + 36}{5}}",
+        "\\text{standard deviation} = \\sqrt{\\frac{86}{5}}",
+        "\\text{standard deviation} \\approx 4.15"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\text{standard deviation} = ?",
+          "to": "\\bar{x} = \\frac{3 + 7 + 8 + 12 + 15}{5}",
+          "status": "unverified",
+          "reason": "the line before is unreadable (untranslatable side)"
+        },
+        {
+          "from": "\\bar{x} = \\frac{3 + 7 + 8 + 12 + 15}{5}",
+          "to": "\\bar{x} = 9",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "\\bar{x} = 9",
+          "to": "\\text{standard deviation} = \\sqrt{\\frac{(3 - 9)^{2} + (7 - 9)^{2} + (8 - 9)^{2} + (12 - 9)^{2} + (15 - 9)^{2}}{5}}",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable side)"
+        },
+        {
+          "from": "\\bar{x} = 9",
+          "to": "\\text{standard deviation} = \\sqrt{\\frac{36 + 4 + 1 + 9 + 36}{5}}",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable side)"
+        },
+        {
+          "from": "\\bar{x} = 9",
+          "to": "\\text{standard deviation} = \\sqrt{\\frac{86}{5}}",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable side)"
+        },
+        {
+          "from": "\\bar{x} = 9",
+          "to": "\\text{standard deviation} \\approx 4.15",
+          "status": "unverified",
+          "reason": "unreadable step (untranslatable side)"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `\\bar{x} = \\frac{3 + 7 + 8 + 12 + 15}{5}` (the line before is unreadable (untranslatable side))",
+        "unverified: `\\text{standard deviation} = \\sqrt{\\frac{(3 - 9)^{2} + (7 - 9)^{2} + (8 - 9)^{2} + (12 - 9)^{2} + (15 - 9)^{2}}{5}}` (unreadable step (untranslatable side))",
+        "unverified: `\\text{standard deviation} = \\sqrt{\\frac{36 + 4 + 1 + 9 + 36}{5}}` (unreadable step (untranslatable side))",
+        "unverified: `\\text{standard deviation} = \\sqrt{\\frac{86}{5}}` (unreadable step (untranslatable side))",
+        "unverified: `\\text{standard deviation} \\approx 4.15` (unreadable step (untranslatable side))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-27",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "2, 4, 4, 5",
+        "s = ?"
+      ],
+      "expected": "s = 1.258306",
+      "note": "a mean in decimals",
+      "source": "solveFromLines",
+      "steps": [
+        "\\bar{x} = \\frac{2 + 4 + 4 + 5}{4}",
+        "\\bar{x} = 3.75",
+        "s = \\sqrt{\\frac{(2 - 3.75)^{2} + (4 - 3.75)^{2} + (4 - 3.75)^{2} + (5 - 3.75)^{2}}{3}}",
+        "s = \\sqrt{\\frac{3.0625 + 0.0625 + 0.0625 + 1.5625}{3}}",
+        "s = \\sqrt{\\frac{4.75}{3}}",
+        "s \\approx 1.26"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "\\bar{x} = \\frac{2 + 4 + 4 + 5}{4}",
+          "status": "unverified",
+          "reason": "mentions x"
+        },
+        {
+          "from": "(the system)",
+          "to": "\\bar{x} = 3.75",
+          "status": "unverified",
+          "reason": "mentions x"
+        },
+        {
+          "from": "(the system)",
+          "to": "s = \\sqrt{\\frac{(2 - 3.75)^{2} + (4 - 3.75)^{2} + (4 - 3.75)^{2} + (5 - 3.75)^{2}}{3}}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "s = \\sqrt{\\frac{3.0625 + 0.0625 + 0.0625 + 1.5625}{3}}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "s = \\sqrt{\\frac{4.75}{3}}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "s \\approx 1.26",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `\\bar{x} = \\frac{2 + 4 + 4 + 5}{4}` (mentions x)",
+        "unverified: `\\bar{x} = 3.75` (mentions x)"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-28",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "3, 7, 8, 12, 15, 20",
+        "\\sigma = ?"
+      ],
+      "expected": "sigma = 5.580223",
+      "note": "a mean that is no short decimal",
+      "source": "solveFromLines",
+      "steps": [
+        "\\bar{x} = \\frac{3 + 7 + 8 + 12 + 15 + 20}{6}",
+        "\\bar{x} = \\frac{65}{6}",
+        "\\sigma = \\sqrt{\\frac{1121}{36}}",
+        "\\sigma \\approx 5.58"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "\\bar{x} = \\frac{3 + 7 + 8 + 12 + 15 + 20}{6}",
+          "status": "unverified",
+          "reason": "mentions x"
+        },
+        {
+          "from": "(the system)",
+          "to": "\\bar{x} = \\frac{65}{6}",
+          "status": "unverified",
+          "reason": "mentions x"
+        },
+        {
+          "from": "(the system)",
+          "to": "\\sigma = \\sqrt{\\frac{1121}{36}}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "\\sigma \\approx 5.58",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `\\bar{x} = \\frac{3 + 7 + 8 + 12 + 15 + 20}{6}` (mentions x)",
+        "unverified: `\\bar{x} = \\frac{65}{6}` (mentions x)"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-st-29",
+      "topic": "statistics",
+      "course": "algebra-1",
+      "lines": [
+        "1, 3, 5, 7, 9",
+        "s ="
+      ],
+      "expected": "s = 3.162278",
+      "source": "solveFromLines",
+      "steps": [
+        "\\bar{x} = \\frac{1 + 3 + 5 + 7 + 9}{5}",
+        "\\bar{x} = 5",
+        "s = \\sqrt{\\frac{(1 - 5)^{2} + (3 - 5)^{2} + (5 - 5)^{2} + (7 - 5)^{2} + (9 - 5)^{2}}{4}}",
+        "s = \\sqrt{\\frac{16 + 4 + 0 + 4 + 16}{4}}",
+        "s = \\sqrt{\\frac{40}{4}}",
+        "s = \\sqrt{10}",
+        "s \\approx 3.16"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "\\bar{x} = \\frac{1 + 3 + 5 + 7 + 9}{5}",
+          "status": "unverified",
+          "reason": "mentions x"
+        },
+        {
+          "from": "(the system)",
+          "to": "\\bar{x} = 5",
+          "status": "unverified",
+          "reason": "mentions x"
+        },
+        {
+          "from": "(the system)",
+          "to": "s = \\sqrt{\\frac{(1 - 5)^{2} + (3 - 5)^{2} + (5 - 5)^{2} + (7 - 5)^{2} + (9 - 5)^{2}}{4}}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "s = \\sqrt{\\frac{16 + 4 + 0 + 4 + 16}{4}}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "s = \\sqrt{\\frac{40}{4}}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "s = \\sqrt{10}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "s \\approx 3.16",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `\\bar{x} = \\frac{1 + 3 + 5 + 7 + 9}{5}` (mentions x)",
+        "unverified: `\\bar{x} = 5` (mentions x)"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-sf-01",
+      "topic": "standard-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = -\\frac{2}{3}x + 2",
+        "Ax + By = C"
+      ],
+      "expected": "2x + 3y = 6",
+      "note": "the fraction cleared, then x brought over",
+      "source": "solveFromLines",
+      "steps": [
+        "3y = -2x + 6",
+        "2x + 3y = 6"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "3y = -2x + 6",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "2x + 3y = 6",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-sf-02",
+      "topic": "standard-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = 2x - 1",
+        "Ax + By = C"
+      ],
+      "expected": "2x - y = 1",
+      "note": "A made positive",
+      "source": "solveFromLines",
+      "steps": [
+        "-2x + y = -1",
+        "2x - y = 1"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "-2x + y = -1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "2x - y = 1",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-sf-03",
+      "topic": "standard-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = \\frac{1}{2}x + 3",
+        "Ax + By = C"
+      ],
+      "expected": "x - 2y = -6",
+      "source": "solveFromLines",
+      "steps": [
+        "2y = x + 6",
+        "-x + 2y = 6",
+        "x - 2y = -6"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "2y = x + 6",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "-x + 2y = 6",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "x - 2y = -6",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-sf-04",
+      "topic": "standard-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = -\\frac{3}{4}x - \\frac{5}{2}",
+        "Ax + By = C"
+      ],
+      "expected": "3x + 4y = -10",
+      "note": "two denominators: their LCD",
+      "source": "solveFromLines",
+      "steps": [
+        "4y = -3x - 10",
+        "3x + 4y = -10"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "4y = -3x - 10",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "3x + 4y = -10",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-sf-05",
+      "topic": "standard-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = 3x",
+        "Ax + By = C"
+      ],
+      "expected": "3x - y = 0",
+      "note": "a zero intercept",
+      "source": "solveFromLines",
+      "steps": [
+        "-3x + y = 0",
+        "3x - y = 0"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "-3x + y = 0",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "3x - y = 0",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-sf-06",
+      "topic": "standard-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = -x + 7",
+        "\\text{standard form}"
+      ],
+      "expected": "x + y = 7",
+      "note": "asked with the student's words",
+      "source": "solveFromLines",
+      "steps": [
+        "x + y = 7"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\text{standard form}",
+          "to": "x + y = 7",
+          "status": "unverified",
+          "reason": "the line before is unreadable (untranslatable)"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `x + y = 7` (the line before is unreadable (untranslatable))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-sf-07",
+      "topic": "standard-form",
+      "course": "algebra-1",
+      "lines": [
+        "y - 3 = 2(x - 1)",
+        "\\text{standard form}"
+      ],
+      "expected": "2x - y = -1",
+      "note": "point-slope: the bracket first",
+      "source": "solveFromLines",
+      "steps": [
+        "y - 3 = 2x - 2",
+        "-2x + y = 1",
+        "2x - y = -1"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\text{standard form}",
+          "to": "y - 3 = 2x - 2",
+          "status": "unverified",
+          "reason": "the line before is unreadable (untranslatable)"
+        },
+        {
+          "from": "y - 3 = 2x - 2",
+          "to": "-2x + y = 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "-2x + y = 1",
+          "to": "2x - y = -1",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `y - 3 = 2x - 2` (the line before is unreadable (untranslatable))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-sf-08",
+      "topic": "standard-form",
+      "course": "algebra-1",
+      "lines": [
+        "y + 2 = -\\frac{1}{3}(x - 6)",
+        "Ax + By = C"
+      ],
+      "expected": "x + 3y = 0",
+      "source": "solveFromLines",
+      "steps": [
+        "y + 2 = -\\frac{1}{3}x + 2",
+        "3y + 6 = -x + 6",
+        "x + 3y = 0"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "y + 2 = -\\frac{1}{3}x + 2",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "3y + 6 = -x + 6",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "x + 3y = 0",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-sf-09",
+      "topic": "standard-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = 0.5x + 2",
+        "Ax + By = C"
+      ],
+      "expected": "x - 2y = -4",
+      "note": "a decimal slope",
+      "source": "solveFromLines",
+      "steps": [
+        "2y = x + 4",
+        "-x + 2y = 4",
+        "x - 2y = -4"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "2y = x + 4",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "-x + 2y = 4",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "x - 2y = -4",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-sf-10",
+      "topic": "standard-form",
+      "course": "algebra-1",
+      "lines": [
+        "4x + 6y = 12",
+        "Ax + By = C"
+      ],
+      "expected": "2x + 3y = 6",
+      "note": "a common factor",
+      "source": "solveFromLines",
+      "steps": [
+        "2x + 3y = 6"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "2x + 3y = 6",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-sf-11",
+      "topic": "standard-form",
+      "course": "algebra-1",
+      "lines": [
+        "-2x - 3y = -6",
+        "Ax + By = C"
+      ],
+      "expected": "2x + 3y = 6",
+      "note": "a negative A and a common factor at once",
+      "source": "solveFromLines",
+      "steps": [
+        "2x + 3y = 6"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "2x + 3y = 6",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-sf-12",
+      "topic": "standard-form",
+      "course": "algebra-1",
+      "lines": [
+        "6x = 4y + 10",
+        "Ax + By = C"
+      ],
+      "expected": "3x - 2y = 5",
+      "source": "solveFromLines",
+      "steps": [
+        "6x - 4y = 10",
+        "3x - 2y = 5"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "6x - 4y = 10",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "3x - 2y = 5",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-sf-13",
+      "topic": "standard-form",
+      "course": "algebra-1",
+      "lines": [
+        "(2, 3), (5, 9)",
+        "Ax + By = C"
+      ],
+      "expected": "2x - y = 1",
+      "note": "two points: the slope, point-slope, standard form",
+      "source": "solveFromLines",
+      "steps": [
+        "m = \\frac{9 - 3}{5 - 2}",
+        "m = \\frac{6}{3}",
+        "m = 2",
+        "y - 3 = 2(x - 2)",
+        "y - 3 = 2x - 4",
+        "-2x + y = -1",
+        "2x - y = 1"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "Ax + By = C",
+          "to": "m = \\frac{9 - 3}{5 - 2}",
+          "status": "unverified",
+          "reason": "several unknowns (A, x, B, y, C, m)"
+        },
+        {
+          "from": "m = \\frac{9 - 3}{5 - 2}",
+          "to": "m = \\frac{6}{3}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "m = \\frac{6}{3}",
+          "to": "m = 2",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "m = 2",
+          "to": "y - 3 = 2(x - 2)",
+          "status": "unverified",
+          "reason": "several unknowns (m, y, x)"
+        },
+        {
+          "from": "y - 3 = 2(x - 2)",
+          "to": "y - 3 = 2x - 4",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "y - 3 = 2x - 4",
+          "to": "-2x + y = -1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "-2x + y = -1",
+          "to": "2x - y = 1",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `m = \\frac{9 - 3}{5 - 2}` (several unknowns (A, x, B, y, C, m))",
+        "unverified: `y - 3 = 2(x - 2)` (several unknowns (m, y, x))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-sf-14",
+      "topic": "standard-form",
+      "course": "algebra-1",
+      "lines": [
+        "m = -\\frac{2}{5}",
+        "(5, 1)",
+        "Ax + By = C"
+      ],
+      "expected": "2x + 5y = 15",
+      "note": "a point and a slope",
+      "source": "solveFromLines",
+      "steps": [
+        "y - 1 = -\\frac{2}{5}(x - 5)",
+        "y - 1 = -\\frac{2}{5}x + 2",
+        "5y - 5 = -2x + 10",
+        "2x + 5y = 15"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "y - 1 = -\\frac{2}{5}(x - 5)",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y - 1 = -\\frac{2}{5}x + 2",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "5y - 5 = -2x + 10",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "2x + 5y = 15",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-sf-15",
+      "topic": "standard-form",
+      "course": "algebra-1",
+      "lines": [
+        "Ax + By = C",
+        "y = \\frac{5}{3}x - 4"
+      ],
+      "expected": "5x - 3y = 12",
+      "note": "asked above the line Solve is pressed on",
+      "source": "solveLatex",
+      "steps": [
+        "3y = 5x - 12",
+        "-5x + 3y = -12",
+        "5x - 3y = 12"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "3y = 5x - 12",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "-5x + 3y = -12",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "5x - 3y = 12",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-sf-16",
+      "topic": "standard-form",
+      "course": "algebra-1",
+      "lines": [
+        "3x - 4y = 12",
+        "y = mx + b"
+      ],
+      "expected": "y = \\frac{3}{4}x - 3",
+      "note": "the other way: slope-intercept",
+      "source": "solveFromLines",
+      "steps": [
+        "-4y = -3x + 12",
+        "y = \\frac{3}{4}x - 3"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "-4y = -3x + 12",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = \\frac{3}{4}x - 3",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-01",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = x^{2} + 6x + 5",
+        "y = a(x - h)^{2} + k"
+      ],
+      "expected": "y = (x + 3)^{2} - 4",
+      "note": "completing the square, a = 1",
+      "source": "solveFromLines",
+      "steps": [
+        "\\left(\\frac{6}{2}\\right)^{2} = 9",
+        "y = (x^{2} + 6x + 9) - 9 + 5",
+        "y = (x + 3)^{2} - 4"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "\\left(\\frac{6}{2}\\right)^{2} = 9",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = (x^{2} + 6x + 9) - 9 + 5",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = (x + 3)^{2} - 4",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-02",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = x^{2} - 8x + 10",
+        "y = a(x - h)^{2} + k"
+      ],
+      "expected": "y = (x - 4)^{2} - 6",
+      "source": "solveFromLines",
+      "steps": [
+        "\\left(\\frac{-8}{2}\\right)^{2} = 16",
+        "y = (x^{2} - 8x + 16) - 16 + 10",
+        "y = (x - 4)^{2} - 6"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "\\left(\\frac{-8}{2}\\right)^{2} = 16",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = (x^{2} - 8x + 16) - 16 + 10",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = (x - 4)^{2} - 6",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-03",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = 2x^{2} - 12x + 7",
+        "y = a(x - h)^{2} + k"
+      ],
+      "expected": "y = 2(x - 3)^{2} - 11",
+      "note": "a ≠ 1: factored out of the x terms",
+      "source": "solveFromLines",
+      "steps": [
+        "y = 2(x^{2} - 6x) + 7",
+        "\\left(\\frac{-6}{2}\\right)^{2} = 9",
+        "y = 2(x^{2} - 6x + 9 - 9) + 7",
+        "y = 2(x^{2} - 6x + 9) - 18 + 7",
+        "y = 2(x - 3)^{2} - 11"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "y = 2(x^{2} - 6x) + 7",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "\\left(\\frac{-6}{2}\\right)^{2} = 9",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = 2(x^{2} - 6x + 9 - 9) + 7",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = 2(x^{2} - 6x + 9) - 18 + 7",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = 2(x - 3)^{2} - 11",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-04",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = -x^{2} + 4x + 1",
+        "\\text{vertex form}"
+      ],
+      "expected": "y = -(x - 2)^{2} + 5",
+      "note": "a < 0, asked with the student's words",
+      "source": "solveFromLines",
+      "steps": [
+        "y = -(x^{2} - 4x) + 1",
+        "\\left(\\frac{-4}{2}\\right)^{2} = 4",
+        "y = -(x^{2} - 4x + 4 - 4) + 1",
+        "y = -(x^{2} - 4x + 4) + 4 + 1",
+        "y = -(x - 2)^{2} + 5"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\text{vertex form}",
+          "to": "y = -(x^{2} - 4x) + 1",
+          "status": "unverified",
+          "reason": "the line before is unreadable (untranslatable)"
+        },
+        {
+          "from": "y = -(x^{2} - 4x) + 1",
+          "to": "\\left(\\frac{-4}{2}\\right)^{2} = 4",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "y = -(x^{2} - 4x) + 1",
+          "to": "y = -(x^{2} - 4x + 4 - 4) + 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "y = -(x^{2} - 4x + 4 - 4) + 1",
+          "to": "y = -(x^{2} - 4x + 4) + 4 + 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "y = -(x^{2} - 4x + 4) + 4 + 1",
+          "to": "y = -(x - 2)^{2} + 5",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `y = -(x^{2} - 4x) + 1` (the line before is unreadable (untranslatable))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-05",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = 3x^{2} + 12x + 5",
+        "y = a(x - h)^{2} + k"
+      ],
+      "expected": "y = 3(x + 2)^{2} - 7",
+      "source": "solveFromLines",
+      "steps": [
+        "y = 3(x^{2} + 4x) + 5",
+        "\\left(\\frac{4}{2}\\right)^{2} = 4",
+        "y = 3(x^{2} + 4x + 4 - 4) + 5",
+        "y = 3(x^{2} + 4x + 4) - 12 + 5",
+        "y = 3(x + 2)^{2} - 7"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "y = 3(x^{2} + 4x) + 5",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "\\left(\\frac{4}{2}\\right)^{2} = 4",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = 3(x^{2} + 4x + 4 - 4) + 5",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = 3(x^{2} + 4x + 4) - 12 + 5",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = 3(x + 2)^{2} - 7",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-06",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = x^{2} + 5x + 1",
+        "y = a(x - h)^{2} + k"
+      ],
+      "expected": "y = (x + \\frac{5}{2})^{2} - \\frac{21}{4}",
+      "note": "fractional h and k, exact",
+      "source": "solveFromLines",
+      "steps": [
+        "\\left(\\frac{5}{2}\\right)^{2} = \\frac{25}{4}",
+        "y = (x^{2} + 5x + \\frac{25}{4}) - \\frac{25}{4} + 1",
+        "y = (x + \\frac{5}{2})^{2} - \\frac{21}{4}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "\\left(\\frac{5}{2}\\right)^{2} = \\frac{25}{4}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = (x^{2} + 5x + \\frac{25}{4}) - \\frac{25}{4} + 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = (x + \\frac{5}{2})^{2} - \\frac{21}{4}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-07",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = 2x^{2} + 3x - 1",
+        "y = a(x - h)^{2} + k"
+      ],
+      "expected": "y = 2(x + \\frac{3}{4})^{2} - \\frac{17}{8}",
+      "source": "solveFromLines",
+      "steps": [
+        "y = 2(x^{2} + \\frac{3}{2}x) - 1",
+        "\\left(\\frac{3}{4}\\right)^{2} = \\frac{9}{16}",
+        "y = 2(x^{2} + \\frac{3}{2}x + \\frac{9}{16} - \\frac{9}{16}) - 1",
+        "y = 2(x^{2} + \\frac{3}{2}x + \\frac{9}{16}) - \\frac{9}{8} - 1",
+        "y = 2(x + \\frac{3}{4})^{2} - \\frac{17}{8}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "y = 2(x^{2} + \\frac{3}{2}x) - 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "\\left(\\frac{3}{4}\\right)^{2} = \\frac{9}{16}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = 2(x^{2} + \\frac{3}{2}x + \\frac{9}{16} - \\frac{9}{16}) - 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = 2(x^{2} + \\frac{3}{2}x + \\frac{9}{16}) - \\frac{9}{8} - 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = 2(x + \\frac{3}{4})^{2} - \\frac{17}{8}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-08",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = x^{2} - 4x",
+        "y = a(x - h)^{2} + k"
+      ],
+      "expected": "y = (x - 2)^{2} - 4",
+      "note": "no constant term",
+      "source": "solveFromLines",
+      "steps": [
+        "\\left(\\frac{-4}{2}\\right)^{2} = 4",
+        "y = (x^{2} - 4x + 4) - 4",
+        "y = (x - 2)^{2} - 4"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "\\left(\\frac{-4}{2}\\right)^{2} = 4",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = (x^{2} - 4x + 4) - 4",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = (x - 2)^{2} - 4",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-09",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = -2x^{2} - 8x - 3",
+        "y = a(x - h)^{2} + k"
+      ],
+      "expected": "y = -2(x + 2)^{2} + 5",
+      "source": "solveFromLines",
+      "steps": [
+        "y = -2(x^{2} + 4x) - 3",
+        "\\left(\\frac{4}{2}\\right)^{2} = 4",
+        "y = -2(x^{2} + 4x + 4 - 4) - 3",
+        "y = -2(x^{2} + 4x + 4) + 8 - 3",
+        "y = -2(x + 2)^{2} + 5"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "y = -2(x^{2} + 4x) - 3",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "\\left(\\frac{4}{2}\\right)^{2} = 4",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = -2(x^{2} + 4x + 4 - 4) - 3",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = -2(x^{2} + 4x + 4) + 8 - 3",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = -2(x + 2)^{2} + 5",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-10",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = a(x - h)^{2} + k",
+        "y = x^{2} + 10x + 21"
+      ],
+      "expected": "y = (x + 5)^{2} - 4",
+      "note": "asked above the line Solve is pressed on",
+      "source": "solveLatex",
+      "steps": [
+        "\\left(\\frac{10}{2}\\right)^{2} = 25",
+        "y = (x^{2} + 10x + 25) - 25 + 21",
+        "y = (x + 5)^{2} - 4"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "\\left(\\frac{10}{2}\\right)^{2} = 25",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = (x^{2} + 10x + 25) - 25 + 21",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = (x + 5)^{2} - 4",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-11",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = x^{2} + 6x + 5",
+        "(h, k) = ?"
+      ],
+      "expected": "",
+      "note": "the vertex: h = -b/2a, then k = f(h)",
+      "source": "solveFromLines",
+      "steps": [
+        "h = -\\frac{6}{2(1)}",
+        "h = -3",
+        "k = (-3)^{2} + 6(-3) + 5",
+        "k = 9 - 18 + 5",
+        "k = -4",
+        "(h, k) = (-3, -4)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(h, k) = ?",
+          "to": "h = -\\frac{6}{2(1)}",
+          "status": "unverified",
+          "reason": "the line before is unreadable (untranslatable side)"
+        },
+        {
+          "from": "h = -\\frac{6}{2(1)}",
+          "to": "h = -3",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "h = -3",
+          "to": "k = (-3)^{2} + 6(-3) + 5",
+          "status": "unverified",
+          "reason": "several unknowns (h, k)"
+        },
+        {
+          "from": "k = (-3)^{2} + 6(-3) + 5",
+          "to": "k = 9 - 18 + 5",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "k = 9 - 18 + 5",
+          "to": "k = -4",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "k = -4",
+          "to": "(h, k) = (-3, -4)",
+          "status": "ok",
+          "reason": "the point"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `h = -\\frac{6}{2(1)}` (the line before is unreadable (untranslatable side))",
+        "unverified: `k = (-3)^{2} + 6(-3) + 5` (several unknowns (h, k))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-12",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = -2x^{2} + 8x - 3",
+        "(h, k) = ?"
+      ],
+      "expected": "",
+      "source": "solveFromLines",
+      "steps": [
+        "h = -\\frac{8}{2(-2)}",
+        "h = 2",
+        "k = -2(2)^{2} + 8(2) - 3",
+        "k = -8 + 16 - 3",
+        "k = 5",
+        "(h, k) = (2, 5)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(h, k) = ?",
+          "to": "h = -\\frac{8}{2(-2)}",
+          "status": "unverified",
+          "reason": "the line before is unreadable (untranslatable side)"
+        },
+        {
+          "from": "h = -\\frac{8}{2(-2)}",
+          "to": "h = 2",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "h = 2",
+          "to": "k = -2(2)^{2} + 8(2) - 3",
+          "status": "unverified",
+          "reason": "several unknowns (h, k)"
+        },
+        {
+          "from": "k = -2(2)^{2} + 8(2) - 3",
+          "to": "k = -8 + 16 - 3",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "k = -8 + 16 - 3",
+          "to": "k = 5",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "k = 5",
+          "to": "(h, k) = (2, 5)",
+          "status": "ok",
+          "reason": "the point"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `h = -\\frac{8}{2(-2)}` (the line before is unreadable (untranslatable side))",
+        "unverified: `k = -2(2)^{2} + 8(2) - 3` (several unknowns (h, k))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-13",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = 2(x - 3)^{2} + 1",
+        "(h, k) = ?"
+      ],
+      "expected": "",
+      "note": "read off a vertex form",
+      "source": "solveFromLines",
+      "steps": [
+        "(h, k) = (3, 1)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(h, k) = ?",
+          "to": "(h, k) = (3, 1)",
+          "status": "ok",
+          "reason": "the point"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-14",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = -(x + 4)^{2} - 2",
+        "\\text{vertex} = ?"
+      ],
+      "expected": "",
+      "note": "x + 4 is x - (-4)",
+      "source": "solveFromLines",
+      "steps": [
+        "y = -(x - (-4))^{2} - 2",
+        "\\text{vertex} = (-4, -2)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\text{vertex} = ?",
+          "to": "y = -(x - (-4))^{2} - 2",
+          "status": "unverified",
+          "reason": "the line before is unreadable (untranslatable side)"
+        },
+        {
+          "from": "y = -(x - (-4))^{2} - 2",
+          "to": "\\text{vertex} = (-4, -2)",
+          "status": "ok",
+          "reason": "the point"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `y = -(x - (-4))^{2} - 2` (the line before is unreadable (untranslatable side))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-15",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = x^{2} - 3x + 2",
+        "\\text{vertex}"
+      ],
+      "expected": "",
+      "note": "fractional vertex",
+      "source": "solveFromLines",
+      "steps": [
+        "h = -\\frac{-3}{2(1)}",
+        "h = \\frac{3}{2}",
+        "k = (\\frac{3}{2})^{2} - 3(\\frac{3}{2}) + 2",
+        "k = \\frac{9}{4} - \\frac{9}{2} + 2",
+        "k = -\\frac{1}{4}",
+        "\\text{vertex} = (\\frac{3}{2}, -\\frac{1}{4})"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\text{vertex}",
+          "to": "h = -\\frac{-3}{2(1)}",
+          "status": "unverified",
+          "reason": "the line before is unreadable (untranslatable)"
+        },
+        {
+          "from": "h = -\\frac{-3}{2(1)}",
+          "to": "h = \\frac{3}{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "h = \\frac{3}{2}",
+          "to": "k = (\\frac{3}{2})^{2} - 3(\\frac{3}{2}) + 2",
+          "status": "unverified",
+          "reason": "several unknowns (h, k)"
+        },
+        {
+          "from": "k = (\\frac{3}{2})^{2} - 3(\\frac{3}{2}) + 2",
+          "to": "k = \\frac{9}{4} - \\frac{9}{2} + 2",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "k = \\frac{9}{4} - \\frac{9}{2} + 2",
+          "to": "k = -\\frac{1}{4}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "k = -\\frac{1}{4}",
+          "to": "\\text{vertex} = (\\frac{3}{2}, -\\frac{1}{4})",
+          "status": "ok",
+          "reason": "the point"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `h = -\\frac{-3}{2(1)}` (the line before is unreadable (untranslatable))",
+        "unverified: `k = (\\frac{3}{2})^{2} - 3(\\frac{3}{2}) + 2` (several unknowns (h, k))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-16",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = 3x^{2} - 6x",
+        "(h, k) ="
+      ],
+      "expected": "",
+      "source": "solveFromLines",
+      "steps": [
+        "h = -\\frac{-6}{2(3)}",
+        "h = 1",
+        "k = 3(1)^{2} - 6(1)",
+        "k = 3 - 6",
+        "k = -3",
+        "(h, k) = (1, -3)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(h, k) =",
+          "to": "h = -\\frac{-6}{2(3)}",
+          "status": "unverified",
+          "reason": "the line before is unreadable (untranslatable)"
+        },
+        {
+          "from": "h = -\\frac{-6}{2(3)}",
+          "to": "h = 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "h = 1",
+          "to": "k = 3(1)^{2} - 6(1)",
+          "status": "unverified",
+          "reason": "several unknowns (h, k)"
+        },
+        {
+          "from": "k = 3(1)^{2} - 6(1)",
+          "to": "k = 3 - 6",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "k = 3 - 6",
+          "to": "k = -3",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "k = -3",
+          "to": "(h, k) = (1, -3)",
+          "status": "ok",
+          "reason": "the point"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `h = -\\frac{-6}{2(3)}` (the line before is unreadable (untranslatable))",
+        "unverified: `k = 3(1)^{2} - 6(1)` (several unknowns (h, k))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-17",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = 2(x - 3)^{2} + 1",
+        "y = ax^{2} + bx + c"
+      ],
+      "expected": "y = 2x^{2} - 12x + 19",
+      "note": "back to standard form",
+      "source": "solveFromLines",
+      "steps": [
+        "y = 2(x^{2} - 6x + 9) + 1",
+        "y = 2x^{2} - 12x + 18 + 1",
+        "y = 2x^{2} - 12x + 19"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "y = 2(x^{2} - 6x + 9) + 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = 2x^{2} - 12x + 18 + 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = 2x^{2} - 12x + 19",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-18",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = (x + 4)^{2} - 7",
+        "\\text{standard form}"
+      ],
+      "expected": "y = x^{2} + 8x + 9",
+      "source": "solveFromLines",
+      "steps": [
+        "y = x^{2} + 8x + 16 - 7",
+        "y = x^{2} + 8x + 9"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\text{standard form}",
+          "to": "y = x^{2} + 8x + 16 - 7",
+          "status": "unverified",
+          "reason": "the line before is unreadable (untranslatable)"
+        },
+        {
+          "from": "y = x^{2} + 8x + 16 - 7",
+          "to": "y = x^{2} + 8x + 9",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [
+        "unverified: `y = x^{2} + 8x + 16 - 7` (the line before is unreadable (untranslatable))"
+      ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-19",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = -(x + 2)^{2} + 5",
+        "y = ax^{2} + bx + c"
+      ],
+      "expected": "y = -x^{2} - 4x + 1",
+      "source": "solveFromLines",
+      "steps": [
+        "y = -(x^{2} + 4x + 4) + 5",
+        "y = -x^{2} - 4x - 4 + 5",
+        "y = -x^{2} - 4x + 1"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "y = -(x^{2} + 4x + 4) + 5",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = -x^{2} - 4x - 4 + 5",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = -x^{2} - 4x + 1",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a1-vx-20",
+      "topic": "vertex-form",
+      "course": "algebra-1",
+      "lines": [
+        "y = \\frac{1}{2}(x - 4)^{2}",
+        "y = ax^{2} + bx + c"
+      ],
+      "expected": "y = \\frac{1}{2}x^{2} - 4x + 8",
+      "note": "k = 0",
+      "source": "solveFromLines",
+      "steps": [
+        "y = \\frac{1}{2}(x^{2} - 8x + 16)",
+        "y = \\frac{1}{2}x^{2} - 4x + 8"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "y = \\frac{1}{2}(x^{2} - 8x + 16)",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "y = \\frac{1}{2}x^{2} - 4x + 8",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
       "pass": true,
       "failures": []
     },

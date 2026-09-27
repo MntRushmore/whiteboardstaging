@@ -717,6 +717,9 @@ export function createEngine(mod: MathModule): LiveEngine {
 
   // --- entry points --------------------------------------------------------
   const analyze = (latex: string, ctx: AnalyzeContext): LineAnalysis => {
+    // a line about the data list above, a form of the line / quadratic above asked for (`courses.ts`)
+    const course = courses.analyzeFirst(latex, ctx);
+    if (course) return course;
     // statements about figures, angle equations in degrees (`geometry.ts`)
     const geo = geometry.analyze(latex, ctx, analyze);
     if (geo) return geo;

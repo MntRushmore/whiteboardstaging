@@ -454,3 +454,95 @@ describe("judge: a rational function's features, a transformation (functionFeatu
     expect(answerOf(wrongParent, ip)).toBe("wrong");
   });
 });
+
+describe("judge: Algebra 1's new answer shapes still catch wrong answers", () => {
+  it("a line in standard form: the same line, and it must look like Ax + By = C", () => {
+    const lines = ["y = -\\frac{2}{3}x + 2", "Ax + By = C"];
+    const p = problem({ topic: "linear-functions", lines, expect: { answer: "2x + 3y = 6", form: "standard" } });
+    const good = judge(p, lines, solved(["3y = -2x + 6", "2x + 3y = 6"], "solveFromLines"), drawAll);
+    expect(good.pass).toBe(true);
+    // the same line, not in standard form: slope-intercept, a common factor, a negative A
+    for (const last of ["y = -\\frac{2}{3}x + 2", "4x + 6y = 12", "-2x - 3y = -6", "3y = -2x + 6"]) expect(judge(p, lines, solved([last], "solveFromLines"), drawAll).answer.status, last).toBe("form");
+    const bad = judge(p, lines, solved(["3y = -2x + 6", "2x + 3y = 7"], "solveFromLines"), drawAll);
+    expect(bad.answer.status).toBe("wrong");
+  });
+
+  it("a quadratic in vertex form: the same quadratic, and it must look like a(x - h)^{2} + k", () => {
+    const lines = ["y = 2x^{2} - 12x + 7", "y = a(x - h)^{2} + k"];
+    const p = problem({ topic: "quadratic", lines, expect: { answer: "y = 2(x - 3)^{2} - 11", form: "vertex" } });
+    const work = ["y = 2(x^{2} - 6x) + 7", "\\left(\\frac{-6}{2}\\right)^{2} = 9", "y = 2(x^{2} - 6x + 9 - 9) + 7", "y = 2(x^{2} - 6x + 9) - 18 + 7"];
+    const good = judge(p, lines, solved([...work, "y = 2(x - 3)^{2} - 11"], "solveFromLines"), drawAll);
+    expect(good.pass).toBe(true);
+    expect(good.transitions.map((t) => t.status)).toEqual(["ok", "ok", "ok", "ok", "ok"]);
+    expect(judge(p, lines, solved(["y = 2x^{2} - 12x + 7"], "solveFromLines"), drawAll).answer.status).toBe("form");
+    expect(judge(p, lines, solved(["y = 2(x^{2} - 6x + 9) - 11"], "solveFromLines"), drawAll).answer.status).toBe("form");
+    // a slip: 9 added inside and 9 (not 18) taken away outside — every line after it is off the curve
+    const bad = judge(p, lines, solved(["y = 2(x^{2} - 6x) + 7", "y = 2(x^{2} - 6x + 9) - 9 + 7", "y = 2(x - 3)^{2} - 2"], "solveFromLines"), drawAll);
+    expect(bad.answer.status).toBe("wrong");
+    expect(bad.transitions.map((t) => t.status)).toEqual(["ok", "broken", "broken"]);
+  });
+
+  it("back to standard form: the expanded quadratic, not the vertex form again", () => {
+    const lines = ["y = 2(x - 3)^{2} + 1", "y = ax^{2} + bx + c"];
+    const p = problem({ topic: "quadratic", lines, expect: { answer: "y = 2x^{2} - 12x + 19", form: "expanded" } });
+    expect(judge(p, lines, solved(["y = 2(x^{2} - 6x + 9) + 1", "y = 2x^{2} - 12x + 18 + 1", "y = 2x^{2} - 12x + 19"], "solveFromLines"), drawAll).pass).toBe(true);
+    expect(judge(p, lines, solved(["y = 2(x - 3)^{2} + 1"], "solveFromLines"), drawAll).answer.status).not.toBe("ok");
+    expect(judge(p, lines, solved(["y = 2x^{2} - 12x + 18"], "solveFromLines"), drawAll).answer.status).toBe("wrong");
+  });
+
+  it("the vertex is a point", () => {
+    const lines = ["y = x^{2} + 6x + 5", "(h, k) = ?"];
+    const p = problem({ topic: "quadratic", lines, expect: { point: [-3, -4] } });
+    expect(judge(p, lines, solved(["h = -\\frac{6}{2(1)}", "h = -3", "k = (-3)^{2} + 6(-3) + 5", "k = 9 - 18 + 5", "k = -4", "(h, k) = (-3, -4)"], "solveFromLines"), drawAll).pass).toBe(true);
+    expect(judge(p, lines, solved(["(h, k) = (-3, 4)"], "solveFromLines"), drawAll).answer.status).toBe("wrong");
+    expect(judge(p, lines, solved(["(h, k) = (3, -4)"], "solveFromLines"), drawAll).answer.status).toBe("wrong");
+  });
+
+  it("a list answer (the five-number summary, the modes) in order; ∅ is no mode", () => {
+    const lines = ["3, 7, 8, 12, 15, 20", "\\text{five number summary}"];
+    const p = problem({ topic: "statistics", lines, expect: { list: [3, 7, 10, 15, 20] } });
+    expect(judge(p, lines, solved(["Q_{2} = \\frac{8 + 12}{2}", "Q_{2} = 10", "Q_{1} = 7", "Q_{3} = 15", "3, \\ 7, \\ 10, \\ 15, \\ 20"], "solveFromLines"), drawAll).pass).toBe(true);
+    expect(judge(p, lines, solved(["3, \\ 7.5, \\ 10, \\ 15, \\ 20"], "solveFromLines"), drawAll).answer.status).toBe("wrong");
+    expect(judge(p, lines, solved(["20, \\ 15, \\ 10, \\ 7, \\ 3"], "solveFromLines"), drawAll).answer.status).toBe("wrong");
+    expect(judge(p, lines, solved(["3, \\ 7, \\ 10, \\ 15"], "solveFromLines"), drawAll).answer.status).toBe("wrong");
+    expect(judge(p, lines, solved(["Q_{2} = 10"], "solveFromLines"), drawAll).answer.status).toBe("wrong");
+    const modes = ["2, 3, 5, 7", "\\text{mode} = ?"];
+    const none = problem({ topic: "statistics", lines: modes, expect: { list: [] } });
+    expect(judge(none, modes, solved(["\\text{mode} = \\varnothing"], "solveFromLines"), drawAll).pass).toBe(true);
+    expect(judge(none, modes, solved(["\\text{mode} = 2"], "solveFromLines"), drawAll).answer.status).toBe("wrong");
+    const two = problem({ topic: "statistics", lines: modes, expect: { list: [3, 7] } });
+    expect(judge(two, modes, solved(["\\text{mode} = 3"], "solveFromLines"), drawAll).answer.status).toBe("wrong");
+    expect(judge(two, modes, solved(["\\text{mode} = \\varnothing"], "solveFromLines"), drawAll).answer.status).toBe("wrong");
+  });
+
+  it("the student's own label may be repeated on the answer line — any other word still fails", () => {
+    const lines = ["12, 3, 15, 7, 8", "\\text{median} = ?"];
+    const p = problem({ topic: "statistics", lines, expect: { answer: "8" } });
+    const good = judge(p, lines, solved(["3, 7, 8, 12, 15", "\\text{median} = 8"], "solveFromLines"), drawAll);
+    expect(good.pass).toBe(true);
+    expect(judge(p, lines, solved(["3, 7, 8, 12, 15", "\\text{median} = 9"], "solveFromLines"), drawAll).answer.status).toBe("wrong");
+    // a word the student did not write
+    expect(judge(p, lines, solved(["\\text{middle} = 8"], "solveFromLines"), drawAll).stages.words).toBe(false);
+    expect(judge(p, lines, solved(["\\text{median} = 8 \\text{ so done}"], "solveFromLines"), drawAll).stages.words).toBe(false);
+    // the same word, in another case or without the heading's colon
+    const colon = ["12, 3, 15, 7, 8", "\\text{Median:}"];
+    expect(judge(problem({ topic: "statistics", lines: colon, expect: { answer: "8" } }), colon, solved(["\\text{Median} = 8"], "solveFromLines"), drawAll).stages.words).toBe(true);
+    const q = ["12, 3, 15, 7, 8", "Q_{2} = ?"];
+    expect(judge(problem({ topic: "statistics", lines: q, expect: { answer: "8" } }), q, solved(["\\text{median} = 8"], "solveFromLines"), drawAll).stages.words).toBe(false);
+  });
+
+  it("a statistic asked by symbol is checked at every step, to the rounding written", () => {
+    const lines = ["3, 7, 8, 12, 15", "Q_{1} = ?"];
+    const p = problem({ topic: "statistics", lines, expect: { values: { Q_1: [5] } } });
+    expect(judge(p, lines, solved(["Q_{1} = \\frac{3 + 7}{2}", "Q_{1} = 5"], "solveFromLines"), drawAll).pass).toBe(true);
+    const bad = judge(p, lines, solved(["Q_{1} = \\frac{3 + 8}{2}", "Q_{1} = 5.5"], "solveFromLines"), drawAll);
+    expect(bad.answer.status).toBe("wrong");
+    expect(bad.transitions.map((t) => t.status)).toEqual(["broken", "broken"]);
+    const sd = ["3, 7, 8, 12, 15", "\\sigma = ?"];
+    const s = problem({ topic: "statistics", lines: sd, expect: { values: { sigma: [Math.sqrt(86 / 5)] }, approxOk: true } });
+    expect(judge(s, sd, solved(["\\sigma = \\sqrt{\\frac{86}{5}}", "\\sigma \\approx 4.15"], "solveFromLines"), drawAll).pass).toBe(true);
+    // the sample value for σ, and a root forgotten
+    expect(judge(s, sd, solved(["\\sigma = \\sqrt{\\frac{86}{4}}", "\\sigma \\approx 4.64"], "solveFromLines"), drawAll).answer.status).toBe("wrong");
+    expect(judge(s, sd, solved(["\\sigma = \\frac{86}{5}"], "solveFromLines"), drawAll).answer.status).toBe("wrong");
+  });
+});

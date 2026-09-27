@@ -45,6 +45,22 @@ export function parseExpr(deps: CourseDeps, latex: string): MathNode | null {
   }
 }
 
+/** Decimals as exact fractions (`0.5` → `1/2`), so `termsOf` (whole numbers only) takes the tree; null when one is not a short fraction. */
+export function exactNode(deps: CourseDeps, node: MathNode): MathNode | null {
+  let ok = true;
+  const out = node.transform((n: MathNode) => {
+    const a = n as AnyNode;
+    if (a.type !== "ConstantNode" || typeof a.value !== "number" || Number.isInteger(a.value)) return n;
+    const f = exactQ(a.value);
+    if (!f) {
+      ok = false;
+      return n;
+    }
+    return new deps.math.OperatorNode("/", "divide", [new deps.math.ConstantNode(f.n), new deps.math.ConstantNode(f.d)]);
+  });
+  return ok ? out : null;
+}
+
 /** The free letters of a tree (constants `e`, `pi`, `i` and function names excluded). */
 export function lettersOf(node: MathNode): string[] {
   const out: string[] = [];

@@ -30,6 +30,9 @@ import {
   isInequality,
   isSimplifiedRadical,
   isSolvedInequality,
+  isStandardLine,
+  isVertexForm,
+  listedValues,
   parseLine,
   rootSet,
   sameRoots,
@@ -107,6 +110,7 @@ export function expectedLatex(expect: Expectation): string {
   if (expect.answer) return expect.answer;
   const features = featuresLatex({ expect });
   if (features) return features;
+  if (expect.list) return expect.list.length === 0 ? "\\varnothing" : expect.list.map(fmtNumber).join(", \\ ");
   const values = expect.values ?? {};
   const vars = Object.keys(values);
   if (vars.length === 1) {
@@ -124,6 +128,14 @@ export function expectedLatex(expect: Expectation): string {
 export function wordsIn(latex: string): string[] {
   return [...latex.matchAll(/\\(?:text|textrm|textit|textbf|mbox)\s*\{([^}]*)\}/g)].map((m) => m[1]).filter((t) => /[A-Za-z]/.test(t)).map((t) => t.trim());
 }
+
+/** A label compared as written: case, spacing and a heading's colon aside (`Median` is the student's `median:`). */
+const labelKey = (word: string): string =>
+  word
+    .toLowerCase()
+    .replace(/[\s:.]+$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
 
 const UNSOLVED_MARKERS = /\\frac\s*\{\s*d(?:\^\{?\d\}?)?\s*\}\s*\{\s*d|\\int|\\lim|\\frac\s*\{\s*d[a-zA-Z]\s*\}|[a-zA-Z]'/;
 
@@ -203,6 +215,16 @@ function judgeAnswer(problem: EvalProblem, lines: readonly string[], steps: read
       if (!sameRoots(sv.values.map((c) => c.re), want, 1e-9)) return { status: "wrong", reason: `${v} = {${sv.values.map((c) => fmtNumber(c.re)).join(", ")}}, want {${want.map(fmtNumber).join(", ")}}` };
       if (sv.approx && !approxOk) return { status: "approx", reason: "written with ≈ although the value is exact" };
     }
+    return { status: "ok", reason: "" };
+  }
+
+  if (expect.list) {
+    // a list of numbers, in order (a five-number summary, the modes): the last line's value side
+    const got = listedValues(finalLatex);
+    const want = expect.list;
+    const show = (xs: readonly number[]) => (xs.length === 0 ? "∅" : `{${xs.map(fmtNumber).join(", ")}}`);
+    if (!got) return { status: "unsolved", reason: "the last line is not a list of numbers" };
+    if (got.length !== want.length || got.some((v, i) => !closeTo(v, want[i], 1e-9))) return { status: "wrong", reason: `gives ${show(got)}, want ${show(want)}` };
     return { status: "ok", reason: "" };
   }
 
@@ -300,6 +322,10 @@ function judgeAnswer(problem: EvalProblem, lines: readonly string[], steps: read
       if (!a || !b) return { status: "unjudged", reason: "cannot solve the relation" };
       if (a.all !== b.all || !sameRoots(a.roots, b.roots, 1e-6)) return { status: "wrong", reason: "not the same line of solutions" };
     }
+    // the same line or curve, and it must also LOOK like the form asked for
+    if (expect.form === "standard" && !isStandardLine(finalLatex)) return { status: "form", reason: "the same line, not in standard form Ax + By = C" };
+    if (expect.form === "vertex" && !isVertexForm(finalLatex)) return { status: "form", reason: "the same quadratic, not in vertex form" };
+    if (expect.form === "expanded" && !isExpanded(finalLatex)) return { status: "form", reason: "the same quadratic, not expanded" };
     return { status: "ok", reason: "" };
   }
   if (want.kind !== "expr") return { status: "unjudged", reason: `the expectation \`${wantLatex}\` is unreadable` };
@@ -1022,7 +1048,10 @@ export function judge(problem: EvalProblem, lines: readonly string[], result: Lo
   // judged as read, reported as written
   const transitions = !found ? [] : (features?.transitions ?? judgeInverseSteps(lines, steps) ?? judgeSteps(problem, read.lines, read.steps).map((t, i) => ({ ...t, to: steps[i] })));
   const unsupported = found ? opts.unsupported(steps) : [];
-  const words = steps.flatMap(wordsIn);
+  // a label the student wrote themselves (`\text{median} = ?` → `\text{median} = 8`) is theirs, not
+  // the tutor's prose; any other word in a step still fails the stage
+  const own = new Set(lines.flatMap(wordsIn).map(labelKey));
+  const words = steps.flatMap(wordsIn).filter((w) => !own.has(labelKey(w)));
   const broken = transitions.filter((t) => t.status === "broken");
 
   const stages: Record<Stage, boolean> = {
