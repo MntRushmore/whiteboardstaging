@@ -53,6 +53,9 @@ export const CLUSTER_RULES = {
   barMinWidthFactor: 1.0,
   barReachFactor: 1.5,
   barCoverRatio: 0.5,
+  /** an overline: what it covers is within this many medians under it, and nothing this close above (`isOverlineBar`) */
+  overlineNearFactor: 0.6,
+  overlineClearFactor: 0.9,
   columnOverlapRatio: 0.4,
   /**
    * A blank gap taller than max(columnBreakMinPx, columnBreakFactor x the taller of the two
@@ -223,6 +226,26 @@ function barCovers(bar: Rect, other: Rect, medianH: number): boolean {
   return vGap <= CLUSTER_RULES.barReachFactor * medianH;
 }
 
+/**
+ * An overline (`\overline{AB}`, a segment's name in a proof), not a fraction bar: the glyphs it covers
+ * sit just under it (within `overlineNearFactor` x median) and nothing it covers is that close above
+ * it — only, at most, the line above, one row away. A fraction bar has its numerator close above. An
+ * overline joins only what is under it: stacked rows of `\overline{AB} \cong \overline{CD}` are
+ * separate lines, not a numerator over a denominator. Takes the raw (un-inflated) bounds.
+ */
+export function isOverlineBar(bar: Rect, others: readonly Rect[], medianH: number): boolean {
+  let above = Infinity;
+  let below = Infinity;
+  for (const o of others) {
+    if (o === bar || !barCovers(bar, o, medianH)) continue;
+    const cy = o.y + o.h / 2;
+    const gap = gap1d(bar.y, bar.y + bar.h, o.y, o.y + o.h);
+    if (cy < bar.y + bar.h / 2) above = Math.min(above, gap);
+    else below = Math.min(below, gap);
+  }
+  return below <= CLUSTER_RULES.overlineNearFactor * medianH && above > CLUSTER_RULES.overlineClearFactor * medianH;
+}
+
 /** Groups strokes into clusters (arrays of indexes into `strokes`). */
 export function clusterStrokeGroups(strokes: InkStroke[]): number[][] {
   const n = strokes.length;
@@ -230,6 +253,11 @@ export function clusterStrokeGroups(strokes: InkStroke[]): number[][] {
   const medianH = medianStrokeHeight(strokes);
   const uf = new UnionFind(n);
   const bars = strokes.map((s) => isFractionBar(s, strokes, medianH));
+  const rawBounds = strokes.map((s) => s.bounds);
+  const overlines = bars.map((bar, i) => bar && isOverlineBar(rawBounds[i], rawBounds, medianH));
+  /** a bar joins `other`: an overline only what is under it */
+  const barJoins = (i: number, bar: Rect, other: Rect, rawOther: Rect) =>
+    barCovers(bar, other, medianH) && (!overlines[i] || rawOther.y + rawOther.h / 2 > rawBounds[i].y + rawBounds[i].h / 2);
   const by = inflationFor(medianH);
   // Inflated rects for the overlap / gap / bar tests; bar detection above used the raw bounds.
   const rects = strokes.map((s) => inflateRect(s.bounds, by));
@@ -245,7 +273,7 @@ export function clusterStrokeGroups(strokes: InkStroke[]): number[][] {
         uf.union(i, j);
         continue;
       }
-      if ((bars[i] && barCovers(a, b, medianH)) || (bars[j] && barCovers(b, a, medianH))) {
+      if ((bars[i] && barJoins(i, a, b, raw[j])) || (bars[j] && barJoins(j, b, a, raw[i]))) {
         uf.union(i, j);
         continue;
       }

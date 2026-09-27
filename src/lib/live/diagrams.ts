@@ -2,6 +2,7 @@ import type { TLShapeId } from "tldraw";
 import type { InkLine, InkStroke, Rect, StrokePayload } from "./contracts";
 import { clusterStrokeGroups, median, medianStrokeHeight, unionRects } from "./strokeClusters";
 import { buildPayload, rdp, type Pt } from "./strokePayload";
+import { tableRules } from "./proof/table";
 
 /**
  * Drawings vs writing. Pure: no editor, no DOM.
@@ -120,7 +121,8 @@ export const DIAGRAM_RULES = {
   idReuseRatio: 0.5,
 } as const;
 
-export type StrokeRole = "writing" | "drawing" | "mark" | "label";
+/** `table`: a rule of a proof's T-table (`proof/table.ts`) — neither writing nor a drawing */
+export type StrokeRole = "writing" | "drawing" | "mark" | "label" | "table";
 export type DiagramKind = "triangle" | "quadrilateral" | "polygon" | "circle" | "axes" | "numberLine" | "arrow" | "segment" | "curve";
 
 export interface Diagram {
@@ -791,6 +793,13 @@ export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagr
   if (all.length === 0) return writingOnly(all, G);
   // Nothing on the screen longer than two glyphs: no drawing (the common case, and cheap).
   if (all.every((s) => Math.max(s.bounds.w, s.bounds.h) < R.mediumFactor * G)) return writingOnly(all, G);
+  // A proof's T-table: its rules are set aside, so the rows it separates are read as lines.
+  const table = tableRules(all, G);
+  if (table.size > 0) {
+    const split = splitInk(all.filter((s) => !table.has(s.id)), previous);
+    for (const id of table) split.roles.set(id, { role: "table", reason: "a proof's table rule" });
+    return split;
+  }
 
   const geos = all.map((s, i) => geometry(s, i, G));
   const reasons = new Map<number, string>();
