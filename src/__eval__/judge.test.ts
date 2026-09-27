@@ -359,3 +359,98 @@ describe("judge: geometry's answer shapes still catch wrong answers", () => {
     expect(bad.answer.status).toBe("wrong");
   });
 });
+
+describe("judge: a rational function's features, a transformation (functionFeatures.ts)", () => {
+  const F = "f(x) = \\frac{x^{2} - 4}{x^{2} - x - 2}";
+  const rp = problem({ topic: "rational-functions", lines: [F], expect: { rational: { domain: [-1, 2], holes: [[2, 4 / 3]], vertical: [-1], horizontal: 1 } } });
+  const good = [
+    "f(x) = \\frac{(x + 2)(x - 2)}{(x + 1)(x - 2)}",
+    "x \\neq -1, \\ x \\neq 2",
+    "f(x) = \\frac{x + 2}{x + 1}, \\ x \\neq 2",
+    "\\frac{2 + 2}{2 + 1} = \\frac{4}{3}",
+    "(2, \\frac{4}{3})",
+    "x = -1",
+    "y = 1",
+  ];
+  const statuses = (steps: string[], p = rp, lines = p.lines) => judge(p, lines, solved(steps), drawAll).transitions.map((t) => t.status);
+  const answerOf = (steps: string[], p = rp, lines = p.lines) => judge(p, lines, solved(steps), drawAll).answer.status;
+
+  it("passes the right analysis, every line checked against the function", () => {
+    const v = judge(rp, [F], solved(good), drawAll);
+    expect(v.pass).toBe(true);
+    expect(v.transitions.every((t) => t.status === "ok")).toBe(true);
+  });
+
+  it("catches a wrong answer of each kind", () => {
+    // the hole's x called a vertical asymptote
+    const va = good.map((s) => (s === "x = -1" ? "x = -1, \\ x = 2" : s));
+    expect(statuses(va)[5]).toBe("broken");
+    expect(answerOf(va)).toBe("wrong");
+    // the hole at the wrong height
+    const hole = good.map((s) => (s === "(2, \\frac{4}{3})" ? "(2, 2)" : s));
+    expect(statuses(hole)[4]).toBe("broken");
+    expect(answerOf(hole)).toBe("wrong");
+    // the hole left out: not an answer yet
+    expect(answerOf(good.filter((s) => !s.startsWith("(") && !s.startsWith("\\frac")))).toBe("unsolved");
+    // the wrong level at ±∞ (the ratio upside down is still 1 here: use the leading-term slip)
+    const ha = good.map((s) => (s === "y = 1" ? "y = 2" : s));
+    expect(statuses(ha)[6]).toBe("broken");
+    expect(answerOf(ha)).toBe("wrong");
+    // a value the domain does include
+    const dom = good.map((s) => (s === "x \\neq -1, \\ x \\neq 2" ? "x \\neq -2, \\ x \\neq -1, \\ x \\neq 2" : s));
+    expect(statuses(dom)[1]).toBe("broken");
+    expect(answerOf(dom)).toBe("wrong");
+    // a wrong cancel
+    const cancel = good.map((s) => (s.startsWith("f(x) = \\frac{x + 2}") ? "f(x) = \\frac{x - 2}{x + 1}, \\ x \\neq 2" : s));
+    expect(statuses(cancel)[2]).toBe("broken");
+    // a slant asymptote that is not one, where there is a horizontal one
+    expect(answerOf([...good, "y = x + 1"])).toBe("wrong");
+  });
+
+  it("a slant asymptote must be the quotient", () => {
+    const p = problem({ topic: "rational-functions", lines: ["f(x) = \\frac{x^{2} + 1}{x - 1}"], expect: { rational: { vertical: [1], horizontal: null, oblique: "x + 1" } } });
+    expect(answerOf(["x = 1", "y = x + 1"], p)).toBe("ok");
+    expect(statuses(["x = 1", "y = x - 1"], p)[1]).toBe("broken");
+    expect(answerOf(["x = 1", "y = x - 1"], p)).toBe("wrong");
+    expect(answerOf(["x = 1", "y = 1"], p)).toBe("wrong");
+  });
+
+  const tp = problem({ topic: "transformations", lines: ["f(x) = x^{2}", "g(x) = f(x - 3) + 1"], expect: { transform: { image: "(x - 3)^{2} + 1", rule: ["x + 3", "y + 1"], point: [[0, 0], [3, 1]] } } });
+  const tgood = ["g(x) = (x - 3)^{2} + 1", "(x, y) \\to (x + 3, y + 1)", "(0, 0) \\to (3, 1)"];
+
+  it("passes the right transformation, each line checked against the parent", () => {
+    const v = judge(tp, tp.lines, solved(tgood, "solveFromLines"), drawAll);
+    expect(v.pass).toBe(true);
+    expect(v.transitions.map((t) => t.status)).toEqual(["ok", "ok", "ok"]);
+  });
+
+  it("catches the shift the wrong way, the rule the wrong way, a stretch inverted, a point off the graph", () => {
+    const wrongG = ["g(x) = (x + 3)^{2} + 1", ...tgood.slice(1)];
+    expect(statuses(wrongG, tp)[0]).toBe("broken");
+    expect(answerOf(wrongG, tp)).toBe("wrong");
+    const wrongRule = [tgood[0], "(x, y) \\to (x - 3, y + 1)", tgood[2]];
+    expect(statuses(wrongRule, tp)[1]).toBe("broken");
+    expect(answerOf(wrongRule, tp)).toBe("wrong");
+    const wrongPoint = [...tgood.slice(0, 2), "(0, 0) \\to (-3, 1)"];
+    expect(statuses(wrongPoint, tp)[2]).toBe("broken");
+    expect(answerOf(wrongPoint, tp)).toBe("wrong");
+    // g left as the call: not written out
+    expect(answerOf(["g(x) = f(x - 3) + 1", ...tgood.slice(1)], tp)).toBe("unsolved");
+    // f(2x) shrinks by ½: the rule that doubles x is wrong
+    const sp = problem({ topic: "transformations", lines: ["f(x) = x^{2}", "g(x) = f(2x)"], expect: { transform: { image: "4x^{2}", rule: ["\\frac{1}{2}x", "y"], point: [[1, 1], [0.5, 1]] } } });
+    const doubled = ["g(x) = 4x^{2}", "(x, y) \\to (2x, y)", "(1, 1) \\to (2, 1)"];
+    expect(statuses(doubled, sp)).toEqual(["ok", "broken", "broken"]);
+    expect(answerOf(doubled, sp)).toBe("wrong");
+    expect(answerOf(["g(x) = 4x^{2}", "(x, y) \\to (\\frac{1}{2}x, y)", "(1, 1) \\to (\\frac{1}{2}, 1)"], sp)).toBe("ok");
+  });
+
+  it("a parent read off the line: named in the steps, confirmed by g written with it", () => {
+    const ip = problem({ topic: "transformations", lines: ["y = 2(x - 1)^{2} + 3"], expect: { transform: { image: "2(x - 1)^{2} + 3", rule: ["x + 1", "2y + 3"], point: [[0, 0], [1, 3]] } } });
+    const right = ["f(x) = x^{2}", "y = 2f(x - 1) + 3", "(x, y) \\to (x + 1, 2y + 3)", "(0, 0) \\to (1, 3)"];
+    expect(statuses(right, ip)).toEqual(["ok", "ok", "ok", "ok"]);
+    expect(answerOf(right, ip)).toBe("ok");
+    const wrongParent = ["f(x) = x^{3}", "y = 2f(x - 1) + 3", "(x, y) \\to (x + 1, 2y + 3)", "(0, 0) \\to (1, 3)"];
+    expect(statuses(wrongParent, ip)[1]).toBe("broken");
+    expect(answerOf(wrongParent, ip)).toBe("wrong");
+  });
+});

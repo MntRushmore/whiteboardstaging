@@ -15,6 +15,7 @@ import { splitRelations } from "@/lib/live/engine/latex";
 import type { LocalSolveResult } from "@/lib/live/localSolve";
 import { courseOf, type Course, type EvalProblem, type Expectation, type Topic } from "./corpus";
 import { definitionsOf, expandCalls } from "./functions";
+import { featuresLatex, judgeFeatures } from "./functionFeatures";
 import {
   assignmentOf,
   boundaries,
@@ -104,6 +105,8 @@ function fmtNumber(n: number): string {
 
 export function expectedLatex(expect: Expectation): string {
   if (expect.answer) return expect.answer;
+  const features = featuresLatex({ expect });
+  if (features) return features;
   const values = expect.values ?? {};
   const vars = Object.keys(values);
   if (vars.length === 1) {
@@ -1013,9 +1016,11 @@ export function judge(problem: EvalProblem, lines: readonly string[], result: Lo
   const steps = result.steps;
   const found = result.source !== null && steps.length > 0;
   const read = withDefinitions(lines, steps);
-  const answer = judgeAnswer(problem, read.lines, read.steps);
+  // a rational function's features, a transformation (`functionFeatures.ts`): their own judge
+  const features = judgeFeatures(problem, lines, steps);
+  const answer = features?.answer ?? judgeAnswer(problem, read.lines, read.steps);
   // judged as read, reported as written
-  const transitions = !found ? [] : (judgeInverseSteps(lines, steps) ?? judgeSteps(problem, read.lines, read.steps).map((t, i) => ({ ...t, to: steps[i] })));
+  const transitions = !found ? [] : (features?.transitions ?? judgeInverseSteps(lines, steps) ?? judgeSteps(problem, read.lines, read.steps).map((t, i) => ({ ...t, to: steps[i] })));
   const unsupported = found ? opts.unsupported(steps) : [];
   const words = steps.flatMap(wordsIn);
   const broken = transitions.filter((t) => t.status === "broken");

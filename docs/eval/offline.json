@@ -1,16 +1,16 @@
 {
   "summary": {
-    "total": 598,
-    "passed": 598,
+    "total": 640,
+    "passed": 640,
     "stages": {
-      "local": 598,
-      "answer": 598,
-      "steps": 598,
-      "drawable": 598,
-      "words": 598
+      "local": 640,
+      "answer": 640,
+      "steps": 640,
+      "drawable": 640,
+      "words": 640
     },
     "answers": {
-      "ok": 598,
+      "ok": 640,
       "approx": 0,
       "form": 0,
       "unsolved": 0,
@@ -476,6 +476,30 @@
         }
       },
       {
+        "topic": "rational-functions",
+        "total": 22,
+        "passed": 22,
+        "stages": {
+          "local": 22,
+          "answer": 22,
+          "steps": 22,
+          "drawable": 22,
+          "words": 22
+        }
+      },
+      {
+        "topic": "transformations",
+        "total": 20,
+        "passed": 20,
+        "stages": {
+          "local": 20,
+          "answer": 20,
+          "steps": 20,
+          "drawable": 20,
+          "words": 20
+        }
+      },
+      {
         "topic": "geometry-angles",
         "total": 26,
         "passed": 26,
@@ -563,14 +587,14 @@
       },
       {
         "course": "algebra-2",
-        "total": 135,
-        "passed": 135,
+        "total": 177,
+        "passed": 177,
         "stages": {
-          "local": 135,
-          "answer": 135,
-          "steps": 135,
-          "drawable": 135,
-          "words": 135
+          "local": 177,
+          "answer": 177,
+          "steps": 177,
+          "drawable": 177,
+          "words": 177
         }
       },
       {
@@ -23946,6 +23970,2410 @@
           "to": "= 1 + \\sqrt{5}",
           "status": "ok",
           "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-01",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = \\frac{x^{2} - 4}{x^{2} - x - 2}"
+      ],
+      "expected": "x \\neq -1, x \\neq 2; (2, 1.33333); x = -1; y = 1",
+      "note": "Solve on the function: factor, cancel with x ≠ 2, the hole, the asymptotes",
+      "source": "solveLatex",
+      "steps": [
+        "f(x) = \\frac{(x + 2)(x - 2)}{(x + 1)(x - 2)}",
+        "x \\neq -1, \\ x \\neq 2",
+        "f(x) = \\frac{x + 2}{x + 1}, \\ x \\neq 2",
+        "\\frac{2 + 2}{2 + 1} = \\frac{4}{3}",
+        "(2, \\frac{4}{3})",
+        "x = -1",
+        "y = 1"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "f(x) = \\frac{(x + 2)(x - 2)}{(x + 1)(x - 2)}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x \\neq -1, \\ x \\neq 2",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "f(x) = \\frac{x + 2}{x + 1}, \\ x \\neq 2",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "\\frac{2 + 2}{2 + 1} = \\frac{4}{3}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "(2, \\frac{4}{3})",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x = -1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "y = 1",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-02",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "y = \\frac{2x + 1}{x - 3}"
+      ],
+      "expected": "x \\neq 3; \\varnothing; x = 3; y = 2",
+      "source": "solveLatex",
+      "steps": [
+        "x \\neq 3",
+        "x = 3",
+        "y = 2"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "x \\neq 3",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x = 3",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "y = 2",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-03",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = \\frac{x^{2} + 1}{x - 1}"
+      ],
+      "expected": "x \\neq 1; \\varnothing; x = 1; y = x + 1",
+      "note": "a slant asymptote by division",
+      "source": "solveLatex",
+      "steps": [
+        "x \\neq 1",
+        "x = 1",
+        "f(x) = x + 1 + \\frac{2}{x - 1}",
+        "y = x + 1"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "x \\neq 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x = 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "f(x) = x + 1 + \\frac{2}{x - 1}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "y = x + 1",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-04",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = \\frac{x^{2} - 4}{x - 2}"
+      ],
+      "expected": "x \\neq 2; (2, 4); \\varnothing",
+      "note": "a line with a hole, no asymptote",
+      "source": "solveLatex",
+      "steps": [
+        "f(x) = \\frac{(x + 2)(x - 2)}{x - 2}",
+        "x \\neq 2",
+        "f(x) = x + 2, \\ x \\neq 2",
+        "2 + 2 = 4",
+        "(2, 4)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "f(x) = \\frac{(x + 2)(x - 2)}{x - 2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x \\neq 2",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "f(x) = x + 2, \\ x \\neq 2",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "2 + 2 = 4",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "(2, 4)",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-05",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "y = \\frac{3x^{2}}{x^{2} - 9}"
+      ],
+      "expected": "x \\neq -3, x \\neq 3; \\varnothing; x = -3, x = 3; y = 3",
+      "source": "solveLatex",
+      "steps": [
+        "y = \\frac{3x^{2}}{(x + 3)(x - 3)}",
+        "x \\neq -3, \\ x \\neq 3",
+        "x = -3, \\ x = 3",
+        "y = 3"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "y = \\frac{3x^{2}}{(x + 3)(x - 3)}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x \\neq -3, \\ x \\neq 3",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x = -3, \\ x = 3",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "y = 3",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-06",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "y = \\frac{x + 1}{x^{2} + 1}"
+      ],
+      "expected": "x \\in \\mathbb{R}; \\varnothing; \\varnothing; y = 0",
+      "note": "the bottom never zero; the bottom's degree wins",
+      "source": "solveLatex",
+      "steps": [
+        "x \\in \\mathbb{R}",
+        "y = 0"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "x \\in \\mathbb{R}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "y = 0",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-07",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = \\frac{2x^{2} - 8}{x^{2} + x - 6}"
+      ],
+      "expected": "x \\neq -3, x \\neq 2; (2, 1.6); x = -3; y = 2",
+      "source": "solveLatex",
+      "steps": [
+        "f(x) = \\frac{2(x + 2)(x - 2)}{(x + 3)(x - 2)}",
+        "x \\neq -3, \\ x \\neq 2",
+        "f(x) = \\frac{2(x + 2)}{x + 3}, \\ x \\neq 2",
+        "\\frac{2(2 + 2)}{2 + 3} = \\frac{8}{5}",
+        "(2, \\frac{8}{5})",
+        "x = -3",
+        "y = 2"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "f(x) = \\frac{2(x + 2)(x - 2)}{(x + 3)(x - 2)}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x \\neq -3, \\ x \\neq 2",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "f(x) = \\frac{2(x + 2)}{x + 3}, \\ x \\neq 2",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "\\frac{2(2 + 2)}{2 + 3} = \\frac{8}{5}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "(2, \\frac{8}{5})",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x = -3",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "y = 2",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-08",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = \\frac{x - 3}{x^{2} - 9}"
+      ],
+      "expected": "x \\neq -3, x \\neq 3; (3, 0.166667); x = -3; y = 0",
+      "source": "solveLatex",
+      "steps": [
+        "f(x) = \\frac{x - 3}{(x + 3)(x - 3)}",
+        "x \\neq -3, \\ x \\neq 3",
+        "f(x) = \\frac{1}{x + 3}, \\ x \\neq 3",
+        "\\frac{1}{3 + 3} = \\frac{1}{6}",
+        "(3, \\frac{1}{6})",
+        "x = -3",
+        "y = 0"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "f(x) = \\frac{x - 3}{(x + 3)(x - 3)}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x \\neq -3, \\ x \\neq 3",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "f(x) = \\frac{1}{x + 3}, \\ x \\neq 3",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "\\frac{1}{3 + 3} = \\frac{1}{6}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "(3, \\frac{1}{6})",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x = -3",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "y = 0",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-09",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "y = \\frac{2x^{2} - 3x - 2}{x - 2}"
+      ],
+      "expected": "x \\neq 2; (2, 5); \\varnothing",
+      "source": "solveLatex",
+      "steps": [
+        "y = \\frac{(2x + 1)(x - 2)}{x - 2}",
+        "x \\neq 2",
+        "y = 2x + 1, \\ x \\neq 2",
+        "2(2) + 1 = 5",
+        "(2, 5)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "y = \\frac{(2x + 1)(x - 2)}{x - 2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x \\neq 2",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "y = 2x + 1, \\ x \\neq 2",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "2(2) + 1 = 5",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "(2, 5)",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-10",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = \\frac{x^{2} - x - 6}{x + 1}"
+      ],
+      "expected": "x \\neq -1; \\varnothing; x = -1; y = x - 2",
+      "source": "solveLatex",
+      "steps": [
+        "f(x) = \\frac{(x + 2)(x - 3)}{x + 1}",
+        "x \\neq -1",
+        "x = -1",
+        "f(x) = x - 2 - \\frac{4}{x + 1}",
+        "y = x - 2"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "f(x) = \\frac{(x + 2)(x - 3)}{x + 1}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x \\neq -1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x = -1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "f(x) = x - 2 - \\frac{4}{x + 1}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "y = x - 2",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-11",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = \\frac{x^{3}}{x^{2} - 1}"
+      ],
+      "expected": "x \\neq -1, x \\neq 1; \\varnothing; x = -1, x = 1; y = x",
+      "source": "solveLatex",
+      "steps": [
+        "f(x) = \\frac{x^{3}}{(x + 1)(x - 1)}",
+        "x \\neq -1, \\ x \\neq 1",
+        "x = -1, \\ x = 1",
+        "f(x) = x + \\frac{x}{x^{2} - 1}",
+        "y = x"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "f(x) = \\frac{x^{3}}{(x + 1)(x - 1)}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x \\neq -1, \\ x \\neq 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x = -1, \\ x = 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "f(x) = x + \\frac{x}{x^{2} - 1}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "y = x",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-12",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "y = \\frac{x^{2} + 2x - 3}{x^{2} - 1}"
+      ],
+      "expected": "x \\neq -1, x \\neq 1; (1, 2); x = -1; y = 1",
+      "source": "solveLatex",
+      "steps": [
+        "y = \\frac{(x + 3)(x - 1)}{(x + 1)(x - 1)}",
+        "x \\neq -1, \\ x \\neq 1",
+        "y = \\frac{x + 3}{x + 1}, \\ x \\neq 1",
+        "\\frac{1 + 3}{1 + 1} = 2",
+        "(1, 2)",
+        "x = -1",
+        "y = 1"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "y = \\frac{(x + 3)(x - 1)}{(x + 1)(x - 1)}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x \\neq -1, \\ x \\neq 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "y = \\frac{x + 3}{x + 1}, \\ x \\neq 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "\\frac{1 + 3}{1 + 1} = 2",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "(1, 2)",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x = -1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "y = 1",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-13",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = \\frac{4x - 2}{2x + 1}"
+      ],
+      "expected": "x \\neq -0.5; \\varnothing; x = -0.5; y = 2",
+      "source": "solveLatex",
+      "steps": [
+        "f(x) = \\frac{2(2x - 1)}{2x + 1}",
+        "x \\neq -\\frac{1}{2}",
+        "x = -\\frac{1}{2}",
+        "y = 2"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "f(x) = \\frac{2(2x - 1)}{2x + 1}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x \\neq -\\frac{1}{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x = -\\frac{1}{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "y = 2",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-14",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = \\frac{x^{2} - 4}{x^{2} - x - 2}",
+        "\\text{VA} = ?"
+      ],
+      "expected": "x = -1",
+      "note": "an ask under the function",
+      "source": "solveFromLines",
+      "steps": [
+        "f(x) = \\frac{(x + 2)(x - 2)}{(x + 1)(x - 2)}",
+        "f(x) = \\frac{x + 2}{x + 1}, \\ x \\neq 2",
+        "x = -1"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "f(x) = \\frac{(x + 2)(x - 2)}{(x + 1)(x - 2)}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "f(x) = \\frac{x + 2}{x + 1}, \\ x \\neq 2",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x = -1",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-15",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = \\frac{x^{2} - 4}{x^{2} - x - 2}",
+        "x = ?"
+      ],
+      "expected": "x = -1",
+      "note": "x = ? under a function with no value given: where it cannot be evaluated",
+      "source": "solveFromLines",
+      "steps": [
+        "f(x) = \\frac{(x + 2)(x - 2)}{(x + 1)(x - 2)}",
+        "f(x) = \\frac{x + 2}{x + 1}, \\ x \\neq 2",
+        "x = -1"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "f(x) = \\frac{(x + 2)(x - 2)}{(x + 1)(x - 2)}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "f(x) = \\frac{x + 2}{x + 1}, \\ x \\neq 2",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x = -1",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-16",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = \\frac{x^{2} - 4}{x^{2} - x - 2}",
+        "\\text{HA} = ?"
+      ],
+      "expected": "y = 1",
+      "source": "solveFromLines",
+      "steps": [
+        "y = 1"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "y = 1",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-17",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = \\frac{x^{2} - 4}{x^{2} - x - 2}",
+        "\\text{holes}"
+      ],
+      "expected": "(2, 1.33333)",
+      "source": "solveFromLines",
+      "steps": [
+        "f(x) = \\frac{(x + 2)(x - 2)}{(x + 1)(x - 2)}",
+        "f(x) = \\frac{x + 2}{x + 1}, \\ x \\neq 2",
+        "\\frac{2 + 2}{2 + 1} = \\frac{4}{3}",
+        "(2, \\frac{4}{3})"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "f(x) = \\frac{(x + 2)(x - 2)}{(x + 1)(x - 2)}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "f(x) = \\frac{x + 2}{x + 1}, \\ x \\neq 2",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "\\frac{2 + 2}{2 + 1} = \\frac{4}{3}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "(2, \\frac{4}{3})",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-18",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = \\frac{x^{2} - 4}{x^{2} - x - 2}",
+        "D = ?"
+      ],
+      "expected": "x \\neq -1, x \\neq 2",
+      "source": "solveFromLines",
+      "steps": [
+        "f(x) = \\frac{(x + 2)(x - 2)}{(x + 1)(x - 2)}",
+        "x \\neq -1, \\ x \\neq 2"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "f(x) = \\frac{(x + 2)(x - 2)}{(x + 1)(x - 2)}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x \\neq -1, \\ x \\neq 2",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-19",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = \\frac{x^{2} + 3x}{x^{2} - 9}",
+        "\\text{domain}"
+      ],
+      "expected": "x \\neq -3, x \\neq 3",
+      "source": "solveFromLines",
+      "steps": [
+        "f(x) = \\frac{x(x + 3)}{(x + 3)(x - 3)}",
+        "x \\neq -3, \\ x \\neq 3"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "f(x) = \\frac{x(x + 3)}{(x + 3)(x - 3)}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the function)",
+          "to": "x \\neq -3, \\ x \\neq 3",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-20",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "y = \\frac{5}{x + 4}",
+        "\\text{HA} = ?"
+      ],
+      "expected": "y = 0",
+      "source": "solveFromLines",
+      "steps": [
+        "y = 0"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the function)",
+          "to": "y = 0",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-21",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = \\frac{x^{2} - 4}{x^{2} - x - 2}",
+        "\\lim_{x \\to \\infty} f(x) ="
+      ],
+      "expected": "1",
+      "note": "the limit at ∞ under the definition: the horizontal asymptote's level",
+      "source": "solveFromLines",
+      "steps": [
+        "= \\lim_{x \\to \\infty} \\frac{x^{2} - 4}{x^{2} - x - 2}",
+        "= \\lim_{x \\to \\infty} \\frac{1 - \\frac{4}{x^{2}}}{1 - \\frac{1}{x} - \\frac{2}{x^{2}}}",
+        "= \\frac{1 - 0}{1 - 0 - 0}",
+        "= 1"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\lim_{x \\to \\infty} \\left(\\frac{\\left(x\\right)^{2} - 4}{\\left(x\\right)^{2} - \\left(x\\right) - 2}\\right) =",
+          "to": "= \\lim_{x \\to \\infty} \\frac{x^{2} - 4}{x^{2} - x - 2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\lim_{x \\to \\infty} \\frac{x^{2} - 4}{x^{2} - x - 2}",
+          "to": "= \\lim_{x \\to \\infty} \\frac{1 - \\frac{4}{x^{2}}}{1 - \\frac{1}{x} - \\frac{2}{x^{2}}}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\lim_{x \\to \\infty} \\frac{1 - \\frac{4}{x^{2}}}{1 - \\frac{1}{x} - \\frac{2}{x^{2}}}",
+          "to": "= \\frac{1 - 0}{1 - 0 - 0}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\frac{1 - 0}{1 - 0 - 0}",
+          "to": "= 1",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-rf-22",
+      "topic": "rational-functions",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = \\frac{x^{2} - 4}{x^{2} - x - 2}",
+        "\\lim_{x \\to 2} f(x) ="
+      ],
+      "expected": "\\frac{4}{3}",
+      "note": "the limit at the hole: its height",
+      "source": "solveFromLines",
+      "steps": [
+        "= \\lim_{x \\to 2} \\frac{x^{2} - 4}{x^{2} - x - 2}",
+        "= \\lim_{x \\to 2} \\frac{(x - 2)(x + 2)}{(x - 2)(x + 1)}",
+        "= \\lim_{x \\to 2} \\frac{x + 2}{x + 1}",
+        "= \\frac{4}{3}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\lim_{x \\to 2} \\left(\\frac{\\left(x\\right)^{2} - 4}{\\left(x\\right)^{2} - \\left(x\\right) - 2}\\right) =",
+          "to": "= \\lim_{x \\to 2} \\frac{x^{2} - 4}{x^{2} - x - 2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\lim_{x \\to 2} \\frac{x^{2} - 4}{x^{2} - x - 2}",
+          "to": "= \\lim_{x \\to 2} \\frac{(x - 2)(x + 2)}{(x - 2)(x + 1)}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\lim_{x \\to 2} \\frac{(x - 2)(x + 2)}{(x - 2)(x + 1)}",
+          "to": "= \\lim_{x \\to 2} \\frac{x + 2}{x + 1}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "= \\lim_{x \\to 2} \\frac{x + 2}{x + 1}",
+          "to": "= \\frac{4}{3}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-01",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = x^{2}",
+        "g(x) = f(x - 3) + 1"
+      ],
+      "expected": "g(x) = (x - 3)^{2} + 1; (x, y) \\to (x + 3, y + 1); (0, 0) \\to (3, 1)",
+      "source": "solveFromLines",
+      "steps": [
+        "g(x) = (x - 3)^{2} + 1",
+        "(x, y) \\to (x + 3, y + 1)",
+        "(0, 0) \\to (3, 1)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "g(x) = (x - 3)^{2} + 1",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (x + 3, y + 1)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(0, 0) \\to (3, 1)",
+          "status": "ok",
+          "reason": "a point and its image"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-02",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = x^{2}",
+        "g(x) = -2f(x)"
+      ],
+      "expected": "g(x) = -2x^{2}; (x, y) \\to (x, -2y); (1, 1) \\to (1, -2)",
+      "note": "the vertex stays put: (1, 1) shows the flip and the stretch",
+      "source": "solveFromLines",
+      "steps": [
+        "g(x) = -2x^{2}",
+        "(x, y) \\to (x, -2y)",
+        "(1, 1) \\to (1, -2)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "g(x) = -2x^{2}",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (x, -2y)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(1, 1) \\to (1, -2)",
+          "status": "ok",
+          "reason": "a point and its image"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-03",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = x^{2}",
+        "g(x) = f(2x)"
+      ],
+      "expected": "g(x) = 4x^{2}; (x, y) \\to (\\frac{1}{2}x, y); (1, 1) \\to (0.5, 1)",
+      "note": "f(2x) shrinks by ½",
+      "source": "solveFromLines",
+      "steps": [
+        "g(x) = (2x)^{2}",
+        "g(x) = 4x^{2}",
+        "(x, y) \\to (\\frac{1}{2}x, y)",
+        "(1, 1) \\to (\\frac{1}{2}, 1)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "g(x) = (2x)^{2}",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "g(x) = 4x^{2}",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (\\frac{1}{2}x, y)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(1, 1) \\to (\\frac{1}{2}, 1)",
+          "status": "ok",
+          "reason": "a point and its image"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-04",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = x^{2}",
+        "g(x) = \\frac{1}{2}f(x + 1) - 4"
+      ],
+      "expected": "g(x) = \\frac{1}{2}(x + 1)^{2} - 4; (x, y) \\to (x - 1, \\frac{1}{2}y - 4); (0, 0) \\to (-1, -4)",
+      "source": "solveFromLines",
+      "steps": [
+        "g(x) = \\frac{1}{2}(x + 1)^{2} - 4",
+        "(x, y) \\to (x - 1, \\frac{1}{2}y - 4)",
+        "(0, 0) \\to (-1, -4)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "g(x) = \\frac{1}{2}(x + 1)^{2} - 4",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (x - 1, \\frac{1}{2}y - 4)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(0, 0) \\to (-1, -4)",
+          "status": "ok",
+          "reason": "a point and its image"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-05",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = |x|",
+        "g(x) = -f(x + 2) + 3"
+      ],
+      "expected": "g(x) = -|x + 2| + 3; (x, y) \\to (x - 2, -y + 3); (0, 0) \\to (-2, 3)",
+      "source": "solveFromLines",
+      "steps": [
+        "g(x) = -|x + 2| + 3",
+        "(x, y) \\to (x - 2, -y + 3)",
+        "(0, 0) \\to (-2, 3)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "g(x) = -|x + 2| + 3",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (x - 2, -y + 3)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(0, 0) \\to (-2, 3)",
+          "status": "ok",
+          "reason": "a point and its image"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-06",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = \\sqrt{x}",
+        "g(x) = f(2x - 6)"
+      ],
+      "expected": "g(x) = \\sqrt{2x - 6}; (x, y) \\to (\\frac{1}{2}x + 3, y); (0, 0) \\to (3, 0)",
+      "note": "f(2(x - 3)): three to the right, not six",
+      "source": "solveFromLines",
+      "steps": [
+        "g(x) = \\sqrt{2x - 6}",
+        "(x, y) \\to (\\frac{1}{2}x + 3, y)",
+        "(0, 0) \\to (3, 0)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "g(x) = \\sqrt{2x - 6}",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (\\frac{1}{2}x + 3, y)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(0, 0) \\to (3, 0)",
+          "status": "ok",
+          "reason": "a point and its image"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-07",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = \\frac{1}{x}",
+        "g(x) = f(x - 2) + 3"
+      ],
+      "expected": "g(x) = \\frac{1}{x - 2} + 3; (x, y) \\to (x + 2, y + 3); (1, 1) \\to (3, 4)",
+      "source": "solveFromLines",
+      "steps": [
+        "g(x) = \\frac{1}{x - 2} + 3",
+        "(x, y) \\to (x + 2, y + 3)",
+        "(1, 1) \\to (3, 4)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "g(x) = \\frac{1}{x - 2} + 3",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (x + 2, y + 3)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(1, 1) \\to (3, 4)",
+          "status": "ok",
+          "reason": "a point and its image"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-08",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = 2^{x}",
+        "g(x) = 3f(x) - 1"
+      ],
+      "expected": "g(x) = 3 \\cdot 2^{x} - 1; (x, y) \\to (x, 3y - 1); (0, 1) \\to (0, 2)",
+      "source": "solveFromLines",
+      "steps": [
+        "g(x) = 3 \\cdot 2^{x} - 1",
+        "(x, y) \\to (x, 3y - 1)",
+        "(0, 1) \\to (0, 2)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "g(x) = 3 \\cdot 2^{x} - 1",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (x, 3y - 1)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(0, 1) \\to (0, 2)",
+          "status": "ok",
+          "reason": "a point and its image"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-09",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = x^{3}",
+        "g(x) = f(-x) + 2"
+      ],
+      "expected": "g(x) = -x^{3} + 2; (x, y) \\to (-x, y + 2); (0, 0) \\to (0, 2)",
+      "source": "solveFromLines",
+      "steps": [
+        "g(x) = (-x)^{3} + 2",
+        "g(x) = 2 - x^{3}",
+        "(x, y) \\to (-x, y + 2)",
+        "(0, 0) \\to (0, 2)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "g(x) = (-x)^{3} + 2",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "g(x) = 2 - x^{3}",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (-x, y + 2)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(0, 0) \\to (0, 2)",
+          "status": "ok",
+          "reason": "a point and its image"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-10",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = x^{2} - 4x",
+        "g(x) = f(x + 1)"
+      ],
+      "expected": "g(x) = (x + 1)^{2} - 4(x + 1); (x, y) \\to (x - 1, y); (2, -4) \\to (1, -4)",
+      "note": "any quadratic parent: its vertex",
+      "source": "solveFromLines",
+      "steps": [
+        "g(x) = (x + 1)^{2} - 4(x + 1)",
+        "(x, y) \\to (x - 1, y)",
+        "(2, -4) \\to (1, -4)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "g(x) = (x + 1)^{2} - 4(x + 1)",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (x - 1, y)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(2, -4) \\to (1, -4)",
+          "status": "ok",
+          "reason": "a point and its image"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-11",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = x^{2}",
+        "g(x) = f(\\frac{1}{2}x)"
+      ],
+      "expected": "g(x) = \\frac{1}{4}x^{2}; (x, y) \\to (2x, y); (1, 1) \\to (2, 1)",
+      "note": "f(½x) stretches by 2",
+      "source": "solveFromLines",
+      "steps": [
+        "g(x) = (\\frac{1}{2}x)^{2}",
+        "g(x) = \\frac{1}{4}x^{2}",
+        "(x, y) \\to (2x, y)",
+        "(1, 1) \\to (2, 1)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "g(x) = (\\frac{1}{2}x)^{2}",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "g(x) = \\frac{1}{4}x^{2}",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (2x, y)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(1, 1) \\to (2, 1)",
+          "status": "ok",
+          "reason": "a point and its image"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-12",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = |x|",
+        "g(x) = f(3x + 6)"
+      ],
+      "expected": "g(x) = |3x + 6|; (x, y) \\to (\\frac{1}{3}x - 2, y); (0, 0) \\to (-2, 0)",
+      "note": "f(3(x + 2)): two to the left",
+      "source": "solveFromLines",
+      "steps": [
+        "g(x) = |3x + 6|",
+        "(x, y) \\to (\\frac{1}{3}x - 2, y)",
+        "(0, 0) \\to (-2, 0)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "g(x) = |3x + 6|",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (\\frac{1}{3}x - 2, y)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(0, 0) \\to (-2, 0)",
+          "status": "ok",
+          "reason": "a point and its image"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-13",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = \\sqrt{x}",
+        "g(x) = -f(-x)"
+      ],
+      "expected": "g(x) = -\\sqrt{-x}; (x, y) \\to (-x, -y); (1, 1) \\to (-1, -1)",
+      "source": "solveFromLines",
+      "steps": [
+        "g(x) = -\\sqrt{-x}",
+        "(x, y) \\to (-x, -y)",
+        "(1, 1) \\to (-1, -1)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "g(x) = -\\sqrt{-x}",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (-x, -y)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(1, 1) \\to (-1, -1)",
+          "status": "ok",
+          "reason": "a point and its image"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-14",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "y = 2(x - 1)^{2} + 3"
+      ],
+      "expected": "g(x) = 2(x - 1)^{2} + 3; (x, y) \\to (x + 1, 2y + 3); (0, 0) \\to (1, 3)",
+      "note": "read directly against its parent x²",
+      "source": "solveLatex",
+      "steps": [
+        "f(x) = x^{2}",
+        "y = 2f(x - 1) + 3",
+        "(x, y) \\to (x + 1, 2y + 3)",
+        "(0, 0) \\to (1, 3)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "f(x) = x^{2}",
+          "status": "ok",
+          "reason": "the parent"
+        },
+        {
+          "from": "(the parent)",
+          "to": "y = 2f(x - 1) + 3",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (x + 1, 2y + 3)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(0, 0) \\to (1, 3)",
+          "status": "ok",
+          "reason": "a point and its image"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-15",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "y = -|x + 2| + 1"
+      ],
+      "expected": "g(x) = -|x + 2| + 1; (x, y) \\to (x - 2, -y + 1); (0, 0) \\to (-2, 1)",
+      "source": "solveLatex",
+      "steps": [
+        "f(x) = |x|",
+        "y = -f(x + 2) + 1",
+        "(x, y) \\to (x - 2, -y + 1)",
+        "(0, 0) \\to (-2, 1)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "f(x) = |x|",
+          "status": "ok",
+          "reason": "the parent"
+        },
+        {
+          "from": "(the parent)",
+          "to": "y = -f(x + 2) + 1",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (x - 2, -y + 1)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(0, 0) \\to (-2, 1)",
+          "status": "ok",
+          "reason": "a point and its image"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-16",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "y = \\sqrt{x - 4} + 1"
+      ],
+      "expected": "g(x) = \\sqrt{x - 4} + 1; (x, y) \\to (x + 4, y + 1); (0, 0) \\to (4, 1)",
+      "source": "solveLatex",
+      "steps": [
+        "f(x) = \\sqrt{x}",
+        "y = f(x - 4) + 1",
+        "(x, y) \\to (x + 4, y + 1)",
+        "(0, 0) \\to (4, 1)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "f(x) = \\sqrt{x}",
+          "status": "ok",
+          "reason": "the parent"
+        },
+        {
+          "from": "(the parent)",
+          "to": "y = f(x - 4) + 1",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (x + 4, y + 1)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(0, 0) \\to (4, 1)",
+          "status": "ok",
+          "reason": "a point and its image"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-17",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "y = 2^{x + 1} - 3"
+      ],
+      "expected": "g(x) = 2^{x + 1} - 3; (x, y) \\to (x - 1, y - 3); (0, 1) \\to (-1, -2)",
+      "source": "solveLatex",
+      "steps": [
+        "f(x) = 2^{x}",
+        "y = f(x + 1) - 3",
+        "(x, y) \\to (x - 1, y - 3)",
+        "(0, 1) \\to (-1, -2)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "f(x) = 2^{x}",
+          "status": "ok",
+          "reason": "the parent"
+        },
+        {
+          "from": "(the parent)",
+          "to": "y = f(x + 1) - 3",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (x - 1, y - 3)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(0, 1) \\to (-1, -2)",
+          "status": "ok",
+          "reason": "a point and its image"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-18",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "y = \\frac{1}{x - 2} + 3"
+      ],
+      "expected": "g(x) = \\frac{1}{x - 2} + 3; (x, y) \\to (x + 2, y + 3); (1, 1) \\to (3, 4)",
+      "source": "solveLatex",
+      "steps": [
+        "f(x) = \\frac{1}{x}",
+        "y = f(x - 2) + 3",
+        "(x, y) \\to (x + 2, y + 3)",
+        "(1, 1) \\to (3, 4)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "f(x) = \\frac{1}{x}",
+          "status": "ok",
+          "reason": "the parent"
+        },
+        {
+          "from": "(the parent)",
+          "to": "y = f(x - 2) + 3",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (x + 2, y + 3)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(1, 1) \\to (3, 4)",
+          "status": "ok",
+          "reason": "a point and its image"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-19",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "g(x) = 4x^{2}"
+      ],
+      "expected": "g(x) = 4x^{2}; (x, y) \\to (x, 4y); (1, 1) \\to (1, 4)",
+      "source": "solveLatex",
+      "steps": [
+        "f(x) = x^{2}",
+        "g(x) = 4f(x)",
+        "(x, y) \\to (x, 4y)",
+        "(1, 1) \\to (1, 4)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "f(x) = x^{2}",
+          "status": "ok",
+          "reason": "the parent"
+        },
+        {
+          "from": "(the parent)",
+          "to": "g(x) = 4f(x)",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (x, 4y)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(1, 1) \\to (1, 4)",
+          "status": "ok",
+          "reason": "a point and its image"
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "a2-tr-20",
+      "topic": "transformations",
+      "course": "algebra-2",
+      "lines": [
+        "f(x) = x^{3}",
+        "g(x) = \\frac{1}{2}f(x - 1) + 2"
+      ],
+      "expected": "g(x) = \\frac{1}{2}(x - 1)^{3} + 2; (x, y) \\to (x + 1, \\frac{1}{2}y + 2); (0, 0) \\to (1, 2)",
+      "source": "solveFromLines",
+      "steps": [
+        "g(x) = \\frac{1}{2}(x - 1)^{3} + 2",
+        "(x, y) \\to (x + 1, \\frac{1}{2}y + 2)",
+        "(0, 0) \\to (1, 2)"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the parent)",
+          "to": "g(x) = \\frac{1}{2}(x - 1)^{3} + 2",
+          "status": "ok",
+          "reason": "g"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(x, y) \\to (x + 1, \\frac{1}{2}y + 2)",
+          "status": "ok",
+          "reason": "the rule"
+        },
+        {
+          "from": "(the parent)",
+          "to": "(0, 0) \\to (1, 2)",
+          "status": "ok",
+          "reason": "a point and its image"
         }
       ],
       "unsupported": [],
