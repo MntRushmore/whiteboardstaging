@@ -175,6 +175,17 @@ export interface LineAnalysis {
   solved?: boolean;
   error?: string;
 }
+/**
+ * What `solveLatex` may know about the column it is solving in (`localSolve` passes it; every
+ * field optional, so a caller with only the line passes nothing).
+ */
+export interface SolveOptions {
+  /** the column's lines down to the one being solved: a function defined above is not a product */
+  column?: readonly string[];
+  /** write complex roots (`x = -1 \pm 2i`) instead of `\varnothing` — see `engine/complexSetting.ts` */
+  complexRoots?: boolean;
+}
+
 export interface AnalyzeContext {
   previous?: LineAnalysis;
   original?: LineAnalysis;
@@ -185,7 +196,7 @@ export interface LiveEngine {
   /** compiled y=f(x) sampler for graph shapes; null when the expression does not parse */
   compileExpr(expr: string): ((x: number) => number) | null;
   /** local solve of a single-variable equation or linear inequality, with teacher-style steps; null when unsupported (LLM path) */
-  solveLatex(latex: string): { latex: string; steps: string[] } | null;
+  solveLatex(latex: string, opts?: SolveOptions): { latex: string; steps: string[] } | null;
   /**
    * Solve for an unknown using the lines above it (a known value substituted in, or two
    * linear equations); `x = ?` names the unknown. Null when that is not possible locally.

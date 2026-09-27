@@ -10,9 +10,12 @@
  *
  *   0. a word problem — the TARGET line reads as prose (`analyzeLine(...).kind === 'text'`) —
  *      skips every local path (the model sets it up);
- *   1. `engine.solveLatex(target)`            (`writeSolutionByHand`) — only with the hand on,
- *      and only when the hand can draw the steps: the loop's `drawStepsByHand` returns false
- *      on ANY `unsupported` construct and the next path gets its turn;
+ *   1. `engine.solveLatex(target, { column, complexRoots })` (`writeSolutionByHand`) — only with
+ *      the hand on, and only when the hand can draw the steps: the loop's `drawStepsByHand`
+ *      returns false on ANY `unsupported` construct and the next path gets its turn. The column
+ *      down to the target goes with it (a function defined above is not a product), and whether
+ *      complex roots may be written (`engine/complexSetting.ts`: by default only when the column
+ *      already uses `i`);
  *   2. `engine.solveFromLines(column[0..target])` (`writeContextSolution`) — needs at least two
  *      lines with LaTeX; hand or typeset, a result here always ends the solve;
  *   3. `engine.simplifySteps(target)`         (`writeSimplification`) — written as `= …` lines;
@@ -28,6 +31,7 @@
  * solution already on the page (`hasHandSolution`), `onlyFirstStep`, and placement.
  */
 import { LIVE_LIMITS, type HelpMode, type LineAnalysis, type LiveEngine } from "./contracts";
+import { allowComplexRoots, DEFAULT_COMPLEX_ROOTS, type ComplexRootsSetting } from "./engine/complexSetting";
 import { localAnswerFor, localAnswerStep } from "./solveSteps";
 
 export type LocalSolveSource = "solveLatex" | "solveFromLines" | "simplifySteps" | "localAnswer";
@@ -55,6 +59,11 @@ export interface LocalSolveOptions {
   canDraw?: (steps: readonly string[]) => boolean;
   /** The board's help mode when each line was analyzed. Default 'answer' (Solve). */
   mode?: HelpMode;
+  /**
+   * When a quadratic with no real roots is answered with complex ones (`engine/complexSetting.ts`).
+   * Default: only when the column already uses `i` — the per-class switch, when there is one.
+   */
+  complexRoots?: ComplexRootsSetting;
 }
 
 const NONE: LocalSolveResult = { source: null, steps: [] };
@@ -122,9 +131,12 @@ export function localSolve(engine: LiveEngine, lines: readonly string[], targetI
 
   if (targetAnalysis?.kind === "text") return NONE;
 
-  // 1. writeSolutionByHand
+  // 1. writeSolutionByHand — with the column down to the target, so a function defined above is
+  //    not read as a product (`f(4)` is not `4f`) and `i` above allows complex roots
+  const upTo = lines.slice(0, index + 1).filter(Boolean);
+  const solveOptions = { column: upTo, complexRoots: allowComplexRoots(opts.complexRoots ?? DEFAULT_COMPLEX_ROOTS, upTo) };
   if (handwriting && target) {
-    const solved = safely(() => engine.solveLatex(target));
+    const solved = safely(() => engine.solveLatex(target, solveOptions));
     if (solved && solved.steps.length > 0) {
       const steps = capped(solved.steps);
       if (canDraw(steps)) return { source: "solveLatex", steps };

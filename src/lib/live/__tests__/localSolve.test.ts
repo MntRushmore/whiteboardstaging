@@ -86,8 +86,21 @@ describe("localSolve — the loop's order and fall-through", () => {
   it("hands solveFromLines the column down to the asked-for line, lines Mathpix could not read left out", () => {
     const s = spied();
     localSolve(s.engine, ["x + y = 18", "", "x - y = 4", "3x = 9"], 2);
-    expect(s.solveLatex).toHaveBeenCalledWith("x - y = 4");
+    // solveLatex sees the column down to its line too (a function defined above; `i` above)
+    expect(s.solveLatex).toHaveBeenCalledWith("x - y = 4", { column: ["x + y = 18", "x - y = 4"], complexRoots: false });
     expect(s.solveFromLines).toHaveBeenCalledWith(["x + y = 18", "x - y = 4"]);
+  });
+
+  it("allows complex roots only when the column already uses i, unless the setting says otherwise", () => {
+    const s = spied();
+    localSolve(s.engine, ["i^{2} = -1", "x^{2} + 4 = 0"]);
+    expect(s.solveLatex).toHaveBeenLastCalledWith("x^{2} + 4 = 0", { column: ["i^{2} = -1", "x^{2} + 4 = 0"], complexRoots: true });
+    localSolve(s.engine, ["x^{2} + 4 = 0"]);
+    expect(s.solveLatex).toHaveBeenLastCalledWith("x^{2} + 4 = 0", { column: ["x^{2} + 4 = 0"], complexRoots: false });
+    localSolve(s.engine, ["x^{2} + 4 = 0"], undefined, { complexRoots: "always" });
+    expect(s.solveLatex).toHaveBeenLastCalledWith("x^{2} + 4 = 0", { column: ["x^{2} + 4 = 0"], complexRoots: true });
+    localSolve(s.engine, ["i^{2} = -1", "x^{2} + 4 = 0"], undefined, { complexRoots: "never" });
+    expect(s.solveLatex).toHaveBeenLastCalledWith("x^{2} + 4 = 0", { column: ["i^{2} = -1", "x^{2} + 4 = 0"], complexRoots: false });
   });
 
   it("needs two lines with LaTeX for the column path", () => {
