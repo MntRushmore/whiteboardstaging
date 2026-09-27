@@ -346,7 +346,8 @@ export interface ParsedChain {
 export function chainSteps(ch: ParsedChain, normalize: (latex: string) => string): Solution | null {
   return exactly(() => {
     const v = ch.variable;
-    let [aNode, fNode, bNode] = ch.sides;
+    const fNode = ch.sides[1];
+    let [aNode, , bNode] = ch.sides;
     let [op1, op2] = ch.ops;
     if (op1 === "==" || op2 === "==") return null;
     const up = (o: RelOp) => o === "<" || o === "<=";
