@@ -1,13 +1,14 @@
 /**
  * What running out of credits looks like on the board, as pure logic: the words (shared by the
- * board's dialog and the Ask panel), the reset date, the upgrade choices, and when the dialog may
- * open. No React, no network: unit-tested in __tests__/outOfCredits.test.ts.
+ * board's dialog and the Ask panel), the reset date and the upgrade choices. When the dialog may
+ * open is creditsDialog.ts (that part is in the board's first load; this one only in the lazy
+ * dialog). No React, no network: unit-tested in __tests__/outOfCredits.test.ts.
  *
  * The path of a 402: a Live route answers `402 credits_exhausted` -> classifyLiveFailure
  * (src/components/live/errorView.ts) records a LiveError with code 'credits' -> the board's
- * OutOfCreditsWatcher sees it (creditsDialogWanted) and opens the dialog once the pen has rested
- * (penIsResting), at most once per visit to the board. The Ask panel maps its own 402 with
- * chatErrorFor (src/components/chat/chatView.ts) and shows the same panel inline.
+ * OutOfCreditsWatcher opens the dialog once the pen has rested, at most once per visit to the
+ * board. The Ask panel maps its own 402 with chatErrorFor (src/components/chat/chatView.ts) and
+ * shows the same panel inline.
  */
 import {
   formatCredits,
@@ -91,28 +92,4 @@ export function upgradeOptionsFor(
 export function upgradeLeadFor(options: ReadonlyArray<UpgradeOption>, summary: CreditSummary | null | undefined): string | null {
   if (options.length === 0) return hasSubscription(summary) ? OUT_OF_CREDITS_COPY.noUpgrade : null;
   return hasSubscription(summary) ? OUT_OF_CREDITS_COPY.switchLead : OUT_OF_CREDITS_COPY.upgradeLead;
-}
-
-/* ------------------------------------------------------------------------- */
-/* When the board's dialog opens                                              */
-/* ------------------------------------------------------------------------- */
-
-/** How long the pen must have been still before the dialog may cover the board. */
-export const PEN_REST_MS = 1_500;
-
-/**
- * True when the student is not writing: no pointer is down and nothing touched the board for
- * PEN_REST_MS. The dialog never lands mid-stroke, nor between the strokes of one expression.
- */
-export function penIsResting(input: { pointerDown: boolean; lastPenAt: number; now: number }): boolean {
-  return !input.pointerDown && input.now - input.lastPenAt >= PEN_REST_MS;
-}
-
-/**
- * The 402 -> dialog mapping: a Live error with code 'credits' (classifyLiveFailure's mapping of
- * `402 credits_exhausted`) asks for the dialog, once per visit to the board; every later credits
- * error is left to the status pill, which already links to the account page.
- */
-export function creditsDialogWanted(error: { code: string } | null | undefined, alreadyShown: boolean): boolean {
-  return !alreadyShown && error?.code === "credits";
 }

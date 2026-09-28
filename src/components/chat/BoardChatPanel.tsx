@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import dynamic from "next/dynamic";
+import { Suspense, lazy, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { ArrowUp, Loader2, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -16,10 +15,7 @@ interface BoardChatPanelProps {
 }
 
 /** Running out of credits: the board dialog's panel, fetched only when a 402 arrives. */
-const OutOfCreditsPanel = dynamic(() => import("@/components/billing/OutOfCreditsPanel").then((m) => m.OutOfCreditsPanel), {
-  ssr: false,
-  loading: () => <p className="text-sm text-red-700">{CHAT_COPY.errors.credits}</p>,
-});
+const OutOfCreditsPanel = lazy(() => import("@/components/billing/OutOfCreditsPanel").then((m) => ({ default: m.OutOfCreditsPanel })));
 
 /** A marker the board page gives the Ask button: Esc there closes the panel too. */
 export const CHAT_TOGGLE_ATTR = "data-chat-toggle";
@@ -165,7 +161,9 @@ function Message({ message: m, onRetry, busy }: { message: ChatMessage; onRetry:
     // the board dialog's words and Upgrade buttons, inline (lazy: fetched only when needed)
     return (
       <div className="rounded-lg border border-red-100 bg-red-50/60 px-3 py-2.5">
-        <OutOfCreditsPanel variant="inline" titleAs="p" />
+        <Suspense fallback={<p className="text-sm text-red-700">{CHAT_COPY.errors.credits}</p>}>
+          <OutOfCreditsPanel variant="inline" titleAs="p" />
+        </Suspense>
       </div>
     );
   }

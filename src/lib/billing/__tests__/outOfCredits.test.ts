@@ -2,16 +2,8 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api-client";
 import { classifyLiveFailure } from "@/components/live/errorView";
 import { chatErrorFor } from "@/components/chat/chatView";
-import {
-  OUT_OF_CREDITS_COPY,
-  PEN_REST_MS,
-  creditsDialogWanted,
-  creditsResetLabel,
-  nextCreditReset,
-  penIsResting,
-  upgradeLeadFor,
-  upgradeOptionsFor,
-} from "../outOfCredits";
+import { OUT_OF_CREDITS_COPY, creditsResetLabel, nextCreditReset, upgradeLeadFor, upgradeOptionsFor } from "../outOfCredits";
+import { PEN_REST_MS, creditsDialogWanted, penIsResting } from "../creditsDialog";
 import { parsePlans, type CreditSummary } from "../viewModel";
 
 const NOW = new Date("2026-09-28T12:00:00Z");

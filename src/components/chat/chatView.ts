@@ -4,7 +4,6 @@
  * far". No React, no network: unit-tested in __tests__/chatView.test.ts.
  */
 import { isApiError } from "@/lib/api-client";
-import { OUT_OF_CREDITS_COPY } from "@/lib/billing/outOfCredits";
 import { CHAT_LIMITS, type ChatRunReport, type ChatTurn } from "@/lib/live/chat/contracts";
 
 /** Credits per request: ROUTE_COSTS["live/chat"] on the server (pinned equal in the tests). */
@@ -23,8 +22,11 @@ export const CHAT_COPY = {
   retry: "Retry",
   cost: `Each request uses ${CHAT_CREDITS} credits.`,
   errors: {
-    /** the same words as the board's out-of-credits dialog (OutOfCreditsPanel shows the rest) */
-    credits: OUT_OF_CREDITS_COPY.title,
+    /**
+     * OUT_OF_CREDITS_COPY.title, the board dialog's words (pinned equal in the tests; a literal so
+     * the panel does not pull the lazy dialog's module into the board's first load)
+     */
+    credits: "You've used this month's credits",
     rateLimited: (seconds: number) => `That's a lot of requests. Try again in ${seconds} s.`,
     unauthorized: "Please sign in again.",
     network: "Couldn't reach the tutor. Check your connection and try again.",

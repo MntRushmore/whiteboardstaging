@@ -1,14 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import dynamic from "next/dynamic";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { useValue, type Editor, type TLEventInfo } from "tldraw";
 import { liveStore } from "@/lib/live/liveStore";
-import { creditsDialogWanted, penIsResting } from "@/lib/billing/outOfCredits";
+import { creditsDialogWanted, penIsResting } from "@/lib/billing/creditsDialog";
 
-const loadDialog = () => import("@/components/billing/OutOfCreditsDialog").then((m) => m.OutOfCreditsDialog);
+const loadDialog = () => import("@/components/billing/OutOfCreditsDialog").then((m) => ({ default: m.OutOfCreditsDialog }));
 /** Not in the board's first load: fetched when the first credits error arrives. */
-const OutOfCreditsDialog = dynamic(loadDialog, { ssr: false });
+const OutOfCreditsDialog = lazy(loadDialog);
 
 /** How often a waiting dialog looks again whether the pen has rested. */
 const CHECK_MS = 250;
@@ -51,5 +50,9 @@ export function OutOfCreditsWatcher({ editor }: { editor: Editor }) {
   }, [wanted, editor]);
 
   if (phase !== "open") return null;
-  return <OutOfCreditsDialog open onOpenChange={(open) => !open && setPhase("done")} />;
+  return (
+    <Suspense fallback={null}>
+      <OutOfCreditsDialog open onOpenChange={(open) => !open && setPhase("done")} />
+    </Suspense>
+  );
 }
