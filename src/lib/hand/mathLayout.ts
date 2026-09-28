@@ -100,9 +100,13 @@ const OP_LEAD = 0.9;
 
 const FRAC_CHILD_SCALE = 0.86;
 const FRAC_BAR_PAD = 0.9;
-/** Bar to numerator / denominator ink. The pen is ~1 unit wide: less than this touches. */
-const FRAC_NUM_GAP = 1.2;
-const FRAC_DEN_GAP = 1.4;
+/**
+ * Bar to numerator / denominator ink. The pen is ~1 unit wide, and the board draws the tutor's
+ * hand a little heavier than that and with a wobble: at 1.2 / 1.4 a numerator sat on the bar and
+ * `\frac{x}{2}` read as a crossed-out x. About a pen's width of clear space either side.
+ */
+const FRAC_NUM_GAP = 2.1;
+const FRAC_DEN_GAP = 2.1;
 
 const SCRIPT_SCALE = 0.7;
 const MIN_SCALE = 0.42;
