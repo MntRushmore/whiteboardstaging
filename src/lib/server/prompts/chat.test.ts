@@ -118,6 +118,12 @@ describe("cleaning the model's reply", () => {
     expect(dropped).toEqual([{ type: "write_proof", reason: expect.stringMatching(/^given/) }]);
   });
 
+  it("a point's label that is not true / false is let go, not the whole figure", () => {
+    const figure = { points: { A: { x: 0, y: 0, label: "A" }, B: { x: 4, y: 0, dot: "yes" }, C: { x: 0, y: 3, label: false } }, segments: [{ from: "A", to: "B" }] };
+    const { actions } = cleanChatActions([{ type: "draw_figure", figure }]);
+    expect(actions).toEqual([{ type: "draw_figure", figure: { points: { A: { x: 0, y: 0 }, B: { x: 4, y: 0 }, C: { x: 0, y: 3, label: false } }, segments: [{ from: "A", to: "B" }] } }]);
+  });
+
   it("a figure must pass the shared spec schema", () => {
     expect(cleanChatActions([{ type: "draw_figure", figure: PROBE_FIGURE }]).actions).toHaveLength(1);
     const bad = cleanChatActions([{ type: "draw_figure", figure: { points: { "1A": { x: 0, y: 0 } } } }]);

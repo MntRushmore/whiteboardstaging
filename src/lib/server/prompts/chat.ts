@@ -232,6 +232,27 @@ function unwrapLatex(v: unknown): unknown {
   return v;
 }
 
+/**
+ * A figure's points with a `label` or `dot` that is not true / false (`"label": "A"`: the model
+ * restating the name, which is written anyway) lose it, instead of the whole figure being dropped.
+ */
+function lenientFigure(v: unknown): unknown {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return v;
+  const fig = v as Record<string, unknown>;
+  if (!fig.points || typeof fig.points !== "object" || Array.isArray(fig.points)) return v;
+  const points: Record<string, unknown> = {};
+  for (const [name, p] of Object.entries(fig.points as Record<string, unknown>)) {
+    if (!p || typeof p !== "object") {
+      points[name] = p;
+      continue;
+    }
+    const q = { ...(p as Record<string, unknown>) };
+    for (const k of ["label", "dot"]) if (k in q && typeof q[k] !== "boolean") delete q[k];
+    points[name] = q;
+  }
+  return { ...fig, points };
+}
+
 /** A reply for the panel: plain, short, cut at a sentence end. */
 export function cleanReplyText(text: string): string {
   const flat = text.replace(/\$+/g, "").replace(/\s+/g, " ").trim();
@@ -272,10 +293,12 @@ export function cleanChatActions(raw: readonly unknown[]): { actions: ChatAction
     } else if (type === "graph" && Array.isArray(obj.relations)) {
       candidate = { ...obj, relations: obj.relations.map(unwrapLatex) };
       if (obj.window === null) delete candidate.window;
+    } else if (type === "draw_figure") {
+      candidate = { ...obj, figure: lenientFigure(obj.figure) };
     } else if (type === "write_proof") {
       // one Given as a string is a list of one; `worked` left out is a worked proof
       const given = typeof obj.given === "string" ? [obj.given] : obj.given;
-      candidate = { ...obj, given: Array.isArray(given) ? given.map(unwrapLatex) : given, prove: unwrapLatex(obj.prove) };
+      candidate = { ...obj, figure: lenientFigure(obj.figure), given: Array.isArray(given) ? given.map(unwrapLatex) : given, prove: unwrapLatex(obj.prove) };
       if (obj.worked === null) delete candidate.worked;
     }
     const parsed = ChatActionSchema.safeParse(candidate);
