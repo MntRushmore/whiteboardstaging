@@ -61,9 +61,12 @@ export function hasFieldErrors(errors: FieldErrors): boolean {
 }
 
 export const RESET_LINK_COPY = {
+  expiredTitle: "This link no longer works",
   expired:
-    "This reset link has expired or was already used. Reset links work once, so ask for a new one.",
-  missing: "Open the link in your password reset email to choose a new password.",
+    "Reset links work once and expire after a while. Go back to sign in and choose “Forgot your password?” to get a new one.",
+  missingTitle: "Open your reset link",
+  missing:
+    "Use the link in your password reset email to choose a new password. To get one, go back to sign in and choose “Forgot your password?”",
 } as const;
 
 /**
