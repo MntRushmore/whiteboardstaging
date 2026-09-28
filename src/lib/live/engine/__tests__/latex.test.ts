@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { create, all } from "mathjs";
-import { latexToMath, preprocessLatex, splitRelations, UnsupportedLatex } from "../latex";
+import { instructionOf, latexToMath, preprocessLatex, splitRelations, UnsupportedLatex, withoutInstruction } from "../latex";
 import { exactIntegral, polynomialCoefficients } from "../math";
 import { valueToLatex } from "../format";
 
@@ -291,5 +291,27 @@ describe("exact definite integrals", () => {
     expect(exactIntegral(math, "sin(x)", "x", 0, 1)).toBeNull();
     expect(exactIntegral(math, "1 / x", "x", 1, 2)).toBeNull();
     expect(exactIntegral(math, "x", "x", 0, Infinity)).toBeNull();
+  });
+});
+
+describe("an instruction written before the maths", () => {
+  it("is not part of the maths: graph, plot, sketch, solve, factor, in text or as bare words", () => {
+    expect(withoutInstruction("\\text { graph } y=x")).toBe("y=x");
+    expect(withoutInstruction("\\text{Graph: } y = x")).toBe("y = x");
+    expect(withoutInstruction("graph y=x")).toBe("y=x");
+    expect(withoutInstruction("\\operatorname{graph} y=2 x+1")).toBe("y=2 x+1");
+    expect(withoutInstruction("\\text { sketch the graph of } y=x^{2}-4")).toBe("y=x^{2}-4");
+    expect(withoutInstruction("\\text { Solve } 2 x+3=11")).toBe("2 x+3=11");
+    expect(withoutInstruction("\\text { factor } x^{2}-5 x+6")).toBe("x^{2}-5 x+6");
+    expect(preprocessLatex("\\text { plot } y=x^{2}")).toBe("y=x^{2}");
+    expect(instructionOf("\\text { graph } y=x")).toBe("graph");
+    expect(instructionOf("\\text { Solve } 2 x+3=11")).toBe("solve");
+  });
+
+  it("a sentence, a verb with nothing mathematical after it, or no verb at all is left as it is", () => {
+    for (const latex of ["\\text{Find the number that doubled is 12}", "\\text { Find } x", "\\text { graph }", "y=x", "\\text { Solve } \\text { for } x", "\\text{Graphs of lines} y = mx + b"]) {
+      expect(withoutInstruction(latex), latex).toBe(latex);
+      expect(instructionOf(latex), latex).toBeNull();
+    }
   });
 });

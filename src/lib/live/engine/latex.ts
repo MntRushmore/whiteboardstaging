@@ -187,9 +187,38 @@ export function preprocessLatex(latex: string): string {
   // `5^{2} + 12^{2} \stackrel{?}{=} 13^{2}`: a check is an equation to test
   s = s.replace(/\\(?:stackrel|overset)\s*\{\s*\?\s*\}\s*\{\s*=\s*\}/g, "=");
   s = s.replace(/\\text\s*\{\s*\}/g, " ");
+  s = withoutInstruction(s);
   // geometry names: `m\angle A` is `\angle A`, and `AB` in a geometry line is one length (`geometryNotation.ts`)
   s = markGeometry(s.replace(/\s+/g, " ").trim());
   return s.replace(/\s+/g, " ").trim();
+}
+
+const INSTRUCTION_VERBS = "graph|plot|sketch|draw|solve|simplify|evaluate|factor|factori[sz]e|expand|find|calculate|compute|differentiate|integrate";
+const INSTRUCTION_PHRASE = `(?:${INSTRUCTION_VERBS})(?:\\s+the\\s+(?:graph|line|curve|function|equation|parabola)(?:\\s+of)?)?\\s*:?`;
+const INSTRUCTION_RE = new RegExp(
+  `^(?:\\\\(?:text|mathrm|operatorname|textrm|mbox)\\s*\\{\\s*${INSTRUCTION_PHRASE}\\s*\\}|${INSTRUCTION_PHRASE}(?=\\s|\\\\|$))\\s*`,
+  "i",
+);
+
+/**
+ * `\text{graph } y = x`, `Solve: 2x + 3 = 11`, `\text{Plot the graph of} y = x^{2}`: an instruction
+ * written before the maths is not part of it. Only an instruction alone in its text (a verb, and
+ * at most "the graph of" and a colon), and only with maths after it: `\text{Find the number that…}`
+ * is a sentence and stays one.
+ */
+export function withoutInstruction(latex: string): string {
+  const m = INSTRUCTION_RE.exec(latex);
+  if (!m) return latex;
+  const rest = latex.slice(m[0].length).trim();
+  if (!rest || /^\\(?:text|mbox|textrm)\b/.test(rest) || !/[=<>\d]|\\[a-zA-Z]/.test(rest)) return latex;
+  return rest;
+}
+
+/** The instruction verb a line starts with (`graph`, `solve`, …), lower case, or null. */
+export function instructionOf(latex: string): string | null {
+  const m = INSTRUCTION_RE.exec(latex.trim());
+  if (!m || withoutInstruction(latex.trim()) === latex.trim()) return null;
+  return m[0].toLowerCase().match(new RegExp(INSTRUCTION_VERBS))?.[0] ?? null;
 }
 
 /** Calculator text: unicode operators and degree signs only; words stay intact. */

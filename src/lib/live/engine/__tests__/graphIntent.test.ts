@@ -50,6 +50,13 @@ describe("graphFor — what gets a graph", () => {
     },
   );
 
+  it("an instruction before the relation (`graph y = x`) asks for the same graph", () => {
+    for (const latex of ["\\text { graph } y=x", "graph y=x", "\\text{Plot: } y = x", "\\text { sketch the graph of } y=x"]) {
+      expect(plane([latex]).key, latex).toBe(plane(["y = x"]).key);
+    }
+    expect(engine.analyzeLine("\\text { graph } y=x", { mode: "answer" }).kind).toBe("function");
+  });
+
   it("a line's intercepts are its labelled points, exactly", () => {
     const g = plane(["y = 2x + 1"]);
     expect(labels(g)).toEqual(expect.arrayContaining(["(0, 1)", "(-\\frac{1}{2}, 0)"]));
