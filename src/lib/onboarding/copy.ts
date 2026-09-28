@@ -6,7 +6,7 @@ export const WELCOME_COPY = {
   kicker: "Welcome to Agathon Classroom",
   title: "The whiteboard that writes back.",
   /** what it does, in two lines */
-  lines: ["Write maths by hand, one step per line.", "The tutor checks each step and answers in its own handwriting."],
+  lines: ["Write maths by hand, one step per line.", "The tutor checks every step and writes back by hand."],
   getStarted: "Get started",
   skip: "Skip for now",
   courseTitle: "Which course are you taking?",

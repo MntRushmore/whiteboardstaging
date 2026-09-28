@@ -74,7 +74,7 @@ export default function Welcome({ userId, onSkip }: WelcomeProps) {
       aria-labelledby="welcome-title"
       data-onboarding="welcome"
       data-step={step}
-      className="mx-auto grid w-full max-w-5xl overflow-hidden rounded-xl border bg-card shadow-xs md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+      className="mx-auto grid w-full max-w-5xl overflow-hidden rounded-xl border bg-card shadow-xs md:min-h-128 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
     >
       <div className="flex min-w-0 flex-col p-6 sm:p-8 lg:p-10">
         <Progress step={step} />
