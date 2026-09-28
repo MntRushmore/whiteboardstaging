@@ -1,4 +1,6 @@
-import { planHandwriting } from "../handwriting";
+// the hand's own layout, not `planHandwriting` (handwriting.ts is a client module): the chat and
+// setup routes run this check on the server
+import { layoutSteps } from "@/lib/hand";
 import { FigureSpecSchema, type FigureSpec } from "./contracts";
 import { degreesOf, fmt, lengthOf, nameLatex, wordIn } from "./labels";
 import { RESOLVE, dist, resolveFigure, type FigAngle, type FigSegment, type Figure } from "./resolve";
@@ -199,7 +201,7 @@ function labelText(fig: Figure): string[] {
     ...fig.angles.filter((g) => g.label).map((g) => ({ latex: g.label!, where: `angle ${g.name}` })),
   ];
   for (const t of texts) {
-    const { unsupported } = planHandwriting([t.latex], { size: CHECK.size, seed: 1 });
+    const { unsupported } = layoutSteps([t.latex], { size: CHECK.size, seed: 1 });
     if (unsupported.length > 0) {
       out.push(`The ${t.name ? "name" : "label"} "${t.latex}" on ${t.where} cannot be written by hand (${unsupported.join(", ")}); use short maths such as 3, x, 2x + 1 or 70^{\\circ}.`);
       continue;
