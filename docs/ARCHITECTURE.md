@@ -108,7 +108,7 @@ Every handler under `src/app/api/**` follows the same preamble: `requireUser` (J
 | `/api/live/solve` | POST | `livePreamble` | `liveSolve` 10 | 10 | `SolveRequestSchema` | SSE worked-solution steps | active |
 | `/api/live/setup` | POST | `livePreamble` | `liveSetup` 10 | 2 | `SetupRequestSchema` (`lines` 0–40 strings; optional `crop` data:image ≤ 280 KB and `labels` ≤ 40, labels only with a crop; lines or a crop required) | A word problem → `{ lines, unknown?, model, ms }`: LaTeX assignments / equations only (no arithmetic, no words), which the client's engine then solves. `openai/gpt-5.4-mini`, fallback `deepseek/deepseek-v4.1-flash` (`LIVE_MODEL_SETUP`). With a `crop` it is a hand-drawn **figure** (asked about, or in Solve left labelled with an unknown): the model describes what the figure shows and `planFigure` (`src/lib/live/figure`) writes the equations — `{ lines, unknown, figure: { source: "facts", stages: [{ letter, lines, value, kind }] } }` — or, when that read does not hold up, its own lines (`figure: { source: "lines", reason, kind? }`); read by `google/gemini-3.1-flash-lite`, fallback `google/gemini-3.5-flash-lite` (`LIVE_MODEL_FIGURE`, prompt `prompts/figure.ts`; chosen on `npm run eval:figures`). A reply with no lines is a 502 (refunded) | active |
 | `/api/live/reread` | POST | `livePreamble` | `liveReread` 30 | 1 | `RereadRequestSchema` (`crop` data:image ≤ 280 KB, Mathpix's `latex`, the column's `above` / `below`) | The second reader: one suspicious line's ink crop → `{ latex, changed, model, ms }`. `google/gemini-3.1-flash-lite`, fallback `anthropic/claude-haiku-4.5` (`LIVE_MODEL_REREAD`). Only sent on a signal, at most once per ink | active |
-| `/api/live/chat` | POST | `livePreamble` | `liveChat` 12 | 3 | `ChatRequestSchema` (`message` 1–500 chars, `history` ≤ 6 turns, `screen`: `empty`, the student's lines, the tutor's lines, the problems written there and their `numbers` on the board) | The board chat: a typed request → `{ reply, actions, notes, refunded?, model, ms }` (`src/lib/live/chat/contracts.ts`); actions validated one by one with zod, an invalid one dropped; a `help_problem` for a number not on the screen dropped with a note. `openai/gpt-5.4-mini`, fallback `deepseek/deepseek-v4.1-flash` (`LIVE_MODEL_CHAT`; chosen on `npm run eval:chat`). A `draw_figure` that `checkFigure` finds problems with gets one repair call per request; still wrong, it is dropped with a note. When every proposed action was dropped the reply says so and the charge is refunded (200, `refunded: true`) | active |
+| `/api/live/chat` | POST | `livePreamble` | `liveChat` 12 | 3 | `ChatRequestSchema` (`message` 1–500 chars, `history` ≤ 6 turns, `screen`: `empty`, the student's lines, the tutor's lines, the problems written there and their `numbers` on the board) | The board chat: a typed request → `{ reply, actions, notes, refunded?, model, ms }` (`src/lib/live/chat/contracts.ts`); actions validated one by one with zod, an invalid one dropped; a `help_problem` for a number not on the screen dropped with a note. `openai/gpt-5.4-mini`, fallback `deepseek/deepseek-v4.1-flash` (`LIVE_MODEL_CHAT`; chosen on `npm run eval:chat`). A `draw_figure` that `checkFigure` finds problems with gets one repair call per request; still wrong, it is dropped with a note. A `write_proof` goes on only when the engine's proof planner proves it (`gateChatProof` → `checkProofProposal`); one it cannot gets one repair call with the engine's problems, else it is dropped with a note. When every proposed action was dropped the reply says so and the charge is refunded (200, `refunded: true`) | active |
 
 Notes:
 
@@ -396,7 +396,8 @@ hand — maths only. History is kept in memory per board for the session.
 - **The reply** is `{ reply, actions }`, at most six actions: `write_problems` (1–12 problems; a system
   is one problem of 2–3 lines), `write_lines` (maths as given, e.g. a formula), `graph` (relations in
   LaTeX, an optional window), `draw_figure` (a `FigureSpec`), `new_screen`, `clear_tutor`, `help_problem`
-  (`{ problem, depth: "step" | "solve" }`: help with a problem on this screen, by its number there). The
+  (`{ problem, depth: "step" | "solve" }`: help with a problem on this screen, by its number there),
+  `write_proof` (a two-column proof, below). The
   prompt (`src/lib/server/prompts/chat.ts`) keeps words off the board, asks for problems a student at the
   level can solve with clean answers, never solves itself, gives the figure format true to scale, adds a
   new screen only when asked, and declines anything that is not maths help. "help me with 3", "I'm stuck
@@ -444,6 +445,32 @@ hand — maths only. History is kept in memory per board for the session.
   trig equation with none, naming the one turn Solve writes is a tick, and the answer is then held to
   it. Solve from the student's step under such a problem solves in its interval and unit
   (`localSolve`'s `domain`: the chat problem's, passed by the loop) — scoreboard t2-52–57.
+- **Proofs (`write_proof`: `{ figure: FigureSpec, given: [...], prove, worked }`).** Asked for a proof
+  ("write a proof", "the hardest proof ever", "prove that the base angles of an isosceles triangle are
+  congruent") the model chooses one — never a question back — and `worked: true` has the tutor write
+  every row; "give me a proof to do" is `worked: false`. The prompt names the reasons the planner knows
+  and shows four examples, each proved by the engine in a test. Nothing is written unproved:
+  `checkProofProposal` (`chat/proof.ts`, pure, a few ms; the route runs it, and the board again) wants
+  a figure the drawer draws true to what it says, points A–Z, statements the proof reader reads, a
+  drawing that bears every statement out, and the planner's proof of the Prove statement with the
+  figure's own geometry (`figureReadOf`: the spec as the desk reads a figure) — never citing the theorem
+  being proved (`theoremsBeingProved`) — in at most 12 rows the hand can write. A proof it cannot prove
+  gets one repair call told what the engine did reach (`whyNot`: the congruences it proved, the parts
+  it lacks); still unproved, it is dropped with a note. A hard proof asked for ("the hardest proof
+  ever") prefers at least 8 rows: a shorter one earns the repair, and if that is still short the
+  longest proved one goes on. The model's words never reach the board: the
+  statements are printed back from their facts in the reader's forms. On the board (`proofWrite.ts`,
+  loaded on first use with the layout and the check — 8.9 KB gzip; the board's first load grew 5.3 KB
+  for the rest, 1,036,984 → 1,042,239 B; `proofLayout.ts`): on an empty screen, else a new one — the figure top right,
+  `Given:` / `Prove:` top left, a Statements | Reasons T-table under them, laid out exactly as the
+  reader reads a student's proof, every row of a worked proof in it (the planner's rows, unmarked: they
+  are the tutor's), or the table left empty to the bottom of the screen. The strokes carry what the
+  proof desk needs to know the proof again, also after a reload (`proof/tutorFigure.ts`: the figure's
+  read, the table's rules, the rows), so a student's rows in the table get their ticks and rings and
+  Help / Solve continue it. An algebra proof ("prove the sum of two odd numbers is even") is
+  `write_lines`: a chain of `=` lines, every step shown equal to the line above (`verifyLines` →
+  `stepHolds`: the engine judges each step with the letters given whole numbers, three times over).
+  Screenshots: `docs/qa-screenshots/chat-proof-*.png`.
 - **Measured** by `npm run eval:chat` (`docs/eval/chat.md`; 38 requests, gated by `RUN_CHAT_EVAL=1`,
   under a $0.60 cap): gpt-5.4-mini did all 38 as asked, every one of its 70 problems verified, 5 of 5
   figures clean (2 after the repair), 2.3 s p50, ~$0.0011 a request; the DeepSeek fallback matched it
@@ -458,6 +485,12 @@ hand — maths only. History is kept in memory per board for the session.
   problems it wrote", above). A typed ask is answered whatever the dial says, Off included. The panel
   notes a problem already worked out, or one not on the screen. The chat request stays 3 credits; the
   local writing is free, and the model fallback is metered by `/api/live/solve` as before.
+- **Measured, proofs** by `npm run eval:chat` (`docs/eval/chat.md`; on the proofs branch 49 requests, 11 of them proofs, gated by
+  `RUN_CHAT_EVAL=1`, under a $0.60 cap): on the proofs prompt gpt-5.4-mini did 49 of 49 as asked
+  (all 9 geometry proofs proved, 5 at once and 4 after the repair; the 12-row "hardest" at once), all
+  70 problems verified, 2.2 s p50, ~$0.0017 a request; the DeepSeek fallback did 49 of 49, every
+  proof proved at once, 1.2 s p50.
+  With both, the corpus is 59 requests (38 + 10 help + 11 proofs).
 
 **Word problems: the model sets up, the engine solves.** Mathpix returns prose as `\text{…}` and
 the engine classifies it `kind: 'text'` (silent: no echo). A column down to the asked-for line that
@@ -679,7 +712,13 @@ Reasons` header or a drawn T-table.
   written in the tutor's hand, statement then reason, one row pitch under the last row. Their
   reasons go in the student's reason column, or with none yet, one column just past the widest
   statement. Sizes come from the Prove line when there are no rows yet: a Given can be two lines
-  read as one.
+  read as one; a Statements | Reasons header just under the Prove line is the proof's, so a table set
+  up and not begun gets its first row under the header, the reason under `Reasons`.
+- **A proof the tutor wrote (the board chat's `write_proof`).** Its figure's strokes carry the
+  figure's read (`meta.proofFigure`), which the desk prefers to reading any ink (`figureFrom:
+  "tutor"`); its rows come back as the tutor's lines; its table's rules are written across. Help with
+  nothing of the student's on the screen asks the one proof there; Help on it plans without the
+  theorem it proves, as the proof was checked.
 - **Scoreboard.** `npm run eval:proofs` (`docs/eval/proofs.md`, 28 textbook proofs): every row of
   every correct proof ticked, every seeded error ringed, and the planner finishing each proof from
   every prefix.
