@@ -429,9 +429,21 @@ hand — maths only. History is kept in memory per board for the session.
   `splitInk`'s `equations`; "Drawings" below). Writing problems, or rubbing one out, re-reads the columns.
   A line there the tutor cannot judge gets its "?" once the student stops, and with nothing of the
   student's to act on the tutor works the problem itself (both above, under Help).
-  Known gap: a problem written with its interval on the line (`2\cos x = 1, 0^{\circ} \le x < 360^{\circ}`)
-  is solved by the engine (scoreboard t2-52–54), but it is analysed as an inequality, so the student's
-  steps under it get no verdict (no tick, ring or "?").
+- **A problem with its interval on the line** (`2\cos x = 1, 0^{\circ} \le x < 360^{\circ}`, `0 \le x <
+  2\pi`, `x \in [0, 360^{\circ})`; `src/lib/live/engine/domain.ts`) is an equation and a DOMAIN, not one
+  inequality: `analyzeLine` analyses the equation as any line and puts the domain on it
+  (`LineAnalysis.domain`, in radians for an angle, with the equation's solutions there, exactly as
+  Solve lists them), and every line under it carries it down the column. The student's steps get their
+  tick or ring as under any equation (`\cos x = \frac{1}{2}`, the reference angle
+  `\cos^{-1}(\frac{1}{2}) = 60^{\circ}` — an inverse trig value is radians beside an angle); an answer
+  outside the interval is ringed though it solves the equation (`x = 420^{\circ}`, note "Outside the
+  interval"); the problem's solutions there are ticked even under a ringed line; one of two solutions
+  (`x = 60^{\circ}` of 60°, 300°) is ticked but not `solved`, so Solve and Help carry on to the other;
+  all of them is solved. Plain numbers are degrees under a degree interval (`x = 210` under `0 \le x <
+  360`). The interval written again on a line of its own is a tick (another interval a ring); under a
+  trig equation with none, naming the one turn Solve writes is a tick, and the answer is then held to
+  it. Solve from the student's step under such a problem solves in its interval and unit
+  (`localSolve`'s `domain`: the chat problem's, passed by the loop) — scoreboard t2-52–57.
 - **Measured** by `npm run eval:chat` (`docs/eval/chat.md`; 38 requests, gated by `RUN_CHAT_EVAL=1`,
   under a $0.60 cap): gpt-5.4-mini did all 38 as asked, every one of its 70 problems verified, 5 of 5
   figures clean (2 after the repair), 2.3 s p50, ~$0.0011 a request; the DeepSeek fallback matched it

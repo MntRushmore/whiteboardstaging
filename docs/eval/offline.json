@@ -1,16 +1,16 @@
 {
   "summary": {
-    "total": 716,
-    "passed": 716,
+    "total": 719,
+    "passed": 719,
     "stages": {
-      "local": 716,
-      "answer": 716,
-      "steps": 716,
-      "drawable": 716,
-      "words": 716
+      "local": 719,
+      "answer": 719,
+      "steps": 719,
+      "drawable": 719,
+      "words": 719
     },
     "answers": {
-      "ok": 716,
+      "ok": 719,
       "approx": 0,
       "form": 0,
       "unsolved": 0,
@@ -249,14 +249,14 @@
       },
       {
         "topic": "trig-equation",
-        "total": 18,
-        "passed": 18,
+        "total": 21,
+        "passed": 21,
         "stages": {
-          "local": 18,
-          "answer": 18,
-          "steps": 18,
-          "drawable": 18,
-          "words": 18
+          "local": 21,
+          "answer": 21,
+          "steps": 21,
+          "drawable": 21,
+          "words": 21
         }
       },
       {
@@ -635,14 +635,14 @@
       },
       {
         "course": "precalc-calc",
-        "total": 105,
-        "passed": 105,
+        "total": 108,
+        "passed": 108,
         "stages": {
-          "local": 105,
-          "answer": 105,
-          "steps": 105,
-          "drawable": 105,
-          "words": 105
+          "local": 108,
+          "answer": 108,
+          "steps": 108,
+          "drawable": 108,
+          "words": 108
         }
       },
       {
@@ -13346,6 +13346,157 @@
         {
           "from": "x = 180^{\\circ} + 30^{\\circ}, \\ x = 360^{\\circ} - 30^{\\circ}",
           "to": "x = 210^{\\circ}, \\ x = 330^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-55",
+      "topic": "trig-equation",
+      "course": "precalc-calc",
+      "lines": [
+        "2\\cos x = 1, \\ 0 \\le x < 2\\pi",
+        "\\cos x = \\frac{1}{2}"
+      ],
+      "expected": "x = \\frac{\\pi}{3}, \\ x = \\frac{5\\pi}{3}",
+      "note": "from the student's step: the problem's interval in radians, not a turn in degrees",
+      "source": "solveLatex",
+      "steps": [
+        "\\cos^{-1}\\left(\\frac{1}{2}\\right) = \\frac{\\pi}{3}",
+        "x = \\frac{\\pi}{3}, \\ x = 2\\pi - \\frac{\\pi}{3}",
+        "x = \\frac{\\pi}{3}, \\ x = \\frac{5\\pi}{3}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "\\cos^{-1}\\left(\\frac{1}{2}\\right) = \\frac{\\pi}{3}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "x = \\frac{\\pi}{3}, \\ x = 2\\pi - \\frac{\\pi}{3}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "x = \\frac{\\pi}{3}, \\ x = \\frac{5\\pi}{3}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-56",
+      "topic": "trig-equation",
+      "course": "precalc-calc",
+      "lines": [
+        "2\\cos x = 1, \\ 0^{\\circ} \\le x < 180^{\\circ}",
+        "\\cos x = \\frac{1}{2}"
+      ],
+      "expected": "x = 60^{\\circ}",
+      "note": "from the student's step: half a turn, so 300° is not an answer",
+      "source": "solveLatex",
+      "steps": [
+        "\\cos^{-1}\\left(\\frac{1}{2}\\right) = 60^{\\circ}",
+        "x = 60^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "\\cos^{-1}\\left(\\frac{1}{2}\\right) = 60^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "x = 60^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-57",
+      "topic": "trig-equation",
+      "course": "precalc-calc",
+      "lines": [
+        "\\tan x = 1, \\quad x \\in [0, 2\\pi)"
+      ],
+      "expected": "x = \\frac{\\pi}{4}, \\ x = \\frac{5\\pi}{4}",
+      "note": "the interval in set notation",
+      "source": "solveLatex",
+      "steps": [
+        "\\tan^{-1}(1) = \\frac{\\pi}{4}",
+        "x = \\frac{\\pi}{4}, \\ x = \\pi + \\frac{\\pi}{4}",
+        "x = \\frac{\\pi}{4}, \\ x = \\frac{5\\pi}{4}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "\\tan^{-1}(1) = \\frac{\\pi}{4}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "x = \\frac{\\pi}{4}, \\ x = \\pi + \\frac{\\pi}{4}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "x = \\frac{\\pi}{4}, \\ x = \\frac{5\\pi}{4}",
           "status": "ok",
           "reason": ""
         }

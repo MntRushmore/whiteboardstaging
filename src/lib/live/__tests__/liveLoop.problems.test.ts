@@ -476,6 +476,45 @@ describe("live loop — the tutor works the problems it wrote", () => {
       expect(handLinesOf(next)).toEqual(["x = 4"]);
     });
 
+    it("the student's lines under an interval problem get their marks: a wrong angle ringed, the answer ticked", async () => {
+      start("feedback");
+      await run([{ type: "write_problems", problems: TRIG }]);
+      const cell = cellOf(3);
+      const x0 = Math.round(cell.x + 40);
+      const wrong = await penLine("x=4", x0, Math.round(cell.y + 110), "x = 50^{\\circ}");
+      const right = await penLine("x=2", x0, Math.round(cell.y + 200), "x = 210^{\\circ}, 330^{\\circ}");
+      await settleStable(() => String(tutor().length));
+      const lines = liveStore.lines.get();
+      expect(lines[wrong].analysis?.verdict).toBe("mismatch");
+
+      expect(lines[right].analysis).toMatchObject({ verdict: "ok", solved: true });
+      const kinds = (id: string) => [...new Set(tutor().filter((s) => s.meta.lineId === id && meta(s).mark).map((s) => String(meta(s).mark).split(":")[0]))];
+      expect(kinds(wrong)).toEqual(["circle"]);
+      expect(kinds(right)).toEqual(["check"]);
+    });
+
+    it("an angle outside the interval is ringed; one of the two answers is ticked, not solved", async () => {
+      start("feedback");
+      await run([{ type: "write_problems", problems: TRIG }]);
+      const cell = cellOf(1);
+      const outside = await penLine("x=4", Math.round(cell.x + 40), Math.round(cell.y + 110), "x = 420^{\\circ}");
+      const one = await penLine("x=2", Math.round(cell.x + 40), Math.round(cell.y + 200), "x = 60^{\\circ}");
+      const lines = liveStore.lines.get();
+      expect(lines[outside].analysis?.verdict).toBe("mismatch");
+      expect(lines[one].analysis).toMatchObject({ verdict: "ok", solved: false });
+    });
+
+    it("Solve from the student's step under a problem in radians: worked in its interval, in radians", async () => {
+      start("answer");
+      await run([{ type: "write_problems", problems: [["2\\cos x = 1, \\ 0 \\le x < 2\\pi"]] }]);
+      const step = await penLine("x=4", 100, 200, "\\cos x = \\frac{1}{2}");
+      expect(liveStore.lines.get()[step].analysis?.verdict).toBe("ok");
+      await pressSolve();
+      const written = handLinesOf(tutor().filter((s) => s.meta.lineId === step && meta(s).solvedLatex));
+      expect(written.at(-1)).toBe("x = \\frac{\\pi}{3}, \\ x = \\frac{5\\pi}{3}");
+      expect(written).not.toContain("0^{\\circ} \\le x < 360^{\\circ}");
+    });
+
     it("a typed ask is answered whatever the dial says, Off included", async () => {
       start("off");
       await run([{ type: "write_problems", problems: [["3x = 12"]] }]);

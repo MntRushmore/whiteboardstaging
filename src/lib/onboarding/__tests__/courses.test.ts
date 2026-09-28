@@ -101,7 +101,11 @@ describe.each(ALL)("starter $course #$i: $lines", ({ lines, firstStep, hint }) =
 
   it("makes coach mark 2 true: Suggest writes a first step the engine ticks under it, Solve has a solution to write", () => {
     const solution = localSolve(engine, [...lines]).steps;
-    const ticked = (step: string) => ["ok", "solved"].includes(badgeFor("feedback", analyzeColumn(engine, [...lines, step], "feedback").at(-1) ?? null));
+    const ticked = (step: string) => {
+      const a = analyzeColumn(engine, [...lines, step], "feedback").at(-1) ?? null;
+      // the interval written again is ticked, but it is not a step (as the loop's `problemStepsFor`)
+      return !(a?.domain && !a.math) && ["ok", "solved"].includes(badgeFor("feedback", a));
+    };
     const [step] = problemSteps({ solution, head: lines, written: [], depth: "step", normalize: normalizeStep, ticked });
     expect(step, "a first step").toBeTruthy();
     expect(ticked(step)).toBe(true);

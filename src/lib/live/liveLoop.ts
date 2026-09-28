@@ -1886,6 +1886,8 @@ export class LiveLoop implements LiveController {
       ticked: engine
         ? (step) => {
             const a = analyzeColumn(engine, [...work.cell.lines, step], mode).at(-1);
+            // the interval written again (`0^{\circ} \le x < 360^{\circ}`) is ticked, but it is not a step
+            if (a?.domain && !a.math) return false;
             return a?.verdict === "ok" || Boolean(a?.solved);
           }
         : undefined,
@@ -3589,6 +3591,8 @@ export class LiveLoop implements LiveController {
         // goes to the paths that can also typeset.
         handwriting: hand && !atCap,
         canDraw: (steps) => planHandwriting(steps, { size: handSizeFor(state.line.bounds.h), seed: handSeedFor(opts.lineId) }).unsupported.length === 0,
+        // the chat's problem above the work, written with its interval: the work is solved in it
+        domain: this.headAnalyses(state.line.column).at(-1)?.domain?.latex,
       },
     );
     if (!local.source) return null;

@@ -17,7 +17,8 @@
  *      returns false on ANY `unsupported` construct and the next path gets its turn. The column
  *      down to the target goes with it (a function defined above is not a product), and whether
  *      complex roots may be written (`engine/complexSetting.ts`: by default only when the column
- *      already uses `i`);
+ *      already uses `i`); a trig target under a problem's domain (`0 \le x < 2\pi`, carried down the
+ *      column by the engine, or `opts.domain`) is solved in that domain first;
  *   2. `engine.solveFromLines(column[0..target])` (`writeContextSolution`) — needs at least two
  *      lines with LaTeX; hand or typeset, a result here always ends the solve;
  *   3. `engine.simplifySteps(target)`         (`writeSimplification`) — written as `= …` lines;
@@ -66,9 +67,19 @@ export interface LocalSolveOptions {
    * Default: only when the column already uses `i` — the per-class switch, when there is one.
    */
   complexRoots?: ComplexRootsSetting;
+  /**
+   * The domain of the problem the column is under (`0 \le x < 2\pi`, a `LineDomain.latex`) when it
+   * is not among `lines` — the loop passes a chat problem's. The lines' own the engine finds.
+   */
+  domain?: string;
 }
 
 const NONE: LocalSolveResult = { source: null, steps: [] };
+
+/** Trig of the unknown on a line: its solutions depend on the domain. */
+const TRIG = /\\(?:sin|cos|tan|sec|csc|cot)(?![a-z])/;
+/** A line with a bound on it (`\le`, `<`, `\in`): it may carry its own domain. */
+const OWN_DOMAIN = /\\l(?:e|eq|t)(?![a-z])|<|\\in(?![a-z])/;
 
 function safely<T>(fn: () => T): T | null {
   try {
@@ -150,8 +161,13 @@ export function localSolve(engine: LiveEngine, lines: readonly string[], targetI
   //    not read as a product (`f(4)` is not `4f`) and `i` above allows complex roots
   const upTo = lines.slice(0, index + 1).filter(Boolean);
   const solveOptions = { column: upTo, complexRoots: allowComplexRoots(opts.complexRoots ?? DEFAULT_COMPLEX_ROOTS, upTo) };
+  // `\cos x = \frac{1}{2}` under `2\cos x = 1, \ 0 \le x < 2\pi`: solved in the problem's domain (the
+  // engine carries it down the column), not the one turn in degrees a bare trig equation gets. A
+  // target with a domain of its own refuses a second one and is solved as written.
+  const domain = opts.domain ?? targetAnalysis?.domain?.latex;
+  const inDomain = domain && TRIG.test(target) && !OWN_DOMAIN.test(target) ? `${target}, \\ ${domain}` : null;
   if (handwriting && target) {
-    const solved = safely(() => engine.solveLatex(target, solveOptions));
+    const solved = (inDomain ? safely(() => engine.solveLatex(inDomain, solveOptions)) : null) ?? safely(() => engine.solveLatex(target, solveOptions));
     if (solved && solved.steps.length > 0) {
       const steps = capped(solved.steps);
       if (canDraw(steps)) return { source: "solveLatex", steps };
