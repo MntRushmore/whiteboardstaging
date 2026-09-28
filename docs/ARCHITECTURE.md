@@ -7,6 +7,7 @@ Agathon Classroom is a single Next.js 16 App Router app. The browser talks to Su
 | Layer | Technology | Responsibility |
 | --- | --- | --- |
 | Canvas | tldraw 4 (`src/app/board/[id]/page.tsx`) | Drawing, the Live Math layer (typeset echoes, the tutor's handwriting, marks and hand-sketched graphs), autosave |
+| Platform pages | Arc (`src/registry`) in `src/app/(platform)` | Sign in / sign up / reset password, the boards home and first-run welcome, the account header (see "Platform UI") |
 | Client API helper | `src/lib/api-client.ts` | `authedFetch` attaches the Supabase access token; `apiJson` parses the error contract into `ApiError` |
 | Route handlers | `src/app/api/**` (Node runtime) | JWT verification, rate limiting, zod validation, provider calls, logging |
 | Server helpers | `src/lib/server/**`, `src/lib/env.ts` | `requireUser`, rate limiter, env validation, provider clients |
@@ -58,6 +59,31 @@ A new student lands on `/` after sign-up (no email confirmation). `useWelcome` (
 State: `profiles.course` (one of the five ids, a check constraint) and `profiles.onboarded_at`, added by `supabase/migrations/20260928100000_onboarding.sql`, which backfills `onboarded_at = created_at` for every profile that exists when it runs — accounts made before onboarding shipped never see the welcome. Both columns are readable by the owner (the existing select policy) and written only by the SECURITY DEFINER RPC `save_onboarding(p_course text default null, p_complete boolean default false)` → `{ course, onboarded_at }`, which acts on `auth.uid()` alone, rejects an unknown course with 22023 (HTTP 400), stamps `onboarded_at` once (a second completion keeps the first time) and creates a missing profile row first; `anon` cannot execute it and `authenticated` has no update grant on either column (a PATCH is 42501). `npm run db:verify` checks all of it (`checkOnboarding` in `scripts/lib/rlsChecks.mjs`).
 
 The boards home with no boards (after Skip, or every board deleted) shows the welcome's picture and words and one next step, New Board (`src/components/boards/EmptyBoards.tsx`).
+
+## Platform UI
+
+The pages around the board (`/`, `/login`, `/reset-password`, `/account`) live in the route group `src/app/(platform)` (URLs unchanged) and are built with [Arc](https://uiarc.dev), a shadcn-style registry of React components styled with CSS modules and animated with `motion`. The board (`/board/[id]`) and `/train` stay on shadcn/ui + Tailwind + tldraw and never load Arc.
+
+**Where it lives.** Components are vendored source: `src/registry/components/<name>/<name>.tsx` + `.module.css`, tokens in `src/registry/foundation.css`, motion timings in `src/registry/motion-tokens.ts` (`src/lib/motion-tokens.ts` re-exports it under Arc's documented path). Add one with `node scripts/arc-add.mjs <id> [...]` (`components.json` registers `@uiarc`); the script runs the shadcn CLI and moves the files under `src/`, since Arc targets the project root and our `@/*` points at `src/`. Installed: alert, badge, button, card (not used: it is a quick-look surface with no link, and board cards are links), dialog, dropdown-menu, empty-state, input, password-field, radio-cards, search-field, segmented-control, select, skeleton, stepper, tabs, user-menu.
+
+**Loading, and keeping it off the board.** `src/app/(platform)/layout.tsx` is the only importer of `foundation.css` and `platform.css` (our Arc theming), and the only place Inter is loaded; it sets Arc's `--font-geist` / `--font-inter` (Geist is shared with the root layout through `src/app/fonts.ts`). Two rules follow from Next keeping a page's CSS in the document after a client-side navigation (home → board):
+
+- Arc defines `--background`, `--foreground`, `--border`, `--accent`, `--accent-foreground`, `--text-xs` … `--text-5xl` and `--ease-in-out` on `:root` with other meanings than shadcn/Tailwind (Arc's `--accent` is near-black; shadcn's is the light hover grey behind `bg-accent`). So Arc keeps the bare names and shadcn's values live under `--ui-*` in `src/app/globals.css`, with `@theme inline` pointing Tailwind's colours at them and Tailwind's font sizes and `ease-in-out` declared inline. Never define a bare shadcn token name on `:root` again; a new shadcn token goes under `--ui-*`.
+- Page-wide rules in `platform.css` are scoped to `body:has([data-platform])` (the layout's wrapper), which stops matching once the platform layout unmounts, and its token values only touch Arc's own names.
+
+The board screenshots before and after this (including after navigating from the Arc home) are pixel-identical, and the production build's `/board/[id]` first load contains no Arc component, `motion` or Arc token (`node scripts/check-bundle.mjs` plus a scan of the route's files).
+
+**Our theming (`platform.css`).** Arc ships no focus rings (`--focus-ring` transparent and a global `outline: none !important` in `foundation.css`, removed there). Keyboard focus gets a quiet ring instead: near-black at 55 % (3.8:1 on white) on every control, and a faint 12 % halo on text fields, whose border already turns black. `--text-muted` (59 % → 54 %) and `--warning` are deepened to clear 4.5:1, since they carry real text here (hints, inactive tabs, the low-credits badge).
+
+**Local changes to Arc sources**, each marked `Agathon:` in the file. `arc-add.mjs` never overwrites a file that differs from the registry's; it writes the registry's version beside it as `<file>.upstream`, so a re-install is a diff and a re-apply:
+
+- `password-field`: an `error` prop tied to the field like Input's, and optional controlled `visible` / `onVisibleChange` (the sign-in form hides the password again on submit, so password managers save a `type=password` field).
+- `dropdown-menu`: an optional `trigger` element (rendered `asChild`, for the icon-only ⋯ on a board card) and `modal` (false when an item opens a dialog, so the menu closing under it cannot leave the page inert).
+- `foundation.css`: the global `outline: none !important` removed (above).
+
+**Our pieces on top.** Styling is CSS modules with Arc tokens only: `src/components/login/auth.module.css` (sign-in, sign-up, reset), `src/components/app/appShell.module.css` (the header and the shared content width, `APP_CONTENT_CLASS`), `src/components/boards/boards.module.css` (home, board cards with Arc Card's border, radius, hover shadow and focus ring), `src/components/onboarding/welcome.module.css`. Shared components: `AppHeader` (Arc UserMenu with Account, Feature Labs and Sign out; credits as an Arc Badge linking to `/account`), `ProductPictures` (the two product pictures, used by the sign-in panel and the welcome), `ButtonLink` (a `next/link` wearing Arc Button's stylesheet: Arc's Button is a `<button>`, and links go places). Components also rendered on the board or outside this pass stay on shadcn/Tailwind: `AuthErrorBanner`, `CreditsBanner` (both on `/board` too), `FeatureLabsPanel`, and the `/account` page body below the header.
+
+**Cost.** First-load gzip, this change against `origin/main` (2026-09-28, Next 16.2.4): `/` 301.3 → 375.0 KB JS and 33.2 → 47.8 KB CSS; `/login` 244.8 → 296.1 KB JS; `/reset-password` 239.7 → 289.0 KB; `/account` 297.3 → 327.7 KB (all + about 12 KB CSS); `/board/[id]` 1,050,446 → 1,049,619 B JS and 47.2 → 45.8 KB CSS (Tailwind no longer generates the classes the platform pages dropped). The platform increase is `motion`, Radix (dialog, dropdown, select, tabs) and the components themselves.
 
 ## Data model
 
