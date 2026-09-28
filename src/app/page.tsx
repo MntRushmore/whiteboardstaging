@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { AuthErrorBanner, useAuth } from '@/components/AuthProvider';
@@ -23,6 +24,9 @@ import { BoardGroups, BoardSkeletons, type BoardActions, type BoardView } from '
 import { asDeleteBoardClient, deleteBoardWithAssets } from '@/lib/assets/deleteBoard';
 import { DEFAULT_BOARD_TITLE, isDefaultBoardTitle } from '@/lib/boards/boardTitle';
 import { settleExitWrites } from '@/lib/boards/exitWrites';
+import { EmptyBoards } from '@/components/boards/EmptyBoards';
+import { useWelcome } from '@/components/onboarding/useWelcome';
+import { homeView } from '@/lib/onboarding/state';
 import {
   Plus,
   Search,
@@ -33,7 +37,6 @@ import {
   AlertTriangle,
   ArrowDownUp,
   ChevronDown,
-  PenLine,
   X,
 } from 'lucide-react';
 import { toast } from "sonner";
@@ -61,6 +64,12 @@ import { Label } from "@/components/ui/label";
 
 /** How long the first list read waits for a board that is still saving as it closes. */
 const EXIT_WRITE_WAIT_MS = 3000;
+
+// First-run welcome: loaded only for a new student with no boards (see useWelcome).
+const Welcome = dynamic(() => import('@/components/onboarding/Welcome'), {
+  ssr: false,
+  loading: () => <div aria-hidden className="mx-auto h-120 w-full max-w-5xl animate-pulse rounded-xl border bg-card" />,
+});
 
 /**
  * Inline error row with a Retry button. Used for every dashboard mutation so
@@ -324,11 +333,17 @@ export default function Dashboard() {
     },
   };
 
-  const dashboardState = dashboardStateFor({
+  const listState = dashboardStateFor({
     loading: loading || authLoading || !user,
     error: fetchError,
     boards: whiteboards,
   });
+  // A new student with no boards gets the welcome instead of the empty state.
+  const welcome = useWelcome(
+    user?.id,
+    listState === 'loading' ? 'loading' : listState === 'error' ? 'error' : whiteboards.length,
+  );
+  const dashboardState = homeView(listState, welcome.decision);
 
   const groups = useMemo(
     () => groupBoards(sortBoards(filterBoards(whiteboards, searchQuery), sort), sort, now),
@@ -342,6 +357,18 @@ export default function Dashboard() {
         <div className="w-full max-w-md">
           <AuthErrorBanner />
         </div>
+      </div>
+    );
+  }
+
+  if (dashboardState === 'welcome' && user) {
+    return (
+      <div className="min-h-screen bg-muted/40">
+        <AppHeader />
+        <main className={cn(APP_CONTENT_CLASS, "pt-8 pb-16 sm:pt-10")}>
+          <AuthErrorBanner className="mb-6" />
+          <Welcome userId={user.id} onSkip={welcome.skip} />
+        </main>
       </div>
     );
   }
@@ -475,9 +502,7 @@ export default function Dashboard() {
               {fetchError}
             </Notice>
           ) : dashboardState === 'empty' ? (
-            <Notice icon={<PenLine className="size-5" />} title={DASHBOARD_COPY.emptyTitle} action={newBoardButton}>
-              {DASHBOARD_COPY.emptyHint}
-            </Notice>
+            <EmptyBoards action={newBoardButton} />
           ) : groups.length === 0 ? (
             <Notice
               icon={<Search className="size-5" />}
