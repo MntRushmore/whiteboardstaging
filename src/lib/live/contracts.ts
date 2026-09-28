@@ -693,5 +693,4 @@ export interface UseLiveMathOptions {
   boardId: string;
   mode: HelpMode;
   enabled: boolean;
-  voiceActive: boolean;
 }

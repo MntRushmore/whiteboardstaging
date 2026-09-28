@@ -98,7 +98,7 @@ describe("live loop — vision fallback (BUG-2) and note provenance (BUG-4)", ()
     const stream = async function* (): AsyncGenerator<LiveSseEvent, void, undefined> {
       for (const ev of streamScript.shift() ?? []) yield ev;
     };
-    opts = { boardId: "board-1", mode, enabled: true, voiceActive: false };
+    opts = { boardId: "board-1", mode, enabled: true };
     return createLiveLoop(editor, opts, {
       recognizer: new RecognizeClient({ fetchJson }),
       stream,

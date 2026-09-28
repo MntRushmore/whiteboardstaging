@@ -39,7 +39,7 @@ export interface ProofHost {
   ink(ids: readonly string[]): InkStroke[];
   /** the screen's glyph scale (page px) */
   glyph(): number;
-  /** Live is on, the mode is not Off and the voice tutor is not talking */
+  /** Live is on and the mode is not Off */
   enabled(): boolean;
   online(): boolean;
   readLabels(d: Diagram): Promise<string[]>;

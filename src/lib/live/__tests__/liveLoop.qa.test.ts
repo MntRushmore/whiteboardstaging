@@ -80,7 +80,7 @@ describe("live loop — QA regressions", () => {
   /** events the scripted check stream yields per call (FIFO; empty stream when exhausted) */
   let streamQueue: LiveSseEvent[][];
 
-  function makeLoop(mode: HelpMode = "feedback", voiceActive = false): LiveLoop {
+  function makeLoop(mode: HelpMode = "feedback"): LiveLoop {
     const stream = async function* (path: string, body: unknown): AsyncGenerator<LiveSseEvent, void, undefined> {
       if (path.endsWith("/check")) checkRequests.push(body as CheckRequest);
       const evs = streamQueue.shift() ?? [];
@@ -88,7 +88,7 @@ describe("live loop — QA regressions", () => {
     };
     return createLiveLoop(
       editor,
-      { boardId: "board-1", mode, enabled: true, voiceActive },
+      { boardId: "board-1", mode, enabled: true },
       {
         recognizer: new RecognizeClient({ fetchJson }),
         stream,
@@ -230,7 +230,7 @@ describe("live loop — QA regressions", () => {
 
       // Up to Suggest: no model call — the engine writes the right next step beside the
       // ringed line once the student has stopped (here they already have).
-      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true });
       await vi.advanceTimersByTimeAsync(3_000);
       await settle(6);
       expect(checkRequests).toHaveLength(0);
@@ -239,23 +239,18 @@ describe("live loop — QA regressions", () => {
       expect(new Set(beside.map((s) => (s.meta as Record<string, unknown>).lineId))).toEqual(new Set([warnLine]));
     });
 
-    it("does not start a ladder-rise check while a hint card is open, while voice is active, or for ok lines", async () => {
+    it("does not start a ladder-rise check while a hint card is open, or for ok lines", async () => {
       const lineId = await write(fixtureSingleLine(), "x=5");
       liveStore.openHints.set([{ id: "h1", lineId: "other", message: "m", question: "q", level: 0, createdAt: 0 }]);
-      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true });
       await settle(4);
       expect(checkRequests).toHaveLength(0);
       liveStore.openHints.set([]);
 
-      loop.setOptions({ boardId: "board-1", mode: "feedback", enabled: true, voiceActive: false });
-      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: true });
-      await settle(4);
-      expect(checkRequests).toHaveLength(0);
-
-      loop.setOptions({ boardId: "board-1", mode: "feedback", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "feedback", enabled: true });
       loop.retypeLine(lineId, "x=4");
       await settle(6);
-      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true });
       await settle(4);
       expect(checkRequests).toHaveLength(0);
     });
@@ -272,7 +267,7 @@ describe("live loop — QA regressions", () => {
 
       // Suggest: the tap still runs a check — but no card opens: the board has no words on it.
       // (Raising the dial asks the model nothing: the engine already rings a wrong line.)
-      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true });
       await settle(4);
       expect(checkRequests).toHaveLength(1);
       streamQueue.push([annotation(lineId, "Look again at the right side of line 1")]);
@@ -291,12 +286,12 @@ describe("live loop — QA regressions", () => {
       expect(checkRequests).toHaveLength(1);
       expect(checkRequests[0].focusLineId).toBe(lineId);
 
-      loop.setOptions({ boardId: "board-1", mode: "off", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "off", enabled: true });
       events.dispatchEvent(new CustomEvent(BADGE_TAP_EVENT, { detail: { lineId, shapeId: echo.id } }));
       await settle(4);
       expect(checkRequests).toHaveLength(1);
 
-      loop.setOptions({ boardId: "board-1", mode: "feedback", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "feedback", enabled: true });
       loop.stop();
       events.dispatchEvent(new CustomEvent(BADGE_TAP_EVENT, { detail: { lineId, shapeId: echo.id } }));
       await settle(4);
@@ -368,7 +363,7 @@ describe("live loop — QA regressions", () => {
       expect((editor.getShape(okEchoId)!.props as MathShapeProps).status).toBe("ok");
 
       // Picking a mode re-badges everything from the engine.
-      loop.setOptions({ boardId: "board-1", mode: "feedback", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "feedback", enabled: true });
       await settle(6);
       expect((echoOf(newLine).props as MathShapeProps).status).toBe("warn");
       expect((editor.getShape(okEchoId)!.props as MathShapeProps).status).toBe("ok");
@@ -395,12 +390,12 @@ describe("live loop — QA regressions", () => {
       expect(props.status).toBe("warn");
       expect(props.note).toBe("Count the atoms on each side");
 
-      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true });
       await settle(6);
       props = echoOf(lineId).props as MathShapeProps;
       expect(props.note).toBe("Count the atoms on each side");
 
-      loop.setOptions({ boardId: "board-1", mode: "answer", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "answer", enabled: true });
       await settle(6);
       props = echoOf(lineId).props as MathShapeProps;
       expect(props.status).toBe("warn");
@@ -408,7 +403,7 @@ describe("live loop — QA regressions", () => {
     });
 
     it("falls back to the plain note in Solve when the balancer has no result, and labels balanced equations", async () => {
-      loop.setOptions({ boardId: "board-1", mode: "answer", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "answer", enabled: true });
       const unbalanced = await write(fixtureTwoLines().slice(0, 6), CHEM_NO_BALANCE);
       const props = echoOf(unbalanced).props as MathShapeProps;
       expect(props.status).toBe("warn");

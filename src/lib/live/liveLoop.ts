@@ -801,7 +801,7 @@ export class LiveLoop implements LiveController {
    * already knows these lines are wrong, and usually what should have come instead.
    */
   private checkMismatchesAfterLadderRise(): void {
-    if (!this.engine || !this.opts.enabled || this.opts.voiceActive) return;
+    if (!this.engine || !this.opts.enabled) return;
     for (const st of Object.values(liveStore.lines.get())) {
       if (st.latex && (st.analysis?.verdict === "mismatch" || this.modelFlagged(st))) this.suggestNextStep(st.line.id);
     }
@@ -1393,14 +1393,14 @@ export class LiveLoop implements LiveController {
     this.pendingChecks.clear();
     const solve = this.pendingSolve;
     this.pendingSolve = null;
-    if (!this.opts.enabled || this.opts.voiceActive || this.opts.mode === "off") return;
+    if (!this.opts.enabled || this.opts.mode === "off") return;
     const lines = liveStore.lines.get();
     for (const [id, userAsked] of checks) {
       // A line about to be re-recognized gets its check from the normal pipeline.
       if (skip.has(id)) continue;
       const st = lines[id];
       if (!st?.latex || st.analysis?.verdict !== "mismatch") continue;
-      // The policy (mode, hints already shown, voice, cap) decides as if asked right now.
+      // The policy (mode, hints already shown, cap) decides as if asked right now.
       if (!this.decisionFor(st, { userAsked }).runLlmCheck) continue;
       this.startCheck(st.line.column, id, { userAsked });
     }
@@ -1633,7 +1633,6 @@ export class LiveLoop implements LiveController {
   private decisionFor(state: LiveLineState, extra: { userAsked?: boolean; idleMs?: number } = {}): PolicyDecision {
     return decide({
       mode: this.opts.mode,
-      voiceActive: this.opts.voiceActive,
       analysis: state.analysis,
       latex: state.latex,
       confidence: state.confidence,
@@ -2255,7 +2254,7 @@ export class LiveLoop implements LiveController {
 
   private startCheck(column: number, focusLineId: string, opts: CheckOpts): void {
     const mode = this.opts.mode;
-    if (mode === "off" || this.opts.voiceActive || !this.opts.enabled) return;
+    if (mode === "off" || !this.opts.enabled) return;
     const checkMode: "feedback" | "suggest" = opts.modeOverride ?? (mode === "feedback" ? "feedback" : "suggest");
     const built = this.buildCheckLines(column);
     if (!built) return;
@@ -2497,7 +2496,7 @@ export class LiveLoop implements LiveController {
 
   // ---------------------------------------------------------------- solve
   private startSolve(column: number, fromLineId: string | undefined, opts: SolveOpts): void {
-    if (!this.opts.enabled || this.opts.voiceActive) return;
+    if (!this.opts.enabled) return;
     const built = this.buildCheckLines(column);
     if (!built) return;
     // Everything the engine can answer is written locally — by hand where the hand can draw it,
@@ -2608,7 +2607,7 @@ export class LiveLoop implements LiveController {
    */
   private startFigure(diagram: Diagram, opts: SolveOpts, from?: { built: BuiltColumn; fromLineId: string | undefined }, unasked = false): void {
     const engine = this.engine;
-    if (!this.opts.enabled || this.opts.voiceActive) return;
+    if (!this.opts.enabled) return;
     if (!engine || liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) {
       if (from) this.solveWithoutFigure(from.built, from.fromLineId, opts);
       return;
@@ -2763,7 +2762,7 @@ export class LiveLoop implements LiveController {
   }
 
   private unaskedFiguresOn(): boolean {
-    return this.started && this.opts.enabled && this.opts.mode === "answer" && !this.opts.voiceActive && this.settled && this.engine !== null;
+    return this.started && this.opts.enabled && this.opts.mode === "answer" && this.settled && this.engine !== null;
   }
 
   /** A drawing the unasked path may look at: labelled, a figure (not a graph's axes), not being solved, nothing written beside it. */
@@ -2996,7 +2995,7 @@ export class LiveLoop implements LiveController {
     };
     const lastLine = built.states[built.states.length - 1].line;
     const columnRect = unionRects(built.states.map((s) => s.line.bounds));
-    // Every solve is asked for (Solve steps, More help, the voice tutor).
+    // Every solve is asked for (Solve steps, More help, the board chat).
     const errCtx = { kind: "solve" as const, lineId: opts.lineId, userAsked: true };
     const retry: RetryContext = { kind: "solve", lineId: opts.lineId, fromLineId, opts };
     // Nothing the model says is drawn on the student's page until the local engine has read it.
@@ -3343,7 +3342,7 @@ export class LiveLoop implements LiveController {
         return this.collectInk().filter((s) => want.has(s.id));
       },
       glyph: () => this.glyph,
-      enabled: () => this.started && this.opts.enabled && this.opts.mode !== "off" && !this.opts.voiceActive,
+      enabled: () => this.started && this.opts.enabled && this.opts.mode !== "off",
       online: () => this.deps.isOnline(),
       readLabels: (d) => this.readLabels(d),
       crop: (d) => this.captureCrop([...d.strokeIds, ...d.labels.flat()], d.bounds, FIGURE_CROP_WIDTH),

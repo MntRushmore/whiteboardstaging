@@ -79,7 +79,7 @@ describe("live loop — solving from the lines above", () => {
     });
     loop = createLiveLoop(
       editor,
-      { boardId: "board-1", mode: "answer", enabled: true, voiceActive: false },
+      { boardId: "board-1", mode: "answer", enabled: true },
       {
         recognizer: new RecognizeClient({ fetchJson }),
         stream: async function* (path: string): AsyncGenerator<LiveSseEvent, void, undefined> {

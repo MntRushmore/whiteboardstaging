@@ -163,7 +163,7 @@ export function keepInsideX(rect: Rect, bounds: Rect): Rect {
   return { ...rect, x: Math.max(bounds.x + PLACEMENT.viewportMargin, maxX - rect.w) };
 }
 
-/** Somewhere sensible for a shape placed by voice/AI without a line: below the anchor or viewport centre. */
+/** Somewhere sensible for a shape the tutor places without a line: below the anchor or viewport centre. */
 export function placeFloating(anchor: Rect | null, size: { w: number; h: number }, viewport: Rect): Rect {
   if (anchor) {
     return { x: anchor.x, y: rectMaxY(anchor) + PLACEMENT.stepGap, w: size.w, h: size.h };

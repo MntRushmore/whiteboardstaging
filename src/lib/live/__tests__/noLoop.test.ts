@@ -54,7 +54,7 @@ describe("useLiveMath loop isolation (noLoop)", () => {
     };
     return createLiveLoop(
       editor,
-      { boardId: "board-1", mode, enabled: true, voiceActive: false },
+      { boardId: "board-1", mode, enabled: true },
       {
         recognizer: new RecognizeClient({ fetchJson }),
         stream,
@@ -243,7 +243,7 @@ describe("useLiveMath loop isolation (noLoop)", () => {
     expect((editor.shapesOfType("math")[0].props as MathShapeProps).status).toBe("ok");
   });
 
-  it("never calls the LLM in off mode and pauses it while voice is active", async () => {
+  it("never calls the LLM in off mode", async () => {
     loop.stop();
     resetLiveStore();
     loop = makeLoop("off");
@@ -256,11 +256,7 @@ describe("useLiveMath loop isolation (noLoop)", () => {
     loop.requestSolve();
     await settle();
     expect(streamCalls).toBe(0);
-    loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: true });
-    loop.requestCheck();
-    await settle();
-    expect(streamCalls).toBe(0);
-    loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: false });
+    loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true });
     loop.requestCheck();
     await settle();
     expect(streamCalls).toBe(1);

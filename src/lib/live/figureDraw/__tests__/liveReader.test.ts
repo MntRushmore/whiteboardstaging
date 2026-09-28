@@ -39,7 +39,7 @@ describe("a figure drawn by the tutor, and the Live reader", () => {
     fetchJson = vi.fn<FetchJson>(async (): Promise<RecognizeResponse> => ({ latex: "A", text: "", kind: "math", confidence: 0.97, provider: "mathpix", ms: 300 }));
     loop = createLiveLoop(
       editor,
-      { boardId: "board-1", mode: "answer", enabled: true, voiceActive: false },
+      { boardId: "board-1", mode: "answer", enabled: true },
       {
         recognizer: new RecognizeClient({ fetchJson }),
         stream: async function* (): AsyncGenerator<LiveSseEvent, void, undefined> {},

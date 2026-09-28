@@ -9,7 +9,6 @@ function analysis(verdict: EngineVerdict, kind: LineKind = "equation", extra: Pa
 function input(over: Partial<PolicyInput> = {}): PolicyInput {
   return {
     mode: "suggest",
-    voiceActive: false,
     analysis: analysis("ok"),
     confidence: 0.95,
     idleMs: 0,
@@ -57,30 +56,28 @@ describe("decide — badge table", () => {
 
 describe("decide — runLlmCheck ladder", () => {
   const idle = LIVE_TIMING.unknownIdleMs;
-  const cases: Array<[HelpMode, EngineVerdict, boolean, number, boolean, number, boolean]> = [
-    // mode, verdict, voice, idleMs, userAsked, hintsShown, expected
-    ["off", "mismatch", false, idle, true, 0, false],
-    ["off", "unknown", false, idle, false, 0, false],
-    ["feedback", "mismatch", false, 0, false, 0, false],
-    ["feedback", "mismatch", false, 0, true, 0, true],
-    ["feedback", "unknown", false, 0, false, 0, false],
-    ["feedback", "unknown", false, idle, false, 0, true],
-    ["feedback", "ok", false, idle, false, 0, false],
+  const cases: Array<[HelpMode, EngineVerdict, number, boolean, number, boolean]> = [
+    // mode, verdict, idleMs, userAsked, hintsShown, expected
+    ["off", "mismatch", idle, true, 0, false],
+    ["off", "unknown", idle, false, 0, false],
+    ["feedback", "mismatch", 0, false, 0, false],
+    ["feedback", "mismatch", 0, true, 0, true],
+    ["feedback", "unknown", 0, false, 0, false],
+    ["feedback", "unknown", idle, false, 0, true],
+    ["feedback", "ok", idle, false, 0, false],
     // a mismatch the engine found is ringed and answered locally: no model hint
-    ["suggest", "mismatch", false, 0, false, 0, false],
-    ["suggest", "mismatch", false, 0, false, 1, false],
-    ["suggest", "mismatch", false, 0, true, 1, true],
-    ["suggest", "unknown", false, idle, false, 0, true],
-    ["suggest", "ok", false, idle, false, 0, false],
-    ["answer", "mismatch", false, 0, false, 0, false],
-    ["answer", "unknown", false, idle - 1, false, 0, false],
-    ["suggest", "mismatch", true, 0, false, 0, false],
-    ["answer", "mismatch", true, idle, true, 0, false],
-    ["feedback", "unknown", true, idle, true, 0, false],
+    ["suggest", "mismatch", 0, false, 0, false],
+    ["suggest", "mismatch", 0, false, 1, false],
+    ["suggest", "mismatch", 0, true, 1, true],
+    ["suggest", "unknown", idle, false, 0, true],
+    ["suggest", "ok", idle, false, 0, false],
+    ["answer", "mismatch", 0, false, 0, false],
+    ["answer", "unknown", idle - 1, false, 0, false],
+
   ];
-  for (const [mode, verdict, voiceActive, idleMs, userAsked, hintsShownForLine, expected] of cases) {
-    it(`${mode} ${verdict} voice=${voiceActive} idle=${idleMs} asked=${userAsked} hints=${hintsShownForLine} -> ${expected}`, () => {
-      const d = decide(input({ mode, analysis: analysis(verdict), voiceActive, idleMs, userAsked, hintsShownForLine }));
+  for (const [mode, verdict, idleMs, userAsked, hintsShownForLine, expected] of cases) {
+    it(`${mode} ${verdict} idle=${idleMs} asked=${userAsked} hints=${hintsShownForLine} -> ${expected}`, () => {
+      const d = decide(input({ mode, analysis: analysis(verdict), idleMs, userAsked, hintsShownForLine }));
       expect(d.runLlmCheck).toBe(expected);
     });
   }
@@ -90,12 +87,6 @@ describe("decide — runLlmCheck ladder", () => {
       for (const userAsked of [true, false]) {
         expect(decide(input({ mode: "off", analysis: analysis(verdict), userAsked, idleMs: 99999 })).runLlmCheck).toBe(false);
       }
-    }
-  });
-
-  it("never calls the LLM while voice is active", () => {
-    for (const mode of HELP_MODES) {
-      expect(decide(input({ mode, voiceActive: true, analysis: analysis("mismatch"), userAsked: true, idleMs: 99999 })).runLlmCheck).toBe(false);
     }
   });
 

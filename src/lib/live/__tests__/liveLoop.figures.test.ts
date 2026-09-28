@@ -72,7 +72,7 @@ describe("live loop — a figure worked out unasked", () => {
     resetLiveStore();
     loop = createLiveLoop(
       editor,
-      { boardId: "board-1", mode, enabled: true, voiceActive: false },
+      { boardId: "board-1", mode, enabled: true },
       {
         recognizer: new RecognizeClient({ fetchJson }),
         stream: async function* (path: string): AsyncGenerator<LiveSseEvent, void, undefined> {
@@ -321,7 +321,7 @@ describe("live loop — a figure worked out unasked", () => {
     resetLiveStore();
     loop = createLiveLoop(
       editor,
-      { boardId: "board-1", mode: "answer", enabled: true, voiceActive: false },
+      { boardId: "board-1", mode: "answer", enabled: true },
       {
         recognizer: new RecognizeClient({ fetchJson }),
         stream: async function* (): AsyncGenerator<LiveSseEvent, void, undefined> {},

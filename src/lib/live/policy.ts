@@ -21,7 +21,6 @@ import {
 
 export interface PolicyInput {
   mode: HelpMode;
-  voiceActive: boolean;
   analysis: LineAnalysis | null;
   confidence: number;
   /** ms since the line last changed */
@@ -120,7 +119,7 @@ export function badgeFor(mode: HelpMode, analysis: LineAnalysis | null): LiveVer
 }
 
 export function decide(input: PolicyInput): PolicyDecision {
-  const { mode, voiceActive, analysis, confidence, idleMs, userAsked } = input;
+  const { mode, analysis, confidence, idleMs, userAsked } = input;
   const kind: LineKind = analysis?.kind ?? "unknown";
   const verdict = analysis?.verdict ?? "unknown";
   const capped = input.liveShapeCount >= LIVE_LIMITS.maxLiveShapesPerBoard;
@@ -144,7 +143,7 @@ export function decide(input: PolicyInput): PolicyDecision {
   //    writing ANYWHERE on the canvas, not merely on this line. Badges, hints and the solved
   //    chip do not wait: they are marks on work already done.
   //
-  // An explicit request (Solve steps, a badge tap, the voice tutor) means "now": `userAsked`
+  // An explicit request (Solve steps, a badge tap, the board chat) means "now": `userAsked`
   // bypasses the settle wait entirely. It does not bypass the mode gate — asking in Feedback
   // asks for feedback.
   const hasResult = Boolean(analysis?.resultLatex);
@@ -158,7 +157,7 @@ export function decide(input: PolicyInput): PolicyDecision {
 
   // 5. runLlmCheck
   let runLlmCheck = false;
-  if (mode !== "off" && !voiceActive && echo && !capped) {
+  if (mode !== "off" && echo && !capped) {
     const feedbackRule =
       userAsked ||
       (verdict === "unknown" && idleMs >= LIVE_TIMING.unknownIdleMs && CHECKABLE_KINDS.has(kind));

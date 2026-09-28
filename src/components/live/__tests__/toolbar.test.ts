@@ -19,7 +19,6 @@ function toolbar(partial: Partial<BoardToolbarState> = {}) {
     mode: "feedback",
     liveEnabled: true,
     liveAvailable: true,
-    voiceActive: false,
     ...partial,
   });
 }
@@ -48,12 +47,6 @@ const ERROR: LiveError = {
 };
 
 describe("boardToolbarView", () => {
-  it("shows the bar with the status pill in every help mode", () => {
-    for (const mode of ["off", "feedback", "suggest", "answer"] as const) {
-      expect(toolbar({ mode })).toMatchObject({ showTopBar: true, showStatusPill: true });
-    }
-  });
-
   it("offers Solve steps only in Solve, not as a permanent button", () => {
     expect(toolbar({ mode: "off" }).showSolveSteps).toBe(false);
     expect(toolbar({ mode: "feedback" }).showSolveSteps).toBe(false);
@@ -66,24 +59,14 @@ describe("boardToolbarView", () => {
     expect(toolbar({ mode: "answer", liveAvailable: false }).showSolveSteps).toBe(false);
   });
 
-  it("keeps the pill (and so the board's only menu) reachable while Live is off", () => {
-    expect(toolbar({ liveEnabled: false })).toMatchObject({ showStatusPill: true, liveRunning: false });
-    expect(toolbar({ liveAvailable: false })).toMatchObject({ showStatusPill: true, liveRunning: false });
+  it("knows when Live is not running (the pill, and so the board's only menu, stays in the bar)", () => {
+    expect(toolbar({ liveEnabled: false })).toMatchObject({ liveRunning: false });
+    expect(toolbar({ liveAvailable: false })).toMatchObject({ liveRunning: false });
   });
 
-  it("stands the whole bar down for the voice tutor", () => {
-    expect(toolbar({ voiceActive: true })).toMatchObject({
-      showTopBar: false,
-      showStatusPill: false,
-      showSolveSteps: false,
-      showHintLayer: false,
-    });
-  });
-
-  it("draws hints only while Live is running and voice is not", () => {
+  it("draws hints only while Live is running", () => {
     expect(toolbar().showHintLayer).toBe(true);
     expect(toolbar({ liveEnabled: false }).showHintLayer).toBe(false);
-    expect(toolbar({ voiceActive: true }).showHintLayer).toBe(false);
   });
   it("Help (the menu's one ask) works in every help mode but Off, and only with Live running", () => {
     for (const mode of ["feedback", "suggest", "answer"] as const) expect(toolbar({ mode }).canHelp).toBe(true);

@@ -64,7 +64,7 @@ describe("live loop — Solve answers locally, and checks the model when it cann
     };
     return createLiveLoop(
       editor,
-      { boardId: "board-1", mode: "answer", enabled: true, voiceActive: false },
+      { boardId: "board-1", mode: "answer", enabled: true },
       {
         recognizer: new RecognizeClient({ fetchJson }),
         stream,

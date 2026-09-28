@@ -82,7 +82,7 @@ describe("live loop — drawings", () => {
     resetLiveStore();
     loop = createLiveLoop(
       editor,
-      { boardId: "board-1", mode, enabled: true, voiceActive: false },
+      { boardId: "board-1", mode, enabled: true },
       {
         recognizer: new RecognizeClient({ fetchJson }),
         stream: async function* (path: string): AsyncGenerator<LiveSseEvent, void, undefined> {

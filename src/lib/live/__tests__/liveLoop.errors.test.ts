@@ -78,7 +78,7 @@ describe("live loop — visible errors and retry", () => {
       if (next instanceof Error) throw next;
       for (const ev of next) yield ev;
     };
-    opts = { boardId: "board-1", mode, enabled: true, voiceActive: false };
+    opts = { boardId: "board-1", mode, enabled: true };
     recognizer = new RecognizeClient({ fetchJson, timeoutMs });
     return createLiveLoop(editor, opts, {
       recognizer,

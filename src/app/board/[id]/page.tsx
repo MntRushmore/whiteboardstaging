@@ -250,7 +250,6 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     boardId: id,
     mode: assistanceMode,
     enabled: liveEnabled,
-    voiceActive: false,
   });
 
   // Auto-save through the SaveQueue (2 s debounce, offline backup + replay, optimistic
@@ -264,7 +263,6 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     mode: assistanceMode,
     liveEnabled: live.enabled,
     liveAvailable: !LIVE_KILL_SWITCH,
-    voiceActive: false,
   });
 
   return (
@@ -275,88 +273,84 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
         preference, the help-mode explainer, Report a problem — hangs off the status pill's
         "…" menu rather than competing with them.
       */}
-      {toolbar.showTopBar && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '16px',
-            left: '16px',
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            // Wrap on narrow screens (400 px) so the status pill stays reachable;
-            // leave room for tldraw's style panel pinned at the top-right.
-            flexWrap: 'wrap',
-            maxWidth: 'calc(100% - 180px)',
-          }}
+      <div
+        style={{
+          position: 'absolute',
+          top: '16px',
+          left: '16px',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          // Wrap on narrow screens (400 px) so the status pill stays reachable;
+          // leave room for tldraw's style panel pinned at the top-right.
+          flexWrap: 'wrap',
+          maxWidth: 'calc(100% - 180px)',
+        }}
+      >
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Back to my whiteboards"
+          onClick={() => router.push("/")}
         >
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Back to my whiteboards"
-            onClick={() => router.push("/")}
+          <ArrowLeft01Icon size={20} strokeWidth={2} />
+        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Tabs
+            value={assistanceMode}
+            onValueChange={(value) => setAssistanceMode(value as AssistanceMode)}
+            className="w-auto shadow-sm rounded-lg"
           >
-            <ArrowLeft01Icon size={20} strokeWidth={2} />
-          </Button>
-          <div className="flex flex-wrap items-center gap-2">
-            <Tabs
-              value={assistanceMode}
-              onValueChange={(value) => setAssistanceMode(value as AssistanceMode)}
-              className="w-auto shadow-sm rounded-lg"
-            >
-              <TabsList aria-label="How much help">
-                <TabsTrigger value="off">Off</TabsTrigger>
-                <TabsTrigger value="feedback">Feedback</TabsTrigger>
-                <TabsTrigger value="suggest">Suggest</TabsTrigger>
-                <TabsTrigger value="answer">Solve</TabsTrigger>
-              </TabsList>
-            </Tabs>
-            {toolbar.showSolveSteps && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="bg-white shadow-sm"
-                title={LIVE_COPY.solve.stepsHint}
-                onClick={() => controller.requestSolve()}
-              >
-                <ListOrdered className="h-4 w-4" />
-                <span className="ml-1.5">{LIVE_COPY.solve.steps}</span>
-              </Button>
-            )}
+            <TabsList aria-label="How much help">
+              <TabsTrigger value="off">Off</TabsTrigger>
+              <TabsTrigger value="feedback">Feedback</TabsTrigger>
+              <TabsTrigger value="suggest">Suggest</TabsTrigger>
+              <TabsTrigger value="answer">Solve</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {toolbar.showSolveSteps && (
             <Button
-              variant={chat.open ? "secondary" : "outline"}
+              variant="outline"
               size="sm"
-              className={chat.open ? "shadow-sm" : "bg-white shadow-sm"}
-              title={CHAT_COPY.buttonHint}
-              aria-expanded={chat.open}
-              {...{ [CHAT_TOGGLE_ATTR]: "" }}
-              onClick={() => chat.onOpenChange(!chat.open)}
+              className="bg-white shadow-sm"
+              title={LIVE_COPY.solve.stepsHint}
+              onClick={() => controller.requestSolve()}
             >
-              <MessageSquare className="h-4 w-4" />
-              <span className="ml-1.5">{CHAT_COPY.button}</span>
+              <ListOrdered className="h-4 w-4" />
+              <span className="ml-1.5">{LIVE_COPY.solve.steps}</span>
             </Button>
-            {toolbar.showStatusPill && (
-              <LiveErrorBoundary>
-                <LiveStatusPill
-                  editor={editor}
-                  liveRunning={toolbar.liveRunning}
-                  liveAvailable={!LIVE_KILL_SWITCH}
-                  onLiveEnabledChange={(enabled) => updateLive({ enabled })}
-                  onHelp={() => controller.requestHelp()}
-                  canHelp={toolbar.canHelp}
-                  onClearMarks={() => controller.clearMarks()}
-                  onShowModeInfo={() => setModeInfoOpen(true)}
-                  onReportProblem={() => setReportOpen(true)}
-                />
-              </LiveErrorBoundary>
-            )}
-            <SaveStatus sync={sync} onRetry={() => void retrySave()} />
-            {features.stickers && <StickerLibrary />}
-            {features.pdfUpload && <PdfUpload />}
-          </div>
+          )}
+          <Button
+            variant={chat.open ? "secondary" : "outline"}
+            size="sm"
+            className={chat.open ? "shadow-sm" : "bg-white shadow-sm"}
+            title={CHAT_COPY.buttonHint}
+            aria-expanded={chat.open}
+            {...{ [CHAT_TOGGLE_ATTR]: "" }}
+            onClick={() => chat.onOpenChange(!chat.open)}
+          >
+            <MessageSquare className="h-4 w-4" />
+            <span className="ml-1.5">{CHAT_COPY.button}</span>
+          </Button>
+          <LiveErrorBoundary>
+            <LiveStatusPill
+              editor={editor}
+              liveRunning={toolbar.liveRunning}
+              liveAvailable={!LIVE_KILL_SWITCH}
+              onLiveEnabledChange={(enabled) => updateLive({ enabled })}
+              onHelp={() => controller.requestHelp()}
+              canHelp={toolbar.canHelp}
+              onClearMarks={() => controller.clearMarks()}
+              onShowModeInfo={() => setModeInfoOpen(true)}
+              onReportProblem={() => setReportOpen(true)}
+            />
+          </LiveErrorBoundary>
+          <SaveStatus sync={sync} onRetry={() => void retrySave()} />
+          {features.stickers && <StickerLibrary />}
+          {features.pdfUpload && <PdfUpload />}
         </div>
-      )}
+      </div>
 
       {/* Opened from Board options; neither owns a button in the bar any more. */}
       <ModeInfoDialog open={modeInfoOpen} onOpenChange={setModeInfoOpen} />
