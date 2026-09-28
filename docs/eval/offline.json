@@ -1,16 +1,16 @@
 {
   "summary": {
-    "total": 701,
-    "passed": 701,
+    "total": 704,
+    "passed": 704,
     "stages": {
-      "local": 701,
-      "answer": 701,
-      "steps": 701,
-      "drawable": 701,
-      "words": 701
+      "local": 704,
+      "answer": 704,
+      "steps": 704,
+      "drawable": 704,
+      "words": 704
     },
     "answers": {
-      "ok": 701,
+      "ok": 704,
       "approx": 0,
       "form": 0,
       "unsolved": 0,
@@ -249,14 +249,14 @@
       },
       {
         "topic": "trig-equation",
-        "total": 13,
-        "passed": 13,
+        "total": 16,
+        "passed": 16,
         "stages": {
-          "local": 13,
-          "answer": 13,
-          "steps": 13,
-          "drawable": 13,
-          "words": 13
+          "local": 16,
+          "answer": 16,
+          "steps": 16,
+          "drawable": 16,
+          "words": 16
         }
       },
       {
@@ -635,14 +635,14 @@
       },
       {
         "course": "precalc-calc",
-        "total": 100,
-        "passed": 100,
+        "total": 103,
+        "passed": 103,
         "stages": {
-          "local": 100,
-          "answer": 100,
-          "steps": 100,
-          "drawable": 100,
-          "words": 100
+          "local": 103,
+          "answer": 103,
+          "steps": 103,
+          "drawable": 103,
+          "words": 103
         }
       },
       {
@@ -13190,6 +13190,169 @@
       "warnings": [
         "8 lines: at the maxSolveSteps cap (working may have been cut)"
       ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-52",
+      "topic": "trig-equation",
+      "course": "precalc-calc",
+      "lines": [
+        "2\\cos x = 1, 0^{\\circ} \\le x < 360^{\\circ}"
+      ],
+      "expected": "x = 60^{\\circ}, \\ x = 300^{\\circ}",
+      "note": "the interval written, in degrees",
+      "source": "solveLatex",
+      "steps": [
+        "\\cos x = \\frac{1}{2}",
+        "\\cos^{-1}\\left(\\frac{1}{2}\\right) = 60^{\\circ}",
+        "x = 60^{\\circ}, \\ x = 360^{\\circ} - 60^{\\circ}",
+        "x = 60^{\\circ}, \\ x = 300^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "2\\cos x = 1, 0^{\\circ} \\le x < 360^{\\circ}",
+          "to": "\\cos x = \\frac{1}{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "\\cos x = \\frac{1}{2}",
+          "to": "\\cos^{-1}\\left(\\frac{1}{2}\\right) = 60^{\\circ}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\cos x = \\frac{1}{2}",
+          "to": "x = 60^{\\circ}, \\ x = 360^{\\circ} - 60^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "x = 60^{\\circ}, \\ x = 360^{\\circ} - 60^{\\circ}",
+          "to": "x = 60^{\\circ}, \\ x = 300^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-53",
+      "topic": "trig-equation",
+      "course": "precalc-calc",
+      "lines": [
+        "\\tan x = \\sqrt{3}, 0^{\\circ} \\le x < 360^{\\circ}"
+      ],
+      "expected": "x = 60^{\\circ}, \\ x = 240^{\\circ}",
+      "note": "the interval written, in degrees",
+      "source": "solveLatex",
+      "steps": [
+        "\\tan^{-1}(\\sqrt{3}) = 60^{\\circ}",
+        "x = 60^{\\circ}, \\ x = 180^{\\circ} + 60^{\\circ}",
+        "x = 60^{\\circ}, \\ x = 240^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\tan x = \\sqrt{3}, 0^{\\circ} \\le x < 360^{\\circ}",
+          "to": "\\tan^{-1}(\\sqrt{3}) = 60^{\\circ}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\tan x = \\sqrt{3}, 0^{\\circ} \\le x < 360^{\\circ}",
+          "to": "x = 60^{\\circ}, \\ x = 180^{\\circ} + 60^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "x = 60^{\\circ}, \\ x = 180^{\\circ} + 60^{\\circ}",
+          "to": "x = 60^{\\circ}, \\ x = 240^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-54",
+      "topic": "trig-equation",
+      "course": "precalc-calc",
+      "lines": [
+        "\\sin x = -\\frac{1}{2}, 0^{\\circ} \\le x < 360^{\\circ}"
+      ],
+      "expected": "x = 210^{\\circ}, \\ x = 330^{\\circ}",
+      "note": "the interval written, in degrees: third and fourth quadrants",
+      "source": "solveLatex",
+      "steps": [
+        "\\sin^{-1}\\left(\\frac{1}{2}\\right) = 30^{\\circ}",
+        "x = 180^{\\circ} + 30^{\\circ}, \\ x = 360^{\\circ} - 30^{\\circ}",
+        "x = 210^{\\circ}, \\ x = 330^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\sin x = -\\frac{1}{2}, 0^{\\circ} \\le x < 360^{\\circ}",
+          "to": "\\sin^{-1}\\left(\\frac{1}{2}\\right) = 30^{\\circ}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\sin x = -\\frac{1}{2}, 0^{\\circ} \\le x < 360^{\\circ}",
+          "to": "x = 180^{\\circ} + 30^{\\circ}, \\ x = 360^{\\circ} - 30^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "x = 180^{\\circ} + 30^{\\circ}, \\ x = 360^{\\circ} - 30^{\\circ}",
+          "to": "x = 210^{\\circ}, \\ x = 330^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
       "pass": true,
       "failures": []
     },
