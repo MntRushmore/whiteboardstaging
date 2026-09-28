@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SectionError } from "@/components/account/SectionError";
+import { SECTION_BODY, SectionHeader } from "@/components/account/SectionHeader";
 import { describeError } from "@/lib/errorMessage";
 import { ACCOUNT_COPY, DELETE_CONFIRM_WORD, deleteConfirmed } from "@/lib/billing/accountState";
 import { deleteOwnAccount } from "@/lib/billing/deleteAccount";
@@ -66,13 +67,12 @@ export function DangerZone({ email }: { email: string }) {
 
   return (
     <Card className="border-red-200">
-      <CardHeader>
-        <CardTitle className="text-red-700">Danger zone</CardTitle>
-        <CardDescription>
-          Deleting your account removes your boards, saved images and usage history for good.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+      <SectionHeader
+        title="Danger zone"
+        titleClassName="text-red-700"
+        description="Deleting your account removes your boards, saved images and usage history for good."
+      />
+      <CardContent className={SECTION_BODY}>
         <Button variant="destructive" size="sm" onClick={() => setOpen(true)}>
           <Trash2 className="w-4 h-4" />
           Delete account

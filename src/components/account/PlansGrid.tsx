@@ -4,8 +4,9 @@ import { useCallback } from "react";
 import { Check, ExternalLink } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { SectionError } from "@/components/account/SectionError";
+import { SECTION_BODY, SectionHeader } from "@/components/account/SectionHeader";
 import { useSection } from "@/components/account/useSection";
 import { ACCOUNT_COPY } from "@/lib/billing/accountState";
 import { billingLinks } from "@/lib/billing/links";
@@ -16,6 +17,12 @@ async function readPlans(): Promise<Plan[]> {
   const { data, error } = await supabase.from("plans").select("*").eq("active", true).order("sort");
   if (error) throw error;
   return parsePlans(data);
+}
+
+/** "$9/month" -> ["$9", "/month"]; "Free" -> ["$0", "/month"], so every card reads the same way. */
+function priceParts(price: string): [string, string] {
+  const [amount, period] = price.split("/");
+  return amount.startsWith("$") ? [amount, `/${period ?? "month"}`] : ["$0", "/month"];
 }
 
 function PlanButton({ card }: { card: PlanCard }) {
@@ -57,15 +64,15 @@ export function PlansGrid({ summary }: { summary: CreditSummary | null }) {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Plans</CardTitle>
-        <CardDescription>Every plan includes the same tutor; bigger plans include more credits each month.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
+      <SectionHeader
+        title="Plans"
+        description="Every plan has the same tutor. Bigger plans come with more credits each month."
+      />
+      <CardContent className={cn(SECTION_BODY, "space-y-3")}>
         {state.status === "loading" && !state.data ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" data-state="loading">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" data-state="loading" aria-busy>
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-36 animate-pulse rounded-lg border bg-muted/40" />
+              <div key={i} className="h-44 animate-pulse rounded-lg border bg-muted/40" />
             ))}
           </div>
         ) : state.status === "error" && !state.data ? (
@@ -77,41 +84,49 @@ export function PlansGrid({ summary }: { summary: CreditSummary | null }) {
         ) : (
           <>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" data-state="list">
-              {cards.map((card) => (
-                <div
-                  key={card.id}
-                  data-plan={card.id}
-                  data-action={card.action}
-                  className={cn(
-                    "flex flex-col gap-3 rounded-lg border p-4",
-                    card.current ? "border-primary/60 bg-primary/5" : "bg-card",
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <h4 className="font-semibold">{card.name}</h4>
-                    {card.current && (
-                      <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
-                        Current
-                      </span>
+              {cards.map((card) => {
+                const [amount, period] = priceParts(card.price);
+                return (
+                  <div
+                    key={card.id}
+                    data-plan={card.id}
+                    data-action={card.action}
+                    className={cn(
+                      "flex flex-col rounded-lg border p-4",
+                      card.current ? "border-primary" : "bg-card",
                     )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="font-semibold">{card.name}</h4>
+                      {card.current && (
+                        <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
+                          Current
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-2">
+                      <span className="text-2xl font-semibold tracking-tight tabular-nums">{amount}</span>
+                      <span className="text-sm text-muted-foreground">{period}</span>
+                    </p>
+                    <p className="mt-0.5 text-sm text-muted-foreground">
+                      <span className="font-medium text-foreground tabular-nums">{card.credits}</span> credits a month
+                    </p>
+                    {card.features.length > 0 && (
+                      <ul className="mt-3 space-y-1.5 border-t pt-3 text-sm text-muted-foreground">
+                        {card.features.map((feature) => (
+                          <li key={feature} className="flex items-start gap-1.5">
+                            <Check className="mt-0.5 w-3.5 h-3.5 shrink-0 text-foreground" />
+                            <span>{feature}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <div className="mt-auto pt-4">
+                      <PlanButton card={card} />
+                    </div>
                   </div>
-                  <p className="text-lg font-medium tabular-nums">{card.price}</p>
-                  <p className="text-sm text-muted-foreground">{card.credits} credits / month</p>
-                  {card.features.length > 0 && (
-                    <ul className="space-y-1 text-sm text-muted-foreground">
-                      {card.features.map((feature) => (
-                        <li key={feature} className="flex items-start gap-1.5">
-                          <Check className="mt-0.5 w-3.5 h-3.5 shrink-0 text-primary" />
-                          <span>{feature}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <div className="mt-auto pt-1">
-                    <PlanButton card={card} />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
             {anyComingSoon && <p className="text-xs text-muted-foreground">{BILLING_COPY.comingSoonNote}</p>}
             {state.status === "error" && state.data && (

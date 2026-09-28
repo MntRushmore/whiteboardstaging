@@ -1020,6 +1020,88 @@ export async function checkRateLimit({ a, b, anon }) {
   return out;
 }
 
+/** True when `body` is a usage_by_day() result: an array of { day: 'YYYY-MM-DD', route, events, credits } rows. */
+export function isUsageByDay(body) {
+  if (!Array.isArray(body)) return false;
+  return body.every((row) => {
+    const o = asObject(row);
+    return (
+      !!o &&
+      typeof o.day === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(o.day) &&
+      typeof o.route === "string" &&
+      Number.isInteger(o.events) &&
+      o.events > 0 &&
+      Number.isInteger(o.credits)
+    );
+  });
+}
+
+/** @param {HttpResult} res */
+const creditsTotal = (res) => rows(res).reduce((n, r) => n + Number(r.credits), 0);
+
+/**
+ * usage_by_day(): the caller's own spend this month, grouped by day and route.
+ * It is SECURITY INVOKER, so the usage_events owner policy decides what it sees:
+ * A's rows add up to A's credit_summary().used, B never sees A's route, an
+ * unknown time zone is rejected and anon cannot call it.
+ * @param {CheckContext} ctx
+ */
+export async function checkUsageByDay({ a, b, anon }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const route = `rls-verify-usage-${uuid().slice(0, 8)}`;
+
+  const spend = await rpc(a, "consume_credits", { p_route: route, p_units: 3, p_request_id: `${route}-req` });
+  out.push(result("usage_by_day: A spends 3 units to have a row to group", isOk(spend) && asObject(spend.body)?.ok === true, describe(spend)));
+
+  const aDays = await rpc(a, "usage_by_day", { p_time_zone: "UTC" });
+  const mine = rows(aDays).filter((r) => r.route === route);
+  out.push(result("usage_by_day: A gets well-formed rows", isOk(aDays) && isUsageByDay(aDays.body), describe(aDays)));
+  out.push(
+    result(
+      "usage_by_day: A sees one row for the new route (1 event, 3 credits)",
+      mine.length === 1 && mine[0].events === 1 && mine[0].credits === 3,
+      describe(aDays),
+    ),
+  );
+  const sumA = await rpc(a, "credit_summary");
+  out.push(
+    result(
+      "usage_by_day: A's rows add up to A's credit_summary().used",
+      isOk(sumA) && asObject(sumA.body)?.used === creditsTotal(aDays),
+      `${describe(aDays)} / ${describe(sumA)}`,
+    ),
+  );
+  const aZoned = await rpc(a, "usage_by_day", { p_time_zone: "America/New_York" });
+  out.push(
+    result(
+      "usage_by_day: another time zone regroups the days, not the credits",
+      isOk(aZoned) && isUsageByDay(aZoned.body) && creditsTotal(aZoned) === creditsTotal(aDays),
+      describe(aZoned),
+    ),
+  );
+
+  const bDays = await rpc(b, "usage_by_day", { p_time_zone: "UTC" });
+  out.push(
+    result("usage_by_day: B does not see A's usage", isOk(bDays) && rows(bDays).every((r) => r.route !== route), describe(bDays)),
+  );
+  const sumB = await rpc(b, "credit_summary");
+  out.push(
+    result(
+      "usage_by_day: B's rows add up to B's own credit_summary().used",
+      isOk(bDays) && isOk(sumB) && asObject(sumB.body)?.used === creditsTotal(bDays),
+      `${describe(bDays)} / ${describe(sumB)}`,
+    ),
+  );
+
+  const badZone = await rpc(a, "usage_by_day", { p_time_zone: "Not/AZone" });
+  out.push(result("usage_by_day: an unknown time zone is rejected", !isOk(badZone), describe(badZone)));
+  const anonDays = await rpc(anon, "usage_by_day", { p_time_zone: "UTC" });
+  out.push(result("usage_by_day: anon cannot call it", isDenied(anonDays), describe(anonDays)));
+  return out;
+}
+
 // ---------------------------------------------------------------- registry / runner
 
 /** @type {CheckDef[]} */
@@ -1039,6 +1121,7 @@ export const ALL_CHECKS = [
   { name: "credits: consume_credits / credit_summary spend only the caller's balance", run: checkCreditsConsumption },
   { name: "refund_credits gives back only the caller's own recent charge", run: checkRefunds },
   { name: "rate_limit_hit: per-user fixed window, function-only table", run: checkRateLimit },
+  { name: "usage_by_day: the caller's own spend this month, by day and route", run: checkUsageByDay },
   { name: "delete_own_account removes the caller's account and data", run: checkDeleteOwnAccount },
 ];
 

@@ -1,19 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
   BILLING_COPY,
+  allowanceLinesFor,
   bannerMessageFor,
   canonicalRouteKey,
   creditsBannerStateFor,
+  creditsNoticeFor,
   formatCredits,
   formatPrice,
   parseBillingLinks,
   parseCreditSummary,
   parsePlans,
   periodEndLabel,
+  periodMonthLabel,
   planCardsFor,
   remainingTone,
-  routeLabel,
-  usageRowsFor,
+  resetSentenceFor,
   usedPercent,
   type CreditSummary,
   type Plan,
@@ -191,50 +193,12 @@ describe("planCardsFor", () => {
   });
 });
 
-describe("route labels", () => {
+describe("canonicalRouteKey", () => {
   it("canonicalizes the route spelling", () => {
     expect(canonicalRouteKey("/api/live/recognize")).toBe("live-recognize");
     expect(canonicalRouteKey("live_recognize")).toBe("live-recognize");
     expect(canonicalRouteKey("Live/Check/")).toBe("live-check");
-  });
-  it("maps every metered route to a human label and falls back to the key", () => {
-    expect(routeLabel("/api/live/recognize")).toBe("Handwriting recognition");
-    expect(routeLabel("live/check")).toBe("Hint check");
-    expect(routeLabel("live/solve")).toBe("Worked solution");
-    expect(routeLabel("generate-solution")).toBe("Drawn help (retired)");
-    expect(routeLabel("/api/generate-worksheet")).toBe("Worksheet (retired)");
-    expect(routeLabel("voice/analyze-workspace")).toBe("Voice analysis");
-    expect(routeLabel("ocr")).toBe("Text recognition (retired)");
-    expect(routeLabel("check-help-needed")).toBe("Help check (retired)");
-    expect(routeLabel("/api/something/new")).toBe("something-new");
-    expect(routeLabel("")).toBe("Other");
-  });
-});
-
-describe("usageRowsFor", () => {
-  it("builds rows with labels, formatted times and numeric credits (from `units`, or `credits` as an alias)", () => {
-    const rows = usageRowsFor(
-      [
-        { id: "a", route: "/api/live/solve", units: 10, created_at: "2026-09-17T15:04:00Z" },
-        { id: 7, route: "generate-worksheet", credits: "20", created_at: "2026-09-16T09:30:00Z" },
-      ],
-      { timeZone: "UTC" },
-    );
-    expect(rows).toEqual([
-      { id: "a", when: "Sep 17, 3:04 PM", whenIso: "2026-09-17T15:04:00.000Z", what: "Worked solution", credits: 10 },
-      { id: "7", when: "Sep 16, 9:30 AM", whenIso: "2026-09-16T09:30:00.000Z", what: "Worksheet (retired)", credits: 20 },
-    ]);
-  });
-  it("falls back to the cost table when a row has no credits, and survives missing fields", () => {
-    const rows = usageRowsFor([{ route: "live/check" }, { route: "/api/live/check", units: null, created_at: "bad" }], {
-      costs: { "/api/live/check": 3 },
-      timeZone: "UTC",
-    });
-    expect(rows[0]).toEqual({ id: "row-0", when: "", whenIso: "", what: "Hint check", credits: 3 });
-    expect(rows[1].credits).toBe(3);
-    // a real migration row: units wins over the alias
-    expect(usageRowsFor([{ route: "ocr", units: 2, credits: 99 }])[0].credits).toBe(2);
-    expect(usageRowsFor([])).toEqual([]);
+    expect(canonicalRouteKey("")).toBe("");
   });
 });
 
@@ -269,6 +233,67 @@ describe("banner copy", () => {
       expect(s).not.toMatch(/!/);
       expect(s).not.toMatch(/\bwrong\b/i);
       expect(s).not.toMatch(/rushil/i);
+    }
+  });
+});
+
+describe("plan & credits card", () => {
+  // The QA account's month: Free (1,000) plus a 20,000 grant, 1,645 used.
+  const granted: CreditSummary = { ...summary, monthly_credits: 1000, granted: 20000, used: 1645, remaining: 19355 };
+
+  it("names the period's month in UTC", () => {
+    expect(periodMonthLabel("2026-09-01T00:00:00+00:00")).toBe("September");
+    expect(periodMonthLabel("2026-10-01T00:00:00Z")).toBe("October");
+    expect(periodMonthLabel("")).toBe("");
+    expect(periodMonthLabel("soon")).toBe("");
+  });
+
+  it("explains the total as ledger lines that add up to what is left", () => {
+    expect(allowanceLinesFor(granted)).toEqual([
+      { key: "plan", label: "Free plan, every month", value: "1,000" },
+      { key: "extra", label: "Extra for September", value: "+20,000" },
+      { key: "used", label: "Used so far", value: "−1,645" },
+    ]);
+    // no grant: no extra line; nothing used yet reads as 0, not −0
+    expect(allowanceLinesFor({ ...summary, used: 0, remaining: 300 })).toEqual([
+      { key: "plan", label: "Free plan, every month", value: "300" },
+      { key: "used", label: "Used so far", value: "0" },
+    ]);
+    // a negative grant is a correction
+    expect(allowanceLinesFor({ ...summary, granted: -100 })[1]).toEqual({
+      key: "extra",
+      label: "Correction for September",
+      value: "−100",
+    });
+  });
+
+  it("says extra credits are for this month only and nothing carries over", () => {
+    expect(resetSentenceFor(granted, NOW)).toBe(
+      "Extra credits count for September only, and unused credits don't carry over: on Oct 1 you start again with 1,000.",
+    );
+    expect(resetSentenceFor(summary, NOW)).toBe("Unused credits don't carry over: on Oct 1 you start again with 300.");
+    expect(resetSentenceFor({ ...summary, period_end: "" }, NOW)).toBe(
+      "Unused credits don't carry over: next month you start again with 300.",
+    );
+  });
+
+  it("shows a calm notice only when low or out, with the reset date and no upgrade pitch", () => {
+    expect(creditsNoticeFor(null, NOW)).toBeNull();
+    expect(creditsNoticeFor(summary, NOW)).toBeNull();
+    expect(creditsNoticeFor(granted, NOW)).toBeNull();
+    expect(creditsNoticeFor({ ...summary, remaining: 12, used: 288 }, NOW)).toEqual({
+      tone: "low",
+      message: "You have 12 credits left this month. They reset on Oct 1.",
+    });
+    const out = creditsNoticeFor({ ...summary, remaining: 0, used: 300 }, NOW);
+    expect(out).toEqual({
+      tone: "empty",
+      message: "You've used all of this month's credits. The tutor can't read new work until they reset on Oct 1.",
+    });
+    expect(creditsNoticeFor({ ...summary, remaining: 0, used: 300, period_end: "" }, NOW)?.message).toMatch(/reset next month\.$/);
+    for (const s of [out?.message ?? "", resetSentenceFor(granted, NOW)]) {
+      expect(s).not.toMatch(/!/);
+      expect(s).not.toMatch(/upgrade/i);
     }
   });
 });

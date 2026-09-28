@@ -3,9 +3,10 @@
  * badge, CreditsBanner). No React, no network, no browser APIs at module scope;
  * unit-tested in src/lib/billing/__tests__/viewModel.test.ts.
  *
- * Data comes from the RPC `credit_summary()` and the `plans` / `usage_events`
- * tables (see supabase/migrations). Credits are the unit: for the current
- * calendar month `remaining = monthly_credits + granted - used`.
+ * Data comes from the RPC `credit_summary()` and the `plans` table (see
+ * supabase/migrations); the Usage card's model is src/lib/billing/usage.ts.
+ * Credits are the unit: for the current calendar month
+ * `remaining = monthly_credits + granted - used`.
  */
 
 import { z } from "zod";
@@ -236,25 +237,10 @@ export function planCardsFor(
 }
 
 /**
- * Human labels per metered route. Keys are canonical: leading "/api/" removed,
- * "/" and "_" folded to "-", lower-case (so "live/recognize", "/api/live/recognize"
- * and "live_recognize" all match).
+ * Canonical key for a metered route: leading "/api/" removed, "/" and "_" folded to
+ * "-", lower-case (so "live/recognize", "/api/live/recognize" and "live_recognize"
+ * all match). The Usage card's kinds (src/lib/billing/usage.ts) are keyed by it.
  */
-export const ROUTE_LABELS: Readonly<Record<string, string>> = {
-  "live-recognize": "Handwriting recognition",
-  "live-check": "Hint check",
-  "live-solve": "Worked solution",
-  "live-setup": "Word problem setup",
-  "live-reread": "Second reading",
-  "voice-analyze-workspace": "Voice analysis",
-  // Retired routes (the image pipeline and its helpers were removed). No request is billed
-  // under these keys any more; they stay only so older usage history still reads as words.
-  "generate-solution": "Drawn help (retired)",
-  "generate-worksheet": "Worksheet (retired)",
-  ocr: "Text recognition (retired)",
-  "check-help-needed": "Help check (retired)",
-};
-
 export function canonicalRouteKey(route: string): string {
   return route
     .trim()
@@ -263,78 +249,6 @@ export function canonicalRouteKey(route: string): string {
     .replace(/^api\//, "")
     .replace(/[/_]+/g, "-")
     .replace(/^-+|-+$/g, "");
-}
-
-export function routeLabel(route: string): string {
-  const key = canonicalRouteKey(route);
-  return ROUTE_LABELS[key] ?? (key || "Other");
-}
-
-/**
- * A `usage_events` row as the page reads it (unknown extra columns are ignored).
- * The migration names the cost column `units`; `credits` is accepted as an alias.
- */
-export type UsageEvent = {
-  id?: string | number;
-  route?: string | null;
-  units?: number | string | null;
-  credits?: number | string | null;
-  created_at?: string | null;
-};
-
-export type UsageRow = {
-  id: string;
-  /** "Sep 17, 3:04 PM" in the requested time zone. */
-  when: string;
-  whenIso: string;
-  /** Human label, e.g. "Worked solution". */
-  what: string;
-  credits: number;
-};
-
-export type UsageRowsOptions = {
-  /** Fallback cost per route when a row carries no `credits` (keys as in ROUTE_LABELS or raw routes). */
-  costs?: Readonly<Record<string, number>>;
-  /** IANA zone for the `when` label; defaults to the runtime's zone. Tests pass "UTC". */
-  timeZone?: string;
-};
-
-function costFor(route: string, costs: Readonly<Record<string, number>> | undefined): number {
-  if (!costs) return 0;
-  const direct = costs[route];
-  if (typeof direct === "number") return direct;
-  const key = canonicalRouteKey(route);
-  for (const [k, v] of Object.entries(costs)) {
-    if (canonicalRouteKey(k) === key) return v;
-  }
-  return 0;
-}
-
-/** Table rows for the usage list, in the order given (the query sorts newest first). */
-export function usageRowsFor(events: ReadonlyArray<UsageEvent>, options: UsageRowsOptions = {}): UsageRow[] {
-  const whenFormat: Intl.DateTimeFormatOptions = {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    ...(options.timeZone ? { timeZone: options.timeZone } : {}),
-  };
-  return events.map((event, index) => {
-    const route = event.route ?? "";
-    const stored = event.units ?? event.credits;
-    const raw = typeof stored === "string" ? Number(stored) : stored;
-    const credits =
-      typeof raw === "number" && Number.isFinite(raw) ? raw : costFor(route, options.costs);
-    const date = event.created_at ? new Date(event.created_at) : null;
-    const valid = date !== null && !Number.isNaN(date.getTime());
-    return {
-      id: event.id !== undefined && event.id !== null ? String(event.id) : `row-${index}`,
-      when: valid ? date.toLocaleString("en-US", whenFormat) : "",
-      whenIso: valid ? date.toISOString() : "",
-      what: routeLabel(route),
-      credits,
-    };
-  });
 }
 
 export const BILLING_COPY = {
@@ -372,4 +286,66 @@ export function creditsBannerStateFor(summary: CreditSummary | null | undefined,
   if (failed) return "hidden-error";
   if (!summary) return "loading";
   return remainingTone(summary) === "ok" ? "hidden" : "visible";
+}
+
+/* ------------------------------------------------------------------------- */
+/* Plan & credits card (/account)                                             */
+/* ------------------------------------------------------------------------- */
+
+/** "September" for the period starting `2026-09-01T00:00:00Z` (UTC, like periodEndLabel); "" when unparsable. */
+export function periodMonthLabel(periodStart: string | null | undefined): string {
+  if (!periodStart) return "";
+  const date = new Date(periodStart);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
+}
+
+export type CreditsNotice = { tone: Exclude<RemainingTone, "ok">; message: string };
+
+/**
+ * The calm notice inside the plan card when credits run low or out; null while they are
+ * fine. Same tones as CreditsBanner, but no "upgrade": paid plans may not be open yet.
+ */
+export function creditsNoticeFor(summary: CreditSummary | null | undefined, now: Date = new Date()): CreditsNotice | null {
+  const tone = remainingTone(summary);
+  if (!summary || tone === "ok") return null;
+  const resets = periodEndLabel(summary.period_end, now);
+  const when = resets ? `on ${resets}` : "next month";
+  if (tone === "empty") {
+    return { tone, message: `You've used all of this month's credits. The tutor can't read new work until they reset ${when}.` };
+  }
+  return { tone, message: `${BILLING_COPY.low(summary.remaining)}. They reset ${when}.` };
+}
+
+export type AllowanceLine = { key: "plan" | "extra" | "used"; label: string; value: string };
+
+/**
+ * Where this month's credits come from, as ledger lines that add up to `remaining`:
+ * the plan's monthly allowance, any extra grant (or correction) for this month, and
+ * what has been used.
+ */
+export function allowanceLinesFor(summary: CreditSummary): AllowanceLine[] {
+  const month = periodMonthLabel(summary.period_start);
+  const lines: AllowanceLine[] = [
+    { key: "plan", label: `${summary.plan_name} plan, every month`, value: formatCredits(summary.monthly_credits) },
+  ];
+  if (summary.granted > 0) {
+    lines.push({ key: "extra", label: month ? `Extra for ${month}` : "Extra this month", value: `+${formatCredits(summary.granted)}` });
+  } else if (summary.granted < 0) {
+    lines.push({
+      key: "extra",
+      label: month ? `Correction for ${month}` : "Correction this month",
+      value: `−${formatCredits(-summary.granted)}`,
+    });
+  }
+  lines.push({ key: "used", label: "Used so far", value: summary.used > 0 ? `−${formatCredits(summary.used)}` : "0" });
+  return lines;
+}
+
+/** Plain words for the reset: extra credits are for this month only and nothing carries over. */
+export function resetSentenceFor(summary: CreditSummary, now: Date = new Date()): string {
+  const resets = periodEndLabel(summary.period_end, now);
+  const month = periodMonthLabel(summary.period_start);
+  const lead = summary.granted > 0 ? `Extra credits count for ${month || "this month"} only, and unused` : "Unused";
+  return `${lead} credits don't carry over: ${resets ? `on ${resets}` : "next month"} you start again with ${formatCredits(summary.monthly_credits)}.`;
 }

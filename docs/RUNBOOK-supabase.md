@@ -365,3 +365,7 @@ select user_id, route, units, model, created_at from public.usage_events where r
 ```
 
 `rate_limit_counters` can be truncated at any time (`truncate public.rate_limit_counters;`) - the only effect is that everyone gets a fresh window.
+
+### 13.2 Usage by day
+
+Migration `supabase/migrations/20260927000000_usage_by_day.sql` (idempotent; `npm run db:push`). One read-only RPC, `usage_by_day(p_time_zone text default 'UTC')` -> rows `{day date, route text, events int, credits int}`: the caller's own `usage_events` for the current credit period (the same UTC calendar month `credit_summary()` counts, so the credits add up to its `used`), grouped by calendar day in `p_time_zone` and by route, newest day first. It is `security invoker`, so the existing `usage_events: owner select` policy decides the rows; `execute` for `authenticated` only (anon gets `42501` / HTTP 401). An unknown zone raises `22023` (HTTP 400). The account page's Usage card is its only caller. Verify with `npm run db:verify` (checks named `usage_by_day:`).

@@ -79,6 +79,7 @@ export function deleteConfirmed(typed: string): boolean {
 
 export const ACCOUNT_COPY = {
   title: "Account",
+  subtitle: "Your plan, credits and usage.",
   back: "Back to boards",
   loadFailedTitle: "Couldn't load your account",
   loadFallback: "Something interrupted the request. Retry in a moment.",
@@ -86,7 +87,8 @@ export const ACCOUNT_COPY = {
   plansFallback: "The plan list didn't arrive. Retry in a moment.",
   usageFailedTitle: "Couldn't load your usage",
   usageFallback: "The usage list didn't arrive. Retry in a moment.",
-  usageEmpty: "No AI usage yet. Credits are only spent when the tutor does work for you.",
+  usageEmpty: "No usage yet this month",
+  usageEmptyHint: "Credits are only spent when the tutor does work for you.",
   profileFailedTitle: "Couldn't load your profile",
   profileFallback: "Your display name didn't load. Retry in a moment.",
   saveNameFailedTitle: "Couldn't save your name",
