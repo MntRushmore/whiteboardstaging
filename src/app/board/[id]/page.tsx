@@ -44,6 +44,7 @@ import {
 import { dropPendingAiOverlays } from "@/hooks/useAiOverlayShapes";
 import { useAssistanceMode, type AssistanceMode } from "@/hooks/useAssistanceMode";
 import { offloadAssetsOnce, useSnapshotSave } from "@/hooks/useSnapshotSave";
+import { useBoardAutoTitle } from "@/hooks/useBoardAutoTitle";
 import { createBoardAssetStore } from "@/lib/assets/boardAssetStore";
 import {
   BOARD_LOAD_COPY,
@@ -737,6 +738,8 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
   // Auto-save through the SaveQueue (2 s debounce, offline backup + replay, optimistic
   // concurrency on `version`, size guard + Storage offload): src/hooks/useSnapshotSave.ts
   const { sync, retry: retrySave } = useSnapshotSave(editor, id, initialVersion);
+  // An "Untitled Whiteboard" is named after its first line of maths once it saves.
+  useBoardAutoTitle(id, sync);
 
   // One place decides what the bar shows (see src/components/live/toolbar.ts).
   const toolbar = boardToolbarView({
