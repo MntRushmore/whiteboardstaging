@@ -34,6 +34,8 @@ export interface PlanOptions {
    * isosceles triangle are proved congruent by congruent halves, not by the Isosceles △ theorem).
    */
   without?: readonly ReasonId[];
+  /** called when the Prove statement is out of reach, with every fact the rules did reach (keyed) */
+  onUnreached?: (reached: ReadonlyMap<string, Fact>) => void;
 }
 
 interface Derivation {
@@ -107,7 +109,10 @@ export function planProof(problem: ProofProblem, figure: FigureModel | null, opt
     if (foundAt >= 0 && round > foundAt) break;
     if (fresh.length === 0 || known.size > maxFacts) break;
   }
-  if (foundAt < 0) return null;
+  if (foundAt < 0) {
+    opts.onUnreached?.(known);
+    return null;
+  }
 
   // the fewest rows for each fact: iterate derivations to a fixed point
   const givenSet = new Set(givenOrder);

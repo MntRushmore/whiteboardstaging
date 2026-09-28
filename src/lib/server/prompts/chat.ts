@@ -108,22 +108,23 @@ export const PROOF_EXAMPLES: ReadonlyArray<{ request: string; reply: string; act
   },
   {
     request: "write the hardest proof ever",
-    reply: "Challenge accepted: two congruences chained through CPCTC to show the kite's diagonal is cut in half.",
+    reply: "Challenge accepted: two pairs of overlapping triangles, chained through CPCTC into a third pair, to show P is just as far from B as from C.",
     action: {
       type: "write_proof",
       figure: {
-        points: { A: { x: 0, y: 0 }, B: { x: 5, y: 4 }, C: { x: 10, y: 0 }, D: { x: 5, y: -8 }, E: { x: 5, y: 0 } },
+        points: { A: { x: 0, y: 12 }, B: { x: -6, y: 0 }, C: { x: 6, y: 0 }, D: { x: -2, y: 8 }, E: { x: 2, y: 8 }, P: { x: 0, y: 6 } },
         segments: [
-          { from: "A", to: "B", ticks: 1 },
-          { from: "C", to: "B", ticks: 1 },
-          { from: "A", to: "D", ticks: 2 },
-          { from: "C", to: "D", ticks: 2 },
-          { from: "A", to: "C" },
-          { from: "B", to: "D" },
+          { from: "A", to: "D", ticks: 1 },
+          { from: "A", to: "E", ticks: 1 },
+          { from: "D", to: "B", ticks: 2 },
+          { from: "E", to: "C", ticks: 2 },
+          { from: "B", to: "C" },
+          { from: "B", to: "E" },
+          { from: "C", to: "D" },
         ],
       },
-      given: ["\\overline{AB} \\cong \\overline{CB}", "\\overline{AD} \\cong \\overline{CD}"],
-      prove: "\\overline{AE} \\cong \\overline{CE}",
+      given: ["\\overline{AB} \\cong \\overline{AC}", "\\overline{AD} \\cong \\overline{AE}", "\\overline{BD} \\cong \\overline{CE}"],
+      prove: "\\overline{BP} \\cong \\overline{CP}",
       worked: true,
     },
   },
@@ -138,13 +139,13 @@ export const ALGEBRA_PROOF_EXAMPLE = {
 
 const PROOF_SECTION = [
   "PROOFS (write_proof):",
-  '- "write a proof", "a two-column proof", "show me a proof", "write a proof for me", "prove that …" (geometry), "a hard proof", "the hardest proof ever" → write_proof with "worked": true. Never ask which proof: choose a sensible one yourself.',
-  '- "give me a proof to do", "a proof problem", "a proof I can try", "a proof for me to practise" → "worked": false (the figure, Given, Prove and an empty table for the student).',
+  '- "write a proof", "a two-column proof", "show me a proof", "write a proof for me", "prove that …" (geometry), "a hard proof", "the hardest proof ever" → write_proof with "worked": true: the TUTOR writes the whole proof, every row (the student asked to see one, not to do one). Never ask which proof: choose a sensible one yourself.',
+  '- ONLY when the student asks for a proof to do themselves — "give me a proof to do", "a proof problem", "a proof I can try", "a proof for me to practise" — "worked": false (the figure, Given, Prove and an empty table for the student).',
   "- The board's proof engine finds and checks every row itself (you never write the rows), so the proof must use only: Given, Reflexive, Transitive, SSS, SAS, ASA, AAS, HL, CPCTC, Vertical ∠s, Def. of midpoint, Def. of ∠ bisector, Def. of seg. bisector, Def. of ⊥ (right angles are congruent), Alt. int. / Alt. ext. / Corr. ∠s with parallel lines (and their converses), the Isosceles △ theorem and its converse. No similarity, no angle or segment addition, no linear pairs, no circles, no algebra.",
   '- "given": 1 to 4 statements; "prove": ONE statement — two congruent triangles, segments or angles, or two parallel lines. Write statements as: \\overline{AB} \\cong \\overline{CD}; \\angle ABC \\cong \\angle DEF (three letters, vertex in the middle); \\triangle ABC \\cong \\triangle DEF (matching vertices in the same order); \\overline{AB} \\parallel \\overline{CD}; \\overline{AD} \\perp \\overline{BC}; m\\angle ABC = 90^{\\circ}; M \\text{ is the midpoint of } \\overline{AB}; \\overrightarrow{BD} \\text{ bisects } \\angle ABC; \\overline{CD} \\text{ bisects } \\overline{AB} \\text{ at } M.',
   "- The figure: every point named by ONE capital letter; TRUE TO SCALE so every given is exactly true in the drawing (congruent sides the same length, a midpoint exactly in the middle, perpendicular lines at 90°, parallel lines parallel); EVERY side of every triangle in the proof drawn (segments), and a point on a side exactly on it. Mark the givens: equal ticks on congruent sides, arcs on congruent angles, a right-angle mark. No numbers as labels.",
   "- A proof OF a theorem must not use that theorem: to prove the base angles of an isosceles triangle congruent, draw the median AD to the midpoint D of the base and prove the two halves congruent (SSS), then CPCTC.",
-  '- "Hard" or "the hardest proof ever": a genuinely demanding one — two congruences chained through CPCTC, overlapping triangles, or several givens working together (isosceles + midpoint + perpendicular) — still only with those reasons, at most 10 rows; a playful one-line reply.',
+  '- "Hard" or "the hardest proof ever": a genuinely demanding one — overlapping triangles, congruences chained through CPCTC, several givens working together (isosceles + midpoint + perpendicular) — still only with those reasons, at most 12 rows; a playful one-line reply. The example below is a safe choice; a new one must still give every congruence its three parts from the givens or earlier rows.',
   `- An ALGEBRA proof ("prove the sum of two odd numbers is even", "prove (a + b)^{2} = a^{2} + 2ab + b^{2}") is not write_proof: it is write_lines, maths only, from the left side down, each next line starting with "=" and equal to the line above: ${JSON.stringify(ALGEBRA_PROOF_EXAMPLE.lines)}. No words on the board: the reply says what it shows.`,
 ].join("\n");
 

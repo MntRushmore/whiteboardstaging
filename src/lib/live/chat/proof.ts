@@ -6,8 +6,9 @@ import type { FigureSpec } from "../figureDraw/contracts";
 import { fmt } from "../figureDraw/labels";
 import { factLatex, factText, parseStatement, pointsOf, type AngRef, type Fact, type LineRef, type SegRef } from "../proof/facts";
 import { buildFigure, type FigureModel, type FigureRead } from "../proof/figure";
+import { Know } from "../proof/know";
 import { planProof, theoremsBeingProved, type PlannedRow } from "../proof/planner";
-import { Resolver } from "../proof/resolve";
+import { Resolver, segKey, triAngle } from "../proof/resolve";
 import { REASON_TEXT } from "../proof/vocab";
 import { CHAT_LIMITS, type WriteProofAction } from "./contracts";
 import { figureProblems } from "./figure";
@@ -44,8 +45,8 @@ export const PROOF_CHECK = {
   angleDeg: 2,
   /** a named point on a drawn side: within this share of the figure's size of it */
   onTol: 0.012,
-  /** the most rows the board lays out on one screen beside the figure */
-  maxRows: 11,
+  /** the most rows the board lays out on one screen beside the figure (`layoutProof`, at its smallest hand) */
+  maxRows: 12,
   /** facts on the Given line (each is one Given of the checked action) */
   maxGivenFacts: CHAT_LIMITS.proofGivens,
   /** the hand size the writability check lays each line out at */
@@ -324,6 +325,47 @@ function disagreement(f: Fact, at: (n: string) => P, r: Resolver): string | null
   }
 }
 
+// ---------------------------------------------------------------- why the planner could not finish
+
+/**
+ * What the engine DID reach, for the model's repair: the triangle congruences it proved from the
+ * givens, and — when the Prove statement is a congruence of triangles — which of its corresponding
+ * parts it has and which it lacks (no postulate applies without them). A sentence or "".
+ */
+export function whyNot(goal: Fact, reached: ReadonlyMap<string, Fact>, givens: readonly Fact[], r: Resolver): string {
+  const know = new Know(r);
+  for (const f of reached.values()) know.add(f);
+  const givenKeys = new Set(givens.map((f) => r.factKey(f)));
+  const proved = [...reached.entries()]
+    .filter(([k, f]) => f.t === "triCong" && !givenKeys.has(k))
+    .map(([, f]) => factLatex(f))
+    .filter((s): s is string => Boolean(s))
+    .slice(0, 3);
+  const out: string[] = [proved.length ? `From the givens it proves ${proved.join(" and ")}, and not what is to be proved.` : "From the givens it proves no two triangles congruent."];
+  if (goal.t === "triCong") {
+    const have: string[] = [];
+    const lack: string[] = [];
+    for (const [i, j] of [
+      [0, 1],
+      [1, 2],
+      [0, 2],
+    ]) {
+      const x: SegRef = { k: "seg", a: goal.x[i], b: goal.x[j] };
+      const y: SegRef = { k: "seg", a: goal.y[i], b: goal.y[j] };
+      const tex = factLatex({ t: "segCong", x, y })!;
+      (know.segCong(segKey(x), segKey(y), "close") ? have : lack).push(tex);
+    }
+    for (let i = 0; i < 3; i++) {
+      const [x, y] = [triAngle(goal.x, i), triAngle(goal.y, i)];
+      const [kx, ky] = [r.angKey(x), r.angKey(y)];
+      const tex = factLatex({ t: "angCong", x, y })!;
+      (kx && ky && know.angCong(kx, ky, "close") ? have : lack).push(tex);
+    }
+    out.push(`For ${factLatex(goal)} it has ${have.length ? have.join(", ") : "none of the corresponding parts"}${lack.length ? `, and not ${lack.join(", ")}` : ""}.`);
+  }
+  return out.join(" ");
+}
+
 // ---------------------------------------------------------------- the check
 
 /** Every fact of one statement, or why it cannot be one. */
@@ -406,14 +448,16 @@ function check(p: Pick<WriteProofAction, "figure" | "given" | "prove"> & { worke
   if (proveFacts.every((f) => givenKeys.has(r.factKey(f)))) return { ok: false, problems: ["The Prove statement is one of the givens: prove something that takes steps."] };
   const problem = { givens: { facts: givenFacts, complete: true }, prove: { facts: proveFacts, complete: true }, rows: [] };
   const without = theoremsBeingProved(problem, model);
-  const rows = planProof(problem, model, { without });
+  let reached: ReadonlyMap<string, Fact> = new Map();
+  const rows = planProof(problem, model, { without, onUnreached: (facts) => (reached = facts) });
   const proveTex = factLatex(proveFacts[0]) ?? "";
   if (rows === null) {
     const not = without.length ? ` It may not cite ${without.map((w) => REASON_TEXT[w]).join(" or ")}, the theorem being proved: add an auxiliary segment (e.g. the median to a midpoint) and its given.` : "";
     return {
       ok: false,
       problems: [
-        `The proof engine could not prove ${proveTex} from these givens with this figure.${not} It proves with: Given, Reflexive, Transitive, SSS, SAS, ASA, AAS, HL, CPCTC, Vertical ∠s, Def. of midpoint, Def. of ∠ bisector, Def. of seg. bisector, Def. of ⊥ with Rt. ∠s ≅, Alt. int. / Alt. ext. / Corr. ∠s (and their converses) with the parallel lines drawn, Isos. △ thm and its converse. Draw every side of every triangle the proof uses (segments or polygon sides), put each point of a side exactly on it, and give enough givens.`,
+        `The proof engine could not prove ${proveTex} from these givens with this figure.${not} ${whyNot(proveFacts[0], reached, givenFacts, r)}`.trim(),
+        "It proves with: Given, Reflexive, Transitive, SSS, SAS, ASA, AAS, HL, CPCTC, Vertical ∠s, Def. of midpoint, Def. of ∠ bisector, Def. of seg. bisector, Def. of ⊥ with Rt. ∠s ≅, Alt. int. / Alt. ext. / Corr. ∠s (and their converses) with the parallel lines drawn, Isos. △ thm and its converse. Draw every side of every triangle the proof uses (segments or polygon sides), put each point of a side exactly on it, and give enough givens — or choose a proof like the examples.",
       ],
     };
   }

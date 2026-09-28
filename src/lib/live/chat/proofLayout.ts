@@ -25,7 +25,7 @@ import { joinPlans } from "./layout";
 
 export const PROOF_LAYOUT = {
   /** hand sizes tried, largest first, until the proof fits */
-  sizes: [34, 31, 28, 25],
+  sizes: [34, 31, 28, 25, 22],
   /** figure boxes tried, largest first */
   figureBoxes: [
     { w: 460, h: 380 },

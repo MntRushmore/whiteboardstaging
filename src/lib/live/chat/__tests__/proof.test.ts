@@ -143,12 +143,24 @@ describe("checking a proposed proof", () => {
     if (!bare.ok) expect(bare.problems[0]).toMatch(/may not cite Isos\. △ thm/);
   });
 
-  it("an unprovable proof is refused with what the engine proves with", () => {
+  it("an unprovable proof is refused with what the engine reached and what it proves with", () => {
     const v = checkProofProposal({ ...HARDEST, given: ["\\overline{AB} \\cong \\overline{CB}"] });
     expect(v.ok).toBe(false);
     if (!v.ok) {
-      expect(v.problems[0]).toMatch(/could not prove \\overline\{AE\} \\cong \\overline\{CE\}/);
-      expect(v.problems[0]).toMatch(/SSS, SAS, ASA, AAS, HL, CPCTC/);
+      expect(v.problems[0]).toMatch(/could not prove \\overline\{AE\} \\cong \\overline\{CE\} from these givens with this figure\. From the givens it proves no two triangles congruent\./);
+      expect(v.problems[1]).toMatch(/SSS, SAS, ASA, AAS, HL, CPCTC/);
+    }
+    // a rhombus's halves, with a vertical angle given: congruent in the drawing, not from the givens
+    const rhombus: FigureSpec = {
+      points: { A: { x: -4, y: 0 }, B: { x: 0, y: 5 }, C: { x: 4, y: 0 }, D: { x: 0, y: -5 }, E: { x: 0, y: 0 } },
+      segments: ["AB", "BC", "AD", "DC", "AC", "BD"].map((s) => ({ from: s[0], to: s[1] })),
+    };
+    const w = checkProofProposal({ figure: rhombus, given: ["\\overline{AB} \\cong \\overline{CB}", "\\overline{AD} \\cong \\overline{CD}", "\\angle AEB \\cong \\angle CED"], prove: "\\triangle AEB \\cong \\triangle CED" });
+    expect(w.ok).toBe(false);
+    if (!w.ok) {
+      expect(w.problems[0]).toMatch(/From the givens it proves \\triangle [A-E]{3} \\cong \\triangle [A-E]{3}/);
+      expect(w.problems[0]).toMatch(/For \\triangle AEB \\cong \\triangle CED it has \\overline\{AE\} \\cong \\overline\{CE\}, \\angle BEA \\cong \\angle DEC/);
+      expect(w.problems[0]).toMatch(/and not .*\\overline\{EB\} \\cong \\overline\{ED\}/);
     }
   });
 
@@ -193,9 +205,12 @@ describe("checking a proposed proof", () => {
     }
     const hardest = PROOF_EXAMPLES.find((e) => /hardest/.test(e.request))!;
     const rows = proved(hardest.action).rows;
-    // demanding: two triangle congruences, chained through CPCTC
-    expect(rows.filter((r) => ["sss", "sas", "asa", "aas", "hl"].includes(r.reason))).toHaveLength(2);
+    // demanding: overlapping triangles, three congruences chained through CPCTC, the most rows the board takes
+    expect(rows.filter((r) => ["sss", "sas", "asa", "aas", "hl"].includes(r.reason))).toHaveLength(3);
     expect(rows.filter((r) => r.reason === "cpctc").length).toBeGreaterThanOrEqual(2);
+    expect(rows).toHaveLength(PROOF_CHECK.maxRows);
+    // and it lays out on the screen
+    expect(laidOut(proved(hardest.action), hardest.action.figure, true).bounds.y + 1).toBeGreaterThan(0);
     expect(PROOF_EXAMPLES.find((e) => /to do/.test(e.request))?.action.worked).toBe(false);
   });
 });
