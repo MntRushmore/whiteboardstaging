@@ -9,9 +9,9 @@ import { paceFor, type HandPlan } from "../handwriting";
 
 export const PROBLEM_GRID = {
   /** the tutor's hand for a problem (the largest it writes: problems are read from across a room) */
-  size: 40,
+  size: 48,
   /** the smallest it shrinks to when a long problem does not fit its cell */
-  minSize: 26,
+  minSize: 28,
   /** space kept to the screen's sides and bottom */
   marginX: 48,
   marginBottom: 28,

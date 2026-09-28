@@ -149,6 +149,11 @@ export interface FakeEditor extends LiveEditorLike {
   addPage(meta?: JsonObject): TLPageId;
   /** what the screen strip does: changes the instance's current page */
   switchPage(id: TLPageId): void;
+  /** the slice of the editor `addScreen` uses (the board chat's `new_screen`) */
+  getPages(): TLPage[];
+  createPage(page: { name: string; meta?: JsonObject }): void;
+  setCurrentPage(id: TLPageId): void;
+  run(fn: () => void): void;
 }
 
 /** An editor double over a headless store implementing exactly what LiveLoop uses. */
@@ -176,6 +181,12 @@ export function createFakeEditor(store: TLStore = createHeadlessStore(), viewpor
       const instance = store.get(TLINSTANCE_ID) as TLInstance;
       store.put([{ ...instance, currentPageId: id }]);
     },
+    getPages: () => (store.allRecords().filter((r) => r.typeName === "page") as TLPage[]).sort((a, b) => (a.index < b.index ? -1 : a.index > b.index ? 1 : 0)),
+    createPage: (page) => {
+      editor.addPage(page.meta ?? {});
+    },
+    setCurrentPage: (id) => editor.switchPage(id),
+    run: (fn) => fn(),
     getShape: (id) => store.get(id) as TLShape | undefined,
     getShapePageBounds: (s) => {
       const shape = resolve(s);

@@ -49,6 +49,12 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
       dismissHint: (hintId) => loopRef.current?.dismissHint(hintId),
       clearMarks: () => loopRef.current?.clearMarks(),
       retypeLine: (lineId, latex) => loopRef.current?.retypeLine(lineId, latex),
+      chatScreen: () => loopRef.current?.chatScreen() ?? { empty: true, student: [], tutor: [], problems: [] },
+      runChatActions: async (actions) => {
+        const loop = loopRef.current;
+        if (!loop) throw new Error("The board is not ready yet.");
+        return loop.runChatActions(actions);
+      },
     }),
     [],
   );

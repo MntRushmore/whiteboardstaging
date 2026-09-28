@@ -7,6 +7,7 @@
  */
 import { z } from "zod";
 import type { TLBaseShape, TLShapeId } from "tldraw";
+import type { ChatAction, ChatRunReport, ChatScreen } from "./chat/contracts";
 
 // 1. Modes, verdicts, kinds -------------------------------------------------
 export const HELP_MODES = ["off", "feedback", "suggest", "answer"] as const;
@@ -672,6 +673,13 @@ export interface LiveController {
   dismissHint(hintId: string): void;
   clearMarks(): void;
   retypeLine(lineId: string, latex: string): void;
+  /**
+   * The board chat (`src/lib/live/chat`): the current screen as maths, sent with a request so "3
+   * more like these" works, and a reply's actions run one block at a time in the tutor's hand
+   * (problems checked by the engine first). Optional, so a controller double need not have them.
+   */
+  chatScreen?(): ChatScreen;
+  runChatActions?(actions: readonly ChatAction[]): Promise<ChatRunReport>;
 }
 export interface UseLiveMathOptions {
   boardId: string;
