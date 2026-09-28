@@ -38,6 +38,9 @@ describe("live loop — the tutor works the problems it wrote", () => {
   let assigned: Map<string, string>;
   let streamCalls: string[];
   let mode: HelpMode;
+  /** what the recognizer answers next, whichever line it is (null: each line keeps its first read) */
+  let nextRead: string | null;
+  let confidence: number;
 
   function start(m: HelpMode = "feedback", deps: Partial<LiveLoopDeps> = {}): void {
     mode = m;
@@ -137,14 +140,21 @@ describe("live loop — the tutor works the problems it wrote", () => {
     script = [];
     streamCalls = [];
     assigned = new Map();
+    nextRead = null;
+    confidence = 0.97;
     fetchJson = vi.fn<FetchJson>(async (_path, body): Promise<RecognizeResponse> => {
       const { lineId } = body as RecognizeRequest;
       let latex = assigned.get(lineId);
-      if (latex === undefined) {
+      if (nextRead !== null) {
+        // the student rewrote a line: this read is the new one
+        latex = nextRead;
+        nextRead = null;
+        assigned.set(lineId, latex);
+      } else if (latex === undefined) {
         latex = script[assigned.size] ?? "\\Delta";
         assigned.set(lineId, latex);
       }
-      return { latex, text: "", kind: "math", confidence: 0.97, provider: "mathpix", ms: 300 };
+      return { latex, text: "", kind: "math", confidence, provider: "mathpix", ms: 300 };
     });
   });
 
@@ -317,6 +327,92 @@ describe("live loop — the tutor works the problems it wrote", () => {
       expect(liveStore.lines.get()[line].analysis).toMatchObject({ verdict: "ok", solved: true });
       const marks = tutor().filter((s) => s.meta.lineId === line && meta(s).mark).map((s) => String(meta(s).mark).split(":")[0]);
       expect(marks).toEqual(["check"]);
+    });
+  });
+
+  describe("no silent lines under a problem", () => {
+    const marksOf = (lineId: string) => tutor().filter((s) => s.meta.lineId === lineId && meta(s).mark);
+    const kinds = (lineId: string) => [...new Set(marksOf(lineId).map((s) => String(meta(s).mark).split(":")[0]))];
+    /** the student stops writing: the canvas settle (2.5 s) runs out */
+    async function stop(): Promise<void> {
+      await vi.advanceTimersByTimeAsync(3000);
+      await landed();
+    }
+
+    it("a lone 2 under the problem gets the tutor's ? once the student stops — not before", async () => {
+      start("feedback");
+      await run([{ type: "write_problems", problems: [["2x + 3 = 11"]] }]);
+      const two = await penLine("2", 120, 170, "2");
+      await landed();
+      expect(liveStore.lines.get()[two].latex).toBe("2");
+      expect(kinds(two)).toEqual([]);
+      await stop();
+      expect(kinds(two)).toEqual(["question"]);
+      // why, for the onboarding's first coach mark: there is nothing in it to check
+      expect(new Set(marksOf(two).map((s) => meta(s).markWhy))).toEqual(new Set(["unjudged"]));
+      expect(streamCalls).toEqual([]);
+    });
+
+    it("in Suggest and Solve too; never in Off", async () => {
+      for (const m of ["suggest", "answer", "off"] as const) {
+        loop?.stop();
+        resetLiveStore();
+        editor = createFakeEditor();
+        editor.store.put([{ ...editor.getCurrentPage(), meta: { screen: { ...DEFAULT_SCREEN } } }]);
+        assigned = new Map();
+        script = [];
+        start(m);
+        await run([{ type: "write_problems", problems: [["3x = 12"]] }]);
+        const two = await penLine("2", 120, 170, "2");
+        await stop();
+        expect(kinds(two), m).toEqual(m === "off" ? [] : ["question"]);
+      }
+    });
+
+    it("the same lone 2 on a blank board stays silent: a label or a scratch number is the student's own", async () => {
+      start("feedback");
+      const two = await penLine("2", 120, 170, "2");
+      await stop();
+      expect(kinds(two)).toEqual([]);
+      expect(tutor()).toEqual([]);
+    });
+
+    it("rewritten into a step the tutor can judge, the ? gives way to the tick", async () => {
+      start("feedback");
+      await run([{ type: "write_problems", problems: [["2x + 3 = 11"]] }]);
+      const two = await penLine("2", 100, 200, "2");
+      await stop();
+      expect(kinds(two)).toEqual(["question"]);
+      const first = liveStore.lines.get()[two].line.strokeIds[0];
+      // the student writes on: the same line now reads 2x=8
+      nextRead = "2x=8";
+      const x0 = liveStore.lines.get()[two].line.bounds.x + liveStore.lines.get()[two].line.bounds.w + 12;
+      editor.putUser(inkLine("x=8", x0, 200, 40));
+      await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 300);
+      await settleUntil(() => Object.values(liveStore.lines.get()).some((s) => s.line.strokeIds.includes(first) && s.latex === "2x=8"));
+      await landed();
+      const line = Object.values(liveStore.lines.get()).find((s) => s.line.strokeIds.includes(first))!;
+      expect(line.analysis?.verdict).toBe("ok");
+      expect(kinds(line.line.id)).toEqual(["check"]);
+      expect(tutor().filter((s) => String(meta(s).mark ?? "").startsWith("question:"))).toEqual([]);
+    });
+
+    it("a read the recognizer was unsure of: a ? that asks for clearer writing", async () => {
+      start("feedback");
+      await run([{ type: "write_problems", problems: [["2x + 3 = 11"]] }]);
+      confidence = 0.3;
+      const line = await penLine("2x=8", 100, 200, "2x=8");
+      await stop();
+      expect(kinds(line)).toEqual(["question"]);
+      expect(new Set(marksOf(line).map((s) => meta(s).markWhy))).toEqual(new Set(["unread"]));
+    });
+
+    it("a line the tutor judges gets its tick, never a ?", async () => {
+      start("feedback");
+      await run([{ type: "write_problems", problems: [["2x + 3 = 11"]] }]);
+      const line = await penLine("2x=8", 100, 200, "2x=8");
+      await stop();
+      expect(kinds(line)).toEqual(["check"]);
     });
   });
 });

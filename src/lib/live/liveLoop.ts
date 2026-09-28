@@ -108,7 +108,7 @@ import {
   rectMaxY,
   rectsIntersect,
 } from "./placement";
-import { badgeFor, decide, isSingleSymbolLatex, localNoteFor, unjudgedReason, type PolicyDecision } from "./policy";
+import { badgeFor, decide, isSingleSymbolLatex, localNoteFor, unjudgedReason, type PolicyDecision, type UnjudgedReason } from "./policy";
 import { createSolveStepGuard, engineParsesStep, localAnswerFor, unwrapBoxed as unwrapBoxedAnywhere } from "./solveSteps";
 import {
   RecognizeClient,
@@ -205,6 +205,8 @@ interface LineRuntime {
   /** the tutor's mark wanted on this line (`markKey`), null for none; undefined until first render */
   markKey?: string | null;
   markWriter?: HandWriter | null;
+  /** its read failed for a reason that is not the ink (signed out, out of credits, rate limited): no "?" */
+  readRefused?: boolean;
 }
 
 type CheckOpts = {
@@ -319,6 +321,8 @@ const AI_WARN_META = "aiWarnLatex";
 const SUGGEST_META = "suggestFor";
 /** on the strokes of a tutor's mark (tick / ring / question mark): its `markKey` */
 const MARK_META = "mark";
+/** on a question mark's strokes: why the tutor put it there (`UnjudgedReason`) */
+const MARK_WHY_META = "markWhy";
 const ANSWER_ANCHORS_META = "answerAnchors";
 
 function metaString(meta: unknown, key: string): string {
@@ -475,6 +479,8 @@ export class LiveLoop implements LiveController {
   private readonly rereads = new Map<string, string | null>();
   /** second readings in flight, aborted with the rest of the runtime */
   private readonly rereadAborts = new Set<AbortController>();
+  /** lines being read right now (the recognizer, or the second reader): nothing to say about them yet */
+  private readonly reading = new Set<string>();
   /**
    * The drawings on this screen (`splitInk`, `src/lib/live/diagrams.ts`), refreshed by every flush.
    * A drawing is never recognized, marked or joined to a line; its labels are read together, once
@@ -642,6 +648,7 @@ export class LiveLoop implements LiveController {
     }
     for (const ctrl of this.rereadAborts) ctrl.abort();
     this.rereadAborts.clear();
+    this.reading.clear();
     this.dismissedGraphs.clear();
     this.dismissedFigures.clear();
     this.figuresInFlight.clear();
@@ -1063,6 +1070,8 @@ export class LiveLoop implements LiveController {
       if (!state.latex || !state.analysis?.resultLatex) continue;
       this.render(state, this.decisionFor(state));
     }
+    // A line under one of the chat's problems the tutor cannot judge gets its "?" now, not mid-stroke.
+    for (const lineId of Object.keys(liveStore.lines.get())) this.questionIfSettled(lineId);
     // The right next step is an answer too: it waited for the pen to stop.
     const waiting = [...this.pendingSuggestions];
     this.pendingSuggestions.clear();
@@ -1294,6 +1303,8 @@ export class LiveLoop implements LiveController {
     // New or changed ink: recognize. Whatever failed for this line before is stale now.
     this.abortLlm(lineId);
     this.clearErrorsForLine(lineId);
+    rt.readRefused = false;
+    this.reading.add(lineId);
     const startedAt = this.deps.now();
     const readingTimer = setTimeout(() => {
       if (liveStore.status.get() === "idle") liveStore.status.set("reading");
@@ -1317,6 +1328,7 @@ export class LiveLoop implements LiveController {
       const cached = Boolean(this.deps.recognizer.peek(hash));
       const res = await this.recognizeWithCropFallback(line, req, hash);
       if (rt.processing !== ticket) return;
+      this.reading.delete(lineId);
       recordRecognition({ lineId, at: this.deps.now(), sent: { ...req.strokes, ...req.bounds }, cached, response: res });
       // This very ink was read again before and the second reader's read was taken: use it now.
       const reread = this.rereads.get(hash) ?? null;
@@ -1328,6 +1340,7 @@ export class LiveLoop implements LiveController {
     } catch (err) {
       if (isAbortLike(err) && !(err instanceof RecognizeTimeoutError)) return;
       if (rt.processing !== ticket) return;
+      this.reading.delete(lineId);
       // Network failure (fetch throws TypeError) or the browser says offline: the offline
       // queue replays the line on reconnect. Offline, that is the whole story.
       const network = !(err instanceof RecognizeTimeoutError) && !isApiError(err) && (err instanceof TypeError || !this.deps.isOnline());
@@ -1338,8 +1351,15 @@ export class LiveLoop implements LiveController {
       // Never a silent blank: transport/model trouble leaves a chip pointing at Retry; sign-in,
       // rate-limit and credit problems are the pill's job (their message is not about the line).
       if (failure && CHIP_CODES.has(failure.code)) this.applyFailedRead(lineId, LIVE_COPY.errors.recognizeChip);
-      else this.applyUnknown(lineId, "");
+      else {
+        // the pill (or the out-of-credits dialog) says why; writing the line again would not help
+        rt.readRefused = true;
+        this.applyUnknown(lineId, "");
+      }
+      // a read that failed under one of the chat's problems, the student already stopped: its "?"
+      this.questionIfSettled(lineId);
     } finally {
+      if (rt.processing === ticket) this.reading.delete(lineId);
       clearTimeout(readingTimer);
       if (this.deps.recognizer.inFlight === 0 && liveStore.status.get() === "reading") liveStore.status.set("idle");
     }
@@ -1548,6 +1568,8 @@ export class LiveLoop implements LiveController {
     if (!current()) return;
     const ctrl = new AbortController();
     this.rereadAborts.add(ctrl);
+    // being read again: no "?" on it until the second read is in
+    this.reading.add(lineId);
     let reply: RereadResponse;
     try {
       reply = await this.deps.reread({ boardId: this.opts.boardId, lineId, crop, latex: res.latex, above, below }, { signal: ctrl.signal });
@@ -1555,14 +1577,22 @@ export class LiveLoop implements LiveController {
       if (ctrl.signal.aborted) this.rereads.delete(hash);
       else record({ latex: "", accepted: false, error: err instanceof Error ? err.message : String(err) });
       clientMetric("live.reread.failed", { signal, lineId });
+      this.rereadAborts.delete(ctrl);
+      if (current() || !liveStore.lines.get()[lineId]) this.reading.delete(lineId);
+      if (this.started && !ctrl.signal.aborted && current()) this.questionIfSettled(lineId);
       return;
     } finally {
       this.rereadAborts.delete(ctrl);
+      if (current() || !liveStore.lines.get()[lineId]) this.reading.delete(lineId);
     }
     const accepted = acceptReread(engine, res.latex, reply.latex, [...above, ...below]);
     record({ latex: reply.latex, accepted: Boolean(accepted), model: reply.model, ms: reply.ms });
     clientMetric("live.reread", { signal, accepted: Boolean(accepted), ms: reply.ms, lineId });
-    if (!accepted || !current() || !this.started) return;
+    if (!accepted || !current() || !this.started) {
+      // Mathpix's read stands: if the student stopped while it was being read again, its "?" is due now
+      if (this.started && current()) this.questionIfSettled(lineId);
+      return;
+    }
     this.rereads.set(hash, accepted);
     this.applyReread(lineId, accepted, res.confidence);
   }
@@ -2011,7 +2041,11 @@ export class LiveLoop implements LiveController {
     if (!opts.keepStatus && !decision.capped) this.syncGraph(state.line.column);
     if (!decision.echo) {
       if (state.mathShapeId || state.graphShapeId) this.deleteLineShapes(lineId, { keepAi: true });
-      if (!opts.quiet) this.syncMark(state, null);
+      if (!opts.quiet) {
+        // silent — unless it is under one of the chat's problems and the student has stopped: "?"
+        const why = this.questionNow(state);
+        this.syncMark(state, why ? "question" : null, why ?? undefined);
+      }
       if (
         state.latex !== "" &&
         state.confidence < LIVE_LIMITS.minConfidence &&
@@ -2026,7 +2060,7 @@ export class LiveLoop implements LiveController {
           if (!cur || rt.processing !== ticket || !this.opts.enabled) return;
           rt.unreadableShown = true;
           this.upsertEcho(lineId, { latex: "", status: "unknown", resultLatex: "", note: UNREADABLE_NOTE });
-          if (this.opts.mode !== "off") this.syncMark(cur, "question");
+          if (this.opts.mode !== "off") this.syncMark(cur, "question", "unread");
         }, LIVE_TIMING.unreadableChipMs);
       }
       return;
@@ -2057,10 +2091,63 @@ export class LiveLoop implements LiveController {
     // echo that used to carry the badge only shows on hover. Mode off keeps what is there.
     if (!opts.keepStatus) {
       const ring = status === "warn" || (status !== "ok" && status !== "solved" && this.modelFlagged(state));
-      this.syncMark(state, ring ? "circle" : status === "ok" || status === "solved" ? "check" : null);
+      const tick = status === "ok" || status === "solved";
+      // a line the engine cannot read at all, under one of the chat's problems: its "?" (`questionNow`)
+      const why = ring || tick ? null : this.questionNow(state);
+      this.syncMark(state, ring ? "circle" : tick ? "check" : why ? "question" : null, why ?? undefined);
       this.dropStaleSuggestion(state, ring);
       if (ring && !opts.quiet) this.suggestNextStep(lineId);
     }
+  }
+
+  // ---------------------------------------------------------------- "?" under the chat's problems
+  /**
+   * No silent lines under a problem the tutor wrote. A line there the tutor read but cannot judge
+   * (`unjudgedReason`: a lone `2`, a label, half a line, prose, LaTeX the engine cannot read, a read
+   * that failed or came back unsure) gets the tutor's "?" — in Feedback, Suggest and Solve, once the
+   * student has stopped writing (the settle: `renderSettled`), never mid-stroke. The student under
+   * a problem is answering it, so saying nothing reads as a broken tutor.
+   *
+   * Everywhere else today's silence stands: students write labels and scratch numbers. And no "?"
+   * on a line that is still being read (the recognizer, the second reader), whose check is in
+   * flight or waiting for the network, on a row of a proof, at the shape cap, or whose read was
+   * refused for a reason writing it again would not fix (signed out, out of credits). A drawing is
+   * never a line, so never gets one. Why it is there rides on the mark (`meta.markWhy`).
+   */
+  private questionFor(state: LiveLineState): UnjudgedReason | null {
+    if (!this.opts.enabled || this.opts.mode === "off") return null;
+    if (!this.columnHeads.has(state.line.column)) return null;
+    const id = state.line.id;
+    const rt = this.rt.get(id);
+    if (this.proofs.owns(id) || rt?.readRefused || rt?.checkAbort) return null;
+    if (this.reading.has(id) || this.offlineQueue.has(id) || this.pendingChecks.has(id)) return null;
+    if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return null;
+    return unjudgedReason(state);
+  }
+
+  /**
+   * The "?" a render of this line wants: once the student has stopped, or — so a re-render does not
+   * take it away — while the "?" already on the page is on the line as it is now (the ink moved or
+   * grew: it waits for the next stop, like the first one did).
+   */
+  private questionNow(state: LiveLineState): UnjudgedReason | null {
+    const why = this.questionFor(state);
+    if (!why) return null;
+    if (this.settled) return why;
+    const key = markKey("question", state.line.bounds);
+    const shown = this.rt.get(state.line.id)?.markKey;
+    if (shown !== undefined) return shown === key ? why : null;
+    // after a reload: the one on the page
+    const onPage = this.editor.getCurrentPageShapes().some((s) => isLiveMeta(s.meta) && s.meta.lineId === state.line.id && metaString(s.meta, MARK_META) === key);
+    return onPage ? why : null;
+  }
+
+  /** The student has stopped: this line's "?", when it wants one. */
+  private questionIfSettled(lineId: string): void {
+    const state = liveStore.lines.get()[lineId];
+    if (!state || !this.settled) return;
+    const why = this.questionFor(state);
+    if (why) this.syncMark(state, "question", why);
   }
 
   // ---------------------------------------------------------------- shape writes
@@ -3623,9 +3710,14 @@ export class LiveLoop implements LiveController {
   /**
    * Puts the tutor's mark for this line on the page (tick, ring, question mark) or takes it
    * off. Redrawn only when the kind or the line's place changes; one already on the page with
-   * the same key (after a reload) is kept, not written again.
+   * the same key (after a reload) is kept, not written again. A question mark says why
+   * (`meta.markWhy`: `unread`, write it again more clearly; `unjudged`, there is nothing in it to
+   * check), for the first coach mark of the onboarding.
+   *
+   * A mark left on this very ink under a line id that is gone is replaced, not doubled: a line with
+   * no echo (a lone `2`) is not rebuilt on a reload, and comes back with a new id when it is read.
    */
-  private syncMark(state: LiveLineState, kind: MarkKind | null): void {
+  private syncMark(state: LiveLineState, kind: MarkKind | null, why?: UnjudgedReason): void {
     const lineId = state.line.id;
     const rt = this.runtime(lineId);
     const want = kind && this.deps.handwritingEnabled() ? markKey(kind, state.line.bounds) : null;
@@ -3635,17 +3727,26 @@ export class LiveLoop implements LiveController {
     rt.markWriter = null;
     this.write(() => {
       if (this.runtime(lineId).markKey !== want) return; // superseded before it ran
-      const marks = this.editor
-        .getCurrentPageShapes()
-        .filter((s) => isLiveMeta(s.meta) && s.meta.lineId === lineId && metaString(s.meta, MARK_META) !== "");
-      const stale = marks.filter((s) => metaString(s.meta, MARK_META) !== want).map((s) => s.id);
+      const lines = liveStore.lines.get();
+      const place = want ? want.slice(want.indexOf(":")) : null;
+      const marks: TLShape[] = [];
+      const orphans: TLShapeId[] = [];
+      for (const s of this.editor.getCurrentPageShapes()) {
+        const key = isLiveMeta(s.meta) ? metaString(s.meta, MARK_META) : "";
+        if (!key || !isLiveMeta(s.meta)) continue;
+        if (s.meta.lineId === lineId) marks.push(s);
+        else if (place && !lines[s.meta.lineId] && key.slice(key.indexOf(":")) === place) orphans.push(s.id);
+      }
+      const stale = [...marks.filter((s) => metaString(s.meta, MARK_META) !== want).map((s) => s.id), ...orphans];
       if (stale.length > 0) this.editor.deleteShapes(stale);
       if (!want || !kind || marks.some((s) => metaString(s.meta, MARK_META) === want)) return;
       const plan = planFromStrokes(kind, markStrokes(kind, state.line.bounds, handSeedFor(`${lineId}:${want}`)), HAND_WRITE.minSize);
       if (!plan) return;
       const writer = this.makeWriter();
       this.runtime(lineId).markWriter = writer;
-      writer.start(plan, { meta: makeMeta("ai", lineId, this.deps.now()), extraMeta: { [MARK_META]: want } });
+      const extraMeta: JsonObject = { [MARK_META]: want };
+      if (kind === "question") extraMeta[MARK_WHY_META] = why ?? "unread";
+      writer.start(plan, { meta: makeMeta("ai", lineId, this.deps.now()), extraMeta });
     });
   }
 
@@ -4121,7 +4222,7 @@ export class LiveLoop implements LiveController {
     if (needsLook(target)) {
       // No sentences on the board: ink the tutor cannot read as maths gets a "?" beside it
       // (write it again, larger or clearer) — not a model's paragraph about the picture.
-      this.syncMark(target, "question");
+      this.syncMark(target, "question", unjudgedReason(target) ?? "unread");
       return;
     }
     if (this.opts.mode === "answer") this.requestSolve(target.line.id);
@@ -4139,7 +4240,7 @@ export class LiveLoop implements LiveController {
     const depth: ProblemDepth = this.opts.mode === "answer" ? "solve" : "step";
     const pick = this.problemPick(depth);
     if (!pick || pick.kind === "none") return false;
-    if (target && needsLook(target)) this.syncMark(target, "question");
+    if (target && needsLook(target)) this.syncMark(target, "question", unjudgedReason(target) ?? "unread");
     if (pick.kind === "tutor") {
       this.workProblem(pick.cell, depth);
       return true;
