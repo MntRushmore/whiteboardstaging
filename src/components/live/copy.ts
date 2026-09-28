@@ -6,7 +6,7 @@ import type { LiveStatus, RecognizerKind } from "@/lib/live/contracts";
 
 export const LIVE_COPY = {
   toggleLabel: "Live",
-  toggleHint: "Typeset each line as you write and check steps instantly",
+  toggleHint: "Live is on: the tutor reads each line as you write it",
 
   pill: {
     idle: "Live",
