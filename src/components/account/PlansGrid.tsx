@@ -9,6 +9,7 @@ import { SectionError } from "@/components/account/SectionError";
 import { SECTION_BODY, SectionHeader } from "@/components/account/SectionHeader";
 import { useSection } from "@/components/account/useSection";
 import { ACCOUNT_COPY } from "@/lib/billing/accountState";
+import { payerLinks, type Payer } from "@/lib/billing/checkout";
 import { billingLinks } from "@/lib/billing/links";
 import { BILLING_COPY, parsePlans, planCardsFor, type CreditSummary, type Plan, type PlanCard } from "@/lib/billing/viewModel";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,7 @@ function priceParts(price: string): [string, string] {
 }
 
 function PlanButton({ card }: { card: PlanCard }) {
+  if (card.action === "none") return null;
   if (card.action === "coming-soon") {
     return (
       <Button variant="outline" size="sm" className="w-full" disabled aria-disabled>
@@ -44,9 +46,10 @@ function PlanButton({ card }: { card: PlanCard }) {
   }
   const label =
     card.action === "current" ? BILLING_COPY.manage : card.action === "upgrade" ? BILLING_COPY.upgrade : BILLING_COPY.downgrade;
+  // Same tab: the Payment Link comes back to /account?upgraded=<plan>, the portal to /account.
   return (
     <Button asChild variant={card.action === "upgrade" ? "default" : "outline"} size="sm" className="w-full">
-      <a href={card.href} target="_blank" rel="noopener noreferrer">
+      <a href={card.href} data-testid={`plan-action-${card.id}`}>
         {label}
         <ExternalLink className="w-3.5 h-3.5" />
       </a>
@@ -54,12 +57,16 @@ function PlanButton({ card }: { card: PlanCard }) {
   );
 }
 
-/** One card per active plan; buttons are real links only when NEXT_PUBLIC_BILLING_LINKS provides them. */
-export function PlansGrid({ summary }: { summary: CreditSummary | null }) {
+/**
+ * One card per active plan; buttons are real links only when NEXT_PUBLIC_BILLING_LINKS provides
+ * them. Upgrades open the plan's Stripe Payment Link carrying this user's id and email; with a
+ * subscription every change goes through the customer portal instead (planCardsFor).
+ */
+export function PlansGrid({ summary, payer }: { summary: CreditSummary | null; payer: Payer | null }) {
   // readPlans is module-level, so it is already stable; useCallback keeps the hook contract explicit.
   const read = useCallback(() => readPlans(), []);
   const { state, retry } = useSection<Plan[]>(read, true, ACCOUNT_COPY.plansFallback);
-  const cards = planCardsFor(state.data ?? [], summary, billingLinks());
+  const cards = planCardsFor(state.data ?? [], summary, payerLinks(billingLinks(), payer));
   const anyComingSoon = cards.some((c) => c.action === "coming-soon");
 
   return (

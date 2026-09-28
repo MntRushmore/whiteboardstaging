@@ -56,7 +56,21 @@ export async function readCreditSummary(
   return { error: CREDIT_SUMMARY_FALLBACK };
 }
 
-/** The summary is re-read on mount, on window focus, on reload(), and every `pollMs` when set. */
+/** Window event that makes every mounted useCreditSummary re-read (e.g. after a plan change). */
+export const CREDITS_CHANGED_EVENT = "agathon:credits-changed";
+
+/**
+ * Tell every credits surface on the page (the header chip, the banner, the account cards) to
+ * re-read: each useCreditSummary is its own request, so one that saw the plan change says so.
+ */
+export function notifyCreditsChanged(): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(CREDITS_CHANGED_EVENT));
+}
+
+/**
+ * The summary is re-read on mount, on window focus, on reload(), on CREDITS_CHANGED_EVENT, and
+ * every `pollMs` when set.
+ */
 export type UseCreditSummaryOptions = {
   /** Re-read on an interval (ms). 0 / undefined = only on mount, focus and reload(). */
   pollMs?: number;
@@ -101,10 +115,12 @@ export function useCreditSummary(options: UseCreditSummaryOptions = {}) {
     void read();
     const onFocus = () => void read();
     window.addEventListener("focus", onFocus);
+    window.addEventListener(CREDITS_CHANGED_EVENT, onFocus);
     const interval = pollMs > 0 ? setInterval(() => void read(), pollMs) : null;
     return () => {
       cancelled = true;
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener(CREDITS_CHANGED_EVENT, onFocus);
       if (interval) clearInterval(interval);
     };
   }, [enabled, userId, pollMs, attempt]);

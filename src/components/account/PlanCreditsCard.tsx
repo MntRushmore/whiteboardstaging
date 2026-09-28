@@ -1,10 +1,12 @@
 "use client";
 
-import { AlertTriangle, OctagonAlert } from "lucide-react";
+import { AlertTriangle, ExternalLink, OctagonAlert } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { SectionError } from "@/components/account/SectionError";
 import { SECTION_BODY, SectionHeader } from "@/components/account/SectionHeader";
 import { ACCOUNT_COPY } from "@/lib/billing/accountState";
+import { CHECKOUT_COPY, subscriptionView } from "@/lib/billing/checkout";
 import { creditPriceSentence } from "@/lib/billing/usage";
 import {
   allowanceLinesFor,
@@ -21,11 +23,43 @@ import { cn } from "@/lib/utils";
 
 const BAR_CLASS = { ok: "bg-primary", low: "bg-amber-500", empty: "bg-red-500" } as const;
 
-/** Same colours and icons as CreditsBanner, so "low" and "out" look alike across the app. */
+/** Same colours and icons as CreditsBanner and the header chip, so "low" and "out" look alike across the app. */
 const NOTICE_CLASS = {
-  low: "bg-yellow-50 border-yellow-200 text-yellow-900",
+  low: "bg-amber-50 border-amber-200 text-amber-900",
   empty: "bg-red-50 border-red-200 text-red-800",
 } as const;
+
+const SUBSCRIPTION_CLASS = {
+  active: "bg-card",
+  canceling: "border-amber-200 bg-amber-50 text-amber-950",
+  past_due: "border-red-200 bg-red-50 text-red-900",
+} as const;
+
+/**
+ * The paid subscription, when there is one: when it renews (or that it is cancelled and until
+ * when the plan lasts, or that a payment failed) and the way into Stripe's customer portal, where
+ * the student changes plan, updates the card or cancels.
+ */
+function SubscriptionRow({ summary, manageHref }: { summary: CreditSummary; manageHref?: string | null }) {
+  const view = subscriptionView(summary);
+  if (view.kind === "none") return null;
+  return (
+    <div data-testid="subscription" data-kind={view.kind} className="space-y-1.5">
+      <div className={cn("flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2.5", SUBSCRIPTION_CLASS[view.kind])}>
+        <p className="min-w-0 flex-1 text-sm">{view.line}</p>
+        {manageHref && (
+          <Button asChild size="sm" variant={view.kind === "active" ? "outline" : "default"}>
+            <a href={manageHref} data-testid="manage-subscription">
+              {CHECKOUT_COPY.manage}
+              <ExternalLink className="size-3.5" />
+            </a>
+          </Button>
+        )}
+      </div>
+      {manageHref && <p className="text-xs text-muted-foreground">{CHECKOUT_COPY.manageHint}</p>}
+    </div>
+  );
+}
 
 /**
  * Credits left as the headline, a bar of what is used, the reset date, where this
@@ -37,12 +71,15 @@ export function PlanCreditsCard({
   error,
   refreshing = false,
   onRetry,
+  manageHref,
 }: {
   summary: CreditSummary;
   /** A refresh failed after a successful load; the last good numbers stay on screen. */
   error?: string | null;
   refreshing?: boolean;
   onRetry: () => void;
+  /** The customer portal's login link for this user (checkout.ts portalUrl); null without one. */
+  manageHref?: string | null;
 }) {
   const tone = remainingTone(summary);
   const pct = usedPercent(summary);
@@ -62,6 +99,7 @@ export function PlanCreditsCard({
         }
       />
       <CardContent className={cn(SECTION_BODY, "space-y-5")}>
+        <SubscriptionRow summary={summary} manageHref={manageHref} />
         {notice && (
           <div
             role="status"
