@@ -58,6 +58,16 @@ export const CLUSTER_RULES = {
   overlineClearFactor: 0.9,
   columnOverlapRatio: 0.4,
   /**
+   * An operation row (`mergeOperationRows`): pieces at most `opPieceWidthFactor` medians wide (two
+   * the same-row join already put together are one piece) and `opPieceHeightFactor` tall, each
+   * starting with a short level bar at most `opBarWidthFactor` medians long, level with each other,
+   * under one line whose bottom is within `opRowReachFactor` medians above them.
+   */
+  opPieceWidthFactor: 6,
+  opPieceHeightFactor: 2.2,
+  opBarWidthFactor: 1.6,
+  opRowReachFactor: 2,
+  /**
    * A blank gap taller than max(columnBreakMinPx, columnBreakFactor x the taller of the two
    * lines) between a line and the bottom of the column above it ends that column: a problem
    * written further down is a new problem, not the next step of the one above.
@@ -343,6 +353,69 @@ function mergeClusters(uf: UnionFind, raw: readonly Rect[], medianH: number): vo
   }
 }
 
+/**
+ * The pieces of an operation row are one line, however far apart the sides they sit under:
+ *
+ *     2x + 3 = 11
+ *       -3     -3
+ *
+ * is what a class writes to take 3 from both sides (`engine/operationLine.ts`), and the two `-3`s
+ * are as far apart as `+ 3` and `11` — past the same-row join (`sameRowMaxGapFactor`), which keeps
+ * side-by-side problems apart, as soon as the median glyph is a little small. Two or three groups
+ * on one row, each short and starting with a short level bar (a `-`, the bar of a `+` or of a
+ * `÷`), with nothing else between them on the row, all under ONE group just above that reaches
+ * over each of them, are joined. Side-by-side columns each have their own line above; `-3` alone
+ * under one side stays alone. Groups of strokes in, groups out.
+ */
+export function mergeOperationRows(groups: InkStroke[][], medianH: number): InkStroke[][] {
+  if (groups.length < 3) return groups;
+  const R = CLUSTER_RULES;
+  const rects = groups.map((g) => unionRects(g.map((s) => s.bounds)));
+  const piece = groups.map((g, k) => {
+    const r = rects[k];
+    if (g.length > 12 || r.w > R.opPieceWidthFactor * medianH || r.h > R.opPieceHeightFactor * medianH) return false;
+    const first = [...g].sort((a, b) => a.bounds.x - b.bounds.x)[0].bounds;
+    return isFlat(first, medianH) && first.w <= R.opBarWidthFactor * medianH && first.w >= 0.25 * medianH;
+  });
+  const above = (k: number): number => {
+    const r = rects[k];
+    let best = -1;
+    let bestGap = Infinity;
+    rects.forEach((c, j) => {
+      if (j === k || piece[j]) return;
+      const gap = r.y - (c.y + c.h);
+      if (gap < -0.25 * medianH || gap > R.opRowReachFactor * medianH) return;
+      if (overlap1d(r.x, r.x + r.w, c.x, c.x + c.w) < 0.5 * r.w) return;
+      if (gap < bestGap) {
+        best = j;
+        bestGap = gap;
+      }
+    });
+    return best;
+  };
+  const uf = new UnionFind(groups.length);
+  for (let a = 0; a < groups.length; a++) {
+    if (!piece[a]) continue;
+    const over = above(a);
+    if (over === -1) continue;
+    for (let b = 0; b < groups.length; b++) {
+      if (b === a || !piece[b] || rects[b].x <= rects[a].x || above(b) !== over) continue;
+      const A = rects[a];
+      const B = rects[b];
+      if (overlap1d(A.y, A.y + A.h, B.y, B.y + B.h) < 0.5 * Math.min(A.h, B.h)) continue;
+      // nothing else of the row between them
+      const between = rects.some((c, j) => j !== a && j !== b && c.x >= A.x + A.w && c.x + c.w <= B.x && overlap1d(A.y, A.y + A.h, c.y, c.y + c.h) > 0);
+      if (!between) uf.union(a, b);
+    }
+  }
+  const merged = new Map<number, InkStroke[]>();
+  groups.forEach((g, k) => {
+    const root = uf.find(k);
+    merged.set(root, [...(merged.get(root) ?? []), ...g]);
+  });
+  return [...merged.values()];
+}
+
 let idCounter = 0;
 export function newLineId(): string {
   idCounter = (idCounter + 1) % 0xffff;
@@ -411,7 +484,8 @@ export function assignColumns(lines: InkLine[]): InkLine[] {
  * columns with the rest.
  */
 export function clusterLines(strokes: InkStroke[], previous: InkLine[] = [], fixed: ReadonlyArray<readonly InkStroke[]> = []): InkLine[] {
-  const groups = [...clusterStrokeGroups(strokes).map((idxs) => idxs.map((i) => strokes[i])), ...fixed.filter((g) => g.length > 0)];
+  const clustered = mergeOperationRows(clusterStrokeGroups(strokes).map((idxs) => idxs.map((i) => strokes[i])), medianStrokeHeight(strokes));
+  const groups = [...clustered, ...fixed.filter((g) => g.length > 0)];
   const usedIds = new Set<string>();
   const lines: InkLine[] = groups.map((members) => {
     const strokeIds = members.map((s) => s.id);
