@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { ChartSpline, ListChecks, PenLine } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BetaBadge } from "@/components/app/BetaBadge";
 
 /**
  * What the product is, beside the sign-in form. Static and server-rendered:
@@ -8,7 +9,7 @@ import { cn } from "@/lib/utils";
  * a two-line version, above the form on phones and on /reset-password.
  */
 
-export const PRODUCT_NAME = "Agathon Classroom";
+export const PRODUCT_NAME = "Agathon";
 export const PRODUCT_LINE = "The whiteboard that writes back.";
 export const PRODUCT_DESCRIPTION =
   "Students write maths by hand. The tutor reads it, checks each step, and answers in its own handwriting.";
@@ -27,7 +28,10 @@ export function ProductPanel({ className }: { className?: string }) {
       className={cn("flex-col border-r bg-muted/50 px-10 py-10 xl:px-16", className)}
     >
       <div className="mx-auto flex w-full max-w-xl flex-1 flex-col xl:max-w-160 2xl:max-w-176">
-        <p className="text-sm font-semibold tracking-tight">{PRODUCT_NAME}</p>
+        <p className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+          {PRODUCT_NAME}
+          <BetaBadge />
+        </p>
 
         <div className="my-auto pt-10 pb-6">
           <h2 className="text-4xl font-bold tracking-tight text-balance 2xl:text-5xl">{PRODUCT_LINE}</h2>
@@ -81,7 +85,10 @@ export function ProductPanel({ className }: { className?: string }) {
 export function ProductLine({ className }: { className?: string }) {
   return (
     <div className={className}>
-      <p className="text-sm font-semibold tracking-tight">{PRODUCT_NAME}</p>
+      <p className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+        {PRODUCT_NAME}
+        <BetaBadge />
+      </p>
       <p className="mt-1 text-sm text-muted-foreground">{PRODUCT_LINE}</p>
     </div>
   );

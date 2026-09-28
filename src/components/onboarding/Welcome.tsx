@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowRight, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BetaBadge } from "@/components/app/BetaBadge";
 import { cn } from "@/lib/utils";
 import { clientMetric } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
@@ -101,6 +102,10 @@ export default function Welcome({ userId, onSkip }: WelcomeProps) {
                 {WELCOME_COPY.skip}
               </Button>
             </div>
+            <p className="mt-6 flex max-w-lg items-start gap-2 text-xs leading-relaxed text-muted-foreground">
+              <BetaBadge className="mt-px shrink-0" />
+              <span>{WELCOME_COPY.beta}</span>
+            </p>
           </div>
         ) : (
           <div className="mt-6 flex flex-1 flex-col">

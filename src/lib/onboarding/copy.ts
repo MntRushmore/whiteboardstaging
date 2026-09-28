@@ -3,11 +3,13 @@
  * thing: what the product does, in two lines, and one next step.
  */
 export const WELCOME_COPY = {
-  kicker: "Welcome to Agathon Classroom",
+  kicker: "Welcome to Agathon",
   title: "The whiteboard that writes back.",
   /** what it does, in two lines */
-  lines: ["Write maths by hand, one step per line.", "The tutor checks every step and writes back by hand."],
-  getStarted: "Get started",
+  lines: ["Write your maths by hand, one step on each line.", "Your tutor checks every step and cheers you on."],
+  /** under the buttons: we are in beta, and where to tell us about a bug */
+  beta: "Agathon is brand new and still in beta. If something looks wrong, tap Report a bug at the top. We read every report.",
+  getStarted: "Let's go",
   skip: "Skip for now",
   courseTitle: "Which course are you taking?",
   courseLede: "The tutor will write your first problem from it.",

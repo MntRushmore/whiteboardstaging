@@ -13,9 +13,11 @@ export type LiveSettings = {
    * draw (see `unsupported` in src/lib/hand).
    */
   handwriting: boolean;
+  /** a cheer and confetti when the tutor ticks a line (src/components/live/Celebrations.tsx) */
+  celebrations: boolean;
 };
 
-export const DEFAULT_LIVE_SETTINGS: LiveSettings = { enabled: true, hideAiShapes: false, handwriting: true };
+export const DEFAULT_LIVE_SETTINGS: LiveSettings = { enabled: true, hideAiShapes: false, handwriting: true, celebrations: true };
 
 const STORAGE_KEY = "agathon.live.v1";
 const listeners = new Set<() => void>();

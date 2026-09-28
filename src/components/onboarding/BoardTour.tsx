@@ -217,8 +217,8 @@ export default function BoardTour({ boardId, userId, controller, onModeChange, c
     : state.unread
       ? "The tutor couldn't read that line. Try writing it a little larger."
       : hint
-        ? `${hint} The tutor checks each line as you write it.`
-        : "The tutor checks each line as you write it.";
+        ? `${hint} Your tutor checks each line as you write it.`
+        : "Your tutor checks each line as you write it.";
 
   switch (state.step) {
     case "write":
@@ -231,7 +231,7 @@ export default function BoardTour({ boardId, userId, controller, onModeChange, c
           number={number}
           total={COACH_COUNT}
           focusKey={`write:${state.unread}:${state.unjudged}`}
-          title={starter ? "Write the next step under the problem with the pen" : "Write a line of maths with the pen"}
+          title={starter ? "Grab the pen and write the next step under the problem" : "Grab the pen and write a line of maths"}
           primary={{ label: "Next", onClick: next, variant: "outline" }}
           onClose={skip}
         >
@@ -248,13 +248,13 @@ export default function BoardTour({ boardId, userId, controller, onModeChange, c
           number={number}
           total={COACH_COUNT}
           focusKey={`result:${state.outcome}`}
-          title={state.outcome === "tick" ? "That tick means your step is right." : "That ring means the step doesn't follow."}
+          title={state.outcome === "tick" ? "Nice! That tick means your step is right." : "That ring means something's off in that step."}
           primary={{ label: "Next", onClick: next }}
           onClose={skip}
         >
           {state.outcome === "tick"
-            ? "The tutor checked it against the problem. Keep going under it whenever you like."
-            : "Rub it out with the eraser and try again. The tutor checks every line."}
+            ? "Your tutor checked it against the problem. Keep going on the next line!"
+            : "No worries, that's how you learn! Rub it out with the eraser and try again."}
         </CoachMark>
       );
     case "modes":
@@ -266,11 +266,11 @@ export default function BoardTour({ boardId, userId, controller, onModeChange, c
           number={number}
           total={COACH_COUNT}
           focusKey="modes"
-          title="Stuck? Suggest shows the next step; Solve works it out."
+          title="Stuck? Suggest gives you a hint. Solve shows you how."
           primary={{ label: "Next", onClick: next }}
           onClose={skip}
         >
-          You&apos;re in Feedback now, which marks each line. Switch whenever you like.
+          You&apos;re in Feedback now, which checks each line. Switch any time.
         </CoachMark>
       );
     case "ask":
@@ -282,11 +282,11 @@ export default function BoardTour({ boardId, userId, controller, onModeChange, c
           number={number}
           total={COACH_COUNT}
           focusKey="ask"
-          title="Want more practice? Ask the tutor."
+          title="Want more practice? Ask your tutor."
           primary={{ label: "Done", onClick: next }}
           onClose={skip}
         >
-          Type a request like &ldquo;3 more like this&rdquo;. Each request uses 3 credits.
+          Try typing &ldquo;3 more like this&rdquo;. Each request uses 3 credits.
         </CoachMark>
       );
     default:

@@ -8,6 +8,8 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthProvider";
 import { FeatureLabsPanel } from "@/components/FeatureLabsPanel";
+import { BugReportButton } from "@/components/BugReportButton";
+import { BetaBadge } from "@/components/app/BetaBadge";
 import { useCreditSummary } from "@/lib/billing/useCreditSummary";
 import { ACCOUNT_PATH, formatCredits, remainingTone } from "@/lib/billing/viewModel";
 import { cn } from "@/lib/utils";
@@ -56,8 +58,8 @@ function CreditsChip() {
 }
 
 /**
- * The app bar for signed-in pages: product name on the left; credits and the account menu
- * (Account, Feature Labs, Sign out) on the right. Self-contained (reads the session and the
+ * The app bar for signed-in pages: product name and the beta badge on the left; Report a bug,
+ * credits and the account menu (Account, Feature Labs, Sign out) on the right. Self-contained (reads the session and the
  * credit summary itself), so any page can drop it in above an `APP_CONTENT_CLASS` container.
  */
 export function AppHeader({ className }: { className?: string }) {
@@ -83,15 +85,19 @@ export function AppHeader({ className }: { className?: string }) {
   return (
     <header className={cn("sticky top-0 z-40 border-b bg-background/90 backdrop-blur-sm", className)}>
       <div className={cn(APP_CONTENT_CLASS, "flex h-14 items-center gap-3")}>
-        <Link
-          href="/"
-          className="rounded-sm text-[15px] font-semibold tracking-tight outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        >
-          Agathon Classroom
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/"
+            className="rounded-sm text-[15px] font-semibold tracking-tight outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            Agathon
+          </Link>
+          <BetaBadge />
+        </div>
 
         {user && (
           <div className="ml-auto flex items-center gap-2">
+            <BugReportButton variant="header" />
             <CreditsChip />
             {/* Not modal: Feature Labs opens a sheet from this menu, and a modal menu closing
                 under an opening dialog can leave the page unclickable (Radix). */}

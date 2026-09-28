@@ -16,12 +16,12 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Agathon Classroom",
-    template: "%s · Agathon Classroom",
+    default: "Agathon",
+    template: "%s · Agathon",
   },
   description:
     "An AI whiteboard that tutors students in real time — handwriting-aware math, science and STEM help.",
-  applicationName: "Agathon Classroom",
+  applicationName: "Agathon",
   robots: {
     index: false,
     follow: false,
