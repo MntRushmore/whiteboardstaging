@@ -174,12 +174,20 @@ describe("live/chat", () => {
   });
 
   it("a figure beside other actions: the figure is dropped with a note, the rest kept and charged", async () => {
-    modelReplies({ reply: "A new screen and the triangle.", actions: [{ type: "new_screen" }, { type: "draw_figure", figure: TRIANGLE }] });
+    modelReplies({ reply: "Two problems and the triangle.", actions: [{ type: "write_problems", problems: ["2x = 8", "3x = 9"] }, { type: "draw_figure", figure: TRIANGLE }] });
     const body = ChatResponseSchema.parse(await (await chat(request(BODY))).json());
-    expect(body.actions).toEqual([{ type: "new_screen" }]);
+    expect(body.actions).toEqual([{ type: "write_problems", problems: [["2x = 8"], ["3x = 9"]] }]);
     expect(body.notes).toEqual(["The figure couldn't be drawn."]);
     expect(body.refunded).toBeUndefined();
     expect(callsTo("refund_credits")).toEqual([]);
+  });
+
+  it("a new screen made only for a figure that could not be drawn is not made", async () => {
+    modelReplies({ reply: "Here is the triangle.", actions: [{ type: "new_screen" }, { type: "draw_figure", figure: TRIANGLE }] });
+    const body = ChatResponseSchema.parse(await (await chat(request(BODY))).json());
+    expect(body.actions).toEqual([]);
+    expect(body.reply).toBe("Sorry, I couldn't draw that figure.");
+    expect(body.refunded).toBe(true);
   });
 
   it("with the drawer: a figure it has problems with gets ONE repair round-trip with the problems", async () => {

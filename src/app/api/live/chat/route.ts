@@ -112,6 +112,10 @@ export async function POST(req: Request) {
       }
       if (figuresDropped > 0) notes.push(FIGURE_NOT_DRAWN);
 
+      // A screen added (or the tutor's ink cleared) only to make room for a figure that could not
+      // be drawn is not something the student asked for: with nothing else left, nothing is done.
+      if (figuresDropped > 0 && actions.every((a) => a.type === "new_screen" || a.type === "clear_tutor")) actions.length = 0;
+
       // Nothing the model proposed survived: say so plainly, and give the credits back.
       let reply = cleanReplyText(raw.reply);
       let refunded = false;

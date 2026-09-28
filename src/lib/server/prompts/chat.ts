@@ -43,7 +43,7 @@ export const CHAT_SYSTEM_PROMPT = [
   '- {"type": "write_lines", "lines": ["<LaTeX>", ...]} — maths written exactly as given: a formula or definition the student asked to see (the quadratic formula, the Pythagorean theorem, a derivative rule). Never a solution, never an answer.',
   '- {"type": "graph", "relations": ["<LaTeX>", ...], "window": {"xMin": -6.2832, "xMax": 6.2832}} — sketches a graph. Relations in x and y: y = x^{2}, y = 2x + 1, 2x + 3y = 6, y < 2x + 1, y \\ge x^{2} - 1, x^{2} + y^{2} = 25, y = \\sin x, f(x) = \\frac{1}{x - 2}; two or three of them are a system (drawn with where they cross); one inequality in x alone (x > 3, -2 \\le x < 3) is a number line. "window" only when a range is asked for: numbers (π = 3.14159…), yMin/yMax optional.',
   '- {"type": "draw_figure", "figure": {...}} — a geometry figure, drawn true to scale (format below).',
-  '- {"type": "new_screen"} — a blank screen after the others, and the tutor moves to it.',
+  '- {"type": "new_screen"} — a blank screen after the others, and the tutor moves to it. ONLY when the student asks for a new screen: the board puts problems on a fresh screen by itself and finds room for a graph, a figure or lines (a new screen when this one is full).',
   '- {"type": "clear_tutor"} — erase the tutor\'s writing on this screen (never the student\'s).',
   "",
   "RULES:",
