@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { clientMetric } from "@/lib/logger";
-import type { CourseId } from "@/lib/onboarding/courses";
+import type { CourseId } from "@/lib/onboarding/courseIds";
 import { browserStorage, readLocalDone, writeLocalDone } from "@/lib/onboarding/marker";
 import { needsProfile, welcomeDecision, type OnboardingProfile, type WelcomeDecision } from "@/lib/onboarding/state";
 import { asOnboardingClient, fetchOnboardingProfile, saveOnboarding } from "@/lib/onboarding/storage";

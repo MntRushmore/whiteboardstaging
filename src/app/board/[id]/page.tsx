@@ -82,11 +82,10 @@ import { boardToolbarView } from "@/components/live/toolbar";
 import { BoardChatPanel, CHAT_TOGGLE_ATTR } from "@/components/chat/BoardChatPanel";
 import { CHAT_COPY } from "@/components/chat/chatView";
 import { useChatOpen } from "@/components/chat/useBoardChat";
-import dynamic from "next/dynamic";
 import { browserStorage as onboardingStorage, isGuidedBoard } from "@/lib/onboarding/marker";
 
 // The guided first board's tour (the welcome's Start): loaded on that board only, after the board.
-const BoardTour = dynamic(() => import("@/components/onboarding/BoardTour"), { ssr: false });
+const BoardTour = React.lazy(() => import("@/components/onboarding/BoardTour"));
 
 // Ensure the tldraw canvas background is pure white in both light and dark modes
 DefaultColorThemePalette.lightMode.background = "#FFFFFF";
@@ -384,7 +383,9 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
       )}
       {guided && user && (
         <LiveErrorBoundary>
-          <BoardTour boardId={id} userId={user.id} controller={controller} onModeChange={setAssistanceMode} chatOpen={chat.open} onFinished={endTour} />
+          <React.Suspense fallback={null}>
+            <BoardTour boardId={id} userId={user.id} controller={controller} onModeChange={setAssistanceMode} chatOpen={chat.open} onFinished={endTour} />
+          </React.Suspense>
         </LiveErrorBoundary>
       )}
       {chat.open &&

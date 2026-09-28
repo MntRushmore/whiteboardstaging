@@ -12,12 +12,9 @@
  * answers a derivative but does not mark a student's rewrite of one.
  */
 
-export const COURSE_IDS = ["algebra1", "geometry", "algebra2", "precalc_calc", "other"] as const;
-export type CourseId = (typeof COURSE_IDS)[number];
+import { isCourseId, type CourseId } from "./courseIds";
 
-export function isCourseId(value: unknown): value is CourseId {
-  return typeof value === "string" && (COURSE_IDS as readonly string[]).includes(value);
-}
+export { COURSE_IDS, isCourseId, type CourseId } from "./courseIds";
 
 export interface Course {
   id: CourseId;

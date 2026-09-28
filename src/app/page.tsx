@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import dynamic from 'next/dynamic';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { AuthErrorBanner, useAuth } from '@/components/AuthProvider';
@@ -66,10 +65,7 @@ import { Label } from "@/components/ui/label";
 const EXIT_WRITE_WAIT_MS = 3000;
 
 // First-run welcome: loaded only for a new student with no boards (see useWelcome).
-const Welcome = dynamic(() => import('@/components/onboarding/Welcome'), {
-  ssr: false,
-  loading: () => <div aria-hidden className="mx-auto h-120 w-full max-w-5xl animate-pulse rounded-xl border bg-card" />,
-});
+const Welcome = lazy(() => import('@/components/onboarding/Welcome'));
 
 /**
  * Inline error row with a Retry button. Used for every dashboard mutation so
@@ -367,7 +363,9 @@ export default function Dashboard() {
         <AppHeader />
         <main className={cn(APP_CONTENT_CLASS, "pt-8 pb-16 sm:pt-10")}>
           <AuthErrorBanner className="mb-6" />
-          <Welcome userId={user.id} onSkip={welcome.skip} />
+          <Suspense fallback={<div aria-hidden className="mx-auto h-120 w-full max-w-5xl animate-pulse rounded-xl border bg-card" />}>
+            <Welcome userId={user.id} onSkip={welcome.skip} />
+          </Suspense>
         </main>
       </div>
     );

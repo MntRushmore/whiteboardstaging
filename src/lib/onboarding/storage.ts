@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isCourseId, type CourseId } from "./courses";
+import { isCourseId, type CourseId } from "./courseIds";
 import type { OnboardingProfile } from "./state";
 
 /**

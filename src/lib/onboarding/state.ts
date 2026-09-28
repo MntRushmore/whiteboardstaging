@@ -3,7 +3,7 @@
  * that is being decided, and the guided board's coach marks as a small state machine. No React,
  * no storage, no network — the components (`src/components/onboarding/**`) drive these.
  */
-import type { CourseId } from "./courses";
+import type { CourseId } from "./courseIds";
 import type { TourMarkerStep } from "./marker";
 
 // ---------------------------------------------------------------- the welcome
