@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { createSkewRetryFetch } from "./supabaseFetch";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -21,4 +22,6 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient(
   supabaseUrl || "https://placeholder.supabase.co",
   supabaseAnonKey || "placeholder-key",
+  // a fresh sign-in's first request can be refused as "issued at future": retried once (supabaseFetch.ts)
+  { global: { fetch: createSkewRetryFetch() } },
 );

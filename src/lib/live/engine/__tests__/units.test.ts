@@ -57,9 +57,11 @@ describe("units: engine lines", () => {
     expect(b.kind).toBe("expression");
     expect(b.resultLatex).toBe("");
   });
-  it("degrees: sin 30 deg", () => {
-    expect(engine.analyzeLine("\\sin 30^{\\circ}", feedback).resultLatex).toBe("0.5");
-    expect(engine.analyzeLine("\\cos 60^\\circ + 1", feedback).resultLatex).toBe("1.5");
+  it("degrees: sin 30 deg, exactly (trig.ts)", () => {
+    expect(engine.analyzeLine("\\sin 30^{\\circ}", feedback).resultLatex).toBe("\\frac{1}{2}");
+    expect(engine.analyzeLine("\\cos 60^\\circ + 1", feedback).resultLatex).toBe("\\frac{3}{2}");
+    // not a special angle: the calculator's decimal
+    expect(engine.analyzeLine("\\sin 20^{\\circ}", feedback).resultLatex).toBe("0.342");
   });
   it("prefers derived units", () => {
     expect(engine.analyzeLine("12 \\mathrm{~V} / 3 \\mathrm{~\\Omega}", feedback).resultLatex).toBe("4\\,\\mathrm{A}");
@@ -106,9 +108,9 @@ describe("units: student notation edge cases", () => {
   it("ALL-CAPS symbols are algebra, not prefixed units", () => {
     const a = engine.analyzeLine("\\mathrm{PV} = \\mathrm{nRT}", feedback);
     expect(a.kind).toBe("equation");
-    expect(a.verdict).toBe("unknown");
+    expect(a.verdict).toBe("none");
     expect(a.math).toBe("PV == nRT");
-    expect(engine.analyzeLine("KE = \\frac{1}{2} m v^2", feedback).verdict).toBe("unknown");
+    expect(engine.analyzeLine("KE = \\frac{1}{2} m v^2", feedback).verdict).toBe("none");
     expect(engine.analyzeLine("3 \\mathrm{~MJ} + 500 \\mathrm{~kJ}", feedback).resultLatex).toBe("3.5\\,\\mathrm{MJ}");
   });
   it("physics assignments evaluate with units and chain", () => {

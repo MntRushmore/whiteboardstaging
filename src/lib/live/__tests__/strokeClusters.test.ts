@@ -9,6 +9,7 @@ import {
   fixtureTwoLines,
   toInkStrokes,
   translateShapes,
+  writeLine,
 } from "../__fixtures__/strokes";
 import {
   clusterLines,
@@ -30,6 +31,29 @@ describe("clusterLines", () => {
     expect(lines[0].column).toBe(0);
     expect(lines[0].row).toBe(0);
     expect(lines[0].id).toMatch(/^ln_[0-9a-f]{8}$/);
+  });
+
+  it("starts a new column for a problem written well below the last one", () => {
+    // problem 1: two lines of working; problem 2 further down the page, same left edge
+    const ink = [
+      ...writeLine("2x=8", 100, 100),
+      ...writeLine("x=4", 100, 160),
+      ...writeLine("4x=8", 100, 520),
+      ...writeLine("x=1", 100, 580),
+    ];
+    const lines = clusterLines(toInkStrokes(ink));
+    expect(lines).toHaveLength(4);
+    expect(lines.map((l) => [l.column, l.row])).toEqual([
+      [0, 0],
+      [0, 1],
+      [1, 0],
+      [1, 1],
+    ]);
+  });
+
+  it("keeps an ordinary gap between steps in one column", () => {
+    const lines = clusterLines(toInkStrokes([...writeLine("2x=8", 100, 100), ...writeLine("x=4", 100, 200)]));
+    expect(lines.map((l) => l.column)).toEqual([0, 0]);
   });
 
   it("separates two stacked lines into rows of one column", () => {
@@ -163,5 +187,51 @@ describe("clusterLines — inflation and superscripts (B7)", () => {
   it("does not merge stacked lines or side-by-side columns after inflation", () => {
     expect(clusterLines(toInkStrokes(fixtureTwoLines()))).toHaveLength(2);
     expect(clusterLines(toInkStrokes(fixtureTwoColumns()))).toHaveLength(4);
+  });
+});
+
+describe("clusterLines — what a line of handwriting really is", () => {
+  let seq = 0;
+  /** a stroke as a straight polyline through `pts` (page coords), in writing order */
+  const stroke = (...pts: Array<[number, number]>) => {
+    const xs = pts.map((p) => p[0]);
+    const ys = pts.map((p) => p[1]);
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    return {
+      id: `shape:t${++seq}` as never,
+      bounds: { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y },
+      segments: [pts.map(([px, py]) => ({ x: px, y: py }))],
+    };
+  };
+  const glyph = (x: number, y = 100, h = 20) => stroke([x, y], [x + 12, y + h]);
+
+  it("the dot of a question mark belongs to it (`x = ?` is one line)", () => {
+    const ink = [glyph(0), stroke([30, 108], [44, 108]), stroke([30, 114], [44, 114]), stroke([60, 100], [68, 104], [64, 114]), stroke([64, 124], [64, 125])];
+    expect(clusterLines(ink)).toHaveLength(1);
+  });
+
+  it("a fraction bar written a few degrees off level still holds its numerator", () => {
+    // 70 px bar tilted 4 degrees: 5 px tall, over a quarter of a 14 px glyph
+    const ink = [glyph(20, 70, 14), stroke([0, 95], [70, 90]), glyph(20, 100, 14), glyph(90, 85, 14)];
+    expect(clusterLines(ink)).toHaveLength(1);
+  });
+
+  it("`x \\to 2` written under `lim`, before the rest, is part of the line", () => {
+    const lim = [glyph(0), glyph(14), glyph(28)];
+    const under = [glyph(0, 124, 12), stroke([14, 130], [28, 130]), glyph(32, 124, 12)];
+    const rest = [glyph(60), glyph(74), glyph(88)];
+    expect(clusterLines([...lim, ...under, ...rest])).toHaveLength(1);
+  });
+
+  it("but the next row, started after the row above was finished, stays its own line", () => {
+    const row1 = [glyph(0), glyph(14), glyph(28), glyph(42)];
+    const row2 = [glyph(0, 124, 12), glyph(14, 124, 12)];
+    expect(clusterLines([...row1, ...row2])).toHaveLength(2);
+  });
+
+  it("a last glyph written higher on a slant is still on the row", () => {
+    const ink = [glyph(0, 104), glyph(16, 102), stroke([34, 110], [46, 108]), glyph(56, 92, 16)];
+    expect(clusterLines(ink)).toHaveLength(1);
   });
 });

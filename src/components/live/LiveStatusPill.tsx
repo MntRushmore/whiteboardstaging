@@ -30,8 +30,10 @@ interface LiveStatusPillProps {
   liveAvailable: boolean;
   /** the Live preference used to be a switch in the bar; it is a menu item now */
   onLiveEnabledChange: (enabled: boolean) => void;
-  /** forces the legacy image-overlay generation */
-  onDrawHelp: () => void;
+  /** the board's one explicit ask ("Help"): LiveController.requestHelp */
+  onHelp: () => void;
+  /** false while there is nothing Help could do (help mode Off, or Live off) */
+  canHelp: boolean;
   onClearMarks: () => void;
   /** opens the "How help modes work" dialog (the old (i) button in the bar) */
   onShowModeInfo: () => void;
@@ -187,7 +189,8 @@ export function LiveStatusPill({
   liveRunning,
   liveAvailable,
   onLiveEnabledChange,
-  onDrawHelp,
+  onHelp,
+  canHelp,
   onClearMarks,
   onShowModeInfo,
   onReportProblem,
@@ -289,8 +292,14 @@ export function LiveStatusPill({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" side="bottom" className="w-60" data-testid="board-menu">
           <DropdownMenuLabel className="text-xs text-gray-500">{LIVE_COPY.pill.groupCanvas}</DropdownMenuLabel>
-          <DropdownMenuItem className="pl-8" onSelect={onDrawHelp} title={LIVE_COPY.pill.drawHelpHint}>
-            {LIVE_COPY.pill.drawHelp}
+          <DropdownMenuItem
+            className="pl-8"
+            onSelect={onHelp}
+            disabled={!canHelp}
+            title={canHelp ? LIVE_COPY.pill.helpHint : LIVE_COPY.pill.helpOffHint}
+            data-testid="board-help-item"
+          >
+            {LIVE_COPY.pill.help}
           </DropdownMenuItem>
           <DropdownMenuItem className="pl-8" onSelect={onClearMarks}>
             {LIVE_COPY.pill.clearMarks}

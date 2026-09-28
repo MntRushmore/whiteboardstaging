@@ -10,7 +10,7 @@ import { resetLiveStore } from "./liveStore";
  * Board-page entry point of the Live layer (spec §6). Subscribes once to the editor
  * store (source 'user', scope 'document'), owns the quiet gate, recognition, local
  * engine, policy, placement and LLM streams via `LiveLoop`, and returns a stable
- * `LiveController` for the UI and the voice tools.
+ * `LiveController` for the UI and the board chat.
  */
 export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveController {
   const loopRef = useRef<LiveLoop | null>(null);
@@ -20,7 +20,7 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
     optsRef.current = opts;
   });
 
-  const { boardId, mode, enabled, voiceActive } = opts;
+  const { boardId, mode, enabled } = opts;
 
   useEffect(() => {
     const loop = createLiveLoop(editor, optsRef.current);
@@ -34,8 +34,8 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
   }, [editor, boardId]);
 
   useEffect(() => {
-    loopRef.current?.setOptions({ boardId, mode, enabled, voiceActive });
-  }, [boardId, mode, enabled, voiceActive]);
+    loopRef.current?.setOptions({ boardId, mode, enabled });
+  }, [boardId, mode, enabled]);
 
   return useMemo<LiveController>(
     () => ({
@@ -44,10 +44,17 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
       plotFunction: (args) => loopRef.current?.plotFunction(args) ?? null,
       requestCheck: (lineId) => loopRef.current?.requestCheck(lineId),
       requestSolve: (lineId) => loopRef.current?.requestSolve(lineId),
+      requestHelp: () => loopRef.current?.requestHelp(),
       escalate: (lineId) => loopRef.current?.escalate(lineId),
       dismissHint: (hintId) => loopRef.current?.dismissHint(hintId),
       clearMarks: () => loopRef.current?.clearMarks(),
       retypeLine: (lineId, latex) => loopRef.current?.retypeLine(lineId, latex),
+      chatScreen: () => loopRef.current?.chatScreen() ?? { empty: true, student: [], tutor: [], problems: [] },
+      runChatActions: async (actions) => {
+        const loop = loopRef.current;
+        if (!loop) throw new Error("The board is not ready yet.");
+        return loop.runChatActions(actions);
+      },
     }),
     [],
   );

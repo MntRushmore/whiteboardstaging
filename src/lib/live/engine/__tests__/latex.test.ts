@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { create, all } from "mathjs";
-import { latexToMath, preprocessLatex, splitRelations, UnsupportedLatex } from "../latex";
+import { instructionOf, latexToMath, preprocessLatex, splitRelations, UnsupportedLatex, withoutInstruction } from "../latex";
 import { exactIntegral, polynomialCoefficients } from "../math";
 import { valueToLatex } from "../format";
 
@@ -140,6 +140,28 @@ describe("latexToMath: units and constants", () => {
     expect(t.hasPm).toBe(true);
     expect(t.branches.map((b) => math.evaluate(b))).toEqual([4, 2]);
   });
+  it("reads \\mathrm{min} as minutes after a number, a unit or `to`, and min() before its argument", () => {
+    const to = latexToMath("2.5 \\mathrm{~h} \\text{ to } \\mathrm{min}", { isUnit });
+    expect(to.functions).not.toContain("min");
+    expect((math.evaluate(to.source) as { toNumber: (u: string) => number }).toNumber("minute")).toBeCloseTo(150, 9);
+    expect(latexToMath("90 \\mathrm{min}", { isUnit }).units).toContain("minute");
+    expect(latexToMath("\\mathrm{min}", { isUnit }).units).toContain("minute");
+    const fn = latexToMath("\\mathrm{min}(3, 5)", { isUnit });
+    expect(fn.functions).toContain("min");
+    expect(math.evaluate(fn.source)).toBe(3);
+  });
+  it("reads a whole number straight before a proper numeric fraction as a mixed number", () => {
+    expect(num("2 \\frac{1}{2} + 1 \\frac{3}{4}")).toBeCloseTo(17 / 4, 12);
+    expect(num("2\\frac{1}{2}")).toBeCloseTo(2.5, 12);
+    expect(num("-1\\frac{1}{2} + 4")).toBeCloseTo(2.5, 12);
+    expect(num("2\\frac{1}{2} \\times 3")).toBeCloseTo(7.5, 12);
+    // not a mixed number: an improper fraction, a letter, a decimal, an operator, an exponent
+    expect(num("2\\frac{5}{3}")).toBeCloseTo(10 / 3, 12);
+    expect(num("2.5\\frac{1}{2}")).toBeCloseTo(1.25, 12);
+    expect(num("2 \\times \\frac{1}{2}")).toBeCloseTo(1, 12);
+    expect(num("3^{2}\\frac{1}{3}")).toBeCloseTo(3, 12);
+    expect(latexToMath("2\\frac{x}{3}", { isUnit }).source).toBe("2 * ((x)/(3))");
+  });
 });
 
 describe("latexToMath: calculus, plain mode and failures", () => {
@@ -163,9 +185,17 @@ describe("latexToMath: calculus, plain mode and failures", () => {
     expect(math.evaluate(t.source)).toBe(6);
   });
   it("throws UnsupportedLatex for constructs the LLM must handle", () => {
-    for (const bad of ["\\sum x_i", "\\prod_{i=1}^{3} i", "f'(x)", "\\frac{dy}{dx}", "\\begin{matrix} 1 \\end{matrix}", "\\lim_{x \\to 0} x"]) {
+    for (const bad of ["\\sum x_i", "\\prod_{i=1}^{3} i", "f'(x)", "\\frac{dy}{dx}", "\\begin{matrix} 1 \\end{matrix}", "\\lim_{x \\to 0^{+}} x", "\\lim x", "\\int_{0} x dx"]) {
       expect(() => latexToMath(bad, { isUnit })).toThrow(UnsupportedLatex);
     }
+  });
+  it("translates limits, indefinite integrals and evaluation brackets for calculus.ts", () => {
+    expect(latexToMath("\\lim_{x \\to 0} x", { isUnit }).source).toBe('limit("x", "x", 0)');
+    expect(latexToMath("\\lim_{x \\to 0} x", { isUnit }).variables).toEqual([]);
+    expect(latexToMath("\\int 2x \\, dx", { isUnit }).source).toBe('antiderivative("2 * x", "x")');
+    expect(latexToMath("\\int 2x \\, dx", { isUnit }).variables).toEqual(["x"]);
+    expect(latexToMath("\\left[x^{3}\\right]_{0}^{2}", { isUnit }).source).toBe('bracketEval("x ^ 3", "x", 0, 2)');
+    expect(latexToMath("\\ln|x|", { isUnit }).source).toBe("log(abs(x))");
   });
   it("splits relations at the top level only", () => {
     expect(splitRelations("2x + 3 = 11")).toEqual({ sides: ["2x + 3", "11"], ops: ["=="] });
@@ -261,5 +291,27 @@ describe("exact definite integrals", () => {
     expect(exactIntegral(math, "sin(x)", "x", 0, 1)).toBeNull();
     expect(exactIntegral(math, "1 / x", "x", 1, 2)).toBeNull();
     expect(exactIntegral(math, "x", "x", 0, Infinity)).toBeNull();
+  });
+});
+
+describe("an instruction written before the maths", () => {
+  it("is not part of the maths: graph, plot, sketch, solve, factor, in text or as bare words", () => {
+    expect(withoutInstruction("\\text { graph } y=x")).toBe("y=x");
+    expect(withoutInstruction("\\text{Graph: } y = x")).toBe("y = x");
+    expect(withoutInstruction("graph y=x")).toBe("y=x");
+    expect(withoutInstruction("\\operatorname{graph} y=2 x+1")).toBe("y=2 x+1");
+    expect(withoutInstruction("\\text { sketch the graph of } y=x^{2}-4")).toBe("y=x^{2}-4");
+    expect(withoutInstruction("\\text { Solve } 2 x+3=11")).toBe("2 x+3=11");
+    expect(withoutInstruction("\\text { factor } x^{2}-5 x+6")).toBe("x^{2}-5 x+6");
+    expect(preprocessLatex("\\text { plot } y=x^{2}")).toBe("y=x^{2}");
+    expect(instructionOf("\\text { graph } y=x")).toBe("graph");
+    expect(instructionOf("\\text { Solve } 2 x+3=11")).toBe("solve");
+  });
+
+  it("a sentence, a verb with nothing mathematical after it, or no verb at all is left as it is", () => {
+    for (const latex of ["\\text{Find the number that doubled is 12}", "\\text { Find } x", "\\text { graph }", "y=x", "\\text { Solve } \\text { for } x", "\\text{Graphs of lines} y = mx + b"]) {
+      expect(withoutInstruction(latex), latex).toBe(latex);
+      expect(instructionOf(latex), latex).toBeNull();
+    }
   });
 });

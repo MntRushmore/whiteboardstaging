@@ -8,7 +8,6 @@ import {
   getRateLimitBackend,
   getServerEnv,
   hasMathpix,
-  hasOpenAI,
   parseBillingLinks,
   parseBillingPriceMap,
   resetServerEnvCache,
@@ -17,7 +16,6 @@ import { LIVE_MODELS } from "@/lib/live/contracts";
 
 const ALL_VARS = [
   ...REQUIRED_ENV_VARS,
-  "OPENAI_API_KEY",
   "MATHPIX_APP_ID",
   "MATHPIX_APP_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
@@ -26,6 +24,11 @@ const ALL_VARS = [
   "LIVE_MODEL_CHECK",
   "LIVE_MODEL_SOLVE",
   "LIVE_MODEL_VISION",
+  "LIVE_MODEL_SETUP",
+  "LIVE_MODEL_REREAD",
+  "LIVE_MODEL_FIGURE",
+  "LIVE_MODEL_PROOF",
+  "LIVE_MODEL_CHAT",
   "BILLING_ENFORCE",
   "STRIPE_WEBHOOK_SECRET",
   "BILLING_PRICE_MAP",
@@ -65,7 +68,7 @@ describe("getServerEnv", () => {
     } catch (err) {
       const message = (err as Error).message;
       for (const name of REQUIRED_ENV_VARS) expect(message).toContain(name);
-      expect(message).not.toContain("OPENAI_API_KEY");
+      expect(message).not.toContain("MATHPIX_APP_ID");
     }
   });
 
@@ -86,7 +89,7 @@ describe("getServerEnv", () => {
     setRequired();
     const first = getServerEnv();
     expect(first.OPENROUTER_API_KEY).toBe("sk-or-test");
-    expect(first.OPENAI_API_KEY).toBeUndefined();
+    expect(first.MATHPIX_APP_ID).toBeUndefined();
 
     process.env.OPENROUTER_API_KEY = "changed";
     expect(getServerEnv()).toBe(first); // cached
@@ -97,15 +100,6 @@ describe("getServerEnv", () => {
 });
 
 describe("optional feature flags", () => {
-  it("hasOpenAI reflects OPENAI_API_KEY", () => {
-    setRequired();
-    expect(hasOpenAI()).toBe(false);
-
-    resetServerEnvCache();
-    process.env.OPENAI_API_KEY = "sk-test";
-    expect(hasOpenAI()).toBe(true);
-  });
-
   it("hasMathpix requires both the app id and key", () => {
     setRequired();
     process.env.MATHPIX_APP_ID = "app";
@@ -126,7 +120,33 @@ describe("getLiveModels", () => {
       solve: LIVE_MODELS.solve,
       solveFallback: LIVE_MODELS.solveFallback,
       vision: LIVE_MODELS.vision,
+      setup: LIVE_MODELS.setup,
+      setupFallback: LIVE_MODELS.setupFallback,
+      reread: LIVE_MODELS.reread,
+      rereadFallback: LIVE_MODELS.rereadFallback,
+      figure: LIVE_MODELS.figure,
+      figureFallback: LIVE_MODELS.figureFallback,
+      proof: LIVE_MODELS.proof,
+      proofFallback: LIVE_MODELS.proofFallback,
+      chat: LIVE_MODELS.chat,
+      chatFallback: LIVE_MODELS.chatFallback,
     });
+  });
+
+  it("LIVE_MODEL_CHAT overrides the chat model; the fallback stays from another provider", () => {
+    setRequired();
+    process.env.LIVE_MODEL_CHAT = "google/gemini-3.1-flash-lite";
+    const models = getLiveModels();
+    expect(models.chat).toBe("google/gemini-3.1-flash-lite");
+    expect(models.chatFallback).toBe(LIVE_MODELS.chatFallback);
+  });
+
+  it("LIVE_MODEL_PROOF overrides the proof model", () => {
+    setRequired();
+    process.env.LIVE_MODEL_PROOF = "google/gemini-3.5-flash";
+    const models = getLiveModels();
+    expect(models.proof).toBe("google/gemini-3.5-flash");
+    expect(models.proofFallback).toBe(LIVE_MODELS.proofFallback);
   });
 
   it("honours LIVE_MODEL_* overrides and ignores placeholders", () => {
@@ -139,6 +159,26 @@ describe("getLiveModels", () => {
     expect(models.checkFallback).toBe(LIVE_MODELS.checkFallback);
     expect(models.solve).toBe(LIVE_MODELS.solve);
     expect(models.vision).toBe("google/gemini-3.5-flash");
+  });
+
+  it("LIVE_MODEL_SETUP / LIVE_MODEL_REREAD override the setup and second-reader primaries", () => {
+    setRequired();
+    process.env.LIVE_MODEL_SETUP = "google/gemini-3.5-flash-lite";
+    process.env.LIVE_MODEL_REREAD = LIVE_MODELS.rereadFallback;
+    const models = getLiveModels();
+    expect(models.setup).toBe("google/gemini-3.5-flash-lite");
+    expect(models.setupFallback).toBe(LIVE_MODELS.setupFallback);
+    // an override equal to the fallback swaps the two
+    expect(models.reread).toBe(LIVE_MODELS.rereadFallback);
+    expect(models.rereadFallback).toBe(LIVE_MODELS.reread);
+  });
+
+  it("LIVE_MODEL_FIGURE overrides the model that reads a drawn figure", () => {
+    setRequired();
+    process.env.LIVE_MODEL_FIGURE = "openai/gpt-5.4-mini";
+    const models = getLiveModels();
+    expect(models.figure).toBe("openai/gpt-5.4-mini");
+    expect(models.figureFallback).toBe(LIVE_MODELS.figureFallback);
   });
 
   it("never returns a fallback equal to the primary", () => {

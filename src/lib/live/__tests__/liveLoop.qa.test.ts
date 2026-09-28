@@ -6,7 +6,6 @@ import {
   LIVE_TIMING,
   MATH_SHAPE_DEFAULTS,
   type CheckRequest,
-  type GraphShapeProps,
   type HelpMode,
   type LineAnalysis,
   type LiveEngine,
@@ -17,7 +16,6 @@ import {
 import { BADGE_TAP_EVENT, createLiveLoop, type LiveLoop } from "../liveLoop";
 import { liveStore, resetLiveStore } from "../liveStore";
 import { liveWrite } from "../liveWrite";
-import { ECHO_WIDTH_RELAYOUT_PX, PLACEMENT, estimateEchoWidth } from "../placement";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
 import { settle } from "@/lib/live/__fixtures__/settle";
 import { useSyncHash } from "@/lib/live/__fixtures__/syncHash";
@@ -53,7 +51,8 @@ const engine: LiveEngine = {
     return base;
   },
   compileExpr: () => () => 0,
-  solveLatex: () => null,
+  // the one step the scripted lines need: after `2x=8`, `x = 4`
+  solveLatex: (latex) => (latex === "2x=8" ? { latex: "x = 4", steps: ["x = 4"] } : null),
   verifyExpected: () => "unknown",
   balance: () => null,
   calculate: () => null,
@@ -81,7 +80,7 @@ describe("live loop — QA regressions", () => {
   /** events the scripted check stream yields per call (FIFO; empty stream when exhausted) */
   let streamQueue: LiveSseEvent[][];
 
-  function makeLoop(mode: HelpMode = "feedback", voiceActive = false): LiveLoop {
+  function makeLoop(mode: HelpMode = "feedback"): LiveLoop {
     const stream = async function* (path: string, body: unknown): AsyncGenerator<LiveSseEvent, void, undefined> {
       if (path.endsWith("/check")) checkRequests.push(body as CheckRequest);
       const evs = streamQueue.shift() ?? [];
@@ -89,7 +88,7 @@ describe("live loop — QA regressions", () => {
     };
     return createLiveLoop(
       editor,
-      { boardId: "board-1", mode, enabled: true, voiceActive },
+      { boardId: "board-1", mode, enabled: true },
       {
         recognizer: new RecognizeClient({ fetchJson }),
         stream,
@@ -119,11 +118,6 @@ describe("live loop — QA regressions", () => {
     const shape = editor.getShape(id);
     if (!shape) throw new Error(`echo ${id} is not in the store`);
     return shape;
-  }
-
-  function graphOf(lineId: string): TLShape | undefined {
-    const id = liveStore.lines.get()[lineId]?.graphShapeId;
-    return id ? editor.getShape(id) : undefined;
   }
 
   function remount(mode: HelpMode): void {
@@ -156,8 +150,8 @@ describe("live loop — QA regressions", () => {
   });
 
   // ------------------------------------------------------------------ B1
-  describe("B1 — lastBurst reflects student ink only", () => {
-    it("live-created shapes and student edits/deletes of live shapes never mark a burst", async () => {
+  describe("B1 — only student ink is read", () => {
+    it("live-created shapes and student edits/deletes of live shapes never trigger a read", async () => {
       liveWrite(editor as unknown as Editor, () => {
         editor.createShapes([
           {
@@ -171,11 +165,11 @@ describe("live loop — QA regressions", () => {
         ]);
       });
       await settle();
-      expect(liveStore.lastBurst.get()).toBeNull();
+      await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs * 2);
+      expect(fetchJson).not.toHaveBeenCalled();
 
       const lineId = await write(fixtureSingleLine(), "x=4");
-      const burst = liveStore.lastBurst.get();
-      expect(burst?.state).toBe("handled");
+      expect(fetchJson).toHaveBeenCalledTimes(1);
 
       // Student retypes the echo (user-sourced update of a live shape).
       const echo = echoOf(lineId);
@@ -184,7 +178,7 @@ describe("live loop — QA regressions", () => {
       await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs * 2);
       await settle(4);
       expect(liveStore.lines.get()[lineId].latex).toBe("x=5");
-      expect(liveStore.lastBurst.get()).toBe(burst);
+      expect(fetchJson).toHaveBeenCalledTimes(1);
 
       // Student moves and then deletes the echo.
       editor.updateUser(echo.id, (s) => ({ ...s, x: s.x + 50 }));
@@ -192,44 +186,40 @@ describe("live loop — QA regressions", () => {
       await settle(6);
       await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs * 2);
       await settle(4);
-      expect(liveStore.lastBurst.get()).toBe(burst);
       expect(fetchJson).toHaveBeenCalledTimes(1);
     });
   });
 
   // ------------------------------------------------------------------ B2 / B8
-  describe("B2/B8 — non-math ink stays silent and hands the burst to the legacy pipeline", () => {
-    it("a lone \\Delta (a drawn triangle) gets no echo and the burst ends 'unhandled'", async () => {
+  describe("B2/B8 — non-math ink stays silent (and nothing else picks it up)", () => {
+    it("a lone \\Delta (a drawn triangle) gets no echo and no model call", async () => {
       latexQueue.push("\\Delta");
       editor.putUser(fixtureSingleLine());
-      expect(liveStore.lastBurst.get()?.state).toBe("pending");
       await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 1);
       await settle(8);
       expect(fetchJson).toHaveBeenCalledTimes(1);
       expect(editor.shapesOfType("math")).toHaveLength(0);
-      expect(liveStore.lastBurst.get()?.state).toBe("unhandled");
       expect(checkRequests).toHaveLength(0);
     });
 
-    it("a prose line (kind 'text') gets no echo and the burst ends 'unhandled'", async () => {
+    it("a prose line (kind 'text') gets no echo and no model call", async () => {
       latexQueue.push("\\text { hello there }");
       editor.putUser(fixtureSingleLine());
       await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 1);
       await settle(8);
       expect(editor.shapesOfType("math")).toHaveLength(0);
-      expect(liveStore.lastBurst.get()?.state).toBe("unhandled");
+      expect(checkRequests).toHaveLength(0);
     });
 
-    it("a real equation in the same burst keeps it 'handled'", async () => {
+    it("a real equation gets its echo", async () => {
       await write(fixtureSingleLine(), "2x=8");
       expect(editor.shapesOfType("math")).toHaveLength(1);
-      expect(liveStore.lastBurst.get()?.state).toBe("handled");
     });
   });
 
   // ------------------------------------------------------------------ B4
   describe("B4 — raising the dial and tapping the badge start checks", () => {
-    it("switching Feedback -> Suggest checks every amber line (once per column, focus = lowest amber)", async () => {
+    it("switching Feedback -> Suggest writes the right next step beside every ringed line, with no model call", async () => {
       const [top, bottom] = [fixtureTwoLines().slice(0, 6), fixtureTwoLines().slice(6)];
       const okLine = await write(top, "2x=8");
       const warnLine = await write(bottom, "x=5");
@@ -238,40 +228,34 @@ describe("live loop — QA regressions", () => {
       // Feedback never asks the model about a local mismatch by itself.
       expect(checkRequests).toHaveLength(0);
 
-      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: false });
-      await settle(4);
-      expect(checkRequests).toHaveLength(1);
-      expect(checkRequests[0]).toMatchObject({ mode: "suggest", focusLineId: warnLine, userAsked: false });
-      expect(checkRequests[0].lines.map((l) => l.id)).toEqual([okLine, warnLine]);
-
-      // Suggest -> Solve is not a rise onto the hint rungs: no second check.
-      loop.setOptions({ boardId: "board-1", mode: "answer", enabled: true, voiceActive: false });
-      await settle(4);
-      expect(checkRequests).toHaveLength(1);
+      // Up to Suggest: no model call — the engine writes the right next step beside the
+      // ringed line once the student has stopped (here they already have).
+      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true });
+      await vi.advanceTimersByTimeAsync(3_000);
+      await settle(6);
+      expect(checkRequests).toHaveLength(0);
+      const beside = editor.shapesOfType("draw").filter((s) => (s.meta as Record<string, unknown>).suggestFor === "x=5");
+      expect(beside.length).toBeGreaterThan(0);
+      expect(new Set(beside.map((s) => (s.meta as Record<string, unknown>).lineId))).toEqual(new Set([warnLine]));
     });
 
-    it("does not start a ladder-rise check while a hint card is open, while voice is active, or for ok lines", async () => {
+    it("does not start a ladder-rise check while a hint card is open, or for ok lines", async () => {
       const lineId = await write(fixtureSingleLine(), "x=5");
       liveStore.openHints.set([{ id: "h1", lineId: "other", message: "m", question: "q", level: 0, createdAt: 0 }]);
-      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true });
       await settle(4);
       expect(checkRequests).toHaveLength(0);
       liveStore.openHints.set([]);
 
-      loop.setOptions({ boardId: "board-1", mode: "feedback", enabled: true, voiceActive: false });
-      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: true });
-      await settle(4);
-      expect(checkRequests).toHaveLength(0);
-
-      loop.setOptions({ boardId: "board-1", mode: "feedback", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "feedback", enabled: true });
       loop.retypeLine(lineId, "x=4");
       await settle(6);
-      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true });
       await settle(4);
       expect(checkRequests).toHaveLength(0);
     });
 
-    it("a badge tap requests a location-only check in Feedback; the same tap escalates after a hint in Suggest", async () => {
+    it("a badge tap requests a location-only check in Feedback, and a check in Suggest — never a hint card", async () => {
       const lineId = await write(fixtureSingleLine(), "x=5");
       const echo = echoOf(lineId);
 
@@ -281,29 +265,17 @@ describe("live loop — QA regressions", () => {
       expect(checkRequests[0]).toMatchObject({ mode: "feedback", focusLineId: lineId, userAsked: true });
       expect(liveStore.openHints.get()).toHaveLength(0);
 
-      // Suggest: the tap runs a check whose annotation opens the hint card.
-      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: false });
+      // Suggest: the tap still runs a check — but no card opens: the board has no words on it.
+      // (Raising the dial asks the model nothing: the engine already rings a wrong line.)
+      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true });
       await settle(4);
-      // The ladder rise itself fired one (empty) check.
-      expect(checkRequests).toHaveLength(2);
+      expect(checkRequests).toHaveLength(1);
       streamQueue.push([annotation(lineId, "Look again at the right side of line 1")]);
       events.dispatchEvent(new CustomEvent(BADGE_TAP_EVENT, { detail: { lineId, shapeId: echo.id } }));
       await settle(6);
-      expect(checkRequests).toHaveLength(3);
-      expect(checkRequests[2]).toMatchObject({ mode: "suggest", userAsked: true });
-      expect(liveStore.openHints.get()).toHaveLength(1);
-      expect(liveStore.openHints.get()[0]).toMatchObject({ lineId, level: 0 });
-      expect(liveStore.lines.get()[lineId].hintsShown).toBe(1);
-
-      // Second tap with a hint already shown: escalate (a new, level-1 hint for THIS line).
-      streamQueue.push([annotation(lineId, "Divide both sides by the same number")]);
-      events.dispatchEvent(new CustomEvent(BADGE_TAP_EVENT, { detail: { lineId, shapeId: echo.id } }));
-      await settle(6);
-      expect(checkRequests).toHaveLength(4);
-      expect(checkRequests[3]).toMatchObject({ mode: "suggest", userAsked: true });
-      const hints = liveStore.openHints.get();
-      expect(hints).toHaveLength(1);
-      expect(hints[0]).toMatchObject({ lineId, level: 1, message: "Divide both sides by the same number" });
+      expect(checkRequests).toHaveLength(2);
+      expect(checkRequests[1]).toMatchObject({ mode: "suggest", userAsked: true });
+      expect(liveStore.openHints.get()).toHaveLength(0);
     });
 
     it("resolves the line from shapeId alone, ignores taps in Off, and stops listening after stop()", async () => {
@@ -314,12 +286,12 @@ describe("live loop — QA regressions", () => {
       expect(checkRequests).toHaveLength(1);
       expect(checkRequests[0].focusLineId).toBe(lineId);
 
-      loop.setOptions({ boardId: "board-1", mode: "off", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "off", enabled: true });
       events.dispatchEvent(new CustomEvent(BADGE_TAP_EVENT, { detail: { lineId, shapeId: echo.id } }));
       await settle(4);
       expect(checkRequests).toHaveLength(1);
 
-      loop.setOptions({ boardId: "board-1", mode: "feedback", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "feedback", enabled: true });
       loop.stop();
       events.dispatchEvent(new CustomEvent(BADGE_TAP_EVENT, { detail: { lineId, shapeId: echo.id } }));
       await settle(4);
@@ -328,32 +300,16 @@ describe("live loop — QA regressions", () => {
   });
 
   // ------------------------------------------------------------------ B5
-  describe("B5 — graph placement follows the measured echo and stays closed once dismissed", () => {
-    it("places the graph right of the estimated echo, then re-places it when KaTeX measures wider", async () => {
-      const lineId = await write(fixtureSingleLine(), "y=x^{2}-4");
-      const echo = echoOf(lineId);
-      const graph = graphOf(lineId);
-      expect(graph).toBeDefined();
-      const estimate = estimateEchoWidth("y=x^{2}-4", "m");
-      expect((echo.props as MathShapeProps).w).toBe(estimate);
-      expect(estimate).toBeGreaterThanOrEqual(129);
-      expect(graph!.x).toBe(echo.x + estimate + PLACEMENT.graphGap);
-
-      // The shape util's ResizeObserver writes the measured size (source 'remote').
-      const measured = estimate + 40;
-      liveWrite(editor as unknown as Editor, () => {
-        editor.updateShapes([{ id: echo.id, type: "math", props: { w: measured } }]);
-      });
+  describe("B5 — no graph card unasked; a wider echo pushes AI shapes away", () => {
+    // The typeset graph card used to appear beside every `y = …` line in every mode. A graph is
+    // an answer now, sketched by hand only when asked (or in Solve once settled): liveLoop.graph.test.
+    it.each(["feedback", "suggest", "answer"] as const)("a `y = f(x)` line gets no graph card in %s", async (mode) => {
+      remount(mode);
+      await write(fixtureSingleLine(), "y=x^{2}-4");
+      await vi.advanceTimersByTimeAsync(5000);
       await settle(6);
-      expect(graphOf(lineId)!.x).toBe(echo.x + measured + PLACEMENT.graphGap);
-
-      // Sub-threshold jitter does not move the card.
-      liveWrite(editor as unknown as Editor, () => {
-        editor.updateShapes([{ id: echo.id, type: "math", props: { w: measured + ECHO_WIDTH_RELAYOUT_PX - 1 } }]);
-      });
-      await settle(6);
-      expect(graphOf(lineId)!.x).toBe(echo.x + measured + PLACEMENT.graphGap);
-      expect(fetchJson).toHaveBeenCalledTimes(1);
+      expect(editor.shapesOfType("graph")).toHaveLength(0);
+      expect(Object.values(liveStore.lines.get())[0].graphShapeId).toBeNull();
     });
 
     it("pushes an AI step shape that the wider echo now covers out of the way", async () => {
@@ -385,63 +341,6 @@ describe("live loop — QA regressions", () => {
       const echoRight = echoNow.x + (echoNow.props as MathShapeProps).w;
       expect(after.x >= echoRight || after.y >= echoNow.y + (echoNow.props as MathShapeProps).h).toBe(true);
     });
-
-    it("a graph the student deleted is not re-created on later renders until the plot changes", async () => {
-      const lineId = await write(fixtureSingleLine(), "y=x^{2}-4");
-      const graph = graphOf(lineId)!;
-      editor.removeUser([graph.id]);
-      await settle(4);
-      expect(liveStore.lines.get()[lineId].graphShapeId).toBeNull();
-      expect(editor.getShape(echoOf(lineId).id)!.meta).toMatchObject({ graphDismissed: "x^{2}-4" });
-
-      // A mode switch re-renders every line: the card must stay closed.
-      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: false });
-      await settle(6);
-      expect(editor.shapesOfType("graph")).toHaveLength(0);
-
-      // A cascade from a retype of the same expression keeps it closed too.
-      loop.retypeLine(lineId, "y=x^{2}-4");
-      await settle(6);
-      expect(editor.shapesOfType("graph")).toHaveLength(0);
-
-      // A different plot brings a fresh card.
-      loop.retypeLine(lineId, "y=x^{3}");
-      await settle(6);
-      const graphs = editor.shapesOfType("graph");
-      expect(graphs).toHaveLength(1);
-      expect((graphs[0].props as GraphShapeProps).fns[0].expr).toBe("x^{3}");
-      expect(editor.getShape(echoOf(lineId).id)!.meta).toMatchObject({ graphDismissed: "" });
-    });
-
-    it("a graph closed from its header (remote delete) stays closed, also across a remount", async () => {
-      const lineId = await write(fixtureSingleLine(), "y=x^{2}-4");
-      const graph = graphOf(lineId)!;
-      liveWrite(editor as unknown as Editor, () => editor.deleteShapes([graph.id]));
-      await settle(6);
-      expect(liveStore.lines.get()[lineId].graphShapeId).toBeNull();
-      loop.setOptions({ boardId: "board-1", mode: "answer", enabled: true, voiceActive: false });
-      await settle(6);
-      expect(editor.shapesOfType("graph")).toHaveLength(0);
-
-      remount("feedback");
-      await settle(8);
-      const lines = Object.values(liveStore.lines.get());
-      expect(lines).toHaveLength(1);
-      expect(lines[0].latex).toBe("y=x^{2}-4");
-      expect(editor.shapesOfType("graph")).toHaveLength(0);
-      expect(fetchJson).toHaveBeenCalledTimes(1);
-    });
-
-    it("the loop's own graph deletes (plot gone) are not treated as a dismissal", async () => {
-      const lineId = await write(fixtureSingleLine(), "y=x^{2}-4");
-      expect(editor.shapesOfType("graph")).toHaveLength(1);
-      loop.retypeLine(lineId, "2x=8");
-      await settle(6);
-      expect(editor.shapesOfType("graph")).toHaveLength(0);
-      loop.retypeLine(lineId, "y=x^{2}-4");
-      await settle(6);
-      expect(editor.shapesOfType("graph")).toHaveLength(1);
-    });
   });
 
   // ------------------------------------------------------------------ B6
@@ -464,7 +363,7 @@ describe("live loop — QA regressions", () => {
       expect((editor.getShape(okEchoId)!.props as MathShapeProps).status).toBe("ok");
 
       // Picking a mode re-badges everything from the engine.
-      loop.setOptions({ boardId: "board-1", mode: "feedback", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "feedback", enabled: true });
       await settle(6);
       expect((echoOf(newLine).props as MathShapeProps).status).toBe("warn");
       expect((editor.getShape(okEchoId)!.props as MathShapeProps).status).toBe("ok");
@@ -491,12 +390,12 @@ describe("live loop — QA regressions", () => {
       expect(props.status).toBe("warn");
       expect(props.note).toBe("Count the atoms on each side");
 
-      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true });
       await settle(6);
       props = echoOf(lineId).props as MathShapeProps;
       expect(props.note).toBe("Count the atoms on each side");
 
-      loop.setOptions({ boardId: "board-1", mode: "answer", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "answer", enabled: true });
       await settle(6);
       props = echoOf(lineId).props as MathShapeProps;
       expect(props.status).toBe("warn");
@@ -504,7 +403,7 @@ describe("live loop — QA regressions", () => {
     });
 
     it("falls back to the plain note in Solve when the balancer has no result, and labels balanced equations", async () => {
-      loop.setOptions({ boardId: "board-1", mode: "answer", enabled: true, voiceActive: false });
+      loop.setOptions({ boardId: "board-1", mode: "answer", enabled: true });
       const unbalanced = await write(fixtureTwoLines().slice(0, 6), CHEM_NO_BALANCE);
       const props = echoOf(unbalanced).props as MathShapeProps;
       expect(props.status).toBe("warn");

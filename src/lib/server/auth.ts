@@ -7,7 +7,6 @@ export type ApiErrorCode =
   | "rate_limited"
   | "credits_exhausted"
   | "upstream_error"
-  | "voice_unavailable"
   | "feature_unavailable"
   | "internal_error"
   | "recognizer_failed";

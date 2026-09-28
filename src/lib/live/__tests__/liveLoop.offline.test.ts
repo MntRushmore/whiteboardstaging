@@ -60,7 +60,7 @@ describe("live loop — offline queue and replay", () => {
     const stream = async function* (path: string): AsyncGenerator<LiveSseEvent, void, undefined> {
       streamCalls.push(path);
     };
-    opts = { boardId: "board-1", mode, enabled: true, voiceActive: false };
+    opts = { boardId: "board-1", mode, enabled: true };
     recognizer = new RecognizeClient({ fetchJson });
     return createLiveLoop(editor, opts, {
       recognizer,
@@ -308,7 +308,7 @@ describe("live loop — offline queue and replay", () => {
     expect(streamCalls).toHaveLength(1);
   });
 
-  it("(f') a pending check is dropped when the line became ok meanwhile, or while voice is active", async () => {
+  it("(f') a pending check is dropped when the line became ok meanwhile", async () => {
     latexQueue.push("x=5");
     await penUp(fixtureSingleLine());
     const [lineId] = Object.keys(liveStore.lines.get());
@@ -324,18 +324,6 @@ describe("live loop — offline queue and replay", () => {
     goOnline();
     await settle(6);
     expect(streamCalls).toHaveLength(0);
-
-    // Still amber but voice is on at reconnect: never call the LLM.
-    loop.retypeLine(lineId, "x=5");
-    await settle(6);
-    goOffline();
-    loop.requestCheck(lineId);
-    await settle(4);
-    online = true;
-    loop.setOptions({ ...opts, voiceActive: true });
-    await settle(6);
-    expect(streamCalls).toHaveLength(0);
-    expect(fetchJson).toHaveBeenCalledTimes(1);
   });
 
   it("(f'') a check whose fetch fails with a TypeError is deferred, not retried", async () => {

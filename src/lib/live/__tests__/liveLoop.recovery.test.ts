@@ -98,7 +98,7 @@ describe("live loop — vision fallback (BUG-2) and note provenance (BUG-4)", ()
     const stream = async function* (): AsyncGenerator<LiveSseEvent, void, undefined> {
       for (const ev of streamScript.shift() ?? []) yield ev;
     };
-    opts = { boardId: "board-1", mode, enabled: true, voiceActive: false };
+    opts = { boardId: "board-1", mode, enabled: true };
     return createLiveLoop(editor, opts, {
       recognizer: new RecognizeClient({ fetchJson }),
       stream,
@@ -183,8 +183,6 @@ describe("live loop — vision fallback (BUG-2) and note provenance (BUG-4)", ()
     expect(liveStore.lines.get()[lineId]).toMatchObject({ latex: "2x=8", provider: "vision" });
     expect(echo()).toMatchObject({ latex: "2x=8", status: "warn" });
     expect(liveStore.lastError.get()).toBeNull();
-    // the burst is 'handled', so the legacy image pipeline stays quiet
-    expect(liveStore.lastBurst.get()?.state).toBe("handled");
   });
 
   it("the retry failing too shows the failed-read state and never loops", async () => {
@@ -198,7 +196,6 @@ describe("live loop — vision fallback (BUG-2) and note provenance (BUG-4)", ()
     expect(requests[1].crop).toBe(CROP);
     expect(echo()).toMatchObject({ latex: "", status: "unknown", note: "Couldn't read this line — tap Retry" });
     expect(liveStore.lastError.get()).toMatchObject({ kind: "recognize", code: "upstream" });
-    expect(liveStore.lastBurst.get()?.state).toBe("failed");
   });
 
   it("after a credential failure the NEXT line's first attempt already carries a crop", async () => {

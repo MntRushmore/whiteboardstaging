@@ -25,19 +25,31 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   Upload,
 };
 
-export function FeatureLabsPanel() {
-  const [open, setOpen] = useState(false);
+/**
+ * The Feature Labs sheet. Uncontrolled it renders its own "Feature Labs" button; pass `open`
+ * and `onOpenChange` to open it from elsewhere (the account menu in AppHeader) without one.
+ */
+export function FeatureLabsPanel({
+  open: openProp,
+  onOpenChange,
+}: { open?: boolean; onOpenChange?: (open: boolean) => void } = {}) {
+  const [openState, setOpenState] = useState(false);
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : openState;
+  const setOpen = controlled ? (onOpenChange ?? (() => {})) : setOpenState;
   const { features, setFeature, loading, saving, saveFailure, retrySave } =
     useFeatureLabs();
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Beaker className="w-4 h-4 mr-1.5" />
-          Feature Labs
-        </Button>
-      </SheetTrigger>
+      {!controlled && (
+        <SheetTrigger asChild>
+          <Button variant="outline" size="sm">
+            <Beaker className="w-4 h-4 mr-1.5" />
+            Feature Labs
+          </Button>
+        </SheetTrigger>
+      )}
       <SheetContent side="right" className="overflow-y-auto">
         <SheetHeader>
           <div className="flex items-center gap-2">

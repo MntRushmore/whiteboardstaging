@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { TLDrawShape } from "tldraw";
+import { ApiError } from "@/lib/api-client";
 import { createFakeEditor, type FakeEditor } from "../__fixtures__/fakeEditor";
 import { fixtureSingleLine } from "../__fixtures__/strokes";
 import { settle, settleStable, settleUntil } from "@/lib/live/__fixtures__/settle";
@@ -13,6 +14,7 @@ import {
   type SolveStep,
 } from "../contracts";
 import { getEngine } from "../engine";
+import { handLinesOf } from "../handwriting";
 import { handSeedFor, handSizeFor, inlineHandSizeFor, planHandwriting } from "../handwriting";
 import { createLiveLoop, type LiveLoop } from "../liveLoop";
 import { liveStore, resetLiveStore } from "../liveStore";
@@ -52,6 +54,8 @@ describe("live loop — Solve answers locally, and checks the model when it cann
   /** events each solve stream yields, FIFO (an empty stream once exhausted) */
   let solveScript: LiveSseEvent[][];
   let latex: string;
+  /** word problems ask /api/live/setup first; here it always fails, so the stream is the subject */
+  let setupCalls: number;
 
   function makeLoop(): LiveLoop {
     const stream = async function* (path: string): AsyncGenerator<LiveSseEvent, void, undefined> {
@@ -60,7 +64,7 @@ describe("live loop — Solve answers locally, and checks the model when it cann
     };
     return createLiveLoop(
       editor,
-      { boardId: "board-1", mode: "answer", enabled: true, voiceActive: false },
+      { boardId: "board-1", mode: "answer", enabled: true },
       {
         recognizer: new RecognizeClient({ fetchJson }),
         stream,
@@ -70,6 +74,13 @@ describe("live loop — Solve answers locally, and checks the model when it cann
         isOnline: () => true,
         handwritingEnabled: () => handwriting,
         reducedMotion: () => true, // the reveal animation is handwriting.test.ts's subject, not this one
+        setup: async () => {
+          setupCalls++;
+          throw new ApiError("The AI service returned an error. Please try again.", 502, "upstream_error");
+        },
+        reread: async () => {
+          throw new Error("no second reader in this file");
+        },
       },
     );
   }
@@ -116,12 +127,19 @@ describe("live loop — Solve answers locally, and checks the model when it cann
    * is what made this file flake — the values were always right, the order was not.
    */
   function typesetSteps(): string[] {
-    return editor
+    const typeset = editor
       .shapesOfType("math")
       .filter((s) => (s.props as MathShapeProps).source === "ai")
       .slice()
       .sort((a, b) => a.y - b.y || a.x - b.x)
       .map((s) => (s.props as MathShapeProps).latex);
+    // the model's steps are written by hand now: the lines of the tutor's ink (marks excluded)
+    const written = handLinesOf(
+      editor
+        .shapesOfType("draw")
+        .filter((s) => isLiveMeta(s.meta) && s.meta.source === "ai" && !(s.meta as Record<string, unknown>).mark && !(s.meta as Record<string, unknown>).answerFor),
+    );
+    return [...typeset, ...written];
   }
 
   function solveCalls(): string[] {
@@ -167,6 +185,7 @@ describe("live loop — Solve answers locally, and checks the model when it cann
     handwriting = true;
     streamCalls = [];
     solveScript = [];
+    setupCalls = 0;
     latex = "36+2=";
     fetchJson = vi.fn<FetchJson>(async (): Promise<RecognizeResponse> => ({
       latex,
@@ -207,7 +226,7 @@ describe("live loop — Solve answers locally, and checks the model when it cann
     // the line the student wrote                what the tutor writes under it
     ["3.2 kg \\cdot 9.8 m/s^2", "= 31.36\\,\\mathrm{N}"], // units
     ["5 km/h \\text{ to } m/s", "= 1.389\\,\\mathrm{m/s}"], // a conversion
-    ["\\frac{d}{dx} x^3", "= 3\\cdot{x}^{2}"], // a derivative
+    ["\\frac{d}{dx} x^3", "= 3x^{2}"], // a derivative (engine/calculus.ts)
     ["100-45", "= 55"], // bare arithmetic the echo's calculator rule keeps quiet about
   ])("answers %s locally too", async (line, written) => {
     await solve(line);
@@ -248,12 +267,14 @@ describe("live loop — Solve answers locally, and checks the model when it cann
 
   // ------------------------------------------------------------ 2. guarding the model
 
-  it("a word problem still reaches the stream, and its steps are drawn", async () => {
+  it("a word problem whose setup fails still reaches the stream, and its steps are drawn", async () => {
     solveScript = [[step(1, "60 \\div 2 = 30"), step(2, "\\boxed{30\\,\\mathrm{km/h}}", true)]];
     await solve("\\text{A train travels 60 km in 2 h. How fast is it going?}");
 
+    // the setup was asked first (liveLoop.setup.test.ts owns what happens when it works)
+    expect(setupCalls).toBe(1);
     expect(solveCalls()).toEqual(["/api/live/solve"]);
-    expect(typesetSteps()).toEqual(["60 \\div 2 = 30", "\\boxed{30\\,\\mathrm{km/h}}"]);
+    expect(typesetSteps()).toEqual(["60 \\div 2 = 30", "30\\,\\mathrm{km/h}"]);
     expect(liveStore.lastError.get()).toBeNull();
   });
 
@@ -269,7 +290,8 @@ describe("live loop — Solve answers locally, and checks the model when it cann
     await solve("\\text{A train travels 60 km in 2 h. How fast is it going?}");
 
     expect(typesetSteps()).toEqual(["60 \\div 2 = 30"]);
-    expect(handShapes()).toHaveLength(0);
+    // the one step that survived is written by hand, not dealt out as a card
+    expect(handShapes().length).toBeGreaterThan(0);
     // one step survived, so this is not a failure
     expect(liveStore.lastError.get()).toBeNull();
   });
@@ -287,12 +309,13 @@ describe("live loop — Solve answers locally, and checks the model when it cann
   });
 
   it("keeps the student's own names in scope, so the engine's continuation is not rejected", async () => {
-    solveScript = [[step(1, "2x = 8"), step(2, "\\boxed{x = 4}", true)]];
-    // a line the local CAS declines (two unknowns) so the stream is genuinely needed
-    await solve("2x + y = 8");
+    solveScript = [[step(1, "2a = 8"), step(2, "\\boxed{a = 4}", true)]];
+    // a line the local CAS declines (two unknowns) so the stream is genuinely needed — not in x
+    // and y, which would be a line to graph (its graph is Solve's answer, no model asked)
+    await solve("2a + b = 8");
 
     expect(solveCalls()).toEqual(["/api/live/solve"]);
-    expect(typesetSteps()).toEqual(["2x = 8", "\\boxed{x = 4}"]);
+    expect(typesetSteps()).toEqual(["2a = 8", "a = 4"]);
   });
 
   it("takes the first step that survives when Live escalates one rung", async () => {

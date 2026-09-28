@@ -80,6 +80,8 @@ export const HAND_WRITE = {
   frameMs: 32,
   /** the pause between two lines of a worked solution — someone thinking, not a print-out */
   lineGapMs: 450,
+  /** a long block is sped up so it is written within seconds (see `paceFor`) */
+  pacing: { naturalUpToMs: 4000, maxWallMs: 6000, maxPace: 5 },
   /** tldraw draw-shape style of the tutor's ink (the accent tone of the AI shapes, never red) */
   color: TUTOR_INK_COLOR,
   size: "s",
@@ -159,7 +161,34 @@ export interface HandPlan {
   /** page-space bounding box of the whole block */
   bounds: Rect;
   size: number;
+  /** the block at a natural writing pace; every `startMs` / `durationMs` is on this clock */
   totalMs: number;
+  /**
+   * How much faster than natural the pen moves (1 = natural). A long solution is written faster
+   * so it is on the board in seconds, not half a minute: see `paceFor`. Wall time = totalMs / pace.
+   */
+  pace?: number;
+}
+
+/**
+ * The pen's speed-up for a block that takes `naturalMs` to write at a human pace.
+ *
+ * Up to `naturalUpToMs` nothing changes — a one- or two-line answer keeps its handwriting feel.
+ * Past it the extra time is written three times faster, and the whole block never takes longer
+ * than `maxWallMs` unless that would need more than `maxPace` (then it is `maxPace`, so the pen
+ * never becomes a blur). Measured on the maths scoreboard: blocks took 4 s at the median but 16 s
+ * at p95 and 26 s at the longest — long after the answer was ready (the engine takes < 0.1 s).
+ */
+export function paceFor(naturalMs: number): number {
+  const { naturalUpToMs, maxWallMs, maxPace } = HAND_WRITE.pacing;
+  if (!(naturalMs > naturalUpToMs)) return 1;
+  const wall = Math.min(maxWallMs, naturalUpToMs + (naturalMs - naturalUpToMs) / 3);
+  return Math.min(maxPace, naturalMs / wall);
+}
+
+/** How long the block takes on the wall clock at its pace. */
+export function wallMsOf(plan: Pick<HandPlan, "totalMs" | "pace">): number {
+  return plan.totalMs / (plan.pace ?? 1);
 }
 
 export interface HandPlanResult {
@@ -215,8 +244,29 @@ export function planHandwriting(
       bounds: { x: minX, y: minY, w: maxX - minX, h: maxY - minY },
       size: opts.size,
       totalMs: Math.max(0, t - HAND_WRITE.lineGapMs),
+      pace: paceFor(Math.max(0, t - HAND_WRITE.lineGapMs)),
     },
     unsupported: [],
+  };
+}
+
+/**
+ * A one-line plan from strokes already in page coordinates — the tutor's marks (a tick, a
+ * ring, a question mark), which are drawn, not typeset, but revealed by the same writer.
+ */
+export function planFromStrokes(label: string, strokes: readonly Stroke[], size: number): HandPlan | null {
+  const b = strokeBounds(strokes as Stroke[]);
+  if (!b || strokes.length === 0) return null;
+  const placed = placeStrokes(strokes as Stroke[], { x: -b.minX, y: -b.minY }).map((st) => ({
+    ...st,
+    points: densify(st.points, HAND_WRITE.resampleStepPx),
+  }));
+  const durationMs = totalDurationMs(placed);
+  return {
+    lines: [{ latex: label, x: b.minX, y: b.minY, baseline: b.height, strokes: placed, startMs: 0, durationMs }],
+    bounds: { x: b.minX, y: b.minY, w: b.width, h: b.height },
+    size,
+    totalMs: durationMs,
   };
 }
 
@@ -293,12 +343,35 @@ export interface HandWriteOptions {
    */
   extraMeta?: JsonObject;
   onDone?: () => void;
+  /**
+   * The reveal starts this long after `start` (a graph drawn after the worked steps, by the same
+   * hand). Cancelled before then, nothing is written.
+   */
+  delayMs?: number;
+  /**
+   * The block is ONE picture (a graph): a cancel that finds it started completes all of it, not
+   * only the parts begun — axes without their curve are not a graph.
+   */
+  whole?: boolean;
 }
 
 /** meta key grouping the stroke shapes of one written block, so the shape cap counts it as one mark. */
 export const HAND_BLOCK_META = "handBlock";
 
 /** The block key of a live shape, or "" when it is not handwriting. */
+/** On each stroke of the tutor's writing: the LaTeX of the line it belongs to. */
+export const HAND_LINE_META = "handLine";
+
+/** The written lines of a set of tutor strokes, in writing order, each once. */
+export function handLinesOf(shapes: readonly { meta: unknown; y: number }[]): string[] {
+  const seen = new Map<string, number>();
+  for (const s of shapes) {
+    const tex = (s.meta as Record<string, unknown> | null)?.[HAND_LINE_META];
+    if (typeof tex === "string" && !seen.has(tex)) seen.set(tex, s.y);
+  }
+  return [...seen.entries()].sort((a, b) => a[1] - b[1]).map(([tex]) => tex);
+}
+
 export function handBlockOf(meta: unknown): string {
   if (typeof meta !== "object" || meta === null) return "";
   const v = (meta as Record<string, unknown>)[HAND_BLOCK_META];
@@ -348,6 +421,7 @@ export class HandWriter {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private startedAt = 0;
   private running = false;
+  private whole = false;
 
   constructor(canvas: HandCanvas, deps: Partial<HandWriterDeps> = {}) {
     this.canvas = canvas;
@@ -371,9 +445,15 @@ export class HandWriter {
     this.dropped = plan.lines.map((l) => l.strokes.map(() => false));
     this.revealed = plan.lines.map((l) => l.strokes.map(() => 0));
     this.running = true;
-    this.startedAt = this.deps.now();
+    this.whole = opts.whole ?? false;
+    const delay = Math.max(0, opts.delayMs ?? 0);
+    this.startedAt = this.deps.now() + delay;
     if (this.deps.reducedMotion()) {
       this.finish("finishAll");
+      return;
+    }
+    if (delay > 0) {
+      this.timer = this.deps.setTimer(() => this.frame(), delay);
       return;
     }
     this.apply(0, "reveal");
@@ -387,13 +467,19 @@ export class HandWriter {
    */
   cancel(): void {
     if (!this.running) return;
-    this.finish("finishStarted");
+    const started = this.ids.some((_, i) => this.startedLine(i));
+    this.finish(this.whole && started ? "finishAll" : "finishStarted");
   }
 
   private frame(): void {
     this.timer = null;
     if (!this.running || !this.plan) return;
-    const t = this.deps.now() - this.startedAt;
+    // natural-pace time: a long block's clock runs `pace` times faster (see `paceFor`)
+    const t = (this.deps.now() - this.startedAt) * (this.plan.pace ?? 1);
+    if (t < 0) {
+      this.timer = this.deps.setTimer(() => this.frame(), Math.min(-t / (this.plan.pace ?? 1), HAND_WRITE.frameMs * 4));
+      return;
+    }
     this.apply(t, "reveal");
     if (t >= this.plan.totalMs) {
       this.finish("finishAll");
@@ -457,7 +543,8 @@ export class HandWriter {
                 isPen: true,
                 scale: 1,
               },
-              meta: { ...meta },
+              // the line of maths this stroke belongs to, as LaTeX (debugging, tests, a future readback)
+              meta: { ...meta, [HAND_LINE_META]: line.latex },
             } satisfies TLShapePartial<TLDrawShape>);
             continue;
           }

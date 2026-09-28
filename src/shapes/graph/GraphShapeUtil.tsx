@@ -15,7 +15,8 @@ import {
   type TLResizeInfo,
 } from "tldraw";
 import { GRAPH_SHAPE_DEFAULTS, type GraphFn, type GraphShape } from "@/lib/live/contracts";
-import { getEngine } from "@/lib/live/engine";
+// the engine (and mathjs) load on demand: they are not part of the board's first load
+const getEngine = () => import("@/lib/live/engine").then((m) => m.getEngine());
 import { scheduleLiveWrite } from "@/lib/live/liveWrite";
 import { renderLatex } from "../math/katex";
 import { TICK_FONT_PX, buildPlot, type PlotOutput, type Sampler } from "./plot";

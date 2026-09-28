@@ -381,3 +381,129 @@ export function expressionsEquivalent(math: MathJsInstance, a: string, b: string
 export function rootToNumber(r: RootValue): number | null {
   return typeof r === "number" ? r : Math.abs(r.im) < 1e-9 ? r.re : null;
 }
+
+/** Values the other unknowns are pinned to while one is solved for (irregular, to dodge special cases). */
+const PIN_SETS = [1.37, -2.21, 3.9, 0.61, -5.3];
+
+function withScope(c: Compiled, fixed: Record<string, number>): Compiled {
+  return { evaluate: (scope) => c.evaluate({ ...fixed, ...scope }) };
+}
+
+function holdsAt(math: MathJsInstance, rel: Relation, scope: Record<string, number>, tol = 1e-6): boolean | null {
+  const l = compile(math, rel.lhs);
+  const r = compile(math, rel.rhs);
+  if (!l || !r) return null;
+  let lv: number | null;
+  let rv: number | null;
+  try {
+    lv = toNumber(l.evaluate(scope));
+    rv = toNumber(r.evaluate(scope));
+  } catch {
+    return null;
+  }
+  if (lv === null || rv === null || !Number.isFinite(lv) || !Number.isFinite(rv)) return null;
+  return Math.abs(lv - rv) <= tol * Math.max(1, Math.abs(lv), Math.abs(rv));
+}
+
+/**
+ * Equations in two or more unknowns (`x + y = 10` → `y = 10 - x`): same solution set, checked
+ * by pinning every unknown but one to a few sample values, finding where one equation holds
+ * along the remaining one, and requiring the other to hold there too — both ways round.
+ *
+ * `ok` needs at least three such points to agree; a point where one holds and the other
+ * clearly does not is `mismatch` (a wrong rearrangement, or squaring that adds solutions);
+ * anything else (different unknowns, nothing found in range) is `unknown`, never a guess.
+ */
+export function compareMultiRelations(math: MathJsInstance, prev: Relation, cur: Relation): EngineVerdict {
+  if (prev.op !== "==" || cur.op !== "==") return "unknown";
+  const vars = [...new Set(prev.variables)].sort();
+  const curVars = [...new Set(cur.variables)].sort();
+  if (vars.length < 2 || vars.join(",") !== curVars.join(",")) return "unknown";
+  // Solve along y when there is one (the variable a student isolates), else the last.
+  const along = vars.includes("y") ? "y" : vars[vars.length - 1];
+  const pinned = vars.filter((v) => v !== along);
+  const gPrev = compile(math, `(${prev.lhs}) - (${prev.rhs})`);
+  const gCur = compile(math, `(${cur.lhs}) - (${cur.rhs})`);
+  if (!gPrev || !gCur) return "unknown";
+
+  let agreed = 0;
+  for (let s = 0; s < PIN_SETS.length; s++) {
+    const fixed: Record<string, number> = {};
+    pinned.forEach((v, i) => {
+      fixed[v] = PIN_SETS[(s + i * 2) % PIN_SETS.length];
+    });
+    for (const [to, g] of [
+      [cur, gPrev],
+      [prev, gCur],
+    ] as const) {
+      const { roots, identity } = numericRoots(math, withScope(g, fixed), along);
+      if (identity) continue;
+      for (const root of roots) {
+        const ok = holdsAt(math, to, { ...fixed, [along]: root });
+        if (ok === null) continue;
+        if (!ok) return notEquivalent(math, prev, cur, vars);
+        agreed++;
+      }
+    }
+  }
+  return agreed >= 3 ? "ok" : "unknown";
+}
+
+/** `sum(coef[v] * v) + constant` when `lhs - rhs` is linear in `vars` (checked at two more points). */
+function linearIn(math: MathJsInstance, rel: Relation, vars: readonly string[]): { coef: number[]; constant: number } | null {
+  const g = compile(math, `(${rel.lhs}) - (${rel.rhs})`);
+  if (!g) return null;
+  const at = (scope: Record<string, number>): number | null => {
+    try {
+      const v = toNumber(g.evaluate(scope));
+      return v !== null && Number.isFinite(v) ? v : null;
+    } catch {
+      return null;
+    }
+  };
+  const zero = Object.fromEntries(vars.map((v) => [v, 0]));
+  const constant = at(zero);
+  if (constant === null) return null;
+  const coef: number[] = [];
+  for (const v of vars) {
+    const one = at({ ...zero, [v]: 1 });
+    if (one === null) return null;
+    coef.push(one - constant);
+  }
+  for (const probe of [1.7, -2.3]) {
+    const scope = Object.fromEntries(vars.map((v, i) => [v, probe * (i + 1)]));
+    const val = at(scope);
+    const predicted = constant + coef.reduce((sum, c, i) => sum + c * scope[vars[i]], 0);
+    if (val === null || Math.abs(val - predicted) > 1e-7 * Math.max(1, Math.abs(val))) return null;
+  }
+  return { coef, constant };
+}
+
+/**
+ * Two lines in two or more unknowns that are NOT the same equation. Written one under the other
+ * this is usually the next equation of a SYSTEM (`x + y = 18`, then `x - y = 4`), not a step — and
+ * ringing a student's correct system is the worst thing the tutor can do. So a non-equivalent line
+ * is only `mismatch` when it carries the signature of a botched rearrangement of the line above:
+ *  - PARALLEL but a different constant (`x + y = 10` → `y = 5 - x`, `2(x + y) = 10` → `x + y = 4`):
+ *    as a system it would have no solution, which a student never sets up;
+ *  - every number the same size, only a sign flipped (`2x + 3y = 12` → `3y = 12 + 2x`): a term moved
+ *    across without changing its sign.
+ * Anything else is `none` — a new equation, nothing to check.
+ */
+function notEquivalent(math: MathJsInstance, prev: Relation, cur: Relation, vars: readonly string[]): EngineVerdict {
+  const a = linearIn(math, prev, vars);
+  const b = linearIn(math, cur, vars);
+  if (!a || !b) return "none";
+  const av = [...a.coef, a.constant];
+  const bv = [...b.coef, b.constant];
+  // the scale that maps a's first non-zero coefficient onto b's
+  const i = a.coef.findIndex((c) => Math.abs(c) > 1e-12);
+  if (i === -1 || Math.abs(b.coef[i]) < 1e-12) return "none";
+  const k = b.coef[i] / a.coef[i];
+  const close = (x: number, y: number) => Math.abs(x - y) <= 1e-9 * Math.max(1, Math.abs(x), Math.abs(y));
+  const parallel = a.coef.every((c, j) => close(c * k, b.coef[j]));
+  if (parallel && !close(a.constant * k, b.constant)) return "mismatch";
+  const sameSizes = av.every((c, j) => close(Math.abs(c * k), Math.abs(bv[j])));
+  if (sameSizes) return "mismatch";
+  return "none";
+}

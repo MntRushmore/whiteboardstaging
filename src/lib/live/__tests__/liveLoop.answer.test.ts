@@ -48,7 +48,7 @@ describe("live loop — the tutor answers the line instead of restating it", () 
     };
     return createLiveLoop(
       editor,
-      { boardId: "board-1", mode: "answer", enabled: true, voiceActive: false },
+      { boardId: "board-1", mode: "answer", enabled: true },
       {
         recognizer: new RecognizeClient({ fetchJson }),
         stream,

@@ -47,7 +47,7 @@ describe("engine: analyzeLine kinds and the calculator rule", () => {
   it("derivatives and integrals evaluate locally", () => {
     const d = engine.analyzeLine("\\frac{d}{dx} x^3", feedback);
     expect(d.kind).toBe("expression");
-    expect(d.resultLatex.replace(/\s/g, "")).toBe("3\\cdot{x}^{2}");
+    expect(d.resultLatex).toBe("3x^{2}");
     const i = engine.analyzeLine("\\int_{0}^{1} x^2 \\, dx", feedback);
     expect(i.resultLatex).toBe("\\frac{1}{3}");
   });
@@ -130,7 +130,9 @@ describe("engine: analyzeLine kinds and the calculator rule", () => {
     // a sum whose upper limit is symbolic is read but not evaluated: no result, never a guess
     const symbolicSum = engine.analyzeLine("\\sum_{i=1}^n i", feedback);
     expect(symbolicSum.resultLatex).toBe("");
-    expect(engine.analyzeLine("\\lim_{x \\to 0} \\frac{\\sin x}{x}", feedback).kind).toBe("unknown");
+    // a limit the engine knows is an expression with its value; one it does not is `unknown`
+    expect(engine.analyzeLine("\\lim_{x \\to 0} \\frac{\\sin x}{x}", feedback).resultLatex).toBe("1");
+    expect(engine.analyzeLine("\\lim_{x \\to 0} \\frac{\\sin x}{x^2}", feedback).kind).toBe("unknown");
     // @ts-expect-error hostile input
     expect(engine.analyzeLine(undefined, undefined).kind).toBe("unknown");
   });
@@ -169,26 +171,29 @@ describe("engine: solveLatex", () => {
     expect(engine.solveLatex("3x + 1 = 2")?.latex).toBe("x = \\frac{1}{3}");
     expect(engine.solveLatex("3\\left(x-2\\right)=2 x+5")?.latex).toBe("x = 11");
   });
+  // Answers are maths, never words: several roots are a list (`x = 2, \ x = 3`), not "or";
+  // irrational roots stay exact surds; no real root is the empty set (advancedAlgebra.test.ts).
   it("quadratics: factored steps and formula steps", () => {
     const r = engine.solveLatex("x^2 - 5x + 6 = 0");
-    expect(r?.latex).toBe("x = 2 \\text{ or } x = 3");
+    expect(r?.latex).toBe("x = 2, \\ x = 3");
     expect(r?.steps).toContain("(x - 2)(x - 3) = 0");
     const q = engine.solveLatex("x^2 - 2x - 1 = 0");
     expect(q?.steps.some((s) => s.includes("\\pm \\sqrt"))).toBe(true);
-    expect(q?.latex).toBe("x \\approx -0.4142 \\text{ or } x \\approx 2.414");
+    expect(q?.latex).toBe("x = 1 \\pm \\sqrt{2}");
     const c = engine.solveLatex("x^2 + 1 = 0");
-    expect(c?.latex).toBe("x = -i \\text{ or } x = i");
+    expect(c?.latex).toBe("\\varnothing");
   });
-  it("cubic and numeric fallback", () => {
-    expect(engine.solveLatex("x^3 - 6x^2 + 11x - 6 = 0")?.latex).toBe("x = 1 \\text{ or } x = 2 \\text{ or } x = 3");
-    expect(engine.solveLatex("2^x = 8")?.latex).toBe("x \\approx 3");
-    expect(engine.solveLatex("\\sin x = 2")).toBeNull();
+  it("cubic, exponential and numeric fallback", () => {
+    expect(engine.solveLatex("x^3 - 6x^2 + 11x - 6 = 0")?.latex).toBe("x = 1, \\ x = 2, \\ x = 3");
+    expect(engine.solveLatex("2^x = 8")?.latex).toBe("x = 3");
+    // no angle has sin x = 2: the bound, then no solution (trigEquation.ts), not a numeric scan
+    expect(engine.solveLatex("\\sin x = 2")?.latex).toBe("\\varnothing");
   });
   it("returns null when unsupported", () => {
     expect(engine.solveLatex("x + y = 5")).toBeNull();
     expect(engine.solveLatex("2x + 3")).toBeNull();
     expect(engine.solveLatex("\\sum x = 1")).toBeNull();
-    expect(engine.solveLatex("x = x")).toBeNull();
+    // `x = x` is an identity (`x \in \mathbb{R}`), no longer refused: teacherSteps.test.ts
   });
 });
 
@@ -241,25 +246,26 @@ describe("engine: verifyExpected, balance, calculate, compileExpr", () => {
 // approximation stands in for an answer the engine cannot actually compute.
 // ---------------------------------------------------------------------------
 const answerFor = (latex: string): string => engine.analyzeLine(latex, answer).resultLatex;
-/** node-rendered answers (derivatives) differ only in spacing between mathjs patch releases */
+/** spacing never counts in a comparison of answers */
 const tight = (latex: string): string => answerFor(latex).replace(/\s/g, "");
 
 describe("engine: derivatives", () => {
+  // the answer is the last line of the engine's own steps (calculus.ts), in a teacher's notation
   const cases: Array<[string, string]> = [
-    ["\\frac{d}{dx} x^3 =", "3\\cdot{x}^{2}"],
-    ["\\frac{d}{dx}(3x^2 + 2x) =", "6\\cdotx+2"],
+    ["\\frac{d}{dx} x^3 =", "3x^{2}"],
+    ["\\frac{d}{dx}(3x^2 + 2x) =", "6x+2"],
     ["\\frac{d}{dx} 3x =", "3"],
     // a constant: the answer is 0, not the constant itself
     ["\\frac{d}{dx} 7 =", "0"],
     // a negative power: the exponent drops to -3, it does not become 2x^{-3}
-    ["\\frac{d}{dx} x^{-2} =", "-\\frac{2}{{x}^{3}}"],
-    ["\\frac{d}{dx} \\frac{1}{x} =", "-\\frac{1}{{x}^{2}}"],
-    ["\\frac{d}{dx} \\sin x =", "\\cos\\left(x\\right)"],
+    ["\\frac{d}{dx} x^{-2} =", "-\\frac{2}{x^{3}}"],
+    ["\\frac{d}{dx} \\frac{1}{x} =", "-\\frac{1}{x^{2}}"],
+    ["\\frac{d}{dx} \\sin x =", "\\cosx"],
     ["\\frac{d}{dx} \\ln x =", "\\frac{1}{x}"],
-    ["\\frac{d}{dx} e^x =", "{e}^{x}"],
+    ["\\frac{d}{dx} e^x =", "e^{x}"],
     // the variable comes from the notation, not from a guess
-    ["\\frac{d}{dt}(5t^3 - t) =", "15\\cdot{t}^{2}-1"],
-    ["\\frac{d^2}{dx^2} x^4 =", "12\\cdot{x}^{2}"],
+    ["\\frac{d}{dt}(5t^3 - t) =", "15t^{2}-1"],
+    ["\\frac{d^2}{dx^2} x^4 =", "12x^{2}"],
   ];
   it.each(cases)("%s -> %s", (latex, expected) => {
     expect(tight(latex)).toBe(expected);
@@ -270,18 +276,18 @@ describe("engine: derivatives", () => {
     expect(a.math).toBe('derivative("x ^ 3", "x")');
     // a trailing `=` is an answer-mode reveal, exactly like `36 + 2 =`
     expect(a.resultLatex).toBe("");
-    expect(engine.analyzeLine("\\frac{d}{dx} x^3", feedback).resultLatex.replace(/\s/g, "")).toBe("3\\cdot{x}^{2}");
+    expect(engine.analyzeLine("\\frac{d}{dx} x^3", feedback).resultLatex).toBe("3x^{2}");
   });
   it("checks a derivative the student wrote out", () => {
     expect(engine.analyzeLine("\\frac{d}{dx} x^2 = 2x", feedback).verdict).toBe("ok");
     expect(engine.analyzeLine("\\frac{d}{dx} x^2 = 3x", feedback).verdict).toBe("mismatch");
   });
   it("differentiates through the functions it knows", () => {
-    expect(tight("\\frac{d}{dx} \\sin(2x) =")).toBe("2\\cdot\\cos\\left(2\\cdotx\\right)");
-    expect(tight("\\frac{d}{dx} \\left( x^2 + 1 \\right) =")).toBe("2\\cdotx");
+    expect(tight("\\frac{d}{dx} \\sin(2x) =")).toBe("2\\cos(2x)");
+    expect(tight("\\frac{d}{dx} \\left( x^2 + 1 \\right) =")).toBe("2x");
     // juxtaposition is still multiplication, exactly as everywhere else in the engine
     expect(tight("\\frac{d}{dx} 2(x+1) =")).toBe("2");
-    expect(tight("\\frac{d}{dx} x(x+1) =")).toBe("2\\cdotx+1");
+    expect(tight("\\frac{d}{dx} x(x+1) =")).toBe("2x+1");
   });
   it("gives no answer when it cannot differentiate", () => {
     const refused = [
@@ -304,12 +310,12 @@ describe("engine: derivatives", () => {
     const y = engine.analyzeLine("y = x^2 + 3", feedback);
     expect(y.kind).toBe("function");
     const ctx = { mode: "answer" as const, previous: y };
-    expect(engine.analyzeLine("\\frac{dy}{dx} =", ctx).resultLatex.replace(/\s/g, "")).toBe("2\\cdotx");
+    expect(engine.analyzeLine("\\frac{dy}{dx} =", ctx).resultLatex).toBe("2x");
     expect(engine.analyzeLine("\\frac{dy}{dx} = 2x", ctx).verdict).toBe("ok");
     expect(engine.analyzeLine("\\frac{dy}{dx} = 3x", ctx).verdict).toBe("mismatch");
     const f = engine.analyzeLine("f(x) = x^2 - 4", feedback);
     const fctx = { mode: "answer" as const, previous: f };
-    expect(engine.analyzeLine("f'(x) =", fctx).resultLatex.replace(/\s/g, "")).toBe("2\\cdotx");
+    expect(engine.analyzeLine("f'(x) =", fctx).resultLatex).toBe("2x");
     expect(engine.analyzeLine("f'(x) = 2x", fctx).verdict).toBe("ok");
     // the wrong variable is refused rather than differentiated anyway
     expect(engine.analyzeLine("f'(t) =", fctx).kind).toBe("unknown");
@@ -333,11 +339,13 @@ describe("engine: definite integrals", () => {
     ["\\int_{3}^{1} x dx =", "-4"],
     ["\\int_{2}^{2} x^2 dx =", "0"],
     ["\\int_{0}^{\\frac{1}{2}} x dx =", "\\frac{1}{8}"],
-    // not polynomials: a numeric value to 4 significant figures, never dressed up as exact
+    // not polynomials, but an antiderivative the engine knows (calculus.ts): still exact
     ["\\int_{0}^{\\pi} \\sin x \\, dx =", "2"],
-    ["\\int_{1}^{2} x^{-2} dx =", "0.5"],
-    ["\\int_{1}^{2} \\frac{1}{x} dx =", "0.6931"],
-    ["\\int_{0}^{2} e^x dx =", "6.389"],
+    ["\\int_{1}^{2} x^{-2} dx =", "\\frac{1}{2}"],
+    ["\\int_{1}^{2} \\frac{1}{x} dx =", "\\ln 2"],
+    ["\\int_{0}^{2} e^x dx =", "e^{2} - 1"],
+    // no antiderivative the engine can write: a numeric value to 4 significant figures, never dressed up as exact
+    ["\\int_{0}^{1} e^{x^2} dx =", "1.463"],
   ];
   it.each(cases)("%s -> %s", (latex, expected) => {
     expect(answerFor(latex)).toBe(expected);
@@ -355,7 +363,8 @@ describe("engine: definite integrals", () => {
   });
   it("gives no answer for integrals it cannot do", () => {
     const refused = [
-      "\\int x^2 dx =", // indefinite
+      "\\int e^{x^2} dx =", // indefinite, no elementary antiderivative
+      "\\int \\frac{\\sin x}{x} dx =", // indefinite, no elementary antiderivative
       "\\int_{-1}^{1} \\frac{1}{x} dx =", // singular inside the interval
       "\\int_{0}^{1} \\frac{1}{x} dx =", // divergent at the endpoint
       "\\int_{-1}^{1} \\sqrt{x} dx =", // not real on the whole interval
@@ -433,13 +442,23 @@ describe("engine: constructs the engine refuses", () => {
    * kind that says "this is maths I could not read" -- it is never a wrong answer, and it is not
    * `text` (a caption) or `incomplete` (keep writing), both of which would be pretending.
    */
-  it("limits are unsupported, in both directions", () => {
-    for (const latex of ["\\lim_{x \\to 0} \\frac{\\sin x}{x} =", "\\lim_{x \\to 0} \\frac{\\sin x}{x}", "\\lim_{x \\to \\infty} \\frac{1}{x}", "\\lim_{n \\to \\infty} (1 + 1/n)^n ="]) {
+  it("limits it cannot find are unknown, in both directions (calculus.ts does the ones it can)", () => {
+    const refused = [
+      "\\lim_{n \\to \\infty} (1 + 1/n)^n =", // e: not a rational function
+      "\\lim_{n \\to \\infty} (1 + 1/n)^n",
+      "\\lim_{x \\to 1} \\frac{1}{x - 1} =", // no finite limit
+      "\\lim_{x \\to 0} \\frac{\\sin x}{x^2} =",
+      "\\lim_{x \\to 0^{+}} \\ln x =", // one-sided
+      "\\lim_{x \\to 0} \\frac{\\cos x}{x} =", // not 0/0: no finite limit (the conjugate and L'Hôpital are limits.ts)
+    ];
+    for (const latex of refused) {
       const a = engine.analyzeLine(latex, answer);
       expect(a.kind, latex).toBe("unknown");
       expect(a.resultLatex, latex).toBe("");
       expect(a.verdict, latex).toBe("unknown");
     }
+    expect(engine.analyzeLine("\\lim_{x \\to 0} \\frac{\\sin x}{x} =", answer).resultLatex).toBe("1");
+    expect(engine.analyzeLine("\\lim_{x \\to \\infty} \\frac{1}{x}", answer).resultLatex).toBe("0");
   });
   it("matrices are unknown, not prose", () => {
     for (const latex of ["\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}", "\\begin{bmatrix}1&2\\\\3&4\\end{bmatrix} =", "\\begin{vmatrix}1&2\\\\3&4\\end{vmatrix}", "\\begin{cases} x > 0 \\\\ x < 5 \\end{cases}"]) {
@@ -449,7 +468,7 @@ describe("engine: constructs the engine refuses", () => {
     }
   });
   it("never answers a line it could not read, whatever the mode", () => {
-    const hostile = ["\\lim_{x \\to 0} x =", "\\begin{matrix}1\\end{matrix} =", "\\frac{dy}{dx} =", "f'(x) =", "\\int x dx =", "\\sum_{i=1}^{n} i =", "\\oint_C F dr =", "\\nabla \\cdot F ="];
+    const hostile = ["\\lim_{x \\to 0} \\frac{1}{x} =", "\\begin{matrix}1\\end{matrix} =", "\\frac{dy}{dx} =", "f'(x) =", "\\int e^{x^2} dx =", "\\sum_{i=1}^{n} i =", "\\oint_C F dr =", "\\nabla \\cdot F ="];
     for (const latex of hostile) {
       for (const ctx of [feedback, answer]) {
         const a = engine.analyzeLine(latex, ctx);
@@ -470,7 +489,7 @@ describe("engine: regression net — everything that already worked", () => {
     ["2^{10} =", "1024"],
     ["\\sqrt{144}", "12"],
     ["\\sqrt{16}", "4"],
-    ["\\sin(30^\\circ)", "0.5"],
+    ["\\sin(30^\\circ)", "\\frac{1}{2}"], // exact at the special angles (trig.ts)
     ["\\log_{2}(8)", "3"],
     ["\\ln(e^2)", "2"],
     ["2\\pi", "6.283"],
@@ -496,11 +515,61 @@ describe("engine: regression net — everything that already worked", () => {
     expect(engine.analyzeLine("2 + 2 = 5", feedback).verdict).toBe("mismatch");
   });
   it("keeps solveLatex, chemistry and the calculator", () => {
-    expect(engine.solveLatex("x^2 - 5x + 6 = 0")?.latex).toBe("x = 2 \\text{ or } x = 3");
+    expect(engine.solveLatex("x^2 - 5x + 6 = 0")?.latex).toBe("x = 2, \\ x = 3");
     expect(engine.solveLatex("2x+3=11")?.latex).toBe("x = 4");
     expect(engine.analyzeLine("Fe + O_2 \\rightarrow Fe_2O_3", feedback).kind).toBe("chem");
     expect(engine.balance("Fe+O2->Fe2O3")?.coeffs).toEqual([4, 3, 2]);
     expect(engine.calculate("3.2*4.5")).toEqual({ latex: "14.4" });
     expect(engine.calculate("5 km/h to m/s")).toEqual({ latex: "1.389\\,\\mathrm{m/s}" });
+  });
+});
+
+describe("engine: steps with two or more unknowns (x and y)", () => {
+  const step = (prev: string, line: string) =>
+    engine.analyzeLine(line, { previous: engine.analyzeLine(prev, { mode: "feedback" }), mode: "feedback" });
+
+  it.each([
+    ["x+y=10", "y=10-x"],
+    ["2x+3y=12", "3y=12-2x"],
+    ["3y=12-2x", "y=4-\\frac{2}{3}x"],
+    ["2(x+y)=10", "x+y=5"],
+    ["xy=6", "y=\\frac{6}{x}"],
+    ["2x+3y=12", "x=\\frac{12-3y}{2}"],
+  ])("%s → %s is a correct step", (prev, line) => {
+    expect(step(prev, line).verdict).toBe("ok");
+  });
+
+  it.each([
+    ["x+y=10", "y=5-x"],
+    ["2x+3y=12", "3y=12+2x"],
+    ["2(x+y)=10", "x+y=4"],
+  ])("%s → %s is flagged", (prev, line) => {
+    expect(step(prev, line).verdict).toBe("mismatch");
+  });
+
+  // The next equation of a SYSTEM is not a step: a correct system must never be ringed. (The
+  // demo video caught `x - y = 4` under `x + y = 18` with a ring round it.)
+  it.each([
+    ["x+y=18", "x-y=4"],
+    ["2x+3y=12", "x-y=1"],
+    ["y=2x+1", "y=-x+4"],
+    ["3x+2y=16", "2x+3y=14"],
+    // squaring both sides is a real step (it adds a solution): not ringed, not ticked either
+    ["x+y=10", "(x+y)^2=100"],
+  ])("%s then %s is a new equation, not a wrong step", (prev, line) => {
+    expect(step(prev, line).verdict).toBe("none");
+  });
+
+  it("a first line in two unknowns has nothing to be checked against (and is not sent to the model)", () => {
+    expect(engine.analyzeLine("x+y=10", { mode: "feedback" }).verdict).toBe("none");
+  });
+
+  it("a step that brings in a new unknown is not guessed at", () => {
+    expect(step("x+y=10", "y=10-z").verdict).not.toBe("ok");
+    expect(step("x+y=10", "x+y+z=10").verdict).toBe("unknown");
+  });
+
+  it("isolating y still draws the graph", () => {
+    expect(step("x+y=10", "y=10-x").plot?.expr).toBe("10 - x");
   });
 });

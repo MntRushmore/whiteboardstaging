@@ -6,7 +6,9 @@
  * filesystem and that every file honours the auth / rate-limit / zod invariants).
  *
  * Adding a route: create src/app/api/<path>/route.ts AND add an entry here, or the
- * unit test fails. Never delete or rename a path that shipped: mark it deprecated.
+ * unit test fails. Prefer marking a shipped path deprecated over renaming it; a route that is
+ * removed on purpose (the image pipeline: generate-solution, generate-worksheet, ocr,
+ * check-help-needed) leaves the filesystem and this list in the same change.
  *
  * Fields
  *   path        URL path
@@ -39,7 +41,6 @@ export const PUBLIC_ROUTE_REASONS = Object.freeze({
 export const NO_BODY_ROUTES = Object.freeze([
   "src/app/api/credits/route.ts", // GET only
   "src/app/api/config/status/route.ts", // GET only
-  "src/app/api/voice/token/route.ts", // POST with an empty body; the model is fixed server-side
   "src/app/api/admin/gc/route.ts", // GET (Vercel cron) or POST with an empty body; options are query params
 ]);
 
@@ -70,16 +71,6 @@ export const API_ROUTES = Object.freeze([
     status: "active",
   },
   {
-    path: "/api/check-help-needed",
-    file: "src/app/api/check-help-needed/route.ts",
-    methods: ["POST"],
-    auth: "user",
-    limit: "checkHelp",
-    body: "zod",
-    purpose: "Text/image heuristic: does the student look stuck?",
-    status: "deprecated: unused by the client",
-  },
-  {
     path: "/api/config/status",
     file: "src/app/api/config/status/route.ts",
     methods: ["GET"],
@@ -101,26 +92,6 @@ export const API_ROUTES = Object.freeze([
     status: "active",
   },
   {
-    path: "/api/generate-solution",
-    file: "src/app/api/generate-solution/route.ts",
-    methods: ["POST"],
-    auth: "user",
-    limit: "generateSolution",
-    body: "zod",
-    purpose: "Canvas PNG -> AI overlay image (feedback/suggest/answer)",
-    status: "active",
-  },
-  {
-    path: "/api/generate-worksheet",
-    file: "src/app/api/generate-worksheet/route.ts",
-    methods: ["POST"],
-    auth: "user",
-    limit: "generateWorksheet",
-    body: "zod",
-    purpose: "Topic -> worksheet image",
-    status: "active",
-  },
-  {
     path: "/api/live/check",
     file: "src/app/api/live/check/route.ts",
     methods: ["POST"],
@@ -128,6 +99,26 @@ export const API_ROUTES = Object.freeze([
     limit: "liveCheck",
     body: "zod",
     purpose: "Live Math: SSE annotations for recognized lines",
+    status: "active",
+  },
+  {
+    path: "/api/live/chat",
+    file: "src/app/api/live/chat/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "liveChat",
+    body: "zod",
+    purpose: "Live Math: the board chat — a typed request -> a short reply and board actions (problems the engine checks, lines, a graph, a figure spec, a new screen, clear)",
+    status: "active",
+  },
+  {
+    path: "/api/live/proof",
+    file: "src/app/api/live/proof/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "liveProof",
+    body: "zod",
+    purpose: "Live Math: two-column proofs — a proof's figure read (crop -> points and lines), or one next row the engine's planner could not find (checked on the client)",
     status: "active",
   },
   {
@@ -141,6 +132,26 @@ export const API_ROUTES = Object.freeze([
     status: "active",
   },
   {
+    path: "/api/live/reread",
+    file: "src/app/api/live/reread/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "liveReread",
+    body: "zod",
+    purpose: "Live Math: the second reader re-reads one suspicious line from its ink crop",
+    status: "active",
+  },
+  {
+    path: "/api/live/setup",
+    file: "src/app/api/live/setup/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "liveSetup",
+    body: "zod",
+    purpose: "Live Math: word problem, or a hand-drawn figure (crop), -> equations (LaTeX only); the client's engine solves them",
+    status: "active",
+  },
+  {
     path: "/api/live/solve",
     file: "src/app/api/live/solve/route.ts",
     methods: ["POST"],
@@ -148,36 +159,6 @@ export const API_ROUTES = Object.freeze([
     limit: "liveSolve",
     body: "zod",
     purpose: "Live Math: SSE worked solution steps",
-    status: "active",
-  },
-  {
-    path: "/api/ocr",
-    file: "src/app/api/ocr/route.ts",
-    methods: ["POST"],
-    auth: "user",
-    limit: "ocr",
-    body: "zod",
-    purpose: "Image -> plain text via a vision model",
-    status: "deprecated: unused by the client",
-  },
-  {
-    path: "/api/voice/analyze-workspace",
-    file: "src/app/api/voice/analyze-workspace/route.ts",
-    methods: ["POST"],
-    auth: "user",
-    limit: "analyzeWorkspace",
-    body: "zod",
-    purpose: "Voice tutor tool: describe the current canvas",
-    status: "active",
-  },
-  {
-    path: "/api/voice/token",
-    file: "src/app/api/voice/token/route.ts",
-    methods: ["POST"],
-    auth: "user",
-    limit: "voiceToken",
-    body: "none",
-    purpose: "Mint an ephemeral OpenAI Realtime client secret",
     status: "active",
   },
 ]);

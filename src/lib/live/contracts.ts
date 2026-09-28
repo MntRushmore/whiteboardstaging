@@ -5,8 +5,10 @@
  * This file is FROZEN during the parallel build: every work package imports from it and
  * nobody edits it without the orchestrator. Propose changes in your report instead.
  */
+import { FigureSpecSchema } from "./figureDraw/contracts";
 import { z } from "zod";
 import type { TLBaseShape, TLShapeId } from "tldraw";
+import type { ChatAction, ChatRunReport, ChatScreen } from "./chat/contracts";
 
 // 1. Modes, verdicts, kinds -------------------------------------------------
 export const HELP_MODES = ["off", "feedback", "suggest", "answer"] as const;
@@ -174,18 +176,131 @@ export interface LineAnalysis {
   units?: { ok: boolean };
   solved?: boolean;
   error?: string;
+  /**
+   * `g(x) = f(x - 3) + 1` under the definition of f, or a right rewrite of it: a function defined
+   * from another, so the next rewrite of it is checked — a wrong one is ringed
+   * (`engine/transformations.ts`).
+   */
+  derived?: boolean;
 }
+/**
+ * What `solveLatex` may know about the column it is solving in (`localSolve` passes it; every
+ * field optional, so a caller with only the line passes nothing).
+ */
+export interface SolveOptions {
+  /** the column's lines down to the one being solved: a function defined above is not a product */
+  column?: readonly string[];
+  /** write complex roots (`x = -1 \pm 2i`) instead of `\varnothing` — see `engine/complexSetting.ts` */
+  complexRoots?: boolean;
+}
+
 export interface AnalyzeContext {
   previous?: LineAnalysis;
   original?: LineAnalysis;
   mode: HelpMode;
 }
+
+/**
+ * What the tutor graphs for a column of work (engine `graphFor`): the maths only, in data
+ * coordinates. `src/lib/live/graphing` turns it into the strokes of a hand-drawn sketch (the
+ * window, the ticks, the curves), so nothing here knows about the page.
+ */
+export type GraphRelOp = "=" | "<" | ">" | "<=" | ">=";
+/** `y op f(x)`: a function, a line in any form solved for y, or the boundary of a region */
+export interface GraphFunctionCurve {
+  kind: "function";
+  /** the relation as the student wrote it */
+  latex: string;
+  /** y as a function of the horizontal variable; NaN where it is not real */
+  f: (x: number) => number;
+  /** mathjs source of f in `x` (the typeset fallback compiles it) */
+  expr: string;
+  op: GraphRelOp;
+  /** a transformation's parent: drawn dotted, under its image */
+  role?: "parent";
+  /** the function's name (`f`, `g`), written beside its curve when there are two */
+  name?: string;
+}
+/** `(x - cx)^2 + (y - cy)^2 op r^2` */
+export interface GraphCircleCurve {
+  kind: "circle";
+  latex: string;
+  cx: number;
+  cy: number;
+  r: number;
+  op: GraphRelOp;
+}
+export type GraphCurve = GraphFunctionCurve | GraphCircleCurve;
+export interface GraphKeyPoint {
+  x: number;
+  y: number;
+  /** `(0, 1)`, written beside the dot; '' when a coordinate is not exact (a dot only) */
+  label: string;
+  /** a hole is drawn as an open circle, the curve broken round it */
+  role: "intercept" | "vertex" | "intersection" | "center" | "endpoint" | "turning" | "hole";
+}
+export interface GraphAsymptote {
+  /** vertical: `x = at`; horizontal: `y = at`; oblique: `y = slope·x + at` (drawn dashed, with its equation) */
+  axis: "vertical" | "horizontal" | "oblique";
+  at: number;
+  slope?: number;
+  /** a transformation's parent's: its curve breaks there, but only the image's are drawn */
+  hidden?: boolean;
+}
+export interface PlaneGraphIntent {
+  kind: "plane";
+  /** stable across rewrites of the same maths: the page never draws one twice */
+  key: string;
+  /** the horizontal variable (`x`, or `t` for `g(t) = …`) */
+  variable: string;
+  curves: GraphCurve[];
+  points: GraphKeyPoint[];
+  asymptotes: GraphAsymptote[];
+  /** a transformation: from the parent's key point to where it lands, drawn as an arrow */
+  arrows?: Array<{ from: { x: number; y: number }; to: { x: number; y: number } }>;
+}
+/** One piece of a one-variable solution set; null is ±∞. */
+export interface NumberLineInterval {
+  from: number | null;
+  to: number | null;
+  fromClosed: boolean;
+  toClosed: boolean;
+}
+export interface NumberLineIntent {
+  kind: "numberLine";
+  key: string;
+  variable: string;
+  intervals: NumberLineInterval[];
+  /** every finite endpoint, with its LaTeX as the answer wrote it (`\frac{3}{2}`) */
+  marks: Array<{ at: number; latex: string }>;
+}
+export type GraphIntent = PlaneGraphIntent | NumberLineIntent;
 export interface LiveEngine {
   analyzeLine(latex: string, ctx: AnalyzeContext): LineAnalysis;
   /** compiled y=f(x) sampler for graph shapes; null when the expression does not parse */
   compileExpr(expr: string): ((x: number) => number) | null;
-  /** local solve of a single-variable equation; null when unsupported (LLM path) */
-  solveLatex(latex: string): { latex: string; steps: string[] } | null;
+  /** local solve of a single-variable equation or linear inequality, with teacher-style steps; null when unsupported (LLM path) */
+  solveLatex(latex: string, opts?: SolveOptions): { latex: string; steps: string[] } | null;
+  /**
+   * Solve for an unknown using the lines above it (a known value substituted in, or two
+   * linear equations); `x = ?` names the unknown. Null when that is not possible locally.
+   * Optional so engine doubles in tests need not implement it.
+   */
+  solveFromLines?(lines: readonly string[]): { latex: string; steps: string[] } | null;
+  /**
+   * Simplifies an expression in an unknown (no relation, or a trailing `=`) the way a teacher
+   * writes it: `3(x+2) - x` → [`3x + 6 - x`, `2x + 6`]. Bare expressions, no leading `=`. Null
+   * when there is nothing to expand or collect. Optional so engine doubles need not implement it.
+   */
+  simplifySteps?(latex: string): string[] | null;
+  /**
+   * What to graph for a column of work (the student's lines, then any solution under them),
+   * top to bottom: `y = f(x)` / `f(x) = …`, a line in any form, two or three of them (with where
+   * they cross), a region (`y < 2x + 1`), a circle, or — from the last line — a one-variable
+   * inequality answer as a number line. Null when there is nothing to graph. Optional so engine
+   * doubles need not implement it.
+   */
+  graphFor?(lines: readonly string[]): GraphIntent | null;
   /** verifies an LLM `expected` claim (mathjs expr) against the student's line */
   verifyExpected(expected: string, latex: string): "equal" | "unequal" | "unknown";
   balance(equation: string): { coeffs: number[]; latex: string } | null;
@@ -222,6 +337,11 @@ export const RecognizeResponseSchema = z.object({
   confidence: z.number().min(0).max(1),
   provider: z.enum(["mathpix", "vision"]),
   ms: z.number(),
+  /**
+   * Dev only (never in production, see `liveDebugEnabled` in the recognize route): the
+   * recognizer's raw output, so the Live debug panel can show what Mathpix actually said.
+   */
+  debug: z.record(z.string(), z.unknown()).optional(),
 });
 export type RecognizeResponse = z.infer<typeof RecognizeResponseSchema>;
 export const CapabilitiesResponseSchema = z.object({
@@ -245,15 +365,26 @@ export const CheckLineSchema = z.object({
 });
 export type CheckLine = z.infer<typeof CheckLineSchema>;
 export const SUBJECTS = ["algebra", "geometry", "calculus", "physics", "chemistry", "other"] as const;
-export const CheckRequestSchema = z.object({
-  boardId: z.string().min(1).max(64),
-  mode: z.enum(["feedback", "suggest"]),
-  subject: z.enum(SUBJECTS).optional(),
-  region: RectSchema,
-  lines: z.array(CheckLineSchema).min(1).max(40),
-  focusLineId: z.string().max(64).optional(),
-  userAsked: z.boolean().default(false),
-});
+export const CheckRequestSchema = z
+  .object({
+    boardId: z.string().min(1).max(64),
+    mode: z.enum(["feedback", "suggest"]),
+    subject: z.enum(SUBJECTS).optional(),
+    region: RectSchema,
+    lines: z.array(CheckLineSchema).min(1).max(40),
+    focusLineId: z.string().max(64).optional(),
+    userAsked: z.boolean().default(false),
+    /**
+     * "Ask about this": a data:image crop of the focus line's ink, sent only when the student
+     * pressed Help on ink Live could not read as maths (a diagram, a sketch, unreadable
+     * writing). Same size cap as RecognizeRequest's crop. Never on an automatic check.
+     */
+    crop: z.string().startsWith("data:image/").max(280_000).optional(),
+  })
+  .refine((r) => !r.crop || (r.userAsked && Boolean(r.focusLineId)), {
+    message: "crop is only accepted on an explicit request for a focus line",
+    path: ["crop"],
+  });
 export type CheckRequest = z.infer<typeof CheckRequestSchema>;
 export const ANNOTATION_KINDS = [
   "arithmetic",
@@ -295,6 +426,92 @@ export const SolveStepSchema = z.object({
 });
 export type SolveStep = z.infer<typeof SolveStepSchema>;
 
+/**
+ * POST /api/live/setup — a word problem turned into the maths a student writes under it. The
+ * model only SETS UP (assignments / equations, no arithmetic done, no words); the local engine
+ * then solves the setup on the client exactly as Solve would, and only when it cannot does the
+ * board fall back to /api/live/solve.
+ */
+export const SetupRequestSchema = z
+  .object({
+    boardId: z.string().min(1).max(64),
+    /** the column's lines top to bottom, as read: prose (`\text{…}`) and any maths the student wrote */
+    lines: z.array(z.string().max(2000)).max(40).default([]),
+    /**
+     * "The tutor reads the figure": a data:image crop of a hand-drawn figure and its labels (the
+     * client's `captureCrop`, same cap as recognize), sent only when the student asks (Solve / Help
+     * on the drawing, or on a line beside it). With it the route reads the image with a vision
+     * model; `lines` are then the lines beside the figure, possibly none.
+     */
+    crop: z.string().startsWith("data:image/").max(280_000).optional(),
+    /** the figure's labels as the recognizer read them, one per label (`A`, `3`, `40^{\circ}`); only with `crop` */
+    labels: z.array(z.string().max(200)).max(40).optional(),
+  })
+  .refine((r) => r.lines.length > 0 || Boolean(r.crop), { message: "a problem needs lines or a figure", path: ["lines"] })
+  .refine((r) => !r.labels || Boolean(r.crop), { message: "labels only come with a figure crop", path: ["labels"] });
+export type SetupRequest = z.infer<typeof SetupRequestSchema>;
+export const SetupResponseSchema = z.object({
+  /**
+   * A word problem that describes a picture (a ladder against a wall, two angles of a triangle, a
+   * rectangle's sides): the figure the tutor draws beside the working, true to scale, labelled with
+   * the problem's numbers and the unknown's letter (`src/lib/live/figureDraw`). Only ever a spec
+   * that `checkFigure` passed; absent otherwise.
+   */
+  sketch: FigureSpecSchema.optional(),
+  /** LaTeX only: assignments / equations, one short letter per quantity, top to bottom */
+  lines: z.array(z.string().min(1).max(500)).min(1).max(6),
+  /** the letter of the asked-for quantity, when the model named one */
+  unknown: z.string().max(20).optional(),
+  model: z.string(),
+  ms: z.number(),
+  /**
+   * With a figure crop: where `lines` came from. `facts`: the model's structured read of the figure,
+   * turned into equations by `planFigure` (src/lib/live/figure), one stage per unknown, each with
+   * the value the board's engine must agree with. `lines`: the model's own free-form setup (the
+   * read did not hold up: `reason`), kept by the board only when its engine solves it to a sensible
+   * size (`kind`: what the labels say is asked). Absent: a word problem, or an older server.
+   */
+  figure: z
+    .object({
+      source: z.enum(["facts", "lines"]),
+      reason: z.string().max(300).optional(),
+      kind: z.enum(["angle", "length"]).optional(),
+      stages: z
+        .array(z.object({ letter: z.string().min(1).max(20), lines: z.array(z.string().min(1).max(500)).min(1).max(6), value: z.number(), kind: z.enum(["angle", "length"]) }))
+        .max(3)
+        .optional(),
+    })
+    .optional(),
+});
+export type SetupResponse = z.infer<typeof SetupResponseSchema>;
+
+/**
+ * POST /api/live/reread — the second reader: a vision model looks at the ink of ONE line that
+ * Mathpix may have misread, with Mathpix's LaTeX and the column's other lines, and returns what
+ * is written. Only ever sent on a signal (`src/lib/live/readCheck.ts`), at most once per ink.
+ */
+export const RereadRequestSchema = z.object({
+  boardId: z.string().min(1).max(64),
+  lineId: z.string().min(1).max(64),
+  /** data:image crop of the line's ink (the client's `captureCrop`), same cap as recognize */
+  crop: z.string().startsWith("data:image/").max(280_000),
+  /** Mathpix's LaTeX for the line */
+  latex: z.string().min(1).max(2000),
+  /** the column's lines above it, top to bottom, as read */
+  above: z.array(z.string().max(2000)).max(40).default([]),
+  /** the column's lines below it (a line rewritten mid-column), top to bottom */
+  below: z.array(z.string().max(2000)).max(40).default([]),
+});
+export type RereadRequest = z.input<typeof RereadRequestSchema>;
+export const RereadResponseSchema = z.object({
+  latex: z.string().max(2000),
+  /** the model's own claim that it changed the read (the client compares for itself) */
+  changed: z.boolean(),
+  model: z.string(),
+  ms: z.number(),
+});
+export type RereadResponse = z.infer<typeof RereadResponseSchema>;
+
 export const SseMetaSchema = z.object({ requestId: z.string(), model: z.string() });
 export const SseDoneSchema = z.object({ count: z.number(), ms: z.number() });
 export const SseErrorSchema = z.object({ error: z.string(), message: z.string() });
@@ -308,7 +525,7 @@ export type LiveSseEvent =
 /**
  * Body of every non-2xx response from /api/* (matches src/lib/server/auth.ts `json()`):
  * `error` is the machine code (unauthorized | invalid_request | rate_limited | credits_exhausted |
- * upstream_error | voice_unavailable | feature_unavailable | internal_error | recognizer_failed).
+ * upstream_error | feature_unavailable | internal_error | recognizer_failed).
  */
 export const ApiErrorSchema = z.object({
   error: z.string(),
@@ -318,13 +535,55 @@ export const ApiErrorSchema = z.object({
 });
 export type ApiErrorBody = z.infer<typeof ApiErrorSchema>;
 
-// 6. Server configuration (model ids verified on OpenRouter 2026-09-11) ------
+// 6. Server configuration (model ids verified on OpenRouter 2026-09-27) ------
+/**
+ * Solve is only reached for maths the local engine cannot do, and every step it returns is
+ * checked by the engine before it is drawn. Chosen on the model benchmark (docs/eval/models.md,
+ * `npm run eval:models`): GPT-5.4 mini matched Sonnet 5 on right answers (22 vs 23 of 25 shown
+ * to the student) at 2.5 s p50 and about 40 % of the cost; DeepSeek v4.1 Flash is the fallback
+ * only when it fails (21/25, cheapest). The owner chose a US provider as primary.
+ */
+/**
+ * Setup (word problem → equations) is benchmark job 1: every model scored 24–25/25, so latency,
+ * cost and a US primary decide — GPT-5.4 mini, with DeepSeek v4.1 Flash (25/25, cheapest) as the
+ * fallback from another provider. Reread (the second reader for messy ink) is job 3: Gemini 3.1
+ * Flash Lite fixed 14/18 real Mathpix misreads and broke 0/20 correct reads at ~0.9 s; Haiku 4.5
+ * (another provider, also 0 breaks) is its fallback.
+ */
 export const LIVE_MODELS = {
   check: "google/gemini-3.5-flash",
   checkFallback: "anthropic/claude-haiku-4.5",
-  solve: "anthropic/claude-sonnet-5",
-  solveFallback: "openai/gpt-5.4-mini",
+  solve: "openai/gpt-5.4-mini",
+  solveFallback: "deepseek/deepseek-v4.1-flash",
   vision: "google/gemini-3.1-flash-lite",
+  setup: "openai/gpt-5.4-mini",
+  setupFallback: "deepseek/deepseek-v4.1-flash",
+  reread: "google/gemini-3.1-flash-lite",
+  rereadFallback: "anthropic/claude-haiku-4.5",
+  /**
+   * A hand-drawn figure (a crop) read as facts (`npm run eval:figures`, docs/eval/figures.md, 47
+   * figures): Gemini 3.1 Flash Lite 47/47 right, none wrong, 1.1 s p50, ~$0.0009 a figure; Gemini 3.5
+   * Flash Lite 45/47 (2 wrong) is the fallback — Haiku 4.5, the reread's fallback, wrote 4 wrong
+   * answers of 47 at nearly three times the cost. Both are Google's (a US provider); OpenRouter
+   * routes each to more than one Google endpoint.
+   */
+  figure: "google/gemini-3.1-flash-lite",
+  figureFallback: "google/gemini-3.5-flash-lite",
+  /**
+   * Two-column proofs (POST /api/live/proof, `src/lib/live/proof`): reading a proof's figure (which
+   * points lie on which lines) and, when the engine's planner cannot finish a proof, one next row —
+   * which the client's checker must tick before it is written. The setup pair: US primary, the
+   * cheapest capable fallback from another provider; both read images.
+   */
+  proof: "openai/gpt-5.4-mini",
+  proofFallback: "deepseek/deepseek-v4.1-flash",
+  /**
+   * The board chat (POST /api/live/chat, `src/lib/live/chat`): a typed request → a reply and the
+   * actions the tutor writes (problems, lines, a graph, a figure spec). Chosen on `npm run
+   * eval:chat` (docs/eval/chat.md): US primary, the cheapest capable fallback from another provider.
+   */
+  chat: "openai/gpt-5.4-mini",
+  chatFallback: "deepseek/deepseek-v4.1-flash",
 } as const;
 
 /** Per-user limits for the live routes (the existing LIMITS table in src/lib/server/rate-limit.ts covers the legacy routes). */
@@ -332,6 +591,14 @@ export const LIVE_RATE_LIMITS = {
   liveRecognize: { limit: 120, windowMs: 60_000 },
   liveCheck: { limit: 30, windowMs: 60_000 },
   liveSolve: { limit: 10, windowMs: 60_000 },
+  /** one per Solve on a word problem, like solve itself */
+  liveSetup: { limit: 10, windowMs: 60_000 },
+  /** only on a suspicious read, at most once per ink; a quarter of the recognize budget is ample */
+  liveReread: { limit: 30, windowMs: 60_000 },
+  /** a proof's figure read (once per figure) and a next row when the planner cannot finish: two per ask at most */
+  liveProof: { limit: 20, windowMs: 60_000 },
+  /** the board chat: typed by hand, one request at a time */
+  liveChat: { limit: 12, windowMs: 60_000 },
 } as const;
 export type LiveRateLimitRoute = keyof typeof LIVE_RATE_LIMITS;
 
@@ -341,7 +608,6 @@ export const LIVE_TIMING = {
   rewriteQuietMs: 450, // when the line already has an echo
   unknownIdleMs: 5000, // Feedback: LLM check for 'unknown' only after this idle
   unreadableChipMs: 3000, // low confidence: "Couldn't read this" chip only after this
-  legacyIdleMs: 4000, // legacy image pipeline debounce while Live is on (2000 when off)
   recognizeTimeoutMs: 6000,
   checkWatchdogMs: 4000, // no model bytes -> fallback model
   pillFadeMs: 1500,
@@ -369,7 +635,8 @@ export interface LiveLineState {
   line: InkLine;
   latex: string;
   confidence: number;
-  provider: "mathpix" | "vision" | "typed" | "none";
+  /** `reread`: Mathpix's read was replaced by the second reader's (`/api/live/reread`) */
+  provider: "mathpix" | "vision" | "reread" | "typed" | "none";
   analysis: LineAnalysis | null;
   mathShapeId: TLShapeId | null;
   graphShapeId: TLShapeId | null;
@@ -385,17 +652,6 @@ export interface OpenHint {
   question: string;
   level: number;
   createdAt: number;
-}
-/**
- * pending: ink landed, recognition still running · handled: an echo landed · unhandled:
- * Live read the ink and has nothing to show (non-math, low confidence): the legacy image
- * pipeline may run · failed: recognition itself failed (server / network / capabilities);
- * the legacy pipeline stays quiet so an outage never turns into paid image generations.
- */
-export type BurstState = "pending" | "handled" | "unhandled" | "failed";
-export interface LiveBurst {
-  at: number;
-  state: BurstState;
 }
 export interface LiveTranscriptLine {
   id: string;
@@ -415,14 +671,26 @@ export interface LiveController {
   plotFunction(args: { expr: string; xMin?: number; xMax?: number; nearLineId?: string }): TLShapeId | null;
   requestCheck(lineId?: string): void;
   requestSolve(lineId?: string): void;
+  /**
+   * The board's one "Help" action, on the latest line: Solve writes the solution, Feedback /
+   * Suggest escalate that line's hint. Ink Live could not read as maths goes to the check
+   * model with a crop of the ink ("Ask about this"). Always explicit; never fired on a timer.
+   */
+  requestHelp(): void;
   escalate(lineId: string): void;
   dismissHint(hintId: string): void;
   clearMarks(): void;
   retypeLine(lineId: string, latex: string): void;
+  /**
+   * The board chat (`src/lib/live/chat`): the current screen as maths, sent with a request so "3
+   * more like these" works, and a reply's actions run one block at a time in the tutor's hand
+   * (problems checked by the engine first). Optional, so a controller double need not have them.
+   */
+  chatScreen?(): ChatScreen;
+  runChatActions?(actions: readonly ChatAction[]): Promise<ChatRunReport>;
 }
 export interface UseLiveMathOptions {
   boardId: string;
   mode: HelpMode;
   enabled: boolean;
-  voiceActive: boolean;
 }

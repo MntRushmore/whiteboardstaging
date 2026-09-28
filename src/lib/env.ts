@@ -34,7 +34,6 @@ const envSchema = z.object({
   NEXT_PUBLIC_SUPABASE_ANON_KEY: requiredString,
   OPENROUTER_API_KEY: requiredString,
 
-  OPENAI_API_KEY: optionalString,
   MATHPIX_APP_ID: optionalString,
   MATHPIX_APP_KEY: optionalString,
   SUPABASE_SERVICE_ROLE_KEY: optionalString,
@@ -45,6 +44,11 @@ const envSchema = z.object({
   LIVE_MODEL_CHECK: optionalString,
   LIVE_MODEL_SOLVE: optionalString,
   LIVE_MODEL_VISION: optionalString,
+  LIVE_MODEL_SETUP: optionalString,
+  LIVE_MODEL_REREAD: optionalString,
+  LIVE_MODEL_FIGURE: optionalString,
+  LIVE_MODEL_PROOF: optionalString,
+  LIVE_MODEL_CHAT: optionalString,
 
   // Billing (all optional; see docs/ARCHITECTURE.md "Billing").
   BILLING_ENFORCE: optionalString,
@@ -110,11 +114,6 @@ export function getRateLimitBackend(): RateLimitBackend {
   return raw?.trim().toLowerCase() === "memory" ? "memory" : "db";
 }
 
-/** True when the OpenAI key is configured (voice tutor / Realtime API). */
-export function hasOpenAI(): boolean {
-  return Boolean(getServerEnv().OPENAI_API_KEY);
-}
-
 /** True when both Mathpix credentials are configured (handwritten math OCR). */
 export function hasMathpix(): boolean {
   const env = getServerEnv();
@@ -127,23 +126,56 @@ export type LiveModels = {
   solve: string;
   solveFallback: string;
   vision: string;
+  setup: string;
+  setupFallback: string;
+  reread: string;
+  rereadFallback: string;
+  /** setup from a hand-drawn figure (POST /api/live/setup with a crop): a vision model */
+  figure: string;
+  figureFallback: string;
+  /** two-column proofs (POST /api/live/proof): a proof's figure read, a next row the planner could not find */
+  proof: string;
+  proofFallback: string;
+  /** the board chat (POST /api/live/chat): a typed request -> a reply and board actions */
+  chat: string;
+  chatFallback: string;
 };
 
+/** The fallback for `primary`: never the primary itself (an override equal to the fallback swaps the two). */
+function fallbackFor(primary: string, defaultPrimary: string, defaultFallback: string): string {
+  return primary === defaultFallback ? defaultPrimary : defaultFallback;
+}
+
 /**
- * Model ids used by the Live Math routes. `LIVE_MODEL_CHECK/SOLVE/VISION` override the
- * primaries; the fallbacks always come from LIVE_MODELS (a fallback equal to the primary
- * would be pointless, so an override that matches a fallback swaps the two).
+ * Model ids used by the Live Math routes. `LIVE_MODEL_CHECK/SOLVE/VISION/SETUP/REREAD/FIGURE/PROOF/CHAT`
+ * override the primaries; the fallbacks always come from LIVE_MODELS (a fallback equal to the
+ * primary would be pointless, so an override that matches a fallback swaps the two).
  */
 export function getLiveModels(): LiveModels {
   const env = getServerEnv();
   const check = env.LIVE_MODEL_CHECK || LIVE_MODELS.check;
   const solve = env.LIVE_MODEL_SOLVE || LIVE_MODELS.solve;
+  const setup = env.LIVE_MODEL_SETUP || LIVE_MODELS.setup;
+  const reread = env.LIVE_MODEL_REREAD || LIVE_MODELS.reread;
+  const figure = env.LIVE_MODEL_FIGURE || LIVE_MODELS.figure;
+  const proof = env.LIVE_MODEL_PROOF || LIVE_MODELS.proof;
+  const chat = env.LIVE_MODEL_CHAT || LIVE_MODELS.chat;
   return {
     check,
-    checkFallback: check === LIVE_MODELS.checkFallback ? LIVE_MODELS.check : LIVE_MODELS.checkFallback,
+    checkFallback: fallbackFor(check, LIVE_MODELS.check, LIVE_MODELS.checkFallback),
     solve,
-    solveFallback: solve === LIVE_MODELS.solveFallback ? LIVE_MODELS.solve : LIVE_MODELS.solveFallback,
+    solveFallback: fallbackFor(solve, LIVE_MODELS.solve, LIVE_MODELS.solveFallback),
     vision: env.LIVE_MODEL_VISION || LIVE_MODELS.vision,
+    setup,
+    setupFallback: fallbackFor(setup, LIVE_MODELS.setup, LIVE_MODELS.setupFallback),
+    reread,
+    rereadFallback: fallbackFor(reread, LIVE_MODELS.reread, LIVE_MODELS.rereadFallback),
+    figure,
+    figureFallback: fallbackFor(figure, LIVE_MODELS.figure, LIVE_MODELS.figureFallback),
+    proof,
+    proofFallback: fallbackFor(proof, LIVE_MODELS.proof, LIVE_MODELS.proofFallback),
+    chat,
+    chatFallback: fallbackFor(chat, LIVE_MODELS.chat, LIVE_MODELS.chatFallback),
   };
 }
 

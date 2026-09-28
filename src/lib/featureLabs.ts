@@ -14,7 +14,7 @@ import {
   type SaveFailure,
 } from "@/lib/featureLabsState";
 
-export type FeatureKey = "stickers" | "worksheetGen" | "pdfUpload";
+export type FeatureKey = "stickers" | "pdfUpload";
 
 export type FeatureMeta = {
   key: FeatureKey;
@@ -34,14 +34,6 @@ export const FEATURES: FeatureMeta[] = [
     icon: "Sparkles",
   },
   {
-    key: "worksheetGen",
-    title: "Worksheet generator",
-    description:
-      "Type a topic and generate a printable worksheet directly onto the canvas. Locked from AI editing.",
-    status: "experimental",
-    icon: "FileText",
-  },
-  {
     key: "pdfUpload",
     title: "PDF worksheet upload",
     description:
@@ -53,7 +45,6 @@ export const FEATURES: FeatureMeta[] = [
 
 export const DEFAULT_FEATURES: Record<FeatureKey, boolean> = {
   stickers: false,
-  worksheetGen: false,
   pdfUpload: false,
 };
 

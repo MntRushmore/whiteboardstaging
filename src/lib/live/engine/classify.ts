@@ -168,7 +168,8 @@ export function bracketsBalanced(latex: string): boolean {
 }
 
 const TRAILING_OP = /(?:[+\-*/^=<>]|\\(?:cdot|times|div|pm|mp|le|ge|ne|leq|geq|neq|to|rightarrow|Rightarrow|frac|sqrt)\s*)$/;
-const LEADING_OP = /^(?:[+*/^=<>]|\\(?:cdot|times|div|le|ge|ne|leq|geq|neq))\s*/;
+// `(?![a-zA-Z])`: `\le` is an operator, `\left(` at the start of a line is a bracket
+const LEADING_OP = /^(?:[+*/^=<>]|\\(?:cdot|times|div|le|ge|ne|leq|geq|neq)(?![a-zA-Z]))\s*/;
 const EMPTY_GROUP = /\{\s*\}/;
 
 export interface IncompleteInfo {

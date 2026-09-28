@@ -23,34 +23,31 @@ export interface BoardToolbarState {
   liveEnabled: boolean;
   /** false when the deploy-time kill switch has taken Live away entirely */
   liveAvailable: boolean;
-  /** the voice tutor owns the top of the screen while a session is open */
-  voiceActive: boolean;
 }
 
 export interface BoardToolbarView {
-  /** the whole bar (back chevron, tabs, pill, save status) */
-  showTopBar: boolean;
   /** "Solve steps" is a Solve-mode action, not a permanent button */
   showSolveSteps: boolean;
-  /** the status pill is always in the bar: it carries the board's only overflow menu */
-  showStatusPill: boolean;
   /** the floating hint cards Live draws next to the ink */
   showHintLayer: boolean;
   /** Live is switched on AND allowed by the build */
   liveRunning: boolean;
+  /**
+   * "Help" in the board menu does something: every answer comes from Live (the image
+   * pipeline is gone), so it needs Live running and a help mode other than Off.
+   */
+  canHelp: boolean;
 }
 
 export function boardToolbarView(state: BoardToolbarState): BoardToolbarView {
   const liveRunning = state.liveEnabled && state.liveAvailable;
-  const showTopBar = !state.voiceActive;
   return {
-    showTopBar,
     // Streaming the worked steps only means anything once the student has asked for
     // solutions, and only Live can write them.
-    showSolveSteps: showTopBar && liveRunning && state.mode === "answer",
-    showStatusPill: showTopBar,
-    showHintLayer: !state.voiceActive && liveRunning,
+    showSolveSteps: liveRunning && state.mode === "answer",
+    showHintLayer: liveRunning,
     liveRunning,
+    canHelp: liveRunning && state.mode !== "off",
   };
 }
 

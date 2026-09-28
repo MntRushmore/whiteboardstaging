@@ -21,7 +21,6 @@ import {
 
 export interface PolicyInput {
   mode: HelpMode;
-  voiceActive: boolean;
   analysis: LineAnalysis | null;
   confidence: number;
   /** ms since the line last changed */
@@ -45,17 +44,6 @@ export interface PolicyInput {
 
 export interface PolicyDecision {
   echo: boolean;
-  /**
-   * Live read this line as mathematics, whether or not it had anything to SAY about it.
-   *
-   * Distinct from `echo`, and the difference is the whole point: an `incomplete` line — the
-   * student mid-working, `3a + 6 =` with nothing after the sign yet — is silent but is NOT
-   * spare. The legacy image pipeline runs on an idle timer whenever Live leaves a burst
-   * unclaimed, so treating "said nothing" as "has nothing" handed exactly those half-written
-   * lines to an image model to guess the rest of. Only ink that is not maths at all (prose, a
-   * diagram label) or that could not be read goes on.
-   */
-  owned: boolean;
   badge: LiveVerdict;
   showResult: boolean;
   runLlmCheck: boolean;
@@ -131,7 +119,7 @@ export function badgeFor(mode: HelpMode, analysis: LineAnalysis | null): LiveVer
 }
 
 export function decide(input: PolicyInput): PolicyDecision {
-  const { mode, voiceActive, analysis, confidence, idleMs, userAsked } = input;
+  const { mode, analysis, confidence, idleMs, userAsked } = input;
   const kind: LineKind = analysis?.kind ?? "unknown";
   const verdict = analysis?.verdict ?? "unknown";
   const capped = input.liveShapeCount >= LIVE_LIMITS.maxLiveShapesPerBoard;
@@ -139,8 +127,6 @@ export function decide(input: PolicyInput): PolicyDecision {
   // 2. echo (labels, incomplete lines, prose and lone symbols are silent)
   const loneSymbol = input.latex !== undefined && isSingleSymbolLatex(input.latex);
   const echo = !SILENT_KINDS.has(kind) && !loneSymbol && confidence >= LIVE_LIMITS.minConfidence;
-  // 2b. owned — everything `echo` claims, plus the half-written maths it deliberately skips.
-  const owned = echo || kind === "incomplete";
 
   // 3. badge (never warn from unknown)
   const badge: LiveVerdict = echo && !capped ? badgeFor(mode, analysis) : "none";
@@ -157,7 +143,7 @@ export function decide(input: PolicyInput): PolicyDecision {
   //    writing ANYWHERE on the canvas, not merely on this line. Badges, hints and the solved
   //    chip do not wait: they are marks on work already done.
   //
-  // An explicit request (Solve steps, a badge tap, the voice tutor) means "now": `userAsked`
+  // An explicit request (Solve steps, a badge tap, the board chat) means "now": `userAsked`
   // bypasses the settle wait entirely. It does not bypass the mode gate — asking in Feedback
   // asks for feedback.
   const hasResult = Boolean(analysis?.resultLatex);
@@ -171,12 +157,14 @@ export function decide(input: PolicyInput): PolicyDecision {
 
   // 5. runLlmCheck
   let runLlmCheck = false;
-  if (mode !== "off" && !voiceActive && echo && !capped) {
+  if (mode !== "off" && echo && !capped) {
     const feedbackRule =
       userAsked ||
       (verdict === "unknown" && idleMs >= LIVE_TIMING.unknownIdleMs && CHECKABLE_KINDS.has(kind));
-    if (mode === "feedback") runLlmCheck = feedbackRule;
-    else runLlmCheck = feedbackRule || (verdict === "mismatch" && input.hintsShownForLine < 1);
+    // A step the engine already calls wrong needs no model to say so: the ring is drawn and
+    // (Suggest / Solve) the right next step is written by hand from the engine. The model is
+    // only asked about lines the engine cannot judge, or when the student asks.
+    runLlmCheck = feedbackRule;
   }
 
   // 6. allowHint
@@ -197,7 +185,6 @@ export function decide(input: PolicyInput): PolicyDecision {
 
   return {
     echo,
-    owned,
     badge,
     showResult,
     runLlmCheck,

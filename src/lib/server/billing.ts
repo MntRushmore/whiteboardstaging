@@ -31,14 +31,17 @@ export const ROUTE_COSTS = {
   "live/recognize": 1,
   "live/check": 3,
   "live/solve": 10,
-  "generate-solution": 25,
-  "generate-worksheet": 20,
-  "voice/analyze-workspace": 3,
-  ocr: 2,
-  "check-help-needed": 2,
+  // A word problem's setup (the model writes the equations, the engine solves them): below solve.
+  "live/setup": 2,
+  // The second reader for a suspicious read: one line read again, priced like recognize.
+  "live/reread": 1,
+  // A proof's figure read, or one next row when the engine's planner cannot finish: priced like setup.
+  "live/proof": 2,
+  // The board chat: one planning call (problems, a graph, a figure spec), plus at most one small
+  // figure repair; the engine checks every problem, so no solve model is involved.
+  "live/chat": 3,
   credits: 0,
   "config/status": 0,
-  "voice/token": 0,
 } as const satisfies Record<string, number>;
 
 export type BillableRoute = keyof typeof ROUTE_COSTS;

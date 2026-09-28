@@ -1,7 +1,18 @@
 "use client";
 
 import { atom } from "tldraw";
-import type { LiveBurst, LiveLineState, LiveStatus, OpenHint, RecognizerKind } from "./contracts";
+import type { LiveLineState, LiveStatus, OpenHint, RecognizerKind, Rect } from "./contracts";
+
+/** A drawing on the screen as the dev panel shows it (`src/lib/live/diagrams.ts`). */
+export interface LiveDiagram {
+  id: string;
+  kinds: string[];
+  bounds: Rect;
+  strokes: number;
+  labels: number;
+  /** its labels as the recognizer read them, one per label; null until read */
+  read: string[] | null;
+}
 
 /** Which network/model call of the Live layer failed. */
 export type LiveErrorKind = "capabilities" | "recognize" | "check" | "solve";
@@ -18,7 +29,7 @@ export interface LiveError {
   code: LiveErrorCode;
   /** student-facing, second person, calm */
   message: string;
-  /** optional second line (recognize/capabilities: the legacy image pipeline is paused) */
+  /** optional second line under the message */
   detail?: string;
   lineId?: string;
   /** rate_limited: how long after `at` a retry makes sense */
@@ -33,8 +44,9 @@ export const liveStore = {
   status: atom<LiveStatus>("live.status", "idle"),
   recognizer: atom<RecognizerKind>("live.recognizer", "unknown"),
   lines: atom<Record<string, LiveLineState>>("live.lines", {}),
+  /** the drawings on the screen: never recognized or marked; their labels are read as context */
+  diagrams: atom<LiveDiagram[]>("live.diagrams", []),
   openHints: atom<OpenHint[]>("live.openHints", []),
-  lastBurst: atom<LiveBurst | null>("live.lastBurst", null),
   liveShapeCount: atom<number>("live.shapeCount", 0),
   /** lines whose recognition is waiting for the network to come back */
   offlineQueued: atom<number>("live.offlineQueued", 0),
@@ -86,32 +98,12 @@ export function removeLine(id: string): void {
   if (err?.lineId === id) liveStore.lastError.set(null);
 }
 
-export function markBurst(state: LiveBurst["state"]): void {
-  liveStore.lastBurst.set({ at: Date.now(), state });
-}
-
-/**
- * true when the legacy image pipeline should stay silent for the current idle window:
- * the latest ink burst is recent and Live still owns it ('pending'), has claimed it
- * ('handled') or could not read it because recognition failed ('failed'). Only 'unhandled'
- * — Live read the ink and it is not maths at all (prose, a diagram label), or it could not
- * be read — lets the image pipeline run. A user-forced "Draw help" bypasses this gate.
- *
- * 'handled' means Live OWNS the line, not that it drew something on it. A half-written line
- * (`3a + 6 =`) is deliberately silent, and while it was reported as unclaimed the image
- * model was invited to guess the rest of the student's working, slowly and in its own ink.
- */
-export function legacyShouldSkip(idleMs: number): boolean {
-  const b = liveStore.lastBurst.get();
-  return !!b && Date.now() - b.at <= idleMs + 1000 && b.state !== "unhandled";
-}
-
 export function resetLiveStore(): void {
   liveStore.status.set("idle");
   liveStore.recognizer.set("unknown");
   liveStore.lines.set({});
+  liveStore.diagrams.set([]);
   liveStore.openHints.set([]);
-  liveStore.lastBurst.set(null);
   liveStore.liveShapeCount.set(0);
   liveStore.offlineQueued.set(0);
   liveStore.lastError.set(null);

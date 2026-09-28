@@ -1,14 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createShapeId, type IndexKey, type TLPageId, type TLShape, type TLShapeId } from "tldraw";
+import { createShapeId, type IndexKey, type TLShape, type TLShapeId } from "tldraw";
 import {
   aiOverlayMeta,
   dropPendingAiOverlays,
   isAiOverlayShape,
-  overlayIndexBelowLive,
   partitionAiOverlays,
-  sameOverlayIds,
   type OverlayWriter,
-  type ZOrderReader,
 } from "../useAiOverlayShapes";
 
 function shape(type: string, index: string, meta: TLShape["meta"] = {}): TLShape {
@@ -85,7 +82,7 @@ describe("dropPendingAiOverlays", () => {
     return state;
   }
 
-  it("removes pending overlays (unlocking them first) and keeps everything else", () => {
+  it("removes pending overlays, unlocks the overlays that stay, and keeps everything else", () => {
     const ink = shape("draw", "a1");
     const worksheet = shape("image", "a2", { isProtected: true, kind: "worksheet" });
     const feedback = { ...shape("image", "a3", aiOverlayMeta("feedback")), isLocked: true };
@@ -94,9 +91,12 @@ describe("dropPendingAiOverlays", () => {
     const s = store([ink, worksheet, feedback, accepted, pending]);
 
     expect(dropPendingAiOverlays(s)).toEqual([pending.id]);
-    // locked shapes are not deletable: unlock first, exactly like Reject
-    expect(s.unlocked).toEqual([pending.id]);
+    // locked shapes are not deletable: the pending one is unlocked before it goes, and the
+    // kept ones are unlocked for good — "Clear feedback" is gone, so the student removes
+    // them like any other image
+    expect(s.unlocked.sort()).toEqual([feedback.id, accepted.id, pending.id].sort());
     expect(s.shapes.map((x) => x.id)).toEqual([ink.id, worksheet.id, feedback.id, accepted.id]);
+    expect(s.shapes.every((x) => !x.isLocked)).toBe(true);
   });
 
   it("removes every pending overlay when several piled up", () => {
@@ -107,7 +107,7 @@ describe("dropPendingAiOverlays", () => {
     expect(s.shapes).toEqual([]);
   });
 
-  it("is a no-op (no writes) when nothing is pending", () => {
+  it("is a no-op (no writes) when nothing is pending or locked", () => {
     const s = store([shape("draw", "a1"), shape("image", "a2", aiOverlayMeta("feedback"))]);
     expect(dropPendingAiOverlays(s)).toEqual([]);
     expect(s.unlocked).toEqual([]);
@@ -121,49 +121,5 @@ describe("dropPendingAiOverlays", () => {
     const after = partitionAiOverlays(s.shapes);
     expect(after.pending).toEqual([]);
     expect(after.feedback).toHaveLength(1);
-  });
-});
-
-describe("sameOverlayIds", () => {
-  it("compares id lists positionally", () => {
-    const a = createShapeId();
-    const b = createShapeId();
-    expect(sameOverlayIds({ feedback: [a], pending: [b] }, { feedback: [a], pending: [b] })).toBe(true);
-    expect(sameOverlayIds({ feedback: [a], pending: [] }, { feedback: [], pending: [a] })).toBe(false);
-    expect(sameOverlayIds({ feedback: [a, b], pending: [] }, { feedback: [b, a], pending: [] })).toBe(false);
-  });
-});
-
-describe("overlayIndexBelowLive", () => {
-  function reader(shapes: TLShape[]): ZOrderReader {
-    const sorted = [...shapes].sort((x, y) => (x.index < y.index ? -1 : 1));
-    const byId = new Map<TLShapeId, TLShape>(shapes.map((s) => [s.id, s]));
-    return {
-      getCurrentPageId: () => "page:p" as TLPageId,
-      getSortedChildIdsForParent: () => sorted.map((s) => s.id),
-      getShape: (id) => byId.get(id),
-    };
-  }
-
-  it("returns undefined when the page has no Live shapes", () => {
-    expect(overlayIndexBelowLive(reader([shape("draw", "a1"), shape("image", "a2")]))).toBeUndefined();
-  });
-
-  it("returns an index strictly between the shape below and the lowest Live shape", () => {
-    const ink = shape("draw", "a1");
-    const echo = shape("math", "a3", { ...liveMeta });
-    const graph = shape("graph", "a2", { ...liveMeta });
-    const idx = overlayIndexBelowLive(reader([ink, echo, graph]));
-    expect(idx).toBeDefined();
-    expect(idx! > ink.index).toBe(true);
-    expect(idx! < graph.index).toBe(true);
-  });
-
-  it("goes below everything when the lowest shape is a Live shape", () => {
-    const echo = shape("math", "a1", { ...liveMeta });
-    const ink = shape("draw", "a2");
-    const idx = overlayIndexBelowLive(reader([echo, ink]));
-    expect(idx).toBeDefined();
-    expect(idx! < echo.index).toBe(true);
   });
 });

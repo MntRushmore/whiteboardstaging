@@ -54,7 +54,7 @@ describe("useLiveMath loop isolation (noLoop)", () => {
     };
     return createLiveLoop(
       editor,
-      { boardId: "board-1", mode, enabled: true, voiceActive: false },
+      { boardId: "board-1", mode, enabled: true },
       {
         recognizer: new RecognizeClient({ fetchJson }),
         stream,
@@ -105,8 +105,8 @@ describe("useLiveMath loop isolation (noLoop)", () => {
   });
 
   it("the tutor's handwriting (a live-meta draw shape) triggers no recognize and no line", async () => {
-    // What HandWriter puts on the canvas: real ink, but tagged live, so the loop, the legacy
-    // image capture and the idle trigger all look straight through it.
+    // What HandWriter puts on the canvas: real ink, but tagged live, so the loop looks
+    // straight through it.
     const [stroke] = fixtureSingleLine();
     liveWrite(editor as unknown as Editor, () => {
       editor.createShapes([
@@ -125,7 +125,6 @@ describe("useLiveMath loop isolation (noLoop)", () => {
     await settle();
     expect(fetchJson).not.toHaveBeenCalled();
     expect(Object.keys(liveStore.lines.get())).toHaveLength(0);
-    expect(liveStore.lastBurst.get()).toBeNull();
     expect(streamCalls).toBe(0);
   });
 
@@ -133,7 +132,6 @@ describe("useLiveMath loop isolation (noLoop)", () => {
     const strokes = fixtureSingleLine();
     editor.putUser(strokes);
     expect(fetchJson).not.toHaveBeenCalled();
-    expect(liveStore.lastBurst.get()?.state).toBe("pending");
 
     await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs - 1);
     await settle();
@@ -157,7 +155,6 @@ describe("useLiveMath loop isolation (noLoop)", () => {
     // 24 px right of the ink
     const inkRight = Math.max(...strokes.map((s) => editor.getShapePageBounds(s.id)!.maxX));
     expect(echoes[0].x).toBe(inkRight + 24);
-    expect(liveStore.lastBurst.get()?.state).toBe("handled");
     expect(liveStore.liveShapeCount.get()).toBe(1);
 
     // The echo write itself must not have re-triggered anything.
@@ -246,7 +243,7 @@ describe("useLiveMath loop isolation (noLoop)", () => {
     expect((editor.shapesOfType("math")[0].props as MathShapeProps).status).toBe("ok");
   });
 
-  it("never calls the LLM in off mode and pauses it while voice is active", async () => {
+  it("never calls the LLM in off mode", async () => {
     loop.stop();
     resetLiveStore();
     loop = makeLoop("off");
@@ -259,11 +256,7 @@ describe("useLiveMath loop isolation (noLoop)", () => {
     loop.requestSolve();
     await settle();
     expect(streamCalls).toBe(0);
-    loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: true });
-    loop.requestCheck();
-    await settle();
-    expect(streamCalls).toBe(0);
-    loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true, voiceActive: false });
+    loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true });
     loop.requestCheck();
     await settle();
     expect(streamCalls).toBe(1);

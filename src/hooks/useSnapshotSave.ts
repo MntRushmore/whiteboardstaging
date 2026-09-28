@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type RefObject } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { atom, getSnapshot, useValue, type Editor, type TLStoreSnapshot } from "tldraw";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -18,6 +18,8 @@ import {
 } from "@/lib/sync";
 import { ASSET_COPY } from "@/components/live/copy";
 import { SNAPSHOT_LIMITS, findInlineAssets, snapshotJsonBytes } from "../../scripts/lib/snapshotAssets.mjs";
+import { isBoardEmpty, makeScreenThumbnail } from "@/lib/boards/thumbnail";
+import { trackExitWrite } from "@/lib/boards/exitWrites";
 
 /**
  * Board autosave. Every document change marks the board dirty in a `SaveQueue`
@@ -97,7 +99,8 @@ export function isNetworkFailure(error: unknown): boolean {
 export type SaveUpdate = {
   data: unknown;
   updated_at: string;
-  preview?: string;
+  /** absent = keep the stored thumbnail; null = clear it (nothing left on the board) */
+  preview?: string | null;
 };
 
 export type SaveOutcome =
@@ -128,8 +131,10 @@ export interface SnapshotBuildDeps {
   offload: () => Promise<OffloadResult | void>;
   /** true while an offload started elsewhere (e.g. on mount) is still running */
   isOffloadInFlight?: () => boolean;
-  /** small JPEG thumbnail as a data URL, or null when none could be made */
+  /** small thumbnail of the current screen as a data URL, or null when none could be made */
   makePreview: () => Promise<string | null>;
+  /** true when no screen has anything on it: the stored thumbnail is cleared instead */
+  isEmpty?: () => boolean;
   /** injectable for tests; defaults to the shared `decideSave` policy */
   decide?: (input: SaveDecisionInput) => SaveDecision;
   /** injectable for tests; defaults to the shared snapshot helpers */
@@ -247,12 +252,17 @@ export async function buildSnapshotUpdate(deps: SnapshotBuildDeps): Promise<Buil
       }
     }
 
+    // An empty board clears its thumbnail, so the card shows the empty placeholder rather
+    // than ink that has since been erased. A failed or oversized thumbnail keeps the old one.
+    const empty = deps.isEmpty?.() ?? false;
     let previewUrl: string | null = null;
-    try {
-      previewUrl = await deps.makePreview();
-    } catch (e) {
-      console.warn("Thumbnail generation failed:", e);
-      logger.warn({ error: errorInfo(e), id: boardId }, "Thumbnail generation failed, continuing without preview");
+    if (!empty) {
+      try {
+        previewUrl = await deps.makePreview();
+      } catch (e) {
+        console.warn("Thumbnail generation failed:", e);
+        logger.warn({ error: errorInfo(e), id: boardId }, "Thumbnail generation failed, continuing without preview");
+      }
     }
 
     const update: SaveUpdate = {
@@ -260,7 +270,9 @@ export async function buildSnapshotUpdate(deps: SnapshotBuildDeps): Promise<Buil
       updated_at: now().toISOString(),
     };
 
-    if (previewUrl) {
+    if (empty) {
+      update.preview = null;
+    } else if (previewUrl) {
       if (previewUrl.length > MAX_PREVIEW_LENGTH) {
         console.warn(`Preview too large (${previewUrl.length} bytes), skipping`);
         logger.warn(
@@ -561,26 +573,6 @@ export function blockedMessageForSync(state: SyncState): string | null {
   return state.status === "refused" ? state.message ?? ASSET_COPY.boardTooLarge : null;
 }
 
-async function makeEditorPreview(editor: Editor): Promise<string | null> {
-  const shapeIds = editor.getCurrentPageShapeIds();
-  if (shapeIds.size === 0) return null;
-  const viewportBounds = editor.getViewportPageBounds();
-  // Quarter scale, lossy: the DB caps `preview` at 20000 chars.
-  const { blob } = await editor.toImage([...shapeIds], {
-    format: "jpeg",
-    quality: 0.6,
-    bounds: viewportBounds,
-    background: true,
-    scale: 0.25,
-  });
-  if (!blob) return null;
-  return new Promise<string>((resolve) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.readAsDataURL(blob);
-  });
-}
-
 /** `buildUpdate` for the queue, bound to a live editor. */
 export function buildEditorUpdate(editor: Editor, boardId: string): Promise<BuildResult> {
   return buildSnapshotUpdate({
@@ -588,7 +580,9 @@ export function buildEditorUpdate(editor: Editor, boardId: string): Promise<Buil
     takeSnapshot: () => getSnapshot(editor.store),
     offload: () => offloadAssetsOnce(editor),
     isOffloadInFlight: () => isOffloadRunning(editor),
-    makePreview: () => makeEditorPreview(editor),
+    // The current screen, sized and encoded to fit the column (src/lib/boards/thumbnail.ts).
+    makePreview: () => makeScreenThumbnail(editor, MAX_PREVIEW_LENGTH),
+    isEmpty: () => isBoardEmpty(editor),
   }).then(toBuildResult);
 }
 
@@ -611,11 +605,8 @@ export interface UseSnapshotSaveResult {
 /**
  * Autosave of the editor snapshot to `whiteboards.data` through a `SaveQueue`.
  *
- * Every document change (`source: 'all'`, so Live echoes, AI overlays and Accept/Reject
- * bookkeeping are included) marks the queue dirty — there is deliberately no
- * `isUpdatingImageRef` skip here any more: that ref only gates the legacy AI trigger, and
- * skipping saves while it was set lost the overlay insert until the next user edit. The
- * parameter is kept for call-site compatibility and is not consulted.
+ * Every document change (`source: 'all'`, so Live echoes, graphs and the tutor's
+ * handwriting are included) marks the queue dirty.
  *
  * On mount the localStorage backup left by a previous session (offline, crash, closed tab
  * mid-save) is merged over the loaded board — this effect runs after tldraw's `onMount`
@@ -625,7 +616,6 @@ export interface UseSnapshotSaveResult {
 export function useSnapshotSave(
   editor: Editor | null,
   boardId: string,
-  _legacyTriggerGate: RefObject<boolean>,
   initialVersion: number | null = null,
 ): UseSnapshotSaveResult {
   // The queue is created in an effect (it needs the editor) but read reactively during
@@ -696,10 +686,14 @@ export function useSnapshotSave(
       // Fire and forget: a pending debounced save must not be discarded on unmount.
       // The backup is written first so nothing is lost even if the flush never completes.
       queue.writeBackupNow();
-      void queue
-        .flush()
-        .catch((e) => logger.warn({ id: boardId, error: errorInfo(e) }, "Flush on unmount failed"))
-        .finally(() => queue.dispose());
+      // Tracked so the dashboard can wait for it: otherwise its first read races this write
+      // and shows the board's previous thumbnail.
+      trackExitWrite(
+        queue
+          .flush()
+          .catch((e) => logger.warn({ id: boardId, error: errorInfo(e) }, "Flush on unmount failed"))
+          .finally(() => queue.dispose()),
+      );
     };
   }, [editor, boardId, initialVersion, queueAtom]);
 

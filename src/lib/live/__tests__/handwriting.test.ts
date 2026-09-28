@@ -31,7 +31,7 @@ import { useSyncHash } from "@/lib/live/__fixtures__/syncHash";
  * The tutor writes the worked steps by hand (WP-H). Everything here is the node-side
  * contract: the `unsupported` interlock, where the block lands, that the reveal is
  * cancellable and always leaves complete writing, and that nothing it draws feeds back into
- * recognition or the legacy image pipeline.
+ * recognition.
  */
 
 const STUDENT_LATEX = "2x+3=11";
@@ -81,12 +81,16 @@ describe("handwriting: planning and the unsupported interlock", () => {
   });
 
   it("refuses to draw anything when the hand engine reports an unsupported construct", () => {
-    const { plan, unsupported } = planHandwriting(["\\sum_{i=1}^{n} i = 5", "x = 4"], { size: 26, seed: 1 });
+    const { plan, unsupported } = planHandwriting(["\\zeta(2) = 5", "x = 4"], { size: 26, seed: 1 });
     expect(unsupported.length).toBeGreaterThan(0);
     expect(plan).toBeNull();
-    const matrix = planHandwriting(["\\begin{pmatrix}1&0\\end{pmatrix}"], { size: 26, seed: 1 });
-    expect(matrix.plan).toBeNull();
-    expect(matrix.unsupported.length).toBeGreaterThan(0);
+    const env = planHandwriting(["\\begin{tikzcd}A&B\\end{tikzcd}"], { size: 26, seed: 1 });
+    expect(env.plan).toBeNull();
+    expect(env.unsupported.length).toBeGreaterThan(0);
+    // prose is not maths: a sentence is never handwritten on the student's page
+    const prose = planHandwriting(["\\text{because the discriminant is negative}"], { size: 26, seed: 1 });
+    expect(prose.plan).toBeNull();
+    expect(prose.unsupported).toEqual(["\\text"]);
   });
 
   it("reveals strokes in order: one pen-down at a time, whole strokes behind it", () => {
@@ -147,7 +151,7 @@ describe("handwriting: wired into Solve", () => {
     };
     return createLiveLoop(
       editor,
-      { boardId: "board-1", mode: "answer", enabled: true, voiceActive: false },
+      { boardId: "board-1", mode: "answer", enabled: true },
       {
         recognizer: new RecognizeClient({ fetchJson }),
         stream,
@@ -375,7 +379,7 @@ describe("handwriting: wired into Solve", () => {
   });
 
   it("falls back to the typeset solve stream when a step is not drawable", async () => {
-    engine = engineWith(["\\sum_{i=1}^{4} i = 10", "x = 4"]);
+    engine = engineWith(["\\zeta(3) \\approx 1.202", "x = 4"]);
     loop.stop();
     resetLiveStore();
     editor = createFakeEditor();
@@ -434,7 +438,7 @@ describe("handwriting: wired into Solve", () => {
     expect(handLines()).toHaveLength(1);
   });
 
-  it("nothing the tutor writes re-triggers recognition or the legacy pipeline", async () => {
+  it("nothing the tutor writes re-triggers recognition", async () => {
     await writeStudentLine();
     expect(fetchJson).toHaveBeenCalledTimes(1);
     const lineCount = Object.keys(liveStore.lines.get()).length;
@@ -445,12 +449,11 @@ describe("handwriting: wired into Solve", () => {
     await settle(8);
     expect(handLines()).toHaveLength(STEPS.length);
 
-    // no second recognition, no new ink line, and the legacy image pipeline stays parked
+    // no second recognition and no new ink line
     await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs * 4);
     await settle(8);
     expect(fetchJson).toHaveBeenCalledTimes(1);
     expect(Object.keys(liveStore.lines.get())).toHaveLength(lineCount);
-    expect(liveStore.lastBurst.get()?.state).toBe("handled");
     expect(solveCalls()).toEqual([]);
     // the tutor's ink is never student ink: its strokes are not part of any line
     const handIds = new Set(handShapes().map((s) => s.id));

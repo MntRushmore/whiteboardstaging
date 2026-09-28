@@ -3,12 +3,13 @@
  * Pure TypeScript: no DOM, no React, no tldraw. Every entry point catches and degrades to
  * kind 'unknown' / verdict 'unknown' / null — the engine never throws.
  */
-import type { MathJsInstance } from "mathjs";
-import type { AnalyzeContext, EngineVerdict, LineAnalysis, LiveEngine } from "../contracts";
+import type { MathJsInstance, MathNode } from "mathjs";
+import type { AnalyzeContext, EngineVerdict, LineAnalysis, LiveEngine, SolveOptions } from "../contracts";
 import { balance as balanceChem, balanceEquation, equationLatex, isBalanced, molarMassLatex, normalizeChemText, parseEquation, looksLikeChemEquation } from "./chem";
 import { preClassify } from "./classify";
 import { PHYSICS_SCOPE_NAMES, physicsScope } from "./constants";
 import {
+  compareMultiRelations,
   compareRelations,
   compareValuesToRelation,
   decimalsIn,
@@ -16,15 +17,32 @@ import {
   expressionsEquivalent,
   parseRelation,
   rootToNumber,
+  satisfies,
+  snapToRoots,
   solvesRelation,
   type Relation,
   type RootValue,
 } from "./equivalence";
-import { asSmallFraction, complexToLatex, formatNumberLatex, nodeToLatex, valueToLatex, type NumberFormatOptions } from "./format";
+import { asSmallFraction, complexToLatex, formatNumberLatex, shortExactDecimal, nodeToLatex, valueToLatex, type NumberFormatOptions } from "./format";
 import { compileExpr, plotFor } from "./graph";
+import { createGraphIntent } from "./graphIntent";
 import { APPROX_OP, latexToMath, preprocessLatex, splitRelations, UnsupportedLatex, type Translated } from "./latex";
 import { countOperations, createMathInstance, integralsExact, isComplexValue, isNodeValue, isUnitValue, safeEvaluate, safeParse, toNumber, translate, type MathModule } from "./math";
 import { evaluateUnits, unitValueToLatex, valuesMatch } from "./units";
+import { solveFromLines, type SystemDeps } from "./systems";
+import { linearSolveSteps, simplifyExpressionSteps, type LinearSteps, type RelOp } from "./algebra";
+import { createCalculus } from "./calculus";
+import { createIntegration } from "./integration";
+import { createLimits } from "./limits";
+import { createTrig } from "./trig";
+import { solveTrigEquation } from "./trigEquation";
+import { solveAdvanced, solveExactly, type AdvancedDeps } from "./advanced";
+import { factorExpressionSteps, rationalExpressionSteps } from "./polynomial";
+import { chainRelation, isSolutionSet, relaxVerdict, splitAtCommas, unionRelation, type Part } from "./compound";
+import { ALL_REALS, EVERY_REAL, LIST_SEP, NO_SOLUTION } from "./solution";
+import { createCourses } from "./courses";
+import { createGeometry } from "./geometry";
+import { isGeometryName } from "./geometryNotation";
 
 const UNKNOWN: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
 
@@ -44,13 +62,30 @@ function normalizeLatex(s: string): string {
   return s.replace(/\\,|\\;|\\!|\\ |~/g, "").replace(/\\mathrm|\\text|\\left|\\right|[{}\s]/g, "");
 }
 
+/** Two step lines are the same line: `\leq` is `\le`, `2 \cdot x` is `2x`, spacing never counts. */
+function stepKey(s: string): string {
+  return normalizeLatex(
+    s
+      .replace(/\\leqslant|\\leq\b/g, "\\le")
+      .replace(/\\geqslant|\\geq\b/g, "\\ge")
+      .replace(/\\lt\b/g, "<")
+      .replace(/\\gt\b/g, ">")
+      .replace(/\\cdot|\\times|\*/g, ""),
+  );
+}
+
+const REL_OPS: ReadonlySet<string> = new Set(["==", "<", ">", "<=", ">="]);
+const isRelOp = (op: string | undefined): op is RelOp => op !== undefined && REL_OPS.has(op);
+
 const TRIG = new Set(["sin", "cos", "tan", "sec", "csc", "cot", "asin", "acos", "atan", "sinh", "cosh", "tanh"]);
 
 /**
  * Calculus/aggregate calls the engine evaluates even when the line still mentions a variable:
  * `\frac{d}{dx} x^3` is an answerable line whose answer contains x.
  */
-const SYMBOLIC_FUNCTIONS: ReadonlySet<string> = new Set(["derivative", "integral", "summation"]);
+const SYMBOLIC_FUNCTIONS: ReadonlySet<string> = new Set(["derivative", "integral", "summation", "antiderivative"]);
+/** Calculus the engine may be unable to do (`calculus.ts`): refused as `unknown`, never "keep writing". */
+const REFUSABLE_CALCULUS: ReadonlySet<string> = new Set(["limit", "antiderivative"]);
 
 function isSymbolic(t: Translated): boolean {
   return t.functions.some((f) => SYMBOLIC_FUNCTIONS.has(f));
@@ -70,7 +105,11 @@ function formatOptions(t: Translated, latex: string, exactIntegral: boolean): Nu
   const decimals = /\d\.\d/.test(latex);
   const trig = t.functions.some((f) => TRIG.has(f));
   const numeric = t.functions.includes("integral") && !exactIntegral;
-  return { preferFraction: !decimals && !t.hasDegrees && !trig && !t.hasUnits && !numeric && !t.hasPercent };
+  return {
+    preferFraction: !decimals && !t.hasDegrees && !trig && !t.hasUnits && !numeric && !t.hasPercent,
+    // plain arithmetic in decimals is exact (`1234.5 + 1 = 1235.5`); measurements keep 4 s.f.
+    exactDecimals: !t.hasUnits && !trig && !numeric && !t.hasDegrees,
+  };
 }
 
 function rootLatex(r: RootValue, opts: NumberFormatOptions = { preferFraction: true }): string {
@@ -81,7 +120,8 @@ function rootLatex(r: RootValue, opts: NumberFormatOptions = { preferFraction: t
 
 /** Splits `2, -2` / `2 \text{ or } -2` / `x = 2 \text{ or } x = -2` into value LaTeX fragments. */
 function splitValueList(rhsLatex: string, variable: string): string[] {
-  const s = rhsLatex.replace(/\\text\s*\{\s*or\s*\}|\\quad|\\;|\\,|\bor\b/g, ",");
+  // `2, \ -2`: the space after a list comma is the tutor's own separator, not part of a value
+  const s = rhsLatex.replace(/,\s*\\ /g, ", ").replace(/\\text\s*\{\s*or\s*\}|\\quad|\\;|\\,|\bor\b/g, ",");
   const parts: string[] = [];
   let depth = 0;
   let start = 0;
@@ -104,7 +144,8 @@ function splitValueList(rhsLatex: string, variable: string): string[] {
 
 /** `x = 2 \text{ or } x = -2`, `x = 2, x = -2`, `x_1 = 2, x_2 = -2` -> { variable, values } */
 function solutionList(latex: string): { variable: string; values: string[] } | null {
-  const s = latex.replace(/\\text\s*\{\s*(?:or|and)\s*\}|\\quad|\\qquad|\\;|\bor\b/g, ",");
+  // `x = 2, \ x = 3` (the tutor's own answer lines) as well as `x = 2 \text{ or } x = 3`
+  const s = latex.replace(/,\s*\\ /g, ", ").replace(/\\text\s*\{\s*(?:or|and)\s*\}|\\quad|\\qquad|\\;|\bor\b/g, ",");
   if (!s.includes(",")) return null;
   const parts = s.split(",").map((p) => p.trim()).filter(Boolean);
   if (parts.length < 2) return null;
@@ -131,10 +172,64 @@ function relationFromAnalysis(math: MathJsInstance, a: LineAnalysis | undefined,
   return rel;
 }
 
+/**
+ * The previous line as an equation in two or more unknowns: an `equation` whose relation has
+ * several free symbols, or a `y = ...` line (kind `function`) read as the equation `y == ...`.
+ */
+function multiRelationFromAnalysis(math: MathJsInstance, a: LineAnalysis | undefined): Relation | null {
+  if (!a || !a.math) return null;
+  if (a.kind === "equation") {
+    const rel = parseRelation(math, a.math);
+    return rel && rel.op === "==" && new Set(rel.variables).size >= 2 ? rel : null;
+  }
+  if (a.kind === "function" && a.math.startsWith("y = ")) {
+    const rhs = a.math.slice(4);
+    const rel = parseRelation(math, `y == ${rhs}`);
+    return rel && new Set(rel.variables).size >= 2 ? rel : null;
+  }
+  return null;
+}
+
+/**
+ * A number written exactly for a line in decimals: a terminating decimal with at most 6 places
+ * as itself (`2315.25`, `3.75`), anything else as an exact fraction (`\frac{1}{3}`) — never
+ * rounded to the display precision, which silently wrote `1234.5 + 1` as `1236`.
+ */
+export function exactDecimalLatex(n: number): string {
+  if (!Number.isFinite(n)) return formatNumberLatex(n);
+  return shortExactDecimal(n) ?? formatNumberLatex(n, { preferFraction: true });
+}
+
 export function createEngine(mod: MathModule): LiveEngine {
   const math = createMathInstance(mod);
 
   const tr = (latex: string, plain = false): Translated => translate(math, latex, { plain });
+  // derivatives, integrals and limits with teacher-style steps; registers limit/antiderivative/bracketEval on `math`
+  // substitution, parts, identities, standard forms, partial fractions (`integration.ts`), tried
+  // when the term-by-term rules have nothing; they use those rules for the inner integral
+  const integration = createIntegration(() => ({ basic: (f, x) => calculus.basicIntegral(f, x) }));
+  // 0/0 beyond factorising: the conjugate, L'Hôpital (`limits.ts`)
+  const limits = createLimits();
+  const calculus = createCalculus(math, {
+    translate: (latex) => tr(latex),
+    integrate: (f, x, constant) => integration.integrate(f, x, constant),
+    integrateDefinite: (f, x, a, b) => integration.integrateDefinite(f, x, a, b),
+    limit: (operand, x, a, prefix) => limits.limit(operand, x, a, prefix),
+  });
+  // exact trig values, identities and equations (`trig.ts`, `trigEquation.ts`)
+  const trig = createTrig(math, { translate: (latex) => tr(latex) });
+  // what to graph for a column of work (`graphIntent.ts`): the maths of the tutor's sketch
+  const graphing = createGraphIntent(math, { translate: (latex) => tr(latex) });
+  // Algebra 1 / Algebra 2 methods (`courses.ts`): asked first at the hooks below, never instead of a path they do not own
+  const courses = createCourses({
+    math,
+    translate: (latex) => translate(math, latex, { letterUnits: false }),
+    normalize: (latex) => stepKey(latex),
+    solveOne: (latex) => solveLatex(latex),
+  });
+  // the maths of a figure: angles in degrees, named angles and segments, Pythagoras, trig ratios,
+  // formulas with their values, coordinates (`geometry.ts`)
+  const geometry = createGeometry({ translate: (latex) => tr(latex), parse: (source) => safeParse(math, source), solveLatex: (latex) => solveLatex(latex) });
 
   const evaluateTranslated = (t: Translated, latex: string): { value: unknown; latex: string; ok: boolean; note: string; error?: string } => {
     const exact = t.functions.includes("integral") && integralsExact(math, t.source);
@@ -175,11 +270,20 @@ export function createEngine(mod: MathModule): LiveEngine {
     const symbolic = isSymbolic(t);
     if (unknowns.length === 0 || symbolic) {
       const ev = evaluateTranslated(t, latex);
+      if (!ev.ok && t.functions.some((f) => REFUSABLE_CALCULUS.has(f))) return { ...UNKNOWN, error: ev.error };
+      // the calculus answer as the steps end (`6x + 2`, `\ln 2`, `\frac{x^{3}}{3} + C`), not mathjs's rendering
+      const exact = ev.ok && t.functions.length > 0 ? calculus.resultLatex(t.source) : null;
+      if (exact) ev.latex = exact;
+      // `\sin 60^{\circ}` is `\frac{\sqrt{3}}{2}`, not 0.866; `\tan 90^{\circ}` has no value (not 1.633 × 10¹⁶)
+      const trigValue = !exact && ev.ok && t.functions.length > 0 ? trig.value(t.source) : null;
+      if (trigValue?.kind === "exact") ev.latex = trigValue.latex;
+      if (trigValue?.kind === "undefined") ev.ok = false;
       const out: LineAnalysis = { kind: "expression", math: t.source, resultLatex: "", verdict: "none", note: ev.note };
       if (t.hasUnits) out.units = { ok: ev.ok };
       if (ev.error) out.error = ev.error;
       if (ev.ok) {
-        if (trailingEquals) out.resultLatex = ctx.mode === "answer" ? ev.latex : "";
+        // `\pi(5)^{2} =` is `25\pi`, as Solve writes it (`geometry.ts`), not its decimal
+        if (trailingEquals) out.resultLatex = ctx.mode === "answer" ? ((!exact && trigValue?.kind !== "exact" ? geometry.exactAnswer(latex) : null) ?? ev.latex) : "";
         else if (symbolic || shouldShowResult(t, latex, ev.latex)) out.resultLatex = ev.latex;
       }
       const prev = ctx.previous;
@@ -233,6 +337,12 @@ export function createEngine(mod: MathModule): LiveEngine {
       return { kind: "equation", math: "", resultLatex: "", verdict: "unknown", note: "" };
     }
     const raw = sides.map((s) => tr(s));
+    // `\int 2x \, dx = x^2 + C`: checked by differentiating the right-hand side
+    const antiderivativeClaim = calculus.claimVerdict(
+      raw.map((t) => t.source),
+      ops,
+    );
+    if (antiderivativeClaim) return { kind: "equation", math: raw.map((t) => t.source).join(" == "), resultLatex: "", verdict: antiderivativeClaim, note: "" };
     const ts = raw.map(resolveSymbolicSide);
     /** a side was a derivative/integral: the line claims a result, which is checked on its own */
     const claim = ts.some((t, i) => t !== raw[i]);
@@ -282,11 +392,26 @@ export function createEngine(mod: MathModule): LiveEngine {
         const prevRel = relationFromAnalysis(math, ctx.previous, variable) ?? relationFromAnalysis(math, ctx.original, variable);
         if (info.identity) out.verdict = "ok"; // a true identity such as (x+1)(x-1) = x^2 - 1 or d/dx x^2 = 2x
         else if (claim) out.verdict = "mismatch"; // d/dx x^2 = 3x
-        else if (prevRel) out.verdict = compareRelations(math, prevRel, rel, variable);
+        else if (prevRel) {
+          // squaring a root away or clearing a denominator may add a root: still a correct step (compound.ts)
+          const verdict = compareRelations(math, prevRel, rel, variable);
+          out.verdict = relaxVerdict(math, verdict, rel, variable, relationFromAnalysis(math, ctx.previous, variable), relationFromAnalysis(math, ctx.original, variable));
+        }
         return out;
       }
       const out: LineAnalysis = { kind: "equation", math: source, resultLatex: "", verdict: "unknown", note: "" };
       if (claim) out.verdict = expressionsEquivalent(math, L.source, R.source, unknowns);
+      else if (!anyUnits) {
+        // Two or more unknowns (`2x + 3y = 12` → `3y = 12 - 2x`): a step is checked against the
+        // line above by solution set. A first line (`x + y = 18`, `KE = 1/2 m v^2`) is a
+        // statement, not a step: nothing to check, so `none` — as `unknown` it sent the model a
+        // line with nothing wrong in it, and the student got "a great starting equation".
+        const rel: Relation = { op: "==", lhs: L.source, rhs: R.source, source, variables: unknowns };
+        const prevRel = multiRelationFromAnalysis(math, ctx.previous) ?? multiRelationFromAnalysis(math, ctx.original);
+        out.verdict = prevRel ? compareMultiRelations(math, prevRel, rel) : "none";
+        // `BC = 3x - 1` under `AB = 2x + 3`: another fact about the figure, not a step of the line above
+        if (out.verdict === "unknown" && unknowns.some(isGeometryName)) out.verdict = "none";
+      }
       if (anyUnits) out.units = { ok: true };
       return out;
     }
@@ -305,6 +430,14 @@ export function createEngine(mod: MathModule): LiveEngine {
 
     // inequalities
     const out: LineAnalysis = { kind: "inequality", math: source, resultLatex: "", verdict: "unknown", note: "" };
+    if (sides.length === 3 && unknowns.length === 1 && !anyUnits) {
+      // `-3 < x - 1 < 3`: both halves at once, as `max(...) < 0` (compound.ts)
+      const chain = chainRelation(ts.map((t) => t.source), ops, unknowns[0]);
+      if (chain) {
+        const prevRel = relationFromAnalysis(math, ctx.previous, unknowns[0]) ?? relationFromAnalysis(math, ctx.original, unknowns[0]);
+        return { ...out, math: chain.source, variable: unknowns[0], verdict: prevRel ? compareRelations(math, prevRel, chain, unknowns[0]) : "none" };
+      }
+    }
     if (sides.length !== 2 || ops.includes("==")) return out;
     const op = ops[0] as Relation["op"];
     if (unknowns.length === 0) {
@@ -336,6 +469,51 @@ export function createEngine(mod: MathModule): LiveEngine {
     return t;
   };
 
+  /** An angle (`30^{\circ}`) as its radian measure; null for any other quantity. */
+  const angleRadians = (v: unknown): number | null => {
+    try {
+      const u = v as { dimensions?: number[]; toNumber(unit: string): number };
+      const dims = u.dimensions ?? [];
+      // mathjs base dimensions: MASS, LENGTH, TIME, CURRENT, TEMPERATURE, LUMINOUS_INTENSITY, AMOUNT_OF_SUBSTANCE, ANGLE, BIT
+      return dims.length >= 8 && dims[7] === 1 && dims.every((d, i) => i === 7 || d === 0) ? u.toNumber("rad") : null;
+    } catch {
+      return null;
+    }
+  };
+
+  /** The unknown inside sin / cos / tan in this relation (a trig equation: a solution in every turn). */
+  const trigOfVariable = (rel: Relation, variable: string): boolean => {
+    const node = safeParse(math, rel.source);
+    if (!node) return false;
+    let hit = false;
+    node.traverse((n) => {
+      const f = n as MathNode & { fn?: { name?: string }; args?: MathNode[] };
+      if (hit || n.type !== "FunctionNode" || !TRIG.has(f.fn?.name ?? "")) return;
+      (f.args ?? []).forEach((a) =>
+        a.traverse((s) => {
+          if (s.type === "SymbolNode" && (s as MathNode & { name: string }).name === variable) hit = true;
+        }),
+      );
+    });
+    return hit;
+  };
+
+  /**
+   * A value line that does not give every root of the line above and is still right: one angle of
+   * a trig equation (it has one in every turn: `\theta = \tan^{-1}\left(\frac{3}{4}\right)`), or a
+   * length's positive root (`c = 13` under `5^{2} + 12^{2} = c^{2}`: a side is never -13).
+   */
+  const rightAnyway = (reference: Relation, refs: Array<Relation | null>, variable: string, values: RootValue[], decimals: number | null): boolean => {
+    const roots = equationRoots(math, reference, variable).roots ?? [];
+    const snapped = snapToRoots(values, roots, decimals);
+    if (!snapped.every((v) => satisfies(math, reference, variable, v) === true)) return false;
+    if (trigOfVariable(reference, variable)) return true;
+    const positive = roots.map(rootToNumber).filter((r): r is number => r !== null && r > 1e-12);
+    const vals = snapped.map(rootToNumber);
+    const lengthy = refs.some((r) => r !== null && geometry.lengthRelation(r.lhs, r.rhs, variable));
+    return lengthy && vals.length === 1 && positive.length === 1 && vals[0] !== null && Math.abs(vals[0] - positive[0]) <= 1e-9 * Math.max(1, positive[0]);
+  };
+
   /** `x = 4`, `x = \pm 2`, `x = 2, -2`, `F = 2 kg * 9.8 m/s^2` */
   const analyzeSolvedOrAssignment = (variable: string, rhsLatex: string, ctx: AnalyzeContext): LineAnalysis => {
     const decimals = decimalsIn(rhsLatex);
@@ -345,6 +523,7 @@ export function createEngine(mod: MathModule): LiveEngine {
     let unitsOk: boolean | undefined;
     let note = "";
     const translations = (fragments.length > 0 ? fragments : [rhsLatex]).map((f) => tr(f));
+    const angles: number[] = [];
     const R = translations[0];
     if (translations.some((t) => unknownsOf(t).length > 0)) return { kind: "equation", math: "", resultLatex: "", verdict: "unknown", note: "", variable };
     const productSource = (vals: RootValue[]) => vals.map((v) => `(${variable} - (${typeof v === "number" ? v : `${v.re} + ${v.im}i`}))`).join(" * ");
@@ -364,16 +543,25 @@ export function createEngine(mod: MathModule): LiveEngine {
         else {
           const n = toNumber(v);
           if (n !== null) values.push(n);
+          else if (isUnitValue(v)) {
+            const rad = angleRadians(v);
+            if (rad !== null) angles.push(rad);
+          }
         }
       }
     }
     const prevRel = relationFromAnalysis(math, ctx.previous, variable);
     const origRel = relationFromAnalysis(math, ctx.original, variable);
     const reference = prevRel ?? origRel;
+    // `x = 30^{\circ}` under `\sin x = \frac{1}{2}`: the angle's radian measure, as sin reads x
+    if (values.length === 0 && angles.length > 0 && reference && [prevRel, origRel].some((r) => r !== null && trigOfVariable(r, variable))) values.push(...angles);
     if (reference && values.length > 0) {
       const out: LineAnalysis = { kind: "equation", math: values.length > 1 ? `${productSource(values)} == 0` : `${variable} == ${R.source}`, resultLatex: "", verdict: "none", note: "", variable };
       out.solutions = values.map((v) => rootLatex(v));
       out.verdict = compareValuesToRelation(math, reference, variable, values, decimals);
+      // the extraneous root dropped: exactly the first line's solutions is right whatever the line above
+      if (out.verdict === "mismatch" && origRel && isSolutionSet(math, origRel, variable, values)) out.verdict = "ok";
+      if (out.verdict === "mismatch" && rightAnyway(reference, [prevRel, origRel], variable, values, decimals)) out.verdict = "ok";
       const target = origRel ?? prevRel;
       out.solved = out.verdict !== "mismatch" && target !== null && solvesRelation(math, target, variable, values, decimals);
       return out;
@@ -395,6 +583,39 @@ export function createEngine(mod: MathModule): LiveEngine {
         out.verdict = eq === null ? "none" : eq ? "ok" : "mismatch";
       }
     }
+    return out;
+  };
+
+  /**
+   * `2x - 3 = 5, \ 2x - 3 = -5` or `x < -2, \ x > 4`: branches in one unknown on one line,
+   * checked as the one relation they amount to (`compound.ts`). Null when the line is not that.
+   */
+  const analyzeRelationList = (latex: string, ctx: AnalyzeContext): LineAnalysis | null => {
+    const pieces = splitAtCommas(latex);
+    if (!pieces) return null;
+    const parts: Part[] = [];
+    const vars = new Set<string>();
+    for (const piece of pieces) {
+      const split = splitRelations(piece);
+      if (split.sides.length !== 2 || !isRelOp(split.ops[0])) return null;
+      const [L, R] = split.sides.map((side) => tr(side));
+      if (L.hasUnits || R.hasUnits || isSymbolic(L) || isSymbolic(R)) return null;
+      for (const v of [...unknownsOf(L), ...unknownsOf(R)]) vars.add(v);
+      parts.push({ op: split.ops[0] as RelOp, lhs: L.source, rhs: R.source });
+    }
+    if (vars.size !== 1) return null;
+    const variable = [...vars][0];
+    const rel = unionRelation(parts, variable);
+    if (!rel) return null;
+    const out: LineAnalysis = { kind: rel.op === "==" ? "equation" : "inequality", math: rel.source, resultLatex: "", verdict: "none", note: "", variable };
+    if (rel.op === "==") {
+      const info = equationRoots(math, rel, variable);
+      if (info.roots) out.solutions = sortRoots(info.roots).slice(0, 8).map((r) => rootLatex(r));
+    }
+    const prevRel = relationFromAnalysis(math, ctx.previous, variable);
+    const origRel = relationFromAnalysis(math, ctx.original, variable);
+    const reference = prevRel ?? origRel;
+    if (reference) out.verdict = relaxVerdict(math, compareRelations(math, reference, rel, variable), rel, variable, prevRel, origRel, false);
     return out;
   };
 
@@ -457,11 +678,59 @@ export function createEngine(mod: MathModule): LiveEngine {
     return out;
   };
 
+  /**
+   * `= 2\cos x` under `\frac{\sin 2x}{\sin x}`: the next line of a chain (a simplification, an
+   * identity proved one rewrite at a time), checked against the line above by sampling. Null
+   * when the line is not that, and the ordinary rules apply (a lone `=` stays incomplete).
+   */
+  const continuation = (cleaned: string, ctx: AnalyzeContext): LineAnalysis | null => {
+    const m = /^=(?!=)\s*/.exec(cleaned);
+    if (!m || ctx.previous?.kind !== "expression" || !ctx.previous.math) return null;
+    const rest = cleaned.slice(m[0].length).trim();
+    const pre = preClassify(rest).kind;
+    // `= 5`, `= i`: after `=`, a lone number or letter is the value, not a label
+    if (!rest || splitRelations(rest).ops.length > 0 || (pre !== null && pre !== "label")) return null;
+    // the student's own step: checked, never finished for them
+    const out: LineAnalysis = { ...analyzeExpression(rest, ctx, false), resultLatex: "" };
+    // it claims the value of the line above: a closed value that differs is wrong (`\sqrt{50}`,
+    // `= 5\sqrt{5}`); a decimal is the calculator's rounding, not a claim, and stays unmarked
+    const closed = (source: string) => safeVars(source)?.length === 0;
+    if (out.verdict === "none" && out.math && !/\d\.\d/.test(rest) && closed(out.math) && closed(ctx.previous.math) && !/\d\.\d/.test(ctx.previous.math)) {
+      if (expressionsEquivalent(math, ctx.previous.math, out.math, []) === "mismatch") out.verdict = "mismatch";
+    }
+    return out;
+  };
+
+  /**
+   * `A = \pi(5)^{2} =`: a named quantity, its value, and a trailing `=` asking for it. Returns the
+   * value side (`\pi(5)^{2}`), answered as if it were written alone before the `=`; null for
+   * anything else. The name is a lone quantity: `A`, `SA` (read as the segment `\overline{SA}`),
+ * `\theta`, `V_{1}`, `f(3)`.
+   */
+  const namedValue = (latex: string): string | null => {
+    const { sides, ops } = splitRelations(latex);
+    if (ops.length !== 2 || ops.some((op) => op !== "==") || sides[2]?.trim() || !sides[1]?.trim()) return null;
+    const name = sides[0].replace(/\s+/g, "");
+    if (!/^(?:[A-Za-z]{1,3}|\\[a-zA-Z]+|\\overline\{[A-Z]{2}\}|[A-Za-z]\([^()=]*\))(?:_\{[^{}]+\}|_[A-Za-z0-9])?$/.test(name)) return null;
+    return sides[1].trim();
+  };
+
   // --- entry points --------------------------------------------------------
   const analyze = (latex: string, ctx: AnalyzeContext): LineAnalysis => {
+    // a line about the data list above, a form of the line / quadratic above asked for (`courses.ts`)
+    const course = courses.analyzeFirst(latex, ctx);
+    if (course) return course;
+    // statements about figures, angle equations in degrees (`geometry.ts`)
+    const geo = geometry.analyze(latex, ctx, analyze);
+    if (geo) return geo;
+    // `\text{holes}` under a function: an ask, not prose (`courses.ts`)
+    const ask = courses.askLine(latex, ctx);
+    if (ask) return ask;
     // preClassify needs the raw line (it tells "decorations only" from "empty"), so the rewritten
     // form is only substituted when a rewrite actually happened.
     const cleaned = preprocessLatex(latex);
+    const chained = continuation(cleaned, ctx);
+    if (chained) return chained;
     const expanded = expandDerivativeNotation(cleaned, ctx);
     const pre = preClassify(expanded === cleaned ? latex : expanded);
     switch (pre.kind) {
@@ -480,11 +749,19 @@ export function createEngine(mod: MathModule): LiveEngine {
             // a bound-variable line (`\int_0^1 x^2 dx =`, `\frac{d}{dx} x^3 =`) is answerable
             if (t.source.trim() && (unknownsOf(t).length === 0 || isSymbolic(t)) && splitRelations(pre.lhs).ops.length === 0) {
               const a = analyzeExpression(pre.lhs, ctx, true);
-              if (a.kind === "expression" && !a.error) return a;
+              if ((a.kind === "expression" && !a.error) || a.kind === "unknown") return a;
             }
           } catch (e) {
             // `\lim ... =`, `\begin{pmatrix} ... =`: not an unfinished line, a line we cannot read
             if (e instanceof UnsupportedLatex) return { ...UNKNOWN, error: errorMessage(e) };
+          }
+        }
+        const value = pre.trailingEquals ? namedValue(expanded) : null;
+        if (value) {
+          const t = tr(value);
+          if (t.source.trim() && unknownsOf(t).length === 0) {
+            const a = analyzeExpression(value, ctx, true);
+            if (a.kind === "expression" && !a.error) return a;
           }
         }
         return base("incomplete");
@@ -514,6 +791,9 @@ export function createEngine(mod: MathModule): LiveEngine {
         return out;
       }
       case "function": {
+        // `g(x) = f(x - 3) + 1` under f, and a rewrite of it (checked) (`courses.ts`)
+        const derived = courses.analyzeFunction(pre.latex, ctx);
+        if (derived) return derived;
         const fn = pre.fn!;
         const out = base("function");
         out.variable = fn.param;
@@ -527,7 +807,18 @@ export function createEngine(mod: MathModule): LiveEngine {
           }
           const prev = ctx.previous;
           if (prev && prev.kind === "function" && prev.plot && out.plot) {
-            out.verdict = expressionsEquivalent(math, prev.plot.expr, out.plot.expr, ["x"]);
+            // The same function rewritten (`y = 2(x + 1)` → `y = 2x + 2`) is a tick. A DIFFERENT
+            // function is a new line — two lines to graph, a system — never a ring: `y = 2x + 1`
+            // then `y = -x + 4` is correct work.
+            const same = expressionsEquivalent(math, prev.plot.expr, out.plot.expr, ["x"]);
+            out.verdict = same === "mismatch" ? "none" : same;
+          }
+          // `x + y = 10` then `y = 10 - x`: the student isolated y — a step to check, not only
+          // a function to graph. (`y = ...` under another `y = ...` is the comparison above.)
+          const prevRel = fn.name === "y" && prev?.kind !== "function" ? multiRelationFromAnalysis(math, prev) : null;
+          if (prevRel) {
+            const cur = parseRelation(math, `y == ${t.source}`);
+            if (cur) out.verdict = compareMultiRelations(math, prevRel, cur);
           }
         } catch (e) {
           out.error = errorMessage(e);
@@ -535,8 +826,13 @@ export function createEngine(mod: MathModule): LiveEngine {
         return out;
       }
       default: {
+        // `f(4) = 11` under `f(x) = 2x + 3`: a claim about the function, not `4f = 11`
+        const claim = courses.analyze(pre.latex, ctx);
+        if (claim) return claim;
         const orList = solutionList(pre.latex);
         if (orList) return analyzeSolvedOrAssignment(orList.variable, orList.values.join(", "), ctx);
+        const branches = analyzeRelationList(pre.latex, ctx);
+        if (branches) return branches;
         const split = splitRelations(pre.latex);
         if (split.ops.length === 0) return analyzeExpression(pre.latex, ctx, false);
         return analyzeRelation(pre.latex, ctx);
@@ -576,8 +872,104 @@ export function createEngine(mod: MathModule): LiveEngine {
     return out || "0";
   };
 
-  const solveLatex = (latex: string): { latex: string; steps: string[] } | null => {
+  /**
+   * The teacher-style steps for a linear equation or inequality in one unknown (`algebra.ts`),
+   * or null when the line is not one — the caller then keeps the CAS path below.
+   */
+  const linearSteps = (latex: string): (LinearSteps & { pre: string; variable: string; op: RelOp }) | null => {
+    const pre = preprocessLatex(latex);
+    if (/\d\.\d/.test(pre)) return null; // decimals stay on the CAS path: no `\frac{1}{2}` for `0.5`
+    const split = splitRelations(pre);
+    if (split.sides.length !== 2 || !isRelOp(split.ops[0])) return null;
+    const [L, R] = split.sides.map((s) => tr(s));
+    if (L.hasUnits || R.hasUnits || isSymbolic(L) || isSymbolic(R) || L.functions.length > 0 || R.functions.length > 0) return null;
+    const unknowns = [...new Set([...unknownsOf(L), ...unknownsOf(R)])];
+    if (unknowns.length !== 1 || !/^[a-zA-Z]$/.test(unknowns[0])) return null;
+    const lhs = safeParse(math, L.source);
+    const rhs = safeParse(math, R.source);
+    if (!lhs || !rhs) return null;
+    const op = split.ops[0] as RelOp;
+    const out = linearSolveSteps(lhs, rhs, op, unknowns[0], pre, stepKey);
+    return out ? { ...out, pre, variable: unknowns[0], op } : null;
+  };
+
+  /** Functions a one-unknown line may use and still be solved exactly by `advanced.ts`. */
+  const ADVANCED_FUNCTIONS: ReadonlySet<string> = new Set(["abs", "sqrt", "nthRoot", "log", "log10", "exp"]);
+
+  const advancedDeps: AdvancedDeps = {
+    relation: (latex) => {
+      try {
+        const pre = preprocessLatex(latex);
+        if (/\d\.\d/.test(pre)) return null; // exact answers only: decimals stay on the CAS path
+        const split = splitRelations(pre);
+        if (split.sides.length !== 2 || !isRelOp(split.ops[0])) return null;
+        const [L, R] = split.sides.map((side) => tr(side));
+        for (const t of [L, R]) {
+          if (t.hasUnits || t.hasText || t.hasPercent || t.hasPm || isSymbolic(t)) return null;
+          if (t.functions.some((f) => !ADVANCED_FUNCTIONS.has(f))) return null;
+        }
+        const unknowns = [...new Set([...unknownsOf(L), ...unknownsOf(R)])];
+        if (unknowns.length !== 1 || !/^[a-zA-Z]$/.test(unknowns[0])) return null;
+        const lhs = safeParse(math, L.source);
+        const rhs = safeParse(math, R.source);
+        if (!lhs || !rhs) return null;
+        return { lhs, rhs, op: split.ops[0] as RelOp, variable: unknowns[0], latex: pre };
+      } catch {
+        return null;
+      }
+    },
+    // `-3 < 2x + 1 < 7`: the same restrictions, three sides (inequality.ts)
+    chain: (latex) => {
+      try {
+        const pre = preprocessLatex(latex);
+        if (/\d\.\d/.test(pre)) return null;
+        const split = splitRelations(pre);
+        if (split.sides.length !== 3 || !split.ops.every(isRelOp)) return null;
+        const ts = split.sides.map((side) => tr(side));
+        if (ts.some((t) => t.hasUnits || t.hasText || t.hasPercent || t.hasPm || t.functions.length > 0)) return null;
+        const unknowns = [...new Set(ts.flatMap(unknownsOf))];
+        if (unknowns.length !== 1 || !/^[a-zA-Z]$/.test(unknowns[0])) return null;
+        const nodes = ts.map((t) => safeParse(math, t.source));
+        if (nodes.some((n) => !n)) return null;
+        return { sides: nodes as [MathNode, MathNode, MathNode], ops: split.ops as [RelOp, RelOp], variable: unknowns[0], latex: pre };
+      } catch {
+        return null;
+      }
+    },
+    normalize: stepKey,
+  };
+
+  const solveLatex = (latex: string, solveOptions?: SolveOptions): { latex: string; steps: string[] } | null => {
     try {
+      // a function applied by name is refused (not `3f = 9`); a line in x and y, complex roots, …
+      const course = courses.solve(latex, solveOptions);
+      if (course === "refuse") return null;
+      if (course) return course;
+      // a line with geometry in it: degrees, π, a root or a trig value among the numbers, a named angle or segment
+      const geo = geometry.solveLine(latex);
+      if (geo === "refuse") return null;
+      if (geo) return geo;
+      const linear = linearSteps(latex);
+      if (linear) {
+        if (linear.outcome !== "solved") {
+          // the unknown cancelled: `0 = -9` has no solution, `0 = 0` every one
+          const final = linear.outcome === "contradiction" ? NO_SOLUTION : linear.op === "==" ? EVERY_REAL(linear.variable) : ALL_REALS(linear.variable);
+          return { latex: final, steps: [...linear.steps, final] };
+        }
+        if (linear.steps.length === 0) return null;
+        // `x = 4` / `x > 4` is already solved: writing it again under itself says nothing.
+        if (stepKey(linear.final) === stepKey(linear.pre)) return null;
+        return { latex: linear.final, steps: linear.steps };
+      }
+      // quadratics, |x|, radicals, exponentials and logs, the unknown in a denominator (advanced.ts)
+      const advanced = solveAdvanced(latex, advancedDeps);
+      // `x = \log_{5} 7` gets its change of base (`courses.ts`)
+      if (advanced) return courses.polish({ latex: advanced.final, steps: advanced.steps });
+      // the unknown inside sin / cos / tan: exact angles in an interval, or no answer at all —
+      // never the numeric root-finder's thirty values in radians (`trigEquation.ts`)
+      const trigEquation = solveTrigEquation(math, latex, { translate: (l) => tr(l), solveAlgebra: (l) => solveLatex(l) });
+      if (trigEquation === "refuse") return null;
+      if (trigEquation) return trigEquation;
       const pre = preprocessLatex(latex);
       const split = splitRelations(pre);
       if (split.sides.length !== 2 || split.ops[0] !== "==") return null;
@@ -589,16 +981,24 @@ export function createEngine(mod: MathModule): LiveEngine {
       const info = equationRoots(math, rel, variable);
       if (!info.roots || info.identity || info.contradiction) return null;
       const steps: string[] = [];
-      const opts: NumberFormatOptions = { preferFraction: true };
-      const fmt = (n: number) => formatNumberLatex(n, opts);
+      // a line written in decimals is worked in decimals (`0.2x = 1.6`, not `\frac{1}{5}x = \frac{8}{5}`)
+      // — EXACT decimals: `2000(1.05)^3` is 2315.25, not the 4-significant-figure 2315; a value
+      // with no short terminating decimal stays an exact fraction rather than being rounded.
+      const decimalLine = /\d\.\d/.test(pre);
+      const opts: NumberFormatOptions = { preferFraction: !decimalLine };
+      const fmt = (n: number) => (decimalLine ? exactDecimalLatex(n) : formatNumberLatex(n, opts));
       const c = info.coefficients;
       const lastIsZero = R.source.trim() === "0";
       if (c && info.exact && c.length === 2) {
-        const [c0, c1] = c;
-        if (Math.abs(c0) > 1e-12 && Math.abs(c1 - 1) > 1e-12) steps.push(`${fmt(c1)}${variable} = ${fmt(-c0)}`);
+        // `ax = b` with a positive a (`2.5 = 0.5x` → `0.5x = 2.5`), never the input again
+        const [c0, c1] = c[1] < 0 ? [-c[0], -c[1]] : c;
+        const axb = `${Math.abs(c1 - 1) < 1e-12 ? "" : fmt(c1)}${variable} = ${fmt(-c0)}`;
+        if (Math.abs(c0) > 1e-12 && Math.abs(c1 - 1) > 1e-12 && normalizeLatex(axb) !== normalizeLatex(pre)) steps.push(axb);
         else if (Math.abs(c0) > 1e-12 && !/^-?\d/.test(pre) && !new RegExp(`^${variable}\\s*=`).test(pre)) steps.push(`${variable} = ${fmt(-c0)}`);
         const root = -c0 / c1;
         const final = `${variable} = ${fmt(root)}`;
+        // `y = 9` is already solved: writing it again under itself says nothing.
+        if (normalizeLatex(final) === normalizeLatex(pre)) return null;
         if (steps[steps.length - 1] !== final) steps.push(final);
         return { latex: final, steps };
       }
@@ -614,7 +1014,9 @@ export function createEngine(mod: MathModule): LiveEngine {
           const factor = (r: number) => (r === 0 ? variable : `(${variable} ${r < 0 ? "+" : "-"} ${fmt(Math.abs(r))})`);
           steps.push(`${factor(r1)}${factor(r2)} = 0`);
         } else {
-          steps.push(`${variable} = \\frac{${fmt(-c1)} \\pm \\sqrt{${fmt(c1)}^{2} - 4 \\cdot ${fmt(c2)} \\cdot ${fmt(c0)}}}{2 \\cdot ${fmt(c2)}}`);
+          // a negative number squared or multiplied is bracketed: `(-2)^{2}`, not `-2^{2}`
+          const paren = (n: number) => (n < 0 ? `(${fmt(n)})` : fmt(n));
+          steps.push(`${variable} = \\frac{${fmt(-c1)} \\pm \\sqrt{${paren(c1)}^{2} - 4 \\cdot ${paren(c2)} \\cdot ${paren(c0)}}}{2 \\cdot ${paren(c2)}}`);
           steps.push(`${variable} = \\frac{${fmt(-c1)} \\pm \\sqrt{${fmt(disc)}}}{${fmt(2 * c2)}}`);
         }
         const final = finalLatex(variable, info.roots, opts, true);
@@ -629,9 +1031,69 @@ export function createEngine(mod: MathModule): LiveEngine {
         return { latex: final, steps };
       }
       if (info.roots.length === 0) return null;
-      const final = finalLatex(variable, info.roots, { preferFraction: false }, false);
+      // a root the root-finder found that IS a whole number or a simple fraction (both sides agree
+      // there to the last bit) is written with `=`, not `\approx`
+      const exact = exactRoots(rel, variable, info.roots);
+      const final = exact ? finalLatex(variable, exact, { preferFraction: true }, true) : finalLatex(variable, info.roots, { preferFraction: false }, false);
       steps.push(final);
       return { latex: final, steps };
+    } catch {
+      return null;
+    }
+  };
+
+  /** Every real root snapped to a whole number or a fraction (denominator ≤ 12) that satisfies `rel` exactly; null when one does not. */
+  const exactRoots = (rel: Relation, variable: string, roots: RootValue[]): number[] | null => {
+    const out: number[] = [];
+    for (const r of roots) {
+      const n = rootToNumber(r);
+      if (n === null) continue;
+      let hit: number | null = null;
+      for (let d = 1; d <= 12 && hit === null; d++) {
+        const c = Math.round(n * d) / d;
+        if (Math.abs(c - n) > 1e-6 * Math.max(1, Math.abs(n))) continue;
+        const l = safeEvaluate(math, rel.lhs, { [variable]: c });
+        const rr = safeEvaluate(math, rel.rhs, { [variable]: c });
+        const a = l.ok ? toNumber(l.value) : null;
+        const b = rr.ok ? toNumber(rr.value) : null;
+        if (a !== null && b !== null && Math.abs(a - b) <= 1e-12 * Math.max(1, Math.abs(a), Math.abs(b))) hit = c;
+      }
+      if (hit === null) return null;
+      out.push(hit);
+    }
+    return out.length > 0 ? out : null;
+  };
+
+  /** `3(x+2) - x` (or `3(x+2) - x =`) → `3x + 6 - x`, `2x + 6`; null when there is nothing to simplify. */
+  const simplifySteps = (latex: string): string[] | null => {
+    try {
+      // `A = \pi(5)^{2} =`: the steps of its value, carrying on the student's `=` chain
+      const value = namedValue(latex);
+      if (value) return simplifySteps(`${value} =`);
+      // a derivative, an integral or a limit: the rule applied, then simplified (`calculus.ts`)
+      const calc = calculus.steps(latex);
+      if (calc) return calc;
+      // exact trig values, the reference angle first (`trig.ts`)
+      const trigSteps = trig.steps(latex);
+      if (trigSteps) return trigSteps;
+      // exponent rules, radicals, complex numbers, log properties, … (`courses.ts`); `f(4)` alone is refused
+      const course = courses.simplify(latex);
+      if (course === "refuse") return null;
+      if (course) return course;
+      // π, a root, degrees: worked out round by round, exact (`geometry.ts`)
+      const geoSteps = geometry.simplify(latex);
+      if (geoSteps) return geoSteps;
+      const pre = preprocessLatex(latex).trim().replace(/=\s*$/, "").trim();
+      if (!pre || /\d\.\d/.test(pre)) return null;
+      if (splitRelations(pre).ops.length > 0) return null;
+      const t = tr(pre);
+      if (t.hasUnits || t.hasText || t.hasPercent || t.functions.length > 0 || isSymbolic(t)) return null;
+      const unknowns = unknownsOf(t);
+      if (unknowns.length === 0 || unknowns.some((v) => !/^[a-zA-Z]$/.test(v))) return null;
+      const node = safeParse(math, t.source);
+      if (!node) return null;
+      // simplify when there is something to expand or collect; otherwise factor it (polynomial.ts)
+      return simplifyExpressionSteps(node, unknowns, pre, stepKey) ?? factorExpressionSteps(node, unknowns, pre, stepKey) ?? rationalExpressionSteps(node, unknowns, pre, stepKey) ?? courses.simplifyLate(latex);
     } catch {
       return null;
     }
@@ -652,7 +1114,10 @@ export function createEngine(mod: MathModule): LiveEngine {
       return (a as { im: number }).im - (b as { im: number }).im;
     });
 
-  const finalLatex = (variable: string, roots: RootValue[], opts: NumberFormatOptions, exactHint: boolean): string => {
+  /** The answer line: real roots only, as a list (`x = 2, \ x = 3`), `\varnothing` when there is none. */
+  const finalLatex = (variable: string, allRoots: RootValue[], opts: NumberFormatOptions, exactHint: boolean): string => {
+    const roots = allRoots.filter((r) => rootToNumber(r) !== null);
+    if (roots.length === 0) return NO_SOLUTION;
     const exact = exactHint && roots.every(isExactValue);
     const seen: string[] = [];
     for (const r of sortRoots(roots)) {
@@ -660,7 +1125,7 @@ export function createEngine(mod: MathModule): LiveEngine {
       if (!seen.includes(tex)) seen.push(tex);
     }
     const rel = exact ? "=" : "\\approx";
-    return seen.map((t) => `${variable} ${rel} ${t}`).join(" \\text{ or } ");
+    return seen.map((t) => `${variable} ${rel} ${t}`).join(LIST_SEP);
   };
 
   // --- verify / calculate ----------------------------------------------------
@@ -751,6 +1216,7 @@ export function createEngine(mod: MathModule): LiveEngine {
         const tex = nodeToLatex(simplified);
         return tex ? { latex: tex } : null;
       }
+      if (trig.value(t.source)?.kind === "undefined") return null; // tan 90°: no value, not 1.633 × 10¹⁶
       const ev = evaluateTranslated(t, s);
       if (!ev.ok) return null;
       return ev.latex ? { latex: ev.latex } : null;
@@ -759,8 +1225,77 @@ export function createEngine(mod: MathModule): LiveEngine {
     }
   };
 
+  const systemDeps: SystemDeps = {
+    parse: (latex) => {
+      try {
+        const pre = preprocessLatex(latex);
+        const split = splitRelations(pre);
+        if (split.sides.length !== 2 || split.ops[0] !== "==") return null;
+        const [L, R] = split.sides.map((side) => tr(side));
+        if (L.hasUnits || R.hasUnits || isSymbolic(L) || isSymbolic(R)) return null;
+        return { lhs: L.source, rhs: R.source, unknowns: [...new Set([...unknownsOf(L), ...unknownsOf(R)])], latex: pre };
+      } catch {
+        return null;
+      }
+    },
+    // a substituted line whose unknown cancels is the system's own case (`cancelled`), not an answer
+    solveOne: (latex) => (systemDeps.cancelled?.(latex) ? null : solveLatex(latex)),
+    cancelled: (latex) => {
+      try {
+        const linear = linearSteps(latex);
+        if (!linear || linear.outcome === "solved") return null;
+        return { steps: linear.steps, outcome: linear.outcome };
+      } catch {
+        return null;
+      }
+    },
+    singleRoot: (latex, variable) => {
+      const rel = systemDeps.parse(latex);
+      if (!rel || rel.unknowns.length !== 1 || rel.unknowns[0] !== variable) return null;
+      const info = equationRoots(math, { op: "==", lhs: rel.lhs, rhs: rel.rhs, source: `${rel.lhs} == ${rel.rhs}`, variables: [variable] }, variable);
+      if (!info.roots || info.identity || info.roots.length !== 1) return null;
+      return rootToNumber(info.roots[0]);
+    },
+    evalG: (lhs, rhs, scope) => {
+      const res = safeEvaluate(math, `(${lhs}) - (${rhs})`, scope);
+      if (!res.ok) return null;
+      const n = toNumber(res.value);
+      return n === null || !Number.isFinite(n) ? null : n;
+    },
+    // a substituted line with the unknown squared (`(w + 3)w = 40`): exact steps and roots
+    solveRoots: (latex) => {
+      try {
+        return solveExactly(latex, advancedDeps);
+      } catch {
+        return null;
+      }
+    },
+    fmt: (n) => formatNumberLatex(n, { preferFraction: true }),
+    normalize: normalizeLatex,
+  };
+
   return {
     analyzeLine,
+    solveFromLines: (lines: readonly string[]) => {
+      try {
+        // `\frac{dy}{dx}` / `f'(2)` under a definition, or a calculus line under a system: calculus answers
+        const calc = calculus.fromLines(lines);
+        // `\lim_{x \to \infty} f(x) =` under the definition of f: the definition put in, then the limit (`courses.ts`)
+        if (calc === null) return courses.calculusOfDefined(lines, calculus.fromLines);
+        if (calc !== undefined) return calc;
+        // function notation, lines through points, sequences, … (`courses.ts`); then the systems; then a formula for a letter
+        const course = courses.fromLines(lines);
+        if (course === "refuse") return null;
+        if (course) return course;
+        // a formula under its values, parts defined in x, coordinates (`geometry.ts`)
+        const geo = geometry.fromLines(lines);
+        if (geo === "refuse") return null;
+        if (geo) return geo;
+        return solveFromLines(lines, systemDeps) ?? courses.fromLinesLate(lines);
+      } catch {
+        return null;
+      }
+    },
     compileExpr: (expr: string) => {
       try {
         return compileExpr(math, expr);
@@ -769,6 +1304,14 @@ export function createEngine(mod: MathModule): LiveEngine {
       }
     },
     solveLatex,
+    simplifySteps,
+    graphFor: (lines: readonly string[]) => {
+      try {
+        return graphing.graphFor(lines);
+      } catch {
+        return null;
+      }
+    },
     verifyExpected,
     balance,
     calculate,
@@ -780,6 +1323,9 @@ const stub: LiveEngine = {
   analyzeLine: () => ({ ...UNKNOWN }),
   compileExpr: () => null,
   solveLatex: () => null,
+  solveFromLines: () => null,
+  simplifySteps: () => null,
+  graphFor: () => null,
   verifyExpected: () => "unknown",
   balance: () => null,
   calculate: () => null,

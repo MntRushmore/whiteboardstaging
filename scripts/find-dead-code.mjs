@@ -14,7 +14,7 @@
  * Classification (see classifyFile):
  *   entry        Next.js conventions (page/layout/route/error/loading/…/proxy/middleware) and
  *                scripts/*.mjs + root config files: always roots, exports never judged.
- *   test/fixture *.test.ts(x), __tests__/, __fixtures__/, __mocks__/: roots for "test-only",
+ *   test/fixture *.test.ts(x), __tests__/, __eval__/, __fixtures__/, __mocks__/: roots for "test-only",
  *                never candidates.
  *   declaration  *.d.ts / *.d.mts: ignored (a `.d.mts` counts as its sibling `.mjs`).
  *   candidate    everything else under src/ and scripts/lib/: judged for reachability.
@@ -69,7 +69,6 @@ import ts from "typescript";
  */
 export const KEEP_FILES = Object.freeze({
   "src/components/SetupRequiredBanner.tsx": "documented drop-in for missing AI keys (SETUP.md); not mounted by any page yet",
-  "src/lib/live/voiceTools.ts": "voice tools over the Live layer (LIVE-MATH-SPEC §2.3 #13); kept until the Realtime session is wired",
 });
 
 const NEXT_ENTRY_BASENAMES = new Set([
@@ -118,7 +117,8 @@ export function classifyFile(rel) {
   if (/\.d\.[cm]?ts$/.test(base)) return "declaration";
   if (parts.some((p) => SKIP_DIRS.has(p))) return "ignored";
   if (parts.some((p) => p === "__fixtures__" || p === "__mocks__" || p === "fixtures")) return "fixture";
-  if (parts.some((p) => p === "__tests__") || /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(base)) return "test";
+  // __eval__/ is the maths scoreboard (npm run eval:offline / eval:live): test code, not the app
+  if (parts.some((p) => p === "__tests__" || p === "__eval__") || /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(base)) return "test";
 
   const name = stripExt(base);
   if (parts[0] === "src") {

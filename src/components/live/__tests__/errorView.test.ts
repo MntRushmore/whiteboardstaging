@@ -105,7 +105,7 @@ describe("liveErrorView", () => {
   });
 
   it("carries the loop's second line (detail) through unchanged, for every code", () => {
-    const detail = "Drawn help is paused until reading works again — use Draw help to force it";
+    const detail = "Your last line is still waiting to be read";
     expect(liveErrorView(err({ code: "upstream", message: "Reading failed", detail }), 0)).toEqual({
       title: "Reading failed",
       detail,

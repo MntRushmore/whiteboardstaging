@@ -24,6 +24,7 @@ import {
   checkStorage,
   checkTrainersNotWritable,
   checkTrainingSamplesDenied,
+  checkUsageByDay,
   checkUserSettingsIsolation,
   checkVersionTrigger,
   checkWhiteboardOwnerCrud,
@@ -33,6 +34,7 @@ import {
   isDenied,
   isRateLimitResult,
   isStorageDenied,
+  isUsageByDay,
   minimalInsert,
   rpc,
   runAllChecks,
@@ -93,7 +95,9 @@ type Leak =
   | "rateLimitNeverDenies"
   | "rateLimitShared"
   | "rateLimitBadRetry"
-  | "countersReadable";
+  | "countersReadable"
+  // usage by day
+  | "usageByDayForeign";
 
 const USER_A = "aaaaaaaa-0000-4000-8000-000000000001";
 const USER_B = "bbbbbbbb-0000-4000-8000-000000000002";
@@ -226,6 +230,26 @@ function makeWorld(leaks: Leak[] = []) {
         const allowed = leak("rateLimitNeverDenies") || row.hits <= limit;
         const retryAfter = allowed ? 0 : leak("rateLimitBadRetry") ? windowMs + 1 : windowStart + windowMs - now;
         return ok({ allowed, remaining: Math.max(0, limit - row.hits), retry_after_ms: retryAfter, backend: "db" });
+      }
+      case "usage_by_day": {
+        const zone = typeof args.p_time_zone === "string" && args.p_time_zone ? args.p_time_zone : "UTC";
+        let format: Intl.DateTimeFormat;
+        try {
+          format = new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" });
+        } catch {
+          return { status: 400, body: { code: "22023", message: `time zone "${zone}" not recognized` } };
+        }
+        const groups = new Map<string, Row>();
+        for (const r of usage) {
+          if (r.user_id !== uid && !leak("usageByDayForeign")) continue;
+          const day = format.format(new Date(String(r.created_at)));
+          const key = `${day}|${r.route}`;
+          const g = groups.get(key) ?? { day, route: r.route, events: 0, credits: 0 };
+          g.events = Number(g.events) + 1;
+          g.credits = Number(g.credits) + Number(r.units);
+          groups.set(key, g);
+        }
+        return ok([...groups.values()].sort((x, y) => String(y.day).localeCompare(String(x.day))));
       }
       case "delete_own_account": {
         if (leak("deleteNoop")) return ok(null, 204);
@@ -567,6 +591,14 @@ describe("rlsChecks against a correctly secured fake", () => {
     // other bucket: 1 hit; main bucket: 3 allowed + 2 denied + 1 after the delete attempt = 6
     expect(aRows.map((c) => c.hits).sort((x, y) => x - y)).toEqual([1, 6]);
   });
+
+  it("the usage_by_day check spends only as A and passes on its own", async () => {
+    const { ctx, state } = makeWorld();
+    const results = await checkUsageByDay(ctx);
+    expect(failures(results)).toEqual([]);
+    expect(state.usage.length).toBe(1);
+    expect(state.usage[0]).toMatchObject({ user_id: USER_A, units: 3 });
+  });
 });
 
 describe("rlsChecks detect individual leaks", () => {
@@ -625,6 +657,10 @@ describe("rlsChecks detect individual leaks", () => {
     ["rateLimitBadRetry", checkRateLimit, "rate_limit_hit: next hit denied with retry_after_ms in (0, window]"],
     ["anonRpc", checkRateLimit, "rate_limit_hit: anon cannot call it"],
     ["countersReadable", checkRateLimit, "rate_limit_counters: not readable by authenticated users"],
+    // usage by day
+    ["usageByDayForeign", checkUsageByDay, "usage_by_day: B does not see A's usage"],
+    ["usageByDayForeign", checkUsageByDay, "usage_by_day: B's rows add up to B's own credit_summary().used"],
+    ["anonRpc", checkUsageByDay, "usage_by_day: anon cannot call it"],
   ];
 
   it.each(cases)("leak %s makes '%s' fail", async (leak, check, failingName) => {
@@ -809,6 +845,17 @@ describe("predicates", () => {
     expect(isRateLimitResult(missing, 60_000)).toBe(false);
     expect(isRateLimitResult([ok], 60_000)).toBe(false);
     expect(isRateLimitResult(null, 60_000)).toBe(false);
+  });
+
+  it("isUsageByDay wants an array of { day: YYYY-MM-DD, route, events > 0, credits } rows", () => {
+    const row = { day: "2026-09-27", route: "live/recognize", events: 3, credits: 3 };
+    expect(isUsageByDay([])).toBe(true);
+    expect(isUsageByDay([row])).toBe(true);
+    expect(isUsageByDay(row)).toBe(false);
+    expect(isUsageByDay([{ ...row, day: "2026-09-27T00:00:00Z" }])).toBe(false);
+    expect(isUsageByDay([{ ...row, events: 0 }])).toBe(false);
+    expect(isUsageByDay([{ ...row, credits: "3" }])).toBe(false);
+    expect(isUsageByDay(null)).toBe(false);
   });
 
   it("rpc posts to /rest/v1/rpc/<fn> with the arguments as the body", async () => {

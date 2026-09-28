@@ -6,6 +6,7 @@ import {
   createSolveStepGuard,
   definedSymbol,
   engineParsesStep,
+  isIntervalAnswer,
   localAnswerFor,
   localAnswerStep,
   mathSymbols,
@@ -53,8 +54,8 @@ describe("solveSteps: reading the symbols out of a step", () => {
   it("unwraps the \\boxed{...} every final step arrives in", () => {
     expect(unwrapBoxed("\\boxed{x = 4}")).toBe("x = 4");
     expect(unwrapBoxed("  \\boxed{ \\frac{1}{2} }  ")).toBe("\\frac{1}{2}");
-    // only when it wraps the WHOLE step
-    expect(unwrapBoxed("\\boxed{x} + 1")).toBe("\\boxed{x} + 1");
+    // a box is decoration wherever it is: the board draws the maths, never a box round part of it
+    expect(unwrapBoxed("\\boxed{x} + 1")).toBe("x + 1");
     expect(unwrapBoxed("x = 4")).toBe("x = 4");
   });
 
@@ -111,6 +112,21 @@ describe("solveSteps: the interlock on a streamed step", () => {
     expect(guard.check("w = 3v").ok).toBe(true); // an assignment defines it
   });
 
+  it("a word problem's solution may introduce its quantity by assignment (train: v = 60/2, v = 30)", () => {
+    const guard = createSolveStepGuard({
+      sourceLatex: ["\\text{A train travels 60 km in 2 hours. What is its speed?}"],
+      parses,
+    });
+    // the prose contributes no names at all...
+    expect(guard.known()).toEqual([]);
+    // ...so the first step must be the assignment that names the unknown
+    expect(guard.check("v = \\frac{60}{2}")).toMatchObject({ ok: true, symbols: ["v"] });
+    expect(guard.check("v = 30")).toMatchObject({ ok: true });
+    expect(guard.check("\\boxed{v = 30}")).toMatchObject({ ok: true });
+    // a bare equation in a name nobody introduced is still refused
+    expect(guard.check("s = 2t")).toMatchObject({ ok: false, reason: "unknown-symbol", introduced: ["t"] });
+  });
+
   it("seeds the known names from every line of the student's column", () => {
     const guard = createSolveStepGuard({ sourceLatex: ["a = 3", "b = 4"], parses });
     expect(guard.check("= a + b").ok).toBe(true);
@@ -157,7 +173,7 @@ describe("solveSteps: the answer the engine already has", () => {
     ["\\frac{1}{2}+\\frac{1}{3}=", "\\frac{5}{6}"],
     ["3.2 kg \\cdot 9.8 m/s^2", "31.36\\,\\mathrm{N}"],
     ["5 km/h \\text{ to } m/s", "1.389\\,\\mathrm{m/s}"],
-    ["\\frac{d}{dx} x^3", "3\\cdot{x}^{2}"],
+    ["\\frac{d}{dx} x^3", "3x^{2}"],
   ])("localAnswerFor(%s)", (latex, expected) => {
     expect(localAnswerFor(engine, latex)).toBe(expected);
   });
@@ -203,5 +219,44 @@ describe("solveSteps: the answer the engine already has", () => {
   it("writes the answer the way a person finishes the line", () => {
     expect(localAnswerStep("38")).toBe("= 38");
     expect(localAnswerStep(" 31.36\\,\\mathrm{N} ")).toBe("= 31.36\\,\\mathrm{N}");
+  });
+});
+
+describe("the step check lets through what a right answer looks like (model benchmark findings)", () => {
+  // stand-in for the engine: everything with maths in it parses
+  const parses = (latex: string) => /[0-9a-zA-Z]/.test(latex) && !/\\text/.test(latex);
+  const run = (source: string[], steps: string[]) => {
+    const guard = createSolveStepGuard({ sourceLatex: source, parses });
+    return steps.map((s) => guard.check(s).ok);
+  };
+
+  it("an antiderivative's + C", () => {
+    expect(run(["\\int 2x \\, dx"], ["= x^{2} + C"])).toEqual([true]);
+    // but C is still a name from nowhere where there is no integral
+    expect(run(["2x + 3 = 11"], ["x = 4 + C"])).toEqual([false]);
+  });
+
+  it("the integer of a periodic trig solution", () => {
+    expect(run(["\\sin x = \\frac{1}{2}"], ["x = 30^{\\circ} + 360^{\\circ} k"])).toEqual([true]);
+    expect(run(["2x + 3 = 11"], ["x = 4 + k"])).toEqual([false]);
+  });
+
+  it("differentials: d/dx written out, and u, dv, du, v in an integration by parts", () => {
+    expect(run(["\\int x e^{x} \\, dx"], ["u = x", "dv = e^{x} \\, dx", "du = dx", "v = e^{x}", "= x e^{x} - \\int e^{x} \\, dx", "= x e^{x} - e^{x} + C"])).toEqual([true, true, true, true, true, true]);
+    expect(run(["y = x^{3}"], ["\\frac{dy}{dx} = 3x^{2}"])).toEqual([true]);
+  });
+
+  it("a box anywhere in the step", () => {
+    expect(unwrapBoxed("= \\boxed{1}")).toBe("= 1");
+    expect(unwrapBoxed("x = \\boxed{\\frac{3}{2}}")).toBe("x = \\frac{3}{2}");
+    expect(unwrapBoxed("\\boxed{x = 3}")).toBe("x = 3");
+  });
+
+  it("interval answers are maths, prose is not", () => {
+    expect(isIntervalAnswer("(2, \\infty)")).toBe(true);
+    expect(isIntervalAnswer("x \\in [1, 4)")).toBe(true);
+    expect(isIntervalAnswer("(-\\infty, -1) \\cup (3, \\infty)")).toBe(true);
+    expect(isIntervalAnswer("\\left(\\frac{1}{2}, 5\\right]".replace(/\\left|\\right/g, ""))).toBe(true);
+    expect(isIntervalAnswer("(so, x is big)")).toBe(false);
   });
 });

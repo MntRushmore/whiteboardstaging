@@ -43,11 +43,11 @@ describe("equivalence: linear chain", () => {
     expect(a3.verdict).toBe("mismatch");
     expect(a3.solved).toBe(false);
   });
-  it("two unknowns -> unknown", () => {
+  it("two unknowns: the first line has nothing to check, a correct rearrangement is ok", () => {
     const [a1, a2] = chain(["x + y = 5", "x = 5 - y"]);
     expect(a1.kind).toBe("equation");
-    expect(a1.verdict).toBe("unknown");
-    expect(a2.verdict).toBe("unknown");
+    expect(a1.verdict).toBe("none");
+    expect(a2.verdict).toBe("ok");
   });
   it("works with Mathpix spacing, fractions and \\left(", () => {
     const [, a2, a3, a4] = chain(["3\\left(x-2\\right)=2 x+5", "3x - 6 = 2x + 5", "x = 11", "\\frac{x}{11} = 1"]);

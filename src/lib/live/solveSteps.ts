@@ -18,6 +18,7 @@
  *     seen. `r` and `\varepsilon` appeared from nowhere; that is what this rejects.
  */
 import type { AnalyzeContext, LineAnalysis, LiveEngine } from "./contracts";
+import { continueLine } from "./engine/solution";
 
 // ---------------------------------------------------------------- LaTeX symbols
 
@@ -90,8 +91,20 @@ function stripTextMacros(latex: string): string {
  * on the model's side, of asking that a bare `N` have been seen before. Structural macros
  * (`\frac`, `\sqrt`, `\cdot`, `\left`) and every function name (`\sin`, `\log`) are skipped.
  */
+/**
+ * `\frac{d}{dx}`, `\,dx`, `du = 2x\,dx`, `dv = e^x dx`, `\mathrm{d}x`: the `d` is the
+ * differential operator, not a quantity. Removed before symbols are collected, so an
+ * integration by parts (`dv`) or a derivative written out is not "a name from nowhere".
+ */
+function stripDifferentials(latex: string): string {
+  return latex
+    .replace(/\\(?:mathrm|operatorname)\s*\{\s*d\s*\}/g, " ")
+    .replace(/\\frac\s*\{\s*d(\^\{?\d\}?)?\s*\}/g, "\\frac{1}")
+    .replace(/(?<![a-zA-Z\\])d(?=\s*\^?\{?[a-zA-Z](?![a-zA-Z]))/g, " ");
+}
+
 export function mathSymbols(latex: string): string[] {
-  const src = stripTextMacros(latex ?? "");
+  const src = stripTextMacros(stripDifferentials(latex ?? ""));
   const out: string[] = [];
   const add = (name: string) => {
     if (!out.includes(name)) out.push(name);
@@ -115,13 +128,23 @@ export function mathSymbols(latex: string): string[] {
 
 /** `\boxed{…}` wrapping the whole step (the model's `final` step always arrives wrapped). */
 export function unwrapBoxed(latex: string): string {
-  const s = (latex ?? "").trim();
-  const m = /^\\boxed\s*\{/.exec(s);
-  if (!m) return s;
-  let depth = 0;
-  for (let i = m[0].length - 1; i < s.length; i++) {
-    if (s[i] === "{") depth++;
-    else if (s[i] === "}" && --depth === 0) return i === s.length - 1 ? unwrapBoxed(s.slice(m[0].length, i)) : s;
+  // Every `\boxed{…}` wrapper, wherever it is (`\boxed{x = 3}`, `= \boxed{1}`, `x = \boxed{3}`):
+  // the tutor's hand and the step check both want the maths inside, never the box.
+  let s = (latex ?? "").trim();
+  for (let guard = 0; guard < 8; guard++) {
+    const m = /\\boxed\s*\{/.exec(s);
+    if (!m) return s;
+    let depth = 0;
+    let end = -1;
+    for (let i = m.index + m[0].length - 1; i < s.length; i++) {
+      if (s[i] === "{") depth++;
+      else if (s[i] === "}" && --depth === 0) {
+        end = i;
+        break;
+      }
+    }
+    if (end === -1) return s;
+    s = (s.slice(0, m.index) + s.slice(m.index + m[0].length, end) + s.slice(end + 1)).trim();
   }
   return s;
 }
@@ -161,7 +184,9 @@ export function definedSymbol(latex: string): string | null {
   const rel = topLevelRelation(latex);
   if (!rel || rel.at === 0) return null;
   // The whole left-hand side is one name, optionally subscripted: `v`, `v_1`, `\varepsilon_0`.
-  const m = /^(?:\\([a-zA-Z]+)|([a-zA-Z]))(?:_\s*(?:\{[A-Za-z0-9,\s]*\}|[A-Za-z0-9]))?$/.exec(latex.slice(0, rel.at).trim());
+  // `dv = e^{x} dx` in an integration by parts defines v as much as `v = e^{x}` does
+  const lhs = latex.slice(0, rel.at).trim().replace(/^d(?=[a-zA-Z]$)/, "");
+  const m = /^(?:\\([a-zA-Z]+)|([a-zA-Z]))(?:_\s*(?:\{[A-Za-z0-9,\s]*\}|[A-Za-z0-9]))?$/.exec(lhs);
   if (!m) return null;
   if (m[1]) return GREEK_SYMBOLS.has(m[1]) ? m[1] : null;
   return CONSTANT_LETTERS.has(m[2]) ? null : m[2];
@@ -234,6 +259,15 @@ export interface SolveStepGuard {
 export function createSolveStepGuard(opts: { sourceLatex: readonly string[]; parses: (latex: string) => boolean }): SolveStepGuard {
   const known = new Set<string>();
   for (const latex of opts.sourceLatex) for (const s of mathSymbols(latex)) known.add(s);
+  const source = opts.sourceLatex.join(" ");
+  // The names a solution legitimately brings with it: the constant of integration of an
+  // antiderivative (every `+ C` was refused before), and the integer of a periodic solution
+  // (`x = 30^\circ + 360^\circ k`, `x = n\pi`) in trigonometry.
+  if (/\\int/.test(source)) known.add("C");
+  if (/\\(?:sin|cos|tan|sec|csc|cot)(?![a-zA-Z])/.test(source)) {
+    known.add("k");
+    known.add("n");
+  }
   return {
     check(latex: string): SolveStepVerdict {
       const verdict = checkSolveStep(latex, { known, parses: opts.parses });
@@ -258,8 +292,15 @@ export function createSolveStepGuard(opts: { sourceLatex: readonly string[]; par
  * empty fragment, a broken `\frac`.
  */
 export function engineParsesStep(engine: Pick<LiveEngine, "analyzeLine">, latex: string): boolean {
-  const body = stripLeadingRelation(unwrapBoxed(latex)).replace(/\\(?:left|right)(?![a-zA-Z])\s*/g, "").trim();
+  const body = unwrapBoxed(stripLeadingRelation(unwrapBoxed(latex)))
+    .replace(/\\(?:left|right)(?![a-zA-Z])\s*/g, "")
+    // `\binom{n}{k}` has the shape of a fraction as far as "is this maths" goes
+    .replace(/\\binom(?=\s*\{)/g, "\\frac")
+    .trim();
   if (!body) return false;
+  // Interval notation is an answer the engine does not read: `(2, \infty)`, `[1, 4)`, `x \in (-3, 2]`,
+  // unions of them. Numbers, ±∞ and simple fractions only — nothing that could hide prose.
+  if (isIntervalAnswer(body)) return true;
   // A bare number is a 'label' to the engine (a problem number written on the page). As the
   // body of a solve step it is the answer, so it is read here rather than thrown away.
   if (/^[-+]?\d+(?:\.\d+)?$/.test(body.replace(/\\,|[\s,]/g, ""))) return true;
@@ -271,6 +312,15 @@ export function engineParsesStep(engine: Pick<LiveEngine, "analyzeLine">, latex:
   }
   if (!analysis || analysis.kind === "unknown" || analysis.kind === "incomplete" || analysis.kind === "text") return false;
   return Boolean(analysis.math?.trim());
+}
+
+const INTERVAL_END = String.raw`(?:-?\s*\\infty|[-+]?\s*\d+(?:\.\d+)?|[-+]?\s*\\frac\s*\{\s*-?\d+\s*\}\s*\{\s*\d+\s*\}|[-+]?\s*\d*\\sqrt\s*\{\s*\d+\s*\}|[-+]?\s*\d*\\pi)`;
+const INTERVAL = String.raw`[\(\[]\s*${INTERVAL_END}\s*,\s*${INTERVAL_END}\s*[\)\]]`;
+const INTERVAL_ANSWER = new RegExp(String.raw`^(?:[a-zA-Z]\s*\\in\s*)?${INTERVAL}(?:\s*\\cup\s*${INTERVAL})*$`);
+
+/** `(2, \infty)`, `x \in [1, 4)`, `(-\infty, -1) \cup (3, \infty)`. */
+export function isIntervalAnswer(latex: string): boolean {
+  return INTERVAL_ANSWER.test(latex.replace(/\\[,;!]|\\ /g, " ").trim());
 }
 
 // ---------------------------------------------------------------- the local answer
@@ -324,7 +374,10 @@ export function localAnswerFor(engine: LiveEngine, latex: string, ctx: Omit<Anal
   return usable(safely(() => engine.calculate(line))?.latex);
 }
 
-/** How a person finishes the line they just wrote: `36 + 2 =` becomes `= 38`. */
+/**
+ * How a person finishes the line they just wrote: `36 + 2 =` becomes `= 38`. A step that is a
+ * relation of its own — the `u = x^{2} + 1` beside a substitution — is written as it stands.
+ */
 export function localAnswerStep(answer: string): string {
-  return `= ${answer.trim()}`;
+  return continueLine(answer);
 }
