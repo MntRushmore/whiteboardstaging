@@ -18,6 +18,7 @@ import {
   checkCreditsConsumption,
   checkCrossUserIsolation,
   checkDeleteOwnAccount,
+  checkOnboarding,
   checkRateLimit,
   checkRefunds,
   checkSnapshots,
@@ -97,7 +98,11 @@ type Leak =
   | "rateLimitBadRetry"
   | "countersReadable"
   // usage by day
-  | "usageByDayForeign";
+  | "usageByDayForeign"
+  // onboarding
+  | "onboardingPatchable"
+  | "onboardingForeign"
+  | "onboardingAnyCourse";
 
 const USER_A = "aaaaaaaa-0000-4000-8000-000000000001";
 const USER_B = "bbbbbbbb-0000-4000-8000-000000000002";
@@ -121,7 +126,7 @@ function makeWorld(leaks: Leak[] = []) {
   const objects = new Map<string, string>(); // "bucket/path" -> owner
   const users = new Set<string>([USER_A, USER_B]); // auth.users
   const profiles = new Map<string, Row>();
-  for (const u of users) profiles.set(u, { user_id: u, plan_id: "free", display_name: null });
+  for (const u of users) profiles.set(u, { user_id: u, plan_id: "free", display_name: null, course: null, onboarded_at: null });
   const usage: Row[] = [];
   const grants: Row[] = [];
   const billingEvents: Row[] = [];
@@ -250,6 +255,21 @@ function makeWorld(leaks: Leak[] = []) {
           groups.set(key, g);
         }
         return ok([...groups.values()].sort((x, y) => String(y.day).localeCompare(String(x.day))));
+      }
+      case "save_onboarding": {
+        const course = args.p_course ?? null;
+        const known = ["algebra1", "geometry", "algebra2", "precalc_calc", "other"];
+        if (course !== null && !known.includes(String(course)) && !leak("onboardingAnyCourse")) {
+          return { status: 400, body: { code: "22023", message: "unknown course" } };
+        }
+        const targets = leak("onboardingForeign") ? [...profiles.values()] : [profiles.get(uid)].filter((r): r is Row => Boolean(r));
+        if (!targets.some((r) => r.user_id === uid)) return denied(uid);
+        for (const r of targets) {
+          if (course !== null) r.course = course;
+          if (args.p_complete === true && !r.onboarded_at) r.onboarded_at = new Date().toISOString();
+        }
+        const own = profiles.get(uid) as Row;
+        return ok({ course: own.course, onboarded_at: own.onboarded_at });
       }
       case "delete_own_account": {
         if (leak("deleteNoop")) return ok(null, 204);
@@ -405,7 +425,9 @@ function makeWorld(leaks: Leak[] = []) {
         if (method === "GET") return ok(visible);
         if (method === "PATCH") {
           // Column-level grant: only display_name is updatable -> 42501 before RLS.
-          if (Object.keys(body).some((k) => k !== "display_name") && !leak("planIdUpdatable")) return denied(uid);
+          const updatable = (k: string) =>
+            k === "display_name" || (leak("planIdUpdatable") && k === "plan_id") || (leak("onboardingPatchable") && (k === "course" || k === "onboarded_at"));
+          if (Object.keys(body).some((k) => !updatable(k))) return denied(uid);
           const own = visible.filter((r) => r.user_id === uid);
           for (const r of own) Object.assign(r, body);
           return ok(rep ? own : null);
@@ -503,7 +525,7 @@ function makeWorld(leaks: Leak[] = []) {
   const newUser = async (): Promise<RlsClient> => {
     const uid = uuid();
     users.add(uid);
-    profiles.set(uid, { user_id: uid, plan_id: "free", display_name: null });
+    profiles.set(uid, { user_id: uid, plan_id: "free", display_name: null, course: null, onboarded_at: null });
     return client(uid);
   };
 
@@ -661,6 +683,12 @@ describe("rlsChecks detect individual leaks", () => {
     ["usageByDayForeign", checkUsageByDay, "usage_by_day: B does not see A's usage"],
     ["usageByDayForeign", checkUsageByDay, "usage_by_day: B's rows add up to B's own credit_summary().used"],
     ["anonRpc", checkUsageByDay, "usage_by_day: anon cannot call it"],
+    // onboarding
+    ["onboardingPatchable", checkOnboarding, "onboarding: A cannot PATCH own onboarded_at (42501, RPC only)"],
+    ["onboardingPatchable", checkOnboarding, "onboarding: A cannot PATCH own course (42501, RPC only)"],
+    ["onboardingForeign", checkOnboarding, "onboarding: B's profile unchanged by A's calls"],
+    ["onboardingAnyCourse", checkOnboarding, "onboarding: an unknown course is rejected (400)"],
+    ["anonRpc", checkOnboarding, "onboarding: anon cannot call save_onboarding"],
   ];
 
   it.each(cases)("leak %s makes '%s' fail", async (leak, check, failingName) => {
