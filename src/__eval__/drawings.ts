@@ -20,7 +20,7 @@
 import type { TLShapeId } from "tldraw";
 import { mulberry32 } from "@/lib/hand";
 import type { InkLine, InkStroke, Rect } from "@/lib/live/contracts";
-import { splitInk, type DiagramKind } from "@/lib/live/diagrams";
+import { barGroups, splitInk, type DiagramKind } from "@/lib/live/diagrams";
 import { clusterLines, unionRects } from "@/lib/live/strokeClusters";
 import { handInk, VARIANTS, type Variant } from "./handwriting";
 
@@ -433,6 +433,8 @@ export interface SceneScore {
   labels: number;
   /** what the split called it (after only) */
   kinds: DiagramKind[];
+  /** division bars the split found (after only): a drawing beside maths is never one */
+  bars: number;
 }
 
 function scoreLines(scene: Scene, lines: InkLine[]): Pick<SceneScore, "mathIntact" | "drawingOut" | "strayLines"> {
@@ -448,12 +450,13 @@ function scoreLines(scene: Scene, lines: InkLine[]): Pick<SceneScore, "mathIntac
 export function scoreScene(scene: Scene, mode: "before" | "after"): SceneScore {
   const ink = [...scene.math, ...scene.drawn.strokes, ...scene.drawn.labels.flat()];
   const base = { id: scene.id, drawing: scene.drawing, placement: scene.placement, labels: scene.drawn.labels.length };
-  if (mode === "before") return { ...base, ...scoreLines(scene, clusterLines(ink)), labelsAttached: 0, kinds: [] };
+  if (mode === "before") return { ...base, ...scoreLines(scene, clusterLines(ink)), labelsAttached: 0, kinds: [], bars: 0 };
   const split = splitInk(ink);
-  const lines = clusterLines(split.writing);
+  // the lines as `LiveLoop.flush` makes them: a division bar and its divisor are one line
+  const lines = clusterLines(split.writing, [], barGroups(split.bars, ink));
   const attached = new Set<string>(split.diagrams.flatMap((d) => [...d.labels.flat(), ...d.strokeIds]));
   const labelsAttached = scene.drawn.labels.filter((l) => l.every((s) => attached.has(s.id))).length;
-  return { ...base, ...scoreLines(scene, lines), labelsAttached, kinds: [...new Set(split.diagrams.flatMap((d) => d.kinds))] };
+  return { ...base, ...scoreLines(scene, lines), labelsAttached, kinds: [...new Set(split.diagrams.flatMap((d) => d.kinds))], bars: split.bars.length };
 }
 
 export interface DrawingBoard {
@@ -473,6 +476,8 @@ export interface Totals {
   strayLines: number;
   labelsAttached: number;
   labels: number;
+  /** division bars found among drawings beside maths: 0 */
+  bars: number;
 }
 
 function totals(scores: readonly SceneScore[]): Totals {
@@ -482,6 +487,7 @@ function totals(scores: readonly SceneScore[]): Totals {
     strayLines: scores.reduce((n, s) => n + s.strayLines, 0),
     labelsAttached: scores.reduce((n, s) => n + s.labelsAttached, 0),
     labels: scores.reduce((n, s) => n + s.labels, 0),
+    bars: scores.reduce((n, s) => n + s.bars, 0),
   };
 }
 
@@ -506,6 +512,172 @@ export function runDrawingEval(scenes = buildScenes()): DrawingBoard {
     byPlacement: placements.map((p) => ({ placement: p, scenes: pick(after, "placement", p).length, before: totals(pick(before, "placement", p)), after: totals(pick(after, "placement", p)) })),
     failures: after.filter((s) => !s.mathIntact || !s.drawingOut),
     stray: after.filter((s) => s.strayLines > 0),
+  };
+}
+
+// ---------------------------------------------------------------- division bars
+
+/**
+ * "Divide both sides by n" drawn as a bar under the whole equation with n under it (the owner's
+ * board: the tutor wrote `2\sin x = 1`, the student drew a bar under it and a `2` under the bar),
+ * and the rules under an equation that are NOT that. The equation is the student's own, or a
+ * problem the tutor wrote: its ink then is not among the strokes, only its box
+ * (`SplitOptions.equations`), as on the board (`LiveLoop.problemCells`).
+ */
+export interface BarScene {
+  id: string;
+  kind: string;
+  /** a division bar (true), or a look-alike that must not become one */
+  bar: boolean;
+  ink: InkStroke[];
+  equations: Rect[];
+  /** the rule under the equation */
+  rule: InkStroke;
+  /** what is under the rule, when it is a divisor */
+  divisor: InkStroke[];
+  /** lines of the student's own that must each stay one line of exactly their strokes */
+  lines: InkStroke[][];
+}
+
+export const BAR_EQUATIONS = ["2x + 3 = 11", "2 \\sin x = 1", "4x - 7 = 13", "2x + 3 > 11", "5x = 2x + 9"];
+export const BAR_DIVISORS = ["2", "-3", "4", "\\frac{1}{2}"];
+
+/** The tutor's problem as the chat writes it (`1.` then the problem, hand size 48): its box only. */
+function tutorProblemBox(latex: string, x: number, y: number): Rect {
+  return boundsOf(writeAt(`1. \\quad ${latex}`, x, y, VARIANTS[0], 48 / 44));
+}
+
+/** `latex` centred under a rule at `ruleY` whose middle is `cx`. */
+function centredUnder(latex: string, cx: number, ruleY: number, variant: Variant): InkStroke[] {
+  const w = boundsOf(writeAt(latex, 0, 0, variant)).w;
+  return writeAt(latex, cx - w / 2, ruleY + 10, variant);
+}
+
+/** Every division bar, and every look-alike, under every equation, in every hand. */
+export function buildBarScenes(): BarScene[] {
+  const scenes: BarScene[] = [];
+  let seed = 500;
+  for (const variant of VARIANTS) {
+    for (const latex of BAR_EQUATIONS) {
+      for (const tutor of [false, true]) {
+        const who = tutor ? "tutor's problem" : "student's line";
+        const own = tutor ? [] : writeAt(latex, 600, 420, variant);
+        const box = tutor ? tutorProblemBox(latex, 600, 420) : boundsOf(own);
+        const equations = tutor ? [box] : [];
+        const ruleY = box.y + box.h + (tutor ? 20 : 14);
+        const rule = (pen: Pen) =>
+          tutor ? pen.stroke({ x: box.x + 16, y: ruleY }, { x: box.x + box.w + 48, y: ruleY + 1 }) : pen.stroke({ x: box.x - 6, y: ruleY }, { x: box.x + box.w + 16, y: ruleY + 1 });
+        const mid = (r: InkStroke) => r.bounds.x + r.bounds.w / 2;
+        const base = (kind: string) => `${kind}/${who}/${variant.name}/${latex}`;
+        // the division bars: the divisor under it, alone or with the next line written under it
+        for (const d of BAR_DIVISORS) {
+          for (const next of [false, true]) {
+            const pen = new Pen(`bar${++seed}`, seed);
+            const r = rule(pen);
+            const divisor = centredUnder(d, mid(r), ruleY, variant);
+            const after = next ? writeAt("x = 4", box.x + 10, boundsOf(divisor).y + boundsOf(divisor).h + 30, variant) : [];
+            const kind = next ? "bar, divisor, next line" : "bar, divisor";
+            scenes.push({ id: `${base(kind)}/${d}`, kind: `${kind} (${who})`, bar: true, ink: [...own, r, ...divisor, ...after], equations, rule: r, divisor, lines: [own, after].filter((l) => l.length > 0) });
+          }
+        }
+        // look-alikes: an underline; a rule with the next line (a relation) right under it — the
+        // sum under a system; a number line under the equation
+        {
+          const pen = new Pen(`ul${++seed}`, seed);
+          const r = rule(pen);
+          scenes.push({ id: base("underline"), kind: `an underline, nothing under it (${who})`, bar: false, ink: [...own, r], equations, rule: r, divisor: [], lines: [] });
+        }
+        {
+          const pen = new Pen(`sum${++seed}`, seed);
+          const r = rule(pen);
+          const sum = writeAt("2x = 12", box.x + 4, ruleY + 12, variant);
+          // under the student's line the rule is a fraction bar between the two, as it always was
+          scenes.push({ id: base("rule over a line"), kind: `a rule with a line of maths under it (${who})`, bar: false, ink: [...own, r, ...sum], equations, rule: r, divisor: [], lines: tutor ? [sum] : [] });
+        }
+        {
+          const nl = DRAWINGS.numberLine(0, 0, ++seed);
+          const nb = boundsOf([...nl.strokes, ...nl.labels.flat()]);
+          const moved = shift(nl, box.x - nb.x, ruleY + 14 - nb.y, `nl${seed}`);
+          scenes.push({ id: base("number line"), kind: `a number line under it (${who})`, bar: false, ink: [...own, ...moved.strokes, ...moved.labels.flat()], equations, rule: moved.strokes[0], divisor: [], lines: [] });
+        }
+      }
+    }
+    // a proof's T-table: its bar under a heading, a rule down the middle, rows either side
+    {
+      const pen = new Pen(`tt${++seed}`, seed);
+      const heading = [...writeAt("\\text{Statements}", 400, 300, variant), ...writeAt("\\text{Reasons}", 760, 300, variant)];
+      const hb = boundsOf(heading);
+      const barY = hb.y + hb.h + 12;
+      const bar = pen.stroke({ x: 380, y: barY }, { x: 1000, y: barY + 1 });
+      const upright = pen.stroke({ x: 690, y: barY - 2 }, { x: 691, y: barY + 260 });
+      const rows = [
+        ...writeAt("AB = CD", 420, barY + 24, variant),
+        ...writeAt("\\text{Given}", 760, barY + 24, variant),
+        ...writeAt("AB + BC = CD + BC", 400, barY + 110, variant),
+        ...writeAt("\\text{Addition}", 760, barY + 110, variant),
+      ];
+      scenes.push({ id: `T-table/${variant.name}`, kind: "a proof's T-table", bar: false, ink: [...heading, bar, upright, ...rows], equations: [], rule: bar, divisor: [], lines: [] });
+    }
+    // a fraction in the student's own line; long division
+    for (const [kind, latex] of [
+      ["a fraction bar in the student's line", "\\frac{x + 1}{2} = 5"],
+      ["a fraction bar under an equation's side", "\\frac{2x + 6}{2} = \\frac{10}{2}"],
+      ["long division", "3 \\overline{)126}"],
+    ] as const) {
+      const ink = writeAt(latex, 600, 420, variant);
+      scenes.push({ id: `${kind}/${variant.name}`, kind, bar: false, ink, equations: [], rule: ink[0], divisor: [], lines: [ink] });
+    }
+  }
+  return scenes;
+}
+
+export interface BarScore {
+  id: string;
+  kind: string;
+  bar: boolean;
+  /** a bar: found, with exactly its divisor; a look-alike: no bar found */
+  right: boolean;
+  /** the student's own lines each one line of exactly their strokes */
+  linesIntact: boolean;
+}
+
+export function scoreBarScene(scene: BarScene): BarScore {
+  const split = splitInk(scene.ink, [], { equations: scene.equations });
+  const lines = clusterLines(split.writing, [], barGroups(split.bars, scene.ink));
+  const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((id) => b.includes(id));
+  const right = scene.bar
+    ? split.bars.length === 1 && split.bars[0].bar === scene.rule.id && sameSet(split.bars[0].divisor, scene.divisor.map((s) => s.id))
+    : split.bars.length === 0;
+  const linesIntact = scene.lines.every((own) => {
+    const ids = own.map((s) => s.id as string);
+    const holding = lines.filter((l) => l.strokeIds.some((id) => ids.includes(id)));
+    return holding.length === 1 && sameSet(holding[0].strokeIds, ids);
+  });
+  return { id: scene.id, kind: scene.kind, bar: scene.bar, right, linesIntact };
+}
+
+export interface BarBoard {
+  scenes: number;
+  bars: { total: number; found: number; linesIntact: number };
+  lookalikes: { total: number; taken: number };
+  byKind: Array<{ kind: string; bar: boolean; scenes: number; right: number; linesIntact: number }>;
+  failures: BarScore[];
+}
+
+export function runBarEval(scenes = buildBarScenes()): BarBoard {
+  const scores = scenes.map(scoreBarScene);
+  const bars = scores.filter((s) => s.bar);
+  const look = scores.filter((s) => !s.bar);
+  const kinds = [...new Set(scores.map((s) => s.kind))];
+  return {
+    scenes: scores.length,
+    bars: { total: bars.length, found: bars.filter((s) => s.right).length, linesIntact: bars.filter((s) => s.right && s.linesIntact).length },
+    lookalikes: { total: look.length, taken: look.filter((s) => !s.right).length },
+    byKind: kinds.map((kind) => {
+      const of = scores.filter((s) => s.kind === kind);
+      return { kind, bar: of[0].bar, scenes: of.length, right: of.filter((s) => s.right).length, linesIntact: of.filter((s) => s.linesIntact).length };
+    }),
+    failures: scores.filter((s) => !s.right || !s.linesIntact),
   };
 }
 
@@ -544,7 +716,7 @@ export function checkWriting(lines: readonly string[], variants: readonly Varian
 
 const pct = (n: number, d: number) => (d === 0 ? "—" : `${Math.round((100 * n) / d)}%`);
 
-export function renderDrawingsMarkdown(board: DrawingBoard, writing: WritingCheck): string {
+export function renderDrawingsMarkdown(board: DrawingBoard, writing: WritingCheck, bars?: BarBoard): string {
   const row = (cells: string[]) => `| ${cells.join(" | ")} |`;
   const table = (head: string[], rows: string[][]) => [row(head), row(head.map(() => "---")), ...rows.map(row)].join("\n");
   const n = board.scenes;
@@ -564,9 +736,11 @@ export function renderDrawingsMarkdown(board: DrawingBoard, writing: WritingChec
         ["drawing kept out of every line", `${board.before.drawingOut} / ${n} (${pct(board.before.drawingOut, n)})`, `${board.after.drawingOut} / ${n} (${pct(board.after.drawingOut, n)})`],
         ["stray lines (no maths in them: a wasted recognizer call each)", String(board.before.strayLines), String(board.after.strayLines)],
         ["labels attached to their drawing", "—", `${board.after.labelsAttached} / ${board.after.labels} (${pct(board.after.labelsAttached, board.after.labels)})`],
+        ["drawings taken for a division bar", "—", String(board.after.bars)],
       ],
     ),
     "",
+    ...(bars ? renderBars(bars, table) : []),
     "## The writing stays writing",
     "",
     `Every line of the maths corpus (src/__eval__/corpus.ts) written in every hand (${VARIANTS.map((v) => v.name).join(", ")}): ${writing.lines} lines — fraction bars, long \`=\`, radicals, integral signs, \`\\left( \\right)\`, matrices, cases — split on its own.`,
@@ -613,4 +787,33 @@ export function renderDrawingsMarkdown(board: DrawingBoard, writing: WritingChec
       : table(["scene", "maths intact", "drawing out", "stray lines"], board.failures.slice(0, 60).map((f) => [f.id.replace(/\|/g, "\\|"), String(f.mathIntact), String(f.drawingOut), String(f.strayLines)])),
     "",
   ].join("\n");
+}
+
+/** The division-bar section: found under every equation, never taken for a look-alike. */
+function renderBars(bars: BarBoard, table: (head: string[], rows: string[][]) => string): string[] {
+  return [
+    "## Division bars",
+    "",
+    "\"Divide both sides by n\" drawn as a bar under the whole equation with n under it (`divisionBars` in",
+    "`src/lib/live/diagrams.ts`): under the student's own line, or under a problem the tutor wrote (its box only, as",
+    "`SplitOptions.equations`), with the next line written under it or not, in every hand, the divisors",
+    `${BAR_DIVISORS.map((d) => `\`${d}\``).join(", ")} under ${BAR_EQUATIONS.map((e) => `\`${e}\``).join(", ")} — and the rules under an equation that are not one.`,
+    "",
+    table(
+      ["", "right"],
+      [
+        ["division bars found, with exactly their divisor", `${bars.bars.found} / ${bars.bars.total} (${pct(bars.bars.found, bars.bars.total)})`],
+        ["… and the student's own lines each one line of exactly their strokes", `${bars.bars.linesIntact} / ${bars.bars.total}`],
+        ["look-alikes taken for a division bar", `${bars.lookalikes.taken} / ${bars.lookalikes.total}`],
+      ],
+    ),
+    "",
+    table(
+      ["scene", "a bar?", "scenes", "right", "lines intact"],
+      bars.byKind.map((k) => [k.kind, k.bar ? "yes" : "no", String(k.scenes), String(k.right), String(k.linesIntact)]),
+    ),
+    "",
+    bars.failures.length === 0 ? "Every scene right." : table(["scene"], bars.failures.slice(0, 40).map((f) => [f.id.replace(/\|/g, "\\|")])),
+    "",
+  ];
 }

@@ -406,12 +406,14 @@ export function assignColumns(lines: InkLine[]): InkLine[] {
  * Clusters ink into lines. `previous` lets ids persist: a new cluster reuses the id of
  * the previous line sharing >= 50 % of its stroke ids (most-overlapping first).
  * `hash` is left as the previous line's hash when the stroke set is identical, else "".
+ * `fixed`: groups of strokes that are one line each whatever the clusterer would make of them —
+ * a division bar and the divisor under it (`diagrams.ts`, `DivisionBar`) — given ids and
+ * columns with the rest.
  */
-export function clusterLines(strokes: InkStroke[], previous: InkLine[] = []): InkLine[] {
-  const groups = clusterStrokeGroups(strokes);
+export function clusterLines(strokes: InkStroke[], previous: InkLine[] = [], fixed: ReadonlyArray<readonly InkStroke[]> = []): InkLine[] {
+  const groups = [...clusterStrokeGroups(strokes).map((idxs) => idxs.map((i) => strokes[i])), ...fixed.filter((g) => g.length > 0)];
   const usedIds = new Set<string>();
-  const lines: InkLine[] = groups.map((idxs) => {
-    const members = idxs.map((i) => strokes[i]);
+  const lines: InkLine[] = groups.map((members) => {
     const strokeIds = members.map((s) => s.id);
     return {
       id: "",

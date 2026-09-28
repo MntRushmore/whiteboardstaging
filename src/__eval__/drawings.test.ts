@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CORPUS } from "./corpus";
-import { checkWriting, renderDrawingsMarkdown, runDrawingEval } from "./drawings";
+import { checkWriting, renderDrawingsMarkdown, runBarEval, runDrawingEval } from "./drawings";
 
 /**
  * The drawings scoreboard (offline, no recognizer): generated drawings beside lines of maths,
@@ -36,9 +36,10 @@ describe("eval: drawings beside maths", () => {
     const lines = [...new Set([...CORPUS.flatMap((p) => p.lines), ...WRITING_EXTRAS])];
     const writing = checkWriting(lines);
     const board = runDrawingEval();
+    const bars = runBarEval();
     const n = board.scenes;
     console.log(
-      `eval:drawings: ${n} scenes; maths intact ${board.before.mathIntact} -> ${board.after.mathIntact}; drawings out ${board.before.drawingOut} -> ${board.after.drawingOut}; stray lines ${board.before.strayLines} -> ${board.after.strayLines}; labels attached ${board.after.labelsAttached}/${board.after.labels}; writing: ${writing.misread.length} of ${writing.lines} lines' strokes misread`,
+      `eval:drawings: ${n} scenes; maths intact ${board.before.mathIntact} -> ${board.after.mathIntact}; drawings out ${board.before.drawingOut} -> ${board.after.drawingOut}; stray lines ${board.before.strayLines} -> ${board.after.strayLines}; labels attached ${board.after.labelsAttached}/${board.after.labels}; writing: ${writing.misread.length} of ${writing.lines} lines' strokes misread; division bars ${bars.bars.found}/${bars.bars.total}, look-alikes taken ${bars.lookalikes.taken}/${bars.lookalikes.total}`,
     );
 
     // the writing never changes: no stroke of any written line is a drawing, a mark or a label
@@ -50,14 +51,35 @@ describe("eval: drawings beside maths", () => {
     expect(board.after.mathIntact).toBeGreaterThan(board.before.mathIntact);
     expect(board.after.strayLines).toBeLessThanOrEqual(Math.ceil(0.01 * n));
     expect(board.after.labelsAttached).toBeGreaterThanOrEqual(Math.floor(0.98 * board.after.labels));
+    // no drawing beside maths is ever a division bar
+    expect(board.after.bars).toBe(0);
+    // a bar under a whole equation with the divisor under it is found, the student's own lines
+    // stay whole; an underline, a rule over a line, a number line, a T-table, a fraction bar are not
+    expect(bars.failures.map((f) => f.id)).toEqual([]);
+    expect(bars.bars.found).toBe(bars.bars.total);
+    expect(bars.lookalikes.taken).toBe(0);
 
     if (process.env.EVAL_WRITE === "1") {
       const dir = join(ROOT, "docs", "eval");
       mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, "drawings.md"), renderDrawingsMarkdown(board, writing));
+      writeFileSync(join(dir, "drawings.md"), renderDrawingsMarkdown(board, writing, bars));
       writeFileSync(
         join(dir, "drawings.json"),
-        JSON.stringify({ scenes: n, before: board.before, after: board.after, byDrawing: board.byDrawing, byPlacement: board.byPlacement, writing, failures: board.failures.map((f) => f.id), stray: board.stray.map((f) => f.id) }, null, 1) + "\n",
+        JSON.stringify(
+          {
+            scenes: n,
+            before: board.before,
+            after: board.after,
+            byDrawing: board.byDrawing,
+            byPlacement: board.byPlacement,
+            writing,
+            failures: board.failures.map((f) => f.id),
+            stray: board.stray.map((f) => f.id),
+            divisionBars: { scenes: bars.scenes, bars: bars.bars, lookalikes: bars.lookalikes, byKind: bars.byKind, failures: bars.failures.map((f) => f.id) },
+          },
+          null,
+          1,
+        ) + "\n",
       );
     }
   }, 180_000);
