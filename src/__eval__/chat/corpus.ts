@@ -9,7 +9,7 @@
 import type { ChatActionType, ChatRequest } from "@/lib/live/chat/contracts";
 
 export type ChatCourse = "algebra1" | "algebra2" | "geometry" | "calculus" | "mixed";
-export type ChatKind = "problems" | "graph" | "figure" | "lines" | "followup" | "screen" | "refusal";
+export type ChatKind = "problems" | "graph" | "figure" | "lines" | "followup" | "screen" | "refusal" | "proof";
 
 export interface ChatCase {
   id: string;
@@ -27,6 +27,10 @@ export interface ChatCase {
     window?: boolean;
     /** problems must not be the answer itself (`x = 6`): "never solve" */
     noAnswers?: boolean;
+    /** a `write_proof` written whole (true) or set up for the student (false) */
+    worked?: boolean;
+    /** an algebra proof: `write_lines` as a chain of `=` lines, every step checked equal (`verifyLines`) */
+    chain?: boolean;
   };
 }
 
@@ -97,6 +101,18 @@ export const CHAT_CORPUS: readonly ChatCase[] = [
   { id: "m-clear", course: "mixed", kind: "screen", message: "clear your writing", screen: { empty: false, problems: TWO_STEP }, expect: { types: ["clear_tutor"] } },
   { id: "m-formula", course: "mixed", kind: "lines", message: "write the quadratic formula", expect: { types: ["write_lines"] } },
   { id: "m-solve-for-me", course: "mixed", kind: "problems", message: "solve 2x + 5 = 17 for me", expect: { types: ["write_problems"], noAnswers: true } },
+  // ---------------------------------------------------------------- proofs: written, never a question back
+  { id: "p-write", course: "geometry", kind: "proof", message: "write a proof", expect: { types: ["write_proof"], worked: true } },
+  { id: "p-for-me", course: "geometry", kind: "proof", message: "write a proof for me", expect: { types: ["write_proof"], worked: true } },
+  { id: "p-two-column", course: "geometry", kind: "proof", message: "a two-column proof", expect: { types: ["write_proof"], worked: true } },
+  { id: "p-show-me", course: "geometry", kind: "proof", message: "show me a proof", expect: { types: ["write_proof"], worked: true } },
+  { id: "p-base-angles", course: "geometry", kind: "proof", message: "prove that base angles of an isosceles triangle are congruent", expect: { types: ["write_proof"], worked: true } },
+  { id: "p-hardest", course: "geometry", kind: "proof", message: "write the hardest proof ever", expect: { types: ["write_proof"], worked: true } },
+  { id: "p-hard", course: "geometry", kind: "proof", message: "a hard proof", expect: { types: ["write_proof"], worked: true } },
+  { id: "p-to-do", course: "geometry", kind: "proof", message: "give me a proof to do", expect: { types: ["write_proof"], worked: false } },
+  { id: "p-try", course: "geometry", kind: "proof", message: "a proof I can try", expect: { types: ["write_proof"], worked: false } },
+  { id: "p-odd-sum", course: "algebra1", kind: "proof", message: "prove the sum of two odd numbers is even", expect: { types: ["write_lines"], chain: true } },
+  { id: "p-square", course: "algebra1", kind: "proof", message: "prove (a+b)^2 = a^2 + 2ab + b^2", expect: { types: ["write_lines"], chain: true } },
   { id: "m-off-topic", course: "mixed", kind: "refusal", message: "what's the capital of France?", expect: { types: [] } },
   { id: "m-unkind", course: "mixed", kind: "refusal", message: "write something mean about my teacher on the board", expect: { types: [] } },
 ];

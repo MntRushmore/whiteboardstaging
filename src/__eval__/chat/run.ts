@@ -10,21 +10,33 @@
  *  - each figure spec is checked by the drawer (`checkFigure`), given the route's ONE repair
  *    round-trip when it has problems (a second call, counted in latency and cost), and planned
  *    (`planFigure` in the board's largest figure box);
- *  - each graph's relations are graphed by the engine (`graphFor`).
+ *  - each graph's relations are graphed by the engine (`graphFor`);
+ *  - each proof is gated as the route gates it (`checkProofProposal`: the engine's planner proves it
+ *    with the figure), with the route's ONE repair round-trip when it fails; each `write_lines`
+ *    block is verified as the board verifies it (an algebra proof: every step equal).
  * And the request's own expectations: the action types it needs, the count of problems asked for,
  * a window when a range was asked for, no action for a request that is not maths help.
  *
  * Calls go through the model bench's client (cached on disk, priced, under a hard spend cap).
  */
 import type { LiveEngine } from "@/lib/live/contracts";
-import type { ChatAction, ChatActionType } from "@/lib/live/chat/contracts";
+import type { ChatAction, ChatActionType, WriteProofAction } from "@/lib/live/chat/contracts";
 import { figureProblems } from "@/lib/live/chat/figure";
 import { PROBLEM_GRID } from "@/lib/live/chat/layout";
-import { answerOf, isCleanAnswer, verifyProblem, type ProblemVerdict } from "@/lib/live/chat/verify";
+import { checkProofProposal, type ProofProposalVerdict } from "@/lib/live/chat/proof";
+import { answerOf, isChain, isCleanAnswer, verifyLines, verifyProblem, type ProblemVerdict } from "@/lib/live/chat/verify";
 import { FigureSpecSchema, type FigureSpec } from "@/lib/live/figureDraw/contracts";
 import { planFigure } from "@/lib/live/figureDraw";
 import { planHandwriting } from "@/lib/live/handwriting";
-import { buildChatMessages, buildFigureRepairMessages, ChatReplyRawSchema, cleanChatActions, type DroppedAction } from "@/lib/server/prompts/chat";
+import {
+  buildChatMessages,
+  buildFigureRepairMessages,
+  buildProofRepairMessages,
+  ChatReplyRawSchema,
+  cleanChatActions,
+  ProofRepairReplySchema,
+  type DroppedAction,
+} from "@/lib/server/prompts/chat";
 import { callModel, pool, type BenchMessage, type CallContext, type CallRecord } from "../models/client";
 import { parseModelJson } from "../models/json";
 import { requestFor, type ChatCase } from "./corpus";
@@ -49,6 +61,23 @@ export interface FigureScore {
   repair?: Omit<CallRecord, "content">;
 }
 
+export interface ProofScore {
+  /** the action passed the shared schema (else the route dropped it) */
+  schema: boolean;
+  worked: boolean;
+  /** the engine's planner proved it the first time (`checkProofProposal`) */
+  provedFirst: boolean;
+  /** proved after the route's one repair round-trip (or the first time): it reaches the board */
+  provedAfterRepair: boolean;
+  /** the proof as the board writes it: rows and their reasons (the planner's) */
+  rows: number;
+  reasons: string[];
+  prove: string;
+  /** what the engine found wrong the first time */
+  problems: string[];
+  repair?: Omit<CallRecord, "content">;
+}
+
 export interface ChatResult {
   id: string;
   course: string;
@@ -66,6 +95,10 @@ export interface ChatResult {
   problems: ProblemScore[];
   figures: FigureScore[];
   graphs: Array<{ relations: string[]; graphed: boolean; window: boolean }>;
+  /** proofs (`write_proof`), gated as the route gates them */
+  proofs: ProofScore[];
+  /** `write_lines` blocks, verified as the board does (`verifyLines`) */
+  lines: Array<{ lines: string[]; chain: boolean; ok: boolean; why: string }>;
   reply: string;
   call: Omit<CallRecord, "content">;
   content: string;
@@ -95,7 +128,34 @@ export function judgeIntent(c: ChatCase, actions: readonly ChatAction[]): { ok: 
   if (c.expect.count !== undefined && problems.length !== c.expect.count) return { ok: false, why: `${problems.length} problems for ${c.expect.count} asked` };
   if (c.expect.window && !actions.some((a) => a.type === "graph" && a.window)) return { ok: false, why: "no window for the range asked" };
   if (c.expect.noAnswers && problems.some((p) => p.some((l) => /^[a-z]\s*=\s*-?[\d.]+$/i.test(l.replace(/\s+/g, " ").trim())))) return { ok: false, why: "wrote the answer" };
+  if (c.expect.worked !== undefined && !actions.some((a) => a.type === "write_proof" && a.worked === c.expect.worked)) return { ok: false, why: `a proof ${c.expect.worked ? "written whole" : "set up for the student"} was asked for` };
+  if (c.expect.chain && !actions.some((a) => a.type === "write_lines" && isChain(a.lines))) return { ok: false, why: "not a chain of = lines" };
   return { ok: true, why: "" };
+}
+
+/** Every `write_lines` block as the board verifies it. */
+export function scoreLines(engine: LiveEngine, actions: readonly ChatAction[]): ChatResult["lines"] {
+  return actions.flatMap((a) => {
+    if (a.type !== "write_lines") return [];
+    const v = verifyLines(engine, a.lines, canDraw);
+    return [{ lines: a.lines, chain: isChain(a.lines), ok: v.ok, why: v.ok ? "" : v.reason }];
+  });
+}
+
+/** A proof as the route gates it: the engine's check, then (once per request) the repair's. */
+export function proofScore(action: WriteProofAction, verdict: ProofProposalVerdict, after?: ProofProposalVerdict, repair?: Omit<CallRecord, "content">): ProofScore {
+  const final = after ?? verdict;
+  return {
+    schema: true,
+    worked: action.worked,
+    provedFirst: verdict.ok,
+    provedAfterRepair: final.ok,
+    rows: final.ok ? final.proof.rows.length : 0,
+    reasons: final.ok ? final.proof.rows.map((r) => r.reason) : [],
+    prove: final.ok ? final.proof.prove : action.prove,
+    problems: verdict.ok ? [] : verdict.problems,
+    ...(repair ? { repair } : {}),
+  };
 }
 
 export function scoreProblems(engine: LiveEngine, actions: readonly ChatAction[]): ProblemScore[] {
@@ -140,7 +200,7 @@ export async function runChat(opts: ChatRunOptions): Promise<ChatResult[]> {
     const record = await callModel({ model, messages, maxTokens: 3000, json: true, reasoning: "low", timeoutMs: 60_000 }, opts.ctx);
     const { content, ...call } = record;
     const base = { id: c.id, course: c.course, kind: c.kind, model, call, content };
-    const empty = { json: false, proposed: 0, valid: 0, dropped: [], types: [], problems: [], figures: [], graphs: [], reply: "" };
+    const empty = { json: false, proposed: 0, valid: 0, dropped: [], types: [], problems: [], figures: [], graphs: [], proofs: [], lines: [], reply: "" };
     if (!record.ok) {
       opts.log?.(`${model} ${c.id}: call failed (${record.failure}: ${record.error})`);
       return { ...base, ...empty, intent: false, intentWhy: `call failed: ${record.failure}` };
@@ -185,9 +245,40 @@ export async function runChat(opts: ChatRunOptions): Promise<ChatResult[]> {
       figures.push({ schema: true, cleanFirst: first.length === 0, cleanAfterRepair: problems.length === 0, drawn: drawn(spec), problems: first, ...(repair ? { repair } : {}) });
     }
 
+    // proofs: the engine's check (the route's gate), its one repair round-trip, the check again
+    const proofs: ProofScore[] = [];
+    let proofRepaired = false;
+    for (const raw of rawActions.filter((a) => a && typeof a === "object" && (a as { type?: unknown }).type === "write_proof")) {
+      const [action] = cleanChatActions([raw]).actions;
+      if (!action || action.type !== "write_proof") {
+        proofs.push({ schema: false, worked: true, provedFirst: false, provedAfterRepair: false, rows: 0, reasons: [], prove: "", problems: ["schema"] });
+        continue;
+      }
+      const first = checkProofProposal(action);
+      if (first.ok || proofRepaired) {
+        proofs.push(proofScore(action, first));
+        continue;
+      }
+      proofRepaired = true;
+      const rec = await callModel(
+        { model, messages: buildProofRepairMessages(c.message, action, first.problems) as BenchMessage[], maxTokens: 2000, json: true, reasoning: "low", timeoutMs: 60_000 },
+        opts.ctx,
+      );
+      const { content: _rc, ...rcall } = rec;
+      void _rc;
+      const fixed = ProofRepairReplySchema.safeParse(parseModelJson(rec.content) ?? {});
+      const after = fixed.success ? checkProofProposal({ ...action, ...fixed.data }) : first;
+      proofs.push(proofScore(action, first, after, rcall));
+    }
+
     let intent = judgeIntent(c, actions);
     // the route drops a figure still wrong after its one repair: the request then did not get its figure
     if (intent.ok && c.expect.types.includes("draw_figure") && !figures.some((f) => f.cleanAfterRepair)) intent = { ok: false, why: "the figure is still wrong after the repair (dropped)" };
+    // …and a proof still unproved after its one repair
+    if (intent.ok && c.expect.types.includes("write_proof") && !proofs.some((p) => p.provedAfterRepair)) intent = { ok: false, why: "the proof is still unproved after the repair (dropped)" };
+    // an algebra proof whose steps the engine cannot all show equal is not written
+    const lines = scoreLines(opts.engine, actions);
+    if (intent.ok && c.expect.chain && !lines.some((l) => l.chain && l.ok)) intent = { ok: false, why: `the lines did not check out (${lines.map((l) => l.why).join(", ")})` };
     return {
       ...base,
       json: isJson,
@@ -200,17 +291,22 @@ export async function runChat(opts: ChatRunOptions): Promise<ChatResult[]> {
       problems: scoreProblems(opts.engine, actions),
       figures,
       graphs: scoreGraphs(opts.engine, actions),
+      proofs,
+      lines,
       reply,
     };
   });
 }
 
-/** Latency of a request as the student waits for it: the call, plus the figure repair when there was one. */
-export function requestLatencyMs(r: Pick<ChatResult, "call" | "figures">): number {
-  return r.call.latencyMs + r.figures.reduce((s, f) => s + (f.repair?.latencyMs ?? 0), 0);
+type Repaired = { repair?: Omit<CallRecord, "content"> };
+const repairs = (r: { figures: readonly Repaired[]; proofs?: readonly Repaired[] }): Repaired[] => [...r.figures, ...(r.proofs ?? [])];
+
+/** Latency of a request as the student waits for it: the call, plus a figure's or a proof's repair when there was one. */
+export function requestLatencyMs(r: Pick<ChatResult, "call" | "figures"> & Partial<Pick<ChatResult, "proofs">>): number {
+  return r.call.latencyMs + repairs(r).reduce((s, f) => s + (f.repair?.latencyMs ?? 0), 0);
 }
 
 /** Cost of a request: the call and any repair. */
-export function requestCostUsd(r: Pick<ChatResult, "call" | "figures">): number {
-  return r.call.costUsd + r.figures.reduce((s, f) => s + (f.repair?.costUsd ?? 0), 0);
+export function requestCostUsd(r: Pick<ChatResult, "call" | "figures"> & Partial<Pick<ChatResult, "proofs">>): number {
+  return r.call.costUsd + repairs(r).reduce((s, f) => s + (f.repair?.costUsd ?? 0), 0);
 }
