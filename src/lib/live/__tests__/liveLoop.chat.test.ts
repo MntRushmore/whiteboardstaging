@@ -214,6 +214,8 @@ describe("live loop — the board chat", () => {
       const report = await run([{ type: "write_problems", problems: set }]);
       expect(report).toMatchObject({ problemsWritten: 8, screensAdded: 1 });
       expect(problems().map((p) => p.n)).toEqual([5, 6, 7, 8]);
+      // the request names them as numbered on the board: "help me with 7"
+      expect(loop.chatScreen().numbers).toEqual([5, 6, 7, 8]);
       editor.switchPage(editor.getPages()[0].id);
       expect(problems().map((p) => p.n)).toEqual([1, 2, 3, 4]);
     });
@@ -223,7 +225,7 @@ describe("live loop — the board chat", () => {
       expect(loop.chatScreen()).toEqual({ empty: true, student: [], tutor: [], problems: [] });
       await run([{ type: "write_problems", problems: [["2x + 3 = 11"], ["x + y = 10", "x - y = 2"]] }]);
       await penLine("2x=8", 100, 200, "2x=8");
-      expect(loop.chatScreen()).toEqual({ empty: false, student: ["2x=8"], tutor: [], problems: ["2x + 3 = 11", "x + y = 10; x - y = 2"] });
+      expect(loop.chatScreen()).toEqual({ empty: false, student: ["2x=8"], tutor: [], problems: ["2x + 3 = 11", "x + y = 10; x - y = 2"], numbers: [1, 2] });
     });
   });
 

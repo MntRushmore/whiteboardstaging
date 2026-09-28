@@ -34,8 +34,14 @@ describe("chat contracts", () => {
       { type: "draw_figure", figure: PROBE_FIGURE },
       { type: "new_screen" },
       { type: "clear_tutor" },
+      { type: "help_problem", problem: 3, depth: "step" },
+      { type: "help_problem", problem: 1, depth: "solve" },
     ]) {
       expect(ChatActionSchema.safeParse(ok).success, ok.type).toBe(true);
+    }
+    // help names a problem by its number on the board, and says how much
+    for (const bad of [{ problem: 0, depth: "step" }, { problem: 2.5, depth: "step" }, { problem: 3, depth: "hint" }, { problem: 3 }]) {
+      expect(ChatActionSchema.safeParse({ type: "help_problem", ...bad }).success, JSON.stringify(bad)).toBe(false);
     }
   });
 

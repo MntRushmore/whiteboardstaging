@@ -217,6 +217,33 @@ describe("live/chat", () => {
     expect(body.refunded).toBe(true);
   });
 
+  it("help with a problem on the screen goes to the board; the screen's numbers are what the model sees", async () => {
+    modelReplies({ reply: "I wrote the next step under problem 2.", actions: [{ type: "help_problem", problem: "2", depth: "step" }] });
+    const res = await chat(request({ ...BODY, message: "help me with 2", screen: { ...BODY.screen, numbers: [1, 2] } }));
+    const body = ChatResponseSchema.parse(await res.json());
+    expect(body.actions).toEqual([{ type: "help_problem", problem: 2, depth: "step" }]);
+    expect(body.reply).toBe("I wrote the next step under problem 2.");
+    expect(body.notes).toEqual([]);
+    expect(callsTo("refund_credits")).toEqual([]);
+    const user = String(vi.mocked(chatJsonWithFallback).mock.calls[0][2].messages.find((m) => m.role === "user")?.content);
+    expect(user).toContain("1. 2x + 3 = 11\n2. 5x - 2 = 13");
+  });
+
+  it("help with a problem that is not on the screen: the reply says there is none, and the credits come back", async () => {
+    modelReplies({ reply: "I wrote the next step under problem 7.", actions: [{ type: "help_problem", problem: 7, depth: "step" }] });
+    const res = await chat(request({ ...BODY, message: "help me with 7" }));
+    expect(res.status).toBe(200);
+    const body = ChatResponseSchema.parse(await res.json());
+    expect(body.actions).toEqual([]);
+    expect(body.reply).toBe("There's no problem 7 on this screen.");
+    expect(body.refunded).toBe(true);
+    // with something else left, the note goes with it
+    modelReplies({ reply: "Here you go.", actions: [{ type: "help_problem", problem: 7, depth: "solve" }, { type: "help_problem", problem: 1, depth: "solve" }] });
+    const both = ChatResponseSchema.parse(await (await chat(request({ ...BODY, message: "solve 7 and 1" }))).json());
+    expect(both.actions).toEqual([{ type: "help_problem", problem: 1, depth: "solve" }]);
+    expect(both.notes).toEqual(["There's no problem 7 on this screen."]);
+  });
+
   it("a polite no: no actions proposed, the charge is kept", async () => {
     modelReplies({ reply: "I can only help with maths on this board.", actions: [] });
     const body = ChatResponseSchema.parse(await (await chat(request({ ...BODY, message: "write me an essay" }))).json());

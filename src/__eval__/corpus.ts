@@ -502,6 +502,10 @@ export const BASE_CORPUS: readonly EvalProblem[] = [
   { id: "t2-21", topic: "trig-equation", lines: ["2\\cos^{2} x + \\cos x - 1 = 0"], expect: { values: { x: [Math.PI / 3, Math.PI, (5 * Math.PI) / 3] }, interval: { lo: 0, hi: 2 * Math.PI } } },
   { id: "t2-22", topic: "trig-equation", lines: ["\\cos(x - 30^{\\circ}) = \\frac{1}{2}"], expect: { values: { x: [Math.PI / 2, (11 * Math.PI) / 6] }, interval: { lo: 0, hi: 2 * Math.PI } }, note: "a shifted angle" },
   { id: "t2-23", topic: "trig-equation", lines: ["2\\sin^{2} x + 3\\cos x - 3 = 0"], expect: { values: { x: [0, Math.PI / 3, (5 * Math.PI) / 3] }, interval: { lo: 0, hi: 2 * Math.PI } }, note: "sin² = 1 - cos² first" },
+  // the board chat writes a trig problem with its interval on the same line, in degrees
+  { id: "t2-52", topic: "trig-equation", lines: ["2\\cos x = 1, 0^{\\circ} \\le x < 360^{\\circ}"], expect: { values: { x: [Math.PI / 3, (5 * Math.PI) / 3] }, answer: "x = 60^{\\circ}, \\ x = 300^{\\circ}", interval: { lo: 0, hi: 2 * Math.PI } }, note: "the interval written, in degrees" },
+  { id: "t2-53", topic: "trig-equation", lines: ["\\tan x = \\sqrt{3}, 0^{\\circ} \\le x < 360^{\\circ}"], expect: { values: { x: [Math.PI / 3, (4 * Math.PI) / 3] }, answer: "x = 60^{\\circ}, \\ x = 240^{\\circ}", interval: { lo: 0, hi: 2 * Math.PI } }, note: "the interval written, in degrees" },
+  { id: "t2-54", topic: "trig-equation", lines: ["\\sin x = -\\frac{1}{2}, 0^{\\circ} \\le x < 360^{\\circ}"], expect: { values: { x: [(7 * Math.PI) / 6, (11 * Math.PI) / 6] }, answer: "x = 210^{\\circ}, \\ x = 330^{\\circ}", interval: { lo: 0, hi: 2 * Math.PI } }, note: "the interval written, in degrees: third and fourth quadrants" },
 
   // ---------------------------------------------------------------- simplifying with identities
   { id: "t2-24", topic: "trig-identity", lines: ["\\frac{\\sin 2x}{\\sin x}"], expect: { answer: "2\\cos x" }, note: "double angle, then cancel" },

@@ -196,6 +196,36 @@ export function decide(input: PolicyInput): PolicyDecision {
   };
 }
 
+/**
+ * Why the tutor cannot judge a line it has read — or null when it can (or has not read it yet).
+ *
+ *  - `unread`: the read failed or came back empty, or Mathpix was not sure of it (below
+ *    `minConfidence`): the ink itself needs writing again;
+ *  - `unjudged`: it was read, but there is nothing in it to check — a lone symbol or number (`2`,
+ *    `x`, `\Delta`), a label (`2x` on its own), half a line (`\sin x =`), prose, or LaTeX the engine
+ *    cannot read at all (no model check is ever asked about those: `runLlmCheck` needs a kind it
+ *    can reason about).
+ *
+ * A line of any other kind is judgeable, whatever its verdict: the engine ticked or ringed it, or a
+ * model check is coming for it, or it is readable maths with nothing to compare (`x = 6` under a
+ * system). Under a problem the tutor wrote, an unjudgeable line gets the tutor's "?" once the
+ * student stops (`LiveLoop.questionFor`), and is not the student's work on it (the tutor works the
+ * problem itself when asked). Everywhere else these lines stay silent: students write labels and
+ * scratch numbers.
+ */
+export type UnjudgedReason = "unread" | "unjudged";
+
+const UNJUDGED_KINDS: ReadonlySet<LineKind> = new Set<LineKind>(["label", "incomplete", "text", "unknown"]);
+
+export function unjudgedReason(line: { latex: string; confidence: number; provider: string; analysis: LineAnalysis | null }): UnjudgedReason | null {
+  // not read yet: nothing to say about it
+  if (line.provider === "none" && !line.analysis) return null;
+  if (!line.latex.trim() || line.confidence < LIVE_LIMITS.minConfidence) return "unread";
+  if (!line.analysis) return null;
+  if (isSingleSymbolLatex(line.latex) || UNJUDGED_KINDS.has(line.analysis.kind)) return "unjudged";
+  return null;
+}
+
 /** Text shown behind an amber dot when the CAS flags a unit or chemistry problem locally. */
 export function localNoteFor(analysis: LineAnalysis | null, mode: HelpMode): string {
   if (!analysis || mode === "off") return "";

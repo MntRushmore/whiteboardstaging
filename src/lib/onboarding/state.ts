@@ -72,21 +72,29 @@ export interface TourState {
   step: TourStep;
   /** what the tutor put on the student's line, once it did */
   outcome: "tick" | "ring" | null;
-  /** the tutor could not read the student's last line (a question mark) */
+  /** the tutor could not read the student's last line (a question mark: write it more clearly) */
   unread: boolean;
+  /**
+   * the tutor read the student's last line but there was nothing in it to check — a lone `2`, half
+   * a step (a question mark: write the whole next line)
+   */
+  unjudged: boolean;
   /** true when `done` came from Skip / Close rather than the last Next */
   skipped: boolean;
 }
 
+/** Why the tutor put a question mark on a line (`meta.markWhy`, written by `LiveLoop.syncMark`). */
+export type QuestionWhy = "unread" | "unjudged";
+
 export type TourEvent =
   | { type: "problemReady" }
-  | { type: "mark"; mark: MarkKind }
+  | { type: "mark"; mark: MarkKind; why?: QuestionWhy }
   | { type: "next" }
   | { type: "askOpened" }
   | { type: "skip" };
 
 export function initialTour(step: TourMarkerStep = "problem"): TourState {
-  return { step, outcome: null, unread: false, skipped: false };
+  return { step, outcome: null, unread: false, unjudged: false, skipped: false };
 }
 
 export function tourReducer(state: TourState, event: TourEvent): TourState {
@@ -98,8 +106,12 @@ export function tourReducer(state: TourState, event: TourEvent): TourState {
     case "write":
     case "result":
       if (event.type === "mark") {
-        if (event.mark === "question") return state.step === "write" ? { ...state, unread: true } : state;
-        return { ...state, step: "result", outcome: event.mark === "check" ? "tick" : "ring", unread: false };
+        if (event.mark === "question") {
+          // the latest question mark says what it means: unread (write it more clearly) or unjudged (write the whole step)
+          const unjudged = event.why === "unjudged";
+          return state.step === "write" ? { ...state, unread: !unjudged, unjudged } : state;
+        }
+        return { ...state, step: "result", outcome: event.mark === "check" ? "tick" : "ring", unread: false, unjudged: false };
       }
       return event.type === "next" ? { ...state, step: "modes" } : state;
     case "modes":
@@ -151,4 +163,14 @@ export function markKindOf(meta: unknown): MarkKind | null {
   if (m.live !== true || m.source !== "ai" || typeof m.mark !== "string") return null;
   const kind = m.mark.split(":")[0];
   return kind === "check" || kind === "circle" || kind === "question" ? kind : null;
+}
+
+/**
+ * Why the tutor put a question mark there (`meta.markWhy`), for a question mark only: `unjudged`
+ * when it read the line but there was nothing in it to check, else `unread` (also a question mark
+ * from before the reason was recorded).
+ */
+export function questionWhyOf(meta: unknown): QuestionWhy | null {
+  if (markKindOf(meta) !== "question") return null;
+  return (meta as Record<string, unknown>).markWhy === "unjudged" ? "unjudged" : "unread";
 }
