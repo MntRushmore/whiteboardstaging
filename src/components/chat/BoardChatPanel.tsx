@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import Link from "next/link";
+import dynamic from "next/dynamic";
 import { ArrowUp, Loader2, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ACCOUNT_PATH } from "@/lib/billing/viewModel";
 import type { LiveController } from "@/lib/live/contracts";
 import { CHAT_COPY, CHAT_SUGGESTIONS, sendsOnKey, type ChatMessage } from "./chatView";
 import { useBoardChat } from "./useBoardChat";
@@ -15,6 +14,12 @@ interface BoardChatPanelProps {
   controller: LiveController;
   onClose: () => void;
 }
+
+/** Running out of credits: the board dialog's panel, fetched only when a 402 arrives. */
+const OutOfCreditsPanel = dynamic(() => import("@/components/billing/OutOfCreditsPanel").then((m) => m.OutOfCreditsPanel), {
+  ssr: false,
+  loading: () => <p className="text-sm text-red-700">{CHAT_COPY.errors.credits}</p>,
+});
 
 /** A marker the board page gives the Ask button: Esc there closes the panel too. */
 export const CHAT_TOGGLE_ATTR = "data-chat-toggle";
@@ -156,15 +161,19 @@ function Message({ message: m, onRetry, busy }: { message: ChatMessage; onRetry:
       </p>
     );
   }
+  if (m.state === "error" && m.error?.kind === "credits") {
+    // the board dialog's words and Upgrade buttons, inline (lazy: fetched only when needed)
+    return (
+      <div className="rounded-lg border border-red-100 bg-red-50/60 px-3 py-2.5">
+        <OutOfCreditsPanel variant="inline" titleAs="p" />
+      </div>
+    );
+  }
   if (m.state === "error" && m.error) {
     return (
       <div className="space-y-2 rounded-lg border border-red-100 bg-red-50/60 px-3 py-2">
         <p className="text-sm text-red-700">{m.error.message}</p>
-        {m.error.kind === "credits" ? (
-          <Link href={ACCOUNT_PATH} className="text-sm font-medium text-gray-900 underline underline-offset-4">
-            {CHAT_COPY.account}
-          </Link>
-        ) : m.error.retry ? (
+        {m.error.retry ? (
           <Button variant="outline" size="sm" className="bg-white" disabled={busy} onClick={onRetry}>
             <RotateCcw />
             {CHAT_COPY.retry}
