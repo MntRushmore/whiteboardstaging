@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkFigure, type FigureSpec } from "..";
 import { degreesOf, lengthOf, nameLatex } from "../labels";
+import { FIGURE_GALLERY } from "./gallery";
 
 /** A 3-4-5 right triangle, right angle at B, every label true to the drawing. */
 const triangle = (): FigureSpec => ({
@@ -21,8 +22,9 @@ const one = (spec: FigureSpec): string => {
 };
 
 describe("checkFigure", () => {
-  it("passes a sound figure", () => {
+  it("passes a sound figure, and every gallery figure", () => {
     expect(checkFigure(triangle())).toEqual([]);
+    for (const g of FIGURE_GALLERY) expect(checkFigure(g.spec), g.title).toEqual([]);
   });
 
   it("names a point that is used but not defined, with what uses it", () => {
@@ -170,10 +172,10 @@ describe("checkFigure", () => {
     expect(out.some((m) => m.startsWith("The spec does not fit the figure schema at points"))).toBe(true);
   });
 
-  it("is fast: a few milliseconds a figure", () => {
+  it("is fast: the whole gallery in a few milliseconds each", () => {
     const t0 = performance.now();
-    for (let k = 0; k < 20; k++) checkFigure(triangle());
-    expect((performance.now() - t0) / 20).toBeLessThan(20);
+    for (let k = 0; k < 5; k++) for (const g of FIGURE_GALLERY) checkFigure(g.spec);
+    expect((performance.now() - t0) / (5 * FIGURE_GALLERY.length)).toBeLessThan(20);
   });
 });
 
