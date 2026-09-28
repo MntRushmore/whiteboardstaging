@@ -29,6 +29,13 @@ export const CreditSummarySchema = z.object({
   remaining: count,
   period_start: z.string(),
   period_end: z.string(),
+  /**
+   * The subscription (migration 20260928110000_paid_plans.sql; absent before it): Stripe's status,
+   * 'canceling' while a cancellation is scheduled, or null for a user who never paid.
+   */
+  billing_status: z.string().nullable().optional(),
+  /** When the paid period renews (or ends, while 'canceling'). Not the credit month's `period_end`. */
+  current_period_end: z.string().nullable().optional(),
 });
 
 export type CreditSummary = z.infer<typeof CreditSummarySchema>;
@@ -166,7 +173,8 @@ export function usedPercent(summary: CreditSummary | null | undefined): number {
   return Math.min(100, Math.max(0, Math.round(pct)));
 }
 
-export type PlanAction = "current" | "upgrade" | "coming-soon" | "downgrade";
+/** 'none': a smaller plan with no subscription to change (the button is left out). */
+export type PlanAction = "current" | "upgrade" | "coming-soon" | "downgrade" | "none";
 
 export type PlanCard = {
   id: string;
@@ -177,7 +185,7 @@ export type PlanCard = {
   credits: string;
   current: boolean;
   action: PlanAction;
-  /** Present when the action is a real link (checkout for upgrades, portal for the current/downgrade plan). */
+  /** Present when the action is a real link: a Payment Link for an upgrade without a subscription, else the portal. */
   href?: string;
   /** Bullets to list under the price; empty when the plan has none. */
   features: string[];
@@ -193,11 +201,31 @@ function planRank(plan: Plan): number {
   return plan.sort * 1_000_000_000 + plan.monthly_credits;
 }
 
+/** Stripe statuses under which a subscription exists and the portal is the way to change it. */
+const SUBSCRIPTION_STATUSES = new Set(["active", "trialing", "past_due", "canceling", "unpaid", "incomplete"]);
+
 /**
- * Cards for the plans grid. Upgrades link to their checkout URL when the env
- * provides one and are 'coming-soon' otherwise; the current plan and any
- * cheaper plan link to the portal when present. Without a summary (still
- * loading, or the RPC failed) no card is marked current.
+ * True when the user pays through a Stripe subscription (billing_status from credit_summary).
+ * Plan changes then go through the customer portal, never a second Payment Link, which would
+ * start a second subscription. A free user, or a plan set by hand ('comped'), has none.
+ */
+export function hasSubscription(
+  summary: (Pick<CreditSummary, "plan_id"> & Partial<Pick<CreditSummary, "billing_status">>) | null | undefined,
+): boolean {
+  if (!summary || summary.plan_id === "free") return false;
+  return SUBSCRIPTION_STATUSES.has(summary.billing_status ?? "");
+}
+
+/**
+ * Cards for the plans grid. `links` are the ones to follow as they are (src/lib/billing/checkout.ts
+ * `payerLinks` adds the user's id and email).
+ *
+ *  - No subscription (Free, or a plan set by hand): a bigger plan links to its Payment Link, or
+ *    is 'coming-soon' without one; the current plan and anything smaller have no button.
+ *  - A subscription: the current plan ("Manage") and every other plan ("Upgrade" / "Switch") go
+ *    to the customer portal, where Stripe changes the one subscription.
+ *
+ * Without a summary (still loading, or the RPC failed) no card is marked current.
  */
 export function planCardsFor(
   plans: ReadonlyArray<Plan>,
@@ -207,21 +235,25 @@ export function planCardsFor(
   const active = plans.filter((p) => p.active !== false).slice().sort((a, b) => planRank(a) - planRank(b));
   const current = summary ? active.find((p) => p.id === summary.plan_id) ?? null : null;
   const currentRank = current ? planRank(current) : Number.NEGATIVE_INFINITY;
+  const subscribed = hasSubscription(summary);
   const portal = links.portal;
 
   return active.map((plan) => {
     const isCurrent = current?.id === plan.id;
+    const bigger = planRank(plan) > currentRank;
     let action: PlanAction;
     let href: string | undefined;
     if (isCurrent) {
       action = "current";
+      href = subscribed ? portal : undefined;
+    } else if (subscribed) {
       href = portal;
-    } else if (planRank(plan) > currentRank) {
+      action = href ? (bigger ? "upgrade" : "downgrade") : "coming-soon";
+    } else if (bigger) {
       href = links[plan.id];
       action = href ? "upgrade" : "coming-soon";
     } else {
-      href = portal;
-      action = href ? "downgrade" : "coming-soon";
+      action = "none";
     }
     return {
       id: plan.id,
@@ -263,6 +295,8 @@ export const BILLING_COPY = {
   /** 402 without a usable server message (toasts, inline errors). */
   exhausted: "You've used this month's credits. Upgrade or wait for the reset in your account.",
   viewAccount: "View plan",
+  /** The out-of-credits banner's link: the plans (and their Upgrade buttons) are on /account. */
+  seePlans: "See plans",
   comingSoon: "Coming soon",
   comingSoonNote: "Paid plans aren't open yet. Your Free credits reset every month.",
   currentPlan: "Current plan",

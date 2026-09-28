@@ -23,6 +23,10 @@
  *   - rate_limit_hit(): p_limit hits then denial with a retry hint, independent
  *     per user, window rollover (1 s window), expired-row cleanup, 20 parallel
  *     hits with limit 10 -> exactly 10 allowed, table unreadable by users
+ *
+ * Covered (migration 20260928110000_paid_plans.sql):
+ *   - plan numbers: free 300, plus 3,000 at $9, pro 12,000 at $29
+ *   - credit_summary() carries billing_status / current_period_end, per user
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ASSETS_BUCKET, TINY_PNG, isCreditSummary, isRateLimitResult, rows, rpc } from "../../scripts/lib/rlsChecks.mjs";
@@ -232,6 +236,43 @@ suite(title, () => {
     const self = await ctx.a.rest("PATCH", "profiles", { query: { user_id: `eq.${ctx.a.userId}` }, body: { plan_id: "pro" } });
     expect(self.status).toBe(403);
     expect((self.body as { code?: string }).code).toBe("42501");
+  }, 30_000);
+
+  it("paid plans (20260928110000): free is 300 a month, plus 3,000 at $9, pro 12,000 at $29", async () => {
+    const res = await ctx.a.rest("GET", "plans", { query: { select: "id,monthly_credits,price_cents,features", order: "sort.asc" } });
+    expect(res.status).toBe(200);
+    const byId = Object.fromEntries(rows(res).map((p) => [p.id, p]));
+    expect(byId.free).toMatchObject({ monthly_credits: 300, price_cents: 0 });
+    expect(byId.free.features[0]).toBe("300 credits / month");
+    expect(byId.plus).toMatchObject({ monthly_credits: 3000, price_cents: 900 });
+    expect(byId.pro).toMatchObject({ monthly_credits: 12000, price_cents: 2900 });
+  }, 30_000);
+
+  it("credit_summary carries the subscription state the webhook writes (billing_status, current_period_end)", async () => {
+    const fresh = (await rpc(ctx.b, "credit_summary")).body as Summary & { billing_status: unknown; current_period_end: unknown };
+    expect(fresh).toHaveProperty("billing_status", null);
+    expect(fresh).toHaveProperty("current_period_end", null);
+
+    const ends = "2031-01-15T12:00:00+00:00";
+    const patch = await service.rest("PATCH", "profiles", {
+      query: { user_id: `eq.${ctx.b.userId}` },
+      body: { plan_id: "plus", billing_status: "canceling", current_period_end: ends },
+      prefer: "return=minimal",
+    });
+    expect(patch.status).toBe(204);
+    const after = (await rpc(ctx.b, "credit_summary")).body as Summary & { billing_status: string; current_period_end: string };
+    expect(after.plan_id).toBe("plus");
+    expect(after.billing_status).toBe("canceling");
+    expect(Date.parse(after.current_period_end)).toBe(Date.parse(ends));
+    // A's summary never shows B's subscription.
+    expect(((await rpc(ctx.a, "credit_summary")).body as { current_period_end: unknown }).current_period_end).not.toBe(after.current_period_end);
+
+    const reset = await service.rest("PATCH", "profiles", {
+      query: { user_id: `eq.${ctx.b.userId}` },
+      body: { plan_id: "free", billing_status: null, current_period_end: null },
+      prefer: "return=minimal",
+    });
+    expect(reset.status).toBe(204);
   }, 30_000);
 
   it("10 parallel 1-unit spends with 5 remaining succeed exactly 5 times", async () => {

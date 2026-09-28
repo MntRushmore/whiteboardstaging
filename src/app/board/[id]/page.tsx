@@ -58,6 +58,7 @@ import { MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import { CreditsBanner } from "@/components/CreditsBanner";
+import { OutOfCreditsWatcher } from "@/components/billing/OutOfCreditsWatcher";
 import { StickerLibrary } from "@/components/StickerLibrary";
 import { PdfUpload } from "@/components/PdfUpload";
 import { BugReportButton } from "@/components/BugReportButton";
@@ -375,6 +376,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
       >
         <CreditsBanner />
       </div>
+      {/* a Live 402 opens the out-of-credits dialog (lazy), never mid-stroke */}
+      <OutOfCreditsWatcher editor={editor} />
       <LiveDebugPanel />
       {toolbar.showHintLayer && (
         <LiveErrorBoundary>

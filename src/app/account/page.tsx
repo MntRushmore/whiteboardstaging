@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, Loader2, RefreshCw } from "lucide-react";
@@ -12,6 +12,9 @@ import { PlanCreditsCard } from "@/components/account/PlanCreditsCard";
 import { PlansGrid } from "@/components/account/PlansGrid";
 import { UsageCard } from "@/components/account/UsageCard";
 import { DangerZone } from "@/components/account/DangerZone";
+import { UpgradeReturnNotice } from "@/components/account/UpgradeReturnNotice";
+import { portalUrl } from "@/lib/billing/checkout";
+import { billingLinks } from "@/lib/billing/links";
 import { useCreditSummary } from "@/lib/billing/useCreditSummary";
 import { ACCOUNT_COPY, accountPageStateFor } from "@/lib/billing/accountState";
 
@@ -85,6 +88,8 @@ export default function AccountPage() {
 
   const pageState = accountPageStateFor(credits.state);
   const email = user.email ?? "";
+  const payer = { userId: user.id, email };
+  const manageHref = portalUrl(billingLinks().portal, email);
 
   return (
     <div className="min-h-screen bg-muted/40">
@@ -102,6 +107,11 @@ export default function AccountPage() {
           <h1 className="mt-3 text-3xl font-bold tracking-tight">{ACCOUNT_COPY.title}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{ACCOUNT_COPY.subtitle}</p>
         </div>
+
+        {/* Back from a Payment Link (?upgraded=<plan>): waits for the webhook's plan change. */}
+        <Suspense fallback={null}>
+          <UpgradeReturnNotice />
+        </Suspense>
 
         {pageState === "loading" ? (
           <AccountSkeleton />
@@ -129,10 +139,11 @@ export default function AccountPage() {
                 error={credits.error}
                 refreshing={credits.loading}
                 onRetry={credits.reload}
+                manageHref={manageHref}
               />
             )}
             <UsageCard usedCredits={credits.summary?.used} />
-            <PlansGrid summary={credits.summary} />
+            <PlansGrid summary={credits.summary} payer={payer} />
             <ProfileCard userId={user.id} email={email} />
             <DangerZone email={email} />
           </div>
