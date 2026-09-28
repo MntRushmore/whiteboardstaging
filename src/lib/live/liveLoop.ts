@@ -127,8 +127,9 @@ import { figureAnswer, labelKey, looksLikeUnknown } from "./figure";
 import { HAND_LINE_META } from "./handwriting";
 import { requestProof } from "./proof/client";
 import type { ProofRequest, ProofResponse } from "./proof/contracts";
-import { ProofDesk, tutorLinesOf, type ProofHost } from "./proof/desk";
+import { ProofDesk, tutorLinesOf, type ProofHost, type TutorFigure } from "./proof/desk";
 import { PROOF_ROWS_META, proofRowsPlan } from "./proof/place";
+import { PROOF_FIGURE_META, PROOF_TABLE_META, tutorFiguresOf } from "./proof/tutorFigure";
 import type { PlannedRow } from "./proof/planner";
 import type { BoardLine, ProofRead } from "./proof/read";
 import { problemLines, problemMetaOf, readProblemCells, splitColumnsAtProblems, type ProblemCell } from "./chat/cells";
@@ -147,7 +148,9 @@ import {
 } from "./chat/work";
 import type { ChatAction, ChatRunReport, ChatScreen } from "./chat/contracts";
 import { CHAT_LINE_ID, ChatDesk, type ChatHost } from "./chat/desk";
-import { planFigure as defaultPlanFigure } from "./figureDraw";
+// the drawer's own module, not the index: the index re-exports `checkFigure`, which the board chat's
+// proof check (a lazy chunk) uses — through the index it would land in the board's first load
+import { planFigure as defaultPlanFigure } from "./figureDraw/plan";
 import type { FigurePlanOptions, FigurePlanResult, FigureSpec } from "./figureDraw/contracts";
 
 /**
@@ -3869,6 +3872,7 @@ export class LiveLoop implements LiveController {
           .filter((s) => s.latex && s.confidence >= LIVE_LIMITS.minConfidence)
           .map((s) => ({ id: s.line.id, latex: s.latex, bounds: s.line.bounds })),
       tutorLines: () => this.proofTutorLines(),
+      tutorFigures: () => this.proofTutorFigures(),
       diagrams: () => this.diagrams,
       labelReads: (d) => this.labelsOf.get(d.id) ?? null,
       ink: (ids) => {
@@ -3943,6 +3947,17 @@ export class LiveLoop implements LiveController {
     return tutorLinesOf(shapes);
   }
 
+  /** The figures the tutor drew for a proof on this screen (the board chat's `write_proof`), read from their meta. */
+  private proofTutorFigures(): TutorFigure[] {
+    const shapes: Array<{ block: string; meta: unknown; bounds: Rect }> = [];
+    for (const s of this.editor.getCurrentPageShapes()) {
+      if (!isLiveMeta(s.meta) || !metaString(s.meta, PROOF_FIGURE_META)) continue;
+      const b = this.editor.getShapePageBounds(s);
+      if (b) shapes.push({ block: handBlockOf(s.meta), meta: s.meta, bounds: boxToRect(b) });
+    }
+    return tutorFiguresOf(shapes);
+  }
+
   /**
    * Writes proof rows in the tutor's hand under the proof's last row: the statement in the statement
    * column, the reason in the reason column, on one line (`proofRowsPlan`). Moved down a row at a time
@@ -3956,8 +3971,8 @@ export class LiveLoop implements LiveController {
     const avoid: Rect[] = [];
     for (const s of this.editor.getCurrentPageShapes()) {
       if (isLiveMeta(s.meta) && (s.meta.source === "echo" || metaString(s.meta, MARK_META))) continue;
-      // a row of a T-table crosses the table's rules
-      if (this.tableStrokeIds.has(s.id)) continue;
+      // a row of a T-table crosses the table's rules (the student's, or the tutor's own)
+      if (this.tableStrokeIds.has(s.id) || metaString(s.meta, PROOF_TABLE_META)) continue;
       const b = this.editor.getShapePageBounds(s);
       if (b) avoid.push(boxToRect(b));
     }

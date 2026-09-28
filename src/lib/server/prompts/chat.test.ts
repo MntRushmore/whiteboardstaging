@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { buildChatMessages, CHAT_SYSTEM_PROMPT, cleanChatActions, cleanReplyText, buildFigureRepairMessages, dropMissingProblems, problemNumbers } from "./chat";
+import {
+  ALGEBRA_PROOF_EXAMPLE,
+  buildChatMessages,
+  buildFigureRepairMessages,
+  buildProofRepairMessages,
+  CHAT_SYSTEM_PROMPT,
+  cleanChatActions,
+  cleanReplyText,
+  dropMissingProblems,
+  PROOF_EXAMPLES,
+  PROOF_REPAIR_PROMPT,
+  problemNumbers,
+  ProofRepairReplySchema,
+} from "./chat";
 import { PROBE_FIGURE } from "@/lib/live/chat/figure";
 import { CHAT_ACTION_TYPES } from "@/lib/live/chat/contracts";
 
@@ -57,6 +70,32 @@ describe("chat prompt", () => {
     // an older client sends no numbers: 1, 2, 3…
     expect(problemNumbers({ problems: ["a", "b"] })).toEqual([1, 2]);
     expect(problemNumbers({ problems: ["a", "b"], numbers: [4] })).toEqual([4, 2]);
+  });
+
+  it("proofs: never a question back; worked unless the student asks for one to do; the engine's reasons named; algebra as maths lines", () => {
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/Never ask which proof: choose a sensible one yourself/);
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/never for a proof: choose one/);
+    for (const ask of ["write a proof", "a two-column proof", "show me a proof", "the hardest proof ever", "give me a proof to do", "a proof I can try"]) expect(CHAT_SYSTEM_PROMPT).toContain(`"${ask}"`);
+    // the reasons the planner and checker know, and what they do not
+    for (const reason of ["SSS", "SAS", "ASA", "AAS", "HL", "CPCTC", "Reflexive", "Vertical ∠s", "Def. of midpoint", "Alt. int."]) expect(CHAT_SYSTEM_PROMPT).toContain(reason);
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/No similarity/);
+    // the theorem being proved is not a reason for itself
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/must not use that theorem/);
+    // every example is in the prompt as the model is to write it
+    for (const e of PROOF_EXAMPLES) expect(CHAT_SYSTEM_PROMPT).toContain(`Request: ${e.request} → ${JSON.stringify({ reply: e.reply, actions: [e.action] })}`);
+    expect(CHAT_SYSTEM_PROMPT).toContain(JSON.stringify(ALGEBRA_PROOF_EXAMPLE.lines));
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/A proof asked for is the other exception/);
+  });
+
+  it("the proof repair carries the proof and every problem the engine found", () => {
+    const action = PROOF_EXAMPLES[0].action;
+    const [system, user] = buildProofRepairMessages("write a proof", action, ["The proof engine could not prove it", "AB is drawn 5 long"]);
+    expect(system.content).toBe(PROOF_REPAIR_PROMPT);
+    // the proved examples are in reach of the repair: "a harder one" can be the hardest example
+    for (const e of PROOF_EXAMPLES) expect(PROOF_REPAIR_PROMPT).toContain(JSON.stringify(e.action.given));
+    expect(String(user.content)).toContain(JSON.stringify({ figure: action.figure, given: action.given, prove: action.prove }));
+    expect(String(user.content)).toContain("- The proof engine could not prove it\n- AB is drawn 5 long");
+    expect(ProofRepairReplySchema.parse({ figure: action.figure, given: "\\overline{AB} \\cong \\overline{CD}", prove: "\\overline{AE} \\cong \\overline{CE}" }).given).toEqual(["\\overline{AB} \\cong \\overline{CD}"]);
   });
 
   it("the figure repair carries the spec and every problem", () => {
@@ -125,6 +164,22 @@ describe("cleaning the model's reply", () => {
     expect(res.dropped).toHaveLength(2);
     // the board's own numbers count, not the position in the list
     expect(dropMissingProblems([{ type: "help_problem", problem: 1, depth: "step" }], { problems: ["a"], numbers: [5] }).notes).toEqual(["There's no problem 1 on this screen."]);
+  });
+
+  it("a proof: $ unwrapped, one Given as a string is a list, worked when it does not say", () => {
+    const { figure } = PROOF_EXAMPLES[0].action;
+    const { actions, dropped } = cleanChatActions([
+      { type: "write_proof", figure, given: "$\\overline{AB} \\cong \\overline{CD}$", prove: "$\\overline{AE} \\cong \\overline{CE}$", worked: null },
+      { type: "write_proof", figure, given: [], prove: "x" },
+    ]);
+    expect(actions).toEqual([{ type: "write_proof", figure, given: ["\\overline{AB} \\cong \\overline{CD}"], prove: "\\overline{AE} \\cong \\overline{CE}", worked: true }]);
+    expect(dropped).toEqual([{ type: "write_proof", reason: expect.stringMatching(/^given/) }]);
+  });
+
+  it("a point's label that is not true / false is let go, not the whole figure", () => {
+    const figure = { points: { A: { x: 0, y: 0, label: "A" }, B: { x: 4, y: 0, dot: "yes" }, C: { x: 0, y: 3, label: false } }, segments: [{ from: "A", to: "B" }] };
+    const { actions } = cleanChatActions([{ type: "draw_figure", figure }]);
+    expect(actions).toEqual([{ type: "draw_figure", figure: { points: { A: { x: 0, y: 0 }, B: { x: 4, y: 0 }, C: { x: 0, y: 3, label: false } }, segments: [{ from: "A", to: "B" }] } }]);
   });
 
   it("a figure must pass the shared spec schema", () => {
