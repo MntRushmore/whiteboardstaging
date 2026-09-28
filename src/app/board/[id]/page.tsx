@@ -82,6 +82,10 @@ import { boardToolbarView } from "@/components/live/toolbar";
 import { BoardChatPanel, CHAT_TOGGLE_ATTR } from "@/components/chat/BoardChatPanel";
 import { CHAT_COPY } from "@/components/chat/chatView";
 import { useChatOpen } from "@/components/chat/useBoardChat";
+import { browserStorage as onboardingStorage, isGuidedBoard } from "@/lib/onboarding/marker";
+
+// The guided first board's tour (the welcome's Start): loaded on that board only, after the board.
+const BoardTour = React.lazy(() => import("@/components/onboarding/BoardTour"));
 
 // Ensure the tldraw canvas background is pure white in both light and dark modes
 DefaultColorThemePalette.lightMode.background = "#FFFFFF";
@@ -243,6 +247,9 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   // Board options now, so the page owns their open state.
   const [modeInfoOpen, setModeInfoOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const { user } = useAuth();
+  const [guided, setGuided] = useState(() => isGuidedBoard(onboardingStorage(), user?.id, id));
+  const endTour = useCallback(() => setGuided(false), []);
 
   // Live Math layer: per-device switch (localStorage) gated by the deploy-time kill switch.
   const { settings: live, update: updateLive } = useLiveSettings();
@@ -372,6 +379,13 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
       {toolbar.showHintLayer && (
         <LiveErrorBoundary>
           <LiveHintLayer editor={editor} controller={controller} />
+        </LiveErrorBoundary>
+      )}
+      {guided && user && (
+        <LiveErrorBoundary>
+          <React.Suspense fallback={null}>
+            <BoardTour boardId={id} userId={user.id} controller={controller} onModeChange={setAssistanceMode} chatOpen={chat.open} onFinished={endTour} />
+          </React.Suspense>
         </LiveErrorBoundary>
       )}
       {chat.open &&

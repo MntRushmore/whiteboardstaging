@@ -8,7 +8,7 @@
  * Covers every public table (including the accounts & billing tables: plans,
  * profiles, usage_events, credit_grants, billing_events, rate_limit_counters),
  * the storage buckets, the version trigger and the RPCs (consume_credits,
- * credit_summary, refund_credits, rate_limit_hit, usage_by_day, delete_own_account). Two
+ * credit_summary, refund_credits, rate_limit_hit, usage_by_day, save_onboarding, delete_own_account). Two
  * throwaway users A and B are created up front; the delete_own_account check
  * creates a third (C) and deletes it through the RPC.
  *
