@@ -4,7 +4,15 @@ import type { InputHTMLAttributes } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { motionTokens } from "@/registry/motion-tokens";
 import styles from "./password-field.module.css";
-export interface PasswordFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "type"> { label: string; description?: string }
+export interface PasswordFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "type"> {
+  label: string;
+  description?: string;
+  /** Agathon: an error under the field, announced and tied to it, as on Input. */
+  error?: string;
+  /** Agathon: controlled reveal, so a form can hide the password again on submit (password managers save type=password fields). */
+  visible?: boolean;
+  onVisibleChange?: (visible: boolean) => void;
+}
 /** One eye that a slash draws across, cutting the outline beneath it, instead of swapping two icons. */
 function EyeMorph({ slashed }: { slashed: boolean }) {
   const reduced = useReducedMotion(); const maskId = `eye-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
@@ -48,9 +56,12 @@ function MessageRow({ id, text, className, alert }: { id?: string; text: string;
   </motion.span>;
 }
 
-export const PasswordField = forwardRef<HTMLInputElement, PasswordFieldProps>(function PasswordField({ label, description, id, className, ...props }, ref) {
-  const generated = useId(); const controlId = id ?? generated; const [visible, setVisible] = useState(false); const [toggled, setToggled] = useState(false);
+export const PasswordField = forwardRef<HTMLInputElement, PasswordFieldProps>(function PasswordField({ label, description, error, visible: visibleProp, onVisibleChange, id, className, ...props }, ref) {
+  const generated = useId(); const controlId = id ?? generated; const [innerVisible, setInnerVisible] = useState(false); const [toggled, setToggled] = useState(false);
+  const visible = visibleProp ?? innerVisible;
   const hintId = description ? `${controlId}-description` : undefined;
+  const errorId = error ? `${controlId}-error` : undefined;
+  function toggle() { const next = !visible; if (visibleProp === undefined) setInnerVisible(next); onVisibleChange?.(next); setToggled(true); }
   // data-reveal only appears after the first toggle, so the value resolves on each change but never on mount.
-  return <div className={styles.field}><label htmlFor={controlId}>{label}</label><div className={styles.shell}><input {...props} ref={ref} id={controlId} type={visible ? "text" : "password"} data-reveal={toggled ? (visible ? "shown" : "hidden") : undefined} aria-describedby={[props["aria-describedby"], hintId].filter(Boolean).join(" ") || undefined} className={[styles.input, className].filter(Boolean).join(" ")} /><button type="button" onClick={() => { setVisible(current => !current); setToggled(true); }} aria-label={visible ? "Hide password" : "Show password"} aria-pressed={visible}><EyeMorph slashed={visible} /></button></div><FieldMessage id={hintId} text={description} className={styles.hint} /></div>;
+  return <div className={styles.field}><label htmlFor={controlId}>{label}</label><div className={styles.shell}><input {...props} ref={ref} id={controlId} type={visible ? "text" : "password"} data-reveal={toggled ? (visible ? "shown" : "hidden") : undefined} aria-invalid={error ? true : props["aria-invalid"]} aria-describedby={[props["aria-describedby"], hintId, errorId].filter(Boolean).join(" ") || undefined} className={[styles.input, className].filter(Boolean).join(" ")} /><button type="button" onClick={toggle} aria-label={visible ? "Hide password" : "Show password"} aria-pressed={visible}><EyeMorph slashed={visible} /></button></div><FieldMessage id={hintId} text={description} className={styles.hint} /><FieldMessage id={errorId} text={error} className={styles.error} alert /></div>;
 });
