@@ -217,6 +217,72 @@ describe("live/chat", () => {
     expect(body.refunded).toBe(true);
   });
 
+  describe("write_proof: proved by the engine before it goes to the board", () => {
+    const KITE = {
+      points: { A: { x: 0, y: 0 }, B: { x: 5, y: 4 }, C: { x: 10, y: 0 }, D: { x: 5, y: -8 } },
+      segments: [
+        { from: "A", to: "B" },
+        { from: "C", to: "B" },
+        { from: "A", to: "D" },
+        { from: "C", to: "D" },
+        { from: "B", to: "D" },
+      ],
+    };
+    const PROOF = { type: "write_proof", figure: KITE, given: ["AB ≅ CB", "$\\overline{AD} \\cong \\overline{CD}$"], prove: "\\triangle ABD \\cong \\triangle CBD", worked: false };
+    const SHORT = { ...PROOF, given: ["\\overline{AB} \\cong \\overline{CB}"] };
+    const CHECKED = { type: "write_proof", figure: KITE, given: ["\\overline{AB} \\cong \\overline{CB}", "\\overline{AD} \\cong \\overline{CD}"], prove: "\\triangle ABD \\cong \\triangle CBD", worked: false };
+
+    it("a proof the planner proves goes on in the reader's forms: no repair call, 3 credits kept", async () => {
+      modelReplies({ reply: "Your turn: prove the triangles congruent.", actions: [PROOF] });
+      const body = ChatResponseSchema.parse(await (await chat(request({ ...BODY, message: "give me a proof to do" }))).json());
+      expect(body.actions).toEqual([CHECKED]);
+      expect(body.notes).toEqual([]);
+      expect(chatJsonWithFallback).toHaveBeenCalledTimes(1);
+      expect(callsTo("refund_credits")).toEqual([]);
+    });
+
+    it("one it cannot prove gets ONE repair round-trip with the engine's problems; the repaired proof goes on", async () => {
+      modelReplies({ reply: "Here is a proof.", actions: [{ ...SHORT, worked: true }] }, { figure: KITE, given: CHECKED.given, prove: CHECKED.prove });
+      const body = ChatResponseSchema.parse(await (await chat(request({ ...BODY, message: "write a proof" }))).json());
+      expect(body.actions).toEqual([{ ...CHECKED, worked: true }]);
+      expect(chatJsonWithFallback).toHaveBeenCalledTimes(2);
+      const repair = String(vi.mocked(chatJsonWithFallback).mock.calls[1][2].messages[1].content);
+      expect(repair).toContain("REQUEST: write a proof");
+      expect(repair).toMatch(/- The proof engine could not prove \\triangle ABD \\cong \\triangle CBD from these givens/);
+    });
+
+    it("still unproved after the repair: dropped, the panel says so, and the credits come back", async () => {
+      modelReplies({ reply: "Here is the hardest proof ever.", actions: [{ type: "new_screen" }, SHORT] }, { figure: KITE, given: SHORT.given, prove: SHORT.prove });
+      const res = await chat(request({ ...BODY, message: "write the hardest proof ever" }));
+      expect(res.status).toBe(200);
+      const body = ChatResponseSchema.parse(await res.json());
+      expect(body.actions).toEqual([]);
+      expect(body.reply).toBe("Sorry, I couldn't check that proof, so I didn't write it. Try asking for another one.");
+      expect(body.refunded).toBe(true);
+      expect(chatJsonWithFallback).toHaveBeenCalledTimes(2);
+      expect(callsTo("refund_credits")[0].args).toEqual({ p_request_id: callsTo("consume_credits")[0].args?.p_request_id });
+    });
+
+    it("beside other actions: the unproved proof is dropped with a note, the rest kept, no refund; a failed repair call is a drop", async () => {
+      modelReplies({ reply: "Problems and a proof.", actions: [{ type: "write_problems", problems: ["2x = 8"] }, SHORT] });
+      vi.mocked(chatJsonWithFallback).mockRejectedValueOnce(new UpstreamError(504, "slow"));
+      const body = ChatResponseSchema.parse(await (await chat(request(BODY))).json());
+      expect(body.actions).toEqual([{ type: "write_problems", problems: [["2x = 8"]] }]);
+      expect(body.notes).toEqual(["I couldn't check that proof, so I didn't write it."]);
+      expect(body.refunded).toBeUndefined();
+      expect(callsTo("refund_credits")).toEqual([]);
+    });
+
+    it("the figure's own problems count too: a proof whose figure the drawer rejects is repaired, then dropped", async () => {
+      fake.drawer.check = () => ["point D is used but not defined"];
+      modelReplies({ reply: "Here.", actions: [PROOF] }, { figure: KITE, given: CHECKED.given, prove: CHECKED.prove });
+      const body = ChatResponseSchema.parse(await (await chat(request(BODY))).json());
+      expect(body.actions).toEqual([]);
+      expect(body.refunded).toBe(true);
+      expect(String(vi.mocked(chatJsonWithFallback).mock.calls[1][2].messages[1].content)).toContain("- point D is used but not defined");
+    });
+  });
+
   it("a polite no: no actions proposed, the charge is kept", async () => {
     modelReplies({ reply: "I can only help with maths on this board.", actions: [] });
     const body = ChatResponseSchema.parse(await (await chat(request({ ...BODY, message: "write me an essay" }))).json());

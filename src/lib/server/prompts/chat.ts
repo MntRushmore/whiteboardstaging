@@ -3,9 +3,11 @@ import {
   CHAT_LIMITS,
   ChatActionSchema,
   ChatProblemSchema,
+  ProofStatementSchema,
   type ChatAction,
   type ChatActionType,
   type ChatRequest,
+  type WriteProofAction,
   CHAT_ACTION_TYPES,
 } from "@/lib/live/chat/contracts";
 import { FigureSpecSchema, type FigureSpec } from "@/lib/live/figureDraw/contracts";
@@ -16,7 +18,10 @@ import type { ChatMessage } from "@/lib/server/openrouter";
  * actions the board carries out in the tutor's hand. The model plans; it never solves and never
  * writes words on the board. Every problem it proposes is checked by the board's engine before it
  * is written (`src/lib/live/chat/verify.ts`), every action is validated with zod here, and an
- * invalid one is dropped, never guessed at.
+ * invalid one is dropped, never guessed at. A proof asked for is the one exception to "never
+ * solves": the model chooses the proof (`write_proof`: figure, givens, what to prove — never a
+ * question back) and the engine's planner finds and checks its rows (`chat/proof.ts`); an algebra
+ * proof is maths lines, every step checked equal.
  */
 
 const FIGURE_FORMAT = [
@@ -32,6 +37,117 @@ const FIGURE_FORMAT = [
   "- Every name a segment, angle, line or circle uses must be a point. Labels are short maths only (A, 3, x, 70^{\\circ}, 2x + 10): never words.",
 ].join("\n");
 
+// ------------------------------------------------------------------ proofs (write_proof)
+
+/**
+ * Proofs the prompt shows the model, one per kind of ask. Every one is proved by the board's engine
+ * (`checkProofProposal`: `prompts/chat.test.ts` holds them to it), so an example copied as it is
+ * still reaches the board.
+ */
+export const PROOF_EXAMPLES: ReadonlyArray<{ request: string; reply: string; action: WriteProofAction }> = [
+  {
+    request: "write a proof",
+    reply: "Here is a two-column proof: E is the midpoint of both segments, so the triangles are congruent by SAS.",
+    action: {
+      type: "write_proof",
+      figure: {
+        points: { A: { x: 0, y: 4 }, B: { x: 1, y: 0 }, C: { x: 9, y: 4 }, D: { x: 10, y: 0 }, E: { x: 5, y: 2 } },
+        segments: [
+          { from: "A", to: "E", ticks: 1 },
+          { from: "E", to: "D", ticks: 1 },
+          { from: "B", to: "E", ticks: 2 },
+          { from: "E", to: "C", ticks: 2 },
+          { from: "A", to: "B" },
+          { from: "C", to: "D" },
+        ],
+      },
+      given: ["E \\text{ is the midpoint of } \\overline{AD}", "E \\text{ is the midpoint of } \\overline{BC}"],
+      prove: "\\triangle ABE \\cong \\triangle DCE",
+      worked: true,
+    },
+  },
+  {
+    request: "give me a proof to do",
+    reply: "Your turn: prove the two triangles in this kite are congruent. Write each statement and its reason in the table.",
+    action: {
+      type: "write_proof",
+      figure: {
+        points: { A: { x: 0, y: 0 }, B: { x: 5, y: 4 }, C: { x: 10, y: 0 }, D: { x: 5, y: -8 } },
+        segments: [
+          { from: "A", to: "B", ticks: 1 },
+          { from: "C", to: "B", ticks: 1 },
+          { from: "A", to: "D", ticks: 2 },
+          { from: "C", to: "D", ticks: 2 },
+          { from: "B", to: "D" },
+        ],
+      },
+      given: ["\\overline{AB} \\cong \\overline{CB}", "\\overline{AD} \\cong \\overline{CD}"],
+      prove: "\\triangle ABD \\cong \\triangle CBD",
+      worked: false,
+    },
+  },
+  {
+    request: "prove that the base angles of an isosceles triangle are congruent",
+    reply: "Here is the proof: the median AD splits the triangle into two congruent halves (SSS), so the base angles match by CPCTC.",
+    action: {
+      type: "write_proof",
+      figure: {
+        points: { A: { x: 3, y: 5 }, B: { x: 0, y: 0 }, C: { x: 6, y: 0 }, D: { x: 3, y: 0 } },
+        segments: [
+          { from: "A", to: "B", ticks: 1 },
+          { from: "A", to: "C", ticks: 1 },
+          { from: "B", to: "D", ticks: 2 },
+          { from: "D", to: "C", ticks: 2 },
+          { from: "A", to: "D" },
+        ],
+      },
+      given: ["\\overline{AB} \\cong \\overline{AC}", "D \\text{ is the midpoint of } \\overline{BC}"],
+      prove: "\\angle B \\cong \\angle C",
+      worked: true,
+    },
+  },
+  {
+    request: "write the hardest proof ever",
+    reply: "Challenge accepted: two congruences chained through CPCTC to show the kite's diagonal is cut in half.",
+    action: {
+      type: "write_proof",
+      figure: {
+        points: { A: { x: 0, y: 0 }, B: { x: 5, y: 4 }, C: { x: 10, y: 0 }, D: { x: 5, y: -8 }, E: { x: 5, y: 0 } },
+        segments: [
+          { from: "A", to: "B", ticks: 1 },
+          { from: "C", to: "B", ticks: 1 },
+          { from: "A", to: "D", ticks: 2 },
+          { from: "C", to: "D", ticks: 2 },
+          { from: "A", to: "C" },
+          { from: "B", to: "D" },
+        ],
+      },
+      given: ["\\overline{AB} \\cong \\overline{CB}", "\\overline{AD} \\cong \\overline{CD}"],
+      prove: "\\overline{AE} \\cong \\overline{CE}",
+      worked: true,
+    },
+  },
+];
+
+/** An algebra proof: maths lines, each one equal to the line above (`verifyLines` checks every step). */
+export const ALGEBRA_PROOF_EXAMPLE = {
+  request: "prove the sum of two odd numbers is even",
+  reply: "Two odd numbers are 2m + 1 and 2n + 1; their sum is 2 times a whole number, so it is even.",
+  lines: ["(2m + 1) + (2n + 1)", "= 2m + 2n + 2", "= 2(m + n + 1)"],
+} as const;
+
+const PROOF_SECTION = [
+  "PROOFS (write_proof):",
+  '- "write a proof", "a two-column proof", "show me a proof", "write a proof for me", "prove that …" (geometry), "a hard proof", "the hardest proof ever" → write_proof with "worked": true. Never ask which proof: choose a sensible one yourself.',
+  '- "give me a proof to do", "a proof problem", "a proof I can try", "a proof for me to practise" → "worked": false (the figure, Given, Prove and an empty table for the student).',
+  "- The board's proof engine finds and checks every row itself (you never write the rows), so the proof must use only: Given, Reflexive, Transitive, SSS, SAS, ASA, AAS, HL, CPCTC, Vertical ∠s, Def. of midpoint, Def. of ∠ bisector, Def. of seg. bisector, Def. of ⊥ (right angles are congruent), Alt. int. / Alt. ext. / Corr. ∠s with parallel lines (and their converses), the Isosceles △ theorem and its converse. No similarity, no angle or segment addition, no linear pairs, no circles, no algebra.",
+  '- "given": 1 to 4 statements; "prove": ONE statement — two congruent triangles, segments or angles, or two parallel lines. Write statements as: \\overline{AB} \\cong \\overline{CD}; \\angle ABC \\cong \\angle DEF (three letters, vertex in the middle); \\triangle ABC \\cong \\triangle DEF (matching vertices in the same order); \\overline{AB} \\parallel \\overline{CD}; \\overline{AD} \\perp \\overline{BC}; m\\angle ABC = 90^{\\circ}; M \\text{ is the midpoint of } \\overline{AB}; \\overrightarrow{BD} \\text{ bisects } \\angle ABC; \\overline{CD} \\text{ bisects } \\overline{AB} \\text{ at } M.',
+  "- The figure: every point named by ONE capital letter; TRUE TO SCALE so every given is exactly true in the drawing (congruent sides the same length, a midpoint exactly in the middle, perpendicular lines at 90°, parallel lines parallel); EVERY side of every triangle in the proof drawn (segments), and a point on a side exactly on it. Mark the givens: equal ticks on congruent sides, arcs on congruent angles, a right-angle mark. No numbers as labels.",
+  "- A proof OF a theorem must not use that theorem: to prove the base angles of an isosceles triangle congruent, draw the median AD to the midpoint D of the base and prove the two halves congruent (SSS), then CPCTC.",
+  '- "Hard" or "the hardest proof ever": a genuinely demanding one — two congruences chained through CPCTC, overlapping triangles, or several givens working together (isosceles + midpoint + perpendicular) — still only with those reasons, at most 10 rows; a playful one-line reply.',
+  `- An ALGEBRA proof ("prove the sum of two odd numbers is even", "prove (a + b)^{2} = a^{2} + 2ab + b^{2}") is not write_proof: it is write_lines, maths only, from the left side down, each next line starting with "=" and equal to the line above: ${JSON.stringify(ALGEBRA_PROOF_EXAMPLE.lines)}. No words on the board: the reply says what it shows.`,
+].join("\n");
+
 export const CHAT_SYSTEM_PROMPT = [
   "You are the tutor's hand on a student's maths whiteboard. The student (or their teacher) types a request; you answer with a one-line reply for the chat panel and the actions the tutor carries out ON THE BOARD in its handwriting.",
   "",
@@ -45,22 +161,27 @@ export const CHAT_SYSTEM_PROMPT = [
   '- {"type": "draw_figure", "figure": {...}} — a geometry figure, drawn true to scale (format below).',
   '- {"type": "new_screen"} — a blank screen after the others, and the tutor moves to it. ONLY when the student asks for a new screen: the board puts problems on a fresh screen by itself and finds room for a graph, a figure or lines (a new screen when this one is full).',
   '- {"type": "clear_tutor"} — erase the tutor\'s writing on this screen (never the student\'s).',
+  '- {"type": "write_proof", "figure": {...}, "given": ["<statement>", ...], "prove": "<statement>", "worked": true} — a two-column geometry proof in the tutor\'s hand: the figure (format below), Given, Prove and a Statements | Reasons table; "worked": true writes every row (the board\'s proof engine finds them), "worked": false leaves the table for the student (PROOFS below).',
   "",
   "RULES:",
   "1. The board gets maths only: LaTeX (KaTeX), no words, no \\text, no $, no instructions. The words go in the reply.",
   "2. Problems are what a student at the level asked for can solve by hand. Unless asked otherwise, choose numbers so every answer is clean (whole numbers or simple fractions) and each problem is different. Match the count asked for; \"a few\" or no count is 4.",
   "3. Write each problem so its form says what to do: an equation or inequality to solve (2x + 3 = 11, x^{2} - 5x + 6 = 0, 3 - 2x > 7, |x - 3| = 5, \\sqrt{x + 3} = 5, 2^{x + 1} = 16, \\log_{2}(x) = 5); an expression to simplify, factor or expand (x^{2} + 5x + 6, (x + 3)^{2}, 4(2x - 1) - 3x, \\frac{12x^{5}}{3x^{2}}, (3 + 2i)(1 - i)); arithmetic to work out (\\frac{3}{4} + \\frac{1}{6}); a derivative, integral or limit (\\frac{d}{dx}(x^{3} + 2x), \\int (3x^{2} + 1) \\, dx, \\int_{0}^{2} x^{2} \\, dx, \\lim_{x \\to 2} \\frac{x^{2} - 4}{x - 2}); a trig equation with its interval (2\\cos x - 1 = 0, \\ 0 \\le x < 2\\pi); geometry as the equation a student writes (3^{2} + 4^{2} = c^{2}, x + 40 + 65 = 180). Never an instruction word.",
-  "4. You NEVER solve: no answers, no steps, no hints on the board or in the reply. Asked to solve something, write it as a problem and say that the Solve tab works it out step by step.",
+  "4. You NEVER solve: no answers, no steps, no hints on the board or in the reply. Asked to solve something, write it as a problem and say that the Solve tab works it out step by step. A proof asked for is the one exception: write_proof (the engine writes its rows) or, for algebra, write_lines (PROOFS below).",
   "5. \"More like these\", \"harder\", \"another one\": the same kind as the problems (or the student's lines) on this screen, with new numbers; harder means one more step or less friendly numbers, still clean answers.",
   "6. A graph or figure the student asks for is drawn, not solved: no answers written beside it.",
-  "7. Anything that is not maths help on this board, or is unsafe or unkind: reply politely that you can only help with maths on the board, and no actions. A request you cannot tell apart: ask one short question, no actions.",
+  "7. Anything that is not maths help on this board, or is unsafe or unkind: reply politely that you can only help with maths on the board, and no actions. A request you cannot tell apart: ask one short question, no actions — but never for a proof: choose one.",
   "",
   FIGURE_FORMAT,
+  "",
+  PROOF_SECTION,
   "",
   "EXAMPLES:",
   'Request: 3 two-step equations → {"reply": "Here are 3 two-step equations to solve.", "actions": [{"type": "write_problems", "problems": ["3x + 4 = 19", "\\\\frac{x}{2} - 5 = 1", "7 - 2x = 13"]}]}',
   'Request: graph y = sin x from -2π to 2π → {"reply": "Here is y = sin x from -2π to 2π.", "actions": [{"type": "graph", "relations": ["y = \\\\sin x"], "window": {"xMin": -6.2832, "xMax": 6.2832}}]}',
   'Request: draw a right triangle with legs 3 and 4 and label the hypotenuse x → {"reply": "Here is the right triangle; the hypotenuse is x.", "actions": [{"type": "draw_figure", "figure": {"points": {"A": {"x": 0, "y": 0}, "B": {"x": 4, "y": 0}, "C": {"x": 0, "y": 3}}, "segments": [{"from": "A", "to": "B", "label": "4"}, {"from": "A", "to": "C", "label": "3"}, {"from": "B", "to": "C", "label": "x"}], "angles": [{"at": "A", "from": "B", "to": "C", "right": true}]}}]}',
+  ...PROOF_EXAMPLES.map((e) => `Request: ${e.request} → ${JSON.stringify({ reply: e.reply, actions: [e.action] })}`),
+  `Request: ${ALGEBRA_PROOF_EXAMPLE.request} → ${JSON.stringify({ reply: ALGEBRA_PROOF_EXAMPLE.reply, actions: [{ type: "write_lines", lines: ALGEBRA_PROOF_EXAMPLE.lines }] })}`,
   'Request: what\'s the capital of France? → {"reply": "I can only help with maths on this board. Try asking for some practice problems or a graph.", "actions": []}',
 ].join("\n");
 
@@ -150,6 +271,11 @@ export function cleanChatActions(raw: readonly unknown[]): { actions: ChatAction
     } else if (type === "graph" && Array.isArray(obj.relations)) {
       candidate = { ...obj, relations: obj.relations.map(unwrapLatex) };
       if (obj.window === null) delete candidate.window;
+    } else if (type === "write_proof") {
+      // one Given as a string is a list of one; `worked` left out is a worked proof
+      const given = typeof obj.given === "string" ? [obj.given] : obj.given;
+      candidate = { ...obj, given: Array.isArray(given) ? given.map(unwrapLatex) : given, prove: unwrapLatex(obj.prove) };
+      if (obj.worked === null) delete candidate.worked;
     }
     const parsed = ChatActionSchema.safeParse(candidate);
     if (!parsed.success) {
@@ -183,6 +309,44 @@ export function buildFigureRepairMessages(request: string, figure: FigureSpec, p
 }
 
 export const FigureRepairReplySchema = z.object({ figure: FigureSpecSchema });
+
+// ------------------------------------------------------------------ one repair round-trip for a proof
+
+export const PROOF_REPAIR_PROMPT = [
+  "You fix a two-column geometry proof so the board's proof engine can prove it and draw it. You are given the request, the proof (its figure, its givens and what it proves) and the problems the engine found.",
+  'OUTPUT: one JSON object and nothing else: {"figure": { ...the corrected figure... }, "given": ["<statement>", ...], "prove": "<statement>"}',
+  "Keep what the request asked for; change only what the problems need. The engine finds the rows itself.",
+  "",
+  PROOF_SECTION,
+  "",
+  FIGURE_FORMAT,
+].join("\n");
+
+export function buildProofRepairMessages(request: string, proof: Pick<WriteProofAction, "figure" | "given" | "prove">, problems: readonly string[]): ChatMessage[] {
+  return [
+    { role: "system", content: PROOF_REPAIR_PROMPT },
+    {
+      role: "user",
+      content: [
+        `REQUEST: ${request.trim()}`,
+        "",
+        "PROOF:",
+        JSON.stringify({ figure: proof.figure, given: proof.given, prove: proof.prove }),
+        "",
+        "PROBLEMS:",
+        ...problems.map((p) => `- ${p}`),
+        "",
+        "JSON only.",
+      ].join("\n"),
+    },
+  ];
+}
+
+export const ProofRepairReplySchema = z.object({
+  figure: FigureSpecSchema,
+  given: z.union([ProofStatementSchema.transform((s) => [s]), z.array(ProofStatementSchema).min(1).max(CHAT_LIMITS.proofGivens)]),
+  prove: ProofStatementSchema,
+});
 
 /** Which action types the reply asked for (for the log). */
 export function actionTypes(actions: readonly { type: ChatActionType }[]): string {
