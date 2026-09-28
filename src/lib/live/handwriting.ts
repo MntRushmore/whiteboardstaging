@@ -3,6 +3,8 @@
 import {
   createShapeId,
   type JsonObject,
+  type TLDefaultColorStyle,
+  type TLDefaultFillStyle,
   type TLDrawShape,
   type TLShape,
   type TLShapeId,
@@ -19,6 +21,7 @@ import {
 } from "@/lib/hand";
 import { TUTOR_INK_COLOR } from "./answer";
 import type { LiveShapeMeta, Rect } from "./contracts";
+import { INK_PRECISION, roundInk, roundInkPoints } from "./inkCompact";
 
 /**
  * The tutor's handwriting on the tldraw canvas.
@@ -85,6 +88,12 @@ export const HAND_WRITE = {
   /** tldraw draw-shape style of the tutor's ink (the accent tone of the AI shapes, never red) */
   color: TUTOR_INK_COLOR,
   size: "s",
+  /**
+   * THE SWITCH for how finely the tutor's ink is saved: points and shape origins at 1/100 px,
+   * pressure to two decimals — what tldraw's own pen stores for the student (see inkCompact.ts).
+   * About half the bytes of full precision, with nothing to see. 0 writes full precision.
+   */
+  inkPrecision: INK_PRECISION,
 } as const;
 
 /**
@@ -111,6 +120,24 @@ function densify(points: readonly { x: number; y: number; z: number }[], step: n
     }
   }
   return out;
+}
+
+/**
+ * The plan as it is saved: every point and line origin at `HAND_WRITE.inkPrecision`. Done once
+ * when the writer starts, not per frame; the reveal slices the same (rounded) points.
+ */
+function atInkPrecision(plan: HandPlan): HandPlan {
+  const precision: number = HAND_WRITE.inkPrecision;
+  if (!(precision > 0)) return plan;
+  return {
+    ...plan,
+    lines: plan.lines.map((l) => ({
+      ...l,
+      x: roundInk(l.x, precision),
+      y: roundInk(l.y, precision),
+      strokes: l.strokes.map((st) => ({ ...st, points: roundInkPoints(st.points, precision) })),
+    })),
+  };
 }
 
 /** Hand size for ink of this height, clamped to something readable. */
@@ -163,6 +190,25 @@ export interface HandLinePlan {
   startMs: number;
   /** ms this line takes to write */
   durationMs: number;
+  /**
+   * How this line's strokes are inked; absent, the tutor's blue and no fill. Lecture mode's
+   * sketches colour a chart's series and fill its bars lightly: `closed` strokes are closed shapes
+   * (a bar, a slice, a box) and take `fill` once the pen has gone all the way round — never while
+   * the outline is still being drawn, which would fill a half-drawn shape.
+   */
+  style?: HandLineStyle;
+  /**
+   * A stable name for this part of a sketch ("bar:Q3:0", "axis:y"), stamped on its strokes
+   * (`HAND_PART_META`): an update of a live chart re-plans it and writes only the parts whose name
+   * or ink changed.
+   */
+  part?: string;
+}
+
+export interface HandLineStyle {
+  color?: TLDefaultColorStyle;
+  fill?: TLDefaultFillStyle;
+  closed?: boolean;
 }
 
 export interface HandPlan {
@@ -351,6 +397,13 @@ export interface HandWriteOptions {
    * answers, so re-rendering that line replaces its answer instead of writing a second one.
    */
   extraMeta?: JsonObject;
+  /**
+   * Meta stamped on the block's FIRST stroke only (the first stroke of its first line), after
+   * `meta` and `extraMeta`. For what describes the block as a whole — a lecture note's summary, say:
+   * a note is ~70 strokes, and copying a sentence onto every one of them only makes the saved board
+   * heavier. Readers find it on whichever stroke of the block carries it.
+   */
+  leadMeta?: JsonObject;
   onDone?: () => void;
   /**
    * The reveal starts this long after `start` (a graph drawn after the worked steps, by the same
@@ -370,6 +423,8 @@ export const HAND_BLOCK_META = "handBlock";
 /** The block key of a live shape, or "" when it is not handwriting. */
 /** On each stroke of the tutor's writing: the LaTeX of the line it belongs to. */
 export const HAND_LINE_META = "handLine";
+/** On each stroke of a sketch's named part: `HandLinePlan.part`. */
+export const HAND_PART_META = "handPart";
 
 /** The written lines of a set of tutor strokes, in writing order, each once. */
 export function handLinesOf(shapes: readonly { meta: unknown; y: number }[]): string[] {
@@ -421,6 +476,8 @@ export class HandWriter {
   private readonly deps: HandWriterDeps;
   private plan: HandPlan | null = null;
   private meta: JsonObject | null = null;
+  /** `HandWriteOptions.leadMeta` until the block's first stroke has taken it */
+  private leadMeta: JsonObject | null = null;
   private onDone: (() => void) | undefined;
   /** per line, per stroke: the shape carrying that stroke (null until the pen reaches it) */
   private ids: (TLShapeId | null)[][] = [];
@@ -447,8 +504,9 @@ export class HandWriter {
   }
 
   start(plan: HandPlan, opts: HandWriteOptions): void {
-    this.plan = plan;
+    this.plan = atInkPrecision(plan);
     this.meta = { ...opts.meta, ...opts.extraMeta, [HAND_BLOCK_META]: `hb_${++blockSeq}_${this.deps.now().toString(36)}` };
+    this.leadMeta = opts.leadMeta && Object.keys(opts.leadMeta).length > 0 ? opts.leadMeta : null;
     this.onDone = opts.onDone;
     this.ids = plan.lines.map((l) => l.strokes.map(() => null));
     this.dropped = plan.lines.map((l) => l.strokes.map(() => false));
@@ -531,29 +589,36 @@ export class HandWriter {
           const stroke = line.strokes[j];
           const points = stroke.points.slice(0, want).map((p) => ({ ...p }));
           const isComplete = want === stroke.points.length;
+          // a closed shape is filled once its outline is whole (see `HandLinePlan.style`)
+          const closed = isComplete && line.style?.closed === true;
+          const fill: TLDefaultFillStyle = closed ? (line.style?.fill ?? "none") : "none";
           const id = this.ids[i][j];
           if (id === null) {
             const fresh = createShapeId();
             this.ids[i][j] = fresh;
             this.revealed[i][j] = want;
+            // lines are revealed in order and a line's strokes in order, so the first stroke created
+            // is the first stroke of the first line
+            const lead = this.leadMeta;
+            this.leadMeta = null;
             creates.push({
               id: fresh,
               type: "draw",
               x: line.x,
               y: line.y,
               props: {
-                color: HAND_WRITE.color,
-                fill: "none",
+                color: line.style?.color ?? HAND_WRITE.color,
+                fill,
                 dash: "draw",
                 size: HAND_WRITE.size,
                 segments: [{ type: "free", points }],
                 isComplete,
-                isClosed: false,
+                isClosed: closed,
                 isPen: true,
                 scale: 1,
               },
               // the line of maths this stroke belongs to, as LaTeX (debugging, tests, a future readback)
-              meta: { ...meta, [HAND_LINE_META]: line.latex },
+              meta: { ...meta, [HAND_LINE_META]: line.latex, ...(line.part ? { [HAND_PART_META]: line.part } : {}), ...lead },
             } satisfies TLShapePartial<TLDrawShape>);
             continue;
           }
@@ -567,7 +632,7 @@ export class HandWriter {
           updates.push({
             id,
             type: "draw",
-            props: { segments: [{ type: "free", points }], isComplete },
+            props: { segments: [{ type: "free", points }], isComplete, ...(closed ? { isClosed: true, fill } : {}) },
           } satisfies TLShapePartial<TLDrawShape>);
         }
       }

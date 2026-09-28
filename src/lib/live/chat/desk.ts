@@ -8,6 +8,7 @@ import type { ChatAction, ChatActionOutcome, ChatRunReport, ChatScreen, ChatWind
 import { CHAT_LIMITS, noProblemNote } from "./contracts";
 import { chunkProblems, findFreeArea, joinPlans, planGrid, PROBLEM_GRID } from "./layout";
 import { verifyLines, verifyProblem } from "./verify";
+import { LECTURE_BLOCK_META, type LecturePageMeta } from "../lecture/contracts";
 
 /**
  * The board chat's hand: runs a reply's actions on the board, one at a time, in the tutor's
@@ -72,8 +73,12 @@ export interface ChatHost {
   handwriting(): boolean;
   /** the loop's own hand is writing (a worked solution, an answer): the chat waits its turn */
   handBusy(): boolean;
-  /** writes a placed plan as ONE whole block (a cancel completes it); resolves once it is on the page */
-  write(plan: HandPlan, extraMeta: JsonObject): Promise<void>;
+  /**
+   * Writes a placed plan as ONE whole block (a cancel completes it); resolves once it is on the page.
+   * `extraMeta` goes on every stroke; `leadMeta` on the first stroke only (what needs saying once —
+   * a lecture note's summary — not ~70 times over in the saved board).
+   */
+  write(plan: HandPlan, extraMeta: JsonObject, leadMeta?: JsonObject): Promise<void>;
   /** the hand is off: typeset maths at `at` instead */
   typeset(latex: string, at: { x: number; y: number }, extraMeta: JsonObject): Rect;
   /** adds a blank screen after the last and moves to it; false at the cap */
@@ -97,9 +102,23 @@ export interface ChatHost {
   seed(key: string): number;
   delay(ms: number): Promise<void>;
   metric?(name: string, data: Record<string, unknown>): void;
+  /** the current screen's lecture page meta (`LECTURE_PAGE_META`): its transcript feeds `picture().lecture` */
+  screenMeta?(): LecturePageMeta;
 }
 
 type Report = ChatRunReport;
+
+/**
+ * The end of a text, at most `max` characters, starting at a word: what was said last is what
+ * a question about a lecture is about, and half a word at the front only reads as noise.
+ */
+export function tailAtWord(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(text.length - max);
+  if (/\s/.test(text[text.length - max - 1] ?? "")) return cut.trimStart();
+  const at = cut.search(/\s/);
+  return at === -1 ? cut : cut.slice(at + 1).trimStart();
+}
 
 function plural(n: number, one: string, many: string): string {
   return n === 1 ? one : many;
@@ -147,8 +166,9 @@ export class ChatDesk {
       }
       const meta = (s.meta ?? {}) as Record<string, unknown>;
       if (meta.live !== true || meta.source !== "ai") continue;
-      // marks, graphs and figures are drawings: their "lines" are labels, not maths
-      if (meta.mark || meta.graphFor || meta[CHAT_BLOCK_META] === "graph" || meta[CHAT_BLOCK_META] === "figure") continue;
+      // marks, graphs and figures are drawings: their "lines" are labels, not maths; a lecture's
+      // heading, notes and sketches are words (the transcript below says what they were about)
+      if (meta.mark || meta.graphFor || meta[CHAT_BLOCK_META] === "graph" || meta[CHAT_BLOCK_META] === "figure" || meta[LECTURE_BLOCK_META]) continue;
       const latex = typeof meta[HAND_LINE_META] === "string" ? (meta[HAND_LINE_META] as string) : (s.latex ?? "");
       if (!latex || seen.has(latex)) continue;
       seen.add(latex);
@@ -156,6 +176,7 @@ export class ChatDesk {
     }
     const cap = (list: string[]) => list.slice(0, CHAT_LIMITS.screenLines).map((l) => l.slice(0, CHAT_LIMITS.lineLatex));
     const numbered = [...problems.entries()].sort((a, b) => a[0] - b[0]).slice(0, CHAT_LIMITS.problems);
+    const heard = (this.host.screenMeta?.().transcript ?? "").replace(/\s+/g, " ").trim();
     return {
       empty: shapes.length === 0,
       student: cap(this.host.studentLines()),
@@ -163,6 +184,8 @@ export class ChatDesk {
       problems: numbered.map(([, l]) => l),
       // as numbered on the board: "help me with 7" on a screen holding 5 to 8
       ...(numbered.length > 0 ? { numbers: numbered.map(([n]) => n) } : {}),
+      // "what did she say about enzymes?": the end of what lecture mode heard on this screen
+      ...(heard ? { lecture: tailAtWord(heard, CHAT_LIMITS.lecture) } : {}),
     };
   }
 
@@ -170,7 +193,16 @@ export class ChatDesk {
 
   /** Runs the actions in order, one block at a time; a second reply waits for the first. */
   run(actions: readonly ChatAction[]): Promise<Report> {
-    const next = this.tail.then(() => this.runNow(actions));
+    return this.exclusive(() => this.runNow(actions));
+  }
+
+  /**
+   * Runs `fn` in this desk's turn: after the reply being written, before the next. Lecture mode
+   * writes its own blocks this way (`LectureDesk`), so a reply and a lecture sketch never measure
+   * the same free space and write into it at once. `fn` must not call `run`: it would wait for itself.
+   */
+  exclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.tail.then(fn);
     this.tail = next.catch(() => undefined);
     return next;
   }

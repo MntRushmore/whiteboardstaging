@@ -639,8 +639,8 @@ export const LIVE_RATE_LIMITS = {
   liveProof: { limit: 20, windowMs: 60_000 },
   /** the board chat: typed by hand, one request at a time */
   liveChat: { limit: 12, windowMs: 60_000 },
-  /** lecture mode's director: a tick every ~40 s at most, plus "Draw that" */
-  liveLecture: { limit: 6, windowMs: 60_000 },
+  /** lecture mode's director: a tick every ~8 s while numbers or steps are coming (else ~40 s), plus "Draw that" */
+  liveLecture: { limit: 12, windowMs: 60_000 },
   /** lecture mode's recognizer tokens: one per speech session (a reconnect opens another) */
   liveListen: { limit: 6, windowMs: 60_000 },
 } as const;

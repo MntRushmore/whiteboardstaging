@@ -40,8 +40,9 @@ export const ROUTE_COSTS = {
   // The board chat: one planning call (problems, a graph, a figure spec), plus at most one small
   // figure repair; the engine checks every problem, so no solve model is involved.
   "live/chat": 3,
-  // Lecture mode: one director call (recent transcript → what to sketch, usually nothing). Asked
-  // at most every ~40 s while someone is talking (LECTURE_TIMING), so about a credit a minute.
+  // Lecture mode: one MINUTE of the director (recent transcript → what to sketch or update). The
+  // route charges the first request of each wall-clock minute of a session and none of the rest
+  // (it asks every ~8 s while numbers are coming), so a credit a minute while someone is talking.
   "live/lecture": 1,
   // Lecture mode: one realtime speech-to-text session opened (a single-use recognizer token).
   "live/listen": 1,

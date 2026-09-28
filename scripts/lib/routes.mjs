@@ -42,6 +42,7 @@ export const NO_BODY_ROUTES = Object.freeze([
   "src/app/api/credits/route.ts", // GET only
   "src/app/api/config/status/route.ts", // GET only
   "src/app/api/admin/gc/route.ts", // GET (Vercel cron) or POST with an empty body; options are query params
+  "src/app/api/live/lecture/token/route.ts", // POST with an empty body: mints a speech-to-text token for the caller
 ]);
 
 export const API_ROUTES = Object.freeze([

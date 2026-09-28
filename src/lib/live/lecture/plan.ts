@@ -1,15 +1,23 @@
 import type { HandPlan } from "../handwriting";
+import { sketchChart } from "./chart";
 import type { ChartSpec, DiagramSpec } from "./contracts";
+import { sketchDiagram } from "./diagram";
+import { sketchHeading, sketchNote } from "./text";
 
 /**
  * Lecture mode's planners: a chart, a diagram, a heading or a note in, a `HandPlan` out — the
  * same plan the worked steps and the graphs are written from, so the HandWriter reveals it one
  * pen stroke at a time in the tutor's hand. Pure geometry (no tldraw, no DOM). A plan is in its
- * own px with `bounds` inside the box it was given; the desk moves it onto the page with
- * `placeHandPlan`. Null when the hand cannot draw it well in that box (the desk tries a smaller
- * box, a new screen, or leaves it out) — never a squashed or overlapping sketch.
+ * own px with its ink from (0, 0) (`bounds` = { x: 0, y: 0, w, h }, inside the box it was
+ * given); the desk moves it onto the page with `placeHandPlan`. Null when the hand cannot draw
+ * it well in that box (the desk tries a smaller box, a new screen, or leaves it out) — never a
+ * squashed or overlapping sketch.
  *
- * STUB: the signatures are the contract; the implementations land with the planners.
+ * Each plan carries its `pace`: a heading is on the board in ~1.5–2 s, a note in ~2–3.5 s, a
+ * chart in ~5–7 s and a diagram in ~5–8 s of wall time (see `LECTURE_PACE`).
+ *
+ * How each is drawn: `text.ts` (heading, note), `chart/` (bar, line, pie, scatter, table),
+ * `diagram/` (flow, cycle, timeline, hub, tree, venn); the words themselves: `words.ts`.
  */
 
 export const LECTURE_BOXES = {
@@ -30,18 +38,18 @@ export interface LecturePlanOptions {
   box: { w: number; h: number };
 }
 
-export function planChart(_spec: ChartSpec, _opts: LecturePlanOptions): HandPlan | null {
-  return null;
+export function planChart(spec: ChartSpec, opts: LecturePlanOptions): HandPlan | null {
+  return sketchChart(spec, opts)?.plan ?? null;
 }
 
-export function planDiagram(_spec: DiagramSpec, _opts: LecturePlanOptions): HandPlan | null {
-  return null;
+export function planDiagram(spec: DiagramSpec, opts: LecturePlanOptions): HandPlan | null {
+  return sketchDiagram(spec, opts)?.plan ?? null;
 }
 
-export function planHeading(_text: string, _opts: { seed: number; maxW: number }): HandPlan | null {
-  return null;
+export function planHeading(text: string, opts: { seed: number; maxW: number }): HandPlan | null {
+  return sketchHeading(text, opts)?.plan ?? null;
 }
 
-export function planNote(_text: string, _opts: { seed: number; maxW: number }): HandPlan | null {
-  return null;
+export function planNote(text: string, opts: { seed: number; maxW: number }): HandPlan | null {
+  return sketchNote(text, opts)?.plan ?? null;
 }

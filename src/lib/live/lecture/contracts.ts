@@ -23,8 +23,19 @@ import { DrawFigureSchema, GraphActionSchema, NewScreenSchema, WriteLinesSchema 
  *    when it is full or the topic changes; graphs, figures, formulas and new screens go through
  *    the board chat's own desk (`ChatDesk`).
  *
+ * LIVE: a chart or a diagram grows as the lecture goes. "Sales in Q1 were 12 million… Q2 was
+ * up to 15…" draws the axes and Q1's bar, then Q2's bar is added to the SAME chart when it is
+ * said (`update_chart`), by the same hand, without redrawing what did not change. The director
+ * sees the screen's live visuals (`LectureScreen.active`, their specs and ids) and answers with
+ * the whole new spec; the desk re-plans it in the same box and writes only the parts whose ink
+ * changed (`HandLinePlan.part`). Categories announced before their numbers are drawn as empty
+ * slots (`null` values), so the layout is set once and the bars fill in. While numbers or steps
+ * are coming, the session asks every few seconds (`LECTURE_TIMING.liveTickMinMs`); otherwise
+ * about every 40 s. Billing is per minute of lecture, not per question (`live/lecture`).
+ *
  * Words ARE written in lecture mode (a heading, a short note, the labels of a chart or a
- * diagram), short and plain; everywhere else the board keeps its no-words rule.
+ * diagram), short and plain; everywhere else the board keeps its no-words rule. Sketches are
+ * inked in a small palette (`LECTURE_PALETTE`), filled lightly where a shape is closed.
  *
  * THIS FILE IS THE SHARED CONTRACT. Change it only together with every user of it.
  */
@@ -49,6 +60,10 @@ export const LECTURE_LIMITS = {
   node: 40,
   /** transcript kept on each screen's page meta (older text is dropped from the front) */
   screenTranscriptChars: 12_000,
+  /** live visuals on the screen the director may update (newest first) */
+  active: 2,
+  /** a block's id on the board (`LECTURE_ID_META`) */
+  idChars: 40,
 } as const;
 
 export const LECTURE_TIMING = {
@@ -56,6 +71,14 @@ export const LECTURE_TIMING = {
   tickMinMs: 40_000,
   /** …and only once this many new words have been heard since it was last asked */
   tickMinWords: 45,
+  /**
+   * LIVE: while what is said is salient (numbers, amounts, years, percentages, steps — "first",
+   * "next", "then") or a live visual on the screen was drawn or updated within `activeWindowMs`,
+   * the director is asked this often, once `liveTickMinWords` new words have been committed.
+   */
+  liveTickMinMs: 8_000,
+  liveTickMinWords: 5,
+  activeWindowMs: 150_000,
   /** "Draw that" (a forced tick) reads this much of the latest transcript as fresh */
   forceWindowMs: 60_000,
   /** a forced tick is allowed this soon after another request */
@@ -88,15 +111,19 @@ export const LabelSchema = lectureText(LECTURE_LIMITS.label);
 export const NodeTextSchema = lectureText(LECTURE_LIMITS.node);
 
 const finite = z.number().finite();
-/** a short unit written after a value or on an axis: `%`, `$`, `kg`, `°C`, `million` */
-const UnitSchema = z.string().trim().min(1).max(10).refine((s) => !/[\\$<>{}]/.test(s) || s === "$", { message: "plain unit" });
+/** a short unit written after a value or on an axis: `%`, `$`, `kg`, `°C`, `million`, `$ million`, `£bn` */
+const UnitSchema = z.string().trim().min(1).max(12).refine((s) => !/[\\<>{}]/.test(s), { message: "plain unit" });
 
 // ------------------------------------------------------------------ charts
 
-/** Categories on the x-axis, one or more series of values (one per category). */
+/**
+ * Categories on the x-axis, one or more series of values (one per category). `null` is a value
+ * not said yet: the category's slot is drawn (its label, no bar), so when the number comes the
+ * bar fills in without the chart being laid out again.
+ */
 const SeriesSchema = z.object({
   name: LabelSchema.optional(),
-  values: z.array(finite).min(1).max(12),
+  values: z.array(finite.nullable()).min(1).max(12),
 });
 
 const CategoryChartBase = {
@@ -108,10 +135,18 @@ const CategoryChartBase = {
   unit: UnitSchema.optional(),
 };
 
-const seriesMatchLabels = (c: { labels: string[]; series: Array<{ values: number[] }> }) => c.series.every((s) => s.values.length === c.labels.length);
+const seriesMatchLabels = (c: { labels: string[]; series: Array<{ values: Array<number | null> }> }) => c.series.every((s) => s.values.length === c.labels.length);
+/** a chart with no number said yet is not a chart */
+const someValue = (c: { series: Array<{ values: Array<number | null> }> }) => c.series.some((s) => s.values.some((v) => v !== null));
 
-export const BarChartSchema = z.object({ kind: z.literal("bar"), ...CategoryChartBase }).refine(seriesMatchLabels, { message: "each series needs one value per label" });
-export const LineChartSchema = z.object({ kind: z.literal("line"), ...CategoryChartBase }).refine(seriesMatchLabels, { message: "each series needs one value per label" });
+export const BarChartSchema = z
+  .object({ kind: z.literal("bar"), ...CategoryChartBase })
+  .refine(seriesMatchLabels, { message: "each series needs one value per label" })
+  .refine(someValue, { message: "a chart needs at least one value" });
+export const LineChartSchema = z
+  .object({ kind: z.literal("line"), ...CategoryChartBase })
+  .refine(seriesMatchLabels, { message: "each series needs one value per label" })
+  .refine(someValue, { message: "a chart needs at least one value" });
 
 export const PieChartSchema = z.object({
   kind: z.literal("pie"),
@@ -141,7 +176,8 @@ export const TableChartSchema = z
     kind: z.literal("table"),
     title: HeadingTextSchema.optional(),
     columns: z.array(LabelSchema).min(2).max(4),
-    rows: z.array(z.array(LabelSchema).min(2).max(4)).min(1).max(6),
+    /** "" is a cell not said yet (drawn empty, filled in by an update) */
+    rows: z.array(z.array(z.union([LabelSchema, z.literal("")])).min(2).max(4)).min(1).max(6),
   })
   .refine((t) => t.rows.every((r) => r.length === t.columns.length), { message: "each row needs one cell per column" });
 
@@ -228,6 +264,17 @@ export const NoteActionSchema = z.object({ type: z.literal("note"), text: NoteTe
 export const ChartActionSchema = z.object({ type: z.literal("chart"), chart: ChartSpecSchema });
 export const DiagramActionSchema = z.object({ type: z.literal("diagram"), diagram: DiagramSpecSchema });
 
+/** A block's id on the board, as the director was told it (`LectureScreen.active`). */
+export const LectureBlockIdSchema = z.string().trim().min(1).max(LECTURE_LIMITS.idChars);
+/**
+ * LIVE: the chart `target` on this screen, as it should now be — the WHOLE new spec (the Q2 bar
+ * added, a value corrected, a series added). Same kind as before. The desk writes only what
+ * changed; a target not on the screen any more is drawn as a new chart.
+ */
+export const UpdateChartSchema = z.object({ type: z.literal("update_chart"), target: LectureBlockIdSchema, chart: ChartSpecSchema });
+/** LIVE: the diagram `target`, as it should now be (a step added to the flow, an event to the timeline). */
+export const UpdateDiagramSchema = z.object({ type: z.literal("update_diagram"), target: LectureBlockIdSchema, diagram: DiagramSpecSchema });
+
 /**
  * Everything the director can ask for. `graph` (a function or relation the engine can plot),
  * `draw_figure` (geometry, to scale), `write_lines` (maths, checked by the engine) and
@@ -238,6 +285,8 @@ export const LectureActionSchema = z.discriminatedUnion("type", [
   NoteActionSchema,
   ChartActionSchema,
   DiagramActionSchema,
+  UpdateChartSchema,
+  UpdateDiagramSchema,
   GraphActionSchema,
   DrawFigureSchema,
   WriteLinesSchema,
@@ -245,9 +294,16 @@ export const LectureActionSchema = z.discriminatedUnion("type", [
 ]);
 export type LectureAction = z.infer<typeof LectureActionSchema>;
 export type LectureActionType = LectureAction["type"];
-export const LECTURE_ACTION_TYPES = ["heading", "note", "chart", "diagram", "graph", "draw_figure", "write_lines", "new_screen"] as const satisfies readonly LectureActionType[];
+export const LECTURE_ACTION_TYPES = ["heading", "note", "chart", "diagram", "update_chart", "update_diagram", "graph", "draw_figure", "write_lines", "new_screen"] as const satisfies readonly LectureActionType[];
 
 // ------------------------------------------------------------------ the director's request
+
+/** A live visual on the screen: its id and its spec as drawn now (what an update starts from). */
+export const ActiveVisualSchema = z.union([
+  z.object({ id: LectureBlockIdSchema, chart: ChartSpecSchema }),
+  z.object({ id: LectureBlockIdSchema, diagram: DiagramSpecSchema }),
+]);
+export type ActiveVisual = z.infer<typeof ActiveVisualSchema>;
 
 /** What is on the current screen, in words: what not to draw again, and whether there is room. */
 export const LectureScreenSchema = z.object({
@@ -258,11 +314,19 @@ export const LectureScreenSchema = z.object({
   drawn: z.array(z.string().max(LECTURE_LIMITS.whatChars)).max(LECTURE_LIMITS.drawn).default([]),
   /** roughly how much of the screen is still free, 0..1 */
   room: z.number().min(0).max(1),
+  /** LIVE: the charts and diagrams on this screen the director may update, newest first */
+  active: z.array(ActiveVisualSchema).max(LECTURE_LIMITS.active).default([]),
 });
 export type LectureScreen = z.infer<typeof LectureScreenSchema>;
 
 export const LectureRequestSchema = z.object({
   boardId: z.string().min(1).max(64),
+  /**
+   * One listening session (a random id the session makes when it starts). Billing is per minute
+   * of a session: the first request in each wall-clock minute is charged, the rest of that minute
+   * are not (`live/lecture`).
+   */
+  session: z.string().regex(/^[A-Za-z0-9_-]{8,40}$/),
   /** what was said before `fresh` (already seen by the director), oldest first */
   context: z.string().max(LECTURE_LIMITS.contextChars).default(""),
   /** what was said since the director was last asked (or the last minute, for "Draw that") */
@@ -281,6 +345,8 @@ export const LectureResponseSchema = z.object({
   notes: z.array(z.string().max(200)).max(8).default([]),
   /** true when everything the model proposed was dropped and the credit was given back */
   refunded: z.boolean().optional(),
+  /** true when this request started a new billed minute (a credit was taken) */
+  charged: z.boolean().optional(),
   model: z.string(),
   ms: z.number(),
 });
@@ -341,6 +407,8 @@ export interface LectureBoard {
 export interface LectureActionOutcome {
   type: LectureActionType;
   ok: boolean;
+  /** the block's id on the board (`LECTURE_ID_META`), for a chart or a diagram drawn or updated */
+  id?: string;
   /** the one-line summary of what was drawn (`describeLectureAction`), when it was */
   what?: string;
   note?: string;
@@ -359,18 +427,49 @@ export const LECTURE_BLOCK_META = "lectureBlock";
 export const LECTURE_WHAT_META = "lectureWhat";
 /** page (screen) meta: `LecturePageMeta` */
 export const LECTURE_PAGE_META = "lecture";
+/** shape meta: the id of the chart or diagram a stroke belongs to (stable across its updates) */
+export const LECTURE_ID_META = "lectureId";
+
+/**
+ * A live chart or diagram, kept on its screen's page meta (`LecturePageMeta.visuals`, by id): what
+ * it shows, and the box and seed it was planned in, so an update re-plans it exactly the same way
+ * and only the parts that changed are redrawn. On the page, not on a stroke: a stroke carrying it
+ * could be the very part an update erases. An entry whose strokes are all gone (the student erased
+ * the chart) is not live any more.
+ */
+export interface LectureSpecMeta {
+  chart?: ChartSpec;
+  diagram?: DiagramSpec;
+  box: { w: number; h: number };
+  seed: number;
+  /** page coordinates of the plan's top-left when it was placed */
+  at: { x: number; y: number };
+  /** epoch ms of the last draw or update (live while within `LECTURE_TIMING.activeWindowMs`) */
+  updatedAt: number;
+}
+
+/**
+ * The inks of lecture sketches (tldraw colours). The first is the tutor's own; series and
+ * regions take the next ones in order. Never red: red means "wrong" on this board.
+ */
+export const LECTURE_PALETTE = ["blue", "orange", "green", "violet", "light-blue", "yellow"] as const;
+export type LectureInk = (typeof LECTURE_PALETTE)[number] | "black" | "grey";
 
 export interface LecturePageMeta {
   /** the screen's heading */
   topic?: string;
   /** what was heard while this screen was the current one (capped, oldest dropped) */
   transcript?: string;
+  /** the screen's charts and diagrams, by `LECTURE_ID_META` id */
+  visuals?: Record<string, LectureSpecMeta>;
 }
 
 // ------------------------------------------------------------------ summaries
 
 const CHART_NAMES: Record<ChartKind, string> = { bar: "bar chart", line: "line chart", pie: "pie chart", scatter: "scatter plot", table: "table" };
 const DIAGRAM_NAMES: Record<DiagramKind, string> = { flow: "flow", cycle: "cycle", timeline: "timeline", hub: "concept map", tree: "tree", venn: "Venn diagram" };
+
+const POLYGON_NAMES: Record<number, string> = { 3: "triangle", 4: "quadrilateral", 5: "pentagon", 6: "hexagon" };
 
 function clip(s: string): string {
   const t = s.replace(/\s+/g, " ").trim();
@@ -404,10 +503,21 @@ export function describeLectureAction(a: LectureAction): string {
                 : `${d.left} vs ${d.right}`);
       return clip(`${DIAGRAM_NAMES[d.kind]}: ${about}`);
     }
+    case "update_chart":
+      return describeLectureAction({ type: "chart", chart: a.chart });
+    case "update_diagram":
+      return describeLectureAction({ type: "diagram", diagram: a.diagram });
     case "graph":
       return clip(`graph: ${a.relations.join("; ")}`);
-    case "draw_figure":
-      return "geometry figure";
+    case "draw_figure": {
+      // named by its shapes ("triangle ABC", "circle O"), else its points, so two figures differ
+      const f = a.figure;
+      const shapes = [
+        ...(f.polygons ?? []).map((p) => `${POLYGON_NAMES[p.vertices.length] ?? "polygon"} ${p.vertices.join("")}`),
+        ...(f.circles ?? []).map((c) => `circle ${c.center}`),
+      ];
+      return clip(`figure: ${shapes.length > 0 ? shapes.join(", ") : Object.keys(f.points).join(", ")}`);
+    }
     case "write_lines":
       return clip(`formula: ${a.lines.join("; ")}`);
     case "new_screen":
