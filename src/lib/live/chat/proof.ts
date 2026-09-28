@@ -51,7 +51,14 @@ export const PROOF_CHECK = {
   maxGivenFacts: CHAT_LIMITS.proofGivens,
   /** the hand size the writability check lays each line out at */
   handSize: 30,
+  /** a proof asked for as hard ("the hardest proof ever") takes at least this many rows */
+  hardMinRows: 8,
 } as const;
+
+/** The request asks for a hard proof: "the hardest proof ever", "a hard proof", "a challenging one". */
+export function wantsHardProof(message: string): boolean {
+  return /\b(?:hard|harder|hardest|difficult|challeng\w*|tough|toughest)\b/i.test(message);
+}
 
 /** Facts the planner reasons from (a Given) and the facts it derives (a Prove). */
 const GIVEN_KINDS: ReadonlySet<Fact["t"]> = new Set<Fact["t"]>(["segCong", "angCong", "triCong", "parallel", "perp", "midpoint", "angBisect", "segBisect", "angMeasure"]);
@@ -79,6 +86,8 @@ export interface ProofCheckOptions {
   checkFigure?: (spec: FigureSpec) => string[];
   /** the hand's interlock: every glyph of the line drawable */
   canWrite?: (latex: string) => boolean;
+  /** the fewest rows the proof may take (a hard proof asked for: `PROOF_CHECK.hardMinRows`) */
+  minRows?: number;
 }
 
 /** The hand can write this line (the server-safe layout, as `checkFigure` uses). */
@@ -463,6 +472,14 @@ function check(p: Pick<WriteProofAction, "figure" | "given" | "prove"> & { worke
   }
   if (rows.length === 0) return { ok: false, problems: ["The Prove statement is one of the givens: prove something that takes steps."] };
   if (rows.length > PROOF_CHECK.maxRows) return { ok: false, problems: [`The proof takes ${rows.length} rows; the board has room for ${PROOF_CHECK.maxRows}. Choose a shorter one.`] };
+  if (opts.minRows && rows.length < opts.minRows) {
+    return {
+      ok: false,
+      problems: [
+        `A hard proof was asked for, and this one takes only ${rows.length} rows. Make it genuinely demanding — at least ${opts.minRows} rows: overlapping triangles, congruences chained through CPCTC, several givens working together (the "hardest proof ever" example is a safe choice).`,
+      ],
+    };
+  }
 
   // the Given and Prove lines in the reader's forms — and they read back as the same facts
   const given: string[] = [];

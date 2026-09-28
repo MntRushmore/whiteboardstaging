@@ -1,6 +1,7 @@
 import { getLiveModels } from "@/lib/env";
 import { ChatRequestSchema, ChatResponseSchema, type ChatAction, type ChatResponse, type WriteProofAction } from "@/lib/live/chat/contracts";
 import { figureProblems } from "@/lib/live/chat/figure";
+import { PROOF_CHECK, wantsHardProof } from "@/lib/live/chat/proof";
 import { FigureSpecSchema } from "@/lib/live/figureDraw/contracts";
 import { enforceCredits, refundCredits, runCharged } from "@/lib/server/billing";
 import { gateChatProof, PROOF_NOT_WRITTEN } from "@/lib/server/chatProof";
@@ -104,9 +105,11 @@ export async function POST(req: Request) {
       // Proofs: proved by the engine's planner with the figure (`gateChatProof`), one repair, else dropped.
       let proofRepairs = 0;
       let proofsDropped = 0;
+      // "the hardest proof ever" is held to it: a proof that takes a few rows is sent back once
+      const proofCheck = wantsHardProof(data.message) ? { minRows: PROOF_CHECK.hardMinRows } : {};
       for (const action of valid) {
         if (action.type === "write_proof") {
-          const gated = await gateChatProof(action, proofRepairs === 0 ? (problems) => repairProof(action, problems) : null);
+          const gated = await gateChatProof(action, proofRepairs === 0 ? (problems) => repairProof(action, problems) : null, proofCheck);
           if (gated.repaired) proofRepairs++;
           if (gated.ok) actions.push(gated.action);
           else {

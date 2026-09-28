@@ -14,7 +14,7 @@ import { Resolver } from "../../proof/resolve";
 import { decodeFigureRead, encodeFigureRead, tutorFiguresOf } from "../../proof/tutorFigure";
 import { ALGEBRA_PROOF_EXAMPLE, PROOF_EXAMPLES } from "@/lib/server/prompts/chat";
 import { ChatActionSchema, ChatResponseSchema, WriteProofSchema, type WriteProofAction } from "../contracts";
-import { checkProofProposal, figureReadOf, PROOF_CHECK, type CheckedProof } from "../proof";
+import { checkProofProposal, figureReadOf, PROOF_CHECK, wantsHardProof, type CheckedProof } from "../proof";
 import { layoutProof, PROOF_LAYOUT, type ProofLayout } from "../proofLayout";
 import { verifyLines } from "../verify";
 
@@ -190,6 +190,15 @@ describe("checking a proposed proof", () => {
   it("the Prove is one of the givens: nothing to prove", () => {
     const v = checkProofProposal({ ...HARDEST, prove: "\\overline{AB} \\cong \\overline{CB}" });
     expect(v).toEqual({ ok: false, problems: ["The Prove statement is one of the givens: prove something that takes steps."] });
+  });
+
+  it("a hard proof asked for is held to it: a few rows are sent back", () => {
+    expect(["write the hardest proof ever", "a hard proof", "something challenging", "a tough one", "a harder proof"].every(wantsHardProof)).toBe(true);
+    expect(["write a proof", "give me a proof to do", "show me a proof"].some(wantsHardProof)).toBe(false);
+    const short = checkProofProposal({ figure: ISOSCELES, given: ["\\overline{AB} \\cong \\overline{AC}", "D \\text{ is the midpoint of } \\overline{BC}"], prove: "\\angle B \\cong \\angle C" }, { minRows: PROOF_CHECK.hardMinRows });
+    expect(short.ok).toBe(false);
+    if (!short.ok) expect(short.problems[0]).toMatch(/A hard proof was asked for, and this one takes only 5 rows\. Make it genuinely demanding — at least 8 rows/);
+    expect(checkProofProposal(HARDEST, { minRows: PROOF_CHECK.hardMinRows }).ok).toBe(true);
   });
 
   it("the hand must be able to write every line", () => {

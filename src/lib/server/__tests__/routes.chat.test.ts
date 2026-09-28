@@ -47,6 +47,7 @@ import { ChatResponseSchema } from "@/lib/live/chat/contracts";
 import { LIVE_MODELS } from "@/lib/live/contracts";
 import { resetBillingWarnings } from "@/lib/server/billing";
 import { chatJsonWithFallback, UpstreamError } from "@/lib/server/openrouter";
+import { PROOF_EXAMPLES } from "@/lib/server/prompts/chat";
 import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rate-limit";
 import { POST as chat } from "@/app/api/live/chat/route";
 
@@ -261,6 +262,28 @@ describe("live/chat", () => {
       expect(body.refunded).toBe(true);
       expect(chatJsonWithFallback).toHaveBeenCalledTimes(2);
       expect(callsTo("refund_credits")[0].args).toEqual({ p_request_id: callsTo("consume_credits")[0].args?.p_request_id });
+    });
+
+    it("'the hardest proof ever' is held to it: a short proof is sent back once for a demanding one", async () => {
+      const worked = { ...CHECKED, worked: true };
+      const hardest = PROOF_EXAMPLES.find((e) => /hardest/.test(e.request))!.action;
+      modelReplies({ reply: "Challenge accepted.", actions: [worked] }, { figure: hardest.figure, given: hardest.given, prove: hardest.prove });
+      const body = ChatResponseSchema.parse(await (await chat(request({ ...BODY, message: "write the hardest proof ever" }))).json());
+      expect(chatJsonWithFallback).toHaveBeenCalledTimes(2);
+      expect(String(vi.mocked(chatJsonWithFallback).mock.calls[1][2].messages[1].content)).toMatch(/- A hard proof was asked for, and this one takes only 4 rows/);
+      expect(body.actions).toEqual([{ type: "write_proof", figure: hardest.figure, given: hardest.given, prove: hardest.prove, worked: true }]);
+      // the same short proof asked for plainly goes on as it is
+      vi.mocked(chatJsonWithFallback).mockReset();
+      modelReplies({ reply: "Here is a proof.", actions: [worked] });
+      const plain = ChatResponseSchema.parse(await (await chat(request({ ...BODY, message: "write a proof" }))).json());
+      expect(plain.actions).toEqual([worked]);
+      // a repair still short (or failed) does not cost the student the proof: the proved one goes on
+      vi.mocked(chatJsonWithFallback).mockReset();
+      modelReplies({ reply: "Challenge accepted.", actions: [worked] });
+      vi.mocked(chatJsonWithFallback).mockRejectedValueOnce(new UpstreamError(504, "slow"));
+      const kept = ChatResponseSchema.parse(await (await chat(request({ ...BODY, message: "a hard proof" }))).json());
+      expect(kept.actions).toEqual([worked]);
+      expect(kept.refunded).toBeUndefined();
     });
 
     it("beside other actions: the unproved proof is dropped with a note, the rest kept, no refund; a failed repair call is a drop", async () => {

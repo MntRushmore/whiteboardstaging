@@ -23,11 +23,12 @@ import type { LiveEngine } from "@/lib/live/contracts";
 import type { ChatAction, ChatActionType, WriteProofAction } from "@/lib/live/chat/contracts";
 import { figureProblems } from "@/lib/live/chat/figure";
 import { PROBLEM_GRID } from "@/lib/live/chat/layout";
-import { checkProofProposal, type ProofProposalVerdict } from "@/lib/live/chat/proof";
+import { checkProofProposal, PROOF_CHECK, wantsHardProof, type ProofProposalVerdict } from "@/lib/live/chat/proof";
 import { answerOf, isChain, isCleanAnswer, verifyLines, verifyProblem, type ProblemVerdict } from "@/lib/live/chat/verify";
 import { FigureSpecSchema, type FigureSpec } from "@/lib/live/figureDraw/contracts";
 import { planFigure } from "@/lib/live/figureDraw";
 import { planHandwriting } from "@/lib/live/handwriting";
+import { gateChatProof } from "@/lib/server/chatProof";
 import {
   buildChatMessages,
   buildFigureRepairMessages,
@@ -217,7 +218,9 @@ export async function runChat(opts: ChatRunOptions): Promise<ChatResult[]> {
     const rawFigures = rawActions.filter((a) => a && typeof a === "object" && (a as { type?: unknown }).type === "draw_figure");
     let repaired = false;
     for (const f of rawFigures) {
-      const parsed = FigureSpecSchema.safeParse((f as { figure?: unknown }).figure);
+      // as the route reads it: cleaned first (`cleanChatActions`), then the shared schema
+      const cleaned = cleanChatActions([f]).actions[0];
+      const parsed = FigureSpecSchema.safeParse(cleaned?.type === "draw_figure" ? cleaned.figure : (f as { figure?: unknown }).figure);
       if (!parsed.success) {
         figures.push({ schema: false, cleanFirst: false, cleanAfterRepair: false, drawn: false, problems: [parsed.error.issues[0]?.message ?? "schema"] });
         continue;
@@ -254,20 +257,28 @@ export async function runChat(opts: ChatRunOptions): Promise<ChatResult[]> {
         proofs.push({ schema: false, worked: true, provedFirst: false, provedAfterRepair: false, rows: 0, reasons: [], prove: "", problems: ["schema"] });
         continue;
       }
-      const first = checkProofProposal(action);
-      if (first.ok || proofRepaired) {
-        proofs.push(proofScore(action, first));
-        continue;
-      }
-      proofRepaired = true;
-      const rec = await callModel(
-        { model, messages: buildProofRepairMessages(c.message, action, first.problems) as BenchMessage[], maxTokens: 2000, json: true, reasoning: "low", timeoutMs: 60_000 },
-        opts.ctx,
+      // the route's own gate (`gateChatProof`): a proof asked for as hard prefers `hardMinRows`
+      const gate = wantsHardProof(c.message) ? { minRows: PROOF_CHECK.hardMinRows } : {};
+      const first = checkProofProposal(action, gate);
+      let rcall: Omit<CallRecord, "content"> | undefined;
+      const gated = await gateChatProof(
+        action,
+        proofRepaired
+          ? null
+          : async (problems) => {
+              proofRepaired = true;
+              const rec = await callModel(
+                { model, messages: buildProofRepairMessages(c.message, action, problems) as BenchMessage[], maxTokens: 2000, json: true, reasoning: "low", timeoutMs: 60_000 },
+                opts.ctx,
+              );
+              const { content: rc, ...call } = rec;
+              rcall = call;
+              const fixed = ProofRepairReplySchema.safeParse(parseModelJson(rc) ?? {});
+              return fixed.success ? fixed.data : null;
+            },
+        gate,
       );
-      const { content: _rc, ...rcall } = rec;
-      void _rc;
-      const fixed = ProofRepairReplySchema.safeParse(parseModelJson(rec.content) ?? {});
-      const after = fixed.success ? checkProofProposal({ ...action, ...fixed.data }) : first;
+      const after = gated.ok ? checkProofProposal(gated.action) : first;
       proofs.push(proofScore(action, first, after, rcall));
     }
 
