@@ -16,6 +16,7 @@ import {
   type Editor,
 } from "tldraw";
 import React, { useCallback, useState, useRef, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import "tldraw/tldraw.css";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -58,7 +59,7 @@ import { supabase } from "@/lib/supabase";
 import { apiJson } from "@/lib/api-client";
 import { useApiErrorHandler } from "@/hooks/useApiErrorHandler";
 import { useParams, useRouter } from "next/navigation";
-import { Volume2, VolumeX } from "lucide-react";
+import { MessageSquare, Volume2, VolumeX } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import { CreditsBanner } from "@/components/CreditsBanner";
@@ -83,6 +84,9 @@ import { LiveHintLayer } from "@/components/live/LiveHintLayer";
 import { LiveErrorBoundary } from "@/components/live/LiveErrorBoundary";
 import { ASSET_COPY, LIVE_COPY } from "@/components/live/copy";
 import { boardToolbarView } from "@/components/live/toolbar";
+import { BoardChatPanel, CHAT_TOGGLE_ATTR } from "@/components/chat/BoardChatPanel";
+import { CHAT_COPY } from "@/components/chat/chatView";
+import { useChatOpen } from "@/components/chat/useBoardChat";
 
 // Ensure the tldraw canvas background is pure white in both light and dark modes
 DefaultColorThemePalette.lightMode.background = "#FFFFFF";
@@ -712,7 +716,14 @@ function VoiceAgentControls({
   );
 }
 
-function BoardContent({ id, initialVersion }: { id: string; initialVersion: number | null }) {
+interface BoardChatSlot {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** where the page lays the panel out: beside the board on a desktop, under it on a phone */
+  host: HTMLElement | null;
+}
+
+function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion: number | null; chat: BoardChatSlot }) {
   const editor = useEditor();
   useScreenCamera(editor);
   const router = useRouter();
@@ -806,6 +817,18 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
                 <span className="ml-1.5">{LIVE_COPY.solve.steps}</span>
               </Button>
             )}
+            <Button
+              variant={chat.open ? "secondary" : "outline"}
+              size="sm"
+              className={chat.open ? "shadow-sm" : "bg-white shadow-sm"}
+              title={CHAT_COPY.buttonHint}
+              aria-expanded={chat.open}
+              {...{ [CHAT_TOGGLE_ATTR]: "" }}
+              onClick={() => chat.onOpenChange(!chat.open)}
+            >
+              <MessageSquare className="h-4 w-4" />
+              <span className="ml-1.5">{CHAT_COPY.button}</span>
+            </Button>
             {toolbar.showStatusPill && (
               <LiveErrorBoundary>
                 <LiveStatusPill
@@ -852,6 +875,14 @@ function BoardContent({ id, initialVersion }: { id: string; initialVersion: numb
         </LiveErrorBoundary>
       )}
       <VoiceAgentControls onSessionChange={setIsVoiceSessionActive} controller={controller} />
+      {chat.open &&
+        chat.host &&
+        createPortal(
+          <LiveErrorBoundary>
+            <BoardChatPanel boardId={id} controller={controller} onClose={() => chat.onOpenChange(false)} />
+          </LiveErrorBoundary>,
+          chat.host,
+        )}
     </>
   );
 }
@@ -897,6 +928,9 @@ export default function BoardPage() {
   // `getAsset` lets the store derive object paths for assets restored from the snapshot
   // (not uploaded this session) so `editor.deleteAssets` also removes the Storage object.
   const userId = user?.id;
+  // The board chat: off by default, remembered per device; the page lays it out beside the board.
+  const [chatOpen, setChatOpen] = useChatOpen();
+  const [chatHost, setChatHost] = useState<HTMLElement | null>(null);
   // The store is created before the editor exists; `attach` (called from onMount) gives its
   // `getAsset` the mounted editor. A closure variable rather than a ref so nothing reads a
   // ref during render.
@@ -987,7 +1021,9 @@ export default function BoardPage() {
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0 }}>
+    <div style={{ position: "fixed", inset: 0 }} className="flex flex-col md:flex-row">
+      {/* the board refits whenever this box changes size (useScreenCamera): the whole screen stays in view */}
+      <div className="relative min-h-0 min-w-0 flex-1">
       <Tldraw
         shapeUtils={liveShapeUtils}
         tools={liveTools}
@@ -1055,8 +1091,18 @@ export default function BoardPage() {
           }
         }}
       >
-        <BoardContent id={id} initialVersion={initialVersion} />
+        <BoardContent id={id} initialVersion={initialVersion} chat={{ open: chatOpen, onOpenChange: setChatOpen, host: chatHost }} />
       </Tldraw>
+      </div>
+      {/* the chat panel: docked on the right on a desktop, a bottom sheet on a phone */}
+      <div
+        ref={setChatHost}
+        className={
+          chatOpen
+            ? "relative z-[1100] h-[46dvh] shrink-0 overflow-hidden border-t border-gray-200 bg-white shadow-[0_-4px_16px_rgba(0,0,0,0.06)] md:h-auto md:w-[360px] md:border-l md:border-t-0 md:shadow-none"
+            : "hidden"
+        }
+      />
     </div>
   );
 }
