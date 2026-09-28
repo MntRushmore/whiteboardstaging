@@ -145,7 +145,7 @@ const PROOF_SECTION = [
   '- "given": 1 to 4 statements; "prove": ONE statement — two congruent triangles, segments or angles, or two parallel lines. Write statements as: \\overline{AB} \\cong \\overline{CD}; \\angle ABC \\cong \\angle DEF (three letters, vertex in the middle); \\triangle ABC \\cong \\triangle DEF (matching vertices in the same order); \\overline{AB} \\parallel \\overline{CD}; \\overline{AD} \\perp \\overline{BC}; m\\angle ABC = 90^{\\circ}; M \\text{ is the midpoint of } \\overline{AB}; \\overrightarrow{BD} \\text{ bisects } \\angle ABC; \\overline{CD} \\text{ bisects } \\overline{AB} \\text{ at } M.',
   "- The figure: every point named by ONE capital letter; TRUE TO SCALE so every given is exactly true in the drawing (congruent sides the same length, a midpoint exactly in the middle, perpendicular lines at 90°, parallel lines parallel); EVERY side of every triangle in the proof drawn (segments), and a point on a side exactly on it. Mark the givens: equal ticks on congruent sides, arcs on congruent angles, a right-angle mark. No numbers as labels.",
   "- A proof OF a theorem must not use that theorem: to prove the base angles of an isosceles triangle congruent, draw the median AD to the midpoint D of the base and prove the two halves congruent (SSS), then CPCTC.",
-  '- "Hard" or "the hardest proof ever": a genuinely demanding one — overlapping triangles, congruences chained through CPCTC, several givens working together (isosceles + midpoint + perpendicular) — still only with those reasons, at most 12 rows; a playful one-line reply. The example below is a safe choice; a new one must still give every congruence its three parts from the givens or earlier rows.',
+  '- "Hard" or "the hardest proof ever": a genuinely demanding one — overlapping triangles, congruences chained through CPCTC, several givens working together (isosceles + midpoint + perpendicular) — still only with those reasons, at most 12 rows; a playful one-line reply. For "the hardest proof ever" use the example below (the engine proves it) unless the student asks for a different or new one; a new one must still give every congruence its three parts from the givens or earlier rows.',
   `- An ALGEBRA proof ("prove the sum of two odd numbers is even", "prove (a + b)^{2} = a^{2} + 2ab + b^{2}") is not write_proof: it is write_lines, maths only, from the left side down, each next line starting with "=" and equal to the line above: ${JSON.stringify(ALGEBRA_PROOF_EXAMPLE.lines)}. No words on the board: the reply says what it shows.`,
 ].join("\n");
 
@@ -339,11 +339,14 @@ export const FigureRepairReplySchema = z.object({ figure: FigureSpecSchema });
 export const PROOF_REPAIR_PROMPT = [
   "You fix a two-column geometry proof so the board's proof engine can prove it and draw it. You are given the request, the proof (its figure, its givens and what it proves) and the problems the engine found.",
   'OUTPUT: one JSON object and nothing else: {"figure": { ...the corrected figure... }, "given": ["<statement>", ...], "prove": "<statement>"}',
-  "Keep what the request asked for; change only what the problems need. The engine finds the rows itself.",
+  "Keep what the request asked for; change only what the problems need. The engine finds the rows itself. When the proof cannot be mended, or a harder one is asked for, an example below (each one proved by the engine) is a safe answer.",
   "",
   PROOF_SECTION,
   "",
   FIGURE_FORMAT,
+  "",
+  "EXAMPLES (the proof for each request):",
+  ...PROOF_EXAMPLES.map((e) => `${e.request} → ${JSON.stringify({ figure: e.action.figure, given: e.action.given, prove: e.action.prove })}`),
 ].join("\n");
 
 export function buildProofRepairMessages(request: string, proof: Pick<WriteProofAction, "figure" | "given" | "prove">, problems: readonly string[]): ChatMessage[] {

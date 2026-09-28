@@ -70,6 +70,8 @@ describe("chat prompt", () => {
     const action = PROOF_EXAMPLES[0].action;
     const [system, user] = buildProofRepairMessages("write a proof", action, ["The proof engine could not prove it", "AB is drawn 5 long"]);
     expect(system.content).toBe(PROOF_REPAIR_PROMPT);
+    // the proved examples are in reach of the repair: "a harder one" can be the hardest example
+    for (const e of PROOF_EXAMPLES) expect(PROOF_REPAIR_PROMPT).toContain(JSON.stringify(e.action.given));
     expect(String(user.content)).toContain(JSON.stringify({ figure: action.figure, given: action.given, prove: action.prove }));
     expect(String(user.content)).toContain("- The proof engine could not prove it\n- AB is drawn 5 long");
     expect(ProofRepairReplySchema.parse({ figure: action.figure, given: "\\overline{AB} \\cong \\overline{CD}", prove: "\\overline{AE} \\cong \\overline{CE}" }).given).toEqual(["\\overline{AB} \\cong \\overline{CD}"]);
