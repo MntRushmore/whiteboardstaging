@@ -1,0 +1,29 @@
+/* ---------------------------------------------------------------------------
+ * Arc theming for the platform pages (/, /login, /reset-password, /account), loaded after
+ * src/registry/foundation.css by src/app/(platform)/layout.tsx. Never loaded by /board, but it stays
+ * in the document after a client-side navigation there, so:
+ *  - page-wide rules are scoped to `body:has([data-platform])`, which stops matching once the
+ *    platform layout unmounts;
+ *  - token values only touch Arc's own names (the board's shadcn/Tailwind tokens are --ui-*).
+ * ------------------------------------------------------------------------- */
+
+/* html:root outranks foundation.css's :root whichever order the two files land in. */
+html:root {
+  /* Arc ships transparent ("no focus rings"). Keyboard focus gets a quiet ring instead: the
+     foreground at 55 % (about 3.3:1 on white), drawn by every Arc control's :focus-visible rule. */
+  --focus-ring: oklch(23% 0 0 / 0.55);
+}
+
+body:has([data-platform]) {
+  font-family: var(--font-body);
+  letter-spacing: var(--tracking-body);
+  color: var(--foreground);
+  background: var(--background);
+}
+
+/* The same ring on anything focusable without its own :focus-visible rule (links, the segmented
+   control). Zero specificity, so an Arc component's own focus style always wins. */
+:where(body:has([data-platform])) :where(:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}

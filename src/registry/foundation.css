@@ -175,5 +175,7 @@
   }
 }
 
-/* No focus rings or outlines for any input method (product decision). */
-:is(*:focus, *:focus-visible, *:focus-within) { outline: none !important; }
+/* Agathon: Arc ships `:is(*:focus, *:focus-visible, *:focus-within) { outline: none !important; }` here
+   ("no focus rings anywhere"). Removed: students use keyboards, and this file stays loaded after a
+   client-side navigation to the board, where it would strip every focus outline. Keyboard focus shows
+   through --focus-ring instead, set in src/app/(platform)/platform.css. */
