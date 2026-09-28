@@ -12,7 +12,7 @@
 import { checkProof, problemFacts, type ProofProblem } from "./checker";
 import { factLatex, seg, statementLatex, type AngRef, type Fact, type LineRef, type TriRef } from "./facts";
 import { lineThrough, type FigureModel } from "./figure";
-import { Know, POSTULATE_ORDER, PERMS } from "./know";
+import { angParts, Know, POSTULATE_ORDER, PERMS } from "./know";
 import { Resolver, segKey, triAngle, triSide } from "./resolve";
 import type { ReasonId } from "./vocab";
 import { reasonLatex } from "./vocab";
@@ -29,6 +29,13 @@ export interface PlannedRow {
 export interface PlanOptions {
   maxRounds?: number;
   maxFacts?: number;
+  /**
+   * Reasons the proof may not use: a proof OF a theorem cannot cite it (the base angles of an
+   * isosceles triangle are proved congruent by congruent halves, not by the Isosceles △ theorem).
+   */
+  without?: readonly ReasonId[];
+  /** called when the Prove statement is out of reach, with every fact the rules did reach (keyed) */
+  onUnreached?: (reached: ReadonlyMap<string, Fact>) => void;
 }
 
 interface Derivation {
@@ -46,6 +53,7 @@ const DEFAULTS = { maxRounds: 7, maxFacts: 4000 };
  */
 export function planProof(problem: ProofProblem, figure: FigureModel | null, opts: PlanOptions = {}): PlannedRow[] | null {
   const { maxRounds, maxFacts } = { ...DEFAULTS, ...opts };
+  const without = new Set<ReasonId>(opts.without ?? []);
   const goals = problem.prove?.facts ?? [];
   if (!problem.prove?.complete || goals.length === 0) return null;
   const r = new Resolver(figure, problemFacts(problem));
@@ -83,7 +91,7 @@ export function planProof(problem: ProofProblem, figure: FigureModel | null, opt
     const know = new Know(r);
     for (const f of known.values()) know.add(f);
     const fresh: Derivation[] = [];
-    for (const d of generate(know, r, figure, goals)) {
+    for (const d of generate(know, r, figure, goals, without)) {
       if (base.has(d.key)) continue;
       const list = derivs.get(d.key);
       if (list) {
@@ -101,7 +109,10 @@ export function planProof(problem: ProofProblem, figure: FigureModel | null, opt
     if (foundAt >= 0 && round > foundAt) break;
     if (fresh.length === 0 || known.size > maxFacts) break;
   }
-  if (foundAt < 0) return null;
+  if (foundAt < 0) {
+    opts.onUnreached?.(known);
+    return null;
+  }
 
   // the fewest rows for each fact: iterate derivations to a fixed point
   const givenSet = new Set(givenOrder);
@@ -205,9 +216,10 @@ function partsOfInterest(r: Resolver, facts: Iterable<Fact>): { segs: Set<string
 const lineRefOf = (fig: FigureModel, i: number): LineRef => ({ k: "line", a: fig.lines[i][0], b: fig.lines[i][fig.lines[i].length - 1] });
 
 /** Everything one rule application derives from what is known (direct facts only). */
-function generate(K: Know, r: Resolver, fig: FigureModel | null, goals: readonly Fact[]): Derivation[] {
+function generate(K: Know, r: Resolver, fig: FigureModel | null, goals: readonly Fact[], without: ReadonlySet<ReasonId>): Derivation[] {
   const out: Derivation[] = [];
   const push = (fact: Fact, reason: ReasonId, premises: string[]) => {
+    if (without.has(reason)) return;
     const key = r.factKey(fact);
     if (key === null || premises.some((p) => !p)) return;
     out.push({ fact, key, reason, premises });
@@ -376,4 +388,38 @@ function generate(K: Know, r: Resolver, fig: FigureModel | null, goals: readonly
     }
   }
   return out;
+}
+
+/**
+ * The reasons a proof of `problem`'s Prove statement may not cite, because they ARE what is being
+ * proved (`PlanOptions.without`): two angles of one triangle are the base angles theorem (Isos. △
+ * thm), two sides from one vertex of a triangle its converse, two vertical angles the vertical
+ * angles theorem. The board chat's proofs are checked without them (`chat/proof.ts`), and Help on
+ * one the tutor set up continues without them.
+ */
+export function theoremsBeingProved(problem: ProofProblem, figure: FigureModel | null): ReasonId[] {
+  const r = new Resolver(figure, problemFacts(problem));
+  const out = new Set<ReasonId>();
+  const anglesOf = (t: TriRef) => [0, 1, 2].map((i) => r.angKey(triAngle(t, i)));
+  for (const f of problem.prove?.facts ?? []) {
+    if (f.t === "angCong") {
+      const a = r.angKey(f.x);
+      const b = r.angKey(f.y);
+      if (!a || !b || a === b) continue;
+      if (r.triangles.some((t) => anglesOf(t).includes(a) && anglesOf(t).includes(b))) out.add("isosceles");
+      const pair = (x: AngRef, y: AngRef) => {
+        const [kx, ky] = [r.angKey(x), r.angKey(y)];
+        return (kx === a && ky === b) || (kx === b && ky === a);
+      };
+      if (angParts(a).v === angParts(b).v && (figure?.vertical ?? []).some(([x, y]) => pair(x, y))) out.add("vertical");
+    } else if (f.t === "segCong") {
+      const x = segKey(f.x);
+      const y = segKey(f.y);
+      const shared = [...x].find((p) => y.includes(p));
+      if (!shared || x === y) continue;
+      const others = [...x, ...y].filter((p) => p !== shared);
+      if (r.triangles.some((t) => t.includes(shared) && others.every((p) => t.includes(p)))) out.add("isoscelesConverse");
+    }
+  }
+  return [...out];
 }

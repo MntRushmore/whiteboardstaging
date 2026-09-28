@@ -52,7 +52,7 @@ export function verifyProblem(engine: LiveEngine, lines: readonly string[], canD
   return { ok: true, steps };
 }
 
-export type LinesVerdict = { ok: true } | { ok: false; reason: "words" | "false" | "unwritable" };
+export type LinesVerdict = { ok: true } | { ok: false; reason: "words" | "false" | "unchecked" | "unwritable" };
 
 /**
  * Maths written as given (`write_lines`: a formula, a definition, the lines of a derivation the
@@ -60,17 +60,94 @@ export type LinesVerdict = { ok: true } | { ok: false; reason: "words" | "false"
  * wrong on its face or does not follow from the line above (`analyzeColumn`'s `mismatch`, the same
  * verdict that rings a student's line) drops the whole block. A formula the engine cannot judge
  * (`x = \frac{-b \pm \sqrt{b^{2} - 4ac}}{2a}`) is written as given.
+ *
+ * A CHAIN in plain algebra — an expression, then lines that each begin with `=` (an algebra proof:
+ * `(2m + 1) + (2n + 1)`, `= 2m + 2n + 2`, `= 2(m + n + 1)`) — is a proof, and is held to more: every step must be
+ * shown EQUAL to the line above — the engine's own proof-column check ticks it, or `stepHolds` does
+ * — not merely not shown false; one the engine cannot confirm drops the block (`unchecked`).
  */
 export function verifyLines(engine: LiveEngine, lines: readonly string[], canDraw: (lines: readonly string[]) => boolean = () => true): LinesVerdict {
   const clean = lines.map((l) => l.trim()).filter(Boolean);
   if (clean.length === 0 || clean.some(hasWords)) return { ok: false, reason: "words" };
+  let analyses: (LineAnalysis | null)[] = [];
   try {
-    if (analyzeColumn(engine, clean, "answer").some((a) => a?.verdict === "mismatch")) return { ok: false, reason: "false" };
+    analyses = analyzeColumn(engine, clean, "answer");
+    if (analyses.some((a) => a?.verdict === "mismatch")) return { ok: false, reason: "false" };
   } catch {
     // the engine threw on a line it cannot read: a formula it cannot judge, written as given
   }
+  if (isChain(clean) && clean.every(isPlainAlgebra)) {
+    for (let i = 1; i < clean.length; i++) {
+      // the engine's own check of the line under the one above (a proof column) ticked it
+      if (analyses[i]?.verdict === "ok") continue;
+      const step = stepHolds(engine, stripEquals(clean[i - 1]), stripEquals(clean[i]));
+      if (step !== "ok") return { ok: false, reason: step === "mismatch" ? "false" : "unchecked" };
+    }
+  }
   if (!canDraw(clean)) return { ok: false, reason: "unwritable" };
   return { ok: true };
+}
+
+/** An expression and the lines under it that each begin with `=`: a chain of equal expressions. */
+export function isChain(lines: readonly string[]): boolean {
+  if (lines.length < 2 || /=/.test(lines[0])) return false;
+  return lines.slice(1).every((l) => /^=(?!=)/.test(l.trim()) && !/=/.test(stripEquals(l)));
+}
+
+function stripEquals(line: string): string {
+  return line.trim().replace(/^=\s*/, "");
+}
+
+/**
+ * Plain algebra: letters that stand for numbers — no subscript, no derivative's d, no integral's or
+ * limit's bound variable, no prime. What `stepHolds` can put numbers into.
+ */
+export function isPlainAlgebra(line: string): boolean {
+  return !/[_']|\\(?:int|lim|sum|prod|partial|mathrm)\b|\\frac\{d/.test(stripEquals(line));
+}
+
+/** Integer values the letters are given, one set per check (irregular, so a slip does not cancel). */
+const STEP_SAMPLES: readonly (readonly number[])[] = [
+  [3, 7, 2, 5],
+  [-2, 5, 11, -3],
+  [11, -4, 6, 13],
+];
+
+/** The letters a line uses as its unknowns: single letters outside commands (not `e`, `i`). */
+function lettersOf(latex: string): string[] {
+  const out = new Set<string>();
+  for (const m of latex.matchAll(/\\[a-zA-Z]+|[a-zA-Z]/g)) if (m[0].length === 1 && m[0] !== "e" && m[0] !== "i") out.add(m[0]);
+  return [...out];
+}
+
+function substitute(latex: string, values: ReadonlyMap<string, number>): string {
+  return latex.replace(/\\[a-zA-Z]+|[a-zA-Z]/g, (t) => (t.length === 1 && values.has(t) ? `(${values.get(t)})` : t));
+}
+
+/**
+ * Is `b` equal to `a` for every value of their letters? Checked by the engine itself: the letters
+ * are given the same whole numbers on both sides, three times over, and the engine judges each
+ * `a = b` (a closed equation: exact, as it judges `2 + 2 = 5`). `ok` only when all three hold;
+ * `mismatch` when one is provably false; `unknown` when the engine cannot tell (subscripts, too
+ * many letters, a value it cannot compute).
+ */
+export function stepHolds(engine: LiveEngine, a: string, b: string): "ok" | "mismatch" | "unknown" {
+  if (!a || !b || /=/.test(a + b) || !isPlainAlgebra(a) || !isPlainAlgebra(b)) return "unknown";
+  const letters = [...new Set([...lettersOf(a), ...lettersOf(b)])];
+  if (letters.length > STEP_SAMPLES[0].length) return "unknown";
+  let held = 0;
+  for (const sample of STEP_SAMPLES) {
+    const values = new Map(letters.map((l, k) => [l, sample[k]] as const));
+    let verdict: LineAnalysis["verdict"] | undefined;
+    try {
+      verdict = engine.analyzeLine(`${substitute(a, values)} = ${substitute(b, values)}`, { mode: "answer" }).verdict;
+    } catch {
+      return "unknown";
+    }
+    if (verdict === "mismatch") return "mismatch";
+    if (verdict === "ok") held++;
+  }
+  return held === STEP_SAMPLES.length ? "ok" : "unknown";
 }
 
 /** The last line of a verified problem's solution, for "clean answers" in the eval (`x = 4`, `= (x + 3)(x + 2)`). */

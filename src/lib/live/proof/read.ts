@@ -219,7 +219,12 @@ export function readProofs(lines: readonly BoardLine[]): ProofRead[] {
     const prove = pick(proves);
     const given = pick(givens.filter((g) => !prove || g.bounds.y <= prove.bounds.y));
     const top = Math.min(...[given, prove].filter((l): l is BoardLine => Boolean(l)).map((l) => l.bounds.y), anchorTop);
-    const header = headers.filter((h) => !taken.has(h.id) && h.bounds.y >= top - 1 && bottomOf(h.bounds) <= anchorTop + 0.5 * h.bounds.h);
+    // no rows yet: the table's `Statements | Reasons` header written just under the Prove line is
+    // this proof's (a table set up and not begun — the tutor's `write_proof` for the student, or a
+    // student's own), so the first row goes under it and its reason under `Reasons`
+    const underProve = (h: BoardLine) =>
+      paired.length === 0 && h.bounds.y >= anchorTop - 1 && h.bounds.y - anchorTop <= 3 * lh && h.bounds.x >= box.x - 4 * lh && h.bounds.x <= box.x + Math.max(box.w + 12 * lh, 24 * lh);
+    const header = headers.filter((h) => !taken.has(h.id) && ((h.bounds.y >= top - 1 && bottomOf(h.bounds) <= anchorTop + 0.5 * h.bounds.h) || underProve(h)));
     // a Given continued on the next line(s): statements between it and the Prove line / the first row
     const givenLines = given ? [given] : [];
     if (given) {
