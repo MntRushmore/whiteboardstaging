@@ -11,6 +11,7 @@ import {
   type MathShapeProps,
   type RecognizeResponse,
   type SetupRequest,
+  type SetupResponse,
   type SolveStep,
   type UseLiveMathOptions,
 } from "../contracts";
@@ -51,6 +52,7 @@ describe("live loop — word problems: the model sets up, the engine solves", ()
   let script: LiveSseEvent[][];
   let reads: Array<Partial<RecognizeResponse>>;
   let setupReply: string[] | Error;
+  let setupSketch: SetupResponse["sketch"];
   let setupBodies: SetupRequest[];
   let online: boolean;
   let handwriting: boolean;
@@ -77,7 +79,7 @@ describe("live loop — word problems: the model sets up, the engine solves", ()
         setup: async (req) => {
           setupBodies.push(req);
           if (setupReply instanceof Error) throw setupReply;
-          return { lines: setupReply, model: "openai/gpt-5.4-mini", ms: 700 };
+          return { lines: setupReply, model: "openai/gpt-5.4-mini", ms: 700, ...(setupSketch ? { sketch: setupSketch } : {}) };
         },
         reread: async () => {
           throw new Error("no second reader in this file");
@@ -127,6 +129,7 @@ describe("live loop — word problems: the model sets up, the engine solves", ()
     script = [];
     reads = [{ latex: TRAIN }];
     setupReply = ["v = \\frac{150}{2.5}"];
+    setupSketch = undefined;
     setupBodies = [];
     online = true;
     handwriting = true;
@@ -157,6 +160,56 @@ describe("live loop — word problems: the model sets up, the engine solves", ()
     expect(tutorInk().every((s) => (s.meta as Record<string, unknown>).solvedLatex === wordProblemKey([TRAIN]))).toBe(true);
     expect(liveStore.lastError.get()).toBeNull();
     expect(liveStore.solving.get()).toBe(0);
+  });
+
+  it("a problem that describes a picture gets its sketch beside the working, drawn after it", async () => {
+    reads = [{ latex: "\\text{A 10 ft ladder leans on a wall with its foot 6 ft out. How high does it reach?}" }];
+    setupReply = ["h^{2} + 6^{2} = 10^{2}"];
+    setupSketch = {
+      points: { A: { x: 0, y: 0 }, B: { x: 0, y: 8 }, C: { x: 6, y: 0 } },
+      polygons: [{ vertices: ["A", "B", "C"] }],
+      segments: [
+        { from: "A", to: "C", label: "6" },
+        { from: "B", to: "C", label: "10" },
+        { from: "A", to: "B", label: "h" },
+      ],
+      angles: [{ at: "A", from: "B", to: "C", right: true }],
+    };
+    const lineId = await write();
+    await run(() => loop.requestSolve(lineId));
+
+    expect(solves()).toEqual([]);
+    const blocks = new Map<string, typeof tutorInk extends () => infer T ? T : never>();
+    for (const s of tutorInk()) {
+      const b = String((s.meta as Record<string, unknown>).handBlock);
+      blocks.set(b, [...(blocks.get(b) ?? []), s]);
+    }
+    // the working, and the figure
+    expect(blocks.size).toBe(2);
+    const setup = ["h^{2} + 6^{2} = 10^{2}"];
+    const working = [...blocks.values()].find((ss) => handLinesOf(ss)[0] === setup[0]);
+    expect(working && handLinesOf(working)).toEqual(expectedBlock(setup));
+    // both are this solution's: Solve again (or a new solution) replaces them together
+    expect(tutorInk().every((s) => (s.meta as Record<string, unknown>).solvedLatex === wordProblemKey([reads[0].latex!]))).toBe(true);
+    // the figure is not written over the working
+    const [steps, figure] = [working!, [...blocks.values()].find((ss) => ss !== working)!].map((ss) => {
+      const xs = ss.map((s) => s.x);
+      const ys = ss.map((s) => s.y);
+      return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+    });
+    expect(figure.x0 >= steps.x1 || figure.y0 >= steps.y1 || figure.x1 <= steps.x0).toBe(true);
+  });
+
+  it("no sketch without the hand: the working is typeset and nothing is drawn", async () => {
+    handwriting = false;
+    start();
+    reads = [{ latex: "\\text{A 10 ft ladder leans on a wall with its foot 6 ft out. How high does it reach?}" }];
+    setupReply = ["h^{2} + 6^{2} = 10^{2}"];
+    setupSketch = { points: { A: { x: 0, y: 0 }, B: { x: 0, y: 8 }, C: { x: 6, y: 0 } }, polygons: [{ vertices: ["A", "B", "C"] }] };
+    const lineId = await write();
+    await run(() => loop.requestSolve(lineId));
+    expect(tutorInk()).toEqual([]);
+    expect(typeset().length).toBeGreaterThan(0);
   });
 
   it("a second Solve on the same problem draws nothing new and costs no second setup", async () => {

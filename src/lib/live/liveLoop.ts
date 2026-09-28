@@ -438,6 +438,8 @@ export class LiveLoop implements LiveController {
   /** the graph being sketched, if any (one at a time), and its key */
   private graphWriter: HandWriter | null = null;
   private graphWriterKey: string | null = null;
+  /** a word problem's sketch, drawn after its working (`drawSketch`) */
+  private sketchWriter: HandWriter | null = null;
   /** `engine.graphFor` by column content */
   private readonly graphMemo = new Map<string, GraphIntent | null>();
   /** graph keys the student rubbed out on this screen: not drawn again unless asked */
@@ -2921,7 +2923,7 @@ export class LiveLoop implements LiveController {
         } else {
           const setup = validateSetupLines(engine, res.lines, problem);
           if (!setup) reason = "invalid";
-          else if (this.writeSetupSolution(engine, built, opts, setup, key)) outcome = "written";
+          else if (this.writeSetupSolution(engine, built, opts, setup, key, res.sketch)) outcome = "written";
           else reason = "unsolved";
         }
       } catch (err) {
@@ -2957,7 +2959,7 @@ export class LiveLoop implements LiveController {
    * Solves a validated setup with the local engine and writes setup + steps as one block.
    * False when the engine cannot solve it (nothing is written; the caller falls back).
    */
-  private writeSetupSolution(engine: LiveEngine, built: { states: LiveLineState[] }, opts: SolveOpts, setup: string[], key: string): boolean {
+  private writeSetupSolution(engine: LiveEngine, built: { states: LiveLineState[] }, opts: SolveOpts, setup: string[], key: string, sketch?: FigureSpec): boolean {
     const state = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
     if (!state) return false;
     const hand = this.deps.handwritingEnabled();
@@ -2970,15 +2972,71 @@ export class LiveLoop implements LiveController {
     // A new solution replaces the last one for this work; it never stacks beside it.
     this.clearSolveOutput(built.states.map((s) => s.line.id));
     const meta = opts.onlyFirstStep ? undefined : { [SOLVED_META]: key };
-    if (hand && this.drawStepsByHand(built, opts, state, block, meta)) {
+    const written = hand ? this.drawStepsByHand(built, opts, state, block, meta) : null;
+    if (written) {
       clientMetric("live.setup.hand", { lineId: opts.lineId, source: solved.source, lines: block.length });
+    } else {
+      const lastLine = built.states[built.states.length - 1].line.bounds;
+      const column = unionRects(built.states.map((s) => s.line.bounds));
+      block.forEach((step, i) => this.placeSolutionStep(column, lastLine, i + 1, step, "", opts.lineId, meta));
+      clientMetric("live.setup.typeset", { lineId: opts.lineId, source: solved.source, lines: block.length });
+    }
+    // the picture the problem describes, beside the work: only with the whole solution, not a hint
+    if (sketch && !opts.onlyFirstStep) this.drawSketch(sketch, built, opts, written, meta);
+    return true;
+  }
+
+  /**
+   * A word problem's sketch (the setup route's `sketch`: a figure `checkFigure` passed) in the
+   * tutor's hand, placed as a graph is — beside the work, else under it and its working — and
+   * drawn once the working is written. It carries the solution's key, so a new solution replaces
+   * it with the working. False when the hand is off or there is no room.
+   */
+  private drawSketch(sketch: FigureSpec, built: { states: LiveLineState[] }, opts: SolveOpts, written: { rect: Rect; wallMs: number } | null, meta: JsonObject | undefined): boolean {
+    if (!this.deps.handwritingEnabled()) return false;
+    const column = unionRects(built.states.map((s) => s.line.bounds));
+    const under = written ? unionRects([column, written.rect]) : column;
+    const avoid: Rect[] = [];
+    for (const s of this.editor.getCurrentPageShapes()) {
+      const b = this.editor.getShapePageBounds(s);
+      if (b) avoid.push(boxToRect(b));
+    }
+    if (written) avoid.push(written.rect);
+    const bounds = this.placementBounds();
+    const seed = handSeedFor(`sketch:${opts.lineId}`);
+    for (const box of [GRAPH.box, ...GRAPH.fallbackBoxes]) {
+      let res: FigurePlanResult | null = null;
+      try {
+        res = this.deps.planFigure(sketch, { seed, box });
+      } catch {
+        res = null;
+      }
+      if (!res) return false;
+      const slot = placeGraphBlock({ w: res.plan.bounds.w, h: res.plan.bounds.h }, { column, under, bounds, avoid });
+      if (!slot) continue;
+      this.startSketchWriter(placeHandPlan(res.plan, { x: slot.x, y: slot.y }), opts.lineId, written ? written.wallMs + 300 : 0, meta);
+      clientMetric("live.setup.sketch", { lineId: opts.lineId });
       return true;
     }
-    const lastLine = built.states[built.states.length - 1].line.bounds;
-    const column = unionRects(built.states.map((s) => s.line.bounds));
-    block.forEach((step, i) => this.placeSolutionStep(column, lastLine, i + 1, step, "", opts.lineId, meta));
-    clientMetric("live.setup.typeset", { lineId: opts.lineId, source: solved.source, lines: block.length });
-    return true;
+    clientMetric("live.setup.sketch.noRoom", { lineId: opts.lineId });
+    return false;
+  }
+
+  private startSketchWriter(plan: HandPlan, lineId: string, delayMs: number, extraMeta: JsonObject | undefined): void {
+    const prev = this.sketchWriter;
+    this.sketchWriter = null;
+    prev?.cancel();
+    const writer = this.makeWriter();
+    this.sketchWriter = writer;
+    writer.start(plan, {
+      meta: makeMeta("ai", lineId, this.deps.now()),
+      ...(extraMeta ? { extraMeta } : {}),
+      delayMs,
+      whole: true,
+      onDone: () => {
+        if (this.sketchWriter === writer) this.sketchWriter = null;
+      },
+    });
   }
 
   /** `/api/live/solve`: the model's worked solution, checked step by step, written when the stream ends. */
@@ -3286,6 +3344,9 @@ export class LiveLoop implements LiveController {
     const graph = this.graphWriter;
     this.graphWriter = null;
     graph?.cancel();
+    const sketch = this.sketchWriter;
+    this.sketchWriter = null;
+    sketch?.cancel();
   }
 
   /** fetch rejects with a TypeError when the network is unreachable. */
