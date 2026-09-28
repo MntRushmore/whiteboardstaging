@@ -16,8 +16,6 @@ import {
   planCardsFor,
   remainingTone,
   resetSentenceFor,
-  routeLabel,
-  usageRowsFor,
   usedPercent,
   type CreditSummary,
   type Plan,
@@ -195,50 +193,12 @@ describe("planCardsFor", () => {
   });
 });
 
-describe("route labels", () => {
+describe("canonicalRouteKey", () => {
   it("canonicalizes the route spelling", () => {
     expect(canonicalRouteKey("/api/live/recognize")).toBe("live-recognize");
     expect(canonicalRouteKey("live_recognize")).toBe("live-recognize");
     expect(canonicalRouteKey("Live/Check/")).toBe("live-check");
-  });
-  it("maps every metered route to a human label and falls back to the key", () => {
-    expect(routeLabel("/api/live/recognize")).toBe("Handwriting recognition");
-    expect(routeLabel("live/check")).toBe("Hint check");
-    expect(routeLabel("live/solve")).toBe("Worked solution");
-    expect(routeLabel("generate-solution")).toBe("Drawn help (retired)");
-    expect(routeLabel("/api/generate-worksheet")).toBe("Worksheet (retired)");
-    expect(routeLabel("voice/analyze-workspace")).toBe("Voice analysis");
-    expect(routeLabel("ocr")).toBe("Text recognition (retired)");
-    expect(routeLabel("check-help-needed")).toBe("Help check (retired)");
-    expect(routeLabel("/api/something/new")).toBe("something-new");
-    expect(routeLabel("")).toBe("Other");
-  });
-});
-
-describe("usageRowsFor", () => {
-  it("builds rows with labels, formatted times and numeric credits (from `units`, or `credits` as an alias)", () => {
-    const rows = usageRowsFor(
-      [
-        { id: "a", route: "/api/live/solve", units: 10, created_at: "2026-09-17T15:04:00Z" },
-        { id: 7, route: "generate-worksheet", credits: "20", created_at: "2026-09-16T09:30:00Z" },
-      ],
-      { timeZone: "UTC" },
-    );
-    expect(rows).toEqual([
-      { id: "a", when: "Sep 17, 3:04 PM", whenIso: "2026-09-17T15:04:00.000Z", what: "Worked solution", credits: 10 },
-      { id: "7", when: "Sep 16, 9:30 AM", whenIso: "2026-09-16T09:30:00.000Z", what: "Worksheet (retired)", credits: 20 },
-    ]);
-  });
-  it("falls back to the cost table when a row has no credits, and survives missing fields", () => {
-    const rows = usageRowsFor([{ route: "live/check" }, { route: "/api/live/check", units: null, created_at: "bad" }], {
-      costs: { "/api/live/check": 3 },
-      timeZone: "UTC",
-    });
-    expect(rows[0]).toEqual({ id: "row-0", when: "", whenIso: "", what: "Hint check", credits: 3 });
-    expect(rows[1].credits).toBe(3);
-    // a real migration row: units wins over the alias
-    expect(usageRowsFor([{ route: "ocr", units: 2, credits: 99 }])[0].credits).toBe(2);
-    expect(usageRowsFor([])).toEqual([]);
+    expect(canonicalRouteKey("")).toBe("");
   });
 });
 

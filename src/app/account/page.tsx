@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { ProfileCard } from "@/components/account/ProfileCard";
 import { PlanCreditsCard } from "@/components/account/PlanCreditsCard";
 import { PlansGrid } from "@/components/account/PlansGrid";
-import { UsageTable } from "@/components/account/UsageTable";
+import { UsageCard } from "@/components/account/UsageCard";
 import { DangerZone } from "@/components/account/DangerZone";
 import { useCreditSummary } from "@/lib/billing/useCreditSummary";
 import { ACCOUNT_COPY, accountPageStateFor } from "@/lib/billing/accountState";
@@ -104,7 +104,7 @@ export default function AccountPage() {
               />
             )}
             <PlansGrid summary={credits.summary} />
-            <UsageTable userId={user.id} />
+            <UsageCard usedCredits={credits.summary?.used} />
             <DangerZone email={email} />
           </div>
         )}
