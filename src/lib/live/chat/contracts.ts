@@ -63,6 +63,11 @@ export const ChatScreenSchema = z.object({
   tutor: z.array(z.string().max(CHAT_LIMITS.lineLatex)).max(CHAT_LIMITS.screenLines).default([]),
   /** the problems the chat wrote on this screen, in order (a system is its lines joined by "; ") */
   problems: z.array(z.string().max(CHAT_LIMITS.lineLatex * CHAT_LIMITS.problemLines)).max(CHAT_LIMITS.problems).default([]),
+  /**
+   * each problem's number as written on the board, in the order of `problems` ("help me with 7" on
+   * a screen holding 5–8 of a set). Absent (an older client): 1, 2, 3… in order.
+   */
+  numbers: z.array(z.number().int().min(1).max(999)).max(CHAT_LIMITS.problems).optional(),
 });
 export type ChatScreen = z.infer<typeof ChatScreenSchema>;
 
@@ -117,6 +122,19 @@ export const NewScreenSchema = z.object({ type: z.literal("new_screen") });
 /** Erase the tutor's ink on this screen (its writing, marks, graphs, figures). */
 export const ClearTutorSchema = z.object({ type: z.literal("clear_tutor") });
 
+/**
+ * Help with a problem the chat wrote on this screen, by its number on the board: the tutor works it
+ * under the problem in its hand — `step`, the next step (continuing from the student's last good
+ * line under it, else from the tutor's own last step there, else the first); `solve`, the rest of it
+ * worked out. The engine does the maths (`LiveLoop.chatHelp`); the model only says which and how
+ * much. A number not on the screen is dropped with a note.
+ */
+export const HelpProblemSchema = z.object({
+  type: z.literal("help_problem"),
+  problem: z.number().int().min(1).max(999),
+  depth: z.enum(["step", "solve"]),
+});
+
 export const ChatActionSchema = z.discriminatedUnion("type", [
   WriteProblemsSchema,
   WriteLinesSchema,
@@ -124,10 +142,16 @@ export const ChatActionSchema = z.discriminatedUnion("type", [
   DrawFigureSchema,
   NewScreenSchema,
   ClearTutorSchema,
+  HelpProblemSchema,
 ]);
 export type ChatAction = z.infer<typeof ChatActionSchema>;
 export type ChatActionType = ChatAction["type"];
-export const CHAT_ACTION_TYPES = ["write_problems", "write_lines", "graph", "draw_figure", "new_screen", "clear_tutor"] as const satisfies readonly ChatActionType[];
+export const CHAT_ACTION_TYPES = ["write_problems", "write_lines", "graph", "draw_figure", "new_screen", "clear_tutor", "help_problem"] as const satisfies readonly ChatActionType[];
+
+/** The note for help asked about a problem that is not on this screen (the route's, and the board's). */
+export function noProblemNote(n: number): string {
+  return `There's no problem ${n} on this screen.`;
+}
 
 // ------------------------------------------------------------------ response
 

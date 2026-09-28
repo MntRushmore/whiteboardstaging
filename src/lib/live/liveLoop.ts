@@ -4004,6 +4004,7 @@ export class LiveLoop implements LiveController {
       screenReady: () => !this.started || this.screenSeen === this.pageKey(),
       clearTutor: () => this.clearMarks(),
       problemsChanged: () => this.refreshProblemColumns(),
+      helpProblem: (n, depth) => this.chatHelp(n, depth),
       planFigure: (spec, opts) => this.deps.planFigure(spec, opts),
       seed: (key) => handSeedFor(key),
       delay: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
@@ -4283,9 +4284,10 @@ export class LiveLoop implements LiveController {
    * (`now`). Engine only — a model is only asked when the student asks (`escalate`).
    * Returns whether a step was written or is waiting to be.
    */
-  private suggestNextStep(lineId: string, opts: { now?: boolean } = {}): boolean {
-    // Unasked, only Suggest and Solve write the step; asked (Help), any mode but Off does.
-    if (!this.opts.enabled || this.opts.mode === "off") return false;
+  private suggestNextStep(lineId: string, opts: { now?: boolean; typed?: boolean } = {}): boolean {
+    // Unasked, only Suggest and Solve write the step; asked (Help), any mode but Off does; typed
+    // into the board chat, any mode at all.
+    if (!opts.typed && (!this.opts.enabled || this.opts.mode === "off")) return false;
     if (!opts.now && this.opts.mode !== "suggest" && this.opts.mode !== "answer") return false;
     const state = liveStore.lines.get()[lineId];
     if (!state?.latex) return false;
@@ -4361,6 +4363,47 @@ export class LiveLoop implements LiveController {
     // graph is the help — sketched from the engine, no model asked. Otherwise the next step.
     if (this.syncGraph(target.line.column, { asked: true, anchorLineId: lineId })) return;
     this.startSolve(target.line.column, lineId, { onlyFirstStep: true, lineId });
+  }
+
+  /**
+   * The board chat's "help me with 3" / "solve 3" (`help_problem`) on problem `n` of this screen.
+   * With the student's work under it, their work gets the help Help and Solve steps give it: the
+   * next step after their last line (the right one beside it when that line is wrong), or the rest
+   * worked out from their last good line. Else the tutor works the problem itself (`workProblem`):
+   * its next step after the tutor's own last one there, or the rest of it. A typed request is an
+   * explicit ask: answered whatever the dial says, Off included. `done` when the student has
+   * already solved it, or nothing is left to write.
+   */
+  private chatHelp(n: number, depth: ProblemDepth): "writing" | "done" | "busy" | "missing" {
+    const cell = this.problemCells().find((c) => c.n === n);
+    if (!cell) return "missing";
+    const line = this.workUnder(cell);
+    if (!line) return this.workProblem(cell, depth, "chat");
+    if (line.analysis?.solved) return "done";
+    const column = line.line.column;
+    if (depth === "solve") {
+      const lastOk = this.columnLines(column)
+        .filter((s) => s.latex)
+        .reverse()
+        .find((s) => s.analysis?.verdict === "ok" || s.analysis?.solved);
+      return this.solveColumn(column, lastOk?.line.id ?? line.line.id, { lineId: line.line.id });
+    }
+    const wrong = line.analysis?.verdict === "mismatch" || this.modelFlagged(line);
+    if (wrong) {
+      if (this.suggestNextStep(line.line.id, { now: true, typed: true })) return "writing";
+      const good = this.lastGoodLineAbove(line);
+      if (good) return this.solveColumn(column, good.line.id, { onlyFirstStep: true, lineId: good.line.id });
+    }
+    if (this.syncGraph(column, { asked: true, anchorLineId: line.line.id })) return "writing";
+    return this.solveColumn(column, line.line.id, { onlyFirstStep: true, lineId: line.line.id });
+  }
+
+  /** Solve on a column of the student's, asked for in the board chat: the Live switch does not gate it. */
+  private solveColumn(column: number, fromLineId: string | undefined, opts: SolveOpts): "writing" | "busy" {
+    const built = this.buildCheckLines(column);
+    if (!built) return "busy";
+    this.solveBuilt(built, fromLineId, opts);
+    return "writing";
   }
 
   dismissHint(hintId: string): void {

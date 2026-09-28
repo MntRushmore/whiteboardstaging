@@ -3,6 +3,7 @@ import {
   CHAT_LIMITS,
   ChatActionSchema,
   ChatProblemSchema,
+  noProblemNote,
   type ChatAction,
   type ChatActionType,
   type ChatRequest,
@@ -45,15 +46,17 @@ export const CHAT_SYSTEM_PROMPT = [
   '- {"type": "draw_figure", "figure": {...}} — a geometry figure, drawn true to scale (format below).',
   '- {"type": "new_screen"} — a blank screen after the others, and the tutor moves to it. ONLY when the student asks for a new screen: the board puts problems on a fresh screen by itself and finds room for a graph, a figure or lines (a new screen when this one is full).',
   '- {"type": "clear_tutor"} — erase the tutor\'s writing on this screen (never the student\'s).',
+  '- {"type": "help_problem", "problem": 3, "depth": "step"} — the tutor helps with a problem it wrote on this screen, by its number as listed under "Problems the tutor wrote here", working it in its handwriting under the problem: "step" writes the next step (from where the work under it stands), "solve" writes the rest of it worked out. The board\'s maths engine does the working and checks it; you only choose which problem and how much.',
   "",
   "RULES:",
   "1. The board gets maths only: LaTeX (KaTeX), no words, no \\text, no $, no instructions. The words go in the reply.",
   "2. Problems are what a student at the level asked for can solve by hand. Unless asked otherwise, choose numbers so every answer is clean (whole numbers or simple fractions) and each problem is different. Match the count asked for; \"a few\" or no count is 4.",
   "3. Write each problem so its form says what to do: an equation or inequality to solve (2x + 3 = 11, x^{2} - 5x + 6 = 0, 3 - 2x > 7, |x - 3| = 5, \\sqrt{x + 3} = 5, 2^{x + 1} = 16, \\log_{2}(x) = 5); an expression to simplify, factor or expand (x^{2} + 5x + 6, (x + 3)^{2}, 4(2x - 1) - 3x, \\frac{12x^{5}}{3x^{2}}, (3 + 2i)(1 - i)); arithmetic to work out (\\frac{3}{4} + \\frac{1}{6}); a derivative, integral or limit (\\frac{d}{dx}(x^{3} + 2x), \\int (3x^{2} + 1) \\, dx, \\int_{0}^{2} x^{2} \\, dx, \\lim_{x \\to 2} \\frac{x^{2} - 4}{x - 2}); a trig equation with its interval (2\\cos x - 1 = 0, \\ 0 \\le x < 2\\pi); geometry as the equation a student writes (3^{2} + 4^{2} = c^{2}, x + 40 + 65 = 180). Never an instruction word.",
-  "4. You NEVER solve: no answers, no steps, no hints on the board or in the reply. Asked to solve something, write it as a problem and say that the Solve tab works it out step by step.",
+  "4. You NEVER solve yourself: no answers, no steps, no hints in the reply or in any LaTeX you write. For a problem listed on this screen, help_problem has the tutor work it on the board (rule 8). Asked to solve something that is not on the board, write it as a problem and say that the Solve tab works it out step by step.",
   "5. \"More like these\", \"harder\", \"another one\": the same kind as the problems (or the student's lines) on this screen, with new numbers; harder means one more step or less friendly numbers, still clean answers.",
   "6. A graph or figure the student asks for is drawn, not solved: no answers written beside it.",
   "7. Anything that is not maths help on this board, or is unsafe or unkind: reply politely that you can only help with maths on the board, and no actions. A request you cannot tell apart: ask one short question, no actions.",
+  '8. Help with a problem listed on this screen is help_problem — never a question back when it is clear which problem is meant: a number ("help me with 3", "I\'m stuck on 2", "how do I start 3"), or "it", "this one", "that one": the problem the chat so far was about, else the only problem on the screen. Help, being stuck, how to start, what to do next: depth "step". Solve it, work it out, show how to solve it, the answer: depth "solve" ("solve 3", "show me how to solve it", "work out 3", "what\'s the answer to 1"). The reply says what the tutor wrote, in plain words, no maths: "I wrote the next step under problem 3." Only with several problems here and nothing saying which, ask which one (no actions). With no problems listed here, never help_problem.',
   "",
   FIGURE_FORMAT,
   "",
@@ -61,8 +64,41 @@ export const CHAT_SYSTEM_PROMPT = [
   'Request: 3 two-step equations → {"reply": "Here are 3 two-step equations to solve.", "actions": [{"type": "write_problems", "problems": ["3x + 4 = 19", "\\\\frac{x}{2} - 5 = 1", "7 - 2x = 13"]}]}',
   'Request: graph y = sin x from -2π to 2π → {"reply": "Here is y = sin x from -2π to 2π.", "actions": [{"type": "graph", "relations": ["y = \\\\sin x"], "window": {"xMin": -6.2832, "xMax": 6.2832}}]}',
   'Request: draw a right triangle with legs 3 and 4 and label the hypotenuse x → {"reply": "Here is the right triangle; the hypotenuse is x.", "actions": [{"type": "draw_figure", "figure": {"points": {"A": {"x": 0, "y": 0}, "B": {"x": 4, "y": 0}, "C": {"x": 0, "y": 3}}, "segments": [{"from": "A", "to": "B", "label": "4"}, {"from": "A", "to": "C", "label": "3"}, {"from": "B", "to": "C", "label": "x"}], "angles": [{"at": "A", "from": "B", "to": "C", "right": true}]}}]}',
+  'Request: help me with 3 (problems 1 to 3 on the screen) → {"reply": "I wrote the next step under problem 3.", "actions": [{"type": "help_problem", "problem": 3, "depth": "step"}]}',
+  'Request: show me how to solve it (the chat so far was about problem 2) → {"reply": "I worked out problem 2 under it.", "actions": [{"type": "help_problem", "problem": 2, "depth": "solve"}]}',
   'Request: what\'s the capital of France? → {"reply": "I can only help with maths on this board. Try asking for some practice problems or a graph.", "actions": []}',
 ].join("\n");
+
+/** Each problem's number on the board, in the order of `problems` (1, 2, 3… when the client sent none). */
+export function problemNumbers(screen: Pick<ChatRequest["screen"], "problems" | "numbers">): number[] {
+  const problems = screen.problems ?? [];
+  const numbers = screen.numbers ?? [];
+  return problems.map((_, i) => numbers[i] ?? i + 1);
+}
+
+/**
+ * Help asked about a problem that is not on this screen ("help me with 7" beside problems 1 to 3)
+ * is dropped, with a note for the panel, never guessed at: the board would have nothing to work.
+ */
+export function dropMissingProblems(
+  actions: readonly ChatAction[],
+  screen: Pick<ChatRequest["screen"], "problems" | "numbers">,
+): { actions: ChatAction[]; dropped: DroppedAction[]; notes: string[] } {
+  const here = new Set(problemNumbers(screen));
+  const kept: ChatAction[] = [];
+  const dropped: DroppedAction[] = [];
+  const notes: string[] = [];
+  for (const a of actions) {
+    if (a.type === "help_problem" && !here.has(a.problem)) {
+      dropped.push({ type: a.type, reason: `no problem ${a.problem} on the screen` });
+      const note = noProblemNote(a.problem);
+      if (!notes.includes(note)) notes.push(note);
+      continue;
+    }
+    kept.push(a);
+  }
+  return { actions: kept, dropped, notes };
+}
 
 /** The screen, the chat so far and the request, as the model reads them. */
 export function buildChatMessages(req: Pick<ChatRequest, "message" | "history" | "screen">): ChatMessage[] {
@@ -72,7 +108,9 @@ export function buildChatMessages(req: Pick<ChatRequest, "message" | "history" |
   const problems = screen.problems ?? [];
   const student = screen.student ?? [];
   const tutor = screen.tutor ?? [];
-  if (problems.length) out.push("Problems the tutor wrote here:", ...problems.map((p, i) => `${i + 1}. ${p}`));
+  // numbered as on the board ("help me with 7" on a screen holding 5 to 8 of a set)
+  const numbers = problemNumbers(screen);
+  if (problems.length) out.push("Problems the tutor wrote here:", ...problems.map((p, i) => `${numbers[i]}. ${p}`));
   if (student.length) out.push("The student's lines (as read):", ...student.map((l) => `- ${l}`));
   if (tutor.length) out.push("The tutor's other lines:", ...tutor.map((l) => `- ${l}`));
   const history = req.history ?? [];
@@ -150,6 +188,10 @@ export function cleanChatActions(raw: readonly unknown[]): { actions: ChatAction
     } else if (type === "graph" && Array.isArray(obj.relations)) {
       candidate = { ...obj, relations: obj.relations.map(unwrapLatex) };
       if (obj.window === null) delete candidate.window;
+    } else if (type === "help_problem") {
+      // "3" or "3." for 3; no depth given is help, one step
+      const n = typeof obj.problem === "string" && /^\s*\d{1,3}\.?\s*$/.test(obj.problem) ? Number.parseInt(obj.problem, 10) : obj.problem;
+      candidate = { ...obj, problem: n, depth: obj.depth ?? "step" };
     }
     const parsed = ChatActionSchema.safeParse(candidate);
     if (!parsed.success) {

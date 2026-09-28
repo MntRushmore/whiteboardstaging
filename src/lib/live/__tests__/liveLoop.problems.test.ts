@@ -415,4 +415,72 @@ describe("live loop — the tutor works the problems it wrote", () => {
       expect(kinds(line)).toEqual(["check"]);
     });
   });
+
+  describe("Ask: help with a problem on the board (help_problem)", () => {
+    /** the owner's screen: three trig equations, each with its interval on the same line */
+    const TRIG = [["2\\cos x = 1, 0^{\\circ} \\le x < 360^{\\circ}"], ["\\tan x = \\sqrt{3}, 0^{\\circ} \\le x < 360^{\\circ}"], ["\\sin x = -\\frac{1}{2}, 0^{\\circ} \\le x < 360^{\\circ}"]];
+
+    it("'help me with 3', then 'solve it': a step under problem 3, then the rest — the engine's working, no model", async () => {
+      start("answer");
+      await run([{ type: "write_problems", problems: TRIG }]);
+      const help = await run([{ type: "help_problem", problem: 3, depth: "step" }]);
+      expect(help.outcomes).toEqual([{ type: "help_problem", ok: true }]);
+      expect(workOn(3).map((w) => [w.kind, w.lines])).toEqual([["step", ["\\sin^{-1}\\left(\\frac{1}{2}\\right) = 30^{\\circ}"]]]);
+      const solve = await run([{ type: "help_problem", problem: 3, depth: "solve" }]);
+      expect(solve.outcomes).toEqual([{ type: "help_problem", ok: true }]);
+      expect(workOn(3).map((w) => [w.kind, w.lines])).toEqual([
+        ["step", ["\\sin^{-1}\\left(\\frac{1}{2}\\right) = 30^{\\circ}"]],
+        ["solution", ["x = 180^{\\circ} + 30^{\\circ}, \\ x = 360^{\\circ} - 30^{\\circ}", "x = 210^{\\circ}, \\ x = 330^{\\circ}"]],
+      ]);
+      // the others untouched, nothing asked of a model, all of it inside problem 3's cell
+      expect(workOn(1)).toEqual([]);
+      expect(workOn(2)).toEqual([]);
+      expect(streamCalls).toEqual([]);
+      const cell = cellOf(3);
+      for (const w of workOn(3)) {
+        const b = box(w.shapes);
+        expect(b.x).toBeGreaterThanOrEqual(cell.x);
+        expect(b.r).toBeLessThanOrEqual(cell.x + cell.w);
+        expect(b.b).toBeLessThanOrEqual(cell.y + cell.h);
+        expect(overlaps(b, box(problemInk(3)))).toBe(false);
+      }
+      // asked again: nothing left to write, and the panel says so
+      const again = await run([{ type: "help_problem", problem: 3, depth: "solve" }]);
+      expect(again.outcomes).toEqual([{ type: "help_problem", ok: false, note: "Problem 3 is already worked out on the board." }]);
+    });
+
+    it("each of the three is worked to its answers in the interval: 60°, 300° / 60°, 240° / 210°, 330°", async () => {
+      start("feedback");
+      await run([{ type: "write_problems", problems: TRIG }]);
+      await run([1, 2, 3].map((problem) => ({ type: "help_problem" as const, problem, depth: "solve" as const })));
+      const answers = [1, 2, 3].map((n) => workOn(n)[0]?.lines.at(-1));
+      expect(answers).toEqual(["x = 60^{\\circ}, \\ x = 300^{\\circ}", "x = 60^{\\circ}, \\ x = 240^{\\circ}", "x = 210^{\\circ}, \\ x = 330^{\\circ}"]);
+    });
+
+    it("a problem that is not on the screen: nothing written, and the panel says there is none", async () => {
+      start("feedback");
+      await run([{ type: "write_problems", problems: TRIG }]);
+      const count = tutor().length;
+      const report = await run([{ type: "help_problem", problem: 7, depth: "step" }]);
+      expect(report.outcomes).toEqual([{ type: "help_problem", ok: false, note: "There's no problem 7 on this screen." }]);
+      expect(tutor()).toHaveLength(count);
+    });
+
+    it("with the student's work under it: the next step from their line, as Help gives it", async () => {
+      start("feedback");
+      await run([{ type: "write_problems", problems: [["2x + 3 = 11"], ["3x = 12"]] }]);
+      const line = await penLine("2x=8", 100, 200, "2x=8");
+      await run([{ type: "help_problem", problem: 1, depth: "step" }]);
+      expect(workOn(1)).toEqual([]);
+      const next = tutor().filter((s) => s.meta.lineId === line && !meta(s).mark);
+      expect(handLinesOf(next)).toEqual(["x = 4"]);
+    });
+
+    it("a typed ask is answered whatever the dial says, Off included", async () => {
+      start("off");
+      await run([{ type: "write_problems", problems: [["3x = 12"]] }]);
+      await run([{ type: "help_problem", problem: 1, depth: "solve" }]);
+      expect(workOn(1).map((w) => w.lines)).toEqual([["x = 4"]]);
+    });
+  });
 });

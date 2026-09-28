@@ -88,13 +88,21 @@ const FIGURE_BOX = { w: 460, h: 380 };
 /** The request's expectations against what the reply would do. */
 export function judgeIntent(c: ChatCase, actions: readonly ChatAction[]): { ok: boolean; why: string } {
   const types = actions.map((a) => a.type);
-  if (c.expect.types.length === 0) return types.length === 0 ? { ok: true, why: "" } : { ok: false, why: `acted on a request it should decline (${types.join(", ")})` };
+  const unwanted = (c.expect.without ?? []).filter((t) => types.includes(t));
+  if (unwanted.length > 0) return { ok: false, why: `${unwanted.join(", ")} where it does not apply` };
+  if (c.expect.types.length === 0 && !c.expect.without) return types.length === 0 ? { ok: true, why: "" } : { ok: false, why: `acted on a request it should decline (${types.join(", ")})` };
   const missing = c.expect.types.filter((t) => !types.includes(t));
   if (missing.length > 0) return { ok: false, why: `no ${missing.join(", ")}${types.length ? ` (got ${types.join(", ")})` : " (no action)"}` };
   const problems = actions.flatMap((a) => (a.type === "write_problems" ? a.problems : []));
   if (c.expect.count !== undefined && problems.length !== c.expect.count) return { ok: false, why: `${problems.length} problems for ${c.expect.count} asked` };
   if (c.expect.window && !actions.some((a) => a.type === "graph" && a.window)) return { ok: false, why: "no window for the range asked" };
   if (c.expect.noAnswers && problems.some((p) => p.some((l) => /^[a-z]\s*=\s*-?[\d.]+$/i.test(l.replace(/\s+/g, " ").trim())))) return { ok: false, why: "wrote the answer" };
+  const want = c.expect.help;
+  if (want) {
+    const helps = actions.flatMap((a) => (a.type === "help_problem" ? [a] : []));
+    if (!helps.some((h) => h.problem === want.problem)) return { ok: false, why: `helped with ${helps.map((h) => h.problem).join(", ") || "nothing"}, not problem ${want.problem}` };
+    if (!helps.some((h) => h.problem === want.problem && h.depth === want.depth)) return { ok: false, why: `${helps.find((h) => h.problem === want.problem)?.depth} for problem ${want.problem}, not ${want.depth}` };
+  }
   return { ok: true, why: "" };
 }
 
