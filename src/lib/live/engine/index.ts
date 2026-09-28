@@ -43,6 +43,8 @@ import { ALL_REALS, EVERY_REAL, LIST_SEP, NO_SOLUTION } from "./solution";
 import { createCourses } from "./courses";
 import { createGeometry } from "./geometry";
 import { isGeometryName } from "./geometryNotation";
+import { judgeOperation, operandMath, parseOperationLine, plainRelation } from "./operationLine";
+import { operationResult } from "./operationResult";
 
 const UNKNOWN: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
 
@@ -715,8 +717,37 @@ export function createEngine(mod: MathModule): LiveEngine {
     return sides[1].trim();
   };
 
+  /**
+   * `-3 \quad -3`, `\div 2 \div 2`, `\div 2` under an equation: what is done to both sides next
+   * (`operationLine.ts`), checked against the relation above. Null when the line is not one: a
+   * sum or difference of terms with no relation above it is arithmetic (`-3 - 3` is -6).
+   */
+  const analyzeOperation = (latex: string, ctx: AnalyzeContext): LineAnalysis | null => {
+    const parsed = parseOperationLine(latex);
+    if (!parsed) return null;
+    const prev = ctx.previous;
+    const relation = prev && (prev.kind === "equation" || prev.kind === "inequality") && prev.math ? prev.math : null;
+    if (!relation && (parsed.op === "add" || parsed.op === "subtract")) return null;
+    const judged = judgeOperation(parsed, relation);
+    const operand = parsed.operands[0];
+    const source = operandMath(operand) ?? "";
+    const result = judged.verdict === "ok" && relation && plainRelation(relation) && source ? operationResult(relation, parsed.op, source, (s) => safeParse(math, s)) : "";
+    return {
+      kind: "operation",
+      math: "",
+      resultLatex: "",
+      verdict: judged.verdict,
+      note: judged.note,
+      operation: { op: parsed.op, operand, operandMath: source, result },
+    };
+  };
+
   // --- entry points --------------------------------------------------------
   const analyze = (latex: string, ctx: AnalyzeContext): LineAnalysis => {
+    // what is done to both sides of the equation above (`operationLine.ts`): before anything reads
+    // `-3 \quad -3` as a sum or a data list
+    const operation = analyzeOperation(latex, ctx);
+    if (operation) return operation;
     // a line about the data list above, a form of the line / quadratic above asked for (`courses.ts`)
     const course = courses.analyzeFirst(latex, ctx);
     if (course) return course;

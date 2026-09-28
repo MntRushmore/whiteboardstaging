@@ -31,6 +31,8 @@ export const LINE_KINDS = [
   "incomplete",
   "text",
   "unknown",
+  /** `-3 \quad -3`, `\div 2`, a bar with a `2` under it: what is done to both sides next (`engine/operationLine.ts`) */
+  "operation",
 ] as const;
 export type LineKind = (typeof LINE_KINDS)[number];
 
@@ -182,6 +184,12 @@ export interface LineAnalysis {
    * (`engine/transformations.ts`).
    */
   derived?: boolean;
+  /**
+   * An operation line (`kind: 'operation'`, `engine/operationLine.ts`): what is done to both sides
+   * of the relation above it — `-3 \quad -3`, `\div 2`, a bar with the divisor under it. `result`
+   * is the relation it leads to (`2x = 8`), '' when the engine cannot write it simply.
+   */
+  operation?: { op: "add" | "subtract" | "multiply" | "divide"; operand: string; operandMath: string; result: string };
 }
 /**
  * What `solveLatex` may know about the column it is solving in (`localSolve` passes it; every
