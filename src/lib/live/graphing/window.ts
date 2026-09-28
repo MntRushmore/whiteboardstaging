@@ -112,8 +112,92 @@ export function lineOf(f: (x: number) => number): { m: number; b: number } | nul
   return { m, b };
 }
 
-/** The window for a plane graph drawn in a box of `box.w` × `box.h` px. */
-export function chooseWindow(intent: PlaneGraphIntent, box: { w: number; h: number }): GraphWindow {
+/**
+ * A window someone asked for (the board chat's "graph y = sin x from -2π to 2π"): x across exactly
+ * that range, y as asked or fitted to the curves over it. Optional everywhere; the sketches the
+ * board draws unasked choose their own window.
+ */
+export interface GraphWindowHint {
+  xMin: number;
+  xMax: number;
+  yMin?: number;
+  yMax?: number;
+}
+
+/**
+ * The window for an asked-for range. x is the range (and the origin, as every school graph is
+ * drawn through its axes), a sliver wider so the ends are not under the arrowheads; y is the range
+ * asked for, else where the key points and the curves go across that x (their middle 90 %), with
+ * the usual margin. Lines and circles keep the same unit both ways when y can grow to it.
+ */
+function hintedWindow(intent: PlaneGraphIntent, box: { w: number; h: number }, hint: GraphWindowHint): GraphWindow {
+  let xLo = Math.min(hint.xMin, 0);
+  let xHi = Math.max(hint.xMax, 0);
+  const xPad = 0.04 * (xHi - xLo);
+  xLo -= xPad;
+  xHi += xPad;
+  let yLo: number;
+  let yHi: number;
+  if (hint.yMin !== undefined && hint.yMax !== undefined && hint.yMax > hint.yMin) {
+    yLo = Math.min(hint.yMin, 0);
+    yHi = Math.max(hint.yMax, 0);
+  } else {
+    const ys = [0];
+    for (const p of intent.points) if (sane(p.y) && p.x >= hint.xMin && p.x <= hint.xMax) ys.push(p.y);
+    for (const c of intent.curves) if (c.kind === "circle") ys.push(c.cy - c.r, c.cy + c.r);
+    const poles = intent.asymptotes.filter((a) => a.axis === "vertical").map((a) => a.at);
+    const values: number[] = [];
+    for (const c of intent.curves) {
+      if (c.kind !== "function") continue;
+      for (let i = 0; i <= 200; i++) {
+        const x = hint.xMin + ((hint.xMax - hint.xMin) * (i + 0.5)) / 201;
+        if (poles.some((p) => Math.abs(x - p) < (hint.xMax - hint.xMin) * 0.03)) continue;
+        const v = c.f(x);
+        if (sane(v)) values.push(v);
+      }
+    }
+    if (values.length > 0) {
+      values.sort((a, b) => a - b);
+      ys.push(percentile(values, 0.05), percentile(values, 0.95));
+    }
+    yLo = hint.yMin ?? Math.min(...ys);
+    yHi = hint.yMax ?? Math.max(...ys);
+    const minY = Math.min(WINDOW.minSpan, xHi - xLo) * (box.h / box.w);
+    if (yHi - yLo < minY) {
+      const c = (yLo + yHi) / 2;
+      if (hint.yMin === undefined) yLo = Math.min(yLo, c - minY / 2);
+      if (hint.yMax === undefined) yHi = Math.max(yHi, c + minY / 2);
+    }
+    const yPad = WINDOW.pad * (yHi - yLo);
+    if (hint.yMin === undefined) yLo -= yPad;
+    if (hint.yMax === undefined) yHi += yPad;
+  }
+  const straight = intent.curves.every((c) => c.kind === "circle" || lineOf(c.f) !== null);
+  const u = box.w / (xHi - xLo);
+  if (straight && hint.yMin === undefined && hint.yMax === undefined && box.h / u >= yHi - yLo) {
+    // same unit both ways: y grows evenly round its middle to the height the box gives it
+    const grow = box.h / u - (yHi - yLo);
+    yLo -= grow / 2;
+    yHi += grow / 2;
+    const step = niceStepFor(Math.max(xHi - xLo, yHi - yLo));
+    return { xMin: xLo, xMax: xHi, yMin: yLo, yMax: yHi, xStep: step, yStep: step, w: box.w, h: box.h, equal: true };
+  }
+  return {
+    xMin: xLo,
+    xMax: xHi,
+    yMin: yLo,
+    yMax: yHi,
+    xStep: niceStepFor(xHi - xLo),
+    yStep: niceStepFor(yHi - yLo, Math.round(WINDOW.tickTarget * (box.h / box.w))),
+    w: box.w,
+    h: box.h,
+    equal: false,
+  };
+}
+
+/** The window for a plane graph drawn in a box of `box.w` × `box.h` px (or across a range asked for). */
+export function chooseWindow(intent: PlaneGraphIntent, box: { w: number; h: number }, hint?: GraphWindowHint): GraphWindow {
+  if (hint && Number.isFinite(hint.xMin) && Number.isFinite(hint.xMax) && hint.xMax > hint.xMin) return hintedWindow(intent, box, hint);
   const xs = [0];
   const ys = [0];
   for (const p of intent.points) {

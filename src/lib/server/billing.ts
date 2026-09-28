@@ -37,6 +37,9 @@ export const ROUTE_COSTS = {
   "live/reread": 1,
   // A proof's figure read, or one next row when the engine's planner cannot finish: priced like setup.
   "live/proof": 2,
+  // The board chat: one planning call (problems, a graph, a figure spec), plus at most one small
+  // figure repair; the engine checks every problem, so no solve model is involved.
+  "live/chat": 3,
   credits: 0,
   "config/status": 0,
 } as const satisfies Record<string, number>;

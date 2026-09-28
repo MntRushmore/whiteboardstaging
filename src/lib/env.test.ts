@@ -28,6 +28,7 @@ const ALL_VARS = [
   "LIVE_MODEL_REREAD",
   "LIVE_MODEL_FIGURE",
   "LIVE_MODEL_PROOF",
+  "LIVE_MODEL_CHAT",
   "BILLING_ENFORCE",
   "STRIPE_WEBHOOK_SECRET",
   "BILLING_PRICE_MAP",
@@ -127,7 +128,17 @@ describe("getLiveModels", () => {
       figureFallback: LIVE_MODELS.figureFallback,
       proof: LIVE_MODELS.proof,
       proofFallback: LIVE_MODELS.proofFallback,
+      chat: LIVE_MODELS.chat,
+      chatFallback: LIVE_MODELS.chatFallback,
     });
+  });
+
+  it("LIVE_MODEL_CHAT overrides the chat model; the fallback stays from another provider", () => {
+    setRequired();
+    process.env.LIVE_MODEL_CHAT = "google/gemini-3.1-flash-lite";
+    const models = getLiveModels();
+    expect(models.chat).toBe("google/gemini-3.1-flash-lite");
+    expect(models.chatFallback).toBe(LIVE_MODELS.chatFallback);
   });
 
   it("LIVE_MODEL_PROOF overrides the proof model", () => {

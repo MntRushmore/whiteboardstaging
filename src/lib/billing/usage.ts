@@ -39,6 +39,8 @@ export const USAGE_KINDS: Readonly<Record<string, UsageKind>> = {
   // A proof's figure read, or one next row the planner could not find.
   "live-proof": { key: "live-proof", label: "Figures & proofs", unit: TIMES, cost: 2 },
   "live-check": { key: "live-check", label: "Checking your work", unit: ["check", "checks"], cost: 3 },
+  // The board chat: problems, graphs and figures asked for in words.
+  "live-chat": { key: "live-chat", label: "Board chat", unit: ["request", "requests"], cost: 3 },
   "live-solve": { key: "live-solve", label: "Worked solutions", unit: ["solution", "solutions"], cost: 10 },
   "generate-solution": { key: "generate-solution", label: "Drawn help (retired)", unit: TIMES },
   "generate-worksheet": { key: "generate-worksheet", label: "Worksheets (retired)", unit: TIMES },

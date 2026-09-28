@@ -64,6 +64,7 @@ describe("ROUTE_COSTS", () => {
       "live/setup": 2,
       "live/reread": 1,
       "live/proof": 2,
+      "live/chat": 3,
       credits: 0,
       "config/status": 0,
     });

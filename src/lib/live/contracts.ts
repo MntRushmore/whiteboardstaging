@@ -8,6 +8,7 @@
 import { FigureSpecSchema } from "./figureDraw/contracts";
 import { z } from "zod";
 import type { TLBaseShape, TLShapeId } from "tldraw";
+import type { ChatAction, ChatRunReport, ChatScreen } from "./chat/contracts";
 
 // 1. Modes, verdicts, kinds -------------------------------------------------
 export const HELP_MODES = ["off", "feedback", "suggest", "answer"] as const;
@@ -576,6 +577,13 @@ export const LIVE_MODELS = {
    */
   proof: "openai/gpt-5.4-mini",
   proofFallback: "deepseek/deepseek-v4.1-flash",
+  /**
+   * The board chat (POST /api/live/chat, `src/lib/live/chat`): a typed request → a reply and the
+   * actions the tutor writes (problems, lines, a graph, a figure spec). Chosen on `npm run
+   * eval:chat` (docs/eval/chat.md): US primary, the cheapest capable fallback from another provider.
+   */
+  chat: "openai/gpt-5.4-mini",
+  chatFallback: "deepseek/deepseek-v4.1-flash",
 } as const;
 
 /** Per-user limits for the live routes (the existing LIMITS table in src/lib/server/rate-limit.ts covers the legacy routes). */
@@ -589,6 +597,8 @@ export const LIVE_RATE_LIMITS = {
   liveReread: { limit: 30, windowMs: 60_000 },
   /** a proof's figure read (once per figure) and a next row when the planner cannot finish: two per ask at most */
   liveProof: { limit: 20, windowMs: 60_000 },
+  /** the board chat: typed by hand, one request at a time */
+  liveChat: { limit: 12, windowMs: 60_000 },
 } as const;
 export type LiveRateLimitRoute = keyof typeof LIVE_RATE_LIMITS;
 
@@ -671,6 +681,13 @@ export interface LiveController {
   dismissHint(hintId: string): void;
   clearMarks(): void;
   retypeLine(lineId: string, latex: string): void;
+  /**
+   * The board chat (`src/lib/live/chat`): the current screen as maths, sent with a request so "3
+   * more like these" works, and a reply's actions run one block at a time in the tutor's hand
+   * (problems checked by the engine first). Optional, so a controller double need not have them.
+   */
+  chatScreen?(): ChatScreen;
+  runChatActions?(actions: readonly ChatAction[]): Promise<ChatRunReport>;
 }
 export interface UseLiveMathOptions {
   boardId: string;

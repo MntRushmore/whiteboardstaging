@@ -66,12 +66,12 @@ import {
 } from "./liveStore";
 import { scheduleLiveWrite } from "./liveWrite";
 import { recordReread, recordRecognition } from "./liveDebug";
-import { localSolve } from "./localSolve";
+import { analyzeColumn, localSolve } from "./localSolve";
 import { requestReread, requestSetup, type CallOptions } from "./modelCalls";
 import { acceptReread, rereadTrigger } from "./readCheck";
 import { isProblemProse, setupBlock, validateSetupLines, wordProblemKey } from "./wordProblem";
 import { markKey, markStrokes, ringRect, type MarkKind } from "./marks";
-import { readScreenMeta } from "@/lib/screens/screens";
+import { addScreen, readScreenMeta, type ScreensEditor } from "@/lib/screens/screens";
 import { getLiveSettings } from "./liveSettings";
 import { GRAPH, chooseWindow, placeGraphBlock, planGraph, type GraphPlaceContext } from "./graphing";
 import {
@@ -120,7 +120,7 @@ import {
   recognizeFailureHints,
 } from "./recognizeClient";
 import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient";
-import { clusterLines, rebuildFromMathShapes, unionRects, type EchoShapeSeed } from "./strokeClusters";
+import { assignColumns, clusterLines, rebuildFromMathShapes, unionRects, type EchoShapeSeed } from "./strokeClusters";
 import { buildPayload, hashPayload } from "./strokePayload";
 import { DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type InkSplit } from "./diagrams";
 import { figureAnswer, labelKey, looksLikeUnknown } from "./figure";
@@ -131,6 +131,11 @@ import { ProofDesk, tutorLinesOf, type ProofHost } from "./proof/desk";
 import { PROOF_ROWS_META, proofRowsPlan } from "./proof/place";
 import type { PlannedRow } from "./proof/planner";
 import type { BoardLine, ProofRead } from "./proof/read";
+import { problemMetaOf, readProblemCells, splitColumnsAtProblems, type ProblemCell } from "./chat/cells";
+import type { ChatAction, ChatRunReport, ChatScreen } from "./chat/contracts";
+import { CHAT_LINE_ID, ChatDesk, type ChatHost } from "./chat/desk";
+import { planFigure as defaultPlanFigure } from "./figureDraw";
+import type { FigurePlanOptions, FigurePlanResult, FigureSpec } from "./figureDraw/contracts";
 
 /**
  * The client live loop (spec §6). Everything the hook does lives here so it can be
@@ -172,6 +177,8 @@ export interface LiveLoopDeps {
   reread: (req: RereadRequest, opts: CallOptions) => Promise<RereadResponse>;
   /** POST /api/live/proof: a proof's figure read, or one next row the planner could not find */
   proof: (req: ProofRequest, opts: CallOptions) => Promise<ProofResponse>;
+  /** the figure drawer (`src/lib/live/figureDraw`): a board-chat figure spec in the tutor's hand */
+  planFigure: (spec: FigureSpec, opts: FigurePlanOptions) => FigurePlanResult | null;
 }
 
 interface LineRuntime {
@@ -374,6 +381,7 @@ function defaultDeps(): LiveLoopDeps {
     setup: (req, opts) => requestSetup(req, opts),
     reread: (req, opts) => requestReread(req, opts),
     proof: (req, opts) => requestProof(req, opts),
+    planFigure: (spec, opts) => defaultPlanFigure(spec, opts),
   };
 }
 
@@ -501,11 +509,24 @@ export class LiveLoop implements LiveController {
   /** the strokes of a proof's T-table (`splitInk` role `table`): the tutor's rows are written across them */
   private tableStrokeIds = new Set<string>();
 
+  /** the board chat's hand: its actions, one block at a time (`src/lib/live/chat/desk.ts`) */
+  private readonly chat: ChatDesk;
+  /**
+   * The problem the chat wrote at the top of each column the student works under it (by column):
+   * the column's first line, the context its first line is checked against (`chat/cells.ts`).
+   */
+  private columnHeads = new Map<number, ProblemCell>();
+  /** a head's lines analysed as a column, per mode (the problem does not change) */
+  private readonly headMemo = new Map<string, (LineAnalysis | null)[]>();
+  /** the screen the loop last took in (`start` / `switchScreen`): the chat writes only once it is this one */
+  private screenSeen: string | null = null;
+
   constructor(editor: LiveEditorLike, opts: UseLiveMathOptions, deps: Partial<LiveLoopDeps> = {}) {
     this.editor = editor;
     this.opts = opts;
     this.deps = { ...defaultDeps(), ...deps };
     this.proofs = new ProofDesk(this.proofHost());
+    this.chat = new ChatDesk(this.chatHost());
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -528,6 +549,7 @@ export class LiveLoop implements LiveController {
     this.lastOnline = this.deps.isOnline();
     this.rebuild();
     this.recount();
+    this.screenSeen = this.pageKey();
     void this.deps
       .getEngine()
       .then((engine) => {
@@ -630,6 +652,7 @@ export class LiveLoop implements LiveController {
   private switchScreen(): void {
     if (!this.started) return;
     this.resetRuntime();
+    this.screenSeen = this.pageKey();
     liveStore.lines.set({});
     liveStore.openHints.set([]);
     clearLiveError();
@@ -864,8 +887,14 @@ export class LiveLoop implements LiveController {
       }
     }
 
+    let problemErased = false;
     for (const rec of Object.values(entry.changes.removed)) {
       if (!isShapeRecord(rec)) continue;
+      // a problem the chat wrote, rubbed out: the columns under it are read again (below)
+      if (isLiveMeta(rec.meta) && problemMetaOf(rec.meta)) {
+        problemErased = true;
+        continue;
+      }
       // the student rubbed out (part of) a graph the tutor sketched: not drawn again unasked
       const graphKey = isLiveMeta(rec.meta) ? metaString(rec.meta, GRAPH_META) : "";
       if (graphKey) {
@@ -898,6 +927,8 @@ export class LiveLoop implements LiveController {
         if (st.mathShapeId === rec.id) setLine(lineId, { mathShapeId: null });
       }
     }
+
+    if (problemErased) this.refreshProblemColumns();
 
     // Any ink at all — a stroke in progress, a finished one, ink dragged somewhere else, ink
     // rubbed out — means the student is still working, wherever on the canvas it happened.
@@ -1030,6 +1061,7 @@ export class LiveLoop implements LiveController {
     // reload must still find the figure beside the work.
     this.splitDrawings(this.collectInk(), new Set());
     this.loadFigureDismissals();
+    this.columnHeads = new Map();
     const seeds: EchoShapeSeed[] = [];
     for (const shape of this.editor.getCurrentPageShapes()) {
       if (!isLiveMeta(shape.meta)) continue;
@@ -1042,6 +1074,9 @@ export class LiveLoop implements LiveController {
     }
     if (seeds.length === 0) return;
     const rebuilt = rebuildFromMathShapes(seeds, this.strokeBoundsMap());
+    // the chat's problems head the columns under them, as at every flush
+    const split = new Map(this.withProblemColumns(rebuilt.map((r) => r.line)).map((l) => [l.id, l]));
+    for (const r of rebuilt) r.line = split.get(r.line.id) ?? r.line;
     const next: Record<string, LiveLineState> = { ...liveStore.lines.get() };
     for (const r of rebuilt) {
       const shape = this.editor.getShape(r.mathShapeId);
@@ -1097,7 +1132,7 @@ export class LiveLoop implements LiveController {
     const { split, touched: drawn } = this.splitDrawings(ink, dirty);
     const prevStates = liveStore.lines.get();
     const prevLines = Object.values(prevStates).map((s) => s.line);
-    const lines = clusterLines(split.writing, prevLines);
+    const lines = this.withProblemColumns(clusterLines(split.writing, prevLines));
     const nextIds = new Set(lines.map((l) => l.id));
 
     for (const prev of prevLines) if (!nextIds.has(prev.id)) this.dropLine(prev.id);
@@ -1509,14 +1544,78 @@ export class LiveLoop implements LiveController {
     const col = this.columnLines(state.line.column);
     let previous: LineAnalysis | undefined;
     let original: LineAnalysis | undefined;
+    const take = (a: LineAnalysis | null | undefined) => {
+      if (!a || a.kind === "label" || a.kind === "incomplete" || a.kind === "unknown") return;
+      previous = a;
+      if (!original && (a.kind === "equation" || a.kind === "inequality")) original = a;
+    };
+    // a problem the chat wrote at the top of this column is its first line
+    for (const a of this.headAnalyses(state.line.column)) take(a);
     for (const s of col) {
       if (s.line.row >= state.line.row) break;
-      if (!s.analysis || !s.latex) continue;
-      if (s.analysis.kind === "label" || s.analysis.kind === "incomplete" || s.analysis.kind === "unknown") continue;
-      previous = s.analysis;
-      if (!original && (s.analysis.kind === "equation" || s.analysis.kind === "inequality")) original = s.analysis;
+      if (!s.latex) continue;
+      take(s.analysis);
     }
     return { previous, original };
+  }
+
+  // ---------------------------------------------------------------- the chat's problems as column heads
+  /** The problems the chat wrote on this screen, from their strokes (`chat/cells.ts`). */
+  private problemCells(): ProblemCell[] {
+    const shapes: Array<{ block: string; meta: unknown; bounds: Rect }> = [];
+    for (const s of this.editor.getCurrentPageShapes()) {
+      if (!isLiveMeta(s.meta) || !problemMetaOf(s.meta)) continue;
+      const b = this.editor.getShapePageBounds(s);
+      if (b) shapes.push({ block: handBlockOf(s.meta), meta: s.meta, bounds: boxToRect(b) });
+    }
+    return readProblemCells(shapes);
+  }
+
+  /** `lines` with the columns split at the chat's problems; remembers which problem heads which column. */
+  private withProblemColumns(lines: InkLine[]): InkLine[] {
+    const cells = this.problemCells();
+    if (cells.length === 0) {
+      this.columnHeads = new Map();
+      return lines;
+    }
+    const split = splitColumnsAtProblems(lines, cells);
+    this.columnHeads = split.heads;
+    return split.lines;
+  }
+
+  /** The head of this column analysed as the column's first line(s), or [] with none. */
+  private headAnalyses(column: number): (LineAnalysis | null)[] {
+    const head = this.columnHeads.get(column);
+    if (!head || !this.engine) return [];
+    const key = `${this.opts.mode}\n${head.lines.join("\n")}`;
+    let memo = this.headMemo.get(key);
+    if (!memo) {
+      memo = analyzeColumn(this.engine, head.lines, this.opts.mode);
+      this.headMemo.set(key, memo);
+      while (this.headMemo.size > 64) this.headMemo.delete(this.headMemo.keys().next().value as string);
+    }
+    return memo;
+  }
+
+  /**
+   * The chat wrote problems, or one was rubbed out: the columns are split again at the problems
+   * there are now, and when any line's column or head changed every line is analysed again (a
+   * line under a problem is checked against it).
+   */
+  private refreshProblemColumns(): void {
+    if (!this.started) return;
+    const states = Object.values(liveStore.lines.get());
+    const before = [...this.columnHeads.entries()].map(([c, h]) => `${c}:${h.key}`).join(",");
+    const next = this.withProblemColumns(assignColumns(states.map((s) => ({ ...s.line }))));
+    const after = [...this.columnHeads.entries()].map(([c, h]) => `${c}:${h.key}`).join(",");
+    let changed = before !== after;
+    for (const l of next) {
+      const st = liveStore.lines.get()[l.id];
+      if (!st || (st.line.column === l.column && st.line.row === l.row)) continue;
+      setLine(l.id, { line: { ...st.line, column: l.column, row: l.row } });
+      changed = true;
+    }
+    if (changed) this.reanalyzeAll();
   }
 
   private analyze(state: LiveLineState): LineAnalysis | null {
@@ -2128,8 +2227,19 @@ export class LiveLoop implements LiveController {
   private buildCheckLines(column: number): { lines: CheckLine[]; region: Rect; states: LiveLineState[] } | null {
     const states = this.columnLines(column).filter((s) => s.latex);
     if (states.length === 0) return null;
-    const region = expandRect(unionRects(states.map((s) => s.line.bounds)), 24);
-    const lines: CheckLine[] = states.slice(-LIVE_LIMITS.maxLinesPerCheck).map((s) => ({
+    // a problem the chat wrote at the top of the column is its first line for the model too
+    const head = this.columnHeads.get(column);
+    const region = expandRect(unionRects([...states.map((s) => s.line.bounds), ...(head ? [head.head] : [])]), 24);
+    const headAnalyses = this.headAnalyses(column);
+    const heads: CheckLine[] = head
+      ? head.lines.slice(0, 3).map((latex, i) => ({
+          id: `chat-problem-${head.n}-${i}`,
+          latex: latex.slice(0, 2000),
+          bbox: normalizeBBox(head.head, region),
+          local: { kind: headAnalyses[i]?.kind ?? "unknown", verdict: headAnalyses[i]?.verdict ?? "none" },
+        }))
+      : [];
+    const lines: CheckLine[] = heads.concat(states.slice(-(LIVE_LIMITS.maxLinesPerCheck - heads.length)).map((s) => ({
       id: s.line.id,
       latex: s.latex.slice(0, 2000),
       bbox: normalizeBBox(s.line.bounds, region),
@@ -2139,7 +2249,7 @@ export class LiveLoop implements LiveController {
         resultLatex: s.analysis?.resultLatex?.slice(0, 500) || undefined,
         note: s.analysis?.note?.slice(0, 200) || undefined,
       },
-    }));
+    })));
     return { lines, region, states };
   }
 
@@ -3329,6 +3439,93 @@ export class LiveLoop implements LiveController {
     return false;
   }
 
+  // ---------------------------------------------------------------- the board chat
+  /** What `ChatDesk` needs of the loop (see `src/lib/live/chat/desk.ts`). */
+  private chatHost(): ChatHost {
+    return {
+      engine: () => this.ensureEngine(),
+      shapes: () =>
+        this.editor.getCurrentPageShapes().map((s) => {
+          const b = this.editor.getShapePageBounds(s);
+          return {
+            id: s.id,
+            type: s.type,
+            meta: s.meta,
+            bounds: b ? boxToRect(b) : null,
+            ...(s.type === "math" ? { latex: (s.props as MathShapeProps).latex } : {}),
+          };
+        }),
+      screen: () => this.placementBounds(),
+      pageId: () => this.pageKey(),
+      studentLines: () =>
+        Object.values(liveStore.lines.get())
+          .filter((s) => s.latex)
+          .sort((a, b) => a.line.column - b.line.column || a.line.row - b.line.row)
+          .map((s) => s.latex),
+      handwriting: () => this.deps.handwritingEnabled(),
+      handBusy: () => this.writer !== null || this.graphWriter !== null,
+      write: (plan, extraMeta) =>
+        new Promise<void>((resolve) => {
+          const writer = this.makeWriter();
+          this.writer = writer;
+          writer.start(plan, {
+            meta: makeMeta("ai", CHAT_LINE_ID, this.deps.now()),
+            extraMeta,
+            // a problem, a graph or a figure is one thing: a cut-short reveal completes it whole
+            whole: true,
+            onDone: () => {
+              if (this.writer === writer) this.writer = null;
+              // after the write queued with its last strokes (a microtask): then it is on the page
+              setTimeout(resolve, 0);
+            },
+          });
+        }),
+      typeset: (latex, at, extraMeta) => {
+        const rect = { x: at.x, y: at.y, w: estimateEchoWidth(latex), h: ECHO_HEIGHTS.m };
+        this.write(() => {
+          this.editor.createShapes([
+            {
+              id: createShapeId(),
+              type: "math",
+              x: rect.x,
+              y: rect.y,
+              props: { ...MATH_SHAPE_DEFAULTS, w: rect.w, h: rect.h, latex, source: "ai", tone: "accent", lineId: CHAT_LINE_ID, anchorIds: [] },
+              meta: { ...makeMeta("ai", CHAT_LINE_ID, this.deps.now()), ...extraMeta },
+            } satisfies TLShapePartial<MathShape>,
+          ]);
+        });
+        return rect;
+      },
+      addScreen: () => {
+        const ed = this.editor as unknown as Partial<ScreensEditor>;
+        if (typeof ed.getPages !== "function" || typeof ed.createPage !== "function" || typeof ed.setCurrentPage !== "function" || typeof ed.run !== "function") return false;
+        return addScreen(ed as ScreensEditor);
+      },
+      screenReady: () => !this.started || this.screenSeen === this.pageKey(),
+      clearTutor: () => this.clearMarks(),
+      problemsChanged: () => this.refreshProblemColumns(),
+      planFigure: (spec, opts) => this.deps.planFigure(spec, opts),
+      seed: (key) => handSeedFor(key),
+      delay: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+      metric: (name, data) => clientMetric(name, data),
+    };
+  }
+
+  /** The current screen's id ("page" on an editor without screens). */
+  private pageKey(): string {
+    return this.editor.getCurrentPage?.()?.id ?? "page";
+  }
+
+  /** The current screen as maths, for a chat request: what "more like these" refers to. */
+  chatScreen(): ChatScreen {
+    return this.chat.picture();
+  }
+
+  /** A chat reply's actions, written one block at a time; resolves when the last is on the page. */
+  runChatActions(actions: readonly ChatAction[]): Promise<ChatRunReport> {
+    return this.chat.run(actions);
+  }
+
   // ---------------------------------------------------------------- LiveController
   getTranscript(): LiveTranscript {
     const states = Object.values(liveStore.lines.get())
@@ -3531,12 +3728,15 @@ export class LiveLoop implements LiveController {
   private rightNextStep(state: LiveLineState): string | null {
     const engine = this.engine;
     const good = this.lastGoodLineAbove(state);
-    if (!engine || !good) return null;
+    // a problem the chat wrote heads the column: a wrong first line is corrected from it
+    const head = this.columnHeads.get(state.line.column)?.lines ?? [];
+    if (!engine || (!good && head.length === 0)) return null;
     const column = this.columnLines(state.line.column).filter((s) => s.latex);
-    const upto = column.filter((s) => s.line.row <= good.line.row);
+    const upto = good ? column.filter((s) => s.line.row <= good.line.row).map((s) => s.latex) : [];
+    const lines = [...head, ...upto];
     const own = new Set(column.map((s) => normalizeStep(s.latex)));
     // The same local decision Solve makes, from the last good line: the step after it.
-    const local = localSolve(engine, upto.map((s) => s.latex), upto.length - 1);
+    const local = localSolve(engine, lines, lines.length - 1);
     return local.steps.find((st) => !own.has(normalizeStep(st))) ?? null;
   }
 

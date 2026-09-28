@@ -6,5 +6,5 @@
  */
 export { GRAPH, graphPaceFor, planGraph, planFromGroups, tickLatex, traceFunction, type GraphPlanResult, type PlanOptions } from "./plan";
 export { GRAPH_PLACE, placeGraphBlock, type GraphPlaceContext } from "./place";
-export { WINDOW, chooseWindow, fromPx, lineOf, niceStepFor, numberLineWindow, ticksIn, toPx, type GraphWindow, type NumberLineWindow } from "./window";
+export { WINDOW, chooseWindow, fromPx, lineOf, niceStepFor, numberLineWindow, ticksIn, toPx, type GraphWindow, type GraphWindowHint, type NumberLineWindow } from "./window";
 export { PEN, Pen, clipPolyline, clipSegment, writeMath } from "./pen";
