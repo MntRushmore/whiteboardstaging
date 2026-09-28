@@ -1,6 +1,6 @@
 import { getLiveModels } from "@/lib/env";
 import { ChatRequestSchema, ChatResponseSchema, type ChatAction, type ChatResponse } from "@/lib/live/chat/contracts";
-import { figureDrawerReady, figureProblems } from "@/lib/live/chat/figure";
+import { figureProblems } from "@/lib/live/chat/figure";
 import { FigureSpecSchema } from "@/lib/live/figureDraw/contracts";
 import { enforceCredits, refundCredits, runCharged } from "@/lib/server/billing";
 import { chatJsonWithFallback } from "@/lib/server/openrouter";
@@ -22,7 +22,7 @@ export const maxDuration = 45;
 
 /** One attempt per model: a problem set or a figure spec is a longer reply than a setup. */
 const CHAT_ATTEMPT_MS = 18_000;
-/** The figure repair is one small call, and only when the drawer can draw at all. */
+/** The figure repair is one small call (at most one per request). */
 const REPAIR_ATTEMPT_MS = 10_000;
 
 const FIGURE_NOT_DRAWN = "The figure couldn't be drawn.";
@@ -31,9 +31,10 @@ const FIGURE_NOT_DRAWN = "The figure couldn't be drawn.";
  * POST /api/live/chat — the board chat: a typed request → `{ reply, actions }`. The model plans
  * (`LIVE_MODELS.chat`, fallback `chatFallback`; prompt `prompts/chat.ts`); every action is validated
  * with zod and an invalid one is dropped, never guessed at. A `draw_figure` the drawer reports
- * problems with (`checkFigure`) gets ONE repair round-trip with those problems — only when the
- * drawer can draw at all — and is dropped otherwise, with a note. The board verifies every problem
- * with its engine before writing it (`src/lib/live/chat/verify.ts`).
+ * problems with (`checkFigure`, run here: pure, ~2 ms, no drawing code) gets ONE repair
+ * round-trip with those problems — one per request, so it stays cheap — and is dropped otherwise,
+ * with a note. The board verifies every problem with its engine before writing it
+ * (`src/lib/live/chat/verify.ts`).
  *
  * Charged `live/chat` (3 credits) up front, refunded by `runCharged` on any non-2xx; a reply whose
  * every proposed action had to be dropped is refunded too (200, `refunded: true`), since the
@@ -72,14 +73,13 @@ export async function POST(req: Request) {
       const actions: ChatAction[] = [];
       let repairs = 0;
       let figuresDropped = 0;
-      let drawer: boolean | null = null;
       for (const action of valid) {
         if (action.type !== "draw_figure") {
           actions.push(action);
           continue;
         }
         let problems = figureProblems(action.figure);
-        if (problems.length > 0 && repairs === 0 && (drawer ??= figureDrawerReady())) {
+        if (problems.length > 0 && repairs === 0) {
           repairs++;
           try {
             const { data: fixed } = await chatJsonWithFallback(models.chat, models.chatFallback, {

@@ -1,6 +1,6 @@
 /**
  * POST /api/live/chat (the board chat), driven through its real handler with fakes for supabase-js
- * (auth + RPCs), OpenRouter (`chatJsonWithFallback`) and the figure drawer. The Live contract: 401
+ * (auth + RPCs), OpenRouter (`chatJsonWithFallback`) and the figure drawer's check. The Live contract: 401
  * before anything, 429 before the charge, zod 400 before the charge, 3 credits up front, the SAME
  * request id refunded on any non-2xx — and on a 200 whose every proposed action had to be dropped.
  */
@@ -13,8 +13,8 @@ const fake = vi.hoisted(() => ({
   USER_ID: "11111111-2222-4333-8444-555555555555",
   calls: [] as Array<{ fn: string; args?: Record<string, unknown> }>,
   replies: {} as Record<string, (args?: Record<string, unknown>) => RpcReply>,
-  /** the drawer: null plans nothing (the placeholder), a function checks a spec */
-  drawer: { ready: false, check: (() => ["the figure drawer is not built yet"]) as (spec: unknown) => string[] },
+  /** the figure drawer's check: [] is a clean figure */
+  drawer: { check: (() => []) as (spec: unknown) => string[] },
 }));
 
 vi.mock("@supabase/supabase-js", () => ({
@@ -37,13 +37,9 @@ vi.mock("@/lib/server/openrouter", async (importOriginal) => {
   return { ...actual, chatJsonWithFallback: vi.fn() };
 });
 
-vi.mock("@/lib/live/figureDraw", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/live/figureDraw")>();
-  return {
-    ...actual,
-    checkFigure: (spec: unknown) => fake.drawer.check(spec),
-    planFigure: () => (fake.drawer.ready ? { plan: { lines: [], bounds: { x: 0, y: 0, w: 10, h: 10 }, size: 30, totalMs: 0 }, points: {} } : null),
-  };
+vi.mock("@/lib/live/figureDraw/check", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/live/figureDraw/check")>();
+  return { ...actual, checkFigure: (spec: unknown) => fake.drawer.check(spec) };
 });
 
 import { resetServerEnvCache } from "@/lib/env";
@@ -99,8 +95,7 @@ beforeEach(() => {
   fake.replies.rate_limit_hit = () => ({ data: { allowed: true, remaining: 11, retry_after_ms: 0, backend: "db" } });
   fake.replies.consume_credits = () => ({ data: { ok: true, remaining: 100, reason: null } });
   fake.replies.refund_credits = () => ({ data: { refunded: 3, remaining: 103 } });
-  fake.drawer.ready = false;
-  fake.drawer.check = () => ["the figure drawer is not built yet"];
+  fake.drawer.check = () => [];
   vi.mocked(chatJsonWithFallback).mockReset();
 });
 
@@ -161,20 +156,51 @@ describe("live/chat", () => {
     expect(callsTo("refund_credits")).toEqual([]);
   });
 
-  it("the figure drawer not built yet: the figure is dropped without a repair call, the panel says so, the credits come back", async () => {
-    modelReplies({ reply: "Here is your triangle.", actions: [{ type: "draw_figure", figure: TRIANGLE }] });
-    const res = await chat(request({ ...BODY, message: "draw a right triangle with legs 3 and 4" }));
+  it("a figure the drawer's check passes goes to the board as it is: no repair call", async () => {
+    modelReplies({ reply: "Here is the triangle.", actions: [{ type: "draw_figure", figure: TRIANGLE }] });
+    const body = ChatResponseSchema.parse(await (await chat(request({ ...BODY, message: "draw a right triangle with legs 3 and 4" }))).json());
+    expect(body.actions).toEqual([{ type: "draw_figure", figure: TRIANGLE }]);
+    expect(body.notes).toEqual([]);
+    expect(chatJsonWithFallback).toHaveBeenCalledTimes(1);
+  });
+
+  it("a figure it has problems with gets ONE repair round-trip with the problems", async () => {
+    fake.drawer.check = (spec) => ((spec as { segments?: unknown[] }).segments?.length === 3 ? [] : ["AB is labelled 4 but side BC is not drawn"]);
+    const fixed = { ...TRIANGLE, segments: [...TRIANGLE.segments, { from: "A", to: "C", label: "3" }, { from: "B", to: "C", label: "x" }] };
+    modelReplies({ reply: "Here is the triangle.", actions: [{ type: "draw_figure", figure: TRIANGLE }] }, { figure: fixed });
+    const body = ChatResponseSchema.parse(await (await chat(request(BODY))).json());
+    expect(body.actions).toEqual([{ type: "draw_figure", figure: fixed }]);
+    expect(chatJsonWithFallback).toHaveBeenCalledTimes(2);
+    const repair = String(vi.mocked(chatJsonWithFallback).mock.calls[1][2].messages[1].content);
+    expect(repair).toContain("- AB is labelled 4 but side BC is not drawn");
+    expect(repair).toContain(JSON.stringify(TRIANGLE));
+  });
+
+  it("a repair that still has problems drops the figure: the panel says so and the credits come back", async () => {
+    fake.drawer.check = () => ["point D is used but not defined"];
+    modelReplies({ reply: "Here is your triangle.", actions: [{ type: "draw_figure", figure: TRIANGLE }] }, { figure: TRIANGLE });
+    const res = await chat(request(BODY));
     expect(res.status).toBe(200);
     const body = ChatResponseSchema.parse(await res.json());
     expect(body.actions).toEqual([]);
     expect(body.reply).toBe("Sorry, I couldn't draw that figure.");
     expect(body.refunded).toBe(true);
-    expect(chatJsonWithFallback).toHaveBeenCalledTimes(1);
+    expect(chatJsonWithFallback).toHaveBeenCalledTimes(2);
     expect(callsTo("refund_credits")[0].args).toEqual({ p_request_id: callsTo("consume_credits")[0].args?.p_request_id });
   });
 
-  it("a figure beside other actions: the figure is dropped with a note, the rest kept and charged", async () => {
+  it("at most one repair per request: a second bad figure is dropped without one", async () => {
+    fake.drawer.check = () => ["the angle labelled 70° is drawn 52°"];
+    modelReplies({ reply: "Two figures.", actions: [{ type: "draw_figure", figure: TRIANGLE }, { type: "draw_figure", figure: TRIANGLE }] }, { figure: TRIANGLE });
+    const body = ChatResponseSchema.parse(await (await chat(request(BODY))).json());
+    expect(body.actions).toEqual([]);
+    expect(chatJsonWithFallback).toHaveBeenCalledTimes(2);
+  });
+
+  it("a repair call that fails drops the figure (the request still answers)", async () => {
+    fake.drawer.check = () => ["zero-length side"];
     modelReplies({ reply: "Two problems and the triangle.", actions: [{ type: "write_problems", problems: ["2x = 8", "3x = 9"] }, { type: "draw_figure", figure: TRIANGLE }] });
+    vi.mocked(chatJsonWithFallback).mockRejectedValueOnce(new UpstreamError(504, "slow"));
     const body = ChatResponseSchema.parse(await (await chat(request(BODY))).json());
     expect(body.actions).toEqual([{ type: "write_problems", problems: [["2x = 8"], ["3x = 9"]] }]);
     expect(body.notes).toEqual(["The figure couldn't be drawn."]);
@@ -183,33 +209,12 @@ describe("live/chat", () => {
   });
 
   it("a new screen made only for a figure that could not be drawn is not made", async () => {
-    modelReplies({ reply: "Here is the triangle.", actions: [{ type: "new_screen" }, { type: "draw_figure", figure: TRIANGLE }] });
+    fake.drawer.check = () => ["point D is used but not defined"];
+    modelReplies({ reply: "Here is the triangle.", actions: [{ type: "new_screen" }, { type: "draw_figure", figure: TRIANGLE }] }, { figure: TRIANGLE });
     const body = ChatResponseSchema.parse(await (await chat(request(BODY))).json());
     expect(body.actions).toEqual([]);
     expect(body.reply).toBe("Sorry, I couldn't draw that figure.");
     expect(body.refunded).toBe(true);
-  });
-
-  it("with the drawer: a figure it has problems with gets ONE repair round-trip with the problems", async () => {
-    fake.drawer.ready = true;
-    fake.drawer.check = (spec) => ((spec as { segments?: unknown[] }).segments?.length === 3 ? [] : ["side BC is not drawn"]);
-    const fixed = { ...TRIANGLE, segments: [...TRIANGLE.segments, { from: "A", to: "C", label: "3" }, { from: "B", to: "C", label: "x" }] };
-    modelReplies({ reply: "Here is the triangle.", actions: [{ type: "draw_figure", figure: TRIANGLE }] }, { figure: fixed });
-    const body = ChatResponseSchema.parse(await (await chat(request(BODY))).json());
-    expect(body.actions).toEqual([{ type: "draw_figure", figure: fixed }]);
-    expect(chatJsonWithFallback).toHaveBeenCalledTimes(2);
-    const repair = String(vi.mocked(chatJsonWithFallback).mock.calls[1][2].messages[1].content);
-    expect(repair).toContain("- side BC is not drawn");
-  });
-
-  it("with the drawer: a repair that still fails drops the figure", async () => {
-    fake.drawer.ready = true;
-    fake.drawer.check = () => ["point D is used but not defined"];
-    modelReplies({ reply: "Here.", actions: [{ type: "draw_figure", figure: TRIANGLE }] }, { figure: TRIANGLE });
-    const body = ChatResponseSchema.parse(await (await chat(request(BODY))).json());
-    expect(body.actions).toEqual([]);
-    expect(body.refunded).toBe(true);
-    expect(chatJsonWithFallback).toHaveBeenCalledTimes(2);
   });
 
   it("a polite no: no actions proposed, the charge is kept", async () => {

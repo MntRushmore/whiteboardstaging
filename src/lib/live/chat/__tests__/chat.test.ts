@@ -4,7 +4,7 @@ import { getEngine } from "../../engine";
 import { planHandwriting } from "../../handwriting";
 import { cellOf, readProblemCells, splitColumnsAtProblems, CHAT_PROBLEM_META, type ProblemCell } from "../cells";
 import { ChatActionSchema, ChatRequestSchema, ChatResponseSchema } from "../contracts";
-import { figureDrawerReady, figureProblems, PROBE_FIGURE } from "../figure";
+import { figureProblems, PROBE_FIGURE } from "../figure";
 import { chunkProblems, findFreeArea, gridCells, gridShape, joinPlans, planGrid, PROBLEM_GRID } from "../layout";
 import { hasWords, isCleanAnswer, verifyLines, verifyProblem } from "../verify";
 
@@ -222,15 +222,16 @@ describe("the columns under the chat's problems", () => {
   });
 });
 
-describe("the figure drawer", () => {
-  it("a drawer that plans nothing (the placeholder before the drawer lands) is not ready; one that plans the probe triangle is; one that throws is not", () => {
-    expect(figureDrawerReady(() => null)).toBe(false);
-    expect(figureDrawerReady(() => ({ plan: { lines: [], bounds: { x: 0, y: 0, w: 1, h: 1 }, size: 30, totalMs: 0 }, points: {} }))).toBe(true);
-    expect(
-      figureDrawerReady(() => {
-        throw new Error("boom");
-      }),
-    ).toBe(false);
+describe("the figure drawer's check", () => {
+  it("the probe triangle is clean; a spec the drawer would draw wrong gets sentences a model can act on", () => {
+    expect(figureProblems(PROBE_FIGURE)).toEqual([]);
+    const lying = { ...PROBE_FIGURE, points: { ...PROBE_FIGURE.points, C: { x: 0, y: 8 } } };
+    const problems = figureProblems(lying);
+    expect(problems.length).toBeGreaterThan(0);
+    expect(problems.join(" ")).toMatch(/AC|AB|3|4/);
+  });
+
+  it("never throws: a check that throws is one problem", () => {
     expect(
       figureProblems(PROBE_FIGURE, () => {
         throw new Error("bad spec");

@@ -376,18 +376,31 @@ describe("live loop — the board chat", () => {
       expect(tutor().some((s) => (s.meta as Record<string, unknown>)[CHAT_BLOCK_META] === "graph")).toBe(true);
     });
 
-    it("draw_figure: the drawer's plan placed in free space; the placeholder drawer draws nothing and says so", async () => {
+    it("draw_figure: the drawer's figure, true to scale, in free space beside the work", async () => {
       start();
-      const placeholder = await run([{ type: "draw_figure", figure: PROBE_FIGURE }]);
-      expect(placeholder.outcomes).toEqual([{ type: "draw_figure", ok: false, note: "I couldn't draw that figure." }]);
-      expect(tutor()).toEqual([]);
-      loop.stop();
-      const drawn = planHandwriting(["A", "B"], { size: 30, seed: 1 }).plan!;
-      start("feedback", { planFigure: (_spec, opts) => ({ plan: { ...drawn, bounds: { ...drawn.bounds, w: Math.min(drawn.bounds.w, opts.box.w) } }, points: {} }) });
+      await penLine("2x=8", 100, 200, "2x=8");
       const report = await run([{ type: "draw_figure", figure: PROBE_FIGURE }]);
       expect(report.outcomes).toEqual([{ type: "draw_figure", ok: true }]);
       const figure = tutor().filter((s) => (s.meta as Record<string, unknown>)[CHAT_BLOCK_META] === "figure");
-      expect(handLinesOf(figure)).toEqual(["A", "B"]);
+      expect(figure.length).toBeGreaterThan(5);
+      expect(new Set(figure.map((s) => handBlockOf(s.meta))).size).toBe(1);
+      // its labels are maths in the hand: the side lengths and the unknown
+      expect(handLinesOf(figure)).toEqual(expect.arrayContaining(["3", "4", "x"]));
+      // inside the screen, clear of the student's line
+      const bounds = figure.map((s) => editor.getShapePageBounds(s)!);
+      const box = { x: Math.min(...bounds.map((b) => b.x)), y: Math.min(...bounds.map((b) => b.y)), r: Math.max(...bounds.map((b) => b.maxX)), b: Math.max(...bounds.map((b) => b.maxY)) };
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.r).toBeLessThanOrEqual(1600);
+      expect(box.b).toBeLessThanOrEqual(900);
+      const ink = shapes().filter((s) => !isLiveMeta(s.meta)).map((s) => editor.getShapePageBounds(s)!);
+      for (const b of ink) expect(b.x < box.r && b.maxX > box.x && b.y < box.b && b.maxY > box.y).toBe(false);
+    });
+
+    it("draw_figure: a spec the drawer cannot draw at all is said so, and nothing is written", async () => {
+      start("feedback", { planFigure: () => null });
+      const report = await run([{ type: "draw_figure", figure: PROBE_FIGURE }]);
+      expect(report.outcomes).toEqual([{ type: "draw_figure", ok: false, note: "I couldn't draw that figure." }]);
+      expect(tutor()).toEqual([]);
     });
 
     it("new_screen moves to a blank screen; clear_tutor erases the tutor's ink and keeps the student's", async () => {
