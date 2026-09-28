@@ -76,6 +76,8 @@ Credits: the balance for the current UTC calendar month is `plans.monthly_credit
 | `rate_limit_hit(p_bucket, p_limit, p_window_ms)` | `{allowed, remaining, retry_after_ms, backend:'db'}` | Fixed window aligned to the Unix epoch, keyed `(auth.uid(), p_bucket, window_start)`; one atomic `insert ... on conflict do update set hits = hits + 1`, so exactly `p_limit` parallel calls per window are allowed; `retry_after_ms` = ms until the window ends (0 when allowed); `p_limit` 1..1,000,000 and `p_window_ms` 1..86,400,000 else `400`. Cleans the caller's expired rows for the bucket on every call and, on ~2% of calls, everyone's |
 | `delete_own_account()` | void | Deletes the caller's `auth.users` row; every table above cascades (`bug_reports` keeps anonymised rows). Storage objects are not touched - see the runbook, section 13, for why and for the GC path |
 
+One read-only RPC is `security invoker` instead, so the `usage_events` owner policy decides what it sees: `usage_by_day(p_time_zone)` -> rows `{day, route, events, credits}`, the caller's spend in the current credit period grouped by calendar day in `p_time_zone` (the browser's IANA zone; unknown -> `400`) and route, newest day first. The rows add up to `credit_summary().used`; `/account` reads it instead of downloading thousands of ledger rows. Migration `20260927000000_usage_by_day.sql`.
+
 Storage: bucket `board-assets` (public read, owner-folder writes, `<uid>/<boardId>/<assetId>.<ext>`) and `training-data` (private, trainers, `<uid>/<sampleId>/...`). `storage.objects` has no FK to `auth.users`; ownership is the first path segment, and objects are only ever deleted through the Storage API.
 
 ## Routes
