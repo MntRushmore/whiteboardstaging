@@ -111,6 +111,47 @@ describe("window choice", () => {
   });
 });
 
+describe("a window someone asked for (the board chat)", () => {
+  it("y = sin x from -2π to 2π: x across exactly that range (a sliver wider), y fitted to the curve", () => {
+    const g = planeOf(["y = \\sin x"]);
+    const w = chooseWindow(g, box, { xMin: -2 * Math.PI, xMax: 2 * Math.PI });
+    expect(w.xMin).toBeLessThan(-2 * Math.PI);
+    expect(w.xMin).toBeGreaterThan(-2 * Math.PI - 1);
+    expect(w.xMax).toBeGreaterThan(2 * Math.PI);
+    expect(w.xMax).toBeLessThan(2 * Math.PI + 1);
+    expect(w.yMax).toBeGreaterThan(1);
+    expect(w.yMax).toBeLessThan(3.5);
+    expect(w.yMin).toBeLessThan(-1);
+    expect(w.yMin).toBeGreaterThan(-3.5);
+    // without the hint the sketch picks its own, lopsided range
+    const own = chooseWindow(g, box);
+    expect(Math.abs(own.xMin + own.xMax)).toBeGreaterThan(1);
+  });
+
+  it("a range away from the origin still shows the origin (the axes are drawn through it)", () => {
+    const w = chooseWindow(planeOf(["y = x^{2}"]), box, { xMin: 2, xMax: 5 });
+    expect(w.xMin).toBeLessThan(0);
+    expect(w.xMax).toBeGreaterThan(5);
+    expect(w.yMax).toBeGreaterThan(20);
+  });
+
+  it("y asked for too: exactly that; a line keeps equal units when y can grow to them", () => {
+    const w = chooseWindow(planeOf(["y = x^{2}"]), box, { xMin: -3, xMax: 3, yMin: -1, yMax: 9 });
+    expect([w.yMin, w.yMax]).toEqual([-1, 9]);
+    const line = chooseWindow(planeOf(["y = \\frac{1}{2}x + 1"]), box, { xMin: -4, xMax: 4 });
+    expect(line.equal).toBe(true);
+    expect(box.w / (line.xMax - line.xMin)).toBeCloseTo(box.h / (line.yMax - line.yMin), 6);
+  });
+
+  it("planGraph takes the window through its options", () => {
+    const g = planeOf(["y = \\sin x"]);
+    const asked = planGraph(g, { seed: 3, window: { xMin: -2 * Math.PI, xMax: 2 * Math.PI } });
+    const own = planGraph(g, { seed: 3 });
+    expect(asked?.window?.xMin).toBeCloseTo(chooseWindow(g, box, { xMin: -2 * Math.PI, xMax: 2 * Math.PI }).xMin, 9);
+    expect(asked?.window?.xMin).not.toBeCloseTo(own!.window!.xMin, 3);
+  });
+});
+
 describe("curves", () => {
   it("1 / (x - 2) is broken at its asymptote: no stroke crosses x = 2, and none leaves the box", () => {
     const g = planeOf(["y = \\frac{1}{x - 2}"]);

@@ -3,7 +3,7 @@ import type { GraphAsymptote, GraphCurve, GraphIntent, GraphKeyPoint, NumberLine
 import { niceLatex } from "../engine/graphIntent";
 import type { HandLinePlan, HandPlan } from "../handwriting";
 import { Pen, clipPolyline, clipSegment, inRect, rectsOverlap, writeMath, type Pt, type Written } from "./pen";
-import { chooseWindow, fromPx, numberLineWindow, ticksIn, toPx, type GraphWindow } from "./window";
+import { chooseWindow, fromPx, numberLineWindow, ticksIn, toPx, type GraphWindow, type GraphWindowHint } from "./window";
 
 /**
  * A graph as the tutor sketches it: `GraphIntent` (the maths, from the engine) in, a `HandPlan`
@@ -114,6 +114,8 @@ export interface GraphPlanResult {
 export interface PlanOptions {
   seed: number;
   box?: { w: number; h: number };
+  /** a range someone asked for (a plane graph only); the board's own sketches choose theirs */
+  window?: GraphWindowHint;
 }
 
 /** The sketch for a graph intent, or null when there is nothing the hand can draw. */
@@ -288,7 +290,7 @@ function hatch(c: GraphCurve, win: GraphWindow, dir: 1 | -1, avoid: readonly Rec
 
 function planPlane(intent: PlaneGraphIntent, opts: PlanOptions): GraphPlanResult | null {
   const box = opts.box ?? GRAPH.box;
-  const win = chooseWindow(intent, box);
+  const win = chooseWindow(intent, box, opts.window);
   const pen = new Pen(opts.seed);
   const T = GRAPH.text;
   const origin = toPx(win, 0, 0);
