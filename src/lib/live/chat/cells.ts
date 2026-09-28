@@ -68,6 +68,31 @@ export function readProblemCells(shapes: ReadonlyArray<{ block: string; meta: un
 }
 
 /**
+ * Where each of a problem's lines is written, without its number (`1.`): the rects the tutor lines
+ * its own work up under, as a student would. Every stroke of the tutor's hand carries the LaTeX of
+ * its line (`line`, the loop's `meta.handLine`); a line with no stroke found (the hand was off and
+ * the problem is typeset, or the student rubbed that line out) is the whole head.
+ */
+export function problemLines(shapes: ReadonlyArray<{ block: string; meta: unknown; bounds: Rect; line: string }>, cell: ProblemCell): Rect[] {
+  const rects = cell.lines.map((): Rect | null => null);
+  for (const s of shapes) {
+    const p = problemMetaOf(s.meta);
+    if (!p || (s.block || `${p.n}:${p.lines.join(";")}`) !== cell.key) continue;
+    const i = cell.lines.indexOf(s.line);
+    if (i === -1) continue;
+    const cur = rects[i];
+    if (!cur) {
+      rects[i] = { ...s.bounds };
+      continue;
+    }
+    const x0 = Math.min(cur.x, s.bounds.x);
+    const y0 = Math.min(cur.y, s.bounds.y);
+    rects[i] = { x: x0, y: y0, w: Math.max(cur.x + cur.w, s.bounds.x + s.bounds.w) - x0, h: Math.max(cur.y + cur.h, s.bounds.y + s.bounds.h) - y0 };
+  }
+  return rects.map((r) => r ?? { ...cell.head });
+}
+
+/**
  * The problem a line of the student's is written under: the cell its middle is in, level with
  * the problem or below it (a line beside the problem, `= 4` after it, counts; one above it does not).
  */
