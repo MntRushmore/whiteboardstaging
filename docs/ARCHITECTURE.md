@@ -396,7 +396,8 @@ hand — maths only. History is kept in memory per board for the session.
   ever") prefers at least 8 rows: a shorter one earns the repair, and if that is still short the
   longest proved one goes on. The model's words never reach the board: the
   statements are printed back from their facts in the reader's forms. On the board (`proofWrite.ts`,
-  loaded on first use; `proofLayout.ts`): on an empty screen, else a new one — the figure top right,
+  loaded on first use with the layout and the check — 8.9 KB gzip; the board's first load grew 5.3 KB
+  for the rest, 1,036,984 → 1,042,239 B; `proofLayout.ts`): on an empty screen, else a new one — the figure top right,
   `Given:` / `Prove:` top left, a Statements | Reasons T-table under them, laid out exactly as the
   reader reads a student's proof, every row of a worked proof in it (the planner's rows, unmarked: they
   are the tutor's), or the table left empty to the bottom of the screen. The strokes carry what the
