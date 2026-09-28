@@ -8,6 +8,8 @@
  * locally, so the scoreboard (`src/__eval__/**`) measures exactly what a student gets. The
  * order, the line each method is handed and the fall-through rules:
  *
+ *   -. operation lines (`-3 \quad -3`, `\div 2` under an equation: `engine/operationLine.ts`) are
+ *      taken out of the column first, and a target that is one becomes the line above it;
  *   0. a word problem — the TARGET line reads as prose (`analyzeLine(...).kind === 'text'`) —
  *      skips every local path (the model sets it up);
  *   1. `engine.solveLatex(target, { column, complexRoots })` (`writeSolutionByHand`) — only with
@@ -15,7 +17,8 @@
  *      returns false on ANY `unsupported` construct and the next path gets its turn. The column
  *      down to the target goes with it (a function defined above is not a product), and whether
  *      complex roots may be written (`engine/complexSetting.ts`: by default only when the column
- *      already uses `i`);
+ *      already uses `i`); a trig target under a problem's domain (`0 \le x < 2\pi`, carried down the
+ *      column by the engine, or `opts.domain`) is solved in that domain first;
  *   2. `engine.solveFromLines(column[0..target])` (`writeContextSolution`) — needs at least two
  *      lines with LaTeX; hand or typeset, a result here always ends the solve;
  *   3. `engine.simplifySteps(target)`         (`writeSimplification`) — written as `= …` lines;
@@ -64,9 +67,19 @@ export interface LocalSolveOptions {
    * Default: only when the column already uses `i` — the per-class switch, when there is one.
    */
   complexRoots?: ComplexRootsSetting;
+  /**
+   * The domain of the problem the column is under (`0 \le x < 2\pi`, a `LineDomain.latex`) when it
+   * is not among `lines` — the loop passes a chat problem's. The lines' own the engine finds.
+   */
+  domain?: string;
 }
 
 const NONE: LocalSolveResult = { source: null, steps: [] };
+
+/** Trig of the unknown on a line: its solutions depend on the domain. */
+const TRIG = /\\(?:sin|cos|tan|sec|csc|cot)(?![a-z])/;
+/** A line with a bound on it (`\le`, `<`, `\in`): it may carry its own domain. */
+const OWN_DOMAIN = /\\l(?:e|eq|t)(?![a-z])|<|\\in(?![a-z])/;
 
 function safely<T>(fn: () => T): T | null {
   try {
@@ -80,14 +93,18 @@ function capped(steps: readonly string[]): string[] {
   return steps.slice(0, LIVE_LIMITS.maxSolveSteps);
 }
 
-/** `LiveLoop.columnContext`: the last usable line above, and the first relation above. */
+/**
+ * `LiveLoop.columnContext`: the last usable line above, and the first relation above. An
+ * operation line (`-3 \quad -3`, `engine/operationLine.ts`) is never the previous line: the line
+ * after it is checked against the equation above it.
+ */
 function contextAbove(analyses: readonly (LineAnalysis | null)[], latex: readonly string[], index: number): { previous?: LineAnalysis; original?: LineAnalysis } {
   let previous: LineAnalysis | undefined;
   let original: LineAnalysis | undefined;
   for (let i = 0; i < index; i++) {
     const a = analyses[i];
     if (!a || !latex[i]) continue;
-    if (a.kind === "label" || a.kind === "incomplete" || a.kind === "unknown") continue;
+    if (a.kind === "label" || a.kind === "incomplete" || a.kind === "unknown" || a.kind === "operation") continue;
     previous = a;
     if (!original && (a.kind === "equation" || a.kind === "inequality")) original = a;
   }
@@ -121,6 +138,15 @@ export function localSolve(engine: LiveEngine, lines: readonly string[], targetI
   const mode = opts.mode ?? "answer";
 
   const analyses = analyzeColumn(engine, lines, mode);
+  // An operation line (`-3 \quad -3`) says what to do next, it is not a line to solve or to
+  // solve from: the column without it, asked about the line it sits under.
+  if (analyses.some((a) => a?.kind === "operation")) {
+    const index = targetIndex === undefined ? lines.length - 1 : Math.max(0, Math.min(lines.length - 1, targetIndex));
+    const kept = lines.map((latex, i) => ({ latex, i })).filter((l) => analyses[l.i]?.kind !== "operation");
+    if (kept.length === 0) return NONE;
+    const at = kept.reduce((best, l, k) => (l.i <= index ? k : best), 0);
+    return localSolve(engine, kept.map((l) => l.latex), at, opts);
+  }
   // `buildCheckLines`: only lines with LaTeX take part.
   const column = lines.map((latex, i) => ({ latex, i })).filter((l) => Boolean(l.latex));
   if (column.length === 0) return NONE;
@@ -135,8 +161,13 @@ export function localSolve(engine: LiveEngine, lines: readonly string[], targetI
   //    not read as a product (`f(4)` is not `4f`) and `i` above allows complex roots
   const upTo = lines.slice(0, index + 1).filter(Boolean);
   const solveOptions = { column: upTo, complexRoots: allowComplexRoots(opts.complexRoots ?? DEFAULT_COMPLEX_ROOTS, upTo) };
+  // `\cos x = \frac{1}{2}` under `2\cos x = 1, \ 0 \le x < 2\pi`: solved in the problem's domain (the
+  // engine carries it down the column), not the one turn in degrees a bare trig equation gets. A
+  // target with a domain of its own refuses a second one and is solved as written.
+  const domain = opts.domain ?? targetAnalysis?.domain?.latex;
+  const inDomain = domain && TRIG.test(target) && !OWN_DOMAIN.test(target) ? `${target}, \\ ${domain}` : null;
   if (handwriting && target) {
-    const solved = safely(() => engine.solveLatex(target, solveOptions));
+    const solved = (inDomain ? safely(() => engine.solveLatex(inDomain, solveOptions)) : null) ?? safely(() => engine.solveLatex(target, solveOptions));
     if (solved && solved.steps.length > 0) {
       const steps = capped(solved.steps);
       if (canDraw(steps)) return { source: "solveLatex", steps };

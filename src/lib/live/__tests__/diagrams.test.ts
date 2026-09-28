@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { boundsOf, DRAWINGS, labelAt, Pen, writeAt, type Drawing } from "@/__eval__/drawings";
 import { VARIANTS } from "@/__eval__/handwriting";
 import type { InkStroke } from "../contracts";
-import { diagramNear, glyphScale, hasRelation, labelPayload, labelStack, parseLabelRead, splitInk, DIAGRAM_RULES } from "../diagrams";
+import { barGroups, diagramNear, glyphScale, hasRelation, labelPayload, labelStack, parseLabelRead, splitInk, DIAGRAM_RULES } from "../diagrams";
 import { clusterLines } from "../strokeClusters";
 
 /**
@@ -265,5 +265,95 @@ describe("relations, and reading the labels", () => {
     ["", []],
   ])("reads the stack %j as %j", (latex, rows) => {
     expect(parseLabelRead(latex)).toEqual(rows);
+  });
+});
+
+describe("splitInk: a bar under a whole equation is \"divide both sides\" (`divisionBars`)", () => {
+  /** The tutor's `1. 2\sin x = 1` at hand size 48: its box only, as the loop passes it. */
+  const head = boundsOf(writeAt("1. \\quad 2 \\sin x = 1", 600, 200, VARIANTS[0], 48 / 44));
+  const barUnder = (pen: Pen, r: { x: number; y: number; w: number; h: number }, gap = 20) =>
+    pen.stroke({ x: r.x + 16, y: r.y + r.h + gap }, { x: r.x + r.w + 48, y: r.y + r.h + gap + 1 });
+  const centred = (latex: string, bar: InkStroke) => {
+    const w = boundsOf(writeAt(latex, 0, 0)).w;
+    return writeAt(latex, bar.bounds.x + bar.bounds.w / 2 - w / 2, bar.bounds.y + 10);
+  };
+
+  it("the owner's board: a bar under the tutor's 2\\sin x = 1 and a 2 under it", () => {
+    const bar = barUnder(new Pen("own", 1), head);
+    const two = centred("2", bar);
+    const ink = [bar, ...two];
+    // without the problem's box it is what it always was: a long line, and a label on it
+    const before = splitInk(ink);
+    expect(before.bars).toEqual([]);
+    expect(roleOf(before, bar)).toBe("drawing");
+    // with it, the bar and the 2 are one line of their own
+    const split = splitInk(ink, [], { equations: [head] });
+    expect(split.bars).toEqual([{ bar: bar.id, divisor: two.map((s) => s.id) }]);
+    expect(split.diagrams).toEqual([]);
+    expect(ink.map((s) => roleOf(split, s))).toEqual(ink.map(() => "operation"));
+    const lines = clusterLines(split.writing, [], barGroups(split.bars, ink));
+    expect(lines).toHaveLength(1);
+    expect(lines[0].strokeIds).toEqual([bar.id, ...two.map((s) => s.id)]);
+  });
+
+  it("under the student's own 2x + 3 = 11: the equation stays one line, the bar and the 2 another", () => {
+    const eq = writeAt("2x + 3 = 11", 200, 300);
+    const r = boundsOf(eq);
+    const bar = new Pen("own2", 2).stroke({ x: r.x - 6, y: r.y + r.h + 14 }, { x: r.x + r.w + 16, y: r.y + r.h + 15 });
+    const two = centred("2", bar);
+    const next = writeAt("x = 4", r.x + 10, boundsOf(two).y + boundsOf(two).h + 30);
+    const ink = [...eq, bar, ...two, ...next];
+    // before: a fraction bar, the whole equation over 2
+    expect(clusterLines(ink).some((l) => l.strokeIds.includes(bar.id) && l.strokeIds.includes(eq[0].id))).toBe(true);
+    const split = splitInk(ink);
+    expect(split.bars).toEqual([{ bar: bar.id, divisor: two.map((s) => s.id) }]);
+    const lines = clusterLines(split.writing, [], barGroups(split.bars, ink));
+    const ids = (strokes: InkStroke[]) => strokes.map((s) => s.id as string).sort();
+    expect(lines.map((l) => [...l.strokeIds].sort())).toEqual(expect.arrayContaining([ids(eq), ids([bar, ...two]), ids(next)]));
+    expect(lines).toHaveLength(3);
+    // top to bottom in one column: the equation, the operation, the next line
+    expect([...lines].sort((a, b) => a.row - b.row).map((l) => l.strokeIds.length)).toEqual([eq.length, 1 + two.length, next.length]);
+    expect(new Set(lines.map((l) => l.column)).size).toBe(1);
+  });
+
+  it("-3 and \\frac{1}{2} under the bar are divisors too", () => {
+    for (const d of ["-3", "\\frac{1}{2}"]) {
+      const bar = barUnder(new Pen(`d${d.length}`, 3), head);
+      const divisor = centred(d, bar);
+      const split = splitInk([bar, ...divisor], [], { equations: [head] });
+      expect(split.bars.map((b) => [...b.divisor].sort())).toEqual([divisor.map((s) => s.id as string).sort()]);
+    }
+  });
+
+  it.each([
+    ["an underline under the tutor's problem, nothing under it", (bar: InkStroke) => [bar]],
+    ["a line of maths right under the rule", (bar: InkStroke) => [bar, ...writeAt("2x = 12", bar.bounds.x, bar.bounds.y + 12)]],
+    [
+      "a 2 under each end: not one divisor",
+      (bar: InkStroke) => [bar, ...writeAt("2", bar.bounds.x + 10, bar.bounds.y + 10), ...writeAt("2", bar.bounds.x + bar.bounds.w - 30, bar.bounds.y + 10)],
+    ],
+  ])("%s is not a division bar", (_what, make) => {
+    const bar = barUnder(new Pen("no", 4), head);
+    const split = splitInk(make(bar), [], { equations: [head] });
+    expect(split.bars).toEqual([]);
+  });
+
+  it("a fraction inside a line of the student's is not one, whatever its numerator", () => {
+    for (const latex of ["y = \\frac{k}{x}", "f(x) = \\frac{x^{2} - 4}{x - 2}", "x = \\frac{-b \\pm \\sqrt{b^{2} - 4ac}}{2a}", "\\frac{x^{3} - 2x^{2} + 4}{x - 3}"]) {
+      for (const variant of VARIANTS) expect(splitInk(writeAt(latex, 200, 300, variant)).bars, `${latex} (${variant.name})`).toEqual([]);
+    }
+  });
+
+  it("a bar under an equation with ticks through it is a number line, not a division bar", () => {
+    const pen = new Pen("nl", 5);
+    const bar = barUnder(pen, head);
+    const ticks = [0.2, 0.4, 0.6, 0.8].map((t) => {
+      const x = bar.bounds.x + t * bar.bounds.w;
+      return pen.stroke({ x, y: bar.bounds.y - 9 }, { x: x + 1, y: bar.bounds.y + 9 });
+    });
+    const two = centred("2", bar);
+    const split = splitInk([bar, ...ticks, ...two], [], { equations: [head] });
+    expect(split.bars).toEqual([]);
+    expect(split.diagrams.flatMap((d) => d.kinds)).toContain("numberLine");
   });
 });

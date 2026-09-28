@@ -40,7 +40,20 @@ describe("eval: board chat (offline)", () => {
     expect(CHAT_CORPUS.length).toBeGreaterThanOrEqual(30);
     expect(new Set(CHAT_CORPUS.map((c) => c.id)).size).toBe(CHAT_CORPUS.length);
     expect(new Set(CHAT_CORPUS.map((c) => c.course))).toEqual(new Set(["algebra1", "algebra2", "geometry", "calculus", "mixed"]));
-    expect(new Set(CHAT_CORPUS.map((c) => c.kind))).toEqual(new Set(["problems", "graph", "figure", "lines", "followup", "screen", "refusal"]));
+    expect(new Set(CHAT_CORPUS.map((c) => c.kind))).toEqual(new Set(["problems", "graph", "figure", "lines", "followup", "screen", "refusal", "help"]));
+  });
+
+  it("scoring help: the right problem, the right depth; no help_problem where there are no problems", () => {
+    const three = CHAT_CORPUS.find((x) => x.id === "h-help-3")!;
+    expect(judgeIntent(three, [{ type: "help_problem", problem: 3, depth: "step" }])).toEqual({ ok: true, why: "" });
+    expect(judgeIntent(three, [{ type: "help_problem", problem: 2, depth: "step" }]).why).toBe("helped with 2, not problem 3");
+    expect(judgeIntent(three, [{ type: "help_problem", problem: 3, depth: "solve" }]).why).toBe("solve for problem 3, not step");
+    expect(judgeIntent(three, []).ok).toBe(false);
+    const none = CHAT_CORPUS.find((x) => x.id === "h-no-problems")!;
+    expect(judgeIntent(none, []).ok).toBe(true);
+    expect(judgeIntent(none, [{ type: "help_problem", problem: 1, depth: "step" }]).ok).toBe(false);
+    // the owner's trig problems, as the request shows them
+    expect(String(buildChatMessages(requestFor(three))[1].content)).toContain("3. \\sin x = -\\frac{1}{2}, 0^{\\circ} \\le x < 360^{\\circ}");
   });
 
   it("the production prompt builds for every request, with the screen where it matters", () => {

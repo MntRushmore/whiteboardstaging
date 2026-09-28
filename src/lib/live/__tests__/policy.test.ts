@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HELP_MODES, LIVE_TIMING, type EngineVerdict, type HelpMode, type LineAnalysis, type LineKind } from "../contracts";
-import { badgeFor, decide, isSingleSymbolLatex, localNoteFor, type PolicyInput } from "../policy";
+import { badgeFor, decide, isSingleSymbolLatex, localNoteFor, unjudgedReason, type PolicyInput } from "../policy";
 
 function analysis(verdict: EngineVerdict, kind: LineKind = "equation", extra: Partial<LineAnalysis> = {}): LineAnalysis {
   return { kind, math: "2x+3=11", resultLatex: "", verdict, note: "", ...extra };
@@ -221,5 +221,41 @@ describe("decide — silent kinds and lone symbols (B2/B8)", () => {
   it("treats an undefined latex as not-a-lone-symbol (kind decides)", () => {
     expect(decide(input({ latex: undefined })).echo).toBe(true);
     expect(decide(input({ latex: "" })).echo).toBe(true);
+  });
+});
+
+describe("unjudgedReason — a line the tutor read but cannot judge", () => {
+  const line = (latex: string, kind: LineKind | null = "equation", verdict: EngineVerdict = "ok", over: { confidence?: number; provider?: string } = {}) => ({
+    latex,
+    confidence: over.confidence ?? 0.97,
+    provider: over.provider ?? "mathpix",
+    analysis: kind ? analysis(verdict, kind) : null,
+  });
+
+  it("a lone number or symbol, a label, half a line, prose, LaTeX the engine cannot read: unjudged", () => {
+    expect(unjudgedReason(line("2", "label", "none"))).toBe("unjudged");
+    expect(unjudgedReason(line("2", "expression", "none"))).toBe("unjudged");
+    expect(unjudgedReason(line("\\Delta", "unknown", "unknown"))).toBe("unjudged");
+    expect(unjudgedReason(line("2x", "label", "none"))).toBe("unjudged");
+    expect(unjudgedReason(line("\\sin x =", "incomplete", "none"))).toBe("unjudged");
+    expect(unjudgedReason(line("\\text{help}", "text", "none"))).toBe("unjudged");
+    expect(unjudgedReason(line("x^{2} \\|", "unknown", "unknown"))).toBe("unjudged");
+  });
+
+  it("a read that failed, came back empty or unsure: unread", () => {
+    expect(unjudgedReason(line("", "unknown", "unknown", { provider: "none" }))).toBe("unread");
+    expect(unjudgedReason(line("", null))).toBe("unread");
+    expect(unjudgedReason(line("2x = 8", "equation", "ok", { confidence: 0.3 }))).toBe("unread");
+  });
+
+  it("judgeable, whatever its verdict; nothing to say about a line not read or not analysed yet", () => {
+    expect(unjudgedReason(line("2x = 8"))).toBeNull();
+    expect(unjudgedReason(line("x = 5", "equation", "mismatch"))).toBeNull();
+    // a model check is coming for it
+    expect(unjudgedReason(line("2x + y = 8", "equation", "unknown"))).toBeNull();
+    // readable maths with nothing to compare
+    expect(unjudgedReason(line("x = 6", "assignment", "none"))).toBeNull();
+    expect(unjudgedReason(line("", null, "none", { provider: "none" }))).toBeNull();
+    expect(unjudgedReason(line("2x = 8", null))).toBeNull();
   });
 });

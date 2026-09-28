@@ -12,6 +12,7 @@
  * Pure: the handwriting check is passed in, so this file needs neither tldraw nor an engine.
  */
 import { splitRelations } from "@/lib/live/engine/latex";
+import { parseOperationLine } from "@/lib/live/engine/operationLine";
 import type { LocalSolveResult } from "@/lib/live/localSolve";
 import { courseOf, type Course, type EvalProblem, type Expectation, type Topic } from "./corpus";
 import { definitionsOf, expandCalls } from "./functions";
@@ -1038,9 +1039,28 @@ function judgeInverseSteps(lines: readonly string[], steps: readonly string[]): 
   });
 }
 
-export function judge(problem: EvalProblem, lines: readonly string[], result: LocalSolveResult, opts: JudgeOptions): Verdict {
+/**
+ * A column's lines without its operation lines (`-3 \quad -3`, `\div 2` under an equation:
+ * `engine/operationLine.ts`): they say what is done to both sides next, they are not a link of
+ * the chain — Solve takes them out too (`localSolve`). A sum or difference counts only under a
+ * relation, as in the engine (`-3 - 3` alone is arithmetic).
+ */
+export function withoutOperationLines(lines: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const line of lines) {
+    const op = line ? parseOperationLine(line) : null;
+    const above = out[out.length - 1] ?? "";
+    const relationAbove = splitRelations(above).ops.length > 0;
+    if (op && (relationAbove || op.op === "multiply" || op.op === "divide")) continue;
+    out.push(line);
+  }
+  return out;
+}
+
+export function judge(problem: EvalProblem, written: readonly string[], result: LocalSolveResult, opts: JudgeOptions): Verdict {
   const steps = result.steps;
   const found = result.source !== null && steps.length > 0;
+  const lines = withoutOperationLines(written);
   const read = withDefinitions(lines, steps);
   // a rational function's features, a transformation (`functionFeatures.ts`): their own judge
   const features = judgeFeatures(problem, lines, steps);
@@ -1082,7 +1102,7 @@ export function judge(problem: EvalProblem, lines: readonly string[], result: Lo
     id: problem.id,
     topic: problem.topic,
     course: courseOf(problem),
-    lines: [...lines],
+    lines: [...written],
     expected: expectedLatex(problem.expect),
     note: problem.note,
     source: result.source,

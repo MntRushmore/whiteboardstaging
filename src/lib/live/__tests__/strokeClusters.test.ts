@@ -19,8 +19,11 @@ import {
   isSuperscriptOf,
   medianStrokeHeight,
   rebuildFromMathShapes,
+  unionRects,
 } from "../strokeClusters";
-import type { Rect } from "../contracts";
+import type { InkStroke, Rect } from "../contracts";
+import { writeAt } from "@/__eval__/drawings";
+import { VARIANTS } from "@/__eval__/handwriting";
 
 describe("clusterLines", () => {
   it("groups '2x+3=11' into one line with all strokes", () => {
@@ -233,5 +236,50 @@ describe("clusterLines — what a line of handwriting really is", () => {
   it("a last glyph written higher on a slant is still on the row", () => {
     const ink = [glyph(0, 104), glyph(16, 102), stroke([34, 110], [46, 108]), glyph(56, 92, 16)];
     expect(clusterLines(ink)).toHaveLength(1);
+  });
+});
+
+describe("clusterLines — an operation row under an equation (`mergeOperationRows`)", () => {
+  /** `latex` in the tutor's hand writing as the student, `under` placed under the parts of it that start with `at`. */
+  function withRow(latex: string, pieces: Array<[string, string]>, variant = VARIANTS[0], next?: string) {
+    const eq = writeAt(latex, 300, 300, variant);
+    const r = unionRects(eq.map((s) => s.bounds));
+    const widthOf = (l: string) => unionRects(writeAt(l, 0, 0, variant).map((s) => s.bounds)).w;
+    const row = pieces.map(([piece, before]) => writeAt(piece, r.x + (before ? widthOf(before) + 8 : 0), r.y + r.h + 18, variant, 0.95));
+    const rb = unionRects(row.flat().map((s) => s.bounds));
+    const after = next ? writeAt(next, r.x, rb.y + rb.h + 26, variant) : [];
+    return { eq, row, after, ink: [...eq, ...row.flat(), ...after] };
+  }
+  const ids = (strokes: InkStroke[]) => strokes.map((s) => s.id as string).sort();
+  const linesOf = (ink: InkStroke[]) => clusterLines(ink).map((l) => [...l.strokeIds].sort());
+
+  it.each(VARIANTS.map((v) => [v.name, v] as const))("-3 under + 3 and -3 under 11 is one line, the next line written or not (%s)", (_name, variant) => {
+    for (const next of [undefined, "2x = 8"]) {
+      const { eq, row, after, ink } = withRow("2x + 3 = 11", [["-3", "2x"], ["-3", "2x + 3 ="]], variant, next);
+      const lines = linesOf(ink);
+      expect(lines).toContainEqual(ids(row.flat()));
+      expect(lines).toContainEqual(ids(eq));
+      if (after.length > 0) expect(lines).toContainEqual(ids(after));
+    }
+  });
+
+  it("÷ 2 under each side, and three pieces under a chain", () => {
+    const div = withRow("5x - 7 = 2x + 11", [["\\div 2", ""], ["\\div 2", "5x - 7 = "]]);
+    expect(linesOf(div.ink)).toContainEqual(ids(div.row.flat()));
+    const chain = withRow("-3 < 2x + 1 < 7", [["-1", ""], ["-1", "-3 < 2x"], ["-1", "-3 < 2x + 1 <"]]);
+    expect(linesOf(chain.ink)).toContainEqual(ids(chain.row.flat()));
+  });
+
+  it("pieces under two problems side by side stay apart, and so do answers that are not operations", () => {
+    const left = withRow("2x + 3 = 11", [["-3", "2x"]]);
+    const right = writeAt("4x - 5 = 3", 620, 300);
+    const rr = unionRects(right.map((s) => s.bounds));
+    const under = writeAt("+5", rr.x + 60, rr.y + rr.h + 18, VARIANTS[0], 0.95);
+    const lines = linesOf([...left.ink, ...right, ...under]);
+    expect(lines).toContainEqual(ids(left.row.flat()));
+    expect(lines).toContainEqual(ids(under));
+    const roots = withRow("x^{2} - 5x + 6 = 0", [["x = 2", ""], ["x = 3", "x^{2} - 5x + 6"]]);
+    const rootLines = linesOf(roots.ink);
+    for (const piece of roots.row) expect(rootLines).toContainEqual(ids(piece));
   });
 });

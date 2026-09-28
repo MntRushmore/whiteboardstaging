@@ -160,8 +160,12 @@
   width: 8px;
   height: 8px;
   border-radius: 9999px;
-  background: #9ca3af; /* idle: gray */
+  background: #9ca3af; /* off: gray */
   transition: background-color 200ms ease;
+}
+/* on and listening: green, so a quiet board still says Live is working */
+.live-pill[data-status="idle"] .live-pill__dot {
+  background: #22c55e;
 }
 .live-pill[data-status="reading"] .live-pill__dot,
 .live-pill[data-status="checking"] .live-pill__dot {

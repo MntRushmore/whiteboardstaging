@@ -1,16 +1,16 @@
 {
   "summary": {
-    "total": 701,
-    "passed": 701,
+    "total": 719,
+    "passed": 719,
     "stages": {
-      "local": 701,
-      "answer": 701,
-      "steps": 701,
-      "drawable": 701,
-      "words": 701
+      "local": 719,
+      "answer": 719,
+      "steps": 719,
+      "drawable": 719,
+      "words": 719
     },
     "answers": {
-      "ok": 701,
+      "ok": 719,
       "approx": 0,
       "form": 0,
       "unsolved": 0,
@@ -33,26 +33,26 @@
       },
       {
         "topic": "linear",
-        "total": 22,
-        "passed": 22,
+        "total": 29,
+        "passed": 29,
         "stages": {
-          "local": 22,
-          "answer": 22,
-          "steps": 22,
-          "drawable": 22,
-          "words": 22
+          "local": 29,
+          "answer": 29,
+          "steps": 29,
+          "drawable": 29,
+          "words": 29
         }
       },
       {
         "topic": "inequality",
-        "total": 17,
-        "passed": 17,
+        "total": 18,
+        "passed": 18,
         "stages": {
-          "local": 17,
-          "answer": 17,
-          "steps": 17,
-          "drawable": 17,
-          "words": 17
+          "local": 18,
+          "answer": 18,
+          "steps": 18,
+          "drawable": 18,
+          "words": 18
         }
       },
       {
@@ -93,14 +93,14 @@
       },
       {
         "topic": "quadratic",
-        "total": 14,
-        "passed": 14,
+        "total": 16,
+        "passed": 16,
         "stages": {
-          "local": 14,
-          "answer": 14,
-          "steps": 14,
-          "drawable": 14,
-          "words": 14
+          "local": 16,
+          "answer": 16,
+          "steps": 16,
+          "drawable": 16,
+          "words": 16
         }
       },
       {
@@ -249,14 +249,14 @@
       },
       {
         "topic": "trig-equation",
-        "total": 13,
-        "passed": 13,
+        "total": 21,
+        "passed": 21,
         "stages": {
-          "local": 13,
-          "answer": 13,
-          "steps": 13,
-          "drawable": 13,
-          "words": 13
+          "local": 21,
+          "answer": 21,
+          "steps": 21,
+          "drawable": 21,
+          "words": 21
         }
       },
       {
@@ -599,14 +599,14 @@
     "byCourse": [
       {
         "course": "algebra-1",
-        "total": 237,
-        "passed": 237,
+        "total": 247,
+        "passed": 247,
         "stages": {
-          "local": 237,
-          "answer": 237,
-          "steps": 237,
-          "drawable": 237,
-          "words": 237
+          "local": 247,
+          "answer": 247,
+          "steps": 247,
+          "drawable": 247,
+          "words": 247
         }
       },
       {
@@ -635,14 +635,14 @@
       },
       {
         "course": "precalc-calc",
-        "total": 100,
-        "passed": 100,
+        "total": 108,
+        "passed": 108,
         "stages": {
-          "local": 100,
-          "answer": 100,
-          "steps": 100,
-          "drawable": 100,
-          "words": 100
+          "local": 108,
+          "answer": 108,
+          "steps": 108,
+          "drawable": 108,
+          "words": 108
         }
       },
       {
@@ -13194,6 +13194,320 @@
       "failures": []
     },
     {
+      "id": "t2-52",
+      "topic": "trig-equation",
+      "course": "precalc-calc",
+      "lines": [
+        "2\\cos x = 1, 0^{\\circ} \\le x < 360^{\\circ}"
+      ],
+      "expected": "x = 60^{\\circ}, \\ x = 300^{\\circ}",
+      "note": "the interval written, in degrees",
+      "source": "solveLatex",
+      "steps": [
+        "\\cos x = \\frac{1}{2}",
+        "\\cos^{-1}\\left(\\frac{1}{2}\\right) = 60^{\\circ}",
+        "x = 60^{\\circ}, \\ x = 360^{\\circ} - 60^{\\circ}",
+        "x = 60^{\\circ}, \\ x = 300^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "2\\cos x = 1, 0^{\\circ} \\le x < 360^{\\circ}",
+          "to": "\\cos x = \\frac{1}{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "\\cos x = \\frac{1}{2}",
+          "to": "\\cos^{-1}\\left(\\frac{1}{2}\\right) = 60^{\\circ}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\cos x = \\frac{1}{2}",
+          "to": "x = 60^{\\circ}, \\ x = 360^{\\circ} - 60^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "x = 60^{\\circ}, \\ x = 360^{\\circ} - 60^{\\circ}",
+          "to": "x = 60^{\\circ}, \\ x = 300^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-53",
+      "topic": "trig-equation",
+      "course": "precalc-calc",
+      "lines": [
+        "\\tan x = \\sqrt{3}, 0^{\\circ} \\le x < 360^{\\circ}"
+      ],
+      "expected": "x = 60^{\\circ}, \\ x = 240^{\\circ}",
+      "note": "the interval written, in degrees",
+      "source": "solveLatex",
+      "steps": [
+        "\\tan^{-1}(\\sqrt{3}) = 60^{\\circ}",
+        "x = 60^{\\circ}, \\ x = 180^{\\circ} + 60^{\\circ}",
+        "x = 60^{\\circ}, \\ x = 240^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\tan x = \\sqrt{3}, 0^{\\circ} \\le x < 360^{\\circ}",
+          "to": "\\tan^{-1}(\\sqrt{3}) = 60^{\\circ}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\tan x = \\sqrt{3}, 0^{\\circ} \\le x < 360^{\\circ}",
+          "to": "x = 60^{\\circ}, \\ x = 180^{\\circ} + 60^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "x = 60^{\\circ}, \\ x = 180^{\\circ} + 60^{\\circ}",
+          "to": "x = 60^{\\circ}, \\ x = 240^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-54",
+      "topic": "trig-equation",
+      "course": "precalc-calc",
+      "lines": [
+        "\\sin x = -\\frac{1}{2}, 0^{\\circ} \\le x < 360^{\\circ}"
+      ],
+      "expected": "x = 210^{\\circ}, \\ x = 330^{\\circ}",
+      "note": "the interval written, in degrees: third and fourth quadrants",
+      "source": "solveLatex",
+      "steps": [
+        "\\sin^{-1}\\left(\\frac{1}{2}\\right) = 30^{\\circ}",
+        "x = 180^{\\circ} + 30^{\\circ}, \\ x = 360^{\\circ} - 30^{\\circ}",
+        "x = 210^{\\circ}, \\ x = 330^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\sin x = -\\frac{1}{2}, 0^{\\circ} \\le x < 360^{\\circ}",
+          "to": "\\sin^{-1}\\left(\\frac{1}{2}\\right) = 30^{\\circ}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\sin x = -\\frac{1}{2}, 0^{\\circ} \\le x < 360^{\\circ}",
+          "to": "x = 180^{\\circ} + 30^{\\circ}, \\ x = 360^{\\circ} - 30^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "x = 180^{\\circ} + 30^{\\circ}, \\ x = 360^{\\circ} - 30^{\\circ}",
+          "to": "x = 210^{\\circ}, \\ x = 330^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-55",
+      "topic": "trig-equation",
+      "course": "precalc-calc",
+      "lines": [
+        "2\\cos x = 1, \\ 0 \\le x < 2\\pi",
+        "\\cos x = \\frac{1}{2}"
+      ],
+      "expected": "x = \\frac{\\pi}{3}, \\ x = \\frac{5\\pi}{3}",
+      "note": "from the student's step: the problem's interval in radians, not a turn in degrees",
+      "source": "solveLatex",
+      "steps": [
+        "\\cos^{-1}\\left(\\frac{1}{2}\\right) = \\frac{\\pi}{3}",
+        "x = \\frac{\\pi}{3}, \\ x = 2\\pi - \\frac{\\pi}{3}",
+        "x = \\frac{\\pi}{3}, \\ x = \\frac{5\\pi}{3}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "\\cos^{-1}\\left(\\frac{1}{2}\\right) = \\frac{\\pi}{3}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "x = \\frac{\\pi}{3}, \\ x = 2\\pi - \\frac{\\pi}{3}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "x = \\frac{\\pi}{3}, \\ x = \\frac{5\\pi}{3}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-56",
+      "topic": "trig-equation",
+      "course": "precalc-calc",
+      "lines": [
+        "2\\cos x = 1, \\ 0^{\\circ} \\le x < 180^{\\circ}",
+        "\\cos x = \\frac{1}{2}"
+      ],
+      "expected": "x = 60^{\\circ}",
+      "note": "from the student's step: half a turn, so 300° is not an answer",
+      "source": "solveLatex",
+      "steps": [
+        "\\cos^{-1}\\left(\\frac{1}{2}\\right) = 60^{\\circ}",
+        "x = 60^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "\\cos^{-1}\\left(\\frac{1}{2}\\right) = 60^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "x = 60^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "t2-57",
+      "topic": "trig-equation",
+      "course": "precalc-calc",
+      "lines": [
+        "\\tan x = 1, \\quad x \\in [0, 2\\pi)"
+      ],
+      "expected": "x = \\frac{\\pi}{4}, \\ x = \\frac{5\\pi}{4}",
+      "note": "the interval in set notation",
+      "source": "solveLatex",
+      "steps": [
+        "\\tan^{-1}(1) = \\frac{\\pi}{4}",
+        "x = \\frac{\\pi}{4}, \\ x = \\pi + \\frac{\\pi}{4}",
+        "x = \\frac{\\pi}{4}, \\ x = \\frac{5\\pi}{4}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "\\tan^{-1}(1) = \\frac{\\pi}{4}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "x = \\frac{\\pi}{4}, \\ x = \\pi + \\frac{\\pi}{4}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "x = \\frac{\\pi}{4}, \\ x = \\frac{5\\pi}{4}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
       "id": "t2-24",
       "topic": "trig-identity",
       "course": "precalc-calc",
@@ -14820,6 +15134,576 @@
         "unverified: `\\frac{1}{y}\\frac{dy}{dx} = \\ln x + 1` (unreadable step (untranslatable side))",
         "unverified: `\\frac{dy}{dx} = y(\\ln x + 1)` (several unknowns (y, x, D_y))"
       ],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "op-01",
+      "topic": "linear",
+      "course": "algebra-1",
+      "lines": [
+        "2x + 3 = 11",
+        "\\begin{array}{ll}\n-3 & -3\n\\end{array}"
+      ],
+      "expected": "x = 4",
+      "note": "`-3` under each side, as Mathpix read it",
+      "source": "solveLatex",
+      "steps": [
+        "2x = 8",
+        "x = 4"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "2x + 3 = 11",
+          "to": "2x = 8",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "2x = 8",
+          "to": "x = 4",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "op-02",
+      "topic": "linear",
+      "course": "algebra-1",
+      "lines": [
+        "2x + 3 = 11",
+        "-3 \\quad-3",
+        "2x = 8"
+      ],
+      "expected": "x = 4",
+      "note": "the line after the operation line",
+      "source": "solveLatex",
+      "steps": [
+        "x = 4"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "x = 4",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "op-03",
+      "topic": "linear",
+      "course": "algebra-1",
+      "lines": [
+        "2x = 8",
+        "\\div 2 \\div 2"
+      ],
+      "expected": "x = 4",
+      "source": "solveLatex",
+      "steps": [
+        "x = 4"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "2x = 8",
+          "to": "x = 4",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "op-04",
+      "topic": "linear",
+      "course": "algebra-1",
+      "lines": [
+        "\\frac{x}{3} = 4",
+        "\\times 3 \\times 3"
+      ],
+      "expected": "x = 12",
+      "source": "solveLatex",
+      "steps": [
+        "x = 12"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "\\frac{x}{3} = 4",
+          "to": "x = 12",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "op-05",
+      "topic": "linear",
+      "course": "algebra-1",
+      "lines": [
+        "x - 5 = 2",
+        "+5+5"
+      ],
+      "expected": "x = 7",
+      "source": "solveLatex",
+      "steps": [
+        "x = 7"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "x - 5 = 2",
+          "to": "x = 7",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "op-06",
+      "topic": "linear",
+      "course": "algebra-1",
+      "lines": [
+        "5x = 2x + 9",
+        "-2 x-2 x"
+      ],
+      "expected": "x = 3",
+      "source": "solveLatex",
+      "steps": [
+        "5x - 2x = 9",
+        "3x = 9",
+        "x = 3"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "5x = 2x + 9",
+          "to": "5x - 2x = 9",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "5x - 2x = 9",
+          "to": "3x = 9",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "3x = 9",
+          "to": "x = 3",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "op-07",
+      "topic": "linear",
+      "course": "algebra-1",
+      "lines": [
+        "x + \\frac{1}{2} = 3",
+        "-\\frac{1}{2} \\quad-\\frac{1}{2}"
+      ],
+      "expected": "x = 2.5",
+      "source": "solveLatex",
+      "steps": [
+        "2x + 1 = 6",
+        "2x = 5",
+        "x = \\frac{5}{2}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "x + \\frac{1}{2} = 3",
+          "to": "2x + 1 = 6",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "2x + 1 = 6",
+          "to": "2x = 5",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "2x = 5",
+          "to": "x = \\frac{5}{2}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "op-08",
+      "topic": "inequality",
+      "course": "algebra-1",
+      "lines": [
+        "-2x < 6",
+        "\\div (-2) \\quad \\div (-2)"
+      ],
+      "expected": "x > -3",
+      "note": "dividing by a negative: the next line turns the sign",
+      "source": "solveLatex",
+      "steps": [
+        "x > -3"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "-2x < 6",
+          "to": "x > -3",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "op-09",
+      "topic": "trig-equation",
+      "course": "precalc-calc",
+      "lines": [
+        "2 \\sin x = 1",
+        "\\div 2"
+      ],
+      "expected": "x = 30^{\\circ}, \\ x = 150^{\\circ}",
+      "note": "a bar under the equation with 2 under it (`\\div 2`, `barDivisionLatex`)",
+      "source": "solveLatex",
+      "steps": [
+        "0^{\\circ} \\le x < 360^{\\circ}",
+        "2\\sin x = 1",
+        "\\sin x = \\frac{1}{2}",
+        "\\sin^{-1}\\left(\\frac{1}{2}\\right) = 30^{\\circ}",
+        "x = 30^{\\circ}, \\ x = 180^{\\circ} - 30^{\\circ}",
+        "x = 30^{\\circ}, \\ x = 150^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "2 \\sin x = 1",
+          "to": "0^{\\circ} \\le x < 360^{\\circ}",
+          "status": "ok",
+          "reason": "the interval"
+        },
+        {
+          "from": "2 \\sin x = 1",
+          "to": "2\\sin x = 1",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "2\\sin x = 1",
+          "to": "\\sin x = \\frac{1}{2}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "\\sin x = \\frac{1}{2}",
+          "to": "\\sin^{-1}\\left(\\frac{1}{2}\\right) = 30^{\\circ}",
+          "status": "ok",
+          "reason": "a true statement beside the working"
+        },
+        {
+          "from": "\\sin x = \\frac{1}{2}",
+          "to": "x = 30^{\\circ}, \\ x = 180^{\\circ} - 30^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "x = 30^{\\circ}, \\ x = 180^{\\circ} - 30^{\\circ}",
+          "to": "x = 30^{\\circ}, \\ x = 150^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "op-11",
+      "topic": "quadratic",
+      "course": "algebra-1",
+      "lines": [
+        "x^{2} - 7x + 10 = 0",
+        "-2 \\quad -5",
+        "(x - 2)(x - 5) = 0"
+      ],
+      "expected": "x = 2 \\text{ or } x = 5",
+      "note": "a factor pair under a quadratic: scratch, not an operation that went wrong",
+      "source": "solveLatex",
+      "steps": [
+        "x - 2 = 0, \\ x - 5 = 0",
+        "x = 2, \\ x = 5"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "x - 2 = 0, \\ x - 5 = 0",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "x = 2, \\ x = 5",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "op-12",
+      "topic": "quadratic",
+      "course": "algebra-1",
+      "lines": [
+        "x^{2} - 7x + 10 = 0",
+        "-10 \\quad -10"
+      ],
+      "expected": "x = 2 \\text{ or } x = 5",
+      "note": "the same operand twice under a quadratic: an operation",
+      "source": "solveLatex",
+      "steps": [
+        "(x - 2)(x - 5) = 0",
+        "x = 2, \\ x = 5"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "x^{2} - 7x + 10 = 0",
+          "to": "(x - 2)(x - 5) = 0",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(x - 2)(x - 5) = 0",
+          "to": "x = 2, \\ x = 5",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "op-10",
+      "topic": "trig-equation",
+      "course": "precalc-calc",
+      "lines": [
+        "2 \\sin x = 1",
+        "\\div 2",
+        "\\sin x = \\frac{1}{2}"
+      ],
+      "expected": "x = 30^{\\circ}, \\ x = 150^{\\circ}",
+      "source": "solveLatex",
+      "steps": [
+        "0^{\\circ} \\le x < 360^{\\circ}",
+        "\\sin^{-1}\\left(\\frac{1}{2}\\right) = 30^{\\circ}",
+        "x = 30^{\\circ}, \\ x = 180^{\\circ} - 30^{\\circ}",
+        "x = 30^{\\circ}, \\ x = 150^{\\circ}"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "0^{\\circ} \\le x < 360^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "\\sin^{-1}\\left(\\frac{1}{2}\\right) = 30^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "x = 30^{\\circ}, \\ x = 180^{\\circ} - 30^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "x = 30^{\\circ}, \\ x = 150^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
       "pass": true,
       "failures": []
     },

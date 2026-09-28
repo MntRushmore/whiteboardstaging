@@ -52,7 +52,7 @@ A new student lands on `/` after sign-up (no email confirmation). `useWelcome` (
 
 1. **Welcome** (`Welcome.tsx`, a dynamic import): what the product does in two lines beside the sign-in page's pictures (`public/login/`), then the course (Algebra 1, Geometry, Algebra 2, Pre-calculus / Calculus, Something else), then Start. Start stores the course (`save_onboarding(p_course)`), creates the first board (named after its starter problem) and writes the device marker `agathon.onboarding.tour.<uid>` = `{ boardId, course, starter, step }`. Skip, at either step, calls `save_onboarding(p_complete: true)` and leaves the student on the empty state.
 2. **The guided board** (`BoardTour.tsx`, a dynamic import the board page makes only when `isGuidedBoard` — a synchronous localStorage read in `src/lib/onboarding/marker.ts` — says this is the marked board, so the board's first load gains only that check). It sets Feedback and the pen, then writes one starter problem from the course through the board chat's executor: `LiveController.runChatActions([{ type: "write_problems", … }])` — the same verification (`verifyProblem`: the engine reads it, `localSolve` answers it, the hand can write it) and the same numbered problem cell, so the student's first line under it gets its tick or ring like under any chat problem. No model call and no credits; the starters are a curated list per course (`src/lib/onboarding/courses.ts`, picked by a hash of the user id, the rest of the course's list as fallbacks), each tested to verify, to be writable by the hand, and to have a first step the engine ticks in Feedback and a wrong one it rings.
-3. **Three coach marks** (`CoachMark.tsx`), one at a time, each a small non-modal popover anchored to the real control with a highlight ring round it, placed by `placeCoachMark` (`placement.ts`) clear of the problem and the student's work: the pen (it waits for the tutor's mark — a new shape whose `meta.mark` is `check:`/`circle:` — then says what the tick or ring means; a question mark asks for larger writing), the help tabs, and Ask (opening Ask finishes the tour). Tab reaches the buttons, Esc or the close button ends the tour. The step is kept in the device marker, so a reload resumes.
+3. **Three coach marks** (`CoachMark.tsx`), one at a time, each a small non-modal popover anchored to the real control with a highlight ring round it, placed by `placeCoachMark` (`placement.ts`) clear of the problem and the student's work: the pen (it waits for the tutor's mark — a new shape whose `meta.mark` is `check:`/`circle:` — then says what the tick or ring means; a question mark changes what it says by its `meta.markWhy`: `unread` asks for larger writing, `unjudged` — a lone `2` under the problem — says "That ? means the tutor couldn't tell what that line says. Write the whole next line." and the starter's hint), the help tabs (true on the starter problem: Suggest writes its first step under it, Solve works it out — "The tutor works the problems it wrote" below), and Ask (opening Ask finishes the tour). Tab reaches the buttons, Esc or the close button ends the tour. The step is kept in the device marker, so a reload resumes.
 4. Finishing or closing stores completion (`save_onboarding(p_complete: true)`, plus `agathon.onboarding.done.<uid>` on the device so a failed write never brings the welcome back) and the tour never shows again. Each step is recorded with `clientMetric` (`onboarding.welcome.*`, `onboarding.tour.*`), which lands in the bug-report log buffer; there is no analytics vendor.
 
 State: `profiles.course` (one of the five ids, a check constraint) and `profiles.onboarded_at`, added by `supabase/migrations/20260928100000_onboarding.sql`, which backfills `onboarded_at = created_at` for every profile that exists when it runs — accounts made before onboarding shipped never see the welcome. Both columns are readable by the owner (the existing select policy) and written only by the SECURITY DEFINER RPC `save_onboarding(p_course text default null, p_complete boolean default false)` → `{ course, onboarded_at }`, which acts on `auth.uid()` alone, rejects an unknown course with 22023 (HTTP 400), stamps `onboarded_at` once (a second completion keeps the first time) and creates a missing profile row first; `anon` cannot execute it and `authenticated` has no update grant on either column (a PATCH is 42501). `npm run db:verify` checks all of it (`checkOnboarding` in `scripts/lib/rlsChecks.mjs`).
@@ -108,7 +108,7 @@ Every handler under `src/app/api/**` follows the same preamble: `requireUser` (J
 | `/api/live/solve` | POST | `livePreamble` | `liveSolve` 10 | 10 | `SolveRequestSchema` | SSE worked-solution steps | active |
 | `/api/live/setup` | POST | `livePreamble` | `liveSetup` 10 | 2 | `SetupRequestSchema` (`lines` 0–40 strings; optional `crop` data:image ≤ 280 KB and `labels` ≤ 40, labels only with a crop; lines or a crop required) | A word problem → `{ lines, unknown?, model, ms }`: LaTeX assignments / equations only (no arithmetic, no words), which the client's engine then solves. `openai/gpt-5.4-mini`, fallback `deepseek/deepseek-v4.1-flash` (`LIVE_MODEL_SETUP`). With a `crop` it is a hand-drawn **figure** (asked about, or in Solve left labelled with an unknown): the model describes what the figure shows and `planFigure` (`src/lib/live/figure`) writes the equations — `{ lines, unknown, figure: { source: "facts", stages: [{ letter, lines, value, kind }] } }` — or, when that read does not hold up, its own lines (`figure: { source: "lines", reason, kind? }`); read by `google/gemini-3.1-flash-lite`, fallback `google/gemini-3.5-flash-lite` (`LIVE_MODEL_FIGURE`, prompt `prompts/figure.ts`; chosen on `npm run eval:figures`). A reply with no lines is a 502 (refunded) | active |
 | `/api/live/reread` | POST | `livePreamble` | `liveReread` 30 | 1 | `RereadRequestSchema` (`crop` data:image ≤ 280 KB, Mathpix's `latex`, the column's `above` / `below`) | The second reader: one suspicious line's ink crop → `{ latex, changed, model, ms }`. `google/gemini-3.1-flash-lite`, fallback `anthropic/claude-haiku-4.5` (`LIVE_MODEL_REREAD`). Only sent on a signal, at most once per ink | active |
-| `/api/live/chat` | POST | `livePreamble` | `liveChat` 12 | 3 | `ChatRequestSchema` (`message` 1–500 chars, `history` ≤ 6 turns, `screen`: `empty`, the student's lines, the tutor's lines, the problems written there) | The board chat: a typed request → `{ reply, actions, notes, refunded?, model, ms }` (`src/lib/live/chat/contracts.ts`); actions validated one by one with zod, an invalid one dropped. `openai/gpt-5.4-mini`, fallback `deepseek/deepseek-v4.1-flash` (`LIVE_MODEL_CHAT`; chosen on `npm run eval:chat`). A `draw_figure` that `checkFigure` finds problems with gets one repair call per request; still wrong, it is dropped with a note. When every proposed action was dropped the reply says so and the charge is refunded (200, `refunded: true`) | active |
+| `/api/live/chat` | POST | `livePreamble` | `liveChat` 12 | 3 | `ChatRequestSchema` (`message` 1–500 chars, `history` ≤ 6 turns, `screen`: `empty`, the student's lines, the tutor's lines, the problems written there and their `numbers` on the board) | The board chat: a typed request → `{ reply, actions, notes, refunded?, model, ms }` (`src/lib/live/chat/contracts.ts`); actions validated one by one with zod, an invalid one dropped; a `help_problem` for a number not on the screen dropped with a note. `openai/gpt-5.4-mini`, fallback `deepseek/deepseek-v4.1-flash` (`LIVE_MODEL_CHAT`; chosen on `npm run eval:chat`). A `draw_figure` that `checkFigure` finds problems with gets one repair call per request; still wrong, it is dropped with a note. When every proposed action was dropped the reply says so and the charge is refunded (200, `refunded: true`) | active |
 
 Notes:
 
@@ -175,8 +175,8 @@ The client maps `unauthorized` to a redirect to `/login`, `rate_limited` to a re
 ```
 pen-up (draw.isComplete false→true, source 'user')
   → quiet gate 600 ms (450 ms on rewrite)      src/lib/live/liveLoop.ts (a stroke plainly a drawing does not push it back)
-  → splitInk → drawings (+ marks, labels) out   diagrams.ts: only handwriting goes on
-  → clusterLines(writing) → InkLine[]           strokeClusters.ts (union-find, fraction bars, columns)
+  → splitInk → drawings (+ marks, labels) out   diagrams.ts: only handwriting goes on (+ division bars, a line each)
+  → clusterLines(writing) → InkLine[]           strokeClusters.ts (union-find, fraction bars, operation rows, columns)
   → buildPayload → normalized ints + sha-1      strokePayload.ts (cache hit → skip network)
   → POST /api/live/recognize                    Mathpix v3/strokes ▸ vision fallback
   → engine.analyzeLine (mathjs, offline)        src/lib/live/engine/**
@@ -195,6 +195,11 @@ Solve / Help on a column
   → word problem? POST /api/live/setup          wordProblem.ts: validateSetupLines
       → localSolve(setup) → setup + steps written as one hand block (no solve model)
   → otherwise, or setup unusable: POST /api/live/solve (SSE) → createSolveStepGuard → one block
+
+Solve steps / Help / the dial moved into Solve or Suggest, nothing of the student's to act on under a chat problem
+  → the current problem (chat/work.ts)          the cell last written in, else the first open one
+  → its lines as the column → localSolve        the rest worked out, or the next step (problemSteps)
+  → by hand under it, in its cell (placeInCell), meta.problemWork; model only when the engine has nothing
 
 Solve / Help on a drawing (the last thing drawn)
   → labels (one recognize call) + crop → POST /api/live/setup   the model describes the figure (facts)
@@ -226,7 +231,7 @@ moves beside the work (`keepOnScreen`). Within a screen, a line separated from t
 blank gap of more than max(120 px, 3 × line height) starts a new column (`assignColumns`), so a
 second problem further down is never checked as the next step of the first.
 
-**No words on the board.** Everything the tutor puts on the page is maths in its animated hand (`HandWriter`, blue), a hand-drawn mark (`src/lib/live/marks.ts`) or a graph sketched in the same hand (numbers, the axis letters and coordinates only; see "Graphs" below): a tick after a step the engine verified, a ring round a wrong one (the engine's `mismatch`, or a model annotation with `verdict: warn`, remembered on the echo as `meta.aiWarnLatex`), a question mark beside ink it cannot read. There are no hint cards and no prose notes. Not even "or": several answers are a list (`x = 2, \ x = 3`, an inequality's union `x < 2, \ x > 3`), no solution is `\varnothing`, every number is `x \in \mathbb{R}` for an equation (`0 = 0`) and `-\infty < x < \infty` for an inequality, an excluded value is `x \neq 1`, a failed check is `\sqrt{4} \neq -2`. In Suggest and Solve, once the student stops (the settle), the right next step is written by hand beside a ringed line, computed by the engine from the last good line above (`suggestNextStep`); Help does it at once in any mode, and only asks the model for one step when the engine has none. The model's Solve steps are written as one handwritten block when the stream ends (typeset only if the hand lacks a symbol). The grey echo (the readback of what Mathpix read) shows only on hover, or while its ink is hovered or selected, and always when the device has the hand switched off. The dev "Mathpix" panel still shows every read.
+**No words on the board.** Everything the tutor puts on the page is maths in its animated hand (`HandWriter`, blue), a hand-drawn mark (`src/lib/live/marks.ts`) or a graph sketched in the same hand (numbers, the axis letters and coordinates only; see "Graphs" below): a tick after a step the engine verified, a ring round a wrong one (the engine's `mismatch`, or a model annotation with `verdict: warn`, remembered on the echo as `meta.aiWarnLatex`), a question mark beside ink it cannot read — and, under a problem the tutor wrote, beside a line it read but cannot judge (see "No silent lines under a problem" below). There are no hint cards and no prose notes. Not even "or": several answers are a list (`x = 2, \ x = 3`, an inequality's union `x < 2, \ x > 3`), no solution is `\varnothing`, every number is `x \in \mathbb{R}` for an equation (`0 = 0`) and `-\infty < x < \infty` for an inequality, an excluded value is `x \neq 1`, a failed check is `\sqrt{4} \neq -2`. In Suggest and Solve, once the student stops (the settle), the right next step is written by hand beside a ringed line, computed by the engine from the last good line above (`suggestNextStep`); Help does it at once in any mode, and only asks the model for one step when the engine has none. The model's Solve steps are written as one handwritten block when the stream ends (typeset only if the hand lacks a symbol). The grey echo (the readback of what Mathpix read) shows only on hover, or while its ink is hovered or selected, and always when the device has the hand switched off. The dev "Mathpix" panel still shows every read.
 
 **Marks may be immediate; answers must wait.** Two clocks, because "this line is finished" and
 "the student has stopped" are different questions. `LIVE_TIMING.quietMs` (600 ms, per line) gates
@@ -259,6 +264,40 @@ worked out by hand draws nothing new (the block carries `meta.solvedLatex`). Sam
 itself: only `requestHelp` sets a crop, and the schema refuses one without `userAsked` + `focusLineId`.
 When the ink touched last is a drawing or one of its labels (not a line), Help — and Solve steps —
 read the figure instead ("Drawings", below); a drawing never gets a "?".
+
+**The tutor works the problems it wrote (`src/lib/live/chat/work.ts`, `LiveLoop.workProblem`).** On a
+screen of the chat's problems (or the onboarding's starter), a student with no line to act on — none at
+all, or only ink the tutor cannot judge, like a lone `2` — is asking about "the current problem": the
+one whose cell they last wrote in, else the first in reading order with no work of theirs and no
+solution of the tutor's under it (a screen holds one set: the chat writes a set only on an empty
+screen). One problem at a time, never every problem on the screen. Solve steps, Help in Solve and the
+dial moved **into** Solve write the rest of it worked out under it; the dial moved into Suggest and Help
+in Feedback / Suggest write its next step where the student would write (the first is the first step
+the engine would tick under it — `\sin x = \frac{1}{2}` under `2\sin x = 1`, not the `0^{\circ} \le x <
+360^{\circ}` Solve opens a trig equation with; each further Help the next). The work is Solve's own
+path with the problem's lines as the column (`solveBuilt`: `localSolve`, a graph for an answer that
+graphs, the model's `/api/live/solve` only when the engine has nothing), continued after whatever the
+tutor already wrote there (`problemSteps`; a line that only restates the problem is left out), in the
+problem's hand, under the problem in its cell (`placeInCell`: moved down past anything in the way,
+smaller when the cell is tight, else clear space on the screen). Every block carries `meta.problemWork`
+(`step` / `solution`, a solution also `meta.solvedLatex`) and `meta.lineId = problem:<the problem's
+hand block>`, so nothing is written twice — a reload, the dial moved again, Solve steps pressed again (it
+moves on to the next open problem, then does nothing). The dial acts only on an explicit switch, never
+on load, and not when the current problem has the student's work under it; with work, Solve steps and
+Help continue from the student's last good line as they always have. A student line under the tutor's
+step is checked against the problem as before (the problem still heads the column).
+
+**No silent lines under a problem.** Lone symbols, labels, half lines, prose, LaTeX the engine cannot
+read and failed or unsure reads are silent by design — students write labels and scratch numbers. Under
+a problem the tutor wrote, though, the student is answering it, and silence reads as a broken tutor. In
+Feedback, Suggest and Solve such a line (`unjudgedReason` in `policy.ts`) gets the tutor's "?" once the
+student has stopped writing (`renderSettled`, never mid-stroke), and loses it when rewritten into
+something the engine judges (the tick or ring replaces it). Not on a line still being read (the
+recognizer or the second reader), whose check is in flight or queued offline, a proof row, at the shape
+cap, or when the read was refused for a reason writing again would not fix (signed out, out of credits).
+Readable maths with nothing to compare (`x = 6` under a system) keeps today's silence. The mark carries
+why (`meta.markWhy`: `unread` or `unjudged`); a "?" left under a stale line id after a reload is
+replaced, not doubled.
 
 **Graphs, sketched by hand (`engine/graphIntent.ts`, `src/lib/live/graphing/**`).** A graph is an
 ANSWER, drawn by the tutor's hand in its blue, stroke by stroke, like its writing — never a card.
@@ -356,11 +395,18 @@ hand — maths only. History is kept in memory per board for the session.
   wrote there, empty or not), so "more like these" and "graph that" have something to refer to.
 - **The reply** is `{ reply, actions }`, at most six actions: `write_problems` (1–12 problems; a system
   is one problem of 2–3 lines), `write_lines` (maths as given, e.g. a formula), `graph` (relations in
-  LaTeX, an optional window), `draw_figure` (a `FigureSpec`), `new_screen`, `clear_tutor`. The prompt
-  (`src/lib/server/prompts/chat.ts`) keeps words off the board, asks for problems a student at the level
-  can solve with clean answers, never solves, gives the figure format true to scale, adds a new screen
-  only when asked, and declines anything that is not maths help. The route validates each action with
-  zod and drops what does not parse (within a problem set, the invalid problems), never guessing.
+  LaTeX, an optional window), `draw_figure` (a `FigureSpec`), `new_screen`, `clear_tutor`, `help_problem`
+  (`{ problem, depth: "step" | "solve" }`: help with a problem on this screen, by its number there). The
+  prompt (`src/lib/server/prompts/chat.ts`) keeps words off the board, asks for problems a student at the
+  level can solve with clean answers, never solves itself, gives the figure format true to scale, adds a
+  new screen only when asked, and declines anything that is not maths help. "help me with 3", "I'm stuck
+  on 2", "how do I start 3", "help me solve it" are `help_problem` depth `step`; "solve 3", "solve it",
+  "show me how to solve it", "what's the answer to 1" depth `solve`; "it" is the problem the recent turns
+  were about, else the only one, and a help request whose problem is clear never gets a question back.
+  The route validates each action with zod and drops what does not parse (within a problem set, the
+  invalid problems), never guessing; a `help_problem` about a number the screen does not have is dropped
+  with the note "There's no problem 7 on this screen." (the reply, refunded, when nothing else is left).
+  The request's `screen.numbers` gives each problem's number as on the board (5–8 on a spill screen).
 - **On the board** (`LiveController.runChatActions` → `ChatDesk`, `chat/desk.ts`, hosted by the loop
   like `ProofDesk`): the actions run in order, each one whole `HandWriter` block, after any writing
   of the loop's own; a switch to another screen stops the rest. Problems are verified first
@@ -378,12 +424,40 @@ hand — maths only. History is kept in memory per board for the session.
   at the problems — work in two cells is never one column — and each column under a problem has it as
   its head (`chat/cells.ts`): `columnContext` starts from it, so the student's first line gets its tick
   or ring exactly as under their own problem; `rightNextStep` corrects a wrong first line from it; and
-  `buildCheckLines` sends it to the check model as the column's first line. Writing problems, or rubbing
-  one out, re-reads the columns.
+  `buildCheckLines` sends it to the check model as the column's first line. A bar the student draws
+  under a one-line problem with a number under it is "divide both sides" (`problemEquations` →
+  `splitInk`'s `equations`; "Drawings" below). Writing problems, or rubbing one out, re-reads the columns.
+  A line there the tutor cannot judge gets its "?" once the student stops, and with nothing of the
+  student's to act on the tutor works the problem itself (both above, under Help).
+- **A problem with its interval on the line** (`2\cos x = 1, 0^{\circ} \le x < 360^{\circ}`, `0 \le x <
+  2\pi`, `x \in [0, 360^{\circ})`; `src/lib/live/engine/domain.ts`) is an equation and a DOMAIN, not one
+  inequality: `analyzeLine` analyses the equation as any line and puts the domain on it
+  (`LineAnalysis.domain`, in radians for an angle, with the equation's solutions there, exactly as
+  Solve lists them), and every line under it carries it down the column. The student's steps get their
+  tick or ring as under any equation (`\cos x = \frac{1}{2}`, the reference angle
+  `\cos^{-1}(\frac{1}{2}) = 60^{\circ}` — an inverse trig value is radians beside an angle); an answer
+  outside the interval is ringed though it solves the equation (`x = 420^{\circ}`, note "Outside the
+  interval"); the problem's solutions there are ticked even under a ringed line; one of two solutions
+  (`x = 60^{\circ}` of 60°, 300°) is ticked but not `solved`, so Solve and Help carry on to the other;
+  all of them is solved. Plain numbers are degrees under a degree interval (`x = 210` under `0 \le x <
+  360`). The interval written again on a line of its own is a tick (another interval a ring); under a
+  trig equation with none, naming the one turn Solve writes is a tick, and the answer is then held to
+  it. Solve from the student's step under such a problem solves in its interval and unit
+  (`localSolve`'s `domain`: the chat problem's, passed by the loop) — scoreboard t2-52–57.
 - **Measured** by `npm run eval:chat` (`docs/eval/chat.md`; 38 requests, gated by `RUN_CHAT_EVAL=1`,
   under a $0.60 cap): gpt-5.4-mini did all 38 as asked, every one of its 70 problems verified, 5 of 5
   figures clean (2 after the repair), 2.3 s p50, ~$0.0011 a request; the DeepSeek fallback matched it
-  at 0.8 s.
+  at 0.8 s. With `help_problem` the corpus is 48 requests (ten help cases, judged on the problem and the
+  depth); on 2026-09-28, for the production pair only (`docs/eval/chat.md` not regenerated): DeepSeek
+  48/48, gpt-5.4-mini 46/48 — help 9/10 (it reads "help me solve it" right after a step as `solve`) and
+  the parallel-lines figure still wrong after its repair.
+- **Help with a problem on the board** (`help_problem`, `ChatDesk.helpProblem` → `LiveLoop.chatHelp`):
+  with the student's work under that problem, their work gets the help Help and Solve steps give it (the
+  next step after their last line — the right one beside it when that line is wrong — or the rest worked
+  out from their last good line); else the tutor works the problem itself ("The tutor works the
+  problems it wrote", above). A typed ask is answered whatever the dial says, Off included. The panel
+  notes a problem already worked out, or one not on the screen. The chat request stays 3 credits; the
+  local writing is free, and the model fallback is metered by `/api/live/solve` as before.
 
 **Word problems: the model sets up, the engine solves.** Mathpix returns prose as `\text{…}` and
 the engine classifies it `kind: 'text'` (silent: no echo). A column down to the asked-for line that
@@ -466,6 +540,21 @@ screen with only a drawing on it has a scale):
   line of maths, and keeps every stroke. From such a line only labels the clusterer ran into it are
   taken back: those inside the drawing's span with the line outside it, or one at the line's end on
   the drawing's side cut off by a gap wider than any inside the line.
+- *Division bars ("divide both sides", `divisionBars`).* Before any of that, a long level rule under
+  a WHOLE equation with a short piece of writing just under it and nothing else on it is set aside:
+  under the student's own line (writing above it holding a free-standing relation, spanned by the
+  rule, nothing level with the rule past its ends — a fraction bar inside a line has the rest of
+  the line level with it), or under a problem the tutor wrote (`splitInk`'s `equations`: the loop
+  passes the box of each one-line problem that is an equation or inequality, `problemEquations`;
+  the problem's ink is not among the strokes, so the rule used to be a drawing and the `2` its
+  label). The bar and the divisor are one line of their own (`InkSplit.bars`, `clusterLines`'
+  `fixed` groups). Mathpix drops the bar and reads the divisor (`2`, `-3`: measured), and the loop
+  writes the line as `\div 2` (`barDivisionLatex`) — an operation line (below, "Operation lines").
+  Not one: an underline with nothing under it, a rule with a line of maths under it (the sum under
+  a system), a number line (ticks), a T-table (`tableRules` first), a fraction bar, long division.
+  `npm run eval:drawings` scores it: 320/320 bars found (2, -3, 4, ½ under five equations, the
+  student's or the tutor's, with and without the next line under them, four hands), 0/136
+  look-alikes taken, no drawing beside maths taken for one.
 
 Behaviour: a drawing is never recognized, never marked (no tick, ring or "?"), never joined to a
 line, and does not count as writing maths — a stroke plainly a drawing (a long diagonal, a big shape)
@@ -680,6 +769,8 @@ Reasons` header or a drawn T-table.
 | A trig equation in `x` at a non-special value (`\tan x = \frac{3}{4}`) | `x` is a trig equation's unknown (every angle in a turn); a capital, a named angle or a Greek letter (`\tan\theta = \frac{3}{4}`) is an angle of a triangle and gets its principal value |
 
 Bound variables are bound: the `dx` of a definite integral, the variable of a limit and the index of a sum are removed from a line's free variables, so `\int_0^1 x^2 dx =` is a closed expression the engine answers, not an expression in `x` (an indefinite integral's `x` stays free: its answer is a function of `x`). A trailing `=` on any of the above follows the same rule as `36 + 2 =` — the value is revealed in answer mode only.
+
+**Operation lines (`engine/operationLine.ts`, line kind `operation`).** What a class writes under an equation to say what it does to both sides next: the same operation and operand under each side (`-3 \quad -3`, `+5+5`, `-2x - 2x`, `\div 2 \div 2`, `/2 \quad /2`, `\times 3 \times 3`, `\cdot 3 \cdot 3`, three under a chain), or a divisor or factor once (`\div 2`, `/2`, `\frac{}{2}`, `\overline{2}`, `\times 3`, and a division bar's read, above). Mathpix's reads, measured on the tutor's hand writing as the student (39 calls): `-3` under each side → `\begin{array}{ll} -3 & -3 \end{array}`, `-3 \quad-3` or `\text { -3 -3 }`; `÷2 ÷2` → `\div 2 \div 2`; `×3 ×3` → `\times 3 \times 3`; `+5 +5` → `+5+5`; a bar with `2` under it → `2`; `/2 /2` → `1212` (the hand's slash is a 1; one leaning well over reads `/ 2 \quad / 2`); `·3 ·3` → `3.3` (never taken for one). `analyzeLine` asks it first; a sum or difference counts only under an equation or inequality (`-3 - 3` alone is -6). Against the relation above (the tutor's problem counts): `ok` for the same valid operation on every side, `mismatch` for two different operands (`-3 \quad -4`) under a LINEAR relation or × / ÷ by 0, `none` for two different operands under anything else (a quadratic, trig, a log, a root, a rational: `-2 \quad -5` under `x^2 - 7x + 10 = 0` is a factor pair, scratch — still an operation line, so the next line keeps the equation above as its context; `linearRelation`), `none` by a letter (it may be 0) or with the wrong number of operands; dividing an inequality by a negative is fine — the next line must turn the sign, and its own check says whether it did. The line after it is checked against the equation ABOVE it (`columnContext`, `localSolve`'s `contextAbove` skip operation lines), so an equivalent next line is ticked whether or not it is what the operation gives; `lastGoodLineAbove`, `buildCheckLines` (the model never sees one), Solve's column and target skip them too, and `localSolve` takes them out. `operationResult` works out the relation the operation leads to (`2x + 3 = 11`, `-3 \quad -3` → `2x = 8`; `2\sin x = 1`, `\div 2` → `\sin x = \frac{1}{2}`; `-2x < 6` ÷ −2 → `x > -3`): in Suggest and Solve, once the student stops, the tutor writes it under a right operation line with nothing under it (`writeOperationResults`, `meta.operationResult`; gone when the operation changes). The pieces of an operation row are one line however far apart the sides are (`mergeOperationRows` in `strokeClusters.ts`: short pieces starting with a `-`, `+` or `÷` bar, level, under one line). Scoreboard: `op-01`…`op-10` in `src/__eval__/corpus.ts`.
 
 **Calculus steps (`engine/calculus.ts`).** `latex.ts` reads `\frac{d}{dx}` (also `\frac{\mathrm{d}}{\mathrm{d} x}`, `\operatorname{d}`, `d x`), `\int … dx` (also `\mathrm{~d} x`), `\lim_{x \to a}` (also `\rightarrow`, `\infty`) and `\left[F\right]_a^b` into `derivative()`, `integral()`/`antiderivative()`, `limit()` and `bracketEval()`; `calculus.ts` registers the last three on the mathjs instance and answers all four with the lines a teacher writes. The board asks for them through the existing contract only: `simplifySteps` (a calculus expression, with or without a trailing `=`; drawn as `= …` lines), `solveFromLines` (`\frac{dy}{dx}` / `f'(2)` under a definition, and any calculus line under other work, so a system above never answers it) and `analyzeLine(…).resultLatex` (the last line, e.g. `6x + 2`, `\ln 2`, `\frac{x^{3}}{3} + C`). Every result is checked numerically before it is returned — a derivative against a central difference, an antiderivative by differentiating it back, a definite integral against Simpson, a limit against the function near the point — so a bug becomes no answer, never a wrong line. The techniques live beside it and hook in through `CalculusDeps` (`integrate`, `integrateDefinite`, `limit`: `integration.ts`, `limits.ts`), tried only when calculus.ts's own rules have nothing and checked by it the same way; they share its expression tree, printer and exact values. A step that is a relation of its own — `u = x^{2} + 1`, `du = 2x \, dx`, the parts, `A = \frac{1}{2}, \ B = -\frac{1}{2}`, `y = x^{x}` — is drawn as it stands; every other line continues the question with `=` (`continueLine` in `engine/solution.ts`, used by `localAnswerStep`).
 

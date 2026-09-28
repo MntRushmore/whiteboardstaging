@@ -4,7 +4,7 @@
  * kind 'unknown' / verdict 'unknown' / null — the engine never throws.
  */
 import type { MathJsInstance, MathNode } from "mathjs";
-import type { AnalyzeContext, EngineVerdict, LineAnalysis, LiveEngine, SolveOptions } from "../contracts";
+import type { AnalyzeContext, EngineVerdict, LineAnalysis, LineDomain, LiveEngine, SolveOptions } from "../contracts";
 import { balance as balanceChem, balanceEquation, equationLatex, isBalanced, molarMassLatex, normalizeChemText, parseEquation, looksLikeChemEquation } from "./chem";
 import { preClassify } from "./classify";
 import { PHYSICS_SCOPE_NAMES, physicsScope } from "./constants";
@@ -43,8 +43,36 @@ import { ALL_REALS, EVERY_REAL, LIST_SEP, NO_SOLUTION } from "./solution";
 import { createCourses } from "./courses";
 import { createGeometry } from "./geometry";
 import { isGeometryName } from "./geometryNotation";
+import { judgeOperation, operandMath, parseOperationLine, plainRelation } from "./operationLine";
+import { linearRelation, operationResult } from "./operationResult";
+import { domainChain, isTrigLine, parseDomainPiece, splitDomain, type DomainBounds } from "./domain";
 
 const UNKNOWN: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
+
+/** An inverse trig call in a mathjs source: its value is in radians. */
+const INVERSE_TRIG = /\ba(?:sin|cos|tan|sec|csc|cot)\(/;
+
+/** Kinds a domain is carried down the column on (the lines the next line is checked against). */
+const SILENT_FOR_DOMAIN: ReadonlySet<LineAnalysis["kind"]> = new Set(["label", "incomplete", "text", "unknown"]);
+
+/** The note on an answer outside the problem's interval (shown with the line's readback). */
+export const OUTSIDE_DOMAIN_NOTE = "Outside the interval";
+
+function insideDomain(d: LineDomain, v: number): boolean {
+  const eps = 1e-9 * Math.max(1, Math.abs(v));
+  return (v > d.lo + eps || (d.loIn && Math.abs(v - d.lo) <= eps)) && (v < d.hi - eps || (d.hiIn && Math.abs(v - d.hi) <= eps));
+}
+
+function sameDomain(a: LineDomain, b: LineDomain): boolean {
+  const near = (x: number, y: number) => Math.abs(x - y) <= 1e-9 * Math.max(1, Math.abs(x), Math.abs(y));
+  return a.variable === b.variable && near(a.lo, b.lo) && near(a.hi, b.hi) && a.loIn === b.loIn && a.hiIn === b.hiIn;
+}
+
+/** The same values, each once, as the domain's solutions (to 1e-6). */
+function sameValueSet(values: readonly number[], solutions: readonly number[]): boolean {
+  const near = (x: number, y: number) => Math.abs(x - y) <= 1e-6 * Math.max(1, Math.abs(y));
+  return values.every((v) => solutions.some((s) => near(v, s))) && solutions.every((s) => values.some((v) => near(v, s)));
+}
 
 /** Notes attached to parsed chemical equations (the shape renders `Balanced…` notes as a secondary line). */
 export const CHEM_BALANCED_NOTE = "Balanced";
@@ -362,10 +390,14 @@ export function createEngine(mod: MathModule): LiveEngine {
         if (failing.error) out.error = failing.error;
         return out;
       }
+      // `\cos^{-1}\left(\frac{1}{2}\right) = 60^{\circ}`, the reference angle: an inverse trig function
+      // gives radians, so beside an angle its number is that many radians (not 60° ≠ 1.047)
+      const angled = evals.some((e) => angleRadians(e.value) !== null);
+      const values = evals.map((e, i) => (angled && typeof e.value === "number" && INVERSE_TRIG.test(ts[i].source) ? math.unit(e.value, "rad") : e.value));
       let verdict: EngineVerdict = "ok";
       for (let i = 1; i < evals.length; i++) {
         const decimals = Math.max(decimalsIn(sides[0]) ?? -1, decimalsIn(sides[i]) ?? -1);
-        const eq = valuesMatch(math, evals[0].value, evals[i].value, { decimals: decimals < 0 ? null : decimals, loose });
+        const eq = valuesMatch(math, values[0], values[i], { decimals: decimals < 0 ? null : decimals, loose });
         if (eq === null) return { ...out, verdict: "unknown" };
         if (!eq) verdict = "mismatch";
       }
@@ -553,8 +585,15 @@ export function createEngine(mod: MathModule): LiveEngine {
     const prevRel = relationFromAnalysis(math, ctx.previous, variable);
     const origRel = relationFromAnalysis(math, ctx.original, variable);
     const reference = prevRel ?? origRel;
+    const trigRef = reference !== null && [prevRel, origRel].some((r) => r !== null && trigOfVariable(r, variable));
     // `x = 30^{\circ}` under `\sin x = \frac{1}{2}`: the angle's radian measure, as sin reads x
-    if (values.length === 0 && angles.length > 0 && reference && [prevRel, origRel].some((r) => r !== null && trigOfVariable(r, variable))) values.push(...angles);
+    if (values.length === 0 && angles.length > 0 && trigRef) values.push(...angles);
+    // the problem's domain (`0^{\circ} \le x < 360^{\circ}`), carried down the column
+    const domain = domainFor(ctx, variable);
+    // an interval in degrees: `x = 210` under it is 210°, as the student means it (π says radians)
+    if (domain?.unit === "deg" && trigRef && angles.length === 0 && values.length > 0 && !/\\pi/.test(rhsLatex) && values.every((v) => typeof v === "number")) {
+      values.splice(0, values.length, ...values.map((v) => ((v as number) * Math.PI) / 180));
+    }
     if (reference && values.length > 0) {
       const out: LineAnalysis = { kind: "equation", math: values.length > 1 ? `${productSource(values)} == 0` : `${variable} == ${R.source}`, resultLatex: "", verdict: "none", note: "", variable };
       out.solutions = values.map((v) => rootLatex(v));
@@ -564,6 +603,28 @@ export function createEngine(mod: MathModule): LiveEngine {
       if (out.verdict === "mismatch" && rightAnyway(reference, [prevRel, origRel], variable, values, decimals)) out.verdict = "ok";
       const target = origRel ?? prevRel;
       out.solved = out.verdict !== "mismatch" && target !== null && solvesRelation(math, target, variable, values, decimals);
+      if (domain) {
+        const numbers = values.filter((v): v is number => typeof v === "number");
+        const inside = numbers.length === values.length && numbers.every((v) => insideDomain(domain, v));
+        // solutions of the problem in its interval are right whatever the line above says (a ringed
+        // `x = 50^{\circ}` and the answer written under it): as the extraneous-root rule above
+        if (out.verdict !== "ok" && inside && origRel) {
+          const near = (v: number) => domain.solutions!.some((s) => Math.abs(v - s) <= 1e-6 * Math.max(1, Math.abs(s)));
+          if (domain.solutions ? numbers.every(near) : rightAnyway(origRel, [origRel], variable, values, decimals)) out.verdict = "ok";
+        }
+      }
+      if (domain && out.verdict !== "mismatch") {
+        const numbers = values.filter((v): v is number => typeof v === "number");
+        if (numbers.some((v) => !insideDomain(domain, v))) {
+          // 420° solves `2\cos x = 1`, but not the problem: it asked for 0° ≤ x < 360°
+          out.verdict = "mismatch";
+          out.note = OUTSIDE_DOMAIN_NOTE;
+          out.solved = false;
+        } else if (domain.solutions && numbers.length === values.length) {
+          // every answer right is a tick; the problem is solved only when all of them are listed
+          out.solved = out.verdict === "ok" && sameValueSet(numbers, domain.solutions);
+        }
+      }
       return out;
     }
     const out: LineAnalysis = { kind: "assignment", math: `${variable} = ${R.source}`, resultLatex: "", verdict: "none", note, variable };
@@ -715,8 +776,40 @@ export function createEngine(mod: MathModule): LiveEngine {
     return sides[1].trim();
   };
 
+  /**
+   * `-3 \quad -3`, `\div 2 \div 2`, `\div 2` under an equation: what is done to both sides next
+   * (`operationLine.ts`), checked against the relation above. Null when the line is not one: a
+   * sum or difference of terms with no relation above it is arithmetic (`-3 - 3` is -6).
+   */
+  const analyzeOperation = (latex: string, ctx: AnalyzeContext): LineAnalysis | null => {
+    const parsed = parseOperationLine(latex);
+    if (!parsed) return null;
+    const prev = ctx.previous;
+    const relation = prev && (prev.kind === "equation" || prev.kind === "inequality") && prev.math ? prev.math : null;
+    if (!relation && (parsed.op === "add" || parsed.op === "subtract")) return null;
+    // two different operands are a mistake under a linear relation, scratch under any other
+    // (`-2 \quad -5` under `x^2 - 7x + 10 = 0`: a factor pair)
+    const linear = relation !== null && linearRelation(relation, (s) => safeParse(math, s));
+    const judged = judgeOperation(parsed, relation, linear);
+    const operand = parsed.operands[0];
+    const source = operandMath(operand) ?? "";
+    const result = judged.verdict === "ok" && relation && plainRelation(relation) && source ? operationResult(relation, parsed.op, source, (s) => safeParse(math, s)) : "";
+    return {
+      kind: "operation",
+      math: "",
+      resultLatex: "",
+      verdict: judged.verdict,
+      note: judged.note,
+      operation: { op: parsed.op, operand, operandMath: source, result },
+    };
+  };
+
   // --- entry points --------------------------------------------------------
   const analyze = (latex: string, ctx: AnalyzeContext): LineAnalysis => {
+    // what is done to both sides of the equation above (`operationLine.ts`): before anything reads
+    // `-3 \quad -3` as a sum or a data list
+    const operation = analyzeOperation(latex, ctx);
+    if (operation) return operation;
     // a line about the data list above, a form of the line / quadratic above asked for (`courses.ts`)
     const course = courses.analyzeFirst(latex, ctx);
     if (course) return course;
@@ -840,9 +933,144 @@ export function createEngine(mod: MathModule): LiveEngine {
     }
   };
 
+  // --- an equation and its domain (`domain.ts`) ------------------------------
+  /**
+   * A domain's bounds as values, in the measure the unknown is read in: an angle in radians
+   * (`360^{\circ}` → 2π; plain numbers beside an angle's equation are degrees when they are that
+   * large, radians otherwise), the numbers themselves for any other equation. Null when a bound is
+   * not a number or the domain is empty.
+   */
+  const readDomain = (b: DomainBounds, trig: boolean): LineDomain | null => {
+    let variable: string;
+    try {
+      const t = tr(b.variable);
+      if (t.variables.length !== 1 || t.source.trim() !== t.variables[0]) return null;
+      variable = t.variables[0];
+    } catch {
+      return null;
+    }
+    const read = (tex: string): { v: number; kind: "deg" | "rad" | "plain" } | null => {
+      try {
+        const t = tr(tex);
+        if (unknownsOf(t).length > 0) return null;
+        const ev = evaluateTranslated(t, tex);
+        if (!ev.ok) return null;
+        if (typeof ev.value === "number" && Number.isFinite(ev.value)) return { v: ev.value, kind: /\\pi/.test(tex) ? "rad" : "plain" };
+        const rad = angleRadians(ev.value);
+        return rad === null ? null : { v: rad, kind: "deg" };
+      } catch {
+        return null;
+      }
+    };
+    const lo = read(b.loTex);
+    const hi = read(b.hiTex);
+    if (!lo || !hi) return null;
+    const unit: LineDomain["unit"] =
+      lo.kind === "deg" || hi.kind === "deg" ? "deg" : lo.kind === "rad" || hi.kind === "rad" ? "rad" : !trig ? "plain" : Math.max(Math.abs(lo.v), Math.abs(hi.v)) >= 7 ? "deg" : "rad";
+    const measure = (x: { v: number; kind: string }) => (x.kind === "plain" && unit === "deg" ? (x.v * Math.PI) / 180 : x.v);
+    const d: LineDomain = { variable, lo: measure(lo), hi: measure(hi), loIn: b.loIn, hiIn: b.hiIn, unit, latex: domainChain(b) };
+    return d.hi > d.lo ? d : null;
+  };
+
+  /** Solutions in a domain, by the equation and its domain (memoised: the problem does not change). */
+  const domainSolutionMemo = new Map<string, number[] | null>();
+  /**
+   * Every solution of `equation` inside `d`, exactly as Solve lists them (`x = 60^{\circ}, \ x =
+   * 300^{\circ}`), in the domain's measure; undefined when the engine cannot list them.
+   */
+  const domainSolutions = (equation: string, d: LineDomain): number[] | undefined => {
+    const key = `${equation} | ${d.latex}`;
+    if (!domainSolutionMemo.has(key)) {
+      let found: number[] | null = null;
+      try {
+        const res = solveLatex(`${equation}, \\ ${d.latex}`) ?? solveLatex(equation);
+        if (res && /\\varnothing|\\emptyset/.test(res.latex)) found = [];
+        else if (res) {
+          const one = new RegExp(`^\\s*${d.variable}\\s*=\\s*([^=]+)$`).exec(res.latex);
+          const list = solutionList(res.latex)?.values ?? (one ? [one[1]] : null);
+          const values = (list ?? []).map((tex) => {
+            const ev = evaluateTranslated(tr(tex), tex);
+            if (!ev.ok) return null;
+            if (typeof ev.value === "number") return d.unit === "deg" && !/\\pi/.test(tex) ? (ev.value * Math.PI) / 180 : ev.value;
+            return angleRadians(ev.value);
+          });
+          if (list && values.every((v): v is number => v !== null && Number.isFinite(v))) found = (values as number[]).filter((v) => insideDomain(d, v));
+        }
+      } catch {
+        found = null;
+      }
+      domainSolutionMemo.set(key, found);
+      while (domainSolutionMemo.size > 128) domainSolutionMemo.delete(domainSolutionMemo.keys().next().value as string);
+    }
+    return domainSolutionMemo.get(key) ?? undefined;
+  };
+
+  /**
+   * A line that is only a domain, under an equation in its unknown: the problem's own domain
+   * written again (a tick; a different one is a ring), or — under an angle's equation that had none
+   * — the student naming the interval (a tick for the one turn from 0 that Solve writes, no mark
+   * for another). Null otherwise: `-2 < x < 3` under `|x - \frac{1}{2}| < \frac{5}{2}` is an answer.
+   * It is not a relation to work from (`math` is empty): the next line is checked against the
+   * equation above it.
+   */
+  const domainLine = (b: DomainBounds, ctx: AnalyzeContext, inherited: LineDomain | undefined): LineAnalysis | null => {
+    const line = (d: LineDomain, verdict: EngineVerdict): LineAnalysis => ({ kind: "inequality", math: "", resultLatex: "", verdict, note: "", variable: d.variable, domain: d });
+    if (inherited) {
+      const d = readDomain(b, inherited.unit !== "plain");
+      if (!d || d.variable !== inherited.variable) return null;
+      // a different interval is a ring; the problem's own stays the one the answer is held to
+      return line(inherited, sameDomain(d, inherited) ? "ok" : "mismatch");
+    }
+    const d = readDomain(b, true);
+    if (!d) return null;
+    const rel = relationFromAnalysis(math, ctx.previous, d.variable) ?? relationFromAnalysis(math, ctx.original, d.variable);
+    if (!rel || rel.op !== "==" || !trigOfVariable(rel, d.variable)) return null;
+    const oneTurn = Math.abs(d.lo) < 1e-9 && Math.abs(d.hi - 2 * Math.PI) < 1e-9 && d.loIn && !d.hiIn;
+    return line(d, oneTurn ? "ok" : "none");
+  };
+
+  /** The domain the column above set for this unknown, if any. */
+  const domainFor = (ctx: AnalyzeContext, variable: string): LineDomain | null => {
+    const d = ctx.previous?.domain ?? ctx.original?.domain;
+    return d && d.variable === variable ? d : null;
+  };
+
+  /**
+   * `analyze`, with domains: an equation written with its domain is analysed as the equation (in
+   * its context, as any line) and carries the domain, with its solutions there; a line that is only
+   * a domain is read as one; and every other line carries the domain of the lines above down the
+   * column, so the answer at the bottom is held to it.
+   */
+  const analyzeInDomain = (latex: string, ctx: AnalyzeContext): LineAnalysis => {
+    const inherited = ctx.previous?.domain ?? ctx.original?.domain;
+    const split = splitDomain(latex);
+    if (split) {
+      const d = readDomain(split.bounds, isTrigLine(split.equation));
+      if (d) {
+        const a = analyze(split.equation, ctx);
+        if (a.kind === "equation" && a.variable === d.variable) {
+          const solutions = domainSolutions(split.equation, d);
+          const own: LineDomain = solutions ? { ...d, solutions } : d;
+          const out: LineAnalysis = { ...a, domain: own };
+          if (solutions) out.solutions = solutions.map((v) => rootLatex(v));
+          // the problem written again with another interval is another problem
+          if (inherited && inherited.variable === own.variable && !sameDomain(inherited, own)) out.verdict = "mismatch";
+          return out;
+        }
+      }
+    }
+    const alone = parseDomainPiece(latex);
+    if (alone) {
+      const d = domainLine(alone, ctx, inherited);
+      if (d) return d;
+    }
+    const a = analyze(latex, ctx);
+    return inherited && !a.domain && !SILENT_FOR_DOMAIN.has(a.kind) ? { ...a, domain: inherited } : a;
+  };
+
   const analyzeLine = (latex: string, ctx: AnalyzeContext): LineAnalysis => {
     try {
-      return analyze(latex ?? "", ctx ?? { mode: "feedback" });
+      return analyzeInDomain(latex ?? "", ctx ?? { mode: "feedback" });
     } catch (e) {
       const out: LineAnalysis = { ...UNKNOWN, error: errorMessage(e) };
       if (e instanceof UnsupportedLatex) out.note = "";
@@ -939,8 +1167,11 @@ export function createEngine(mod: MathModule): LiveEngine {
     normalize: stepKey,
   };
 
-  const solveLatex = (latex: string, solveOptions?: SolveOptions): { latex: string; steps: string[] } | null => {
+  const solveLatex = (written: string, solveOptions?: SolveOptions): { latex: string; steps: string[] } | null => {
     try {
+      // `x \in [0, 360^{\circ})` beside the equation is the chain `0 \le x < 360^{\circ}` (`domain.ts`)
+      const inForm = /\\in(?![a-z])/.test(written) ? splitDomain(written) : null;
+      const latex = inForm ? `${inForm.equation}, \\ ${domainChain(inForm.bounds)}` : written;
       // a function applied by name is refused (not `3f = 9`); a line in x and y, complex roots, …
       const course = courses.solve(latex, solveOptions);
       if (course === "refuse") return null;

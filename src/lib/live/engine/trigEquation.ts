@@ -25,6 +25,7 @@
  */
 import type { MathJsInstance, MathNode } from "mathjs";
 import { exAdd, exInv, exIsRational, exMul, exNeg, exNum, exQ, exTex, fromNode, lineKey, q, Q0, Q1, QHALF, qAdd, qInt, qMul, qNeg, qSub, qVal, qZero, symTex, tex, type AnyNode, type Ex, type Q } from "./calculus";
+import { domainChain, parseDomainPiece } from "./domain";
 import { preprocessLatex, splitRelations, type Translated } from "./latex";
 import { LIST_SEP, NO_SOLUTION } from "./solution";
 import { angleEx, angleTex, exactValueIn, fnName, FORWARD, inverseValue, NotExact, piMultiple, stripParens, tallBrackets, Undefined, type AngleUnit, type TrigName } from "./trig";
@@ -159,7 +160,11 @@ class Solver {
   solve(latex: string): TrigEquationResult {
     const pre = preprocessLatex(latex ?? "").trim();
     if (!/\\(?:sin|cos|tan|sec|csc|cot)(?![a-z])/.test(pre)) return null;
-    const parts = pieces(pre);
+    // `x \\in [0, 2\\pi)` is the chain `0 \\le x < 2\\pi` (`domain.ts`)
+    const parts = pieces(pre).map((p) => {
+      const b = /\\in(?![a-z])/.test(p) ? parseDomainPiece(p) : null;
+      return b ? domainChain(b) : p;
+    });
     if (parts.length > 2) return null;
     let equation: { L: MathNode; R: MathNode; latex: string } | null = null;
     let range: { sides: string[]; ops: string[] } | null = null;

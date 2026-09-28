@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildChatMessages, CHAT_SYSTEM_PROMPT, cleanChatActions, cleanReplyText, buildFigureRepairMessages } from "./chat";
+import { buildChatMessages, CHAT_SYSTEM_PROMPT, cleanChatActions, cleanReplyText, buildFigureRepairMessages, dropMissingProblems, problemNumbers } from "./chat";
 import { PROBE_FIGURE } from "@/lib/live/chat/figure";
+import { CHAT_ACTION_TYPES } from "@/lib/live/chat/contracts";
 
 describe("chat prompt", () => {
   it("names every action and the rules that keep the board to maths", () => {
-    for (const t of ["write_problems", "write_lines", "graph", "draw_figure", "new_screen", "clear_tutor"]) expect(CHAT_SYSTEM_PROMPT).toContain(`"${t}"`);
+    for (const t of CHAT_ACTION_TYPES) expect(CHAT_SYSTEM_PROMPT).toContain(`"${t}"`);
     expect(CHAT_SYSTEM_PROMPT).toMatch(/no words/i);
     expect(CHAT_SYSTEM_PROMPT).toMatch(/never solve/i);
     expect(CHAT_SYSTEM_PROMPT).toMatch(/TRUE TO SCALE/);
@@ -40,6 +41,24 @@ describe("chat prompt", () => {
     expect(String(empty.content)).toMatch(/^THIS SCREEN: empty\n\nREQUEST: graph y = x\^2/);
   });
 
+  it("help with a problem on the board: help_problem, a step or the solution, never a question back when the problem is clear", () => {
+    expect(CHAT_SYSTEM_PROMPT).toContain('"help_problem"');
+    for (const ask of ["help me with 3", "I'm stuck on 2", "how do I start 3", "solve 3", "show me how to solve it", "work out 3", "what's the answer to 1"]) {
+      expect(CHAT_SYSTEM_PROMPT).toContain(ask);
+    }
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/never a question back/);
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/With no problems listed here, never help_problem/);
+    expect(CHAT_SYSTEM_PROMPT).toContain('{"type": "help_problem", "problem": 3, "depth": "step"}');
+  });
+
+  it("problems are listed as numbered on the board", () => {
+    const [, user] = buildChatMessages({ message: "help me with 7", history: [], screen: { empty: false, problems: ["x + 1 = 2", "x + 2 = 4", "x + 3 = 6", "x + 4 = 8"], numbers: [5, 6, 7, 8] } });
+    expect(String(user.content)).toContain("Problems the tutor wrote here:\n5. x + 1 = 2\n6. x + 2 = 4\n7. x + 3 = 6\n8. x + 4 = 8");
+    // an older client sends no numbers: 1, 2, 3…
+    expect(problemNumbers({ problems: ["a", "b"] })).toEqual([1, 2]);
+    expect(problemNumbers({ problems: ["a", "b"], numbers: [4] })).toEqual([4, 2]);
+  });
+
   it("the figure repair carries the spec and every problem", () => {
     const [, user] = buildFigureRepairMessages("a right triangle", PROBE_FIGURE, ["point D is not defined", "zero-length side"]);
     expect(String(user.content)).toContain(JSON.stringify(PROBE_FIGURE));
@@ -71,6 +90,41 @@ describe("cleaning the model's reply", () => {
     const many = cleanChatActions(Array(8).fill({ type: "new_screen" }));
     expect(many.actions).toHaveLength(6);
     expect(many.dropped).toHaveLength(2);
+  });
+
+  it("help_problem: a number (or \"3\"), a depth (none given is a step); anything else is dropped", () => {
+    const { actions, dropped } = cleanChatActions([
+      { type: "help_problem", problem: 3, depth: "step" },
+      { type: "help_problem", problem: "2", depth: "solve" },
+      { type: "help_problem", problem: 1 },
+      { type: "help_problem", problem: "three", depth: "step" },
+      { type: "help_problem", problem: 2, depth: "answer" },
+      { type: "help_problem", problem: 0, depth: "step" },
+    ]);
+    expect(actions).toEqual([
+      { type: "help_problem", problem: 3, depth: "step" },
+      { type: "help_problem", problem: 2, depth: "solve" },
+      { type: "help_problem", problem: 1, depth: "step" },
+    ]);
+    expect(dropped.map((d) => d.type)).toEqual(["help_problem", "help_problem", "help_problem"]);
+  });
+
+  it("help with a problem that is not on the screen is dropped, with a note for the panel", () => {
+    const screen = { problems: ["2\\cos x = 1", "\\tan x = \\sqrt{3}", "\\sin x = -\\frac{1}{2}"] };
+    const res = dropMissingProblems(
+      [
+        { type: "help_problem", problem: 3, depth: "step" },
+        { type: "help_problem", problem: 7, depth: "step" },
+        { type: "help_problem", problem: 7, depth: "solve" },
+        { type: "new_screen" },
+      ],
+      screen,
+    );
+    expect(res.actions).toEqual([{ type: "help_problem", problem: 3, depth: "step" }, { type: "new_screen" }]);
+    expect(res.notes).toEqual(["There's no problem 7 on this screen."]);
+    expect(res.dropped).toHaveLength(2);
+    // the board's own numbers count, not the position in the list
+    expect(dropMissingProblems([{ type: "help_problem", problem: 1, depth: "step" }], { problems: ["a"], numbers: [5] }).notes).toEqual(["There's no problem 1 on this screen."]);
   });
 
   it("a figure must pass the shared spec schema", () => {

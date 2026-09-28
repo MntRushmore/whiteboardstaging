@@ -45,6 +45,15 @@ import { tableRules } from "./proof/table";
  *
  * Drawings are never recognized, never marked and never joined to a line; their labels are read
  * together, with one recognizer call (`labelPayload`), as the drawing's context.
+ *
+ * Before step 2, two kinds of rule are set aside as neither: a proof's T-table (`tableRules`), and
+ * a "divide both sides" bar (`divisionBars`) — a long level rule under a WHOLE equation (the
+ * student's own line, holding a relation, or a problem the tutor wrote: `SplitOptions.equations`,
+ * whose ink is not among the strokes) with a short cluster of writing just under it and nothing
+ * else on it. Under the tutor's problem such a bar had no writing about it and was a drawing (the
+ * `2` under it a label); under the student's line it was a fraction bar, and the whole equation a
+ * fraction over 2. Now the bar and the divisor are one line of their own (`InkSplit.bars`),
+ * written `\div 2` for the engine (`engine/operationLine.ts`).
  */
 
 export const DIAGRAM_RULES = {
@@ -119,10 +128,29 @@ export const DIAGRAM_RULES = {
   labelStackGapFactor: 0.6,
   /** a previous drawing keeps its id when at least this share of its strokes are still in it */
   idReuseRatio: 0.5,
+  /**
+   * A "divide both sides" bar (`divisionBars`): a level rule under a whole equation, the equation
+   * at most `divisionAboveFactor` glyphs above it (or `divisionAboveShare` of the height of a
+   * problem the tutor wrote, whose hand is bigger), the bar under at least `divisionSpanShare` of
+   * the equation's width and at most `divisionMaxSpan` times it; the divisor starting within
+   * `divisionBelowFactor` glyphs under it, at most `divisionDivisorWidthFactor` glyphs wide (and
+   * `divisionDivisorSpanShare` of the bar) and `divisionDivisorHeightFactor` tall.
+   */
+  divisionAboveFactor: 2.2,
+  divisionAboveShare: 0.6,
+  divisionSpanShare: 0.6,
+  divisionMaxSpan: 1.8,
+  divisionBelowFactor: 1.5,
+  divisionDivisorWidthFactor: 5,
+  divisionDivisorSpanShare: 0.7,
+  divisionDivisorHeightFactor: 4.5,
 } as const;
 
-/** `table`: a rule of a proof's T-table (`proof/table.ts`) — neither writing nor a drawing */
-export type StrokeRole = "writing" | "drawing" | "mark" | "label" | "table";
+/**
+ * `table`: a rule of a proof's T-table (`proof/table.ts`) — neither writing nor a drawing;
+ * `operation`: a "divide both sides" bar under an equation, or the divisor under it (`DivisionBar`)
+ */
+export type StrokeRole = "writing" | "drawing" | "mark" | "label" | "table" | "operation";
 export type DiagramKind = "triangle" | "quadrilateral" | "polygon" | "circle" | "axes" | "numberLine" | "arrow" | "segment" | "curve";
 
 export interface Diagram {
@@ -146,10 +174,32 @@ export interface StrokeVerdict {
   diagram?: number;
 }
 
+/**
+ * "Divide both sides by n", drawn: a bar under the whole equation with n under it
+ * (`divisionBars`). Neither writing nor a drawing — one line of its own for the loop, the bar and
+ * the divisor read together (Mathpix drops the bar and reads `2`), written as `\div 2`
+ * (`engine/operationLine.ts`, `barDivisionLatex`).
+ */
+export interface DivisionBar {
+  bar: TLShapeId;
+  /** the divisor's strokes, under the bar */
+  divisor: TLShapeId[];
+}
+
+export interface SplitOptions {
+  /**
+   * Equations on the screen that are not among the strokes — the problems the tutor wrote
+   * (`chat/cells.ts`), each as the box of its ink. A bar drawn under one is a division bar.
+   */
+  equations?: readonly Rect[];
+}
+
 export interface InkSplit {
   /** the strokes that are handwriting: the only ones `clusterLines` should see */
   writing: InkStroke[];
   diagrams: Diagram[];
+  /** division bars under an equation, each one line of its own (its strokes are in no other) */
+  bars: DivisionBar[];
   /** the glyph scale G the split was made with (page px) */
   glyph: number;
   roles: Map<string, StrokeVerdict>;
@@ -740,6 +790,174 @@ function peelShadow(cluster: readonly number[], toDrawing: (i: number) => number
   return [];
 }
 
+// ---------------------------------------------------------------- division bars
+
+const writingShape = (g: Geo): boolean => g.cls === "glyph" || g.cls === "medium" || g.cls === "flat" || g.cls === "tall";
+
+/**
+ * A relation among these strokes (`hasRelation`), counting only signs that stand on their own: the
+ * first stroke of a `4` and the arms of a `k` are a V opening sideways too, but another stroke of
+ * their glyph touches them; the bars of `\pm` (and of `\neq`) are two level bars stacked like an
+ * `=`, but a stroke goes through them.
+ */
+function holdsRelation(strokes: readonly Geo[], G: number): boolean {
+  const pad = 0.1 * G;
+  const crossed = (s: Geo) =>
+    strokes.some((o) => {
+      if (o.i === s.i) return false;
+      const cx = o.b.x + o.b.w / 2;
+      return cx >= s.b.x && cx <= s.b.x + s.b.w && o.b.y < s.b.y + s.b.h / 2 - pad && o.b.y + o.b.h > s.b.y + s.b.h / 2 + pad;
+    });
+  const glued = (s: Geo) => {
+    if (!hasRelation([s.stroke], G)) return flatBar(s.b, G) && crossed(s);
+    return strokes.some((o) => o.i !== s.i && intersects(inflate(s.b, pad), o.b));
+  };
+  return hasRelation(
+    strokes.filter((s) => !glued(s)).map((s) => s.stroke),
+    G,
+  );
+}
+
+/**
+ * The student's own equation straight above a level rule: the strokes just over its span (within
+ * `divisionAboveFactor` glyphs), holding a relation (`=`, `<`, `>`) and covering half of it, grown
+ * to the whole row they are on — which the rule must span most of. The row's strokes, or [].
+ * A fraction bar has its numerator above it, never a relation; the lower bar of a long `=` has
+ * only the upper one over it.
+ */
+function equationAbove(g: Geo, geos: readonly Geo[], G: number, x0: number, x1: number, y: number): number[] {
+  const R = DIAGRAM_RULES;
+  const slack = 0.25 * G;
+  const over = (o: Geo) => o.b.y + o.b.h <= y + slack;
+  const seed = geos.filter(
+    (o) => o.i !== g.i && writingShape(o) && over(o) && o.b.y + o.b.h >= y - R.divisionAboveFactor * G && Math.min(x1, o.b.x + o.b.w) > Math.max(x0, o.b.x),
+  );
+  if (seed.length === 0 || !holdsRelation(seed, G)) return [];
+  const covered = unionLength(
+    seed.map((o) => [Math.max(x0, o.b.x - slack), Math.min(x1, o.b.x + o.b.w + slack)]),
+    R.coverBridgeFactor * G,
+  );
+  if (covered < R.coverShare * (x1 - x0)) return [];
+  // the rest of the row: strokes level with it, a glyph's gap or so along
+  const row = new Set(seed.map((o) => o.i));
+  let rect = unionRects(seed.map((o) => o.b));
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const o of geos) {
+      if (row.has(o.i) || o.i === g.i || !writingShape(o) || !over(o)) continue;
+      const cy = o.b.y + o.b.h / 2;
+      if (cy < rect.y || cy > rect.y + rect.h) continue;
+      if (rectGap(o.b, rect) > 1.5 * G) continue;
+      row.add(o.i);
+      rect = unionRects([rect, o.b]);
+      changed = true;
+    }
+  }
+  const spanned = Math.min(x1, rect.x + rect.w) - Math.max(x0, rect.x);
+  if (spanned < R.divisionSpanShare * rect.w || x1 - x0 > R.divisionMaxSpan * rect.w + 2 * G) return [];
+  return [...row];
+}
+
+/**
+ * What both sides are divided by: the strokes that start within `divisionBelowFactor` glyphs
+ * under the rule, inside its span, grown to what they are written with — on their row (`-` and
+ * `3`), or stacked on them (a fraction's bar and its `2`) — and nothing more: one short piece of
+ * writing, with no relation in it (the sum under a system — `x + y = 10`, `x - y = 2`, a rule,
+ * `2x = 12` — has one) and nothing else level with it under the rule. The next line, written
+ * further down, is not part of it. Its strokes, or null.
+ */
+function divisorUnder(g: Geo, geos: readonly Geo[], G: number, x0: number, x1: number, y: number, row: readonly number[]): number[] | null {
+  const R = DIAGRAM_RULES;
+  const bottom = g.b.y + g.b.h;
+  const zone = geos.filter((o) => o.i !== g.i && !row.includes(o.i) && o.b.y >= y - 0.25 * G && o.b.x + o.b.w >= x0 - 2 * G && o.b.x <= x1 + 2 * G);
+  const group = zone.filter((o) => {
+    const cx = o.b.x + o.b.w / 2;
+    return o.b.y <= bottom + R.divisionBelowFactor * G && cx >= x0 && cx <= x1;
+  });
+  if (group.length === 0) return null;
+  const inGroup = new Set(group.map((o) => o.i));
+  let box = unionRects(group.map((o) => o.b));
+  const overlap = (a0: number, a1: number, b0: number, b1: number) => Math.min(a1, b1) - Math.max(a0, b0);
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const o of zone) {
+      if (inGroup.has(o.i)) continue;
+      const b = o.b;
+      const hGap = -overlap(b.x, b.x + b.w, box.x, box.x + box.w);
+      const vGap = -overlap(b.y, b.y + b.h, box.y, box.y + box.h);
+      const sameRow = Math.abs(b.y + b.h / 2 - (box.y + box.h / 2)) <= 0.6 * G && hGap <= 1.2 * G;
+      const stacked = hGap < 0 && vGap <= 0.6 * G;
+      if (!sameRow && !stacked) continue;
+      inGroup.add(o.i);
+      group.push(o);
+      box = unionRects([box, b]);
+      changed = true;
+    }
+  }
+  if (box.w > Math.min(R.divisionDivisorWidthFactor * G, R.divisionDivisorSpanShare * (x1 - x0))) return null;
+  if (box.h > R.divisionDivisorHeightFactor * G) return null;
+  if (!group.every(writingShape) || holdsRelation(group, G)) return null;
+  // something else level with it under the rule (`2` under each side): not one divisor
+  const beside = zone.some((o) => {
+    if (inGroup.has(o.i)) return false;
+    const cy = o.b.y + o.b.h / 2;
+    const cx = o.b.x + o.b.w / 2;
+    return cy >= box.y && cy <= box.y + box.h && cx >= x0 && cx <= x1;
+  });
+  return beside ? null : group.map((o) => o.i);
+}
+
+/**
+ * "Divide both sides by n", drawn: a long level rule under a WHOLE equation — the student's own
+ * line (`equationAbove`), or a problem the tutor wrote (`equations`: its ink is not among the
+ * strokes, so nothing about the rule looked like writing and it was taken for a drawing, and the
+ * `2` under it for its label) — with n written just under it (`divisorUnder`) and nothing else
+ * on it: no stroke touching or crossing it but the equation's and the divisor's, no ticks, no
+ * arrowhead, no corner. An underline has nothing under it; a number line has ticks; a T-table's
+ * bar has a heading above it, not a relation (and `tableRules` has taken it already); a
+ * triangle's base has its sides at its ends. Each bar with its divisor, as indexes into `geos`.
+ */
+function divisionBars(geos: readonly Geo[], G: number, equations: readonly Rect[]): Array<{ bar: number; divisor: number[] }> {
+  const R = DIAGRAM_RULES;
+  const out: Array<{ bar: number; divisor: number[] }> = [];
+  const taken = new Set<number>();
+  const rules = geos.filter((o) => o.cls === "levelRule" || o.cls === "uprightRule");
+  const small = geos.filter((o) => o.cls === "glyph" || o.cls === "medium");
+  const touch = Math.max(R.touchMinPx, R.touchFactor * G);
+  for (const g of geos) {
+    if (taken.has(g.i)) continue;
+    if (!(g.cls === "levelRule" || (g.cls === "medium" && g.orient === "level"))) continue;
+    const x0 = Math.min(g.main.a.x, g.main.b.x);
+    const x1 = Math.max(g.main.a.x, g.main.b.x);
+    const y = (g.main.a.y + g.main.b.y) / 2;
+    const under = (e: Rect) => {
+      const gap = y - (e.y + e.h);
+      const spanned = Math.min(x1, e.x + e.w) - Math.max(x0, e.x);
+      return gap >= -0.25 * G && gap <= Math.max(R.divisionAboveFactor * G, R.divisionAboveShare * e.h) && spanned >= R.divisionSpanShare * e.w && x1 - x0 <= R.divisionMaxSpan * e.w + 2 * G;
+    };
+    // writing level with the rule just past its ends: it is a fraction bar inside a line
+    // (`y = \frac{k}{x}`, `f(x) = \frac{x^2 - 4}{x - 2}`), not a rule under one
+    const beside = geos.some((o) => {
+      if (o.i === g.i || !writingShape(o) || o.b.y > g.b.y + g.b.h + 0.25 * G || o.b.y + o.b.h < g.b.y - 0.25 * G) return false;
+      const left = x0 - (o.b.x + o.b.w);
+      const right = o.b.x - x1;
+      return (left >= -0.25 * G && left <= 2 * G) || (right >= -0.25 * G && right <= 2 * G);
+    });
+    if (beside) continue;
+    const row = equations.some(under) ? [] : equationAbove(g, geos, G, x0, x1, y);
+    if (row.length === 0 && !equations.some(under)) continue;
+    const divisor = divisorUnder(g, geos, G, x0, x1, y, row);
+    if (!divisor) continue;
+    const own = new Set([g.i, ...row, ...divisor]);
+    const box = inflate(g.b, touch);
+    if (geos.some((o) => !own.has(o.i) && intersects(box, o.b) && pathDist(o.path, g.path) <= touch)) continue;
+    if (numberLineTicks(g, geos, G).length > 0 || arrowhead(g, small, G, true) || perpendicularPartner(g, rules, G)) continue;
+    out.push({ bar: g.i, divisor });
+    for (const i of [g.i, ...divisor]) taken.add(i);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- the split
 
 interface Flags {
@@ -777,6 +995,7 @@ function newDiagramId(): string {
 const writingOnly = (strokes: InkStroke[], glyph: number, reason = "glyph"): InkSplit => ({
   writing: strokes,
   diagrams: [],
+  bars: [],
   glyph,
   roles: new Map(strokes.map((s) => [s.id as string, { role: "writing" as const, reason }])),
 });
@@ -784,9 +1003,10 @@ const writingOnly = (strokes: InkStroke[], glyph: number, reason = "glyph"): Ink
 /**
  * Splits the screen's ink into handwriting and drawings (see the module comment). `previous`
  * keeps diagram ids stable: a drawing reuses the id of the previous one sharing at least half
- * of its strokes. Deterministic and pure.
+ * of its strokes. `opts.equations`: the tutor's problems on the screen, which a division bar may
+ * be drawn under. Deterministic and pure.
  */
-export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagram[] = []): InkSplit {
+export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagram[] = [], opts: SplitOptions = {}): InkSplit {
   const R = DIAGRAM_RULES;
   const all = [...strokes];
   const G = glyphScale(all);
@@ -796,12 +1016,30 @@ export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagr
   // A proof's T-table: its rules are set aside, so the rows it separates are read as lines.
   const table = tableRules(all, G);
   if (table.size > 0) {
-    const split = splitInk(all.filter((s) => !table.has(s.id)), previous);
+    const split = splitInk(all.filter((s) => !table.has(s.id)), previous, opts);
     for (const id of table) split.roles.set(id, { role: "table", reason: "a proof's table rule" });
     return split;
   }
 
   const geos = all.map((s, i) => geometry(s, i, G));
+  // "Divide both sides by 2": a bar under a whole equation with the 2 under it. Set aside with its
+  // divisor, a line of their own, before anything takes the bar for a drawing (under the tutor's
+  // problem there is no writing about it) or for a fraction bar (under the student's own line).
+  const bars = divisionBars(geos, G, opts.equations ?? []);
+  if (bars.length > 0) {
+    const taken = new Set<string>(bars.flatMap((b) => [b.bar, ...b.divisor]).map((i) => all[i].id));
+    const split = splitInk(
+      all.filter((s) => !taken.has(s.id)),
+      previous,
+      opts,
+    );
+    for (const b of bars) {
+      split.roles.set(all[b.bar].id, { role: "operation", reason: "a bar under an equation: divide both sides" });
+      for (const i of b.divisor) split.roles.set(all[i].id, { role: "operation", reason: "what both sides are divided by" });
+    }
+    split.bars = [...bars.map((b) => ({ bar: all[b.bar].id, divisor: b.divisor.map((i) => all[i].id) })), ...split.bars];
+    return split;
+  }
   const reasons = new Map<number, string>();
   const drawing = new Set<number>();
   const draw = (g: Geo, reason: string) => {
@@ -1065,7 +1303,16 @@ export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagr
     else roles.set(all[g.i].id, roleOf.get(g.i) ?? { role: "writing", reason: reasons.get(g.i) ?? "glyph" });
   });
   const writing = all.filter((s) => roles.get(s.id)?.role === "writing");
-  return { writing, diagrams, glyph: G, roles };
+  return { writing, diagrams, bars: [], glyph: G, roles };
+}
+
+/**
+ * Each division bar's strokes (the bar, then its divisor) for `clusterLines`' `fixed` groups: one
+ * line each. Strokes no longer in `strokes` are left out.
+ */
+export function barGroups(bars: readonly DivisionBar[], strokes: readonly InkStroke[]): InkStroke[][] {
+  const byId = new Map(strokes.map((s) => [s.id as string, s]));
+  return bars.map((b) => [b.bar, ...b.divisor].map((id) => byId.get(id)).filter((s): s is InkStroke => Boolean(s)));
 }
 
 // ---------------------------------------------------------------- what it looks like

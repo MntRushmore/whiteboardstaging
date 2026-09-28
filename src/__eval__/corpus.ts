@@ -502,6 +502,14 @@ export const BASE_CORPUS: readonly EvalProblem[] = [
   { id: "t2-21", topic: "trig-equation", lines: ["2\\cos^{2} x + \\cos x - 1 = 0"], expect: { values: { x: [Math.PI / 3, Math.PI, (5 * Math.PI) / 3] }, interval: { lo: 0, hi: 2 * Math.PI } } },
   { id: "t2-22", topic: "trig-equation", lines: ["\\cos(x - 30^{\\circ}) = \\frac{1}{2}"], expect: { values: { x: [Math.PI / 2, (11 * Math.PI) / 6] }, interval: { lo: 0, hi: 2 * Math.PI } }, note: "a shifted angle" },
   { id: "t2-23", topic: "trig-equation", lines: ["2\\sin^{2} x + 3\\cos x - 3 = 0"], expect: { values: { x: [0, Math.PI / 3, (5 * Math.PI) / 3] }, interval: { lo: 0, hi: 2 * Math.PI } }, note: "sin² = 1 - cos² first" },
+  // the board chat writes a trig problem with its interval on the same line, in degrees
+  { id: "t2-52", topic: "trig-equation", lines: ["2\\cos x = 1, 0^{\\circ} \\le x < 360^{\\circ}"], expect: { values: { x: [Math.PI / 3, (5 * Math.PI) / 3] }, answer: "x = 60^{\\circ}, \\ x = 300^{\\circ}", interval: { lo: 0, hi: 2 * Math.PI } }, note: "the interval written, in degrees" },
+  { id: "t2-53", topic: "trig-equation", lines: ["\\tan x = \\sqrt{3}, 0^{\\circ} \\le x < 360^{\\circ}"], expect: { values: { x: [Math.PI / 3, (4 * Math.PI) / 3] }, answer: "x = 60^{\\circ}, \\ x = 240^{\\circ}", interval: { lo: 0, hi: 2 * Math.PI } }, note: "the interval written, in degrees" },
+  { id: "t2-54", topic: "trig-equation", lines: ["\\sin x = -\\frac{1}{2}, 0^{\\circ} \\le x < 360^{\\circ}"], expect: { values: { x: [(7 * Math.PI) / 6, (11 * Math.PI) / 6] }, answer: "x = 210^{\\circ}, \\ x = 330^{\\circ}", interval: { lo: 0, hi: 2 * Math.PI } }, note: "the interval written, in degrees: third and fourth quadrants" },
+  // …and Solve from the student's step under such a problem: in the problem's interval, in its unit
+  { id: "t2-55", topic: "trig-equation", lines: ["2\\cos x = 1, \\ 0 \\le x < 2\\pi", "\\cos x = \\frac{1}{2}"], expect: { values: { x: [Math.PI / 3, (5 * Math.PI) / 3] }, answer: "x = \\frac{\\pi}{3}, \\ x = \\frac{5\\pi}{3}", interval: { lo: 0, hi: 2 * Math.PI } }, note: "from the student's step: the problem's interval in radians, not a turn in degrees" },
+  { id: "t2-56", topic: "trig-equation", lines: ["2\\cos x = 1, \\ 0^{\\circ} \\le x < 180^{\\circ}", "\\cos x = \\frac{1}{2}"], expect: { values: { x: [Math.PI / 3] }, answer: "x = 60^{\\circ}", interval: { lo: 0, hi: Math.PI } }, note: "from the student's step: half a turn, so 300° is not an answer" },
+  { id: "t2-57", topic: "trig-equation", lines: ["\\tan x = 1, \\quad x \\in [0, 2\\pi)"], expect: { values: { x: [Math.PI / 4, (5 * Math.PI) / 4] }, answer: "x = \\frac{\\pi}{4}, \\ x = \\frac{5\\pi}{4}", interval: { lo: 0, hi: 2 * Math.PI } }, note: "the interval in set notation" },
 
   // ---------------------------------------------------------------- simplifying with identities
   { id: "t2-24", topic: "trig-identity", lines: ["\\frac{\\sin 2x}{\\sin x}"], expect: { answer: "2\\cos x" }, note: "double angle, then cancel" },
@@ -538,6 +546,23 @@ export const BASE_CORPUS: readonly EvalProblem[] = [
   { id: "t2-49", topic: "derivative", lines: ["\\frac{d^{3}}{dx^{3}} x^{5} ="], expect: { answer: "60x^{2}" }, note: "each earlier stage under the derivatives still to take" },
   { id: "t2-50", topic: "derivative", lines: ["x^{2} + y^{2} = 25", "\\frac{dy}{dx} ="], expect: { answer: "-\\frac{x}{y}" }, note: "implicit differentiation" },
   { id: "t2-51", topic: "derivative", lines: ["\\frac{d}{dx} x^{x} ="], expect: { answer: "x^{x}(\\ln x + 1)" }, note: "logarithmic differentiation" },
+
+  // ---------------------------------------------------------------- operation lines (`engine/operationLine.ts`)
+  // What a class writes under an equation to say what it does to both sides next, as Mathpix
+  // read the ink. Solve takes the operation line out and solves the equation above it; the line
+  // after one is checked against that equation. `oracle`: the problem without the operation line.
+  { id: "op-01", topic: "linear", lines: ["2x + 3 = 11", "\\begin{array}{ll}\n-3 & -3\n\\end{array}"], expect: { values: { x: [4] } }, oracle: ["2x + 3 = 11"], note: "`-3` under each side, as Mathpix read it" },
+  { id: "op-02", topic: "linear", lines: ["2x + 3 = 11", "-3 \\quad-3", "2x = 8"], expect: { values: { x: [4] } }, oracle: ["2x + 3 = 11"], note: "the line after the operation line" },
+  { id: "op-03", topic: "linear", lines: ["2x = 8", "\\div 2 \\div 2"], expect: { values: { x: [4] } }, oracle: ["2x = 8"] },
+  { id: "op-04", topic: "linear", lines: ["\\frac{x}{3} = 4", "\\times 3 \\times 3"], expect: { values: { x: [12] } }, oracle: ["\\frac{x}{3} = 4"] },
+  { id: "op-05", topic: "linear", lines: ["x - 5 = 2", "+5+5"], expect: { values: { x: [7] } }, oracle: ["x - 5 = 2"] },
+  { id: "op-06", topic: "linear", lines: ["5x = 2x + 9", "-2 x-2 x"], expect: { values: { x: [3] } }, oracle: ["5x = 2x + 9"] },
+  { id: "op-07", topic: "linear", lines: ["x + \\frac{1}{2} = 3", "-\\frac{1}{2} \\quad-\\frac{1}{2}"], expect: { values: { x: [5 / 2] } }, oracle: ["x + \\frac{1}{2} = 3"] },
+  { id: "op-08", topic: "inequality", lines: ["-2x < 6", "\\div (-2) \\quad \\div (-2)"], expect: { answer: "x > -3" }, oracle: ["-2x < 6"], note: "dividing by a negative: the next line turns the sign" },
+  { id: "op-09", topic: "trig-equation", lines: ["2 \\sin x = 1", "\\div 2"], expect: { values: { x: [Math.PI / 6, (5 * Math.PI) / 6] }, answer: "x = 30^{\\circ}, \\ x = 150^{\\circ}", interval: { lo: 0, hi: 2 * Math.PI } }, oracle: ["2 \\sin x = 1"], note: "a bar under the equation with 2 under it (`\\div 2`, `barDivisionLatex`)" },
+  { id: "op-11", topic: "quadratic", lines: ["x^{2} - 7x + 10 = 0", "-2 \\quad -5", "(x - 2)(x - 5) = 0"], expect: { values: { x: [2, 5] } }, oracle: ["x^{2} - 7x + 10 = 0"], note: "a factor pair under a quadratic: scratch, not an operation that went wrong" },
+  { id: "op-12", topic: "quadratic", lines: ["x^{2} - 7x + 10 = 0", "-10 \\quad -10"], expect: { values: { x: [2, 5] } }, oracle: ["x^{2} - 7x + 10 = 0"], note: "the same operand twice under a quadratic: an operation" },
+  { id: "op-10", topic: "trig-equation", lines: ["2 \\sin x = 1", "\\div 2", "\\sin x = \\frac{1}{2}"], expect: { values: { x: [Math.PI / 6, (5 * Math.PI) / 6] }, answer: "x = 30^{\\circ}, \\ x = 150^{\\circ}", interval: { lo: 0, hi: 2 * Math.PI } }, oracle: ["2 \\sin x = 1"] },
 ];
 
 /** Every problem on the scoreboard: the original set, then the course files. */

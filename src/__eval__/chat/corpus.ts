@@ -9,7 +9,7 @@
 import type { ChatActionType, ChatRequest } from "@/lib/live/chat/contracts";
 
 export type ChatCourse = "algebra1" | "algebra2" | "geometry" | "calculus" | "mixed";
-export type ChatKind = "problems" | "graph" | "figure" | "lines" | "followup" | "screen" | "refusal";
+export type ChatKind = "problems" | "graph" | "figure" | "lines" | "followup" | "screen" | "refusal" | "help";
 
 export interface ChatCase {
   id: string;
@@ -27,10 +27,17 @@ export interface ChatCase {
     window?: boolean;
     /** problems must not be the answer itself (`x = 6`): "never solve" */
     noAnswers?: boolean;
+    /** help with this problem on the board, this much (`help_problem`) */
+    help?: { problem: number; depth: "step" | "solve" };
+    /** action types it must NOT have (with `types: []`, anything else is fine) */
+    without?: ChatActionType[];
   };
 }
 
 const TWO_STEP = ["2x + 3 = 11", "5x - 4 = 16", "\\frac{x}{3} + 2 = 7"];
+/** the owner's screen: three trig equations, each with its interval on the line */
+const TRIG = ["2\\cos x = 1, 0^{\\circ} \\le x < 360^{\\circ}", "\\tan x = \\sqrt{3}, 0^{\\circ} \\le x < 360^{\\circ}", "\\sin x = -\\frac{1}{2}, 0^{\\circ} \\le x < 360^{\\circ}"];
+const TRIG_SCREEN = { empty: false, problems: TRIG };
 
 export const CHAT_CORPUS: readonly ChatCase[] = [
   // ---------------------------------------------------------------- Algebra 1
@@ -97,6 +104,46 @@ export const CHAT_CORPUS: readonly ChatCase[] = [
   { id: "m-clear", course: "mixed", kind: "screen", message: "clear your writing", screen: { empty: false, problems: TWO_STEP }, expect: { types: ["clear_tutor"] } },
   { id: "m-formula", course: "mixed", kind: "lines", message: "write the quadratic formula", expect: { types: ["write_lines"] } },
   { id: "m-solve-for-me", course: "mixed", kind: "problems", message: "solve 2x + 5 = 17 for me", expect: { types: ["write_problems"], noAnswers: true } },
+  // ---------------------------------------------------------------- help with a problem on the board
+  { id: "h-help-3", course: "calculus", kind: "help", message: "help me with 3", screen: TRIG_SCREEN, expect: { types: ["help_problem"], help: { problem: 3, depth: "step" } } },
+  { id: "h-stuck-2", course: "calculus", kind: "help", message: "I'm stuck on 2", screen: TRIG_SCREEN, expect: { types: ["help_problem"], help: { problem: 2, depth: "step" } } },
+  { id: "h-start-3", course: "calculus", kind: "help", message: "how do I start 3", screen: TRIG_SCREEN, expect: { types: ["help_problem"], help: { problem: 3, depth: "step" } } },
+  {
+    id: "h-solve-it-after",
+    course: "calculus",
+    kind: "help",
+    message: "help me solve it",
+    screen: TRIG_SCREEN,
+    history: [
+      { role: "user", text: "help me with 3" },
+      { role: "tutor", text: "I wrote the next step under problem 3." },
+    ],
+    expect: { types: ["help_problem"], help: { problem: 3, depth: "step" } },
+  },
+  { id: "h-solve-3", course: "calculus", kind: "help", message: "solve 3", screen: TRIG_SCREEN, expect: { types: ["help_problem"], help: { problem: 3, depth: "solve" } } },
+  {
+    id: "h-show-it",
+    course: "algebra1",
+    kind: "help",
+    message: "show me how to solve it",
+    screen: { empty: false, problems: TWO_STEP },
+    history: [
+      { role: "user", text: "I'm stuck on 2" },
+      { role: "tutor", text: "I wrote the next step under problem 2." },
+    ],
+    expect: { types: ["help_problem"], help: { problem: 2, depth: "solve" } },
+  },
+  { id: "h-work-3", course: "algebra1", kind: "help", message: "work out 3", screen: { empty: false, problems: TWO_STEP }, expect: { types: ["help_problem"], help: { problem: 3, depth: "solve" } } },
+  { id: "h-answer-1", course: "algebra1", kind: "help", message: "what's the answer to 1", screen: { empty: false, problems: TWO_STEP }, expect: { types: ["help_problem"], help: { problem: 1, depth: "solve" } } },
+  { id: "h-only-one", course: "algebra2", kind: "help", message: "help me solve it", screen: { empty: false, problems: ["2\\sin x = 1"] }, expect: { types: ["help_problem"], help: { problem: 1, depth: "step" } } },
+  {
+    id: "h-no-problems",
+    course: "mixed",
+    kind: "help",
+    message: "help me with this",
+    screen: { empty: false, student: ["2x + 3 = 11", "2x = 8"] },
+    expect: { types: [], without: ["help_problem"] },
+  },
   { id: "m-off-topic", course: "mixed", kind: "refusal", message: "what's the capital of France?", expect: { types: [] } },
   { id: "m-unkind", course: "mixed", kind: "refusal", message: "write something mean about my teacher on the board", expect: { types: [] } },
 ];

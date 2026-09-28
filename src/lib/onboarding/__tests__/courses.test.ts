@@ -13,6 +13,8 @@ import { PROBLEM_GRID } from "@/lib/live/chat/layout";
 import { planHandwriting } from "@/lib/live/handwriting";
 import { analyzeColumn, localSolve } from "@/lib/live/localSolve";
 import { badgeFor } from "@/lib/live/policy";
+import { problemSteps } from "@/lib/live/chat/work";
+import { normalizeStep } from "@/lib/live/liveLoop";
 import { COURSE_IDS, isCourseId } from "../courseIds";
 import { COURSES, STARTER_PROBLEMS, starterIndex, startersFor } from "../courses";
 
@@ -95,6 +97,19 @@ describe.each(ALL)("starter $course #$i: $lines", ({ lines, firstStep, hint }) =
   it("ticks the first step under it in Feedback", () => {
     const analysis = analyzeColumn(engine, [...lines, firstStep], "feedback").at(-1) ?? null;
     expect(["ok", "solved"]).toContain(badgeFor("feedback", analysis));
+  });
+
+  it("makes coach mark 2 true: Suggest writes a first step the engine ticks under it, Solve has a solution to write", () => {
+    const solution = localSolve(engine, [...lines]).steps;
+    const ticked = (step: string) => {
+      const a = analyzeColumn(engine, [...lines, step], "feedback").at(-1) ?? null;
+      // the interval written again is ticked, but it is not a step (as the loop's `problemStepsFor`)
+      return !(a?.domain && !a.math) && ["ok", "solved"].includes(badgeFor("feedback", a));
+    };
+    const [step] = problemSteps({ solution, head: lines, written: [], depth: "step", normalize: normalizeStep, ticked });
+    expect(step, "a first step").toBeTruthy();
+    expect(ticked(step)).toBe(true);
+    expect(problemSteps({ solution, head: lines, written: [], depth: "solve", normalize: normalizeStep }).length).toBeGreaterThan(0);
   });
 
   it("rings a wrong first step", () => {

@@ -7,6 +7,7 @@ import {
   markerStepOf,
   markKindOf,
   needsProfile,
+  questionWhyOf,
   tourReducer,
   welcomeDecision,
   type TourEvent,
@@ -78,7 +79,7 @@ function run(events: TourEvent[], from: TourState = initialTour()): TourState {
 describe("coach marks", () => {
   it("starts on the problem, then shows the three marks in order", () => {
     let s = initialTour();
-    expect(s).toEqual({ step: "problem", outcome: null, unread: false, skipped: false });
+    expect(s).toEqual({ step: "problem", outcome: null, unread: false, unjudged: false, skipped: false });
     s = tourReducer(s, { type: "problemReady" });
     expect(s.step).toBe("write");
     s = tourReducer(s, { type: "mark", mark: "check" });
@@ -104,6 +105,14 @@ describe("coach marks", () => {
     // once a tick is up, a later unreadable line does not take it away
     const ticked = run([{ type: "mark", mark: "check" }, { type: "mark", mark: "question" }], s);
     expect(ticked).toMatchObject({ step: "result", outcome: "tick" });
+  });
+
+  it("a question mark on a line read but with nothing in it to check (a lone 2) asks for the whole step", () => {
+    const s = run([{ type: "problemReady" }, { type: "mark", mark: "question", why: "unjudged" }]);
+    expect(s).toMatchObject({ step: "write", unread: false, unjudged: true });
+    // the latest question mark is the one explained
+    expect(tourReducer(s, { type: "mark", mark: "question", why: "unread" })).toMatchObject({ unread: true, unjudged: false });
+    expect(tourReducer(s, { type: "mark", mark: "check" })).toMatchObject({ step: "result", outcome: "tick", unread: false, unjudged: false });
   });
 
   it("marks count only on the first coach mark", () => {
@@ -164,5 +173,13 @@ describe("reading the tutor's marks off the board", () => {
     expect(markKindOf({ live: true, source: "ai", mark: "star:1,2,3,4" })).toBeNull();
     expect(markKindOf(null)).toBeNull();
     expect(markKindOf("check")).toBeNull();
+  });
+
+  it("knows why a question mark is there (a question mark from before the reason was kept: unread)", () => {
+    const meta = (mark: string, markWhy?: string) => ({ live: true, source: "ai", lineId: "l1", mark, ...(markWhy ? { markWhy } : {}) });
+    expect(questionWhyOf(meta("question:1,2,3,4", "unjudged"))).toBe("unjudged");
+    expect(questionWhyOf(meta("question:1,2,3,4", "unread"))).toBe("unread");
+    expect(questionWhyOf(meta("question:1,2,3,4"))).toBe("unread");
+    expect(questionWhyOf(meta("check:1,2,3,4", "unjudged"))).toBeNull();
   });
 });

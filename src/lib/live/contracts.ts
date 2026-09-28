@@ -31,6 +31,8 @@ export const LINE_KINDS = [
   "incomplete",
   "text",
   "unknown",
+  /** `-3 \quad -3`, `\div 2`, a bar with a `2` under it: what is done to both sides next (`engine/operationLine.ts`) */
+  "operation",
 ] as const;
 export type LineKind = (typeof LINE_KINDS)[number];
 
@@ -182,6 +184,36 @@ export interface LineAnalysis {
    * (`engine/transformations.ts`).
    */
   derived?: boolean;
+  /**
+   * An operation line (`kind: 'operation'`, `engine/operationLine.ts`): what is done to both sides
+   * of the relation above it — `-3 \quad -3`, `\div 2`, a bar with the divisor under it. `result`
+   * is the relation it leads to (`2x = 8`), '' when the engine cannot write it simply.
+   */
+  operation?: { op: "add" | "subtract" | "multiply" | "divide"; operand: string; operandMath: string; result: string };
+  /**
+   * Where the unknown lives, written with the equation (`2\cos x = 1, 0^{\circ} \le x < 360^{\circ}`)
+   * or on a line of its own (`engine/domain.ts`). Carried down the column: an answer under it must
+   * lie inside, and lists all of its solutions there to count as solved.
+   */
+  domain?: LineDomain;
+}
+/**
+ * A domain in the measure the unknown is read in: radians for an angle (`0^{\circ}` → 0,
+ * `360^{\circ}` → 2π), the numbers themselves otherwise.
+ */
+export interface LineDomain {
+  /** the unknown, as the engine names it (`x`, `theta`) */
+  variable: string;
+  lo: number;
+  hi: number;
+  loIn: boolean;
+  hiIn: boolean;
+  /** how the bounds were written: degrees, radians (π, or small numbers for an angle), plain numbers */
+  unit: "deg" | "rad" | "plain";
+  /** the domain as a chain (`0^{\circ} \le x < 360^{\circ}`) */
+  latex: string;
+  /** every solution inside it, in the same measure, when the engine can list them exactly */
+  solutions?: number[];
 }
 /**
  * What `solveLatex` may know about the column it is solving in (`localSolve` passes it; every

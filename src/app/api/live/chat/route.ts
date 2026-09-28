@@ -12,6 +12,7 @@ import {
   ChatReplyRawSchema,
   cleanChatActions,
   cleanReplyText,
+  dropMissingProblems,
   FigureRepairReplySchema,
 } from "@/lib/server/prompts/chat";
 import { livePreamble, withRequestId } from "@/lib/server/live-route";
@@ -34,7 +35,9 @@ const FIGURE_NOT_DRAWN = "The figure couldn't be drawn.";
  * problems with (`checkFigure`, run here: pure, ~2 ms, no drawing code) gets ONE repair
  * round-trip with those problems — one per request, so it stays cheap — and is dropped otherwise,
  * with a note. The board verifies every problem with its engine before writing it
- * (`src/lib/live/chat/verify.ts`).
+ * (`src/lib/live/chat/verify.ts`). A `help_problem` ("help me with 3") names a problem on the
+ * screen by its number there; one about a number the screen does not have is dropped with a note
+ * ("There's no problem 7 on this screen."), which is the reply when nothing else is left.
  *
  * Charged `live/chat` (3 credits) up front, refunded by `runCharged` on any non-2xx; a reply whose
  * every proposed action had to be dropped is refunded too (200, `refunded: true`), since the
@@ -116,11 +119,22 @@ export async function POST(req: Request) {
       // be drawn is not something the student asked for: with nothing else left, nothing is done.
       if (figuresDropped > 0 && actions.every((a) => a.type === "new_screen" || a.type === "clear_tutor")) actions.length = 0;
 
+      // Help with a problem that is not on this screen: dropped, and the panel says there is none.
+      const present = dropMissingProblems(actions, data.screen);
+      actions.splice(0, actions.length, ...present.actions);
+      dropped.push(...present.dropped);
+      notes.push(...present.notes);
+
       // Nothing the model proposed survived: say so plainly, and give the credits back.
       let reply = cleanReplyText(raw.reply);
       let refunded = false;
       if (proposed > 0 && actions.length === 0) {
-        reply = figuresDropped > 0 ? "Sorry, I couldn't draw that figure." : "Sorry, I couldn't do that on the board. Try asking another way.";
+        reply =
+          figuresDropped > 0
+            ? "Sorry, I couldn't draw that figure."
+            : present.notes.length > 0
+              ? present.notes[0]
+              : "Sorry, I couldn't do that on the board. Try asking another way.";
         notes.length = 0;
         const r = await refundCredits({ token, requestId }, log);
         refunded = r.refunded > 0;

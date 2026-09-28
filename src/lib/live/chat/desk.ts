@@ -5,7 +5,7 @@ import { GRAPH, graphPaceFor, planGraph, type GraphWindowHint } from "../graphin
 import { HAND_LINE_META, planHandwriting, placeHandPlan, placeHandPlanOnBaseline, type HandPlan } from "../handwriting";
 import { CHAT_PROBLEM_META, problemMetaOf } from "./cells";
 import type { ChatAction, ChatActionOutcome, ChatRunReport, ChatScreen, ChatWindow } from "./contracts";
-import { CHAT_LIMITS } from "./contracts";
+import { CHAT_LIMITS, noProblemNote } from "./contracts";
 import { chunkProblems, findFreeArea, joinPlans, planGrid, PROBLEM_GRID } from "./layout";
 import { verifyLines, verifyProblem } from "./verify";
 
@@ -85,6 +85,12 @@ export interface ChatHost {
   clearTutor(): void;
   /** the problems on the screen changed: the loop re-reads the columns under them */
   problemsChanged(): void;
+  /**
+   * Helps with problem `n` on this screen, in the tutor's hand under it (`LiveLoop.chatHelp`): its
+   * next step, or the rest worked out, from where the work under it stands. `missing`: no problem
+   * `n` here; `done`: nothing left to write; `busy`: it is being written already.
+   */
+  helpProblem(n: number, depth: "step" | "solve"): "writing" | "done" | "busy" | "missing";
   planFigure(spec: FigureSpec, opts: FigurePlanOptions): FigurePlanResult | null;
   seed(key: string): number;
   delay(ms: number): Promise<void>;
@@ -147,11 +153,14 @@ export class ChatDesk {
       tutor.push({ latex, y: s.bounds?.y ?? 0 });
     }
     const cap = (list: string[]) => list.slice(0, CHAT_LIMITS.screenLines).map((l) => l.slice(0, CHAT_LIMITS.lineLatex));
+    const numbered = [...problems.entries()].sort((a, b) => a[0] - b[0]).slice(0, CHAT_LIMITS.problems);
     return {
       empty: shapes.length === 0,
       student: cap(this.host.studentLines()),
       tutor: cap(tutor.sort((a, b) => a.y - b.y).map((t) => t.latex)),
-      problems: [...problems.entries()].sort((a, b) => a[0] - b[0]).map(([, l]) => l).slice(0, CHAT_LIMITS.problems),
+      problems: numbered.map(([, l]) => l),
+      // as numbered on the board: "help me with 7" on a screen holding 5 to 8
+      ...(numbered.length > 0 ? { numbers: numbered.map(([n]) => n) } : {}),
     };
   }
 
@@ -200,7 +209,27 @@ export class ChatDesk {
         this.host.clearTutor();
         this.host.problemsChanged();
         return { type: "clear_tutor", ok: true };
+      case "help_problem":
+        return this.helpProblem(action.problem, action.depth);
     }
+  }
+
+  // ---------------------------------------------------------------- help with a problem
+
+  /**
+   * "Help me with 3", "solve it": the tutor works problem `n` on this screen under it, in its hand —
+   * the engine's working, not the model's (`LiveLoop.chatHelp`) — after any writing already under
+   * way, and the run goes on once it is written.
+   */
+  private async helpProblem(n: number, depth: "step" | "solve"): Promise<ChatActionOutcome> {
+    await this.waitForHand();
+    const res = this.host.helpProblem(n, depth);
+    if (res === "missing") return { type: "help_problem", ok: false, note: noProblemNote(n) };
+    if (res === "done") return { type: "help_problem", ok: false, note: `Problem ${n} is already worked out on the board.` };
+    if (res === "busy") return { type: "help_problem", ok: false, note: `I'm still writing on problem ${n}.` };
+    await this.waitForHand();
+    this.host.metric?.("live.chat.help", { depth });
+    return { type: "help_problem", ok: true };
   }
 
   // ---------------------------------------------------------------- helpers

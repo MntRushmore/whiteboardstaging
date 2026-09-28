@@ -10,7 +10,7 @@ import { supabase } from "@/lib/supabase";
 import { startersFor, type StarterProblem } from "@/lib/onboarding/courses";
 import { browserStorage, clearTourMarker, readTourMarker, writeLocalDone, writeTourMarker } from "@/lib/onboarding/marker";
 import type { Box } from "@/lib/onboarding/placement";
-import { COACH_COUNT, coachNumber, initialTour, markKindOf, markerStepOf, tourReducer } from "@/lib/onboarding/state";
+import { COACH_COUNT, coachNumber, initialTour, markKindOf, markerStepOf, questionWhyOf, tourReducer } from "@/lib/onboarding/state";
 import { asOnboardingClient, saveOnboarding } from "@/lib/onboarding/storage";
 import { CoachMark } from "./CoachMark";
 
@@ -137,9 +137,10 @@ export default function BoardTour({ boardId, userId, controller, onModeChange, c
       });
   }, [state.step, editor, controller, starters, marker]);
 
-  // Coach mark 1 waits for the tutor's mark on the student's line: a tick or a ring moves it on.
-  // The mark settles first — a line read half-written can be ringed and then ticked a moment
-  // later — so only the last mark of a quick run is reported.
+  // Coach mark 1 waits for the tutor's mark on the student's line: a tick or a ring moves it on;
+  // a question mark (the tutor could not read the line, or read it but found nothing to check)
+  // changes what it says. The mark settles first — a line read half-written can be ringed and then
+  // ticked a moment later — so only the last mark of a quick run is reported.
   const listening = state.step === "write" || state.step === "result";
   useEffect(() => {
     if (!listening) return;
@@ -150,10 +151,11 @@ export default function BoardTour({ boardId, userId, controller, onModeChange, c
           if (rec.typeName !== "shape") continue;
           const mark = markKindOf(rec.meta);
           if (!mark) continue;
+          const why = questionWhyOf(rec.meta) ?? undefined;
           if (timer) clearTimeout(timer);
           timer = setTimeout(() => {
-            clientMetric("onboarding.tour.mark", { mark });
-            dispatch({ type: "mark", mark });
+            clientMetric("onboarding.tour.mark", { mark, why: why ?? null });
+            dispatch({ type: "mark", mark, why });
           }, MARK_SETTLE_MS);
         }
       },
@@ -209,6 +211,14 @@ export default function BoardTour({ boardId, userId, controller, onModeChange, c
   const number = coachNumber(state.step);
   if (number === null) return null;
   const hint = starter?.hint;
+  // what coach mark 1 says under its title: the nudge, or what the tutor's question mark means
+  const writeBody = state.unjudged
+    ? `That ? means the tutor couldn't tell what that line says. Write the whole next line${hint ? `. ${hint}` : " under the problem."}`
+    : state.unread
+      ? "The tutor couldn't read that line. Try writing it a little larger."
+      : hint
+        ? `${hint} The tutor checks each line as you write it.`
+        : "The tutor checks each line as you write it.";
 
   switch (state.step) {
     case "write":
@@ -220,12 +230,12 @@ export default function BoardTour({ boardId, userId, controller, onModeChange, c
           avoid={avoidWork}
           number={number}
           total={COACH_COUNT}
-          focusKey={`write:${state.unread}`}
+          focusKey={`write:${state.unread}:${state.unjudged}`}
           title={starter ? "Write the next step under the problem with the pen" : "Write a line of maths with the pen"}
           primary={{ label: "Next", onClick: next, variant: "outline" }}
           onClose={skip}
         >
-          {state.unread ? "The tutor couldn't read that line. Try writing it a little larger." : hint ? `${hint} The tutor checks each line as you write it.` : "The tutor checks each line as you write it."}
+          {writeBody}
         </CoachMark>
       );
     case "result":
