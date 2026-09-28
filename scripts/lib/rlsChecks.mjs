@@ -1,5 +1,5 @@
 /**
- * Behavioural RLS checks for the Agathon Classroom schema.
+ * Behavioural RLS checks for the Agathon schema.
  *
  * Every check is a pure async function over a CheckContext made of three tiny
  * clients (anon, user A, user B). It never touches process.env or the network

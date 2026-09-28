@@ -36,7 +36,7 @@ const CREDITS_MESSAGE_RE =
   /insufficient (credit|balance|fund)|out of credit|exceeded.*credit|payment required/i;
 
 /** Build the standard OpenRouter headers (auth + app attribution). */
-export function openrouterHeaders(title = "Agathon Classroom Staging"): Record<string, string> {
+export function openrouterHeaders(title = "Agathon"): Record<string, string> {
   const env = getServerEnv();
   return {
     Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,

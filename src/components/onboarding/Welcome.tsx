@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight } from "lucide-react";
+import { BetaBadge } from "@/components/app/BetaBadge";
 import { clientMetric } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
 import { describeError } from "@/lib/errorMessage";
@@ -114,6 +115,10 @@ export default function Welcome({ userId, onSkip }: WelcomeProps) {
                 {WELCOME_COPY.skip}
               </Button>
             </div>
+            <p className={styles.betaNote}>
+              <BetaBadge className={styles.betaBadge} />
+              <span>{WELCOME_COPY.beta}</span>
+            </p>
           </div>
         ) : (
           <div className={styles.step}>

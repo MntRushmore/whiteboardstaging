@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Creates (or finds) the Stripe objects behind Agathon Classroom's paid plans, and prints the
+ * Creates (or finds) the Stripe objects behind Agathon's paid plans, and prints the
  * env values the app needs. Idempotent: every object carries `metadata.app = agathon-classroom`
  * and is found again by it, so a second run changes nothing unless the config below changed.
  *
@@ -39,7 +39,7 @@ import { pathToFileURL } from "node:url";
 
 /** Tag on every object this script owns. */
 export const APP_TAG = "agathon-classroom";
-export const PRODUCT_PREFIX = "Agathon Classroom";
+export const PRODUCT_PREFIX = "Agathon";
 
 /**
  * The paid plans, at the launch prices the owner set (2026-09-28): keep them equal to `public.plans`

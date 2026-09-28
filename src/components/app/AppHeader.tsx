@@ -8,6 +8,8 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthProvider";
 import { FeatureLabsPanel } from "@/components/FeatureLabsPanel";
+import { BugReportButton } from "@/components/BugReportButton";
+import { BetaBadge } from "@/components/app/BetaBadge";
 import { useCreditSummary } from "@/lib/billing/useCreditSummary";
 import { ACCOUNT_PATH, formatCredits, remainingTone, type CreditSummary } from "@/lib/billing/viewModel";
 import { Badge, type BadgeTone } from "@/registry/components/badge/badge";
@@ -47,8 +49,8 @@ function CreditsLink({ summary }: { summary: CreditSummary }) {
 }
 
 /**
- * The app bar for signed-in pages: product name on the left; credits and the account menu
- * (Account, Feature Labs, Sign out) on the right. Self-contained (reads the session and the
+ * The app bar for signed-in pages: product name and the beta badge on the left; Report a bug,
+ * credits and the account menu (Account, Feature Labs, Sign out) on the right. Self-contained (reads the session and the
  * credit summary itself), so any page can drop it in above an `APP_CONTENT_CLASS` container.
  * The menu is Arc's UserMenu: a panel on desktop, a bottom sheet below 640 px.
  */
@@ -74,12 +76,16 @@ export function AppHeader({ className }: { className?: string }) {
   return (
     <header className={[styles.header, className].filter(Boolean).join(" ")}>
       <div className={`${styles.content} ${styles.bar}`}>
-        <Link href="/" className={styles.brand}>
-          Agathon Classroom
-        </Link>
+        <div className={styles.brandRow}>
+          <Link href="/" className={styles.brand}>
+            Agathon
+          </Link>
+          <BetaBadge />
+        </div>
 
         {user && (
           <div className={styles.end}>
+            <BugReportButton variant="header" />
             {summary && <CreditsLink summary={summary} />}
             <UserMenu
               user={{ name, email, plan: summary ? summary.plan_name : undefined }}

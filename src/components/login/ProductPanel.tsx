@@ -1,4 +1,5 @@
 import { ChartSpline, ListChecks, PenLine } from "lucide-react";
+import { BetaBadge } from "@/components/app/BetaBadge";
 import { ProductPictures } from "@/components/app/ProductPictures";
 import styles from "./auth.module.css";
 
@@ -8,7 +9,7 @@ import styles from "./auth.module.css";
  * phones and on /reset-password.
  */
 
-export const PRODUCT_NAME = "Agathon Classroom";
+export const PRODUCT_NAME = "Agathon";
 export const PRODUCT_LINE = "The whiteboard that writes back.";
 export const PRODUCT_DESCRIPTION =
   "Students write maths by hand. The tutor reads it, checks each step, and answers in its own handwriting.";
@@ -23,7 +24,10 @@ export function ProductPanel() {
   return (
     <aside aria-label={`About ${PRODUCT_NAME}`} className={styles.panel}>
       <div className={styles.panelInner}>
-        <p className={styles.brand}>{PRODUCT_NAME}</p>
+        <p className={`${styles.brand} ${styles.brandRow}`}>
+          {PRODUCT_NAME}
+          <BetaBadge />
+        </p>
         <div className={styles.panelBody}>
           <h2 className={styles.headline}>{PRODUCT_LINE}</h2>
           <p className={styles.description}>{PRODUCT_DESCRIPTION}</p>
@@ -54,7 +58,10 @@ export function ProductPanel() {
 export function ProductLine({ className }: { className?: string }) {
   return (
     <div className={[styles.productLine, className].filter(Boolean).join(" ")}>
-      <p className={styles.brand}>{PRODUCT_NAME}</p>
+      <p className={`${styles.brand} ${styles.brandRow}`}>
+        {PRODUCT_NAME}
+        <BetaBadge />
+      </p>
       <p className={styles.productLineText}>{PRODUCT_LINE}</p>
     </div>
   );

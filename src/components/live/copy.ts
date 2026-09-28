@@ -36,6 +36,8 @@ export const LIVE_COPY = {
     helpOffHint: "Pick Feedback, Suggest or Solve to ask for help",
     clearMarks: "Clear marks",
     hideAiShapes: "Hide AI shapes",
+    celebrations: "Celebrations",
+    celebrationsHint: "A cheer and confetti when the tutor ticks your step",
     handwriting: "Tutor writes by hand",
     handwritingHint: "Worked steps appear as handwriting instead of typeset text",
     /** the Live switch, moved out of the top bar: says what it does, not what it is called */
@@ -44,7 +46,7 @@ export const LIVE_COPY = {
     /** hover text on the resting pill once the student has switched Live off themselves */
     offHint: "Switch checking back on under Board options",
     modeInfo: "How help modes work",
-    report: "Report a problem",
+    report: "Report a bug",
     shapeCap: "Lots of marks on this page. Clear marks to keep going.",
   },
 
