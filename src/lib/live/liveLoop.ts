@@ -52,7 +52,6 @@ import {
   type UseLiveMathOptions,
 } from "./contracts";
 import { endsWithRelation } from "./answer";
-import { getEngine as defaultGetEngine } from "./engine";
 import { LIVE_COPY } from "@/components/live/copy";
 import { classifyLiveFailure, sseFailure, type ClassifyContext } from "@/components/live/errorView";
 import {
@@ -370,7 +369,8 @@ function defaultDeps(): LiveLoopDeps {
   return {
     recognizer: createRecognizeClient(),
     stream: defaultStream,
-    getEngine: defaultGetEngine,
+    // the engine's modules load with it, after the board: not part of the board's first load
+    getEngine: () => import("./engine").then((m) => m.getEngine()),
     fetchCapabilities: () => defaultFetchCapabilities(),
     now: () => Date.now(),
     events: hasWindow ? window : null,
