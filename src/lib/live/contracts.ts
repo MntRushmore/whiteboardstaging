@@ -5,6 +5,7 @@
  * This file is FROZEN during the parallel build: every work package imports from it and
  * nobody edits it without the orchestrator. Propose changes in your report instead.
  */
+import { FigureSpecSchema } from "./figureDraw/contracts";
 import { z } from "zod";
 import type { TLBaseShape, TLShapeId } from "tldraw";
 
@@ -449,6 +450,13 @@ export const SetupRequestSchema = z
   .refine((r) => !r.labels || Boolean(r.crop), { message: "labels only come with a figure crop", path: ["labels"] });
 export type SetupRequest = z.infer<typeof SetupRequestSchema>;
 export const SetupResponseSchema = z.object({
+  /**
+   * A word problem that describes a picture (a ladder against a wall, two angles of a triangle, a
+   * rectangle's sides): the figure the tutor draws beside the working, true to scale, labelled with
+   * the problem's numbers and the unknown's letter (`src/lib/live/figureDraw`). Only ever a spec
+   * that `checkFigure` passed; absent otherwise.
+   */
+  sketch: FigureSpecSchema.optional(),
   /** LaTeX only: assignments / equations, one short letter per quantity, top to bottom */
   lines: z.array(z.string().min(1).max(500)).min(1).max(6),
   /** the letter of the asked-for quantity, when the model named one */

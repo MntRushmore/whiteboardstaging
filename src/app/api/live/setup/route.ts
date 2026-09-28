@@ -60,6 +60,7 @@ export async function POST(req: Request) {
         lines: setup.lines,
         ...(setup.unknown ? { unknown: setup.unknown } : {}),
         ...("figure" in setup && setup.figure ? { figure: setup.figure } : {}),
+        ...("sketch" in setup && setup.sketch ? { sketch: setup.sketch } : {}),
         model,
         ms: Date.now() - startedAt,
       });
@@ -72,6 +73,8 @@ export async function POST(req: Request) {
           figure,
           labels: data.labels?.length ?? 0,
           ...(body.figure ? { source: body.figure.source, reason: body.figure.reason, stages: body.figure.stages?.length ?? 0 } : {}),
+          sketch: Boolean(body.sketch),
+          ...("sketchDropped" in setup && setup.sketchDropped ? { sketchDropped: setup.sketchDropped } : {}),
         },
         "setup completed",
       );
