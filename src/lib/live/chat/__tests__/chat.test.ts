@@ -6,7 +6,7 @@ import { cellOf, readProblemCells, splitColumnsAtProblems, CHAT_PROBLEM_META, ty
 import { ChatActionSchema, ChatRequestSchema, ChatResponseSchema } from "../contracts";
 import { figureProblems, PROBE_FIGURE } from "../figure";
 import { chunkProblems, findFreeArea, gridCells, gridShape, joinPlans, planGrid, PROBLEM_GRID } from "../layout";
-import { hasWords, isCleanAnswer, verifyLines, verifyProblem } from "../verify";
+import { hasWords, isChain, isCleanAnswer, stepHolds, verifyLines, verifyProblem } from "../verify";
 
 let engine: LiveEngine;
 beforeAll(async () => {
@@ -104,6 +104,31 @@ describe("verifying what a model proposed", () => {
     expect(isCleanAnswer("x = \\frac{3}{2}")).toBe(true);
     expect(isCleanAnswer("x \\approx 1.414")).toBe(false);
     expect(isCleanAnswer("x = 2.2361")).toBe(false);
+  });
+});
+
+describe("algebra proofs are maths lines, every step checked equal", () => {
+  it("a chain: each line starting with = under an expression", () => {
+    expect(isChain(["(a + b)^{2}", "= a^{2} + 2ab + b^{2}"])).toBe(true);
+    expect(isChain(["x^{2} + 6x + 5 = 0", "= 0"])).toBe(false);
+    expect(isChain(["a^{2} + b^{2} = c^{2}"])).toBe(false);
+  });
+
+  it("every step equal: the sum of two odd numbers, (a + b)², the square of an odd number", () => {
+    expect(verifyLines(engine, ["(2m + 1) + (2n + 1)", "= 2m + 2n + 2", "= 2(m + n + 1)"])).toEqual({ ok: true });
+    expect(verifyLines(engine, ["(a + b)^{2}", "= (a + b)(a + b)", "= a^{2} + ab + ba + b^{2}", "= a^{2} + 2ab + b^{2}"])).toEqual({ ok: true });
+    expect(verifyLines(engine, ["(2k + 1)^{2}", "= 4k^{2} + 4k + 1", "= 2(2k^{2} + 2k) + 1"])).toEqual({ ok: true });
+  });
+
+  it("a false step drops the block; one the engine cannot confirm too", () => {
+    // the engine alone does not flag these (several letters): the step check does
+    expect(verifyLines(engine, ["(a + b)^{2}", "= a^{2} + b^{2}"])).toEqual({ ok: false, reason: "false" });
+    expect(verifyLines(engine, ["(2m + 1) + (2n + 1)", "= 2m + 2n + 1"])).toEqual({ ok: false, reason: "false" });
+    expect(stepHolds(engine, "x_{1} + x_{2}", "x_{2} + x_{1}")).toBe("unknown");
+    expect(stepHolds(engine, "a + b + c + d + f", "f + d + c + b + a")).toBe("unknown");
+    expect(stepHolds(engine, "(m + n)^{2}", "m^{2} + 2mn + n^{2}")).toBe("ok");
+    // calculus is not put through the substitution: the engine's own column check judges it, as before
+    expect(verifyLines(engine, ["\\frac{d}{dx}(x^{2})", "= 2x"])).toEqual({ ok: true });
   });
 });
 

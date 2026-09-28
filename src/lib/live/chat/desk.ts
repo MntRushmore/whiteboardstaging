@@ -358,7 +358,8 @@ export class ChatDesk {
   private async writeLines(lines: readonly string[], engine: LiveEngine, report: Report): Promise<ChatActionOutcome> {
     const v = verifyLines(engine, lines, this.canDraw);
     if (!v.ok) {
-      return { type: "write_lines", ok: false, note: v.reason === "false" ? "I left out lines that didn't check out." : "I couldn't write that on the board." };
+      const note = v.reason === "false" ? "I left out lines that didn't check out." : v.reason === "unchecked" ? "I couldn't check those lines, so I didn't write them." : "I couldn't write that on the board.";
+      return { type: "write_lines", ok: false, note };
     }
     const clean = lines.map((l) => l.trim()).filter(Boolean);
     const meta: JsonObject = { [CHAT_BLOCK_META]: "lines" };
