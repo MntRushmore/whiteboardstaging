@@ -17,9 +17,11 @@ import {
   handSeedFor,
   handSizeFor,
   inlineHandSizeFor,
+  planFromStrokes,
   planHandwriting,
   revealCounts,
 } from "../handwriting";
+import { markStrokes, ringRadii } from "../marks";
 import { createLiveLoop, type LiveLoop } from "../liveLoop";
 import { liveStore, resetLiveStore } from "../liveStore";
 import { rectsIntersect } from "../placement";
@@ -108,6 +110,23 @@ describe("handwriting: planning and the unsupported interlock", () => {
     }
     expect(mid.some((n) => n > 0)).toBe(true);
     expect(revealCounts(line.strokes, Number.POSITIVE_INFINITY)).toEqual(full);
+  });
+
+  it("draws a ring round a wide line the whole way round, within the point cap", () => {
+    // `10 + 10 = 1` written large: the ring is ~1,500 px long, and the cap used to cut it off
+    // halfway, leaving a lasso open along the bottom.
+    const line: Rect = { x: 120, y: 120, w: 440, h: 80 };
+    const plan = planFromStrokes("circle", markStrokes("circle", line, 7), HAND_WRITE.minSize)!;
+    const pts = plan.lines[0].strokes[0].points.map((p) => ({ x: p.x + plan.lines[0].x, y: p.y + plan.lines[0].y }));
+    expect(pts.length).toBeLessThanOrEqual(HAND_WRITE.maxPointsPerStroke);
+    // the ring ends past where it started (top-left, round through the bottom and back up the left)
+    const { rx } = ringRadii(line);
+    const cx = line.x + line.w / 2;
+    const cy = line.y + line.h / 2;
+    const end = pts[pts.length - 1];
+    expect(end.x).toBeLessThan(cx - rx * 0.8);
+    // and it passes under the ink on the way round
+    expect(pts.some((p) => p.y > cy + line.h / 2 && Math.abs(p.x - cx) < line.w / 4)).toBe(true);
   });
 
   it("matches the hand to the student's ink, within readable bounds", () => {

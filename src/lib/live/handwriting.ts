@@ -87,18 +87,27 @@ export const HAND_WRITE = {
   size: "s",
 } as const;
 
-/** Resamples a polyline so no two points are further apart than `step` px (pressure lerped too). */
+/**
+ * Resamples a polyline so no two points are further apart than `step` px (pressure lerped too).
+ * A stroke too long for `maxPointsPerStroke` at that step is resampled more coarsely instead —
+ * never cut short: the cap used to drop the rest of the stroke, so the ring round a wide line
+ * (~1,500 px) stopped halfway round and looked like a lasso.
+ */
 function densify(points: readonly { x: number; y: number; z: number }[], step: number): { x: number; y: number; z: number }[] {
   if (points.length < 2) return points.map((p) => ({ ...p }));
+  let length = 0;
+  for (let i = 1; i < points.length; i++) length += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  // each segment rounds its count up, so leave a point per segment of headroom under the cap
+  const room = Math.max(1, HAND_WRITE.maxPointsPerStroke - points.length);
+  const pitch = Math.max(step, length / room);
   const out = [{ ...points[0] }];
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1];
     const b = points[i];
-    const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step));
+    const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / pitch));
     for (let k = 1; k <= n; k++) {
       const t = k / n;
       out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t });
-      if (out.length >= HAND_WRITE.maxPointsPerStroke) return out;
     }
   }
   return out;
