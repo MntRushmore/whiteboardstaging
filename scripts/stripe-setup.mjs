@@ -493,6 +493,12 @@ export async function setup(opts, deps = {}) {
     }
 
     linkUrls[plan.id] = link.url;
+    // Archived prices stay in the map: their subscribers still bill on them, and the webhook
+    // reads a subscription's plan from its price.
+    if (product.id.startsWith("prod_")) {
+      const archived = await listAll(api, "/v1/prices", { product: product.id, active: "false" });
+      for (const old of [...prices, ...archived]) if (isOurs(old, { plan_id: plan.id })) priceMap[old.id] = plan.id;
+    }
     priceMap[price.id] = plan.id;
     portalProducts.push({ product: product.id, price: price.id });
   }

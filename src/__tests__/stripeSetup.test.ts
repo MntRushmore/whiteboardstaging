@@ -225,7 +225,7 @@ function fakeStripe() {
     async get(path: string, params: Record<string, unknown> = {}) {
       if (path === "/v1/account") return { id: "acct_fake", settings: { dashboard: { display_name: "Fake" } } };
       if (path === "/v1/products") return list(db.products.filter((p) => p.active));
-      if (path === "/v1/prices") return list(db.prices.filter((p) => p.active && p.product === params.product));
+      if (path === "/v1/prices") return list(db.prices.filter((p) => p.active === (params.active !== "false") && p.product === params.product));
       if (path === "/v1/payment_links") return list(db.links.filter((l) => l.active));
       if (path === "/v1/billing_portal/configurations") return list(db.configs);
       if (path === "/v1/webhook_endpoints") return list(db.hooks);
@@ -307,6 +307,9 @@ describe("setup()", () => {
     expect(second.links.plus).not.toBe(first.links.plus);
     expect(second.links.pro).toBe(first.links.pro);
     expect(plusPrice.active).toBe(false);
+    // the archived price keeps mapping to its plan: its subscribers still bill on it
+    expect(second.priceMap[plusPrice.id]).toBe("plus");
+    expect(Object.keys(second.priceMap)).toHaveLength(3);
     expect(stripe.db.links.filter((l) => l.active && (l.metadata as Record<string, string>).plan_id === "plus")).toHaveLength(1);
 
     const moved = await setup({ ...live, site: "https://b.example.com" }, deps);
