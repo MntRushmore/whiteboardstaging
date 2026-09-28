@@ -95,6 +95,7 @@ Every handler under `src/app/api/**` follows the same preamble: `requireUser` (J
 | `/api/live/solve` | POST | `livePreamble` | `liveSolve` 10 | 10 | `SolveRequestSchema` | SSE worked-solution steps | active |
 | `/api/live/setup` | POST | `livePreamble` | `liveSetup` 10 | 2 | `SetupRequestSchema` (`lines` 0–40 strings; optional `crop` data:image ≤ 280 KB and `labels` ≤ 40, labels only with a crop; lines or a crop required) | A word problem → `{ lines, unknown?, model, ms }`: LaTeX assignments / equations only (no arithmetic, no words), which the client's engine then solves. `openai/gpt-5.4-mini`, fallback `deepseek/deepseek-v4.1-flash` (`LIVE_MODEL_SETUP`). With a `crop` it is a hand-drawn **figure** (asked about, or in Solve left labelled with an unknown): the model describes what the figure shows and `planFigure` (`src/lib/live/figure`) writes the equations — `{ lines, unknown, figure: { source: "facts", stages: [{ letter, lines, value, kind }] } }` — or, when that read does not hold up, its own lines (`figure: { source: "lines", reason, kind? }`); read by `google/gemini-3.1-flash-lite`, fallback `google/gemini-3.5-flash-lite` (`LIVE_MODEL_FIGURE`, prompt `prompts/figure.ts`; chosen on `npm run eval:figures`). A reply with no lines is a 502 (refunded) | active |
 | `/api/live/reread` | POST | `livePreamble` | `liveReread` 30 | 1 | `RereadRequestSchema` (`crop` data:image ≤ 280 KB, Mathpix's `latex`, the column's `above` / `below`) | The second reader: one suspicious line's ink crop → `{ latex, changed, model, ms }`. `google/gemini-3.1-flash-lite`, fallback `anthropic/claude-haiku-4.5` (`LIVE_MODEL_REREAD`). Only sent on a signal, at most once per ink | active |
+| `/api/live/chat` | POST | `livePreamble` | `liveChat` 12 | 3 | `ChatRequestSchema` (`message` 1–500 chars, `history` ≤ 6 turns, `screen`: `empty`, the student's lines, the tutor's lines, the problems written there) | The board chat: a typed request → `{ reply, actions, notes, refunded?, model, ms }` (`src/lib/live/chat/contracts.ts`); actions validated one by one with zod, an invalid one dropped. `openai/gpt-5.4-mini`, fallback `deepseek/deepseek-v4.1-flash` (`LIVE_MODEL_CHAT`; chosen on `npm run eval:chat`). A `draw_figure` that `checkFigure` finds problems with gets one repair call per request; still wrong, it is dropped with a note. When every proposed action was dropped the reply says so and the charge is refunded (200, `refunded: true`) | active |
 
 Notes:
 
@@ -113,7 +114,7 @@ Credits are the unit; the schema is `supabase/migrations/20260917020000_accounts
 - **Metering runs as the user.** `requireUser` now also returns the verified access token; `enforceCredits({ token, route, requestId, model })` (`src/lib/server/billing.ts`) builds a supabase-js client with the anon key + `Authorization: Bearer <token>` and calls the SECURITY DEFINER RPC `consume_credits(p_route, p_units, p_request_id, p_model)`. The function locks the caller's profile row, checks the balance and appends a `usage_events` row atomically, so parallel requests cannot overspend; it returns `{ ok: false, reason: 'insufficient_credits', remaining }` without writing when short. A user can only spend their own credits and no API exposed to `authenticated` can add credits or change a plan (column-level grants: a user may update `display_name` only).
 - **Placement.** After auth + rate limit + body validation and **before** the upstream call, for every route — including the SSE routes (`check` / `solve`), where a refusal is a JSON `402` instead of a stream. Charging up-front keeps the balance check atomic (no window between "check" and "spend"); what the provider then fails to deliver is given back by a refund.
 - **Refunds.** `refundCredits({ token, requestId })` calls the SECURITY DEFINER RPC `refund_credits(p_request_id)` as the user (migration `20260917030000_refunds_ratelimit.sql`): it deletes the caller's own `usage_events` rows carrying that `request_id` and younger than 15 minutes, and returns `{ refunded, remaining }`; it never throws (a refund that cannot happen is logged and reported as `{ refunded: 0, reason }`), and with `BILLING_ENFORCE=0` it does nothing because nothing was charged. The `requestId` refunded is the very one passed to `enforceCredits` (asserted per route by `routes.refunds.test.ts`). Two wrappers apply it: non-streaming routes (`voice/analyze-workspace`, `live/recognize` POST, `live/setup`, `live/reread`) run their provider call inside `runCharged`, which refunds whenever the Response handed to the client is not a 2xx — `UpstreamError` (502), the provider's own `CreditsExhaustedError` (402), `recognizer_failed` (502), timeouts/aborts (500). A 2xx is never refunded. The SSE routes (`live/check`, `live/solve`) run inside `runChargedStream`, which refunds only when the stream fails **before the first annotation / step was emitted**; a failure after partial output keeps the charge (the user has the partial result and the model was paid), and the `error` frame is still sent either way.
-- **Prices** (`ROUTE_COSTS`, credits per call): recognize 1, check 3, solve 10; **setup 2** — a word problem's equations, or a drawn figure's (the same route with a crop), below solve because the engine does the solving (when the setup is unusable the board then calls solve as well, 12 in all; a setup call that returns nothing is refunded); **reread 1** — the second reader reads one line again, priced like recognize. It is never asked for by the student: it fires only on a signal (a read the engine cannot read, a symbol implausible in its column, or a confidence below 0.6), at most once per ink, which on the handwriting scoreboard is 17 of 20 misreads and none of 704 correct reads — so in practice a few percent of lines at most. At ~$0.00035 per call the credit is about the rate limit and abuse, not cost.
+- **Prices** (`ROUTE_COSTS`, credits per call): recognize 1, check 3, solve 10; **setup 2** — a word problem's equations, or a drawn figure's (the same route with a crop), below solve because the engine does the solving (when the setup is unusable the board then calls solve as well, 12 in all; a setup call that returns nothing is refunded); **chat 3** — one board-chat request: one planning call (problems, lines, a graph, a figure spec) and at most one small figure repair; the engine checks every problem, so no solve model is involved; refunded when nothing it proposed could be used; **reread 1** — the second reader reads one line again, priced like recognize. It is never asked for by the student: it fires only on a signal (a read the engine cannot read, a symbol implausible in its column, or a confidence below 0.6), at most once per ink, which on the handwriting scoreboard is 17 of 20 misreads and none of 704 correct reads — so in practice a few percent of lines at most. At ~$0.00035 per call the credit is about the rate limit and abuse, not cost.
 - **Responses.** `402 { error: 'credits_exhausted', message, remaining, upgradeUrl }` (`upgradeUrl` is `NEXT_PUBLIC_BILLING_LINKS.portal` or `/account`). When metering is enforced but the RPC is missing or the database errors, the route fails closed with `503 feature_unavailable` ("Billing is not set up on this deployment — run the migrations."). `BILLING_ENFORCE=0` skips consumption entirely (logged once per process) — a dev/staging escape hatch, never for production.
 - **Plan changes** happen only through `POST /api/billing/webhook` (service role) or SQL. The webhook is Stripe-compatible without a payment SDK: `Stripe-Signature: t=…,v1=…` is HMAC-SHA256 over `${t}.${rawBody}` with `STRIPE_WEBHOOK_SECRET`, 5-minute tolerance, constant-time compare, Web Crypto only (`src/lib/server/webhookSignature.ts`). Every event id is inserted into `billing_events` first (duplicate -> `200 { received: true, duplicate: true }`), then `mapBillingEvent` (pure) turns the event into a `profiles` patch:
   `checkout.session.completed` -> `client_reference_id` (our user id) gets `plan_id` (from `metadata.plan_id`, else `BILLING_PRICE_MAP[price id]`), `billing_customer_id`, `billing_subscription_id`, `billing_status = 'active'`;
@@ -326,6 +327,48 @@ apart, because the board's pen is ~4 px wide. What they look like: `docs/figure/
 carries the Live meta (`live: true`, `source: "ai"`), so the reader never takes a figure for the
 student's ink (`isStudentInk`; `figureDraw/__tests__/liveReader.test.ts`). In development
 `window.__agathonDrawFigure(spec)` draws one in free space on the current screen (`figureDraw/board.ts`).
+
+**Board chat (`src/lib/live/chat/**`, `POST /api/live/chat`, `src/components/chat/**`).** An "Ask"
+button beside the help tabs opens a panel (docked on the right on a desktop, a bottom sheet on a
+phone; off by default, open/closed remembered per device, Esc closes it; the board refits so the whole
+16:9 screen stays in view — `useScreenCamera` refits on any change of the board's size). The student or
+teacher types a request ("5 two-step equations", "graph y = sin x from -2π to 2π", "draw a right triangle
+with legs 3 and 4", "3 more like these", "a new screen", "clear your writing"); the panel shows the
+model's one-line reply and notes on anything left out, and the tutor carries it out on the board in its
+hand — maths only. History is kept in memory per board for the session.
+- **The request** carries the message, the last six turns and a picture of the current screen
+  (`LiveController.chatScreen`: the student's lines as read, the tutor's lines, the problems the chat
+  wrote there, empty or not), so "more like these" and "graph that" have something to refer to.
+- **The reply** is `{ reply, actions }`, at most six actions: `write_problems` (1–12 problems; a system
+  is one problem of 2–3 lines), `write_lines` (maths as given, e.g. a formula), `graph` (relations in
+  LaTeX, an optional window), `draw_figure` (a `FigureSpec`), `new_screen`, `clear_tutor`. The prompt
+  (`src/lib/server/prompts/chat.ts`) keeps words off the board, asks for problems a student at the level
+  can solve with clean answers, never solves, gives the figure format true to scale, adds a new screen
+  only when asked, and declines anything that is not maths help. The route validates each action with
+  zod and drops what does not parse (within a problem set, the invalid problems), never guessing.
+- **On the board** (`LiveController.runChatActions` → `ChatDesk`, `chat/desk.ts`, hosted by the loop
+  like `ProofDesk`): the actions run in order, each one whole `HandWriter` block, after any writing
+  of the loop's own; a switch to another screen stops the rest. Problems are verified first
+  (`chat/verify.ts`: every line reads as maths, none is false on its face, `localSolve` answers it,
+  the hand can write it) and the rest reported ("2 of 5 problems couldn't be checked…"); they are
+  numbered `1.`, `2.`… in a grid at hand size 48 (1–3 across, 4 as 2×2, 5–6 as 3×2, at most six a
+  screen, more spread evenly over more screens) with ~400 px under each to work in — on this screen
+  when it is empty, else on a new one, and the desk waits for the loop to take a new screen in before
+  writing (tldraw's store listeners run a frame later). Lines, a graph (the engine's `graphFor` and the
+  same `planGraph` sketch as the unasked graphs, with the asked window — `GraphWindowHint` — and its
+  equation above it) and a figure (`planFigure`) go in the first free space in reading order, a
+  problem's whole cell counting as taken; no room means a new screen. `clear_tutor` is Clear marks.
+- **Checking work under a problem the chat wrote.** Every stroke of a problem carries
+  `meta.chatProblem = { n, lines, cell }`. After clustering (and after a reload) the columns are split
+  at the problems — work in two cells is never one column — and each column under a problem has it as
+  its head (`chat/cells.ts`): `columnContext` starts from it, so the student's first line gets its tick
+  or ring exactly as under their own problem; `rightNextStep` corrects a wrong first line from it; and
+  `buildCheckLines` sends it to the check model as the column's first line. Writing problems, or rubbing
+  one out, re-reads the columns.
+- **Measured** by `npm run eval:chat` (`docs/eval/chat.md`; 38 requests, gated by `RUN_CHAT_EVAL=1`,
+  under a $0.60 cap): gpt-5.4-mini did all 38 as asked, every one of its 70 problems verified, 5 of 5
+  figures clean (2 after the repair), 2.3 s p50, ~$0.0011 a request; the DeepSeek fallback matched it
+  at 0.8 s.
 
 **Word problems: the model sets up, the engine solves.** Mathpix returns prose as `\text{…}` and
 the engine classifies it `kind: 'text'` (silent: no echo). A column down to the asked-for line that
