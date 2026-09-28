@@ -172,6 +172,8 @@
 /* ---- Groups ------------------------------------------------------------------------------------ */
 .groups {
   display: grid;
+  /* minmax(0, …): an auto track would grow to the list's unwrapped titles and overflow a phone. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-10);
 }
 .groupHeading {
