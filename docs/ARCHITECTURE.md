@@ -299,6 +299,36 @@ and `graph-help-feedback.png` (Feedback: nothing unasked, Help sketches the para
 written at 30–34 px and every glyph resampled to 2 px like the worked steps — tldraw's freehand
 smoothing otherwise collapses a small `4` into a `1`.
 
+**Figures drawn by the tutor (`src/lib/live/figureDraw/**`).** A geometry figure asked for (the board
+chat's `draw_figure`) is data — `FigureSpec` (`contracts.ts`, zod): named points in figure units, y
+up, and the segments, polygons, lines and rays, circles and angles that join and mark them — drawn
+by the same hand as the graphs. `checkFigure` (`check.ts`, pure, ~2 ms: mostly laying out each label in the hand) returns
+what is wrong in sentences a model can act on: a point used but not defined (a circle's `through`
+included), a zero-length side, a 0° or 180° angle, a right-angle mark more than 3° off 90°, numeric
+side labels that disagree with the drawn lengths by more than 10 % (each side against the most typical
+one: "AB is labelled 3 and BC 4, but BC is drawn 2.1 times AB"), a degree label more than 5° off, equal
+ticks / equal arcs / parallel arrows the drawing does not bear out, a label the hand cannot write
+(`planHandwriting`'s `unsupported`) or that is a word, and more than 20 points, 48 marks or 28 labels.
+`planFigure` (`plan.ts`) fits the figure to a box true to scale (one scale, y flipped, the ink with its
+labels centred; a line runs on a third of its span past its outermost points with an arrowhead each
+way, a ray past `to` only, a tangent as far either side of where it touches) and returns one `HandPlan`
+in a teacher's order — sides a polygon at a time, lines, circles, angle marks (arcs, two or three for
+equal angles, nested angles on separate radii, a small angle's arc longer; right-angle squares), ticks
+and parallel chevrons, dots (where asked, on a point on nothing, and where a named point would not
+otherwise show: a segment's end, a point along a line), then the writing — paced to ~4–5 s
+(`graphPaceFor`), with each named point's px for placing work beside it. Every label tries a list of
+spots, best first, and takes the first that touches no stroke (4 px clear of its centre line) and no
+other label: a name along the middle of the widest gap between the strokes and marked angles meeting at
+its point (a vertex's external bisector); a side's label beside its middle, away from its polygon's (or
+closed triangle's, or the figure's) centre; an angle's label inside, on the bisector, just past the arc,
+far enough out to clear both arms. A label with no clear spot shrinks the figure a little and it is laid
+out again; a figure whose labels leave room grows back to fill the box. Side-by-side marks step ≥ 7 px
+apart, because the board's pen is ~4 px wide. What they look like: `docs/figure/gallery.png`
+(`FIGURE_GALLERY=1 npx vitest run src/lib/live/figureDraw/__tests__/gallery.test.ts`). Every stroke
+carries the Live meta (`live: true`, `source: "ai"`), so the reader never takes a figure for the
+student's ink (`isStudentInk`; `figureDraw/__tests__/liveReader.test.ts`). In development
+`window.__agathonDrawFigure(spec)` draws one in free space on the current screen (`figureDraw/board.ts`).
+
 **Word problems: the model sets up, the engine solves.** Mathpix returns prose as `\text{…}` and
 the engine classifies it `kind: 'text'` (silent: no echo). A column down to the asked-for line that
 has a line of prose reading like a sentence (≥ 4 words, `isProblemProse` in

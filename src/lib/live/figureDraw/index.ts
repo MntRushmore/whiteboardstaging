@@ -1,26 +1,10 @@
-import type { FigurePlanOptions, FigurePlanResult, FigureSpec } from "./contracts";
-
+/**
+ * Figures the tutor draws by hand: a `FigureSpec` (./contracts.ts) — named points in figure units
+ * and what joins and marks them — checked (`checkFigure`, ./check.ts: what is wrong with it, in
+ * words a model can fix) and drawn (`planFigure`, ./plan.ts: a `HandPlan` true to scale, fitted to
+ * a box, revealed by the HandWriter like the worked steps and the graphs). Pure.
+ */
 export * from "./contracts";
-
-/**
- * The problems with a figure spec, in words for the model to fix (a name used but not defined, a
- * zero-length side, a label the hand cannot write, …), or [] when it can be drawn.
- *
- * Placeholder: the figure-drawer build replaces this file.
- */
-export function checkFigure(spec: FigureSpec): string[] {
-  void spec;
-  return ["the figure drawer is not built yet"];
-}
-
-/**
- * The figure in the tutor's hand, fitted to `opts.box` true to scale, or null when it cannot be
- * drawn (see `checkFigure`).
- *
- * Placeholder: the figure-drawer build replaces this file.
- */
-export function planFigure(spec: FigureSpec, opts: FigurePlanOptions): FigurePlanResult | null {
-  void spec;
-  void opts;
-  return null;
-}
+export { CHECK, checkFigure } from "./check";
+export { FIGURE, layoutFigure, planFigure, textSizesFor, type FigureLayout, type FigurePart, type FigurePartKind } from "./plan";
+export { degreesOf, lengthOf, nameLatex } from "./labels";
