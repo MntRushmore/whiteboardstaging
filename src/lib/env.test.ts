@@ -8,7 +8,6 @@ import {
   getRateLimitBackend,
   getServerEnv,
   hasMathpix,
-  hasOpenAI,
   parseBillingLinks,
   parseBillingPriceMap,
   resetServerEnvCache,
@@ -17,7 +16,6 @@ import { LIVE_MODELS } from "@/lib/live/contracts";
 
 const ALL_VARS = [
   ...REQUIRED_ENV_VARS,
-  "OPENAI_API_KEY",
   "MATHPIX_APP_ID",
   "MATHPIX_APP_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
@@ -69,7 +67,7 @@ describe("getServerEnv", () => {
     } catch (err) {
       const message = (err as Error).message;
       for (const name of REQUIRED_ENV_VARS) expect(message).toContain(name);
-      expect(message).not.toContain("OPENAI_API_KEY");
+      expect(message).not.toContain("MATHPIX_APP_ID");
     }
   });
 
@@ -90,7 +88,7 @@ describe("getServerEnv", () => {
     setRequired();
     const first = getServerEnv();
     expect(first.OPENROUTER_API_KEY).toBe("sk-or-test");
-    expect(first.OPENAI_API_KEY).toBeUndefined();
+    expect(first.MATHPIX_APP_ID).toBeUndefined();
 
     process.env.OPENROUTER_API_KEY = "changed";
     expect(getServerEnv()).toBe(first); // cached
@@ -101,15 +99,6 @@ describe("getServerEnv", () => {
 });
 
 describe("optional feature flags", () => {
-  it("hasOpenAI reflects OPENAI_API_KEY", () => {
-    setRequired();
-    expect(hasOpenAI()).toBe(false);
-
-    resetServerEnvCache();
-    process.env.OPENAI_API_KEY = "sk-test";
-    expect(hasOpenAI()).toBe(true);
-  });
-
   it("hasMathpix requires both the app id and key", () => {
     setRequired();
     process.env.MATHPIX_APP_ID = "app";

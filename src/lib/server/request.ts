@@ -20,7 +20,6 @@ export const imageDataUrlSchema = z
 
 export const modeSchema = z.enum(["off", "feedback", "suggest", "answer"]);
 export const modelSchema = z.enum(["gemini", "gemini-fast", "gpt"]);
-export const sourceSchema = z.enum(["auto", "voice"]);
 
 export const promptSchema = z.string().max(2000, "Prompt must be 2000 characters or fewer.");
 export const focusSchema = z.string().max(500, "Focus must be 500 characters or fewer.");

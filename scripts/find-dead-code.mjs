@@ -69,7 +69,6 @@ import ts from "typescript";
  */
 export const KEEP_FILES = Object.freeze({
   "src/components/SetupRequiredBanner.tsx": "documented drop-in for missing AI keys (SETUP.md); not mounted by any page yet",
-  "src/lib/live/voiceTools.ts": "voice tools over the Live layer (LIVE-MATH-SPEC §2.3 #13); kept until the Realtime session is wired",
 });
 
 const NEXT_ENTRY_BASENAMES = new Set([

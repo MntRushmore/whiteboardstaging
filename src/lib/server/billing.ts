@@ -37,10 +37,8 @@ export const ROUTE_COSTS = {
   "live/reread": 1,
   // A proof's figure read, or one next row when the engine's planner cannot finish: priced like setup.
   "live/proof": 2,
-  "voice/analyze-workspace": 3,
   credits: 0,
   "config/status": 0,
-  "voice/token": 0,
 } as const satisfies Record<string, number>;
 
 export type BillableRoute = keyof typeof ROUTE_COSTS;

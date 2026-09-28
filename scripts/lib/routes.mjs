@@ -41,7 +41,6 @@ export const PUBLIC_ROUTE_REASONS = Object.freeze({
 export const NO_BODY_ROUTES = Object.freeze([
   "src/app/api/credits/route.ts", // GET only
   "src/app/api/config/status/route.ts", // GET only
-  "src/app/api/voice/token/route.ts", // POST with an empty body; the model is fixed server-side
   "src/app/api/admin/gc/route.ts", // GET (Vercel cron) or POST with an empty body; options are query params
 ]);
 
@@ -150,26 +149,6 @@ export const API_ROUTES = Object.freeze([
     limit: "liveSolve",
     body: "zod",
     purpose: "Live Math: SSE worked solution steps",
-    status: "active",
-  },
-  {
-    path: "/api/voice/analyze-workspace",
-    file: "src/app/api/voice/analyze-workspace/route.ts",
-    methods: ["POST"],
-    auth: "user",
-    limit: "analyzeWorkspace",
-    body: "zod",
-    purpose: "Voice tutor tool: describe the current canvas",
-    status: "active",
-  },
-  {
-    path: "/api/voice/token",
-    file: "src/app/api/voice/token/route.ts",
-    methods: ["POST"],
-    auth: "user",
-    limit: "voiceToken",
-    body: "none",
-    purpose: "Mint an ephemeral OpenAI Realtime client secret",
     status: "active",
   },
 ]);

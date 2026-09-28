@@ -34,7 +34,6 @@ const envSchema = z.object({
   NEXT_PUBLIC_SUPABASE_ANON_KEY: requiredString,
   OPENROUTER_API_KEY: requiredString,
 
-  OPENAI_API_KEY: optionalString,
   MATHPIX_APP_ID: optionalString,
   MATHPIX_APP_KEY: optionalString,
   SUPABASE_SERVICE_ROLE_KEY: optionalString,
@@ -112,11 +111,6 @@ export type RateLimitBackend = "db" | "memory";
 export function getRateLimitBackend(): RateLimitBackend {
   const raw = getServerEnv().RATE_LIMIT_BACKEND;
   return raw?.trim().toLowerCase() === "memory" ? "memory" : "db";
-}
-
-/** True when the OpenAI key is configured (voice tutor / Realtime API). */
-export function hasOpenAI(): boolean {
-  return Boolean(getServerEnv().OPENAI_API_KEY);
 }
 
 /** True when both Mathpix credentials are configured (handwritten math OCR). */

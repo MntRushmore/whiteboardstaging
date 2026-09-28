@@ -524,7 +524,7 @@ export type LiveSseEvent =
 /**
  * Body of every non-2xx response from /api/* (matches src/lib/server/auth.ts `json()`):
  * `error` is the machine code (unauthorized | invalid_request | rate_limited | credits_exhausted |
- * upstream_error | voice_unavailable | feature_unavailable | internal_error | recognizer_failed).
+ * upstream_error | feature_unavailable | internal_error | recognizer_failed).
  */
 export const ApiErrorSchema = z.object({
   error: z.string(),

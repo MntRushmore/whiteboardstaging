@@ -25,7 +25,6 @@ export const logger = pino(
 );
 
 // Create child loggers for different modules
-export const voiceLogger = logger.child({ module: 'voice' });
 
 // Client-side console log ring buffer for bug reports.
 // Captures the most recent N console messages so users can attach them when

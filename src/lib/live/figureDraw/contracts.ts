@@ -2,8 +2,9 @@ import { z } from "zod";
 import type { HandPlan } from "../handwriting";
 
 /**
- * A geometry figure the tutor draws by hand when asked (the board chat's `draw_figure`; later the
- * voice tutor): named points in figure units — any scale, y up, as a maths drawing is — and what
+ * A geometry figure the tutor draws by hand when asked (the board chat's `draw_figure`, and the
+ * sketch beside a word problem's working): named points in figure units — any scale, y up, as a
+ * maths drawing is — and what
  * joins and marks them. `planFigure` fits it to a box true to scale and writes it in the tutor's
  * hand: sides, lines and rays, circles, angle arcs and right-angle marks, equal-side ticks,
  * parallel arrows, labels. No words: every label is maths (`A`, `3`, `x`, `70^{\circ}`, `2x + 10`).

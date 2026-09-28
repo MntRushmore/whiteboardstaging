@@ -87,8 +87,6 @@ describe("checkRateLimit", () => {
 
 describe("LIMITS", () => {
   it("matches the documented per-route budget", () => {
-    expect(LIMITS.voiceToken).toEqual({ limit: 6, windowMs: 60_000 });
-    expect(LIMITS.analyzeWorkspace).toEqual({ limit: 30, windowMs: 60_000 });
     expect(LIMITS.credits).toEqual({ limit: 30, windowMs: 60_000 });
   });
 

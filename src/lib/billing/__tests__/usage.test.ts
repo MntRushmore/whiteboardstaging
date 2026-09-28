@@ -39,7 +39,7 @@ describe("usage kinds", () => {
     expect(usageKindFor("live/setup").label).toBe("Word-problem setup");
     expect(usageKindFor("live/reread").label).toBe("Second read of messy writing");
     expect(usageKindFor("live/proof").label).toBe("Figures & proofs");
-    expect(usageKindFor("voice/analyze-workspace").label).toBe("Voice tutor");
+    expect(usageKindFor("voice/analyze-workspace").label).toBe("Voice tutor (retired)");
     expect(usageKindFor("generate-solution").label).toBe("Drawn help (retired)");
   });
 
@@ -151,7 +151,7 @@ describe("usageSummaryFor", () => {
       ],
       "2026-09-27",
     );
-    expect(kinds.map((k) => k.label)).toEqual(["Handwriting reading", "Checking your work", "Voice tutor"]);
+    expect(kinds.map((k) => k.label)).toEqual(["Handwriting reading", "Checking your work", "Voice tutor (retired)"]);
   });
 
   it("is empty for a month with no usage", () => {
