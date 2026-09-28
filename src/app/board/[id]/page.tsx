@@ -68,6 +68,7 @@ import { LIVE_KILL_SWITCH } from "@/lib/live/contracts";
 import { useLiveMath } from "@/lib/live/useLiveMath";
 import { useLiveSettings } from "@/lib/live/liveSettings";
 import { ScreenStrip } from "@/components/screens/ScreenStrip";
+import { PenStyleButton } from "@/components/board/PenStyleButton";
 import { LiveDebugPanel } from "@/components/live/LiveDebugPanel";
 import { ScreenBackground, ScreenFrame } from "@/components/screens/ScreenFrame";
 import { applyScreenCamera } from "@/lib/screens/screens";
@@ -535,6 +536,8 @@ export default function BoardPage() {
           Background: ScreenBackground,
           OnTheCanvas: ScreenFrame,
           Toolbar: LiveToolbar,
+          // the pen's colour and size on request, not a panel always open over the screen
+          StylePanel: PenStyleButton,
         }}
         onMount={(editor) => {
           assetStoreBundle?.attach(editor);
