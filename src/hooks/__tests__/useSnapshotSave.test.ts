@@ -159,6 +159,20 @@ describe("runSnapshotSave", () => {
     expect(deps.persisted[0].update.preview).toBeUndefined();
   });
 
+  it("clears the stored thumbnail when nothing is left on the board", async () => {
+    const makePreview = vi.fn(async () => "data:image/webp;base64,AAAA");
+    const deps = fakeDeps({ makePreview, isEmpty: () => true });
+    expect((await runSnapshotSave(deps)).kind).toBe("saved");
+    expect(deps.persisted[0].update).toHaveProperty("preview", null);
+    expect(makePreview).not.toHaveBeenCalled();
+  });
+
+  it("keeps the stored thumbnail when the current screen is blank but another has ink", async () => {
+    const deps = fakeDeps({ makePreview: async () => null, isEmpty: () => false });
+    expect((await runSnapshotSave(deps)).kind).toBe("saved");
+    expect(deps.persisted[0].update).not.toHaveProperty("preview");
+  });
+
   it("'offload-then-save' offloads once, re-snapshots and saves the rewritten data", async () => {
     const deps = fakeDeps({ decide: ({ inlineAssets }) => ok(inlineAssets > 0 ? "offload-then-save" : "save", "warn") });
     const outcome = await runSnapshotSave(deps);
