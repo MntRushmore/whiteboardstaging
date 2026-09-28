@@ -134,7 +134,9 @@ import type { BoardLine, ProofRead } from "./proof/read";
 import { problemMetaOf, readProblemCells, splitColumnsAtProblems, type ProblemCell } from "./chat/cells";
 import type { ChatAction, ChatRunReport, ChatScreen } from "./chat/contracts";
 import { CHAT_LINE_ID, ChatDesk, type ChatHost } from "./chat/desk";
-import { planFigure as defaultPlanFigure } from "./figureDraw";
+// the drawer's own module, not the index: the index re-exports `checkFigure`, which the board chat's
+// proof check (a lazy chunk) uses — through the index it would land in the board's first load
+import { planFigure as defaultPlanFigure } from "./figureDraw/plan";
 import type { FigurePlanOptions, FigurePlanResult, FigureSpec } from "./figureDraw/contracts";
 
 /**
