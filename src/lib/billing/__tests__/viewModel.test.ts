@@ -1,17 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
   BILLING_COPY,
+  allowanceLinesFor,
   bannerMessageFor,
   canonicalRouteKey,
   creditsBannerStateFor,
+  creditsNoticeFor,
   formatCredits,
   formatPrice,
   parseBillingLinks,
   parseCreditSummary,
   parsePlans,
   periodEndLabel,
+  periodMonthLabel,
   planCardsFor,
   remainingTone,
+  resetSentenceFor,
   routeLabel,
   usageRowsFor,
   usedPercent,
@@ -269,6 +273,67 @@ describe("banner copy", () => {
       expect(s).not.toMatch(/!/);
       expect(s).not.toMatch(/\bwrong\b/i);
       expect(s).not.toMatch(/rushil/i);
+    }
+  });
+});
+
+describe("plan & credits card", () => {
+  // The QA account's month: Free (1,000) plus a 20,000 grant, 1,645 used.
+  const granted: CreditSummary = { ...summary, monthly_credits: 1000, granted: 20000, used: 1645, remaining: 19355 };
+
+  it("names the period's month in UTC", () => {
+    expect(periodMonthLabel("2026-09-01T00:00:00+00:00")).toBe("September");
+    expect(periodMonthLabel("2026-10-01T00:00:00Z")).toBe("October");
+    expect(periodMonthLabel("")).toBe("");
+    expect(periodMonthLabel("soon")).toBe("");
+  });
+
+  it("explains the total as ledger lines that add up to what is left", () => {
+    expect(allowanceLinesFor(granted)).toEqual([
+      { key: "plan", label: "Free plan, every month", value: "1,000" },
+      { key: "extra", label: "Extra for September", value: "+20,000" },
+      { key: "used", label: "Used so far", value: "−1,645" },
+    ]);
+    // no grant: no extra line; nothing used yet reads as 0, not −0
+    expect(allowanceLinesFor({ ...summary, used: 0, remaining: 300 })).toEqual([
+      { key: "plan", label: "Free plan, every month", value: "300" },
+      { key: "used", label: "Used so far", value: "0" },
+    ]);
+    // a negative grant is a correction
+    expect(allowanceLinesFor({ ...summary, granted: -100 })[1]).toEqual({
+      key: "extra",
+      label: "Correction for September",
+      value: "−100",
+    });
+  });
+
+  it("says extra credits are for this month only and nothing carries over", () => {
+    expect(resetSentenceFor(granted, NOW)).toBe(
+      "Extra credits count for September only, and unused credits don't carry over: on Oct 1 you start again with 1,000.",
+    );
+    expect(resetSentenceFor(summary, NOW)).toBe("Unused credits don't carry over: on Oct 1 you start again with 300.");
+    expect(resetSentenceFor({ ...summary, period_end: "" }, NOW)).toBe(
+      "Unused credits don't carry over: next month you start again with 300.",
+    );
+  });
+
+  it("shows a calm notice only when low or out, with the reset date and no upgrade pitch", () => {
+    expect(creditsNoticeFor(null, NOW)).toBeNull();
+    expect(creditsNoticeFor(summary, NOW)).toBeNull();
+    expect(creditsNoticeFor(granted, NOW)).toBeNull();
+    expect(creditsNoticeFor({ ...summary, remaining: 12, used: 288 }, NOW)).toEqual({
+      tone: "low",
+      message: "You have 12 credits left this month. They reset on Oct 1.",
+    });
+    const out = creditsNoticeFor({ ...summary, remaining: 0, used: 300 }, NOW);
+    expect(out).toEqual({
+      tone: "empty",
+      message: "You've used all of this month's credits. The tutor can't read new work until they reset on Oct 1.",
+    });
+    expect(creditsNoticeFor({ ...summary, remaining: 0, used: 300, period_end: "" }, NOW)?.message).toMatch(/reset next month\.$/);
+    for (const s of [out?.message ?? "", resetSentenceFor(granted, NOW)]) {
+      expect(s).not.toMatch(/!/);
+      expect(s).not.toMatch(/upgrade/i);
     }
   });
 });

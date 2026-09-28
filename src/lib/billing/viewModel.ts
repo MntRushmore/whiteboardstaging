@@ -373,3 +373,65 @@ export function creditsBannerStateFor(summary: CreditSummary | null | undefined,
   if (!summary) return "loading";
   return remainingTone(summary) === "ok" ? "hidden" : "visible";
 }
+
+/* ------------------------------------------------------------------------- */
+/* Plan & credits card (/account)                                             */
+/* ------------------------------------------------------------------------- */
+
+/** "September" for the period starting `2026-09-01T00:00:00Z` (UTC, like periodEndLabel); "" when unparsable. */
+export function periodMonthLabel(periodStart: string | null | undefined): string {
+  if (!periodStart) return "";
+  const date = new Date(periodStart);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
+}
+
+export type CreditsNotice = { tone: Exclude<RemainingTone, "ok">; message: string };
+
+/**
+ * The calm notice inside the plan card when credits run low or out; null while they are
+ * fine. Same tones as CreditsBanner, but no "upgrade": paid plans may not be open yet.
+ */
+export function creditsNoticeFor(summary: CreditSummary | null | undefined, now: Date = new Date()): CreditsNotice | null {
+  const tone = remainingTone(summary);
+  if (!summary || tone === "ok") return null;
+  const resets = periodEndLabel(summary.period_end, now);
+  const when = resets ? `on ${resets}` : "next month";
+  if (tone === "empty") {
+    return { tone, message: `You've used all of this month's credits. The tutor can't read new work until they reset ${when}.` };
+  }
+  return { tone, message: `${BILLING_COPY.low(summary.remaining)}. They reset ${when}.` };
+}
+
+export type AllowanceLine = { key: "plan" | "extra" | "used"; label: string; value: string };
+
+/**
+ * Where this month's credits come from, as ledger lines that add up to `remaining`:
+ * the plan's monthly allowance, any extra grant (or correction) for this month, and
+ * what has been used.
+ */
+export function allowanceLinesFor(summary: CreditSummary): AllowanceLine[] {
+  const month = periodMonthLabel(summary.period_start);
+  const lines: AllowanceLine[] = [
+    { key: "plan", label: `${summary.plan_name} plan, every month`, value: formatCredits(summary.monthly_credits) },
+  ];
+  if (summary.granted > 0) {
+    lines.push({ key: "extra", label: month ? `Extra for ${month}` : "Extra this month", value: `+${formatCredits(summary.granted)}` });
+  } else if (summary.granted < 0) {
+    lines.push({
+      key: "extra",
+      label: month ? `Correction for ${month}` : "Correction this month",
+      value: `−${formatCredits(-summary.granted)}`,
+    });
+  }
+  lines.push({ key: "used", label: "Used so far", value: summary.used > 0 ? `−${formatCredits(summary.used)}` : "0" });
+  return lines;
+}
+
+/** Plain words for the reset: extra credits are for this month only and nothing carries over. */
+export function resetSentenceFor(summary: CreditSummary, now: Date = new Date()): string {
+  const resets = periodEndLabel(summary.period_end, now);
+  const month = periodMonthLabel(summary.period_start);
+  const lead = summary.granted > 0 ? `Extra credits count for ${month || "this month"} only, and unused` : "Unused";
+  return `${lead} credits don't carry over: ${resets ? `on ${resets}` : "next month"} you start again with ${formatCredits(summary.monthly_credits)}.`;
+}
