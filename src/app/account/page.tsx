@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, Loader2, RefreshCw } from "lucide-react";
 import { AuthErrorBanner, useAuth } from "@/components/AuthProvider";
+import { AppHeader } from "@/components/app/AppHeader";
 import { Button } from "@/components/ui/button";
 import { ProfileCard } from "@/components/account/ProfileCard";
 import { PlanCreditsCard } from "@/components/account/PlanCreditsCard";
@@ -86,7 +87,8 @@ export default function AccountPage() {
   const email = user.email ?? "";
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-muted/40">
+      <AppHeader />
       <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         <AuthErrorBanner className="mb-4" />
         <div className="mb-8">

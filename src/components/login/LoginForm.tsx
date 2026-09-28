@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, MailCheck } from "lucide-react";
-import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { AuthErrorBanner, useAuth } from "@/components/AuthProvider";
 import { Button } from "@/components/ui/button";
@@ -110,13 +109,12 @@ export function LoginForm() {
           password,
         });
         if (error) throw error;
-        toast.success("Signed in");
+        // no toast: the boards opening is the confirmation (a toast lingered over the cards)
         router.replace("/");
       } else if (mode === "signup") {
         const { data, error } = await supabase.auth.signUp({ email: address, password });
         if (error) throw error;
         if (data.session) {
-          toast.success("Account created");
           router.replace("/");
         } else {
           // Email confirmation is on: there is no session until the link is opened.
