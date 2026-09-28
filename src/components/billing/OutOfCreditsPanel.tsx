@@ -30,12 +30,14 @@ async function readPlans(): Promise<Plan[]> {
 export function OutOfCreditsPanel({
   variant,
   titleAs: Title = "h2",
+  bodyAs: Body = "p",
   className,
   footer,
 }: {
   variant: "dialog" | "inline";
-  /** The dialog renders its own accessible title; the inline panel uses a plain heading. */
+  /** The dialog passes its accessible Title / Description; the inline panel uses plain text. */
   titleAs?: React.ElementType;
+  bodyAs?: React.ElementType;
   className?: string;
   /** Extra buttons next to "See your plan" (the dialog's "Not now"). */
   footer?: React.ReactNode;
@@ -53,9 +55,9 @@ export function OutOfCreditsPanel({
     <div className={cn("space-y-3", className)} data-testid="out-of-credits" data-variant={variant}>
       <div className="space-y-1">
         <Title className={cn("font-semibold", inline ? "text-sm text-red-800" : "text-lg")}>{OUT_OF_CREDITS_COPY.title}</Title>
-        <p className={cn(inline ? "text-sm text-red-800/90" : "text-sm text-muted-foreground")}>
+        <Body className={cn(inline ? "text-sm text-red-800/90" : "text-sm text-muted-foreground")}>
           {OUT_OF_CREDITS_COPY.body(creditsResetLabel(summary))}
-        </p>
+        </Body>
       </div>
       {lead && <p className={cn("text-sm", inline ? "text-gray-700" : "text-foreground")}>{lead}</p>}
       {options.length > 0 && (

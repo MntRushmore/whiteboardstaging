@@ -17,11 +17,11 @@ export function OutOfCreditsDialog({ open, onOpenChange }: { open: boolean; onOp
         <div className="flex size-10 items-center justify-center rounded-full bg-red-50 text-red-600" aria-hidden>
           <OctagonAlert className="size-5" />
         </div>
-        {/* Radix wants a Title and a Description inside Content; the panel shows the words. */}
-        <DialogDescription className="sr-only">{OUT_OF_CREDITS_COPY.upgradeLead}</DialogDescription>
+        {/* the panel's heading and first sentence are the dialog's accessible title and description */}
         <OutOfCreditsPanel
           variant="dialog"
           titleAs={DialogTitle}
+          bodyAs={DialogDescription}
           footer={
             <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
               {OUT_OF_CREDITS_COPY.notNow}

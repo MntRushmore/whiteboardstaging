@@ -141,7 +141,7 @@ export const CHECKOUT_COPY = {
   doneDetail: (credits: string) => `${credits} credits a month, starting now.`,
   timeout: "Your plan hasn't updated yet",
   timeoutDetail:
-    "Stripe has your payment, but its confirmation hasn't reached us yet. It usually lands within a minute — check again shortly. If it still says Free, write to us and we'll sort it out.",
+    "Stripe has your payment, but its confirmation hasn't reached us yet. It usually lands within a minute, so check again shortly. If your plan still hasn't changed after a few minutes, report it and we'll switch it by hand.",
   checkAgain: "Check again",
   dismiss: "Dismiss",
   manage: "Manage subscription",
