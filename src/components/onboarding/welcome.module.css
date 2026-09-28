@@ -1,0 +1,172 @@
+/* The first-run welcome on the boards home: Arc tokens only. */
+
+.welcome {
+  display: grid;
+  width: 100%;
+  max-width: 64rem;
+  margin-inline: auto;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+}
+@media (min-width: 768px) {
+  .welcome {
+    min-height: 32rem;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: var(--space-6);
+}
+@media (min-width: 640px) {
+  .main {
+    padding: var(--space-8);
+  }
+}
+@media (min-width: 1024px) {
+  .main {
+    padding: var(--space-10);
+  }
+}
+
+.step {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  margin-top: var(--space-8);
+}
+
+.kicker {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.title {
+  margin: var(--space-3) 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(var(--text-3xl), 4vw, var(--text-4xl));
+  font-weight: 500;
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-display);
+  text-wrap: balance;
+}
+.courseTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 500;
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-display);
+  text-wrap: balance;
+}
+.title:focus,
+.courseTitle:focus {
+  outline: none;
+}
+.lede {
+  max-width: 32rem;
+  margin: var(--space-4) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  line-height: 1.6;
+}
+.courseLede {
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+
+.courses {
+  margin-top: var(--space-5);
+}
+.courseLabel {
+  white-space: normal;
+}
+/* "Something else" takes the whole row under the four courses. */
+.courses > [data-card]:last-child {
+  grid-column: 1 / -1;
+}
+.error {
+  margin-top: var(--space-4);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-8);
+}
+@media (min-width: 768px) {
+  .actions {
+    margin-top: auto;
+    padding-top: var(--space-10);
+  }
+}
+.skipEnd {
+  margin-left: auto;
+}
+/* Start, Back and Skip do not fit one phone row: Start fills the first with Back, Skip takes the next. */
+@media (max-width: 479px) {
+  .actions:has(.skipEnd) > :first-child {
+    flex: 1;
+  }
+  .skipEnd {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+}
+
+/* The pictures sit beside the words from 768 px; on a phone, between the words and the buttons. */
+.aside {
+  display: none;
+}
+@media (min-width: 768px) {
+  .aside {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    border-left: 1px solid var(--border);
+    padding: var(--space-8);
+    background: var(--surface-muted);
+  }
+  .phonePictures {
+    display: none;
+  }
+}
+@media (min-width: 1024px) {
+  .aside {
+    padding: var(--space-10);
+  }
+}
+/* Leaves room for the small card's overhang (ProductPictures). */
+.asidePictures {
+  width: calc(100% - var(--space-6));
+}
+.phonePictures {
+  margin-top: var(--space-8);
+}
+
+/* under step 1's buttons: we are in beta, and where to report a bug */
+.betaNote {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  max-width: 32rem;
+  margin-top: var(--space-6);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+}
+
+.betaBadge {
+  flex-shrink: 0;
+  margin-top: 1px;
+}

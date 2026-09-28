@@ -1,0 +1,6 @@
+/* Arc's button stylesheet assumes a <button>; an anchor also needs these. */
+.link {
+  text-decoration: none;
+  -webkit-user-select: none;
+  user-select: none;
+}

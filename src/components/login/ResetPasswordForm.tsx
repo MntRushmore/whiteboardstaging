@@ -1,18 +1,19 @@
 "use client";
 
 import { useRef, useState, useSyncExternalStore } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { KeyRound, Loader2, TriangleAlert } from "lucide-react";
+import { KeyRound, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { AuthErrorBanner, useAuth } from "@/components/AuthProvider";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { PasswordInput } from "@/components/login/PasswordInput";
-import { FieldError, FormError, INVALID_INPUT } from "@/components/login/formParts";
+import { ButtonLink } from "@/components/app/ButtonLink";
+import { Alert } from "@/registry/components/alert/alert";
+import { Button } from "@/registry/components/button/button";
+import { PasswordField } from "@/registry/components/password-field/password-field";
+import { Skeleton } from "@/registry/components/skeleton/skeleton";
 import { loginErrorField, loginErrorMessage } from "@/lib/loginErrorMessage";
 import { FORM_COPY, RESET_LINK_COPY, hashHasAuthError, validateNewPassword } from "@/lib/loginForm";
+import styles from "./auth.module.css";
 
 function subscribeToHash(onChange: () => void) {
   window.addEventListener("hashchange", onChange);
@@ -71,82 +72,65 @@ export function ResetPasswordForm() {
   }
 
   if (authLoading && !authError) {
-    return (
-      <div className="flex justify-center py-16" role="status" aria-label="Checking your reset link">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" aria-hidden />
-      </div>
-    );
+    return <Skeleton className={styles.checking} label="Checking your reset link" lines={3} />;
   }
 
   if (!user) {
     return (
-      <div data-state={linkFailed ? "link-expired" : "link-missing"}>
+      <div data-state={linkFailed ? "link-expired" : "link-missing"} className={styles.state}>
         <AuthErrorBanner className="mb-6" />
-        <div className="mb-5 flex size-11 items-center justify-center rounded-full border bg-muted">
-          {linkFailed ? <TriangleAlert className="size-5" aria-hidden /> : <KeyRound className="size-5" aria-hidden />}
+        {linkFailed ? (
+          <TriangleAlert className={styles.stateIcon} size={24} strokeWidth={1.75} aria-hidden />
+        ) : (
+          <KeyRound className={styles.stateIcon} size={24} strokeWidth={1.75} aria-hidden />
+        )}
+        <div className={styles.heading}>
+          <h1 className={styles.title}>{linkFailed ? RESET_LINK_COPY.expiredTitle : RESET_LINK_COPY.missingTitle}</h1>
+          <p className={styles.lede}>{linkFailed ? RESET_LINK_COPY.expired : RESET_LINK_COPY.missing}</p>
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {linkFailed ? RESET_LINK_COPY.expiredTitle : RESET_LINK_COPY.missingTitle}
-        </h1>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          {linkFailed ? RESET_LINK_COPY.expired : RESET_LINK_COPY.missing}
-        </p>
-        <Button asChild size="lg" className="mt-6 w-full">
-          <Link href="/login">Back to sign in</Link>
-        </Button>
+        <ButtonLink href="/login" size="lg" className={styles.wide}>
+          Back to sign in
+        </ButtonLink>
       </div>
     );
   }
 
   const busy = submitting || done;
-  const describedBy = [fieldError ? "reset-password-error" : "reset-password-hint", formError ? "reset-error" : null]
-    .filter(Boolean)
-    .join(" ");
 
   return (
     <div data-state="reset-form">
       <AuthErrorBanner className="mb-6" />
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Choose a new password</h1>
-        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-          For <span className="font-medium text-foreground">{user.email}</span>. You&rsquo;ll use it the next
-          time you sign in.
+      <div className={styles.heading}>
+        <h1 className={styles.title}>Choose a new password</h1>
+        <p className={styles.lede}>
+          For <strong>{user.email}</strong>. You&rsquo;ll use it the next time you sign in.
         </p>
       </div>
-      <form onSubmit={handleSubmit} noValidate aria-busy={busy} className="grid gap-4">
+      <form onSubmit={handleSubmit} noValidate aria-busy={busy} className={styles.form}>
         {/* Tells password managers which saved login this new password belongs to. */}
         <input type="email" name="email" autoComplete="username" value={user.email ?? ""} readOnly hidden />
-        <div className="grid gap-2">
-          <Label htmlFor="reset-password">New password</Label>
-          <PasswordInput
-            ref={passwordRef}
-            id="reset-password"
-            name="password"
-            autoComplete="new-password"
-            value={password}
-            visible={showPassword}
-            onVisibleChange={setShowPassword}
-            onChange={(e) => {
-              setPassword(e.target.value);
-              if (fieldError) setFieldError(undefined);
-              if (formError) setFormError(null);
-            }}
-            readOnly={busy}
-            aria-invalid={fieldError || formError ? true : undefined}
-            aria-describedby={describedBy}
-            className={fieldError ? INVALID_INPUT : undefined}
-          />
-          {fieldError ? (
-            <FieldError id="reset-password-error" message={fieldError} />
-          ) : (
-            <p id="reset-password-hint" className="text-sm text-muted-foreground">
-              {FORM_COPY.newPasswordHint}
-            </p>
-          )}
-        </div>
-        <FormError id="reset-error" message={formError} />
-        <Button type="submit" size="lg" className="mt-1 w-full disabled:opacity-80" disabled={busy}>
-          {busy && <Loader2 className="animate-spin" aria-hidden />}
+        <PasswordField
+          ref={passwordRef}
+          id="reset-password"
+          label="New password"
+          name="password"
+          autoComplete="new-password"
+          value={password}
+          visible={showPassword}
+          onVisibleChange={setShowPassword}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            if (fieldError) setFieldError(undefined);
+            if (formError) setFormError(null);
+          }}
+          readOnly={busy}
+          description={fieldError ? undefined : FORM_COPY.newPasswordHint}
+          error={fieldError}
+          aria-invalid={formError ? true : undefined}
+          aria-describedby={formError ? "reset-error" : undefined}
+        />
+        {formError && <Alert id="reset-error" data-state="error" tone="danger" title={formError} />}
+        <Button type="submit" size="lg" className={styles.submit} loading={busy}>
           {done ? "Opening your boards…" : submitting ? "Saving…" : "Save password"}
         </Button>
       </form>

@@ -1,0 +1,51 @@
+/* ---------------------------------------------------------------------------
+ * Arc theming for the platform pages (/, /login, /reset-password, /account), loaded after
+ * src/registry/foundation.css by src/app/(platform)/layout.tsx. Never loaded by /board, but it stays
+ * in the document after a client-side navigation there, so:
+ *  - page-wide rules are scoped to `body:has([data-platform])`, which stops matching once the
+ *    platform layout unmounts;
+ *  - token values only touch Arc's own names (the board's shadcn/Tailwind tokens are --ui-*).
+ * ------------------------------------------------------------------------- */
+
+/* html:root outranks foundation.css's :root whichever order the two files land in. */
+html:root {
+  /* Arc ships transparent ("no focus rings"). Keyboard focus gets a quiet ring instead: near-black
+     at 55 % (3.8:1 on white), drawn by every Arc control's :focus-visible rule. */
+  --focus-ring-strong: oklch(23% 0 0 / 0.55);
+  /* Text fields already turn their border to the foreground when focused (the indicator); the 3 px
+     halo Arc draws around them from the same token stays faint. */
+  --focus-ring-field: oklch(23% 0 0 / 0.12);
+  --focus-ring: var(--focus-ring-strong);
+  /* Arc's muted text (59 %) is 4.1:1 on white and its warning 4.4:1; both carry real text here
+     (hints, inactive tabs, the low-credits badge), so they are deepened to clear 4.5:1:
+     54 % grey is 5.1:1 on white and 4.75:1 on --surface-muted; the amber 5.7:1. */
+  --text-muted: oklch(54% 0 0);
+  --warning: oklch(52% 0.14 70);
+}
+
+body:has([data-platform]) {
+  font-family: var(--font-body);
+  letter-spacing: var(--tracking-body);
+  color: var(--foreground);
+  background: var(--background);
+}
+
+/* Arc draws a field's halo on the input itself (Input) or on the box around it (PasswordField,
+   SearchField); buttons inside that box (show password, clear search) keep the full ring. */
+:where(body:has([data-platform]))
+  :where(
+    input:not([type="checkbox"], [type="radio"], [type="hidden"], [hidden]),
+    :has(> input:not([type="checkbox"], [type="radio"], [type="hidden"], [hidden]))
+  ) {
+  --focus-ring: var(--focus-ring-field);
+}
+:where(body:has([data-platform])) :where(:has(> input) button) {
+  --focus-ring: var(--focus-ring-strong);
+}
+
+/* The same ring on anything focusable without its own :focus-visible rule (links, the segmented
+   control). Zero specificity, so an Arc component's own focus style always wins. */
+:where(body:has([data-platform])) :where(:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
