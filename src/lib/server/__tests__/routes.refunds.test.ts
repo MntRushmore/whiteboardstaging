@@ -5,7 +5,7 @@
  * is driven through its real handler so the requestId that is charged is provably the one
  * that is refunded.
  *
- *  - non-streaming routes (voice/analyze-workspace): charged then refunded on any non-2xx; not refunded on a 2xx
+ *  - non-streaming routes (live/setup): charged then refunded on any non-2xx; not refunded on a 2xx
  *  - live/recognize: refunded on `recognizer_failed` and on a thrown upstream error
  *  - live/check + live/solve (SSE): refunded only when the stream fails before the first
  *    annotation / step; a later failure keeps the charge
@@ -45,7 +45,7 @@ vi.mock("@supabase/supabase-js", () => ({
 
 vi.mock("@/lib/server/openrouter", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/server/openrouter")>();
-  return { ...actual, openrouterChat: vi.fn(), chatJson: vi.fn(), streamWithFallback: vi.fn() };
+  return { ...actual, openrouterChat: vi.fn(), chatJson: vi.fn(), chatJsonWithFallback: vi.fn(), streamWithFallback: vi.fn() };
 });
 
 vi.mock("@/lib/server/mathpix", () => ({ isMathpixConfigured: () => false, recognizeStrokes: vi.fn() }));
@@ -53,8 +53,8 @@ vi.mock("@/lib/server/mathpix", () => ({ isMathpixConfigured: () => false, recog
 import { resetServerEnvCache } from "@/lib/env";
 import { resetBillingWarnings } from "@/lib/server/billing";
 import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rate-limit";
-import { CreditsExhaustedError, UpstreamError, chatJson, openrouterChat, streamWithFallback, type FallbackStreamEvent } from "@/lib/server/openrouter";
-import { POST as analyzeWorkspace } from "@/app/api/voice/analyze-workspace/route";
+import { CreditsExhaustedError, UpstreamError, chatJson, chatJsonWithFallback, openrouterChat, streamWithFallback, type FallbackStreamEvent } from "@/lib/server/openrouter";
+import { POST as liveSetup } from "@/app/api/live/setup/route";
 import { POST as recognize } from "@/app/api/live/recognize/route";
 import { POST as liveCheck } from "@/app/api/live/check/route";
 import { POST as liveSolve } from "@/app/api/live/solve/route";
@@ -178,17 +178,21 @@ type Family = {
   cost: number;
   /** An upstream reply that yields a 2xx. */
   okReply: unknown;
+  /** the provider call the route makes (mocked) */
+  upstream: typeof chatJsonWithFallback;
 };
 
-const TEXT_REPLY = { choices: [{ message: { content: "The student is solving 2x+3=11 and is on the last step." } }], usage: { total_tokens: 5 } };
+/** A word problem's setup, as `chatJsonWithFallback` answers it. */
+const SETUP_REPLY = { data: { unknown: "x", lines: ["2x + 5 = 17"] }, model: "openai/gpt-5.4-mini" };
+const SETUP_BODY = { boardId: "board-1", lines: ["\\text{Twice a number plus 5 is 17}"] };
 
 const FAMILIES: Family[] = [
-  { name: "voice/analyze-workspace", handler: analyzeWorkspace, path: "/api/voice/analyze-workspace", body: { image: IMAGE }, route: "voice/analyze-workspace", cost: 3, okReply: TEXT_REPLY },
+  { name: "live/setup", handler: liveSetup, path: "/api/live/setup", body: SETUP_BODY, route: "live/setup", cost: 2, okReply: SETUP_REPLY, upstream: chatJsonWithFallback },
 ];
 
 describe.each(FAMILIES)("$name: charge + refund", (family) => {
   it("charges the route cost and does not refund on success", async () => {
-    vi.mocked(openrouterChat).mockResolvedValue(family.okReply as never);
+    vi.mocked(family.upstream).mockResolvedValue(family.okReply as never);
     const res = await family.handler(request(family.path, family.body));
     expect(res.status).toBe(200);
     expectChargedNotRefunded();
@@ -196,7 +200,7 @@ describe.each(FAMILIES)("$name: charge + refund", (family) => {
   });
 
   it("refunds the same request id when the upstream call throws an UpstreamError (502)", async () => {
-    vi.mocked(openrouterChat).mockRejectedValue(new UpstreamError(500, "OpenRouter 500"));
+    vi.mocked(family.upstream).mockRejectedValue(new UpstreamError(500, "OpenRouter 500"));
     const res = await family.handler(request(family.path, family.body));
     expect(res.status).toBe(502);
     expect(await res.json()).toMatchObject({ error: "upstream_error" });
@@ -204,14 +208,14 @@ describe.each(FAMILIES)("$name: charge + refund", (family) => {
   });
 
   it("refunds when the provider reports its own credits exhausted (402) and on a timeout/abort (500)", async () => {
-    vi.mocked(openrouterChat).mockRejectedValue(new CreditsExhaustedError());
+    vi.mocked(family.upstream).mockRejectedValue(new CreditsExhaustedError());
     expect((await family.handler(request(family.path, family.body))).status).toBe(402);
     expectChargedAndRefunded();
 
     fake.calls.length = 0;
     const abort = new Error("The operation was aborted");
     abort.name = "AbortError";
-    vi.mocked(openrouterChat).mockRejectedValue(abort);
+    vi.mocked(family.upstream).mockRejectedValue(abort);
     expect((await family.handler(request(family.path, family.body))).status).toBe(500);
     expectChargedAndRefunded();
   });
@@ -220,13 +224,13 @@ describe.each(FAMILIES)("$name: charge + refund", (family) => {
     fake.replies.consume_credits = () => ({ data: { ok: false, remaining: 1, reason: "insufficient_credits" } });
     const res = await family.handler(request(family.path, family.body));
     expect(res.status).toBe(402);
-    expect(openrouterChat).not.toHaveBeenCalled();
+    expect(family.upstream).not.toHaveBeenCalled();
     expect(callsTo("refund_credits")).toEqual([]);
   });
 
   it("still answers the mapped error when the refund RPC itself fails (only logged)", async () => {
     fake.replies.refund_credits = () => new Error("refund db down");
-    vi.mocked(openrouterChat).mockRejectedValue(new UpstreamError(503, "unavailable"));
+    vi.mocked(family.upstream).mockRejectedValue(new UpstreamError(503, "unavailable"));
     const res = await family.handler(request(family.path, family.body));
     expect(res.status).toBe(502);
     expect(callsTo("refund_credits").length).toBe(1);
@@ -235,7 +239,7 @@ describe.each(FAMILIES)("$name: charge + refund", (family) => {
   it("does not touch the database at all with BILLING_ENFORCE=0", async () => {
     process.env.BILLING_ENFORCE = "0";
     resetServerEnvCache();
-    vi.mocked(openrouterChat).mockRejectedValue(new UpstreamError(500, "boom"));
+    vi.mocked(family.upstream).mockRejectedValue(new UpstreamError(500, "boom"));
     expect((await family.handler(request(family.path, family.body))).status).toBe(502);
     expect(callsTo("consume_credits")).toEqual([]);
     expect(callsTo("refund_credits")).toEqual([]);
@@ -420,10 +424,10 @@ describe("distributed rate limits through the routes", () => {
 
   it("the rate limit runs before the charge: a denied hit never calls consume_credits", async () => {
     fake.replies.rate_limit_hit = () => ({ data: { allowed: false, remaining: 0, retry_after_ms: 1_000 } });
-    const res = await analyzeWorkspace(request("/api/voice/analyze-workspace", { image: IMAGE }));
+    const res = await liveSetup(request("/api/live/setup", SETUP_BODY));
     expect(res.status).toBe(429);
     expect(callsTo("consume_credits")).toEqual([]);
-    expect(openrouterChat).not.toHaveBeenCalled();
+    expect(chatJsonWithFallback).not.toHaveBeenCalled();
   });
 
   it("live routes: the 429 carries X-Request-Id and backend", async () => {
@@ -436,15 +440,15 @@ describe("distributed rate limits through the routes", () => {
 
   it("when rate_limit_hit errors the in-memory limiter answers instead and still enforces the bucket (backend 'memory')", async () => {
     fake.replies.rate_limit_hit = () => ({ error: { message: "Could not find the function public.rate_limit_hit in the schema cache", code: "PGRST202" } });
-    vi.mocked(openrouterChat).mockResolvedValue(TEXT_REPLY as never);
-    // analyzeWorkspace is 30/min: thirty succeed, the 31st is limited by the fallback.
-    for (let i = 0; i < 30; i++) {
-      expect((await analyzeWorkspace(request("/api/voice/analyze-workspace", { image: IMAGE }))).status).toBe(200);
+    vi.mocked(chatJsonWithFallback).mockResolvedValue(SETUP_REPLY as never);
+    // live/setup is 10/min: ten succeed, the 11th is limited by the fallback.
+    for (let i = 0; i < 10; i++) {
+      expect((await liveSetup(request("/api/live/setup", SETUP_BODY))).status).toBe(200);
     }
-    const limited = await analyzeWorkspace(request("/api/voice/analyze-workspace", { image: IMAGE }));
+    const limited = await liveSetup(request("/api/live/setup", SETUP_BODY));
     expect(limited.status).toBe(429);
     expect(await limited.json()).toMatchObject({ error: "rate_limited", backend: "memory" });
-    expect(callsTo("rate_limit_hit").length, "the RPC is retried on every request").toBe(31);
+    expect(callsTo("rate_limit_hit").length, "the RPC is retried on every request").toBe(11);
   });
 
   it("RATE_LIMIT_BACKEND=memory never calls the RPC and reports backend 'memory' on the 429", async () => {
@@ -494,7 +498,6 @@ describe("static: every route that charges credits refunds through runCharged / 
       "src/app/api/live/reread/route.ts",
       "src/app/api/live/setup/route.ts",
       "src/app/api/live/solve/route.ts",
-      "src/app/api/voice/analyze-workspace/route.ts",
     ]);
   });
 
@@ -507,7 +510,7 @@ describe("static: every route that charges credits refunds through runCharged / 
   }
 
   it("every user-keyed route uses the distributed limiter (the public IP buckets keep checkRateLimit)", () => {
-    const userRoutes = [...charged, "src/app/api/credits/route.ts", "src/app/api/voice/token/route.ts"];
+    const userRoutes = [...charged, "src/app/api/credits/route.ts"];
     for (const file of userRoutes) {
       const src = readFileSync(join(REPO_ROOT, file), "utf8");
       expect(/\bcheckRateLimitDistributed\s*\(/.test(src) || /\blivePreamble\s*\(/.test(src), `${file} should use checkRateLimitDistributed (or livePreamble)`).toBe(true);

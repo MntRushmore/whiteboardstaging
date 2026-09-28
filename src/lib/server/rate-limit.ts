@@ -36,8 +36,6 @@ const MINUTE = 60_000;
 
 /** Per-user limits for each API route (requests per window). */
 export const LIMITS = {
-  voiceToken: { limit: 6, windowMs: MINUTE },
-  analyzeWorkspace: { limit: 30, windowMs: MINUTE },
   credits: { limit: 30, windowMs: MINUTE },
   // Live Math routes (budgets are defined once, in the shared contracts).
   liveRecognize: LIVE_RATE_LIMITS.liveRecognize,

@@ -65,10 +65,8 @@ describe("ROUTE_COSTS", () => {
       "live/reread": 1,
       "live/proof": 2,
       "live/chat": 3,
-      "voice/analyze-workspace": 3,
       credits: 0,
       "config/status": 0,
-      "voice/token": 0,
     });
   });
 });

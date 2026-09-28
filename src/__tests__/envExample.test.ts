@@ -133,7 +133,7 @@ describe(".env.example", () => {
 
   it("uses local/placeholder values for provider keys", () => {
     const placeholder = /^(|your-.*|sk-or-\.\.\.|sk-\.\.\.|\.\.\.)$/;
-    for (const name of ["OPENROUTER_API_KEY", "OPENAI_API_KEY", "MATHPIX_APP_KEY", "SUPABASE_SERVICE_ROLE_KEY"]) {
+    for (const name of ["OPENROUTER_API_KEY", "MATHPIX_APP_KEY", "SUPABASE_SERVICE_ROLE_KEY"]) {
       const entry = entries.find((e) => e.name === name);
       expect(entry, `${name} is missing`).toBeDefined();
       expect(entry?.value ?? "", `${name} must be a placeholder`).toMatch(placeholder);

@@ -40,10 +40,8 @@ export const ROUTE_COSTS = {
   // The board chat: one planning call (problems, a graph, a figure spec), plus at most one small
   // figure repair; the engine checks every problem, so no solve model is involved.
   "live/chat": 3,
-  "voice/analyze-workspace": 3,
   credits: 0,
   "config/status": 0,
-  "voice/token": 0,
 } as const satisfies Record<string, number>;
 
 export type BillableRoute = keyof typeof ROUTE_COSTS;

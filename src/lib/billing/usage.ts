@@ -41,12 +41,12 @@ export const USAGE_KINDS: Readonly<Record<string, UsageKind>> = {
   "live-check": { key: "live-check", label: "Checking your work", unit: ["check", "checks"], cost: 3 },
   // The board chat: problems, graphs and figures asked for in words.
   "live-chat": { key: "live-chat", label: "Board chat", unit: ["request", "requests"], cost: 3 },
-  "voice-analyze-workspace": { key: "voice-analyze-workspace", label: "Voice tutor", unit: TIMES, cost: 3 },
   "live-solve": { key: "live-solve", label: "Worked solutions", unit: ["solution", "solutions"], cost: 10 },
   "generate-solution": { key: "generate-solution", label: "Drawn help (retired)", unit: TIMES },
   "generate-worksheet": { key: "generate-worksheet", label: "Worksheets (retired)", unit: TIMES },
   ocr: { key: "ocr", label: "Text recognition (retired)", unit: TIMES },
   "check-help-needed": { key: "check-help-needed", label: "Help checks (retired)", unit: TIMES },
+  "voice-analyze-workspace": { key: "voice-analyze-workspace", label: "Voice tutor (retired)", unit: TIMES },
 };
 
 /** The kind for a stored route; an unknown route keeps its own spelling rather than vanishing. */

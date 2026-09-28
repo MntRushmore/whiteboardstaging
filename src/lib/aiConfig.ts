@@ -9,7 +9,7 @@
 import { NextResponse } from 'next/server';
 import { isPlaceholderValue } from '@/lib/env';
 
-export type ProviderId = 'openrouter' | 'openai' | 'mathpix';
+export type ProviderId = 'openrouter' | 'mathpix';
 
 export interface ProviderSpec {
   id: ProviderId;
@@ -34,18 +34,9 @@ export const PROVIDERS: Record<ProviderId, ProviderSpec> = {
     features: [
       'Live Math checks, hints and worked solutions',
       'The fallback handwriting recognizer',
-      'Voice workspace analysis',
       'Credit balance display',
     ],
     required: true,
-  },
-  openai: {
-    id: 'openai',
-    label: 'OpenAI',
-    envVar: 'OPENAI_API_KEY',
-    signupUrl: 'https://platform.openai.com/api-keys',
-    features: ['Realtime voice tutor'],
-    required: false,
   },
   mathpix: {
     id: 'mathpix',
