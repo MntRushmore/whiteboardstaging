@@ -6,7 +6,7 @@ a plan by hand): `docs/RUNBOOK-supabase.md` section 13.
 
 ## 1. How it fits together
 
-- **Plans.** Free 300 credits a month, Plus 3,000 at $9, Pro 12,000 at $29 (migration
+- **Plans.** Free 300 credits a month, Plus 3,000 at $12, Pro 12,000 at $39 (migration
   `20260928110000_paid_plans.sql`). The paid prices are placeholders. They live in two places that
   must agree: `public.plans` (what the app shows and meters) and `PLANS` at the top of
   `scripts/stripe-setup.mjs` (what Stripe charges). `src/__tests__/stripeSetup.test.ts` fails when

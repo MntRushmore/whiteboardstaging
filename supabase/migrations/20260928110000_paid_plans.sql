@@ -5,10 +5,10 @@
 -- from 20260917040000_pilot_free_credits.sql ends:
 --
 --   free   300 credits / month, $0      (was 1,000 during the pilot)
---   plus   3,000 credits / month, $9    (unchanged)
---   pro    12,000 credits / month, $29  (unchanged)
+--   plus   3,000 credits / month, $12   (was $9, a placeholder)
+--   pro    12,000 credits / month, $39  (was $29, a placeholder)
 --
--- The paid prices are PLACEHOLDERS the owner may still change. Two places hold them and must
+-- The owner set the launch prices on 2026-09-28. Two places hold them and must
 -- agree: this table (what the app shows and meters) and the PLANS config at the top of
 -- scripts/stripe-setup.mjs (what Stripe charges). src/__tests__/stripeSetup.test.ts pins the two
 -- together. To change a price later: edit both, run the script (it creates a new Stripe price and
@@ -40,12 +40,12 @@ update public.plans
 
 update public.plans
    set monthly_credits = 3000,
-       price_cents = 900
+       price_cents = 1200
  where id = 'plus';
 
 update public.plans
    set monthly_credits = 12000,
-       price_cents = 2900
+       price_cents = 3900
  where id = 'pro';
 
 -- Same body as 20260917020000_accounts_billing.sql plus billing_status / current_period_end.

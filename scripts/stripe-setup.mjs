@@ -42,13 +42,13 @@ export const APP_TAG = "agathon-classroom";
 export const PRODUCT_PREFIX = "Agathon Classroom";
 
 /**
- * The paid plans. PLACEHOLDER prices the owner may change: keep them equal to `public.plans`
+ * The paid plans, at the launch prices the owner set (2026-09-28): keep them equal to `public.plans`
  * (supabase/migrations/20260928110000_paid_plans.sql, then the runbook's UPDATE).
  * @type {ReadonlyArray<{ id: string, name: string, credits: number, priceCents: number, currency: string, interval: "month" }>}
  */
 export const PLANS = Object.freeze([
-  Object.freeze({ id: "plus", name: "Plus", credits: 3000, priceCents: 900, currency: "usd", interval: "month" }),
-  Object.freeze({ id: "pro", name: "Pro", credits: 12000, priceCents: 2900, currency: "usd", interval: "month" }),
+  Object.freeze({ id: "plus", name: "Plus", credits: 3000, priceCents: 1200, currency: "usd", interval: "month" }),
+  Object.freeze({ id: "pro", name: "Pro", credits: 12000, priceCents: 3900, currency: "usd", interval: "month" }),
 ]);
 
 /** The events src/app/api/billing/webhook/route.ts acts on. */

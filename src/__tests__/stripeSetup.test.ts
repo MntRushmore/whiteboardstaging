@@ -302,7 +302,7 @@ describe("setup()", () => {
 
     // the stored Plus price no longer matches PLANS: the same as the owner editing PLANS (which is frozen here)
     const plusPrice = stripe.db.prices.find((p) => (p.metadata as Record<string, string>).plan_id === "plus")!;
-    plusPrice.unit_amount = 1200;
+    plusPrice.unit_amount = 900;
     const second = await setup(live, deps);
     expect(second.links.plus).not.toBe(first.links.plus);
     expect(second.links.pro).toBe(first.links.pro);
