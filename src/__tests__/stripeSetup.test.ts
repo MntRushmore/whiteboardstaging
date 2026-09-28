@@ -127,7 +127,7 @@ describe("finding what exists", () => {
 
   it("finds our product by metadata, never someone else's product with the same name", () => {
     const products = [
-      { id: "prod_other", name: "Agathon Classroom Plus", active: true, created: 1, metadata: {} },
+      { id: "prod_other", name: "Agathon Plus", active: true, created: 1, metadata: {} },
       { id: "prod_old", active: false, created: 2, metadata: ours },
       { id: "prod_ours", active: true, created: 3, metadata: ours },
       { id: "prod_dup", active: true, created: 4, metadata: ours },

@@ -1,4 +1,4 @@
-# Agathon Classroom
+# Agathon
 
 > **Bring your own keys.** No AI credentials ship with this source; whoever runs an instance supplies their own keys (see [SETUP.md](./SETUP.md)).
 >

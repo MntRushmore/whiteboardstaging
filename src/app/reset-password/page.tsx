@@ -4,7 +4,7 @@ import { ResetPasswordForm } from "@/components/login/ResetPasswordForm";
 
 export const metadata: Metadata = {
   title: "Choose a new password",
-  description: "Set a new password for your Agathon Classroom account.",
+  description: "Set a new password for your Agathon account.",
 };
 
 // Where the "Forgot your password?" email link lands (redirectTo in LoginForm).

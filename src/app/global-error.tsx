@@ -42,7 +42,7 @@ export default function GlobalError({
           }}
         >
           <h1 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 8px" }}>
-            Agathon Classroom crashed
+            Agathon crashed
           </h1>
           <p style={{ fontSize: 14, color: "#525252", margin: "0 0 16px" }}>
             A fatal error prevented the app from rendering. Reloading usually

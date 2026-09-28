@@ -54,7 +54,7 @@ import {
 import { logger } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
 import { useParams, useRouter } from "next/navigation";
-import { MessageSquare } from "lucide-react";
+import { Bug, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import { CreditsBanner } from "@/components/CreditsBanner";
@@ -62,6 +62,8 @@ import { OutOfCreditsWatcher } from "@/components/billing/OutOfCreditsWatcher";
 import { StickerLibrary } from "@/components/StickerLibrary";
 import { PdfUpload } from "@/components/PdfUpload";
 import { BugReportButton } from "@/components/BugReportButton";
+import { BETA_COPY } from "@/components/app/BetaBadge";
+import { Celebrations } from "@/components/live/Celebrations";
 import { useFeatureLabs } from "@/lib/featureLabs";
 import { ListOrdered } from "lucide-react";
 import { liveShapeUtils, liveTools, liveUiOverrides, LiveToolbar } from "@/shapes";
@@ -279,8 +281,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
       {/*
         The board's one primary row: go back, choose how much help, see what the tutor is
         doing, and (in Solve) ask for the worked steps. Everything rare — the Live
-        preference, the help-mode explainer, Report a problem — hangs off the status pill's
-        "…" menu rather than competing with them.
+        preference, the help-mode explainer — hangs off the status pill's "…" menu rather
+        than competing with them. Report a bug has a button of its own while we are in beta.
       */}
       <div
         style={{
@@ -356,14 +358,26 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
             />
           </LiveErrorBoundary>
           <SaveStatus sync={sync} onRetry={() => void retrySave()} />
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 rounded-full bg-white px-3 shadow-sm"
+            title={BETA_COPY.hint}
+            aria-label="Report a bug"
+            onClick={() => setReportOpen(true)}
+          >
+            <Bug className="size-3.5" aria-hidden />
+            <span className="hidden text-xs font-medium sm:inline">Report a bug</span>
+          </Button>
           {features.stickers && <StickerLibrary />}
           {features.pdfUpload && <PdfUpload />}
         </div>
       </div>
 
-      {/* Opened from Board options; neither owns a button in the bar any more. */}
+      {/* The explainer opens from Board options; the report from there or its button in the bar. */}
       <ModeInfoDialog open={modeInfoOpen} onOpenChange={setModeInfoOpen} />
       <BugReportButton boardId={id} open={reportOpen} onOpenChange={setReportOpen} />
+      {liveEnabled && live.celebrations && <Celebrations editor={editor} />}
 
       <div
         style={{

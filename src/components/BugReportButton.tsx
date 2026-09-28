@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useEditor } from "tldraw";
+import { useMaybeEditor } from "tldraw";
 import { Bug, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,16 +59,21 @@ function collectDiagnostics(boardId?: string): Diagnostics {
 interface BugReportButtonProps {
   boardId?: string;
   /**
-   * Controlled mode. Reporting a bug is rare, so the board opens this dialog from its
-   * "Board options" menu instead of spending a slot in the top bar on it; pass `open` and
-   * the component renders the dialog only, with no trigger of its own.
+   * Controlled mode: pass `open` and the component renders the dialog only, with no trigger of
+   * its own (the board's "Board options" menu opens it this way too).
    */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** the trigger's look: a pill over the board, or a quiet button in the app header */
+  variant?: "board" | "header";
 }
 
-export function BugReportButton({ boardId, open: openProp, onOpenChange }: BugReportButtonProps) {
-  const editor = useEditor();
+/**
+ * Report a bug: a message, plus diagnostics and recent logs, into `bug_reports`. On a board it
+ * also attaches a screenshot of the canvas; elsewhere (the app header) there is no canvas.
+ */
+export function BugReportButton({ boardId, open: openProp, onOpenChange, variant = "board" }: BugReportButtonProps) {
+  const editor = useMaybeEditor();
   const { user } = useAuth();
   const controlled = openProp !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
@@ -152,23 +157,33 @@ export function BugReportButton({ boardId, open: openProp, onOpenChange }: BugRe
     >
       {!controlled && (
         <DialogTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-full shadow-md bg-white hover:bg-gray-50 gap-1.5 h-8 px-3"
-            aria-label="Report a problem"
-          >
-            <Bug className="w-3.5 h-3.5" />
-            <span className="text-xs font-medium">Report</span>
-          </Button>
+          {variant === "header" ? (
+            <Button variant="ghost" size="sm" className="h-8 gap-1.5 rounded-full px-2.5 text-muted-foreground hover:text-foreground" title="Report a bug">
+              <Bug className="size-3.5" aria-hidden />
+              <span className="hidden text-xs font-medium sm:inline">Report a bug</span>
+              <span className="sr-only sm:hidden">Report a bug</span>
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 rounded-full bg-white px-3 shadow-sm hover:bg-gray-50"
+              title="Agathon is in beta. Found a bug? Tell us."
+            >
+              <Bug className="size-3.5" aria-hidden />
+              <span className="text-xs font-medium">Report a bug</span>
+            </Button>
+          )}
         </DialogTrigger>
       )}
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Report a problem</DialogTitle>
+          <DialogTitle>Report a bug</DialogTitle>
           <DialogDescription>
-            Tell us what went wrong. We&apos;ll include a screenshot of your canvas
-            and recent diagnostic logs to help debug.
+            Agathon is in beta, so thanks for helping us fix it! Tell us what went wrong.
+            {editor
+              ? " We'll include a screenshot of your board and recent logs to help us find it."
+              : " We'll include recent logs to help us find it."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
@@ -179,13 +194,13 @@ export function BugReportButton({ boardId, open: openProp, onOpenChange }: BugRe
             id="bug-message"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="e.g. The AI suggestion never appeared after I drew a math problem."
+            placeholder="e.g. I wrote a step and the tutor never checked it."
             rows={5}
             disabled={submitting}
           />
           <p className="text-xs text-muted-foreground">
-            Sent: your message, a canvas screenshot, recent console logs, your
-            browser info, and your account email.
+            Sent: your message{editor ? ", a screenshot of your board" : ""}, recent console
+            logs, your browser info, and your account email.
           </p>
           {sendError && (
             <div

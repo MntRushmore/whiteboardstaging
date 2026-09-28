@@ -310,6 +310,13 @@ export function LiveStatusPill({
           >
             {LIVE_COPY.pill.hideAiShapes}
           </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={settings.celebrations}
+            onCheckedChange={(v) => update({ celebrations: v === true })}
+            title={LIVE_COPY.pill.celebrationsHint}
+          >
+            {LIVE_COPY.pill.celebrations}
+          </DropdownMenuCheckboxItem>
 
           <DropdownMenuSeparator />
           <DropdownMenuLabel className="text-xs text-gray-500">{LIVE_COPY.pill.groupLive}</DropdownMenuLabel>
