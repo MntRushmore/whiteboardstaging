@@ -9,6 +9,7 @@ import { FigureSpecSchema } from "./figureDraw/contracts";
 import { z } from "zod";
 import type { TLBaseShape, TLShapeId } from "tldraw";
 import type { ChatAction, ChatRunReport, ChatScreen } from "./chat/contracts";
+import type { LectureAction, LectureRunReport, LectureScreen } from "./lecture/contracts";
 
 // 1. Modes, verdicts, kinds -------------------------------------------------
 export const HELP_MODES = ["off", "feedback", "suggest", "answer"] as const;
@@ -616,6 +617,13 @@ export const LIVE_MODELS = {
    */
   chat: "openai/gpt-5.4-mini",
   chatFallback: "deepseek/deepseek-v4.1-flash",
+  /**
+   * Lecture mode's director (POST /api/live/lecture, `src/lib/live/lecture`): recent transcript →
+   * what to sketch (a chart's data, a diagram's steps, a heading), usually nothing. The chat's pair
+   * until `npm run eval:lecture` says otherwise.
+   */
+  lecture: "openai/gpt-5.4-mini",
+  lectureFallback: "deepseek/deepseek-v4.1-flash",
 } as const;
 
 /** Per-user limits for the live routes (the existing LIMITS table in src/lib/server/rate-limit.ts covers the legacy routes). */
@@ -631,6 +639,10 @@ export const LIVE_RATE_LIMITS = {
   liveProof: { limit: 20, windowMs: 60_000 },
   /** the board chat: typed by hand, one request at a time */
   liveChat: { limit: 12, windowMs: 60_000 },
+  /** lecture mode's director: a tick every ~40 s at most, plus "Draw that" */
+  liveLecture: { limit: 6, windowMs: 60_000 },
+  /** lecture mode's recognizer tokens: one per speech session (a reconnect opens another) */
+  liveListen: { limit: 6, windowMs: 60_000 },
 } as const;
 export type LiveRateLimitRoute = keyof typeof LIVE_RATE_LIMITS;
 
@@ -720,6 +732,14 @@ export interface LiveController {
    */
   chatScreen?(): ChatScreen;
   runChatActions?(actions: readonly ChatAction[]): Promise<ChatRunReport>;
+  /**
+   * Lecture mode (`src/lib/live/lecture`): the current screen in words for the director, the
+   * director's actions sketched one block at a time (`LectureDesk`), and heard text saved on the
+   * current screen's page meta. Optional, like the chat's.
+   */
+  lectureScreen?(): LectureScreen;
+  runLectureActions?(actions: readonly LectureAction[]): Promise<LectureRunReport>;
+  saveLectureTranscript?(text: string): void;
 }
 export interface UseLiveMathOptions {
   boardId: string;

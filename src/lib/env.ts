@@ -49,6 +49,10 @@ const envSchema = z.object({
   LIVE_MODEL_FIGURE: optionalString,
   LIVE_MODEL_PROOF: optionalString,
   LIVE_MODEL_CHAT: optionalString,
+  LIVE_MODEL_LECTURE: optionalString,
+
+  // Lecture mode's realtime speech-to-text (ElevenLabs Scribe). Unset: the browser's recognizer.
+  ELEVENLABS_API_KEY: optionalString,
 
   // Billing (all optional; see docs/ARCHITECTURE.md "Billing").
   BILLING_ENFORCE: optionalString,
@@ -114,6 +118,11 @@ export function getRateLimitBackend(): RateLimitBackend {
   return raw?.trim().toLowerCase() === "memory" ? "memory" : "db";
 }
 
+/** True when lecture mode's realtime recognizer (ElevenLabs) is configured. */
+export function hasElevenLabs(): boolean {
+  return Boolean(getServerEnv().ELEVENLABS_API_KEY);
+}
+
 /** True when both Mathpix credentials are configured (handwritten math OCR). */
 export function hasMathpix(): boolean {
   const env = getServerEnv();
@@ -139,6 +148,9 @@ export type LiveModels = {
   /** the board chat (POST /api/live/chat): a typed request -> a reply and board actions */
   chat: string;
   chatFallback: string;
+  /** lecture mode's director (POST /api/live/lecture): recent transcript -> what to sketch */
+  lecture: string;
+  lectureFallback: string;
 };
 
 /** The fallback for `primary`: never the primary itself (an override equal to the fallback swaps the two). */
@@ -147,7 +159,7 @@ function fallbackFor(primary: string, defaultPrimary: string, defaultFallback: s
 }
 
 /**
- * Model ids used by the Live Math routes. `LIVE_MODEL_CHECK/SOLVE/VISION/SETUP/REREAD/FIGURE/PROOF/CHAT`
+ * Model ids used by the Live Math routes. `LIVE_MODEL_CHECK/SOLVE/VISION/SETUP/REREAD/FIGURE/PROOF/CHAT/LECTURE`
  * override the primaries; the fallbacks always come from LIVE_MODELS (a fallback equal to the
  * primary would be pointless, so an override that matches a fallback swaps the two).
  */
@@ -160,6 +172,7 @@ export function getLiveModels(): LiveModels {
   const figure = env.LIVE_MODEL_FIGURE || LIVE_MODELS.figure;
   const proof = env.LIVE_MODEL_PROOF || LIVE_MODELS.proof;
   const chat = env.LIVE_MODEL_CHAT || LIVE_MODELS.chat;
+  const lecture = env.LIVE_MODEL_LECTURE || LIVE_MODELS.lecture;
   return {
     check,
     checkFallback: fallbackFor(check, LIVE_MODELS.check, LIVE_MODELS.checkFallback),
@@ -176,6 +189,8 @@ export function getLiveModels(): LiveModels {
     proofFallback: fallbackFor(proof, LIVE_MODELS.proof, LIVE_MODELS.proofFallback),
     chat,
     chatFallback: fallbackFor(chat, LIVE_MODELS.chat, LIVE_MODELS.chatFallback),
+    lecture,
+    lectureFallback: fallbackFor(lecture, LIVE_MODELS.lecture, LIVE_MODELS.lectureFallback),
   };
 }
 

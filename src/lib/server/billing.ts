@@ -40,6 +40,11 @@ export const ROUTE_COSTS = {
   // The board chat: one planning call (problems, a graph, a figure spec), plus at most one small
   // figure repair; the engine checks every problem, so no solve model is involved.
   "live/chat": 3,
+  // Lecture mode: one director call (recent transcript → what to sketch, usually nothing). Asked
+  // at most every ~40 s while someone is talking (LECTURE_TIMING), so about a credit a minute.
+  "live/lecture": 1,
+  // Lecture mode: one realtime speech-to-text session opened (a single-use recognizer token).
+  "live/listen": 1,
   credits: 0,
   "config/status": 0,
 } as const satisfies Record<string, number>;

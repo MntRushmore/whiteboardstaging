@@ -29,6 +29,8 @@ const ALL_VARS = [
   "LIVE_MODEL_FIGURE",
   "LIVE_MODEL_PROOF",
   "LIVE_MODEL_CHAT",
+  "LIVE_MODEL_LECTURE",
+  "ELEVENLABS_API_KEY",
   "BILLING_ENFORCE",
   "STRIPE_WEBHOOK_SECRET",
   "BILLING_PRICE_MAP",
@@ -130,7 +132,17 @@ describe("getLiveModels", () => {
       proofFallback: LIVE_MODELS.proofFallback,
       chat: LIVE_MODELS.chat,
       chatFallback: LIVE_MODELS.chatFallback,
+      lecture: LIVE_MODELS.lecture,
+      lectureFallback: LIVE_MODELS.lectureFallback,
     });
+  });
+
+  it("LIVE_MODEL_LECTURE overrides lecture mode's director", () => {
+    setRequired();
+    process.env.LIVE_MODEL_LECTURE = "google/gemini-3.5-flash";
+    const models = getLiveModels();
+    expect(models.lecture).toBe("google/gemini-3.5-flash");
+    expect(models.lectureFallback).toBe(LIVE_MODELS.lectureFallback);
   });
 
   it("LIVE_MODEL_CHAT overrides the chat model; the fallback stays from another provider", () => {
