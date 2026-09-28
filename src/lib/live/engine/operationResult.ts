@@ -104,6 +104,46 @@ function sideAfter(side: string, op: OperationOp, operand: string, factor: Q | n
 }
 
 /**
+ * Is the relation (a line's mathjs source) linear in its unknowns — every side a polynomial in
+ * single letters with no term of degree 2 or more, once everything is on one side? A chain
+ * (`max(a - f, f - b) < 0`, `compound.ts`) is linear when each of its parts is. Anything with a
+ * power, a product of unknowns, a function (trig, a log, a root) or an unknown in a denominator
+ * is not; neither is a union or a list of branches. Decides whether two different operands under
+ * it are a mistake or scratch work (`judgeOperation`).
+ */
+export function linearRelation(relationMath: string, parse: (source: string) => MathNode | null): boolean {
+  try {
+    const m = relationMath.trim();
+    let exprs: string[];
+    const chain = /^max\((.*)\)\s*<=?\s*0$/.exec(m);
+    if (chain) {
+      const node = parse(`max(${chain[1]})`);
+      const args = node ? ((node as MathNode & { args?: MathNode[] }).args ?? []) : [];
+      if (args.length !== 2) return false;
+      exprs = args.map((a) => a.toString());
+    } else {
+      if (/^min\(|!=/.test(m) || /^\(\(.*\)\) \* \(\(.*\)\) == 0$/.test(m)) return false;
+      const parts = m.split(/(<=|>=|==|<|>)/).map((p) => p.trim());
+      if (parts.length < 3 || parts.length % 2 === 0 || parts.some((p) => !p)) return false;
+      const sides = parts.filter((_, i) => i % 2 === 0);
+      exprs = sides.slice(1).map((s, i) => `(${sides[i]}) - (${s})`);
+    }
+    for (const e of exprs) {
+      const node = parse(e);
+      if (!node) return false;
+      const letters = freeSymbols(node);
+      if (!letters.every((v) => /^[a-zA-Z]$/.test(v))) return false;
+      const terms = termsOf(node, letters);
+      if (!terms) return false;
+      if (combineTerms(terms).some((t) => Object.values(t.vars).reduce((a, b) => a + b, 0) > 1)) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The relation `relationMath` (a line's mathjs source: `2 * x + 3 == 11`, `-3 < 2 * x + 1 < 7`)
  * after `op` by `operandMath` on every side, as LaTeX; '' when it cannot be written simply.
  */

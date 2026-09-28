@@ -44,7 +44,7 @@ import { createCourses } from "./courses";
 import { createGeometry } from "./geometry";
 import { isGeometryName } from "./geometryNotation";
 import { judgeOperation, operandMath, parseOperationLine, plainRelation } from "./operationLine";
-import { operationResult } from "./operationResult";
+import { linearRelation, operationResult } from "./operationResult";
 
 const UNKNOWN: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
 
@@ -728,7 +728,10 @@ export function createEngine(mod: MathModule): LiveEngine {
     const prev = ctx.previous;
     const relation = prev && (prev.kind === "equation" || prev.kind === "inequality") && prev.math ? prev.math : null;
     if (!relation && (parsed.op === "add" || parsed.op === "subtract")) return null;
-    const judged = judgeOperation(parsed, relation);
+    // two different operands are a mistake under a linear relation, scratch under any other
+    // (`-2 \quad -5` under `x^2 - 7x + 10 = 0`: a factor pair)
+    const linear = relation !== null && linearRelation(relation, (s) => safeParse(math, s));
+    const judged = judgeOperation(parsed, relation, linear);
     const operand = parsed.operands[0];
     const source = operandMath(operand) ?? "";
     const result = judged.verdict === "ok" && relation && plainRelation(relation) && source ? operationResult(relation, parsed.op, source, (s) => safeParse(math, s)) : "";

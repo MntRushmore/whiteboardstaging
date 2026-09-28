@@ -552,6 +552,8 @@ export const BASE_CORPUS: readonly EvalProblem[] = [
   { id: "op-07", topic: "linear", lines: ["x + \\frac{1}{2} = 3", "-\\frac{1}{2} \\quad-\\frac{1}{2}"], expect: { values: { x: [5 / 2] } }, oracle: ["x + \\frac{1}{2} = 3"] },
   { id: "op-08", topic: "inequality", lines: ["-2x < 6", "\\div (-2) \\quad \\div (-2)"], expect: { answer: "x > -3" }, oracle: ["-2x < 6"], note: "dividing by a negative: the next line turns the sign" },
   { id: "op-09", topic: "trig-equation", lines: ["2 \\sin x = 1", "\\div 2"], expect: { values: { x: [Math.PI / 6, (5 * Math.PI) / 6] }, answer: "x = 30^{\\circ}, \\ x = 150^{\\circ}", interval: { lo: 0, hi: 2 * Math.PI } }, oracle: ["2 \\sin x = 1"], note: "a bar under the equation with 2 under it (`\\div 2`, `barDivisionLatex`)" },
+  { id: "op-11", topic: "quadratic", lines: ["x^{2} - 7x + 10 = 0", "-2 \\quad -5", "(x - 2)(x - 5) = 0"], expect: { values: { x: [2, 5] } }, oracle: ["x^{2} - 7x + 10 = 0"], note: "a factor pair under a quadratic: scratch, not an operation that went wrong" },
+  { id: "op-12", topic: "quadratic", lines: ["x^{2} - 7x + 10 = 0", "-10 \\quad -10"], expect: { values: { x: [2, 5] } }, oracle: ["x^{2} - 7x + 10 = 0"], note: "the same operand twice under a quadratic: an operation" },
   { id: "op-10", topic: "trig-equation", lines: ["2 \\sin x = 1", "\\div 2", "\\sin x = \\frac{1}{2}"], expect: { values: { x: [Math.PI / 6, (5 * Math.PI) / 6] }, answer: "x = 30^{\\circ}, \\ x = 150^{\\circ}", interval: { lo: 0, hi: 2 * Math.PI } }, oracle: ["2 \\sin x = 1"] },
 ];
 

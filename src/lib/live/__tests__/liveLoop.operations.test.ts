@@ -164,6 +164,18 @@ describe("live loop — operation lines under an equation", () => {
     expect(marksOf(op)).toEqual(["circle"]);
   });
 
+  it("a factor pair under a quadratic (-2, -5) is scratch: no mark, and the factored line under it is ticked", async () => {
+    start();
+    await pen(inkLine("2x+3=11", 100, 200, 40), "x^{2} - 7x + 10 = 0");
+    const scratch = await pen(inkLine("2 8", 180, 262, 36), "-2 \\quad-5");
+    expect(analysisOf(scratch)).toMatchObject({ kind: "operation", verdict: "none" });
+    const next = await pen(inkLine("2x=8", 100, 330, 40), "(x - 2)(x - 5) = 0");
+    expect(analysisOf(next)?.verdict).toBe("ok");
+    await settleStable(() => String(tutor().length));
+    expect(marksOf(scratch)).toEqual([]);
+    expect(marksOf(next)).toEqual(["check"]);
+  });
+
   it("dividing by 0 is ringed", async () => {
     start();
     await pen(inkLine("2x=8", 100, 200, 40), "2x = 8");

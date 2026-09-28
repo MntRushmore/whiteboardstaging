@@ -32,7 +32,9 @@
  *
  * The verdict, against the line above in the column (an equation, an inequality, or a chain —
  * the problem the tutor wrote counts, `LiveLoop.columnHeads`): `ok` for the same valid operation
- * on every side; `mismatch` for different operands, or multiplying or dividing by 0; `none` when
+ * on every side; `mismatch` for different operands under a LINEAR relation, or multiplying or
+ * dividing by 0; `none` for different operands under anything else (a quadratic, trig, a log, a
+ * root, a rational: two numbers there are scratch — a factor pair — `judgeOperation`), and when
  * it cannot say (multiplying or dividing by an expression in a letter, which may be 0 — dividing
  * `x^2 = 3x` by x loses x = 0 —, or a number of operands that does not match the sides). Dividing
  * an inequality by a negative is a valid operation: the NEXT line must turn the sign round, and
@@ -299,11 +301,19 @@ export const OPERATION_NOTES = {
 /**
  * Is this operation right under the relation above (`relationMath`: the line's mathjs source,
  * `2 * x + 3 == 11`)? See the module comment. `relationMath` null: nothing to check it against.
+ *
+ * `linear`: the relation above is linear in its unknowns (`linearRelation`). Two different
+ * operands are the classic mistake only there. Under anything else — a quadratic, trig, a log, a
+ * root, the unknown in a denominator — two numbers side by side are scratch work, not an
+ * operation that went wrong: `-2 \quad -5` under `x^2 - 7x + 10 = 0` is a factor pair (−2 × −5 =
+ * 10, −2 + −5 = −7). That is `none`: no mark, and still an operation line, so the next line is
+ * checked against the equation above it as before. The same operand twice stays an operation
+ * (`-10 \quad -10` under the quadratic is fine).
  */
-export function judgeOperation(parsed: ParsedOperation, relationMath: string | null): OperationVerdict {
+export function judgeOperation(parsed: ParsedOperation, relationMath: string | null, linear = true): OperationVerdict {
   if (!relationMath) return { verdict: "none", note: "" };
   const [first, ...others] = parsed.operands;
-  if (others.some((o) => !sameOperand(first, o))) return { verdict: "mismatch", note: OPERATION_NOTES.different };
+  if (others.some((o) => !sameOperand(first, o))) return linear ? { verdict: "mismatch", note: OPERATION_NOTES.different } : { verdict: "none", note: "" };
   const sides = sidesOf(relationMath);
   if (sides < 2 || (parsed.form === "both" && parsed.operands.length !== sides)) return { verdict: "none", note: "" };
   if (parsed.op === "multiply" || parsed.op === "divide") {

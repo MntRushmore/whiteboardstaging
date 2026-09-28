@@ -4,6 +4,8 @@ import { analyzeColumn, localSolve } from "../../localSolve";
 import { planHandwriting } from "../../handwriting";
 import { getEngine } from "..";
 import { barDivisionLatex, judgeOperation, OPERATION_NOTES, operandMath, operandValue, parseOperationLine, sameOperand, sidesOf } from "../operationLine";
+import { linearRelation } from "../operationResult";
+import { parse as mathParse, type MathNode } from "mathjs";
 
 /**
  * Both-sides operation lines (`engine/operationLine.ts`): `-3 \quad -3` under `2x + 3 = 11`, `\div 2`
@@ -127,6 +129,12 @@ describe("the verdict against the relation above", () => {
     expect(judge("\\times 0 \\times 0", "x / 3 == 4").verdict).toBe("mismatch");
   });
 
+  it("different operands under a relation that is not linear are scratch, not a mistake; the same operand twice is still right", () => {
+    expect(judgeOperation(parseOperationLine("-2 \\quad -5")!, "x ^ 2 - 7 * x + 10 == 0", false)).toEqual({ verdict: "none", note: "" });
+    expect(judgeOperation(parseOperationLine("-10 \\quad -10")!, "x ^ 2 - 7 * x + 10 == 0", false).verdict).toBe("ok");
+    expect(judgeOperation(parseOperationLine("-3 \\quad -4")!, "2 * x + 3 == 11", true).verdict).toBe("mismatch");
+  });
+
   it("by a letter, or the wrong number of operands, is not judged", () => {
     expect(judge("\\div x \\quad \\div x", "x ^ 2 == 3 * x").verdict).toBe("none");
     expect(judge("-3 \\quad -3", "-3 < 2 * x + 1 < 7").verdict).toBe("none");
@@ -190,6 +198,65 @@ describe("analyzeLine: an operation line under an equation", () => {
     // an inequality divided by a negative: the next line must turn the sign round
     expect(col(["-2x < 6", "\\div (-2) \\quad \\div (-2)", "x > -3"])).toEqual(["none", "ok", "ok"]);
     expect(col(["-2x < 6", "\\div (-2) \\quad \\div (-2)", "x < -3"])).toEqual(["none", "ok", "mismatch"]);
+  });
+});
+
+describe("under a relation that is not linear: two different numbers are scratch (a factor pair), not a ring", () => {
+  const parse = (s: string): MathNode | null => {
+    try {
+      return mathParse(s);
+    } catch {
+      return null;
+    }
+  };
+
+  it.each([
+    ["2 * x + 3 == 11", true],
+    ["5 * x == 2 * x + 9", true],
+    ["x / 3 == 4", true],
+    ["-2 * x < 6", true],
+    ["2 * (x + 3) == 2 * x + 6", true],
+    ["max((-3) - (2 * x + 1), (2 * x + 1) - (7)) < 0", true],
+    ["x ^ 2 - 7 * x + 10 == 0", false],
+    ["x * (x + 1) == 12", false],
+    ["2 * sin(x) == 1", false],
+    ["log(x) == 2", false],
+    ["sqrt(x + 3) == 5", false],
+    ["1 / x == 2", false],
+    ["2 ^ x == 32", false],
+    ["min((x) - (2), (3) - (x)) < 0", false],
+    ["((2 * x - 3) - (5)) * ((2 * x - 3) - (-5)) == 0", false],
+  ])("%s is linear: %s", (relation, linear) => {
+    expect(linearRelation(relation, parse)).toBe(linear);
+  });
+
+  it.each([
+    ["x^{2} - 7x + 10 = 0", "-2 \\quad -5"],
+    ["x^{2} - 7x + 10 = 0", "\\begin{array}{ll}\n-2 & -5\n\\end{array}"],
+    ["x^{2} + 7x + 10 = 0", "+2 +5"],
+    ["2 \\sin x = 1", "-1 \\quad -2"],
+    ["\\sqrt{x + 3} = 5", "-3 \\quad -5"],
+    ["\\log_{2} x = 5", "-1 \\quad -2"],
+    ["\\frac{1}{x} = 2", "-1 \\quad -2"],
+  ])("under %s, %s is no mark", (above, latex) => {
+    const a = under(above, latex);
+    expect(a.kind).toBe("operation");
+    expect(a.verdict).toBe("none");
+    expect(a.operation?.result).toBe("");
+  });
+
+  it("the same operand twice under the quadratic is still a right operation", () => {
+    const a = under("x^{2} - 7x + 10 = 0", "-10 \\quad -10");
+    expect(a).toMatchObject({ kind: "operation", verdict: "ok" });
+    expect(a.operation?.result).toBe("x^{2} - 7x = -10");
+  });
+
+  it("the scratch does not change the next line's context: it is checked against the equation above", () => {
+    const col = (lines: string[]) => analyzeColumn(engine, lines, "feedback").map((a) => a?.verdict);
+    expect(col(["x^{2} - 7x + 10 = 0", "-2 \\quad -5", "(x - 2)(x - 5) = 0"])).toEqual(["none", "none", "ok"]);
+    expect(col(["x^{2} - 7x + 10 = 0", "-2 \\quad -5", "(x + 2)(x + 5) = 0"])).toEqual(["none", "none", "mismatch"]);
+    // under a linear equation the same row is still the classic mistake
+    expect(col(["2x + 3 = 11", "-2 \\quad -5"])).toEqual(["none", "mismatch"]);
   });
 });
 

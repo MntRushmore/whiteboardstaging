@@ -1,16 +1,16 @@
 {
   "summary": {
-    "total": 711,
-    "passed": 711,
+    "total": 713,
+    "passed": 713,
     "stages": {
-      "local": 711,
-      "answer": 711,
-      "steps": 711,
-      "drawable": 711,
-      "words": 711
+      "local": 713,
+      "answer": 713,
+      "steps": 713,
+      "drawable": 713,
+      "words": 713
     },
     "answers": {
-      "ok": 711,
+      "ok": 713,
       "approx": 0,
       "form": 0,
       "unsolved": 0,
@@ -93,14 +93,14 @@
       },
       {
         "topic": "quadratic",
-        "total": 14,
-        "passed": 14,
+        "total": 16,
+        "passed": 16,
         "stages": {
-          "local": 14,
-          "answer": 14,
-          "steps": 14,
-          "drawable": 14,
-          "words": 14
+          "local": 16,
+          "answer": 16,
+          "steps": 16,
+          "drawable": 16,
+          "words": 16
         }
       },
       {
@@ -599,14 +599,14 @@
     "byCourse": [
       {
         "course": "algebra-1",
-        "total": 245,
-        "passed": 245,
+        "total": 247,
+        "passed": 247,
         "stages": {
-          "local": 245,
-          "answer": 245,
-          "steps": 245,
-          "drawable": 245,
-          "words": 245
+          "local": 247,
+          "answer": 247,
+          "steps": 247,
+          "drawable": 247,
+          "words": 247
         }
       },
       {
@@ -15230,6 +15230,99 @@
         {
           "from": "x = 30^{\\circ}, \\ x = 180^{\\circ} - 30^{\\circ}",
           "to": "x = 30^{\\circ}, \\ x = 150^{\\circ}",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "op-11",
+      "topic": "quadratic",
+      "course": "algebra-1",
+      "lines": [
+        "x^{2} - 7x + 10 = 0",
+        "-2 \\quad -5",
+        "(x - 2)(x - 5) = 0"
+      ],
+      "expected": "x = 2 \\text{ or } x = 5",
+      "note": "a factor pair under a quadratic: scratch, not an operation that went wrong",
+      "source": "solveLatex",
+      "steps": [
+        "x - 2 = 0, \\ x - 5 = 0",
+        "x = 2, \\ x = 5"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "(the system)",
+          "to": "x - 2 = 0, \\ x - 5 = 0",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(the system)",
+          "to": "x = 2, \\ x = 5",
+          "status": "ok",
+          "reason": ""
+        }
+      ],
+      "unsupported": [],
+      "words": [],
+      "warnings": [],
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": "op-12",
+      "topic": "quadratic",
+      "course": "algebra-1",
+      "lines": [
+        "x^{2} - 7x + 10 = 0",
+        "-10 \\quad -10"
+      ],
+      "expected": "x = 2 \\text{ or } x = 5",
+      "note": "the same operand twice under a quadratic: an operation",
+      "source": "solveLatex",
+      "steps": [
+        "(x - 2)(x - 5) = 0",
+        "x = 2, \\ x = 5"
+      ],
+      "stages": {
+        "local": true,
+        "answer": true,
+        "steps": true,
+        "drawable": true,
+        "words": true
+      },
+      "answer": {
+        "status": "ok",
+        "reason": ""
+      },
+      "transitions": [
+        {
+          "from": "x^{2} - 7x + 10 = 0",
+          "to": "(x - 2)(x - 5) = 0",
+          "status": "ok",
+          "reason": ""
+        },
+        {
+          "from": "(x - 2)(x - 5) = 0",
+          "to": "x = 2, \\ x = 5",
           "status": "ok",
           "reason": ""
         }
