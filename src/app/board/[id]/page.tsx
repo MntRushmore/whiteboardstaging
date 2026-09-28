@@ -62,6 +62,7 @@ import { OutOfCreditsWatcher } from "@/components/billing/OutOfCreditsWatcher";
 import { StickerLibrary } from "@/components/StickerLibrary";
 import { PdfUpload } from "@/components/PdfUpload";
 import { BugReportButton } from "@/components/BugReportButton";
+import { captureBoardScreenshot } from "@/components/board/boardScreenshot";
 import { BETA_COPY } from "@/components/app/BetaBadge";
 import { Celebrations } from "@/components/live/Celebrations";
 import { useFeatureLabs } from "@/lib/featureLabs";
@@ -376,7 +377,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
 
       {/* The explainer opens from Board options; the report from there or its button in the bar. */}
       <ModeInfoDialog open={modeInfoOpen} onOpenChange={setModeInfoOpen} />
-      <BugReportButton boardId={id} open={reportOpen} onOpenChange={setReportOpen} />
+      <BugReportButton boardId={id} open={reportOpen} onOpenChange={setReportOpen} screenshot={() => captureBoardScreenshot(editor)} />
       {liveEnabled && live.celebrations && <Celebrations editor={editor} />}
 
       <div

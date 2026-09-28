@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useMaybeEditor } from "tldraw";
 import { Bug, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -66,14 +65,19 @@ interface BugReportButtonProps {
   onOpenChange?: (open: boolean) => void;
   /** the trigger's look: a pill over the board, or a quiet button in the app header */
   variant?: "board" | "header";
+  /**
+   * A screenshot to attach (a data URL, or null): the board passes one of its canvas. Passed in
+   * rather than taken from tldraw here, so the app header can use this dialog without pulling
+   * tldraw into every page's bundle.
+   */
+  screenshot?: () => Promise<string | null>;
 }
 
 /**
  * Report a bug: a message, plus diagnostics and recent logs, into `bug_reports`. On a board it
- * also attaches a screenshot of the canvas; elsewhere (the app header) there is no canvas.
+ * also attaches a screenshot of the canvas (`screenshot`); elsewhere (the app header) there is none.
  */
-export function BugReportButton({ boardId, open: openProp, onOpenChange, variant = "board" }: BugReportButtonProps) {
-  const editor = useMaybeEditor();
+export function BugReportButton({ boardId, open: openProp, onOpenChange, variant = "board", screenshot }: BugReportButtonProps) {
   const { user } = useAuth();
   const controlled = openProp !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
@@ -87,36 +91,12 @@ export function BugReportButton({ boardId, open: openProp, onOpenChange, variant
   // Inline failure shown in the dialog (which stays open) with a Retry.
   const [sendError, setSendError] = useState<string | null>(null);
 
-  const captureScreenshot = async (): Promise<string | null> => {
-    if (!editor) return null;
-    try {
-      const shapeIds = editor.getCurrentPageShapeIds();
-      if (shapeIds.size === 0) return null;
-      const viewportBounds = editor.getViewportPageBounds();
-      const { blob } = await editor.toImage([...shapeIds], {
-        format: "png",
-        bounds: viewportBounds,
-        background: true,
-        scale: 0.75,
-        padding: 0,
-      });
-      if (!blob) return null;
-      return await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(blob);
-      });
-    } catch {
-      return null;
-    }
-  };
-
   const handleSubmit = async () => {
     if (submitting) return;
     setSubmitting(true);
     setSendError(null);
     try {
-      const screenshot = await captureScreenshot();
+      const shot = screenshot ? await screenshot().catch(() => null) : null;
       const diagnostics = collectDiagnostics(boardId);
       const logs = getClientLogs();
 
@@ -125,7 +105,7 @@ export function BugReportButton({ boardId, open: openProp, onOpenChange, variant
         user_email: user?.email ?? null,
         board_id: boardId ?? null,
         message: message.trim() || null,
-        screenshot,
+        screenshot: shot,
         diagnostics,
         logs,
       });
@@ -181,7 +161,7 @@ export function BugReportButton({ boardId, open: openProp, onOpenChange, variant
           <DialogTitle>Report a bug</DialogTitle>
           <DialogDescription>
             Agathon is in beta, so thanks for helping us fix it! Tell us what went wrong.
-            {editor
+            {screenshot
               ? " We'll include a screenshot of your board and recent logs to help us find it."
               : " We'll include recent logs to help us find it."}
           </DialogDescription>
@@ -199,7 +179,7 @@ export function BugReportButton({ boardId, open: openProp, onOpenChange, variant
             disabled={submitting}
           />
           <p className="text-xs text-muted-foreground">
-            Sent: your message{editor ? ", a screenshot of your board" : ""}, recent console
+            Sent: your message{screenshot ? ", a screenshot of your board" : ""}, recent console
             logs, your browser info, and your account email.
           </p>
           {sendError && (
