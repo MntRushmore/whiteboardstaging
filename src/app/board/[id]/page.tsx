@@ -1088,6 +1088,8 @@ export default function BoardPage() {
           if (process.env.NODE_ENV !== "production") {
             // Dev-only handle for recording fixtures / poking the store from devtools.
             (window as unknown as { __agathonEditor?: Editor }).__agathonEditor = editor;
+            // …and for drawing a figure spec in the tutor's hand: `__agathonDrawFigure(spec)`.
+            void import("@/lib/live/figureDraw/board").then(({ drawFigureOnBoard }) => Object.assign(window, { __agathonDrawFigure: (spec: unknown) => drawFigureOnBoard(editor, spec) }));
           }
         }}
       >

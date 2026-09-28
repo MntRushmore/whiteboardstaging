@@ -110,6 +110,7 @@ describe("envExample: section headers and classification", () => {
       "FIGURE_EVAL_MODELS",
       "FIGURE_EVAL_BASELINE",
       "GRAPH_GALLERY",
+      "FIGURE_GALLERY",
       "VERIFY_EMAIL_DOMAIN",
     ]);
     expect(keysByClassification(realEnvExample, "optional-deploy")).toContain("NEXT_PUBLIC_TLDRAW_LICENSE_KEY");
