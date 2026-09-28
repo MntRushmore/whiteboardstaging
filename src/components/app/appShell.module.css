@@ -1,0 +1,81 @@
+/* The signed-in platform pages (the boards home, /account): the header and the content width. */
+
+/* Content width shared by the header and the pages under it. */
+.content {
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: auto;
+  padding-inline: var(--space-4);
+}
+@media (min-width: 640px) {
+  .content {
+    padding-inline: var(--space-6);
+  }
+}
+@media (min-width: 1024px) {
+  .content {
+    padding-inline: var(--space-8);
+  }
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklch, var(--background) 88%, transparent);
+  -webkit-backdrop-filter: saturate(1.4) blur(12px);
+  backdrop-filter: saturate(1.4) blur(12px);
+}
+.bar {
+  display: flex;
+  height: 4rem;
+  align-items: center;
+  gap: var(--space-3);
+}
+.brand {
+  border-radius: var(--space-2);
+  color: var(--foreground);
+  font-family: var(--font-display);
+  font-size: var(--text-base);
+  font-weight: 500;
+  letter-spacing: var(--tracking-display);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.end {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+
+/* The credits badge is a link to /account; the link's box is a full control height, so the small
+   pill is still an easy target. */
+.credits {
+  display: inline-flex;
+  min-height: var(--control-height-sm);
+  align-items: center;
+  border-radius: var(--radius-pill);
+  padding-inline: var(--space-1);
+  color: inherit;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .credits[data-tone="ok"]:hover > span {
+    border-color: var(--border-strong);
+  }
+}
+/* "18,334" on a phone; "18,334 credits" from 480 px. */
+@media (max-width: 479px) {
+  .creditsWord {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
