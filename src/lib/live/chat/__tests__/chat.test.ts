@@ -151,7 +151,7 @@ describe("the problem grid", () => {
   });
 
   it("free space: the first gap in reading order, clear of what is there; null when full", () => {
-    expect(findFreeArea({ w: 300, h: 200 }, SCREEN, [])).toEqual({ x: 40, y: 72, w: 300, h: 200 });
+    expect(findFreeArea({ w: 300, h: 200 }, SCREEN, [])).toEqual({ x: 56, y: 80, w: 300, h: 200 });
     const work = { x: 30, y: 60, w: 600, h: 500 };
     const slot = findFreeArea({ w: 300, h: 200 }, SCREEN, [work])!;
     expect(slot.x).toBeGreaterThanOrEqual(work.x + work.w);

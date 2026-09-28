@@ -26,10 +26,10 @@ export const CHAT_BLOCK_META = "chatBlock";
 export const CHAT_LINE_ID = "chat";
 
 export const CHAT_WRITE = {
-  /** hand size of `write_lines` */
-  linesSize: 36,
+  /** hand size of `write_lines`: a formula is read from across the room, like a problem */
+  linesSize: 44,
   /** hand size of a graph's equations above it */
-  graphLabelSize: 30,
+  graphLabelSize: 34,
   /** space between a graph's equations and the graph */
   graphLabelGap: 14,
   /** figure boxes, largest first */
@@ -43,6 +43,9 @@ export const CHAT_WRITE = {
   /** how long to wait for the loop's own writing to finish before starting */
   waitStepMs: 150,
   waitMaxMs: 30_000,
+  /** after adding a screen, until the loop has switched to it (one frame, normally) */
+  screenWaitStepMs: 20,
+  screenWaitMaxMs: 2_000,
 } as const;
 
 export interface ChatShape {
@@ -73,6 +76,11 @@ export interface ChatHost {
   typeset(latex: string, at: { x: number; y: number }, extraMeta: JsonObject): Rect;
   /** adds a blank screen after the last and moves to it; false at the cap */
   addScreen(): boolean;
+  /**
+   * The loop has taken the current screen in. Its store listener runs a frame after a screen
+   * switch and puts down any pen in flight — a block started before that would be dropped.
+   */
+  screenReady(): boolean;
   /** erases the tutor's ink on this screen */
   clearTutor(): void;
   /** the problems on the screen changed: the loop re-reads the columns under them */
@@ -186,7 +194,7 @@ export class ChatDesk {
       case "draw_figure":
         return this.figure(action.figure, report);
       case "new_screen":
-        return this.newScreen(report) ? { type: "new_screen", ok: true } : { type: "new_screen", ok: false, note: "This board already has the most screens it can hold." };
+        return (await this.newScreen(report)) ? { type: "new_screen", ok: true } : { type: "new_screen", ok: false, note: "This board already has the most screens it can hold." };
       case "clear_tutor":
         await this.waitForHand();
         this.host.clearTutor();
@@ -197,10 +205,15 @@ export class ChatDesk {
 
   // ---------------------------------------------------------------- helpers
 
-  private newScreen(report: Report): boolean {
+  private async newScreen(report: Report): Promise<boolean> {
+    await this.waitForHand();
     if (!this.host.addScreen()) return false;
     this.expectedPage = this.host.pageId();
     report.screensAdded++;
+    // nothing is written until the loop has moved to the new screen with us
+    for (let waited = 0; !this.host.screenReady() && waited < CHAT_WRITE.screenWaitMaxMs; waited += CHAT_WRITE.screenWaitStepMs) {
+      await this.host.delay(CHAT_WRITE.screenWaitStepMs);
+    }
     return true;
   }
 
@@ -208,8 +221,20 @@ export class ChatDesk {
     return this.host.shapes().length === 0;
   }
 
+  /** What free space must stay clear of: everything on the screen, and the whole of each problem's cell (the student works there). */
   private obstacles(): Rect[] {
-    return this.host.shapes().flatMap((s) => (s.bounds ? [s.bounds] : []));
+    const out: Rect[] = [];
+    const cells = new Set<string>();
+    for (const s of this.host.shapes()) {
+      if (s.bounds) out.push(s.bounds);
+      const p = problemMetaOf(s.meta);
+      const key = p ? `${p.cell.x},${p.cell.y}` : "";
+      if (p && !cells.has(key)) {
+        cells.add(key);
+        out.push(p.cell);
+      }
+    }
+    return out;
   }
 
   private async waitForHand(): Promise<void> {
@@ -231,10 +256,10 @@ export class ChatDesk {
   };
 
   /** A place for a block of this size on this screen, else on a new one. */
-  private placeFor(size: { w: number; h: number }, report: Report): Rect | null {
+  private async placeFor(size: { w: number; h: number }, report: Report): Promise<Rect | null> {
     const here = findFreeArea(size, this.host.screen(), this.obstacles());
     if (here) return here;
-    if (!this.newScreen(report)) return null;
+    if (!(await this.newScreen(report))) return null;
     return findFreeArea(size, this.host.screen(), this.obstacles());
   }
 
@@ -289,7 +314,7 @@ export class ChatDesk {
       index += items.length;
       await this.waitForHand();
       // a screen with anything on it keeps its work: the problems go on a fresh one
-      if ((ci > 0 || !this.screenEmpty()) && !this.newScreen(report)) {
+      if ((ci > 0 || !this.screenEmpty()) && !(await this.newScreen(report))) {
         stopped = "This board already has the most screens it can hold.";
         break;
       }
@@ -339,7 +364,7 @@ export class ChatDesk {
     const meta: JsonObject = { [CHAT_BLOCK_META]: "lines" };
     if (!this.host.handwriting()) {
       const est = { w: 420, h: clean.length * 56 };
-      const slot = this.placeFor(est, report);
+      const slot = await this.placeFor(est, report);
       if (!slot) return { type: "write_lines", ok: false, note: "There's no room left on this board." };
       let y = slot.y;
       for (const l of clean) y += this.host.typeset(l, { x: slot.x, y }, meta).h + 8;
@@ -348,7 +373,7 @@ export class ChatDesk {
     const { plan } = planHandwriting(clean, { size: CHAT_WRITE.linesSize, seed: this.host.seed(`chat:lines:${clean.join(";")}`) });
     if (!plan) return { type: "write_lines", ok: false, note: "I couldn't write that on the board." };
     await this.waitForHand();
-    const slot = this.placeFor({ w: plan.bounds.w, h: plan.bounds.h }, report);
+    const slot = await this.placeFor({ w: plan.bounds.w, h: plan.bounds.h }, report);
     if (!slot) return { type: "write_lines", ok: false, note: "There's no room left on this board." };
     await this.writeBlock(placeHandPlan(plan, { x: slot.x, y: slot.y }), meta);
     return { type: "write_lines", ok: true };
@@ -388,7 +413,7 @@ export class ChatDesk {
       return null;
     };
     let placed = tryPlace();
-    if (!placed && planGraph(shown, { seed, window: hint }) && this.newScreen(report)) placed = tryPlace();
+    if (!placed && planGraph(shown, { seed, window: hint }) && (await this.newScreen(report))) placed = tryPlace();
     if (!placed) return planGraph(shown, { seed, window: hint }) ? { type: "graph", ok: false, note: "There's no room left for the graph." } : cannot;
     await this.writeBlock(placed.plan, { [CHAT_BLOCK_META]: "graph", chatGraph: intent.key });
     this.host.metric?.("live.chat.graph", { kind: intent.kind, window: Boolean(win) });
@@ -417,7 +442,7 @@ export class ChatDesk {
       await this.writeBlock(placeHandPlan(res.plan, { x: slot.x, y: slot.y }), { [CHAT_BLOCK_META]: "figure" });
       return { type: "draw_figure", ok: true };
     }
-    if (!this.newScreen(report)) return { type: "draw_figure", ok: false, note: "There's no room left for the figure." };
+    if (!(await this.newScreen(report))) return { type: "draw_figure", ok: false, note: "There's no room left for the figure." };
     const slot = findFreeArea({ w: plans[0].bounds.w, h: plans[0].bounds.h }, this.host.screen(), this.obstacles());
     if (!slot) return cannot;
     await this.writeBlock(placeHandPlan(plans[0], { x: slot.x, y: slot.y }), { [CHAT_BLOCK_META]: "figure" });

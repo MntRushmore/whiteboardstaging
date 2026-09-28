@@ -26,8 +26,8 @@ export const PROBLEM_GRID = {
 } as const;
 
 export const FREE_AREA = {
-  margin: 40,
-  top: 72,
+  margin: 56,
+  top: 80,
   /** space kept round what is already on the screen */
   clearance: 18,
   step: 24,

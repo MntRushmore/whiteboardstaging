@@ -198,6 +198,16 @@ describe("live loop — the board chat", () => {
       expect(problems()).toHaveLength(2);
     });
 
+    it("with the hand animated: every problem on a new screen, then the graph on the next (the problems fill theirs), one block after another", async () => {
+      start("feedback", { reducedMotion: () => false });
+      await penLine("2x=8", 100, 200, "2x=8");
+      const report = await run([{ type: "write_problems", problems: [["2x + 3 = 11"], ["3x = 12"]] }, { type: "graph", relations: ["y = x^{2}"] }]);
+      expect(report).toMatchObject({ problemsWritten: 2, screensAdded: 2 });
+      expect(tutor().filter((s) => (s.meta as Record<string, unknown>)[CHAT_BLOCK_META] === "graph").length).toBeGreaterThan(20);
+      editor.switchPage(editor.getPages()[1].id);
+      expect(problems().map((p) => p.n)).toEqual([1, 2]);
+    });
+
     it("more than six spill onto more screens, spread evenly and numbered on", async () => {
       start();
       const set = ["x + 1 = 2", "x + 2 = 4", "x + 3 = 6", "x + 4 = 8", "2x = 4", "2x = 6", "2x = 8", "2x = 10"].map((l) => [l]);
@@ -340,7 +350,12 @@ describe("live loop — the board chat", () => {
       const sketch = tutor().filter((s) => (s.meta as Record<string, unknown>)[CHAT_BLOCK_META] === "graph");
       expect(sketch.length).toBeGreaterThan(20);
       expect(new Set(sketch.map((s) => handBlockOf(s.meta))).size).toBe(1);
-      expect(handLinesOf(sketch)[0]).toBe("y = \\sin x");
+      // the equation is written above the sketch (the curve's own strokes carry its LaTeX too)
+      expect(handLinesOf(sketch)).toContain("y = \\sin x");
+      const isEquation = (s: TLShape) => (s.meta as Record<string, unknown>).handLine === "y = \\sin x";
+      const equationTop = Math.min(...sketch.filter(isEquation).map((s) => editor.getShapePageBounds(s)!.minY));
+      const axesTop = Math.min(...sketch.filter((s) => !isEquation(s)).map((s) => editor.getShapePageBounds(s)!.minY));
+      expect(equationTop).toBeLessThan(axesTop);
       // clear of the student's line
       const ink = shapes().filter((s) => !isLiveMeta(s.meta)).map((s) => editor.getShapePageBounds(s)!);
       const work = { x: Math.min(...ink.map((b) => b.x)), y: Math.min(...ink.map((b) => b.y)), r: Math.max(...ink.map((b) => b.x + b.w)), b: Math.max(...ink.map((b) => b.y + b.h)) };
@@ -349,6 +364,16 @@ describe("live loop — the board chat", () => {
         const overlaps = bb.x < work.r && bb.x + bb.w > work.x && bb.y < work.b && bb.y + bb.h > work.y;
         expect(overlaps).toBe(false);
       }
+    });
+
+    it("a problem's cell is the student's working space: a graph asked for on a screen of problems goes on a new screen", async () => {
+      start();
+      await run([{ type: "write_problems", problems: [["2x + 3 = 11"], ["3x = 12"], ["x + 8 = 12"], ["4x = 20"]] }]);
+      const report = await run([{ type: "graph", relations: ["y = x^{2}"] }]);
+      expect(report).toMatchObject({ screensAdded: 1, outcomes: [{ type: "graph", ok: true }] });
+      expect(editor.getPages()).toHaveLength(2);
+      expect(problems()).toEqual([]);
+      expect(tutor().some((s) => (s.meta as Record<string, unknown>)[CHAT_BLOCK_META] === "graph")).toBe(true);
     });
 
     it("draw_figure: the drawer's plan placed in free space; the placeholder drawer draws nothing and says so", async () => {

@@ -518,6 +518,8 @@ export class LiveLoop implements LiveController {
   private columnHeads = new Map<number, ProblemCell>();
   /** a head's lines analysed as a column, per mode (the problem does not change) */
   private readonly headMemo = new Map<string, (LineAnalysis | null)[]>();
+  /** the screen the loop last took in (`start` / `switchScreen`): the chat writes only once it is this one */
+  private screenSeen: string | null = null;
 
   constructor(editor: LiveEditorLike, opts: UseLiveMathOptions, deps: Partial<LiveLoopDeps> = {}) {
     this.editor = editor;
@@ -547,6 +549,7 @@ export class LiveLoop implements LiveController {
     this.lastOnline = this.deps.isOnline();
     this.rebuild();
     this.recount();
+    this.screenSeen = this.pageKey();
     void this.deps
       .getEngine()
       .then((engine) => {
@@ -649,6 +652,7 @@ export class LiveLoop implements LiveController {
   private switchScreen(): void {
     if (!this.started) return;
     this.resetRuntime();
+    this.screenSeen = this.pageKey();
     liveStore.lines.set({});
     liveStore.openHints.set([]);
     clearLiveError();
@@ -3452,7 +3456,7 @@ export class LiveLoop implements LiveController {
           };
         }),
       screen: () => this.placementBounds(),
-      pageId: () => this.editor.getCurrentPage?.()?.id ?? "page",
+      pageId: () => this.pageKey(),
       studentLines: () =>
         Object.values(liveStore.lines.get())
           .filter((s) => s.latex)
@@ -3497,6 +3501,7 @@ export class LiveLoop implements LiveController {
         if (typeof ed.getPages !== "function" || typeof ed.createPage !== "function" || typeof ed.setCurrentPage !== "function" || typeof ed.run !== "function") return false;
         return addScreen(ed as ScreensEditor);
       },
+      screenReady: () => !this.started || this.screenSeen === this.pageKey(),
       clearTutor: () => this.clearMarks(),
       problemsChanged: () => this.refreshProblemColumns(),
       planFigure: (spec, opts) => this.deps.planFigure(spec, opts),
@@ -3504,6 +3509,11 @@ export class LiveLoop implements LiveController {
       delay: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
       metric: (name, data) => clientMetric(name, data),
     };
+  }
+
+  /** The current screen's id ("page" on an editor without screens). */
+  private pageKey(): string {
+    return this.editor.getCurrentPage?.()?.id ?? "page";
   }
 
   /** The current screen as maths, for a chat request: what "more like these" refers to. */
