@@ -2,15 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, MailCheck } from "lucide-react";
+import { ArrowLeft, MailCheck } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { AuthErrorBanner, useAuth } from "@/components/AuthProvider";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { PasswordInput } from "@/components/login/PasswordInput";
-import { FieldError, FormError, INVALID_INPUT } from "@/components/login/formParts";
+import { Alert } from "@/registry/components/alert/alert";
+import { Button } from "@/registry/components/button/button";
+import { Input } from "@/registry/components/input/input";
+import { PasswordField } from "@/registry/components/password-field/password-field";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/registry/components/tabs/tabs";
 import { loginErrorField, loginErrorMessage } from "@/lib/loginErrorMessage";
 import {
   FORM_COPY,
@@ -19,6 +18,7 @@ import {
   type FieldErrors,
   type LoginMode,
 } from "@/lib/loginForm";
+import styles from "./auth.module.css";
 
 const HEADINGS: Record<LoginMode, { title: string; lede: string }> = {
   signin: { title: "Welcome back", lede: "Sign in to open your boards." },
@@ -145,129 +145,95 @@ export function LoginForm() {
 
   if (sent) {
     return (
-      <div data-state={`sent-${sent.kind}`}>
+      <div data-state={`sent-${sent.kind}`} className={styles.state}>
         <AuthErrorBanner className="mb-6" />
-        <div className="mb-5 flex size-11 items-center justify-center rounded-full border bg-muted">
-          <MailCheck className="size-5" aria-hidden />
+        <MailCheck className={styles.stateIcon} size={24} strokeWidth={1.75} aria-hidden />
+        <div className={styles.heading}>
+          <h1 ref={headingRef} tabIndex={-1} className={styles.title}>
+            Check your email
+          </h1>
+          {/* The address gets its own line so a long or hyphenated one never breaks mid-word. */}
+          <p className={styles.lede}>
+            {sent.kind === "confirm-signup"
+              ? "We sent a confirmation link to:"
+              : "If this email has an account, a link to choose a new password is on its way to:"}
+            <span className={styles.address}>{sent.email}</span>
+            {sent.kind === "confirm-signup" && "Open it, then come back here to sign in."}
+          </p>
         </div>
-        <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-semibold tracking-tight outline-none">
-          Check your email
-        </h1>
-        {/* The address gets its own line so a long or hyphenated one never breaks mid-word. */}
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          {sent.kind === "confirm-signup"
-            ? "We sent a confirmation link to:"
-            : "If this email has an account, a link to choose a new password is on its way to:"}
-          <span className="block font-medium text-foreground wrap-anywhere">{sent.email}</span>
-          {sent.kind === "confirm-signup" && "Open it, then come back here to sign in."}
-        </p>
-        <Button variant="outline" size="lg" className="mt-6 w-full" onClick={() => switchMode("signin", "password")}>
+        <Button variant="secondary" size="lg" className={styles.wide} onClick={() => switchMode("signin", "password")}>
           Back to sign in
         </Button>
-        <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-          Nothing after a few minutes? Check your spam folder, or go back and try again.
-        </p>
+        <p className={styles.note}>Nothing after a few minutes? Check your spam folder, or go back and try again.</p>
       </div>
     );
   }
 
-  const emailErrorId = "login-email-error";
-  const passwordErrorId = "login-password-error";
-  const passwordHintId = "login-password-hint";
   const label = SUBMIT_LABEL[mode];
 
   const form = (
-    <form onSubmit={handleSubmit} noValidate aria-busy={busy} className="grid gap-4">
-      <div className="grid gap-2">
-        <Label htmlFor="login-email">Email</Label>
-        <Input
-          ref={emailRef}
-          id="login-email"
-          name="email"
-          type="email"
-          inputMode="email"
-          autoComplete="username"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          placeholder="you@example.com"
-          value={email}
+    <form onSubmit={handleSubmit} noValidate aria-busy={busy} className={styles.form}>
+      <Input
+        ref={emailRef}
+        id="login-email"
+        label="Email"
+        name="email"
+        type="email"
+        inputMode="email"
+        autoComplete="username"
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
+        placeholder="you@example.com"
+        value={email}
+        onChange={(e) => {
+          setEmail(e.target.value);
+          if (fieldErrors.email) setFieldErrors((f) => ({ ...f, email: undefined }));
+          if (formError) setFormError(null);
+        }}
+        readOnly={busy}
+        error={fieldErrors.email}
+        aria-invalid={formError ? true : undefined}
+        aria-describedby={formError ? "login-error" : undefined}
+      />
+
+      {mode !== "forgot" && (
+        <PasswordField
+          ref={passwordRef}
+          id="login-password"
+          label="Password"
+          name="password"
+          autoComplete={mode === "signin" ? "current-password" : "new-password"}
+          value={password}
+          visible={showPassword}
+          onVisibleChange={setShowPassword}
           onChange={(e) => {
-            setEmail(e.target.value);
-            if (fieldErrors.email) setFieldErrors((f) => ({ ...f, email: undefined }));
+            setPassword(e.target.value);
+            if (fieldErrors.password) setFieldErrors((f) => ({ ...f, password: undefined }));
             if (formError) setFormError(null);
           }}
           readOnly={busy}
-          aria-invalid={fieldErrors.email || formError ? true : undefined}
-          aria-describedby={fieldErrors.email ? emailErrorId : formError ? "login-error" : undefined}
-          className={fieldErrors.email ? INVALID_INPUT : undefined}
+          description={mode === "signup" && !fieldErrors.password ? FORM_COPY.newPasswordHint : undefined}
+          error={fieldErrors.password}
+          aria-invalid={formError ? true : undefined}
+          aria-describedby={formError ? "login-error" : undefined}
         />
-        <FieldError id={emailErrorId} message={fieldErrors.email} />
-      </div>
-
-      {mode !== "forgot" && (
-        <div className="grid gap-2">
-          <Label htmlFor="login-password">Password</Label>
-          <PasswordInput
-            ref={passwordRef}
-            id="login-password"
-            name="password"
-            autoComplete={mode === "signin" ? "current-password" : "new-password"}
-            value={password}
-            visible={showPassword}
-            onVisibleChange={setShowPassword}
-            onChange={(e) => {
-              setPassword(e.target.value);
-              if (fieldErrors.password) setFieldErrors((f) => ({ ...f, password: undefined }));
-              if (formError) setFormError(null);
-            }}
-            readOnly={busy}
-            aria-invalid={fieldErrors.password || formError ? true : undefined}
-            aria-describedby={
-              [
-                fieldErrors.password ? passwordErrorId : mode === "signup" ? passwordHintId : null,
-                formError ? "login-error" : null,
-              ]
-                .filter(Boolean)
-                .join(" ") || undefined
-            }
-            className={fieldErrors.password ? INVALID_INPUT : undefined}
-          />
-          {fieldErrors.password ? (
-            <FieldError id={passwordErrorId} message={fieldErrors.password} />
-          ) : (
-            mode === "signup" && (
-              <p id={passwordHintId} className="text-sm text-muted-foreground">
-                {FORM_COPY.newPasswordHint}
-              </p>
-            )
-          )}
-        </div>
       )}
 
-      <FormError id="login-error" message={formError} />
+      {formError && <Alert id="login-error" data-state="error" tone="danger" title={formError} />}
 
-      <Button type="submit" size="lg" className="mt-1 w-full disabled:opacity-80" disabled={busy}>
-        {busy && <Loader2 className="animate-spin" aria-hidden />}
+      <Button type="submit" size="lg" className={styles.submit} loading={busy}>
         {redirecting ? "Opening your boards…" : busy ? label.busy : label.idle}
       </Button>
 
       {mode === "signin" && (
-        <button
-          type="button"
-          onClick={() => switchMode("forgot", "email")}
-          className="justify-self-center rounded-sm text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        >
+        <button type="button" onClick={() => switchMode("forgot", "email")} className={styles.textButton}>
           Forgot your password?
         </button>
       )}
       {mode === "forgot" && (
-        <button
-          type="button"
-          onClick={() => switchMode("signin", "password")}
-          className="inline-flex items-center gap-1.5 justify-self-center rounded-sm text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        >
-          <ArrowLeft className="size-3.5" aria-hidden />
+        <button type="button" onClick={() => switchMode("signin", "password")} className={styles.textButton}>
+          <ArrowLeft size={14} strokeWidth={1.75} aria-hidden />
           Back to sign in
         </button>
       )}
@@ -277,26 +243,24 @@ export function LoginForm() {
   return (
     <div data-state={mode}>
       <AuthErrorBanner className="mb-6" />
-      <div className="mb-6">
-        <h1 ref={headingRef} tabIndex={-1} className="text-2xl font-semibold tracking-tight outline-none">
+      <div className={styles.heading}>
+        <h1 ref={headingRef} tabIndex={-1} className={styles.title}>
           {HEADINGS[mode].title}
         </h1>
-        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{HEADINGS[mode].lede}</p>
+        <p className={styles.lede}>{HEADINGS[mode].lede}</p>
       </div>
 
       {mode === "forgot" ? (
         form
       ) : (
-        <Tabs value={mode} onValueChange={(v) => switchMode(v as LoginMode, null)} className="gap-5">
-          <TabsList className="grid h-10 w-full grid-cols-2">
+        <Tabs value={mode} onValueChange={(v) => switchMode(v as LoginMode, null)}>
+          <TabsList aria-label="Sign in or create an account">
             <TabsTrigger value="signin">Sign in</TabsTrigger>
             <TabsTrigger value="signup">Sign up</TabsTrigger>
           </TabsList>
-          {/* Only the active panel mounts, so this is one form. tabIndex -1: Tab goes from the tabs straight to Email. */}
-          <TabsContent value="signin" tabIndex={-1}>
-            {form}
-          </TabsContent>
-          <TabsContent value="signup" tabIndex={-1}>
+          {/* One panel, always the active tab's, so there is only ever one form (and one "Email" field);
+              forceMount keeps it in place while the tab changes. tabIndex -1: Tab goes from the tabs to Email. */}
+          <TabsContent value={mode} forceMount tabIndex={-1}>
             {form}
           </TabsContent>
         </Tabs>

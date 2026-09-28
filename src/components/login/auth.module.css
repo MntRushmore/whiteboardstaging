@@ -1,0 +1,281 @@
+/* /login and /reset-password: layout and type from Arc's tokens (src/registry/foundation.css). */
+
+/* ---- /login: the product panel beside the form from 1024 px ---------------------------------- */
+.split {
+  min-height: 100dvh;
+  background: var(--background);
+}
+@media (min-width: 1024px) {
+  .split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  }
+}
+
+.panel {
+  display: none;
+}
+@media (min-width: 1024px) {
+  .panel {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    padding: var(--space-10);
+    background: var(--surface-muted);
+  }
+}
+@media (min-width: 1280px) {
+  .panel {
+    padding-inline: var(--space-16);
+  }
+}
+.panelInner {
+  display: flex;
+  width: 100%;
+  max-width: 36rem;
+  flex: 1;
+  flex-direction: column;
+  margin-inline: auto;
+}
+@media (min-width: 1280px) {
+  .panelInner {
+    max-width: 40rem;
+  }
+}
+@media (min-width: 1536px) {
+  .panelInner {
+    max-width: 44rem;
+  }
+}
+.panelBody {
+  margin-block: auto;
+  padding: var(--space-10) 0 var(--space-6);
+}
+.brand {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.headline {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(var(--text-3xl), 3.2vw, var(--text-4xl));
+  font-weight: 500;
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-display);
+  text-wrap: balance;
+}
+.description {
+  max-width: 28rem;
+  margin: var(--space-4) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+.points {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-6) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.points li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.points svg {
+  flex: none;
+  color: var(--text-secondary);
+}
+/* Width follows the viewport height too, so the stack fits on a short laptop screen. */
+.panelPictures {
+  width: min(100% - var(--space-6), (100dvh - 29rem) * 1.38);
+  min-width: 18rem;
+  margin-top: var(--space-10);
+}
+
+.formColumn {
+  display: flex;
+  min-height: 100dvh;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-12) var(--space-4) var(--space-10);
+}
+@media (min-width: 640px) {
+  .formColumn {
+    justify-content: center;
+    padding: var(--space-10) var(--space-6);
+  }
+}
+.formInner {
+  width: 100%;
+  max-width: 25rem;
+}
+
+/* Name and product line above the form where the panel is hidden. */
+.productLine {
+  margin-bottom: var(--space-10);
+}
+@media (min-width: 1024px) {
+  .split .productLine {
+    display: none;
+  }
+}
+.productLineText {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+/* ---- The form ---------------------------------------------------------------------------------- */
+.heading {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+}
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+  font-weight: 400;
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-display);
+  text-wrap: balance;
+}
+.title:focus {
+  outline: none;
+}
+@media (max-width: 479px) {
+  .title {
+    font-size: var(--text-2xl);
+  }
+}
+.lede {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.lede strong {
+  color: var(--foreground);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.form {
+  display: grid;
+  gap: var(--space-4);
+  /* The tab panel around it sets secondary text. */
+  color: var(--foreground);
+}
+.wide {
+  width: 100%;
+}
+.submit {
+  width: 100%;
+  margin-top: var(--space-1);
+}
+
+/* A quiet text action under the form: "Forgot your password?", "Back to sign in". */
+.textButton {
+  display: inline-flex;
+  min-height: var(--control-height-sm);
+  align-items: center;
+  gap: var(--space-2);
+  justify-self: center;
+  border: 0;
+  border-radius: var(--space-2);
+  padding: 0 var(--space-2);
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 4px;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    text-decoration-color var(--duration-fast) var(--ease-standard);
+}
+@media (hover: hover) and (pointer: fine) {
+  .textButton:hover {
+    color: var(--foreground);
+    text-decoration-color: currentColor;
+  }
+}
+
+/* A state that replaces the form: "Check your email", the reset link's states. */
+.state {
+  display: grid;
+  justify-items: start;
+}
+.stateIcon {
+  margin-bottom: var(--space-5);
+  color: var(--text-secondary);
+}
+.stateActions {
+  width: 100%;
+  margin-top: var(--space-6);
+}
+.note {
+  margin: var(--space-4) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+}
+.address {
+  display: block;
+  color: var(--foreground);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.checking {
+  padding: var(--space-8) 0;
+}
+
+/* ---- /reset-password: one card on a quiet page ----------------------------------------------- */
+.centered {
+  display: flex;
+  min-height: 100dvh;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-12) var(--space-4) var(--space-10);
+  background: var(--background);
+}
+@media (min-width: 640px) {
+  .centered {
+    justify-content: center;
+    padding: var(--space-10) var(--space-6);
+    background: var(--surface-muted);
+  }
+}
+.centeredInner {
+  width: 100%;
+  max-width: 27.5rem;
+}
+.centered .productLine {
+  margin-bottom: var(--space-10);
+}
+@media (min-width: 640px) {
+  .centered .productLine {
+    margin-bottom: var(--space-6);
+    padding-inline: var(--space-1);
+  }
+  .card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-surface);
+    padding: var(--space-8);
+    background: var(--surface);
+  }
+  /* A card heading: one step down from the page heading, so it fits the 440 px card on one line. */
+  .card .title {
+    font-size: var(--text-2xl);
+  }
+}

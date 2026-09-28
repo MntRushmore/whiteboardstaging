@@ -1,0 +1,62 @@
+/* The small card hangs off the big one's bottom-right corner; the margins reserve its overhang. */
+.figure {
+  --overhang: var(--space-6);
+  position: relative;
+  /* Longhands only: a caller sets margin-top. */
+  margin-right: var(--overhang);
+  margin-bottom: var(--overhang);
+  margin-left: 0;
+}
+.compact {
+  --overhang: var(--space-4);
+  max-width: 24rem;
+}
+
+.solved,
+.checked {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.solved {
+  border-radius: 20px;
+}
+/* The one layer that floats over another, so the one raised shadow. */
+.checked {
+  position: absolute;
+  right: calc(var(--overhang) * -1);
+  bottom: calc(var(--overhang) * -1);
+  width: 44%;
+  border-radius: 14px;
+  box-shadow: var(--shadow-raised);
+}
+.compact .checked {
+  width: 42%;
+}
+
+.image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Once, as the welcome appears: the ticked steps settle onto the solved board. */
+@media (prefers-reduced-motion: no-preference) {
+  .entrance .solved {
+    animation: pictures-fade var(--duration-considered) var(--ease-enter) both;
+  }
+  .entrance .checked {
+    animation: pictures-rise var(--duration-spring) var(--ease-spring) 180ms both;
+  }
+}
+@keyframes pictures-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes pictures-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+}
