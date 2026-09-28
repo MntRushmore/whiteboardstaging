@@ -5,14 +5,16 @@
   "drawingOut": 0,
   "strayLines": 1890,
   "labelsAttached": 0,
-  "labels": 9000
+  "labels": 9000,
+  "bars": 0
  },
  "after": {
   "mathIntact": 2847,
   "drawingOut": 2880,
   "strayLines": 18,
   "labelsAttached": 8951,
-  "labels": 9000
+  "labels": 9000,
+  "bars": 0
  },
  "byDrawing": [
   {
@@ -24,14 +26,16 @@
     "drawingOut": 0,
     "strayLines": 336,
     "labelsAttached": 0,
-    "labels": 1800
+    "labels": 1800,
+    "bars": 0
    },
    "after": {
     "mathIntact": 360,
     "drawingOut": 360,
     "strayLines": 0,
     "labelsAttached": 1800,
-    "labels": 1800
+    "labels": 1800,
+    "bars": 0
    },
    "kinds": [
     "triangle"
@@ -46,14 +50,16 @@
     "drawingOut": 0,
     "strayLines": 216,
     "labelsAttached": 0,
-    "labels": 1080
+    "labels": 1080,
+    "bars": 0
    },
    "after": {
     "mathIntact": 360,
     "drawingOut": 360,
     "strayLines": 0,
     "labelsAttached": 1080,
-    "labels": 1080
+    "labels": 1080,
+    "bars": 0
    },
    "kinds": [
     "triangle"
@@ -68,14 +74,16 @@
     "drawingOut": 0,
     "strayLines": 219,
     "labelsAttached": 0,
-    "labels": 1080
+    "labels": 1080,
+    "bars": 0
    },
    "after": {
     "mathIntact": 343,
     "drawingOut": 360,
     "strayLines": 0,
     "labelsAttached": 1065,
-    "labels": 1080
+    "labels": 1080,
+    "bars": 0
    },
    "kinds": [
     "triangle"
@@ -90,14 +98,16 @@
     "drawingOut": 0,
     "strayLines": 216,
     "labelsAttached": 0,
-    "labels": 720
+    "labels": 720,
+    "bars": 0
    },
    "after": {
     "mathIntact": 360,
     "drawingOut": 360,
     "strayLines": 0,
     "labelsAttached": 720,
-    "labels": 720
+    "labels": 720,
+    "bars": 0
    },
    "kinds": [
     "circle"
@@ -112,14 +122,16 @@
     "drawingOut": 0,
     "strayLines": 212,
     "labelsAttached": 0,
-    "labels": 2520
+    "labels": 2520,
+    "bars": 0
    },
    "after": {
     "mathIntact": 360,
     "drawingOut": 360,
     "strayLines": 0,
     "labelsAttached": 2520,
-    "labels": 2520
+    "labels": 2520,
+    "bars": 0
    },
    "kinds": [
     "numberLine",
@@ -135,14 +147,16 @@
     "drawingOut": 0,
     "strayLines": 261,
     "labelsAttached": 0,
-    "labels": 1080
+    "labels": 1080,
+    "bars": 0
    },
    "after": {
     "mathIntact": 357,
     "drawingOut": 360,
     "strayLines": 17,
     "labelsAttached": 1060,
-    "labels": 1080
+    "labels": 1080,
+    "bars": 0
    },
    "kinds": [
     "axes"
@@ -157,14 +171,16 @@
     "drawingOut": 0,
     "strayLines": 213,
     "labelsAttached": 0,
-    "labels": 0
+    "labels": 0,
+    "bars": 0
    },
    "after": {
     "mathIntact": 360,
     "drawingOut": 360,
     "strayLines": 0,
     "labelsAttached": 0,
-    "labels": 0
+    "labels": 0,
+    "bars": 0
    },
    "kinds": [
     "arrow"
@@ -179,14 +195,16 @@
     "drawingOut": 0,
     "strayLines": 217,
     "labelsAttached": 0,
-    "labels": 720
+    "labels": 720,
+    "bars": 0
    },
    "after": {
     "mathIntact": 347,
     "drawingOut": 360,
     "strayLines": 1,
     "labelsAttached": 706,
-    "labels": 720
+    "labels": 720,
+    "bars": 0
    },
    "kinds": [
     "quadrilateral"
@@ -202,14 +220,16 @@
     "drawingOut": 0,
     "strayLines": 47,
     "labelsAttached": 0,
-    "labels": 1800
+    "labels": 1800,
+    "bars": 0
    },
    "after": {
     "mathIntact": 559,
     "drawingOut": 576,
     "strayLines": 0,
     "labelsAttached": 1785,
-    "labels": 1800
+    "labels": 1800,
+    "bars": 0
    }
   },
   {
@@ -220,14 +240,16 @@
     "drawingOut": 0,
     "strayLines": 50,
     "labelsAttached": 0,
-    "labels": 1800
+    "labels": 1800,
+    "bars": 0
    },
    "after": {
     "mathIntact": 560,
     "drawingOut": 576,
     "strayLines": 18,
     "labelsAttached": 1766,
-    "labels": 1800
+    "labels": 1800,
+    "bars": 0
    }
   },
   {
@@ -238,14 +260,16 @@
     "drawingOut": 0,
     "strayLines": 593,
     "labelsAttached": 0,
-    "labels": 1800
+    "labels": 1800,
+    "bars": 0
    },
    "after": {
     "mathIntact": 576,
     "drawingOut": 576,
     "strayLines": 0,
     "labelsAttached": 1800,
-    "labels": 1800
+    "labels": 1800,
+    "bars": 0
    }
   },
   {
@@ -256,14 +280,16 @@
     "drawingOut": 0,
     "strayLines": 600,
     "labelsAttached": 0,
-    "labels": 1800
+    "labels": 1800,
+    "bars": 0
    },
    "after": {
     "mathIntact": 576,
     "drawingOut": 576,
     "strayLines": 0,
     "labelsAttached": 1800,
-    "labels": 1800
+    "labels": 1800,
+    "bars": 0
    }
   },
   {
@@ -274,19 +300,21 @@
     "drawingOut": 0,
     "strayLines": 600,
     "labelsAttached": 0,
-    "labels": 1800
+    "labels": 1800,
+    "bars": 0
    },
    "after": {
     "mathIntact": 576,
     "drawingOut": 576,
     "strayLines": 0,
     "labelsAttached": 1800,
-    "labels": 1800
+    "labels": 1800,
+    "bars": 0
    }
   }
  ],
  "writing": {
-  "lines": 3620,
+  "lines": 3696,
   "misread": [],
   "regrouped": 0
  },
@@ -344,5 +372,118 @@
   "axesAndLine/left, close/x0.7/messy/\\frac{x}{2} + 3 = 7",
   "axesAndLine/left, close/x0.7/messy/2x + 3 > 11",
   "rectangle/left, close/x1.4/messy/x + 40 + 65 = 180"
- ]
+ ],
+ "divisionBars": {
+  "scenes": 456,
+  "bars": {
+   "total": 320,
+   "found": 320,
+   "linesIntact": 320
+  },
+  "lookalikes": {
+   "total": 136,
+   "taken": 0
+  },
+  "byKind": [
+   {
+    "kind": "bar, divisor (student's line)",
+    "bar": true,
+    "scenes": 80,
+    "right": 80,
+    "linesIntact": 80
+   },
+   {
+    "kind": "bar, divisor, next line (student's line)",
+    "bar": true,
+    "scenes": 80,
+    "right": 80,
+    "linesIntact": 80
+   },
+   {
+    "kind": "an underline, nothing under it (student's line)",
+    "bar": false,
+    "scenes": 20,
+    "right": 20,
+    "linesIntact": 20
+   },
+   {
+    "kind": "a rule with a line of maths under it (student's line)",
+    "bar": false,
+    "scenes": 20,
+    "right": 20,
+    "linesIntact": 20
+   },
+   {
+    "kind": "a number line under it (student's line)",
+    "bar": false,
+    "scenes": 20,
+    "right": 20,
+    "linesIntact": 20
+   },
+   {
+    "kind": "bar, divisor (tutor's problem)",
+    "bar": true,
+    "scenes": 80,
+    "right": 80,
+    "linesIntact": 80
+   },
+   {
+    "kind": "bar, divisor, next line (tutor's problem)",
+    "bar": true,
+    "scenes": 80,
+    "right": 80,
+    "linesIntact": 80
+   },
+   {
+    "kind": "an underline, nothing under it (tutor's problem)",
+    "bar": false,
+    "scenes": 20,
+    "right": 20,
+    "linesIntact": 20
+   },
+   {
+    "kind": "a rule with a line of maths under it (tutor's problem)",
+    "bar": false,
+    "scenes": 20,
+    "right": 20,
+    "linesIntact": 20
+   },
+   {
+    "kind": "a number line under it (tutor's problem)",
+    "bar": false,
+    "scenes": 20,
+    "right": 20,
+    "linesIntact": 20
+   },
+   {
+    "kind": "a proof's T-table",
+    "bar": false,
+    "scenes": 4,
+    "right": 4,
+    "linesIntact": 4
+   },
+   {
+    "kind": "a fraction bar in the student's line",
+    "bar": false,
+    "scenes": 4,
+    "right": 4,
+    "linesIntact": 4
+   },
+   {
+    "kind": "a fraction bar under an equation's side",
+    "bar": false,
+    "scenes": 4,
+    "right": 4,
+    "linesIntact": 4
+   },
+   {
+    "kind": "long division",
+    "bar": false,
+    "scenes": 4,
+    "right": 4,
+    "linesIntact": 4
+   }
+  ],
+  "failures": []
+ }
 }

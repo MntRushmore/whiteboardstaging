@@ -12,10 +12,43 @@
 | drawing kept out of every line | 0 / 2880 (0%) | 2880 / 2880 (100%) |
 | stray lines (no maths in them: a wasted recognizer call each) | 1890 | 18 |
 | labels attached to their drawing | — | 8951 / 9000 (99%) |
+| drawings taken for a division bar | — | 0 |
+
+## Division bars
+
+"Divide both sides by n" drawn as a bar under the whole equation with n under it (`divisionBars` in
+`src/lib/live/diagrams.ts`): under the student's own line, or under a problem the tutor wrote (its box only, as
+`SplitOptions.equations`), with the next line written under it or not, in every hand, the divisors
+`2`, `-3`, `4`, `\frac{1}{2}` under `2x + 3 = 11`, `2 \sin x = 1`, `4x - 7 = 13`, `2x + 3 > 11`, `5x = 2x + 9` — and the rules under an equation that are not one.
+
+|  | right |
+| --- | --- |
+| division bars found, with exactly their divisor | 320 / 320 (100%) |
+| … and the student's own lines each one line of exactly their strokes | 320 / 320 |
+| look-alikes taken for a division bar | 0 / 136 |
+
+| scene | a bar? | scenes | right | lines intact |
+| --- | --- | --- | --- | --- |
+| bar, divisor (student's line) | yes | 80 | 80 | 80 |
+| bar, divisor, next line (student's line) | yes | 80 | 80 | 80 |
+| an underline, nothing under it (student's line) | no | 20 | 20 | 20 |
+| a rule with a line of maths under it (student's line) | no | 20 | 20 | 20 |
+| a number line under it (student's line) | no | 20 | 20 | 20 |
+| bar, divisor (tutor's problem) | yes | 80 | 80 | 80 |
+| bar, divisor, next line (tutor's problem) | yes | 80 | 80 | 80 |
+| an underline, nothing under it (tutor's problem) | no | 20 | 20 | 20 |
+| a rule with a line of maths under it (tutor's problem) | no | 20 | 20 | 20 |
+| a number line under it (tutor's problem) | no | 20 | 20 | 20 |
+| a proof's T-table | no | 4 | 4 | 4 |
+| a fraction bar in the student's line | no | 4 | 4 | 4 |
+| a fraction bar under an equation's side | no | 4 | 4 | 4 |
+| long division | no | 4 | 4 | 4 |
+
+Every scene right.
 
 ## The writing stays writing
 
-Every line of the maths corpus (src/__eval__/corpus.ts) written in every hand (clean, slanted, steep, messy): 3620 lines — fraction bars, long `=`, radicals, integral signs, `\left( \right)`, matrices, cases — split on its own.
+Every line of the maths corpus (src/__eval__/corpus.ts) written in every hand (clean, slanted, steep, messy): 3696 lines — fraction bars, long `=`, radicals, integral signs, `\left( \right)`, matrices, cases — split on its own.
 
 | strokes taken for a drawing, mark or label | lines regrouped by the split |
 | --- | --- |

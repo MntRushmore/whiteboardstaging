@@ -175,8 +175,8 @@ The client maps `unauthorized` to a redirect to `/login`, `rate_limited` to a re
 ```
 pen-up (draw.isComplete false→true, source 'user')
   → quiet gate 600 ms (450 ms on rewrite)      src/lib/live/liveLoop.ts (a stroke plainly a drawing does not push it back)
-  → splitInk → drawings (+ marks, labels) out   diagrams.ts: only handwriting goes on
-  → clusterLines(writing) → InkLine[]           strokeClusters.ts (union-find, fraction bars, columns)
+  → splitInk → drawings (+ marks, labels) out   diagrams.ts: only handwriting goes on (+ division bars, a line each)
+  → clusterLines(writing) → InkLine[]           strokeClusters.ts (union-find, fraction bars, operation rows, columns)
   → buildPayload → normalized ints + sha-1      strokePayload.ts (cache hit → skip network)
   → POST /api/live/recognize                    Mathpix v3/strokes ▸ vision fallback
   → engine.analyzeLine (mathjs, offline)        src/lib/live/engine/**
@@ -378,8 +378,9 @@ hand — maths only. History is kept in memory per board for the session.
   at the problems — work in two cells is never one column — and each column under a problem has it as
   its head (`chat/cells.ts`): `columnContext` starts from it, so the student's first line gets its tick
   or ring exactly as under their own problem; `rightNextStep` corrects a wrong first line from it; and
-  `buildCheckLines` sends it to the check model as the column's first line. Writing problems, or rubbing
-  one out, re-reads the columns.
+  `buildCheckLines` sends it to the check model as the column's first line. A bar the student draws
+  under a one-line problem with a number under it is "divide both sides" (`problemEquations` →
+  `splitInk`'s `equations`; "Drawings" below). Writing problems, or rubbing one out, re-reads the columns.
 - **Measured** by `npm run eval:chat` (`docs/eval/chat.md`; 38 requests, gated by `RUN_CHAT_EVAL=1`,
   under a $0.60 cap): gpt-5.4-mini did all 38 as asked, every one of its 70 problems verified, 5 of 5
   figures clean (2 after the repair), 2.3 s p50, ~$0.0011 a request; the DeepSeek fallback matched it
@@ -466,6 +467,21 @@ screen with only a drawing on it has a scale):
   line of maths, and keeps every stroke. From such a line only labels the clusterer ran into it are
   taken back: those inside the drawing's span with the line outside it, or one at the line's end on
   the drawing's side cut off by a gap wider than any inside the line.
+- *Division bars ("divide both sides", `divisionBars`).* Before any of that, a long level rule under
+  a WHOLE equation with a short piece of writing just under it and nothing else on it is set aside:
+  under the student's own line (writing above it holding a free-standing relation, spanned by the
+  rule, nothing level with the rule past its ends — a fraction bar inside a line has the rest of
+  the line level with it), or under a problem the tutor wrote (`splitInk`'s `equations`: the loop
+  passes the box of each one-line problem that is an equation or inequality, `problemEquations`;
+  the problem's ink is not among the strokes, so the rule used to be a drawing and the `2` its
+  label). The bar and the divisor are one line of their own (`InkSplit.bars`, `clusterLines`'
+  `fixed` groups). Mathpix drops the bar and reads the divisor (`2`, `-3`: measured), and the loop
+  writes the line as `\div 2` (`barDivisionLatex`) — an operation line (below, "Operation lines").
+  Not one: an underline with nothing under it, a rule with a line of maths under it (the sum under
+  a system), a number line (ticks), a T-table (`tableRules` first), a fraction bar, long division.
+  `npm run eval:drawings` scores it: 320/320 bars found (2, -3, 4, ½ under five equations, the
+  student's or the tutor's, with and without the next line under them, four hands), 0/136
+  look-alikes taken, no drawing beside maths taken for one.
 
 Behaviour: a drawing is never recognized, never marked (no tick, ring or "?"), never joined to a
 line, and does not count as writing maths — a stroke plainly a drawing (a long diagonal, a big shape)
@@ -680,6 +696,8 @@ Reasons` header or a drawn T-table.
 | A trig equation in `x` at a non-special value (`\tan x = \frac{3}{4}`) | `x` is a trig equation's unknown (every angle in a turn); a capital, a named angle or a Greek letter (`\tan\theta = \frac{3}{4}`) is an angle of a triangle and gets its principal value |
 
 Bound variables are bound: the `dx` of a definite integral, the variable of a limit and the index of a sum are removed from a line's free variables, so `\int_0^1 x^2 dx =` is a closed expression the engine answers, not an expression in `x` (an indefinite integral's `x` stays free: its answer is a function of `x`). A trailing `=` on any of the above follows the same rule as `36 + 2 =` — the value is revealed in answer mode only.
+
+**Operation lines (`engine/operationLine.ts`, line kind `operation`).** What a class writes under an equation to say what it does to both sides next: the same operation and operand under each side (`-3 \quad -3`, `+5+5`, `-2x - 2x`, `\div 2 \div 2`, `/2 \quad /2`, `\times 3 \times 3`, `\cdot 3 \cdot 3`, three under a chain), or a divisor or factor once (`\div 2`, `/2`, `\frac{}{2}`, `\overline{2}`, `\times 3`, and a division bar's read, above). Mathpix's reads, measured on the tutor's hand writing as the student (39 calls): `-3` under each side → `\begin{array}{ll} -3 & -3 \end{array}`, `-3 \quad-3` or `\text { -3 -3 }`; `÷2 ÷2` → `\div 2 \div 2`; `×3 ×3` → `\times 3 \times 3`; `+5 +5` → `+5+5`; a bar with `2` under it → `2`; `/2 /2` → `1212` (the hand's slash is a 1; one leaning well over reads `/ 2 \quad / 2`); `·3 ·3` → `3.3` (never taken for one). `analyzeLine` asks it first; a sum or difference counts only under an equation or inequality (`-3 - 3` alone is -6). Against the relation above (the tutor's problem counts): `ok` for the same valid operation on every side, `mismatch` for two different operands (`-3 \quad -4`) under a LINEAR relation or × / ÷ by 0, `none` for two different operands under anything else (a quadratic, trig, a log, a root, a rational: `-2 \quad -5` under `x^2 - 7x + 10 = 0` is a factor pair, scratch — still an operation line, so the next line keeps the equation above as its context; `linearRelation`), `none` by a letter (it may be 0) or with the wrong number of operands; dividing an inequality by a negative is fine — the next line must turn the sign, and its own check says whether it did. The line after it is checked against the equation ABOVE it (`columnContext`, `localSolve`'s `contextAbove` skip operation lines), so an equivalent next line is ticked whether or not it is what the operation gives; `lastGoodLineAbove`, `buildCheckLines` (the model never sees one), Solve's column and target skip them too, and `localSolve` takes them out. `operationResult` works out the relation the operation leads to (`2x + 3 = 11`, `-3 \quad -3` → `2x = 8`; `2\sin x = 1`, `\div 2` → `\sin x = \frac{1}{2}`; `-2x < 6` ÷ −2 → `x > -3`): in Suggest and Solve, once the student stops, the tutor writes it under a right operation line with nothing under it (`writeOperationResults`, `meta.operationResult`; gone when the operation changes). The pieces of an operation row are one line however far apart the sides are (`mergeOperationRows` in `strokeClusters.ts`: short pieces starting with a `-`, `+` or `÷` bar, level, under one line). Scoreboard: `op-01`…`op-10` in `src/__eval__/corpus.ts`.
 
 **Calculus steps (`engine/calculus.ts`).** `latex.ts` reads `\frac{d}{dx}` (also `\frac{\mathrm{d}}{\mathrm{d} x}`, `\operatorname{d}`, `d x`), `\int … dx` (also `\mathrm{~d} x`), `\lim_{x \to a}` (also `\rightarrow`, `\infty`) and `\left[F\right]_a^b` into `derivative()`, `integral()`/`antiderivative()`, `limit()` and `bracketEval()`; `calculus.ts` registers the last three on the mathjs instance and answers all four with the lines a teacher writes. The board asks for them through the existing contract only: `simplifySteps` (a calculus expression, with or without a trailing `=`; drawn as `= …` lines), `solveFromLines` (`\frac{dy}{dx}` / `f'(2)` under a definition, and any calculus line under other work, so a system above never answers it) and `analyzeLine(…).resultLatex` (the last line, e.g. `6x + 2`, `\ln 2`, `\frac{x^{3}}{3} + C`). Every result is checked numerically before it is returned — a derivative against a central difference, an antiderivative by differentiating it back, a definite integral against Simpson, a limit against the function near the point — so a bug becomes no answer, never a wrong line. The techniques live beside it and hook in through `CalculusDeps` (`integrate`, `integrateDefinite`, `limit`: `integration.ts`, `limits.ts`), tried only when calculus.ts's own rules have nothing and checked by it the same way; they share its expression tree, printer and exact values. A step that is a relation of its own — `u = x^{2} + 1`, `du = 2x \, dx`, the parts, `A = \frac{1}{2}, \ B = -\frac{1}{2}`, `y = x^{x}` — is drawn as it stands; every other line continues the question with `=` (`continueLine` in `engine/solution.ts`, used by `localAnswerStep`).
 

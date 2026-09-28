@@ -538,6 +538,23 @@ export const BASE_CORPUS: readonly EvalProblem[] = [
   { id: "t2-49", topic: "derivative", lines: ["\\frac{d^{3}}{dx^{3}} x^{5} ="], expect: { answer: "60x^{2}" }, note: "each earlier stage under the derivatives still to take" },
   { id: "t2-50", topic: "derivative", lines: ["x^{2} + y^{2} = 25", "\\frac{dy}{dx} ="], expect: { answer: "-\\frac{x}{y}" }, note: "implicit differentiation" },
   { id: "t2-51", topic: "derivative", lines: ["\\frac{d}{dx} x^{x} ="], expect: { answer: "x^{x}(\\ln x + 1)" }, note: "logarithmic differentiation" },
+
+  // ---------------------------------------------------------------- operation lines (`engine/operationLine.ts`)
+  // What a class writes under an equation to say what it does to both sides next, as Mathpix
+  // read the ink. Solve takes the operation line out and solves the equation above it; the line
+  // after one is checked against that equation. `oracle`: the problem without the operation line.
+  { id: "op-01", topic: "linear", lines: ["2x + 3 = 11", "\\begin{array}{ll}\n-3 & -3\n\\end{array}"], expect: { values: { x: [4] } }, oracle: ["2x + 3 = 11"], note: "`-3` under each side, as Mathpix read it" },
+  { id: "op-02", topic: "linear", lines: ["2x + 3 = 11", "-3 \\quad-3", "2x = 8"], expect: { values: { x: [4] } }, oracle: ["2x + 3 = 11"], note: "the line after the operation line" },
+  { id: "op-03", topic: "linear", lines: ["2x = 8", "\\div 2 \\div 2"], expect: { values: { x: [4] } }, oracle: ["2x = 8"] },
+  { id: "op-04", topic: "linear", lines: ["\\frac{x}{3} = 4", "\\times 3 \\times 3"], expect: { values: { x: [12] } }, oracle: ["\\frac{x}{3} = 4"] },
+  { id: "op-05", topic: "linear", lines: ["x - 5 = 2", "+5+5"], expect: { values: { x: [7] } }, oracle: ["x - 5 = 2"] },
+  { id: "op-06", topic: "linear", lines: ["5x = 2x + 9", "-2 x-2 x"], expect: { values: { x: [3] } }, oracle: ["5x = 2x + 9"] },
+  { id: "op-07", topic: "linear", lines: ["x + \\frac{1}{2} = 3", "-\\frac{1}{2} \\quad-\\frac{1}{2}"], expect: { values: { x: [5 / 2] } }, oracle: ["x + \\frac{1}{2} = 3"] },
+  { id: "op-08", topic: "inequality", lines: ["-2x < 6", "\\div (-2) \\quad \\div (-2)"], expect: { answer: "x > -3" }, oracle: ["-2x < 6"], note: "dividing by a negative: the next line turns the sign" },
+  { id: "op-09", topic: "trig-equation", lines: ["2 \\sin x = 1", "\\div 2"], expect: { values: { x: [Math.PI / 6, (5 * Math.PI) / 6] }, answer: "x = 30^{\\circ}, \\ x = 150^{\\circ}", interval: { lo: 0, hi: 2 * Math.PI } }, oracle: ["2 \\sin x = 1"], note: "a bar under the equation with 2 under it (`\\div 2`, `barDivisionLatex`)" },
+  { id: "op-11", topic: "quadratic", lines: ["x^{2} - 7x + 10 = 0", "-2 \\quad -5", "(x - 2)(x - 5) = 0"], expect: { values: { x: [2, 5] } }, oracle: ["x^{2} - 7x + 10 = 0"], note: "a factor pair under a quadratic: scratch, not an operation that went wrong" },
+  { id: "op-12", topic: "quadratic", lines: ["x^{2} - 7x + 10 = 0", "-10 \\quad -10"], expect: { values: { x: [2, 5] } }, oracle: ["x^{2} - 7x + 10 = 0"], note: "the same operand twice under a quadratic: an operation" },
+  { id: "op-10", topic: "trig-equation", lines: ["2 \\sin x = 1", "\\div 2", "\\sin x = \\frac{1}{2}"], expect: { values: { x: [Math.PI / 6, (5 * Math.PI) / 6] }, answer: "x = 30^{\\circ}, \\ x = 150^{\\circ}", interval: { lo: 0, hi: 2 * Math.PI } }, oracle: ["2 \\sin x = 1"] },
 ];
 
 /** Every problem on the scoreboard: the original set, then the course files. */

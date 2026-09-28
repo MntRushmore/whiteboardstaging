@@ -121,7 +121,8 @@ import {
 import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient";
 import { assignColumns, clusterLines, rebuildFromMathShapes, unionRects, type EchoShapeSeed } from "./strokeClusters";
 import { buildPayload, hashPayload } from "./strokePayload";
-import { DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type InkSplit } from "./diagrams";
+import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type InkSplit } from "./diagrams";
+import { barDivisionLatex } from "./engine/operationLine";
 import { figureAnswer, labelKey, looksLikeUnknown } from "./figure";
 import { HAND_LINE_META } from "./handwriting";
 import { requestProof } from "./proof/client";
@@ -298,6 +299,8 @@ const SOLVED_META = "solvedLatex";
 const AI_WARN_META = "aiWarnLatex";
 /** on the tutor's handwritten next step beside a wrong line: the wrong line's LaTeX it answers */
 const SUGGEST_META = "suggestFor";
+/** the equation written under a right operation line (`-3 \quad -3` → `2x = 8`): what it was written for */
+const OPERATION_RESULT_META = "operationResult";
 /** on the strokes of a tutor's mark (tick / ring / question mark): its `markKey` */
 const MARK_META = "mark";
 const ANSWER_ANCHORS_META = "answerAnchors";
@@ -510,6 +513,8 @@ export class LiveLoop implements LiveController {
   private readonly proofs: ProofDesk;
   /** the strokes of a proof's T-table (`splitInk` role `table`): the tutor's rows are written across them */
   private tableStrokeIds = new Set<string>();
+  /** division bars under an equation (`splitInk`): a line holding one is read as `\div n` */
+  private barStrokeIds = new Set<string>();
 
   /** the board chat's hand: its actions, one block at a time (`src/lib/live/chat/desk.ts`) */
   private readonly chat: ChatDesk;
@@ -1006,6 +1011,8 @@ export class LiveLoop implements LiveController {
     const waiting = [...this.pendingSuggestions];
     this.pendingSuggestions.clear();
     for (const lineId of waiting) this.suggestNextStep(lineId);
+    // ...and so is the equation a right operation line leads to (`-3 \quad -3` → `2x = 8`)
+    this.writeOperationResults();
     // and so is a graph (Solve only): `y = 2x + 1`, a system, a finished inequality's number line
     this.drawWantedGraphs();
     // A drawing's labels are its context, not something to answer: read once the student has
@@ -1130,11 +1137,12 @@ export class LiveLoop implements LiveController {
     const force = new Set(this.forceRecognize);
     this.forceRecognize.clear();
     const ink = this.collectInk();
-    // Drawings (and their marks and labels) first: only handwriting is grouped into lines.
+    // Drawings (and their marks and labels) first: only handwriting is grouped into lines. A bar
+    // under an equation with a number under it ("divide both sides") is a line of its own.
     const { split, touched: drawn } = this.splitDrawings(ink, dirty);
     const prevStates = liveStore.lines.get();
     const prevLines = Object.values(prevStates).map((s) => s.line);
-    const lines = this.withProblemColumns(clusterLines(split.writing, prevLines));
+    const lines = this.withProblemColumns(clusterLines(split.writing, prevLines, barGroups(split.bars, ink)));
     const nextIds = new Set(lines.map((l) => l.id));
 
     for (const prev of prevLines) if (!nextIds.has(prev.id)) this.dropLine(prev.id);
@@ -1167,11 +1175,13 @@ export class LiveLoop implements LiveController {
    * tutor's answer about it with it. Returns the split and the drawing `dirty` touched, if any.
    */
   private splitDrawings(ink: InkStroke[], dirty: ReadonlySet<string>): { split: InkSplit; touched: Diagram | null } {
-    const split = splitInk(ink, this.diagrams);
+    // the tutor's problems are equations a division bar may be drawn under (their ink is not ink here)
+    const split = splitInk(ink, this.diagrams, { equations: this.problemEquations() });
     const gone = this.diagrams.filter((d) => !split.diagrams.some((n) => n.id === d.id));
     this.diagrams = split.diagrams;
     this.glyph = split.glyph;
     this.tableStrokeIds = new Set([...split.roles].filter(([, v]) => v.role === "table").map(([id]) => id));
+    this.barStrokeIds = new Set(split.bars.map((b) => b.bar));
     for (const d of gone) {
       this.labelsOf.delete(d.id);
       if (this.editor.getCurrentPageShapes().some((s) => isLiveMeta(s.meta) && s.meta.lineId === d.id)) this.deleteLineShapes(d.id);
@@ -1426,8 +1436,12 @@ export class LiveLoop implements LiveController {
   private async applyRecognition(lineId: string, res: RecognizeResponse, reread: string | null = null): Promise<void> {
     const state = liveStore.lines.get()[lineId];
     if (!state) return;
-    if (reread) setLine(lineId, { latex: reread, confidence: Math.max(res.confidence, LIVE_LIMITS.minConfidence), provider: "reread" });
-    else setLine(lineId, { latex: res.latex, confidence: res.confidence, provider: res.provider });
+    // a division bar and the number under it: Mathpix drops the bar and reads `2` — the line is
+    // "divide both sides by 2" (`engine/operationLine.ts`)
+    const read = reread ?? res.latex;
+    const latex = state.line.strokeIds.some((id) => this.barStrokeIds.has(id)) ? (barDivisionLatex(read) ?? read) : read;
+    if (reread) setLine(lineId, { latex, confidence: Math.max(res.confidence, LIVE_LIMITS.minConfidence), provider: "reread" });
+    else setLine(lineId, { latex, confidence: res.confidence, provider: res.provider });
     await this.ensureEngine();
     this.analyzeAndRender(lineId, { cascade: true });
   }
@@ -1547,7 +1561,9 @@ export class LiveLoop implements LiveController {
     let previous: LineAnalysis | undefined;
     let original: LineAnalysis | undefined;
     const take = (a: LineAnalysis | null | undefined) => {
-      if (!a || a.kind === "label" || a.kind === "incomplete" || a.kind === "unknown") return;
+      // an operation line (`-3 \quad -3`, a bar with a 2 under it) says what the next line does: that
+      // line is checked against the equation above it (`engine/operationLine.ts`)
+      if (!a || a.kind === "label" || a.kind === "incomplete" || a.kind === "unknown" || a.kind === "operation") return;
       previous = a;
       if (!original && (a.kind === "equation" || a.kind === "inequality")) original = a;
     };
@@ -1571,6 +1587,17 @@ export class LiveLoop implements LiveController {
       if (b) shapes.push({ block: handBlockOf(s.meta), meta: s.meta, bounds: boxToRect(b) });
     }
     return readProblemCells(shapes);
+  }
+
+  /**
+   * The chat's one-line problems that are an equation or an inequality, as the box of their ink:
+   * a bar the student draws under one, with a number under it, is "divide both sides"
+   * (`splitInk`'s `equations`), though the problem's ink is not the student's.
+   */
+  private problemEquations(): Rect[] {
+    return this.problemCells()
+      .filter((c) => c.lines.length === 1 && /=|<|>|\\[lg]eq?(?![a-zA-Z])/.test(c.lines[0]))
+      .map((c) => c.head);
   }
 
   /** `lines` with the columns split at the chat's problems; remembers which problem heads which column. */
@@ -1733,6 +1760,7 @@ export class LiveLoop implements LiveController {
     const rt = this.runtime(lineId);
     // The line changed under an answer the tutor had already written: that answer is stale.
     this.dropStaleAnswer(state);
+    this.dropStaleOperationResult(state);
     // Its column's graph follows its maths: erased when that changed, sketched when wanted (Solve, settled).
     if (!opts.keepStatus && !decision.capped) this.syncGraph(state.line.column);
     if (!decision.echo) {
@@ -1950,7 +1978,7 @@ export class LiveLoop implements LiveController {
    * `2x + 3 > 11` is solved, its answer `x > 4` is part of the column and its number line stays.
    */
   private columnGraphLines(column: number): { states: LiveLineState[]; lines: string[] } {
-    const states = this.columnLines(column).filter((s) => s.latex);
+    const states = this.columnLines(column).filter((s) => s.latex && !isOperationLine(s));
     const ids = new Set<string>(states.map((s) => s.line.id));
     const typeset: Array<{ latex: string; y: number }> = [];
     const hand: TLShape[] = [];
@@ -2226,7 +2254,9 @@ export class LiveLoop implements LiveController {
 
   // ---------------------------------------------------------------- LLM check
   private buildCheckLines(column: number): { lines: CheckLine[]; region: Rect; states: LiveLineState[] } | null {
-    const states = this.columnLines(column).filter((s) => s.latex);
+    // an operation line (`-3 \quad -3`) is not a line of working for a model to check or to
+    // solve from: the line after it follows from the equation above it (`isOperationLine`)
+    const states = this.columnLines(column).filter((s) => s.latex && !isOperationLine(s));
     if (states.length === 0) return null;
     // a problem the chat wrote at the top of the column is its first line for the model too
     const head = this.columnHeads.get(column);
@@ -3154,7 +3184,9 @@ export class LiveLoop implements LiveController {
   private writeLocal(built: { states: LiveLineState[] }, opts: SolveOpts): LocalWritten | null {
     const engine = this.engine;
     if (!engine) return null;
-    const state = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
+    const asked = liveStore.lines.get()[opts.lineId];
+    // Solve asked on an operation line (`\div 2`) solves the equation above it
+    const state = asked && !isOperationLine(asked) ? asked : built.states[built.states.length - 1];
     if (!state?.latex) return null;
     const atCap = liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard;
     const hand = this.deps.handwritingEnabled();
@@ -3723,7 +3755,7 @@ export class LiveLoop implements LiveController {
     // so it is written now. Ahead of `startSolve`, which would otherwise not yet see it
     // (live writes land on a microtask) and would draw a second copy underneath.
     if (this.answerLineNow(target)) return;
-    const col = this.columnLines(target.line.column).filter((s) => s.latex);
+    const col = this.columnLines(target.line.column).filter((s) => s.latex && !isOperationLine(s));
     const lastOk = [...col].reverse().find((s) => s.analysis?.verdict === "ok" || s.analysis?.solved);
     this.startSolve(target.line.column, lastOk?.line.id ?? target.line.id, { lineId: target.line.id });
   }
@@ -3775,9 +3807,12 @@ export class LiveLoop implements LiveController {
     else this.escalate(target.line.id);
   }
 
-  /** The last line above `state` in its column that is not itself wrong: where the work was still right. */
+  /**
+   * The last line above `state` in its column that is not itself wrong: where the work was still
+   * right. Never an operation line (`-3 \quad -3`): the step comes from the equation above it.
+   */
   private lastGoodLineAbove(state: LiveLineState): LiveLineState | undefined {
-    const above = this.columnLines(state.line.column).filter((s) => s.latex && s.line.row < state.line.row);
+    const above = this.columnLines(state.line.column).filter((s) => s.latex && s.line.row < state.line.row && !isOperationLine(s));
     return [...above].reverse().find((s) => s.analysis?.verdict !== "mismatch" && !this.modelFlagged(s));
   }
 
@@ -3837,6 +3872,51 @@ export class LiveLoop implements LiveController {
     });
     clientMetric("live.suggest.hand", { lineId });
     return true;
+  }
+
+  /**
+   * Suggest and Solve, once the student has stopped: under a right operation line with nothing
+   * under it yet, the tutor writes the equation it leads to — `2x = 8` under `-3 \quad -3`,
+   * `\sin x = \frac{1}{2}` under a bar and a 2 — as the engine worked it out
+   * (`LineAnalysis.operation.result`). An answer, so it waits for the settle; once, per operation.
+   */
+  private writeOperationResults(): void {
+    if (!this.opts.enabled || (this.opts.mode !== "suggest" && this.opts.mode !== "answer") || !this.deps.handwritingEnabled()) return;
+    for (const state of Object.values(liveStore.lines.get())) {
+      const result = isOperationLine(state) && state.analysis?.verdict === "ok" ? (state.analysis.operation?.result ?? "") : "";
+      if (!result || this.operationResultShapes(state.line.id).some((s) => metaString(s.meta, OPERATION_RESULT_META) === result)) continue;
+      const column = this.columnLines(state.line.column);
+      if (column.some((s) => s.line.row > state.line.row)) continue;
+      if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return;
+      const { plan, unsupported } = planHandwriting([result], { size: handSizeFor(state.line.bounds.h), seed: handSeedFor(`${state.line.id}:result`) });
+      if (!plan || unsupported.length > 0) continue;
+      const ink = state.line.bounds;
+      // under the operation, level with the equation it works on
+      const above = [...column].reverse().find((s) => s.line.row < state.line.row && !isOperationLine(s));
+      const candidate: Rect = { x: Math.min(ink.x, above?.line.bounds.x ?? ink.x), y: rectMaxY(ink) + PLACEMENT.stepGap, w: plan.bounds.w, h: plan.bounds.h };
+      const placed = keepOnScreen(candidate, this.screenRect(), ink);
+      const slot = findFreeSlot(placed, [...this.avoidRects(state.line.id), ink], ink, placed.x === candidate.x ? "below" : "right");
+      this.makeWriter().start(placeHandPlan(plan, { x: slot.x, y: slot.y }), {
+        meta: makeMeta("ai", state.line.id, this.deps.now()),
+        extraMeta: { [OPERATION_RESULT_META]: result },
+      });
+      clientMetric("live.operation.result", { lineId: state.line.id });
+    }
+  }
+
+  private operationResultShapes(lineId: string): TLShape[] {
+    return this.editor.getCurrentPageShapes().filter((s) => isLiveMeta(s.meta) && s.meta.lineId === lineId && metaString(s.meta, OPERATION_RESULT_META) !== "");
+  }
+
+  /** The operation line changed, or is no longer right: the equation written under it goes. */
+  private dropStaleOperationResult(state: LiveLineState): void {
+    const want = isOperationLine(state) && state.analysis?.verdict === "ok" ? (state.analysis.operation?.result ?? "") : "";
+    const stale = this.operationResultShapes(state.line.id).filter((s) => metaString(s.meta, OPERATION_RESULT_META) !== want);
+    if (stale.length === 0) return;
+    this.write(() => {
+      const ids = stale.map((s) => s.id).filter((id) => this.editor.getShape(id));
+      if (ids.length > 0) this.editor.deleteShapes(ids);
+    });
   }
 
   private hasSuggestion(lineId: string, latex: string): boolean {
@@ -3983,6 +4063,15 @@ export function needsLook(state: Pick<LiveLineState, "latex" | "confidence" | "a
   if (state.analysis?.kind === "label") return true;
   if (state.analysis?.kind === "text" && !isProblemProse(state)) return true;
   return isSingleSymbolLatex(state.latex);
+}
+
+/**
+ * A line that says what is done to both sides next — `-3 \quad -3`, `\div 2`, a bar with a `2`
+ * under it (`engine/operationLine.ts`) — not a line of the working: the line after it is checked
+ * against, solved from and corrected from the equation above it.
+ */
+export function isOperationLine(state: Pick<LiveLineState, "analysis">): boolean {
+  return state.analysis?.kind === "operation";
 }
 
 export function createLiveLoop(editor: LiveEditorLike, opts: UseLiveMathOptions, deps: Partial<LiveLoopDeps> = {}): LiveLoop {
