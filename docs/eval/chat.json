@@ -40,27 +40,29 @@
    },
    {
     "lines": [
-     "4x - 6 = 10"
+     "4x - 9 = 23"
     ],
     "verdict": "verified",
-    "answer": "x = 4",
+    "answer": "x = 8",
     "clean": true
    },
    {
     "lines": [
-     "\\frac{3x}{5} + 2 = 8"
+     "\\frac{3x}{4} + 2 = 11"
     ],
     "verdict": "verified",
-    "answer": "x = 10",
+    "answer": "x = 12",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 5 two-step equations to solve.",
-  "latencyMs": 2517,
-  "costUsd": 0.0008243235,
-  "cached": true
+  "latencyMs": 2153,
+  "costUsd": 0.0023464485,
+  "cached": false
  },
  {
   "id": "a1-both-sides",
@@ -79,23 +81,15 @@
   "problems": [
    {
     "lines": [
-     "3x + 5 = 2x + 14"
+     "3x + 5 = 2x + 17"
     ],
     "verdict": "verified",
-    "answer": "x = 9",
+    "answer": "x = 12",
     "clean": true
    },
    {
     "lines": [
-     "4(x - 2) = 2x + 10"
-    ],
-    "verdict": "verified",
-    "answer": "x = 9",
-    "clean": true
-   },
-   {
-    "lines": [
-     "7x - 3 = 3x + 21"
+     "7x - 4 = 3x + 20"
     ],
     "verdict": "verified",
     "answer": "x = 6",
@@ -103,19 +97,29 @@
    },
    {
     "lines": [
-     "5(2x + 1) = 3x + 26"
+     "5(x - 2) = 2x + 13"
     ],
     "verdict": "verified",
-    "answer": "x = 3",
+    "answer": "x = \\frac{23}{3}",
+    "clean": true
+   },
+   {
+    "lines": [
+     "4x + 9 = 2(x + 11)"
+    ],
+    "verdict": "verified",
+    "answer": "x = \\frac{13}{2}",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 4 multi-step equations with variables on both sides.",
-  "latencyMs": 2577,
-  "costUsd": 0.002110185,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 4 multi-step equations with variables on both sides. Use the Solve tab to work them out step by step.",
+  "latencyMs": 2193,
+  "costUsd": 0.00111078,
+  "cached": false
  },
  {
   "id": "a1-inequalities",
@@ -134,7 +138,7 @@
   "problems": [
    {
     "lines": [
-     "2x + 3 > 11"
+     "2x+3>11"
     ],
     "verdict": "verified",
     "answer": "x > 4",
@@ -142,7 +146,7 @@
    },
    {
     "lines": [
-     "5 - x \\le 8"
+     "5-3x\\le 14"
     ],
     "verdict": "verified",
     "answer": "x \\ge -3",
@@ -150,19 +154,21 @@
    },
    {
     "lines": [
-     "3x - 4 < 2x + 5"
+     "\\frac{x}{4}-2<1"
     ],
     "verdict": "verified",
-    "answer": "x < 9",
+    "answer": "x < 12",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 3 one-variable inequalities to solve.",
-  "latencyMs": 2665,
-  "costUsd": 0.0007678935,
-  "cached": true
+  "latencyMs": 2266,
+  "costUsd": 0.0008590725,
+  "cached": false
  },
  {
   "id": "a1-factoring",
@@ -181,35 +187,37 @@
   "problems": [
    {
     "lines": [
-     "2x^{2} + 7x + 3"
+     "x^{2} + 7x + 12"
     ],
     "verdict": "verified",
-    "answer": "= (x + 3)(2x + 1)",
+    "answer": "= (x + 4)(x + 3)",
     "clean": true
    },
    {
     "lines": [
-     "3x^{2} - 11x + 6"
+     "x^{2} - 11x + 24"
     ],
     "verdict": "verified",
-    "answer": "= (3x - 2)(x - 3)",
+    "answer": "= (x - 3)(x - 8)",
     "clean": true
    },
    {
     "lines": [
-     "x^{2} - 16"
+     "2x^{2} + 9x + 9"
     ],
     "verdict": "verified",
-    "answer": "= (x + 4)(x - 4)",
+    "answer": "= (x + 3)(2x + 3)",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 3 harder factoring problems.",
-  "latencyMs": 2346,
-  "costUsd": 0.000888921,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 3 harder factoring problems. Work them out on the Solve tab.",
+  "latencyMs": 2257,
+  "costUsd": 0.001064745,
+  "cached": false
  },
  {
   "id": "a1-systems",
@@ -247,10 +255,12 @@
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 2 systems of linear equations to solve.",
-  "latencyMs": 1196,
-  "costUsd": 0.000799821,
-  "cached": true
+  "latencyMs": 2172,
+  "costUsd": 0.000931095,
+  "cached": false
  },
  {
   "id": "a1-exponents",
@@ -269,43 +279,45 @@
   "problems": [
    {
     "lines": [
-     "x^{3} \\cdot x^{5}"
+     "\\frac{12x^{5}}{3x^{2}}"
     ],
     "verdict": "verified",
-    "answer": "= x^{8}",
+    "answer": "= 4x^{3}",
     "clean": true
    },
    {
     "lines": [
-     "\\frac{a^{7}}{a^{2}}"
+     "(x^{3})^{4}"
     ],
     "verdict": "verified",
-    "answer": "= a^{5}",
+    "answer": "= x^{12}",
     "clean": true
    },
    {
     "lines": [
-     "(m^{4})^{2}"
+     "2x^{2}\\cdot 5x^{3}"
     ],
     "verdict": "verified",
-    "answer": "= m^{8}",
+    "answer": "= 10x^{5}",
     "clean": true
    },
    {
     "lines": [
-     "\\frac{12x^{5}y^{3}}{3x^{2}y}"
+     "\\frac{a^{7}b^{4}}{a^{2}b}"
     ],
     "verdict": "verified",
-    "answer": "= 4x^{3}y^{2}",
+    "answer": "= a^{5}b^{3}",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 4 exponent-rule simplifications to work on.",
-  "latencyMs": 2569,
-  "costUsd": 0.000888921,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 4 exponent-rule simplifications to work out.",
+  "latencyMs": 1796,
+  "costUsd": 0.00103356,
+  "cached": false
  },
  {
   "id": "a1-quadratics",
@@ -332,27 +344,29 @@
    },
    {
     "lines": [
-     "x^{2} - x - 12 = 0"
+     "x^{2} - x - 6 = 0"
     ],
     "verdict": "verified",
-    "answer": "x = -3, \\ x = 4",
+    "answer": "x = -2, \\ x = 3",
     "clean": true
    },
    {
     "lines": [
-     "2x^{2} - 7x + 3 = 0"
+     "x^{2} - 9x + 20 = 0"
     ],
     "verdict": "verified",
-    "answer": "x = \\frac{1}{2}, \\ x = 3",
+    "answer": "x = 4, \\ x = 5",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 3 quadratic equations to solve by factoring.",
-  "latencyMs": 2252,
-  "costUsd": 0.000835461,
-  "cached": true
+  "latencyMs": 2285,
+  "costUsd": 0.00096228,
+  "cached": false
  },
  {
   "id": "a2-logs",
@@ -387,19 +401,21 @@
    },
    {
     "lines": [
-     "\\log_{4}(x + 3) = 1"
+     "\\log_{10}(x) + \\log_{10}(2) = 2"
     ],
     "verdict": "verified",
-    "answer": "x = 1",
+    "answer": "x = 50",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 3 logarithmic equations to solve.",
-  "latencyMs": 2303,
-  "costUsd": 0.0008465985,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 3 logarithmic equations to solve. The Solve tab works them out step by step.",
+  "latencyMs": 1934,
+  "costUsd": 0.0010001475,
+  "cached": false
  },
  {
   "id": "a2-exponential",
@@ -418,15 +434,7 @@
   "problems": [
    {
     "lines": [
-     "2^{x} = 32"
-    ],
-    "verdict": "verified",
-    "answer": "x = 5",
-    "clean": true
-   },
-   {
-    "lines": [
-     "3^{x+1} = 81"
+     "2^{x+1} = 16"
     ],
     "verdict": "verified",
     "answer": "x = 3",
@@ -434,19 +442,29 @@
    },
    {
     "lines": [
-     "5^{2x} = 125"
+     "3^{2x} = 81"
     ],
     "verdict": "verified",
-    "answer": "x = \\frac{3}{2}",
+    "answer": "x = 2",
+    "clean": true
+   },
+   {
+    "lines": [
+     "5^{x-1} = 25"
+    ],
+    "verdict": "verified",
+    "answer": "x = 3",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 3 exponential equations to solve by matching bases.",
-  "latencyMs": 1509,
-  "costUsd": 0.0007129485,
-  "cached": true
+  "latencyMs": 1887,
+  "costUsd": 0.0009199575,
+  "cached": false
  },
  {
   "id": "a2-radical",
@@ -465,27 +483,29 @@
   "problems": [
    {
     "lines": [
-     "\\sqrt{x+5}=7"
+     "\\sqrt{x + 5} = 4"
     ],
     "verdict": "verified",
-    "answer": "x = 44",
+    "answer": "x = 11",
     "clean": true
    },
    {
     "lines": [
-     "\\sqrt{2x-1}=\\sqrt{x+8}"
+     "\\sqrt{2x - 1} = 3"
     ],
     "verdict": "verified",
-    "answer": "x = 9",
+    "answer": "x = 5",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 2 radical equations to solve.",
-  "latencyMs": 2022,
-  "costUsd": 0.000752301,
-  "cached": true
+  "latencyMs": 3139,
+  "costUsd": 0.000839025,
+  "cached": false
  },
  {
   "id": "a2-complex",
@@ -504,43 +524,45 @@
   "problems": [
    {
     "lines": [
-     "(2 + 3i)(1 - 4i)"
+     "(2 + 3i)(4 - i)"
     ],
     "verdict": "verified",
-    "answer": "= 14 - 5i",
+    "answer": "= 11 + 10i",
     "clean": true
    },
    {
     "lines": [
-     "(3 - 2i)(5 + i)"
+     "(1 - 2i)(3 + 5i)"
     ],
     "verdict": "verified",
-    "answer": "= 17 - 7i",
+    "answer": "= 13 - i",
     "clean": true
    },
    {
     "lines": [
-     "(-1 + 6i)(4 - 2i)"
+     "(5 + i)(2 - 4i)"
     ],
     "verdict": "verified",
-    "answer": "= 8 + 26i",
+    "answer": "= 14 - 18i",
     "clean": true
    },
    {
     "lines": [
-     "(2 - i)(-3 - 5i)"
+     "(3 - 2i)(-1 + 6i)"
     ],
     "verdict": "verified",
-    "answer": "= -11 - 7i",
+    "answer": "= 9 + 20i",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 4 complex number multiplication problems.",
-  "latencyMs": 3016,
-  "costUsd": 0.000869616,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 4 complex number multiplication problems to work out.",
+  "latencyMs": 1808,
+  "costUsd": 0.001032075,
+  "cached": false
  },
  {
   "id": "a2-rational",
@@ -567,27 +589,29 @@
    },
    {
     "lines": [
-     "\\frac{x^{2} - 9}{x + 3}"
+     "\\frac{x^{2} - 9}{x - 3}"
     ],
     "verdict": "verified",
-    "answer": "= x - 3",
+    "answer": "= x + 3",
     "clean": true
    },
    {
     "lines": [
-     "\\frac{6x^{2}y}{9xy^{2}}"
+     "\\frac{6x^{2}y}{3xy^{2}}"
     ],
     "verdict": "verified",
-    "answer": "= \\frac{2x}{3y}",
+    "answer": "= \\frac{2x}{y}",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 3 rational expressions to simplify.",
-  "latencyMs": 2294,
-  "costUsd": 0.000816156,
-  "cached": true
+  "latencyMs": 2390,
+  "costUsd": 0.000978615,
+  "cached": false
  },
  {
   "id": "a2-absolute",
@@ -631,10 +655,12 @@
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 3 absolute value equations to solve.",
-  "latencyMs": 2070,
-  "costUsd": 0.0007441335,
-  "cached": true
+  "latencyMs": 1687,
+  "costUsd": 0.0008843175,
+  "cached": false
  },
  {
   "id": "g-pythagoras",
@@ -653,10 +679,10 @@
   "problems": [
    {
     "lines": [
-     "3^{2} + 4^{2} = x^{2}"
+     "3^{2} + 4^{2} = c^{2}"
     ],
     "verdict": "verified",
-    "answer": "x = 5",
+    "answer": "c = 5",
     "clean": true
    },
    {
@@ -669,27 +695,29 @@
    },
    {
     "lines": [
-     "8^{2} + x^{2} = 17^{2}"
+     "x^{2} + 8^{2} = 10^{2}"
     ],
     "verdict": "verified",
-    "answer": "x = 15",
+    "answer": "x = 6",
     "clean": true
    },
    {
     "lines": [
-     "9^{2} + 40^{2} = h^{2}"
+     "x^{2} + 15^{2} = 17^{2}"
     ],
     "verdict": "verified",
-    "answer": "h = 41",
+    "answer": "x = 8",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 4 Pythagorean theorem problems to find the missing side.",
-  "latencyMs": 2517,
-  "costUsd": 0.001067121,
-  "cached": true
+  "latencyMs": 1838,
+  "costUsd": 0.00112266,
+  "cached": false
  },
  {
   "id": "g-triangle-angles",
@@ -708,23 +736,23 @@
   "problems": [
    {
     "lines": [
-     "x + 35 + 65 = 180"
+     "x + 50 + 60 = 180"
     ],
     "verdict": "verified",
-    "answer": "x = 80",
+    "answer": "x = 70",
     "clean": true
    },
    {
     "lines": [
-     "x + 48 + 72 = 180"
+     "x + 35 + 75 = 180"
     ],
     "verdict": "verified",
-    "answer": "x = 60",
+    "answer": "x = 70",
     "clean": true
    },
    {
     "lines": [
-     "x + 27 + 83 = 180"
+     "x + 42 + 68 = 180"
     ],
     "verdict": "verified",
     "answer": "x = 70",
@@ -733,10 +761,12 @@
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 3 triangle angle problems to solve.",
-  "latencyMs": 2508,
-  "costUsd": 0.000930501,
-  "cached": true
+  "latencyMs": 1970,
+  "costUsd": 0.000954855,
+  "cached": false
  },
  {
   "id": "g-fig-right",
@@ -763,10 +793,12 @@
    }
   ],
   "graphs": [],
-  "reply": "Here is the right triangle with the hypotenuse labeled x.",
-  "latencyMs": 1177,
-  "costUsd": 0.001016631,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here is the right triangle with legs 3 and 4, and the hypotenuse labeled x.",
+  "latencyMs": 1300,
+  "costUsd": 0.001192455,
+  "cached": false
  },
  {
   "id": "g-fig-isosceles",
@@ -786,36 +818,19 @@
   "figures": [
    {
     "schema": true,
-    "cleanFirst": false,
+    "cleanFirst": true,
     "cleanAfterRepair": true,
     "drawn": true,
-    "problems": [
-     "Angle BAC is labelled 40° but is drawn 68.75°; move the points so it measures 40° (within 5°)."
-    ],
-    "repair": {
-     "model": "openai/gpt-5.4-mini",
-     "key": "6cf05352209531b783e8ce4b2e5f9de3747dc305",
-     "latencyMs": 3196,
-     "promptTokens": 813,
-     "completionTokens": 239,
-     "reasoningTokens": 116,
-     "attempts": 1,
-     "cached": true,
-     "ok": true,
-     "status": 200,
-     "costUsd": 0.0016683975,
-     "costSource": "usage",
-     "provider": "OpenAI",
-     "finishReason": "stop",
-     "at": "2026-09-28T14:51:11.021Z"
-    }
+    "problems": []
    }
   ],
   "graphs": [],
-  "reply": "Here is the isosceles triangle with a 40 degree top angle and base angles labeled x.",
-  "latencyMs": 3404,
-  "costUsd": 0.0016663185,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here is the isosceles triangle with the top angle marked 40 degrees and the base angles marked x.",
+  "latencyMs": 3383,
+  "costUsd": 0.0023811975,
+  "cached": false
  },
  {
   "id": "g-fig-circle",
@@ -842,10 +857,12 @@
    }
   ],
   "graphs": [],
-  "reply": "Here is the circle with radius OA labeled 5.",
-  "latencyMs": 2211,
-  "costUsd": 0.000982476,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here is the circle with radius OA labelled 5.",
+  "latencyMs": 2014,
+  "costUsd": 0.001038015,
+  "cached": false
  },
  {
   "id": "g-fig-parallel",
@@ -869,32 +886,34 @@
     "cleanAfterRepair": true,
     "drawn": true,
     "problems": [
-     "Angle BPT is labelled 70° but is drawn 63.43°; move the points so it measures 70° (within 5°)."
+     "Angle BAE is labelled 70° but is drawn 33.69°; move the points so it measures 70° (within 5°)."
     ],
     "repair": {
      "model": "openai/gpt-5.4-mini",
-     "key": "82165c8812dfb4a8d758f0c5941f85ad84ca6586",
-     "latencyMs": 7658,
-     "promptTokens": 862,
-     "completionTokens": 887,
-     "reasoningTokens": 691,
+     "key": "bfeacd921fd4ecc304e3ab5a1c92fbd4d64c029b",
+     "latencyMs": 10679,
+     "promptTokens": 844,
+     "completionTokens": 1290,
+     "reasoningTokens": 1107,
      "attempts": 1,
-     "cached": true,
+     "cached": false,
      "ok": true,
      "status": 200,
-     "costUsd": 0.00459162,
+     "costUsd": 0.00637362,
      "costSource": "usage",
      "provider": "OpenAI",
      "finishReason": "stop",
-     "at": "2026-09-28T14:51:23.609Z"
+     "at": "2026-09-28T19:46:12.013Z"
     }
    }
   ],
   "graphs": [],
-  "reply": "Here is the diagram with parallel lines and a transversal.",
-  "latencyMs": 10011,
-  "costUsd": 0.003971781,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here is the diagram with the corresponding angles marked.",
+  "latencyMs": 2341,
+  "costUsd": 0.00165726,
+  "cached": false
  },
  {
   "id": "g-fig-rectangle",
@@ -921,10 +940,12 @@
    }
   ],
   "graphs": [],
-  "reply": "Here is the rectangle with diagonal d.",
-  "latencyMs": 1355,
-  "costUsd": 0.0011064735,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here is the rectangle with the diagonal labeled d.",
+  "latencyMs": 1531,
+  "costUsd": 0.0012332925,
+  "cached": false
  },
  {
   "id": "c-power-rule",
@@ -943,14 +964,6 @@
   "problems": [
    {
     "lines": [
-     "\\frac{d}{dx}(x^{3})"
-    ],
-    "verdict": "verified",
-    "answer": "= 3x^{2}",
-    "clean": true
-   },
-   {
-    "lines": [
      "\\frac{d}{dx}(x^{5})"
     ],
     "verdict": "verified",
@@ -959,35 +972,45 @@
    },
    {
     "lines": [
-     "\\frac{d}{dx}(4x^{7})"
+     "\\frac{d}{dx}(3x^{4})"
     ],
     "verdict": "verified",
-    "answer": "= 28x^{6}",
+    "answer": "= 12x^{3}",
     "clean": true
    },
    {
     "lines": [
-     "\\frac{d}{dx}(\\,3x^{4} - 2x^{2}\\,)"
+     "\\frac{d}{dx}(7x^{3} - 2x)"
     ],
     "verdict": "verified",
-    "answer": "= 12x^{3} - 4x",
+    "answer": "= 21x^{2} - 2",
     "clean": true
    },
    {
     "lines": [
-     "\\frac{d}{dx}(\\,\\frac{1}{2}x^{6} + 5x\\,)"
+     "\\frac{d}{dx}(\\frac{1}{2}x^{6})"
     ],
     "verdict": "verified",
-    "answer": "= 3x^{5} + 5",
+    "answer": "= 3x^{5}",
+    "clean": true
+   },
+   {
+    "lines": [
+     "\\frac{d}{dx}(4x^{7} + x^{2})"
+    ],
+    "verdict": "verified",
+    "answer": "= 28x^{6} + 2x",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 5 power rule derivatives to work on.",
-  "latencyMs": 2373,
-  "costUsd": 0.0010351935,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 5 derivatives using the power rule. Work them out in the Solve tab.",
+  "latencyMs": 3302,
+  "costUsd": 0.0011441925,
+  "cached": false
  },
  {
   "id": "c-definite",
@@ -1031,10 +1054,12 @@
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 3 definite integrals of polynomials to solve.",
-  "latencyMs": 2474,
-  "costUsd": 0.000937926,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 3 definite integrals of polynomials to work out.",
+  "latencyMs": 1966,
+  "costUsd": 0.001011285,
+  "cached": false
  },
  {
   "id": "c-limits",
@@ -1078,10 +1103,12 @@
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 3 limits that need factoring first.",
-  "latencyMs": 2245,
-  "costUsd": 0.0009460935,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 3 limits that need factoring first. The Solve tab can work them out step by step.",
+  "latencyMs": 1331,
+  "costUsd": 0.0011575575,
+  "cached": false
  },
  {
   "id": "c-chain",
@@ -1100,7 +1127,7 @@
   "problems": [
    {
     "lines": [
-     "\\frac{d}{dx}(3x+1)^{4}"
+     "\\frac{d}{dx}(3x + 1)^{4}"
     ],
     "verdict": "verified",
     "answer": "= 12(3x + 1)^{3}",
@@ -1108,27 +1135,29 @@
    },
    {
     "lines": [
-     "\\frac{d}{dx}(2x^{2}-5)^{3}"
+     "\\frac{d}{dx}(5x - 2)^{3}"
     ],
     "verdict": "verified",
-    "answer": "= 12x(2x^{2} - 5)^{2}",
+    "answer": "= 15(5x - 2)^{2}",
     "clean": true
    },
    {
     "lines": [
-     "\\frac{d}{dx}\\sqrt{5x-2}"
+     "\\frac{d}{dx}(2x^{2} + 1)^{5}"
     ],
     "verdict": "verified",
-    "answer": "= \\frac{5}{2\\sqrt{5x - 2}}",
+    "answer": "= 20x(2x^{2} + 1)^{4}",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 3 chain rule derivatives to work on.",
-  "latencyMs": 2642,
-  "costUsd": 0.0008866935,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 3 chain rule derivatives to work out.",
+  "latencyMs": 1954,
+  "costUsd": 0.0009778725,
+  "cached": false
  },
  {
   "id": "gr-sin",
@@ -1155,10 +1184,12 @@
     "window": true
    }
   ],
+  "proofs": [],
+  "lines": [],
   "reply": "Here is y = sin x from -2π to 2π.",
-  "latencyMs": 2735,
-  "costUsd": 0.0007367085,
-  "cached": true
+  "latencyMs": 1423,
+  "costUsd": 0.0008635275,
+  "cached": false
  },
  {
   "id": "gr-parabola",
@@ -1185,10 +1216,12 @@
     "window": false
    }
   ],
+  "proofs": [],
+  "lines": [],
   "reply": "Here is the graph of y = x^2 - 4x + 3.",
-  "latencyMs": 1433,
-  "costUsd": 0.0006654285,
-  "cached": true
+  "latencyMs": 1414,
+  "costUsd": 0.0008011575,
+  "cached": false
  },
  {
   "id": "gr-system",
@@ -1216,10 +1249,12 @@
     "window": false
    }
   ],
+  "proofs": [],
+  "lines": [],
   "reply": "Here is the graph of the system.",
-  "latencyMs": 1769,
-  "costUsd": 0.0006342435,
-  "cached": true
+  "latencyMs": 1255,
+  "costUsd": 0.0007877925,
+  "cached": false
  },
  {
   "id": "gr-region",
@@ -1246,10 +1281,12 @@
     "window": false
    }
   ],
-  "reply": "Here is the graph of y less than 2x plus 1.",
-  "latencyMs": 2405,
-  "costUsd": 0.0006357285,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here is the shaded graph of y is less than 2x plus 1.",
+  "latencyMs": 1743,
+  "costUsd": 0.0008427375,
+  "cached": false
  },
  {
   "id": "gr-circle",
@@ -1276,10 +1313,12 @@
     "window": false
    }
   ],
-  "reply": "Here is the circle x^2 + y^2 = 25.",
-  "latencyMs": 2822,
-  "costUsd": 0.0006698835,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here is the circle x squared plus y squared equals 25.",
+  "latencyMs": 1688,
+  "costUsd": 0.0008011575,
+  "cached": false
  },
  {
   "id": "f-more",
@@ -1298,10 +1337,10 @@
   "problems": [
    {
     "lines": [
-     "4x + 5 = 21"
+     "3x + 5 = 20"
     ],
     "verdict": "verified",
-    "answer": "x = 4",
+    "answer": "x = 5",
     "clean": true
    },
    {
@@ -1314,7 +1353,7 @@
    },
    {
     "lines": [
-     "\\frac{x}{4} + 3 = 8"
+     "\\frac{x}{4} - 3 = 2"
     ],
     "verdict": "verified",
     "answer": "x = 20",
@@ -1323,10 +1362,12 @@
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 3 more two-step equations to solve.",
-  "latencyMs": 1995,
-  "costUsd": 0.0008228385,
-  "cached": true
+  "latencyMs": 2520,
+  "costUsd": 0.0010432125,
+  "cached": false
  },
  {
   "id": "f-harder",
@@ -1345,35 +1386,37 @@
   "problems": [
    {
     "lines": [
-     "4(2x - 3) = 20"
+     "7x - 5 = 30"
+    ],
+    "verdict": "verified",
+    "answer": "x = 5",
+    "clean": true
+   },
+   {
+    "lines": [
+     "\\frac{x}{4} + 6 = 11"
+    ],
+    "verdict": "verified",
+    "answer": "x = 20",
+    "clean": true
+   },
+   {
+    "lines": [
+     "3(2x - 1) = 21"
     ],
     "verdict": "verified",
     "answer": "x = 4",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{3x}{5} + 7 = 16"
-    ],
-    "verdict": "verified",
-    "answer": "x = 15",
-    "clean": true
-   },
-   {
-    "lines": [
-     "9 - 2(3x + 1) = 1"
-    ],
-    "verdict": "verified",
-    "answer": "x = 1",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are harder ones of the same kind.",
-  "latencyMs": 2643,
-  "costUsd": 0.001095336,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 3 harder two-step equations to solve.",
+  "latencyMs": 2384,
+  "costUsd": 0.00100386,
+  "cached": false
  },
  {
   "id": "f-graph-that",
@@ -1400,10 +1443,12 @@
     "window": false
    }
   ],
+  "proofs": [],
+  "lines": [],
   "reply": "Here is the graph of y = 3x - 2.",
-  "latencyMs": 2423,
-  "costUsd": 0.000712206,
-  "cached": true
+  "latencyMs": 2549,
+  "costUsd": 0.000928125,
+  "cached": false
  },
  {
   "id": "m-new-screen",
@@ -1422,10 +1467,12 @@
   "problems": [],
   "figures": [],
   "graphs": [],
-  "reply": "New screen coming up.",
-  "latencyMs": 2755,
-  "costUsd": 0.0006580035,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here is a fresh screen.",
+  "latencyMs": 3065,
+  "costUsd": 0.0008204625,
+  "cached": false
  },
  {
   "id": "m-clear",
@@ -1444,10 +1491,12 @@
   "problems": [],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Cleared.",
-  "latencyMs": 1077,
-  "costUsd": 0.0005599935,
-  "cached": true
+  "latencyMs": 1317,
+  "costUsd": 0.0007090875,
+  "cached": false
  },
  {
   "id": "m-formula",
@@ -1466,10 +1515,21 @@
   "problems": [],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [
+   {
+    "lines": [
+     "x = \\frac{-b \\pm \\sqrt{b^{2} - 4ac}}{2a}"
+    ],
+    "chain": false,
+    "ok": true,
+    "why": ""
+   }
+  ],
   "reply": "Here is the quadratic formula.",
-  "latencyMs": 1374,
-  "costUsd": 0.000658746,
-  "cached": true
+  "latencyMs": 1093,
+  "costUsd": 0.00079002,
+  "cached": false
  },
  {
   "id": "m-solve-for-me",
@@ -1497,10 +1557,532 @@
   ],
   "figures": [],
   "graphs": [],
-  "reply": "I can put it on the board as a problem. The Solve tab will work it out step by step.",
-  "latencyMs": 2139,
-  "costUsd": 0.000758241,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "I can put it on the board, but the Solve tab will work it out step by step.",
+  "latencyMs": 2569,
+  "costUsd": 0.00088506,
+  "cached": false
+ },
+ {
+  "id": "p-write",
+  "course": "geometry",
+  "kind": "proof",
+  "model": "openai/gpt-5.4-mini",
+  "json": true,
+  "proposed": 1,
+  "valid": 1,
+  "dropped": [],
+  "types": [
+   "write_proof"
+  ],
+  "intent": true,
+  "intentWhy": "",
+  "problems": [],
+  "figures": [],
+  "graphs": [],
+  "proofs": [
+   {
+    "schema": true,
+    "worked": true,
+    "provedFirst": false,
+    "provedAfterRepair": true,
+    "rows": 4,
+    "reasons": [
+     "given",
+     "reflexive",
+     "midpoint",
+     "sss"
+    ],
+    "prove": "\\triangle ABD \\cong \\triangle ACD",
+    "problems": [
+     "Angle BDC is a straight angle (B, D and C are in a line), so its mark has no side; mark the angles either side of it instead."
+    ],
+    "repair": {
+     "model": "openai/gpt-5.4-mini",
+     "key": "afdaecc843b07c396286b7468edc603876af4bdd",
+     "latencyMs": 2625,
+     "promptTokens": 2552,
+     "completionTokens": 276,
+     "reasoningTokens": 67,
+     "attempts": 1,
+     "cached": false,
+     "ok": true,
+     "status": 200,
+     "costUsd": 0.00312444,
+     "costSource": "usage",
+     "provider": "OpenAI",
+     "finishReason": "stop",
+     "at": "2026-09-28T19:46:16.509Z"
+    }
+   }
+  ],
+  "lines": [],
+  "reply": "Here is a two-column proof with a simple congruent-triangles setup.",
+  "latencyMs": 2932,
+  "costUsd": 0.0016891875,
+  "cached": false
+ },
+ {
+  "id": "p-for-me",
+  "course": "geometry",
+  "kind": "proof",
+  "model": "openai/gpt-5.4-mini",
+  "json": true,
+  "proposed": 1,
+  "valid": 1,
+  "dropped": [],
+  "types": [
+   "write_proof"
+  ],
+  "intent": true,
+  "intentWhy": "",
+  "problems": [],
+  "figures": [],
+  "graphs": [],
+  "proofs": [
+   {
+    "schema": true,
+    "worked": true,
+    "provedFirst": true,
+    "provedAfterRepair": true,
+    "rows": 5,
+    "reasons": [
+     "given",
+     "reflexive",
+     "midpoint",
+     "sss",
+     "cpctc"
+    ],
+    "prove": "\\angle ABD \\cong \\angle DCA",
+    "problems": []
+   }
+  ],
+  "lines": [],
+  "reply": "Here is a two-column proof: the median splits the isosceles triangle into two congruent triangles, so the base angles are congruent.",
+  "latencyMs": 3058,
+  "costUsd": 0.0017218575,
+  "cached": false
+ },
+ {
+  "id": "p-two-column",
+  "course": "geometry",
+  "kind": "proof",
+  "model": "openai/gpt-5.4-mini",
+  "json": true,
+  "proposed": 1,
+  "valid": 1,
+  "dropped": [],
+  "types": [
+   "write_proof"
+  ],
+  "intent": true,
+  "intentWhy": "",
+  "problems": [],
+  "figures": [],
+  "graphs": [],
+  "proofs": [
+   {
+    "schema": true,
+    "worked": true,
+    "provedFirst": true,
+    "provedAfterRepair": true,
+    "rows": 5,
+    "reasons": [
+     "given",
+     "reflexive",
+     "midpoint",
+     "sss",
+     "cpctc"
+    ],
+    "prove": "\\angle ABC \\cong \\angle BCA",
+    "problems": []
+   }
+  ],
+  "lines": [],
+  "reply": "Here is a two-column proof of the base angles of an isosceles triangle.",
+  "latencyMs": 2327,
+  "costUsd": 0.00169884,
+  "cached": false
+ },
+ {
+  "id": "p-show-me",
+  "course": "geometry",
+  "kind": "proof",
+  "model": "openai/gpt-5.4-mini",
+  "json": true,
+  "proposed": 1,
+  "valid": 1,
+  "dropped": [],
+  "types": [
+   "write_proof"
+  ],
+  "intent": true,
+  "intentWhy": "",
+  "problems": [],
+  "figures": [],
+  "graphs": [],
+  "proofs": [
+   {
+    "schema": true,
+    "worked": true,
+    "provedFirst": false,
+    "provedAfterRepair": true,
+    "rows": 4,
+    "reasons": [
+     "given",
+     "given",
+     "given",
+     "sss"
+    ],
+    "prove": "\\triangle AEB \\cong \\triangle CED",
+    "problems": [
+     "The proof engine could not prove \\triangle AEB \\cong \\triangle CED from these givens with this figure. From the givens it proves no two triangles congruent. For \\triangle AEB \\cong \\triangle CED it has \\overline{AE} \\cong \\overline{CE}, \\overline{EB} \\cong \\overline{ED}, and not \\overline{AB} \\cong \\overline{CD}, \\angle EAB \\cong \\angle ECD, \\angle BEA \\cong \\angle DEC, \\angle ABE \\cong \\angle CDE.",
+     "It proves with: Given, Reflexive, Transitive, SSS, SAS, ASA, AAS, HL, CPCTC, Vertical ∠s, Def. of midpoint, Def. of ∠ bisector, Def. of seg. bisector, Def. of ⊥ with Rt. ∠s ≅, Alt. int. / Alt. ext. / Corr. ∠s (and their converses) with the parallel lines drawn, Isos. △ thm and its converse. Draw every side of every triangle the proof uses (segments or polygon sides), put each point of a side exactly on it, and give enough givens — or choose a proof like the examples."
+    ],
+    "repair": {
+     "model": "openai/gpt-5.4-mini",
+     "key": "3b84190dfacb5b140c69a64359aa8c54d0b8ed2a",
+     "latencyMs": 2655,
+     "promptTokens": 2792,
+     "completionTokens": 349,
+     "reasoningTokens": 138,
+     "attempts": 1,
+     "cached": false,
+     "ok": true,
+     "status": 200,
+     "costUsd": 0.002430351,
+     "costSource": "usage",
+     "provider": "OpenAI",
+     "finishReason": "stop",
+     "at": "2026-09-28T19:46:19.415Z"
+    }
+   }
+  ],
+  "lines": [],
+  "reply": "Here is a proof on the board. Use the given equal sides and the vertical angles to show the triangles are congruent.",
+  "latencyMs": 2896,
+  "costUsd": 0.002407185,
+  "cached": false
+ },
+ {
+  "id": "p-base-angles",
+  "course": "geometry",
+  "kind": "proof",
+  "model": "openai/gpt-5.4-mini",
+  "json": true,
+  "proposed": 1,
+  "valid": 1,
+  "dropped": [],
+  "types": [
+   "write_proof"
+  ],
+  "intent": true,
+  "intentWhy": "",
+  "problems": [],
+  "figures": [],
+  "graphs": [],
+  "proofs": [
+   {
+    "schema": true,
+    "worked": true,
+    "provedFirst": true,
+    "provedAfterRepair": true,
+    "rows": 5,
+    "reasons": [
+     "given",
+     "reflexive",
+     "midpoint",
+     "sss",
+     "cpctc"
+    ],
+    "prove": "\\angle ABC \\cong \\angle BCA",
+    "problems": []
+   }
+  ],
+  "lines": [],
+  "reply": "Here is the proof: draw the median from the top vertex, prove the two triangles congruent by SSS, and the base angles match by CPCTC.",
+  "latencyMs": 3227,
+  "costUsd": 0.00194238,
+  "cached": false
+ },
+ {
+  "id": "p-hardest",
+  "course": "geometry",
+  "kind": "proof",
+  "model": "openai/gpt-5.4-mini",
+  "json": true,
+  "proposed": 1,
+  "valid": 1,
+  "dropped": [],
+  "types": [
+   "write_proof"
+  ],
+  "intent": true,
+  "intentWhy": "",
+  "problems": [],
+  "figures": [],
+  "graphs": [],
+  "proofs": [
+   {
+    "schema": true,
+    "worked": true,
+    "provedFirst": true,
+    "provedAfterRepair": true,
+    "rows": 12,
+    "reasons": [
+     "given",
+     "given",
+     "given",
+     "reflexive",
+     "reflexive",
+     "isosceles",
+     "sas",
+     "sas",
+     "cpctc",
+     "cpctc",
+     "asa",
+     "cpctc"
+    ],
+    "prove": "\\overline{BP} \\cong \\overline{CP}",
+    "problems": []
+   }
+  ],
+  "lines": [],
+  "reply": "Challenge accepted: I’ll prove the triangles match, then use that to lock in the last congruence.",
+  "latencyMs": 2352,
+  "costUsd": 0.0019356975,
+  "cached": false
+ },
+ {
+  "id": "p-hard",
+  "course": "geometry",
+  "kind": "proof",
+  "model": "openai/gpt-5.4-mini",
+  "json": true,
+  "proposed": 1,
+  "valid": 1,
+  "dropped": [],
+  "types": [
+   "write_proof"
+  ],
+  "intent": true,
+  "intentWhy": "",
+  "problems": [],
+  "figures": [],
+  "graphs": [],
+  "proofs": [
+   {
+    "schema": true,
+    "worked": true,
+    "provedFirst": false,
+    "provedAfterRepair": true,
+    "rows": 4,
+    "reasons": [
+     "given",
+     "reflexive",
+     "midpoint",
+     "sss"
+    ],
+    "prove": "\\triangle ABD \\cong \\triangle ACD",
+    "problems": [
+     "The figure does not show E \\text{ is the midpoint of } \\overline{AB}: E is not at the middle of AB (the middle is (-2, 3)).",
+     "The figure does not show \\triangle ADE \\cong \\triangle ACD: AD is drawn 6 long and its match AC 7.21."
+    ],
+    "repair": {
+     "model": "openai/gpt-5.4-mini",
+     "key": "e24784e3a5dc4b5331e10bad2f74c3af1cb7d6e7",
+     "latencyMs": 11135,
+     "promptTokens": 2594,
+     "completionTokens": 1537,
+     "reasoningTokens": 1337,
+     "attempts": 1,
+     "cached": false,
+     "ok": true,
+     "status": 200,
+     "costUsd": 0.007575876,
+     "costSource": "usage",
+     "provider": "OpenAI",
+     "finishReason": "stop",
+     "at": "2026-09-28T19:46:37.411Z"
+    }
+   }
+  ],
+  "lines": [],
+  "reply": "Here is a harder proof with overlapping triangles. Use the given facts to match the triangles, then finish with CPCTC.",
+  "latencyMs": 9737,
+  "costUsd": 0.0068124375,
+  "cached": false
+ },
+ {
+  "id": "p-to-do",
+  "course": "geometry",
+  "kind": "proof",
+  "model": "openai/gpt-5.4-mini",
+  "json": true,
+  "proposed": 1,
+  "valid": 1,
+  "dropped": [],
+  "types": [
+   "write_proof"
+  ],
+  "intent": true,
+  "intentWhy": "",
+  "problems": [],
+  "figures": [],
+  "graphs": [],
+  "proofs": [
+   {
+    "schema": true,
+    "worked": false,
+    "provedFirst": true,
+    "provedAfterRepair": true,
+    "rows": 4,
+    "reasons": [
+     "given",
+     "reflexive",
+     "midpoint",
+     "sss"
+    ],
+    "prove": "\\triangle ABD \\cong \\triangle ACD",
+    "problems": []
+   }
+  ],
+  "lines": [],
+  "reply": "Your turn: prove the two halves of the isosceles triangle are congruent. Fill in the statements and reasons in the table.",
+  "latencyMs": 2712,
+  "costUsd": 0.001860705,
+  "cached": false
+ },
+ {
+  "id": "p-try",
+  "course": "geometry",
+  "kind": "proof",
+  "model": "openai/gpt-5.4-mini",
+  "json": true,
+  "proposed": 1,
+  "valid": 1,
+  "dropped": [],
+  "types": [
+   "write_proof"
+  ],
+  "intent": true,
+  "intentWhy": "",
+  "problems": [],
+  "figures": [],
+  "graphs": [],
+  "proofs": [
+   {
+    "schema": true,
+    "worked": false,
+    "provedFirst": false,
+    "provedAfterRepair": true,
+    "rows": 4,
+    "reasons": [
+     "given",
+     "reflexive",
+     "midpoint",
+     "sss"
+    ],
+    "prove": "\\triangle ABD \\cong \\triangle ACD",
+    "problems": [
+     "Angle BDC is a straight angle (B, D and C are in a line), so its mark has no side; mark the angles either side of it instead."
+    ],
+    "repair": {
+     "model": "openai/gpt-5.4-mini",
+     "key": "dcc98df8225f2b491db0dea22f922baf0b9a671e",
+     "latencyMs": 2091,
+     "promptTokens": 2546,
+     "completionTokens": 301,
+     "reasoningTokens": 133,
+     "attempts": 1,
+     "cached": false,
+     "ok": true,
+     "status": 200,
+     "costUsd": 0.002033856,
+     "costSource": "usage",
+     "provider": "OpenAI",
+     "finishReason": "stop",
+     "at": "2026-09-28T19:46:22.926Z"
+    }
+   }
+  ],
+  "lines": [],
+  "reply": "Here’s a proof for you to try. Fill in the statements and reasons to show the two triangles are congruent.",
+  "latencyMs": 2596,
+  "costUsd": 0.0017084925,
+  "cached": false
+ },
+ {
+  "id": "p-odd-sum",
+  "course": "algebra1",
+  "kind": "proof",
+  "model": "openai/gpt-5.4-mini",
+  "json": true,
+  "proposed": 1,
+  "valid": 1,
+  "dropped": [],
+  "types": [
+   "write_lines"
+  ],
+  "intent": true,
+  "intentWhy": "",
+  "problems": [],
+  "figures": [],
+  "graphs": [],
+  "proofs": [],
+  "lines": [
+   {
+    "lines": [
+     "(2m + 1) + (2n + 1)",
+     "= 2m + 2n + 2",
+     "= 2(m + n + 1)"
+    ],
+    "chain": true,
+    "ok": true,
+    "why": ""
+   }
+  ],
+  "reply": "Here is the algebra proof: the sum of two odd numbers can be written as 2 times a whole number, so it is even.",
+  "latencyMs": 1963,
+  "costUsd": 0.0010298475,
+  "cached": false
+ },
+ {
+  "id": "p-square",
+  "course": "algebra1",
+  "kind": "proof",
+  "model": "openai/gpt-5.4-mini",
+  "json": true,
+  "proposed": 1,
+  "valid": 1,
+  "dropped": [],
+  "types": [
+   "write_lines"
+  ],
+  "intent": true,
+  "intentWhy": "",
+  "problems": [],
+  "figures": [],
+  "graphs": [],
+  "proofs": [],
+  "lines": [
+   {
+    "lines": [
+     "(a+b)^2",
+     "= (a+b)(a+b)",
+     "= a^2 + ab + ba + b^2",
+     "= a^2 + 2ab + b^2"
+    ],
+    "chain": true,
+    "ok": true,
+    "why": ""
+   }
+  ],
+  "reply": "Here is the algebra proof written step by step.",
+  "latencyMs": 2063,
+  "costUsd": 0.00099198,
+  "cached": false
  },
  {
   "id": "m-off-topic",
@@ -1517,10 +2099,12 @@
   "problems": [],
   "figures": [],
   "graphs": [],
-  "reply": "I can only help with maths on the board. Try asking for a problem, graph, or formula.",
-  "latencyMs": 1301,
-  "costUsd": 0.0005837535,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "I can only help with maths on the board. Try asking for practice problems, a graph, or a proof.",
+  "latencyMs": 2333,
+  "costUsd": 0.0007684875,
+  "cached": false
  },
  {
   "id": "m-unkind",
@@ -1537,10 +2121,12 @@
   "problems": [],
   "figures": [],
   "graphs": [],
-  "reply": "I can only help with maths on the board. Try asking for a problem, formula, graph, or figure.",
-  "latencyMs": 1439,
-  "costUsd": 0.0006089985,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "I can only help with maths on the board. Try asking for a problem, a graph, or a proof.",
+  "latencyMs": 1111,
+  "costUsd": 0.0007625475,
+  "cached": false
  },
  {
   "id": "a1-two-step",
@@ -1583,15 +2169,15 @@
    },
    {
     "lines": [
-     "9 - 2x = 1"
+     "7 - 2x = 1"
     ],
     "verdict": "verified",
-    "answer": "x = 4",
+    "answer": "x = 3",
     "clean": true
    },
    {
     "lines": [
-     "4x + 3 = 27"
+     "4x + 9 = 33"
     ],
     "verdict": "verified",
     "answer": "x = 6",
@@ -1600,10 +2186,12 @@
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 5 two-step equations to solve.",
-  "latencyMs": 662,
-  "costUsd": 0.000753489,
-  "cached": true
+  "latencyMs": 1056,
+  "costUsd": 0.00064468008,
+  "cached": false
  },
  {
   "id": "a1-both-sides",
@@ -1630,10 +2218,10 @@
    },
    {
     "lines": [
-     "4x + 7 = 6x - 5"
+     "4x + 7 = 9x - 3"
     ],
     "verdict": "verified",
-    "answer": "x = 6",
+    "answer": "x = 2",
     "clean": true
    },
    {
@@ -1646,19 +2234,21 @@
    },
    {
     "lines": [
-     "8x - 5 = 3x + 20"
+     "7 - 2x = 5x - 14"
     ],
     "verdict": "verified",
-    "answer": "x = 5",
+    "answer": "x = 3",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 4 multi-step equations with variables on both sides.",
-  "latencyMs": 1359,
-  "costUsd": 0.00037509912,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 4 equations with variables on both sides to solve.",
+  "latencyMs": 2082,
+  "costUsd": 0.001623699,
+  "cached": false
  },
  {
   "id": "a1-inequalities",
@@ -1677,23 +2267,23 @@
   "problems": [
    {
     "lines": [
-     "2x + 5 > 11"
+     "x + 5 > 9"
     ],
     "verdict": "verified",
-    "answer": "x > 3",
+    "answer": "x > 4",
     "clean": true
    },
    {
     "lines": [
-     "3x - 4 \\le 8"
+     "2x - 3 \\le 7"
     ],
     "verdict": "verified",
-    "answer": "x \\le 4",
+    "answer": "x \\le 5",
     "clean": true
    },
    {
     "lines": [
-     "7 - 2x < 1"
+     "4 - x < 1"
     ],
     "verdict": "verified",
     "answer": "x > 3",
@@ -1702,10 +2292,12 @@
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 3 inequalities to solve.",
-  "latencyMs": 556,
-  "costUsd": 0.00012621312,
-  "cached": true
+  "latencyMs": 1198,
+  "costUsd": 0.00023965524,
+  "cached": false
  },
  {
   "id": "a1-factoring",
@@ -1732,27 +2324,29 @@
    },
    {
     "lines": [
-     "6x^{2} - x - 2"
+     "3x^{2} - 12"
     ],
     "verdict": "verified",
-    "answer": "= (2x + 1)(3x - 2)",
+    "answer": "= 3(x + 2)(x - 2)",
     "clean": true
    },
    {
     "lines": [
-     "x^{3} - 8"
+     "x^{2} - 5x - 14"
     ],
     "verdict": "verified",
-    "answer": "= (x - 2)(x^{2} + 2x + 4)",
+    "answer": "= (x + 2)(x - 7)",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 3 harder factoring problems.",
-  "latencyMs": 830,
-  "costUsd": 0.00022897512,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 3 harder factoring problems, each with a leading coefficient or a common factor to handle first.",
+  "latencyMs": 1781,
+  "costUsd": 0.00034122924,
+  "cached": false
  },
  {
   "id": "a1-systems",
@@ -1771,29 +2365,31 @@
   "problems": [
    {
     "lines": [
-     "x + y = 10",
-     "x - y = 2"
+     "x + y = 7",
+     "x - y = 1"
     ],
     "verdict": "verified",
-    "answer": "y = 4",
+    "answer": "y = 3",
     "clean": true
    },
    {
     "lines": [
-     "2x + y = 7",
-     "x - y = 2"
+     "2x + 3y = 12",
+     "x - y = 1"
     ],
     "verdict": "verified",
-    "answer": "y = 1",
+    "answer": "y = 2",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 2 systems of linear equations to solve.",
-  "latencyMs": 622,
-  "costUsd": 0.00013571712,
-  "cached": true
+  "latencyMs": 1729,
+  "costUsd": 0.00038459124,
+  "cached": false
  },
  {
   "id": "a1-exponents",
@@ -1820,35 +2416,37 @@
    },
    {
     "lines": [
-     "\\frac{x^{7}}{x^{2}}"
+     "\\frac{y^{7}}{y^{2}}"
     ],
     "verdict": "verified",
-    "answer": "= x^{5}",
+    "answer": "= y^{5}",
     "clean": true
    },
    {
     "lines": [
-     "(3x^{2})^{2}"
+     "(2a^{3})^{4}"
     ],
     "verdict": "verified",
-    "answer": "= 9x^{4}",
+    "answer": "= 16a^{12}",
     "clean": true
    },
    {
     "lines": [
-     "\\frac{12x^{5}}{4x^{2}}"
+     "\\frac{6m^{5}n^{2}}{3m^{2}n^{5}}"
     ],
     "verdict": "verified",
-    "answer": "= 3x^{3}",
+    "answer": "= \\frac{2m^{3}}{n^{3}}",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 4 problems to simplify with the exponent rules.",
-  "latencyMs": 1049,
-  "costUsd": 0.00027114912,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 4 problems to simplify using the exponent rules.",
+  "latencyMs": 933,
+  "costUsd": 0.00016124724,
+  "cached": false
  },
  {
   "id": "a1-quadratics",
@@ -1867,35 +2465,37 @@
   "problems": [
    {
     "lines": [
-     "x^{2} - 7x + 12 = 0"
+     "x^{2} - 5x + 6 = 0"
     ],
     "verdict": "verified",
-    "answer": "x = 3, \\ x = 4",
+    "answer": "x = 2, \\ x = 3",
     "clean": true
    },
    {
     "lines": [
-     "x^{2} + 3x - 10 = 0"
+     "x^{2} + 7x + 12 = 0"
     ],
     "verdict": "verified",
-    "answer": "x = -5, \\ x = 2",
+    "answer": "x = -4, \\ x = -3",
     "clean": true
    },
    {
     "lines": [
-     "2x^{2} - 5x - 3 = 0"
+     "2x^{2} - 7x + 3 = 0"
     ],
     "verdict": "verified",
-    "answer": "x = -\\frac{1}{2}, \\ x = 3",
+    "answer": "x = \\frac{1}{2}, \\ x = 3",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 3 quadratic equations to solve by factoring.",
-  "latencyMs": 521,
-  "costUsd": 0.00015472512,
-  "cached": true
+  "latencyMs": 941,
+  "costUsd": 0.00020995524,
+  "cached": false
  },
  {
   "id": "a2-logs",
@@ -1922,27 +2522,29 @@
    },
    {
     "lines": [
-     "\\log_{3}(x + 1) = 2"
+     "\\log_{3}(x - 1) = 2"
     ],
     "verdict": "verified",
-    "answer": "x = 8",
+    "answer": "x = 10",
     "clean": true
    },
    {
     "lines": [
-     "\\log(x) + \\log(x - 3) = 1"
+     "\\log_{5}(2x + 1) = 2"
     ],
     "verdict": "verified",
-    "answer": "x = 5",
+    "answer": "x = 12",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 3 logarithmic equations to solve.",
-  "latencyMs": 571,
-  "costUsd": 0.00014403312,
-  "cached": true
+  "latencyMs": 1305,
+  "costUsd": 0.00026935524,
+  "cached": false
  },
  {
   "id": "a2-exponential",
@@ -1961,7 +2563,7 @@
   "problems": [
    {
     "lines": [
-     "2^{x + 1} = 16"
+     "2^{x} = 8"
     ],
     "verdict": "verified",
     "answer": "x = 3",
@@ -1969,7 +2571,7 @@
    },
    {
     "lines": [
-     "3^{2x} = 81"
+     "3^{x + 1} = 27"
     ],
     "verdict": "verified",
     "answer": "x = 2",
@@ -1977,19 +2579,21 @@
    },
    {
     "lines": [
-     "5^{x - 1} = 125"
+     "5^{2x} = 125"
     ],
     "verdict": "verified",
-    "answer": "x = 4",
+    "answer": "x = \\frac{3}{2}",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 3 exponential equations you can solve by matching the bases.",
-  "latencyMs": 1093,
-  "costUsd": 0.00026847612,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 3 exponential equations: write each side as a power of the same base, then match the exponents.",
+  "latencyMs": 1139,
+  "costUsd": 0.00024767424,
+  "cached": false
  },
  {
   "id": "a2-radical",
@@ -2025,10 +2629,12 @@
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 2 radical equations to solve.",
-  "latencyMs": 736,
-  "costUsd": 0.00019630512,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 2 radical equations to solve; square both sides and check for extraneous roots.",
+  "latencyMs": 1033,
+  "costUsd": 0.00018144324,
+  "cached": false
  },
  {
   "id": "a2-complex",
@@ -2055,35 +2661,37 @@
    },
    {
     "lines": [
-     "(2 - 5i)(4 + i)"
+     "(2 + i)(4 + 3i)"
     ],
     "verdict": "verified",
-    "answer": "= 13 - 18i",
+    "answer": "= 5 + 10i",
     "clean": true
    },
    {
     "lines": [
-     "(1 + i)(1 - i)"
+     "(1 - 2i)(3 + i)"
     ],
     "verdict": "verified",
-    "answer": "= 2",
+    "answer": "= 5 - 5i",
     "clean": true
    },
    {
     "lines": [
-     "(4 + 3i)(2 + 3i)"
+     "(5 + i)(2 - i)"
     ],
     "verdict": "verified",
-    "answer": "= -1 + 18i",
+    "answer": "= 11 - 3i",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 4 complex number products to work out.",
-  "latencyMs": 570,
-  "costUsd": 0.00014819112,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 4 products of complex numbers to work out.",
+  "latencyMs": 1687,
+  "costUsd": 0.00038756124,
+  "cached": false
  },
  {
   "id": "a2-rational",
@@ -2110,7 +2718,7 @@
    },
    {
     "lines": [
-     "\\frac{2x^{2} + 6x}{2x}"
+     "\\frac{x^{2} + 7x + 12}{x + 4}"
     ],
     "verdict": "verified",
     "answer": "= x + 3",
@@ -2118,19 +2726,21 @@
    },
    {
     "lines": [
-     "\\frac{x^{2} - 4x}{x^{2} - 16}"
+     "\\frac{3x^{2} - 12}{x - 2}"
     ],
     "verdict": "verified",
-    "answer": "= \\frac{x}{x + 4}",
+    "answer": "= 3(x + 2)",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 3 rational expressions to simplify.",
-  "latencyMs": 998,
-  "costUsd": 0.00031688712,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 3 rational expressions to simplify by factoring.",
+  "latencyMs": 1361,
+  "costUsd": 0.00031271724,
+  "cached": false
  },
  {
   "id": "a2-absolute",
@@ -2149,18 +2759,18 @@
   "problems": [
    {
     "lines": [
-     "|x - 3| = 5"
+     "|x - 4| = 7"
     ],
     "verdict": "verified",
-    "answer": "x = 8, \\ x = -2",
+    "answer": "x = 11, \\ x = -3",
     "clean": true
    },
    {
     "lines": [
-     "|2x + 1| = 7"
+     "|2x + 1| = 9"
     ],
     "verdict": "verified",
-    "answer": "x = 3, \\ x = -4",
+    "answer": "x = 4, \\ x = -5",
     "clean": true
    },
    {
@@ -2174,10 +2784,12 @@
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 3 absolute value equations to solve.",
-  "latencyMs": 775,
-  "costUsd": 0.00021561012,
-  "cached": true
+  "latencyMs": 651,
+  "costUsd": 0.00013778424,
+  "cached": false
  },
  {
   "id": "g-pythagoras",
@@ -2204,35 +2816,37 @@
    },
    {
     "lines": [
-     "6^{2} + b^{2} = 10^{2}"
+     "6^{2} + 8^{2} = c^{2}"
     ],
     "verdict": "verified",
-    "answer": "b = 8",
+    "answer": "c = 10",
     "clean": true
    },
    {
     "lines": [
-     "5^{2} + 12^{2} = c^{2}"
+     "5^{2} + b^{2} = 13^{2}"
     ],
     "verdict": "verified",
-    "answer": "c = 13",
+    "answer": "b = 12",
     "clean": true
    },
    {
     "lines": [
-     "a^{2} + 8^{2} = 17^{2}"
+     "a^{2} + 12^{2} = 15^{2}"
     ],
     "verdict": "verified",
-    "answer": "a = 15",
+    "answer": "a = 9",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 4 Pythagorean theorem problems to find the missing side.",
-  "latencyMs": 922,
-  "costUsd": 0.00026610012,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 4 Pythagorean theorem problems: find each missing side, some are the hypotenuse and some are a leg.",
+  "latencyMs": 1158,
+  "costUsd": 0.00029875824,
+  "cached": false
  },
  {
   "id": "g-triangle-angles",
@@ -2259,27 +2873,29 @@
    },
    {
     "lines": [
-     "x + 55 + 55 = 180"
+     "x + 90 + 35 = 180"
     ],
     "verdict": "verified",
-    "answer": "x = 70",
+    "answer": "x = 55",
     "clean": true
    },
    {
     "lines": [
-     "x + 30 + 90 = 180"
+     "x + 55 + 60 = 180"
     ],
     "verdict": "verified",
-    "answer": "x = 60",
+    "answer": "x = 65",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 3 triangles to find the missing angle x.",
-  "latencyMs": 764,
-  "costUsd": 0.00022659912,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 3 triangles to find the missing angle in — write the equation and solve for x.",
+  "latencyMs": 1546,
+  "costUsd": 0.00032459724,
+  "cached": false
  },
  {
   "id": "g-fig-right",
@@ -2306,10 +2922,12 @@
    }
   ],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here is the right triangle with legs 3 and 4; the hypotenuse is x.",
-  "latencyMs": 763,
-  "costUsd": 0.00029015712,
-  "cached": true
+  "latencyMs": 1021,
+  "costUsd": 0.00025985124,
+  "cached": false
  },
  {
   "id": "g-fig-isosceles",
@@ -2336,10 +2954,12 @@
    }
   ],
   "graphs": [],
-  "reply": "Here is an isosceles triangle with a 40° angle at the top; the base angles are each x.",
-  "latencyMs": 1332,
-  "costUsd": 0.00048291012,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here is the isosceles triangle: 40 degrees at the top, and each base angle labelled x.",
+  "latencyMs": 2300,
+  "costUsd": 0.00054289224,
+  "cached": false
  },
  {
   "id": "g-fig-circle",
@@ -2366,10 +2986,12 @@
    }
   ],
   "graphs": [],
-  "reply": "Here is the circle with centre O, radius OA labelled 5.",
-  "latencyMs": 1226,
-  "costUsd": 0.00019986912,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here is the circle with centre O, radius 5, and the radius OA drawn and labelled.",
+  "latencyMs": 838,
+  "costUsd": 0.00022658724,
+  "cached": false
  },
  {
   "id": "g-fig-parallel",
@@ -2396,10 +3018,12 @@
    }
   ],
   "graphs": [],
-  "reply": "Here are two parallel lines cut by a transversal, with the 70° angle and its corresponding angle marked x.",
-  "latencyMs": 11100,
-  "costUsd": 0.00346924512,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are two parallel lines cut by a transversal: one angle is 70° and its corresponding angle is x.",
+  "latencyMs": 11005,
+  "costUsd": 0.00218559924,
+  "cached": false
  },
  {
   "id": "g-fig-rectangle",
@@ -2426,10 +3050,12 @@
    }
   ],
   "graphs": [],
-  "reply": "Here is an 8 by 5 rectangle with the diagonal labelled d.",
-  "latencyMs": 1710,
-  "costUsd": 0.00042707412,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here is an 8 by 5 rectangle with its diagonal labelled d.",
+  "latencyMs": 1777,
+  "costUsd": 0.00046329624,
+  "cached": false
  },
  {
   "id": "c-power-rule",
@@ -2456,43 +3082,45 @@
    },
    {
     "lines": [
-     "\\frac{d}{dx}(4x^{3})"
+     "\\frac{d}{dx}(3x^{4})"
     ],
     "verdict": "verified",
-    "answer": "= 12x^{2}",
+    "answer": "= 12x^{3}",
     "clean": true
    },
    {
     "lines": [
-     "\\frac{d}{dx}(2x^{5} - 3x^{2})"
+     "\\frac{d}{dx}(x^{3} + 5x^{2})"
     ],
     "verdict": "verified",
-    "answer": "= 10x^{4} - 6x",
+    "answer": "= 3x^{2} + 10x",
     "clean": true
    },
    {
     "lines": [
-     "\\frac{d}{dx}(x^{4} + 6x - 2)"
+     "\\frac{d}{dx}(2x^{5} - 4x)"
     ],
     "verdict": "verified",
-    "answer": "= 4x^{3} + 6",
+    "answer": "= 10x^{4} - 4",
     "clean": true
    },
    {
     "lines": [
-     "\\frac{d}{dx}\\left(\\frac{8}{x^{2}}\\right)"
+     "\\frac{d}{dx}(\\frac{x^{7}}{7})"
     ],
     "verdict": "verified",
-    "answer": "= -\\frac{16}{x^{3}}",
+    "answer": "= x^{6}",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 5 derivatives to work out with the power rule.",
-  "latencyMs": 1854,
-  "costUsd": 0.00056310012,
-  "cached": true
+  "latencyMs": 975,
+  "costUsd": 0.00021084624,
+  "cached": false
  },
  {
   "id": "c-definite",
@@ -2519,27 +3147,29 @@
    },
    {
     "lines": [
-     "\\int_{0}^{1} (3x^{2} + 2x) \\, dx"
-    ],
-    "verdict": "verified",
-    "answer": "= 2",
-    "clean": true
-   },
-   {
-    "lines": [
      "\\int_{1}^{3} (2x + 1) \\, dx"
     ],
     "verdict": "verified",
     "answer": "= 10",
     "clean": true
+   },
+   {
+    "lines": [
+     "\\int_{0}^{1} (3x^{2} - 2x) \\, dx"
+    ],
+    "verdict": "verified",
+    "answer": "= 0",
+    "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 3 definite integrals of polynomials to work out.",
-  "latencyMs": 814,
-  "costUsd": 0.00024323112,
-  "cached": true
+  "latencyMs": 1010,
+  "costUsd": 0.00025450524,
+  "cached": false
  },
  {
   "id": "c-limits",
@@ -2558,18 +3188,18 @@
   "problems": [
    {
     "lines": [
-     "\\lim_{x \\to 2} \\frac{x^{2} - 4}{x - 2}"
+     "\\lim_{x \\to 3} \\frac{x^{2} - 9}{x - 3}"
     ],
     "verdict": "verified",
-    "answer": "= 4",
+    "answer": "= 6",
     "clean": true
    },
    {
     "lines": [
-     "\\lim_{x \\to 3} \\frac{x^{2} - x - 6}{x - 3}"
+     "\\lim_{x \\to 2} \\frac{x^{2} - 5x + 6}{x - 2}"
     ],
     "verdict": "verified",
-    "answer": "= 5",
+    "answer": "= -1",
     "clean": true
    },
    {
@@ -2583,10 +3213,12 @@
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 3 limits that need factoring first.",
-  "latencyMs": 1144,
-  "costUsd": 0.00033619212,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 3 limits to work out by factoring the top first.",
+  "latencyMs": 1876,
+  "costUsd": 0.00042825024,
+  "cached": false
  },
  {
   "id": "c-chain",
@@ -2605,35 +3237,37 @@
   "problems": [
    {
     "lines": [
-     "\\frac{d}{dx}(2x + 1)^{5}"
+     "\\frac{d}{dx}(2x + 1)^{3}"
     ],
     "verdict": "verified",
-    "answer": "= 10(2x + 1)^{4}",
+    "answer": "= 6(2x + 1)^{2}",
     "clean": true
    },
    {
     "lines": [
-     "\\frac{d}{dx}\\sin(3x^{2})"
+     "\\frac{d}{dx}\\sin(3x)"
     ],
     "verdict": "verified",
-    "answer": "= 6\\cdot x\\cdot\\cos\\left(3\\cdot{x}^{2}\\right)",
+    "answer": "= 3\\cos(3x)",
     "clean": true
    },
    {
     "lines": [
-     "\\frac{d}{dx}e^{4x - 1}"
+     "\\frac{d}{dx}(x^{2} + 1)^{4}"
     ],
     "verdict": "verified",
-    "answer": "= 4e^{4x - 1}",
+    "answer": "= 8x(x^{2} + 1)^{3}",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
+  "proofs": [],
+  "lines": [],
   "reply": "Here are 3 chain rule derivatives to work out.",
-  "latencyMs": 517,
-  "costUsd": 0.00014789412,
-  "cached": true
+  "latencyMs": 1154,
+  "costUsd": 0.00022450824,
+  "cached": false
  },
  {
   "id": "gr-sin",
@@ -2660,10 +3294,12 @@
     "window": true
    }
   ],
+  "proofs": [],
+  "lines": [],
   "reply": "Here is y = sin x from -2π to 2π.",
-  "latencyMs": 492,
-  "costUsd": 0.00014076612,
-  "cached": true
+  "latencyMs": 665,
+  "costUsd": 0.00014372424,
+  "cached": false
  },
  {
   "id": "gr-parabola",
@@ -2690,10 +3326,12 @@
     "window": true
    }
   ],
+  "proofs": [],
+  "lines": [],
   "reply": "Here is the graph of y = x^2 - 4x + 3.",
-  "latencyMs": 660,
-  "costUsd": 0.00018115812,
-  "cached": true
+  "latencyMs": 707,
+  "costUsd": 0.00016867224,
+  "cached": false
  },
  {
   "id": "gr-system",
@@ -2721,10 +3359,12 @@
     "window": false
    }
   ],
-  "reply": "Here is the system y = 2x + 1 and y = -x + 4, with where they cross.",
-  "latencyMs": 384,
-  "costUsd": 0.00012354012,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here is the system: the two lines are drawn with their crossing point.",
+  "latencyMs": 810,
+  "costUsd": 0.00011343024,
+  "cached": false
  },
  {
   "id": "gr-region",
@@ -2748,13 +3388,15 @@
      "y < 2x + 1"
     ],
     "graphed": true,
-    "window": false
+    "window": true
    }
   ],
-  "reply": "Here is y < 2x + 1 shaded below the dashed line.",
-  "latencyMs": 519,
-  "costUsd": 0.00011819412,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here is y < 2x + 1 with the half-plane below the dashed line shaded.",
+  "latencyMs": 744,
+  "costUsd": 0.00019243224,
+  "cached": false
  },
  {
   "id": "gr-circle",
@@ -2781,10 +3423,12 @@
     "window": true
    }
   ],
+  "proofs": [],
+  "lines": [],
   "reply": "Here is the circle x^2 + y^2 = 25, centred at the origin with radius 5.",
-  "latencyMs": 778,
-  "costUsd": 0.00015621012,
-  "cached": true
+  "latencyMs": 2046,
+  "costUsd": 0.00015916824,
+  "cached": false
  },
  {
   "id": "f-more",
@@ -2819,1463 +3463,7 @@
    },
    {
     "lines": [
-     "\\frac{x}{2} + 3 = 9"
-    ],
-    "verdict": "verified",
-    "answer": "x = 12",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 more two-step equations like the ones you just did.",
-  "latencyMs": 740,
-  "costUsd": 0.00017997012,
-  "cached": true
- },
- {
-  "id": "f-harder",
-  "course": "mixed",
-  "kind": "followup",
-  "model": "deepseek/deepseek-v4.1-flash",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "-2x + 9 = 1"
-    ],
-    "verdict": "verified",
-    "answer": "x = 4",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{2x}{3} - 4 = 6"
-    ],
-    "verdict": "verified",
-    "answer": "x = 15",
-    "clean": true
-   },
-   {
-    "lines": [
-     "5 - 3x = -10"
-    ],
-    "verdict": "verified",
-    "answer": "x = 5",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 harder two-step equations, with negatives and fractions.",
-  "latencyMs": 1472,
-  "costUsd": 0.00033873444,
-  "cached": true
- },
- {
-  "id": "f-graph-that",
-  "course": "mixed",
-  "kind": "followup",
-  "model": "deepseek/deepseek-v4.1-flash",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "graph"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [
-   {
-    "relations": [
-     "y = 3x - 2"
-    ],
-    "graphed": true,
-    "window": false
-   }
-  ],
-  "reply": "Here is the graph of y = 3x - 2.",
-  "latencyMs": 483,
-  "costUsd": 0.00013066812,
-  "cached": true
- },
- {
-  "id": "m-new-screen",
-  "course": "mixed",
-  "kind": "screen",
-  "model": "deepseek/deepseek-v4.1-flash",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "new_screen"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [],
-  "reply": "Fresh screen for you.",
-  "latencyMs": 464,
-  "costUsd": 0.00009473112,
-  "cached": true
- },
- {
-  "id": "m-clear",
-  "course": "mixed",
-  "kind": "screen",
-  "model": "deepseek/deepseek-v4.1-flash",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "clear_tutor"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [],
-  "reply": "Cleared my writing from this screen.",
-  "latencyMs": 465,
-  "costUsd": 0.00007321644,
-  "cached": true
- },
- {
-  "id": "m-formula",
-  "course": "mixed",
-  "kind": "lines",
-  "model": "deepseek/deepseek-v4.1-flash",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_lines"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here is the quadratic formula.",
-  "latencyMs": 484,
-  "costUsd": 0.00011789712,
-  "cached": true
- },
- {
-  "id": "m-solve-for-me",
-  "course": "mixed",
-  "kind": "problems",
-  "model": "deepseek/deepseek-v4.1-flash",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "2x + 5 = 17"
-    ],
-    "verdict": "verified",
-    "answer": "x = 6",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "I can't solve it here, but I've put it on the board — the Solve tab works it out step by step.",
-  "latencyMs": 798,
-  "costUsd": 0.00014522112,
-  "cached": true
- },
- {
-  "id": "m-off-topic",
-  "course": "mixed",
-  "kind": "refusal",
-  "model": "deepseek/deepseek-v4.1-flash",
-  "json": true,
-  "proposed": 0,
-  "valid": 0,
-  "dropped": [],
-  "types": [],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [],
-  "reply": "I can only help with maths on this board. Try asking for some practice problems, a graph, or a figure.",
-  "latencyMs": 630,
-  "costUsd": 0.00009591912,
-  "cached": true
- },
- {
-  "id": "m-unkind",
-  "course": "mixed",
-  "kind": "refusal",
-  "model": "deepseek/deepseek-v4.1-flash",
-  "json": true,
-  "proposed": 0,
-  "valid": 0,
-  "dropped": [],
-  "types": [],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [],
-  "reply": "I can't write that — I can only help with maths on the board. Want some practice problems or a graph instead?",
-  "latencyMs": 863,
-  "costUsd": 0.00009681012,
-  "cached": true
- },
- {
-  "id": "a1-two-step",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": false,
-  "proposed": 0,
-  "valid": 0,
-  "dropped": [],
-  "types": [],
-  "intent": false,
-  "intentWhy": "not JSON",
-  "problems": [],
-  "figures": [],
-  "graphs": [],
-  "reply": "",
-  "latencyMs": 2055,
-  "costUsd": 0.0013068,
-  "cached": true
- },
- {
-  "id": "a1-both-sides",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "3x + 5 = 2x + 10"
-    ],
-    "verdict": "verified",
-    "answer": "x = 5",
-    "clean": true
-   },
-   {
-    "lines": [
-     "5(x - 2) = 2x + 4"
-    ],
-    "verdict": "verified",
-    "answer": "x = \\frac{14}{3}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "4x - 7 = 2x + 9"
-    ],
-    "verdict": "verified",
-    "answer": "x = 8",
-    "clean": true
-   },
-   {
-    "lines": [
-     "2(3x + 1) = 4x + 10"
-    ],
-    "verdict": "verified",
-    "answer": "x = 4",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 4 multi-step equations with variables on both sides for you to solve.",
-  "latencyMs": 1252,
-  "costUsd": 0.0008046225,
-  "cached": true
- },
- {
-  "id": "a1-inequalities",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": false,
-  "proposed": 0,
-  "valid": 0,
-  "dropped": [],
-  "types": [],
-  "intent": false,
-  "intentWhy": "not JSON",
-  "problems": [],
-  "figures": [],
-  "graphs": [],
-  "reply": "",
-  "latencyMs": 1975,
-  "costUsd": 0.001191465,
-  "cached": true
- },
- {
-  "id": "a1-factoring",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 2,
-  "valid": 2,
-  "dropped": [],
-  "types": [
-   "new_screen",
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "2x^{2} + 7x + 3"
-    ],
-    "verdict": "verified",
-    "answer": "= (x + 3)(2x + 1)",
-    "clean": true
-   },
-   {
-    "lines": [
-     "3x^{2} - 10x + 8"
-    ],
-    "verdict": "verified",
-    "answer": "= (3x - 4)(x - 2)",
-    "clean": true
-   },
-   {
-    "lines": [
-     "4x^{2} - 25"
-    ],
-    "verdict": "verified",
-    "answer": "= (2x + 5)(2x - 5)",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are three slightly more challenging factoring problems for you.",
-  "latencyMs": 1076,
-  "costUsd": 0.0007521525,
-  "cached": true
- },
- {
-  "id": "a1-systems",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "x + y = 5",
-     "x - y = 1"
-    ],
-    "verdict": "verified",
-    "answer": "y = 2",
-    "clean": true
-   },
-   {
-    "lines": [
-     "2x + y = 8",
-     "x - y = 1"
-    ],
-    "verdict": "verified",
-    "answer": "y = 2",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are two systems of linear equations for you to solve.",
-  "latencyMs": 1069,
-  "costUsd": 0.000832095,
-  "cached": true
- },
- {
-  "id": "a1-exponents",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "x^{3} \\cdot x^{4}"
-    ],
-    "verdict": "verified",
-    "answer": "= x^{7}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "(x^{2})^{3}"
-    ],
-    "verdict": "verified",
-    "answer": "= x^{6}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{x^{6}}{x^{2}}"
-    ],
-    "verdict": "verified",
-    "answer": "= x^{4}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "(2x^{3})^{2}"
-    ],
-    "verdict": "verified",
-    "answer": "= 4x^{6}",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 4 problems to practice simplifying expressions using exponent rules.",
-  "latencyMs": 1016,
-  "costUsd": 0.000740025,
-  "cached": true
- },
- {
-  "id": "a1-quadratics",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "x^{2} + 5x + 6 = 0"
-    ],
-    "verdict": "verified",
-    "answer": "x = -3, \\ x = -2",
-    "clean": true
-   },
-   {
-    "lines": [
-     "x^{2} - 7x + 10 = 0"
-    ],
-    "verdict": "verified",
-    "answer": "x = 2, \\ x = 5",
-    "clean": true
-   },
-   {
-    "lines": [
-     "x^{2} - 9 = 0"
-    ],
-    "verdict": "verified",
-    "answer": "x = \\pm 3",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 quadratic equations for you to solve by factoring.",
-  "latencyMs": 1664,
-  "costUsd": 0.001170675,
-  "cached": true
- },
- {
-  "id": "a2-logs",
-  "course": "algebra2",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\log_{2}(x) = 3"
-    ],
-    "verdict": "verified",
-    "answer": "x = 8",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\log_{3}(x + 1) = 2"
-    ],
-    "verdict": "verified",
-    "answer": "x = 8",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\log_{5}(2x - 3) = 1"
-    ],
-    "verdict": "verified",
-    "answer": "x = 4",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 logarithmic equations for you to solve.",
-  "latencyMs": 1169,
-  "costUsd": 0.000822195,
-  "cached": true
- },
- {
-  "id": "a2-exponential",
-  "course": "algebra2",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "2^{x} = 32"
-    ],
-    "verdict": "verified",
-    "answer": "x = 5",
-    "clean": true
-   },
-   {
-    "lines": [
-     "3^{x + 1} = 81"
-    ],
-    "verdict": "verified",
-    "answer": "x = 3",
-    "clean": true
-   },
-   {
-    "lines": [
-     "5^{2x - 1} = 125"
-    ],
-    "verdict": "verified",
-    "answer": "x = 2",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are three exponential equations that can be solved by matching the bases.",
-  "latencyMs": 1369,
-  "costUsd": 0.0008595675,
-  "cached": true
- },
- {
-  "id": "a2-radical",
-  "course": "algebra2",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\sqrt{x + 5} = 3"
-    ],
-    "verdict": "verified",
-    "answer": "x = 4",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\sqrt{2x - 3} = 5"
-    ],
-    "verdict": "verified",
-    "answer": "x = 14",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are two radical equations for you to solve.",
-  "latencyMs": 1429,
-  "costUsd": 0.000801405,
-  "cached": true
- },
- {
-  "id": "a2-complex",
-  "course": "algebra2",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "(2 + 3i)(1 + 2i)"
-    ],
-    "verdict": "verified",
-    "answer": "= -4 + 7i",
-    "clean": true
-   },
-   {
-    "lines": [
-     "(4 - i)(2 + 3i)"
-    ],
-    "verdict": "verified",
-    "answer": "= 11 + 10i",
-    "clean": true
-   },
-   {
-    "lines": [
-     "(3 + 2i)(3 - 2i)"
-    ],
-    "verdict": "verified",
-    "answer": "= 13",
-    "clean": true
-   },
-   {
-    "lines": [
-     "(1 - 4i)(2 - i)"
-    ],
-    "verdict": "verified",
-    "answer": "= -2 - 9i",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are four problems involving the multiplication of complex numbers.",
-  "latencyMs": 1415,
-  "costUsd": 0.000741015,
-  "cached": true
- },
- {
-  "id": "a2-rational",
-  "course": "algebra2",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\frac{x^{2} - 9}{x^{2} + 5x + 6}"
-    ],
-    "verdict": "verified",
-    "answer": "= \\frac{x - 3}{x + 2}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{2x^{2} - 8}{x^{2} - 4x + 4}"
-    ],
-    "verdict": "verified",
-    "answer": "= \\frac{2(x + 2)}{x - 2}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{x^{2} - 5x + 6}{x^{2} - 4}"
-    ],
-    "verdict": "verified",
-    "answer": "= \\frac{x - 3}{x + 2}",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 rational expressions for you to simplify.",
-  "latencyMs": 1191,
-  "costUsd": 0.000874665,
-  "cached": true
- },
- {
-  "id": "a2-absolute",
-  "course": "algebra2",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "|x - 5| = 3"
-    ],
-    "verdict": "verified",
-    "answer": "x = 8, \\ x = 2",
-    "clean": true
-   },
-   {
-    "lines": [
-     "|2x + 1| = 7"
-    ],
-    "verdict": "verified",
-    "answer": "x = 3, \\ x = -4",
-    "clean": true
-   },
-   {
-    "lines": [
-     "|3x - 4| = 5"
-    ],
-    "verdict": "verified",
-    "answer": "x = 3, \\ x = -\\frac{1}{3}",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are three absolute value equations for you to solve.",
-  "latencyMs": 1040,
-  "costUsd": 0.0007882875,
-  "cached": true
- },
- {
-  "id": "g-pythagoras",
-  "course": "geometry",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "3^{2} + 4^{2} = c^{2}"
-    ],
-    "verdict": "verified",
-    "answer": "c = 5",
-    "clean": true
-   },
-   {
-    "lines": [
-     "a^{2} + 12^{2} = 13^{2}"
-    ],
-    "verdict": "verified",
-    "answer": "a = 5",
-    "clean": true
-   },
-   {
-    "lines": [
-     "6^{2} + 8^{2} = c^{2}"
-    ],
-    "verdict": "verified",
-    "answer": "c = 10",
-    "clean": true
-   },
-   {
-    "lines": [
-     "a^{2} + 15^{2} = 17^{2}"
-    ],
-    "verdict": "verified",
-    "answer": "a = 8",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 4 Pythagorean theorem problems for you to solve.",
-  "latencyMs": 1153,
-  "costUsd": 0.0008268975,
-  "cached": true
- },
- {
-  "id": "g-triangle-angles",
-  "course": "geometry",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "x + 50 + 60 = 180"
-    ],
-    "verdict": "verified",
-    "answer": "x = 70",
-    "clean": true
-   },
-   {
-    "lines": [
-     "x + 45 + 90 = 180"
-    ],
-    "verdict": "verified",
-    "answer": "x = 45",
-    "clean": true
-   },
-   {
-    "lines": [
-     "x + 35 + 75 = 180"
-    ],
-    "verdict": "verified",
-    "answer": "x = 70",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are three problems to help you find the missing angle in a triangle.",
-  "latencyMs": 1150,
-  "costUsd": 0.00079398,
-  "cached": true
- },
- {
-  "id": "g-fig-right",
-  "course": "geometry",
-  "kind": "figure",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "draw_figure"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [
-   {
-    "schema": true,
-    "cleanFirst": true,
-    "cleanAfterRepair": true,
-    "drawn": true,
-    "problems": []
-   }
-  ],
-  "graphs": [],
-  "reply": "Here is the right triangle with legs 3 and 4 and hypotenuse x.",
-  "latencyMs": 1295,
-  "costUsd": 0.00087318,
-  "cached": true
- },
- {
-  "id": "g-fig-isosceles",
-  "course": "geometry",
-  "kind": "figure",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "draw_figure"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [
-   {
-    "schema": true,
-    "cleanFirst": true,
-    "cleanAfterRepair": true,
-    "drawn": true,
-    "problems": []
-   }
-  ],
-  "graphs": [],
-  "reply": "Here is an isosceles triangle with a 40 degree top angle and base angles labeled x.",
-  "latencyMs": 3056,
-  "costUsd": 0.001876545,
-  "cached": true
- },
- {
-  "id": "g-fig-circle",
-  "course": "geometry",
-  "kind": "figure",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "draw_figure"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [
-   {
-    "schema": true,
-    "cleanFirst": true,
-    "cleanAfterRepair": true,
-    "drawn": true,
-    "problems": []
-   }
-  ],
-  "graphs": [],
-  "reply": "Here is a circle with center O and radius 5.",
-  "latencyMs": 1057,
-  "costUsd": 0.000784575,
-  "cached": true
- },
- {
-  "id": "g-fig-parallel",
-  "course": "geometry",
-  "kind": "figure",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "draw_figure"
-  ],
-  "intent": false,
-  "intentWhy": "the figure is still wrong after the repair (dropped)",
-  "problems": [],
-  "figures": [
-   {
-    "schema": true,
-    "cleanFirst": false,
-    "cleanAfterRepair": false,
-    "drawn": true,
-    "problems": [
-     "Angle BI1P1 is labelled 70° but is drawn 135°; move the points so it measures 70° (within 5°)."
-    ],
-    "repair": {
-     "model": "google/gemini-3.1-flash-lite",
-     "key": "30f26acdbb69933f39983168ede68d2771930354",
-     "latencyMs": 1534,
-     "promptTokens": 910,
-     "completionTokens": 381,
-     "reasoningTokens": 154,
-     "attempts": 1,
-     "cached": true,
-     "ok": true,
-     "status": 200,
-     "costUsd": 0.00079101,
-     "costSource": "usage",
-     "provider": "Google AI Studio",
-     "finishReason": "stop",
-     "at": "2026-09-28T14:51:41.550Z"
-    }
-   }
-  ],
-  "graphs": [],
-  "reply": "Here are two parallel lines cut by a transversal with the requested angles.",
-  "latencyMs": 1822,
-  "costUsd": 0.0011961675,
-  "cached": true
- },
- {
-  "id": "g-fig-rectangle",
-  "course": "geometry",
-  "kind": "figure",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "draw_figure"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [
-   {
-    "schema": true,
-    "cleanFirst": true,
-    "cleanAfterRepair": true,
-    "drawn": true,
-    "problems": []
-   }
-  ],
-  "graphs": [],
-  "reply": "Here is a rectangle with sides 8 and 5 and a diagonal labeled d.",
-  "latencyMs": 1265,
-  "costUsd": 0.0008778825,
-  "cached": true
- },
- {
-  "id": "c-power-rule",
-  "course": "calculus",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\frac{d}{dx}(x^{4})"
-    ],
-    "verdict": "verified",
-    "answer": "= 4x^{3}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{d}{dx}(3x^{2})"
-    ],
-    "verdict": "verified",
-    "answer": "= 6x",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{d}{dx}(x^{5} + 2x)"
-    ],
-    "verdict": "verified",
-    "answer": "= 5x^{4} + 2",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{d}{dx}(4x^{3} - 5x^{2})"
-    ],
-    "verdict": "verified",
-    "answer": "= 12x^{2} - 10x",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{d}{dx}(2x^{4} - 3x + 7)"
-    ],
-    "verdict": "verified",
-    "answer": "= 8x^{3} - 3",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 5 derivatives for you to practice using the power rule.",
-  "latencyMs": 1304,
-  "costUsd": 0.0008511525,
-  "cached": true
- },
- {
-  "id": "c-definite",
-  "course": "calculus",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\int_{0}^{2} (3x^{2} + 2x) \\, dx"
-    ],
-    "verdict": "verified",
-    "answer": "= 12",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\int_{1}^{3} (4x^{3} - 1) \\, dx"
-    ],
-    "verdict": "verified",
-    "answer": "= 78",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\int_{-1}^{2} (6x^{2} - 4x + 1) \\, dx"
-    ],
-    "verdict": "verified",
-    "answer": "= 15",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 definite integrals of polynomials for you to solve.",
-  "latencyMs": 1062,
-  "costUsd": 0.00082269,
-  "cached": true
- },
- {
-  "id": "c-limits",
-  "course": "calculus",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\lim_{x \\to 2} \\frac{x^{2} - 4}{x - 2}"
-    ],
-    "verdict": "verified",
-    "answer": "= 4",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\lim_{x \\to 3} \\frac{x^{2} - 9}{x - 3}"
-    ],
-    "verdict": "verified",
-    "answer": "= 6",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\lim_{x \\to 5} \\frac{x^{2} - 25}{x - 5}"
-    ],
-    "verdict": "verified",
-    "answer": "= 10",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are three limits that require factoring before you can evaluate them.",
-  "latencyMs": 1081,
-  "costUsd": 0.0008273925,
-  "cached": true
- },
- {
-  "id": "c-chain",
-  "course": "calculus",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\frac{d}{dx}(2x + 1)^{3}"
-    ],
-    "verdict": "verified",
-    "answer": "= 6(2x + 1)^{2}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{d}{dx}\\sin(3x)"
-    ],
-    "verdict": "verified",
-    "answer": "= 3\\cos(3x)",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{d}{dx}e^{x^{2}}"
-    ],
-    "verdict": "verified",
-    "answer": "= 2xe^{x^{2}}",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are three derivatives that require the chain rule.",
-  "latencyMs": 1095,
-  "costUsd": 0.0007719525,
-  "cached": true
- },
- {
-  "id": "gr-sin",
-  "course": "algebra2",
-  "kind": "graph",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "graph"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [
-   {
-    "relations": [
-     "y = \\sin x"
-    ],
-    "graphed": true,
-    "window": true
-   }
-  ],
-  "reply": "Here is the graph of y = sin x from -2π to 2π.",
-  "latencyMs": 1895,
-  "costUsd": 0.0013738725,
-  "cached": true
- },
- {
-  "id": "gr-parabola",
-  "course": "algebra1",
-  "kind": "graph",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "graph"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [
-   {
-    "relations": [
-     "y = x^{2} - 4x + 3"
-    ],
-    "graphed": true,
-    "window": false
-   }
-  ],
-  "reply": "Here is the graph of the quadratic function.",
-  "latencyMs": 1098,
-  "costUsd": 0.0007813575,
-  "cached": true
- },
- {
-  "id": "gr-system",
-  "course": "algebra1",
-  "kind": "graph",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "graph"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [
-   {
-    "relations": [
-     "y = 2x + 1",
-     "y = -x + 4"
-    ],
-    "graphed": true,
-    "window": true
-   }
-  ],
-  "reply": "Here is the graph of the system of equations.",
-  "latencyMs": 991,
-  "costUsd": 0.0008125425,
-  "cached": true
- },
- {
-  "id": "gr-region",
-  "course": "algebra1",
-  "kind": "graph",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "graph"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [
-   {
-    "relations": [
-     "y < 2x + 1"
-    ],
-    "graphed": true,
-    "window": false
-   }
-  ],
-  "reply": "Here is the graph of the inequality y < 2x + 1.",
-  "latencyMs": 1058,
-  "costUsd": 0.0007922475,
-  "cached": true
- },
- {
-  "id": "gr-circle",
-  "course": "geometry",
-  "kind": "graph",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "graph"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [
-   {
-    "relations": [
-     "x^{2} + y^{2} = 25"
-    ],
-    "graphed": true,
-    "window": true
-   }
-  ],
-  "reply": "Here is the graph of the circle x^2 + y^2 = 25.",
-  "latencyMs": 982,
-  "costUsd": 0.00080982,
-  "cached": true
- },
- {
-  "id": "f-more",
-  "course": "mixed",
-  "kind": "followup",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 2,
-  "valid": 2,
-  "dropped": [],
-  "types": [
-   "new_screen",
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "4x + 5 = 17"
-    ],
-    "verdict": "verified",
-    "answer": "x = 3",
-    "clean": true
-   },
-   {
-    "lines": [
-     "3x - 7 = 8"
-    ],
-    "verdict": "verified",
-    "answer": "x = 5",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{x}{2} - 4 = 1"
+     "\\frac{x}{2} + 6 = 11"
     ],
     "verdict": "verified",
     "answer": "x = 10",
@@ -4284,160 +3472,18 @@
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 3 more two-step equations for you to practice.",
-  "latencyMs": 1158,
-  "costUsd": 0.00089892,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 3 more two-step equations like those ones.",
+  "latencyMs": 2156,
+  "costUsd": 0.00017936424,
+  "cached": false
  },
  {
   "id": "f-harder",
   "course": "mixed",
   "kind": "followup",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 2,
-  "valid": 2,
-  "dropped": [],
-  "types": [
-   "new_screen",
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "-4x + 9 = 25"
-    ],
-    "verdict": "verified",
-    "answer": "x = -4",
-    "clean": true
-   },
-   {
-    "lines": [
-     "12 - 3x = 3"
-    ],
-    "verdict": "verified",
-    "answer": "x = 3",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{3x}{4} - 2 = 4"
-    ],
-    "verdict": "verified",
-    "answer": "x = 8",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are three slightly more challenging two-step equations for you.",
-  "latencyMs": 3534,
-  "costUsd": 0.00167211,
-  "cached": true
- },
- {
-  "id": "f-graph-that",
-  "course": "mixed",
-  "kind": "followup",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "graph"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [
-   {
-    "relations": [
-     "y = 3x - 2"
-    ],
-    "graphed": true,
-    "window": false
-   }
-  ],
-  "reply": "I have graphed the line y = 3x - 2 for you.",
-  "latencyMs": 1008,
-  "costUsd": 0.0007947225,
-  "cached": true
- },
- {
-  "id": "m-new-screen",
-  "course": "mixed",
-  "kind": "screen",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "new_screen"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [],
-  "reply": "Starting a fresh screen for you.",
-  "latencyMs": 901,
-  "costUsd": 0.000708345,
-  "cached": true
- },
- {
-  "id": "m-clear",
-  "course": "mixed",
-  "kind": "screen",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "clear_tutor"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [],
-  "reply": "I have cleared my writing from the board.",
-  "latencyMs": 861,
-  "costUsd": 0.0007427475,
-  "cached": true
- },
- {
-  "id": "m-formula",
-  "course": "mixed",
-  "kind": "lines",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_lines"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here is the quadratic formula for you.",
-  "latencyMs": 1299,
-  "costUsd": 0.000920205,
-  "cached": true
- },
- {
-  "id": "m-solve-for-me",
-  "course": "mixed",
-  "kind": "problems",
-  "model": "google/gemini-3.1-flash-lite",
+  "model": "deepseek/deepseek-v4.1-flash",
   "json": true,
   "proposed": 1,
   "valid": 1,
@@ -4450,1360 +3496,15 @@
   "problems": [
    {
     "lines": [
-     "2x + 5 = 17"
+     "3(x - 2) = 15"
     ],
     "verdict": "verified",
-    "answer": "x = 6",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "I cannot solve this for you, but you can use the Solve tab to see the steps. Here is the problem for you to try.",
-  "latencyMs": 993,
-  "costUsd": 0.0007769025,
-  "cached": true
- },
- {
-  "id": "m-off-topic",
-  "course": "mixed",
-  "kind": "refusal",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 0,
-  "valid": 0,
-  "dropped": [],
-  "types": [],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [],
-  "reply": "I can only help with maths on this board. Try asking for some practice problems or a graph.",
-  "latencyMs": 883,
-  "costUsd": 0.00070587,
-  "cached": true
- },
- {
-  "id": "m-unkind",
-  "course": "mixed",
-  "kind": "refusal",
-  "model": "google/gemini-3.1-flash-lite",
-  "json": true,
-  "proposed": 0,
-  "valid": 0,
-  "dropped": [],
-  "types": [],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [],
-  "reply": "I can only help with maths on this board, so I cannot write anything unkind.",
-  "latencyMs": 1090,
-  "costUsd": 0.0007387875,
-  "cached": true
- },
- {
-  "id": "a1-two-step",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "2x + 5 = 13"
-    ],
-    "verdict": "verified",
-    "answer": "x = 4",
+    "answer": "x = 7",
     "clean": true
    },
    {
     "lines": [
-     "3x - 4 = 11"
-    ],
-    "verdict": "verified",
-    "answer": "x = 5",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{x}{2} + 3 = 7"
-    ],
-    "verdict": "verified",
-    "answer": "x = 8",
-    "clean": true
-   },
-   {
-    "lines": [
-     "5 - 2x = 3"
-    ],
-    "verdict": "verified",
-    "answer": "x = 1",
-    "clean": true
-   },
-   {
-    "lines": [
-     "4x + 7 = 19"
-    ],
-    "verdict": "verified",
-    "answer": "x = 3",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 5 two-step equations to solve.",
-  "latencyMs": 869,
-  "costUsd": 0.000856251,
-  "cached": true
- },
- {
-  "id": "a1-both-sides",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "3x + 5 = 2x + 11"
-    ],
-    "verdict": "verified",
-    "answer": "x = 6",
-    "clean": true
-   },
-   {
-    "lines": [
-     "5x - 4 = 2x + 8"
-    ],
-    "verdict": "verified",
-    "answer": "x = 4",
-    "clean": true
-   },
-   {
-    "lines": [
-     "4x - 7 = x + 8"
-    ],
-    "verdict": "verified",
-    "answer": "x = 5",
-    "clean": true
-   },
-   {
-    "lines": [
-     "6x + 2 = 3x + 14"
-    ],
-    "verdict": "verified",
-    "answer": "x = 4",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 4 multi-step equations with variables on both sides for you to solve.",
-  "latencyMs": 867,
-  "costUsd": 0.000872586,
-  "cached": true
- },
- {
-  "id": "a1-inequalities",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "2x + 3 > 7"
-    ],
-    "verdict": "verified",
-    "answer": "x > 2",
-    "clean": true
-   },
-   {
-    "lines": [
-     "5 - x \\le 2"
-    ],
-    "verdict": "verified",
-    "answer": "x \\ge 3",
-    "clean": true
-   },
-   {
-    "lines": [
-     "3x - 1 < 8"
-    ],
-    "verdict": "verified",
-    "answer": "x < 3",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 one-variable inequalities to solve.",
-  "latencyMs": 992,
-  "costUsd": 0.000787545,
-  "cached": true
- },
- {
-  "id": "a1-factoring",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "2x^{2} + 5x + 2"
-    ],
-    "verdict": "verified",
-    "answer": "= (x + 2)(2x + 1)",
-    "clean": true
-   },
-   {
-    "lines": [
-     "2x^{2} - 18"
-    ],
-    "verdict": "verified",
-    "answer": "= 2(x + 3)(x - 3)",
-    "clean": true
-   },
-   {
-    "lines": [
-     "3x^{2} + 10x + 3"
-    ],
-    "verdict": "verified",
-    "answer": "= (x + 3)(3x + 1)",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 harder factoring problems.",
-  "latencyMs": 4213,
-  "costUsd": 0.003318777,
-  "cached": true
- },
- {
-  "id": "a1-systems",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "x + y = 7",
-     "2x - y = 2"
-    ],
-    "verdict": "verified",
-    "answer": "y = 4",
-    "clean": true
-   },
-   {
-    "lines": [
-     "3x + 2y = 12",
-     "x - y = 1"
-    ],
-    "verdict": "verified",
-    "answer": "y = \\frac{9}{5}",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 2 systems of linear equations to solve.",
-  "latencyMs": 922,
-  "costUsd": 0.00080982,
-  "cached": true
- },
- {
-  "id": "a1-exponents",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "x^{3} \\cdot x^{5}"
-    ],
-    "verdict": "verified",
-    "answer": "= x^{8}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{x^{6}}{x^{2}}"
-    ],
-    "verdict": "verified",
-    "answer": "= x^{4}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "(x^{3})^{2}"
-    ],
-    "verdict": "verified",
-    "answer": "= x^{6}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "x^{-3}"
-    ],
-    "verdict": "verified",
-    "answer": "= \\frac{1}{x^{3}}",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 4 exponent rule problems to simplify.",
-  "latencyMs": 2883,
-  "costUsd": 0.00223542,
-  "cached": true
- },
- {
-  "id": "a1-quadratics",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "x^{2} - 5x + 6 = 0"
-    ],
-    "verdict": "verified",
-    "answer": "x = 2, \\ x = 3",
-    "clean": true
-   },
-   {
-    "lines": [
-     "x^{2} + 7x + 10 = 0"
-    ],
-    "verdict": "verified",
-    "answer": "x = -5, \\ x = -2",
-    "clean": true
-   },
-   {
-    "lines": [
-     "x^{2} - 9 = 0"
-    ],
-    "verdict": "verified",
-    "answer": "x = \\pm 3",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 quadratic equations to solve by factoring.",
-  "latencyMs": 1047,
-  "costUsd": 0.000827145,
-  "cached": true
- },
- {
-  "id": "a2-logs",
-  "course": "algebra2",
-  "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\log_{2}(x) = 3"
-    ],
-    "verdict": "verified",
-    "answer": "x = 8",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\log_{3}(x - 1) = 2"
-    ],
-    "verdict": "verified",
-    "answer": "x = 10",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\log_{5}(2x + 1) = 2"
-    ],
-    "verdict": "verified",
-    "answer": "x = 12",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 logarithmic equations to solve.",
-  "latencyMs": 1140,
-  "costUsd": 0.000811107,
-  "cached": true
- },
- {
-  "id": "a2-exponential",
-  "course": "algebra2",
-  "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "2^{x} = 16"
-    ],
-    "verdict": "verified",
-    "answer": "x = 4",
-    "clean": true
-   },
-   {
-    "lines": [
-     "3^{2x - 1} = 27"
-    ],
-    "verdict": "verified",
-    "answer": "x = 2",
-    "clean": true
-   },
-   {
-    "lines": [
-     "5^{x + 2} = 125"
-    ],
-    "verdict": "verified",
-    "answer": "x = 1",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 exponential equations where you can match the bases.",
-  "latencyMs": 787,
-  "costUsd": 0.000815661,
-  "cached": true
- },
- {
-  "id": "a2-radical",
-  "course": "algebra2",
-  "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\sqrt{x + 3} = 5"
-    ],
-    "verdict": "verified",
-    "answer": "x = 22",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\sqrt{2x - 1} = 3"
-    ],
-    "verdict": "verified",
-    "answer": "x = 5",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 2 radical equations for you to solve.",
-  "latencyMs": 855,
-  "costUsd": 0.000778932,
-  "cached": true
- },
- {
-  "id": "a2-complex",
-  "course": "algebra2",
-  "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "(2 + 3i)(1 + 4i)"
-    ],
-    "verdict": "verified",
-    "answer": "= -10 + 11i",
-    "clean": true
-   },
-   {
-    "lines": [
-     "(3 - 2i)(4 + i)"
-    ],
-    "verdict": "verified",
-    "answer": "= 14 - 5i",
-    "clean": true
-   },
-   {
-    "lines": [
-     "(1 - i)(1 + i)"
-    ],
-    "verdict": "verified",
-    "answer": "= 2",
-    "clean": true
-   },
-   {
-    "lines": [
-     "(5 + 2i)^{2}"
-    ],
-    "verdict": "verified",
-    "answer": "= 21 + 20i",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 4 complex number multiplication problems for you to solve.",
-  "latencyMs": 962,
-  "costUsd": 0.000826551,
-  "cached": true
- },
- {
-  "id": "a2-rational",
-  "course": "algebra2",
-  "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\frac{x^2 - 9}{x + 3}"
-    ],
-    "verdict": "verified",
-    "answer": "= x - 3",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{2x^2 + 4x}{x + 2}"
-    ],
-    "verdict": "verified",
-    "answer": "= 2x",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{x^2 - 5x + 6}{x - 2}"
-    ],
-    "verdict": "verified",
-    "answer": "= x - 3",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 rational expressions to simplify.",
-  "latencyMs": 839,
-  "costUsd": 0.000838926,
-  "cached": true
- },
- {
-  "id": "a2-absolute",
-  "course": "algebra2",
-  "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "|x - 3| = 5"
-    ],
-    "verdict": "verified",
-    "answer": "x = 8, \\ x = -2",
-    "clean": true
-   },
-   {
-    "lines": [
-     "|2x + 1| = 7"
-    ],
-    "verdict": "verified",
-    "answer": "x = 3, \\ x = -4",
-    "clean": true
-   },
-   {
-    "lines": [
-     "|4 - x| = 2"
-    ],
-    "verdict": "verified",
-    "answer": "x = 2, \\ x = 6",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 absolute value equations for you to solve.",
-  "latencyMs": 952,
-  "costUsd": 0.000873279,
-  "cached": true
- },
- {
-  "id": "g-pythagoras",
-  "course": "geometry",
-  "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "3^{2} + 4^{2} = c^{2}"
-    ],
-    "verdict": "verified",
-    "answer": "c = 5",
-    "clean": true
-   },
-   {
-    "lines": [
-     "5^{2} + b^{2} = 13^{2}"
-    ],
-    "verdict": "verified",
-    "answer": "b = 12",
-    "clean": true
-   },
-   {
-    "lines": [
-     "6^{2} + 8^{2} = c^{2}"
-    ],
-    "verdict": "verified",
-    "answer": "c = 10",
-    "clean": true
-   },
-   {
-    "lines": [
-     "a^{2} + 12^{2} = 15^{2}"
-    ],
-    "verdict": "verified",
-    "answer": "a = 9",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 4 Pythagorean theorem problems for you to solve.",
-  "latencyMs": 1084,
-  "costUsd": 0.000887436,
-  "cached": true
- },
- {
-  "id": "g-triangle-angles",
-  "course": "geometry",
-  "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "x + 50 + 60 = 180"
-    ],
-    "verdict": "verified",
-    "answer": "x = 70",
-    "clean": true
-   },
-   {
-    "lines": [
-     "x + 90 + 35 = 180"
-    ],
-    "verdict": "verified",
-    "answer": "x = 55",
-    "clean": true
-   },
-   {
-    "lines": [
-     "2x + 50 + 70 = 180"
-    ],
-    "verdict": "verified",
-    "answer": "x = 30",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 problems on finding the missing angle of a triangle.",
-  "latencyMs": 1292,
-  "costUsd": 0.000845064,
-  "cached": true
- },
- {
-  "id": "g-fig-right",
-  "course": "geometry",
-  "kind": "figure",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "draw_figure"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [
-   {
-    "schema": true,
-    "cleanFirst": true,
-    "cleanAfterRepair": true,
-    "drawn": true,
-    "problems": []
-   }
-  ],
-  "graphs": [],
-  "reply": "Here is the right triangle; the hypotenuse is x.",
-  "latencyMs": 1077,
-  "costUsd": 0.001052865,
-  "cached": true
- },
- {
-  "id": "g-fig-isosceles",
-  "course": "geometry",
-  "kind": "figure",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "draw_figure"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [
-   {
-    "schema": true,
-    "cleanFirst": false,
-    "cleanAfterRepair": true,
-    "drawn": true,
-    "problems": [
-     "Angle BAC is labelled 40° but is drawn 55.17°; move the points so it measures 40° (within 5°)."
-    ],
-    "repair": {
-     "model": "google/gemini-3.5-flash-lite",
-     "key": "e608abd6639bddeb321becdadd881b273b67dcf7",
-     "latencyMs": 1124,
-     "promptTokens": 842,
-     "completionTokens": 198,
-     "reasoningTokens": 0,
-     "attempts": 1,
-     "cached": true,
-     "ok": true,
-     "status": 200,
-     "costUsd": 0.000740124,
-     "costSource": "usage",
-     "provider": "Google",
-     "finishReason": "stop",
-     "at": "2026-09-28T14:51:53.157Z"
-    }
-   }
-  ],
-  "graphs": [],
-  "reply": "Here is the isosceles triangle with a 40 degree top angle and base angles labeled x.",
-  "latencyMs": 1488,
-  "costUsd": 0.001219878,
-  "cached": true
- },
- {
-  "id": "g-fig-circle",
-  "course": "geometry",
-  "kind": "figure",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "draw_figure"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [
-   {
-    "schema": true,
-    "cleanFirst": true,
-    "cleanAfterRepair": true,
-    "drawn": true,
-    "problems": []
-   }
-  ],
-  "graphs": [],
-  "reply": "Here is a circle with center O, radius 5, and radius segment OA labelled 5.",
-  "latencyMs": 879,
-  "costUsd": 0.000917334,
-  "cached": true
- },
- {
-  "id": "g-fig-parallel",
-  "course": "geometry",
-  "kind": "figure",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": false,
-  "proposed": 0,
-  "valid": 0,
-  "dropped": [],
-  "types": [],
-  "intent": false,
-  "intentWhy": "not JSON",
-  "problems": [],
-  "figures": [],
-  "graphs": [],
-  "reply": "",
-  "latencyMs": 10003,
-  "costUsd": 0.008060481,
-  "cached": true
- },
- {
-  "id": "g-fig-rectangle",
-  "course": "geometry",
-  "kind": "figure",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "draw_figure"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [
-   {
-    "schema": true,
-    "cleanFirst": true,
-    "cleanAfterRepair": true,
-    "drawn": true,
-    "problems": []
-   }
-  ],
-  "graphs": [],
-  "reply": "Here is the rectangle with dimensions 8 by 5 and a diagonal labeled d.",
-  "latencyMs": 1631,
-  "costUsd": 0.001336005,
-  "cached": true
- },
- {
-  "id": "c-power-rule",
-  "course": "calculus",
-  "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\frac{d}{dx}(x^{4})"
-    ],
-    "verdict": "verified",
-    "answer": "= 4x^{3}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{d}{dx}(3x^{2})"
-    ],
-    "verdict": "verified",
-    "answer": "= 6x",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{d}{dx}(5x^{3} - 2x)"
-    ],
-    "verdict": "verified",
-    "answer": "= 15x^{2} - 2",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{d}{dx}(4\\sqrt{x})"
-    ],
-    "verdict": "verified",
-    "answer": "= \\frac{2}{\\sqrt{x}}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{d}{dx}\\left(\\frac{1}{x^{2}}\\right)"
-    ],
-    "verdict": "verified",
-    "answer": "= -\\frac{2}{x^{3}}",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 5 derivatives to practice using the power rule.",
-  "latencyMs": 1068,
-  "costUsd": 0.000908523,
-  "cached": true
- },
- {
-  "id": "c-definite",
-  "course": "calculus",
-  "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\int_{0}^{2} (3x^{2} + 2x - 1) \\, dx"
-    ],
-    "verdict": "verified",
-    "answer": "= 10",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\int_{-1}^{3} (4x - 2) \\, dx"
-    ],
-    "verdict": "verified",
-    "answer": "= 8",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\int_{1}^{2} (6x^{2} - 4x + 5) \\, dx"
-    ],
-    "verdict": "verified",
-    "answer": "= 13",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 definite integrals of polynomials to work out.",
-  "latencyMs": 1031,
-  "costUsd": 0.000888426,
-  "cached": true
- },
- {
-  "id": "c-limits",
-  "course": "calculus",
-  "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\lim_{x \\to 2} \\frac{x^{2} - 4}{x - 2}"
-    ],
-    "verdict": "verified",
-    "answer": "= 4",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\lim_{x \\to 3} \\frac{x^{2} - 9}{x - 3}"
-    ],
-    "verdict": "verified",
-    "answer": "= 6",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\lim_{x \\to 1} \\frac{x^{2} - 1}{x - 1}"
-    ],
-    "verdict": "verified",
-    "answer": "= 2",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 limits that need factoring first.",
-  "latencyMs": 838,
-  "costUsd": 0.000901098,
-  "cached": true
- },
- {
-  "id": "c-chain",
-  "course": "calculus",
-  "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": false,
-  "proposed": 0,
-  "valid": 0,
-  "dropped": [],
-  "types": [],
-  "intent": false,
-  "intentWhy": "not JSON",
-  "problems": [],
-  "figures": [],
-  "graphs": [],
-  "reply": "",
-  "latencyMs": 816,
-  "costUsd": 0.000826254,
-  "cached": true
- },
- {
-  "id": "gr-sin",
-  "course": "algebra2",
-  "kind": "graph",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "graph"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [
-   {
-    "relations": [
-     "y = \\sin x"
-    ],
-    "graphed": true,
-    "window": true
-   }
-  ],
-  "reply": "Here is y = sin x from -2π to 2π.",
-  "latencyMs": 850,
-  "costUsd": 0.000831105,
-  "cached": true
- },
- {
-  "id": "gr-parabola",
-  "course": "algebra1",
-  "kind": "graph",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "graph"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [
-   {
-    "relations": [
-     "y = x^{2} - 4x + 3"
-    ],
-    "graphed": true,
-    "window": false
-   }
-  ],
-  "reply": "Here is the graph of the quadratic equation.",
-  "latencyMs": 1095,
-  "costUsd": 0.00074448,
-  "cached": true
- },
- {
-  "id": "gr-system",
-  "course": "algebra1",
-  "kind": "graph",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "graph"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [
-   {
-    "relations": [
-     "y = 2x + 1",
-     "y = -x + 4"
-    ],
-    "graphed": true,
-    "window": false
-   }
-  ],
-  "reply": "Here is the graph of the system of equations.",
-  "latencyMs": 873,
-  "costUsd": 0.000758637,
-  "cached": true
- },
- {
-  "id": "gr-region",
-  "course": "algebra1",
-  "kind": "graph",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "graph"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [
-   {
-    "relations": [
-     "y < 2x + 1"
-    ],
-    "graphed": true,
-    "window": false
-   }
-  ],
-  "reply": "Here is the graph shading y < 2x + 1.",
-  "latencyMs": 802,
-  "costUsd": 0.000743292,
-  "cached": true
- },
- {
-  "id": "gr-circle",
-  "course": "geometry",
-  "kind": "graph",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "graph"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [
-   {
-    "relations": [
-     "x^{2} + y^{2} = 25"
-    ],
-    "graphed": true,
-    "window": true
-   }
-  ],
-  "reply": "Here is the circle on the graph.",
-  "latencyMs": 1018,
-  "costUsd": 0.000895752,
-  "cached": true
- },
- {
-  "id": "f-more",
-  "course": "mixed",
-  "kind": "followup",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 2,
-  "valid": 2,
-  "dropped": [],
-  "types": [
-   "new_screen",
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "3x - 5 = 10"
-    ],
-    "verdict": "verified",
-    "answer": "x = 5",
-    "clean": true
-   },
-   {
-    "lines": [
-     "4x + 2 = 18"
-    ],
-    "verdict": "verified",
-    "answer": "x = 4",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{x}{2} - 3 = 4"
-    ],
-    "verdict": "verified",
-    "answer": "x = 14",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 more two-step equations to practice.",
-  "latencyMs": 987,
-  "costUsd": 0.000953964,
-  "cached": true
- },
- {
-  "id": "f-harder",
-  "course": "mixed",
-  "kind": "followup",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "-3x + 7 = -8"
-    ],
-    "verdict": "verified",
-    "answer": "x = 5",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{2x}{3} - 1 = 5"
+     "\\frac{2x}{3} + 5 = 11"
     ],
     "verdict": "verified",
     "answer": "x = 9",
@@ -5811,25 +3512,27 @@
    },
    {
     "lines": [
-     "5 - 4x = 13"
+     "7 - 4x = -13"
     ],
     "verdict": "verified",
-    "answer": "x = -2",
+    "answer": "x = 5",
     "clean": true
    }
   ],
   "figures": [],
   "graphs": [],
-  "reply": "Here are 3 harder two-step equations to solve.",
-  "latencyMs": 1011,
-  "costUsd": 0.000832392,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here are 3 harder two-step equations, with a bracket and a fraction to handle.",
+  "latencyMs": 2794,
+  "costUsd": 0.00028272024,
+  "cached": false
  },
  {
   "id": "f-graph-that",
   "course": "mixed",
   "kind": "followup",
-  "model": "google/gemini-3.5-flash-lite",
+  "model": "deepseek/deepseek-v4.1-flash",
   "json": true,
   "proposed": 1,
   "valid": 1,
@@ -5847,19 +3550,21 @@
      "y = 3x - 2"
     ],
     "graphed": true,
-    "window": true
+    "window": false
    }
   ],
-  "reply": "Here is the graph of the line.",
-  "latencyMs": 960,
-  "costUsd": 0.000800019,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Here is the graph of y = 3x - 2.",
+  "latencyMs": 1105,
+  "costUsd": 0.00013362624,
+  "cached": false
  },
  {
   "id": "m-new-screen",
   "course": "mixed",
   "kind": "screen",
-  "model": "google/gemini-3.5-flash-lite",
+  "model": "deepseek/deepseek-v4.1-flash",
   "json": true,
   "proposed": 1,
   "valid": 1,
@@ -5872,16 +3577,18 @@
   "problems": [],
   "figures": [],
   "graphs": [],
-  "reply": "Here is a fresh screen for you.",
-  "latencyMs": 723,
-  "costUsd": 0.000705672,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Fresh screen for you.",
+  "latencyMs": 693,
+  "costUsd": 0.00009768924,
+  "cached": false
  },
  {
   "id": "m-clear",
   "course": "mixed",
   "kind": "screen",
-  "model": "google/gemini-3.5-flash-lite",
+  "model": "deepseek/deepseek-v4.1-flash",
   "json": true,
   "proposed": 1,
   "valid": 1,
@@ -5894,16 +3601,18 @@
   "problems": [],
   "figures": [],
   "graphs": [],
-  "reply": "I have cleared my writing from the board.",
-  "latencyMs": 1452,
-  "costUsd": 0.001261854,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "Cleared my writing from this screen.",
+  "latencyMs": 601,
+  "costUsd": 0.00010986624,
+  "cached": false
  },
  {
   "id": "m-formula",
   "course": "mixed",
   "kind": "lines",
-  "model": "google/gemini-3.5-flash-lite",
+  "model": "deepseek/deepseek-v4.1-flash",
   "json": true,
   "proposed": 1,
   "valid": 1,
@@ -5916,16 +3625,27 @@
   "problems": [],
   "figures": [],
   "graphs": [],
-  "reply": "Here is the quadratic formula.",
-  "latencyMs": 815,
-  "costUsd": 0.000761607,
-  "cached": true
+  "proofs": [],
+  "lines": [
+   {
+    "lines": [
+     "x = \\frac{-b \\pm \\sqrt{b^{2} - 4ac}}{2a}"
+    ],
+    "chain": false,
+    "ok": true,
+    "why": ""
+   }
+  ],
+  "reply": "Here is the quadratic formula, with the discriminant under the root.",
+  "latencyMs": 713,
+  "costUsd": 0.00012679524,
+  "cached": false
  },
  {
   "id": "m-solve-for-me",
   "course": "mixed",
   "kind": "problems",
-  "model": "google/gemini-3.5-flash-lite",
+  "model": "deepseek/deepseek-v4.1-flash",
   "json": true,
   "proposed": 1,
   "valid": 1,
@@ -5947,1479 +3667,399 @@
   ],
   "figures": [],
   "graphs": [],
-  "reply": "I can set up the equation for you to solve, but the Solve tab will walk you through it step by step.",
-  "latencyMs": 916,
-  "costUsd": 0.000776655,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "I can't solve it here, but I've put it on the board — the Solve tab works it out step by step.",
+  "latencyMs": 606,
+  "costUsd": 0.00014461524,
+  "cached": false
  },
  {
-  "id": "m-off-topic",
-  "course": "mixed",
-  "kind": "refusal",
-  "model": "google/gemini-3.5-flash-lite",
+  "id": "p-write",
+  "course": "geometry",
+  "kind": "proof",
+  "model": "deepseek/deepseek-v4.1-flash",
   "json": true,
-  "proposed": 0,
-  "valid": 0,
+  "proposed": 1,
+  "valid": 1,
   "dropped": [],
-  "types": [],
+  "types": [
+   "write_proof"
+  ],
   "intent": true,
   "intentWhy": "",
   "problems": [],
   "figures": [],
   "graphs": [],
-  "reply": "I can only help with maths on this board. Try asking for some practice problems or a graph.",
-  "latencyMs": 740,
-  "costUsd": 0.000713295,
-  "cached": true
- },
- {
-  "id": "m-unkind",
-  "course": "mixed",
-  "kind": "refusal",
-  "model": "google/gemini-3.5-flash-lite",
-  "json": true,
-  "proposed": 0,
-  "valid": 0,
-  "dropped": [],
-  "types": [],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [],
-  "reply": "I can only help with maths on this board. Try asking for some practice problems or a graph.",
-  "latencyMs": 656,
-  "costUsd": 0.000713592,
-  "cached": true
- },
- {
-  "id": "a1-two-step",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "3x + 5 = 20"
-    ],
-    "verdict": "verified",
-    "answer": "x = 5",
-    "clean": true
-   },
-   {
-    "lines": [
-     "2x - 7 = 9"
-    ],
-    "verdict": "verified",
-    "answer": "x = 8",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{x}{3} + 4 = 10"
-    ],
-    "verdict": "verified",
-    "answer": "x = 18",
-    "clean": true
-   },
-   {
-    "lines": [
-     "5x - 2 = 13"
-    ],
-    "verdict": "verified",
-    "answer": "x = 3",
-    "clean": true
-   },
-   {
-    "lines": [
-     "7 - \\frac{x}{2} = 3"
-    ],
-    "verdict": "verified",
-    "answer": "x = 8",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Solve these 5 two-step equations—use the Solve tab for step-by-step work.",
-  "latencyMs": 1192,
-  "costUsd": 0.000535491,
-  "cached": true
- },
- {
-  "id": "a1-both-sides",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "2x + 5 = 3x - 7"
-    ],
-    "verdict": "verified",
-    "answer": "x = 12",
-    "clean": true
-   },
-   {
-    "lines": [
-     "3(x - 2) = 2( x + 4 )"
-    ],
-    "verdict": "verified",
-    "answer": "x = 14",
-    "clean": true
-   },
-   {
-    "lines": [
-     "5 - 2x = 3(1 - x)"
-    ],
-    "verdict": "verified",
-    "answer": "x = -2",
-    "clean": true
-   },
-   {
-    "lines": [
-     "(x + 3)/2 - (x - 1)/3 = 5"
-    ],
-    "verdict": "verified",
-    "answer": "x = 19",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "I’ll put 4 multi-step equations to solve, with variables on both sides.",
-  "latencyMs": 1242,
-  "costUsd": 0.0002282841,
-  "cached": true
- },
- {
-  "id": "a1-inequalities",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "3x - 5 \\ge 16"
-    ],
-    "verdict": "verified",
-    "answer": "x \\ge 7",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{x}{4} - 2 < 3"
-    ],
-    "verdict": "verified",
-    "answer": "x < 20",
-    "clean": true
-   },
-   {
-    "lines": [
-     "|2x + 1| > 7"
-    ],
-    "verdict": "verified",
-    "answer": "x < -4, \\ x > 3",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 one-variable inequalities to solve.",
-  "latencyMs": 1266,
-  "costUsd": 0.0001843776,
-  "cached": true
- },
- {
-  "id": "a1-factoring",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 2,
-  "valid": 2,
-  "dropped": [],
-  "types": [
-   "new_screen",
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "2x^{2}+7x+3"
-    ],
-    "verdict": "verified",
-    "answer": "= (x + 3)(2x + 1)",
-    "clean": true
-   },
-   {
-    "lines": [
-     "6x^{2}-5x-2"
-    ],
-    "verdict": "unsolved",
-    "answer": "",
-    "clean": false
-   },
-   {
-    "lines": [
-     "x^{3}-4x^{2}-11x+30"
-    ],
-    "verdict": "verified",
-    "answer": "= (x + 3)(x - 2)(x - 5)",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 harder factoring problems. Use the Solve tab to work them step by step.",
-  "latencyMs": 2780,
-  "costUsd": 0.000626175,
-  "cached": true
- },
- {
-  "id": "a1-systems",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "2x + 3y = 13",
-     "x - y = 1"
-    ],
-    "verdict": "verified",
-    "answer": "y = \\frac{11}{5}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "3x - 2y = 8",
-     "2x + y = 7"
-    ],
-    "verdict": "verified",
-    "answer": "y = \\frac{5}{7}",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "I’ll put 2 systems of linear equations on the board to solve.",
-  "latencyMs": 1059,
-  "costUsd": 0.0001944756,
-  "cached": true
- },
- {
-  "id": "a1-exponents",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\frac{2^{5} \\cdot 2^{3}}{2^{4}}"
-    ],
-    "verdict": "verified",
-    "answer": "= 16",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\left(3^{2} \\cdot 3^{5}\\right)^{-1}"
-    ],
-    "verdict": "verified",
-    "answer": "= \\frac{1}{2187}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{5^{7}}{5^{2}} \\cdot 5^{3}"
-    ],
-    "verdict": "verified",
-    "answer": "= 390625",
-    "clean": true
-   },
-   {
-    "lines": [
-     "(2^{3})^{4} \\cdot 2^{1}"
-    ],
-    "verdict": "verified",
-    "answer": "= 8192",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 4 exponent simplification problems using exponent rules.",
-  "latencyMs": 2588,
-  "costUsd": 0.0002835756,
-  "cached": true
- },
- {
-  "id": "a1-quadratics",
-  "course": "algebra1",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "x^{2}-5x+6=0"
-    ],
-    "verdict": "verified",
-    "answer": "x = 2, \\ x = 3",
-    "clean": true
-   },
-   {
-    "lines": [
-     "3x^{2}+7x+4=0"
-    ],
-    "verdict": "verified",
-    "answer": "x = -\\frac{4}{3}, \\ x = -1",
-    "clean": true
-   },
-   {
-    "lines": [
-     "2x^{2}-3x-2=0"
-    ],
-    "verdict": "verified",
-    "answer": "x = -\\frac{1}{2}, \\ x = 2",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 quadratic equations you can solve by factoring.",
-  "latencyMs": 1060,
-  "costUsd": 0.0001882881,
-  "cached": true
- },
- {
-  "id": "a2-logs",
-  "course": "algebra2",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\log_{2}(x)=5"
-    ],
-    "verdict": "verified",
-    "answer": "x = 32",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\log_{10}(3x-2)=2"
-    ],
-    "verdict": "verified",
-    "answer": "x = 34",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\ln(2x+1)=\\ln(7)"
-    ],
-    "verdict": "verified",
-    "answer": "x = 3",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 logarithmic equations to solve.",
-  "latencyMs": 2099,
-  "costUsd": 0.0002223441,
-  "cached": true
- },
- {
-  "id": "a2-exponential",
-  "course": "algebra2",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "2^{x + 1} = 32"
-    ],
-    "verdict": "verified",
-    "answer": "x = 4",
-    "clean": true
-   },
-   {
-    "lines": [
-     "3^{2x - 1} = 81"
-    ],
-    "verdict": "verified",
-    "answer": "x = \\frac{5}{2}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "5^{x - 2} = 25"
-    ],
-    "verdict": "verified",
-    "answer": "x = 4",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 exponential equations to solve by matching the bases.",
-  "latencyMs": 956,
-  "costUsd": 0.0001888821,
-  "cached": true
- },
- {
-  "id": "a2-radical",
-  "course": "algebra2",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\sqrt{2x + 7}=x - 1"
-    ],
-    "verdict": "verified",
-    "answer": "x \\approx 5.162",
-    "clean": false
-   },
-   {
-    "lines": [
-     "\\sqrt{3x - 4}+\\sqrt{x + 5}=5"
-    ],
-    "verdict": "verified",
-    "answer": "x \\approx 2.925",
-    "clean": false
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 2 radical equations to solve.",
-  "latencyMs": 2322,
-  "costUsd": 0.0002011086,
-  "cached": true
- },
- {
-  "id": "a2-complex",
-  "course": "algebra2",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "(3+2i)(1-4i)"
-    ],
-    "verdict": "verified",
-    "answer": "= 11 - 10i",
-    "clean": true
-   },
-   {
-    "lines": [
-     "(2-i)(5+3i)"
-    ],
-    "verdict": "verified",
-    "answer": "= 13 + i",
-    "clean": true
-   },
-   {
-    "lines": [
-     "(1+3i)(1-i)"
-    ],
-    "verdict": "verified",
-    "answer": "= 4 + 2i",
-    "clean": true
-   },
-   {
-    "lines": [
-     "(4-5i)(2+ i)"
-    ],
-    "verdict": "verified",
-    "answer": "= 13 - 6i",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Let’s do 4 complex number multiplication problems.",
-  "latencyMs": 1417,
-  "costUsd": 0.0001953171,
-  "cached": true
- },
- {
-  "id": "a2-rational",
-  "course": "algebra2",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\frac{2x^{2}-8}{4x}\\cdot \\frac{3x}{x-2}"
-    ],
-    "verdict": "verified",
-    "answer": "= \\frac{3(x + 2)}{2}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{x^{2}-1}{x+1}+\\frac{2x}{x-1}"
-    ],
-    "verdict": "verified",
-    "answer": "= \\frac{x^{2} + 1}{x - 1}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{3}{x}-\\frac{6}{x+3}"
-    ],
-    "verdict": "verified",
-    "answer": "= \\frac{9 - 3x}{x(x + 3)}",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 rational expressions to simplify.",
-  "latencyMs": 1185,
-  "costUsd": 0.0002225421,
-  "cached": true
- },
- {
-  "id": "a2-absolute",
-  "course": "algebra2",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "|x - 3| = 7"
-    ],
-    "verdict": "verified",
-    "answer": "x = 10, \\ x = -4",
-    "clean": true
-   },
-   {
-    "lines": [
-     "|2x + 1| = 9"
-    ],
-    "verdict": "verified",
-    "answer": "x = 4, \\ x = -5",
-    "clean": true
-   },
-   {
-    "lines": [
-     "|x + 5| = 2"
-    ],
-    "verdict": "verified",
-    "answer": "x = -3, \\ x = -7",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 absolute value equations to solve.",
-  "latencyMs": 1786,
-  "costUsd": 0.0002136816,
-  "cached": true
- },
- {
-  "id": "g-pythagoras",
-  "course": "geometry",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "a^{2}+b^{2}=c^{2}"
-    ],
-    "verdict": "unsolved",
-    "answer": "",
-    "clean": false
-   },
-   {
-    "lines": [
-     "3^{2}+4^{2}=c^{2}"
-    ],
-    "verdict": "verified",
-    "answer": "c = 5",
-    "clean": true
-   },
-   {
-    "lines": [
-     "8^{2}+15^{2}=c^{2}"
-    ],
-    "verdict": "verified",
-    "answer": "c = 17",
-    "clean": true
-   },
-   {
-    "lines": [
-     "(\\frac{9}{2})^{2}+6^{2}=c^{2}"
-    ],
-    "verdict": "verified",
-    "answer": "c = \\frac{15}{2}",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "I’ll put 4 Pythagorean theorem problems on the board to find the missing side.",
-  "latencyMs": 1467,
-  "costUsd": 0.0002290761,
-  "cached": true
- },
- {
-  "id": "g-triangle-angles",
-  "course": "geometry",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "x + 40 + 90 = 180"
-    ],
-    "verdict": "verified",
-    "answer": "x = 50",
-    "clean": true
-   },
-   {
-    "lines": [
-     "2x + 15 + 3x = 180"
-    ],
-    "verdict": "verified",
-    "answer": "x = 33",
-    "clean": true
-   },
-   {
-    "lines": [
-     "y + 55 + 70 = 180"
-    ],
-    "verdict": "verified",
-    "answer": "y = 55",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "I’ll put 3 triangle angle-sum problems on the board to find the missing angle.",
-  "latencyMs": 3017,
-  "costUsd": 0.0002629341,
-  "cached": true
- },
- {
-  "id": "g-fig-right",
-  "course": "geometry",
-  "kind": "figure",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 0,
-  "dropped": [
-   {
-    "type": "draw_figure",
-    "reason": "figure.segments.0.ticks: Number must be greater than or equal to 1"
-   }
-  ],
-  "types": [],
-  "intent": false,
-  "intentWhy": "no draw_figure (no action)",
-  "problems": [],
-  "figures": [
-   {
-    "schema": false,
-    "cleanFirst": false,
-    "cleanAfterRepair": false,
-    "drawn": false,
-    "problems": [
-     "Number must be greater than or equal to 1"
-    ]
-   }
-  ],
-  "graphs": [],
-  "reply": "Here is the right triangle with legs 3 and 4; the hypotenuse is labeled x.",
-  "latencyMs": 1589,
-  "costUsd": 0.0003028806,
-  "cached": true
- },
- {
-  "id": "g-fig-isosceles",
-  "course": "geometry",
-  "kind": "figure",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 0,
-  "dropped": [
-   {
-    "type": "draw_figure",
-    "reason": "figure.segments.0.label: Expected string, received boolean"
-   }
-  ],
-  "types": [],
-  "intent": false,
-  "intentWhy": "no draw_figure (no action)",
-  "problems": [],
-  "figures": [
-   {
-    "schema": false,
-    "cleanFirst": false,
-    "cleanAfterRepair": false,
-    "drawn": false,
-    "problems": [
-     "Expected string, received boolean"
-    ]
-   }
-  ],
-  "graphs": [],
-  "reply": "Here’s an isosceles triangle with a 40° top angle and base angles labeled x.",
-  "latencyMs": 5093,
-  "costUsd": 0.0007283331,
-  "cached": true
- },
- {
-  "id": "g-fig-circle",
-  "course": "geometry",
-  "kind": "figure",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "draw_figure"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [
+  "proofs": [
    {
     "schema": true,
-    "cleanFirst": true,
-    "cleanAfterRepair": true,
-    "drawn": true,
+    "worked": true,
+    "provedFirst": true,
+    "provedAfterRepair": true,
+    "rows": 4,
+    "reasons": [
+     "vertical",
+     "midpoint",
+     "midpoint",
+     "sas"
+    ],
+    "prove": "\\triangle ABE \\cong \\triangle DCE",
     "problems": []
    }
   ],
-  "graphs": [],
-  "reply": "Here’s the circle with center O, radius 5, and the radius OA labelled 5.",
-  "latencyMs": 2769,
-  "costUsd": 0.0002834766,
-  "cached": true
+  "lines": [],
+  "reply": "Here is a two-column proof: E is the midpoint of both segments, so the triangles are congruent by SAS.",
+  "latencyMs": 1482,
+  "costUsd": 0.00036409824,
+  "cached": false
  },
  {
-  "id": "g-fig-parallel",
+  "id": "p-for-me",
   "course": "geometry",
-  "kind": "figure",
-  "model": "openai/gpt-5.4-nano",
+  "kind": "proof",
+  "model": "deepseek/deepseek-v4.1-flash",
   "json": true,
   "proposed": 1,
   "valid": 1,
   "dropped": [],
   "types": [
-   "draw_figure"
+   "write_proof"
   ],
   "intent": true,
   "intentWhy": "",
   "problems": [],
-  "figures": [
+  "figures": [],
+  "graphs": [],
+  "proofs": [
    {
     "schema": true,
-    "cleanFirst": true,
-    "cleanAfterRepair": true,
-    "drawn": true,
+    "worked": true,
+    "provedFirst": true,
+    "provedAfterRepair": true,
+    "rows": 4,
+    "reasons": [
+     "vertical",
+     "midpoint",
+     "midpoint",
+     "sas"
+    ],
+    "prove": "\\triangle ABE \\cong \\triangle DCE",
     "problems": []
    }
   ],
-  "graphs": [],
-  "reply": "I drew two parallel lines cut by a transversal, with the 70° angle and its corresponding angle x.",
-  "latencyMs": 11814,
-  "costUsd": 0.0019986516,
-  "cached": true
+  "lines": [],
+  "reply": "Here is a two-column proof: E is the midpoint of both segments, so the triangles are congruent by SAS.",
+  "latencyMs": 1488,
+  "costUsd": 0.00037182024,
+  "cached": false
  },
  {
-  "id": "g-fig-rectangle",
+  "id": "p-two-column",
   "course": "geometry",
-  "kind": "figure",
-  "model": "openai/gpt-5.4-nano",
+  "kind": "proof",
+  "model": "deepseek/deepseek-v4.1-flash",
   "json": true,
   "proposed": 1,
   "valid": 1,
   "dropped": [],
   "types": [
-   "draw_figure"
+   "write_proof"
   ],
   "intent": true,
   "intentWhy": "",
   "problems": [],
-  "figures": [
+  "figures": [],
+  "graphs": [],
+  "proofs": [
    {
     "schema": true,
-    "cleanFirst": true,
-    "cleanAfterRepair": true,
-    "drawn": true,
+    "worked": true,
+    "provedFirst": true,
+    "provedAfterRepair": true,
+    "rows": 4,
+    "reasons": [
+     "vertical",
+     "midpoint",
+     "midpoint",
+     "sas"
+    ],
+    "prove": "\\triangle ABE \\cong \\triangle DCE",
     "problems": []
    }
   ],
-  "graphs": [],
-  "reply": "Here is a rectangle 8 by 5 with the diagonal labelled d.",
-  "latencyMs": 2330,
-  "costUsd": 0.0003266406,
-  "cached": true
+  "lines": [],
+  "reply": "Here is a two-column proof: E is the midpoint of both segments, so the triangles are congruent by SAS.",
+  "latencyMs": 1457,
+  "costUsd": 0.00034776324,
+  "cached": false
  },
  {
-  "id": "c-power-rule",
-  "course": "calculus",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\frac{d}{dx}(x^{5})"
-    ],
-    "verdict": "verified",
-    "answer": "= 5x^{4}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{d}{dx}(7x^{4})"
-    ],
-    "verdict": "verified",
-    "answer": "= 28x^{3}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{d}{dx}(3x^{2}-5)"
-    ],
-    "verdict": "verified",
-    "answer": "= 6x",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{d}{dx}(\\frac{1}{2}x^{9})"
-    ],
-    "verdict": "verified",
-    "answer": "= \\frac{9x^{8}}{2}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{d}{dx}(4x^{3}+2x^{-1})"
-    ],
-    "verdict": "verified",
-    "answer": "= 12x^{2} - \\frac{2}{x^{2}}",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 5 derivatives to practice using the power rule. The Solve tab will work them out step by step.",
-  "latencyMs": 1341,
-  "costUsd": 0.0002536776,
-  "cached": true
- },
- {
-  "id": "c-definite",
-  "course": "calculus",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\int_{0}^{2} (3x^{2}-4x+1)\\,dx"
-    ],
-    "verdict": "verified",
-    "answer": "= 2",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\int_{-1}^{2} (x^{3}-2x)\\,dx"
-    ],
-    "verdict": "verified",
-    "answer": "= \\frac{3}{4}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\int_{1}^{3} (5x^{2}+2x-3)\\,dx"
-    ],
-    "verdict": "verified",
-    "answer": "= \\frac{136}{3}",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 definite integrals of polynomials to solve.",
-  "latencyMs": 5749,
-  "costUsd": 0.0002588256,
-  "cached": true
- },
- {
-  "id": "c-limits",
-  "course": "calculus",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\lim_{x\\to 2} \\frac{x^{2}-4}{x-2}"
-    ],
-    "verdict": "verified",
-    "answer": "= 4",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\lim_{x\\to 3} \\frac{x^{2}-9}{x-3}"
-    ],
-    "verdict": "verified",
-    "answer": "= 6",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\lim_{x\\to 1} \\frac{x^{3}-1}{x-1}"
-    ],
-    "verdict": "verified",
-    "answer": "= 3",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 limits that factor first. Use the Solve tab to work them out step by step.",
-  "latencyMs": 1334,
-  "costUsd": 0.0002375901,
-  "cached": true
- },
- {
-  "id": "c-chain",
-  "course": "calculus",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "\\frac{d}{dx}\\left((3x-2)^{5}\\right)"
-    ],
-    "verdict": "verified",
-    "answer": "= 15(3x - 2)^{4}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{d}{dx}\\left(\\sqrt{2x+1}\\right)"
-    ],
-    "verdict": "verified",
-    "answer": "= \\frac{1}{\\sqrt{2x + 1}}",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{d}{dx}\\left(\\ln(4x^{2}-3x)\\right)"
-    ],
-    "verdict": "verified",
-    "answer": "= \\frac{8x - 3}{4x^{2} - 3x}",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 chain-rule derivatives to do.",
-  "latencyMs": 7706,
-  "costUsd": 0.0002508066,
-  "cached": true
- },
- {
-  "id": "gr-sin",
-  "course": "algebra2",
-  "kind": "graph",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "graph"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [
-   {
-    "relations": [
-     "y = \\sin x"
-    ],
-    "graphed": true,
-    "window": true
-   }
-  ],
-  "reply": "Here is y = sin x from -2π to 2π.",
-  "latencyMs": 1093,
-  "costUsd": 0.0001769031,
-  "cached": true
- },
- {
-  "id": "gr-parabola",
-  "course": "algebra1",
-  "kind": "graph",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "graph"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [
-   {
-    "relations": [
-     "y = x^{2} - 4x + 3"
-    ],
-    "graphed": true,
-    "window": true
-   }
-  ],
-  "reply": "I’ll graph y = x^2 - 4x + 3 for you.",
-  "latencyMs": 2426,
-  "costUsd": 0.0002561031,
-  "cached": true
- },
- {
-  "id": "gr-system",
-  "course": "algebra1",
-  "kind": "graph",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "graph"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [
-   {
-    "relations": [
-     "y = 2x + 1",
-     "y = -x + 4"
-    ],
-    "graphed": true,
-    "window": true
-   }
-  ],
-  "reply": "I’ll graph the two lines and show where they meet.",
-  "latencyMs": 2236,
-  "costUsd": 0.0002597661,
-  "cached": true
- },
- {
-  "id": "gr-region",
-  "course": "algebra1",
-  "kind": "graph",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "graph"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [
-   {
-    "relations": [
-     "y < 2x + 1"
-    ],
-    "graphed": true,
-    "window": true
-   }
-  ],
-  "reply": "I’ll shade the region for y < 2x + 1.",
-  "latencyMs": 2555,
-  "costUsd": 0.0002119986,
-  "cached": true
- },
- {
-  "id": "gr-circle",
+  "id": "p-show-me",
   "course": "geometry",
-  "kind": "graph",
-  "model": "openai/gpt-5.4-nano",
+  "kind": "proof",
+  "model": "deepseek/deepseek-v4.1-flash",
   "json": true,
   "proposed": 1,
   "valid": 1,
   "dropped": [],
   "types": [
-   "graph"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [
-   {
-    "relations": [
-     "x^{2} + y^{2} = 25"
-    ],
-    "graphed": true,
-    "window": true
-   }
-  ],
-  "reply": "I’ll graph the circle x^2 + y^2 = 25.",
-  "latencyMs": 1164,
-  "costUsd": 0.0001868031,
-  "cached": true
- },
- {
-  "id": "f-more",
-  "course": "mixed",
-  "kind": "followup",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "3x - 5 = 10"
-    ],
-    "verdict": "verified",
-    "answer": "x = 5",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{x}{4} + 3 = 7"
-    ],
-    "verdict": "verified",
-    "answer": "x = 16",
-    "clean": true
-   },
-   {
-    "lines": [
-     "6 - 2x = 2"
-    ],
-    "verdict": "verified",
-    "answer": "x = 2",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Here are 3 more two-step equations to solve.",
-  "latencyMs": 1006,
-  "costUsd": 0.0002001186,
-  "cached": true
- },
- {
-  "id": "f-harder",
-  "course": "mixed",
-  "kind": "followup",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "write_problems"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "4x - 7 = 25"
-    ],
-    "verdict": "verified",
-    "answer": "x = 8",
-    "clean": true
-   },
-   {
-    "lines": [
-     "\\frac{3x}{2} + 5 = 17"
-    ],
-    "verdict": "verified",
-    "answer": "x = 8",
-    "clean": true
-   },
-   {
-    "lines": [
-     "6 - \\frac{x}{4} = 1"
-    ],
-    "verdict": "verified",
-    "answer": "x = 20",
-    "clean": true
-   }
-  ],
-  "figures": [],
-  "graphs": [],
-  "reply": "Sure—here are 3 harder two-step equations to solve.",
-  "latencyMs": 2181,
-  "costUsd": 0.0002265021,
-  "cached": true
- },
- {
-  "id": "f-graph-that",
-  "course": "mixed",
-  "kind": "followup",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "graph"
-  ],
-  "intent": true,
-  "intentWhy": "",
-  "problems": [],
-  "figures": [],
-  "graphs": [
-   {
-    "relations": [
-     "y = 3x - 2"
-    ],
-    "graphed": true,
-    "window": true
-   }
-  ],
-  "reply": "I’ll graph y = 3x - 2 for you.",
-  "latencyMs": 2399,
-  "costUsd": 0.0002108601,
-  "cached": true
- },
- {
-  "id": "m-new-screen",
-  "course": "mixed",
-  "kind": "screen",
-  "model": "openai/gpt-5.4-nano",
-  "json": true,
-  "proposed": 1,
-  "valid": 1,
-  "dropped": [],
-  "types": [
-   "new_screen"
+   "write_proof"
   ],
   "intent": true,
   "intentWhy": "",
   "problems": [],
   "figures": [],
   "graphs": [],
-  "reply": "Sure—I'll open a new blank screen for more work.",
-  "latencyMs": 3501,
-  "costUsd": 0.0001797246,
-  "cached": true
+  "proofs": [
+   {
+    "schema": true,
+    "worked": true,
+    "provedFirst": true,
+    "provedAfterRepair": true,
+    "rows": 4,
+    "reasons": [
+     "vertical",
+     "midpoint",
+     "midpoint",
+     "sas"
+    ],
+    "prove": "\\triangle ABE \\cong \\triangle DCE",
+    "problems": []
+   }
+  ],
+  "lines": [],
+  "reply": "Here is a two-column proof: E is the midpoint of both segments, so the triangles are congruent by SAS.",
+  "latencyMs": 3190,
+  "costUsd": 0.00036795924,
+  "cached": false
  },
  {
-  "id": "m-clear",
-  "course": "mixed",
-  "kind": "screen",
-  "model": "openai/gpt-5.4-nano",
+  "id": "p-base-angles",
+  "course": "geometry",
+  "kind": "proof",
+  "model": "deepseek/deepseek-v4.1-flash",
   "json": true,
   "proposed": 1,
   "valid": 1,
   "dropped": [],
   "types": [
-   "clear_tutor"
+   "write_proof"
   ],
   "intent": true,
   "intentWhy": "",
   "problems": [],
   "figures": [],
   "graphs": [],
-  "reply": "Okay, I’ll clear my writing on this screen.",
-  "latencyMs": 2574,
-  "costUsd": 0.0001658646,
-  "cached": true
+  "proofs": [
+   {
+    "schema": true,
+    "worked": true,
+    "provedFirst": true,
+    "provedAfterRepair": true,
+    "rows": 5,
+    "reasons": [
+     "given",
+     "reflexive",
+     "midpoint",
+     "sss",
+     "cpctc"
+    ],
+    "prove": "\\angle B \\cong \\angle C",
+    "problems": []
+   }
+  ],
+  "lines": [],
+  "reply": "Here is the proof: the median AD splits the isosceles triangle into two congruent halves by SSS, so the base angles match by CPCTC.",
+  "latencyMs": 2909,
+  "costUsd": 0.00032489424,
+  "cached": false
  },
  {
-  "id": "m-formula",
-  "course": "mixed",
-  "kind": "lines",
-  "model": "openai/gpt-5.4-nano",
+  "id": "p-hardest",
+  "course": "geometry",
+  "kind": "proof",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "json": true,
+  "proposed": 1,
+  "valid": 1,
+  "dropped": [],
+  "types": [
+   "write_proof"
+  ],
+  "intent": true,
+  "intentWhy": "",
+  "problems": [],
+  "figures": [],
+  "graphs": [],
+  "proofs": [
+   {
+    "schema": true,
+    "worked": true,
+    "provedFirst": true,
+    "provedAfterRepair": true,
+    "rows": 12,
+    "reasons": [
+     "given",
+     "given",
+     "given",
+     "reflexive",
+     "reflexive",
+     "isosceles",
+     "sas",
+     "sas",
+     "cpctc",
+     "cpctc",
+     "asa",
+     "cpctc"
+    ],
+    "prove": "\\overline{BP} \\cong \\overline{CP}",
+    "problems": []
+   }
+  ],
+  "lines": [],
+  "reply": "Challenge accepted: two pairs of overlapping triangles, chained through CPCTC into a third pair, to show P is just as far from B as from C.",
+  "latencyMs": 2979,
+  "costUsd": 0.00037776024,
+  "cached": false
+ },
+ {
+  "id": "p-hard",
+  "course": "geometry",
+  "kind": "proof",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "json": true,
+  "proposed": 1,
+  "valid": 1,
+  "dropped": [],
+  "types": [
+   "write_proof"
+  ],
+  "intent": true,
+  "intentWhy": "",
+  "problems": [],
+  "figures": [],
+  "graphs": [],
+  "proofs": [
+   {
+    "schema": true,
+    "worked": true,
+    "provedFirst": true,
+    "provedAfterRepair": true,
+    "rows": 12,
+    "reasons": [
+     "given",
+     "given",
+     "given",
+     "reflexive",
+     "reflexive",
+     "isosceles",
+     "sas",
+     "sas",
+     "cpctc",
+     "cpctc",
+     "asa",
+     "cpctc"
+    ],
+    "prove": "\\overline{BP} \\cong \\overline{CP}",
+    "problems": []
+   }
+  ],
+  "lines": [],
+  "reply": "A hard one: two pairs of overlapping triangles chained through CPCTC, ending with P the same distance from B as from C. Every row is written out for you.",
+  "latencyMs": 11835,
+  "costUsd": 0.00120163824,
+  "cached": false
+ },
+ {
+  "id": "p-to-do",
+  "course": "geometry",
+  "kind": "proof",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "json": true,
+  "proposed": 1,
+  "valid": 1,
+  "dropped": [],
+  "types": [
+   "write_proof"
+  ],
+  "intent": true,
+  "intentWhy": "",
+  "problems": [],
+  "figures": [],
+  "graphs": [],
+  "proofs": [
+   {
+    "schema": true,
+    "worked": false,
+    "provedFirst": true,
+    "provedAfterRepair": true,
+    "rows": 7,
+    "reasons": [
+     "given",
+     "reflexive",
+     "midpoint",
+     "perpendicular",
+     "perpendicular",
+     "rightAngles",
+     "sas"
+    ],
+    "prove": "\\triangle ABD \\cong \\triangle ACD",
+    "problems": []
+   }
+  ],
+  "lines": [],
+  "reply": "Your turn: prove the two triangles are congruent. Fill in each statement and its reason in the table.",
+  "latencyMs": 6737,
+  "costUsd": 0.00086870124,
+  "cached": false
+ },
+ {
+  "id": "p-try",
+  "course": "geometry",
+  "kind": "proof",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "json": true,
+  "proposed": 1,
+  "valid": 1,
+  "dropped": [],
+  "types": [
+   "write_proof"
+  ],
+  "intent": true,
+  "intentWhy": "",
+  "problems": [],
+  "figures": [],
+  "graphs": [],
+  "proofs": [
+   {
+    "schema": true,
+    "worked": false,
+    "provedFirst": true,
+    "provedAfterRepair": true,
+    "rows": 5,
+    "reasons": [
+     "given",
+     "reflexive",
+     "midpoint",
+     "sss",
+     "cpctc"
+    ],
+    "prove": "\\angle BAD \\cong \\angle CAD",
+    "problems": []
+   }
+  ],
+  "lines": [],
+  "reply": "Your turn: prove that the median from the apex of an isosceles triangle splits the apex angle in two. Fill in each statement and its reason.",
+  "latencyMs": 5524,
+  "costUsd": 0.00058803624,
+  "cached": false
+ },
+ {
+  "id": "p-odd-sum",
+  "course": "algebra1",
+  "kind": "proof",
+  "model": "deepseek/deepseek-v4.1-flash",
   "json": true,
   "proposed": 1,
   "valid": 1,
@@ -7432,47 +4072,65 @@
   "problems": [],
   "figures": [],
   "graphs": [],
-  "reply": "Quadratic formula is on the board—use the Solve tab to apply it.",
-  "latencyMs": 995,
-  "costUsd": 0.0001751211,
-  "cached": true
+  "proofs": [],
+  "lines": [
+   {
+    "lines": [
+     "(2m + 1) + (2n + 1)",
+     "= 2m + 2n + 2",
+     "= 2(m + n + 1)"
+    ],
+    "chain": true,
+    "ok": true,
+    "why": ""
+   }
+  ],
+  "reply": "Two odd numbers are 2m + 1 and 2n + 1; their sum is 2 times a whole number, so it is even.",
+  "latencyMs": 667,
+  "costUsd": 0.00016629624,
+  "cached": false
  },
  {
-  "id": "m-solve-for-me",
-  "course": "mixed",
-  "kind": "problems",
-  "model": "openai/gpt-5.4-nano",
+  "id": "p-square",
+  "course": "algebra1",
+  "kind": "proof",
+  "model": "deepseek/deepseek-v4.1-flash",
   "json": true,
   "proposed": 1,
   "valid": 1,
   "dropped": [],
   "types": [
-   "write_problems"
+   "write_lines"
   ],
   "intent": true,
   "intentWhy": "",
-  "problems": [
-   {
-    "lines": [
-     "2x + 5 = 17"
-    ],
-    "verdict": "verified",
-    "answer": "x = 6",
-    "clean": true
-   }
-  ],
+  "problems": [],
   "figures": [],
   "graphs": [],
-  "reply": "I’ll put the equation on the board; use the Solve tab to work it step by step.",
-  "latencyMs": 1989,
-  "costUsd": 0.0005183145,
-  "cached": true
+  "proofs": [],
+  "lines": [
+   {
+    "lines": [
+     "(a + b)^{2}",
+     "= (a + b)(a + b)",
+     "= a^{2} + ab + ab + b^{2}",
+     "= a^{2} + 2ab + b^{2}"
+    ],
+    "chain": true,
+    "ok": true,
+    "why": ""
+   }
+  ],
+  "reply": "Expanding (a + b)(a + b) gives a squared, two ab terms and b squared, so the identity holds.",
+  "latencyMs": 768,
+  "costUsd": 0.00017609724,
+  "cached": false
  },
  {
   "id": "m-off-topic",
   "course": "mixed",
   "kind": "refusal",
-  "model": "openai/gpt-5.4-nano",
+  "model": "deepseek/deepseek-v4.1-flash",
   "json": true,
   "proposed": 0,
   "valid": 0,
@@ -7483,16 +4141,18 @@
   "problems": [],
   "figures": [],
   "graphs": [],
-  "reply": "I can only help with maths on this board. Ask for maths practice (equations, graphs, geometry) and I’ll add it here.",
-  "latencyMs": 911,
-  "costUsd": 0.0001518066,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "I can only help with maths on this board. Try asking for some practice problems, a graph, or a proof.",
+  "latencyMs": 3231,
+  "costUsd": 0.00009887724,
+  "cached": false
  },
  {
   "id": "m-unkind",
   "course": "mixed",
   "kind": "refusal",
-  "model": "openai/gpt-5.4-nano",
+  "model": "deepseek/deepseek-v4.1-flash",
   "json": true,
   "proposed": 0,
   "valid": 0,
@@ -7503,9 +4163,11 @@
   "problems": [],
   "figures": [],
   "graphs": [],
-  "reply": "I can’t help write anything mean. I can write maths practice instead—what topic do you want (equations, fractions, algebra, geometry)?",
-  "latencyMs": 867,
-  "costUsd": 0.0001550736,
-  "cached": true
+  "proofs": [],
+  "lines": [],
+  "reply": "I can only help with maths on this board, and I won't write unkind things about anyone. Ask me for practice problems, a graph or a proof instead.",
+  "latencyMs": 786,
+  "costUsd": 0.00011402424,
+  "cached": false
  }
 ]

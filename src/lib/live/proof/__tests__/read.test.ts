@@ -117,6 +117,19 @@ describe("reading a proof off the board", () => {
     expect(readProofs([line("\\overline{AB} \\cong \\overline{CD}", 100, 100), line("\\text{Given}", 620, 104, 140, 36)])).toEqual([]);
   });
 
+  it("a table set up and not begun: the header under the Prove line is the proof's — the first row goes under it, its reason under Reasons", () => {
+    const [p] = readProofs(board([], { given: GIVEN, prove: PROVE, header: true }));
+    expect(p.rows).toEqual([]);
+    expect(p.header.map((h) => h.latex)).toEqual(["\\text{Statements}", "\\text{Reasons}"]);
+    expect(p.reasonX).toBe(620);
+    // the header's bottom (y 240 + 40), not the Prove line's
+    expect(p.bottom).toBe(280);
+    // a header far below (another table on the screen) is not
+    const [q] = readProofs([line(GIVEN, 100, 100, 600), line(PROVE, 100, 160, 400), line("\\text{Statements}", 100, 520, 200), line("\\text{Reasons}", 620, 520, 160)]);
+    expect(q.header).toEqual([]);
+    expect(q.bottom).toBe(200);
+  });
+
   it("with no rows yet, sizes come from the Prove line: two givens read as one line do not double them", () => {
     // `Given: E is the midpoint of AD` with `E is midpoint of BC` under it, read as one 100 px line
     const [p] = readProofs([line("\\text{Given: } E \\text{ is the midpoint of } \\overline{AD} \\ E \\text{ is midpoint of } \\overline{BC}", 100, 100, 600, 100), line(PROVE, 100, 220, 400)]);

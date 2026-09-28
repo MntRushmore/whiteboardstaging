@@ -22,8 +22,8 @@ import type { MarkKind } from "../marks";
 import { checkProof, type ProofProblem, type RowVerdict } from "./checker";
 import type { ProofRequest, ProofResponse, FigureReadWire } from "./contracts";
 import { parseStatement, statementLatex } from "./facts";
-import { buildFigure, type FigureModel } from "./figure";
-import { planProof, type PlannedRow } from "./planner";
+import { buildFigure, type FigureModel, type FigureRead } from "./figure";
+import { planProof, theoremsBeingProved, type PlannedRow } from "./planner";
 import { proofProblem, readProofs, type BoardLine, type ProofRead } from "./read";
 import { normalizeReason, reasonLatex, resolveBisector } from "./vocab";
 
@@ -32,6 +32,11 @@ export interface ProofHost {
   lines(): readonly BoardLine[];
   /** the rows the tutor has written on this screen, as lines (`tutorLinesOf`) */
   tutorLines(): readonly BoardLine[];
+  /**
+   * The figures the tutor drew for a proof on this screen (the board chat's `write_proof`), each
+   * with its read — exact, from the spec it was drawn from, so nothing is read from its ink.
+   */
+  tutorFigures?(): readonly TutorFigure[];
   diagrams(): readonly Diagram[];
   /** a drawing's labels as already read (one row per label), or null while they are not */
   labelReads(d: Diagram): readonly string[] | null;
@@ -57,6 +62,13 @@ export interface ProofHost {
   metric(name: string, data: Record<string, unknown>): void;
 }
 
+/** A figure the tutor drew for a proof: its read (as a model's read of a student's drawing is) and where its ink is. */
+export interface TutorFigure {
+  key: string;
+  read: FigureRead;
+  bounds: Rect;
+}
+
 export interface ProofView {
   key: string;
   read: ProofRead;
@@ -64,8 +76,8 @@ export interface ProofView {
   verdicts: RowVerdict[];
   diagram: Diagram | null;
   figure: FigureModel | null;
-  /** where the figure read came from: the ink and its labels (free), or the model */
-  figureFrom: "ink" | "model" | null;
+  /** where the figure read came from: the tutor's own figure, the ink and its labels (free), or the model */
+  figureFrom: "tutor" | "ink" | "model" | null;
   /** student lines of the proof → their mark */
   marks: Map<string, MarkKind | null>;
 }
@@ -129,6 +141,8 @@ export class ProofDesk {
   private readonly figures = new Map<string, { read: FigureReadWire; model: FigureModel }>();
   /** figures read from their own ink and labels, per drawing and label read (null: nothing readable) */
   private readonly inkFigures = new Map<string, { read: FigureReadWire; model: FigureModel } | null>();
+  /** the tutor's own figures' models, per figure */
+  private readonly tutorModels = new Map<string, FigureModel>();
   private readonly inflight = new Map<string, AbortController>();
   /** which proof each line belonged to at the last sync */
   private roles = new Map<string, string>();
@@ -143,6 +157,7 @@ export class ProofDesk {
     this.inflight.clear();
     this.figures.clear();
     this.inkFigures.clear();
+    this.tutorModels.clear();
     this.memoKey = "";
     this.views = [];
     this.byLine.clear();
@@ -153,21 +168,25 @@ export class ProofDesk {
   proofs(): readonly ProofView[] {
     const lines = [...this.host.lines(), ...this.host.tutorLines()];
     const diagrams = this.host.diagrams();
+    const tutorFigures = this.host.tutorFigures?.() ?? [];
     const sig = JSON.stringify([
       lines.map((l) => [l.id, l.latex, Math.round(l.bounds.x), Math.round(l.bounds.y), Math.round(l.bounds.w), Math.round(l.bounds.h)]),
       diagrams.map((d) => [d.id, figureCacheKey(d), this.host.labelReads(d)]),
       [...this.figures.keys()],
+      tutorFigures.map((f) => [f.key, Math.round(f.bounds.x), Math.round(f.bounds.y), Math.round(f.bounds.w), Math.round(f.bounds.h)]),
     ]);
     if (sig === this.memoKey) return this.views;
     this.memoKey = sig;
     this.views = readProofs(lines).map((read) => {
       const problem = proofProblem(read);
       const diagram = diagramNear(diagrams, read.bounds, FIGURE_REACH);
-      // the figure as its own ink reads (deterministic, free); the model's read only when there is none
-      const fromInk = diagram ? (this.inkFigure(diagram, pointNames(problem))?.model ?? null) : null;
-      const fromModel = diagram && !fromInk ? (this.figures.get(figureCacheKey(diagram))?.model ?? null) : null;
-      const figure = fromInk ?? fromModel;
-      const figureFrom = fromInk ? ("ink" as const) : fromModel ? ("model" as const) : null;
+      // the tutor's own figure beside it is exact; else the figure as its own ink reads
+      // (deterministic, free); the model's read only when there is neither
+      const fromTutor = this.tutorFigure(tutorFigures, read.bounds);
+      const fromInk = !fromTutor && diagram ? (this.inkFigure(diagram, pointNames(problem))?.model ?? null) : null;
+      const fromModel = !fromTutor && diagram && !fromInk ? (this.figures.get(figureCacheKey(diagram))?.model ?? null) : null;
+      const figure = fromTutor ?? fromInk ?? fromModel;
+      const figureFrom = fromTutor ? ("tutor" as const) : fromInk ? ("ink" as const) : fromModel ? ("model" as const) : null;
       const verdicts = checkProof(problem, figure);
       const marks = new Map<string, MarkKind | null>();
       for (const id of read.lineIds) marks.set(id, null);
@@ -189,6 +208,27 @@ export class ProofDesk {
     this.byLine = new Map();
     for (const v of this.views) for (const id of v.read.lineIds) this.byLine.set(id, v);
     return this.views;
+  }
+
+  /** The model of the tutor's figure nearest the proof (within reach), cached per figure; null when none. */
+  private tutorFigure(figures: readonly TutorFigure[], near: Rect): FigureModel | null {
+    let best: TutorFigure | null = null;
+    let bestGap = Infinity;
+    for (const f of figures) {
+      const b = f.bounds;
+      const gap = Math.hypot(Math.max(0, b.x - (near.x + near.w), near.x - (b.x + b.w)), Math.max(0, b.y - (near.y + near.h), near.y - (b.y + b.h)));
+      if (gap <= FIGURE_REACH && gap < bestGap) {
+        best = f;
+        bestGap = gap;
+      }
+    }
+    if (!best) return null;
+    let model = this.tutorModels.get(best.key);
+    if (!model) {
+      model = buildFigure(best.read);
+      this.tutorModels.set(best.key, model);
+    }
+    return model;
   }
 
   /**
@@ -255,6 +295,9 @@ export class ProofDesk {
     const views = this.proofs();
     let view = lineId ? this.byLine.get(lineId) : undefined;
     if (diagram) view = views.find((v) => v.diagram?.id === diagram.id) ?? view;
+    // nothing of the student's on the screen to ask about, and one proof there: a proof the tutor
+    // set up (the board chat's `write_proof`) and not begun — Help writes its first row
+    if (!view && lineId === null && !diagram && views.length === 1) view = views[0];
     if (!view) return false;
     void this.run(view, opts.all, lineId && view.read.lineIds.includes(lineId) ? lineId : (view.read.lineIds[0] ?? lineId ?? view.key));
     return true;
@@ -286,7 +329,9 @@ export class ProofDesk {
         }
       }
       let figure = view.figure;
-      let plan = planProof(this.trusted(view), figure);
+      // a proof the tutor set up was checked without the theorem it proves: Help continues so
+      const without = view.figureFrom === "tutor" ? theoremsBeingProved(view.problem, figure) : [];
+      let plan = planProof(this.trusted(view), figure, { without });
       // still short: the model reads the figure (once per drawing), and the planner tries with that
       if (plan === null && view.diagram && this.host.online()) {
         const read = await this.readFigure(view, ctrl.signal);

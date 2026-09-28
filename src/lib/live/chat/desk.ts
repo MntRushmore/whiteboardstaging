@@ -4,7 +4,7 @@ import type { FigurePlanOptions, FigurePlanResult, FigureSpec } from "../figureD
 import { GRAPH, graphPaceFor, planGraph, type GraphWindowHint } from "../graphing";
 import { HAND_LINE_META, planHandwriting, placeHandPlan, placeHandPlanOnBaseline, type HandPlan } from "../handwriting";
 import { CHAT_PROBLEM_META, problemMetaOf } from "./cells";
-import type { ChatAction, ChatActionOutcome, ChatRunReport, ChatScreen, ChatWindow } from "./contracts";
+import type { ChatAction, ChatActionOutcome, ChatRunReport, ChatScreen, ChatWindow, WriteProofAction } from "./contracts";
 import { CHAT_LIMITS, noProblemNote } from "./contracts";
 import { chunkProblems, findFreeArea, joinPlans, planGrid, PROBLEM_GRID } from "./layout";
 import { verifyLines, verifyProblem } from "./verify";
@@ -12,9 +12,11 @@ import { verifyLines, verifyProblem } from "./verify";
 /**
  * The board chat's hand: runs a reply's actions on the board, one at a time, in the tutor's
  * writing — problems as a numbered grid with room to work under each, maths written as given, a
- * graph sketched like the unasked ones, a figure, a new screen, the tutor's ink cleared. Nothing
- * a model proposed is written until the engine has read it (`verify.ts`); what is left out comes
- * back as a note for the panel. No words on the board: numbers are `1.`, `2.`, …
+ * graph sketched like the unasked ones, a figure, a two-column proof (`proofWrite.ts`, loaded on
+ * first use), a new screen, the tutor's ink cleared. Nothing a model proposed is written until the
+ * engine has read it (`verify.ts`; a proof, `proof.ts`); what is left out comes back as a note for
+ * the panel. No words on the board: numbers are `1.`, `2.`, … (a proof's Given / Prove and reasons
+ * are the one exception, in the proof reader's own vocabulary).
  *
  * The loop is the host (`LiveLoop.chatHost`), as it is for `ProofDesk`: it owns the editor, the
  * writer and the screens; this file decides what goes where.
@@ -211,6 +213,8 @@ export class ChatDesk {
         return { type: "clear_tutor", ok: true };
       case "help_problem":
         return this.helpProblem(action.problem, action.depth);
+      case "write_proof":
+        return this.proof(action, report);
     }
   }
 
@@ -230,6 +234,22 @@ export class ChatDesk {
     await this.waitForHand();
     this.host.metric?.("live.chat.help", { depth });
     return { type: "help_problem", ok: true };
+  }
+
+  /** A two-column proof: checked, laid out and written by `proofWrite.ts`, loaded on first use. */
+  private async proof(action: WriteProofAction, report: Report): Promise<ChatActionOutcome> {
+    const { writeProof } = await import("./proofWrite");
+    return writeProof(
+      {
+        host: this.host,
+        screenEmpty: () => this.screenEmpty(),
+        newScreen: () => this.newScreen(report),
+        waitForHand: () => this.waitForHand(),
+        writeBlock: (plan, meta) => this.writeBlock(plan, meta),
+        onScreen: () => this.host.pageId() === this.expectedPage,
+      },
+      action,
+    );
   }
 
   // ---------------------------------------------------------------- helpers
@@ -387,7 +407,8 @@ export class ChatDesk {
   private async writeLines(lines: readonly string[], engine: LiveEngine, report: Report): Promise<ChatActionOutcome> {
     const v = verifyLines(engine, lines, this.canDraw);
     if (!v.ok) {
-      return { type: "write_lines", ok: false, note: v.reason === "false" ? "I left out lines that didn't check out." : "I couldn't write that on the board." };
+      const note = v.reason === "false" ? "I left out lines that didn't check out." : v.reason === "unchecked" ? "I couldn't check those lines, so I didn't write them." : "I couldn't write that on the board.";
+      return { type: "write_lines", ok: false, note };
     }
     const clean = lines.map((l) => l.trim()).filter(Boolean);
     const meta: JsonObject = { [CHAT_BLOCK_META]: "lines" };

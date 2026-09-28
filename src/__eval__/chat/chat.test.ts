@@ -4,12 +4,13 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { LiveEngine } from "@/lib/live/contracts";
 import { getEngine } from "@/lib/live/engine";
 import { PROBE_FIGURE } from "@/lib/live/chat/figure";
-import { buildChatMessages, cleanChatActions } from "@/lib/server/prompts/chat";
+import { checkProofProposal } from "@/lib/live/chat/proof";
+import { ALGEBRA_PROOF_EXAMPLE, buildChatMessages, cleanChatActions, PROOF_EXAMPLES } from "@/lib/server/prompts/chat";
 import { loadEnvLocal } from "../handwriting";
 import { loadCatalog, MODELS_CACHE_DIR, SpendLedger } from "../models/client";
 import { CHAT_CORPUS, requestFor } from "./corpus";
 import { modelSummary, renderChatMarkdown } from "./report";
-import { judgeIntent, runChat, scoreGraphs, scoreProblems, type ChatResult } from "./run";
+import { judgeIntent, proofScore, runChat, scoreGraphs, scoreLines, scoreProblems, type ChatResult } from "./run";
 
 /**
  * The BOARD CHAT eval (./run.ts). Offline, in every `vitest run`: the corpus covers every course and
@@ -40,7 +41,9 @@ describe("eval: board chat (offline)", () => {
     expect(CHAT_CORPUS.length).toBeGreaterThanOrEqual(30);
     expect(new Set(CHAT_CORPUS.map((c) => c.id)).size).toBe(CHAT_CORPUS.length);
     expect(new Set(CHAT_CORPUS.map((c) => c.course))).toEqual(new Set(["algebra1", "algebra2", "geometry", "calculus", "mixed"]));
-    expect(new Set(CHAT_CORPUS.map((c) => c.kind))).toEqual(new Set(["problems", "graph", "figure", "lines", "followup", "screen", "refusal", "help"]));
+    expect(new Set(CHAT_CORPUS.map((c) => c.kind))).toEqual(new Set(["problems", "graph", "figure", "lines", "followup", "screen", "refusal", "help", "proof"]));
+    // the owner's asks: a proof, the hardest proof ever, one to do
+    for (const ask of ["write a proof", "write the hardest proof ever", "give me a proof to do"]) expect(CHAT_CORPUS.some((c) => c.message === ask && c.expect.types.includes("write_proof"))).toBe(true);
   });
 
   it("scoring help: the right problem, the right depth; no help_problem where there are no problems", () => {
@@ -54,6 +57,24 @@ describe("eval: board chat (offline)", () => {
     expect(judgeIntent(none, [{ type: "help_problem", problem: 1, depth: "step" }]).ok).toBe(false);
     // the owner's trig problems, as the request shows them
     expect(String(buildChatMessages(requestFor(three))[1].content)).toContain("3. \\sin x = -\\frac{1}{2}, 0^{\\circ} \\le x < 360^{\\circ}");
+  });
+
+  it("scoring proofs: written or set up as asked, proved by the engine; an algebra proof's steps all checked", () => {
+    const write = CHAT_CORPUS.find((x) => x.id === "p-write")!;
+    const toDo = CHAT_CORPUS.find((x) => x.id === "p-to-do")!;
+    const example = PROOF_EXAMPLES[0].action;
+    expect(judgeIntent(write, [example])).toEqual({ ok: true, why: "" });
+    expect(judgeIntent(write, [])).toEqual({ ok: false, why: "no write_proof (no action)" });
+    expect(judgeIntent(toDo, [example]).why).toBe("a proof set up for the student was asked for");
+    expect(judgeIntent(toDo, [{ ...example, worked: false }]).ok).toBe(true);
+    const verdict = checkProofProposal(example);
+    expect(proofScore(example, verdict)).toMatchObject({ schema: true, worked: true, provedFirst: true, provedAfterRepair: true, rows: 4, reasons: ["vertical", "midpoint", "midpoint", "sas"] });
+    const odd = CHAT_CORPUS.find((x) => x.id === "p-odd-sum")!;
+    const chain = { type: "write_lines" as const, lines: [...ALGEBRA_PROOF_EXAMPLE.lines] };
+    expect(judgeIntent(odd, [chain]).ok).toBe(true);
+    expect(judgeIntent(odd, [{ type: "write_lines", lines: ["2m + 1 + 2n + 1 = 2(m + n + 1)"] }]).why).toBe("not a chain of = lines");
+    expect(scoreLines(engine, [chain])).toEqual([{ lines: chain.lines, chain: true, ok: true, why: "" }]);
+    expect(scoreLines(engine, [{ type: "write_lines", lines: ["(a + b)^{2}", "= a^{2} + b^{2}"] }])[0]).toMatchObject({ ok: false, why: "false" });
   });
 
   it("the production prompt builds for every request, with the screen where it matters", () => {
@@ -103,13 +124,16 @@ describe("eval: board chat (offline)", () => {
       problems: [{ lines: ["2x = 4"], verdict: "verified", answer: "x = 2", clean: true }],
       figures: [{ schema: true, cleanFirst: false, cleanAfterRepair: true, drawn: true, problems: ["x"], repair: { model: "m/x", key: "k", ok: true, latencyMs: 500, promptTokens: 1, completionTokens: 1, reasoningTokens: 0, costUsd: 0.001, costSource: "usage", attempts: 1, at: "", cached: false } }],
       graphs: [],
+      proofs: [{ schema: true, worked: true, provedFirst: false, provedAfterRepair: true, rows: 8, reasons: ["given"], prove: "\\overline{AE} \\cong \\overline{CE}", problems: ["could not prove"], repair: { model: "m/x", key: "r", ok: true, latencyMs: 700, promptTokens: 1, completionTokens: 1, reasoningTokens: 0, costUsd: 0.001, costSource: "usage", attempts: 1, at: "", cached: false } }],
+      lines: [],
       reply: "Here.",
       call: { model: "m/x", key: "k", ok: true, latencyMs: 1500, promptTokens: 1, completionTokens: 1, reasoningTokens: 0, costUsd: 0.002, costSource: "usage", attempts: 1, at: "", cached: false },
       content: "",
     };
     const s = modelSummary([r]);
-    expect(s).toMatchObject({ verified: 1, problems: 1, figureCleanFirst: 0, figureClean: 1, figureDrawn: 1, p50: 2000 });
-    expect(s.cost).toBeCloseTo(0.003, 9);
+    // the figure's repair (0.5 s) and the proof's (0.7 s) are part of the wait and the cost
+    expect(s).toMatchObject({ verified: 1, problems: 1, figureCleanFirst: 0, figureClean: 1, figureDrawn: 1, proofs: 1, proofsFirst: 0, proofsProved: 1, p50: 2700 });
+    expect(s.cost).toBeCloseTo(0.004, 9);
     const md = renderChatMarkdown({ corpus: CHAT_CORPUS, results: [r], spend: { totalUsd: 0.003, calls: 2, byModel: {} }, spentThisRun: 0.003, capUsd: 0.6, date: "2026-09-28", catalogFetchedAt: "2026-09-28" });
     expect(md).toContain("| `m/x` |");
     expect(md).toContain("**1/1 (100%)**");

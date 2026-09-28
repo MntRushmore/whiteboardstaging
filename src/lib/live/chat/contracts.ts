@@ -34,6 +34,9 @@ export const CHAT_LIMITS = {
   /** relations of one `graph` (a system is two or three) */
   relations: 3,
   reply: 280,
+  /** a `write_proof`'s Given statements, and one statement's length */
+  proofGivens: 4,
+  proofStatement: 200,
 } as const;
 
 /** LaTeX as the hand writes it: short, no `$` delimiters, no words (`\text{…}` is refused). */
@@ -135,6 +138,36 @@ export const HelpProblemSchema = z.object({
   depth: z.enum(["step", "solve"]),
 });
 
+/**
+ * One statement of a two-column proof as the proof reader reads a student's
+ * (`src/lib/live/proof/facts.ts`): `\overline{AB} \cong \overline{CB}`, `\triangle ABD \cong
+ * \triangle CBD`, `M \text{ is the midpoint of } \overline{AB}`. Words only as that reader reads
+ * them — the board never writes the model's words: the statement is parsed into facts and written
+ * back in the reader's own forms (`chat/proof.ts`).
+ */
+export const ProofStatementSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(CHAT_LIMITS.proofStatement)
+  .refine((s) => !/\$/.test(s), { message: "no $ delimiters" });
+
+/**
+ * A two-column proof, written by the tutor (`worked`, the default) or set up for the student to do
+ * (`worked: false`: the figure, `Given:`, `Prove:` and an empty Statements | Reasons table). Nothing
+ * of it reaches the board until the engine's proof planner has proved it with the figure's own
+ * geometry (`checkProofProposal`); a worked proof's rows are the planner's, every one ticked by the
+ * checker.
+ */
+export const WriteProofSchema = z.object({
+  type: z.literal("write_proof"),
+  figure: FigureSpecSchema,
+  given: z.array(ProofStatementSchema).min(1).max(CHAT_LIMITS.proofGivens),
+  prove: ProofStatementSchema,
+  worked: z.boolean().default(true),
+});
+export type WriteProofAction = z.infer<typeof WriteProofSchema>;
+
 export const ChatActionSchema = z.discriminatedUnion("type", [
   WriteProblemsSchema,
   WriteLinesSchema,
@@ -143,10 +176,11 @@ export const ChatActionSchema = z.discriminatedUnion("type", [
   NewScreenSchema,
   ClearTutorSchema,
   HelpProblemSchema,
+  WriteProofSchema,
 ]);
 export type ChatAction = z.infer<typeof ChatActionSchema>;
 export type ChatActionType = ChatAction["type"];
-export const CHAT_ACTION_TYPES = ["write_problems", "write_lines", "graph", "draw_figure", "new_screen", "clear_tutor", "help_problem"] as const satisfies readonly ChatActionType[];
+export const CHAT_ACTION_TYPES = ["write_problems", "write_lines", "graph", "draw_figure", "new_screen", "clear_tutor", "help_problem", "write_proof"] as const satisfies readonly ChatActionType[];
 
 /** The note for help asked about a problem that is not on this screen (the route's, and the board's). */
 export function noProblemNote(n: number): string {
