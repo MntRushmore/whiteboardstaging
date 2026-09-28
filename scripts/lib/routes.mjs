@@ -103,6 +103,16 @@ export const API_ROUTES = Object.freeze([
     status: "active",
   },
   {
+    path: "/api/live/chat",
+    file: "src/app/api/live/chat/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "liveChat",
+    body: "zod",
+    purpose: "Live Math: the board chat — a typed request -> a short reply and board actions (problems the engine checks, lines, a graph, a figure spec, a new screen, clear)",
+    status: "active",
+  },
+  {
     path: "/api/live/proof",
     file: "src/app/api/live/proof/route.ts",
     methods: ["POST"],

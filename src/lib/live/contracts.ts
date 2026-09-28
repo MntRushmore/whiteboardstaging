@@ -568,6 +568,13 @@ export const LIVE_MODELS = {
    */
   proof: "openai/gpt-5.4-mini",
   proofFallback: "deepseek/deepseek-v4.1-flash",
+  /**
+   * The board chat (POST /api/live/chat, `src/lib/live/chat`): a typed request → a reply and the
+   * actions the tutor writes (problems, lines, a graph, a figure spec). Chosen on `npm run
+   * eval:chat` (docs/eval/chat.md): US primary, the cheapest capable fallback from another provider.
+   */
+  chat: "openai/gpt-5.4-mini",
+  chatFallback: "deepseek/deepseek-v4.1-flash",
 } as const;
 
 /** Per-user limits for the live routes (the existing LIMITS table in src/lib/server/rate-limit.ts covers the legacy routes). */
@@ -581,6 +588,8 @@ export const LIVE_RATE_LIMITS = {
   liveReread: { limit: 30, windowMs: 60_000 },
   /** a proof's figure read (once per figure) and a next row when the planner cannot finish: two per ask at most */
   liveProof: { limit: 20, windowMs: 60_000 },
+  /** the board chat: typed by hand, one request at a time */
+  liveChat: { limit: 12, windowMs: 60_000 },
 } as const;
 export type LiveRateLimitRoute = keyof typeof LIVE_RATE_LIMITS;
 
