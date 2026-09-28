@@ -14,8 +14,6 @@
 
 import { isCourseId, type CourseId } from "./courseIds";
 
-export { COURSE_IDS, isCourseId, type CourseId } from "./courseIds";
-
 export interface Course {
   id: CourseId;
   label: string;

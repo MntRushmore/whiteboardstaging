@@ -13,7 +13,8 @@ import { PROBLEM_GRID } from "@/lib/live/chat/layout";
 import { planHandwriting } from "@/lib/live/handwriting";
 import { analyzeColumn, localSolve } from "@/lib/live/localSolve";
 import { badgeFor } from "@/lib/live/policy";
-import { COURSE_IDS, COURSES, isCourseId, STARTER_PROBLEMS, starterIndex, startersFor } from "../courses";
+import { COURSE_IDS, isCourseId } from "../courseIds";
+import { COURSES, STARTER_PROBLEMS, starterIndex, startersFor } from "../courses";
 
 let engine: LiveEngine;
 beforeAll(async () => {
