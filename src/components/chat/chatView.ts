@@ -20,10 +20,13 @@ export const CHAT_COPY = {
   thinking: "Thinking…",
   writing: "Writing on the board…",
   retry: "Retry",
-  account: "See your account",
   cost: `Each request uses ${CHAT_CREDITS} credits.`,
   errors: {
-    credits: "You're out of credits for this month.",
+    /**
+     * OUT_OF_CREDITS_COPY.title, the board dialog's words (pinned equal in the tests; a literal so
+     * the panel does not pull the lazy dialog's module into the board's first load)
+     */
+    credits: "You've used this month's credits",
     rateLimited: (seconds: number) => `That's a lot of requests. Try again in ${seconds} s.`,
     unauthorized: "Please sign in again.",
     network: "Couldn't reach the tutor. Check your connection and try again.",

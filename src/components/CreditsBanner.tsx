@@ -10,12 +10,25 @@ import {
   creditsBannerStateFor,
   remainingTone,
 } from "@/lib/billing/viewModel";
+import { cn } from "@/lib/utils";
 
 const POLL_MS = 60_000;
 
 /**
+ * The header credits chip's colours (AppHeader CHIP_TONE), so "low" reads the same everywhere:
+ * amber at 10 % or less of the month's credits, red when they are gone.
+ */
+const TONE_CLASS = {
+  low: "border-amber-300 bg-amber-50 text-amber-900",
+  empty: "border-red-300 bg-red-50 text-red-900",
+} as const;
+
+/**
  * Low / exhausted credits notice for the signed-in user, from their own
  * `credit_summary()` RPC. Hidden while credits are fine.
+ *
+ * Low credits are a nudge, not an alarm: same threshold and amber as the header chip
+ * (remainingTone), announced politely (`role="status"`). Only "out of credits" is an alert.
  *
  * This component no longer calls GET /api/credits: that route reports the
  * OPERATOR's OpenRouter balance and stays available for operators/smoke
@@ -39,10 +52,13 @@ export function CreditsBanner({ className = "" }: { className?: string }) {
 
   return (
     <div
-      className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm ${
-        isExhausted ? "bg-red-50 border-red-200 text-red-800" : "bg-yellow-50 border-yellow-200 text-yellow-900"
-      } ${className}`}
-      role="alert"
+      className={cn(
+        "flex items-center gap-2 rounded-lg border px-3 text-sm",
+        isExhausted ? "py-2" : "py-1.5 text-xs",
+        isExhausted ? TONE_CLASS.empty : TONE_CLASS.low,
+        className,
+      )}
+      role={isExhausted ? "alert" : "status"}
       data-state="visible"
       data-tone={tone}
       data-banner="credits"
@@ -50,11 +66,11 @@ export function CreditsBanner({ className = "" }: { className?: string }) {
       {isExhausted ? (
         <OctagonAlert className="w-4 h-4 shrink-0" />
       ) : (
-        <AlertTriangle className="w-4 h-4 shrink-0" />
+        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
       )}
       <span className="flex-1 min-w-0">{message}</span>
       <Link href={ACCOUNT_PATH} className="font-medium underline underline-offset-2 whitespace-nowrap">
-        {BILLING_COPY.viewAccount}
+        {isExhausted ? BILLING_COPY.seePlans : BILLING_COPY.viewAccount}
       </Link>
     </div>
   );

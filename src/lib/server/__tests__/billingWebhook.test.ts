@@ -6,6 +6,7 @@ vi.hoisted(() => {
 });
 import {
   PROFILE_COLUMNS,
+  billingStatusOf,
   createWebhookHandler,
   mapBillingEvent,
   type BillingEvent,
@@ -100,6 +101,66 @@ describe("mapBillingEvent", () => {
     );
     expect(mapped).toMatchObject({ kind: "update", patch: { billing_status: "active", current_period_end: new Date(1_762_000_000 * 1000).toISOString() } });
     expect((mapped as { patch: ProfilePatch }).patch).not.toHaveProperty("plan_id");
+  });
+
+  it("customer.subscription.updated reads the plan from the price even when checkout metadata says otherwise (portal switch)", () => {
+    const mapped = mapBillingEvent(
+      event("customer.subscription.updated", {
+        id: "sub_9",
+        status: "active",
+        metadata: { plan_id: "plus", app: "agathon-classroom" },
+        items: { data: [{ price: { id: "price_pro" }, current_period_end: 1_762_000_000 }] },
+      }),
+      PRICE_MAP,
+    );
+    expect(mapped).toMatchObject({ kind: "update", patch: { plan_id: "pro", billing_status: "active" } });
+    // a price outside the map falls back to the metadata
+    const fallback = mapBillingEvent(
+      event("customer.subscription.updated", { id: "sub_9", status: "active", metadata: { plan_id: "plus" }, items: { data: [{ price: "price_mystery" }] } }),
+      PRICE_MAP,
+    );
+    expect(fallback).toMatchObject({ kind: "update", patch: { plan_id: "plus" } });
+  });
+
+  it("customer.subscription.updated stores a scheduled cancellation as 'canceling' with the date it ends", () => {
+    const atPeriodEnd = mapBillingEvent(
+      event("customer.subscription.updated", {
+        id: "sub_9",
+        status: "active",
+        cancel_at_period_end: true,
+        items: { data: [{ price: { id: "price_plus" }, current_period_end: 1_762_000_000 }] },
+      }),
+      PRICE_MAP,
+    );
+    expect(atPeriodEnd).toMatchObject({
+      kind: "update",
+      patch: { plan_id: "plus", billing_status: "canceling", current_period_end: new Date(1_762_000_000 * 1000).toISOString() },
+    });
+
+    // newer API versions: cancel_at instead of the flag; the end date is cancel_at
+    const cancelAt = mapBillingEvent(
+      event("customer.subscription.updated", {
+        id: "sub_9",
+        status: "active",
+        cancel_at_period_end: false,
+        cancel_at: 1_761_500_000,
+        items: { data: [{ price: "price_plus", current_period_end: 1_762_000_000 }] },
+      }),
+      PRICE_MAP,
+    );
+    expect(cancelAt).toMatchObject({ patch: { billing_status: "canceling", current_period_end: new Date(1_761_500_000 * 1000).toISOString() } });
+
+    // "Don't cancel" in the portal: back to active
+    const renewed = mapBillingEvent(
+      event("customer.subscription.updated", { id: "sub_9", status: "active", cancel_at_period_end: false, cancel_at: null, items: { data: [{ price: "price_plus" }] } }),
+      PRICE_MAP,
+    );
+    expect(renewed).toMatchObject({ patch: { billing_status: "active" } });
+
+    // an unpaid or already-canceled subscription keeps Stripe's status
+    expect(billingStatusOf({ status: "canceled", cancel_at_period_end: true })).toBe("canceled");
+    expect(billingStatusOf({ status: "past_due", cancel_at_period_end: true })).toBe("canceling");
+    expect(billingStatusOf({})).toBeNull();
   });
 
   it("customer.subscription.deleted reverts to free / canceled", () => {

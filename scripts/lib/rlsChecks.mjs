@@ -1102,6 +1102,103 @@ export async function checkUsageByDay({ a, b, anon }) {
   return out;
 }
 
+/**
+ * First-run onboarding (migration 20260928100000_onboarding.sql): profiles.course and
+ * profiles.onboarded_at are readable by their owner and written only through the
+ * save_onboarding() RPC, which acts on the caller alone, validates the course and stamps
+ * onboarded_at once. Runs on the throwaway users, which are new accounts (not backfilled).
+ * @param {CheckContext} ctx
+ */
+export async function checkOnboarding({ a, b, anon }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const select = "user_id,course,onboarded_at";
+
+  const fresh = await a.rest("GET", "profiles", { query: { select } });
+  out.push(
+    result(
+      "onboarding: A reads own course and onboarded_at (a new account starts not onboarded)",
+      isOk(fresh) && rows(fresh).length === 1 && rows(fresh)[0].course === null && rows(fresh)[0].onboarded_at === null,
+      describe(fresh),
+    ),
+  );
+
+  const patchAt = await a.rest("PATCH", "profiles", {
+    query: { user_id: `eq.${a.userId}` },
+    body: { onboarded_at: new Date().toISOString() },
+    prefer: "return=representation",
+  });
+  out.push(
+    result(
+      "onboarding: A cannot PATCH own onboarded_at (42501, RPC only)",
+      isDenied(patchAt) && String(asObject(patchAt.body)?.code ?? "") === "42501",
+      describe(patchAt),
+    ),
+  );
+  const patchCourse = await a.rest("PATCH", "profiles", {
+    query: { user_id: `eq.${a.userId}` },
+    body: { course: "geometry" },
+    prefer: "return=representation",
+  });
+  out.push(
+    result(
+      "onboarding: A cannot PATCH own course (42501, RPC only)",
+      isDenied(patchCourse) && String(asObject(patchCourse.body)?.code ?? "") === "42501",
+      describe(patchCourse),
+    ),
+  );
+
+  const course = await rpc(a, "save_onboarding", { p_course: "geometry" });
+  out.push(
+    result(
+      "onboarding: save_onboarding stores A's course (not yet onboarded)",
+      isOk(course) && asObject(course.body)?.course === "geometry" && asObject(course.body)?.onboarded_at === null,
+      describe(course),
+    ),
+  );
+  const unknown = await rpc(a, "save_onboarding", { p_course: "astrology" });
+  out.push(result("onboarding: an unknown course is rejected (400)", unknown.status === 400, describe(unknown)));
+
+  const done = await rpc(a, "save_onboarding", { p_complete: true });
+  const doneAt = asObject(done.body)?.onboarded_at;
+  out.push(
+    result(
+      "onboarding: save_onboarding(p_complete) stamps onboarded_at and keeps the course",
+      isOk(done) && typeof doneAt === "string" && asObject(done.body)?.course === "geometry",
+      describe(done),
+    ),
+  );
+  const again = await rpc(a, "save_onboarding", { p_complete: true });
+  out.push(
+    result(
+      "onboarding: completing again keeps the first onboarded_at",
+      isOk(again) && typeof doneAt === "string" && asObject(again.body)?.onboarded_at === doneAt,
+      describe(again),
+    ),
+  );
+  const readBack = await a.rest("GET", "profiles", { query: { select } });
+  out.push(
+    result(
+      "onboarding: A reads back course and onboarded_at",
+      isOk(readBack) && rows(readBack).length === 1 && rows(readBack)[0].course === "geometry" && typeof rows(readBack)[0].onboarded_at === "string",
+      describe(readBack),
+    ),
+  );
+
+  const other = await b.rest("GET", "profiles", { query: { select } });
+  out.push(
+    result(
+      "onboarding: B's profile unchanged by A's calls",
+      isOk(other) && rows(other).length === 1 && rows(other)[0].user_id === b.userId && rows(other)[0].course === null && rows(other)[0].onboarded_at === null,
+      describe(other),
+    ),
+  );
+
+  const anonCall = await rpc(anon, "save_onboarding", { p_complete: true });
+  out.push(result("onboarding: anon cannot call save_onboarding", isDenied(anonCall), describe(anonCall)));
+  return out;
+}
+
 // ---------------------------------------------------------------- registry / runner
 
 /** @type {CheckDef[]} */
@@ -1122,6 +1219,7 @@ export const ALL_CHECKS = [
   { name: "refund_credits gives back only the caller's own recent charge", run: checkRefunds },
   { name: "rate_limit_hit: per-user fixed window, function-only table", run: checkRateLimit },
   { name: "usage_by_day: the caller's own spend this month, by day and route", run: checkUsageByDay },
+  { name: "onboarding: course and onboarded_at written only through save_onboarding", run: checkOnboarding },
   { name: "delete_own_account removes the caller's account and data", run: checkDeleteOwnAccount },
 ];
 

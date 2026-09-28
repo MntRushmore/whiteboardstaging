@@ -290,6 +290,8 @@ select u.email, p.plan_id, p.billing_status, p.billing_customer_id, p.current_pe
 from public.profiles p join auth.users u on u.id = p.user_id where u.email = 'student@example.com';
 ```
 
+**Stripe** (products, Payment Links, the customer portal, the webhook endpoint, going live, a payment that did not become a plan): `docs/RUNBOOK-billing.md`. Migration `20260928110000_paid_plans.sql` set free to 300 credits (the pilot's 1,000 ended) and made `credit_summary()` also return `billing_status` and `current_period_end`.
+
 **How the webhook updates it.** `POST /api/billing/webhook` verifies the provider signature (`STRIPE_WEBHOOK_SECRET`) and then, with `SUPABASE_SERVICE_ROLE_KEY` (the only route that uses it; add it to Vercel *Production* only, as a sensitive variable, when you enable billing), does two writes: `insert into billing_events (id, type, payload)` keyed by the provider's event id (`on conflict do nothing`; a duplicate delivery is dropped there) and `update profiles set plan_id, billing_customer_id, billing_subscription_id, billing_status, current_period_end where user_id = ...` (the user id travels in the checkout session's `client_reference_id` / subscription metadata). Without both env vars the route answers `503 feature_unavailable` and nothing changes. `BILLING_ENFORCE=0` makes the API routes skip `consume_credits()` entirely (dev/staging escape hatch; never in production). Checkout / portal links come from `NEXT_PUBLIC_BILLING_LINKS`; without it the pricing UI shows the plans with disabled buttons. Inspect what arrived with `select id, type, received_at from public.billing_events order by received_at desc limit 20;`.
 
 **Usage questions**

@@ -103,7 +103,11 @@ function periodEndIso(obj: Record<string, unknown>): string | null {
   return new Date(secs * 1000).toISOString();
 }
 
-/** Plan id from `metadata.plan_id`, else the price map lookup of the first line item's price. */
+/**
+ * Plan id for a Checkout Session: `metadata.plan_id` (a Payment Link copies its metadata onto
+ * every session it creates; the session's line items are not in the event), else the price map
+ * lookup of the first line item's price.
+ */
 function planIdOf(obj: Record<string, unknown>, priceMap: BillingPriceMap): string | null {
   const fromMeta = str(metadataOf(obj).plan_id);
   if (fromMeta) return fromMeta;
@@ -112,11 +116,43 @@ function planIdOf(obj: Record<string, unknown>, priceMap: BillingPriceMap): stri
 }
 
 /**
+ * Plan id for a subscription: its PRICE first, because the customer portal switches plans by
+ * changing the price and leaves the subscription's metadata as it was at checkout. Metadata is
+ * only the fallback for a price that is not in BILLING_PRICE_MAP.
+ */
+function subscriptionPlanIdOf(obj: Record<string, unknown>, priceMap: BillingPriceMap): string | null {
+  const priceId = firstPriceId(obj);
+  const fromPrice = priceId ? (priceMap[priceId] ?? null) : null;
+  return fromPrice ?? str(metadataOf(obj).plan_id);
+}
+
+/** Unix seconds -> ISO, or null. */
+function isoOf(secs: unknown): string | null {
+  return typeof secs === "number" && Number.isFinite(secs) && secs > 0 ? new Date(secs * 1000).toISOString() : null;
+}
+
+/** Statuses in which the subscriber still has the plan's credits. */
+const STILL_PAID = new Set(["active", "trialing", "past_due"]);
+
+/**
+ * `billing_status` as stored: Stripe's status, except `canceling` for a paid subscription whose
+ * cancellation is scheduled (the portal's "cancel at period end" sets `cancel_at_period_end`;
+ * newer API versions may set `cancel_at` instead). The account page shows it as "cancels on …".
+ */
+export function billingStatusOf(obj: Record<string, unknown>): string | null {
+  const status = str(obj.status);
+  if (!status) return null;
+  const scheduled = obj.cancel_at_period_end === true || isoOf(obj.cancel_at) !== null;
+  return scheduled && STILL_PAID.has(status) ? "canceling" : status;
+}
+
+/**
  * Pure: provider event -> what to change on which profile. No I/O.
  *
  *  - checkout.session.completed   `client_reference_id` (our user id) gets the plan,
  *                                 customer + subscription ids and status "active".
- *  - customer.subscription.updated matched by subscription id: status, period end,
+ *  - customer.subscription.updated matched by subscription id: status ("canceling" while a
+ *                                 cancellation is scheduled), period end (the end date then),
  *                                 and the plan when the price is in BILLING_PRICE_MAP.
  *  - customer.subscription.deleted matched by subscription id: plan "free", status "canceled".
  *  - anything else                ignored.
@@ -147,11 +183,13 @@ export function mapBillingEvent(event: BillingEvent, priceMap: BillingPriceMap):
       const subscriptionId = str(obj.id);
       if (!subscriptionId) return { kind: "ignored", reason: "subscription has no id" };
       const patch: ProfilePatch = {};
-      const planId = planIdOf(obj, priceMap);
+      const planId = subscriptionPlanIdOf(obj, priceMap);
       if (planId) patch[PROFILE_COLUMNS.planId] = planId;
-      const status = str(obj.status);
+      const status = billingStatusOf(obj);
       if (status) patch[PROFILE_COLUMNS.status] = status;
-      const periodEnd = periodEndIso(obj);
+      // While a cancellation is scheduled this is when the plan ENDS (cancel_at when Stripe gives
+      // one, which is the period end for "cancel at period end"); otherwise when it renews.
+      const periodEnd = (status === "canceling" ? isoOf(obj.cancel_at) : null) ?? periodEndIso(obj);
       if (periodEnd) patch[PROFILE_COLUMNS.periodEnd] = periodEnd;
       const customerId = idOf(obj.customer);
       if (customerId) patch[PROFILE_COLUMNS.customerId] = customerId;

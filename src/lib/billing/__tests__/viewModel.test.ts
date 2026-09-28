@@ -167,23 +167,37 @@ describe("planCardsFor", () => {
     expect(cards.some((c) => "href" in c)).toBe(false);
   });
 
-  it("turns upgrades into links and the current / cheaper plans into portal links", () => {
-    const links = { plus: "https://buy.example/plus", pro: "https://buy.example/pro", portal: "https://portal.example/" };
+  const links = { plus: "https://buy.example/plus", pro: "https://buy.example/pro", portal: "https://portal.example/" };
+
+  it("without a subscription: bigger plans link to their Payment Links, the current plan has no button", () => {
     const onFree = planCardsFor(plans, summary, links);
-    expect(onFree[0]).toMatchObject({ action: "current", href: "https://portal.example/" });
+    expect(onFree[0]).toMatchObject({ action: "current" });
+    expect("href" in onFree[0]).toBe(false);
     expect(onFree[1]).toMatchObject({ action: "upgrade", href: "https://buy.example/plus" });
     expect(onFree[2]).toMatchObject({ action: "upgrade", href: "https://buy.example/pro" });
 
-    const onPlus = planCardsFor(plans, { ...summary, plan_id: "plus", plan_name: "Plus" }, links);
-    expect(onPlus[0]).toMatchObject({ id: "free", action: "downgrade", href: "https://portal.example/" });
-    expect(onPlus[1]).toMatchObject({ id: "plus", action: "current" });
-    expect(onPlus[2]).toMatchObject({ id: "pro", action: "upgrade" });
+    // a plan set by hand ('comped'): nothing to manage, Pro can still be bought, Free has no button
+    const comped = planCardsFor(plans, { ...summary, plan_id: "plus", plan_name: "Plus", billing_status: "comped" }, links);
+    expect(comped.map((c) => c.action)).toEqual(["none", "current", "upgrade"]);
+    expect(comped[2].href).toBe("https://buy.example/pro");
+  });
 
-    // a checkout link for one plan but no portal: the cheaper plan stays coming-soon
-    const onPro = planCardsFor(plans, { ...summary, plan_id: "pro" }, { plus: "https://buy.example/plus" });
-    expect(onPro[0]).toMatchObject({ id: "free", action: "coming-soon" });
-    expect(onPro[2]).toMatchObject({ id: "pro", action: "current" });
-    expect("href" in onPro[2]).toBe(false);
+  it("with a subscription: every change goes through the portal, never a second Payment Link", () => {
+    const onPlus = planCardsFor(plans, { ...summary, plan_id: "plus", plan_name: "Plus", billing_status: "active" }, links);
+    expect(onPlus[0]).toMatchObject({ id: "free", action: "downgrade", href: "https://portal.example/" });
+    expect(onPlus[1]).toMatchObject({ id: "plus", action: "current", href: "https://portal.example/" });
+    expect(onPlus[2]).toMatchObject({ id: "pro", action: "upgrade", href: "https://portal.example/" });
+
+    // cancelled but still paid until the period end: still managed in the portal
+    const canceling = planCardsFor(plans, { ...summary, plan_id: "pro", billing_status: "canceling" }, links);
+    expect(canceling.map((c) => c.href)).toEqual(["https://portal.example/", "https://portal.example/", "https://portal.example/"]);
+
+    // no portal link configured: nothing to click for a subscriber
+    const noPortal = planCardsFor(plans, { ...summary, plan_id: "pro", billing_status: "active" }, { plus: "https://buy.example/plus" });
+    expect(noPortal[0]).toMatchObject({ id: "free", action: "coming-soon" });
+    expect(noPortal[1]).toMatchObject({ id: "plus", action: "coming-soon" });
+    expect(noPortal[2]).toMatchObject({ id: "pro", action: "current" });
+    expect("href" in noPortal[2]).toBe(false);
   });
 
   it("marks nothing current without a summary or when the plan id is unknown", () => {
