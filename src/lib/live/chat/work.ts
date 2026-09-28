@@ -142,8 +142,8 @@ export function problemSteps(args: {
 export const WORK_PLACE = {
   /** space kept to the cell's edges */
   margin: 12,
-  /** between the problem (or the tutor's last block) and the next block */
-  gap: 16,
+  /** between the problem (or the tutor's last block) and the next block: room to read them apart */
+  gap: 24,
   /** how far a block slides right, each try, when the column is blocked all the way down */
   stepX: 48,
 } as const;

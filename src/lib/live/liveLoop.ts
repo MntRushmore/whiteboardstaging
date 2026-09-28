@@ -1879,7 +1879,8 @@ export class LiveLoop implements LiveController {
    * the hand cannot write a glyph of it (the typeset fallback's turn).
    */
   private drawProblemWork(built: { states: LiveLineState[] }, opts: SolveOpts, work: ProblemWork, state: LiveLineState, steps: readonly string[], extraMeta?: JsonObject): { rect: Rect; wallMs: number } | null {
-    const base = handSizeFor(state.line.bounds.h);
+    // the hand the problem was written in (its ink is a digit's height of it), as large as a student's line allows
+    const base = handSizeFor(state.line.bounds.h / HAND_WRITE.digitRatio);
     const seed = handSeedFor(`${opts.lineId}:${work.written.length}`);
     const at = { x: unionRects(built.states.map((s) => s.line.bounds)).x, y: rectMaxY(work.below) + WORK_PLACE.gap };
     const avoid = this.avoidRects(opts.lineId);
