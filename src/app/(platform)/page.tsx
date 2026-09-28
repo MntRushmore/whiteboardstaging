@@ -1,7 +1,9 @@
 "use client";
 
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { AlertTriangle, Plus, RefreshCw, Search } from 'lucide-react';
+import { toast } from "sonner";
 import { supabase } from '@/lib/supabase';
 import { AuthErrorBanner, useAuth } from '@/components/AuthProvider';
 import {
@@ -26,40 +28,15 @@ import { settleExitWrites } from '@/lib/boards/exitWrites';
 import { EmptyBoards } from '@/components/boards/EmptyBoards';
 import { useWelcome } from '@/components/onboarding/useWelcome';
 import { homeView } from '@/lib/onboarding/state';
-import {
-  Plus,
-  Search,
-  LayoutGrid,
-  List as ListIcon,
-  Loader2,
-  RefreshCw,
-  AlertTriangle,
-  ArrowDownUp,
-  ChevronDown,
-  X,
-} from 'lucide-react';
-import { toast } from "sonner";
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
+import { Alert } from '@/registry/components/alert/alert';
+import { Button } from '@/registry/components/button/button';
+import { Dialog, DialogContent } from '@/registry/components/dialog/dialog';
+import { EmptyState } from '@/registry/components/empty-state/empty-state';
+import { Input } from '@/registry/components/input/input';
+import { SearchField } from '@/registry/components/search-field/search-field';
+import SegmentedControl from '@/registry/components/segmented-control/segmented-control';
+import { Select } from '@/registry/components/select/select';
+import styles from '@/components/boards/boards.module.css';
 
 /** How long the first list read waits for a board that is still saving as it closes. */
 const EXIT_WRITE_WAIT_MS = 3000;
@@ -67,9 +44,15 @@ const EXIT_WRITE_WAIT_MS = 3000;
 // First-run welcome: loaded only for a new student with no boards (see useWelcome).
 const Welcome = lazy(() => import('@/components/onboarding/Welcome'));
 
+const SORT_OPTIONS = BOARD_SORTS.map((s) => ({ value: s.value, label: s.label }));
+const VIEW_OPTIONS = [
+  { value: 'grid', label: 'Grid' },
+  { value: 'list', label: 'List' },
+];
+
 /**
- * Inline error row with a Retry button. Used for every dashboard mutation so
- * a failure is visible next to the thing you clicked, not only as a toast.
+ * An error about one action, next to the thing you clicked (not only as a toast), with Retry
+ * when the action can simply run again.
  */
 function InlineError({
   title,
@@ -85,69 +68,17 @@ function InlineError({
   className?: string;
 }) {
   return (
-    <div
-      role="alert"
-      data-state="error"
-      className={cn(
-        "flex flex-col sm:flex-row sm:items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800",
-        className,
-      )}
-    >
-      <AlertTriangle className="w-4 h-4 shrink-0 hidden sm:block" />
-      <div className="flex-1 min-w-0">
-        <span className="font-medium">{title}.</span> <span>{message}</span>
-      </div>
+    <Alert tone="danger" title={title} data-state="error" className={className}>
+      {message}
       {onRetry && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="bg-white"
-          onClick={onRetry}
-          disabled={retrying}
-        >
-          <RefreshCw className={cn("w-3.5 h-3.5", retrying && "animate-spin")} />
-          {DASHBOARD_COPY.retry}
-        </Button>
+        <span className={styles.alertAction}>
+          <Button variant="secondary" size="sm" onClick={onRetry} loading={retrying}>
+            <RefreshCw size={14} strokeWidth={1.75} aria-hidden />
+            {DASHBOARD_COPY.retry}
+          </Button>
+        </span>
       )}
-    </div>
-  );
-}
-
-/** A centred message in the content area: the empty dashboard, no search results, a failed load. */
-function Notice({
-  icon,
-  title,
-  children,
-  action,
-  tone = "neutral",
-}: {
-  icon: React.ReactNode;
-  title: string;
-  children: React.ReactNode;
-  action?: React.ReactNode;
-  tone?: "neutral" | "error";
-}) {
-  return (
-    <div
-      role={tone === "error" ? "alert" : undefined}
-      data-state={tone === "error" ? "error" : undefined}
-      className={cn(
-        "flex flex-col items-center justify-center rounded-xl border bg-card px-6 py-16 text-center shadow-xs",
-        tone === "error" && "border-red-200",
-      )}
-    >
-      <div
-        className={cn(
-          "mb-4 grid size-12 place-items-center rounded-full",
-          tone === "error" ? "bg-red-50 text-red-600" : "bg-muted text-muted-foreground",
-        )}
-      >
-        {icon}
-      </div>
-      <h2 className="text-base font-semibold">{title}</h2>
-      <div className="mt-1.5 max-w-lg text-sm text-balance text-muted-foreground">{children}</div>
-      {action && <div className="mt-6">{action}</div>}
-    </div>
+    </Alert>
   );
 }
 
@@ -180,10 +111,17 @@ export default function Dashboard() {
   const [renaming, setRenaming] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
 
-  // Delete confirmation state
+  // Delete confirmation state. The name is kept apart from the target so the dialog's copy
+  // stays put while it animates out.
   const [deleteTarget, setDeleteTarget] = useState<BoardListItem | null>(null);
+  const [deleteName, setDeleteName] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Where each dialog puts focus when it opens (Arc's dialog would otherwise focus its close
+  // button, which comes first): the name to retype, and Cancel before a permanent delete.
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const deleteCancelRef = useRef<HTMLButtonElement>(null);
 
   // Auth gate: redirect to login if not authenticated. When the sign-in
   // service could not be reached we show a banner with Retry instead, so a
@@ -297,7 +235,7 @@ export default function Dashboard() {
       setRenameId(null);
     } catch (error) {
       console.error('Error renaming whiteboard:', error);
-      // Dialog stays open with the message and a Retry.
+      // Dialog stays open with the message; Save becomes "Try again".
       setRenameError(describeError(error, DASHBOARD_COPY.renameFallback));
     } finally {
       setRenaming(false);
@@ -325,6 +263,7 @@ export default function Dashboard() {
     },
     onDelete: (board) => {
       setDeleteTarget(board);
+      setDeleteName(displayTitle(board.title));
       setDeleteError(null);
     },
   };
@@ -345,12 +284,11 @@ export default function Dashboard() {
     () => groupBoards(sortBoards(filterBoards(whiteboards, searchQuery), sort), sort, now),
     [whiteboards, searchQuery, sort, now],
   );
-  const sortLabel = BOARD_SORTS.find((s) => s.value === sort)?.label ?? '';
 
   if (!user && authError) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
-        <div className="w-full max-w-md">
+      <div className={`${styles.page} ${styles.authError}`}>
+        <div className={styles.authErrorInner}>
           <AuthErrorBanner />
         </div>
       </div>
@@ -359,11 +297,13 @@ export default function Dashboard() {
 
   if (dashboardState === 'welcome' && user) {
     return (
-      <div className="min-h-screen bg-muted/40">
+      <div className={styles.page}>
         <AppHeader />
-        <main className={cn(APP_CONTENT_CLASS, "pt-8 pb-16 sm:pt-10")}>
-          <AuthErrorBanner className="mb-6" />
-          <Suspense fallback={<div aria-hidden className="mx-auto h-120 w-full max-w-5xl animate-pulse rounded-xl border bg-card" />}>
+        <main className={`${APP_CONTENT_CLASS} ${styles.main}`}>
+          <div className={styles.banners}>
+            <AuthErrorBanner />
+          </div>
+          <Suspense fallback={<div aria-hidden className={`${styles.welcomeFallback} ${styles.pulse}`} />}>
             <Welcome userId={user.id} onSkip={welcome.skip} />
           </Suspense>
         </main>
@@ -372,26 +312,26 @@ export default function Dashboard() {
   }
 
   const newBoardButton = (
-    <Button onClick={createWhiteboard} disabled={creating || !user}>
-      {creating ? <Loader2 className="animate-spin" /> : <Plus />}
+    <Button onClick={createWhiteboard} loading={creating} disabled={!user}>
+      <Plus size={16} strokeWidth={2} aria-hidden />
       New Board
     </Button>
   );
 
   return (
-    <div className="min-h-screen bg-muted/40">
+    <div className={styles.page}>
       <AppHeader />
-      <main className={cn(APP_CONTENT_CLASS, "pt-8 pb-16 sm:pt-10")}>
-        <AuthErrorBanner className="mb-6" />
-        <CreditsBanner className="mb-6" />
+      <main className={`${APP_CONTENT_CLASS} ${styles.main}`}>
+        <div className={styles.banners}>
+          <AuthErrorBanner />
+          <CreditsBanner />
+        </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight">My whiteboards</h1>
-            {dashboardState === 'list' && (
-              <p className="mt-0.5 text-sm text-muted-foreground">{boardCountLabel(whiteboards.length)}</p>
-            )}
-            {dashboardState === 'loading' && <div aria-hidden className="mt-1.5 h-4 w-20 animate-pulse rounded bg-muted" />}
+        <div className={styles.pageHeader}>
+          <div>
+            <h1 className={styles.title}>My whiteboards</h1>
+            {dashboardState === 'list' && <p className={styles.count}>{boardCountLabel(whiteboards.length)}</p>}
+            {dashboardState === 'loading' && <div aria-hidden className={`${styles.countPlaceholder} ${styles.pulse}`} />}
           </div>
           {/* The empty state carries its own New Board: one call to action, not two. */}
           {dashboardState !== 'empty' && newBoardButton}
@@ -399,7 +339,7 @@ export default function Dashboard() {
 
         {createError && (
           <InlineError
-            className="mt-4"
+            className={styles.inlineError}
             title={DASHBOARD_COPY.createFailedTitle}
             message={createError}
             onRetry={createWhiteboard}
@@ -409,110 +349,67 @@ export default function Dashboard() {
 
         {/* Shown while loading too, so the grid does not jump down when the list arrives. */}
         {(dashboardState === 'list' || dashboardState === 'loading') && (
-          <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="relative w-full sm:max-w-xs">
-              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-              <Input
-                type="search"
-                aria-label="Search boards"
+          <div className={styles.toolbar}>
+            <div className={styles.search}>
+              <SearchField
+                label="Search boards"
                 placeholder="Search boards"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onValueChange={setSearchQuery}
                 onKeyDown={(e) => e.key === 'Escape' && setSearchQuery('')}
-                className="h-9 bg-background pr-9 pl-9 [&::-webkit-search-cancel-button]:hidden"
               />
-              {searchQuery && (
-                <button
-                  type="button"
-                  aria-label="Clear search"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute top-1/2 right-1.5 grid size-6 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                >
-                  <X className="size-3.5" />
-                </button>
-              )}
             </div>
-            <div className="flex items-center gap-2 sm:ml-auto">
-              <DropdownMenu modal={false}>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" aria-label={`Sort boards: ${sortLabel}`} className="flex-1 justify-between sm:flex-none">
-                    <span className="flex items-center gap-2">
-                      <ArrowDownUp className="text-muted-foreground" />
-                      {sortLabel}
-                    </span>
-                    <ChevronDown className="text-muted-foreground" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">Sort by</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuRadioGroup value={sort} onValueChange={(v) => setSort(v as BoardSort)}>
-                    {BOARD_SORTS.map((s) => (
-                      <DropdownMenuRadioItem key={s.value} value={s.value}>
-                        {s.label}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <div role="group" aria-label="Layout" className="inline-flex h-9 items-center gap-0.5 rounded-md border bg-background p-0.5 shadow-xs">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Grid view"
-                  aria-pressed={viewMode === 'grid'}
-                  onClick={() => setViewMode('grid')}
-                  className={cn("size-7 text-muted-foreground", viewMode === 'grid' && "bg-accent text-foreground")}
-                >
-                  <LayoutGrid />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="List view"
-                  aria-pressed={viewMode === 'list'}
-                  onClick={() => setViewMode('list')}
-                  className={cn("size-7 text-muted-foreground", viewMode === 'list' && "bg-accent text-foreground")}
-                >
-                  <ListIcon />
-                </Button>
+            <div className={styles.controls}>
+              <div className={styles.sort}>
+                <Select
+                  label="Sort by"
+                  options={SORT_OPTIONS}
+                  value={sort}
+                  onValueChange={(v) => setSort(v as BoardSort)}
+                />
               </div>
+              <SegmentedControl
+                label="Layout"
+                options={VIEW_OPTIONS}
+                value={viewMode}
+                onValueChange={(v) => setViewMode(v as BoardView)}
+              />
             </div>
           </div>
         )}
 
-        <div className="mt-8">
+        <div className={styles.results}>
           {dashboardState === 'loading' ? (
             <BoardSkeletons />
           ) : dashboardState === 'error' ? (
-            <Notice
-              tone="error"
-              icon={<AlertTriangle className="size-5" />}
-              title={DASHBOARD_COPY.loadFailedTitle}
-              action={
-                <Button onClick={fetchWhiteboards} variant="outline">
-                  <RefreshCw />
-                  {DASHBOARD_COPY.retry}
-                </Button>
-              }
-            >
-              {fetchError}
-            </Notice>
+            <div role="alert" data-state="error" className={styles.panel}>
+              <EmptyState
+                icon={<AlertTriangle size={22} strokeWidth={1.5} />}
+                title={DASHBOARD_COPY.loadFailedTitle}
+                description={fetchError ?? DASHBOARD_COPY.loadFallback}
+                action={
+                  <Button variant="secondary" onClick={fetchWhiteboards}>
+                    <RefreshCw size={15} strokeWidth={1.75} aria-hidden />
+                    {DASHBOARD_COPY.retry}
+                  </Button>
+                }
+              />
+            </div>
           ) : dashboardState === 'empty' ? (
             <EmptyBoards action={newBoardButton} />
           ) : groups.length === 0 ? (
-            <Notice
-              icon={<Search className="size-5" />}
-              title={DASHBOARD_COPY.noMatchesTitle}
-              action={
-                <Button variant="outline" onClick={() => setSearchQuery('')}>
-                  Clear search
-                </Button>
-              }
-            >
-              {DASHBOARD_COPY.noMatchesHint}
-            </Notice>
+            <div className={styles.panel}>
+              <EmptyState
+                icon={<Search size={22} strokeWidth={1.5} />}
+                title={DASHBOARD_COPY.noMatchesTitle}
+                description={DASHBOARD_COPY.noMatchesHint}
+                action={
+                  <Button variant="secondary" onClick={() => setSearchQuery('')}>
+                    Clear search
+                  </Button>
+                }
+              />
+            </div>
           ) : (
             <BoardGroups groups={groups} view={viewMode} now={now} actions={actions} />
           )}
@@ -520,86 +417,74 @@ export default function Dashboard() {
       </main>
 
       <Dialog open={!!renameId} onOpenChange={(open) => !open && closeRename()}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Rename board</DialogTitle>
-            <DialogDescription>Give this board a name you will recognise later.</DialogDescription>
-          </DialogHeader>
+        <DialogContent
+          title="Rename board"
+          description="Give this board a name you will recognise later."
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            renameInputRef.current?.focus();
+          }}
+        >
           <form
-            className="grid gap-2"
+            className={styles.dialogForm}
             onSubmit={(e) => {
               e.preventDefault();
               void handleRename();
             }}
           >
-            <Label htmlFor="board-name">Name</Label>
             <Input
+              ref={renameInputRef}
               id="board-name"
+              label="Name"
               value={renameTitle}
               placeholder="Untitled board"
               maxLength={200}
               onChange={(e) => setRenameTitle(e.target.value)}
               onFocus={(e) => e.currentTarget.select()}
-              autoFocus
-              disabled={renaming}
+              readOnly={renaming}
               aria-invalid={renameError ? true : undefined}
             />
             {renameError && (
-              <InlineError
-                className="mt-1"
-                title={DASHBOARD_COPY.renameFailedTitle}
-                message={renameError}
-                onRetry={handleRename}
-                retrying={renaming}
-              />
+              <InlineError title={DASHBOARD_COPY.renameFailedTitle} message={renameError} />
             )}
-            <DialogFooter className="mt-4">
-              <Button type="button" variant="outline" onClick={closeRename} disabled={renaming}>Cancel</Button>
-              <Button type="submit" disabled={renaming || !renameTitle.trim()}>
-                {renaming && <Loader2 className="animate-spin" />}
+            <div className={styles.dialogActions}>
+              <Button type="button" variant="secondary" onClick={closeRename} disabled={renaming}>
+                Cancel
+              </Button>
+              <Button type="submit" loading={renaming} disabled={!renameTitle.trim()}>
                 {renameError ? 'Try again' : 'Save'}
               </Button>
-            </DialogFooter>
+            </div>
           </form>
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={!!deleteTarget}
-        onOpenChange={(open) => !open && closeDelete()}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete board?</DialogTitle>
-            <DialogDescription>
-              {deleteTarget
-                ? `"${displayTitle(deleteTarget.title)}" and everything on it will be permanently deleted. This can't be undone.`
-                : ''}
-            </DialogDescription>
-          </DialogHeader>
-          {deleteError && (
-            <InlineError
-              title={DASHBOARD_COPY.deleteFailedTitle}
-              message={deleteError}
-            />
-          )}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={closeDelete}
-              disabled={deleting}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => deleteTarget && deleteWhiteboard(deleteTarget.id)}
-              disabled={deleting}
-            >
-              {deleting && <Loader2 className="animate-spin" />}
-              {deleteError ? 'Retry delete' : 'Delete'}
-            </Button>
-          </DialogFooter>
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && closeDelete()}>
+        <DialogContent
+          title="Delete board?"
+          description={`"${deleteName}" and everything on it will be permanently deleted. This can't be undone.`}
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            deleteCancelRef.current?.focus();
+          }}
+        >
+          <div className={styles.dialogForm}>
+            {deleteError && (
+              <InlineError title={DASHBOARD_COPY.deleteFailedTitle} message={deleteError} />
+            )}
+            <div className={styles.dialogActions}>
+              <Button ref={deleteCancelRef} variant="secondary" onClick={closeDelete} disabled={deleting}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                loading={deleting}
+                onClick={() => deleteTarget && deleteWhiteboard(deleteTarget.id)}
+              >
+                {deleteError ? 'Retry delete' : 'Delete'}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
