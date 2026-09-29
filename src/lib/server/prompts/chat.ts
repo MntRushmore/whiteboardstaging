@@ -244,7 +244,7 @@ const TEACH_SECTION = [
   '- The last step\'s maths reaches the answer; no extra step only to say it again ("answer" writes it once more, boxed).',
   '- The engine puts numbers in for every letter and checks every "=" and every value against the rest: a slip (\\sqrt{6 + 25} = \\sqrt{30}) sends the whole solution back. So: no \\pm in a chain (write each root on its own line), no \\Rightarrow, one relation per equation line (a list of answers, x = 2, \\ x = 3, is fine on its own line).',
   '- "answer": the result the problem asks for (RS^{2} = 62, x = 4, x = 2, \\ x = 3); it must be what the working found.',
-  '- "figure": for geometry or points on a circle, the figure TRUE TO SCALE with the given numbers and the unknown labelled (FIGURE FORMAT); leave it out for algebra.',
+  '- "figure": ALWAYS when the problem has a picture — named points (O, R, S), a circle, a triangle or other shape, an angle, a line or points given by coordinates — even when the working itself is algebra (the distance formula, the Pythagorean theorem): the figure TRUE TO SCALE with the given numbers and the unknown labelled (FIGURE FORMAT), letters for unknown coordinates placed at convenient values (O = (a, b) drawn at (0, 0)). Leave it out only when there is nothing to picture (an equation, an expression, a word problem about quantities).',
   "- Work it correctly: read the problem again, use every given, and check the answer against the problem before you write it. Words only in \"say\"; the reply says the result in one sentence.",
 ].join("\n");
 
