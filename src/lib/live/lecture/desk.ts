@@ -101,6 +101,12 @@ export const LECTURE_LAYOUT = {
   boardBudgetBytes: 3_300_000,
   /** two versions of a part are the same ink when every coordinate is within this (px) */
   sameInkPx: 0.01,
+  /**
+   * Where the lecture bar floats over the screen (`LectureBar`: bottom centre, above tldraw's
+   * toolbar), as fractions of the screen: nothing is sketched there, or the bar would hide it for
+   * the whole lecture. Measured with the screen fitted to a 1440 px window; a little generous.
+   */
+  barZone: { x0: 0.29, x1: 0.71, y0: 0.74 },
   /** between two parts of an update, written one after the other */
   partGapMs: 150,
   /**
@@ -460,18 +466,26 @@ export class LectureDesk implements LectureBoard {
     const cols = Math.ceil((x1 - x0) / cell);
     const rows = Math.ceil((y1 - y0) / cell);
     if (cols <= 0 || rows <= 0) return 0;
-    // each obstacle marks the cells it touches: a lecture screen holds thousands of strokes
+    // each obstacle marks the cells it touches (1): a lecture screen holds thousands of strokes; the
+    // cells under the lecture bar (2) are never free, and are not part of the room either
     const covered = new Uint8Array(cols * rows);
-    for (const o of this.obstacles(shapes)) {
+    const mark = (o: Rect, v: number) => {
       const c0 = Math.max(0, Math.floor((o.x - x0) / cell));
       const c1 = Math.min(cols - 1, Math.ceil((o.x + o.w - x0) / cell) - 1);
       const r0 = Math.max(0, Math.floor((o.y - y0) / cell));
       const r1 = Math.min(rows - 1, Math.ceil((o.y + o.h - y0) / cell) - 1);
-      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) covered[r * cols + c] = 1;
-    }
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) covered[r * cols + c] = v;
+    };
+    for (const o of this.obstacles(shapes, false)) mark(o, 1);
+    mark(this.barZone(), 2);
     let free = 0;
-    for (const v of covered) if (!v) free++;
-    return Math.round((free / covered.length) * 100) / 100;
+    let usable = 0;
+    for (const v of covered) {
+      if (v === 2) continue;
+      usable++;
+      if (!v) free++;
+    }
+    return usable === 0 ? 0 : Math.round((free / usable) * 100) / 100;
   }
 
   // ---------------------------------------------------------------- the transcript
@@ -905,8 +919,15 @@ export class LectureDesk implements LectureBoard {
    * What free space must stay clear of: everything on the screen, each chat problem's whole cell
    * (the student works there), and each live visual's whole box (its next update draws there).
    */
-  private obstacles(shapes: readonly ChatShape[]): Rect[] {
-    const out: Rect[] = [];
+  /** The part of the screen the lecture bar floats over (`LECTURE_LAYOUT.barZone`). */
+  private barZone(): Rect {
+    const screen = this.host.screen();
+    const { x0, x1, y0 } = LECTURE_LAYOUT.barZone;
+    return { x: screen.x + screen.w * x0, y: screen.y + screen.h * y0, w: screen.w * (x1 - x0), h: screen.h * (1 - y0) };
+  }
+
+  private obstacles(shapes: readonly ChatShape[], bar = true): Rect[] {
+    const out: Rect[] = bar ? [this.barZone()] : [];
     const cells = new Set<string>();
     for (const s of shapes) {
       if (s.bounds) out.push(s.bounds);
