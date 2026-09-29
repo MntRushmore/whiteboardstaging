@@ -37,6 +37,8 @@ export const CHAT_LIMITS = {
   /** a `write_proof`'s Given statements, and one statement's length */
   proofGivens: 4,
   proofStatement: 200,
+  /** the end of a screen's lecture transcript sent with a request */
+  lecture: 3000,
 } as const;
 
 /** LaTeX as the hand writes it: short, no `$` delimiters, no words (`\text{…}` is refused). */
@@ -71,6 +73,11 @@ export const ChatScreenSchema = z.object({
    * a screen holding 5–8 of a set). Absent (an older client): 1, 2, 3… in order.
    */
   numbers: z.array(z.number().int().min(1).max(999)).max(CHAT_LIMITS.problems).optional(),
+  /**
+   * The end of what lecture mode heard while this screen was the current one (its page meta), so
+   * "what did she say about X?" can be answered in the panel. Absent: no lecture on this screen.
+   */
+  lecture: z.string().max(CHAT_LIMITS.lecture).optional(),
 });
 export type ChatScreen = z.infer<typeof ChatScreenSchema>;
 

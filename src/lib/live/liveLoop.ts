@@ -63,7 +63,7 @@ import {
   type LiveError,
   type LiveErrorKind,
 } from "./liveStore";
-import { scheduleLiveWrite } from "./liveWrite";
+import { liveWrite, scheduleLiveWrite } from "./liveWrite";
 import { recordReread, recordRecognition } from "./liveDebug";
 import { analyzeColumn, localSolve } from "./localSolve";
 import { requestReread, requestSetup, type CallOptions } from "./modelCalls";
@@ -87,6 +87,7 @@ import {
   wallMsOf,
   HAND_WRITE,
   type HandPlan,
+  type HandWriteOptions,
 } from "./handwriting";
 import {
   ECHO_HEIGHTS,
@@ -148,6 +149,10 @@ import {
 } from "./chat/work";
 import type { ChatAction, ChatRunReport, ChatScreen } from "./chat/contracts";
 import { CHAT_LINE_ID, ChatDesk, type ChatHost } from "./chat/desk";
+// lecture mode's desk (and its planners) is loaded the first time a lecture needs it (`lectureDesk`)
+import type { LectureDesk, LectureHost, LecturePlanners, LoadLecturePlanners } from "./lecture/desk";
+import type { LectureAction, LecturePageMeta, LectureRunReport, LectureScreen, LectureSpecMeta } from "./lecture/contracts";
+import { appendHeard, LECTURE_BLOCK_META, LECTURE_PAGE_META } from "./lecture/meta";
 // the drawer's own module, not the index: the index re-exports `checkFigure`, which the board chat's
 // proof check (a lazy chunk) uses — through the index it would land in the board's first load
 import { planFigure as defaultPlanFigure } from "./figureDraw/plan";
@@ -195,6 +200,8 @@ export interface LiveLoopDeps {
   proof: (req: ProofRequest, opts: CallOptions) => Promise<ProofResponse>;
   /** the figure drawer (`src/lib/live/figureDraw`): a board-chat figure spec in the tutor's hand */
   planFigure: (spec: FigureSpec, opts: FigurePlanOptions) => FigurePlanResult | null;
+  /** lecture mode's planners (`src/lib/live/lecture/plan.ts`); absent, they are loaded on the first lecture run */
+  lecturePlanners?: LecturePlanners | LoadLecturePlanners;
 }
 
 interface LineRuntime {
@@ -393,6 +400,37 @@ function makeMeta(source: LiveShapeMeta["source"], lineId: string, now: number, 
   return { live: true, source, lineId, createdAt: now, ...extra };
 }
 
+/** How long heard text waits before it is written to the screen's page meta (see `pendingPageMeta`). */
+export const LECTURE_META_FLUSH_MS = 15_000;
+
+/** A page's `LECTURE_PAGE_META`, keeping only what it should hold. */
+function readLecturePageMeta(meta: unknown): LecturePageMeta {
+  const raw = meta && typeof meta === "object" ? (meta as Record<string, unknown>)[LECTURE_PAGE_META] : undefined;
+  if (!raw || typeof raw !== "object") return {};
+  const { topic, transcript, visuals } = raw as Record<string, unknown>;
+  return {
+    ...(typeof topic === "string" ? { topic } : {}),
+    ...(typeof transcript === "string" ? { transcript } : {}),
+    // each entry's spec is checked against the contract where it is used (`LectureDesk`)
+    ...(visuals && typeof visuals === "object" && !Array.isArray(visuals) ? { visuals: visualsOf(visuals as Record<string, unknown>) } : {}),
+  };
+}
+
+/** The entries of a page's `visuals` that have a place, a box and a seed (the spec is the desk's to check). */
+function visualsOf(raw: Record<string, unknown>): Record<string, LectureSpecMeta> {
+  const fin = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
+  const out: Record<string, LectureSpecMeta> = {};
+  for (const [id, v] of Object.entries(raw)) {
+    if (!v || typeof v !== "object") continue;
+    const e = v as Record<string, unknown>;
+    const at = e.at as Record<string, unknown> | undefined;
+    const box = e.box as Record<string, unknown> | undefined;
+    if (!at || !box || !fin(at.x) || !fin(at.y) || !fin(box.w) || !fin(box.h) || !fin(e.seed)) continue;
+    out[id] = { ...(e as unknown as LectureSpecMeta), updatedAt: fin(e.updatedAt) ? e.updatedAt : 0 };
+  }
+  return out;
+}
+
 function defaultDeps(): LiveLoopDeps {
   const hasWindow = typeof window !== "undefined";
   return {
@@ -564,6 +602,19 @@ export class LiveLoop implements LiveController {
   /** the screen the loop last took in (`start` / `switchScreen`): the chat writes only once it is this one */
   private screenSeen: string | null = null;
 
+  /**
+   * lecture mode's hand: the director's actions, one block at a time (`src/lib/live/lecture/desk.ts`),
+   * loaded with the first lecture (`lectureDesk`) so no board pays for it in its first load
+   */
+  private lecture: LectureDesk | null = null;
+  private lectureLoad: Promise<LectureDesk> | null = null;
+  /**
+   * Lecture page meta not yet in the store, by page: read back as if it were (`lecturePageMeta`).
+   * A topic is written at once; heard text waits `LECTURE_META_FLUSH_MS` for more, so a lecture's
+   * transcript does not make the autosave upload the whole board after every sentence.
+   */
+  private readonly pendingPageMeta = new Map<string, { patch: Partial<LecturePageMeta>; timer: ReturnType<typeof setTimeout> | null }>();
+
   constructor(editor: LiveEditorLike, opts: UseLiveMathOptions, deps: Partial<LiveLoopDeps> = {}) {
     this.editor = editor;
     this.opts = opts;
@@ -634,6 +685,8 @@ export class LiveLoop implements LiveController {
     this.deps.events?.removeEventListener("offline", this.onOffline);
     this.deps.events?.removeEventListener(BADGE_TAP_EVENT, this.onBadgeTap);
     this.resetRuntime();
+    // what lecture mode heard since the last write is saved with the board, not lost with the loop
+    this.flushPageMeta();
     if (liveStore.retryHandler.get() === this.retryHandler) liveStore.retryHandler.set(null);
     this.resetRetry();
   }
@@ -2204,6 +2257,9 @@ export class LiveLoop implements LiveController {
     const blocks = new Set<string>();
     for (const s of this.editor.getCurrentPageShapes()) {
       if (!isLiveMeta(s.meta)) continue;
+      // a lecture's notes and sketches are the student's notes, not marks on their work: an hour of
+      // lecture must not use up the cap and leave the tutor unable to mark what they write
+      if (metaString(s.meta, LECTURE_BLOCK_META)) continue;
       if (answerSrcOf(s.meta)) answers = true;
       const block = handBlockOf(s.meta);
       if (block) blocks.add(block);
@@ -3733,10 +3789,14 @@ export class LiveLoop implements LiveController {
   }
 
   private makeWriter(): HandWriter {
+    // A reveal is finished whole when the student switches screens (`switchScreen` cancels it), and
+    // by then the new screen is the current page: its last strokes are put on the page it started
+    // on, never on the one the student moved to.
+    const page = this.editor.getCurrentPage?.()?.id;
     return new HandWriter(
       {
         write: (fn) => this.write(fn),
-        createShapes: (shapes) => this.editor.createShapes(shapes),
+        createShapes: (shapes) => this.editor.createShapes(page ? shapes.map((sh) => (sh.parentId ? sh : { ...sh, parentId: page })) : shapes),
         updateShapes: (shapes) => this.editor.updateShapes(shapes),
         getShape: (id) => this.editor.getShape(id),
       },
@@ -4012,14 +4072,16 @@ export class LiveLoop implements LiveController {
           .map((s) => s.latex),
       handwriting: () => this.deps.handwritingEnabled(),
       handBusy: () => this.writer !== null || this.graphWriter !== null,
-      write: (plan, extraMeta) =>
+      write: (plan, extraMeta, leadMeta) =>
         new Promise<void>((resolve) => {
           const writer = this.makeWriter();
           this.writer = writer;
           this.writerFor = CHAT_LINE_ID;
-          writer.start(plan, {
+          // a variable, not a literal: `leadMeta` is a HandWriter option from its next version on
+          const options: HandWriteOptions & { leadMeta?: JsonObject } = {
             meta: makeMeta("ai", CHAT_LINE_ID, this.deps.now()),
             extraMeta,
+            ...(leadMeta ? { leadMeta } : {}),
             // a problem, a graph or a figure is one thing: a cut-short reveal completes it whole
             whole: true,
             onDone: () => {
@@ -4027,10 +4089,12 @@ export class LiveLoop implements LiveController {
                 this.writer = null;
                 this.writerFor = null;
               }
+              if (leadMeta) this.stampLead(writer, leadMeta);
               // after the write queued with its last strokes (a microtask): then it is on the page
               setTimeout(resolve, 0);
             },
-          });
+          };
+          writer.start(plan, options);
         }),
       typeset: (latex, at, extraMeta) => {
         const rect = { x: at.x, y: at.y, w: estimateEchoWidth(latex), h: ECHO_HEIGHTS.m };
@@ -4061,7 +4125,145 @@ export class LiveLoop implements LiveController {
       seed: (key) => handSeedFor(key),
       delay: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
       metric: (name, data) => clientMetric(name, data),
+      screenMeta: () => this.lecturePageMeta(),
     };
+  }
+
+  /**
+   * The block's lead meta on its first stroke, when the writer has not put it there itself (a
+   * HandWriter without `leadMeta`): queued after the block's last strokes (a writer's shapes get
+   * their ids inside its own queued write), so the shape exists.
+   */
+  private stampLead(writer: HandWriter, leadMeta: JsonObject): void {
+    this.write(() => {
+      const id = writer.shapeIds[0];
+      const shape = id ? this.editor.getShape(id) : undefined;
+      if (!shape) return;
+      const meta = shape.meta as Record<string, unknown>;
+      if (Object.entries(leadMeta).every(([k, v]) => meta[k] === v)) return;
+      this.editor.updateShapes([{ id, type: shape.type, meta: { ...shape.meta, ...leadMeta } }]);
+    });
+  }
+
+  // ---------------------------------------------------------------- lecture mode
+  /**
+   * What `LectureDesk` needs of the loop: the chat's host (lecture mode writes with the same hand,
+   * on the same screens) and the current screen's lecture page meta. Nothing here is gated on the
+   * Live switch or the help mode: a lecture is sketched in Off as in Solve, as the chat writes.
+   */
+  private lectureHost(): LectureHost {
+    return {
+      ...this.chatHost(),
+      screenMeta: (pageId) => this.lecturePageMeta(pageId),
+      setScreenMeta: (patch, pageId) => this.setLecturePageMeta(patch, pageId),
+      deleteShapes: (ids) =>
+        this.write(() => {
+          const live = ids.filter((id) => this.editor.getShape(id as TLShapeId)) as TLShapeId[];
+          if (live.length > 0) this.editor.deleteShapes(live);
+        }),
+      now: () => this.deps.now(),
+      // what the autosave measures (the snapshot as JSON), once per lecture block: ~10–30 ms at 3 MB
+      boardBytes: () => JSON.stringify(this.editor.store.allRecords()).length,
+    };
+  }
+
+  /** A screen's `LECTURE_PAGE_META` (the current one's by default), with what is waiting to be written merged in. */
+  private lecturePageMeta(pageId?: string): LecturePageMeta {
+    const page = pageId ? (this.editor.store.get(pageId as TLPage["id"]) as TLPage | undefined) : this.editor.getCurrentPage?.();
+    if (!page) return {};
+    const saved = readLecturePageMeta(page.meta);
+    const pending = this.pendingPageMeta.get(page.id)?.patch;
+    return pending ? { ...saved, ...pending } : saved;
+  }
+
+  /**
+   * Merges into the current screen's `LECTURE_PAGE_META`. A store write like the tutor's ink
+   * (`liveWrite`): saved by the autosave (a page is a document record), kept out of the student's
+   * undo history. The patch belongs to the screen it was made on, even if it is written later.
+   */
+  private setLecturePageMeta(patch: Partial<LecturePageMeta>, pageId?: string): void {
+    const page = pageId ? (this.editor.store.get(pageId as TLPage["id"]) as TLPage | undefined) : this.editor.getCurrentPage?.();
+    if (!page) return;
+    const cur = this.pendingPageMeta.get(page.id);
+    const next = { patch: { ...cur?.patch, ...patch }, timer: cur?.timer ?? null };
+    this.pendingPageMeta.set(page.id, next);
+    // only heard text waits for more; a topic, a chart's spec (the next update needs it) go now
+    const soon = Object.keys(patch).some((k) => k !== "transcript");
+    if (soon && next.timer) {
+      clearTimeout(next.timer);
+      next.timer = null;
+    }
+    if (soon) {
+      scheduleLiveWrite(this.editor as Editor, () => this.writePageMeta(page.id));
+      return;
+    }
+    if (!next.timer) next.timer = setTimeout(() => this.flushPageMeta(page.id), LECTURE_META_FLUSH_MS);
+  }
+
+  /** Writes what is waiting for one page (or every page), now. */
+  private flushPageMeta(pageId?: string): void {
+    const ids = pageId ? [pageId] : [...this.pendingPageMeta.keys()];
+    if (ids.length === 0) return;
+    try {
+      liveWrite(this.editor as Editor, () => {
+        for (const id of ids) this.writePageMeta(id);
+      });
+    } catch {
+      // inside a store listener: a moment later
+      scheduleLiveWrite(this.editor as Editor, () => {
+        for (const id of ids) this.writePageMeta(id);
+      });
+    }
+  }
+
+  /** Inside a live write: the page's pending lecture meta into its record. */
+  private writePageMeta(pageId: string): void {
+    const pending = this.pendingPageMeta.get(pageId);
+    if (!pending) return;
+    if (pending.timer) clearTimeout(pending.timer);
+    this.pendingPageMeta.delete(pageId);
+    const page = this.editor.store.get(pageId as TLPage["id"]) as TLPage | undefined;
+    if (!page) return;
+    const raw = (page.meta as JsonObject)[LECTURE_PAGE_META];
+    const merged: JsonObject = raw && typeof raw === "object" && !Array.isArray(raw) ? { ...raw } : {};
+    // JSON only (a spec's absent fields are left out, not stored as undefined)
+    for (const [k, v] of Object.entries(pending.patch)) if (v !== undefined) merged[k] = JSON.parse(JSON.stringify(v)) as JsonObject[string];
+    this.editor.store.put([{ ...page, meta: { ...page.meta, [LECTURE_PAGE_META]: merged } }]);
+  }
+
+  /** Lecture mode's desk, loaded and made the first time a lecture needs it. */
+  private lectureDesk(): Promise<LectureDesk> {
+    this.lectureLoad ??= import("./lecture/desk").then(({ LectureDesk }) => {
+      this.lecture = new LectureDesk(this.lectureHost(), this.chat, this.deps.lecturePlanners);
+      return this.lecture;
+    });
+    return this.lectureLoad;
+  }
+
+  /**
+   * The current screen in words, for the lecture director. Asked before the desk has loaded (the
+   * very first tick of a lecture, a moment after the start), the screen is described from what the
+   * loop knows itself: whether it is empty, and its topic.
+   */
+  lectureScreen(): LectureScreen {
+    if (this.lecture) return this.lecture.screen();
+    void this.lectureDesk();
+    return { empty: this.editor.getCurrentPageShapes().length === 0, topic: this.lecturePageMeta().topic ?? null, drawn: [], room: 1, active: [] };
+  }
+
+  /** The director's actions, sketched one block at a time; resolves when the last is on the page. */
+  async runLectureActions(actions: readonly LectureAction[]): Promise<LectureRunReport> {
+    return (await this.lectureDesk()).run(actions);
+  }
+
+  /**
+   * Heard text, kept on the current screen's page meta (what "what did she say about…" is answered
+   * from). The loop's own write, not the desk's: a sentence belongs to the screen it was heard on,
+   * even before the desk has loaded.
+   */
+  saveLectureTranscript(text: string): void {
+    if (!text.trim()) return;
+    this.setLecturePageMeta({ transcript: appendHeard(this.lecturePageMeta().transcript ?? "", text) });
   }
 
   /** The current screen's id ("page" on an editor without screens). */
@@ -4525,6 +4727,8 @@ export class LiveLoop implements LiveController {
       const resets: TLShapePartial<MathShape>[] = [];
       for (const s of this.editor.getCurrentPageShapes()) {
         if (!isLiveMeta(s.meta)) continue;
+        // a lecture's notes stay: they are what the student came away with, and this is not undoable
+        if (s.meta.source === "ai" && metaString(s.meta, LECTURE_BLOCK_META)) continue;
         if (s.meta.source === "ai") ids.push(s.id);
         else if (s.type === "math") {
           const p = s.props as MathShapeProps;

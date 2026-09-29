@@ -112,8 +112,15 @@ describe("envExample: section headers and classification", () => {
       "RUN_CHAT_EVAL",
       "CHAT_EVAL_LIMIT",
       "CHAT_EVAL_MODELS",
+      "RUN_LECTURE_EVAL",
+      "LECTURE_EVAL_LIMIT",
+      "LECTURE_EVAL_MODELS",
+      "LECTURE_EVAL_TRIALS",
+      "LECTURE_EVAL_ONLY",
+      "LECTURE_EVAL_REASONING",
       "GRAPH_GALLERY",
       "FIGURE_GALLERY",
+      "LECTURE_GALLERY",
       "VERIFY_EMAIL_DOMAIN",
     ]);
     expect(keysByClassification(realEnvExample, "optional-deploy")).toContain("NEXT_PUBLIC_TLDRAW_LICENSE_KEY");

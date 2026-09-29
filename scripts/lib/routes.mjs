@@ -42,6 +42,7 @@ export const NO_BODY_ROUTES = Object.freeze([
   "src/app/api/credits/route.ts", // GET only
   "src/app/api/config/status/route.ts", // GET only
   "src/app/api/admin/gc/route.ts", // GET (Vercel cron) or POST with an empty body; options are query params
+  "src/app/api/live/lecture/token/route.ts", // POST with an empty body: mints a speech-to-text token for the caller
 ]);
 
 export const API_ROUTES = Object.freeze([
@@ -109,6 +110,26 @@ export const API_ROUTES = Object.freeze([
     limit: "liveChat",
     body: "zod",
     purpose: "Live Math: the board chat — a typed request -> a short reply and board actions (problems the engine checks, lines, a graph, a figure spec, a new screen, clear)",
+    status: "active",
+  },
+  {
+    path: "/api/live/lecture",
+    file: "src/app/api/live/lecture/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "liveLecture",
+    body: "zod",
+    purpose: "Lecture mode: the director — recent lecture transcript + what is drawn -> what to sketch (charts, diagrams, headings, graphs, figures), usually nothing",
+    status: "active",
+  },
+  {
+    path: "/api/live/lecture/token",
+    file: "src/app/api/live/lecture/token/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "liveListen",
+    body: "none",
+    purpose: "Lecture mode: a single-use ElevenLabs realtime speech-to-text token for the browser's microphone session",
     status: "active",
   },
   {

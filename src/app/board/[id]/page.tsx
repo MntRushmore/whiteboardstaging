@@ -86,6 +86,9 @@ import { boardToolbarView } from "@/components/live/toolbar";
 import { BoardChatPanel, CHAT_TOGGLE_ATTR } from "@/components/chat/BoardChatPanel";
 import { CHAT_COPY } from "@/components/chat/chatView";
 import { useChatOpen } from "@/components/chat/useBoardChat";
+import { useLecture } from "@/components/lecture/useLecture";
+import { LectureButton } from "@/components/lecture/LectureButton";
+import { LectureBar } from "@/components/lecture/LectureBar";
 import { browserStorage as onboardingStorage, isGuidedBoard } from "@/lib/onboarding/marker";
 
 // The guided first board's tour (the welcome's Start): loaded on that board only, after the board.
@@ -263,6 +266,22 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     mode: assistanceMode,
     enabled: liveEnabled,
   });
+  // Lecture mode: the mic and the tutor sketching what is said. Not gated on Live or the help
+  // mode: the controller's lecture methods work whatever they say.
+  const lecture = useLecture(id, controller);
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    // Dev-only handles for QA: `__agathonLecture.startScripted(...)` plays a lecture without a mic;
+    // `__agathonLectureDemo(speed?)` plays the two-minute demo lecture (src/lib/live/lecture/demo.ts).
+    const w = window as unknown as { __agathonLecture?: typeof lecture; __agathonLectureDemo?: (speed?: number) => void };
+    w.__agathonLecture = lecture;
+    const demo = (speed?: number) => void import("@/lib/live/lecture/demo").then(({ DEMO_LECTURE }) => lecture.startScripted([...DEMO_LECTURE], { speed }));
+    w.__agathonLectureDemo = demo;
+    return () => {
+      if (w.__agathonLecture === lecture) delete w.__agathonLecture;
+      if (w.__agathonLectureDemo === demo) delete w.__agathonLectureDemo;
+    };
+  }, [lecture]);
 
   // Auto-save through the SaveQueue (2 s debounce, offline backup + replay, optimistic
   // concurrency on `version`, size guard + Storage offload): src/hooks/useSnapshotSave.ts
@@ -345,6 +364,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
             <MessageSquare className="h-4 w-4" />
             <span className="ml-1.5">{CHAT_COPY.button}</span>
           </Button>
+          <LectureButton lecture={lecture} />
           <LiveErrorBoundary>
             <LiveStatusPill
               editor={editor}
@@ -393,6 +413,9 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
       </div>
       {/* a Live 402 opens the out-of-credits dialog (lazy), never mid-stroke */}
       <OutOfCreditsWatcher editor={editor} />
+      <LiveErrorBoundary>
+        <LectureBar lecture={lecture} />
+      </LiveErrorBoundary>
       <LiveDebugPanel />
       {toolbar.showHintLayer && (
         <LiveErrorBoundary>

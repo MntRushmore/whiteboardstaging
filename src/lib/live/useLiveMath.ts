@@ -55,6 +55,14 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
         if (!loop) throw new Error("The board is not ready yet.");
         return loop.runChatActions(actions);
       },
+      // Lecture mode: the loop runs whatever the Live switch and the help mode say (see `lectureHost`)
+      lectureScreen: () => loopRef.current?.lectureScreen() ?? { empty: true, topic: null, drawn: [], room: 1, active: [] },
+      runLectureActions: async (actions) => {
+        const loop = loopRef.current;
+        if (!loop) throw new Error("The board is not ready yet.");
+        return loop.runLectureActions(actions);
+      },
+      saveLectureTranscript: (text) => loopRef.current?.saveLectureTranscript(text),
     }),
     [],
   );

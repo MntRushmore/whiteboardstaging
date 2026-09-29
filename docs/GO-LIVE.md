@@ -35,6 +35,7 @@ State measured with `vercel env ls` on 2026-09-17 (saved as `src/__tests__/fixtu
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | required | present (**replace**) | **MISSING** | **MISSING** | See step 1. |
 | `OPENROUTER_API_KEY` | required | present | present | present | ~$58 of credit remained on 2026-09-11. |
 | `MATHPIX_APP_ID` / `MATHPIX_APP_KEY` | optional | present | present | present | Realtime handwriting recognition; verified working. |
+| `ELEVENLABS_API_KEY` | optional | present (2026-09-29) | — | — | Lecture mode's realtime speech-to-text (Scribe v2 Realtime, ~$0.39 an hour of audio). Without it lecture mode falls back to the browser's recognizer (Chrome, Edge, Safari). |
 | `NEXT_PUBLIC_TLDRAW_LICENSE_KEY` | optional | present | present | absent | Development absent is fine (watermark only). See section 3. |
 | `NEXT_PUBLIC_SITE_URL` | optional | present | absent | absent | Referer header for OpenRouter; defaults to `http://localhost:3000`. Add for Preview. |
 | `NEXT_PUBLIC_LIVE_MATH` | optional | absent = on | absent = on | absent = on | Set to `0` to hide Live Math without unregistering its shapes. |

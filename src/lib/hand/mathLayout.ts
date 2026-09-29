@@ -51,6 +51,12 @@ export type Stroke = {
   /** Drawing order, ascending. Also the index of the stroke in `strokes`. */
   order: number;
   kind: StrokeKind;
+  /**
+   * How heavy the pen is, 1 = the tutor's usual pen (a tldraw draw shape's `scale`, which thickens
+   * or thins the line and leaves its path alone). Absent: 1. Small writing needs a finer pen, or
+   * its letters fill in.
+   */
+  weight?: number;
 };
 
 /** A laid-out LaTeX expression, ready to be placed on a canvas. */
@@ -2189,6 +2195,8 @@ export function placeStrokes(
   return strokes.map((st) => ({
     order: st.order,
     kind: st.kind,
+    // the pen goes with the stroke (a sketch's labels are written with a finer one)
+    ...(st.weight !== undefined ? { weight: st.weight } : {}),
     points: st.points.map((p) => ({ x: p.x * k + dx, y: p.y * k + dy, z: p.z })),
   }));
 }
