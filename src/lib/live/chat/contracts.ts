@@ -4,9 +4,10 @@ import { FigureSpecSchema } from "../figureDraw/contracts";
 /**
  * The board chat (POST /api/live/chat): a student or teacher types a request — "5 two-step
  * equations", "graph y = sin x from -2π to 2π", "draw a right triangle with legs 3 and 4", "a new
- * screen", "clear your writing" — and the tutor carries it out ON THE BOARD, in its hand. The
- * panel shows one short reply; the board gets maths only (no words), and every problem is checked
- * by the local engine before it is written.
+ * screen", "clear your writing", "explain it step by step" — and the tutor carries it out ON THE
+ * BOARD, in its hand. The panel shows one short reply; the board gets maths (words only where a
+ * teacher writes them: a worked solution's sentences, a proof's reasons), and every problem, every
+ * proof and every line of a worked solution is checked by the local engine before it is written.
  *
  * The request carries the message, a few recent turns and a compact picture of the current screen
  * (the student's lines as read, the tutor's lines, the problems it wrote, whether it is empty), so
@@ -39,7 +40,27 @@ export const CHAT_LIMITS = {
   proofStatement: 200,
   /** the end of a screen's lecture transcript sent with a request */
   lecture: 3000,
+  /** a worked solution (`teach`): its steps, a step's sentence (asked for in ~90), a step's maths lines */
+  teachSteps: 8,
+  teachSay: 140,
+  teachLines: 6,
+  /** the problem the student typed earlier, sent when it has left the recent turns */
+  problem: 600,
 } as const;
+
+/**
+ * Plain words as the hand writes them: letters, digits, spaces and everyday punctuation (the maths
+ * symbols the hand has — √, ², π, °, ∠ — included). No LaTeX (`\`), no `$`, no markup, one line (the
+ * planner wraps it). Lecture mode's headings and notes, and a worked solution's sentences.
+ */
+export function plainWords(max: number, min = 1) {
+  return z
+    .string()
+    .trim()
+    .min(min)
+    .max(max)
+    .refine((s) => !/[\\$<>{}\n\r\t]/.test(s), { message: "plain words only" });
+}
 
 /** LaTeX as the hand writes it: short, no `$` delimiters, no words (`\text{…}` is refused). */
 export const ChatLatexSchema = z
@@ -86,6 +107,11 @@ export const ChatRequestSchema = z.object({
   message: z.string().trim().min(1).max(CHAT_LIMITS.message),
   history: z.array(ChatTurnSchema).max(CHAT_LIMITS.turns).default([]),
   screen: ChatScreenSchema,
+  /**
+   * The last problem the student typed, when it is no longer in `history` ("do the actual problem"
+   * six turns after the problem was asked): what "it" is.
+   */
+  problem: z.string().trim().min(1).max(CHAT_LIMITS.problem).optional(),
 });
 export type ChatRequest = z.input<typeof ChatRequestSchema>;
 
@@ -175,6 +201,30 @@ export const WriteProofSchema = z.object({
 });
 export type WriteProofAction = z.infer<typeof WriteProofSchema>;
 
+/**
+ * One step of a worked solution: what happens, in a sentence (`say`, plain words), and the maths
+ * of it (`math`, LaTeX lines): a line, then lines starting with `=` that continue it
+ * (`OR = \sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2}`, `= \sqrt{31}`), or equations solved line by line.
+ */
+export const TeachStepSchema = z.object({
+  say: plainWords(CHAT_LIMITS.teachSay, 0),
+  math: z.array(ChatLatexSchema).max(CHAT_LIMITS.teachLines).default([]),
+});
+
+/**
+ * A worked solution, written on the board the way a teacher writes one: the figure (true to scale,
+ * the given numbers labelled) top right, the steps down the left — each sentence in the tutor's
+ * hand, its maths under it — and the answer last, boxed. Nothing is written until the engine has
+ * checked every line of maths (`chat/teach.ts`): one it cannot check is sent back once, else dropped.
+ */
+export const TeachSchema = z.object({
+  type: z.literal("teach"),
+  figure: FigureSpecSchema.optional(),
+  steps: z.array(TeachStepSchema).min(1).max(CHAT_LIMITS.teachSteps),
+  answer: ChatLatexSchema.optional(),
+});
+export type TeachAction = z.infer<typeof TeachSchema>;
+
 export const ChatActionSchema = z.discriminatedUnion("type", [
   WriteProblemsSchema,
   WriteLinesSchema,
@@ -184,10 +234,11 @@ export const ChatActionSchema = z.discriminatedUnion("type", [
   ClearTutorSchema,
   HelpProblemSchema,
   WriteProofSchema,
+  TeachSchema,
 ]);
 export type ChatAction = z.infer<typeof ChatActionSchema>;
 export type ChatActionType = ChatAction["type"];
-export const CHAT_ACTION_TYPES = ["write_problems", "write_lines", "graph", "draw_figure", "new_screen", "clear_tutor", "help_problem", "write_proof"] as const satisfies readonly ChatActionType[];
+export const CHAT_ACTION_TYPES = ["write_problems", "write_lines", "graph", "draw_figure", "new_screen", "clear_tutor", "help_problem", "write_proof", "teach"] as const satisfies readonly ChatActionType[];
 
 /** The note for help asked about a problem that is not on this screen (the route's, and the board's). */
 export function noProblemNote(n: number): string {

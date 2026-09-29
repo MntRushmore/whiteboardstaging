@@ -15,6 +15,7 @@ import { CHAT_PROBLEM_META, problemMetaOf } from "../chat/cells";
 import type { ChatAction, ChatRunReport } from "../chat/contracts";
 import { CHAT_BLOCK_META } from "../chat/desk";
 import { PROBE_FIGURE } from "../chat/figure";
+import { LINEAR_TEACH, OWNER_FIGURE, OWNER_TEACH } from "../chat/__tests__/teachFixtures";
 
 /**
  * The board chat's hand in the loop: a reply's actions written one block at a time, problems the
@@ -26,6 +27,8 @@ import { PROBE_FIGURE } from "../chat/figure";
 let engine: LiveEngine;
 beforeAll(async () => {
   engine = await getEngine();
+  // the writers the desk loads on first use: loaded now, so a fake clock never waits on the import
+  await import("../chat/teachWrite");
 });
 
 describe("live loop — the board chat", () => {
@@ -448,6 +451,73 @@ describe("live loop — the board chat", () => {
       const report = await run([{ type: "draw_figure", figure: PROBE_FIGURE }, { type: "write_lines", lines: ["A = \\pi r^{2}"] }]);
       expect(report.outcomes[1]).toEqual({ type: "write_lines", ok: false, note: "I stopped because you moved to another screen." });
       expect(handLinesOf(tutor())).not.toContain("A = \\pi r^{2}");
+    });
+  });
+
+  describe("teach: a worked solution, checked, written as a teacher writes it", () => {
+    const teachAction = (t: typeof OWNER_TEACH, figure?: typeof OWNER_FIGURE): ChatAction => ({
+      type: "teach",
+      ...(figure ? { figure } : {}),
+      steps: t.steps.map((s) => ({ say: s.say, math: [...(s.math ?? [])] })),
+      ...(t.answer ? { answer: t.answer } : {}),
+    });
+    const metaOf = (s: TLShape) => s.meta as Record<string, unknown>;
+    const blocksOf = (kind: string) => new Set(tutor().filter((s) => metaOf(s)[CHAT_BLOCK_META] === kind).map((s) => handBlockOf(s.meta)));
+
+    it("on an empty screen: the figure, each step (its sentence, then its maths) and the boxed answer, inside the screen, never marked", async () => {
+      start();
+      const report = await run([teachAction(OWNER_TEACH, OWNER_FIGURE)]);
+      expect(report.outcomes).toEqual([{ type: "teach", ok: true }]);
+      expect(report.screensAdded).toBe(0);
+      // one block for the figure, one per step, one for the answer and its box
+      expect(blocksOf("figure").size).toBe(1);
+      expect(blocksOf("teach").size).toBe(OWNER_TEACH.steps.length + 1);
+      const teach = tutor().filter((s) => metaOf(s)[CHAT_BLOCK_META] === "teach");
+      const maths = handLinesOf(teach).filter(Boolean);
+      for (const line of OWNER_TEACH.steps.flatMap((s) => s.math ?? [])) expect(maths).toContain(line);
+      expect(maths).toContain("RS^{2} = 62");
+      // the sentences are ink too (words in the tutor's hand), stamped as the step's words
+      expect(teach.some((s) => String(metaOf(s).handPart ?? "").startsWith("say:"))).toBe(true);
+      // everything inside the 1600×900 screen
+      for (const s of tutor()) {
+        const b = editor.getShapePageBounds(s)!;
+        expect(b.x).toBeGreaterThanOrEqual(0);
+        expect(b.maxX).toBeLessThanOrEqual(1600);
+        expect(b.y).toBeGreaterThanOrEqual(0);
+        expect(b.maxY).toBeLessThanOrEqual(900);
+      }
+      // the picture of the screen lists the tutor's maths (a follow-up refers to it), not the sentences
+      const picture = loop.chatScreen();
+      expect(picture.tutor).toEqual(expect.arrayContaining(["OR = \\sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2}", "RS^{2} = 62"]));
+      expect(picture.tutor.some((l) => /radii|distance/.test(l))).toBe(false);
+      // the tutor's own lines are never read or marked
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(tutor().filter((s) => metaOf(s).mark)).toEqual([]);
+      expect(Object.keys(liveStore.lines.get())).toEqual([]);
+    });
+
+    it("a solution the engine cannot check is not written at all; the panel is told", async () => {
+      start();
+      const slip = teachAction({ ...LINEAR_TEACH, steps: [LINEAR_TEACH.steps[0], { say: "Divide by 2.", math: ["x = 5"] }], answer: "x = 5" });
+      const report = await run([slip]);
+      expect(report.outcomes).toEqual([{ type: "teach", ok: false, note: "I couldn't check that working, so I didn't write it." }]);
+      expect(tutor()).toEqual([]);
+    });
+
+    it("beside the student's work when there is room, clear of it; a full screen gets a new one", async () => {
+      start();
+      await penLine("2x=8", 100, 200, "2x=8");
+      const report = await run([teachAction(LINEAR_TEACH)]);
+      expect(report).toMatchObject({ screensAdded: 0, outcomes: [{ type: "teach", ok: true }] });
+      const ink = shapes().filter((s) => !isLiveMeta(s.meta)).map((s) => editor.getShapePageBounds(s)!);
+      for (const s of tutor().filter((t) => metaOf(t)[CHAT_BLOCK_META] === "teach")) {
+        const b = editor.getShapePageBounds(s)!;
+        for (const i of ink) expect(b.x < i.maxX && b.maxX > i.x && b.y < i.maxY && b.maxY > i.y).toBe(false);
+      }
+      // a second worked solution never goes beside the first: a new screen
+      const second = await run([teachAction(OWNER_TEACH, OWNER_FIGURE)]);
+      expect(second).toMatchObject({ screensAdded: 1, outcomes: [{ type: "teach", ok: true }] });
+      expect(editor.getPages()).toHaveLength(2);
     });
   });
 

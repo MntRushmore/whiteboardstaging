@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DrawFigureSchema, GraphActionSchema, NewScreenSchema, WriteLinesSchema } from "../chat/contracts";
+import { DrawFigureSchema, GraphActionSchema, NewScreenSchema, plainWords, WriteLinesSchema } from "../chat/contracts";
 import { LECTURE_TRANSCRIPT_CHARS } from "./meta";
 
 /**
@@ -35,7 +35,8 @@ import { LECTURE_TRANSCRIPT_CHARS } from "./meta";
  * about every 40 s. Billing is per minute of lecture, not per question (`live/lecture`).
  *
  * Words ARE written in lecture mode (a heading, a short note, the labels of a chart or a
- * diagram), short and plain; everywhere else the board keeps its no-words rule. Sketches are
+ * diagram), short and plain; elsewhere the board writes words only in the board chat's worked
+ * solutions (a sentence per step, under the same text rule) and a proof's reasons. Sketches are
  * inked in a small palette (`LECTURE_PALETTE`), filled lightly where a shape is closed.
  *
  * THIS FILE IS THE SHARED CONTRACT. Change it only together with every user of it.
@@ -95,16 +96,10 @@ export const LECTURE_TIMING = {
 /**
  * Plain words as the hand writes them: letters, digits, spaces and everyday punctuation. No
  * LaTeX (`\`), no `$`, no markup, one line (the planner wraps it). Characters the hand has no
- * glyph for are left out by the planner, never drawn as boxes.
+ * glyph for are left out by the planner, never drawn as boxes. The board chat's worked solutions
+ * write their sentences under the same rule (`plainWords`, shared).
  */
-export function lectureText(max: number) {
-  return z
-    .string()
-    .trim()
-    .min(1)
-    .max(max)
-    .refine((s) => !/[\\$<>{}\n\r\t]/.test(s), { message: "plain words only" });
-}
+export const lectureText = (max: number) => plainWords(max);
 
 export const HeadingTextSchema = lectureText(LECTURE_LIMITS.heading);
 export const NoteTextSchema = lectureText(LECTURE_LIMITS.note);

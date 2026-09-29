@@ -4,7 +4,7 @@ import type { FigurePlanOptions, FigurePlanResult, FigureSpec } from "../figureD
 import { GRAPH, graphPaceFor, planGraph, type GraphWindowHint } from "../graphing";
 import { HAND_LINE_META, planHandwriting, placeHandPlan, placeHandPlanOnBaseline, type HandPlan } from "../handwriting";
 import { CHAT_PROBLEM_META, problemMetaOf } from "./cells";
-import type { ChatAction, ChatActionOutcome, ChatRunReport, ChatScreen, ChatWindow, WriteProofAction } from "./contracts";
+import type { ChatAction, ChatActionOutcome, ChatRunReport, ChatScreen, ChatWindow } from "./contracts";
 import { CHAT_LIMITS, noProblemNote } from "./contracts";
 import { chunkProblems, findFreeArea, joinPlans, planGrid, PROBLEM_GRID } from "./layout";
 import { verifyLines, verifyProblem } from "./verify";
@@ -15,10 +15,12 @@ import { LECTURE_BLOCK_META } from "../lecture/meta";
  * The board chat's hand: runs a reply's actions on the board, one at a time, in the tutor's
  * writing — problems as a numbered grid with room to work under each, maths written as given, a
  * graph sketched like the unasked ones, a figure, a two-column proof (`proofWrite.ts`, loaded on
- * first use), a new screen, the tutor's ink cleared. Nothing a model proposed is written until the
- * engine has read it (`verify.ts`; a proof, `proof.ts`); what is left out comes back as a note for
- * the panel. No words on the board: numbers are `1.`, `2.`, … (a proof's Given / Prove and reasons
- * are the one exception, in the proof reader's own vocabulary).
+ * first use), a worked solution taught step by step (`teachWrite.ts`, loaded on first use), a new
+ * screen, the tutor's ink cleared. Nothing a model proposed is written until the engine has read it
+ * (`verify.ts`; a proof, `proof.ts`; a worked solution, `teach.ts`); what is left out comes back as
+ * a note for the panel. Words only where a teacher writes them: a proof's Given / Prove and reasons
+ * (in the proof reader's own vocabulary) and a worked solution's sentences; problems are numbered
+ * `1.`, `2.`, … and everything else is maths.
  *
  * The loop is the host (`LiveLoop.chatHost`), as it is for `ProofDesk`: it owns the editor, the
  * writer and the screens; this file decides what goes where.
@@ -247,7 +249,9 @@ export class ChatDesk {
       case "help_problem":
         return this.helpProblem(action.problem, action.depth);
       case "write_proof":
-        return this.proof(action, report);
+        return (await import("./proofWrite")).writeProof(this.writerDesk(report), action);
+      case "teach":
+        return (await import("./teachWrite")).writeTeach(this.writerDesk(report), action);
     }
   }
 
@@ -269,20 +273,20 @@ export class ChatDesk {
     return { type: "help_problem", ok: true };
   }
 
-  /** A two-column proof: checked, laid out and written by `proofWrite.ts`, loaded on first use. */
-  private async proof(action: WriteProofAction, report: Report): Promise<ChatActionOutcome> {
-    const { writeProof } = await import("./proofWrite");
-    return writeProof(
-      {
-        host: this.host,
-        screenEmpty: () => this.screenEmpty(),
-        newScreen: () => this.newScreen(report),
-        waitForHand: () => this.waitForHand(),
-        writeBlock: (plan, meta) => this.writeBlock(plan, meta),
-        onScreen: () => this.host.pageId() === this.expectedPage,
-      },
-      action,
-    );
+  /**
+   * What the writers loaded on first use lend of the desk: a two-column proof (`proofWrite.ts`) and
+   * a worked solution (`teachWrite.ts`) are checked, laid out and written there.
+   */
+  private writerDesk(report: Report) {
+    return {
+      host: this.host,
+      screenEmpty: () => this.screenEmpty(),
+      newScreen: () => this.newScreen(report),
+      waitForHand: () => this.waitForHand(),
+      writeBlock: (plan: HandPlan, meta: JsonObject) => this.writeBlock(plan, meta),
+      onScreen: () => this.host.pageId() === this.expectedPage,
+      obstacles: () => this.obstacles(),
+    };
   }
 
   // ---------------------------------------------------------------- helpers
