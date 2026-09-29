@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { TLBaseShape, TLShapeId } from "tldraw";
 import type { ChatAction, ChatRunReport, ChatScreen } from "./chat/contracts";
 import type { LectureAction, LectureRunReport, LectureScreen } from "./lecture/contracts";
+import type { LectureRunOptions } from "./lecture/desk";
 
 // 1. Modes, verdicts, kinds -------------------------------------------------
 export const HELP_MODES = ["off", "feedback", "suggest", "answer"] as const;
@@ -628,6 +629,17 @@ export const LIVE_MODELS = {
    */
   lecture: "deepseek/deepseek-v4.1-flash",
   lectureFallback: "openai/gpt-5.4-mini",
+  /**
+   * Lecture mode's illustrator (POST /api/live/lecture/sketch): a panel described in words → a
+   * small SVG the route turns into ink strokes. Chosen BY EYE on `npm run eval:sketch`
+   * (docs/eval/sketch.md: 19 drawings a round, the owner's four-panel comic among them, rendered as
+   * the board inks them): Gemini 3.8 Flash drew nearly as well as Sonnet 5.5 (8.4 vs 8.7 of 9) and
+   * is the only good one inside the 10–15 s a panel should take (7 s p50, 13 s p95, $0.009 a
+   * drawing). Sonnet 5.5, the best-looking but always reasoning (20 s p50, 36 s p95, $0.029), is the
+   * fallback, with the time the primary did not use. Both US providers.
+   */
+  sketch: "google/gemini-3.8-flash",
+  sketchFallback: "anthropic/claude-sonnet-5.5",
 } as const;
 
 /** Per-user limits for the live routes (the existing LIMITS table in src/lib/server/rate-limit.ts covers the legacy routes). */
@@ -643,10 +655,12 @@ export const LIVE_RATE_LIMITS = {
   liveProof: { limit: 20, windowMs: 60_000 },
   /** the board chat: typed by hand, one request at a time */
   liveChat: { limit: 12, windowMs: 60_000 },
-  /** lecture mode's director: a tick every ~8 s while numbers or steps are coming (else ~40 s), plus "Draw that" */
-  liveLecture: { limit: 12, windowMs: 60_000 },
+  /** lecture mode's director: a tick every ~4 s while numbers or steps are coming (else ~20 s), plus "Draw that" */
+  liveLecture: { limit: 20, windowMs: 60_000 },
   /** lecture mode's recognizer tokens: one per speech session (a reconnect opens another) */
   liveListen: { limit: 6, windowMs: 60_000 },
+  /** lecture mode's illustrator: one request per panel, a comic strip is four at once */
+  liveSketch: { limit: 12, windowMs: 60_000 },
 } as const;
 export type LiveRateLimitRoute = keyof typeof LIVE_RATE_LIMITS;
 
@@ -739,10 +753,11 @@ export interface LiveController {
   /**
    * Lecture mode (`src/lib/live/lecture`): the current screen in words for the director, the
    * director's actions sketched one block at a time (`LectureDesk`), and heard text saved on the
-   * current screen's page meta. Optional, like the chat's.
+   * current screen's page meta. Optional, like the chat's. `opts` carries the session's way to the
+   * illustrator for a sketch's panels (`LectureRunOptions`).
    */
   lectureScreen?(): LectureScreen;
-  runLectureActions?(actions: readonly LectureAction[]): Promise<LectureRunReport>;
+  runLectureActions?(actions: readonly LectureAction[], opts?: LectureRunOptions): Promise<LectureRunReport>;
   saveLectureTranscript?(text: string): void;
 }
 export interface UseLiveMathOptions {

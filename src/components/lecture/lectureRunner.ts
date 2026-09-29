@@ -1,4 +1,4 @@
-import type { LectureRequest, LectureResponse, SpeechSource } from "@/lib/live/lecture/contracts";
+import type { LectureRequest, LectureResponse, SketchRequest, SketchResponse, SpeechSource } from "@/lib/live/lecture/contracts";
 import { LectureSession, timingForSpeed, type LectureErrorCode, type LectureSnapshot, type LectureTiming } from "@/lib/live/lecture/session";
 import { handleStatusFor, hasLectureConsent, lectureBoardFor, rememberLectureConsent, type LectureControllerLike, type LectureHandleStatus } from "./lectureView";
 
@@ -43,6 +43,8 @@ export interface LectureRunnerDeps {
   openScript(lines: Array<{ atMs: number; text: string }>, opts?: { speed?: number }): SpeechSource;
   /** the director (`requestLecture`) */
   request(req: LectureRequest, signal: AbortSignal): Promise<LectureResponse>;
+  /** the illustrator, one panel of a sketch at a time (`requestLectureSketch`) */
+  requestSketch?(req: SketchRequest, signal: AbortSignal): Promise<SketchResponse>;
   /** where the consent is remembered (localStorage; null when unavailable) */
   storage(): ConsentStorage;
   now?(): number;
@@ -153,6 +155,7 @@ export class LectureRunner {
       board,
       timing,
       request: this.deps.request,
+      ...(this.deps.requestSketch ? { requestSketch: this.deps.requestSketch } : {}),
       ...this.deps.session,
       onChange: (snap) => {
         if (this.session !== session) return;

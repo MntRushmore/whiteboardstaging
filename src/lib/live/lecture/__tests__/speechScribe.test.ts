@@ -20,7 +20,7 @@ describe("Scribe: the session's socket URL", () => {
       model_id: "scribe_v2_realtime",
       audio_format: "pcm_16000",
       commit_strategy: "vad",
-      vad_silence_threshold_secs: "1",
+      vad_silence_threshold_secs: "0.5",
       token: "tok_1",
     });
   });

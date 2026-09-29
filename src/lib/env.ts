@@ -50,6 +50,7 @@ const envSchema = z.object({
   LIVE_MODEL_PROOF: optionalString,
   LIVE_MODEL_CHAT: optionalString,
   LIVE_MODEL_LECTURE: optionalString,
+  LIVE_MODEL_SKETCH: optionalString,
 
   // Lecture mode's realtime speech-to-text (ElevenLabs Scribe). Unset: the browser's recognizer.
   ELEVENLABS_API_KEY: optionalString,
@@ -151,6 +152,9 @@ export type LiveModels = {
   /** lecture mode's director (POST /api/live/lecture): recent transcript -> what to sketch */
   lecture: string;
   lectureFallback: string;
+  /** lecture mode's illustrator (POST /api/live/lecture/sketch): a panel in words -> vector strokes */
+  sketch: string;
+  sketchFallback: string;
 };
 
 /** The fallback for `primary`: never the primary itself (an override equal to the fallback swaps the two). */
@@ -159,7 +163,7 @@ function fallbackFor(primary: string, defaultPrimary: string, defaultFallback: s
 }
 
 /**
- * Model ids used by the Live Math routes. `LIVE_MODEL_CHECK/SOLVE/VISION/SETUP/REREAD/FIGURE/PROOF/CHAT/LECTURE`
+ * Model ids used by the Live Math routes. `LIVE_MODEL_CHECK/SOLVE/VISION/SETUP/REREAD/FIGURE/PROOF/CHAT/LECTURE/SKETCH`
  * override the primaries; the fallbacks always come from LIVE_MODELS (a fallback equal to the
  * primary would be pointless, so an override that matches a fallback swaps the two).
  */
@@ -173,6 +177,7 @@ export function getLiveModels(): LiveModels {
   const proof = env.LIVE_MODEL_PROOF || LIVE_MODELS.proof;
   const chat = env.LIVE_MODEL_CHAT || LIVE_MODELS.chat;
   const lecture = env.LIVE_MODEL_LECTURE || LIVE_MODELS.lecture;
+  const sketch = env.LIVE_MODEL_SKETCH || LIVE_MODELS.sketch;
   return {
     check,
     checkFallback: fallbackFor(check, LIVE_MODELS.check, LIVE_MODELS.checkFallback),
@@ -191,6 +196,8 @@ export function getLiveModels(): LiveModels {
     chatFallback: fallbackFor(chat, LIVE_MODELS.chat, LIVE_MODELS.chatFallback),
     lecture,
     lectureFallback: fallbackFor(lecture, LIVE_MODELS.lecture, LIVE_MODELS.lectureFallback),
+    sketch,
+    sketchFallback: fallbackFor(sketch, LIVE_MODELS.sketch, LIVE_MODELS.sketchFallback),
   };
 }
 

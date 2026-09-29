@@ -304,14 +304,19 @@ describe("live/lecture", () => {
     expect(String(vi.mocked(chatJsonWithFallback).mock.calls[0][2].messages[1].content)).toContain('DRAW THAT: the student tapped "Draw that"');
   });
 
-  it("invalid actions are dropped, not guessed at; the valid ones stay; at most three", async () => {
+  it(`invalid actions are dropped, not guessed at; the valid ones stay; at most ${LECTURE_LIMITS.actions}`, async () => {
     modelReplies({ actions: [{ type: "paint", what: "a graph" }, { type: "note", text: "Costs $5" }, BAR] });
     const { body } = await post();
     expect(body?.actions).toEqual([BAR]);
     expect(body?.notes).toEqual(["Part of the sketch couldn't be drawn, so it was left out."]);
     const hub = { type: "diagram", diagram: { kind: "hub", center: "Growth", spokes: ["Capital", "Labour"] } };
     const flow = { type: "diagram", diagram: { kind: "flow", steps: ["Save", "Invest", "Grow"] } };
-    modelReplies({ actions: [{ type: "heading", text: "GDP" }, BAR, hub, flow] });
-    expect((await post()).body?.actions.map((a) => a.type)).toEqual(["heading", "chart", "diagram"]);
+    const cycle = { type: "diagram", diagram: { kind: "cycle", steps: ["Boom", "Bust", "Recovery"] } };
+    modelReplies({ actions: [{ type: "heading", text: "GDP" }, BAR, hub, flow, cycle] });
+    expect((await post()).body?.actions.map((a) => a.type)).toEqual(["heading", "chart", "diagram", "diagram"]);
+    // a slide: its title, two bullets beside its chart
+    const bullets = [{ type: "note", text: "GDP fell in 2020" }, { type: "note", text: "The recovery was fast" }];
+    modelReplies({ actions: [{ type: "heading", text: "GDP" }, ...bullets, BAR] });
+    expect((await post()).body?.actions.map((a) => a.type)).toEqual(["heading", "note", "note", "chart"]);
   });
 });

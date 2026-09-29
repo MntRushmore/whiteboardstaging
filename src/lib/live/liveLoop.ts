@@ -150,7 +150,7 @@ import {
 import type { ChatAction, ChatRunReport, ChatScreen } from "./chat/contracts";
 import { CHAT_LINE_ID, ChatDesk, type ChatHost } from "./chat/desk";
 // lecture mode's desk (and its planners) is loaded the first time a lecture needs it (`lectureDesk`)
-import type { LectureDesk, LectureHost, LecturePlanners, LoadLecturePlanners } from "./lecture/desk";
+import type { LectureDesk, LectureHost, LecturePlanners, LectureRunOptions, LoadLecturePlanners } from "./lecture/desk";
 import type { LectureAction, LecturePageMeta, LectureRunReport, LectureScreen, LectureSpecMeta } from "./lecture/contracts";
 import { appendHeard, LECTURE_BLOCK_META, LECTURE_PAGE_META } from "./lecture/meta";
 // the drawer's own module, not the index: the index re-exports `checkFigure`, which the board chat's
@@ -4251,9 +4251,12 @@ export class LiveLoop implements LiveController {
     return { empty: this.editor.getCurrentPageShapes().length === 0, topic: this.lecturePageMeta().topic ?? null, drawn: [], room: 1, active: [] };
   }
 
-  /** The director's actions, sketched one block at a time; resolves when the last is on the page. */
-  async runLectureActions(actions: readonly LectureAction[]): Promise<LectureRunReport> {
-    return (await this.lectureDesk()).run(actions);
+  /**
+   * The director's actions, sketched one block at a time; resolves when the last is on the page (a
+   * sketch's drawings follow as they arrive, through `opts.requestSketch`).
+   */
+  async runLectureActions(actions: readonly LectureAction[], opts?: LectureRunOptions): Promise<LectureRunReport> {
+    return (await this.lectureDesk()).run(actions, opts);
   }
 
   /**

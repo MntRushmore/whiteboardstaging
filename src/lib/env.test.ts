@@ -30,6 +30,7 @@ const ALL_VARS = [
   "LIVE_MODEL_PROOF",
   "LIVE_MODEL_CHAT",
   "LIVE_MODEL_LECTURE",
+  "LIVE_MODEL_SKETCH",
   "ELEVENLABS_API_KEY",
   "BILLING_ENFORCE",
   "STRIPE_WEBHOOK_SECRET",
@@ -134,6 +135,8 @@ describe("getLiveModels", () => {
       chatFallback: LIVE_MODELS.chatFallback,
       lecture: LIVE_MODELS.lecture,
       lectureFallback: LIVE_MODELS.lectureFallback,
+      sketch: LIVE_MODELS.sketch,
+      sketchFallback: LIVE_MODELS.sketchFallback,
     });
   });
 

@@ -12,7 +12,8 @@ import { liveStore, resetLiveStore } from "../../liveStore";
 import { RecognizeClient } from "../../recognizeClient";
 import { LECTURE_BLOCK_META, LECTURE_ID_META, LECTURE_PAGE_META, LECTURE_WHAT_META, type ChartSpec, type LectureAction, type LecturePageMeta, type LectureRunReport } from "../contracts";
 import { HAND_PART_META } from "../../handwriting";
-import type { LecturePlanners } from "../desk";
+import { LECTURE_LAYOUT, LECTURE_SLIDE, type LecturePlanners } from "../desk";
+import { FREE_AREA } from "../../chat/layout";
 import { LECTURE_BOXES } from "../plan";
 
 /**
@@ -224,7 +225,8 @@ describe("live loop — lecture mode", () => {
     const first = await run([{ type: "chart", chart: sales([12, 15]) }]);
     const id = first.outcomes[0].id!;
     expect(Date.now() - t0).toBeLessThan(LECTURE_META_FLUSH_MS);
-    expect(lectureMeta()?.visuals?.[id]).toMatchObject({ chart: sales([12, 15]), box: LECTURE_BOXES.visual[0] });
+    // an empty screen is a slide (with no title yet): the chart is its visual, in a box as large as the visual area
+    expect(lectureMeta()?.visuals?.[id]).toMatchObject({ chart: sales([12, 15]), box: { w: DEFAULT_SCREEN.w - FREE_AREA.margin - LECTURE_SLIDE.visual.x, h: DEFAULT_SCREEN.h * LECTURE_LAYOUT.barZone.y0 - FREE_AREA.clearance - FREE_AREA.top } });
     const partsOf = () =>
       lectureShapes()
         .filter((s) => (s.meta as Record<string, unknown>)[LECTURE_ID_META] === id)

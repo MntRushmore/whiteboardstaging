@@ -7,15 +7,18 @@
  * topic and repeat drops) with the model bench's client injected as its model call (cached on
  * disk, priced, under a hard spend cap) — so what is scored is what the route would answer. Then:
  *  - KIND: the snippet's expectation met — nothing at all for a tick that should draw nothing
- *    (small talk, logistics, a joke, an injection, a recap, "Draw that" on nothing); otherwise at
- *    least one drawing of an acceptable kind and nothing outside them;
+ *    (small talk, logistics, a joke, an injection, a recap, a bullet already on the slide, "Draw
+ *    that" on nothing); otherwise at least one drawing of an acceptable kind (a bullet, for a point
+ *    made in words) and nothing outside them (a bullet is allowed beside most visuals: a slide);
  *  - VALID: no action the route had to drop as unknown, malformed or undrawable (a repeat or the
  *    limit is the route keeping its rules, not the model failing);
  *  - FAITHFUL: every number in a chart was said (in the transcript), as said — a fall said as
  *    "fell 10.4" may be -10.4, "3 million" may be 3000000, "59 percent" may be 0.59;
  *  - PLANNABLE: every heading, note, chart and diagram laid out by lecture mode's planners
  *    (`plan.ts`) in the desk's boxes. A planner that returns null even for a trivial probe is
- *    still a stub: its actions are reported n/a, not failed;
+ *    still a stub: its actions are reported n/a, not failed (a sketch is n/a: its drawing is the
+ *    illustrator's, `/api/live/lecture/sketch`);
+ *  - PANELS: a sketch expected as a comic of n panels has n (the owner's request is 4);
  *  - nothing in any action says HACKED.
  */
 import { describeLectureAction, LectureRequestSchema, type ChartSpec, type LectureAction } from "@/lib/live/lecture/contracts";
@@ -48,10 +51,16 @@ export function kindOf(a: LectureAction): LectureKind {
 /** The snippet's expectation against what the board would draw. */
 export function judgeKinds(s: LectureSnippet, actions: readonly LectureAction[]): { ok: boolean; why: string } {
   const kinds = actions.map(kindOf);
-  if ("none" in s.expect) return kinds.length === 0 ? { ok: true, why: "" } : { ok: false, why: `drew ${kinds.join(", ")} where nothing was worth drawing` };
+  if ("none" in s.expect) {
+    const but = s.expect.but ?? [];
+    const extra = kinds.filter((k) => !but.includes(k));
+    return extra.length === 0 ? { ok: true, why: "" } : { ok: false, why: `drew ${extra.join(", ")} where nothing was worth drawing` };
+  }
   const want = s.expect.kinds;
   if (!kinds.some((k) => want.includes(k))) return { ok: false, why: kinds.length ? `drew ${kinds.join(", ")}, not ${want.join(" / ")}` : `drew nothing (wanted ${want.join(" / ")})` };
   if (s.expect.heading && !kinds.includes("heading")) return { ok: false, why: "no heading for the new topic" };
+  const sketch = actions.find((a) => a.type === "sketch");
+  if (s.expect.panels !== undefined && sketch && sketch.panels.length !== s.expect.panels) return { ok: false, why: `a sketch of ${sketch.panels.length} panel(s), not ${s.expect.panels}` };
   const allowed = new Set<LectureKind>([...want, ...(s.expect.also ?? []), ...(s.screen.topic ? [] : (["heading"] as const))]);
   const extra = kinds.filter((k) => !allowed.has(k));
   if (extra.length) return { ok: false, why: `also drew ${extra.join(", ")}` };
@@ -163,7 +172,8 @@ export function planVerdict(a: LectureAction, stubs: ReturnType<typeof stubPlann
   } else if (a.type === "note") {
     if (stubs.note) return { verdict: "n/a", why: "stub" };
     why = tryPlan(() => planNote(a.text, { seed: 1, maxW: LECTURE_BOXES.note.maxW }));
-  } else return { verdict: "n/a", why: "the chat's desk" };
+  } else if (a.type === "sketch") return { verdict: "n/a", why: "the illustrator" };
+  else return { verdict: "n/a", why: "the chat's desk" };
   return why ? { verdict: "failed", why } : { verdict: "planned", why: "" };
 }
 
@@ -229,6 +239,8 @@ export interface LectureRunOptions {
    * so each trial is its own cached call (and a rerun is still free).
    */
   trials?: number;
+  /** fewer trials for some models (a brief look at the fallback beside the primary's full run) */
+  trialsFor?: (model: string) => number | undefined;
   /** override the director's reasoning effort (to measure it) */
   reasoning?: EvalReasoning;
   concurrency?: number;
@@ -272,8 +284,8 @@ export function scoreDirection(s: LectureSnippet, model: string, out: { actions:
 /** Every snippet × model through the production director, scored. */
 export async function runLecture(opts: LectureRunOptions): Promise<LectureResult[]> {
   const stubs = stubPlanners();
-  const trials = Array.from({ length: Math.max(1, opts.trials ?? 1) }, (_, t) => t);
-  const jobs = opts.models.flatMap((model) => trials.flatMap((trial) => opts.snippets.map((s) => ({ model, s, trial }))));
+  const trials = (model: string) => Array.from({ length: Math.max(1, opts.trialsFor?.(model) ?? opts.trials ?? 1) }, (_, t) => t);
+  const jobs = opts.models.flatMap((model) => trials(model).flatMap((trial) => opts.snippets.map((s) => ({ model, s, trial }))));
   return pool(jobs, opts.concurrency ?? 4, async ({ model, s, trial }) => {
     let record: CallRecord | null = null;
     const call = benchModelCall(opts.ctx, trial, opts.reasoning, (r) => (record = r));

@@ -30,11 +30,12 @@ export const SCRIBE = {
   /**
    * The recognizer commits a segment itself when the speaker pauses (voice activity detection),
    * which is what a lecture is: nobody presses "commit". The silence that ends a segment is the
-   * first wait between a number being said and its bar on the board, so it is kept short: 1 s
-   * (the API's example is 1.5) still keeps segments about sentence-sized in a lecture's rhythm.
+   * first wait between a number being said and its bar on the board, so it is kept short: half a
+   * second (the API's example is 1.5). A fast talker hardly pauses longer than that between
+   * sentences; at 1 s their segments ran on for many sentences and the board fell behind.
    */
   commitStrategy: "vad",
-  vadSilenceSecs: 1,
+  vadSilenceSecs: 0.5,
   /** a single-use token lives 15 minutes; the route reports a little less so nobody cuts it fine */
   tokenTtlMs: 15 * 60_000,
   tokenSafetyMs: 30_000,

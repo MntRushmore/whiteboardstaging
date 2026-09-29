@@ -50,6 +50,7 @@ export function planHeading(text: string, opts: { seed: number; maxW: number }):
   return sketchHeading(text, opts)?.plan ?? null;
 }
 
-export function planNote(text: string, opts: { seed: number; maxW: number }): HandPlan | null {
+/** A note; `slide`: a slide's bullet (two lines while it fits in two, evenly broken: `LECTURE_WORDS.slide`). */
+export function planNote(text: string, opts: { seed: number; maxW: number; slide?: boolean }): HandPlan | null {
   return sketchNote(text, opts)?.plan ?? null;
 }

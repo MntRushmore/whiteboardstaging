@@ -2,10 +2,20 @@
 
 import { apiJson, isApiError } from "@/lib/api-client";
 import type { FetchJson } from "../recognizeClient";
-import { LISTEN_NOT_CONFIGURED, LectureResponseSchema, ListenTokenResponseSchema, type LectureRequest, type LectureResponse, type ListenTokenResponse } from "./contracts";
+import {
+  LISTEN_NOT_CONFIGURED,
+  LectureResponseSchema,
+  ListenTokenResponseSchema,
+  SketchResponseSchema,
+  type LectureRequest,
+  type LectureResponse,
+  type ListenTokenResponse,
+  type SketchRequest,
+  type SketchResponse,
+} from "./contracts";
 
 /**
- * Lecture mode's two calls, like the board chat's (`src/lib/live/chat/client.ts`): `apiJson` sends
+ * Lecture mode's three calls, like the board chat's (`src/lib/live/chat/client.ts`): `apiJson` sends
  * the signed-in user's token and turns a failure into an `ApiError` (401, 402 `credits_exhausted`,
  * 429 with its `retryAfterMs`), and a 2xx that does not match the contract is an
  * `UnexpectedLectureResponse`, never guessed at.
@@ -15,6 +25,8 @@ import { LISTEN_NOT_CONFIGURED, LectureResponseSchema, ListenTokenResponseSchema
 export const LECTURE_PATH = "/api/live/lecture";
 /** POST /api/live/lecture/token: a single-use token for one realtime speech-to-text session. */
 export const LISTEN_TOKEN_PATH = "/api/live/lecture/token";
+/** POST /api/live/lecture/sketch: one panel of a sketch, drawn by the illustrator as vector strokes. */
+export const LECTURE_SKETCH_PATH = "/api/live/lecture/sketch";
 
 export class UnexpectedLectureResponse extends Error {
   constructor(what: string) {
@@ -26,6 +38,16 @@ export class UnexpectedLectureResponse extends Error {
 export async function requestLecture(req: LectureRequest, signal?: AbortSignal, fetchJson: FetchJson = apiJson as FetchJson): Promise<LectureResponse> {
   const parsed = LectureResponseSchema.safeParse(await fetchJson(LECTURE_PATH, req, { signal }));
   if (!parsed.success) throw new UnexpectedLectureResponse("lecture director");
+  return parsed.data;
+}
+
+/**
+ * One panel drawn (`SketchRequest` → `SketchDrawing`), checked against the contract here too: the
+ * desk turns it into ink as it is, so a drawing that does not parse is refused, never drawn.
+ */
+export async function requestLectureSketch(req: SketchRequest, signal?: AbortSignal, fetchJson: FetchJson = apiJson as FetchJson): Promise<SketchResponse> {
+  const parsed = SketchResponseSchema.safeParse(await fetchJson(LECTURE_SKETCH_PATH, req, { signal }));
+  if (!parsed.success) throw new UnexpectedLectureResponse("illustrator");
   return parsed.data;
 }
 
