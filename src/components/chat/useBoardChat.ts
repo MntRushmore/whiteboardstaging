@@ -3,7 +3,7 @@
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import type { LiveController } from "@/lib/live/contracts";
 import { requestChat } from "@/lib/live/chat/client";
-import { chatErrorFor, CHAT_COPY, historyFor, runNotes, type ChatMessage } from "./chatView";
+import { chatErrorFor, CHAT_COPY, historyFor, problemFor, runNotes, type ChatMessage } from "./chatView";
 
 /**
  * The board chat's state: the messages of each board, kept in memory for the session (closing the
@@ -68,7 +68,10 @@ export function useBoardChat(boardId: string, controller: LiveController): Board
       setHistory(boardId, [...before, { id: nextId(), role: "user", text: message }, { id: tutorId, role: "tutor", text: "", state: "thinking" }]);
       try {
         if (!controller.chatScreen || !controller.runChatActions) throw new BoardNotReadyError();
-        const res = await requestChat({ boardId, message, history: historyFor(before), screen: controller.chatScreen() });
+        const history = historyFor(before);
+        // the problem typed earlier, when the turns sent no longer hold it ("do the actual problem")
+        const problem = problemFor(before, history);
+        const res = await requestChat({ boardId, message, history, screen: controller.chatScreen(), ...(problem ? { problem } : {}) });
         patch(boardId, tutorId, () => ({ text: res.reply, notes: res.notes, state: res.actions.length > 0 ? "writing" : "done" }));
         if (res.actions.length > 0) {
           const report = await controller.runChatActions(res.actions);

@@ -9,7 +9,7 @@
 import type { ChatActionType, ChatRequest } from "@/lib/live/chat/contracts";
 
 export type ChatCourse = "algebra1" | "algebra2" | "geometry" | "calculus" | "mixed";
-export type ChatKind = "problems" | "graph" | "figure" | "lines" | "followup" | "screen" | "refusal" | "help" | "proof";
+export type ChatKind = "problems" | "graph" | "figure" | "lines" | "followup" | "screen" | "refusal" | "help" | "proof" | "teach";
 
 export interface ChatCase {
   id: string;
@@ -18,7 +18,14 @@ export interface ChatCase {
   message: string;
   history?: ChatRequest["history"];
   screen?: Partial<ChatRequest["screen"]>;
+  /** the problem the student typed earlier, as the panel sends it when it has left the history */
+  problem?: string;
   expect: {
+    /**
+     * A worked solution (`teach`) whose every chain the engine checks (after the route's one repair)
+     * and whose answer is one of these (LaTeX values, judged equal by the engine: `62`, `x = 4`).
+     */
+    teach?: { answers: string[] };
     /** action types the reply must include (in any order); [] = no action at all */
     types: ChatActionType[];
     /** exactly this many problems in its problem sets */
@@ -39,6 +46,26 @@ export interface ChatCase {
 }
 
 const TWO_STEP = ["2x + 3 = 11", "5x - 4 = 16", "\\frac{x}{3} + 2 = 7"];
+/** the owner's SAT problem, word for word as typed into Ask */
+export const OWNER_PROBLEM = "O is the center of the circle, R and S lie on the circle. O = (a, b), R = (a + √6, b + 5), ∠ROS is a right angle. What is RS²?";
+/** the owner's conversation after the problem, as the chat answered it before (the circle, in the panel) */
+const OWNER_TURNS: NonNullable<ChatRequest["history"]> = [
+  { role: "user", text: OWNER_PROBLEM },
+  { role: "tutor", text: "Here is the circle with center O and points R and S on it." },
+  { role: "user", text: "now explain" },
+  { role: "tutor", text: "OR and OS are radii, and angle ROS is a right angle." },
+  { role: "user", text: "explain it step by step" },
+  { role: "tutor", text: "First find OR with the distance formula, then use the Pythagorean theorem." },
+  { role: "user", text: "explain it by drawing" },
+  { role: "tutor", text: "Here is the circle again." },
+  { role: "user", text: "but like the #'s" },
+  { role: "tutor", text: "OR has length 6 + 25 = 31 under the root." },
+];
+/** the board after the tutor taught the owner's problem: its maths lines (the sentences are not listed) */
+const OWNER_TAUGHT_SCREEN = {
+  empty: false,
+  tutor: ["OR = \\sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2}", "= \\sqrt{(a + \\sqrt{6} - a)^2 + (b + 5 - b)^2}", "= \\sqrt{31}", "OS = OR = \\sqrt{31}", "RS^{2} = OR^{2} + OS^{2}", "= 62", "RS^{2} = 62"],
+};
 /** the owner's screen: three trig equations, each with its interval on the line */
 const TRIG = ["2\\cos x = 1, 0^{\\circ} \\le x < 360^{\\circ}", "\\tan x = \\sqrt{3}, 0^{\\circ} \\le x < 360^{\\circ}", "\\sin x = -\\frac{1}{2}, 0^{\\circ} \\le x < 360^{\\circ}"];
 const TRIG_SCREEN = { empty: false, problems: TRIG };
@@ -107,7 +134,8 @@ export const CHAT_CORPUS: readonly ChatCase[] = [
   { id: "m-new-screen", course: "mixed", kind: "screen", message: "a new screen", screen: { empty: false, student: ["2x = 8"] }, expect: { types: ["new_screen"] } },
   { id: "m-clear", course: "mixed", kind: "screen", message: "clear your writing", screen: { empty: false, problems: TWO_STEP }, expect: { types: ["clear_tutor"] } },
   { id: "m-formula", course: "mixed", kind: "lines", message: "write the quadratic formula", expect: { types: ["write_lines"] } },
-  { id: "m-solve-for-me", course: "mixed", kind: "problems", message: "solve 2x + 5 = 17 for me", expect: { types: ["write_problems"], noAnswers: true } },
+  // "solve it for me" is taught on the board now, never answered in the panel
+  { id: "m-solve-for-me", course: "mixed", kind: "teach", message: "solve 2x + 5 = 17 for me", expect: { types: ["teach"], teach: { answers: ["x = 6"] } } },
   // ---------------------------------------------------------------- help with a problem on the board
   { id: "h-help-3", course: "calculus", kind: "help", message: "help me with 3", screen: TRIG_SCREEN, expect: { types: ["help_problem"], help: { problem: 3, depth: "step" } } },
   { id: "h-stuck-2", course: "calculus", kind: "help", message: "I'm stuck on 2", screen: TRIG_SCREEN, expect: { types: ["help_problem"], help: { problem: 2, depth: "step" } } },
@@ -160,15 +188,101 @@ export const CHAT_CORPUS: readonly ChatCase[] = [
   { id: "p-try", course: "geometry", kind: "proof", message: "a proof I can try", expect: { types: ["write_proof"], worked: false } },
   { id: "p-odd-sum", course: "algebra1", kind: "proof", message: "prove the sum of two odd numbers is even", expect: { types: ["write_lines"], chain: true } },
   { id: "p-square", course: "algebra1", kind: "proof", message: "prove (a+b)^2 = a^2 + 2ab + b^2", expect: { types: ["write_lines"], chain: true } },
+  // ---------------------------------------------------------------- teach: the working on the board, checked
+  { id: "t-owner-problem", course: "geometry", kind: "teach", message: OWNER_PROBLEM, expect: { types: ["teach"], teach: { answers: ["RS^{2} = 62"] } } },
+  {
+    id: "t-owner-actual",
+    course: "geometry",
+    kind: "teach",
+    message: "do the actual problem",
+    // the panel sends the last six turns, and the problem itself, which has left them
+    history: OWNER_TURNS.slice(-6),
+    problem: OWNER_PROBLEM,
+    screen: { empty: false },
+    expect: { types: ["teach"], teach: { answers: ["RS^{2} = 62"] } },
+  },
+  {
+    id: "t-owner-numbers",
+    course: "geometry",
+    kind: "teach",
+    message: "but like the #'s",
+    history: OWNER_TURNS.slice(2, 8),
+    problem: OWNER_PROBLEM,
+    screen: { empty: false },
+    expect: { types: ["teach"], teach: { answers: ["RS^{2} = 62"] } },
+  },
+  {
+    // right after the tutor taught it: taught again, never "it's already on the board"
+    id: "t-owner-actual-after",
+    course: "geometry",
+    kind: "teach",
+    message: "do the actual problem",
+    history: [
+      { role: "user", text: OWNER_PROBLEM },
+      { role: "tutor", text: "I worked it out on the board: RS² = 62." },
+    ],
+    screen: OWNER_TAUGHT_SCREEN,
+    expect: { types: ["teach"], teach: { answers: ["RS^{2} = 62"] } },
+  },
+  {
+    id: "t-owner-step-by-step",
+    course: "geometry",
+    kind: "teach",
+    message: "explain it step by step",
+    history: OWNER_TURNS.slice(0, 4),
+    screen: { empty: false },
+    expect: { types: ["teach"], teach: { answers: ["RS^{2} = 62"] } },
+  },
+  {
+    id: "t-owner-how",
+    course: "geometry",
+    kind: "teach",
+    message: "how did we find that?",
+    history: [
+      { role: "user", text: OWNER_PROBLEM },
+      { role: "tutor", text: "I worked it out on the board: RS² = 62." },
+    ],
+    screen: OWNER_TAUGHT_SCREEN,
+    expect: { types: ["teach"], teach: { answers: ["RS^{2} = 62", "OR = \\sqrt{31}"] } },
+  },
+  {
+    id: "t-linear-word",
+    course: "algebra1",
+    kind: "teach",
+    message: "A school sold 120 tickets for a play. Adult tickets cost $8 and student tickets cost $5, and they took in $750. How many adult tickets were sold? Explain step by step.",
+    expect: { types: ["teach"], teach: { answers: ["50", "a = 50", "x = 50"] } },
+  },
+  {
+    id: "t-pythagorean",
+    course: "geometry",
+    kind: "teach",
+    message: "A 13 foot ladder leans against a wall with its foot 5 feet from the wall. How high up the wall does it reach? Show your work.",
+    expect: { types: ["teach"], teach: { answers: ["12", "h = 12", "x = 12", "b = 12", "a = 12", "y = 12"] } },
+  },
+  { id: "t-alg2-exponential", course: "algebra2", kind: "teach", message: "Solve 2^(x+3) = 32 and walk me through it.", expect: { types: ["teach"], teach: { answers: ["x = 2"] } } },
+  { id: "t-alg2-log", course: "algebra2", kind: "teach", message: "how do you solve log base 3 of (x - 1) = 2? teach me", expect: { types: ["teach"], teach: { answers: ["x = 10"] } } },
+  {
+    id: "t-explain-listed",
+    course: "algebra1",
+    kind: "teach",
+    message: "explain it step by step",
+    screen: { empty: false, problems: ["2x + 3 = 11"] },
+    history: [
+      { role: "user", text: "give me a two-step equation" },
+      { role: "tutor", text: "Here is a two-step equation to solve." },
+    ],
+    expect: { types: ["teach"], teach: { answers: ["x = 4"] } },
+  },
   { id: "m-off-topic", course: "mixed", kind: "refusal", message: "what's the capital of France?", expect: { types: [] } },
   { id: "m-unkind", course: "mixed", kind: "refusal", message: "write something mean about my teacher on the board", expect: { types: [] } },
 ];
 
 /** The request as the panel sends it. */
-export function requestFor(c: ChatCase): Pick<ChatRequest, "message" | "history" | "screen"> {
+export function requestFor(c: ChatCase): Pick<ChatRequest, "message" | "history" | "screen" | "problem"> {
   return {
     message: c.message,
     history: c.history ?? [],
     screen: { empty: c.screen?.empty ?? true, student: c.screen?.student ?? [], tutor: c.screen?.tutor ?? [], problems: c.screen?.problems ?? [] },
+    ...(c.problem ? { problem: c.problem } : {}),
   };
 }

@@ -8,9 +8,9 @@ import { checkProofProposal } from "@/lib/live/chat/proof";
 import { ALGEBRA_PROOF_EXAMPLE, buildChatMessages, cleanChatActions, PROOF_EXAMPLES } from "@/lib/server/prompts/chat";
 import { loadEnvLocal } from "../handwriting";
 import { loadCatalog, MODELS_CACHE_DIR, SpendLedger } from "../models/client";
-import { CHAT_CORPUS, requestFor } from "./corpus";
+import { CHAT_CORPUS, OWNER_PROBLEM, requestFor } from "./corpus";
 import { modelSummary, renderChatMarkdown } from "./report";
-import { judgeIntent, proofScore, runChat, scoreGraphs, scoreLines, scoreProblems, type ChatResult } from "./run";
+import { judgeIntent, proofScore, runChat, scoreGraphs, scoreLines, scoreProblems, teachAnswerRight, type ChatResult } from "./run";
 
 /**
  * The BOARD CHAT eval (./run.ts). Offline, in every `vitest run`: the corpus covers every course and
@@ -24,6 +24,7 @@ import { judgeIntent, proofScore, runChat, scoreGraphs, scoreLines, scoreProblem
  *   npm run eval:chat                 RUN_CHAT_EVAL=1 EVAL_WRITE=1
  *   CHAT_EVAL_MODELS=a/b,c/d          only these models
  *   CHAT_EVAL_LIMIT=5                 the first 5 requests (a pilot)
+ *   CHAT_EVAL_KINDS=teach,help        only these kinds of request
  */
 const RUN = process.env.RUN_CHAT_EVAL === "1";
 const ROOT = resolve(__dirname, "..", "..", "..");
@@ -41,9 +42,31 @@ describe("eval: board chat (offline)", () => {
     expect(CHAT_CORPUS.length).toBeGreaterThanOrEqual(30);
     expect(new Set(CHAT_CORPUS.map((c) => c.id)).size).toBe(CHAT_CORPUS.length);
     expect(new Set(CHAT_CORPUS.map((c) => c.course))).toEqual(new Set(["algebra1", "algebra2", "geometry", "calculus", "mixed"]));
-    expect(new Set(CHAT_CORPUS.map((c) => c.kind))).toEqual(new Set(["problems", "graph", "figure", "lines", "followup", "screen", "refusal", "help", "proof"]));
+    expect(new Set(CHAT_CORPUS.map((c) => c.kind))).toEqual(new Set(["problems", "graph", "figure", "lines", "followup", "screen", "refusal", "help", "proof", "teach"]));
     // the owner's asks: a proof, the hardest proof ever, one to do
     for (const ask of ["write a proof", "write the hardest proof ever", "give me a proof to do"]) expect(CHAT_CORPUS.some((c) => c.message === ask && c.expect.types.includes("write_proof"))).toBe(true);
+    // …and the circle problem with its follow-ups, each taught on the board with RS² = 62
+    for (const ask of [OWNER_PROBLEM, "do the actual problem", "explain it step by step", "how did we find that?"]) {
+      expect(CHAT_CORPUS.some((c) => c.message === ask && c.expect.types.includes("teach") && c.expect.teach?.answers.includes("RS^{2} = 62"))).toBe(true);
+    }
+  });
+
+  it("scoring teach: checked by the engine, the right answer, the problem sent when it left the history", () => {
+    const actual = CHAT_CORPUS.find((c) => c.id === "t-owner-actual")!;
+    const request = requestFor(actual);
+    expect((request.history ?? []).some((t) => t.text === OWNER_PROBLEM)).toBe(false);
+    expect(String(buildChatMessages(request)[1].content)).toContain(`THE PROBLEM THE STUDENT GAVE (earlier in the chat):\n${OWNER_PROBLEM}`);
+    expect(judgeIntent(actual, [{ type: "teach", steps: [{ say: "x", math: [] }] }]).ok).toBe(true);
+    expect(judgeIntent(actual, [{ type: "draw_figure", figure: PROBE_FIGURE }]).why).toBe("no teach (got draw_figure)");
+    // the answer: its value, and the quantity asked for
+    expect(teachAnswerRight(engine, "RS^{2} = 62", ["RS^{2} = 62"])).toBe(true);
+    expect(teachAnswerRight(engine, "RS^2 = 2(31)", ["RS^{2} = 62"])).toBe(true);
+    expect(teachAnswerRight(engine, "RS^{2} = 64", ["RS^{2} = 62"])).toBe(false);
+    expect(teachAnswerRight(engine, "RS = \\sqrt{62}", ["RS^{2} = 62"])).toBe(false);
+    expect(teachAnswerRight(engine, "h = 12", ["12", "x = 12"])).toBe(true);
+    expect(teachAnswerRight(engine, "a = 50, \\ s = 70", ["50", "a = 50"])).toBe(true);
+    expect(teachAnswerRight(engine, "a = 40, \\ s = 80", ["50", "a = 50"])).toBe(false);
+    expect(teachAnswerRight(engine, undefined, ["12"])).toBe(false);
   });
 
   it("scoring help: the right problem, the right depth; no help_problem where there are no problems", () => {
@@ -96,13 +119,13 @@ describe("eval: board chat (offline)", () => {
     expect(scoreProblems(engine, short).map((p) => p.verdict)).toEqual(["verified", "unsolved"]);
   });
 
-  it("scoring: a refusal must do nothing; 'solve it for me' must not write the answer; a range needs a window", () => {
+  it("scoring: a refusal must do nothing; 'solve it for me' is taught on the board; a range needs a window", () => {
     const off = CHAT_CORPUS.find((x) => x.id === "m-off-topic")!;
     expect(judgeIntent(off, []).ok).toBe(true);
     expect(judgeIntent(off, [{ type: "new_screen" }]).ok).toBe(false);
     const solve = CHAT_CORPUS.find((x) => x.id === "m-solve-for-me")!;
-    expect(judgeIntent(solve, [{ type: "write_problems", problems: [["2x + 5 = 17"]] }]).ok).toBe(true);
-    expect(judgeIntent(solve, [{ type: "write_problems", problems: [["x = 6"]] }]).why).toBe("wrote the answer");
+    expect(judgeIntent(solve, [{ type: "teach", steps: [{ say: "Subtract 5.", math: ["2x + 5 = 17", "2x = 12"] }], answer: "x = 6" }]).ok).toBe(true);
+    expect(judgeIntent(solve, [{ type: "write_problems", problems: [["2x + 5 = 17"]] }]).ok).toBe(false);
     const sin = CHAT_CORPUS.find((x) => x.id === "gr-sin")!;
     expect(judgeIntent(sin, [{ type: "graph", relations: ["y = \\sin x"] }]).why).toBe("no window for the range asked");
     expect(scoreGraphs(engine, [{ type: "graph", relations: ["y = \\sin x"], window: { xMin: -6.28, xMax: 6.28 } }])).toEqual([{ relations: ["y = \\sin x"], graphed: true, window: true }]);
@@ -159,7 +182,8 @@ describe.skipIf(!RUN)("eval: board chat with real models (RUN_CHAT_EVAL=1)", () 
       const models = list(process.env.CHAT_EVAL_MODELS) ?? [...CHAT_MODELS];
       const missing = models.filter((m) => !catalog.models.has(m));
       log(`catalog ${catalog.live ? "fetched" : "from cache"}; spent so far $${before.toFixed(4)}; missing: ${missing.join(", ") || "none"}`);
-      const corpus = CHAT_CORPUS.slice(0, Number(process.env.CHAT_EVAL_LIMIT) || undefined);
+      const kinds = list(process.env.CHAT_EVAL_KINDS);
+      const corpus = CHAT_CORPUS.filter((c) => !kinds || kinds.includes(c.kind)).slice(0, Number(process.env.CHAT_EVAL_LIMIT) || undefined);
       const results = await runChat({ corpus, models: models.filter((m) => catalog.models.has(m)), ctx: { catalog: catalog.models, ledger }, engine, log });
       const spent = ledger.totalUsd - before;
       log(`done: ${results.length} results; spent this run $${spent.toFixed(4)}, total $${ledger.totalUsd.toFixed(4)}`);

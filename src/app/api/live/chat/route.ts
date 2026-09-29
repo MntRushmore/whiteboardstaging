@@ -1,10 +1,12 @@
 import { getLiveModels } from "@/lib/env";
-import { ChatRequestSchema, ChatResponseSchema, type ChatAction, type ChatResponse, type WriteProofAction } from "@/lib/live/chat/contracts";
+import { ChatRequestSchema, ChatResponseSchema, type ChatAction, type ChatResponse, type TeachAction, type WriteProofAction } from "@/lib/live/chat/contracts";
 import { figureProblems } from "@/lib/live/chat/figure";
 import { PROOF_CHECK, wantsHardProof } from "@/lib/live/chat/proof";
+import type { LiveEngine } from "@/lib/live/contracts";
 import { FigureSpecSchema } from "@/lib/live/figureDraw/contracts";
 import { enforceCredits, refundCredits, runCharged } from "@/lib/server/billing";
 import { gateChatProof, PROOF_NOT_WRITTEN } from "@/lib/server/chatProof";
+import { gateChatTeach, TEACH_NOT_WRITTEN } from "@/lib/server/chatTeach";
 import { chatJsonWithFallback } from "@/lib/server/openrouter";
 import { errorResponse } from "@/lib/server/request";
 import {
@@ -12,12 +14,15 @@ import {
   buildChatMessages,
   buildFigureRepairMessages,
   buildProofRepairMessages,
+  buildTeachRepairMessages,
   ChatReplyRawSchema,
   cleanChatActions,
   cleanReplyText,
   dropMissingProblems,
   FigureRepairReplySchema,
   ProofRepairReplySchema,
+  teachFromRepair,
+  TeachRepairReplySchema,
 } from "@/lib/server/prompts/chat";
 import { livePreamble, withRequestId } from "@/lib/server/live-route";
 
@@ -31,8 +36,17 @@ const CHAT_ATTEMPT_MS = 18_000;
 const REPAIR_ATTEMPT_MS = 10_000;
 /** A proof's repair carries its figure and statements back (at most one per request). */
 const PROOF_REPAIR_ATTEMPT_MS = 14_000;
+/** A worked solution's repair works the problem again (at most one per request). */
+const TEACH_REPAIR_ATTEMPT_MS = 16_000;
 
 const FIGURE_NOT_DRAWN = "The figure couldn't be drawn.";
+
+/** The maths engine the teach check runs on, loaded on the first worked solution (mathjs, ~2 MB). */
+let enginePromise: Promise<LiveEngine> | null = null;
+function teachEngine(): Promise<LiveEngine> {
+  enginePromise ??= import("@/lib/live/engine").then((m) => m.getEngine());
+  return enginePromise;
+}
 
 /**
  * POST /api/live/chat — the board chat: a typed request → `{ reply, actions }`. The model plans
@@ -44,6 +58,11 @@ const FIGURE_NOT_DRAWN = "The figure couldn't be drawn.";
  * figure's own geometry (`gateChatProof` → `checkProofProposal`, pure, a few ms); one it cannot
  * gets ONE repair round-trip with the engine's problems, else it is dropped with a note. The board
  * verifies every problem (`src/lib/live/chat/verify.ts`) and every proof again before writing it.
+ * A `teach` (a worked solution: "explain it step by step", "do the actual problem") goes on only
+ * when the engine has checked every line of its maths (`gateChatTeach` → `checkTeach`, run here on
+ * the engine, loaded on the first one); one it cannot check gets ONE repair round-trip with the
+ * engine's findings, else it is dropped with a note — never written unchecked. Its figure, when the
+ * drawer still finds problems with it after that, is left out and the working goes on.
  * A `help_problem` ("help me with 3") names a problem on the screen by its number there; one about
  * a number the screen does not have is dropped with a note ("There's no problem 7 on this
  * screen."), which is the reply when nothing else is left.
@@ -102,6 +121,27 @@ export async function POST(req: Request) {
         }
       };
 
+      /** One repair round-trip for a worked solution the engine could not check: the model gets its findings. */
+      const repairTeach = async (action: TeachAction, problems: readonly string[]) => {
+        try {
+          const { data: fixed } = await chatJsonWithFallback(models.chat, models.chatFallback, {
+            messages: buildTeachRepairMessages(data, action, problems),
+            schema: TeachRepairReplySchema,
+            signal: req.signal,
+            requestId,
+            maxTokens: 3000,
+            reasoningFor: () => "low",
+            latencyFirst: true,
+            attemptTimeoutMs: TEACH_REPAIR_ATTEMPT_MS,
+            title: "Agathon Live - chat teach",
+          });
+          return teachFromRepair(fixed);
+        } catch (err) {
+          log.warn({ err: err instanceof Error ? err.message : String(err) }, "chat teach repair failed");
+          return null;
+        }
+      };
+
       // Figures: checked by the drawer; one repair round-trip when it stays cheap, else dropped.
       const actions: ChatAction[] = [];
       let repairs = 0;
@@ -109,9 +149,26 @@ export async function POST(req: Request) {
       // Proofs: proved by the engine's planner with the figure (`gateChatProof`), one repair, else dropped.
       let proofRepairs = 0;
       let proofsDropped = 0;
+      // Worked solutions: every line checked by the engine (`gateChatTeach`), one repair, else dropped.
+      let teachRepairs = 0;
+      let teachesDropped = 0;
+      let teachChecked = 0;
       // "the hardest proof ever" is held to it: a proof that takes a few rows is sent back once
       const proofCheck = wantsHardProof(data.message) ? { minRows: PROOF_CHECK.hardMinRows } : {};
       for (const action of valid) {
+        if (action.type === "teach") {
+          const gated = await gateChatTeach(action, await teachEngine(), teachRepairs === 0 ? (problems) => repairTeach(action, problems) : null);
+          if (gated.repaired) teachRepairs++;
+          if (gated.ok) {
+            actions.push(gated.action);
+            teachChecked += gated.checked;
+            if (gated.figureDropped && !notes.includes(FIGURE_NOT_DRAWN)) notes.push(FIGURE_NOT_DRAWN);
+          } else {
+            teachesDropped++;
+            dropped.push({ type: "teach", reason: gated.reason });
+          }
+          continue;
+        }
         if (action.type === "write_proof") {
           const gated = await gateChatProof(action, proofRepairs === 0 ? (problems) => repairProof(action, problems) : null, proofCheck);
           if (gated.repaired) proofRepairs++;
@@ -158,12 +215,14 @@ export async function POST(req: Request) {
         figuresDropped++;
         dropped.push({ type: "draw_figure", reason: problems.slice(0, 3).join("; ").slice(0, 160) });
       }
-      if (figuresDropped > 0) notes.push(FIGURE_NOT_DRAWN);
+      if (figuresDropped > 0 && !notes.includes(FIGURE_NOT_DRAWN)) notes.push(FIGURE_NOT_DRAWN);
       if (proofsDropped > 0) notes.push(PROOF_NOT_WRITTEN);
+      if (teachesDropped > 0) notes.push(TEACH_NOT_WRITTEN);
 
-      // A screen added (or the tutor's ink cleared) only to make room for a figure or a proof that
-      // could not be written is not something the student asked for: with nothing else left, nothing is done.
-      if (figuresDropped + proofsDropped > 0 && actions.every((a) => a.type === "new_screen" || a.type === "clear_tutor")) actions.length = 0;
+      // A screen added (or the tutor's ink cleared) only to make room for a figure, a proof or a
+      // worked solution that could not be written is not something the student asked for: with
+      // nothing else left, nothing is done.
+      if (figuresDropped + proofsDropped + teachesDropped > 0 && actions.every((a) => a.type === "new_screen" || a.type === "clear_tutor")) actions.length = 0;
 
       // Help with a problem that is not on this screen: dropped, and the panel says there is none.
       const present = dropMissingProblems(actions, data.screen);
@@ -176,13 +235,15 @@ export async function POST(req: Request) {
       let refunded = false;
       if (proposed > 0 && actions.length === 0) {
         reply =
-          proofsDropped > 0
-            ? "Sorry, I couldn't check that proof, so I didn't write it. Try asking for another one."
-            : figuresDropped > 0
-              ? "Sorry, I couldn't draw that figure."
-              : present.notes.length > 0
-                ? present.notes[0]
-                : "Sorry, I couldn't do that on the board. Try asking another way.";
+          teachesDropped > 0
+            ? "Sorry, I couldn't check that working, so I didn't write it. Try asking again."
+            : proofsDropped > 0
+              ? "Sorry, I couldn't check that proof, so I didn't write it. Try asking for another one."
+              : figuresDropped > 0
+                ? "Sorry, I couldn't draw that figure."
+                : present.notes.length > 0
+                  ? present.notes[0]
+                  : "Sorry, I couldn't do that on the board. Try asking another way.";
         notes.length = 0;
         const r = await refundCredits({ token, requestId }, log);
         refunded = r.refunded > 0;
@@ -208,6 +269,10 @@ export async function POST(req: Request) {
           repairs,
           proofRepairs,
           proofsDropped,
+          teachRepairs,
+          teachesDropped,
+          teachChecked,
+          problemSent: Boolean(data.problem),
           refunded,
           history: data.history.length,
           screenEmpty: data.screen.empty,

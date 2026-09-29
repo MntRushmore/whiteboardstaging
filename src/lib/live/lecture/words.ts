@@ -3,10 +3,11 @@ import type { Rect } from "../contracts";
 import { PEN, type Align, type Pt, type VAlign } from "../graphing/pen";
 
 /**
- * Plain words in the tutor's hand: a heading, a note, the labels of a chart or a diagram.
+ * Plain words in the tutor's hand: a heading, a note, the labels of a chart or a diagram, and the
+ * sentence of each step of a worked solution the board chat teaches (`chat/teachLayout.ts`).
  *
  * The board's maths goes through `layoutMath`, which refuses prose on purpose (the board carries
- * no words). Lecture mode does write words — short and plain — so they are laid out here, glyph by
+ * no words unasked). Lecture mode and a worked solution do write words — short and plain — so they are laid out here, glyph by
  * glyph from the same atlas and with the same tremor as `\text{…}` in the worked steps, so a label
  * and a formula on one screen are one hand. Per line, not per block: the planners need to wrap to
  * a width, cap the number of lines, shrink to fit a box and know exactly where each line's ink is.
@@ -71,6 +72,10 @@ const EXTRA: Record<string, Glyph> = {
   "≥": g(7.2, "M 1.4 5.0 L 6.4 7.5 L 1.4 9.8", "M 1.3 11.4 L 6.2 11.3"),
   "±": g(6.6, "M 1.0 7.0 L 5.4 6.9 M 3.2 4.6 L 3.2 9.2", "M 1.0 10.8 L 5.6 10.7"),
   "·": g(3.6, "M 1.5 8.2 L 1.8 8.7"),
+  // a worked solution's sentences: "so OR ≠ RS", "△ROS is a right triangle", "△ABC ≅ △DEF"
+  "≠": g(6.6, "M 1.0 7.4 L 5.6 7.3 M 1.0 9.6 L 5.6 9.5", "M 4.6 5.4 L 2.0 11.6"),
+  "≅": g(7.8, "M 1.2 6.0 C 2.2 4.6 3.4 4.8 4.2 5.5 C 5.0 6.2 6.2 6.4 7.2 5.2", "M 1.2 8.4 L 7.0 8.3 M 1.2 10.6 L 7.0 10.5"),
+  "△": g(8.8, "M 4.6 3.6 L 8.0 11.3 L 1.4 11.2 Z"),
 };
 
 /** Characters rewritten before writing: typography the hand writes plainly, and letters it writes as two. */

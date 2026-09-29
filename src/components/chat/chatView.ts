@@ -97,6 +97,25 @@ export function historyFor(messages: readonly ChatMessage[]): ChatTurn[] {
   return out.slice(-CHAT_LIMITS.turns);
 }
 
+/**
+ * The last problem the student typed ("O is the center of the circle… What is RS²?", "solve 2x + 5
+ * = 17"), for the request's `problem` when it is no longer among the turns sent (`sent`): after six
+ * turns of "explain", "now explain", "do the actual problem", the problem itself has left the window.
+ * A problem reads like one: long enough, some maths in it, and a question or an equation — not a
+ * request for problems ("5 two-step equations") or a short follow-up.
+ */
+export function problemFor(messages: readonly ChatMessage[], sent: readonly ChatTurn[]): string | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    const t = m.text.trim();
+    if (m.role !== "user" || t.length < 24 || !/[\d=²√^+×÷∠°π]/.test(t) || !/[?=]|\b(what|find|solve|how (many|much|long|far)|calculate|compute|evaluate|simplify|determine|prove)\b/i.test(t)) continue;
+    if (/^\s*(\d+|a few|some)\s+(more\s+)?[\w-]+(\s+[\w-]+)?\s+(problems?|equations?|questions?)\b/i.test(t)) continue;
+    const text = t.slice(0, CHAT_LIMITS.problem);
+    return sent.some((s) => s.role === "user" && s.text === t.slice(0, CHAT_LIMITS.turnText)) ? undefined : text;
+  }
+  return undefined;
+}
+
 /** The board's notes on a run, for the panel (each once). */
 export function runNotes(report: ChatRunReport | null): string[] {
   if (!report) return [];

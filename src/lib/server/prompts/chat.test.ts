@@ -4,25 +4,78 @@ import {
   buildChatMessages,
   buildFigureRepairMessages,
   buildProofRepairMessages,
+  buildTeachRepairMessages,
   CHAT_SYSTEM_PROMPT,
   cleanChatActions,
   cleanReplyText,
   dropMissingProblems,
+  plainSay,
   PROOF_EXAMPLES,
   PROOF_REPAIR_PROMPT,
   problemNumbers,
   ProofRepairReplySchema,
+  TEACH_EXAMPLES,
+  TEACH_REPAIR_PROMPT,
+  teachFromRepair,
 } from "./chat";
-import { PROBE_FIGURE } from "@/lib/live/chat/figure";
-import { CHAT_ACTION_TYPES } from "@/lib/live/chat/contracts";
+import { figureProblems, PROBE_FIGURE } from "@/lib/live/chat/figure";
+import { CHAT_ACTION_TYPES, type TeachAction } from "@/lib/live/chat/contracts";
+import { checkTeach } from "@/lib/live/chat/teach";
+import { getEngine } from "@/lib/live/engine";
 
 describe("chat prompt", () => {
   it("names every action and the rules that keep the board to maths", () => {
     for (const t of CHAT_ACTION_TYPES) expect(CHAT_SYSTEM_PROMPT).toContain(`"${t}"`);
     expect(CHAT_SYSTEM_PROMPT).toMatch(/no words/i);
-    expect(CHAT_SYSTEM_PROMPT).toMatch(/never solve/i);
+    // answers and working never in the panel; on the board only three ways
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/You never put answers or working in the REPLY/);
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/Working goes on the BOARD, and only three ways: help_problem .*write_proof .*teach/);
+    // a listed problem's help and solve words stay help_problem; only an explanation of it is teach
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/A problem LISTED on this screen is rule 8's: help and solve words .*"show me how to solve it".* stay help_problem; only asking to have it explained .* is teach/);
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/write_problems and write_lines never carry a solution or an answer/);
     expect(CHAT_SYSTEM_PROMPT).toMatch(/TRUE TO SCALE/);
     expect(CHAT_SYSTEM_PROMPT).toMatch(/only help with maths/);
+  });
+
+  it("teach: asked to be shown or taught, the whole worked solution on the board, never a question back", () => {
+    expect(CHAT_SYSTEM_PROMPT).toContain('{"type": "teach", "figure": {...}, "steps": [{"say": "<one short sentence>", "math": ["<LaTeX>", "= <LaTeX>", ...]}, ...], "answer": "<LaTeX>"}');
+    // the owner's asks, word for word
+    for (const ask of ["explain", "now explain", "explain it step by step", "explain it by drawing", "how did we find that?", "do the actual problem", "show me with the numbers", "show your work", "solve it and explain", "walk me through it", "teach me"]) {
+      expect(CHAT_SYSTEM_PROMPT).toContain(`"${ask}"`);
+    }
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/ONE teach with the WHOLE worked solution/);
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/Never a question back, never a figure alone, never the working in the reply/);
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/never when the student asks to be shown a problem that is in context/);
+    // a listed problem asked to be explained is taught; a step or its solution stays help_problem
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/"explain problem 3".*is teach \(rule 10\)/);
+    // the format: a sentence and its maths, a chain continued with "=", the formula then its numbers
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/TEACHING \(teach\)/);
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/a CHAIN: a first line, then lines that start with "=" and continue it, each EQUAL to the line before/);
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/that formula with the problem's numbers put in exactly where its letters were/);
+    for (const e of TEACH_EXAMPLES) expect(CHAT_SYSTEM_PROMPT).toContain(`Request: ${e.request} → ${JSON.stringify({ reply: e.reply, actions: [e.action] })}`);
+  });
+
+  it("every teach example passes the engine's check, so an example copied as it is reaches the board", async () => {
+    const engine = await getEngine();
+    for (const e of TEACH_EXAMPLES) {
+      const v = checkTeach(engine, e.action);
+      expect(v, e.request).toMatchObject({ ok: true });
+      if (e.action.figure) expect(figureProblems(e.action.figure), e.request).toEqual([]);
+    }
+    // the inequality example in the rules, too
+    const inequality = /Request: explain it step by step \(THE PROBLEM THE STUDENT GAVE: "3 - 2x > 7, solve it"\) → (\{.*\})$/m.exec(CHAT_SYSTEM_PROMPT);
+    expect(inequality).not.toBeNull();
+    const action = cleanChatActions(JSON.parse(inequality![1]).actions).actions[0];
+    expect(action?.type).toBe("teach");
+    expect(checkTeach(engine, action as TeachAction)).toMatchObject({ ok: true, answerValue: "-2" });
+  });
+
+  it("the problem the student gave goes with the request when it has left the chat so far", () => {
+    const problem = "O is the center of the circle, R and S lie on the circle. O = (a, b), R = (a + √6, b + 5), ∠ROS is a right angle. What is RS²?";
+    const [, user] = buildChatMessages({ message: "do the actual problem", history: [{ role: "user", text: "but like the #'s" }], screen: { empty: false }, problem: `  ${problem}\n` });
+    expect(String(user.content)).toBe(
+      ["THIS SCREEN: has work on it", "", "THE PROBLEM THE STUDENT GAVE (earlier in the chat):", problem, "", "CHAT SO FAR:", "student: but like the #'s", "", "REQUEST: do the actual problem", "", "JSON only."].join("\n"),
+    );
   });
 
   it("the user message: the screen, the chat so far, the request", () => {
@@ -119,7 +172,7 @@ describe("chat prompt", () => {
 
   it("proofs: never a question back; worked unless the student asks for one to do; the engine's reasons named; algebra as maths lines", () => {
     expect(CHAT_SYSTEM_PROMPT).toMatch(/Never ask which proof: choose a sensible one yourself/);
-    expect(CHAT_SYSTEM_PROMPT).toMatch(/never for a proof: choose one/);
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/never for a proof \(choose one\)/);
     for (const ask of ["write a proof", "a two-column proof", "show me a proof", "the hardest proof ever", "give me a proof to do", "a proof I can try"]) expect(CHAT_SYSTEM_PROMPT).toContain(`"${ask}"`);
     // the reasons the planner and checker know, and what they do not
     for (const reason of ["SSS", "SAS", "ASA", "AAS", "HL", "CPCTC", "Reflexive", "Vertical ∠s", "Def. of midpoint", "Alt. int."]) expect(CHAT_SYSTEM_PROMPT).toContain(reason);
@@ -129,7 +182,31 @@ describe("chat prompt", () => {
     // every example is in the prompt as the model is to write it
     for (const e of PROOF_EXAMPLES) expect(CHAT_SYSTEM_PROMPT).toContain(`Request: ${e.request} → ${JSON.stringify({ reply: e.reply, actions: [e.action] })}`);
     expect(CHAT_SYSTEM_PROMPT).toContain(JSON.stringify(ALGEBRA_PROOF_EXAMPLE.lines));
-    expect(CHAT_SYSTEM_PROMPT).toMatch(/A proof asked for is the other exception/);
+    expect(CHAT_SYSTEM_PROMPT).toMatch(/write_proof for a proof asked for — the tutor writes every row, "worked": true, unless the student asks for one to do \(or write_lines for an algebra proof, PROOFS below\)/);
+  });
+
+  it("the teach repair carries the request's context, the solution and every problem the engine found", () => {
+    const action = TEACH_EXAMPLES[1].action;
+    const [system, user] = buildTeachRepairMessages(
+      { message: "do the actual problem", history: [{ role: "user", text: "now explain" }], screen: { empty: true }, problem: "solve 3x - 7 = 11" },
+      action,
+      ['Step 1, line 2: "3x - 7" is not equal to "3x = 17".', "The figure: point D is used but not defined"],
+    );
+    expect(system.content).toBe(TEACH_REPAIR_PROMPT);
+    expect(TEACH_REPAIR_PROMPT).toMatch(/TEACHING \(teach\)/);
+    const text = String(user.content);
+    expect(text).toContain("THE PROBLEM THE STUDENT GAVE (earlier in the chat):\nsolve 3x - 7 = 11");
+    expect(text).toContain("REQUEST: do the actual problem");
+    expect(text).toContain(`SOLUTION:\n${JSON.stringify({ steps: action.steps, answer: action.answer })}`);
+    expect(text).toContain('- Step 1, line 2: "3x - 7" is not equal to "3x = 17".\n- The figure: point D is used but not defined');
+    expect(text.endsWith("JSON only.")).toBe(true);
+    expect(text.match(/JSON only\./g)).toHaveLength(1);
+    // the reply read leniently: the solution itself, or wrapped
+    expect(teachFromRepair({ steps: [{ say: "Add 7.", math: "3x = 18" }], answer: "$x = 6$" })).toEqual({ steps: [{ say: "Add 7.", math: ["3x = 18"] }], answer: "x = 6" });
+    expect(teachFromRepair({ teach: { steps: [{ say: "Add 7.", math: ["3x = 18"] }] } })).toEqual({ steps: [{ say: "Add 7.", math: ["3x = 18"] }] });
+    expect(teachFromRepair({ actions: [{ type: "teach", steps: [{ say: "Add 7.", math: ["3x = 18"] }] }] })).toEqual({ steps: [{ say: "Add 7.", math: ["3x = 18"] }] });
+    expect(teachFromRepair({ steps: [] })).toBeNull();
+    expect(teachFromRepair("nope")).toBeNull();
   });
 
   it("the proof repair carries the proof and every problem the engine found", () => {
@@ -219,6 +296,48 @@ describe("cleaning the model's reply", () => {
     ]);
     expect(actions).toEqual([{ type: "write_proof", figure, given: ["\\overline{AB} \\cong \\overline{CD}"], prove: "\\overline{AE} \\cong \\overline{CE}", worked: true }]);
     expect(dropped).toEqual([{ type: "write_proof", reason: expect.stringMatching(/^given/) }]);
+  });
+
+  it("a teach: its sentences made plain (stray LaTeX to the hand's symbols), its maths unwrapped, empty steps gone", () => {
+    const { actions, dropped } = cleanChatActions([
+      {
+        type: "teach",
+        figure: null,
+        steps: [
+          { say: "O is the center, so $OR$ and $OS$ are radii: OR = OS.", math: null },
+          { text: "Use the distance formula for OR.", lines: ["$OR = \\sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2}$", "= \\sqrt{31}"] },
+          { say: "So $RS^2 = 2 \\cdot 31$ and \\angle ROS = 90^{\\circ}, since x_1 < x_2.", math: "RS^{2} = 62" },
+          { say: "", math: [] },
+          "Done.",
+        ],
+        answer: "$RS^{2} = 62$",
+      },
+      { type: "teach", steps: [{ say: "No maths here", math: ["\\text{words}"] }] },
+      { type: "teach", steps: "nothing" },
+    ]);
+    expect(actions).toEqual([
+      {
+        type: "teach",
+        steps: [
+          { say: "O is the center, so OR and OS are radii: OR = OS.", math: [] },
+          { say: "Use the distance formula for OR.", math: ["OR = \\sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2}", "= \\sqrt{31}"] },
+          { say: "So RS² = 2 · 31 and ∠ROS = 90°, since x₁ is less than x₂.", math: ["RS^{2} = 62"] },
+          { say: "Done.", math: [] },
+        ],
+        answer: "RS^{2} = 62",
+      },
+    ]);
+    expect(dropped.map((d) => d.type)).toEqual(["teach", "teach"]);
+    // a last step that only says the answer again is left out: the boxed answer says it
+    const again = cleanChatActions([
+      { type: "teach", steps: [{ say: "Pythagoras.", math: ["RS^{2} = 31 + 31", "= 62"] }, { say: "So the answer is RS squared equals 62.", math: ["RS^2 = 62"] }], answer: "RS^{2} = 62" },
+    ]).actions[0];
+    expect(again).toEqual({ type: "teach", steps: [{ say: "Pythagoras.", math: ["RS^{2} = 31 + 31", "= 62"] }], answer: "RS^{2} = 62" });
+    // a sentence past the limit is cut at a word
+    const long = plainSay(`${"word ".repeat(40)}end`);
+    expect(long.length).toBeLessThanOrEqual(140);
+    expect(long.endsWith("word…")).toBe(true);
+    expect(plainSay("\\frac{1}{2} of 10^{2} is 50")).toBe("1/2 of 10² is 50");
   });
 
   it("a point's label that is not true / false is let go, not the whole figure", () => {

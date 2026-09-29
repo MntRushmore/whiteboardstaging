@@ -333,6 +333,87 @@ describe("live/chat", () => {
     });
   });
 
+  describe("teach: every line of the working checked by the engine before it goes to the board", () => {
+    const OWNER_PROBLEM = "O is the center of the circle, R and S lie on the circle. O = (a, b), R = (a + √6, b + 5), ∠ROS is a right angle. What is RS²?";
+    const STEPS = [
+      { say: "O is the center, so OR and OS are radii: OR = OS." },
+      { say: "Find OR with the distance formula.", math: ["OR = \\sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2}", "= \\sqrt{(a + \\sqrt{6} - a)^2 + (b + 5 - b)^2}", "= \\sqrt{(\\sqrt{6})^2 + 5^2}", "= \\sqrt{6 + 25}", "= \\sqrt{31}"] },
+      { say: "The radii are equal.", math: ["OS = OR = \\sqrt{31}"] },
+      { say: "Angle ROS is a right angle: use the Pythagorean theorem.", math: ["RS^{2} = OR^{2} + OS^{2}", "= 2 \\cdot OR^{2}", "= 2(\\sqrt{31})^{2}", "= 2(31)", "= 62"] },
+    ];
+    const GOOD = { type: "teach", steps: STEPS, answer: "RS^{2} = 62" };
+    const CLEAN = { type: "teach", steps: STEPS.map((s) => ({ say: s.say, math: s.math ?? [] })), answer: "RS^{2} = 62" };
+    const SLIP = { ...GOOD, steps: STEPS.map((s, i) => (i === 1 ? { ...s, math: [...s.math!.slice(0, 4), "= \\sqrt{30}"] } : s)) };
+    const OWNER_BODY = {
+      ...BODY,
+      message: "do the actual problem",
+      history: [
+        { role: "user", text: "explain it by drawing" },
+        { role: "tutor", text: "Here is the circle." },
+      ],
+      screen: { empty: true },
+      problem: OWNER_PROBLEM,
+    };
+
+    it("a checked solution goes on as it is: no repair call, 3 credits kept; the problem the student gave goes to the model", async () => {
+      modelReplies({ reply: "I worked it out on the board: RS² = 62.", actions: [GOOD] });
+      const body = ChatResponseSchema.parse(await (await chat(request(OWNER_BODY))).json());
+      expect(body.actions).toEqual([CLEAN]);
+      expect(body.notes).toEqual([]);
+      expect(body.reply).toBe("I worked it out on the board: RS² = 62.");
+      expect(chatJsonWithFallback).toHaveBeenCalledTimes(1);
+      expect(callsTo("refund_credits")).toEqual([]);
+      const user = String(vi.mocked(chatJsonWithFallback).mock.calls[0][2].messages[1].content);
+      expect(user).toContain(`THE PROBLEM THE STUDENT GAVE (earlier in the chat):\n${OWNER_PROBLEM}`);
+      expect(user).toContain("REQUEST: do the actual problem");
+    }, 20_000);
+
+    it("a slip (\\sqrt{6 + 25} = \\sqrt{30}) gets ONE repair round-trip with the engine's findings; the repaired solution goes on", async () => {
+      modelReplies({ reply: "I worked it out on the board.", actions: [SLIP] }, { steps: STEPS, answer: "RS^{2} = 62" });
+      const body = ChatResponseSchema.parse(await (await chat(request(OWNER_BODY))).json());
+      expect(body.actions).toEqual([CLEAN]);
+      expect(chatJsonWithFallback).toHaveBeenCalledTimes(2);
+      const repair = String(vi.mocked(chatJsonWithFallback).mock.calls[1][2].messages[1].content);
+      expect(repair).toContain('- Step 2, line 5: "\\sqrt{6 + 25}" is not equal to "\\sqrt{30}".');
+      expect(repair).toContain(`THE PROBLEM THE STUDENT GAVE (earlier in the chat):\n${OWNER_PROBLEM}`);
+      expect(repair).toContain("SOLUTION:");
+      expect(callsTo("refund_credits")).toEqual([]);
+    }, 20_000);
+
+    it("still failing after the repair: dropped — never written unchecked — the panel says so, and the credits come back", async () => {
+      modelReplies({ reply: "I worked it out.", actions: [{ type: "new_screen" }, SLIP] }, { steps: SLIP.steps, answer: "RS^{2} = 60" });
+      const res = await chat(request(OWNER_BODY));
+      expect(res.status).toBe(200);
+      const body = ChatResponseSchema.parse(await res.json());
+      expect(body.actions).toEqual([]);
+      expect(body.reply).toBe("Sorry, I couldn't check that working, so I didn't write it. Try asking again.");
+      expect(body.refunded).toBe(true);
+      expect(chatJsonWithFallback).toHaveBeenCalledTimes(2);
+      expect(callsTo("refund_credits")[0].args).toEqual({ p_request_id: callsTo("consume_credits")[0].args?.p_request_id });
+    }, 20_000);
+
+    it("a wrong answer (RS² = 64) is caught against the working; a failed repair call is a drop, the rest kept, no refund", async () => {
+      modelReplies({ reply: "Problems and the working.", actions: [{ type: "write_problems", problems: ["2x = 8"] }, { ...GOOD, answer: "RS^{2} = 64" }] });
+      vi.mocked(chatJsonWithFallback).mockRejectedValueOnce(new UpstreamError(504, "slow"));
+      const body = ChatResponseSchema.parse(await (await chat(request(OWNER_BODY))).json());
+      expect(body.actions).toEqual([{ type: "write_problems", problems: [["2x = 8"]] }]);
+      expect(body.notes).toEqual(["I couldn't check that working, so I didn't write it."]);
+      expect(body.refunded).toBeUndefined();
+      expect(callsTo("refund_credits")).toEqual([]);
+    }, 20_000);
+
+    it("the maths holds but the drawer rejects the figure after the repair: the working goes on without it, with a note", async () => {
+      fake.drawer.check = () => ["point S is used but not defined"];
+      const withFigure = { ...GOOD, figure: TRIANGLE };
+      modelReplies({ reply: "I worked it out on the board.", actions: [withFigure] }, { ...withFigure, type: undefined });
+      const body = ChatResponseSchema.parse(await (await chat(request(OWNER_BODY))).json());
+      expect(body.actions).toEqual([CLEAN]);
+      expect(body.notes).toEqual(["The figure couldn't be drawn."]);
+      expect(String(vi.mocked(chatJsonWithFallback).mock.calls[1][2].messages[1].content)).toContain("- The figure: point S is used but not defined");
+      expect(body.refunded).toBeUndefined();
+    }, 20_000);
+  });
+
   it("a polite no: no actions proposed, the charge is kept", async () => {
     modelReplies({ reply: "I can only help with maths on this board.", actions: [] });
     const body = ChatResponseSchema.parse(await (await chat(request({ ...BODY, message: "write me an essay" }))).json());

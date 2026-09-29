@@ -24,18 +24,22 @@ import type { ChatAction, ChatActionType, WriteProofAction } from "@/lib/live/ch
 import { figureProblems } from "@/lib/live/chat/figure";
 import { PROBLEM_GRID } from "@/lib/live/chat/layout";
 import { checkProofProposal, PROOF_CHECK, wantsHardProof, type ProofProposalVerdict } from "@/lib/live/chat/proof";
+import { checkTeach, linkHolds, normTex, splitRelations } from "@/lib/live/chat/teach";
 import { answerOf, isChain, isCleanAnswer, verifyLines, verifyProblem, type ProblemVerdict } from "@/lib/live/chat/verify";
 import { FigureSpecSchema, type FigureSpec } from "@/lib/live/figureDraw/contracts";
 import { planFigure } from "@/lib/live/figureDraw";
 import { planHandwriting } from "@/lib/live/handwriting";
 import { gateChatProof } from "@/lib/server/chatProof";
+import { gateChatTeach } from "@/lib/server/chatTeach";
 import {
   buildChatMessages,
   buildFigureRepairMessages,
   buildProofRepairMessages,
+  buildTeachRepairMessages,
   ChatReplyRawSchema,
   cleanChatActions,
   ProofRepairReplySchema,
+  teachFromRepair,
   type DroppedAction,
 } from "@/lib/server/prompts/chat";
 import { callModel, pool, type BenchMessage, type CallContext, type CallRecord } from "../models/client";
@@ -79,6 +83,27 @@ export interface ProofScore {
   repair?: Omit<CallRecord, "content">;
 }
 
+export interface TeachScore {
+  /** the action passed the shared schema (else the route dropped it) */
+  schema: boolean;
+  steps: number;
+  lines: number;
+  /** the engine checked every chain the first time (`checkTeach`) */
+  checkedFirst: boolean;
+  /** checked after the route's one repair round-trip (or the first time): it reaches the board */
+  checkedAfterRepair: boolean;
+  /** links the engine showed equal */
+  links: number;
+  /** the answer as written, and whether it is the right one for the request */
+  answer: string;
+  right: boolean;
+  /** the figure left out (the drawer still found problems with it after the repair) */
+  figureDropped: boolean;
+  /** what the engine found wrong the first time */
+  problems: string[];
+  repair?: Omit<CallRecord, "content">;
+}
+
 export interface ChatResult {
   id: string;
   course: string;
@@ -100,6 +125,8 @@ export interface ChatResult {
   proofs: ProofScore[];
   /** `write_lines` blocks, verified as the board does (`verifyLines`) */
   lines: Array<{ lines: string[]; chain: boolean; ok: boolean; why: string }>;
+  /** worked solutions (`teach`), gated as the route gates them, the answer judged */
+  teaches?: TeachScore[];
   reply: string;
   call: Omit<CallRecord, "content">;
   content: string;
@@ -167,6 +194,29 @@ export function proofScore(action: WriteProofAction, verdict: ProofProposalVerdi
   };
 }
 
+/**
+ * A worked solution's answer against the request's: the value it states (its last part: `62` of
+ * `RS^{2} = 62`) equal, by the engine, to one of the expected ones' — and, when both name what they
+ * find (`RS^{2}`), the same thing (`RS = \sqrt{62}` is not the RS² asked for).
+ */
+export function teachAnswerRight(engine: LiveEngine, answer: string | undefined, expected: readonly string[]): boolean {
+  if (!answer) return false;
+  // a list answers with each of its items (`a = 50, \ s = 70` for "how many adult tickets")
+  const items = answer.split(/,\s*(?:\\[ ,;:]|\\quad|~)?\s*(?=[A-Za-z\\]+(?:_\{?\w+\}?)?(?:\^\{?\d+\}?)?\s*=)/);
+  if (items.length > 1) return items.some((it) => teachAnswerRight(engine, it, expected));
+  const got = splitRelations(answer);
+  const value = got.parts[got.parts.length - 1];
+  return expected.some((e) => {
+    const want = splitRelations(e);
+    const target = want.parts[want.parts.length - 1];
+    if (linkHolds(engine, value, target) !== "ok") return false;
+    if (got.parts.length < 2 || want.parts.length < 2) return true;
+    const head = (p: string) => normTex(p).replace(/[^A-Za-z0-9^{}]/g, "");
+    // a letter the student did not name (h, x, y for the height) is fine; a different quantity is not
+    return head(got.parts[0]) === head(want.parts[0]) || (/^[a-z]$/.test(head(got.parts[0])) && /^[a-z]$/.test(head(want.parts[0])));
+  });
+}
+
 export function scoreProblems(engine: LiveEngine, actions: readonly ChatAction[]): ProblemScore[] {
   const out: ProblemScore[] = [];
   for (const a of actions) {
@@ -209,7 +259,7 @@ export async function runChat(opts: ChatRunOptions): Promise<ChatResult[]> {
     const record = await callModel({ model, messages, maxTokens: 3000, json: true, reasoning: "low", timeoutMs: 60_000 }, opts.ctx);
     const { content, ...call } = record;
     const base = { id: c.id, course: c.course, kind: c.kind, model, call, content };
-    const empty = { json: false, proposed: 0, valid: 0, dropped: [], types: [], problems: [], figures: [], graphs: [], proofs: [], lines: [], reply: "" };
+    const empty = { json: false, proposed: 0, valid: 0, dropped: [], types: [], problems: [], figures: [], graphs: [], proofs: [], lines: [], teaches: [], reply: "" };
     if (!record.ok) {
       opts.log?.(`${model} ${c.id}: call failed (${record.failure}: ${record.error})`);
       return { ...base, ...empty, intent: false, intentWhy: `call failed: ${record.failure}` };
@@ -290,7 +340,55 @@ export async function runChat(opts: ChatRunOptions): Promise<ChatResult[]> {
       proofs.push(proofScore(action, first, after, rcall));
     }
 
+    // worked solutions: the engine's check (the route's gate), its one repair round-trip, the answer
+    const teaches: TeachScore[] = [];
+    let teachRepaired = false;
+    for (const raw of rawActions.filter((a) => a && typeof a === "object" && (a as { type?: unknown }).type === "teach")) {
+      const [action] = cleanChatActions([raw]).actions;
+      if (!action || action.type !== "teach") {
+        teaches.push({ schema: false, steps: 0, lines: 0, checkedFirst: false, checkedAfterRepair: false, links: 0, answer: "", right: false, figureDropped: false, problems: ["schema"] });
+        continue;
+      }
+      const first = checkTeach(opts.engine, action);
+      let rcall: Omit<CallRecord, "content"> | undefined;
+      const gated = await gateChatTeach(
+        action,
+        opts.engine,
+        teachRepaired
+          ? null
+          : async (problems) => {
+              teachRepaired = true;
+              const rec = await callModel(
+                { model, messages: buildTeachRepairMessages(requestFor(c), action, problems) as BenchMessage[], maxTokens: 3000, json: true, reasoning: "low", timeoutMs: 60_000 },
+                opts.ctx,
+              );
+              const { content: rc, ...call } = rec;
+              rcall = call;
+              return teachFromRepair(parseModelJson(rc));
+            },
+      );
+      const final = gated.ok ? gated.action : action;
+      teaches.push({
+        schema: true,
+        steps: final.steps.length,
+        lines: final.steps.reduce((n, s) => n + s.math.length, 0),
+        checkedFirst: first.ok,
+        checkedAfterRepair: gated.ok,
+        links: gated.ok ? gated.checked : 0,
+        answer: final.answer ?? "",
+        right: gated.ok && teachAnswerRight(opts.engine, final.answer, c.expect.teach?.answers ?? []),
+        figureDropped: gated.ok && gated.figureDropped,
+        problems: first.ok ? [] : first.problems,
+        ...(rcall ? { repair: rcall } : {}),
+      });
+    }
+
     let intent = judgeIntent(c, actions);
+    // a worked solution the engine could not check is dropped; one with the wrong answer did not teach the problem
+    if (intent.ok && c.expect.teach) {
+      if (!teaches.some((t) => t.checkedAfterRepair)) intent = { ok: false, why: `the working did not check out (${teaches[0]?.problems.slice(0, 1).join("; ") ?? "no teach"})` };
+      else if (!teaches.some((t) => t.right)) intent = { ok: false, why: `the answer ${teaches.find((t) => t.checkedAfterRepair)?.answer || "(none)"} is not ${c.expect.teach.answers[0]}` };
+    }
     // the route drops a figure still wrong after its one repair: the request then did not get its figure
     if (intent.ok && c.expect.types.includes("draw_figure") && !figures.some((f) => f.cleanAfterRepair)) intent = { ok: false, why: "the figure is still wrong after the repair (dropped)" };
     // …and a proof still unproved after its one repair
@@ -312,20 +410,21 @@ export async function runChat(opts: ChatRunOptions): Promise<ChatResult[]> {
       graphs: scoreGraphs(opts.engine, actions),
       proofs,
       lines,
+      teaches,
       reply,
     };
   });
 }
 
 type Repaired = { repair?: Omit<CallRecord, "content"> };
-const repairs = (r: { figures: readonly Repaired[]; proofs?: readonly Repaired[] }): Repaired[] => [...r.figures, ...(r.proofs ?? [])];
+const repairs = (r: { figures: readonly Repaired[]; proofs?: readonly Repaired[]; teaches?: readonly Repaired[] }): Repaired[] => [...r.figures, ...(r.proofs ?? []), ...(r.teaches ?? [])];
 
-/** Latency of a request as the student waits for it: the call, plus a figure's or a proof's repair when there was one. */
-export function requestLatencyMs(r: Pick<ChatResult, "call" | "figures"> & Partial<Pick<ChatResult, "proofs">>): number {
+/** Latency of a request as the student waits for it: the call, plus a figure's, a proof's or a worked solution's repair when there was one. */
+export function requestLatencyMs(r: Pick<ChatResult, "call" | "figures"> & Partial<Pick<ChatResult, "proofs" | "teaches">>): number {
   return r.call.latencyMs + repairs(r).reduce((s, f) => s + (f.repair?.latencyMs ?? 0), 0);
 }
 
 /** Cost of a request: the call and any repair. */
-export function requestCostUsd(r: Pick<ChatResult, "call" | "figures"> & Partial<Pick<ChatResult, "proofs">>): number {
+export function requestCostUsd(r: Pick<ChatResult, "call" | "figures"> & Partial<Pick<ChatResult, "proofs" | "teaches">>): number {
   return r.call.costUsd + repairs(r).reduce((s, f) => s + (f.repair?.costUsd ?? 0), 0);
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api-client";
 import { ROUTE_COSTS } from "@/lib/server/billing";
-import { CHAT_COPY, CHAT_CREDITS, CHAT_SUGGESTIONS, chatErrorFor, historyFor, runNotes, sendsOnKey, type ChatMessage } from "../chatView";
+import { CHAT_COPY, CHAT_CREDITS, CHAT_SUGGESTIONS, chatErrorFor, historyFor, problemFor, runNotes, sendsOnKey, type ChatMessage } from "../chatView";
 
 describe("board chat panel — view logic", () => {
   it("the cost note matches what the route charges", () => {
@@ -45,6 +45,31 @@ describe("board chat panel — view logic", () => {
     const long = Array.from({ length: 10 }, (_, i) => [m("user", `ask ${i}`), m("tutor", `reply ${i}`, "done")]).flat();
     expect(historyFor(long)).toHaveLength(6);
     expect(historyFor(long).at(-1)).toEqual({ role: "tutor", text: "reply 9" });
+  });
+
+  it("the problem the student gave, sent when the last six turns no longer hold it (the owner's conversation)", () => {
+    const problem = "O is the center of the circle, R and S lie on the circle. O = (a, b), R = (a + √6, b + 5), ∠ROS is a right angle. What is RS²?";
+    const asks = [problem, "now explain", "explain it step by step", "explain it by drawing", "but like the #'s"];
+    const messages: ChatMessage[] = asks.flatMap((text, i) => [
+      { id: `u${i}`, role: "user" as const, text },
+      { id: `t${i}`, role: "tutor" as const, text: "Here is the circle.", state: "done" as const },
+    ]);
+    // "do the actual problem": the problem left the window three turns ago
+    const history = historyFor(messages);
+    expect(history.some((t) => t.text === problem)).toBe(false);
+    expect(problemFor(messages, history)).toBe(problem);
+    // still in the window: not sent twice
+    const early = messages.slice(0, 4);
+    expect(problemFor(early, historyFor(early))).toBeUndefined();
+    // requests for problems, follow-ups and chit-chat are not problems; the latest problem wins
+    const none: ChatMessage[] = ["5 two-step equations", "3 more like these", "graph y = x^2", "explain it step by step", "thanks!"].map((text, i) => ({ id: `n${i}`, role: "user", text }));
+    expect(problemFor(none, [])).toBeUndefined();
+    const two: ChatMessage[] = [
+      { id: "a", role: "user", text: "solve 2x + 5 = 17 and explain it" },
+      { id: "b", role: "user", text: "a right triangle has legs 6 and 8, how long is the hypotenuse?" },
+      { id: "c", role: "tutor", text: "I worked it out on the board: the hypotenuse is 10." },
+    ];
+    expect(problemFor(two, [])).toBe("a right triangle has legs 6 and 8, how long is the hypotenuse?");
   });
 
   it("the board's notes, each once", () => {
