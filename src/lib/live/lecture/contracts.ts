@@ -34,6 +34,14 @@ import { LECTURE_TRANSCRIPT_CHARS } from "./meta";
  * are coming, the session asks every few seconds (`LECTURE_TIMING.liveTickMinMs`); otherwise
  * about every 40 s. Billing is per minute of lecture, not per question (`live/lecture`).
  *
+ * SLIDES: the board is a slide deck the lecture builds live, in the tutor's hand. Each screen is a
+ * slide: its title (`heading`) at the top, its bullets (`note`, one key point each, added as the
+ * point is made) in a column on the left, and ONE visual on the right — a chart, a diagram, a graph
+ * or a picture — that grows as the lecture goes. A new topic is a new slide; a slide that is full
+ * (its bullets, or a second visual) goes on on the next screen as "<title> (cont.)". The director
+ * is asked every few seconds while anyone is talking (`LECTURE_TIMING`), so the slide keeps up
+ * with the speaker; nothing waits for them to finish.
+ *
  * Words ARE written in lecture mode (a heading, a short note, the labels of a chart or a
  * diagram), short and plain; everywhere else the board keeps its no-words rule. Sketches are
  * inked in a small palette (`LECTURE_PALETTE`), filled lightly where a shape is closed.
@@ -47,8 +55,10 @@ export const LECTURE_LIMITS = {
   /** transcript sent to the director: what came before (context) and what is new (fresh) */
   contextChars: 2400,
   freshChars: 2400,
-  /** actions per director reply (more are dropped) */
-  actions: 3,
+  /** actions per director reply (more are dropped): a new slide's title, two bullets and its chart */
+  actions: 4,
+  /** bullets on one slide: past this the slide continues on the next screen ("… (cont.)") */
+  slideBullets: 6,
   /** what the director is told is already drawn: on this screen, and on the screens before */
   drawn: 12,
   recent: 8,
@@ -68,10 +78,13 @@ export const LECTURE_LIMITS = {
 } as const;
 
 export const LECTURE_TIMING = {
-  /** the director is asked at most this often while listening… */
-  tickMinMs: 20_000,
-  /** …and only once this many new words have been heard since it was last asked */
-  tickMinWords: 25,
+  /**
+   * SLIDES: the director is asked at most this often while anyone is talking (each point becomes a
+   * bullet on the slide as it is made)…
+   */
+  tickMinMs: 6_000,
+  /** …once this many new words have been heard since it was last asked */
+  tickMinWords: 12,
   /**
    * LIVE: while what is said is salient (numbers, amounts, years, percentages, steps — "first",
    * "next", "then") or a live visual on the screen was drawn or updated within `activeWindowMs`,
@@ -260,7 +273,7 @@ export const DIAGRAM_KINDS = ["flow", "cycle", "timeline", "hub", "tree", "venn"
 
 /** A new topic: written at the top of a screen, underlined. A screen with anything on it → a new screen first. */
 export const HeadingActionSchema = z.object({ type: z.literal("heading"), text: HeadingTextSchema });
-/** One key point or definition, a short line with a bullet ("Mitochondria make ATP"). */
+/** A bullet on the slide: one key point or definition, as the lecturer made it ("Mitochondria make ATP"). */
 export const NoteActionSchema = z.object({ type: z.literal("note"), text: NoteTextSchema });
 export const ChartActionSchema = z.object({ type: z.literal("chart"), chart: ChartSpecSchema });
 export const DiagramActionSchema = z.object({ type: z.literal("diagram"), diagram: DiagramSpecSchema });

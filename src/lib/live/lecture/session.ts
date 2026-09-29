@@ -52,11 +52,9 @@ import { cleanSpeech, TranscriptBuffer, type TranscriptMark, type TranscriptWind
  *    out-of-credits panel, as the Ask panel does); 401 stops it signed out; 429 skips asks until
  *    the server's retry-after; anything else (the network, a 5xx, a timeout) keeps listening and
  *    the next ask tries again with the same unread words.
- *  - A REQUEST to see something ("draw a plant cell", "I'd like to see that on the whiteboard, four
- *    panels…") is asked about at the live pace, but only once the speaker has stopped describing
- *    it: `REQUEST_QUIET_MS` after the last words (longer while they are still talking), at most
- *    `REQUEST_MAX_WAIT_MS` after it was first heard. Speech comes in pieces; a comic asked for in
- *    one sentence and described in the next two is drawn once, from all three.
+ *  - A REQUEST to see something ("draw a plant cell", "I'd like to see that on the whiteboard") is
+ *    asked about at the live pace, at once: the board starts drawing while the speaker is still
+ *    describing it (the owner: "it should be live"), never after their last words.
  *  - Every request carries the session's id (`session`): the route bills per minute of a session.
  *  - A sketch (a picture, a comic strip): the board writes its frames and the run ends there; each
  *    panel's drawing is asked of the illustrator through the session (`requestSketch`: the board's
@@ -182,14 +180,6 @@ export const SKETCH_TIMEOUT_MS = 60_000;
  */
 export const RUN_ON = { words: 10, ms: 2_500, holdBack: 2 } as const;
 
-/** A request to see something is asked about once nothing new has been said for this long… */
-export const REQUEST_QUIET_MS = 3_500;
-/**
- * …or this long after it was first heard, whichever comes first. A request is often described over
- * a long run-on sentence ("I want four panels, and each of them… the first two… the next two…"): at
- * 15 s the first real test drew a lone picture from the opening words, then the comic after it.
- */
-export const REQUEST_MAX_WAIT_MS = 30_000;
 
 const VISUAL_TYPES: ReadonlySet<LectureAction["type"]> = new Set(["chart", "diagram", "update_chart", "update_diagram"]);
 const UPDATE_TYPES: ReadonlySet<LectureAction["type"]> = new Set(["update_chart", "update_diagram"]);
@@ -301,7 +291,6 @@ export class LectureSession {
   private lastAskAt: number | null = null;
   private lastFinalAt = 0;
   /** when a request to see something was first heard since the last ask (null: none) */
-  private requestAt: number | null = null;
   private retryAt = 0;
   private listenedMs = 0;
   private listeningSince: number | null = null;
@@ -486,7 +475,6 @@ export class LectureSession {
       return;
     }
     this.lastFinalAt = this.now();
-    if (this.requestAt === null && isRequest(seg.text)) this.requestAt = this.lastFinalAt;
     try {
       this.deps.board.saveTranscript(seg.text);
     } catch {
@@ -535,7 +523,8 @@ export class LectureSession {
     if (this.ended || this.status !== "listening" || this.busy || this.forceQueued) return;
     const now = this.now();
     const fresh = this.transcript.textSince(this.mark);
-    this.pace = this.visualIsLive(now) || (fresh !== "" && isSalient(fresh)) ? "live" : "normal";
+    // numbers, steps, a request to see something, or a live visual: the live pace
+    this.pace = this.visualIsLive(now) || (fresh !== "" && (isSalient(fresh) || isRequest(fresh))) ? "live" : "normal";
     if (!fresh) {
       this.followUp = false;
       return;
@@ -551,8 +540,6 @@ export class LectureSession {
       const since = live ? (this.lastAskAt ?? Number.NEGATIVE_INFINITY) : this.lastRequestAt;
       dueAt = Math.max(since + (live ? this.timing.liveTickMinMs : this.timing.tickMinMs), this.retryAt);
     }
-    // a request to see something: once the speaker has finished describing it
-    if (this.requestAt !== null) dueAt = Math.max(dueAt, this.requestDueAt(now));
     if (dueAt > now) {
       this.dueTimer = this.setTimer(() => {
         this.dueTimer = null;
@@ -564,15 +551,6 @@ export class LectureSession {
     void this.tick(false);
   }
 
-  /**
-   * When a request heard since the last ask may be asked about: `REQUEST_QUIET_MS` after the last
-   * words committed, or after now while words are still being heard (the timer looks again then),
-   * never later than `REQUEST_MAX_WAIT_MS` after the request.
-   */
-  private requestDueAt(now: number): number {
-    const quiet = Math.max(this.lastFinalAt + REQUEST_QUIET_MS, this.partial ? now + REQUEST_QUIET_MS : 0);
-    return Math.min(quiet, (this.requestAt ?? now) + REQUEST_MAX_WAIT_MS);
-  }
 
   private clearDue(): void {
     if (this.dueTimer !== null) this.clearTimer(this.dueTimer);
@@ -615,7 +593,6 @@ export class LectureSession {
     }
     const readTo = this.transcript.mark();
     const ctrl = new AbortController();
-    this.requestAt = null;
     this.busy = true;
     this.thinking = true;
     this.forceInFlight = force;

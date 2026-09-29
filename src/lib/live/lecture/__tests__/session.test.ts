@@ -17,7 +17,7 @@ import {
   type SpeechSource,
 } from "../contracts";
 import type { LectureRunOptions } from "../desk";
-import { FOLLOW_UP_GAP_MS, HEARTBEAT_MS, LectureSession, REQUEST_MAX_WAIT_MS, RUN_ON, REQUEST_QUIET_MS, SKETCH_TIMEOUT_MS, sketchKind, timingForSpeed, updatingKind, type LectureSessionDeps } from "../session";
+import { FOLLOW_UP_GAP_MS, HEARTBEAT_MS, LectureSession, RUN_ON, SKETCH_TIMEOUT_MS, sketchKind, timingForSpeed, updatingKind, type LectureSessionDeps } from "../session";
 import { SpeechError } from "../speech/errors";
 
 // ------------------------------------------------------------------ fakes
@@ -256,17 +256,18 @@ describe("LectureSession: pacing", () => {
   it("pauses its clock: no asks while paused, and the timer counts listening time only", async () => {
     const h = await startSession();
     h.source.say(words(50));
-    await advance(10_000);
+    const before = LECTURE_TIMING.tickMinMs - 1_000; // paused just before the ask was due
+    await advance(before);
     h.session.pause();
     expect(h.source.pause).toHaveBeenCalled();
     expect(h.session.snapshot().status).toBe("paused");
     await advance(5 * 60_000);
     expect(h.request).not.toHaveBeenCalled();
-    expect(h.session.snapshot().stats.elapsedMs).toBe(10_000);
+    expect(h.session.snapshot().stats.elapsedMs).toBe(before);
     h.session.resume();
     expect(h.source.resume).toHaveBeenCalled();
     await advance(2_000);
-    expect(h.session.snapshot().stats.elapsedMs).toBe(12_000);
+    expect(h.session.snapshot().stats.elapsedMs).toBe(before + 2_000);
     // the time since the last ask kept running while paused: the words are asked about at once
     expect(h.request).toHaveBeenCalledTimes(1);
   });
@@ -277,14 +278,15 @@ describe("LectureSession: Draw that", () => {
     const h = await startSession();
     h.source.say("Early words from the introduction.");
     await advance(90_000);
-    h.source.say("Supply meets demand at the market price.");
+    // few enough words that the usual pace has not asked about them yet
+    h.source.say("Supply meets demand.");
     await advance(10_000);
     h.source.say("Demand shifts outward.");
     h.session.drawThat();
     expect(h.session.snapshot().forcing).toBe(true);
     await advance(0);
     expect(h.request).toHaveBeenCalledTimes(1);
-    expect(h.requests[0].req).toMatchObject({ force: true, context: "Early words from the introduction.", fresh: "Supply meets demand at the market price. Demand shifts outward." });
+    expect(h.requests[0].req).toMatchObject({ force: true, context: "Early words from the introduction.", fresh: "Supply meets demand. Demand shifts outward." });
     expect(h.session.snapshot().forcing).toBe(false);
   });
 
@@ -676,7 +678,8 @@ describe("LectureSession: the live pace", () => {
       return reply();
     });
     await play(h, [[1_000, "Sales were twelve million in March."], [2_000, words(12, "chat")]], 30_000);
-    expect(asked).toEqual([1_000]); // the chatter waits for the usual pace
+    // the chatter is not a follow-up the moment the ask settles (4 s): it waits for the usual pace
+    expect(asked).toEqual([1_000, 1_000 + LECTURE_TIMING.tickMinMs]);
   });
 
   it("after a chart is drawn, the pace stays live for activeWindowMs, then goes back to normal", async () => {
@@ -890,36 +893,17 @@ describe("LectureSession: sketches", () => {
     expect(opts?.onSketch).toBeInstanceOf(Function);
   });
 
-  it("a request to see something waits for the speaker to finish describing it, then all of it is asked about at once", async () => {
+  it("a request to see something is asked about at once, while the speaker is still describing it", async () => {
     const h = await startSession();
-    // the owner's comic, as the recognizer commits it: the request, then its panels, a pause or two apart
     h.source.say("I'm thinking about making a comic strip for a video game about a futuristic police officer, and I would kind of like to see that on the whiteboard.");
-    await advance(REQUEST_QUIET_MS - 1);
-    expect(h.request).not.toHaveBeenCalled();
-    h.source.say("I want, like, four different panels, and I want each of them to feature the police officer and talk about his adversities…");
-    await advance(2_000);
-    h.source.hear("the first two, but then");
-    await advance(REQUEST_QUIET_MS);
-    // still talking: not yet
-    expect(h.request).not.toHaveBeenCalled();
-    h.source.say("the first two, but then the next two… the future…");
-    await advance(REQUEST_QUIET_MS - 1);
-    expect(h.request).not.toHaveBeenCalled();
-    await advance(1);
+    await advance(0);
+    // the live pace, from the first words of the request: the board starts while they go on
     expect(h.request).toHaveBeenCalledTimes(1);
-    expect(h.requests[0].req.fresh).toMatch(/^I'm thinking about making a comic strip.*four different panels.*the future…$/);
-  });
-
-  it("…but not for ever: at most REQUEST_MAX_WAIT_MS after the request, even while the speaker goes on", async () => {
-    const h = await startSession();
-    h.source.say("Can you draw a plant cell for me?");
-    for (let t = 0; t < REQUEST_MAX_WAIT_MS - 2_000; t += 2_000) {
-      await advance(2_000);
-      h.source.say(`and ${words(3, `x${t}`)}`);
-    }
-    expect(h.request).not.toHaveBeenCalled();
-    await advance(2_000);
-    expect(h.request).toHaveBeenCalledTimes(1);
+    expect(h.requests[0].req.fresh).toMatch(/^I'm thinking about making a comic strip/);
+    h.source.say("I want, like, four different panels, and I want each of them to feature the police officer.");
+    await advance(LECTURE_TIMING.liveTickMinMs);
+    expect(h.request).toHaveBeenCalledTimes(2);
+    expect(h.requests[1].req.fresh).toMatch(/^I want, like, four different panels/);
   });
 
   it("sketchKind: a comic (more than one panel), a picture, or none", () => {

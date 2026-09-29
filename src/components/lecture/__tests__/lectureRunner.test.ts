@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api-client";
 import { LECTURE_TIMING, type LectureRequest, type LectureResponse, type SketchRequest, type SketchResponse, type SpeechCallbacks, type SpeechSource } from "@/lib/live/lecture/contracts";
 import type { LectureRunOptions } from "@/lib/live/lecture/desk";
-import { REQUEST_QUIET_MS } from "@/lib/live/lecture/session";
 import { createScriptSource } from "@/lib/live/lecture/speech/script";
 import { LECTURE_OFF, LectureRunner, type LectureRunnerDeps } from "../lectureRunner";
 import { LECTURE_CONSENT_KEY, type LectureControllerLike } from "../lectureView";
@@ -199,12 +198,14 @@ describe("LectureRunner: the scripted demo", () => {
     expect(h.r.coarse.get()).toMatchObject({ status: "listening", source: "script" });
     expect(h.mics).toHaveLength(0);
     expect(h.storage.has(LECTURE_CONSENT_KEY)).toBe(false);
-    // 8 s of script at 4× = 2 s; the usual interval is scaled to 40 s / 4 = 10 s of wall time
+    // the usual interval is scaled too: tickMinMs / 4 of wall time from the start
+    await vi.advanceTimersByTimeAsync(LECTURE_TIMING.tickMinMs / 4 - 1);
+    expect(h.request).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(h.request).toHaveBeenCalledTimes(1);
+    // 8 s of script at 4× = 2 s: both lines heard and saved
     await vi.advanceTimersByTimeAsync(2_000);
     expect(h.ctl.saveLectureTranscript).toHaveBeenCalledTimes(2);
-    expect(h.request).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(LECTURE_TIMING.tickMinMs / 4 - 2_000);
-    expect(h.request).toHaveBeenCalledTimes(1);
     expect(h.request.mock.calls[0][0]).toMatchObject({ boardId: "board-1", force: false });
     expect(h.request.mock.calls[0][0].session).toMatch(/^[A-Za-z0-9_-]{8,40}$/);
   });
@@ -228,16 +229,16 @@ describe("LectureRunner: the scripted demo", () => {
     expect(h.request).toHaveBeenCalledTimes(2);
   });
 
-  it("a request to draw is asked about once the speaker has finished; the sketch's panels go to the illustrator through the session, with the board and the session", async () => {
+  it("a request to draw is asked about at once; the sketch's panels go to the illustrator through the session, with the board and the session", async () => {
     const drawing = { w: 1000 as const, h: 800, strokes: [{ points: [[0, 0], [5, 5]] as Array<[number, number]>, closed: false, fill: false }], labels: [] };
     const requestSketch = vi.fn<(req: SketchRequest, signal: AbortSignal) => Promise<SketchResponse>>(async () => ({ drawing, model: "m", ms: 1 }));
     const h = runner({ requestSketch });
     h.request.mockResolvedValueOnce({ actions: [{ type: "sketch", panels: [{ prompt: "a plant cell" }] }], notes: [], model: "m", ms: 1 });
     h.r.startScripted([{ atMs: 4_000, text: "Can you draw a plant cell for me?" }], { speed: 4 });
-    await vi.advanceTimersByTimeAsync(1_000 + REQUEST_QUIET_MS - 1);
-    expect(h.request).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_000 - 1);
+    expect(h.request).not.toHaveBeenCalled(); // 4 s of script at 4×: not heard yet
     await vi.advanceTimersByTimeAsync(1);
-    expect(h.request).toHaveBeenCalledTimes(1);
+    expect(h.request).toHaveBeenCalledTimes(1); // heard, and asked about at once
     const run = h.ctl.runLectureActions as ReturnType<typeof vi.fn>;
     expect(run).toHaveBeenCalledTimes(1);
     const opts = run.mock.calls[0][1] as LectureRunOptions;
