@@ -117,6 +117,7 @@ describe("envExample: section headers and classification", () => {
       "LECTURE_EVAL_IDS",
       "LECTURE_EVAL_MODELS",
       "LECTURE_EVAL_TRIALS",
+      "LECTURE_EVAL_ONCE",
       "LECTURE_EVAL_ONLY",
       "LECTURE_EVAL_REASONING",
       "RUN_SKETCH_EVAL",

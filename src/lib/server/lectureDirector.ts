@@ -14,22 +14,24 @@ import { buildLectureMessages, cleanLectureActions, LectureReplyRawSchema, type 
  * billing.
  *
  * ONE model call (primary, then the fallback once) and no repair round-trip: a tick is one
- * credit, asked every ~40 s, and most ticks draw nothing. What the model proposes is validated
- * against the shared contract and anything wrong is dropped, never guessed at
+ * credit, asked every few seconds while anyone talks (`LECTURE_TIMING`). What the model proposes
+ * is validated against the shared contract and anything wrong is dropped, never guessed at
  * (`cleanLectureActions`): a figure the drawer rejects, a heading that is already the topic,
- * something already drawn, an update that is not its live visual grown.
+ * something already drawn, a bullet that says again what one on the board says, a comic nobody
+ * asked for (cut to its first panel), an update that is not its live visual grown.
  *
- * Live ticks (every ~8 s while numbers or steps are coming) carry a sentence or two of fresh
- * speech: the call is the same, and short, and the reply is usually one update.
+ * SLIDES: each tick carries a sentence or two of fresh speech, and the reply builds the slide as
+ * the lecture goes — a title when the topic changes, a bullet for each point as it is made, the
+ * visual's next number or step. The call is the same for every tick, and short.
  */
 
-/** One attempt per model: a chart plus a diagram is a short reply. Two attempts fit the route's 30 s. */
+/** One attempt per model: a title, two bullets and a chart is a short reply. Two attempts fit the route's 30 s. */
 export const LECTURE_ATTEMPT_MS = 13_000;
-/** Room for a heading, a 12-label chart with 3 series and a diagram, and low reasoning before them. */
+/** Room for a heading, two bullets, a 12-label chart with 3 series, and low reasoning before them. */
 export const LECTURE_MAX_TOKENS = 2000;
 
 /**
- * The least reasoning that keeps the director right, because a live tick comes every ~8 s and the
+ * The least reasoning that keeps the director right, because a tick comes every few seconds and the
  * student waits for it: "minimal" for OpenAI's models (the eval, docs/eval/lecture.md: GPT-5.4 mini
  * as right at "minimal" as at "low" on the single ticks and the live sequences, with a shorter
  * tail), "low" for the others (DeepSeek's fallback was measured there), none for Anthropic's (its
@@ -111,6 +113,8 @@ export async function directLecture(data: ParsedLectureRequest, deps: LectureDir
   const proposed = raw.actions.length;
   const check = (spec: FigureSpec) => figureProblems(spec, deps.checkFigure);
   const drawn = [...data.screen.drawn, ...data.recent];
-  const { actions, dropped } = cleanLectureActions(raw.actions, { topic: data.screen.topic, drawn, figureProblems: check, active: data.screen.active });
+  // what was said, for "was a comic asked for?": the request may have come a tick or two before its panels
+  const said = `${data.context} ${data.fresh}`;
+  const { actions, dropped } = cleanLectureActions(raw.actions, { topic: data.screen.topic, drawn, figureProblems: check, active: data.screen.active, said });
   return { actions, notes: droppedNotes(dropped), proposed, dropped, model };
 }

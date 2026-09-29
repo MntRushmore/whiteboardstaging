@@ -1,11 +1,11 @@
 import type { JsonObject } from "tldraw";
 import type { Rect } from "../contracts";
 import { problemMetaOf } from "../chat/cells";
-import type { ChatAction } from "../chat/contracts";
-import { CHAT_BLOCK_META, CHAT_WRITE, type ChatDesk, type ChatHost, type ChatShape } from "../chat/desk";
+import type { ChatAction, ChatRunReport } from "../chat/contracts";
+import { CHAT_BLOCK_META, CHAT_WRITE, ChatDesk, type ChatHost, type ChatShape } from "../chat/desk";
 import { appendHeard } from "./meta";
 import { findFreeArea, FREE_AREA } from "../chat/layout";
-import { HAND_BLOCK_META, HAND_LINE_META, HAND_PART_META, paceFor, placeHandPlan, type HandLinePlan, type HandPlan } from "../handwriting";
+import { HAND_BLOCK_META, HAND_LINE_META, HAND_PART_META, paceFor, placeHandPlan, planHandwriting, type HandLinePlan, type HandPlan } from "../handwriting";
 import {
   ChartSpecSchema,
   describeLectureAction,
@@ -34,11 +34,18 @@ import type { PanelsLayout, SketchPlanOptions } from "./sketch/plan";
 
 /**
  * Lecture mode's hand: places each of the director's actions on the current screen and writes it
- * in the tutor's hand, one block at a time. A lecture screen reads like a page of good notes — the
- * topic at the top left, the key points down the left under it, the pictures (a chart, a diagram)
- * on the right — and a new screen when this one is full ("<topic> (cont.)") or the topic changes.
- * Graphs, figures, formulas and new screens are the board chat's own actions and go through its
- * desk unchanged (`ChatDesk`), so they are checked and placed exactly as when the student asks.
+ * in the tutor's hand, one block at a time. Graphs, figures, formulas and new screens are the board
+ * chat's own actions and go through its desk (`ChatDesk`), so they are checked and drawn exactly as
+ * when the student asks.
+ *
+ * SLIDES: the board is a live slide deck in the tutor's hand. Each screen is a slide
+ * (`LECTURE_SLIDE`): its title top left; its bullets down a column on the left, one under the last,
+ * each written in about a second as the point is made; ONE visual on the right — a chart, a diagram,
+ * a graph, a figure or a framed picture — as large as the area holds, growing as the lecture goes.
+ * A new topic is a new slide. A slide that is full — its sixth bullet written, or a second visual
+ * coming — goes on on the next screen as "<title> (cont.)", or under the reply's new title when the
+ * same reply brings one (`nextSlide`). A comic strip takes a slide's whole body. On a screen that is
+ * not a slide (the student's own work, an old board's) blocks go where there is room, as before.
  *
  * LIVE: a chart or a diagram keeps an id (`LECTURE_ID_META` on its strokes) and its spec, box and
  * seed on the screen's page meta (`LecturePageMeta.visuals`). An update re-plans the old spec and
@@ -94,7 +101,8 @@ export interface LecturePlanners {
   chart(spec: ChartSpec, opts: LecturePlanOptions): HandPlan | null;
   diagram(spec: DiagramSpec, opts: LecturePlanOptions): HandPlan | null;
   heading(text: string, opts: { seed: number; maxW: number }): HandPlan | null;
-  note(text: string, opts: { seed: number; maxW: number }): HandPlan | null;
+  /** `slide`: a slide's bullet (at most two lines while it fits in two, evenly broken) */
+  note(text: string, opts: { seed: number; maxW: number; slide?: boolean }): HandPlan | null;
   /** free drawing's planners; absent, they are loaded from `./sketch/plan` with the first sketch */
   sketches?: SketchPlanners;
 }
@@ -266,6 +274,55 @@ export const LECTURE_LAYOUT = {
   },
 } as const;
 
+/**
+ * SLIDES: where the parts of a slide go on the board's 1600 × 900 screen (px from its top-left).
+ * Measured against what floats over every screen: the board's own bar along the top
+ * (`FREE_AREA.top`) and the lecture bar at the bottom centre (`LECTURE_LAYOUT.barZone`: from 666 px
+ * down, 464–1136 px across). The body — the bullets and the visual — stops a clearance above the
+ * lecture bar right across the slide (at 648 px), so the slide has one clean bottom edge and nothing
+ * is ever drawn under the bar.
+ *
+ *     56                        704  776                              1544
+ *   80 ┌ Photosynthesis ────────────────────────────────────────────────┐   title (54 px hand, underlined)
+ *  176 │ • Light energy becomes     │  ┌───────────────────────────────┐ │   body top
+ *      │   chemical energy          │  │  the visual: a chart, a        │ │
+ *      │ • … six at most            │  │  diagram, a graph, a picture   │ │
+ *  648 │                            │  └───────────────────────────────┘ │   body bottom
+ *  666 └──────────────────[ the lecture bar ]────────────────────────────┘
+ *
+ * The bullets' column is the left 44 % (648 px of writing at `LECTURE_WORDS.slide`'s 34 px hand,
+ * ~40 characters a line: six bullets fit it, up to four of them on two lines), the visual area the
+ * right 52 % (768 × 472 px). A slide with no title (the lecture began without one) starts its body
+ * under the board's bar instead.
+ */
+export const LECTURE_SLIDE = {
+  /** the title's top-left: under the board's bar, as a heading always was */
+  title: { x: 56, y: 80 },
+  /** a titled slide's body starts here — or this far under a title that runs longer (two lines) */
+  bodyTop: 176,
+  titleGap: 36,
+  /** the bullets' column: its left edge and its width (a bullet wraps at this width) */
+  bullets: { x: 56, w: 648 },
+  /** the visual area's left edge; it runs to the right margin (`FREE_AREA.margin`) */
+  visual: { x: 776 },
+  /**
+   * Ink to ink, from one bullet to the next: clearly more than the gap between a bullet's own two
+   * lines, so each point reads as one. Six one-line bullets take ~320 px of the column's 472, and
+   * up to four of six may wrap to two lines.
+   */
+  bulletGap: 28,
+  /**
+   * A bullet is on the board in about 1–1.5 s of wall time, whatever its length: the point is up
+   * while it is still being made. Its natural writing time over `bulletSpeed`, within these.
+   */
+  bulletWallMs: { min: 900, max: 1500 },
+  bulletSpeed: 6,
+  /** a visual's box, largest first: the whole visual area, then these shares of it, then `LECTURE_BOXES.visual` */
+  visualShares: [1, 0.86, 0.74],
+  /** a picture's frame is at most this wide (a picture reads better nearer 3:2 than the area's 16:10), centred in the area */
+  pictureMaxW: 640,
+} as const;
+
 export const LECTURE_NOTES = {
   handOff: "Turn on the tutor's handwriting to see sketches.",
   movedAway: "I stopped because you moved to another screen.",
@@ -296,6 +353,45 @@ interface Block {
   topY: number;
   lines: Array<{ latex: string; y: number }>;
 }
+
+/** A slide as it stands (`LectureDesk.slide`): where its body is and what is on it, in page px. */
+interface Slide {
+  screen: Rect;
+  /** it has a title: a heading on it, or a topic carried onto it (its body starts under the title band) */
+  titled: boolean;
+  /** the body's top and bottom */
+  top: number;
+  bottom: number;
+  /** the bullets' column and the visual area, over the body */
+  bullets: Rect;
+  visual: Rect;
+  /** the bullets written on it, oldest first */
+  notes: Block[];
+  /** the visuals on it: charts, diagrams, pictures and comics (drawn, or with drawings still coming), graphs, figures */
+  visuals: number;
+  /** anything on it but its title */
+  body: boolean;
+}
+
+/**
+ * The reply being run. A heading further on in it may be written sooner: when a visual needs a new
+ * slide, the reply's new title heads it (`nextSlide`), rather than "(cont.)" and then the new title.
+ */
+interface RunState {
+  actions: readonly LectureAction[];
+  /** the action being run */
+  at: number;
+  /** actions already run out of turn (a heading written early) */
+  taken: Set<number>;
+  /** in the reply's order */
+  outcomes: Array<LectureActionOutcome | undefined>;
+}
+
+/** The lecture's own blocks that are a slide's visual, and the chat's. */
+const LECTURE_VISUALS = new Set(["chart", "diagram", "sketch"]);
+const CHAT_VISUALS = new Set(["graph", "figure"]);
+/** The chat's blocks a lecture may draw on a slide (a slide holds nothing but the tutor's blocks, unless it is titled). */
+const CHAT_ON_SLIDES = new Set(["graph", "figure", "lines"]);
 
 function intersects(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
@@ -542,6 +638,12 @@ export class LectureDesk implements LectureBoard {
   private sketchPlanners: Promise<SketchPlanners> | null = null;
   /** sketches whose panels are still coming or still to be written, oldest first */
   private readonly pending = new Set<PendingSketch>();
+  /** the reply being run (`runNow`) */
+  private state: RunState | null = null;
+  /** the chat desk a slide's graphs, figures and formulas go through (`slideChat`), made on first use */
+  private slideDesk: ChatDesk | null = null;
+  /** while the slide's chat desk runs: the part of the slide it may draw in, and the topic a screen it adds carries */
+  private carry: { region: "visual" | "bullets" | "body"; topic: string | null } | null = null;
 
   constructor(host: LectureHost, chat: ChatDesk, planners: LecturePlanners | LoadLecturePlanners = loadPlanners) {
     this.host = host;
@@ -700,12 +802,17 @@ export class LectureDesk implements LectureBoard {
     this.running++;
     this.stopped = false;
     const report: Report = { outcomes: [], screensAdded: 0 };
+    const state: RunState = { actions, at: 0, taken: new Set(), outcomes: [] };
+    this.state = state;
     try {
       this.flushAll();
       this.expectedPage = this.host.pageId();
-      for (const action of actions) {
+      for (let i = 0; i < actions.length; i++) {
+        if (state.taken.has(i)) continue;
+        const action = actions[i];
+        state.at = i;
         if (!this.onScreen()) {
-          report.outcomes.push({ type: action.type, ok: false, note: LECTURE_NOTES.movedAway });
+          state.outcomes[i] = { type: action.type, ok: false, note: LECTURE_NOTES.movedAway };
           break;
         }
         let out: LectureActionOutcome;
@@ -715,12 +822,14 @@ export class LectureDesk implements LectureBoard {
           this.host.metric?.("live.lecture.failed", { type: action.type, error: e instanceof Error ? e.message : String(e) });
           out = { type: action.type, ok: false, note: LECTURE_NOTES.failed };
         }
-        report.outcomes.push(out.ok ? { ...out, what: describeLectureAction(action) } : out);
+        state.outcomes[i] = out.ok ? { ...out, what: describeLectureAction(action) } : out;
         if (this.stopped) break;
       }
     } finally {
       this.running--;
+      this.state = null;
     }
+    report.outcomes = state.outcomes.filter((o): o is LectureActionOutcome => o !== undefined);
     return report;
   }
 
@@ -749,6 +858,9 @@ export class LectureDesk implements LectureBoard {
    */
   private async delegate(action: Extract<LectureAction, { type: ChatAction["type"] }>, report: Report): Promise<LectureActionOutcome> {
     const topic = cleanTopic(this.host.screenMeta().topic);
+    if ((action.type === "graph" || action.type === "draw_figure" || action.type === "write_lines") && this.host.handwriting() && this.slide()) {
+      return this.onSlide(action, action.type === "write_lines" ? "bullets" : "visual", report);
+    }
     if (this.pendingHere()) await this.chat.exclusive(() => this.settleSketches());
     const res = await this.chat.run([action]);
     report.screensAdded += res.screensAdded;
@@ -761,6 +873,140 @@ export class LectureDesk implements LectureBoard {
     const o = res.outcomes[0];
     if (!o) return { type: action.type, ok: false, note: LECTURE_NOTES.cannotWrite };
     return { type: action.type, ok: o.ok, ...(o.note ? { note: o.note } : {}) };
+  }
+
+  /**
+   * A graph, a figure or a formula on a slide, through the chat desk (checked and drawn as ever) but
+   * placed as a slide places it: a graph or a figure is the slide's visual — in the visual area, on
+   * the next slide when this one has its visual already — and a formula goes down the bullets'
+   * column, under the last bullet (anywhere in the body when it is wider than the column). The chat
+   * desk is shown the rest of the slide as taken (`slideChat`); a screen it adds when there is no
+   * room is the next slide, headed "<title> (cont.)" like any other.
+   */
+  private async onSlide(action: Extract<LectureAction, { type: "graph" | "draw_figure" | "write_lines" }>, region: "visual" | "bullets", report: Report): Promise<LectureActionOutcome> {
+    const planners = await this.plannersOnce();
+    return this.chat.exclusive(async () => {
+      await this.waitForHand();
+      if (!this.onScreen()) return this.movedAway(action.type);
+      const slide = this.slide();
+      const lines = action.type === "write_lines" ? this.linesSize(action.lines) : null;
+      const part = lines && slide && lines.w > slide.bullets.w ? "body" : region;
+      if (region === "visual" && slide && slide.visuals > 0) {
+        if (!(await this.nextSlide(planners, report, true))) return this.stopped ? this.movedAway(action.type) : { type: action.type, ok: false, note: LECTURE_NOTES.noRoom };
+      } else if (this.pendingHere()) {
+        // a picture still loading here: waited for only when the formula will not fit here (the chat desk then moves on)
+        const fits = lines && slide && this.freeIn(lines, this.regionOf(slide, part), this.obstacles(this.host.shapes()));
+        if (!fits) await this.settleSketches();
+      }
+      const topic = cleanTopic(this.host.screenMeta().topic);
+      this.carry = { region: part, topic };
+      let res: ChatRunReport;
+      try {
+        res = await this.slideChat().run([action]);
+      } finally {
+        this.carry = null;
+      }
+      report.screensAdded += res.screensAdded;
+      if (res.screensAdded > 0) {
+        this.expectedPage = this.host.pageId();
+        if (topic) {
+          this.host.setScreenMeta({ topic });
+          await this.contTitle(planners, topic);
+        }
+      }
+      const o = res.outcomes[0];
+      if (!o) return { type: action.type, ok: false, note: LECTURE_NOTES.cannotWrite };
+      return { type: action.type, ok: o.ok, ...(o.note ? { note: o.note } : {}) };
+    });
+  }
+
+  /** How large a formula is written (the chat's hand for lines), to know whether the bullets' column holds it. */
+  private linesSize(lines: readonly string[]): { w: number; h: number } {
+    try {
+      const { plan } = planHandwriting(
+        lines.map((l) => l.trim()).filter(Boolean),
+        { size: CHAT_WRITE.linesSize, seed: 1 },
+      );
+      return { w: plan?.bounds.w ?? 0, h: plan?.bounds.h ?? 0 };
+    } catch {
+      return { w: 0, h: 0 };
+    }
+  }
+
+  /**
+   * The part of a slide a chat block goes in: the visual area; the bullets' column under the last
+   * bullet (a formula never goes beside a short one); or, for a formula too wide for the column,
+   * the body's whole width under the last bullet.
+   */
+  private regionOf(slide: Slide, part: "visual" | "bullets" | "body"): Rect {
+    if (part === "visual") return slide.visual;
+    const last = slide.notes[slide.notes.length - 1];
+    const y = last ? Math.max(slide.top, last.bounds.y + last.bounds.h + LECTURE_SLIDE.bulletGap) : slide.top;
+    const w = part === "bullets" ? slide.bullets.w : slide.visual.x + slide.visual.w - slide.bullets.x;
+    return { x: slide.bullets.x, y, w, h: Math.max(0, slide.bottom - y) };
+  }
+
+  /**
+   * The chat desk a slide's graphs, figures and formulas go through: the board chat's own, on a
+   * host that shows it the rest of the slide as taken (`reserved`), so its "first free place" is in
+   * the part of the slide the block belongs to; a screen it adds carries the slide's topic at once,
+   * so it is laid out as the next slide from its first block. Always run in the chat desk's turn.
+   */
+  private slideChat(): ChatDesk {
+    if (!this.slideDesk) {
+      const host = this.host;
+      const proxy = new Proxy(host, {
+        get: (target, prop) => {
+          if (prop === "shapes") return () => [...target.shapes(), ...this.reserved()];
+          if (prop === "addScreen")
+            return () => {
+              const ok = target.addScreen();
+              const topic = this.carry?.topic;
+              if (ok && topic) target.setScreenMeta({ topic });
+              return ok;
+            };
+          const v: unknown = Reflect.get(target, prop, target);
+          return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+        },
+      });
+      this.slideDesk = new ChatDesk(proxy);
+    }
+    return this.slideDesk;
+  }
+
+  /**
+   * While the slide's chat desk runs: everything round the part of the slide its block goes in (the
+   * visual area, the bullets' column, or the body), as taken — a clearance away, so the block may
+   * reach that part's very edges (`findFreeArea` keeps the clearance itself).
+   */
+  private reserved(): ChatShape[] {
+    const carry = this.carry;
+    if (!carry) return [];
+    const slide = this.slide();
+    if (!slide) return [];
+    const r = this.regionOf(slide, carry.region);
+    const c = FREE_AREA.clearance;
+    const far = 10_000;
+    const s = slide.screen;
+    const rects: Rect[] = [
+      { x: s.x - far, y: s.y - far, w: s.w + 2 * far, h: r.y - c - (s.y - far) },
+      { x: s.x - far, y: r.y + r.h + c, w: s.w + 2 * far, h: far },
+      { x: s.x - far, y: s.y - far, w: r.x - c - (s.x - far), h: s.h + 2 * far },
+      { x: r.x + r.w + c, y: s.y - far, w: far, h: s.h + 2 * far },
+    ];
+    return rects.map((bounds, i) => ({ id: `lecture:slide:${i}`, type: "reserved", meta: {}, bounds }));
+  }
+
+  /** "<title> (cont.)" at the top of a screen the chat desk added, when its title band is still free. */
+  private async contTitle(planners: LecturePlanners, topic: string): Promise<void> {
+    const shapes = this.host.shapes();
+    if (topHeading([...this.blocks(shapes).values()])) return;
+    const plan = this.contPlan(planners, topic);
+    if (!plan) return;
+    const screen = this.host.screen();
+    const at = { x: screen.x + LECTURE_SLIDE.title.x, y: screen.y + LECTURE_SLIDE.title.y };
+    if (!this.clear({ ...at, w: plan.bounds.w, h: plan.bounds.h }, this.obstacles(shapes))) return;
+    await this.writeText(plan, at, "heading", describeLectureAction({ type: "heading", text: `${topic} (cont.)` }));
   }
 
   /** The lecture's own blocks: planned here, written in the chat desk's turn. */
@@ -823,7 +1069,7 @@ export class LectureDesk implements LectureBoard {
     }
     const screen = this.host.screen();
     const page = this.expectedPage;
-    const ok = await this.writeText(plan, { x: screen.x + FREE_AREA.margin, y: screen.y + FREE_AREA.top }, "heading", describeLectureAction({ type: "heading", text }));
+    const ok = await this.writeText(plan, { x: screen.x + LECTURE_SLIDE.title.x, y: screen.y + LECTURE_SLIDE.title.y }, "heading", describeLectureAction({ type: "heading", text }));
     if (!ok) return this.movedAway("heading");
     this.host.setScreenMeta({ topic: text }, page);
     return { type: "heading", ok: true };
@@ -835,22 +1081,72 @@ export class LectureDesk implements LectureBoard {
 
   // ---------------------------------------------------------------- note
 
-  /** A key point, down the notes column: under the note before it, else under the heading, else wherever there is room. */
+  /**
+   * A key point. On a slide, a bullet: under the last bullet in the column, written quickly
+   * (`bulletPaced`); a slide whose column is full — `LECTURE_LIMITS.slideBullets` bullets, or no
+   * room left above the lecture bar — goes on as "<title> (cont.)". Elsewhere, as before: under the
+   * note before it, else under the heading, else wherever there is room.
+   */
   private async note(text: string, planners: LecturePlanners, report: Report): Promise<LectureActionOutcome> {
-    const maxW = Math.min(planners.boxes.note.maxW, this.host.screen().w - 2 * FREE_AREA.margin);
-    const plan = planners.note(text, { seed: this.host.seed(`lecture:note:${text}`), maxW });
+    const seed = this.host.seed(`lecture:note:${text}`);
+    // planned once as a bullet, once as a note, as it is needed (a slide that fills up moves it to another slide)
+    const planned = new Map<string, HandPlan | null>();
+    const planFor = (slide: Slide | null): HandPlan | null => {
+      const maxW = slide ? slide.bullets.w : Math.min(planners.boxes.note.maxW, this.host.screen().w - 2 * FREE_AREA.margin);
+      const key = `${slide ? "bullet" : "note"}:${maxW}`;
+      if (!planned.has(key)) planned.set(key, planners.note(text, slide ? { seed, maxW, slide: true } : { seed, maxW }));
+      return planned.get(key) ?? null;
+    };
+    let slide = this.slide();
+    let plan = planFor(slide);
     if (!plan) return { type: "note", ok: false, note: LECTURE_NOTES.cannotWrite };
     if (this.boardFull(plan)) return { type: "note", ok: false, note: LECTURE_NOTES.boardFull };
     await this.waitForHand();
     if (!this.onScreen()) return this.movedAway("note");
-    let at = this.notePlace(plan, planners);
+    const place = (): { x: number; y: number } | null => {
+      slide = this.slide();
+      plan = planFor(slide);
+      if (!plan) return null;
+      if (!slide) return this.notePlace(plan, planners);
+      if (slide.notes.length >= LECTURE_LIMITS.slideBullets) return null;
+      return this.bulletPlace(plan, slide);
+    };
+    let at = place();
     if (!at) {
-      if (!(await this.continueOnNewScreen(planners, report))) return { type: "note", ok: false, note: LECTURE_NOTES.noRoom };
-      at = this.notePlace(plan, planners);
-      if (!at) return { type: "note", ok: false, note: LECTURE_NOTES.noRoom };
+      if (!(await this.nextSlide(planners, report, false))) return this.stopped ? this.movedAway("note") : { type: "note", ok: false, note: LECTURE_NOTES.noRoom };
+      at = place();
     }
-    const ok = await this.writeText(plan, at, "note", describeLectureAction({ type: "note", text }));
+    if (!at || !plan) return { type: "note", ok: false, note: plan ? LECTURE_NOTES.noRoom : LECTURE_NOTES.cannotWrite };
+    const ok = await this.writeText(slide ? this.bulletPaced(plan) : plan, at, "note", describeLectureAction({ type: "note", text }));
     return ok ? { type: "note", ok: true } : this.movedAway("note");
+  }
+
+  /**
+   * A bullet's place on a slide: at the column's left edge, `bulletGap` under the last bullet (at the
+   * body's top for the first), ending above the body's bottom. Something in the way there (the
+   * student's own ink, a formula): the first free place in the column below the last bullet. Never
+   * in the visual area, never under the bar. Null: the column has no room for it.
+   */
+  private bulletPlace(plan: HandPlan, slide: Slide): { x: number; y: number } | null {
+    const shapes = this.host.shapes();
+    if (crowded(shapes, plan)) return null;
+    const size = { w: plan.bounds.w, h: plan.bounds.h };
+    const col = slide.bullets;
+    if (size.w > col.w + 0.5) return null;
+    const obstacles = this.obstacles(shapes);
+    const last = slide.notes[slide.notes.length - 1];
+    const y = last ? Math.max(col.y, last.bounds.y + last.bounds.h + LECTURE_SLIDE.bulletGap) : col.y;
+    if (y + size.h > slide.bottom) return null;
+    const r = { x: col.x, y, w: size.w, h: size.h };
+    if (this.clear(r, obstacles)) return r;
+    return this.freeIn(size, { x: col.x, y, w: col.w, h: slide.bottom - y }, obstacles);
+  }
+
+  /** A slide's bullet at its brisk pace: ~1–1.5 s on the wall (`LECTURE_SLIDE.bulletWallMs`), never slower than planned. */
+  private bulletPaced(plan: HandPlan): HandPlan {
+    const S = LECTURE_SLIDE;
+    const wall = Math.min(S.bulletWallMs.max, Math.max(S.bulletWallMs.min, plan.totalMs / S.bulletSpeed));
+    return { ...plan, pace: Math.max(plan.pace ?? 1, wall > 0 ? plan.totalMs / wall : 1) };
   }
 
   /**
@@ -882,23 +1178,47 @@ export class LectureDesk implements LectureBoard {
   // ---------------------------------------------------------------- chart, diagram
 
   /**
-   * A new picture: as large as it fits (`boxes.visual`, largest first), to the right of the notes
-   * column when there is room there, else anywhere on the screen; a new screen, carrying the
-   * topic, when nothing fits here. Its whole box is kept for it (an update may grow into it), and
-   * it is recorded — id, spec, box, seed, place — so it can be updated.
+   * A new chart or diagram. On a slide, the slide's visual: in the visual area, as large as the
+   * area holds (the whole area first — the planners lay out to any box — then smaller); a slide
+   * that has its visual already goes on to the next slide first (`nextSlide`: under the reply's new
+   * title when it brings one, else "<title> (cont.)"). Elsewhere, as before: as large as it fits
+   * (`boxes.visual`) to the right of the notes column when there is room there, else anywhere; a new
+   * screen, carrying the topic, when nothing fits here. Its whole box is kept for it (an update may
+   * grow into it), and it is recorded — id, spec, box, seed, place — so it can be updated in place.
    */
   private async visual(type: LectureActionType, spec: Spec, planners: LecturePlanners, report: Report, reuseId?: string): Promise<LectureActionOutcome> {
     const seed = this.host.seed(`lecture:${spec.kind}:${JSON.stringify(spec.chart ?? spec.diagram).slice(0, 400)}`);
-    const plans = planners.boxes.visual.map((box) => this.planIn(spec, planners, { seed, box: { w: box.w, h: box.h } }));
-    const largest = plans.find((p): p is HandPlan => p !== null);
+    // planned when a box is tried, once per size (a slide's boxes are the same slide after slide)
+    const planned = new Map<string, HandPlan | null>();
+    const planAt = (box: { w: number; h: number }): HandPlan | null => {
+      // a title that repeats the topic is left off (`planIn`): a new title on the way changes that
+      const key = `${this.host.screenMeta().topic ?? ""}|${box.w}x${box.h}`;
+      if (!planned.has(key)) planned.set(key, this.planIn(spec, planners, { seed, box }));
+      return planned.get(key) ?? null;
+    };
+    const layoutFor = (slide: Slide | null) => ({ slide, boxes: slide ? this.slideBoxes(slide, planners) : planners.boxes.visual.map((b) => ({ w: b.w, h: b.h })) });
+    let lay = layoutFor(this.slide());
+    let largest: HandPlan | null = null;
+    for (const box of lay.boxes) if ((largest = planAt(box))) break;
     if (!largest) return { type, ok: false, note: LECTURE_NOTES.cannotSketch };
     if (this.boardFull(largest)) return { type, ok: false, note: LECTURE_NOTES.boardFull };
     await this.waitForHand();
     if (!this.onScreen()) return this.movedAway(type);
-    let placed = this.visualPlace(plans, planners);
+    const onward = async (): Promise<LectureActionOutcome | null> => {
+      if (!(await this.nextSlide(planners, report, true))) return this.stopped ? this.movedAway(type) : { type, ok: false, note: LECTURE_NOTES.noRoom };
+      lay = layoutFor(this.slide());
+      return null;
+    };
+    lay = layoutFor(this.slide());
+    if (lay.slide && lay.slide.visuals > 0) {
+      const stop = await onward();
+      if (stop) return stop;
+    }
+    let placed = this.visualPlace(planAt, lay.boxes, lay.slide, planners);
     if (!placed) {
-      if (!(await this.continueOnNewScreen(planners, report))) return { type, ok: false, note: LECTURE_NOTES.noRoom };
-      placed = this.visualPlace(plans, planners);
+      const stop = await onward();
+      if (stop) return stop;
+      placed = this.visualPlace(planAt, lay.boxes, lay.slide, planners);
       if (!placed) return { type, ok: false, note: LECTURE_NOTES.noRoom };
     }
     const id = reuseId ?? this.newId();
@@ -906,13 +1226,18 @@ export class LectureDesk implements LectureBoard {
     const plan = withParts(placed.plan);
     const at = { x: placed.slot.x + plan.bounds.x, y: placed.slot.y + plan.bounds.y };
     if (!(await this.writeVisual(placeHandPlan(plan, at), spec.kind, id))) return this.movedAway(type);
-    const box = planners.boxes.visual[placed.box];
+    const box = lay.boxes[placed.box];
     this.record(id, { ...specOf(spec), box: { w: box.w, h: box.h }, seed, at, updatedAt: this.now() }, page);
-    this.host.metric?.("live.lecture.visual", { type: spec.kind, kind: (spec.chart ?? spec.diagram)?.kind, box: placed.box, screens: report.screensAdded });
+    this.host.metric?.("live.lecture.visual", { type: spec.kind, kind: (spec.chart ?? spec.diagram)?.kind, box: placed.box, slide: lay.slide !== null, screens: report.screensAdded });
     return { type, ok: true, id };
   }
 
-  private visualPlace(plans: readonly (HandPlan | null)[], planners: LecturePlanners): { plan: HandPlan; slot: { x: number; y: number }; box: number } | null {
+  private visualPlace(
+    planAt: (box: { w: number; h: number }) => HandPlan | null,
+    boxes: ReadonlyArray<{ w: number; h: number }>,
+    slide: Slide | null,
+    planners: LecturePlanners,
+  ): { plan: HandPlan; slot: { x: number; y: number }; box: number } | null {
     const screen = this.host.screen();
     const shapes = this.host.shapes();
     const obstacles = this.obstacles(shapes);
@@ -920,12 +1245,13 @@ export class LectureDesk implements LectureBoard {
     // `findFreeArea` keeps its margin inside this rect: the pictures start a gutter past the notes column
     const left = planners.boxes.note.maxW + LECTURE_LAYOUT.gutter;
     const right: Rect = { x: screen.x + left, y: screen.y, w: Math.max(0, screen.w - left), h: screen.h };
-    for (let i = 0; i < plans.length; i++) {
-      const plan = plans[i];
+    for (let i = 0; i < boxes.length; i++) {
+      const plan = planAt(boxes[i]);
       if (!plan || crowded(shapes, plan)) continue;
       // the whole box, not the ink: an update may draw anywhere in it
-      const size = { w: Math.max(planners.boxes.visual[i].w, plan.bounds.w), h: Math.max(planners.boxes.visual[i].h, plan.bounds.h) };
-      const slot = findFreeArea(size, from(right, top), obstacles) ?? findFreeArea(size, from(screen, top), obstacles);
+      const size = { w: Math.max(boxes[i].w, plan.bounds.w), h: Math.max(boxes[i].h, plan.bounds.h) };
+      // a slide's visual goes in its visual area and nowhere else (never over the bullets or under the bar)
+      const slot = slide ? this.freeIn(size, slide.visual, obstacles) : (findFreeArea(size, from(right, top), obstacles) ?? findFreeArea(size, from(screen, top), obstacles));
       if (slot) return { plan, slot, box: i };
     }
     return null;
@@ -1054,22 +1380,38 @@ export class LectureDesk implements LectureBoard {
     if (!request) return { type, ok: false, note: LECTURE_NOTES.cannotSketch };
     const n = action.panels.length;
     const comic = n > 1;
-    const topic = (this.host.screenMeta().topic ?? "").trim().toLowerCase();
-    // a title that only repeats the screen's heading is left off (as a chart's is)
-    const title = action.title && action.title.trim().toLowerCase() !== topic ? action.title : undefined;
     const seed = this.host.seed(`lecture:sketch:${JSON.stringify(action).slice(0, 400)}`);
-    const boxes = comic ? LECTURE_LAYOUT.sketch.comic : LECTURE_LAYOUT.sketch.picture;
-    const layout = { count: n, captions: action.panels.map((p) => p.caption), ...(title ? { title } : {}), framed: comic };
-    const plans = boxes.map((box) => this.panelsIn(sketches, layout, { seed, box: { w: box.w, h: box.h } }));
-    const largest = plans.find((p): p is PanelsLayout => p !== null);
+    // on a slide a picture is framed: the slide visibly holds its picture while the drawing loads
+    const layoutFor = (slide: Slide | null) => {
+      const topic = (this.host.screenMeta().topic ?? "").trim().toLowerCase();
+      // a title that only repeats the screen's heading is left off (as a chart's is)
+      const title = action.title && action.title.trim().toLowerCase() !== topic ? action.title : undefined;
+      const boxes = slide ? this.slideSketchBoxes(slide, comic) : (comic ? LECTURE_LAYOUT.sketch.comic : LECTURE_LAYOUT.sketch.picture).map((b) => ({ w: b.w, h: b.h }));
+      const layout = { count: n, captions: action.panels.map((p) => p.caption), ...(title ? { title } : {}), framed: comic || slide !== null };
+      return { slide, boxes, plans: boxes.map((box) => this.panelsIn(sketches, layout, { seed, box })) };
+    };
+    let lay = layoutFor(this.slide());
+    const largest = lay.plans.find((p): p is PanelsLayout => p !== null);
     if (!largest) return { type, ok: false, note: LECTURE_NOTES.cannotSketch };
     if (this.boardFull(largest.plan, n * LECTURE_LAYOUT.sketch.panelBytes)) return { type, ok: false, note: LECTURE_NOTES.boardFull };
     await this.waitForHand();
     if (!this.onScreen()) return this.movedAway(type);
-    let placed = this.sketchPlace(plans, comic, planners);
+    const onward = async (): Promise<LectureActionOutcome | null> => {
+      if (!(await this.nextSlide(planners, report, true))) return this.stopped ? this.movedAway(type) : { type, ok: false, note: LECTURE_NOTES.noRoom };
+      lay = layoutFor(this.slide());
+      return null;
+    };
+    lay = layoutFor(this.slide());
+    // a slide holds one visual; a comic strip takes a slide's whole body
+    if (lay.slide && (lay.slide.visuals > 0 || (comic && lay.slide.body))) {
+      const stop = await onward();
+      if (stop) return stop;
+    }
+    let placed = this.sketchPlace(lay.plans, lay.boxes, comic, lay.slide, planners);
     if (!placed) {
-      if (!(await this.continueOnNewScreen(planners, report))) return { type, ok: false, note: LECTURE_NOTES.noRoom };
-      placed = this.sketchPlace(plans, comic, planners);
+      const stop = await onward();
+      if (stop) return stop;
+      placed = this.sketchPlace(lay.plans, lay.boxes, comic, lay.slide, planners);
       if (!placed) return { type, ok: false, note: LECTURE_NOTES.noRoom };
     }
     const { slot, box } = placed;
@@ -1317,20 +1659,31 @@ export class LectureDesk implements LectureBoard {
    * a picture to the right of the notes column when there is room there, else anywhere. Its whole
    * box is kept for it (the drawings fill it later).
    */
-  private sketchPlace(plans: readonly (PanelsLayout | null)[], comic: boolean, planners: LecturePlanners): { layout: PanelsLayout; slot: { x: number; y: number }; box: { w: number; h: number }; index: number } | null {
+  private sketchPlace(
+    plans: readonly (PanelsLayout | null)[],
+    boxes: ReadonlyArray<{ w: number; h: number }>,
+    comic: boolean,
+    slide: Slide | null,
+    planners: LecturePlanners,
+  ): { layout: PanelsLayout; slot: { x: number; y: number }; box: { w: number; h: number }; index: number } | null {
     const screen = this.host.screen();
     const shapes = this.host.shapes();
     const obstacles = this.obstacles(shapes);
     const top = underHeading(topHeading([...this.blocks(shapes).values()]), screen);
-    const boxes = comic ? LECTURE_LAYOUT.sketch.comic : LECTURE_LAYOUT.sketch.picture;
     const left = planners.boxes.note.maxW + LECTURE_LAYOUT.gutter;
     const right: Rect = { x: screen.x + left, y: screen.y, w: Math.max(0, screen.w - left), h: screen.h };
+    // on a slide: a picture centred in the visual area, a comic centred across the body
+    const body = slide ? { x: screen.x + FREE_AREA.margin, y: slide.top, w: screen.w - 2 * FREE_AREA.margin, h: slide.bottom - slide.top } : null;
     for (let i = 0; i < plans.length; i++) {
       const layout = plans[i];
       if (!layout || crowded(shapes, layout.plan)) continue;
       const b = layout.plan.bounds;
       const box = { w: Math.max(boxes[i].w, b.x + b.w), h: Math.max(boxes[i].h, b.y + b.h) };
-      const slot = comic ? findFreeArea(box, from(screen, top), obstacles) : (findFreeArea(box, from(right, top), obstacles) ?? findFreeArea(box, from(screen, top), obstacles));
+      const slot = slide && body
+        ? this.centredIn(box, comic ? body : slide.visual, obstacles)
+        : comic
+          ? findFreeArea(box, from(screen, top), obstacles)
+          : (findFreeArea(box, from(right, top), obstacles) ?? findFreeArea(box, from(screen, top), obstacles));
       if (slot) return { layout, slot, box, index: i };
     }
     return null;
@@ -1346,13 +1699,144 @@ export class LectureDesk implements LectureBoard {
     const topic = cleanTopic(this.host.screenMeta().topic);
     if (!(await this.newScreen(report))) return false;
     if (!topic) return true;
-    const text = `${topic} (cont.)`;
-    const plan = planners.heading(text, { seed: this.host.seed(`lecture:heading:${text}`), maxW: LECTURE_LAYOUT.contMaxW / LECTURE_LAYOUT.contScale });
+    const plan = this.contPlan(planners, topic);
     this.host.setScreenMeta({ topic });
     if (!plan) return true;
     const screen = this.host.screen();
-    await this.writeText(scalePlan(plan, LECTURE_LAYOUT.contScale), { x: screen.x + FREE_AREA.margin, y: screen.y + FREE_AREA.top }, "heading", describeLectureAction({ type: "heading", text }));
+    await this.writeText(plan, { x: screen.x + LECTURE_SLIDE.title.x, y: screen.y + LECTURE_SLIDE.title.y }, "heading", describeLectureAction({ type: "heading", text: `${topic} (cont.)` }));
     return true;
+  }
+
+  /** "<topic> (cont.)", in the smaller hand of a continued slide's title. */
+  private contPlan(planners: LecturePlanners, topic: string): HandPlan | null {
+    const text = `${topic} (cont.)`;
+    const plan = planners.heading(text, { seed: this.host.seed(`lecture:heading:${text}`), maxW: LECTURE_LAYOUT.contMaxW / LECTURE_LAYOUT.contScale });
+    return plan ? scalePlan(plan, LECTURE_LAYOUT.contScale) : null;
+  }
+
+  /**
+   * This slide is full: the next one. `pull` (a visual that needs a slide of its own): when a
+   * heading is coming later in this same reply, it is written now and heads the new slide — the
+   * visual belongs with the new topic, and the deck does not get a "(cont.)" slide with nothing but
+   * that visual before it. Else "<title> (cont.)" (`continueOnNewScreen`). False: no new slide (the
+   * screen cap, or the student moved away: `stopped`).
+   */
+  private async nextSlide(planners: LecturePlanners, report: Report, pull: boolean): Promise<boolean> {
+    const next = pull ? this.takeHeading() : null;
+    if (next) {
+      const out = await this.heading(next.text, planners, report);
+      next.done(out);
+      if (out.ok) return true;
+      if (this.stopped) return false;
+    }
+    return this.continueOnNewScreen(planners, report);
+  }
+
+  /** The next heading in the reply being run, taken out of its turn (its outcome goes in its own place). */
+  private takeHeading(): { text: string; done(out: LectureActionOutcome): void } | null {
+    const st = this.state;
+    if (!st) return null;
+    for (let j = st.at + 1; j < st.actions.length; j++) {
+      const a = st.actions[j];
+      if (a.type !== "heading" || st.taken.has(j)) continue;
+      st.taken.add(j);
+      return { text: a.text, done: (out) => (st.outcomes[j] = out.ok ? { ...out, what: describeLectureAction(a) } : out) };
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------- the slide
+
+  /**
+   * The current screen as a slide, or null when it is not one. A screen is a slide when the lecture
+   * titled it (it has a topic) or when it holds nothing but the tutor's lecture blocks (an empty
+   * screen is a slide about to begin). Anything else — the student's own work, a problem set, a
+   * screen from before lecture mode — is not laid out as a slide: blocks go where there is room.
+   */
+  private slide(shapes: readonly ChatShape[] = this.host.shapes()): Slide | null {
+    const meta = this.host.screenMeta();
+    const topic = cleanTopic(meta.topic);
+    if (!topic && !shapes.every(isSlideStroke)) return null;
+    const S = LECTURE_SLIDE;
+    const screen = this.host.screen();
+    const blocks = [...this.blocks(shapes).values()];
+    const heading = topHeading(blocks);
+    const titled = Boolean(topic || heading);
+    const top = titled ? Math.max(screen.y + S.bodyTop, heading ? heading.bounds.y + heading.bounds.h + S.titleGap : -Infinity) : screen.y + FREE_AREA.top;
+    const bottom = this.bodyBottom(screen);
+    const h = Math.max(0, bottom - top);
+    const vx = screen.x + S.visual.x;
+    const notes = blocks
+      .filter((b) => b.meta[LECTURE_BLOCK_META] === "note")
+      .sort((a, b) => num(a.meta.createdAt) - num(b.meta.createdAt) || a.bounds.y - b.bounds.y);
+    let visuals = blocks.filter((b) => LECTURE_VISUALS.has(str(b.meta[LECTURE_BLOCK_META])) || CHAT_VISUALS.has(str(b.meta[CHAT_BLOCK_META]))).length;
+    // a picture whose drawing is still coming may have nothing on the board yet: its place is taken all the same
+    const page = this.host.pageId();
+    for (const sk of this.pending) if (sk.page === page && !blocks.some((b) => b.key === sk.id)) visuals++;
+    return {
+      screen,
+      titled,
+      top,
+      bottom,
+      bullets: { x: screen.x + S.bullets.x, y: top, w: S.bullets.w, h },
+      visual: { x: vx, y: top, w: Math.max(0, screen.x + screen.w - FREE_AREA.margin - vx), h },
+      notes,
+      visuals,
+      body: shapes.some((s) => !heading || blockKey(s) !== heading.key) || visuals > 0,
+    };
+  }
+
+  /** The body's bottom edge: a clearance above the lecture bar (`barZone`), right across the slide. */
+  private bodyBottom(screen: Rect): number {
+    return screen.y + screen.h * LECTURE_LAYOUT.barZone.y0 - FREE_AREA.clearance;
+  }
+
+  /** A slide's boxes for a chart or a diagram, largest first: its visual area, shares of it, then the usual boxes that fit it. */
+  private slideBoxes(slide: Slide, planners: LecturePlanners): Array<{ w: number; h: number }> {
+    const a = slide.visual;
+    const out = LECTURE_SLIDE.visualShares.map((f) => ({ w: Math.floor(a.w * f), h: Math.floor(a.h * f) }));
+    for (const b of planners.boxes.visual) if (b.w < out[out.length - 1].w && b.h <= a.h) out.push({ w: b.w, h: b.h });
+    return out.filter((b) => b.w > 0 && b.h > 0);
+  }
+
+  /** A picture's (or a comic's) boxes on a slide, largest first. */
+  private slideSketchBoxes(slide: Slide, comic: boolean): Array<{ w: number; h: number }> {
+    if (comic) return LECTURE_LAYOUT.sketch.comic.filter((b) => b.h <= slide.bottom - slide.top).map((b) => ({ w: b.w, h: b.h }));
+    const a = slide.visual;
+    const w = Math.min(a.w, LECTURE_SLIDE.pictureMaxW);
+    const out = LECTURE_SLIDE.visualShares.map((f) => ({ w: Math.floor(w * f), h: Math.floor(a.h * f) }));
+    for (const b of LECTURE_LAYOUT.sketch.picture) if (b.w < out[out.length - 1].w && b.h <= a.h) out.push({ w: b.w, h: b.h });
+    return out.filter((b) => b.w > 0 && b.h > 0);
+  }
+
+  /**
+   * The first place inside `area` a block of `size` fits clear of everything, in reading order from
+   * the area's own top-left (`findFreeArea` without its screen margins: the area is inside them).
+   */
+  private freeIn(size: { w: number; h: number }, area: Rect, obstacles: readonly Rect[]): Rect | null {
+    const maxX = area.x + area.w - size.w + 0.5;
+    const maxY = area.y + area.h - size.h + 0.5;
+    for (let y = area.y; y <= maxY; y += FREE_AREA.step) {
+      for (let x = area.x; x <= maxX; x += FREE_AREA.step) {
+        const r = { x, y, w: size.w, h: size.h };
+        if (this.clear(r, obstacles)) return r;
+      }
+    }
+    return null;
+  }
+
+  /** Centred across the top of `area` when that is clear, else its first free place. */
+  private centredIn(size: { w: number; h: number }, area: Rect, obstacles: readonly Rect[]): Rect | null {
+    if (size.w > area.w + 0.5 || size.h > area.h + 0.5) return null;
+    const r = { x: area.x + Math.max(0, (area.w - size.w) / 2), y: area.y, w: size.w, h: size.h };
+    return this.clear(r, obstacles) ? r : this.freeIn(size, area, obstacles);
+  }
+
+  /** Clear of everything by `FREE_AREA.clearance`. */
+  private clear(r: Rect, obstacles: readonly Rect[]): boolean {
+    const c = FREE_AREA.clearance;
+    const grown = { x: r.x - c, y: r.y - c, w: r.w + 2 * c, h: r.h + 2 * c };
+    return !obstacles.some((o) => intersects(grown, o));
   }
 
   /**
@@ -1510,6 +1994,18 @@ function validSpec(v: Partial<LectureSpecMeta> | undefined): Spec | null {
 /** The spec half of a `LectureSpecMeta` (one of `chart`, `diagram`). */
 function specOf(spec: Spec): Pick<LectureSpecMeta, "chart" | "diagram"> {
   return spec.kind === "chart" ? { chart: spec.chart, diagram: undefined } : { diagram: spec.diagram, chart: undefined };
+}
+
+/** Which block a stroke belongs to (as `LectureDesk.blocks` keys them). */
+function blockKey(s: ChatShape): string {
+  const meta = metaOf(s);
+  return str(meta[LECTURE_ID_META]) || str(meta[HAND_BLOCK_META]) || s.id;
+}
+
+/** A stroke of the tutor's that a slide may hold: a lecture block, or a graph, figure or formula of the chat's. */
+function isSlideStroke(s: ChatShape): boolean {
+  const meta = metaOf(s);
+  return Boolean(str(meta[LECTURE_BLOCK_META])) || CHAT_ON_SLIDES.has(str(meta[CHAT_BLOCK_META]));
 }
 
 /** The screen's heading: the topmost lecture heading on it. */

@@ -1,19 +1,26 @@
 /**
- * The lecture director eval's snippets (./run.ts): about forty seconds of a lecture each, as the
- * recognizer would hand it over (digits for numbers, light punctuation, the odd "um"), with the
- * screen the student is on and what is already drawn. Spread over biology, chemistry, physics,
- * economics, history, geography, computer science, psychology, algebra and geometry, plus the
- * ticks that must draw nothing: small talk, logistics (with numbers in them), a joke, an attempt
- * to talk to the AI, a recap of what is already on the board, filler, and "Draw that" pressed on
- * nothing. Each says which KINDS of drawing are acceptable, never the exact drawing (the model
- * chooses the words; the numbers are held to the transcript by the scorer).
+ * The lecture director eval's snippets (./run.ts): a stretch of a lecture each, as the recognizer
+ * would hand it over (digits for numbers, light punctuation, the odd "um"), with the screen the
+ * student is on and what is already drawn. Spread over biology, chemistry, physics, economics,
+ * history, geography, computer science, psychology, algebra and geometry, plus the ticks that must
+ * draw nothing: small talk, logistics (with numbers in them), a joke, an attempt to talk to the AI,
+ * a recap of what is already on the board, filler, and "Draw that" pressed on nothing. Each says
+ * which KINDS of drawing are acceptable, never the exact drawing (the model chooses the words; the
+ * numbers are held to the transcript by the scorer).
+ *
+ * SLIDES (round 4): the board is a slide deck, so a key point made in words is a bullet (`note`),
+ * and a bullet may stand beside any visual (`also: ["note"]`). Lecture content with nothing to
+ * draw — a definition, a claim, a symbol explained — must be bullets (with a title on a screen that
+ * has none); a point already bulleted on the slide, said again, must be nothing. Small talk,
+ * logistics and injections still draw nothing at all.
  *
  * FREE DRAWING (`sketch`): the owner's first real test, word for word as it was heard — a student
  * asking the board for a four-panel comic, which drew nothing on the tick and nothing on "Draw
- * that" — must be a comic of four panels, both ways. Beside it: "draw a plant cell", a legionary
- * described in a history lecture, "Draw that" on a story, and the ticks a picture must NOT take
- * over: numbers that are a chart even when they are about animals, an anecdote, and "draw a sign
- * that says HACKED".
+ * that" — must be a comic of four panels, both ways; its first sentence alone (the comic asked for,
+ * nothing yet said of its panels) is nothing yet. Beside it: "draw a plant cell" (one picture), a
+ * legionary described in a history lecture, "Draw that" on a story, and the ticks a picture must
+ * NOT take over: numbers that are a chart even when they are about animals, an anecdote, and "draw
+ * a sign that says HACKED".
  */
 import type { ChartKind, DiagramKind, LectureScreen } from "@/lib/live/lecture/contracts";
 
@@ -23,8 +30,8 @@ export type LectureSubject = "biology" | "chemistry" | "physics" | "economics" |
 export type LectureKind = "heading" | "note" | ChartKind | DiagramKind | "graph" | "figure" | "formula" | "sketch" | "new_screen";
 
 export type LectureExpect =
-  /** the tick draws nothing at all */
-  | { none: true }
+  /** the tick draws nothing at all (`but` these kinds, when given: a title for a screen that has none) */
+  | { none: true; but?: LectureKind[] }
   | {
       /** at least one action of one of these kinds, and nothing outside them (and `also`) */
       kinds: LectureKind[];
@@ -70,7 +77,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "So mitosis happens in four stages, and you need to know them in order. First is prophase, where the chromosomes condense and become visible and the nuclear envelope starts to break down. Then metaphase, the chromosomes line up along the middle of the cell. Then anaphase, the sister chromatids are pulled apart to opposite poles. And finally telophase, where two new nuclei form, and then the cytoplasm divides.",
     screen: on("Cell Division"),
-    expect: { kinds: ["flow", "cycle"] },
+    expect: { kinds: ["flow", "cycle"], also: ["note"] },
   },
   {
     id: "bio-organelles",
@@ -79,7 +86,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "Let's go through the main parts of an animal cell. The nucleus holds the DNA and controls the cell. The mitochondria are where respiration happens, that's where the energy is released. Ribosomes make proteins. The cell membrane controls what goes in and out. And the cytoplasm is the jelly where most of the chemical reactions happen.",
     screen: on("The Animal Cell"),
-    expect: { kinds: ["hub", "tree", "table"] },
+    expect: { kinds: ["hub", "tree", "table"], also: ["note"] },
   },
   {
     id: "bio-osmosis",
@@ -89,7 +96,8 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "Now, a definition you'll need word for word. Osmosis is the diffusion of water molecules from a dilute solution to a more concentrated solution through a partially permeable membrane. Write that down, it comes up every single year.",
     screen: on("Transport in Cells", ["flow: Diffusion"]),
-    expect: { kinds: ["note"] },
+    // "now, a definition": a new slide for osmosis is a fair reading
+    expect: { kinds: ["note"], also: ["heading"] },
   },
   {
     id: "bio-new-topic",
@@ -109,7 +117,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "Look at how the atomic radius grows as you go down the group. Lithium is 152 picometres, sodium is 186, potassium 227, and rubidium 248. So every step down the group adds a whole new shell of electrons, and the outer electron is further from the nucleus.",
     screen: on("Group 1: The Alkali Metals"),
-    expect: { kinds: ["bar", "line"] },
+    expect: { kinds: ["bar", "line"], also: ["note"] },
   },
   {
     id: "chem-rates",
@@ -118,7 +126,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "So what actually speeds a reaction up? There are four factors on your syllabus. Temperature: hotter particles move faster and collide more often. Concentration, or pressure for gases, more particles in the same space. Surface area, smaller pieces means more exposed particles. And catalysts, which lower the activation energy without being used up.",
     screen: on("Rates of Reaction"),
-    expect: { kinds: ["hub", "tree", "table"] },
+    expect: { kinds: ["hub", "tree", "table"], also: ["note"] },
   },
   // ---------------------------------------------------------------- physics
   {
@@ -129,7 +137,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "The kinetic energy store depends on mass and speed. The equation is kinetic energy equals one half times mass times velocity squared, E k equals a half m v squared. Notice the square: if you double the speed, you get four times the energy.",
     screen: on("Energy Stores"),
-    expect: { kinds: ["formula"] },
+    expect: { kinds: ["formula"], also: ["note"] },
   },
   {
     id: "phys-free-fall",
@@ -138,7 +146,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "If you drop a ball, the distance it has fallen is d equals 4.9 t squared, with t in seconds and d in metres. So it's not a straight line, it's a parabola. After one second it's fallen 4.9 metres, after two seconds 19.6 metres, and it keeps curving up.",
     screen: on("Free Fall"),
-    expect: { kinds: ["graph", "formula"] },
+    expect: { kinds: ["graph", "formula"], also: ["note"] },
   },
   // ---------------------------------------------------------------- economics
   {
@@ -149,7 +157,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "Let's look at the UK's real GDP growth over the last few years. In 2018 it grew 1.4 percent, in 2019 1.6 percent, then in 2020 the pandemic hit and it fell 10.4 percent, and in 2021 it bounced back with growth of 8.7 percent.",
     screen: on("Economic Growth"),
-    expect: { kinds: ["bar", "line"] },
+    expect: { kinds: ["bar", "line"], also: ["note"] },
   },
   {
     id: "econ-markets",
@@ -158,7 +166,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "So compare the two extremes. Perfect competition has many firms, they sell identical products, there are no barriers to entry, and every firm is a price taker. A monopoly is a single firm, its product has no close substitutes, barriers to entry are high, and the firm is a price maker.",
     screen: on("Market Structures"),
-    expect: { kinds: ["table", "venn"] },
+    expect: { kinds: ["table", "venn"], also: ["note"] },
   },
   // ---------------------------------------------------------------- history
   {
@@ -168,7 +176,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "Let's get the key dates straight. 1789, the storming of the Bastille on the 14th of July. 1792, France becomes a republic. 1793, Louis the Sixteenth is executed and the Terror begins. And 1799, Napoleon seizes power in a coup.",
     screen: on("The French Revolution"),
-    expect: { kinds: ["timeline"] },
+    expect: { kinds: ["timeline"], also: ["note"] },
   },
   {
     id: "hist-ww1",
@@ -177,7 +185,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "Historians often remember the long-term causes with the word MAIN. M is militarism, the arms race, especially the naval race between Britain and Germany. A is the alliance system, which dragged countries in. I is imperialism, the competition for colonies. And N is nationalism, especially in the Balkans.",
     screen: on("Causes of the First World War"),
-    expect: { kinds: ["hub", "tree"] },
+    expect: { kinds: ["hub", "tree"], also: ["note"] },
   },
   {
     id: "hist-new-unit",
@@ -186,7 +194,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "Okay, let's get going. Today we're starting a brand new unit on the French Revolution, and over the next few weeks we'll look at why it happened, how it unfolded, and what it changed in Europe. But first, some background on France in the 1780s.",
     screen: EMPTY,
-    expect: { kinds: ["heading"], heading: true },
+    expect: { kinds: ["heading"], heading: true, also: ["note"] },
   },
   // ---------------------------------------------------------------- geography
   {
@@ -196,7 +204,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "The sun heats the oceans and water evaporates. As the vapour rises it cools and condenses into clouds. When the droplets get heavy enough it falls as precipitation, so rain, snow, hail. Then it collects in rivers, lakes and the sea, or soaks into the ground, and it all flows back to the ocean, and the whole thing starts again.",
     screen: on("The Water Cycle"),
-    expect: { kinds: ["cycle"] },
+    expect: { kinds: ["cycle"], also: ["note"] },
   },
   {
     id: "geo-population",
@@ -205,7 +213,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "Where do people actually live? Roughly 59 percent of the world's population is in Asia, 18 percent in Africa, 9 percent in Europe, 8 percent in Latin America and the Caribbean, 5 percent in North America, and about 1 percent in Oceania.",
     screen: on("World Population"),
-    expect: { kinds: ["pie", "bar"] },
+    expect: { kinds: ["pie", "bar"], also: ["note"] },
   },
   // ---------------------------------------------------------------- computer science
   {
@@ -215,7 +223,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "So what happens when you compile? The source code goes into the lexer, which breaks it into tokens. The parser takes the tokens and builds a syntax tree. Then the code generator turns the tree into machine code, and finally the linker joins it with the libraries into one executable.",
     screen: on("How Programs Run"),
-    expect: { kinds: ["flow"] },
+    expect: { kinds: ["flow"], also: ["note"] },
   },
   {
     id: "cs-sorting",
@@ -225,7 +233,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "Merge sort and quicksort are both divide and conquer, and both are n log n on average. The differences: merge sort is stable and it's always n log n, but it needs extra memory. Quicksort sorts in place, so it's light on memory, but its worst case is n squared, and it isn't stable.",
     screen: on("Sorting Algorithms"),
-    expect: { kinds: ["venn", "table"] },
+    expect: { kinds: ["venn", "table"], also: ["note"] },
   },
   // ---------------------------------------------------------------- psychology
   {
@@ -235,7 +243,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "The multi-store model says information flows through three stores. It comes in through the senses into sensory memory. If you pay attention to it, it passes into short-term memory. And if it's rehearsed, it's transferred into long-term memory. When we remember something, retrieval brings it back from long-term into short-term memory.",
     screen: on("Models of Memory"),
-    expect: { kinds: ["flow", "cycle"] },
+    expect: { kinds: ["flow", "cycle"], also: ["note"] },
   },
   {
     id: "psych-sleep",
@@ -244,7 +252,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "In the study, students who slept 5 hours scored on average 62 percent on the test, those who slept 6 hours scored 70, 7 hours 78, and 8 hours 85. But interestingly, 9 hours was 83, so it levels off.",
     screen: on("Sleep and Performance"),
-    expect: { kinds: ["scatter", "line", "bar"] },
+    expect: { kinds: ["scatter", "line", "bar"], also: ["note"] },
   },
   // ---------------------------------------------------------------- algebra
   {
@@ -263,7 +271,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "Take the line y equals 2 x plus 1. The 2 is the gradient: every step to the right, you go up 2. The 1 is the y-intercept, where it crosses the y-axis. Let's sketch that.",
     screen: on("Straight-Line Graphs"),
-    expect: { kinds: ["graph"] },
+    expect: { kinds: ["graph"], also: ["note"] },
   },
   // ---------------------------------------------------------------- geometry
   {
@@ -273,7 +281,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "Here's the classic example. A right-angled triangle with the two shorter sides 3 centimetres and 4 centimetres. The hypotenuse, the side opposite the right angle, is 5, because 3 squared plus 4 squared is 9 plus 16, which is 25, and the square root of 25 is 5.",
     screen: on("Pythagoras' Theorem"),
-    expect: { kinds: ["figure", "formula"] },
+    expect: { kinds: ["figure", "formula"], also: ["note"] },
   },
   // ---------------------------------------------------------------- nothing to draw
   {
@@ -329,6 +337,59 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     screen: on("Models of Memory"),
     expect: { none: true },
   },
+  // ---------------------------------------------------------------- slides: points in words are bullets
+  {
+    id: "slide-first-tick",
+    subject: "biology",
+    about: "the first words on an empty screen: a title and its first bullet",
+    fresh: "Good morning. Today we're looking at the immune system, and the first thing to know is that your skin is actually your first line of defence against infection.",
+    screen: EMPTY,
+    expect: { kinds: ["note"], heading: true },
+  },
+  {
+    id: "slide-econ-point",
+    subject: "economics",
+    about: "a claim and its reason, no numbers: bullets",
+    fresh:
+      "The key thing about inflation is that it quietly eats into your savings. If prices rise faster than the interest your bank pays, your money buys less every year, even though the number in your account goes up.",
+    screen: on("Inflation"),
+    expect: { kinds: ["note"] },
+  },
+  {
+    id: "slide-lit-symbol",
+    subject: "literature",
+    about: "a symbol explained: a bullet, not a picture",
+    context: "So Gatsby throws these enormous parties, hoping Daisy will wander into one.",
+    fresh:
+      "Fitzgerald uses the green light at the end of Daisy's dock as a symbol of Gatsby's hopes for the future, and of the American dream more broadly: always visible, always just out of reach.",
+    screen: on("The Great Gatsby"),
+    expect: { kinds: ["note"] },
+  },
+  {
+    id: "slide-psych-bystander",
+    subject: "psychology",
+    about: "a new idea and its cause: bullets (a title allowed)",
+    fresh:
+      "Now, the bystander effect. The more people who witness an emergency, the less likely any one of them is to help. Each person assumes somebody else will step in, and that's called diffusion of responsibility.",
+    screen: on("Social influence", ["note: Conformity: changing behaviour to fit the group"]),
+    expect: { kinds: ["note"], also: ["heading"] },
+  },
+  {
+    id: "slide-chem-next-point",
+    subject: "chemistry",
+    about: "the next point on a slide with bullets: one new bullet",
+    fresh: "And remember, a catalyst isn't used up in the reaction. You get the same amount back at the end, which is why a tiny amount goes such a long way.",
+    screen: on("Rates of reaction", ["note: Catalysts lower the activation energy", "note: Higher temperature means more collisions"]),
+    expect: { kinds: ["note"] },
+  },
+  {
+    id: "neg-bullet-repeat",
+    subject: "chemistry",
+    about: "a point already bulleted, said again: nothing",
+    fresh: "So again, just to be clear, the catalyst isn't consumed, you get it all back at the end. Okay? Everyone with me?",
+    screen: on("Rates of reaction", ["note: Catalysts lower the activation energy", "note: A catalyst is not used up in the reaction"]),
+    expect: { none: true },
+  },
   // ---------------------------------------------------------------- free drawing
   {
     id: "req-comic",
@@ -346,6 +407,14 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     screen: EMPTY,
     force: true,
     expect: { kinds: ["sketch"], panels: 4 },
+  },
+  {
+    id: "req-comic-early",
+    subject: "creative",
+    about: "the owner's request, first sentence only: a comic asked for, its panels not said yet (nothing yet)",
+    fresh: OWNER_COMIC.slice(0, OWNER_COMIC.indexOf(" I want, like")),
+    screen: EMPTY,
+    expect: { none: true, but: ["heading"] },
   },
   {
     id: "req-comic-continued",
@@ -373,7 +442,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "So picture the typical legionary around the year 100. He wears the lorica segmentata, that's armour made of overlapping iron bands across the chest and shoulders. On his head, an iron helmet with big cheek guards and a neck guard at the back. He carries the scutum, a large curved rectangular shield, a short stabbing sword called the gladius on his right hip, and a heavy javelin, the pilum. And on his feet, hobnailed sandals called caligae.",
     screen: on("The Roman army"),
-    expect: { kinds: ["sketch"], panels: 1 },
+    expect: { kinds: ["sketch"], panels: 1, also: ["note"] },
   },
   {
     id: "bio-whale-sizes",
@@ -382,7 +451,7 @@ export const LECTURE_SNIPPETS: readonly LectureSnippet[] = [
     fresh:
       "Now just to give you a sense of scale. A blue whale can reach 30 metres long. The biggest dinosaur we know of, Argentinosaurus, was about 35 metres. A sperm whale is around 16 metres, and an African elephant only about 7 metres from trunk to tail.",
     screen: on("Giants of the animal kingdom"),
-    expect: { kinds: ["bar", "table"] },
+    expect: { kinds: ["bar", "table"], also: ["note"] },
   },
   {
     id: "neg-anecdote",
