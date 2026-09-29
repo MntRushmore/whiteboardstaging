@@ -10,9 +10,13 @@
  * question); a false negative costs up to `tickMinMs` of waiting. So the rules lean inclusive —
  * except "one", "half" and "quarter", which are everywhere in speech ("one of the reasons", "the
  * other half"); "one million" and "a quarter of the market" are still caught by what follows them.
+ *
+ * A REQUEST to see something ("draw a plant cell", "I'd like to see that on the whiteboard",
+ * "picture this", "a comic strip") is the one thing the speaker asks of the board itself: it gets
+ * the quick look too, so what they asked for is on the board in seconds, not at the next minute.
  */
 
-export type SalienceReason = "number" | "percent" | "money" | "change" | "sequence" | "list";
+export type SalienceReason = "number" | "percent" | "money" | "change" | "sequence" | "list" | "request";
 
 const NUMBER_WORDS = [
   "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
@@ -38,6 +42,7 @@ const RULES: ReadonlyArray<[SalienceReason, RegExp]> = [
     "list",
     /\bthere (are|were|is) (\w+ ){0,2}(types?|kinds?|stages?|steps?|causes?|parts?|phases?|ways?|reasons?|factors?|categories|forms?|classes|groups?|layers?|components?|elements?|principles?|laws?|effects?|branches|levels?|periods?|sources?|features?)\b/i,
   ],
+  ["request", /\b(draw|drawn|sketch|illustrate|doodle|imagine|comic( strip)?s?)\b|\bpicture (this|that|it)\b|\bshow (me|us)\b|\b(want|like|love|need) to see\b|\bon the (white ?)?board\b/i],
 ];
 
 /** Every reason `text` is salient (empty: it is not). */
@@ -49,4 +54,11 @@ export function salienceReasons(text: string): SalienceReason[] {
 
 export function isSalient(text: string): boolean {
   return RULES.some(([, re]) => re.test(text));
+}
+
+const REQUEST = RULES.find(([reason]) => reason === "request")![1];
+
+/** The speaker asks to see something drawn ("draw…", "I'd like to see that on the whiteboard", "a comic strip"). */
+export function isRequest(text: string): boolean {
+  return REQUEST.test(text);
 }

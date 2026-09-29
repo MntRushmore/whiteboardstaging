@@ -28,6 +28,7 @@ function snap(over: Partial<LectureSnapshot> = {}, stats: Partial<LectureSnapsho
     forcing: false,
     drawing: false,
     updating: null,
+    sketching: null,
     liveVisual: false,
     pace: "normal",
     ...over,
@@ -48,6 +49,8 @@ describe("lecture copy", () => {
     expect(ROUTE_COSTS["live/lecture"]).toBe(2);
     expect(ROUTE_COSTS["live/listen"]).toBe(1);
     expect(LECTURE_COPY.consent.cost).toMatch(/about 2 credits a minute/);
+    // a picture is billed per panel the illustrator draws
+    expect(LECTURE_COPY.consent.cost).toContain(`${ROUTE_COSTS["live/sketch"]} for each picture it draws`);
   });
 
   it("out of credits says what the board dialog says", () => {
@@ -130,6 +133,18 @@ describe("lectureBarModel", () => {
     expect(model(snap({ status: "paused", liveVisual: true })).liveVisual).toBe(false);
   });
 
+  it("a sketch: 'Drawing the comic…' (or 'Drawing…') while its frames go on and its panels come, then what it drew", () => {
+    const busy = { tone: "busy" };
+    expect(model(snap({ drawing: true, sketching: "comic" })).status).toEqual({ ...busy, text: "Drawing the comic…" });
+    expect(model(snap({ drawing: true, sketching: "picture" })).status).toEqual({ ...busy, text: "Drawing…" });
+    // the run is over, the panels are still coming: the words so far are not the news yet
+    const loading = snap({ sketching: "comic" }, { lastWhat: "comic (4 panels): Officer Vega", sketches: 1 });
+    expect(model(loading).status).toEqual({ ...busy, text: "Drawing the comic…" });
+    // a chart updated meanwhile says so while it is written
+    expect(model({ ...loading, drawing: true, updating: "chart" }).status.text).toBe("Updating the chart…");
+    expect(model({ ...loading, sketching: null }).status).toEqual({ lead: "Drew:", text: "comic (4 panels): Officer Vega", tone: "done" });
+  });
+
   it("notices in words", () => {
     const text = (notice: LectureSnapshot["notice"], now = 0) => model(snap({ notice }), "listening", now).status.text;
     expect(text({ kind: "idle" })).toBe(LECTURE_COPY.notices.idle);
@@ -138,6 +153,9 @@ describe("lectureBarModel", () => {
     expect(text({ kind: "empty" })).toBe(LECTURE_COPY.notices.empty);
     expect(text({ kind: "rate_limited", retryAtMs: 20_500 }, 10_000)).toBe("Taking a short break. Back in 11 s.");
     expect(text({ kind: "board_failed" })).toBe(LECTURE_COPY.notices.boardFailed);
+    expect(text({ kind: "sketch_failed", failed: 1, panels: 4 })).toBe("Couldn't draw 1 of the 4 panels.");
+    expect(text({ kind: "sketch_failed", failed: 4, panels: 4 })).toBe("Couldn't draw the comic.");
+    expect(text({ kind: "sketch_failed", failed: 1, panels: 1 })).toBe("Couldn't draw that picture.");
   });
 
   it("errors: words for each, retry where trying again can help", () => {
@@ -204,7 +222,11 @@ describe("lectureBoardFor", () => {
     board.saveTranscript("two");
     await board.run([{ type: "new_screen" }]);
     expect(saved).toEqual(["a:one", "b:two"]);
-    expect(a.runLectureActions).toHaveBeenCalledWith([{ type: "new_screen" }]);
+    expect(a.runLectureActions).toHaveBeenCalledWith([{ type: "new_screen" }], undefined);
+    // a run's options (the way to the illustrator) reach the controller
+    const opts = { onSketch: () => undefined };
+    await board.run([{ type: "new_screen" }], opts);
+    expect(a.runLectureActions).toHaveBeenLastCalledWith([{ type: "new_screen" }], opts);
     current = {} as typeof a;
     expect(() => board.screen()).toThrow(/no lectureScreen/);
   });

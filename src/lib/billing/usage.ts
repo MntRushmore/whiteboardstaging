@@ -43,6 +43,7 @@ export const USAGE_KINDS: Readonly<Record<string, UsageKind>> = {
   "live-chat": { key: "live-chat", label: "Board chat", unit: ["request", "requests"], cost: 3 },
   // Lecture mode: the director deciding what to sketch from what was said, and the recognizer.
   "live-lecture": { key: "live-lecture", label: "Lecture sketches", unit: ["minute", "minutes"], cost: 2 },
+  "live-sketch": { key: "live-sketch", label: "Lecture drawings", unit: ["drawing", "drawings"], cost: 4 },
   "live-listen": { key: "live-listen", label: "Lecture listening", unit: ["session", "sessions"], cost: 1 },
   "live-solve": { key: "live-solve", label: "Worked solutions", unit: ["solution", "solutions"], cost: 10 },
   "generate-solution": { key: "generate-solution", label: "Drawn help (retired)", unit: TIMES },

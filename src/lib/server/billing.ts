@@ -45,6 +45,9 @@ export const ROUTE_COSTS = {
   // (it asks every ~8 s while numbers are coming): 2 credits a minute while someone is talking,
   // which covers the director and the realtime recognizer (~$0.39 an hour) on the paid plans.
   "live/lecture": 2,
+  // Lecture mode's free drawing: one panel drawn by the illustrator (a picture, or one panel of a
+  // comic strip) — a larger model writing a few thousand tokens of vectors, priced above a tick.
+  "live/sketch": 4,
   // Lecture mode: one realtime speech-to-text session opened (a single-use recognizer token).
   "live/listen": 1,
   credits: 0,

@@ -5,8 +5,9 @@
  * board chat's chatView.ts.
  */
 import { LECTURE_TIMING, type LectureBoard } from "@/lib/live/lecture/contracts";
+import type { LectureRunOptions } from "@/lib/live/lecture/desk";
 import { LECTURE_BUTTON_COPY } from "./lectureCopy";
-import type { LectureErrorCode, LectureNotice, LectureSnapshot } from "@/lib/live/lecture/session";
+import type { LectureErrorCode, LectureNotice, LectureSessionBoard, LectureSnapshot } from "@/lib/live/lecture/session";
 import { tailChars } from "@/lib/live/lecture/transcript";
 
 export type LectureHandleStatus = "off" | "consent" | "starting" | "listening" | "paused" | "error";
@@ -17,7 +18,7 @@ export const LECTURE_COPY = {
   consent: {
     title: "Lecture mode",
     body: "Lecture mode listens through your microphone and sketches what's said. We keep the words, never the audio. Make sure recording is allowed in your class.",
-    cost: "Uses about 2 credits a minute while someone is talking.",
+    cost: "Uses about 2 credits a minute while someone is talking, and 4 for each picture it draws (each panel of a comic is one).",
     start: "Start listening",
     cancel: "Cancel",
   },
@@ -40,6 +41,10 @@ export const LECTURE_COPY = {
     sketching: "Sketching…",
     updatingChart: "Updating the chart…",
     updatingDiagram: "Updating the diagram…",
+    /** a comic strip: its frames, then its panels as they arrive (~10–20 s) */
+    drawingComic: "Drawing the comic…",
+    /** one picture */
+    drawingPicture: "Drawing…",
     /** "Drew: bar chart: Sales by quarter" (the lead is set apart in the panel) */
     drew: "Drew:",
     updated: "Updated:",
@@ -54,6 +59,7 @@ export const LECTURE_COPY = {
     rateLimited: (seconds: number) => `Taking a short break. Back in ${seconds} s.`,
     retrying: "Couldn't reach the tutor. Trying again soon.",
     boardFailed: "Couldn't draw that on the board.",
+    sketchFailed: (failed: number, panels: number) => (panels <= 1 ? "Couldn't draw that picture." : failed >= panels ? "Couldn't draw the comic." : `Couldn't draw ${failed} of the ${panels} panels.`),
   },
   errors: {
     unsupported: "Lecture mode needs Chrome, Edge or Safari.",
@@ -128,6 +134,8 @@ function noticeText(notice: LectureNotice, now: number): string {
       return LECTURE_COPY.notices.retrying;
     case "board_failed":
       return LECTURE_COPY.notices.boardFailed;
+    case "sketch_failed":
+      return LECTURE_COPY.notices.sketchFailed(notice.failed, notice.panels);
   }
 }
 
@@ -163,18 +171,22 @@ export function lectureBarModel(input: { status: LectureHandleStatus; error: Lec
   const paused = status === "paused";
   const reconnecting = !paused && snap.speech === "reconnecting";
   const { heard, hearing } = tickerText(snap.stats.lines, snap.stats.partial);
+  // a sketch's panels keep coming after its run: "Drawing the comic…" until the last one is in
+  const sketching = snap.sketching === "comic" ? LECTURE_COPY.status.drawingComic : snap.sketching === "picture" ? LECTURE_COPY.status.drawingPicture : null;
   const statusLine: LectureBarModel["status"] = snap.drawing
     ? {
-        text: snap.updating === "chart" ? LECTURE_COPY.status.updatingChart : snap.updating === "diagram" ? LECTURE_COPY.status.updatingDiagram : LECTURE_COPY.status.sketching,
+        text: snap.updating === "chart" ? LECTURE_COPY.status.updatingChart : snap.updating === "diagram" ? LECTURE_COPY.status.updatingDiagram : (sketching ?? LECTURE_COPY.status.sketching),
         tone: "busy",
       }
-    : snap.forcing
-      ? { text: LECTURE_COPY.status.looking, tone: "busy" }
-      : snap.notice
-        ? { text: noticeText(snap.notice, now), tone: "notice" }
-        : snap.stats.lastWhat
-          ? { lead: snap.stats.lastVerb === "updated" ? LECTURE_COPY.status.updated : LECTURE_COPY.status.drew, text: snap.stats.lastWhat, tone: "done" }
-          : { text: LECTURE_COPY.status.waiting, tone: "muted" };
+    : sketching
+      ? { text: sketching, tone: "busy" }
+      : snap.forcing
+        ? { text: LECTURE_COPY.status.looking, tone: "busy" }
+        : snap.notice
+          ? { text: noticeText(snap.notice, now), tone: "notice" }
+          : snap.stats.lastWhat
+            ? { lead: snap.stats.lastVerb === "updated" ? LECTURE_COPY.status.updated : LECTURE_COPY.status.drew, text: snap.stats.lastWhat, tone: "done" }
+            : { text: LECTURE_COPY.status.waiting, tone: "muted" };
   return {
     mode: "active",
     label: paused ? LECTURE_COPY.paused : reconnecting ? LECTURE_COPY.reconnecting : LECTURE_COPY.listening,
@@ -231,7 +243,7 @@ export function rememberLectureConsent(storage: ConsentStorage | null): void {
 /** The lecture half of the live controller (`LiveController.lecture*`). */
 export interface LectureControllerLike {
   lectureScreen?(): ReturnType<LectureBoard["screen"]>;
-  runLectureActions?: LectureBoard["run"];
+  runLectureActions?(actions: Parameters<LectureBoard["run"]>[0], opts?: LectureRunOptions): ReturnType<LectureBoard["run"]>;
   saveLectureTranscript?(text: string): void;
 }
 
@@ -240,7 +252,7 @@ export interface LectureControllerLike {
  * controller of the moment (`get`), since the page may hand the hook a new one. Null when the
  * controller has no lecture methods (the board is not ready for it).
  */
-export function lectureBoardFor(get: () => LectureControllerLike): LectureBoard | null {
+export function lectureBoardFor(get: () => LectureControllerLike): LectureSessionBoard | null {
   const c = get();
   if (!c.lectureScreen || !c.runLectureActions || !c.saveLectureTranscript) return null;
   const need = <K extends keyof LectureControllerLike>(key: K): NonNullable<LectureControllerLike[K]> => {
@@ -251,7 +263,8 @@ export function lectureBoardFor(get: () => LectureControllerLike): LectureBoard 
   };
   return {
     screen: () => need("lectureScreen")(),
-    run: (actions) => need("runLectureActions")(actions),
+    // a run's options carry the session's way to the illustrator (a sketch's panels)
+    run: (actions, opts) => need("runLectureActions")(actions, opts),
     saveTranscript: (text) => need("saveLectureTranscript")(text),
   };
 }

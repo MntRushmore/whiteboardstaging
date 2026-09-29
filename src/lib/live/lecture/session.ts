@@ -9,13 +9,17 @@ import {
   type LectureResponse,
   type LectureRunReport,
   type LectureScreen,
+  type SketchDrawing,
+  type SketchRequest,
+  type SketchResponse,
   type SpeechSource,
   type SpeechState,
   type TranscriptSegment,
 } from "./contracts";
-import { isSalient } from "./salience";
+import type { LectureRunOptions, SketchPanelRequest, SketchProgress } from "./desk";
+import { isRequest, isSalient } from "./salience";
 import { isSpeechErrorCode, speechErrorCodeFor, type SpeechErrorCode } from "./speech/errors";
-import { TranscriptBuffer, type TranscriptMark, type TranscriptWindow } from "./transcript";
+import { cleanSpeech, TranscriptBuffer, type TranscriptMark, type TranscriptWindow } from "./transcript";
 
 /**
  * One lecture, from "Start listening" to Stop: the transcript as it is heard, when the director is
@@ -45,10 +49,19 @@ import { TranscriptBuffer, type TranscriptMark, type TranscriptWindow } from "./
  *    before"), newest first; an updated chart counts once, as it is now.
  *  - Silence for `idlePauseMs`: the session pauses itself (the microphone is let go).
  *  - Failures: 402 stops the lecture with "out of credits" (the panel shows the board's own
- *    out-of-credits panel, as the Ask panel does); 401 stops it signed out; 429 skips asks until
+ *    out-of-credits panel, as the Ask panel does); two 401s in a row stop it signed out (one is
+ *    retried at the next ask: the auth server may be slow, a token refreshing); 429 skips asks until
  *    the server's retry-after; anything else (the network, a 5xx, a timeout) keeps listening and
  *    the next ask tries again with the same unread words.
+ *  - A REQUEST to see something ("draw a plant cell", "I'd like to see that on the whiteboard") is
+ *    asked about at the live pace, at once: the board starts drawing while the speaker is still
+ *    describing it (the owner: "it should be live"), never after their last words.
  *  - Every request carries the session's id (`session`): the route bills per minute of a session.
+ *  - A sketch (a picture, a comic strip): the board writes its frames and the run ends there; each
+ *    panel's drawing is asked of the illustrator through the session (`requestSketch`: the board's
+ *    and the session's ids added, `SKETCH_TIMEOUT_MS`, called off when the lecture ends) and drawn
+ *    when it arrives, while the lecture goes on. The panel says "Drawing the comic…" until the
+ *    last one is in (`sketching`), and which panels could not be drawn.
  */
 
 export type LectureStatus = "starting" | "listening" | "paused" | "stopped" | "error";
@@ -69,7 +82,9 @@ export type LectureNotice =
   /** the director could not be reached; the next ask tries again */
   | { kind: "retrying" }
   /** the board could not draw what the director asked for */
-  | { kind: "board_failed" };
+  | { kind: "board_failed" }
+  /** some of a sketch's panels (or its one picture) could not be drawn */
+  | { kind: "sketch_failed"; failed: number; panels: number };
 
 export interface LectureStats {
   /** time spent listening (pauses not counted) */
@@ -102,6 +117,8 @@ export interface LectureSnapshot {
   drawing: boolean;
   /** what is being written is an update of a chart or a diagram already there (else a new sketch) */
   updating: "chart" | "diagram" | null;
+  /** a picture or a comic strip is being drawn: its frames now, or its panels as they arrive */
+  sketching: "comic" | "picture" | null;
   /** a chart or diagram this lecture drew or updated is live (within `activeWindowMs`) */
   liveVisual: boolean;
   /** the pace the director is being asked at now */
@@ -113,13 +130,20 @@ export type LectureTiming = { -readonly [K in keyof typeof LECTURE_TIMING]: numb
 
 type Timer = ReturnType<typeof setTimeout>;
 
+/** The board as the session runs it: a run may be given the way to the illustrator (`LectureDesk.run`). */
+export interface LectureSessionBoard extends LectureBoard {
+  run(actions: readonly LectureAction[], opts?: LectureRunOptions): Promise<LectureRunReport>;
+}
+
 export interface LectureSessionDeps {
   boardId: string;
   /** the speech source (asks for a token, may fall back): `createSpeechSource`, or a script */
   openSource(): Promise<SpeechSource>;
-  board: LectureBoard;
+  board: LectureSessionBoard;
   /** the director (`requestLecture`) */
   request(req: LectureRequest, signal: AbortSignal): Promise<LectureResponse>;
+  /** the illustrator, one panel at a time (`requestLectureSketch`); absent, sketches are not drawn */
+  requestSketch?(req: SketchRequest, signal: AbortSignal): Promise<SketchResponse>;
   /** the pacing (default `LECTURE_TIMING`); a scripted demo at 4× speed scales it */
   timing?: Partial<LectureTiming>;
   /** the session's id (default: a random one) */
@@ -142,6 +166,21 @@ export const DEFAULT_RETRY_AFTER_MS = 30_000;
  * spread evenly, so a lecture full of numbers is never turned away with a 429.
  */
 export const FOLLOW_UP_GAP_MS = Math.ceil(LIVE_RATE_LIMITS.liveLecture.windowMs / LIVE_RATE_LIMITS.liveLecture.limit);
+/**
+ * One panel's drawing may take this long before its frame gets a note instead: the illustrator writes
+ * a few thousand tokens of vectors (~10–20 s), and its route may try a second model.
+ */
+export const SKETCH_TIMEOUT_MS = 60_000;
+/**
+ * A run-on speaker: the recognizer ends a segment only at a pause, and someone who talks fast
+ * hardly pauses — in the first fast-talk test nothing was committed for 36 s, and the board sat
+ * empty while the numbers went by. While the words being heard (the partial) have run on for
+ * `ms` with `words` new words in them, the session takes them as heard itself — all but the last
+ * `holdBack`, which the recognizer may still revise — and when the recognizer does commit the
+ * segment, only the words beyond those already taken are added.
+ */
+export const RUN_ON = { words: 10, ms: 2_500, holdBack: 2 } as const;
+
 
 const VISUAL_TYPES: ReadonlySet<LectureAction["type"]> = new Set(["chart", "diagram", "update_chart", "update_diagram"]);
 const UPDATE_TYPES: ReadonlySet<LectureAction["type"]> = new Set(["update_chart", "update_diagram"]);
@@ -173,6 +212,19 @@ export function timingForSpeed(speed = 1): LectureTiming {
   };
 }
 
+/** The sketch a reply's actions draw, for the panel: a comic strip (more than one panel), a picture, or none. */
+export function sketchKind(actions: readonly LectureAction[]): "comic" | "picture" | null {
+  const s = actions.find((a): a is Extract<LectureAction, { type: "sketch" }> => a.type === "sketch");
+  return s ? (s.panels.length > 1 ? "comic" : "picture") : null;
+}
+
+/** An error the board reads as "called off" (`AbortError`): nothing is written for that panel. */
+function abortError(): Error {
+  const e = new Error("The drawing was called off.");
+  e.name = "AbortError";
+  return e;
+}
+
 /** What a reply's actions will do on the board, for the panel: update a chart, a diagram, or sketch anew. */
 export function updatingKind(actions: readonly LectureAction[]): "chart" | "diagram" | null {
   const drawn = actions.filter((a) => a.type !== "new_screen");
@@ -201,6 +253,10 @@ export class LectureSession {
   private error: LectureErrorCode | null = null;
   private notice: LectureNotice | null = null;
   private partial = "";
+  /** words of the segment being heard that were already taken as heard (`RUN_ON`) */
+  private taken = 0;
+  /** when the segment being heard began, or when words of it were last taken */
+  private takenAt: number | null = null;
   private sketches = 0;
   private lastWhat: string | null = null;
   private lastVerb: "drew" | "updated" = "drew";
@@ -215,11 +271,21 @@ export class LectureSession {
   private thinking = false;
   private drawing = false;
   private updating: "chart" | "diagram" | null = null;
+  /** the sketch whose frames the run being drawn writes */
+  private framing: "comic" | "picture" | null = null;
+  /** sketches whose panels are still coming, by id, oldest first */
+  private readonly pendingSketches = new Map<string, SketchProgress>();
+  /** called off when the lecture ends: the panels still being drawn are not wanted any more */
+  private readonly sketchCtrl = new AbortController();
+  /** what a run is given: the way to the illustrator, and where a sketch's progress goes */
+  private readonly runOptions: LectureRunOptions;
   private forceQueued = false;
   /** the ask in flight is a "Draw that" */
   private forceInFlight = false;
   /** a salient segment was heard while an ask was in flight: ask once more right after it */
   private followUp = false;
+  /** 401s in a row from the director (`requestFailed`) */
+  private authFailures = 0;
   private inflight: AbortController | null = null;
 
   /** the pace's clock: the last ask, or the start (the first normal ask comes `tickMinMs` in) */
@@ -227,6 +293,7 @@ export class LectureSession {
   /** the last ask actually sent (the force and follow-up gaps are measured from it) */
   private lastAskAt: number | null = null;
   private lastFinalAt = 0;
+  /** when a request to see something was first heard since the last ask (null: none) */
   private retryAt = 0;
   private listenedMs = 0;
   private listeningSince: number | null = null;
@@ -244,6 +311,12 @@ export class LectureSession {
     this.now = deps.now ?? (() => Date.now());
     this.setTimer = deps.setTimeout ?? ((fn, ms) => setTimeout(fn, ms));
     this.clearTimer = deps.clearTimeout ?? ((t) => clearTimeout(t));
+    this.runOptions = {
+      ...(deps.requestSketch ? { requestSketch: (req: SketchPanelRequest, signal: AbortSignal) => this.requestSketch(req, signal) } : {}),
+      onSketch: (p: SketchProgress) => this.onSketch(p),
+      // new words heard while the board is drawing: the hand hurries (a fast talker)
+      behind: () => this.transcript.wordsSince(this.mark) >= this.timing.liveTickMinWords,
+    };
     this.snap = this.build();
     if (deps.onChange) this.listeners.add(deps.onChange);
   }
@@ -322,6 +395,7 @@ export class LectureSession {
     this.status = "stopped";
     this.clearTimers();
     this.inflight?.abort();
+    this.endSketches();
     this.source?.stop();
     this.emit();
   }
@@ -356,14 +430,49 @@ export class LectureSession {
 
   private onPartial(text: string): void {
     if (this.ended) return;
-    if (text === this.partial) return;
-    this.partial = text;
+    const words = cleanSpeech(text).split(" ").filter(Boolean);
+    const now = this.now();
+    this.takenAt ??= now;
+    // a run-on segment: take its settled words as heard now rather than at the speaker's next pause
+    const settled = words.length - RUN_ON.holdBack;
+    if (settled - this.taken >= RUN_ON.words && now - this.takenAt >= RUN_ON.ms) {
+      const piece = words.slice(this.taken, settled).join(" ");
+      this.taken = settled;
+      this.takenAt = now;
+      this.accept({ text: piece, atMs: this.heardAtMs() });
+    }
+    // what is still being heard: the words not taken yet
+    const rest = words.slice(Math.min(this.taken, words.length)).join(" ");
+    if (rest === this.partial) return;
+    this.partial = rest;
     this.emit();
+  }
+
+  /** ms of listening so far: where a segment the session takes itself sits in the lecture */
+  private heardAtMs(): number {
+    return this.listenedMs + (this.listeningSince !== null ? this.now() - this.listeningSince : 0);
   }
 
   private onFinal(seg: TranscriptSegment): void {
     // a stop's (or a failure's) last words still arrive — the source flushes them — and are saved
     this.partial = "";
+    // part of this segment was already taken while it ran on: only the words after those are new
+    const taken = this.taken;
+    this.taken = 0;
+    this.takenAt = null;
+    if (taken > 0) {
+      const rest = cleanSpeech(seg.text).split(" ").filter(Boolean).slice(taken).join(" ");
+      if (!rest) {
+        this.emit();
+        return;
+      }
+      seg = { ...seg, text: rest };
+    }
+    this.accept(seg);
+  }
+
+  /** A piece of the lecture heard: kept, saved on the screen, and perhaps worth asking about. */
+  private accept(seg: TranscriptSegment): void {
     if (!this.transcript.add(seg)) {
       this.emit();
       return;
@@ -417,7 +526,8 @@ export class LectureSession {
     if (this.ended || this.status !== "listening" || this.busy || this.forceQueued) return;
     const now = this.now();
     const fresh = this.transcript.textSince(this.mark);
-    this.pace = this.visualIsLive(now) || (fresh !== "" && isSalient(fresh)) ? "live" : "normal";
+    // numbers, steps, a request to see something, or a live visual: the live pace
+    this.pace = this.visualIsLive(now) || (fresh !== "" && (isSalient(fresh) || isRequest(fresh))) ? "live" : "normal";
     if (!fresh) {
       this.followUp = false;
       return;
@@ -443,6 +553,7 @@ export class LectureSession {
     this.followUp = false;
     void this.tick(false);
   }
+
 
   private clearDue(): void {
     if (this.dueTimer !== null) this.clearTimer(this.dueTimer);
@@ -508,6 +619,7 @@ export class LectureSession {
     }
     this.clearTimer(timeout);
     this.thinking = false;
+    this.authFailures = 0;
     if (this.ended) {
       this.settle();
       return;
@@ -518,9 +630,10 @@ export class LectureSession {
     if (res.actions.length > 0) {
       this.drawing = true;
       this.updating = updatingKind(res.actions);
+      this.framing = sketchKind(res.actions);
       this.emit();
       try {
-        this.record(await this.deps.board.run(res.actions));
+        this.record(await this.deps.board.run(res.actions, this.runOptions));
       } catch {
         this.notice = { kind: "board_failed" };
       }
@@ -536,6 +649,7 @@ export class LectureSession {
     this.thinking = false;
     this.drawing = false;
     this.updating = null;
+    this.framing = null;
     this.forceInFlight = false;
     this.inflight = null;
     if (!this.ended) {
@@ -552,7 +666,14 @@ export class LectureSession {
         return;
       }
       if (err.status === 401 || err.code === "unauthorized") {
-        this.fail("unauthorized");
+        // one 401 can be the auth server's hiccup (a slow or waking database) or a token being
+        // refreshed: an hour's lecture is not ended for it. Two in a row: signed out.
+        if (++this.authFailures >= 2) {
+          this.fail("unauthorized");
+          return;
+        }
+        this.notice = { kind: "retrying" };
+        this.followUp = false;
         return;
       }
       if (err.status === 429 || err.code === "rate_limited") {
@@ -567,8 +688,63 @@ export class LectureSession {
     this.followUp = false;
   }
 
+  // ---------------------------------------------------------------- sketches
+
+  /**
+   * One panel asked of the illustrator for the board: the board's and the session's ids added, given
+   * up after `SKETCH_TIMEOUT_MS` (a failure: its frame gets a note), called off when the board no
+   * longer wants it or the lecture ends (an `AbortError`: nothing is written for it). It settles
+   * then and there, whether or not the request itself heeds its abort.
+   */
+  private requestSketch(req: SketchPanelRequest, signal: AbortSignal): Promise<SketchDrawing> {
+    const call = this.deps.requestSketch;
+    if (!call || this.ended || signal.aborted) return Promise.reject(abortError());
+    const ctrl = new AbortController();
+    const ended = this.sketchCtrl.signal;
+    return new Promise<SketchDrawing>((resolve, reject) => {
+      let done = false;
+      const finish = (settle: () => void) => {
+        if (done) return;
+        done = true;
+        this.clearTimer(timer);
+        signal.removeEventListener("abort", calledOff);
+        ended.removeEventListener("abort", calledOff);
+        ctrl.abort();
+        settle();
+      };
+      const calledOff = () => finish(() => reject(abortError()));
+      const timer = this.setTimer(() => finish(() => reject(new Error("The drawing took too long."))), SKETCH_TIMEOUT_MS);
+      signal.addEventListener("abort", calledOff, { once: true });
+      ended.addEventListener("abort", calledOff, { once: true });
+      Promise.resolve()
+        .then(() => call({ ...req, boardId: this.deps.boardId, session: this.sessionId }, ctrl.signal))
+        .then(
+          (res) => finish(() => resolve(res.drawing)),
+          (err: unknown) => finish(() => reject(err)),
+        );
+    });
+  }
+
+  /** A sketch's panels, as the board draws them: "Drawing the comic…" until the last, then what could not be drawn. */
+  private onSketch(p: SketchProgress): void {
+    if (!p.done) this.pendingSketches.set(p.id, p);
+    else {
+      this.pendingSketches.delete(p.id);
+      if (p.failed > 0 && !this.ended) this.notice = { kind: "sketch_failed", failed: p.failed, panels: p.panels };
+    }
+    this.emit();
+  }
+
+  /** The lecture ended: the panels still being drawn are called off. */
+  private endSketches(): void {
+    this.sketchCtrl.abort();
+    this.pendingSketches.clear();
+  }
+
   private record(report: LectureRunReport): void {
     const now = this.now();
+    // something new on the board: a sketch that could not be drawn earlier is old news
+    if (this.notice?.kind === "sketch_failed" && report.outcomes.some((o) => o.ok && o.type !== "new_screen")) this.notice = null;
     for (const o of report.outcomes) {
       if (!o.ok || o.type === "new_screen") continue;
       if (VISUAL_TYPES.has(o.type)) this.lastVisualAt = now;
@@ -608,6 +784,7 @@ export class LectureSession {
     this.error = code;
     this.clearTimers();
     this.inflight?.abort();
+    this.endSketches();
     this.source?.stop();
     this.emit();
   }
@@ -651,10 +828,19 @@ export class LectureSession {
       forcing: this.forceQueued || this.forceInFlight,
       drawing: this.drawing,
       updating: this.drawing ? this.updating : null,
+      sketching: this.ended ? null : this.sketchingNow(),
       liveVisual: !this.ended && this.visualIsLive(now),
       pace: this.pace,
       stats,
     };
+  }
+
+  /** The sketch being drawn: the one whose frames the run is writing, else the newest whose panels are coming. */
+  private sketchingNow(): "comic" | "picture" | null {
+    if (this.drawing && this.framing) return this.framing;
+    let last: SketchProgress | undefined;
+    for (const p of this.pendingSketches.values()) last = p;
+    return last ? (last.panels > 1 ? "comic" : "picture") : null;
   }
 
   private emit(): void {

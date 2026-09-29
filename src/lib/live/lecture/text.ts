@@ -13,6 +13,13 @@ export const LECTURE_WORDS = {
   underline: { drop: 0.3, gap: 3, before: 4, after: 12 },
   /** a note: hand size, the smallest it may shrink to, and its most lines */
   note: { size: 34, min: 28, maxLines: 4 },
+  /**
+   * A slide's bullet (`slide: true`): one key point, at a note's size (read from the back of a room),
+   * in at most two lines — shrinking a little rather than taking a third, so six bullets fit the
+   * slide's column above the lecture bar (`LECTURE_SLIDE`); three lines, small, only when two will
+   * not hold it at all. At 34 px a line of the 648 px column holds ~40 characters.
+   */
+  slide: { size: 34, min: 30, maxLines: 2, crowded: { min: 26, maxLines: 3 } },
   /** the bullet: its radius and the hanging indent of the text (× size) */
   bullet: { r: 0.12, indent: 0.95 },
 } as const;
@@ -43,24 +50,35 @@ export function sketchHeading(text: string, opts: { seed: number; maxW: number }
   return out && inside(out.plan.bounds, { w: opts.maxW, h: Infinity }) ? out : null;
 }
 
-/** A note laid out beside its bullet: the largest size at which it wraps into `maxLines` lines. */
-function noteLayout(text: string, maxW: number): WordsLayout | null {
-  const N = LECTURE_WORDS.note;
+/** A note laid out beside its bullet: the largest size (from `size` down to `min`) at which it wraps into `maxLines` lines. */
+function noteLayout(text: string, maxW: number, tries: ReadonlyArray<{ size: number; min: number; maxLines: number }>, balance = false): WordsLayout | null {
   const at = () => {
-    for (let size = N.size; size >= N.min; size--) {
-      const indent = size * LECTURE_WORDS.bullet.indent;
-      const m = fitWords(text, { maxWidth: maxW - indent, maxLines: N.maxLines, maxSize: size, minSize: size });
-      if (m) return m;
+    for (const t of tries) {
+      for (let size = t.size; size >= t.min; size--) {
+        const indent = size * LECTURE_WORDS.bullet.indent;
+        const m = fitWords(text, { maxWidth: maxW - indent, maxLines: t.maxLines, maxSize: size, minSize: size, balance });
+        if (m) return m;
+      }
     }
     return null;
   };
   return at() ?? hyphenating(true, at);
 }
 
-/** The note's sketch: a filled dot, then the words with a hanging indent. */
-export function sketchNote(text: string, opts: { seed: number; maxW: number }): LectureSketch | null {
+/** What a note tries, largest first: a slide's bullet stays within two lines while it can. */
+function noteTries(slide: boolean): ReadonlyArray<{ size: number; min: number; maxLines: number }> {
+  const S = LECTURE_WORDS.slide;
+  return slide ? [S, { size: S.min - 1, min: S.crowded.min, maxLines: S.maxLines }, { size: S.min, min: S.crowded.min, maxLines: S.crowded.maxLines }] : [LECTURE_WORDS.note];
+}
+
+/**
+ * The note's sketch: a filled dot, then the words with a hanging indent. `slide`: written as a
+ * slide's bullet (`LECTURE_WORDS.slide`: at most two lines while it fits in two, evenly broken).
+ */
+export function sketchNote(text: string, opts: { seed: number; maxW: number; slide?: boolean }): LectureSketch | null {
   const room = innerBox({ w: opts.maxW, h: 0 }).w;
-  const layout = noteLayout(text, room);
+  // a slide's bullet breaks evenly ("Solar peaks in summer and / is near zero in winter"), never leaving one word on a line of its own
+  const layout = noteLayout(text, room, noteTries(opts.slide === true), opts.slide === true);
   if (!layout) return null;
   const B = LECTURE_WORDS.bullet;
   const s = new Sketch(opts.seed);

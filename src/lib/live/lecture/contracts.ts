@@ -34,6 +34,14 @@ import { LECTURE_TRANSCRIPT_CHARS } from "./meta";
  * are coming, the session asks every few seconds (`LECTURE_TIMING.liveTickMinMs`); otherwise
  * about every 40 s. Billing is per minute of lecture, not per question (`live/lecture`).
  *
+ * SLIDES: the board is a slide deck the lecture builds live, in the tutor's hand. Each screen is a
+ * slide: its title (`heading`) at the top, its bullets (`note`, one key point each, added as the
+ * point is made) in a column on the left, and ONE visual on the right — a chart, a diagram, a graph
+ * or a picture — that grows as the lecture goes. A new topic is a new slide; a slide that is full
+ * (its bullets, or a second visual) goes on on the next screen as "<title> (cont.)". The director
+ * is asked every few seconds while anyone is talking (`LECTURE_TIMING`), so the slide keeps up
+ * with the speaker; nothing waits for them to finish.
+ *
  * Words ARE written in lecture mode (a heading, a short note, the labels of a chart or a
  * diagram), short and plain; elsewhere the board writes words only in the board chat's worked
  * solutions (a sentence per step, under the same text rule) and a proof's reasons. Sketches are
@@ -48,8 +56,10 @@ export const LECTURE_LIMITS = {
   /** transcript sent to the director: what came before (context) and what is new (fresh) */
   contextChars: 2400,
   freshChars: 2400,
-  /** actions per director reply (more are dropped) */
-  actions: 3,
+  /** actions per director reply (more are dropped): a new slide's title, two bullets and its chart */
+  actions: 4,
+  /** bullets on one slide: past this the slide continues on the next screen ("… (cont.)") */
+  slideBullets: 6,
   /** what the director is told is already drawn: on this screen, and on the screens before */
   drawn: 12,
   recent: 8,
@@ -69,17 +79,20 @@ export const LECTURE_LIMITS = {
 } as const;
 
 export const LECTURE_TIMING = {
-  /** the director is asked at most this often while listening… */
-  tickMinMs: 40_000,
-  /** …and only once this many new words have been heard since it was last asked */
-  tickMinWords: 45,
+  /**
+   * SLIDES: the director is asked at most this often while anyone is talking (each point becomes a
+   * bullet on the slide as it is made)…
+   */
+  tickMinMs: 6_000,
+  /** …once this many new words have been heard since it was last asked */
+  tickMinWords: 12,
   /**
    * LIVE: while what is said is salient (numbers, amounts, years, percentages, steps — "first",
    * "next", "then") or a live visual on the screen was drawn or updated within `activeWindowMs`,
    * the director is asked this often, once `liveTickMinWords` new words have been committed.
    */
-  liveTickMinMs: 8_000,
-  liveTickMinWords: 5,
+  liveTickMinMs: 4_000,
+  liveTickMinWords: 4,
   activeWindowMs: 150_000,
   /** "Draw that" (a forced tick) reads this much of the latest transcript as fresh */
   forceWindowMs: 60_000,
@@ -255,7 +268,7 @@ export const DIAGRAM_KINDS = ["flow", "cycle", "timeline", "hub", "tree", "venn"
 
 /** A new topic: written at the top of a screen, underlined. A screen with anything on it → a new screen first. */
 export const HeadingActionSchema = z.object({ type: z.literal("heading"), text: HeadingTextSchema });
-/** One key point or definition, a short line with a bullet ("Mitochondria make ATP"). */
+/** A bullet on the slide: one key point or definition, as the lecturer made it ("Mitochondria make ATP"). */
 export const NoteActionSchema = z.object({ type: z.literal("note"), text: NoteTextSchema });
 export const ChartActionSchema = z.object({ type: z.literal("chart"), chart: ChartSpecSchema });
 export const DiagramActionSchema = z.object({ type: z.literal("diagram"), diagram: DiagramSpecSchema });
@@ -271,6 +284,49 @@ export const UpdateChartSchema = z.object({ type: z.literal("update_chart"), tar
 /** LIVE: the diagram `target`, as it should now be (a step added to the flow, an event to the timeline). */
 export const UpdateDiagramSchema = z.object({ type: z.literal("update_diagram"), target: LectureBlockIdSchema, diagram: DiagramSpecSchema });
 
+// ------------------------------------------------------------------ free drawing
+
+/**
+ * FREE DRAWING: a picture of anything — "a futuristic police officer on a rooftop", "a plant cell",
+ * "a medieval castle" — or a comic strip of up to four panels, drawn as ink by the tutor's hand
+ * like everything else (never an image model's picture). The director only says WHAT each panel
+ * shows (`prompt`, plain words) and what is written under it (`caption`); the illustrator
+ * (`POST /api/live/lecture/sketch`) draws each panel as vector strokes (`SketchDrawing`), and the
+ * planners (`sketch/`) turn those into hand-drawn ink in the panel's frame. The frames and captions
+ * go on the board first; each drawing fills its frame when it arrives.
+ */
+export const LECTURE_SKETCH_LIMITS = {
+  panels: 4,
+  prompt: 240,
+  /** what every panel of one sketch shares (the characters, the setting, the style), sent with each */
+  cast: 400,
+  /** a drawing, after the illustrator's vectors are sampled (the route drops what is past these) */
+  strokes: 400,
+  pointsPerStroke: 600,
+  points: 24_000,
+  labels: 16,
+} as const;
+
+export const SketchPanelSchema = z.object({
+  /** what the panel shows, in plain words: the subject, what it is doing, where; no text to write in it */
+  prompt: z.string().trim().min(3).max(LECTURE_SKETCH_LIMITS.prompt),
+  /** written under the panel (a comic's caption, a picture's label) */
+  caption: NoteTextSchema.optional(),
+});
+
+/**
+ * A picture (one panel) or a comic strip (2–4 panels, in reading order). `cast` describes what the
+ * panels share — "Officer Vega: tall, visor helmet, long coat; a neon city at night" — so the
+ * separately drawn panels show the same character in the same world.
+ */
+export const SketchActionSchema = z.object({
+  type: z.literal("sketch"),
+  title: HeadingTextSchema.optional(),
+  cast: z.string().trim().max(LECTURE_SKETCH_LIMITS.cast).optional(),
+  panels: z.array(SketchPanelSchema).min(1).max(LECTURE_SKETCH_LIMITS.panels),
+});
+export type SketchAction = z.infer<typeof SketchActionSchema>;
+
 /**
  * Everything the director can ask for. `graph` (a function or relation the engine can plot),
  * `draw_figure` (geometry, to scale), `write_lines` (maths, checked by the engine) and
@@ -283,6 +339,7 @@ export const LectureActionSchema = z.discriminatedUnion("type", [
   DiagramActionSchema,
   UpdateChartSchema,
   UpdateDiagramSchema,
+  SketchActionSchema,
   GraphActionSchema,
   DrawFigureSchema,
   WriteLinesSchema,
@@ -290,7 +347,7 @@ export const LectureActionSchema = z.discriminatedUnion("type", [
 ]);
 export type LectureAction = z.infer<typeof LectureActionSchema>;
 export type LectureActionType = LectureAction["type"];
-export const LECTURE_ACTION_TYPES = ["heading", "note", "chart", "diagram", "update_chart", "update_diagram", "graph", "draw_figure", "write_lines", "new_screen"] as const satisfies readonly LectureActionType[];
+export const LECTURE_ACTION_TYPES = ["heading", "note", "chart", "diagram", "update_chart", "update_diagram", "sketch", "graph", "draw_figure", "write_lines", "new_screen"] as const satisfies readonly LectureActionType[];
 
 // ------------------------------------------------------------------ the director's request
 
@@ -493,6 +550,8 @@ export function describeLectureAction(a: LectureAction): string {
                 : `${d.left} vs ${d.right}`);
       return clip(`${DIAGRAM_NAMES[d.kind]}: ${about}`);
     }
+    case "sketch":
+      return clip(`${a.panels.length > 1 ? `comic (${a.panels.length} panels)` : "sketch"}: ${a.title ?? a.panels.map((p) => p.prompt).join("; ")}`);
     case "update_chart":
       return describeLectureAction({ type: "chart", chart: a.chart });
     case "update_diagram":
@@ -514,3 +573,62 @@ export function describeLectureAction(a: LectureAction): string {
       return "new screen";
   }
 }
+
+// ------------------------------------------------------------------ the illustrator
+
+/**
+ * `POST /api/live/lecture/sketch`: one panel drawn. The route asks the illustrator model for a
+ * small SVG, parses the subset it allows (paths, lines, polylines, polygons, rects, circles,
+ * ellipses, groups with transforms, text) and samples it into `SketchDrawing` — so the client
+ * never parses markup a model wrote.
+ */
+export const SketchRequestSchema = z.object({
+  boardId: z.string().min(1).max(64),
+  /** the lecture session (billing is per panel drawn) */
+  session: z.string().regex(/^[A-Za-z0-9_-]{8,40}$/),
+  prompt: z.string().trim().min(3).max(LECTURE_SKETCH_LIMITS.prompt),
+  cast: z.string().trim().max(LECTURE_SKETCH_LIMITS.cast).optional(),
+  /** a comic's panel ("panel 2 of 4") or a single picture */
+  panel: z.object({ index: z.number().int().min(0).max(3), of: z.number().int().min(1).max(4) }).optional(),
+  /** width / height of the frame it will fill (the drawing is composed for it) */
+  aspect: z.number().min(0.4).max(2.5),
+});
+export type SketchRequest = z.input<typeof SketchRequestSchema>;
+
+/** a coordinate in the drawing's box (x to 1000, y to `h`, which may be up to 2500 for a tall panel), with a little overshoot */
+const Coord = z.number().finite().min(-50).max(2550);
+
+/**
+ * A drawing in its own box: x from 0 to 1000, y from 0 to `h` (1000 / aspect), y down. Each stroke
+ * is one pen-down polyline, already sampled (curves flattened); `closed` joins its ends, and a
+ * closed stroke may be filled with a pale tint of its colour. Labels are words the picture needs
+ * (a sign, a name), written by the tutor's hand at (x, y), centred.
+ */
+export const SketchStrokeSchema = z.object({
+  points: z.array(z.tuple([Coord, Coord])).min(2).max(LECTURE_SKETCH_LIMITS.pointsPerStroke),
+  closed: z.boolean().default(false),
+  color: z.enum([...LECTURE_PALETTE, "black", "grey"]).optional(),
+  fill: z.boolean().default(false),
+});
+export const SketchLabelSchema = z.object({ text: LabelSchema, x: Coord, y: Coord, size: z.number().min(10).max(200).optional() });
+export const SketchDrawingSchema = z
+  .object({
+    w: z.literal(1000),
+    h: z.number().min(300).max(2500),
+    strokes: z.array(SketchStrokeSchema).min(1).max(LECTURE_SKETCH_LIMITS.strokes),
+    labels: z.array(SketchLabelSchema).max(LECTURE_SKETCH_LIMITS.labels).default([]),
+  })
+  .refine((d) => d.strokes.reduce((n, s) => n + s.points.length, 0) <= LECTURE_SKETCH_LIMITS.points, { message: "too many points" })
+  .refine((d) => d.strokes.every((s) => s.points.every(([x, y]) => x <= 1050 && y <= d.h + 50)) && d.labels.every((l) => l.x <= 1050 && l.y <= d.h + 50), {
+    message: "a point outside the drawing's box",
+  });
+export type SketchDrawing = z.infer<typeof SketchDrawingSchema>;
+export type SketchStroke = z.infer<typeof SketchStrokeSchema>;
+
+export const SketchResponseSchema = z.object({
+  drawing: SketchDrawingSchema,
+  model: z.string(),
+  ms: z.number(),
+  charged: z.boolean().optional(),
+});
+export type SketchResponse = z.infer<typeof SketchResponseSchema>;

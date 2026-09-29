@@ -76,6 +76,54 @@ describe("directLecture", () => {
     expect(out.notes).toEqual([SKETCH_NOT_DRAWN, "Already on the board: bar chart: GDP growth", "Already on the board: concept map: Factors of production"]);
   });
 
+  it("free drawing: a comic asked for goes on whole; a second sketch in the reply is left out without a note; a comic already drawn is said to be there", async () => {
+    const comic = {
+      type: "sketch",
+      title: "Officer Vega",
+      cast: "Officer Vega: a tall officer in a visor helmet and a long coat; a neon city at night",
+      panels: [
+        { prompt: "Officer Vega is outnumbered by rogue drones in a dark alley", caption: "Outnumbered" },
+        { prompt: "Officer Vega is scolded by the chief in a cluttered office", caption: "No backup" },
+        { prompt: "Officer Vega trains a young recruit on a rooftop at dawn", caption: "A new partner" },
+        { prompt: "Officer Vega looks out over a calm city at sunrise", caption: "The future" },
+      ],
+    };
+    const req = LectureRequestSchema.parse({ ...REQUEST, screen: { empty: true, room: 1 }, recent: [], fresh: "I want four panels about a futuristic police officer." });
+    const out = await directLecture(req, { models: MODELS, callModel: model([comic, { type: "sketch", panels: [{ prompt: "a police car" }] }]) });
+    expect(out.actions).toEqual([comic]);
+    expect(out.dropped.map((d) => d.why)).toEqual(["sketch"]);
+    expect(out.notes).toEqual([]);
+    const again = await directLecture({ ...req, recent: ["comic (4 panels): Officer Vega"] }, { models: MODELS, callModel: model([comic]) });
+    expect(again.actions).toEqual([]);
+    expect(again.notes).toEqual(["Already on the board: comic (4 panels): Officer Vega"]);
+  });
+
+  it("slides: two bullets beside a chart in one reply; a bullet the slide already has, reworded, is left out and said to be there", async () => {
+    const req = LectureRequestSchema.parse({
+      ...REQUEST,
+      screen: { empty: false, topic: "Economic Growth", drawn: ["heading: Economic Growth", "note: Growth is the rise in real GDP"], room: 0.6 },
+      fresh: "Growth means real GDP going up. It fell in 2020 because of lockdowns, and the recovery was fast.",
+    });
+    const fell = { type: "note", text: "GDP fell in 2020 because of lockdowns" };
+    const fast = { type: "note", text: "The recovery was fast" };
+    // word overlap catches a rewording ("Growth: the rise in real GDP"), not a synonym ("real GDP going up"): that is the prompt's job
+    const out = await directLecture(req, { models: MODELS, callModel: model([{ type: "note", text: "Growth: the rise in real GDP" }, fell, fast, BAR]) });
+    expect(out.actions).toEqual([fell, fast, BAR]);
+    expect(out.dropped).toEqual([{ type: "note", why: "repeat", reason: "already on the board in other words: note: Growth is the rise in real GDP", what: "note: Growth is the rise in real GDP" }]);
+    expect(out.notes).toEqual(["Already on the board: note: Growth is the rise in real GDP"]);
+  });
+
+  it("a comic nobody asked for is cut to its first panel; one asked for a tick before its panels (in the context) is kept whole", async () => {
+    const comic = { type: "sketch", title: "The legion on the march", panels: [{ prompt: "legionaries marching along a Roman road" }, { prompt: "legionaries digging a ditch round a camp at dusk" }] };
+    const lecture = LectureRequestSchema.parse({ ...REQUEST, context: "", fresh: "Every evening the legion dug a ditch and built a camp, wherever it was." });
+    const cut = await directLecture(lecture, { models: MODELS, callModel: model([comic]) });
+    expect(cut.actions).toEqual([{ ...comic, panels: [comic.panels[0]] }]);
+    expect(cut.dropped.map((d) => d.why)).toEqual(["sketch"]);
+    expect(cut.notes).toEqual([]);
+    const asked = LectureRequestSchema.parse({ ...REQUEST, context: "Can you make that a comic strip?", fresh: "First they march all day, then they dig the camp at night." });
+    expect((await directLecture(asked, { models: MODELS, callModel: model([comic]) })).actions).toEqual([comic]);
+  });
+
   it("a figure the drawer rejects is dropped, with no repair call; a clean one goes on", async () => {
     const bad = model([{ type: "draw_figure", figure: PROBE_FIGURE }, BAR]);
     const out = await directLecture(REQUEST, { models: MODELS, callModel: bad, checkFigure: () => ["side BC is not drawn"] });

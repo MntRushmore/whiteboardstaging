@@ -67,6 +67,7 @@ describe("ROUTE_COSTS", () => {
       "live/chat": 3,
       "live/lecture": 2,
       "live/listen": 1,
+      "live/sketch": 4,
       credits: 0,
       "config/status": 0,
     });

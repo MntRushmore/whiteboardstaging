@@ -1,168 +1,46 @@
 import { describe, expect, it } from "vitest";
-import type { JsonObject } from "tldraw";
 import type { Stroke } from "@/lib/hand";
-import type { LiveEngine, Rect } from "../../contracts";
+import type { Rect } from "../../contracts";
 import type { ChatAction, ChatRunReport } from "../../chat/contracts";
-import { CHAT_BLOCK_META, ChatDesk, tailAtWord, type ChatShape } from "../../chat/desk";
+import { CHAT_BLOCK_META, ChatDesk, tailAtWord } from "../../chat/desk";
 import { FREE_AREA } from "../../chat/layout";
 import { HAND_BLOCK_META, HAND_LINE_META, HAND_PART_META, type HandPlan } from "../../handwriting";
-import { LECTURE_BLOCK_META, LECTURE_ID_META, LECTURE_LIMITS, LECTURE_WHAT_META, type LectureAction, type LecturePageMeta, type LectureRunReport } from "../contracts";
-import { estimateBytes, LECTURE_LAYOUT, LECTURE_NOTES, LectureDesk, roundPlan, scalePlan, type LectureHost, type LecturePlanners } from "../desk";
+import { LECTURE_BLOCK_META, LECTURE_ID_META, LECTURE_LIMITS, LECTURE_WHAT_META, type LectureAction, type LectureRunReport, type SketchDrawing } from "../contracts";
+import {
+  estimateBytes,
+  LECTURE_LAYOUT,
+  LECTURE_NOTES,
+  LECTURE_SLIDE,
+  LectureDesk,
+  roundPlan,
+  scalePlan,
+  type LectureRunOptions,
+  type RequestSketch,
+  type SketchPanelRequest,
+  type SketchPlanners,
+  type SketchProgress,
+} from "../desk";
 import { LECTURE_BOXES } from "../plan";
+import { boxPlan, FakeBoard, fakePlanners, SCREEN, setup } from "./deskBoard";
 
 /**
- * The lecture desk against a fake board: where each block goes on a 1600×900 screen (the topic top
- * left, the notes down the left under it, the pictures to the right), a new screen when this one is
- * full — carrying the topic as "<topic> (cont.)" — or when a new topic starts on a screen with
- * anything on it; the chat's own actions through the chat desk; the screen in words for the director.
+ * The lecture desk against a fake board: where each block goes on a 1600×900 screen (a slide: the
+ * title top left, the bullets down the left under it, the visual on the right; a screen that is not a
+ * slide: wherever there is room), a new screen when this one is full — carrying the topic as
+ * "<topic> (cont.)" — or when a new topic starts on a screen with anything on it; the chat's own
+ * actions through the chat desk; the screen in words for the director. The slide's own rules are
+ * in `deskSlides.test.ts`.
  */
 
-const SCREEN: Rect = { x: 0, y: 0, w: 1600, h: 900 };
-
-/** A plan whose ink is exactly a w × h rectangle outline from (0, 0): its bounds are what it covers. */
-function boxPlan(w: number, h: number, label: string): HandPlan {
-  const seg = (a: [number, number], b: [number, number], order: number): Stroke => ({ points: [a, b].map(([x, y]) => ({ x, y, z: 0.5 })), order, kind: "rule" }) as Stroke;
-  const strokes = [seg([0, 0], [w, 0], 0), seg([w, 0], [w, h], 1), seg([w, h], [0, h], 2), seg([0, h], [0, 0], 3)];
-  return { lines: [{ latex: label, x: 0, y: 0, strokes, baseline: h, startMs: 0, durationMs: 100 }], bounds: { x: 0, y: 0, w, h }, size: 30, totalMs: 100 };
+/** The visual area of a slide with no title (its body starts under the board's bar), as a box. */
+function untitledArea(): { w: number; h: number } {
+  const bottom = SCREEN.h * LECTURE_LAYOUT.barZone.y0 - FREE_AREA.clearance;
+  return { w: SCREEN.w - FREE_AREA.margin - LECTURE_SLIDE.visual.x, h: bottom - FREE_AREA.top };
 }
 
-interface FakePage {
-  id: string;
-  shapes: ChatShape[];
-  meta: LecturePageMeta;
-}
-
-interface Written {
-  page: string;
-  plan: HandPlan;
-  meta: JsonObject;
-  lead: JsonObject;
-}
-
-class FakeBoard implements LectureHost {
-  pages: FakePage[] = [{ id: "p1", shapes: [], meta: {} }];
-  current = 0;
-  hand = true;
-  busy = false;
-  maxScreens = 50;
-  writes: Written[] = [];
-  deleted: string[] = [];
-  metaWrites = 0;
-  private clock = 1;
-  private blocks = 0;
-  /** runs before each write (a test moves the student to another screen here) */
-  beforeWrite: (() => void) | null = null;
-  /** runs on each wait for the hand */
-  onDelay: (() => void) | null = null;
-
-  get page(): FakePage {
-    return this.pages[this.current];
-  }
-
-  engine = async (): Promise<LiveEngine> => ({}) as LiveEngine;
-  shapes = (): ChatShape[] => this.page.shapes;
-  screen = (): Rect => ({ ...SCREEN });
-  pageId = (): string => this.page.id;
-  studentLines = (): string[] => [];
-  handwriting = (): boolean => this.hand;
-  handBusy = (): boolean => this.busy;
-  /** as the loop's writer: `extraMeta` on every stroke, `leadMeta` on the first, a named line's part on its strokes */
-  write = async (plan: HandPlan, extraMeta: JsonObject, leadMeta: JsonObject = {}): Promise<void> => {
-    this.beforeWrite?.();
-    const block = `hb_${++this.blocks}`;
-    const createdAt = this.clock++;
-    this.writes.push({ page: this.page.id, plan, meta: extraMeta, lead: leadMeta });
-    let first = true;
-    for (const line of plan.lines) {
-      for (const st of line.strokes) {
-        const xs = st.points.map((p) => line.x + p.x);
-        const ys = st.points.map((p) => line.y + p.y);
-        const bounds = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
-        this.page.shapes.push({
-          id: `s${++this.strokeIds}_${block}`,
-          type: "draw",
-          meta: {
-            live: true,
-            source: "ai",
-            lineId: "chat",
-            createdAt,
-            [HAND_BLOCK_META]: block,
-            [HAND_LINE_META]: line.latex,
-            ...(line.part ? { [HAND_PART_META]: line.part } : {}),
-            ...extraMeta,
-            ...(first ? leadMeta : {}),
-          },
-          bounds,
-        });
-        first = false;
-      }
-    }
-  };
-  private strokeIds = 0;
-  deleteShapes = (ids: readonly string[]): void => {
-    const gone = new Set(ids);
-    this.deleted.push(...ids);
-    for (const p of this.pages) p.shapes = p.shapes.filter((s) => !gone.has(s.id));
-  };
-  now = (): number => 1_000 * this.clock++;
-  typeset = (): Rect => {
-    throw new Error("not in lecture tests");
-  };
-  addScreen = (): boolean => {
-    if (this.pages.length >= this.maxScreens) return false;
-    this.pages.push({ id: `p${this.pages.length + 1}`, shapes: [], meta: {} });
-    this.current = this.pages.length - 1;
-    return true;
-  };
-  screenReady = (): boolean => true;
-  clearTutor = (): void => undefined;
-  problemsChanged = (): void => undefined;
-  helpProblem = () => "missing" as const;
-  planFigure = () => null;
-  seed = (key: string): number => key.length;
-  delay = async (): Promise<void> => {
-    this.onDelay?.();
-  };
-  /** the saved board's size, when a test sets it */
-  bytes: number | null = null;
-  boardBytes = (): number => this.bytes ?? 0;
-  pageOf(id?: string): FakePage {
-    return (id && this.pages.find((p) => p.id === id)) || this.page;
-  }
-  screenMeta = (pageId?: string): LecturePageMeta => ({ ...this.pageOf(pageId).meta });
-  setScreenMeta = (patch: Partial<LecturePageMeta>, pageId?: string): void => {
-    this.metaWrites++;
-    Object.assign(this.pageOf(pageId).meta, patch);
-  };
-
-  /** student ink (or anything) at a rect on the current screen */
-  put(bounds: Rect, meta: Record<string, unknown> = {}): void {
-    this.page.shapes.push({ id: `x${this.page.shapes.length}`, type: "draw", meta, bounds });
-  }
-
-  /** the written block's page rect */
-  rectOf(w: Written): Rect {
-    return w.plan.bounds;
-  }
-}
-
-/** Planners that draw each block as its box: a heading 20 px a character, a note 12, a picture its whole box. */
-function fakePlanners(overrides: Partial<LecturePlanners> = {}): LecturePlanners {
-  return {
-    boxes: LECTURE_BOXES,
-    heading: (text, { maxW }) => boxPlan(Math.min(text.length * 20, maxW), 44, text),
-    note: (text, { maxW }) => boxPlan(Math.min(text.length * 12, maxW), 36, text),
-    chart: (_spec, { box }) => boxPlan(box.w, box.h, "chart"),
-    diagram: (_spec, { box }) => boxPlan(box.w, box.h, "diagram"),
-    ...overrides,
-  };
-}
-
-function setup(planners: Partial<LecturePlanners> = {}) {
-  const board = new FakeBoard();
-  const chat = new ChatDesk(board);
-  const desk = new LectureDesk(board, chat, fakePlanners(planners));
-  return { board, chat, desk };
+/** A mark of the student's in a corner: the screen is their own work, not a slide (placement is by free space). */
+function notSlide(board: FakeBoard): void {
+  board.put({ x: 1560, y: 860, w: 4, h: 4 });
 }
 
 const BAR: LectureAction = { type: "chart", chart: { kind: "bar", title: "GDP growth", labels: ["2021", "2022", "2023"], series: [{ values: [7.6, 4.1, 0.1] }], unit: "%" } };
@@ -195,7 +73,7 @@ describe("the lecture desk — placing blocks", () => {
     expect(board.pages[1].meta.topic).toBe("Photosynthesis");
   });
 
-  it("notes go down the left: the first under the heading, each next one under the one before", async () => {
+  it("bullets go down the slide's column: the first at the top of the body under the title, each next one a bullet gap under the one before", async () => {
     const { board, desk } = setup();
     await desk.run([
       { type: "heading", text: "Cells" },
@@ -204,8 +82,17 @@ describe("the lecture desk — placing blocks", () => {
     ]);
     const [h, n1, n2] = board.writes.map((w) => w.plan.bounds);
     expect(n1.x).toBe(h.x);
-    expect(n1.y).toBe(h.y + h.h + LECTURE_LAYOUT.headingGap);
+    expect(n1.y).toBe(Math.max(LECTURE_SLIDE.bodyTop, h.y + h.h + LECTURE_SLIDE.titleGap));
     expect(n2.x).toBe(n1.x);
+    expect(n2.y).toBe(n1.y + n1.h + LECTURE_SLIDE.bulletGap);
+  });
+
+  it("not a slide: notes go under the heading and each other at the note gaps, as before", async () => {
+    const { board, desk } = setup();
+    notSlide(board);
+    await desk.run([{ type: "note", text: "Mitochondria make ATP" }, { type: "note", text: "The nucleus holds the DNA" }]);
+    const [n1, n2] = board.writes.map((w) => w.plan.bounds);
+    expect(n1).toMatchObject({ x: FREE_AREA.margin, y: FREE_AREA.top });
     expect(n2.y).toBe(n1.y + n1.h + LECTURE_LAYOUT.noteGap);
   });
 
@@ -219,7 +106,7 @@ describe("the lecture desk — placing blocks", () => {
     board.put({ x: 700, y: 700, w: 100, h: 40 });
     await desk.run([{ type: "note", text: "two" }]);
     const [, n1, n2] = board.writes.map((w) => w.plan.bounds);
-    expect(n2.y).toBe(n1.y + n1.h + LECTURE_LAYOUT.noteGap);
+    expect(n2.y).toBe(n1.y + n1.h + LECTURE_SLIDE.bulletGap);
   });
 
   it("a note whose place under the last is taken goes to the first free place in the notes column", async () => {
@@ -237,22 +124,22 @@ describe("the lecture desk — placing blocks", () => {
     expect(n2.x).toBeLessThan(2 * FREE_AREA.margin + LECTURE_BOXES.note.maxW);
   });
 
-  it("a chart goes to the right of the notes column, as large as it fits", async () => {
+  it("not a slide: a chart goes to the right of the notes column, as large as it fits", async () => {
     const { board, desk } = setup();
-    const report = await desk.run([{ type: "heading", text: "The economy" }, { type: "note", text: "Growth slowed after 2021" }, BAR]);
+    notSlide(board);
+    const report = await desk.run([{ type: "note", text: "Growth slowed after 2021" }, BAR]);
     expect(report.outcomes.map((o) => [o.type, o.ok, o.what])).toEqual([
-      ["heading", true, "heading: The economy"],
       ["note", true, "note: Growth slowed after 2021"],
       ["chart", true, "bar chart: GDP growth"],
     ]);
-    const chart = board.writes[2];
+    const chart = board.writes[1];
     expect(chart.plan.bounds.w).toBe(LECTURE_BOXES.visual[0].w);
     expect(chart.plan.bounds.x).toBeGreaterThanOrEqual(LECTURE_BOXES.note.maxW + LECTURE_LAYOUT.gutter + FREE_AREA.margin);
     expect(chart.meta).toEqual({ [LECTURE_BLOCK_META]: "chart", [LECTURE_ID_META]: expect.stringMatching(/^lv_[0-9a-z]+$/) });
-    expect(report.outcomes[2].id).toBe(chart.meta[LECTURE_ID_META]);
+    expect(report.outcomes[1].id).toBe(chart.meta[LECTURE_ID_META]);
   });
 
-  it("a smaller box when the largest does not fit here; a planner that cannot draw one box is asked for the next", async () => {
+  it("not a slide: a smaller box when the largest does not fit here; a planner that cannot draw one box is asked for the next", async () => {
     const tried: number[] = [];
     const { board, desk } = setup({
       diagram: (_spec, { box }) => {
@@ -260,10 +147,12 @@ describe("the lecture desk — placing blocks", () => {
         return box.w === LECTURE_BOXES.visual[0].w ? null : boxPlan(box.w, box.h, "diagram");
       },
     });
+    notSlide(board);
     const report = await desk.run([CYCLE]);
     expect(report.outcomes[0]).toMatchObject({ ok: true, what: "cycle: The water cycle" });
     expect(board.writes[0].plan.bounds.w).toBe(LECTURE_BOXES.visual[1].w);
-    expect(tried).toEqual(LECTURE_BOXES.visual.map((b) => b.w));
+    // each box is planned when it is tried: the smallest is never needed
+    expect(tried).toEqual(LECTURE_BOXES.visual.slice(0, 2).map((b) => b.w));
   });
 
   it("a picture that fits nowhere here: a new screen headed '<topic> (cont.)', smaller, and carrying the topic", async () => {
@@ -439,8 +328,10 @@ describe("the lecture desk — the hand, the screens, the order", () => {
 });
 
 describe("the lecture desk — the chat's own actions", () => {
+  /** A chat desk that only says what it was asked; the board is the student's own work (on a slide the lecture places the chat's blocks itself). */
   function stubChat(outcome: ChatRunReport, onRun?: () => void) {
     const board = new FakeBoard();
+    notSlide(board);
     const calls: ChatAction[][] = [];
     const chat = {
       run: async (actions: readonly ChatAction[]) => {
@@ -471,16 +362,14 @@ describe("the lecture desk — the chat's own actions", () => {
     expect(report.outcomes).toEqual([{ type: "draw_figure", ok: false, note: "I couldn't draw that figure." }]);
   });
 
-  it("a screen the chat adds counts, and the lecture goes on there (a graph that overflowed keeps the topic)", async () => {
+  it("a screen the chat adds counts, and the lecture goes on there", async () => {
     let board: FakeBoard | null = null;
     const res = stubChat({ outcomes: [{ type: "graph", ok: true }], problemsWritten: 0, problemsDropped: 0, screensAdded: 1 }, () => board?.addScreen());
     board = res.board;
-    board.page.meta.topic = "Quadratics";
     const report = await res.desk.run([{ type: "graph", relations: ["y = x^{2}"] }, { type: "note", text: "The vertex is the minimum" }]);
     expect(report.screensAdded).toBe(1);
     expect(report.outcomes.map((o) => o.ok)).toEqual([true, true]);
     expect(board.writes.map((w) => w.page)).toEqual(["p2"]);
-    expect(board.pages[1].meta.topic).toBe("Quadratics");
   });
 
   it("new_screen through the real chat desk: a blank screen, and the next block is written on it", async () => {
@@ -674,7 +563,8 @@ describe("the lecture desk — live charts", () => {
     // where the whole chart puts Q2's bar: the chart's own (0, 0) is at `at`
     const bar = update.plan.lines[0];
     expect(bar.x).toBeCloseTo(entry.at.x + 40 + 60, 2);
-    expect(bar.y).toBeCloseTo(entry.at.y + 340 - 150, 2);
+    // the chart's base line: 40 px above its box's foot
+    expect(bar.y).toBeCloseTo(entry.at.y + entry.box.h - 40 - 150, 2);
     expect(bar.style).toEqual({ color: "blue", fill: "semi", closed: true });
     // one bar and its value, from the start, at the sketch's pace: well under a second
     expect(update.plan.lines[0].startMs).toBe(0);
@@ -694,7 +584,8 @@ describe("the lecture desk — live charts", () => {
     expect(report.outcomes[0]).toMatchObject({ ok: true, id });
     expect(board.deleted.sort()).toEqual(q2.sort());
     expect(board.writes[1].plan.lines.map((l) => l.part)).toEqual(["bar:Q2", "value:Q2"]);
-    expect(board.writes[1].plan.lines[0].y).toBeCloseTo(board.page.meta.visuals![id].at.y + 340 - 180, 2);
+    const entry = board.page.meta.visuals![id];
+    expect(board.writes[1].plan.lines[0].y).toBeCloseTo(entry.at.y + entry.box.h - 40 - 180, 2);
   });
 
   it("the same spec again: nothing rubbed out, nothing written, still live", async () => {
@@ -734,14 +625,17 @@ describe("the lecture desk — live charts", () => {
     expect(board.pages[1].meta.visuals?.[out.id!]?.chart).toEqual(sales([12, 15]));
   });
 
-  it("the kind changing (a bar chart that became a line chart): a new chart, the old one left as it is", async () => {
+  it("the kind changing (a bar chart that became a line chart): a new chart — the slide's second visual, so on the next slide — the old one left as it is", async () => {
     const { board, desk, id } = await drawn([12, 15]);
     const before = partsOfShapes(board, id).length;
     const line: ChartSpec = { kind: "line", title: "Sales", labels: ["Q1", "Q2"], series: [{ values: [12, 15] }], unit: "million" };
     const report = await desk.run([{ type: "update_chart", target: id, chart: line }]);
     expect(report.outcomes[0].id).not.toBe(id);
     expect(report.outcomes[0]).toMatchObject({ ok: true, what: "line chart: Sales" });
+    expect(report.screensAdded).toBe(1);
+    board.current = 0;
     expect(partsOfShapes(board, id)).toHaveLength(before);
+    board.current = 1;
     expect(board.deleted).toEqual([]);
     // an update_diagram aimed at a chart is a new diagram too
     const d = await desk.run([{ type: "update_diagram", target: id, diagram: { kind: "flow", steps: ["a", "b"] } }]);
@@ -761,11 +655,14 @@ describe("the lecture desk — live charts", () => {
     const report = await desk.run([{ type: "update_chart", target: id, chart: sales([1, 2, 3, 4, 5, 6]) }]);
     expect(report).toMatchObject({ screensAdded: 1, outcomes: [{ type: "update_chart", ok: true, id }] });
     expect(board.deleted.sort()).toEqual(first.sort());
-    expect(board.pages[1].meta.visuals?.[id]?.box).toEqual(LECTURE_BOXES.visual[0]);
+    // the new screen is a slide: the chart is its visual, in a box as large as its visual area
+    expect(board.pages[1].meta.visuals?.[id]?.box).toEqual(untitledArea());
   });
 
   it("active: the live visuals still on the screen, newest first, at most two, with their specs", async () => {
     const { board, desk } = setup({ chart: partsChart });
+    // three visuals on one screen: the student's own, not a slide (a slide holds one)
+    notSlide(board);
     const a = (await desk.run([{ type: "chart", chart: sales([1, 2]) }])).outcomes[0].id!;
     const b = (await desk.run([CYCLE])).outcomes[0].id!;
     const c = (await desk.run([{ type: "chart", chart: sales([3, null]) }])).outcomes[0].id!;
@@ -788,7 +685,7 @@ describe("the lecture desk — live charts", () => {
     const entry = board.page.meta.visuals?.[id];
     if (!entry) throw new Error("no visual recorded");
     expect(JSON.parse(JSON.stringify(entry))).toEqual(entry);
-    expect(entry).toEqual({ chart: sales([12, null]), box: LECTURE_BOXES.visual[0], seed: expect.any(Number), at: expect.any(Object), updatedAt: expect.any(Number) });
+    expect(entry).toEqual({ chart: sales([12, null]), box: untitledArea(), seed: expect.any(Number), at: expect.any(Object), updatedAt: expect.any(Number) });
     expect(desk.screen().active).toEqual([{ id, chart: sales([12, null]) }]);
     // the stored box, seed and place give back exactly what was written
     const again = partsChart(entry.chart!, { seed: entry.seed, box: entry.box })!;
@@ -847,5 +744,409 @@ describe("parts", () => {
     expect(d.remove.sort()).toEqual(["bar:A", "bar:B", "gone"]);
     expect(d.add.map((l) => l.part)).toEqual(["bar:A", "bar:B", "new"]);
     expect({ written: d.written, total: d.total }).toEqual({ written: 3, total: 4 });
+  });
+});
+
+// ------------------------------------------------------------------ free drawing
+
+/** The plan moved by (dx, dy), its bounds with it: a drawing centred in its box, as the planner leaves it. */
+function offsetPlan(p: HandPlan, dx: number, dy: number): HandPlan {
+  return { ...p, lines: p.lines.map((l) => ({ ...l, x: l.x + dx, y: l.y + dy })), bounds: { ...p.bounds, x: p.bounds.x + dx, y: p.bounds.y + dy } };
+}
+
+const FRAME_GAP = 20;
+const TITLE_H = 50;
+const CAPTION_H = 40;
+
+/**
+ * Sketch planners like the real ones in shape: the frames in a row across the box (a title band
+ * above, a caption band under), outlined as one box; nothing to draw for one picture with no
+ * caption and no title. A drawing is a box of 80 % of its frame, centred (its bounds carry the offset).
+ */
+function fakeSketches(over: Partial<SketchPlanners> = {}): SketchPlanners {
+  return {
+    panels: ({ count, captions, title, framed }, { box }) => {
+      const top = title ? TITLE_H : 0;
+      const band = captions.some(Boolean) ? CAPTION_H : 0;
+      const w = (box.w - FRAME_GAP * (count - 1)) / count;
+      const frames = Array.from({ length: count }, (_, i) => ({ x: i * (w + FRAME_GAP), y: top, w, h: box.h - top - band }));
+      const plan: HandPlan = framed || top || band ? boxPlan(box.w, box.h, "frames") : { lines: [], bounds: { x: 0, y: 0, w: 0, h: 0 }, size: 30, totalMs: 0 };
+      return { plan, frames };
+    },
+    sketch: (drawing, { box }) => offsetPlan(boxPlan(box.w * 0.8, box.h * 0.8, `drawing ${drawing.labels[0]?.text ?? ""}`), box.w * 0.1, box.h * 0.1),
+    ...over,
+  };
+}
+
+/** The illustrator: every panel asked for is held until the test answers it. */
+function illustrator() {
+  const calls: Array<{ req: SketchPanelRequest; signal: AbortSignal; resolve(d: SketchDrawing): void; reject(e: unknown): void }> = [];
+  const progress: SketchProgress[] = [];
+  const requestSketch: RequestSketch = (req, signal) => new Promise<SketchDrawing>((resolve, reject) => calls.push({ req, signal, resolve, reject }));
+  const opts: LectureRunOptions = { requestSketch, onSketch: (p) => progress.push(p) };
+  return { calls, progress, opts };
+}
+
+const drawing = (tag: string): SketchDrawing => ({
+  w: 1000,
+  h: 800,
+  strokes: [
+    {
+      points: [
+        [0, 0],
+        [100, 100],
+      ],
+      closed: false,
+      fill: false,
+    },
+  ],
+  labels: [{ text: tag, x: 10, y: 10 }],
+});
+
+/** Lets the arrivals be written: each goes through the chat desk's turn, a few hops away. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+}
+
+function overlaps(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+const COMIC: Extract<LectureAction, { type: "sketch" }> = {
+  type: "sketch",
+  title: "Officer Vega",
+  cast: "Officer Vega: a tall officer in a visor helmet and a long coat; a neon city at night",
+  panels: [1, 2, 3, 4].map((i) => ({ prompt: `Officer Vega, scene ${i}`, caption: `Scene ${i}` })),
+};
+const COMIC_WHAT = "comic (4 panels): Officer Vega";
+const PICTURE: Extract<LectureAction, { type: "sketch" }> = { type: "sketch", panels: [{ prompt: "a plant cell with its wall, vacuole and chloroplasts" }] };
+
+function setupSketch(over: Partial<SketchPlanners> = {}) {
+  return { ...setup({ sketches: fakeSketches(over) }), ...illustrator() };
+}
+
+describe("the lecture desk — free drawing", () => {
+  const sketchWrites = (board: FakeBoard) => board.writes.filter((w) => w.meta[LECTURE_BLOCK_META] === "sketch");
+  /** what each write after the frames drew: "drawing <tag>", or the frame's note */
+  const fills = (board: FakeBoard) => sketchWrites(board).slice(1).map((w) => w.plan.lines[0].latex);
+
+  it("a comic: its frames at once, in a wide band under the heading, carrying its summary; every panel asked for at once, each for its frame; the run ends before any drawing is in", async () => {
+    const { board, desk, calls, progress, opts } = setupSketch();
+    await desk.run([{ type: "heading", text: "Future cops" }]);
+    const report = await desk.run([COMIC], opts);
+    expect(report).toEqual({ outcomes: [{ type: "sketch", ok: true, id: expect.stringMatching(/^lv_/), what: COMIC_WHAT }], screensAdded: 0 });
+    const id = report.outcomes[0].id!;
+    expect(board.writes).toHaveLength(2);
+    const [heading, frames] = board.writes;
+    expect(frames.meta).toEqual({ [LECTURE_BLOCK_META]: "sketch", [LECTURE_ID_META]: id });
+    expect(frames.lead).toEqual({ [LECTURE_WHAT_META]: COMIC_WHAT });
+    // most of the screen's width, under the heading, above the lecture bar: 540 would reach under the bar here, 460 does not
+    const band = frames.plan.bounds;
+    expect(band).toMatchObject({ w: 1400, h: 460 });
+    expect(band.y).toBeGreaterThanOrEqual(heading.plan.bounds.y + heading.plan.bounds.h + LECTURE_LAYOUT.headingGap);
+    expect(band.y + band.h).toBeLessThanOrEqual(SCREEN.h * LECTURE_LAYOUT.barZone.y0);
+    // the four panels asked for at once, before any is in, each composed for its frame, with the cast
+    const fw = (1400 - 3 * FRAME_GAP) / 4;
+    const fh = 460 - TITLE_H - CAPTION_H;
+    expect(calls.map((c) => c.req)).toEqual(COMIC.panels.map((p, index) => ({ prompt: p.prompt, cast: COMIC.cast, panel: { index, of: 4 }, aspect: fw / fh })));
+    expect(progress).toEqual([{ id, panels: 4, drawn: 0, failed: 0, done: false }]);
+    expect(desk.sketching).toBe(1);
+    // the director sees it once, by its summary, and the frames still to fill are not free room
+    const screen = desk.screen();
+    expect(screen.drawn).toEqual(["heading: Future cops", COMIC_WHAT]);
+    expect(screen.room).toBeLessThan(0.5);
+  });
+
+  it("each drawing fills its frame in reading order: one that comes early waits for the one before it", async () => {
+    const { board, desk, calls, progress, opts } = setupSketch();
+    const report = await desk.run([COMIC], opts);
+    const id = report.outcomes[0].id!;
+    calls[2].resolve(drawing("c"));
+    await settle();
+    expect(fills(board)).toEqual([]);
+    calls[0].resolve(drawing("a"));
+    await settle();
+    expect(fills(board)).toEqual(["drawing a"]);
+    calls[1].resolve(drawing("b"));
+    await settle();
+    expect(fills(board)).toEqual(["drawing a", "drawing b", "drawing c"]);
+    calls[3].resolve(drawing("d"));
+    await settle();
+    expect(fills(board)).toEqual(["drawing a", "drawing b", "drawing c", "drawing d"]);
+    // each in its own frame, where the planner centred it; every stroke the sketch's, its parts named by panel
+    const band = sketchWrites(board)[0].plan.bounds;
+    const fw = (1400 - 3 * FRAME_GAP) / 4;
+    const fh = board.writes[0].plan.bounds.h - TITLE_H - CAPTION_H;
+    sketchWrites(board)
+      .slice(1)
+      .forEach((w, i) => {
+        expect(w.meta).toEqual({ [LECTURE_BLOCK_META]: "sketch", [LECTURE_ID_META]: id });
+        expect(w.lead).toEqual({});
+        expect(w.plan.bounds.x).toBeCloseTo(band.x + i * (fw + FRAME_GAP) + fw * 0.1, 1);
+        expect(w.plan.bounds.y).toBeCloseTo(band.y + TITLE_H + fh * 0.1, 1);
+        expect(w.plan.lines.every((l) => l.part?.startsWith(`panel${i}:`))).toBe(true);
+      });
+    expect(progress.map((p) => [p.drawn, p.done])).toEqual([
+      [0, false],
+      [1, false],
+      [2, false],
+      [3, false],
+      [4, true],
+    ]);
+    expect(desk.sketching).toBe(0);
+    // one block for the director, frames and drawings together
+    expect(desk.screen().drawn).toEqual([COMIC_WHAT]);
+  });
+
+  it("a panel that fails gets a small note in its frame, as does one the planner cannot draw; the others are drawn", async () => {
+    const real = fakeSketches().sketch;
+    const { board, desk, calls, progress, opts } = setupSketch({ sketch: (d, o) => (d.labels[0]?.text === "bad" ? null : real(d, o)) });
+    await desk.run([COMIC], opts);
+    calls[3].resolve(drawing("d"));
+    calls[1].reject(new Error("upstream 502"));
+    calls[0].resolve(drawing("a"));
+    calls[2].resolve(drawing("bad"));
+    await settle();
+    expect(fills(board)).toEqual(["drawing a", LECTURE_NOTES.panelFailed, LECTURE_NOTES.panelFailed, "drawing d"]);
+    // small, and inside its frame
+    const band = sketchWrites(board)[0].plan.bounds;
+    const fw = (1400 - 3 * FRAME_GAP) / 4;
+    const frame = { x: band.x + fw + FRAME_GAP, y: band.y + TITLE_H, w: fw, h: band.h - TITLE_H - CAPTION_H };
+    const note = sketchWrites(board)[2].plan.bounds;
+    expect(note.x).toBeGreaterThanOrEqual(frame.x);
+    expect(note.x + note.w).toBeLessThanOrEqual(frame.x + frame.w);
+    expect(note.y + note.h).toBeLessThanOrEqual(frame.y + frame.h);
+    expect(note.h).toBeLessThan(36);
+    expect(progress.at(-1)).toMatchObject({ drawn: 2, failed: 2, done: true });
+  });
+
+  it("not a slide: the lecture goes on while the drawings load — a note is written meanwhile, never in the comic's empty frames", async () => {
+    const { board, desk, calls, opts } = setupSketch();
+    notSlide(board);
+    await desk.run([COMIC], opts);
+    const band = sketchWrites(board)[0].plan.bounds;
+    const report = await desk.run([{ type: "note", text: "Cops of 2090" }]);
+    expect(report.outcomes).toEqual([{ type: "note", ok: true, what: "note: Cops of 2090" }]);
+    const note = board.writes[1];
+    expect(note.meta[LECTURE_BLOCK_META]).toBe("note");
+    expect(overlaps(note.plan.bounds, band)).toBe(false);
+    calls.forEach((c, i) => c.resolve(drawing(String(i))));
+    await settle();
+    expect(fills(board)).toEqual(["drawing 0", "drawing 1", "drawing 2", "drawing 3"]);
+    expect(board.writes.every((w) => w.page === "p1")).toBe(true);
+  });
+
+  it("on a slide a comic takes the whole body: the next bullet waits for its drawings, then goes on the next slide", async () => {
+    const { board, desk, calls, opts } = setupSketch();
+    await desk.run([{ type: "heading", text: "Future cops" }]);
+    await desk.run([COMIC], opts);
+    const band = sketchWrites(board)[0].plan.bounds;
+    expect(band.x).toBeCloseTo((SCREEN.w - band.w) / 2, 5);
+    let answered = false;
+    board.onDelay = () => {
+      if (answered) return;
+      answered = true;
+      calls.forEach((c, i) => c.resolve(drawing(String(i))));
+    };
+    const report = await desk.run([{ type: "note", text: "Cops of 2090" }]);
+    expect(report).toMatchObject({ screensAdded: 1, outcomes: [{ type: "note", ok: true }] });
+    expect(board.writes.map((w) => [w.page, w.plan.lines[0].latex])).toEqual([
+      ["p1", "Future cops"],
+      ["p1", "frames"],
+      ["p1", "drawing 0"],
+      ["p1", "drawing 1"],
+      ["p1", "drawing 2"],
+      ["p1", "drawing 3"],
+      ["p2", "Future cops (cont.)"],
+      ["p2", "Cops of 2090"],
+    ]);
+  });
+
+  it("no room for the band here: the comic goes on a new screen headed '<topic> (cont.)'", async () => {
+    const { board, desk, calls, opts } = setupSketch();
+    await desk.run([{ type: "heading", text: "Future cops" }]);
+    // the student's own work in the middle: no 1400 px band fits above the lecture bar
+    board.put({ x: 700, y: 300, w: 200, h: 100 });
+    const report = await desk.run([COMIC], opts);
+    expect(report.screensAdded).toBe(1);
+    expect(report.outcomes).toEqual([{ type: "sketch", ok: true, id: expect.stringMatching(/^lv_/), what: COMIC_WHAT }]);
+    expect(board.writes.map((w) => [w.page, w.meta[LECTURE_BLOCK_META]])).toEqual([
+      ["p1", "heading"],
+      ["p2", "heading"],
+      ["p2", "sketch"],
+    ]);
+    expect(board.pages[1].meta.topic).toBe("Future cops");
+    calls.forEach((c, i) => c.resolve(drawing(String(i))));
+    await settle();
+    expect(sketchWrites(board).map((w) => w.page)).toEqual(["p2", "p2", "p2", "p2", "p2"]);
+  });
+
+  it("a new topic while panels are still coming: they are waited for and written on their own screen first, then the new screen", async () => {
+    const { board, desk, calls, opts } = setupSketch();
+    await desk.run([COMIC], opts);
+    let answered = false;
+    board.onDelay = () => {
+      if (answered) return;
+      answered = true;
+      calls.forEach((c, i) => c.resolve(drawing(String(i))));
+    };
+    const report = await desk.run([{ type: "heading", text: "The future" }]);
+    expect(report).toMatchObject({ screensAdded: 1, outcomes: [{ type: "heading", ok: true }] });
+    expect(board.writes.map((w) => [w.page, w.plan.lines[0].latex])).toEqual([
+      ["p1", "frames"],
+      ["p1", "drawing 0"],
+      ["p1", "drawing 1"],
+      ["p1", "drawing 2"],
+      ["p1", "drawing 3"],
+      ["p2", "The future"],
+    ]);
+    expect(desk.sketching).toBe(0);
+  });
+
+  it("…and panels that never come get their note once the wait is over, their requests called off; the new screen goes on", async () => {
+    const { board, desk, calls, progress, opts } = setupSketch();
+    await desk.run([COMIC], opts);
+    calls[0].resolve(drawing("a"));
+    await settle();
+    const report = await desk.run([{ type: "new_screen" }, { type: "heading", text: "The future" }]);
+    expect(report.outcomes.map((o) => [o.type, o.ok])).toEqual([
+      ["new_screen", true],
+      ["heading", true],
+    ]);
+    expect(board.writes.map((w) => [w.page, w.plan.lines[0].latex])).toEqual([
+      ["p1", "frames"],
+      ["p1", "drawing a"],
+      ["p1", LECTURE_NOTES.panelFailed],
+      ["p1", LECTURE_NOTES.panelFailed],
+      ["p1", LECTURE_NOTES.panelFailed],
+      ["p2", "The future"],
+    ]);
+    // the ones still out are called off (one signal for the sketch: the drawing already in is not affected)
+    expect(calls.slice(1).every((c) => c.signal.aborted)).toBe(true);
+    expect(progress.at(-1)).toMatchObject({ drawn: 1, failed: 3, done: true });
+    // a drawing that comes after all is not written anywhere
+    calls[1].resolve(drawing("late"));
+    await settle();
+    expect(board.writes).toHaveLength(6);
+  });
+
+  it("the student on another screen when the drawings come: nothing is written there; they are written when the student is back", async () => {
+    const { board, desk, calls, opts } = setupSketch();
+    await desk.run([COMIC], opts);
+    board.pages.push({ id: "p2", shapes: [], meta: {} });
+    board.current = 1;
+    calls.forEach((c, i) => c.resolve(drawing(String(i))));
+    await settle();
+    expect(board.writes).toHaveLength(1);
+    expect(board.pages[1].shapes).toEqual([]);
+    board.current = 0;
+    // the director looks at the screen: what waited for it is written now
+    desk.screen();
+    await settle();
+    expect(sketchWrites(board).map((w) => [w.page, w.plan.lines[0].latex])).toEqual([
+      ["p1", "frames"],
+      ["p1", "drawing 0"],
+      ["p1", "drawing 1"],
+      ["p1", "drawing 2"],
+      ["p1", "drawing 3"],
+    ]);
+  });
+
+  it("…and given up when they stay away too long", async () => {
+    const { board, desk, calls, progress, opts } = setupSketch();
+    await desk.run([COMIC], opts);
+    board.pages.push({ id: "p2", shapes: [], meta: {} });
+    board.current = 1;
+    (board as unknown as { clock: number }).clock += LECTURE_LAYOUT.sketch.keepMs / 1000 + 10;
+    desk.screen();
+    expect(desk.sketching).toBe(0);
+    expect(progress.at(-1)).toMatchObject({ drawn: 0, done: true });
+    expect(calls.every((c) => c.signal.aborted)).toBe(true);
+    calls.forEach((c, i) => c.resolve(drawing(String(i))));
+    board.current = 0;
+    desk.screen();
+    await settle();
+    expect(board.writes).toHaveLength(1);
+  });
+
+  it("the student moves away before the frames are written: nothing of it is drawn, its panels are called off", async () => {
+    const { board, desk, calls, opts } = setupSketch();
+    // the hand is free when the sketch is placed, busy when its frames are to be written
+    let asked = 0;
+    board.handBusy = () => ++asked === 2;
+    board.onDelay = () => {
+      board.pages.push({ id: "p2", shapes: [], meta: {} });
+      board.current = 1;
+    };
+    const report = await desk.run([COMIC], opts);
+    expect(report.outcomes).toEqual([{ type: "sketch", ok: false, note: LECTURE_NOTES.movedAway }]);
+    expect(board.writes).toEqual([]);
+    expect(calls).toHaveLength(4);
+    expect(calls.every((c) => c.signal.aborted)).toBe(true);
+    expect(desk.sketching).toBe(0);
+  });
+
+  it("not a slide: one picture in a chart's box to the right of the notes, no frame drawn round it; its drawing carries the summary; its box is kept clear while it loads", async () => {
+    const { board, desk, calls, opts } = setupSketch();
+    notSlide(board);
+    const what = "sketch: a plant cell with its wall, vacuole and chloroplasts";
+    const report = await desk.run([PICTURE], opts);
+    expect(report.outcomes).toEqual([{ type: "sketch", ok: true, id: expect.stringMatching(/^lv_/), what }]);
+    // nothing to write until the picture comes (no frame, no caption, no title), and no panel or cast asked for
+    expect(board.writes).toHaveLength(0);
+    expect(calls.map((c) => c.req)).toEqual([{ prompt: PICTURE.panels[0].prompt, aspect: 520 / 420 }]);
+    // a chart meanwhile is not placed in the picture's box
+    await desk.run([BAR]);
+    const chart = board.writes[0].plan.bounds;
+    calls[0].resolve(drawing("cell"));
+    await settle();
+    const pic = board.writes[1];
+    expect(pic.plan.lines[0].latex).toBe("drawing cell");
+    expect(pic.lead).toEqual({ [LECTURE_WHAT_META]: what });
+    expect(pic.plan.bounds.x).toBeGreaterThanOrEqual(LECTURE_BOXES.note.maxW + LECTURE_LAYOUT.gutter);
+    expect(overlaps(chart, pic.plan.bounds)).toBe(false);
+    expect(desk.screen().drawn).toEqual(["bar chart: GDP growth", what]);
+  });
+
+  it("a title that only repeats the screen's heading is left off the strip", async () => {
+    const seen: Array<string | undefined> = [];
+    const real = fakeSketches().panels;
+    const { desk, opts } = setupSketch({ panels: (l, o) => (seen.push(l.title), real(l, o)) });
+    await desk.run([{ type: "heading", text: "Officer Vega" }]);
+    await desk.run([COMIC], opts);
+    expect(seen.every((t) => t === undefined)).toBe(true);
+  });
+
+  it("left out, with a note and nothing asked of the illustrator: no illustrator to ask, frames that cannot be laid out, a board too full to save", async () => {
+    const none = setupSketch();
+    expect((await none.desk.run([COMIC])).outcomes).toEqual([{ type: "sketch", ok: false, note: LECTURE_NOTES.cannotSketch }]);
+    const flat = setupSketch({ panels: () => null });
+    expect((await flat.desk.run([COMIC], flat.opts)).outcomes).toEqual([{ type: "sketch", ok: false, note: LECTURE_NOTES.cannotSketch }]);
+    expect(flat.calls).toEqual([]);
+    const full = setupSketch();
+    full.board.bytes = LECTURE_LAYOUT.boardBudgetBytes - 4 * LECTURE_LAYOUT.sketch.panelBytes;
+    expect((await full.desk.run([COMIC], full.opts)).outcomes).toEqual([{ type: "sketch", ok: false, note: LECTURE_NOTES.boardFull }]);
+    for (const s of [none, flat, full]) expect(s.board.writes).toEqual([]);
+  });
+});
+
+describe("LectureDesk: keeping up with a fast talker", () => {
+  it("draws faster while the lecture is ahead of the board, at its own pace otherwise", async () => {
+    const { board, desk } = setup();
+    await desk.run([BAR]);
+    const calm = board.writes[0].plan.pace ?? 1;
+    await desk.run([{ ...BAR, chart: { ...BAR.chart, title: "GDP growth again" } } as LectureAction], { behind: () => true });
+    expect(board.writes).toHaveLength(2);
+    expect(board.writes[1].plan.pace).toBeCloseTo(calm * LECTURE_LAYOUT.catchUpPace);
+  });
+
+  it("a behind() that throws is not ahead", async () => {
+    const { board, desk } = setup();
+    await desk.run([BAR], {
+      behind: () => {
+        throw new Error("gone");
+      },
+    });
+    expect(board.writes[0].plan.pace ?? 1).toBeLessThan(LECTURE_LAYOUT.catchUpPace);
   });
 });

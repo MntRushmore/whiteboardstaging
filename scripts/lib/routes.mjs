@@ -123,6 +123,16 @@ export const API_ROUTES = Object.freeze([
     status: "active",
   },
   {
+    path: "/api/live/lecture/sketch",
+    file: "src/app/api/live/lecture/sketch/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "liveSketch",
+    body: "zod",
+    purpose: "Lecture mode: free drawing — one panel described in words -> the illustrator's SVG, parsed and sampled into ink strokes",
+    status: "active",
+  },
+  {
     path: "/api/live/lecture/token",
     file: "src/app/api/live/lecture/token/route.ts",
     methods: ["POST"],

@@ -1,4 +1,4 @@
-import { requestLecture } from "@/lib/live/lecture/client";
+import { requestLecture, requestLectureSketch } from "@/lib/live/lecture/client";
 import { createScriptSource, createSpeechSource } from "@/lib/live/lecture/speech";
 import { LectureRunner } from "./lectureRunner";
 import { browserStorage } from "./lectureView";
@@ -14,6 +14,7 @@ export function createLectureRunner(boardId: string): LectureRunner {
     openSpeech: () => createSpeechSource(),
     openScript: (lines, opts) => createScriptSource(lines, opts),
     request: (req, signal) => requestLecture(req, signal),
+    requestSketch: (req, signal) => requestLectureSketch(req, signal),
     storage: browserStorage,
   });
 }

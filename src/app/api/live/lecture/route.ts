@@ -51,7 +51,10 @@ export async function POST(req: Request) {
         minute,
         force: data.force,
         proposed,
-        actions: actions.map((a) => (a.type === "chart" || a.type === "update_chart" ? `${a.type}:${a.chart.kind}` : a.type === "diagram" || a.type === "update_diagram" ? `${a.type}:${a.diagram.kind}` : a.type)).join(","),
+        // a sketch by its panel count (its prompts are what was said: not logged)
+        actions: actions
+          .map((a) => (a.type === "chart" || a.type === "update_chart" ? `${a.type}:${a.chart.kind}` : a.type === "diagram" || a.type === "update_diagram" ? `${a.type}:${a.diagram.kind}` : a.type === "sketch" ? `sketch:${a.panels.length}` : a.type))
+          .join(","),
         dropped: dropped.length,
         // why, and the schema's or the drawer's reason; a repeat's reason is lecture content (its title)
         droppedWhy: dropped.slice(0, 4).map((d) => ({ type: d.type, why: d.why, ...(d.why === "repeat" ? {} : { reason: d.reason }) })),
