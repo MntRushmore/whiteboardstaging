@@ -60,7 +60,7 @@ export const FIGURE_FORMAT = [
   '- segments: sides drawn between two points; optional "label" (a length or unknown: "3", "x", "2x + 1"), "ticks": 1-3 (equal sides), "arrows": 1-3 (parallel sides), "dashed": true.',
   '- polygons: {"vertices": [...]} draws the closed shape (instead of listing its sides); add a segment only to label or mark a side.',
   '- lines: {"through": [P, Q], "extend": "both" | "ray"} a line (or a ray from P through Q) running past the points.',
-  '- circles: {"center": "O", "radius": r} or {"center": "O", "through": "A"}.',
+  '- circles: {"center": "O", "through": "A"} whenever a named point lies on the circle (it is then exactly on it, and so is every point you place at that distance); {"center": "O", "radius": r} only for a circle with no named point on it.',
   '- angles: {"at": vertex, "from": point on one arm, "to": point on the other}, the smaller angle; "right": true for a right-angle box; "label" ("70^{\\circ}", "x", "\\theta"); "arcs": 1-3 for equal angles.',
   "- Every name a segment, angle, line or circle uses must be a point. Labels are short maths only (A, 3, x, 70^{\\circ}, 2x + 10): never words.",
 ].join("\n");

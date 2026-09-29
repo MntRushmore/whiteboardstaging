@@ -102,6 +102,10 @@ export const RESOLVE = {
   runOn: 1 / 3,
   /** …and at least this much of the figure's size */
   minRunOn: 0.12,
+  /** segments from a circle's centre this close in length (× their length) are the same radius */
+  spokesAgree: 0.02,
+  /** one lone segment from the centre this close to the given radius (×) was meant to end on it */
+  loneSpoke: 0.1,
 } as const;
 
 export const dist = (a: V, b: V): number => Math.hypot(b.x - a.x, b.y - a.y);
@@ -118,6 +122,29 @@ export function angleDeg(v: V, a: V, b: V): number {
 }
 
 const at = (p: V): string => `(${fmt(p.x)}, ${fmt(p.y)})`;
+
+/**
+ * The radius a circle given by a number is drawn with. A segment from the centre to a point is a
+ * radius as the figure is drawn ("R and S lie on the circle" → `OR`, `OS`), and a model that gives
+ * the radius as a number as well easily gets the two apart: the circle through √31 drawn with
+ * radius 5 left R and S floating outside it. So: two or more such spokes of one length ARE the
+ * radius; a single spoke only when it is already within `loneSpoke` of the number (a point
+ * placed a little off) — one spoke well away from it is a point off the circle on purpose (the
+ * external point a tangent comes from). Otherwise the number stands.
+ */
+function radiusFromSpokes(r: number, center: V, centerName: string, segments: readonly FigSegment[]): number {
+  const spokes: number[] = [];
+  for (const s of segments) {
+    if (s.from === centerName) spokes.push(dist(center, s.b));
+    else if (s.to === centerName) spokes.push(dist(center, s.a));
+  }
+  if (spokes.length === 0) return r;
+  const mean = spokes.reduce((a, b) => a + b, 0) / spokes.length;
+  const agree = spokes.every((d) => Math.abs(d - mean) <= RESOLVE.spokesAgree * mean);
+  if (!agree || !(mean > 0)) return r;
+  if (spokes.length >= 2) return mean;
+  return Math.abs(mean - r) <= RESOLVE.loneSpoke * r ? mean : r;
+}
 
 /** Resolves the spec; `problems` are the reasons some element could not be drawn (the rest is). */
 export function resolveFigure(spec: FigureSpec): { fig: Figure; problems: string[] } {
@@ -231,6 +258,8 @@ export function resolveFigure(spec: FigureSpec): { fig: Figure; problems: string
         problems.push(`The circle centred at ${c.center} has radius ${fmt(c.radius)} but goes through ${c.through}, which is ${fmt(rt)} from ${c.center}; give one or make them agree.`);
       }
       r = rt;
+    } else {
+      r = radiusFromSpokes(r, center, c.center, segments);
     }
     if (!(r > size * RESOLVE.same)) {
       problems.push(
