@@ -20,6 +20,9 @@ import { PEN, type Align, type Pt, type VAlign } from "../graphing/pen";
  */
 
 export const WORDS = {
+  /** the hand size written with the tutor's full pen; smaller writing gets a finer one (`wordsWeight`) */
+  weightRefSize: 58,
+  minWeight: 0.36,
   /** em units from the writing line up to the top of a capital (with the pen's width); taller ink raises it */
   cap: 8.8,
   /** em units the layout box reaches below the writing line; a descender takes it lower */
@@ -611,7 +614,11 @@ export function writeLayout(layout: WordsLayout, at: Pt, align: Align, valign: V
     for (const st of written.strokes) strokes.push({ ...st, points: resample(st.points.map((p) => ({ ...p, x: p.x + x }))) });
     lines.push({ text: line, x, baseline, w });
   });
-  strokes.forEach((s, i) => (s.order = i));
+  const weight = wordsWeight(layout.size);
+  strokes.forEach((s, i) => {
+    s.order = i;
+    s.weight = weight;
+  });
   const box: Rect = { x: bx, y: by, w: layout.w, h: layout.h };
   let minX = box.x;
   let minY = box.y;
@@ -626,6 +633,17 @@ export function writeLayout(layout: WordsLayout, at: Pt, align: Align, valign: V
     }
   }
   return { text, strokes, rect: { x: minX, y: minY, w: maxX - minX, h: maxY - minY }, box, lines, size: layout.size };
+}
+
+/**
+ * The pen for words written at hand size `size`. tldraw draws every stroke with the same pen
+ * whatever the size of the writing, so a chart's labels (~24–30 px) came out with their letters
+ * filled in, and hard to read on the board, next to a heading (~52 px) that looked right. The
+ * pen thins with the writing, down to about half.
+ */
+export function wordsWeight(size: number): number {
+  const { weightRefSize, minWeight } = WORDS;
+  return Math.round(Math.min(1, Math.max(minWeight, size / weightRefSize)) * 100) / 100;
 }
 
 /**

@@ -102,6 +102,12 @@ export const LECTURE_LAYOUT = {
   /** two versions of a part are the same ink when every coordinate is within this (px) */
   sameInkPx: 0.01,
   /**
+   * The pen of a sketch's lines — axes, bars, boxes, arrows — as a stroke weight (`Stroke.weight`;
+   * its words carry their own, `wordsWeight`): a touch lighter than the tutor's writing pen, so a
+   * chart reads as a drawing and its labels stay the loudest thing on it.
+   */
+  lineWeight: 0.8,
+  /**
    * Where the lecture bar floats over the screen (`LectureBar`: bottom centre, above tldraw's
    * toolbar), as fractions of the screen: nothing is sketched there, or the bar would hide it for
    * the whole lecture. Measured with the screen fitted to a 1440 px window; a little generous.
@@ -181,6 +187,11 @@ function clipWhat(s: string): string {
  * writes tens of thousands of points an hour. A hundredth of a pixel is far below anything the
  * screen can show (tldraw's own pen keeps two decimals too); it makes a sketch ~35 % lighter.
  */
+/** The plan with every stroke that has no pen weight of its own (a sketch's lines) given `weight`. */
+export function weighPlan(plan: HandPlan, weight: number): HandPlan {
+  return { ...plan, lines: plan.lines.map((l) => ({ ...l, strokes: l.strokes.map((st) => (st.weight === undefined ? { ...st, weight } : st)) })) };
+}
+
 export function roundPlan(plan: HandPlan): HandPlan {
   const r = (n: number) => Math.round(n * 100) / 100;
   return {
@@ -781,11 +792,18 @@ export class LectureDesk implements LectureBoard {
     return { type, ok: true, id: target };
   }
 
-  /** A spec planned in a box; null when the planner cannot draw it there (or fails). */
+  /**
+   * A spec planned in a box; null when the planner cannot draw it there (or fails). A title that
+   * only repeats the screen's heading ("How a product gets built" under "How a product gets
+   * built") is left off; the same rule plans a live visual before and after an update, so the
+   * two still match part for part.
+   */
   private planIn(spec: Spec, planners: LecturePlanners, opts: LecturePlanOptions): HandPlan | null {
+    const topic = (this.host.screenMeta().topic ?? "").trim().toLowerCase();
+    const untitled = <T extends { title?: string }>(v: T): T => (topic && v.title?.trim().toLowerCase() === topic ? { ...v, title: undefined } : v);
     try {
-      if (spec.kind === "chart" && spec.chart) return planners.chart(spec.chart, opts);
-      if (spec.kind === "diagram" && spec.diagram) return planners.diagram(spec.diagram, opts);
+      if (spec.kind === "chart" && spec.chart) return planners.chart(untitled(spec.chart), opts);
+      if (spec.kind === "diagram" && spec.diagram) return planners.diagram(untitled(spec.diagram), opts);
     } catch (e) {
       this.host.metric?.("live.lecture.plan.failed", { type: spec.kind, error: e instanceof Error ? e.message : String(e) });
     }
@@ -894,7 +912,7 @@ export class LectureDesk implements LectureBoard {
     await this.waitForHand();
     if (!this.onScreen()) return false;
     const meta: JsonObject = { [LECTURE_BLOCK_META]: kind, [LECTURE_ID_META]: id };
-    await this.host.write(roundPlan(plan), meta);
+    await this.host.write(roundPlan(weighPlan(plan, LECTURE_LAYOUT.lineWeight)), meta);
     return true;
   }
 

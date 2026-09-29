@@ -615,7 +615,7 @@ export class HandWriter {
                 isComplete,
                 isClosed: closed,
                 isPen: true,
-                scale: 1,
+                scale: stroke.weight ?? 1,
               },
               // the line of maths this stroke belongs to, as LaTeX (debugging, tests, a future readback)
               meta: { ...meta, [HAND_LINE_META]: line.latex, ...(line.part ? { [HAND_PART_META]: line.part } : {}), ...lead },
