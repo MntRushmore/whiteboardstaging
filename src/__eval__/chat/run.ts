@@ -20,13 +20,37 @@
  * Calls go through the model bench's client (cached on disk, priced, under a hard spend cap).
  */
 import type { LiveEngine } from "@/lib/live/contracts";
-import type { ChatAction, ChatActionType, WriteProofAction } from "@/lib/live/chat/contracts";
+import type {
+  ChatAction,
+  ChatActionType,
+  WriteProofAction,
+} from "@/lib/live/chat/contracts";
 import { figureProblems } from "@/lib/live/chat/figure";
 import { PROBLEM_GRID } from "@/lib/live/chat/layout";
-import { checkProofProposal, PROOF_CHECK, wantsHardProof, type ProofProposalVerdict } from "@/lib/live/chat/proof";
-import { checkTeach, linkHolds, normTex, splitRelations } from "@/lib/live/chat/teach";
-import { answerOf, isChain, isCleanAnswer, verifyLines, verifyProblem, type ProblemVerdict } from "@/lib/live/chat/verify";
-import { FigureSpecSchema, type FigureSpec } from "@/lib/live/figureDraw/contracts";
+import {
+  checkProofProposal,
+  PROOF_CHECK,
+  wantsHardProof,
+  type ProofProposalVerdict,
+} from "@/lib/live/chat/proof";
+import {
+  checkTeach,
+  linkHolds,
+  normTex,
+  splitRelations,
+} from "@/lib/live/chat/teach";
+import {
+  answerOf,
+  isChain,
+  isCleanAnswer,
+  verifyLines,
+  verifyProblem,
+  type ProblemVerdict,
+} from "@/lib/live/chat/verify";
+import {
+  FigureSpecSchema,
+  type FigureSpec,
+} from "@/lib/live/figureDraw/contracts";
 import { planFigure } from "@/lib/live/figureDraw";
 import { planHandwriting } from "@/lib/live/handwriting";
 import { gateChatProof } from "@/lib/server/chatProof";
@@ -42,7 +66,13 @@ import {
   teachFromRepair,
   type DroppedAction,
 } from "@/lib/server/prompts/chat";
-import { callModel, pool, type BenchMessage, type CallContext, type CallRecord } from "../models/client";
+import {
+  callModel,
+  pool,
+  type BenchMessage,
+  type CallContext,
+  type CallRecord,
+} from "../models/client";
 import { parseModelJson } from "../models/json";
 import { requestFor, type ChatCase } from "./corpus";
 
@@ -142,44 +172,115 @@ export interface ChatRunOptions {
 }
 
 /** The hand's interlock, as the board runs it: every glyph drawable at the problem size. */
-const canDraw = (lines: readonly string[]) => planHandwriting(lines, { size: PROBLEM_GRID.size, seed: 1 }).unsupported.length === 0;
+const canDraw = (lines: readonly string[]) =>
+  planHandwriting(lines, { size: PROBLEM_GRID.size, seed: 1 }).unsupported
+    .length === 0;
 
 const FIGURE_BOX = { w: 460, h: 380 };
 
 /** The request's expectations against what the reply would do. */
-export function judgeIntent(c: ChatCase, actions: readonly ChatAction[]): { ok: boolean; why: string } {
+export function judgeIntent(
+  c: ChatCase,
+  actions: readonly ChatAction[],
+): { ok: boolean; why: string } {
   const types = actions.map((a) => a.type);
   const unwanted = (c.expect.without ?? []).filter((t) => types.includes(t));
-  if (unwanted.length > 0) return { ok: false, why: `${unwanted.join(", ")} where it does not apply` };
-  if (c.expect.types.length === 0 && !c.expect.without) return types.length === 0 ? { ok: true, why: "" } : { ok: false, why: `acted on a request it should decline (${types.join(", ")})` };
+  if (unwanted.length > 0)
+    return { ok: false, why: `${unwanted.join(", ")} where it does not apply` };
+  if (c.expect.types.length === 0 && !c.expect.without)
+    return types.length === 0
+      ? { ok: true, why: "" }
+      : {
+          ok: false,
+          why: `acted on a request it should decline (${types.join(", ")})`,
+        };
   const missing = c.expect.types.filter((t) => !types.includes(t));
-  if (missing.length > 0) return { ok: false, why: `no ${missing.join(", ")}${types.length ? ` (got ${types.join(", ")})` : " (no action)"}` };
-  const problems = actions.flatMap((a) => (a.type === "write_problems" ? a.problems : []));
-  if (c.expect.count !== undefined && problems.length !== c.expect.count) return { ok: false, why: `${problems.length} problems for ${c.expect.count} asked` };
-  if (c.expect.window && !actions.some((a) => a.type === "graph" && a.window)) return { ok: false, why: "no window for the range asked" };
-  if (c.expect.noAnswers && problems.some((p) => p.some((l) => /^[a-z]\s*=\s*-?[\d.]+$/i.test(l.replace(/\s+/g, " ").trim())))) return { ok: false, why: "wrote the answer" };
+  if (missing.length > 0)
+    return {
+      ok: false,
+      why: `no ${missing.join(", ")}${types.length ? ` (got ${types.join(", ")})` : " (no action)"}`,
+    };
+  const problems = actions.flatMap((a) =>
+    a.type === "write_problems" ? a.problems : [],
+  );
+  if (c.expect.count !== undefined && problems.length !== c.expect.count)
+    return {
+      ok: false,
+      why: `${problems.length} problems for ${c.expect.count} asked`,
+    };
+  if (c.expect.window && !actions.some((a) => a.type === "graph" && a.window))
+    return { ok: false, why: "no window for the range asked" };
+  if (
+    c.expect.noAnswers &&
+    problems.some((p) =>
+      p.some((l) =>
+        /^[a-z]\s*=\s*-?[\d.]+$/i.test(l.replace(/\s+/g, " ").trim()),
+      ),
+    )
+  )
+    return { ok: false, why: "wrote the answer" };
   const want = c.expect.help;
   if (want) {
-    const helps = actions.flatMap((a) => (a.type === "help_problem" ? [a] : []));
-    if (!helps.some((h) => h.problem === want.problem)) return { ok: false, why: `helped with ${helps.map((h) => h.problem).join(", ") || "nothing"}, not problem ${want.problem}` };
-    if (!helps.some((h) => h.problem === want.problem && h.depth === want.depth)) return { ok: false, why: `${helps.find((h) => h.problem === want.problem)?.depth} for problem ${want.problem}, not ${want.depth}` };
+    const helps = actions.flatMap((a) =>
+      a.type === "help_problem" ? [a] : [],
+    );
+    if (!helps.some((h) => h.problem === want.problem))
+      return {
+        ok: false,
+        why: `helped with ${helps.map((h) => h.problem).join(", ") || "nothing"}, not problem ${want.problem}`,
+      };
+    if (
+      !helps.some((h) => h.problem === want.problem && h.depth === want.depth)
+    )
+      return {
+        ok: false,
+        why: `${helps.find((h) => h.problem === want.problem)?.depth} for problem ${want.problem}, not ${want.depth}`,
+      };
   }
-  if (c.expect.worked !== undefined && !actions.some((a) => a.type === "write_proof" && a.worked === c.expect.worked)) return { ok: false, why: `a proof ${c.expect.worked ? "written whole" : "set up for the student"} was asked for` };
-  if (c.expect.chain && !actions.some((a) => a.type === "write_lines" && isChain(a.lines))) return { ok: false, why: "not a chain of = lines" };
+  if (
+    c.expect.worked !== undefined &&
+    !actions.some(
+      (a) => a.type === "write_proof" && a.worked === c.expect.worked,
+    )
+  )
+    return {
+      ok: false,
+      why: `a proof ${c.expect.worked ? "written whole" : "set up for the student"} was asked for`,
+    };
+  if (
+    c.expect.chain &&
+    !actions.some((a) => a.type === "write_lines" && isChain(a.lines))
+  )
+    return { ok: false, why: "not a chain of = lines" };
   return { ok: true, why: "" };
 }
 
 /** Every `write_lines` block as the board verifies it. */
-export function scoreLines(engine: LiveEngine, actions: readonly ChatAction[]): ChatResult["lines"] {
+export function scoreLines(
+  engine: LiveEngine,
+  actions: readonly ChatAction[],
+): ChatResult["lines"] {
   return actions.flatMap((a) => {
     if (a.type !== "write_lines") return [];
     const v = verifyLines(engine, a.lines, canDraw);
-    return [{ lines: a.lines, chain: isChain(a.lines), ok: v.ok, why: v.ok ? "" : v.reason }];
+    return [
+      {
+        lines: a.lines,
+        chain: isChain(a.lines),
+        ok: v.ok,
+        why: v.ok ? "" : v.reason,
+      },
+    ];
   });
 }
 
 /** A proof as the route gates it: the engine's check, then (once per request) the repair's. */
-export function proofScore(action: WriteProofAction, verdict: ProofProposalVerdict, after?: ProofProposalVerdict, repair?: Omit<CallRecord, "content">): ProofScore {
+export function proofScore(
+  action: WriteProofAction,
+  verdict: ProofProposalVerdict,
+  after?: ProofProposalVerdict,
+  repair?: Omit<CallRecord, "content">,
+): ProofScore {
   const final = after ?? verdict;
   return {
     schema: true,
@@ -199,11 +300,18 @@ export function proofScore(action: WriteProofAction, verdict: ProofProposalVerdi
  * `RS^{2} = 62`) equal, by the engine, to one of the expected ones' — and, when both name what they
  * find (`RS^{2}`), the same thing (`RS = \sqrt{62}` is not the RS² asked for).
  */
-export function teachAnswerRight(engine: LiveEngine, answer: string | undefined, expected: readonly string[]): boolean {
+export function teachAnswerRight(
+  engine: LiveEngine,
+  answer: string | undefined,
+  expected: readonly string[],
+): boolean {
   if (!answer) return false;
   // a list answers with each of its items (`a = 50, \ s = 70` for "how many adult tickets")
-  const items = answer.split(/,\s*(?:\\[ ,;:]|\\quad|~)?\s*(?=[A-Za-z\\]+(?:_\{?\w+\}?)?(?:\^\{?\d+\}?)?\s*=)/);
-  if (items.length > 1) return items.some((it) => teachAnswerRight(engine, it, expected));
+  const items = answer.split(
+    /,\s*(?:\\[ ,;:]|\\quad|~)?\s*(?=[A-Za-z\\]+(?:_\{?\w+\}?)?(?:\^\{?\d+\}?)?\s*=)/,
+  );
+  if (items.length > 1)
+    return items.some((it) => teachAnswerRight(engine, it, expected));
   const got = splitRelations(answer);
   const value = got.parts[got.parts.length - 1];
   return expected.some((e) => {
@@ -213,24 +321,39 @@ export function teachAnswerRight(engine: LiveEngine, answer: string | undefined,
     if (got.parts.length < 2 || want.parts.length < 2) return true;
     const head = (p: string) => normTex(p).replace(/[^A-Za-z0-9^{}]/g, "");
     // a letter the student did not name (h, x, y for the height) is fine; a different quantity is not
-    return head(got.parts[0]) === head(want.parts[0]) || (/^[a-z]$/.test(head(got.parts[0])) && /^[a-z]$/.test(head(want.parts[0])));
+    return (
+      head(got.parts[0]) === head(want.parts[0]) ||
+      (/^[a-z]$/.test(head(got.parts[0])) &&
+        /^[a-z]$/.test(head(want.parts[0])))
+    );
   });
 }
 
-export function scoreProblems(engine: LiveEngine, actions: readonly ChatAction[]): ProblemScore[] {
+export function scoreProblems(
+  engine: LiveEngine,
+  actions: readonly ChatAction[],
+): ProblemScore[] {
   const out: ProblemScore[] = [];
   for (const a of actions) {
     if (a.type !== "write_problems") continue;
     for (const lines of a.problems) {
       const v = verifyProblem(engine, lines, canDraw);
       const answer = v.ok ? answerOf(v.steps) : "";
-      out.push({ lines, verdict: v.ok ? "verified" : v.reason, answer, clean: v.ok && isCleanAnswer(answer) });
+      out.push({
+        lines,
+        verdict: v.ok ? "verified" : v.reason,
+        answer,
+        clean: v.ok && isCleanAnswer(answer),
+      });
     }
   }
   return out;
 }
 
-export function scoreGraphs(engine: LiveEngine, actions: readonly ChatAction[]): ChatResult["graphs"] {
+export function scoreGraphs(
+  engine: LiveEngine,
+  actions: readonly ChatAction[],
+): ChatResult["graphs"] {
   return actions.flatMap((a) => {
     if (a.type !== "graph") return [];
     let graphed = false;
@@ -253,34 +376,91 @@ function drawn(spec: FigureSpec): boolean {
 
 /** Every request × model, scored. */
 export async function runChat(opts: ChatRunOptions): Promise<ChatResult[]> {
-  const jobs = opts.models.flatMap((model) => opts.corpus.map((c) => ({ model, c })));
+  const jobs = opts.models.flatMap((model) =>
+    opts.corpus.map((c) => ({ model, c })),
+  );
   return pool(jobs, opts.concurrency ?? 4, async ({ model, c }) => {
     const messages = buildChatMessages(requestFor(c)) as BenchMessage[];
-    const record = await callModel({ model, messages, maxTokens: 3000, json: true, reasoning: "low", timeoutMs: 60_000 }, opts.ctx);
+    const record = await callModel(
+      {
+        model,
+        messages,
+        maxTokens: 3000,
+        json: true,
+        reasoning: "low",
+        timeoutMs: 60_000,
+      },
+      opts.ctx,
+    );
     const { content, ...call } = record;
-    const base = { id: c.id, course: c.course, kind: c.kind, model, call, content };
-    const empty = { json: false, proposed: 0, valid: 0, dropped: [], types: [], problems: [], figures: [], graphs: [], proofs: [], lines: [], teaches: [], reply: "" };
+    const base = {
+      id: c.id,
+      course: c.course,
+      kind: c.kind,
+      model,
+      call,
+      content,
+    };
+    const empty = {
+      json: false,
+      proposed: 0,
+      valid: 0,
+      dropped: [],
+      types: [],
+      problems: [],
+      figures: [],
+      graphs: [],
+      proofs: [],
+      lines: [],
+      teaches: [],
+      reply: "",
+    };
     if (!record.ok) {
-      opts.log?.(`${model} ${c.id}: call failed (${record.failure}: ${record.error})`);
-      return { ...base, ...empty, intent: false, intentWhy: `call failed: ${record.failure}` };
+      opts.log?.(
+        `${model} ${c.id}: call failed (${record.failure}: ${record.error})`,
+      );
+      return {
+        ...base,
+        ...empty,
+        intent: false,
+        intentWhy: `call failed: ${record.failure}`,
+      };
     }
     const json = parseModelJson(content);
     const raw = ChatReplyRawSchema.safeParse(json ?? {});
-    const isJson = Boolean(json) && raw.success && typeof (json as { reply?: unknown }).reply === "string";
+    const isJson =
+      Boolean(json) &&
+      raw.success &&
+      typeof (json as { reply?: unknown }).reply === "string";
     const reply = raw.success ? raw.data.reply : "";
     const rawActions = raw.success ? raw.data.actions : [];
     const { actions, dropped } = cleanChatActions(rawActions);
 
     // figures: the drawer's check, the route's one repair, the drawing
     const figures: FigureScore[] = [];
-    const rawFigures = rawActions.filter((a) => a && typeof a === "object" && (a as { type?: unknown }).type === "draw_figure");
+    const rawFigures = rawActions.filter(
+      (a) =>
+        a &&
+        typeof a === "object" &&
+        (a as { type?: unknown }).type === "draw_figure",
+    );
     let repaired = false;
     for (const f of rawFigures) {
       // as the route reads it: cleaned first (`cleanChatActions`), then the shared schema
       const cleaned = cleanChatActions([f]).actions[0];
-      const parsed = FigureSpecSchema.safeParse(cleaned?.type === "draw_figure" ? cleaned.figure : (f as { figure?: unknown }).figure);
+      const parsed = FigureSpecSchema.safeParse(
+        cleaned?.type === "draw_figure"
+          ? cleaned.figure
+          : (f as { figure?: unknown }).figure,
+      );
       if (!parsed.success) {
-        figures.push({ schema: false, cleanFirst: false, cleanAfterRepair: false, drawn: false, problems: [parsed.error.issues[0]?.message ?? "schema"] });
+        figures.push({
+          schema: false,
+          cleanFirst: false,
+          cleanAfterRepair: false,
+          drawn: false,
+          problems: [parsed.error.issues[0]?.message ?? "schema"],
+        });
         continue;
       }
       let spec = parsed.data;
@@ -290,33 +470,69 @@ export async function runChat(opts: ChatRunOptions): Promise<ChatResult[]> {
       if (first.length > 0 && !repaired) {
         repaired = true;
         const rec = await callModel(
-          { model, messages: buildFigureRepairMessages(c.message, spec, first) as BenchMessage[], maxTokens: 1500, json: true, reasoning: "low", timeoutMs: 60_000 },
+          {
+            model,
+            messages: buildFigureRepairMessages(
+              c.message,
+              spec,
+              first,
+            ) as BenchMessage[],
+            maxTokens: 1500,
+            json: true,
+            reasoning: "low",
+            timeoutMs: 60_000,
+          },
           opts.ctx,
         );
         const { content: _c, ...rcall } = rec;
         void _c;
         repair = rcall;
-        const fixed = FigureSpecSchema.safeParse((parseModelJson(rec.content) as { figure?: unknown } | null)?.figure);
+        const fixed = FigureSpecSchema.safeParse(
+          (parseModelJson(rec.content) as { figure?: unknown } | null)?.figure,
+        );
         if (fixed.success) {
           const again = figureProblems(fixed.data);
           if (again.length === 0) spec = fixed.data;
           problems = again;
         }
       }
-      figures.push({ schema: true, cleanFirst: first.length === 0, cleanAfterRepair: problems.length === 0, drawn: drawn(spec), problems: first, ...(repair ? { repair } : {}) });
+      figures.push({
+        schema: true,
+        cleanFirst: first.length === 0,
+        cleanAfterRepair: problems.length === 0,
+        drawn: drawn(spec),
+        problems: first,
+        ...(repair ? { repair } : {}),
+      });
     }
 
     // proofs: the engine's check (the route's gate), its one repair round-trip, the check again
     const proofs: ProofScore[] = [];
     let proofRepaired = false;
-    for (const raw of rawActions.filter((a) => a && typeof a === "object" && (a as { type?: unknown }).type === "write_proof")) {
+    for (const raw of rawActions.filter(
+      (a) =>
+        a &&
+        typeof a === "object" &&
+        (a as { type?: unknown }).type === "write_proof",
+    )) {
       const [action] = cleanChatActions([raw]).actions;
       if (!action || action.type !== "write_proof") {
-        proofs.push({ schema: false, worked: true, provedFirst: false, provedAfterRepair: false, rows: 0, reasons: [], prove: "", problems: ["schema"] });
+        proofs.push({
+          schema: false,
+          worked: true,
+          provedFirst: false,
+          provedAfterRepair: false,
+          rows: 0,
+          reasons: [],
+          prove: "",
+          problems: ["schema"],
+        });
         continue;
       }
       // the route's own gate (`gateChatProof`): a proof asked for as hard prefers `hardMinRows`
-      const gate = wantsHardProof(c.message) ? { minRows: PROOF_CHECK.hardMinRows } : {};
+      const gate = wantsHardProof(c.message)
+        ? { minRows: PROOF_CHECK.hardMinRows }
+        : {};
       const first = checkProofProposal(action, gate);
       let rcall: Omit<CallRecord, "content"> | undefined;
       const gated = await gateChatProof(
@@ -326,12 +542,25 @@ export async function runChat(opts: ChatRunOptions): Promise<ChatResult[]> {
           : async (problems) => {
               proofRepaired = true;
               const rec = await callModel(
-                { model, messages: buildProofRepairMessages(c.message, action, problems) as BenchMessage[], maxTokens: 2000, json: true, reasoning: "low", timeoutMs: 60_000 },
+                {
+                  model,
+                  messages: buildProofRepairMessages(
+                    c.message,
+                    action,
+                    problems,
+                  ) as BenchMessage[],
+                  maxTokens: 2000,
+                  json: true,
+                  reasoning: "low",
+                  timeoutMs: 60_000,
+                },
                 opts.ctx,
               );
               const { content: rc, ...call } = rec;
               rcall = call;
-              const fixed = ProofRepairReplySchema.safeParse(parseModelJson(rc) ?? {});
+              const fixed = ProofRepairReplySchema.safeParse(
+                parseModelJson(rc) ?? {},
+              );
               return fixed.success ? fixed.data : null;
             },
         gate,
@@ -343,10 +572,26 @@ export async function runChat(opts: ChatRunOptions): Promise<ChatResult[]> {
     // worked solutions: the engine's check (the route's gate), its one repair round-trip, the answer
     const teaches: TeachScore[] = [];
     let teachRepaired = false;
-    for (const raw of rawActions.filter((a) => a && typeof a === "object" && (a as { type?: unknown }).type === "teach")) {
+    for (const raw of rawActions.filter(
+      (a) =>
+        a &&
+        typeof a === "object" &&
+        (a as { type?: unknown }).type === "teach",
+    )) {
       const [action] = cleanChatActions([raw]).actions;
       if (!action || action.type !== "teach") {
-        teaches.push({ schema: false, steps: 0, lines: 0, checkedFirst: false, checkedAfterRepair: false, links: 0, answer: "", right: false, figureDropped: false, problems: ["schema"] });
+        teaches.push({
+          schema: false,
+          steps: 0,
+          lines: 0,
+          checkedFirst: false,
+          checkedAfterRepair: false,
+          links: 0,
+          answer: "",
+          right: false,
+          figureDropped: false,
+          problems: ["schema"],
+        });
         continue;
       }
       const first = checkTeach(opts.engine, action);
@@ -359,7 +604,18 @@ export async function runChat(opts: ChatRunOptions): Promise<ChatResult[]> {
           : async (problems) => {
               teachRepaired = true;
               const rec = await callModel(
-                { model, messages: buildTeachRepairMessages(requestFor(c), action, problems) as BenchMessage[], maxTokens: 3000, json: true, reasoning: "low", timeoutMs: 60_000 },
+                {
+                  model,
+                  messages: buildTeachRepairMessages(
+                    requestFor(c),
+                    action,
+                    problems,
+                  ) as BenchMessage[],
+                  maxTokens: 3000,
+                  json: true,
+                  reasoning: "low",
+                  timeoutMs: 60_000,
+                },
                 opts.ctx,
               );
               const { content: rc, ...call } = rec;
@@ -376,7 +632,13 @@ export async function runChat(opts: ChatRunOptions): Promise<ChatResult[]> {
         checkedAfterRepair: gated.ok,
         links: gated.ok ? gated.checked : 0,
         answer: final.answer ?? "",
-        right: gated.ok && teachAnswerRight(opts.engine, final.answer, c.expect.teach?.answers ?? []),
+        right:
+          gated.ok &&
+          teachAnswerRight(
+            opts.engine,
+            final.answer,
+            c.expect.teach?.answers ?? [],
+          ),
         figureDropped: gated.ok && gated.figureDropped,
         problems: first.ok ? [] : first.problems,
         ...(rcall ? { repair: rcall } : {}),
@@ -386,16 +648,50 @@ export async function runChat(opts: ChatRunOptions): Promise<ChatResult[]> {
     let intent = judgeIntent(c, actions);
     // a worked solution the engine could not check is dropped; one with the wrong answer did not teach the problem
     if (intent.ok && c.expect.teach) {
-      if (!teaches.some((t) => t.checkedAfterRepair)) intent = { ok: false, why: `the working did not check out (${teaches[0]?.problems.slice(0, 1).join("; ") ?? "no teach"})` };
-      else if (!teaches.some((t) => t.right)) intent = { ok: false, why: `the answer ${teaches.find((t) => t.checkedAfterRepair)?.answer || "(none)"} is not ${c.expect.teach.answers[0]}` };
+      if (!teaches.some((t) => t.checkedAfterRepair))
+        intent = {
+          ok: false,
+          why: `the working did not check out (${teaches[0]?.problems.slice(0, 1).join("; ") ?? "no teach"})`,
+        };
+      else if (!teaches.some((t) => t.right))
+        intent = {
+          ok: false,
+          why: `the answer ${teaches.find((t) => t.checkedAfterRepair)?.answer || "(none)"} is not ${c.expect.teach.answers[0]}`,
+        };
+      // a geometry problem is taught beside its picture ("explain it by drawing", "but like the #'s")
+      else if (
+        (c.expect.teach.figure ?? c.course === "geometry") &&
+        !actions.some((a) => a.type === "teach" && a.figure)
+      )
+        intent = { ok: false, why: "no figure beside the working" };
     }
     // the route drops a figure still wrong after its one repair: the request then did not get its figure
-    if (intent.ok && c.expect.types.includes("draw_figure") && !figures.some((f) => f.cleanAfterRepair)) intent = { ok: false, why: "the figure is still wrong after the repair (dropped)" };
+    if (
+      intent.ok &&
+      c.expect.types.includes("draw_figure") &&
+      !figures.some((f) => f.cleanAfterRepair)
+    )
+      intent = {
+        ok: false,
+        why: "the figure is still wrong after the repair (dropped)",
+      };
     // …and a proof still unproved after its one repair
-    if (intent.ok && c.expect.types.includes("write_proof") && !proofs.some((p) => p.provedAfterRepair)) intent = { ok: false, why: "the proof is still unproved after the repair (dropped)" };
+    if (
+      intent.ok &&
+      c.expect.types.includes("write_proof") &&
+      !proofs.some((p) => p.provedAfterRepair)
+    )
+      intent = {
+        ok: false,
+        why: "the proof is still unproved after the repair (dropped)",
+      };
     // an algebra proof whose steps the engine cannot all show equal is not written
     const lines = scoreLines(opts.engine, actions);
-    if (intent.ok && c.expect.chain && !lines.some((l) => l.chain && l.ok)) intent = { ok: false, why: `the lines did not check out (${lines.map((l) => l.why).join(", ")})` };
+    if (intent.ok && c.expect.chain && !lines.some((l) => l.chain && l.ok))
+      intent = {
+        ok: false,
+        why: `the lines did not check out (${lines.map((l) => l.why).join(", ")})`,
+      };
     return {
       ...base,
       json: isJson,
@@ -417,14 +713,30 @@ export async function runChat(opts: ChatRunOptions): Promise<ChatResult[]> {
 }
 
 type Repaired = { repair?: Omit<CallRecord, "content"> };
-const repairs = (r: { figures: readonly Repaired[]; proofs?: readonly Repaired[]; teaches?: readonly Repaired[] }): Repaired[] => [...r.figures, ...(r.proofs ?? []), ...(r.teaches ?? [])];
+const repairs = (r: {
+  figures: readonly Repaired[];
+  proofs?: readonly Repaired[];
+  teaches?: readonly Repaired[];
+}): Repaired[] => [...r.figures, ...(r.proofs ?? []), ...(r.teaches ?? [])];
 
 /** Latency of a request as the student waits for it: the call, plus a figure's, a proof's or a worked solution's repair when there was one. */
-export function requestLatencyMs(r: Pick<ChatResult, "call" | "figures"> & Partial<Pick<ChatResult, "proofs" | "teaches">>): number {
-  return r.call.latencyMs + repairs(r).reduce((s, f) => s + (f.repair?.latencyMs ?? 0), 0);
+export function requestLatencyMs(
+  r: Pick<ChatResult, "call" | "figures"> &
+    Partial<Pick<ChatResult, "proofs" | "teaches">>,
+): number {
+  return (
+    r.call.latencyMs +
+    repairs(r).reduce((s, f) => s + (f.repair?.latencyMs ?? 0), 0)
+  );
 }
 
 /** Cost of a request: the call and any repair. */
-export function requestCostUsd(r: Pick<ChatResult, "call" | "figures"> & Partial<Pick<ChatResult, "proofs" | "teaches">>): number {
-  return r.call.costUsd + repairs(r).reduce((s, f) => s + (f.repair?.costUsd ?? 0), 0);
+export function requestCostUsd(
+  r: Pick<ChatResult, "call" | "figures"> &
+    Partial<Pick<ChatResult, "proofs" | "teaches">>,
+): number {
+  return (
+    r.call.costUsd +
+    repairs(r).reduce((s, f) => s + (f.repair?.costUsd ?? 0), 0)
+  );
 }

@@ -25,7 +25,8 @@ export interface ChatCase {
      * A worked solution (`teach`) whose every chain the engine checks (after the route's one repair)
      * and whose answer is one of these (LaTeX values, judged equal by the engine: `62`, `x = 4`).
      */
-    teach?: { answers: string[] };
+    /** a worked solution with one of these answers; `figure` (default: a geometry case) — it draws the problem's picture */
+    teach?: { answers: string[]; figure?: boolean };
     /** action types the reply must include (in any order); [] = no action at all */
     types: ChatActionType[];
     /** exactly this many problems in its problem sets */
