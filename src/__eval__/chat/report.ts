@@ -58,6 +58,11 @@ export function modelSummary(rs: readonly ChatResult[]) {
     proofs: rs.flatMap((r) => r.proofs ?? []).length,
     proofsFirst: rs.flatMap((r) => r.proofs ?? []).filter((p) => p.provedFirst).length,
     proofsProved: rs.flatMap((r) => r.proofs ?? []).filter((p) => p.provedAfterRepair).length,
+    teaches: rs.flatMap((r) => r.teaches ?? []).length,
+    teachesFirst: rs.flatMap((r) => r.teaches ?? []).filter((t) => t.checkedFirst).length,
+    teachesChecked: rs.flatMap((r) => r.teaches ?? []).filter((t) => t.checkedAfterRepair).length,
+    teachesRight: rs.flatMap((r) => r.teaches ?? []).filter((t) => t.right).length,
+    teachCases: rs.filter((r) => r.kind === "teach").length,
     p50: percentile(lat, 50),
     p95: percentile(lat, 95),
     cost,
@@ -83,6 +88,7 @@ export function renderChatMarkdown(input: ChatReportInput): string {
       `${s.figureSchema}/${s.figures} · ${s.figureCleanFirst} → ${s.figureClean} · ${s.figureDrawn}`,
       frac(s.graphed, s.graphs),
       `${s.proofsFirst} → ${s.proofsProved} of ${s.proofs}`,
+      `${s.teachesFirst} → ${s.teachesChecked} of ${s.teaches} · ${s.teachesRight} right`,
       secs(s.p50),
       secs(s.p95),
       usd(s.costPerRequest),
@@ -123,6 +129,18 @@ export function renderChatMarkdown(input: ChatReportInput): string {
     ]),
   );
   const lineRows = results.flatMap((r) => (r.lines ?? []).filter((l) => l.chain || !l.ok).map((l) => [r.model, r.id, `\`${esc(l.lines.join(" "))}\``, l.ok ? "yes" : `no (${l.why})`]));
+  const teachRows = results.flatMap((r) =>
+    (r.teaches ?? []).map((t) => [
+      r.model,
+      r.id,
+      `${t.steps} steps, ${t.lines} lines`,
+      t.checkedFirst ? "yes" : "no",
+      t.checkedAfterRepair ? `yes (${t.links} links)` : "no",
+      t.answer ? `\`${esc(t.answer)}\`` : "—",
+      t.right ? "yes" : "no",
+      esc(t.problems.slice(0, 1).join("; ").slice(0, 140)),
+    ]),
+  );
 
   const recommendation = /<!-- recommendation:start -->[\s\S]*?<!-- recommendation:end -->/.exec(input.previous ?? "")?.[0] ?? "<!-- recommendation:start -->\n_(written by hand after a run)_\n<!-- recommendation:end -->";
   const spendRows = Object.entries(input.spend.byModel).map(([m, v]) => [`\`${m}\``, String(v.calls), usd(v.usd)]);
@@ -138,7 +156,7 @@ export function renderChatMarkdown(input: ChatReportInput): string {
     "## Summary",
     "",
     table(
-      ["model", "JSON", "valid actions", "intent", "problems verified", "clean answers", "figures: schema · check-clean first → after repair · drawn", "graphs graphed", "proofs proved: first → after repair", "p50", "p95", "cost / request", "cost"],
+      ["model", "JSON", "valid actions", "intent", "problems verified", "clean answers", "figures: schema · check-clean first → after repair · drawn", "graphs graphed", "proofs proved: first → after repair", "worked solutions checked: first → after repair · right answer", "p50", "p95", "cost / request", "cost"],
       summary,
     ),
     "",
@@ -179,6 +197,12 @@ export function renderChatMarkdown(input: ChatReportInput): string {
     "`write_lines` chains (an expression, then lines starting with `=`) are proofs: every step must be shown equal to the line above (`verifyLines`).",
     "",
     lineRows.length ? table(["model", "request", "lines", "verified"], lineRows) : "None.",
+    "",
+    "## Worked solutions",
+    "",
+    "Every `teach` through the route's gate (`checkTeach`: every chain equal with the letters given values, every value consistent with the rest, the answer the working's; `checkFigure` for its figure), with its one repair round-trip when it fails, and its answer against the request's.",
+    "",
+    teachRows.length ? table(["model", "request", "size", "checked first", "after repair", "answer", "right", "first problem"], teachRows) : "None.",
     "",
     "## Spend",
     "",

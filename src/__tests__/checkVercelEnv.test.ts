@@ -112,6 +112,7 @@ describe("envExample: section headers and classification", () => {
       "RUN_CHAT_EVAL",
       "CHAT_EVAL_LIMIT",
       "CHAT_EVAL_MODELS",
+      "CHAT_EVAL_KINDS",
       "RUN_LECTURE_EVAL",
       "LECTURE_EVAL_LIMIT",
       "LECTURE_EVAL_MODELS",
