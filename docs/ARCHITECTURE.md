@@ -134,7 +134,7 @@ Every handler under `src/app/api/**` follows the same preamble: `requireUser` (J
 | `/api/live/solve` | POST | `livePreamble` | `liveSolve` 10 | 10 | `SolveRequestSchema` | SSE worked-solution steps | active |
 | `/api/live/setup` | POST | `livePreamble` | `liveSetup` 10 | 2 | `SetupRequestSchema` (`lines` 0–40 strings; optional `crop` data:image ≤ 280 KB and `labels` ≤ 40, labels only with a crop; lines or a crop required) | A word problem → `{ lines, unknown?, model, ms }`: LaTeX assignments / equations only (no arithmetic, no words), which the client's engine then solves. `openai/gpt-5.4-mini`, fallback `deepseek/deepseek-v4.1-flash` (`LIVE_MODEL_SETUP`). With a `crop` it is a hand-drawn **figure** (asked about, or in Solve left labelled with an unknown): the model describes what the figure shows and `planFigure` (`src/lib/live/figure`) writes the equations — `{ lines, unknown, figure: { source: "facts", stages: [{ letter, lines, value, kind }] } }` — or, when that read does not hold up, its own lines (`figure: { source: "lines", reason, kind? }`); read by `google/gemini-3.1-flash-lite`, fallback `google/gemini-3.5-flash-lite` (`LIVE_MODEL_FIGURE`, prompt `prompts/figure.ts`; chosen on `npm run eval:figures`). A reply with no lines is a 502 (refunded) | active |
 | `/api/live/reread` | POST | `livePreamble` | `liveReread` 30 | 1 | `RereadRequestSchema` (`crop` data:image ≤ 280 KB, Mathpix's `latex`, the column's `above` / `below`) | The second reader: one suspicious line's ink crop → `{ latex, changed, model, ms }`. `google/gemini-3.1-flash-lite`, fallback `anthropic/claude-haiku-4.5` (`LIVE_MODEL_REREAD`). Only sent on a signal, at most once per ink | active |
-| `/api/live/chat` | POST | `livePreamble` | `liveChat` 12 | 3 | `ChatRequestSchema` (`message` 1–500 chars, `history` ≤ 6 turns, `screen`: `empty`, the student's lines, the tutor's lines, the problems written there and their `numbers` on the board) | The board chat: a typed request → `{ reply, actions, notes, refunded?, model, ms }` (`src/lib/live/chat/contracts.ts`); actions validated one by one with zod, an invalid one dropped; a `help_problem` for a number not on the screen dropped with a note. `openai/gpt-5.4-mini`, fallback `deepseek/deepseek-v4.1-flash` (`LIVE_MODEL_CHAT`; chosen on `npm run eval:chat`). A `draw_figure` that `checkFigure` finds problems with gets one repair call per request; still wrong, it is dropped with a note. A `write_proof` goes on only when the engine's proof planner proves it (`gateChatProof` → `checkProofProposal`); one it cannot gets one repair call with the engine's problems, else it is dropped with a note. When every proposed action was dropped the reply says so and the charge is refunded (200, `refunded: true`) | active |
+| `/api/live/chat` | POST | `livePreamble` | `liveChat` 12 | 3 | `ChatRequestSchema` (`message` 1–500 chars, `history` ≤ 6 turns, `screen`: `empty`, the student's lines, the tutor's lines, the problems written there and their `numbers` on the board; optional `problem` ≤ 600 chars: the problem the student typed earlier, when it has left `history`) | The board chat: a typed request → `{ reply, actions, notes, refunded?, model, ms }` (`src/lib/live/chat/contracts.ts`); actions validated one by one with zod, an invalid one dropped; a `help_problem` for a number not on the screen dropped with a note. `openai/gpt-5.4-mini`, fallback `deepseek/deepseek-v4.1-flash` (`LIVE_MODEL_CHAT`; chosen on `npm run eval:chat`). A `draw_figure` that `checkFigure` finds problems with gets one repair call per request; still wrong, it is dropped with a note. A `write_proof` goes on only when the engine's proof planner proves it (`gateChatProof` → `checkProofProposal`); one it cannot gets one repair call with the engine's problems, else it is dropped with a note. A `teach` (a worked solution) goes on only when the engine has checked every line of its maths (`gateChatTeach` → `checkTeach`, on the maths engine loaded in the route on the first one); one it cannot check gets one repair call with the engine's findings, else it is dropped with a note (its figure, still wrong after the repair, is left out and the working goes on). When every proposed action was dropped the reply says so and the charge is refunded (200, `refunded: true`) | active |
 | `/api/live/lecture` | POST | `livePreamble` | `liveLecture` 12 | 2 per started minute of a session | `LectureRequestSchema` (`session` id, `context` + `fresh` transcript ≤ 2,400 chars each, `screen`: `empty`, `topic`, what is `drawn`, `room`, the ≤ 2 `active` live visuals with their specs; `recent`; `force` for "Draw that") | Lecture mode's director: recent transcript → `{ actions, notes, charged?, model, ms }` (`src/lib/live/lecture/contracts.ts`), usually no actions; `heading`, `note`, `chart`, `diagram`, `update_chart` / `update_diagram` (the whole new spec of a live visual), and the chat's `graph`, `draw_figure`, `write_lines`, `new_screen`; each validated with zod and dropped when invalid (`cleanLectureActions`). `deepseek/deepseek-v4.1-flash`, fallback `openai/gpt-5.4-mini` (`LIVE_MODEL_LECTURE`; `npm run eval:lecture`). Billed per minute: the first request of each wall-clock minute of a session charges under `lec:<session>:<minute>`, the rest of that minute find the charge and are free (`lectureMinuteId`) | active |
 | `/api/live/lecture/token` | POST | `requireUser` | `liveListen` 6 | 1 | none | A single-use ElevenLabs realtime speech-to-text token (`realtime_scribe`, 15 min) and the websocket URL for the browser's microphone session (`ListenTokenResponseSchema`); `503 listen_not_configured` without `ELEVENLABS_API_KEY` (no charge) or when ElevenLabs rejects the key (refunded), and the client falls back to the browser's recognizer | active |
 
@@ -155,7 +155,7 @@ Credits are the unit; the schema is `supabase/migrations/20260917020000_accounts
 - **Metering runs as the user.** `requireUser` now also returns the verified access token; `enforceCredits({ token, route, requestId, model })` (`src/lib/server/billing.ts`) builds a supabase-js client with the anon key + `Authorization: Bearer <token>` and calls the SECURITY DEFINER RPC `consume_credits(p_route, p_units, p_request_id, p_model)`. The function locks the caller's profile row, checks the balance and appends a `usage_events` row atomically, so parallel requests cannot overspend; it returns `{ ok: false, reason: 'insufficient_credits', remaining }` without writing when short. A user can only spend their own credits and no API exposed to `authenticated` can add credits or change a plan (column-level grants: a user may update `display_name` only).
 - **Placement.** After auth + rate limit + body validation and **before** the upstream call, for every route — including the SSE routes (`check` / `solve`), where a refusal is a JSON `402` instead of a stream. Charging up-front keeps the balance check atomic (no window between "check" and "spend"); what the provider then fails to deliver is given back by a refund.
 - **Refunds.** `refundCredits({ token, requestId })` calls the SECURITY DEFINER RPC `refund_credits(p_request_id)` as the user (migration `20260917030000_refunds_ratelimit.sql`): it deletes the caller's own `usage_events` rows carrying that `request_id` and younger than 15 minutes, and returns `{ refunded, remaining }`; it never throws (a refund that cannot happen is logged and reported as `{ refunded: 0, reason }`), and with `BILLING_ENFORCE=0` it does nothing because nothing was charged. The `requestId` refunded is the very one passed to `enforceCredits` (asserted per route by `routes.refunds.test.ts`). Two wrappers apply it: non-streaming routes (`voice/analyze-workspace`, `live/recognize` POST, `live/setup`, `live/reread`) run their provider call inside `runCharged`, which refunds whenever the Response handed to the client is not a 2xx — `UpstreamError` (502), the provider's own `CreditsExhaustedError` (402), `recognizer_failed` (502), timeouts/aborts (500). A 2xx is never refunded. The SSE routes (`live/check`, `live/solve`) run inside `runChargedStream`, which refunds only when the stream fails **before the first annotation / step was emitted**; a failure after partial output keeps the charge (the user has the partial result and the model was paid), and the `error` frame is still sent either way.
-- **Prices** (`ROUTE_COSTS`, credits per call): recognize 1, check 3, solve 10; **setup 2** — a word problem's equations, or a drawn figure's (the same route with a crop), below solve because the engine does the solving (when the setup is unusable the board then calls solve as well, 12 in all; a setup call that returns nothing is refunded); **chat 3** — one board-chat request: one planning call (problems, lines, a graph, a figure spec) and at most one small figure repair; the engine checks every problem, so no solve model is involved; refunded when nothing it proposed could be used; **lecture 2 a minute** — lecture mode's director, charged once per started wall-clock minute of a session however often it is asked (every ~8 s while numbers or steps are coming), which covers the director and the realtime recognizer (~$0.39 an hour); **listen 1** — one realtime speech-to-text session opened (a single-use ElevenLabs token); **reread 1** — the second reader reads one line again, priced like recognize. It is never asked for by the student: it fires only on a signal (a read the engine cannot read, a symbol implausible in its column, or a confidence below 0.6), at most once per ink, which on the handwriting scoreboard is 17 of 20 misreads and none of 704 correct reads — so in practice a few percent of lines at most. At ~$0.00035 per call the credit is about the rate limit and abuse, not cost.
+- **Prices** (`ROUTE_COSTS`, credits per call): recognize 1, check 3, solve 10; **setup 2** — a word problem's equations, or a drawn figure's (the same route with a crop), below solve because the engine does the solving (when the setup is unusable the board then calls solve as well, 12 in all; a setup call that returns nothing is refunded); **chat 3** — one board-chat request: one planning call (problems, lines, a graph, a figure spec, a proof, a worked solution) and at most one repair each for a figure, a proof and a worked solution; the engine checks every problem and every line of a worked solution, so no solve model is involved; refunded when nothing it proposed could be used; **lecture 2 a minute** — lecture mode's director, charged once per started wall-clock minute of a session however often it is asked (every ~8 s while numbers or steps are coming), which covers the director and the realtime recognizer (~$0.39 an hour); **listen 1** — one realtime speech-to-text session opened (a single-use ElevenLabs token); **reread 1** — the second reader reads one line again, priced like recognize. It is never asked for by the student: it fires only on a signal (a read the engine cannot read, a symbol implausible in its column, or a confidence below 0.6), at most once per ink, which on the handwriting scoreboard is 17 of 20 misreads and none of 704 correct reads — so in practice a few percent of lines at most. At ~$0.00035 per call the credit is about the rate limit and abuse, not cost.
 - **Responses.** `402 { error: 'credits_exhausted', message, remaining, upgradeUrl }` (`upgradeUrl` is `NEXT_PUBLIC_BILLING_LINKS.portal` or `/account`). When metering is enforced but the RPC is missing or the database errors, the route fails closed with `503 feature_unavailable` ("Billing is not set up on this deployment — run the migrations."). `BILLING_ENFORCE=0` skips consumption entirely (logged once per process) — a dev/staging escape hatch, never for production.
 - **Plan changes** happen only through `POST /api/billing/webhook` (service role) or SQL. The webhook is Stripe-compatible without a payment SDK: `Stripe-Signature: t=…,v1=…` is HMAC-SHA256 over `${t}.${rawBody}` with `STRIPE_WEBHOOK_SECRET`, 5-minute tolerance, constant-time compare, Web Crypto only (`src/lib/server/webhookSignature.ts`). Every event id is inserted into `billing_events` first (duplicate -> `200 { received: true, duplicate: true }`), then `mapBillingEvent` (pure) turns the event into a `profiles` patch:
   `checkout.session.completed` -> `client_reference_id` (our user id) gets `plan_id` (from `metadata.plan_id`, else `BILLING_PRICE_MAP[price id]`), `billing_customer_id`, `billing_subscription_id`, `billing_status = 'active'`;
@@ -259,7 +259,7 @@ moves beside the work (`keepOnScreen`). Within a screen, a line separated from t
 blank gap of more than max(120 px, 3 × line height) starts a new column (`assignColumns`), so a
 second problem further down is never checked as the next step of the first.
 
-**No words on the board.** Everything the tutor puts on the page is maths in its animated hand (`HandWriter`, blue), a hand-drawn mark (`src/lib/live/marks.ts`) or a graph sketched in the same hand (numbers, the axis letters and coordinates only; see "Graphs" below): a tick after a step the engine verified, a ring round a wrong one (the engine's `mismatch`, or a model annotation with `verdict: warn`, remembered on the echo as `meta.aiWarnLatex`), a question mark beside ink it cannot read — and, under a problem the tutor wrote, beside a line it read but cannot judge (see "No silent lines under a problem" below). There are no hint cards and no prose notes. Not even "or": several answers are a list (`x = 2, \ x = 3`, an inequality's union `x < 2, \ x > 3`), no solution is `\varnothing`, every number is `x \in \mathbb{R}` for an equation (`0 = 0`) and `-\infty < x < \infty` for an inequality, an excluded value is `x \neq 1`, a failed check is `\sqrt{4} \neq -2`. In Suggest and Solve, once the student stops (the settle), the right next step is written by hand beside a ringed line, computed by the engine from the last good line above (`suggestNextStep`); Help does it at once in any mode, and only asks the model for one step when the engine has none. The model's Solve steps are written as one handwritten block when the stream ends (typeset only if the hand lacks a symbol). The grey echo (the readback of what Mathpix read) shows only on hover, or while its ink is hovered or selected, and always when the device has the hand switched off. The dev "Mathpix" panel still shows every read.
+**No words on the board — except where a teacher writes them.** Everything the tutor puts on the page unasked is maths in its animated hand (`HandWriter`, blue), a hand-drawn mark (`src/lib/live/marks.ts`) or a graph sketched in the same hand (numbers, the axis letters and coordinates only; see "Graphs" below). Words appear in three places only, all asked for: lecture mode's headings, notes and labels; a proof's Given / Prove and reasons (the proof reader's own vocabulary); and a worked solution's sentences, one per step, when the student asks Ask to teach a problem (`teach`, "Board chat" below). The marks: a tick after a step the engine verified, a ring round a wrong one (the engine's `mismatch`, or a model annotation with `verdict: warn`, remembered on the echo as `meta.aiWarnLatex`), a question mark beside ink it cannot read — and, under a problem the tutor wrote, beside a line it read but cannot judge (see "No silent lines under a problem" below). There are no hint cards and no prose notes. Not even "or": several answers are a list (`x = 2, \ x = 3`, an inequality's union `x < 2, \ x > 3`), no solution is `\varnothing`, every number is `x \in \mathbb{R}` for an equation (`0 = 0`) and `-\infty < x < \infty` for an inequality, an excluded value is `x \neq 1`, a failed check is `\sqrt{4} \neq -2`. In Suggest and Solve, once the student stops (the settle), the right next step is written by hand beside a ringed line, computed by the engine from the last good line above (`suggestNextStep`); Help does it at once in any mode, and only asks the model for one step when the engine has none. The model's Solve steps are written as one handwritten block when the stream ends (typeset only if the hand lacks a symbol). The grey echo (the readback of what Mathpix read) shows only on hover, or while its ink is hovered or selected, and always when the device has the hand switched off. The dev "Mathpix" panel still shows every read.
 
 **Marks may be immediate; answers must wait.** Two clocks, because "this line is finished" and
 "the student has stopped" are different questions. `LIVE_TIMING.quietMs` (600 ms, per line) gates
@@ -415,20 +415,29 @@ button beside the help tabs opens a panel (docked on the right on a desktop, a b
 phone; off by default, open/closed remembered per device, Esc closes it; the board refits so the whole
 16:9 screen stays in view — `useScreenCamera` refits on any change of the board's size). The student or
 teacher types a request ("5 two-step equations", "graph y = sin x from -2π to 2π", "draw a right triangle
-with legs 3 and 4", "3 more like these", "a new screen", "clear your writing"); the panel shows the
-model's one-line reply and notes on anything left out, and the tutor carries it out on the board in its
-hand — maths only. History is kept in memory per board for the session.
+with legs 3 and 4", "3 more like these", "a new screen", "clear your writing", a problem to be explained);
+the panel shows the model's one-line reply and notes on anything left out, and the tutor carries it out on
+the board in its hand — maths, and words only in a worked solution's sentences and a proof's reasons.
+History is kept in memory per board for the session.
 - **The request** carries the message, the last six turns and a picture of the current screen
   (`LiveController.chatScreen`: the student's lines as read, the tutor's lines, the problems the chat
-  wrote there, empty or not), so "more like these" and "graph that" have something to refer to.
+  wrote there, empty or not), so "more like these" and "graph that" have something to refer to. Six
+  turns is three asks: the owner's conversation (the problem, "now explain", "explain it step by step",
+  "explain it by drawing", "but like the #'s", "do the actual problem") had lost the problem by its sixth
+  ask, so the panel remembers the last problem the student typed (`problemFor` in
+  `src/components/chat/chatView.ts`: a message long enough, with some maths and a question or an
+  equation in it — not "5 two-step equations") and sends it as `problem` when the turns no longer hold
+  it; the prompt shows it as "THE PROBLEM THE STUDENT GAVE".
 - **The reply** is `{ reply, actions }`, at most six actions: `write_problems` (1–12 problems; a system
   is one problem of 2–3 lines), `write_lines` (maths as given, e.g. a formula), `graph` (relations in
   LaTeX, an optional window), `draw_figure` (a `FigureSpec`), `new_screen`, `clear_tutor`, `help_problem`
   (`{ problem, depth: "step" | "solve" }`: help with a problem on this screen, by its number there),
-  `write_proof` (a two-column proof, below). The
-  prompt (`src/lib/server/prompts/chat.ts`) keeps words off the board, asks for problems a student at the
-  level can solve with clean answers, never solves itself, gives the figure format true to scale, adds a
-  new screen only when asked, and declines anything that is not maths help. "help me with 3", "I'm stuck
+  `write_proof` (a two-column proof, below), `teach` (a worked solution, below). The
+  prompt (`src/lib/server/prompts/chat.ts`) keeps words to where a teacher writes them, asks for problems
+  a student at the level can solve with clean answers, gives the figure format true to scale, adds a
+  new screen only when asked, and declines anything that is not maths help. Answers and working never
+  go in the panel's reply; on the board only three ways: `help_problem`, `write_proof` (or `write_lines`
+  for an algebra proof) and `teach`. "help me with 3", "I'm stuck
   on 2", "how do I start 3", "help me solve it" are `help_problem` depth `step`; "solve 3", "solve it",
   "show me how to solve it", "what's the answer to 1" depth `solve`; "it" is the problem the recent turns
   were about, else the only one, and a help request whose problem is clear never gets a question back.
@@ -519,6 +528,77 @@ hand — maths only. History is kept in memory per board for the session.
   70 problems verified, 2.2 s p50, ~$0.0017 a request; the DeepSeek fallback did 49 of 49, every
   proof proved at once, 1.2 s p50.
   With both, the corpus is 59 requests (38 + 10 help + 11 proofs).
+- **Worked solutions — Ask teaches on the board (`teach`: `{ figure?, steps: [{ say, math }], answer? }`).**
+  Asked to be taught or shown — "explain", "explain it step by step", "explain it by drawing", "how did we
+  find that?", "do the actual problem", "show your work", "but like the #'s", a problem typed with its
+  question — with a problem in context (the remembered `problem`, the recent turns, the screen), the reply
+  is ONE teach with the whole worked solution: never a question back, never a figure alone, never the
+  working in the panel, and asked again it is taught again (on a fresh screen). "explain problem 3" and
+  "why" about a listed problem are teach; "help me with 3", "solve 3", "show me how to solve it" stay
+  `help_problem`. A step is a sentence (`say`: plain words under lecture mode's text rule, `plainWords`,
+  ≤ 140 characters, asked for in ~90; LaTeX a model slips in becomes the hand's symbols, `plainSay`:
+  `\sqrt{31}` → `√31`, `RS^2` → `RS²`) and its maths (`math`, ≤ 6 LaTeX lines: a chain — a line, then
+  lines starting with `=` that continue it — or equations solved line by line); ≤ 8 steps; `answer` the
+  result. The prompt shows three worked examples, each checked by the engine in a test.
+  - *Checked before anything is written* (`checkTeach`, `chat/teach.ts`, pure, ~5–600 ms; the route runs
+    it on the maths engine, loaded there on the first teach, and the board again before writing). Every
+    link of a chain must be EQUAL: the engine judges `left = right` with every quantity given the same
+    numbers, four positive sets (`linkHolds`) — a segment `OR` is one quantity, `x_2` one letter, `a` and
+    `b` free letters — so an identity holds and a slip (`\sqrt{6 + 25} = \sqrt{30}`) is caught; calculus
+    the engine judges itself. A chain's first computed link may put the problem's numbers into a formula:
+    the letters that vanish (`x_1`, `x_2`, `y_1`, `y_2`) are matched to balanced pieces of the next line
+    (`matchTemplate`) and the formula with those values put in must equal it — which numbers belong there
+    is the reading of the problem, the one thing no engine can check. A chain headed by a name (`OR = …`,
+    `RS^{2} = …`, `m\angle B = …`) states its value; later maths is checked with it put in (`2 \cdot OR^{2}`),
+    a restated value must agree, a segment's square gives the segment. Equation lines follow as the engine
+    ticks a student's column, or by what the column's setup solves to (a system's elimination); an
+    equation whose right side a chain works out (`2^{x+3} = 32`, `= 2^{5}`) goes in the column as worked
+    out. At the end every relation taken as given (a definition, a setup) is checked with every value
+    found, and the answer against the working (`RS^{2} = 64` after it found 62 is caught). What fails comes
+    back as sentences the model can act on ("Step 2, line 5: "\sqrt{6 + 25}" is not equal to
+    "\sqrt{30}"."): ONE repair round-trip (`gateChatTeach`, `buildTeachRepairMessages`: the request with
+    its context, the solution, the findings), then dropped with a note and, alone, refunded — never
+    written unchecked. The figure goes through `checkFigure` in the same repair; still wrong, the working
+    goes on without it. The sentences are words and are not checked; the prompt keeps them to what the
+    maths shows.
+  - *On the board* (`teachWrite.ts`, loaded on first use with the check, the layout and lecture's words
+    planner; `teachLayout.ts`, pure): on this screen when it is empty, or in clear room beside what is
+    there (right of it, under it, left of it; in a hand ≥ 34 and never beside another worked solution),
+    else on a new screen. The figure (the figure drawer, true to scale, the given numbers labelled) top
+    right; the steps down the left, each sentence in the tutor's hand at 0.8 of the maths size, wrapped
+    to even lines, its maths under it; every `=` of the solution in one column (a chain's `= …` lines
+    under its first line's `=`, equations line by line aligned on theirs, `= …` under an expression
+    indented); the answer last in a hand-drawn box. Two columns on a whole screen (the second starts under
+    the figure), one beside other work; the maths at 40 px, smaller as needed (28 at the least; a hand up
+    to 6 px smaller is taken to keep the answer right under the last step); a second screen only when
+    even the smallest hand does not fit. Written as a teacher writes it: the figure, then each step as one
+    `HandWriter` block (sped up past 3 s, at most 4.5 s a step, the whole within ~24 s), 550 ms between
+    steps, then the boxed answer. The strokes carry `chatBlock: "teach"` (the figure's `"figure"`) and the
+    tutor's live meta, so the reader never reads or marks them; a sentence's plan lines carry no LaTeX, so
+    the screen's picture lists the tutor's maths (what "how did we find that?" refers to), not its words.
+    The words planner gained `≠`, `≅`, `△`. A worked solution is ~250–320 strokes (~300 KB in the saved
+    board). Screenshots: `docs/qa-screenshots/chat-teach-*.png` (the owner's conversation; a listed linear
+    equation explained).
+  - *Cost*: the board's first load grew 1.3 KB gzip for the contract, the desk's case and the panel's
+    problem memory (1,057,746 → 1,059,093 B of the 1,060,000 budget); the check, the layout, the writer,
+    the words planner and the prompt are not in it.
+  - *Measured* by `npm run eval:chat` for the production pair only (`docs/eval/chat.md` not regenerated;
+    2026-09-29, $0.56 on the eval ledger; `CHAT_EVAL_KINDS=teach` runs the teach cases alone). The corpus
+    is 70 requests: the 59, `m-solve-for-me` now a teach, and 12 teach cases — the owner's circle problem
+    as typed, "do the actual problem" (with the problem sent as `problem`, and again right after it was
+    taught), "explain it step by step", "but like the #'s", "how did we find that?", a ticket word problem,
+    a ladder (Pythagorean), `2^{x+3} = 32`, `\log_{3}(x - 1) = 2`, a listed `2x + 3 = 11` explained — each
+    judged on a `teach`, every chain checked after the route's repair, and the right answer. The teach
+    cases: both models 12/12, every solution checked (gpt-5.4-mini one after the repair), every answer
+    right (RS² = 62 in all six of the owner's). The whole corpus on the prompt before its last two wording
+    changes: DeepSeek 70/70; gpt-5.4-mini 66/70 — "help me solve it" after a step read as `solve` (as
+    before), "show me how to solve it" about a listed problem taught instead of `help_problem` (the rule
+    now says a listed problem's help and solve words stay `help_problem`: 9/10 help after it, the old
+    miss only), `help_problem` asked with no problem listed (dropped by the route), and "write a proof for
+    me" set up for the student. On the final prompt gpt-5.4-mini's proofs are 9/11 ("write a proof for
+    me" still set up for the student; "a proof I can try" not proved after its repair) — on this
+    prompt's first version they were 11/11: variance on that phrase or the longer prompt, not settled
+    within the eval budget. Latency p50 2.3 s (gpt-5.4-mini) / 1.1 s (DeepSeek); a teach ~3–4 s.
 
 **Lecture mode (`src/lib/live/lecture/**`, `POST /api/live/lecture`, `src/components/lecture/**`).**
 A "Lecture" button beside Ask turns on the microphone; the tutor then sketches what is said, live, on
@@ -526,7 +606,8 @@ the board's screens: a chart of the numbers, a flow of the steps, a cycle, a tim
 tree, a Venn comparison, a table, a heading per topic, a short note, and the chat's graphs, figures and
 formulas. Any subject. The model only says what to draw; the planners lay it out and the HandWriter
 draws it in ink, as it does the worked steps. Words are written here (headings, notes, labels), short
-and plain; the rest of the board keeps its no-words rule. The contract is
+and plain; elsewhere the board writes words only in a worked solution's sentences and a proof's reasons
+(the same text rule, `plainWords`, and the same words planner for the sentences). The contract is
 `src/lib/live/lecture/contracts.ts`; a first-use note says the words are kept and the audio never is.
 - **Listening** (`speech/*`). ElevenLabs Scribe v2 Realtime over a websocket opened with a single-use
   token from `POST /api/live/lecture/token` (16 kHz PCM from an AudioWorklet, the recognizer's own
