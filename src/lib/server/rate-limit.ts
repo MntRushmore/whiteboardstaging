@@ -47,6 +47,7 @@ export const LIMITS = {
   liveChat: LIVE_RATE_LIMITS.liveChat,
   liveLecture: LIVE_RATE_LIMITS.liveLecture,
   liveListen: LIVE_RATE_LIMITS.liveListen,
+  liveSketch: LIVE_RATE_LIMITS.liveSketch,
 } as const satisfies Record<string, RateLimitOptions>;
 
 export type RateLimitBucket = keyof typeof LIMITS;

@@ -628,6 +628,12 @@ export const LIVE_MODELS = {
    */
   lecture: "deepseek/deepseek-v4.1-flash",
   lectureFallback: "openai/gpt-5.4-mini",
+  /**
+   * Lecture mode's illustrator (POST /api/live/lecture/sketch): a panel described in words → a
+   * small SVG the route turns into ink strokes. Placeholder pair until the illustrator eval picks.
+   */
+  sketch: "google/gemini-3.5-flash",
+  sketchFallback: "openai/gpt-5.4-mini",
 } as const;
 
 /** Per-user limits for the live routes (the existing LIMITS table in src/lib/server/rate-limit.ts covers the legacy routes). */
@@ -647,6 +653,8 @@ export const LIVE_RATE_LIMITS = {
   liveLecture: { limit: 12, windowMs: 60_000 },
   /** lecture mode's recognizer tokens: one per speech session (a reconnect opens another) */
   liveListen: { limit: 6, windowMs: 60_000 },
+  /** lecture mode's illustrator: one request per panel, a comic strip is four at once */
+  liveSketch: { limit: 12, windowMs: 60_000 },
 } as const;
 export type LiveRateLimitRoute = keyof typeof LIVE_RATE_LIMITS;
 
