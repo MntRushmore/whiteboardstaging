@@ -304,7 +304,9 @@ describe("planSketch: the most the contract allows", () => {
     expect(wall(sk.plan)).toBeLessThanOrEqual(SKETCH_INK.pace.maxWallMs + 1);
   });
 
-  it("plans it in well under 60 ms", () => {
+  // ~17 ms on its own; the budget is for a pathological slowdown, not a benchmark: under the full
+  // suite's parallel load the same planning took ~200 ms, and failed a 60 ms budget for nothing
+  it("plans it in well under 400 ms, even under the full suite's load", () => {
     planSketch(big, { seed: 21, box: BOX });
     const times: number[] = [];
     for (let i = 0; i < 5; i++) {
@@ -313,7 +315,7 @@ describe("planSketch: the most the contract allows", () => {
       times.push(performance.now() - t0);
     }
     times.sort((a, b) => a - b);
-    expect(times[2]).toBeLessThan(60);
+    expect(times[2]).toBeLessThan(400);
   });
 
   it("paces a typical picture at 4–6 s of wall time", () => {

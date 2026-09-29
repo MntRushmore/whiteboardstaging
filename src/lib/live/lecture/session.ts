@@ -19,7 +19,7 @@ import {
 import type { LectureRunOptions, SketchPanelRequest, SketchProgress } from "./desk";
 import { isRequest, isSalient } from "./salience";
 import { isSpeechErrorCode, speechErrorCodeFor, type SpeechErrorCode } from "./speech/errors";
-import { TranscriptBuffer, type TranscriptMark, type TranscriptWindow } from "./transcript";
+import { cleanSpeech, TranscriptBuffer, type TranscriptMark, type TranscriptWindow } from "./transcript";
 
 /**
  * One lecture, from "Start listening" to Stop: the transcript as it is heard, when the director is
@@ -172,10 +172,24 @@ export const FOLLOW_UP_GAP_MS = Math.ceil(LIVE_RATE_LIMITS.liveLecture.windowMs 
  * a few thousand tokens of vectors (~10–20 s), and its route may try a second model.
  */
 export const SKETCH_TIMEOUT_MS = 60_000;
+/**
+ * A run-on speaker: the recognizer ends a segment only at a pause, and someone who talks fast
+ * hardly pauses — in the first fast-talk test nothing was committed for 36 s, and the board sat
+ * empty while the numbers went by. While the words being heard (the partial) have run on for
+ * `ms` with `words` new words in them, the session takes them as heard itself — all but the last
+ * `holdBack`, which the recognizer may still revise — and when the recognizer does commit the
+ * segment, only the words beyond those already taken are added.
+ */
+export const RUN_ON = { words: 10, ms: 2_500, holdBack: 2 } as const;
+
 /** A request to see something is asked about once nothing new has been said for this long… */
 export const REQUEST_QUIET_MS = 3_500;
-/** …or this long after it was first heard, whichever comes first. */
-export const REQUEST_MAX_WAIT_MS = 15_000;
+/**
+ * …or this long after it was first heard, whichever comes first. A request is often described over
+ * a long run-on sentence ("I want four panels, and each of them… the first two… the next two…"): at
+ * 15 s the first real test drew a lone picture from the opening words, then the comic after it.
+ */
+export const REQUEST_MAX_WAIT_MS = 30_000;
 
 const VISUAL_TYPES: ReadonlySet<LectureAction["type"]> = new Set(["chart", "diagram", "update_chart", "update_diagram"]);
 const UPDATE_TYPES: ReadonlySet<LectureAction["type"]> = new Set(["update_chart", "update_diagram"]);
@@ -248,6 +262,10 @@ export class LectureSession {
   private error: LectureErrorCode | null = null;
   private notice: LectureNotice | null = null;
   private partial = "";
+  /** words of the segment being heard that were already taken as heard (`RUN_ON`) */
+  private taken = 0;
+  /** when the segment being heard began, or when words of it were last taken */
+  private takenAt: number | null = null;
   private sketches = 0;
   private lastWhat: string | null = null;
   private lastVerb: "drew" | "updated" = "drew";
@@ -420,14 +438,49 @@ export class LectureSession {
 
   private onPartial(text: string): void {
     if (this.ended) return;
-    if (text === this.partial) return;
-    this.partial = text;
+    const words = cleanSpeech(text).split(" ").filter(Boolean);
+    const now = this.now();
+    this.takenAt ??= now;
+    // a run-on segment: take its settled words as heard now rather than at the speaker's next pause
+    const settled = words.length - RUN_ON.holdBack;
+    if (settled - this.taken >= RUN_ON.words && now - this.takenAt >= RUN_ON.ms) {
+      const piece = words.slice(this.taken, settled).join(" ");
+      this.taken = settled;
+      this.takenAt = now;
+      this.accept({ text: piece, atMs: this.heardAtMs() });
+    }
+    // what is still being heard: the words not taken yet
+    const rest = words.slice(Math.min(this.taken, words.length)).join(" ");
+    if (rest === this.partial) return;
+    this.partial = rest;
     this.emit();
+  }
+
+  /** ms of listening so far: where a segment the session takes itself sits in the lecture */
+  private heardAtMs(): number {
+    return this.listenedMs + (this.listeningSince !== null ? this.now() - this.listeningSince : 0);
   }
 
   private onFinal(seg: TranscriptSegment): void {
     // a stop's (or a failure's) last words still arrive — the source flushes them — and are saved
     this.partial = "";
+    // part of this segment was already taken while it ran on: only the words after those are new
+    const taken = this.taken;
+    this.taken = 0;
+    this.takenAt = null;
+    if (taken > 0) {
+      const rest = cleanSpeech(seg.text).split(" ").filter(Boolean).slice(taken).join(" ");
+      if (!rest) {
+        this.emit();
+        return;
+      }
+      seg = { ...seg, text: rest };
+    }
+    this.accept(seg);
+  }
+
+  /** A piece of the lecture heard: kept, saved on the screen, and perhaps worth asking about. */
+  private accept(seg: TranscriptSegment): void {
     if (!this.transcript.add(seg)) {
       this.emit();
       return;

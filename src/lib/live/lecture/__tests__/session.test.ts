@@ -17,7 +17,7 @@ import {
   type SpeechSource,
 } from "../contracts";
 import type { LectureRunOptions } from "../desk";
-import { FOLLOW_UP_GAP_MS, HEARTBEAT_MS, LectureSession, REQUEST_MAX_WAIT_MS, REQUEST_QUIET_MS, SKETCH_TIMEOUT_MS, sketchKind, timingForSpeed, updatingKind, type LectureSessionDeps } from "../session";
+import { FOLLOW_UP_GAP_MS, HEARTBEAT_MS, LectureSession, REQUEST_MAX_WAIT_MS, RUN_ON, REQUEST_QUIET_MS, SKETCH_TIMEOUT_MS, sketchKind, timingForSpeed, updatingKind, type LectureSessionDeps } from "../session";
 import { SpeechError } from "../speech/errors";
 
 // ------------------------------------------------------------------ fakes
@@ -926,5 +926,58 @@ describe("LectureSession: sketches", () => {
     expect(sketchKind([HEADING, COMIC])).toBe("comic");
     expect(sketchKind([{ type: "sketch", panels: [{ prompt: "a plant cell" }] }])).toBe("picture");
     expect(sketchKind([HEADING, NOTE])).toBeNull();
+  });
+});
+
+describe("LectureSession: a speaker who never pauses", () => {
+  /** a director that records when it was asked */
+  async function timedSession() {
+    const h = await startSession();
+    h.request.mockImplementation(async (req, signal) => {
+      h.requests.push({ req, signal, at: Date.now() - T0 });
+      return { actions: [], notes: [], model: "m", ms: 1 };
+    });
+    return h;
+  }
+
+  /** one long run-on segment, heard word by word (a partial every ~0.25 s, ~4 words a second), never committed */
+  const RUN =
+    "So a rep makes 100 dials in a day and about 30 of those connect and of those 30 only 10 turn into a real conversation and of those 10 conversations 3 book a meeting so 100 dials gets you 3 meetings";
+
+  async function runOn(h: Awaited<ReturnType<typeof timedSession>>, text: string, msPerWord = 250): Promise<void> {
+    const words = text.split(" ");
+    for (let i = 1; i <= words.length; i++) {
+      h.source.hear(words.slice(0, i).join(" "));
+      await advance(msPerWord);
+    }
+  }
+
+  it("takes the settled words of a run-on segment as heard, and asks about them without waiting for a pause", async () => {
+    const h = await timedSession();
+    await runOn(h, RUN);
+    expect(h.requests.length).toBeGreaterThan(0);
+    // the first numbers reach the director within a few seconds of being said, not at the end
+    expect(h.requests[0].at!).toBeLessThan(RUN_ON.ms + 3_000);
+    expect(h.requests[0].req.fresh).toContain("100 dials");
+  });
+
+  it("when the recognizer commits the segment, only the words not already taken are added", async () => {
+    const h = await timedSession();
+    await runOn(h, RUN);
+    h.source.say(RUN);
+    await advance(60_000);
+    const heard = h.requests.map((r) => r.req.fresh).join(" ");
+    // every word of the segment reaches the director once, in order
+    expect(heard.replace(/\s+/g, " ").trim()).toBe(RUN);
+    // the panel shows nothing twice
+    expect(h.session.snapshot().stats.lines.join(" ").replace(/\s+/g, " ")).not.toMatch(/100 dials.*100 dials in a day/);
+  });
+
+  it("the words still being heard show only what has not been taken", async () => {
+    const h = await timedSession();
+    await runOn(h, RUN);
+    const partial = h.session.snapshot().stats.partial;
+    expect(RUN.startsWith(partial)).toBe(false);
+    expect(partial.split(" ").length).toBeLessThan(RUN_ON.words + RUN_ON.holdBack + 1);
   });
 });
