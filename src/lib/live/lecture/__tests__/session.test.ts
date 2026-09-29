@@ -365,12 +365,31 @@ describe("LectureSession: failures", () => {
     expect(h.request).toHaveBeenCalledTimes(1);
   });
 
-  it("401 stops it signed out", async () => {
+  it("one 401 is retried at the next ask; two in a row stop it signed out", async () => {
     const h = await startSession();
     h.request.mockRejectedValueOnce(new ApiError("x", 401, "unauthorized"));
     h.source.say(words(50));
     await advance(LECTURE_TIMING.tickMinMs);
+    expect(h.session.snapshot().status).toBe("listening");
+    h.request.mockRejectedValueOnce(new ApiError("x", 401, "unauthorized"));
+    h.source.say(words(20));
+    await advance(LECTURE_TIMING.tickMinMs);
+    expect(h.request).toHaveBeenCalledTimes(2);
     expect(h.session.snapshot()).toMatchObject({ status: "error", error: "unauthorized" });
+  });
+
+  it("a 401 between answers that got through is forgotten", async () => {
+    const h = await startSession();
+    h.request.mockRejectedValueOnce(new ApiError("x", 401, "unauthorized"));
+    h.source.say(words(50));
+    await advance(LECTURE_TIMING.tickMinMs);
+    h.source.say(words(20)); // answered: the 401 before it no longer counts
+    await advance(LECTURE_TIMING.tickMinMs);
+    h.request.mockRejectedValueOnce(new ApiError("x", 401, "unauthorized"));
+    h.source.say(words(20));
+    await advance(LECTURE_TIMING.tickMinMs);
+    expect(h.request).toHaveBeenCalledTimes(3);
+    expect(h.session.snapshot().status).toBe("listening");
   });
 
   it("429 skips ticks until the server's retry-after", async () => {

@@ -49,7 +49,8 @@ import { cleanSpeech, TranscriptBuffer, type TranscriptMark, type TranscriptWind
  *    before"), newest first; an updated chart counts once, as it is now.
  *  - Silence for `idlePauseMs`: the session pauses itself (the microphone is let go).
  *  - Failures: 402 stops the lecture with "out of credits" (the panel shows the board's own
- *    out-of-credits panel, as the Ask panel does); 401 stops it signed out; 429 skips asks until
+ *    out-of-credits panel, as the Ask panel does); two 401s in a row stop it signed out (one is
+ *    retried at the next ask: the auth server may be slow, a token refreshing); 429 skips asks until
  *    the server's retry-after; anything else (the network, a 5xx, a timeout) keeps listening and
  *    the next ask tries again with the same unread words.
  *  - A REQUEST to see something ("draw a plant cell", "I'd like to see that on the whiteboard") is
@@ -283,6 +284,8 @@ export class LectureSession {
   private forceInFlight = false;
   /** a salient segment was heard while an ask was in flight: ask once more right after it */
   private followUp = false;
+  /** 401s in a row from the director (`requestFailed`) */
+  private authFailures = 0;
   private inflight: AbortController | null = null;
 
   /** the pace's clock: the last ask, or the start (the first normal ask comes `tickMinMs` in) */
@@ -616,6 +619,7 @@ export class LectureSession {
     }
     this.clearTimer(timeout);
     this.thinking = false;
+    this.authFailures = 0;
     if (this.ended) {
       this.settle();
       return;
@@ -662,7 +666,14 @@ export class LectureSession {
         return;
       }
       if (err.status === 401 || err.code === "unauthorized") {
-        this.fail("unauthorized");
+        // one 401 can be the auth server's hiccup (a slow or waking database) or a token being
+        // refreshed: an hour's lecture is not ended for it. Two in a row: signed out.
+        if (++this.authFailures >= 2) {
+          this.fail("unauthorized");
+          return;
+        }
+        this.notice = { kind: "retrying" };
+        this.followUp = false;
         return;
       }
       if (err.status === 429 || err.code === "rate_limited") {
