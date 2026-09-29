@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSalient, salienceReasons } from "../salience";
+import { isRequest, isSalient, salienceReasons } from "../salience";
 
 describe("salience", () => {
   it("numbers: digits, years, number words", () => {
@@ -36,6 +36,23 @@ describe("salience", () => {
     expect(salienceReasons("there are three types of rock")).toContain("list");
     expect(salienceReasons("There were several main causes of the war")).toContain("list");
     expect(salienceReasons("there are many kinds of cells")).toContain("list");
+  });
+
+  it("a request to see something: drawn at the quick pace", () => {
+    for (const s of [
+      "Can you draw a plant cell for me?",
+      "I would kind of like to see that on the whiteboard.",
+      "Picture this: a castle on a hill.",
+      "Imagine a futuristic police officer.",
+      "I'm thinking about making a comic strip for a video game.",
+      "Show me what a neuron looks like.",
+      "Sketch the heart, please.",
+    ]) {
+      expect(salienceReasons(s), s).toContain("request");
+    }
+    expect(isSalient("Can everyone see the board?")).toBe(false);
+    expect(isRequest("I would kind of like to see that on the whiteboard.")).toBe(true);
+    expect(isRequest("Sales grew 12% in Q2.")).toBe(false);
   });
 
   it("everyday talk is not salient", () => {

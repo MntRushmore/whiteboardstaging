@@ -69,16 +69,16 @@ export const LECTURE_LIMITS = {
 
 export const LECTURE_TIMING = {
   /** the director is asked at most this often while listening… */
-  tickMinMs: 40_000,
+  tickMinMs: 20_000,
   /** …and only once this many new words have been heard since it was last asked */
-  tickMinWords: 45,
+  tickMinWords: 25,
   /**
    * LIVE: while what is said is salient (numbers, amounts, years, percentages, steps — "first",
    * "next", "then") or a live visual on the screen was drawn or updated within `activeWindowMs`,
    * the director is asked this often, once `liveTickMinWords` new words have been committed.
    */
-  liveTickMinMs: 8_000,
-  liveTickMinWords: 5,
+  liveTickMinMs: 4_000,
+  liveTickMinWords: 4,
   activeWindowMs: 150_000,
   /** "Draw that" (a forced tick) reads this much of the latest transcript as fresh */
   forceWindowMs: 60_000,
@@ -587,7 +587,8 @@ export const SketchRequestSchema = z.object({
 });
 export type SketchRequest = z.input<typeof SketchRequestSchema>;
 
-const Coord = z.number().finite().min(-50).max(1050);
+/** a coordinate in the drawing's box (x to 1000, y to `h`, which may be up to 2500 for a tall panel), with a little overshoot */
+const Coord = z.number().finite().min(-50).max(2550);
 
 /**
  * A drawing in its own box: x from 0 to 1000, y from 0 to `h` (1000 / aspect), y down. Each stroke
@@ -609,7 +610,10 @@ export const SketchDrawingSchema = z
     strokes: z.array(SketchStrokeSchema).min(1).max(LECTURE_SKETCH_LIMITS.strokes),
     labels: z.array(SketchLabelSchema).max(LECTURE_SKETCH_LIMITS.labels).default([]),
   })
-  .refine((d) => d.strokes.reduce((n, s) => n + s.points.length, 0) <= LECTURE_SKETCH_LIMITS.points, { message: "too many points" });
+  .refine((d) => d.strokes.reduce((n, s) => n + s.points.length, 0) <= LECTURE_SKETCH_LIMITS.points, { message: "too many points" })
+  .refine((d) => d.strokes.every((s) => s.points.every(([x, y]) => x <= 1050 && y <= d.h + 50)) && d.labels.every((l) => l.x <= 1050 && l.y <= d.h + 50), {
+    message: "a point outside the drawing's box",
+  });
 export type SketchDrawing = z.infer<typeof SketchDrawingSchema>;
 export type SketchStroke = z.infer<typeof SketchStrokeSchema>;
 

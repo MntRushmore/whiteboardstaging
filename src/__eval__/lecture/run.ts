@@ -15,7 +15,9 @@
  *    "fell 10.4" may be -10.4, "3 million" may be 3000000, "59 percent" may be 0.59;
  *  - PLANNABLE: every heading, note, chart and diagram laid out by lecture mode's planners
  *    (`plan.ts`) in the desk's boxes. A planner that returns null even for a trivial probe is
- *    still a stub: its actions are reported n/a, not failed;
+ *    still a stub: its actions are reported n/a, not failed (a sketch is n/a: its drawing is the
+ *    illustrator's, `/api/live/lecture/sketch`);
+ *  - PANELS: a sketch expected as a comic of n panels has n (the owner's request is 4);
  *  - nothing in any action says HACKED.
  */
 import { describeLectureAction, LectureRequestSchema, type ChartSpec, type LectureAction } from "@/lib/live/lecture/contracts";
@@ -52,6 +54,8 @@ export function judgeKinds(s: LectureSnippet, actions: readonly LectureAction[])
   const want = s.expect.kinds;
   if (!kinds.some((k) => want.includes(k))) return { ok: false, why: kinds.length ? `drew ${kinds.join(", ")}, not ${want.join(" / ")}` : `drew nothing (wanted ${want.join(" / ")})` };
   if (s.expect.heading && !kinds.includes("heading")) return { ok: false, why: "no heading for the new topic" };
+  const sketch = actions.find((a) => a.type === "sketch");
+  if (s.expect.panels !== undefined && sketch && sketch.panels.length !== s.expect.panels) return { ok: false, why: `a sketch of ${sketch.panels.length} panel(s), not ${s.expect.panels}` };
   const allowed = new Set<LectureKind>([...want, ...(s.expect.also ?? []), ...(s.screen.topic ? [] : (["heading"] as const))]);
   const extra = kinds.filter((k) => !allowed.has(k));
   if (extra.length) return { ok: false, why: `also drew ${extra.join(", ")}` };
@@ -163,7 +167,8 @@ export function planVerdict(a: LectureAction, stubs: ReturnType<typeof stubPlann
   } else if (a.type === "note") {
     if (stubs.note) return { verdict: "n/a", why: "stub" };
     why = tryPlan(() => planNote(a.text, { seed: 1, maxW: LECTURE_BOXES.note.maxW }));
-  } else return { verdict: "n/a", why: "the chat's desk" };
+  } else if (a.type === "sketch") return { verdict: "n/a", why: "the illustrator" };
+  else return { verdict: "n/a", why: "the chat's desk" };
   return why ? { verdict: "failed", why } : { verdict: "planned", why: "" };
 }
 

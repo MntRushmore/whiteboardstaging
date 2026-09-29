@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PROBE_FIGURE } from "@/lib/live/chat/figure";
-import { describeLectureAction, LECTURE_ACTION_TYPES, LECTURE_LIMITS, type LectureAction } from "@/lib/live/lecture/contracts";
+import { describeLectureAction, LECTURE_ACTION_TYPES, LECTURE_LIMITS, LECTURE_SKETCH_LIMITS, type LectureAction } from "@/lib/live/lecture/contracts";
 import { FIGURE_FORMAT, GRAPH_ACTION } from "./chat";
 import { ActiveVisualSchema, type ActiveVisual, type ChartSpec, type DiagramSpec } from "@/lib/live/lecture/contracts";
 import { buildLectureMessages, cleanLectureActions, LECTURE_SYSTEM_PROMPT, LectureReplyRawSchema, LIMITS_REMINDER, sameWhat, updateProblem } from "./lecture";
@@ -9,6 +9,18 @@ const BAR = { type: "chart", chart: { kind: "bar", title: "GDP growth", labels: 
 const FLOW = { type: "diagram", diagram: { kind: "flow", steps: ["Prophase", "Metaphase", "Anaphase", "Telophase"] } };
 const HEADING = { type: "heading", text: "Cell Division" };
 const NOTE = { type: "note", text: "Osmosis moves water toward the more concentrated side" };
+const PICTURE = { type: "sketch", title: "A plant cell", panels: [{ prompt: "a plant cell: a thick cell wall, a large central vacuole, green chloroplasts, a nucleus", caption: "Plant cell" }] };
+const COMIC = {
+  type: "sketch",
+  title: "Officer Vega",
+  cast: "Officer Vega: a tall police officer in a visor helmet and a long armoured coat; a neon city at night",
+  panels: [
+    { prompt: "Officer Vega chases a drone through rain-soaked neon streets", caption: "Outrun" },
+    { prompt: "Officer Vega sits alone in a cramped office late at night", caption: "Alone" },
+    { prompt: "Officer Vega trains a young recruit on a rooftop at dawn", caption: "A new partner" },
+    { prompt: "Officer Vega stands over a calm, clean city at sunrise", caption: "The future" },
+  ],
+};
 
 /** Every example in the prompt, as the model is to answer it, with the live visual it updates (as its line gives it). */
 function examples(): Array<{ line: string; actions: unknown[]; active: ActiveVisual[] }> {
@@ -35,6 +47,13 @@ describe("lecture prompt", () => {
     expect(LECTURE_SYSTEM_PROMPT).toMatch(/only from FRESH/);
     expect(LECTURE_SYSTEM_PROMPT).toMatch(/DRAW THAT: when the request says the student tapped "Draw that"/);
     expect(LECTURE_SYSTEM_PROMPT).toMatch(/PREFER ONE STRONG VISUAL/);
+    // free drawing: a request to see something is honoured (as a drawing, never as dictated words); "Draw that" always draws
+    expect(LECTURE_SYSTEM_PROMPT).toMatch(/DIRECT REQUEST: the speaker asks to see something drawn/);
+    expect(LECTURE_SYSTEM_PROMPT).toMatch(/never as words they dictate/);
+    expect(LECTURE_SYSTEM_PROMPT).toMatch(/The number of panels asked for is the number of panels/);
+    expect(LECTURE_SYSTEM_PROMPT).toMatch(/COMICS: the panels tell the story in the order it was told/);
+    expect(LECTURE_SYSTEM_PROMPT).toMatch(/so ALWAYS return something for it/);
+    expect(LECTURE_SYSTEM_PROMPT).toMatch(/Numbers said → a chart, never a sketch of them/);
     // the reminder at the end of every message says the contract's own numbers
     for (const n of [LECTURE_LIMITS.label, LECTURE_LIMITS.node, LECTURE_LIMITS.note, LECTURE_LIMITS.heading]) expect(LIMITS_REMINDER).toContain(`${n}`);
   });
@@ -43,7 +62,8 @@ describe("lecture prompt", () => {
     for (const t of LECTURE_ACTION_TYPES.filter((t) => t !== "new_screen")) expect(LECTURE_SYSTEM_PROMPT).toContain(`"type": "${t}"`);
     for (const k of ["bar", "pie", "scatter", "table", "flow", "cycle", "timeline", "hub", "tree", "venn"]) expect(LECTURE_SYSTEM_PROMPT).toContain(`"kind": "${k}"`);
     expect(LECTURE_SYSTEM_PROMPT).toContain('"line" has the same shape');
-    for (const n of [LECTURE_LIMITS.heading, LECTURE_LIMITS.note, LECTURE_LIMITS.label, LECTURE_LIMITS.node]) expect(LECTURE_SYSTEM_PROMPT).toContain(`at most ${n}`);
+    for (const n of [LECTURE_LIMITS.heading, LECTURE_LIMITS.note, LECTURE_LIMITS.label, LECTURE_LIMITS.node, LECTURE_SKETCH_LIMITS.prompt, LECTURE_SKETCH_LIMITS.cast]) expect(LECTURE_SYSTEM_PROMPT).toContain(`at most ${n}`);
+    expect(LIMITS_REMINDER).toContain(`a sketch 1 to ${LECTURE_SKETCH_LIMITS.panels} panels, one per reply`);
     // the board chat's own graph and figure sections, word for word
     expect(LECTURE_SYSTEM_PROMPT).toContain(GRAPH_ACTION);
     expect(LECTURE_SYSTEM_PROMPT).toContain(FIGURE_FORMAT);
@@ -57,6 +77,11 @@ describe("lecture prompt", () => {
     // the live ones: a chart started at its first number, grown, corrected beside new data, left alone
     expect(all.filter((e) => e.active.length).length).toBeGreaterThanOrEqual(4);
     expect(all.some((e) => e.actions.some((a) => (a as { type: string }).type === "update_diagram"))).toBe(true);
+    // free drawing: a picture asked for, a comic asked for (with its cast), one described in a lecture, one on "Draw that"
+    const sketches = all.flatMap((e) => e.actions.filter((a) => (a as { type: string }).type === "sketch") as Array<{ panels: unknown[]; cast?: string }>);
+    expect(sketches.length).toBeGreaterThanOrEqual(4);
+    expect(sketches.some((s) => s.panels.length > 1 && s.cast)).toBe(true);
+    expect(all.some((e) => e.line.startsWith("DRAW THAT.") && e.actions.length > 0)).toBe(true);
     for (const e of all) {
       const { actions, dropped } = cleanLectureActions(e.actions, { active: e.active });
       expect(dropped, e.line).toEqual([]);
@@ -93,7 +118,7 @@ describe("lecture prompt", () => {
         "The four stages of mitosis are prophase, metaphase, anaphase and telophase.",
         "</transcript>",
         "",
-        'DRAW THAT: the student tapped "Draw that". Return the single best visual for FRESH (a note when nothing visual fits), unless FRESH holds nothing at all worth drawing.',
+        'DRAW THAT: the student tapped "Draw that". Return the best visual for FRESH now: a chart or diagram when its data is there, else a sketch of what was described, else a note. Nothing only when FRESH is just a mic check, logistics or small talk, or all of it is already drawn.',
         "",
         LIMITS_REMINDER,
         "JSON only.",
@@ -139,6 +164,8 @@ describe("reading the model's reply", () => {
       { type: "graph", relations: ["y = 2x + 1"] },
       { type: "draw_figure", figure: PROBE_FIGURE },
       { type: "write_lines", lines: ["E = mc^{2}"] },
+      PICTURE,
+      COMIC,
     ];
     for (const a of good) {
       const { actions, dropped } = cleanLectureActions([a]);
@@ -174,6 +201,50 @@ describe("reading the model's reply", () => {
     ]);
     // arrows that fit stay
     expect(cleanLectureActions([{ type: "diagram", diagram: { kind: "flow", steps: ["A", "B"], arrows: ["heats"] } }]).actions[0]).toMatchObject({ diagram: { arrows: ["heats"] } });
+  });
+
+  it("a sketch: packaging let go (a bare prompt, one panel without its list, the illustrator's words cut at a word); a bad caption left off, the panel kept", () => {
+    const long = `a futuristic police officer ${"on a rain-soaked rooftop ".repeat(20)}`;
+    const { actions, dropped } = cleanLectureActions([{ type: "sketch", title: "", cast: "", panels: ["a lighthouse on a cliff", { prompt: long, caption: "" }] }]);
+    expect(dropped).toEqual([]);
+    const sk = actions[0] as Extract<LectureAction, { type: "sketch" }>;
+    expect(sk).toMatchObject({ type: "sketch", panels: [{ prompt: "a lighthouse on a cliff" }, {}] });
+    expect(sk.title).toBeUndefined();
+    expect(sk.cast).toBeUndefined();
+    expect(sk.panels[1].caption).toBeUndefined();
+    expect(sk.panels[1].prompt.length).toBeLessThanOrEqual(LECTURE_SKETCH_LIMITS.prompt);
+    expect(sk.panels[1].prompt).toMatch(/^a futuristic police officer on a rain-soaked rooftop/);
+    expect(sk.panels[1].prompt).toMatch(/[a-z]$/);
+    // one panel sent on the sketch itself
+    expect(cleanLectureActions([{ type: "sketch", prompt: "a Roman legionary in armour", caption: "A legionary" }]).actions).toEqual([{ type: "sketch", panels: [{ prompt: "a Roman legionary in armour", caption: "A legionary" }] }]);
+    // a caption with markup, or too long to write, is left off; the drawing is not
+    const bad = cleanLectureActions([{ type: "sketch", panels: [{ prompt: "a castle", caption: "<b>Castle</b>" }, { prompt: "a moat", caption: "x".repeat(LECTURE_LIMITS.note + 1) }] }]);
+    expect(bad.dropped).toEqual([]);
+    expect(bad.actions).toEqual([{ type: "sketch", panels: [{ prompt: "a castle" }, { prompt: "a moat" }] }]);
+    // a cast past its limit is cut at a word
+    const cast = cleanLectureActions([{ ...COMIC, cast: "Officer Vega, ".repeat(60) }]).actions[0] as Extract<LectureAction, { type: "sketch" }>;
+    expect(cast.cast!.length).toBeLessThanOrEqual(LECTURE_SKETCH_LIMITS.cast);
+  });
+
+  it("a sketch the contract refuses is dropped whole: more than four panels (a story's end is not cut off), no panels, a prompt too short", () => {
+    const five = { type: "sketch", panels: Array.from({ length: 5 }, (_, i) => ({ prompt: `scene number ${i + 1}` })) };
+    const { actions, dropped } = cleanLectureActions([five, { type: "sketch", panels: [] }, { type: "sketch", panels: [{ prompt: "ok" }] }]);
+    expect(actions).toEqual([]);
+    expect(dropped.map((d) => d.why)).toEqual(["invalid", "invalid", "invalid"]);
+    expect(dropped[0].reason).toMatch(/^panels:/);
+  });
+
+  it("one sketch per reply, and no note beside it; a sketch already drawn is not drawn again", () => {
+    const two = cleanLectureActions([COMIC, PICTURE]);
+    expect(two.actions).toEqual([COMIC]);
+    expect(two.dropped).toEqual([{ type: "sketch", why: "sketch", reason: "one sketch per reply" }]);
+    const beside = cleanLectureActions([HEADING, COMIC, NOTE]);
+    expect(beside.actions).toEqual([HEADING, COMIC]);
+    expect(beside.dropped.map((d) => d.why)).toEqual(["note"]);
+    expect(describeLectureAction(COMIC as LectureAction)).toBe("comic (4 panels): Officer Vega");
+    const again = cleanLectureActions([COMIC], { drawn: ["comic (4 panels): Officer Vega"] });
+    expect(again.actions).toEqual([]);
+    expect(again.dropped).toEqual([{ type: "sketch", why: "repeat", reason: "already drawn: comic (4 panels): Officer Vega", what: "comic (4 panels): Officer Vega" }]);
   });
 
   it("drops what the contract refuses, with why: unknown, too long, words with LaTeX, invented shapes", () => {

@@ -28,6 +28,7 @@ function handle(status: LectureHandle["status"], snapshot: Partial<LectureSnapsh
           forcing: false,
           drawing: false,
           updating: null,
+          sketching: null,
           liveVisual: false,
           pace: "normal",
           ...snapshot,

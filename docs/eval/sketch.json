@@ -1,0 +1,242 @@
+{
+ "rounds": [
+  {
+   "round": "1",
+   "about": "the first prompt (outlines, the palette by meaning, 20–60 elements, labels only when asked, the cast honoured, one example)",
+   "date": "2026-09-29",
+   "reasoning": "the illustrator's own (`sketchReasoning`: low; none for Anthropic's)",
+   "numbers": [
+    {
+     "model": "google/gemini-3.8-flash",
+     "drawings": 19,
+     "drawn": 19,
+     "firstUnusable": 0,
+     "failed": 0,
+     "overAttempt": 0,
+     "p50": 7571,
+     "p95": 11843,
+     "costPerDrawing": 0.009183943421052632,
+     "costTotal": 0.17449492500000002,
+     "meanStrokes": 40.473684210526315,
+     "meanPoints": 289.94736842105266
+    },
+    {
+     "model": "deepseek/deepseek-v4.1-flash",
+     "drawings": 19,
+     "drawn": 18,
+     "firstUnusable": 1,
+     "failed": 1,
+     "overAttempt": 1,
+     "p50": 12326,
+     "p95": 30904,
+     "costPerDrawing": 0.004518463585263159,
+     "costTotal": 0.08585080812000001,
+     "meanStrokes": 30.444444444444443,
+     "meanPoints": 234.5
+    },
+    {
+     "model": "anthropic/claude-sonnet-5.5",
+     "drawings": 19,
+     "drawn": 19,
+     "firstUnusable": 0,
+     "failed": 0,
+     "overAttempt": 5,
+     "p50": 13926,
+     "p95": 35309,
+     "costPerDrawing": 0.025808466315789477,
+     "costTotal": 0.49036086000000007,
+     "meanStrokes": 29.526315789473685,
+     "meanPoints": 237
+    },
+    {
+     "model": "openai/gpt-5.4-mini",
+     "drawings": 19,
+     "drawn": 19,
+     "firstUnusable": 0,
+     "failed": 0,
+     "overAttempt": 0,
+     "p50": 8051,
+     "p95": 15195,
+     "costPerDrawing": 0.0062203914473684205,
+     "costTotal": 0.11818743749999999,
+     "meanStrokes": 41.73684210526316,
+     "meanPoints": 269.2105263157895
+    },
+    {
+     "model": "anthropic/claude-haiku-4.5",
+     "drawings": 19,
+     "drawn": 19,
+     "firstUnusable": 0,
+     "failed": 0,
+     "overAttempt": 0,
+     "p50": 7343,
+     "p95": 18376,
+     "costPerDrawing": 0.007281762631578947,
+     "costTotal": 0.13835349,
+     "meanStrokes": 29.31578947368421,
+     "meanPoints": 198.42105263157896
+    }
+   ],
+   "sheets": {
+    "google/gemini-3.8-flash": "docs/eval/sketch/1-google-gemini-3.8-flash.png",
+    "deepseek/deepseek-v4.1-flash": "docs/eval/sketch/1-deepseek-deepseek-v4.1-flash.png",
+    "anthropic/claude-sonnet-5.5": "docs/eval/sketch/1-anthropic-claude-sonnet-5.5.png",
+    "openai/gpt-5.4-mini": "docs/eval/sketch/1-openai-gpt-5.4-mini.png",
+    "anthropic/claude-haiku-4.5": "docs/eval/sketch/1-anthropic-claude-haiku-4.5.png"
+   }
+  },
+  {
+   "round": "2",
+   "about": "the second prompt: drawn in a teacher's order, faithful details (a night has no sun), diagrams as textbook diagrams (a heart is not a valentine), bodies not stick figures, 2–6 main shapes filled, labels at 36 and well inside",
+   "date": "2026-09-29",
+   "reasoning": "the illustrator's own (`sketchReasoning`: low; none for Anthropic's)",
+   "numbers": [
+    {
+     "model": "google/gemini-3.8-flash",
+     "drawings": 19,
+     "drawn": 19,
+     "firstUnusable": 0,
+     "failed": 0,
+     "overAttempt": 0,
+     "p50": 7638,
+     "p95": 9894,
+     "costPerDrawing": 0.009390436578947368,
+     "costTotal": 0.17841829499999998,
+     "meanStrokes": 41,
+     "meanPoints": 283.3157894736842
+    },
+    {
+     "model": "anthropic/claude-sonnet-5.5",
+     "drawings": 19,
+     "drawn": 19,
+     "firstUnusable": 0,
+     "failed": 0,
+     "overAttempt": 5,
+     "p50": 10291,
+     "p95": 33009,
+     "costPerDrawing": 0.02451531789473684,
+     "costTotal": 0.46579103999999993,
+     "meanStrokes": 30.05263157894737,
+     "meanPoints": 247.68421052631578
+    },
+    {
+     "model": "deepseek/deepseek-v4.1-flash",
+     "drawings": 19,
+     "drawn": 18,
+     "firstUnusable": 1,
+     "failed": 1,
+     "overAttempt": 1,
+     "p50": 11826,
+     "p95": 31336,
+     "costPerDrawing": 0.0046663239410526325,
+     "costTotal": 0.08866015488000002,
+     "meanStrokes": 30.333333333333332,
+     "meanPoints": 229.94444444444446
+    },
+    {
+     "model": "openai/gpt-5.4-mini",
+     "drawings": 19,
+     "drawn": 19,
+     "firstUnusable": 0,
+     "failed": 0,
+     "overAttempt": 0,
+     "p50": 8273,
+     "p95": 20935,
+     "costPerDrawing": 0.007122919736842104,
+     "costTotal": 0.13533547499999998,
+     "meanStrokes": 45.63157894736842,
+     "meanPoints": 307.05263157894734
+    }
+   ],
+   "sheets": {
+    "google/gemini-3.8-flash": "docs/eval/sketch/2-google-gemini-3.8-flash.png",
+    "anthropic/claude-sonnet-5.5": "docs/eval/sketch/2-anthropic-claude-sonnet-5.5.png",
+    "deepseek/deepseek-v4.1-flash": "docs/eval/sketch/2-deepseek-deepseek-v4.1-flash.png",
+    "openai/gpt-5.4-mini": "docs/eval/sketch/2-openai-gpt-5.4-mini.png"
+   }
+  },
+  {
+   "round": "2m",
+   "about": "the second prompt, Gemini 3.8 Flash at medium reasoning",
+   "date": "2026-09-29",
+   "reasoning": "medium for every model",
+   "numbers": [
+    {
+     "model": "google/gemini-3.8-flash",
+     "drawings": 19,
+     "drawn": 19,
+     "firstUnusable": 0,
+     "failed": 0,
+     "overAttempt": 11,
+     "p50": 28034,
+     "p95": 35634,
+     "costPerDrawing": 0.026406778026315792,
+     "costTotal": 0.5017287825000001,
+     "meanStrokes": 46.526315789473685,
+     "meanPoints": 288.36842105263156
+    }
+   ],
+   "sheets": {
+    "google/gemini-3.8-flash": "docs/eval/sketch/2m-google-gemini-3.8-flash.png"
+   }
+  },
+  {
+   "round": "3",
+   "about": "the third prompt, at the desk's real aspects (0.81 comic panels, 1.57 pictures): each part outlined in its own colour and most main shapes filled (the look of the planners' gallery), composed for tall and wide frames; a reply cut off at the token limit is unusable",
+   "date": "2026-09-29",
+   "reasoning": "the illustrator's own (`sketchReasoning`: low; none for Anthropic's)",
+   "numbers": [
+    {
+     "model": "google/gemini-3.8-flash",
+     "drawings": 19,
+     "drawn": 19,
+     "firstUnusable": 0,
+     "failed": 0,
+     "overAttempt": 0,
+     "p50": 7066,
+     "p95": 12629,
+     "costPerDrawing": 0.009172532368421051,
+     "costTotal": 0.17427811499999998,
+     "meanStrokes": 38.73684210526316,
+     "meanPoints": 266.7368421052632
+    },
+    {
+     "model": "anthropic/claude-sonnet-5.5",
+     "drawings": 19,
+     "drawn": 19,
+     "firstUnusable": 0,
+     "failed": 0,
+     "overAttempt": 9,
+     "p50": 19922,
+     "p95": 35897,
+     "costPerDrawing": 0.028787428421052634,
+     "costTotal": 0.5469611400000001,
+     "meanStrokes": 30.36842105263158,
+     "meanPoints": 236.47368421052633
+    },
+    {
+     "model": "deepseek/deepseek-v4.1-flash",
+     "drawings": 19,
+     "drawn": 18,
+     "firstUnusable": 2,
+     "failed": 1,
+     "overAttempt": 5,
+     "p50": 11123,
+     "p95": 42788,
+     "costPerDrawing": 0.005380632075789473,
+     "costTotal": 0.10223200944,
+     "meanStrokes": 28.055555555555557,
+     "meanPoints": 235.77777777777777
+    }
+   ],
+   "sheets": {
+    "google/gemini-3.8-flash": "docs/eval/sketch/3-google-gemini-3.8-flash.png",
+    "anthropic/claude-sonnet-5.5": "docs/eval/sketch/3-anthropic-claude-sonnet-5.5.png",
+    "deepseek/deepseek-v4.1-flash": "docs/eval/sketch/3-deepseek-deepseek-v4.1-flash.png"
+   }
+  }
+ ],
+ "spentUsd": 3.4922436674399977,
+ "capUsd": 4,
+ "catalogFetchedAt": "2026-09-29"
+}

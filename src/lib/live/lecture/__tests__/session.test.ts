@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api-client";
+import { isSalient } from "../salience";
 import {
   LECTURE_LIMITS,
   LECTURE_TIMING,
@@ -9,10 +10,14 @@ import {
   type LectureResponse,
   type LectureRunReport,
   type LectureScreen,
+  type SketchDrawing,
+  type SketchRequest,
+  type SketchResponse,
   type SpeechCallbacks,
   type SpeechSource,
 } from "../contracts";
-import { FOLLOW_UP_GAP_MS, HEARTBEAT_MS, LectureSession, timingForSpeed, updatingKind, type LectureSessionDeps } from "../session";
+import type { LectureRunOptions } from "../desk";
+import { FOLLOW_UP_GAP_MS, HEARTBEAT_MS, LectureSession, REQUEST_MAX_WAIT_MS, REQUEST_QUIET_MS, SKETCH_TIMEOUT_MS, sketchKind, timingForSpeed, updatingKind, type LectureSessionDeps } from "../session";
 import { SpeechError } from "../speech/errors";
 
 // ------------------------------------------------------------------ fakes
@@ -67,7 +72,7 @@ interface Harness {
   session: LectureSession;
   source: FakeSource;
   screen: LectureScreen;
-  run: ReturnType<typeof vi.fn<(actions: readonly LectureAction[]) => Promise<LectureRunReport>>>;
+  run: ReturnType<typeof vi.fn<(actions: readonly LectureAction[], opts?: LectureRunOptions) => Promise<LectureRunReport>>>;
   saved: string[];
   requests: Array<{ req: LectureRequest; signal: AbortSignal; at?: number }>;
   request: ReturnType<typeof vi.fn<(req: LectureRequest, signal: AbortSignal) => Promise<LectureResponse>>>;
@@ -78,7 +83,7 @@ async function startSession(over: Partial<LectureSessionDeps> = {}): Promise<Har
   const screen: LectureScreen = { empty: true, topic: null, drawn: [], room: 1, active: [] };
   const saved: string[] = [];
   const requests: Harness["requests"] = [];
-  const run = vi.fn(async (actions: readonly LectureAction[]): Promise<LectureRunReport> => ({
+  const run = vi.fn<(actions: readonly LectureAction[], opts?: LectureRunOptions) => Promise<LectureRunReport>>(async (actions) => ({
     outcomes: actions.map((a) => ({ type: a.type, ok: true, what: a.type === "heading" ? `heading: ${a.text}` : a.type === "note" ? `note: ${a.text}` : a.type })),
     screensAdded: 0,
   }));
@@ -244,7 +249,7 @@ describe("LectureSession: pacing", () => {
     });
     h.source.say(words(50));
     await advance(LECTURE_TIMING.tickMinMs);
-    expect(h.run).toHaveBeenCalledWith([{ type: "new_screen" }, HEADING, NOTE]);
+    expect(h.run).toHaveBeenCalledWith([{ type: "new_screen" }, HEADING, NOTE], expect.objectContaining({ onSketch: expect.any(Function) }));
     expect(h.session.snapshot().stats).toMatchObject({ sketches: 1, lastWhat: "heading: Photosynthesis" });
   });
 
@@ -574,29 +579,34 @@ describe("LectureSession: the live pace", () => {
     [31_000, "Our best quarter ever."],
   ];
 
-  it("a sales story: asked the moment it starts, then every liveTickMinMs, each ask carrying what was said since the last", async () => {
+  it("a sales story: asked the moment it starts, then at the live pace, every sentence reaching the director once and within one interval", async () => {
     const h = await timedSession();
     await play(h, SALES.slice(0, 7), 29_000);
-    expect(h.session.snapshot().pace).toBe("live"); // "eighteen million" heard, not asked about yet
     await advance(2_000);
     h.source.say(SALES[7][1]);
     await advance(14_000);
     const times = askTimes(h);
-    expect(times).toEqual([1_000, 9_000, 17_000, 25_000, 33_000]);
-    for (let i = 1; i < times.length; i++) expect(times[i] - times[i - 1]).toBe(LECTURE_TIMING.liveTickMinMs);
+    // asked the moment the story starts, then never closer together than the live pace allows
+    expect(times[0]).toBe(1_000);
+    for (let i = 1; i < times.length; i++) expect(times[i] - times[i - 1]).toBeGreaterThanOrEqual(LECTURE_TIMING.liveTickMinMs);
     expect(h.requests[0].req.fresh).toBe("Let's look at how our sales went this year.");
-    // the ask due at 9 s goes at 9 s exactly, just before that second's sentence is committed
-    expect(h.requests[1].req.fresh).toBe("In the first quarter we sold twelve million units.");
-    expect(h.requests[2].req.fresh).toBe("The second quarter was up to fifteen million. That is a twenty five percent jump.");
     expect(h.requests[1].req.context).toBe("Let's look at how our sales went this year.");
-    expect(h.requests[4].req.fresh).toBe("And the fourth quarter finished at eighteen million. Our best quarter ever.");
+    // a sentence with numbers in it reaches the director exactly once, within one live interval; the
+    // rest go with the next ask (an aside at the very end waits for more words, at the usual pace)
+    for (const [at, text] of SALES) {
+      const carrying = h.requests.filter((r) => r.req.fresh.includes(text));
+      expect(carrying.length, text).toBeLessThanOrEqual(1);
+      if (!isSalient(text)) continue;
+      expect(carrying, text).toHaveLength(1);
+      expect(carrying[0].at! - at, text).toBeLessThanOrEqual(LECTURE_TIMING.liveTickMinMs);
+    }
   });
 
   it("chatter without numbers or steps stays at the usual pace", async () => {
     const h = await timedSession();
     const chatter: Array<[number, string]> = Array.from({ length: 30 }, (_, i) => [(i + 1) * 4_000, `${words(12, "chat")} and so on`]);
     await play(h, chatter, 125_000);
-    expect(askTimes(h)).toEqual([40_000, 80_000, 120_000]);
+    expect(askTimes(h)).toEqual(Array.from({ length: Math.floor(125_000 / LECTURE_TIMING.tickMinMs) }, (_, i) => (i + 1) * LECTURE_TIMING.tickMinMs));
     expect(h.session.snapshot().pace).toBe("normal");
   });
 
@@ -634,12 +644,12 @@ describe("LectureSession: the live pace", () => {
         [2_000, "Then fifteen in the second."], // in flight
         [3_000, "Then eighteen in the third."], // in flight: coalesced with the one before
       ],
-      4_000,
+      3_500,
     );
-    expect(asked).toEqual([1_000]);
-    await advance(2_000); // settled at 4 s; the follow-up waits for the 5 s budget gap (1 + 5 = 6 s)
-    expect(asked).toEqual([1_000, 1_000 + FOLLOW_UP_GAP_MS]);
-    expect(FOLLOW_UP_GAP_MS).toBe(5_000);
+    expect(asked).toEqual([1_000]); // the director is still thinking until 4 s
+    await advance(2_500); // settled at 4 s; the follow-up goes at the later of that and the budget gap
+    expect(FOLLOW_UP_GAP_MS).toBe(3_000);
+    expect(asked).toEqual([1_000, Math.max(4_000, 1_000 + FOLLOW_UP_GAP_MS)]);
     expect(h.requests[1].req.fresh).toBe("Then fifteen in the second. Then eighteen in the third.");
     await advance(60_000);
     expect(asked).toHaveLength(2); // nothing new was said: no more asks
@@ -684,7 +694,7 @@ describe("LectureSession: the live pace", () => {
     await advance(2_000);
     h.source.say(words(8, "talk"));
     await advance(6_000);
-    expect(askTimes(h)).toEqual([0, 8_000]);
+    expect(askTimes(h)).toEqual([0, LECTURE_TIMING.liveTickMinMs]);
     // past the live window, plain talk is back to the usual pace
     await advance(LECTURE_TIMING.activeWindowMs);
     expect(h.session.snapshot().liveVisual).toBe(false);
@@ -743,5 +753,178 @@ describe("updatingKind", () => {
     expect(updatingKind([{ type: "update_chart", target: "c", chart }, HEADING])).toBeNull();
     expect(updatingKind([{ type: "chart", chart }])).toBeNull();
     expect(updatingKind([])).toBeNull();
+  });
+});
+
+describe("LectureSession: sketches", () => {
+  const COMIC: LectureAction = { type: "sketch", title: "Officer Vega", cast: "Officer Vega: visor helmet, long coat", panels: [1, 2, 3, 4].map((i) => ({ prompt: `Officer Vega, scene ${i}` })) };
+  const WHAT = "comic (4 panels): Officer Vega";
+  const DRAWING: SketchDrawing = {
+    w: 1000,
+    h: 800,
+    strokes: [
+      {
+        points: [
+          [0, 0],
+          [10, 10],
+        ],
+        closed: false,
+        fill: false,
+      },
+    ],
+    labels: [],
+  };
+  const PANEL = { prompt: "Officer Vega, scene 1", cast: "Officer Vega: visor helmet, long coat", panel: { index: 0, of: 4 }, aspect: 0.9 };
+
+  /** A session with the illustrator, whose board draws a comic: it keeps the run's options, as the desk does. */
+  async function withIllustrator() {
+    const out: Array<{ req: SketchRequest; signal: AbortSignal; d: ReturnType<typeof deferred<SketchResponse>> }> = [];
+    const requestSketch = vi.fn((req: SketchRequest, signal: AbortSignal) => {
+      const d = deferred<SketchResponse>();
+      out.push({ req, signal, d });
+      return d.promise;
+    });
+    const h = await startSession({ requestSketch });
+    let opts: LectureRunOptions | undefined;
+    h.run.mockImplementation(async (_actions, o) => {
+      opts = o;
+      return { outcomes: [{ type: "sketch", ok: true, id: "lv_1", what: WHAT }], screensAdded: 0 };
+    });
+    h.request.mockResolvedValueOnce(reply([COMIC]));
+    h.source.say(`draw me a comic ${words(50)}`);
+    await advance(LECTURE_TIMING.tickMinMs);
+    expect(opts).toBeDefined();
+    return { h, out, requestSketch, opts: opts! };
+  }
+
+  it("the run is given the way to the illustrator: each panel asked with the board's and the session's ids, its drawing handed back", async () => {
+    const { h, out, requestSketch, opts } = await withIllustrator();
+    const panel = opts.requestSketch!(PANEL, new AbortController().signal);
+    await advance(0);
+    expect(requestSketch).toHaveBeenCalledTimes(1);
+    expect(out[0].req).toEqual({ ...PANEL, boardId: "board-1", session: h.session.sessionId });
+    out[0].d.resolve({ drawing: DRAWING, model: "m", ms: 9000, charged: true });
+    await expect(panel).resolves.toEqual(DRAWING);
+  });
+
+  it('"Drawing the comic…" while its frames are written and while its panels come; the lecture goes on meanwhile', async () => {
+    const h = await startSession({ requestSketch: vi.fn() });
+    const frames = deferred<LectureRunReport>();
+    let opts: LectureRunOptions | undefined;
+    h.run.mockImplementationOnce((_a, o) => {
+      opts = o;
+      return frames.promise;
+    });
+    h.request.mockResolvedValueOnce(reply([COMIC]));
+    h.source.say(words(50));
+    await advance(LECTURE_TIMING.tickMinMs);
+    expect(h.session.snapshot()).toMatchObject({ drawing: true, sketching: "comic" });
+    opts!.onSketch!({ id: "lv_1", panels: 4, drawn: 0, failed: 0, done: false });
+    frames.resolve({ outcomes: [{ type: "sketch", ok: true, id: "lv_1", what: WHAT }], screensAdded: 0 });
+    await advance(0);
+    // the run is over (the frames are on the board): the panels are still coming
+    expect(h.session.snapshot()).toMatchObject({ drawing: false, thinking: false, sketching: "comic", stats: { sketches: 1, lastWhat: WHAT } });
+    // …and the lecture goes on: the next ask is not held up by them
+    h.source.say(words(50, "v"));
+    await advance(LECTURE_TIMING.tickMinMs);
+    expect(h.request).toHaveBeenCalledTimes(2);
+    opts!.onSketch!({ id: "lv_1", panels: 4, drawn: 3, failed: 0, done: false });
+    expect(h.session.snapshot().sketching).toBe("comic");
+    opts!.onSketch!({ id: "lv_1", panels: 4, drawn: 4, failed: 0, done: true });
+    expect(h.session.snapshot()).toMatchObject({ sketching: null, notice: null });
+  });
+
+  it("panels that could not be drawn are said, until something new is drawn", async () => {
+    const { h, opts } = await withIllustrator();
+    opts.onSketch!({ id: "lv_1", panels: 4, drawn: 3, failed: 1, done: true });
+    expect(h.session.snapshot().notice).toEqual({ kind: "sketch_failed", failed: 1, panels: 4 });
+    h.run.mockResolvedValueOnce({ outcomes: [{ type: "heading", ok: true, what: "heading: The future" }], screensAdded: 1 });
+    h.request.mockResolvedValueOnce(reply([{ type: "heading", text: "The future" }]));
+    h.source.say(words(50, "u"));
+    await advance(LECTURE_TIMING.tickMinMs);
+    expect(h.session.snapshot().notice).toBeNull();
+  });
+
+  it("a panel that takes too long is a failure (its frame gets a note); the desk calling one off, or the lecture ending, is not", async () => {
+    const { h, out, opts } = await withIllustrator();
+    // the request never answers (nor heeds its abort): it is given up all the same
+    const slow = opts.requestSketch!(PANEL, new AbortController().signal).catch((e: unknown) => e);
+    await advance(SKETCH_TIMEOUT_MS);
+    const err = (await slow) as Error;
+    expect(out[0].signal.aborted).toBe(true);
+    expect(err.message).toBe("The drawing took too long.");
+    expect(err.name).not.toBe("AbortError");
+
+    const desk = new AbortController();
+    const calledOff = opts.requestSketch!(PANEL, desk.signal).catch((e: unknown) => e);
+    await advance(0);
+    desk.abort();
+    expect(out[1].signal.aborted).toBe(true);
+    expect(((await calledOff) as Error).name).toBe("AbortError");
+    // an answer after that changes nothing
+    out[1].d.resolve({ drawing: DRAWING, model: "m", ms: 1 });
+
+    const failed = opts.requestSketch!(PANEL, new AbortController().signal).catch((e: unknown) => e);
+    await advance(0);
+    out[2].d.reject(new Error("upstream 502"));
+    expect(((await failed) as Error).message).toBe("upstream 502");
+
+    const ended = opts.requestSketch!(PANEL, new AbortController().signal).catch((e: unknown) => e);
+    await advance(0);
+    h.session.stop();
+    expect(out[3].signal.aborted).toBe(true);
+    expect(((await ended) as Error).name).toBe("AbortError");
+    // after the lecture, nothing more is asked
+    await expect(opts.requestSketch!(PANEL, new AbortController().signal)).rejects.toMatchObject({ name: "AbortError" });
+    expect(out).toHaveLength(4);
+    expect(h.session.snapshot().sketching).toBeNull();
+  });
+
+  it("without the illustrator, a run is given no way to it (the board leaves a sketch out)", async () => {
+    const h = await startSession();
+    h.request.mockResolvedValueOnce(reply([COMIC]));
+    h.source.say(words(50));
+    await advance(LECTURE_TIMING.tickMinMs);
+    const opts = h.run.mock.calls[0][1];
+    expect(opts?.requestSketch).toBeUndefined();
+    expect(opts?.onSketch).toBeInstanceOf(Function);
+  });
+
+  it("a request to see something waits for the speaker to finish describing it, then all of it is asked about at once", async () => {
+    const h = await startSession();
+    // the owner's comic, as the recognizer commits it: the request, then its panels, a pause or two apart
+    h.source.say("I'm thinking about making a comic strip for a video game about a futuristic police officer, and I would kind of like to see that on the whiteboard.");
+    await advance(REQUEST_QUIET_MS - 1);
+    expect(h.request).not.toHaveBeenCalled();
+    h.source.say("I want, like, four different panels, and I want each of them to feature the police officer and talk about his adversities…");
+    await advance(2_000);
+    h.source.hear("the first two, but then");
+    await advance(REQUEST_QUIET_MS);
+    // still talking: not yet
+    expect(h.request).not.toHaveBeenCalled();
+    h.source.say("the first two, but then the next two… the future…");
+    await advance(REQUEST_QUIET_MS - 1);
+    expect(h.request).not.toHaveBeenCalled();
+    await advance(1);
+    expect(h.request).toHaveBeenCalledTimes(1);
+    expect(h.requests[0].req.fresh).toMatch(/^I'm thinking about making a comic strip.*four different panels.*the future…$/);
+  });
+
+  it("…but not for ever: at most REQUEST_MAX_WAIT_MS after the request, even while the speaker goes on", async () => {
+    const h = await startSession();
+    h.source.say("Can you draw a plant cell for me?");
+    for (let t = 0; t < REQUEST_MAX_WAIT_MS - 2_000; t += 2_000) {
+      await advance(2_000);
+      h.source.say(`and ${words(3, `x${t}`)}`);
+    }
+    expect(h.request).not.toHaveBeenCalled();
+    await advance(2_000);
+    expect(h.request).toHaveBeenCalledTimes(1);
+  });
+
+  it("sketchKind: a comic (more than one panel), a picture, or none", () => {
+    expect(sketchKind([HEADING, COMIC])).toBe("comic");
+    expect(sketchKind([{ type: "sketch", panels: [{ prompt: "a plant cell" }] }])).toBe("picture");
+    expect(sketchKind([HEADING, NOTE])).toBeNull();
   });
 });

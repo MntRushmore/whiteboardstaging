@@ -6,8 +6,22 @@ import type { ChatAction, ChatRunReport } from "../../chat/contracts";
 import { CHAT_BLOCK_META, ChatDesk, tailAtWord, type ChatShape } from "../../chat/desk";
 import { FREE_AREA } from "../../chat/layout";
 import { HAND_BLOCK_META, HAND_LINE_META, HAND_PART_META, type HandPlan } from "../../handwriting";
-import { LECTURE_BLOCK_META, LECTURE_ID_META, LECTURE_LIMITS, LECTURE_WHAT_META, type LectureAction, type LecturePageMeta, type LectureRunReport } from "../contracts";
-import { estimateBytes, LECTURE_LAYOUT, LECTURE_NOTES, LectureDesk, roundPlan, scalePlan, type LectureHost, type LecturePlanners } from "../desk";
+import { LECTURE_BLOCK_META, LECTURE_ID_META, LECTURE_LIMITS, LECTURE_WHAT_META, type LectureAction, type LecturePageMeta, type LectureRunReport, type SketchDrawing } from "../contracts";
+import {
+  estimateBytes,
+  LECTURE_LAYOUT,
+  LECTURE_NOTES,
+  LectureDesk,
+  roundPlan,
+  scalePlan,
+  type LectureHost,
+  type LecturePlanners,
+  type LectureRunOptions,
+  type RequestSketch,
+  type SketchPanelRequest,
+  type SketchPlanners,
+  type SketchProgress,
+} from "../desk";
 import { LECTURE_BOXES } from "../plan";
 
 /**
@@ -847,5 +861,383 @@ describe("parts", () => {
     expect(d.remove.sort()).toEqual(["bar:A", "bar:B", "gone"]);
     expect(d.add.map((l) => l.part)).toEqual(["bar:A", "bar:B", "new"]);
     expect({ written: d.written, total: d.total }).toEqual({ written: 3, total: 4 });
+  });
+});
+
+// ------------------------------------------------------------------ free drawing
+
+/** The plan moved by (dx, dy), its bounds with it: a drawing centred in its box, as the planner leaves it. */
+function offsetPlan(p: HandPlan, dx: number, dy: number): HandPlan {
+  return { ...p, lines: p.lines.map((l) => ({ ...l, x: l.x + dx, y: l.y + dy })), bounds: { ...p.bounds, x: p.bounds.x + dx, y: p.bounds.y + dy } };
+}
+
+const FRAME_GAP = 20;
+const TITLE_H = 50;
+const CAPTION_H = 40;
+
+/**
+ * Sketch planners like the real ones in shape: the frames in a row across the box (a title band
+ * above, a caption band under), outlined as one box; nothing to draw for one picture with no
+ * caption and no title. A drawing is a box of 80 % of its frame, centred (its bounds carry the offset).
+ */
+function fakeSketches(over: Partial<SketchPlanners> = {}): SketchPlanners {
+  return {
+    panels: ({ count, captions, title, framed }, { box }) => {
+      const top = title ? TITLE_H : 0;
+      const band = captions.some(Boolean) ? CAPTION_H : 0;
+      const w = (box.w - FRAME_GAP * (count - 1)) / count;
+      const frames = Array.from({ length: count }, (_, i) => ({ x: i * (w + FRAME_GAP), y: top, w, h: box.h - top - band }));
+      const plan: HandPlan = framed || top || band ? boxPlan(box.w, box.h, "frames") : { lines: [], bounds: { x: 0, y: 0, w: 0, h: 0 }, size: 30, totalMs: 0 };
+      return { plan, frames };
+    },
+    sketch: (drawing, { box }) => offsetPlan(boxPlan(box.w * 0.8, box.h * 0.8, `drawing ${drawing.labels[0]?.text ?? ""}`), box.w * 0.1, box.h * 0.1),
+    ...over,
+  };
+}
+
+/** The illustrator: every panel asked for is held until the test answers it. */
+function illustrator() {
+  const calls: Array<{ req: SketchPanelRequest; signal: AbortSignal; resolve(d: SketchDrawing): void; reject(e: unknown): void }> = [];
+  const progress: SketchProgress[] = [];
+  const requestSketch: RequestSketch = (req, signal) => new Promise<SketchDrawing>((resolve, reject) => calls.push({ req, signal, resolve, reject }));
+  const opts: LectureRunOptions = { requestSketch, onSketch: (p) => progress.push(p) };
+  return { calls, progress, opts };
+}
+
+const drawing = (tag: string): SketchDrawing => ({
+  w: 1000,
+  h: 800,
+  strokes: [
+    {
+      points: [
+        [0, 0],
+        [100, 100],
+      ],
+      closed: false,
+      fill: false,
+    },
+  ],
+  labels: [{ text: tag, x: 10, y: 10 }],
+});
+
+/** Lets the arrivals be written: each goes through the chat desk's turn, a few hops away. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+}
+
+function overlaps(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+const COMIC: Extract<LectureAction, { type: "sketch" }> = {
+  type: "sketch",
+  title: "Officer Vega",
+  cast: "Officer Vega: a tall officer in a visor helmet and a long coat; a neon city at night",
+  panels: [1, 2, 3, 4].map((i) => ({ prompt: `Officer Vega, scene ${i}`, caption: `Scene ${i}` })),
+};
+const COMIC_WHAT = "comic (4 panels): Officer Vega";
+const PICTURE: Extract<LectureAction, { type: "sketch" }> = { type: "sketch", panels: [{ prompt: "a plant cell with its wall, vacuole and chloroplasts" }] };
+
+function setupSketch(over: Partial<SketchPlanners> = {}) {
+  return { ...setup({ sketches: fakeSketches(over) }), ...illustrator() };
+}
+
+describe("the lecture desk — free drawing", () => {
+  const sketchWrites = (board: FakeBoard) => board.writes.filter((w) => w.meta[LECTURE_BLOCK_META] === "sketch");
+  /** what each write after the frames drew: "drawing <tag>", or the frame's note */
+  const fills = (board: FakeBoard) => sketchWrites(board).slice(1).map((w) => w.plan.lines[0].latex);
+
+  it("a comic: its frames at once, in a wide band under the heading, carrying its summary; every panel asked for at once, each for its frame; the run ends before any drawing is in", async () => {
+    const { board, desk, calls, progress, opts } = setupSketch();
+    await desk.run([{ type: "heading", text: "Future cops" }]);
+    const report = await desk.run([COMIC], opts);
+    expect(report).toEqual({ outcomes: [{ type: "sketch", ok: true, id: expect.stringMatching(/^lv_/), what: COMIC_WHAT }], screensAdded: 0 });
+    const id = report.outcomes[0].id!;
+    expect(board.writes).toHaveLength(2);
+    const [heading, frames] = board.writes;
+    expect(frames.meta).toEqual({ [LECTURE_BLOCK_META]: "sketch", [LECTURE_ID_META]: id });
+    expect(frames.lead).toEqual({ [LECTURE_WHAT_META]: COMIC_WHAT });
+    // most of the screen's width, under the heading, above the lecture bar: 540 would reach under the bar here, 460 does not
+    const band = frames.plan.bounds;
+    expect(band).toMatchObject({ w: 1400, h: 460 });
+    expect(band.y).toBeGreaterThanOrEqual(heading.plan.bounds.y + heading.plan.bounds.h + LECTURE_LAYOUT.headingGap);
+    expect(band.y + band.h).toBeLessThanOrEqual(SCREEN.h * LECTURE_LAYOUT.barZone.y0);
+    // the four panels asked for at once, before any is in, each composed for its frame, with the cast
+    const fw = (1400 - 3 * FRAME_GAP) / 4;
+    const fh = 460 - TITLE_H - CAPTION_H;
+    expect(calls.map((c) => c.req)).toEqual(COMIC.panels.map((p, index) => ({ prompt: p.prompt, cast: COMIC.cast, panel: { index, of: 4 }, aspect: fw / fh })));
+    expect(progress).toEqual([{ id, panels: 4, drawn: 0, failed: 0, done: false }]);
+    expect(desk.sketching).toBe(1);
+    // the director sees it once, by its summary, and the frames still to fill are not free room
+    const screen = desk.screen();
+    expect(screen.drawn).toEqual(["heading: Future cops", COMIC_WHAT]);
+    expect(screen.room).toBeLessThan(0.5);
+  });
+
+  it("each drawing fills its frame in reading order: one that comes early waits for the one before it", async () => {
+    const { board, desk, calls, progress, opts } = setupSketch();
+    const report = await desk.run([COMIC], opts);
+    const id = report.outcomes[0].id!;
+    calls[2].resolve(drawing("c"));
+    await settle();
+    expect(fills(board)).toEqual([]);
+    calls[0].resolve(drawing("a"));
+    await settle();
+    expect(fills(board)).toEqual(["drawing a"]);
+    calls[1].resolve(drawing("b"));
+    await settle();
+    expect(fills(board)).toEqual(["drawing a", "drawing b", "drawing c"]);
+    calls[3].resolve(drawing("d"));
+    await settle();
+    expect(fills(board)).toEqual(["drawing a", "drawing b", "drawing c", "drawing d"]);
+    // each in its own frame, where the planner centred it; every stroke the sketch's, its parts named by panel
+    const band = sketchWrites(board)[0].plan.bounds;
+    const fw = (1400 - 3 * FRAME_GAP) / 4;
+    const fh = board.writes[0].plan.bounds.h - TITLE_H - CAPTION_H;
+    sketchWrites(board)
+      .slice(1)
+      .forEach((w, i) => {
+        expect(w.meta).toEqual({ [LECTURE_BLOCK_META]: "sketch", [LECTURE_ID_META]: id });
+        expect(w.lead).toEqual({});
+        expect(w.plan.bounds.x).toBeCloseTo(band.x + i * (fw + FRAME_GAP) + fw * 0.1, 1);
+        expect(w.plan.bounds.y).toBeCloseTo(band.y + TITLE_H + fh * 0.1, 1);
+        expect(w.plan.lines.every((l) => l.part?.startsWith(`panel${i}:`))).toBe(true);
+      });
+    expect(progress.map((p) => [p.drawn, p.done])).toEqual([
+      [0, false],
+      [1, false],
+      [2, false],
+      [3, false],
+      [4, true],
+    ]);
+    expect(desk.sketching).toBe(0);
+    // one block for the director, frames and drawings together
+    expect(desk.screen().drawn).toEqual([COMIC_WHAT]);
+  });
+
+  it("a panel that fails gets a small note in its frame, as does one the planner cannot draw; the others are drawn", async () => {
+    const real = fakeSketches().sketch;
+    const { board, desk, calls, progress, opts } = setupSketch({ sketch: (d, o) => (d.labels[0]?.text === "bad" ? null : real(d, o)) });
+    await desk.run([COMIC], opts);
+    calls[3].resolve(drawing("d"));
+    calls[1].reject(new Error("upstream 502"));
+    calls[0].resolve(drawing("a"));
+    calls[2].resolve(drawing("bad"));
+    await settle();
+    expect(fills(board)).toEqual(["drawing a", LECTURE_NOTES.panelFailed, LECTURE_NOTES.panelFailed, "drawing d"]);
+    // small, and inside its frame
+    const band = sketchWrites(board)[0].plan.bounds;
+    const fw = (1400 - 3 * FRAME_GAP) / 4;
+    const frame = { x: band.x + fw + FRAME_GAP, y: band.y + TITLE_H, w: fw, h: band.h - TITLE_H - CAPTION_H };
+    const note = sketchWrites(board)[2].plan.bounds;
+    expect(note.x).toBeGreaterThanOrEqual(frame.x);
+    expect(note.x + note.w).toBeLessThanOrEqual(frame.x + frame.w);
+    expect(note.y + note.h).toBeLessThanOrEqual(frame.y + frame.h);
+    expect(note.h).toBeLessThan(36);
+    expect(progress.at(-1)).toMatchObject({ drawn: 2, failed: 2, done: true });
+  });
+
+  it("the lecture goes on while the drawings load: a note is written meanwhile, never in the comic's empty frames", async () => {
+    const { board, desk, calls, opts } = setupSketch();
+    await desk.run([{ type: "heading", text: "Future cops" }]);
+    await desk.run([COMIC], opts);
+    const band = sketchWrites(board)[0].plan.bounds;
+    const report = await desk.run([{ type: "note", text: "Cops of 2090" }]);
+    expect(report.outcomes).toEqual([{ type: "note", ok: true, what: "note: Cops of 2090" }]);
+    const note = board.writes[2];
+    expect(note.meta[LECTURE_BLOCK_META]).toBe("note");
+    expect(overlaps(note.plan.bounds, band)).toBe(false);
+    calls.forEach((c, i) => c.resolve(drawing(String(i))));
+    await settle();
+    expect(fills(board)).toEqual(["drawing 0", "drawing 1", "drawing 2", "drawing 3"]);
+    expect(board.writes.every((w) => w.page === "p1")).toBe(true);
+  });
+
+  it("no room for the band here: the comic goes on a new screen headed '<topic> (cont.)'", async () => {
+    const { board, desk, calls, opts } = setupSketch();
+    await desk.run([{ type: "heading", text: "Future cops" }]);
+    // the student's own work in the middle: no 1400 px band fits above the lecture bar
+    board.put({ x: 700, y: 300, w: 200, h: 100 });
+    const report = await desk.run([COMIC], opts);
+    expect(report.screensAdded).toBe(1);
+    expect(report.outcomes).toEqual([{ type: "sketch", ok: true, id: expect.stringMatching(/^lv_/), what: COMIC_WHAT }]);
+    expect(board.writes.map((w) => [w.page, w.meta[LECTURE_BLOCK_META]])).toEqual([
+      ["p1", "heading"],
+      ["p2", "heading"],
+      ["p2", "sketch"],
+    ]);
+    expect(board.pages[1].meta.topic).toBe("Future cops");
+    calls.forEach((c, i) => c.resolve(drawing(String(i))));
+    await settle();
+    expect(sketchWrites(board).map((w) => w.page)).toEqual(["p2", "p2", "p2", "p2", "p2"]);
+  });
+
+  it("a new topic while panels are still coming: they are waited for and written on their own screen first, then the new screen", async () => {
+    const { board, desk, calls, opts } = setupSketch();
+    await desk.run([COMIC], opts);
+    let answered = false;
+    board.onDelay = () => {
+      if (answered) return;
+      answered = true;
+      calls.forEach((c, i) => c.resolve(drawing(String(i))));
+    };
+    const report = await desk.run([{ type: "heading", text: "The future" }]);
+    expect(report).toMatchObject({ screensAdded: 1, outcomes: [{ type: "heading", ok: true }] });
+    expect(board.writes.map((w) => [w.page, w.plan.lines[0].latex])).toEqual([
+      ["p1", "frames"],
+      ["p1", "drawing 0"],
+      ["p1", "drawing 1"],
+      ["p1", "drawing 2"],
+      ["p1", "drawing 3"],
+      ["p2", "The future"],
+    ]);
+    expect(desk.sketching).toBe(0);
+  });
+
+  it("…and panels that never come get their note once the wait is over, their requests called off; the new screen goes on", async () => {
+    const { board, desk, calls, progress, opts } = setupSketch();
+    await desk.run([COMIC], opts);
+    calls[0].resolve(drawing("a"));
+    await settle();
+    const report = await desk.run([{ type: "new_screen" }, { type: "heading", text: "The future" }]);
+    expect(report.outcomes.map((o) => [o.type, o.ok])).toEqual([
+      ["new_screen", true],
+      ["heading", true],
+    ]);
+    expect(board.writes.map((w) => [w.page, w.plan.lines[0].latex])).toEqual([
+      ["p1", "frames"],
+      ["p1", "drawing a"],
+      ["p1", LECTURE_NOTES.panelFailed],
+      ["p1", LECTURE_NOTES.panelFailed],
+      ["p1", LECTURE_NOTES.panelFailed],
+      ["p2", "The future"],
+    ]);
+    // the ones still out are called off (one signal for the sketch: the drawing already in is not affected)
+    expect(calls.slice(1).every((c) => c.signal.aborted)).toBe(true);
+    expect(progress.at(-1)).toMatchObject({ drawn: 1, failed: 3, done: true });
+    // a drawing that comes after all is not written anywhere
+    calls[1].resolve(drawing("late"));
+    await settle();
+    expect(board.writes).toHaveLength(6);
+  });
+
+  it("the student on another screen when the drawings come: nothing is written there; they are written when the student is back", async () => {
+    const { board, desk, calls, opts } = setupSketch();
+    await desk.run([COMIC], opts);
+    board.pages.push({ id: "p2", shapes: [], meta: {} });
+    board.current = 1;
+    calls.forEach((c, i) => c.resolve(drawing(String(i))));
+    await settle();
+    expect(board.writes).toHaveLength(1);
+    expect(board.pages[1].shapes).toEqual([]);
+    board.current = 0;
+    // the director looks at the screen: what waited for it is written now
+    desk.screen();
+    await settle();
+    expect(sketchWrites(board).map((w) => [w.page, w.plan.lines[0].latex])).toEqual([
+      ["p1", "frames"],
+      ["p1", "drawing 0"],
+      ["p1", "drawing 1"],
+      ["p1", "drawing 2"],
+      ["p1", "drawing 3"],
+    ]);
+  });
+
+  it("…and given up when they stay away too long", async () => {
+    const { board, desk, calls, progress, opts } = setupSketch();
+    await desk.run([COMIC], opts);
+    board.pages.push({ id: "p2", shapes: [], meta: {} });
+    board.current = 1;
+    (board as unknown as { clock: number }).clock += LECTURE_LAYOUT.sketch.keepMs / 1000 + 10;
+    desk.screen();
+    expect(desk.sketching).toBe(0);
+    expect(progress.at(-1)).toMatchObject({ drawn: 0, done: true });
+    expect(calls.every((c) => c.signal.aborted)).toBe(true);
+    calls.forEach((c, i) => c.resolve(drawing(String(i))));
+    board.current = 0;
+    desk.screen();
+    await settle();
+    expect(board.writes).toHaveLength(1);
+  });
+
+  it("the student moves away before the frames are written: nothing of it is drawn, its panels are called off", async () => {
+    const { board, desk, calls, opts } = setupSketch();
+    // the hand is free when the sketch is placed, busy when its frames are to be written
+    let asked = 0;
+    board.handBusy = () => ++asked === 2;
+    board.onDelay = () => {
+      board.pages.push({ id: "p2", shapes: [], meta: {} });
+      board.current = 1;
+    };
+    const report = await desk.run([COMIC], opts);
+    expect(report.outcomes).toEqual([{ type: "sketch", ok: false, note: LECTURE_NOTES.movedAway }]);
+    expect(board.writes).toEqual([]);
+    expect(calls).toHaveLength(4);
+    expect(calls.every((c) => c.signal.aborted)).toBe(true);
+    expect(desk.sketching).toBe(0);
+  });
+
+  it("one picture: a chart's box to the right of the notes, no frame drawn round it; its drawing carries the summary; its box is kept clear while it loads", async () => {
+    const { board, desk, calls, opts } = setupSketch();
+    await desk.run([{ type: "heading", text: "Plant cells" }]);
+    const what = "sketch: a plant cell with its wall, vacuole and chloroplasts";
+    const report = await desk.run([PICTURE], opts);
+    expect(report.outcomes).toEqual([{ type: "sketch", ok: true, id: expect.stringMatching(/^lv_/), what }]);
+    // nothing to write until the picture comes (no frame, no caption, no title), and no panel or cast asked for
+    expect(board.writes).toHaveLength(1);
+    expect(calls.map((c) => c.req)).toEqual([{ prompt: PICTURE.panels[0].prompt, aspect: 520 / 420 }]);
+    // a chart meanwhile is not placed in the picture's box
+    await desk.run([BAR]);
+    const chart = board.writes[1].plan.bounds;
+    calls[0].resolve(drawing("cell"));
+    await settle();
+    const pic = board.writes[2];
+    expect(pic.plan.lines[0].latex).toBe("drawing cell");
+    expect(pic.lead).toEqual({ [LECTURE_WHAT_META]: what });
+    expect(pic.plan.bounds.x).toBeGreaterThanOrEqual(LECTURE_BOXES.note.maxW + LECTURE_LAYOUT.gutter);
+    expect(overlaps(chart, pic.plan.bounds)).toBe(false);
+    expect(desk.screen().drawn).toEqual(["heading: Plant cells", "bar chart: GDP growth", what]);
+  });
+
+  it("a title that only repeats the screen's heading is left off the strip", async () => {
+    const seen: Array<string | undefined> = [];
+    const real = fakeSketches().panels;
+    const { desk, opts } = setupSketch({ panels: (l, o) => (seen.push(l.title), real(l, o)) });
+    await desk.run([{ type: "heading", text: "Officer Vega" }]);
+    await desk.run([COMIC], opts);
+    expect(seen.every((t) => t === undefined)).toBe(true);
+  });
+
+  it("left out, with a note and nothing asked of the illustrator: no illustrator to ask, frames that cannot be laid out, a board too full to save", async () => {
+    const none = setupSketch();
+    expect((await none.desk.run([COMIC])).outcomes).toEqual([{ type: "sketch", ok: false, note: LECTURE_NOTES.cannotSketch }]);
+    const flat = setupSketch({ panels: () => null });
+    expect((await flat.desk.run([COMIC], flat.opts)).outcomes).toEqual([{ type: "sketch", ok: false, note: LECTURE_NOTES.cannotSketch }]);
+    expect(flat.calls).toEqual([]);
+    const full = setupSketch();
+    full.board.bytes = LECTURE_LAYOUT.boardBudgetBytes - 4 * LECTURE_LAYOUT.sketch.panelBytes;
+    expect((await full.desk.run([COMIC], full.opts)).outcomes).toEqual([{ type: "sketch", ok: false, note: LECTURE_NOTES.boardFull }]);
+    for (const s of [none, flat, full]) expect(s.board.writes).toEqual([]);
+  });
+});
+
+describe("LectureDesk: keeping up with a fast talker", () => {
+  it("draws faster while the lecture is ahead of the board, at its own pace otherwise", async () => {
+    const { board, desk } = setup();
+    await desk.run([BAR]);
+    const calm = board.writes[0].plan.pace ?? 1;
+    await desk.run([{ ...BAR, chart: { ...BAR.chart, title: "GDP growth again" } } as LectureAction], { behind: () => true });
+    expect(board.writes).toHaveLength(2);
+    expect(board.writes[1].plan.pace).toBeCloseTo(calm * LECTURE_LAYOUT.catchUpPace);
+  });
+
+  it("a behind() that throws is not ahead", async () => {
+    const { board, desk } = setup();
+    await desk.run([BAR], {
+      behind: () => {
+        throw new Error("gone");
+      },
+    });
+    expect(board.writes[0].plan.pace ?? 1).toBeLessThan(LECTURE_LAYOUT.catchUpPace);
   });
 });

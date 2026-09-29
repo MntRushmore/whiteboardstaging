@@ -494,6 +494,7 @@ describe("static: every route that charges credits refunds through runCharged / 
       "src/app/api/live/chat/route.ts",
       "src/app/api/live/check/route.ts",
       "src/app/api/live/lecture/route.ts",
+      "src/app/api/live/lecture/sketch/route.ts",
       "src/app/api/live/lecture/token/route.ts",
       "src/app/api/live/proof/route.ts",
       "src/app/api/live/recognize/route.ts",
