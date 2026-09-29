@@ -5,7 +5,8 @@ import type { LectureSnapshot } from "@/lib/live/lecture/session";
 // the lazy out-of-credits panel pulls in the billing and Supabase modules: not needed to render
 vi.mock("@/components/billing/OutOfCreditsPanel", () => ({ OutOfCreditsPanel: () => <p>panel</p> }));
 
-import { LectureBar } from "../LectureBar";
+// the panel itself (the page mounts `LectureBar`, which loads it lazily on the first start)
+import { LectureBarPanel as LectureBar } from "../LectureBarPanel";
 import { LectureButton } from "../LectureButton";
 import { LECTURE_COPY } from "../lectureView";
 import type { LectureHandle, LectureLiveState } from "../useLecture";

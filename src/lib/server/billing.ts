@@ -42,8 +42,9 @@ export const ROUTE_COSTS = {
   "live/chat": 3,
   // Lecture mode: one MINUTE of the director (recent transcript → what to sketch or update). The
   // route charges the first request of each wall-clock minute of a session and none of the rest
-  // (it asks every ~8 s while numbers are coming), so a credit a minute while someone is talking.
-  "live/lecture": 1,
+  // (it asks every ~8 s while numbers are coming): 2 credits a minute while someone is talking,
+  // which covers the director and the realtime recognizer (~$0.39 an hour) on the paid plans.
+  "live/lecture": 2,
   // Lecture mode: one realtime speech-to-text session opened (a single-use recognizer token).
   "live/listen": 1,
   credits: 0,

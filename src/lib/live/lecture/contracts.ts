@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DrawFigureSchema, GraphActionSchema, NewScreenSchema, WriteLinesSchema } from "../chat/contracts";
+import { LECTURE_TRANSCRIPT_CHARS } from "./meta";
 
 /**
  * Lecture mode: the board listens to a lecture (the microphone, as a live transcript) and the
@@ -59,7 +60,7 @@ export const LECTURE_LIMITS = {
   /** a node of a diagram may be a few words (wrapped onto two or three lines by the planner) */
   node: 40,
   /** transcript kept on each screen's page meta (older text is dropped from the front) */
-  screenTranscriptChars: 12_000,
+  screenTranscriptChars: LECTURE_TRANSCRIPT_CHARS,
   /** live visuals on the screen the director may update (newest first) */
   active: 2,
   /** a block's id on the board (`LECTURE_ID_META`) */
@@ -421,14 +422,8 @@ export interface LectureRunReport {
 
 // ------------------------------------------------------------------ on the page
 
-/** shape meta: the kind of lecture block (`heading`, `note`, `chart`, `diagram`) */
-export const LECTURE_BLOCK_META = "lectureBlock";
-/** shape meta: the block's one-line summary (`describeLectureAction`) */
-export const LECTURE_WHAT_META = "lectureWhat";
-/** page (screen) meta: `LecturePageMeta` */
-export const LECTURE_PAGE_META = "lecture";
-/** shape meta: the id of the chart or diagram a stroke belongs to (stable across its updates) */
-export const LECTURE_ID_META = "lectureId";
+// the meta keys (shape: block kind, summary, id; page: `LecturePageMeta`) live in `meta.ts`
+export { LECTURE_BLOCK_META, LECTURE_ID_META, LECTURE_PAGE_META, LECTURE_WHAT_META } from "./meta";
 
 /**
  * A live chart or diagram, kept on its screen's page meta (`LecturePageMeta.visuals`, by id): what

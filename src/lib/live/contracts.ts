@@ -619,11 +619,15 @@ export const LIVE_MODELS = {
   chatFallback: "deepseek/deepseek-v4.1-flash",
   /**
    * Lecture mode's director (POST /api/live/lecture, `src/lib/live/lecture`): recent transcript →
-   * what to sketch (a chart's data, a diagram's steps, a heading), usually nothing. The chat's pair
-   * until `npm run eval:lecture` says otherwise.
+   * what to sketch or update (a chart's data, a diagram's steps, a heading), usually nothing. On
+   * `npm run eval:lecture` (docs/eval/lecture.md) DeepSeek v4.1 Flash matched GPT-5.4 mini on every
+   * score — live sequences 66/66 each, single ticks 90/90 vs 89/90 — at 0.6 s vs 1.7 s p50 and
+   * about a fifth of the cost ($0.00023 vs $0.00126 a tick). A lecture asks every few seconds for
+   * an hour, so the owner chose it as the primary here (2026-09-29), with GPT-5.4 mini (a US
+   * provider) as the fallback.
    */
-  lecture: "openai/gpt-5.4-mini",
-  lectureFallback: "deepseek/deepseek-v4.1-flash",
+  lecture: "deepseek/deepseek-v4.1-flash",
+  lectureFallback: "openai/gpt-5.4-mini",
 } as const;
 
 /** Per-user limits for the live routes (the existing LIMITS table in src/lib/server/rate-limit.ts covers the legacy routes). */

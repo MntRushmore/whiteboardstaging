@@ -149,8 +149,10 @@ import {
 } from "./chat/work";
 import type { ChatAction, ChatRunReport, ChatScreen } from "./chat/contracts";
 import { CHAT_LINE_ID, ChatDesk, type ChatHost } from "./chat/desk";
-import { LectureDesk, type LectureHost, type LecturePlanners, type LoadLecturePlanners } from "./lecture/desk";
-import { LECTURE_BLOCK_META, LECTURE_PAGE_META, type LectureAction, type LecturePageMeta, type LectureRunReport, type LectureScreen, type LectureSpecMeta } from "./lecture/contracts";
+// lecture mode's desk (and its planners) is loaded the first time a lecture needs it (`lectureDesk`)
+import type { LectureDesk, LectureHost, LecturePlanners, LoadLecturePlanners } from "./lecture/desk";
+import type { LectureAction, LecturePageMeta, LectureRunReport, LectureScreen, LectureSpecMeta } from "./lecture/contracts";
+import { appendHeard, LECTURE_BLOCK_META, LECTURE_PAGE_META } from "./lecture/meta";
 // the drawer's own module, not the index: the index re-exports `checkFigure`, which the board chat's
 // proof check (a lazy chunk) uses — through the index it would land in the board's first load
 import { planFigure as defaultPlanFigure } from "./figureDraw/plan";
@@ -600,8 +602,12 @@ export class LiveLoop implements LiveController {
   /** the screen the loop last took in (`start` / `switchScreen`): the chat writes only once it is this one */
   private screenSeen: string | null = null;
 
-  /** lecture mode's hand: the director's actions, one block at a time (`src/lib/live/lecture/desk.ts`) */
-  private readonly lecture: LectureDesk;
+  /**
+   * lecture mode's hand: the director's actions, one block at a time (`src/lib/live/lecture/desk.ts`),
+   * loaded with the first lecture (`lectureDesk`) so no board pays for it in its first load
+   */
+  private lecture: LectureDesk | null = null;
+  private lectureLoad: Promise<LectureDesk> | null = null;
   /**
    * Lecture page meta not yet in the store, by page: read back as if it were (`lecturePageMeta`).
    * A topic is written at once; heard text waits `LECTURE_META_FLUSH_MS` for more, so a lecture's
@@ -615,7 +621,6 @@ export class LiveLoop implements LiveController {
     this.deps = { ...defaultDeps(), ...deps };
     this.proofs = new ProofDesk(this.proofHost());
     this.chat = new ChatDesk(this.chatHost());
-    this.lecture = new LectureDesk(this.lectureHost(), this.chat, this.deps.lecturePlanners);
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -4226,19 +4231,39 @@ export class LiveLoop implements LiveController {
     this.editor.store.put([{ ...page, meta: { ...page.meta, [LECTURE_PAGE_META]: merged } }]);
   }
 
-  /** The current screen in words, for the lecture director. */
+  /** Lecture mode's desk, loaded and made the first time a lecture needs it. */
+  private lectureDesk(): Promise<LectureDesk> {
+    this.lectureLoad ??= import("./lecture/desk").then(({ LectureDesk }) => {
+      this.lecture = new LectureDesk(this.lectureHost(), this.chat, this.deps.lecturePlanners);
+      return this.lecture;
+    });
+    return this.lectureLoad;
+  }
+
+  /**
+   * The current screen in words, for the lecture director. Asked before the desk has loaded (the
+   * very first tick of a lecture, a moment after the start), the screen is described from what the
+   * loop knows itself: whether it is empty, and its topic.
+   */
   lectureScreen(): LectureScreen {
-    return this.lecture.screen();
+    if (this.lecture) return this.lecture.screen();
+    void this.lectureDesk();
+    return { empty: this.editor.getCurrentPageShapes().length === 0, topic: this.lecturePageMeta().topic ?? null, drawn: [], room: 1, active: [] };
   }
 
   /** The director's actions, sketched one block at a time; resolves when the last is on the page. */
-  runLectureActions(actions: readonly LectureAction[]): Promise<LectureRunReport> {
-    return this.lecture.run(actions);
+  async runLectureActions(actions: readonly LectureAction[]): Promise<LectureRunReport> {
+    return (await this.lectureDesk()).run(actions);
   }
 
-  /** Heard text, kept on the current screen's page meta (what "what did she say about…" is answered from). */
+  /**
+   * Heard text, kept on the current screen's page meta (what "what did she say about…" is answered
+   * from). The loop's own write, not the desk's: a sentence belongs to the screen it was heard on,
+   * even before the desk has loaded.
+   */
   saveLectureTranscript(text: string): void {
-    this.lecture.saveTranscript(text);
+    if (!text.trim()) return;
+    this.setLecturePageMeta({ transcript: appendHeard(this.lecturePageMeta().transcript ?? "", text) });
   }
 
   /** The current screen's id ("page" on an editor without screens). */

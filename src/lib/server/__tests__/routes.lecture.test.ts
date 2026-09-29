@@ -195,7 +195,7 @@ describe("live/lecture", () => {
       const minute = lectureMinuteId(SESSION, T0);
       modelReplies({ actions: [BAR] }, { actions: [] }, { actions: [] }, { actions: [] });
       expect((await post()).body?.charged).toBe(true);
-      expect(callsTo("consume_credits").map((c) => c.args)).toEqual([{ p_route: "live/lecture", p_units: 1, p_request_id: minute, p_model: LIVE_MODELS.lecture }]);
+      expect(callsTo("consume_credits").map((c) => c.args)).toEqual([{ p_route: "live/lecture", p_units: 2, p_request_id: minute, p_model: LIVE_MODELS.lecture }]);
       // the lookup is the user's own row for this minute
       expect(callsTo("select usage_events")[0].args).toEqual({ user_id: fake.USER_ID, request_id: minute });
 
@@ -259,7 +259,7 @@ describe("live/lecture", () => {
     });
 
     it("a lookup that fails charges: a minute is never given away on an error", async () => {
-      fake.rows.push({ user_id: fake.USER_ID, request_id: lectureMinuteId(SESSION, T0), units: 1 });
+      fake.rows.push({ user_id: fake.USER_ID, request_id: lectureMinuteId(SESSION, T0), units: 2 });
       fake.selectError = "connection reset";
       modelReplies({ actions: [] });
       expect((await post()).body?.charged).toBe(true);

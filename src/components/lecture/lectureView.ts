@@ -5,20 +5,19 @@
  * board chat's chatView.ts.
  */
 import { LECTURE_TIMING, type LectureBoard } from "@/lib/live/lecture/contracts";
+import { LECTURE_BUTTON_COPY } from "./lectureCopy";
 import type { LectureErrorCode, LectureNotice, LectureSnapshot } from "@/lib/live/lecture/session";
 import { tailChars } from "@/lib/live/lecture/transcript";
 
 export type LectureHandleStatus = "off" | "consent" | "starting" | "listening" | "paused" | "error";
 
 export const LECTURE_COPY = {
-  button: "Lecture",
-  buttonHint: "Lecture mode: the tutor sketches the lecture as it is said",
-  stopHint: "Stop lecture mode",
+  ...LECTURE_BUTTON_COPY,
   title: "Lecture mode",
   consent: {
     title: "Lecture mode",
     body: "Lecture mode listens through your microphone and sketches what's said. We keep the words, never the audio. Make sure recording is allowed in your class.",
-    cost: "Uses about a credit a minute while someone is talking.",
+    cost: "Uses about 2 credits a minute while someone is talking.",
     start: "Start listening",
     cancel: "Cancel",
   },

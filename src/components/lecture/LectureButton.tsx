@@ -2,7 +2,7 @@
 
 import { Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { LECTURE_COPY } from "./lectureView";
+import { LECTURE_BUTTON_COPY as LECTURE_COPY } from "./lectureCopy";
 import type { LectureHandle } from "./useLecture";
 
 /**

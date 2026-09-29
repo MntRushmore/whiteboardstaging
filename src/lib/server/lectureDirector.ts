@@ -66,7 +66,7 @@ export interface LectureDirection {
 }
 
 /**
- * Lecture mode is billed per minute of a session, not per question (`live/lecture`, 1 credit): the
+ * Lecture mode is billed per minute of a session, not per question (`live/lecture`, 2 credits): the
  * first request in each wall-clock minute of a session is charged under this id, and the others
  * that minute find the charge already there. The id is the charge's `usage_events.request_id` (a
  * user's own row, which they may read), so a failed charging request is refunded under it and the

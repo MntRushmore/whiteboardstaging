@@ -2,7 +2,8 @@ import type { JsonObject } from "tldraw";
 import type { Rect } from "../contracts";
 import { problemMetaOf } from "../chat/cells";
 import type { ChatAction } from "../chat/contracts";
-import { CHAT_BLOCK_META, CHAT_WRITE, tailAtWord, type ChatDesk, type ChatHost, type ChatShape } from "../chat/desk";
+import { CHAT_BLOCK_META, CHAT_WRITE, type ChatDesk, type ChatHost, type ChatShape } from "../chat/desk";
+import { appendHeard } from "./meta";
 import { findFreeArea, FREE_AREA } from "../chat/layout";
 import { HAND_BLOCK_META, HAND_LINE_META, HAND_PART_META, paceFor, placeHandPlan, type HandLinePlan, type HandPlan } from "../handwriting";
 import {
@@ -506,10 +507,8 @@ export class LectureDesk implements LectureBoard {
    * `screenTranscriptChars` (older text is dropped from the front, at a word).
    */
   saveTranscript(text: string): void {
-    const heard = text.replace(/\s+/g, " ").trim();
-    if (!heard) return;
-    const cur = (this.host.screenMeta().transcript ?? "").trim();
-    this.host.setScreenMeta({ transcript: tailAtWord(cur ? `${cur} ${heard}` : heard, LECTURE_LIMITS.screenTranscriptChars) });
+    if (!text.trim()) return;
+    this.host.setScreenMeta({ transcript: appendHeard(this.host.screenMeta().transcript ?? "", text) });
   }
 
   // ---------------------------------------------------------------- running the director's actions

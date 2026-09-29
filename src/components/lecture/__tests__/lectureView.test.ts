@@ -44,10 +44,10 @@ describe("lecture copy", () => {
     );
     expect(LECTURE_COPY.consent.start).toBe("Start listening");
     expect(LECTURE_COPY.consent.cancel).toBe("Cancel");
-    // a tick costs 1 and comes at most every 40 s while someone talks, plus 1 per speech session
-    expect(ROUTE_COSTS["live/lecture"]).toBe(1);
+    // the director is billed per started minute of a session, plus 1 per speech session
+    expect(ROUTE_COSTS["live/lecture"]).toBe(2);
     expect(ROUTE_COSTS["live/listen"]).toBe(1);
-    expect(LECTURE_COPY.consent.cost).toMatch(/about a credit a minute/);
+    expect(LECTURE_COPY.consent.cost).toMatch(/about 2 credits a minute/);
   });
 
   it("out of credits says what the board dialog says", () => {

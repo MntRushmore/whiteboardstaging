@@ -8,7 +8,8 @@ import type { ChatAction, ChatActionOutcome, ChatRunReport, ChatScreen, ChatWind
 import { CHAT_LIMITS, noProblemNote } from "./contracts";
 import { chunkProblems, findFreeArea, joinPlans, planGrid, PROBLEM_GRID } from "./layout";
 import { verifyLines, verifyProblem } from "./verify";
-import { LECTURE_BLOCK_META, type LecturePageMeta } from "../lecture/contracts";
+import type { LecturePageMeta } from "../lecture/contracts";
+import { LECTURE_BLOCK_META } from "../lecture/meta";
 
 /**
  * The board chat's hand: runs a reply's actions on the board, one at a time, in the tutor's
