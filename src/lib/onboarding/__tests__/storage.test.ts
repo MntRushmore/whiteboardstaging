@@ -7,10 +7,13 @@ import {
   clearTourMarker,
   doneKey,
   isGuidedBoard,
+  planKey,
   readLocalDone,
+  readPlanMarker,
   readTourMarker,
   tourKey,
   writeLocalDone,
+  writePlanMarker,
   writeTourMarker,
   type TourMarker,
 } from "../marker";
@@ -215,5 +218,27 @@ describe("done on this device", () => {
     expect(readLocalDone(null, "u1")).toBe(false);
     expect(readLocalDone(throwing, "u1")).toBe(false);
     expect(() => writeLocalDone(throwing, "u1")).not.toThrow();
+  });
+});
+
+describe("the plan screen on this device", () => {
+  it("is due once the tour is finished, and seen once it has shown, per user", () => {
+    const s = memoryStorage();
+    expect(readPlanMarker(s, "u1")).toBeNull();
+    writePlanMarker(s, "u1", "pending");
+    expect(readPlanMarker(s, "u1")).toBe("pending");
+    expect(readPlanMarker(s, "u2")).toBeNull();
+    writePlanMarker(s, "u1", "seen");
+    expect(readPlanMarker(s, "u1")).toBe("seen");
+    expect(s.map.get(planKey("u1"))).toBe("seen");
+  });
+
+  it("reads garbage, no user and blocked storage as never due, and never throws", () => {
+    expect(readPlanMarker(memoryStorage({ [planKey("u1")]: "yes" }), "u1")).toBeNull();
+    expect(readPlanMarker(memoryStorage(), undefined)).toBeNull();
+    expect(readPlanMarker(null, "u1")).toBeNull();
+    expect(readPlanMarker(throwing, "u1")).toBeNull();
+    expect(() => writePlanMarker(throwing, "u1", "pending")).not.toThrow();
+    expect(() => writePlanMarker(null, "u1", "pending")).not.toThrow();
   });
 });

@@ -1,0 +1,268 @@
+/* The plan screen (PlanOffer, src/app/(platform)/welcome/plan): Arc tokens only, like the welcome. */
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.page {
+  /* fills the platform layout above the legal footer (platform.css) */
+  flex: 1 0 auto;
+  background: var(--surface-muted);
+}
+.main {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-6) var(--space-4) var(--space-16);
+}
+@media (min-width: 640px) {
+  .main {
+    padding-top: var(--space-12);
+  }
+}
+
+.card {
+  width: 100%;
+  max-width: 38rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+}
+
+/* ---- the price, on the brand's soft gradient ------------------------------------------------- */
+.hero {
+  padding: var(--space-8) var(--space-6) var(--space-6);
+  background: var(--arc-gradient-soft);
+  text-align: center;
+}
+@media (min-width: 640px) {
+  .hero {
+    padding: var(--space-10) var(--space-10) var(--space-8);
+  }
+}
+.kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
+  background: var(--surface);
+  box-shadow: var(--shadow-resting);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.title {
+  margin: var(--space-4) 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(var(--text-3xl), 7vw, var(--text-4xl));
+  font-weight: 600;
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-display);
+  text-wrap: balance;
+}
+.price {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-5) 0 0;
+}
+.was {
+  color: var(--text-muted);
+  font-size: var(--text-lg);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.was s {
+  text-decoration-thickness: 2px;
+}
+.free {
+  background: var(--arc-gradient-ink);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-family: var(--font-display);
+  font-size: clamp(var(--text-2xl), 5.5vw, var(--text-3xl));
+  font-weight: 650;
+  letter-spacing: var(--tracking-display);
+  line-height: 1.15;
+  text-wrap: balance;
+}
+.then {
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+}
+
+/* ---- what it gives ---------------------------------------------------------------------------- */
+.perks {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-6) var(--space-6) 0;
+  list-style: none;
+}
+@media (min-width: 560px) {
+  .perks {
+    grid-template-columns: 1fr 1fr;
+    padding-inline: var(--space-10);
+  }
+}
+.perk {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-base);
+  font-weight: 500;
+  line-height: 1.35;
+}
+.perkIcon {
+  display: grid;
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border-radius: var(--radius-control);
+  background: var(--surface-muted);
+  color: var(--foreground);
+}
+
+/* ---- the grown-up, and the button --------------------------------------------------------------- */
+.grownUp {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin: var(--space-6) var(--space-6) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  padding: var(--space-4);
+  background: var(--surface-muted);
+}
+@media (min-width: 560px) {
+  .grownUp {
+    margin-inline: var(--space-10);
+  }
+}
+.grownUpIcon {
+  display: grid;
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  box-shadow: var(--shadow-resting);
+  color: oklch(58% 0.19 15);
+}
+.grownUpTitle {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: 1.3;
+}
+.grownUpHint {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-6) var(--space-8);
+}
+@media (min-width: 560px) {
+  .actions {
+    padding-inline: var(--space-10);
+  }
+}
+/* Big enough for a small finger; a pill, the one shape on the page that says "tap me". */
+.cta.cta {
+  min-height: 3.5rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+.later.later {
+  border-radius: var(--radius-pill);
+  font-size: var(--text-base);
+}
+.disclosure {
+  margin: 0 auto;
+  max-width: 30rem;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  text-align: center;
+  text-wrap: pretty;
+}
+
+/* Holds the card's place while the session and the plan are read. */
+.placeholder {
+  width: 100%;
+  max-width: 38rem;
+  height: 40rem;
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+  animation: plan-pulse 1.8s var(--ease-in-out) infinite both;
+}
+@keyframes plan-pulse {
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Each part rises in after the one before: the price first, the button last. */
+.rise {
+  animation: plan-rise 520ms var(--ease-enter) both;
+}
+.hero > .rise:nth-child(2) {
+  animation-delay: 60ms;
+}
+.hero > .rise:nth-child(3) {
+  animation-delay: 140ms;
+}
+.hero > .rise:nth-child(4) {
+  animation-delay: 200ms;
+}
+.perk:nth-child(1) {
+  animation-delay: 260ms;
+}
+.perk:nth-child(2) {
+  animation-delay: 310ms;
+}
+.perk:nth-child(3) {
+  animation-delay: 360ms;
+}
+.perk:nth-child(4) {
+  animation-delay: 410ms;
+}
+.grownUp.rise {
+  animation-delay: 480ms;
+}
+.actions.rise {
+  animation-delay: 540ms;
+}
+@keyframes plan-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rise,
+  .placeholder {
+    animation: none;
+  }
+}
