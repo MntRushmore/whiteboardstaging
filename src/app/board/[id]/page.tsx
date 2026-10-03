@@ -60,8 +60,6 @@ import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import { CreditsBanner } from "@/components/CreditsBanner";
 import { OutOfCreditsWatcher } from "@/components/billing/OutOfCreditsWatcher";
-import { StickerLibrary } from "@/components/StickerLibrary";
-import { PdfUpload } from "@/components/PdfUpload";
 import { BugReportButton } from "@/components/BugReportButton";
 import { captureBoardScreenshot } from "@/components/board/boardScreenshot";
 import { BETA_COPY } from "@/components/app/BetaBadge";
@@ -74,7 +72,7 @@ import { useLiveMath } from "@/lib/live/useLiveMath";
 import { useLiveSettings } from "@/lib/live/liveSettings";
 import { ScreenStrip, ScreenStripCorner, screenStripSlot } from "@/components/screens/ScreenStrip";
 import { PenStyleButton } from "@/components/board/PenStyleButton";
-import { LiveDebugPanel } from "@/components/live/LiveDebugPanel";
+import { liveDebugEnabled } from "@/lib/live/liveDebug";
 import { ScreenBackground, ScreenFrame } from "@/components/screens/ScreenFrame";
 import { applyScreenCamera } from "@/lib/screens/screens";
 import { useScreenCamera } from "@/lib/screens/useScreenCamera";
@@ -94,6 +92,11 @@ import { browserStorage as onboardingStorage, isGuidedBoard } from "@/lib/onboar
 
 // The guided first board's tour (the welcome's Start): loaded on that board only, after the board.
 const BoardTour = React.lazy(() => import("@/components/onboarding/BoardTour"));
+// Feature Labs extras (off by default) and the Mathpix debug panel (development, or opted in on the
+// device): fetched only when shown, not with every board (docs/BUNDLE.md).
+const StickerLibrary = React.lazy(() => import("@/components/StickerLibrary").then((m) => ({ default: m.StickerLibrary })));
+const PdfUpload = React.lazy(() => import("@/components/PdfUpload").then((m) => ({ default: m.PdfUpload })));
+const LiveDebugPanel = React.lazy(() => import("@/components/live/LiveDebugPanel").then((m) => ({ default: m.LiveDebugPanel })));
 
 // Ensure the tldraw canvas background is pure white in both light and dark modes
 DefaultColorThemePalette.lightMode.background = "#FFFFFF";
@@ -395,8 +398,12 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
             <Bug className="size-3.5" aria-hidden />
             <span className="hidden text-xs font-medium lg:inline">Report a bug</span>
           </Button>
-          {features.stickers && <StickerLibrary />}
-          {features.pdfUpload && <PdfUpload />}
+          {(features.stickers || features.pdfUpload) && (
+            <React.Suspense fallback={null}>
+              {features.stickers && <StickerLibrary />}
+              {features.pdfUpload && <PdfUpload />}
+            </React.Suspense>
+          )}
         </div>
       </div>
 
@@ -421,7 +428,11 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
       <LiveErrorBoundary>
         <LectureBar lecture={lecture} />
       </LiveErrorBoundary>
-      <LiveDebugPanel />
+      {liveDebugEnabled() && (
+        <React.Suspense fallback={null}>
+          <LiveDebugPanel />
+        </React.Suspense>
+      )}
       {toolbar.showHintLayer && (
         <LiveErrorBoundary>
           <LiveHintLayer editor={editor} controller={controller} />
