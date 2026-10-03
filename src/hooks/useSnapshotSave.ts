@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { atom, getSnapshot, useValue, type Editor, type TLStoreSnapshot } from "tldraw";
+import { atom, getSnapshot, useValue, type Editor, type TLStore, type TLStoreSnapshot } from "tldraw";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { logger } from "@/lib/logger";
@@ -10,8 +10,10 @@ import type { OffloadResult } from "@/lib/assets/offloadSnapshotAssets";
 import {
   createLocalStorageBackup,
   createSaveQueue,
-  restoreBackupInto,
+  holdTabLock,
+  openTabIds,
   type BuildResult,
+  type DeviceBackups,
   type PersistResult,
   type SaveQueue,
   type SyncState,
@@ -20,6 +22,7 @@ import { ASSET_COPY } from "@/components/live/copy";
 import { SNAPSHOT_LIMITS, findInlineAssets, snapshotJsonBytes } from "../../scripts/lib/snapshotAssets.mjs";
 import { isBoardEmpty, makeScreenThumbnail } from "@/lib/boards/thumbnail";
 import { trackExitWrite } from "@/lib/boards/exitWrites";
+import type { RestoreReport, restoreBackups } from "@/lib/sync/restoreBackup";
 
 /**
  * Board autosave. Every document change marks the board dirty in a `SaveQueue`
@@ -48,6 +51,8 @@ export const PG_CHECK_VIOLATION = "23514";
 /** Student-facing strings owned by the autosave wiring (the pill's strings live in SaveStatus.tsx). */
 export const SAVE_COPY = {
   restoredBackup: "Restored unsaved changes from this device",
+  /** a backup's change to a record the board has changed since (on another device) was dropped */
+  staleBackup: "Some unsaved changes from this device were older than the board and weren't restored",
   /** the editor could not produce a serializable snapshot (not a size problem) */
   cannotPrepare: "Couldn't prepare this board to save — try reloading",
 } as const;
@@ -603,6 +608,57 @@ export function idleSyncState(version: number | null): SyncState {
   return { status: "saved", message: null, notice: null, lastSavedAt: null, version, pending: false, attempt: 0 };
 }
 
+export interface RestoreDeviceBackupsArgs {
+  store: TLStore;
+  boardId: string;
+  /** `whiteboards.version` of the row the store was loaded from */
+  loadedVersion: number | null;
+  /** this mount's backup (its own key is never replayed) */
+  backup: DeviceBackups;
+  queue: Pick<SaveQueue, "markDirty" | "writeBackupNow">;
+  /** true once the board unmounted: nothing is applied */
+  cancelled: () => boolean;
+  /** injectable for tests */
+  openTabs?: () => Promise<Set<string> | null>;
+  restore?: () => Promise<typeof restoreBackups>;
+}
+
+/**
+ * Replay the unsaved work this device kept for the board over the loaded row: every backup key
+ * whose tab is gone (closed, crashed, an earlier page load, the shared key of older deploys), oldest
+ * first; a tab that is still open saves its own. Restored records are this tab's unsaved changes
+ * from then on (saved, and in its own backup, written at once) and the replayed keys are removed.
+ * Without Web Locks every other key counts as gone. Null when there was nothing to replay.
+ */
+export async function restoreDeviceBackups({
+  store,
+  boardId,
+  loadedVersion,
+  backup,
+  queue,
+  cancelled,
+  openTabs = openTabIds,
+  restore = () => import("@/lib/sync/restoreBackup").then((m) => m.restoreBackups),
+}: RestoreDeviceBackupsArgs): Promise<RestoreReport | null> {
+  const found = backup.list(boardId).filter((b) => b.tabId !== backup.tabId);
+  if (found.length === 0) return null;
+  const open = await openTabs();
+  const gone = found.filter((b) => !(b.tabId && open?.has(b.tabId)));
+  const payloads = gone.flatMap((b) => (b.payload ? [b.payload] : []));
+  if (gone.length === 0 || cancelled()) return null;
+  let report: RestoreReport = { applied: 0, stale: 0 };
+  if (payloads.length > 0) {
+    const restoreBackups = await restore();
+    if (cancelled()) return null;
+    report = restoreBackups(store, payloads, loadedVersion);
+    queue.markDirty();
+    // What is still unsaved now goes into this tab's backup before the old keys go: no window without one.
+    queue.writeBackupNow();
+  }
+  for (const b of gone) backup.remove(b.key);
+  return report;
+}
+
 export interface UseSnapshotSaveResult {
   /** live queue state for the SaveStatus pill (a board that cannot be saved is `refused`, see blockedMessageForSync) */
   sync: SyncState;
@@ -616,10 +672,12 @@ export interface UseSnapshotSaveResult {
  * Every document change (`source: 'all'`, so Live echoes, graphs and the tutor's
  * handwriting are included) marks the queue dirty.
  *
- * On mount the localStorage backup left by a previous session (offline, crash, closed tab
- * mid-save) is merged over the loaded board — this effect runs after tldraw's `onMount`
- * (layout effect of the parent `Layout`) has run `loadSnapshot`, so the restore never gets
- * overwritten by the load.
+ * Each mount backs up to its own key (`agathon.unsaved.<boardId>.<tabId>`) and holds a Web Lock
+ * named after it while it lives. On mount the backups that tabs which are gone left on this device
+ * (offline, crash, closed tab mid-save) are merged over the loaded board, record by record, never
+ * over a record the server changed since (`restoreDeviceBackups`) — this effect runs after
+ * tldraw's `onMount` (layout effect of the parent `Layout`) has run `loadSnapshot`, so the restore
+ * never gets overwritten by the load.
  */
 export function useSnapshotSave(
   editor: Editor | null,
@@ -633,7 +691,10 @@ export function useSnapshotSave(
   useEffect(() => {
     if (!editor) return;
     const store = editor.store;
+    // This mount's own backup key, and the lock that tells other tabs it is still open.
     const backup = createLocalStorageBackup();
+    const releaseLock = holdTabLock(backup.tabId);
+    let unmounted = false;
     const queue = createSaveQueue({
       boardId,
       store,
@@ -647,22 +708,15 @@ export function useSnapshotSave(
     });
     queueAtom.set(queue);
 
-    // Unsaved work from a previous session on this device: local edits win over the loaded row.
-    try {
-      const pending = backup.read(boardId);
-      if (pending) {
-        const { applied } = restoreBackupInto(store, pending, initialVersion);
-        logger.info({ id: boardId, applied, baseVersion: pending.baseVersion }, "Restored autosave backup");
-        if (applied > 0) toast.info(SAVE_COPY.restoredBackup);
-        queue.markDirty();
-        // Replaces the old backup with what is still unsaved now (nothing: it is cleared), at
-        // once: clearing it and waiting for the next backup would leave a window with none.
-        queue.writeBackupNow();
-      }
-    } catch (e) {
-      logger.warn({ id: boardId, error: errorInfo(e) }, "Could not restore autosave backup");
-      backup.clear(boardId);
-    }
+    // Unsaved work this device kept for the board (closed or crashed tabs, earlier sessions).
+    void restoreDeviceBackups({ store, boardId, loadedVersion: initialVersion, backup, queue, cancelled: () => unmounted })
+      .then((report) => {
+        if (!report) return;
+        logger.info({ id: boardId, ...report }, "Restored autosave backups");
+        if (report.stale > 0) toast.warning(SAVE_COPY.staleBackup);
+        else if (report.applied > 0) toast.info(SAVE_COPY.restoredBackup);
+      })
+      .catch((e) => logger.warn({ id: boardId, error: errorInfo(e) }, "Could not restore autosave backup"));
 
     const disposeListener = store.listen(() => queue.markDirty(), { source: "all", scope: "document" });
 
@@ -695,6 +749,7 @@ export function useSnapshotSave(
     }
 
     return () => {
+      unmounted = true;
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
       window.removeEventListener("pagehide", onPageHide);
@@ -715,7 +770,11 @@ export function useSnapshotSave(
         queue
           .flush()
           .catch((e) => logger.warn({ id: boardId, error: errorInfo(e) }, "Flush on unmount failed"))
-          .finally(() => queue.dispose()),
+          .finally(() => {
+            queue.dispose();
+            // Only now may another tab treat this one's backup (if the flush left one) as orphaned.
+            releaseLock();
+          }),
       );
     };
   }, [editor, boardId, initialVersion, queueAtom]);

@@ -1,37 +1,103 @@
-import type { TLStore } from "tldraw";
+import type { TLStore, TLStoreSnapshot } from "tldraw";
 import { applyRemotePlan } from "./applyRemotePlan";
 import { deepEqual } from "./deepEqual";
-import { mergeDocumentRecords } from "./mergeDocumentRecords";
+import { SESSION_TYPE_NAMES } from "./mergeDocumentRecords";
 import type { BackupPayload } from "./types";
 
 const has = (o: object, id: string): boolean => Object.prototype.hasOwnProperty.call(o, id);
+const valueOf = (o: Record<string, unknown>, id: string): unknown => (has(o, id) ? o[id] : undefined);
 
-/**
- * Replay an unsaved-changes backup over a freshly loaded store: the backup's `changed` records
- * are put (local edits win, even when the loaded row is newer than `backup.baseVersion`) and
- * its `removed` ids are removed. Everything else comes from the loaded store untouched.
- * Records written by an older schema (a deploy since) are migrated first. Returns how many
- * records actually changed: a backup whose save landed before the tab closed applies nothing.
- */
-export function restoreBackupInto(store: TLStore, backup: BackupPayload, loadedVersion: number | null): { applied: number } {
-  void loadedVersion; // local edits win regardless of how far the server moved on
-  let local = backup.snapshot.store as Record<string, unknown>;
+export interface RestoreReport {
+  /** records the restore put or removed */
+  applied: number;
+  /** unsaved local changes NOT restored because the server changed the same record since (the student is told) */
+  stale: number;
+}
+
+/** Records written by an older schema (a deploy since the backup) are migrated first. */
+function migrated(store: TLStore, records: Record<string, unknown> | undefined, schema: TLStoreSnapshot["schema"]): Record<string, unknown> | undefined {
+  if (!records) return undefined;
   try {
-    const migrated = store.schema.migrateStoreSnapshot(backup.snapshot);
-    if (migrated.type === "success") local = migrated.value as Record<string, unknown>;
+    const result = store.schema.migrateStoreSnapshot({ store: records, schema } as TLStoreSnapshot);
+    if (result.type === "success") return result.value as Record<string, unknown>;
   } catch {
     /* keep the records as written; applyRemotePlan skips any that no longer validate */
   }
-  const changed = new Set(backup.changed);
-  const removed = new Set(backup.removed);
-  const current = store.getStoreSnapshot("document").store as Record<string, unknown>;
-  const { merged } = mergeDocumentRecords({ local, remote: current, changed, removed });
+  return records;
+}
+
+/**
+ * Replay unsaved-changes backups over a freshly loaded store, oldest first, record by record (the
+ * same granularity as the save queue's conflict merge). For each record a backup changed or
+ * removed, the loaded row decides:
+ *
+ *  - the server still has it as it was at the backup's base version -> only this device changed
+ *    it: the local change is restored (put, or removed)
+ *  - the server has exactly what a write of this device sent (`backup.sent`: it landed, the tab
+ *    died before hearing so) -> still this device's own: restored
+ *  - the server changed it too (edited, or deleted, since the base) -> the server's record stays
+ *    and the stale local change is dropped and counted in `stale`
+ *  - the server already holds the local record -> nothing to do
+ *
+ * A newer backup's decision about a record replaces an older one's. Backups written before
+ * 2026-10-03 carry no base records: when the row is still at their base version every change is
+ * restored; when it moved on, a record the server has and the backup changed is kept as the
+ * server has it, and one the server lacks is restored (most likely a new stroke).
+ * Everything else comes from the loaded store untouched; nothing is applied when every backup's
+ * save had in fact landed.
+ */
+export function restoreBackups(store: TLStore, backups: readonly BackupPayload[], loadedVersion: number | null): RestoreReport {
+  const server = store.getStoreSnapshot("document").store as Record<string, unknown>;
+  /** id -> record to put, or null to remove */
+  const outcome = new Map<string, unknown>();
+  const stale = new Set<string>();
+
+  for (const backup of [...backups].sort((a, b) => a.at - b.at)) {
+    const { schema } = backup.snapshot;
+    const local = migrated(store, backup.snapshot.store as Record<string, unknown>, schema) ?? {};
+    const base = migrated(store, backup.base, schema);
+    // `sent` marks a removal with null, which is not a record to migrate
+    const sentRemovals = Object.entries(backup.sent ?? {}).filter(([, v]) => v === null);
+    const sentRecords = Object.fromEntries(Object.entries(backup.sent ?? {}).filter(([, v]) => v !== null));
+    const sent = backup.sent && { ...Object.fromEntries(sentRemovals), ...migrated(store, sentRecords, schema) };
+    const atBase = backup.baseVersion !== null && backup.baseVersion === loadedVersion;
+    /** did the server change `id` after this backup's base version (other than by this device's own write)? */
+    const serverMoved = (id: string): boolean => {
+      const now = valueOf(server, id);
+      if (base ? deepEqual(now, valueOf(base, id)) : atBase || now === undefined) return false;
+      if (sent && has(sent, id) && deepEqual(now ?? null, sent[id])) return false;
+      return true;
+    };
+    const decide = (id: string, value: unknown): void => {
+      if (value === null ? !has(server, id) : deepEqual(valueOf(server, id), value)) {
+        outcome.set(id, value); // the server already agrees
+        stale.delete(id);
+      } else if (serverMoved(id)) {
+        if (!outcome.has(id)) stale.add(id);
+      } else {
+        outcome.set(id, value);
+        stale.delete(id);
+      }
+    };
+    for (const id of backup.changed) {
+      const record = valueOf(local, id) as { typeName?: string } | undefined;
+      if (record && !SESSION_TYPE_NAMES.has(record.typeName ?? "")) decide(id, record);
+    }
+    for (const id of backup.removed) decide(id, null);
+  }
 
   const put: unknown[] = [];
-  for (const id of changed) {
-    if (has(merged, id) && !(has(current, id) && deepEqual(current[id], merged[id]))) put.push(merged[id]);
+  const remove: string[] = [];
+  for (const [id, value] of outcome) {
+    if (value === null) {
+      if (has(server, id)) remove.push(id);
+    } else if (!deepEqual(valueOf(server, id), value)) put.push(value);
   }
-  const remove = [...removed].filter((id) => has(current, id));
   const report = applyRemotePlan(store, { put, remove });
-  return { applied: report.put + report.removed };
+  return { applied: report.put + report.removed, stale: stale.size };
+}
+
+/** One backup (see `restoreBackups`). */
+export function restoreBackupInto(store: TLStore, backup: BackupPayload, loadedVersion: number | null): RestoreReport {
+  return restoreBackups(store, [backup], loadedVersion);
 }

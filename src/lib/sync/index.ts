@@ -15,7 +15,16 @@ export type {
 export { createDirtyTracker } from "./dirtyTracker";
 export { mergeDocumentRecords, SESSION_TYPE_NAMES, type MergeArgs } from "./mergeDocumentRecords";
 export { applyRemotePlan, type ApplyReport } from "./applyRemotePlan";
-export { createLocalStorageBackup, isBackupPayload, backupKey, BACKUP_KEY_PREFIX, BACKUP_MAX_BYTES } from "./localBackup";
+export {
+  createLocalStorageBackup,
+  isBackupPayload,
+  backupKey,
+  newTabId,
+  BACKUP_KEY_PREFIX,
+  BACKUP_MAX_BYTES,
+  type DeviceBackups,
+  type StoredBackup,
+} from "./localBackup";
 export {
   createSaveQueue,
   backoffDelay,
@@ -34,4 +43,4 @@ export {
   MSG_SAVE_FAILED,
   MSG_SAVE_TIMEOUT,
 } from "./saveQueue";
-export { restoreBackupInto } from "./restoreBackup";
+export { holdTabLock, openTabIds } from "./tabLock";
