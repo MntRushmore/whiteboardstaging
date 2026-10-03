@@ -239,16 +239,16 @@ describe("backup size and Safari's storage quota", () => {
     expect(otherTab.read("b1")?.at).toBe(9_500);
   });
 
-  it("makes room by evicting restored, then unreadable, then week-old backups, oldest first", () => {
+  it("makes room only with this board's restored and week-old backups and unreadable ones, never another board's", () => {
     const DAY = 24 * 60 * 60 * 1000;
     const now = 30 * DAY;
-    const storage = safariStorage(5_000); // 4.6 KB in use
+    const storage = safariStorage(5_000); // ~4.6 KB in use
     const put = (board: string, tab: string, at: number, chars = 1_000) =>
       storage.setItem(backupKey(board, tab), JSON.stringify(sized(chars, { at })));
     put("b1", "replayed", now - DAY, 1_200); // restored by this tab (absorbed)
-    put("b2", "recent", now - DAY); // another board's backup from yesterday: never evicted
-    put("b3", "old", now - 9 * DAY); // stale
-    put("b4", "older", now - 20 * DAY); // stale, older
+    put("b2", "recent", now - DAY); // another board's backup from yesterday
+    put("b3", "old", now - 9 * DAY); // another board's, week-old: may be all that board has
+    put("b1", "stale", now - 20 * DAY); // this board's, week-old
     storage.setItem(backupKey("b5", "junk"), "{not json");
     storage.setItem("sb-127-auth-token", "t".repeat(300)); // not a backup: never touched
 
@@ -258,23 +258,36 @@ describe("backup size and Safari's storage quota", () => {
 
     expect(backup.write("b1", sized(1_100, { at: now }))).toBe(true); // the replayed backup goes
     expect(keys()).not.toContain(backupKey("b1", "replayed"));
-    expect(keys()).toContain(backupKey("b5", "junk"));
-    expect(keys()).toContain(backupKey("b4", "older"));
+    expect(keys()).toContain(backupKey("b1", "stale"));
 
-    const second = createLocalStorageBackup(storage, 2_000, "u", () => now);
-    expect(second.write("b6", sized(1_400, { at: now }))).toBe(true); // junk, then the oldest stale one
+    // Another board does not fit: only the unreadable entry may go, and that is not enough.
+    const other = createLocalStorageBackup(storage, 2_000, "u", () => now);
+    expect(other.write("b6", sized(1_400, { at: now }))).toBe(false);
+    expect(other.read("b6")).toBeNull();
     expect(keys()).not.toContain(backupKey("b5", "junk"));
-    expect(keys()).not.toContain(backupKey("b4", "older"));
-    expect(keys()).toContain(backupKey("b3", "old"));
-    expect(keys()).toContain(backupKey("b2", "recent"));
-    expect(keys()).toContain("sb-127-auth-token");
+    for (const k of [backupKey("b2", "recent"), backupKey("b3", "old"), backupKey("b1", "stale"), "sb-127-auth-token"]) expect(keys()).toContain(k);
 
-    const third = createLocalStorageBackup(storage, 2_000, "v", () => now);
-    expect(third.write("b7", sized(1_900, { at: now }))).toBe(false); // only recent backups left
-    expect(keys()).toContain(backupKey("b2", "recent"));
-    expect(keys()).not.toContain(backupKey("b3", "old")); // evicted on the way, as stale
+    // This board's own week-old backup may go for this board's newer one.
+    const again = createLocalStorageBackup(storage, 2_000, "v", () => now);
+    expect(again.write("b1", sized(1_400, { at: now }))).toBe(true);
+    expect(keys()).not.toContain(backupKey("b1", "stale"));
+    expect(keys()).toContain(backupKey("b3", "old"));
     expect(backup.read("b1")?.at).toBe(now);
-    expect(second.read("b6")?.at).toBe(now);
+  });
+
+  it("puts back what it evicted when the new backup still does not fit", () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const now = 30 * DAY;
+    const storage = safariStorage(2_900);
+    storage.setItem(backupKey("b1", "stale"), JSON.stringify(sized(1_000, { at: now - 20 * DAY })));
+    storage.setItem(backupKey("b2", "recent"), JSON.stringify(sized(1_000, { at: now - DAY })));
+    storage.setItem(backupKey("b1", "replayed"), JSON.stringify(sized(300, { at: now - DAY })));
+    const before = new Map(storage.map);
+    const backup = createLocalStorageBackup(storage, 2_000, "t", () => now);
+    backup.absorb([backupKey("b1", "replayed")]);
+
+    expect(backup.write("b1", sized(1_900, { at: now }))).toBe(false);
+    expect(storage.map).toEqual(before); // the restored and the week-old backups are back
   });
 
   it("evicts nothing when storage is blocked rather than full", () => {

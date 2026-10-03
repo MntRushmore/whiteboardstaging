@@ -309,10 +309,22 @@ never all at once with a plain `db push`:
    Turn on receipt emails for successful payments and refunds (*Settings → Customer emails*).
    Decide on tax (the Payment Links do not collect tax). Leave Adaptive Pricing as it is: the
    webhook checks the USD amount either way.
-3. **Apply the first half of the migrations**, ink and snapshot retention, to the production
-   database (the Marketplace project; see the note at the top of `RUNBOOK-supabase.md`). Not with
-   `db push`, which would apply the consent migration too: run the two files, then record them so
-   step 5's `db push` skips them.
+3. **Back up the board history, then apply the first half of the migrations**, ink and snapshot
+   retention, to the production database (the Marketplace project; see the note at the top of
+   `RUNBOOK-supabase.md`). Production is on the free plan (no backups, no PITR), and
+   `20261003000000_snapshot_retention.sql` deletes most of `public.whiteboard_snapshots` (the copies
+   of every board kept by the old every-save rule), so dump it first:
+
+   ```bash
+   mkdir -p backups && pg_dump "$POSTGRES_URL_NON_POOLING" -t public.whiteboard_snapshots -Fc \
+     -f backups/whiteboard_snapshots-$(date +%F).dump
+   gpg -c backups/whiteboard_snapshots-$(date +%F).dump && rm backups/whiteboard_snapshots-$(date +%F).dump
+   ```
+
+   It holds students' work: keep the encrypted file off the repo and off shared drives (a full
+   `pg_dump --schema=public` the same way is better still; `RUNBOOK-supabase.md` section 10).
+   Then apply the two files. Not with `db push`, which would apply the consent migration too: run
+   the two files, then record them so step 5's `db push` skips them.
 
    ```bash
    DB="$POSTGRES_URL_NON_POOLING"                       # from `vercel env pull`

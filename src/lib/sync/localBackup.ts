@@ -8,9 +8,9 @@ export const BACKUP_KEY_PREFIX = "agathon.unsaved.";
  */
 export const BACKUP_MAX_BYTES = 2_000_000;
 /**
- * A backup older than this may be evicted to make room for a newer one (`write`). A backup is
- * replayed the next time its board opens, so one this old belongs to a board the student has not
- * opened for a week (and Safari itself deletes a site's storage after 7 days of use without a visit).
+ * A backup of a board older than this may be evicted to make room for a newer backup of the same
+ * board (`write`): a backup is replayed the next time its board opens, so on a board that is open
+ * again one this old is an earlier session's leftover. Another board's backup is never evicted.
  */
 export const STALE_BACKUP_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -107,11 +107,13 @@ export interface DeviceBackups extends LocalBackup {
  * `write` keeps a backup within `maxBytes` as Safari counts them (`storedBytes`), dropping the
  * optional `base` / `sent` copies (they only sharpen a restore) when the whole payload is over
  * that or does not fit in what storage has left. When storage is full it then makes room by
- * evicting, oldest first, backups this tab has restored (`absorb`), unreadable ones, and ones
- * older than STALE_BACKUP_MS; never another tab's recent backup. If the new backup still does not
- * fit, or is over `maxBytes` even trimmed, `write` returns false and leaves this tab's previous
- * backup in place: older unsaved work beats none, and a restore is record by record and
- * base-aware. `read` returns null for anything malformed.
+ * evicting, oldest first, this board's backups this tab has restored (`absorb`), unreadable ones,
+ * and this board's backups older than STALE_BACKUP_MS; never another board's backup and never
+ * another tab's recent one. If the new backup still does not fit, the evicted backups are put back,
+ * and if it is over `maxBytes` even trimmed nothing is evicted: `write` returns false and leaves
+ * this tab's previous backup in place (older unsaved work beats none, and a restore is record by
+ * record and base-aware; the save pill says the work is not backed up on this device).
+ * `read` returns null for anything malformed.
  */
 export function createLocalStorageBackup(
   storage: Storage | undefined = defaultStorage(),
@@ -150,8 +152,15 @@ export function createLocalStorageBackup(
     }
   };
 
-  /** Backups `write` may evict to make room, in the order it evicts them (never `ownKey`). */
-  const evictable = (store: Storage, ownKey: string): string[] => {
+  /**
+   * Backups `write` may evict to make room for `boardId`'s, in the order it evicts them: this
+   * board's backups this tab has restored (`absorb`: their records are in the one being written),
+   * unreadable ones (any board: nothing can restore them), then this board's own week-old ones.
+   * Never `ownKey`, and never another board's readable backup, however old: it may be all that
+   * board has of the student's unsaved work.
+   */
+  const evictable = (store: Storage, ownKey: string, boardId: string): string[] => {
+    const board = backupKey(boardId);
     const found: Array<{ key: string; rank: number; at: number }> = [];
     try {
       for (let i = 0; i < store.length; i++) {
@@ -159,9 +168,10 @@ export function createLocalStorageBackup(
         if (!key || key === ownKey || !key.startsWith(BACKUP_KEY_PREFIX)) continue;
         const payload = parse(store.getItem(key));
         const at = payload?.at ?? Number.NEGATIVE_INFINITY;
+        const sameBoard = key === board || key.startsWith(`${board}.`);
         if (absorbed.has(key)) found.push({ key, rank: 0, at });
         else if (!payload) found.push({ key, rank: 1, at });
-        else if (now() - payload.at > STALE_BACKUP_MS) found.push({ key, rank: 2, at });
+        else if (sameBoard && now() - payload.at > STALE_BACKUP_MS) found.push({ key, rank: 2, at });
       }
     } catch {
       /* storage unavailable */
@@ -201,13 +211,29 @@ export function createLocalStorageBackup(
         const result = trySet(storage, key, raw);
         if (result !== "full") return result === "ok";
       }
-      // Storage is full: make room, one eviction at a time, for the smallest form.
+      // Storage is full: make room, one eviction at a time, for the smallest form. If that is not
+      // enough, everything evicted that could still be restored goes back: an eviction only ever
+      // happens for a write that then succeeds (unreadable entries stay gone: nothing reads them).
       const smallest = forms[forms.length - 1];
-      for (const victim of evictable(storage, key)) {
-        remove(victim);
-        const result = trySet(storage, key, smallest);
-        if (result !== "full") return result === "ok";
+      const evicted: Array<[string, string]> = [];
+      let result: "ok" | "full" | "failed" = "full";
+      for (const victim of evictable(storage, key, boardId)) {
+        let raw: string | null = null;
+        try {
+          raw = storage.getItem(victim);
+          storage.removeItem(victim);
+        } catch {
+          continue;
+        }
+        if (raw !== null && parse(raw)) evicted.push([victim, raw]);
+        result = trySet(storage, key, smallest);
+        if (result !== "full") break;
       }
+      if (result === "ok") {
+        for (const [victim] of evicted) absorbed.delete(victim);
+        return true;
+      }
+      for (const [victim, raw] of evicted) trySet(storage, victim, raw);
       return false;
     },
     clear,

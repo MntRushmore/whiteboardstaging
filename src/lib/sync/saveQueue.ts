@@ -107,6 +107,18 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
   let inFlightToken: DirtyToken | null = null;
   /** the document records the write in flight sent (null when none is) */
   let inFlightSent: Record<string, unknown> | null = null;
+  /**
+   * Writes whose outcome is unknown (timed out, cut off, an unexplained error), newest last: one of
+   * them may have landed. What they sent goes into backups (`sent`) until a write or a merge settles
+   * what the server holds.
+   */
+  let unacked: Array<{ sent: Record<string, unknown>; ids: Set<string> }> = [];
+  /**
+   * Whether `persisted` is known to be what the server holds. False after an ambiguous failure (the
+   * write may have landed), so the "nothing to save" shortcut cannot leave a landed stroke the
+   * student has since erased on the server.
+   */
+  let serverKnown = true;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let backupTimer: ReturnType<typeof setTimeout> | null = null;
@@ -159,23 +171,25 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
   function writeBackupNow(): boolean {
     if (disposed || !deps.backup) return false;
     const pending = tracker.peek();
-    // Ids edited again while a write is in flight: what that write sent, in case it lands and the
-    // tab dies before hearing so (the restore must not mistake it for another device's change).
+    // What a write that may land, or may have landed, sent for an id still unsaved (the write in
+    // flight first, then those whose outcome is unknown, newest first): if the tab dies, the restore
+    // must not mistake this device's own write on the server for another device's change.
     let sent: Record<string, unknown> | undefined;
-    if (inFlightToken) {
-      if (inFlightSent) {
-        for (const id of [...pending.changed, ...pending.removed]) {
-          if (inFlightToken.changed.has(id) || inFlightToken.removed.has(id)) {
-            sent ??= {};
-            sent[id] = has(inFlightSent, id) ? inFlightSent[id] : null;
-          }
-        }
+    const writes = [...(inFlightToken && inFlightSent ? [{ sent: inFlightSent, ids: new Set([...inFlightToken.changed, ...inFlightToken.removed]) }] : []), ...[...unacked].reverse()];
+    for (const id of [...pending.changed, ...pending.removed]) {
+      const write = writes.find((w) => w.ids.has(id));
+      if (write) {
+        sent ??= {};
+        sent[id] = has(write.sent, id) ? write.sent[id] : null;
       }
+    }
+    if (inFlightToken) {
       for (const id of inFlightToken.changed) if (!pending.removed.has(id)) pending.changed.add(id);
       for (const id of inFlightToken.removed) if (!pending.changed.has(id)) pending.removed.add(id);
     }
     if (pending.changed.size === 0 && pending.removed.size === 0) {
       deps.backup.clear(deps.boardId);
+      noteBackup(true);
       return false;
     }
     try {
@@ -190,18 +204,27 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
         if (has(persisted, id)) base[id] = persisted[id];
       }
       for (const id of pending.removed) if (has(persisted, id)) base[id] = persisted[id];
-      return deps.backup.write(deps.boardId, {
-        snapshot: { store: records, schema: deps.store.schema.serialize() } as TLStoreSnapshot,
-        baseVersion: state.get().version,
-        changed: [...pending.changed],
-        removed: [...pending.removed],
-        at: now(),
-        base,
-        ...(sent ? { sent } : {}),
-      });
+      return noteBackup(
+        deps.backup.write(deps.boardId, {
+          snapshot: { store: records, schema: deps.store.schema.serialize() } as TLStoreSnapshot,
+          baseVersion: state.get().version,
+          changed: [...pending.changed],
+          removed: [...pending.removed],
+          at: now(),
+          base,
+          ...(sent ? { sent } : {}),
+        }),
+      );
     } catch {
-      return false;
+      return noteBackup(false);
     }
+  }
+
+  /** The pill says when unsaved work is not backed up on this device (storage full); returns `ok`. */
+  function noteBackup(ok: boolean): boolean {
+    if (!!state.get().backupFailed === !ok) return ok;
+    patch({ backupFailed: !ok });
+    return ok;
   }
 
   function scheduleBackup(): void {
@@ -220,6 +243,7 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
    * the same content (Live re-rendering its echoes when a board opens) or changed and changed back.
    */
   function nothingToSave(): boolean {
+    if (!serverKnown) return false;
     const { changed, removed } = tracker.peek();
     for (const id of changed) if (!deepEqual(deps.store.get(id as TLRecord["id"]), persisted[id])) return false;
     for (const id of removed) if (has(persisted, id)) return false;
@@ -248,6 +272,7 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
       dirty = false;
       patch({ status: "saved", message: null, pending: false, attempt: 0 });
       deps.backup?.clear(deps.boardId);
+      noteBackup(true);
       return state.get();
     }
     patch({ status: "saving", message: null });
@@ -293,6 +318,8 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
       if (result.ok) {
         inFlightToken = null;
         persisted = built.snapshot.store as Record<string, unknown>;
+        serverKnown = true;
+        unacked = [];
         patch({
           status: "saved",
           message: null,
@@ -302,7 +329,10 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
           attempt: 0,
           pending: hasPending(),
         });
-        if (!hasPending()) deps.backup?.clear(deps.boardId);
+        if (!hasPending()) {
+          deps.backup?.clear(deps.boardId);
+          noteBackup(true);
+        }
         return state.get();
       }
 
@@ -350,7 +380,10 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
           tracker.restore(token);
           inFlightToken = null;
           // The server now holds `remoteStore` at `remote.version`: the base a backup refers to.
+          // (Any earlier write that landed is in it, so nothing is unknown any more.)
           persisted = remoteStore;
+          serverKnown = true;
+          unacked = [];
           patch({ status: "saving", version: remote.version });
           continue;
         }
@@ -364,6 +397,10 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
         case "offline":
         case "timeout":
         case "other": {
+          // The write may have landed without our hearing so: what the server holds is unknown,
+          // and what this write sent stays in the backups until a write or a merge settles it.
+          serverKnown = false;
+          unacked = [...unacked.slice(-2), { sent: built.snapshot.store as Record<string, unknown>, ids: new Set([...token.changed, ...token.removed]) }];
           const attempt = state.get().attempt + 1;
           const offline = result.kind === "offline" || !isOnline();
           fail(token, {
