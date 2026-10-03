@@ -15,8 +15,14 @@ export const SCREEN = { w: 1600, h: 900 } as const;
 export const SCREEN_ASPECT = SCREEN.w / SCREEN.h;
 /** page-space breathing room around ink that predates screens */
 const LEGACY_PAD = 40;
-/** screen-space gap between the screen edge and the window edge */
-export const SCREEN_VIEW_PADDING = 16;
+/**
+ * Screen-space gap between the screen edge and the board's edge. Taller than wide: the top bar
+ * (16 + 36 px) and tldraw's toolbar (48 + 8 px) float over the board, and on a laptop or a monitor —
+ * where the 16:9 screen is fitted by height — a 16 px gap put the first line's top-left corner
+ * under the help tabs and the bottom of the screen under the tools. 64 px clears both. An iPad
+ * (fitted by width, with room to spare above and below) is unaffected.
+ */
+export const SCREEN_VIEW_PADDING = { x: 16, y: 64 } as const;
 export const MAX_SCREENS = 50;
 
 export interface ScreenMeta {
@@ -119,7 +125,7 @@ export function applyScreenCamera(editor: ScreensEditor): void {
     wheelBehavior: "pan",
     constraints: {
       bounds: { x: screen.x, y: screen.y, w: screen.w, h: screen.h },
-      padding: { x: SCREEN_VIEW_PADDING, y: SCREEN_VIEW_PADDING },
+      padding: { ...SCREEN_VIEW_PADDING },
       origin: { x: 0.5, y: 0.5 },
       initialZoom: "fit-max",
       baseZoom: "fit-max",

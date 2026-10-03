@@ -139,6 +139,15 @@ describe("applyScreenCamera", () => {
     expect(opts.zoomSteps[0]).toBe(1);
     expect(setCamera).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ reset: true }));
   });
+
+  it("keeps the screen clear of the top bar and the toolbar floating over the board", () => {
+    const { editor, setCameraOptions } = fakeEditor();
+    applyScreenCamera(editor);
+    const { padding } = setCameraOptions.mock.calls[0][0].constraints;
+    // the help tabs end 52 px down and tldraw's toolbar is 56 px tall: the screen starts below both
+    expect(padding.y).toBeGreaterThanOrEqual(60);
+    expect(padding.x).toBe(16);
+  });
 });
 
 describe("addScreen / goToScreen", () => {
