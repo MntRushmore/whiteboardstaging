@@ -138,6 +138,15 @@ into the root layout, which would load it on `/` and `/login` - a regression for
   `/` and `/login` too (~15 KB gzip of the 29 KB layout CSS). See recommendations.
 - **mathjs** and **pdfjs-dist** stay lazy (`(lazy)` in the chunk table; both are behind `await import()`).
 
+## 2026-10-02: the board-feel pass (`fix/board-feel`)
+
+`/board/[id]` first-load JS was 1,059,082 B gzip (918 B under budget) before the pass and
+1,054,571 B after it (CSS 48,211 → 48,419 B). The pass's fixes (timeouts, the narrow-board strip,
+screen deletion, focus rings, the Live loop changes) were paid for by making three things lazy that
+most boards never show: `StickerLibrary` and `PdfUpload` (Feature Labs, off by default) and
+`LiveDebugPanel` (development, or opted in on the device) — `React.lazy` in `app/board/[id]/page.tsx`.
+See `docs/QA-2026-10-02-feel.md`.
+
 ## Recommendations not done here (files owned elsewhere)
 
 1. `src/app/globals.css`: drop `@import "katex/dist/katex.min.css"` and import it from

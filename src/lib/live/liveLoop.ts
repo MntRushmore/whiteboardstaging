@@ -218,6 +218,10 @@ interface LineRuntime {
   markWriter?: HandWriter | null;
   /** its read failed for a reason that is not the ink (signed out, out of credits, rate limited): no "?" */
   readRefused?: boolean;
+  /** when a change of its mark was scheduled (`syncMark`) and has not finished writing; 0 when none */
+  markBusySince?: number;
+  /** what waits for the tutor's pen to lift from this line's mark (`afterMark`) */
+  afterMark?: Array<() => void>;
 }
 
 type CheckOpts = {
@@ -282,6 +286,9 @@ const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream
  * a moment's wait, firing early takes the problem out of the student's hands.
  */
 export const ANSWER_SETTLE_MS = 2500;
+
+/** The longest a mark's write may hold up what waits for it (`afterMark`): a ring takes about a second. */
+const MARK_BUSY_MAX_MS = 4000;
 
 const CHECK_PATH = "/api/live/check";
 const SOLVE_PATH = "/api/live/solve";
@@ -480,6 +487,10 @@ export class LiveLoop implements LiveController {
   private unsubscribeRemote: (() => void) | null = null;
   private unsubscribeSession: (() => void) | null = null;
   private quietTimer: ReturnType<typeof setTimeout> | null = null;
+  /** when the quiet gate armed last runs out (`deps.now()` time) */
+  private quietDue = 0;
+  /** a gate that was running when a stroke began: held until that stroke's pen-up (or its cancel) */
+  private quietHeld = false;
   /** the canvas-level settle clock: running means the student is still considered to be working */
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
   /**
@@ -695,6 +706,7 @@ export class LiveLoop implements LiveController {
   private resetRuntime(): void {
     if (this.quietTimer) clearTimeout(this.quietTimer);
     this.quietTimer = null;
+    this.quietHeld = false;
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
     this.settled = false;
@@ -979,7 +991,13 @@ export class LiveLoop implements LiveController {
     let penDown = false;
 
     for (const rec of Object.values(entry.changes.added)) {
-      if (!isShapeRecord(rec) || !isStudentInk(rec)) continue;
+      if (!isShapeRecord(rec)) continue;
+      // Undo brought back a readback the same action had deleted (Live never writes as the user)
+      if (rec.type === "math" && isLiveMeta(rec.meta) && rec.meta.source === "echo") {
+        this.restoredEcho(rec);
+        continue;
+      }
+      if (!isStudentInk(rec)) continue;
       if ((rec as TLDrawShape).props.isComplete) {
         this.dirtyStrokeIds.add(rec.id);
         penUp = true;
@@ -1016,6 +1034,8 @@ export class LiveLoop implements LiveController {
     }
 
     let problemErased = false;
+    /** a stroke removed before its pen-up (the pointer was cancelled) */
+    let abandoned = false;
     for (const rec of Object.values(entry.changes.removed)) {
       if (!isShapeRecord(rec)) continue;
       // a problem the chat wrote, rubbed out: the columns under it are read again (below)
@@ -1036,6 +1056,10 @@ export class LiveLoop implements LiveController {
         continue;
       }
       if (isDraw(rec)) {
+        if (!rec.props.isComplete) {
+          abandoned = true;
+          continue;
+        }
         const line = this.lineOfStroke(rec.id);
         if (line) {
           for (const sid of line.strokeIds) if (sid !== rec.id) this.dirtyStrokeIds.add(sid);
@@ -1065,6 +1089,17 @@ export class LiveLoop implements LiveController {
     // rubbed out — means the student is still working, wherever on the canvas it happened.
     if (penUp || inkChanged || erased || penDown) this.markUnsettled();
 
+    // A stroke in progress is part of the writing ("never render while the pen is down"): a gate
+    // that ran out mid-stroke read the line without it — the first half of an 8 read as a 0 and
+    // ringed, then read again and ticked. It is held until this stroke's pen-up, which arms it again.
+    if (penDown && !penUp && !inkChanged && !erased && this.quietTimer) {
+      clearTimeout(this.quietTimer);
+      this.quietTimer = null;
+      this.quietHeld = true;
+    }
+    // ...or until the stroke is abandoned, when the lines waiting get the rest of their time
+    if (abandoned && this.quietHeld && !this.quietTimer) this.armQuietTimer(Math.max(0, this.quietDue - this.deps.now()));
+
     if (penUp || inkChanged || erased) {
       // The student is working again: the tutor puts the pen down (finishing what it started).
       this.cancelHandwriting();
@@ -1075,9 +1110,25 @@ export class LiveLoop implements LiveController {
       this.pendingRewrite = this.pendingRewrite || rewrite;
       // A stroke that is plainly a drawing is not the student writing maths: the lines already
       // waiting to be read keep their time (it is sorted out at that flush, or at one of its own).
-      if (penUp && !writingUp && !inkChanged && !erased && this.quietTimer) return;
+      if (penUp && !writingUp && !inkChanged && !erased && (this.quietTimer || this.quietHeld)) {
+        if (!this.quietTimer) this.armQuietTimer(Math.max(0, this.quietDue - this.deps.now()));
+        return;
+      }
       this.armQuietTimer();
     }
+  }
+
+  /**
+   * An echo the student's Undo (or Redo) put back. Its line, if it is still here without one, takes
+   * it back; a line that already has another is not given a second (this one goes). An echo whose
+   * line is gone waits for the line its ink makes next (`adoptOrphanEcho`).
+   */
+  private restoredEcho(rec: TLShape): void {
+    const lineId = (rec.props as MathShapeProps).lineId || (isLiveMeta(rec.meta) ? rec.meta.lineId : "");
+    const st = liveStore.lines.get()[lineId];
+    if (!st) return;
+    if (!st.mathShapeId || !this.editor.getShape(st.mathShapeId)) setLine(lineId, { mathShapeId: rec.id });
+    else if (st.mathShapeId !== rec.id) this.write(() => this.editor.deleteShapes([rec.id]));
   }
 
   /** A finished draw shape that is a drawing by its shape alone (`strokeLooksDrawn`). */
@@ -1090,9 +1141,10 @@ export class LiveLoop implements LiveController {
     return this.diagrams.find((d) => d.strokeIds.includes(strokeId as TLShapeId) || d.labels.some((l) => l.includes(strokeId as TLShapeId))) ?? null;
   }
 
-  private armQuietTimer(): void {
+  private armQuietTimer(delay: number = this.pendingRewrite ? LIVE_TIMING.rewriteQuietMs : LIVE_TIMING.quietMs): void {
     if (this.quietTimer) clearTimeout(this.quietTimer);
-    const delay = this.pendingRewrite ? LIVE_TIMING.rewriteQuietMs : LIVE_TIMING.quietMs;
+    this.quietHeld = false;
+    this.quietDue = this.deps.now() + delay;
     this.quietTimer = setTimeout(() => {
       this.quietTimer = null;
       this.pendingRewrite = false;
@@ -1208,7 +1260,12 @@ export class LiveLoop implements LiveController {
       }
     }
     if (seeds.length === 0) return;
-    const rebuilt = rebuildFromMathShapes(seeds, this.strokeBoundsMap());
+    const bounds = this.strokeBoundsMap();
+    const rebuilt = rebuildFromMathShapes(seeds, bounds);
+    // a second readback of a line rebuilt from another one: one line, one echo
+    const kept = new Set<string>(rebuilt.map((r) => r.mathShapeId));
+    const extra = seeds.filter((s) => s.lineId && !kept.has(s.shapeId) && s.anchorIds.some((id) => bounds.has(id))).map((s) => s.shapeId);
+    if (extra.length > 0) this.write(() => this.editor.deleteShapes(extra));
     // the chat's problems head the columns under them, as at every flush
     const split = new Map(this.withProblemColumns(rebuilt.map((r) => r.line)).map((l) => [l.id, l]));
     for (const r of rebuilt) r.line = split.get(r.line.id) ?? r.line;
@@ -2311,7 +2368,12 @@ export class LiveLoop implements LiveController {
       if (!st) return;
       const size = echoSizeFor(st.line.bounds.h);
       const anchorIds = st.line.strokeIds as string[];
-      const existing = st.mathShapeId ? this.editor.getShape(st.mathShapeId) : undefined;
+      const own = st.mathShapeId ? this.editor.getShape(st.mathShapeId) : undefined;
+      // No echo of its own: an echo already on this ink that no current line owns is this line's —
+      // Undo after a rub-out or a delete brings the readback back with the ink, under the id of a
+      // line Live has since dropped. It is taken over, never written a second time beside it.
+      const adopted = own ? undefined : this.adoptOrphanEcho(lineId, anchorIds);
+      const existing = own ?? adopted;
       if (existing && existing.type === "math") {
         const cur = existing.props as MathShapeProps;
         // BUG-4: a note the model wrote is not something the local engine can reproduce.
@@ -2327,11 +2389,13 @@ export class LiveLoop implements LiveController {
             ? { ...wanted, note: cur.note }
             : wanted;
         const changed =
+          Boolean(adopted) ||
           cur.latex !== props.latex ||
           cur.status !== props.status ||
           cur.resultLatex !== props.resultLatex ||
           cur.note !== props.note ||
           !sameStrokeSet(cur.anchorIds, anchorIds);
+        if (adopted) setLine(lineId, { mathShapeId: adopted.id });
         if (!changed) return;
         this.editor.updateShapes([
           {
@@ -2339,7 +2403,7 @@ export class LiveLoop implements LiveController {
             type: "math",
             props: { ...props, anchorIds, lineId, tone: "muted", source: "echo" },
             // `false` (not a delete) because tldraw merges meta patches shallowly.
-            meta: { ...(existing.meta as LiveShapeMeta), edited: st.edited, [AI_NOTE_META]: aiNoteNow },
+            meta: { ...(existing.meta as LiveShapeMeta), lineId, edited: st.edited, [AI_NOTE_META]: aiNoteNow },
           } satisfies TLShapePartial<MathShape>,
         ]);
         return;
@@ -2373,6 +2437,25 @@ export class LiveLoop implements LiveController {
       ]);
       setLine(lineId, { mathShapeId: id });
     });
+  }
+
+  /**
+   * An echo on this line's ink that no other current line owns (one Undo brought back), or
+   * undefined. Any further such echoes on the same ink are deleted: one line, one readback. Runs
+   * inside a live write.
+   */
+  private adoptOrphanEcho(lineId: string, anchorIds: readonly string[]): TLShape | undefined {
+    const lines = liveStore.lines.get();
+    const ink = new Set(anchorIds);
+    const found: TLShape[] = [];
+    for (const s of this.editor.getCurrentPageShapes()) {
+      if (s.type !== "math" || !isLiveMeta(s.meta) || s.meta.source !== "echo") continue;
+      const owner = (s.props as MathShapeProps).lineId || s.meta.lineId;
+      if (owner !== lineId && lines[owner]) continue;
+      if ((s.props as MathShapeProps).anchorIds.some((id) => ink.has(id))) found.push(s);
+    }
+    if (found.length > 1) this.editor.deleteShapes(found.slice(1).map((s) => s.id));
+    return found[0];
   }
 
   /** Line moved: keep content, move the echo to the new slot. */
@@ -3825,6 +3908,7 @@ export class LiveLoop implements LiveController {
     rt.markKey = want;
     rt.markWriter?.cancel();
     rt.markWriter = null;
+    rt.markBusySince = this.deps.now();
     this.write(() => {
       if (this.runtime(lineId).markKey !== want) return; // superseded before it ran
       const lines = liveStore.lines.get();
@@ -3839,15 +3923,39 @@ export class LiveLoop implements LiveController {
       }
       const stale = [...marks.filter((s) => metaString(s.meta, MARK_META) !== want).map((s) => s.id), ...orphans];
       if (stale.length > 0) this.editor.deleteShapes(stale);
-      if (!want || !kind || marks.some((s) => metaString(s.meta, MARK_META) === want)) return;
+      // nothing to write leaves the pen free for this line at once; a writer frees it when it ends
+      if (!want || !kind || marks.some((s) => metaString(s.meta, MARK_META) === want)) return this.markDone(lineId, null);
       const plan = planFromStrokes(kind, markStrokes(kind, state.line.bounds, handSeedFor(`${lineId}:${want}`)), HAND_WRITE.minSize);
-      if (!plan) return;
+      if (!plan) return this.markDone(lineId, null);
       const writer = this.makeWriter();
       this.runtime(lineId).markWriter = writer;
       const extraMeta: JsonObject = { [MARK_META]: want };
       if (kind === "question") extraMeta[MARK_WHY_META] = why ?? "unread";
-      writer.start(plan, { meta: makeMeta("ai", lineId, this.deps.now()), extraMeta });
+      writer.start(plan, { meta: makeMeta("ai", lineId, this.deps.now()), extraMeta, onDone: () => this.markDone(lineId, writer) });
     });
+  }
+
+  /**
+   * Waits for the tutor's pen to lift from this line's mark when a change of it is under way, then
+   * runs `fn` — one pen at a time: the step written beside a ring comes after the ring (raising the
+   * dial from Off used to draw both at once). True when `fn` was queued.
+   */
+  private afterMark(lineId: string, fn: () => void): boolean {
+    const rt = this.rt.get(lineId);
+    // a write that never finished (it threw) holds nothing up for longer than a mark takes
+    if (!rt?.markBusySince || this.deps.now() - rt.markBusySince > MARK_BUSY_MAX_MS) return false;
+    (rt.afterMark ??= []).push(fn);
+    return true;
+  }
+
+  /** This line's mark is written, or none was wanted: what waited for it goes now. */
+  private markDone(lineId: string, writer: HandWriter | null): void {
+    const rt = this.rt.get(lineId);
+    // a newer mark took over (it cancelled this writer): its own end releases the line
+    if (!rt || (writer && rt.markWriter !== writer)) return;
+    rt.markBusySince = 0;
+    const next = rt.afterMark?.splice(0) ?? [];
+    if (next.length > 0) queueMicrotask(() => next.forEach((fn) => this.started && fn()));
   }
 
   private startHandwriting(plan: HandPlan, lineId: string, extraMeta?: JsonObject): void {
@@ -4558,6 +4666,8 @@ export class LiveLoop implements LiveController {
       this.pendingSuggestions.add(lineId);
       return true;
     }
+    // one pen at a time: a ring still being drawn round the line is finished first
+    if (this.afterMark(lineId, () => this.suggestNextStep(lineId, opts))) return true;
     if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
     const { plan, unsupported } = planHandwriting([step], { size: handSizeFor(state.line.bounds.h), seed: handSeedFor(`${lineId}:suggest`) });
     if (!plan || unsupported.length > 0) return false;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api-client";
 import type { LiveError } from "@/lib/live/liveStore";
+import { SseTimeoutError } from "@/lib/live/sseClient";
 import { LIVE_COPY, pillLabelFor } from "../copy";
 import {
   RATE_LIMIT_FALLBACK_MS,
@@ -56,6 +57,15 @@ describe("classifyLiveFailure", () => {
     timeout.name = "TimeoutError";
     expect(classifyLiveFailure(timeout, ONLINE)).toMatchObject({ code: "timeout", message: "Reading took too long" });
     expect(classifyLiveFailure(new DOMException("t", "TimeoutError"), ONLINE)).toMatchObject({ code: "timeout" });
+    // a check or a solve that went silent is not "reading": the student asked for an answer
+    const silent = new SseTimeoutError();
+    expect(classifyLiveFailure(silent, { kind: "solve", lineId: "L1", online: true, userAsked: true })).toMatchObject({
+      code: "timeout",
+      message: "The tutor took too long to answer",
+      userAsked: true,
+    });
+    expect(classifyLiveFailure(silent, { kind: "check", lineId: "L1", online: true })).toMatchObject({ code: "timeout", message: LIVE_COPY.errors.answerTimeout });
+    expect(liveErrorView({ ...err(), kind: "solve", code: "timeout", message: LIVE_COPY.errors.answerTimeout }, 10_000)).toMatchObject({ primary: "retry", retryEnabled: true });
 
     expect(classifyLiveFailure(sseFailure({ error: "upstream_error", message: "Model unavailable" }), { kind: "check", lineId: "L1", online: true, userAsked: true })).toMatchObject({
       kind: "check",

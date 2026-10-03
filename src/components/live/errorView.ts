@@ -77,7 +77,11 @@ export function classifyLiveFailure(err: unknown, ctx: ClassifyContext): LiveErr
     return make("unknown", LIVE_COPY.errors.unknown);
   }
 
-  if (err instanceof Error && err.name === "TimeoutError") return make("timeout", LIVE_COPY.errors.timeout);
+  if (err instanceof Error && err.name === "TimeoutError") {
+    // a recognize call times out reading the line; a check or solve stream that went silent
+    const answering = ctx.kind === "check" || ctx.kind === "solve";
+    return make("timeout", answering ? LIVE_COPY.errors.answerTimeout : LIVE_COPY.errors.timeout);
+  }
 
   if (err instanceof TypeError) {
     if (!ctx.online) return null;

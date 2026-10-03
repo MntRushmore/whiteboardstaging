@@ -2,6 +2,7 @@
 
 import {
   Tldraw,
+  useBreakpoint,
   useEditor,
   type TLAssetId,
   DefaultColorThemePalette,
@@ -59,8 +60,6 @@ import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import { CreditsBanner } from "@/components/CreditsBanner";
 import { OutOfCreditsWatcher } from "@/components/billing/OutOfCreditsWatcher";
-import { StickerLibrary } from "@/components/StickerLibrary";
-import { PdfUpload } from "@/components/PdfUpload";
 import { BugReportButton } from "@/components/BugReportButton";
 import { captureBoardScreenshot } from "@/components/board/boardScreenshot";
 import { BETA_COPY } from "@/components/app/BetaBadge";
@@ -71,9 +70,9 @@ import { liveShapeUtils, liveTools, liveUiOverrides, LiveToolbar } from "@/shape
 import { LIVE_KILL_SWITCH } from "@/lib/live/contracts";
 import { useLiveMath } from "@/lib/live/useLiveMath";
 import { useLiveSettings } from "@/lib/live/liveSettings";
-import { ScreenStrip } from "@/components/screens/ScreenStrip";
+import { ScreenStrip, ScreenStripCorner, screenStripSlot } from "@/components/screens/ScreenStrip";
 import { PenStyleButton } from "@/components/board/PenStyleButton";
-import { LiveDebugPanel } from "@/components/live/LiveDebugPanel";
+import { liveDebugEnabled } from "@/lib/live/liveDebug";
 import { ScreenBackground, ScreenFrame } from "@/components/screens/ScreenFrame";
 import { applyScreenCamera } from "@/lib/screens/screens";
 import { useScreenCamera } from "@/lib/screens/useScreenCamera";
@@ -93,6 +92,11 @@ import { browserStorage as onboardingStorage, isGuidedBoard } from "@/lib/onboar
 
 // The guided first board's tour (the welcome's Start): loaded on that board only, after the board.
 const BoardTour = React.lazy(() => import("@/components/onboarding/BoardTour"));
+// Feature Labs extras (off by default) and the Mathpix debug panel (development, or opted in on the
+// device): fetched only when shown, not with every board (docs/BUNDLE.md).
+const StickerLibrary = React.lazy(() => import("@/components/StickerLibrary").then((m) => ({ default: m.StickerLibrary })));
+const PdfUpload = React.lazy(() => import("@/components/PdfUpload").then((m) => ({ default: m.PdfUpload })));
+const LiveDebugPanel = React.lazy(() => import("@/components/live/LiveDebugPanel").then((m) => ({ default: m.LiveDebugPanel })));
 
 // Ensure the tldraw canvas background is pure white in both light and dark modes
 DefaultColorThemePalette.lightMode.background = "#FFFFFF";
@@ -289,6 +293,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   // An "Untitled Whiteboard" is named after its first line of maths once it saves.
   useBoardAutoTitle(id, sync);
 
+  const narrowBoard = screenStripSlot(useBreakpoint()) === "corner";
+
   // One place decides what the bar shows (see src/components/live/toolbar.ts).
   const toolbar = boardToolbarView({
     mode: assistanceMode,
@@ -311,23 +317,25 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
           left: '16px',
           zIndex: 1000,
           display: 'flex',
-          alignItems: 'center',
+          alignItems: 'flex-start',
           gap: '12px',
-          // Wrap on narrow screens (400 px) so the status pill stays reachable;
-          // leave room for tldraw's style panel pinned at the top-right.
-          flexWrap: 'wrap',
-          maxWidth: 'calc(100% - 180px)',
+          // The controls wrap beside the back button (an upright iPad keeps one row) and leave
+          // room for the pen's swatch at the top-right. On a phone-narrow board they drop under
+          // the back button instead: the screen strip takes that corner (screenStripSlot).
+          flexWrap: narrowBoard ? 'wrap' : 'nowrap',
+          maxWidth: 'calc(100% - 72px)',
         }}
       >
         <Button
           variant="ghost"
           size="icon"
+          className="shrink-0"
           aria-label="Back to my whiteboards"
           onClick={() => router.push("/")}
         >
           <ArrowLeft01Icon size={20} strokeWidth={2} />
         </Button>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Tabs
             value={assistanceMode}
             onValueChange={(value) => setAssistanceMode(value as AssistanceMode)}
@@ -388,10 +396,14 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
             onClick={() => setReportOpen(true)}
           >
             <Bug className="size-3.5" aria-hidden />
-            <span className="hidden text-xs font-medium sm:inline">Report a bug</span>
+            <span className="hidden text-xs font-medium lg:inline">Report a bug</span>
           </Button>
-          {features.stickers && <StickerLibrary />}
-          {features.pdfUpload && <PdfUpload />}
+          {(features.stickers || features.pdfUpload) && (
+            <React.Suspense fallback={null}>
+              {features.stickers && <StickerLibrary />}
+              {features.pdfUpload && <PdfUpload />}
+            </React.Suspense>
+          )}
         </div>
       </div>
 
@@ -416,7 +428,11 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
       <LiveErrorBoundary>
         <LectureBar lecture={lecture} />
       </LiveErrorBoundary>
-      <LiveDebugPanel />
+      {liveDebugEnabled() && (
+        <React.Suspense fallback={null}>
+          <LiveDebugPanel />
+        </React.Suspense>
+      )}
       {toolbar.showHintLayer && (
         <LiveErrorBoundary>
           <LiveHintLayer editor={editor} controller={controller} />
@@ -575,18 +591,23 @@ export default function BoardPage() {
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0 }} className="flex flex-col md:flex-row">
+    // touch-action: a quick double tap on the bar's buttons must not zoom the page on an iPad
+    <div style={{ position: "fixed", inset: 0, touchAction: "manipulation" }} className="flex flex-col md:landscape:flex-row">
       {/* the board refits whenever this box changes size (useScreenCamera): the whole screen stays in view */}
       <div className="relative min-h-0 min-w-0 flex-1">
       <Tldraw
         shapeUtils={liveShapeUtils}
         tools={liveTools}
         overrides={boardOverrides}
+        // a board is for writing: the pen is in hand when it opens, not the selection arrow
+        initialState="draw"
         licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
         assets={assetStoreBundle?.store}
         components={{
           MenuPanel: null,
           NavigationPanel: ScreenStrip,
+          // a narrow board's strip, in the corner the style panel leaves free (screenStripSlot)
+          SharePanel: ScreenStripCorner,
           HelperButtons: null,
           Background: ScreenBackground,
           OnTheCanvas: ScreenFrame,
@@ -652,12 +673,13 @@ export default function BoardPage() {
         <BoardContent id={id} initialVersion={initialVersion} chat={{ open: chatOpen, onOpenChange: setChatOpen, host: chatHost }} />
       </Tldraw>
       </div>
-      {/* the chat panel: docked on the right on a desktop, a bottom sheet on a phone */}
+      {/* the chat panel: docked on the right on a wide screen held sideways, a bottom sheet on a
+          phone or an upright iPad (docked there it would leave the 16:9 board a postcard) */}
       <div
         ref={setChatHost}
         className={
           chatOpen
-            ? "relative z-[1100] h-[46dvh] shrink-0 overflow-hidden border-t border-gray-200 bg-white shadow-[0_-4px_16px_rgba(0,0,0,0.06)] md:h-auto md:w-[360px] md:border-l md:border-t-0 md:shadow-none"
+            ? "relative z-[1100] h-[46dvh] shrink-0 overflow-hidden border-t border-gray-200 bg-white shadow-[0_-4px_16px_rgba(0,0,0,0.06)] md:landscape:h-auto md:landscape:w-[360px] md:landscape:border-l md:landscape:border-t-0 md:landscape:shadow-none"
             : "hidden"
         }
       />

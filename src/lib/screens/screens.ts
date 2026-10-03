@@ -15,8 +15,14 @@ export const SCREEN = { w: 1600, h: 900 } as const;
 export const SCREEN_ASPECT = SCREEN.w / SCREEN.h;
 /** page-space breathing room around ink that predates screens */
 const LEGACY_PAD = 40;
-/** screen-space gap between the screen edge and the window edge */
-export const SCREEN_VIEW_PADDING = 16;
+/**
+ * Screen-space gap between the screen edge and the board's edge. Taller than wide: the top bar
+ * (16 + 36 px) and tldraw's toolbar (48 + 8 px) float over the board, and on a laptop or a monitor —
+ * where the 16:9 screen is fitted by height — a 16 px gap put the first line's top-left corner
+ * under the help tabs and the bottom of the screen under the tools. 64 px clears both. An iPad
+ * (fitted by width, with room to spare above and below) is unaffected.
+ */
+export const SCREEN_VIEW_PADDING = { x: 16, y: 64 } as const;
 export const MAX_SCREENS = 50;
 
 export interface ScreenMeta {
@@ -119,7 +125,7 @@ export function applyScreenCamera(editor: ScreensEditor): void {
     wheelBehavior: "pan",
     constraints: {
       bounds: { x: screen.x, y: screen.y, w: screen.w, h: screen.h },
-      padding: { x: SCREEN_VIEW_PADDING, y: SCREEN_VIEW_PADDING },
+      padding: { ...SCREEN_VIEW_PADDING },
       origin: { x: 0.5, y: 0.5 },
       initialZoom: "fit-max",
       baseZoom: "fit-max",
@@ -139,6 +145,28 @@ export function addScreen(editor: ScreensEditor): boolean {
     editor.setCurrentPage(created.id);
   });
   return true;
+}
+
+/**
+ * Deletes the current screen (never the only one) with its ink, and shows the one before it (the
+ * next, when it was the first). Returns a function that puts it back as it was — the strip's
+ * "Undo" — or null when there was nothing to delete. The restore does not lean on the undo stack,
+ * which by then may hold the student's next strokes.
+ */
+export function deleteScreen(editor: ScreensEditor & Pick<Editor, "deletePage" | "getShape" | "getBindingsInvolvingShape" | "store">): (() => void) | null {
+  const pages = editor.getPages();
+  const page = editor.getCurrentPage();
+  if (pages.length <= 1) return null;
+  const shapes = [...editor.getPageShapeIds(page.id)].map((id) => editor.getShape(id)).filter((s) => s !== undefined);
+  const bindings = new Map(shapes.flatMap((s) => editor.getBindingsInvolvingShape(s)).map((b) => [b.id, b]));
+  editor.deletePage(page.id);
+  return () => {
+    if (editor.getPages().length >= MAX_SCREENS) return;
+    editor.run(() => {
+      editor.store.put([page, ...shapes, ...bindings.values()]);
+      editor.setCurrentPage(page.id);
+    });
+  };
 }
 
 /** Moves `delta` screens forward/back; clamps at the ends. Returns whether it moved. */

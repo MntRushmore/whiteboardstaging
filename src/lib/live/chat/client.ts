@@ -8,8 +8,42 @@ import { ChatResponseSchema, type ChatRequest, type ChatResponse } from "./contr
 /** POST /api/live/chat: a typed request → a short reply and the actions for the board. */
 export const CHAT_PATH = "/api/live/chat";
 
-export async function requestChat(req: ChatRequest, opts: CallOptions = {}, fetchJson: FetchJson = apiJson as FetchJson): Promise<ChatResponse> {
-  const parsed = ChatResponseSchema.safeParse(await fetchJson(CHAT_PATH, req, { signal: opts.signal }));
-  if (!parsed.success) throw new Error("The chat returned an unexpected response");
-  return parsed.data;
+/**
+ * The route ends a request at its 45 s maxDuration; a reply that has not come by this is a stalled
+ * connection, and the panel says so (with Retry) instead of "Thinking…" for ever.
+ */
+export const CHAT_TIMEOUT_MS = 60_000;
+
+/** The chat request outlived CHAT_TIMEOUT_MS. */
+export class ChatTimeoutError extends Error {
+  constructor() {
+    super("The tutor took too long to answer");
+    this.name = "TimeoutError";
+  }
+}
+
+export async function requestChat(
+  req: ChatRequest,
+  opts: CallOptions & { timeoutMs?: number } = {},
+  fetchJson: FetchJson = apiJson as FetchJson,
+): Promise<ChatResponse> {
+  // a controller of our own (not AbortSignal.timeout: iPadOS 15 has none) the caller's signal also ends
+  const ctrl = new AbortController();
+  const onAbort = () => ctrl.abort();
+  opts.signal?.addEventListener("abort", onAbort);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    ctrl.abort();
+  }, opts.timeoutMs ?? CHAT_TIMEOUT_MS);
+  try {
+    const parsed = ChatResponseSchema.safeParse(await fetchJson(CHAT_PATH, req, { signal: ctrl.signal }));
+    if (!parsed.success) throw new Error("The chat returned an unexpected response");
+    return parsed.data;
+  } catch (err) {
+    throw timedOut ? new ChatTimeoutError() : err;
+  } finally {
+    clearTimeout(timer);
+    opts.signal?.removeEventListener("abort", onAbort);
+  }
 }

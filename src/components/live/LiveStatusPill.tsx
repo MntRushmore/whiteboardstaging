@@ -283,7 +283,9 @@ export function LiveStatusPill({
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="ml-0.5 flex h-6 w-6 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+            // a 24 px dot of a button is small under a finger: the tap area reaches to the pill's
+            // edges (not left, where Dismiss / Clear marks sit)
+            className="relative ml-0.5 flex h-6 w-6 items-center justify-center rounded-full text-gray-500 after:absolute after:-inset-y-1.5 after:-right-1.5 after:left-0 hover:bg-gray-100 hover:text-gray-800"
             aria-label={LIVE_COPY.pill.menuLabel}
             data-testid="board-menu-trigger"
           >

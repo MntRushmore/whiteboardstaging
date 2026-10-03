@@ -95,6 +95,12 @@ describe("LectureBar", () => {
     expect(html).toContain("max-w-[480px]");
   });
 
+  it("on a board whose toolbar has a second row (undo, redo…), the panel sits above both rows", () => {
+    const html = render(<LectureBar lecture={handle("listening", {})} raised />);
+    expect(html).toContain("bottom-28");
+    expect(html).not.toContain("bottom-20");
+  });
+
   it("paused: Resume instead of Pause, no pulsing dot", () => {
     const html = render(<LectureBar lecture={handle("paused", { status: "paused" })} />);
     expect(html).toContain(`aria-label="${LECTURE_COPY.resume}"`);
