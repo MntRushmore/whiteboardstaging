@@ -3911,13 +3911,27 @@ export class LiveLoop implements LiveController {
     rt.markBusySince = this.deps.now();
     this.write(() => {
       if (this.runtime(lineId).markKey !== want) return; // superseded before it ran
-      // whatever happens below, the pen is free for this line when it is done (`markDone`)
-      let writing = false;
-      try {
-        writing = this.writeMark(lineId, want, kind, state, why);
-      } finally {
-        if (!writing) this.markDone(lineId, null);
+      const lines = liveStore.lines.get();
+      const place = want ? want.slice(want.indexOf(":")) : null;
+      const marks: TLShape[] = [];
+      const orphans: TLShapeId[] = [];
+      for (const s of this.editor.getCurrentPageShapes()) {
+        const key = isLiveMeta(s.meta) ? metaString(s.meta, MARK_META) : "";
+        if (!key || !isLiveMeta(s.meta)) continue;
+        if (s.meta.lineId === lineId) marks.push(s);
+        else if (place && !lines[s.meta.lineId] && key.slice(key.indexOf(":")) === place) orphans.push(s.id);
       }
+      const stale = [...marks.filter((s) => metaString(s.meta, MARK_META) !== want).map((s) => s.id), ...orphans];
+      if (stale.length > 0) this.editor.deleteShapes(stale);
+      // nothing to write leaves the pen free for this line at once; a writer frees it when it ends
+      if (!want || !kind || marks.some((s) => metaString(s.meta, MARK_META) === want)) return this.markDone(lineId, null);
+      const plan = planFromStrokes(kind, markStrokes(kind, state.line.bounds, handSeedFor(`${lineId}:${want}`)), HAND_WRITE.minSize);
+      if (!plan) return this.markDone(lineId, null);
+      const writer = this.makeWriter();
+      this.runtime(lineId).markWriter = writer;
+      const extraMeta: JsonObject = { [MARK_META]: want };
+      if (kind === "question") extraMeta[MARK_WHY_META] = why ?? "unread";
+      writer.start(plan, { meta: makeMeta("ai", lineId, this.deps.now()), extraMeta, onDone: () => this.markDone(lineId, writer) });
     });
   }
 
@@ -3942,31 +3956,6 @@ export class LiveLoop implements LiveController {
     rt.markBusySince = 0;
     const next = rt.afterMark?.splice(0) ?? [];
     if (next.length > 0) queueMicrotask(() => next.forEach((fn) => this.started && fn()));
-  }
-
-  /** The body of `syncMark`'s write: true when a writer was started (it calls `markDone` when it ends). */
-  private writeMark(lineId: string, want: string | null, kind: MarkKind | null, state: LiveLineState, why: UnjudgedReason | undefined): boolean {
-    const lines = liveStore.lines.get();
-    const place = want ? want.slice(want.indexOf(":")) : null;
-    const marks: TLShape[] = [];
-    const orphans: TLShapeId[] = [];
-    for (const s of this.editor.getCurrentPageShapes()) {
-      const key = isLiveMeta(s.meta) ? metaString(s.meta, MARK_META) : "";
-      if (!key || !isLiveMeta(s.meta)) continue;
-      if (s.meta.lineId === lineId) marks.push(s);
-      else if (place && !lines[s.meta.lineId] && key.slice(key.indexOf(":")) === place) orphans.push(s.id);
-    }
-    const stale = [...marks.filter((s) => metaString(s.meta, MARK_META) !== want).map((s) => s.id), ...orphans];
-    if (stale.length > 0) this.editor.deleteShapes(stale);
-    if (!want || !kind || marks.some((s) => metaString(s.meta, MARK_META) === want)) return false;
-    const plan = planFromStrokes(kind, markStrokes(kind, state.line.bounds, handSeedFor(`${lineId}:${want}`)), HAND_WRITE.minSize);
-    if (!plan) return false;
-    const writer = this.makeWriter();
-    this.runtime(lineId).markWriter = writer;
-    const extraMeta: JsonObject = { [MARK_META]: want };
-    if (kind === "question") extraMeta[MARK_WHY_META] = why ?? "unread";
-    writer.start(plan, { meta: makeMeta("ai", lineId, this.deps.now()), extraMeta, onDone: () => this.markDone(lineId, writer) });
-    return true;
   }
 
   private startHandwriting(plan: HandPlan, lineId: string, extraMeta?: JsonObject): void {
