@@ -1,231 +1,283 @@
-# Billing runbook (Stripe)
+# Billing runbook (ink packs on Stripe)
 
-How paid plans work in operation, how to go live, and what to do when a payment does not turn
-into a plan. Design: `docs/ARCHITECTURE.md` "Billing". Database side (plans table, grants, setting
-a plan by hand): `docs/RUNBOOK-supabase.md` section 13.
+How ink works in operation, how to change packs and prices, how to give or take back ink by hand,
+what a refund does, how to go live, and what to do when a payment does not turn into ink. Design:
+`docs/ARCHITECTURE.md` "Billing". Schema: `supabase/migrations/20261002000000_ink.sql` (its header
+is the reference for every table, trigger and function named here).
 
 ## 1. How it fits together
 
-- **Plans.** Free 300 credits a month, Plus 3,000 at $12, Pro 12,000 at $39 (migration
-  `20260928110000_paid_plans.sql`). The paid prices are placeholders. They live in two places that
-  must agree: `public.plans` (what the app shows and meters) and `PLANS` at the top of
-  `scripts/stripe-setup.mjs` (what Stripe charges). `src/__tests__/stripeSetup.test.ts` fails when
-  they differ.
-- **Checkout** is a Stripe Payment Link per paid plan. The app opens it with
-  `client_reference_id=<user id>` and `prefilled_email=<email>`. After payment Stripe redirects to
-  `<site>/account?upgraded=<plan>`, where the page waits for the webhook.
-- **The webhook** (`POST /api/billing/webhook`, `STRIPE_WEBHOOK_SECRET` + `SUPABASE_SERVICE_ROLE_KEY`)
-  turns three events into `profiles` changes:
-  - `checkout.session.completed` sets the plan, the customer and the subscription.
-  - `customer.subscription.updated` handles a plan switch (by price, `BILLING_PRICE_MAP`), a
-    cancellation scheduled for the period end (`billing_status = 'canceling'`), a renewal date or a
-    failed payment.
-  - `customer.subscription.deleted` moves the user back to Free.
-- **Everything after checkout** goes through the Stripe customer portal. The app links to the
-  portal's login page with the email filled in, and Stripe emails a one-time sign-in link. In the
-  portal the customer can switch between Plus and Pro, cancel at the period end, update the card
-  and see invoices.
-- **Stripe objects** carry `metadata.app = agathon-classroom`. `scripts/stripe-setup.mjs` finds them
-  that way, and never touches anything else on the account (the account also sells "Fuime
-  membership").
+- **Ink is the unit.** 1 ink = 1 of the old monthly credits, and the per-action prices are unchanged
+  (`ROUTE_COSTS` in `src/lib/server/billing.ts`: reading a line 1, checking 3, a worked solution 10,
+  a word-problem setup 2, a board-chat request 3, lecture mode 2 a minute and 4 a drawing). Drawing
+  on your own is always free.
+- **Ink never expires and never resets.** A new account gets **300 starter ink once**, at sign-up
+  (`handle_new_user()`; a failure never blocks sign-up, and the first summary or AI action grants a
+  missing starter). Beta accounts that existed when the migration ran got one starter of
+  `max(300, what they had left that month)`. There is no monthly refill.
+- **Packs** (`public.ink_packs`, one-time payments, USD):
 
-## 2. The setup script
+  | Pack | Ink | Price | Ink per $1 |
+  | --- | --- | --- | --- |
+  | `small` | 1,000 | $5 | 200 |
+  | `medium` | 5,000 | $20 | 250 (+25 %) |
+  | `large` | 14,000 | $50 | 280 (+40 %) |
+
+  They live in two places that must agree: `public.ink_packs` (what the app shows and grants) and
+  `PACKS` at the top of `scripts/stripe-setup.mjs` (what Stripe charges).
+  `src/__tests__/stripeSetup.test.ts` fails when they differ.
+- **The balance** is all ink granted (`ink_grants`: starter, purchases, manual grants, refund
+  reversals) minus all ink used (`usage_events`), stored in `profiles.ink_balance` (CHECK `>= 0`) and
+  kept by triggers in the same transaction as each ledger row. `consume_credits()` (the paid routes,
+  as the user) locks the profile row, refuses with nothing written when the balance is short, and
+  the route answers `402 ink_empty`. The ledgers are append-only: fix a mistake with a new row.
+- **Checkout** is a Stripe Payment Link per pack, in payment mode. The app opens it with
+  `client_reference_id=<user id>` and `prefilled_email=<email>`: from the board in a **new tab** (the
+  board stays as it is; the meter and the dialog pick the ink up when it lands), from `/account` in
+  the same tab. After paying, Stripe redirects to `<site>/account?ink=<pack>`, where the page says
+  "Adding your Medium pack…" until the webhook lands, then "Ink added".
+- **The webhook** (`POST /api/billing/webhook`, `STRIPE_WEBHOOK_SECRET` + `SUPABASE_SERVICE_ROLE_KEY`):
+  - `checkout.session.completed` with `mode: payment` and `payment_status: paid` (or
+    `checkout.session.async_payment_succeeded` for a delayed method) grants the pack: the session's
+    `metadata.pack_id` (copied from the Payment Link), else `INK_PRICE_MAP`, to the user in
+    `client_reference_id`, via `grant_ink_purchase()`. One grant per Checkout Session id, ever.
+  - `charge.refunded` takes the refunded share of that purchase's ink back via
+    `reverse_ink_purchase()`, at most what is still unspent (section 5).
+  - Every event it acts on is recorded in `billing_events` first; a duplicate answers
+    `200 { received: true, duplicate: true }`. A failure a retry could fix answers 500 and forgets
+    the event id, so Stripe redelivers it.
+- **Stripe objects** carry `metadata.app = agathon-classroom`. `scripts/stripe-setup.mjs` finds them
+  that way and never writes to anything else on the account (section 2).
+- **Env:** `NEXT_PUBLIC_BILLING_LINKS` = `{"small": url, "medium": url, "large": url}` (public; without
+  it every buy button says "Coming soon" and everything else works), `INK_PRICE_MAP` =
+  `{"price_…": "small", …}` (the webhook's fallback), `STRIPE_WEBHOOK_SECRET`,
+  `SUPABASE_SERVICE_ROLE_KEY`. `BILLING_PRICE_MAP` (plans) is no longer read; remove it from Vercel.
+
+## 2. Shared Stripe account (Fuime)
+
+Agathon's packs run on the owner's existing Stripe account, which also runs **Fuime**, a live
+merchant-of-record app. The rule is that Agathon never interferes with Fuime and ignores its traffic.
+
+- **Fuime acts only on its own tags.** Its handlers (`app/services/fuime/payment_webhook_handler.rb`,
+  `missed_mor_payment_sweep.rb`, `subscription_webhook_handler.rb` in the Fuime repo) act only on
+  objects whose metadata carries `fuime_event_id` or `fuime_subscription_kind`, or on refunds and
+  disputes of payment intents it recorded itself. Its sweep lists every succeeded PaymentIntent on
+  the account and skips any without `fuime_event_id`. So Fuime ignores Agathon's payments as long as
+  **no Agathon object ever carries a `fuime_*` metadata key**. The setup script's write guard refuses
+  one, and `stripeSetup.test.ts` asserts that no body it sends has one.
+- **Everything Agathon makes is tagged** `metadata.app = "agathon-classroom"`: products, prices,
+  Payment Links, the webhook endpoint, and, through `payment_intent_data.metadata` on each Payment
+  Link (`app`, `pack_id`), every PaymentIntent and charge. Card statements carry the suffix
+  `AGATHON` (`payment_intent_data.statement_descriptor_suffix`) after the account's descriptor.
+- **The webhook ignores Fuime's events of the same types** before writing anything. A Checkout
+  Session is Agathon's only with `metadata.app = agathon-classroom` (plus a user id and a pack); a
+  refund only when its charge carries the tag or its payment intent is an ink purchase we recorded
+  (a read). Anything else answers `200 { received: true, ignored: true }` and leaves **no row at all**,
+  not even in `billing_events` (Fuime's payloads hold its buyers' names, emails and addresses).
+- **The setup script writes only to tagged objects it found or made**, never to account-level
+  settings (branding, business profile, the default customer-portal configuration, payouts, tax).
+  It has to *list* products, links and endpoints (Stripe's list endpoints cannot filter by
+  metadata), but a guard throws before any write to an untagged object, any create without the tag,
+  or any `fuime_*` key. When it retires the old Plus/Pro objects it deactivates only our tagged
+  Payment Links, prices and products and our tagged portal configuration; the test-mode portal
+  configuration it made in September is the account's default, which Stripe will not deactivate, so
+  it is left as it is (it lists only archived plans).
+- **Money is shared.** Payouts and the balance are one pool with Fuime. Agathon's revenue is
+  filterable in the Dashboard by product ("Agathon … ink pack") or by `metadata.app`.
+- **Branding is shared.** Checkout, receipts and statements show the account's public name and
+  branding ("Fuime"); see section 7.
+
+## 3. The setup script
 
 ```bash
 node scripts/stripe-setup.mjs [--mode test|live] [--site <url>] [--dry-run] [--secret-file <path>]
 ```
 
-The script talks to Stripe only through the Stripe CLI (`stripe get|post … [--live]`), using the
-account the CLI is logged in to (`stripe config --list`). It never reads, stores or prints an API
-key. It is idempotent: a second run creates nothing, and it only updates what differs. Per paid plan
-it makes:
+It talks to Stripe only through the Stripe CLI (`stripe get|post … [--live]`), using the account the
+CLI is logged in to, and never reads, stores or prints an API key. It is idempotent: a second run
+creates nothing and only updates what differs. Per pack it makes:
 
-- a product and a monthly price;
-- a Payment Link that redirects to `<site>/account?upgraded=<plan>`.
+- a product (`Agathon Medium ink pack`) and a **one-time** price;
+- a Payment Link in payment mode, quantity fixed at 1, `metadata { app, pack_id, price_id }`,
+  `payment_intent_data { metadata { app, pack_id }, statement_descriptor_suffix: AGATHON }`, that
+  redirects to `<site>/account?ink=<pack>`.
 
-It also makes one customer portal configuration with a login page, and, for a site that is not
-localhost, a webhook endpoint for `<site>/api/billing/webhook` with the three events.
+It also retires its own Plus/Pro objects (section 2) and, for a site that is not localhost, makes a
+webhook endpoint for `<site>/api/billing/webhook` listening to exactly `checkout.session.completed`,
+`checkout.session.async_payment_succeeded` and `charge.refunded` (an existing endpoint of ours is
+narrowed to those). A new endpoint's signing secret is written to
+`~/.config/agathon-classroom/stripe-webhook-secret-<mode>` (mode 600) and never printed.
 
-A new endpoint's signing secret is written to `~/.config/agathon-classroom/stripe-webhook-secret-<mode>`
-(mode 600) and is never printed. Stripe's API returns the secret only when the endpoint is created;
-after that, it can be revealed in the Dashboard.
+It prints the values to set: `NEXT_PUBLIC_BILLING_LINKS` and `INK_PRICE_MAP`.
 
-The script prints the values to set: `NEXT_PUBLIC_BILLING_LINKS` and `BILLING_PRICE_MAP`.
+**Dry run, test mode, 2026-10-02** (`--mode test --site https://whiteboard.rushilchopra.com --dry-run`,
+read-only): it would create the three products, prices and links; deactivate
+`plink_1UKhFS2Uz4P3wrXOAGg8YW0Z` (Pro) and `plink_1UKhFQ2Uz4P3wrXOZy1YVtIV` (Plus); archive
+`prod_VLO1tDN1Jinw3b` and `prod_VLO1PGefEep16C` with their prices; leave portal configuration
+`bpc_1UKhFb2Uz4P3wrXOenlorpyo` (the test-mode default); and create the endpoint for the three
+events. No test or live objects have been created for ink yet.
 
-**Changing a price.** Edit `PLANS` in the script, then run it. The script:
+### Changing a price or a pack
 
-- creates a new price;
-- archives the old price (its subscribers keep paying it until they switch);
-- creates a new Payment Link and deactivates the old one;
-- prints new values for both env vars. `BILLING_PRICE_MAP` keeps the archived prices mapped.
+1. Edit `PACKS` in `scripts/stripe-setup.mjs` **and** the `ink_packs` seed in a new migration (or an
+   `update public.ink_packs …` plus the seed, so the next migration run does not revert it). The
+   test fails until they agree.
+2. Run the script (dry run first). For a changed amount it creates a new price and Payment Link,
+   archives the old price, deactivates the old link, and prints new `NEXT_PUBLIC_BILLING_LINKS` /
+   `INK_PRICE_MAP` (archived prices stay in the map).
+3. Update both Vercel variables and redeploy: the links are built into the client bundle.
 
-Then update the two Vercel variables and redeploy. Also update `public.plans` (runbook-supabase
-section 13), plus a migration if the change is permanent.
+A purchase always grants the pack's ink as the database knew it when the webhook landed
+(`ink_purchases.ink` keeps that number). To stop selling a pack, set `active = false` on its row and
+drop its link from `NEXT_PUBLIC_BILLING_LINKS`; old purchases keep its name.
 
-## 3. Test mode (what exists now)
-
-Run on 2026-09-28 against account `acct_1TznaN2Uz4P3wrXO` ("Fuime", test mode) with
-`node scripts/stripe-setup.mjs --mode test --site http://localhost:3112`. A second run printed
-this (only IDs and public URLs, no secrets):
-
-```
-Stripe account acct_1TznaN2Uz4P3wrXO ("Fuime"), test mode
-Site http://localhost:3112
-
-Plus (plus): $9.00/month, 3000 credits
-  product prod_VLO1PGefEep16C
-  price price_1UKhFP2Uz4P3wrXOgj06QDjP
-  payment link plink_1UKhFQ2Uz4P3wrXOZy1YVtIV https://buy.stripe.com/test_00w4gs8Jn0J79Zg4v63Je00
-
-Pro (pro): $29.00/month, 12000 credits
-  product prod_VLO1tDN1Jinw3b
-  price price_1UKhFR2Uz4P3wrXOKixfGN3V
-  payment link plink_1UKhFS2Uz4P3wrXOAGg8YW0Z https://buy.stripe.com/test_cNi3co4t7crPb3kd1C3Je01
-
-Customer portal
-  update portal configuration bpc_1UKhFb2Uz4P3wrXOenlorpyo (plans, return URL, login page)
-  configuration bpc_1UKhFb2Uz4P3wrXOenlorpyo
-  login page https://billing.stripe.com/p/login/test_00w4gs8Jn0J79Zg4v63Je00
-
-Webhook
-  skipped (local site)
-
-Set these (Vercel: Production; locally: the dev server's env):
-  NEXT_PUBLIC_BILLING_LINKS={"plus":"https://buy.stripe.com/test_00w4gs8Jn0J79Zg4v63Je00","pro":"https://buy.stripe.com/test_cNi3co4t7crPb3kd1C3Je01","portal":"https://billing.stripe.com/p/login/test_00w4gs8Jn0J79Zg4v63Je00"}
-  BILLING_PRICE_MAP={"price_1UKhFP2Uz4P3wrXOgj06QDjP":"plus","price_1UKhFR2Uz4P3wrXOKixfGN3V":"pro"}
-  STRIPE_WEBHOOK_SECRET: http://localhost:3112 is local, so no endpoint was made. Run `stripe listen --forward-to http://localhost:3112/api/billing/webhook`; the whsec_ secret it prints is STRIPE_WEBHOOK_SECRET for that session.
-```
-
-Because the test Payment Links redirect to `http://localhost:3112`, re-run the script with another
-`--site` to move them. The test-mode portal configuration is the account's default test-mode
-configuration, because it was the first one.
-
-### Trying it locally
+## 4. Trying it locally (test mode)
 
 ```bash
 # 1. Webhooks to the dev server. The secret goes into a variable, never onto the screen.
 export STRIPE_WEBHOOK_SECRET="$(stripe listen --print-secret)"
-stripe listen --forward-to localhost:3112/api/billing/webhook &
+stripe listen --forward-to localhost:3000/api/billing/webhook &
 
-# 2. The dev server, with the test-mode values from section 3 (env vars override .env.local)
-NEXT_PUBLIC_BILLING_LINKS='…' BILLING_PRICE_MAP='…' npx next dev -p 3112
+# 2. Test-mode objects (once), then the dev server with the printed values
+node scripts/stripe-setup.mjs --mode test --site http://localhost:3000
+NEXT_PUBLIC_BILLING_LINKS='…' INK_PRICE_MAP='…' npx next dev -p 3000
 ```
 
-To pay, use card `4242 4242 4242 4242`, any future date, and any CVC and ZIP.
+Pay with card `4242 4242 4242 4242`, any future date, any CVC and ZIP. `stripe listen` forwards every
+event on the account (Fuime's test traffic too); the webhook ignores what is not Agathon's.
 
-A test-mode portal login emails a one-time link only to a test-mode customer's address. For an
-`@example.com` user, open the portal through a session instead:
+Without Stripe at all, sign a fake event with the same scheme as `src/lib/server/webhookSignature.ts`
+(`Stripe-Signature: t=<unix>,v1=<hex HMAC-SHA256 of "<t>.<raw body>">`) and POST it; the event's
+`data.object` needs `metadata.app = "agathon-classroom"`, `mode: "payment"`,
+`payment_status: "paid"`, `client_reference_id` and `metadata.pack_id`.
 
-```bash
-stripe post /v1/billing_portal/sessions \
-  -d customer=<profiles.billing_customer_id> \
-  -d configuration=bpc_1UKhFb2Uz4P3wrXOenlorpyo \
-  -d return_url=http://localhost:3112/account
+## 5. Refunds
+
+Refund in the Dashboard (*Payments → the payment → Refund*). Stripe sends `charge.refunded` with the
+charge's **cumulative** refunded amount; `reverse_ink_purchase()` acts only on its growth, so replays
+and later partial refunds never double up:
+
+- the ink to take back is the refunded share of the pack (a full refund: all of it; half the money:
+  half the ink), minus what earlier refund events already asked for;
+- it takes **at most the current balance**: ink the student already spent stays spent, and the
+  balance never goes below zero;
+- `ink_purchases` records it: `status` (`refunded` / `partially_refunded`), `refunded_cents`,
+  `refunded_ink` (taken back) and `refund_unrecovered_ink` (asked for, already spent). The student
+  sees "Refunded: 3,800 ink taken back; 1,200 had already been used" in their purchase history.
+
+```sql
+-- refunds and what they did
+select p.created_at, u.email, p.pack_id, p.ink, p.amount_cents, p.status, p.refunded_ink, p.refund_unrecovered_ink
+from public.ink_purchases p join auth.users u on u.id = p.user_id
+where p.status <> 'paid' order by p.refunded_at desc;
 ```
 
-To end a subscription at once, which is what happens at the period end, run
-`stripe delete /v1/subscriptions/<id> --confirm`.
+Disputes (chargebacks) are not handled automatically. If one is lost, take the ink back by hand
+(section 6) and note the dispute id in the reason.
 
-## 4. Before going live: the owner, in the Stripe Dashboard
+## 6. By hand (SQL editor, as `postgres`)
 
-These are decisions or account settings; the script does not change them.
+```sql
+-- what a student has
+select public.ink_summary_of((select id from auth.users where email = 'student@example.com'));
 
-1. **Who the customer sees.** Checkout, the portal and card statements show the account's public
-   business name, which today is **"Fuime"**. Checkout says "Subscribe to Agathon Classroom Plus",
-   but also "By subscribing, you authorize Fuime to charge you". The portal shows "Return to Fuime".
-   Either set up a separate Stripe account for Agathon Classroom, or accept or change the public
-   details. Changing them affects Fuime's customers too. They are under *Settings → Business →
-   Public details*: business name, support email/phone/URL, and statement descriptor.
-2. **Branding** (*Settings → Branding*): the icon, logo and colours used on Checkout and the portal.
-3. **Account activation.** The API reports `charges_enabled: true` and `details_submitted: true`
-   for this account, so it can take live payments. Confirm that payouts are enabled and the bank
-   account is right.
-4. **Customer emails** (*Settings → Customer emails*): receipts for successful payments and
-   refunds, and emails about failed payments and cards that are about to expire.
-5. **Portal legal links.** The portal configuration has no terms-of-service or privacy-policy URL,
-   because the app has no such pages yet. Add them in *Settings → Billing → Customer portal*, or
-   through the script, once the pages exist.
-6. **Live-mode default portal configuration.** If the live account has no portal configuration
-   yet, the one the script creates becomes the account's default. Fuime's own portal sessions
-   would then show Agathon's plans. Check *Settings → Billing → Customer portal* after the live run.
-7. **Tax.** Decide whether Stripe Tax applies. The Payment Links do not collect tax today.
-8. **Failed payments** (*Settings → Billing → Subscriptions and emails*): decide how many retries
-   happen and what happens after the last one. The app keeps the plan while the status is
-   `past_due`, and moves the user to Free when Stripe deletes the subscription.
+-- give ink (an apology, a pilot, a payment the webhook missed)
+select public.grant_ink((select id from auth.users where email = 'student@example.com'), 500, 'outage apology 2026-10-05');
 
-## 5. Going live
+-- take ink back (stops at zero; `granted` in the answer says how much actually moved)
+select public.grant_ink((select id from auth.users where email = 'student@example.com'), -500, 'duplicate grant');
 
-1. **Apply the migration** `20260928110000_paid_plans.sql` to the production database (the
-   Marketplace project; see the note at the top of `RUNBOOK-supabase.md`):
-   `npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING" --include-all`. Then run
-   `node scripts/verify-rls.mjs` against production.
-   - This lowers the Free plan from 1,000 to 300 credits for everyone at once.
-   - A Free user who has already used more than 300 credits this month is out of credits until the 1st.
-   - To soften that for this month, grant the difference in `credit_grants` (runbook-supabase
-     section 13).
-2. **Create the live objects:**
+-- a paid checkout the webhook could not match (opened outside the app, so no client_reference_id):
+-- record it as a purchase so a later refund finds it (one row per Checkout Session, ever)
+select public.grant_ink_purchase(
+  (select id from auth.users where email = 'student@example.com'),
+  'medium', 'cs_live_…', 'pi_…', 'cus_…', 2000, 'usd');
+
+-- the ledger
+select kind, units, reason, created_at from public.ink_grants
+where user_id = (select id from auth.users where email = 'student@example.com') order by created_at;
+```
+
+Never `update` or `delete` ledger rows: a trigger refuses edits to `units`/`user_id`, and a deleted
+grant would leave the balance as it was. Corrections are new rows. A raw
+`insert into public.ink_grants` works (the trigger keeps the balance), but one that would take the
+balance below zero fails with `23514`.
+
+## 7. Going live
+
+The owner's steps, in order:
+
+1. **Stripe access.** Give the live restricted key write permission (Products, Prices, Payment
+   Links, Webhook Endpoints; read on the account) or run `stripe login` for the live account.
+2. **Check what the customer will see** (*Settings → Business → Public details*, *Settings →
+   Branding*): Checkout, receipts and card statements show the account's name ("Fuime") and
+   branding, with `AGATHON` as the statement suffix. Changing them affects Fuime's customers too.
+   Turn on receipt emails for successful payments and refunds (*Settings → Customer emails*).
+   Decide on tax (the Payment Links do not collect tax).
+3. **Create the live objects:**
 
    ```bash
    node scripts/stripe-setup.mjs --mode live --site https://whiteboard.rushilchopra.com --dry-run   # read-only preview
    node scripts/stripe-setup.mjs --mode live --site https://whiteboard.rushilchopra.com
    ```
 
-   This creates the products, prices, Payment Links, the portal configuration and the webhook
-   endpoint. It prints `NEXT_PUBLIC_BILLING_LINKS` and `BILLING_PRICE_MAP`, and writes the
-   endpoint's signing secret to `~/.config/agathon-classroom/stripe-webhook-secret-live`.
-3. **Set the Vercel Production env vars** (project `whiteboardstaging`, team `rushmore`):
+   It prints `NEXT_PUBLIC_BILLING_LINKS` and `INK_PRICE_MAP` and writes the endpoint's signing
+   secret to `~/.config/agathon-classroom/stripe-webhook-secret-live`.
+4. **Set the Vercel Production env vars** (project `whiteboardstaging`, team `rushmore`):
 
    ```bash
    vercel env add NEXT_PUBLIC_BILLING_LINKS production   # paste the printed JSON
-   vercel env add BILLING_PRICE_MAP production           # paste the printed JSON
+   vercel env add INK_PRICE_MAP production               # paste the printed JSON
    vercel env add STRIPE_WEBHOOK_SECRET production --sensitive < ~/.config/agathon-classroom/stripe-webhook-secret-live
+   vercel env rm BILLING_PRICE_MAP production            # if it exists: plans are gone
    ```
 
-   `SUPABASE_SERVICE_ROLE_KEY`, which the webhook also needs, is already in Production: the
-   Supabase Marketplace integration added it, as `vercel env ls production` showed on 2026-09-28.
-4. **Redeploy** production (`vercel --prod`, or merge to `main`). The `NEXT_PUBLIC_*` values are
+   `SUPABASE_SERVICE_ROLE_KEY` is already in Production (the Supabase Marketplace integration).
+5. **Apply the migration** `20261002000000_ink.sql` to the production database (the Marketplace
+   project; see the note at the top of `RUNBOOK-supabase.md`):
+   `npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING" --include-all`, then
+   `node scripts/verify-rls.mjs` against production. On the way in it gives every existing account
+   one starter of `max(300, what it had left this month)`, deactivates Plus/Pro and moves everyone to
+   `free`. Apply it right before the deploy: the old app keeps working on the new schema, but shows
+   "0 credits a month".
+6. **Redeploy** production (merge to `main`, or `vercel --prod`). The `NEXT_PUBLIC_*` values are
    built into the client bundle, so a deploy that predates them keeps showing "Coming soon".
-5. **Test purchase and refund** with a real card on https://whiteboard.rushilchopra.com:
-   1. Sign up (or use your own account), open */account* and click Plus → Upgrade. Pay.
-   2. Back on */account* you should see "You're on Plus" and 3,000 credits within a few seconds.
-      In the Stripe Dashboard, *Developers → Webhooks → the endpoint* should show
-      `checkout.session.completed` answered `200`.
-   3. In the Dashboard, open the payment and click *Refund*. Then open the subscription and
-      *Cancel subscription → Immediately*. A refund alone does not cancel the subscription.
-   4. The `customer.subscription.deleted` event moves the account back to Free. Check it with
-      `select id, type, received_at from public.billing_events order by received_at desc limit 5;`.
+7. **A real purchase and refund** on https://whiteboard.rushilchopra.com:
+   1. Sign in, open a board, tap the ink meter, buy the Small pack (a new tab opens). Pay.
+   2. Back on the board tab the meter should read +1,000 within seconds; the other tab ends on
+      `/account?ink=small` saying "Ink added". In the Dashboard, *Developers → Webhooks → the
+      endpoint* shows `checkout.session.completed` answered `200`.
+   3. Refund the payment in the Dashboard. The `charge.refunded` delivery answers `200`; the
+      purchase shows "Refunded" in `/account` and the ink is gone (or what was left of it).
+   4. `select id, type, received_at from public.billing_events order by received_at desc limit 5;`
+      shows only those two events: Fuime's traffic leaves no rows.
 
-## 6. When something goes wrong
+## 8. When something goes wrong
 
-- **Paid, but the plan is still Free after a minute.**
-  1. Look in `billing_events` and at the endpoint's deliveries in the Dashboard.
-     - `503` means an env var is missing: `STRIPE_WEBHOOK_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`, or
-       a malformed `BILLING_PRICE_MAP`.
-     - `400 bad signature` means the secret belongs to another endpoint or mode.
-  2. A `checkout.session.completed` without `client_reference_id` is ignored. That happens when
-     someone opened the Payment Link directly instead of through the app.
-  3. Fix it by hand: set the plan and the Stripe ids with SQL (runbook-supabase section 13, "Set a
-     user's plan by hand"). Include `billing_customer_id` and `billing_subscription_id`, so that
-     later events find the profile.
-- **"Renews every month" instead of a date.** Stripe sends no `customer.subscription.updated`
-  right after a Payment Link checkout, and `checkout.session.completed` does not carry the period
-  end. The date appears with the first renewal, plan switch or cancellation.
-- **Two subscriptions for one user.** The app sends a subscriber to the portal, never to a second
-  Payment Link. The links themselves are public, though. Cancel the extra one in the Dashboard.
-- **Portal login email not arriving.** Stripe sends it to the address on the Stripe customer, which
-  is the checkout email, not necessarily the app login.
+- **Paid, but no ink after a minute.**
+  1. Look at the endpoint's deliveries in the Dashboard and at `billing_events`.
+     - `503` means an env var is missing (`STRIPE_WEBHOOK_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`) or
+       `INK_PRICE_MAP` is malformed; `400 bad signature` means the secret belongs to another
+       endpoint or mode; `500` with "names a pack that is not in ink_packs" means the migration is
+       missing or a pack was removed (fix it; Stripe retries for 3 days).
+     - `200 ignored` for a session that is ours: it had no `client_reference_id` (the Payment Link
+       was opened outside the app) or no pack. The Vercel log line `Agathon event ignored` says
+       which. Grant it by hand with `grant_ink_purchase` (section 6).
+  2. `ink purchase for a deleted account` in the logs: the account was deleted between paying and
+     the webhook. Refund the payment.
+- **The meter did not move after buying.** It re-reads on focus, on returning to the tab, every 3 s
+  for ten minutes after a buy button, and when another tab saw the ink arrive. A reload settles it.
+- **A student is out of ink mid-lesson.** Give some by hand (section 6); the meter picks it up the
+  next time the tab is focused.
+- **Two purchases for one checkout.** Impossible by construction (unique Checkout Session id);
+  check `ink_purchases` before granting by hand.
 
-## 7. What the no-secret design cannot do
+## 9. What the no-secret design cannot do
 
-These are the limits of Payment Links plus the portal login link. Each one could be lifted by a
-small server route that uses a *restricted* key (Checkout Sessions: write; Billing portal sessions:
-write; Customers: read). Nothing needs it yet.
+These are the limits of Payment Links with no server-side Stripe key. Each could be lifted by a
+small server route with a restricted key (Checkout Sessions: write).
 
-- **Portal access takes an email round trip.** A server route could open a portal session for the
-  signed-in user in one click.
-- **No renewal date right after checkout.** A route or webhook with API access could read the
-  subscription.
 - **A Payment Link opened outside the app cannot be matched to a user.** A server-created Checkout
-  Session always carries the user.
-- **The same Payment Link could be bought twice.** A server-created Checkout Session could refuse
-  a user who already has a subscription.
+  Session always carries the user. Today such a payment is logged and granted by hand.
+- **No per-user receipt list in the app beyond our own purchase rows.** Stripe's receipts go by
+  email.

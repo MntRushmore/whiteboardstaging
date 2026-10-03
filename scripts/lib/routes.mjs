@@ -68,7 +68,7 @@ export const API_ROUTES = Object.freeze([
     // Reads the raw text (the signature covers the bytes), then zod-validates the parsed event.
     // Without a valid Stripe-Signature it answers 400; without the secrets, 503.
     withoutTokenStatus: [400, 503],
-    purpose: "Stripe-compatible billing webhook: plan changes via the service role",
+    purpose: "Stripe-compatible billing webhook: ink pack purchases and refunds via the service role (other apps' events on the shared account are ignored)",
     status: "active",
   },
   {
@@ -89,7 +89,7 @@ export const API_ROUTES = Object.freeze([
     auth: "user",
     limit: "credits",
     body: "none",
-    purpose: "OpenRouter balance for the low-credit banner",
+    purpose: "The operator's OpenRouter balance (operators, smoke tests)",
     status: "active",
   },
   {
