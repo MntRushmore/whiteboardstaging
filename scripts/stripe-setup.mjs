@@ -71,6 +71,8 @@ export const RETIRED_PLAN_IDS = Object.freeze(["plus", "pro"]);
 
 export const WEBHOOK_PATH = "/api/billing/webhook";
 export const DEFAULT_SITE = "http://localhost:3000";
+/** The production origin: test-mode objects must never point at it (a test webhook would post real-looking events there). */
+export const PRODUCTION_SITE = "https://whiteboard.rushilchopra.com";
 
 /* ------------------------------------------------------------------------- */
 /* Arguments                                                                  */
@@ -125,6 +127,9 @@ export function parseArgs(argv) {
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
     }
+  }
+  if (opts.mode === "test" && opts.site === PRODUCTION_SITE && !opts.dryRun) {
+    return { error: `--mode test must not point at ${PRODUCTION_SITE} (it would make a test webhook endpoint for production); use a local or preview --site` };
   }
   if (opts.mode === "live" && isLocalSite(opts.site)) {
     return { error: "--mode live needs the public --site (a live Payment Link cannot send customers to localhost)" };
@@ -247,6 +252,9 @@ export function paymentLinkBody(pack, priceId, site) {
       statement_descriptor_suffix: STATEMENT_DESCRIPTOR_SUFFIX,
     },
     submit_type: "pay",
+    // No promotion codes: the account's coupons belong to Fuime too, and a 100 % code would make
+    // the pack free (the webhook would record such a checkout for review and grant nothing).
+    allow_promotion_codes: false,
   };
 }
 
@@ -387,12 +395,17 @@ export function stripeCli(mode) {
   return { get: (p, params) => run("get", p, params), post: (p, params) => run("post", p, params) };
 }
 
-/** Every object of a list endpoint, following `has_more`. */
+/**
+ * Every object of a list endpoint, following `has_more` to the end (the shared account can hold
+ * thousands of Fuime objects; a capped listing could miss ours and create duplicates). Stripe's
+ * search API could filter by metadata, but its index lags writes by up to a minute, which would
+ * break the run-twice-creates-nothing guarantee.
+ */
 export async function listAll(api, apiPath, params = {}) {
   /** @type {any[]} */
   const all = [];
   let startingAfter;
-  for (let page = 0; page < 50; page++) {
+  for (;;) {
     const res = await api.get(apiPath, { limit: 100, ...params, ...(startingAfter ? { starting_after: startingAfter } : {}) });
     const data = Array.isArray(res?.data) ? res.data : [];
     all.push(...data);

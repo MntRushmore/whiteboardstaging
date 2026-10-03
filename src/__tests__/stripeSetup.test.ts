@@ -22,6 +22,7 @@ import {
   guardedApi,
   inkReturnUrl,
   isLocalSite,
+  listAll,
   metadataKeys,
   normalizeSite,
   parseArgs,
@@ -60,6 +61,12 @@ describe("parseArgs", () => {
     expect(parseArgs(["--site", "--dry-run"])).toMatchObject({ error: /needs a value/ });
     expect(parseArgs(["--live"])).toMatchObject({ error: /unknown argument/ });
     expect(parseArgs(["--mode", "live"])).toMatchObject({ error: /public --site/ });
+  });
+  it("refuses test-mode objects that point at production (a test webhook endpoint there), except as a read-only dry run", () => {
+    expect(parseArgs(["--mode", "test", "--site", "https://whiteboard.rushilchopra.com"])).toMatchObject({ error: /must not point at https:\/\/whiteboard\.rushilchopra\.com/ });
+    expect(parseArgs(["--site", "https://whiteboard.rushilchopra.com/"])).toMatchObject({ error: /must not point at/ });
+    expect(parseArgs(["--mode", "test", "--site", "https://whiteboard.rushilchopra.com", "--dry-run"])).toMatchObject({ mode: "test", dryRun: true });
+    expect(parseArgs(["--mode", "test", "--site", "https://preview-abc.vercel.app"])).toMatchObject({ mode: "test", site: "https://preview-abc.vercel.app" });
   });
 });
 
@@ -112,6 +119,8 @@ describe("request bodies", () => {
     expect(body.after_completion).toEqual({ type: "redirect", redirect: { url: "https://a.example.com/account?ink=medium" } });
     expect(body.metadata).toEqual({ app: APP_TAG, pack_id: "medium", price_id: "price_1" });
     expect(body.payment_intent_data).toEqual({ metadata: { app: APP_TAG, pack_id: "medium" }, statement_descriptor_suffix: "AGATHON" });
+    // no promotion codes: the shared account's coupons must never make a pack free
+    expect(body.allow_promotion_codes).toBe(false);
     // Stripe: the suffix is at most 22 characters, letters, digits and spaces, not all digits
     expect(STATEMENT_DESCRIPTOR_SUFFIX).toMatch(/^(?=.*[A-Z])[A-Z0-9 ]{1,22}$/);
   });
@@ -123,7 +132,7 @@ describe("request bodies", () => {
     expect([...WEBHOOK_EVENTS]).toEqual([...HANDLED_EVENTS]);
     for (const type of WEBHOOK_EVENTS) {
       const mapped = mapBillingEvent({ id: "evt", type, data: { object: { metadata: { app: APP_TAG } } } }, {});
-      if (mapped.kind !== "grant" && mapped.kind !== "reverse") expect(mapped.reason).not.toMatch(/unhandled event type/);
+      if (mapped.kind === "foreign" || mapped.kind === "ignored") expect(mapped.reason).not.toMatch(/unhandled event type/);
     }
     expect(webhookEventsMatch({ enabled_events: [...WEBHOOK_EVENTS] })).toBe(true);
     // the plan-era events are dropped, not kept alongside
@@ -242,6 +251,25 @@ describe("finding what exists", () => {
     expect(found.links.map((l: { id: string }) => l.id)).toEqual(["plink_pro"]);
     expect(found.configs.map((c: { id: string }) => c.id)).toEqual(["bpc_ours"]);
     expect([...RETIRED_PLAN_IDS]).toEqual(["plus", "pro"]);
+  });
+});
+
+describe("listAll", () => {
+  it("follows has_more to the very end (no page cap: the shared account can hold thousands of objects)", async () => {
+    const pages = 75;
+    let calls = 0;
+    const api = {
+      get: async (_path: string, params: Record<string, unknown> = {}) => {
+        calls++;
+        const page = params.starting_after ? Number(String(params.starting_after).slice(4)) + 1 : 0;
+        return { data: [{ id: `obj_${page}` }], has_more: page < pages - 1 };
+      },
+      post: async () => ({}),
+    };
+    const all = await listAll(api, "/v1/products");
+    expect(all).toHaveLength(pages);
+    expect(calls).toBe(pages);
+    expect(all.at(-1)).toEqual({ id: "obj_74" });
   });
 });
 
