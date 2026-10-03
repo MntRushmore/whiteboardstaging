@@ -7,6 +7,7 @@
 import { LECTURE_TIMING, type LectureBoard } from "@/lib/live/lecture/contracts";
 import type { LectureRunOptions } from "@/lib/live/lecture/desk";
 import { LECTURE_BUTTON_COPY } from "./lectureCopy";
+import { waitPhrase } from "@/components/live/copy";
 import type { LectureErrorCode, LectureNotice, LectureSessionBoard, LectureSnapshot } from "@/lib/live/lecture/session";
 import { tailChars } from "@/lib/live/lecture/transcript";
 
@@ -56,7 +57,7 @@ export const LECTURE_COPY = {
     idle: `Paused: nothing heard for ${Math.round(LECTURE_TIMING.idlePauseMs / 60_000)} minutes.`,
     nothing: "Nothing to sketch from that yet.",
     empty: "Nothing heard yet.",
-    rateLimited: (seconds: number) => `Taking a short break. Back in ${seconds} s.`,
+    rateLimited: (seconds: number) => `Taking a short break. Back in ${waitPhrase(seconds)}.`,
     retrying: "Couldn't reach the tutor. Trying again soon.",
     boardFailed: "Couldn't draw that on the board.",
     sketchFailed: (failed: number, panels: number) => (panels <= 1 ? "Couldn't draw that picture." : failed >= panels ? "Couldn't draw the comic." : `Couldn't draw ${failed} of the ${panels} panels.`),

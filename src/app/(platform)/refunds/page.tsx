@@ -2,11 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ContactBlock, ContactEmail, LegalPage, LegalSection } from "@/components/legal/LegalPage";
 import styles from "@/components/legal/legal.module.css";
+import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
 import { LEGAL } from "@/lib/legal";
 
 export const metadata: Metadata = {
   title: "Refund Policy",
-  description: "How refunds work for Agathon ink packs.",
+  description: "How refunds work for Agathon ink packs and Agathon Unlimited.",
 };
 
 const days = LEGAL.refundWindowDays;
@@ -17,8 +18,13 @@ const example = LEGAL.inkPacks[1];
 const exampleUsed = example.ink / 5;
 const exampleRefund = (example.priceUsd * (example.ink - exampleUsed)) / example.ink;
 
-// DRAFT for the owner and counsel to review (src/lib/legal.ts): the refund rule itself is a
-// proposal the owner has to confirm. Static: no request data.
+const plan = UNLIMITED_PLAN.name;
+const price = `$${UNLIMITED_PLAN.monthlyUsd}`;
+const planDays = LEGAL.unlimited.refundWindowDays;
+
+// DRAFT for the owner and counsel to review (src/lib/legal.ts): both refund rules are proposals the
+// owner has to confirm. Refunds are made by hand in the Stripe Dashboard (docs/RUNBOOK-billing.md
+// sections 5 and 10); a refunded plan is also cancelled there. Static: no request data.
 export default function RefundsPage() {
   return (
     <LegalPage
@@ -27,11 +33,15 @@ export default function RefundsPage() {
         <ul>
           <li>Unused ink from a pack can be refunded within {days} days of buying it. Just ask.</li>
           <li>Ink you have already used is not refundable.</li>
-          <li>The refund is the pack’s price times the share of its ink you have not used.</li>
+          <li>
+            {plan}: cancel during the free week and you are never charged. Charged {price} and did not mean to keep
+            the plan? Ask within {planDays} days and we refund that charge.
+          </li>
+          <li>If something went wrong on our side, we put it right or refund you in full, at any time.</li>
         </ul>
       }
     >
-      <LegalSection id="rule" title="What can be refunded">
+      <LegalSection id="rule" title="Ink packs: what can be refunded">
         <p>
           Ink packs are one-time purchases ({LEGAL.inkPacks.map((p) => `${ink(p.ink)} ink for $${p.priceUsd}`).join(", ")}
           ). Within <strong>{days} days</strong> of buying a pack you can ask for a refund of the ink from that pack you
@@ -52,7 +62,7 @@ export default function RefundsPage() {
         </p>
       </LegalSection>
 
-      <LegalSection id="not" title="What is not refundable">
+      <LegalSection id="not" title="Ink that is not refundable">
         <ul>
           <li>Ink you have used.</li>
           <li>Packs bought more than {days} days ago, unless something below applies.</li>
@@ -60,25 +70,47 @@ export default function RefundsPage() {
         </ul>
       </LegalSection>
 
+      <LegalSection id="subscriptions" title={`${plan} (subscription)`}>
+        <ul>
+          <li>
+            <strong>The free week is free.</strong> Cancel before it ends and you are never charged. See{" "}
+            <Link href="/terms#unlimited">how to cancel</Link>.
+          </li>
+          <li>
+            <strong>Charged and did not mean to keep it?</strong> If you forgot to cancel, or a charge was a mistake, ask
+            within <strong>{planDays} days</strong> of that charge (the first {price} after the free week, or any monthly
+            renewal). We refund that charge in full and end the plan straight away. From then on, help uses ink again.
+          </li>
+          <li>
+            <strong>Otherwise, no refunds for part of a month.</strong> When you cancel, you are not charged again, and
+            the plan stays on until the end of the month you have paid for.
+          </li>
+          <li>A refund for the plan never takes any ink from your account.</li>
+        </ul>
+      </LegalSection>
+
       <LegalSection id="mistakes" title="When something went wrong">
         <p>
-          If you were charged twice, were charged and never got the ink, or a fault on our side used up your ink, tell us
-          at any time and we will put it right or refund you in full.
+          If you were charged twice, were charged after you cancelled, were charged and never got the ink, or a fault on
+          our side used up your ink, tell us at any time and we will put it right or refund you in full.
         </p>
       </LegalSection>
 
       <LegalSection id="how" title="How to ask">
         <ol>
           <li>
-            Email <ContactEmail /> from your account’s email address, with the date of the purchase (your Stripe
-            receipt is enough). A parent can ask for a child’s account.
+            Email <ContactEmail /> from your account’s email address (or, for {plan}, the email used at
+            checkout), with the date of the charge. Your Stripe receipt is enough. A parent can ask for a child’s
+            account.
           </li>
           <li>We reply within a few working days and refund through Stripe to the card you paid with.</li>
           <li>Your bank usually shows the refund within 5 to 10 working days.</li>
         </ol>
         <p>
-          Your payment, receipt and card statement show the seller name “{LEGAL.stripeSellerName}”. Please ask
-          us before disputing a charge with your bank: it is usually quicker.
+          Your payment and receipt show the seller name “{LEGAL.stripeSellerName}”. On a card statement, an ink pack
+          shows as “{LEGAL.statementDescriptors.inkPacks}” and {UNLIMITED_PLAN.name}{" "}
+          as “{LEGAL.statementDescriptors.unlimited}”. Please ask us before disputing a charge with your bank: it is
+          usually quicker.
         </p>
       </LegalSection>
 

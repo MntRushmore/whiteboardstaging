@@ -173,7 +173,11 @@ export interface Recognition {
 }
 
 export function cacheKey(payload: StrokePayload): string {
-  return createHash("sha1").update(JSON.stringify(buildStrokesBody(payload))).digest("hex");
+  // `metadata` (the privacy flag) changes nothing Mathpix reads, so it stays out of the key: the
+  // answers cached before it was added are still the answers.
+  const read: Record<string, unknown> = { ...buildStrokesBody(payload) };
+  delete read.metadata;
+  return createHash("sha1").update(JSON.stringify(read)).digest("hex");
 }
 
 export interface CallBudget {

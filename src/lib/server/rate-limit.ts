@@ -37,6 +37,8 @@ const MINUTE = 60_000;
 /** Per-user limits for each API route (requests per window). */
 export const LIMITS = {
   credits: { limit: 30, windowMs: MINUTE },
+  // POST /api/email/welcome: the app asks once, at the end of the tour; the email itself goes at most once.
+  emailWelcome: { limit: 5, windowMs: MINUTE },
   // Live Math routes (budgets are defined once, in the shared contracts).
   liveRecognize: LIVE_RATE_LIMITS.liveRecognize,
   liveCheck: LIVE_RATE_LIMITS.liveCheck,
@@ -48,6 +50,7 @@ export const LIMITS = {
   liveLecture: LIVE_RATE_LIMITS.liveLecture,
   liveListen: LIVE_RATE_LIMITS.liveListen,
   liveSketch: LIVE_RATE_LIMITS.liveSketch,
+  liveTitle: LIVE_RATE_LIMITS.liveTitle,
 } as const satisfies Record<string, RateLimitOptions>;
 
 export type RateLimitBucket = keyof typeof LIMITS;

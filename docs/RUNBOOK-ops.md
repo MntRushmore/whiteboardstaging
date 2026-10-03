@@ -1,4 +1,4 @@
-# Runbook: errors, uptime and releases
+# Runbook: errors, uptime, releases and email
 
 Where a crash shows up, how to know the site is up, and how to tell which commit is live. No third-party service is involved: everything below lands in Vercel's runtime logs as one JSON line per event (pino), and `/api/health` is a plain endpoint any uptime monitor can poll. Design: `docs/ARCHITECTURE.md` (routes table, "Security model").
 
@@ -71,3 +71,48 @@ A `client-error` with an older `release` than the live one comes from a tab open
 1. `curl -s https://whiteboard.rushilchopra.com/api/health` → `200`, `"db":"up"`, and the `release` you just shipped.
 2. `vercel logs --environment production --since 15m --level error --expand` → nothing new, or only what you expect.
 3. Over the next day, a look at `client-error` lines for the new `release`.
+
+## 6. Email
+
+Agathon sends two transactional emails through [Resend](https://resend.com), from `Agathon <hello@mail.agathon.app>` (`EMAIL_FROM`; the domain `mail.agathon.app` is verified in Resend). Code: `src/lib/email/` (templates, the Resend client, the log). Password-reset and other auth emails are Supabase's own, sent through Resend SMTP; they are configured in the Supabase dashboard, not here.
+
+| Email | Sent by | When | To |
+| --- | --- | --- | --- |
+| Welcome (`kind = 'welcome'`, `ref = ''`) | `POST /api/email/welcome`, which the app calls at the end of the guided first board (`sendWelcomeEmail` in `src/lib/email/client.ts`) | Once per account, only when `profiles.onboarded_at` is set and less than 7 days old | The account's own address (Supabase Auth); the request has no body |
+| Free week ending (`kind = 'trial_reminder'`, `ref = <Stripe subscription id>`) | `GET /api/cron/trial-reminders`, a Vercel cron (`vercel.json`, `0 15 * * *`, i.e. 15:00 UTC, within the hour on Hobby) | Once per Agathon Unlimited subscription that is `trialing` with `trial_end` 24 to 72 hours away, so 2 to 3 days before the first charge; not when it is set to cancel by then, or has no user | The subscribing account's address (`auth.admin.getUserById`) |
+
+**The log.** `public.email_log` (migration `20261003030000_email_log.sql`; service role only, no user can read or write it) has one row per email: `user_id, kind, ref, resend_id, claimed_at, sent_at`, unique on `(user_id, kind, ref)`. The server claims the row first, sends, then stores Resend's id; a failed send deletes its claim so the next attempt retries. A row with `sent_at` null is a claim whose send was never recorded (the function died in between): it counts as sent and is not retried by itself. Each send also carries a Resend `Idempotency-Key` (`welcome/<user id>`, `trial-reminder/<subscription>/<trial end>`), so a retry within 24 hours cannot send twice.
+
+```sql
+-- what went out lately
+select kind, ref, user_id, resend_id, claimed_at, sent_at from public.email_log order by claimed_at desc limit 50;
+-- claims that never got an id (look the address up in Resend before resending)
+select * from public.email_log where sent_at is null and claimed_at < now() - interval '10 minutes';
+```
+
+**Logs.** Module `email`: `welcome email sent` / `welcome email not sent`, `trial reminder sent` / `trial reminder not sent; ...`, and one `trial reminders summary` per cron run with `found, due, alreadySent, sent, failed, skipped, deferred`. A run sends at most 50 (spaced for Resend's 2 requests a second); the rest go the next day, still inside the window.
+
+**Checking the cron by hand** (production, needs `CRON_SECRET`):
+
+```bash
+# what it would send now, sending nothing
+curl -sS -H "Authorization: Bearer $CRON_SECRET" "https://whiteboard.rushilchopra.com/api/cron/trial-reminders?dryRun=1" | jq
+# a real run: safe to repeat, every reminder goes at most once
+curl -sS -H "Authorization: Bearer $CRON_SECRET" https://whiteboard.rushilchopra.com/api/cron/trial-reminders | jq
+```
+
+**Resending.** Delete the email's row, then trigger it again. A trial reminder: `delete from public.email_log where kind = 'trial_reminder' and ref = 'sub_...';`, then the next daily run (or the `curl` above) sends it while the trial is still 24 hours or more away. A welcome is only asked for at the end of the tour: deleting its row (`... where kind = 'welcome' and user_id = '<uuid>'`) lets the next request send it, but nothing in the app asks again by itself, and there is no operator command for it (a missed welcome is not worth one). Within 24 hours of the first send Resend answers a repeat with the same `Idempotency-Key` with the first email instead of a new one.
+
+**Testing a send** without emailing anyone: use Resend's test inbox `delivered@resend.dev` (also `bounced@resend.dev`, `complained@resend.dev`), then `curl -sS -H "Authorization: Bearer $RESEND_API_KEY" https://api.resend.com/emails/<id> | jq .last_event` shows `"delivered"`.
+
+**Going live.**
+1. Apply `supabase/migrations/20261003030000_email_log.sql` to production (before or with the deploy; without the table the routes answer 500 and send nothing). Then `node scripts/verify-rls.mjs` against production: the `email_log` checks must pass.
+2. Set the variables in Vercel Production: `RESEND_API_KEY` (sensitive), `EMAIL_FROM` (optional), `NEXT_PUBLIC_BILLING_PORTAL_URL` (the Stripe customer portal login link; without it the reminder links `/account`). `CRON_SECRET` and `SUPABASE_SERVICE_ROLE_KEY` are already there.
+   ```bash
+   printf '%s' "$(cat ~/.config/agathon-classroom/resend-api-key)" | vercel env add RESEND_API_KEY production --sensitive
+   printf '%s' 'Agathon <hello@mail.agathon.app>' | vercel env add EMAIL_FROM production
+   ```
+3. Deploy. In Vercel → Settings → Cron Jobs, `/api/cron/trial-reminders` is listed next to `/api/admin/gc`. Run the dry run above once.
+4. Ship the app change that calls `sendWelcomeEmail()` after the tour saves `onboarded_at`.
+
+Without `RESEND_API_KEY` (local development, previews) nothing is sent and nothing breaks: the welcome route answers `503 feature_unavailable`, the cron too (except `?dryRun=1`), and `sendEmail` returns `{ ok: false, error: "not configured" }` with one log line.

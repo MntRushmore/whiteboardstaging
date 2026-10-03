@@ -14,12 +14,14 @@ import {
   RATE_LIMIT_KEYS,
   affectedNoRows,
   checkAnonDenied,
+  checkBillingRetention,
   checkBillingTables,
   checkBoardAssets,
   checkBugReports,
   checkCreditsConsumption,
   checkCrossUserIsolation,
   checkDeleteOwnAccount,
+  checkEmailLog,
   checkInkPurchases,
   checkInkTables,
   checkOnboarding,
@@ -30,6 +32,7 @@ import {
   checkStorage,
   checkTrainersNotWritable,
   checkTrainingSamplesDenied,
+  checkUnlimited,
   checkUsageByDay,
   checkUserSettingsIsolation,
   checkVersionTrigger,
@@ -72,6 +75,8 @@ type Leak =
   | "crossDelete"
   | "settingsHijack"
   | "bugReportForeign"
+  | "bugReportNoUser"
+  | "bugReportEmailSpoof"
   | "bugReportRead"
   | "trainersInsert"
   | "trainingInsert"
@@ -80,6 +85,9 @@ type Leak =
   | "assetCrossRead"
   | "storageForeignUpload"
   | "storagePublicRead"
+  | "storageAnonList"
+  | "storageForeignList"
+  | "storageOwnList"
   | "storageForeignDelete"
   | "trainingUpload"
   | "noVersionBump"
@@ -131,7 +139,29 @@ type Leak =
   | "inkNoStarter"
   | "inkAmountUnchecked"
   | "inkReviewsReadable"
-  | "inkLedgerDeletable";
+  | "inkLedgerDeletable"
+  // email log (20261003030000_email_log.sql)
+  | "emailLogReadable"
+  | "emailLogWritable"
+  | "emailLogTwice"
+  // Agathon Unlimited (20261003020000_unlimited.sql)
+  | "unlimitedSelfGrant"
+  | "unlimitedRpcOpen"
+  | "unlimitedProbe"
+  | "unlimitedCrossRead"
+  | "unlimitedSpendsInk"
+  | "unlimitedCountsTwice"
+  | "unlimitedRefundMints"
+  | "unlimitedStaleApplies"
+  | "unlimitedDeleteNotBlocked"
+  // go-live gaps (20261003040000_go_live_gaps.sql)
+  | "checkoutRefPatchable"
+  | "checkoutRefByUserId"
+  | "unlimitedRepeatTrial"
+  | "payerEmailDropped"
+  | "purgeOpen"
+  | "purgeKeepsOld"
+  | "purgeTooEager";
 
 const USER_A = "aaaaaaaa-0000-4000-8000-000000000001";
 const USER_B = "bbbbbbbb-0000-4000-8000-000000000002";
@@ -162,7 +192,9 @@ function makeWorld(leaks: Leak[] = []) {
     leak("termsNotRecorded")
       ? { accepted_terms_at: null, terms_version: null }
       : { accepted_terms_at: "2026-10-03T08:00:00.000Z", terms_version: TERMS_VERSION };
-  for (const u of users) profiles.set(u, { user_id: u, plan_id: "free", display_name: null, course: null, onboarded_at: null, ...signupTerms() });
+  // 20261003040000_go_live_gaps.sql: every profile has its own random checkout reference
+  const newProfile = (u: string): Row => ({ user_id: u, plan_id: "free", display_name: null, course: null, onboarded_at: null, checkout_ref: globalThis.crypto.randomUUID(), ...signupTerms() });
+  for (const u of users) profiles.set(u, newProfile(u));
   const usage: Row[] = [];
   const grants: Row[] = [];
   const billingEvents: Row[] = [];
@@ -170,6 +202,10 @@ function makeWorld(leaks: Leak[] = []) {
   const inkGrants: Row[] = [];
   const purchases: Row[] = [];
   const reviews: Row[] = []; // ink_checkout_reviews: service role only
+  const emailLog: Row[] = []; // email_log: service role only, unique (user_id, kind, ref)
+  // Agathon Unlimited: the webhook's subscription rows and the fair-use record
+  const subs: Row[] = [];
+  const unlimitedUsage: Row[] = [];
   const grantStarter = (uid: string) => {
     if (!leak("inkNoStarter")) inkGrants.push({ id: inkGrants.length + 1, user_id: uid, kind: "starter", units: STARTER_INK, created_at: new Date().toISOString() });
   };
@@ -208,6 +244,95 @@ function makeWorld(leaks: Leak[] = []) {
     if (leak("summaryMissingField")) delete body.granted;
     return body;
   }
+  const FINAL = ["canceled", "incomplete_expired"];
+  const GRACE_MS = 3 * 86_400_000;
+  /** unlimited_earlier_plan(): an earlier row of the same account that started (anything but incomplete_expired) */
+  const earlierPlan = (s: Row) => subs.some((o) => o.user_id === s.user_id && Number(o.id) < Number(s.id) && o.status !== "incomplete_expired");
+  const grantsPlan = (s: Row) => {
+    const end = s.current_period_end ?? s.trial_end;
+    const firstOrPaid = s.status === "active" || (s.status === "trialing" && (leak("unlimitedRepeatTrial") || !earlierPlan(s)));
+    return firstOrPaid && (end == null || Date.parse(String(end)) + GRACE_MS > Date.now());
+  };
+  /** has_unlimited(uid) */
+  const hasUnlimited = (uid: string) => subs.some((s) => s.user_id === uid && grantsPlan(s));
+  /** unlimited_state_of(uid): the row that grants the plan, else the latest; plus repeat_trial and the checkout ref */
+  function unlimitedState(uid: string): Row {
+    const own = subs.filter((s) => s.user_id === uid);
+    const row = own.find(grantsPlan) ?? own.at(-1);
+    const checkout_ref = profiles.get(uid)?.checkout_ref ?? null;
+    if (!row) return { status: "none", unlimited: false, trial_end: null, current_period_end: null, cancel_at_period_end: false, cancel_at: null, repeat_trial: false, checkout_ref };
+    return {
+      status: row.status ?? null,
+      unlimited: hasUnlimited(uid),
+      trial_end: row.trial_end ?? null,
+      current_period_end: row.current_period_end ?? null,
+      cancel_at_period_end: row.cancel_at_period_end === true,
+      cancel_at: row.cancel_at ?? null,
+      repeat_trial: row.status === "trialing" && earlierPlan(row),
+      checkout_ref,
+    };
+  }
+  /** purge_billing_event_payloads(): payloads older than 90 days blanked, rows kept */
+  function purgePayloads(): HttpResult {
+    const cutoff = Date.now() - 90 * 86_400_000;
+    let n = 0;
+    for (const e of billingEvents) {
+      const old = Date.parse(String(e.received_at)) < cutoff;
+      if (e.payload !== null && ((old && !leak("purgeKeepsOld")) || leak("purgeTooEager"))) {
+        e.payload = null;
+        n++;
+      }
+    }
+    return ok(n);
+  }
+  /** The service-role writers of 20261003020000_unlimited.sql (and, with a leak, callable by a user). */
+  function unlimitedRpc(fn: string, args: Row): HttpResult | null {
+    const sub = String(args.p_subscription_id ?? "");
+    const rowFor = () => {
+      let row = subs.find((s) => s.stripe_subscription_id === sub);
+      if (!row) {
+        row = { id: subs.length + 1, stripe_subscription_id: sub, user_id: null, status: null, cancel_at_period_end: false, status_event_at: null };
+        subs.push(row);
+      }
+      return row;
+    };
+    switch (fn) {
+      case "link_unlimited_checkout": {
+        // the account whose checkout ref it is; a user id matches nobody (unless the leak)
+        const named = typeof args.p_checkout_ref === "string" ? args.p_checkout_ref : null;
+        const byRef = named ? (([...profiles.values()].find((p) => p.checkout_ref === named)?.user_id as string | undefined) ?? null) : null;
+        const user = byRef ?? (leak("checkoutRefByUserId") && named && users.has(named) ? named : null);
+        const row = rowFor();
+        row.user_id ??= user;
+        row.checkout_session_id ??= args.p_checkout_session_id ?? null;
+        if (!leak("payerEmailDropped")) row.payer_email ??= args.p_payer_email ?? null;
+        return ok({
+          linked: user !== null && row.user_id === user,
+          user_id: row.user_id,
+          no_account: named !== null && user === null,
+          conflict: user !== null && row.user_id !== user,
+          status: row.status,
+        });
+      }
+      case "apply_unlimited_subscription": {
+        const row = rowFor();
+        const at = typeof args.p_event_at === "string" ? Date.parse(args.p_event_at) : Date.now();
+        const status = String(args.p_status);
+        const stale = (FINAL.includes(String(row.status)) && !FINAL.includes(status)) || (row.status_event_at !== null && at < Number(row.status_event_at));
+        if (stale && !leak("unlimitedStaleApplies")) return ok({ applied: false, stale: true, user_id: row.user_id, status: row.status });
+        Object.assign(row, {
+          status,
+          trial_end: args.p_trial_end ?? null,
+          current_period_end: args.p_current_period_end ?? null,
+          cancel_at_period_end: args.p_cancel_at_period_end === true,
+          cancel_at: args.p_cancel_at ?? null,
+          status_event_at: at,
+        });
+        return ok({ applied: true, stale: false, user_id: row.user_id, status });
+      }
+    }
+    return null;
+  }
   function inkSummary(uid: string): Row {
     const own = inkGrants.filter((g) => g.user_id === uid);
     const sum = (kind: string) => own.filter((g) => g.kind === kind).reduce((n, g) => n + Number(g.units), 0);
@@ -224,6 +349,7 @@ function makeWorld(leaks: Leak[] = []) {
       starter_at: own.find((g) => g.kind === "starter")?.created_at ?? null,
       purchases: mine.length,
       last_purchase: last ? { pack_id: last.pack_id, pack_name: last.pack_id, ink: last.ink, status: last.status, created_at: last.created_at } : null,
+      unlimited: unlimitedState(uid),
     };
   }
   /** The service-role RPCs of 20261002000000_ink.sql (and, with a leak, callable by a user). */
@@ -259,6 +385,16 @@ function makeWorld(leaks: Leak[] = []) {
       if (Date.parse(String(r.created_at)) <= cutoff && !leak("refundStale")) continue;
       refunded += Number(r.units);
       if (!leak("refundKeepsRow")) usage.splice(i, 1);
+    }
+    // A subscriber's call spent no ink: its fair-use row goes, and nothing comes back.
+    for (let i = unlimitedUsage.length - 1; i >= 0; i--) {
+      const r = unlimitedUsage[i];
+      if (r.user_id !== uid || r.request_id !== requestId) continue;
+      if (leak("unlimitedRefundMints")) {
+        inkGrants.push({ id: inkGrants.length + 1, user_id: uid, kind: "manual", units: Number(r.units) });
+        refunded += Number(r.units);
+      }
+      unlimitedUsage.splice(i, 1);
     }
     return ok({ refunded, remaining: balance(uid).remaining });
   }
@@ -371,6 +507,11 @@ function makeWorld(leaks: Leak[] = []) {
       return ok(0);
     }
     if (fn === "refund_ink_for") return leak("refundUserCallable") ? refundFor(String(args.p_user_id), args.p_request_id) : denied(uid);
+    if (fn === "link_unlimited_checkout" || fn === "apply_unlimited_subscription") {
+      return leak("unlimitedRpcOpen") ? (unlimitedRpc(fn, args) as HttpResult) : denied(uid);
+    }
+    if (fn === "has_unlimited") return leak("unlimitedProbe") ? ok(hasUnlimited(String(args.p_uid))) : denied(uid);
+    if (fn === "purge_billing_event_payloads") return leak("purgeOpen") ? purgePayloads() : denied(uid);
     switch (fn) {
       case "credit_summary":
         return ok(summary(uid));
@@ -382,6 +523,14 @@ function makeWorld(leaks: Leak[] = []) {
           return { status: 400, body: { code: "22023", message: "p_units must be between 1 and 1000" } };
         }
         if (!users.has(uid)) return denied(uid); // auth.users row gone -> 'account not found' (42501)
+        if (hasUnlimited(uid) && !leak("unlimitedSpendsInk")) {
+          // nothing spent: one fair-use row per request id
+          const requestId = args.p_request_id ?? null;
+          if (requestId === null || leak("unlimitedCountsTwice") || !unlimitedUsage.some((r) => r.user_id === uid && r.request_id === requestId)) {
+            unlimitedUsage.push({ id: unlimitedUsage.length + 1, user_id: uid, route: args.p_route, units, request_id: requestId, created_at: new Date().toISOString() });
+          }
+          return ok({ ok: true, remaining: balance(uid).remaining, reason: null, unlimited: true });
+        }
         const { remaining } = balance(uid);
         if (remaining < units && !leak("overspendAllowed")) return ok({ ok: false, remaining, reason: "insufficient_credits" });
         const row: Row = {
@@ -463,6 +612,14 @@ function makeWorld(leaks: Leak[] = []) {
       }
       case "delete_own_account": {
         if (leak("deleteNoop")) return ok(null, 204);
+        const charges = subs.some(
+          (s) => s.user_id === uid && ["trialing", "active", "past_due", "unpaid"].includes(String(s.status)) && s.cancel_at_period_end !== true && !s.cancel_at,
+        );
+        if (charges && !leak("unlimitedDeleteNotBlocked")) {
+          return { status: 400, body: { code: "P0001", hint: "unlimited_active", message: "Cancel Agathon Unlimited before deleting your account" } };
+        }
+        for (const s of subs) if (s.user_id === uid) Object.assign(s, { user_id: null, payer_email: null }); // on delete set null; the trigger forgets the payer
+        for (let i = unlimitedUsage.length - 1; i >= 0; i--) if (unlimitedUsage[i].user_id === uid) unlimitedUsage.splice(i, 1);
         users.delete(uid);
         profiles.delete(uid);
         settings.delete(uid);
@@ -502,7 +659,11 @@ function makeWorld(leaks: Leak[] = []) {
         if (rest.length === 0 && text !== head) return false;
         continue;
       }
-      if (!value.startsWith("eq.")) throw new Error(`fake only supports eq. and like. filters, got ${key}=${value}`);
+      if (value.startsWith("in.(") && value.endsWith(")")) {
+        if (!value.slice(4, -1).split(",").includes(String(row[key]))) return false;
+        continue;
+      }
+      if (!value.startsWith("eq.")) throw new Error(`fake only supports eq., in. and like. filters, got ${key}=${value}`);
       if (String(row[key]) !== value.slice(3)) return false;
     }
     return true;
@@ -582,8 +743,10 @@ function makeWorld(leaks: Leak[] = []) {
       }
       case "bug_reports": {
         if (method === "POST") {
-          if (body.user_id != null && body.user_id !== uid && !leak("bugReportForeign")) return denied(uid);
-          bugReports.push({ id: uuid(), ...body });
+          const allowed = body.user_id === uid || (body.user_id == null ? leak("bugReportNoUser") : leak("bugReportForeign"));
+          if (!allowed) return denied(uid);
+          // the BEFORE INSERT trigger stamps the address from the caller's JWT
+          bugReports.push({ id: uuid(), ...body, user_email: leak("bugReportEmailSpoof") ? body.user_email : `${uid}@fake.test` });
           return ok(null, 201);
         }
         if (method === "GET") return leak("bugReportRead") ? ok(bugReports) : denied(uid);
@@ -647,7 +810,8 @@ function makeWorld(leaks: Leak[] = []) {
             (leak("planIdUpdatable") && k === "plan_id") ||
             (leak("onboardingPatchable") && (k === "course" || k === "onboarded_at")) ||
             (leak("inkBalancePatchable") && k === "ink_balance") ||
-            (leak("termsPatchable") && (k === "accepted_terms_at" || k === "terms_version"));
+            (leak("termsPatchable") && (k === "accepted_terms_at" || k === "terms_version")) ||
+            (leak("checkoutRefPatchable") && k === "checkout_ref");
           if (Object.keys(body).some((k) => !updatable(k))) return denied(uid);
           const own = visible.filter((r) => r.user_id === uid);
           for (const r of own) Object.assign(r, body);
@@ -699,6 +863,30 @@ function makeWorld(leaks: Leak[] = []) {
         if (method === "GET" && leak("inkReviewsReadable")) return ok(reviews.filter((r) => matches(r, query)));
         return denied(uid);
       }
+      case "email_log": {
+        // No grants for authenticated at all (service role only).
+        if (method === "GET") return leak("emailLogReadable") ? ok(emailLog.filter((r) => matches(r, query))) : denied(uid);
+        if (!leak("emailLogWritable")) return denied(uid);
+        if (method === "POST") {
+          emailLog.push({ id: emailLog.length + 1, ...body });
+          return ok(null, 201);
+        }
+        return ok(rep ? [] : null);
+      }
+      case "unlimited_subscriptions": {
+        if (method === "POST") {
+          if (!leak("unlimitedSelfGrant")) return denied(uid);
+          subs.push({ id: subs.length + 1, cancel_at_period_end: false, status_event_at: null, ...body });
+          return ok(null, 201);
+        }
+        if (method === "GET") return ok(subs.filter((r) => (r.user_id === uid || leak("unlimitedCrossRead")) && matches(r, query)));
+        return denied(uid); // select only: no update, no delete
+      }
+      case "unlimited_usage": {
+        if (method === "POST") return denied(uid);
+        if (method === "GET") return ok(unlimitedUsage.filter((r) => (r.user_id === uid || leak("unlimitedCrossRead")) && matches(r, query)));
+        return denied(uid);
+      }
       case "rate_limit_counters": {
         // Function-only table: no grants for authenticated at all.
         if (method === "GET" && leak("countersReadable")) return ok([...counters.values()].filter((c) => c.user_id === uid));
@@ -710,7 +898,10 @@ function makeWorld(leaks: Leak[] = []) {
 
   /** The service role bypasses RLS and holds every grant; only what the checks use is modelled. */
   function serviceRest(method: string, table: string, query: Record<string, string>, body: Row): HttpResult {
+    if (table === "rpc/purge_billing_event_payloads") return purgePayloads();
     if (table.startsWith("rpc/")) {
+      const plan = unlimitedRpc(table.slice(4), body);
+      if (plan) return plan;
       const res = inkRpc(table.slice(4), body);
       if (res) return res;
     }
@@ -724,6 +915,15 @@ function makeWorld(leaks: Leak[] = []) {
       return ok(gone);
     }
     switch (table) {
+      case "bug_reports": {
+        if (method === "GET") return ok(bugReports.filter((r) => matches(r, query)));
+        if (method === "DELETE") {
+          const gone = bugReports.filter((r) => matches(r, query));
+          for (const r of gone) bugReports.splice(bugReports.indexOf(r), 1);
+          return ok(gone);
+        }
+        break;
+      }
       case "usage_events": {
         if (method === "POST") {
           usage.push({ id: usage.length + 1, created_at: new Date().toISOString(), ...body });
@@ -732,11 +932,48 @@ function makeWorld(leaks: Leak[] = []) {
         if (method === "GET") return ok(usage.filter((r) => matches(r, query)));
         break;
       }
+      case "unlimited_subscriptions": {
+        if (method === "DELETE") {
+          const gone = subs.filter((r) => matches(r, query));
+          for (const r of gone) subs.splice(subs.indexOf(r), 1);
+          return ok(gone);
+        }
+        break;
+      }
+      case "billing_events": {
+        if (method === "POST") {
+          for (const r of Array.isArray(body) ? (body as Row[]) : [body]) billingEvents.push({ received_at: new Date().toISOString(), ...r });
+          return ok(null, 201);
+        }
+        if (method === "GET") return ok(billingEvents.filter((r) => matches(r, query)));
+        if (method === "DELETE") {
+          const gone = billingEvents.filter((r) => matches(r, query));
+          for (const r of gone) billingEvents.splice(billingEvents.indexOf(r), 1);
+          return ok(gone);
+        }
+        break;
+      }
       case "ink_checkout_reviews": {
         if (method === "GET") return ok(reviews.filter((r) => matches(r, query)));
         if (method === "DELETE") {
           const gone = reviews.filter((r) => matches(r, query));
           for (const r of gone) reviews.splice(reviews.indexOf(r), 1);
+          return ok(gone);
+        }
+        break;
+      }
+      case "email_log": {
+        if (method === "POST") {
+          const dup = emailLog.some((r) => r.user_id === body.user_id && r.kind === body.kind && r.ref === (body.ref ?? ""));
+          if (dup && !leak("emailLogTwice")) return { status: 409, body: { code: "23505", message: 'duplicate key value violates unique constraint "email_log_once"' } };
+          const row: Row = { id: emailLog.length + 1, ref: "", resend_id: null, sent_at: null, ...body };
+          emailLog.push(row);
+          return ok([row], 201);
+        }
+        if (method === "GET") return ok(emailLog.filter((r) => matches(r, query)));
+        if (method === "DELETE") {
+          const gone = emailLog.filter((r) => matches(r, query));
+          for (const r of gone) emailLog.splice(emailLog.indexOf(r), 1);
           return ok(gone);
         }
         break;
@@ -769,6 +1006,25 @@ function makeWorld(leaks: Leak[] = []) {
     return bucket === "board-assets" && objects.has(`${bucket}/${path}`) ? ok(null) : { status: 404, body: null };
   }
 
+  /** Storage's list: one level under `prefix`, only inside the caller's own folder (owner SELECT policy). */
+  function storageList(uid: string | null, bucket: string, prefix: string): HttpResult {
+    const clean = prefix.replace(/^\/+|\/+$/g, "");
+    const visible = [...objects.entries()].filter(([key, owner]) => {
+      if (!key.startsWith(`${bucket}/`)) return false;
+      if (uid === null) return leak("storageAnonList");
+      if (owner === uid) return !leak("storageOwnList");
+      return leak("storageForeignList");
+    });
+    const names = new Set<string>();
+    for (const [key] of visible) {
+      const path = key.slice(bucket.length + 1);
+      if (clean && !path.startsWith(`${clean}/`)) continue;
+      const rest = clean ? path.slice(clean.length + 1) : path;
+      names.add(rest.split("/")[0]);
+    }
+    return ok([...names].map((name) => ({ name })));
+  }
+
   function storageDelete(uid: string | null, bucket: string, path: string): HttpResult {
     const key = `${bucket}/${path}`;
     const owner = objects.get(key);
@@ -784,19 +1040,20 @@ function makeWorld(leaks: Leak[] = []) {
     rest: async (method, table, opts) => rest(uid, method, table, opts),
     upload: async (bucket, path) => upload(uid, bucket, path),
     publicRead: async (bucket, path) => publicRead(bucket, path),
+    storageList: async (bucket, prefix) => storageList(uid, bucket, prefix),
     storageDelete: async (bucket, path) => storageDelete(uid, bucket, path),
   });
 
   const newUser = async (): Promise<RlsClient> => {
     const uid = uuid();
     users.add(uid);
-    profiles.set(uid, { user_id: uid, plan_id: "free", display_name: null, course: null, onboarded_at: null, ...signupTerms() });
+    profiles.set(uid, newProfile(uid));
     grantStarter(uid);
     return client(uid);
   };
 
   const ctx: CheckContext = { anon: client(null), a: client(USER_A), b: client(USER_B), newUser, service: client(SERVICE) };
-  return { ctx, state: { boards, settings, bugReports, snapshots, assets, objects, users, profiles, usage, grants, counters, inkGrants, purchases, reviews } };
+  return { ctx, state: { boards, settings, bugReports, snapshots, assets, objects, users, profiles, usage, grants, counters, inkGrants, purchases, reviews, emailLog, subs, unlimitedUsage, billingEvents } };
 }
 
 const failures = (results: CheckResult[]) => results.filter((r) => !r.pass).map((r) => r.name);
@@ -817,8 +1074,8 @@ describe("rlsChecks against a correctly secured fake", () => {
       expect(results.map((r) => r.name)).toContain(`anon: select ${table} denied`);
       expect(results.map((r) => r.name)).toContain(`anon: insert ${table} denied`);
     }
-    expect(PUBLIC_TABLES).toHaveLength(17);
-    for (const table of ["plans", "profiles", "usage_events", "credit_grants", "billing_events", "rate_limit_counters", "ink_packs", "ink_grants", "ink_purchases", "ink_checkout_reviews"]) {
+    expect(PUBLIC_TABLES).toHaveLength(20);
+    for (const table of ["plans", "profiles", "usage_events", "credit_grants", "billing_events", "rate_limit_counters", "ink_packs", "ink_grants", "ink_purchases", "ink_checkout_reviews", "email_log", "unlimited_subscriptions", "unlimited_usage"]) {
       expect(PUBLIC_TABLES).toContain(table);
     }
   });
@@ -894,12 +1151,55 @@ describe("rlsChecks against a correctly secured fake", () => {
     expect(state.inkGrants.filter((g) => g.user_id === USER_B && g.kind !== "starter")).toEqual([]);
   });
 
+  it("the email log check claims once through the service role and leaves no row behind", async () => {
+    const { ctx, state } = makeWorld();
+    const results = await checkEmailLog(ctx);
+    expect(failures(results)).toEqual([]);
+    expect(results.length).toBe(9);
+    expect(state.emailLog).toEqual([]);
+    const without = await checkEmailLog({ anon: ctx.anon, a: ctx.a, b: ctx.b });
+    expect(failures(without)).toEqual([]);
+    expect(without.map((r) => r.name)).toContain("email_log with the service role (skipped: no service role client)");
+  });
+
   it("the ink purchase check reports its service-role part as skipped (still passing) without a service client", async () => {
     const { ctx, state } = makeWorld();
     const results = await checkInkPurchases({ anon: ctx.anon, a: ctx.a, b: ctx.b });
     expect(failures(results)).toEqual([]);
     expect(results.map((r) => r.name)).toContain("grant_ink_purchase / reverse_ink_purchase with the service role (skipped: no service role client)");
     expect(state.purchases).toEqual([]);
+  });
+
+  it("the Unlimited check passes on its own, spends no ink while A is subscribed and leaves no subscription rows", async () => {
+    const { ctx, state } = makeWorld();
+    const results = await checkUnlimited(ctx);
+    expect(failures(results)).toEqual([]);
+    expect(results.length).toBeGreaterThanOrEqual(20);
+    expect(state.subs).toEqual([]);
+    // the paid spends are the check's own "after the plan ends" call and the second plan's free week (it grants nothing)
+    expect(state.usage.filter((r) => r.user_id === USER_A).map((r) => r.route)).toEqual(["rls-verify-unlimited", "rls-verify-repeat-trial"]);
+    expect(state.inkGrants.filter((g) => g.kind === "manual")).toEqual([]);
+    // C (whose deletion had to wait for the cancellation) is gone again
+    expect([...state.users].sort()).toEqual([USER_A, USER_B].sort());
+  });
+
+  it("the billing retention check blanks only the old payload and leaves no rows behind", async () => {
+    const { ctx, state } = makeWorld();
+    const results = await checkBillingRetention(ctx);
+    expect(failures(results)).toEqual([]);
+    expect(results.length).toBe(5);
+    expect(state.billingEvents).toEqual([]);
+    const without = await checkBillingRetention({ anon: ctx.anon, a: ctx.a, b: ctx.b });
+    expect(failures(without)).toEqual([]);
+    expect(without.map((r) => r.name)).toContain("billing_events retention with the service role (skipped: no service role client)");
+  });
+
+  it("the Unlimited check reports its service-role part as skipped (still passing) without a service client", async () => {
+    const { ctx, state } = makeWorld();
+    const results = await checkUnlimited({ anon: ctx.anon, a: ctx.a, b: ctx.b });
+    expect(failures(results)).toEqual([]);
+    expect(results.map((r) => r.name)).toContain("Agathon Unlimited with the service role (skipped: no service role client)");
+    expect(state.subs).toEqual([]);
   });
 
   it("the usage_by_day check spends only as A and passes on its own", async () => {
@@ -921,6 +1221,8 @@ describe("rlsChecks detect individual leaks", () => {
     ["settingsHijack", checkUserSettingsIsolation, "user_settings: B cannot upsert A's row"],
     ["settingsHijack", checkUserSettingsIsolation, "user_settings: A's features unchanged after B's attempt"],
     ["bugReportForeign", checkBugReports, "bug_reports: A cannot insert report with B's user_id"],
+    ["bugReportNoUser", checkBugReports, "bug_reports: A cannot insert a report with no user id"],
+    ["bugReportEmailSpoof", checkBugReports, "bug_reports: the reporter's email comes from the JWT, not the client (no reports in another person's name)"],
     ["bugReportRead", checkBugReports, "bug_reports: not readable back by the reporter"],
     ["trainersInsert", checkTrainersNotWritable, "trainers: self-insert denied"],
     ["trainingInsert", checkTrainingSamplesDenied, "training_samples: non-trainer insert denied"],
@@ -929,6 +1231,11 @@ describe("rlsChecks detect individual leaks", () => {
     ["assetCrossRead", checkBoardAssets, "board_assets: B cannot read A's assets"],
     ["storageForeignUpload", checkStorage, "storage: B cannot upload into A's board-assets folder"],
     ["storagePublicRead", checkStorage, "storage: board-assets object is publicly readable"],
+    ["storageAnonList", checkStorage, "storage: anon cannot list board-assets (no user folders)"],
+    ["storageAnonList", checkStorage, "storage: anon cannot list A's board-assets folder"],
+    ["storageForeignList", checkStorage, "storage: B cannot list A's user folder at the bucket root"],
+    ["storageForeignList", checkStorage, "storage: B cannot list A's board-assets folder"],
+    ["storageOwnList", checkStorage, "storage: A lists own board-assets folder"],
     ["storageForeignDelete", checkStorage, "storage: B cannot delete A's board-assets object"],
     ["trainingUpload", checkStorage, "storage: non-trainer cannot upload to training-data"],
     ["noVersionBump", checkVersionTrigger, "version: data update bumps version 1 -> 2"],
@@ -1017,6 +1324,40 @@ describe("rlsChecks detect individual leaks", () => {
     ["termsNotRecorded", checkSignupConsent, "consent: A's profile records the Terms version and when it was accepted"],
     ["termsPatchable", checkSignupConsent, "consent: A cannot rewrite own Terms acceptance (42501)"],
     ["termsPatchable", checkSignupConsent, "consent: A's Terms acceptance unchanged after the attempt"],
+    // email log
+    ["anonSelect", checkAnonDenied, "anon: select email_log denied"],
+    ["anonInsert", checkAnonDenied, "anon: insert email_log denied"],
+    ["emailLogReadable", checkEmailLog, "email_log: A cannot read it"],
+    ["emailLogReadable", checkEmailLog, "email_log: A still cannot read the row about them"],
+    ["emailLogReadable", checkEmailLog, "email_log: B cannot read it either"],
+    ["emailLogWritable", checkEmailLog, "email_log: A cannot mark an email as sent (insert denied)"],
+    ["emailLogWritable", checkEmailLog, "email_log: A cannot update it"],
+    ["emailLogWritable", checkEmailLog, "email_log: A cannot delete from it"],
+    ["emailLogTwice", checkEmailLog, "email_log: a second claim of the same email conflicts (409: sent at most once)"],
+    // Agathon Unlimited
+    ["anonSelect", checkAnonDenied, "anon: select unlimited_subscriptions denied"],
+    ["anonInsert", checkAnonDenied, "anon: insert unlimited_usage denied"],
+    ["unlimitedSelfGrant", checkUnlimited, "unlimited_subscriptions: A cannot give themselves the plan (insert denied)"],
+    ["unlimitedRpcOpen", checkUnlimited, "link_unlimited_checkout: A cannot call it"],
+    ["unlimitedRpcOpen", checkUnlimited, "apply_unlimited_subscription: A cannot call it"],
+    ["unlimitedProbe", checkUnlimited, "has_unlimited: A cannot call it (nobody asks about another account's plan)"],
+    ["unlimitedCrossRead", checkUnlimited, "unlimited_subscriptions: B cannot read A's subscription"],
+    ["unlimitedCrossRead", checkUnlimited, "unlimited_usage: B cannot read A's record"],
+    ["unlimitedSpendsInk", checkUnlimited, "consume_credits: on Unlimited, A's help spends no ink (ok, unlimited, balance unchanged)"],
+    ["unlimitedSpendsInk", checkUnlimited, "usage_events: no ink ledger row for a subscriber's call"],
+    ["unlimitedCountsTwice", checkUnlimited, "unlimited_usage: the call is recorded once for fair use, even when its request id comes again"],
+    ["unlimitedRefundMints", checkUnlimited, "refund_ink_for: a subscriber's failed call gives back 0 ink (none was spent, none minted) and its fair-use count"],
+    ["unlimitedStaleApplies", checkUnlimited, "apply_unlimited_subscription: an older event arriving late changes nothing (stale)"],
+    ["unlimitedStaleApplies", checkUnlimited, "apply_unlimited_subscription: a cancelled plan stays cancelled (a late trialing event cannot revive it)"],
+    ["unlimitedDeleteNotBlocked", checkUnlimited, "delete_own_account: refused while the plan will charge again (P0001, hint unlimited_active); C's account stays"],
+    ["profileCrossRead", checkUnlimited, "profiles: B cannot read A's checkout_ref (select returns [])"],
+    ["checkoutRefPatchable", checkUnlimited, "profiles: A cannot change own checkout_ref (42501), and it is unchanged"],
+    ["checkoutRefByUserId", checkUnlimited, "link_unlimited_checkout: A's user id as the checkout reference links nobody (no plan on A's account)"],
+    ["unlimitedRepeatTrial", checkUnlimited, "has_unlimited: a second plan's free week grants nothing (repeat_trial: help spends ink until it is paid)"],
+    ["payerEmailDropped", checkUnlimited, "unlimited_subscriptions: A's row carries the payer's email from the checkout"],
+    ["purgeOpen", checkBillingRetention, "purge_billing_event_payloads: A cannot call it"],
+    ["purgeKeepsOld", checkBillingRetention, "purge_billing_event_payloads (service role): a payload older than 90 days is blanked, its row kept"],
+    ["purgeTooEager", checkBillingRetention, "purge_billing_event_payloads: a payload younger than 90 days is kept whole"],
   ];
 
   it.each(cases)("leak %s makes '%s' fail", async (leak, check, failingName) => {
@@ -1250,6 +1591,7 @@ describe("predicates", () => {
       },
       upload: async () => ({ status: 200, body: null }),
       publicRead: async () => ({ status: 200, body: null }),
+      storageList: async () => ({ status: 200, body: [] }),
       storageDelete: async () => ({ status: 200, body: null }),
     };
     await rpc(client, "consume_credits", { p_route: "x", p_units: 1 });
@@ -1351,6 +1693,12 @@ describe("supabaseHttp", () => {
 
     await client.storageDelete("board-assets", "u1/b/ok.png");
     expect(f.calls[3].init?.method).toBe("DELETE");
+
+    await client.storageList("board-assets", "u1/b");
+    expect(f.calls[4].url).toBe("http://x/storage/v1/object/list/board-assets");
+    expect(f.calls[4].init?.method).toBe("POST");
+    expect(JSON.parse(String(f.calls[4].init?.body))).toMatchObject({ prefix: "u1/b" });
+    expect((f.calls[4].init?.headers as Record<string, string>).Authorization).toBe("Bearer tok");
   });
 
   it("provisionUser: signup returns a session", async () => {

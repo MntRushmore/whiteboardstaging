@@ -25,6 +25,7 @@ const client = asOnboardingClient(supabase);
 const STEPS = [
   { id: "welcome", label: "How it works" },
   { id: "course", label: "Your course" },
+  { id: "try", label: "Try it" },
 ];
 
 // Arc truncates a card's label to one line; a course name wraps instead ("Pre-calculus / Calculus").

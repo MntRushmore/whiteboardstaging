@@ -51,6 +51,12 @@ export const InkSummarySchema = z.object({
   /** How many packs were bought. */
   purchases: count,
   last_purchase: LastPurchaseSchema.nullable(),
+  /**
+   * The Agathon Unlimited plan (20261003020000_unlimited.sql), read by parseUnlimitedState in
+   * unlimited.ts (useUnlimited). Kept raw here so this module stays small; absent on a database
+   * without the migration.
+   */
+  unlimited: z.unknown().optional(),
 });
 
 export type InkSummary = z.infer<typeof InkSummarySchema>;

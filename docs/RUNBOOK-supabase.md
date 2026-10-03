@@ -48,7 +48,7 @@ What the migration creates (idempotent, safe to re-run):
 | Functions | `set_updated_at()`, `is_trainer()` (security definer), `whiteboards_bump_version()`, `whiteboards_record_snapshot()` |
 | Triggers | `updated_at` on whiteboards/user_settings/training_samples; `version` bump on every `whiteboards.data` change; board history in `whiteboard_snapshots` (since `20261003000000_snapshot_retention.sql`: the replaced state at most every 10 minutes and before a wipe, pruned to the newest 8 + one a day for 7 days within 4 MB; section 10.1) |
 | Policies | owner-only CRUD keyed on `auth.uid()`; `bug_reports` insert-only; trainer tables/objects gated by `is_trainer()` |
-| Storage | bucket `board-assets` (public read, 15 MB, image/*) and `training-data` (private, 10 MB, image/png) + `storage.objects` policies scoped to `<uid>/...` folders |
+| Storage | bucket `board-assets` (public read by URL, not listable except your own folder, 15 MB, image/*) and `training-data` (private, 10 MB, image/png) + `storage.objects` policies scoped to `<uid>/...` folders |
 | Seed | `trainers` row for `rushilchopra123@gmail.com` (no-op until that user signs up) |
 
 If `db push` says "no migrations to apply" on a brand-new project, the `supabase_migrations` table was created earlier; run `npx supabase migration repair --status reverted 20260911000000` then push again.
@@ -415,7 +415,7 @@ Both are null for accounts made before the migration; those are never asked. Use
   curl -X POST "$SUPABASE_URL/auth/v1/admin/users" \
     -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
     -H "Content-Type: application/json" \
-    -d '{"email":"student@example.com","password":"...","email_confirm":true,"user_metadata":{"terms_version":"2026-10-03"}}'
+    -d '{"email":"student@example.com","password":"...","email_confirm":true,"user_metadata":{"terms_version":"2026-10-04"}}'
   ```
 
 - **Invites.** The dashboard's *Invite user* is refused for the same reason. An invited person sets a password from the email and never sees the box, so invite only someone who (or whose parent) has agreed to the Terms and Privacy Policy some other way, and say which version:
@@ -424,7 +424,7 @@ Both are null for accounts made before the migration; those are never asked. Use
   curl -X POST "$SUPABASE_URL/auth/v1/invite" \
     -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
     -H "Content-Type: application/json" \
-    -d '{"email":"student@example.com","data":{"terms_version":"2026-10-03"}}'
+    -d '{"email":"student@example.com","data":{"terms_version":"2026-10-04"}}'
   ```
 
   (`supabase.auth.admin.inviteUserByEmail(email, { data: { terms_version } })` from code.) For a closed cohort it is simpler to leave sign-ups on and share the link: everyone then ticks the box themselves.

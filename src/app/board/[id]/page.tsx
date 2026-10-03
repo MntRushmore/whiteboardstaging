@@ -44,6 +44,7 @@ import { useAssistanceMode, type AssistanceMode } from "@/hooks/useAssistanceMod
 import { offloadAssetsOnce, useSnapshotSave } from "@/hooks/useSnapshotSave";
 import { useBoardAutoTitle } from "@/hooks/useBoardAutoTitle";
 import { createBoardAssetStore } from "@/lib/assets/boardAssetStore";
+import { BOARD_EMBEDS } from "@/lib/boards/embeds";
 import {
   BOARD_LOAD_COPY,
   BoardCrashed,
@@ -63,12 +64,9 @@ import { inkTone } from "@/lib/billing/inkSummary";
 import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { OutOfInkWatcher } from "@/components/billing/OutOfInkWatcher";
 import { clearInkErrorIfAffordable } from "@/lib/live/liveStore";
-import { BugReportButton } from "@/components/BugReportButton";
 import { captureBoardScreenshot } from "@/components/board/boardScreenshot";
 import { BETA_COPY } from "@/components/app/BetaBadge";
-import { Celebrations } from "@/components/live/Celebrations";
 import { useFeatureLabs } from "@/lib/featureLabs";
-import { ListOrdered } from "lucide-react";
 import { liveShapeUtils, liveTools, liveUiOverrides, LiveToolbar } from "@/shapes";
 import { LIVE_KILL_SWITCH } from "@/lib/live/contracts";
 import { useLiveMath } from "@/lib/live/useLiveMath";
@@ -85,21 +83,26 @@ import { LiveHintLayer } from "@/components/live/LiveHintLayer";
 import { LiveErrorBoundary } from "@/components/live/LiveErrorBoundary";
 import { ASSET_COPY, LIVE_COPY } from "@/components/live/copy";
 import { boardToolbarView } from "@/components/live/toolbar";
+import { AskButton } from "@/components/live/AskButton";
 import { BoardChatPanel, CHAT_TOGGLE_ATTR } from "@/components/chat/BoardChatPanel";
 import { CHAT_COPY } from "@/components/chat/chatView";
 import { useChatOpen } from "@/components/chat/useBoardChat";
 import { useLecture } from "@/components/lecture/useLecture";
-import { LectureButton } from "@/components/lecture/LectureButton";
 import { LectureBar } from "@/components/lecture/LectureBar";
 import { browserStorage as onboardingStorage, isGuidedBoard } from "@/lib/onboarding/marker";
 import { attachKeyboardFit, browserKeyboardFitEnv } from "@/components/board/keyboardFit";
 
 // The guided first board's tour (the welcome's Start): loaded on that board only, after the board.
 const BoardTour = React.lazy(() => import("@/components/onboarding/BoardTour"));
+// The cheers on a tick (words and confetti): nothing to show until the tutor marks a line, so they
+// load just after the board rather than with it (docs/BUNDLE.md).
+const Celebrations = React.lazy(() => import("@/components/live/Celebrations").then((m) => ({ default: m.Celebrations })));
 // Feature Labs extras (off by default) and the Mathpix debug panel (development, or opted in on the
 // device): fetched only when shown, not with every board (docs/BUNDLE.md).
 const StickerLibrary = React.lazy(() => import("@/components/StickerLibrary").then((m) => ({ default: m.StickerLibrary })));
 const PdfUpload = React.lazy(() => import("@/components/PdfUpload").then((m) => ({ default: m.PdfUpload })));
+// The bug report's dialog: opened rarely, so it loads the first time it is (the board's first load is at its budget).
+const BugReportButton = React.lazy(() => import("@/components/BugReportButton").then((m) => ({ default: m.BugReportButton })));
 const LiveDebugPanel = React.lazy(() => import("@/components/live/LiveDebugPanel").then((m) => ({ default: m.LiveDebugPanel })));
 
 /** The help tabs: 6 px of padding on a board under 768 px (a 10.2" iPad sideways with Ask docked), 8 px from there. */
@@ -261,13 +264,24 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   const { features } = useFeatureLabs();
   // Help mode is remembered per board on this device (default Feedback).
   const [assistanceMode, setAssistanceMode] = useAssistanceMode(id);
+  // Bumped each time the student moves the dial: the ask button glows (AskButton).
+  const [askGlow, setAskGlow] = useState(0);
   // The (i) explainer and the bug report both used to be buttons in the bar; they open from
   // Board options now, so the page owns their open state.
   const [modeInfoOpen, setModeInfoOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  // mounted from the first open on, so its dialog can animate closed and keeps the student's words
+  const [reportMounted, setReportMounted] = useState(false);
+  const openReport = useCallback(() => {
+    setReportMounted(true);
+    setReportOpen(true);
+  }, []);
   const { user } = useAuth();
   const [guided, setGuided] = useState(() => isGuidedBoard(onboardingStorage(), user?.id, id));
   const endTour = useCallback(() => setGuided(false), []);
+  // Each tap on Help me / Solve it, for the guided board's second coach mark (it waits for what the
+  // tutor writes, and says so when there was nothing to help with). Only counted on that board.
+  const [tourHelpAsk, setTourHelpAsk] = useState<{ n: number; ok: boolean } | null>(null);
 
   // Live Math layer: per-device switch (localStorage) gated by the deploy-time kill switch.
   const { settings: live, update: updateLive } = useLiveSettings();
@@ -298,7 +312,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   // concurrency on `version`, size guard + Storage offload): src/hooks/useSnapshotSave.ts
   const { sync, retry: retrySave } = useSnapshotSave(editor, id, initialVersion);
   // An "Untitled Whiteboard" is named after its first line of maths once it saves.
-  useBoardAutoTitle(id, sync);
+  useBoardAutoTitle(editor, id, sync);
 
   const narrowBoard = screenStripSlot(useBreakpoint()) === "corner";
   // The meter says "Get ink" whenever ink is low or gone; the Live pill's out-of-ink error then
@@ -316,8 +330,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   return (
     <>
       {/*
-        The board's one primary row: go back, choose how much help, see what the tutor is
-        doing, and (in Solve) ask for the worked steps. Everything rare — the Live
+        The board's one primary row: go back, choose how much help, ask for it (Help me / Solve it),
+        and see what the tutor is doing. Everything rare — the Live
         preference, the help-mode explainer — hangs off the status pill's "…" menu rather
         than competing with them. Report a bug has a button of its own while we are in beta.
       */}
@@ -361,7 +375,10 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
         <div className="flex min-w-0 flex-wrap items-center gap-1.5 @5xl/bar:gap-2">
           <Tabs
             value={assistanceMode}
-            onValueChange={(value) => setAssistanceMode(value as AssistanceMode)}
+            onValueChange={(value) => {
+              setAssistanceMode(value as AssistanceMode);
+              setAskGlow((n) => n + 1);
+            }}
             className="w-auto shadow-sm rounded-lg"
           >
             <TabsList aria-label="How much help">
@@ -371,17 +388,17 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
               <TabsTrigger value="answer" className={HELP_TAB_CLASS}>Solve</TabsTrigger>
             </TabsList>
           </Tabs>
-          {toolbar.showSolveSteps && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="bg-white shadow-sm"
-              title={LIVE_COPY.solve.stepsHint}
-              onClick={() => controller.requestSolve()}
-            >
-              <ListOrdered className="h-4 w-4" />
-              <span className="ml-1.5">{LIVE_COPY.solve.steps}</span>
-            </Button>
+          {/* stuck? the one thing to tap: the next step, or in Solve the rest of them */}
+          {toolbar.askButton && (
+            <AskButton
+              kind={toolbar.askButton}
+              glow={askGlow}
+              onAsk={() => {
+                const ok = controller.requestHelp();
+                if (guided) setTourHelpAsk((a) => ({ n: (a?.n ?? 0) + 1, ok }));
+                return ok;
+              }}
+            />
           )}
           <Button
             variant={chat.open ? "secondary" : "outline"}
@@ -397,7 +414,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
             {/* open, the panel names itself: the button is its icon unless the board is wide */}
             <span className={chat.open ? "ml-1.5 hidden @5xl/bar:inline" : "ml-1.5"}>{CHAT_COPY.button}</span>
           </Button>
-          <LectureButton lecture={lecture} />
+          {/* Lecture mode is hidden for now (owner, 2026-10-03): its button is out of the bar; the
+              code, LectureBar and the dev handles stay, so it comes back with this one line. */}
           <LiveErrorBoundary>
             <LiveStatusPill
               editor={editor}
@@ -408,7 +426,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
               canHelp={toolbar.canHelp}
               onClearMarks={() => controller.clearMarks()}
               onShowModeInfo={() => setModeInfoOpen(true)}
-              onReportProblem={() => setReportOpen(true)}
+              onReportProblem={openReport}
               meterOffersInk={meterOffersInk}
             />
           </LiveErrorBoundary>
@@ -421,7 +439,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
             className="h-8 gap-1.5 rounded-full bg-white px-3 shadow-sm"
             title={BETA_COPY.hint}
             aria-label="Report a bug"
-            onClick={() => setReportOpen(true)}
+            onClick={openReport}
           >
             <Bug className="size-3.5" aria-hidden />
             <span className="hidden text-xs font-medium @5xl/bar:inline">Report a bug</span>
@@ -443,8 +461,20 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
 
       {/* The explainer opens from Board options; the report from there or its button in the bar. */}
       <ModeInfoDialog open={modeInfoOpen} onOpenChange={setModeInfoOpen} />
-      <BugReportButton boardId={id} open={reportOpen} onOpenChange={setReportOpen} screenshot={() => captureBoardScreenshot(editor)} />
-      {liveEnabled && live.celebrations && <Celebrations editor={editor} />}
+      {reportMounted && (
+        <LiveErrorBoundary>
+          <React.Suspense fallback={null}>
+            <BugReportButton boardId={id} open={reportOpen} onOpenChange={setReportOpen} screenshot={() => captureBoardScreenshot(editor)} />
+          </React.Suspense>
+        </LiveErrorBoundary>
+      )}
+      {liveEnabled && live.celebrations && (
+        <LiveErrorBoundary>
+          <React.Suspense fallback={null}>
+            <Celebrations editor={editor} />
+          </React.Suspense>
+        </LiveErrorBoundary>
+      )}
 
       {/* a Live 402 or "Get ink" opens the ink dialog (lazy); a 402's never mid-stroke */}
       <OutOfInkWatcher editor={editor} />
@@ -466,7 +496,16 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
       {guided && user && (
         <LiveErrorBoundary>
           <React.Suspense fallback={null}>
-            <BoardTour boardId={id} userId={user.id} controller={controller} onModeChange={setAssistanceMode} chatOpen={chat.open} onFinished={endTour} />
+            <BoardTour
+              boardId={id}
+              userId={user.id}
+              controller={controller}
+              mode={assistanceMode}
+              onModeChange={setAssistanceMode}
+              chatOpen={chat.open}
+              helpAsk={tourHelpAsk}
+              onFinished={endTour}
+            />
           </React.Suspense>
         </LiveErrorBoundary>
       )}
@@ -639,6 +678,8 @@ export default function BoardPage() {
         // a board is for writing: the pen is in hand when it opens, not the selection arrow
         initialState="draw"
         licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
+        // no GitHub Gist: tldraw runs its script unsandboxed, in our origin (src/lib/boards/embeds.ts)
+        embeds={BOARD_EMBEDS}
         assets={assetStoreBundle?.store}
         components={{
           MenuPanel: null,

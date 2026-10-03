@@ -48,12 +48,20 @@ export interface BoardChat {
   retry: (messageId: string) => void;
 }
 
-export function useBoardChat(boardId: string, controller: LiveController): BoardChat {
-  const messages = useSyncExternalStore(
+/**
+ * This board's chat messages, read-only: the panel's own store, so the guided board's last coach
+ * mark (`BoardTour`) can follow the student's first ask without a hook into the panel.
+ */
+export function useChatMessages(boardId: string): ChatMessage[] {
+  return useSyncExternalStore(
     subscribe,
     () => histories.get(boardId) ?? EMPTY,
     () => EMPTY,
   );
+}
+
+export function useBoardChat(boardId: string, controller: LiveController): BoardChat {
+  const messages = useChatMessages(boardId);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
 

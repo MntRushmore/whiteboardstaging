@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Creates (or finds) the Stripe objects behind Agathon's ink packs, retires the old Plus/Pro
- * subscription objects, and prints the env values the app needs. Idempotent: every object carries
- * `metadata.app = agathon-classroom` and is found again by it, so a second run changes nothing
- * unless the config below changed.
+ * Creates (or finds) the Stripe objects behind Agathon's ink packs and the Agathon Unlimited
+ * subscription, retires the old Plus/Pro subscription objects, and prints the env values the app
+ * needs. Idempotent: every object carries `metadata.app = agathon-classroom` and is found again by
+ * it, so a second run changes nothing unless the config below changed.
  *
  *   node scripts/stripe-setup.mjs [--mode test|live] [--site <url>] [--dry-run] [--secret-file <path>]
  *
@@ -20,11 +20,19 @@
  *   - a Payment Link per pack, in payment mode, with `metadata.pack_id` (copied onto every Checkout
  *     Session, where the webhook reads it) and a redirect back to the account page; the app appends
  *     `client_reference_id=<user id>` and `prefilled_email=<email>` (src/lib/billing/checkout.ts)
+ *   - Agathon Unlimited (UNLIMITED below): a product, a $25 MONTHLY price, and a subscription
+ *     Payment Link with the 7-day free trial on it (`subscription_data.trial_period_days`), the card
+ *     taken up front (`payment_method_collection: always`), `metadata.plan_id = unlimited` on the
+ *     link (so on its Checkout Sessions) and on every subscription it starts
+ *     (`subscription_data.metadata`), and a redirect to `<site>/?unlimited=started`
+ *   - a customer portal configuration for Unlimited (cancel at the period end, update the card,
+ *     invoices) with its no-code login page, whose URL is NEXT_PUBLIC_BILLING_PORTAL_URL
  *   - a webhook endpoint for exactly the events src/app/api/billing/webhook handles (not for a
  *     localhost site: use `stripe listen --forward-to` there)
  *   - the retired subscription objects it made before ink: the Plus/Pro Payment Links are
- *     deactivated, their products and prices archived, and its customer portal configuration
- *     deactivated (unless it is the account's default, which Stripe will not deactivate)
+ *     deactivated, their products and prices archived, and their customer portal configuration
+ *     deactivated (unless it is the account's default, which Stripe will not deactivate). The
+ *     Unlimited configuration (`metadata.plan_id = unlimited`) is never retired.
  *
  * SHARED ACCOUNT. The Stripe account also runs Fuime. This script lists what it must (Stripe's
  * list endpoints have no metadata filter) but writes ONLY to objects tagged app=agathon-classroom
@@ -64,7 +72,20 @@ export const WEBHOOK_EVENTS = Object.freeze([
   "checkout.session.completed",
   "checkout.session.async_payment_succeeded",
   "charge.refunded",
+  // Agathon Unlimited: the subscription's state (its checkout comes through the first one)
+  "customer.subscription.created",
+  "customer.subscription.updated",
+  "customer.subscription.deleted",
 ]);
+
+/**
+ * Agathon Unlimited, at the owner's price (2026-10-03): $25 a month after a 7-day free trial. Keep it
+ * equal to UNLIMITED_PLAN in src/lib/billing/unlimited.ts (what the app shows): stripeSetup.test.ts
+ * pins the two together. Changing the price or the trial makes a new price and Payment Link (the old
+ * link is deactivated; subscribers on the old price keep it until they cancel).
+ * @type {Readonly<{ id: string, name: string, priceCents: number, currency: string, interval: "month", trialDays: number }>}
+ */
+export const UNLIMITED = Object.freeze({ id: "unlimited", name: "Agathon Unlimited", priceCents: 2500, currency: "usd", interval: "month", trialDays: 7 });
 
 /** The subscription plans this script sold before ink; their objects are retired on every run. */
 export const RETIRED_PLAN_IDS = Object.freeze(["plus", "pro"]);
@@ -163,6 +184,19 @@ export function inkReturnUrl(site, packId) {
   return `${site}/account?ink=${encodeURIComponent(packId)}`;
 }
 
+/**
+ * Where the Unlimited Payment Link sends the grown-up after checkout: the home, which says the free
+ * week has started (UNLIMITED_RETURN_PARAM / _VALUE in src/lib/billing/unlimited.ts).
+ */
+export function unlimitedReturnUrl(site) {
+  return `${site}/?unlimited=started`;
+}
+
+/** Where the customer portal's "Return to Agathon" goes: the account page's Plan section. */
+export function portalReturnUrl(site) {
+  return `${site}/account`;
+}
+
 export function webhookUrl(site) {
   return `${site}${WEBHOOK_PATH}`;
 }
@@ -258,11 +292,109 @@ export function paymentLinkBody(pack, priceId, site) {
   };
 }
 
+/** "$25" */
+const dollars = (cents) => `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
+
+/**
+ * What a card statement shows for the plan's charges. The account is shared with Fuime, so its own
+ * descriptor is FUIME, and a subscription's charges cannot take a suffix the way the packs' do
+ * (`payment_intent_data` is payment mode only: Stripe makes renewal charges itself). Stripe takes a
+ * subscription payment's descriptor from its invoice, else from the first item's PRODUCT
+ * `statement_descriptor`, else the account's (docs.stripe.com/get-started/account/statement-descriptors),
+ * so it is set on the product: every invoice of every Unlimited subscription, the first $25 after
+ * the free week included, shows it. Stripe's rules: 5 to 22 Latin characters, at least one letter,
+ * none of < > \ ' " *.
+ */
+export const UNLIMITED_STATEMENT_DESCRIPTOR = "AGATHON";
+
+/** The Unlimited product: what Checkout, the receipt and the portal call the plan, and what the card statement shows. */
+export function unlimitedProductBody() {
+  return {
+    name: UNLIMITED.name,
+    description: `Help from the AI tutor without counting ink. ${UNLIMITED.trialDays} days free, then ${dollars(UNLIMITED.priceCents)} a ${UNLIMITED.interval}. Cancel any time.`,
+    statement_descriptor: UNLIMITED_STATEMENT_DESCRIPTOR,
+    metadata: { app: APP_TAG, plan_id: UNLIMITED.id },
+  };
+}
+
+/** The Unlimited price: RECURRING, monthly. */
+export function unlimitedPriceBody(productId) {
+  return {
+    product: productId,
+    currency: UNLIMITED.currency,
+    unit_amount: UNLIMITED.priceCents,
+    recurring: { interval: UNLIMITED.interval },
+    nickname: `${UNLIMITED.name} monthly`,
+    metadata: { app: APP_TAG, plan_id: UNLIMITED.id },
+  };
+}
+
+/** Shown above Checkout's button: what happens after the free week, in plain words. */
+export const UNLIMITED_CHECKOUT_NOTE = `Free for ${UNLIMITED.trialDays} days, then ${dollars(UNLIMITED.priceCents)} a ${UNLIMITED.interval} until you cancel. Cancel before the free week ends and you won't be charged.`;
+
+/**
+ * The Unlimited Payment Link, in subscription mode (a recurring price makes it one). The free week
+ * is on the link (`subscription_data.trial_period_days`), and the card is collected up front
+ * (`payment_method_collection: always`), so the plan renews by itself unless cancelled. `metadata`
+ * goes onto every Checkout Session (the webhook links the subscription to `client_reference_id`
+ * there) and `subscription_data.metadata` onto every subscription it starts (the webhook knows
+ * the subscription's events by it). `trial_days` in the link's metadata finds it again only while
+ * the trial is unchanged. No `submit_type` or `payment_intent_data` (payment mode only). No
+ * promotion codes: the account's coupons belong to Fuime too.
+ */
+export function unlimitedLinkBody(priceId, site) {
+  return {
+    line_items: [{ price: priceId, quantity: 1 }],
+    after_completion: { type: "redirect", redirect: { url: unlimitedReturnUrl(site) } },
+    metadata: { app: APP_TAG, plan_id: UNLIMITED.id, price_id: priceId, trial_days: String(UNLIMITED.trialDays) },
+    subscription_data: {
+      trial_period_days: UNLIMITED.trialDays,
+      metadata: { app: APP_TAG, plan_id: UNLIMITED.id },
+    },
+    payment_method_collection: "always",
+    allow_promotion_codes: false,
+    custom_text: { submit: { message: UNLIMITED_CHECKOUT_NOTE } },
+  };
+}
+
+/**
+ * The customer portal for Unlimited: cancel (at the end of the free week or the paid month, so the
+ * time paid for is kept and nothing more is charged), update the card, see invoices. No plan
+ * switching (there is one plan) and no changes to the customer's details. `login_page.enabled`
+ * gives the no-code login link the account page opens (NEXT_PUBLIC_BILLING_PORTAL_URL): the
+ * grown-up types the checkout's email and gets a one-time code, so the app needs no Stripe key.
+ * The legal pages are linked only for a public site (Stripe wants reachable URLs).
+ */
+export function portalBody(site) {
+  const local = isLocalSite(site);
+  return {
+    business_profile: {
+      headline: `${UNLIMITED.name}: manage or cancel your plan`,
+      ...(local ? {} : { privacy_policy_url: `${site}/privacy`, terms_of_service_url: `${site}/terms` }),
+    },
+    default_return_url: portalReturnUrl(site),
+    features: {
+      customer_update: { enabled: false },
+      invoice_history: { enabled: true },
+      payment_method_update: { enabled: true },
+      subscription_cancel: {
+        enabled: true,
+        mode: "at_period_end",
+        proration_behavior: "none",
+        cancellation_reason: { enabled: true, options: ["too_expensive", "unused", "missing_features", "other"] },
+      },
+      subscription_update: { enabled: false },
+    },
+    login_page: { enabled: true },
+    metadata: { app: APP_TAG, plan_id: UNLIMITED.id },
+  };
+}
+
 export function webhookBody(site) {
   return {
     url: webhookUrl(site),
     enabled_events: [...WEBHOOK_EVENTS],
-    description: `${PRODUCT_PREFIX} ink packs`,
+    description: `${PRODUCT_PREFIX} ink packs and Unlimited`,
     metadata: { app: APP_TAG },
   };
 }
@@ -313,13 +445,64 @@ export function findWebhook(endpoints, url) {
   return oldest(endpoints.filter((e) => e.url === url && isOurs(e)));
 }
 
-/** The subscription-era objects of ours (metadata.plan_id) that are still active. */
+/** Our active Unlimited product (the oldest, if a failed run ever made two). */
+export function findUnlimitedProduct(products) {
+  return oldest(products.filter((p) => p.active !== false && isOurs(p, { plan_id: UNLIMITED.id })));
+}
+
+/** Our active MONTHLY Unlimited price on the product with exactly the plan's amount and currency. */
+export function findUnlimitedPrice(prices, productId) {
+  return oldest(
+    prices.filter(
+      (p) =>
+        p.active !== false &&
+        isOurs(p, { plan_id: UNLIMITED.id }) &&
+        p.product === productId &&
+        p.unit_amount === UNLIMITED.priceCents &&
+        p.currency === UNLIMITED.currency &&
+        p.recurring?.interval === UNLIMITED.interval &&
+        (p.recurring?.interval_count ?? 1) === 1,
+    ),
+  );
+}
+
+/** Our active Unlimited Payment Link selling exactly this price with exactly this trial. */
+export function findUnlimitedLink(links, priceId) {
+  return oldest(links.filter((l) => l.active !== false && isOurs(l, { plan_id: UNLIMITED.id, price_id: priceId, trial_days: String(UNLIMITED.trialDays) })));
+}
+
+/** Our active Unlimited portal configuration. */
+export function findPortalConfig(configs) {
+  return oldest(configs.filter((c) => c.active !== false && isOurs(c, { plan_id: UNLIMITED.id })));
+}
+
+/** True when the configuration already does what portalBody asks (no update needed). */
+export function portalMatches(config, site) {
+  const want = portalBody(site);
+  const cancel = config?.features?.subscription_cancel;
+  return (
+    config?.default_return_url === want.default_return_url &&
+    config?.login_page?.enabled === true &&
+    config?.business_profile?.headline === want.business_profile.headline &&
+    (config?.business_profile?.privacy_policy_url ?? undefined) === want.business_profile.privacy_policy_url &&
+    cancel?.enabled === true &&
+    cancel?.mode === "at_period_end" &&
+    config?.features?.payment_method_update?.enabled === true &&
+    config?.features?.subscription_update?.enabled !== true
+  );
+}
+
+/**
+ * The subscription-era objects of ours (metadata.plan_id) that are still active. The Unlimited
+ * portal configuration is ours too and stays: only the Plus/Pro-era one (tagged, no Unlimited
+ * plan) is retired.
+ */
 export function retiredObjects({ products, links, configs }) {
   const planOf = (o) => metaOf(o).plan_id;
   return {
     products: products.filter((p) => p.active !== false && isOurs(p) && RETIRED_PLAN_IDS.includes(planOf(p))),
     links: links.filter((l) => l.active !== false && isOurs(l) && RETIRED_PLAN_IDS.includes(planOf(l))),
-    configs: configs.filter((c) => c.active !== false && isOurs(c)),
+    configs: configs.filter((c) => c.active !== false && isOurs(c) && planOf(c) !== UNLIMITED.id),
   };
 }
 
@@ -346,11 +529,17 @@ export function webhookEventsMatch(endpoint) {
 
 /**
  * The env values to set, one per line, ready for `vercel env add` / .env.local.
- * Only public URLs and price ids: nothing here is a secret.
- * @param {{ links: Record<string, string>, priceMap: Record<string, string> }} v
+ * Only public URLs and price ids: nothing here is a secret. The Unlimited link and the portal's
+ * login page are printed when known (a dry run that would create them does not know them yet).
+ * @param {{ links: Record<string, string>, priceMap: Record<string, string>, unlimitedLink?: string | null, portalUrl?: string | null }} v
  */
-export function envLines({ links, priceMap }) {
-  return [`NEXT_PUBLIC_BILLING_LINKS=${JSON.stringify(links)}`, `INK_PRICE_MAP=${JSON.stringify(priceMap)}`];
+export function envLines({ links, priceMap, unlimitedLink = null, portalUrl = null }) {
+  return [
+    `NEXT_PUBLIC_BILLING_LINKS=${JSON.stringify(links)}`,
+    `INK_PRICE_MAP=${JSON.stringify(priceMap)}`,
+    ...(unlimitedLink ? [`NEXT_PUBLIC_UNLIMITED_LINK=${unlimitedLink}`] : []),
+    ...(portalUrl ? [`NEXT_PUBLIC_BILLING_PORTAL_URL=${portalUrl}`] : []),
+  ];
 }
 
 /** Anything that looks like a Stripe secret, masked before a message is printed. */
@@ -420,7 +609,7 @@ export async function listAll(api, apiPath, params = {}) {
 /* ------------------------------------------------------------------------- */
 
 /** The create endpoints the script uses; each body must carry our tag. */
-const CREATE_PATHS = new Set(["/v1/products", "/v1/prices", "/v1/payment_links", "/v1/webhook_endpoints"]);
+const CREATE_PATHS = new Set(["/v1/products", "/v1/prices", "/v1/payment_links", "/v1/webhook_endpoints", "/v1/billing_portal/configurations"]);
 
 /** Every metadata key in a request body, at any depth (`metadata`, `payment_intent_data.metadata`, …). */
 export function metadataKeys(body, inMetadata = false) {
@@ -556,9 +745,76 @@ export async function setup(opts, deps = {}) {
     priceMap[price.id] = pack.id;
   }
 
+  // Agathon Unlimited: the monthly plan with the free week.
+  log(`\n${UNLIMITED.name}: ${dollars(UNLIMITED.priceCents)} a ${UNLIMITED.interval} after ${UNLIMITED.trialDays} days free`);
+  let uProduct = findUnlimitedProduct(products);
+  const uBody = unlimitedProductBody();
+  if (!uProduct) {
+    would(`create product "${uBody.name}"`);
+    uProduct = dry ? { id: "(new unlimited product)", name: uBody.name } : await api.post("/v1/products", uBody);
+  } else if (uProduct.name !== uBody.name || uProduct.description !== uBody.description || uProduct.statement_descriptor !== uBody.statement_descriptor) {
+    would(`update product ${uProduct.id} name/description/statement descriptor (${uBody.statement_descriptor})`);
+    if (!dry) {
+      uProduct = await api.post(`/v1/products/${uProduct.id}`, { name: uBody.name, description: uBody.description, statement_descriptor: uBody.statement_descriptor });
+    }
+  }
+  log(`  product ${uProduct.id}`);
+
+  const uPrices = uProduct.id.startsWith("prod_") ? claim(await listAll(api, "/v1/prices", { product: uProduct.id, active: "true" })) : [];
+  let uPrice = findUnlimitedPrice(uPrices, uProduct.id);
+  if (!uPrice) {
+    would(`create monthly price ${UNLIMITED.priceCents} ${UNLIMITED.currency}`);
+    uPrice = dry ? { id: "(new unlimited price)" } : await api.post("/v1/prices", unlimitedPriceBody(uProduct.id));
+  }
+  log(`  price ${uPrice.id}`);
+  if (!dry && uProduct.default_price !== uPrice.id) {
+    await api.post(`/v1/products/${uProduct.id}`, { default_price: uPrice.id });
+  }
+  // Subscribers on an archived price keep it until they cancel; new checkouts get the new one.
+  for (const stale of uPrices.filter((p) => p.id !== uPrice.id && isOurs(p, { plan_id: UNLIMITED.id }))) {
+    would(`archive old price ${stale.id} (${stale.unit_amount} ${stale.currency})`);
+    if (!dry) await api.post(`/v1/prices/${stale.id}`, { active: false });
+  }
+
+  const wantUnlimitedRedirect = unlimitedReturnUrl(opts.site);
+  let uLink = findUnlimitedLink(links, uPrice.id);
+  if (!uLink) {
+    would(`create subscription Payment Link (${UNLIMITED.trialDays}-day trial, card up front) redirecting to ${wantUnlimitedRedirect}`);
+    uLink = dry ? { id: "(new unlimited link)", url: null } : await api.post("/v1/payment_links", unlimitedLinkBody(uPrice.id, opts.site));
+  } else if (linkRedirect(uLink) !== wantUnlimitedRedirect) {
+    would(`point Payment Link ${uLink.id} at ${wantUnlimitedRedirect}`);
+    if (!dry) uLink = await api.post(`/v1/payment_links/${uLink.id}`, { after_completion: { type: "redirect", redirect: { url: wantUnlimitedRedirect } } });
+  }
+  log(`  payment link ${uLink.id} ${uLink.url ?? "(made on the real run)"}`);
+  for (const stale of links.filter((l) => l.id !== uLink.id && isOurs(l, { plan_id: UNLIMITED.id }))) {
+    would(`deactivate old Payment Link ${stale.id} (${stale.url})`);
+    if (!dry) await api.post(`/v1/payment_links/${stale.id}`, { active: false });
+    notes.push("The Unlimited Payment Link changed: update NEXT_PUBLIC_UNLIMITED_LINK and redeploy (the old link no longer sells).");
+  }
+
+  // The customer portal: where a grown-up cancels or changes the card (the app has no Stripe key).
+  log("\nCustomer portal (Unlimited)");
+  const configs = claim(await listAll(api, "/v1/billing_portal/configurations", { active: "true" }));
+  let portal = findPortalConfig(configs);
+  if (!portal) {
+    would("create portal configuration (cancel at period end, card, invoices) with a login page");
+    portal = dry ? { id: "(new portal configuration)", login_page: { url: null } } : await api.post("/v1/billing_portal/configurations", portalBody(opts.site));
+  } else if (!portalMatches(portal, opts.site)) {
+    would(`update portal configuration ${portal.id} (features, return URL, login page)`);
+    if (!dry) portal = await api.post(`/v1/billing_portal/configurations/${portal.id}`, portalBody(opts.site));
+  }
+  const portalUrl = portal.login_page?.url ?? null;
+  log(`  configuration ${portal.id}`);
+  log(`  login page ${portalUrl ?? (dry ? "(made on the real run)" : "(none returned)")}`);
+  if (!dry && !portalUrl) {
+    notes.push(
+      "Stripe returned no portal login page URL. Turn it on by hand: Dashboard > Settings > Billing > Customer portal > the Agathon configuration > " +
+        "'Customer portal link' > Activate, then set NEXT_PUBLIC_BILLING_PORTAL_URL to that https://billing.stripe.com/p/login/… link.",
+    );
+  }
+
   // The subscription plans this script sold before ink: stop selling them.
   log("\nRetired subscription plans (Plus, Pro)");
-  const configs = claim(await listAll(api, "/v1/billing_portal/configurations", { active: "true" }));
   const retired = retiredObjects({ products, links, configs });
   if (retired.products.length + retired.links.length + retired.configs.length === 0) log("  nothing left to retire");
   for (const l of retired.links) {
@@ -614,13 +870,16 @@ export async function setup(opts, deps = {}) {
     }
   }
 
-  const lines = envLines({ links: linkUrls, priceMap });
+  const unlimitedLink = uLink.url ?? null;
+  const lines = envLines({ links: linkUrls, priceMap, unlimitedLink, portalUrl });
   log("\nSet these (Vercel: Production; locally: the dev server's env):");
   for (const line of lines) log(`  ${line}`);
+  if (!unlimitedLink) log("  NEXT_PUBLIC_UNLIMITED_LINK: (printed by the real run)");
+  if (!portalUrl) log("  NEXT_PUBLIC_BILLING_PORTAL_URL: (printed by the real run, or see the note below)");
   log(`  STRIPE_WEBHOOK_SECRET: ${secretNote}`);
   log("  (BILLING_PRICE_MAP from the subscription days is no longer read: remove it.)");
   for (const note of new Set(notes)) log(`\nNote: ${note}`);
-  return { links: linkUrls, priceMap, env: lines };
+  return { links: linkUrls, priceMap, unlimitedLink, portalUrl, env: lines };
 }
 
 /** Write the webhook signing secret for the operator, readable only by them. */

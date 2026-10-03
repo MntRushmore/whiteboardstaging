@@ -25,6 +25,15 @@ import { json } from "@/lib/server/auth";
  *     the first annotation/step was emitted (see `runChargedStream` in live-route.ts).
  * The refund uses the SAME requestId the charge used and the user `requireUser` verified; the
  * RPC only touches that user's usage_events rows younger than 15 minutes.
+ *
+ * Agathon Unlimited (supabase/migrations/20261003020000_unlimited.sql): while the caller's
+ * subscription is trialing or active, the same `consume_credits` call spends NO ink. It answers
+ * ok with the untouched balance and records the action for a fair-use cap instead (one constant
+ * in SQL, `unlimited_fair_use_per_day()`, per rolling 24 hours). Over the cap it answers
+ * `reason: 'fair_use'`, which `enforceInk` turns into the same `429 rate_limited` (with
+ * Retry-After) as any rate limit, never the 402 out-of-ink. Nothing else here changes: the routes
+ * call `enforceInk` and `runCharged` as before, and a refund of a subscriber's call gives back 0
+ * ink (it spent none), so refunds can never mint ink.
  */
 
 export const billingLogger = logger.child({ module: "billing" });
@@ -61,8 +70,11 @@ export const ROUTE_COSTS = {
 export type BillableRoute = keyof typeof ROUTE_COSTS;
 
 export type ConsumeResult =
-  | { ok: true; remaining: number }
+  /** `unlimited`: an Agathon Unlimited subscriber's call, which spent nothing (`remaining` is the untouched balance). */
+  | { ok: true; remaining: number; unlimited?: true }
   | { ok: false; reason: "insufficient_ink"; remaining: number }
+  /** A subscriber over the fair-use cap: a 429, not a 402. */
+  | { ok: false; reason: "fair_use"; retryAfterMs: number }
   | { ok: false; reason: "unavailable"; message: string };
 
 export type ConsumeInput = {
@@ -86,6 +98,8 @@ export type RpcError = { message: string; code?: string | null; details?: string
  * reason string are from the monthly-credit days):
  * `consume_credits(p_route text, p_units int, p_request_id text, p_model text) returns jsonb`
  * -> `{ ok: boolean, remaining: int, reason: 'insufficient_credits' | null }`, remaining = ink left.
+ * For an Agathon Unlimited subscriber (20261003020000_unlimited.sql) it adds `unlimited: true`,
+ * and over the fair-use cap answers `{ ok: false, reason: 'fair_use', retry_after_ms }`.
  */
 export const CONSUME_INK_RPC = "consume_credits";
 
@@ -139,9 +153,14 @@ function asNumber(v: unknown): number | null {
   return null;
 }
 
+/** A fair-use refusal without a usable `retry_after_ms` waits this long (the window is 24 hours). */
+export const FAIR_USE_FALLBACK_RETRY_MS = 60 * 60_000;
+const DAY_MS = 24 * 60 * 60_000;
+
 /**
  * Normalise the RPC payload. The function may return a single row (object), a
- * one-row set (array) or jsonb; we accept `{ ok | allowed, remaining }`.
+ * one-row set (array) or jsonb; we accept `{ ok | allowed, remaining }`, plus the Unlimited
+ * additions (`unlimited`, and `reason: 'fair_use'` with `retry_after_ms`).
  * Exported for tests.
  */
 export function normalizeConsumeResult(data: unknown): ConsumeResult {
@@ -151,11 +170,16 @@ export function normalizeConsumeResult(data: unknown): ConsumeResult {
   }
   const r = row as Record<string, unknown>;
   const okField = typeof r.ok === "boolean" ? r.ok : typeof r.allowed === "boolean" ? r.allowed : null;
+  // Checked before `remaining`: the refusal is about the plan's cap, not about ink.
+  if (okField === false && r.reason === "fair_use") {
+    const retry = asNumber(r.retry_after_ms);
+    return { ok: false, reason: "fair_use", retryAfterMs: retry !== null && retry > 0 ? Math.min(DAY_MS, Math.round(retry)) : FAIR_USE_FALLBACK_RETRY_MS };
+  }
   const remaining = asNumber(r.remaining);
   if (okField === null || remaining === null) {
     return { ok: false, reason: "unavailable", message: "consume_credits returned an unexpected shape." };
   }
-  if (okField) return { ok: true, remaining: Math.max(0, remaining) };
+  if (okField) return r.unlimited === true ? { ok: true, remaining: Math.max(0, remaining), unlimited: true } : { ok: true, remaining: Math.max(0, remaining) };
   return { ok: false, reason: "insufficient_ink", remaining: Math.max(0, remaining) };
 }
 
@@ -272,13 +296,25 @@ export async function refundInk(input: RefundInput, log: BillingLog = billingLog
 
 const isSuccess = (res: Response) => res.status >= 200 && res.status < 300;
 
+export type RunChargedOptions = {
+  /**
+   * The request's own signal (`req.signal`). When it has fired, the CLIENT abandoned the request,
+   * and a failure that follows is kept, not refunded. For a charge that other requests ride on
+   * (lecture mode's minute: every later tick of that minute is served free because this one paid),
+   * a refund on abort is free work on demand: send the minute's first tick, send the rest while it
+   * is in flight, abort the first, get the ink back (security audit, 2026-10-03).
+   */
+  keepChargeWhenAborted?: AbortSignal;
+};
+
 /**
  * Run the paid part of a non-streaming route after `enforceInk` succeeded.
  * `run` returns the Response for the client; a thrown error is turned into one by
  * `onError` (normally `errorResponse`). Whenever that Response is NOT a 2xx — upstream
  * error, the provider's own account out of funds, recognizer failure, timeout, abort — the
- * charge for `input.requestId` is refunded before the Response is returned. A 2xx is never
- * refunded, even when the model answered with text instead of an image.
+ * charge for `input.requestId` is refunded before the Response is returned, except after the
+ * client abandoned a request whose route asked to keep it (`opts.keepChargeWhenAborted`). A 2xx is
+ * never refunded, even when the model answered with text instead of an image.
  */
 export async function runCharged(
   input: RefundInput,
@@ -286,6 +322,7 @@ export async function runCharged(
   run: () => Promise<Response>,
   onError: (err: unknown) => Response,
   client?: RpcClient,
+  opts: RunChargedOptions = {},
 ): Promise<Response> {
   let res: Response;
   try {
@@ -293,7 +330,13 @@ export async function runCharged(
   } catch (err) {
     res = onError(err);
   }
-  if (!isSuccess(res)) await refundInk(input, log, client);
+  if (!isSuccess(res)) {
+    if (opts.keepChargeWhenAborted?.aborted) {
+      log.info?.({ requestId: input.requestId, status: res.status }, "request abandoned by the client after it was charged; charge kept");
+    } else {
+      await refundInk(input, log, client);
+    }
+  }
   return res;
 }
 
@@ -326,6 +369,29 @@ export function billingUnavailableResponse(): Response {
   return json(503, "feature_unavailable", BILLING_UNAVAILABLE_MESSAGE);
 }
 
+/** "about 3 hours", "about 40 minutes", "about a minute": how long until the tutor is back. */
+export function aboutHowLong(ms: number): string {
+  const minutes = Math.max(1, Math.ceil(ms / 60_000));
+  if (minutes < 2) return "about a minute";
+  if (minutes < 60) return `about ${minutes} minutes`;
+  const hours = Math.round(minutes / 60);
+  return hours === 1 ? "about an hour" : `about ${hours} hours`;
+}
+
+export const FAIR_USE_MESSAGE = (retryAfterMs: number) =>
+  `You've reached the daily fair-use limit of Agathon Unlimited. The tutor is back in ${aboutHowLong(retryAfterMs)}.`;
+
+/**
+ * 429 for an Agathon Unlimited subscriber over the fair-use cap: the same `rate_limited` code,
+ * `retryAfterMs` and Retry-After header as rateLimitedResponse (src/lib/server/rate-limit.ts), so
+ * every client handles it as the rate limit it is, plus the additive `reason: "fair_use"`. Never a
+ * 402: the student is not out of ink, and the ink dialog must not offer them packs.
+ */
+export function fairUseResponse(retryAfterMs: number): Response {
+  const ms = Math.max(1000, Math.round(retryAfterMs));
+  return json(429, "rate_limited", FAIR_USE_MESSAGE(ms), { retryAfterMs: ms, reason: "fair_use" }, { "Retry-After": String(Math.ceil(ms / 1000)) });
+}
+
 export { billingEnforced };
 
 let warnedNotEnforced = false;
@@ -342,7 +408,9 @@ export type EnforceResult = { response: Response } | { remaining: number | null 
  * that ends the request.
  *
  *  - `BILLING_ENFORCE=0`: skip the database entirely (logged once per process).
+ *  - an Agathon Unlimited subscriber: passes, nothing spent (the RPC decides).
  *  - not enough ink: `402 ink_empty`.
+ *  - a subscriber over the fair-use cap: `429 rate_limited` (fairUseResponse).
  *  - RPC missing / DB error while enforced: fail closed with `503 feature_unavailable`.
  */
 export async function enforceInk(
@@ -364,6 +432,11 @@ export async function enforceInk(
   if (result.reason === "insufficient_ink") {
     log.warn({ route: input.route, remaining: result.remaining, cost: ROUTE_COSTS[input.route] }, "out of ink");
     return { response: inkEmptyResponse(result.remaining, ROUTE_COSTS[input.route]) };
+  }
+
+  if (result.reason === "fair_use") {
+    log.warn({ route: input.route, retryAfterMs: result.retryAfterMs }, "Agathon Unlimited fair-use limit reached");
+    return { response: fairUseResponse(result.retryAfterMs) };
   }
 
   log.warn({ route: input.route, error: result.message }, "billing unavailable; failing closed");

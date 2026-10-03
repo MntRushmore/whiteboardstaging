@@ -1,43 +1,76 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { useEditor, type Editor } from "tldraw";
+import { useRouter } from "next/navigation";
+import { useEditor, type Editor, type TLShapeId } from "tldraw";
+import { Check, CircleDashed, Lightbulb, MessageSquare, Pencil, Sparkles } from "lucide-react";
 import type { AssistanceMode } from "@/hooks/useAssistanceMode";
 import type { LiveController } from "@/lib/live/contracts";
 import { problemMetaOf } from "@/lib/live/chat/cells";
 import { clientMetric } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
+import { ASK_BUTTON_ATTR } from "@/components/live/AskButton";
+import { CHAT_TOGGLE_ATTR } from "@/components/chat/BoardChatPanel";
+import { CHAT_INK } from "@/components/chat/chatView";
+import { useChatMessages } from "@/components/chat/useBoardChat";
 import { startersFor, type StarterProblem } from "@/lib/onboarding/courses";
 import { browserStorage, clearTourMarker, readTourMarker, writeLocalDone, writeTourMarker } from "@/lib/onboarding/marker";
+import { HOME_PATH, PLAN_PATH, writePlanMarker } from "@/lib/onboarding/planMarker";
 import type { Box } from "@/lib/onboarding/placement";
-import { COACH_COUNT, coachNumber, initialTour, markKindOf, markerStepOf, questionWhyOf, tourReducer } from "@/lib/onboarding/state";
+import { isTutorWork, markKindOf, questionWhyOf } from "@/lib/onboarding/marks";
+import { askProgress, COACH_COUNT, coachNumber, initialTour, markerStepOf, tourReducer } from "@/lib/onboarding/tour";
 import { asOnboardingClient, saveOnboarding } from "@/lib/onboarding/storage";
+import { sendWelcomeEmail } from "@/lib/email/client";
+import { askCopy, helpCopy, MORE_LIKE_THESE, TOUR_COPY, writeCopy } from "@/lib/onboarding/tourCopy";
 import { CoachMark } from "./CoachMark";
+import { TourFinish } from "./TourFinish";
+import styles from "./tour.module.css";
 
 /**
- * The guided first board (loaded with a dynamic import, only on the board the welcome created):
- * the tutor writes one starter problem from the student's course through the board chat's own
- * executor — the engine checks it and the tutor's hand writes it, no model and no ink — and
- * then three coach marks, one at a time: the pen (waits for the tutor's tick or ring on the
- * student's step), the help modes, and Ask. Finishing or closing it stores completion on the
- * profile (`save_onboarding`) and on this device, and it never shows again.
+ * The guided first board (loaded with a dynamic import, only on the board the welcome created).
+ * The tutor writes one starter problem from the student's course through the board chat's own
+ * executor — the engine checks it and the tutor's hand writes it, no model and no ink — and then
+ * three coach marks, one at a time, each asking the student to do one thing on the real board and
+ * waiting for the board to answer (`tourReducer`):
+ *
+ *  1. write the next step with the pen → the tutor's tick or ring says what it means;
+ *  2. tap Help me (the bar's big button, `AskButton`) → the tutor writes the next step;
+ *  3. tap Ask, then "3 more like these" → the tutor writes more problems;
+ *
+ * then a finish card with confetti, whose button opens the plan screen (`PLAN_PATH`). Skip tour (or
+ * Esc) on any coach mark goes straight to the home instead, without the plan: a student who skips
+ * has asked to get going. Either way completion is stored on the profile (`save_onboarding`) and on
+ * this device, and the tour never shows again; until then a reload resumes it (`marker.ts`).
  */
 
 export interface BoardTourProps {
   boardId: string;
   userId: string;
   controller: LiveController;
+  /** the dial: the tour starts it on Feedback, and coach mark 2 needs it on anything but Off */
+  mode: AssistanceMode;
   onModeChange: (mode: AssistanceMode) => void;
   chatOpen: boolean;
-  /** the tour is over (finished or skipped): the page unmounts it */
+  /** the bar's Help me / Solve it, tapped: how many times so far, and whether the last tap found anything to help with */
+  helpAsk: { n: number; ok: boolean } | null;
+  /** the tour is over and leaving the board: the page unmounts it */
   onFinished: () => void;
 }
 
 const PEN = '[data-testid="tools.draw"]';
 const MODES = '[aria-label="How much help"]';
-const ASK = "[data-chat-toggle]";
+const HELP = `[${ASK_BUTTON_ATTR}]`;
+const ASK = `[${CHAT_TOGGLE_ATTR}]`;
+/** the Ask panel, and its suggestions (buttons with their words: the tour finds one by its text) */
+const PANEL = "[data-board-chat]";
 /** how long a tutor's mark must stand before the first coach mark says what it means */
 const MARK_SETTLE_MS = 900;
+/** the tutor's hand writes a step stroke by stroke: it is done once nothing new came for this long */
+const WRITE_SETTLE_MS = 1200;
+/** Help me found something, but nothing is written after this long: the coach mark offers Next */
+const HELP_SLOW_MS = 15_000;
+/** the tutor has answered the student's ask: a moment to see it land before the finish card */
+const ANSWER_SETTLE_MS = 1200;
 
 /** The problem already on this screen (a reload mid-tour): its lines, else null. */
 function problemOnPage(editor: Editor): string[] | null {
@@ -53,13 +86,17 @@ function matchStarter(starters: readonly StarterProblem[], lines: string[] | nul
   return starters.find((s) => s.lines.join(";") === lines.join(";")) ?? null;
 }
 
-/** Everything on the current screen, as one rect in client pixels (the problem and the student's work). */
-function workRect(editor: Editor): Box | null {
-  const b = editor.getCurrentPageBounds();
-  if (!b) return null;
+/** Page bounds in client pixels. */
+function screenBox(editor: Editor, b: { minX: number; minY: number; maxX: number; maxY: number }): Box {
   const tl = editor.pageToScreen({ x: b.minX, y: b.minY });
   const br = editor.pageToScreen({ x: b.maxX, y: b.maxY });
   return { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y };
+}
+
+/** Everything on the current screen, as one rect in client pixels (the problem and the student's work). */
+function workRect(editor: Editor): Box | null {
+  const b = editor.getCurrentPageBounds();
+  return b ? screenBox(editor, b) : null;
 }
 
 /** The problem's ink in client pixels, and the line under it where the student writes first. */
@@ -79,19 +116,51 @@ function problemAndNextLine(editor: Editor): Box | null {
   }
   if (!Number.isFinite(minX)) return null;
   const h = maxY - minY;
-  const tl = editor.pageToScreen({ x: minX, y: minY });
   // two lines' worth below the problem: where the first step goes
-  const br = editor.pageToScreen({ x: maxX + h, y: maxY + 2.5 * h });
-  return { x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y };
+  return screenBox(editor, { minX, minY, maxX: maxX + h, maxY: maxY + 2.5 * h });
 }
 
-export default function BoardTour({ boardId, userId, controller, onModeChange, chatOpen, onFinished }: BoardTourProps) {
+/** The shapes the tutor just wrote, as one rect in client pixels (coach mark 2 points at them). */
+function shapesRect(editor: Editor, ids: ReadonlySet<TLShapeId>): Box | null {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const id of ids) {
+    const b = editor.getShapePageBounds(id);
+    if (!b) continue;
+    minX = Math.min(minX, b.minX);
+    minY = Math.min(minY, b.minY);
+    maxX = Math.max(maxX, b.maxX);
+    maxY = Math.max(maxY, b.maxY);
+  }
+  return Number.isFinite(minX) ? screenBox(editor, { minX, minY, maxX, maxY }) : null;
+}
+
+function rectOf(el: Element | null | undefined): Box | null {
+  if (!el || el.getClientRects().length === 0) return null;
+  const r = el.getBoundingClientRect();
+  return { x: r.left, y: r.top, w: r.width, h: r.height };
+}
+
+function rectOfSelector(selector: string): Box | null {
+  return rectOf(document.querySelector(selector));
+}
+
+/** The panel's "3 more like these" while it still shows its suggestions. */
+function suggestionButton(): Element | undefined {
+  return [...document.querySelectorAll(`${PANEL} button`)].find((b) => b.textContent?.trim() === MORE_LIKE_THESE);
+}
+
+export default function BoardTour({ boardId, userId, controller, mode, onModeChange, chatOpen, helpAsk, onFinished }: BoardTourProps) {
   const editor = useEditor();
+  const router = useRouter();
   const marker = useMemo(() => readTourMarker(browserStorage(), userId), [userId]);
   const [state, dispatch] = useReducer(tourReducer, marker?.step ?? "problem", initialTour);
   const starters = useMemo(() => startersFor(marker?.course, marker?.starter ?? 0), [marker]);
   // the starter on the board (its hint goes in the first coach mark); a resumed tour finds it on the page
   const [starter, setStarter] = useState<StarterProblem | null>(() => matchStarter(starters, problemOnPage(editor)));
+  const messages = useChatMessages(boardId);
   const mounted = useRef(false);
   const writing = useRef(false);
 
@@ -108,6 +177,11 @@ export default function BoardTour({ boardId, userId, controller, onModeChange, c
     onModeChange("feedback");
     editor.setCurrentTool("draw");
   }, [editor, marker, onModeChange]);
+
+  // Coach mark 2 needs a Help me button: with the dial on Off there is none, so it goes to Feedback.
+  useEffect(() => {
+    if (state.step === "help" && mode === "off") onModeChange("feedback");
+  }, [state.step, mode, onModeChange]);
 
   // The starter problem, written once through the chat's executor (verified, the tutor's hand).
   useEffect(() => {
@@ -137,13 +211,16 @@ export default function BoardTour({ boardId, userId, controller, onModeChange, c
       });
   }, [state.step, editor, controller, starters, marker]);
 
-  // Coach mark 1 waits for the tutor's mark on the student's line: a tick or a ring moves it on;
-  // a question mark (the tutor could not read the line, or read it but found nothing to check)
-  // changes what it says. The mark settles first — a line read half-written can be ringed and then
-  // ticked a moment later — so only the last mark of a quick run is reported.
-  const listening = state.step === "write" || state.step === "result";
+  // The tutor's marks: coach mark 1 waits for a tick or a ring on the student's line, and a
+  // question mark (the tutor could not read the line, or read it but found nothing to check)
+  // changes what it says; on coach mark 2 a question mark is Help me's answer to unreadable ink.
+  // The mark settles first — a line read half-written can be ringed and then ticked a moment
+  // later — so only the last mark of a quick run is reported.
+  const marking = state.step === "write" || state.step === "result" || state.step === "help";
+  // the mark coach mark 1 is explaining: it points at it
+  const lastMark = useRef(new Set<TLShapeId>());
   useEffect(() => {
-    if (!listening) return;
+    if (!marking) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const off = editor.store.listen(
       ({ changes }) => {
@@ -155,6 +232,7 @@ export default function BoardTour({ boardId, userId, controller, onModeChange, c
           if (timer) clearTimeout(timer);
           timer = setTimeout(() => {
             clientMetric("onboarding.tour.mark", { mark, why: why ?? null });
+            lastMark.current = new Set([rec.id]);
             dispatch({ type: "mark", mark, why });
           }, MARK_SETTLE_MS);
         }
@@ -165,17 +243,71 @@ export default function BoardTour({ boardId, userId, controller, onModeChange, c
       off();
       if (timer) clearTimeout(timer);
     };
-  }, [editor, listening]);
+  }, [editor, marking]);
 
-  // Coach mark 3: opening Ask finishes the tour.
-  const wasOpen = useRef(chatOpen);
+  // Help me, tapped (the page reports each tap): coach mark 2 waits for what it writes.
+  const seenAsk = useRef(helpAsk?.n ?? 0);
   useEffect(() => {
-    if (chatOpen && !wasOpen.current && state.step === "ask") dispatch({ type: "askOpened" });
-    wasOpen.current = chatOpen;
-  }, [chatOpen, state.step]);
+    if (!helpAsk || helpAsk.n === seenAsk.current) return;
+    seenAsk.current = helpAsk.n;
+    clientMetric("onboarding.tour.help", { ok: helpAsk.ok, step: state.step });
+    dispatch({ type: "helpAsked", ok: helpAsk.ok });
+  }, [helpAsk, state.step]);
 
-  // Remember where the tour is on this device, and record each step.
-  const finished = useRef(false);
+  useEffect(() => {
+    if (state.help !== "asked") return;
+    const timer = setTimeout(() => dispatch({ type: "helpSlow" }), HELP_SLOW_MS);
+    return () => clearTimeout(timer);
+  }, [state.help, state.asks]);
+
+  // What the tutor writes for Help me (a step, a graph; never a mark or a problem): reported once
+  // its hand has stopped, and remembered so coach mark 2 can point at it.
+  const wrote = useRef(new Set<TLShapeId>());
+  const watchingWork = state.step === "help" || (state.step === "write" && state.help === "asked");
+  useEffect(() => {
+    if (!watchingWork) return;
+    wrote.current = new Set();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const off = editor.store.listen(
+      ({ changes }) => {
+        let fresh = false;
+        for (const rec of [...Object.values(changes.added), ...Object.values(changes.updated).map(([, to]) => to)]) {
+          if (rec.typeName !== "shape" || !isTutorWork(rec.meta)) continue;
+          wrote.current.add(rec.id);
+          fresh = true;
+        }
+        if (!fresh) return;
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => dispatch({ type: "tutorWrote" }), WRITE_SETTLE_MS);
+      },
+      { scope: "document", source: "all" },
+    );
+    return () => {
+      off();
+      if (timer) clearTimeout(timer);
+    };
+  }, [editor, watchingWork]);
+
+  // Coach mark 3: the panel open moves on to the suggestion to tap (also when it was open already,
+  // e.g. on a reload); closing it goes back to the Ask button.
+  const messageCount = messages.length;
+  useEffect(() => {
+    if (state.step === "ask" && chatOpen) dispatch({ type: "askOpened", messages: messageCount });
+    if (state.step === "asking" && !chatOpen) dispatch({ type: "askClosed" });
+  }, [chatOpen, state.step, messageCount]);
+
+  // ...and follows the student's ask in the panel: sent, being answered, answered.
+  const progress = state.step === "asking" ? askProgress(messages, state.askFrom) : "waiting";
+  useEffect(() => {
+    if (progress !== "answered") return;
+    const timer = setTimeout(() => dispatch({ type: "askAnswered" }), ANSWER_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [progress]);
+
+  // Remember where the tour is on this device, and record each step. The finish card stores
+  // completion (and that the plan screen is due); `done` leaves the board.
+  const completed = useRef(false);
+  const left = useRef(false);
   useEffect(() => {
     clientMetric("onboarding.tour.step", { step: state.step, outcome: state.outcome });
     const step = markerStepOf(state.step);
@@ -183,17 +315,24 @@ export default function BoardTour({ boardId, userId, controller, onModeChange, c
       writeTourMarker(browserStorage(), userId, { ...marker, boardId, step });
       return;
     }
-    if (state.step !== "done" || finished.current) return;
-    finished.current = true;
-    const storage = browserStorage();
-    clearTourMarker(storage, userId);
-    writeLocalDone(storage, userId);
-    clientMetric(state.skipped ? "onboarding.tour.skip" : "onboarding.tour.done", { course: marker?.course ?? null });
-    void saveOnboarding(asOnboardingClient(supabase), { complete: true }).then((res) => {
-      if (!res.ok) clientMetric("onboarding.save.failed", { error: res.error });
-    });
+    if ((state.step === "finish" || state.step === "done") && !completed.current) {
+      completed.current = true;
+      const storage = browserStorage();
+      clearTourMarker(storage, userId);
+      writeLocalDone(storage, userId);
+      if (!state.skipped) writePlanMarker(storage, userId, "pending");
+      clientMetric(state.skipped ? "onboarding.tour.skip" : "onboarding.tour.done", { course: marker?.course ?? null });
+      void saveOnboarding(asOnboardingClient(supabase), { complete: true }).then((res) => {
+        if (!res.ok) clientMetric("onboarding.save.failed", { error: res.error });
+        // after the save: the route sends only once profiles.onboarded_at is stamped (and only once)
+        else void sendWelcomeEmail();
+      });
+    }
+    if (state.step !== "done" || left.current) return;
+    left.current = true;
+    router.push(state.skipped ? HOME_PATH : PLAN_PATH);
     onFinished();
-  }, [state.step, state.outcome, state.skipped, marker, boardId, userId, onFinished]);
+  }, [state.step, state.outcome, state.skipped, marker, boardId, userId, router, onFinished]);
 
   const skip = useCallback(() => dispatch({ type: "skip" }), []);
   const next = useCallback(() => dispatch({ type: "next" }), []);
@@ -207,89 +346,100 @@ export default function BoardTour({ boardId, userId, controller, onModeChange, c
     const v = editor.getViewportScreenBounds();
     return { x: v.x + v.w / 2 - 20, y: v.y + v.h - 56, w: 40, h: 40 };
   }, [editor]);
+  // the tick or ring being explained, else the pen
+  const markFallback = useCallback(() => shapesRect(editor, lastMark.current) ?? rectOfSelector(PEN) ?? penFallback(), [editor, penFallback]);
+  // no Help me in the bar (Live switched off): the dial, where help is turned on
+  const helpFallback = useCallback(() => rectOfSelector(MODES) ?? penFallback(), [penFallback]);
+  // the step the tutor wrote, else the button that asked for it
+  const wroteFallback = useCallback(() => shapesRect(editor, wrote.current) ?? helpFallback(), [editor, helpFallback]);
+  // "3 more like these" in the panel; its suggestions are gone once it has messages: its text box
+  const askFallback = useCallback(() => rectOf(suggestionButton()) ?? rectOfSelector(`${PANEL} form`) ?? rectOfSelector(ASK), []);
 
+  if (state.step === "problem") return <TourStatus text={TOUR_COPY.writingProblem} />;
+  if (state.step === "finish") return <TourFinish onContinue={next} />;
   const number = coachNumber(state.step);
   if (number === null) return null;
-  const hint = starter?.hint;
-  // what coach mark 1 says under its title: the nudge, or what the tutor's question mark means
-  const writeBody = state.unjudged
-    ? `That ? means the tutor couldn't tell what that line says. Write the whole next line${hint ? `. ${hint}` : " under the problem."}`
-    : state.unread
-      ? "The tutor couldn't read that line. Try writing it a little larger."
-      : hint
-        ? `${hint} Your tutor checks each line as you write it.`
-        : "Your tutor checks each line as you write it.";
+  const common = { avoid: avoidWork, number, total: COACH_COUNT, onSkip: skip } as const;
 
   switch (state.step) {
     case "write":
+    case "result": {
+      const copy = writeCopy(state, starter?.hint ?? null);
+      const result = state.step === "result";
+      const ring = result && state.outcome === "ring";
       return (
         <CoachMark
-          anchor={PEN}
-          fallback={penFallback}
-          prefer={["top", "right", "left"]}
-          avoid={avoidWork}
-          number={number}
-          total={COACH_COUNT}
-          focusKey={`write:${state.unread}:${state.unjudged}`}
-          title={starter ? "Grab the pen and write the next step under the problem" : "Grab the pen and write a line of maths"}
-          primary={{ label: "Next", onClick: next, variant: "outline" }}
-          onClose={skip}
+          {...common}
+          anchor={result ? undefined : PEN}
+          fallback={result ? markFallback : penFallback}
+          prefer={result ? ["right", "bottom", "top", "left"] : ["top", "right", "left"]}
+          icon={state.step === "write" ? <Pencil /> : ring ? <CircleDashed /> : <Check />}
+          tone={state.step === "write" ? "blue" : ring ? "amber" : "green"}
+          focusKey={`${state.step}:${state.outcome}:${state.unread}:${state.unjudged}`}
+          title={copy.title}
+          primary={{ label: copy.button, onClick: next, variant: copy.waiting ? "outline" : "default" }}
         >
-          {writeBody}
+          {copy.body}
         </CoachMark>
       );
-    case "result":
+    }
+    case "help":
+    case "helped": {
+      const copy = helpCopy(state.step, state.help, mode === "answer");
+      const helped = state.step === "helped";
       return (
         <CoachMark
-          anchor={PEN}
-          fallback={penFallback}
-          prefer={["top", "right", "left"]}
-          avoid={avoidWork}
-          number={number}
-          total={COACH_COUNT}
-          focusKey={`result:${state.outcome}`}
-          title={state.outcome === "tick" ? "Nice! That tick means your step is right." : "That ring means something's off in that step."}
-          primary={{ label: "Next", onClick: next }}
-          onClose={skip}
+          {...common}
+          anchor={helped ? undefined : HELP}
+          fallback={helped ? wroteFallback : helpFallback}
+          prefer={helped ? ["right", "bottom", "left", "top"] : ["bottom", "right", "left"]}
+          icon={helped ? <Sparkles /> : <Lightbulb />}
+          tone={helped ? "violet" : "blue"}
+          pulse={!helped && state.help === "waiting"}
+          focusKey={`${state.step}:${state.help}`}
+          title={copy.title}
+          primary={{ label: copy.button, onClick: next, variant: copy.waiting ? "outline" : "default" }}
         >
-          {state.outcome === "tick"
-            ? "Your tutor checked it against the problem. Keep going on the next line!"
-            : "No worries, that's how you learn! Rub it out with the eraser and try again."}
+          {copy.body}
         </CoachMark>
       );
-    case "modes":
-      return (
-        <CoachMark
-          anchor={MODES}
-          prefer={["bottom", "right"]}
-          avoid={avoidWork}
-          number={number}
-          total={COACH_COUNT}
-          focusKey="modes"
-          title="Stuck? Suggest gives you a hint. Solve shows you how."
-          primary={{ label: "Next", onClick: next }}
-          onClose={skip}
-        >
-          You&apos;re in Feedback now, which checks each line. Switch any time.
-        </CoachMark>
-      );
+    }
     case "ask":
+    case "asking": {
+      const asking = state.step === "asking";
+      const copy = askCopy(state.step, { busy: progress === "busy", suggestion: messages.length === 0 ? MORE_LIKE_THESE : null, ink: CHAT_INK });
       return (
         <CoachMark
-          anchor={ASK}
-          prefer={["bottom", "right", "left"]}
-          avoid={avoidWork}
-          number={number}
-          total={COACH_COUNT}
-          focusKey="ask"
-          title="Want more practice? Ask your tutor."
-          primary={{ label: "Done", onClick: next }}
-          onClose={skip}
+          {...common}
+          anchor={asking ? undefined : ASK}
+          fallback={asking ? askFallback : undefined}
+          prefer={asking ? ["left", "top", "bottom"] : ["bottom", "right", "left"]}
+          icon={<MessageSquare />}
+          tone="blue"
+          pulse={progress !== "busy"}
+          focusKey={`${state.step}:${progress}:${messages.length === 0}`}
+          title={copy.title}
+          primary={{ label: copy.button, onClick: next, variant: "outline" }}
         >
-          Try typing &ldquo;3 more like this&rdquo;. Each request uses 3 ink.
+          {copy.body}
         </CoachMark>
       );
+    }
     default:
       return null;
   }
+}
+
+/** While the tutor writes the starter problem: one calm line at the foot of the board. */
+function TourStatus({ text }: { text: string }) {
+  return (
+    <div
+      role="status"
+      data-tour-status=""
+      className={`pointer-events-none fixed bottom-24 left-1/2 z-1200 flex -translate-x-1/2 items-center gap-2.5 rounded-full border bg-popover px-5 py-3 text-base font-medium text-popover-foreground shadow-lg ${styles.enter}`}
+    >
+      <Pencil aria-hidden className={`size-5 text-blue-600 ${styles.wiggle}`} />
+      {text}
+    </div>
+  );
 }

@@ -86,7 +86,11 @@ describe("pure helpers", () => {
       formats: ["latex_styled", "text"],
       // never let Mathpix turn a line upside down (it read `3(x+2)=21` as `1 e=(e+x)ε`)
       auto_rotate_confidence_threshold: 1,
+      // a child's handwriting: Mathpix keeps none of it and its QA team never sees it
+      metadata: { improve_mathpix: false },
     });
+    // data_options never displace the privacy flag
+    expect(buildStrokesBody(PAYLOAD, { include_svg: true })).toMatchObject({ data_options: { include_svg: true }, metadata: { improve_mathpix: false } });
     expect(stripMathDelimiters("\\( 2x = 8 \\)")).toBe("2x = 8");
     expect(latexFromMathpix({ latex_styled: "2x=8", text: "\\(2x=8\\)" })).toBe("2x=8");
     expect(latexFromMathpix({ text: "\\(x=4\\)" })).toBe("x=4");
@@ -123,6 +127,8 @@ describe("recognizeStrokes — success", () => {
     expect(headers.app_id).toBe("app-id-123");
     expect(headers.app_key).toBe("app-key-super-secret");
     expect(headers["X-Request-Id"]).toBe("req-1");
+    // what goes over the wire carries the privacy flag (not just the helper's return value)
+    expect(JSON.parse(String(calls[0].init?.body))).toMatchObject({ metadata: { improve_mathpix: false } });
   });
 
   it("falls back to confidence_rate and clamps it into 0..1", async () => {

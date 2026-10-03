@@ -44,7 +44,7 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
       plotFunction: (args) => loopRef.current?.plotFunction(args) ?? null,
       requestCheck: (lineId) => loopRef.current?.requestCheck(lineId),
       requestSolve: (lineId) => loopRef.current?.requestSolve(lineId),
-      requestHelp: () => loopRef.current?.requestHelp(),
+      requestHelp: () => loopRef.current?.requestHelp() ?? false,
       escalate: (lineId) => loopRef.current?.escalate(lineId),
       dismissHint: (hintId) => loopRef.current?.dismissHint(hintId),
       clearMarks: () => loopRef.current?.clearMarks(),

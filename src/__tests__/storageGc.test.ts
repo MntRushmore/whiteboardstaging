@@ -17,6 +17,8 @@ vi.mock("@/lib/server/storageGc", async (importOriginal) => {
     ...real,
     getGcEnv: () => (gcDeps.current ? gcDeps.current.getEnv() : real.getGcEnv()),
     runStorageGc: (opts: Parameters<GcDeps["run"]>[0]) => (gcDeps.current ? gcDeps.current.run(opts) : real.runStorageGc(opts)),
+    purgeBillingPayloads: (opts: { url: string; serviceKey: string }) =>
+      gcDeps.current ? (gcDeps.current.purge ?? (async () => 0))(opts) : real.purgeBillingPayloads(opts),
   };
 });
 
@@ -44,6 +46,8 @@ import { bearerMatches, isCronRequest, isDryRun, readCronSecret, toResponseBody,
 type GcDeps = {
   getEnv: () => GcEnv;
   run: (opts: { url: string; serviceKey: string; dryRun: boolean }) => Promise<GcSummary>;
+  /** purge_billing_event_payloads() (default: blanks nothing) */
+  purge?: (opts: { url: string; serviceKey: string }) => Promise<number>;
 };
 
 /** The route's GET/POST with `deps` standing in for its env and runner. */
@@ -523,8 +527,9 @@ describe("GET|POST /api/admin/gc", () => {
     failures: [],
   });
 
-  function build(envOverrides: Partial<ReturnType<GcDeps["getEnv"]>> = {}, runImpl?: GcDeps["run"]) {
+  function build(envOverrides: Partial<ReturnType<GcDeps["getEnv"]>> = {}, runImpl?: GcDeps["run"], purgeImpl?: GcDeps["purge"]) {
     const runs: Array<{ url: string; serviceKey: string; dryRun: boolean }> = [];
+    const purges: Array<{ url: string; serviceKey: string }> = [];
     const deps: GcDeps = {
       getEnv: () => ({ url: ORIGIN, serviceKey: "service-role", cronSecret: SECRET, ...envOverrides }),
       run:
@@ -533,8 +538,12 @@ describe("GET|POST /api/admin/gc", () => {
           runs.push(opts);
           return summary(opts.dryRun);
         }),
+      purge: async (opts) => {
+        purges.push(opts);
+        return purgeImpl ? purgeImpl(opts) : 3;
+      },
     };
-    return { handler: createGcHandler(deps), runs };
+    return { handler: createGcHandler(deps), runs, purges };
   }
 
   const request = (opts: { auth?: string; method?: string; query?: string; ip?: string } = {}) =>
@@ -589,6 +598,45 @@ describe("GET|POST /api/admin/gc", () => {
     expect(res.status).toBe(200);
     expect((await res.json()) as Record<string, unknown>).toMatchObject({ dryRun: false, deleted: 2 });
     expect(runs[0].dryRun).toBe(false);
+  });
+
+  it("the nightly run also blanks Stripe payloads past their 90 days; a dry run never does", async () => {
+    const { handler, purges } = build();
+    const dry = (await (await handler(request({ auth: `Bearer ${SECRET}` }))).json()) as Record<string, unknown>;
+    expect(dry).toMatchObject({ dryRun: true, billingPayloadsPurged: null });
+    expect(purges).toEqual([]);
+    const cron = new Request("http://localhost/api/admin/gc", { headers: { Authorization: `Bearer ${SECRET}`, "user-agent": "vercel-cron/1.0", "x-forwarded-for": "203.0.113.9" } });
+    const res = await handler(cron);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ dryRun: false, deleted: 2, billingPayloadsPurged: 3 });
+    expect(purges).toEqual([{ url: ORIGIN, serviceKey: "service-role" }]);
+  });
+
+  it("a failed purge is logged and reported as null, never failing the storage pass", async () => {
+    const { handler } = build({}, undefined, async () => {
+      throw new Error('function public.purge_billing_event_payloads() does not exist');
+    });
+    const res = await handler(request({ auth: `Bearer ${SECRET}`, query: "?dryRun=0" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ dryRun: false, deleted: 2, billingPayloadsPurged: null });
+  });
+
+  it("purgeBillingPayloads calls the RPC with the service role and reads the count; anything else throws", async () => {
+    // the real one (the module mock above routes the route's calls to the test's deps)
+    const { purgeBillingPayloads } = await vi.importActual<typeof import("@/lib/server/storageGc")>("@/lib/server/storageGc");
+    const seen: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      seen.push({ url, init });
+      return new Response("4", { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as unknown as typeof fetch;
+    expect(await purgeBillingPayloads({ url: `${ORIGIN}/`, serviceKey: "service-role", fetchImpl })).toBe(4);
+    expect(seen[0].url).toBe(`${ORIGIN}/rest/v1/rpc/purge_billing_event_payloads`);
+    expect(seen[0].init?.method).toBe("POST");
+    expect(seen[0].init?.headers).toMatchObject({ apikey: "service-role", Authorization: "Bearer service-role" });
+    const failing = (async () => new Response(JSON.stringify({ message: "permission denied" }), { status: 403 })) as unknown as typeof fetch;
+    await expect(purgeBillingPayloads({ url: ORIGIN, serviceKey: "k", fetchImpl: failing })).rejects.toThrow(/permission denied/);
+    const odd = (async () => new Response(JSON.stringify({ purged: 1 }), { status: 200 })) as unknown as typeof fetch;
+    await expect(purgeBillingPayloads({ url: ORIGIN, serviceKey: "k", fetchImpl: odd })).rejects.toThrow(/count/);
   });
 
   it("500 internal_error when the run throws", async () => {

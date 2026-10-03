@@ -661,6 +661,8 @@ export const LIVE_RATE_LIMITS = {
   liveListen: { limit: 6, windowMs: 60_000 },
   /** lecture mode's illustrator: one request per panel, a comic strip is four at once */
   liveSketch: { limit: 12, windowMs: 60_000 },
+  /** a board's smart name: a few per board session (`useBoardAutoTitle`), uncharged, so kept low */
+  liveTitle: { limit: 10, windowMs: 60_000 },
 } as const;
 export type LiveRateLimitRoute = keyof typeof LIVE_RATE_LIMITS;
 
@@ -737,8 +739,9 @@ export interface LiveController {
    * The board's one "Help" action, on the latest line: Solve writes the solution, Feedback /
    * Suggest escalate that line's hint. Ink Live could not read as maths goes to the check
    * model with a crop of the ink ("Ask about this"). Always explicit; never fired on a timer.
+   * False when there is nothing on the screen to help with yet (or help is Off).
    */
-  requestHelp(): void;
+  requestHelp(): boolean;
   escalate(lineId: string): void;
   dismissHint(hintId: string): void;
   clearMarks(): void;

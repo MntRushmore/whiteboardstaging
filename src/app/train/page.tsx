@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
+import { BOARD_EMBEDS } from "@/lib/boards/embeds";
 
 const STORAGE_BUCKET = "training-data";
 
@@ -502,6 +503,7 @@ export default function TrainPage() {
       <Tldraw
         shapeUtils={liveShapeUtils}
         licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
+        embeds={BOARD_EMBEDS}
         components={{
           MenuPanel: null,
           NavigationPanel: null,

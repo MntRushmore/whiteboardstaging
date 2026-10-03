@@ -4,6 +4,7 @@
  * far". No React, no network: unit-tested in __tests__/chatView.test.ts.
  */
 import { isApiError, isOutOfInk } from "@/lib/api-client";
+import { waitPhrase } from "@/components/live/copy";
 import { CHAT_LIMITS, type ChatRunReport, type ChatTurn } from "@/lib/live/chat/contracts";
 
 /** Ink per request: ROUTE_COSTS["live/chat"] on the server (pinned equal in the tests). */
@@ -27,7 +28,7 @@ export const CHAT_COPY = {
      * the panel does not pull the lazy dialog's module into the board's first load)
      */
     ink: "You're out of ink",
-    rateLimited: (seconds: number) => `That's a lot of requests. Try again in ${seconds} s.`,
+    rateLimited: (seconds: number) => `That's a lot of requests. Try again in ${waitPhrase(seconds)}.`,
     unauthorized: "Please sign in again.",
     network: "Couldn't reach the tutor. Check your connection and try again.",
     timeout: "The tutor took too long to answer. Try again.",

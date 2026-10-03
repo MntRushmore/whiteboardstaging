@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Editor, TLRecord, TLShapeId } from "tldraw";
 import { Flame } from "lucide-react";
-import { markKindOf } from "@/lib/onboarding/state";
+import { markKindOf } from "@/lib/onboarding/marks";
 import { celebrate, INITIAL_CELEBRATE, MarkSettler, STREAK_FROM, streakText, type Cheer } from "@/lib/live/celebrate";
+import { confettiPieces as confetti, type ConfettiPiece } from "@/lib/confetti";
 import { cn } from "@/lib/utils";
 
 /**
@@ -24,19 +25,9 @@ function isFinishedStudentStroke(rec: TLRecord): boolean {
 
 /** how long a cheer stays up (matches the `celebrate-pop` animation) */
 const SHOW_MS = 2200;
-const CONFETTI_COLORS = ["#f43f5e", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#ec4899", "#facc15"];
 /** keep the bubble this far inside the window */
 const EDGE = 12;
 const BUBBLE_W = 200;
-
-interface Piece {
-  dx: number;
-  dy: number;
-  rot: number;
-  color: string;
-  delay: number;
-  round: boolean;
-}
 
 interface Pop {
   id: number;
@@ -44,22 +35,7 @@ interface Pop {
   /** the mark's right edge, middle, in client pixels */
   x: number;
   y: number;
-  pieces: Piece[];
-}
-
-function confetti(count: number, spread: number): Piece[] {
-  return Array.from({ length: count }, (_, i) => {
-    const angle = (i / count) * Math.PI * 2 + Math.random() * 0.6;
-    const dist = spread * (0.5 + Math.random() * 0.6);
-    return {
-      dx: Math.cos(angle) * dist,
-      dy: Math.sin(angle) * dist - spread * 0.35,
-      rot: (Math.random() - 0.5) * 720,
-      color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-      delay: Math.random() * 80,
-      round: i % 3 === 0,
-    };
-  });
+  pieces: ConfettiPiece[];
 }
 
 /** The tutor's mark for this line on the page, as a client-pixel point (its right edge, middle). */

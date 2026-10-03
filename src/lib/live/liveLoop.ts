@@ -125,6 +125,7 @@ import { assignColumns, clusterLines, rebuildFromMathShapes, unionRects, type Ec
 import { buildPayload, hashPayload } from "./strokePayload";
 import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
+import { parseDomainPiece } from "./engine/domain";
 import { figureAnswer, labelKey, looksLikeUnknown } from "./figure";
 import { HAND_LINE_META } from "./handwriting";
 import { requestProof } from "./proof/client";
@@ -935,7 +936,10 @@ export class LiveLoop implements LiveController {
       if (next.enabled && (next.mode === "answer" || next.mode === "suggest")) {
         // after the writing `cancelHandwriting` just finished has landed (live writes are queued)
         const mode = next.mode;
-        queueMicrotask(() => this.dialMovedTo(mode));
+        queueMicrotask(() => {
+          this.dialMovedTo(mode);
+          this.dialRoseWhileStopped(mode);
+        });
       }
     }
   }
@@ -956,6 +960,20 @@ export class LiveLoop implements LiveController {
     const s = this.problemState(cell);
     if (s.work || (mode === "answer" ? s.solved : s.started)) return;
     this.workProblem(cell, mode === "answer" ? "solve" : "step");
+  }
+
+  /**
+   * The dial went up to Suggest or Solve after the student had stopped writing: the answers the
+   * settle writes (`renderSettled`) that the old mode held back are written now, as if the student
+   * had stopped in this mode. A student stuck after a ticked `\div 2` turns the dial to Suggest
+   * because they are stuck: before this, nothing came until they wrote again, which they could not.
+   * Mid-writing, the settle still decides.
+   */
+  private dialRoseWhileStopped(mode: "answer" | "suggest"): void {
+    if (!this.started || !this.opts.enabled || this.opts.mode !== mode || this.settleTimer) return;
+    this.writeOperationResults();
+    this.drawWantedGraphs();
+    this.solveWantedFigures();
   }
 
   /**
@@ -4597,6 +4615,8 @@ export class LiveLoop implements LiveController {
     // so it is written now. Ahead of `startSolve`, which would otherwise not yet see it
     // (live writes land on a microtask) and would draw a second copy underneath.
     if (this.answerLineNow(target)) return;
+    // the student's last line is a right operation: the equation it leads to, and the rest from it
+    if (this.opts.enabled && this.continueOperation(target, { all: true })) return;
     const col = this.columnLines(target.line.column).filter((s) => s.latex && !isOperationLine(s));
     const lastOk = [...col].reverse().find((s) => s.analysis?.verdict === "ok" || s.analysis?.solved);
     this.startSolve(target.line.column, lastOk?.line.id ?? target.line.id, { lineId: target.line.id });
@@ -4625,30 +4645,32 @@ export class LiveLoop implements LiveController {
    *  - Solve: the worked solution (`requestSolve`), word problems included.
    *  - Feedback / Suggest: that line's next hint (`escalate`).
    */
-  requestHelp(): void {
-    if (!this.opts.enabled || this.opts.mode === "off") return;
+  requestHelp(): boolean {
+    if (!this.opts.enabled || this.opts.mode === "off") return false;
     // On a two-column proof (or its figure): the next row — in Solve, the rest of the proof.
-    if (this.proofs.ask(this.latestLine()?.line.id ?? null, this.touchedDiagram(), { all: this.opts.mode === "answer" })) return;
+    if (this.proofs.ask(this.latestLine()?.line.id ?? null, this.touchedDiagram(), { all: this.opts.mode === "answer" })) return true;
     // The student's last ink was a drawing (or its labels): the tutor reads the figure — in Solve
     // the whole setup and its answer, in Feedback / Suggest the first line of the setup. A drawing
     // never gets a "?": it is not ink that failed to read as maths.
     const figure = this.touchedDiagram();
     if (figure) {
       this.startFigure(figure, { lineId: figure.id, onlyFirstStep: this.opts.mode !== "answer" });
-      return;
+      return true;
     }
     const target = this.latestLine();
     // The chat's problems: with no line of the student's to help with, Help is about the current one.
-    if (!this.actsOn(target) && this.helpWithProblem(target)) return;
-    if (!target) return;
+    if (!this.actsOn(target) && this.helpWithProblem(target)) return true;
+    // nothing on this screen to help with: the button says so
+    if (!target) return false;
     if (needsLook(target)) {
       // No sentences on the board: ink the tutor cannot read as maths gets a "?" beside it
       // (write it again, larger or clearer) — not a model's paragraph about the picture.
       this.syncMark(target, "question", unjudgedReason(target) ?? "unread");
-      return;
+      return true;
     }
     if (this.opts.mode === "answer") this.requestSolve(target.line.id);
     else this.escalate(target.line.id);
+    return true;
   }
 
   /**
@@ -4767,19 +4789,15 @@ export class LiveLoop implements LiveController {
   private writeOperationResults(): void {
     if (!this.opts.enabled || (this.opts.mode !== "suggest" && this.opts.mode !== "answer") || !this.deps.handwritingEnabled()) return;
     for (const state of Object.values(liveStore.lines.get())) {
-      const result = isOperationLine(state) && state.analysis?.verdict === "ok" ? (state.analysis.operation?.result ?? "") : "";
+      const result = this.operationResultOf(state);
       if (!result || this.operationResultShapes(state.line.id).some((s) => metaString(s.meta, OPERATION_RESULT_META) === result)) continue;
-      const column = this.columnLines(state.line.column);
-      if (column.some((s) => s.line.row > state.line.row)) continue;
+      if (this.rt.get(state.line.id)?.resultWriter?.active || this.writerFor === state.line.id) continue;
       if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return;
+      // one pen at a time: the dial raised from Off draws the operation's tick first
+      if (this.afterMark(state.line.id, () => this.writeOperationResults())) continue;
       const { plan, unsupported } = planHandwriting([result], { size: handSizeFor(state.line.bounds.h), seed: handSeedFor(`${state.line.id}:result`) });
       if (!plan || unsupported.length > 0) continue;
-      const ink = state.line.bounds;
-      // under the operation, level with the equation it works on
-      const above = [...column].reverse().find((s) => s.line.row < state.line.row && !isOperationLine(s));
-      const candidate: Rect = { x: Math.min(ink.x, above?.line.bounds.x ?? ink.x), y: rectMaxY(ink) + PLACEMENT.stepGap, w: plan.bounds.w, h: plan.bounds.h };
-      const placed = keepOnScreen(candidate, this.screenRect(), ink);
-      const slot = findFreeSlot(placed, [...this.avoidRects(state.line.id), ink], ink, placed.x === candidate.x ? "below" : "right");
+      const slot = this.underOperation(state, plan.bounds);
       const writer = this.makeWriter();
       this.runtime(state.line.id).resultWriter = writer;
       writer.start(placeHandPlan(plan, { x: slot.x, y: slot.y }), {
@@ -4788,6 +4806,93 @@ export class LiveLoop implements LiveController {
       });
       clientMetric("live.operation.result", { lineId: state.line.id });
     }
+  }
+
+  /**
+   * The equation a right operation line leads to (`\sin x = \frac{1}{2}` for a `\div 2` under
+   * `2\sin x = 1`) while it is still the last thing in its column; "" once the student has written
+   * under it, or when it is not a right operation line.
+   */
+  private operationResultOf(state: LiveLineState): string {
+    const result = isOperationLine(state) && state.analysis?.verdict === "ok" ? (state.analysis.operation?.result ?? "") : "";
+    if (!result) return "";
+    return this.columnLines(state.line.column).some((s) => s.line.row > state.line.row) ? "" : result;
+  }
+
+  /**
+   * Where a block of the tutor's goes under an operation line — or under what it already wrote
+   * there (`anchor`) — level with the equation the operation works on.
+   */
+  private underOperation(state: LiveLineState, size: { w: number; h: number }, anchor: Rect = state.line.bounds): Rect {
+    const ink = state.line.bounds;
+    const above = [...this.columnLines(state.line.column)].reverse().find((s) => s.line.row < state.line.row && !isOperationLine(s));
+    const candidate: Rect = { x: Math.min(ink.x, above?.line.bounds.x ?? ink.x), y: rectMaxY(anchor) + PLACEMENT.stepGap, w: size.w, h: size.h };
+    const placed = keepOnScreen(candidate, this.screenRect(), anchor);
+    return findFreeSlot(placed, [...this.avoidRects(state.line.id), ink, anchor], anchor, placed.x === candidate.x ? "below" : "right");
+  }
+
+  /**
+   * Help or Solve on a right operation line the student stopped at. The next step is the equation
+   * it leads to (`\div 2` under `2\sin x = 1` → `\sin x = \frac{1}{2}`): Help writes it — the same
+   * block Suggest writes once the student stops (`writeOperationResults`) — and, asked again with
+   * it on the page, the step after it. Solve writes it and the rest. Engine only, no model.
+   *
+   * Solve's column (`buildCheckLines`) leaves operation lines out, so under one of the chat's
+   * problems, where the operation is often the student's only line, Help and Solve steps had
+   * nothing to work from and did nothing. False when this is not such a line, or the engine has
+   * nothing more to say about it: the usual paths take it.
+   */
+  private continueOperation(state: LiveLineState, opts: { all: boolean }): boolean {
+    const engine = this.engine;
+    const result = this.operationResultOf(state);
+    if (!engine || !result) return false;
+    const lineId = state.line.id;
+    // its block is being written already (Suggest's, or this ask's own a moment ago)
+    if (this.rt.get(lineId)?.resultWriter?.active || this.writerFor === lineId) return true;
+    if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return true;
+    // one pen at a time: the operation's tick is finished first
+    if (this.afterMark(lineId, () => {
+      const fresh = liveStore.lines.get()[lineId];
+      if (fresh) this.continueOperation(fresh, opts);
+    })) return true;
+    const resultBlock = this.operationResultShapes(lineId).filter((s) => metaString(s.meta, OPERATION_RESULT_META) === result);
+    const written = resultBlock.length > 0;
+    const hand = this.deps.handwritingEnabled();
+    const size = handSizeFor(state.line.bounds.h);
+    const seed = handSeedFor(`${lineId}:result`);
+    const canDraw = (steps: readonly string[]) => planHandwriting(steps, { size, seed }).unsupported.length === 0;
+    const after = localSolve(engine, [result], 0, { handwriting: hand, canDraw, domain: this.headAnalyses(state.line.column).at(-1)?.domain?.latex });
+    // the engine cannot go on from the result it already wrote: the usual paths (a model) may
+    if (written && !after.source) return false;
+    const rest = after.steps.filter((st) => normalizeStep(st) !== normalizeStep(result));
+    const key = [result, ...rest].join(" ; ");
+    // everything there is to write is on the page already
+    if (this.hasHandSolution(lineId, key) || (written && rest.length === 0)) return true;
+    const all = written ? rest : [result, ...rest];
+    // a domain on its own (`0^{\circ} \le x < 360^{\circ}`) is not a step: it goes with the one after it
+    const steps = opts.all ? all : all.slice(0, parseDomainPiece(all[0] ?? "") && all.length > 1 ? 2 : 1);
+    const extraMeta: JsonObject = {
+      ...(written ? {} : { [OPERATION_RESULT_META]: result }),
+      ...(opts.all ? { [SOLVED_META]: key } : {}),
+    };
+    const anchor = written ? unionRects(resultBlock.map((s) => boxToRect(this.editor.getShapePageBounds(s)!))) : state.line.bounds;
+    // A new step replaces the last one asked for here; it never stacks under it. The result
+    // block stays: it is the student's next line, written for them.
+    const keep = new Set(resultBlock.map((s) => s.id));
+    const old = this.editor
+      .getCurrentPageShapes()
+      .filter((s) => isLiveMeta(s.meta) && s.meta.source === "ai" && s.meta.lineId === lineId && !keep.has(s.id) && !metaString(s.meta, MARK_META) && !metaString(s.meta, GRAPH_META) && !answerSrcOf(s.meta))
+      .map((s) => s.id);
+    if (old.length > 0) this.write(() => this.editor.deleteShapes(old.filter((id) => this.editor.getShape(id))));
+    const { plan, unsupported } = planHandwriting(steps, { size, seed });
+    if (hand && plan && unsupported.length === 0) {
+      const slot = this.underOperation(state, plan.bounds, anchor);
+      this.startHandwriting(placeHandPlan(plan, { x: slot.x, y: slot.y }), lineId, extraMeta);
+    } else {
+      steps.forEach((step, i) => this.placeSolutionStep(anchor, anchor, i + 1, step, "", lineId, extraMeta));
+    }
+    clientMetric("live.operation.continue", { lineId, all: opts.all, written, steps: steps.length });
+    return true;
   }
 
   private operationResultShapes(lineId: string): TLShape[] {
@@ -4846,6 +4951,8 @@ export class LiveLoop implements LiveController {
         return;
       }
     }
+    // Stuck after a right operation (`\div 2` under `2\sin x = 1`): the equation it leads to, then the step after it.
+    if (this.continueOperation(target, { all: false })) return;
     // Stuck on a line that is fine: when its work graphs (`y = 2x + 1`, a system, `x > 4`), the
     // graph is the help — sketched from the engine, no model asked. Otherwise the next step.
     if (this.syncGraph(target.line.column, { asked: true, anchorLineId: lineId })) return;
@@ -4868,6 +4975,7 @@ export class LiveLoop implements LiveController {
     if (!line) return this.workProblem(cell, depth, "chat");
     if (line.analysis?.solved) return "done";
     const column = line.line.column;
+    if (this.continueOperation(line, { all: depth === "solve" })) return "writing";
     if (depth === "solve") {
       const lastOk = this.columnLines(column)
         .filter((s) => s.latex)

@@ -9,14 +9,23 @@
  *   skipped, so the home does not ask the profile again, and a save that failed (offline) does
  *   not bring the welcome back on this device.
  *
- * Kept tiny and import-free: this file is part of the board's first load.
+ * Kept tiny and import-free: this file is part of the board's first load (the plan screen's marker,
+ * which the board never reads, is in `planMarker.ts`).
  */
 
-type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+export type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-/** Where the tour is: resumable steps only (a result on screen resumes at the next mark). */
-export type TourMarkerStep = "problem" | "write" | "modes" | "ask";
-const MARKER_STEPS: readonly string[] = ["problem", "write", "modes", "ask"];
+/** Where the tour is: resumable steps only (a result on screen resumes at the next coach mark). */
+export type TourMarkerStep = "problem" | "write" | "help" | "ask";
+const MARKER_STEPS: readonly string[] = ["problem", "write", "help", "ask"];
+/** a marker written before Help me replaced the help-modes coach mark (2026-10-03) resumes there */
+const LEGACY_STEPS: Readonly<Record<string, TourMarkerStep>> = { modes: "help" };
+
+function stepOf(v: unknown): TourMarkerStep {
+  if (typeof v !== "string") return "problem";
+  if (MARKER_STEPS.includes(v)) return v as TourMarkerStep;
+  return LEGACY_STEPS[v] ?? "problem";
+}
 
 export interface TourMarker {
   boardId: string;
@@ -49,7 +58,7 @@ export function readTourMarker(storage: StorageLike | null | undefined, userId: 
       boardId: v.boardId,
       course: typeof v.course === "string" ? v.course : null,
       starter: typeof v.starter === "number" && Number.isFinite(v.starter) ? v.starter : 0,
-      step: typeof v.step === "string" && MARKER_STEPS.includes(v.step) ? (v.step as TourMarkerStep) : "problem",
+      step: stepOf(v.step),
     };
   } catch {
     return null;

@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   BOARD_ASSETS_BUCKET,
+  PLAN_STILL_ACTIVE_HINT,
+  PlanStillActiveError,
   REMOVE_BATCH_SIZE,
   clearLocalSession,
   deleteOwnAccount,
+  isPlanStillActiveError,
+  planBlocksDeletion,
   readStorageKey,
   removeOwnBoardAssets,
   selectAuthStorageKeys,
@@ -36,6 +40,11 @@ function fakeClient(opts: {
   selectError?: string;
   removeError?: (batch: string[]) => string | null;
   rpcError?: string;
+  /** the RPC's refusal as PostgREST sends it (code, message, hint) */
+  rpcErrorBody?: { message: string; code?: string; hint?: string };
+  /** the caller's unlimited_subscriptions rows (RLS: own rows) */
+  plan?: Array<Record<string, unknown>>;
+  planError?: string;
   storageKey?: string;
   signOutError?: string;
 }): { client: DeleteAccountClient; calls: Calls } {
@@ -53,11 +62,16 @@ function fakeClient(opts: {
         return Promise.resolve({ data: { session: null }, error: null });
       },
     },
-    from: () => ({
-      select: () =>
-        Promise.resolve(
+    from: (table) => ({
+      select: () => {
+        if (table === "unlimited_subscriptions") {
+          calls.order.push("plan");
+          return Promise.resolve(opts.planError ? { data: null, error: { message: opts.planError } } : { data: opts.plan ?? [], error: null });
+        }
+        return Promise.resolve(
           opts.selectError ? { data: null, error: { message: opts.selectError } } : { data: opts.rows ?? [], error: null },
-        ),
+        );
+      },
     }),
     storage: {
       from: (bucket) => {
@@ -75,7 +89,7 @@ function fakeClient(opts: {
     rpc: (fn) => {
       calls.rpc.push(fn);
       calls.order.push("rpc");
-      return Promise.resolve({ data: null, error: opts.rpcError ? { message: opts.rpcError } : null });
+      return Promise.resolve({ data: null, error: opts.rpcErrorBody ?? (opts.rpcError ? { message: opts.rpcError } : null) });
     },
   };
   return { client, calls };
@@ -204,7 +218,7 @@ describe("deleteOwnAccount", () => {
       assets: { found: 1, removed: 1, error: null },
       clearedKeys: ["sb-abc-auth-token", "sb-abc-auth-token-code-verifier"],
     });
-    expect(calls.order).toEqual(["remove", "rpc", "signOut:local"]);
+    expect(calls.order).toEqual(["plan", "remove", "rpc", "signOut:local"]);
     expect(calls.rpc).toEqual(["delete_own_account"]);
     expect([...storage.data.keys()]).toEqual(["theme"]);
   });
@@ -215,7 +229,7 @@ describe("deleteOwnAccount", () => {
       assets: { found: 0, removed: 0, error: null },
       clearedKeys: [],
     });
-    expect(calls.order).toEqual(["rpc", "signOut:local"]);
+    expect(calls.order).toEqual(["plan", "rpc", "signOut:local"]);
   });
 
   it("still calls the RPC when asset removal fails, throws the RPC error and keeps the session", async () => {
@@ -227,8 +241,60 @@ describe("deleteOwnAccount", () => {
     });
     const storage = fakeStorage({ "sb-abc-auth-token": "{}" });
     await expect(deleteOwnAccount(client, { storage })).rejects.toEqual({ message: "not authenticated" });
-    expect(calls.order).toEqual(["remove", "rpc"]);
+    expect(calls.order).toEqual(["plan", "remove", "rpc"]);
     expect(storage.removed).toEqual([]);
     expect(storage.data.has("sb-abc-auth-token")).toBe(true);
+  });
+
+  describe("Agathon Unlimited: the plan is cancelled first", () => {
+    it("refuses while the plan would charge again, before ANY image is removed or the RPC is called", async () => {
+      for (const status of ["trialing", "active", "past_due", "unpaid"]) {
+        const { client, calls } = fakeClient({ rows: [{ object_path: "u/b/1.png" }], plan: [{ status, cancel_at_period_end: false, cancel_at: null }] });
+        const err = await deleteOwnAccount(client, { storage: null }).catch((e: unknown) => e);
+        expect(err, status).toBeInstanceOf(PlanStillActiveError);
+        expect(isPlanStillActiveError(err)).toBe(true);
+        expect(calls.order, status).toEqual(["plan"]);
+        expect(calls.removed).toEqual([]);
+      }
+    });
+
+    it("goes ahead once the plan is set to cancel, or has ended, or never started", async () => {
+      for (const plan of [
+        [{ status: "trialing", cancel_at_period_end: true, cancel_at: null }],
+        [{ status: "active", cancel_at_period_end: false, cancel_at: "2026-11-10T00:00:00Z" }],
+        [{ status: "canceled", cancel_at_period_end: false, cancel_at: null }],
+        [{ status: "incomplete_expired" }, { status: "paused" }, { status: null }],
+        [],
+      ]) {
+        const { client, calls } = fakeClient({ rows: [], plan });
+        await deleteOwnAccount(client, { storage: null });
+        expect(calls.order, JSON.stringify(plan)).toEqual(["plan", "rpc", "signOut:local"]);
+      }
+    });
+
+    it("never deletes unchecked: a failed plan read stops it; a database without the plan's table does not", async () => {
+      const failed = fakeClient({ rows: [{ object_path: "u/b/1.png" }], planError: "JWT expired" });
+      await expect(deleteOwnAccount(failed.client, { storage: null })).rejects.toEqual({ message: "JWT expired" });
+      expect(failed.calls.order).toEqual(["plan"]);
+      const older = fakeClient({ rows: [], planError: "Could not find the table 'public.unlimited_subscriptions' in the schema cache" });
+      await deleteOwnAccount(older.client, { storage: null });
+      expect(older.calls.order).toEqual(["plan", "rpc", "signOut:local"]);
+    });
+
+    it("the database's own refusal (a plan started in another tab meanwhile) comes back as PlanStillActiveError, session kept", async () => {
+      const { client } = fakeClient({ rows: [], rpcErrorBody: { code: "P0001", message: "Cancel Agathon Unlimited before deleting your account", hint: PLAN_STILL_ACTIVE_HINT } });
+      const storage = fakeStorage({ "sb-abc-auth-token": "{}" });
+      await expect(deleteOwnAccount(client, { storage })).rejects.toBeInstanceOf(PlanStillActiveError);
+      expect(storage.removed).toEqual([]);
+    });
+
+    it("planBlocksDeletion is delete_own_account()'s rule", () => {
+      expect(planBlocksDeletion([{ status: "trialing", cancel_at_period_end: false, cancel_at: null }])).toBe(true);
+      expect(planBlocksDeletion([{ status: "canceled" }, { status: "active" }])).toBe(true);
+      expect(planBlocksDeletion([{ status: "active", cancel_at_period_end: true }])).toBe(false);
+      expect(planBlocksDeletion(null)).toBe(false);
+      expect(isPlanStillActiveError({ hint: "something_else" })).toBe(false);
+      expect(isPlanStillActiveError(new Error("x"))).toBe(false);
+    });
   });
 });

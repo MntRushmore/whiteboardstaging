@@ -1,17 +1,30 @@
+import { after } from "next/server";
+import type pino from "pino";
 import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
 import { getServerEnv, type InkPriceMap } from "@/lib/env";
+import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
+import { emailDeps } from "@/lib/email/server";
+import { sendUnlimitedStarted } from "@/lib/email/unlimitedStarted";
 
 /**
- * The billing webhook's event schema, its pure mapping of a Stripe event to an ink change, and the
- * service-role store it writes through. The handler itself, with its rate limit, signature check
- * and body validation, is src/app/api/billing/webhook/route.ts (whose header explains the flow);
- * these live here because a route file may export only its handlers and segment config (`next
- * dev` type-checks a route's exports under .next/dev/types).
+ * The billing webhook's event schema, its pure mapping of a Stripe event to an ink change or an
+ * Agathon Unlimited subscription change, and the service-role store it writes through. The
+ * handler itself, with its rate limit, signature check and body validation, is
+ * src/app/api/billing/webhook/route.ts (whose header explains the flow); these live here because a
+ * route file may export only its handlers and segment config (`next dev` type-checks a route's
+ * exports under .next/dev/types).
  */
 
 /** `metadata.app` on every Stripe object Agathon creates (APP_TAG in scripts/stripe-setup.mjs). */
 export const APP_TAG = "agathon-classroom";
+
+/**
+ * `metadata.plan_id` on the Unlimited product, price, Payment Link (so on its Checkout Sessions) and,
+ * through the link's `subscription_data.metadata`, on every subscription it starts. The Plus/Pro
+ * subscriptions of the September plans carried the app tag without this, so they stay ignored.
+ */
+export const UNLIMITED_PLAN_ID = UNLIMITED_PLAN.id;
 
 /* ------------------------------------------------------------------------- */
 /* Event schema + pure mapping                                                */
@@ -21,6 +34,8 @@ export const EventSchema = z.object({
   id: z.string().min(1).max(200),
   type: z.string().min(1).max(200),
   livemode: z.boolean().optional(),
+  /** Unix seconds: orders subscription events that arrive out of order. */
+  created: z.number().int().nonnegative().optional(),
   data: z.object({ object: z.record(z.string(), z.unknown()) }),
 });
 
@@ -75,18 +90,79 @@ export type InkRefund = {
   tagged: boolean;
 };
 
+/**
+ * An Agathon Unlimited checkout, ready for link_unlimited_checkout(): whose subscription it is.
+ * The only event that names our user; it may arrive before or after the subscription's own events.
+ *
+ * The user is named by a CHECKOUT REFERENCE, not a user id: `client_reference_id` carries the
+ * account's `profiles.checkout_ref` (a random uuid only its owner can read, sent by
+ * unlimitedCheckoutUrl), and the database resolves it to the user. A user id is not a secret, and
+ * linking by one let anyone start a plan, on their own card, on someone else's account (which then
+ * could not be deleted, and whose plan only the payer could cancel). A user id sent as the ref
+ * matches no profile and links nobody. Ink packs still name the user id: a pack is a gift.
+ */
+export type UnlimitedLink = {
+  subscriptionId: string;
+  /** `client_reference_id` when it is a uuid, lower-cased: the checkout ref; null when there is no usable one. */
+  checkoutRef: string | null;
+  clientReferenceId: string | null;
+  customerId: string | null;
+  checkoutSessionId: string;
+  livemode: boolean | null;
+  /**
+   * The payer's email as Stripe has it for the checkout (`customer_details.email`, else
+   * `customer_email`): where the plan's emails go (the account may be a child's). Null when absent
+   * or not an address.
+   */
+  payerEmail: string | null;
+  /** Why the subscription cannot be linked to anyone, when `checkoutRef` is null. */
+  problem: string | null;
+};
+
+/** Stripe's subscription statuses (the CHECK on unlimited_subscriptions.status). */
+export const SUBSCRIPTION_STATUSES = ["incomplete", "incomplete_expired", "trialing", "active", "past_due", "canceled", "unpaid", "paused"] as const;
+export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
+
+/** A customer.subscription.* event, ready for apply_unlimited_subscription(). Times are ISO strings. */
+export type UnlimitedSubscription = {
+  subscriptionId: string;
+  customerId: string | null;
+  status: SubscriptionStatus;
+  priceId: string | null;
+  trialEnd: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  cancelAt: string | null;
+  canceledAt: string | null;
+  endedAt: string | null;
+  livemode: boolean | null;
+  /** The event's `created`: a late delivery of an older event never overwrites a newer state. */
+  eventAt: string | null;
+};
+
 export type MappedEvent =
   /** Not Agathon's (Fuime's, or nobody's): nothing is written, not even the event id. */
   | { kind: "foreign"; reason: string }
-  /** Agathon's, but nothing to do yet (not paid yet, not a one-time checkout): nothing is written. */
+  /** Agathon's, but nothing to do yet (not paid yet, a retired plan): nothing is written. */
   | { kind: "ignored"; reason: string }
   | { kind: "grant"; purchase: InkPurchase }
   /** Agathon's and paid (or claimed paid), but not grantable: recorded for the owner, no ink. */
   | { kind: "review"; review: InkReview }
-  | { kind: "reverse"; refund: InkRefund };
+  | { kind: "reverse"; refund: InkRefund }
+  /** An Agathon Unlimited checkout: link the subscription to its user. */
+  | { kind: "link"; link: UnlimitedLink }
+  /** An Agathon Unlimited subscription's new state. */
+  | { kind: "subscription"; subscription: UnlimitedSubscription };
 
 /** The event types the handler acts on (scripts/stripe-setup.mjs WEBHOOK_EVENTS must match). */
-export const HANDLED_EVENTS = ["checkout.session.completed", "checkout.session.async_payment_succeeded", "charge.refunded"] as const;
+export const HANDLED_EVENTS = [
+  "checkout.session.completed",
+  "checkout.session.async_payment_succeeded",
+  "charge.refunded",
+  "customer.subscription.created",
+  "customer.subscription.updated",
+  "customer.subscription.deleted",
+] as const;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Pack ids as `ink_packs` allows them (ink_packs_id_format). */
@@ -157,8 +233,132 @@ export function isAgathonObject(obj: Record<string, unknown>): boolean {
   return metadataOf(obj).app === APP_TAG;
 }
 
+/** The subscription's items (`items.data[]`), each a record. */
+function itemsOf(obj: Record<string, unknown>): Array<Record<string, unknown>> {
+  const data = recordOf(obj.items).data;
+  return Array.isArray(data) ? data.map(recordOf) : [];
+}
+
+/**
+ * Whose subscription this is: `tagged` when the subscription (its `metadata`, set by the Payment
+ * Link's `subscription_data.metadata`) or one of its prices carries Agathon's tag, and its `plan`
+ * (`metadata.plan_id`, from the same places). A subscription Fuime sells carries neither.
+ */
+export function subscriptionPlanOf(obj: Record<string, unknown>): { tagged: boolean; plan: string | null } {
+  const sources = [metadataOf(obj), ...itemsOf(obj).map((item) => metadataOf(recordOf(item.price)))];
+  const ours = sources.filter((m) => m.app === APP_TAG);
+  const plan = ours.map((m) => str(m.plan_id)).find((p): p is string => p !== null) ?? null;
+  return { tagged: ours.length > 0, plan };
+}
+
+/** A Unix-seconds Stripe timestamp as ISO, or null. */
+function isoOf(v: unknown): string | null {
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? new Date(v * 1000).toISOString() : null;
+}
+
+/**
+ * When the subscription's current period ends: the subscription's own `current_period_end` (API
+ * versions before 2025-03-31), else the latest of its items' (newer versions moved it there; the
+ * endpoint's API version is the account's default, which this code does not choose).
+ */
+export function periodEndOf(obj: Record<string, unknown>): string | null {
+  const own = isoOf(obj.current_period_end);
+  if (own) return own;
+  const ends = itemsOf(obj)
+    .map((item) => item.current_period_end)
+    .filter((v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0);
+  return ends.length ? isoOf(Math.max(...ends)) : null;
+}
+
 const ignored = (reason: string): MappedEvent => ({ kind: "ignored", reason });
 const foreign = (reason: string): MappedEvent => ({ kind: "foreign", reason });
+
+/** The checkout's payer email (`customer_details.email`, else `customer_email`), trimmed, when it looks like one address. */
+export function payerEmailOf(obj: Record<string, unknown>): string | null {
+  const email = (str(recordOf(obj.customer_details).email) ?? str(obj.customer_email))?.trim() ?? "";
+  return email.length >= 3 && email.length <= 320 && /^[^\s@,;<>]+@[^\s@,;<>]+$/.test(email) ? email : null;
+}
+
+/** checkout.session.completed with `mode: subscription` and our tag: the Unlimited link, or a retired plan. */
+function mapSubscriptionCheckout(event: BillingEvent, obj: Record<string, unknown>): MappedEvent {
+  const plan = str(metadataOf(obj).plan_id);
+  // The Plus/Pro links of September also made subscription checkouts; they carried no plan_id.
+  if (plan !== UNLIMITED_PLAN_ID) return ignored(`not a one-time payment (mode subscription, plan ${plan ?? "missing"})`);
+  const sessionId = str(obj.id);
+  if (!sessionId) return ignored("checkout session has no id");
+  const subscriptionId = idOf(obj.subscription);
+  if (!subscriptionId) return ignored("Agathon Unlimited checkout without a subscription id");
+  // client_reference_id alone, never `metadata.user_id`: a plan is linked by checkout ref only.
+  const rawRef = str(obj.client_reference_id);
+  const checkoutRef = rawRef && UUID_RE.test(rawRef) ? rawRef.toLowerCase() : null;
+  return {
+    kind: "link",
+    link: {
+      subscriptionId,
+      checkoutRef,
+      clientReferenceId: rawRef,
+      customerId: idOf(obj.customer),
+      checkoutSessionId: sessionId,
+      livemode: typeof obj.livemode === "boolean" ? obj.livemode : (event.livemode ?? null),
+      payerEmail: payerEmailOf(obj),
+      problem: checkoutRef
+        ? null
+        : rawRef
+          ? "client_reference_id is not a checkout reference"
+          : "no client_reference_id (the Payment Link was opened outside the app)",
+    },
+  };
+}
+
+/**
+ * Stripe stamps events to the second, and a subscription's `created` and first `updated` often share
+ * one (a change made right after checkout). Within a second a subscription is created before it is
+ * updated, and updated before it is deleted, so the type breaks the tie: the event's time plus 0, 1
+ * or 2 milliseconds. Two updates in the same second stay in arrival order.
+ */
+const SAME_SECOND_ORDER: Record<string, number> = {
+  "customer.subscription.created": 0,
+  "customer.subscription.updated": 1,
+  "customer.subscription.deleted": 2,
+};
+
+/** The event's time as ISO, with SAME_SECOND_ORDER's tie-break; null when the event has none. */
+export function subscriptionEventAt(event: Pick<BillingEvent, "type" | "created">): string | null {
+  if (typeof event.created !== "number" || event.created <= 0) return null;
+  return new Date(event.created * 1000 + (SAME_SECOND_ORDER[event.type] ?? 0)).toISOString();
+}
+
+/** customer.subscription.created / updated / deleted. */
+function mapSubscription(event: BillingEvent, obj: Record<string, unknown>): MappedEvent {
+  const { tagged, plan } = subscriptionPlanOf(obj);
+  if (!tagged) return foreign("subscription is not tagged app=agathon-classroom");
+  if (plan !== UNLIMITED_PLAN_ID) return ignored(`not an Agathon Unlimited subscription (plan ${plan ?? "missing"})`);
+  const subscriptionId = str(obj.id);
+  if (!subscriptionId) return ignored("subscription has no id");
+  const raw = str(obj.status);
+  const known = (SUBSCRIPTION_STATUSES as readonly string[]).includes(raw ?? "") ? (raw as SubscriptionStatus) : null;
+  // A deleted subscription has ended, whatever its object still says.
+  const status: SubscriptionStatus | null =
+    event.type === "customer.subscription.deleted" ? (known === "incomplete_expired" ? known : "canceled") : known;
+  if (!status) return ignored(`unknown subscription status ${raw ?? "(missing)"}`);
+  return {
+    kind: "subscription",
+    subscription: {
+      subscriptionId,
+      customerId: idOf(obj.customer),
+      status,
+      priceId: itemsOf(obj).map((item) => idOf(item.price)).find((id): id is string => id !== null) ?? null,
+      trialEnd: isoOf(obj.trial_end),
+      currentPeriodEnd: periodEndOf(obj),
+      cancelAtPeriodEnd: obj.cancel_at_period_end === true,
+      cancelAt: isoOf(obj.cancel_at),
+      canceledAt: isoOf(obj.canceled_at),
+      endedAt: isoOf(obj.ended_at),
+      livemode: typeof obj.livemode === "boolean" ? obj.livemode : (event.livemode ?? null),
+      eventAt: subscriptionEventAt(event),
+    },
+  };
+}
 
 /**
  * Pure: provider event -> what to do. No I/O.
@@ -170,8 +370,17 @@ const foreign = (reason: string): MappedEvent => ({ kind: "foreign", reason });
  *        the database checks the amount covers the pack. Ours and `unpaid` (a delayed method;
  *        async_payment_succeeded follows) -> ignored. Ours and `no_payment_required` (nothing was
  *        paid: a 100 % promotion code), or paid without a usable user id or pack -> review.
+ *        Ours with `mode: "subscription"` and `metadata.plan_id = unlimited` -> link the
+ *        subscription to the account whose checkout ref is `client_reference_id` (whatever
+ *        `payment_status` says: a free week's checkout pays nothing, and the subscription's own
+ *        status decides the plan), with the payer's email; without a usable ref it is still
+ *        recorded, linked to nobody, for the owner. Any other subscription checkout
+ *        (the retired Plus/Pro links) -> ignored.
  *  - charge.refunded -> reverse by the charge's payment intent; `tagged` says whether the charge
  *        itself proves it is ours (else the handler checks for a recorded purchase first).
+ *  - customer.subscription.created / updated / deleted -> the subscription's state when it, or
+ *        one of its prices, carries our tag and `plan_id = unlimited`; untagged -> foreign (Fuime
+ *        sells subscriptions too); tagged with another plan -> ignored.
  *  - anything else -> foreign: the endpoint subscribes to nothing else.
  */
 export function mapBillingEvent(event: BillingEvent, priceMap: InkPriceMap): MappedEvent {
@@ -182,6 +391,7 @@ export function mapBillingEvent(event: BillingEvent, priceMap: InkPriceMap): Map
     case "checkout.session.async_payment_succeeded": {
       if (!isAgathonObject(obj)) return foreign("checkout session is not tagged app=agathon-classroom");
       const mode = str(obj.mode);
+      if (mode === "subscription") return mapSubscriptionCheckout(event, obj);
       if (mode !== "payment") return ignored(`not a one-time payment (mode ${mode ?? "missing"})`);
       const paymentStatus = str(obj.payment_status);
       if (paymentStatus === "unpaid") return ignored("not paid yet (payment_status unpaid)");
@@ -231,6 +441,11 @@ export function mapBillingEvent(event: BillingEvent, priceMap: InkPriceMap): Map
       };
     }
 
+    case "customer.subscription.created":
+    case "customer.subscription.updated":
+    case "customer.subscription.deleted":
+      return mapSubscription(event, obj);
+
     default:
       return foreign(`unhandled event type ${event.type}`);
   }
@@ -274,6 +489,21 @@ export type ReverseOutcome =
   | { status: "not_found" }
   | { status: "error"; message: string };
 
+export type LinkOutcome =
+  /** The subscription is this user's (now, or already: a redelivery). */
+  | { status: "linked"; userId: string; subscriptionStatus: string | null }
+  /** Recorded, but linked to nobody: no usable user id, or the account no longer exists. */
+  | { status: "unlinked"; reason: string }
+  /** Already linked to another account; that link stands. */
+  | { status: "conflict"; userId: string | null }
+  | { status: "error"; message: string };
+
+export type ApplyOutcome =
+  | { status: "applied"; userId: string | null; unlimited: boolean }
+  /** An older event than the one the row holds, or one that would revive an ended plan: nothing changed. */
+  | { status: "stale"; current: string | null }
+  | { status: "error"; message: string };
+
 export type BillingStore = {
   /** Read-only: is this payment intent an ink purchase or review we recorded? (An untagged refund's test.) */
   isInkPayment(paymentIntentId: string): Promise<boolean | { error: string }>;
@@ -284,6 +514,10 @@ export type BillingStore = {
   grantPurchase(purchase: InkPurchase, eventId: string): Promise<GrantOutcome>;
   recordReview(review: InkReview, eventId: string): Promise<{ recorded: boolean } | { error: string }>;
   reversePurchase(refund: InkRefund): Promise<ReverseOutcome>;
+  /** link_unlimited_checkout(): idempotent, first link wins. */
+  linkSubscription(link: UnlimitedLink): Promise<LinkOutcome>;
+  /** apply_unlimited_subscription(): idempotent, ordered by the event's time. */
+  applySubscription(subscription: UnlimitedSubscription): Promise<ApplyOutcome>;
 };
 
 const UNIQUE_VIOLATION = "23505";
@@ -368,7 +602,51 @@ export function supabaseBillingStore(url: string, serviceRoleKey: string): Billi
       if (row.duplicate === true) return { status: "duplicate" };
       return { status: "reversed", reversed: num(row.reversed), requested: num(row.requested), balance: num(row.balance) };
     },
+    async linkSubscription(l) {
+      const { data, error } = await client.rpc("link_unlimited_checkout", {
+        p_subscription_id: l.subscriptionId,
+        p_checkout_ref: l.checkoutRef,
+        p_customer_id: l.customerId,
+        p_checkout_session_id: l.checkoutSessionId,
+        p_livemode: l.livemode,
+        p_payer_email: l.payerEmail,
+      });
+      if (error) return { status: "error", message: error.message };
+      const row = rowOf(data);
+      if (!row) return { status: "error", message: "link_unlimited_checkout returned no row" };
+      return linkOutcomeOf(row, l);
+    },
+    async applySubscription(s) {
+      const { data, error } = await client.rpc("apply_unlimited_subscription", {
+        p_subscription_id: s.subscriptionId,
+        p_customer_id: s.customerId,
+        p_status: s.status,
+        p_price_id: s.priceId,
+        p_trial_end: s.trialEnd,
+        p_current_period_end: s.currentPeriodEnd,
+        p_cancel_at_period_end: s.cancelAtPeriodEnd,
+        p_cancel_at: s.cancelAt,
+        p_canceled_at: s.canceledAt,
+        p_ended_at: s.endedAt,
+        p_livemode: s.livemode,
+        p_event_at: s.eventAt,
+      });
+      if (error) return { status: "error", message: error.message };
+      const row = rowOf(data);
+      if (!row) return { status: "error", message: "apply_unlimited_subscription returned no row" };
+      if (row.stale === true) return { status: "stale", current: typeof row.status === "string" ? row.status : null };
+      return { status: "applied", userId: typeof row.user_id === "string" ? row.user_id : null, unlimited: row.unlimited === true };
+    },
   };
+}
+
+/** Read link_unlimited_checkout()'s answer. Exported for tests. */
+export function linkOutcomeOf(row: Record<string, unknown>, l: Pick<UnlimitedLink, "problem">): LinkOutcome {
+  const userId = typeof row.user_id === "string" ? row.user_id : null;
+  if (row.linked === true && userId) return { status: "linked", userId, subscriptionStatus: typeof row.status === "string" ? row.status : null };
+  if (row.conflict === true) return { status: "conflict", userId };
+  if (row.no_account === true) return { status: "unlinked", reason: "no account has this checkout reference (a user id, or an account deleted before the webhook?)" };
+  return { status: "unlinked", reason: l.problem ?? "no user to link" };
 }
 
 /* ------------------------------------------------------------------------- */
@@ -388,14 +666,46 @@ export type WebhookDeps = {
   createStore: (url: string, serviceRoleKey: string) => BillingStore;
   /** Unix seconds (signature tolerance). */
   now: () => number;
+  /**
+   * The "free week started" email for a subscription that may just have become linked and trialing
+   * (src/lib/email/unlimitedStarted.ts: it checks, and email_log sends it once). Never throws.
+   */
+  confirmStarted: (subscriptionId: string, log: pino.Logger) => Promise<unknown>;
+  /**
+   * Run work AFTER the response has gone to Stripe: next/server's `after` (Vercel keeps the function
+   * alive for it, up to its maxDuration). So email can neither fail the webhook (a non-2xx makes
+   * Stripe redeliver) nor slow its answer.
+   */
+  defer: (work: () => Promise<unknown>) => void;
 };
 
+/** `after(work)`, or (outside a request, where `after` throws) work started now and not awaited. Never throws. */
+export function deferAfterResponse(work: () => Promise<unknown>): void {
+  // async: a work that throws synchronously becomes a rejection, swallowed like any other (the
+  // email step logs its own failures).
+  const run = async () => {
+    try {
+      await work();
+    } catch {
+      /* never the webhook's problem */
+    }
+  };
+  try {
+    after(run);
+  } catch {
+    void run();
+  }
+}
+
 /**
- * What the webhook reads from outside the request: the env, the service-role store and the clock
- * (Unix seconds, for the signature tolerance). The route calls these; tests replace them.
+ * What the webhook reads from outside the request: the env, the service-role store, the clock
+ * (Unix seconds, for the signature tolerance), and the plan's confirmation email with the way it
+ * runs after the response. The route calls these; tests replace them.
  */
 export const webhookDeps: WebhookDeps = {
   getEnv: () => getServerEnv(),
   createStore: supabaseBillingStore,
   now: () => Math.floor(Date.now() / 1000),
+  confirmStarted: (subscriptionId, log) => sendUnlimitedStarted(emailDeps, subscriptionId, log),
+  defer: deferAfterResponse,
 };

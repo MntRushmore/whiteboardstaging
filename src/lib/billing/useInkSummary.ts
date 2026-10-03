@@ -8,6 +8,7 @@ import { describeError } from "@/lib/errorMessage";
 import { parseInkSummary, type InkSummary } from "@/lib/billing/inkSummary";
 import type { CheckoutMark } from "@/lib/billing/checkout";
 import { initialSection, sectionReducer, type SectionState } from "@/lib/billing/accountState";
+import { isUnlimited, parseUnlimitedState } from "@/lib/billing/unlimited";
 
 export const INK_SUMMARY_FALLBACK = "Couldn't read your ink. Retry in a moment.";
 
@@ -161,7 +162,10 @@ export interface InkStore {
   refresh(force?: boolean): Promise<void>;
   /** a paid call happened: a 402's `remaining` is shown at once, otherwise one re-read once a burst has settled */
   spent(remaining?: number): void;
-  /** a buy button opened checkout: re-read every CHECKOUT_WATCH_MS until the balance grows (or CHECKOUT_WATCH_FOR_MS) */
+  /**
+   * a buy button opened checkout (or the Unlimited checkout came back): re-read every
+   * CHECKOUT_WATCH_MS until the balance grows or Agathon Unlimited turns on (or CHECKOUT_WATCH_FOR_MS)
+   */
   watchCheckout(): void;
 }
 
@@ -170,6 +174,11 @@ export interface InkStoreDeps {
   /** wires the window events to the store while anything is attached; returns the unbind */
   bind?: (store: InkStore) => () => void;
   now?: () => number;
+}
+
+/** True when the summary says Agathon Unlimited is on (help spends no ink). */
+function planOn(summary: InkSummary): boolean {
+  return isUnlimited(parseUnlimitedState(summary.unlimited));
 }
 
 /**
@@ -189,7 +198,8 @@ export function createInkStore({ read, bind, now = Date.now }: InkStoreDeps): In
   let spentTimer: ReturnType<typeof setTimeout> | null = null;
   let watch: ReturnType<typeof setInterval> | null = null;
   let watchUntil = 0;
-  let watchFrom: number | null = null;
+  /** what the watch's first read saw: the balance, and whether the plan was already on */
+  let watchFrom: { balance: number; plan: boolean } | null = null;
   const listeners = new Set<() => void>();
 
   const set = (next: SectionState<InkSummary>) => {
@@ -213,9 +223,10 @@ export function createInkStore({ read, bind, now = Date.now }: InkStoreDeps): In
         else {
           readAt = now();
           set({ status: "ready", data: result.summary, error: null });
-          // The checkout watch ends when the ink has arrived (or its time is up).
-          if (watch && (now() > watchUntil || (watchFrom !== null && result.summary.balance > watchFrom))) stopWatch();
-          if (watch && watchFrom === null) watchFrom = result.summary.balance;
+          // The checkout watch ends when the ink or the plan has arrived (or its time is up).
+          const arrived = watchFrom !== null && (result.summary.balance > watchFrom.balance || (!watchFrom.plan && planOn(result.summary)));
+          if (watch && (now() > watchUntil || arrived)) stopWatch();
+          if (watch && watchFrom === null) watchFrom = { balance: result.summary.balance, plan: planOn(result.summary) };
         }
         if (again) {
           again = false;
@@ -308,6 +319,16 @@ export function bindInkEvents(store: InkStore, win: EventTarget = window, doc: P
 }
 
 const inkStore = createInkStore({ read: () => readInkSummary(() => supabase.rpc("ink_summary")), bind: (s) => bindInkEvents(s) });
+
+/**
+ * Watch this page's summary for a checkout's result now: re-read until the ink or the plan arrives
+ * (the webhook usually lands within seconds). For a consumer that is already mounted (useUnlimited,
+ * back on `?unlimited=started`, or a page that opened the Unlimited checkout in a new tab); a pack's
+ * buy button uses watchInkCheckout, which also leaves a mark for the return page.
+ */
+export function watchCheckoutResult(): void {
+  inkStore.watchCheckout();
+}
 const SIGNED_OUT = initialSection<InkSummary>();
 
 /**

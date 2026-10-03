@@ -18,6 +18,14 @@
  * that the browser reports as a console error. Instead the persisted session is
  * removed from storage directly (the keys auth-js itself uses) and `getSession()`
  * is called once so the client reloads the now-empty state without any request.
+ *
+ * Agathon Unlimited: an account whose plan would charge the card again (in its free
+ * week, paid up or retrying a payment, and not set to cancel) is NOT deleted. With no
+ * server key nothing here can cancel a Stripe subscription, so the grown-up cancels it
+ * in the customer portal first. The plan is checked FIRST, before any image is removed
+ * (a refused deletion must not have deleted anything), with a fresh read of the
+ * caller's own unlimited_subscriptions rows; delete_own_account() refuses too
+ * (supabase/migrations/20261003020000_unlimited.sql), as the backstop.
  */
 
 export const BOARD_ASSETS_BUCKET = "board-assets";
@@ -29,8 +37,8 @@ type QueryResult<T> = PromiseLike<{ data: T | null; error: { message: string } |
 
 /** The slice of a Supabase client this module uses (lets tests pass a fake). */
 export type DeleteAccountClient = {
-  from: (table: "board_assets") => {
-    select: (columns: "object_path") => QueryResult<Array<{ object_path: string | null }>>;
+  from: (table: "board_assets" | "unlimited_subscriptions") => {
+    select: (columns: string) => QueryResult<Array<Record<string, unknown>>>;
   };
   storage: {
     from: (bucket: string) => {
@@ -167,19 +175,67 @@ export async function removeOwnBoardAssets(client: DeleteAccountClient): Promise
   return { found: paths.length, removed, error: firstError };
 }
 
+/** The hint delete_own_account() raises with while a plan would charge again. */
+export const PLAN_STILL_ACTIVE_HINT = "unlimited_active";
+
+/** Deletion refused: the Agathon Unlimited plan must be cancelled in the customer portal first. */
+export class PlanStillActiveError extends Error {
+  readonly code = PLAN_STILL_ACTIVE_HINT;
+  constructor() {
+    super("Cancel Agathon Unlimited before deleting your account, so you're not charged again.");
+    this.name = "PlanStillActiveError";
+  }
+}
+
+/** Stripe statuses in which a subscription charges again unless it is set to cancel. */
+const CHARGING = new Set(["trialing", "active", "past_due", "unpaid"]);
+
 /**
- * Remove own Storage objects (best effort), delete the account via the RPC, then
- * forget the session locally (no network — the user no longer exists).
- * Throws the RPC error so the caller can show it; on that path the session is kept
- * so the user can retry. Asset problems come back in `assets`.
+ * True when one of these unlimited_subscriptions rows would charge again: the rule of
+ * delete_own_account() in SQL (and of mustCancelBeforeDeleting for the hook's state).
+ */
+export function planBlocksDeletion(rows: ReadonlyArray<Record<string, unknown>> | null | undefined): boolean {
+  return (rows ?? []).some((r) => CHARGING.has(String(r.status)) && r.cancel_at_period_end !== true && (r.cancel_at === null || r.cancel_at === undefined));
+}
+
+/** True for a PlanStillActiveError or the database's own refusal (PostgREST passes the hint through). */
+export function isPlanStillActiveError(error: unknown): boolean {
+  if (error instanceof PlanStillActiveError) return true;
+  return !!error && typeof error === "object" && (error as { hint?: unknown }).hint === PLAN_STILL_ACTIVE_HINT;
+}
+
+/** A database without the plan's table (the Unlimited migration not applied): nothing to cancel. */
+const MISSING_TABLE_RE = /could not find the table|relation .* does not exist/i;
+
+/**
+ * Throws PlanStillActiveError while the caller's plan would charge again. Reads the caller's own
+ * rows (RLS) fresh, not a cached summary: the plan may have changed in another tab. A read that
+ * fails for any other reason throws too: deletion never goes ahead unchecked.
+ */
+export async function assertNoChargingPlan(client: DeleteAccountClient): Promise<void> {
+  const { data, error } = await client.from("unlimited_subscriptions").select("status,cancel_at_period_end,cancel_at");
+  if (error) {
+    if (MISSING_TABLE_RE.test(error.message)) return;
+    throw error;
+  }
+  if (planBlocksDeletion(data)) throw new PlanStillActiveError();
+}
+
+/**
+ * Check the plan (nothing is touched while it would charge again), remove own Storage
+ * objects (best effort), delete the account via the RPC, then forget the session
+ * locally (no network — the user no longer exists).
+ * Throws PlanStillActiveError, or the RPC error, so the caller can show it; on that
+ * path the session is kept so the user can retry. Asset problems come back in `assets`.
  */
 export async function deleteOwnAccount(
   client: DeleteAccountClient,
   options: { storage?: KeyValueStorage | null } = {},
 ): Promise<{ assets: RemoveAssetsResult; clearedKeys: string[] }> {
+  await assertNoChargingPlan(client);
   const assets = await removeOwnBoardAssets(client);
   const { error } = await client.rpc("delete_own_account");
-  if (error) throw error;
+  if (error) throw isPlanStillActiveError(error) ? new PlanStillActiveError() : error;
   const clearedKeys = await clearLocalSession(client, options.storage === undefined ? defaultStorage() : options.storage);
   return { assets, clearedKeys };
 }

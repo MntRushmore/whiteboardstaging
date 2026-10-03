@@ -3,9 +3,12 @@ import { resetServerEnvCache } from "@/lib/env";
 import {
   BILLING_UNAVAILABLE_MESSAGE,
   BUY_INK_PATH,
+  FAIR_USE_FALLBACK_RETRY_MS,
   INK_EMPTY_MESSAGE,
   ROUTE_COSTS,
+  aboutHowLong,
   billingEnforced,
+  fairUseResponse,
   billingUnavailableResponse,
   consumeInk,
   consumeErrorToResult,
@@ -101,6 +104,18 @@ describe("normalizeConsumeResult", () => {
   it("never reports a negative balance", () => {
     expect(normalizeConsumeResult({ ok: false, remaining: -4 })).toMatchObject({ remaining: 0 });
   });
+
+  it("reads an Agathon Unlimited answer: ok with the untouched balance, and the fair-use refusal", () => {
+    expect(normalizeConsumeResult({ ok: true, remaining: 300, reason: null, unlimited: true })).toEqual({ ok: true, remaining: 300, unlimited: true });
+    expect(normalizeConsumeResult({ ok: false, remaining: 300, reason: "fair_use", unlimited: true, retry_after_ms: 3_601_000 })).toEqual({
+      ok: false,
+      reason: "fair_use",
+      retryAfterMs: 3_601_000,
+    });
+    // a refusal over the cap is never read as out of ink, even with no usable retry hint
+    expect(normalizeConsumeResult({ ok: false, remaining: 0, reason: "fair_use" })).toEqual({ ok: false, reason: "fair_use", retryAfterMs: FAIR_USE_FALLBACK_RETRY_MS });
+    expect(normalizeConsumeResult({ ok: false, reason: "fair_use", retry_after_ms: 999_999_999 })).toMatchObject({ retryAfterMs: 24 * 60 * 60_000 });
+  });
 });
 
 describe("consumeErrorToResult", () => {
@@ -176,6 +191,17 @@ describe("responses", () => {
     expect(await inkEmptyResponse(-3).json()).toEqual({ error: "ink_empty", message: INK_EMPTY_MESSAGE, remaining: 0, buyUrl: "/account" });
   });
 
+  it("the fair-use 429 says how long, in words a student reads at a glance", async () => {
+    expect(aboutHowLong(30_000)).toBe("about a minute");
+    expect(aboutHowLong(40 * 60_000)).toBe("about 40 minutes");
+    expect(aboutHowLong(70 * 60_000)).toBe("about an hour");
+    expect(aboutHowLong(23.6 * 60 * 60_000)).toBe("about 24 hours");
+    const res = fairUseResponse(10);
+    // at least a second, so Retry-After is never 0
+    expect(res.headers.get("retry-after")).toBe("1");
+    expect(await res.json()).toMatchObject({ error: "rate_limited", retryAfterMs: 1000, reason: "fair_use" });
+  });
+
   it("503 feature_unavailable points at the migrations", async () => {
     const res = billingUnavailableResponse();
     expect(res.status).toBe(503);
@@ -211,6 +237,23 @@ describe("enforceInk", () => {
     expect(res.status).toBe(402);
     // `cost` is what the refused call needs (a worked solution: 10), so the board knows when it is affordable
     expect(await res.json()).toMatchObject({ error: "ink_empty", remaining: 4, cost: 10, buyUrl: "/account" });
+  });
+
+  it("lets an Agathon Unlimited subscriber through with the balance untouched", async () => {
+    const client = fakeRpc({ data: { ok: true, remaining: 0, reason: null, unlimited: true } });
+    // zero ink left does not matter: the subscription pays for help
+    await expect(enforceInk(input, quiet, client)).resolves.toEqual({ remaining: 0 });
+  });
+
+  it("answers a subscriber over the fair-use cap like a rate limit: 429 rate_limited with Retry-After, never 402", async () => {
+    const result = await enforceInk(input, quiet, fakeRpc({ data: { ok: false, remaining: 0, reason: "fair_use", unlimited: true, retry_after_ms: 3 * 60 * 60_000 } }));
+    const res = (result as { response: Response }).response;
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe(String(3 * 60 * 60));
+    const body = await res.json();
+    expect(body).toMatchObject({ error: "rate_limited", retryAfterMs: 3 * 60 * 60_000, reason: "fair_use" });
+    expect(body.message).toBe("You've reached the daily fair-use limit of Agathon Unlimited. The tutor is back in about 3 hours.");
+    expect(body).not.toHaveProperty("buyUrl");
   });
 
   it("fails closed with 503 when the RPC is unavailable and billing is enforced", async () => {
@@ -331,6 +374,24 @@ describe("runCharged", () => {
     expect(res.status).toBe(502);
     expect(client.calls).toEqual([{ fn: "refund_ink_for", args: { p_user_id: "11111111-2222-4333-8444-555555555555", p_request_id: "req-7" } }]);
     expect(log.lines).toEqual(["info:ink refunded"]);
+  });
+
+  it("keeps the charge when the client abandoned a request that asked for it (keepChargeWhenAborted); refunds when not aborted", async () => {
+    const aborted = new AbortController();
+    aborted.abort();
+    const client = fakeRpc({ data: { refunded: 2, remaining: 2 } });
+    const log = recordingLog();
+    const fail = async () => {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    };
+    const res = await runCharged(input, log, fail, onError, client, { keepChargeWhenAborted: aborted.signal });
+    expect(res.status).toBe(502);
+    expect(client.calls).toEqual([]);
+    expect(log.lines).toEqual(["info:request abandoned by the client after it was charged; charge kept"]);
+
+    const live = new AbortController();
+    await runCharged(input, recordingLog(), async () => Response.json({}, { status: 502 }), onError, client, { keepChargeWhenAborted: live.signal });
+    expect(client.calls.map((c) => c.fn)).toEqual(["refund_ink_for"]);
   });
 
   it("maps a thrown error through onError and refunds", async () => {

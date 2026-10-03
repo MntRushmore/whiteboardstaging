@@ -5,8 +5,10 @@ import type { StrokePayload } from "@/lib/live/contracts";
 /**
  * Mathpix handwriting recognition over the strokes API.
  * Docs: https://docs.mathpix.com/reference/post-v3-strokes (shape re-verified against the docs + a live call on 2026-09-12)
- * Request shape (verified with a real call on 2026-09-11):
- *   { strokes: { strokes: { x: number[][], y: number[][] } }, formats: ["latex_styled", "text"] }
+ * Request shape (verified with a real call on 2026-09-11; `metadata.improve_mathpix: false` with one
+ * on 2026-10-03):
+ *   { strokes: { strokes: { x: number[][], y: number[][] } }, formats: ["latex_styled", "text"],
+ *     metadata: { improve_mathpix: false } }
  * Response: { latex_styled, text, confidence, confidence_rate, is_handwritten, ... }
  */
 export const MATHPIX_STROKES_URL = "https://api.mathpix.com/v3/strokes";
@@ -90,6 +92,11 @@ export function buildStrokesBody(payload: StrokePayload, dataOptions?: Record<st
     // a student's `3(x+2)=21` (flat-topped 3, looped 2s) came back rotated 180° as
     // `1 e=(e+x) \varepsilon` at 93 % confidence, and the model then "solved" that. 1 = never.
     auto_rotate_confidence_threshold: 1,
+    // The strokes are a child's handwriting. Off, Mathpix persists no image data or anything
+    // derived from it, its QA team sees none, and nothing shows in its console; only the request's
+    // metadata (status, time) is kept for billing (docs.mathpix.com/concepts/privacy; the default
+    // is on). An account-level value (set by Mathpix support) would override this one: keep it unset.
+    metadata: { improve_mathpix: false },
   };
   if (dataOptions) body.data_options = dataOptions;
   return body;

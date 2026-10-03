@@ -226,6 +226,21 @@ export function createSupabaseHttp(cfg) {
     },
 
     /**
+     * Storage's list API (what `supabase.storage.from(bucket).list(prefix)` calls): the names one
+     * level under `prefix`, as far as this identity's SELECT policies on storage.objects allow.
+     * @param {string} bucket
+     * @param {string} prefix
+     */
+    async storageList(bucket, prefix) {
+      const res = await fetchImpl(`${base}/storage/v1/object/list/${bucket}`, {
+        method: "POST",
+        headers: headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ prefix, limit: 100, offset: 0 }),
+      });
+      return toResult(res);
+    },
+
+    /**
      * @param {string} bucket
      * @param {string} path
      */
@@ -267,7 +282,7 @@ export async function signInWithPassword(url, anonKey, email, password, fetchImp
  * (supabase/migrations/20261003010000_signup_consent.sql), whether it signs up or is created with
  * the service role. Kept equal to TERMS_VERSION in src/lib/legal.ts (verifyRls.test.ts checks).
  */
-export const TERMS_VERSION = "2026-10-03";
+export const TERMS_VERSION = "2026-10-04";
 
 /**
  * @param {string} url

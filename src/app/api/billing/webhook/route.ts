@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/billing/webhook — Stripe-compatible billing webhook for ink packs.
+ * POST /api/billing/webhook — Stripe-compatible billing webhook for ink packs and Agathon Unlimited.
  *
  * PUBLIC BY DESIGN (allow-listed in scripts/lib/routes.mjs, reason "signature-verified
  * provider webhook"): the provider has no user JWT. Authentication is the
@@ -29,12 +29,22 @@ export const dynamic = "force-dynamic";
  *   charge.refunded
  *       reverse_ink_purchase(): takes the refunded share of that purchase's ink back, at most
  *       what is still unspent (supabase/migrations/20261002000000_ink.sql)
+ *   checkout.session.completed with mode subscription (the Agathon Unlimited Payment Link)
+ *       link_unlimited_checkout(): the subscription belongs to the account whose checkout ref
+ *       (profiles.checkout_ref, never a user id) is client_reference_id, with the payer's email.
+ *       Without a usable one it is recorded linked to nobody, logged at warn for the owner.
+ *   customer.subscription.created / updated / deleted (Agathon Unlimited)
+ *       apply_unlimited_subscription(): status, trial end, period end, cancellation
+ *       (supabase/migrations/20261003020000_unlimited.sql). Stripe does not order deliveries: the
+ *       subscription's events may land before the checkout that names its user, so either can
+ *       create the row, and an older event that arrives late never overwrites a newer state.
  *
  * SHARED STRIPE ACCOUNT. The account also runs Fuime, so this endpoint receives Fuime's
  * checkouts and refunds too. Whether an event is Agathon's is decided BEFORE anything is
  * written: a Checkout Session is ours only with `metadata.app = "agathon-classroom"` (the
  * Payment Link's metadata, copied onto the session); a refund only when its charge carries that
- * tag or its payment intent is an ink purchase or review we recorded (a read, nothing written).
+ * tag or its payment intent is an ink purchase or review we recorded (a read, nothing written); a
+ * subscription only when it (or its price) carries the tag, and only Unlimited's (`plan_id`).
  * A foreign event answers `200 { received: true, ignored: true }` and leaves NO row anywhere, not
  * even in billing_events: its payload holds another business's buyers' names, emails and addresses.
  *
@@ -42,8 +52,15 @@ export const dynamic = "force-dynamic";
  * other mode answers 400. Unset, a deployment accepts live events only, and a localhost dev
  * server accepts either (`stripe listen` forwards test events there).
  *
- * Idempotency: grant_ink_purchase is keyed on the Checkout Session id and reverse_ink_purchase on
- * the growth of the cumulative refunded amount, so a redelivered event is simply applied again
+ * The free week's confirmation email (auto-renewal laws: the terms and how to cancel, to the payer):
+ * once the subscription is both linked to an account and trialing, by whichever of its events
+ * completes that, the route asks for it AFTER answering (`deps.defer`, next/server's `after`), so
+ * email never fails or slows this endpoint. Every redelivery asks again; email_log sends it once
+ * (src/lib/email/unlimitedStarted.ts), and the daily cron catches one that could not be sent.
+ *
+ * Idempotency: grant_ink_purchase is keyed on the Checkout Session id, reverse_ink_purchase on
+ * the growth of the cumulative refunded amount, and the Unlimited writers on the subscription id
+ * (with the event's time deciding between states), so a redelivered event is simply applied again
  * (and answers duplicate). `billing_events` is the log of the Agathon events received; a failure a
  * retry could fix answers 500 so Stripe redelivers. Nothing depends on that log for correctness,
  * so a redelivery whose first attempt failed half-way still gets its ink.
@@ -172,6 +189,8 @@ export async function POST(req: Request): Promise<Response> {
     return json(500, "internal_error", "Could not apply the billing update.");
   };
   const done = (duplicate: boolean) => Response.json(duplicate ? { received: true, duplicate: true } : { received: true });
+  // The plan's "free week started" email, after the response (see the header): never awaited here.
+  const confirmStartedLater = (subscriptionId: string) => deps.defer(() => deps.confirmStarted(subscriptionId, eventLog));
 
   if (mapped.kind === "review") {
     const r = mapped.review;
@@ -203,6 +222,48 @@ export async function POST(req: Request): Promise<Response> {
         return done(false);
       default:
         return failed("ink purchase grant failed", { error: outcome.message });
+    }
+  }
+
+  if (mapped.kind === "link") {
+    const l = mapped.link;
+    const outcome = await store.linkSubscription(l);
+    switch (outcome.status) {
+      case "linked":
+        eventLog.info({ userId: outcome.userId, subscription: l.subscriptionId, status: outcome.subscriptionStatus }, "Agathon Unlimited linked to its account");
+        if (outcome.subscriptionStatus === "trialing") confirmStartedLater(l.subscriptionId);
+        return done(false);
+      case "conflict":
+        eventLog.warn({ subscription: l.subscriptionId, linkedTo: outcome.userId }, "Agathon Unlimited already linked to another account; the first link stands");
+        return done(false);
+      case "unlinked":
+        // Paid for (or in its free week) but nobody gets the plan: loud, so the owner links it by hand.
+        eventLog.warn(
+          { subscription: l.subscriptionId, session: l.checkoutSessionId, customer: l.customerId, reason: outcome.reason },
+          "Agathon Unlimited checkout NOT linked to an account: link it by hand (docs/RUNBOOK-billing.md)",
+        );
+        return done(false);
+      default:
+        return failed("could not link the Agathon Unlimited subscription", { error: outcome.message });
+    }
+  }
+
+  if (mapped.kind === "subscription") {
+    const s = mapped.subscription;
+    const outcome = await store.applySubscription(s);
+    switch (outcome.status) {
+      case "applied":
+        eventLog.info(
+          { subscription: s.subscriptionId, status: s.status, userId: outcome.userId, unlimited: outcome.unlimited, cancelAtPeriodEnd: s.cancelAtPeriodEnd },
+          outcome.userId ? "Agathon Unlimited subscription updated" : "Agathon Unlimited subscription recorded; its checkout has not linked an account yet",
+        );
+        if (outcome.userId && s.status === "trialing") confirmStartedLater(s.subscriptionId);
+        return done(false);
+      case "stale":
+        eventLog.info({ subscription: s.subscriptionId, status: s.status, current: outcome.current }, "older Agathon Unlimited event arrived late; the newer state stands");
+        return done(true);
+      default:
+        return failed("could not apply the Agathon Unlimited subscription", { error: outcome.message });
     }
   }
 

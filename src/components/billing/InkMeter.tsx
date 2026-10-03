@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect } from "react";
+import { InfinityIcon } from "lucide-react";
 import { InkBottle } from "@/components/billing/InkBottle";
 import { openInkDialog } from "@/lib/billing/inkDialog";
 import { INK_COPY, bottleFill, formatInk, inkTone } from "@/lib/billing/inkSummary";
+import { UNLIMITED_METER_COPY, isUnlimited } from "@/lib/billing/unlimited";
 import { useInkSummary } from "@/lib/billing/useInkSummary";
+import { useUnlimited } from "@/lib/billing/useUnlimited";
 import { cn } from "@/lib/utils";
 
 const TONE_CLASS = {
@@ -12,6 +15,8 @@ const TONE_CLASS = {
   low: "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100",
   empty: "border-red-300 bg-red-50 text-red-800 hover:bg-red-100",
 } as const;
+
+const PILL = "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium tabular-nums shadow-sm transition-colors";
 
 /**
  * The board bar's ink meter: the bottle (its fill is the balance) and the number ("300 ink" on a
@@ -22,15 +27,38 @@ const TONE_CLASS = {
  * the balance has loaded, and silent on failure: the bar is not where a metering hiccup is
  * explained. The balance re-reads on focus, on return to the tab and after a checkout
  * (useInkSummary), so bought ink appears without a reload.
+ *
+ * With Agathon Unlimited on (trialing or active), help spends no ink, so the count would only
+ * worry the student: the meter shows ∞ and "Unlimited" instead, quietly, and offers no packs (it
+ * is not a button). The board is told the balance is unlimited, so an "out of ink" left over from
+ * before the plan arrived clears and the refused help runs.
  */
 export function InkMeter({ className, onBalance }: { className?: string; onBalance?: (balance: number) => void }) {
   const { summary } = useInkSummary();
+  const { state } = useUnlimited();
+  const unlimited = isUnlimited(state);
   const balance = summary?.balance ?? null;
   // The board clears a stale "out of ink" error here once ink is back (bought in another tab).
   useEffect(() => {
-    if (balance !== null) onBalance?.(balance);
-  }, [balance, onBalance]);
+    if (balance === null) return;
+    onBalance?.(unlimited ? Number.POSITIVE_INFINITY : balance);
+  }, [balance, unlimited, onBalance]);
   if (!summary) return null;
+  if (unlimited) {
+    return (
+      <span
+        role="status"
+        data-testid="ink-meter"
+        data-tone="unlimited"
+        title={UNLIMITED_METER_COPY.label}
+        aria-label={UNLIMITED_METER_COPY.label}
+        className={cn(PILL, "border-input bg-white text-foreground", className)}
+      >
+        <InfinityIcon className="size-4 shrink-0" aria-hidden />
+        <span className="hidden @5xl/bar:inline">{UNLIMITED_METER_COPY.word}</span>
+      </span>
+    );
+  }
   const tone = inkTone(summary.balance);
   const label = INK_COPY.meterLabel(summary.balance);
   return (
@@ -41,11 +69,7 @@ export function InkMeter({ className, onBalance }: { className?: string; onBalan
       data-tone={tone}
       title={tone === "ok" ? label : `${label}: ${INK_COPY.getInk.toLowerCase()}`}
       aria-label={tone === "ok" ? label : `${label}. ${INK_COPY.getInk}`}
-      className={cn(
-        "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium tabular-nums shadow-sm transition-colors",
-        TONE_CLASS[tone],
-        className,
-      )}
+      className={cn(PILL, TONE_CLASS[tone], className)}
     >
       <InkBottle fill={bottleFill(summary.balance)} tone={tone} className="shrink-0" />
       <span>{formatInk(summary.balance)}</span>

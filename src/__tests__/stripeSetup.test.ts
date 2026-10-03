@@ -7,17 +7,31 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { LEGAL } from "@/lib/legal";
 import {
   APP_TAG,
   PACKS,
   RETIRED_PLAN_IDS,
   STATEMENT_DESCRIPTOR_SUFFIX,
+  UNLIMITED_STATEMENT_DESCRIPTOR,
+  UNLIMITED,
+  UNLIMITED_CHECKOUT_NOTE,
   WEBHOOK_EVENTS,
   envLines,
   findPaymentLink,
+  findPortalConfig,
   findPrice,
   findProduct,
+  findUnlimitedLink,
+  findUnlimitedPrice,
+  findUnlimitedProduct,
   findWebhook,
+  portalBody,
+  portalMatches,
+  unlimitedLinkBody,
+  unlimitedPriceBody,
+  unlimitedProductBody,
+  unlimitedReturnUrl,
   formFields,
   guardedApi,
   inkReturnUrl,
@@ -38,6 +52,7 @@ import {
 import { APP_TAG as WEBHOOK_APP_TAG, HANDLED_EVENTS, mapBillingEvent } from "@/lib/server/billingWebhook";
 import { parseInkPriceMap } from "@/lib/env";
 import { parseBillingLinks } from "@/lib/billing/checkout";
+import { UNLIMITED_PLAN, isUnlimitedReturn, parseUnlimitedLink } from "@/lib/billing/unlimited";
 
 const ROOT = resolve(__dirname, "..", "..");
 
@@ -135,8 +150,11 @@ describe("request bodies", () => {
       if (mapped.kind === "foreign" || mapped.kind === "ignored") expect(mapped.reason).not.toMatch(/unhandled event type/);
     }
     expect(webhookEventsMatch({ enabled_events: [...WEBHOOK_EVENTS] })).toBe(true);
-    // the plan-era events are dropped, not kept alongside
-    expect(webhookEventsMatch({ enabled_events: [...WEBHOOK_EVENTS, "customer.subscription.updated"] })).toBe(false);
+    // Agathon Unlimited's subscription events are among them
+    for (const type of ["customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"]) expect(WEBHOOK_EVENTS).toContain(type);
+    // anything else is dropped, not kept alongside
+    expect(webhookEventsMatch({ enabled_events: [...WEBHOOK_EVENTS, "invoice.paid"] })).toBe(false);
+    expect(webhookEventsMatch({ enabled_events: ["checkout.session.completed", "checkout.session.async_payment_succeeded", "charge.refunded"] })).toBe(false);
     expect(webhookEventsMatch({ enabled_events: ["checkout.session.completed"] })).toBe(false);
     expect(webhookEventsMatch({ enabled_events: ["*"] })).toBe(false);
   });
@@ -147,10 +165,133 @@ describe("request bodies", () => {
   });
 });
 
+describe("Agathon Unlimited", () => {
+  it("the script charges what the app shows: $25 a month after 7 days free (UNLIMITED_PLAN)", () => {
+    expect(UNLIMITED.id).toBe(UNLIMITED_PLAN.id);
+    expect(UNLIMITED.name).toBe(UNLIMITED_PLAN.name);
+    expect(UNLIMITED.priceCents).toBe(UNLIMITED_PLAN.monthlyUsd * 100);
+    expect(UNLIMITED.trialDays).toBe(UNLIMITED_PLAN.trialDays);
+    expect(UNLIMITED).toMatchObject({ currency: "usd", interval: "month" });
+  });
+
+  it("a tagged product and a MONTHLY price, both marked plan_id unlimited", () => {
+    expect(unlimitedProductBody()).toEqual({
+      name: "Agathon Unlimited",
+      description: "Help from the AI tutor without counting ink. 7 days free, then $25 a month. Cancel any time.",
+      statement_descriptor: "AGATHON",
+      metadata: { app: APP_TAG, plan_id: "unlimited" },
+    });
+    expect(unlimitedPriceBody("prod_u")).toEqual({
+      product: "prod_u",
+      currency: "usd",
+      unit_amount: 2500,
+      recurring: { interval: "month" },
+      nickname: "Agathon Unlimited monthly",
+      metadata: { app: APP_TAG, plan_id: "unlimited" },
+    });
+  });
+
+  it("card statements show AGATHON for the plan, not the shared account's FUIME (the product's statement_descriptor, Stripe's rule for subscription charges)", () => {
+    // Stripe: 5-22 Latin characters, at least one letter, none of < > \ ' " *
+    expect(UNLIMITED_STATEMENT_DESCRIPTOR).toMatch(/^(?=.*[A-Za-z])[^<>\\'"*]{5,22}$/);
+    expect(UNLIMITED_STATEMENT_DESCRIPTOR).toBe("AGATHON");
+    expect(unlimitedProductBody().statement_descriptor).toBe(UNLIMITED_STATEMENT_DESCRIPTOR);
+    // and the legal pages say what the statement shows
+    expect(LEGAL.statementDescriptors.unlimited).toBe(UNLIMITED_STATEMENT_DESCRIPTOR);
+    expect(LEGAL.statementDescriptors.inkPacks).toBe(`FUIME* ${STATEMENT_DESCRIPTOR_SUFFIX}`);
+  });
+
+  it("the Payment Link starts a subscription with the free week, takes the card up front and comes back to /?unlimited=started", () => {
+    const body = unlimitedLinkBody("price_u", "https://a.example.com");
+    expect(body.line_items).toEqual([{ price: "price_u", quantity: 1 }]);
+    expect(body.subscription_data).toEqual({ trial_period_days: 7, metadata: { app: APP_TAG, plan_id: "unlimited" } });
+    expect(body.payment_method_collection).toBe("always");
+    expect(body.allow_promotion_codes).toBe(false);
+    expect(body.metadata).toEqual({ app: APP_TAG, plan_id: "unlimited", price_id: "price_u", trial_days: "7" });
+    expect(body.after_completion).toEqual({ type: "redirect", redirect: { url: "https://a.example.com/?unlimited=started" } });
+    // the home recognises the return the app's own way
+    expect(isUnlimitedReturn(new URL(unlimitedReturnUrl("https://a.example.com")).search)).toBe(true);
+    // payment-mode-only fields would make Stripe refuse the link
+    expect(body).not.toHaveProperty("submit_type");
+    expect(body).not.toHaveProperty("payment_intent_data");
+    expect(body.custom_text.submit.message).toBe(UNLIMITED_CHECKOUT_NOTE);
+    expect(UNLIMITED_CHECKOUT_NOTE).toBe("Free for 7 days, then $25 a month until you cancel. Cancel before the free week ends and you won't be charged.");
+    expect(UNLIMITED_CHECKOUT_NOTE.length).toBeLessThanOrEqual(1200);
+  });
+
+  it("the webhook knows the link's sessions and subscriptions as Unlimited", () => {
+    const body = unlimitedLinkBody("price_u", "https://a.example.com");
+    const session = { id: "cs_1", mode: "subscription", subscription: "sub_1", client_reference_id: "8d2a3f1e-4b6c-4d7e-9f01-23456789abcd", metadata: body.metadata };
+    expect(mapBillingEvent({ id: "evt", type: "checkout.session.completed", data: { object: session } }, {})).toMatchObject({ kind: "link" });
+    const sub = { id: "sub_1", status: "trialing", metadata: body.subscription_data.metadata };
+    expect(mapBillingEvent({ id: "evt2", type: "customer.subscription.created", data: { object: sub } }, {})).toMatchObject({ kind: "subscription" });
+  });
+
+  it("the portal cancels at the period end, updates the card, shows invoices, has a login page, and links the legal pages on a public site", () => {
+    const body = portalBody("https://a.example.com");
+    expect(body.features.subscription_cancel).toMatchObject({ enabled: true, mode: "at_period_end", proration_behavior: "none" });
+    expect(body.features.payment_method_update).toEqual({ enabled: true });
+    expect(body.features.invoice_history).toEqual({ enabled: true });
+    expect(body.features.subscription_update).toEqual({ enabled: false });
+    expect(body.features.customer_update).toEqual({ enabled: false });
+    expect(body.login_page).toEqual({ enabled: true });
+    expect(body.default_return_url).toBe("https://a.example.com/account");
+    expect(body.business_profile).toMatchObject({ privacy_policy_url: "https://a.example.com/privacy", terms_of_service_url: "https://a.example.com/terms" });
+    expect(body.metadata).toEqual({ app: APP_TAG, plan_id: "unlimited" });
+    expect(portalBody("http://localhost:3000").business_profile).toEqual({ headline: "Agathon Unlimited: manage or cancel your plan" });
+    expect(portalMatches({ ...body, login_page: { enabled: true, url: "https://billing.stripe.com/p/login/x" } }, "https://a.example.com")).toBe(true);
+    expect(portalMatches({ ...body, login_page: { enabled: false } }, "https://a.example.com")).toBe(false);
+    expect(portalMatches({ ...body, login_page: { enabled: true } }, "https://b.example.com")).toBe(false);
+  });
+
+  it("finds our Unlimited objects again only by their tags, exact price and trial", () => {
+    const tag = { app: APP_TAG, plan_id: "unlimited" };
+    expect(findUnlimitedProduct([{ id: "prod_x", active: true, name: "Agathon Unlimited", metadata: {} }, { id: "prod_u", active: true, metadata: tag }])?.id).toBe("prod_u");
+    const base = { active: true, product: "prod_u", currency: "usd", unit_amount: 2500, metadata: tag };
+    const prices = [
+      { ...base, id: "price_once" },
+      { ...base, id: "price_year", recurring: { interval: "year" } },
+      { ...base, id: "price_2mo", recurring: { interval: "month", interval_count: 2 } },
+      { ...base, id: "price_cheap", unit_amount: 2000, recurring: { interval: "month" } },
+      { ...base, id: "price_ok", recurring: { interval: "month", interval_count: 1 } },
+    ];
+    expect(findUnlimitedPrice(prices, "prod_u")?.id).toBe("price_ok");
+    expect(findUnlimitedPrice(prices.slice(0, 4), "prod_u")).toBeNull();
+    const links = [
+      { id: "plink_3day", active: true, metadata: { ...tag, price_id: "price_ok", trial_days: "3" } },
+      { id: "plink_ok", active: true, metadata: { ...tag, price_id: "price_ok", trial_days: "7" } },
+    ];
+    expect(findUnlimitedLink(links, "price_ok")?.id).toBe("plink_ok");
+    expect(findPortalConfig([{ id: "bpc_old", active: true, metadata: { app: APP_TAG } }, { id: "bpc_u", active: true, metadata: tag }])?.id).toBe("bpc_u");
+  });
+
+  it("prints NEXT_PUBLIC_UNLIMITED_LINK and NEXT_PUBLIC_BILLING_PORTAL_URL in a form the app reads", () => {
+    const lines = envLines({ links: {}, priceMap: {}, unlimitedLink: "https://buy.stripe.com/test_u", portalUrl: "https://billing.stripe.com/p/login/test_p" });
+    expect(lines.slice(2)).toEqual(["NEXT_PUBLIC_UNLIMITED_LINK=https://buy.stripe.com/test_u", "NEXT_PUBLIC_BILLING_PORTAL_URL=https://billing.stripe.com/p/login/test_p"]);
+    expect(parseUnlimitedLink(lines[2].slice("NEXT_PUBLIC_UNLIMITED_LINK=".length))).toBe("https://buy.stripe.com/test_u");
+    expect(envLines({ links: {}, priceMap: {} })).toHaveLength(2);
+  });
+
+  it("the Unlimited portal configuration is never retired; the Plus/Pro-era one is", () => {
+    const found = retiredObjects({
+      products: [{ id: "prod_u", active: true, metadata: { app: APP_TAG, plan_id: "unlimited" } }],
+      links: [{ id: "plink_u", active: true, metadata: { app: APP_TAG, plan_id: "unlimited" } }],
+      configs: [
+        { id: "bpc_u", active: true, metadata: { app: APP_TAG, plan_id: "unlimited" } },
+        { id: "bpc_old", active: true, metadata: { app: APP_TAG } },
+      ],
+    });
+    expect(found.products).toEqual([]);
+    expect(found.links).toEqual([]);
+    expect(found.configs.map((c: { id: string }) => c.id)).toEqual(["bpc_old"]);
+  });
+});
+
 describe("shared account: nothing of ours looks like Fuime's", () => {
   it("no metadata key in any body the script sends starts with fuime", () => {
     const bodies: Array<Record<string, unknown>> = PACKS.flatMap((pack) => [productBody(pack), priceBody(pack, "prod_x"), paymentLinkBody(pack, "price_x", "https://a.example.com")]);
     bodies.push(webhookBody("https://a.example.com"));
+    bodies.push(unlimitedProductBody(), unlimitedPriceBody("prod_x"), unlimitedLinkBody("price_x", "https://a.example.com"), portalBody("https://a.example.com"));
     const keys = bodies.flatMap((b) => metadataKeys(b));
     expect(keys.length).toBeGreaterThan(10);
     expect(keys.filter((k) => /^fuime/i.test(k))).toEqual([]);
@@ -353,7 +494,7 @@ function fakeStripe(seed: { products?: Obj[]; prices?: Obj[]; links?: Obj[]; con
       let m: RegExpMatchArray | null;
       if (path === "/v1/products") return db.products.push(make("prod", body)) && db.products.at(-1);
       if ((m = path.match(/^\/v1\/products\/(.+)$/))) return Object.assign(byId(db.products, m[1]), body);
-      if (path === "/v1/prices") return db.prices.push(make("price", { type: "one_time", ...body })) && db.prices.at(-1);
+      if (path === "/v1/prices") return db.prices.push(make("price", { type: body.recurring ? "recurring" : "one_time", ...body })) && db.prices.at(-1);
       if ((m = path.match(/^\/v1\/prices\/(.+)$/))) return Object.assign(byId(db.prices, m[1]), body);
       if (path === "/v1/payment_links") {
         const link = make("plink", body);
@@ -362,6 +503,13 @@ function fakeStripe(seed: { products?: Obj[]; prices?: Obj[]; links?: Obj[]; con
         return link;
       }
       if ((m = path.match(/^\/v1\/payment_links\/(.+)$/))) return Object.assign(byId(db.links, m[1]), body);
+      if (path === "/v1/billing_portal/configurations") {
+        const config = make("bpc", { is_default: false, ...body });
+        // Stripe answers login_page.enabled with the shareable login URL
+        if ((body.login_page as { enabled?: boolean } | undefined)?.enabled) config.login_page = { enabled: true, url: `https://billing.stripe.com/p/login/test_${config.id}` };
+        db.configs.push(config);
+        return config;
+      }
       if ((m = path.match(/^\/v1\/billing_portal\/configurations\/(.+)$/))) return Object.assign(byId(db.configs, m[1]), body);
       if (path === "/v1/webhook_endpoints") return db.hooks.push({ ...make("we", body), secret: "whsec_fake_secret" }) && db.hooks.at(-1);
       if ((m = path.match(/^\/v1\/webhook_endpoints\/(.+)$/))) return Object.assign(byId(db.hooks, m[1]), body);
@@ -381,10 +529,14 @@ describe("setup()", () => {
     const deps = { api: stripe.api, log: (l: string) => log.push(l), writeSecret: (f: string, s: string) => secrets.push([f, s]) };
 
     const first = await setup(live, deps);
-    expect(stripe.db.products).toHaveLength(3);
-    expect(stripe.db.prices).toHaveLength(3);
-    expect(stripe.db.prices.every((p) => !("recurring" in p))).toBe(true);
-    expect(stripe.db.links).toHaveLength(3);
+    const packPrices = stripe.db.prices.filter((p) => (p.metadata as Record<string, string>).pack_id);
+    // three packs and Unlimited
+    expect(stripe.db.products).toHaveLength(4);
+    expect(stripe.db.prices).toHaveLength(4);
+    expect(packPrices).toHaveLength(3);
+    expect(packPrices.every((p) => !("recurring" in p))).toBe(true);
+    expect(stripe.db.links).toHaveLength(4);
+    expect(stripe.db.configs).toHaveLength(1);
     expect(stripe.db.hooks).toHaveLength(1);
     expect(stripe.db.hooks[0].enabled_events).toEqual([...WEBHOOK_EVENTS]);
     expect(secrets).toEqual([["/tmp/never-written", "whsec_fake_secret"]]);
@@ -395,14 +547,27 @@ describe("setup()", () => {
       "https://a.example.com/account?ink=small",
       "https://a.example.com/account?ink=medium",
       "https://a.example.com/account?ink=large",
+      "https://a.example.com/?unlimited=started",
+    ]);
+    expect(first.unlimitedLink).toBe(stripe.db.links[3].url);
+    expect(first.portalUrl).toMatch(/^https:\/\/billing\.stripe\.com\/p\/login\//);
+    expect(first.env).toEqual([
+      expect.stringMatching(/^NEXT_PUBLIC_BILLING_LINKS=/),
+      expect.stringMatching(/^INK_PRICE_MAP=/),
+      `NEXT_PUBLIC_UNLIMITED_LINK=${first.unlimitedLink}`,
+      `NEXT_PUBLIC_BILLING_PORTAL_URL=${first.portalUrl}`,
     ]);
 
     stripe.posts.length = 0;
     const second = await setup(live, deps);
-    const creates = stripe.posts.filter((p) => /^\/v1\/(products|prices|payment_links|webhook_endpoints)$/.test(p.path));
+    const creates = stripe.posts.filter((p) => /^\/v1\/(products|prices|payment_links|webhook_endpoints|billing_portal\/configurations)$/.test(p.path));
     expect(creates).toEqual([]);
+    // and nothing of ours is updated either: the portal already matches
+    expect(stripe.posts.filter((p) => p.path.startsWith("/v1/billing_portal/"))).toEqual([]);
     expect(second.links).toEqual(first.links);
     expect(second.priceMap).toEqual(first.priceMap);
+    expect(second.unlimitedLink).toBe(first.unlimitedLink);
+    expect(second.portalUrl).toBe(first.portalUrl);
     expect(secrets).toHaveLength(1);
   });
 
@@ -427,7 +592,44 @@ describe("setup()", () => {
     expect(moved.links).toEqual(second.links);
     const mediumLink = stripe.db.links.find((l) => l.url === moved.links.medium)!;
     expect(mediumLink.after_completion).toEqual({ type: "redirect", redirect: { url: "https://b.example.com/account?ink=medium" } });
+    // the Unlimited link and the portal move with the site; the link's URL stays the same
+    expect(moved.unlimitedLink).toBe(first.unlimitedLink);
+    const unlimitedLink = stripe.db.links.find((l) => l.url === moved.unlimitedLink)!;
+    expect(unlimitedLink.after_completion).toEqual({ type: "redirect", redirect: { url: "https://b.example.com/?unlimited=started" } });
+    expect(stripe.db.configs).toHaveLength(1);
+    expect(stripe.db.configs[0].default_return_url).toBe("https://b.example.com/account");
     expect(stripe.db.hooks).toHaveLength(2); // one per site URL
+  });
+
+  it("a changed Unlimited price makes a new monthly price and link, archives and deactivates the old (subscribers keep theirs)", async () => {
+    const stripe = fakeStripe();
+    const log: string[] = [];
+    const deps = { api: stripe.api, log: (l: string) => log.push(l), writeSecret: () => undefined };
+    const first = await setup(live, deps);
+    const oldPrice = stripe.db.prices.find((p) => (p.metadata as Record<string, string>).plan_id === "unlimited")!;
+    oldPrice.unit_amount = 2000; // as if UNLIMITED had said $20 before
+    const second = await setup(live, deps);
+    expect(second.unlimitedLink).not.toBe(first.unlimitedLink);
+    expect(oldPrice.active).toBe(false);
+    const ours = stripe.db.links.filter((l) => (l.metadata as Record<string, string>).plan_id === "unlimited");
+    expect(ours.map((l) => l.active)).toEqual([false, true]);
+    expect(log.join("\n")).toMatch(/update NEXT_PUBLIC_UNLIMITED_LINK/);
+  });
+
+  it("an Unlimited product made before the statement descriptor gets AGATHON, in place (same product, price and link)", async () => {
+    const stripe = fakeStripe();
+    const deps = { api: stripe.api, log: () => undefined, writeSecret: () => undefined };
+    const first = await setup(live, deps);
+    const product = stripe.db.products.find((p) => (p.metadata as Record<string, string>).plan_id === "unlimited")!;
+    delete product.statement_descriptor; // as the live product was made on 2026-10-03
+    stripe.posts.length = 0;
+    const second = await setup(live, deps);
+    expect(stripe.posts.filter((p) => p.path === `/v1/products/${product.id}`)).toEqual([
+      expect.objectContaining({ body: expect.objectContaining({ statement_descriptor: "AGATHON" }) }),
+    ]);
+    expect(product.statement_descriptor).toBe("AGATHON");
+    expect(second.unlimitedLink).toBe(first.unlimitedLink);
+    expect(stripe.db.products).toHaveLength(4);
   });
 
   it("makes no webhook for a local site and writes nothing in a dry run", async () => {
@@ -435,20 +637,46 @@ describe("setup()", () => {
     const deps = { api: stripe.api, log: () => undefined, writeSecret: () => undefined };
     await setup({ ...live, mode: "test", site: "http://localhost:3112" }, deps);
     expect(stripe.db.hooks).toHaveLength(0);
+    // the local portal links no legal pages (Stripe wants reachable URLs) but still has its login page
+    expect((stripe.db.configs[0].business_profile as Record<string, unknown>).privacy_policy_url).toBeUndefined();
+    expect(stripe.db.configs[0].login_page).toMatchObject({ enabled: true });
 
     const dry = fakeStripe();
-    await setup({ ...live, dryRun: true }, { api: dry.api, log: () => undefined, writeSecret: () => undefined });
+    const lines: string[] = [];
+    const result = await setup({ ...live, dryRun: true }, { api: dry.api, log: (l: string) => lines.push(l), writeSecret: () => undefined });
     expect(dry.posts).toEqual([]);
+    const text = lines.join("\n");
+    expect(text).toMatch(/would create product "Agathon Unlimited"/);
+    expect(text).toMatch(/would create monthly price 2500 usd/);
+    expect(text).toMatch(/would create subscription Payment Link \(7-day trial, card up front\) redirecting to https:\/\/a\.example\.com\/\?unlimited=started/);
+    expect(text).toMatch(/would create portal configuration/);
+    expect(text).toMatch(/NEXT_PUBLIC_UNLIMITED_LINK: \(printed by the real run\)/);
+    expect(result.unlimitedLink).toBeNull();
+    expect(result.portalUrl).toBeNull();
   });
 
-  it("narrows our old endpoint to exactly the ink events", async () => {
+  it("says how to turn the portal login page on by hand when Stripe returns no URL", async () => {
+    const stripe = fakeStripe();
+    const realPost = stripe.api.post;
+    stripe.api.post = async (path: string, body: Record<string, unknown> = {}) => {
+      const out = await realPost(path, body);
+      if (path === "/v1/billing_portal/configurations") delete (out as Obj).login_page;
+      return out;
+    };
+    const log: string[] = [];
+    const result = await setup(live, { api: stripe.api, log: (l: string) => log.push(l), writeSecret: () => undefined });
+    expect(result.portalUrl).toBeNull();
+    expect(log.join("\n")).toMatch(/Customer portal > the Agathon configuration > 'Customer portal link' > Activate/);
+  });
+
+  it("re-subscribes our existing endpoint to exactly the handled events (the ink-only one gains the subscription events)", async () => {
     const stripe = fakeStripe({
       hooks: [
         {
           id: "we_ours",
           created: 1,
           url: "https://a.example.com/api/billing/webhook",
-          enabled_events: ["checkout.session.completed", "customer.subscription.updated", "customer.subscription.deleted"],
+          enabled_events: ["checkout.session.completed", "checkout.session.async_payment_succeeded", "charge.refunded"],
           metadata: { app: APP_TAG },
         },
       ],
@@ -530,6 +758,10 @@ describe("setup()", () => {
       expect(get(stripe.db.hooks, "we_untagged_same_url").enabled_events).toEqual(["*"]);
       // our new endpoint, next to the untagged one at the same URL
       expect(stripe.db.hooks.filter((h) => (h.metadata as Record<string, string>).app === APP_TAG)).toHaveLength(1);
+      // our new Unlimited portal configuration is made (tagged), and is not the one retired
+      const unlimitedConfigs = stripe.db.configs.filter((c) => (c.metadata as Record<string, string>).plan_id === "unlimited");
+      expect(unlimitedConfigs).toHaveLength(1);
+      expect(unlimitedConfigs[0]).toMatchObject({ active: true, is_default: false, metadata: { app: APP_TAG, plan_id: "unlimited" } });
     });
 
     it("a dry run on the shared account writes nothing and says what it would retire", async () => {
