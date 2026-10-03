@@ -38,9 +38,10 @@ export function BoardChatPanel({ boardId, controller, onClose }: BoardChatPanelP
     if (list) list.scrollTop = list.scrollHeight;
   }, [messages]);
 
-  // typing starts in the box on a desktop (a phone would throw up its keyboard over the board)
+  // typing starts in the box with a mouse and keyboard; on a touch screen (an iPad is wider than a
+  // phone, so width alone cannot tell) the on-screen keyboard would come up over the board
   useEffect(() => {
-    if (typeof window !== "undefined" && window.matchMedia?.("(min-width: 768px)").matches) inputRef.current?.focus();
+    if (typeof window !== "undefined" && window.matchMedia?.("(hover: hover) and (pointer: fine)").matches) inputRef.current?.focus();
   }, []);
 
   // Esc closes: from inside the panel, from the Ask button, or with nothing focused. On the

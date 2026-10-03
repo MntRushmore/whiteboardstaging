@@ -580,7 +580,7 @@ export default function BoardPage() {
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0 }} className="flex flex-col md:flex-row">
+    <div style={{ position: "fixed", inset: 0 }} className="flex flex-col md:landscape:flex-row">
       {/* the board refits whenever this box changes size (useScreenCamera): the whole screen stays in view */}
       <div className="relative min-h-0 min-w-0 flex-1">
       <Tldraw
@@ -661,12 +661,13 @@ export default function BoardPage() {
         <BoardContent id={id} initialVersion={initialVersion} chat={{ open: chatOpen, onOpenChange: setChatOpen, host: chatHost }} />
       </Tldraw>
       </div>
-      {/* the chat panel: docked on the right on a desktop, a bottom sheet on a phone */}
+      {/* the chat panel: docked on the right on a wide screen held sideways, a bottom sheet on a
+          phone or an upright iPad (docked there it would leave the 16:9 board a postcard) */}
       <div
         ref={setChatHost}
         className={
           chatOpen
-            ? "relative z-[1100] h-[46dvh] shrink-0 overflow-hidden border-t border-gray-200 bg-white shadow-[0_-4px_16px_rgba(0,0,0,0.06)] md:h-auto md:w-[360px] md:border-l md:border-t-0 md:shadow-none"
+            ? "relative z-[1100] h-[46dvh] shrink-0 overflow-hidden border-t border-gray-200 bg-white shadow-[0_-4px_16px_rgba(0,0,0,0.06)] md:landscape:h-auto md:landscape:w-[360px] md:landscape:border-l md:landscape:border-t-0 md:landscape:shadow-none"
             : "hidden"
         }
       />
