@@ -1,14 +1,17 @@
 /**
  * Unit tests for scripts/stripe-setup.mjs: argument parsing, the request bodies, how existing
- * objects are found again (idempotency), the env output, and that the script's prices agree with
- * `public.plans`. Offline: a fake Stripe stands in for the CLI.
+ * objects are found again (idempotency), the env output, that the script's packs agree with
+ * `public.ink_packs`, and that on the account it shares with Fuime it never writes to anything
+ * that is not tagged as Agathon's. Offline: a fake Stripe stands in for the CLI.
  */
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   APP_TAG,
-  PLANS,
+  PACKS,
+  RETIRED_PLAN_IDS,
+  STATEMENT_DESCRIPTOR_SUFFIX,
   WEBHOOK_EVENTS,
   envLines,
   findPaymentLink,
@@ -16,19 +19,24 @@ import {
   findProduct,
   findWebhook,
   formFields,
+  guardedApi,
+  inkReturnUrl,
   isLocalSite,
+  metadataKeys,
   normalizeSite,
   parseArgs,
   paymentLinkBody,
-  portalBody,
+  priceBody,
+  productBody,
   redactSecrets,
+  retiredObjects,
   setup,
-  upgradeReturnUrl,
   webhookBody,
-  webhookHasEvents,
+  webhookEventsMatch,
 } from "../../scripts/stripe-setup.mjs";
-import { mapBillingEvent } from "@/app/api/billing/webhook/route";
-import { parseBillingLinks, parseBillingPriceMap } from "@/lib/env";
+import { APP_TAG as WEBHOOK_APP_TAG, HANDLED_EVENTS, mapBillingEvent } from "@/app/api/billing/webhook/route";
+import { parseInkPriceMap } from "@/lib/env";
+import { parseBillingLinks } from "@/lib/billing/checkout";
 
 const ROOT = resolve(__dirname, "..", "..");
 
@@ -62,90 +70,140 @@ describe("site helpers", () => {
     expect(isLocalSite("http://localhost:3112")).toBe(true);
     expect(isLocalSite("http://127.0.0.1:3000")).toBe(true);
     expect(isLocalSite("https://whiteboard.rushilchopra.com")).toBe(false);
-    expect(upgradeReturnUrl("https://a.example.com", "plus")).toBe("https://a.example.com/account?upgraded=plus");
+    expect(inkReturnUrl("https://a.example.com", "medium")).toBe("https://a.example.com/account?ink=medium");
   });
 });
 
 describe("formFields", () => {
   it("encodes nested objects and arrays the way Stripe's form API expects", () => {
-    expect(formFields({ a: 1, b: { c: "x", d: [{ e: true }, "f"] }, skip: undefined, nil: null })).toEqual([
+    expect(formFields({ a: 1, b: { c: "x", d: [{ e: true }, "f"] }, skip: undefined, nil: null, empty: "" })).toEqual([
       ["a", "1"],
       ["b[c]", "x"],
       ["b[d][0][e]", "true"],
       ["b[d][1]", "f"],
+      ["empty", ""],
     ]);
   });
 });
 
 describe("request bodies", () => {
-  const plus = PLANS.find((p) => p.id === "plus")!;
+  const medium = PACKS.find((p) => p.id === "medium")!;
 
-  it("a Payment Link redirects to the account page and tags the session with the plan", () => {
-    const body = paymentLinkBody(plus, "price_1", "https://a.example.com");
-    expect(body.after_completion).toEqual({ type: "redirect", redirect: { url: "https://a.example.com/account?upgraded=plus" } });
-    expect(body.metadata).toEqual({ app: APP_TAG, plan_id: "plus", price_id: "price_1" });
-    // the subscription's plan is its price: no plan_id there, or a portal switch would be undone
-    expect(body.subscription_data.metadata).toEqual({ app: APP_TAG });
-    expect(body.line_items).toEqual([{ price: "price_1", quantity: 1 }]);
+  it("a pack is a product with a ONE-TIME price, both tagged with the pack", () => {
+    expect(productBody(medium)).toEqual({
+      name: "Agathon Medium ink pack",
+      description: "5,000 ink for the AI tutor. Ink never expires.",
+      metadata: { app: APP_TAG, pack_id: "medium" },
+    });
+    const price = priceBody(medium, "prod_1");
+    expect(price).toEqual({
+      product: "prod_1",
+      currency: "usd",
+      unit_amount: 2000,
+      nickname: "Medium ink pack",
+      metadata: { app: APP_TAG, pack_id: "medium", ink: 5000 },
+    });
+    expect(price).not.toHaveProperty("recurring");
   });
 
-  it("the portal switches plans, cancels at period end, updates cards and has a login page", () => {
-    const body = portalBody("https://a.example.com", [
-      { product: "prod_plus", price: "price_plus" },
-      { product: "prod_pro", price: "price_pro" },
-    ]);
-    expect(body.default_return_url).toBe("https://a.example.com/account");
-    expect(body.login_page).toEqual({ enabled: true });
-    expect(body.features.subscription_cancel).toMatchObject({ enabled: true, mode: "at_period_end" });
-    expect(body.features.payment_method_update).toEqual({ enabled: true });
-    expect(body.features.subscription_update.default_allowed_updates).toEqual(["price"]);
-    expect(body.features.subscription_update.products).toEqual([
-      { product: "prod_plus", prices: ["price_plus"], adjustable_quantity: { enabled: false } },
-      { product: "prod_pro", prices: ["price_pro"], adjustable_quantity: { enabled: false } },
-    ]);
-    // Stripe caps the headline at 60 characters
-    expect(body.business_profile.headline.length).toBeLessThanOrEqual(60);
+  it("a Payment Link sells one pack, tags the session and the payment intent, and comes back to the account page", () => {
+    const body = paymentLinkBody(medium, "price_1", "https://a.example.com");
+    expect(body.line_items).toEqual([{ price: "price_1", quantity: 1 }]);
+    expect(body.after_completion).toEqual({ type: "redirect", redirect: { url: "https://a.example.com/account?ink=medium" } });
+    expect(body.metadata).toEqual({ app: APP_TAG, pack_id: "medium", price_id: "price_1" });
+    expect(body.payment_intent_data).toEqual({ metadata: { app: APP_TAG, pack_id: "medium" }, statement_descriptor_suffix: "AGATHON" });
+    // Stripe: the suffix is at most 22 characters, letters, digits and spaces, not all digits
+    expect(STATEMENT_DESCRIPTOR_SUFFIX).toMatch(/^(?=.*[A-Z])[A-Z0-9 ]{1,22}$/);
   });
 
   it("the webhook listens to exactly the events the route handles", () => {
     const body = webhookBody("https://a.example.com");
     expect(body.url).toBe("https://a.example.com/api/billing/webhook");
     expect(body.enabled_events).toEqual([...WEBHOOK_EVENTS]);
+    expect([...WEBHOOK_EVENTS]).toEqual([...HANDLED_EVENTS]);
     for (const type of WEBHOOK_EVENTS) {
-      const mapped = mapBillingEvent({ id: "evt", type, data: { object: {} } }, {});
-      if (mapped.kind === "ignored") expect(mapped.reason).not.toMatch(/unhandled event type/);
+      const mapped = mapBillingEvent({ id: "evt", type, data: { object: { metadata: { app: APP_TAG } } } }, {});
+      if (mapped.kind !== "grant" && mapped.kind !== "reverse") expect(mapped.reason).not.toMatch(/unhandled event type/);
     }
-    expect(webhookHasEvents({ enabled_events: [...WEBHOOK_EVENTS, "invoice.paid"] })).toBe(true);
-    expect(webhookHasEvents({ enabled_events: ["checkout.session.completed"] })).toBe(false);
-    expect(webhookHasEvents({ enabled_events: ["*"] })).toBe(true);
+    expect(webhookEventsMatch({ enabled_events: [...WEBHOOK_EVENTS] })).toBe(true);
+    // the plan-era events are dropped, not kept alongside
+    expect(webhookEventsMatch({ enabled_events: [...WEBHOOK_EVENTS, "customer.subscription.updated"] })).toBe(false);
+    expect(webhookEventsMatch({ enabled_events: ["checkout.session.completed"] })).toBe(false);
+    expect(webhookEventsMatch({ enabled_events: ["*"] })).toBe(false);
+  });
+
+  it("the script and the webhook agree on the tag", () => {
+    expect(APP_TAG).toBe("agathon-classroom");
+    expect(WEBHOOK_APP_TAG).toBe(APP_TAG);
+  });
+});
+
+describe("shared account: nothing of ours looks like Fuime's", () => {
+  it("no metadata key in any body the script sends starts with fuime", () => {
+    const bodies: Array<Record<string, unknown>> = PACKS.flatMap((pack) => [productBody(pack), priceBody(pack, "prod_x"), paymentLinkBody(pack, "price_x", "https://a.example.com")]);
+    bodies.push(webhookBody("https://a.example.com"));
+    const keys = bodies.flatMap((b) => metadataKeys(b));
+    expect(keys.length).toBeGreaterThan(10);
+    expect(keys.filter((k) => /^fuime/i.test(k))).toEqual([]);
+    // and on the wire: no form field with a fuime metadata key either
+    const fields = bodies.flatMap((b) => formFields(b).map(([k]) => k));
+    expect(fields.filter((k) => /\[metadata\]\[fuime/i.test(k) || /^metadata\[fuime/i.test(k))).toEqual([]);
+  });
+
+  it("metadataKeys finds keys at any depth, and only under metadata", () => {
+    expect(metadataKeys({ metadata: { a: 1 }, payment_intent_data: { metadata: { b: 2 }, x: 3 }, c: { d: 4 } }).sort()).toEqual(["a", "b"]);
+  });
+
+  it("the write guard refuses fuime keys, untagged creates and writes to objects not known to be ours", async () => {
+    const posts: string[] = [];
+    const inner = {
+      get: async () => ({}),
+      post: async (p: string) => {
+        posts.push(p);
+        return { id: "prod_new" };
+      },
+    };
+    const ours = new Set(["prod_ours"]);
+    const api = guardedApi(inner, ours);
+    await expect(api.post("/v1/products", { name: "x", metadata: { app: APP_TAG, fuime_event_id: "e" } })).rejects.toThrow(/fuime_event_id/);
+    await expect(api.post("/v1/payment_links", { payment_intent_data: { metadata: { Fuime_x: "1" } }, metadata: { app: APP_TAG } })).rejects.toThrow(/Fuime_x/);
+    await expect(api.post("/v1/products", { name: "x", metadata: {} })).rejects.toThrow(/without metadata\.app/);
+    await expect(api.post("/v1/products/prod_fuime", { active: false })).rejects.toThrow(/not an object tagged/);
+    await expect(api.post("/v1/billing_portal/configurations/bpc_default", { active: false })).rejects.toThrow(/not an object tagged/);
+    expect(posts).toEqual([]);
+    await api.post("/v1/products/prod_ours", { active: false });
+    await api.post("/v1/products", { name: "x", metadata: { app: APP_TAG } });
+    expect(ours.has("prod_new")).toBe(true); // a created object may be updated later in the run
+    expect(posts).toEqual(["/v1/products/prod_ours", "/v1/products"]);
   });
 });
 
 describe("finding what exists", () => {
-  const plus = PLANS.find((p) => p.id === "plus")!;
-  const ours = { app: APP_TAG, plan_id: "plus" };
+  const medium = PACKS.find((p) => p.id === "medium")!;
+  const ours = { app: APP_TAG, pack_id: "medium" };
 
   it("finds our product by metadata, never someone else's product with the same name", () => {
     const products = [
-      { id: "prod_other", name: "Agathon Plus", active: true, created: 1, metadata: {} },
+      { id: "prod_other", name: "Agathon Medium ink pack", active: true, created: 1, metadata: {} },
       { id: "prod_old", active: false, created: 2, metadata: ours },
       { id: "prod_ours", active: true, created: 3, metadata: ours },
       { id: "prod_dup", active: true, created: 4, metadata: ours },
     ];
-    expect(findProduct(products, "plus")?.id).toBe("prod_ours");
-    expect(findProduct(products, "pro")).toBeNull();
+    expect(findProduct(products, "medium")?.id).toBe("prod_ours");
+    expect(findProduct(products, "large")).toBeNull();
   });
 
-  it("finds a price only with the exact amount, currency and monthly interval", () => {
-    const base = { active: true, product: "prod_1", currency: "usd", recurring: { interval: "month", interval_count: 1 } };
+  it("finds a price only when it is ours, one-time, with the exact amount and currency", () => {
+    const base = { active: true, product: "prod_1", currency: "usd", type: "one_time", metadata: ours };
     const prices = [
       { ...base, id: "price_wrong_amount", unit_amount: 1000 },
-      { ...base, id: "price_yearly", unit_amount: plus.priceCents, recurring: { interval: "year" } },
-      { ...base, id: "price_other_product", unit_amount: plus.priceCents, product: "prod_2" },
-      { ...base, id: "price_ok", unit_amount: plus.priceCents },
+      { ...base, id: "price_monthly", unit_amount: medium.priceCents, type: "recurring", recurring: { interval: "month" } },
+      { ...base, id: "price_other_product", unit_amount: medium.priceCents, product: "prod_2" },
+      { ...base, id: "price_untagged", unit_amount: medium.priceCents, metadata: {} },
+      { ...base, id: "price_ok", unit_amount: medium.priceCents },
     ];
-    expect(findPrice(prices, plus, "prod_1")?.id).toBe("price_ok");
-    expect(findPrice(prices.slice(0, 3), plus, "prod_1")).toBeNull();
+    expect(findPrice(prices, medium, "prod_1")?.id).toBe("price_ok");
+    expect(findPrice(prices.slice(0, 4), medium, "prod_1")).toBeNull();
   });
 
   it("finds the Payment Link selling that exact price, and the webhook by URL + tag", () => {
@@ -153,31 +211,54 @@ describe("finding what exists", () => {
       { id: "plink_old", active: true, metadata: { ...ours, price_id: "price_old" } },
       { id: "plink_ok", active: true, metadata: { ...ours, price_id: "price_ok" } },
     ];
-    expect(findPaymentLink(links, "plus", "price_ok")?.id).toBe("plink_ok");
-    expect(findPaymentLink(links, "plus", "price_new")).toBeNull();
+    expect(findPaymentLink(links, "medium", "price_ok")?.id).toBe("plink_ok");
+    expect(findPaymentLink(links, "medium", "price_new")).toBeNull();
     const hooks = [
       { id: "we_fuime", url: "https://app.fuime.com/hook", metadata: {} },
+      { id: "we_same_url_untagged", url: "https://a.example.com/api/billing/webhook", metadata: {} },
       { id: "we_ours", url: "https://a.example.com/api/billing/webhook", metadata: { app: APP_TAG } },
     ];
     expect(findWebhook(hooks, "https://a.example.com/api/billing/webhook")?.id).toBe("we_ours");
     expect(findWebhook(hooks, "https://app.fuime.com/hook")).toBeNull();
+  });
+
+  it("only our tagged Plus/Pro objects and our portal configuration are retired", () => {
+    const found = retiredObjects({
+      products: [
+        { id: "prod_plus", active: true, metadata: { app: APP_TAG, plan_id: "plus" } },
+        { id: "prod_medium", active: true, metadata: { app: APP_TAG, pack_id: "medium" } },
+        { id: "prod_fuime_plus", active: true, metadata: { plan_id: "plus" } },
+      ],
+      links: [
+        { id: "plink_pro", active: true, metadata: { app: APP_TAG, plan_id: "pro" } },
+        { id: "plink_fuime", active: true, metadata: { fuime_event_id: "e" } },
+      ],
+      configs: [
+        { id: "bpc_ours", active: true, metadata: { app: APP_TAG } },
+        { id: "bpc_fuime_default", active: true, is_default: true, metadata: {} },
+      ],
+    });
+    expect(found.products.map((p: { id: string }) => p.id)).toEqual(["prod_plus"]);
+    expect(found.links.map((l: { id: string }) => l.id)).toEqual(["plink_pro"]);
+    expect(found.configs.map((c: { id: string }) => c.id)).toEqual(["bpc_ours"]);
+    expect([...RETIRED_PLAN_IDS]).toEqual(["plus", "pro"]);
   });
 });
 
 describe("output", () => {
   it("prints env values the app itself parses", () => {
     const [links, map] = envLines({
-      links: { plus: "https://buy.stripe.com/test_a", pro: "https://buy.stripe.com/test_b" },
-      portal: "https://billing.stripe.com/p/login/test_c",
-      priceMap: { price_a: "plus", price_b: "pro" },
+      links: { small: "https://buy.stripe.com/test_a", medium: "https://buy.stripe.com/test_b", large: "https://buy.stripe.com/test_c" },
+      priceMap: { price_a: "small", price_b: "medium", price_c: "large" },
     });
     expect(links.startsWith("NEXT_PUBLIC_BILLING_LINKS=")).toBe(true);
     expect(parseBillingLinks(links.slice("NEXT_PUBLIC_BILLING_LINKS=".length))).toEqual({
-      plus: "https://buy.stripe.com/test_a",
-      pro: "https://buy.stripe.com/test_b",
-      portal: "https://billing.stripe.com/p/login/test_c",
+      small: "https://buy.stripe.com/test_a",
+      medium: "https://buy.stripe.com/test_b",
+      large: "https://buy.stripe.com/test_c",
     });
-    expect(parseBillingPriceMap(map.slice("BILLING_PRICE_MAP=".length))).toEqual({ map: { price_a: "plus", price_b: "pro" } });
+    expect(map.startsWith("INK_PRICE_MAP=")).toBe(true);
+    expect(parseInkPriceMap(map.slice("INK_PRICE_MAP=".length))).toEqual({ map: { price_a: "small", price_b: "medium", price_c: "large" } });
   });
 
   it("masks anything shaped like a Stripe secret", () => {
@@ -185,16 +266,24 @@ describe("output", () => {
   });
 });
 
-describe("prices agree with public.plans", () => {
-  it("PLANS matches the paid-plans migration (monthly credits and price in cents)", () => {
-    const sql = readFileSync(join(ROOT, "supabase/migrations/20260928110000_paid_plans.sql"), "utf8");
-    for (const plan of PLANS) {
-      const m = sql.match(new RegExp(`set monthly_credits = (\\d+),\\s*price_cents = (\\d+)\\s*where id = '${plan.id}'`));
-      expect(m, `no UPDATE for ${plan.id}`).not.toBeNull();
-      expect(Number(m![1])).toBe(plan.credits);
-      expect(Number(m![2])).toBe(plan.priceCents);
-    }
-    expect(sql).toMatch(/set monthly_credits = 300,[\s\S]*?where id = 'free'/);
+describe("packs agree with public.ink_packs", () => {
+  it("PACKS matches the ink migration's seed (id, name, ink, price in cents, order, all active, USD)", () => {
+    const sql = readFileSync(join(ROOT, "supabase/migrations/20261002000000_ink.sql"), "utf8");
+    const seed = [...sql.matchAll(/\('([a-z][a-z0-9_-]*)',\s*'([^']+)',\s*(\d+),\s*(\d+),\s*(\d+),\s*(true|false)\)/g)].map((m) => ({
+      id: m[1],
+      name: m[2],
+      ink: Number(m[3]),
+      priceCents: Number(m[4]),
+      sort: Number(m[5]),
+      active: m[6] === "true",
+    }));
+    expect(seed).toEqual(PACKS.map((p, i) => ({ id: p.id, name: p.name, ink: p.ink, priceCents: p.priceCents, sort: i + 1, active: true })));
+    expect(PACKS.map((p) => [p.id, p.ink, p.priceCents])).toEqual([
+      ["small", 1000, 500],
+      ["medium", 5000, 2000],
+      ["large", 14000, 5000],
+    ]);
+    expect(PACKS.every((p) => p.currency === "usd")).toBe(true);
   });
 });
 
@@ -204,16 +293,16 @@ describe("prices agree with public.plans", () => {
 
 type Obj = Record<string, unknown> & { id: string; created: number };
 
-function fakeStripe() {
-  let seq = 0;
+function fakeStripe(seed: { products?: Obj[]; prices?: Obj[]; links?: Obj[]; configs?: Obj[]; hooks?: Obj[] } = {}) {
+  let seq = 100;
   const db = {
-    products: [] as Obj[],
-    prices: [] as Obj[],
-    links: [] as Obj[],
-    configs: [] as Obj[],
-    hooks: [] as Obj[],
+    products: [...(seed.products ?? [])],
+    prices: [...(seed.prices ?? [])],
+    links: [...(seed.links ?? [])],
+    configs: [...(seed.configs ?? [])],
+    hooks: [...(seed.hooks ?? [])],
   };
-  const posts: string[] = [];
+  const posts: Array<{ path: string; body: Record<string, unknown> }> = [];
   const make = (prefix: string, body: Record<string, unknown>): Obj => ({ id: `${prefix}_${++seq}`, created: seq, active: true, ...body });
   const list = (data: Obj[]) => ({ object: "list", data, has_more: false });
   const byId = (arr: Obj[], id: string) => {
@@ -227,16 +316,16 @@ function fakeStripe() {
       if (path === "/v1/products") return list(db.products.filter((p) => p.active));
       if (path === "/v1/prices") return list(db.prices.filter((p) => p.active === (params.active !== "false") && p.product === params.product));
       if (path === "/v1/payment_links") return list(db.links.filter((l) => l.active));
-      if (path === "/v1/billing_portal/configurations") return list(db.configs);
+      if (path === "/v1/billing_portal/configurations") return list(db.configs.filter((c) => c.active));
       if (path === "/v1/webhook_endpoints") return list(db.hooks);
       throw new Error(`unexpected GET ${path}`);
     },
     async post(path: string, body: Record<string, unknown> = {}) {
-      posts.push(path);
+      posts.push({ path, body });
       let m: RegExpMatchArray | null;
       if (path === "/v1/products") return db.products.push(make("prod", body)) && db.products.at(-1);
       if ((m = path.match(/^\/v1\/products\/(.+)$/))) return Object.assign(byId(db.products, m[1]), body);
-      if (path === "/v1/prices") return db.prices.push(make("price", body)) && db.prices.at(-1);
+      if (path === "/v1/prices") return db.prices.push(make("price", { type: "one_time", ...body })) && db.prices.at(-1);
       if ((m = path.match(/^\/v1\/prices\/(.+)$/))) return Object.assign(byId(db.prices, m[1]), body);
       if (path === "/v1/payment_links") {
         const link = make("plink", body);
@@ -245,18 +334,7 @@ function fakeStripe() {
         return link;
       }
       if ((m = path.match(/^\/v1\/payment_links\/(.+)$/))) return Object.assign(byId(db.links, m[1]), body);
-      if (path === "/v1/billing_portal/configurations") {
-        const c = make("bpc", body);
-        c.login_page = { enabled: true, url: `https://billing.stripe.com/p/login/test_${c.id}` };
-        db.configs.push(c);
-        return c;
-      }
-      if ((m = path.match(/^\/v1\/billing_portal\/configurations\/(.+)$/))) {
-        const c = byId(db.configs, m[1]);
-        const { login_page: _lp, ...rest } = body;
-        void _lp;
-        return Object.assign(c, rest);
-      }
+      if ((m = path.match(/^\/v1\/billing_portal\/configurations\/(.+)$/))) return Object.assign(byId(db.configs, m[1]), body);
       if (path === "/v1/webhook_endpoints") return db.hooks.push({ ...make("we", body), secret: "whsec_fake_secret" }) && db.hooks.at(-1);
       if ((m = path.match(/^\/v1\/webhook_endpoints\/(.+)$/))) return Object.assign(byId(db.hooks, m[1]), body);
       throw new Error(`unexpected POST ${path}`);
@@ -275,20 +353,25 @@ describe("setup()", () => {
     const deps = { api: stripe.api, log: (l: string) => log.push(l), writeSecret: (f: string, s: string) => secrets.push([f, s]) };
 
     const first = await setup(live, deps);
-    expect(stripe.db.products).toHaveLength(2);
-    expect(stripe.db.prices).toHaveLength(2);
-    expect(stripe.db.links).toHaveLength(2);
-    expect(stripe.db.configs).toHaveLength(1);
+    expect(stripe.db.products).toHaveLength(3);
+    expect(stripe.db.prices).toHaveLength(3);
+    expect(stripe.db.prices.every((p) => !("recurring" in p))).toBe(true);
+    expect(stripe.db.links).toHaveLength(3);
     expect(stripe.db.hooks).toHaveLength(1);
+    expect(stripe.db.hooks[0].enabled_events).toEqual([...WEBHOOK_EVENTS]);
     expect(secrets).toEqual([["/tmp/never-written", "whsec_fake_secret"]]);
     expect(log.join("\n")).not.toContain("whsec_fake_secret");
-    expect(Object.keys(first.links)).toEqual(["plus", "pro"]);
-    expect(Object.values(first.priceMap).sort()).toEqual(["plus", "pro"]);
-    expect(first.portal).toMatch(/^https:\/\/billing\.stripe\.com\/p\/login\//);
+    expect(Object.keys(first.links)).toEqual(["small", "medium", "large"]);
+    expect(Object.values(first.priceMap).sort()).toEqual(["large", "medium", "small"]);
+    expect(stripe.db.links.map((l) => (l.after_completion as { redirect: { url: string } }).redirect.url)).toEqual([
+      "https://a.example.com/account?ink=small",
+      "https://a.example.com/account?ink=medium",
+      "https://a.example.com/account?ink=large",
+    ]);
 
     stripe.posts.length = 0;
     const second = await setup(live, deps);
-    const creates = stripe.posts.filter((p) => /^\/v1\/(products|prices|payment_links|webhook_endpoints|billing_portal\/configurations)$/.test(p));
+    const creates = stripe.posts.filter((p) => /^\/v1\/(products|prices|payment_links|webhook_endpoints)$/.test(p.path));
     expect(creates).toEqual([]);
     expect(second.links).toEqual(first.links);
     expect(second.priceMap).toEqual(first.priceMap);
@@ -300,22 +383,22 @@ describe("setup()", () => {
     const deps = { api: stripe.api, log: () => undefined, writeSecret: () => undefined };
     const first = await setup(live, deps);
 
-    // the stored Plus price no longer matches PLANS: the same as the owner editing PLANS (which is frozen here)
-    const plusPrice = stripe.db.prices.find((p) => (p.metadata as Record<string, string>).plan_id === "plus")!;
-    plusPrice.unit_amount = 900;
+    // the stored Medium price no longer matches PACKS: the same as the owner editing PACKS (which is frozen here)
+    const mediumPrice = stripe.db.prices.find((p) => (p.metadata as Record<string, string>).pack_id === "medium")!;
+    mediumPrice.unit_amount = 1900;
     const second = await setup(live, deps);
-    expect(second.links.plus).not.toBe(first.links.plus);
-    expect(second.links.pro).toBe(first.links.pro);
-    expect(plusPrice.active).toBe(false);
-    // the archived price keeps mapping to its plan: its subscribers still bill on it
-    expect(second.priceMap[plusPrice.id]).toBe("plus");
-    expect(Object.keys(second.priceMap)).toHaveLength(3);
-    expect(stripe.db.links.filter((l) => l.active && (l.metadata as Record<string, string>).plan_id === "plus")).toHaveLength(1);
+    expect(second.links.medium).not.toBe(first.links.medium);
+    expect(second.links.small).toBe(first.links.small);
+    expect(mediumPrice.active).toBe(false);
+    // the archived price keeps mapping to its pack: a checkout opened before the change still pays it
+    expect(second.priceMap[mediumPrice.id]).toBe("medium");
+    expect(Object.keys(second.priceMap)).toHaveLength(4);
+    expect(stripe.db.links.filter((l) => l.active && (l.metadata as Record<string, string>).pack_id === "medium")).toHaveLength(1);
 
     const moved = await setup({ ...live, site: "https://b.example.com" }, deps);
     expect(moved.links).toEqual(second.links);
-    const plusLink = stripe.db.links.find((l) => l.url === moved.links.plus)!;
-    expect(plusLink.after_completion).toEqual({ type: "redirect", redirect: { url: "https://b.example.com/account?upgraded=plus" } });
+    const mediumLink = stripe.db.links.find((l) => l.url === moved.links.medium)!;
+    expect(mediumLink.after_completion).toEqual({ type: "redirect", redirect: { url: "https://b.example.com/account?ink=medium" } });
     expect(stripe.db.hooks).toHaveLength(2); // one per site URL
   });
 
@@ -328,5 +411,117 @@ describe("setup()", () => {
     const dry = fakeStripe();
     await setup({ ...live, dryRun: true }, { api: dry.api, log: () => undefined, writeSecret: () => undefined });
     expect(dry.posts).toEqual([]);
+  });
+
+  it("narrows our old endpoint to exactly the ink events", async () => {
+    const stripe = fakeStripe({
+      hooks: [
+        {
+          id: "we_ours",
+          created: 1,
+          url: "https://a.example.com/api/billing/webhook",
+          enabled_events: ["checkout.session.completed", "customer.subscription.updated", "customer.subscription.deleted"],
+          metadata: { app: APP_TAG },
+        },
+      ],
+    });
+    await setup(live, { api: stripe.api, log: () => undefined, writeSecret: () => undefined });
+    expect(stripe.db.hooks).toHaveLength(1);
+    expect(stripe.db.hooks[0].enabled_events).toEqual([...WEBHOOK_EVENTS]);
+  });
+
+  describe("on the account shared with Fuime", () => {
+    /** Fuime's live objects (untagged, some with confusable names/urls) next to our retired plan objects. */
+    function sharedAccount() {
+      const fuime = {
+        products: [
+          { id: "prod_fuime_ticket", created: 1, active: true, name: "Founders Weekend ticket", metadata: { fuime_event_id: "evt_fw" } },
+          { id: "prod_fuime_namesake", created: 2, active: true, name: "Agathon Medium ink pack", metadata: {} },
+          { id: "prod_fuime_plus", created: 3, active: true, name: "Plus", metadata: { plan_id: "plus" } },
+        ],
+        prices: [{ id: "price_fuime", created: 4, active: true, product: "prod_fuime_ticket", unit_amount: 2000, currency: "usd", type: "one_time", metadata: {} }],
+        links: [{ id: "plink_fuime", created: 5, active: true, url: "https://buy.stripe.com/fuime", metadata: { fuime_event_id: "evt_fw", pack_id: "medium" } }],
+        configs: [{ id: "bpc_fuime_default", created: 6, active: true, is_default: true, metadata: {} }],
+        hooks: [
+          { id: "we_fuime", created: 7, url: "https://fuime.example/webhooks/stripe", enabled_events: ["*"], metadata: {} },
+          { id: "we_untagged_same_url", created: 8, url: "https://a.example.com/api/billing/webhook", enabled_events: ["*"], metadata: {} },
+        ],
+      };
+      const plan = (id: string) => ({ app: APP_TAG, plan_id: id });
+      const ours = {
+        products: [
+          { id: "prod_plus", created: 10, active: true, name: "Agathon Plus", default_price: "price_plus", metadata: plan("plus") },
+          { id: "prod_pro", created: 11, active: true, name: "Agathon Pro", default_price: "price_pro", metadata: plan("pro") },
+        ],
+        prices: [
+          { id: "price_plus", created: 12, active: true, product: "prod_plus", unit_amount: 1200, currency: "usd", type: "recurring", recurring: { interval: "month" }, metadata: plan("plus") },
+          { id: "price_pro", created: 13, active: true, product: "prod_pro", unit_amount: 3900, currency: "usd", type: "recurring", recurring: { interval: "month" }, metadata: plan("pro") },
+          // someone added a price to our product by hand in the Dashboard: untagged, so left alone
+          { id: "price_plus_manual", created: 14, active: true, product: "prod_plus", unit_amount: 999, currency: "usd", type: "one_time", metadata: {} },
+        ],
+        links: [
+          { id: "plink_plus", created: 15, active: true, url: "https://buy.stripe.com/plus", metadata: { ...plan("plus"), price_id: "price_plus" } },
+          { id: "plink_pro", created: 16, active: true, url: "https://buy.stripe.com/pro", metadata: { ...plan("pro"), price_id: "price_pro" } },
+        ],
+        configs: [{ id: "bpc_ours", created: 17, active: true, is_default: false, metadata: { app: APP_TAG } }],
+      };
+      const untaggedIds = [...fuime.products, ...fuime.prices, ...fuime.links, ...fuime.configs, ...fuime.hooks, ours.prices[2]].map((o) => o.id);
+      const stripe = fakeStripe({
+        products: [...fuime.products, ...ours.products],
+        prices: [...fuime.prices, ...ours.prices],
+        links: [...fuime.links, ...ours.links],
+        configs: [...fuime.configs, ...ours.configs],
+        hooks: [...fuime.hooks],
+      });
+      return { stripe, untaggedIds };
+    }
+
+    it("a real run never writes to an untagged object, and retires only our Plus/Pro objects", async () => {
+      const { stripe, untaggedIds } = sharedAccount();
+      await setup(live, { api: stripe.api, log: () => undefined, writeSecret: () => undefined });
+      const touched = stripe.posts.map((p) => p.path.split("/").pop());
+      for (const id of untaggedIds) expect(touched, id).not.toContain(id);
+      // every write is a create of a tagged object, or an update of one of ours
+      for (const { path, body } of stripe.posts) {
+        if (/^\/v1\/(products|prices|payment_links|webhook_endpoints)$/.test(path)) expect((body.metadata as Record<string, string>).app, path).toBe(APP_TAG);
+        expect(metadataKeys(body).filter((k) => /^fuime/i.test(k)), path).toEqual([]);
+      }
+      const get = (arr: Obj[], id: string) => arr.find((o) => o.id === id)!;
+      // ours retired
+      expect(get(stripe.db.links, "plink_plus").active).toBe(false);
+      expect(get(stripe.db.links, "plink_pro").active).toBe(false);
+      expect(get(stripe.db.products, "prod_plus")).toMatchObject({ active: false, default_price: "" });
+      expect(get(stripe.db.prices, "price_pro").active).toBe(false);
+      expect(get(stripe.db.configs, "bpc_ours").active).toBe(false);
+      // theirs untouched (Fuime's live objects, its default portal configuration, the hand-made price)
+      expect(get(stripe.db.products, "prod_fuime_namesake").active).toBe(true);
+      expect(get(stripe.db.products, "prod_fuime_plus").active).toBe(true);
+      expect(get(stripe.db.links, "plink_fuime").active).toBe(true);
+      expect(get(stripe.db.configs, "bpc_fuime_default").active).toBe(true);
+      expect(get(stripe.db.prices, "price_plus_manual").active).toBe(true);
+      expect(get(stripe.db.hooks, "we_untagged_same_url").enabled_events).toEqual(["*"]);
+      // our new endpoint, next to the untagged one at the same URL
+      expect(stripe.db.hooks.filter((h) => (h.metadata as Record<string, string>).app === APP_TAG)).toHaveLength(1);
+    });
+
+    it("a dry run on the shared account writes nothing and says what it would retire", async () => {
+      const { stripe } = sharedAccount();
+      const log: string[] = [];
+      await setup({ ...live, dryRun: true }, { api: stripe.api, log: (l: string) => log.push(l), writeSecret: () => undefined });
+      expect(stripe.posts).toEqual([]);
+      const text = log.join("\n");
+      expect(text).toMatch(/would deactivate Payment Link plink_plus/);
+      expect(text).toMatch(/would archive product prod_pro/);
+      expect(text).toMatch(/would deactivate customer portal configuration bpc_ours/);
+      expect(text).not.toMatch(/fuime/i);
+    });
+
+    it("our portal configuration is left alone when it is the account's default", async () => {
+      const stripe = fakeStripe({ configs: [{ id: "bpc_ours_default", created: 1, active: true, is_default: true, metadata: { app: APP_TAG } }] });
+      const log: string[] = [];
+      await setup(live, { api: stripe.api, log: (l: string) => log.push(l), writeSecret: () => undefined });
+      expect(stripe.posts.map((p) => p.path)).not.toContain("/v1/billing_portal/configurations/bpc_ours_default");
+      expect(log.join("\n")).toMatch(/bpc_ours_default is the account's default/);
+    });
   });
 });
