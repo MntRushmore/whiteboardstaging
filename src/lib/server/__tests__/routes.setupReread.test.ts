@@ -156,17 +156,17 @@ describe.each([
     expectChargedAndRefunded();
   });
 
-  it("refunds when the provider's own credits are exhausted (402)", async () => {
+  it("refunds when the provider account runs dry (503 upstream_error, not a 402)", async () => {
     vi.mocked(chatJsonWithFallback).mockRejectedValue(new CreditsExhaustedError());
-    expect((await route.handler(request(route.path, route.body))).status).toBe(402);
+    expect((await route.handler(request(route.path, route.body))).status).toBe(503);
     expectChargedAndRefunded();
   });
 
-  it("402 credits_exhausted before any model call when the user is out of credits", async () => {
+  it("402 ink_empty before any model call when the user is out of ink", async () => {
     fake.replies.consume_credits = () => ({ data: { ok: false, remaining: 0, reason: "insufficient_credits" } });
     const res = await route.handler(request(route.path, route.body));
     expect(res.status).toBe(402);
-    expect(await res.json()).toMatchObject({ error: "credits_exhausted" });
+    expect(await res.json()).toMatchObject({ error: "ink_empty" });
     expect(chatJsonWithFallback).not.toHaveBeenCalled();
     expect(callsTo("refund_credits")).toEqual([]);
   });

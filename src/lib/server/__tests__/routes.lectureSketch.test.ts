@@ -204,7 +204,7 @@ describe("live/lecture/sketch", () => {
     fake.replies.consume_credits = () => ({ data: { ok: false, remaining: 2, reason: "insufficient_credits" } });
     const res = await sketch(request(BODY));
     expect(res.status).toBe(402);
-    expect(await res.json()).toMatchObject({ error: "credits_exhausted" });
+    expect(await res.json()).toMatchObject({ error: "ink_empty" });
     expect(openrouterChat).not.toHaveBeenCalled();
   });
 

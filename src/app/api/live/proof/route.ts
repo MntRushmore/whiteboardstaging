@@ -1,6 +1,6 @@
 import { getLiveModels } from "@/lib/env";
 import { ProofRequestSchema, ProofResponseSchema, type ProofResponse } from "@/lib/live/proof/contracts";
-import { enforceCredits, runCharged } from "@/lib/server/billing";
+import { enforceInk, runCharged } from "@/lib/server/billing";
 import { chatJsonWithFallback, UpstreamError } from "@/lib/server/openrouter";
 import { errorResponse } from "@/lib/server/request";
 import { buildProofFigureMessages, buildProofStepMessages, cleanFigureReply, cleanStepReply, FigureReplySchema, StepReplySchema } from "@/lib/server/prompts/proof";
@@ -23,7 +23,7 @@ const PROOF_ATTEMPT_MS = 12_000;
  *    which the client writes only when its checker ticks it.
  *
  * `LIVE_MODELS.proof` (`openai/gpt-5.4-mini`), fallback `proofFallback` (`deepseek/deepseek-v4.1-flash`).
- * Charged `live/proof` (2 credits), refunded by `runCharged` on any non-2xx — an empty read or an
+ * Charged `live/proof` (2 ink), refunded by `runCharged` on any non-2xx — an empty read or an
  * empty row is a 502.
  */
 export async function POST(req: Request) {
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   const { requestId, token, log, data, startedAt } = ctx;
 
   const models = getLiveModels();
-  const billing = await enforceCredits({ token, route: "live/proof", requestId, model: models.proof }, log);
+  const billing = await enforceInk({ token, route: "live/proof", requestId, model: models.proof }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   return runCharged(

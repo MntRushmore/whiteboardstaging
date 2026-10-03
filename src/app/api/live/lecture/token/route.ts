@@ -2,7 +2,7 @@ import { getServerEnv, hasElevenLabs } from "@/lib/env";
 import { LISTEN_NOT_CONFIGURED, ListenTokenResponseSchema, type ListenTokenResponse } from "@/lib/live/lecture/contracts";
 import { SCRIBE, scribeSocketUrl } from "@/lib/live/lecture/speech/scribe";
 import { requireUser } from "@/lib/server/auth";
-import { enforceCredits, runCharged } from "@/lib/server/billing";
+import { enforceInk, runCharged } from "@/lib/server/billing";
 import { liveLogger, withRequestId } from "@/lib/server/live-route";
 import { UpstreamError } from "@/lib/server/openrouter";
 import { checkRateLimitDistributed, rateLimitedResponse } from "@/lib/server/rate-limit";
@@ -31,7 +31,7 @@ function notConfigured(): Response {
  * No body: the handler never reads one (NO_BODY_ROUTES in scripts/lib/routes.mjs).
  * requireUser → the `liveListen` budget (a reconnect opens another session, so a few a minute) →
  * without ELEVENLABS_API_KEY a 503 `listen_not_configured` with nothing charged → `live/listen`
- * (1 credit) up front → the token, refunded by `runCharged` on any non-2xx. A key ElevenLabs
+ * (1 ink) up front → the token, refunded by `runCharged` on any non-2xx. A key ElevenLabs
  * rejects (401/403) is answered like a missing one, so the lecture still starts on the browser's
  * recognizer instead of failing for everyone until an operator notices.
  */
@@ -55,7 +55,7 @@ export async function POST(req: Request) {
     return withRequestId(notConfigured(), requestId);
   }
 
-  const billing = await enforceCredits({ token, route: "live/listen", requestId, model: SCRIBE.model }, log);
+  const billing = await enforceInk({ token, route: "live/listen", requestId, model: SCRIBE.model }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   return runCharged(

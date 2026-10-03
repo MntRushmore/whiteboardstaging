@@ -9,7 +9,7 @@ import {
 } from "@/lib/live/contracts";
 import { getLiveModels } from "@/lib/env";
 import { json, requireUser } from "@/lib/server/auth";
-import { enforceCredits, runCharged } from "@/lib/server/billing";
+import { enforceInk, runCharged } from "@/lib/server/billing";
 import { errorResponse } from "@/lib/server/request";
 import { isMathpixAuthFailure, isMathpixConfigured, recognizeStrokes, type MathpixFailure } from "@/lib/server/mathpix";
 import { chatJson } from "@/lib/server/openrouter";
@@ -75,9 +75,9 @@ export async function POST(req: Request) {
   if ("response" in ctx) return ctx.response;
   const { requestId, token, log, data, startedAt } = ctx;
 
-  // Charge credits before any recognizer call; runCharged refunds them on any non-2xx
+  // Charge ink before any recognizer call; runCharged refunds them on any non-2xx
   // (recognizer_failed, upstream error, timeout). GET is free. See src/lib/server/billing.ts.
-  const billing = await enforceCredits(
+  const billing = await enforceInk(
     { token, route: "live/recognize", requestId, model: isMathpixConfigured() ? "mathpix" : getLiveModels().vision },
     log,
   );

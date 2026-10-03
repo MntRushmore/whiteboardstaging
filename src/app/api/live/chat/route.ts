@@ -4,7 +4,7 @@ import { figureProblems } from "@/lib/live/chat/figure";
 import { PROOF_CHECK, wantsHardProof } from "@/lib/live/chat/proof";
 import type { LiveEngine } from "@/lib/live/contracts";
 import { FigureSpecSchema } from "@/lib/live/figureDraw/contracts";
-import { enforceCredits, refundCredits, runCharged } from "@/lib/server/billing";
+import { enforceInk, refundInk, runCharged } from "@/lib/server/billing";
 import { gateChatProof, PROOF_NOT_WRITTEN } from "@/lib/server/chatProof";
 import { gateChatTeach, TEACH_NOT_WRITTEN } from "@/lib/server/chatTeach";
 import { chatJsonWithFallback } from "@/lib/server/openrouter";
@@ -67,7 +67,7 @@ function teachEngine(): Promise<LiveEngine> {
  * a number the screen does not have is dropped with a note ("There's no problem 7 on this
  * screen."), which is the reply when nothing else is left.
  *
- * Charged `live/chat` (3 credits) up front, refunded by `runCharged` on any non-2xx; a reply whose
+ * Charged `live/chat` (3 ink) up front, refunded by `runCharged` on any non-2xx; a reply whose
  * every proposed action had to be dropped is refunded too (200, `refunded: true`), since the
  * student got nothing for it. A deliberate reply with no actions (a question back, a polite no to
  * something that is not maths) keeps the charge.
@@ -78,7 +78,7 @@ export async function POST(req: Request) {
   const { requestId, token, log, data, startedAt } = ctx;
 
   const models = getLiveModels();
-  const billing = await enforceCredits({ token, route: "live/chat", requestId, model: models.chat }, log);
+  const billing = await enforceInk({ token, route: "live/chat", requestId, model: models.chat }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   return runCharged(
@@ -230,7 +230,7 @@ export async function POST(req: Request) {
       dropped.push(...present.dropped);
       notes.push(...present.notes);
 
-      // Nothing the model proposed survived: say so plainly, and give the credits back.
+      // Nothing the model proposed survived: say so plainly, and give the ink back.
       let reply = cleanReplyText(raw.reply);
       let refunded = false;
       if (proposed > 0 && actions.length === 0) {
@@ -245,7 +245,7 @@ export async function POST(req: Request) {
                   ? present.notes[0]
                   : "Sorry, I couldn't do that on the board. Try asking another way.";
         notes.length = 0;
-        const r = await refundCredits({ token, requestId }, log);
+        const r = await refundInk({ token, requestId }, log);
         refunded = r.refunded > 0;
       }
       if (!reply) reply = actions.length > 0 ? "Here you go." : "I can only help with maths on this board.";

@@ -1,6 +1,6 @@
 import { getLiveModels } from "@/lib/env";
 import { SketchRequestSchema, SketchResponseSchema, type SketchResponse } from "@/lib/live/lecture/contracts";
-import { billingEnforced, enforceCredits, runCharged } from "@/lib/server/billing";
+import { billingEnforced, enforceInk, runCharged } from "@/lib/server/billing";
 import { errorResponse } from "@/lib/server/request";
 import { livePreamble, withRequestId } from "@/lib/server/live-route";
 import { illustrate, NoDrawingError } from "@/lib/server/sketch/illustrate";
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   const models = getLiveModels();
   const charged = billingEnforced();
 
-  const billing = await enforceCredits({ token, route: "live/sketch", requestId, model: models.sketch }, log);
+  const billing = await enforceInk({ token, route: "live/sketch", requestId, model: models.sketch }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   const draw = async (): Promise<Response> => {

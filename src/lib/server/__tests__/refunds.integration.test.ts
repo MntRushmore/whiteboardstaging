@@ -14,7 +14,7 @@ import { createClient } from "@supabase/supabase-js";
 import { beforeAll, describe, expect, it } from "vitest";
 import { ensureUser, resolveSupabaseEnv, waitForHealth } from "../../../../scripts/lib/supabaseHttp.mjs";
 import { resetServerEnvCache } from "@/lib/env";
-import { consumeCredits, refundCredits, userClient } from "@/lib/server/billing";
+import { consumeInk, refundInk, userClient } from "@/lib/server/billing";
 import { RATE_LIMIT_HIT_RPC, normalizeRateLimitHit } from "@/lib/server/rate-limit";
 
 const enabled = process.env.RUN_DB_TESTS === "1";
@@ -57,20 +57,20 @@ suite(title, () => {
   it("refund_credits gives back exactly what consume_credits charged for the same request id (idempotent)", async () => {
     const before = await remaining();
     const requestId = `it-refund-${Date.now()}`;
-    const charged = await consumeCredits({ token, route: "live/solve", requestId, model: "test" });
+    const charged = await consumeInk({ token, route: "live/solve", requestId, model: "test" });
     expect(charged).toEqual({ ok: true, remaining: before - 10 });
 
-    const refund = await refundCredits({ token, requestId });
+    const refund = await refundInk({ token, requestId });
     expect(refund).toEqual({ refunded: 10, remaining: before });
     expect(await remaining()).toBe(before);
 
     // A second refund of the same id finds nothing to undo.
-    expect(await refundCredits({ token, requestId })).toEqual({ refunded: 0, remaining: before });
+    expect(await refundInk({ token, requestId })).toEqual({ refunded: 0, remaining: before });
   });
 
   it("refund_credits for an unknown request id refunds nothing and leaves the balance alone", async () => {
     const before = await remaining();
-    expect(await refundCredits({ token, requestId: `it-unknown-${Date.now()}` })).toEqual({ refunded: 0, remaining: before });
+    expect(await refundInk({ token, requestId: `it-unknown-${Date.now()}` })).toEqual({ refunded: 0, remaining: before });
   });
 
   it("rate_limit_hit allows exactly p_limit hits per window and then denies with retry_after_ms (backend db)", async () => {

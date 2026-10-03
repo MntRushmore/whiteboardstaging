@@ -1,6 +1,6 @@
 import { RereadRequestSchema, RereadResponseSchema, type RereadResponse } from "@/lib/live/contracts";
 import { getLiveModels } from "@/lib/env";
-import { enforceCredits, runCharged } from "@/lib/server/billing";
+import { enforceInk, runCharged } from "@/lib/server/billing";
 import { chatJsonWithFallback } from "@/lib/server/openrouter";
 import { errorResponse } from "@/lib/server/request";
 import { buildRereadMessages, cleanRereadLatex, rereadReasoning, RereadReplySchema } from "@/lib/server/prompts/reread";
@@ -18,7 +18,7 @@ const REREAD_ATTEMPT_MS = 8_000;
  * engine cannot make sense of, a symbol that is odd in its column, or a low-confidence read) and
  * at most once per ink. The reply is the model's transcription; the client keeps Mathpix's read
  * unless the new one differs, parses with the engine and has no words. Charged `live/reread`
- * (1 credit, like recognize), refunded by `runCharged` on any non-2xx.
+ * (1 ink, like recognize), refunded by `runCharged` on any non-2xx.
  */
 export async function POST(req: Request) {
   const ctx = await livePreamble(req, "reread", "liveReread", RereadRequestSchema);
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   const { requestId, token, log, data, startedAt } = ctx;
 
   const models = getLiveModels();
-  const billing = await enforceCredits({ token, route: "live/reread", requestId, model: models.reread }, log);
+  const billing = await enforceInk({ token, route: "live/reread", requestId, model: models.reread }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   return runCharged(

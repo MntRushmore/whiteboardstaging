@@ -53,6 +53,7 @@ vi.mock("@/lib/server/mathpix", () => ({ isMathpixConfigured: () => false, recog
 import { resetServerEnvCache } from "@/lib/env";
 import { resetBillingWarnings } from "@/lib/server/billing";
 import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rate-limit";
+import { PROVIDER_UNAVAILABLE_MESSAGE } from "@/lib/server/request";
 import { CreditsExhaustedError, UpstreamError, chatJson, chatJsonWithFallback, openrouterChat, streamWithFallback, type FallbackStreamEvent } from "@/lib/server/openrouter";
 import { POST as liveSetup } from "@/app/api/live/setup/route";
 import { POST as recognize } from "@/app/api/live/recognize/route";
@@ -207,9 +208,11 @@ describe.each(FAMILIES)("$name: charge + refund", (family) => {
     expectChargedAndRefunded();
   });
 
-  it("refunds when the provider reports its own credits exhausted (402) and on a timeout/abort (500)", async () => {
+  it("refunds when the provider account runs dry (503, never the student's 402) and on a timeout/abort (500)", async () => {
     vi.mocked(family.upstream).mockRejectedValue(new CreditsExhaustedError());
-    expect((await family.handler(request(family.path, family.body))).status).toBe(402);
+    const dry = await family.handler(request(family.path, family.body));
+    expect(dry.status).toBe(503);
+    expect(await dry.json()).toMatchObject({ error: "upstream_error", message: PROVIDER_UNAVAILABLE_MESSAGE });
     expectChargedAndRefunded();
 
     fake.calls.length = 0;
@@ -220,7 +223,7 @@ describe.each(FAMILIES)("$name: charge + refund", (family) => {
     expectChargedAndRefunded();
   });
 
-  it("does not call the provider or refund when the charge is refused (402 before upstream)", async () => {
+  it("does not call the provider or refund when the ink is short (402 ink_empty before upstream)", async () => {
     fake.replies.consume_credits = () => ({ data: { ok: false, remaining: 1, reason: "insufficient_credits" } });
     const res = await family.handler(request(family.path, family.body));
     expect(res.status).toBe(402);
@@ -473,7 +476,7 @@ describe("distributed rate limits through the routes", () => {
 /* Static invariant: every charged route refunds through the shared wrappers   */
 /* ------------------------------------------------------------------------- */
 
-describe("static: every route that charges credits refunds through runCharged / runChargedStream", () => {
+describe("static: every route that charges ink refunds through runCharged / runChargedStream", () => {
   const REPO_ROOT = join(__dirname, "..", "..", "..", "..");
   const API_DIR = join(REPO_ROOT, "src", "app", "api");
 
@@ -487,7 +490,7 @@ describe("static: every route that charges credits refunds through runCharged / 
     return out.sort();
   }
 
-  const charged = routeFiles().filter((f) => /\benforceCredits\s*\(/.test(readFileSync(join(REPO_ROOT, f), "utf8")));
+  const charged = routeFiles().filter((f) => /\benforceInk\s*\(/.test(readFileSync(join(REPO_ROOT, f), "utf8")));
 
   it("finds the charged routes", () => {
     expect(charged).toEqual([
@@ -507,7 +510,7 @@ describe("static: every route that charges credits refunds through runCharged / 
   for (const file of charged) {
     it(`${file} charges and refunds the same { token, requestId }`, () => {
       const src = readFileSync(join(REPO_ROOT, file), "utf8");
-      expect(src).toMatch(/enforceCredits\(\s*\{\s*token,\s*route:\s*"[^"]+",\s*requestId\b/);
+      expect(src).toMatch(/enforceInk\(\s*\{\s*token,\s*route:\s*"[^"]+",\s*requestId\b/);
       expect(/\brunCharged\(\s*\{\s*token,\s*requestId\s*\}/.test(src) || /\brunChargedStream\(\s*\{\s*token,\s*requestId\s*\}/.test(src), `${file} must wrap its paid work in runCharged or runChargedStream`).toBe(true);
     });
   }

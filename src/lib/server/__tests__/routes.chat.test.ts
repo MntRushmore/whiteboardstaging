@@ -435,7 +435,7 @@ describe("live/chat", () => {
     fake.replies.consume_credits = () => ({ data: { ok: false, remaining: 1, reason: "insufficient_credits" } });
     const res = await chat(request(BODY));
     expect(res.status).toBe(402);
-    expect(await res.json()).toMatchObject({ error: "credits_exhausted" });
+    expect(await res.json()).toMatchObject({ error: "ink_empty" });
     expect(chatJsonWithFallback).not.toHaveBeenCalled();
   });
 });

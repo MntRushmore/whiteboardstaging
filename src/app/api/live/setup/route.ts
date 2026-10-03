@@ -1,7 +1,7 @@
 import { SetupRequestSchema, SetupResponseSchema, type SetupResponse } from "@/lib/live/contracts";
 import { FigureReplySchema } from "@/lib/live/figure";
 import { getLiveModels } from "@/lib/env";
-import { enforceCredits, runCharged } from "@/lib/server/billing";
+import { enforceInk, runCharged } from "@/lib/server/billing";
 import { chatJsonWithFallback, UpstreamError } from "@/lib/server/openrouter";
 import { errorResponse } from "@/lib/server/request";
 import { buildSetupMessages, cleanSetupReply, SetupReplySchema, type SetupReply } from "@/lib/server/prompts/setup";
@@ -35,7 +35,7 @@ export async function POST(req: Request) {
   const models = getLiveModels();
   const figure = Boolean(data.crop);
   const [primary, fallback] = figure ? [models.figure, models.figureFallback] : [models.setup, models.setupFallback];
-  const billing = await enforceCredits({ token, route: "live/setup", requestId, model: primary }, log);
+  const billing = await enforceInk({ token, route: "live/setup", requestId, model: primary }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   return runCharged(

@@ -254,7 +254,7 @@ describe("live/lecture", () => {
       fake.replies.consume_credits = () => ({ data: { ok: false, remaining: 0, reason: "insufficient_credits" } });
       const res = await lecture(request(BODY));
       expect(res.status).toBe(402);
-      expect(await res.json()).toMatchObject({ error: "credits_exhausted" });
+      expect(await res.json()).toMatchObject({ error: "ink_empty" });
       expect(chatJsonWithFallback).not.toHaveBeenCalled();
     });
 

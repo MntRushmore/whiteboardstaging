@@ -139,7 +139,7 @@ describe("POST /api/live/lecture/token", () => {
     fake.replies.consume_credits = () => ({ data: { ok: false, remaining: 0, reason: "insufficient_credits" } });
     const res = await token(request());
     expect(res.status).toBe(402);
-    expect(((await res.json()) as { error: string }).error).toBe("credits_exhausted");
+    expect(((await res.json()) as { error: string }).error).toBe("ink_empty");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
