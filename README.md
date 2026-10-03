@@ -42,7 +42,7 @@ Defined in `supabase/migrations/20260911000000_init.sql`. Every table has RLS en
 | Table | Purpose |
 | --- | --- |
 | `whiteboards` | One row per board: `title`, `data` (tldraw snapshot jsonb), `preview` thumbnail, `version`, `deleted_at` (soft delete). Owner CRUD. |
-| `whiteboard_snapshots` | Last 20 versions of each board's `data`, written by trigger on every data change. Owner read. |
+| `whiteboard_snapshots` | Board history for an operator's restore: the state a save replaced, at most every 10 minutes and before a wipe; newest 8 + one a day for 7 days, within 4 MB per board (`20261003000000_snapshot_retention.sql`). Written by trigger only; owner read. |
 | `board_assets` | Registry of objects in the `board-assets` bucket, for garbage collection. Owner CRUD. |
 | `user_settings` | `features` jsonb (feature-lab toggles). Owner read/insert/update. |
 | `bug_reports` | Insert-only from the app (message, screenshot, diagnostics, client log ring buffer). Read via the dashboard/service role. |
