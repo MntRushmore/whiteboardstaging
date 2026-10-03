@@ -13,6 +13,9 @@
 --
 -- The privacy policy (src/app/(platform)/privacy/page.tsx, "How long we keep it") says so.
 --
+-- Deploy order: with 20261003010000, after the frontend deploy (RUNBOOK-billing section 7, step 5).
+-- The code does not need it: until then a deleted account's reports simply stay, as before.
+--
 -- Objects: constraint bug_reports_user_id_fkey replaced (on delete cascade).
 -- =============================================================================
 

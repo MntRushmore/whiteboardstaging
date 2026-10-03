@@ -13,6 +13,9 @@ Prereqs: Node 22+, `npx supabase --version` >= 2.x (bundled, no global install),
 > `vercel env pull` and run
 > `npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING" --include-all`, then verify with
 > `NEXT_PUBLIC_SUPABASE_URL=… NEXT_PUBLIC_SUPABASE_ANON_KEY=… SUPABASE_SERVICE_ROLE_KEY=… node scripts/verify-rls.mjs`.
+> **Except the October 2026 release (ink, snapshot retention, sign-up consent, bug reports):** it
+> goes in two halves around the frontend deploy, `docs/RUNBOOK-billing.md` section 7 steps 3 and 5.
+> A plain `db push` of all four before the deploy breaks every sign-up until the new form is live.
 
 ## 1. Create the project (dashboard, ~3 min)
 
@@ -400,7 +403,9 @@ Migration `supabase/migrations/20261003010000_signup_consent.sql` (idempotent). 
 | `profiles.accepted_terms_at` | when the account was created with the box ticked (the account's `created_at`) |
 | `profiles.terms_version` | which version of that text it agreed to (`YYYY-MM-DD`) |
 
-Both are null for accounts made before the migration; those are never asked. Users can read their own, never write them.
+Both are null for accounts made before the migration; those are never asked. Users can read their own, never write them. A version is a real calendar date from 2026-01-01 to tomorrow (UTC), so changing `TERMS_VERSION` needs no migration.
+
+**Deploy order.** Apply this migration only **after** the frontend that sends `terms_version` is live (`docs/RUNBOOK-billing.md` section 7, step 5). The other way round, every sign-up from the old form is refused until the deploy. The new frontend without the migration is harmless (the version waits in the account's metadata), and the migration's backfill records it for the accounts made in between. It is re-runnable: the trigger is created only when missing (no `drop trigger` on `auth.users`, which needs ownership the hosted `postgres` role may not have), the functions are create-or-replace, and the backfill fills only empty profiles.
 
 **No acceptance, no account.** A `BEFORE INSERT` trigger on `auth.users` (`auth_users_require_terms`) refuses any new user without a well-formed `user_metadata.terms_version`: a client that skips the box, a page cached from before the release, or a direct `POST /auth/v1/signup`. The sign-up page then says "We couldn't create your account. Reload this page and try again." GoTrue's admin API and the public sign-up look the same to a trigger, so this applies to accounts made with the service role too:
 
@@ -413,6 +418,16 @@ Both are null for accounts made before the migration; those are never asked. Use
     -d '{"email":"student@example.com","password":"...","email_confirm":true,"user_metadata":{"terms_version":"2026-10-03"}}'
   ```
 
+- **Invites.** The dashboard's *Invite user* is refused for the same reason. An invited person sets a password from the email and never sees the box, so invite only someone who (or whose parent) has agreed to the Terms and Privacy Policy some other way, and say which version:
+
+  ```bash
+  curl -X POST "$SUPABASE_URL/auth/v1/invite" \
+    -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"email":"student@example.com","data":{"terms_version":"2026-10-03"}}'
+  ```
+
+  (`supabase.auth.admin.inviteUserByEmail(email, { data: { terms_version } })` from code.) For a closed cohort it is simpler to leave sign-ups on and share the link: everyone then ticks the box themselves.
 - The scripts (`seed-local`, `verify-rls`, the DB tests) send it themselves (`scripts/lib/supabaseHttp.mjs`).
 
 ```sql

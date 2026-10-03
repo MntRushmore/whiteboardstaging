@@ -13,6 +13,11 @@ tables, RLS, storage buckets (`board-assets` public, `training-data` private), t
 ledger and its RPCs are all in place (the ink migration `20261002000000_ink.sql` adds the ink
 ledger and packs; see `RUNBOOK-billing.md` "Going live").
 
+**The October 2026 release's four migrations go in two halves around the deploy**, not with one
+`db push`: ink and snapshot retention before it, sign-up consent and bug reports after it
+(`RUNBOOK-billing.md` section 7, steps 3 and 5). The consent migration refuses any sign-up that
+does not send the Terms version, and the form on `main` does not send one.
+
 Two settings live only in the Supabase dashboard, so they still need you (open it with
 `vercel integration open supabase`, then Authentication -> URL configuration / Providers):
 
@@ -20,8 +25,11 @@ Two settings live only in the Supabase dashboard, so they still need you (open i
    confirmation links point at. Set the Site URL to `https://whiteboard.rushilchopra.com` and add
    `https://whiteboard.rushilchopra.com/**` (plus any preview host you use) to the redirect list.
 2. **Email confirmations.** They are ON, so a new student must click a link before their first
-   sign-in, and open sign-up is enabled. For a closed cohort, turn sign-ups off and invite users;
-   for a demo, turn confirmations off. Either way it is a product decision, not a code change.
+   sign-in, and open sign-up is enabled. For a demo, turn confirmations off. For a closed cohort,
+   keep sign-ups on and share the link: since the consent migration (`20261003010000`) every new
+   account must carry the Terms version it agreed to, so the dashboard's *Invite user* and *Add
+   user* are refused. Inviting is still possible through the API with the version, for someone
+   who agreed some other way (`RUNBOOK-supabase.md` 13.3). A product decision, not a code change.
 
 Everything else about the backend — schema changes, ink packs, manual ink grants, backups,
 key rotation, restore drill — is in [`RUNBOOK-supabase.md`](./RUNBOOK-supabase.md).
