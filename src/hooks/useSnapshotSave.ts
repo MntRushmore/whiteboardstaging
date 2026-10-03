@@ -672,10 +672,22 @@ export function useSnapshotSave(
     const onPageHide = () => {
       queue.writeBackupNow();
     };
+    // Switching app or tab is often the last event a page gets (iPadOS suspends a hidden tab's
+    // timers, then may discard it without pagehide): back up and save now, not after the
+    // debounce. Back in view, a save waiting out a backoff is tried again at once.
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        queue.writeBackupNow();
+        void queue.flush();
+      } else {
+        queue.setOnline(navigatorOnline());
+      }
+    };
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
     window.addEventListener("pagehide", onPageHide);
     window.addEventListener("beforeunload", onPageHide);
+    document.addEventListener("visibilitychange", onVisibility);
 
     if (process.env.NODE_ENV !== "production") {
       // Dev-only handle for the verifier / devtools.
@@ -687,6 +699,7 @@ export function useSnapshotSave(
       window.removeEventListener("offline", onOffline);
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("beforeunload", onPageHide);
+      document.removeEventListener("visibilitychange", onVisibility);
       disposeListener();
       if (queueAtom.get() === queue) queueAtom.set(null);
       if (process.env.NODE_ENV !== "production") {
