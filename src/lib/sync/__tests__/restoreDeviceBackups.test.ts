@@ -129,6 +129,32 @@ describe("restoreDeviceBackups (two tabs, one device: N1)", () => {
     expect(mine.read("b1")?.changed.sort()).toEqual(["shape:closed", "shape:legacy"]);
   });
 
+  it("storage too full even with the replayed backups gone: they stay (put back), to be replayed next time", async () => {
+    const { storage, server, loaded, queue } = setup();
+    const closed = JSON.stringify(strokeBackup(server, "shape:closed", 20));
+    const legacy = JSON.stringify(strokeBackup(server, "shape:legacy", 10));
+    storage.setItem(backupKey("b1", "closed"), closed);
+    storage.setItem(backupKey("b1"), legacy);
+    // This tab's own key never fits (a quota smaller than the backup it would hold).
+    const setItem = storage.setItem;
+    storage.setItem = (k: string, v: string) => {
+      if (k === backupKey("b1", "mine")) throw new DOMException("full", "QuotaExceededError");
+      setItem(k, v);
+    };
+    const mine = createLocalStorageBackup(storage, undefined, "mine", () => 100);
+    queue.writeBackupNow.mockImplementation(() => {
+      const records = Object.fromEntries(["shape:closed", "shape:legacy"].map((id) => [id, loaded.get(id as never)]));
+      return mine.write("b1", { snapshot: { store: records, schema: loaded.schema.serialize() } as unknown as BackupPayload["snapshot"], baseVersion: 1, changed: Object.keys(records), removed: [], at: 50 });
+    });
+
+    const report = await restoreDeviceBackups({ store: loaded, boardId: "b1", loadedVersion: 1, backup: mine, queue, cancelled: () => false, openTabs: async () => null });
+
+    expect(report).toEqual({ applied: 2, stale: 0 }); // on screen, and pending a save
+    expect(storage.map.get(backupKey("b1", "closed"))).toBe(closed);
+    expect(storage.map.get(backupKey("b1"))).toBe(legacy);
+    expect(storage.map.has(backupKey("b1", "mine"))).toBe(false);
+  });
+
   it("an unmounted board applies nothing and keeps the keys for the next mount", async () => {
     const { storage, server, loaded, mine, queue, write } = setup();
     write("closed", strokeBackup(server, "shape:closed", 1));

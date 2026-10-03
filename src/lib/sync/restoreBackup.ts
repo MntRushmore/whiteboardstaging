@@ -145,10 +145,14 @@ export async function restoreDeviceBackups({
   if (payloads.length > 0) {
     report = restoreBackups(store, payloads, loadedVersion);
     queue.markDirty();
-    // What is still unsaved now goes into this tab's backup before the old keys go: no window
-    // without one. If storage is full, the old keys (their records are in it) make the room.
-    backup.absorb(gone.map((b) => b.key));
-    queue.writeBackupNow();
+    if (report.applied > 0) {
+      // What is still unsaved now goes into this tab's backup before the old keys go: no window
+      // without one. If storage is full, the old keys (their records are in it) make the room; if
+      // even that is not enough, the old keys stay (the write puts back what it evicted) and are
+      // replayed again next time.
+      backup.absorb(gone.map((b) => b.key));
+      if (!queue.writeBackupNow()) return report;
+    }
   }
   for (const b of gone) backup.remove(b.key);
   return report;
