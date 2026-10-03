@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { reportClientError } from "@/lib/clientErrors";
+import { reportAppError } from "@/lib/reportAppError";
 import { logger } from "@/lib/logger";
 
 interface Props {
@@ -32,7 +32,7 @@ export class LiveErrorBoundary extends React.Component<Props, State> {
       },
       "Live UI crashed; hiding the Live layer for this session",
     );
-    reportClientError("live", error);
+    reportAppError("live", error);
   }
 
   render(): React.ReactNode {

@@ -7,8 +7,9 @@ import { RELEASE } from "@/lib/release";
  *
  * Fed by src/instrumentation-client.ts (window `error` and `unhandledrejection`, installed before
  * hydration on every page) and by the error boundaries that catch what never reaches the window:
- * error.tsx, global-error.tsx and LiveErrorBoundary. Per page load each distinct error is sent
- * once, at most MAX_REPORTS in all, and noise is dropped (NOISE, extension scripts).
+ * error.tsx, global-error.tsx and LiveErrorBoundary. They all go through `reportAppError`
+ * (src/lib/reportAppError.ts), which loads this module lazily. Per page load each distinct error is
+ * sent once, at most MAX_REPORTS in all, and noise is dropped (NOISE, extension scripts).
  *
  * What it sends is a ClientErrorReport and nothing else: the page's path without its query string
  * or hash (a query string once carried a login form's credentials), the board id on a board, the
@@ -17,7 +18,9 @@ import { RELEASE } from "@/lib/release";
  * typed. When signed in, the request carries the session's access token so the server can log
  * who it was (the user id, never the token).
  *
- * Dependency-free and small on purpose: it ships in every page's first load (docs/BUNDLE.md).
+ * Not in any page's first load: the board's budget is nearly spent (docs/BUNDLE.md), so this
+ * module is a lazy chunk, fetched a few seconds after the page loads (or at the first error, if
+ * sooner) — from the same deployment, so a tab left open across a deploy can still report.
  */
 
 export const CLIENT_ERRORS_PATH = "/api/client-errors";
