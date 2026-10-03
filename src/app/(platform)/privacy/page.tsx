@@ -42,7 +42,7 @@ const PROVIDERS = [
   },
   {
     name: "AI model providers: Google (Gemini), OpenAI (GPT), Anthropic (Claude), DeepSeek",
-    role: "Read your work and write the tutor’s answers, reached through OpenRouter. Which one answers depends on the task; if one is slow or down, another takes over.",
+    role: "Read your work and write the tutor’s answers, reached through OpenRouter, which sends each request only to a host that has agreed to keep nothing and not to train on it (such as Google Cloud, Microsoft Azure or Amazon Web Services). Which model answers depends on the task; if one is slow or down, another takes over.",
     data: "Pictures of the part of the board you are working on, the maths read from your board, what the tutor has written, your chat messages and, in lecture mode, the lecture transcript.",
   },
   {
@@ -213,9 +213,9 @@ export default function PrivacyPage() {
           anything you write on a board (your name, say) is sent along with the rest of the board.
         </p>
         <p>
-          We do not use your boards to train AI models. {LEGAL.aiProviderTraining} AI providers may keep what they
-          receive for a limited time under their own policies (for example, to watch for abuse), and some of them may
-          process it outside the United States.
+          We do not use your boards to train AI models. {LEGAL.aiProviderTraining} Mathpix keeps only a record that a
+          request was made (when, and whether it worked), not your handwriting or what it read. Some of the AI
+          providers may process what we send outside the United States.
         </p>
       </LegalSection>
 

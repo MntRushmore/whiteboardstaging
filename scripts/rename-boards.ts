@@ -19,6 +19,7 @@ import { writeFileSync } from "node:fs";
 import { buildTitleMessages } from "@/lib/server/prompts/title";
 import { cleanSmartTitle, replaceableTitles, titleContent } from "@/lib/boards/smartTitle";
 import { CHAT_PROBLEM_META } from "@/lib/live/chat/cells";
+import { PROVIDER_PRIVACY } from "@/lib/server/openrouter";
 
 const MODEL = "google/gemini-3.1-flash-lite";
 const args = process.argv.slice(2);
@@ -75,7 +76,8 @@ async function nameFor(lines: string[]): Promise<string | null> {
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${orKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: MODEL, messages: buildTitleMessages(lines), max_tokens: 120, temperature: 0, response_format: { type: "json_object" } }),
+    // The boards' maths is children's work: the same no-training, no-retention providers as the app.
+    body: JSON.stringify({ model: MODEL, messages: buildTitleMessages(lines), max_tokens: 120, temperature: 0, response_format: { type: "json_object" }, provider: PROVIDER_PRIVACY }),
   });
   const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
   const text = json.choices?.[0]?.message?.content ?? "";

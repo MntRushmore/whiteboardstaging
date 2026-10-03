@@ -14,6 +14,30 @@ export const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completion
 export const OPENROUTER_CREDITS_URL = "https://openrouter.ai/api/v1/credits";
 
 /**
+ * Provider preferences on EVERY request this server sends to OpenRouter: what goes in is a child's
+ * work (pictures of their board, their handwriting read as maths, their chat messages).
+ *  - `data_collection: "deny"`: only providers that do not store prompts to train on them.
+ *  - `zdr: true`: only Zero Data Retention endpoints, which keep nothing at all once they answer
+ *    (OpenRouter's own list: GET /api/v1/endpoints/zdr). Stronger than the first: it also rules out
+ *    the 30-day "abuse monitoring" copies some first-party APIs keep.
+ * OpenRouter itself keeps no prompts unless the account opts in to input/output logging, which
+ * must stay off (openrouter.ai/settings/privacy; the go-live checklist in docs/RUNBOOK-billing.md).
+ * Every model in LIVE_MODELS answers this way (a real call per model on 2026-10-03, with the
+ * provider that served it: `npm run eval:privacy`, docs/eval/privacy.md); a model with no ZDR
+ * endpoint is refused with a 404 ("No endpoints found matching your data policy"), never sent to
+ * a provider that keeps data, so a new model must pass that probe before it ships. Applied
+ * in the two functions that POST (openrouterChat, streamChatText), so no caller can leave it out;
+ * a caller's own `provider` preferences (`sort: "latency"`) are kept, these always win.
+ */
+export const PROVIDER_PRIVACY = { data_collection: "deny", zdr: true } as const;
+
+/** `body` with PROVIDER_PRIVACY merged into its `provider` preferences (a copy; the caller's object is untouched). */
+export function withProviderPrivacy(body: Record<string, unknown>): Record<string, unknown> {
+  const own = body.provider && typeof body.provider === "object" && !Array.isArray(body.provider) ? (body.provider as Record<string, unknown>) : {};
+  return { ...body, provider: { ...own, ...PROVIDER_PRIVACY } };
+}
+
+/**
  * Thrown when OpenRouter reports the OPERATOR's account is out of credits (its own billing, not
  * the student's ink). Routes answer it with a 503 (request.ts `errorResponse`), never a 402: the
  * student cannot fix it by buying ink. The message is for the logs only.
@@ -67,6 +91,8 @@ export type OpenRouterMessage = {
 export type OpenRouterChatResponse = {
   id?: string;
   model?: string;
+  /** The provider that served the request (e.g. "Google", "Azure"). */
+  provider?: string;
   choices?: Array<{ message?: OpenRouterMessage; finish_reason?: string }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
   error?: { code?: number | string; message?: string };
@@ -88,7 +114,7 @@ export async function openrouterChat(
   const response = await fetch(OPENROUTER_CHAT_URL, {
     method: "POST",
     headers,
-    body: JSON.stringify(body),
+    body: JSON.stringify(withProviderPrivacy(body)),
     signal,
   });
 
@@ -168,7 +194,7 @@ export async function* streamChatText(opts: StreamChatOptions): AsyncGenerator<s
   const response = await fetch(OPENROUTER_CHAT_URL, {
     method: "POST",
     headers,
-    body: JSON.stringify(body),
+    body: JSON.stringify(withProviderPrivacy(body)),
     signal: opts.signal,
   });
   if (!response.ok) await throwForBadResponse(response);

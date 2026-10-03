@@ -15,9 +15,10 @@ import { LEGAL_LAST_UPDATED } from "@/components/legal/LegalPage";
 import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
 import { DEFAULT_EMAIL_FROM } from "@/lib/email/resend";
 import { TRIAL_REMINDER_WINDOW } from "@/lib/email/trialReminders";
-import { LEGAL, TERMS_VERSION } from "@/lib/legal";
+import { isPlaceholder, LEGAL, TERMS_VERSION } from "@/lib/legal";
 import { LIVE_MODELS } from "@/lib/live/contracts";
-import { TEXT_MODELS } from "@/lib/server/openrouter";
+import { buildStrokesBody } from "@/lib/server/mathpix";
+import { PROVIDER_PRIVACY, TEXT_MODELS } from "@/lib/server/openrouter";
 
 const PAGES = {
   "/terms": renderToStaticMarkup(<TermsPage />),
@@ -157,8 +158,16 @@ describe("privacy: who gets what", () => {
     expect(privacy).toContain("Payment notices from Stripe: kept after an account is deleted");
   });
 
-  it("shows the AI-training sentence the owner has to confirm (a placeholder until then)", () => {
+  it("says AI services neither keep nor train on what we send, only because every request asks and is refused otherwise", () => {
+    expect(isPlaceholder(LEGAL.aiProviderTraining)).toBe(false);
     expect(privacy).toContain(LEGAL.aiProviderTraining);
+    // OpenRouter: only endpoints that do not train on prompts and keep none (a 404 where there is none)
+    expect(PROVIDER_PRIVACY).toEqual({ data_collection: "deny", zdr: true });
+    // Mathpix: no image data or result persisted
+    expect(buildStrokesBody({ x: [[0, 1]], y: [[0, 1]], w: 1, h: 1 }).metadata).toEqual({ improve_mathpix: false });
+    expect(privacy).toContain("Mathpix keeps only a record that a request was made");
+    // no leftover promise that providers keep data "for a limited time"
+    expect(privacy).not.toContain("may keep what they receive for a limited time");
   });
 });
 

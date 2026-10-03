@@ -23,13 +23,16 @@ export const LEGAL = {
   effectiveDate: "[Effective date]",
   /**
    * What the AI services may do with what we send them, as one sentence in the Privacy Policy
-   * ("AI and your boards"). A placeholder because the code cannot answer it: no request sets a
-   * "no training / no retention" flag (OpenRouter's `provider.data_collection` / `zdr`, Mathpix's
-   * `metadata.improve_mathpix`), so it depends on the OpenRouter account's privacy settings and on
-   * each provider's own policy. Check those, then state what is true, e.g. "Our settings do not
-   * allow these services to train their models on what we send."
+   * ("AI and your boards"). True because every request says so and is refused where it cannot be
+   * honoured: OpenRouter requests carry `provider: { data_collection: "deny", zdr: true }`
+   * (PROVIDER_PRIVACY in src/lib/server/openrouter.ts: only endpoints that neither train on nor
+   * keep prompts may answer; one without is a 404, never a fallback) and Mathpix requests carry
+   * `metadata: { improve_mathpix: false }` (src/lib/server/mathpix.ts: no image data or result is
+   * persisted). It also depends on OpenRouter's own prompt logging staying off in the account's
+   * privacy settings (the go-live checklist, docs/RUNBOOK-billing.md). legalPages.test.tsx pins
+   * the two flags to this sentence.
    */
-  aiProviderTraining: "[Whether AI services may keep or train on what we send: check the OpenRouter and Mathpix settings, then say so here]",
+  aiProviderTraining: "We ask every AI service we use not to keep or train on what we send, and we only use providers that agree.",
   /** Set to true once counsel has reviewed the pages and the placeholders above are filled. */
   reviewed: false,
 

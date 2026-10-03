@@ -624,3 +624,25 @@ group by u.email order by ink_equivalent desc;
 - **A grown-up who cannot sign in to the portal** (they used another email at checkout): cancel
   the subscription for them in the Dashboard (*Customers → the customer → the subscription →
   Cancel*, at the period end); the webhook updates the app.
+
+## 12. Go-live checklist (2026-10-04): privacy, plan emails, retention
+
+What `supabase/migrations/20261003040000_go_live_gaps.sql` and the code beside it need before the
+first real families sign up. Each item says how to check it.
+
+### AI services keep nothing and train on nothing
+
+- **OpenRouter.** Every request carries `provider: { data_collection: "deny", zdr: true }`
+  (`PROVIDER_PRIVACY`, `src/lib/server/openrouter.ts`, merged in the only two functions that post):
+  OpenRouter may route it only to an endpoint with Zero Data Retention that does not train on
+  prompts; a model with none is refused with `404 No endpoints found matching your data policy`,
+  never sent elsewhere. **Check by hand:** <https://openrouter.ai/settings/privacy> must have
+  *input/output logging* OFF (OpenRouter's own copy of prompts; nothing in the API shows it). Also
+  leave the account's "allow training" switches off; the per-request flags win either way.
+- **A new model** (in `LIVE_MODELS`, or a `LIVE_MODEL_*` override in Vercel) must pass `npm run
+  eval:privacy` first: one tiny request per model under those flags, with the provider that served
+  it (`docs/eval/privacy.md`). A model with no ZDR endpoint fails every request in production.
+- **Mathpix.** Every strokes request carries `metadata: { improve_mathpix: false }`
+  (`src/lib/server/mathpix.ts`): Mathpix persists no image data or result and keeps only the
+  request's metadata for billing. An account-level `improve_mathpix` value (set by Mathpix support)
+  overrides the per-request one: leave it unset, or have it set to false.
