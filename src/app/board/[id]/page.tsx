@@ -534,8 +534,11 @@ export default function BoardPage() {
     setLoadAttempt((n) => n + 1);
   }, []);
 
+  // Keyed on the user's id, not the user object: supabase-js hands out a new session object on
+  // every auth event (a token refresh, another tab of the app starting), and reloading the row
+  // under a mounted editor gave the autosave a newer version than the board on screen.
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
     let cancelled = false;
     async function loadBoard() {
       let result: BoardLoadState;
@@ -580,7 +583,7 @@ export default function BoardPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, user, loadAttempt]);
+  }, [id, userId, loadAttempt]);
 
   if (authLoading || !user || loadState.kind === "loading") {
     return <BoardLoading label={loadAttempt > 0 ? BOARD_LOAD_COPY.retrying : BOARD_LOAD_COPY.loading} />;
@@ -620,6 +623,8 @@ export default function BoardPage() {
         }}
         onMount={(editor) => {
           assetStoreBundle?.attach(editor);
+          // Pasted/dropped pictures: one whose upload fails is removed again, not saved broken.
+          editor.registerExternalContentHandler("files", (c) => import("@/lib/assets/addImageFiles").then((m) => m.addImageFiles(editor, c)));
           if (initialData) {
             try {
               loadSnapshot(editor.store, initialData);

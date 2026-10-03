@@ -49,8 +49,22 @@ export interface BackupPayload {
   changed: string[];
   removed: string[];
   at: number;
+  /**
+   * Each changed or removed record as the server had it at `baseVersion` (an id that is missing
+   * did not exist then). A restore compares it with the row it loads to tell "only this device
+   * changed it" from "the server changed it too". Absent in backups written before 2026-10-03,
+   * and dropped when it would push the backup past its size cap.
+   */
+  base?: Record<string, unknown>;
+  /**
+   * Records a write still in flight sent (null: it removed the record), for ids edited again
+   * since: if the tab died after that write landed, the server holds exactly this and the newer
+   * local edit is still this device's own.
+   */
+  sent?: Record<string, unknown>;
 }
 
+/** This tab's unsaved-changes backup of a board. */
 export interface LocalBackup {
   read(boardId: string): BackupPayload | null;
   /** false when the payload could not be stored (too large, storage unavailable) */

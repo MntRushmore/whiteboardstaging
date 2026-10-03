@@ -10,7 +10,7 @@ import type { OffloadResult } from "@/lib/assets/offloadSnapshotAssets";
 import {
   createLocalStorageBackup,
   createSaveQueue,
-  restoreBackupInto,
+  holdTabLock,
   type BuildResult,
   type PersistResult,
   type SaveQueue,
@@ -48,6 +48,8 @@ export const PG_CHECK_VIOLATION = "23514";
 /** Student-facing strings owned by the autosave wiring (the pill's strings live in SaveStatus.tsx). */
 export const SAVE_COPY = {
   restoredBackup: "Restored unsaved changes from this device",
+  /** a backup's change to a record the board has changed since (on another device) was dropped */
+  staleBackup: "Some unsaved changes from this device were older than the board and weren't restored",
   /** the editor could not produce a serializable snapshot (not a size problem) */
   cannotPrepare: "Couldn't prepare this board to save — try reloading",
 } as const;
@@ -616,24 +618,33 @@ export interface UseSnapshotSaveResult {
  * Every document change (`source: 'all'`, so Live echoes, graphs and the tutor's
  * handwriting are included) marks the queue dirty.
  *
- * On mount the localStorage backup left by a previous session (offline, crash, closed tab
- * mid-save) is merged over the loaded board — this effect runs after tldraw's `onMount`
- * (layout effect of the parent `Layout`) has run `loadSnapshot`, so the restore never gets
- * overwritten by the load.
+ * Each mount backs up to its own key (`agathon.unsaved.<boardId>.<tabId>`) and holds a Web Lock
+ * named after it while it lives. On mount the backups that tabs which are gone left on this device
+ * (offline, crash, closed tab mid-save) are merged over the loaded board, record by record, never
+ * over a record the server changed since (`restoreDeviceBackups`) — this effect runs after
+ * tldraw's `onMount` (layout effect of the parent `Layout`) has run `loadSnapshot`, so the restore
+ * never gets overwritten by the load.
  */
 export function useSnapshotSave(
   editor: Editor | null,
   boardId: string,
-  initialVersion: number | null = null,
+  version: number | null = null,
 ): UseSnapshotSaveResult {
   // The queue is created in an effect (it needs the editor) but read reactively during
   // render, so it lives in a tldraw atom rather than React state (no setState in effects).
   const [queueAtom] = useState(() => atom<SaveQueue | null>("save.queue", null));
+  // The version the editor's document was loaded at, fixed for this mount: a newer value later
+  // (the page re-read the row) does not reload the store, and a queue built on it would write
+  // the stale document as if it were that version, over another tab's or device's work.
+  const [initialVersion] = useState(version);
 
   useEffect(() => {
     if (!editor) return;
     const store = editor.store;
+    // This mount's own backup key, and the lock that tells other tabs it is still open.
     const backup = createLocalStorageBackup();
+    const releaseLock = holdTabLock(backup.tabId);
+    let unmounted = false;
     const queue = createSaveQueue({
       boardId,
       store,
@@ -647,21 +658,18 @@ export function useSnapshotSave(
     });
     queueAtom.set(queue);
 
-    // Unsaved work from a previous session on this device: local edits win over the loaded row.
-    try {
-      const pending = backup.read(boardId);
-      if (pending) {
-        const { applied } = restoreBackupInto(store, pending, initialVersion);
-        logger.info({ id: boardId, applied, baseVersion: pending.baseVersion }, "Restored autosave backup");
-        if (applied > 0) toast.info(SAVE_COPY.restoredBackup);
-        queue.markDirty();
-        // Replaces the old backup with what is still unsaved now (nothing: it is cleared), at
-        // once: clearing it and waiting for the next backup would leave a window with none.
-        queue.writeBackupNow();
-      }
-    } catch (e) {
-      logger.warn({ id: boardId, error: errorInfo(e) }, "Could not restore autosave backup");
-      backup.clear(boardId);
+    // Unsaved work this device kept for the board (closed or crashed tabs, earlier sessions); the
+    // restore is only fetched when there is some.
+    if (backup.list(boardId).some((b) => b.tabId !== backup.tabId)) {
+      void import("@/lib/sync/restoreBackup")
+        .then((m) => m.restoreDeviceBackups({ store, boardId, loadedVersion: initialVersion, backup, queue, cancelled: () => unmounted }))
+        .then((report) => {
+          if (!report) return;
+          logger.info({ id: boardId, ...report }, "Restored autosave backups");
+          if (report.stale > 0) toast.warning(SAVE_COPY.staleBackup);
+          else if (report.applied > 0) toast.info(SAVE_COPY.restoredBackup);
+        })
+        .catch((e) => logger.warn({ id: boardId, error: errorInfo(e) }, "Could not restore autosave backup"));
     }
 
     const disposeListener = store.listen(() => queue.markDirty(), { source: "all", scope: "document" });
@@ -695,6 +703,7 @@ export function useSnapshotSave(
     }
 
     return () => {
+      unmounted = true;
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
       window.removeEventListener("pagehide", onPageHide);
@@ -715,7 +724,11 @@ export function useSnapshotSave(
         queue
           .flush()
           .catch((e) => logger.warn({ id: boardId, error: errorInfo(e) }, "Flush on unmount failed"))
-          .finally(() => queue.dispose()),
+          .finally(() => {
+            queue.dispose();
+            // Only now may another tab treat this one's backup (if the flush left one) as orphaned.
+            releaseLock();
+          }),
       );
     };
   }, [editor, boardId, initialVersion, queueAtom]);

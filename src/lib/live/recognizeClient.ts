@@ -49,7 +49,7 @@ export function isAbortLike(err: unknown): boolean {
 
 /**
  * Additive hints the recognize route puts on its `recognizer_failed` 502 (see
- * `recognizeFailureHints` in src/app/api/live/recognize/route.ts). They are read from the
+ * `recognizeFailureHints` in src/lib/server/recognizeHints.ts). They are read from the
  * error itself, its raw body and its `details` so the shape of the transport never matters.
  *
  *  - `needsCrop`      the server had nothing to fall back on: send the same line again with

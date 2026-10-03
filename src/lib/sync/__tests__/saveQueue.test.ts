@@ -553,6 +553,79 @@ describe("createSaveQueue", () => {
     queue.dispose();
   });
 
+  it("the backup carries each changed or removed record as the server has it at its base version", async () => {
+    const store = makeStore();
+    const loadedA = putShape(store, "shape:a", 1);
+    const loadedB = putShape(store, "shape:b", 1);
+    const backup = memoryBackup();
+    const queue = createSaveQueue(makeDeps(store, { backup }));
+    putShape(store, "shape:a", 2);
+    store.remove(["shape:b" as TLShapeId]);
+    putShape(store, "shape:new", 3);
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(backup.map.get("b1")).toMatchObject({ baseVersion: 1, base: { "shape:a": loadedA, "shape:b": loadedB } });
+    expect(Object.keys(backup.map.get("b1")!.base!).sort()).toEqual(["shape:a", "shape:b"]); // nothing for a new record
+
+    await vi.advanceTimersByTimeAsync(1500); // saved as v2: the base moves with it
+    putShape(store, "shape:a", 4);
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(backup.map.get("b1")).toMatchObject({ baseVersion: 2, changed: ["shape:a"] });
+    expect((backup.map.get("b1")!.base!["shape:a"] as { x: number }).x).toBe(2);
+    queue.dispose();
+  });
+
+  it("an id edited again while a write is in flight is backed up with what that write sent", async () => {
+    const store = makeStore();
+    const remote = fakeRemote(store);
+    const backup = memoryBackup();
+    let release: (() => void) | null = null;
+    const persist = vi.fn(async (u: Record<string, unknown>, v: number | null): Promise<PersistResult> => {
+      if (!release) await new Promise<void>((r) => (release = r));
+      return remote.persist(u, v);
+    });
+    const queue = createSaveQueue(makeDeps(store, { persist, backup }));
+    const sentA = putShape(store, "shape:a", 50);
+    putShape(store, "shape:b", 1);
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(2000); // the write of a@50 and b is in flight
+    putShape(store, "shape:a", 60); // the stroke goes on
+    expect(queue.writeBackupNow()).toBe(true);
+    const written = backup.map.get("b1")!;
+    expect(written.baseVersion).toBe(1);
+    expect(written.sent).toEqual({ "shape:a": sentA }); // b was not touched again
+    expect((written.snapshot.store as Record<string, { x: number }>)["shape:a"].x).toBe(60);
+    release!();
+    await tick();
+    await tick();
+    queue.dispose();
+  });
+
+  it("after merging another tab's write, the backup's base is that tab's row", async () => {
+    const storeA = makeStore();
+    putShape(storeA, "shape:shared", 1);
+    const storeB = cloneStore(storeA);
+    const remote = fakeRemote(storeA);
+    const backup = memoryBackup();
+    const queueA = createSaveQueue(makeDeps(storeA, { persist: remote.persist, fetchRemote: remote.fetchRemote, backup }));
+    const queueB = createSaveQueue(makeDeps(storeB, { persist: remote.persist, fetchRemote: remote.fetchRemote }));
+    putShape(storeB, "shape:shared", 7); // B moves it and saves first (v2)
+    queueB.markDirty();
+    await queueB.flush();
+    putShape(storeA, "shape:mine", 3);
+    queueA.markDirty();
+    await queueA.flush(); // conflict -> merge B's move in -> saved as v3
+    expect(queueA.state.get()).toMatchObject({ status: "saved", version: 3 });
+    putShape(storeA, "shape:shared", 9);
+    queueA.markDirty();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(backup.map.get("b1")).toMatchObject({ baseVersion: 3 });
+    expect((backup.map.get("b1")!.base!["shape:shared"] as { x: number }).x).toBe(7);
+    queueA.dispose();
+    queueB.dispose();
+  });
+
   it("a build's notice (nearly full) becomes the state's notice once that write lands", async () => {
     const store = makeStore();
     const inner = buildFrom(store);

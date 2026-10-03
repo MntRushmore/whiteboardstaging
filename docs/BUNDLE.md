@@ -47,6 +47,14 @@ boundaries) share. The reporter itself, `src/lib/clientErrors.ts` (1.7 KB raw / 
 chunk fetched 3 s after the page loads, or at the first error; shipped in the first load it cost 887 B.
 Other routes grew 274 to 405 B for the same front door.
 
+**Sync follow-ups, 2026-10-03** (`fix/sync-followups`, measured against a build of
+`release/ink-and-board` `ce2b2f7`, which itself measured 1,054,882 B): `/board/[id]` 1,056,203 B
+(+1,321, 3,797 B under the budget). In the first load: the per-tab backup key and its Web Lock, the
+`base`/`sent` copies in the backup, the shared ink store (also +321 B on `/`, +303 B on `/account`)
+and the registration of the board's `files` handler. Lazy: the backup restore
+(`src/lib/sync/restoreBackup.ts`, fetched only when another tab left a backup) and the
+paste/drop handler (`src/lib/assets/addImageFiles.ts`, fetched on the first paste or drop).
+
 ## Before / after
 
 "Before" is the branch as handed over (commit `7b4a42d`); "after" is the same tree plus the changes in

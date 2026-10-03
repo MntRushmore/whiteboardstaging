@@ -44,6 +44,8 @@ export function persistTimeoutMs(bytes = 0): number {
 
 const TIMED_OUT = Symbol("timed out");
 
+const has = (o: object, id: string): boolean => Object.prototype.hasOwnProperty.call(o, id);
+
 /** `whiteboards.data` is either a TLEditorSnapshot (`{ document: { store } }`) or a bare TLStoreSnapshot (`{ store }`). */
 export function extractStoreMap(data: unknown): Record<string, unknown> | null {
   if (!data || typeof data !== "object") return null;
@@ -103,13 +105,15 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
   let onlineHint: boolean | null = null;
   let inFlight: Promise<SyncState> | null = null;
   let inFlightToken: DirtyToken | null = null;
+  /** the document records the write in flight sent (null when none is) */
+  let inFlightSent: Record<string, unknown> | null = null;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let backupTimer: ReturnType<typeof setTimeout> | null = null;
   /** when the edits the debounce / backup timer is waiting on started */
   let saveBurstAt: number | null = null;
   let backupBurstAt: number | null = null;
-  /** the document records as last persisted (or as loaded) */
+  /** the document records as the server has them at `state.version` (as loaded, persisted or merged in) */
   let persisted = deps.store.getStoreSnapshot("document").store as Record<string, unknown>;
 
   const isOnline = (): boolean => onlineHint ?? deps.isOnline();
@@ -155,7 +159,18 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
   function writeBackupNow(): boolean {
     if (disposed || !deps.backup) return false;
     const pending = tracker.peek();
+    // Ids edited again while a write is in flight: what that write sent, in case it lands and the
+    // tab dies before hearing so (the restore must not mistake it for another device's change).
+    let sent: Record<string, unknown> | undefined;
     if (inFlightToken) {
+      if (inFlightSent) {
+        for (const id of [...pending.changed, ...pending.removed]) {
+          if (inFlightToken.changed.has(id) || inFlightToken.removed.has(id)) {
+            sent ??= {};
+            sent[id] = has(inFlightSent, id) ? inFlightSent[id] : null;
+          }
+        }
+      }
       for (const id of inFlightToken.changed) if (!pending.removed.has(id)) pending.changed.add(id);
       for (const id of inFlightToken.removed) if (!pending.changed.has(id)) pending.removed.add(id);
     }
@@ -166,17 +181,23 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
     try {
       // Only the unsaved records: a restore never reads the rest, and the whole document of a
       // big board would not fit in localStorage (a board too large to save most needs this).
+      // `base` is each of them as the server has it at `baseVersion` (nothing for a new record).
       const records: Record<string, TLRecord> = {};
+      const base: Record<string, unknown> = {};
       for (const id of pending.changed) {
         const record = deps.store.get(id as TLRecord["id"]);
         if (record) records[id] = record;
+        if (has(persisted, id)) base[id] = persisted[id];
       }
+      for (const id of pending.removed) if (has(persisted, id)) base[id] = persisted[id];
       return deps.backup.write(deps.boardId, {
         snapshot: { store: records, schema: deps.store.schema.serialize() } as TLStoreSnapshot,
         baseVersion: state.get().version,
         changed: [...pending.changed],
         removed: [...pending.removed],
         at: now(),
+        base,
+        ...(sent ? { sent } : {}),
       });
     } catch {
       return false;
@@ -201,7 +222,7 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
   function nothingToSave(): boolean {
     const { changed, removed } = tracker.peek();
     for (const id of changed) if (!deepEqual(deps.store.get(id as TLRecord["id"]), persisted[id])) return false;
-    for (const id of removed) if (Object.prototype.hasOwnProperty.call(persisted, id)) return false;
+    for (const id of removed) if (has(persisted, id)) return false;
     return true;
   }
 
@@ -255,10 +276,13 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
       let result: PersistResult;
       try {
         const expected = state.get().version;
+        inFlightSent = built.snapshot.store as Record<string, unknown>;
         const sent = await withTimeout((signal) => deps.persist(built.update, expected, signal), persistTimeoutMs(built.bytes));
         result = sent === TIMED_OUT ? { ok: false, kind: "timeout", message: MSG_SAVE_TIMEOUT } : sent;
       } catch (e) {
         result = { ok: false, kind: isOnline() ? "other" : "offline", message: e instanceof Error ? e.message : String(e) };
+      } finally {
+        inFlightSent = null;
       }
       if (disposed) {
         tracker.restore(token);
@@ -325,6 +349,8 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
           // The merge only adopted remote records; ours are still unsaved -> keep them dirty.
           tracker.restore(token);
           inFlightToken = null;
+          // The server now holds `remoteStore` at `remote.version`: the base a backup refers to.
+          persisted = remoteStore;
           patch({ status: "saving", version: remote.version });
           continue;
         }
