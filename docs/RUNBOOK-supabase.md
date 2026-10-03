@@ -415,7 +415,7 @@ Both are null for accounts made before the migration; those are never asked. Use
   curl -X POST "$SUPABASE_URL/auth/v1/admin/users" \
     -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
     -H "Content-Type: application/json" \
-    -d '{"email":"student@example.com","password":"...","email_confirm":true,"user_metadata":{"terms_version":"2026-10-03"}}'
+    -d '{"email":"student@example.com","password":"...","email_confirm":true,"user_metadata":{"terms_version":"2026-10-04"}}'
   ```
 
 - **Invites.** The dashboard's *Invite user* is refused for the same reason. An invited person sets a password from the email and never sees the box, so invite only someone who (or whose parent) has agreed to the Terms and Privacy Policy some other way, and say which version:
@@ -424,7 +424,7 @@ Both are null for accounts made before the migration; those are never asked. Use
   curl -X POST "$SUPABASE_URL/auth/v1/invite" \
     -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
     -H "Content-Type: application/json" \
-    -d '{"email":"student@example.com","data":{"terms_version":"2026-10-03"}}'
+    -d '{"email":"student@example.com","data":{"terms_version":"2026-10-04"}}'
   ```
 
   (`supabase.auth.admin.inviteUserByEmail(email, { data: { terms_version } })` from code.) For a closed cohort it is simpler to leave sign-ups on and share the link: everyone then ticks the box themselves.
