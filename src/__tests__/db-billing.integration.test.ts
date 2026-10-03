@@ -29,6 +29,12 @@
  *     (the delete guards let the account's cascade through); a review outlives the account;
  *     the account's bug reports go with it, email included (20261003010100)
  *
+ * Covered (Agathon Unlimited; 20261003020000_unlimited.sql):
+ *   - link before the subscription event (pending, no plan yet), then trialing: help spends no ink
+ *   - the fair-use cap over a rolling 24 hours: fair_use with a retry hint; a recorded request id
+ *     stays free; a refunded call gives back its count and no ink
+ *   - delete_own_account waits for the plan to end; the subscription row outlives the account, unlinked
+ *
  * Covered (sign-up consent; 20261003010000_signup_consent.sql):
  *   - the profile records the Terms version and when; the user can read it, not write it
  *   - no account without an accepted Terms version: sign-up without one, with a malformed one,
@@ -621,6 +627,66 @@ suite(title, () => {
     expect(refused.every((r) => r.remaining === 0 && r.retry_after_ms > 0 && r.retry_after_ms <= 60_000)).toBe(true);
     const counter = await service.rest("GET", "rate_limit_counters", { query: { user_id: `eq.${ctx.b.userId}`, bucket: `eq.${bucket}`, select: "hits" } });
     expect(rows(counter)).toEqual([{ hits: 20 }]);
+  }, 60_000);
+
+  it("Agathon Unlimited: no ink spent, the fair-use cap answers fair_use with a retry hint, a failed call's count comes back", async () => {
+    if (!ctx.newUser) throw new Error("bootstrapVerifyContext did not provide newUser()");
+    const c = await ctx.newUser();
+    const uid = c.userId as string;
+    const sub = `sub_db_unlimited_${uid}`;
+    const week = new Date(Date.now() + 7 * DAY).toISOString();
+    // the checkout first this time (the other order is in scripts/lib/rlsChecks.mjs checkUnlimited)
+    const linked = await rpc(service, "link_unlimited_checkout", { p_subscription_id: sub, p_user_id: uid, p_customer_id: "cus_db", p_checkout_session_id: `cs_db_${uid}` });
+    expect(linked.body).toMatchObject({ linked: true, status: null, unlimited: false });
+    const pending = (await rpc(c, "ink_summary")).body as { unlimited: { status: string | null; unlimited: boolean } };
+    expect(pending.unlimited).toMatchObject({ status: null, unlimited: false });
+    const applied = await rpc(service, "apply_unlimited_subscription", {
+      p_subscription_id: sub, p_customer_id: "cus_db", p_status: "trialing", p_trial_end: week, p_current_period_end: week, p_event_at: new Date().toISOString(),
+    });
+    expect(applied.body).toMatchObject({ applied: true, user_id: uid, status: "trialing", unlimited: true });
+
+    const before = await ink(c);
+    const free = await consume(c, 10, "live/solve", { p_request_id: "db-unlimited-1" });
+    expect(free.body).toEqual({ ok: true, remaining: before.balance, reason: null, unlimited: true });
+    expect((await ink(c)).balance).toBe(before.balance);
+
+    // fill the rolling window to one under the cap (1,500), the oldest 23 hours ago
+    const cap = 1500;
+    const oldest = Date.now() - 23 * 60 * 60_000;
+    const filler = Array.from({ length: cap - 2 }, (_, i) => ({ user_id: uid, route: "live/recognize", units: 1, created_at: new Date(oldest + i * 1000).toISOString() }));
+    const filled = await service.rest("POST", "unlimited_usage", { body: filler, prefer: "return=minimal" });
+    expect(filled.status, JSON.stringify(filled.body)).toBe(201);
+
+    const last = await consume(c, 3, "live/check", { p_request_id: "db-unlimited-2" });
+    expect(last.body).toMatchObject({ ok: true, unlimited: true });
+    const over = await consume(c, 3, "live/check", { p_request_id: "db-unlimited-3" });
+    const refusal = over.body as { ok: boolean; reason: string; retry_after_ms: number; remaining: number };
+    expect(refusal).toMatchObject({ ok: false, reason: "fair_use", unlimited: true, remaining: before.balance });
+    // a slot frees when the oldest action turns 24 hours old: in about an hour
+    expect(refusal.retry_after_ms).toBeGreaterThan(55 * 60_000);
+    expect(refusal.retry_after_ms).toBeLessThanOrEqual(60 * 60_000 + 5_000);
+    // a repeat of a recorded request id is still free (a lecture minute's later ticks)
+    expect(((await consume(c, 2, "live/lecture", { p_request_id: "db-unlimited-2" })).body as Consume).ok).toBe(true);
+
+    // the failed call is refunded: no ink comes back (none was spent), its count does
+    const refund = await rpc(service, "refund_ink_for", { p_user_id: uid, p_request_id: "db-unlimited-2" });
+    expect(refund.body).toEqual({ refunded: 0, remaining: before.balance });
+    expect(((await consume(c, 3, "live/check", { p_request_id: "db-unlimited-4" })).body as Consume).ok).toBe(true);
+    expect((await ink(c)).balance).toBe(before.balance);
+    // and the ink ledger never saw any of it
+    expect(rows(await c.rest("GET", "usage_events", { query: { select: "id" } }))).toEqual([]);
+
+    // the plan ends: deletion was refused while it would charge, then the account goes and the row stays, unlinked
+    const refused = await rpc(c, "delete_own_account");
+    expect(refused.status).toBe(400);
+    expect(refused.body).toMatchObject({ code: "P0001", hint: "unlimited_active" });
+    await rpc(service, "apply_unlimited_subscription", {
+      p_subscription_id: sub, p_customer_id: "cus_db", p_status: "canceled", p_ended_at: new Date().toISOString(), p_event_at: new Date(Date.now() + 1000).toISOString(),
+    });
+    expect((await rpc(c, "delete_own_account")).status).toBeLessThan(300);
+    expect(rows(await service.rest("GET", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${sub}`, select: "user_id,status" } }))).toEqual([{ user_id: null, status: "canceled" }]);
+    expect(rows(await service.rest("GET", "unlimited_usage", { query: { user_id: `eq.${uid}`, select: "id" } }))).toEqual([]);
+    await service.rest("DELETE", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${sub}` } });
   }, 60_000);
 
   it("delete_own_account takes the account's bug reports with it, email included", async () => {
