@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useReducer } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { supabase } from "@/lib/supabase";
 import { INK_SPENT_EVENT } from "@/lib/api-client";
 import { useAuth } from "@/components/AuthProvider";
@@ -73,8 +73,8 @@ export const CHECKOUT_WATCH_MS = 3_000;
 export const CHECKOUT_WATCH_FOR_MS = 10 * 60_000;
 
 /**
- * Tell every ink surface on the page (and in the app's other tabs) to re-read: each useInkSummary
- * is its own request, so one that saw the balance change says so.
+ * Tell every ink surface on the page (and in the app's other tabs) to re-read: whoever saw the
+ * balance change says so.
  */
 export function notifyInkChanged(): void {
   if (typeof window === "undefined") return;
@@ -140,16 +140,188 @@ export type UseInkSummaryOptions = {
 };
 
 /**
+ * An answer this recent (or a read still in flight) serves a mount, a focus or a tab coming back
+ * into view: the header, the account page and the board's meter mount together, a page that swaps
+ * its layout remounts the header, and returning to a tab fires both `focus` and
+ * `visibilitychange`. Each of those used to be its own `ink_summary` call.
+ */
+export const INK_FRESH_MS = 5_000;
+
+export interface InkStore {
+  subscribe(listener: () => void): () => void;
+  getState(): SectionState<InkSummary>;
+  /** the user the cached state belongs to (null before the first attach) */
+  userId(): string | null;
+  /** a consumer for `userId` mounted: read unless fresh; the returned function detaches it */
+  attach(userId: string, pollMs?: number): () => void;
+  /**
+   * Read now unless the last answer is under INK_FRESH_MS old (one in flight is joined). `force`: the
+   * balance changed, so always read (once more after one in flight, which may predate the change).
+   */
+  refresh(force?: boolean): Promise<void>;
+  /** a paid call happened: a 402's `remaining` is shown at once, otherwise one re-read once a burst has settled */
+  spent(remaining?: number): void;
+  /** a buy button opened checkout: re-read every CHECKOUT_WATCH_MS until the balance grows (or CHECKOUT_WATCH_FOR_MS) */
+  watchCheckout(): void;
+}
+
+export interface InkStoreDeps {
+  read: () => Promise<ReadInkSummaryResult>;
+  /** wires the window events to the store while anything is attached; returns the unbind */
+  bind?: (store: InkStore) => () => void;
+  now?: () => number;
+}
+
+/**
+ * One ink summary per page, shared by every `useInkSummary`: one request in flight at a time, one
+ * cached answer, one set of window listeners (installed while any consumer is mounted).
+ */
+export function createInkStore({ read, bind, now = Date.now }: InkStoreDeps): InkStore {
+  let user: string | null = null;
+  let state: SectionState<InkSummary> = initialSection<InkSummary>();
+  /** bumped when the user changes: a read still in flight for the previous user is dropped */
+  let gen = 0;
+  let inFlight: Promise<void> | null = null;
+  let again = false;
+  let readAt = -Infinity;
+  let attached = 0;
+  let unbind: (() => void) | null = null;
+  let spentTimer: ReturnType<typeof setTimeout> | null = null;
+  let watch: ReturnType<typeof setInterval> | null = null;
+  let watchUntil = 0;
+  let watchFrom: number | null = null;
+  const listeners = new Set<() => void>();
+
+  const set = (next: SectionState<InkSummary>) => {
+    state = next;
+    for (const l of listeners) l();
+  };
+  const stopWatch = () => {
+    if (watch) clearInterval(watch);
+    watch = null;
+    watchFrom = null;
+  };
+  const start = (): Promise<void> => {
+    const g = gen;
+    const p = read()
+      .catch((): ReadInkSummaryResult => ({ error: INK_SUMMARY_FALLBACK }))
+      .then((result) => {
+        if (g !== gen) return;
+        inFlight = null;
+        // a failed read is not an answer: the next mount or focus tries again
+        if ("error" in result) set(sectionReducer(state, { type: "failed", message: result.error }));
+        else {
+          readAt = now();
+          set({ status: "ready", data: result.summary, error: null });
+          // The checkout watch ends when the ink has arrived (or its time is up).
+          if (watch && (now() > watchUntil || (watchFrom !== null && result.summary.balance > watchFrom))) stopWatch();
+          if (watch && watchFrom === null) watchFrom = result.summary.balance;
+        }
+        if (again) {
+          again = false;
+          void start();
+        }
+      });
+    inFlight = p;
+    return p;
+  };
+
+  const store: InkStore = {
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    getState: () => state,
+    userId: () => user,
+    attach(userId, pollMs = 0) {
+      if (userId !== user) {
+        user = userId;
+        gen++;
+        inFlight = null;
+        again = false;
+        readAt = -Infinity;
+        stopWatch();
+        set(initialSection<InkSummary>());
+      }
+      if (attached++ === 0 && bind) unbind = bind(store);
+      void store.refresh();
+      const poll = pollMs > 0 ? setInterval(() => void store.refresh(true), pollMs) : null;
+      return () => {
+        if (poll) clearInterval(poll);
+        if (--attached > 0) return;
+        unbind?.();
+        unbind = null;
+        stopWatch();
+        if (spentTimer) clearTimeout(spentTimer);
+        spentTimer = null;
+      };
+    },
+    refresh(force = false) {
+      if (!user || attached === 0) return Promise.resolve();
+      if (inFlight) {
+        if (force) again = true;
+        return inFlight;
+      }
+      if (!force && now() - readAt < INK_FRESH_MS) return Promise.resolve();
+      return start();
+    },
+    spent(remaining) {
+      const data = state.data;
+      if (typeof remaining === "number" && data) {
+        // a 402 carries the exact balance (read under the same lock as the refusal)
+        set({ status: "ready", data: { ...data, balance: remaining, used: Math.max(0, data.granted - remaining) }, error: null });
+        return;
+      }
+      if (spentTimer) clearTimeout(spentTimer);
+      spentTimer = setTimeout(() => void store.refresh(true), SPENT_REREAD_MS);
+    },
+    watchCheckout() {
+      watchUntil = now() + CHECKOUT_WATCH_FOR_MS;
+      if (watch) return;
+      watch = setInterval(() => void store.refresh(true), CHECKOUT_WATCH_MS);
+      void store.refresh(true); // the balance before paying, to know when it grew
+    },
+  };
+  return store;
+}
+
+/**
+ * The window events the ink surfaces react to, bound once per page: focus / the tab coming back
+ * (the student returns from the Stripe tab), INK_CHANGED_EVENT and the other tabs' storage ping,
+ * the board's paid calls (INK_SPENT_EVENT from authedFetch) and a buy button opening checkout.
+ */
+export function bindInkEvents(store: InkStore, win: EventTarget = window, doc: Pick<Document, "visibilityState"> & EventTarget = document): () => void {
+  const fresh = () => void store.refresh();
+  const changed = () => void store.refresh(true);
+  const on: Array<[EventTarget, string, (e: Event) => void]> = [
+    [win, "focus", fresh],
+    [doc, "visibilitychange", () => doc.visibilityState === "visible" && fresh()],
+    [win, INK_CHANGED_EVENT, changed],
+    [win, "storage", (e) => (e as StorageEvent).key === INK_CHANGED_KEY && changed()],
+    [win, INK_SPENT_EVENT, (e) => store.spent((e as CustomEvent<{ remaining?: number }>).detail?.remaining)],
+    [win, INK_CHECKOUT_EVENT, () => store.watchCheckout()],
+  ];
+  for (const [t, name, fn] of on) t.addEventListener(name, fn);
+  return () => {
+    for (const [t, name, fn] of on) t.removeEventListener(name, fn);
+  };
+}
+
+const inkStore = createInkStore({ read: () => readInkSummary(() => supabase.rpc("ink_summary")), bind: (s) => bindInkEvents(s) });
+const SIGNED_OUT = initialSection<InkSummary>();
+
+/**
  * The signed-in user's ink via the SECURITY DEFINER RPC `ink_summary()`, read with the user's own
  * JWT. Nothing here can add ink; that happens server-side.
  *
- * Re-read on mount, on reload(), when the window regains focus or the tab becomes visible again
- * (the student comes back from the Stripe tab), on INK_CHANGED_EVENT and the other tabs' storage
- * ping, every `pollMs` when set, and every CHECKOUT_WATCH_MS for up to CHECKOUT_WATCH_FOR_MS after
- * a buy button opened checkout (the webhook usually lands within seconds of paying, often after
- * the student is back), so bought ink appears without a reload. After the board's paid calls
- * (INK_SPENT_EVENT from authedFetch) it re-reads once a burst has settled, and a 402's own
- * `remaining` is shown at once.
+ * Every mounted instance shares one store (`createInkStore`): one request at a time and one cached
+ * answer. It is read when the first instance mounts (or one mounts more than INK_FRESH_MS after the
+ * last read), on reload(), when the window regains focus or the tab becomes visible again (both
+ * deduped by INK_FRESH_MS), on INK_CHANGED_EVENT and the other tabs' storage ping, every `pollMs`
+ * when set, and every CHECKOUT_WATCH_MS for up to CHECKOUT_WATCH_FOR_MS after a buy button opened
+ * checkout (the webhook usually lands within seconds of paying, often after the student is back),
+ * so bought ink appears without a reload. After the board's paid calls (INK_SPENT_EVENT from
+ * authedFetch) it re-reads once a burst has settled, and a 402's own `remaining` is shown at once.
  */
 export function useInkSummary(options: UseInkSummaryOptions = {}) {
   const { session } = useAuth();
@@ -157,88 +329,16 @@ export function useInkSummary(options: UseInkSummaryOptions = {}) {
   const userId = session?.user?.id ?? null;
   const pollMs = options.pollMs ?? 0;
 
-  const [state, dispatch] = useReducer(
-    sectionReducer<InkSummary>,
-    undefined,
-    (): SectionState<InkSummary> => initialSection<InkSummary>(),
-  );
-  // Incremented by reload(); the effect below re-runs the request.
-  const [attempt, bump] = useReducer((n: number) => n + 1, 0);
-  const reload = useCallback(() => bump(), []);
+  const shared = useSyncExternalStore(inkStore.subscribe, inkStore.getState, () => SIGNED_OUT);
+  // Another account's cached answer is never shown (the store resets when the user changes).
+  const state = enabled && inkStore.userId() === userId ? shared : SIGNED_OUT;
 
   useEffect(() => {
     if (!enabled || !userId) return;
-    let cancelled = false;
-    let watch: ReturnType<typeof setInterval> | null = null;
-    let watchUntil = 0;
-    let watchFrom: number | null = null;
-    let latest: InkSummary | null = null;
-    let spentTimer: ReturnType<typeof setTimeout> | null = null;
+    return inkStore.attach(userId, pollMs);
+  }, [enabled, userId, pollMs]);
 
-    async function read() {
-      const result = await readInkSummary(() => supabase.rpc("ink_summary"));
-      if (cancelled) return;
-      if ("error" in result) {
-        dispatch({ type: "failed", message: result.error });
-        return;
-      }
-      latest = result.summary;
-      dispatch({ type: "loaded", data: result.summary });
-      // The checkout watch ends when the ink has arrived (or its time is up).
-      if (watch && (Date.now() > watchUntil || (watchFrom !== null && result.summary.balance > watchFrom))) stopWatch();
-      if (watch && watchFrom === null) watchFrom = result.summary.balance;
-    }
-    function stopWatch() {
-      if (watch) clearInterval(watch);
-      watch = null;
-      watchFrom = null;
-    }
-
-    void read();
-    const onChange = () => void read();
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void read();
-    };
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === INK_CHANGED_KEY) void read();
-    };
-    const onSpent = (e: Event) => {
-      const remaining = (e as CustomEvent<{ remaining?: number }>).detail?.remaining;
-      if (typeof remaining === "number" && latest) {
-        // a 402 carries the exact balance (read under the same lock as the refusal)
-        latest = { ...latest, balance: remaining, used: Math.max(0, latest.granted - remaining) };
-        dispatch({ type: "loaded", data: latest });
-        return;
-      }
-      if (spentTimer) clearTimeout(spentTimer);
-      spentTimer = setTimeout(() => void read(), SPENT_REREAD_MS);
-    };
-    const onCheckout = () => {
-      watchUntil = Date.now() + CHECKOUT_WATCH_FOR_MS;
-      if (watch) return;
-      watch = setInterval(() => void read(), CHECKOUT_WATCH_MS);
-      void read(); // the balance before paying, to know when it grew
-    };
-    window.addEventListener("focus", onChange);
-    window.addEventListener(INK_CHANGED_EVENT, onChange);
-    window.addEventListener(INK_CHECKOUT_EVENT, onCheckout);
-    window.addEventListener(INK_SPENT_EVENT, onSpent);
-    window.addEventListener("storage", onStorage);
-    document.addEventListener("visibilitychange", onVisible);
-    const interval = pollMs > 0 ? setInterval(() => void read(), pollMs) : null;
-    return () => {
-      cancelled = true;
-      stopWatch();
-      window.removeEventListener("focus", onChange);
-      window.removeEventListener(INK_CHANGED_EVENT, onChange);
-      window.removeEventListener(INK_CHECKOUT_EVENT, onCheckout);
-      window.removeEventListener(INK_SPENT_EVENT, onSpent);
-      window.removeEventListener("storage", onStorage);
-      if (spentTimer) clearTimeout(spentTimer);
-      document.removeEventListener("visibilitychange", onVisible);
-      if (interval) clearInterval(interval);
-    };
-  }, [enabled, userId, pollMs, attempt]);
+  const reload = useCallback(() => void inkStore.refresh(true), []);
 
   return {
     /** Raw section state, for accountPageStateFor(). */
