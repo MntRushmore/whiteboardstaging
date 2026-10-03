@@ -468,6 +468,39 @@ describe("createSaveQueue", () => {
     queue.dispose();
   });
 
+  it("the backup holds only the unsaved records, not the whole board", async () => {
+    const store = makeStore();
+    for (let i = 0; i < 50; i++) putShape(store, `shape:saved${i}`);
+    const backup = memoryBackup();
+    const queue = createSaveQueue(makeDeps(store, { backup }));
+    putShape(store, "shape:new");
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(500);
+    const written = backup.map.get("b1")!;
+    expect(Object.keys(written.snapshot.store)).toEqual(["shape:new"]);
+    expect(written.snapshot.schema).toEqual(store.schema.serialize());
+    queue.dispose();
+  });
+
+  it("a build's notice (nearly full) becomes the state's notice once that write lands", async () => {
+    const store = makeStore();
+    const inner = buildFrom(store);
+    let notice: string | undefined = "Board almost full";
+    const buildUpdate = async (): Promise<BuildResult> => ({ ...(await inner()), notice } as BuildResult);
+    const queue = createSaveQueue(makeDeps(store, { buildUpdate }));
+    putShape(store, "shape:a");
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(queue.state.get()).toMatchObject({ status: "saved", notice: "Board almost full" });
+    putShape(store, "shape:b");
+    queue.markDirty();
+    expect(queue.state.get()).toMatchObject({ status: "dirty", notice: "Board almost full" });
+    notice = undefined;
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(queue.state.get()).toMatchObject({ status: "saved", notice: null });
+    queue.dispose();
+  });
+
   it("setOnline(false) surfaces offline while pending; dispose stops timers and ignores later markDirty", async () => {
     const store = makeStore();
     const persist = vi.fn(fakeRemote(store).persist);

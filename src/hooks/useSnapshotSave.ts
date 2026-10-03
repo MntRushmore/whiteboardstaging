@@ -304,13 +304,19 @@ export function storeSnapshotOf(snapshot: unknown): TLStoreSnapshot {
   return snapshot as TLStoreSnapshot;
 }
 
+/** Above this a board that saves is told it is nearly full (80 % of the size the client refuses). */
+export const NEARLY_FULL_BYTES = SNAPSHOT_LIMITS.hardBytes * 0.8;
+
 /** `BuildOutcome` -> the `SaveQueue` contract. Anything that cannot produce a row is `refused`. */
 export function toBuildResult(outcome: BuildOutcome): BuildResult {
   switch (outcome.kind) {
-    case "update":
-      return { kind: "update", update: outcome.update, snapshot: storeSnapshotOf(outcome.snapshot) };
+    case "update": {
+      const notice = outcome.bytes > NEARLY_FULL_BYTES ? ASSET_COPY.boardNearlyFull : undefined;
+      return { kind: "update", update: outcome.update, snapshot: storeSnapshotOf(outcome.snapshot), bytes: outcome.bytes, notice };
+    }
     case "refused":
-      return { kind: "refused", message: ASSET_COPY.boardTooLarge };
+      // Only images can be moved out of the row; a board of ink is simply full.
+      return { kind: "refused", message: outcome.inlineAssets > 0 ? ASSET_COPY.boardTooLarge : ASSET_COPY.boardFull };
     case "skipped":
     case "error":
       return { kind: "refused", message: SAVE_COPY.cannotPrepare };
@@ -592,7 +598,7 @@ export function buildEditorUpdate(editor: Editor, boardId: string): Promise<Buil
 
 /** State shown before the queue exists (editor not mounted yet). */
 export function idleSyncState(version: number | null): SyncState {
-  return { status: "saved", message: null, lastSavedAt: null, version, pending: false, attempt: 0 };
+  return { status: "saved", message: null, notice: null, lastSavedAt: null, version, pending: false, attempt: 0 };
 }
 
 export interface UseSnapshotSaveResult {

@@ -128,6 +128,10 @@ export const ASSET_COPY = {
   offloadPartial: "Some images could not be moved to storage; the board still saves.",
   /** autosave refused (snapshot over the hard limit) or the DB rejected the row */
   boardTooLarge: "Board too large to save — remove some images",
+  /** autosave refused and there are no images left to move out: only less on the board helps */
+  boardFull: "Board full — new work here isn't saved. Start a new board",
+  /** the last save was above 80 % of the hard limit */
+  boardNearlyFull: "Board almost full — start a new board soon",
   /** an upload fell back to embedding the image in the board (shown once per session) */
   inlineFallback: "Couldn't upload this image to storage; it was saved inside the board instead.",
 } as const;

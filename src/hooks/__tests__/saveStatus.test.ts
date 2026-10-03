@@ -3,7 +3,7 @@ import { ASSET_COPY } from "@/components/live/copy";
 import { SAVE_STATUS_COPY, SAVED_FADE_MS, saveStatusViewFor } from "@/components/live/SaveStatus";
 import type { SyncState } from "@/lib/sync";
 
-const base: SyncState = { status: "saved", message: null, lastSavedAt: 1000, version: 3, pending: false, attempt: 0 };
+const base: SyncState = { status: "saved", message: null, notice: null, lastSavedAt: 1000, version: 3, pending: false, attempt: 0 };
 const at = (over: Partial<SyncState>): SyncState => ({ ...base, ...over });
 
 describe("saveStatusViewFor", () => {
@@ -66,6 +66,17 @@ describe("saveStatusViewFor", () => {
       label: "Couldn't prepare this board to save",
       tone: "red",
     });
+  });
+
+  it("a nearly full board keeps an amber notice up while it saves normally", () => {
+    const notice = ASSET_COPY.boardNearlyFull;
+    const view = { label: notice, tone: "amber", showRetry: false, title: null };
+    expect(saveStatusViewFor(at({ notice }), false)).toEqual(view);
+    expect(saveStatusViewFor(at({ status: "dirty", pending: true, notice }), false)).toEqual(view);
+    // the brief "Saved", a save in flight and every problem state still take precedence
+    expect(saveStatusViewFor(at({ notice }), true)?.label).toBe(SAVE_STATUS_COPY.saved);
+    expect(saveStatusViewFor(at({ status: "saving", notice }), false)?.label).toBe(SAVE_STATUS_COPY.saving);
+    expect(saveStatusViewFor(at({ status: "error", message: "x", notice }), false)?.label).toBe(SAVE_STATUS_COPY.error);
   });
 
   it("the fade flag never leaks into non-saved states", () => {

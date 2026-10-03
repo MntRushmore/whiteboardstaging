@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ASSET_COPY } from "@/components/live/copy";
 import {
   MAX_PREVIEW_LENGTH,
+  NEARLY_FULL_BYTES,
   SAVE_COPY,
   blockedMessageFor,
   blockedMessageForSync,
@@ -404,16 +405,31 @@ describe("toBuildResult / storeSnapshotOf", () => {
     expect(result.update.data).toBe(editorSnap);
   });
 
+  it("passes the size on and warns once a board passes 80 % of the hard limit", () => {
+    const editorSnap = editorSnapshot([]);
+    const at = (bytes: number) =>
+      toBuildResult({ kind: "update", update: { data: editorSnap, updated_at: "t" }, snapshot: editorSnap, bytes, offloaded: false });
+    expect(NEARLY_FULL_BYTES).toBe(SNAPSHOT_LIMITS.hardBytes * 0.8);
+    expect(at(1000)).toMatchObject({ bytes: 1000, notice: undefined });
+    expect(at(NEARLY_FULL_BYTES)).toMatchObject({ notice: undefined });
+    expect(at(NEARLY_FULL_BYTES + 1)).toMatchObject({ notice: ASSET_COPY.boardNearlyFull });
+  });
+
   it("passes a bare store snapshot through unchanged", () => {
     const bare = { store: {}, schema: { schemaVersion: 2 } };
     expect(storeSnapshotOf(bare)).toBe(bare);
     expect(storeSnapshotOf(null)).toBeNull();
   });
 
-  it("maps refused to the too-large copy and skipped/error to the cannot-prepare copy", () => {
-    expect(toBuildResult({ kind: "refused", bytes: 1, inlineAssets: 0 })).toEqual({
+  it("maps refused to the too-large copy (images) or the board-full copy (ink only), skipped/error to cannot-prepare", () => {
+    expect(toBuildResult({ kind: "refused", bytes: 5_000_000, inlineAssets: 2 })).toEqual({
       kind: "refused",
       message: ASSET_COPY.boardTooLarge,
+    });
+    // nothing left to offload: "remove some images" would be wrong advice for a board of strokes
+    expect(toBuildResult({ kind: "refused", bytes: 5_000_000, inlineAssets: 0 })).toEqual({
+      kind: "refused",
+      message: ASSET_COPY.boardFull,
     });
     expect(toBuildResult({ kind: "skipped", reason: "unserializable" })).toEqual({
       kind: "refused",
@@ -538,7 +554,7 @@ describe("resolvePersistResult", () => {
 });
 
 describe("blockedMessageForSync / idleSyncState", () => {
-  const base: SyncState = { status: "saved", message: null, lastSavedAt: null, version: 3, pending: false, attempt: 0 };
+  const base: SyncState = { status: "saved", message: null, notice: null, lastSavedAt: null, version: 3, pending: false, attempt: 0 };
 
   it("only refused blocks; the queue's message wins over the default copy", () => {
     expect(blockedMessageForSync({ ...base, status: "refused", message: null })).toBe(ASSET_COPY.boardTooLarge);
@@ -549,7 +565,7 @@ describe("blockedMessageForSync / idleSyncState", () => {
   });
 
   it("idle state carries the loaded version and no lastSavedAt", () => {
-    expect(idleSyncState(42)).toEqual({ status: "saved", message: null, lastSavedAt: null, version: 42, pending: false, attempt: 0 });
+    expect(idleSyncState(42)).toEqual({ status: "saved", message: null, notice: null, lastSavedAt: null, version: 42, pending: false, attempt: 0 });
     expect(idleSyncState(null).version).toBeNull();
   });
 });

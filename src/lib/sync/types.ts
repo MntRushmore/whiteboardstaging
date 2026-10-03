@@ -11,6 +11,8 @@ export interface SyncState {
   status: SyncStatus;
   /** human-readable explanation for `error` / `refused` / `offline`; null otherwise */
   message: string | null;
+  /** standing notice from the last successful write (the board is nearly full); null otherwise */
+  notice: string | null;
   /** epoch ms of the last successful persist */
   lastSavedAt: number | null;
   /** `whiteboards.version` the local document is based on; null when unknown */
@@ -41,6 +43,7 @@ export type BuildResult =
   | { kind: "refused"; message: string };
 
 export interface BackupPayload {
+  /** `store` holds the `changed` records only (older backups hold the whole document) */
   snapshot: TLStoreSnapshot;
   baseVersion: number | null;
   changed: string[];

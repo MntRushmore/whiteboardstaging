@@ -1,4 +1,4 @@
-import { atom } from "tldraw";
+import { atom, type TLRecord, type TLStoreSnapshot } from "tldraw";
 import { applyRemotePlan } from "./applyRemotePlan";
 import { createDirtyTracker } from "./dirtyTracker";
 import { mergeDocumentRecords } from "./mergeDocumentRecords";
@@ -85,6 +85,7 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
   const state = atom<SyncState>(`sync.state.${deps.boardId}`, {
     status: "saved",
     message: null,
+    notice: null,
     lastSavedAt: null,
     version: deps.initialVersion,
     pending: false,
@@ -160,8 +161,15 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
       return false;
     }
     try {
+      // Only the unsaved records: a restore never reads the rest, and the whole document of a
+      // big board would not fit in localStorage (a board too large to save most needs this).
+      const records: Record<string, TLRecord> = {};
+      for (const id of pending.changed) {
+        const record = deps.store.get(id as TLRecord["id"]);
+        if (record) records[id] = record;
+      }
       return deps.backup.write(deps.boardId, {
-        snapshot: deps.store.getStoreSnapshot("document"),
+        snapshot: { store: records, schema: deps.store.schema.serialize() } as TLStoreSnapshot,
         baseVersion: state.get().version,
         changed: [...pending.changed],
         removed: [...pending.removed],
@@ -241,6 +249,7 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
         patch({
           status: "saved",
           message: null,
+          notice: built.notice ?? null,
           version: result.version,
           lastSavedAt: now(),
           attempt: 0,
