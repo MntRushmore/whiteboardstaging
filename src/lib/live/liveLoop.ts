@@ -480,6 +480,10 @@ export class LiveLoop implements LiveController {
   private unsubscribeRemote: (() => void) | null = null;
   private unsubscribeSession: (() => void) | null = null;
   private quietTimer: ReturnType<typeof setTimeout> | null = null;
+  /** when the quiet gate armed last runs out (`deps.now()` time) */
+  private quietDue = 0;
+  /** a gate that was running when a stroke began: held until that stroke's pen-up (or its cancel) */
+  private quietHeld = false;
   /** the canvas-level settle clock: running means the student is still considered to be working */
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
   /**
@@ -695,6 +699,7 @@ export class LiveLoop implements LiveController {
   private resetRuntime(): void {
     if (this.quietTimer) clearTimeout(this.quietTimer);
     this.quietTimer = null;
+    this.quietHeld = false;
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
     this.settled = false;
@@ -1022,6 +1027,8 @@ export class LiveLoop implements LiveController {
     }
 
     let problemErased = false;
+    /** a stroke removed before its pen-up (the pointer was cancelled) */
+    let abandoned = false;
     for (const rec of Object.values(entry.changes.removed)) {
       if (!isShapeRecord(rec)) continue;
       // a problem the chat wrote, rubbed out: the columns under it are read again (below)
@@ -1042,6 +1049,10 @@ export class LiveLoop implements LiveController {
         continue;
       }
       if (isDraw(rec)) {
+        if (!rec.props.isComplete) {
+          abandoned = true;
+          continue;
+        }
         const line = this.lineOfStroke(rec.id);
         if (line) {
           for (const sid of line.strokeIds) if (sid !== rec.id) this.dirtyStrokeIds.add(sid);
@@ -1071,6 +1082,17 @@ export class LiveLoop implements LiveController {
     // rubbed out — means the student is still working, wherever on the canvas it happened.
     if (penUp || inkChanged || erased || penDown) this.markUnsettled();
 
+    // A stroke in progress is part of the writing ("never render while the pen is down"): a gate
+    // that ran out mid-stroke read the line without it — the first half of an 8 read as a 0 and
+    // ringed, then read again and ticked. It is held until this stroke's pen-up, which arms it again.
+    if (penDown && !penUp && !inkChanged && !erased && this.quietTimer) {
+      clearTimeout(this.quietTimer);
+      this.quietTimer = null;
+      this.quietHeld = true;
+    }
+    // ...or until the stroke is abandoned, when the lines waiting get the rest of their time
+    if (abandoned && this.quietHeld && !this.quietTimer) this.armQuietTimer(Math.max(0, this.quietDue - this.deps.now()));
+
     if (penUp || inkChanged || erased) {
       // The student is working again: the tutor puts the pen down (finishing what it started).
       this.cancelHandwriting();
@@ -1081,7 +1103,10 @@ export class LiveLoop implements LiveController {
       this.pendingRewrite = this.pendingRewrite || rewrite;
       // A stroke that is plainly a drawing is not the student writing maths: the lines already
       // waiting to be read keep their time (it is sorted out at that flush, or at one of its own).
-      if (penUp && !writingUp && !inkChanged && !erased && this.quietTimer) return;
+      if (penUp && !writingUp && !inkChanged && !erased && (this.quietTimer || this.quietHeld)) {
+        if (!this.quietTimer) this.armQuietTimer(Math.max(0, this.quietDue - this.deps.now()));
+        return;
+      }
       this.armQuietTimer();
     }
   }
@@ -1109,9 +1134,10 @@ export class LiveLoop implements LiveController {
     return this.diagrams.find((d) => d.strokeIds.includes(strokeId as TLShapeId) || d.labels.some((l) => l.includes(strokeId as TLShapeId))) ?? null;
   }
 
-  private armQuietTimer(): void {
+  private armQuietTimer(delay: number = this.pendingRewrite ? LIVE_TIMING.rewriteQuietMs : LIVE_TIMING.quietMs): void {
     if (this.quietTimer) clearTimeout(this.quietTimer);
-    const delay = this.pendingRewrite ? LIVE_TIMING.rewriteQuietMs : LIVE_TIMING.quietMs;
+    this.quietHeld = false;
+    this.quietDue = this.deps.now() + delay;
     this.quietTimer = setTimeout(() => {
       this.quietTimer = null;
       this.pendingRewrite = false;
