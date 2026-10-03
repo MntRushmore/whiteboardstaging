@@ -15,6 +15,9 @@ import { useSyncHash } from "@/lib/live/__fixtures__/syncHash";
  * next stroke and 400 ms to draw it had the line read WITHOUT that stroke, mid-stroke: `2x = 8`
  * read as `2x = 0` from the first half of its 8 and ringed, then re-read and ticked. Every slow
  * writer paid an extra read per line and saw marks flip as they wrote.
+ *
+ * Only the stroke the draw tool is drawing counts: a stroke left unfinished for good (Esc
+ * mid-stroke, a tool switch mid-stroke) must not hold the line back.
  */
 
 const engine: LiveEngine = {
@@ -34,11 +37,15 @@ describe("live loop — the quiet gate waits while the pen is down", () => {
   let fetchJson: Mock<FetchJson>;
   let loop: LiveLoop;
   let sent: RecognizeRequest[];
+  /** what the draw tool is doing (tldraw's `editor.isIn("draw.drawing")`) */
+  let drawing: boolean;
 
   beforeEach(async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
     resetLiveStore();
     editor = createFakeEditor();
+    drawing = false;
+    editor.isIn = (path: string) => path === "draw.drawing" && drawing;
     sent = [];
     fetchJson = vi.fn<FetchJson>(async (_path, body): Promise<RecognizeResponse> => {
       sent.push(body as RecognizeRequest);
@@ -67,9 +74,11 @@ describe("live loop — the quiet gate waits while the pen is down", () => {
 
   /** The draw tool: the shape appears at pen-down (incomplete), grows, and completes at pen-up. */
   function penDown(stroke: TLDrawShape): void {
+    drawing = true;
     editor.putUser([{ ...stroke, props: { ...stroke.props, isComplete: false } } as TLShape]);
   }
   function penUp(stroke: TLDrawShape): void {
+    drawing = false;
     editor.updateUser(stroke.id, (s) => ({ ...s, props: { ...s.props, isComplete: true } }) as TLShape);
   }
 
@@ -91,7 +100,7 @@ describe("live loop — the quiet gate waits while the pen is down", () => {
     expect(sent[0].strokes.x).toHaveLength(rest.length + 2);
   });
 
-  it("a stroke the student abandons (the pointer is cancelled) does not stall the line", async () => {
+  it("a stroke the student abandons (the pointer is cancelled and the shape removed) does not stall the line", async () => {
     const ink = writeLine("2x=8", 100, 100);
     editor.putUser(ink);
     await vi.advanceTimersByTimeAsync(300);
@@ -100,7 +109,39 @@ describe("live loop — the quiet gate waits while the pen is down", () => {
       { x: 420, y: 430 },
     ]);
     penDown(stray);
+    drawing = false;
     editor.removeUser([stray.id]);
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 1);
+    await settle();
+    expect(fetchJson).toHaveBeenCalledTimes(1);
+  });
+
+  it("a stroke left unfinished for good (Esc or a tool switch mid-stroke) does not stall the line", async () => {
+    editor.putUser(writeLine("2x=8", 100, 100));
+    await vi.advanceTimersByTimeAsync(300);
+    const stray = drawShapeFromPoints([
+      { x: 400, y: 400 },
+      { x: 420, y: 430 },
+    ]);
+    penDown(stray);
+    // the tool stops drawing, the shape stays in the store with isComplete: false
+    drawing = false;
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 1);
+    await settle();
+    expect(fetchJson).toHaveBeenCalledTimes(1);
+  });
+
+  it("moving such a leftover stroke later is not a pen down", async () => {
+    const stray = drawShapeFromPoints([
+      { x: 400, y: 400 },
+      { x: 420, y: 430 },
+    ]);
+    editor.putUser([{ ...stray, props: { ...stray.props, isComplete: false } } as TLShape]);
+    await vi.advanceTimersByTimeAsync(2000);
+    editor.putUser(writeLine("2x=8", 100, 100));
+    await vi.advanceTimersByTimeAsync(300);
+    // the select tool drags it: an update of an incomplete student stroke, the draw tool idle
+    editor.updateUser(stray.id, (s) => ({ ...s, x: s.x + 50 }) as TLShape);
     await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 1);
     await settle();
     expect(fetchJson).toHaveBeenCalledTimes(1);

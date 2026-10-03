@@ -175,6 +175,8 @@ export interface LiveEditorLike {
   updateShapes(shapes: TLShapePartial[]): unknown;
   deleteShapes(ids: TLShapeId[]): unknown;
   toImage?: Editor["toImage"];
+  /** the tool state (`draw.drawing`: a stroke is being drawn); optional: test editors have no tools */
+  isIn?(path: string): boolean;
 }
 
 export type StreamFn = (path: string, body: unknown, opts?: StreamOptions) => AsyncGenerator<LiveSseEvent, void, undefined>;
@@ -289,6 +291,9 @@ export const ANSWER_SETTLE_MS = 2500;
 
 /** The longest a mark's write may hold up what waits for it (`afterMark`): a ring takes about a second. */
 const MARK_BUSY_MAX_MS = 4000;
+
+/** How soon a quiet gate that ran out mid-stroke looks again (`armQuietTimer`). */
+const QUIET_RECHECK_MS = 150;
 
 const CHECK_PATH = "/api/live/check";
 const SOLVE_PATH = "/api/live/solve";
@@ -487,10 +492,6 @@ export class LiveLoop implements LiveController {
   private unsubscribeRemote: (() => void) | null = null;
   private unsubscribeSession: (() => void) | null = null;
   private quietTimer: ReturnType<typeof setTimeout> | null = null;
-  /** when the quiet gate armed last runs out (`deps.now()` time) */
-  private quietDue = 0;
-  /** a gate that was running when a stroke began: held until that stroke's pen-up (or its cancel) */
-  private quietHeld = false;
   /** the canvas-level settle clock: running means the student is still considered to be working */
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
   /**
@@ -706,7 +707,6 @@ export class LiveLoop implements LiveController {
   private resetRuntime(): void {
     if (this.quietTimer) clearTimeout(this.quietTimer);
     this.quietTimer = null;
-    this.quietHeld = false;
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
     this.settled = false;
@@ -1034,8 +1034,6 @@ export class LiveLoop implements LiveController {
     }
 
     let problemErased = false;
-    /** a stroke removed before its pen-up (the pointer was cancelled) */
-    let abandoned = false;
     for (const rec of Object.values(entry.changes.removed)) {
       if (!isShapeRecord(rec)) continue;
       // a problem the chat wrote, rubbed out: the columns under it are read again (below)
@@ -1056,10 +1054,6 @@ export class LiveLoop implements LiveController {
         continue;
       }
       if (isDraw(rec)) {
-        if (!rec.props.isComplete) {
-          abandoned = true;
-          continue;
-        }
         const line = this.lineOfStroke(rec.id);
         if (line) {
           for (const sid of line.strokeIds) if (sid !== rec.id) this.dirtyStrokeIds.add(sid);
@@ -1089,17 +1083,6 @@ export class LiveLoop implements LiveController {
     // rubbed out — means the student is still working, wherever on the canvas it happened.
     if (penUp || inkChanged || erased || penDown) this.markUnsettled();
 
-    // A stroke in progress is part of the writing ("never render while the pen is down"): a gate
-    // that ran out mid-stroke read the line without it — the first half of an 8 read as a 0 and
-    // ringed, then read again and ticked. It is held until this stroke's pen-up, which arms it again.
-    if (penDown && !penUp && !inkChanged && !erased && this.quietTimer) {
-      clearTimeout(this.quietTimer);
-      this.quietTimer = null;
-      this.quietHeld = true;
-    }
-    // ...or until the stroke is abandoned, when the lines waiting get the rest of their time
-    if (abandoned && this.quietHeld && !this.quietTimer) this.armQuietTimer(Math.max(0, this.quietDue - this.deps.now()));
-
     if (penUp || inkChanged || erased) {
       // The student is working again: the tutor puts the pen down (finishing what it started).
       this.cancelHandwriting();
@@ -1110,10 +1093,7 @@ export class LiveLoop implements LiveController {
       this.pendingRewrite = this.pendingRewrite || rewrite;
       // A stroke that is plainly a drawing is not the student writing maths: the lines already
       // waiting to be read keep their time (it is sorted out at that flush, or at one of its own).
-      if (penUp && !writingUp && !inkChanged && !erased && (this.quietTimer || this.quietHeld)) {
-        if (!this.quietTimer) this.armQuietTimer(Math.max(0, this.quietDue - this.deps.now()));
-        return;
-      }
+      if (penUp && !writingUp && !inkChanged && !erased && this.quietTimer) return;
       this.armQuietTimer();
     }
   }
@@ -1143,10 +1123,16 @@ export class LiveLoop implements LiveController {
 
   private armQuietTimer(delay: number = this.pendingRewrite ? LIVE_TIMING.rewriteQuietMs : LIVE_TIMING.quietMs): void {
     if (this.quietTimer) clearTimeout(this.quietTimer);
-    this.quietHeld = false;
-    this.quietDue = this.deps.now() + delay;
     this.quietTimer = setTimeout(() => {
       this.quietTimer = null;
+      // "Never render while the pen is down": a gate that runs out while the draw tool is drawing
+      // a stroke would read the line without it (the first half of an 8 read as a 0, ringed, then
+      // read again and ticked). It looks again shortly; that stroke's pen-up re-arms it anyway. Only
+      // the stroke being drawn counts — one left unfinished (Esc, a tool switch) never holds it.
+      if (this.editor.isIn?.("draw.drawing")) {
+        this.armQuietTimer(QUIET_RECHECK_MS);
+        return;
+      }
       this.pendingRewrite = false;
       this.flush();
     }, delay);
