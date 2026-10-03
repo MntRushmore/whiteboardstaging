@@ -1,6 +1,7 @@
 import { atom, type TLRecord, type TLStoreSnapshot } from "tldraw";
 import { applyRemotePlan } from "./applyRemotePlan";
 import { createDirtyTracker } from "./dirtyTracker";
+import { deepEqual } from "./deepEqual";
 import { mergeDocumentRecords } from "./mergeDocumentRecords";
 import type { BuildResult, DirtyToken, PersistResult, SaveQueue, SaveQueueDeps, SyncState } from "./types";
 
@@ -108,6 +109,8 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
   /** when the edits the debounce / backup timer is waiting on started */
   let saveBurstAt: number | null = null;
   let backupBurstAt: number | null = null;
+  /** the document records as last persisted (or as loaded) */
+  let persisted = deps.store.getStoreSnapshot("document").store as Record<string, unknown>;
 
   const isOnline = (): boolean => onlineHint ?? deps.isOnline();
   const hasPending = (): boolean => dirty || tracker.hasPending();
@@ -191,6 +194,17 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
     }, burstDelay(backupBurstAt, BACKUP_DEBOUNCE_MS, MAX_BACKUP_WAIT_MS));
   }
 
+  /**
+   * True when every pending change leaves its record as last persisted: a record rewritten with
+   * the same content (Live re-rendering its echoes when a board opens) or changed and changed back.
+   */
+  function nothingToSave(): boolean {
+    const { changed, removed } = tracker.peek();
+    for (const id of changed) if (!deepEqual(deps.store.get(id as TLRecord["id"]), persisted[id])) return false;
+    for (const id of removed) if (Object.prototype.hasOwnProperty.call(persisted, id)) return false;
+    return true;
+  }
+
   function fail(token: DirtyToken, p: Partial<SyncState>): void {
     tracker.restore(token);
     dirty = true;
@@ -205,6 +219,14 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
       const attempt = state.get().attempt + 1;
       patch({ status: "offline", message: MSG_OFFLINE, pending: hasPending(), attempt });
       if (hasPending()) scheduleRetry(attempt);
+      return state.get();
+    }
+    if (nothingToSave()) {
+      // No write, no "Saving…", and the row's updated_at (the boards home's order) stays put.
+      tracker.begin();
+      dirty = false;
+      patch({ status: "saved", message: null, pending: false, attempt: 0 });
+      deps.backup?.clear(deps.boardId);
       return state.get();
     }
     patch({ status: "saving", message: null });
@@ -246,6 +268,7 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
 
       if (result.ok) {
         inFlightToken = null;
+        persisted = built.snapshot.store as Record<string, unknown>;
         patch({
           status: "saved",
           message: null,

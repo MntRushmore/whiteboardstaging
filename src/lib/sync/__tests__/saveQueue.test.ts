@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TLShapeId, TLStore } from "tldraw";
+import { react, type TLShapeId, type TLStore } from "tldraw";
 import {
   backoffDelay,
   createSaveQueue,
@@ -449,6 +449,47 @@ describe("createSaveQueue", () => {
     await vi.advanceTimersByTimeAsync(2500);
     expect(queue.state.get()).toMatchObject({ status: "saved", pending: false });
     expect((remote.row?.data as { document: { store: Record<string, { x: number }> } }).document.store["shape:text"].x).toBe(299);
+    queue.dispose();
+  });
+
+  it("changes that leave the board as it was persisted write nothing and never show 'Saving…'", async () => {
+    const store = makeStore();
+    const original = putShape(store, "shape:a", 10);
+    const remote = fakeRemote(store);
+    const persist = vi.fn(remote.persist);
+    const backup = memoryBackup();
+    const queue = createSaveQueue(makeDeps(store, { persist, backup }));
+    const statuses: string[] = [];
+    const stop = react("statuses", () => void statuses.push(queue.state.get().status));
+
+    // what Live does when a board opens: rewrites records with what they already hold
+    store.put([{ ...original, props: { ...original.props } }]);
+    putShape(store, "shape:a", 99);
+    store.put([original]);
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(persist).not.toHaveBeenCalled();
+    expect(statuses).not.toContain("saving");
+    expect(queue.state.get()).toMatchObject({ status: "saved", pending: false, version: 1 });
+    expect(backup.map.has("b1")).toBe(false);
+
+    // a real change still saves, and the saved state becomes the new baseline
+    const at50 = putShape(store, "shape:a", 50);
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(persist).toHaveBeenCalledTimes(1);
+    store.put([{ ...at50, x: 70 }]);
+    store.put([{ ...at50 }]);
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(persist).toHaveBeenCalledTimes(1);
+    // ...and a shape added then erased before the save is nothing to save either
+    putShape(store, "shape:tmp");
+    store.remove(["shape:tmp" as TLShapeId]);
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(persist).toHaveBeenCalledTimes(1);
+    stop();
     queue.dispose();
   });
 
