@@ -576,6 +576,63 @@ describe("createSaveQueue", () => {
     queue.dispose();
   });
 
+  it("after a write that may have landed (no answer), erasing the stroke is still saved: no 'nothing to save' shortcut", async () => {
+    const store = makeStore();
+    const remote = fakeRemote(store);
+    let lose = true;
+    const persist = vi.fn(async (u: Record<string, unknown>, v: number | null): Promise<PersistResult> => {
+      const res = await remote.persist(u, v); // it lands...
+      if (lose) {
+        lose = false;
+        return { ok: false, kind: "timeout", message: MSG_SAVE_TIMEOUT }; // ...but the answer is lost
+      }
+      return res;
+    });
+    const queue = createSaveQueue(makeDeps(store, { persist, fetchRemote: remote.fetchRemote }));
+    putShape(store, "shape:a");
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(remote.shapeIds()).toEqual(["shape:a"]);
+    expect(queue.state.get()).toMatchObject({ status: "error", pending: true });
+    store.remove(["shape:a" as TLShapeId]); // the student erases it before the retry
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(RETRY_BACKOFF_MS[0] + 100);
+    // The retry conflicts (the first write did land), merges, and removes it on the server too.
+    expect(remote.shapeIds()).toEqual([]);
+    expect(queue.state.get()).toMatchObject({ status: "saved", pending: false });
+    expect(persist.mock.calls.length).toBeGreaterThanOrEqual(2);
+    queue.dispose();
+  });
+
+  it("what an unanswered write sent stays in the backups until a write settles it", async () => {
+    const store = makeStore();
+    const remote = fakeRemote(store);
+    const backup = memoryBackup();
+    let failing = true;
+    const persist = vi.fn(async (u: Record<string, unknown>, v: number | null): Promise<PersistResult> => {
+      if (failing) {
+        await remote.persist(u, v); // lands, answer lost
+        return { ok: false, kind: "other", message: "socket hang up" };
+      }
+      return remote.persist(u, v);
+    });
+    const queue = createSaveQueue(makeDeps(store, { persist, backup, fetchRemote: remote.fetchRemote }));
+    const sentA = putShape(store, "shape:a", 50);
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(2000); // the write lands, the answer does not
+    putShape(store, "shape:a", 60); // the stroke goes on
+    expect(queue.writeBackupNow()).toBe(true);
+    expect(backup.map.get("b1")).toMatchObject({ baseVersion: 1, sent: { "shape:a": sentA } });
+    failing = false;
+    await vi.advanceTimersByTimeAsync(RETRY_BACKOFF_MS[0] + 100);
+    expect(queue.state.get()).toMatchObject({ status: "saved", pending: false });
+    putShape(store, "shape:a", 70);
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(backup.map.get("b1")?.sent).toBeUndefined(); // settled: the server's state is known again
+    queue.dispose();
+  });
+
   it("an id edited again while a write is in flight is backed up with what that write sent", async () => {
     const store = makeStore();
     const remote = fakeRemote(store);
@@ -585,7 +642,7 @@ describe("createSaveQueue", () => {
       if (!release) await new Promise<void>((r) => (release = r));
       return remote.persist(u, v);
     });
-    const queue = createSaveQueue(makeDeps(store, { persist, backup }));
+    const queue = createSaveQueue(makeDeps(store, { persist, backup, fetchRemote: remote.fetchRemote }));
     const sentA = putShape(store, "shape:a", 50);
     putShape(store, "shape:b", 1);
     queue.markDirty();
