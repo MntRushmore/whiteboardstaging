@@ -149,7 +149,7 @@ into the root layout, which would load it on `/` and `/login` - a regression for
 ## 2026-10-02: the board-feel pass (`fix/board-feel`)
 
 `/board/[id]` first-load JS was 1,059,082 B gzip (918 B under budget) before the pass and
-1,054,571 B after it (CSS 48,211 → 48,419 B); 1,055,322 B after the review fixes that followed. The pass's fixes (timeouts, the narrow-board strip,
+1,054,571 B after it (CSS 48,211 → 48,419 B); 1,055,898 B after the review fixes and the pause-mid-line fix that followed. The pass's fixes (timeouts, the narrow-board strip,
 screen deletion, focus rings, the Live loop changes) were paid for by making three things lazy that
 most boards never show: `StickerLibrary` and `PdfUpload` (Feature Labs, off by default) and
 `LiveDebugPanel` (development, or opted in on the device) — `React.lazy` in `app/board/[id]/page.tsx`.

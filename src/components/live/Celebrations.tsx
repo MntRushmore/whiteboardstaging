@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Editor, TLShapeId } from "tldraw";
+import type { Editor, TLRecord, TLShapeId } from "tldraw";
 import { Flame } from "lucide-react";
 import { markKindOf } from "@/lib/onboarding/state";
-import { celebrate, INITIAL_CELEBRATE, STREAK_FROM, streakText, type Cheer } from "@/lib/live/celebrate";
+import { celebrate, INITIAL_CELEBRATE, MarkSettler, STREAK_FROM, streakText, type Cheer } from "@/lib/live/celebrate";
 import { cn } from "@/lib/utils";
 
 /**
@@ -16,8 +16,12 @@ import { cn } from "@/lib/utils";
  * prefers-reduced-motion (globals.css): the words still show, the confetti does not.
  */
 
-/** a line read half-written can be ringed and then ticked a moment later: only the last mark counts */
-const SETTLE_MS = 700;
+/** A finished stroke of the student's own (not the tutor's hand). */
+function isFinishedStudentStroke(rec: TLRecord): boolean {
+  if (rec.typeName !== "shape" || rec.type !== "draw") return false;
+  return (rec.props as { isComplete?: boolean }).isComplete === true && (rec.meta as Record<string, unknown>).live !== true;
+}
+
 /** how long a cheer stays up (matches the `celebrate-pop` animation) */
 const SHOW_MS = 2200;
 const CONFETTI_COLORS = ["#f43f5e", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#ec4899", "#facc15"];
@@ -94,45 +98,61 @@ export function Celebrations({ editor }: { editor: Editor }) {
   const seq = useRef(0);
 
   useEffect(() => {
-    const pending = new Map<string, ReturnType<typeof setTimeout>>();
     const clearing = new Set<ReturnType<typeof setTimeout>>();
+    // which mark shape each line's cheer is drawn beside, if its own are gone by then
+    const lastMark = new Map<string, TLShapeId>();
+    // a tick counts after a moment, a ring only once the line has stopped changing (`MarkSettler`)
+    const settler = new MarkSettler((lineId, kind) => {
+      const { state: next, cheer } = celebrate(state.current, lineId, kind);
+      state.current = next;
+      const fallback = lastMark.get(lineId);
+      if (!cheer || !fallback) return;
+      const at = markPoint(editor, lineId, fallback);
+      if (!at) return;
+      const id = ++seq.current;
+      const pieces = cheer.tone === "win" ? (cheer.burst === "big" ? confetti(36, 110) : confetti(16, 64)) : [];
+      setPops((all) => [...all.slice(-2), { id, cheer, ...at, pieces }]);
+      setSaid(cheer.tone === "win" && cheer.streak >= STREAK_FROM ? `${cheer.text} ${streakText(cheer.streak)}` : cheer.text);
+      const done = setTimeout(() => {
+        clearing.delete(done);
+        setPops((all) => all.filter((p) => p.id !== id));
+      }, SHOW_MS);
+      clearing.add(done);
+    });
+    const verdict = (rec: TLRecord) => {
+      if (rec.typeName !== "shape") return null;
+      const kind = markKindOf(rec.meta);
+      const meta = rec.meta as Record<string, unknown>;
+      if ((kind !== "check" && kind !== "circle") || typeof meta.lineId !== "string") return null;
+      return { kind, lineId: meta.lineId, mark: String(meta.mark) };
+    };
+    /** the student finished a stroke: a ring waiting on the line it extends does not count */
+    const studentInk = (rec: TLRecord) => {
+      const b = editor.getShapePageBounds(rec.id as TLShapeId);
+      if (b) settler.ink({ x: b.x, y: b.y, w: b.w, h: b.h });
+    };
     const off = editor.store.listen(
       ({ changes }) => {
         for (const rec of Object.values(changes.added)) {
-          if (rec.typeName !== "shape") continue;
-          const kind = markKindOf(rec.meta);
-          if (kind !== "check" && kind !== "circle") continue;
-          const lineId = (rec.meta as Record<string, unknown>).lineId;
-          if (typeof lineId !== "string") continue;
-          const waiting = pending.get(lineId);
-          if (waiting) clearTimeout(waiting);
-          pending.set(
-            lineId,
-            setTimeout(() => {
-              pending.delete(lineId);
-              const { state: next, cheer } = celebrate(state.current, lineId, kind);
-              state.current = next;
-              if (!cheer) return;
-              const at = markPoint(editor, lineId, rec.id);
-              if (!at) return;
-              const id = ++seq.current;
-              const pieces = cheer.tone === "win" ? (cheer.burst === "big" ? confetti(36, 110) : confetti(16, 64)) : [];
-              setPops((all) => [...all.slice(-2), { id, cheer, ...at, pieces }]);
-              setSaid(cheer.tone === "win" && cheer.streak >= STREAK_FROM ? `${cheer.text} ${streakText(cheer.streak)}` : cheer.text);
-              const done = setTimeout(() => {
-                clearing.delete(done);
-                setPops((all) => all.filter((p) => p.id !== id));
-              }, SHOW_MS);
-              clearing.add(done);
-            }, SETTLE_MS),
-          );
+          const v = verdict(rec);
+          if (v) {
+            lastMark.set(v.lineId, rec.id as TLShapeId);
+            settler.mark(v.lineId, v.kind, v.mark);
+          } else if (isFinishedStudentStroke(rec)) studentInk(rec);
+        }
+        for (const [from, to] of Object.values(changes.updated)) {
+          if (isFinishedStudentStroke(to) && !isFinishedStudentStroke(from)) studentInk(to);
+        }
+        for (const rec of Object.values(changes.removed)) {
+          const v = verdict(rec);
+          if (v) settler.markRemoved(v.lineId, v.kind);
         }
       },
       { scope: "document", source: "all" },
     );
     return () => {
       off();
-      pending.forEach((t) => clearTimeout(t));
+      settler.dispose();
       clearing.forEach((t) => clearTimeout(t));
     };
   }, [editor]);
