@@ -59,6 +59,8 @@ import { Bug, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import { InkMeter } from "@/components/billing/InkMeter";
+import { inkTone } from "@/lib/billing/inkSummary";
+import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { OutOfInkWatcher } from "@/components/billing/OutOfInkWatcher";
 import { clearInkErrorIfAffordable } from "@/lib/live/liveStore";
 import { BugReportButton } from "@/components/BugReportButton";
@@ -299,6 +301,10 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   useBoardAutoTitle(id, sync);
 
   const narrowBoard = screenStripSlot(useBreakpoint()) === "corner";
+  // The meter says "Get ink" whenever ink is low or gone; the Live pill's out-of-ink error then
+  // leaves it to the meter, so the bar says it once (one shared read per page: useInkSummary).
+  const inkBalance = useInkSummary().summary?.balance;
+  const meterOffersInk = typeof inkBalance === "number" && inkTone(inkBalance) !== "ok";
 
   // One place decides what the bar shows (see src/components/live/toolbar.ts).
   const toolbar = boardToolbarView({
@@ -403,6 +409,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
               onClearMarks={() => controller.clearMarks()}
               onShowModeInfo={() => setModeInfoOpen(true)}
               onReportProblem={() => setReportOpen(true)}
+              meterOffersInk={meterOffersInk}
             />
           </LiveErrorBoundary>
           {/* ink left; tapping it (or its "Get ink" when low) opens the ink dialog */}

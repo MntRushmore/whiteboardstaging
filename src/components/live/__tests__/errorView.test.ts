@@ -7,6 +7,7 @@ import {
   RATE_LIMIT_FALLBACK_MS,
   classifyLiveFailure,
   liveErrorView,
+  pillPrimary,
   secondsLeftFor,
   showsHintCard,
   sseFailure,
@@ -118,6 +119,16 @@ describe("liveErrorView", () => {
     expect(liveErrorView(err({ code: "ink", message: "Out of ink" }), 0)).toEqual({ title: "Out of ink", primary: "ink", retryEnabled: false });
     for (const code of ["network", "upstream", "timeout", "unknown"] as const) {
       expect(liveErrorView(err({ code, message: "m" }), 0)).toEqual({ title: "m", primary: "retry", retryEnabled: true });
+    }
+  });
+
+  it("out of ink, the pill leaves 'Get ink' to the bar's meter when the meter shows it (one 'Get ink', not two)", () => {
+    const ink = liveErrorView(err({ code: "ink", message: "Out of ink" }), 0);
+    expect(pillPrimary(ink, true)).toBeNull(); // the meter is low or empty: it says "Get ink"
+    expect(pillPrimary(ink, false)).toBe("ink"); // no meter (balance not loaded): the pill keeps it
+    for (const code of ["network", "unauthorized", "rate_limited"] as const) {
+      const view = liveErrorView(err({ code, message: "m" }), 0);
+      expect(pillPrimary(view, true)).toBe(view.primary);
     }
   });
 
