@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
+import { reportAppError } from "@/lib/reportAppError";
 
 export default function GlobalError({
   error,
@@ -12,6 +13,7 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     console.error("[global error boundary]", error);
+    reportAppError("global", error, error.digest);
   }, [error]);
 
   return (

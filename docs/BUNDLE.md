@@ -39,6 +39,14 @@ The budget lives in `BUDGETS` in `scripts/check-bundle.mjs`. Raising it needs a 
 what was added and why it could not be lazy-loaded. `/train` has no budget: trainer-only route, same
 graph as the board minus the live-math hooks.
 
+**Headroom, 2026-10-03.** `origin/main` (`620f11a`) measures 1,059,095 B on `/board/[id]`: 905 B under
+the budget. Client error reporting (`feat/prod-basics`) takes 281 B of it, leaving 624 B
+(1,059,376 B). Only its front door is in the first load: the window listeners in
+`src/instrumentation-client.ts` and `src/lib/reportAppError.ts`, which every page (and the error
+boundaries) share. The reporter itself, `src/lib/clientErrors.ts` (1.7 KB raw / 1.1 KB gzip), is a lazy
+chunk fetched 3 s after the page loads, or at the first error; shipped in the first load it cost 887 B.
+Other routes grew 274 to 405 B for the same front door.
+
 ## Before / after
 
 "Before" is the branch as handed over (commit `7b4a42d`); "after" is the same tree plus the changes in

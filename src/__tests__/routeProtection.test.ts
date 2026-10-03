@@ -91,16 +91,39 @@ describe("route discovery", () => {
 });
 
 describe("allow-lists", () => {
-  it("PUBLIC_ROUTES is exactly config/status, the billing webhook and the GC cron", () => {
+  it("PUBLIC_ROUTES is exactly config/status, the billing webhook, the GC cron, client errors and health", () => {
     // config/status: reports which provider keys exist as booleans (never values,
     // prefixes or lengths) so the setup screen can render before sign-in.
     // billing/webhook: the provider has no user JWT; the Stripe-Signature HMAC is the auth.
     // admin/gc: Vercel cron has no user JWT; the shared CRON_SECRET bearer token is the auth.
+    // client-errors: browser crash reports, signed out too; it only writes a log line.
+    // health: an uptime monitor has no user; it answers { ok, db, release } only.
     expect([...PUBLIC_ROUTES].sort()).toEqual([
       "src/app/api/admin/gc/route.ts",
       "src/app/api/billing/webhook/route.ts",
+      "src/app/api/client-errors/route.ts",
       "src/app/api/config/status/route.ts",
+      "src/app/api/health/route.ts",
     ]);
+  });
+
+  it("client errors only log: body capped, zod-validated, a token only names the user", () => {
+    // The real invariants behind its PUBLIC_ROUTES entry (behaviour: routes.clientErrors.test.ts).
+    const src = sources.get("src/app/api/client-errors/route.ts") ?? "";
+    expect(/\bMAX_REPORT_BYTES\b/.test(src)).toBe(true);
+    expect(/\.safeParse\s*\(/.test(src)).toBe(true);
+    expect(/\bidentifyUser\s*\(/.test(src)).toBe(true);
+    expect(/req\.json\s*\(/.test(src), "read through the size cap, never req.json()").toBe(false);
+    expect(/supabase|\.from\s*\(|\.rpc\s*\(/i.test(src), "no database access").toBe(false);
+  });
+
+  it("health answers { ok, db, release } and nothing else", () => {
+    const src = sources.get("src/app/api/health/route.ts") ?? "";
+    const bodies = [...src.matchAll(/Response\.json\(\s*(\{[^}]*\})/g)].map((m) => m[1]);
+    expect(bodies.length).toBe(2);
+    for (const body of bodies) {
+      expect(body.match(/\b(\w+):/g)?.map((k) => k.slice(0, -1)).sort()).toEqual(["db", "ok", "release"]);
+    }
   });
 
   it("every public route documents why it may skip requireUser", () => {

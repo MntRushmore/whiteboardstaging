@@ -12,8 +12,8 @@ import { describe, expect, it } from "vitest";
 const ROOT = resolve(__dirname, "..", "..");
 const ENV_EXAMPLE_PATH = join(ROOT, ".env.example");
 
-/** Runtime-provided names that must not appear in .env.example. */
-const IGNORED = new Set(["NODE_ENV"]);
+/** Runtime-provided names that must not appear in .env.example (NEXT_RUNTIME: set by Next, read in src/instrumentation.ts). */
+const IGNORED = new Set(["NODE_ENV", "NEXT_RUNTIME"]);
 const IGNORED_PREFIXES = ["VERCEL_"];
 
 const REQUIRED = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY"];

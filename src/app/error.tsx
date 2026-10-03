@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect } from "react";
 import { AlertTriangle, Home, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { reportAppError } from "@/lib/reportAppError";
 import {
   Card,
   CardContent,
@@ -22,6 +23,7 @@ export default function ErrorPage({
 }) {
   useEffect(() => {
     console.error("[app error boundary]", error);
+    reportAppError("boundary", error, error.digest);
   }, [error]);
 
   return (
