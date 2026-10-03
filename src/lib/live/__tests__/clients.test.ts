@@ -90,6 +90,20 @@ describe("RecognizeClient", () => {
     }
   });
 
+  it("times out even when the request is stuck before fetch (a session read deaf to the abort)", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new RecognizeClient({ fetchJson: vi.fn(() => new Promise<never>(() => undefined)), timeoutMs: 1000 });
+      const p = client.recognize(req("a"), "h");
+      const assertion = expect(p).rejects.toBeInstanceOf(RecognizeTimeoutError);
+      await vi.advanceTimersByTimeAsync(1001);
+      await assertion;
+      expect(client.inFlight).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("rejects malformed responses", async () => {
     const client = new RecognizeClient({ fetchJson: vi.fn(async () => ({ nope: true })) });
     await expect(client.recognize(req("a"), "h")).rejects.toThrow(/unexpected/i);
@@ -211,6 +225,12 @@ describe("streamLiveSse", () => {
     const gen = streamLiveSse("/api/live/solve", {}, { fetchImpl, idleTimeoutMs: 30 });
     await expect(gen.next()).rejects.toBeInstanceOf(SseTimeoutError);
     expect(seen?.aborted).toBe(true);
+  });
+
+  it("a request stuck before fetch (a session read that hangs, deaf to the abort) still times out", async () => {
+    const fetchImpl = vi.fn<FetchLike>(() => new Promise<Response>(() => undefined));
+    const gen = streamLiveSse("/api/live/check", {}, { fetchImpl, idleTimeoutMs: 30 });
+    await expect(gen.next()).rejects.toBeInstanceOf(SseTimeoutError);
   });
 
   it("the server's pings keep a slow model's stream alive", async () => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { apiJson } from "@/lib/api-client";
+import { abortable } from "../abortable";
 import type { CallOptions } from "../modelCalls";
 import type { FetchJson } from "../recognizeClient";
 import { ChatResponseSchema, type ChatRequest, type ChatResponse } from "./contracts";
@@ -30,14 +31,16 @@ export async function requestChat(
   // a controller of our own (not AbortSignal.timeout: iPadOS 15 has none) the caller's signal also ends
   const ctrl = new AbortController();
   const onAbort = () => ctrl.abort();
-  opts.signal?.addEventListener("abort", onAbort);
+  if (opts.signal?.aborted) ctrl.abort();
+  else opts.signal?.addEventListener("abort", onAbort);
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
     ctrl.abort();
   }, opts.timeoutMs ?? CHAT_TIMEOUT_MS);
   try {
-    const parsed = ChatResponseSchema.safeParse(await fetchJson(CHAT_PATH, req, { signal: ctrl.signal }));
+    // raced against the abort as well: authedFetch's session read happens before fetch sees it
+    const parsed = ChatResponseSchema.safeParse(await abortable(fetchJson(CHAT_PATH, req, { signal: ctrl.signal }), ctrl.signal));
     if (!parsed.success) throw new Error("The chat returned an unexpected response");
     return parsed.data;
   } catch (err) {

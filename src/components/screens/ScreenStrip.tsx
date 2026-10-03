@@ -3,6 +3,7 @@
 import { ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { PORTRAIT_BREAKPOINT, useBreakpoint, useEditor, useValue } from "tldraw";
+import { liveStore } from "@/lib/live/liveStore";
 import { addScreen, deleteScreen, goToScreen, MAX_SCREENS, screenPosition } from "@/lib/screens/screens";
 
 export const SCREEN_COPY = {
@@ -78,8 +79,10 @@ function Strip() {
           aria-label={SCREEN_COPY.remove}
           title={SCREEN_COPY.remove}
           onClick={() => {
-            const restore = deleteScreen(editor);
-            if (restore) toast(SCREEN_COPY.removed(index), { duration: 8000, action: { label: SCREEN_COPY.undo, onClick: restore } });
+            // the tutor's pens finish on this screen first (`deleteScreen`)
+            void deleteScreen(editor, () => liveStore.finishWriting.get()?.()).then((restore) => {
+              if (restore) toast(SCREEN_COPY.removed(index), { duration: 8000, action: { label: SCREEN_COPY.undo, onClick: restore } });
+            });
           }}
         >
           <Trash2 className="h-4 w-4" />

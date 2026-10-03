@@ -402,11 +402,14 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
             <Bug className="size-3.5" aria-hidden />
             <span className="hidden text-xs font-medium lg:inline">Report a bug</span>
           </Button>
+          {/* a chunk that fails to load (an offline tab, a stale deploy) hides the button, not the board */}
           {(features.stickers || features.pdfUpload) && (
-            <React.Suspense fallback={null}>
-              {features.stickers && <StickerLibrary />}
-              {features.pdfUpload && <PdfUpload />}
-            </React.Suspense>
+            <LiveErrorBoundary>
+              <React.Suspense fallback={null}>
+                {features.stickers && <StickerLibrary />}
+                {features.pdfUpload && <PdfUpload />}
+              </React.Suspense>
+            </LiveErrorBoundary>
           )}
         </div>
       </div>
@@ -422,9 +425,11 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
         <LectureBar lecture={lecture} />
       </LiveErrorBoundary>
       {liveDebugEnabled() && (
-        <React.Suspense fallback={null}>
-          <LiveDebugPanel />
-        </React.Suspense>
+        <LiveErrorBoundary>
+          <React.Suspense fallback={null}>
+            <LiveDebugPanel />
+          </React.Suspense>
+        </LiveErrorBoundary>
       )}
       {toolbar.showHintLayer && (
         <LiveErrorBoundary>

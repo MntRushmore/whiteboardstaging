@@ -110,6 +110,30 @@ describe("live loop — undo brings the ink back, not a second readback", () => 
     expect(echoes()[0].meta.lineId).toBe(line.line.id);
   });
 
+  it("a readback the student had typed over comes back as they typed it, not as the ink was misread", async () => {
+    fetchJson.mockImplementation(async () => ok("2x=0"));
+    const ink = fixtureSingleLine();
+    editor.putUser(ink);
+    await quiet();
+    const [lineId] = Object.keys(liveStore.lines.get());
+    // the student fixes the misread by typing into the readback
+    loop.retypeLine(lineId, "2x=8");
+    await quiet();
+    const echo = echoes()[0];
+    expect((echo.props as MathShapeProps).latex).toBe("2x=8");
+    expect(echo.meta.edited).toBe(true);
+
+    editor.removeUser([...ink.map((s) => s.id), echo.id]);
+    await quiet();
+    editor.putUser([...ink, echo] as TLShape[]);
+    await quiet();
+    expect(echoes()).toHaveLength(1);
+    const [line] = Object.values(liveStore.lines.get());
+    expect(line.latex).toBe("2x=8");
+    expect(line.edited).toBe(true);
+    expect((echoes()[0].props as MathShapeProps).latex).toBe("2x=8");
+  });
+
   it("delete everything and Undo, twice: still one echo per line", async () => {
     const first = writeLine("2x=8", 100, 100);
     const second = writeLine("x=4", 100, 200);
