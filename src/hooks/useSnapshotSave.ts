@@ -682,11 +682,15 @@ export interface UseSnapshotSaveResult {
 export function useSnapshotSave(
   editor: Editor | null,
   boardId: string,
-  initialVersion: number | null = null,
+  version: number | null = null,
 ): UseSnapshotSaveResult {
   // The queue is created in an effect (it needs the editor) but read reactively during
   // render, so it lives in a tldraw atom rather than React state (no setState in effects).
   const [queueAtom] = useState(() => atom<SaveQueue | null>("save.queue", null));
+  // The version the editor's document was loaded at, fixed for this mount: a newer value later
+  // (the page re-read the row) does not reload the store, and a queue built on it would write
+  // the stale document as if it were that version, over another tab's or device's work.
+  const [initialVersion] = useState(version);
 
   useEffect(() => {
     if (!editor) return;
