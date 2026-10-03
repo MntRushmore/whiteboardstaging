@@ -127,4 +127,47 @@ describe("live loop — the dial raised from Off: the ring, then the step", () =
     // never both pens at once: the first stroke of the step after the last of the ring
     expect(step[0].t).toBeGreaterThanOrEqual(ring[ring.length - 1].t);
   });
+
+  /** The step's strokes on the page: how many, and in how many written blocks. */
+  function steps(): { shapes: number; blocks: number } {
+    const shapes = editor.getCurrentPageShapes().filter((s) => typeof (s.meta as Record<string, unknown>).suggestFor === "string");
+    return { shapes: shapes.length, blocks: new Set(shapes.map((s) => String((s.meta as Record<string, unknown>).handBlock))).size };
+  }
+
+  async function ringThenStep(during: () => void): Promise<{ shapes: number; blocks: number }> {
+    loop = makeLoop("off");
+    loop.start();
+    await settle(2);
+    const [top, bottom] = [fixtureTwoLines().slice(0, 6), fixtureTwoLines().slice(6)];
+    await write(top, "2x=8");
+    await write(bottom, "x=5");
+    await vi.advanceTimersByTimeAsync(3_000);
+    await settle(4);
+    loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true });
+    for (let i = 0; i < 10; i++) {
+      await vi.advanceTimersByTimeAsync(16);
+      await settle(1);
+    }
+    during();
+    for (let i = 0; i < 400; i++) {
+      await vi.advanceTimersByTimeAsync(16);
+      await settle(1);
+    }
+    return steps();
+  }
+
+  it("asked twice while the ring is written (the dial down and up, or Help), the step is written once", async () => {
+    const once = await ringThenStep(() => undefined);
+    loop.stop();
+    resetLiveStore();
+    editor = createFakeEditor();
+    queue = [];
+    const twice = await ringThenStep(() => {
+      loop.setOptions({ boardId: "board-1", mode: "off", enabled: true });
+      loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true });
+      loop.requestHelp();
+    });
+    expect(once.blocks).toBe(1);
+    expect(twice).toEqual(once);
+  });
 });

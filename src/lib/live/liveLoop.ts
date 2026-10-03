@@ -224,6 +224,10 @@ interface LineRuntime {
   markBusySince?: number;
   /** what waits for the tutor's pen to lift from this line's mark (`afterMark`) */
   afterMark?: Array<() => void>;
+  /** the right next step being written beside it, for which read (`stepInFlight`); `landed` once its first write ran */
+  stepWriter?: { writer: HandWriter; latex: string; landed: boolean } | null;
+  /** the equation an operation line leads to, being written under it (`writeOperationResults`) */
+  resultWriter?: HandWriter | null;
 }
 
 type CheckOpts = {
@@ -4645,7 +4649,7 @@ export class LiveLoop implements LiveController {
     if (!opts.now && this.opts.mode !== "suggest" && this.opts.mode !== "answer") return false;
     const state = liveStore.lines.get()[lineId];
     if (!state?.latex) return false;
-    if (this.hasSuggestion(lineId, state.latex)) return true;
+    if (this.hasSuggestion(lineId, state.latex) || this.stepInFlight(lineId, state.latex)) return true;
     const step = this.rightNextStep(state);
     if (!step) return false;
     if (!opts.now && !this.settled) {
@@ -4666,12 +4670,26 @@ export class LiveLoop implements LiveController {
     };
     const slot = findFreeSlot(keepInsideX(candidate, this.placementBounds()), this.avoidRects(lineId), ink);
     const writer = this.makeWriter();
+    const entry = { writer, latex: state.latex, landed: false };
+    this.runtime(lineId).stepWriter = entry;
     writer.start(placeHandPlan(plan, { x: slot.x, y: slot.y }), {
       meta: makeMeta("ai", lineId, this.deps.now()),
       extraMeta: { [SUGGEST_META]: state.latex },
     });
+    // queued after the writer's first write (live writes are microtasks): from here its strokes are
+    // on the page for `hasSuggestion`
+    queueMicrotask(() => (entry.landed = true));
     clientMetric("live.suggest.hand", { lineId });
     return true;
+  }
+
+  /**
+   * A step for this read is being written and its strokes may not be on the page yet: two asks in
+   * one tick (both queued behind a ring, or Help during it) wrote the same step twice.
+   */
+  private stepInFlight(lineId: string, latex: string): boolean {
+    const entry = this.rt.get(lineId)?.stepWriter;
+    return Boolean(entry && entry.latex === latex && (entry.writer.active || !entry.landed));
   }
 
   /**
