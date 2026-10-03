@@ -54,7 +54,9 @@ export function restartDelayMs(quickEnds: number): number {
 /** The recognizer's error codes that will not go away by starting it again. */
 const FATAL: Record<string, SpeechErrorCode> = {
   "not-allowed": "mic-denied",
-  "service-not-allowed": "unsupported",
+  // Safari has a recognizer but its service is off (Dictation off, or Speech Recognition not
+  // allowed for Safari): "needs Chrome, Edge or Safari" was wrong there
+  "service-not-allowed": "speech-off",
   "audio-capture": "mic-missing",
   "language-not-supported": "unsupported",
 };
