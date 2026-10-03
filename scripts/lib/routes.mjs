@@ -31,6 +31,8 @@ export const PUBLIC_ROUTES = Object.freeze([
   // Browser crash reports: errors happen signed out too, and a beacon cannot carry a token. Per-IP
   // limit, 16 KB body cap, zod; a token, when sent, only names the user in the log line.
   "src/app/api/client-errors/route.ts",
+  // Uptime monitor probe: answers { ok, db, release } only.
+  "src/app/api/health/route.ts",
 ]);
 
 /** Why each public route may skip requireUser (enforced by routeProtection.test.ts). */
@@ -39,6 +41,7 @@ export const PUBLIC_ROUTE_REASONS = Object.freeze({
   "src/app/api/billing/webhook/route.ts": "signature-verified provider webhook",
   "src/app/api/admin/gc/route.ts": "Vercel cron; requires Authorization: Bearer CRON_SECRET",
   "src/app/api/client-errors/route.ts": "browser error reports, sent signed out too; per-IP limit, 16 KB body cap, zod; logs only",
+  "src/app/api/health/route.ts": "uptime monitor probe; answers { ok, db, release } only",
 });
 
 /** Routes whose handlers legitimately have no zod body schema. */
@@ -47,6 +50,7 @@ export const NO_BODY_ROUTES = Object.freeze([
   "src/app/api/config/status/route.ts", // GET only
   "src/app/api/admin/gc/route.ts", // GET (Vercel cron) or POST with an empty body; options are query params
   "src/app/api/live/lecture/token/route.ts", // POST with an empty body: mints a speech-to-text token for the caller
+  "src/app/api/health/route.ts", // GET only
 ]);
 
 export const API_ROUTES = Object.freeze([
@@ -106,6 +110,18 @@ export const API_ROUTES = Object.freeze([
     limit: "credits",
     body: "none",
     purpose: "OpenRouter balance for the low-credit banner",
+    status: "active",
+  },
+  {
+    path: "/api/health",
+    file: "src/app/api/health/route.ts",
+    methods: ["GET"],
+    auth: "public",
+    limit: "ip:health",
+    body: "none",
+    // 503 when the database does not answer (the free Supabase project paused).
+    withoutTokenStatus: [200, 503],
+    purpose: "Uptime probe: { ok, db, release }; db up when Postgres answers a trivial query within 3 s",
     status: "active",
   },
   {
