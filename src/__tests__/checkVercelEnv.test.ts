@@ -127,6 +127,7 @@ describe("envExample: section headers and classification", () => {
       "SKETCH_EVAL_ROUND",
       "SKETCH_EVAL_ABOUT",
       "SKETCH_EVAL_REASONING",
+      "RUN_PRIVACY_EVAL",
       "GRAPH_GALLERY",
       "FIGURE_GALLERY",
       "LECTURE_GALLERY",

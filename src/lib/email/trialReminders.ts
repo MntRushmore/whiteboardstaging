@@ -10,11 +10,14 @@
  * which moves this by under an hour. Inside the window, email_log (kind 'trial_reminder',
  * ref = the Stripe subscription id) keeps it to once per subscription.
  *
+ * Who it goes to: the person who pays, at the email Stripe has for the checkout (`payer_email` on
+ * the row, 20261003040000_go_live_gaps.sql), else the account's address (src/lib/email/payer.ts).
+ *
  * Who is NOT reminded, because no charge is coming or nobody can be told:
  *  - a subscription set to cancel at the end of the trial (`cancel_at_period_end`), or with a
  *    `cancel_at` at or before the trial end: it will not charge;
  *  - a row with no user (a Payment Link opened outside the app, or a deleted account);
- *  - an account with no email address.
+ *  - no payer email and an account with no email address.
  *
  * The subscriptions table belongs to the Unlimited plan (migration
  * 20261003020000_unlimited.sql, branch feat/unlimited-plan). Everything this module assumes about
@@ -24,7 +27,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type pino from "pino";
 import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
 import { sendOnce, type EmailLogKey } from "@/lib/email/log";
-import { isSendableAddress, type SendEmailInput, type SendEmailResult } from "@/lib/email/resend";
+import { billingRecipient } from "@/lib/email/payer";
+import type { SendEmailInput, SendEmailResult } from "@/lib/email/resend";
 import type { EmailDeps, EmailEnv } from "@/lib/email/server";
 import { trialReminderEmail } from "@/lib/email/templates";
 
@@ -61,6 +65,7 @@ export const SUBSCRIPTIONS = {
     trialEnd: "trial_end", // timestamptz: when the free week ends and the first charge is made
     cancelAtPeriodEnd: "cancel_at_period_end", // boolean
     cancelAt: "cancel_at", // timestamptz, nullable
+    payerEmail: "payer_email", // text, nullable: the checkout's email (20261003040000_go_live_gaps.sql)
   },
   trialingStatus: "trialing",
 } as const;
@@ -72,6 +77,8 @@ export type TrialRow = {
   trialEnd: string | null;
   cancelAtPeriodEnd: boolean;
   cancelAt: string | null;
+  /** Where the plan's emails go (the payer), when the checkout gave one. */
+  payerEmail: string | null;
 };
 
 export type ReminderWindow = { from: Date; to: Date };
@@ -126,6 +133,7 @@ export function toTrialRow(raw: Record<string, unknown>): TrialRow | null {
     trialEnd: asString(raw[c.trialEnd]),
     cancelAtPeriodEnd: raw[c.cancelAtPeriodEnd] === true,
     cancelAt: asString(raw[c.cancelAt]),
+    payerEmail: asString(raw[c.payerEmail]),
   };
 }
 
@@ -226,16 +234,17 @@ export async function runTrialReminders(deps: EmailDeps, env: EmailEnv, opts: Tr
       continue;
     }
 
-    const who = await deps.emailOf(row.userId);
+    // The payer's email from the checkout, else the account's.
+    const who = await billingRecipient(row, deps.emailOf);
     if ("error" in who) {
       summary.failed++;
       log.error({ subscription: row.subscriptionId, error: who.error }, "trial reminder: could not look up the account's email");
       continue;
     }
-    const email = who.email?.trim() ?? "";
-    if (!email || !isSendableAddress(email)) {
+    const email = who.email;
+    if (!email) {
       summary.skipped.noEmail++;
-      log.warn({ subscription: row.subscriptionId, userId: row.userId }, "trial reminder: the account has no email address");
+      log.warn({ subscription: row.subscriptionId, userId: row.userId }, "trial reminder: neither the payer nor the account has an email address");
       continue;
     }
 
@@ -259,7 +268,7 @@ export async function runTrialReminders(deps: EmailDeps, env: EmailEnv, opts: Tr
     const where = { subscription: row.subscriptionId, userId: row.userId, trialEnd: row.trialEnd };
     if (outcome.status === "sent") {
       summary.sent++;
-      log.info({ ...where, resendId: outcome.id }, "trial reminder sent");
+      log.info({ ...where, to: who.source, resendId: outcome.id }, "trial reminder sent");
     } else if (outcome.status === "already_sent") {
       summary.alreadySent++;
     } else {

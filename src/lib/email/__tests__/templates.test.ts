@@ -14,8 +14,10 @@ import {
   formatUsd,
   siteLink,
   trialReminderEmail,
+  unlimitedStartedEmail,
   welcomeEmail,
   type TrialReminderInput,
+  type UnlimitedStartedInput,
 } from "@/lib/email/templates";
 
 const SITE = "https://whiteboard.rushilchopra.com";
@@ -173,8 +175,58 @@ describe("trialReminderEmail", () => {
   });
 });
 
+describe("unlimitedStartedEmail (the auto-renewal acknowledgment)", () => {
+  const input: UnlimitedStartedInput = {
+    trialEnd: new Date("2026-10-10T03:04:00Z"),
+    manageUrl: PORTAL,
+    siteUrl: SITE,
+    planName: "Agathon Unlimited",
+    monthlyUsd: 25,
+  };
+  const email = unlimitedStartedEmail(input);
+
+  it("says nothing was charged, when and how much the card will be charged, that it renews monthly, and how to cancel free", () => {
+    expect(email.subject).toBe("Your free week of Agathon Unlimited has started");
+    for (const part of [visibleText(email.html), email.text]) {
+      expect(part).toContain("Your free week of Agathon Unlimited has started. Nothing was charged today.");
+      expect(part).toContain("On Friday, October 9 at 11:04 PM EDT, your card will be charged $25, then $25 every month until you cancel.");
+      expect(part).toContain("Cancel before Friday, October 9 at 11:04 PM EDT and you won't be charged.");
+    }
+    expect(visibleText(email.html)).toContain("To cancel, use Manage or cancel .");
+  });
+
+  it("links how to cancel (body and button), the plan's terms, the refund policy and the site", () => {
+    expect(hrefs(email.html)).toEqual([PORTAL, PORTAL, `${SITE}/terms#unlimited`, `${SITE}/refunds#subscriptions`, `${SITE}/`]);
+    expect(email.text).toContain(`To cancel, use Manage or cancel: ${PORTAL}`);
+    expect(email.text).toContain(`How the plan works: ${SITE}/terms#unlimited`);
+    expect(email.text).toContain(`Refund policy: ${SITE}/refunds#subscriptions`);
+  });
+
+  it("a second plan says it starts with the first charge, not a free week of help", () => {
+    const repeat = unlimitedStartedEmail({ ...input, repeat: true });
+    expect(repeat.subject).toBe("Your Agathon Unlimited plan starts on Friday, October 9");
+    expect(repeat.text).toContain("Your Agathon Unlimited plan is set up. Nothing was charged today.");
+    expect(repeat.text).toContain("The free week is for a first plan only, so until then help uses ink.");
+    expect(repeat.text).toContain("your card will be charged $25, then $25 every month until you cancel.");
+  });
+
+  it("escapes what it interpolates and refuses a bad link or date", () => {
+    const odd = unlimitedStartedEmail({ ...input, planName: `<b>Plan</b>`, manageUrl: `${PORTAL}?a=1&b="><img src=x>` });
+    expect(odd.html).not.toContain("<b>Plan</b>");
+    expect(odd.html).not.toMatch(/<img\b/);
+    expect(() => unlimitedStartedEmail({ ...input, manageUrl: "javascript:void(0)" })).toThrow(/email link/);
+    expect(() => unlimitedStartedEmail({ ...input, siteUrl: "/relative" })).toThrow(/email link/);
+    expect(() => unlimitedStartedEmail({ ...input, trialEnd: new Date(Number.NaN) })).toThrow(/valid date/);
+  });
+});
+
 describe("the house style", () => {
-  const all = [welcomeEmail({ siteUrl: SITE }), trialReminderEmail({ trialEnd: new Date("2026-10-10T03:04:00Z"), manageUrl: PORTAL, siteUrl: SITE, planName: "Agathon Unlimited", monthlyUsd: 25 })];
+  const all = [
+    welcomeEmail({ siteUrl: SITE }),
+    trialReminderEmail({ trialEnd: new Date("2026-10-10T03:04:00Z"), manageUrl: PORTAL, siteUrl: SITE, planName: "Agathon Unlimited", monthlyUsd: 25 }),
+    unlimitedStartedEmail({ trialEnd: new Date("2026-10-10T03:04:00Z"), manageUrl: PORTAL, siteUrl: SITE, planName: "Agathon Unlimited", monthlyUsd: 25 }),
+    unlimitedStartedEmail({ trialEnd: new Date("2026-10-10T03:04:00Z"), manageUrl: PORTAL, siteUrl: SITE, planName: "Agathon Unlimited", monthlyUsd: 25, repeat: true }),
+  ];
 
   it("never uses an exclamation mark", () => {
     for (const email of all) {

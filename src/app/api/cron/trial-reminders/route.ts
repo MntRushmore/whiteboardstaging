@@ -4,6 +4,7 @@ import { bearerMatches } from "@/lib/server/storageGc";
 import { emailLogger } from "@/lib/email/resend";
 import { emailDeps, type EmailEnv } from "@/lib/email/server";
 import { runTrialReminders, type TrialReminderSummary } from "@/lib/email/trialReminders";
+import { runStartedSweep, type StartedSweepSummary } from "@/lib/email/unlimitedStarted";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +26,12 @@ export const maxDuration = 60;
  * second run the same day finds nothing new. `?dryRun=1` lists what would be sent and sends nothing
  * (and needs no RESEND_API_KEY).
  *
- * Body: `{ dryRun, window, found, due, alreadySent, sent, failed, skipped, deferred, wouldSend? }`.
+ * The same run catches up the "free week started" emails the billing webhook could not send
+ * (`runStartedSweep`, src/lib/email/unlimitedStarted.ts: trials with more than a day left and no
+ * such email in email_log). Its failure is logged and reported, never a 500 for the reminders.
+ *
+ * Body: `{ dryRun, window, found, due, alreadySent, sent, failed, skipped, deferred, wouldSend?,
+ * started: { found, alreadySent, sent, failed, skipped, wouldSend? } | { error } }`.
  */
 
 /** Per-IP budget: the cron fires once a day; 10/min stops a leaked URL from being hammered. */
@@ -71,7 +77,14 @@ export async function GET(req: Request) {
     log.error({ requestId, dryRun, error: err instanceof Error ? err.message : String(err) }, "trial reminders failed");
     return json(500, "internal_error", "Trial reminders could not run.");
   }
+  let started: StartedSweepSummary | { error: string };
+  try {
+    started = await runStartedSweep(emailDeps, { dryRun }, log.child({ requestId }));
+  } catch (err) {
+    started = { error: "could not run" };
+    log.error({ requestId, dryRun, error: err instanceof Error ? err.message : String(err) }, "free week started catch-up failed");
+  }
   const { wouldSend, ...counts } = summary;
-  log.info({ requestId, durationMs: Date.now() - startedAt, ...counts, wouldSend: wouldSend?.length }, "trial reminders summary");
-  return Response.json(summary, { headers: { "Cache-Control": "no-store" } });
+  log.info({ requestId, durationMs: Date.now() - startedAt, ...counts, wouldSend: wouldSend?.length, started }, "trial reminders summary");
+  return Response.json({ ...summary, started }, { headers: { "Cache-Control": "no-store" } });
 }

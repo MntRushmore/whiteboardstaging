@@ -454,8 +454,9 @@ keeps whatever ink they had for later.
 - **Checkout.** One subscription Payment Link (`NEXT_PUBLIC_UNLIMITED_LINK`) with the free week on
   it (`subscription_data.trial_period_days = 7`) and the card taken up front
   (`payment_method_collection: always`), so it renews at $25 unless cancelled. The app opens it
-  with `client_reference_id=<user id>` like the packs: from the last onboarding screen and from
-  `/account`'s Plan section ("Try Unlimited free for 7 days"). After checkout Stripe redirects to
+  with `client_reference_id=<the account's checkout_ref>` (NOT the user id, unlike the packs: see
+  section 12) from the last onboarding screen and from `/account`'s Plan section ("Try Unlimited
+  free for 7 days"). After checkout Stripe redirects to
   `<site>/?unlimited=started`, where the page re-reads every few seconds until the plan shows up.
   Nothing is charged at checkout; Stripe charges $25 when the trial ends.
 - **Tags.** The product, price, link and its Checkout Sessions carry `metadata.app =
@@ -463,8 +464,9 @@ keeps whatever ink they had for later.
   the same pair (`subscription_data.metadata`). That is how the webhook tells Unlimited apart from
   Fuime's subscriptions (foreign: nothing stored) and from the retired Plus/Pro ones (ignored).
 - **The webhook** (`src/lib/server/billingWebhook.ts`):
-  - `checkout.session.completed` with `mode: subscription` links the subscription to the user in
-    `client_reference_id` (`link_unlimited_checkout()`). It is the only event that names the user.
+  - `checkout.session.completed` with `mode: subscription` links the subscription to the account
+    whose `profiles.checkout_ref` is `client_reference_id`, and stores the payer's email
+    (`link_unlimited_checkout()`). It is the only event that names the user.
   - `customer.subscription.created|updated|deleted` store its status, trial end, period end and
     cancellation (`apply_unlimited_subscription()`).
   - Stripe does not order deliveries, so either kind may arrive first: each creates the row
@@ -474,9 +476,9 @@ keeps whatever ink they had for later.
   - A checkout without a usable user (the link opened outside the app; the account deleted) is
     stored linked to nobody and logged at `warn`: `Agathon Unlimited checkout NOT linked to an
     account`. Nobody gets the plan until you link it (section 11).
-- **Who has it** (`has_unlimited()`): a linked row in `trialing` or `active` whose period end
-  (else trial end) is less than **3 days** past (Stripe retries a failed webhook delivery for three
-  days). `past_due` (a failed renewal) is **not** Unlimited: help spends ink again until the card
+- **Who has it** (`has_unlimited()`): a linked row in `active`, or in `trialing` on the account's
+  FIRST plan (section 12), whose period end (else trial end) is less than **3 days** past (Stripe
+  retries a failed webhook delivery for three days). `past_due` (a failed renewal) is **not** Unlimited: help spends ink again until the card
   is fixed, and the Plan section says "Your last payment didn't go through. Update your card".
 - **Fair use.** Each AI action a subscriber takes is recorded in `unlimited_usage` (the ink it
   would have cost) instead of spending ink, at most **1,500 actions per rolling 24 hours**
@@ -624,3 +626,134 @@ group by u.email order by ink_equivalent desc;
 - **A grown-up who cannot sign in to the portal** (they used another email at checkout): cancel
   the subscription for them in the Dashboard (*Customers → the customer → the subscription →
   Cancel*, at the period end); the webhook updates the app.
+
+## 12. Go-live checklist (2026-10-04): privacy, plan emails, retention
+
+What `supabase/migrations/20261003040000_go_live_gaps.sql` and the code beside it need before the
+first real families sign up. Each item says how to check it.
+
+### Nobody can start a plan on someone else's account
+
+The Unlimited link used to carry `client_reference_id=<user id>`, and a user id is not a secret. A
+stranger who learned one could open the link with their own card and the plan landed on the
+victim's account: the account could then not be deleted (it refuses while a plan would charge) and
+only the stranger could cancel it (the portal signs in by the checkout's email). Now:
+
+- every profile has `checkout_ref` (a random uuid; unique; readable only by its owner, writable by
+  nobody), delivered to the app in `ink_summary().unlimited.checkout_ref`;
+- the app sends that as `client_reference_id` (`unlimitedCheckoutUrl`); until it is read the start
+  button waits (it never falls back to the user id);
+- `link_unlimited_checkout(p_checkout_ref, …)` resolves it to the account; the old
+  `p_user_id` signature is dropped. A user id sent as the ref links nobody and is logged at `warn`
+  like any unlinkable checkout (section 11 links one by hand, by the account's email).
+
+Ink packs still carry the user id: buying ink for someone else is a gift, harmless.
+`scripts/verify-rls.mjs` checks that B cannot read A's ref, A cannot change it, and A's user id as
+the ref links nothing.
+
+### One free week per account (the trade-off)
+
+Every checkout through the Payment Link starts a new 7-day trial in Stripe, so an account could
+cancel and start again forever without paying. `has_unlimited()` now counts a `trialing`
+subscription only when it is the account's **first** Unlimited subscription (no earlier row of
+theirs that ever started, i.e. anything but `incomplete_expired`). A later trial still runs in
+Stripe and charges $25 when it ends, as its checkout said; until then **help spends ink**, and the
+Plan section says "Your plan starts on <date>, with the first $25 charge. The free week is for a
+first plan only, so help uses ink until then." The trade-off, accepted: **a returning subscriber
+who starts a second plan pays in ink during that week** (or cancels in the portal before it ends
+and is not charged). It does not stop a new account with the same card: the Terms already say free
+weeks may be limited to one per person, family or card, which covers cancelling such a trial by hand.
+
+### AI services keep nothing and train on nothing
+
+- **OpenRouter.** Every request carries `provider: { data_collection: "deny", zdr: true }`
+  (`PROVIDER_PRIVACY`, `src/lib/server/openrouter.ts`, merged in the only two functions that post):
+  OpenRouter may route it only to an endpoint with Zero Data Retention that does not train on
+  prompts; a model with none is refused with `404 No endpoints found matching your data policy`,
+  never sent elsewhere. **Check by hand:** <https://openrouter.ai/settings/privacy> must have
+  *input/output logging* OFF (OpenRouter's own copy of prompts; nothing in the API shows it). Also
+  leave the account's "allow training" switches off; the per-request flags win either way.
+- **A new model** (in `LIVE_MODELS`, or a `LIVE_MODEL_*` override in Vercel) must pass `npm run
+  eval:privacy` first: one tiny request per model under those flags, with the provider that served
+  it (`docs/eval/privacy.md`). A model with no ZDR endpoint fails every request in production.
+- **Mathpix.** Every strokes request carries `metadata: { improve_mathpix: false }`
+  (`src/lib/server/mathpix.ts`): Mathpix persists no image data or result and keeps only the
+  request's metadata for billing. An account-level `improve_mathpix` value (set by Mathpix support)
+  overrides the per-request one: leave it unset, or have it set to false.
+
+### The plan's emails go to the payer; the free week is confirmed
+
+- **Payer email.** Stripe gives the payer's email only on the checkout (`customer_details.email`,
+  else `customer_email`); `link_unlimited_checkout(…, p_payer_email)` stores it on the row
+  (`unlimited_subscriptions.payer_email`, first wins). The free-week reminder and the confirmation
+  go there, and fall back to the account's address only when the row has none
+  (`src/lib/email/payer.ts`). The account reads its own row (RLS unchanged); when the account is
+  deleted, the trigger `unlimited_subscriptions_forget_payer` blanks the email with the user id, so
+  the row kept for the owner names nobody.
+- **"Your free week of Agathon Unlimited has started"** (`src/lib/email/unlimitedStarted.ts`,
+  template `unlimitedStartedEmail`): nothing charged today; the date, time (Eastern) and amount of
+  the first charge, then $25 every month until cancelled; *Manage or cancel*; cancel before that
+  moment and nothing is charged; links to `/terms#unlimited` and `/refunds#subscriptions`. A second
+  plan's version says the plan starts with the first charge (its free week grants nothing). Sent
+  when the webhook sees the subscription both linked and `trialing` (either event may complete
+  that), **after** answering Stripe (`after()` from `next/server`): email never fails or slows the
+  webhook. Once per subscription (`email_log` kind `unlimited_started`, ref = subscription id; Resend
+  idempotency key `unlimited-started/<sub>`), however often Stripe redelivers. If Resend fails, the
+  daily cron (`/api/cron/trial-reminders`, its `started` block) sends it while the trial has more
+  than a day left. Not sent when the plan is set to cancel by the trial's end, or is linked to nobody.
+- **Check after the first real signup:** `select kind, ref, resend_id, sent_at from public.email_log
+  where kind = 'unlimited_started' order by claimed_at desc limit 5;` and the Resend dashboard.
+
+### Stripe payloads are kept 90 days
+
+`billing_events.payload` (the whole Stripe event: the payer's name, email, billing address, card
+brand and last four) is blanked after **90 days** by `purge_billing_event_payloads()` (service role
+only; the one constant is `billing_event_payload_retention()` in the go-live migration). The row
+(event id, type, time) stays. The nightly `GET /api/admin/gc` calls it when collecting (never in a
+dry run) and reports `billingPayloadsPurged`; a failure is logged and reported as `null` without
+failing the storage pass. The Privacy Policy states the 90 days (`legalPages.test.tsx` reads it
+from the migration). By hand: `select public.purge_billing_event_payloads();`.
+
+### Card statements say AGATHON
+
+The Stripe account is Fuime's, so its own statement descriptor is `FUIME`. Ink packs already add
+the suffix: their Payment Links set `payment_intent_data.statement_descriptor_suffix = AGATHON`, so a
+statement reads `FUIME* AGATHON`. A subscription's charges cannot take a suffix (Stripe makes the
+renewal charges itself; `payment_intent_data` is payment mode only), but Stripe takes a
+subscription payment's descriptor from the first item's **product** `statement_descriptor`. The
+setup script now sets `statement_descriptor = AGATHON` on the Unlimited product (and updates an
+existing product in place: same product, price and link). **Checked in test mode on 2026-10-03:**
+after `node scripts/stripe-setup.mjs --mode test`, a test subscription on the Unlimited price
+(no trial, `pm_card_visa`) produced charge `ch_3UMadU2Uz4P3wrXO1HcQo3jf` with
+`calculated_statement_descriptor: "AGATHON"`; the test customer was then deleted. What stays
+"Fuime": Checkout, receipts, invoices and the customer portal show the account's public business
+name, which is account-wide (only a separate Stripe account would change it). The Terms and the
+Refund Policy say exactly this (`LEGAL.statementDescriptors`, pinned to the script by
+`stripeSetup.test.ts`).
+
+### Go-live order for these changes
+
+1. **Back up production first** (the free plan has no backups or PITR): `pg_dump "$DB" -n public
+   -f ~/.config/agathon-classroom/backups/pre-go-live-gaps.sql`.
+2. **Apply `20261003040000_go_live_gaps.sql`** right before the deploy, after
+   `20261003020000_unlimited.sql` and `20261003030000_email_log.sql`. If the security audit's
+   `20261003100000_*` / `20261003100100_*` are already applied, `supabase db push` refuses an
+   older-stamped file: apply it with `psql "$DB" -v ON_ERROR_STOP=1 --single-transaction -f
+   supabase/migrations/20261003040000_go_live_gaps.sql` and record it with `npx supabase migration
+   repair --db-url "$DB" --status applied 20261003040000`. It is idempotent.
+3. **Deploy the code at once.** In between, only Agathon Unlimited's link breaks: old code calls
+   `link_unlimited_checkout(p_user_id)`, which no longer exists (500; Stripe retries for 3 days, so
+   nothing is lost once the code is out). Ink packs, spending and everything else work either way.
+4. `SUPABASE_SERVICE_ROLE_KEY=… node scripts/verify-rls.mjs` against production: the checkout-ref,
+   one-free-week, payer-email and billing-retention checks pass.
+5. **Stripe (live):** `node scripts/stripe-setup.mjs --mode live --site https://whiteboard.rushilchopra.com --dry-run`,
+   then without `--dry-run`: it sets `statement_descriptor = AGATHON` on the Unlimited product (or
+   makes the product with it). Nothing to do in the Dashboard for the descriptor.
+6. **Vercel Production env:** `RESEND_API_KEY` (the confirmation and the reminder send nothing
+   without it; on 2026-10-03 it was only in `.env.local`), `CRON_SECRET` (set),
+   `NEXT_PUBLIC_BILLING_PORTAL_URL` (else the emails' cancel link opens `/account`). Redeploy after
+   adding.
+7. **OpenRouter:** <https://openrouter.ai/settings/privacy>: input/output logging OFF.
+8. After the first real Unlimited signup: `select kind, ref, sent_at from public.email_log where kind
+   = 'unlimited_started';`, the Resend dashboard shows it delivered to the payer's address, and
+   `select payer_email is not null from public.unlimited_subscriptions order by id desc limit 1;`.

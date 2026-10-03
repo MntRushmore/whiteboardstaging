@@ -107,8 +107,10 @@ export default function RefundsPage() {
           <li>Your bank usually shows the refund within 5 to 10 working days.</li>
         </ol>
         <p>
-          Your payment, receipt and card statement show the seller name “{LEGAL.stripeSellerName}”. Please ask
-          us before disputing a charge with your bank: it is usually quicker.
+          Your payment and receipt show the seller name “{LEGAL.stripeSellerName}”. On a card statement, an ink pack
+          shows as “{LEGAL.statementDescriptors.inkPacks}” and {UNLIMITED_PLAN.name}{" "}
+          as “{LEGAL.statementDescriptors.unlimited}”. Please ask us before disputing a charge with your bank: it is
+          usually quicker.
         </p>
       </LegalSection>
 

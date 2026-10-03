@@ -42,7 +42,7 @@ const PROVIDERS = [
   },
   {
     name: "AI model providers: Google (Gemini), OpenAI (GPT), Anthropic (Claude), DeepSeek",
-    role: "Read your work and write the tutor’s answers, reached through OpenRouter. Which one answers depends on the task; if one is slow or down, another takes over.",
+    role: "Read your work and write the tutor’s answers, reached through OpenRouter, which sends each request only to a host that has agreed to keep nothing and not to train on it (such as Google Cloud, Microsoft Azure or Amazon Web Services). Which model answers depends on the task; if one is slow or down, another takes over.",
     data: "Pictures of the part of the board you are working on, the maths read from your board, what the tutor has written, your chat messages and, in lecture mode, the lecture transcript.",
   },
   {
@@ -57,8 +57,8 @@ const PROVIDERS = [
   },
   {
     name: "Resend",
-    role: "Sends our emails: password resets, the welcome email and the free-week reminder.",
-    data: "Your email address and the email we send you.",
+    role: "Sends our emails: password resets, the welcome email, and the confirmation and reminder for a free week.",
+    data: "Your email address (for a plan’s emails, the email used at checkout) and the email we send.",
   },
   {
     name: "ElevenLabs",
@@ -133,8 +133,9 @@ export default function PrivacyPage() {
             payment ids.
           </li>
           <li>
-            <strong>{plan}:</strong> the plan’s Stripe ids, its status (free week, active, payment problem, cancelled)
-            and its dates (when the free week ends, the next charge, when it was cancelled or ends).
+            <strong>{plan}:</strong> the plan’s Stripe ids, its status (free week, active, payment problem, cancelled),
+            its dates (when the free week ends, the next charge, when it was cancelled or ends), and the email of the
+            person who paid, from checkout, where the plan’s emails go.
           </li>
           <li>
             <strong>Payment notices:</strong> the messages Stripe sends us about {LEGAL.productName}’s payments. They
@@ -213,20 +214,27 @@ export default function PrivacyPage() {
           anything you write on a board (your name, say) is sent along with the rest of the board.
         </p>
         <p>
-          We do not use your boards to train AI models. {LEGAL.aiProviderTraining} AI providers may keep what they
-          receive for a limited time under their own policies (for example, to watch for abuse), and some of them may
-          process it outside the United States.
+          We do not use your boards to train AI models. {LEGAL.aiProviderTraining} Mathpix keeps only a record that a
+          request was made (when, and whether it worked), not your handwriting or what it read. Some of the AI
+          providers may process what we send outside the United States.
         </p>
       </LegalSection>
 
       <LegalSection id="emails" title="Emails we send">
-        <p>We send only the emails {LEGAL.productName} needs to work, to the email address on your account:</p>
+        <p>
+          We send only the emails {LEGAL.productName} needs to work, to the email address on your account, except the
+          emails about {plan}, which go to the person who paid, at the email used at checkout:
+        </p>
         <ul>
           <li>
             <strong>Password reset:</strong> when you ask for one.
           </li>
           <li>
             <strong>Welcome:</strong> once, after you finish your first guided board, with two tips for using the tutor.
+          </li>
+          <li>
+            <strong>Free week started:</strong> if you start {plan}, one email when it starts, confirming that nothing
+            was charged, the date and amount of the first charge, and how to cancel.
           </li>
           <li>
             <strong>Free week ending:</strong> if you start {plan}, one reminder about 2 to 3 days before the free week
@@ -348,7 +356,9 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>Payment notices from Stripe:</strong> kept after an account is deleted, for our accounts and to sort
-            out payment questions and refunds. Stripe keeps its own payment records under its own policy and the law.
+            out payment questions and refunds. After 90 days we delete what a notice says about the payer (name, email,
+            address and card details) and keep only a record that it came. Stripe keeps its own payment records under
+            its own policy and the law.
           </li>
           <li>
             <strong>Server logs and error reports:</strong> kept by our hosting provider for a limited time, then

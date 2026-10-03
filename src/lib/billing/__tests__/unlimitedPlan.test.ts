@@ -48,6 +48,23 @@ describe("unlimitedPlanView", () => {
     });
   });
 
+  it("a second plan's free week: it starts with the first charge, and help uses ink until then", () => {
+    expect(view({ status: "repeat_trial", trialEnd: "2026-10-10T15:00:00Z", currentPeriodEnd: "2026-10-10T15:00:00Z" })).toEqual({
+      kind: "repeat_trial",
+      badge: "Starting",
+      headline: "Your plan starts on Saturday, October 10, with the first $25 charge.",
+      detail: "The free week is for a first plan only, so help uses ink until then. Cancel before that day and you won't be charged.",
+      action: "manage",
+      actionLabel: "Manage or cancel",
+    });
+    expect(view({ status: "repeat_trial", trialEnd: "2026-10-10T15:00:00Z", cancelAtPeriodEnd: true })).toMatchObject({
+      kind: "ending",
+      detail: "You won't be charged. Help uses ink meanwhile.",
+      action: "manage",
+    });
+    expect(view({ status: "repeat_trial" }).headline).toBe("Your plan starts with the first $25 charge.");
+  });
+
   it("a paid month: the next charge; set to cancel: the day it ends", () => {
     expect(view({ status: "active", currentPeriodEnd: "2026-11-10T15:00:00Z" })).toMatchObject({
       kind: "active",
@@ -91,7 +108,7 @@ describe("unlimitedPlanView", () => {
   });
 
   it("never shouts and never says wrong", () => {
-    const states: Array<Partial<UnlimitedState>> = [{}, { status: "trialing" }, { status: "active" }, { status: "past_due" }, { status: "incomplete" }, { status: "canceled" }];
+    const states: Array<Partial<UnlimitedState>> = [{}, { status: "trialing" }, { status: "repeat_trial" }, { status: "active" }, { status: "past_due" }, { status: "incomplete" }, { status: "canceled" }];
     for (const s of states) {
       const v = view(s);
       const text = [v.headline, v.detail, v.actionLabel, v.badge].join(" ");

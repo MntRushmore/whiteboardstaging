@@ -14,7 +14,6 @@ const FILLED = {
   governingLaw: "the State of Example",
   disputeVenue: "the courts of Example County",
   effectiveDate: "January 1, 2027",
-  aiProviderTraining: "Our settings do not allow these services to train their models on what we send.",
 };
 
 describe("legal config", () => {
@@ -27,7 +26,7 @@ describe("legal config", () => {
 
   it("ships with the operator fields as placeholders, never invented values", () => {
     expect(unfilledLegalFields().sort()).toEqual(
-      ["aiProviderTraining", "contactEmail", "contactPhone", "disputeVenue", "effectiveDate", "governingLaw", "operatorName", "postalAddress"].sort(),
+      ["contactEmail", "contactPhone", "disputeVenue", "effectiveDate", "governingLaw", "operatorName", "postalAddress"].sort(),
     );
     expect(LEGAL.contactEmail).not.toMatch(/@/);
   });

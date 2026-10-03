@@ -15,9 +15,10 @@ import { LEGAL_LAST_UPDATED } from "@/components/legal/LegalPage";
 import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
 import { DEFAULT_EMAIL_FROM } from "@/lib/email/resend";
 import { TRIAL_REMINDER_WINDOW } from "@/lib/email/trialReminders";
-import { LEGAL, TERMS_VERSION } from "@/lib/legal";
+import { isPlaceholder, LEGAL, TERMS_VERSION } from "@/lib/legal";
 import { LIVE_MODELS } from "@/lib/live/contracts";
-import { TEXT_MODELS } from "@/lib/server/openrouter";
+import { buildStrokesBody } from "@/lib/server/mathpix";
+import { PROVIDER_PRIVACY, TEXT_MODELS } from "@/lib/server/openrouter";
 
 const PAGES = {
   "/terms": renderToStaticMarkup(<TermsPage />),
@@ -103,7 +104,9 @@ describe("terms: Agathon Unlimited as sold", () => {
   it("promises the reminder the cron actually sends: 2 to 3 days before the free week ends", () => {
     // a daily run reminds trials ending 24 to 72 hours out, so the first run to see one is 2 to 3 days ahead
     expect(TRIAL_REMINDER_WINDOW).toEqual({ fromMs: 24 * HOUR_MS, toMs: 72 * HOUR_MS });
-    expect(terms).toContain("About 2 to 3 days before the free week ends, we email the address on the Agathon account");
+    expect(terms).toContain("About 2 to 3 days before the free week ends, we email them again");
+    // the confirmation, and both to the payer (src/lib/email/payer.ts)
+    expect(terms).toContain("When the free week starts, we email the person who paid, at the email used at checkout");
     expect(text(PAGES["/privacy"])).toContain("one reminder about 2 to 3 days before the free week ends");
   });
 
@@ -148,7 +151,8 @@ describe("privacy: who gets what", () => {
   it("lists the emails we send, from the domain we send them from", () => {
     expect(DEFAULT_EMAIL_FROM).toContain("@mail.agathon.app");
     expect(privacy).toContain("mail.agathon.app");
-    for (const email of ["Password reset:", "Welcome:", "Free week ending:"]) expect(privacy).toContain(email);
+    for (const email of ["Password reset:", "Welcome:", "Free week started:", "Free week ending:"]) expect(privacy).toContain(email);
+    expect(privacy).toContain("emails about Agathon Unlimited, which go to the person who paid, at the email used at checkout");
     expect(privacy).toContain("We send no newsletters or marketing emails.");
   });
 
@@ -157,8 +161,23 @@ describe("privacy: who gets what", () => {
     expect(privacy).toContain("Payment notices from Stripe: kept after an account is deleted");
   });
 
-  it("shows the AI-training sentence the owner has to confirm (a placeholder until then)", () => {
+  it("states how long Stripe's payment notices keep the payer's details: the retention the nightly purge applies", () => {
+    const sql = readFileSync(join(MIGRATIONS, "20261003040000_go_live_gaps.sql"), "utf8");
+    const retention = /function public\.billing_event_payload_retention\(\)[\s\S]*?select interval '(\d+) days'/.exec(sql);
+    expect(retention?.[1]).toBe("90");
+    expect(privacy).toContain(`After ${retention?.[1]} days we delete what a notice says about the payer (name, email, address and card details) and keep only a record that it came.`);
+  });
+
+  it("says AI services neither keep nor train on what we send, only because every request asks and is refused otherwise", () => {
+    expect(isPlaceholder(LEGAL.aiProviderTraining)).toBe(false);
     expect(privacy).toContain(LEGAL.aiProviderTraining);
+    // OpenRouter: only endpoints that do not train on prompts and keep none (a 404 where there is none)
+    expect(PROVIDER_PRIVACY).toEqual({ data_collection: "deny", zdr: true });
+    // Mathpix: no image data or result persisted
+    expect(buildStrokesBody({ x: [[0, 1]], y: [[0, 1]], w: 1, h: 1 }).metadata).toEqual({ improve_mathpix: false });
+    expect(privacy).toContain("Mathpix keeps only a record that a request was made");
+    // no leftover promise that providers keep data "for a limited time"
+    expect(privacy).not.toContain("may keep what they receive for a limited time");
   });
 });
 

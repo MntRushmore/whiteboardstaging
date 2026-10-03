@@ -16,6 +16,8 @@ vi.mock("@/lib/server/billingWebhook", async (importOriginal) => {
       getEnv: () => pick().getEnv(),
       createStore: (url: string, key: string) => pick().createStore(url, key),
       now: () => pick().now(),
+      confirmStarted: (subscriptionId: string, log: import("pino").Logger) => pick().confirmStarted(subscriptionId, log),
+      defer: (work: () => Promise<unknown>) => pick().defer(work),
     },
   };
 });
@@ -23,6 +25,7 @@ vi.mock("@/lib/server/billingWebhook", async (importOriginal) => {
 import { POST } from "@/app/api/billing/webhook/route";
 import {
   HANDLED_EVENTS,
+  deferAfterResponse,
   linkOutcomeOf,
   livemodeAccepted,
   mapBillingEvent,
@@ -54,10 +57,14 @@ function createWebhookHandler(handlerDeps: WebhookDeps): (req: Request) => Promi
   };
 }
 import { resetRateLimits } from "@/lib/server/rate-limit";
+import { sendUnlimitedStarted } from "@/lib/email/unlimitedStarted";
+import { fakeDeps as fakeEmailDeps } from "@/lib/email/__tests__/fakes";
 import { signStripePayload } from "@/lib/server/webhookSignature";
 import realEvents from "./fixtures/stripe-unlimited-subscription-events.json";
 
 const USER_ID = "8d2a3f1e-4b6c-4d7e-9f01-23456789abcd";
+/** That account's checkout reference (profiles.checkout_ref): what the Unlimited link carries instead of the user id. */
+const CHECKOUT_REF = "0b7e9c1a-5d2f-4e3a-8b6c-9d0e1f2a3b4c";
 const SECRET = "whsec_unit";
 const NOW = 1_760_000_000;
 const PRICE_MAP = { price_small: "small", price_medium: "medium", price_large: "large" };
@@ -135,7 +142,7 @@ function unlimitedSession(overrides: Record<string, unknown> = {}): Record<strin
     mode: "subscription",
     payment_status: "no_payment_required",
     status: "complete",
-    client_reference_id: USER_ID,
+    client_reference_id: CHECKOUT_REF,
     customer: "cus_u",
     subscription: "sub_1",
     amount_total: 0,
@@ -364,32 +371,48 @@ describe("mapBillingEvent: refunds and the rest", () => {
 });
 
 describe("mapBillingEvent: Agathon Unlimited", () => {
-  it("the Unlimited checkout links its subscription to the user in client_reference_id, paid or not (a free week pays nothing)", () => {
+  it("the Unlimited checkout links its subscription to the account whose checkout ref is client_reference_id, with the payer's email", () => {
     expect(mapBillingEvent(event("checkout.session.completed", unlimitedSession()), {})).toEqual({
       kind: "link",
       link: {
         subscriptionId: "sub_1",
-        userId: USER_ID,
-        clientReferenceId: USER_ID,
+        checkoutRef: CHECKOUT_REF,
+        clientReferenceId: CHECKOUT_REF,
         customerId: "cus_u",
         checkoutSessionId: "cs_sub_1",
         livemode: false,
+        payerEmail: "parent@example.com",
         problem: null,
       },
     });
-    const expanded = unlimitedSession({ subscription: { id: "sub_2" }, customer: { id: "cus_2" }, payment_status: "paid", client_reference_id: USER_ID.toUpperCase() });
-    expect(mapBillingEvent(event("checkout.session.completed", expanded), {})).toMatchObject({ kind: "link", link: { subscriptionId: "sub_2", customerId: "cus_2", userId: USER_ID } });
+    const expanded = unlimitedSession({ subscription: { id: "sub_2" }, customer: { id: "cus_2" }, payment_status: "paid", client_reference_id: CHECKOUT_REF.toUpperCase() });
+    expect(mapBillingEvent(event("checkout.session.completed", expanded), {})).toMatchObject({ kind: "link", link: { subscriptionId: "sub_2", customerId: "cus_2", checkoutRef: CHECKOUT_REF } });
   });
 
-  it("an Unlimited checkout without a usable user is still a link, to nobody, saying why", () => {
+  it("the payer's email: the checkout's customer_details, else customer_email, only when it is one address", () => {
+    const payer = (overrides: Record<string, unknown>) => {
+      const mapped = mapBillingEvent(event("checkout.session.completed", unlimitedSession(overrides)), {});
+      return mapped.kind === "link" ? mapped.link.payerEmail : "not a link";
+    };
+    expect(payer({ customer_details: { email: " grown.up@example.com " } })).toBe("grown.up@example.com");
+    expect(payer({ customer_details: null, customer_email: "prefilled@example.com" })).toBe("prefilled@example.com");
+    for (const email of [null, "", "nobody", "a@b, c@d", "<a@b>", `${"x".repeat(320)}@example.com`]) {
+      expect(payer({ customer_details: { email }, customer_email: null }), String(email)).toBeNull();
+    }
+  });
+
+  it("an Unlimited checkout without a usable ref is still a link, to nobody, saying why; metadata.user_id is never read", () => {
     expect(mapBillingEvent(event("checkout.session.completed", unlimitedSession({ client_reference_id: null })), {})).toMatchObject({
       kind: "link",
-      link: { userId: null, problem: /opened outside the app/ },
+      link: { checkoutRef: null, problem: /opened outside the app/ },
     });
     expect(mapBillingEvent(event("checkout.session.completed", unlimitedSession({ client_reference_id: "kid-42" })), {})).toMatchObject({
       kind: "link",
-      link: { userId: null, clientReferenceId: "kid-42", problem: /not a user id/ },
+      link: { checkoutRef: null, clientReferenceId: "kid-42", problem: /not a checkout reference/ },
     });
+    // the packs' fallback to metadata.user_id does not apply to the plan
+    const viaMetadata = unlimitedSession({ client_reference_id: null, metadata: { ...UNLIMITED_TAG, user_id: USER_ID } });
+    expect(mapBillingEvent(event("checkout.session.completed", viaMetadata), {})).toMatchObject({ kind: "link", link: { checkoutRef: null } });
     expect(mapBillingEvent(event("checkout.session.completed", unlimitedSession({ subscription: null })), {})).toMatchObject({ kind: "ignored", reason: /without a subscription id/ });
   });
 
@@ -526,6 +549,7 @@ type StoreLog = {
 /** An unlimited_subscriptions row as the fake keeps it. */
 type PlanRow = {
   userId: string | null;
+  payerEmail: string | null;
   status: string | null;
   eventAt: number | null;
   cancelAtPeriodEnd: boolean;
@@ -555,11 +579,12 @@ function fakeStore(
   const log: StoreLog = { recorded: [], payloads: [], forgotten: [], grants: [], reviews: [], reversals: [], lookups: [], links: [], applies: [] };
   // unlimited_subscriptions, with the semantics of link_unlimited_checkout / apply_unlimited_subscription
   const plans = new Map<string, PlanRow>();
-  const accounts = new Set([USER_ID]);
+  // profiles.checkout_ref -> user (link_unlimited_checkout resolves the ref; a user id matches nothing)
+  const refs = new Map([[CHECKOUT_REF, USER_ID]]);
   const planRow = (id: string): PlanRow => {
     let row = plans.get(id);
     if (!row) {
-      row = { userId: null, status: null, eventAt: null, cancelAtPeriodEnd: false, currentPeriodEnd: null, trialEnd: null, customerId: null };
+      row = { userId: null, payerEmail: null, status: null, eventAt: null, cancelAtPeriodEnd: false, currentPeriodEnd: null, trialEnd: null, customerId: null };
       plans.set(id, row);
     }
     return row;
@@ -578,13 +603,14 @@ function fakeStore(
       const forced = opts.link?.(l);
       if (forced) return forced;
       log.links.push(l);
-      const user = l.userId && accounts.has(l.userId) ? l.userId : null;
+      const user = (l.checkoutRef && refs.get(l.checkoutRef)) ?? null;
       const row = planRow(l.subscriptionId);
       row.userId ??= user;
       row.customerId ??= l.customerId;
+      row.payerEmail ??= l.payerEmail;
       if (user && row.userId === user) return { status: "linked", userId: user, subscriptionStatus: row.status };
       if (user) return { status: "conflict", userId: row.userId };
-      return { status: "unlinked", reason: l.userId ? "no account for this user" : (l.problem ?? "no user") };
+      return { status: "unlinked", reason: l.checkoutRef ? "no account has this checkout reference" : (l.problem ?? "no user") };
     },
     async applySubscription(s) {
       const forced = opts.apply?.(s);
@@ -669,8 +695,11 @@ const fullEnv: WebhookEnv = {
   INK_PRICE_MAP: JSON.stringify(PRICE_MAP),
 };
 
-function handlerWith(store: BillingStore, env: Partial<WebhookEnv> = {}): (req: Request) => Promise<Response> {
-  const deps: WebhookDeps = { getEnv: () => ({ ...fullEnv, ...env }), createStore: () => store, now: () => NOW };
+/** No email by default: the plan's confirmation has its own tests below (`emailWorld`). */
+const NO_EMAIL: Pick<WebhookDeps, "confirmStarted" | "defer"> = { confirmStarted: async () => undefined, defer: () => undefined };
+
+function handlerWith(store: BillingStore, env: Partial<WebhookEnv> = {}, email: Pick<WebhookDeps, "confirmStarted" | "defer"> = NO_EMAIL): (req: Request) => Promise<Response> {
+  const deps: WebhookDeps = { getEnv: () => ({ ...fullEnv, ...env }), createStore: () => store, now: () => NOW, ...email };
   return createWebhookHandler(deps);
 }
 
@@ -951,7 +980,7 @@ describe("POST /api/billing/webhook", () => {
     expect(store.log.recorded).toEqual([]);
     expect((await strict(await signedRequest(live))).status).toBe(200);
     // unset on a deployment: live only
-    const prod = createWebhookHandler({ getEnv: () => ({ ...fullEnv }), createStore: () => store, now: () => NOW });
+    const prod = createWebhookHandler({ getEnv: () => ({ ...fullEnv }), createStore: () => store, now: () => NOW, ...NO_EMAIL });
     const onProd = (body: string) => signedRequest(body, { url: "https://whiteboard.rushilchopra.com/api/billing/webhook" });
     expect((await prod(await onProd(test))).status).toBe(400);
     expect((await prod(await onProd(JSON.stringify({ ...event("checkout.session.completed", session({ id: "cs_l2" }), "evt_live_2"), livemode: true })))).status).toBe(200);
@@ -1102,6 +1131,22 @@ describe("POST /api/billing/webhook: Agathon Unlimited", () => {
     expect(store.log.applies.at(-1)).toMatchObject({ status: "past_due" });
   });
 
+  it("SECURITY: a user id as client_reference_id no longer links the plan (anyone can learn one); the checkout ref does", async () => {
+    const store = fakeStore();
+    const handler = handlerWith(store);
+    // an attacker opens the Unlimited link with the victim's USER ID and their own card
+    expect(await send(handler, subEvent("checkout.session.completed", unlimitedSession({ client_reference_id: USER_ID, id: "cs_attack", subscription: "sub_attack" }), "evt_attack", NOW))).toEqual({
+      status: 200,
+      body: { received: true },
+    });
+    await send(handler, subEvent("customer.subscription.created", subscription({ id: "sub_attack" }), "evt_attack_sub", NOW + 1));
+    expect(store.plan("sub_attack")).toMatchObject({ userId: null, status: "trialing" }); // nobody's: no plan on the victim's account
+    expect(store.log.links.at(-1)).toMatchObject({ checkoutRef: USER_ID }); // sent as a ref, and no profile has it
+    // the account's own checkout (its ref) links as before
+    await send(handler, checkoutEv());
+    expect(store.plan("sub_1")).toMatchObject({ userId: USER_ID, payerEmail: "parent@example.com" });
+  });
+
   it("an Unlimited checkout without a usable user is recorded, linked to nobody (200, for the owner to link)", async () => {
     const store = fakeStore();
     const handler = handlerWith(store);
@@ -1148,5 +1193,143 @@ describe("POST /api/billing/webhook: Agathon Unlimited", () => {
     await send(handler, checkoutEv());
     expect(await send(handler, event("checkout.session.completed", session(), "evt_pack"))).toEqual({ status: 200, body: { received: true } });
     expect(store.balance()).toBe(5300);
+  });
+
+  /**
+   * The free week's confirmation through the real `sendUnlimitedStarted`, with fake email deps
+   * (email_log in memory, Resend recorded) reading the fake store's subscription row. `defer`
+   * collects the work instead of running it, so a test sees exactly what happens before the
+   * answer to Stripe (nothing) and after it (`settle`).
+   */
+  function emailWorld(store: ReturnType<typeof fakeStore>) {
+    const email = fakeEmailDeps({ now: new Date(NOW * 1000) });
+    email.findSubscription = vi.fn(async (id: string) => {
+      const row = store.plan(id);
+      if (!row) return null;
+      return { subscriptionId: id, userId: row.userId, status: row.status, trialEnd: row.trialEnd, cancelAtPeriodEnd: row.cancelAtPeriodEnd, cancelAt: null, payerEmail: row.payerEmail, repeat: false };
+    });
+    const queued: Array<() => Promise<unknown>> = [];
+    const requested: string[] = [];
+    const webhook: Pick<WebhookDeps, "confirmStarted" | "defer"> = {
+      confirmStarted: (id, log) => {
+        requested.push(id);
+        return sendUnlimitedStarted(email, id, log);
+      },
+      defer: (work) => {
+        queued.push(work);
+      },
+    };
+    /** Run what the route deferred (after its answers), in order. */
+    const settle = async () => {
+      while (queued.length) await queued.shift()!();
+    };
+    return { email, webhook, settle, requested, queued };
+  }
+
+  it("the free week's confirmation goes to the PAYER, once, after the answer, whichever event completes the plan and however often Stripe redelivers", async () => {
+    const store = fakeStore();
+    const world = emailWorld(store);
+    const handler = handlerWith(store, {}, world.webhook);
+
+    // the subscription first: trialing but nobody's yet, so nothing is due
+    expect(await send(handler, createdEv())).toEqual({ status: 200, body: { received: true } });
+    await world.settle();
+    expect(world.email.sent).toEqual([]);
+
+    // the checkout links it: the email is asked for, but only after the answer
+    expect(await send(handler, checkoutEv())).toEqual({ status: 200, body: { received: true } });
+    expect(world.queued).toHaveLength(1);
+    expect(world.requested).toEqual([]); // not even started before the answer
+    expect(world.email.sent).toEqual([]);
+    await world.settle();
+    expect(world.requested).toEqual(["sub_1"]);
+    expect(world.email.sent).toHaveLength(1);
+    const [message] = world.email.sent;
+    expect(message.to).toBe("parent@example.com"); // the payer from the checkout, not the account's address
+    expect(world.email.emailOf).not.toHaveBeenCalled();
+    expect(message.subject).toBe("Your free week of Agathon Unlimited has started");
+    expect(message.text).toContain("Nothing was charged today.");
+    expect(message.text).toContain("your card will be charged $25, then $25 every month until you cancel.");
+    expect(message.text).toMatch(/\/terms#unlimited/);
+    expect(message.idempotencyKey).toBe("unlimited-started/sub_1");
+    expect(world.email.log.rows).toEqual([expect.objectContaining({ user_id: USER_ID, kind: "unlimited_started", ref: "sub_1", resend_id: "re_1" })]);
+
+    // Stripe redelivers both, and an update arrives: asked again each time, sent never again
+    await send(handler, checkoutEv());
+    await send(handler, createdEv());
+    await send(handler, subEvent("customer.subscription.updated", subscription(), "evt_upd", NOW + 5));
+    await world.settle();
+    expect(world.requested.length).toBeGreaterThanOrEqual(4);
+    expect(world.email.sent).toHaveLength(1);
+    expect(world.email.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("…the checkout first, then the subscription event: the same single email", async () => {
+    const store = fakeStore();
+    const world = emailWorld(store);
+    const handler = handlerWith(store, {}, world.webhook);
+    await send(handler, checkoutEv()); // linked, no status yet: nothing asked
+    expect(world.requested).toEqual([]);
+    await send(handler, createdEv()); // now linked AND trialing
+    await world.settle();
+    expect(world.email.sent.map((m) => m.to)).toEqual(["parent@example.com"]);
+  });
+
+  it("email never fails or slows the webhook: Resend down, an email step that throws or hangs, all answer 200; a later delivery sends it", async () => {
+    const store = fakeStore();
+    const world = emailWorld(store);
+    const handler = handlerWith(store, {}, world.webhook);
+    world.email.sendReplies.push({ ok: false, error: "timed out" });
+    expect((await send(handler, createdEv())).status).toBe(200);
+    expect(await send(handler, checkoutEv())).toEqual({ status: 200, body: { received: true } });
+    await world.settle();
+    expect(world.email.sent).toEqual([]);
+    expect(world.email.log.rows).toEqual([]); // the claim was released, so it can be sent later
+    expect(store.log.forgotten).toEqual([]); // and the webhook did not undo anything
+    // the next delivery for the subscription (or the daily cron) sends it
+    await send(handler, subEvent("customer.subscription.updated", subscription(), "evt_upd", NOW + 5));
+    await world.settle();
+    expect(world.email.sent).toHaveLength(1);
+
+    // an email step that throws, or never finishes, with the real `defer`: the answer is still 200, at once
+    for (const confirmStarted of [
+      async () => {
+        throw new Error("boom");
+      },
+      () => new Promise<never>(() => undefined),
+    ]) {
+      const s = fakeStore();
+      const h = handlerWith(s, {}, { confirmStarted, defer: deferAfterResponse });
+      expect(await send(h, createdEv())).toEqual({ status: 200, body: { received: true } });
+      expect(await send(h, checkoutEv())).toEqual({ status: 200, body: { received: true } });
+      expect(s.log.forgotten).toEqual([]);
+    }
+  });
+
+  it("deferAfterResponse never throws, even outside a request (where next/server's `after` refuses) or for work that fails", async () => {
+    let ran = 0;
+    expect(() => deferAfterResponse(async () => void ran++)).not.toThrow();
+    expect(() => deferAfterResponse(() => Promise.reject(new Error("smtp down")))).not.toThrow();
+    expect(() =>
+      deferAfterResponse(() => {
+        throw new Error("sync throw");
+      }),
+    ).not.toThrow();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(ran).toBe(1);
+  });
+
+  it("no confirmation for a plan linked to nobody, a pack, or a plan already set to cancel", async () => {
+    const store = fakeStore();
+    const world = emailWorld(store);
+    const handler = handlerWith(store, {}, world.webhook);
+    await send(handler, subEvent("checkout.session.completed", unlimitedSession({ client_reference_id: USER_ID, subscription: "sub_x", id: "cs_x" }), "evt_x", NOW));
+    await send(handler, subEvent("customer.subscription.created", subscription({ id: "sub_x" }), "evt_x_sub", NOW + 1));
+    await send(handler, event("checkout.session.completed", session(), "evt_pack"));
+    await send(handler, subEvent("customer.subscription.created", subscription({ id: "sub_c", cancel_at_period_end: true }), "evt_c_sub", NOW + 1));
+    await send(handler, subEvent("checkout.session.completed", unlimitedSession({ subscription: "sub_c", id: "cs_c" }), "evt_c", NOW + 2));
+    await world.settle();
+    expect(world.requested).toEqual(["sub_c"]); // asked (linked and trialing), but it will not charge
+    expect(world.email.sent).toEqual([]);
   });
 });

@@ -30,7 +30,8 @@ export const dynamic = "force-dynamic";
  *       reverse_ink_purchase(): takes the refunded share of that purchase's ink back, at most
  *       what is still unspent (supabase/migrations/20261002000000_ink.sql)
  *   checkout.session.completed with mode subscription (the Agathon Unlimited Payment Link)
- *       link_unlimited_checkout(): the subscription belongs to the user in client_reference_id.
+ *       link_unlimited_checkout(): the subscription belongs to the account whose checkout ref
+ *       (profiles.checkout_ref, never a user id) is client_reference_id, with the payer's email.
  *       Without a usable one it is recorded linked to nobody, logged at warn for the owner.
  *   customer.subscription.created / updated / deleted (Agathon Unlimited)
  *       apply_unlimited_subscription(): status, trial end, period end, cancellation
@@ -50,6 +51,12 @@ export const dynamic = "force-dynamic";
  * MODE. STRIPE_LIVEMODE ("true" / "false") says which mode's events count; an event from the
  * other mode answers 400. Unset, a deployment accepts live events only, and a localhost dev
  * server accepts either (`stripe listen` forwards test events there).
+ *
+ * The free week's confirmation email (auto-renewal laws: the terms and how to cancel, to the payer):
+ * once the subscription is both linked to an account and trialing, by whichever of its events
+ * completes that, the route asks for it AFTER answering (`deps.defer`, next/server's `after`), so
+ * email never fails or slows this endpoint. Every redelivery asks again; email_log sends it once
+ * (src/lib/email/unlimitedStarted.ts), and the daily cron catches one that could not be sent.
  *
  * Idempotency: grant_ink_purchase is keyed on the Checkout Session id, reverse_ink_purchase on
  * the growth of the cumulative refunded amount, and the Unlimited writers on the subscription id
@@ -182,6 +189,8 @@ export async function POST(req: Request): Promise<Response> {
     return json(500, "internal_error", "Could not apply the billing update.");
   };
   const done = (duplicate: boolean) => Response.json(duplicate ? { received: true, duplicate: true } : { received: true });
+  // The plan's "free week started" email, after the response (see the header): never awaited here.
+  const confirmStartedLater = (subscriptionId: string) => deps.defer(() => deps.confirmStarted(subscriptionId, eventLog));
 
   if (mapped.kind === "review") {
     const r = mapped.review;
@@ -222,9 +231,10 @@ export async function POST(req: Request): Promise<Response> {
     switch (outcome.status) {
       case "linked":
         eventLog.info({ userId: outcome.userId, subscription: l.subscriptionId, status: outcome.subscriptionStatus }, "Agathon Unlimited linked to its account");
+        if (outcome.subscriptionStatus === "trialing") confirmStartedLater(l.subscriptionId);
         return done(false);
       case "conflict":
-        eventLog.warn({ subscription: l.subscriptionId, linkedTo: outcome.userId, named: l.userId }, "Agathon Unlimited already linked to another account; the first link stands");
+        eventLog.warn({ subscription: l.subscriptionId, linkedTo: outcome.userId }, "Agathon Unlimited already linked to another account; the first link stands");
         return done(false);
       case "unlinked":
         // Paid for (or in its free week) but nobody gets the plan: loud, so the owner links it by hand.
@@ -247,6 +257,7 @@ export async function POST(req: Request): Promise<Response> {
           { subscription: s.subscriptionId, status: s.status, userId: outcome.userId, unlimited: outcome.unlimited, cancelAtPeriodEnd: s.cancelAtPeriodEnd },
           outcome.userId ? "Agathon Unlimited subscription updated" : "Agathon Unlimited subscription recorded; its checkout has not linked an account yet",
         );
+        if (outcome.userId && s.status === "trialing") confirmStartedLater(s.subscriptionId);
         return done(false);
       case "stale":
         eventLog.info({ subscription: s.subscriptionId, status: s.status, current: outcome.current }, "older Agathon Unlimited event arrived late; the newer state stands");

@@ -1,7 +1,11 @@
+import { after } from "next/server";
+import type pino from "pino";
 import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
 import { getServerEnv, type InkPriceMap } from "@/lib/env";
 import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
+import { emailDeps } from "@/lib/email/server";
+import { sendUnlimitedStarted } from "@/lib/email/unlimitedStarted";
 
 /**
  * The billing webhook's event schema, its pure mapping of a Stripe event to an ink change or an
@@ -88,18 +92,30 @@ export type InkRefund = {
 
 /**
  * An Agathon Unlimited checkout, ready for link_unlimited_checkout(): whose subscription it is.
- * The only event that names our user (`client_reference_id`); it may arrive before or after the
- * subscription's own events.
+ * The only event that names our user; it may arrive before or after the subscription's own events.
+ *
+ * The user is named by a CHECKOUT REFERENCE, not a user id: `client_reference_id` carries the
+ * account's `profiles.checkout_ref` (a random uuid only its owner can read, sent by
+ * unlimitedCheckoutUrl), and the database resolves it to the user. A user id is not a secret, and
+ * linking by one let anyone start a plan, on their own card, on someone else's account (which then
+ * could not be deleted, and whose plan only the payer could cancel). A user id sent as the ref
+ * matches no profile and links nobody. Ink packs still name the user id: a pack is a gift.
  */
 export type UnlimitedLink = {
   subscriptionId: string;
-  /** The user in `client_reference_id` (else `metadata.user_id`), lower-cased; null when there is no usable one. */
-  userId: string | null;
+  /** `client_reference_id` when it is a uuid, lower-cased: the checkout ref; null when there is no usable one. */
+  checkoutRef: string | null;
   clientReferenceId: string | null;
   customerId: string | null;
   checkoutSessionId: string;
   livemode: boolean | null;
-  /** Why the subscription cannot be linked to anyone, when `userId` is null. */
+  /**
+   * The payer's email as Stripe has it for the checkout (`customer_details.email`, else
+   * `customer_email`): where the plan's emails go (the account may be a child's). Null when absent
+   * or not an address.
+   */
+  payerEmail: string | null;
+  /** Why the subscription cannot be linked to anyone, when `checkoutRef` is null. */
   problem: string | null;
 };
 
@@ -257,6 +273,12 @@ export function periodEndOf(obj: Record<string, unknown>): string | null {
 const ignored = (reason: string): MappedEvent => ({ kind: "ignored", reason });
 const foreign = (reason: string): MappedEvent => ({ kind: "foreign", reason });
 
+/** The checkout's payer email (`customer_details.email`, else `customer_email`), trimmed, when it looks like one address. */
+export function payerEmailOf(obj: Record<string, unknown>): string | null {
+  const email = (str(recordOf(obj.customer_details).email) ?? str(obj.customer_email))?.trim() ?? "";
+  return email.length >= 3 && email.length <= 320 && /^[^\s@,;<>]+@[^\s@,;<>]+$/.test(email) ? email : null;
+}
+
 /** checkout.session.completed with `mode: subscription` and our tag: the Unlimited link, or a retired plan. */
 function mapSubscriptionCheckout(event: BillingEvent, obj: Record<string, unknown>): MappedEvent {
   const plan = str(metadataOf(obj).plan_id);
@@ -266,18 +288,24 @@ function mapSubscriptionCheckout(event: BillingEvent, obj: Record<string, unknow
   if (!sessionId) return ignored("checkout session has no id");
   const subscriptionId = idOf(obj.subscription);
   if (!subscriptionId) return ignored("Agathon Unlimited checkout without a subscription id");
-  const rawRef = str(obj.client_reference_id) ?? str(metadataOf(obj).user_id);
-  const userId = rawRef && UUID_RE.test(rawRef) ? rawRef.toLowerCase() : null;
+  // client_reference_id alone, never `metadata.user_id`: a plan is linked by checkout ref only.
+  const rawRef = str(obj.client_reference_id);
+  const checkoutRef = rawRef && UUID_RE.test(rawRef) ? rawRef.toLowerCase() : null;
   return {
     kind: "link",
     link: {
       subscriptionId,
-      userId,
+      checkoutRef,
       clientReferenceId: rawRef,
       customerId: idOf(obj.customer),
       checkoutSessionId: sessionId,
       livemode: typeof obj.livemode === "boolean" ? obj.livemode : (event.livemode ?? null),
-      problem: userId ? null : rawRef ? "client_reference_id is not a user id" : "no client_reference_id (the Payment Link was opened outside the app)",
+      payerEmail: payerEmailOf(obj),
+      problem: checkoutRef
+        ? null
+        : rawRef
+          ? "client_reference_id is not a checkout reference"
+          : "no client_reference_id (the Payment Link was opened outside the app)",
     },
   };
 }
@@ -343,9 +371,10 @@ function mapSubscription(event: BillingEvent, obj: Record<string, unknown>): Map
  *        async_payment_succeeded follows) -> ignored. Ours and `no_payment_required` (nothing was
  *        paid: a 100 % promotion code), or paid without a usable user id or pack -> review.
  *        Ours with `mode: "subscription"` and `metadata.plan_id = unlimited` -> link the
- *        subscription to the user (whatever `payment_status` says: a free week's checkout pays
- *        nothing, and the subscription's own status decides the plan); without a usable user id
- *        it is still recorded, linked to nobody, for the owner. Any other subscription checkout
+ *        subscription to the account whose checkout ref is `client_reference_id` (whatever
+ *        `payment_status` says: a free week's checkout pays nothing, and the subscription's own
+ *        status decides the plan), with the payer's email; without a usable ref it is still
+ *        recorded, linked to nobody, for the owner. Any other subscription checkout
  *        (the retired Plus/Pro links) -> ignored.
  *  - charge.refunded -> reverse by the charge's payment intent; `tagged` says whether the charge
  *        itself proves it is ours (else the handler checks for a recorded purchase first).
@@ -576,10 +605,11 @@ export function supabaseBillingStore(url: string, serviceRoleKey: string): Billi
     async linkSubscription(l) {
       const { data, error } = await client.rpc("link_unlimited_checkout", {
         p_subscription_id: l.subscriptionId,
-        p_user_id: l.userId,
+        p_checkout_ref: l.checkoutRef,
         p_customer_id: l.customerId,
         p_checkout_session_id: l.checkoutSessionId,
         p_livemode: l.livemode,
+        p_payer_email: l.payerEmail,
       });
       if (error) return { status: "error", message: error.message };
       const row = rowOf(data);
@@ -615,7 +645,7 @@ export function linkOutcomeOf(row: Record<string, unknown>, l: Pick<UnlimitedLin
   const userId = typeof row.user_id === "string" ? row.user_id : null;
   if (row.linked === true && userId) return { status: "linked", userId, subscriptionStatus: typeof row.status === "string" ? row.status : null };
   if (row.conflict === true) return { status: "conflict", userId };
-  if (row.no_account === true) return { status: "unlinked", reason: "no account for this user (deleted before the webhook?)" };
+  if (row.no_account === true) return { status: "unlinked", reason: "no account has this checkout reference (a user id, or an account deleted before the webhook?)" };
   return { status: "unlinked", reason: l.problem ?? "no user to link" };
 }
 
@@ -636,14 +666,46 @@ export type WebhookDeps = {
   createStore: (url: string, serviceRoleKey: string) => BillingStore;
   /** Unix seconds (signature tolerance). */
   now: () => number;
+  /**
+   * The "free week started" email for a subscription that may just have become linked and trialing
+   * (src/lib/email/unlimitedStarted.ts: it checks, and email_log sends it once). Never throws.
+   */
+  confirmStarted: (subscriptionId: string, log: pino.Logger) => Promise<unknown>;
+  /**
+   * Run work AFTER the response has gone to Stripe: next/server's `after` (Vercel keeps the function
+   * alive for it, up to its maxDuration). So email can neither fail the webhook (a non-2xx makes
+   * Stripe redeliver) nor slow its answer.
+   */
+  defer: (work: () => Promise<unknown>) => void;
 };
 
+/** `after(work)`, or (outside a request, where `after` throws) work started now and not awaited. Never throws. */
+export function deferAfterResponse(work: () => Promise<unknown>): void {
+  // async: a work that throws synchronously becomes a rejection, swallowed like any other (the
+  // email step logs its own failures).
+  const run = async () => {
+    try {
+      await work();
+    } catch {
+      /* never the webhook's problem */
+    }
+  };
+  try {
+    after(run);
+  } catch {
+    void run();
+  }
+}
+
 /**
- * What the webhook reads from outside the request: the env, the service-role store and the clock
- * (Unix seconds, for the signature tolerance). The route calls these; tests replace them.
+ * What the webhook reads from outside the request: the env, the service-role store, the clock
+ * (Unix seconds, for the signature tolerance), and the plan's confirmation email with the way it
+ * runs after the response. The route calls these; tests replace them.
  */
 export const webhookDeps: WebhookDeps = {
   getEnv: () => getServerEnv(),
   createStore: supabaseBillingStore,
   now: () => Math.floor(Date.now() / 1000),
+  confirmStarted: (subscriptionId, log) => sendUnlimitedStarted(emailDeps, subscriptionId, log),
+  defer: deferAfterResponse,
 };

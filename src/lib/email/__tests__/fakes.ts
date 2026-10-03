@@ -7,6 +7,7 @@ import type { EmailLogKey, EmailLogStore } from "@/lib/email/log";
 import type { SendEmailInput, SendEmailResult } from "@/lib/email/resend";
 import type { EmailDeps, EmailEnv } from "@/lib/email/server";
 import type { TrialRow } from "@/lib/email/trialReminders";
+import type { StartedRow } from "@/lib/email/unlimitedStarted";
 
 export type LogRow = { user_id: string; kind: string; ref: string; resend_id: string | null; sent_at: string | null };
 
@@ -66,6 +67,8 @@ export function fakeDeps(opts: {
   onboardedAt?: string | null | { error: string };
   trials?: TrialRow[] | { error: string };
   emails?: Record<string, string | null | { error: string }>;
+  /** unlimited_subscriptions by Stripe id, for the "free week started" email */
+  subscriptions?: Record<string, StartedRow | { error: string }>;
 } = {}): FakeDeps {
   const log = memoryEmailLog();
   const sent: SendEmailInput[] = [];
@@ -84,6 +87,7 @@ export function fakeDeps(opts: {
       return v !== null && typeof v === "object" ? v : { onboardedAt: v };
     }),
     findTrials: vi.fn(async () => opts.trials ?? []),
+    findSubscription: vi.fn(async (id: string) => opts.subscriptions?.[id] ?? null),
     emailOf: vi.fn(async (userId: string) => {
       const v = opts.emails?.[userId];
       if (v !== null && typeof v === "object") return v;

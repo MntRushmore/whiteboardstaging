@@ -105,6 +105,33 @@ export async function runStorageGc(opts: RunStorageGcOptions): Promise<GcSummary
   });
 }
 
+/**
+ * Retention of Stripe payloads (20261003040000_go_live_gaps.sql): purge_billing_event_payloads()
+ * with the service role blanks every billing_events payload older than
+ * billing_event_payload_retention() (90 days, the one constant, in SQL) and keeps the row (id, type,
+ * time). Those payloads hold the payer's name, email, billing address and card brand and last four;
+ * nothing reads them after the event is applied. Answers how many were blanked; throws on any
+ * failure (the route logs it and still answers for the storage pass). PostgREST over `fetch`, like
+ * the storage client; tests pass `fetchImpl`.
+ */
+export async function purgeBillingPayloads(opts: { url: string; serviceKey: string; fetchImpl?: typeof fetch }): Promise<number> {
+  const doFetch = opts.fetchImpl ?? fetch;
+  const res = await doFetch(`${opts.url.replace(/\/+$/, "")}/rest/v1/rpc/purge_billing_event_payloads`, {
+    method: "POST",
+    headers: { apikey: opts.serviceKey, Authorization: `Bearer ${opts.serviceKey}`, "Content-Type": "application/json" },
+    body: "{}",
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    const message = body && typeof body === "object" && typeof (body as { message?: unknown }).message === "string" ? (body as { message: string }).message : `HTTP ${res.status}`;
+    throw new Error(`purge_billing_event_payloads failed: ${message}`);
+  }
+  if (typeof body !== "number" || !Number.isInteger(body) || body < 0) throw new Error("purge_billing_event_payloads answered something other than a count");
+  return body;
+}
+
 /** Public shape of the route's 200 body (additive fields allowed). */
 export type GcResponseBody = {
   scanned: number;

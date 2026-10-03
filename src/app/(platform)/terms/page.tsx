@@ -91,8 +91,8 @@ export default function TermsPage() {
           <li>One person per account. You are responsible for what happens under your account; tell us if you think
             someone else is using it.</li>
           <li>
-            Keep your email address up to date. It is where we send password resets, the reminder before a free week
-            ends, and notice of changes to these terms or to prices.
+            Keep your email address up to date. It is where we send password resets and notice of changes to these
+            terms or to prices. Emails about {plan}’s payments go to the email used at checkout.
           </li>
         </ul>
       </LegalSection>
@@ -139,8 +139,9 @@ export default function TermsPage() {
             and never renew.
           </li>
           <li>
-            Payments are processed by Stripe. Checkout, your receipt and your card statement show the seller name{" "}
-            <strong>“{LEGAL.stripeSellerName}”</strong>. We never see or store your full card number.
+            Payments are processed by Stripe. Checkout and your receipt show the seller name{" "}
+            <strong>“{LEGAL.stripeSellerName}”</strong>, and your card statement shows{" "}
+            <strong>“{LEGAL.statementDescriptors.inkPacks}”</strong>. We never see or store your full card number.
           </li>
           <li>
             <strong>Ink never expires.</strong> It has no cash value, cannot be transferred to another account, and can
@@ -173,9 +174,10 @@ export default function TermsPage() {
         <h3>It renews automatically</h3>
         <p>
           By starting the free week, you agree that we may charge the card you gave {price} when the free week ends and
-          then every month, until you cancel. You do not need to do anything to keep the plan. About 2 to 3 days before
-          the free week ends, we email the address on the {LEGAL.productName} account with the date and the amount, and
-          a link to cancel.
+          then every month, until you cancel. You do not need to do anything to keep the plan. When the free week
+          starts, we email the person who paid, at the email used at checkout, to confirm it: nothing was charged, the
+          date and amount of the first charge, and how to cancel. About 2 to 3 days before the free week ends, we email
+          them again with the date and the amount, and a link to cancel.
         </p>
 
         <h3>How to cancel</h3>
@@ -234,7 +236,8 @@ export default function TermsPage() {
             agrees to these terms for the plan and is responsible for its charges.
           </li>
           <li>
-            Payments are processed by Stripe, under the seller name <strong>“{LEGAL.stripeSellerName}”</strong>.
+            Payments are processed by Stripe, under the seller name <strong>“{LEGAL.stripeSellerName}”</strong>; your
+            card statement shows the plan’s charges as <strong>“{LEGAL.statementDescriptors.unlimited}”</strong>.
             Stripe’s billing page shows the plan, its invoices and the card. We never see or store your full card
             number.
           </li>

@@ -5,7 +5,6 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { SECTION_BODY, SectionHeader } from "@/components/account/SectionHeader";
-import type { Payer } from "@/lib/billing/checkout";
 import { billingPortalUrl, unlimitedCheckoutUrl } from "@/lib/billing/unlimited";
 import { PLAN_COPY, unlimitedPlanView } from "@/lib/billing/unlimitedPlan";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
@@ -13,6 +12,7 @@ import { cn } from "@/lib/utils";
 
 const BADGE_CLASS: Record<string, string> = {
   "Free week": "bg-indigo-50 text-indigo-800 border-indigo-200",
+  Starting: "bg-indigo-50 text-indigo-800 border-indigo-200",
   Active: "bg-emerald-50 text-emerald-800 border-emerald-200",
   "Payment needed": "bg-amber-50 text-amber-900 border-amber-200",
 };
@@ -24,12 +24,14 @@ const BADGE_CLASS: Record<string, string> = {
  * back to the home), or manage it in Stripe's customer portal (cancel, change the card, invoices)
  * through its login page, NEXT_PUBLIC_BILLING_PORTAL_URL, in a new tab. The app holds no Stripe
  * key, so the portal is the only place a plan is cancelled. The plan re-reads when this tab gets
- * focus again (useUnlimited), so a cancellation shows once the webhook has it.
+ * focus again (useUnlimited), so a cancellation shows once the webhook has it. The checkout carries
+ * the account's checkout reference from the same read (never the user id), so the start button
+ * shows "Coming soon" until that read has landed.
  */
-export function PlanCard({ email, payer }: { email: string; payer: Payer | null }) {
+export function PlanCard({ email }: { email: string }) {
   const { state, loading, refresh } = useUnlimited();
   const view = unlimitedPlanView(state, { now: new Date() });
-  const checkout = unlimitedCheckoutUrl(payer);
+  const checkout = unlimitedCheckoutUrl({ checkoutRef: state.checkoutRef, email });
   const portal = billingPortalUrl(email);
 
   return (

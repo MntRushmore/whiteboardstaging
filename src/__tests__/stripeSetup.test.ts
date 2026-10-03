@@ -7,11 +7,13 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { LEGAL } from "@/lib/legal";
 import {
   APP_TAG,
   PACKS,
   RETIRED_PLAN_IDS,
   STATEMENT_DESCRIPTOR_SUFFIX,
+  UNLIMITED_STATEMENT_DESCRIPTOR,
   UNLIMITED,
   UNLIMITED_CHECKOUT_NOTE,
   WEBHOOK_EVENTS,
@@ -176,6 +178,7 @@ describe("Agathon Unlimited", () => {
     expect(unlimitedProductBody()).toEqual({
       name: "Agathon Unlimited",
       description: "Help from the AI tutor without counting ink. 7 days free, then $25 a month. Cancel any time.",
+      statement_descriptor: "AGATHON",
       metadata: { app: APP_TAG, plan_id: "unlimited" },
     });
     expect(unlimitedPriceBody("prod_u")).toEqual({
@@ -186,6 +189,16 @@ describe("Agathon Unlimited", () => {
       nickname: "Agathon Unlimited monthly",
       metadata: { app: APP_TAG, plan_id: "unlimited" },
     });
+  });
+
+  it("card statements show AGATHON for the plan, not the shared account's FUIME (the product's statement_descriptor, Stripe's rule for subscription charges)", () => {
+    // Stripe: 5-22 Latin characters, at least one letter, none of < > \ ' " *
+    expect(UNLIMITED_STATEMENT_DESCRIPTOR).toMatch(/^(?=.*[A-Za-z])[^<>\\'"*]{5,22}$/);
+    expect(UNLIMITED_STATEMENT_DESCRIPTOR).toBe("AGATHON");
+    expect(unlimitedProductBody().statement_descriptor).toBe(UNLIMITED_STATEMENT_DESCRIPTOR);
+    // and the legal pages say what the statement shows
+    expect(LEGAL.statementDescriptors.unlimited).toBe(UNLIMITED_STATEMENT_DESCRIPTOR);
+    expect(LEGAL.statementDescriptors.inkPacks).toBe(`FUIME* ${STATEMENT_DESCRIPTOR_SUFFIX}`);
   });
 
   it("the Payment Link starts a subscription with the free week, takes the card up front and comes back to /?unlimited=started", () => {
@@ -601,6 +614,22 @@ describe("setup()", () => {
     const ours = stripe.db.links.filter((l) => (l.metadata as Record<string, string>).plan_id === "unlimited");
     expect(ours.map((l) => l.active)).toEqual([false, true]);
     expect(log.join("\n")).toMatch(/update NEXT_PUBLIC_UNLIMITED_LINK/);
+  });
+
+  it("an Unlimited product made before the statement descriptor gets AGATHON, in place (same product, price and link)", async () => {
+    const stripe = fakeStripe();
+    const deps = { api: stripe.api, log: () => undefined, writeSecret: () => undefined };
+    const first = await setup(live, deps);
+    const product = stripe.db.products.find((p) => (p.metadata as Record<string, string>).plan_id === "unlimited")!;
+    delete product.statement_descriptor; // as the live product was made on 2026-10-03
+    stripe.posts.length = 0;
+    const second = await setup(live, deps);
+    expect(stripe.posts.filter((p) => p.path === `/v1/products/${product.id}`)).toEqual([
+      expect.objectContaining({ body: expect.objectContaining({ statement_descriptor: "AGATHON" }) }),
+    ]);
+    expect(product.statement_descriptor).toBe("AGATHON");
+    expect(second.unlimitedLink).toBe(first.unlimitedLink);
+    expect(stripe.db.products).toHaveLength(4);
   });
 
   it("makes no webhook for a local site and writes nothing in a dry run", async () => {

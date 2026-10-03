@@ -19,7 +19,7 @@ export type PlanAction =
 
 export interface PlanView {
   /** for tests and styling: which state the section is in */
-  kind: "offer" | "trialing" | "active" | "ending" | "past_due" | "pending" | "ended";
+  kind: "offer" | "trialing" | "repeat_trial" | "active" | "ending" | "past_due" | "pending" | "ended";
   /** short label next to the title ("Free week", "Active", …); null for none */
   badge: string | null;
   /** the main sentence */
@@ -57,6 +57,8 @@ export const PLAN_COPY = {
   deleteBlockedTitle: `Cancel ${UNLIMITED_PLAN.name} first`,
   deleteBlockedBody:
     "Deleting your account doesn't cancel your plan, so cancel it first. Once it's set to cancel, you won't be charged again and you can delete your account here.",
+  /** A second plan's free week (repeat_trial): no free help, said before the reader wonders why. */
+  repeatTrial: "The free week is for a first plan only, so help uses ink until then. Cancel before that day and you won't be charged.",
   /** The ink card's note for a subscriber: the balance is not being spent. */
   inkNote: "Agathon Unlimited is on, so help uses no ink. Your ink stays here for later.",
 } as const;
@@ -89,6 +91,26 @@ export function unlimitedPlanView(state: UnlimitedState, opts: { now: Date; time
             detail: trialEnd
               ? `Then ${PRICE} a month, starting that day, until you cancel. Help uses no ink meanwhile.`
               : `Then ${PRICE} a month until you cancel. Help uses no ink meanwhile.`,
+            action: "manage",
+            actionLabel: PLAN_COPY.manage,
+          };
+    case "repeat_trial":
+      // A second plan's trial: Stripe charges when it ends, but the free help is for a first plan
+      // only (has_unlimited()), so help uses ink until then. Said plainly, not as a payment problem.
+      return ending
+        ? {
+            kind: "ending",
+            badge: "Starting",
+            headline: trialEnd ? `Your plan was set to start on ${trialEnd}, and it is cancelled.` : "Your plan is cancelled before it starts.",
+            detail: "You won't be charged. Help uses ink meanwhile.",
+            action: "manage",
+            actionLabel: PLAN_COPY.manage,
+          }
+        : {
+            kind: "repeat_trial",
+            badge: "Starting",
+            headline: trialEnd ? `Your plan starts on ${trialEnd}, with the first ${PRICE} charge.` : `Your plan starts with the first ${PRICE} charge.`,
+            detail: PLAN_COPY.repeatTrial,
             action: "manage",
             actionLabel: PLAN_COPY.manage,
           };
