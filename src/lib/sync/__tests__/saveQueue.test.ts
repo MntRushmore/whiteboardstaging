@@ -310,7 +310,7 @@ describe("createSaveQueue", () => {
     queue.dispose();
   });
 
-  it("markDirty during an in-flight save triggers exactly one follow-up save carrying the new edit", async () => {
+  it("markDirty during an in-flight save triggers exactly one follow-up save, after the debounce, carrying the new edit", async () => {
     const store = makeStore();
     const remote = fakeRemote(store);
     let release: (() => void) | null = null;
@@ -331,6 +331,9 @@ describe("createSaveQueue", () => {
     expect(queue.state.get()).toMatchObject({ status: "saving", pending: true });
     release!();
     await tick();
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(queue.state.get()).toMatchObject({ status: "saved", version: 2, pending: true });
+    await vi.advanceTimersByTimeAsync(2000);
     expect(persist).toHaveBeenCalledTimes(2);
     expect(persist.mock.calls[1][1]).toBe(2);
     expect(queue.state.get()).toMatchObject({ status: "saved", version: 3, pending: false });
@@ -378,6 +381,9 @@ describe("createSaveQueue", () => {
     release!();
     await tick();
     await tick();
+    // the removal made during the save is saved after the debounce
+    expect(backup.map.get("b1")).toMatchObject({ changed: [], removed: ["shape:a"] });
+    await vi.advanceTimersByTimeAsync(2000);
     expect(queue.state.get()).toMatchObject({ status: "saved", version: 3, pending: false });
     expect(backup.map.has("b1")).toBe(false);
     expect(queue.writeBackupNow()).toBe(false);
@@ -419,6 +425,30 @@ describe("createSaveQueue", () => {
     expect(persist).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(persist).toHaveBeenCalledTimes(2);
+    queue.dispose();
+  });
+
+  it("edits that keep coming while saves are in flight do not chain saves back to back", async () => {
+    const store = makeStore();
+    const remote = fakeRemote(store);
+    // each write takes 150 ms, like a real round trip
+    const persist = vi.fn(async (u: Record<string, unknown>, v: number | null): Promise<PersistResult> => {
+      await new Promise((r) => setTimeout(r, 150));
+      return remote.persist(u, v);
+    });
+    const queue = createSaveQueue(makeDeps(store, { persist }));
+    // typing: a change every 100 ms for 30 s
+    for (let i = 0; i < 300; i++) {
+      putShape(store, "shape:text", i);
+      queue.markDirty();
+      await vi.advanceTimersByTimeAsync(100);
+    }
+    // one save per MAX_SAVE_WAIT_MS window, not one per round trip (that was ~150 in 30 s)
+    expect(persist.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(persist.mock.calls.length).toBeLessThanOrEqual(4);
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(queue.state.get()).toMatchObject({ status: "saved", pending: false });
+    expect((remote.row?.data as { document: { store: Record<string, { x: number }> } }).document.store["shape:text"].x).toBe(299);
     queue.dispose();
   });
 

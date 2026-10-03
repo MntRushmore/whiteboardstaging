@@ -57,7 +57,7 @@ export function extractStoreMap(data: unknown): Record<string, unknown> | null {
  * Debounced, retrying, conflict-aware autosave queue.
  *
  *  markDirty -> (debounce) -> cycle: begin dirty token -> buildUpdate -> persist(expectedVersion)
- *    ok          -> saved, version bumped, backup cleared; one follow-up save if edits arrived meanwhile
+ *    ok          -> saved, version bumped, backup cleared; edits that arrived meanwhile wait for the debounce
  *    conflict    -> merging: fetch the remote row, merge record-by-record (local edits win), adopt the
  *                   remote version and immediately persist again (max MAX_CONFLICT_ROUNDS rounds)
  *    offline/timeout/other -> dirty sets restored, retry with backoff (2 s, 5 s, 15 s, 60 s…)
@@ -339,8 +339,10 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
         inFlight = null;
         inFlightToken = null;
         const s = state.get();
-        // Edits that arrived while saving: exactly one immediate follow-up save.
-        if (!disposed && !halted && s.status === "saved" && hasPending()) void run();
+        // Edits that arrived while saving are saved like any others: after the debounce (at most
+        // MAX_SAVE_WAIT_MS after the first). Saving them at once chained writes back to back for
+        // as long as the student kept writing.
+        if (!disposed && !halted && s.status === "saved" && hasPending()) scheduleSave();
       }
     })();
     inFlight = p;
@@ -356,6 +358,8 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
       return;
     }
     if (inFlight) {
+      // part of the next save's burst (see scheduleSave)
+      saveBurstAt ??= now();
       patch({ pending: true });
       return;
     }
@@ -368,6 +372,10 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
     } else {
       patch({ status: "dirty", message: null, pending: true });
     }
+    scheduleSave();
+  }
+
+  function scheduleSave(): void {
     saveBurstAt ??= now();
     clearTimer("debounce");
     debounceTimer = timers.set(() => {
