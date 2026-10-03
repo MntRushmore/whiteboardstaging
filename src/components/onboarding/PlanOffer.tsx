@@ -50,51 +50,53 @@ export function PlanOffer({ view, chargeDate, starting = false, onStart, onLater
         <p className={`${styles.then} ${styles.rise}`}>{PLAN_COPY.then}</p>
       </div>
 
-      <h2 className={styles.srOnly}>{PLAN_COPY.perksTitle}</h2>
-      <ul className={styles.perks}>
-        {PLAN_COPY.perks.map((p) => {
-          const Icon = PERK_ICONS[p.id];
-          return (
-            <li key={p.id} className={`${styles.perk} ${styles.rise}`}>
-              <span aria-hidden className={styles.perkIcon}>
-                <Icon size={20} strokeWidth={1.9} />
-              </span>
-              {p.text}
-            </li>
-          );
-        })}
-      </ul>
+      <div className={styles.body}>
+        <h2 className={styles.srOnly}>{PLAN_COPY.perksTitle}</h2>
+        <ul className={styles.perks}>
+          {PLAN_COPY.perks.map((p) => {
+            const Icon = PERK_ICONS[p.id];
+            return (
+              <li key={p.id} className={`${styles.perk} ${styles.rise}`}>
+                <span aria-hidden className={styles.perkIcon}>
+                  <Icon size={20} strokeWidth={1.9} />
+                </span>
+                {p.text}
+              </li>
+            );
+          })}
+        </ul>
 
-      <div className={`${styles.grownUp} ${styles.rise}`}>
-        <span aria-hidden className={styles.grownUpIcon}>
-          {soon ? <Hourglass size={20} strokeWidth={1.8} /> : <HeartHandshake size={22} strokeWidth={1.8} />}
-        </span>
-        <div>
-          <p className={styles.grownUpTitle}>{soon ? PLAN_COPY.soonTitle : PLAN_COPY.grownUp}</p>
-          <p className={styles.grownUpHint}>{soon ? PLAN_COPY.soonNote : PLAN_COPY.grownUpHint}</p>
+        <div className={`${styles.grownUp} ${styles.rise}`}>
+          <span aria-hidden className={styles.grownUpIcon}>
+            {soon ? <Hourglass size={20} strokeWidth={1.8} /> : <HeartHandshake size={22} strokeWidth={1.8} />}
+          </span>
+          <div>
+            <p className={styles.grownUpTitle}>{soon ? PLAN_COPY.soonTitle : PLAN_COPY.grownUp}</p>
+            <p className={styles.grownUpHint}>{soon ? PLAN_COPY.soonNote : PLAN_COPY.grownUpHint}</p>
+          </div>
         </div>
-      </div>
 
-      <div className={`${styles.actions} ${styles.rise}`}>
-        {soon ? (
-          <Button size="lg" className={styles.cta} disabled>
-            {PLAN_COPY.soon}
+        <div className={`${styles.actions} ${styles.rise}`}>
+          {soon ? (
+            <Button size="lg" className={styles.cta} disabled>
+              {PLAN_COPY.soon}
+            </Button>
+          ) : (
+            // while checkout opens the label itself says so (Arc's loading state would hide it)
+            <Button size="lg" className={styles.cta} onClick={() => !starting && onStart()} aria-busy={starting || undefined} aria-describedby="plan-disclosure">
+              {starting ? PLAN_COPY.opening : PLAN_COPY.start}
+              {!starting && <ArrowRight size={18} strokeWidth={2} aria-hidden />}
+            </Button>
+          )}
+          {!soon && (
+            <p id="plan-disclosure" className={styles.disclosure}>
+              {PLAN_COPY.disclosure(chargeDate)}
+            </p>
+          )}
+          <Button size="lg" variant={soon ? "secondary" : "ghost"} className={styles.later} onClick={onLater} disabled={starting}>
+            {soon ? PLAN_COPY.continue : PLAN_COPY.later}
           </Button>
-        ) : (
-          // while checkout opens the label itself says so (Arc's loading state would hide it)
-          <Button size="lg" className={styles.cta} onClick={() => !starting && onStart()} aria-busy={starting || undefined} aria-describedby="plan-disclosure">
-            {starting ? PLAN_COPY.opening : PLAN_COPY.start}
-            {!starting && <ArrowRight size={18} strokeWidth={2} aria-hidden />}
-          </Button>
-        )}
-        {!soon && (
-          <p id="plan-disclosure" className={styles.disclosure}>
-            {PLAN_COPY.disclosure(chargeDate)}
-          </p>
-        )}
-        <Button size="lg" variant={soon ? "secondary" : "ghost"} className={styles.later} onClick={onLater} disabled={starting}>
-          {soon ? PLAN_COPY.continue : PLAN_COPY.later}
-        </Button>
+        </div>
       </div>
     </section>
   );

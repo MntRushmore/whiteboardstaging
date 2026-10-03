@@ -103,6 +103,10 @@
 }
 
 /* ---- what it gives ---------------------------------------------------------------------------- */
+/* the perks, the grown-up and the buttons: under the price, or beside it held sideways */
+.body {
+  min-width: 0;
+}
 .perks {
   display: grid;
   gap: var(--space-3);
@@ -206,6 +210,38 @@
   line-height: 1.55;
   text-align: center;
   text-wrap: pretty;
+}
+
+/*
+ * Held sideways (an iPad in landscape, a laptop): the price on the left, what it gives and the
+ * button on the right, so the whole offer and both buttons fit an 820 px-tall screen unscrolled.
+ */
+@media (min-width: 900px) and (orientation: landscape) {
+  .main {
+    padding-top: var(--space-8);
+  }
+  .card {
+    display: grid;
+    max-width: 62rem;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  }
+  .hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-10) var(--space-8);
+  }
+  .perks {
+    grid-template-columns: 1fr;
+    padding: var(--space-8) var(--space-8) 0;
+  }
+  .grownUp {
+    margin: var(--space-5) var(--space-8) 0;
+  }
+  .actions {
+    padding: var(--space-5) var(--space-8) var(--space-8);
+  }
 }
 
 /* Holds the card's place while the session and the plan are read. */
