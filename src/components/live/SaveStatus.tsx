@@ -51,7 +51,8 @@ export function saveStatusViewFor(state: SyncState, savedVisible: boolean): Save
       if (state.attempt > 0) return { label: SAVE_STATUS_COPY.retrying, tone: "neutral", showRetry: false, title: null };
       return notice;
     case "saving":
-      return { label: SAVE_STATUS_COPY.saving, tone: "neutral", showRetry: false, title: null };
+      // a retry after a failure (a hung or refused write) is not an ordinary save
+      return { label: state.attempt > 0 ? SAVE_STATUS_COPY.retrying : SAVE_STATUS_COPY.saving, tone: "neutral", showRetry: false, title: null };
     case "offline":
       return { label: SAVE_STATUS_COPY.offline, tone: "amber", showRetry: false, title: state.message };
     case "merging":

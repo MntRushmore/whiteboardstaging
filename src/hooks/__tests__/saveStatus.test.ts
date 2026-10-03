@@ -32,6 +32,14 @@ describe("saveStatusViewFor", () => {
     });
   });
 
+  it("a save that is a retry after a failure says 'Retrying…', so a hang that keeps timing out never reads as an ordinary save", () => {
+    expect(saveStatusViewFor(at({ status: "saving", attempt: 2 }), false)).toMatchObject({
+      label: SAVE_STATUS_COPY.retrying,
+      tone: "neutral",
+      showRetry: false,
+    });
+  });
+
   it("offline is amber and explains that changes are unsaved", () => {
     const view = saveStatusViewFor(at({ status: "offline", message: "You're offline", pending: true }), false);
     expect(view).toEqual({ label: SAVE_STATUS_COPY.offline, tone: "amber", showRetry: false, title: "You're offline" });
