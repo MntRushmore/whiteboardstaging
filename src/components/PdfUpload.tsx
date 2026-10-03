@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { loadPdfThumbnails, renderPdfPage, type PdfPagePreview } from "@/lib/pdf";
 import { uploadDataUrlAsset } from "@/lib/assets/uploadDataUrl";
 import { warnInlineAssetFallbackOnce } from "@/hooks/useSnapshotSave";
+import { currentScreen, fitInScreen } from "@/lib/screens/screens";
 
 const MAX_BYTES = 25 * 1024 * 1024; // 25 MB
 
@@ -128,20 +129,17 @@ export function PdfUpload() {
       });
       if (inline) warnInlineAssetFallbackOnce();
 
+      // Inside the current 16:9 screen with a margin (the viewport around it is larger, most of
+      // all on an upright iPad, so a page fitted to the viewport overflowed the screen's frame).
       const vb = editor.getViewportPageBounds();
-      const scale = Math.min(
-        1,
-        (vb.width * 0.9) / img.width,
-        (vb.height * 0.9) / img.height,
-      );
-      const w = img.width * scale;
-      const h = img.height * scale;
+      const screen = currentScreen(editor) ?? { x: vb.x, y: vb.y, w: vb.width, h: vb.height };
+      const { x, y, w, h } = fitInScreen({ w: img.width, h: img.height }, screen);
 
       editor.createShape({
         id: createShapeId(),
         type: "image",
-        x: vb.x + (vb.width - w) / 2,
-        y: vb.y + (vb.height - h) / 2,
+        x,
+        y,
         isLocked: true,
         // Critical: protected from AI capture so the tutor never modifies the worksheet.
         meta: {

@@ -5,7 +5,7 @@ export type ApiErrorCode =
   | "unauthorized"
   | "invalid_request"
   | "rate_limited"
-  | "credits_exhausted"
+  | "ink_empty"
   | "upstream_error"
   | "feature_unavailable"
   | "internal_error"
@@ -59,7 +59,7 @@ const UNAUTHORIZED = () =>
  * and verifies it against Supabase Auth (`auth.getUser(token)`).
  *
  * Returns `{ user, token }` on success (`token` is the verified access token, so
- * callers can act AS the user against Supabase, e.g. `consumeCredits`) or
+ * callers can act AS the user against Supabase, e.g. `consumeInk`) or
  * `{ response }` (a ready-to-return 401 JSON response) on any failure.
  */
 export async function requireUser(
@@ -88,5 +88,33 @@ export async function requireUser(
     return { user: { id: data.user.id, email: data.user.email ?? null }, token };
   } catch {
     return { response: UNAUTHORIZED() };
+  }
+}
+
+/** How long `identifyUser` waits for Supabase Auth before answering "nobody". */
+const IDENTIFY_TIMEOUT_MS = 3_000;
+
+/**
+ * The signed-in user's id when the request carries a valid access token, else null — never a 401.
+ * For public routes that only want to say who it was (POST /api/client-errors logs it); a route
+ * that needs a user calls `requireUser`. Gives up after IDENTIFY_TIMEOUT_MS, so a slow Auth never
+ * holds the caller.
+ */
+export async function identifyUser(req: Request): Promise<string | null> {
+  const token = extractBearerToken(req);
+  if (!token) return null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const verified = getVerifier()
+      .auth.getUser(token)
+      .then(({ data, error }) => (error ? null : (data?.user?.id ?? null)));
+    const timeout = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), IDENTIFY_TIMEOUT_MS);
+    });
+    return await Promise.race([verified, timeout]);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
   }
 }

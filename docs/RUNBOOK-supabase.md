@@ -13,6 +13,9 @@ Prereqs: Node 22+, `npx supabase --version` >= 2.x (bundled, no global install),
 > `vercel env pull` and run
 > `npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING" --include-all`, then verify with
 > `NEXT_PUBLIC_SUPABASE_URL=… NEXT_PUBLIC_SUPABASE_ANON_KEY=… SUPABASE_SERVICE_ROLE_KEY=… node scripts/verify-rls.mjs`.
+> **Except the October 2026 release (ink, snapshot retention, sign-up consent, bug reports):** it
+> goes in two halves around the frontend deploy, `docs/RUNBOOK-billing.md` section 7 steps 3 and 5.
+> A plain `db push` of all four before the deploy breaks every sign-up until the new form is live.
 
 ## 1. Create the project (dashboard, ~3 min)
 
@@ -43,7 +46,7 @@ What the migration creates (idempotent, safe to re-run):
 | --- | --- |
 | Tables (all RLS on, no `anon` grants) | `whiteboards`, `whiteboard_snapshots`, `board_assets`, `user_settings`, `bug_reports`, `trainers`, `training_samples` |
 | Functions | `set_updated_at()`, `is_trainer()` (security definer), `whiteboards_bump_version()`, `whiteboards_record_snapshot()` |
-| Triggers | `updated_at` on whiteboards/user_settings/training_samples; `version` bump + copy into `whiteboard_snapshots` (last 20) on every `whiteboards.data` change |
+| Triggers | `updated_at` on whiteboards/user_settings/training_samples; `version` bump on every `whiteboards.data` change; board history in `whiteboard_snapshots` (since `20261003000000_snapshot_retention.sql`: the replaced state at most every 10 minutes and before a wipe, pruned to the newest 8 + one a day for 7 days within 4 MB; section 10.1) |
 | Policies | owner-only CRUD keyed on `auth.uid()`; `bug_reports` insert-only; trainer tables/objects gated by `is_trainer()` |
 | Storage | bucket `board-assets` (public read, 15 MB, image/*) and `training-data` (private, 10 MB, image/png) + `storage.objects` policies scoped to `<uid>/...` folders |
 | Seed | `trainers` row for `rushilchopra123@gmail.com` (no-op until that user signs up) |
@@ -89,7 +92,7 @@ vercel env ls                        # expect both names listed 3x
 vercel env pull .env.local           # optional: sync development values locally
 ```
 
-Also required: `OPENROUTER_API_KEY` (all envs). Optional: `OPENAI_API_KEY`, `MATHPIX_APP_ID`/`MATHPIX_APP_KEY`, `NEXT_PUBLIC_TLDRAW_LICENSE_KEY`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_LIVE_MATH`, `LIVE_MODEL_*`, `LOG_LEVEL`, `NEXT_PUBLIC_LOG_LEVEL`. Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to Vercel unless you enable billing: the only route that reads it is `POST /api/billing/webhook` (section 13), everything else runs with the caller's JWT. Never add the `# ─── Scripts and tests` keys from `.env.example` (`BASE_URL`, `SMOKE_*`, `RUN_DB_TESTS`, `VERIFY_EMAIL_DOMAIN`). Redeploy (`vercel --prod`) after changing env vars; existing deployments keep their old values.
+Also required: `OPENROUTER_API_KEY` (all envs). Optional: `OPENAI_API_KEY`, `MATHPIX_APP_ID`/`MATHPIX_APP_KEY`, `NEXT_PUBLIC_TLDRAW_LICENSE_KEY`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_LIVE_MATH`, `LIVE_MODEL_*`, `LOG_LEVEL`, `NEXT_PUBLIC_LOG_LEVEL`. Add `SUPABASE_SERVICE_ROLE_KEY` (as a sensitive variable) to every Vercel environment that meters ink: the paid routes need it to give a failed call's ink back (`refund_ink_for`, section 13.1; without it failed calls are not refunded, and the log says so), and `POST /api/billing/webhook` and `/api/admin/gc` need it to work at all. Everything else runs with the caller's JWT. An environment with `BILLING_ENFORCE=0` charges nothing and so needs it only for those two routes. Never add the `# ─── Scripts and tests` keys from `.env.example` (`BASE_URL`, `SMOKE_*`, `RUN_DB_TESTS`, `VERIFY_EMAIL_DOMAIN`). Redeploy (`vercel --prod`) after changing env vars; existing deployments keep their old values.
 
 Check the result with `npm run env:check` (`node scripts/check-vercel-env.mjs`): it runs the read-only `vercel env ls`, classifies every key by its `.env.example` section, and exits 1 on a missing required key, a deployed scripts-only key, or a Vercel key that `.env.example` does not document. `--env Preview` limits it to one environment, `--json` prints the report as JSON, `--from <file>` reads saved `vercel env ls` output (CI uses `src/__tests__/fixtures/vercel-env-ls.txt`). The current per-environment state and the exact `vercel env add` commands are in `docs/GO-LIVE.md` section 2.
 
@@ -150,6 +153,40 @@ npx supabase stop                     # keeps data; add --no-backup to wipe volu
 - **Storage objects** are not in a DB dump. Copy them with `npx supabase storage cp -r ss:///board-assets ./backups/board-assets --linked` (experimental) or from the dashboard.
 - **Restore drill (do this once per quarter, ~15 min):** create a throwaway project (section 1), `npx supabase link --project-ref <new-ref>`, `npm run db:push`, then load data with `npx supabase db query --linked -f backups/data-<date>.sql` (or `psql "$DB_URL" -f ...`). Point a local `.env.local` at the new project, sign in as a test user, open a restored board. Delete the throwaway project when done. Note: `auth.users` rows are included in `--data-only` dumps; user passwords remain valid because hashes are copied.
 
+### 10.1 Board history (`whiteboard_snapshots`)
+
+The database keeps a short history of every board, for one purpose: an operator putting a board back after it was wiped or messed up (a bug, a stale device, a student who cleared it). Nothing in the app reads it. Rules (`supabase/migrations/20261003000000_snapshot_retention.sql`):
+
+- A history row holds the state a save **replaced** (`version` is that state's version; the row in `whiteboards` is always the current state). One is written when the board has none younger than 10 minutes (so the first save of every session, then at most one per 10 minutes of drawing), and whenever a save drops more than half of a board of 16 KB or more (the state right before a clear or a wipe, `reason = 'pre_drop'`). A new board's empty start is never kept. If a history row cannot be written the save still goes through (a `WARNING whiteboards_record_snapshot: no history row ...` in the Postgres log).
+- Each time one is written the board's history is pruned: the newest 3 `pre_drop` copies of the last 7 days always stay (outside the size budget); of the rest, the newest 8 plus the newest of each UTC day for the last 7 days, taken in order of value (newest; each earlier day's newest; the rest), up to 4 MB of stored size, never fewer than 2. "Newest" is by `id` (insertion order).
+- Only the trigger writes it; owners can read their own rows; `prune_whiteboard_snapshots(board uuid)` is callable by the service role (returns how many rows it removed).
+
+Put a board back (SQL editor; the student should close the board first, or their open tab saves over it):
+
+```sql
+-- what there is
+select version, created_at, pg_size_pretty(pg_column_size(data)::bigint) as stored
+from public.whiteboard_snapshots where whiteboard_id = '<board id>' order by version desc;
+-- keep the current state too (the restore below is a save like any other: it is kept only by the rules above)
+insert into public.whiteboard_snapshots (whiteboard_id, user_id, version, data)
+select id, user_id, version, data from public.whiteboards where id = '<board id>'
+on conflict (whiteboard_id, version) do nothing;
+-- restore one (it becomes a new version)
+update public.whiteboards w set data = s.data
+from public.whiteboard_snapshots s
+where w.id = '<board id>' and s.whiteboard_id = w.id and s.version = <version>;
+```
+
+Size. Before 2026-10-03 every save was copied and 20 copies kept per board (15-35 MB for a heavy board). After applying the migration, the one-time prune frees the rows but not the disk: run `vacuum (full, analyze) public.whiteboard_snapshots;` once (it locks the table for the seconds it takes; saves wait meanwhile, so pick a quiet moment). Watch the totals with:
+
+```sql
+select pg_size_pretty(pg_database_size(current_database())) as db,
+       pg_size_pretty(pg_total_relation_size('public.whiteboards')) as boards,
+       pg_size_pretty(pg_total_relation_size('public.whiteboard_snapshots')) as history;
+```
+
+On the free plan the project turns read-only near 500 MB and every save fails; move to Pro (8 GB) well before that.
+
 ## 11. Troubleshooting
 
 | Symptom | Meaning | Fix |
@@ -157,7 +194,7 @@ npx supabase stop                     # keeps data; add --no-backup to wipe volu
 | `PGRST303` / `JWT expired` right after sign-in | Clock skew between the client machine and Supabase, or a token from another project | Sync the OS clock (NTP); sign out/in; check `NEXT_PUBLIC_SUPABASE_URL` matches the project that issued the token. |
 | `57014 canceling statement due to statement timeout` on save | `whiteboards.data` row is multi-MB (legacy base64 images); PostgREST `authenticated` timeout is 8 s | Run `node scripts/offload-assets.mjs --board <id>` (section 12) to move the inline images to the `board-assets` bucket. Do not raise the role timeout. |
 | `23514 ... violates check constraint "whiteboards_data_size"` on save | Snapshot is over the 8 MB cap (`20260917010000_snapshot_size_cap.sql`) - a legacy board with big base64 images, or a client bypassing the 4 MB soft limit | Same fix: `node scripts/offload-assets.mjs --board <id>`; the constraint only checks new tuples, so the board loads fine and saves again once its assets are URLs. |
-| `42501 permission denied for table ...` | Missing `grant ... to authenticated` (or the table was created outside the migration) | Re-run `npm run db:push` (idempotent) or paste the init migration into the SQL editor. `anon` is denied on purpose. |
+| `42501 permission denied for table ...` | Missing `grant ... to authenticated` (or the table was created outside the migration) | Re-run `npm run db:push` (idempotent; it applies only what is missing). Do **not** paste `20260911000000_init.sql` into the SQL editor: re-running it puts back the old every-save history trigger, its 20-copy retention and the users' INSERT grant on `whiteboard_snapshots` that later migrations removed. To restore one grant, run just that `grant` line from the newest migration that sets it. `anon` is denied on purpose. |
 | `42P01 relation "public.whiteboards" does not exist` | Migration never ran on this project | Section 2. |
 | Storage upload -> `403` / `new row violates row-level security policy` | Object path does not start with the caller's `auth.uid()`, caller is not in `trainers` (training-data), wrong MIME type, or bucket missing | Check the path prefix, the trainer row (section 6), and `select * from storage.buckets`. |
 | Storage upload -> `413` / `Payload too large` | Over the bucket or project cap | 15 MB (`board-assets`) / 10 MB (`training-data`); *Storage -> Settings* global cap. |
@@ -236,81 +273,60 @@ left join storage.objects o on o.bucket_id = 'board-assets' and o.name = a.objec
 where o.id is null;
 ```
 
-## 13. Accounts & billing
+## 13. Accounts & billing (ink)
 
-Migration `supabase/migrations/20260917020000_accounts_billing.sql` (idempotent; `npm run db:push`). Credits are the unit: every user is on a plan with a monthly allowance, and for the current **UTC calendar month**
+Migrations `supabase/migrations/20260917020000_accounts_billing.sql` (profiles, the usage ledger, `billing_events`, account deletion) and `20261002000000_ink.sql` (ink: it replaced the monthly credits and the plans; idempotent; `npm run db:push`). Ink never expires and never resets:
 
 ```
-remaining = plans.monthly_credits + sum(credit_grants.units this month) - sum(usage_events.units this month)   (clamped at 0)
+balance = sum(ink_grants.units)  - sum(usage_events.units)        (all-time; stored in profiles.ink_balance, CHECK >= 0)
+          starter, purchases,      every metered call
+          manual, refund reversals
 ```
 
-Nothing resets or rolls over; the window simply moves on the 1st at 00:00 UTC. Metering runs *as the user*: the API routes call `consume_credits()` with the caller's own JWT, so a user can only ever spend their own balance and nothing reachable with a user token can add credits or change a plan.
+The balance is kept by triggers on both ledgers in the same transaction as each row. Metering runs *as the user*: the API routes call `consume_credits()` with the caller's own JWT, so a user can only ever spend their own ink and nothing reachable with a user token can add any, not even a refund (section 13.1). The ledgers are append-only: delete guards refuse any delete from `usage_events`, `ink_grants`, `ink_purchases` or `profiles` (`42501`, for every role including `postgres`) except an account deletion's cascade and `refund_ink_for()`. The migration header lists every object; `docs/RUNBOOK-billing.md` is the operator side (packs, prices, Stripe, refunds, manual grants, going live).
 
-**What the migration creates**
+**What the ink migration creates**
 
 | Kind | Objects |
 | --- | --- |
-| Tables (RLS on, no `anon` grants) | `plans` (catalogue; `select` for authenticated), `profiles` (one per `auth.users` row; owner `select`, owner `update` of **`display_name` only** via a column-level grant, so `PATCH {plan_id}` fails with `42501`), `usage_events` (spent credits; owner `select` only), `credit_grants` (extra credits; owner `select` only), `billing_events` (webhook idempotency log; **no** authenticated access, service role only) |
-| Functions (`security definer`, `set search_path = public`, `execute` only for `authenticated`) | `credit_summary()` -> `{plan_id, plan_name, monthly_credits, used, granted, remaining, period_start, period_end}`; `consume_credits(p_route, p_units, p_request_id?, p_model?)` -> `{ok, remaining, reason}` (locks the caller's `profiles` row `FOR UPDATE`, so parallel calls serialize; `ok:false, reason:'insufficient_credits'` writes nothing; `p_units` must be 1..1000, else `400`); `delete_own_account()` -> deletes the caller's `auth.users` row (cascades below). Internal, not callable by users: `credit_period()`, `credit_balance(uuid)`, `handle_new_user()` |
-| Triggers | `on_auth_user_created` (`auth.users` AFTER INSERT -> `profiles` row with `plan_id='free'`; never blocks sign-up - a failure is logged as a warning and `consume_credits()` creates the missing row on first use); `profiles_set_updated_at` |
-| Seed | `plans` rows `free` (300 credits, $0), `plus` (3,000, $9.00), `pro` (12,000, $29.00) - **placeholders**, re-applied with `on conflict do update` on every migration run |
-| Backfill | a `profiles` row for every pre-existing user |
+| Tables (RLS on, no `anon` grants) | `ink_packs` (catalogue; `select` for authenticated, nothing else), `ink_grants` (owner `select` only; written by the functions below, the sign-up trigger and SQL), `ink_purchases` (owner `select` only; one row per paid Checkout Session, unique `checkout_session_id`), `ink_checkout_reviews` (service role only; Agathon checkouts that did not become ink, with the payer's email) |
+| Column | `profiles.ink_balance` (CHECK `>= 0`; users can read it, never write it: the column grant is still `display_name` only) |
+| Functions for `authenticated` | `ink_summary()`; `credit_summary()`, `consume_credits(...)` (same names and shapes as before, now on ink); `usage_by_day(p_time_zone, p_days?)` |
+| Functions for the service role only | `refund_ink_for(user, request_id)`, `grant_ink_purchase(...)`, `reverse_ink_purchase(...)`, `record_ink_checkout_review(...)`, `resolve_ink_checkout_review(review_id, user?, pack?, note?)`, `grant_ink(user, units, reason)`; `refund_credits(p_request_id)` keeps its signature but no role but the owner may execute it any more |
+| Triggers | `ink_grants_apply`, `usage_events_apply_insert` / `_delete` (the balance; a ledger row for a user without a profile creates it first), `ink_grants_immutable`, `usage_events_immutable` (append-only), `ink_grants_guard_delete`, `ink_purchases_guard_delete`, `usage_events_guard_delete`, `profiles_guard_delete` (no deletes but the account's cascade and `refund_ink_for`); `handle_new_user()` now also grants the 300 starter ink (never blocks sign-up) |
+| Data | `plus`/`pro` deactivated and every profile moved to `free`; one starter grant per existing account of `max(300, what it had left this month)` |
 
-The per-route cost (credits per call) is defined in the server code next to the route registry (see the routes table in `docs/ARCHITECTURE.md`); the database only records what it is told in `usage_events.units`. Verify the whole thing with `npm run db:verify` (checks named `plans:`, `profiles:`, `usage_events:`, `credit_grants:`, `billing_events:`, `credit_summary:`, `consume_credits:`, `delete_own_account:`) and `RUN_DB_TESTS=1 npx vitest run src/__tests__/db-billing.integration.test.ts` (month window, 10-way concurrency, deletion cascade).
+Verify with `npm run db:verify` (checks named `ink_packs:`, `ink_grants:`, `ink_purchases:`, `ink_checkout_reviews:`, `ink_summary:`, `grant_ink_purchase:`, `reverse_ink_purchase:`, `record_ink_checkout_review:`, `resolve_ink_checkout_review:`, `grant_ink:`, `consume_credits:`, `refund_credits:`, `refund_ink_for:`, `usage_by_day:`, `delete_own_account:`; the service-role halves need `SUPABASE_SERVICE_ROLE_KEY`) and `RUN_DB_TESTS=1 npx vitest run src/__tests__/db-billing.integration.test.ts` (starter, all-time balance, 10-way concurrency, purchases and refunds, the amount check and review queue, the delete guards, deletion cascade).
 
-**Change the plan numbers** (SQL editor; takes effect on the next `credit_summary()` / `consume_credits()` call, no deploy):
-
-```sql
-update public.plans set monthly_credits = 500, price_cents = 0 where id = 'free';
-update public.plans set monthly_credits = 5000, price_cents = 1200, features = '["5,000 credits / month","Worksheets"]' where id = 'plus';
-update public.plans set active = false where id = 'pro';      -- hide from the pricing UI; existing subscribers keep it
-select id, name, monthly_credits, price_cents, active from public.plans order by sort;
-```
-
-Keep the migration's seed in sync when you change numbers permanently (it re-applies on every `db push`; otherwise the next push reverts your UPDATE). New plan ids must match `^[a-z][a-z0-9_-]{0,31}$`.
-
-**Grant credits to a user by hand** (a refund, a classroom pilot, a bug apology). Grants count for the month of their `created_at`, so a grant made today is gone on the 1st:
+**Give or take ink by hand** (SQL editor, as `postgres`):
 
 ```sql
-insert into public.credit_grants (user_id, units, reason)
-select id, 500, 'pilot cohort 2026-09' from auth.users where lower(email) = lower('student@example.com');
--- negative units are allowed for corrections
-insert into public.credit_grants (user_id, units, reason) values ('<uuid>', -100, 'double-counted refund');
--- what the student now sees (as postgres you cannot call credit_summary(); use the internal helper)
-select public.credit_balance((select id from auth.users where email = 'student@example.com'));
+select public.grant_ink((select id from auth.users where lower(email) = lower('student@example.com')), 500, 'pilot cohort 2026-10');
+select public.grant_ink('<uuid>', -100, 'double-counted refund');      -- stops at zero
+select public.ink_summary_of((select id from auth.users where email = 'student@example.com'));  -- what they now see
 ```
 
-**Set a user's plan by hand** (comped account, or the webhook missed an event):
+Never update or delete ledger rows; corrections are new rows. More in `docs/RUNBOOK-billing.md` section 6.
 
-```sql
-update public.profiles
-set plan_id = 'plus', billing_status = 'comped', current_period_end = null
-where user_id = (select id from auth.users where lower(email) = lower('student@example.com'));
-select u.email, p.plan_id, p.billing_status, p.billing_customer_id, p.current_period_end
-from public.profiles p join auth.users u on u.id = p.user_id where u.email = 'student@example.com';
-```
-
-**Stripe** (products, Payment Links, the customer portal, the webhook endpoint, going live, a payment that did not become a plan): `docs/RUNBOOK-billing.md`. Migration `20260928110000_paid_plans.sql` set free to 300 credits (the pilot's 1,000 ended) and made `credit_summary()` also return `billing_status` and `current_period_end`.
-
-**How the webhook updates it.** `POST /api/billing/webhook` verifies the provider signature (`STRIPE_WEBHOOK_SECRET`) and then, with `SUPABASE_SERVICE_ROLE_KEY` (the only route that uses it; add it to Vercel *Production* only, as a sensitive variable, when you enable billing), does two writes: `insert into billing_events (id, type, payload)` keyed by the provider's event id (`on conflict do nothing`; a duplicate delivery is dropped there) and `update profiles set plan_id, billing_customer_id, billing_subscription_id, billing_status, current_period_end where user_id = ...` (the user id travels in the checkout session's `client_reference_id` / subscription metadata). Without both env vars the route answers `503 feature_unavailable` and nothing changes. `BILLING_ENFORCE=0` makes the API routes skip `consume_credits()` entirely (dev/staging escape hatch; never in production). Checkout / portal links come from `NEXT_PUBLIC_BILLING_LINKS`; without it the pricing UI shows the plans with disabled buttons. Inspect what arrived with `select id, type, received_at from public.billing_events order by received_at desc limit 20;`.
+**How the webhook writes.** `POST /api/billing/webhook` verifies the provider signature (`STRIPE_WEBHOOK_SECRET`), decides whether the event is Agathon's at all (the Stripe account is shared with Fuime; foreign events are stored nowhere), and then, with `SUPABASE_SERVICE_ROLE_KEY`: `insert into billing_events (id, type, payload)` keyed by the provider's event id (a redelivery is applied again; every step is idempotent) and `grant_ink_purchase(...)`, `record_ink_checkout_review(...)` or `reverse_ink_purchase(...)`. Without both env vars the route answers `503 feature_unavailable` and nothing changes. `BILLING_ENFORCE=0` makes the API routes skip `consume_credits()` entirely (dev/staging escape hatch; never in production). Inspect what arrived with `select id, type, received_at from public.billing_events order by received_at desc limit 20;` and the purchases with `select * from public.ink_purchases order by created_at desc limit 20;`.
 
 **Usage questions**
 
 ```sql
 -- this month's spend per user
-select u.email, sum(e.units) as credits, count(*) as calls
+select u.email, sum(e.units) as ink, count(*) as calls
 from public.usage_events e join auth.users u on u.id = e.user_id
 where e.created_at >= date_trunc('month', now() at time zone 'utc') at time zone 'utc'
-group by u.email order by credits desc;
+group by u.email order by ink desc;
 -- most expensive routes this month
-select route, sum(units) as credits, count(*) as calls from public.usage_events
+select route, sum(units) as ink, count(*) as calls from public.usage_events
 where created_at >= date_trunc('month', now() at time zone 'utc') at time zone 'utc'
-group by route order by credits desc;
+group by route order by ink desc;
 ```
 
 `usage_events` is append-only and grows with every AI call (one row per call, ~100 bytes). Prune rows older than the retention you want (`delete from public.usage_events where created_at < now() - interval '13 months';`) - only the current month is ever consulted for balances.
 
-**Account deletion and storage garbage collection.** `delete_own_account()` deletes the caller's `auth.users` row. That cascades (`on delete cascade`) to `profiles`, `whiteboards` (-> `whiteboard_snapshots`, `board_assets`), `user_settings`, `trainers`, `training_samples`, `usage_events` and `credit_grants`; `bug_reports` keeps its rows with `user_id = null`; Auth removes identities, sessions and refresh tokens itself. The user's JWT stays signature-valid until it expires, but every table is empty for it and `consume_credits()` answers `403 account not found`.
+**Account deletion and storage garbage collection.** `delete_own_account()` deletes the caller's `auth.users` row. That cascades (`on delete cascade`) to `profiles`, `whiteboards` (-> `whiteboard_snapshots`, `board_assets`), `user_settings`, `trainers`, `training_samples`, `usage_events`, `credit_grants`, `ink_grants`, `ink_purchases` and, since `20261003010100_bug_reports_leave_with_account.sql`, `bug_reports` (they hold the account's email, message, a board screenshot and logs); Auth removes identities, sessions and refresh tokens itself. The user's JWT stays signature-valid until it expires, but every table is empty for it and `consume_credits()` answers `403 account not found`.
 
 Storage objects are **not** removed by the RPC: `storage.objects` has no FK to `auth.users`, and the Storage trigger described in section 12 rejects direct row deletes because the file behind the row would stay in the backing store. So: (1) the client does this itself — `src/components/account/DangerZone.tsx` calls `deleteOwnAccount()` from `src/lib/billing/deleteAccount.ts`, which reads its own `board_assets.object_path` rows and calls `storage.from('board-assets').remove(paths)` *before* the RPC (the owner-delete policy allows it; a Storage failure is logged and does not block the deletion; `training-data` has no delete policy on purpose), and (2) the operator runs this after deletions, because `board-assets` is a public bucket and an orphaned image stays reachable by URL until it is removed:
 
@@ -335,16 +351,22 @@ curl -X DELETE "$NEXT_PUBLIC_SUPABASE_URL/storage/v1/object/board-assets" \
 
 ### 13.1 Refunds and database-backed rate limits
 
-Migration `supabase/migrations/20260917030000_refunds_ratelimit.sql` (idempotent; `npm run db:push`). Two more `security definer` RPCs, `execute` for `authenticated` only (anon gets `42501` / HTTP 401), both keyed on `auth.uid()`:
+Migration `supabase/migrations/20260917030000_refunds_ratelimit.sql` (idempotent; `npm run db:push`), with the refund made service-role only by `20261002000000_ink.sql`:
+
+| RPC | Who | Returns | What it does |
+| --- | --- | --- | --- |
+| `refund_ink_for(p_user_id uuid, p_request_id text)` | **service role only** (users get `403`, anon `401`) | `{refunded, remaining}` | Deletes that user's `usage_events` rows with that `request_id` whose `created_at` is within the last **15 minutes**, then returns `refunded` (the sum of `units`; `0` when nothing matched) and the new balance. Takes the same `profiles` row lock as `consume_credits()`, so a refund and a spend for one user never interleave. Idempotent: calling it twice refunds `0` the second time. Another user's id, an unknown request id and a row older than 15 minutes all return `refunded: 0` and touch nothing. `p_request_id` must be 1..100 characters (else `400`). The API routes call it (`refundInk`, with the user id from the verified JWT) when the upstream provider fails *after* the charge; the 15-minute cap means a request id can never be replayed later to erase spend. It replaced `refund_credits(p_request_id)`, which the user could call: every 2xx returns its `X-Request-Id`, so a user could have refunded any successful call. `refund_credits` keeps its signature (older code gets a permission error, not a missing function) but no user can execute it |
+| `rate_limit_hit(p_bucket text, p_limit int, p_window_ms int)` | `authenticated`, keyed on `auth.uid()` | `{allowed, remaining, retry_after_ms, backend: 'db'}` | see below |
+
+`rate_limit_hit`:
 
 | RPC | Returns | What it does |
 | --- | --- | --- |
-| `refund_credits(p_request_id text)` | `{refunded, remaining}` | Deletes the caller's **own** `usage_events` rows with that `request_id` whose `created_at` is within the last **15 minutes**, then returns `refunded` (credits removed, i.e. the sum of `units`; `0` when nothing matched) and the new `remaining` from the normal balance logic. Takes the same `profiles` row lock as `consume_credits()`, so a refund and a spend for one user never interleave. Idempotent: calling it twice refunds `0` the second time. Another user's request id, an unknown id and a row older than 15 minutes all return `refunded: 0` and touch nothing. `p_request_id` must be 1..100 characters (else `400`). The API routes call it when the upstream provider fails *after* the charge; the 15-minute cap means a request id can never be replayed later to erase spend |
 | `rate_limit_hit(p_bucket text, p_limit int, p_window_ms int)` | `{allowed, remaining, retry_after_ms, backend: 'db'}` | Fixed window aligned to the Unix epoch (`window_start = now - now mod p_window_ms`), counter row `(user_id, bucket, window_start)` in `public.rate_limit_counters`, incremented with one atomic `insert ... on conflict do update`. `allowed = hits <= p_limit`; `remaining = max(0, p_limit - hits)`; `retry_after_ms` is the time until the window ends when denied and `0` when allowed. Parallel calls serialise on the row, so 20 simultaneous hits with `p_limit = 10` allow exactly 10 (integration-tested). Limits: `p_bucket` 1..100 chars, `p_limit` 1..1,000,000, `p_window_ms` 1..86,400,000 (else `400`) |
 
 `rate_limit_counters` (`user_id uuid, bucket text, window_start timestamptz, hits int, expires_at timestamptz`, PK `(user_id, bucket, window_start)`) has RLS enabled with **no policies and no grants** for `anon` or `authenticated`: users reach it through the function only (`GET /rest/v1/rate_limit_counters` -> `403`). It is not a ledger: `expires_at = window_start + 2 * window`, every call deletes the caller's expired rows for that bucket, and about 2% of calls sweep every expired row of every user, so the table stays at roughly `active users x buckets x 2` rows. There is deliberately no FK to `auth.users` (rows age out within two windows anyway, and a deleted user's still-valid JWT must not turn a rate-limit check into a constraint error). Compared with the in-memory limiter in `src/lib/server/rate-limit.ts` (per server instance, so the effective limit is `limit x instances`), this one is global; the `backend` field tells the route which implementation answered.
 
-Verify with `npm run db:verify` (checks named `refund_credits:`, `rate_limit_hit:`, `rate_limit_counters:`; the "row older than 15 minutes" case needs `SUPABASE_SERVICE_ROLE_KEY` to plant a back-dated row and is reported as skipped otherwise) and `RUN_DB_TESTS=1 npx vitest run src/__tests__/db-billing.integration.test.ts` (refund idempotency, foreign/stale ids, 1-second window rollover and cleanup, 20-way concurrency).
+Verify with `npm run db:verify` (checks named `refund_credits:` and `refund_ink_for:` (a user cannot refund; the service role can, once, only the named user's recent rows), `rate_limit_hit:`, `rate_limit_counters:`; the service-role half needs `SUPABASE_SERVICE_ROLE_KEY` and is reported as skipped otherwise) and `RUN_DB_TESTS=1 npx vitest run src/__tests__/db-billing.integration.test.ts` (user denied, refund idempotency, foreign/stale ids, 1-second window rollover and cleanup, 20-way concurrency).
 
 **Operator questions**
 
@@ -359,8 +381,8 @@ delete from public.rate_limit_counters
 where user_id = (select id from auth.users where lower(email) = lower('student@example.com'));
 
 -- refunds are deletions, so "how much was refunded" is not in the ledger; look at the API logs
--- (event `credits refunded`, fields route/requestId/refunded). Manual make-goods stay in credit_grants:
-insert into public.credit_grants (user_id, units, reason) values ('<uuid>', 25, 'refund: provider outage 2026-09-17');
+-- (event `ink refunded`, fields route/requestId/refunded). Manual make-goods are ink grants:
+select public.grant_ink('<uuid>', 25, 'refund: provider outage 2026-09-17');
 
 -- a request id that was charged but not refunded (e.g. to decide on a manual grant)
 select user_id, route, units, model, created_at from public.usage_events where request_id = '<request id>';
@@ -371,3 +393,47 @@ select user_id, route, units, model, created_at from public.usage_events where r
 ### 13.2 Usage by day
 
 Migration `supabase/migrations/20260927000000_usage_by_day.sql` (idempotent; `npm run db:push`). One read-only RPC, `usage_by_day(p_time_zone text default 'UTC')` -> rows `{day date, route text, events int, credits int}`: the caller's own `usage_events` for the current credit period (the same UTC calendar month `credit_summary()` counts, so the credits add up to its `used`), grouped by calendar day in `p_time_zone` and by route, newest day first. It is `security invoker`, so the existing `usage_events: owner select` policy decides the rows; `execute` for `authenticated` only (anon gets `42501` / HTTP 401). An unknown zone raises `22023` (HTTP 400). The account page's Usage card is its only caller. Verify with `npm run db:verify` (checks named `usage_by_day:`).
+
+### 13.3 Sign-up consent, and creating an account by hand
+
+Migration `supabase/migrations/20261003010000_signup_consent.sql` (idempotent). Sign-up has one required box: "I agree to the Terms and Privacy Policy. I'm 13 or older, or I'm a parent or guardian setting this up for my child." The form sends `terms_version` (`TERMS_VERSION` in `src/lib/legal.ts`, a date) in the new account's user metadata; the database keeps it on the profile:
+
+| Column | Meaning |
+| --- | --- |
+| `profiles.accepted_terms_at` | when the account was created with the box ticked (the account's `created_at`) |
+| `profiles.terms_version` | which version of that text it agreed to (`YYYY-MM-DD`) |
+
+Both are null for accounts made before the migration; those are never asked. Users can read their own, never write them. A version is a real calendar date from 2026-01-01 to tomorrow (UTC), so changing `TERMS_VERSION` needs no migration.
+
+**Deploy order.** Apply this migration only **after** the frontend that sends `terms_version` is live (`docs/RUNBOOK-billing.md` section 7, step 5). The other way round, every sign-up from the old form is refused until the deploy. The new frontend without the migration is harmless (the version waits in the account's metadata), and the migration's backfill records it for the accounts made in between. It is re-runnable: the trigger is created only when missing (no `drop trigger` on `auth.users`, which needs ownership the hosted `postgres` role may not have), the functions are create-or-replace, and the backfill fills only empty profiles.
+
+**No acceptance, no account.** A `BEFORE INSERT` trigger on `auth.users` (`auth_users_require_terms`) refuses any new user without a well-formed `user_metadata.terms_version`: a client that skips the box, a page cached from before the release, or a direct `POST /auth/v1/signup`. The sign-up page then says "We couldn't create your account. Reload this page and try again." GoTrue's admin API and the public sign-up look the same to a trigger, so this applies to accounts made with the service role too:
+
+- **The dashboard's *Authentication -> Add user* is refused** (it cannot send metadata). Ask the person to sign up, or create the account with the admin API and say which version they agreed to:
+
+  ```bash
+  curl -X POST "$SUPABASE_URL/auth/v1/admin/users" \
+    -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"email":"student@example.com","password":"...","email_confirm":true,"user_metadata":{"terms_version":"2026-10-03"}}'
+  ```
+
+- **Invites.** The dashboard's *Invite user* is refused for the same reason. An invited person sets a password from the email and never sees the box, so invite only someone who (or whose parent) has agreed to the Terms and Privacy Policy some other way, and say which version:
+
+  ```bash
+  curl -X POST "$SUPABASE_URL/auth/v1/invite" \
+    -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"email":"student@example.com","data":{"terms_version":"2026-10-03"}}'
+  ```
+
+  (`supabase.auth.admin.inviteUserByEmail(email, { data: { terms_version } })` from code.) For a closed cohort it is simpler to leave sign-ups on and share the link: everyone then ticks the box themselves.
+- The scripts (`seed-local`, `verify-rls`, the DB tests) send it themselves (`scripts/lib/supabaseHttp.mjs`).
+
+```sql
+-- who agreed to what
+select u.email, p.terms_version, p.accepted_terms_at
+from public.profiles p join auth.users u on u.id = p.user_id order by p.accepted_terms_at desc nulls last;
+```
+
+When the Terms or Privacy Policy change in a way that matters, bump `TERMS_VERSION`; new sign-ups record the new date. Asking existing accounts to agree again is not built.

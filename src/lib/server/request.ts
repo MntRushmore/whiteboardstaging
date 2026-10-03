@@ -45,29 +45,50 @@ function describeIssues(error: z.ZodError): string {
 }
 
 /**
- * Parse and validate a JSON request body. Returns `{ data }` on success or a
- * ready-to-return 400 `invalid_request` response.
+ * Why a body was refused:
+ *  - `unreadable` it never arrived in full: the client went away while it was on its way (the
+ *                 Live clients abort on their timeout, or when a newer request for the same line
+ *                 supersedes it), so nobody reads the answer;
+ *  - `malformed`  it arrived, but is not JSON;
+ *  - `invalid`    JSON that the route's schema refuses (`issues` says where).
+ */
+export type BodyFailure = "unreadable" | "malformed" | "invalid";
+
+export type BodyIssue = { path: string; message: string };
+
+/**
+ * Parse and validate a JSON request body. Returns `{ data }` on success or a ready-to-return 400
+ * `invalid_request` response, with `failure` (and `issues`) for the caller's log.
  */
 export async function parseJsonBody<S extends z.ZodTypeAny>(
   req: Request,
   schema: S,
-): Promise<{ data: z.infer<S> } | { response: Response }> {
+): Promise<{ data: z.infer<S> } | { response: Response; failure: BodyFailure; issues?: BodyIssue[] }> {
+  let text: string;
+  try {
+    text = await req.text();
+  } catch {
+    return { response: json(400, "invalid_request", "The request body did not arrive in full."), failure: "unreadable" };
+  }
   let raw: unknown;
   try {
-    raw = await req.json();
+    raw = JSON.parse(text);
   } catch {
-    return { response: json(400, "invalid_request", "Request body must be valid JSON.") };
+    // A body cut short by the client going away can also end cleanly, just short.
+    const failure: BodyFailure = req.signal?.aborted ? "unreadable" : "malformed";
+    return { response: json(400, "invalid_request", "Request body must be valid JSON."), failure };
   }
 
   const result = schema.safeParse(raw);
   if (!result.success) {
+    const issues = result.error.issues.map((issue) => ({
+      path: issue.path.join("."),
+      message: issue.message,
+    }));
     return {
-      response: json(400, "invalid_request", `Invalid request: ${describeIssues(result.error)}`, {
-        issues: result.error.issues.map((issue) => ({
-          path: issue.path.join("."),
-          message: issue.message,
-        })),
-      }),
+      response: json(400, "invalid_request", `Invalid request: ${describeIssues(result.error)}`, { issues }),
+      failure: "invalid",
+      issues,
     };
   }
 
@@ -77,6 +98,9 @@ export async function parseJsonBody<S extends z.ZodTypeAny>(
 /* ------------------------------------------------------------------------- */
 /* Error mapping                                                              */
 /* ------------------------------------------------------------------------- */
+
+/** What the student reads when the provider account behind the tutor has run dry. */
+export const PROVIDER_UNAVAILABLE_MESSAGE = "The tutor is unavailable right now. Try again in a few minutes.";
 
 /**
  * Map an error thrown inside a route handler to the shared error contract and
@@ -88,8 +112,10 @@ export function errorResponse(
   context: Record<string, unknown> = {},
 ): Response {
   if (err instanceof CreditsExhaustedError) {
-    log.warn({ ...context }, "OpenRouter credits exhausted");
-    return json(402, "credits_exhausted", err.message);
+    // The operator's provider account, not the student's ink: a 503 the student can only wait out
+    // (a 402 would tell them to buy ink that could not help). Logged as an error so it gets seen.
+    log.error({ ...context }, "OpenRouter credits exhausted: top up the provider account");
+    return json(503, "upstream_error", PROVIDER_UNAVAILABLE_MESSAGE);
   }
 
   if (err instanceof UpstreamError) {

@@ -1,6 +1,6 @@
 import { AnnotationSchema, CheckRequestSchema, LIVE_TIMING } from "@/lib/live/contracts";
 import { getLiveModels } from "@/lib/env";
-import { enforceCredits } from "@/lib/server/billing";
+import { enforceInk } from "@/lib/server/billing";
 import { streamWithFallback } from "@/lib/server/openrouter";
 import { jsonlToEvents, sseResponse, type SseEmit } from "@/lib/server/sse";
 import { buildCheckMessages } from "@/lib/server/prompts/check";
@@ -35,13 +35,13 @@ async function* textDeltas(
 export async function POST(req: Request) {
   const ctx = await livePreamble(req, "check", "liveCheck", CheckRequestSchema);
   if ("response" in ctx) return ctx.response;
-  const { requestId, token, log, data, startedAt } = ctx;
+  const { requestId, token, user, log, data, startedAt } = ctx;
 
   const models = getLiveModels();
 
-  // Charge credits before opening the stream (a 402/503 JSON body, not SSE). The charge is
+  // Charge ink before opening the stream (a 402/503 JSON body, not SSE). The charge is
   // refunded if the stream fails before the first annotation (runChargedStream), never after.
-  const billing = await enforceCredits({ token, route: "live/check", requestId, model: models.check }, log);
+  const billing = await enforceInk({ token, route: "live/check", requestId, model: models.check }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   const messages = buildCheckMessages(data);
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
     req,
     async (emit, signal) => {
       let sent = 0;
-      await runChargedStream({ token, requestId }, log, () => sent > 0, async () => {
+      await runChargedStream({ userId: user.id, requestId }, log, () => sent > 0, async () => {
         let model = models.check;
         emit("meta", { requestId, model });
 

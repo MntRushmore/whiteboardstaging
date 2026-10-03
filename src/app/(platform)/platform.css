@@ -49,3 +49,28 @@ body:has([data-platform]) {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+
+/* The page above the legal footer fills the window: a short page (sign-in on a laptop or an iPad)
+   shows the footer without scrolling, and a long one pushes it below its content. Each page's root
+   grows (`flex: 1 0 auto`) instead of taking a full window height of its own, which used to put the
+   footer one scroll down on every platform page. */
+[data-platform] {
+  display: flex;
+  min-height: 100dvh;
+  flex-direction: column;
+}
+[data-platform] > footer {
+  flex: none;
+}
+
+/* iPhone Safari zooms the page in when a text field under 16 px takes focus, and leaves it zoomed:
+   Arc's fields are 14 px (--text-sm). On a touch screen every text field on a platform page (the
+   sign-in and reset forms, the boards search and rename, /account's name and delete confirmation,
+   the bug report) is at least 16 px; a mouse keeps the 14 px look. Specific enough to beat the
+   fields' own one-class rules; the dialogs portal to body, which this still matches. The board
+   route sets maximum-scale=1 instead. */
+@media (pointer: coarse) {
+  body:has([data-platform]) :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="hidden"], [type="button"], [type="submit"]), textarea, select) {
+    font-size: max(16px, 1em);
+  }
+}

@@ -1,15 +1,61 @@
 import type { BackupPayload, LocalBackup } from "./types";
 
 export const BACKUP_KEY_PREFIX = "agathon.unsaved.";
+/**
+ * One backup's budget, in bytes as Safari counts them (`storedBytes`). Safari gives an origin
+ * 5 MB of localStorage, so two backups this size fit beside the session and the rest; Chromium's
+ * 10 MB (5.2 M characters) holds more.
+ */
 export const BACKUP_MAX_BYTES = 2_000_000;
+/**
+ * A backup of a board older than this may be evicted to make room for a newer backup of the same
+ * board (`write`): a backup is replayed the next time its board opens, so on a board that is open
+ * again one this old is an earlier session's leftover. Another board's backup is never evicted.
+ */
+export const STALE_BACKUP_MS = 7 * 24 * 60 * 60 * 1000;
 
-export function backupKey(boardId: string): string {
-  return `${BACKUP_KEY_PREFIX}${boardId}`;
+/** Any UTF-16 code unit above U+00FF: WebKit then stores the whole string as UTF-16. */
+const WIDE_CHAR = /[Ā-￿]/;
+
+/**
+ * Bytes `value` takes in Safari's localStorage. WebKit keeps a string whose characters are all
+ * Latin-1 at 1 byte each, but the whole string at 2 bytes each once any character is above U+00FF
+ * (one "√" in a recognized line), and counts those bytes against its 5 MB quota: the same 2 M
+ * characters cost 2 MB or 4 MB. Chromium counts 2 bytes per character either way, against 10 MB,
+ * so the bound is conservative there too.
+ */
+export function storedBytes(value: string): number {
+  return WIDE_CHAR.test(value) ? value.length * 2 : value.length;
+}
+
+/** The browser refused a write because the origin's storage is full (not because it is blocked). */
+export function isQuotaError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const { name, code } = error as { name?: unknown; code?: unknown };
+  // QuotaExceededError (code 22) everywhere; NS_ERROR_DOM_QUOTA_REACHED (1014) in older Firefox
+  return name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED" || code === 22 || code === 1014;
+}
+
+/**
+ * `agathon.unsaved.<boardId>.<tabId>`: one key per tab (per mounted board, really), so two tabs
+ * of a board never overwrite or clear each other's backup. Without `tabId` it is the key every
+ * tab shared before 2026-10-03, still read (and removed) when a board opens.
+ */
+export function backupKey(boardId: string, tabId?: string): string {
+  return `${BACKUP_KEY_PREFIX}${boardId}${tabId ? `.${tabId}` : ""}`;
+}
+
+/** A random id for this tab's backup key (and its Web Lock, see tabLock.ts). */
+export function newTabId(): string {
+  const c = (globalThis as { crypto?: Crypto }).crypto;
+  return c?.randomUUID ? c.randomUUID().slice(0, 13) : Math.random().toString(36).slice(2, 15);
 }
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((v) => typeof v === "string");
 }
+
+const isMap = (v: unknown): boolean => !!v && typeof v === "object" && !Array.isArray(v);
 
 /** Shape check for what `read` finds in storage; anything else is treated as absent. */
 export function isBackupPayload(value: unknown): value is BackupPayload {
@@ -17,11 +63,13 @@ export function isBackupPayload(value: unknown): value is BackupPayload {
   const v = value as Record<string, unknown>;
   const snapshot = v.snapshot as Record<string, unknown> | undefined;
   if (!snapshot || typeof snapshot !== "object") return false;
-  if (!snapshot.store || typeof snapshot.store !== "object" || Array.isArray(snapshot.store)) return false;
+  if (!isMap(snapshot.store)) return false;
   if (!snapshot.schema || typeof snapshot.schema !== "object") return false;
   if (!(v.baseVersion === null || typeof v.baseVersion === "number")) return false;
   if (!isStringArray(v.changed) || !isStringArray(v.removed)) return false;
   if (typeof v.at !== "number") return false;
+  if (v.base !== undefined && !isMap(v.base)) return false;
+  if (v.sent !== undefined && !isMap(v.sent)) return false;
   return true;
 }
 
@@ -33,51 +81,181 @@ function defaultStorage(): Storage | undefined {
   }
 }
 
+/** One backup found on the device: its key, the tab that wrote it (null: the old shared key) and the payload (null: unreadable). */
+export interface StoredBackup {
+  key: string;
+  tabId: string | null;
+  payload: BackupPayload | null;
+}
+
+/** This tab's backup (`LocalBackup`, what the save queue writes) plus the device-wide view a restore needs. */
+export interface DeviceBackups extends LocalBackup {
+  readonly tabId: string;
+  /** every backup of `boardId` on this device: other tabs', earlier page loads', the old shared key, this tab's */
+  list(boardId: string): StoredBackup[];
+  remove(key: string): void;
+  /**
+   * These keys' records are now this tab's own unsaved changes (a restore replayed them): until
+   * they are removed, they are the first backups `write` evicts when storage is full.
+   */
+  absorb(keys: readonly string[]): void;
+}
+
 /**
- * Unsaved-changes backup in `localStorage` under `agathon.unsaved.<boardId>`.
- * `write` returns false (and clears any stale entry) when the payload exceeds `maxBytes`
- * or storage is unavailable/full; `read` returns null for anything malformed.
+ * Unsaved-changes backup in `localStorage` under `agathon.unsaved.<boardId>.<tabId>`.
+ *
+ * `write` keeps a backup within `maxBytes` as Safari counts them (`storedBytes`), dropping the
+ * optional `base` / `sent` copies (they only sharpen a restore) when the whole payload is over
+ * that or does not fit in what storage has left. When storage is full it then makes room by
+ * evicting, oldest first, this board's backups this tab has restored (`absorb`), unreadable ones,
+ * and this board's backups older than STALE_BACKUP_MS; never another board's backup and never
+ * another tab's recent one. If the new backup still does not fit, the evicted backups are put back,
+ * and if it is over `maxBytes` even trimmed nothing is evicted: `write` returns false and leaves
+ * this tab's previous backup in place (older unsaved work beats none, and a restore is record by
+ * record and base-aware; the save pill says the work is not backed up on this device).
+ * `read` returns null for anything malformed.
  */
-export function createLocalStorageBackup(storage: Storage | undefined = defaultStorage(), maxBytes = BACKUP_MAX_BYTES): LocalBackup {
-  const clear = (boardId: string): void => {
+export function createLocalStorageBackup(
+  storage: Storage | undefined = defaultStorage(),
+  maxBytes = BACKUP_MAX_BYTES,
+  tabId: string = newTabId(),
+  now: () => number = Date.now,
+): DeviceBackups {
+  /** other tabs' backup keys whose records this tab carries now (restored) */
+  const absorbed = new Set<string>();
+  const remove = (key: string): void => {
+    absorbed.delete(key);
     try {
-      storage?.removeItem(backupKey(boardId));
+      storage?.removeItem(key);
     } catch {
       /* storage unavailable */
     }
   };
+  const parse = (raw: string | null | undefined): BackupPayload | null => {
+    if (!raw) return null;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return isBackupPayload(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+  const clear = (boardId: string): void => remove(backupKey(boardId, tabId));
+
+  /** "ok"; "full" (over quota: making room may help); "failed" (storage blocked or broken) */
+  const trySet = (store: Storage, key: string, raw: string): "ok" | "full" | "failed" => {
+    try {
+      store.setItem(key, raw);
+      return "ok";
+    } catch (e) {
+      return isQuotaError(e) ? "full" : "failed";
+    }
+  };
+
+  /**
+   * Backups `write` may evict to make room for `boardId`'s, in the order it evicts them: this
+   * board's backups this tab has restored (`absorb`: their records are in the one being written),
+   * unreadable ones (any board: nothing can restore them), then this board's own week-old ones.
+   * Never `ownKey`, and never another board's readable backup, however old: it may be all that
+   * board has of the student's unsaved work.
+   */
+  const evictable = (store: Storage, ownKey: string, boardId: string): string[] => {
+    const board = backupKey(boardId);
+    const found: Array<{ key: string; rank: number; at: number }> = [];
+    try {
+      for (let i = 0; i < store.length; i++) {
+        const key = store.key(i);
+        if (!key || key === ownKey || !key.startsWith(BACKUP_KEY_PREFIX)) continue;
+        const payload = parse(store.getItem(key));
+        const at = payload?.at ?? Number.NEGATIVE_INFINITY;
+        const sameBoard = key === board || key.startsWith(`${board}.`);
+        if (absorbed.has(key)) found.push({ key, rank: 0, at });
+        else if (!payload) found.push({ key, rank: 1, at });
+        else if (sameBoard && now() - payload.at > STALE_BACKUP_MS) found.push({ key, rank: 2, at });
+      }
+    } catch {
+      /* storage unavailable */
+    }
+    return found.sort((a, b) => a.rank - b.rank || a.at - b.at).map((f) => f.key);
+  };
+
   return {
+    tabId,
     read(boardId) {
       try {
-        const raw = storage?.getItem(backupKey(boardId));
-        if (!raw) return null;
-        const parsed: unknown = JSON.parse(raw);
-        return isBackupPayload(parsed) ? parsed : null;
+        return parse(storage?.getItem(backupKey(boardId, tabId)));
       } catch {
         return null;
       }
     },
     write(boardId, payload) {
       if (!storage) return false;
-      let raw: string;
+      const key = backupKey(boardId, tabId);
+      // What to store, best first: the whole payload, then without the base copies.
+      const forms: string[] = [];
       try {
-        raw = JSON.stringify(payload);
+        const whole = JSON.stringify(payload);
+        if (storedBytes(whole) <= maxBytes) forms.push(whole);
+        if (payload.base || payload.sent) {
+          const { base: _base, sent: _sent, ...plain } = payload;
+          void _base;
+          void _sent;
+          const trimmed = JSON.stringify(plain);
+          if (storedBytes(trimmed) <= maxBytes) forms.push(trimmed);
+        }
       } catch {
-        clear(boardId);
         return false;
       }
-      if (raw.length > maxBytes) {
-        clear(boardId);
-        return false;
+      if (forms.length === 0) return false;
+      for (const raw of forms) {
+        const result = trySet(storage, key, raw);
+        if (result !== "full") return result === "ok";
       }
-      try {
-        storage.setItem(backupKey(boardId), raw);
+      // Storage is full: make room, one eviction at a time, for the smallest form. If that is not
+      // enough, everything evicted that could still be restored goes back: an eviction only ever
+      // happens for a write that then succeeds (unreadable entries stay gone: nothing reads them).
+      const smallest = forms[forms.length - 1];
+      const evicted: Array<[string, string]> = [];
+      let result: "ok" | "full" | "failed" = "full";
+      for (const victim of evictable(storage, key, boardId)) {
+        let raw: string | null = null;
+        try {
+          raw = storage.getItem(victim);
+          storage.removeItem(victim);
+        } catch {
+          continue;
+        }
+        if (raw !== null && parse(raw)) evicted.push([victim, raw]);
+        result = trySet(storage, key, smallest);
+        if (result !== "full") break;
+      }
+      if (result === "ok") {
+        for (const [victim] of evicted) absorbed.delete(victim);
         return true;
-      } catch {
-        clear(boardId);
-        return false;
       }
+      for (const [victim, raw] of evicted) trySet(storage, victim, raw);
+      return false;
     },
     clear,
+    list(boardId) {
+      const shared = backupKey(boardId);
+      const out: StoredBackup[] = [];
+      try {
+        if (!storage) return out;
+        for (let i = 0; i < storage.length; i++) {
+          const key = storage.key(i);
+          if (key === shared || key?.startsWith(`${shared}.`)) {
+            out.push({ key, tabId: key === shared ? null : key.slice(shared.length + 1), payload: parse(storage.getItem(key)) });
+          }
+        }
+      } catch {
+        /* storage unavailable: nothing to restore */
+      }
+      return out;
+    },
+    remove,
+    absorb(keys) {
+      for (const key of keys) absorbed.add(key);
+    },
   };
 }

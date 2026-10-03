@@ -17,9 +17,9 @@ import { isLiveMeta, LIVE_LIMITS, LIVE_TIMING, type LiveStatus } from "@/lib/liv
 import { clearLiveError, liveStore, retryLiveError, type LiveError } from "@/lib/live/liveStore";
 import { scheduleLiveWrite } from "@/lib/live/liveWrite";
 import { useLiveSettings } from "@/lib/live/liveSettings";
-import { ACCOUNT_PATH } from "@/lib/billing/viewModel";
+import { openInkDialog } from "@/lib/billing/inkDialog";
 import { LIVE_COPY } from "./copy";
-import { liveErrorView, secondsLeftFor } from "./errorView";
+import { liveErrorView, pillPrimary, secondsLeftFor } from "./errorView";
 import { boardMenuView, statusPillView } from "./toolbar";
 
 interface LiveStatusPillProps {
@@ -39,6 +39,8 @@ interface LiveStatusPillProps {
   onShowModeInfo: () => void;
   /** opens the bug report dialog (the old Report button in the bar) */
   onReportProblem: () => void;
+  /** the bar's ink meter shows "Get ink" (ink low or gone): an out-of-ink error leaves it to the meter */
+  meterOffersInk?: boolean;
 }
 
 /** meta key that remembers a shape's opacity while "Hide AI shapes" is on */
@@ -135,8 +137,9 @@ export function useLiveErrorClock(error: LiveError | null): number {
 const ERROR_BUTTON = "rounded-full px-2 py-0.5 text-[11px] font-medium";
 
 /** The pill's error face: message + the one way out (Retry / Sign in) + Dismiss. */
-function LiveErrorFace({ error, now, canRetry }: { error: LiveError; now: number; canRetry: boolean }) {
+function LiveErrorFace({ error, now, canRetry, meterOffersInk }: { error: LiveError; now: number; canRetry: boolean; meterOffersInk: boolean }) {
   const view = liveErrorView(error, now);
+  const primary = pillPrimary(view, meterOffersInk);
   return (
     <>
       <span className="flex min-w-0 flex-col leading-tight">
@@ -149,7 +152,7 @@ function LiveErrorFace({ error, now, canRetry }: { error: LiveError; now: number
           </span>
         )}
       </span>
-      {view.primary === "retry" && canRetry && (
+      {primary === "retry" && canRetry && (
         <button
           type="button"
           className={`${ERROR_BUTTON} ml-1 bg-red-50 text-red-700 hover:bg-red-100 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-red-50`}
@@ -162,20 +165,26 @@ function LiveErrorFace({ error, now, canRetry }: { error: LiveError; now: number
           {view.secondsLeft ? ` (${view.secondsLeft})` : ""}
         </button>
       )}
-      {view.primary === "signin" && (
+      {primary === "signin" && (
         <Link href="/login" className={`${ERROR_BUTTON} ml-1 bg-red-50 text-red-700 hover:bg-red-100`} data-testid="live-error-signin">
           {LIVE_COPY.errors.signIn}
         </Link>
       )}
-      {view.primary === "account" && (
-        <Link href={ACCOUNT_PATH} className={`${ERROR_BUTTON} ml-1 bg-red-50 text-red-700 hover:bg-red-100`} data-testid="live-error-account">
-          {LIVE_COPY.errors.viewPlan}
-        </Link>
+      {primary === "ink" && (
+        // The board's ink dialog (packs open in a new tab), so the student never leaves the board.
+        <button
+          type="button"
+          className={`${ERROR_BUTTON} ml-1 bg-red-50 text-red-700 hover:bg-red-100`}
+          onClick={openInkDialog}
+          data-testid="live-error-ink"
+        >
+          {LIVE_COPY.errors.getInk}
+        </button>
       )}
       <button
         type="button"
         className={`${ERROR_BUTTON} text-gray-500 hover:bg-gray-100 hover:text-gray-800`}
-        onClick={clearLiveError}
+        onClick={() => clearLiveError()}
         data-testid="live-error-dismiss"
       >
         {LIVE_COPY.errors.dismiss}
@@ -194,6 +203,7 @@ export function LiveStatusPill({
   onClearMarks,
   onShowModeInfo,
   onReportProblem,
+  meterOffersInk = false,
 }: LiveStatusPillProps) {
   const status = useValue(liveStore.status);
   const recognizer = useValue(liveStore.recognizer);
@@ -266,7 +276,7 @@ export function LiveStatusPill({
     >
       <span className="live-pill__dot" aria-hidden />
       {view.showError && lastError ? (
-        <LiveErrorFace error={lastError} now={now} canRetry={canRetry} />
+        <LiveErrorFace error={lastError} now={now} canRetry={canRetry} meterOffersInk={meterOffersInk} />
       ) : (
         <span className={`live-pill__label ${view.fading ? "live-pill__label--fading" : ""}`}>{view.label}</span>
       )}
@@ -283,7 +293,9 @@ export function LiveStatusPill({
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="ml-0.5 flex h-6 w-6 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+            // a 24 px dot of a button is small under a finger: the tap area reaches to the pill's
+            // edges (not left, where Dismiss / Clear marks sit)
+            className="relative ml-0.5 flex h-6 w-6 items-center justify-center rounded-full text-gray-500 after:absolute after:-inset-y-1.5 after:-right-1.5 after:left-0 hover:bg-gray-100 hover:text-gray-800"
             aria-label={LIVE_COPY.pill.menuLabel}
             data-testid="board-menu-trigger"
           >

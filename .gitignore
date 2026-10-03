@@ -46,3 +46,6 @@ supabase/.branches
 *.tsbuildinfo
 next-env.d.ts
 .gstack/
+
+# Database dumps from the go-live runbooks (students' work; never commit)
+/backups/

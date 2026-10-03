@@ -16,7 +16,7 @@ import {
 
 /**
  * Lecture mode's three calls, like the board chat's (`src/lib/live/chat/client.ts`): `apiJson` sends
- * the signed-in user's token and turns a failure into an `ApiError` (401, 402 `credits_exhausted`,
+ * the signed-in user's token and turns a failure into an `ApiError` (401, 402 `ink_empty`,
  * 429 with its `retryAfterMs`), and a 2xx that does not match the contract is an
  * `UnexpectedLectureResponse`, never guessed at.
  */

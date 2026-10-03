@@ -76,10 +76,12 @@ export const LIVE_COPY = {
     /** seconds until the rate limit lifts */
     rateLimited: (seconds: number) => `Slowing down — try again in ${seconds} s`,
     rateLimitedReady: "You can try again now",
-    /** 402 without a usable server message; the account page shows the plan and reset date */
-    credits: "This month's credits are used up — see your account",
+    /** 402 without a usable server message; "Get ink" opens the packs */
+    ink: "You're out of ink — grab an ink pack to keep the tutor going",
     upstream: "The tutor service had a hiccup",
     timeout: "Reading took too long",
+    /** a check or a solve whose stream went silent (a stalled connection) */
+    answerTimeout: "The tutor took too long to answer",
     unknown: "Something went sideways",
     /** appended once the same call has failed more than once */
     attempts: (n: number) => `tried ${n} times`,
@@ -90,8 +92,8 @@ export const LIVE_COPY = {
     retry: "Retry",
     dismiss: "Dismiss",
     signIn: "Sign in",
-    /** 402: link to /account (plan, remaining credits, reset date) */
-    viewPlan: "View plan",
+    /** 402: opens the ink dialog (the packs) */
+    getInk: "Get ink",
     /** aria label of the error region */
     region: "Live needs attention",
   },
@@ -128,6 +130,10 @@ export const ASSET_COPY = {
   offloadPartial: "Some images could not be moved to storage; the board still saves.",
   /** autosave refused (snapshot over the hard limit) or the DB rejected the row */
   boardTooLarge: "Board too large to save — remove some images",
+  /** autosave refused and there are no images left to move out: only less on the board helps */
+  boardFull: "Board full — new work here isn't saved. Start a new board",
+  /** the last save was above 80 % of the hard limit */
+  boardNearlyFull: "Board almost full — start a new board soon",
   /** an upload fell back to embedding the image in the board (shown once per session) */
   inlineFallback: "Couldn't upload this image to storage; it was saved inside the board instead.",
 } as const;

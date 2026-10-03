@@ -8,17 +8,16 @@ import { AuthErrorBanner, useAuth } from "@/components/AuthProvider";
 import { AppHeader } from "@/components/app/AppHeader";
 import { Button } from "@/components/ui/button";
 import { ProfileCard } from "@/components/account/ProfileCard";
-import { PlanCreditsCard } from "@/components/account/PlanCreditsCard";
-import { PlansGrid } from "@/components/account/PlansGrid";
+import { InkCard } from "@/components/account/InkCard";
+import { InkPacksGrid } from "@/components/account/InkPacksGrid";
+import { PurchaseHistory } from "@/components/account/PurchaseHistory";
 import { UsageCard } from "@/components/account/UsageCard";
 import { DangerZone } from "@/components/account/DangerZone";
-import { UpgradeReturnNotice } from "@/components/account/UpgradeReturnNotice";
-import { portalUrl } from "@/lib/billing/checkout";
-import { billingLinks } from "@/lib/billing/links";
-import { useCreditSummary } from "@/lib/billing/useCreditSummary";
+import { InkReturnNotice } from "@/components/account/InkReturnNotice";
+import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { ACCOUNT_COPY, accountPageStateFor } from "@/lib/billing/accountState";
 
-/** Shaped like the plan and usage cards, so the page does not jump when they arrive. */
+/** Shaped like the ink and usage cards, so the page does not jump when they arrive. */
 function AccountSkeleton() {
   const bar = "animate-pulse rounded bg-muted";
   return (
@@ -47,20 +46,19 @@ function AccountSkeleton() {
 }
 
 /**
- * /account: plan & credits, usage, plans, profile and account deletion, in one
- * ~768 px column. One column on purpose: the cards differ a lot in height (usage
- * grows with the month), a single reading order suits a settings page, and the
- * plans grid and usage rows need the width more than a sidebar would give them.
+ * /account: ink, the packs to buy more, purchase history, usage, profile and account
+ * deletion, in one ~768 px column. One column on purpose: the cards differ a lot in height
+ * (usage grows with the days), a single reading order suits a settings page, and the packs
+ * grid and usage rows need the width more than a sidebar would give them.
  *
- * Credits come first because both ways in are about them (the header's plan badge
- * and the low-credit banner link here). Auth-gated like the dashboard; every card
- * loads its own data through the user's own Supabase session (RLS / RPCs), nothing
- * here talks to /api/*.
+ * Ink comes first because every way in is about it (the header's ink meter and its "Get ink",
+ * a Payment Link's return to ?ink=<pack>). Auth-gated like the dashboard; every card loads its
+ * own data through the user's own Supabase session (RLS / RPCs), nothing here talks to /api/*.
  */
 export default function AccountPage() {
   const router = useRouter();
   const { user, loading: authLoading, authError } = useAuth();
-  const credits = useCreditSummary();
+  const ink = useInkSummary();
 
   useEffect(() => {
     if (!authLoading && !user && !authError) {
@@ -70,7 +68,7 @@ export default function AccountPage() {
 
   if (!user && authError) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
+      <div className="flex grow items-center justify-center bg-gray-50 p-4">
         <div className="w-full max-w-md">
           <AuthErrorBanner />
         </div>
@@ -80,19 +78,18 @@ export default function AccountPage() {
 
   if (authLoading || !user) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50">
+      <div className="flex grow items-center justify-center bg-gray-50">
         <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
       </div>
     );
   }
 
-  const pageState = accountPageStateFor(credits.state);
+  const pageState = accountPageStateFor(ink.state);
   const email = user.email ?? "";
   const payer = { userId: user.id, email };
-  const manageHref = portalUrl(billingLinks().portal, email);
 
   return (
-    <div className="min-h-screen bg-muted/40">
+    <div className="grow bg-muted/40">
       <AppHeader />
       <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         <AuthErrorBanner className="mb-4" />
@@ -108,9 +105,9 @@ export default function AccountPage() {
           <p className="mt-1 text-sm text-muted-foreground">{ACCOUNT_COPY.subtitle}</p>
         </div>
 
-        {/* Back from a Payment Link (?upgraded=<plan>): waits for the webhook's plan change. */}
+        {/* Back from a Payment Link (?ink=<pack>): waits for the webhook's ink. */}
         <Suspense fallback={null}>
-          <UpgradeReturnNotice />
+          <InkReturnNotice />
         </Suspense>
 
         {pageState === "loading" ? (
@@ -125,25 +122,18 @@ export default function AccountPage() {
               <AlertTriangle className="w-8 h-8 text-red-600" />
             </div>
             <h3 className="text-lg font-semibold">{ACCOUNT_COPY.loadFailedTitle}</h3>
-            <p className="text-muted-foreground mt-2 max-w-md">{credits.error}</p>
-            <Button onClick={credits.reload} className="mt-6" variant="outline" disabled={credits.loading}>
-              <RefreshCw className={`w-4 h-4 mr-2 ${credits.loading ? "animate-spin" : ""}`} />
+            <p className="text-muted-foreground mt-2 max-w-md">{ink.error}</p>
+            <Button onClick={ink.reload} className="mt-6" variant="outline" disabled={ink.loading}>
+              <RefreshCw className={`w-4 h-4 mr-2 ${ink.loading ? "animate-spin" : ""}`} />
               {ACCOUNT_COPY.retry}
             </Button>
           </div>
         ) : (
           <div className="space-y-6" data-state="ready">
-            {credits.summary && (
-              <PlanCreditsCard
-                summary={credits.summary}
-                error={credits.error}
-                refreshing={credits.loading}
-                onRetry={credits.reload}
-                manageHref={manageHref}
-              />
-            )}
-            <UsageCard usedCredits={credits.summary?.used} />
-            <PlansGrid summary={credits.summary} payer={payer} />
+            {ink.summary && <InkCard summary={ink.summary} error={ink.error} refreshing={ink.loading} onRetry={ink.reload} />}
+            <InkPacksGrid payer={payer} lastPurchaseId={ink.summary?.last_purchase?.id ?? null} />
+            <PurchaseHistory purchases={ink.summary?.purchases} />
+            <UsageCard usedInk={ink.summary?.used} />
             <ProfileCard userId={user.id} email={email} />
             <DangerZone email={email} />
           </div>

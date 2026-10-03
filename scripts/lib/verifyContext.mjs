@@ -96,7 +96,8 @@ export async function bootstrapVerifyContext(cfg) {
       });
       const allSessions = [a, b, ...extras.map((e) => e.session)];
       const ids = `(${allSessions.map((s) => s.userId).join(",")})`;
-      // bug_reports.user_id is ON DELETE SET NULL, so remove them before the users.
+      // bug_reports go with their account (ON DELETE CASCADE since 20261003010100); removed first
+      // anyway so a project without that migration is left clean too.
       await service.rest("DELETE", "bug_reports", { query: { user_id: `in.${ids}` } });
       for (const c of [clientA, clientB, ...extraClients]) {
         for (const key of c.uploaded) {

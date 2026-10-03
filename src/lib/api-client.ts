@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 /**
  * Error thrown by API helpers when the server responds with a non-2xx status.
  * `code` is the machine-readable `error` field returned by our routes
- * (e.g. "unauthorized", "rate_limited", "credits_exhausted").
+ * (e.g. "unauthorized", "rate_limited", "ink_empty").
  */
 export class ApiError extends Error {
   status: number;
@@ -68,6 +68,29 @@ function retryAfterMsFrom(body: ApiErrorBody, headers: Headers): number | undefi
 }
 
 /**
+ * Window event after a paid call (a POST to /api/live/*) came back: the ink surfaces re-read the
+ * balance. `detail.remaining` is set for a 402, whose body already carries the balance.
+ */
+export const INK_SPENT_EVENT = "agathon:ink-spent";
+
+/** Tells the ink meter that a paid call happened (no-op outside the browser and for free calls). */
+export function noteInkSpend(input: string, method: string, res: Response): void {
+  if (typeof window === "undefined" || method.toUpperCase() !== "POST" || !input.startsWith("/api/live/")) return;
+  if (res.status === 402) {
+    void res
+      .clone()
+      .json()
+      .then((body: { remaining?: unknown }) => {
+        const remaining = typeof body?.remaining === "number" ? body.remaining : undefined;
+        window.dispatchEvent(new CustomEvent(INK_SPENT_EVENT, { detail: { remaining } }));
+      })
+      .catch(() => window.dispatchEvent(new CustomEvent(INK_SPENT_EVENT, { detail: {} })));
+  } else if (res.ok) {
+    window.dispatchEvent(new CustomEvent(INK_SPENT_EVENT, { detail: {} }));
+  }
+}
+
+/**
  * fetch() that attaches the current Supabase access token as a Bearer token.
  * All /api/* routes require it. Throws ApiError(401, "unauthorized") when
  * there is no active session so callers can redirect to /login.
@@ -80,7 +103,9 @@ export async function authedFetch(input: string, init: RequestInit = {}): Promis
   }
   const headers = new Headers(init.headers ?? {});
   headers.set("Authorization", `Bearer ${token}`);
-  return fetch(input, { ...init, headers });
+  const res = await fetch(input, { ...init, headers });
+  noteInkSpend(input, init.method ?? "GET", res);
+  return res;
 }
 
 /**
@@ -107,4 +132,15 @@ export async function apiJson<T = unknown>(
 /** True when the error is an ApiError with the given code. */
 export function isApiError(err: unknown, code?: string): err is ApiError {
   return err instanceof ApiError && (code === undefined || err.code === code);
+}
+
+/**
+ * True when the student is out of ink: the API's `402 ink_empty` (src/lib/server/billing.ts).
+ * Any 402 counts, because ink is the only thing the API answers 402 for (the provider's own
+ * account running dry is a 503); `credits_exhausted` is the same answer from a server deployed
+ * before ink, for the minutes a tab outlives a deploy.
+ */
+export function isOutOfInk(err: { status?: number; code?: string } | null | undefined): boolean {
+  if (!err) return false;
+  return err.status === 402 || err.code === "ink_empty" || err.code === "credits_exhausted";
 }

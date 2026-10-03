@@ -1,12 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api-client";
 import { ROUTE_COSTS } from "@/lib/server/billing";
-import { CHAT_COPY, CHAT_CREDITS, CHAT_SUGGESTIONS, chatErrorFor, historyFor, problemFor, runNotes, sendsOnKey, type ChatMessage } from "../chatView";
+import { CHAT_TIMEOUT_MS, ChatTimeoutError, requestChat } from "@/lib/live/chat/client";
+import { CHAT_COPY, CHAT_INK, CHAT_SUGGESTIONS, chatErrorFor, historyFor, problemFor, runNotes, sendsOnKey, type ChatMessage } from "../chatView";
 
 describe("board chat panel — view logic", () => {
   it("the cost note matches what the route charges", () => {
-    expect(CHAT_CREDITS).toBe(ROUTE_COSTS["live/chat"]);
-    expect(CHAT_COPY.cost).toBe("Each request uses 3 credits.");
+    expect(CHAT_INK).toBe(ROUTE_COSTS["live/chat"]);
+    expect(CHAT_COPY.cost).toBe("Each request uses 3 ink.");
   });
 
   it("four first asks: a problem set, a graph, a figure, more like these", () => {
@@ -14,13 +15,73 @@ describe("board chat panel — view logic", () => {
     expect(CHAT_SUGGESTIONS[3]).toMatch(/more like these/);
   });
 
-  it("failures: out of credits (no retry, the account page), rate limited with seconds, signed out, network, anything else", () => {
-    expect(chatErrorFor(new ApiError("x", 402, "credits_exhausted"))).toEqual({ kind: "credits", message: CHAT_COPY.errors.credits, retry: false });
+  it("failures: out of ink (no retry, the ink packs), rate limited with seconds, signed out, network, anything else", () => {
+    expect(chatErrorFor(new ApiError("x", 402, "ink_empty"))).toEqual({ kind: "ink", message: CHAT_COPY.errors.ink, retry: false });
+    expect(chatErrorFor(new ApiError("x", 503, "upstream_error"))).toMatchObject({ kind: "other", retry: true });
     expect(chatErrorFor(new ApiError("x", 429, "rate_limited", undefined, 4200))).toEqual({ kind: "rate_limited", message: "That's a lot of requests. Try again in 5 s.", retry: true });
     expect(chatErrorFor(new ApiError("x", 401, "unauthorized")).kind).toBe("unauthorized");
     expect(chatErrorFor(new ApiError("x", 502, "upstream_error"))).toEqual({ kind: "other", message: CHAT_COPY.errors.other, retry: true });
     expect(chatErrorFor(new TypeError("Failed to fetch")).kind).toBe("network");
     expect(chatErrorFor(new Error("?")).kind).toBe("other");
+  });
+
+  it("a request that never answers ends as a timeout with Retry, not a spinner", async () => {
+    expect(chatErrorFor(new ChatTimeoutError())).toEqual({ kind: "timeout", message: CHAT_COPY.errors.timeout, retry: true });
+    vi.useFakeTimers();
+    try {
+      let signal: AbortSignal | undefined;
+      const fetchJson = vi.fn(
+        (_path: string, _body: unknown, init?: { signal?: AbortSignal }) =>
+          new Promise<unknown>((_resolve, reject) => {
+            signal = init?.signal;
+            init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+          }),
+      );
+      const req = { boardId: "b", message: "3 equations", history: [], screen: { empty: true, student: [], tutor: [], problems: [] } };
+      const pending = requestChat(req as never, {}, fetchJson);
+      const assertion = expect(pending).rejects.toBeInstanceOf(ChatTimeoutError);
+      await vi.advanceTimersByTimeAsync(CHAT_TIMEOUT_MS + 1);
+      await assertion;
+      expect(signal?.aborted).toBe(true);
+      // the stalled connection is cut well after the route's own 45 s limit, never before it
+      expect(CHAT_TIMEOUT_MS).toBeGreaterThan(45_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a request stuck before fetch (a session read deaf to the abort) still ends as a timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const req = { boardId: "b", message: "3 equations", history: [], screen: { empty: true, student: [], tutor: [], problems: [] } };
+      const pending = requestChat(req as never, {}, vi.fn(() => new Promise<unknown>(() => undefined)));
+      const assertion = expect(pending).rejects.toBeInstanceOf(ChatTimeoutError);
+      await vi.advanceTimersByTimeAsync(CHAT_TIMEOUT_MS + 1);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a caller's signal that is already aborted ends the request at once", async () => {
+    const ctrl = new AbortController();
+    ctrl.abort();
+    const req = { boardId: "b", message: "3 equations", history: [], screen: { empty: true, student: [], tutor: [], problems: [] } };
+    await expect(requestChat(req as never, { signal: ctrl.signal }, vi.fn(() => new Promise<unknown>(() => undefined)))).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("closing the board mid-request aborts it as an abort, not a timeout", async () => {
+    const ctrl = new AbortController();
+    const fetchJson = vi.fn(
+      (_path: string, _body: unknown, init?: { signal?: AbortSignal }) =>
+        new Promise<unknown>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        }),
+    );
+    const req = { boardId: "b", message: "3 equations", history: [], screen: { empty: true, student: [], tutor: [], problems: [] } };
+    const pending = requestChat(req as never, { signal: ctrl.signal }, fetchJson);
+    ctrl.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
   });
 
   it("the chat so far: finished turns only, a failed ask left out, the last six", () => {

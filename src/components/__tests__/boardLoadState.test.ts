@@ -22,6 +22,11 @@ describe("loadStateFor", () => {
     expect(loadStateFor({ error: { details: "The result contains 0 rows" } }).kind).toBe("not-found");
   });
 
+  it("treats a board URL whose id is not a uuid (22P02) as not-found, not as a connection problem", () => {
+    const state = loadStateFor({ error: { code: "22P02", message: 'invalid input syntax for type uuid: "not-a-uuid"' }, row: null });
+    expect(state).toEqual({ kind: "not-found", message: BOARD_LOAD_COPY.notFoundTitle });
+  });
+
   it("is not-found when there is no error and no row", () => {
     expect(loadStateFor({ error: null, row: null }).kind).toBe("not-found");
     expect(loadStateFor({}).kind).toBe("not-found");

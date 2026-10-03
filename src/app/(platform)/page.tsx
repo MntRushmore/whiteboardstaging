@@ -19,7 +19,6 @@ import {
   type BoardSort,
 } from '@/app/dashboardState';
 import { describeError } from '@/lib/errorMessage';
-import { CreditsBanner } from '@/components/CreditsBanner';
 import { AppHeader, APP_CONTENT_CLASS } from '@/components/app/AppHeader';
 import { BoardGroups, BoardSkeletons, type BoardActions, type BoardView } from '@/components/boards/BoardList';
 import { asDeleteBoardClient, deleteBoardWithAssets } from '@/lib/assets/deleteBoard';
@@ -324,7 +323,6 @@ export default function Dashboard() {
       <main className={`${APP_CONTENT_CLASS} ${styles.main}`}>
         <div className={styles.banners}>
           <AuthErrorBanner />
-          <CreditsBanner />
         </div>
 
         <div className={styles.pageHeader}>

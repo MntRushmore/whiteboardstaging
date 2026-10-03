@@ -1,6 +1,7 @@
 "use client";
 
 import { apiErrorFromResponse, authedFetch } from "@/lib/api-client";
+import { abortable } from "./abortable";
 import {
   AnnotationSchema,
   SolveStepSchema,
@@ -115,12 +116,31 @@ export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 export interface StreamOptions {
   signal?: AbortSignal;
   fetchImpl?: FetchLike;
+  /** see SSE_IDLE_TIMEOUT_MS */
+  idleTimeoutMs?: number;
+}
+
+/**
+ * How long a stream may go without a byte. The routes send a `: ping` every 15 s while the model
+ * thinks (SSE_PING_MS) and the platform ends them at their maxDuration, so silence this long is a
+ * stalled connection (an iPad's Wi-Fi dropping mid-check): the call fails as a timeout the student
+ * can retry, instead of "Checking…" / "Solving…" for ever.
+ */
+export const SSE_IDLE_TIMEOUT_MS = 45_000;
+
+/** A stream that went silent for SSE_IDLE_TIMEOUT_MS (classified as `timeout`, retryable). */
+export class SseTimeoutError extends Error {
+  constructor() {
+    super("The tutor stopped answering");
+    this.name = "TimeoutError";
+  }
 }
 
 /**
  * POSTs `body` and yields typed events until `done`, `error`, the stream closes, or
  * `signal` aborts (the generator then returns quietly). Non-2xx responses throw ApiError
- * so callers can reuse the shared error handling.
+ * so callers can reuse the shared error handling; a stream silent for `idleTimeoutMs`
+ * (before the response or between chunks) throws SseTimeoutError.
  */
 export async function* streamLiveSse(
   path: string,
@@ -128,38 +148,74 @@ export async function* streamLiveSse(
   opts: StreamOptions = {},
 ): AsyncGenerator<LiveSseEvent, void, undefined> {
   const fetchImpl = opts.fetchImpl ?? authedFetch;
-  const res = await fetchImpl(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-    body: JSON.stringify(body),
-    signal: opts.signal,
-  });
-  if (!res.ok) throw await apiErrorFromResponse(res);
-  if (!res.body) return;
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  const parser = new SseFrameParser();
+  // One controller for the request: the caller's abort and the idle timer both end it.
+  const ctrl = new AbortController();
+  const onAbort = () => ctrl.abort();
+  if (opts.signal?.aborted) ctrl.abort();
+  else opts.signal?.addEventListener("abort", onAbort);
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  let timedOut = false;
+  let idle: ReturnType<typeof setTimeout> | null = null;
+  const armIdle = () => {
+    if (idle) clearTimeout(idle);
+    idle = setTimeout(() => {
+      timedOut = true;
+      ctrl.abort();
+      // a body that ignores the abort still ends: the pending read resolves `done`
+      reader?.cancel().catch(() => {});
+    }, opts.idleTimeoutMs ?? SSE_IDLE_TIMEOUT_MS);
+  };
   try {
-    for (;;) {
-      if (opts.signal?.aborted) return;
-      const { value, done } = await reader.read();
-      const frames = done ? parser.flush() : parser.push(decoder.decode(value, { stream: true }));
-      for (const frame of frames) {
-        const ev = toLiveSseEvent(frame);
-        if (!ev) continue;
-        yield ev;
-        if (ev.event === "done" || ev.event === "error") return;
-      }
-      if (done) return;
-    }
-  } catch (err) {
-    if (opts.signal?.aborted) return;
-    throw err;
-  } finally {
+    armIdle();
+    let res: Response;
     try {
-      await reader.cancel();
-    } catch {
-      /* already closed */
+      // raced against the abort as well: authedFetch's session read happens before fetch sees it
+      res = await abortable(
+        fetchImpl(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+          body: JSON.stringify(body),
+          signal: ctrl.signal,
+        }),
+        ctrl.signal,
+      );
+    } catch (err) {
+      if (timedOut) throw new SseTimeoutError();
+      throw err;
     }
+    if (!res.ok) throw await apiErrorFromResponse(res);
+    if (!res.body) return;
+    reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    const parser = new SseFrameParser();
+    try {
+      for (;;) {
+        if (opts.signal?.aborted) return;
+        const { value, done } = await reader.read();
+        if (timedOut) throw new SseTimeoutError();
+        armIdle();
+        const frames = done ? parser.flush() : parser.push(decoder.decode(value, { stream: true }));
+        for (const frame of frames) {
+          const ev = toLiveSseEvent(frame);
+          if (!ev) continue;
+          yield ev;
+          if (ev.event === "done" || ev.event === "error") return;
+        }
+        if (done) return;
+      }
+    } catch (err) {
+      if (opts.signal?.aborted) return;
+      if (timedOut && !(err instanceof SseTimeoutError)) throw new SseTimeoutError();
+      throw err;
+    } finally {
+      try {
+        await reader.cancel();
+      } catch {
+        /* already closed */
+      }
+    }
+  } finally {
+    if (idle) clearTimeout(idle);
+    opts.signal?.removeEventListener("abort", onAbort);
   }
 }

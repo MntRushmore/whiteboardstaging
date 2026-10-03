@@ -11,20 +11,20 @@ type RpcReply = { data?: unknown; error?: { message: string; code?: string } | n
 const fake = vi.hoisted(() => ({
   GOOD_TOKEN: "aaaa.bbbb.cccc",
   USER_ID: "11111111-2222-4333-8444-555555555555",
-  calls: [] as Array<{ fn: string; args?: Record<string, unknown> }>,
+  calls: [] as Array<{ fn: string; args?: Record<string, unknown>; key?: string }>,
   replies: {} as Record<string, (args?: Record<string, unknown>) => RpcReply>,
   /** the figure drawer's check: [] is a clean figure */
   drawer: { check: (() => []) as (spec: unknown) => string[] },
 }));
 
 vi.mock("@supabase/supabase-js", () => ({
-  createClient: () => ({
+  createClient: (_url: string, key: string) => ({
     auth: {
       getUser: async (token: string) =>
         token === fake.GOOD_TOKEN ? { data: { user: { id: fake.USER_ID, email: "qa@example.com" } }, error: null } : { data: { user: null }, error: { message: "invalid token" } },
     },
     rpc: async (fn: string, args?: Record<string, unknown>) => {
-      fake.calls.push({ fn, args });
+      fake.calls.push({ fn, args, key });
       const reply = fake.replies[fn]?.(args) ?? { error: { message: `no fake reply for ${fn}` } };
       if (reply instanceof Error) throw reply;
       return { data: reply.data ?? null, error: reply.error ?? null };
@@ -51,7 +51,7 @@ import { PROOF_EXAMPLES } from "@/lib/server/prompts/chat";
 import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rate-limit";
 import { POST as chat } from "@/app/api/live/chat/route";
 
-const ENV_VARS = ["BILLING_ENFORCE", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "LIVE_MODEL_CHAT"];
+const ENV_VARS = ["BILLING_ENFORCE", "SUPABASE_SERVICE_ROLE_KEY", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "LIVE_MODEL_CHAT"];
 const savedEnv: Record<string, string | undefined> = {};
 const BODY = {
   boardId: "board-1",
@@ -85,6 +85,7 @@ beforeEach(() => {
     delete process.env[name];
   }
   process.env.NEXT_PUBLIC_SUPABASE_URL = "http://127.0.0.1:54321";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test";
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
   process.env.OPENROUTER_API_KEY = "sk-or-test";
   resetServerEnvCache();
@@ -95,7 +96,7 @@ beforeEach(() => {
   for (const key of Object.keys(fake.replies)) delete fake.replies[key];
   fake.replies.rate_limit_hit = () => ({ data: { allowed: true, remaining: 11, retry_after_ms: 0, backend: "db" } });
   fake.replies.consume_credits = () => ({ data: { ok: true, remaining: 100, reason: null } });
-  fake.replies.refund_credits = () => ({ data: { refunded: 3, remaining: 103 } });
+  fake.replies.refund_ink_for = () => ({ data: { refunded: 3, remaining: 103 } });
   fake.drawer.check = () => [];
   vi.mocked(chatJsonWithFallback).mockReset();
 });
@@ -132,7 +133,7 @@ describe("live/chat", () => {
     expect(body.actions).toEqual([{ type: "write_problems", problems: [["4x + 1 = 9"], ["6x - 5 = 13"], ["x + y = 7", "x - y = 1"]] }]);
     expect(body.notes).toEqual([]);
     expect(callsTo("consume_credits")[0].args).toMatchObject({ p_route: "live/chat", p_units: 3 });
-    expect(callsTo("refund_credits")).toEqual([]);
+    expect(callsTo("refund_ink_for")).toEqual([]);
     const [primary, fallback, opts] = vi.mocked(chatJsonWithFallback).mock.calls[0];
     expect([primary, fallback]).toEqual([LIVE_MODELS.chat, LIVE_MODELS.chatFallback]);
     const user = String(opts.messages.find((m) => m.role === "user")?.content);
@@ -154,7 +155,7 @@ describe("live/chat", () => {
     });
     const body = ChatResponseSchema.parse(await (await chat(request(BODY))).json());
     expect(body.actions).toEqual([{ type: "write_problems", problems: [["3x = 12"]] }, { type: "new_screen" }]);
-    expect(callsTo("refund_credits")).toEqual([]);
+    expect(callsTo("refund_ink_for")).toEqual([]);
   });
 
   it("a figure the drawer's check passes goes to the board as it is: no repair call", async () => {
@@ -187,7 +188,7 @@ describe("live/chat", () => {
     expect(body.reply).toBe("Sorry, I couldn't draw that figure.");
     expect(body.refunded).toBe(true);
     expect(chatJsonWithFallback).toHaveBeenCalledTimes(2);
-    expect(callsTo("refund_credits")[0].args).toEqual({ p_request_id: callsTo("consume_credits")[0].args?.p_request_id });
+    expect(callsTo("refund_ink_for")[0].args).toEqual({ p_user_id: fake.USER_ID, p_request_id: callsTo("consume_credits")[0].args?.p_request_id });
   });
 
   it("at most one repair per request: a second bad figure is dropped without one", async () => {
@@ -206,7 +207,7 @@ describe("live/chat", () => {
     expect(body.actions).toEqual([{ type: "write_problems", problems: [["2x = 8"], ["3x = 9"]] }]);
     expect(body.notes).toEqual(["The figure couldn't be drawn."]);
     expect(body.refunded).toBeUndefined();
-    expect(callsTo("refund_credits")).toEqual([]);
+    expect(callsTo("refund_ink_for")).toEqual([]);
   });
 
   it("a new screen made only for a figure that could not be drawn is not made", async () => {
@@ -225,7 +226,7 @@ describe("live/chat", () => {
     expect(body.actions).toEqual([{ type: "help_problem", problem: 2, depth: "step" }]);
     expect(body.reply).toBe("I wrote the next step under problem 2.");
     expect(body.notes).toEqual([]);
-    expect(callsTo("refund_credits")).toEqual([]);
+    expect(callsTo("refund_ink_for")).toEqual([]);
     const user = String(vi.mocked(chatJsonWithFallback).mock.calls[0][2].messages.find((m) => m.role === "user")?.content);
     expect(user).toContain("1. 2x + 3 = 11\n2. 5x - 2 = 13");
   });
@@ -266,7 +267,7 @@ describe("live/chat", () => {
       expect(body.actions).toEqual([CHECKED]);
       expect(body.notes).toEqual([]);
       expect(chatJsonWithFallback).toHaveBeenCalledTimes(1);
-      expect(callsTo("refund_credits")).toEqual([]);
+      expect(callsTo("refund_ink_for")).toEqual([]);
     });
 
     it("one it cannot prove gets ONE repair round-trip with the engine's problems; the repaired proof goes on", async () => {
@@ -288,7 +289,7 @@ describe("live/chat", () => {
       expect(body.reply).toBe("Sorry, I couldn't check that proof, so I didn't write it. Try asking for another one.");
       expect(body.refunded).toBe(true);
       expect(chatJsonWithFallback).toHaveBeenCalledTimes(2);
-      expect(callsTo("refund_credits")[0].args).toEqual({ p_request_id: callsTo("consume_credits")[0].args?.p_request_id });
+      expect(callsTo("refund_ink_for")[0].args).toEqual({ p_user_id: fake.USER_ID, p_request_id: callsTo("consume_credits")[0].args?.p_request_id });
     });
 
     it("'the hardest proof ever' is held to it: a short proof is sent back once for a demanding one", async () => {
@@ -320,7 +321,7 @@ describe("live/chat", () => {
       expect(body.actions).toEqual([{ type: "write_problems", problems: [["2x = 8"]] }]);
       expect(body.notes).toEqual(["I couldn't check that proof, so I didn't write it."]);
       expect(body.refunded).toBeUndefined();
-      expect(callsTo("refund_credits")).toEqual([]);
+      expect(callsTo("refund_ink_for")).toEqual([]);
     });
 
     it("the figure's own problems count too: a proof whose figure the drawer rejects is repaired, then dropped", async () => {
@@ -362,7 +363,7 @@ describe("live/chat", () => {
       expect(body.notes).toEqual([]);
       expect(body.reply).toBe("I worked it out on the board: RS² = 62.");
       expect(chatJsonWithFallback).toHaveBeenCalledTimes(1);
-      expect(callsTo("refund_credits")).toEqual([]);
+      expect(callsTo("refund_ink_for")).toEqual([]);
       const user = String(vi.mocked(chatJsonWithFallback).mock.calls[0][2].messages[1].content);
       expect(user).toContain(`THE PROBLEM THE STUDENT GAVE (earlier in the chat):\n${OWNER_PROBLEM}`);
       expect(user).toContain("REQUEST: do the actual problem");
@@ -377,7 +378,7 @@ describe("live/chat", () => {
       expect(repair).toContain('- Step 2, line 5: "\\sqrt{6 + 25}" is not equal to "\\sqrt{30}".');
       expect(repair).toContain(`THE PROBLEM THE STUDENT GAVE (earlier in the chat):\n${OWNER_PROBLEM}`);
       expect(repair).toContain("SOLUTION:");
-      expect(callsTo("refund_credits")).toEqual([]);
+      expect(callsTo("refund_ink_for")).toEqual([]);
     }, 20_000);
 
     it("still failing after the repair: dropped — never written unchecked — the panel says so, and the credits come back", async () => {
@@ -389,7 +390,7 @@ describe("live/chat", () => {
       expect(body.reply).toBe("Sorry, I couldn't check that working, so I didn't write it. Try asking again.");
       expect(body.refunded).toBe(true);
       expect(chatJsonWithFallback).toHaveBeenCalledTimes(2);
-      expect(callsTo("refund_credits")[0].args).toEqual({ p_request_id: callsTo("consume_credits")[0].args?.p_request_id });
+      expect(callsTo("refund_ink_for")[0].args).toEqual({ p_user_id: fake.USER_ID, p_request_id: callsTo("consume_credits")[0].args?.p_request_id });
     }, 20_000);
 
     it("a wrong answer (RS² = 64) is caught against the working; a failed repair call is a drop, the rest kept, no refund", async () => {
@@ -399,7 +400,7 @@ describe("live/chat", () => {
       expect(body.actions).toEqual([{ type: "write_problems", problems: [["2x = 8"]] }]);
       expect(body.notes).toEqual(["I couldn't check that working, so I didn't write it."]);
       expect(body.refunded).toBeUndefined();
-      expect(callsTo("refund_credits")).toEqual([]);
+      expect(callsTo("refund_ink_for")).toEqual([]);
     }, 20_000);
 
     it("the maths holds but the drawer rejects the figure after the repair: the working goes on without it, with a note", async () => {
@@ -419,7 +420,7 @@ describe("live/chat", () => {
     const body = ChatResponseSchema.parse(await (await chat(request({ ...BODY, message: "write me an essay" }))).json());
     expect(body.actions).toEqual([]);
     expect(body.reply).toBe("I can only help with maths on this board.");
-    expect(callsTo("refund_credits")).toEqual([]);
+    expect(callsTo("refund_ink_for")).toEqual([]);
   });
 
   it("a provider failure is a 502, refunded with the same request id", async () => {
@@ -428,14 +429,14 @@ describe("live/chat", () => {
     expect(res.status).toBe(502);
     expect(res.headers.get("X-Request-Id")).toBeTruthy();
     const charged = callsTo("consume_credits")[0].args?.p_request_id;
-    expect(callsTo("refund_credits")[0].args).toEqual({ p_request_id: charged });
+    expect(callsTo("refund_ink_for")[0].args).toEqual({ p_user_id: fake.USER_ID, p_request_id: charged });
   });
 
   it("402 when out of credits, before any model call", async () => {
     fake.replies.consume_credits = () => ({ data: { ok: false, remaining: 1, reason: "insufficient_credits" } });
     const res = await chat(request(BODY));
     expect(res.status).toBe(402);
-    expect(await res.json()).toMatchObject({ error: "credits_exhausted" });
+    expect(await res.json()).toMatchObject({ error: "ink_empty" });
     expect(chatJsonWithFallback).not.toHaveBeenCalled();
   });
 });

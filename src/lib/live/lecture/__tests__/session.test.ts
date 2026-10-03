@@ -145,17 +145,17 @@ describe("LectureSession: starting and hearing", () => {
     expect(session.snapshot()).toMatchObject({ status: "error", error: "unsupported" });
   });
 
-  it("the token route's 402 while opening the source is out of credits", async () => {
+  it("the token route's 402 while opening the source is out of ink", async () => {
     const session = new LectureSession({
       boardId: "b",
       openSource: async () => {
-        throw new ApiError("x", 402, "credits_exhausted");
+        throw new ApiError("x", 402, "ink_empty");
       },
       board: { screen: () => ({ empty: true, topic: null, drawn: [], room: 1, active: [] }), run: vi.fn(), saveTranscript: vi.fn() },
       request: vi.fn(),
     });
     await session.start();
-    expect(session.snapshot()).toMatchObject({ status: "error", error: "credits" });
+    expect(session.snapshot()).toMatchObject({ status: "error", error: "ink" });
   });
 
   it("the source failing for good ends the lecture with its code", async () => {
@@ -352,12 +352,12 @@ describe("LectureSession: Draw that", () => {
 });
 
 describe("LectureSession: failures", () => {
-  it("402 stops the lecture: out of credits, the source stopped, nothing more asked", async () => {
+  it("402 stops the lecture: out of ink, the source stopped, nothing more asked", async () => {
     const h = await startSession();
-    h.request.mockRejectedValueOnce(new ApiError("x", 402, "credits_exhausted"));
+    h.request.mockRejectedValueOnce(new ApiError("x", 402, "ink_empty"));
     h.source.say(words(50));
     await advance(LECTURE_TIMING.tickMinMs);
-    expect(h.session.snapshot()).toMatchObject({ status: "error", error: "credits" });
+    expect(h.session.snapshot()).toMatchObject({ status: "error", error: "ink" });
     expect(h.source.stop).toHaveBeenCalled();
     h.source.say(words(100));
     h.session.drawThat();

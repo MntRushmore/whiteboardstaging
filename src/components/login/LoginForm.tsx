@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import type { Ref } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, MailCheck } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -12,8 +14,11 @@ import { PasswordField } from "@/registry/components/password-field/password-fie
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/registry/components/tabs/tabs";
 import { loginErrorField, loginErrorMessage } from "@/lib/loginErrorMessage";
 import {
+  AUTH_FORM_METHOD,
   FORM_COPY,
+  afterSignInPath,
   hasFieldErrors,
+  signUpRequest,
   validateLoginForm,
   type FieldErrors,
   type LoginMode,
@@ -38,15 +43,84 @@ const SUBMIT_LABEL: Record<LoginMode, { idle: string; busy: string }> = {
 /** What was emailed, shown in place of the form until the user goes back. */
 type Sent = { kind: "confirm-signup" | "reset"; email: string };
 
-type FocusTarget = "email" | "password" | "heading";
+type FocusTarget = "email" | "password" | "consent" | "heading";
+
+const CONSENT_ERROR_ID = "login-consent-error";
+
+/**
+ * Sign-up's consent: the Terms, the Privacy Policy and the age statement, in one box. Required
+ * here (validateLoginForm) and by the database, which refuses an account whose sign-up does not
+ * carry the Terms version (signUpRequest). The links open a new tab so the form keeps what was
+ * typed.
+ */
+export function ConsentField({
+  checked,
+  onChange,
+  error,
+  disabled,
+  inputRef,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  error?: string;
+  disabled?: boolean;
+  inputRef?: Ref<HTMLInputElement>;
+}) {
+  return (
+    <div className={styles.consent}>
+      <label className={styles.consentLabel}>
+        <input
+          ref={inputRef}
+          type="checkbox"
+          name="consent"
+          required
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          disabled={disabled}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? CONSENT_ERROR_ID : undefined}
+          className={styles.checkbox}
+        />
+        <span className={styles.consentText}>
+          <span>
+            I agree to the{" "}
+            <Link href="/terms" target="_blank" rel="noopener" className={styles.consentLink}>
+              Terms<span className={styles.srOnly}> (opens in a new tab)</span>
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy" target="_blank" rel="noopener" className={styles.consentLink}>
+              Privacy Policy<span className={styles.srOnly}> (opens in a new tab)</span>
+            </Link>
+            .
+          </span>
+          <span>I&rsquo;m 13 or older, or I&rsquo;m a parent or guardian setting this up for my child.</span>
+        </span>
+      </label>
+      {error && (
+        <p id={CONSENT_ERROR_ID} className={styles.consentError}>
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+const subscribeNever = () => () => {};
 
 export function LoginForm() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  // The form is in the server HTML, so it can be submitted before React attaches onSubmit (a
+  // slow load, a quick Enter on an iPad). Submit stays disabled until hydration, which also stops
+  // Enter (implicit submission does nothing while the default button is disabled); the form
+  // posts (AUTH_FORM_METHOD) in case anything submits it anyway.
+  const hydrated = useSyncExternalStore(subscribeNever, () => true, () => false);
   const [mode, setMode] = useState<LoginMode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  // Sign-up's consent box; kept when switching tabs, like the email.
+  const [agreed, setAgreed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   // Inline error about the attempt as a whole; cleared when the user edits or switches tabs.
@@ -55,13 +129,14 @@ export function LoginForm() {
 
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
+  const consentRef = useRef<HTMLInputElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   // Set by handlers, applied after the next commit (the target may have just mounted).
   const pendingFocus = useRef<FocusTarget | null>(null);
 
   useEffect(() => {
     if (!authLoading && user) {
-      router.replace("/");
+      router.replace(afterSignInPath(window.location.search));
     }
   }, [user, authLoading, router]);
 
@@ -69,7 +144,7 @@ export function LoginForm() {
     const target = pendingFocus.current;
     if (!target) return;
     pendingFocus.current = null;
-    const el = { email: emailRef, password: passwordRef, heading: headingRef }[target].current;
+    const el = { email: emailRef, password: passwordRef, consent: consentRef, heading: headingRef }[target].current;
     el?.focus();
     if (el instanceof HTMLInputElement && target === "password") el.select();
   });
@@ -92,11 +167,11 @@ export function LoginForm() {
     e.preventDefault();
     if (busy) return;
     const address = email.trim();
-    const errors = validateLoginForm(mode, address, password);
+    const errors = validateLoginForm(mode, address, password, agreed);
     setFormError(null);
     setFieldErrors(errors);
     if (hasFieldErrors(errors)) {
-      pendingFocus.current = errors.email ? "email" : "password";
+      pendingFocus.current = errors.email ? "email" : errors.password ? "password" : "consent";
       return;
     }
     setShowPassword(false);
@@ -110,12 +185,12 @@ export function LoginForm() {
         });
         if (error) throw error;
         // no toast: the boards opening is the confirmation (a toast lingered over the cards)
-        router.replace("/");
+        router.replace(afterSignInPath(window.location.search));
       } else if (mode === "signup") {
-        const { data, error } = await supabase.auth.signUp({ email: address, password });
+        const { data, error } = await supabase.auth.signUp(signUpRequest(address, password));
         if (error) throw error;
         if (data.session) {
-          router.replace("/");
+          router.replace(afterSignInPath(window.location.search));
         } else {
           // Email confirmation is on: there is no session until the link is opened.
           setSent({ kind: "confirm-signup", email: address });
@@ -172,7 +247,7 @@ export function LoginForm() {
   const label = SUBMIT_LABEL[mode];
 
   const form = (
-    <form onSubmit={handleSubmit} noValidate aria-busy={busy} className={styles.form}>
+    <form {...AUTH_FORM_METHOD} onSubmit={handleSubmit} noValidate aria-busy={busy} className={styles.form}>
       <Input
         ref={emailRef}
         id="login-email"
@@ -220,9 +295,23 @@ export function LoginForm() {
         />
       )}
 
+      {mode === "signup" && (
+        <ConsentField
+          inputRef={consentRef}
+          checked={agreed}
+          onChange={(next) => {
+            setAgreed(next);
+            if (fieldErrors.consent) setFieldErrors((f) => ({ ...f, consent: undefined }));
+            if (formError) setFormError(null);
+          }}
+          error={fieldErrors.consent}
+          disabled={busy}
+        />
+      )}
+
       {formError && <Alert id="login-error" data-state="error" tone="danger" title={formError} />}
 
-      <Button type="submit" size="lg" className={styles.submit} loading={busy}>
+      <Button type="submit" size="lg" className={styles.submit} loading={busy} disabled={!hydrated}>
         {redirecting ? "Opening your boards…" : busy ? label.busy : label.idle}
       </Button>
 

@@ -9,9 +9,10 @@ import {
 } from "@/lib/live/contracts";
 import { getLiveModels } from "@/lib/env";
 import { json, requireUser } from "@/lib/server/auth";
-import { enforceCredits, runCharged } from "@/lib/server/billing";
+import { enforceInk, runCharged } from "@/lib/server/billing";
 import { errorResponse } from "@/lib/server/request";
-import { isMathpixAuthFailure, isMathpixConfigured, recognizeStrokes, type MathpixFailure } from "@/lib/server/mathpix";
+import { isMathpixConfigured, recognizeStrokes, type MathpixFailure } from "@/lib/server/mathpix";
+import { recognizeFailureHints } from "@/lib/server/recognizeHints";
 import { chatJson } from "@/lib/server/openrouter";
 import { buildVisionMessages, VisionTranscriptionSchema } from "@/lib/server/prompts/recognizeVision";
 import { liveDebugEnabled, liveLogger, livePreamble, withRequestId } from "@/lib/server/live-route";
@@ -47,37 +48,14 @@ export async function GET(req: Request) {
 /* POST: strokes -> latex                                                     */
 /* ------------------------------------------------------------------------- */
 
-/**
- * Additive fields on the existing `recognizer_failed` 502 body (the response schema in
- * src/lib/live/contracts.ts is frozen and describes success only). Both are hints, never
- * requirements: an old client that ignores them behaves exactly as before.
- *
- *  - `needsCrop`      we had no crop to fall back on; send one and this line can still be
- *                     read by the vision recognizer. The client retries the line once.
- *  - `recognizerDown` Mathpix rejected our credentials, so every line will fail the same
- *                     way: the client flips to the vision recognizer for the rest of the
- *                     session instead of paying a failed round-trip per line.
- */
-export type RecognizeFailureHints = { needsCrop?: true; recognizerDown?: true };
-
-export function recognizeFailureHints(
-  hadCrop: boolean,
-  mathpixFailure: MathpixFailure | null,
-): RecognizeFailureHints {
-  return {
-    ...(hadCrop ? {} : { needsCrop: true as const }),
-    ...(mathpixFailure && isMathpixAuthFailure(mathpixFailure) ? { recognizerDown: true as const } : {}),
-  };
-}
-
 export async function POST(req: Request) {
   const ctx = await livePreamble(req, "recognize", "liveRecognize", RecognizeRequestSchema);
   if ("response" in ctx) return ctx.response;
-  const { requestId, token, log, data, startedAt } = ctx;
+  const { requestId, token, user, log, data, startedAt } = ctx;
 
-  // Charge credits before any recognizer call; runCharged refunds them on any non-2xx
+  // Charge ink before any recognizer call; runCharged refunds them on any non-2xx
   // (recognizer_failed, upstream error, timeout). GET is free. See src/lib/server/billing.ts.
-  const billing = await enforceCredits(
+  const billing = await enforceInk(
     { token, route: "live/recognize", requestId, model: isMathpixConfigured() ? "mathpix" : getLiveModels().vision },
     log,
   );
@@ -85,7 +63,7 @@ export async function POST(req: Request) {
 
   const payload: StrokePayload = { x: data.strokes.x, y: data.strokes.y, w: data.bounds.w, h: data.bounds.h };
 
-  return runCharged({ token, requestId }, log, async () => {
+  return runCharged({ userId: user.id, requestId }, log, async () => {
     let result: RecognizeResponse | null = null;
     /** set when Mathpix ran and produced nothing; drives the vision-fallback hints below */
     let mathpixFailure: MathpixFailure | null = null;

@@ -2,6 +2,7 @@
 
 import {
   Tldraw,
+  useBreakpoint,
   useEditor,
   type TLAssetId,
   DefaultColorThemePalette,
@@ -39,13 +40,13 @@ import {
   Image01Icon,
   AddSquareIcon,
 } from "hugeicons-react";
-import { dropPendingAiOverlays } from "@/hooks/useAiOverlayShapes";
 import { useAssistanceMode, type AssistanceMode } from "@/hooks/useAssistanceMode";
 import { offloadAssetsOnce, useSnapshotSave } from "@/hooks/useSnapshotSave";
 import { useBoardAutoTitle } from "@/hooks/useBoardAutoTitle";
 import { createBoardAssetStore } from "@/lib/assets/boardAssetStore";
 import {
   BOARD_LOAD_COPY,
+  BoardCrashed,
   BoardLoadError,
   BoardLoading,
   loadStateFor,
@@ -57,10 +58,11 @@ import { useParams, useRouter } from "next/navigation";
 import { Bug, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
-import { CreditsBanner } from "@/components/CreditsBanner";
-import { OutOfCreditsWatcher } from "@/components/billing/OutOfCreditsWatcher";
-import { StickerLibrary } from "@/components/StickerLibrary";
-import { PdfUpload } from "@/components/PdfUpload";
+import { InkMeter } from "@/components/billing/InkMeter";
+import { inkTone } from "@/lib/billing/inkSummary";
+import { useInkSummary } from "@/lib/billing/useInkSummary";
+import { OutOfInkWatcher } from "@/components/billing/OutOfInkWatcher";
+import { clearInkErrorIfAffordable } from "@/lib/live/liveStore";
 import { BugReportButton } from "@/components/BugReportButton";
 import { captureBoardScreenshot } from "@/components/board/boardScreenshot";
 import { BETA_COPY } from "@/components/app/BetaBadge";
@@ -71,9 +73,9 @@ import { liveShapeUtils, liveTools, liveUiOverrides, LiveToolbar } from "@/shape
 import { LIVE_KILL_SWITCH } from "@/lib/live/contracts";
 import { useLiveMath } from "@/lib/live/useLiveMath";
 import { useLiveSettings } from "@/lib/live/liveSettings";
-import { ScreenStrip } from "@/components/screens/ScreenStrip";
+import { ScreenStrip, ScreenStripCorner, screenStripSlot } from "@/components/screens/ScreenStrip";
 import { PenStyleButton } from "@/components/board/PenStyleButton";
-import { LiveDebugPanel } from "@/components/live/LiveDebugPanel";
+import { liveDebugEnabled } from "@/lib/live/liveDebug";
 import { ScreenBackground, ScreenFrame } from "@/components/screens/ScreenFrame";
 import { applyScreenCamera } from "@/lib/screens/screens";
 import { useScreenCamera } from "@/lib/screens/useScreenCamera";
@@ -90,9 +92,18 @@ import { useLecture } from "@/components/lecture/useLecture";
 import { LectureButton } from "@/components/lecture/LectureButton";
 import { LectureBar } from "@/components/lecture/LectureBar";
 import { browserStorage as onboardingStorage, isGuidedBoard } from "@/lib/onboarding/marker";
+import { attachKeyboardFit, browserKeyboardFitEnv } from "@/components/board/keyboardFit";
 
 // The guided first board's tour (the welcome's Start): loaded on that board only, after the board.
 const BoardTour = React.lazy(() => import("@/components/onboarding/BoardTour"));
+// Feature Labs extras (off by default) and the Mathpix debug panel (development, or opted in on the
+// device): fetched only when shown, not with every board (docs/BUNDLE.md).
+const StickerLibrary = React.lazy(() => import("@/components/StickerLibrary").then((m) => ({ default: m.StickerLibrary })));
+const PdfUpload = React.lazy(() => import("@/components/PdfUpload").then((m) => ({ default: m.PdfUpload })));
+const LiveDebugPanel = React.lazy(() => import("@/components/live/LiveDebugPanel").then((m) => ({ default: m.LiveDebugPanel })));
+
+/** The help tabs: 6 px of padding on a board under 768 px (a 10.2" iPad sideways with Ask docked), 8 px from there. */
+const HELP_TAB_CLASS = "px-1.5 @3xl/bar:px-2";
 
 // Ensure the tldraw canvas background is pure white in both light and dark modes
 DefaultColorThemePalette.lightMode.background = "#FFFFFF";
@@ -289,6 +300,12 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   // An "Untitled Whiteboard" is named after its first line of maths once it saves.
   useBoardAutoTitle(id, sync);
 
+  const narrowBoard = screenStripSlot(useBreakpoint()) === "corner";
+  // The meter says "Get ink" whenever ink is low or gone; the Live pill's out-of-ink error then
+  // leaves it to the meter, so the bar says it once (one shared read per page: useInkSummary).
+  const inkBalance = useInkSummary().summary?.balance;
+  const meterOffersInk = typeof inkBalance === "number" && inkTone(inkBalance) !== "ok";
+
   // One place decides what the bar shows (see src/components/live/toolbar.ts).
   const toolbar = boardToolbarView({
     mode: assistanceMode,
@@ -304,40 +321,54 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
         preference, the help-mode explainer — hangs off the status pill's "…" menu rather
         than competing with them. Report a bug has a button of its own while we are in beta.
       */}
+      {/*
+        The bar's width class is the board's width, not the window's (a container, `bar`): with
+        Ask docked beside the board, an iPad held sideways has an upright iPad's board.
+      */}
+      <div className="@container/bar absolute inset-x-0 top-0 z-1000 h-0">
       <div
         style={{
           position: 'absolute',
           top: '16px',
           left: '16px',
-          zIndex: 1000,
           display: 'flex',
-          alignItems: 'center',
+          alignItems: 'flex-start',
           gap: '12px',
-          // Wrap on narrow screens (400 px) so the status pill stays reachable;
-          // leave room for tldraw's style panel pinned at the top-right.
-          flexWrap: 'wrap',
-          maxWidth: 'calc(100% - 180px)',
+          // The controls wrap beside the back button (an upright iPad keeps one row) and leave
+          // room for the pen's swatch at the top-right. On a phone-narrow board they drop under
+          // the back button instead: the screen strip takes that corner (screenStripSlot).
+          flexWrap: narrowBoard ? 'wrap' : 'nowrap',
+          maxWidth: 'calc(100% - 72px)',
         }}
       >
         <Button
           variant="ghost"
           size="icon"
+          className="shrink-0"
           aria-label="Back to my whiteboards"
           onClick={() => router.push("/")}
         >
           <ArrowLeft01Icon size={20} strokeWidth={2} />
         </Button>
-        <div className="flex flex-wrap items-center gap-2">
+        {/*
+          A board 768–1023 px wide (an upright iPad, or one sideways with Ask docked) fits this
+          row only just: below @5xl the gaps are 6 px, the ink meter is the bottle and the number,
+          Report a bug, a routine save and an open Ask are icons; below @3xl (a 10.2" iPad
+          sideways with Ask) the help tabs are tighter. The save pill comes last, so neither it
+          nor a long status ever pushes the other controls onto a second row (Solve's steps
+          button still wraps the status end there).
+        */}
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5 @5xl/bar:gap-2">
           <Tabs
             value={assistanceMode}
             onValueChange={(value) => setAssistanceMode(value as AssistanceMode)}
             className="w-auto shadow-sm rounded-lg"
           >
             <TabsList aria-label="How much help">
-              <TabsTrigger value="off">Off</TabsTrigger>
-              <TabsTrigger value="feedback">Feedback</TabsTrigger>
-              <TabsTrigger value="suggest">Suggest</TabsTrigger>
-              <TabsTrigger value="answer">Solve</TabsTrigger>
+              <TabsTrigger value="off" className={HELP_TAB_CLASS}>Off</TabsTrigger>
+              <TabsTrigger value="feedback" className={HELP_TAB_CLASS}>Feedback</TabsTrigger>
+              <TabsTrigger value="suggest" className={HELP_TAB_CLASS}>Suggest</TabsTrigger>
+              <TabsTrigger value="answer" className={HELP_TAB_CLASS}>Solve</TabsTrigger>
             </TabsList>
           </Tabs>
           {toolbar.showSolveSteps && (
@@ -357,12 +388,14 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
             size="sm"
             className={chat.open ? "shadow-sm" : "bg-white shadow-sm"}
             title={CHAT_COPY.buttonHint}
+            aria-label={CHAT_COPY.button}
             aria-expanded={chat.open}
             {...{ [CHAT_TOGGLE_ATTR]: "" }}
             onClick={() => chat.onOpenChange(!chat.open)}
           >
             <MessageSquare className="h-4 w-4" />
-            <span className="ml-1.5">{CHAT_COPY.button}</span>
+            {/* open, the panel names itself: the button is its icon unless the board is wide */}
+            <span className={chat.open ? "ml-1.5 hidden @5xl/bar:inline" : "ml-1.5"}>{CHAT_COPY.button}</span>
           </Button>
           <LectureButton lecture={lecture} />
           <LiveErrorBoundary>
@@ -376,9 +409,12 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
               onClearMarks={() => controller.clearMarks()}
               onShowModeInfo={() => setModeInfoOpen(true)}
               onReportProblem={() => setReportOpen(true)}
+              meterOffersInk={meterOffersInk}
             />
           </LiveErrorBoundary>
-          <SaveStatus sync={sync} onRetry={() => void retrySave()} />
+          {/* ink left; tapping it (or its "Get ink" when low) opens the ink dialog */}
+          {/* once the balance covers the refused call again (a pack landed), its "out of ink" pill goes */}
+          <InkMeter onBalance={clearInkErrorIfAffordable} />
           <Button
             variant="outline"
             size="sm"
@@ -388,11 +424,21 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
             onClick={() => setReportOpen(true)}
           >
             <Bug className="size-3.5" aria-hidden />
-            <span className="hidden text-xs font-medium sm:inline">Report a bug</span>
+            <span className="hidden text-xs font-medium @5xl/bar:inline">Report a bug</span>
           </Button>
-          {features.stickers && <StickerLibrary />}
-          {features.pdfUpload && <PdfUpload />}
+          {/* a chunk that fails to load (an offline tab, a stale deploy) hides the button, not the board */}
+          {(features.stickers || features.pdfUpload) && (
+            <LiveErrorBoundary>
+              <React.Suspense fallback={null}>
+                {features.stickers && <StickerLibrary />}
+                {features.pdfUpload && <PdfUpload />}
+              </React.Suspense>
+            </LiveErrorBoundary>
+          )}
+          {/* last: it comes and goes with every save, and must not move the controls before it */}
+          <SaveStatus sync={sync} onRetry={() => void retrySave()} />
         </div>
+      </div>
       </div>
 
       {/* The explainer opens from Board options; the report from there or its button in the bar. */}
@@ -400,23 +446,18 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
       <BugReportButton boardId={id} open={reportOpen} onOpenChange={setReportOpen} screenshot={() => captureBoardScreenshot(editor)} />
       {liveEnabled && live.celebrations && <Celebrations editor={editor} />}
 
-      <div
-        style={{
-          position: "absolute",
-          bottom: "16px",
-          right: "16px",
-          zIndex: 1000,
-          maxWidth: "360px",
-        }}
-      >
-        <CreditsBanner />
-      </div>
-      {/* a Live 402 opens the out-of-credits dialog (lazy), never mid-stroke */}
-      <OutOfCreditsWatcher editor={editor} />
+      {/* a Live 402 or "Get ink" opens the ink dialog (lazy); a 402's never mid-stroke */}
+      <OutOfInkWatcher editor={editor} />
       <LiveErrorBoundary>
         <LectureBar lecture={lecture} />
       </LiveErrorBoundary>
-      <LiveDebugPanel />
+      {liveDebugEnabled() && (
+        <LiveErrorBoundary>
+          <React.Suspense fallback={null}>
+            <LiveDebugPanel />
+          </React.Suspense>
+        </LiveErrorBoundary>
+      )}
       {toolbar.showHintLayer && (
         <LiveErrorBoundary>
           <LiveHintLayer editor={editor} controller={controller} />
@@ -485,6 +526,10 @@ export default function BoardPage() {
   // The board chat: off by default, remembered per device; the page lays it out beside the board.
   const [chatOpen, setChatOpen] = useChatOpen();
   const [chatHost, setChatHost] = useState<HTMLElement | null>(null);
+  // With the on-screen keyboard up for the Ask panel docked beside the board (an iPad held sideways), the root
+  // is laid over the part of the screen the keyboard leaves (src/components/board/keyboardFit.ts).
+  const [boardRoot, setBoardRoot] = useState<HTMLElement | null>(null);
+  useEffect(() => (boardRoot && chatHost ? attachKeyboardFit(boardRoot, browserKeyboardFitEnv(chatHost)) : undefined), [boardRoot, chatHost]);
   // The store is created before the editor exists; `attach` (called from onMount) gives its
   // `getAsset` the mounted editor. A closure variable rather than a ref so nothing reads a
   // ref during render.
@@ -507,9 +552,11 @@ export default function BoardPage() {
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.replace("/login");
+      // Signed out (or the session ended mid-board): come back here after signing in. Unsaved
+      // strokes are in the device backup and are restored when the board reopens.
+      router.replace(`/login?next=/board/${id}`);
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, router, id]);
 
   const retryLoad = useCallback(() => {
     setInitialData(null);
@@ -518,19 +565,23 @@ export default function BoardPage() {
     setLoadAttempt((n) => n + 1);
   }, []);
 
+  // Keyed on the user's id, not the user object: supabase-js hands out a new session object on
+  // every auth event (a token refresh, another tab of the app starting), and reloading the row
+  // under a mounted editor gave the autosave a newer version than the board on screen.
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
     let cancelled = false;
     async function loadBoard() {
       let result: BoardLoadState;
       let snapshot: BoardSnapshot | null = null;
       let version: number | null = null;
       try {
+        // maybeSingle: a missing (or another account's) board is a null row, not a 406 error.
         const { data, error } = await supabase
           .from('whiteboards')
           .select('data, version')
           .eq('id', id)
-          .single();
+          .maybeSingle();
 
         result = loadStateFor({ error, row: data });
         if (result.kind === "ready" && data) {
@@ -563,7 +614,7 @@ export default function BoardPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, user, loadAttempt]);
+  }, [id, userId, loadAttempt]);
 
   if (authLoading || !user || loadState.kind === "loading") {
     return <BoardLoading label={loadAttempt > 0 ? BOARD_LOAD_COPY.retrying : BOARD_LOAD_COPY.loading} />;
@@ -575,27 +626,38 @@ export default function BoardPage() {
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0 }} className="flex flex-col md:flex-row">
+    // touch-action: a quick double tap on the bar's buttons must not zoom the page on an iPad.
+    // data-board-root: the page under it never scrolls or bounces (globals.css). Positioned by
+    // class, not inline, so the keyboard fit's inline top/height fall back to inset: 0 when cleared.
+    <div ref={setBoardRoot} data-board-root="" style={{ touchAction: "manipulation" }} className="fixed inset-0 flex flex-col md:landscape:flex-row">
       {/* the board refits whenever this box changes size (useScreenCamera): the whole screen stays in view */}
       <div className="relative min-h-0 min-w-0 flex-1">
       <Tldraw
         shapeUtils={liveShapeUtils}
         tools={liveTools}
         overrides={boardOverrides}
+        // a board is for writing: the pen is in hand when it opens, not the selection arrow
+        initialState="draw"
         licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
         assets={assetStoreBundle?.store}
         components={{
           MenuPanel: null,
           NavigationPanel: ScreenStrip,
+          // a narrow board's strip, in the corner the style panel leaves free (screenStripSlot)
+          SharePanel: ScreenStripCorner,
           HelperButtons: null,
           Background: ScreenBackground,
           OnTheCanvas: ScreenFrame,
           Toolbar: LiveToolbar,
           // the pen's colour and size on request, not a panel always open over the screen
           StylePanel: PenStyleButton,
+          // tldraw's own error screen offers "Reset data", which clears localStorage
+          ErrorFallback: BoardCrashed,
         }}
         onMount={(editor) => {
           assetStoreBundle?.attach(editor);
+          // Pasted/dropped pictures: one whose upload fails is removed again, not saved broken.
+          editor.registerExternalContentHandler("files", (c) => import("@/lib/assets/addImageFiles").then((m) => m.addImageFiles(editor, c)));
           if (initialData) {
             try {
               loadSnapshot(editor.store, initialData);
@@ -609,9 +671,14 @@ export default function BoardPage() {
           }
           // An overlay the student never accepted is a proposal, not part of the board: it
           // would otherwise reopen full-canvas over work they have moved on from. Dropping
-          // it here is the same outcome as Reject (see dropPendingAiOverlays).
-          const dropped = dropPendingAiOverlays(editor);
-          if (dropped.length > 0) logger.info({ id, count: dropped.length }, "Dropped pending AI overlays on load");
+          // it here is the same outcome as Reject (see dropPendingAiOverlays). Only boards
+          // from the retired image pipeline have any, so the module loads for those alone.
+          if (editor.getCurrentPageShapes().some((s) => s.meta.aiOverlay === true)) {
+            void import("@/hooks/useAiOverlayShapes").then(({ dropPendingAiOverlays }) => {
+              const dropped = dropPendingAiOverlays(editor);
+              if (dropped.length > 0) logger.info({ id, count: dropped.length }, "Dropped pending AI overlays on load");
+            });
+          }
           // Boards saved before the asset store shipped still carry base64 images: move
           // them to Storage in the background. The rewrite is a store change, so the
           // autosave persists the new URLs; only failures are surfaced.
@@ -652,12 +719,13 @@ export default function BoardPage() {
         <BoardContent id={id} initialVersion={initialVersion} chat={{ open: chatOpen, onOpenChange: setChatOpen, host: chatHost }} />
       </Tldraw>
       </div>
-      {/* the chat panel: docked on the right on a desktop, a bottom sheet on a phone */}
+      {/* the chat panel: docked on the right on a wide screen held sideways, a bottom sheet on a
+          phone or an upright iPad (docked there it would leave the 16:9 board a postcard) */}
       <div
         ref={setChatHost}
         className={
           chatOpen
-            ? "relative z-[1100] h-[46dvh] shrink-0 overflow-hidden border-t border-gray-200 bg-white shadow-[0_-4px_16px_rgba(0,0,0,0.06)] md:h-auto md:w-[360px] md:border-l md:border-t-0 md:shadow-none"
+            ? "relative z-[1100] h-[46dvh] shrink-0 overflow-hidden border-t border-gray-200 bg-white shadow-[0_-4px_16px_rgba(0,0,0,0.06)] md:landscape:h-auto md:landscape:w-[360px] md:landscape:border-l md:landscape:border-t-0 md:landscape:shadow-none"
             : "hidden"
         }
       />

@@ -39,6 +39,22 @@ The budget lives in `BUDGETS` in `scripts/check-bundle.mjs`. Raising it needs a 
 what was added and why it could not be lazy-loaded. `/train` has no budget: trainer-only route, same
 graph as the board minus the live-math hooks.
 
+**Headroom, 2026-10-03.** `origin/main` (`620f11a`) measures 1,059,095 B on `/board/[id]`: 905 B under
+the budget. Client error reporting (`feat/prod-basics`) takes 281 B of it, leaving 624 B
+(1,059,376 B). Only its front door is in the first load: the window listeners in
+`src/instrumentation-client.ts` and `src/lib/reportAppError.ts`, which every page (and the error
+boundaries) share. The reporter itself, `src/lib/clientErrors.ts` (1.7 KB raw / 1.1 KB gzip), is a lazy
+chunk fetched 3 s after the page loads, or at the first error; shipped in the first load it cost 887 B.
+Other routes grew 274 to 405 B for the same front door.
+
+**Sync follow-ups, 2026-10-03** (`fix/sync-followups`, measured against a build of
+`release/ink-and-board` `ce2b2f7`, which itself measured 1,054,882 B): `/board/[id]` 1,056,203 B
+(+1,321, 3,797 B under the budget). In the first load: the per-tab backup key and its Web Lock, the
+`base`/`sent` copies in the backup, the shared ink store (also +321 B on `/`, +303 B on `/account`)
+and the registration of the board's `files` handler. Lazy: the backup restore
+(`src/lib/sync/restoreBackup.ts`, fetched only when another tab left a backup) and the
+paste/drop handler (`src/lib/assets/addImageFiles.ts`, fetched on the first paste or drop).
+
 ## Before / after
 
 "Before" is the branch as handed over (commit `7b4a42d`); "after" is the same tree plus the changes in
@@ -137,6 +153,15 @@ into the root layout, which would load it on `/` and `/login` - a regression for
   first-load on the board. Its CSS, however, is imported from `src/app/globals.css` and therefore ships to
   `/` and `/login` too (~15 KB gzip of the 29 KB layout CSS). See recommendations.
 - **mathjs** and **pdfjs-dist** stay lazy (`(lazy)` in the chunk table; both are behind `await import()`).
+
+## 2026-10-02: the board-feel pass (`fix/board-feel`)
+
+`/board/[id]` first-load JS was 1,059,082 B gzip (918 B under budget) before the pass and
+1,054,571 B after it (CSS 48,211 → 48,419 B); 1,055,898 B after the review fixes and the pause-mid-line fix that followed. The pass's fixes (timeouts, the narrow-board strip,
+screen deletion, focus rings, the Live loop changes) were paid for by making three things lazy that
+most boards never show: `StickerLibrary` and `PdfUpload` (Feature Labs, off by default) and
+`LiveDebugPanel` (development, or opted in on the device) — `React.lazy` in `app/board/[id]/page.tsx`.
+See `docs/QA-2026-10-02-feel.md`.
 
 ## Recommendations not done here (files owned elsewhere)
 

@@ -1,9 +1,11 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ASSET_COPY } from "@/components/live/copy";
-import { SAVE_STATUS_COPY, SAVED_FADE_MS, saveStatusViewFor } from "@/components/live/SaveStatus";
+import { SAVE_STATUS_COPY, SAVED_FADE_MS, SaveStatus, saveStatusIcon, saveStatusViewFor } from "@/components/live/SaveStatus";
 import type { SyncState } from "@/lib/sync";
 
-const base: SyncState = { status: "saved", message: null, lastSavedAt: 1000, version: 3, pending: false, attempt: 0 };
+const base: SyncState = { status: "saved", message: null, notice: null, lastSavedAt: 1000, version: 3, pending: false, attempt: 0 };
 const at = (over: Partial<SyncState>): SyncState => ({ ...base, ...over });
 
 describe("saveStatusViewFor", () => {
@@ -12,6 +14,20 @@ describe("saveStatusViewFor", () => {
     expect(saveStatusViewFor(at({}), false)).toBeNull();
     expect(saveStatusViewFor(at({ lastSavedAt: null }), true)).toBeNull();
     expect(SAVED_FADE_MS).toBe(1500);
+  });
+
+  it("says when unsaved work is not backed up on this device either (storage full)", () => {
+    expect(saveStatusViewFor(at({ status: "offline", pending: true, message: "offline", backupFailed: true }), false)).toEqual({
+      label: SAVE_STATUS_COPY.offlineNotBackedUp,
+      tone: "red",
+      showRetry: false,
+      title: SAVE_STATUS_COPY.notBackedUp,
+    });
+    expect(saveStatusViewFor(at({ status: "error", pending: true, message: "Save timed out.", backupFailed: true }), false)).toMatchObject({
+      label: SAVE_STATUS_COPY.error,
+      title: `Save timed out. ${SAVE_STATUS_COPY.notBackedUp}`,
+    });
+    expect(saveStatusViewFor(at({ status: "offline", pending: true, message: "offline" }), false)).toMatchObject({ label: SAVE_STATUS_COPY.offline });
   });
 
   it("stays quiet while a save is merely debounced, but shows retries", () => {
@@ -29,6 +45,14 @@ describe("saveStatusViewFor", () => {
       tone: "neutral",
       showRetry: false,
       title: null,
+    });
+  });
+
+  it("a save that is a retry after a failure says 'Retrying…', so a hang that keeps timing out never reads as an ordinary save", () => {
+    expect(saveStatusViewFor(at({ status: "saving", attempt: 2 }), false)).toMatchObject({
+      label: SAVE_STATUS_COPY.retrying,
+      tone: "neutral",
+      showRetry: false,
     });
   });
 
@@ -68,9 +92,46 @@ describe("saveStatusViewFor", () => {
     });
   });
 
+  it("a nearly full board keeps an amber notice up while it saves normally", () => {
+    const notice = ASSET_COPY.boardNearlyFull;
+    const view = { label: notice, tone: "amber", showRetry: false, title: null };
+    expect(saveStatusViewFor(at({ notice }), false)).toEqual(view);
+    expect(saveStatusViewFor(at({ status: "dirty", pending: true, notice }), false)).toEqual(view);
+    // the brief "Saved", a save in flight and every problem state still take precedence
+    expect(saveStatusViewFor(at({ notice }), true)?.label).toBe(SAVE_STATUS_COPY.saved);
+    expect(saveStatusViewFor(at({ status: "saving", notice }), false)?.label).toBe(SAVE_STATUS_COPY.saving);
+    expect(saveStatusViewFor(at({ status: "error", message: "x", notice }), false)?.label).toBe(SAVE_STATUS_COPY.error);
+  });
+
   it("the fade flag never leaks into non-saved states", () => {
     for (const status of ["dirty", "saving", "offline", "merging", "error", "refused"] as const) {
       expect(saveStatusViewFor(at({ status }), true)).toEqual(saveStatusViewFor(at({ status }), false));
     }
+  });
+});
+
+describe("the pill's compact form (an icon on a board under 1024 px, so an upright iPad's bar keeps one row)", () => {
+  it("only the routine states shrink to an icon; anything the student must read keeps its words", () => {
+    const icon = (state: SyncState, savedVisible = false) => {
+      const view = saveStatusViewFor(state, savedVisible);
+      return view && saveStatusIcon(view);
+    };
+    expect(icon(at({}), true)).toBe("saved");
+    expect(icon(at({ status: "saving" }))).toBe("busy");
+    expect(icon(at({ status: "saving", attempt: 1 }))).toBe("busy");
+    expect(icon(at({ status: "dirty", attempt: 2 }))).toBe("busy");
+    for (const status of ["offline", "merging", "error", "refused"] as const) expect(icon(at({ status, message: "x" })), status).toBeNull();
+    expect(icon(at({ notice: "This board is nearly full" }))).toBeNull();
+  });
+
+  it("renders the icon on a narrow board with the words for screen readers and as the tooltip; errors in words", () => {
+    const saving = renderToStaticMarkup(createElement(SaveStatus, { sync: at({ status: "saving" }), onRetry: () => {} }));
+    expect(saving).toContain('title="Saving…"');
+    expect(saving).toMatch(/<svg[^>]*@5xl\/bar:hidden/);
+    expect(saving).toContain('<span class="sr-only @5xl/bar:not-sr-only">Saving…</span>');
+    const failed = renderToStaticMarkup(createElement(SaveStatus, { sync: at({ status: "error", message: "network" }), onRetry: () => {} })).replace(/&#x27;/g, "'");
+    expect(failed).not.toContain("<svg");
+    expect(failed).toContain(`<span>${SAVE_STATUS_COPY.error}</span>`);
+    expect(failed).toContain(">Retry</button>");
   });
 });

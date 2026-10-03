@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api-client";
 import type { LiveError } from "@/lib/live/liveStore";
+import { SseTimeoutError } from "@/lib/live/sseClient";
 import { LIVE_COPY, pillLabelFor } from "../copy";
 import {
   RATE_LIMIT_FALLBACK_MS,
   classifyLiveFailure,
   liveErrorView,
+  pillPrimary,
   secondsLeftFor,
   showsHintCard,
   sseFailure,
@@ -43,12 +45,19 @@ describe("classifyLiveFailure", () => {
   });
 
   it("402: keeps a human server message, falls back to our copy for a bare code", () => {
-    expect(classifyLiveFailure(new ApiError("Your class is out of credits.", 402, "credits_exhausted"), ONLINE)).toMatchObject({
-      code: "credits",
-      message: "Your class is out of credits.",
+    expect(classifyLiveFailure(new ApiError("You're out of ink. Grab an ink pack to keep going.", 402, "ink_empty"), ONLINE)).toMatchObject({
+      code: "ink",
+      message: "You're out of ink. Grab an ink pack to keep going.",
     });
-    expect(classifyLiveFailure(new ApiError("credits_exhausted", 402, "credits_exhausted"), ONLINE)).toMatchObject({ message: LIVE_COPY.errors.credits });
-    expect(classifyLiveFailure(new ApiError("Request failed (402)", 402), ONLINE)).toMatchObject({ message: LIVE_COPY.errors.credits });
+    expect(classifyLiveFailure(new ApiError("ink_empty", 402, "ink_empty"), ONLINE)).toMatchObject({ message: LIVE_COPY.errors.ink });
+    expect(classifyLiveFailure(new ApiError("Request failed (402)", 402), ONLINE)).toMatchObject({ message: LIVE_COPY.errors.ink });
+    // the 402's `cost` rides along, so the pill stays until the balance covers the refused call
+    const refused = new ApiError("You're out of ink.", 402, "ink_empty");
+    refused.body = { error: "ink_empty", remaining: 4, cost: 10 };
+    expect(classifyLiveFailure(refused, ONLINE)).toMatchObject({ code: "ink", inkNeeded: 10 });
+    expect(classifyLiveFailure(new ApiError("x", 402, "ink_empty"), ONLINE)).not.toHaveProperty("inkNeeded");
+    // the provider's own outage is not the student's ink
+    expect(classifyLiveFailure(new ApiError("The tutor is unavailable right now.", 503, "upstream_error"), ONLINE)).toMatchObject({ code: "upstream" });
   });
 
   it("timeouts, SSE error frames, network failures and the offline exception", () => {
@@ -56,6 +65,15 @@ describe("classifyLiveFailure", () => {
     timeout.name = "TimeoutError";
     expect(classifyLiveFailure(timeout, ONLINE)).toMatchObject({ code: "timeout", message: "Reading took too long" });
     expect(classifyLiveFailure(new DOMException("t", "TimeoutError"), ONLINE)).toMatchObject({ code: "timeout" });
+    // a check or a solve that went silent is not "reading": the student asked for an answer
+    const silent = new SseTimeoutError();
+    expect(classifyLiveFailure(silent, { kind: "solve", lineId: "L1", online: true, userAsked: true })).toMatchObject({
+      code: "timeout",
+      message: "The tutor took too long to answer",
+      userAsked: true,
+    });
+    expect(classifyLiveFailure(silent, { kind: "check", lineId: "L1", online: true })).toMatchObject({ code: "timeout", message: LIVE_COPY.errors.answerTimeout });
+    expect(liveErrorView({ ...err(), kind: "solve", code: "timeout", message: LIVE_COPY.errors.answerTimeout }, 10_000)).toMatchObject({ primary: "retry", retryEnabled: true });
 
     expect(classifyLiveFailure(sseFailure({ error: "upstream_error", message: "Model unavailable" }), { kind: "check", lineId: "L1", online: true, userAsked: true })).toMatchObject({
       kind: "check",
@@ -97,10 +115,20 @@ describe("liveErrorView", () => {
     expect(secondsLeftFor({ at: 0 }, 5)).toBe(0);
   });
 
-  it("credits -> View plan link (no Retry); everything else -> Retry enabled", () => {
-    expect(liveErrorView(err({ code: "credits", message: "Out of credits" }), 0)).toEqual({ title: "Out of credits", primary: "account", retryEnabled: false });
+  it("ink -> Get ink (no Retry); everything else -> Retry enabled", () => {
+    expect(liveErrorView(err({ code: "ink", message: "Out of ink" }), 0)).toEqual({ title: "Out of ink", primary: "ink", retryEnabled: false });
     for (const code of ["network", "upstream", "timeout", "unknown"] as const) {
       expect(liveErrorView(err({ code, message: "m" }), 0)).toEqual({ title: "m", primary: "retry", retryEnabled: true });
+    }
+  });
+
+  it("out of ink, the pill leaves 'Get ink' to the bar's meter when the meter shows it (one 'Get ink', not two)", () => {
+    const ink = liveErrorView(err({ code: "ink", message: "Out of ink" }), 0);
+    expect(pillPrimary(ink, true)).toBeNull(); // the meter is low or empty: it says "Get ink"
+    expect(pillPrimary(ink, false)).toBe("ink"); // no meter (balance not loaded): the pill keeps it
+    for (const code of ["network", "unauthorized", "rate_limited"] as const) {
+      const view = liveErrorView(err({ code, message: "m" }), 0);
+      expect(pillPrimary(view, true)).toBe(view.primary);
     }
   });
 

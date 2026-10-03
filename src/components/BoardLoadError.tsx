@@ -19,6 +19,8 @@ export const BOARD_LOAD_COPY = {
   notFoundBody: "It may have been deleted, or it belongs to another account.",
   restoreTitle: "Couldn't restore this board's contents",
   restoreBody: "The saved drawing could not be read. Nothing has been changed; try again or come back later.",
+  crashTitle: "This board needs to reload",
+  crashBody: "Your work is safe: anything not uploaded yet is kept on this device.",
   retry: "Retry",
   back: "Back to my whiteboards",
 } as const;
@@ -46,6 +48,8 @@ export interface LoadStateInput {
 
 /** PostgREST: `.single()` found zero rows (also what an RLS-hidden row looks like). */
 const NO_ROWS_CODE = "PGRST116";
+/** Postgres invalid_text_representation: the id in the URL is not a uuid, so no board has it. */
+const BAD_ID_CODE = "22P02";
 
 function detailOf(e: unknown): string | undefined {
   if (e instanceof Error) return e.message || undefined;
@@ -60,6 +64,7 @@ function detailOf(e: unknown): string | undefined {
  * Pure decision for the board route:
  *   restoreError            -> error   (snapshot unreadable; never mount an empty editor)
  *   error PGRST116 / 0 rows -> not-found
+ *   error 22P02 (not a uuid) -> not-found (a mistyped link, not a connection problem)
  *   any other error         -> error
  *   no row                  -> not-found
  *   row                     -> ready
@@ -70,7 +75,7 @@ export function loadStateFor(input: LoadStateInput): BoardLoadState {
   }
   const { error, row } = input;
   if (error) {
-    const zeroRows = error.code === NO_ROWS_CODE || /0 rows/i.test(error.details ?? "");
+    const zeroRows = error.code === NO_ROWS_CODE || error.code === BAD_ID_CODE || /0 rows/i.test(error.details ?? "");
     if (zeroRows) return { kind: "not-found", message: BOARD_LOAD_COPY.notFoundTitle };
     return { kind: "error", message: BOARD_LOAD_COPY.errorTitle, detail: detailOf(error) };
   }
@@ -91,18 +96,35 @@ export function BoardLoading({ label = BOARD_LOAD_COPY.loading }: { label?: stri
   );
 }
 
+/**
+ * In place of tldraw's own error screen, whose "Reset data" runs `localStorage.clear()`: that
+ * would wipe the unsaved-changes backups (and the sign-in) at the one moment they matter. The
+ * board's autosave has already backed up and flushed as the editor unmounted; a reload restores.
+ */
+export function BoardCrashed({ error }: { error: unknown }) {
+  return (
+    <BoardLoadError
+      state={{ kind: "error", message: BOARD_LOAD_COPY.crashTitle, detail: detailOf(error) }}
+      onRetry={() => window.location.reload()}
+    />
+  );
+}
+
 interface BoardLoadErrorProps {
   state: Exclude<BoardLoadState, { kind: "ready" }>;
   onRetry: () => void;
 }
 
 export function BoardLoadError({ state, onRetry }: BoardLoadErrorProps) {
+  const crashed = state.message === BOARD_LOAD_COPY.crashTitle;
   const body =
     state.kind === "not-found"
       ? BOARD_LOAD_COPY.notFoundBody
       : state.message === BOARD_LOAD_COPY.restoreTitle
         ? BOARD_LOAD_COPY.restoreBody
-        : BOARD_LOAD_COPY.errorBody;
+        : crashed
+          ? BOARD_LOAD_COPY.crashBody
+          : BOARD_LOAD_COPY.errorBody;
 
   return (
     <div className="flex h-screen items-center justify-center bg-gray-50 px-4" role="alert">

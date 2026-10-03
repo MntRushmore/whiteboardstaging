@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api-client";
 import {
-  CREDITS_ACCOUNT_PATH,
-  CREDITS_EXHAUSTED_MESSAGE,
+  INK_BUY_PATH,
+  INK_EMPTY_MESSAGE,
   NETWORK_MESSAGE,
   OFFLINE_MESSAGE,
   RATE_LIMITED_MESSAGE,
@@ -25,21 +25,29 @@ describe("describeApiError", () => {
     expect(describeApiError(new ApiError("You need to be signed in.", 401, "unauthorized")).signIn).toBe(true);
   });
 
-  it("402 shows the credits message with no Retry, preferring the server's human text", () => {
-    expect(describeApiError(new ApiError("credits_exhausted", 402, "credits_exhausted"))).toEqual({
-      message: CREDITS_EXHAUSTED_MESSAGE,
+  it("402 ink_empty shows the out-of-ink message with no Retry, preferring the server's human text", () => {
+    expect(describeApiError(new ApiError("ink_empty", 402, "ink_empty"))).toEqual({
+      message: INK_EMPTY_MESSAGE,
       retryable: false,
       aborted: false,
-      kind: "credits",
-      accountHref: CREDITS_ACCOUNT_PATH,
+      kind: "ink",
+      accountHref: INK_BUY_PATH,
     });
-    expect(CREDITS_ACCOUNT_PATH).toBe("/account");
-    expect(CREDITS_EXHAUSTED_MESSAGE).not.toMatch(/rushil/i);
-    expect(describeApiError(new ApiError("Out of credits for today", 402, "credits_exhausted")).message).toBe(
-      "Out of credits for today",
+    expect(INK_BUY_PATH).toBe("/account#ink-packs");
+    expect(INK_EMPTY_MESSAGE).not.toMatch(/rushil|credit/i);
+    expect(describeApiError(new ApiError("You're out of ink. Grab an ink pack to keep going.", 402, "ink_empty")).message).toBe(
+      "You're out of ink. Grab an ink pack to keep going.",
     );
     // apiJson's own fallback text is not a human message either
-    expect(describeApiError(new ApiError("Request failed (402)", 402)).message).toBe(CREDITS_EXHAUSTED_MESSAGE);
+    expect(describeApiError(new ApiError("Request failed (402)", 402)).message).toBe(INK_EMPTY_MESSAGE);
+    // a tab that outlived a deploy still understands the pre-ink code
+    expect(describeApiError(new ApiError("x", 402, "credits_exhausted")).kind).toBe("ink");
+  });
+
+  it("the provider's own outage (503 upstream_error) is a server error, never out of ink", () => {
+    const d = describeApiError(new ApiError("The tutor is unavailable right now. Try again in a few minutes.", 503, "upstream_error"));
+    expect(d.kind).toBe("server");
+    expect(d.retryable).toBe(true);
   });
 
   it("429 is retryable and carries retryAfterMs from details, the body, or the message", () => {
@@ -121,7 +129,7 @@ describe("describeApiError", () => {
   });
 
   it("keeps the copy calm: no exclamation marks, never 'wrong'", () => {
-    for (const text of [CREDITS_EXHAUSTED_MESSAGE, SIGN_IN_AGAIN_MESSAGE, RATE_LIMITED_MESSAGE, OFFLINE_MESSAGE, NETWORK_MESSAGE, SERVER_MESSAGE]) {
+    for (const text of [INK_EMPTY_MESSAGE, SIGN_IN_AGAIN_MESSAGE, RATE_LIMITED_MESSAGE, OFFLINE_MESSAGE, NETWORK_MESSAGE, SERVER_MESSAGE]) {
       expect(text).not.toMatch(/!/);
       expect(text).not.toMatch(/\bwrong\b/i);
     }

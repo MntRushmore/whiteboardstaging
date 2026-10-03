@@ -5,14 +5,53 @@ import {
   MAX_SCREENS,
   SCREEN_ASPECT,
   addScreen,
+  deleteScreen,
   applyScreenCamera,
   ensureScreen,
+  fitInScreen,
   goToScreen,
   readScreenMeta,
+  SCREEN_FIT_MARGIN,
   screenForContent,
   screenPosition,
+  screenViewPadding,
   type ScreensEditor,
 } from "../screens";
+
+describe("fitInScreen (where an inserted PDF page goes)", () => {
+  const inside = (r: { x: number; y: number; w: number; h: number }, s: { x: number; y: number; w: number; h: number }, m: number) =>
+    r.x >= s.x + m - 1e-9 && r.y >= s.y + m - 1e-9 && r.x + r.w <= s.x + s.w - m + 1e-9 && r.y + r.h <= s.y + s.h - m + 1e-9;
+
+  it("a portrait worksheet (A4 rendered 1600 px wide) fills the screen's height inside the margin, centred", () => {
+    const page = { w: 1600, h: 2263 };
+    const r = fitInScreen(page, DEFAULT_SCREEN);
+    expect(inside(r, DEFAULT_SCREEN, SCREEN_FIT_MARGIN)).toBe(true);
+    expect(r.h).toBeCloseTo(DEFAULT_SCREEN.h - 2 * SCREEN_FIT_MARGIN);
+    expect(r.w / r.h).toBeCloseTo(page.w / page.h);
+    expect(r.x + r.w / 2).toBeCloseTo(DEFAULT_SCREEN.w / 2);
+  });
+
+  it("a landscape page fills the width; any screen (a later one, offset) is respected", () => {
+    const screen = { x: 3200, y: -450, w: 1600, h: 900 };
+    const r = fitInScreen({ w: 3000, h: 1000 }, screen);
+    expect(inside(r, screen, SCREEN_FIT_MARGIN)).toBe(true);
+    expect(r.w).toBeCloseTo(screen.w - 2 * SCREEN_FIT_MARGIN);
+    expect(r.y + r.h / 2).toBeCloseTo(screen.y + screen.h / 2);
+  });
+
+  it("never enlarges a small page", () => {
+    expect(fitInScreen({ w: 400, h: 300 }, DEFAULT_SCREEN)).toEqual({ x: 600, y: 300, w: 400, h: 300 });
+  });
+
+  it("the old placement (90% of an upright iPad's viewport) overflowed the screen's frame", () => {
+    // An 834x1194 window shows the 1600x900 screen across its width: the viewport is ~1600x2290
+    // page units, so 90% of it let a portrait page grow to ~2060 tall, more than twice the screen.
+    const viewport = { w: 1632, h: 2336 };
+    const old = Math.min(1, (viewport.w * 0.9) / 1600, (viewport.h * 0.9) / 2263);
+    expect(2263 * old).toBeGreaterThan(DEFAULT_SCREEN.h);
+    expect(fitInScreen({ w: 1600, h: 2263 }, DEFAULT_SCREEN).h).toBeLessThan(DEFAULT_SCREEN.h);
+  });
+});
 
 describe("readScreenMeta", () => {
   it("reads a stored screen", () => {
@@ -61,7 +100,7 @@ describe("screenPosition", () => {
 });
 
 /** Just enough editor for the screen helpers: pages, one current page, shapes by page. */
-function fakeEditor(opts: { pages?: number; shapes?: Record<string, Box[]> } = {}) {
+function fakeEditor(opts: { pages?: number; shapes?: Record<string, Box[]>; boardHeight?: number } = {}) {
   let pages: TLPage[] = Array.from({ length: opts.pages ?? 1 }, (_, i) => ({
     id: `page:${i + 1}` as TLPageId,
     typeName: "page",
@@ -84,6 +123,8 @@ function fakeEditor(opts: { pages?: number; shapes?: Record<string, Box[]> } = {
   }
   const setCameraOptions = vi.fn();
   const setCamera = vi.fn();
+  /** the order things happened in when a screen was deleted */
+  const log: string[] = [];
   const editor = {
     getPages: () => pages,
     getCurrentPage: () => pages.find((p) => p.id === current)!,
@@ -103,9 +144,32 @@ function fakeEditor(opts: { pages?: number; shapes?: Record<string, Box[]> } = {
     getCameraOptions: () => ({ isLocked: false, panSpeed: 1, zoomSpeed: 1, zoomSteps: [0.1, 1, 8], wheelBehavior: "pan" as const }),
     setCamera,
     getCamera: () => ({ x: 0, y: 0, z: 1 }),
+    getViewportScreenBounds: () => new Box(0, 0, 1280, opts.boardHeight ?? 800),
     run: (fn: () => void) => fn(),
+    // deleting and restoring a screen (tldraw's deletePage moves to the page before, else after)
+    getShape: (id: TLShapeId) => {
+      const pageId = [...byPage].find(([, ids]) => ids.includes(id))?.[0];
+      return pageId ? { id, typeName: "shape", parentId: pageId } : undefined;
+    },
+    getBindingsInvolvingShape: () => [],
+    markHistoryStoppingPoint: (name: string) => log.push(`mark:${name}`),
+    deletePage: (id: TLPageId) => {
+      log.push(`delete:${id}`);
+      const i = pages.findIndex((p) => p.id === id);
+      if (current === id) current = (pages[i - 1] ?? pages[i + 1]).id;
+      pages = pages.filter((p) => p.id !== id);
+      byPage.delete(id);
+    },
+    store: {
+      put: (records: Array<{ id: string; typeName: string; parentId?: string }>) => {
+        for (const r of records) {
+          if (r.typeName === "page") pages = [...pages, r as TLPage].sort((a, b) => (a.index < b.index ? -1 : 1));
+          else if (r.parentId) byPage.set(r.parentId, [...(byPage.get(r.parentId) ?? []), r.id as TLShapeId]);
+        }
+      },
+    },
   };
-  return { editor: editor as unknown as ScreensEditor, setCameraOptions, setCamera, pages: () => pages };
+  return { editor: editor as unknown as ScreensEditor, setCameraOptions, setCamera, pages: () => pages, shapesOn: (id: string) => byPage.get(id) ?? [], log };
 }
 
 describe("ensureScreen", () => {
@@ -139,6 +203,28 @@ describe("applyScreenCamera", () => {
     expect(opts.zoomSteps[0]).toBe(1);
     expect(setCamera).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ reset: true }));
   });
+
+  it("keeps the screen clear of the top bar and the toolbar floating over the board", () => {
+    const { editor, setCameraOptions } = fakeEditor();
+    applyScreenCamera(editor);
+    const { padding } = setCameraOptions.mock.calls[0][0].constraints;
+    // the help tabs end 52 px down and tldraw's toolbar is 56 px tall: the screen starts below both
+    expect(padding.y).toBeGreaterThanOrEqual(60);
+    expect(padding.x).toBe(16);
+  });
+
+  it("on a phone on its side the screen stays big: the gap shrinks with the board's height", () => {
+    const at = (boardHeight: number) => {
+      const { editor, setCameraOptions } = fakeEditor({ boardHeight });
+      applyScreenCamera(editor);
+      return setCameraOptions.mock.calls[0][0].constraints.padding.y;
+    };
+    expect(at(390)).toBe(16);
+    expect(at(520)).toBe(40);
+    expect(at(640)).toBe(64);
+    expect(at(1080)).toBe(64);
+    expect(screenViewPadding(300)).toEqual({ x: 16, y: 16 });
+  });
 });
 
 describe("addScreen / goToScreen", () => {
@@ -154,6 +240,62 @@ describe("addScreen / goToScreen", () => {
     const { editor } = fakeEditor({ pages: MAX_SCREENS });
     expect(addScreen(editor)).toBe(false);
     expect(editor.getPages()).toHaveLength(MAX_SCREENS);
+  });
+
+  it("deletes the current screen and its ink, shows the one before it, and puts it all back on Undo", async () => {
+    const { editor, pages, shapesOn } = fakeEditor({ pages: 3, shapes: { "page:2": [new Box(0, 0, 10, 10), new Box(20, 0, 10, 10)] } });
+    goToScreen(editor, 1);
+    const restore = await deleteScreen(editor as never);
+    expect(restore).toBeTypeOf("function");
+    expect(pages().map((p) => p.id)).toEqual(["page:1", "page:3"]);
+    expect(editor.getCurrentPageId()).toBe("page:1");
+    expect(shapesOn("page:2")).toEqual([]);
+    restore!();
+    // the screen and both of its strokes come back where they were, and the student is shown it
+    expect(pages().map((p) => p.id)).toEqual(["page:1", "page:2", "page:3"]);
+    expect(shapesOn("page:2")).toHaveLength(2);
+    expect(editor.getCurrentPageId()).toBe("page:2");
+  });
+
+  it("the tutor's pens finish (and their writes land) before the screen goes, and the delete is its own undo step", async () => {
+    const { editor, log } = fakeEditor({ pages: 2 });
+    goToScreen(editor, 1);
+    // a finished pen's last strokes are written a microtask later, as Live's writes are
+    const finishWriting = vi.fn(() => queueMicrotask(() => log.push("strokes landed")));
+    await deleteScreen(editor as never, finishWriting);
+    expect(finishWriting).toHaveBeenCalled();
+    expect(log.slice(-2)).toEqual(["mark:delete screen", "delete:page:2"]);
+    expect(log.indexOf("strokes landed")).toBeLessThan(log.indexOf("delete:page:2"));
+  });
+
+  it("Undo from the toast does nothing once Ctrl+Z has brought the screen back", async () => {
+    const { editor, pages } = fakeEditor({ pages: 2 });
+    goToScreen(editor, 1);
+    const page = editor.getCurrentPage();
+    const restore = await deleteScreen(editor as never);
+    // Ctrl+Z: tldraw puts the page back itself (the student may have changed it since)
+    (editor as unknown as { store: { put: (r: unknown[]) => void } }).store.put([page]);
+    const before = pages().length;
+    restore!();
+    expect(pages()).toHaveLength(before);
+  });
+
+  it("a screen added since takes no index from the one put back: it returns to where it was", async () => {
+    const { editor, pages } = fakeEditor({ pages: 2 });
+    goToScreen(editor, 1);
+    const restore = await deleteScreen(editor as never);
+    // a new screen at the end now has the deleted screen's index (tldraw: the index above the last)
+    (editor as unknown as { store: { put: (r: unknown[]) => void } }).store.put([{ id: "page:new", typeName: "page", name: "Screen 2", index: "a2", meta: {} }]);
+    expect(pages().map((p) => p.index)).toEqual(["a1", "a2"]);
+    restore!();
+    const indexes = pages().map((p) => p.index);
+    expect(new Set(indexes).size).toBe(3);
+    expect(pages().map((p) => p.id)[1]).toBe("page:2");
+  });
+
+  it("never deletes a board's only screen", async () => {
+    const { editor } = fakeEditor();
+    expect(await deleteScreen(editor as never)).toBeNull();
   });
 
   it("moves between screens and clamps at the ends", () => {

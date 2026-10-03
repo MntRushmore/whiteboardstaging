@@ -3,8 +3,8 @@ import type pino from "pino";
 import { logger } from "@/lib/logger";
 import { requireUser, type AuthedUser } from "@/lib/server/auth";
 import { checkRateLimitDistributed, rateLimitedResponse, type RateLimitBucket } from "@/lib/server/rate-limit";
-import { parseJsonBody } from "@/lib/server/request";
-import { refundCredits, type RefundInput, type RpcClient } from "@/lib/server/billing";
+import { PROVIDER_UNAVAILABLE_MESSAGE, parseJsonBody } from "@/lib/server/request";
+import { refundInk, type RefundInput, type RpcClient } from "@/lib/server/billing";
 import { CreditsExhaustedError, UpstreamError } from "@/lib/server/openrouter";
 
 /** Shared plumbing for the /api/live/* route handlers. */
@@ -28,7 +28,7 @@ export function withRequestId(res: Response, requestId: string): Response {
 export type LiveContext<T> = {
   requestId: string;
   user: AuthedUser;
-  /** Verified access token (for acting as the user, e.g. `enforceCredits`). */
+  /** Verified access token (for acting as the user, e.g. `enforceInk`). */
   token: string;
   log: pino.Logger;
   data: T;
@@ -61,7 +61,14 @@ export async function livePreamble<S extends z.ZodTypeAny>(
 
   const parsed = await parseJsonBody(req, schema);
   if ("response" in parsed) {
-    log.warn("invalid request body");
+    if (parsed.failure === "unreadable") {
+      // Not a client bug: the request was abandoned on its way (the client's timeout fired while
+      // a slow or cold server had not read it yet, or a newer request for the same line replaced
+      // it). Nobody is waiting for this answer, and nothing was charged.
+      log.info("request abandoned by the client before its body arrived");
+    } else {
+      log.warn({ failure: parsed.failure, issues: parsed.issues?.slice(0, 5) }, "invalid request body");
+    }
     return { response: withRequestId(parsed.response, requestId) };
   }
 
@@ -88,7 +95,7 @@ export async function runChargedStream(
     if (delivered()) {
       log.info({ requestId: input.requestId }, "stream failed after partial output; charge kept");
     } else {
-      await refundCredits(input, log, client);
+      await refundInk(input, log, client);
     }
     throw err;
   }
@@ -96,7 +103,8 @@ export async function runChargedStream(
 
 /** Map a thrown error to the SSE `error` frame payload (same codes as the JSON error contract). */
 export function sseErrorPayload(err: unknown): { error: string; message: string } {
-  if (err instanceof CreditsExhaustedError) return { error: "credits_exhausted", message: err.message };
+  // The provider account behind the tutor, not the student's ink (see errorResponse in request.ts).
+  if (err instanceof CreditsExhaustedError) return { error: "upstream_error", message: PROVIDER_UNAVAILABLE_MESSAGE };
   if (err instanceof UpstreamError) {
     return { error: "upstream_error", message: "The AI service returned an error. Please try again." };
   }

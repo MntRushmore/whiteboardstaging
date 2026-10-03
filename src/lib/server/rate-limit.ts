@@ -6,8 +6,8 @@
  *  - `checkRateLimit` — in-memory sliding window, PER INSTANCE. Every server instance
  *    (or Vercel Fluid Compute function instance) keeps its own Map, so the effective
  *    limit is `limit * instances`. Used for the public, IP-keyed buckets (config/status,
- *    billing/webhook) where there is no user to key a database row on, and as the
- *    fallback below.
+ *    billing/webhook, admin/gc, client-errors, health; `clientIp`) where there is no user to
+ *    key a database row on, and as the fallback below.
  *
  *  - `checkRateLimitDistributed` — the per-user buckets. With `RATE_LIMIT_BACKEND=db`
  *    (the default) it calls the SECURITY DEFINER RPC `rate_limit_hit(p_bucket, p_limit,
@@ -100,6 +100,15 @@ export function checkRateLimit(key: string, { limit, windowMs }: RateLimitOption
 
   stamps.push(now);
   return { ok: true, remaining: limit - stamps.length, retryAfterMs: 0 };
+}
+
+/**
+ * The caller's IP for a public route's per-IP bucket (`ip:<ip>:<bucket>`): the first hop of
+ * `x-forwarded-for` (Vercel sets it), else `x-real-ip`, else "unknown".
+ */
+export function clientIp(req: Request): string {
+  const first = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return first || req.headers.get("x-real-ip")?.trim() || "unknown";
 }
 
 /** Convenience: build the canonical key for a user + bucket. */

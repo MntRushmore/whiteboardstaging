@@ -396,9 +396,9 @@ export const LectureResponseSchema = z.object({
   actions: z.array(LectureActionSchema).max(LECTURE_LIMITS.actions),
   /** what the route dropped and why (logged; shown only after "Draw that") */
   notes: z.array(z.string().max(200)).max(8).default([]),
-  /** true when everything the model proposed was dropped and the credit was given back */
+  /** true when everything the model proposed was dropped and the ink was given back */
   refunded: z.boolean().optional(),
-  /** true when this request started a new billed minute (a credit was taken) */
+  /** true when this request started a new billed minute (ink was taken) */
   charged: z.boolean().optional(),
   model: z.string(),
   ms: z.number(),

@@ -2,7 +2,7 @@
  * The courses a new student chooses from in the welcome, and the starter problem the tutor writes
  * on their first board. Pure data: the board writes a starter through the board chat's own
  * executor (`write_problems`, `src/lib/live/chat/desk.ts`), so it is checked by the engine and
- * written in the tutor's hand like any problem the chat writes — no model call, no credits.
+ * written in the tutor's hand like any problem the chat writes — no model call, no ink.
  *
  * Every starter is held to this by `__tests__/courses.test.ts`: `verifyProblem` accepts it (the
  * engine reads it and `localSolve` answers it), the hand can write it, its answer is clean, and

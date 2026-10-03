@@ -12,7 +12,7 @@ import { Button } from "@/registry/components/button/button";
 import { PasswordField } from "@/registry/components/password-field/password-field";
 import { Skeleton } from "@/registry/components/skeleton/skeleton";
 import { loginErrorField, loginErrorMessage } from "@/lib/loginErrorMessage";
-import { FORM_COPY, RESET_LINK_COPY, hashHasAuthError, validateNewPassword } from "@/lib/loginForm";
+import { AUTH_FORM_METHOD, FORM_COPY, RESET_LINK_COPY, hashHasAuthError, validateNewPassword } from "@/lib/loginForm";
 import styles from "./auth.module.css";
 
 function subscribeToHash(onChange: () => void) {
@@ -106,7 +106,8 @@ export function ResetPasswordForm() {
           For <strong>{user.email}</strong>. You&rsquo;ll use it the next time you sign in.
         </p>
       </div>
-      <form onSubmit={handleSubmit} noValidate aria-busy={busy} className={styles.form}>
+      {/* Rendered only once auth has loaded (after hydration); posts anyway, so a password can never land in a URL. */}
+      <form {...AUTH_FORM_METHOD} onSubmit={handleSubmit} noValidate aria-busy={busy} className={styles.form}>
         {/* Tells password managers which saved login this new password belongs to. */}
         <input type="email" name="email" autoComplete="username" value={user.email ?? ""} readOnly hidden />
         <PasswordField

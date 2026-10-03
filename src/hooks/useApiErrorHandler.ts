@@ -3,13 +3,13 @@
 import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { isApiError } from "@/lib/api-client";
-import { ACCOUNT_PATH, BILLING_COPY } from "@/lib/billing/viewModel";
+import { isApiError, isOutOfInk } from "@/lib/api-client";
+import { INK_COPY, INK_PACKS_PATH } from "@/lib/billing/inkSummary";
 
-/** 402 without a usable server message. The toast links to /account (plans, reset date). */
-export const CREDITS_EXHAUSTED_MESSAGE = BILLING_COPY.exhausted;
-/** Where a 402 sends the user: their plan, remaining credits and the reset date. */
-export const CREDITS_ACCOUNT_PATH = ACCOUNT_PATH;
+/** 402 without a usable server message. The toast links to the ink packs on /account. */
+export const INK_EMPTY_MESSAGE = "You're out of ink. Grab an ink pack to keep going.";
+/** Where a 402 sends the user: the ink packs. */
+export const INK_BUY_PATH = INK_PACKS_PATH;
 export const SIGN_IN_AGAIN_MESSAGE = "Please sign in again";
 export const RATE_LIMITED_MESSAGE =
   "Slow down a little — try again in a few seconds";
@@ -33,7 +33,7 @@ export function isAbortError(err: unknown): boolean {
 export type ApiErrorKind =
   | "abort"
   | "unauthorized"
-  | "credits"
+  | "ink"
   | "rate-limited"
   | "offline"
   | "network"
@@ -53,7 +53,7 @@ export interface ApiErrorDescription {
   /** True for a fetch abort (the user edited mid-request) — not an error to show. */
   aborted: boolean;
   kind: ApiErrorKind;
-  /** Present on 402: the in-app route where the user can see their plan and credits. */
+  /** Present on 402: the in-app route where the user can buy ink. */
   accountHref?: string;
 }
 
@@ -99,7 +99,7 @@ function isNetworkFailure(err: unknown): boolean {
  * should say and whether a Retry button makes sense:
  *   AbortError           -> aborted (show nothing)
  *   401 / unauthorized   -> "Please sign in again", signIn, not retryable
- *   402 / credits        -> credits message, not retryable
+ *   402 / ink_empty      -> out-of-ink message, not retryable
  *   429 / rate_limited   -> the server's hint (with retryAfterMs), retryable
  *   5xx                  -> server message, retryable
  *   other 4xx            -> server message, retryable only for 408/409/425
@@ -127,13 +127,13 @@ export function describeApiError(
         kind: "unauthorized",
       };
     }
-    if (err.status === 402 || err.code === "credits_exhausted") {
+    if (isOutOfInk(err)) {
       return {
-        message: human ?? CREDITS_EXHAUSTED_MESSAGE,
+        message: human ?? INK_EMPTY_MESSAGE,
         retryable: false,
         aborted: false,
-        kind: "credits",
-        accountHref: CREDITS_ACCOUNT_PATH,
+        kind: "ink",
+        accountHref: INK_BUY_PATH,
       };
     }
     if (err.status === 429 || err.code === "rate_limited") {
@@ -189,7 +189,7 @@ type HandleOptions = {
  * Uniform handling for errors thrown by `apiJson` / `authedFetch`:
  *   401 -> toast "Please sign in again" and redirect to /login
  *   429 -> toast the server's retry hint
- *   402 / credits_exhausted -> the credits toast with a "View plan" action to /account
+ *   402 / ink_empty -> the out-of-ink toast with a "Get ink" action to the packs on /account
  *   anything else -> the server's human message (toasted if `toastOthers`)
  *
  * Returns the human-readable message so callers can also show it inline.
@@ -210,13 +210,13 @@ export function useApiErrorHandler() {
         return described.message;
       }
 
-      const wellKnown = described.kind === "credits" || described.kind === "rate-limited";
+      const wellKnown = described.kind === "ink" || described.kind === "rate-limited";
       if (showToast && (wellKnown || options.toastOthers)) {
-        if (described.kind === "credits" && described.accountHref) {
+        if (described.kind === "ink" && described.accountHref) {
           const href = described.accountHref;
           toast.error(described.message, {
             duration: 8000,
-            action: { label: BILLING_COPY.viewAccount, onClick: () => router.push(href) },
+            action: { label: INK_COPY.getInk, onClick: () => router.push(href) },
           });
         } else {
           toast.error(described.message);

@@ -263,6 +263,13 @@ export async function signInWithPassword(url, anonKey, email, password, fetchImp
 }
 
 /**
+ * The Terms version a script-made account carries. The database refuses a new account without one
+ * (supabase/migrations/20261003010000_signup_consent.sql), whether it signs up or is created with
+ * the service role. Kept equal to TERMS_VERSION in src/lib/legal.ts (verifyRls.test.ts checks).
+ */
+export const TERMS_VERSION = "2026-10-03";
+
+/**
  * @param {string} url
  * @param {string} anonKey
  * @param {string} email
@@ -274,7 +281,7 @@ export async function signUp(url, anonKey, email, password, fetchImpl = fetch) {
   const res = await fetchImpl(`${url}/auth/v1/signup`, {
     method: "POST",
     headers: { apikey: anonKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, data: { terms_version: TERMS_VERSION } }),
   });
   return toResult(res);
 }
@@ -292,7 +299,7 @@ export async function adminCreateUser(url, serviceKey, email, password, fetchImp
   const res = await fetchImpl(`${url}/auth/v1/admin/users`, {
     method: "POST",
     headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password, email_confirm: true }),
+    body: JSON.stringify({ email, password, email_confirm: true, user_metadata: { terms_version: TERMS_VERSION } }),
   });
   return toResult(res);
 }

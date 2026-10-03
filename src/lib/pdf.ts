@@ -1,19 +1,33 @@
 // Browser-side PDF rendering helper. Uses pdfjs-dist with the published
 // worker file from a CDN — avoids bundler-specific worker setup that can
 // break under Turbopack.
+//
+// The LEGACY build, page and worker alike: pdf.js 5's modern build calls Map.getOrInsertComputed,
+// Promise.try, URL.parse and Promise.withResolvers without a fallback, which iPadOS Safari only has
+// from 26.x (17.4 for withResolvers). On an iPad on iPadOS 16.4–18 a PDF never opened ("Couldn't
+// read this PDF", or "Reading PDF…" for ever). The legacy build carries those as polyfills and
+// targets Safari 16.4, the app's own floor (Next's browserslist). It is only ever lazy-loaded.
 
-let pdfjsPromise: Promise<typeof import("pdfjs-dist")> | null = null;
+type Pdfjs = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 
-async function loadPdfjs() {
+let pdfjsPromise: Promise<Pdfjs> | null = null;
+
+/** The worker matching `version`, from the legacy build (an ES module: pdf.js 4+ workers are). */
+export function pdfWorkerUrl(version: string): string {
+  return `https://unpkg.com/pdfjs-dist@${version}/legacy/build/pdf.worker.min.mjs`;
+}
+
+export async function loadPdfjs(): Promise<Pdfjs> {
   if (!pdfjsPromise) {
     pdfjsPromise = (async () => {
-      const pdfjs = await import("pdfjs-dist");
-      const version: string = pdfjs.version;
-      // Use the matching version from the unpkg CDN. The .mjs is required
-      // for pdfjs-dist v4+ ESM workers.
-      pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.mjs`;
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl(pdfjs.version);
       return pdfjs;
     })();
+    // a failed load (offline, a CDN hiccup) is tried again next time, not remembered for good
+    pdfjsPromise.catch(() => {
+      pdfjsPromise = null;
+    });
   }
   return pdfjsPromise;
 }

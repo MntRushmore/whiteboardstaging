@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LiveSseEvent, RecognizeRequest, RecognizeResponse } from "../contracts";
 import { LiveAbortError, RecognizeClient, RecognizeTimeoutError, fetchCapabilities } from "../recognizeClient";
-import { SseFrameParser, streamLiveSse, toLiveSseEvent, type FetchLike } from "../sseClient";
+import { SseFrameParser, SseTimeoutError, streamLiveSse, toLiveSseEvent, type FetchLike } from "../sseClient";
 
 const req = (lineId: string): RecognizeRequest => ({
   boardId: "b1",
@@ -90,6 +90,20 @@ describe("RecognizeClient", () => {
     }
   });
 
+  it("times out even when the request is stuck before fetch (a session read deaf to the abort)", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new RecognizeClient({ fetchJson: vi.fn(() => new Promise<never>(() => undefined)), timeoutMs: 1000 });
+      const p = client.recognize(req("a"), "h");
+      const assertion = expect(p).rejects.toBeInstanceOf(RecognizeTimeoutError);
+      await vi.advanceTimersByTimeAsync(1001);
+      await assertion;
+      expect(client.inFlight).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("rejects malformed responses", async () => {
     const client = new RecognizeClient({ fetchJson: vi.fn(async () => ({ nope: true })) });
     await expect(client.recognize(req("a"), "h")).rejects.toThrow(/unexpected/i);
@@ -172,4 +186,74 @@ describe("streamLiveSse", () => {
     }
     expect(events.map((e) => e.event)).toEqual(["meta"]);
   });
+
+  /** A body that sends `chunks` (a string, then a gap in ms) and then hangs, like a stalled connection. */
+  function stallingResponse(steps: Array<string | number>): Response {
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        for (const s of steps) {
+          if (typeof s === "number") await new Promise((r) => setTimeout(r, s));
+          else controller.enqueue(encoder.encode(s));
+        }
+        // ...and never closes
+      },
+    });
+    return new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+  }
+
+  it("a stream that goes silent mid-check fails as a timeout instead of hanging", async () => {
+    const fetchImpl = vi.fn<FetchLike>(async () => stallingResponse(['event: meta\ndata: {"requestId":"r","model":"m"}\n\n']));
+    const events: LiveSseEvent[] = [];
+    const run = (async () => {
+      for await (const ev of streamLiveSse("/api/live/check", {}, { fetchImpl, idleTimeoutMs: 40 })) events.push(ev);
+    })();
+    await expect(run).rejects.toBeInstanceOf(SseTimeoutError);
+    await expect(run).rejects.toMatchObject({ name: "TimeoutError" });
+    expect(events.map((e) => e.event)).toEqual(["meta"]);
+  });
+
+  it("a request that never answers fails as a timeout, and its fetch is aborted", async () => {
+    let seen: AbortSignal | undefined;
+    const fetchImpl = vi.fn<FetchLike>(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          seen = init?.signal ?? undefined;
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        }),
+    );
+    const gen = streamLiveSse("/api/live/solve", {}, { fetchImpl, idleTimeoutMs: 30 });
+    await expect(gen.next()).rejects.toBeInstanceOf(SseTimeoutError);
+    expect(seen?.aborted).toBe(true);
+  });
+
+  it("a request stuck before fetch (a session read that hangs, deaf to the abort) still times out", async () => {
+    const fetchImpl = vi.fn<FetchLike>(() => new Promise<Response>(() => undefined));
+    const gen = streamLiveSse("/api/live/check", {}, { fetchImpl, idleTimeoutMs: 30 });
+    await expect(gen.next()).rejects.toBeInstanceOf(SseTimeoutError);
+  });
+
+  it("the server's pings keep a slow model's stream alive", async () => {
+    const fetchImpl = vi.fn<FetchLike>(async () =>
+      streamResponseAfter([": ping\n\n", 25, ": ping\n\n", 25, ": ping\n\n", 25, 'event: done\ndata: {"count":0,"ms":75}\n\n']),
+    );
+    const events: LiveSseEvent[] = [];
+    for await (const ev of streamLiveSse("/api/live/solve", {}, { fetchImpl, idleTimeoutMs: 40 })) events.push(ev);
+    expect(events.map((e) => e.event)).toEqual(["done"]);
+  });
+
+  /** Like stallingResponse, but the body closes after its last step. */
+  function streamResponseAfter(steps: Array<string | number>): Response {
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        for (const s of steps) {
+          if (typeof s === "number") await new Promise((r) => setTimeout(r, s));
+          else controller.enqueue(encoder.encode(s));
+        }
+        controller.close();
+      },
+    });
+    return new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+  }
 });

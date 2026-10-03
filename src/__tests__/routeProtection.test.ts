@@ -13,11 +13,26 @@
  *      for log correlation; /api/live/* additionally returns it as X-Request-Id.
  *   5. No route reads process.env directly: keys come from getServerEnv()/aiConfig.
  *   6. The static registry in scripts/lib/routes.mjs matches the filesystem exactly.
+ *   7. A route file exports only HTTP handlers and route segment config (next dev type-checks
+ *      a compiled route's exports under .next/dev/types, so anything else breaks `tsc`).
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
-import { createGcHandler } from "@/app/api/admin/gc/route";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { GcEnv } from "@/lib/server/storageGc";
+
+// The GC route reads its env and runner from src/lib/server/storageGc; the 401 check swaps them.
+const gc = vi.hoisted(() => ({ env: null as GcEnv | null, run: null as null | (() => Promise<never>) }));
+vi.mock("@/lib/server/storageGc", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/server/storageGc")>();
+  return {
+    ...real,
+    getGcEnv: () => gc.env ?? real.getGcEnv(),
+    runStorageGc: (opts: Parameters<typeof real.runStorageGc>[0]) => (gc.run ? gc.run() : real.runStorageGc(opts)),
+  };
+});
+
+import { GET as gcGet } from "@/app/api/admin/gc/route";
 import { GET as configStatusGet } from "@/app/api/config/status/route";
 import { resetRateLimits } from "@/lib/server/rate-limit";
 import {
@@ -83,6 +98,18 @@ describe("route discovery", () => {
     }
   });
 
+  it("route files export only handlers and segment config (helpers live in src/lib)", () => {
+    // `next dev` writes a type check of every compiled route's exports under .next/dev/types;
+    // any other export (a helper, a constant, a test seam) then fails `tsc`.
+    const allowed = new Set<string>([...HTTP_METHODS, "runtime", "dynamic", "dynamicParams", "revalidate", "fetchCache", "preferredRegion", "maxDuration", "generateStaticParams"]);
+    for (const [file, src] of sources) {
+      const values = [...src.matchAll(/^export\s+(?:async\s+)?(?:function\*?|const|let|var|class)\s+(\w+)/gm)].map((m) => m[1]);
+      const lists = [...src.matchAll(/^export\s*\{([^}]*)\}/gm)].flatMap((m) => m[1].split(",").map((s) => s.trim().split(/\s+as\s+/).pop()!).filter(Boolean));
+      const extra = [...values, ...lists].filter((name) => !allowed.has(name));
+      expect(extra, file).toEqual([]);
+    }
+  });
+
   it("exportedHandlers recognises both export styles", () => {
     expect(exportedHandlers("export async function GET(req: Request) {}")).toEqual(["GET"]);
     expect(exportedHandlers("export const POST = handler;\nexport function DELETE() {}")).toEqual(["DELETE", "POST"]);
@@ -91,16 +118,39 @@ describe("route discovery", () => {
 });
 
 describe("allow-lists", () => {
-  it("PUBLIC_ROUTES is exactly config/status, the billing webhook and the GC cron", () => {
+  it("PUBLIC_ROUTES is exactly config/status, the billing webhook, the GC cron, client errors and health", () => {
     // config/status: reports which provider keys exist as booleans (never values,
     // prefixes or lengths) so the setup screen can render before sign-in.
     // billing/webhook: the provider has no user JWT; the Stripe-Signature HMAC is the auth.
     // admin/gc: Vercel cron has no user JWT; the shared CRON_SECRET bearer token is the auth.
+    // client-errors: browser crash reports, signed out too; it only writes a log line.
+    // health: an uptime monitor has no user; it answers { ok, db, release } only.
     expect([...PUBLIC_ROUTES].sort()).toEqual([
       "src/app/api/admin/gc/route.ts",
       "src/app/api/billing/webhook/route.ts",
+      "src/app/api/client-errors/route.ts",
       "src/app/api/config/status/route.ts",
+      "src/app/api/health/route.ts",
     ]);
+  });
+
+  it("client errors only log: body capped, zod-validated, a token only names the user", () => {
+    // The real invariants behind its PUBLIC_ROUTES entry (behaviour: routes.clientErrors.test.ts).
+    const src = sources.get("src/app/api/client-errors/route.ts") ?? "";
+    expect(/\bMAX_REPORT_BYTES\b/.test(src)).toBe(true);
+    expect(/\.safeParse\s*\(/.test(src)).toBe(true);
+    expect(/\bidentifyUser\s*\(/.test(src)).toBe(true);
+    expect(/req\.json\s*\(/.test(src), "read through the size cap, never req.json()").toBe(false);
+    expect(/supabase|\.from\s*\(|\.rpc\s*\(/i.test(src), "no database access").toBe(false);
+  });
+
+  it("health answers { ok, db, release } and nothing else", () => {
+    const src = sources.get("src/app/api/health/route.ts") ?? "";
+    const bodies = [...src.matchAll(/Response\.json\(\s*(\{[^}]*\})/g)].map((m) => m[1]);
+    expect(bodies.length).toBe(2);
+    for (const body of bodies) {
+      expect(body.match(/\b(\w+):/g)?.map((k) => k.slice(0, -1)).sort()).toEqual(["db", "ok", "release"]);
+    }
   });
 
   it("every public route documents why it may skip requireUser", () => {
@@ -119,17 +169,20 @@ describe("allow-lists", () => {
     expect(src).toMatch(/CRON_SECRET/);
     expect(/\bbearerMatches\s*\(/.test(src)).toBe(true);
     expect(/\brunStorageGc\b/.test(src)).toBe(true);
-    const handler = createGcHandler({
-      getEnv: () => ({ url: "https://proj.supabase.co", serviceKey: "svc", cronSecret: "unit-secret" }),
-      run: async () => {
-        throw new Error("must not run without the secret");
-      },
-    });
-    const res = await handler(new Request("http://localhost/api/admin/gc", { headers: { "x-forwarded-for": "192.0.2.1" } }));
-    expect(res.status).toBe(401);
-    expect(((await res.json()) as { error: string }).error).toBe("unauthorized");
-    const wrong = await handler(new Request("http://localhost/api/admin/gc", { headers: { Authorization: "Bearer nope", "x-forwarded-for": "192.0.2.1" } }));
-    expect(wrong.status).toBe(401);
+    gc.env = { url: "https://proj.supabase.co", serviceKey: "svc", cronSecret: "unit-secret" };
+    gc.run = async () => {
+      throw new Error("must not run without the secret");
+    };
+    try {
+      const res = await gcGet(new Request("http://localhost/api/admin/gc", { headers: { "x-forwarded-for": "192.0.2.1" } }));
+      expect(res.status).toBe(401);
+      expect(((await res.json()) as { error: string }).error).toBe("unauthorized");
+      const wrong = await gcGet(new Request("http://localhost/api/admin/gc", { headers: { Authorization: "Bearer nope", "x-forwarded-for": "192.0.2.1" } }));
+      expect(wrong.status).toBe(401);
+    } finally {
+      gc.env = null;
+      gc.run = null;
+    }
   });
 
   it("the billing webhook verifies the provider signature over the raw body", () => {

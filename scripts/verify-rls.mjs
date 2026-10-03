@@ -6,17 +6,22 @@
  *   node scripts/verify-rls.mjs
  *
  * Covers every public table (including the accounts & billing tables: plans,
- * profiles, usage_events, credit_grants, billing_events, rate_limit_counters),
- * the storage buckets, the version trigger and the RPCs (consume_credits,
- * credit_summary, refund_credits, rate_limit_hit, usage_by_day, save_onboarding, delete_own_account). Two
- * throwaway users A and B are created up front; the delete_own_account check
- * creates a third (C) and deletes it through the RPC.
+ * profiles, usage_events, credit_grants, billing_events, rate_limit_counters, and
+ * the ink tables ink_packs, ink_grants, ink_purchases, ink_checkout_reviews), the
+ * storage buckets, the version and history triggers and the RPCs (consume_credits, credit_summary,
+ * ink_summary, rate_limit_hit, usage_by_day, save_onboarding, delete_own_account;
+ * and that a user can call none of the service-role RPCs refund_credits,
+ * refund_ink_for, grant_ink_purchase, reverse_ink_purchase, record_ink_checkout_review,
+ * grant_ink, prune_whiteboard_snapshots). Two throwaway users A and B are created up front; the
+ * delete_own_account check creates a third (C) and deletes it through the RPC.
  *
  * Env (read from .env.local when not already set):
  *   NEXT_PUBLIC_SUPABASE_URL        project URL (falls back to `npx supabase status` for the local stack)
  *   NEXT_PUBLIC_SUPABASE_ANON_KEY   anon / publishable key
  *   SUPABASE_SERVICE_ROLE_KEY       optional: creates pre-confirmed throwaway users and deletes them afterwards;
- *                                   also enables the refund check's "row older than 15 minutes" case
+ *                                   also enables the service-role halves: refunds of failed calls
+ *                                   (refund_ink_for), the ink purchase + refund round trip, the amount
+ *                                   check and review queue, and the ledgers' delete guards
  *   VERIFY_EMAIL_DOMAIN             optional: domain for the throwaway emails (default example.com)
  *
  * Waits up to 3 minutes for /auth/v1/health before running anything.
@@ -62,9 +67,9 @@ try {
 
 console.log(`Users: ${bootstrap.users.map((u) => u.email).join(", ")}\n`);
 
-// The refund check's "row older than 15 minutes" case needs a back-dated ledger
-// row, which only the service role can plant. Without the key that one case is
-// reported as skipped; everything else runs as the throwaway users.
+// Refunds, purchases and reviews are service-role only, so their positive cases
+// need the key. Without it those halves are reported as skipped; everything a
+// user must NOT be able to do still runs as the throwaway users.
 /** @type {import("./lib/rlsChecks.mjs").CheckContext} */
 const ctx = {
   ...bootstrap.ctx,

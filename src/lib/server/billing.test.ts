@@ -2,24 +2,26 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resetServerEnvCache } from "@/lib/env";
 import {
   BILLING_UNAVAILABLE_MESSAGE,
-  CREDITS_EXHAUSTED_MESSAGE,
+  BUY_INK_PATH,
+  INK_EMPTY_MESSAGE,
   ROUTE_COSTS,
   billingEnforced,
   billingUnavailableResponse,
-  consumeCredits,
+  consumeInk,
   consumeErrorToResult,
-  creditsExhaustedResponse,
-  enforceCredits,
+  enforceInk,
+  inkEmptyResponse,
   normalizeConsumeResult,
   normalizeRefundResult,
-  refundCredits,
+  refundInk,
   resetBillingWarnings,
   runCharged,
+  serviceClient,
   type RpcClient,
   type RpcError,
 } from "@/lib/server/billing";
 
-const ENV_VARS = ["BILLING_ENFORCE", "NEXT_PUBLIC_BILLING_LINKS", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY"];
+const ENV_VARS = ["BILLING_ENFORCE", "NEXT_PUBLIC_BILLING_LINKS", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 const saved: Record<string, string | undefined> = {};
 
 beforeEach(() => {
@@ -79,7 +81,7 @@ describe("normalizeConsumeResult", () => {
     expect(normalizeConsumeResult({ ok: true, remaining: 299, reason: null })).toEqual({ ok: true, remaining: 299 });
     expect(normalizeConsumeResult({ ok: false, remaining: 0, reason: "insufficient_credits" })).toEqual({
       ok: false,
-      reason: "insufficient_credits",
+      reason: "insufficient_ink",
       remaining: 0,
     });
   });
@@ -111,9 +113,10 @@ describe("consumeErrorToResult", () => {
     expect(consumeErrorToResult({ message: "function consume_credits(text) does not exist", code: "42883" })).toMatchObject({ reason: "unavailable" });
   });
 
-  it("maps a raised insufficient_credits to the 402 path with the balance from details", () => {
-    expect(consumeErrorToResult({ message: "insufficient_credits", details: "7" })).toEqual({ ok: false, reason: "insufficient_credits", remaining: 7 });
-    expect(consumeErrorToResult({ message: "insufficient credits" })).toEqual({ ok: false, reason: "insufficient_credits", remaining: 0 });
+  it("maps a raised insufficient_credits (or ink) to the 402 path with the balance from details", () => {
+    expect(consumeErrorToResult({ message: "insufficient_credits", details: "7" })).toEqual({ ok: false, reason: "insufficient_ink", remaining: 7 });
+    expect(consumeErrorToResult({ message: "insufficient credits" })).toEqual({ ok: false, reason: "insufficient_ink", remaining: 0 });
+    expect(consumeErrorToResult({ message: "ink_empty", hint: "3" })).toEqual({ ok: false, reason: "insufficient_ink", remaining: 3 });
   });
 
   it("maps anything else to unavailable with the message", () => {
@@ -121,12 +124,12 @@ describe("consumeErrorToResult", () => {
   });
 });
 
-describe("consumeCredits", () => {
+describe("consumeInk", () => {
   const input = { token: "jwt", route: "live/solve" as const, requestId: "req-1", model: "anthropic/claude-sonnet-5" };
 
   it("calls consume_credits with the route cost and metadata", async () => {
     const client = fakeRpc({ data: { ok: true, remaining: 275, reason: null } });
-    await expect(consumeCredits(input, client)).resolves.toEqual({ ok: true, remaining: 275 });
+    await expect(consumeInk(input, client)).resolves.toEqual({ ok: true, remaining: 275 });
     expect(client.calls).toEqual([
       { fn: "consume_credits", args: { p_route: "live/solve", p_units: 10, p_request_id: "req-1", p_model: "anthropic/claude-sonnet-5" } },
     ]);
@@ -134,25 +137,25 @@ describe("consumeCredits", () => {
 
   it("sends p_model null when no model is given", async () => {
     const client = fakeRpc({ data: { ok: true, remaining: 1 } });
-    await consumeCredits({ token: "jwt", route: "live/check", requestId: "r" }, client);
+    await consumeInk({ token: "jwt", route: "live/check", requestId: "r" }, client);
     expect(client.calls[0].args).toMatchObject({ p_units: 3, p_model: null });
   });
 
   it("short-circuits zero-cost routes without touching the database", async () => {
     const client = fakeRpc({ data: { ok: false, remaining: 0 } });
-    const result = await consumeCredits({ token: "jwt", route: "credits", requestId: "r" }, client);
+    const result = await consumeInk({ token: "jwt", route: "credits", requestId: "r" }, client);
     expect(result.ok).toBe(true);
     expect(client.calls).toEqual([]);
   });
 
-  it("returns insufficient_credits from the RPC payload", async () => {
+  it("returns insufficient_ink from the RPC payload", async () => {
     const client = fakeRpc({ data: { ok: false, remaining: 0, reason: "insufficient_credits" } });
-    await expect(consumeCredits(input, client)).resolves.toEqual({ ok: false, reason: "insufficient_credits", remaining: 0 });
+    await expect(consumeInk(input, client)).resolves.toEqual({ ok: false, reason: "insufficient_ink", remaining: 0 });
   });
 
   it("maps RPC errors and thrown errors to unavailable instead of throwing", async () => {
-    await expect(consumeCredits(input, fakeRpc({ error: { message: "boom" } }))).resolves.toMatchObject({ ok: false, reason: "unavailable" });
-    await expect(consumeCredits(input, fakeRpc(new Error("network down")))).resolves.toEqual({
+    await expect(consumeInk(input, fakeRpc({ error: { message: "boom" } }))).resolves.toMatchObject({ ok: false, reason: "unavailable" });
+    await expect(consumeInk(input, fakeRpc(new Error("network down")))).resolves.toEqual({
       ok: false,
       reason: "unavailable",
       message: "consume_credits threw: network down",
@@ -161,21 +164,16 @@ describe("consumeCredits", () => {
 });
 
 describe("responses", () => {
-  it("402 keeps the error contract and adds remaining + upgradeUrl (portal when configured)", async () => {
-    const res = creditsExhaustedResponse(0);
+  it("402 ink_empty keeps the error contract and adds remaining + buyUrl (the account page's packs)", async () => {
+    const res = inkEmptyResponse(4);
     expect(res.status).toBe(402);
-    expect(await res.json()).toEqual({ error: "credits_exhausted", message: CREDITS_EXHAUSTED_MESSAGE, remaining: 0, upgradeUrl: "/account" });
-
-    process.env.NEXT_PUBLIC_BILLING_LINKS = JSON.stringify({ portal: "https://billing.example.com/p/abc" });
+    expect(await res.json()).toEqual({ error: "ink_empty", message: INK_EMPTY_MESSAGE, remaining: 4, buyUrl: BUY_INK_PATH });
+    expect(BUY_INK_PATH).toBe("/account");
+    expect(INK_EMPTY_MESSAGE).toBe("You're out of ink. Grab an ink pack to keep going.");
+    // never a negative balance, and no billing link: Payment Links need the user's id, which only the client has
+    process.env.NEXT_PUBLIC_BILLING_LINKS = JSON.stringify({ medium: "https://buy.stripe.com/x" });
     resetServerEnvCache();
-    const withPortal = await creditsExhaustedResponse(-3, "2026-10-01T00:00:00.000Z").json();
-    expect(withPortal).toEqual({
-      error: "credits_exhausted",
-      message: CREDITS_EXHAUSTED_MESSAGE,
-      remaining: 0,
-      upgradeUrl: "https://billing.example.com/p/abc",
-      periodEnd: "2026-10-01T00:00:00.000Z",
-    });
+    expect(await inkEmptyResponse(-3).json()).toEqual({ error: "ink_empty", message: INK_EMPTY_MESSAGE, remaining: 0, buyUrl: "/account" });
   });
 
   it("503 feature_unavailable points at the migrations", async () => {
@@ -196,26 +194,27 @@ describe("billingEnforced", () => {
   });
 });
 
-describe("enforceCredits", () => {
+describe("enforceInk", () => {
   const input = { token: "jwt", route: "live/solve" as const, requestId: "r", model: "m" };
   const quiet = { warn: () => undefined };
 
   it("passes through with the new balance when the RPC allows", async () => {
     const client = fakeRpc({ data: { ok: true, remaining: 290 } });
-    await expect(enforceCredits(input, quiet, client)).resolves.toEqual({ remaining: 290 });
+    await expect(enforceInk(input, quiet, client)).resolves.toEqual({ remaining: 290 });
     expect(client.calls[0].args).toMatchObject({ p_route: "live/solve", p_units: 10 });
   });
 
-  it("answers 402 on insufficient credits", async () => {
-    const result = await enforceCredits(input, quiet, fakeRpc({ data: { ok: false, remaining: 4, reason: "insufficient_credits" } }));
+  it("answers 402 ink_empty when the ink is short", async () => {
+    const result = await enforceInk(input, quiet, fakeRpc({ data: { ok: false, remaining: 4, reason: "insufficient_credits" } }));
     expect("response" in result).toBe(true);
     const res = (result as { response: Response }).response;
     expect(res.status).toBe(402);
-    expect(await res.json()).toMatchObject({ error: "credits_exhausted", remaining: 4 });
+    // `cost` is what the refused call needs (a worked solution: 10), so the board knows when it is affordable
+    expect(await res.json()).toMatchObject({ error: "ink_empty", remaining: 4, cost: 10, buyUrl: "/account" });
   });
 
   it("fails closed with 503 when the RPC is unavailable and billing is enforced", async () => {
-    const result = await enforceCredits(input, quiet, fakeRpc({ error: { message: "schema cache", code: "PGRST202" } }));
+    const result = await enforceInk(input, quiet, fakeRpc({ error: { message: "schema cache", code: "PGRST202" } }));
     const res = (result as { response: Response }).response;
     expect(res.status).toBe(503);
     expect(await res.json()).toMatchObject({ error: "feature_unavailable" });
@@ -225,8 +224,8 @@ describe("enforceCredits", () => {
     process.env.BILLING_ENFORCE = "0";
     resetServerEnvCache();
     const client = fakeRpc({ error: { message: "must not be called" } });
-    await expect(enforceCredits(input, quiet, client)).resolves.toEqual({ remaining: null });
-    await expect(enforceCredits(input, quiet, client)).resolves.toEqual({ remaining: null });
+    await expect(enforceInk(input, quiet, client)).resolves.toEqual({ remaining: null });
+    await expect(enforceInk(input, quiet, client)).resolves.toEqual({ remaining: null });
     expect(client.calls).toEqual([]);
   });
 });
@@ -254,43 +253,53 @@ describe("normalizeRefundResult", () => {
 
   it("treats an unexpected payload as refunded 0 with a reason (never throws)", () => {
     for (const payload of [null, undefined, 7, "ok", {}, { refunded: 1 }, { refunded: "x", remaining: 1 }, []]) {
-      expect(normalizeRefundResult(payload), JSON.stringify(payload)).toMatchObject({ refunded: 0, reason: expect.stringMatching(/refund_credits/) });
+      expect(normalizeRefundResult(payload), JSON.stringify(payload)).toMatchObject({ refunded: 0, reason: expect.stringMatching(/refund_ink_for/) });
     }
   });
 });
 
-describe("refundCredits", () => {
-  const input = { token: "jwt", requestId: "req-42" };
+describe("refundInk", () => {
+  const USER = "11111111-2222-4333-8444-555555555555";
+  const input = { userId: USER, requestId: "req-42" };
 
-  it("calls refund_credits with exactly the request id and reports refunded + remaining", async () => {
+  it("calls refund_ink_for (service role) with exactly the verified user and the request id", async () => {
     const client = fakeRpc({ data: { refunded: 25, remaining: 300 } });
     const log = recordingLog();
-    await expect(refundCredits(input, log, client)).resolves.toEqual({ refunded: 25, remaining: 300 });
-    expect(client.calls).toEqual([{ fn: "refund_credits", args: { p_request_id: "req-42" } }]);
-    expect(log.lines).toEqual(["info:credits refunded"]);
+    await expect(refundInk(input, log, client)).resolves.toEqual({ refunded: 25, remaining: 300 });
+    expect(client.calls).toEqual([{ fn: "refund_ink_for", args: { p_user_id: USER, p_request_id: "req-42" } }]);
+    expect(log.lines).toEqual(["info:ink refunded"]);
+  });
+
+  it("without SUPABASE_SERVICE_ROLE_KEY nothing is refunded (logged), and the user's own token is never used", async () => {
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    resetServerEnvCache();
+    const log = recordingLog();
+    await expect(refundInk(input, log)).resolves.toEqual({ refunded: 0, reason: expect.stringMatching(/SUPABASE_SERVICE_ROLE_KEY/) });
+    expect(log.lines).toEqual(["warn:ink refund failed"]);
+    expect(serviceClient()).toBeNull();
   });
 
   it("a refund that matched nothing is refunded 0 without a reason (idempotent, not an error)", async () => {
     const log = recordingLog();
-    await expect(refundCredits(input, log, fakeRpc({ data: { refunded: 0, remaining: 12 } }))).resolves.toEqual({ refunded: 0, remaining: 12 });
-    expect(log.lines).toEqual(["info:credits refunded"]);
+    await expect(refundInk(input, log, fakeRpc({ data: { refunded: 0, remaining: 12 } }))).resolves.toEqual({ refunded: 0, remaining: 12 });
+    expect(log.lines).toEqual(["info:ink refunded"]);
   });
 
   it("maps a missing function, an RPC error and a thrown error to refunded 0 + reason, only logging", async () => {
     const missing = recordingLog();
-    await expect(refundCredits(input, missing, fakeRpc({ error: { message: "Could not find the function public.refund_credits in the schema cache", code: "PGRST202" } }))).resolves.toEqual({
+    await expect(refundInk(input, missing, fakeRpc({ error: { message: "Could not find the function public.refund_ink_for in the schema cache", code: "PGRST202" } }))).resolves.toEqual({
       refunded: 0,
-      reason: "refund_credits RPC is missing (run the migrations).",
+      reason: "refund_ink_for RPC is missing (run the migrations).",
     });
-    expect(missing.lines).toEqual(["warn:credit refund failed"]);
+    expect(missing.lines).toEqual(["warn:ink refund failed"]);
 
-    await expect(refundCredits(input, recordingLog(), fakeRpc({ error: { message: "deadlock detected" } }))).resolves.toEqual({
+    await expect(refundInk(input, recordingLog(), fakeRpc({ error: { message: "deadlock detected" } }))).resolves.toEqual({
       refunded: 0,
-      reason: "refund_credits failed: deadlock detected",
+      reason: "refund_ink_for failed: deadlock detected",
     });
-    await expect(refundCredits(input, recordingLog(), fakeRpc(new Error("network down")))).resolves.toEqual({
+    await expect(refundInk(input, recordingLog(), fakeRpc(new Error("network down")))).resolves.toEqual({
       refunded: 0,
-      reason: "refund_credits threw: network down",
+      reason: "refund_ink_for threw: network down",
     });
   });
 
@@ -298,13 +307,13 @@ describe("refundCredits", () => {
     process.env.BILLING_ENFORCE = "0";
     resetServerEnvCache();
     const client = fakeRpc({ data: { refunded: 99, remaining: 99 } });
-    await expect(refundCredits(input, recordingLog(), client)).resolves.toEqual({ refunded: 0, reason: "not_enforced" });
+    await expect(refundInk(input, recordingLog(), client)).resolves.toEqual({ refunded: 0, reason: "not_enforced" });
     expect(client.calls).toEqual([]);
   });
 });
 
 describe("runCharged", () => {
-  const input = { token: "jwt", requestId: "req-7" };
+  const input = { userId: "11111111-2222-4333-8444-555555555555", requestId: "req-7" };
   const onError = (err: unknown) => Response.json({ error: "upstream_error", message: String(err) }, { status: 502 });
 
   it("returns a 2xx untouched and never refunds (a text-only model answer is still a 2xx)", async () => {
@@ -320,8 +329,8 @@ describe("runCharged", () => {
     const log = recordingLog();
     const res = await runCharged(input, log, async () => Response.json({ error: "recognizer_failed" }, { status: 502 }), onError, client);
     expect(res.status).toBe(502);
-    expect(client.calls).toEqual([{ fn: "refund_credits", args: { p_request_id: "req-7" } }]);
-    expect(log.lines).toEqual(["info:credits refunded"]);
+    expect(client.calls).toEqual([{ fn: "refund_ink_for", args: { p_user_id: "11111111-2222-4333-8444-555555555555", p_request_id: "req-7" } }]);
+    expect(log.lines).toEqual(["info:ink refunded"]);
   });
 
   it("maps a thrown error through onError and refunds", async () => {
@@ -337,13 +346,13 @@ describe("runCharged", () => {
     );
     expect(res.status).toBe(502);
     expect(await res.json()).toMatchObject({ error: "upstream_error", message: "Error: timeout" });
-    expect(client.calls.map((c) => c.fn)).toEqual(["refund_credits"]);
+    expect(client.calls.map((c) => c.fn)).toEqual(["refund_ink_for"]);
   });
 
   it("still returns the error response when the refund itself fails (only logged)", async () => {
     const log = recordingLog();
     const res = await runCharged(input, log, async () => Response.json({}, { status: 500 }), onError, fakeRpc(new Error("db gone")));
     expect(res.status).toBe(500);
-    expect(log.lines).toEqual(["warn:credit refund failed"]);
+    expect(log.lines).toEqual(["warn:ink refund failed"]);
   });
 });

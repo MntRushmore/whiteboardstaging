@@ -14,8 +14,8 @@ interface BoardChatPanelProps {
   onClose: () => void;
 }
 
-/** Running out of credits: the board dialog's panel, fetched only when a 402 arrives. */
-const OutOfCreditsPanel = lazy(() => import("@/components/billing/OutOfCreditsPanel").then((m) => ({ default: m.OutOfCreditsPanel })));
+/** Running out of ink: the board dialog's panel (the packs to buy), fetched only when a 402 arrives. */
+const OutOfInkPanel = lazy(() => import("@/components/billing/OutOfInkPanel").then((m) => ({ default: m.OutOfInkPanel })));
 
 /** A marker the board page gives the Ask button: Esc there closes the panel too. */
 export const CHAT_TOGGLE_ATTR = "data-chat-toggle";
@@ -38,9 +38,10 @@ export function BoardChatPanel({ boardId, controller, onClose }: BoardChatPanelP
     if (list) list.scrollTop = list.scrollHeight;
   }, [messages]);
 
-  // typing starts in the box on a desktop (a phone would throw up its keyboard over the board)
+  // typing starts in the box with a mouse and keyboard; on a touch screen (an iPad is wider than a
+  // phone, so width alone cannot tell) the on-screen keyboard would come up over the board
   useEffect(() => {
-    if (typeof window !== "undefined" && window.matchMedia?.("(min-width: 768px)").matches) inputRef.current?.focus();
+    if (typeof window !== "undefined" && window.matchMedia?.("(hover: hover) and (pointer: fine)").matches) inputRef.current?.focus();
   }, []);
 
   // Esc closes: from inside the panel, from the Ask button, or with nothing focused. On the
@@ -84,7 +85,7 @@ export function BoardChatPanel({ boardId, controller, onClose }: BoardChatPanelP
   };
 
   return (
-    <section ref={panelRef} aria-label={CHAT_COPY.title} className="flex h-full min-h-0 flex-col bg-white text-gray-900">
+    <section ref={panelRef} aria-label={CHAT_COPY.title} data-board-chat="" className="flex h-full min-h-0 flex-col bg-white text-gray-900">
       <header className="flex shrink-0 items-center justify-between border-b border-gray-200 px-4 py-2.5">
         <h2 className="text-sm font-semibold">{CHAT_COPY.title}</h2>
         <Button variant="ghost" size="icon-sm" aria-label={CHAT_COPY.close} title={`${CHAT_COPY.close} (Esc)`} onClick={onClose}>
@@ -122,6 +123,8 @@ export function BoardChatPanel({ boardId, controller, onClose }: BoardChatPanelP
             value={draft}
             rows={1}
             maxLength={500}
+            // Return sends (sendsOnKey): an iPad's on-screen keyboard labels the key "send", not "return"
+            enterKeyHint="send"
             aria-label={CHAT_COPY.title}
             placeholder={CHAT_COPY.placeholder}
             onChange={(e) => {
@@ -157,12 +160,12 @@ function Message({ message: m, onRetry, busy }: { message: ChatMessage; onRetry:
       </p>
     );
   }
-  if (m.state === "error" && m.error?.kind === "credits") {
+  if (m.state === "error" && m.error?.kind === "ink") {
     // the board dialog's words and Upgrade buttons, inline (lazy: fetched only when needed)
     return (
       <div className="rounded-lg border border-red-100 bg-red-50/60 px-3 py-2.5">
-        <Suspense fallback={<p className="text-sm text-red-700">{CHAT_COPY.errors.credits}</p>}>
-          <OutOfCreditsPanel variant="inline" titleAs="p" />
+        <Suspense fallback={<p className="text-sm text-red-700">{CHAT_COPY.errors.ink}</p>}>
+          <OutOfInkPanel variant="inline" titleAs="p" outOfInk />
         </Suspense>
       </div>
     );

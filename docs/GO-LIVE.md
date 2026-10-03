@@ -9,8 +9,21 @@ The Supabase project **agathon-classroom** is provisioned through the Vercel Mar
 Development, so the integration owns the credentials and rotates them with the resource. All five
 migrations are applied (`npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING"`, no Supabase
 login needed) and `node scripts/verify-rls.mjs` reports **132/132** against the live project:
-tables, RLS, storage buckets (`board-assets` public, `training-data` private), the credit ledger
-and its RPCs are all in place, with `free` / `plus` / `pro` seeded.
+tables, RLS, storage buckets (`board-assets` public, `training-data` private), the usage
+ledger and its RPCs are all in place (the ink migration `20261002000000_ink.sql` adds the ink
+ledger and packs; see `RUNBOOK-billing.md` "Going live").
+
+**Before every `db push` to production, back it up.** The project is on the free plan: no daily
+backups, no PITR. At least dump the board history, which `20261003000000_snapshot_retention.sql`
+prunes: `pg_dump "$POSTGRES_URL_NON_POOLING" -t public.whiteboard_snapshots -Fc -f
+backups/whiteboard_snapshots-$(date +%F).dump`, encrypted (`gpg -c`) and kept off the repo and
+shared drives, since it holds students' work (better: the whole `public` schema the same way,
+`RUNBOOK-supabase.md` section 10; `RUNBOOK-billing.md` "Going live" step 3 has the commands).
+
+**The October 2026 release's four migrations go in two halves around the deploy**, not with one
+`db push`: ink and snapshot retention before it, sign-up consent and bug reports after it
+(`RUNBOOK-billing.md` section 7, steps 3 and 5). The consent migration refuses any sign-up that
+does not send the Terms version, and the form on `main` does not send one.
 
 Two settings live only in the Supabase dashboard, so they still need you (open it with
 `vercel integration open supabase`, then Authentication -> URL configuration / Providers):
@@ -19,10 +32,13 @@ Two settings live only in the Supabase dashboard, so they still need you (open i
    confirmation links point at. Set the Site URL to `https://whiteboard.rushilchopra.com` and add
    `https://whiteboard.rushilchopra.com/**` (plus any preview host you use) to the redirect list.
 2. **Email confirmations.** They are ON, so a new student must click a link before their first
-   sign-in, and open sign-up is enabled. For a closed cohort, turn sign-ups off and invite users;
-   for a demo, turn confirmations off. Either way it is a product decision, not a code change.
+   sign-in, and open sign-up is enabled. For a demo, turn confirmations off. For a closed cohort,
+   keep sign-ups on and share the link: since the consent migration (`20261003010000`) every new
+   account must carry the Terms version it agreed to, so the dashboard's *Invite user* and *Add
+   user* are refused. Inviting is still possible through the API with the version, for someone
+   who agreed some other way (`RUNBOOK-supabase.md` 13.3). A product decision, not a code change.
 
-Everything else about the backend — schema changes, plan numbers, manual credit grants, backups,
+Everything else about the backend — schema changes, ink packs, manual ink grants, backups,
 key rotation, restore drill — is in [`RUNBOOK-supabase.md`](./RUNBOOK-supabase.md).
 
 ## 2. Environment variables
@@ -41,7 +57,8 @@ State measured with `vercel env ls` on 2026-09-17 (saved as `src/__tests__/fixtu
 | `NEXT_PUBLIC_LIVE_MATH` | optional | absent = on | absent = on | absent = on | Set to `0` to hide Live Math without unregistering its shapes. |
 | `LIVE_MODEL_CHECK` / `_SOLVE` / `_VISION` | optional | absent = defaults | absent = defaults | absent = defaults | OpenRouter model overrides for Live routes. |
 | `LOG_LEVEL` / `NEXT_PUBLIC_LOG_LEVEL` | optional | absent = `info` | absent = `info` | absent = `info` | Server / browser pino levels. |
-| `SUPABASE_SERVICE_ROLE_KEY` | optional | absent | absent | absent | Needed in **Production only** by two non-user-facing routes: `POST /api/billing/webhook` (plan changes) and the storage GC cron `GET /api/admin/gc` (both answer `503` without it). Every user-facing route acts as the user. Keep it out of Preview/Development unless you are testing those two paths. |
+| `SUPABASE_SERVICE_ROLE_KEY` | required where ink is metered | present (sensitive) | present (sensitive) if Preview meters ink | absent | Used for three things: `POST /api/billing/webhook` (ink pack purchases and refunds) and the storage GC cron `GET /api/admin/gc` (both answer `503` without it), and by the paid routes to give a failed call's ink back (`refund_ink_for`; without the key a failed call keeps its charge and the log says so). Everything else a user-facing route does acts as the user. A deployment with `BILLING_ENFORCE=0` charges nothing and needs it only for the two routes. |
+| `STRIPE_LIVEMODE` | optional | `true` | `false` if Preview has a test-mode webhook, else absent | absent | Which Stripe mode the webhook accepts; an event from the other mode answers `400`. Unset: live only (localhost: either). `docs/RUNBOOK-billing.md` section 7. |
 | `CRON_SECRET` | optional | absent | absent | absent | Bearer token Vercel sends to `/api/admin/gc` (nightly storage GC, `vercel.json` crons). Random string, >= 16 chars (`openssl rand -hex 24`). Without it the route answers `503` and the cron does nothing. Production only; runbook section 12. |
 | `BASE_URL`, `SMOKE_*`, `RUN_DB_TESTS`, `VERIFY_EMAIL_DOMAIN` | scripts-only | absent | absent | absent | Correct: the checker fails if any of these appear in Vercel. |
 | `MISTRAL_API_KEY` | removed | absent | absent | absent | Not in `.env.example`; OCR runs on OpenRouter now. |
@@ -99,5 +116,5 @@ Note: production is currently aliased to a deployment of the `cursor/realtime-ma
 - Images now go to the `board-assets` bucket (`docs/ARCHITECTURE.md` flow 2b). If the new project is restored from a backup that contains boards saved by the old client, run `node scripts/offload-assets.mjs --dry-run` then without the flag (runbook section 12) once, with the service role key, before students open those boards. A fresh project has nothing to migrate.
 - Storage garbage collection ships in three layers (runbook section 12): board delete removes the board's own objects, `node scripts/gc-storage.mjs` is the operator tool, and the Vercel cron `0 4 * * *` -> `/api/admin/gc` runs nightly once `CRON_SECRET` + `SUPABASE_SERVICE_ROLE_KEY` are set in Production. The nightly cron **collects** (Vercel's own invocation is recognised by its `vercel-cron/1.0` user agent and `x-vercel-cron-schedule` header; a manual `curl` to the same URL only reports unless you pass `?dryRun=0`). Before the first cohort, run `node scripts/gc-storage.mjs` once and read the table, then watch a few nightly `storage gc summary` log lines; pause collection by setting the cron path to `/api/admin/gc?dryRun=1`.
 - Rate limits are database-backed (`rate_limit_hit()` RPC, fixed window in `rate_limit_counters`), so they hold across instances and regions; the in-memory limiter remains the automatic fallback when the RPC is unavailable and can be forced with `RATE_LIMIT_BACKEND=memory`. A 429 body reports which backend answered. Public/IP-keyed buckets (`/api/config/status`, `/api/billing/webhook`, `/api/admin/gc`) stay in memory by design.
-- Credits are refunded when a paid provider call fails (`refund_credits()`, 15-minute window). Exception: a streaming check or solve that fails *after* its first annotation or step keeps the charge, since the student already received part of the answer.
+- Ink is refunded when a paid provider call fails (`refund_ink_for()` with the service role, 15-minute window; users cannot refund). Exception: a streaming check or solve that fails *after* its first annotation or step keeps the charge, since the student already received part of the answer.
 - Systems of equations, summations, and limits go to the LLM path today; a local `lusolve` path is a small addition.

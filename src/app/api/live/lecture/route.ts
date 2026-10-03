@@ -1,7 +1,7 @@
 import type pino from "pino";
 import { getLiveModels } from "@/lib/env";
 import { LectureRequestSchema, LectureResponseSchema, type LectureResponse } from "@/lib/live/lecture/contracts";
-import { billingEnforced, enforceCredits, runCharged, userClient } from "@/lib/server/billing";
+import { billingEnforced, enforceInk, runCharged, userClient } from "@/lib/server/billing";
 import { directLecture, lectureMinuteId } from "@/lib/server/lectureDirector";
 import { errorResponse } from "@/lib/server/request";
 import { livePreamble, withRequestId } from "@/lib/server/live-route";
@@ -20,7 +20,7 @@ export const maxDuration = 30;
  * `lectureFallback`; every action validated against the shared contract and an invalid one
  * dropped, never guessed at).
  *
- * BILLED PER MINUTE of a session, not per request: `live/lecture` (1 credit) is charged by the
+ * BILLED PER MINUTE of a session, not per request: `live/lecture` (2 ink) is charged by the
  * first request in each wall-clock minute of `session` (`lectureMinuteId`), and `charged: true`
  * says so. The others that minute find that charge (the user's own `usage_events` row, readable
  * by them) and are free. A charging request that fails is refunded by `runCharged` (the row is
@@ -73,9 +73,9 @@ export async function POST(req: Request) {
 
   /** The minute's charge: taken, and on any failure given back, under the minute's own id. */
   const charge = async (requestId: string): Promise<Response> => {
-    const billing = await enforceCredits({ token, route: "live/lecture", requestId, model: models.lecture }, log);
+    const billing = await enforceInk({ token, route: "live/lecture", requestId, model: models.lecture }, log);
     if ("response" in billing) return withRequestId(billing.response, traceId);
-    return runCharged({ token, requestId }, log, () => direct(true), failed);
+    return runCharged({ userId: user.id, requestId }, log, () => direct(true), failed);
   };
 
   if (billingEnforced() && !(await minutePaid(token, user.id, minute, log))) return charge(minute);

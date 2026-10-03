@@ -18,7 +18,7 @@ export const LECTURE_COPY = {
   consent: {
     title: "Lecture mode",
     body: "Lecture mode listens through your microphone and sketches what's said. We keep the words, never the audio. Make sure recording is allowed in your class.",
-    cost: "Uses about 2 credits a minute while someone is talking, and 4 for each picture it draws (each panel of a comic is one).",
+    cost: "Uses about 2 ink a minute while someone is talking, and 4 for each picture it draws (each panel of a comic is one).",
     start: "Start listening",
     cancel: "Cancel",
   },
@@ -65,8 +65,9 @@ export const LECTURE_COPY = {
     unsupported: "Lecture mode needs Chrome, Edge or Safari.",
     "mic-denied": "Lecture mode needs your microphone. Allow it in the browser's address bar, then try again.",
     "mic-missing": "No microphone found. Plug one in, or close other apps using it, then try again.",
-    /** OUT_OF_CREDITS_COPY.title (pinned equal in the tests; a literal so the lazy panel's module stays out of the first load) */
-    credits: "You've used this month's credits",
+    "speech-off": "Speech recognition is turned off. On an iPad, turn on Dictation (Settings › General › Keyboard) and allow Safari in Settings › Privacy & Security › Speech Recognition, then try again.",
+    /** OUT_OF_INK_COPY.title (pinned equal in the tests; a literal so the lazy panel's module stays out of the first load) */
+    ink: "You're out of ink",
     unauthorized: "Please sign in again.",
     network: "Lost the connection to the transcriber. Check your connection and try again.",
     recognizer: "The transcriber stopped working. Try again in a moment.",
@@ -95,7 +96,7 @@ export interface LectureBarModel {
   status: { text: string; tone: "muted" | "busy" | "done" | "notice"; lead?: string };
   drawThat: { enabled: boolean; busy: boolean };
   paused: boolean;
-  error: { code: LectureErrorCode; message: string; credits: boolean; retry: boolean } | null;
+  error: { code: LectureErrorCode; message: string; ink: boolean; retry: boolean } | null;
 }
 
 /** The ticker holds about two lines of a 400 px panel; older words are trimmed from the front. */
@@ -139,10 +140,10 @@ function noticeText(notice: LectureNotice, now: number): string {
   }
 }
 
-const RETRYABLE: ReadonlySet<LectureErrorCode> = new Set(["mic-denied", "mic-missing", "network", "recognizer", "board"]);
+const RETRYABLE: ReadonlySet<LectureErrorCode> = new Set(["mic-denied", "mic-missing", "speech-off", "network", "recognizer", "board"]);
 
 export function lectureErrorView(code: LectureErrorCode): NonNullable<LectureBarModel["error"]> {
-  return { code, message: LECTURE_COPY.errors[code], credits: code === "credits", retry: RETRYABLE.has(code) };
+  return { code, message: LECTURE_COPY.errors[code], ink: code === "ink", retry: RETRYABLE.has(code) };
 }
 
 const HIDDEN: LectureBarModel = {

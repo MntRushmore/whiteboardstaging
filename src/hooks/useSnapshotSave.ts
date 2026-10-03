@@ -6,11 +6,11 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { logger } from "@/lib/logger";
 import { decideSave, type SaveDecision, type SaveDecisionInput } from "@/lib/assets/savePolicy";
-import { offloadEditorAssets, type OffloadResult } from "@/lib/assets/offloadSnapshotAssets";
+import type { OffloadResult } from "@/lib/assets/offloadSnapshotAssets";
 import {
   createLocalStorageBackup,
   createSaveQueue,
-  restoreBackupInto,
+  holdTabLock,
   type BuildResult,
   type PersistResult,
   type SaveQueue,
@@ -48,9 +48,23 @@ export const PG_CHECK_VIOLATION = "23514";
 /** Student-facing strings owned by the autosave wiring (the pill's strings live in SaveStatus.tsx). */
 export const SAVE_COPY = {
   restoredBackup: "Restored unsaved changes from this device",
+  /** a backup's change to a record the board has changed since (on another device) was dropped */
+  staleBackup: "Some unsaved changes from this device were older than the board and weren't restored",
   /** the editor could not produce a serializable snapshot (not a size problem) */
   cannotPrepare: "Couldn't prepare this board to save — try reloading",
 } as const;
+
+/**
+ * The toast a finished restore shows, if any. Each has one id per board, so a second restore of
+ * the same board in this page (React's doubled effects in dev, or an editor re-created after the
+ * first restore: its fresh store needs the records again) updates the toast on screen instead of
+ * stacking another.
+ */
+export function restoreToastFor(report: { applied: number; stale: number }, boardId: string): { level: "info" | "warning"; message: string; id: string } | null {
+  if (report.stale > 0) return { level: "warning", message: SAVE_COPY.staleBackup, id: `restore-stale:${boardId}` };
+  if (report.applied > 0) return { level: "info", message: SAVE_COPY.restoredBackup, id: `restore:${boardId}` };
+  return null;
+}
 
 export type PgErrorLike = {
   code?: string | null;
@@ -183,7 +197,6 @@ function toSafeSnapshot(snapshot: unknown, boardId: string): unknown | null {
   try {
     return JSON.parse(JSON.stringify(snapshot));
   } catch (e) {
-    console.error("Failed to serialize board snapshot:", e);
     logger.error({ error: errorInfo(e), id: boardId }, "Failed to serialize board snapshot for auto-save");
     return null;
   }
@@ -202,10 +215,8 @@ export async function buildSnapshotUpdate(deps: SnapshotBuildDeps): Promise<Buil
 
   try {
     let snapshot = deps.takeSnapshot();
-    if (!snapshot) {
-      console.warn("Failed to get snapshot from editor");
-      return { kind: "skipped", reason: "no-snapshot" };
-    }
+    // (each outcome below is logged once, through `logger`, which also writes to the console)
+    if (!snapshot) return { kind: "skipped", reason: "no-snapshot" };
     let safeSnapshot = toSafeSnapshot(snapshot, boardId);
     if (safeSnapshot === null) return { kind: "skipped", reason: "unserializable" };
 
@@ -219,7 +230,6 @@ export async function buildSnapshotUpdate(deps: SnapshotBuildDeps): Promise<Buil
     }
 
     if (decision.action === "refuse") {
-      console.warn("Auto-save refused: board snapshot too large.", { id: boardId, ...measured });
       return { kind: "refused", bytes: measured.bytes, inlineAssets: measured.inlineAssets };
     }
 
@@ -246,7 +256,6 @@ export async function buildSnapshotUpdate(deps: SnapshotBuildDeps): Promise<Buil
       // limit (uploads failed, or the bulk is not inline images) refuse instead of
       // letting the DB size constraint be the first thing the user hears about it.
       if (measured.bytes > SNAPSHOT_LIMITS.hardBytes) {
-        console.warn("Auto-save refused: board snapshot still too large after asset offload.", { id: boardId, ...measured });
         logger.warn({ id: boardId, ...measured, hardBytes: SNAPSHOT_LIMITS.hardBytes }, "Snapshot still over the hard limit after offload; refusing to save");
         return { kind: "refused", bytes: measured.bytes, inlineAssets: measured.inlineAssets };
       }
@@ -260,7 +269,6 @@ export async function buildSnapshotUpdate(deps: SnapshotBuildDeps): Promise<Buil
       try {
         previewUrl = await deps.makePreview();
       } catch (e) {
-        console.warn("Thumbnail generation failed:", e);
         logger.warn({ error: errorInfo(e), id: boardId }, "Thumbnail generation failed, continuing without preview");
       }
     }
@@ -274,7 +282,6 @@ export async function buildSnapshotUpdate(deps: SnapshotBuildDeps): Promise<Buil
       update.preview = null;
     } else if (previewUrl) {
       if (previewUrl.length > MAX_PREVIEW_LENGTH) {
-        console.warn(`Preview too large (${previewUrl.length} bytes), skipping`);
         logger.warn(
           { id: boardId, length: previewUrl.length, maxLength: MAX_PREVIEW_LENGTH },
           "Preview too large, skipping storing preview in database",
@@ -287,7 +294,6 @@ export async function buildSnapshotUpdate(deps: SnapshotBuildDeps): Promise<Buil
     return { kind: "update", update, snapshot: safeSnapshot, bytes: measured.bytes, offloaded };
   } catch (error) {
     const info = { id: boardId, ...errorInfo(error) };
-    console.error("Error preparing board auto-save:", info);
     logger.error({ error: info, id: boardId }, "Error preparing board auto-save");
     return { kind: "error", error };
   }
@@ -304,13 +310,19 @@ export function storeSnapshotOf(snapshot: unknown): TLStoreSnapshot {
   return snapshot as TLStoreSnapshot;
 }
 
+/** Above this a board that saves is told it is nearly full (80 % of the size the client refuses). */
+export const NEARLY_FULL_BYTES = SNAPSHOT_LIMITS.hardBytes * 0.8;
+
 /** `BuildOutcome` -> the `SaveQueue` contract. Anything that cannot produce a row is `refused`. */
 export function toBuildResult(outcome: BuildOutcome): BuildResult {
   switch (outcome.kind) {
-    case "update":
-      return { kind: "update", update: outcome.update, snapshot: storeSnapshotOf(outcome.snapshot) };
+    case "update": {
+      const notice = outcome.bytes > NEARLY_FULL_BYTES ? ASSET_COPY.boardNearlyFull : undefined;
+      return { kind: "update", update: outcome.update, snapshot: storeSnapshotOf(outcome.snapshot), bytes: outcome.bytes, notice };
+    }
     case "refused":
-      return { kind: "refused", message: ASSET_COPY.boardTooLarge };
+      // Only images can be moved out of the row; a board of ink is simply full.
+      return { kind: "refused", message: outcome.inlineAssets > 0 ? ASSET_COPY.boardTooLarge : ASSET_COPY.boardFull };
     case "skipped":
     case "error":
       return { kind: "refused", message: SAVE_COPY.cannotPrepare };
@@ -466,12 +478,15 @@ export async function persistBoardUpdate(
   boardId: string,
   update: Record<string, unknown>,
   expectedVersion: number | null,
+  signal?: AbortSignal,
 ): Promise<PersistResult> {
   if (!navigatorOnline()) return { ok: false, kind: "offline" };
   try {
     let query = supabase.from("whiteboards").update(update).eq("id", boardId);
     if (expectedVersion !== null) query = query.eq("version", expectedVersion);
-    const { data, error } = await query.select("version");
+    const select = query.select("version");
+    // The queue aborts a write that hangs (then retries it); see PERSIST_TIMEOUT_MS.
+    const { data, error } = await (signal ? select.abortSignal(signal) : select);
     return resolvePersistResult(
       { error, rows: data },
       { expectedVersion, online: navigatorOnline(), exists: () => boardExists(boardId) },
@@ -482,8 +497,9 @@ export async function persistBoardUpdate(
 }
 
 /** The other tab's row, for the merge. */
-export async function fetchRemoteBoard(boardId: string): Promise<{ data: unknown; version: number } | null> {
-  const { data, error } = await supabase.from("whiteboards").select("data, version").eq("id", boardId).maybeSingle();
+export async function fetchRemoteBoard(boardId: string, signal?: AbortSignal): Promise<{ data: unknown; version: number } | null> {
+  const query = supabase.from("whiteboards").select("data, version").eq("id", boardId);
+  const { data, error } = await (signal ? query.abortSignal(signal) : query).maybeSingle();
   if (error) throw error;
   if (!data) return null;
   const row = data as { data: unknown; version: unknown };
@@ -518,10 +534,20 @@ export function singleFlight<T>(fn: () => Promise<T>): SingleFlight<T> {
 
 const offloadByEditor = new WeakMap<Editor, SingleFlight<OffloadResult>>();
 
+/** Only boards saved before the asset store shipped still hold images as data: URLs. */
+export function hasInlineImages(editor: Pick<Editor, "getAssets">): boolean {
+  return editor.getAssets().some((a) => !!a.props.src?.startsWith("data:"));
+}
+
 function offloadFlightFor(editor: Editor): SingleFlight<OffloadResult> {
   let flight = offloadByEditor.get(editor);
   if (!flight) {
-    flight = singleFlight(() => offloadEditorAssets(editor));
+    // The offloader is fetched for a board that needs it, not on every board's first load.
+    flight = singleFlight(async () =>
+      hasInlineImages(editor)
+        ? (await import("@/lib/assets/offloadSnapshotAssets")).offloadEditorAssets(editor)
+        : { migrated: 0, failed: [], bytesBefore: 0, bytesAfter: 0, aborted: false },
+    );
     offloadByEditor.set(editor, flight);
   }
   return flight;
@@ -588,18 +614,14 @@ export function buildEditorUpdate(editor: Editor, boardId: string): Promise<Buil
 
 /** State shown before the queue exists (editor not mounted yet). */
 export function idleSyncState(version: number | null): SyncState {
-  return { status: "saved", message: null, lastSavedAt: null, version, pending: false, attempt: 0 };
+  return { status: "saved", message: null, notice: null, lastSavedAt: null, version, pending: false, attempt: 0 };
 }
 
 export interface UseSnapshotSaveResult {
-  /** non-null while the board cannot be persisted (too large); cleared by the next successful save */
-  blockedMessage: string | null;
-  /** live queue state for the SaveStatus pill */
+  /** live queue state for the SaveStatus pill (a board that cannot be saved is `refused`, see blockedMessageForSync) */
   sync: SyncState;
   /** re-run a failed save now (Retry button) */
   retry: () => Promise<SyncState>;
-  /** save whatever is pending now (navigation away) */
-  flush: () => Promise<SyncState>;
 }
 
 /**
@@ -608,50 +630,58 @@ export interface UseSnapshotSaveResult {
  * Every document change (`source: 'all'`, so Live echoes, graphs and the tutor's
  * handwriting are included) marks the queue dirty.
  *
- * On mount the localStorage backup left by a previous session (offline, crash, closed tab
- * mid-save) is merged over the loaded board — this effect runs after tldraw's `onMount`
- * (layout effect of the parent `Layout`) has run `loadSnapshot`, so the restore never gets
- * overwritten by the load.
+ * Each mount backs up to its own key (`agathon.unsaved.<boardId>.<tabId>`) and holds a Web Lock
+ * named after it while it lives. On mount the backups that tabs which are gone left on this device
+ * (offline, crash, closed tab mid-save) are merged over the loaded board, record by record, never
+ * over a record the server changed since (`restoreDeviceBackups`) — this effect runs after
+ * tldraw's `onMount` (layout effect of the parent `Layout`) has run `loadSnapshot`, so the restore
+ * never gets overwritten by the load.
  */
 export function useSnapshotSave(
   editor: Editor | null,
   boardId: string,
-  initialVersion: number | null = null,
+  version: number | null = null,
 ): UseSnapshotSaveResult {
   // The queue is created in an effect (it needs the editor) but read reactively during
   // render, so it lives in a tldraw atom rather than React state (no setState in effects).
   const [queueAtom] = useState(() => atom<SaveQueue | null>("save.queue", null));
+  // The version the editor's document was loaded at, fixed for this mount: a newer value later
+  // (the page re-read the row) does not reload the store, and a queue built on it would write
+  // the stale document as if it were that version, over another tab's or device's work.
+  const [initialVersion] = useState(version);
 
   useEffect(() => {
     if (!editor) return;
     const store = editor.store;
+    // This mount's own backup key, and the lock that tells other tabs it is still open.
     const backup = createLocalStorageBackup();
+    const releaseLock = holdTabLock(backup.tabId);
+    let unmounted = false;
     const queue = createSaveQueue({
       boardId,
       store,
       initialVersion,
       buildUpdate: () => buildEditorUpdate(editor, boardId),
-      persist: (update, expectedVersion) => persistBoardUpdate(boardId, update, expectedVersion),
-      fetchRemote: () => fetchRemoteBoard(boardId),
+      persist: (update, expectedVersion, signal) => persistBoardUpdate(boardId, update, expectedVersion, signal),
+      fetchRemote: (signal) => fetchRemoteBoard(boardId, signal),
       backup,
       isOnline: navigatorOnline,
       debounceMs: SAVE_DEBOUNCE_MS,
     });
     queueAtom.set(queue);
 
-    // Unsaved work from a previous session on this device: local edits win over the loaded row.
-    try {
-      const pending = backup.read(boardId);
-      if (pending) {
-        const { applied } = restoreBackupInto(store, pending, initialVersion);
-        backup.clear(boardId);
-        logger.info({ id: boardId, applied, baseVersion: pending.baseVersion }, "Restored autosave backup");
-        if (applied > 0) toast.info(SAVE_COPY.restoredBackup);
-        queue.markDirty();
-      }
-    } catch (e) {
-      logger.warn({ id: boardId, error: errorInfo(e) }, "Could not restore autosave backup");
-      backup.clear(boardId);
+    // Unsaved work this device kept for the board (closed or crashed tabs, earlier sessions); the
+    // restore is only fetched when there is some.
+    if (backup.list(boardId).some((b) => b.tabId !== backup.tabId)) {
+      void import("@/lib/sync/restoreBackup")
+        .then((m) => m.restoreDeviceBackups({ store, boardId, loadedVersion: initialVersion, backup, queue, cancelled: () => unmounted }))
+        .then((report) => {
+          if (!report) return;
+          logger.info({ id: boardId, ...report }, "Restored autosave backups");
+          const shown = restoreToastFor(report, boardId);
+          if (shown) toast[shown.level](shown.message, { id: shown.id });
+        })
+        .catch((e) => logger.warn({ id: boardId, error: errorInfo(e) }, "Could not restore autosave backup"));
     }
 
     const disposeListener = store.listen(() => queue.markDirty(), { source: "all", scope: "document" });
@@ -662,10 +692,22 @@ export function useSnapshotSave(
     const onPageHide = () => {
       queue.writeBackupNow();
     };
+    // Switching app or tab is often the last event a page gets (iPadOS suspends a hidden tab's
+    // timers, then may discard it without pagehide): back up and save now, not after the
+    // debounce. Back in view, a save waiting out a backoff is tried again at once.
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        queue.writeBackupNow();
+        void queue.flush();
+      } else {
+        queue.setOnline(navigatorOnline());
+      }
+    };
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
     window.addEventListener("pagehide", onPageHide);
     window.addEventListener("beforeunload", onPageHide);
+    document.addEventListener("visibilitychange", onVisibility);
 
     if (process.env.NODE_ENV !== "production") {
       // Dev-only handle for the verifier / devtools.
@@ -673,10 +715,12 @@ export function useSnapshotSave(
     }
 
     return () => {
+      unmounted = true;
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("beforeunload", onPageHide);
+      document.removeEventListener("visibilitychange", onVisibility);
       disposeListener();
       if (queueAtom.get() === queue) queueAtom.set(null);
       if (process.env.NODE_ENV !== "production") {
@@ -692,7 +736,11 @@ export function useSnapshotSave(
         queue
           .flush()
           .catch((e) => logger.warn({ id: boardId, error: errorInfo(e) }, "Flush on unmount failed"))
-          .finally(() => queue.dispose()),
+          .finally(() => {
+            queue.dispose();
+            // Only now may another tab treat this one's backup (if the flush left one) as orphaned.
+            releaseLock();
+          }),
       );
     };
   }, [editor, boardId, initialVersion, queueAtom]);
@@ -706,10 +754,5 @@ export function useSnapshotSave(
     () => queueAtom.get()?.retry() ?? Promise.resolve(idleSyncState(initialVersion)),
     [queueAtom, initialVersion],
   );
-  const flush = useCallback(
-    () => queueAtom.get()?.flush() ?? Promise.resolve(idleSyncState(initialVersion)),
-    [queueAtom, initialVersion],
-  );
-
-  return { blockedMessage: blockedMessageForSync(sync), sync, retry, flush };
+  return { sync, retry };
 }

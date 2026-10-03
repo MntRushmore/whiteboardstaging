@@ -13,10 +13,14 @@ export const TEXT_MODELS = {
 export const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 export const OPENROUTER_CREDITS_URL = "https://openrouter.ai/api/v1/credits";
 
-/** Thrown when OpenRouter reports the account is out of credits. */
+/**
+ * Thrown when OpenRouter reports the OPERATOR's account is out of credits (its own billing, not
+ * the student's ink). Routes answer it with a 503 (request.ts `errorResponse`), never a 402: the
+ * student cannot fix it by buying ink. The message is for the logs only.
+ */
 export class CreditsExhaustedError extends Error {
   readonly status = 402;
-  constructor(message = "Account credits depleted — please talk to Rushil to refill your account!") {
+  constructor(message = "OpenRouter reports the account is out of credits: top it up.") {
     super(message);
     this.name = "CreditsExhaustedError";
   }

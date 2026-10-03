@@ -1,3 +1,4 @@
+import { TERMS_VERSION } from "@/lib/legal";
 import { passwordTooShortMessage } from "@/lib/loginErrorMessage";
 
 /**
@@ -21,9 +22,19 @@ export const FORM_COPY = {
   emailInvalid: "Enter a full email address, like you@example.com.",
   passwordRequired: "Enter your password.",
   newPasswordHint: `Use ${NEW_PASSWORD_MIN_LENGTH} or more characters.`,
+  consentRequired: "Tick the box to agree before you create your account.",
 } as const;
 
-export type FieldErrors = { email?: string; password?: string };
+/** `consent`: sign-up's Terms / Privacy / age box. */
+export type FieldErrors = { email?: string; password?: string; consent?: string };
+
+/**
+ * Every form that takes a password posts. A form without `method` is a GET: submitted before
+ * React attached onSubmit (a slow load, a quick Enter on an iPad), the browser put
+ * `?email=…&password=…` in the URL, and so in history and the server and Vercel logs. `#` posts
+ * to the page itself, which reads no body.
+ */
+export const AUTH_FORM_METHOD = { method: "post", action: "#" } as const;
 
 // Deliberately loose: something@something.tld. Supabase does the real check.
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -43,8 +54,11 @@ export function validateNewPassword(password: string): string | undefined {
   return undefined;
 }
 
-/** Per-field errors for the login card; an empty object means "submit". */
-export function validateLoginForm(mode: LoginMode, email: string, password: string): FieldErrors {
+/**
+ * Per-field errors for the login card; an empty object means "submit". `agreed` is sign-up's
+ * consent box (ignored for sign-in and reset: existing accounts are never asked).
+ */
+export function validateLoginForm(mode: LoginMode, email: string, password: string, agreed = false): FieldErrors {
   const errors: FieldErrors = {};
   const emailError = validateEmail(email);
   if (emailError) errors.email = emailError;
@@ -52,12 +66,32 @@ export function validateLoginForm(mode: LoginMode, email: string, password: stri
   if (mode === "signup") {
     const passwordError = validateNewPassword(password);
     if (passwordError) errors.password = passwordError;
+    if (!agreed) errors.consent = FORM_COPY.consentRequired;
   }
   return errors;
 }
 
 export function hasFieldErrors(errors: FieldErrors): boolean {
-  return Boolean(errors.email || errors.password);
+  return Boolean(errors.email || errors.password || errors.consent);
+}
+
+/**
+ * The argument to `supabase.auth.signUp`. The Terms version goes into the new account's user
+ * metadata, in the same request that creates it: the database refuses an account without it and
+ * copies it to the profile (supabase/migrations/20261003010000_signup_consent.sql).
+ */
+export function signUpRequest(email: string, password: string) {
+  return { email, password, options: { data: { terms_version: TERMS_VERSION } } };
+}
+
+/**
+ * Where to go once signed in: the board a signed-out visit (or an expired session) was sent to
+ * /login from (`?next=/board/<id>`), else the boards home. Only a board path on this site is
+ * honoured, never an absolute URL or `//host`, so the parameter cannot redirect anywhere else.
+ */
+export function afterSignInPath(search: string): string {
+  const next = new URLSearchParams(search).get("next");
+  return next && /^\/board\/[\w-]+$/.test(next) ? next : "/";
 }
 
 export const RESET_LINK_COPY = {
