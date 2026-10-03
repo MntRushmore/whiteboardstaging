@@ -443,7 +443,7 @@ export async function checkUserSettingsIsolation({ a, b }) {
 }
 
 /** @param {CheckContext} ctx */
-export async function checkBugReports({ a, b }) {
+export async function checkBugReports({ a, b, service }) {
   /** @type {CheckResult[]} */
   const out = [];
   const own = await a.rest("POST", "bug_reports", {
@@ -457,6 +457,34 @@ export async function checkBugReports({ a, b }) {
     prefer: "return=minimal",
   });
   out.push(result("bug_reports: A cannot insert report with B's user_id", isDenied(foreign), describe(foreign)));
+
+  // A report with no user id is nobody's: it never leaves with an account and can carry any
+  // email (20261003100100_bug_reports_own_only.sql).
+  const nobody = await a.rest("POST", "bug_reports", {
+    body: { user_id: null, user_email: "someone-else@example.com", message: "rls-verify no user" },
+    prefer: "return=minimal",
+  });
+  out.push(result("bug_reports: A cannot insert a report with no user id", isDenied(nobody), describe(nobody)));
+
+  if (!service) {
+    out.push(result("bug_reports: the reporter's email comes from the JWT (skipped: no service role client)", true));
+  } else {
+    const tag = `rls-verify-email-${uuid()}`;
+    const spoof = await a.rest("POST", "bug_reports", {
+      body: { user_id: a.userId, user_email: "someone-else@example.com", message: tag },
+      prefer: "return=minimal",
+    });
+    const stored = await service.rest("GET", "bug_reports", { query: { message: `eq.${tag}`, select: "user_email" } });
+    const email = rows(stored)[0]?.user_email;
+    out.push(
+      result(
+        "bug_reports: the reporter's email comes from the JWT, not the client (no reports in another person's name)",
+        isOk(spoof) && rows(stored).length === 1 && email !== "someone-else@example.com",
+        `insert ${describe(spoof)}; stored ${describe(stored)}`,
+      ),
+    );
+    await service.rest("DELETE", "bug_reports", { query: { message: `eq.${tag}` } });
+  }
 
   const read = await a.rest("GET", "bug_reports", { query: { select: "id", limit: "1" } });
   out.push(result("bug_reports: not readable back by the reporter", deniedOrEmpty(read), describe(read)));

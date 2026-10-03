@@ -74,6 +74,8 @@ type Leak =
   | "crossDelete"
   | "settingsHijack"
   | "bugReportForeign"
+  | "bugReportNoUser"
+  | "bugReportEmailSpoof"
   | "bugReportRead"
   | "trainersInsert"
   | "trainingInsert"
@@ -703,8 +705,10 @@ function makeWorld(leaks: Leak[] = []) {
       }
       case "bug_reports": {
         if (method === "POST") {
-          if (body.user_id != null && body.user_id !== uid && !leak("bugReportForeign")) return denied(uid);
-          bugReports.push({ id: uuid(), ...body });
+          const allowed = body.user_id === uid || (body.user_id == null ? leak("bugReportNoUser") : leak("bugReportForeign"));
+          if (!allowed) return denied(uid);
+          // the BEFORE INSERT trigger stamps the address from the caller's JWT
+          bugReports.push({ id: uuid(), ...body, user_email: leak("bugReportEmailSpoof") ? body.user_email : `${uid}@fake.test` });
           return ok(null, 201);
         }
         if (method === "GET") return leak("bugReportRead") ? ok(bugReports) : denied(uid);
@@ -871,6 +875,15 @@ function makeWorld(leaks: Leak[] = []) {
       return ok(gone);
     }
     switch (table) {
+      case "bug_reports": {
+        if (method === "GET") return ok(bugReports.filter((r) => matches(r, query)));
+        if (method === "DELETE") {
+          const gone = bugReports.filter((r) => matches(r, query));
+          for (const r of gone) bugReports.splice(bugReports.indexOf(r), 1);
+          return ok(gone);
+        }
+        break;
+      }
       case "usage_events": {
         if (method === "POST") {
           usage.push({ id: usage.length + 1, created_at: new Date().toISOString(), ...body });
@@ -1144,6 +1157,8 @@ describe("rlsChecks detect individual leaks", () => {
     ["settingsHijack", checkUserSettingsIsolation, "user_settings: B cannot upsert A's row"],
     ["settingsHijack", checkUserSettingsIsolation, "user_settings: A's features unchanged after B's attempt"],
     ["bugReportForeign", checkBugReports, "bug_reports: A cannot insert report with B's user_id"],
+    ["bugReportNoUser", checkBugReports, "bug_reports: A cannot insert a report with no user id"],
+    ["bugReportEmailSpoof", checkBugReports, "bug_reports: the reporter's email comes from the JWT, not the client (no reports in another person's name)"],
     ["bugReportRead", checkBugReports, "bug_reports: not readable back by the reporter"],
     ["trainersInsert", checkTrainersNotWritable, "trainers: self-insert denied"],
     ["trainingInsert", checkTrainingSamplesDenied, "training_samples: non-trainer insert denied"],
