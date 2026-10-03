@@ -6,17 +6,20 @@
  *   node scripts/verify-rls.mjs
  *
  * Covers every public table (including the accounts & billing tables: plans,
- * profiles, usage_events, credit_grants, billing_events, rate_limit_counters),
- * the storage buckets, the version trigger and the RPCs (consume_credits,
- * credit_summary, refund_credits, rate_limit_hit, usage_by_day, save_onboarding, delete_own_account). Two
- * throwaway users A and B are created up front; the delete_own_account check
- * creates a third (C) and deletes it through the RPC.
+ * profiles, usage_events, credit_grants, billing_events, rate_limit_counters, and
+ * the ink tables ink_packs, ink_grants, ink_purchases), the storage buckets, the
+ * version trigger and the RPCs (consume_credits, credit_summary, ink_summary,
+ * refund_credits, rate_limit_hit, usage_by_day, save_onboarding, delete_own_account;
+ * and that a user can call none of the service-role ink RPCs grant_ink_purchase,
+ * reverse_ink_purchase, grant_ink). Two throwaway users A and B are created up front;
+ * the delete_own_account check creates a third (C) and deletes it through the RPC.
  *
  * Env (read from .env.local when not already set):
  *   NEXT_PUBLIC_SUPABASE_URL        project URL (falls back to `npx supabase status` for the local stack)
  *   NEXT_PUBLIC_SUPABASE_ANON_KEY   anon / publishable key
  *   SUPABASE_SERVICE_ROLE_KEY       optional: creates pre-confirmed throwaway users and deletes them afterwards;
- *                                   also enables the refund check's "row older than 15 minutes" case
+ *                                   also enables the refund check's "row older than 15 minutes" case and
+ *                                   the ink purchase + refund round trip (grant_ink_purchase / reverse_ink_purchase)
  *   VERIFY_EMAIL_DOMAIN             optional: domain for the throwaway emails (default example.com)
  *
  * Waits up to 3 minutes for /auth/v1/health before running anything.

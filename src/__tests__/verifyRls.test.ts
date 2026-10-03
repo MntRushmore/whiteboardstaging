@@ -8,6 +8,8 @@ import { describe, expect, it } from "vitest";
 import {
   ALL_CHECKS,
   CREDIT_SUMMARY_KEYS,
+  INK_PACKS,
+  INK_SUMMARY_KEYS,
   PUBLIC_TABLES,
   RATE_LIMIT_KEYS,
   affectedNoRows,
@@ -18,6 +20,8 @@ import {
   checkCreditsConsumption,
   checkCrossUserIsolation,
   checkDeleteOwnAccount,
+  checkInkPurchases,
+  checkInkTables,
   checkOnboarding,
   checkRateLimit,
   checkRefunds,
@@ -33,6 +37,7 @@ import {
   formatResults,
   isCreditSummary,
   isDenied,
+  isInkSummary,
   isRateLimitResult,
   isStorageDenied,
   isUsageByDay,
@@ -102,7 +107,17 @@ type Leak =
   // onboarding
   | "onboardingPatchable"
   | "onboardingForeign"
-  | "onboardingAnyCourse";
+  | "onboardingAnyCourse"
+  // ink
+  | "inkPacksWritable"
+  | "inkSelfGrant"
+  | "inkGrantsCrossRead"
+  | "inkBalancePatchable"
+  | "inkPurchaseRpcOpen"
+  | "inkPurchaseReplay"
+  | "inkPurchaseCrossRead"
+  | "inkReverseNegative"
+  | "inkNoStarter";
 
 const USER_A = "aaaaaaaa-0000-4000-8000-000000000001";
 const USER_B = "bbbbbbbb-0000-4000-8000-000000000002";
@@ -112,9 +127,11 @@ const REFUND_WINDOW_MS = 15 * 60_000;
 const FILTER_KEYS = new Set(["select", "limit", "order", "on_conflict"]);
 const PLANS: Row[] = [
   { id: "free", name: "Free", monthly_credits: 300, price_cents: 0, sort: 0, active: true },
-  { id: "plus", name: "Plus", monthly_credits: 3000, price_cents: 900, sort: 1, active: true },
-  { id: "pro", name: "Pro", monthly_credits: 12000, price_cents: 2900, sort: 2, active: true },
+  { id: "plus", name: "Plus", monthly_credits: 3000, price_cents: 1200, sort: 1, active: false },
+  { id: "pro", name: "Pro", monthly_credits: 12000, price_cents: 3900, sort: 2, active: false },
 ];
+const PACKS: Row[] = INK_PACKS.map(([id, ink, price], i) => ({ id, name: String(id), ink, price_cents: price, sort: i + 1, active: true }));
+const STARTER_INK = 300;
 
 function makeWorld(leaks: Leak[] = []) {
   const leak = (l: Leak) => leaks.includes(l);
@@ -130,6 +147,13 @@ function makeWorld(leaks: Leak[] = []) {
   const usage: Row[] = [];
   const grants: Row[] = [];
   const billingEvents: Row[] = [];
+  // ink (20261002000000_ink.sql): the grant ledger and the purchases; the balance is grants - usage
+  const inkGrants: Row[] = [];
+  const purchases: Row[] = [];
+  const grantStarter = (uid: string) => {
+    if (!leak("inkNoStarter")) inkGrants.push({ id: inkGrants.length + 1, user_id: uid, kind: "starter", units: STARTER_INK, created_at: new Date().toISOString() });
+  };
+  for (const u of users) grantStarter(u);
   // "<uid>:<bucket>:<windowStartMs>" -> counter row (public.rate_limit_counters)
   const counters = new Map<string, { user_id: string; bucket: string; window_start: number; hits: number; expires_at: number }>();
   const uuid = () => globalThis.crypto.randomUUID();
@@ -141,12 +165,12 @@ function makeWorld(leaks: Leak[] = []) {
   });
 
   const sumUnits = (list: Row[], uid: string) => list.filter((r) => r.user_id === uid).reduce((n, r) => n + Number(r.units), 0);
+  /** The ink model: all ink granted minus all ink used (credit_summary keeps the old keys, monthly_credits 0). */
   function balance(uid: string) {
-    const plan = PLANS.find((p) => p.id === (profiles.get(uid)?.plan_id ?? "free")) ?? PLANS[0];
-    const monthly = Number(plan.monthly_credits);
+    const plan = PLANS[0];
     const used = sumUnits(usage, uid);
-    const granted = sumUnits(grants, uid);
-    return { plan, monthly, used, granted, remaining: Math.max(0, monthly + granted - used) };
+    const granted = sumUnits(inkGrants, uid);
+    return { plan, monthly: 0, used, granted, remaining: Math.max(0, granted - used) };
   }
   function summary(uid: string): Row {
     const b = balance(uid);
@@ -157,11 +181,85 @@ function makeWorld(leaks: Leak[] = []) {
       used: b.used,
       granted: b.granted,
       remaining: b.remaining,
-      period_start: "2026-09-01T00:00:00+00:00",
-      period_end: "2026-10-01T00:00:00+00:00",
+      balance: b.remaining,
+      period_start: "2026-10-01T00:00:00+00:00",
+      period_end: "2026-11-01T00:00:00+00:00",
     };
     if (leak("summaryMissingField")) delete body.granted;
     return body;
+  }
+  function inkSummary(uid: string): Row {
+    const own = inkGrants.filter((g) => g.user_id === uid);
+    const sum = (kind: string) => own.filter((g) => g.kind === kind).reduce((n, g) => n + Number(g.units), 0);
+    const b = balance(uid);
+    const mine = purchases.filter((p) => p.user_id === uid);
+    const last = mine.at(-1);
+    return {
+      balance: b.remaining,
+      granted: b.granted,
+      purchased: sum("purchase"),
+      refunded: -sum("refund"),
+      used: Math.max(0, b.granted - b.remaining),
+      starter: sum("starter"),
+      starter_at: own.find((g) => g.kind === "starter")?.created_at ?? null,
+      purchases: mine.length,
+      last_purchase: last ? { pack_id: last.pack_id, pack_name: last.pack_id, ink: last.ink, status: last.status, created_at: last.created_at } : null,
+    };
+  }
+  /** The service-role RPCs of 20261002000000_ink.sql (and, with a leak, callable by a user). */
+  function inkRpc(fn: string, args: Row): HttpResult | null {
+    switch (fn) {
+      case "grant_ink_purchase": {
+        const uid = String(args.p_user_id);
+        const pack = PACKS.find((p) => p.id === args.p_pack_id);
+        if (!pack) return { status: 400, body: { code: "22023", message: `unknown ink pack ${args.p_pack_id}` } };
+        const existing = purchases.find((p) => p.checkout_session_id === args.p_checkout_session_id);
+        if (existing && !leak("inkPurchaseReplay")) return ok({ granted: 0, duplicate: true, purchase_id: existing.id, balance: balance(uid).remaining });
+        const purchase: Row = {
+          id: purchases.length + 1,
+          user_id: uid,
+          pack_id: pack.id,
+          ink: pack.ink,
+          amount_cents: args.p_amount_cents ?? pack.price_cents,
+          checkout_session_id: args.p_checkout_session_id,
+          payment_intent_id: args.p_payment_intent_id ?? null,
+          status: "paid",
+          refunded_cents: 0,
+          refunded_ink: 0,
+          refund_unrecovered_ink: 0,
+          created_at: new Date().toISOString(),
+        };
+        purchases.push(purchase);
+        inkGrants.push({ id: inkGrants.length + 1, user_id: uid, kind: "purchase", units: pack.ink, purchase_id: purchase.id });
+        return ok({ granted: pack.ink, duplicate: false, purchase_id: purchase.id, balance: balance(uid).remaining });
+      }
+      case "reverse_ink_purchase": {
+        const p = purchases.find((x) => x.payment_intent_id === args.p_payment_intent_id);
+        if (!p) return ok({ found: false, reversed: 0 });
+        const base = Number(p.amount_cents);
+        const cum = args.p_fully_refunded ? base : Math.min(Number(args.p_amount_refunded_cents), base);
+        if (cum <= Number(p.refunded_cents)) return ok({ found: true, duplicate: true, reversed: 0, requested: 0 });
+        const target = cum >= base ? Number(p.ink) : Math.round((Number(p.ink) * cum) / base);
+        const owed = target - Number(p.refunded_ink) - Number(p.refund_unrecovered_ink);
+        const have = balance(String(p.user_id)).remaining;
+        const reversed = leak("inkReverseNegative") ? owed : Math.min(owed, have);
+        if (reversed > 0) inkGrants.push({ id: inkGrants.length + 1, user_id: p.user_id, kind: "refund", units: -reversed, purchase_id: p.id });
+        Object.assign(p, {
+          refunded_cents: cum,
+          refunded_ink: Number(p.refunded_ink) + reversed,
+          refund_unrecovered_ink: Number(p.refund_unrecovered_ink) + owed - reversed,
+          status: cum >= base ? "refunded" : "partially_refunded",
+        });
+        return ok({ found: true, duplicate: false, reversed, requested: owed, balance: have - reversed, status: p.status });
+      }
+      case "grant_ink": {
+        const uid = String(args.p_user_id);
+        const units = Number(args.p_units);
+        inkGrants.push({ id: inkGrants.length + 1, user_id: uid, kind: "manual", units });
+        return ok({ granted: units, balance: balance(uid).remaining });
+      }
+    }
+    return null;
   }
   function deleteBoardRows(id: string) {
     boards.delete(id);
@@ -170,9 +268,14 @@ function makeWorld(leaks: Leak[] = []) {
   }
 
   function rpcCall(uid: string, fn: string, args: Row): HttpResult {
+    if (fn === "grant_ink_purchase" || fn === "reverse_ink_purchase" || fn === "grant_ink") {
+      return leak("inkPurchaseRpcOpen") ? (inkRpc(fn, args) as HttpResult) : denied(uid);
+    }
     switch (fn) {
       case "credit_summary":
         return ok(summary(uid));
+      case "ink_summary":
+        return ok(inkSummary(uid));
       case "consume_credits": {
         const units = Number(args.p_units);
         if (!Number.isInteger(units) || units < 1 || units > 1000) {
@@ -238,6 +341,10 @@ function makeWorld(leaks: Leak[] = []) {
       }
       case "usage_by_day": {
         const zone = typeof args.p_time_zone === "string" && args.p_time_zone ? args.p_time_zone : "UTC";
+        // p_days (20261002000000_ink.sql): null = this month, else 1..366 days back; every fake row is from today
+        if (args.p_days !== undefined && args.p_days !== null && !(Number(args.p_days) >= 1 && Number(args.p_days) <= 366)) {
+          return { status: 400, body: { code: "22023", message: "p_days must be between 1 and 366" } };
+        }
         let format: Intl.DateTimeFormat;
         try {
           format = new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" });
@@ -279,6 +386,8 @@ function makeWorld(leaks: Leak[] = []) {
         for (const b of [...boards.values()]) if (b.user_id === uid) deleteBoardRows(b.id as string);
         for (let i = usage.length - 1; i >= 0; i--) if (usage[i].user_id === uid) usage.splice(i, 1);
         for (let i = grants.length - 1; i >= 0; i--) if (grants[i].user_id === uid) grants.splice(i, 1);
+        for (let i = inkGrants.length - 1; i >= 0; i--) if (inkGrants[i].user_id === uid) inkGrants.splice(i, 1);
+        for (let i = purchases.length - 1; i >= 0; i--) if (purchases[i].user_id === uid) purchases.splice(i, 1);
         // Storage rows are NOT removed by the RPC (storage.protect_delete forbids direct deletes); they
         // stay until the client / operator removes them through the Storage API - mirror that here.
         return ok(null, 204);
@@ -426,7 +535,10 @@ function makeWorld(leaks: Leak[] = []) {
         if (method === "PATCH") {
           // Column-level grant: only display_name is updatable -> 42501 before RLS.
           const updatable = (k: string) =>
-            k === "display_name" || (leak("planIdUpdatable") && k === "plan_id") || (leak("onboardingPatchable") && (k === "course" || k === "onboarded_at"));
+            k === "display_name" ||
+            (leak("planIdUpdatable") && k === "plan_id") ||
+            (leak("onboardingPatchable") && (k === "course" || k === "onboarded_at")) ||
+            (leak("inkBalancePatchable") && k === "ink_balance");
           if (Object.keys(body).some((k) => !updatable(k))) return denied(uid);
           const own = visible.filter((r) => r.user_id === uid);
           for (const r of own) Object.assign(r, body);
@@ -456,6 +568,24 @@ function makeWorld(leaks: Leak[] = []) {
         if (method === "GET") return leak("billingEventsReadable") ? ok(billingEvents) : denied(uid);
         return denied(uid);
       }
+      case "ink_packs": {
+        if (method === "GET") return ok(ordered(PACKS.filter((r) => matches(r, query)), query));
+        return leak("inkPacksWritable") ? ok(rep ? [] : null, method === "POST" ? 201 : 200) : denied(uid);
+      }
+      case "ink_grants": {
+        if (method === "POST") {
+          if (!leak("inkSelfGrant")) return denied(uid);
+          inkGrants.push({ id: inkGrants.length + 1, ...body });
+          return ok(null, 201);
+        }
+        if (method === "GET") return ok(ordered(inkGrants.filter((r) => (r.user_id === uid || leak("inkGrantsCrossRead")) && matches(r, query)), query));
+        return denied(uid);
+      }
+      case "ink_purchases": {
+        if (method === "POST") return denied(uid);
+        if (method === "GET") return ok(purchases.filter((r) => (r.user_id === uid || leak("inkPurchaseCrossRead")) && matches(r, query)));
+        return denied(uid);
+      }
       case "rate_limit_counters": {
         // Function-only table: no grants for authenticated at all.
         if (method === "GET" && leak("countersReadable")) return ok([...counters.values()].filter((c) => c.user_id === uid));
@@ -467,6 +597,10 @@ function makeWorld(leaks: Leak[] = []) {
 
   /** The service role bypasses RLS and holds every grant; only what the checks use is modelled. */
   function serviceRest(method: string, table: string, query: Record<string, string>, body: Row): HttpResult {
+    if (table.startsWith("rpc/")) {
+      const res = inkRpc(table.slice(4), body);
+      if (res) return res;
+    }
     switch (table) {
       case "usage_events": {
         if (method === "POST") {
@@ -526,11 +660,12 @@ function makeWorld(leaks: Leak[] = []) {
     const uid = uuid();
     users.add(uid);
     profiles.set(uid, { user_id: uid, plan_id: "free", display_name: null, course: null, onboarded_at: null });
+    grantStarter(uid);
     return client(uid);
   };
 
   const ctx: CheckContext = { anon: client(null), a: client(USER_A), b: client(USER_B), newUser, service: client(SERVICE) };
-  return { ctx, state: { boards, settings, bugReports, snapshots, assets, objects, users, profiles, usage, grants, counters } };
+  return { ctx, state: { boards, settings, bugReports, snapshots, assets, objects, users, profiles, usage, grants, counters, inkGrants, purchases } };
 }
 
 const failures = (results: CheckResult[]) => results.filter((r) => !r.pass).map((r) => r.name);
@@ -551,8 +686,8 @@ describe("rlsChecks against a correctly secured fake", () => {
       expect(results.map((r) => r.name)).toContain(`anon: select ${table} denied`);
       expect(results.map((r) => r.name)).toContain(`anon: insert ${table} denied`);
     }
-    expect(PUBLIC_TABLES).toHaveLength(13);
-    for (const table of ["plans", "profiles", "usage_events", "credit_grants", "billing_events", "rate_limit_counters"]) {
+    expect(PUBLIC_TABLES).toHaveLength(16);
+    for (const table of ["plans", "profiles", "usage_events", "credit_grants", "billing_events", "rate_limit_counters", "ink_packs", "ink_grants", "ink_purchases"]) {
       expect(PUBLIC_TABLES).toContain(table);
     }
   });
@@ -612,6 +747,23 @@ describe("rlsChecks against a correctly secured fake", () => {
     const aRows = [...state.counters.values()].filter((c) => c.user_id === USER_A);
     // other bucket: 1 hit; main bucket: 3 allowed + 2 denied + 1 after the delete attempt = 6
     expect(aRows.map((c) => c.hits).sort((x, y) => x - y)).toEqual([1, 6]);
+  });
+
+  it("the ink checks pass on their own and only ever add ink through the service role", async () => {
+    const { ctx, state } = makeWorld();
+    expect(failures(await checkInkTables(ctx))).toEqual([]);
+    expect(failures(await checkInkPurchases(ctx))).toEqual([]);
+    expect(state.inkGrants.filter((g) => g.kind === "manual")).toEqual([]);
+    expect(state.purchases).toHaveLength(1);
+    expect(state.purchases[0]).toMatchObject({ user_id: USER_A, pack_id: "medium", status: "refunded" });
+  });
+
+  it("the ink purchase check reports its service-role part as skipped (still passing) without a service client", async () => {
+    const { ctx, state } = makeWorld();
+    const results = await checkInkPurchases({ anon: ctx.anon, a: ctx.a, b: ctx.b });
+    expect(failures(results)).toEqual([]);
+    expect(results.map((r) => r.name)).toContain("grant_ink_purchase / reverse_ink_purchase with the service role (skipped: no service role client)");
+    expect(state.purchases).toEqual([]);
   });
 
   it("the usage_by_day check spends only as A and passes on its own", async () => {
@@ -689,6 +841,25 @@ describe("rlsChecks detect individual leaks", () => {
     ["onboardingForeign", checkOnboarding, "onboarding: B's profile unchanged by A's calls"],
     ["onboardingAnyCourse", checkOnboarding, "onboarding: an unknown course is rejected (400)"],
     ["anonRpc", checkOnboarding, "onboarding: anon cannot call save_onboarding"],
+    // ink
+    ["anonSelect", checkAnonDenied, "anon: select ink_grants denied"],
+    ["anonInsert", checkAnonDenied, "anon: insert ink_purchases denied"],
+    ["inkPacksWritable", checkInkTables, "ink_packs: A cannot insert a pack"],
+    ["inkPacksWritable", checkInkTables, "ink_packs: A cannot update a pack"],
+    ["inkSelfGrant", checkInkTables, "ink_grants: A cannot grant themselves ink (insert denied)"],
+    ["inkSelfGrant", checkInkTables, "ink: A's balance unchanged by all of the attempts above"],
+    ["inkGrantsCrossRead", checkInkTables, "ink_grants: A cannot read B's grants (select returns [])"],
+    ["inkBalancePatchable", checkInkTables, "profiles: A cannot set own ink_balance (42501)"],
+    ["inkNoStarter", checkInkTables, "ink_grants: A reads own ledger, which starts with the 300-ink starter (sign-up trigger)"],
+    ["inkNoStarter", checkInkPurchases, "ink_summary: a new account starts with its 300 starter ink"],
+    ["inkPurchaseRpcOpen", checkInkPurchases, "grant_ink_purchase: A cannot call it"],
+    ["inkPurchaseRpcOpen", checkInkPurchases, "grant_ink: A cannot call it"],
+    ["inkPurchaseRpcOpen", checkInkPurchases, "ink: A's balance unchanged after the denied calls"],
+    ["inkPurchaseReplay", checkInkPurchases, "grant_ink_purchase: the same Checkout Session again grants nothing (duplicate)"],
+    ["inkPurchaseCrossRead", checkInkPurchases, "ink_purchases: B cannot see A's purchase"],
+    ["inkReverseNegative", checkInkPurchases, "reverse_ink_purchase: a full refund takes the pack's ink back, at most what is left (A spent 1,000 first; never below zero)"],
+    ["anonRpc", checkInkPurchases, "ink_summary: anon cannot call it"],
+    ["anonRpc", checkInkPurchases, "grant_ink_purchase: anon cannot call it"],
   ];
 
   it.each(cases)("leak %s makes '%s' fail", async (leak, check, failingName) => {
@@ -853,6 +1024,20 @@ describe("predicates", () => {
     expect(isCreditSummary(missing)).toBe(false);
     expect(isCreditSummary([good])).toBe(false);
     expect(isCreditSummary(null)).toBe(false);
+  });
+
+  it("isInkSummary requires every key, whole non-negative numbers and used = granted - balance", () => {
+    const good = { balance: 250, granted: 300, purchased: 0, refunded: 0, used: 50, starter: 300, starter_at: "2026-10-02T00:00:00+00:00", purchases: 0, last_purchase: null };
+    expect(INK_SUMMARY_KEYS).toHaveLength(9);
+    expect(isInkSummary(good)).toBe(true);
+    expect(isInkSummary({ ...good, used: 49 })).toBe(false);
+    expect(isInkSummary({ ...good, balance: -1, used: 301 })).toBe(false);
+    expect(isInkSummary({ ...good, balance: "250" })).toBe(false);
+    expect(isInkSummary({ ...good, last_purchase: { pack_id: "small" } })).toBe(true);
+    const missing: Partial<typeof good> = { ...good };
+    delete missing.starter;
+    expect(isInkSummary(missing)).toBe(false);
+    expect(isInkSummary(null)).toBe(false);
   });
 
   it("isRateLimitResult ties retry_after_ms to `allowed` and the window", () => {
