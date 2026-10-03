@@ -15,16 +15,24 @@
  *   - consume_credits(): decrement + usage row, argument validation, refusal without writes
  *   - the balance is all-time: a usage row or a grant from another month counts like today's
  *   - grant_ink(): a manual grant; a negative correction stops at zero; the CHECK refuses a
- *     ledger row that would take the balance below zero; ledger rows are append-only
+ *     ledger row that would take the balance below zero; ledger rows are append-only, and
+ *     not even the service role can delete a usage row, grant, purchase or profile
  *   - concurrency: 10 parallel 1-ink spends with 5 left -> exactly 5 succeed, balance 0
  *   - purchases: once per Checkout Session; refunds (partial, full, replayed) take back at most
  *     the unspent ink and record what was taken back and what was already spent
+ *   - the money has to cover the pack: underpaid, free, unpriced, non-USD sessions, unknown
+ *     packs and missing accounts go to ink_checkout_reviews with no ink (service role only);
+ *     refunding one marks the review refunded; resolve_ink_checkout_review() turns one into a
+ *     real purchase that a later refund reverses
  *   - ink_packs: the catalogue as seeded
  *   - delete_own_account(): auth.users row, profile, boards, ledgers, purchases, storage rows
+ *     (the delete guards let the account's cascade through); a review outlives the account
  *
- * Covered (migration 20260917030000_refunds_ratelimit.sql):
- *   - refund_credits(): own recent request restored + row deleted, idempotent,
- *     another user's request id and rows older than 15 minutes refund nothing
+ * Covered (refunds of failed calls; 20260917030000_refunds_ratelimit.sql, made service-role
+ * only by 20261002000000_ink.sql):
+ *   - a user can call neither refund_credits() nor refund_ink_for() (403), anon neither (401)
+ *   - refund_ink_for() (service role): the user's own recent request restored + row deleted,
+ *     idempotent; another user's id and rows older than 15 minutes refund nothing
  *   - rate_limit_hit(): p_limit hits then denial with a retry hint, independent
  *     per user, window rollover (1 s window), expired-row cleanup, 20 parallel
  *     hits with limit 10 -> exactly 10 allowed, table unreadable by users
@@ -303,22 +311,137 @@ suite(title, () => {
     const grants = await ctx.b.rest("GET", "ink_grants", { query: { kind: "eq.refund", select: "units" } });
     expect(rows(grants).map((g) => g.units)).toEqual([-1250, -1000]);
 
-    // Unknown packs and unknown payments: refused / not found, nothing written.
-    const badPack = await rpc(service, "grant_ink_purchase", { ...args, p_pack_id: "huge", p_checkout_session_id: `cs_db_bad_${tag}` });
-    expect(badPack.status).toBe(400);
+    // Unknown payments: not found, nothing written (the webhook decides whether to wait for a grant).
     expect((await rpc(service, "reverse_ink_purchase", { p_payment_intent_id: `pi_nobody_${tag}`, p_amount_refunded_cents: 1 })).body).toEqual({ found: false, reversed: 0 });
     await setBalance(ctx.b, 300);
   }, 60_000);
 
-  // ------------------------------------------------------------ refund_credits
+  it("the money has to cover the pack: anything else waits in ink_checkout_reviews with no ink", async () => {
+    await setBalance(ctx.b, 300);
+    const before = await ink(ctx.b);
+    const tag = Date.now().toString(36);
+    const base = { p_user_id: ctx.b.userId, p_pack_id: "small", p_currency: "usd", p_customer_email: "payer@example.com" };
+    const cases: Array<[string, Record<string, unknown>, RegExp]> = [
+      ["underpaid", { p_amount_cents: 499 }, /paid 499 cents for the small pack, priced 500 cents/],
+      ["free", { p_amount_cents: 0 }, /paid 0 cents/],
+      ["unpriced", { p_amount_cents: null }, /no amount/],
+      ["euro", { p_amount_cents: 500, p_currency: "eur" }, /paid in eur/],
+      ["unknown-pack", { p_amount_cents: 500, p_pack_id: "huge" }, /unknown pack huge/],
+      ["no-account", { p_amount_cents: 500, p_user_id: "00000000-0000-4000-8000-000000000000" }, /no account/],
+    ];
+    for (const [name, extra, reason] of cases) {
+      const res = await rpc(service, "grant_ink_purchase", { ...base, ...extra, p_checkout_session_id: `cs_db_review_${name}_${tag}`, p_payment_intent_id: `pi_db_review_${name}_${tag}` });
+      expect(res.status, `${name}: ${JSON.stringify(res.body)}`).toBe(200);
+      expect(res.body, name).toMatchObject({ granted: 0, duplicate: false, review: true });
+      expect(String((res.body as { reason?: string }).reason), name).toMatch(reason);
+    }
+    const after = await ink(ctx.b);
+    expect(after).toMatchObject({ balance: 300, purchased: before.purchased, purchases: before.purchases });
+    expect(rows(await ctx.b.rest("GET", "ink_purchases", { query: { checkout_session_id: `like.cs_db_review_*_${tag}`, select: "id" } }))).toEqual([]);
 
-  it("refund_credits restores remaining, deletes the usage row, and is idempotent", async () => {
+    // The owner's queue (service role): one open row per session, with what is needed to resolve it.
+    const queue = await service.rest("GET", "ink_checkout_reviews", {
+      query: { checkout_session_id: `like.cs_db_review_*_${tag}`, select: "id,checkout_session_id,status,user_id,pack_id,amount_cents,currency,customer_email", order: "id.asc" },
+    });
+    expect(queue.status).toBe(200);
+    expect(rows(queue).map((r) => [r.checkout_session_id.split("_")[3], r.status, r.user_id, r.amount_cents, r.currency])).toEqual([
+      ["underpaid", "open", ctx.b.userId, 499, "usd"],
+      ["free", "open", ctx.b.userId, 0, "usd"],
+      ["unpriced", "open", ctx.b.userId, null, "usd"],
+      ["euro", "open", ctx.b.userId, 500, "eur"],
+      ["unknown-pack", "open", ctx.b.userId, 500, "usd"],
+      ["no-account", "open", null, 500, "usd"],
+    ]);
+    expect(rows(queue)[0].customer_email).toBe("payer@example.com");
+
+    // A redelivery of a reviewed session is a duplicate, still with no ink.
+    const again = await rpc(service, "grant_ink_purchase", { ...base, p_amount_cents: 499, p_checkout_session_id: `cs_db_review_underpaid_${tag}` });
+    expect(again.body).toMatchObject({ granted: 0, duplicate: true, review: true });
+    // Refunding a reviewed checkout takes no ink and closes the review.
+    const refund = await rpc(service, "reverse_ink_purchase", { p_payment_intent_id: `pi_db_review_underpaid_${tag}`, p_amount_refunded_cents: 499, p_charge_amount_cents: 499, p_fully_refunded: true });
+    expect(refund.body).toMatchObject({ found: true, review: true, reversed: 0 });
+    const closed = await service.rest("GET", "ink_checkout_reviews", { query: { checkout_session_id: `eq.cs_db_review_underpaid_${tag}`, select: "status,resolved_at" } });
+    expect(rows(closed)[0].status).toBe("refunded");
+    expect(rows(closed)[0].resolved_at).toBeTruthy();
+    expect((await ink(ctx.b)).balance).toBe(300);
+
+    // The owner resolves one: it becomes a real purchase (a later refund finds it), once.
+    const reviewId = (name: string) => rows(queue).find((r) => r.checkout_session_id === `cs_db_review_${name}_${tag}`)?.id;
+    const resolved = await rpc(service, "resolve_ink_checkout_review", { p_review_id: reviewId("unknown-pack"), p_pack_id: "small", p_note: "meant the Small pack" });
+    expect(resolved.status, JSON.stringify(resolved.body)).toBe(200);
+    expect(resolved.body).toMatchObject({ granted: 1000, user_id: ctx.b.userId, balance: 1300 });
+    const bought = await ctx.b.rest("GET", "ink_purchases", { query: { checkout_session_id: `eq.cs_db_review_unknown-pack_${tag}`, select: "pack_id,ink,amount_cents,status" } });
+    expect(rows(bought)).toEqual([{ pack_id: "small", ink: 1000, amount_cents: 500, status: "paid" }]);
+    expect((await rpc(service, "resolve_ink_checkout_review", { p_review_id: reviewId("unknown-pack") })).status).toBe(400);
+    expect((await rpc(service, "resolve_ink_checkout_review", { p_review_id: reviewId("no-account") })).status).toBe(400); // names nobody
+    expect((await rpc(ctx.b, "resolve_ink_checkout_review", { p_review_id: reviewId("free") })).status).toBe(403);
+    // ...and refunding it takes the ink back like any purchase.
+    const back = await rpc(service, "reverse_ink_purchase", { p_payment_intent_id: `pi_db_review_unknown-pack_${tag}`, p_amount_refunded_cents: 500, p_charge_amount_cents: 500, p_fully_refunded: true });
+    expect(back.body).toMatchObject({ found: true, reversed: 1000, balance: 300, status: "refunded" });
+
+    // The webhook's own path for a checkout it cannot map at all (no user): idempotent.
+    const manual = { p_checkout_session_id: `cs_db_review_noref_${tag}`, p_reason: "no client_reference_id", p_pack_id: "small", p_amount_cents: 500, p_currency: "usd" };
+    expect((await rpc(service, "record_ink_checkout_review", manual)).body).toMatchObject({ recorded: true, duplicate: false });
+    expect((await rpc(service, "record_ink_checkout_review", manual)).body).toMatchObject({ recorded: false, duplicate: true });
+
+    // Users see none of it, and cannot add to it.
+    expect((await ctx.b.rest("GET", "ink_checkout_reviews", { query: { select: "id" } })).status).toBe(403);
+    expect((await rpc(ctx.b, "record_ink_checkout_review", manual)).status).toBe(403);
+
+    // Review rows outlive the throwaway users; remove this test's own.
+    const cleared = await service.rest("DELETE", "ink_checkout_reviews", { query: { checkout_session_id: `like.cs_db_review_*_${tag}` }, prefer: "return=representation" });
+    expect(rows(cleared).length).toBe(7);
+  }, 60_000);
+
+  it("ledgers are append-only even for the service role: no usage row, grant, purchase or profile can be deleted", async () => {
+    await setBalance(ctx.a, 300);
+    expect(((await consume(ctx.a, 2, "rls-billing/guard", { p_request_id: "req-guard" })).body as Consume).ok).toBe(true);
+    const tag = Date.now().toString(36);
+    const bought = await rpc(service, "grant_ink_purchase", { p_user_id: ctx.a.userId, p_pack_id: "small", p_checkout_session_id: `cs_db_guard_${tag}`, p_amount_cents: 500, p_currency: "usd" });
+    expect((bought.body as { granted: number }).granted).toBe(1000);
+    const before = await ink(ctx.a);
+
+    for (const [table, query] of [
+      ["usage_events", { user_id: `eq.${ctx.a.userId}`, request_id: "eq.req-guard" }],
+      ["ink_grants", { user_id: `eq.${ctx.a.userId}`, kind: "eq.starter" }],
+      ["ink_grants", { user_id: `eq.${ctx.a.userId}`, kind: "eq.purchase" }],
+      ["ink_purchases", { checkout_session_id: `eq.cs_db_guard_${tag}` }],
+      ["profiles", { user_id: `eq.${ctx.a.userId}` }],
+    ] as const) {
+      const del = await service.rest("DELETE", table, { query, prefer: "return=representation" });
+      expect(del.status, `${table}: ${JSON.stringify(del.body)}`).toBe(403);
+      expect((del.body as { code?: string }).code, table).toBe("42501");
+    }
+    expect(await ink(ctx.a)).toEqual(before);
+    expect(rows(await ctx.a.rest("GET", "usage_events", { query: { request_id: "eq.req-guard", select: "units" } }))).toEqual([{ units: 2 }]);
+    await setBalance(ctx.a, 300);
+  }, 60_000);
+
+  // ------------------------------------------------------------ refunds of failed calls
+
+  it("a user cannot refund anything: refund_credits and refund_ink_for are denied, the charge stays", async () => {
+    const before = await summary(ctx.a);
+    expect(((await consume(ctx.a, 4, "rls-billing/refund", { p_request_id: "req-refund-self" })).body as Consume).ok).toBe(true);
+
+    const self = await rpc(ctx.a, "refund_credits", { p_request_id: "req-refund-self" });
+    expect(self.status, JSON.stringify(self.body)).toBe(403);
+    expect((self.body as { code?: string }).code).toBe("42501");
+    const direct = await rpc(ctx.a, "refund_ink_for", { p_user_id: ctx.a.userId, p_request_id: "req-refund-self" });
+    expect(direct.status, JSON.stringify(direct.body)).toBe(403);
+    expect((await rpc(ctx.anon, "refund_credits", { p_request_id: "req-refund-self" })).status).toBe(401);
+    expect((await rpc(ctx.anon, "refund_ink_for", { p_user_id: ctx.a.userId, p_request_id: "req-refund-self" })).status).toBe(401);
+
+    expect((await summary(ctx.a)).remaining).toBe(before.remaining - 4);
+    expect(rows(await ctx.a.rest("GET", "usage_events", { query: { request_id: "eq.req-refund-self", select: "units" } }))).toEqual([{ units: 4 }]);
+  }, 30_000);
+
+  it("refund_ink_for (service role) restores the user's balance, deletes the usage row, and is idempotent", async () => {
     const before = await summary(ctx.a);
     const spend = await consume(ctx.a, 7, "rls-billing/refund", { p_request_id: "req-refund-own" });
     expect((spend.body as Consume).ok).toBe(true);
     expect((await summary(ctx.a)).remaining).toBe(before.remaining - 7);
 
-    const refund = await rpc(ctx.a, "refund_credits", { p_request_id: "req-refund-own" });
+    const refund = await rpc(service, "refund_ink_for", { p_user_id: ctx.a.userId, p_request_id: "req-refund-own" });
     expect(refund.status, JSON.stringify(refund.body)).toBe(200);
     expect(refund.body as Refund).toEqual({ refunded: 7, remaining: before.remaining });
 
@@ -327,18 +450,18 @@ suite(title, () => {
     expect(after.remaining).toBe(before.remaining);
     expect(rows(await ctx.a.rest("GET", "usage_events", { query: { request_id: "eq.req-refund-own", select: "id" } }))).toEqual([]);
 
-    const again = await rpc(ctx.a, "refund_credits", { p_request_id: "req-refund-own" });
+    const again = await rpc(service, "refund_ink_for", { p_user_id: ctx.a.userId, p_request_id: "req-refund-own" });
     expect(again.body as Refund).toEqual({ refunded: 0, remaining: before.remaining });
-    const unknown = await rpc(ctx.a, "refund_credits", { p_request_id: "req-never-existed" });
+    const unknown = await rpc(service, "refund_ink_for", { p_user_id: ctx.a.userId, p_request_id: "req-never-existed" });
     expect(unknown.body as Refund).toEqual({ refunded: 0, remaining: before.remaining });
   }, 30_000);
 
-  it("refund_credits with another user's request id refunds 0 and touches nothing", async () => {
+  it("refund_ink_for naming another user with A's request id refunds 0 and touches nothing", async () => {
     const aBefore = await summary(ctx.a);
     const bBefore = await summary(ctx.b);
     expect(((await consume(ctx.a, 2, "rls-billing/refund-foreign", { p_request_id: "req-refund-foreign" })).body as Consume).ok).toBe(true);
 
-    const foreign = await rpc(ctx.b, "refund_credits", { p_request_id: "req-refund-foreign" });
+    const foreign = await rpc(service, "refund_ink_for", { p_user_id: ctx.b.userId, p_request_id: "req-refund-foreign" });
     expect(foreign.status).toBe(200);
     expect(foreign.body as Refund).toEqual({ refunded: 0, remaining: bBefore.remaining });
 
@@ -348,7 +471,7 @@ suite(title, () => {
     expect((await summary(ctx.b)).remaining).toBe(bBefore.remaining);
   }, 30_000);
 
-  it("refund_credits ignores rows older than 15 minutes but still honours a 14-minute-old one", async () => {
+  it("refund_ink_for ignores rows older than 15 minutes but still honours a 14-minute-old one", async () => {
     const stale = new Date(Date.now() - 16 * 60_000).toISOString();
     const fresh = new Date(Date.now() - 14 * 60_000).toISOString();
     // Planted with the service role: nothing reachable with a user token can back-date a ledger row.
@@ -361,21 +484,23 @@ suite(title, () => {
     }
     const before = await summary(ctx.a);
 
-    const tooOld = await rpc(ctx.a, "refund_credits", { p_request_id: "req-refund-stale" });
+    const tooOld = await rpc(service, "refund_ink_for", { p_user_id: ctx.a.userId, p_request_id: "req-refund-stale" });
     expect(tooOld.body as Refund).toEqual({ refunded: 0, remaining: before.remaining });
     expect(rows(await service.rest("GET", "usage_events", { query: { request_id: "eq.req-refund-stale", select: "units" } }))).toEqual([{ units: 9 }]);
 
-    const inWindow = await rpc(ctx.a, "refund_credits", { p_request_id: "req-refund-fresh" });
+    const inWindow = await rpc(service, "refund_ink_for", { p_user_id: ctx.a.userId, p_request_id: "req-refund-fresh" });
     expect(inWindow.body as Refund).toEqual({ refunded: 5, remaining: before.remaining + 5 });
     expect(rows(await service.rest("GET", "usage_events", { query: { request_id: "eq.req-refund-fresh", select: "units" } }))).toEqual([]);
   }, 30_000);
 
-  it("refund_credits rejects an empty request id (400) and anon (401)", async () => {
-    for (const args of [{ p_request_id: "" }, { p_request_id: "x".repeat(101) }]) {
-      expect((await rpc(ctx.a, "refund_credits", args)).status, JSON.stringify(args)).toBe(400);
+  it("refund_ink_for rejects an empty or oversized request id and a missing user (400)", async () => {
+    for (const args of [
+      { p_user_id: ctx.a.userId, p_request_id: "" },
+      { p_user_id: ctx.a.userId, p_request_id: "x".repeat(101) },
+      { p_user_id: null, p_request_id: "req-x" },
+    ]) {
+      expect((await rpc(service, "refund_ink_for", args)).status, JSON.stringify(args)).toBe(400);
     }
-    const anon = await rpc(ctx.anon, "refund_credits", { p_request_id: "req-refund-own" });
-    expect(anon.status).toBe(401);
   }, 30_000);
 
   // ------------------------------------------------------------ rate_limit_hit
@@ -462,8 +587,10 @@ suite(title, () => {
     const path = `${uid}/${board.id}/asset.png`;
     expect((await c.upload(ASSETS_BUCKET, path, TINY_PNG, "image/png")).status).toBe(200);
     expect(((await consume(c, 1, "rls-billing/delete")).body as Consume).ok).toBe(true);
-    const bought = await rpc(service, "grant_ink_purchase", { p_user_id: uid, p_pack_id: "small", p_checkout_session_id: `cs_db_delete_${uid}` });
+    const bought = await rpc(service, "grant_ink_purchase", { p_user_id: uid, p_pack_id: "small", p_checkout_session_id: `cs_db_delete_${uid}`, p_amount_cents: 500, p_currency: "usd" });
     expect((bought.body as { granted: number }).granted).toBe(1000);
+    const underpaid = await rpc(service, "grant_ink_purchase", { p_user_id: uid, p_pack_id: "small", p_checkout_session_id: `cs_db_delete_low_${uid}`, p_amount_cents: 100, p_currency: "usd" });
+    expect(underpaid.body).toMatchObject({ granted: 0, review: true });
     expect((await ctx.anon.publicRead(ASSETS_BUCKET, path)).status).toBe(200);
 
     const del = await rpc(c, "delete_own_account");
@@ -488,6 +615,11 @@ suite(title, () => {
       expect(res.status, table).toBe(200);
       expect(rows(res), table).toEqual([]);
     }
+    // A checkout waiting for review outlives the account (the owner may still owe a refund), unlinked.
+    const review = await service.rest("GET", "ink_checkout_reviews", { query: { checkout_session_id: `eq.cs_db_delete_low_${uid}`, select: "user_id,status" } });
+    expect(rows(review)).toEqual([{ user_id: null, status: "open" }]);
+    await service.rest("DELETE", "ink_checkout_reviews", { query: { checkout_session_id: `eq.cs_db_delete_low_${uid}` } });
+
     // The still signature-valid JWT can no longer spend or see anything.
     const spend = await consume(c, 1, "rls-billing/after-delete");
     expect(spend.status).toBe(403);

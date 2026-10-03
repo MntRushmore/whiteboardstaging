@@ -95,6 +95,7 @@ type Leak =
   | "anonRpc"
   | "deleteNoop"
   // refunds & rate limits
+  | "refundUserCallable"
   | "refundOthers"
   | "refundStale"
   | "refundKeepsRow"
@@ -117,7 +118,10 @@ type Leak =
   | "inkPurchaseReplay"
   | "inkPurchaseCrossRead"
   | "inkReverseNegative"
-  | "inkNoStarter";
+  | "inkNoStarter"
+  | "inkAmountUnchecked"
+  | "inkReviewsReadable"
+  | "inkLedgerDeletable";
 
 const USER_A = "aaaaaaaa-0000-4000-8000-000000000001";
 const USER_B = "bbbbbbbb-0000-4000-8000-000000000002";
@@ -150,6 +154,7 @@ function makeWorld(leaks: Leak[] = []) {
   // ink (20261002000000_ink.sql): the grant ledger and the purchases; the balance is grants - usage
   const inkGrants: Row[] = [];
   const purchases: Row[] = [];
+  const reviews: Row[] = []; // ink_checkout_reviews: service role only
   const grantStarter = (uid: string) => {
     if (!leak("inkNoStarter")) inkGrants.push({ id: inkGrants.length + 1, user_id: uid, kind: "starter", units: STARTER_INK, created_at: new Date().toISOString() });
   };
@@ -207,14 +212,81 @@ function makeWorld(leaks: Leak[] = []) {
     };
   }
   /** The service-role RPCs of 20261002000000_ink.sql (and, with a leak, callable by a user). */
+  function recordReview(args: Row, reason: string): HttpResult {
+    const existing = reviews.find((r) => r.checkout_session_id === args.p_checkout_session_id);
+    if (existing) return ok({ recorded: false, duplicate: true, review_id: existing.id });
+    const ref = String(args.p_client_reference_id ?? args.p_user_id ?? "");
+    const row: Row = {
+      id: reviews.length + 1,
+      checkout_session_id: args.p_checkout_session_id,
+      reason,
+      status: "open",
+      user_id: users.has(ref) ? ref : null,
+      pack_id: args.p_pack_id ?? null,
+      payment_intent_id: args.p_payment_intent_id ?? null,
+      amount_cents: args.p_amount_cents ?? null,
+      currency: args.p_currency ?? null,
+    };
+    reviews.push(row);
+    return ok({ recorded: true, duplicate: false, review_id: row.id });
+  }
+  /** refund_ink_for(p_user_id, p_request_id): the given user's own recent rows for that request. */
+  function refundFor(uid: string, requestId: unknown): HttpResult {
+    if (typeof requestId !== "string" || requestId.length < 1 || requestId.length > 100) {
+      return { status: 400, body: { code: "22023", message: "p_request_id must be 1..100 characters" } };
+    }
+    const cutoff = Date.now() - REFUND_WINDOW_MS;
+    let refunded = 0;
+    for (let i = usage.length - 1; i >= 0; i--) {
+      const r = usage[i];
+      if (r.request_id !== requestId) continue;
+      if (r.user_id !== uid && !leak("refundOthers")) continue;
+      if (Date.parse(String(r.created_at)) <= cutoff && !leak("refundStale")) continue;
+      refunded += Number(r.units);
+      if (!leak("refundKeepsRow")) usage.splice(i, 1);
+    }
+    return ok({ refunded, remaining: balance(uid).remaining });
+  }
   function inkRpc(fn: string, args: Row): HttpResult | null {
     switch (fn) {
+      case "refund_ink_for":
+        return refundFor(String(args.p_user_id), args.p_request_id);
+      case "record_ink_checkout_review":
+        return recordReview(args, String(args.p_reason ?? "unknown"));
+      case "resolve_ink_checkout_review": {
+        const review = reviews.find((r) => r.id === args.p_review_id && r.status === "open");
+        const uid = String(args.p_user_id ?? review?.user_id ?? "");
+        const pack = PACKS.find((p) => p.id === (args.p_pack_id ?? review?.pack_id));
+        if (!review || !users.has(uid) || !pack) return { status: 400, body: { code: "22023", message: "cannot resolve" } };
+        review.status = "resolved";
+        inkGrants.push({ id: inkGrants.length + 1, user_id: uid, kind: "purchase", units: pack.ink });
+        return ok({ granted: pack.ink, user_id: uid, balance: balance(uid).remaining });
+      }
       case "grant_ink_purchase": {
         const uid = String(args.p_user_id);
-        const pack = PACKS.find((p) => p.id === args.p_pack_id);
-        if (!pack) return { status: 400, body: { code: "22023", message: `unknown ink pack ${args.p_pack_id}` } };
         const existing = purchases.find((p) => p.checkout_session_id === args.p_checkout_session_id);
         if (existing && !leak("inkPurchaseReplay")) return ok({ granted: 0, duplicate: true, purchase_id: existing.id, balance: balance(uid).remaining });
+        if (reviews.some((r) => r.checkout_session_id === args.p_checkout_session_id)) return ok({ granted: 0, duplicate: true, review: true });
+        const pack = PACKS.find((p) => p.id === args.p_pack_id);
+        const currency = typeof args.p_currency === "string" ? args.p_currency.toLowerCase() : null;
+        const amount = typeof args.p_amount_cents === "number" ? args.p_amount_cents : null;
+        const reason = !pack
+          ? `unknown pack ${String(args.p_pack_id)}`
+          : !users.has(uid)
+            ? "no account for this user"
+            : leak("inkAmountUnchecked")
+              ? null
+              : amount === null || currency === null
+                ? "no amount on the session"
+                : currency !== "usd"
+                  ? `paid in ${currency}`
+                  : amount < Number(pack.price_cents)
+                    ? `paid ${amount} cents`
+                    : null;
+        if (reason || !pack) {
+          const recorded = recordReview(args, reason ?? "unknown pack");
+          return ok({ granted: 0, duplicate: false, review: true, reason, review_id: (recorded.body as Row).review_id });
+        }
         const purchase: Row = {
           id: purchases.length + 1,
           user_id: uid,
@@ -235,7 +307,11 @@ function makeWorld(leaks: Leak[] = []) {
       }
       case "reverse_ink_purchase": {
         const p = purchases.find((x) => x.payment_intent_id === args.p_payment_intent_id);
-        if (!p) return ok({ found: false, reversed: 0 });
+        if (!p) {
+          const reviewed = reviews.filter((r) => r.payment_intent_id === args.p_payment_intent_id);
+          for (const r of reviewed) r.status = "refunded";
+          return ok(reviewed.length ? { found: true, review: true, reversed: 0, requested: 0 } : { found: false, reversed: 0 });
+        }
         const base = Number(p.amount_cents);
         const cum = args.p_fully_refunded ? base : Math.min(Number(args.p_amount_refunded_cents), base);
         if (cum <= Number(p.refunded_cents)) return ok({ found: true, duplicate: true, reversed: 0, requested: 0 });
@@ -268,9 +344,13 @@ function makeWorld(leaks: Leak[] = []) {
   }
 
   function rpcCall(uid: string, fn: string, args: Row): HttpResult {
-    if (fn === "grant_ink_purchase" || fn === "reverse_ink_purchase" || fn === "grant_ink") {
+    if (["grant_ink_purchase", "reverse_ink_purchase", "grant_ink", "record_ink_checkout_review", "resolve_ink_checkout_review"].includes(fn)) {
       return leak("inkPurchaseRpcOpen") ? (inkRpc(fn, args) as HttpResult) : denied(uid);
     }
+    // Refunds of failed calls are the server's (service role): a user holding a request id must
+    // not be able to get that call's ink back.
+    if (fn === "refund_credits") return leak("refundUserCallable") ? refundFor(uid, args.p_request_id) : denied(uid);
+    if (fn === "refund_ink_for") return leak("refundUserCallable") ? refundFor(String(args.p_user_id), args.p_request_id) : denied(uid);
     switch (fn) {
       case "credit_summary":
         return ok(summary(uid));
@@ -296,23 +376,6 @@ function makeWorld(leaks: Leak[] = []) {
         usage.push(row);
         if (leak("consumeChargesOther")) for (const other of users) if (other !== uid) usage.push({ ...row, id: usage.length + 1, user_id: other });
         return ok({ ok: true, remaining: remaining - units, reason: null });
-      }
-      case "refund_credits": {
-        const requestId = args.p_request_id;
-        if (typeof requestId !== "string" || requestId.length < 1 || requestId.length > 100) {
-          return { status: 400, body: { code: "22023", message: "p_request_id must be 1..100 characters" } };
-        }
-        const cutoff = Date.now() - REFUND_WINDOW_MS;
-        let refunded = 0;
-        for (let i = usage.length - 1; i >= 0; i--) {
-          const r = usage[i];
-          if (r.request_id !== requestId) continue;
-          if (r.user_id !== uid && !leak("refundOthers")) continue;
-          if (Date.parse(String(r.created_at)) <= cutoff && !leak("refundStale")) continue;
-          refunded += Number(r.units);
-          if (!leak("refundKeepsRow")) usage.splice(i, 1);
-        }
-        return ok({ refunded, remaining: balance(uid).remaining });
       }
       case "rate_limit_hit": {
         const bucket = args.p_bucket;
@@ -404,7 +467,22 @@ function makeWorld(leaks: Leak[] = []) {
   function matches(row: Row, query: Record<string, string>) {
     for (const [key, value] of Object.entries(query)) {
       if (FILTER_KEYS.has(key)) continue;
-      if (!value.startsWith("eq.")) throw new Error(`fake only supports eq. filters, got ${key}=${value}`);
+      if (value.startsWith("like.")) {
+        // PostgREST `like.` with `*` as the wildcard; everything else is literal.
+        const [head, ...rest] = value.slice(5).split("*");
+        const text = String(row[key]);
+        if (!text.startsWith(head)) return false;
+        let at = head.length;
+        for (const part of rest) {
+          const found = text.indexOf(part, at);
+          if (found < 0) return false;
+          at = found + part.length;
+        }
+        if (rest.length > 0 && !text.endsWith(rest[rest.length - 1])) return false;
+        if (rest.length === 0 && text !== head) return false;
+        continue;
+      }
+      if (!value.startsWith("eq.")) throw new Error(`fake only supports eq. and like. filters, got ${key}=${value}`);
       if (String(row[key]) !== value.slice(3)) return false;
     }
     return true;
@@ -586,6 +664,10 @@ function makeWorld(leaks: Leak[] = []) {
         if (method === "GET") return ok(purchases.filter((r) => (r.user_id === uid || leak("inkPurchaseCrossRead")) && matches(r, query)));
         return denied(uid);
       }
+      case "ink_checkout_reviews": {
+        if (method === "GET" && leak("inkReviewsReadable")) return ok(reviews.filter((r) => matches(r, query)));
+        return denied(uid);
+      }
       case "rate_limit_counters": {
         // Function-only table: no grants for authenticated at all.
         if (method === "GET" && leak("countersReadable")) return ok([...counters.values()].filter((c) => c.user_id === uid));
@@ -601,6 +683,15 @@ function makeWorld(leaks: Leak[] = []) {
       const res = inkRpc(table.slice(4), body);
       if (res) return res;
     }
+    // The ledgers are append-only even for the service role (delete-guard triggers, 42501):
+    // corrections are inserts. With the leak, a delete goes through and the balance drifts.
+    if (method === "DELETE" && (table === "ink_grants" || table === "ink_purchases" || table === "usage_events")) {
+      if (!leak("inkLedgerDeletable")) return denied(SERVICE);
+      const list = table === "ink_grants" ? inkGrants : table === "ink_purchases" ? purchases : usage;
+      const gone = list.filter((r) => matches(r, query));
+      for (const r of gone) list.splice(list.indexOf(r), 1);
+      return ok(gone);
+    }
     switch (table) {
       case "usage_events": {
         if (method === "POST") {
@@ -608,6 +699,15 @@ function makeWorld(leaks: Leak[] = []) {
           return ok(null, 201);
         }
         if (method === "GET") return ok(usage.filter((r) => matches(r, query)));
+        break;
+      }
+      case "ink_checkout_reviews": {
+        if (method === "GET") return ok(reviews.filter((r) => matches(r, query)));
+        if (method === "DELETE") {
+          const gone = reviews.filter((r) => matches(r, query));
+          for (const r of gone) reviews.splice(reviews.indexOf(r), 1);
+          return ok(gone);
+        }
         break;
       }
       case "rate_limit_counters": {
@@ -665,7 +765,7 @@ function makeWorld(leaks: Leak[] = []) {
   };
 
   const ctx: CheckContext = { anon: client(null), a: client(USER_A), b: client(USER_B), newUser, service: client(SERVICE) };
-  return { ctx, state: { boards, settings, bugReports, snapshots, assets, objects, users, profiles, usage, grants, counters, inkGrants, purchases } };
+  return { ctx, state: { boards, settings, bugReports, snapshots, assets, objects, users, profiles, usage, grants, counters, inkGrants, purchases, reviews } };
 }
 
 const failures = (results: CheckResult[]) => results.filter((r) => !r.pass).map((r) => r.name);
@@ -686,8 +786,8 @@ describe("rlsChecks against a correctly secured fake", () => {
       expect(results.map((r) => r.name)).toContain(`anon: select ${table} denied`);
       expect(results.map((r) => r.name)).toContain(`anon: insert ${table} denied`);
     }
-    expect(PUBLIC_TABLES).toHaveLength(16);
-    for (const table of ["plans", "profiles", "usage_events", "credit_grants", "billing_events", "rate_limit_counters", "ink_packs", "ink_grants", "ink_purchases"]) {
+    expect(PUBLIC_TABLES).toHaveLength(17);
+    for (const table of ["plans", "profiles", "usage_events", "credit_grants", "billing_events", "rate_limit_counters", "ink_packs", "ink_grants", "ink_purchases", "ink_checkout_reviews"]) {
       expect(PUBLIC_TABLES).toContain(table);
     }
   });
@@ -720,7 +820,8 @@ describe("rlsChecks against a correctly secured fake", () => {
     const { ctx, state } = makeWorld();
     const results = await checkRefunds(ctx);
     expect(failures(results)).toEqual([]);
-    expect(results.map((r) => r.name)).toContain("refund_credits: a row older than 15 minutes refunds 0 and stays");
+    expect(results.map((r) => r.name)).toContain("refund_ink_for: a row older than 15 minutes refunds 0 and stays");
+    expect(results.map((r) => r.name)).toContain("refund_credits: A cannot refund own request (users have no refunds)");
     const requestIds = state.usage.map((r) => String(r.request_id));
     expect(requestIds.some((id) => id.endsWith("-foreign"))).toBe(true);
     expect(requestIds.some((id) => id.endsWith("-stale"))).toBe(true);
@@ -728,14 +829,15 @@ describe("rlsChecks against a correctly secured fake", () => {
     expect(state.usage.every((r) => r.user_id === USER_A)).toBe(true);
   });
 
-  it("the refund check reports the stale case as skipped (still passing) without a service client", async () => {
-    const { ctx } = makeWorld();
+  it("without a service client the refund check still proves a user cannot refund, and skips the service half", async () => {
+    const { ctx, state } = makeWorld();
     const results = await checkRefunds({ anon: ctx.anon, a: ctx.a, b: ctx.b });
     expect(failures(results)).toEqual([]);
-    expect(results.map((r) => r.name)).toContain(
-      "refund_credits: a row older than 15 minutes refunds 0 and stays (skipped: no service role client)",
-    );
-    expect(results.map((r) => r.name)).not.toContain("refund_credits: a row older than 15 minutes refunds 0 and stays");
+    expect(results.map((r) => r.name)).toContain("refund_credits: A cannot refund own request (users have no refunds)");
+    expect(results.map((r) => r.name)).toContain("refund_ink_for with the service role (skipped: no service role client)");
+    expect(results.map((r) => r.name)).not.toContain("refund_ink_for: a row older than 15 minutes refunds 0 and stays");
+    // the spend stays: nothing refunded it
+    expect(state.usage.filter((r) => String(r.request_id).endsWith("-own"))).toHaveLength(1);
   });
 
   it("the rate limit check keeps counters per user and never lets a user token read them", async () => {
@@ -756,6 +858,9 @@ describe("rlsChecks against a correctly secured fake", () => {
     expect(state.inkGrants.filter((g) => g.kind === "manual")).toEqual([]);
     expect(state.purchases).toHaveLength(1);
     expect(state.purchases[0]).toMatchObject({ user_id: USER_A, pack_id: "medium", status: "refunded" });
+    // the underpaid and the euro checkouts went to review with no ink, and the check removed its rows again
+    expect(state.reviews).toEqual([]);
+    expect(state.inkGrants.filter((g) => g.user_id === USER_B && g.kind !== "starter")).toEqual([]);
   });
 
   it("the ink purchase check reports its service-role part as skipped (still passing) without a service client", async () => {
@@ -819,11 +924,13 @@ describe("rlsChecks detect individual leaks", () => {
     // refunds & rate limits
     ["anonSelect", checkAnonDenied, "anon: select rate_limit_counters denied"],
     ["anonInsert", checkAnonDenied, "anon: insert rate_limit_counters denied"],
-    ["refundOthers", checkRefunds, "refund_credits: B refunding A's request id refunds 0 and B's balance is unchanged"],
-    ["refundOthers", checkRefunds, "refund_credits: A's usage row and balance untouched by B's attempt"],
-    ["refundStale", checkRefunds, "refund_credits: a row older than 15 minutes refunds 0 and stays"],
-    ["refundKeepsRow", checkRefunds, "refund_credits: the refunded usage row is deleted"],
-    ["refundKeepsRow", checkRefunds, "refund_credits: A refunds own request (refunded 5, remaining restored)"],
+    ["refundUserCallable", checkRefunds, "refund_credits: A cannot refund own request (users have no refunds)"],
+    ["refundUserCallable", checkRefunds, "refund_ink_for: A cannot call it"],
+    ["refundUserCallable", checkRefunds, "refund: A's charge and usage row stay after the attempts"],
+    ["refundOthers", checkRefunds, "refund_ink_for: another user's id with A's request id refunds 0; A's row and both balances untouched"],
+    ["refundStale", checkRefunds, "refund_ink_for: a row older than 15 minutes refunds 0 and stays"],
+    ["refundKeepsRow", checkRefunds, "refund_ink_for: the refunded usage row is deleted"],
+    ["refundKeepsRow", checkRefunds, "refund_ink_for: refunding the same request again refunds 0"],
     ["anonRpc", checkRefunds, "refund_credits: anon cannot call it"],
     ["rateLimitNeverDenies", checkRateLimit, "rate_limit_hit: next hit denied with retry_after_ms in (0, window]"],
     ["rateLimitNeverDenies", checkRateLimit, "rate_limit_hit: A is still denied after the delete attempt"],
@@ -858,6 +965,16 @@ describe("rlsChecks detect individual leaks", () => {
     ["inkPurchaseReplay", checkInkPurchases, "grant_ink_purchase: the same Checkout Session again grants nothing (duplicate)"],
     ["inkPurchaseCrossRead", checkInkPurchases, "ink_purchases: B cannot see A's purchase"],
     ["inkReverseNegative", checkInkPurchases, "reverse_ink_purchase: a full refund takes the pack's ink back, at most what is left (A spent 1,000 first; never below zero)"],
+    ["anonSelect", checkAnonDenied, "anon: select ink_checkout_reviews denied"],
+    ["inkAmountUnchecked", checkInkPurchases, "grant_ink_purchase: an underpaid session ($5 for the $50 Large) grants nothing and goes to review"],
+    ["inkAmountUnchecked", checkInkPurchases, "grant_ink_purchase: a session in another currency goes to review"],
+    ["inkReviewsReadable", checkInkTables, "ink_checkout_reviews: A cannot read the review queue"],
+    ["inkReviewsReadable", checkInkPurchases, "ink_checkout_reviews: B cannot read even their own review"],
+    ["inkPurchaseRpcOpen", checkInkTables, "record_ink_checkout_review: A cannot call it"],
+    ["inkPurchaseRpcOpen", checkInkTables, "resolve_ink_checkout_review: A cannot call it"],
+    ["inkLedgerDeletable", checkInkPurchases, "ink_grants: even the service role cannot delete a grant (delete guard, 42501)"],
+    ["inkLedgerDeletable", checkInkPurchases, "usage_events: even the service role cannot delete usage outside a refund (delete guard)"],
+    ["inkLedgerDeletable", checkInkPurchases, "ink: A's balance and ledger unchanged by the denied deletes"],
     ["anonRpc", checkInkPurchases, "ink_summary: anon cannot call it"],
     ["anonRpc", checkInkPurchases, "grant_ink_purchase: anon cannot call it"],
   ];
@@ -873,19 +990,31 @@ describe("rlsChecks detect individual leaks", () => {
     expect(failures(results)).toEqual(["delete_own_account: context provides newUser()"]);
   });
 
-  it("refund check fails when refund_credits reports the credits but does not restore remaining", async () => {
+  it("refund check fails when refund_ink_for reports the ink but does not restore remaining", async () => {
     const { ctx } = makeWorld();
-    const real = ctx.a.rest;
-    ctx.a.rest = async (method, table, opts) => {
+    const service = ctx.service!;
+    const real = service.rest;
+    service.rest = async (method, table, opts) => {
       const res = await real(method, table, opts);
-      if (table === "rpc/refund_credits" && res.status === 200) {
+      if (table === "rpc/refund_ink_for" && res.status === 200) {
         return { status: 200, body: { ...(res.body as Row), remaining: 0 } };
       }
       return res;
     };
     const results = await checkRefunds(ctx);
-    expect(failures(results)).toContain("refund_credits: A refunds own request (refunded 5, remaining restored)");
-    expect(failures(results)).toContain("refund_credits: refunding the same request again refunds 0");
+    expect(failures(results)).toContain("refund_ink_for: the service role refunds A's request (refunded 5, remaining restored)");
+    expect(failures(results)).toContain("refund_ink_for: refunding the same request again refunds 0");
+  });
+
+  it("refund check fails when a user's refund call is answered 200 with nothing refunded (it must be denied outright)", async () => {
+    const { ctx } = makeWorld();
+    const real = ctx.a.rest;
+    ctx.a.rest = async (method, table, opts) => {
+      if (table === "rpc/refund_credits") return { status: 200, body: { refunded: 0, remaining: 0 } };
+      return real(method, table, opts);
+    };
+    const results = await checkRefunds(ctx);
+    expect(failures(results)).toEqual(["refund_credits: A cannot refund own request (users have no refunds)"]);
   });
 
   it("rate limit check fails when the backend is not 'db' or remaining does not count down", async () => {

@@ -16,7 +16,9 @@
 -- ledgers, in the same transaction as the ledger row that changes it:
 --   ink_grants   AFTER INSERT  -> balance += units   (units are signed: a refund is negative)
 --   usage_events AFTER INSERT  -> balance -= units   (consume_credits)
---   usage_events AFTER DELETE  -> balance += units   (refund_credits gives a failed call back)
+--   usage_events AFTER DELETE  -> balance += units   (refund_ink_for gives a failed call back)
+-- A ledger row for a user without a profile row creates that row first, so no row can land
+-- without moving the balance.
 -- Why stored and not lock-and-sum: the ledger is all-time now. A summing balance would read
 -- every row a student ever wrote (one per handwriting read, thousands a month) on every paid
 -- call, forever; the stored balance is one row. Parallel spends still serialise:
@@ -24,10 +26,15 @@
 -- two requests can never both spend the last ink, and the CHECK makes a negative balance
 -- impossible even for a buggy writer (the statement fails instead). Because the triggers do
 -- the bookkeeping, an operator's plain `insert into ink_grants` keeps the balance right too.
--- Ledger rows are append-only: corrections are new rows (negative units), never edits or
--- deletes (a guard trigger refuses edits to units/user_id; deleting a grant row would leave
--- the balance as it is). Rows the ledgers held before this migration (monthly-credit history)
--- are not counted: they were never seen by the triggers.
+-- Ledger rows are append-only: corrections are new rows (negative units). Triggers refuse edits
+-- to units/user_id, and refuse DELETES from usage_events, ink_grants, ink_purchases and profiles
+-- (which holds the stored balance) with two exceptions: the account is being deleted (its
+-- auth.users row is gone when the cascade arrives), and refund_ink_for() deleting a failed call's
+-- usage row (it sets agathon.ink_refund for its own statement). Chosen over adjusting the balance
+-- in a delete trigger: a deleted usage row would mint ink, a deleted grant or purchase would
+-- erase history and an idempotency key, a deleted profile would come back with a zero balance,
+-- and no legitimate path needs any of them. Rows the ledgers held before this migration
+-- (monthly-credit history) are not counted: they were never seen by the triggers.
 --
 -- Starter ink: handle_new_user() grants 300 after it creates the profile (one 'starter' row per
 -- user, enforced by a partial unique index; a failure is logged and never blocks sign-up, and
@@ -37,7 +44,10 @@
 --
 -- Purchases: ink_purchases records each paid Checkout Session once (UNIQUE
 -- checkout_session_id, so a replayed or duplicate webhook never grants twice) and the
--- 'purchase' grant that came with it. A refund (charge.refunded) reverses the refunded share of
+-- 'purchase' grant that came with it. Only when the money covers the pack (the session's amount,
+-- in USD, at least the pack's price): an underpaid, unpriced or free session, an unknown pack, an
+-- account deleted before the webhook, or an Agathon checkout the webhook cannot match to a user
+-- is recorded in ink_checkout_reviews with NO ink (service role only), for the owner to resolve. A refund (charge.refunded) reverses the refunded share of
 -- the pack's ink, but at most what is still unspent: the balance never goes negative, and the
 -- purchase row records what was reversed (refunded_ink) and what had already been spent
 -- (refund_unrecovered_ink). Repeated refund events only act on the increase of the cumulative
@@ -46,28 +56,36 @@
 -- RPCs keep the names and argument signatures src/lib/server/billing.ts and main's client call:
 --   consume_credits(p_route, p_units, p_request_id?, p_model?) -> { ok, remaining, reason }
 --     reason stays 'insufficient_credits' (an internal string; the HTTP error is ink_empty)
---   refund_credits(p_request_id)                               -> { refunded, remaining }
+--   refund_credits(p_request_id)  NO LONGER executable by users: a user who could refund their
+--                        own request ids (every 2xx returns one) could get any call's ink back.
+--                        Failed calls are refunded by the server with refund_ink_for (service role).
 --   credit_summary()  -> the old keys, consistent (monthly_credits 0, granted = lifetime ink
 --                        granted, used = lifetime ink used, remaining = balance), plus balance
 --   usage_by_day(p_time_zone, p_days?)  same columns (credits = ink); p_days null = this UTC
 --                        month as before, else the last p_days calendar days in p_time_zone
 --   ink_summary()     -> { balance, granted, purchased, refunded, used, starter, starter_at,
 --                          purchases, last_purchase }  (the ink UI reads this one)
--- Service role only (the billing webhook, the runbook):
---   grant_ink_purchase(...), reverse_ink_purchase(...), grant_ink(user, units, reason)
+-- Service role only (the API's refunds, the billing webhook, the runbook):
+--   refund_ink_for(user, request_id), grant_ink_purchase(...), reverse_ink_purchase(...),
+--   record_ink_checkout_review(...), resolve_ink_checkout_review(review_id, user?, pack?, note?),
+--   grant_ink(user, units, reason)
 --
 -- Objects created or changed here:
---   tables     ink_packs (catalogue, seeded), ink_grants, ink_purchases
+--   tables     ink_packs (catalogue, seeded), ink_grants, ink_purchases, ink_checkout_reviews
 --   columns    profiles.ink_balance
 --   functions  ink_starter_amount(), ensure_ink_account(uuid), ink_ledger_grant() [trigger],
 --              ink_ledger_usage() [trigger], ink_ledger_immutable() [trigger],
---              ink_summary_of(uuid), ink_summary(), grant_ink(uuid,int,text),
---              grant_ink_purchase(uuid,text,text,text,text,int,text),
---              reverse_ink_purchase(text,int,int,boolean)
+--              ink_ledger_guard_delete() [trigger], ink_summary_of(uuid), ink_summary(),
+--              refund_ink_for(uuid,text), grant_ink(uuid,int,text),
+--              record_ink_checkout_review(text,text,text,text,text,text,int,text,text,text),
+--              grant_ink_purchase(uuid,text,text,text,text,int,text,text,text),
+--              reverse_ink_purchase(text,int,int,boolean),
+--              resolve_ink_checkout_review(bigint,uuid,text,text)
 --   replaced   handle_new_user(), credit_balance(uuid), credit_summary(), consume_credits(...),
---              refund_credits(text), usage_by_day(text) -> usage_by_day(text, integer)
---   triggers   ink_grants_apply, ink_grants_immutable, usage_events_apply_insert,
---              usage_events_apply_delete, usage_events_immutable
+--              refund_credits(text) (users lose execute), usage_by_day(text) -> usage_by_day(text, integer)
+--   triggers   ink_grants_apply, ink_grants_immutable, ink_grants_guard_delete,
+--              ink_purchases_guard_delete, profiles_guard_delete, usage_events_apply_insert,
+--              usage_events_apply_delete, usage_events_guard_delete, usage_events_immutable
 --   rows       plans plus/pro deactivated; profiles moved to 'free'; one starter grant per
 --              existing account
 --
@@ -208,11 +226,12 @@ grant select on public.ink_grants to authenticated;
 grant all on public.ink_grants to service_role;
 
 -- -----------------------------------------------------------------------------
--- 5. The balance triggers
+-- 5. The balance triggers and the ledger guards
 -- -----------------------------------------------------------------------------
 -- SECURITY DEFINER so the bookkeeping happens whoever writes the ledger (a definer RPC, the
--- service role, an operator in the SQL editor). A ledger row whose user has no profile changes
--- no balance (the functions below create the profile first).
+-- service role, an operator in the SQL editor). A ledger row for a user without a profile row
+-- creates it first (a sign-up whose profile insert failed), so a row can never land without
+-- moving the balance.
 create or replace function public.ink_ledger_grant()
 returns trigger
 language plpgsql
@@ -220,6 +239,7 @@ security definer
 set search_path = public
 as $$
 begin
+  insert into public.profiles (user_id) values (new.user_id) on conflict (user_id) do nothing;
   update public.profiles set ink_balance = ink_balance + new.units where user_id = new.user_id;
   return null;
 end;
@@ -234,10 +254,11 @@ set search_path = public
 as $$
 begin
   if tg_op = 'INSERT' then
+    insert into public.profiles (user_id) values (new.user_id) on conflict (user_id) do nothing;
     update public.profiles set ink_balance = ink_balance - new.units where user_id = new.user_id;
   else
-    -- A refunded call (refund_credits) or an account deletion's cascade: give the ink back. The
-    -- profile may already be gone in the cascade; then nothing is updated.
+    -- Only refund_ink_for() and an account deletion's cascade get here (ink_ledger_guard_delete):
+    -- the refunded call's ink comes back. In the cascade the profile may already be gone.
     update public.profiles set ink_balance = ink_balance + old.units where user_id = old.user_id;
   end if;
   return null;
@@ -260,6 +281,31 @@ end;
 $$;
 revoke all on function public.ink_ledger_immutable() from public, anon, authenticated;
 
+-- No deletes from the ledgers, the purchases or the profiles, by anyone, with two exceptions: the
+-- account is being deleted (its auth.users row is already gone when the cascade reaches these
+-- tables), and refund_ink_for() giving a failed call's usage row back (it sets agathon.ink_refund
+-- for its own statement). A deleted usage row would otherwise mint ink, a deleted grant or
+-- purchase would leave the balance as it was (and a purchase's idempotency key gone), and a
+-- deleted profile would come back (ensure_ink_account) with a zero balance.
+create or replace function public.ink_ledger_guard_delete()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not exists (select 1 from auth.users u where u.id = old.user_id) then
+    return old;
+  end if;
+  if tg_table_name = 'usage_events' and current_setting('agathon.ink_refund', true) = 'on' then
+    return old;
+  end if;
+  raise exception '% rows cannot be deleted (the ink balance depends on them): insert a correction, or delete the account', tg_table_name
+    using errcode = '42501';
+end;
+$$;
+revoke all on function public.ink_ledger_guard_delete() from public, anon, authenticated;
+
 drop trigger if exists ink_grants_apply on public.ink_grants;
 create trigger ink_grants_apply
   after insert on public.ink_grants
@@ -270,6 +316,21 @@ create trigger ink_grants_immutable
   before update on public.ink_grants
   for each row execute function public.ink_ledger_immutable();
 
+drop trigger if exists ink_grants_guard_delete on public.ink_grants;
+create trigger ink_grants_guard_delete
+  before delete on public.ink_grants
+  for each row execute function public.ink_ledger_guard_delete();
+
+drop trigger if exists ink_purchases_guard_delete on public.ink_purchases;
+create trigger ink_purchases_guard_delete
+  before delete on public.ink_purchases
+  for each row execute function public.ink_ledger_guard_delete();
+
+drop trigger if exists profiles_guard_delete on public.profiles;
+create trigger profiles_guard_delete
+  before delete on public.profiles
+  for each row execute function public.ink_ledger_guard_delete();
+
 drop trigger if exists usage_events_apply_insert on public.usage_events;
 create trigger usage_events_apply_insert
   after insert on public.usage_events
@@ -279,6 +340,11 @@ drop trigger if exists usage_events_apply_delete on public.usage_events;
 create trigger usage_events_apply_delete
   after delete on public.usage_events
   for each row execute function public.ink_ledger_usage();
+
+drop trigger if exists usage_events_guard_delete on public.usage_events;
+create trigger usage_events_guard_delete
+  before delete on public.usage_events
+  for each row execute function public.ink_ledger_guard_delete();
 
 drop trigger if exists usage_events_immutable on public.usage_events;
 create trigger usage_events_immutable
@@ -555,7 +621,7 @@ revoke all on function public.credit_summary() from public, anon;
 grant execute on function public.credit_summary() to authenticated;
 
 -- -----------------------------------------------------------------------------
--- 9. Spending and giving back (as the user)
+-- 9. Spending (as the user) and giving a failed call back (service role)
 -- -----------------------------------------------------------------------------
 -- RPC: POST /rest/v1/rpc/consume_credits {p_route, p_units, p_request_id?, p_model?}
 -- The profile row is locked FOR UPDATE before the balance is read, so parallel calls for one
@@ -611,9 +677,54 @@ $$;
 revoke all on function public.consume_credits(text, integer, text, text) from public, anon;
 grant execute on function public.consume_credits(text, integer, text, text) to authenticated;
 
--- RPC: POST /rest/v1/rpc/refund_credits {p_request_id}  (as the user)
--- Same contract as 20260917030000_refunds_ratelimit.sql: deletes the caller's own usage rows for
--- that request id younger than 15 minutes; the delete trigger puts the ink back.
+-- Giving a failed call's ink back: SERVICE ROLE ONLY. The route that charged calls it (with the
+-- user requireUser verified) when the provider call then failed. It used to be callable by the
+-- user (refund_credits), and every 2xx carries its X-Request-Id, so a user could get the ink of
+-- any successful call back within 15 minutes and never run out. Deletes that user's usage rows for
+-- the request id younger than 15 minutes; the delete trigger puts the ink back. Idempotent.
+create or replace function public.refund_ink_for(p_user_id uuid, p_request_id text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  v_refunded integer := 0;
+  v_balance integer;
+begin
+  if p_user_id is null then
+    raise exception 'p_user_id is required' using errcode = '22023';
+  end if;
+  if p_request_id is null or char_length(p_request_id) < 1 or char_length(p_request_id) > 100 then
+    raise exception 'p_request_id must be 1..100 characters' using errcode = '22023';
+  end if;
+
+  -- Same lock consume_credits() takes, so a refund and a spend for one user serialise.
+  perform 1 from public.profiles pr where pr.user_id = p_user_id for update;
+
+  -- The one path allowed to delete usage rows (ink_ledger_guard_delete), for this statement only.
+  perform set_config('agathon.ink_refund', 'on', true);
+  with gone as (
+    delete from public.usage_events u
+    where u.user_id = p_user_id
+      and u.request_id = p_request_id
+      and u.created_at > now() - interval '15 minutes'
+    returning u.units
+  )
+  select coalesce(sum(units), 0)::integer into v_refunded from gone;
+  perform set_config('agathon.ink_refund', 'off', true);
+
+  select pr.ink_balance into v_balance from public.profiles pr where pr.user_id = p_user_id;
+  return jsonb_build_object('refunded', v_refunded, 'remaining', coalesce(v_balance, 0));
+end;
+$$;
+revoke all on function public.refund_ink_for(uuid, text) from public, anon, authenticated;
+grant execute on function public.refund_ink_for(uuid, text) to service_role;
+
+-- The old user-callable refund: no longer executable by users (see refund_ink_for). Kept, with
+-- the same signature, so older code gets a permission error rather than a missing function; its
+-- body only ever acts on the caller.
 create or replace function public.refund_credits(p_request_id text)
 returns jsonb
 language plpgsql
@@ -623,42 +734,115 @@ set search_path = public
 as $$
 declare
   v_uid uuid := auth.uid();
-  v_refunded integer := 0;
-  v_balance integer;
 begin
   if v_uid is null then
     raise exception 'not authenticated' using errcode = '42501';
   end if;
-  if p_request_id is null or char_length(p_request_id) < 1 or char_length(p_request_id) > 100 then
-    raise exception 'p_request_id must be 1..100 characters' using errcode = '22023';
-  end if;
-
-  -- Same lock consume_credits() takes, so a refund and a spend for one user serialise.
-  perform 1 from public.profiles pr where pr.user_id = v_uid for update;
-
-  with gone as (
-    delete from public.usage_events u
-    where u.user_id = v_uid
-      and u.request_id = p_request_id
-      and u.created_at > now() - interval '15 minutes'
-    returning u.units
-  )
-  select coalesce(sum(units), 0)::integer into v_refunded from gone;
-
-  select pr.ink_balance into v_balance from public.profiles pr where pr.user_id = v_uid;
-  return jsonb_build_object('refunded', v_refunded, 'remaining', coalesce(v_balance, 0));
+  return public.refund_ink_for(v_uid, p_request_id);
 end;
 $$;
-revoke all on function public.refund_credits(text) from public, anon;
-grant execute on function public.refund_credits(text) to authenticated;
+revoke all on function public.refund_credits(text) from public, anon, authenticated;
 
 -- -----------------------------------------------------------------------------
 -- 10. Purchases, refunds and manual grants (service role only)
 -- -----------------------------------------------------------------------------
+-- Agathon checkouts that were paid (or claimed paid) but could not be granted automatically:
+-- no or a bad client_reference_id (the Payment Link opened outside the app), no or an unknown
+-- pack, an account deleted before the webhook, or an amount that does not cover the pack (a
+-- promotion code, a wrong currency, nothing paid at all). One row per Checkout Session; only ever
+-- Agathon's own sessions (tagged app=agathon-classroom), never another app's on the shared Stripe
+-- account. Service role only: the owner resolves them by hand (docs/RUNBOOK-billing.md).
+create table if not exists public.ink_checkout_reviews (
+  id                  bigint      generated always as identity primary key,
+  checkout_session_id text        not null check (char_length(checkout_session_id) between 1 and 255),
+  reason              text        not null check (char_length(reason) between 1 and 300),
+  status              text        not null default 'open' check (status in ('open', 'resolved', 'refunded')),
+  user_id             uuid        references auth.users (id) on delete set null,   -- when the reference named a real user
+  client_reference_id text        check (client_reference_id is null or char_length(client_reference_id) <= 255),
+  pack_id             text        check (pack_id is null or char_length(pack_id) <= 64),
+  payment_intent_id   text        check (payment_intent_id is null or char_length(payment_intent_id) <= 255),
+  customer_id         text        check (customer_id is null or char_length(customer_id) <= 255),
+  customer_email      text        check (customer_email is null or char_length(customer_email) <= 320),
+  amount_cents        integer,
+  currency            text        check (currency is null or char_length(currency) <= 8),
+  event_id            text        check (event_id is null or char_length(event_id) <= 200),
+  note                text        check (note is null or char_length(note) <= 500),
+  created_at          timestamptz not null default now(),
+  resolved_at         timestamptz
+);
+
+create unique index if not exists ink_checkout_reviews_session_key on public.ink_checkout_reviews (checkout_session_id);
+create index if not exists ink_checkout_reviews_payment_intent_idx
+  on public.ink_checkout_reviews (payment_intent_id) where payment_intent_id is not null;
+
+alter table public.ink_checkout_reviews enable row level security;
+revoke all on public.ink_checkout_reviews from public, anon, authenticated;
+grant all on public.ink_checkout_reviews to service_role;
+
+-- Record a checkout for review (idempotent on the session id). The webhook calls it for an
+-- Agathon session it cannot map (no user, no pack); grant_ink_purchase calls it for the rest.
+create or replace function public.record_ink_checkout_review(
+  p_checkout_session_id text,
+  p_reason              text,
+  p_client_reference_id text default null,
+  p_pack_id             text default null,
+  p_payment_intent_id   text default null,
+  p_customer_id         text default null,
+  p_amount_cents        integer default null,
+  p_currency            text default null,
+  p_customer_email      text default null,
+  p_event_id            text default null
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  v_user uuid;
+  v_id bigint;
+  v_ref text := nullif(lower(btrim(coalesce(p_client_reference_id, ''))), '');
+begin
+  if p_checkout_session_id is null or char_length(p_checkout_session_id) < 1 or char_length(p_checkout_session_id) > 255 then
+    raise exception 'p_checkout_session_id must be 1..255 characters' using errcode = '22023';
+  end if;
+  if v_ref ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+    select u.id into v_user from auth.users u where u.id = v_ref::uuid;
+  end if;
+
+  insert into public.ink_checkout_reviews (
+    checkout_session_id, reason, user_id, client_reference_id, pack_id, payment_intent_id,
+    customer_id, customer_email, amount_cents, currency, event_id
+  )
+  values (
+    p_checkout_session_id, left(coalesce(nullif(p_reason, ''), 'unknown'), 300), v_user, left(p_client_reference_id, 255),
+    left(p_pack_id, 64), nullif(left(p_payment_intent_id, 255), ''), nullif(left(p_customer_id, 255), ''),
+    nullif(left(p_customer_email, 320), ''), p_amount_cents, nullif(left(lower(p_currency), 8), ''), left(p_event_id, 200)
+  )
+  on conflict (checkout_session_id) do nothing
+  returning id into v_id;
+
+  if v_id is null then
+    select r.id into v_id from public.ink_checkout_reviews r where r.checkout_session_id = p_checkout_session_id;
+    return jsonb_build_object('recorded', false, 'duplicate', true, 'review_id', v_id);
+  end if;
+  return jsonb_build_object('recorded', true, 'duplicate', false, 'review_id', v_id);
+end;
+$$;
+revoke all on function public.record_ink_checkout_review(text, text, text, text, text, text, integer, text, text, text) from public, anon, authenticated;
+grant execute on function public.record_ink_checkout_review(text, text, text, text, text, text, integer, text, text, text) to service_role;
+
 -- The billing webhook, for a paid Checkout Session. Idempotent on the session id: a second call
--- for the same session grants nothing and answers duplicate:true. A pack that has since been
--- deactivated is still honoured (the customer paid for it); an unknown pack or a user that no
--- longer exists raises (22023 / P0002) so the webhook can tell the operator.
+-- for the same session grants nothing and answers duplicate:true (so the webhook can call it again
+-- for a redelivered event). The money has to cover the pack: `p_amount_cents` in `p_currency`
+-- (the session's amount_total, or its currency_conversion source amount under Adaptive Pricing)
+-- must be at least the pack's price in USD. Anything that cannot be granted (an underpaid or
+-- unpriced session, an unknown pack, a user that no longer exists) is recorded in
+-- ink_checkout_reviews with NO ink, and answered review:true. A deactivated pack is still honoured
+-- (the customer paid for it).
+drop function if exists public.grant_ink_purchase(uuid, text, text, text, text, integer, text);
+
 create or replace function public.grant_ink_purchase(
   p_user_id             uuid,
   p_pack_id             text,
@@ -666,7 +850,9 @@ create or replace function public.grant_ink_purchase(
   p_payment_intent_id   text default null,
   p_customer_id         text default null,
   p_amount_cents        integer default null,
-  p_currency            text default null
+  p_currency            text default null,
+  p_customer_email      text default null,
+  p_event_id            text default null
 )
 returns jsonb
 language plpgsql
@@ -678,31 +864,55 @@ declare
   v_pack public.ink_packs%rowtype;
   v_purchase_id bigint;
   v_balance integer;
+  v_reason text;
+  v_review jsonb;
+  v_currency text := lower(nullif(btrim(coalesce(p_currency, '')), ''));
 begin
-  if p_user_id is null then
-    raise exception 'p_user_id is required' using errcode = '22023';
-  end if;
   if p_checkout_session_id is null or char_length(p_checkout_session_id) < 1 or char_length(p_checkout_session_id) > 255 then
     raise exception 'p_checkout_session_id must be 1..255 characters' using errcode = '22023';
   end if;
+
+  -- Already handled: granted once, or already waiting for review.
+  select p.id into v_purchase_id from public.ink_purchases p where p.checkout_session_id = p_checkout_session_id;
+  if v_purchase_id is not null then
+    select pr.ink_balance into v_balance from public.profiles pr where pr.user_id = p_user_id;
+    return jsonb_build_object('granted', 0, 'duplicate', true, 'purchase_id', v_purchase_id, 'balance', v_balance);
+  end if;
+  if exists (select 1 from public.ink_checkout_reviews r where r.checkout_session_id = p_checkout_session_id) then
+    return jsonb_build_object('granted', 0, 'duplicate', true, 'review', true);
+  end if;
+
   select * into v_pack from public.ink_packs where id = p_pack_id;
   if not found then
-    raise exception 'unknown ink pack %', p_pack_id using errcode = '22023';
+    v_reason := format('unknown pack %s', coalesce(p_pack_id, '(none)'));
+  elsif p_user_id is null or not exists (select 1 from auth.users u where u.id = p_user_id) then
+    v_reason := 'no account for this user (deleted before the webhook?)';
+  elsif p_amount_cents is null or v_currency is null then
+    v_reason := 'no amount on the session';
+  elsif v_currency <> 'usd' then
+    v_reason := format('paid in %s; packs are priced in usd', v_currency);
+  elsif p_amount_cents < v_pack.price_cents then
+    v_reason := format('paid %s cents for the %s pack, priced %s cents', p_amount_cents, v_pack.id, v_pack.price_cents);
+  end if;
+
+  if v_reason is not null then
+    v_review := public.record_ink_checkout_review(
+      p_checkout_session_id, v_reason, p_user_id::text, p_pack_id, p_payment_intent_id,
+      p_customer_id, p_amount_cents, v_currency, p_customer_email, p_event_id
+    );
+    return jsonb_build_object('granted', 0, 'duplicate', false, 'review', true, 'reason', v_reason, 'review_id', v_review ->> 'review_id');
   end if;
 
   perform public.ensure_ink_account(p_user_id);
   perform 1 from public.profiles pr where pr.user_id = p_user_id for update;
-  if not found then
-    raise exception 'no account for user %', p_user_id using errcode = 'P0002';
-  end if;
 
   insert into public.ink_purchases (user_id, pack_id, ink, amount_cents, currency, checkout_session_id, payment_intent_id, customer_id)
   values (
     p_user_id,
     v_pack.id,
     v_pack.ink,
-    greatest(0, coalesce(p_amount_cents, v_pack.price_cents)),
-    lower(coalesce(nullif(p_currency, ''), 'usd')),
+    p_amount_cents,
+    v_currency,
     p_checkout_session_id,
     nullif(p_payment_intent_id, ''),
     nullif(p_customer_id, '')
@@ -711,6 +921,7 @@ begin
   returning id into v_purchase_id;
 
   if v_purchase_id is null then
+    -- a concurrent delivery of the same session won the insert
     select p.id into v_purchase_id from public.ink_purchases p where p.checkout_session_id = p_checkout_session_id;
     select pr.ink_balance into v_balance from public.profiles pr where pr.user_id = p_user_id;
     return jsonb_build_object('granted', 0, 'duplicate', true, 'purchase_id', v_purchase_id, 'balance', v_balance);
@@ -723,8 +934,8 @@ begin
   return jsonb_build_object('granted', v_pack.ink, 'duplicate', false, 'purchase_id', v_purchase_id, 'balance', v_balance);
 end;
 $$;
-revoke all on function public.grant_ink_purchase(uuid, text, text, text, text, integer, text) from public, anon, authenticated;
-grant execute on function public.grant_ink_purchase(uuid, text, text, text, text, integer, text) to service_role;
+revoke all on function public.grant_ink_purchase(uuid, text, text, text, text, integer, text, text, text) from public, anon, authenticated;
+grant execute on function public.grant_ink_purchase(uuid, text, text, text, text, integer, text, text, text) to service_role;
 
 -- The billing webhook, for charge.refunded. `p_amount_refunded_cents` is Stripe's CUMULATIVE
 -- refunded amount for the charge; only its increase since the last call is acted on, so a replay
@@ -760,6 +971,16 @@ begin
 
   select * into v_purchase from public.ink_purchases where payment_intent_id = p_payment_intent_id for update;
   if not found then
+    -- A checkout waiting for review granted no ink: nothing to take back, but the review row
+    -- should say the money went back.
+    update public.ink_checkout_reviews
+       set status = 'refunded', resolved_at = coalesce(resolved_at, now())
+     where payment_intent_id = p_payment_intent_id and status <> 'refunded';
+    if found or exists (select 1 from public.ink_checkout_reviews r where r.payment_intent_id = p_payment_intent_id) then
+      return jsonb_build_object('found', true, 'review', true, 'reversed', 0, 'requested', 0);
+    end if;
+    -- Not (yet) a purchase: the webhook decides whether to wait for its grant (a tagged charge)
+    -- or ignore it (someone else's payment).
     return jsonb_build_object('found', false, 'reversed', 0);
   end if;
 
@@ -812,6 +1033,74 @@ end;
 $$;
 revoke all on function public.reverse_ink_purchase(text, integer, integer, boolean) from public, anon, authenticated;
 grant execute on function public.reverse_ink_purchase(text, integer, integer, boolean) to service_role;
+
+-- The owner's way out of the review queue (docs/RUNBOOK-billing.md): turn an open review into a
+-- real purchase (so a later charge.refunded finds it and takes the ink back like any other), for
+-- the review's user and pack unless others are named (a checkout opened outside the app names
+-- nobody). The amount recorded is what was actually paid. Each review resolves once; a session
+-- that already has a purchase is refused. Service role (and postgres) only.
+create or replace function public.resolve_ink_checkout_review(
+  p_review_id bigint,
+  p_user_id   uuid default null,
+  p_pack_id   text default null,
+  p_note      text default null
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  v_review public.ink_checkout_reviews%rowtype;
+  v_user uuid;
+  v_pack public.ink_packs%rowtype;
+  v_purchase_id bigint;
+  v_balance integer;
+begin
+  select * into v_review from public.ink_checkout_reviews where id = p_review_id for update;
+  if not found then
+    raise exception 'no checkout review %', p_review_id using errcode = '22023';
+  end if;
+  if v_review.status <> 'open' then
+    raise exception 'checkout review % is already %', p_review_id, v_review.status using errcode = '22023';
+  end if;
+  v_user := coalesce(p_user_id, v_review.user_id);
+  if v_user is null or not exists (select 1 from auth.users u where u.id = v_user) then
+    raise exception 'checkout review %: name the account to grant (p_user_id)', p_review_id using errcode = '22023';
+  end if;
+  select * into v_pack from public.ink_packs where id = coalesce(p_pack_id, v_review.pack_id);
+  if not found then
+    raise exception 'checkout review %: name a pack that exists (p_pack_id)', p_review_id using errcode = '22023';
+  end if;
+  if exists (select 1 from public.ink_purchases p where p.checkout_session_id = v_review.checkout_session_id) then
+    raise exception 'checkout session % already has a purchase', v_review.checkout_session_id using errcode = '23505';
+  end if;
+
+  perform public.ensure_ink_account(v_user);
+  perform 1 from public.profiles pr where pr.user_id = v_user for update;
+
+  insert into public.ink_purchases (user_id, pack_id, ink, amount_cents, currency, checkout_session_id, payment_intent_id, customer_id)
+  values (
+    v_user, v_pack.id, v_pack.ink, greatest(coalesce(v_review.amount_cents, 0), 0), coalesce(v_review.currency, 'usd'),
+    v_review.checkout_session_id, v_review.payment_intent_id, v_review.customer_id
+  )
+  returning id into v_purchase_id;
+
+  insert into public.ink_grants (user_id, units, kind, purchase_id, reason)
+  values (v_user, v_pack.ink, 'purchase', v_purchase_id, left(format('%s pack (review #%s)', v_pack.name, p_review_id), 200));
+
+  update public.ink_checkout_reviews
+     set status = 'resolved', resolved_at = now(), user_id = v_user,
+         note = left(coalesce(nullif(p_note, ''), note), 500)
+   where id = p_review_id;
+
+  select pr.ink_balance into v_balance from public.profiles pr where pr.user_id = v_user;
+  return jsonb_build_object('granted', v_pack.ink, 'purchase_id', v_purchase_id, 'user_id', v_user, 'balance', v_balance);
+end;
+$$;
+revoke all on function public.resolve_ink_checkout_review(bigint, uuid, text, text) from public, anon, authenticated;
+grant execute on function public.resolve_ink_checkout_review(bigint, uuid, text, text) to service_role;
 
 -- Manual grants and corrections (runbook): `select public.grant_ink('<uuid>', 500, 'outage apology');`
 -- A negative correction takes at most the current balance (never below zero); `granted` says how

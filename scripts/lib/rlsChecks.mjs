@@ -47,6 +47,7 @@ export const PUBLIC_TABLES = [
   "ink_packs",
   "ink_grants",
   "ink_purchases",
+  "ink_checkout_reviews",
 ];
 
 /** Keys every rate_limit_hit() payload must carry. */
@@ -195,6 +196,8 @@ export function minimalInsert(table, userId = ZERO_UUID) {
       return { user_id: userId, units: 1000000, kind: "manual", reason: "rls-verify" };
     case "ink_purchases":
       return { user_id: userId, pack_id: "large", ink: 14000, amount_cents: 0, checkout_session_id: `cs_rls_verify_${uuid()}` };
+    case "ink_checkout_reviews":
+      return { checkout_session_id: `cs_rls_verify_${uuid()}`, reason: "rls-verify", user_id: userId };
     default:
       return {};
   }
@@ -881,9 +884,11 @@ export async function checkDeleteOwnAccount(ctx) {
 }
 
 /**
- * refund_credits(): a user gets back exactly what one of their own recent
- * requests charged, once; another user's request id and rows older than 15
- * minutes (only plantable with the service role) refund nothing and touch nothing.
+ * Refunds of failed calls (20261002000000_ink.sql): a user can NOT refund anything (not through
+ * refund_credits, not through refund_ink_for), because every 2xx hands them its request id and a
+ * self-refund would make ink free. With the service role, refund_ink_for gives back exactly what
+ * one of the user's own recent requests charged, once; another user's id and rows older than 15
+ * minutes refund nothing and touch nothing. Without a service client that half is skipped.
  * @param {CheckContext} ctx
  */
 export async function checkRefunds({ a, b, anon, service }) {
@@ -898,82 +903,80 @@ export async function checkRefunds({ a, b, anon, service }) {
   const a0 = asObject((await rpc(a, "credit_summary")).body);
   const spend = await rpc(a, "consume_credits", { p_route: route, p_units: 5, p_request_id: reqOwn });
   if (!a0 || !isOk(spend) || asObject(spend.body)?.ok !== true) {
-    out.push(result("refund_credits: setup spend of 5 units succeeded", false, `${describe(spend)}`));
+    out.push(result("refund: setup spend of 5 units succeeded", false, `${describe(spend)}`));
     return out;
   }
 
-  const refund = await rpc(a, "refund_credits", { p_request_id: reqOwn });
+  const self = await rpc(a, "refund_credits", { p_request_id: reqOwn });
+  out.push(result("refund_credits: A cannot refund own request (users have no refunds)", isDenied(self), describe(self)));
+  const direct = await rpc(a, "refund_ink_for", { p_user_id: a.userId, p_request_id: reqOwn });
+  out.push(result("refund_ink_for: A cannot call it", isDenied(direct), describe(direct)));
+  const anonRefund = await rpc(anon, "refund_credits", { p_request_id: reqOwn });
+  out.push(result("refund_credits: anon cannot call it", isDenied(anonRefund), describe(anonRefund)));
+  const kept = asObject((await rpc(a, "credit_summary")).body);
+  const row = await a.rest("GET", "usage_events", { query: { request_id: `eq.${reqOwn}`, select: "units" } });
+  out.push(
+    result(
+      "refund: A's charge and usage row stay after the attempts",
+      kept?.remaining === a0.remaining - 5 && isOk(row) && rows(row).length === 1,
+      `${JSON.stringify(kept)} / ${describe(row)}`.slice(0, 200),
+    ),
+  );
+
+  if (!service) {
+    out.push(result("refund_ink_for with the service role (skipped: no service role client)", true));
+    return out;
+  }
+
+  const refund = await rpc(service, "refund_ink_for", { p_user_id: a.userId, p_request_id: reqOwn });
   const r = asObject(refund.body);
   out.push(
     result(
-      "refund_credits: A refunds own request (refunded 5, remaining restored)",
+      "refund_ink_for: the service role refunds A's request (refunded 5, remaining restored)",
       isOk(refund) && r?.refunded === 5 && r.remaining === a0.remaining,
       describe(refund),
     ),
   );
   const gone = await a.rest("GET", "usage_events", { query: { request_id: `eq.${reqOwn}`, select: "id" } });
-  out.push(result("refund_credits: the refunded usage row is deleted", affectedNoRows(gone), describe(gone)));
-  const sumA1 = asObject((await rpc(a, "credit_summary")).body);
-  out.push(
-    result(
-      "credit_summary: A's used/remaining back to the pre-spend values",
-      sumA1?.used === a0.used && sumA1.remaining === a0.remaining,
-      JSON.stringify(sumA1).slice(0, 200),
-    ),
-  );
-  const again = await rpc(a, "refund_credits", { p_request_id: reqOwn });
+  out.push(result("refund_ink_for: the refunded usage row is deleted", affectedNoRows(gone), describe(gone)));
+  const again = await rpc(service, "refund_ink_for", { p_user_id: a.userId, p_request_id: reqOwn });
   const r2 = asObject(again.body);
-  out.push(
-    result("refund_credits: refunding the same request again refunds 0", isOk(again) && r2?.refunded === 0 && r2.remaining === a0.remaining, describe(again)),
-  );
+  out.push(result("refund_ink_for: refunding the same request again refunds 0", isOk(again) && r2?.refunded === 0 && r2.remaining === a0.remaining, describe(again)));
 
-  // A spends again; B tries to refund A's request id.
-  const spend2 = await rpc(a, "consume_credits", { p_route: route, p_units: 3, p_request_id: reqForeign });
+  // A spends again; a refund naming B with A's request id refunds nothing.
+  await rpc(a, "consume_credits", { p_route: route, p_units: 3, p_request_id: reqForeign });
   const b0 = asObject((await rpc(b, "credit_summary")).body);
-  const foreign = await rpc(b, "refund_credits", { p_request_id: reqForeign });
+  const foreign = await rpc(service, "refund_ink_for", { p_user_id: b.userId, p_request_id: reqForeign });
   const rf = asObject(foreign.body);
-  out.push(
-    result(
-      "refund_credits: B refunding A's request id refunds 0 and B's balance is unchanged",
-      isOk(spend2) && isOk(foreign) && rf?.refunded === 0 && rf.remaining === b0?.remaining,
-      describe(foreign),
-    ),
-  );
   const still = await a.rest("GET", "usage_events", { query: { request_id: `eq.${reqForeign}`, select: "units" } });
   const sumA2 = asObject((await rpc(a, "credit_summary")).body);
   out.push(
     result(
-      "refund_credits: A's usage row and balance untouched by B's attempt",
-      isOk(still) && rows(still).length === 1 && rows(still)[0].units === 3 && sumA2?.remaining === a0.remaining - 3,
-      `${describe(still)} / remaining ${sumA2?.remaining}`,
+      "refund_ink_for: another user's id with A's request id refunds 0; A's row and both balances untouched",
+      isOk(foreign) && rf?.refunded === 0 && rf.remaining === b0?.remaining && rows(still).length === 1 && sumA2?.remaining === a0.remaining - 3,
+      `${describe(foreign)} / ${describe(still)}`,
     ),
   );
 
-  if (service) {
-    const old = new Date(Date.now() - 16 * 60_000).toISOString();
-    const planted = await service.rest("POST", "usage_events", {
-      body: { user_id: a.userId, route, units: 4, request_id: reqStale, created_at: old },
-      prefer: "return=minimal",
-    });
-    const before = asObject((await rpc(a, "credit_summary")).body);
-    const stale = await rpc(a, "refund_credits", { p_request_id: reqStale });
-    const rs = asObject(stale.body);
-    const staleRow = await service.rest("GET", "usage_events", { query: { request_id: `eq.${reqStale}`, select: "units" } });
-    out.push(
-      result(
-        "refund_credits: a row older than 15 minutes refunds 0 and stays",
-        isOk(planted) && isOk(stale) && rs?.refunded === 0 && rs.remaining === before?.remaining && rows(staleRow).length === 1,
-        `${describe(planted)} / ${describe(stale)} / ${describe(staleRow)}`,
-      ),
-    );
-  } else {
-    out.push(result("refund_credits: a row older than 15 minutes refunds 0 and stays (skipped: no service role client)", true));
-  }
+  const old = new Date(Date.now() - 16 * 60_000).toISOString();
+  const planted = await service.rest("POST", "usage_events", {
+    body: { user_id: a.userId, route, units: 4, request_id: reqStale, created_at: old },
+    prefer: "return=minimal",
+  });
+  const before = asObject((await rpc(a, "credit_summary")).body);
+  const stale = await rpc(service, "refund_ink_for", { p_user_id: a.userId, p_request_id: reqStale });
+  const rs = asObject(stale.body);
+  const staleRow = await service.rest("GET", "usage_events", { query: { request_id: `eq.${reqStale}`, select: "units" } });
+  out.push(
+    result(
+      "refund_ink_for: a row older than 15 minutes refunds 0 and stays",
+      isOk(planted) && isOk(stale) && rs?.refunded === 0 && rs.remaining === before?.remaining && rows(staleRow).length === 1,
+      `${describe(planted)} / ${describe(stale)} / ${describe(staleRow)}`,
+    ),
+  );
 
-  const empty = await rpc(a, "refund_credits", { p_request_id: "" });
-  out.push(result("refund_credits: empty p_request_id is rejected", !isOk(empty), describe(empty)));
-  const anonRefund = await rpc(anon, "refund_credits", { p_request_id: reqForeign });
-  out.push(result("refund_credits: anon cannot call it", isDenied(anonRefund), describe(anonRefund)));
+  const empty = await rpc(service, "refund_ink_for", { p_user_id: a.userId, p_request_id: "" });
+  out.push(result("refund_ink_for: an empty p_request_id is rejected", !isOk(empty), describe(empty)));
   return out;
 }
 
@@ -1296,6 +1299,16 @@ export async function checkInkTables({ a, b }) {
   const purchaseSel = await a.rest("GET", "ink_purchases", { query: { select: "id" } });
   out.push(result("ink_purchases: A may read own purchases (none yet)", isOk(purchaseSel) && rows(purchaseSel).length === 0, describe(purchaseSel)));
 
+  // Checkouts waiting for review carry payer emails and amounts: the service role's alone.
+  const reviewSel = await a.rest("GET", "ink_checkout_reviews", { query: { select: "id" } });
+  out.push(result("ink_checkout_reviews: A cannot read the review queue", isDenied(reviewSel), describe(reviewSel)));
+  const reviewIns = await a.rest("POST", "ink_checkout_reviews", { body: minimalInsert("ink_checkout_reviews", a.userId ?? ZERO_UUID), prefer: "return=minimal" });
+  out.push(result("ink_checkout_reviews: A cannot add to it", isDenied(reviewIns), describe(reviewIns)));
+  const reviewRpc = await rpc(a, "record_ink_checkout_review", { p_checkout_session_id: `cs_rls_verify_${uuid()}`, p_reason: "rls-verify" });
+  out.push(result("record_ink_checkout_review: A cannot call it", isDenied(reviewRpc), describe(reviewRpc)));
+  const resolveRpc = await rpc(a, "resolve_ink_checkout_review", { p_review_id: 1, p_user_id: a.userId, p_pack_id: "large" });
+  out.push(result("resolve_ink_checkout_review: A cannot call it", isDenied(resolveRpc), describe(resolveRpc)));
+
   const balancePatch = await a.rest("PATCH", "profiles", { query: { user_id: `eq.${a.userId}` }, body: { ink_balance: 1000000 }, prefer: "return=representation" });
   out.push(
     result(
@@ -1428,6 +1441,75 @@ export async function checkInkPurchases({ a, b, anon, service }) {
       describe(refunded),
     ),
   );
+
+  // The money has to cover the pack: $5 for a Large ($50) is recorded for review, with no ink.
+  const lowSession = `cs_rls_verify_${tag}_low`;
+  const lowIntent = `pi_rls_verify_${tag}_low`;
+  const b1 = asObject((await rpc(b, "ink_summary")).body);
+  const under = await rpc(service, "grant_ink_purchase", {
+    p_user_id: b.userId,
+    p_pack_id: "large",
+    p_checkout_session_id: lowSession,
+    p_payment_intent_id: lowIntent,
+    p_amount_cents: 500,
+    p_currency: "usd",
+  });
+  const u = asObject(under.body);
+  const b2 = asObject((await rpc(b, "ink_summary")).body);
+  out.push(
+    result(
+      "grant_ink_purchase: an underpaid session ($5 for the $50 Large) grants nothing and goes to review",
+      isOk(under) && u?.granted === 0 && u.review === true && b2?.balance === b1?.balance && b2?.purchased === b1?.purchased,
+      `${describe(under)} / ${JSON.stringify(b2)}`.slice(0, 200),
+    ),
+  );
+  const euro = await rpc(service, "grant_ink_purchase", { ...grantArgs, p_user_id: b.userId, p_checkout_session_id: `${lowSession}_eur`, p_payment_intent_id: null, p_currency: "eur" });
+  out.push(result("grant_ink_purchase: a session in another currency goes to review", isOk(euro) && asObject(euro.body)?.granted === 0 && asObject(euro.body)?.review === true, describe(euro)));
+  const queued = await service.rest("GET", "ink_checkout_reviews", { query: { checkout_session_id: `eq.${lowSession}`, select: "status,user_id,pack_id,amount_cents" } });
+  const q = rows(queued)[0];
+  out.push(
+    result(
+      "ink_checkout_reviews: the underpaid checkout is listed (open, B's, large, 500 cents)",
+      isOk(queued) && q?.status === "open" && q.user_id === b.userId && q.pack_id === "large" && q.amount_cents === 500,
+      describe(queued),
+    ),
+  );
+  const bReads = await b.rest("GET", "ink_checkout_reviews", { query: { select: "id" } });
+  out.push(result("ink_checkout_reviews: B cannot read even their own review", isDenied(bReads), describe(bReads)));
+  const lowRefund = await rpc(service, "reverse_ink_purchase", { p_payment_intent_id: lowIntent, p_amount_refunded_cents: 500, p_charge_amount_cents: 500, p_fully_refunded: true });
+  const lr = asObject(lowRefund.body);
+  const closed = await service.rest("GET", "ink_checkout_reviews", { query: { checkout_session_id: `eq.${lowSession}`, select: "status" } });
+  const b3 = asObject((await rpc(b, "ink_summary")).body);
+  out.push(
+    result(
+      "reverse_ink_purchase: refunding a reviewed checkout takes no ink and marks the review refunded",
+      isOk(lowRefund) && lr?.found === true && lr.review === true && lr.reversed === 0 && rows(closed)[0]?.status === "refunded" && b3?.balance === b1?.balance,
+      `${describe(lowRefund)} / ${describe(closed)}`,
+    ),
+  );
+
+  // Ledgers are append-only, even for the service role: a deleted grant or purchase would leave
+  // the stored balance wrong, and a deleted usage row would mint ink. Corrections are inserts.
+  const a5 = asObject((await rpc(a, "ink_summary")).body);
+  const delGrant = await service.rest("DELETE", "ink_grants", { query: { user_id: `eq.${a.userId}`, kind: "eq.starter" }, prefer: "return=representation" });
+  out.push(result("ink_grants: even the service role cannot delete a grant (delete guard, 42501)", isDenied(delGrant), describe(delGrant)));
+  const delPurchase = await service.rest("DELETE", "ink_purchases", { query: { checkout_session_id: `eq.${session}` }, prefer: "return=representation" });
+  out.push(result("ink_purchases: even the service role cannot delete a purchase (delete guard)", isDenied(delPurchase), describe(delPurchase)));
+  const delUsage = await service.rest("DELETE", "usage_events", { query: { user_id: `eq.${a.userId}` }, prefer: "return=representation" });
+  out.push(result("usage_events: even the service role cannot delete usage outside a refund (delete guard)", isDenied(delUsage), describe(delUsage)));
+  const a6 = asObject((await rpc(a, "ink_summary")).body);
+  out.push(
+    result(
+      "ink: A's balance and ledger unchanged by the denied deletes",
+      !!a5 && a6?.balance === a5.balance && a6?.granted === a5.granted && a6?.used === a5.used,
+      `${JSON.stringify(a5)} / ${JSON.stringify(a6)}`.slice(0, 200),
+    ),
+  );
+
+  // Leave no review rows behind: they outlive the throwaway users and would sit in the owner's
+  // queue (this check also runs against production).
+  const cleared = await service.rest("DELETE", "ink_checkout_reviews", { query: { checkout_session_id: `like.cs_rls_verify_${tag}_*` }, prefer: "return=representation" });
+  out.push(result("ink_checkout_reviews: the check's own review rows are removed again", isOk(cleared) && rows(cleared).length === 2, describe(cleared)));
   return out;
 }
 
@@ -1448,12 +1530,12 @@ export const ALL_CHECKS = [
   { name: "version trigger and optimistic concurrency", run: checkVersionTrigger },
   { name: "accounts & billing tables (plans, profiles, ledgers, billing_events)", run: checkBillingTables },
   { name: "credits: consume_credits / credit_summary spend only the caller's balance", run: checkCreditsConsumption },
-  { name: "refund_credits gives back only the caller's own recent charge", run: checkRefunds },
+  { name: "refunds of failed calls: service role only (refund_ink_for), never by the user", run: checkRefunds },
   { name: "rate_limit_hit: per-user fixed window, function-only table", run: checkRateLimit },
   { name: "usage_by_day: the caller's own spend this month, by day and route", run: checkUsageByDay },
   { name: "onboarding: course and onboarded_at written only through save_onboarding", run: checkOnboarding },
   { name: "ink tables: packs read-only, own grants and purchases only, no way to add ink", run: checkInkTables },
-  { name: "ink: summary, and purchases/refunds only through the service role", run: checkInkPurchases },
+  { name: "ink: summary, purchases/refunds/reviews only through the service role, append-only ledgers", run: checkInkPurchases },
   { name: "delete_own_account removes the caller's account and data", run: checkDeleteOwnAccount },
 ];
 
