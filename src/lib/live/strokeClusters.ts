@@ -549,6 +549,8 @@ export interface RebuiltLine {
  * Seeds lines from existing echo shapes' `anchorIds`/`lineId` so a reload never
  * re-recognizes. Anchors that no longer exist are dropped; echoes without any
  * surviving anchor are skipped (the loop deletes them when their line is gone).
+ * A stroke belongs to one line: an echo on ink an earlier echo already holds (a second
+ * readback of the same line, left by an Undo before Live adopted it) is skipped too.
  */
 export function rebuildFromMathShapes(
   echoes: EchoShapeSeed[],
@@ -556,11 +558,13 @@ export function rebuildFromMathShapes(
 ): RebuiltLine[] {
   const out: RebuiltLine[] = [];
   const seen = new Set<string>();
+  const claimed = new Set<string>();
   for (const echo of echoes) {
     if (!echo.lineId || seen.has(echo.lineId)) continue;
     const alive = echo.anchorIds.filter((id) => strokeBounds.has(id));
-    if (alive.length === 0) continue;
+    if (alive.length === 0 || alive.some((id) => claimed.has(id))) continue;
     seen.add(echo.lineId);
+    for (const id of alive) claimed.add(id);
     const rects = alive.map((id) => strokeBounds.get(id) as Rect);
     out.push({
       line: {

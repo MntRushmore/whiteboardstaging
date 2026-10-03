@@ -140,6 +140,21 @@ describe("rebuildFromMathShapes", () => {
     expect(rebuilt[1].line.row).toBe(1);
     expect(rebuilt[1].latex).toBe("x");
   });
+
+  it("a second echo on ink another echo already holds is not a second line", () => {
+    const bounds = new Map<string, Rect>([
+      ["shape:a", { x: 0, y: 0, w: 20, h: 40 }],
+      ["shape:b", { x: 30, y: 0, w: 20, h: 40 }],
+    ]);
+    const rebuilt = rebuildFromMathShapes(
+      [
+        { shapeId: "shape:m1" as never, lineId: "ln_old", anchorIds: ["shape:a", "shape:b"], latex: "2x" },
+        { shapeId: "shape:m2" as never, lineId: "ln_new", anchorIds: ["shape:a", "shape:b"], latex: "2x" },
+      ],
+      bounds,
+    );
+    expect(rebuilt.map((r) => r.mathShapeId)).toEqual(["shape:m1"]);
+  });
 });
 
 describe("clusterLines — inflation and superscripts (B7)", () => {

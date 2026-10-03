@@ -979,7 +979,13 @@ export class LiveLoop implements LiveController {
     let penDown = false;
 
     for (const rec of Object.values(entry.changes.added)) {
-      if (!isShapeRecord(rec) || !isStudentInk(rec)) continue;
+      if (!isShapeRecord(rec)) continue;
+      // Undo brought back a readback the same action had deleted (Live never writes as the user)
+      if (rec.type === "math" && isLiveMeta(rec.meta) && rec.meta.source === "echo") {
+        this.restoredEcho(rec);
+        continue;
+      }
+      if (!isStudentInk(rec)) continue;
       if ((rec as TLDrawShape).props.isComplete) {
         this.dirtyStrokeIds.add(rec.id);
         penUp = true;
@@ -1078,6 +1084,19 @@ export class LiveLoop implements LiveController {
       if (penUp && !writingUp && !inkChanged && !erased && this.quietTimer) return;
       this.armQuietTimer();
     }
+  }
+
+  /**
+   * An echo the student's Undo (or Redo) put back. Its line, if it is still here without one, takes
+   * it back; a line that already has another is not given a second (this one goes). An echo whose
+   * line is gone waits for the line its ink makes next (`adoptOrphanEcho`).
+   */
+  private restoredEcho(rec: TLShape): void {
+    const lineId = (rec.props as MathShapeProps).lineId || (isLiveMeta(rec.meta) ? rec.meta.lineId : "");
+    const st = liveStore.lines.get()[lineId];
+    if (!st) return;
+    if (!st.mathShapeId || !this.editor.getShape(st.mathShapeId)) setLine(lineId, { mathShapeId: rec.id });
+    else if (st.mathShapeId !== rec.id) this.write(() => this.editor.deleteShapes([rec.id]));
   }
 
   /** A finished draw shape that is a drawing by its shape alone (`strokeLooksDrawn`). */
@@ -1208,7 +1227,12 @@ export class LiveLoop implements LiveController {
       }
     }
     if (seeds.length === 0) return;
-    const rebuilt = rebuildFromMathShapes(seeds, this.strokeBoundsMap());
+    const bounds = this.strokeBoundsMap();
+    const rebuilt = rebuildFromMathShapes(seeds, bounds);
+    // a second readback of a line rebuilt from another one: one line, one echo
+    const kept = new Set<string>(rebuilt.map((r) => r.mathShapeId));
+    const extra = seeds.filter((s) => s.lineId && !kept.has(s.shapeId) && s.anchorIds.some((id) => bounds.has(id))).map((s) => s.shapeId);
+    if (extra.length > 0) this.write(() => this.editor.deleteShapes(extra));
     // the chat's problems head the columns under them, as at every flush
     const split = new Map(this.withProblemColumns(rebuilt.map((r) => r.line)).map((l) => [l.id, l]));
     for (const r of rebuilt) r.line = split.get(r.line.id) ?? r.line;
@@ -2311,7 +2335,12 @@ export class LiveLoop implements LiveController {
       if (!st) return;
       const size = echoSizeFor(st.line.bounds.h);
       const anchorIds = st.line.strokeIds as string[];
-      const existing = st.mathShapeId ? this.editor.getShape(st.mathShapeId) : undefined;
+      const own = st.mathShapeId ? this.editor.getShape(st.mathShapeId) : undefined;
+      // No echo of its own: an echo already on this ink that no current line owns is this line's —
+      // Undo after a rub-out or a delete brings the readback back with the ink, under the id of a
+      // line Live has since dropped. It is taken over, never written a second time beside it.
+      const adopted = own ? undefined : this.adoptOrphanEcho(lineId, anchorIds);
+      const existing = own ?? adopted;
       if (existing && existing.type === "math") {
         const cur = existing.props as MathShapeProps;
         // BUG-4: a note the model wrote is not something the local engine can reproduce.
@@ -2327,11 +2356,13 @@ export class LiveLoop implements LiveController {
             ? { ...wanted, note: cur.note }
             : wanted;
         const changed =
+          Boolean(adopted) ||
           cur.latex !== props.latex ||
           cur.status !== props.status ||
           cur.resultLatex !== props.resultLatex ||
           cur.note !== props.note ||
           !sameStrokeSet(cur.anchorIds, anchorIds);
+        if (adopted) setLine(lineId, { mathShapeId: adopted.id });
         if (!changed) return;
         this.editor.updateShapes([
           {
@@ -2339,7 +2370,7 @@ export class LiveLoop implements LiveController {
             type: "math",
             props: { ...props, anchorIds, lineId, tone: "muted", source: "echo" },
             // `false` (not a delete) because tldraw merges meta patches shallowly.
-            meta: { ...(existing.meta as LiveShapeMeta), edited: st.edited, [AI_NOTE_META]: aiNoteNow },
+            meta: { ...(existing.meta as LiveShapeMeta), lineId, edited: st.edited, [AI_NOTE_META]: aiNoteNow },
           } satisfies TLShapePartial<MathShape>,
         ]);
         return;
@@ -2373,6 +2404,25 @@ export class LiveLoop implements LiveController {
       ]);
       setLine(lineId, { mathShapeId: id });
     });
+  }
+
+  /**
+   * An echo on this line's ink that no other current line owns (one Undo brought back), or
+   * undefined. Any further such echoes on the same ink are deleted: one line, one readback. Runs
+   * inside a live write.
+   */
+  private adoptOrphanEcho(lineId: string, anchorIds: readonly string[]): TLShape | undefined {
+    const lines = liveStore.lines.get();
+    const ink = new Set(anchorIds);
+    const found: TLShape[] = [];
+    for (const s of this.editor.getCurrentPageShapes()) {
+      if (s.type !== "math" || !isLiveMeta(s.meta) || s.meta.source !== "echo") continue;
+      const owner = (s.props as MathShapeProps).lineId || s.meta.lineId;
+      if (owner !== lineId && lines[owner]) continue;
+      if ((s.props as MathShapeProps).anchorIds.some((id) => ink.has(id))) found.push(s);
+    }
+    if (found.length > 1) this.editor.deleteShapes(found.slice(1).map((s) => s.id));
+    return found[0];
   }
 
   /** Line moved: keep content, move the echo to the new slot. */
