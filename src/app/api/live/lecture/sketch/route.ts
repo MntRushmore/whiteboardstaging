@@ -1,6 +1,6 @@
 import { getLiveModels } from "@/lib/env";
 import { SketchRequestSchema, SketchResponseSchema, type SketchResponse } from "@/lib/live/lecture/contracts";
-import { billingEnforced, enforceCredits, runCharged } from "@/lib/server/billing";
+import { billingEnforced, enforceInk, runCharged } from "@/lib/server/billing";
 import { errorResponse } from "@/lib/server/request";
 import { livePreamble, withRequestId } from "@/lib/server/live-route";
 import { illustrate, NoDrawingError } from "@/lib/server/sketch/illustrate";
@@ -27,11 +27,11 @@ export const maxDuration = 60;
 export async function POST(req: Request) {
   const ctx = await livePreamble(req, "lecture/sketch", "liveSketch", SketchRequestSchema);
   if ("response" in ctx) return ctx.response;
-  const { requestId, token, log, data, startedAt } = ctx;
+  const { requestId, token, user, log, data, startedAt } = ctx;
   const models = getLiveModels();
   const charged = billingEnforced();
 
-  const billing = await enforceCredits({ token, route: "live/sketch", requestId, model: models.sketch }, log);
+  const billing = await enforceInk({ token, route: "live/sketch", requestId, model: models.sketch }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   const draw = async (): Promise<Response> => {
@@ -62,5 +62,5 @@ export async function POST(req: Request) {
     if (err instanceof NoDrawingError) log.warn({ attempts: err.attempts }, "sketch: no usable drawing");
     return withRequestId(errorResponse(err, log, { ms: Date.now() - startedAt, charged }), requestId);
   };
-  return runCharged({ token, requestId }, log, draw, failed);
+  return runCharged({ userId: user.id, requestId }, log, draw, failed);
 }

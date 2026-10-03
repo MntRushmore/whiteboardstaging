@@ -14,8 +14,8 @@ interface BoardChatPanelProps {
   onClose: () => void;
 }
 
-/** Running out of credits: the board dialog's panel, fetched only when a 402 arrives. */
-const OutOfCreditsPanel = lazy(() => import("@/components/billing/OutOfCreditsPanel").then((m) => ({ default: m.OutOfCreditsPanel })));
+/** Running out of ink: the board dialog's panel (the packs to buy), fetched only when a 402 arrives. */
+const OutOfInkPanel = lazy(() => import("@/components/billing/OutOfInkPanel").then((m) => ({ default: m.OutOfInkPanel })));
 
 /** A marker the board page gives the Ask button: Esc there closes the panel too. */
 export const CHAT_TOGGLE_ATTR = "data-chat-toggle";
@@ -158,12 +158,12 @@ function Message({ message: m, onRetry, busy }: { message: ChatMessage; onRetry:
       </p>
     );
   }
-  if (m.state === "error" && m.error?.kind === "credits") {
+  if (m.state === "error" && m.error?.kind === "ink") {
     // the board dialog's words and Upgrade buttons, inline (lazy: fetched only when needed)
     return (
       <div className="rounded-lg border border-red-100 bg-red-50/60 px-3 py-2.5">
-        <Suspense fallback={<p className="text-sm text-red-700">{CHAT_COPY.errors.credits}</p>}>
-          <OutOfCreditsPanel variant="inline" titleAs="p" />
+        <Suspense fallback={<p className="text-sm text-red-700">{CHAT_COPY.errors.ink}</p>}>
+          <OutOfInkPanel variant="inline" titleAs="p" outOfInk />
         </Suspense>
       </div>
     );

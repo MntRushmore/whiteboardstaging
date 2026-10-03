@@ -20,7 +20,7 @@ describe("lecture client", () => {
   });
 
   it("the route's errors pass through as ApiError (402, 429 with its wait)", async () => {
-    const err = new ApiError("x", 402, "credits_exhausted");
+    const err = new ApiError("x", 402, "ink_empty");
     await expect(
       requestLecture(REQ, undefined, async () => {
         throw err;

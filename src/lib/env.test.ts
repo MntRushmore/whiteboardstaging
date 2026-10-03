@@ -2,14 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   REQUIRED_ENV_VARS,
   billingEnforced,
-  getBillingLinks,
-  getBillingPriceMap,
   getLiveModels,
   getRateLimitBackend,
   getServerEnv,
   hasMathpix,
-  parseBillingLinks,
-  parseBillingPriceMap,
+  parseInkPriceMap,
   resetServerEnvCache,
 } from "@/lib/env";
 import { LIVE_MODELS } from "@/lib/live/contracts";
@@ -34,7 +31,8 @@ const ALL_VARS = [
   "ELEVENLABS_API_KEY",
   "BILLING_ENFORCE",
   "STRIPE_WEBHOOK_SECRET",
-  "BILLING_PRICE_MAP",
+  "STRIPE_LIVEMODE",
+  "INK_PRICE_MAP",
   "NEXT_PUBLIC_BILLING_LINKS",
   "RATE_LIMIT_BACKEND",
 ] as const;
@@ -212,7 +210,8 @@ describe("billing env", () => {
     const env = getServerEnv();
     expect(env.BILLING_ENFORCE).toBeUndefined();
     expect(env.STRIPE_WEBHOOK_SECRET).toBeUndefined();
-    expect(env.BILLING_PRICE_MAP).toBeUndefined();
+    expect(env.STRIPE_LIVEMODE).toBeUndefined();
+    expect(env.INK_PRICE_MAP).toBeUndefined();
     expect(env.NEXT_PUBLIC_BILLING_LINKS).toBeUndefined();
   });
 
@@ -227,41 +226,21 @@ describe("billing env", () => {
     expect(billingEnforced()).toBe(true);
   });
 
-  it("parseBillingPriceMap validates lazily: unset -> {}, valid -> map, bad -> error", () => {
-    expect(parseBillingPriceMap(undefined)).toEqual({ map: {} });
-    expect(parseBillingPriceMap("  ")).toEqual({ map: {} });
-    expect(parseBillingPriceMap('{"price_1":"plus","price_2":"pro"}')).toEqual({ map: { price_1: "plus", price_2: "pro" } });
-    expect(parseBillingPriceMap("{oops")).toEqual({ error: expect.stringMatching(/valid JSON/) });
-    expect(parseBillingPriceMap('["plus"]')).toEqual({ error: expect.stringMatching(/JSON object/) });
-    expect(parseBillingPriceMap('{"price_1": 3}')).toEqual({ error: expect.stringMatching(/JSON object/) });
+  it("parseInkPriceMap validates lazily: unset -> {}, valid -> map, bad -> error", () => {
+    expect(parseInkPriceMap(undefined)).toEqual({ map: {} });
+    expect(parseInkPriceMap("  ")).toEqual({ map: {} });
+    expect(parseInkPriceMap('{"price_1":"small","price_2":"large"}')).toEqual({ map: { price_1: "small", price_2: "large" } });
+    expect(parseInkPriceMap("{oops")).toEqual({ error: expect.stringMatching(/INK_PRICE_MAP is not valid JSON/) });
+    expect(parseInkPriceMap('["small"]')).toEqual({ error: expect.stringMatching(/JSON object/) });
+    expect(parseInkPriceMap('{"price_1": 3}')).toEqual({ error: expect.stringMatching(/JSON object/) });
+    // a pack id must look like one (ink_packs_id_format)
+    expect(parseInkPriceMap('{"price_1": "Small Pack"}')).toEqual({ error: expect.stringMatching(/pack id/) });
   });
 
-  it("getBillingPriceMap reads the env and throws only when malformed", () => {
+  it("INK_PRICE_MAP is read from the env like any optional variable", () => {
     setRequired();
-    expect(getBillingPriceMap()).toEqual({});
-    resetServerEnvCache();
-    process.env.BILLING_PRICE_MAP = '{"price_x":"pro"}';
-    expect(getBillingPriceMap()).toEqual({ price_x: "pro" });
-    resetServerEnvCache();
-    process.env.BILLING_PRICE_MAP = "nope";
-    expect(() => getBillingPriceMap()).toThrowError(/BILLING_PRICE_MAP/);
-  });
-
-  it("parseBillingLinks is lenient and keeps only http(s) URLs for plus/pro/portal", () => {
-    expect(parseBillingLinks(undefined)).toEqual({});
-    expect(parseBillingLinks("{bad")).toEqual({});
-    expect(parseBillingLinks('["https://a"]')).toEqual({});
-    expect(
-      parseBillingLinks('{"plus":"https://buy.example/plus","pro":"javascript:alert(1)","portal":"https://billing.example/p","other":"https://x"}'),
-    ).toEqual({ plus: "https://buy.example/plus", portal: "https://billing.example/p" });
-  });
-
-  it("getBillingLinks reads NEXT_PUBLIC_BILLING_LINKS", () => {
-    setRequired();
-    expect(getBillingLinks()).toEqual({});
-    resetServerEnvCache();
-    process.env.NEXT_PUBLIC_BILLING_LINKS = '{"portal":"https://billing.example/p"}';
-    expect(getBillingLinks()).toEqual({ portal: "https://billing.example/p" });
+    process.env.INK_PRICE_MAP = '{"price_x":"medium"}';
+    expect(parseInkPriceMap(getServerEnv().INK_PRICE_MAP)).toEqual({ map: { price_x: "medium" } });
   });
 });
 

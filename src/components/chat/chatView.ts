@@ -3,11 +3,11 @@
  * messages it keeps, what a failure looks like, and what goes back to the route as "the chat so
  * far". No React, no network: unit-tested in __tests__/chatView.test.ts.
  */
-import { isApiError } from "@/lib/api-client";
+import { isApiError, isOutOfInk } from "@/lib/api-client";
 import { CHAT_LIMITS, type ChatRunReport, type ChatTurn } from "@/lib/live/chat/contracts";
 
-/** Credits per request: ROUTE_COSTS["live/chat"] on the server (pinned equal in the tests). */
-export const CHAT_CREDITS = 3;
+/** Ink per request: ROUTE_COSTS["live/chat"] on the server (pinned equal in the tests). */
+export const CHAT_INK = 3;
 
 export const CHAT_COPY = {
   button: "Ask",
@@ -20,13 +20,13 @@ export const CHAT_COPY = {
   thinking: "Thinking…",
   writing: "Writing on the board…",
   retry: "Retry",
-  cost: `Each request uses ${CHAT_CREDITS} credits.`,
+  cost: `Each request uses ${CHAT_INK} ink.`,
   errors: {
     /**
-     * OUT_OF_CREDITS_COPY.title, the board dialog's words (pinned equal in the tests; a literal so
+     * OUT_OF_INK_COPY.title, the board dialog's words (pinned equal in the tests; a literal so
      * the panel does not pull the lazy dialog's module into the board's first load)
      */
-    credits: "You've used this month's credits",
+    ink: "You're out of ink",
     rateLimited: (seconds: number) => `That's a lot of requests. Try again in ${seconds} s.`,
     unauthorized: "Please sign in again.",
     network: "Couldn't reach the tutor. Check your connection and try again.",
@@ -44,12 +44,12 @@ export const CHAT_SUGGESTIONS = [
   "3 more like these",
 ] as const;
 
-export type ChatErrorKind = "credits" | "rate_limited" | "unauthorized" | "network" | "timeout" | "other";
+export type ChatErrorKind = "ink" | "rate_limited" | "unauthorized" | "network" | "timeout" | "other";
 
 export interface ChatError {
   kind: ChatErrorKind;
   message: string;
-  /** Retry is offered for everything but running out of credits and being signed out */
+  /** Retry is offered for everything but running out of ink and being signed out */
   retry: boolean;
 }
 
@@ -69,7 +69,7 @@ export interface ChatMessage {
 /** A failure of the chat call as the panel shows it. */
 export function chatErrorFor(err: unknown): ChatError {
   if (isApiError(err)) {
-    if (err.status === 402 || err.code === "credits_exhausted") return { kind: "credits", message: CHAT_COPY.errors.credits, retry: false };
+    if (isOutOfInk(err)) return { kind: "ink", message: CHAT_COPY.errors.ink, retry: false };
     if (err.status === 429 || err.code === "rate_limited") {
       const seconds = Math.max(1, Math.ceil((err.retryAfterMs ?? 10_000) / 1000));
       return { kind: "rate_limited", message: CHAT_COPY.errors.rateLimited(seconds), retry: true };

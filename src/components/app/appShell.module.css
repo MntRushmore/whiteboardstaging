@@ -57,9 +57,9 @@
   margin-left: auto;
 }
 
-/* The credits badge is a link to /account; the link's box is a full control height, so the small
+/* The ink meter is a link to /account; the link's box is a full control height, so the small
    pill is still an easy target. */
-.credits {
+.ink {
   display: inline-flex;
   min-height: var(--control-height-sm);
   align-items: center;
@@ -70,13 +70,33 @@
   text-decoration: none;
 }
 @media (hover: hover) and (pointer: fine) {
-  .credits[data-tone="ok"]:hover > span {
+  .ink[data-tone="ok"]:hover > span {
     border-color: var(--border-strong);
   }
 }
-/* "18,334" on a phone; "18,334 credits" from 480 px. */
+/* Low or out of ink: a quiet text link to the packs beside the meter, in the meter's colour. */
+.getInk {
+  display: inline-flex;
+  min-height: var(--control-height-sm);
+  align-items: center;
+  padding-inline: var(--space-1);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+.getInk[data-tone="low"] {
+  color: var(--warning);
+}
+.getInk[data-tone="empty"] {
+  color: var(--danger);
+}
+
+/* "18,334" on a phone; "18,334 ink" from 480 px. */
 @media (max-width: 479px) {
-  .creditsWord {
+  .inkWord {
     position: absolute;
     width: 1px;
     height: 1px;

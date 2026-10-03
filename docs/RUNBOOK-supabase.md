@@ -89,7 +89,7 @@ vercel env ls                        # expect both names listed 3x
 vercel env pull .env.local           # optional: sync development values locally
 ```
 
-Also required: `OPENROUTER_API_KEY` (all envs). Optional: `OPENAI_API_KEY`, `MATHPIX_APP_ID`/`MATHPIX_APP_KEY`, `NEXT_PUBLIC_TLDRAW_LICENSE_KEY`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_LIVE_MATH`, `LIVE_MODEL_*`, `LOG_LEVEL`, `NEXT_PUBLIC_LOG_LEVEL`. Do **not** add `SUPABASE_SERVICE_ROLE_KEY` to Vercel unless you enable billing: the only route that reads it is `POST /api/billing/webhook` (section 13), everything else runs with the caller's JWT. Never add the `# ─── Scripts and tests` keys from `.env.example` (`BASE_URL`, `SMOKE_*`, `RUN_DB_TESTS`, `VERIFY_EMAIL_DOMAIN`). Redeploy (`vercel --prod`) after changing env vars; existing deployments keep their old values.
+Also required: `OPENROUTER_API_KEY` (all envs). Optional: `OPENAI_API_KEY`, `MATHPIX_APP_ID`/`MATHPIX_APP_KEY`, `NEXT_PUBLIC_TLDRAW_LICENSE_KEY`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_LIVE_MATH`, `LIVE_MODEL_*`, `LOG_LEVEL`, `NEXT_PUBLIC_LOG_LEVEL`. Add `SUPABASE_SERVICE_ROLE_KEY` (as a sensitive variable) to every Vercel environment that meters ink: the paid routes need it to give a failed call's ink back (`refund_ink_for`, section 13.1; without it failed calls are not refunded, and the log says so), and `POST /api/billing/webhook` and `/api/admin/gc` need it to work at all. Everything else runs with the caller's JWT. An environment with `BILLING_ENFORCE=0` charges nothing and so needs it only for those two routes. Never add the `# ─── Scripts and tests` keys from `.env.example` (`BASE_URL`, `SMOKE_*`, `RUN_DB_TESTS`, `VERIFY_EMAIL_DOMAIN`). Redeploy (`vercel --prod`) after changing env vars; existing deployments keep their old values.
 
 Check the result with `npm run env:check` (`node scripts/check-vercel-env.mjs`): it runs the read-only `vercel env ls`, classifies every key by its `.env.example` section, and exits 1 on a missing required key, a deployed scripts-only key, or a Vercel key that `.env.example` does not document. `--env Preview` limits it to one environment, `--json` prints the report as JSON, `--from <file>` reads saved `vercel env ls` output (CI uses `src/__tests__/fixtures/vercel-env-ls.txt`). The current per-environment state and the exact `vercel env add` commands are in `docs/GO-LIVE.md` section 2.
 
@@ -236,81 +236,60 @@ left join storage.objects o on o.bucket_id = 'board-assets' and o.name = a.objec
 where o.id is null;
 ```
 
-## 13. Accounts & billing
+## 13. Accounts & billing (ink)
 
-Migration `supabase/migrations/20260917020000_accounts_billing.sql` (idempotent; `npm run db:push`). Credits are the unit: every user is on a plan with a monthly allowance, and for the current **UTC calendar month**
+Migrations `supabase/migrations/20260917020000_accounts_billing.sql` (profiles, the usage ledger, `billing_events`, account deletion) and `20261002000000_ink.sql` (ink: it replaced the monthly credits and the plans; idempotent; `npm run db:push`). Ink never expires and never resets:
 
 ```
-remaining = plans.monthly_credits + sum(credit_grants.units this month) - sum(usage_events.units this month)   (clamped at 0)
+balance = sum(ink_grants.units)  - sum(usage_events.units)        (all-time; stored in profiles.ink_balance, CHECK >= 0)
+          starter, purchases,      every metered call
+          manual, refund reversals
 ```
 
-Nothing resets or rolls over; the window simply moves on the 1st at 00:00 UTC. Metering runs *as the user*: the API routes call `consume_credits()` with the caller's own JWT, so a user can only ever spend their own balance and nothing reachable with a user token can add credits or change a plan.
+The balance is kept by triggers on both ledgers in the same transaction as each row. Metering runs *as the user*: the API routes call `consume_credits()` with the caller's own JWT, so a user can only ever spend their own ink and nothing reachable with a user token can add any, not even a refund (section 13.1). The ledgers are append-only: delete guards refuse any delete from `usage_events`, `ink_grants`, `ink_purchases` or `profiles` (`42501`, for every role including `postgres`) except an account deletion's cascade and `refund_ink_for()`. The migration header lists every object; `docs/RUNBOOK-billing.md` is the operator side (packs, prices, Stripe, refunds, manual grants, going live).
 
-**What the migration creates**
+**What the ink migration creates**
 
 | Kind | Objects |
 | --- | --- |
-| Tables (RLS on, no `anon` grants) | `plans` (catalogue; `select` for authenticated), `profiles` (one per `auth.users` row; owner `select`, owner `update` of **`display_name` only** via a column-level grant, so `PATCH {plan_id}` fails with `42501`), `usage_events` (spent credits; owner `select` only), `credit_grants` (extra credits; owner `select` only), `billing_events` (webhook idempotency log; **no** authenticated access, service role only) |
-| Functions (`security definer`, `set search_path = public`, `execute` only for `authenticated`) | `credit_summary()` -> `{plan_id, plan_name, monthly_credits, used, granted, remaining, period_start, period_end}`; `consume_credits(p_route, p_units, p_request_id?, p_model?)` -> `{ok, remaining, reason}` (locks the caller's `profiles` row `FOR UPDATE`, so parallel calls serialize; `ok:false, reason:'insufficient_credits'` writes nothing; `p_units` must be 1..1000, else `400`); `delete_own_account()` -> deletes the caller's `auth.users` row (cascades below). Internal, not callable by users: `credit_period()`, `credit_balance(uuid)`, `handle_new_user()` |
-| Triggers | `on_auth_user_created` (`auth.users` AFTER INSERT -> `profiles` row with `plan_id='free'`; never blocks sign-up - a failure is logged as a warning and `consume_credits()` creates the missing row on first use); `profiles_set_updated_at` |
-| Seed | `plans` rows `free` (300 credits, $0), `plus` (3,000, $9.00), `pro` (12,000, $29.00) - **placeholders**, re-applied with `on conflict do update` on every migration run |
-| Backfill | a `profiles` row for every pre-existing user |
+| Tables (RLS on, no `anon` grants) | `ink_packs` (catalogue; `select` for authenticated, nothing else), `ink_grants` (owner `select` only; written by the functions below, the sign-up trigger and SQL), `ink_purchases` (owner `select` only; one row per paid Checkout Session, unique `checkout_session_id`), `ink_checkout_reviews` (service role only; Agathon checkouts that did not become ink, with the payer's email) |
+| Column | `profiles.ink_balance` (CHECK `>= 0`; users can read it, never write it: the column grant is still `display_name` only) |
+| Functions for `authenticated` | `ink_summary()`; `credit_summary()`, `consume_credits(...)` (same names and shapes as before, now on ink); `usage_by_day(p_time_zone, p_days?)` |
+| Functions for the service role only | `refund_ink_for(user, request_id)`, `grant_ink_purchase(...)`, `reverse_ink_purchase(...)`, `record_ink_checkout_review(...)`, `resolve_ink_checkout_review(review_id, user?, pack?, note?)`, `grant_ink(user, units, reason)`; `refund_credits(p_request_id)` keeps its signature but no role but the owner may execute it any more |
+| Triggers | `ink_grants_apply`, `usage_events_apply_insert` / `_delete` (the balance; a ledger row for a user without a profile creates it first), `ink_grants_immutable`, `usage_events_immutable` (append-only), `ink_grants_guard_delete`, `ink_purchases_guard_delete`, `usage_events_guard_delete`, `profiles_guard_delete` (no deletes but the account's cascade and `refund_ink_for`); `handle_new_user()` now also grants the 300 starter ink (never blocks sign-up) |
+| Data | `plus`/`pro` deactivated and every profile moved to `free`; one starter grant per existing account of `max(300, what it had left this month)` |
 
-The per-route cost (credits per call) is defined in the server code next to the route registry (see the routes table in `docs/ARCHITECTURE.md`); the database only records what it is told in `usage_events.units`. Verify the whole thing with `npm run db:verify` (checks named `plans:`, `profiles:`, `usage_events:`, `credit_grants:`, `billing_events:`, `credit_summary:`, `consume_credits:`, `delete_own_account:`) and `RUN_DB_TESTS=1 npx vitest run src/__tests__/db-billing.integration.test.ts` (month window, 10-way concurrency, deletion cascade).
+Verify with `npm run db:verify` (checks named `ink_packs:`, `ink_grants:`, `ink_purchases:`, `ink_checkout_reviews:`, `ink_summary:`, `grant_ink_purchase:`, `reverse_ink_purchase:`, `record_ink_checkout_review:`, `resolve_ink_checkout_review:`, `grant_ink:`, `consume_credits:`, `refund_credits:`, `refund_ink_for:`, `usage_by_day:`, `delete_own_account:`; the service-role halves need `SUPABASE_SERVICE_ROLE_KEY`) and `RUN_DB_TESTS=1 npx vitest run src/__tests__/db-billing.integration.test.ts` (starter, all-time balance, 10-way concurrency, purchases and refunds, the amount check and review queue, the delete guards, deletion cascade).
 
-**Change the plan numbers** (SQL editor; takes effect on the next `credit_summary()` / `consume_credits()` call, no deploy):
-
-```sql
-update public.plans set monthly_credits = 500, price_cents = 0 where id = 'free';
-update public.plans set monthly_credits = 5000, price_cents = 1200, features = '["5,000 credits / month","Worksheets"]' where id = 'plus';
-update public.plans set active = false where id = 'pro';      -- hide from the pricing UI; existing subscribers keep it
-select id, name, monthly_credits, price_cents, active from public.plans order by sort;
-```
-
-Keep the migration's seed in sync when you change numbers permanently (it re-applies on every `db push`; otherwise the next push reverts your UPDATE). New plan ids must match `^[a-z][a-z0-9_-]{0,31}$`.
-
-**Grant credits to a user by hand** (a refund, a classroom pilot, a bug apology). Grants count for the month of their `created_at`, so a grant made today is gone on the 1st:
+**Give or take ink by hand** (SQL editor, as `postgres`):
 
 ```sql
-insert into public.credit_grants (user_id, units, reason)
-select id, 500, 'pilot cohort 2026-09' from auth.users where lower(email) = lower('student@example.com');
--- negative units are allowed for corrections
-insert into public.credit_grants (user_id, units, reason) values ('<uuid>', -100, 'double-counted refund');
--- what the student now sees (as postgres you cannot call credit_summary(); use the internal helper)
-select public.credit_balance((select id from auth.users where email = 'student@example.com'));
+select public.grant_ink((select id from auth.users where lower(email) = lower('student@example.com')), 500, 'pilot cohort 2026-10');
+select public.grant_ink('<uuid>', -100, 'double-counted refund');      -- stops at zero
+select public.ink_summary_of((select id from auth.users where email = 'student@example.com'));  -- what they now see
 ```
 
-**Set a user's plan by hand** (comped account, or the webhook missed an event):
+Never update or delete ledger rows; corrections are new rows. More in `docs/RUNBOOK-billing.md` section 6.
 
-```sql
-update public.profiles
-set plan_id = 'plus', billing_status = 'comped', current_period_end = null
-where user_id = (select id from auth.users where lower(email) = lower('student@example.com'));
-select u.email, p.plan_id, p.billing_status, p.billing_customer_id, p.current_period_end
-from public.profiles p join auth.users u on u.id = p.user_id where u.email = 'student@example.com';
-```
-
-**Stripe** (products, Payment Links, the customer portal, the webhook endpoint, going live, a payment that did not become a plan): `docs/RUNBOOK-billing.md`. Migration `20260928110000_paid_plans.sql` set free to 300 credits (the pilot's 1,000 ended) and made `credit_summary()` also return `billing_status` and `current_period_end`.
-
-**How the webhook updates it.** `POST /api/billing/webhook` verifies the provider signature (`STRIPE_WEBHOOK_SECRET`) and then, with `SUPABASE_SERVICE_ROLE_KEY` (the only route that uses it; add it to Vercel *Production* only, as a sensitive variable, when you enable billing), does two writes: `insert into billing_events (id, type, payload)` keyed by the provider's event id (`on conflict do nothing`; a duplicate delivery is dropped there) and `update profiles set plan_id, billing_customer_id, billing_subscription_id, billing_status, current_period_end where user_id = ...` (the user id travels in the checkout session's `client_reference_id` / subscription metadata). Without both env vars the route answers `503 feature_unavailable` and nothing changes. `BILLING_ENFORCE=0` makes the API routes skip `consume_credits()` entirely (dev/staging escape hatch; never in production). Checkout / portal links come from `NEXT_PUBLIC_BILLING_LINKS`; without it the pricing UI shows the plans with disabled buttons. Inspect what arrived with `select id, type, received_at from public.billing_events order by received_at desc limit 20;`.
+**How the webhook writes.** `POST /api/billing/webhook` verifies the provider signature (`STRIPE_WEBHOOK_SECRET`), decides whether the event is Agathon's at all (the Stripe account is shared with Fuime; foreign events are stored nowhere), and then, with `SUPABASE_SERVICE_ROLE_KEY`: `insert into billing_events (id, type, payload)` keyed by the provider's event id (a redelivery is applied again; every step is idempotent) and `grant_ink_purchase(...)`, `record_ink_checkout_review(...)` or `reverse_ink_purchase(...)`. Without both env vars the route answers `503 feature_unavailable` and nothing changes. `BILLING_ENFORCE=0` makes the API routes skip `consume_credits()` entirely (dev/staging escape hatch; never in production). Inspect what arrived with `select id, type, received_at from public.billing_events order by received_at desc limit 20;` and the purchases with `select * from public.ink_purchases order by created_at desc limit 20;`.
 
 **Usage questions**
 
 ```sql
 -- this month's spend per user
-select u.email, sum(e.units) as credits, count(*) as calls
+select u.email, sum(e.units) as ink, count(*) as calls
 from public.usage_events e join auth.users u on u.id = e.user_id
 where e.created_at >= date_trunc('month', now() at time zone 'utc') at time zone 'utc'
-group by u.email order by credits desc;
+group by u.email order by ink desc;
 -- most expensive routes this month
-select route, sum(units) as credits, count(*) as calls from public.usage_events
+select route, sum(units) as ink, count(*) as calls from public.usage_events
 where created_at >= date_trunc('month', now() at time zone 'utc') at time zone 'utc'
-group by route order by credits desc;
+group by route order by ink desc;
 ```
 
 `usage_events` is append-only and grows with every AI call (one row per call, ~100 bytes). Prune rows older than the retention you want (`delete from public.usage_events where created_at < now() - interval '13 months';`) - only the current month is ever consulted for balances.
 
-**Account deletion and storage garbage collection.** `delete_own_account()` deletes the caller's `auth.users` row. That cascades (`on delete cascade`) to `profiles`, `whiteboards` (-> `whiteboard_snapshots`, `board_assets`), `user_settings`, `trainers`, `training_samples`, `usage_events` and `credit_grants`; `bug_reports` keeps its rows with `user_id = null`; Auth removes identities, sessions and refresh tokens itself. The user's JWT stays signature-valid until it expires, but every table is empty for it and `consume_credits()` answers `403 account not found`.
+**Account deletion and storage garbage collection.** `delete_own_account()` deletes the caller's `auth.users` row. That cascades (`on delete cascade`) to `profiles`, `whiteboards` (-> `whiteboard_snapshots`, `board_assets`), `user_settings`, `trainers`, `training_samples`, `usage_events`, `credit_grants`, `ink_grants` and `ink_purchases`; `bug_reports` keeps its rows with `user_id = null`; Auth removes identities, sessions and refresh tokens itself. The user's JWT stays signature-valid until it expires, but every table is empty for it and `consume_credits()` answers `403 account not found`.
 
 Storage objects are **not** removed by the RPC: `storage.objects` has no FK to `auth.users`, and the Storage trigger described in section 12 rejects direct row deletes because the file behind the row would stay in the backing store. So: (1) the client does this itself — `src/components/account/DangerZone.tsx` calls `deleteOwnAccount()` from `src/lib/billing/deleteAccount.ts`, which reads its own `board_assets.object_path` rows and calls `storage.from('board-assets').remove(paths)` *before* the RPC (the owner-delete policy allows it; a Storage failure is logged and does not block the deletion; `training-data` has no delete policy on purpose), and (2) the operator runs this after deletions, because `board-assets` is a public bucket and an orphaned image stays reachable by URL until it is removed:
 
@@ -335,16 +314,22 @@ curl -X DELETE "$NEXT_PUBLIC_SUPABASE_URL/storage/v1/object/board-assets" \
 
 ### 13.1 Refunds and database-backed rate limits
 
-Migration `supabase/migrations/20260917030000_refunds_ratelimit.sql` (idempotent; `npm run db:push`). Two more `security definer` RPCs, `execute` for `authenticated` only (anon gets `42501` / HTTP 401), both keyed on `auth.uid()`:
+Migration `supabase/migrations/20260917030000_refunds_ratelimit.sql` (idempotent; `npm run db:push`), with the refund made service-role only by `20261002000000_ink.sql`:
+
+| RPC | Who | Returns | What it does |
+| --- | --- | --- | --- |
+| `refund_ink_for(p_user_id uuid, p_request_id text)` | **service role only** (users get `403`, anon `401`) | `{refunded, remaining}` | Deletes that user's `usage_events` rows with that `request_id` whose `created_at` is within the last **15 minutes**, then returns `refunded` (the sum of `units`; `0` when nothing matched) and the new balance. Takes the same `profiles` row lock as `consume_credits()`, so a refund and a spend for one user never interleave. Idempotent: calling it twice refunds `0` the second time. Another user's id, an unknown request id and a row older than 15 minutes all return `refunded: 0` and touch nothing. `p_request_id` must be 1..100 characters (else `400`). The API routes call it (`refundInk`, with the user id from the verified JWT) when the upstream provider fails *after* the charge; the 15-minute cap means a request id can never be replayed later to erase spend. It replaced `refund_credits(p_request_id)`, which the user could call: every 2xx returns its `X-Request-Id`, so a user could have refunded any successful call. `refund_credits` keeps its signature (older code gets a permission error, not a missing function) but no user can execute it |
+| `rate_limit_hit(p_bucket text, p_limit int, p_window_ms int)` | `authenticated`, keyed on `auth.uid()` | `{allowed, remaining, retry_after_ms, backend: 'db'}` | see below |
+
+`rate_limit_hit`:
 
 | RPC | Returns | What it does |
 | --- | --- | --- |
-| `refund_credits(p_request_id text)` | `{refunded, remaining}` | Deletes the caller's **own** `usage_events` rows with that `request_id` whose `created_at` is within the last **15 minutes**, then returns `refunded` (credits removed, i.e. the sum of `units`; `0` when nothing matched) and the new `remaining` from the normal balance logic. Takes the same `profiles` row lock as `consume_credits()`, so a refund and a spend for one user never interleave. Idempotent: calling it twice refunds `0` the second time. Another user's request id, an unknown id and a row older than 15 minutes all return `refunded: 0` and touch nothing. `p_request_id` must be 1..100 characters (else `400`). The API routes call it when the upstream provider fails *after* the charge; the 15-minute cap means a request id can never be replayed later to erase spend |
 | `rate_limit_hit(p_bucket text, p_limit int, p_window_ms int)` | `{allowed, remaining, retry_after_ms, backend: 'db'}` | Fixed window aligned to the Unix epoch (`window_start = now - now mod p_window_ms`), counter row `(user_id, bucket, window_start)` in `public.rate_limit_counters`, incremented with one atomic `insert ... on conflict do update`. `allowed = hits <= p_limit`; `remaining = max(0, p_limit - hits)`; `retry_after_ms` is the time until the window ends when denied and `0` when allowed. Parallel calls serialise on the row, so 20 simultaneous hits with `p_limit = 10` allow exactly 10 (integration-tested). Limits: `p_bucket` 1..100 chars, `p_limit` 1..1,000,000, `p_window_ms` 1..86,400,000 (else `400`) |
 
 `rate_limit_counters` (`user_id uuid, bucket text, window_start timestamptz, hits int, expires_at timestamptz`, PK `(user_id, bucket, window_start)`) has RLS enabled with **no policies and no grants** for `anon` or `authenticated`: users reach it through the function only (`GET /rest/v1/rate_limit_counters` -> `403`). It is not a ledger: `expires_at = window_start + 2 * window`, every call deletes the caller's expired rows for that bucket, and about 2% of calls sweep every expired row of every user, so the table stays at roughly `active users x buckets x 2` rows. There is deliberately no FK to `auth.users` (rows age out within two windows anyway, and a deleted user's still-valid JWT must not turn a rate-limit check into a constraint error). Compared with the in-memory limiter in `src/lib/server/rate-limit.ts` (per server instance, so the effective limit is `limit x instances`), this one is global; the `backend` field tells the route which implementation answered.
 
-Verify with `npm run db:verify` (checks named `refund_credits:`, `rate_limit_hit:`, `rate_limit_counters:`; the "row older than 15 minutes" case needs `SUPABASE_SERVICE_ROLE_KEY` to plant a back-dated row and is reported as skipped otherwise) and `RUN_DB_TESTS=1 npx vitest run src/__tests__/db-billing.integration.test.ts` (refund idempotency, foreign/stale ids, 1-second window rollover and cleanup, 20-way concurrency).
+Verify with `npm run db:verify` (checks named `refund_credits:` and `refund_ink_for:` (a user cannot refund; the service role can, once, only the named user's recent rows), `rate_limit_hit:`, `rate_limit_counters:`; the service-role half needs `SUPABASE_SERVICE_ROLE_KEY` and is reported as skipped otherwise) and `RUN_DB_TESTS=1 npx vitest run src/__tests__/db-billing.integration.test.ts` (user denied, refund idempotency, foreign/stale ids, 1-second window rollover and cleanup, 20-way concurrency).
 
 **Operator questions**
 
@@ -359,8 +344,8 @@ delete from public.rate_limit_counters
 where user_id = (select id from auth.users where lower(email) = lower('student@example.com'));
 
 -- refunds are deletions, so "how much was refunded" is not in the ledger; look at the API logs
--- (event `credits refunded`, fields route/requestId/refunded). Manual make-goods stay in credit_grants:
-insert into public.credit_grants (user_id, units, reason) values ('<uuid>', 25, 'refund: provider outage 2026-09-17');
+-- (event `ink refunded`, fields route/requestId/refunded). Manual make-goods are ink grants:
+select public.grant_ink('<uuid>', 25, 'refund: provider outage 2026-09-17');
 
 -- a request id that was charged but not refunded (e.g. to decide on a manual grant)
 select user_id, route, units, model, created_at from public.usage_events where request_id = '<request id>';

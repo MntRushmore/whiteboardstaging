@@ -253,7 +253,7 @@ export const ChatResponseSchema = z.object({
   actions: z.array(ChatActionSchema).max(CHAT_LIMITS.actions),
   /** what the route dropped and why, in words for the panel ("The figure couldn't be drawn.") */
   notes: z.array(z.string().max(200)).max(8).default([]),
-  /** true when every action the model proposed was dropped and the credits were given back */
+  /** true when every action the model proposed was dropped and the ink was given back */
   refunded: z.boolean().optional(),
   model: z.string(),
   ms: z.number(),

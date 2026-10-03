@@ -4,38 +4,42 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2, Clock, Loader2, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { notifyCreditsChanged, useCreditSummary } from "@/lib/billing/useCreditSummary";
-import { CHECKOUT_COPY, UPGRADE_POLL_MS, parseUpgradeReturn, upgradeReturnState } from "@/lib/billing/checkout";
-import { formatCredits } from "@/lib/billing/viewModel";
+import { clearCheckoutMark, notifyInkChanged, readCheckoutMark, useInkSummary } from "@/lib/billing/useInkSummary";
+import { CHECKOUT_COPY, INK_RETURN_POLL_MS, inkReturnState, parseInkReturn } from "@/lib/billing/checkout";
+import { inkLabel } from "@/lib/billing/inkSummary";
 import { cn } from "@/lib/utils";
 
-/** "plus" -> "Plus" until credit_summary names the plan. */
+/** "medium" -> "Medium" until ink_summary names the pack. */
 function titleCase(id: string): string {
   return id.charAt(0).toUpperCase() + id.slice(1);
 }
 
 /**
- * Back from a Stripe Payment Link (`/account?upgraded=plus`): the payment is done, but the plan
- * changes only when Stripe's webhook reaches /api/billing/webhook, usually a few seconds later.
- * Shows a calm "Upgrading…" while it re-reads credit_summary every 2 s, "You're on Plus" when
- * the plan arrives (and tells the header chip and the cards to re-read), and after a minute
- * without it says so instead of spinning forever. Needs a Suspense boundary (useSearchParams).
+ * Back from a Stripe Payment Link (`/account?ink=medium`): the payment is done, but the ink
+ * arrives only when Stripe's webhook reaches /api/billing/webhook, usually a few seconds later
+ * (sometimes before the redirect). Shows a calm "Adding your Medium pack…" while it re-reads
+ * ink_summary every 2 s, "Ink added" when the purchase is there (and tells every ink surface, in
+ * this tab and the board's, to re-read), and after a minute without it says so instead of
+ * spinning forever. Needs a Suspense boundary (useSearchParams).
  */
-export function UpgradeReturnNotice() {
+export function InkReturnNotice() {
   const params = useSearchParams();
-  const target = parseUpgradeReturn(params);
+  const target = parseInkReturn(params);
   if (!target) return null;
-  return <UpgradeWait key={target} target={target} />;
+  return <InkWait key={target} target={target} />;
 }
 
-function UpgradeWait({ target }: { target: string }) {
+function InkWait({ target }: { target: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const [startedAt, setStartedAt] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
-  const { summary, reload } = useCreditSummary();
-  const state = upgradeReturnState({ target, summary, startedAt, now });
-  const planName = summary?.plan_id === target ? summary.plan_name : titleCase(target);
+  // Which purchase the student had when they left for checkout: the next one is theirs.
+  const [mark] = useState(() => readCheckoutMark());
+  const { summary, reload } = useInkSummary();
+  const state = inkReturnState({ target, summary, mark, startedAt, now });
+  const last = summary?.last_purchase;
+  const packName = last?.pack_id === target ? last.pack_name : titleCase(target);
 
   // Re-read while waiting; the ticking clock is what turns "waiting" into "timeout".
   useEffect(() => {
@@ -43,13 +47,15 @@ function UpgradeWait({ target }: { target: string }) {
     const id = setInterval(() => {
       setNow(Date.now());
       reload();
-    }, UPGRADE_POLL_MS);
+    }, INK_RETURN_POLL_MS);
     return () => clearInterval(id);
   }, [state, reload]);
 
-  // The plan arrived: every other credits surface on the page re-reads too.
+  // The ink arrived: every other ink surface (the header meter here, the board in its own tab) re-reads.
   useEffect(() => {
-    if (state === "done") notifyCreditsChanged();
+    if (state !== "done") return;
+    clearCheckoutMark();
+    notifyInkChanged();
   }, [state]);
 
   const dismiss = () => router.replace(pathname);
@@ -67,13 +73,7 @@ function UpgradeWait({ target }: { target: string }) {
   }[state];
 
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      data-testid="upgrade-return"
-      data-state={state}
-      className={cn("mb-6 flex items-start gap-3 rounded-xl border px-4 py-3", tone)}
-    >
+    <div role="status" aria-live="polite" data-testid="ink-return" data-state={state} className={cn("mb-6 flex items-start gap-3 rounded-xl border px-4 py-3", tone)}>
       {state === "waiting" ? (
         <Loader2 className="mt-0.5 size-5 shrink-0 animate-spin" aria-hidden />
       ) : state === "done" ? (
@@ -82,18 +82,12 @@ function UpgradeWait({ target }: { target: string }) {
         <Clock className="mt-0.5 size-5 shrink-0" aria-hidden />
       )}
       <div className="min-w-0 flex-1">
-        <p className="font-medium">
-          {state === "waiting"
-            ? CHECKOUT_COPY.upgrading(planName)
-            : state === "done"
-              ? CHECKOUT_COPY.done(planName)
-              : CHECKOUT_COPY.timeout}
-        </p>
+        <p className="font-medium">{state === "waiting" ? CHECKOUT_COPY.waiting(packName) : state === "done" ? CHECKOUT_COPY.done : CHECKOUT_COPY.timeout}</p>
         <p className="mt-0.5 text-sm opacity-80">
           {state === "waiting"
-            ? CHECKOUT_COPY.upgradingDetail
+            ? CHECKOUT_COPY.waitingDetail
             : state === "done"
-              ? CHECKOUT_COPY.doneDetail(formatCredits(summary?.monthly_credits))
+              ? CHECKOUT_COPY.doneDetail(inkLabel(last?.ink), inkLabel(summary?.balance))
               : CHECKOUT_COPY.timeoutDetail}
         </p>
         {state === "timeout" && (

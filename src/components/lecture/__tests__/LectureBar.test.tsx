@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { LectureSnapshot } from "@/lib/live/lecture/session";
 
-// the lazy out-of-credits panel pulls in the billing and Supabase modules: not needed to render
-vi.mock("@/components/billing/OutOfCreditsPanel", () => ({ OutOfCreditsPanel: () => <p>panel</p> }));
+// the lazy out-of-ink panel pulls in the billing and Supabase modules: not needed to render
+vi.mock("@/components/billing/OutOfInkPanel", () => ({ OutOfInkPanel: () => <p>panel</p> }));
 
 // the panel itself (the page mounts `LectureBar`, which loads it lazily on the first start)
 import { LectureBarPanel as LectureBar } from "../LectureBarPanel";
@@ -126,9 +126,9 @@ describe("LectureBar", () => {
     expect(html).toContain(LECTURE_COPY.close);
   });
 
-  it("out of credits: the board's out-of-credits panel (its short form while it loads)", () => {
-    const html = render(<LectureBar lecture={handle("error", null, { error: "credits" })} />);
-    expect(html).toContain(LECTURE_COPY.errors.credits);
+  it("out of ink: the board's out-of-ink panel (its short form while it loads)", () => {
+    const html = render(<LectureBar lecture={handle("error", null, { error: "ink" })} />);
+    expect(html).toContain(LECTURE_COPY.errors.ink);
     expect(html).not.toContain(LECTURE_COPY.tryAgain);
   });
 });

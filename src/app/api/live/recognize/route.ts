@@ -9,7 +9,7 @@ import {
 } from "@/lib/live/contracts";
 import { getLiveModels } from "@/lib/env";
 import { json, requireUser } from "@/lib/server/auth";
-import { enforceCredits, runCharged } from "@/lib/server/billing";
+import { enforceInk, runCharged } from "@/lib/server/billing";
 import { errorResponse } from "@/lib/server/request";
 import { isMathpixAuthFailure, isMathpixConfigured, recognizeStrokes, type MathpixFailure } from "@/lib/server/mathpix";
 import { chatJson } from "@/lib/server/openrouter";
@@ -73,11 +73,11 @@ export function recognizeFailureHints(
 export async function POST(req: Request) {
   const ctx = await livePreamble(req, "recognize", "liveRecognize", RecognizeRequestSchema);
   if ("response" in ctx) return ctx.response;
-  const { requestId, token, log, data, startedAt } = ctx;
+  const { requestId, token, user, log, data, startedAt } = ctx;
 
-  // Charge credits before any recognizer call; runCharged refunds them on any non-2xx
+  // Charge ink before any recognizer call; runCharged refunds them on any non-2xx
   // (recognizer_failed, upstream error, timeout). GET is free. See src/lib/server/billing.ts.
-  const billing = await enforceCredits(
+  const billing = await enforceInk(
     { token, route: "live/recognize", requestId, model: isMathpixConfigured() ? "mathpix" : getLiveModels().vision },
     log,
   );
@@ -85,7 +85,7 @@ export async function POST(req: Request) {
 
   const payload: StrokePayload = { x: data.strokes.x, y: data.strokes.y, w: data.bounds.w, h: data.bounds.h };
 
-  return runCharged({ token, requestId }, log, async () => {
+  return runCharged({ userId: user.id, requestId }, log, async () => {
     let result: RecognizeResponse | null = null;
     /** set when Mathpix ran and produced nothing; drives the vision-fallback hints below */
     let mathpixFailure: MathpixFailure | null = null;

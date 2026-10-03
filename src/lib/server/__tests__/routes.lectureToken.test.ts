@@ -12,18 +12,18 @@ type RpcReply = { data?: unknown; error?: { message: string; code?: string } | n
 const fake = vi.hoisted(() => ({
   GOOD_TOKEN: "aaaa.bbbb.cccc",
   USER_ID: "11111111-2222-4333-8444-555555555555",
-  calls: [] as Array<{ fn: string; args?: Record<string, unknown> }>,
+  calls: [] as Array<{ fn: string; args?: Record<string, unknown>; key?: string }>,
   replies: {} as Record<string, (args?: Record<string, unknown>) => RpcReply>,
 }));
 
 vi.mock("@supabase/supabase-js", () => ({
-  createClient: () => ({
+  createClient: (_url: string, key: string) => ({
     auth: {
       getUser: async (token: string) =>
         token === fake.GOOD_TOKEN ? { data: { user: { id: fake.USER_ID, email: "qa@example.com" } }, error: null } : { data: { user: null }, error: { message: "invalid token" } },
     },
     rpc: async (fn: string, args?: Record<string, unknown>) => {
-      fake.calls.push({ fn, args });
+      fake.calls.push({ fn, args, key });
       const reply = fake.replies[fn]?.(args) ?? { error: { message: `no fake reply for ${fn}` } };
       if (reply instanceof Error) throw reply;
       return { data: reply.data ?? null, error: reply.error ?? null };
@@ -38,7 +38,7 @@ import { resetBillingWarnings, ROUTE_COSTS } from "@/lib/server/billing";
 import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rate-limit";
 import { POST as token } from "@/app/api/live/lecture/token/route";
 
-const ENV_VARS = ["BILLING_ENFORCE", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "ELEVENLABS_API_KEY"];
+const ENV_VARS = ["BILLING_ENFORCE", "SUPABASE_SERVICE_ROLE_KEY", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "ELEVENLABS_API_KEY"];
 const savedEnv: Record<string, string | undefined> = {};
 const KEY = "el-test-key-0123456789";
 
@@ -55,7 +55,7 @@ const upstream = (status: number, body: unknown) => fetchMock.mockResolvedValueO
 
 function expectChargedAndRefunded(): void {
   const charged = callsTo("consume_credits");
-  const refunded = callsTo("refund_credits");
+  const refunded = callsTo("refund_ink_for");
   expect(charged.length).toBe(1);
   expect(refunded.length).toBe(1);
   expect(refunded[0].args?.p_request_id).toBe(charged[0].args?.p_request_id);
@@ -67,6 +67,7 @@ beforeEach(() => {
     delete process.env[name];
   }
   process.env.NEXT_PUBLIC_SUPABASE_URL = "http://127.0.0.1:54321";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test";
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
   process.env.OPENROUTER_API_KEY = "sk-or-test";
   process.env.ELEVENLABS_API_KEY = KEY;
@@ -78,7 +79,7 @@ beforeEach(() => {
   for (const k of Object.keys(fake.replies)) delete fake.replies[k];
   fake.replies.rate_limit_hit = () => ({ data: { allowed: true, remaining: 5, retry_after_ms: 0, backend: "db" } });
   fake.replies.consume_credits = () => ({ data: { ok: true, remaining: 100, reason: null } });
-  fake.replies.refund_credits = () => ({ data: { refunded: 1, remaining: 101 } });
+  fake.replies.refund_ink_for = () => ({ data: { refunded: 1, remaining: 101 } });
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -124,7 +125,7 @@ describe("POST /api/live/lecture/token", () => {
     expect(body.message).toMatch(/not set up/);
     expect(res.headers.get("X-Request-Id")).toBeTruthy();
     expect(callsTo("consume_credits")).toEqual([]);
-    expect(callsTo("refund_credits")).toEqual([]);
+    expect(callsTo("refund_ink_for")).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -139,7 +140,7 @@ describe("POST /api/live/lecture/token", () => {
     fake.replies.consume_credits = () => ({ data: { ok: false, remaining: 0, reason: "insufficient_credits" } });
     const res = await token(request());
     expect(res.status).toBe(402);
-    expect(((await res.json()) as { error: string }).error).toBe("credits_exhausted");
+    expect(((await res.json()) as { error: string }).error).toBe("ink_empty");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -171,7 +172,7 @@ describe("POST /api/live/lecture/token", () => {
     expect(new Headers(init?.headers).get("xi-api-key")).toBe(KEY);
 
     expect(callsTo("consume_credits")[0].args).toMatchObject({ p_route: "live/listen", p_units: 1, p_model: "scribe_v2_realtime" });
-    expect(callsTo("refund_credits")).toEqual([]);
+    expect(callsTo("refund_ink_for")).toEqual([]);
   });
 
   it("an ElevenLabs error is a 502, and the same request id is refunded", async () => {

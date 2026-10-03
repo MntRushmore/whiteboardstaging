@@ -2,7 +2,7 @@
  * Pure mappings for the Live error surface: a thrown failure -> LiveError fields, and a
  * LiveError -> what the pill / hint card shows. No React, no store: unit-tested directly.
  */
-import { isApiError } from "@/lib/api-client";
+import { isApiError, isOutOfInk } from "@/lib/api-client";
 import type { LiveError, LiveErrorCode, LiveErrorKind } from "@/lib/live/liveStore";
 import { LIVE_COPY } from "./copy";
 
@@ -45,7 +45,7 @@ function withAttempts(message: string, attempts: number | undefined): string {
  *   fetch TypeError (online)                   -> network
  *   ApiError 401 / unauthorized                -> unauthorized
  *   ApiError 429 / rate_limited                -> rate_limited (+ retryAfterMs)
- *   ApiError 402 / credits_exhausted           -> credits (server message when it has one)
+ *   ApiError 402 / ink_empty                   -> ink (server message when it has one)
  *   ApiError 5xx, recognizer_failed, upstream  -> upstream
  *   *TimeoutError                              -> timeout
  *   { sse: true, message }  (SSE 'error' frame) -> upstream with the server message
@@ -68,8 +68,9 @@ export function classifyLiveFailure(err: unknown, ctx: ClassifyContext): LiveErr
       const retryAfterMs = readNumber(err, "retryAfterMs") ?? readNumber(err.details, "retryAfterMs") ?? RATE_LIMIT_FALLBACK_MS;
       return make("rate_limited", LIVE_COPY.errors.rateLimited(Math.ceil(retryAfterMs / 1000)), { retryAfterMs });
     }
-    if (err.status === 402 || err.code === "credits_exhausted") {
-      return make("credits", humanMessage(err) ?? LIVE_COPY.errors.credits);
+    if (isOutOfInk(err)) {
+      const inkNeeded = readNumber(err.body, "cost");
+      return make("ink", humanMessage(err) ?? LIVE_COPY.errors.ink, inkNeeded !== undefined ? { inkNeeded } : {});
     }
     if (err.status >= 500 || err.code === "recognizer_failed" || err.code === "upstream_error") {
       return make("upstream", LIVE_COPY.errors.upstream);
@@ -108,7 +109,7 @@ export interface LiveErrorView {
   title: string;
   detail?: string;
   /** which button leads out of the error; null when only Dismiss makes sense */
-  primary: "retry" | "signin" | "account" | null;
+  primary: "retry" | "signin" | "ink" | null;
   /** rate_limited: whole seconds until Retry becomes available (0 = now) */
   secondsLeft?: number;
   /** false while a rate-limit countdown is still running */
@@ -137,9 +138,9 @@ function liveErrorViewBase(err: LiveError, now: number): LiveErrorView {
       const title = secondsLeft > 0 ? LIVE_COPY.errors.rateLimited(secondsLeft) : LIVE_COPY.errors.rateLimitedReady;
       return { title, primary: "retry", secondsLeft, retryEnabled: secondsLeft === 0 };
     }
-    case "credits":
-      // 402: retrying cannot help; the way out is the account page (plan, reset date).
-      return { title: err.message, primary: "account", retryEnabled: false };
+    case "ink":
+      // 402: retrying cannot help; the way out is an ink pack (the board's ink dialog).
+      return { title: err.message, primary: "ink", retryEnabled: false };
     default:
       return { title: err.message, primary: "retry", retryEnabled: true };
   }

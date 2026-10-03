@@ -2,12 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api-client";
 import { ROUTE_COSTS } from "@/lib/server/billing";
 import { CHAT_TIMEOUT_MS, ChatTimeoutError, requestChat } from "@/lib/live/chat/client";
-import { CHAT_COPY, CHAT_CREDITS, CHAT_SUGGESTIONS, chatErrorFor, historyFor, problemFor, runNotes, sendsOnKey, type ChatMessage } from "../chatView";
+import { CHAT_COPY, CHAT_INK, CHAT_SUGGESTIONS, chatErrorFor, historyFor, problemFor, runNotes, sendsOnKey, type ChatMessage } from "../chatView";
 
 describe("board chat panel — view logic", () => {
   it("the cost note matches what the route charges", () => {
-    expect(CHAT_CREDITS).toBe(ROUTE_COSTS["live/chat"]);
-    expect(CHAT_COPY.cost).toBe("Each request uses 3 credits.");
+    expect(CHAT_INK).toBe(ROUTE_COSTS["live/chat"]);
+    expect(CHAT_COPY.cost).toBe("Each request uses 3 ink.");
   });
 
   it("four first asks: a problem set, a graph, a figure, more like these", () => {
@@ -15,8 +15,9 @@ describe("board chat panel — view logic", () => {
     expect(CHAT_SUGGESTIONS[3]).toMatch(/more like these/);
   });
 
-  it("failures: out of credits (no retry, the account page), rate limited with seconds, signed out, network, anything else", () => {
-    expect(chatErrorFor(new ApiError("x", 402, "credits_exhausted"))).toEqual({ kind: "credits", message: CHAT_COPY.errors.credits, retry: false });
+  it("failures: out of ink (no retry, the ink packs), rate limited with seconds, signed out, network, anything else", () => {
+    expect(chatErrorFor(new ApiError("x", 402, "ink_empty"))).toEqual({ kind: "ink", message: CHAT_COPY.errors.ink, retry: false });
+    expect(chatErrorFor(new ApiError("x", 503, "upstream_error"))).toMatchObject({ kind: "other", retry: true });
     expect(chatErrorFor(new ApiError("x", 429, "rate_limited", undefined, 4200))).toEqual({ kind: "rate_limited", message: "That's a lot of requests. Try again in 5 s.", retry: true });
     expect(chatErrorFor(new ApiError("x", 401, "unauthorized")).kind).toBe("unauthorized");
     expect(chatErrorFor(new ApiError("x", 502, "upstream_error"))).toEqual({ kind: "other", message: CHAT_COPY.errors.other, retry: true });

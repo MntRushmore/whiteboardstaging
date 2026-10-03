@@ -5,7 +5,7 @@ export type ApiErrorCode =
   | "unauthorized"
   | "invalid_request"
   | "rate_limited"
-  | "credits_exhausted"
+  | "ink_empty"
   | "upstream_error"
   | "feature_unavailable"
   | "internal_error"
@@ -59,7 +59,7 @@ const UNAUTHORIZED = () =>
  * and verifies it against Supabase Auth (`auth.getUser(token)`).
  *
  * Returns `{ user, token }` on success (`token` is the verified access token, so
- * callers can act AS the user against Supabase, e.g. `consumeCredits`) or
+ * callers can act AS the user against Supabase, e.g. `consumeInk`) or
  * `{ response }` (a ready-to-return 401 JSON response) on any failure.
  */
 export async function requireUser(

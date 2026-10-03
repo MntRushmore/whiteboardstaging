@@ -23,7 +23,7 @@
     padding-top: var(--space-10);
   }
 }
-/* The sign-in and credits notices, when either shows (CreditsBanner leaves a hidden marker). */
+/* The sign-in notice, when it shows. */
 .banners {
   display: grid;
   gap: var(--space-4);

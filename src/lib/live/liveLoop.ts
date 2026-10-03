@@ -13,7 +13,7 @@ import type {
   TLShapeId,
   TLShapePartial,
 } from "tldraw";
-import { isApiError } from "@/lib/api-client";
+import { isApiError, isOutOfInk } from "@/lib/api-client";
 import { clientMetric } from "@/lib/logger";
 import {
   GRAPH_COLORS,
@@ -216,7 +216,7 @@ interface LineRuntime {
   /** the tutor's mark wanted on this line (`markKey`), null for none; undefined until first render */
   markKey?: string | null;
   markWriter?: HandWriter | null;
-  /** its read failed for a reason that is not the ink (signed out, out of credits, rate limited): no "?" */
+  /** its read failed for a reason that is not the handwriting (signed out, out of ink, rate limited): no "?" */
   readRefused?: boolean;
   /** when a change of its mark was scheduled (`syncMark`) and has not finished writing; 0 when none */
   markBusySince?: number;
@@ -1475,7 +1475,7 @@ export class LiveLoop implements LiveController {
       // rate-limit and credit problems are the pill's job (their message is not about the line).
       if (failure && CHIP_CODES.has(failure.code)) this.applyFailedRead(lineId, LIVE_COPY.errors.recognizeChip);
       else {
-        // the pill (or the out-of-credits dialog) says why; writing the line again would not help
+        // the pill (or the out-of-ink dialog) says why; writing the line again would not help
         rt.readRefused = true;
         this.applyUnknown(lineId, "");
       }
@@ -2255,7 +2255,7 @@ export class LiveLoop implements LiveController {
    * Everywhere else today's silence stands: students write labels and scratch numbers. And no "?"
    * on a line that is still being read (the recognizer, the second reader), whose check is in
    * flight or waiting for the network, on a row of a proof, at the shape cap, or whose read was
-   * refused for a reason writing it again would not fix (signed out, out of credits). A drawing is
+   * refused for a reason writing it again would not fix (signed out, out of ink). A drawing is
    * never a line, so never gets one. Why it is there rides on the mark (`meta.markWhy`).
    */
   private questionFor(state: LiveLineState): UnjudgedReason | null {
@@ -3149,7 +3149,7 @@ export class LiveLoop implements LiveController {
   /**
    * Solve / Help on a drawing, or on a line beside one — or, in Solve, a figure the student labelled
    * with an unknown and left (`solveWantedFigures`, `unasked`). A crop of the drawing and its labels
-   * goes to `/api/live/setup` (a vision model; 2 credits, like a word problem), which reads the
+   * goes to `/api/live/setup` (a vision model; 2 ink, like a word problem), which reads the
    * figure as FACTS — which label is which angle or side, and what the drawing shows — and turns
    * them into equations (`planFigure`: `x + 40 + 65 = 180`, `2x + 10 = 70`); when its read does not
    * hold up, the model's own setup lines come instead. The board keeps nothing it cannot check
@@ -3244,7 +3244,7 @@ export class LiveLoop implements LiveController {
         } else if (this.isNetworkFailure(err)) {
           outcome = "stop";
           if (from) this.deferLlm("solve", opts.lineId);
-        } else if (isApiError(err) && (err.code === "unauthorized" || err.code === "credits_exhausted" || err.code === "rate_limited")) {
+        } else if (isApiError(err) && (err.code === "unauthorized" || isOutOfInk(err) || err.code === "rate_limited")) {
           outcome = "stop";
           // nothing the student asked for: no pill
           if (!unasked) this.fail(err, errCtx, retry);
@@ -3490,7 +3490,7 @@ export class LiveLoop implements LiveController {
           // the same deferral as a solve that could not reach the network
           outcome = "stop";
           this.deferLlm("solve", opts.lineId);
-        } else if (isApiError(err) && (err.code === "unauthorized" || err.code === "credits_exhausted" || err.code === "rate_limited")) {
+        } else if (isApiError(err) && (err.code === "unauthorized" || isOutOfInk(err) || err.code === "rate_limited")) {
           // not the setup's fault: the solve route would say exactly the same
           outcome = "stop";
           this.fail(err, errCtx, retry);

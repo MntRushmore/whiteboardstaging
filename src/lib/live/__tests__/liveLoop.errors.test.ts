@@ -201,7 +201,7 @@ describe("live loop — visible errors and retry", () => {
       retryAfterMs: 1500,
       message: "Slowing down — try again in 2 s",
     });
-    // sign-in / rate-limit / credits are the pill's job: no chip, no shape
+    // sign-in / rate-limit / ink are the pill's job: no chip, no shape
     expect(editor.shapesOfType("math")).toHaveLength(0);
 
     recognizeScript.push(new ApiError("Too many requests", 429, "rate_limited"));
@@ -210,14 +210,14 @@ describe("live loop — visible errors and retry", () => {
     expect(liveStore.lastError.get()).toMatchObject({ code: "rate_limited", retryAfterMs: RATE_LIMIT_FALLBACK_MS });
   });
 
-  it("401 -> unauthorized 'Please sign in again'; 402 -> credits with the server message", async () => {
+  it("401 -> unauthorized 'Please sign in again'; 402 -> ink with the server message", async () => {
     recognizeScript.push(new ApiError("You need to be signed in.", 401, "unauthorized"));
     await penUp(writeLine("2x=8", 100, 200, 40));
     expect(liveStore.lastError.get()).toMatchObject({ kind: "recognize", code: "unauthorized", message: "Please sign in again" });
 
-    recognizeScript.push(new ApiError("Your class is out of credits for today.", 402, "credits_exhausted"));
+    recognizeScript.push(new ApiError("You're out of ink. Grab an ink pack to keep going.", 402, "ink_empty"));
     await penUp(writeLine("x=4", 100, 300, 40));
-    expect(liveStore.lastError.get()).toMatchObject({ code: "credits", message: "Your class is out of credits for today." });
+    expect(liveStore.lastError.get()).toMatchObject({ code: "ink", message: "You're out of ink. Grab an ink pack to keep going." });
   });
 
   it("recognition timeout -> timeout error with a chip; retry re-runs it", async () => {

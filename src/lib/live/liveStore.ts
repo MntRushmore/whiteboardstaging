@@ -17,7 +17,7 @@ export interface LiveDiagram {
 /** Which network/model call of the Live layer failed. */
 export type LiveErrorKind = "capabilities" | "recognize" | "check" | "solve";
 /** Why it failed, mapped from the transport / API error contract. */
-export type LiveErrorCode = "network" | "unauthorized" | "rate_limited" | "credits" | "upstream" | "timeout" | "unknown";
+export type LiveErrorCode = "network" | "unauthorized" | "rate_limited" | "ink" | "upstream" | "timeout" | "unknown";
 
 /**
  * The one visible Live error. It never clears on a timer: only a successful retry, a
@@ -36,6 +36,8 @@ export interface LiveError {
   retryAfterMs?: number;
   /** check/solve: the student asked for this (badge tap / More help / Solve steps) */
   userAsked?: boolean;
+  /** ink (402): what the refused call costs (the 402's `cost`), so the error stays until it is affordable */
+  inkNeeded?: number;
   at: number;
 }
 
@@ -69,8 +71,19 @@ export function setLiveError(err: Omit<LiveError, "id" | "at"> & { at?: number }
   return full;
 }
 
-export function clearLiveError(): void {
-  if (liveStore.lastError.get() !== null) liveStore.lastError.set(null);
+/**
+ * The board's meter saw the balance: an "out of ink" error goes once the balance covers the call
+ * that was refused (its `inkNeeded`; 1 when the server did not say). A balance of 5 does not
+ * clear a refused worked solution (10).
+ */
+export function clearInkErrorIfAffordable(balance: number): void {
+  const current = liveStore.lastError.get();
+  if (current?.code === "ink" && balance >= Math.max(1, current.inkNeeded ?? 1)) liveStore.lastError.set(null);
+}
+
+export function clearLiveError(code?: LiveErrorCode): void {
+  const current = liveStore.lastError.get();
+  if (current !== null && (code === undefined || current.code === code)) liveStore.lastError.set(null);
 }
 
 /** Runs the loop's retry for the current error (no-op without a loop or an error). */

@@ -7,8 +7,8 @@ import { cn } from "@/lib/utils";
 import { LECTURE_COPY, lectureBarModel, type LectureBarModel } from "./lectureView";
 import { useLectureLive, type LectureHandle } from "./useLecture";
 
-/** Running out of credits: the board dialog's panel, fetched only when a 402 arrives (as in the Ask panel). */
-const OutOfCreditsPanel = lazy(() => import("@/components/billing/OutOfCreditsPanel").then((m) => ({ default: m.OutOfCreditsPanel })));
+/** Running out of ink: the board dialog's panel, fetched only when a 402 arrives (as in the Ask panel). */
+const OutOfInkPanel = lazy(() => import("@/components/billing/OutOfInkPanel").then((m) => ({ default: m.OutOfInkPanel })));
 
 /**
  * Lecture mode's floating panel: the consent note, then while the lecture runs the recording dot
@@ -18,7 +18,7 @@ const OutOfCreditsPanel = lazy(() => import("@/components/billing/OutOfCreditsPa
  * Draw that / Pause / Stop.
  *
  * Where: bottom centre, just above tldraw's toolbar — clear of the top bar (top left), the pen's
- * style button (top right), the screen strip (bottom left), the credits banner (bottom right) and
+ * style button (top right), the screen strip (bottom left) and
  * the Ask panel (docked beside the board, outside the canvas). It is where captions sit, which is
  * what the ticker is. At 400 px it spans the width less a 16 px margin each side.
  *
@@ -128,11 +128,11 @@ function Failure({ lecture, error }: { lecture: LectureHandle; error: LectureBar
   if (!error) return null;
   return (
     <div className="space-y-3.5 p-4" role="alert">
-      {error.credits ? (
+      {error.ink ? (
         // the board dialog's words and Upgrade buttons, inline (lazy: fetched only when needed)
         <div className="max-h-[min(55dvh,420px)] overflow-y-auto rounded-2xl border border-red-100 bg-red-50/60 px-3.5 py-3">
-          <Suspense fallback={<p className="text-sm font-medium text-red-800">{LECTURE_COPY.errors.credits}</p>}>
-            <OutOfCreditsPanel variant="inline" titleAs="p" />
+          <Suspense fallback={<p className="text-sm font-medium text-red-800">{LECTURE_COPY.errors.ink}</p>}>
+            <OutOfInkPanel variant="inline" titleAs="p" outOfInk />
           </Suspense>
         </div>
       ) : (

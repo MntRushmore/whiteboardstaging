@@ -78,6 +78,9 @@ export async function parseJsonBody<S extends z.ZodTypeAny>(
 /* Error mapping                                                              */
 /* ------------------------------------------------------------------------- */
 
+/** What the student reads when the provider account behind the tutor has run dry. */
+export const PROVIDER_UNAVAILABLE_MESSAGE = "The tutor is unavailable right now. Try again in a few minutes.";
+
 /**
  * Map an error thrown inside a route handler to the shared error contract and
  * log it with the route's child logger.
@@ -88,8 +91,10 @@ export function errorResponse(
   context: Record<string, unknown> = {},
 ): Response {
   if (err instanceof CreditsExhaustedError) {
-    log.warn({ ...context }, "OpenRouter credits exhausted");
-    return json(402, "credits_exhausted", err.message);
+    // The operator's provider account, not the student's ink: a 503 the student can only wait out
+    // (a 402 would tell them to buy ink that could not help). Logged as an error so it gets seen.
+    log.error({ ...context }, "OpenRouter credits exhausted: top up the provider account");
+    return json(503, "upstream_error", PROVIDER_UNAVAILABLE_MESSAGE);
   }
 
   if (err instanceof UpstreamError) {

@@ -1,7 +1,7 @@
 /**
  * POST /api/live/lecture/sketch (lecture mode's illustrator), driven through its real handler with
  * fakes for supabase-js (auth, the rate-limit and credit RPCs, the user's own `usage_events` rows
- * that `consume_credits` writes and `refund_credits` deletes) and OpenRouter (`openrouterChat`).
+ * that `consume_credits` writes and `refund_ink_for` deletes) and OpenRouter (`openrouterChat`).
  * The Live contract: 401 before anything, 429 before the charge, zod 400 before the charge. Billed
  * PER PANEL: `live/sketch` (4 credits) under the request's own id, the one `X-Request-Id` carries;
  * a drawing that arrives keeps the charge, and no usable drawing at all (after the retry and the
@@ -14,19 +14,19 @@ type RpcReply = { data?: unknown; error?: { message: string; code?: string } | n
 const fake = vi.hoisted(() => ({
   GOOD_TOKEN: "aaaa.bbbb.cccc",
   USER_ID: "11111111-2222-4333-8444-555555555555",
-  calls: [] as Array<{ fn: string; args?: Record<string, unknown> }>,
+  calls: [] as Array<{ fn: string; args?: Record<string, unknown>; key?: string }>,
   replies: {} as Record<string, (args?: Record<string, unknown>) => RpcReply>,
   rows: [] as Array<{ user_id: string; request_id: string; units: number }>,
 }));
 
 vi.mock("@supabase/supabase-js", () => ({
-  createClient: () => ({
+  createClient: (_url: string, key: string) => ({
     auth: {
       getUser: async (token: string) =>
         token === fake.GOOD_TOKEN ? { data: { user: { id: fake.USER_ID, email: "qa@example.com" } }, error: null } : { data: { user: null }, error: { message: "invalid token" } },
     },
     rpc: async (fn: string, args?: Record<string, unknown>) => {
-      fake.calls.push({ fn, args });
+      fake.calls.push({ fn, args, key });
       const reply = fake.replies[fn]?.(args) ?? { error: { message: `no fake reply for ${fn}` } };
       if (reply instanceof Error) throw reply;
       return { data: reply.data ?? null, error: reply.error ?? null };
@@ -49,7 +49,7 @@ import { SKETCH_BUDGET_MS, SKETCH_MAX_TOKENS } from "@/lib/server/sketch/illustr
 import { SKETCH_SYSTEM_PROMPT } from "@/lib/server/sketch/prompt";
 import { maxDuration, POST as sketch } from "@/app/api/live/lecture/sketch/route";
 
-const ENV_VARS = ["BILLING_ENFORCE", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "LIVE_MODEL_SKETCH"];
+const ENV_VARS = ["BILLING_ENFORCE", "SUPABASE_SERVICE_ROLE_KEY", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "LIVE_MODEL_SKETCH"];
 const savedEnv: Record<string, string | undefined> = {};
 const BODY = {
   boardId: "board-1",
@@ -87,6 +87,7 @@ beforeEach(() => {
     delete process.env[name];
   }
   process.env.NEXT_PUBLIC_SUPABASE_URL = "http://127.0.0.1:54321";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test";
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
   process.env.OPENROUTER_API_KEY = "sk-or-test";
   resetServerEnvCache();
@@ -101,7 +102,7 @@ beforeEach(() => {
     fake.rows.push({ user_id: fake.USER_ID, request_id: String(args?.p_request_id), units: Number(args?.p_units) });
     return { data: { ok: true, remaining: 100, reason: null } };
   };
-  fake.replies.refund_credits = (args) => {
+  fake.replies.refund_ink_for = (args) => {
     const before = fake.rows.length;
     fake.rows.splice(0, fake.rows.length, ...fake.rows.filter((r) => r.request_id !== args?.p_request_id));
     return { data: { refunded: before - fake.rows.length, remaining: 104 } };
@@ -153,7 +154,7 @@ describe("live/lecture/sketch", () => {
     expect(charge.args).toMatchObject({ p_route: "live/sketch", p_units: ROUTE_COSTS["live/sketch"], p_model: LIVE_MODELS.sketch });
     expect(ROUTE_COSTS["live/sketch"]).toBe(4);
     expect(res.headers.get("X-Request-Id")).toBe(charge.args?.p_request_id);
-    expect(callsTo("refund_credits")).toEqual([]);
+    expect(callsTo("refund_ink_for")).toEqual([]);
   });
 
   it("the model is asked as the illustrator asks: the house prompt, the panel and the cast, the frame's viewBox, no JSON mode", async () => {
@@ -184,7 +185,7 @@ describe("live/lecture/sketch", () => {
     res = await sketch(request(BODY));
     expect(SketchResponseSchema.parse(await res.json()).model).toBe(LIVE_MODELS.sketchFallback);
     expect(modelsAsked()).toEqual([LIVE_MODELS.sketch, LIVE_MODELS.sketchFallback]);
-    expect(callsTo("refund_credits")).toEqual([]);
+    expect(callsTo("refund_ink_for")).toEqual([]);
     expect(fake.rows).toHaveLength(2);
   });
 
@@ -195,7 +196,7 @@ describe("live/lecture/sketch", () => {
     expect(await res.json()).toMatchObject({ error: "upstream_error" });
     expect(modelsAsked()).toEqual([LIVE_MODELS.sketch, LIVE_MODELS.sketch, LIVE_MODELS.sketchFallback]);
     const charged = callsTo("consume_credits")[0].args?.p_request_id;
-    expect(callsTo("refund_credits").map((c) => c.args)).toEqual([{ p_request_id: charged }]);
+    expect(callsTo("refund_ink_for").map((c) => c.args)).toEqual([{ p_user_id: fake.USER_ID, p_request_id: charged }]);
     expect(res.headers.get("X-Request-Id")).toBe(charged);
     expect(fake.rows).toEqual([]);
   });
@@ -204,7 +205,7 @@ describe("live/lecture/sketch", () => {
     fake.replies.consume_credits = () => ({ data: { ok: false, remaining: 2, reason: "insufficient_credits" } });
     const res = await sketch(request(BODY));
     expect(res.status).toBe(402);
-    expect(await res.json()).toMatchObject({ error: "credits_exhausted" });
+    expect(await res.json()).toMatchObject({ error: "ink_empty" });
     expect(openrouterChat).not.toHaveBeenCalled();
   });
 

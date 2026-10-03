@@ -1,18 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { ROUTE_COSTS } from "@/lib/server/billing";
+import { inkLabel } from "../inkSummary";
 import {
   USAGE_KINDS,
+  USAGE_WINDOW_DAYS,
+  canonicalRouteKey,
   countLabel,
-  creditPriceSentence,
-  creditsLabel,
   dayLabel,
+  inkPriceSentence,
   localDayKey,
   parseUsageDayRows,
   usageKindFor,
   usageSummaryFor,
   type UsageDayRow,
 } from "../usage";
-import { canonicalRouteKey } from "../viewModel";
 
 describe("usage kinds", () => {
   it("names every billed route, at the price the server charges", () => {
@@ -57,16 +58,20 @@ describe("usage kinds", () => {
     expect(countLabel(usageKindFor("live/reread"), 23)).toBe("23 lines");
     expect(countLabel(usageKindFor("live/solve"), 1)).toBe("1 solution");
     expect(countLabel(usageKindFor("live/proof"), 11)).toBe("11 times");
-    expect(creditsLabel(1)).toBe("1 credit");
-    expect(creditsLabel(1645)).toBe("1,645 credits");
-    expect(creditsLabel(0)).toBe("0 credits");
   });
 
-  it("says honestly what a credit buys", () => {
-    expect(creditPriceSentence()).toBe(
-      "Most of the tutor's work is reading your handwriting, at 1 credit a read. " +
-        "Setting up a word problem costs 2, checking your work 3, and a worked solution 10.",
+  it("says honestly what ink buys, and that drawing is free", () => {
+    expect(inkPriceSentence()).toBe(
+      "Most of the tutor's work is reading your handwriting, at 1 ink a line. " +
+        "Setting up a word problem costs 2, checking your work 3, and a worked solution 10. Drawing on your own is free.",
     );
+    expect(USAGE_WINDOW_DAYS).toBe(30);
+  });
+
+  it("folds every spelling of a route to one key", () => {
+    expect(canonicalRouteKey("/api/live/recognize")).toBe("live-recognize");
+    expect(canonicalRouteKey(" Live_Check ")).toBe("live-check");
+    expect(canonicalRouteKey("//")).toBe("");
   });
 });
 
@@ -114,32 +119,32 @@ describe("usageSummaryFor", () => {
     { day: "2026-09-18", route: "generate-solution", events: 4, credits: 100 },
   ];
 
-  it("sums each day, newest first, with its kinds by credits", () => {
+  it("sums each day, newest first, with its kinds by ink", () => {
     const { days } = usageSummaryFor([...rows].reverse(), "2026-09-27");
-    expect(days.map((d) => [d.day, d.label, d.date, d.credits, d.count])).toEqual([
+    expect(days.map((d) => [d.day, d.label, d.date, d.ink, d.count])).toEqual([
       ["2026-09-27", "Today", "Sep 27", 415, 376],
       ["2026-09-26", "Yesterday", "Sep 26", 48, 38],
       ["2026-09-18", "Fri, Sep 18", "", 100, 4],
     ]);
     expect(days[0].kinds).toEqual([
-      { key: "live-recognize", label: "Handwriting reading", count: 345, countLabel: "345 reads", credits: 345 },
-      { key: "live-setup", label: "Word-problem setup", count: 30, countLabel: "30 setups", credits: 60 },
-      { key: "live-solve", label: "Worked solutions", count: 1, countLabel: "1 solution", credits: 10 },
+      { key: "live-recognize", label: "Handwriting reading", count: 345, countLabel: "345 reads", ink: 345 },
+      { key: "live-setup", label: "Word-problem setup", count: 30, countLabel: "30 setups", ink: 60 },
+      { key: "live-solve", label: "Worked solutions", count: 1, countLabel: "1 solution", ink: 10 },
     ]);
   });
 
   it("sums the whole period by kind and in total", () => {
     const summary = usageSummaryFor(rows, "2026-09-27");
-    expect(summary.kinds.map((k) => `${k.label} · ${k.countLabel} · ${creditsLabel(k.credits)}`)).toEqual([
-      "Handwriting reading · 378 reads · 378 credits",
-      "Drawn help (retired) · 4 times · 100 credits",
-      "Word-problem setup · 30 setups · 60 credits",
-      "Checking your work · 5 checks · 15 credits",
-      "Worked solutions · 1 solution · 10 credits",
+    expect(summary.kinds.map((k) => `${k.label} · ${k.countLabel} · ${inkLabel(k.ink)}`)).toEqual([
+      "Handwriting reading · 378 reads · 378 ink",
+      "Drawn help (retired) · 4 times · 100 ink",
+      "Word-problem setup · 30 setups · 60 ink",
+      "Checking your work · 5 checks · 15 ink",
+      "Worked solutions · 1 solution · 10 ink",
     ]);
-    expect(summary.credits).toBe(563);
+    expect(summary.ink).toBe(563);
     expect(summary.count).toBe(418);
-    expect(summary.credits).toBe(summary.days.reduce((n, d) => n + d.credits, 0));
+    expect(summary.ink).toBe(summary.days.reduce((n, d) => n + d.ink, 0));
   });
 
   it("breaks ties by count, then by name", () => {
@@ -154,8 +159,8 @@ describe("usageSummaryFor", () => {
     expect(kinds.map((k) => k.label)).toEqual(["Handwriting reading", "Checking your work", "Voice tutor (retired)"]);
   });
 
-  it("is empty for a month with no usage", () => {
-    expect(usageSummaryFor([], "2026-09-27")).toEqual({ days: [], kinds: [], credits: 0, count: 0 });
+  it("is empty for a window with no usage", () => {
+    expect(usageSummaryFor([], "2026-09-27")).toEqual({ days: [], kinds: [], ink: 0, count: 0 });
   });
 });
 

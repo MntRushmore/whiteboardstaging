@@ -39,7 +39,7 @@ export function sectionReducer<T>(state: SectionState<T>, action: SectionAction<
 export type AccountPageState = "loading" | "error" | "ready";
 
 /**
- * The plan card is the page: while the summary loads the page shows a
+ * The ink card is the page: while the summary loads the page shows a
  * skeleton; if it fails (and nothing was loaded before) the page shows one
  * error panel with Retry; otherwise the cards render and each handles its own
  * failure inline.
@@ -79,16 +79,14 @@ export function deleteConfirmed(typed: string): boolean {
 
 export const ACCOUNT_COPY = {
   title: "Account",
-  subtitle: "Your plan, credits and usage.",
+  subtitle: "Your ink, purchases and usage.",
   back: "Back to boards",
   loadFailedTitle: "Couldn't load your account",
   loadFallback: "Something interrupted the request. Retry in a moment.",
-  plansFailedTitle: "Couldn't load plans",
-  plansFallback: "The plan list didn't arrive. Retry in a moment.",
   usageFailedTitle: "Couldn't load your usage",
   usageFallback: "The usage list didn't arrive. Retry in a moment.",
-  usageEmpty: "No usage yet this month",
-  usageEmptyHint: "Credits are only spent when the tutor does work for you.",
+  usageEmpty: "No ink used in the last 30 days",
+  usageEmptyHint: "Ink is only spent when the tutor does work for you. Drawing on your own is free.",
   profileFailedTitle: "Couldn't load your profile",
   profileFallback: "Your display name didn't load. Retry in a moment.",
   saveNameFailedTitle: "Couldn't save your name",
