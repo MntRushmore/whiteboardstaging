@@ -195,6 +195,16 @@ export const API_ROUTES = Object.freeze([
     status: "active",
   },
   {
+    path: "/api/live/title",
+    file: "src/app/api/live/title/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "liveTitle",
+    body: "zod",
+    purpose: "Live Math: a board's smart name from the maths on it (uncharged)",
+    status: "active",
+  },
+  {
     path: "/api/live/reread",
     file: "src/app/api/live/reread/route.ts",
     methods: ["POST"],

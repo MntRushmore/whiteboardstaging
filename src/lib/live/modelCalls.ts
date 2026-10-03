@@ -10,6 +10,7 @@ import {
   type SetupResponse,
 } from "./contracts";
 import type { FetchJson } from "./recognizeClient";
+import { TITLE_PATH, TitleResponseSchema, type TitleRequest, type TitleResponse } from "@/lib/boards/smartTitle";
 
 /**
  * The two non-streaming Live model calls: POST /api/live/setup (a word problem's equations) and
@@ -28,6 +29,13 @@ export interface CallOptions {
 export async function requestSetup(req: SetupRequest, opts: CallOptions = {}, fetchJson: FetchJson = apiJson as FetchJson): Promise<SetupResponse> {
   const parsed = SetupResponseSchema.safeParse(await fetchJson(SETUP_PATH, req, { signal: opts.signal }));
   if (!parsed.success) throw new Error("Setup returned an unexpected response");
+  return parsed.data;
+}
+
+/** POST /api/live/title: a board's smart name (`src/lib/boards/smartTitle.ts`). */
+export async function requestTitle(req: TitleRequest, opts: CallOptions = {}, fetchJson: FetchJson = apiJson as FetchJson): Promise<TitleResponse> {
+  const parsed = TitleResponseSchema.safeParse(await fetchJson(TITLE_PATH, req, { signal: opts.signal }));
+  if (!parsed.success) throw new Error("Title returned an unexpected response");
   return parsed.data;
 }
 

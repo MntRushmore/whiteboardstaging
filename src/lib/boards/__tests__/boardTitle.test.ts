@@ -1,15 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_BOARD_TITLE,
-  INITIAL_AUTO_TITLE,
   MAX_AUTO_TITLE_LENGTH,
-  afterTitleWrite,
   boardTitleFromLatex,
   hasMathContent,
   isDefaultBoardTitle,
   latexToPlainText,
   pickTitleLine,
-  planTitleWrite,
 } from "../boardTitle";
 
 describe("latexToPlainText", () => {
@@ -144,35 +141,5 @@ describe("isDefaultBoardTitle", () => {
     expect(isDefaultBoardTitle(null)).toBe(true);
     expect(isDefaultBoardTitle("Untitled")).toBe(false);
     expect(isDefaultBoardTitle("Homework 3")).toBe(false);
-  });
-});
-
-describe("planTitleWrite / afterTitleWrite", () => {
-  const first = { lineId: "l1", title: "2x = 8" };
-
-  it("waits for a line to be read", () => {
-    expect(planTitleWrite(INITIAL_AUTO_TITLE, null)).toBeNull();
-  });
-
-  it("names a default-titled board, conditional on the title still being the default", () => {
-    expect(planTitleWrite(INITIAL_AUTO_TITLE, first)).toEqual({ expected: DEFAULT_BOARD_TITLE, title: "2x = 8", lineId: "l1" });
-  });
-
-  it("stops for the session when the stored title was not the default (the student named it)", () => {
-    const plan = planTitleWrite(INITIAL_AUTO_TITLE, first)!;
-    const state = afterTitleWrite(INITIAL_AUTO_TITLE, plan, false);
-    expect(state.stopped).toBe(true);
-    expect(planTitleWrite(state, { lineId: "l1", title: "2x = 9" })).toBeNull();
-  });
-
-  it("follows a re-read of the same line, but not a different first line", () => {
-    const named = afterTitleWrite(INITIAL_AUTO_TITLE, planTitleWrite(INITIAL_AUTO_TITLE, first)!, true);
-    expect(named).toEqual({ expected: "2x = 8", lineId: "l1", stopped: false });
-    // nothing changed: nothing to write
-    expect(planTitleWrite(named, first)).toBeNull();
-    // the second reader corrected the same line: rename, expecting our own previous name
-    expect(planTitleWrite(named, { lineId: "l1", title: "2x = 6" })).toEqual({ expected: "2x = 8", title: "2x = 6", lineId: "l1" });
-    // another screen, or a line written above: the board keeps its name
-    expect(planTitleWrite(named, { lineId: "l9", title: "y = x²" })).toBeNull();
   });
 });

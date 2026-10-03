@@ -299,7 +299,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   // concurrency on `version`, size guard + Storage offload): src/hooks/useSnapshotSave.ts
   const { sync, retry: retrySave } = useSnapshotSave(editor, id, initialVersion);
   // An "Untitled Whiteboard" is named after its first line of maths once it saves.
-  useBoardAutoTitle(id, sync);
+  useBoardAutoTitle(editor, id, sync);
 
   const narrowBoard = screenStripSlot(useBreakpoint()) === "corner";
   // The meter says "Get ink" whenever ink is low or gone; the Live pill's out-of-ink error then
