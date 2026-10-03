@@ -168,6 +168,16 @@
   background-color: #ffffff !important;
 }
 
+/* Keyboard focus on the board's own controls (the top bar, the status pill and its menu button,
+ * the screen strip, hint cards, the lecture bar) and in the Ask panel. tldraw sets `outline: none`
+ * on everything inside its container and shadcn's ring is a 50 % light grey (about 1.4:1 on
+ * white), so tabbing through the bar showed nothing on most of them. A near-black ring, the
+ * platform pages' focus colour (3.8:1); tldraw's own buttons keep their blue one. */
+:is(.tl-container, [data-board-chat]) :is(button, a, [role="tab"]):not(.tlui-button):focus-visible {
+  outline: 2px solid rgb(0 0 0 / 0.55);
+  outline-offset: 2px;
+}
+
 /* ---------------------------------------------------------------------------
  * Live Math layer (src/components/live, src/shapes). Tailwind utilities cover
  * layout; these rules hold only what utilities cannot: keyframes, the pill

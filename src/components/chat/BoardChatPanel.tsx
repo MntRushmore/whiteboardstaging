@@ -85,7 +85,7 @@ export function BoardChatPanel({ boardId, controller, onClose }: BoardChatPanelP
   };
 
   return (
-    <section ref={panelRef} aria-label={CHAT_COPY.title} className="flex h-full min-h-0 flex-col bg-white text-gray-900">
+    <section ref={panelRef} aria-label={CHAT_COPY.title} data-board-chat="" className="flex h-full min-h-0 flex-col bg-white text-gray-900">
       <header className="flex shrink-0 items-center justify-between border-b border-gray-200 px-4 py-2.5">
         <h2 className="text-sm font-semibold">{CHAT_COPY.title}</h2>
         <Button variant="ghost" size="icon-sm" aria-label={CHAT_COPY.close} title={`${CHAT_COPY.close} (Esc)`} onClick={onClose}>

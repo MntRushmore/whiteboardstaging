@@ -580,7 +580,8 @@ export default function BoardPage() {
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0 }} className="flex flex-col md:landscape:flex-row">
+    // touch-action: a quick double tap on the bar's buttons must not zoom the page on an iPad
+    <div style={{ position: "fixed", inset: 0, touchAction: "manipulation" }} className="flex flex-col md:landscape:flex-row">
       {/* the board refits whenever this box changes size (useScreenCamera): the whole screen stays in view */}
       <div className="relative min-h-0 min-w-0 flex-1">
       <Tldraw
