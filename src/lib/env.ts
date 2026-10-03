@@ -62,6 +62,9 @@ const envSchema = z.object({
   STRIPE_LIVEMODE: optionalString,
   INK_PRICE_MAP: optionalString,
   NEXT_PUBLIC_BILLING_LINKS: optionalString,
+  // Agathon Unlimited: its Payment Link and the customer portal's login page (src/lib/billing/unlimited.ts).
+  NEXT_PUBLIC_UNLIMITED_LINK: optionalString,
+  NEXT_PUBLIC_BILLING_PORTAL_URL: optionalString,
 
   // Rate limiting: 'db' (default; shared counters via rate_limit_hit RPC) or 'memory' (per instance).
   RATE_LIMIT_BACKEND: optionalString,
@@ -74,8 +77,6 @@ const envSchema = z.object({
   RESEND_API_KEY: optionalString,
   // `Name <address>` on a domain verified in Resend; default `Agathon <hello@mail.agathon.app>`.
   EMAIL_FROM: optionalString,
-  // Stripe's customer portal login link: the trial reminder's "Manage or cancel".
-  NEXT_PUBLIC_BILLING_PORTAL_URL: optionalString,
 });
 
 export type ServerEnv = z.infer<typeof envSchema>;

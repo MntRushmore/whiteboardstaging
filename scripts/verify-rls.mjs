@@ -6,15 +6,18 @@
  *   node scripts/verify-rls.mjs
  *
  * Covers every public table (including the accounts & billing tables: plans,
- * profiles, usage_events, credit_grants, billing_events, rate_limit_counters, and
- * the ink tables ink_packs, ink_grants, ink_purchases, ink_checkout_reviews, and the
- * service-role-only email_log), the
+ * profiles, usage_events, credit_grants, billing_events, rate_limit_counters, the
+ * ink tables ink_packs, ink_grants, ink_purchases, ink_checkout_reviews, Agathon
+ * Unlimited's unlimited_subscriptions and unlimited_usage, and the service-role-only
+ * email_log), the
  * storage buckets, the version and history triggers and the RPCs (consume_credits, credit_summary,
  * ink_summary, rate_limit_hit, usage_by_day, save_onboarding, delete_own_account;
  * and that a user can call none of the service-role RPCs refund_credits,
  * refund_ink_for, grant_ink_purchase, reverse_ink_purchase, record_ink_checkout_review,
- * grant_ink, prune_whiteboard_snapshots). Two throwaway users A and B are created up front; the
- * delete_own_account check creates a third (C) and deletes it through the RPC.
+ * grant_ink, prune_whiteboard_snapshots, link_unlimited_checkout, apply_unlimited_subscription,
+ * nor the internal has_unlimited). Two throwaway users A and B are created up front; the
+ * delete_own_account check creates a third (C) and deletes it through the RPC, and the Unlimited
+ * check a fourth, whose deletion must wait until its plan is set to cancel.
  *
  * Env (read from .env.local when not already set):
  *   NEXT_PUBLIC_SUPABASE_URL        project URL (falls back to `npx supabase status` for the local stack)
@@ -22,7 +25,8 @@
  *   SUPABASE_SERVICE_ROLE_KEY       optional: creates pre-confirmed throwaway users and deletes them afterwards;
  *                                   also enables the service-role halves: refunds of failed calls
  *                                   (refund_ink_for), the ink purchase + refund round trip, the amount
- *                                   check and review queue, and the ledgers' delete guards
+ *                                   check and review queue, the ledgers' delete guards, and an
+ *                                   Unlimited plan's whole life (its rows are removed afterwards)
  *   VERIFY_EMAIL_DOMAIN             optional: domain for the throwaway emails (default example.com)
  *
  * Waits up to 3 minutes for /auth/v1/health before running anything.

@@ -50,6 +50,9 @@ export const PUBLIC_TABLES = [
   "ink_checkout_reviews",
   // transactional email (20261003030000_email_log.sql)
   "email_log",
+  // Agathon Unlimited (20261003020000_unlimited.sql)
+  "unlimited_subscriptions",
+  "unlimited_usage",
 ];
 
 /** Keys every rate_limit_hit() payload must carry. */
@@ -202,6 +205,10 @@ export function minimalInsert(table, userId = ZERO_UUID) {
       return { checkout_session_id: `cs_rls_verify_${uuid()}`, reason: "rls-verify", user_id: userId };
     case "email_log":
       return { user_id: userId, kind: "welcome", ref: "" };
+    case "unlimited_subscriptions":
+      return { stripe_subscription_id: `sub_rls_verify_${uuid()}`, user_id: userId, status: "active" };
+    case "unlimited_usage":
+      return { user_id: userId, route: "rls-verify", units: 1 };
     default:
       return {};
   }
@@ -1561,6 +1568,182 @@ export async function checkInkPurchases({ a, b, anon, service }) {
   return out;
 }
 
+/**
+ * Agathon Unlimited (migration 20261003020000_unlimited.sql). Nothing a user token can reach
+ * gives anyone the plan: the subscription rows are the webhook's (service role) and readable only
+ * by their owner, the fair-use record is written only by consume_credits(), and the plan's RPCs
+ * (link_unlimited_checkout, apply_unlimited_subscription, has_unlimited) are not callable by users.
+ * With the service role: a linked trialing plan makes A's help free (no ink spent, no usage row,
+ * one fair-use row per request id), a refund of such a call gives back nothing (no ink minted), an
+ * older event never overwrites a newer one, account deletion waits until the plan is set to cancel,
+ * and a cancelled plan spends ink again. The check's subscription rows are removed at the end
+ * (they outlive the throwaway users, and this also runs against production).
+ * @param {CheckContext} ctx
+ */
+export async function checkUnlimited({ a, b, anon, service, newUser }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const tag = uuid().slice(0, 8);
+  const subA = `sub_rls_verify_${tag}_a`;
+
+  const none = await a.rest("GET", "unlimited_subscriptions", { query: { select: "id" } });
+  out.push(result("unlimited_subscriptions: A has none to begin with (select returns [])", affectedNoRows(none), describe(none)));
+  const forged = await a.rest("POST", "unlimited_subscriptions", { body: { stripe_subscription_id: subA, user_id: a.userId, status: "active" }, prefer: "return=minimal" });
+  out.push(result("unlimited_subscriptions: A cannot give themselves the plan (insert denied)", isDenied(forged), describe(forged)));
+  const usageIns = await a.rest("POST", "unlimited_usage", { body: minimalInsert("unlimited_usage", a.userId ?? ZERO_UUID), prefer: "return=minimal" });
+  out.push(result("unlimited_usage: A cannot write the fair-use record (insert denied)", isDenied(usageIns), describe(usageIns)));
+
+  const applyArgs = (status, at, extra = {}) => ({
+    p_subscription_id: subA,
+    p_customer_id: `cus_rls_verify_${tag}`,
+    p_status: status,
+    p_trial_end: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+    p_current_period_end: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+    p_cancel_at_period_end: false,
+    p_livemode: false,
+    p_event_at: new Date(at).toISOString(),
+    ...extra,
+  });
+  const t0 = Date.now() - 60_000;
+  for (const [who, client] of /** @type {const} */ ([["A", a], ["anon", anon]])) {
+    const link = await rpc(client, "link_unlimited_checkout", { p_subscription_id: subA, p_user_id: a.userId });
+    out.push(result(`link_unlimited_checkout: ${who} cannot call it`, isDenied(link), describe(link)));
+    const apply = await rpc(client, "apply_unlimited_subscription", applyArgs("active", t0));
+    out.push(result(`apply_unlimited_subscription: ${who} cannot call it`, isDenied(apply), describe(apply)));
+  }
+  const probe = await rpc(a, "has_unlimited", { p_uid: b.userId });
+  out.push(result("has_unlimited: A cannot call it (nobody asks about another account's plan)", isDenied(probe), describe(probe)));
+
+  const a0 = asObject((await rpc(a, "ink_summary")).body);
+  out.push(
+    result(
+      "ink_summary: A's plan reads none (no subscription, help spends ink)",
+      a0?.unlimited?.status === "none" && a0?.unlimited?.unlimited === false,
+      JSON.stringify(a0?.unlimited ?? null).slice(0, 200),
+    ),
+  );
+
+  if (!service) {
+    out.push(result("Agathon Unlimited with the service role (skipped: no service role client)", true));
+    return out;
+  }
+
+  // The subscription's own event first (no user yet), then the checkout links it: either order works.
+  const applied = await rpc(service, "apply_unlimited_subscription", applyArgs("trialing", t0));
+  const linked = await rpc(service, "link_unlimited_checkout", { p_subscription_id: subA, p_user_id: a.userId, p_checkout_session_id: `cs_rls_verify_${tag}` });
+  const a1 = asObject((await rpc(a, "ink_summary")).body);
+  out.push(
+    result(
+      "apply + link (service role): A's free week is on (ink_summary reads trialing, unlimited)",
+      isOk(applied) && isOk(linked) && asObject(linked.body)?.linked === true && a1?.unlimited?.status === "trialing" && a1?.unlimited?.unlimited === true,
+      `${describe(linked)} / ${JSON.stringify(a1?.unlimited ?? null)}`.slice(0, 200),
+    ),
+  );
+  const own = await a.rest("GET", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${subA}`, select: "user_id,status" } });
+  out.push(result("unlimited_subscriptions: A reads own subscription", isOk(own) && rows(own).length === 1 && rows(own)[0].user_id === a.userId, describe(own)));
+  const theirs = await b.rest("GET", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${subA}`, select: "id" } });
+  out.push(result("unlimited_subscriptions: B cannot read A's subscription", affectedNoRows(theirs), describe(theirs)));
+  const hijack = await b.rest("PATCH", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${subA}` }, body: { user_id: b.userId }, prefer: "return=representation" });
+  out.push(result("unlimited_subscriptions: B cannot move A's plan to themselves (update denied)", isDenied(hijack), describe(hijack)));
+
+  const request = `rls-verify-unlimited-${tag}`;
+  const spend = await rpc(a, "consume_credits", { p_route: "rls-verify-unlimited", p_units: 10, p_request_id: request });
+  const again = await rpc(a, "consume_credits", { p_route: "rls-verify-unlimited", p_units: 10, p_request_id: request });
+  const a2 = asObject((await rpc(a, "ink_summary")).body);
+  out.push(
+    result(
+      "consume_credits: on Unlimited, A's help spends no ink (ok, unlimited, balance unchanged)",
+      isOk(spend) && asObject(spend.body)?.ok === true && asObject(spend.body)?.unlimited === true && a2?.balance === a1?.balance && a2?.used === a1?.used,
+      `${describe(spend)} / ${JSON.stringify(a2)}`.slice(0, 200),
+    ),
+  );
+  const ledger = await a.rest("GET", "usage_events", { query: { request_id: `eq.${request}`, select: "id" } });
+  out.push(result("usage_events: no ink ledger row for a subscriber's call", affectedNoRows(ledger), describe(ledger)));
+  const counted = await a.rest("GET", "unlimited_usage", { query: { request_id: `eq.${request}`, select: "units" } });
+  out.push(
+    result(
+      "unlimited_usage: the call is recorded once for fair use, even when its request id comes again",
+      isOk(again) && asObject(again.body)?.ok === true && isOk(counted) && rows(counted).length === 1 && rows(counted)[0].units === 10,
+      describe(counted),
+    ),
+  );
+  const peek = await b.rest("GET", "unlimited_usage", { query: { request_id: `eq.${request}`, select: "id" } });
+  out.push(result("unlimited_usage: B cannot read A's record", affectedNoRows(peek), describe(peek)));
+
+  const refund = await rpc(service, "refund_ink_for", { p_user_id: a.userId, p_request_id: request });
+  const a3 = asObject((await rpc(a, "ink_summary")).body);
+  const recount = await a.rest("GET", "unlimited_usage", { query: { request_id: `eq.${request}`, select: "id" } });
+  out.push(
+    result(
+      "refund_ink_for: a subscriber's failed call gives back 0 ink (none was spent, none minted) and its fair-use count",
+      isOk(refund) && asObject(refund.body)?.refunded === 0 && a3?.balance === a1?.balance && affectedNoRows(recount),
+      `${describe(refund)} / ${JSON.stringify(a3)}`.slice(0, 200),
+    ),
+  );
+
+  const stale = await rpc(service, "apply_unlimited_subscription", applyArgs("incomplete", t0 - 3_600_000));
+  const a4 = asObject((await rpc(a, "ink_summary")).body);
+  out.push(
+    result(
+      "apply_unlimited_subscription: an older event arriving late changes nothing (stale)",
+      isOk(stale) && asObject(stale.body)?.stale === true && a4?.unlimited?.status === "trialing",
+      describe(stale),
+    ),
+  );
+
+  if (newUser) {
+    const c = await newUser();
+    const subC = `sub_rls_verify_${tag}_c`;
+    await rpc(service, "apply_unlimited_subscription", { ...applyArgs("trialing", t0), p_subscription_id: subC });
+    await rpc(service, "link_unlimited_checkout", { p_subscription_id: subC, p_user_id: c.userId });
+    const blocked = await rpc(c, "delete_own_account");
+    const still = await c.rest("GET", "profiles", { query: { select: "user_id" } });
+    out.push(
+      result(
+        "delete_own_account: refused while the plan will charge again (P0001, hint unlimited_active); C's account stays",
+        !isOk(blocked) && String(asObject(blocked.body)?.hint ?? "") === "unlimited_active" && rows(still).length === 1,
+        describe(blocked),
+      ),
+    );
+    await rpc(service, "apply_unlimited_subscription", { ...applyArgs("trialing", t0 + 1000, { p_cancel_at_period_end: true }), p_subscription_id: subC });
+    const allowed = await rpc(c, "delete_own_account");
+    out.push(result("delete_own_account: allowed once the plan is set to cancel", isOk(allowed), describe(allowed)));
+  } else {
+    out.push(result("delete_own_account with a plan (skipped: the context cannot provision a user)", true));
+  }
+
+  const ended = await rpc(service, "apply_unlimited_subscription", applyArgs("canceled", t0 + 2000, { p_ended_at: new Date().toISOString() }));
+  const revived = await rpc(service, "apply_unlimited_subscription", applyArgs("trialing", t0 + 3000));
+  const a5 = asObject((await rpc(a, "ink_summary")).body);
+  const paid = await rpc(a, "consume_credits", { p_route: "rls-verify-unlimited", p_units: 1, p_request_id: `${request}-after` });
+  const a6 = asObject((await rpc(a, "ink_summary")).body);
+  const p = asObject(paid.body);
+  // The ink path again: one ink spent, or (the earlier checks may have left A with none) refused as
+  // out of ink with nothing written. Either way no `unlimited` in the answer.
+  const inkPath =
+    p?.unlimited === undefined &&
+    (p?.ok === true ? a6?.balance === (a5?.balance ?? 0) - 1 : p?.reason === "insufficient_credits" && a6?.balance === a5?.balance);
+  out.push(
+    result(
+      "apply_unlimited_subscription: a cancelled plan stays cancelled (a late trialing event cannot revive it)",
+      isOk(ended) && asObject(revived.body)?.stale === true && a5?.unlimited?.status === "canceled" && a5?.unlimited?.unlimited === false,
+      `${describe(revived)} / ${JSON.stringify(a5?.unlimited ?? null)}`.slice(0, 200),
+    ),
+  );
+  out.push(
+    result(
+      "consume_credits: after the plan ends, A's help spends ink again",
+      isOk(paid) && inkPath,
+      `${describe(paid)} / ${JSON.stringify(a6)}`.slice(0, 200),
+    ),
+  );
+
+  // Leave nothing behind: the rows outlive the throwaway users (user_id becomes null).
+  const cleared = await service.rest("DELETE", "unlimited_subscriptions", { query: { stripe_subscription_id: `like.sub_rls_verify_${tag}_*` }, prefer: "return=representation" });
+  out.push(result("unlimited_subscriptions: the check's own rows are removed again", isOk(cleared) && rows(cleared).length === (newUser ? 2 : 1), describe(cleared)));
+  return out;
+}
+
 // ---------------------------------------------------------------- registry / runner
 
 /** @type {CheckDef[]} */
@@ -1584,6 +1767,7 @@ export const ALL_CHECKS = [
   { name: "onboarding: course and onboarded_at written only through save_onboarding", run: checkOnboarding },
   { name: "ink tables: packs read-only, own grants and purchases only, no way to add ink", run: checkInkTables },
   { name: "ink: summary, purchases/refunds/reviews only through the service role, append-only ledgers", run: checkInkPurchases },
+  { name: "Agathon Unlimited: only the webhook grants the plan; subscribers spend no ink and refunds mint none", run: checkUnlimited },
   { name: "sign-up consent: the Terms version is on the profile, readable, never writable", run: checkSignupConsent },
   { name: "email_log: the service role's alone, each email claimed once", run: checkEmailLog },
   { name: "delete_own_account removes the caller's account and data", run: checkDeleteOwnAccount },

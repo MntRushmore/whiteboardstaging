@@ -14,7 +14,10 @@ import { PurchaseHistory } from "@/components/account/PurchaseHistory";
 import { UsageCard } from "@/components/account/UsageCard";
 import { DangerZone } from "@/components/account/DangerZone";
 import { InkReturnNotice } from "@/components/account/InkReturnNotice";
+import { PlanCard } from "@/components/account/PlanCard";
 import { useInkSummary } from "@/lib/billing/useInkSummary";
+import { isUnlimited } from "@/lib/billing/unlimited";
+import { useUnlimited } from "@/lib/billing/useUnlimited";
 import { ACCOUNT_COPY, accountPageStateFor } from "@/lib/billing/accountState";
 
 /** Shaped like the ink and usage cards, so the page does not jump when they arrive. */
@@ -52,13 +55,17 @@ function AccountSkeleton() {
  * grid and usage rows need the width more than a sidebar would give them.
  *
  * Ink comes first because every way in is about it (the header's ink meter and its "Get ink",
- * a Payment Link's return to ?ink=<pack>). Auth-gated like the dashboard; every card loads its
- * own data through the user's own Supabase session (RLS / RPCs), nothing here talks to /api/*.
+ * a Payment Link's return to ?ink=<pack>). Agathon Unlimited's Plan section (`#plan`, where the
+ * header's "Unlimited" links) follows it: the plan decides whether help spends that ink at all.
+ * Auth-gated like the dashboard; every card loads its own data through the user's own Supabase
+ * session (RLS / RPCs), nothing here talks to /api/*.
  */
 export default function AccountPage() {
   const router = useRouter();
   const { user, loading: authLoading, authError } = useAuth();
   const ink = useInkSummary();
+  // Part of the same ink summary read (one request for both).
+  const unlimited = isUnlimited(useUnlimited().state);
 
   useEffect(() => {
     if (!authLoading && !user && !authError) {
@@ -130,7 +137,8 @@ export default function AccountPage() {
           </div>
         ) : (
           <div className="space-y-6" data-state="ready">
-            {ink.summary && <InkCard summary={ink.summary} error={ink.error} refreshing={ink.loading} onRetry={ink.reload} />}
+            {ink.summary && <InkCard summary={ink.summary} error={ink.error} refreshing={ink.loading} unlimited={unlimited} onRetry={ink.reload} />}
+            <PlanCard email={email} payer={payer} />
             <InkPacksGrid payer={payer} lastPurchaseId={ink.summary?.last_purchase?.id ?? null} />
             <PurchaseHistory purchases={ink.summary?.purchases} />
             <UsageCard usedInk={ink.summary?.used} />

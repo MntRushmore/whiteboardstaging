@@ -238,11 +238,11 @@ describe("the shared ink store (one request, one cache, one set of listeners per
       advance: (ms: number) => {
         clock += ms;
       },
-      /** settle the oldest read in flight */
-      async answer(balance = 297) {
+      /** settle the oldest read in flight (with the Agathon Unlimited part when given) */
+      async answer(balance = 297, unlimited?: Record<string, unknown>) {
         const resolve = pending.shift();
         if (!resolve) throw new Error("no read in flight");
-        resolve({ summary: summaryWith(balance) });
+        resolve({ summary: unlimited ? { ...summaryWith(balance), unlimited } : summaryWith(balance) });
         for (let i = 0; i < 5; i++) await Promise.resolve();
       },
     };
@@ -377,6 +377,48 @@ describe("the shared ink store (one request, one cache, one set of listeners per
       await h.answer(1010); // the pack arrived
       vi.advanceTimersByTime(CHECKOUT_WATCH_MS * 10);
       expect(h.read).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the checkout watch also stops when Agathon Unlimited turns on (the balance does not move)", async () => {
+    vi.useFakeTimers();
+    try {
+      const p = page();
+      const h = harness(p);
+      const none = { status: "none", unlimited: false };
+      const trialing = { status: "trialing", unlimited: true, trial_end: "2026-10-10T00:00:00Z", current_period_end: "2026-10-10T00:00:00Z", cancel_at_period_end: false, cancel_at: null };
+      h.store.attach("u1");
+      await h.answer(0, none);
+      h.store.watchCheckout(); // back on ?unlimited=started
+      await h.answer(0, none); // before the webhook
+      vi.advanceTimersByTime(CHECKOUT_WATCH_MS);
+      expect(h.read).toHaveBeenCalledTimes(3);
+      await h.answer(0, trialing); // the free week arrived
+      vi.advanceTimersByTime(CHECKOUT_WATCH_MS * 10);
+      expect(h.read).toHaveBeenCalledTimes(3);
+      expect(h.store.getState().data?.unlimited).toEqual(trialing);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a watch that starts with the plan already on still waits for a pack's ink", async () => {
+    vi.useFakeTimers();
+    try {
+      const p = page();
+      const h = harness(p);
+      const on = { status: "active", unlimited: true };
+      h.store.attach("u1");
+      await h.answer(10, on);
+      p.win.dispatchEvent(new Event(INK_CHECKOUT_EVENT)); // a subscriber buying ink for later
+      await h.answer(10, on);
+      vi.advanceTimersByTime(CHECKOUT_WATCH_MS);
+      expect(h.read).toHaveBeenCalledTimes(3);
+      await h.answer(1010, on);
+      vi.advanceTimersByTime(CHECKOUT_WATCH_MS * 10);
+      expect(h.read).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();
     }

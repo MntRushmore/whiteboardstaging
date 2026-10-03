@@ -79,3 +79,103 @@ export function isUnlimitedReturn(search: string | URLSearchParams | null | unde
   const params = typeof search === "string" ? new URLSearchParams(search) : search;
   return params.get(UNLIMITED_RETURN_PARAM) === UNLIMITED_RETURN_VALUE;
 }
+
+/* ------------------------------------------------------------------------- */
+/* The plan as the server reports it (ink_summary().unlimited)                */
+/* ------------------------------------------------------------------------- */
+
+const isoOrNull = (v: unknown): string | null => (typeof v === "string" && !Number.isNaN(Date.parse(v)) ? v : null);
+
+/**
+ * `ink_summary().unlimited` (supabase/migrations/20261003020000_unlimited.sql) as the app shows it:
+ * `{ status, unlimited, trial_end, current_period_end, cancel_at_period_end, cancel_at }`, where
+ * status is Stripe's. Never throws; anything missing or malformed (an older database, a failed
+ * read) is NO_UNLIMITED, so nobody is told they have a plan they may not have.
+ *
+ *  - trialing / active -> as they are, unless the server says `unlimited: false` (the renewal is
+ *    overdue past the grace): then past_due, the "check your payment" state, matching the server,
+ *    which is spending ink again
+ *  - past_due, unpaid, paused -> past_due (a payment problem; help spends ink meanwhile)
+ *  - canceled, incomplete_expired -> canceled
+ *  - incomplete, or null (the checkout is linked, the subscription's own event is not in yet) -> incomplete
+ *  - none or anything else -> none
+ * A plan set to cancel (`cancel_at_period_end`, or Stripe's `cancel_at`) reads cancelAtPeriodEnd,
+ * and currentPeriodEnd is then the day it ends.
+ */
+export function parseUnlimitedState(raw: unknown): UnlimitedState {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return NO_UNLIMITED;
+  const r = raw as Record<string, unknown>;
+  if (!("status" in r)) return NO_UNLIMITED;
+  const stripe = typeof r.status === "string" ? r.status : null;
+  let status: UnlimitedStatus;
+  switch (stripe) {
+    case "trialing":
+    case "active":
+      status = r.unlimited === false ? "past_due" : stripe;
+      break;
+    case "past_due":
+    case "unpaid":
+    case "paused":
+      status = "past_due";
+      break;
+    case "canceled":
+    case "incomplete_expired":
+      status = "canceled";
+      break;
+    case "incomplete":
+    case null:
+      status = "incomplete";
+      break;
+    default:
+      return NO_UNLIMITED;
+  }
+  const cancelAt = isoOrNull(r.cancel_at);
+  const periodEnd = isoOrNull(r.current_period_end);
+  return {
+    status,
+    trialEnd: isoOrNull(r.trial_end),
+    currentPeriodEnd: cancelAt ?? periodEnd,
+    cancelAtPeriodEnd: r.cancel_at_period_end === true || cancelAt !== null,
+  };
+}
+
+/**
+ * True while the plan would charge the card again (in its free week, paid up, or retrying a failed
+ * payment) and is not set to cancel. Deleting the account then must wait until it is cancelled in
+ * the portal: nothing in the app can cancel a Stripe subscription (no server key), and
+ * delete_own_account() refuses too.
+ */
+export function mustCancelBeforeDeleting(state: Pick<UnlimitedState, "status" | "cancelAtPeriodEnd"> | null | undefined): boolean {
+  if (!state || state.cancelAtPeriodEnd) return false;
+  return state.status === "trialing" || state.status === "active" || state.status === "past_due";
+}
+
+/* ------------------------------------------------------------------------- */
+/* The customer portal (manage or cancel)                                     */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * The customer portal's login page, from NEXT_PUBLIC_BILLING_PORTAL_URL (made and printed by
+ * scripts/stripe-setup.mjs): the grown-up signs in with the checkout's email and a one-time code,
+ * then cancels or changes the card. Inlined at build time like unlimitedLink(). Null when unset or
+ * not an absolute http(s) URL.
+ */
+export function billingPortalLink(): string | null {
+  return parseUnlimitedLink(process.env.NEXT_PUBLIC_BILLING_PORTAL_URL);
+}
+
+/** The portal's login page with the email prefilled (it can be changed there); null without a link. */
+export function billingPortalUrl(email: string | null | undefined, link: string | null = billingPortalLink()): string | null {
+  const safe = parseUnlimitedLink(link);
+  if (!safe) return null;
+  const url = new URL(safe);
+  const e = email?.trim();
+  if (e) url.searchParams.set("prefilled_email", e);
+  return url.toString();
+}
+
+/** The ink meter's words for a subscriber (the board bar and the app header). */
+export const UNLIMITED_METER_COPY = {
+  word: "Unlimited",
+  label: `${UNLIMITED_PLAN.name}: help uses no ink`,
+} as const;

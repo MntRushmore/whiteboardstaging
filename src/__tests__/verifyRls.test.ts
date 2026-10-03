@@ -31,6 +31,7 @@ import {
   checkStorage,
   checkTrainersNotWritable,
   checkTrainingSamplesDenied,
+  checkUnlimited,
   checkUsageByDay,
   checkUserSettingsIsolation,
   checkVersionTrigger,
@@ -136,7 +137,17 @@ type Leak =
   // email log (20261003030000_email_log.sql)
   | "emailLogReadable"
   | "emailLogWritable"
-  | "emailLogTwice";
+  | "emailLogTwice"
+  // Agathon Unlimited (20261003020000_unlimited.sql)
+  | "unlimitedSelfGrant"
+  | "unlimitedRpcOpen"
+  | "unlimitedProbe"
+  | "unlimitedCrossRead"
+  | "unlimitedSpendsInk"
+  | "unlimitedCountsTwice"
+  | "unlimitedRefundMints"
+  | "unlimitedStaleApplies"
+  | "unlimitedDeleteNotBlocked";
 
 const USER_A = "aaaaaaaa-0000-4000-8000-000000000001";
 const USER_B = "bbbbbbbb-0000-4000-8000-000000000002";
@@ -176,6 +187,9 @@ function makeWorld(leaks: Leak[] = []) {
   const purchases: Row[] = [];
   const reviews: Row[] = []; // ink_checkout_reviews: service role only
   const emailLog: Row[] = []; // email_log: service role only, unique (user_id, kind, ref)
+  // Agathon Unlimited: the webhook's subscription rows and the fair-use record
+  const subs: Row[] = [];
+  const unlimitedUsage: Row[] = [];
   const grantStarter = (uid: string) => {
     if (!leak("inkNoStarter")) inkGrants.push({ id: inkGrants.length + 1, user_id: uid, kind: "starter", units: STARTER_INK, created_at: new Date().toISOString() });
   };
@@ -214,6 +228,73 @@ function makeWorld(leaks: Leak[] = []) {
     if (leak("summaryMissingField")) delete body.granted;
     return body;
   }
+  const FINAL = ["canceled", "incomplete_expired"];
+  const GRACE_MS = 3 * 86_400_000;
+  const grantsPlan = (s: Row) => {
+    const end = s.current_period_end ?? s.trial_end;
+    return ["trialing", "active"].includes(String(s.status)) && (end == null || Date.parse(String(end)) + GRACE_MS > Date.now());
+  };
+  /** has_unlimited(uid) */
+  const hasUnlimited = (uid: string) => subs.some((s) => s.user_id === uid && grantsPlan(s));
+  /** unlimited_state_of(uid): the row that grants the plan, else the latest */
+  function unlimitedState(uid: string): Row {
+    const own = subs.filter((s) => s.user_id === uid);
+    const row = own.find(grantsPlan) ?? own.at(-1);
+    if (!row) return { status: "none", unlimited: false, trial_end: null, current_period_end: null, cancel_at_period_end: false, cancel_at: null };
+    return {
+      status: row.status ?? null,
+      unlimited: hasUnlimited(uid),
+      trial_end: row.trial_end ?? null,
+      current_period_end: row.current_period_end ?? null,
+      cancel_at_period_end: row.cancel_at_period_end === true,
+      cancel_at: row.cancel_at ?? null,
+    };
+  }
+  /** The service-role writers of 20261003020000_unlimited.sql (and, with a leak, callable by a user). */
+  function unlimitedRpc(fn: string, args: Row): HttpResult | null {
+    const sub = String(args.p_subscription_id ?? "");
+    const rowFor = () => {
+      let row = subs.find((s) => s.stripe_subscription_id === sub);
+      if (!row) {
+        row = { id: subs.length + 1, stripe_subscription_id: sub, user_id: null, status: null, cancel_at_period_end: false, status_event_at: null };
+        subs.push(row);
+      }
+      return row;
+    };
+    switch (fn) {
+      case "link_unlimited_checkout": {
+        const named = typeof args.p_user_id === "string" ? args.p_user_id : null;
+        const user = named && users.has(named) ? named : null;
+        const row = rowFor();
+        row.user_id ??= user;
+        row.checkout_session_id ??= args.p_checkout_session_id ?? null;
+        return ok({
+          linked: user !== null && row.user_id === user,
+          user_id: row.user_id,
+          no_account: named !== null && user === null,
+          conflict: user !== null && row.user_id !== user,
+          status: row.status,
+        });
+      }
+      case "apply_unlimited_subscription": {
+        const row = rowFor();
+        const at = typeof args.p_event_at === "string" ? Date.parse(args.p_event_at) : Date.now();
+        const status = String(args.p_status);
+        const stale = (FINAL.includes(String(row.status)) && !FINAL.includes(status)) || (row.status_event_at !== null && at < Number(row.status_event_at));
+        if (stale && !leak("unlimitedStaleApplies")) return ok({ applied: false, stale: true, user_id: row.user_id, status: row.status });
+        Object.assign(row, {
+          status,
+          trial_end: args.p_trial_end ?? null,
+          current_period_end: args.p_current_period_end ?? null,
+          cancel_at_period_end: args.p_cancel_at_period_end === true,
+          cancel_at: args.p_cancel_at ?? null,
+          status_event_at: at,
+        });
+        return ok({ applied: true, stale: false, user_id: row.user_id, status });
+      }
+    }
+    return null;
+  }
   function inkSummary(uid: string): Row {
     const own = inkGrants.filter((g) => g.user_id === uid);
     const sum = (kind: string) => own.filter((g) => g.kind === kind).reduce((n, g) => n + Number(g.units), 0);
@@ -230,6 +311,7 @@ function makeWorld(leaks: Leak[] = []) {
       starter_at: own.find((g) => g.kind === "starter")?.created_at ?? null,
       purchases: mine.length,
       last_purchase: last ? { pack_id: last.pack_id, pack_name: last.pack_id, ink: last.ink, status: last.status, created_at: last.created_at } : null,
+      unlimited: unlimitedState(uid),
     };
   }
   /** The service-role RPCs of 20261002000000_ink.sql (and, with a leak, callable by a user). */
@@ -265,6 +347,16 @@ function makeWorld(leaks: Leak[] = []) {
       if (Date.parse(String(r.created_at)) <= cutoff && !leak("refundStale")) continue;
       refunded += Number(r.units);
       if (!leak("refundKeepsRow")) usage.splice(i, 1);
+    }
+    // A subscriber's call spent no ink: its fair-use row goes, and nothing comes back.
+    for (let i = unlimitedUsage.length - 1; i >= 0; i--) {
+      const r = unlimitedUsage[i];
+      if (r.user_id !== uid || r.request_id !== requestId) continue;
+      if (leak("unlimitedRefundMints")) {
+        inkGrants.push({ id: inkGrants.length + 1, user_id: uid, kind: "manual", units: Number(r.units) });
+        refunded += Number(r.units);
+      }
+      unlimitedUsage.splice(i, 1);
     }
     return ok({ refunded, remaining: balance(uid).remaining });
   }
@@ -377,6 +469,10 @@ function makeWorld(leaks: Leak[] = []) {
       return ok(0);
     }
     if (fn === "refund_ink_for") return leak("refundUserCallable") ? refundFor(String(args.p_user_id), args.p_request_id) : denied(uid);
+    if (fn === "link_unlimited_checkout" || fn === "apply_unlimited_subscription") {
+      return leak("unlimitedRpcOpen") ? (unlimitedRpc(fn, args) as HttpResult) : denied(uid);
+    }
+    if (fn === "has_unlimited") return leak("unlimitedProbe") ? ok(hasUnlimited(String(args.p_uid))) : denied(uid);
     switch (fn) {
       case "credit_summary":
         return ok(summary(uid));
@@ -388,6 +484,14 @@ function makeWorld(leaks: Leak[] = []) {
           return { status: 400, body: { code: "22023", message: "p_units must be between 1 and 1000" } };
         }
         if (!users.has(uid)) return denied(uid); // auth.users row gone -> 'account not found' (42501)
+        if (hasUnlimited(uid) && !leak("unlimitedSpendsInk")) {
+          // nothing spent: one fair-use row per request id
+          const requestId = args.p_request_id ?? null;
+          if (requestId === null || leak("unlimitedCountsTwice") || !unlimitedUsage.some((r) => r.user_id === uid && r.request_id === requestId)) {
+            unlimitedUsage.push({ id: unlimitedUsage.length + 1, user_id: uid, route: args.p_route, units, request_id: requestId, created_at: new Date().toISOString() });
+          }
+          return ok({ ok: true, remaining: balance(uid).remaining, reason: null, unlimited: true });
+        }
         const { remaining } = balance(uid);
         if (remaining < units && !leak("overspendAllowed")) return ok({ ok: false, remaining, reason: "insufficient_credits" });
         const row: Row = {
@@ -469,6 +573,14 @@ function makeWorld(leaks: Leak[] = []) {
       }
       case "delete_own_account": {
         if (leak("deleteNoop")) return ok(null, 204);
+        const charges = subs.some(
+          (s) => s.user_id === uid && ["trialing", "active", "past_due", "unpaid"].includes(String(s.status)) && s.cancel_at_period_end !== true && !s.cancel_at,
+        );
+        if (charges && !leak("unlimitedDeleteNotBlocked")) {
+          return { status: 400, body: { code: "P0001", hint: "unlimited_active", message: "Cancel Agathon Unlimited before deleting your account" } };
+        }
+        for (const s of subs) if (s.user_id === uid) s.user_id = null; // on delete set null
+        for (let i = unlimitedUsage.length - 1; i >= 0; i--) if (unlimitedUsage[i].user_id === uid) unlimitedUsage.splice(i, 1);
         users.delete(uid);
         profiles.delete(uid);
         settings.delete(uid);
@@ -715,6 +827,20 @@ function makeWorld(leaks: Leak[] = []) {
         }
         return ok(rep ? [] : null);
       }
+      case "unlimited_subscriptions": {
+        if (method === "POST") {
+          if (!leak("unlimitedSelfGrant")) return denied(uid);
+          subs.push({ id: subs.length + 1, cancel_at_period_end: false, status_event_at: null, ...body });
+          return ok(null, 201);
+        }
+        if (method === "GET") return ok(subs.filter((r) => (r.user_id === uid || leak("unlimitedCrossRead")) && matches(r, query)));
+        return denied(uid); // select only: no update, no delete
+      }
+      case "unlimited_usage": {
+        if (method === "POST") return denied(uid);
+        if (method === "GET") return ok(unlimitedUsage.filter((r) => (r.user_id === uid || leak("unlimitedCrossRead")) && matches(r, query)));
+        return denied(uid);
+      }
       case "rate_limit_counters": {
         // Function-only table: no grants for authenticated at all.
         if (method === "GET" && leak("countersReadable")) return ok([...counters.values()].filter((c) => c.user_id === uid));
@@ -727,6 +853,8 @@ function makeWorld(leaks: Leak[] = []) {
   /** The service role bypasses RLS and holds every grant; only what the checks use is modelled. */
   function serviceRest(method: string, table: string, query: Record<string, string>, body: Row): HttpResult {
     if (table.startsWith("rpc/")) {
+      const plan = unlimitedRpc(table.slice(4), body);
+      if (plan) return plan;
       const res = inkRpc(table.slice(4), body);
       if (res) return res;
     }
@@ -746,6 +874,14 @@ function makeWorld(leaks: Leak[] = []) {
           return ok(null, 201);
         }
         if (method === "GET") return ok(usage.filter((r) => matches(r, query)));
+        break;
+      }
+      case "unlimited_subscriptions": {
+        if (method === "DELETE") {
+          const gone = subs.filter((r) => matches(r, query));
+          for (const r of gone) subs.splice(subs.indexOf(r), 1);
+          return ok(gone);
+        }
         break;
       }
       case "ink_checkout_reviews": {
@@ -828,7 +964,7 @@ function makeWorld(leaks: Leak[] = []) {
   };
 
   const ctx: CheckContext = { anon: client(null), a: client(USER_A), b: client(USER_B), newUser, service: client(SERVICE) };
-  return { ctx, state: { boards, settings, bugReports, snapshots, assets, objects, users, profiles, usage, grants, counters, inkGrants, purchases, reviews, emailLog } };
+  return { ctx, state: { boards, settings, bugReports, snapshots, assets, objects, users, profiles, usage, grants, counters, inkGrants, purchases, reviews, emailLog, subs, unlimitedUsage } };
 }
 
 const failures = (results: CheckResult[]) => results.filter((r) => !r.pass).map((r) => r.name);
@@ -849,8 +985,8 @@ describe("rlsChecks against a correctly secured fake", () => {
       expect(results.map((r) => r.name)).toContain(`anon: select ${table} denied`);
       expect(results.map((r) => r.name)).toContain(`anon: insert ${table} denied`);
     }
-    expect(PUBLIC_TABLES).toHaveLength(18);
-    for (const table of ["plans", "profiles", "usage_events", "credit_grants", "billing_events", "rate_limit_counters", "ink_packs", "ink_grants", "ink_purchases", "ink_checkout_reviews", "email_log"]) {
+    expect(PUBLIC_TABLES).toHaveLength(20);
+    for (const table of ["plans", "profiles", "usage_events", "credit_grants", "billing_events", "rate_limit_counters", "ink_packs", "ink_grants", "ink_purchases", "ink_checkout_reviews", "email_log", "unlimited_subscriptions", "unlimited_usage"]) {
       expect(PUBLIC_TABLES).toContain(table);
     }
   });
@@ -943,6 +1079,27 @@ describe("rlsChecks against a correctly secured fake", () => {
     expect(failures(results)).toEqual([]);
     expect(results.map((r) => r.name)).toContain("grant_ink_purchase / reverse_ink_purchase with the service role (skipped: no service role client)");
     expect(state.purchases).toEqual([]);
+  });
+
+  it("the Unlimited check passes on its own, spends no ink while A is subscribed and leaves no subscription rows", async () => {
+    const { ctx, state } = makeWorld();
+    const results = await checkUnlimited(ctx);
+    expect(failures(results)).toEqual([]);
+    expect(results.length).toBeGreaterThanOrEqual(20);
+    expect(state.subs).toEqual([]);
+    // the one paid spend is the check's own "after the plan ends" call; nothing else touched the ink ledger
+    expect(state.usage.filter((r) => r.user_id === USER_A).map((r) => r.route)).toEqual(["rls-verify-unlimited"]);
+    expect(state.inkGrants.filter((g) => g.kind === "manual")).toEqual([]);
+    // C (whose deletion had to wait for the cancellation) is gone again
+    expect([...state.users].sort()).toEqual([USER_A, USER_B].sort());
+  });
+
+  it("the Unlimited check reports its service-role part as skipped (still passing) without a service client", async () => {
+    const { ctx, state } = makeWorld();
+    const results = await checkUnlimited({ anon: ctx.anon, a: ctx.a, b: ctx.b });
+    expect(failures(results)).toEqual([]);
+    expect(results.map((r) => r.name)).toContain("Agathon Unlimited with the service role (skipped: no service role client)");
+    expect(state.subs).toEqual([]);
   });
 
   it("the usage_by_day check spends only as A and passes on its own", async () => {
@@ -1070,6 +1227,22 @@ describe("rlsChecks detect individual leaks", () => {
     ["emailLogWritable", checkEmailLog, "email_log: A cannot update it"],
     ["emailLogWritable", checkEmailLog, "email_log: A cannot delete from it"],
     ["emailLogTwice", checkEmailLog, "email_log: a second claim of the same email conflicts (409: sent at most once)"],
+    // Agathon Unlimited
+    ["anonSelect", checkAnonDenied, "anon: select unlimited_subscriptions denied"],
+    ["anonInsert", checkAnonDenied, "anon: insert unlimited_usage denied"],
+    ["unlimitedSelfGrant", checkUnlimited, "unlimited_subscriptions: A cannot give themselves the plan (insert denied)"],
+    ["unlimitedRpcOpen", checkUnlimited, "link_unlimited_checkout: A cannot call it"],
+    ["unlimitedRpcOpen", checkUnlimited, "apply_unlimited_subscription: A cannot call it"],
+    ["unlimitedProbe", checkUnlimited, "has_unlimited: A cannot call it (nobody asks about another account's plan)"],
+    ["unlimitedCrossRead", checkUnlimited, "unlimited_subscriptions: B cannot read A's subscription"],
+    ["unlimitedCrossRead", checkUnlimited, "unlimited_usage: B cannot read A's record"],
+    ["unlimitedSpendsInk", checkUnlimited, "consume_credits: on Unlimited, A's help spends no ink (ok, unlimited, balance unchanged)"],
+    ["unlimitedSpendsInk", checkUnlimited, "usage_events: no ink ledger row for a subscriber's call"],
+    ["unlimitedCountsTwice", checkUnlimited, "unlimited_usage: the call is recorded once for fair use, even when its request id comes again"],
+    ["unlimitedRefundMints", checkUnlimited, "refund_ink_for: a subscriber's failed call gives back 0 ink (none was spent, none minted) and its fair-use count"],
+    ["unlimitedStaleApplies", checkUnlimited, "apply_unlimited_subscription: an older event arriving late changes nothing (stale)"],
+    ["unlimitedStaleApplies", checkUnlimited, "apply_unlimited_subscription: a cancelled plan stays cancelled (a late trialing event cannot revive it)"],
+    ["unlimitedDeleteNotBlocked", checkUnlimited, "delete_own_account: refused while the plan will charge again (P0001, hint unlimited_active); C's account stays"],
   ];
 
   it.each(cases)("leak %s makes '%s' fail", async (leak, check, failingName) => {

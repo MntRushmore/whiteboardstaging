@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FlaskConical, UserRound } from "lucide-react";
+import { FlaskConical, InfinityIcon, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthProvider";
@@ -14,6 +14,8 @@ import { BetaBadge } from "@/components/app/BetaBadge";
 import { InkBottle } from "@/components/billing/InkBottle";
 import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { ACCOUNT_PATH, INK_COPY, INK_PACKS_PATH, bottleFill, formatInk, inkTone, type InkTone } from "@/lib/billing/inkSummary";
+import { UNLIMITED_METER_COPY, isUnlimited } from "@/lib/billing/unlimited";
+import { useUnlimited } from "@/lib/billing/useUnlimited";
 import { Badge, type BadgeTone } from "@/registry/components/badge/badge";
 import { UserMenu } from "@/registry/components/user-menu/user-menu";
 import styles from "./appShell.module.css";
@@ -54,6 +56,20 @@ function InkLink({ balance }: { balance: number }) {
 }
 
 /**
+ * The meter for an Agathon Unlimited subscriber: ∞ and "Unlimited" instead of a count help does
+ * not spend, linking to the account page's Plan section. Never amber or red, never "Get ink".
+ */
+function UnlimitedLink() {
+  return (
+    <Link href={`${ACCOUNT_PATH}#plan`} data-tone="unlimited" data-testid="ink-meter" title={UNLIMITED_METER_COPY.label} className={styles.ink}>
+      <Badge tone="neutral" icon={<InfinityIcon size={14} strokeWidth={2} aria-hidden />}>
+        {UNLIMITED_METER_COPY.word}
+      </Badge>
+    </Link>
+  );
+}
+
+/**
  * The app bar for signed-in pages: product name and the beta badge on the left; Report a bug,
  * the ink meter and the account menu (Account, Feature Labs, Sign out) on the right. Self-contained
  * (reads the session and the ink summary itself), so any page can drop it in above an
@@ -64,6 +80,8 @@ export function AppHeader({ className }: { className?: string }) {
   const router = useRouter();
   const { user } = useAuth();
   const { summary } = useInkSummary({ enabled: Boolean(user) });
+  // The same shared read: the plan is part of the ink summary.
+  const unlimited = isUnlimited(useUnlimited().state);
   const [labsOpen, setLabsOpen] = useState(false);
   const email = user?.email ?? "";
   // No display name in the session; the address before the @ stands in (initial on the avatar).
@@ -92,7 +110,7 @@ export function AppHeader({ className }: { className?: string }) {
         {user && (
           <div className={styles.end}>
             <BugReportButton variant="header" />
-            {summary && <InkLink balance={summary.balance} />}
+            {summary && (unlimited ? <UnlimitedLink /> : <InkLink balance={summary.balance} />)}
             <UserMenu
               user={{ name, email }}
               showName
