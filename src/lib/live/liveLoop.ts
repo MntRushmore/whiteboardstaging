@@ -1056,8 +1056,12 @@ export class LiveLoop implements LiveController {
     }
 
     let problemErased = false;
+    const pageId = this.editor.getCurrentPage?.()?.id;
     for (const rec of Object.values(entry.changes.removed)) {
       if (!isShapeRecord(rec)) continue;
+      // shapes going with another screen (one deleted) are nothing the student rubbed out here: a
+      // figure answer among them must not be "dismissed" in this screen's page meta
+      if (pageId && String(rec.parentId).startsWith("page:") && rec.parentId !== pageId) continue;
       // a problem the chat wrote, rubbed out: the columns under it are read again (below)
       if (isLiveMeta(rec.meta) && problemMetaOf(rec.meta)) {
         problemErased = true;
@@ -3389,8 +3393,10 @@ export class LiveLoop implements LiveController {
 
   private saveFigureDismissals(): void {
     const keys = [...this.dismissedFigures].slice(-MAX_FIGURE_DISMISSALS);
+    // the screen they belong to, even if the student has moved on by the time this lands
+    const pageId = this.editor.getCurrentPage?.()?.id;
     this.write(() => {
-      const page = this.editor.getCurrentPage?.();
+      const page = pageId ? (this.editor.store.get(pageId) as TLPage | undefined) : undefined;
       if (!page) return;
       this.editor.store.put([{ ...page, meta: { ...page.meta, [FIGURES_DISMISSED_META]: keys } }]);
     });

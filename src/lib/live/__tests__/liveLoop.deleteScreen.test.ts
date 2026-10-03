@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { TLDrawShape, TLPageId, TLShape } from "tldraw";
 import { createFakeEditor, type FakeEditor } from "../__fixtures__/fakeEditor";
-import { fixtureTwoLines } from "../__fixtures__/strokes";
+import { drawShapeFromPoints, fixtureTwoLines } from "../__fixtures__/strokes";
 import { isLiveMeta, LIVE_TIMING, type LineAnalysis, type LiveEngine, type LiveSseEvent, type RecognizeResponse } from "../contracts";
 import { createLiveLoop, type LiveLoop } from "../liveLoop";
 import { liveStore, resetLiveStore } from "../liveStore";
@@ -136,6 +136,25 @@ describe("live loop — a screen deleted while the tutor writes on it", () => {
     await settle(4);
     expect(shapesOn(third).filter(isStep)).toHaveLength(whole);
     expect(shapesOn(third).filter(isRing)).toHaveLength(ring);
+  });
+
+  it("a figure answer deleted with its screen is not 'dismissed' on the next one; rubbed out here, it is", async () => {
+    /** the tutor's answer about a figure (a live write, not the student's) */
+    const putAnswer = (id: string, page: TLPageId) => {
+      const stroke = drawShapeFromPoints([{ x: 100, y: 100 }, { x: 120, y: 120 }], `shape:${id}` as TLShape["id"]);
+      const meta = { live: true, source: "ai", lineId: "dg_1", createdAt: 1, solvedLatex: `figure:${id}` };
+      editor.store.mergeRemoteChanges(() => editor.store.put([{ ...stroke, parentId: page, meta } as TLShape]));
+    };
+    const dismissed = (page: TLPageId) => (editor.store.get(page) as { meta: Record<string, unknown> } | undefined)?.meta.liveFiguresDismissed;
+    putAnswer("gone", second);
+    deletePage(second, first);
+    await settle(4);
+    expect(dismissed(first)).toBeUndefined();
+    // the same on this screen, rubbed out by the student: remembered here
+    putAnswer("here", first);
+    editor.removeUser(["shape:here" as TLShape["id"]]);
+    await settle(4);
+    expect(dismissed(first)).toEqual(["figure:here"]);
   });
 
   it("whatever was still being written when the screen went, nothing of it lands on the next one", async () => {
