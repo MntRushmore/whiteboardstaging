@@ -49,6 +49,26 @@ describe("board chat panel — view logic", () => {
     }
   });
 
+  it("a request stuck before fetch (a session read deaf to the abort) still ends as a timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const req = { boardId: "b", message: "3 equations", history: [], screen: { empty: true, student: [], tutor: [], problems: [] } };
+      const pending = requestChat(req as never, {}, vi.fn(() => new Promise<unknown>(() => undefined)));
+      const assertion = expect(pending).rejects.toBeInstanceOf(ChatTimeoutError);
+      await vi.advanceTimersByTimeAsync(CHAT_TIMEOUT_MS + 1);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a caller's signal that is already aborted ends the request at once", async () => {
+    const ctrl = new AbortController();
+    ctrl.abort();
+    const req = { boardId: "b", message: "3 equations", history: [], screen: { empty: true, student: [], tutor: [], problems: [] } };
+    await expect(requestChat(req as never, { signal: ctrl.signal }, vi.fn(() => new Promise<unknown>(() => undefined)))).rejects.toMatchObject({ name: "AbortError" });
+  });
+
   it("closing the board mid-request aborts it as an abort, not a timeout", async () => {
     const ctrl = new AbortController();
     const fetchJson = vi.fn(

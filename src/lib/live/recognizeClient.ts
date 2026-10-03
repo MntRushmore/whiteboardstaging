@@ -1,6 +1,7 @@
 "use client";
 
 import { apiJson, isApiError } from "@/lib/api-client";
+import { abortable } from "./abortable";
 import {
   CapabilitiesResponseSchema,
   LIVE_LIMITS,
@@ -205,7 +206,8 @@ export class RecognizeClient {
       // A cache fill may have happened while we waited.
       const late = this.peek(hash);
       if (late) return late;
-      const raw = await this.fetchJson(RECOGNIZE_PATH, req, { signal: controller.signal });
+      // raced against the abort as well (the timeout's too): authedFetch's session read happens before fetch sees it
+      const raw = await abortable(this.fetchJson(RECOGNIZE_PATH, req, { signal: controller.signal }), controller.signal);
       const parsed = RecognizeResponseSchema.safeParse(raw);
       if (!parsed.success) throw new Error("Recognizer returned an unexpected response");
       // Still worth caching: the same ink will hash the same next time.

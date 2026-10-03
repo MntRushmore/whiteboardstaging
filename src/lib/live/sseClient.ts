@@ -1,6 +1,7 @@
 "use client";
 
 import { apiErrorFromResponse, authedFetch } from "@/lib/api-client";
+import { abortable } from "./abortable";
 import {
   AnnotationSchema,
   SolveStepSchema,
@@ -168,12 +169,16 @@ export async function* streamLiveSse(
     armIdle();
     let res: Response;
     try {
-      res = await fetchImpl(path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-        body: JSON.stringify(body),
-        signal: ctrl.signal,
-      });
+      // raced against the abort as well: authedFetch's session read happens before fetch sees it
+      res = await abortable(
+        fetchImpl(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+          body: JSON.stringify(body),
+          signal: ctrl.signal,
+        }),
+        ctrl.signal,
+      );
     } catch (err) {
       if (timedOut) throw new SseTimeoutError();
       throw err;
