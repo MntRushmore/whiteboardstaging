@@ -454,8 +454,9 @@ keeps whatever ink they had for later.
 - **Checkout.** One subscription Payment Link (`NEXT_PUBLIC_UNLIMITED_LINK`) with the free week on
   it (`subscription_data.trial_period_days = 7`) and the card taken up front
   (`payment_method_collection: always`), so it renews at $25 unless cancelled. The app opens it
-  with `client_reference_id=<user id>` like the packs: from the last onboarding screen and from
-  `/account`'s Plan section ("Try Unlimited free for 7 days"). After checkout Stripe redirects to
+  with `client_reference_id=<the account's checkout_ref>` (NOT the user id, unlike the packs: see
+  section 12) from the last onboarding screen and from `/account`'s Plan section ("Try Unlimited
+  free for 7 days"). After checkout Stripe redirects to
   `<site>/?unlimited=started`, where the page re-reads every few seconds until the plan shows up.
   Nothing is charged at checkout; Stripe charges $25 when the trial ends.
 - **Tags.** The product, price, link and its Checkout Sessions carry `metadata.app =
@@ -463,8 +464,9 @@ keeps whatever ink they had for later.
   the same pair (`subscription_data.metadata`). That is how the webhook tells Unlimited apart from
   Fuime's subscriptions (foreign: nothing stored) and from the retired Plus/Pro ones (ignored).
 - **The webhook** (`src/lib/server/billingWebhook.ts`):
-  - `checkout.session.completed` with `mode: subscription` links the subscription to the user in
-    `client_reference_id` (`link_unlimited_checkout()`). It is the only event that names the user.
+  - `checkout.session.completed` with `mode: subscription` links the subscription to the account
+    whose `profiles.checkout_ref` is `client_reference_id`, and stores the payer's email
+    (`link_unlimited_checkout()`). It is the only event that names the user.
   - `customer.subscription.created|updated|deleted` store its status, trial end, period end and
     cancellation (`apply_unlimited_subscription()`).
   - Stripe does not order deliveries, so either kind may arrive first: each creates the row
@@ -474,9 +476,9 @@ keeps whatever ink they had for later.
   - A checkout without a usable user (the link opened outside the app; the account deleted) is
     stored linked to nobody and logged at `warn`: `Agathon Unlimited checkout NOT linked to an
     account`. Nobody gets the plan until you link it (section 11).
-- **Who has it** (`has_unlimited()`): a linked row in `trialing` or `active` whose period end
-  (else trial end) is less than **3 days** past (Stripe retries a failed webhook delivery for three
-  days). `past_due` (a failed renewal) is **not** Unlimited: help spends ink again until the card
+- **Who has it** (`has_unlimited()`): a linked row in `active`, or in `trialing` on the account's
+  FIRST plan (section 12), whose period end (else trial end) is less than **3 days** past (Stripe
+  retries a failed webhook delivery for three days). `past_due` (a failed renewal) is **not** Unlimited: help spends ink again until the card
   is fixed, and the Plan section says "Your last payment didn't go through. Update your card".
 - **Fair use.** Each AI action a subscriber takes is recorded in `unlimited_usage` (the ink it
   would have cost) instead of spending ink, at most **1,500 actions per rolling 24 hours**
@@ -629,6 +631,38 @@ group by u.email order by ink_equivalent desc;
 
 What `supabase/migrations/20261003040000_go_live_gaps.sql` and the code beside it need before the
 first real families sign up. Each item says how to check it.
+
+### Nobody can start a plan on someone else's account
+
+The Unlimited link used to carry `client_reference_id=<user id>`, and a user id is not a secret. A
+stranger who learned one could open the link with their own card and the plan landed on the
+victim's account: the account could then not be deleted (it refuses while a plan would charge) and
+only the stranger could cancel it (the portal signs in by the checkout's email). Now:
+
+- every profile has `checkout_ref` (a random uuid; unique; readable only by its owner, writable by
+  nobody), delivered to the app in `ink_summary().unlimited.checkout_ref`;
+- the app sends that as `client_reference_id` (`unlimitedCheckoutUrl`); until it is read the start
+  button waits (it never falls back to the user id);
+- `link_unlimited_checkout(p_checkout_ref, …)` resolves it to the account; the old
+  `p_user_id` signature is dropped. A user id sent as the ref links nobody and is logged at `warn`
+  like any unlinkable checkout (section 11 links one by hand, by the account's email).
+
+Ink packs still carry the user id: buying ink for someone else is a gift, harmless.
+`scripts/verify-rls.mjs` checks that B cannot read A's ref, A cannot change it, and A's user id as
+the ref links nothing.
+
+### One free week per account (the trade-off)
+
+Every checkout through the Payment Link starts a new 7-day trial in Stripe, so an account could
+cancel and start again forever without paying. `has_unlimited()` now counts a `trialing`
+subscription only when it is the account's **first** Unlimited subscription (no earlier row of
+theirs that ever started, i.e. anything but `incomplete_expired`). A later trial still runs in
+Stripe and charges $25 when it ends, as its checkout said; until then **help spends ink**, and the
+Plan section says "Your plan starts on <date>, with the first $25 charge. The free week is for a
+first plan only, so help uses ink until then." The trade-off, accepted: **a returning subscriber
+who starts a second plan pays in ink during that week** (or cancels in the portal before it ends
+and is not charged). It does not stop a new account with the same card: the Terms already say free
+weeks may be limited to one per person, family or card, which covers cancelling such a trial by hand.
 
 ### AI services keep nothing and train on nothing
 

@@ -16,12 +16,24 @@ import {
 } from "@/lib/billing/unlimited";
 
 const USER = { userId: "8d2a3f1e-4b6c-4d7e-9f01-23456789abcd", email: "kid@example.com" };
+/** The account's checkout reference (profiles.checkout_ref): what the plan's checkout carries. */
+const REF = "0b7e9c1a-5d2f-4e3a-8b6c-9d0e1f2a3b4c";
 const WEEK = "2026-10-10T20:00:00.000Z";
 const MONTH = "2026-11-10T20:00:00.000Z";
 
 /** ink_summary().unlimited as the database answers it. */
 function row(overrides: Record<string, unknown> = {}) {
-  return { status: "trialing", unlimited: true, trial_end: WEEK, current_period_end: WEEK, cancel_at_period_end: false, cancel_at: null, ...overrides };
+  return {
+    status: "trialing",
+    unlimited: true,
+    trial_end: WEEK,
+    current_period_end: WEEK,
+    cancel_at_period_end: false,
+    cancel_at: null,
+    repeat_trial: false,
+    checkout_ref: REF,
+    ...overrides,
+  };
 }
 
 afterEach(() => vi.unstubAllEnvs());
@@ -34,16 +46,21 @@ describe("the contract", () => {
   it("only trialing and active spend no ink", () => {
     expect(isUnlimited({ status: "trialing" })).toBe(true);
     expect(isUnlimited({ status: "active" })).toBe(true);
-    for (const status of ["none", "past_due", "canceled", "incomplete"] as const) expect(isUnlimited({ status })).toBe(false);
+    for (const status of ["none", "repeat_trial", "past_due", "canceled", "incomplete"] as const) expect(isUnlimited({ status })).toBe(false);
     expect(isUnlimited(null)).toBe(false);
   });
 
-  it("the checkout carries the user's id (and email) like the ink packs; nothing without a link or a user", () => {
-    const url = new URL(unlimitedCheckoutUrl(USER, "https://buy.stripe.com/test_u")!);
-    expect(url.searchParams.get("client_reference_id")).toBe(USER.userId);
+  it("the checkout carries the account's checkout reference (and email), never the user id; nothing without a link or a ref", () => {
+    const url = new URL(unlimitedCheckoutUrl({ checkoutRef: REF, email: USER.email }, "https://buy.stripe.com/test_u")!);
+    expect(url.searchParams.get("client_reference_id")).toBe(REF);
     expect(url.searchParams.get("prefilled_email")).toBe(USER.email);
-    expect(unlimitedCheckoutUrl(USER, null)).toBeNull();
+    expect(url.toString()).not.toContain(USER.userId);
+    expect(unlimitedCheckoutUrl({ checkoutRef: REF }, null)).toBeNull();
     expect(unlimitedCheckoutUrl(null, "https://buy.stripe.com/test_u")).toBeNull();
+    // the ref not read yet: the button waits; it never falls back to anything else
+    for (const checkoutRef of [null, undefined, "", "not-a-uuid"]) {
+      expect(unlimitedCheckoutUrl({ checkoutRef, email: USER.email }, "https://buy.stripe.com/test_u"), String(checkoutRef)).toBeNull();
+    }
   });
 
   it("reads NEXT_PUBLIC_UNLIMITED_LINK, refusing anything that is not an absolute http(s) URL", () => {
@@ -64,7 +81,7 @@ describe("the contract", () => {
 
 describe("parseUnlimitedState (ink_summary().unlimited)", () => {
   it("a free week, as it is", () => {
-    expect(parseUnlimitedState(row())).toEqual({ status: "trialing", trialEnd: WEEK, currentPeriodEnd: WEEK, cancelAtPeriodEnd: false });
+    expect(parseUnlimitedState(row())).toEqual({ status: "trialing", trialEnd: WEEK, currentPeriodEnd: WEEK, cancelAtPeriodEnd: false, checkoutRef: REF });
   });
 
   it("a paid month with its next charge", () => {
@@ -73,7 +90,23 @@ describe("parseUnlimitedState (ink_summary().unlimited)", () => {
       trialEnd: null,
       currentPeriodEnd: MONTH,
       cancelAtPeriodEnd: false,
+      checkoutRef: REF,
     });
+  });
+
+  it("a second plan's free week (repeat_trial: the server grants nothing) is its own state, not a payment problem", () => {
+    expect(parseUnlimitedState(row({ unlimited: false, repeat_trial: true }))).toMatchObject({ status: "repeat_trial", trialEnd: WEEK });
+    expect(isUnlimited(parseUnlimitedState(row({ unlimited: false, repeat_trial: true })))).toBe(false);
+    // once it is paid it is active like any other plan
+    expect(parseUnlimitedState(row({ status: "active", repeat_trial: false })).status).toBe("active");
+    // without the flag, trialing and not unlimited is still the overdue case
+    expect(parseUnlimitedState(row({ unlimited: false })).status).toBe("past_due");
+  });
+
+  it("reads the checkout reference with or without a plan, and only a uuid", () => {
+    expect(parseUnlimitedState({ status: "none", unlimited: false, checkout_ref: REF.toUpperCase() })).toEqual({ ...NO_UNLIMITED, checkoutRef: REF });
+    expect(parseUnlimitedState(row({ checkout_ref: "8d2a3f1e" })).checkoutRef).toBeNull();
+    expect(parseUnlimitedState(row({ checkout_ref: undefined })).checkoutRef).toBeNull();
   });
 
   it("set to cancel: by cancel_at_period_end, or by Stripe's cancel_at (then that is the day it ends)", () => {
@@ -93,7 +126,7 @@ describe("parseUnlimitedState (ink_summary().unlimited)", () => {
     expect(parseUnlimitedState(row({ status: "incomplete", unlimited: false })).status).toBe("incomplete");
     // the checkout is linked but the subscription's own event has not arrived yet
     expect(parseUnlimitedState(row({ status: null, unlimited: false })).status).toBe("incomplete");
-    expect(parseUnlimitedState(row({ status: "none", unlimited: false }))).toEqual(NO_UNLIMITED);
+    expect(parseUnlimitedState(row({ status: "none", unlimited: false }))).toEqual({ ...NO_UNLIMITED, checkoutRef: REF });
   });
 
   it("a renewal overdue past the grace (the server already spends ink) reads as a payment problem", () => {
@@ -113,6 +146,8 @@ describe("mustCancelBeforeDeleting", () => {
     expect(mustCancelBeforeDeleting({ status: "trialing", cancelAtPeriodEnd: false })).toBe(true);
     expect(mustCancelBeforeDeleting({ status: "active", cancelAtPeriodEnd: false })).toBe(true);
     expect(mustCancelBeforeDeleting({ status: "past_due", cancelAtPeriodEnd: false })).toBe(true);
+    // a second plan's free week charges when it ends, like the first
+    expect(mustCancelBeforeDeleting({ status: "repeat_trial", cancelAtPeriodEnd: false })).toBe(true);
     expect(mustCancelBeforeDeleting({ status: "active", cancelAtPeriodEnd: true })).toBe(false);
     for (const status of ["none", "canceled", "incomplete"] as const) expect(mustCancelBeforeDeleting({ status, cancelAtPeriodEnd: false })).toBe(false);
     expect(mustCancelBeforeDeleting(null)).toBe(false);

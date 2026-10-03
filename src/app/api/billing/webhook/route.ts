@@ -30,7 +30,8 @@ export const dynamic = "force-dynamic";
  *       reverse_ink_purchase(): takes the refunded share of that purchase's ink back, at most
  *       what is still unspent (supabase/migrations/20261002000000_ink.sql)
  *   checkout.session.completed with mode subscription (the Agathon Unlimited Payment Link)
- *       link_unlimited_checkout(): the subscription belongs to the user in client_reference_id.
+ *       link_unlimited_checkout(): the subscription belongs to the account whose checkout ref
+ *       (profiles.checkout_ref, never a user id) is client_reference_id, with the payer's email.
  *       Without a usable one it is recorded linked to nobody, logged at warn for the owner.
  *   customer.subscription.created / updated / deleted (Agathon Unlimited)
  *       apply_unlimited_subscription(): status, trial end, period end, cancellation
@@ -224,7 +225,7 @@ export async function POST(req: Request): Promise<Response> {
         eventLog.info({ userId: outcome.userId, subscription: l.subscriptionId, status: outcome.subscriptionStatus }, "Agathon Unlimited linked to its account");
         return done(false);
       case "conflict":
-        eventLog.warn({ subscription: l.subscriptionId, linkedTo: outcome.userId, named: l.userId }, "Agathon Unlimited already linked to another account; the first link stands");
+        eventLog.warn({ subscription: l.subscriptionId, linkedTo: outcome.userId }, "Agathon Unlimited already linked to another account; the first link stands");
         return done(false);
       case "unlinked":
         // Paid for (or in its free week) but nobody gets the plan: loud, so the owner links it by hand.

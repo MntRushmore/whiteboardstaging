@@ -15,6 +15,8 @@ describe("what the plan screen shows", () => {
   it("skips straight to the home for a plan in its free week or paid up", () => {
     expect(planView({ loading: false, unlimited: { status: "trialing" }, checkoutUrl: URL })).toBe("skip");
     expect(planView({ loading: false, unlimited: { status: "active" }, checkoutUrl: null })).toBe("skip");
+    // a second plan waiting for its first charge is a plan too: never pitched a third
+    expect(planView({ loading: false, unlimited: { status: "repeat_trial" }, checkoutUrl: URL })).toBe("skip");
   });
 
   it("offers the free week with a checkout, and says Coming soon without one", () => {

@@ -14,6 +14,7 @@ import {
   RATE_LIMIT_KEYS,
   affectedNoRows,
   checkAnonDenied,
+  checkBillingRetention,
   checkBillingTables,
   checkBoardAssets,
   checkBugReports,
@@ -147,7 +148,15 @@ type Leak =
   | "unlimitedCountsTwice"
   | "unlimitedRefundMints"
   | "unlimitedStaleApplies"
-  | "unlimitedDeleteNotBlocked";
+  | "unlimitedDeleteNotBlocked"
+  // go-live gaps (20261003040000_go_live_gaps.sql)
+  | "checkoutRefPatchable"
+  | "checkoutRefByUserId"
+  | "unlimitedRepeatTrial"
+  | "payerEmailDropped"
+  | "purgeOpen"
+  | "purgeKeepsOld"
+  | "purgeTooEager";
 
 const USER_A = "aaaaaaaa-0000-4000-8000-000000000001";
 const USER_B = "bbbbbbbb-0000-4000-8000-000000000002";
@@ -178,7 +187,9 @@ function makeWorld(leaks: Leak[] = []) {
     leak("termsNotRecorded")
       ? { accepted_terms_at: null, terms_version: null }
       : { accepted_terms_at: "2026-10-03T08:00:00.000Z", terms_version: TERMS_VERSION };
-  for (const u of users) profiles.set(u, { user_id: u, plan_id: "free", display_name: null, course: null, onboarded_at: null, ...signupTerms() });
+  // 20261003040000_go_live_gaps.sql: every profile has its own random checkout reference
+  const newProfile = (u: string): Row => ({ user_id: u, plan_id: "free", display_name: null, course: null, onboarded_at: null, checkout_ref: globalThis.crypto.randomUUID(), ...signupTerms() });
+  for (const u of users) profiles.set(u, newProfile(u));
   const usage: Row[] = [];
   const grants: Row[] = [];
   const billingEvents: Row[] = [];
@@ -230,17 +241,21 @@ function makeWorld(leaks: Leak[] = []) {
   }
   const FINAL = ["canceled", "incomplete_expired"];
   const GRACE_MS = 3 * 86_400_000;
+  /** unlimited_earlier_plan(): an earlier row of the same account that started (anything but incomplete_expired) */
+  const earlierPlan = (s: Row) => subs.some((o) => o.user_id === s.user_id && Number(o.id) < Number(s.id) && o.status !== "incomplete_expired");
   const grantsPlan = (s: Row) => {
     const end = s.current_period_end ?? s.trial_end;
-    return ["trialing", "active"].includes(String(s.status)) && (end == null || Date.parse(String(end)) + GRACE_MS > Date.now());
+    const firstOrPaid = s.status === "active" || (s.status === "trialing" && (leak("unlimitedRepeatTrial") || !earlierPlan(s)));
+    return firstOrPaid && (end == null || Date.parse(String(end)) + GRACE_MS > Date.now());
   };
   /** has_unlimited(uid) */
   const hasUnlimited = (uid: string) => subs.some((s) => s.user_id === uid && grantsPlan(s));
-  /** unlimited_state_of(uid): the row that grants the plan, else the latest */
+  /** unlimited_state_of(uid): the row that grants the plan, else the latest; plus repeat_trial and the checkout ref */
   function unlimitedState(uid: string): Row {
     const own = subs.filter((s) => s.user_id === uid);
     const row = own.find(grantsPlan) ?? own.at(-1);
-    if (!row) return { status: "none", unlimited: false, trial_end: null, current_period_end: null, cancel_at_period_end: false, cancel_at: null };
+    const checkout_ref = profiles.get(uid)?.checkout_ref ?? null;
+    if (!row) return { status: "none", unlimited: false, trial_end: null, current_period_end: null, cancel_at_period_end: false, cancel_at: null, repeat_trial: false, checkout_ref };
     return {
       status: row.status ?? null,
       unlimited: hasUnlimited(uid),
@@ -248,7 +263,22 @@ function makeWorld(leaks: Leak[] = []) {
       current_period_end: row.current_period_end ?? null,
       cancel_at_period_end: row.cancel_at_period_end === true,
       cancel_at: row.cancel_at ?? null,
+      repeat_trial: row.status === "trialing" && earlierPlan(row),
+      checkout_ref,
     };
+  }
+  /** purge_billing_event_payloads(): payloads older than 90 days blanked, rows kept */
+  function purgePayloads(): HttpResult {
+    const cutoff = Date.now() - 90 * 86_400_000;
+    let n = 0;
+    for (const e of billingEvents) {
+      const old = Date.parse(String(e.received_at)) < cutoff;
+      if (e.payload !== null && ((old && !leak("purgeKeepsOld")) || leak("purgeTooEager"))) {
+        e.payload = null;
+        n++;
+      }
+    }
+    return ok(n);
   }
   /** The service-role writers of 20261003020000_unlimited.sql (and, with a leak, callable by a user). */
   function unlimitedRpc(fn: string, args: Row): HttpResult | null {
@@ -263,11 +293,14 @@ function makeWorld(leaks: Leak[] = []) {
     };
     switch (fn) {
       case "link_unlimited_checkout": {
-        const named = typeof args.p_user_id === "string" ? args.p_user_id : null;
-        const user = named && users.has(named) ? named : null;
+        // the account whose checkout ref it is; a user id matches nobody (unless the leak)
+        const named = typeof args.p_checkout_ref === "string" ? args.p_checkout_ref : null;
+        const byRef = named ? (([...profiles.values()].find((p) => p.checkout_ref === named)?.user_id as string | undefined) ?? null) : null;
+        const user = byRef ?? (leak("checkoutRefByUserId") && named && users.has(named) ? named : null);
         const row = rowFor();
         row.user_id ??= user;
         row.checkout_session_id ??= args.p_checkout_session_id ?? null;
+        if (!leak("payerEmailDropped")) row.payer_email ??= args.p_payer_email ?? null;
         return ok({
           linked: user !== null && row.user_id === user,
           user_id: row.user_id,
@@ -473,6 +506,7 @@ function makeWorld(leaks: Leak[] = []) {
       return leak("unlimitedRpcOpen") ? (unlimitedRpc(fn, args) as HttpResult) : denied(uid);
     }
     if (fn === "has_unlimited") return leak("unlimitedProbe") ? ok(hasUnlimited(String(args.p_uid))) : denied(uid);
+    if (fn === "purge_billing_event_payloads") return leak("purgeOpen") ? purgePayloads() : denied(uid);
     switch (fn) {
       case "credit_summary":
         return ok(summary(uid));
@@ -579,7 +613,7 @@ function makeWorld(leaks: Leak[] = []) {
         if (charges && !leak("unlimitedDeleteNotBlocked")) {
           return { status: 400, body: { code: "P0001", hint: "unlimited_active", message: "Cancel Agathon Unlimited before deleting your account" } };
         }
-        for (const s of subs) if (s.user_id === uid) s.user_id = null; // on delete set null
+        for (const s of subs) if (s.user_id === uid) Object.assign(s, { user_id: null, payer_email: null }); // on delete set null; the trigger forgets the payer
         for (let i = unlimitedUsage.length - 1; i >= 0; i--) if (unlimitedUsage[i].user_id === uid) unlimitedUsage.splice(i, 1);
         users.delete(uid);
         profiles.delete(uid);
@@ -620,7 +654,11 @@ function makeWorld(leaks: Leak[] = []) {
         if (rest.length === 0 && text !== head) return false;
         continue;
       }
-      if (!value.startsWith("eq.")) throw new Error(`fake only supports eq. and like. filters, got ${key}=${value}`);
+      if (value.startsWith("in.(") && value.endsWith(")")) {
+        if (!value.slice(4, -1).split(",").includes(String(row[key]))) return false;
+        continue;
+      }
+      if (!value.startsWith("eq.")) throw new Error(`fake only supports eq., in. and like. filters, got ${key}=${value}`);
       if (String(row[key]) !== value.slice(3)) return false;
     }
     return true;
@@ -765,7 +803,8 @@ function makeWorld(leaks: Leak[] = []) {
             (leak("planIdUpdatable") && k === "plan_id") ||
             (leak("onboardingPatchable") && (k === "course" || k === "onboarded_at")) ||
             (leak("inkBalancePatchable") && k === "ink_balance") ||
-            (leak("termsPatchable") && (k === "accepted_terms_at" || k === "terms_version"));
+            (leak("termsPatchable") && (k === "accepted_terms_at" || k === "terms_version")) ||
+            (leak("checkoutRefPatchable") && k === "checkout_ref");
           if (Object.keys(body).some((k) => !updatable(k))) return denied(uid);
           const own = visible.filter((r) => r.user_id === uid);
           for (const r of own) Object.assign(r, body);
@@ -852,6 +891,7 @@ function makeWorld(leaks: Leak[] = []) {
 
   /** The service role bypasses RLS and holds every grant; only what the checks use is modelled. */
   function serviceRest(method: string, table: string, query: Record<string, string>, body: Row): HttpResult {
+    if (table === "rpc/purge_billing_event_payloads") return purgePayloads();
     if (table.startsWith("rpc/")) {
       const plan = unlimitedRpc(table.slice(4), body);
       if (plan) return plan;
@@ -880,6 +920,19 @@ function makeWorld(leaks: Leak[] = []) {
         if (method === "DELETE") {
           const gone = subs.filter((r) => matches(r, query));
           for (const r of gone) subs.splice(subs.indexOf(r), 1);
+          return ok(gone);
+        }
+        break;
+      }
+      case "billing_events": {
+        if (method === "POST") {
+          for (const r of Array.isArray(body) ? (body as Row[]) : [body]) billingEvents.push({ received_at: new Date().toISOString(), ...r });
+          return ok(null, 201);
+        }
+        if (method === "GET") return ok(billingEvents.filter((r) => matches(r, query)));
+        if (method === "DELETE") {
+          const gone = billingEvents.filter((r) => matches(r, query));
+          for (const r of gone) billingEvents.splice(billingEvents.indexOf(r), 1);
           return ok(gone);
         }
         break;
@@ -958,13 +1011,13 @@ function makeWorld(leaks: Leak[] = []) {
   const newUser = async (): Promise<RlsClient> => {
     const uid = uuid();
     users.add(uid);
-    profiles.set(uid, { user_id: uid, plan_id: "free", display_name: null, course: null, onboarded_at: null, ...signupTerms() });
+    profiles.set(uid, newProfile(uid));
     grantStarter(uid);
     return client(uid);
   };
 
   const ctx: CheckContext = { anon: client(null), a: client(USER_A), b: client(USER_B), newUser, service: client(SERVICE) };
-  return { ctx, state: { boards, settings, bugReports, snapshots, assets, objects, users, profiles, usage, grants, counters, inkGrants, purchases, reviews, emailLog, subs, unlimitedUsage } };
+  return { ctx, state: { boards, settings, bugReports, snapshots, assets, objects, users, profiles, usage, grants, counters, inkGrants, purchases, reviews, emailLog, subs, unlimitedUsage, billingEvents } };
 }
 
 const failures = (results: CheckResult[]) => results.filter((r) => !r.pass).map((r) => r.name);
@@ -1087,11 +1140,22 @@ describe("rlsChecks against a correctly secured fake", () => {
     expect(failures(results)).toEqual([]);
     expect(results.length).toBeGreaterThanOrEqual(20);
     expect(state.subs).toEqual([]);
-    // the one paid spend is the check's own "after the plan ends" call; nothing else touched the ink ledger
-    expect(state.usage.filter((r) => r.user_id === USER_A).map((r) => r.route)).toEqual(["rls-verify-unlimited"]);
+    // the paid spends are the check's own "after the plan ends" call and the second plan's free week (it grants nothing)
+    expect(state.usage.filter((r) => r.user_id === USER_A).map((r) => r.route)).toEqual(["rls-verify-unlimited", "rls-verify-repeat-trial"]);
     expect(state.inkGrants.filter((g) => g.kind === "manual")).toEqual([]);
     // C (whose deletion had to wait for the cancellation) is gone again
     expect([...state.users].sort()).toEqual([USER_A, USER_B].sort());
+  });
+
+  it("the billing retention check blanks only the old payload and leaves no rows behind", async () => {
+    const { ctx, state } = makeWorld();
+    const results = await checkBillingRetention(ctx);
+    expect(failures(results)).toEqual([]);
+    expect(results.length).toBe(5);
+    expect(state.billingEvents).toEqual([]);
+    const without = await checkBillingRetention({ anon: ctx.anon, a: ctx.a, b: ctx.b });
+    expect(failures(without)).toEqual([]);
+    expect(without.map((r) => r.name)).toContain("billing_events retention with the service role (skipped: no service role client)");
   });
 
   it("the Unlimited check reports its service-role part as skipped (still passing) without a service client", async () => {
@@ -1243,6 +1307,14 @@ describe("rlsChecks detect individual leaks", () => {
     ["unlimitedStaleApplies", checkUnlimited, "apply_unlimited_subscription: an older event arriving late changes nothing (stale)"],
     ["unlimitedStaleApplies", checkUnlimited, "apply_unlimited_subscription: a cancelled plan stays cancelled (a late trialing event cannot revive it)"],
     ["unlimitedDeleteNotBlocked", checkUnlimited, "delete_own_account: refused while the plan will charge again (P0001, hint unlimited_active); C's account stays"],
+    ["profileCrossRead", checkUnlimited, "profiles: B cannot read A's checkout_ref (select returns [])"],
+    ["checkoutRefPatchable", checkUnlimited, "profiles: A cannot change own checkout_ref (42501), and it is unchanged"],
+    ["checkoutRefByUserId", checkUnlimited, "link_unlimited_checkout: A's user id as the checkout reference links nobody (no plan on A's account)"],
+    ["unlimitedRepeatTrial", checkUnlimited, "has_unlimited: a second plan's free week grants nothing (repeat_trial: help spends ink until it is paid)"],
+    ["payerEmailDropped", checkUnlimited, "unlimited_subscriptions: A's row carries the payer's email from the checkout"],
+    ["purgeOpen", checkBillingRetention, "purge_billing_event_payloads: A cannot call it"],
+    ["purgeKeepsOld", checkBillingRetention, "purge_billing_event_payloads (service role): a payload older than 90 days is blanked, its row kept"],
+    ["purgeTooEager", checkBillingRetention, "purge_billing_event_payloads: a payload younger than 90 days is kept whole"],
   ];
 
   it.each(cases)("leak %s makes '%s' fail", async (leak, check, failingName) => {

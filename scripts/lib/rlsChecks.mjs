@@ -1578,6 +1578,11 @@ export async function checkInkPurchases({ a, b, anon, service }) {
  * older event never overwrites a newer one, account deletion waits until the plan is set to cancel,
  * and a cancelled plan spends ink again. The check's subscription rows are removed at the end
  * (they outlive the throwaway users, and this also runs against production).
+ *
+ * Go-live gaps (20261003040000_go_live_gaps.sql): the checkout names the account by its
+ * `profiles.checkout_ref`, which only its owner reads and nobody writes, and a USER ID sent as the
+ * ref links nobody (so nobody can start a plan on someone else's account); the payer's email is on
+ * the row its owner reads; and a second plan's free week grants nothing until it is paid.
  * @param {CheckContext} ctx
  */
 export async function checkUnlimited({ a, b, anon, service, newUser }) {
@@ -1593,6 +1598,22 @@ export async function checkUnlimited({ a, b, anon, service, newUser }) {
   const usageIns = await a.rest("POST", "unlimited_usage", { body: minimalInsert("unlimited_usage", a.userId ?? ZERO_UUID), prefer: "return=minimal" });
   out.push(result("unlimited_usage: A cannot write the fair-use record (insert denied)", isDenied(usageIns), describe(usageIns)));
 
+  // The checkout reference: A's own, readable by A alone, writable by nobody.
+  const ownRef = await a.rest("GET", "profiles", { query: { select: "checkout_ref" } });
+  const refA = typeof rows(ownRef)[0]?.checkout_ref === "string" ? String(rows(ownRef)[0].checkout_ref) : null;
+  out.push(result("profiles: A reads own checkout_ref (a uuid)", isOk(ownRef) && rows(ownRef).length === 1 && /^[0-9a-f-]{36}$/i.test(refA ?? ""), describe(ownRef)));
+  const theirRef = await b.rest("GET", "profiles", { query: { user_id: `eq.${a.userId}`, select: "checkout_ref" } });
+  out.push(result("profiles: B cannot read A's checkout_ref (select returns [])", affectedNoRows(theirRef), describe(theirRef)));
+  const setRef = await a.rest("PATCH", "profiles", { query: { user_id: `eq.${a.userId}` }, body: { checkout_ref: uuid() }, prefer: "return=representation" });
+  const refAfter = await a.rest("GET", "profiles", { query: { select: "checkout_ref" } });
+  out.push(
+    result(
+      "profiles: A cannot change own checkout_ref (42501), and it is unchanged",
+      isDenied(setRef) && rows(refAfter)[0]?.checkout_ref === refA,
+      describe(setRef),
+    ),
+  );
+
   const applyArgs = (status, at, extra = {}) => ({
     p_subscription_id: subA,
     p_customer_id: `cus_rls_verify_${tag}`,
@@ -1606,7 +1627,7 @@ export async function checkUnlimited({ a, b, anon, service, newUser }) {
   });
   const t0 = Date.now() - 60_000;
   for (const [who, client] of /** @type {const} */ ([["A", a], ["anon", anon]])) {
-    const link = await rpc(client, "link_unlimited_checkout", { p_subscription_id: subA, p_user_id: a.userId });
+    const link = await rpc(client, "link_unlimited_checkout", { p_subscription_id: subA, p_checkout_ref: refA ?? ZERO_UUID });
     out.push(result(`link_unlimited_checkout: ${who} cannot call it`, isDenied(link), describe(link)));
     const apply = await rpc(client, "apply_unlimited_subscription", applyArgs("active", t0));
     out.push(result(`apply_unlimited_subscription: ${who} cannot call it`, isDenied(apply), describe(apply)));
@@ -1622,15 +1643,39 @@ export async function checkUnlimited({ a, b, anon, service, newUser }) {
       JSON.stringify(a0?.unlimited ?? null).slice(0, 200),
     ),
   );
+  out.push(
+    result(
+      "ink_summary: carries A's own checkout_ref for the plan's checkout",
+      refA !== null && a0?.unlimited?.checkout_ref === refA,
+      JSON.stringify(a0?.unlimited?.checkout_ref ?? null),
+    ),
+  );
 
   if (!service) {
     out.push(result("Agathon Unlimited with the service role (skipped: no service role client)", true));
     return out;
   }
 
+  // A's USER ID as the checkout reference (what someone who learned it would send): nobody's plan.
+  const byId = await rpc(service, "link_unlimited_checkout", { p_subscription_id: `sub_rls_verify_${tag}_byid`, p_checkout_ref: a.userId });
+  const aById = asObject((await rpc(a, "ink_summary")).body);
+  out.push(
+    result(
+      "link_unlimited_checkout: A's user id as the checkout reference links nobody (no plan on A's account)",
+      isOk(byId) && asObject(byId.body)?.linked === false && asObject(byId.body)?.user_id === null && aById?.unlimited?.status === "none",
+      describe(byId),
+    ),
+  );
+
   // The subscription's own event first (no user yet), then the checkout links it: either order works.
+  const payer = `rls-verify-payer-${tag}@example.com`;
   const applied = await rpc(service, "apply_unlimited_subscription", applyArgs("trialing", t0));
-  const linked = await rpc(service, "link_unlimited_checkout", { p_subscription_id: subA, p_user_id: a.userId, p_checkout_session_id: `cs_rls_verify_${tag}` });
+  const linked = await rpc(service, "link_unlimited_checkout", {
+    p_subscription_id: subA,
+    p_checkout_ref: refA,
+    p_checkout_session_id: `cs_rls_verify_${tag}`,
+    p_payer_email: payer,
+  });
   const a1 = asObject((await rpc(a, "ink_summary")).body);
   out.push(
     result(
@@ -1639,8 +1684,9 @@ export async function checkUnlimited({ a, b, anon, service, newUser }) {
       `${describe(linked)} / ${JSON.stringify(a1?.unlimited ?? null)}`.slice(0, 200),
     ),
   );
-  const own = await a.rest("GET", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${subA}`, select: "user_id,status" } });
+  const own = await a.rest("GET", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${subA}`, select: "user_id,status,payer_email" } });
   out.push(result("unlimited_subscriptions: A reads own subscription", isOk(own) && rows(own).length === 1 && rows(own)[0].user_id === a.userId, describe(own)));
+  out.push(result("unlimited_subscriptions: A's row carries the payer's email from the checkout", rows(own)[0]?.payer_email === payer, describe(own)));
   const theirs = await b.rest("GET", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${subA}`, select: "id" } });
   out.push(result("unlimited_subscriptions: B cannot read A's subscription", affectedNoRows(theirs), describe(theirs)));
   const hijack = await b.rest("PATCH", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${subA}` }, body: { user_id: b.userId }, prefer: "return=representation" });
@@ -1695,7 +1741,8 @@ export async function checkUnlimited({ a, b, anon, service, newUser }) {
     const c = await newUser();
     const subC = `sub_rls_verify_${tag}_c`;
     await rpc(service, "apply_unlimited_subscription", { ...applyArgs("trialing", t0), p_subscription_id: subC });
-    await rpc(service, "link_unlimited_checkout", { p_subscription_id: subC, p_user_id: c.userId });
+    const refC = rows(await c.rest("GET", "profiles", { query: { select: "checkout_ref" } }))[0]?.checkout_ref ?? null;
+    await rpc(service, "link_unlimited_checkout", { p_subscription_id: subC, p_checkout_ref: refC });
     const blocked = await rpc(c, "delete_own_account");
     const still = await c.rest("GET", "profiles", { query: { select: "user_id" } });
     out.push(
@@ -1738,9 +1785,86 @@ export async function checkUnlimited({ a, b, anon, service, newUser }) {
     ),
   );
 
+  // One free week per account: A's plan was cancelled, so a second plan's trial grants nothing
+  // until its first payment (then it is Unlimited like any paid plan).
+  const subA2 = `sub_rls_verify_${tag}_a2`;
+  await rpc(service, "link_unlimited_checkout", { p_subscription_id: subA2, p_checkout_ref: refA });
+  await rpc(service, "apply_unlimited_subscription", { ...applyArgs("trialing", t0 + 4000), p_subscription_id: subA2 });
+  const a7 = asObject((await rpc(a, "ink_summary")).body);
+  const second = asObject((await rpc(a, "consume_credits", { p_route: "rls-verify-repeat-trial", p_units: 1, p_request_id: `${request}-repeat` })).body);
+  out.push(
+    result(
+      "has_unlimited: a second plan's free week grants nothing (repeat_trial: help spends ink until it is paid)",
+      a7?.unlimited?.status === "trialing" && a7?.unlimited?.unlimited === false && a7?.unlimited?.repeat_trial === true && second?.unlimited === undefined,
+      `${JSON.stringify(a7?.unlimited ?? null)} / ${JSON.stringify(second)}`.slice(0, 200),
+    ),
+  );
+  await rpc(service, "apply_unlimited_subscription", { ...applyArgs("active", t0 + 5000), p_subscription_id: subA2 });
+  const a8 = asObject((await rpc(a, "ink_summary")).body);
+  out.push(
+    result(
+      "has_unlimited: the second plan, once paid (active), is Unlimited",
+      a8?.unlimited?.status === "active" && a8?.unlimited?.unlimited === true && a8?.unlimited?.repeat_trial === false,
+      JSON.stringify(a8?.unlimited ?? null).slice(0, 200),
+    ),
+  );
+  await rpc(service, "apply_unlimited_subscription", { ...applyArgs("canceled", t0 + 6000, { p_ended_at: new Date().toISOString() }), p_subscription_id: subA2 });
+
   // Leave nothing behind: the rows outlive the throwaway users (user_id becomes null).
   const cleared = await service.rest("DELETE", "unlimited_subscriptions", { query: { stripe_subscription_id: `like.sub_rls_verify_${tag}_*` }, prefer: "return=representation" });
-  out.push(result("unlimited_subscriptions: the check's own rows are removed again", isOk(cleared) && rows(cleared).length === (newUser ? 2 : 1), describe(cleared)));
+  out.push(result("unlimited_subscriptions: the check's own rows are removed again", isOk(cleared) && rows(cleared).length === (newUser ? 4 : 3), describe(cleared)));
+  return out;
+}
+
+/**
+ * Retention of Stripe payloads (20261003040000_go_live_gaps.sql): billing_events keeps a payload
+ * (the payer's name, email, address, card brand and last four) for 90 days, then
+ * purge_billing_event_payloads() (the nightly cron, service role only) blanks it and keeps the
+ * row. Users can neither read the table nor call the purge. With the service role: a payload 91
+ * days old is blanked, one 89 days old is kept; the check's rows are removed again.
+ * @param {CheckContext} ctx
+ */
+export async function checkBillingRetention({ a, anon, service }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  for (const [who, client] of /** @type {const} */ ([["A", a], ["anon", anon]])) {
+    const purge = await rpc(client, "purge_billing_event_payloads");
+    out.push(result(`purge_billing_event_payloads: ${who} cannot call it`, isDenied(purge), describe(purge)));
+  }
+  if (!service) {
+    out.push(result("billing_events retention with the service role (skipped: no service role client)", true));
+    return out;
+  }
+  const tag = uuid().slice(0, 8);
+  const ids = { old: `evt_rls_verify_${tag}_old`, recent: `evt_rls_verify_${tag}_recent` };
+  const day = 86_400_000;
+  const payload = { rls_verify: true, customer_details: { email: "payer@example.com" } };
+  const inserted = await service.rest("POST", "billing_events", {
+    body: [
+      { id: ids.old, type: "rls.verify", payload, received_at: new Date(Date.now() - 91 * day).toISOString() },
+      { id: ids.recent, type: "rls.verify", payload, received_at: new Date(Date.now() - 89 * day).toISOString() },
+    ],
+    prefer: "return=minimal",
+  });
+  const purged = await rpc(service, "purge_billing_event_payloads");
+  const left = await service.rest("GET", "billing_events", { query: { id: `in.(${ids.old},${ids.recent})`, select: "id,type,payload" } });
+  const byId = Object.fromEntries(rows(left).map((r) => [r.id, r]));
+  out.push(
+    result(
+      "purge_billing_event_payloads (service role): a payload older than 90 days is blanked, its row kept",
+      isOk(inserted) && isOk(purged) && Number(purged.body) >= 1 && byId[ids.old]?.payload === null && byId[ids.old]?.type === "rls.verify",
+      `${describe(purged)} / ${describe(left)}`.slice(0, 200),
+    ),
+  );
+  out.push(
+    result(
+      "purge_billing_event_payloads: a payload younger than 90 days is kept whole",
+      JSON.stringify(byId[ids.recent]?.payload ?? null) === JSON.stringify(payload),
+      describe(left),
+    ),
+  );
+  const cleared = await service.rest("DELETE", "billing_events", { query: { id: `in.(${ids.old},${ids.recent})` }, prefer: "return=representation" });
+  out.push(result("billing_events: the check's own rows are removed again", isOk(cleared) && rows(cleared).length === 2, describe(cleared)));
   return out;
 }
 
@@ -1770,6 +1894,7 @@ export const ALL_CHECKS = [
   { name: "Agathon Unlimited: only the webhook grants the plan; subscribers spend no ink and refunds mint none", run: checkUnlimited },
   { name: "sign-up consent: the Terms version is on the profile, readable, never writable", run: checkSignupConsent },
   { name: "email_log: the service role's alone, each email claimed once", run: checkEmailLog },
+  { name: "billing_events: Stripe payloads kept 90 days, purged only by the service role", run: checkBillingRetention },
   { name: "delete_own_account removes the caller's account and data", run: checkDeleteOwnAccount },
 ];
 

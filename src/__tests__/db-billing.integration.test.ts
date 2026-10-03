@@ -35,6 +35,12 @@
  *     stays free; a refunded call gives back its count and no ink
  *   - delete_own_account waits for the plan to end; the subscription row outlives the account, unlinked
  *
+ * Covered (go-live gaps; 20261003040000_go_live_gaps.sql):
+ *   - the checkout links by the account's checkout_ref (never its user id), with the payer's email,
+ *     which goes when the account goes
+ *   - a second plan's free week grants nothing (repeat_trial) until it turns active
+ *   - purge_billing_event_payloads() blanks payloads older than 90 days, keeps the rows, service role only
+ *
  * Covered (sign-up consent; 20261003010000_signup_consent.sql):
  *   - the profile records the Terms version and when; the user can read it, not write it
  *   - no account without an accepted Terms version: sign-up without one, with a malformed one,
@@ -635,8 +641,13 @@ suite(title, () => {
     const uid = c.userId as string;
     const sub = `sub_db_unlimited_${uid}`;
     const week = new Date(Date.now() + 7 * DAY).toISOString();
-    // the checkout first this time (the other order is in scripts/lib/rlsChecks.mjs checkUnlimited)
-    const linked = await rpc(service, "link_unlimited_checkout", { p_subscription_id: sub, p_user_id: uid, p_customer_id: "cus_db", p_checkout_session_id: `cs_db_${uid}` });
+    // the checkout first this time (the other order is in scripts/lib/rlsChecks.mjs checkUnlimited),
+    // naming the account by its checkout ref, which the account itself reads
+    const ref = rows(await c.rest("GET", "profiles", { query: { select: "checkout_ref" } }))[0]?.checkout_ref as string;
+    expect(ref).toMatch(/^[0-9a-f-]{36}$/);
+    const linked = await rpc(service, "link_unlimited_checkout", {
+      p_subscription_id: sub, p_checkout_ref: ref, p_customer_id: "cus_db", p_checkout_session_id: `cs_db_${uid}`, p_payer_email: "grown.up@example.com",
+    });
     expect(linked.body).toMatchObject({ linked: true, status: null, unlimited: false });
     const pending = (await rpc(c, "ink_summary")).body as { unlimited: { status: string | null; unlimited: boolean } };
     expect(pending.unlimited).toMatchObject({ status: null, unlimited: false });
@@ -683,10 +694,72 @@ suite(title, () => {
     await rpc(service, "apply_unlimited_subscription", {
       p_subscription_id: sub, p_customer_id: "cus_db", p_status: "canceled", p_ended_at: new Date().toISOString(), p_event_at: new Date(Date.now() + 1000).toISOString(),
     });
+    expect(rows(await service.rest("GET", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${sub}`, select: "payer_email" } }))).toEqual([{ payer_email: "grown.up@example.com" }]);
     expect((await rpc(c, "delete_own_account")).status).toBeLessThan(300);
-    expect(rows(await service.rest("GET", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${sub}`, select: "user_id,status" } }))).toEqual([{ user_id: null, status: "canceled" }]);
+    // the row kept for the owner names nobody: no user, and no payer email either
+    expect(rows(await service.rest("GET", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${sub}`, select: "user_id,status,payer_email" } }))).toEqual([
+      { user_id: null, status: "canceled", payer_email: null },
+    ]);
     expect(rows(await service.rest("GET", "unlimited_usage", { query: { user_id: `eq.${uid}`, select: "id" } }))).toEqual([]);
     await service.rest("DELETE", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${sub}` } });
+  }, 60_000);
+
+  it("go-live gaps: a user id links nobody, one free week per account, Stripe payloads purged after 90 days", async () => {
+    if (!ctx.newUser) throw new Error("bootstrapVerifyContext did not provide newUser()");
+    const c = await ctx.newUser();
+    const uid = c.userId as string;
+    const ref = rows(await c.rest("GET", "profiles", { query: { select: "checkout_ref" } }))[0]?.checkout_ref as string;
+    const week = new Date(Date.now() + 7 * DAY).toISOString();
+    const subs = [`sub_db_gaps_${uid}_0`, `sub_db_gaps_${uid}_1`, `sub_db_gaps_${uid}_2`];
+    const apply = (sub: string, status: string, at: number, extra: Record<string, unknown> = {}) =>
+      rpc(service, "apply_unlimited_subscription", { p_subscription_id: sub, p_customer_id: "cus_db", p_status: status, p_trial_end: week, p_current_period_end: week, p_event_at: new Date(at).toISOString(), ...extra });
+    const plan = async () => ((await rpc(c, "ink_summary")).body as { unlimited: Record<string, unknown> }).unlimited;
+
+    // the user id as the reference (what an attacker who knows it would send): nobody's plan
+    const byId = await rpc(service, "link_unlimited_checkout", { p_subscription_id: subs[0], p_checkout_ref: uid });
+    expect(byId.body).toMatchObject({ linked: false, user_id: null, no_account: true });
+    await apply(subs[0], "trialing", Date.now());
+    expect(await plan()).toMatchObject({ status: "none", unlimited: false, checkout_ref: ref });
+
+    // the first plan's free week is Unlimited
+    await rpc(service, "link_unlimited_checkout", { p_subscription_id: subs[1], p_checkout_ref: ref });
+    await apply(subs[1], "trialing", Date.now());
+    expect(await plan()).toMatchObject({ status: "trialing", unlimited: true, repeat_trial: false });
+    // cancelled, then a second checkout: its free week grants nothing, help spends ink
+    await apply(subs[1], "canceled", Date.now() + 1000, { p_ended_at: new Date().toISOString() });
+    await rpc(service, "link_unlimited_checkout", { p_subscription_id: subs[2], p_checkout_ref: ref });
+    await apply(subs[2], "trialing", Date.now() + 2000);
+    expect(await plan()).toMatchObject({ status: "trialing", unlimited: false, repeat_trial: true });
+    const spent = (await consume(c, 2, "live/check", { p_request_id: "db-gaps-repeat" })).body as Consume & { unlimited?: boolean };
+    expect(spent).toMatchObject({ ok: true });
+    expect(spent.unlimited).toBeUndefined();
+    // paid: Unlimited like anyone's
+    await apply(subs[2], "active", Date.now() + 3000, { p_trial_end: null, p_current_period_end: new Date(Date.now() + 30 * DAY).toISOString() });
+    expect(await plan()).toMatchObject({ status: "active", unlimited: true, repeat_trial: false });
+    await apply(subs[2], "canceled", Date.now() + 4000, { p_ended_at: new Date().toISOString() });
+
+    // payloads: older than 90 days blanked, the row kept; newer kept whole; users cannot call it
+    const ids = [`evt_db_gaps_${uid}_old`, `evt_db_gaps_${uid}_new`];
+    const inserted = await service.rest("POST", "billing_events", {
+      body: [
+        { id: ids[0], type: "test", payload: { email: "a@example.com" }, received_at: new Date(Date.now() - 91 * DAY).toISOString() },
+        { id: ids[1], type: "test", payload: { email: "a@example.com" }, received_at: new Date(Date.now() - 89 * DAY).toISOString() },
+      ],
+      prefer: "return=minimal",
+    });
+    expect(inserted.status, JSON.stringify(inserted.body)).toBe(201);
+    expect((await rpc(c, "purge_billing_event_payloads")).status).toBeGreaterThanOrEqual(400);
+    const purged = await rpc(service, "purge_billing_event_payloads");
+    expect(purged.status).toBe(200);
+    expect(purged.body).toBeGreaterThanOrEqual(1);
+    const left = rows(await service.rest("GET", "billing_events", { query: { id: `in.(${ids.join(",")})`, select: "id,payload", order: "id" } }));
+    // (ordered by id: "_new" before "_old")
+    expect(left).toEqual([
+      { id: ids[1], payload: { email: "a@example.com" } },
+      { id: ids[0], payload: null },
+    ]);
+    await service.rest("DELETE", "billing_events", { query: { id: `in.(${ids.join(",")})` } });
+    await service.rest("DELETE", "unlimited_subscriptions", { query: { stripe_subscription_id: `in.(${subs.join(",")})` } });
   }, 60_000);
 
   it("delete_own_account takes the account's bug reports with it, email included", async () => {

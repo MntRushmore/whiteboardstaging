@@ -58,6 +58,8 @@ import { signStripePayload } from "@/lib/server/webhookSignature";
 import realEvents from "./fixtures/stripe-unlimited-subscription-events.json";
 
 const USER_ID = "8d2a3f1e-4b6c-4d7e-9f01-23456789abcd";
+/** That account's checkout reference (profiles.checkout_ref): what the Unlimited link carries instead of the user id. */
+const CHECKOUT_REF = "0b7e9c1a-5d2f-4e3a-8b6c-9d0e1f2a3b4c";
 const SECRET = "whsec_unit";
 const NOW = 1_760_000_000;
 const PRICE_MAP = { price_small: "small", price_medium: "medium", price_large: "large" };
@@ -135,7 +137,7 @@ function unlimitedSession(overrides: Record<string, unknown> = {}): Record<strin
     mode: "subscription",
     payment_status: "no_payment_required",
     status: "complete",
-    client_reference_id: USER_ID,
+    client_reference_id: CHECKOUT_REF,
     customer: "cus_u",
     subscription: "sub_1",
     amount_total: 0,
@@ -364,32 +366,48 @@ describe("mapBillingEvent: refunds and the rest", () => {
 });
 
 describe("mapBillingEvent: Agathon Unlimited", () => {
-  it("the Unlimited checkout links its subscription to the user in client_reference_id, paid or not (a free week pays nothing)", () => {
+  it("the Unlimited checkout links its subscription to the account whose checkout ref is client_reference_id, with the payer's email", () => {
     expect(mapBillingEvent(event("checkout.session.completed", unlimitedSession()), {})).toEqual({
       kind: "link",
       link: {
         subscriptionId: "sub_1",
-        userId: USER_ID,
-        clientReferenceId: USER_ID,
+        checkoutRef: CHECKOUT_REF,
+        clientReferenceId: CHECKOUT_REF,
         customerId: "cus_u",
         checkoutSessionId: "cs_sub_1",
         livemode: false,
+        payerEmail: "parent@example.com",
         problem: null,
       },
     });
-    const expanded = unlimitedSession({ subscription: { id: "sub_2" }, customer: { id: "cus_2" }, payment_status: "paid", client_reference_id: USER_ID.toUpperCase() });
-    expect(mapBillingEvent(event("checkout.session.completed", expanded), {})).toMatchObject({ kind: "link", link: { subscriptionId: "sub_2", customerId: "cus_2", userId: USER_ID } });
+    const expanded = unlimitedSession({ subscription: { id: "sub_2" }, customer: { id: "cus_2" }, payment_status: "paid", client_reference_id: CHECKOUT_REF.toUpperCase() });
+    expect(mapBillingEvent(event("checkout.session.completed", expanded), {})).toMatchObject({ kind: "link", link: { subscriptionId: "sub_2", customerId: "cus_2", checkoutRef: CHECKOUT_REF } });
   });
 
-  it("an Unlimited checkout without a usable user is still a link, to nobody, saying why", () => {
+  it("the payer's email: the checkout's customer_details, else customer_email, only when it is one address", () => {
+    const payer = (overrides: Record<string, unknown>) => {
+      const mapped = mapBillingEvent(event("checkout.session.completed", unlimitedSession(overrides)), {});
+      return mapped.kind === "link" ? mapped.link.payerEmail : "not a link";
+    };
+    expect(payer({ customer_details: { email: " grown.up@example.com " } })).toBe("grown.up@example.com");
+    expect(payer({ customer_details: null, customer_email: "prefilled@example.com" })).toBe("prefilled@example.com");
+    for (const email of [null, "", "nobody", "a@b, c@d", "<a@b>", `${"x".repeat(320)}@example.com`]) {
+      expect(payer({ customer_details: { email }, customer_email: null }), String(email)).toBeNull();
+    }
+  });
+
+  it("an Unlimited checkout without a usable ref is still a link, to nobody, saying why; metadata.user_id is never read", () => {
     expect(mapBillingEvent(event("checkout.session.completed", unlimitedSession({ client_reference_id: null })), {})).toMatchObject({
       kind: "link",
-      link: { userId: null, problem: /opened outside the app/ },
+      link: { checkoutRef: null, problem: /opened outside the app/ },
     });
     expect(mapBillingEvent(event("checkout.session.completed", unlimitedSession({ client_reference_id: "kid-42" })), {})).toMatchObject({
       kind: "link",
-      link: { userId: null, clientReferenceId: "kid-42", problem: /not a user id/ },
+      link: { checkoutRef: null, clientReferenceId: "kid-42", problem: /not a checkout reference/ },
     });
+    // the packs' fallback to metadata.user_id does not apply to the plan
+    const viaMetadata = unlimitedSession({ client_reference_id: null, metadata: { ...UNLIMITED_TAG, user_id: USER_ID } });
+    expect(mapBillingEvent(event("checkout.session.completed", viaMetadata), {})).toMatchObject({ kind: "link", link: { checkoutRef: null } });
     expect(mapBillingEvent(event("checkout.session.completed", unlimitedSession({ subscription: null })), {})).toMatchObject({ kind: "ignored", reason: /without a subscription id/ });
   });
 
@@ -526,6 +544,7 @@ type StoreLog = {
 /** An unlimited_subscriptions row as the fake keeps it. */
 type PlanRow = {
   userId: string | null;
+  payerEmail: string | null;
   status: string | null;
   eventAt: number | null;
   cancelAtPeriodEnd: boolean;
@@ -555,11 +574,12 @@ function fakeStore(
   const log: StoreLog = { recorded: [], payloads: [], forgotten: [], grants: [], reviews: [], reversals: [], lookups: [], links: [], applies: [] };
   // unlimited_subscriptions, with the semantics of link_unlimited_checkout / apply_unlimited_subscription
   const plans = new Map<string, PlanRow>();
-  const accounts = new Set([USER_ID]);
+  // profiles.checkout_ref -> user (link_unlimited_checkout resolves the ref; a user id matches nothing)
+  const refs = new Map([[CHECKOUT_REF, USER_ID]]);
   const planRow = (id: string): PlanRow => {
     let row = plans.get(id);
     if (!row) {
-      row = { userId: null, status: null, eventAt: null, cancelAtPeriodEnd: false, currentPeriodEnd: null, trialEnd: null, customerId: null };
+      row = { userId: null, payerEmail: null, status: null, eventAt: null, cancelAtPeriodEnd: false, currentPeriodEnd: null, trialEnd: null, customerId: null };
       plans.set(id, row);
     }
     return row;
@@ -578,13 +598,14 @@ function fakeStore(
       const forced = opts.link?.(l);
       if (forced) return forced;
       log.links.push(l);
-      const user = l.userId && accounts.has(l.userId) ? l.userId : null;
+      const user = (l.checkoutRef && refs.get(l.checkoutRef)) ?? null;
       const row = planRow(l.subscriptionId);
       row.userId ??= user;
       row.customerId ??= l.customerId;
+      row.payerEmail ??= l.payerEmail;
       if (user && row.userId === user) return { status: "linked", userId: user, subscriptionStatus: row.status };
       if (user) return { status: "conflict", userId: row.userId };
-      return { status: "unlinked", reason: l.userId ? "no account for this user" : (l.problem ?? "no user") };
+      return { status: "unlinked", reason: l.checkoutRef ? "no account has this checkout reference" : (l.problem ?? "no user") };
     },
     async applySubscription(s) {
       const forced = opts.apply?.(s);
@@ -1100,6 +1121,22 @@ describe("POST /api/billing/webhook: Agathon Unlimited", () => {
     await send(handler, subEvent("customer.subscription.updated", subscription({ status: "past_due" }), "evt_pd", NOW + WEEK + 3600));
     expect(store.plan("sub_1")).toMatchObject({ userId: USER_ID, status: "past_due" });
     expect(store.log.applies.at(-1)).toMatchObject({ status: "past_due" });
+  });
+
+  it("SECURITY: a user id as client_reference_id no longer links the plan (anyone can learn one); the checkout ref does", async () => {
+    const store = fakeStore();
+    const handler = handlerWith(store);
+    // an attacker opens the Unlimited link with the victim's USER ID and their own card
+    expect(await send(handler, subEvent("checkout.session.completed", unlimitedSession({ client_reference_id: USER_ID, id: "cs_attack", subscription: "sub_attack" }), "evt_attack", NOW))).toEqual({
+      status: 200,
+      body: { received: true },
+    });
+    await send(handler, subEvent("customer.subscription.created", subscription({ id: "sub_attack" }), "evt_attack_sub", NOW + 1));
+    expect(store.plan("sub_attack")).toMatchObject({ userId: null, status: "trialing" }); // nobody's: no plan on the victim's account
+    expect(store.log.links.at(-1)).toMatchObject({ checkoutRef: USER_ID }); // sent as a ref, and no profile has it
+    // the account's own checkout (its ref) links as before
+    await send(handler, checkoutEv());
+    expect(store.plan("sub_1")).toMatchObject({ userId: USER_ID, payerEmail: "parent@example.com" });
   });
 
   it("an Unlimited checkout without a usable user is recorded, linked to nobody (200, for the owner to link)", async () => {

@@ -19,7 +19,8 @@ import styles from "./plan.module.css";
  * straight on to the home. It counts as shown the moment it shows — the device marker turns to
  * "seen" — so the home never sends the student back here; the page itself stays reachable.
  *
- * Start the free week opens the plan's Stripe Payment Link for this user in this tab; its return
+ * Start the free week opens the plan's Stripe Payment Link for this account (its checkout
+ * reference, `unlimitedCheckoutUrl`) in this tab; its return
  * lands on the home (`/?unlimited=started`), which welcomes them. Maybe later goes home.
  */
 export function PlanScreen() {
@@ -29,7 +30,9 @@ export function PlanScreen() {
   const [starting, setStarting] = useState(false);
   // the day the free week would end if it started now (client only: the card shows once signed in)
   const [now] = useState(() => new Date());
-  const checkout = user ? unlimitedCheckoutUrl({ userId: user.id, email: user.email }) : null;
+  // The account's checkout reference comes with the plan's own read (never the user id): until it
+  // lands the screen is still "checking", so the button never opens a checkout without it.
+  const checkout = user ? unlimitedCheckoutUrl({ checkoutRef: unlimited.state.checkoutRef, email: user.email }) : null;
   const view = planView({ loading: unlimited.loading || authLoading || !user, unlimited: unlimited.state, checkoutUrl: checkout });
   const userId = user?.id;
 
