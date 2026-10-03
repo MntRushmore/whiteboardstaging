@@ -44,6 +44,7 @@ import { useAssistanceMode, type AssistanceMode } from "@/hooks/useAssistanceMod
 import { offloadAssetsOnce, useSnapshotSave } from "@/hooks/useSnapshotSave";
 import { useBoardAutoTitle } from "@/hooks/useBoardAutoTitle";
 import { createBoardAssetStore } from "@/lib/assets/boardAssetStore";
+import { BOARD_EMBEDS } from "@/lib/boards/embeds";
 import {
   BOARD_LOAD_COPY,
   BoardCrashed,
@@ -634,6 +635,8 @@ export default function BoardPage() {
         // a board is for writing: the pen is in hand when it opens, not the selection arrow
         initialState="draw"
         licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
+        // no GitHub Gist: tldraw runs its script unsandboxed, in our origin (src/lib/boards/embeds.ts)
+        embeds={BOARD_EMBEDS}
         assets={assetStoreBundle?.store}
         components={{
           MenuPanel: null,
