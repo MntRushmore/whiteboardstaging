@@ -169,6 +169,35 @@ describe("LectureRunner: running", () => {
     expect(h.status()).toBe("listening");
   });
 
+  it("keeps the screen on while starting and listening, lets it sleep when paused, stopped or failed", async () => {
+    const calls: string[] = [];
+    const wakeLock = { hold: () => calls.push("hold"), release: () => calls.push("release") };
+    let fail = false;
+    const h = runner({
+      wakeLock,
+      openSpeech: async () => {
+        if (fail) throw new ApiError("x", 402, "ink_empty");
+        return new MicSource();
+      },
+    });
+    h.storage.set(LECTURE_CONSENT_KEY, "1");
+    h.r.start();
+    expect(calls).toEqual(["hold"]); // starting: in the tap that started it
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls.at(-1)).toBe("hold"); // listening
+    h.r.pause();
+    expect(calls.at(-1)).toBe("release");
+    h.r.resume();
+    expect(calls.at(-1)).toBe("hold");
+    h.r.stop();
+    expect(calls.at(-1)).toBe("release");
+    fail = true;
+    h.r.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.status()).toBe("error");
+    expect(calls.at(-1)).toBe("release");
+  });
+
   it("dispose ends the lecture", async () => {
     const h = runner();
     h.storage.set(LECTURE_CONSENT_KEY, "1");
