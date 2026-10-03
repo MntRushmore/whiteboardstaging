@@ -34,11 +34,6 @@ function firstLineTitle(): string | null {
   return pickTitleLine(studentLines())?.title ?? null;
 }
 
-/** What the student has written, as the namer reads it: changes when a line is read differently. */
-function studentContentKey(): string {
-  return titleContent(studentLines()).join("\n");
-}
-
 /** The chat's problems on this screen (their lines), each once. */
 function problemsOnPage(editor: Editor): string[][] {
   const seen = new Set<string>();
@@ -68,7 +63,9 @@ function problemsOnPage(editor: Editor): string[][] {
  */
 export function useBoardAutoTitle(editor: Editor, boardId: string, sync: Pick<SyncState, "lastSavedAt" | "pending">): void {
   const firstLine = useValue("board.firstLineTitle", firstLineTitle, []);
-  const content = useValue("board.titleContent", studentContentKey, []);
+  // Everything the namer reads (the chat's problems, then the student's lines): a board with only
+  // the tutor's problem on it — the welcome's first board before the student writes — is named too.
+  const content = useValue("board.titleContent", () => titleContent(studentLines(), problemsOnPage(editor)).join("\n"), [editor]);
 
   const stateRef = useRef(INITIAL_NAMER);
   const editedRef = useRef(false);
