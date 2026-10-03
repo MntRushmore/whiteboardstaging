@@ -8,7 +8,7 @@ import styles from "./plan.module.css";
 const PERK_ICONS = { help: Lightbulb, ask: MessageSquare, check: CheckCheck, courses: GraduationCap } as const;
 
 export interface PlanOfferProps {
-  /** `offer`: Start my free week opens checkout; `soon`: no checkout yet, Continue goes home */
+  /** `offer`: Start the free week opens checkout; `soon`: no checkout yet, Continue goes home */
   view: "offer" | "soon";
   /** the day the card is first charged, in words (`chargeDateText`) */
   chargeDate: string;
@@ -22,7 +22,7 @@ export interface PlanOfferProps {
 /**
  * The plan screen's card (the route is src/app/(platform)/welcome/plan): Agathon Unlimited, its
  * price crossed out under "Free for your beta week", what it gives in four pictures, and — because
- * the student is a child and the card is a grown-up's — "Ask a grown-up to start your free week"
+ * the student is a child and the card is a grown-up's — "This part is for a grown-up"
  * above the one button, with the auto-renewal said plainly right under it. "Maybe later" is always
  * there and goes home. Without a checkout link the button says Coming soon and Continue goes home.
  *
@@ -90,7 +90,14 @@ export function PlanOffer({ view, chargeDate, starting = false, onStart, onLater
           )}
           {!soon && (
             <p id="plan-disclosure" className={styles.disclosure}>
-              {PLAN_COPY.disclosure(chargeDate)}
+              {PLAN_COPY.disclosure(chargeDate)}{" "}
+              <a href={PLAN_COPY.termsLink.href} className="underline underline-offset-2">
+                {PLAN_COPY.termsLink.text}
+              </a>
+              {" · "}
+              <a href={PLAN_COPY.fairUseLink.href} className="underline underline-offset-2">
+                {PLAN_COPY.fairUseLink.text}
+              </a>
             </p>
           )}
           <Button size="lg" variant={soon ? "secondary" : "ghost"} className={styles.later} onClick={onLater} disabled={starting}>

@@ -49,10 +49,10 @@ describe("the plan screen's words", () => {
 
   it("says plainly, under the button, that nothing is charged today and when the grown-up's card is", () => {
     expect(PLAN_COPY.disclosure("Saturday, October 10")).toBe(
-      "You won't be charged today. Your grown-up's card is charged $25 on Saturday, October 10 unless you cancel before then.",
+      "Nothing is charged today. The card is charged $25 on Saturday, October 10, then every month, unless you cancel before then.",
     );
-    expect(PLAN_COPY.grownUp).toBe("Ask a grown-up to start your free week");
-    expect(PLAN_COPY.start).toBe("Start my free week");
+    expect(PLAN_COPY.grownUp).toBe("This part is for a grown-up");
+    expect(PLAN_COPY.start).toBe("Start the free week");
     expect(PLAN_COPY.later).toBe("Maybe later");
   });
 
@@ -62,8 +62,16 @@ describe("the plan screen's words", () => {
     expect(PLAN_COPY.perks.map((p) => p.text).join(" ")).toMatch(/Help me and Solve/);
   });
 
+  it("links the plan's terms and its fair-use limit beside the disclosure", () => {
+    expect(PLAN_COPY.termsLink.href).toBe("/terms#unlimited");
+    expect(PLAN_COPY.fairUseLink.href).toBe("/terms#fair-use");
+    expect(PLAN_COPY.disclosure("Saturday, October 10")).toMatch(/then every month/);
+  });
+
   it("never says wrong", () => {
-    const words = Object.values(PLAN_COPY).flatMap((v) => (typeof v === "string" ? [v] : typeof v === "function" ? [v("today")] : v.map((p) => p.text)));
+    const words = Object.values(PLAN_COPY).flatMap((v): string[] =>
+      typeof v === "string" ? [v] : typeof v === "function" ? [v("today")] : Array.isArray(v) ? v.map((p) => p.text) : [(v as { text: string }).text],
+    );
     for (const w of words) expect(w).not.toMatch(/\bwrong\b/i);
   });
 });

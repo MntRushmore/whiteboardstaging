@@ -14,7 +14,7 @@ import { UNLIMITED_PLAN, isUnlimited, type UnlimitedState } from "@/lib/billing/
 /**
  * - `checking`: the subscription is still being read (nothing shows: a subscriber is never pitched);
  * - `skip`: already on the plan (trialing or paid up): straight on to the home;
- * - `offer`: the pitch, with Start my free week;
+ * - `offer`: the pitch, with Start the free week;
  * - `soon`: the pitch without a checkout (the Payment Link is not configured): "Coming soon".
  */
 export type PlanView = "checking" | "skip" | "offer" | "soon";
@@ -60,12 +60,18 @@ export const PLAN_COPY = {
     { id: "check", text: "Checks every line you write" },
     { id: "courses", text: "Every course, from Algebra to Calculus" },
   ],
-  grownUp: "Ask a grown-up to start your free week",
-  grownUpHint: "They add a card at checkout. It takes a minute.",
-  start: "Start my free week",
+  // Said TO the grown-up, not "ask a grown-up": guidance on advertising to children (CARU) is
+  // against urging a child to ask a parent to buy.
+  grownUp: "This part is for a grown-up",
+  grownUpHint: "A parent or guardian adds a card at checkout. It takes a minute.",
+  start: "Start the free week",
   opening: "Opening checkout…",
   /** the auto-renewal disclosure, right under the button */
-  disclosure: (date: string) => `You won't be charged today. Your grown-up's card is charged ${PRICE} on ${date} unless you cancel before then.`,
+  disclosure: (date: string) =>
+    `Nothing is charged today. The card is charged ${PRICE} on ${date}, then every month, unless you cancel before then.`,
+  /** under the disclosure: the plan's terms, and the fair-use limit "Unlimited" is subject to */
+  termsLink: { href: "/terms#unlimited", text: "How the plan works" },
+  fairUseLink: { href: "/terms#fair-use", text: "Fair use" },
   later: "Maybe later",
   soon: "Coming soon",
   /** without a checkout, in place of the grown-up's line */

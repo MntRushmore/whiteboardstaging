@@ -19,7 +19,7 @@ import styles from "./plan.module.css";
  * straight on to the home. It counts as shown the moment it shows — the device marker turns to
  * "seen" — so the home never sends the student back here; the page itself stays reachable.
  *
- * Start my free week opens the plan's Stripe Payment Link for this user in this tab; its return
+ * Start the free week opens the plan's Stripe Payment Link for this user in this tab; its return
  * lands on the home (`/?unlimited=started`), which welcomes them. Maybe later goes home.
  */
 export function PlanScreen() {
