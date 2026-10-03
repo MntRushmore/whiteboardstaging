@@ -56,8 +56,14 @@ export type ClientErrorReport = {
 const NOISE = /ResizeObserver loop|^Script error\.?$|\babort(ed|error)\b|No active pointer with the given id/i;
 /** Thrown from a browser extension's script, not ours (Safari masks extension URLs). */
 const EXTENSION = /-extension:\/\/|webkit-masked-url:/;
+/**
+ * The same lifted pen in Safari, which words it "NotFoundError: The object can not be found here."
+ * (its message for every NotFoundError, so only when the stack's top frame is setPointerCapture).
+ */
+const SAFARI_POINTER_CAPTURE = { message: /^NotFoundError\b/, stack: /^setPointerCapture@\[native code\]/ };
 
 export function isNoise(message: string, stack = ""): boolean {
+  if (SAFARI_POINTER_CAPTURE.message.test(message) && SAFARI_POINTER_CAPTURE.stack.test(stack)) return true;
   return !message || NOISE.test(message) || EXTENSION.test(stack);
 }
 

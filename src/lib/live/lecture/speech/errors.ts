@@ -8,14 +8,16 @@ import { isApiError, isOutOfInk } from "@/lib/api-client";
  *  - unsupported   no way to listen in this browser (no realtime recognizer here and no built-in one)
  *  - mic-denied    the microphone permission was refused
  *  - mic-missing   no microphone, or it is in use elsewhere
+ *  - speech-off    the browser has a recognizer but its service is switched off (Safari: Dictation
+ *                  off, or Speech Recognition not allowed for Safari, in the device's settings)
  *  - ink           the token route answered 402: the student is out of ink
  *  - unauthorized  signed out
  *  - network       the recognizer could not be reached, again and again
  *  - recognizer    the recognizer refused the session (its key, its quota)
  */
-export type SpeechErrorCode = "unsupported" | "mic-denied" | "mic-missing" | "ink" | "unauthorized" | "network" | "recognizer";
+export type SpeechErrorCode = "unsupported" | "mic-denied" | "mic-missing" | "speech-off" | "ink" | "unauthorized" | "network" | "recognizer";
 
-export const SPEECH_ERROR_CODES: readonly SpeechErrorCode[] = ["unsupported", "mic-denied", "mic-missing", "ink", "unauthorized", "network", "recognizer"];
+export const SPEECH_ERROR_CODES: readonly SpeechErrorCode[] = ["unsupported", "mic-denied", "mic-missing", "speech-off", "ink", "unauthorized", "network", "recognizer"];
 
 export class SpeechError extends Error {
   readonly code: SpeechErrorCode;

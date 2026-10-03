@@ -13,8 +13,16 @@ import {
   INK_SUMMARY_FALLBACK,
   isRetryableAuthError,
   readInkSummary,
+  createInkStore,
+  bindInkEvents,
+  INK_FRESH_MS,
+  SPENT_REREAD_MS,
+  CHECKOUT_WATCH_MS,
   type InkSummaryRpc,
+  type ReadInkSummaryResult,
 } from "@/lib/billing/useInkSummary";
+import { INK_SPENT_EVENT } from "@/lib/api-client";
+import { parseInkSummary } from "@/lib/billing/inkSummary";
 
 /** Shape the RPC returns on success (ink_summary() jsonb). */
 const SUMMARY = {
@@ -195,5 +203,194 @@ describe("telling the other ink surfaces", () => {
       vi.unstubAllGlobals();
     }
     expect(seen).toEqual([INK_CHECKOUT_EVENT]);
+  });
+});
+
+describe("the shared ink store (one request, one cache, one set of listeners per page)", () => {
+  function summaryWith(balance: number) {
+    const parsed = parseInkSummary({ ...SUMMARY, balance, used: Math.max(0, 300 - balance) });
+    if (!parsed) throw new Error("fixture does not parse");
+    return parsed;
+  }
+
+  /** A store whose reads wait for `answer()`, with a hand-moved clock and counted listener sets. */
+  function harness(bindTo?: { win: EventTarget; doc: EventTarget & { visibilityState: DocumentVisibilityState } }) {
+    const pending: Array<(r: ReadInkSummaryResult) => void> = [];
+    let clock = 1_000_000;
+    const bound = { count: 0 };
+    const read = vi.fn(() => new Promise<ReadInkSummaryResult>((resolve) => pending.push(resolve)));
+    const store = createInkStore({
+      read,
+      now: () => clock,
+      bind: (s) => {
+        bound.count++;
+        const unbind = bindTo ? bindInkEvents(s, bindTo.win, bindTo.doc) : () => undefined;
+        return () => {
+          bound.count--;
+          unbind();
+        };
+      },
+    });
+    return {
+      store,
+      read,
+      bound,
+      advance: (ms: number) => {
+        clock += ms;
+      },
+      /** settle the oldest read in flight */
+      async answer(balance = 297) {
+        const resolve = pending.shift();
+        if (!resolve) throw new Error("no read in flight");
+        resolve({ summary: summaryWith(balance) });
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+      },
+    };
+  }
+
+  function page() {
+    return { win: new EventTarget(), doc: Object.assign(new EventTarget(), { visibilityState: "visible" as DocumentVisibilityState }) };
+  }
+
+  it("two consumers mounting together (header + page, or StrictMode's double effect) make one read", async () => {
+    const h = harness();
+    const offHeader = h.store.attach("u1");
+    const offPage = h.store.attach("u1");
+    expect(h.read).toHaveBeenCalledTimes(1);
+    expect(h.bound.count).toBe(1); // one set of window listeners for the page
+    await h.answer(250);
+    expect(h.store.getState()).toMatchObject({ status: "ready", data: { balance: 250 } });
+    offHeader();
+    expect(h.bound.count).toBe(1);
+    offPage();
+    expect(h.bound.count).toBe(0);
+  });
+
+  it("a remount within INK_FRESH_MS (a page swapping its layout) uses the cached answer; later, reads again", async () => {
+    const h = harness();
+    const off = h.store.attach("u1");
+    await h.answer();
+    off();
+    h.advance(INK_FRESH_MS - 1);
+    const again = h.store.attach("u1");
+    expect(h.read).toHaveBeenCalledTimes(1);
+    expect(h.store.getState().status).toBe("ready");
+    again();
+    h.advance(2);
+    h.store.attach("u1");
+    expect(h.read).toHaveBeenCalledTimes(2);
+  });
+
+  it("focus and visibilitychange when the tab comes back are one read, and none right after a read", async () => {
+    const p = page();
+    const h = harness(p);
+    h.store.attach("u1");
+    h.store.attach("u1");
+    h.advance(INK_FRESH_MS);
+    p.win.dispatchEvent(new Event("focus"));
+    p.doc.dispatchEvent(new Event("visibilitychange"));
+    expect(h.read).toHaveBeenCalledTimes(1); // the mount's read is still in flight: joined
+    await h.answer();
+    p.win.dispatchEvent(new Event("focus"));
+    p.doc.dispatchEvent(new Event("visibilitychange"));
+    expect(h.read).toHaveBeenCalledTimes(1); // fresh
+    h.advance(INK_FRESH_MS);
+    p.win.dispatchEvent(new Event("focus"));
+    p.doc.dispatchEvent(new Event("visibilitychange"));
+    expect(h.read).toHaveBeenCalledTimes(2); // stale: exactly one read for both events
+    p.doc.visibilityState = "hidden";
+    await h.answer();
+    h.advance(INK_FRESH_MS);
+    p.doc.dispatchEvent(new Event("visibilitychange"));
+    expect(h.read).toHaveBeenCalledTimes(2); // going hidden reads nothing
+  });
+
+  it("a balance change reads even when fresh, and once more after a read already in flight", async () => {
+    const p = page();
+    const h = harness(p);
+    h.store.attach("u1");
+    h.store.attach("u1"); // two surfaces, one listener set
+    p.win.dispatchEvent(new Event(INK_CHANGED_EVENT));
+    p.win.dispatchEvent(new Event(INK_CHANGED_EVENT));
+    expect(h.read).toHaveBeenCalledTimes(1);
+    await h.answer(100); // that read may predate the change...
+    expect(h.read).toHaveBeenCalledTimes(2); // ...so exactly one more
+    await h.answer(1100);
+    expect(h.store.getState().data?.balance).toBe(1100);
+    expect(h.read).toHaveBeenCalledTimes(2);
+    // another tab's ping (storage) is a change; an unrelated key is not
+    p.win.dispatchEvent(Object.assign(new Event("storage"), { key: "something-else" }));
+    expect(h.read).toHaveBeenCalledTimes(2);
+    p.win.dispatchEvent(Object.assign(new Event("storage"), { key: INK_CHANGED_KEY }));
+    expect(h.read).toHaveBeenCalledTimes(3);
+  });
+
+  it("a 402's remaining is shown without a read; other paid calls re-read once after the burst", async () => {
+    vi.useFakeTimers();
+    try {
+      const p = page();
+      const h = harness(p);
+      h.store.attach("u1");
+      await h.answer(300);
+      p.win.dispatchEvent(new CustomEvent(INK_SPENT_EVENT, { detail: { remaining: 12 } }));
+      expect(h.store.getState().data).toMatchObject({ balance: 12, used: 288 });
+      expect(h.read).toHaveBeenCalledTimes(1);
+      p.win.dispatchEvent(new CustomEvent(INK_SPENT_EVENT, { detail: {} }));
+      vi.advanceTimersByTime(1000);
+      p.win.dispatchEvent(new CustomEvent(INK_SPENT_EVENT, { detail: {} }));
+      vi.advanceTimersByTime(SPENT_REREAD_MS - 1);
+      expect(h.read).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(1);
+      expect(h.read).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("another account starts from loading and never sees the previous account's late answer", async () => {
+    const h = harness();
+    h.store.attach("a")();
+    h.store.attach("b");
+    expect(h.read).toHaveBeenCalledTimes(2);
+    expect(h.store.userId()).toBe("b");
+    await h.answer(999); // a's read lands late: dropped
+    expect(h.store.getState().status).toBe("loading");
+    await h.answer(42);
+    expect(h.store.getState().data?.balance).toBe(42);
+  });
+
+  it("the checkout watch re-reads until the balance grows, then stops", async () => {
+    vi.useFakeTimers();
+    try {
+      const p = page();
+      const h = harness(p);
+      h.store.attach("u1");
+      await h.answer(10);
+      p.win.dispatchEvent(new Event(INK_CHECKOUT_EVENT));
+      expect(h.read).toHaveBeenCalledTimes(2);
+      await h.answer(10); // the balance before paying
+      vi.advanceTimersByTime(CHECKOUT_WATCH_MS);
+      expect(h.read).toHaveBeenCalledTimes(3);
+      await h.answer(10);
+      vi.advanceTimersByTime(CHECKOUT_WATCH_MS);
+      expect(h.read).toHaveBeenCalledTimes(4);
+      await h.answer(1010); // the pack arrived
+      vi.advanceTimersByTime(CHECKOUT_WATCH_MS * 10);
+      expect(h.read).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("nothing reads while no consumer is mounted, and the listeners go with the last one", () => {
+    const p = page();
+    const h = harness(p);
+    void h.store.refresh(true);
+    expect(h.read).not.toHaveBeenCalled();
+    h.store.attach("u1")();
+    expect(h.read).toHaveBeenCalledTimes(1);
+    p.win.dispatchEvent(new Event(INK_CHANGED_EVENT));
+    void h.store.refresh(true);
+    expect(h.read).toHaveBeenCalledTimes(1);
   });
 });

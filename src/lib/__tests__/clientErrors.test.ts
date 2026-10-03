@@ -77,6 +77,15 @@ describe("isNoise", () => {
     expect(isNoise("TypeError: Cannot read properties of undefined (reading 'id')", "at https://app.test/a.js:1:1")).toBe(false);
     expect(isNoise("TypeError: Failed to fetch")).toBe(false);
   });
+
+  it("Safari's words for a lifted pen are noise; its other NotFoundErrors are not", () => {
+    // the stack WebKit gives tldraw's setPointerCapture throwing (seen in WebKit 26.6)
+    const message = "NotFoundError: The object can not be found here.";
+    expect(isNoise(message, "setPointerCapture@[native code]\nsetPointerCapture@https://app.test/_next/static/chunks/a.js:1:2\nonPointerDown@https://app.test/_next/static/chunks/a.js:3:4")).toBe(true);
+    // the same words from removeChild (a translation extension rewriting the DOM React owns) are a real crash
+    expect(isNoise(message, "removeChild@[native code]\ncommitDeletion@https://app.test/_next/static/chunks/b.js:1:2")).toBe(false);
+    expect(isNoise(message)).toBe(false);
+  });
 });
 
 describe("boardIdFromPath", () => {

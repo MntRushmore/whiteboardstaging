@@ -162,6 +162,9 @@ describe("lectureBarModel", () => {
     expect(lectureBarModel({ status: "error", error: "mic-denied", snap: null, now: 0 }).error).toEqual({ code: "mic-denied", message: LECTURE_COPY.errors["mic-denied"], ink: false, retry: true });
     expect(lectureErrorView("ink")).toMatchObject({ ink: true, retry: false });
     expect(lectureErrorView("unsupported").retry).toBe(false);
+    // Safari with Dictation off has a recognizer: it is told how to switch it on, not to change browser
+    expect(lectureErrorView("speech-off")).toMatchObject({ retry: true, message: expect.stringMatching(/Dictation/) });
+    expect(lectureErrorView("speech-off").message).not.toMatch(/Chrome|Edge/);
     expect(lectureErrorView("unauthorized").retry).toBe(false);
     expect(lectureErrorView("network").retry).toBe(true);
     // the handle's error wins; the snapshot's is the fallback

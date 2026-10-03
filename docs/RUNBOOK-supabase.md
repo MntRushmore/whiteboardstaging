@@ -43,7 +43,7 @@ What the migration creates (idempotent, safe to re-run):
 | --- | --- |
 | Tables (all RLS on, no `anon` grants) | `whiteboards`, `whiteboard_snapshots`, `board_assets`, `user_settings`, `bug_reports`, `trainers`, `training_samples` |
 | Functions | `set_updated_at()`, `is_trainer()` (security definer), `whiteboards_bump_version()`, `whiteboards_record_snapshot()` |
-| Triggers | `updated_at` on whiteboards/user_settings/training_samples; `version` bump + copy into `whiteboard_snapshots` (last 20) on every `whiteboards.data` change |
+| Triggers | `updated_at` on whiteboards/user_settings/training_samples; `version` bump on every `whiteboards.data` change; board history in `whiteboard_snapshots` (since `20261003000000_snapshot_retention.sql`: the replaced state at most every 10 minutes and before a wipe, pruned to the newest 8 + one a day for 7 days within 4 MB; section 10.1) |
 | Policies | owner-only CRUD keyed on `auth.uid()`; `bug_reports` insert-only; trainer tables/objects gated by `is_trainer()` |
 | Storage | bucket `board-assets` (public read, 15 MB, image/*) and `training-data` (private, 10 MB, image/png) + `storage.objects` policies scoped to `<uid>/...` folders |
 | Seed | `trainers` row for `rushilchopra123@gmail.com` (no-op until that user signs up) |
@@ -149,6 +149,40 @@ npx supabase stop                     # keeps data; add --no-backup to wipe volu
   With `pg_dump` installed: `pg_dump "postgresql://postgres:<db-password>@db.<ref>.supabase.co:5432/postgres" --schema=public --no-owner --no-privileges -Fc -f backups/full-$(date +%F).dump`. Dumps contain student work: encrypt at rest, never commit.
 - **Storage objects** are not in a DB dump. Copy them with `npx supabase storage cp -r ss:///board-assets ./backups/board-assets --linked` (experimental) or from the dashboard.
 - **Restore drill (do this once per quarter, ~15 min):** create a throwaway project (section 1), `npx supabase link --project-ref <new-ref>`, `npm run db:push`, then load data with `npx supabase db query --linked -f backups/data-<date>.sql` (or `psql "$DB_URL" -f ...`). Point a local `.env.local` at the new project, sign in as a test user, open a restored board. Delete the throwaway project when done. Note: `auth.users` rows are included in `--data-only` dumps; user passwords remain valid because hashes are copied.
+
+### 10.1 Board history (`whiteboard_snapshots`)
+
+The database keeps a short history of every board, for one purpose: an operator putting a board back after it was wiped or messed up (a bug, a stale device, a student who cleared it). Nothing in the app reads it. Rules (`supabase/migrations/20261003000000_snapshot_retention.sql`):
+
+- A history row holds the state a save **replaced** (`version` is that state's version; the row in `whiteboards` is always the current state). One is written when the board has none younger than 10 minutes (so the first save of every session, then at most one per 10 minutes of drawing), and whenever a save drops more than half of a board of 16 KB or more (the state right before a clear or a wipe). A new board's empty start is never kept.
+- Each time one is written the board's history is pruned to the newest 8 plus the newest of each UTC day for the last 7 days, and, taken in order of value (newest; each earlier day's newest; the rest), to at most 4 MB of stored size, never fewer than 2.
+- Only the trigger writes it; owners can read their own rows; `prune_whiteboard_snapshots(board uuid)` is callable by the service role (returns how many rows it removed).
+
+Put a board back (SQL editor; the student should close the board first, or their open tab saves over it):
+
+```sql
+-- what there is
+select version, created_at, pg_size_pretty(pg_column_size(data)::bigint) as stored
+from public.whiteboard_snapshots where whiteboard_id = '<board id>' order by version desc;
+-- keep the current state too (the restore below is a save like any other: it is kept only by the rules above)
+insert into public.whiteboard_snapshots (whiteboard_id, user_id, version, data)
+select id, user_id, version, data from public.whiteboards where id = '<board id>'
+on conflict (whiteboard_id, version) do nothing;
+-- restore one (it becomes a new version)
+update public.whiteboards w set data = s.data
+from public.whiteboard_snapshots s
+where w.id = '<board id>' and s.whiteboard_id = w.id and s.version = <version>;
+```
+
+Size. Before 2026-10-03 every save was copied and 20 copies kept per board (15-35 MB for a heavy board). After applying the migration, the one-time prune frees the rows but not the disk: run `vacuum (full, analyze) public.whiteboard_snapshots;` once (it locks the table for the seconds it takes; saves wait meanwhile, so pick a quiet moment). Watch the totals with:
+
+```sql
+select pg_size_pretty(pg_database_size(current_database())) as db,
+       pg_size_pretty(pg_total_relation_size('public.whiteboards')) as boards,
+       pg_size_pretty(pg_total_relation_size('public.whiteboard_snapshots')) as history;
+```
+
+On the free plan the project turns read-only near 500 MB and every save fails; move to Pro (8 GB) well before that.
 
 ## 11. Troubleshooting
 

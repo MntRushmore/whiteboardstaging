@@ -90,6 +90,7 @@ import { useLecture } from "@/components/lecture/useLecture";
 import { LectureButton } from "@/components/lecture/LectureButton";
 import { LectureBar } from "@/components/lecture/LectureBar";
 import { browserStorage as onboardingStorage, isGuidedBoard } from "@/lib/onboarding/marker";
+import { attachKeyboardFit, browserKeyboardFitEnv } from "@/components/board/keyboardFit";
 
 // The guided first board's tour (the welcome's Start): loaded on that board only, after the board.
 const BoardTour = React.lazy(() => import("@/components/onboarding/BoardTour"));
@@ -499,6 +500,10 @@ export default function BoardPage() {
   // The board chat: off by default, remembered per device; the page lays it out beside the board.
   const [chatOpen, setChatOpen] = useChatOpen();
   const [chatHost, setChatHost] = useState<HTMLElement | null>(null);
+  // With the on-screen keyboard up for the Ask panel docked beside the board (an iPad held sideways), the root
+  // is laid over the part of the screen the keyboard leaves (src/components/board/keyboardFit.ts).
+  const [boardRoot, setBoardRoot] = useState<HTMLElement | null>(null);
+  useEffect(() => (boardRoot && chatHost ? attachKeyboardFit(boardRoot, browserKeyboardFitEnv(chatHost)) : undefined), [boardRoot, chatHost]);
   // The store is created before the editor exists; `attach` (called from onMount) gives its
   // `getAsset` the mounted editor. A closure variable rather than a ref so nothing reads a
   // ref during render.
@@ -534,8 +539,11 @@ export default function BoardPage() {
     setLoadAttempt((n) => n + 1);
   }, []);
 
+  // Keyed on the user's id, not the user object: supabase-js hands out a new session object on
+  // every auth event (a token refresh, another tab of the app starting), and reloading the row
+  // under a mounted editor gave the autosave a newer version than the board on screen.
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
     let cancelled = false;
     async function loadBoard() {
       let result: BoardLoadState;
@@ -580,7 +588,7 @@ export default function BoardPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, user, loadAttempt]);
+  }, [id, userId, loadAttempt]);
 
   if (authLoading || !user || loadState.kind === "loading") {
     return <BoardLoading label={loadAttempt > 0 ? BOARD_LOAD_COPY.retrying : BOARD_LOAD_COPY.loading} />;
@@ -592,8 +600,10 @@ export default function BoardPage() {
   }
 
   return (
-    // touch-action: a quick double tap on the bar's buttons must not zoom the page on an iPad
-    <div style={{ position: "fixed", inset: 0, touchAction: "manipulation" }} className="flex flex-col md:landscape:flex-row">
+    // touch-action: a quick double tap on the bar's buttons must not zoom the page on an iPad.
+    // data-board-root: the page under it never scrolls or bounces (globals.css). Positioned by
+    // class, not inline, so the keyboard fit's inline top/height fall back to inset: 0 when cleared.
+    <div ref={setBoardRoot} data-board-root="" style={{ touchAction: "manipulation" }} className="fixed inset-0 flex flex-col md:landscape:flex-row">
       {/* the board refits whenever this box changes size (useScreenCamera): the whole screen stays in view */}
       <div className="relative min-h-0 min-w-0 flex-1">
       <Tldraw
@@ -620,6 +630,8 @@ export default function BoardPage() {
         }}
         onMount={(editor) => {
           assetStoreBundle?.attach(editor);
+          // Pasted/dropped pictures: one whose upload fails is removed again, not saved broken.
+          editor.registerExternalContentHandler("files", (c) => import("@/lib/assets/addImageFiles").then((m) => m.addImageFiles(editor, c)));
           if (initialData) {
             try {
               loadSnapshot(editor.store, initialData);

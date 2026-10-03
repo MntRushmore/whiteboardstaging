@@ -488,12 +488,20 @@ export async function checkTrainingSamplesDenied({ a }) {
   return out;
 }
 
-/** @param {CheckContext} ctx */
-export async function checkSnapshots({ a, b }) {
+/**
+ * History rows are written by the whiteboards trigger only (20261003000000_snapshot_retention.sql):
+ * nobody inserts them through the API, owners read their own, and the pruning function is not a
+ * user RPC.
+ * @param {CheckContext} ctx
+ */
+export async function checkSnapshots({ anon, a, b }) {
   /** @type {CheckResult[]} */
   const out = [];
   const board = await createBoard(a, "rls-verify snapshots");
   try {
+    // Two changes: the second keeps the version the first produced.
+    for (const v of [1, 2]) await a.rest("PATCH", "whiteboards", { query: { id: `eq.${board.id}` }, body: { data: { v } } });
+
     const bIns = await b.rest("POST", "whiteboard_snapshots", {
       body: { whiteboard_id: board.id, user_id: b.userId, version: 900001, data: {} },
       prefer: "return=minimal",
@@ -510,13 +518,20 @@ export async function checkSnapshots({ a, b }) {
       body: { whiteboard_id: board.id, user_id: a.userId, version: 900001, data: {} },
       prefer: "return=minimal",
     });
-    out.push(result("whiteboard_snapshots: A inserts snapshot for own board", isOk(aIns), describe(aIns)));
+    out.push(result("whiteboard_snapshots: A cannot insert history for own board either (only the trigger writes it)", isDenied(aIns), describe(aIns)));
 
     const bSel = await b.rest("GET", "whiteboard_snapshots", { query: { whiteboard_id: `eq.${board.id}`, select: "id" } });
     out.push(result("whiteboard_snapshots: B cannot read A's snapshots", affectedNoRows(bSel), describe(bSel)));
 
     const aSel = await a.rest("GET", "whiteboard_snapshots", { query: { whiteboard_id: `eq.${board.id}`, select: "version" } });
     out.push(result("whiteboard_snapshots: A reads own snapshots", isOk(aSel) && rows(aSel).length >= 1, describe(aSel)));
+
+    for (const [who, client] of /** @type {const} */ ([["A", a], ["anon", anon]])) {
+      const prune = await rpc(client, "prune_whiteboard_snapshots", { p_whiteboard_id: board.id });
+      out.push(result(`prune_whiteboard_snapshots: ${who} cannot call it`, isDenied(prune), describe(prune)));
+    }
+    const aAfter = await a.rest("GET", "whiteboard_snapshots", { query: { whiteboard_id: `eq.${board.id}`, select: "version" } });
+    out.push(result("whiteboard_snapshots: A's history unchanged by the attempts", rows(aAfter).length === rows(aSel).length, describe(aAfter)));
   } finally {
     await deleteBoard(a, board.id);
   }
@@ -641,15 +656,44 @@ export async function checkVersionTrigger({ a }) {
     });
     out.push(result("version: fresh optimistic update (version=2) -> 3", isOk(fresh) && rows(fresh)[0]?.version === 3, describe(fresh)));
 
-    const snaps = await a.rest("GET", "whiteboard_snapshots", {
-      query: { whiteboard_id: `eq.${board.id}`, select: "version", order: "version.asc" },
-    });
-    const versions = rows(snaps).map((r) => Number(r.version));
+    // History (20261003000000_snapshot_retention.sql): a row holds the state a write replaced, kept
+    // when the board has none younger than 10 minutes or the write drops more than half the board;
+    // a new board's empty start is never kept.
+    const history = async () => {
+      const snaps = await a.rest("GET", "whiteboard_snapshots", {
+        query: { whiteboard_id: `eq.${board.id}`, select: "version", order: "version.asc" },
+      });
+      return { snaps, versions: rows(snaps).map((r) => Number(r.version)).join(",") };
+    };
+    const first = await history();
     out.push(
       result(
-        "version: snapshot history recorded for versions 2 and 3",
-        isOk(snaps) && versions.length === 2 && versions[0] === 2 && versions[1] === 3,
-        describe(snaps),
+        "history: the empty start is not kept; the next change keeps the version it replaced (2), not 3",
+        isOk(first.snaps) && first.versions === "2",
+        describe(first.snaps),
+      ),
+    );
+
+    // A board big enough to count (the shrink rule ignores boards under 16 KB stored), random so
+    // compression cannot shrink it below that.
+    const big = { strokes: Array.from({ length: 2000 }, () => uuid()) };
+    const grow = await a.rest("PATCH", "whiteboards", { query: { ...q, version: "eq.3" }, body: { data: big }, prefer: "return=representation" });
+    const afterGrow = await history();
+    out.push(
+      result(
+        "history: a change within 10 minutes of the last kept version keeps nothing",
+        isOk(grow) && rows(grow)[0]?.version === 4 && afterGrow.versions === "2",
+        `${describe(grow)} / ${afterGrow.versions}`,
+      ),
+    );
+
+    const wipe = await a.rest("PATCH", "whiteboards", { query: { ...q, version: "eq.4" }, body: { data: { v: "wiped" } }, prefer: "return=representation" });
+    const afterWipe = await history();
+    out.push(
+      result(
+        "history: a change that drops more than half the board keeps the version before it (4), even within 10 minutes",
+        isOk(wipe) && rows(wipe)[0]?.version === 5 && afterWipe.versions === "2,4",
+        `${describe(wipe)} / ${afterWipe.versions}`,
       ),
     );
   } finally {
@@ -1524,10 +1568,10 @@ export const ALL_CHECKS = [
   { name: "bug_reports: insert-only for self", run: checkBugReports },
   { name: "trainers is read-only", run: checkTrainersNotWritable },
   { name: "training_samples denied for non-trainers", run: checkTrainingSamplesDenied },
-  { name: "whiteboard_snapshots follow board ownership", run: checkSnapshots },
+  { name: "whiteboard_snapshots: owners read their history, only the trigger writes it", run: checkSnapshots },
   { name: "board_assets are isolated", run: checkBoardAssets },
   { name: "storage bucket policies", run: checkStorage },
-  { name: "version trigger and optimistic concurrency", run: checkVersionTrigger },
+  { name: "version trigger, optimistic concurrency and history retention", run: checkVersionTrigger },
   { name: "accounts & billing tables (plans, profiles, ledgers, billing_events)", run: checkBillingTables },
   { name: "credits: consume_credits / credit_summary spend only the caller's balance", run: checkCreditsConsumption },
   { name: "refunds of failed calls: service role only (refund_ink_for), never by the user", run: checkRefunds },

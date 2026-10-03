@@ -70,6 +70,7 @@ import { requestReread, requestSetup, type CallOptions } from "./modelCalls";
 import { acceptReread, rereadTrigger } from "./readCheck";
 import { isProblemProse, setupBlock, validateSetupLines, wordProblemKey } from "./wordProblem";
 import { markKey, markStrokes, ringRect, type MarkKind } from "./marks";
+import { inkExtendsLine } from "./celebrate";
 import { addScreen, readScreenMeta, type ScreensEditor } from "@/lib/screens/screens";
 import { getLiveSettings } from "./liveSettings";
 import { GRAPH, chooseWindow, placeGraphBlock, planGraph, type GraphPlaceContext } from "./graphing";
@@ -1011,6 +1012,8 @@ export class LiveLoop implements LiveController {
     let erased = false;
     /** the pen is down: a stroke in progress, which is working just as much as a finished one */
     let penDown = false;
+    /** strokes the student just finished */
+    const finished: TLShape[] = [];
 
     for (const rec of Object.values(entry.changes.added)) {
       if (!isShapeRecord(rec)) continue;
@@ -1022,6 +1025,7 @@ export class LiveLoop implements LiveController {
       if (!isStudentInk(rec)) continue;
       if ((rec as TLDrawShape).props.isComplete) {
         this.dirtyStrokeIds.add(rec.id);
+        finished.push(rec);
         penUp = true;
         if (!this.looksDrawn(rec)) writingUp = true;
       } else penDown = true;
@@ -1035,6 +1039,7 @@ export class LiveLoop implements LiveController {
         if (!to.props.isComplete) penDown = true;
         if (!f.props.isComplete && to.props.isComplete) {
           this.dirtyStrokeIds.add(to.id);
+          finished.push(to);
           penUp = true;
           if (!this.looksDrawn(to)) writingUp = true;
         } else if (
@@ -1109,6 +1114,10 @@ export class LiveLoop implements LiveController {
     // rubbed out — means the student is still working, wherever on the canvas it happened.
     if (penUp || inkChanged || erased || penDown) this.markUnsettled();
 
+    // A line the tutor ringed that the student is still writing (a pause before the last stroke of
+    // the 12 read `2x = 12` as `2x = 1`): the ring comes off now, not when the line is read again.
+    if (finished.length > 0) this.unringGrowingLines(finished);
+
     if (penUp || inkChanged || erased) {
       // The student is working again: the tutor puts the pen down (finishing what it started).
       this.cancelHandwriting();
@@ -1121,6 +1130,20 @@ export class LiveLoop implements LiveController {
       // waiting to be read keep their time (it is sorted out at that flush, or at one of its own).
       if (penUp && !writingUp && !inkChanged && !erased && this.quietTimer) return;
       this.armQuietTimer();
+    }
+  }
+
+  /**
+   * Takes the ring off every ringed line these new strokes extend (`inkExtendsLine`: on its row, on
+   * it or just past its right end). The verdict was on a half-written line; the re-read of the whole
+   * line marks it again — a ring again if it is still wrong — instead of the old ring standing (and
+   * its writer finishing it) while the student completes the line.
+   */
+  private unringGrowingLines(strokes: readonly TLShape[]): void {
+    const inks = strokes.map((s) => this.editor.getShapePageBounds(s)).filter((b): b is Box => Boolean(b));
+    for (const state of Object.values(liveStore.lines.get())) {
+      if (!this.rt.get(state.line.id)?.markKey?.startsWith("circle:")) continue;
+      if (inks.some((b) => inkExtendsLine(boxToRect(b), state.line.bounds))) this.syncMark(state, null);
     }
   }
 

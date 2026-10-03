@@ -123,6 +123,8 @@ export function BoardChatPanel({ boardId, controller, onClose }: BoardChatPanelP
             value={draft}
             rows={1}
             maxLength={500}
+            // Return sends (sendsOnKey): an iPad's on-screen keyboard labels the key "send", not "return"
+            enterKeyHint="send"
             aria-label={CHAT_COPY.title}
             placeholder={CHAT_COPY.placeholder}
             onChange={(e) => {

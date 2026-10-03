@@ -47,6 +47,14 @@ boundaries) share. The reporter itself, `src/lib/clientErrors.ts` (1.7 KB raw / 
 chunk fetched 3 s after the page loads, or at the first error; shipped in the first load it cost 887 B.
 Other routes grew 274 to 405 B for the same front door.
 
+**Sync follow-ups, 2026-10-03** (`fix/sync-followups`, measured against a build of
+`release/ink-and-board` `ce2b2f7`, which itself measured 1,054,882 B): `/board/[id]` 1,056,203 B
+(+1,321, 3,797 B under the budget). In the first load: the per-tab backup key and its Web Lock, the
+`base`/`sent` copies in the backup, the shared ink store (also +321 B on `/`, +303 B on `/account`)
+and the registration of the board's `files` handler. Lazy: the backup restore
+(`src/lib/sync/restoreBackup.ts`, fetched only when another tab left a backup) and the
+paste/drop handler (`src/lib/assets/addImageFiles.ts`, fetched on the first paste or drop).
+
 ## Before / after
 
 "Before" is the branch as handed over (commit `7b4a42d`); "after" is the same tree plus the changes in
@@ -149,7 +157,7 @@ into the root layout, which would load it on `/` and `/login` - a regression for
 ## 2026-10-02: the board-feel pass (`fix/board-feel`)
 
 `/board/[id]` first-load JS was 1,059,082 B gzip (918 B under budget) before the pass and
-1,054,571 B after it (CSS 48,211 → 48,419 B); 1,055,322 B after the review fixes that followed. The pass's fixes (timeouts, the narrow-board strip,
+1,054,571 B after it (CSS 48,211 → 48,419 B); 1,055,898 B after the review fixes and the pause-mid-line fix that followed. The pass's fixes (timeouts, the narrow-board strip,
 screen deletion, focus rings, the Live loop changes) were paid for by making three things lazy that
 most boards never show: `StickerLibrary` and `PdfUpload` (Feature Labs, off by default) and
 `LiveDebugPanel` (development, or opted in on the device) — `React.lazy` in `app/board/[id]/page.tsx`.

@@ -8,11 +8,11 @@
  * Covers every public table (including the accounts & billing tables: plans,
  * profiles, usage_events, credit_grants, billing_events, rate_limit_counters, and
  * the ink tables ink_packs, ink_grants, ink_purchases, ink_checkout_reviews), the
- * storage buckets, the version trigger and the RPCs (consume_credits, credit_summary,
+ * storage buckets, the version and history triggers and the RPCs (consume_credits, credit_summary,
  * ink_summary, rate_limit_hit, usage_by_day, save_onboarding, delete_own_account;
  * and that a user can call none of the service-role RPCs refund_credits,
  * refund_ink_for, grant_ink_purchase, reverse_ink_purchase, record_ink_checkout_review,
- * grant_ink). Two throwaway users A and B are created up front; the
+ * grant_ink, prune_whiteboard_snapshots). Two throwaway users A and B are created up front; the
  * delete_own_account check creates a third (C) and deletes it through the RPC.
  *
  * Env (read from .env.local when not already set):

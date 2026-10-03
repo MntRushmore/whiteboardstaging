@@ -85,6 +85,11 @@ type Leak =
   | "noVersionBump"
   | "staleUpdateApplies"
   | "noSnapshotHistory"
+  // history retention (20261003000000_snapshot_retention.sql)
+  | "snapshotOwnerInsert"
+  | "snapshotEveryWrite"
+  | "snapshotNoShrinkKeep"
+  | "snapshotPruneCallable"
   // accounts & billing
   | "plansWritable"
   | "profileCrossRead"
@@ -360,6 +365,11 @@ function makeWorld(leaks: Leak[] = []) {
     // Refunds of failed calls are the server's (service role): a user holding a request id must
     // not be able to get that call's ink back.
     if (fn === "refund_credits") return leak("refundUserCallable") ? refundFor(uid, args.p_request_id) : denied(uid);
+    if (fn === "prune_whiteboard_snapshots") {
+      if (!leak("snapshotPruneCallable")) return denied(uid);
+      for (let i = snapshots.length - 1; i >= 0; i--) if (snapshots[i].whiteboard_id === args.p_whiteboard_id) snapshots.splice(i, 1);
+      return ok(0);
+    }
     if (fn === "refund_ink_for") return leak("refundUserCallable") ? refundFor(String(args.p_user_id), args.p_request_id) : denied(uid);
     switch (fn) {
       case "credit_summary":
@@ -532,11 +542,19 @@ function makeWorld(leaks: Leak[] = []) {
         if (method === "PATCH") {
           for (const r of visible) {
             const dataChanged = "data" in body && JSON.stringify(body.data) !== JSON.stringify(r.data);
+            const before = { version: r.version, data: r.data };
             Object.assign(r, body);
             if (dataChanged && !leak("noVersionBump")) {
               r.version = (r.version as number) + 1;
-              if (!leak("noSnapshotHistory")) {
-                snapshots.push({ id: snapshots.length + 1, whiteboard_id: r.id, user_id: r.user_id, version: r.version, data: r.data });
+              // The history trigger: keep the replaced state when the board has no history row
+              // younger than 10 minutes (time never moves here, so: none at all) or the write drops
+              // more than half of a board of 16 KB or more; never the empty start.
+              const oldBytes = JSON.stringify(before.data).length;
+              const shrink = oldBytes >= 16384 && JSON.stringify(r.data).length * 2 < oldBytes && !leak("snapshotNoShrinkKeep");
+              const recent = snapshots.some((s) => s.whiteboard_id === r.id) && !leak("snapshotEveryWrite");
+              const empty = JSON.stringify(before.data) === "{}";
+              if (!leak("noSnapshotHistory") && !empty && (!recent || shrink)) {
+                snapshots.push({ id: snapshots.length + 1, whiteboard_id: r.id, user_id: r.user_id, version: before.version, data: before.data });
               }
             }
           }
@@ -582,8 +600,10 @@ function makeWorld(leaks: Leak[] = []) {
       }
       case "whiteboard_snapshots": {
         if (method === "POST") {
+          // No INSERT grant for authenticated: only the trigger writes history.
           const owns = boards.get(body.whiteboard_id as string)?.user_id === uid;
-          if ((body.user_id !== uid || !owns) && !leak("snapshotForeign")) return denied(uid);
+          const allowed = leak("snapshotForeign") || (leak("snapshotOwnerInsert") && body.user_id === uid && owns);
+          if (!allowed) return denied(uid);
           snapshots.push({ id: snapshots.length + 1, ...body });
           return ok(null, 201);
         }
@@ -913,7 +933,12 @@ describe("rlsChecks detect individual leaks", () => {
     ["trainingUpload", checkStorage, "storage: non-trainer cannot upload to training-data"],
     ["noVersionBump", checkVersionTrigger, "version: data update bumps version 1 -> 2"],
     ["staleUpdateApplies", checkVersionTrigger, "version: stale optimistic update (version=1) affects 0 rows"],
-    ["noSnapshotHistory", checkVersionTrigger, "version: snapshot history recorded for versions 2 and 3"],
+    ["noSnapshotHistory", checkVersionTrigger, "history: the empty start is not kept; the next change keeps the version it replaced (2), not 3"],
+    ["snapshotEveryWrite", checkVersionTrigger, "history: a change within 10 minutes of the last kept version keeps nothing"],
+    ["snapshotNoShrinkKeep", checkVersionTrigger, "history: a change that drops more than half the board keeps the version before it (4), even within 10 minutes"],
+    ["snapshotOwnerInsert", checkSnapshots, "whiteboard_snapshots: A cannot insert history for own board either (only the trigger writes it)"],
+    ["snapshotPruneCallable", checkSnapshots, "prune_whiteboard_snapshots: A cannot call it"],
+    ["snapshotPruneCallable", checkSnapshots, "whiteboard_snapshots: A's history unchanged by the attempts"],
     // accounts & billing
     ["anonSelect", checkAnonDenied, "anon: select profiles denied"],
     ["anonInsert", checkAnonDenied, "anon: insert credit_grants denied"],
