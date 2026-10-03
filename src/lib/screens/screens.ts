@@ -20,9 +20,20 @@ const LEGACY_PAD = 40;
  * (16 + 36 px) and tldraw's toolbar (48 + 8 px) float over the board, and on a laptop or a monitor —
  * where the 16:9 screen is fitted by height — a 16 px gap put the first line's top-left corner
  * under the help tabs and the bottom of the screen under the tools. 64 px clears both. An iPad
- * (fitted by width, with room to spare above and below) is unaffected.
+ * (fitted by width, with room to spare above and below) is unaffected. See `screenViewPadding`.
  */
 export const SCREEN_VIEW_PADDING = { x: 16, y: 64 } as const;
+
+/**
+ * The gap for a board this tall. Clearing the chrome costs 96 px of screen height, a few per cent on
+ * a monitor but over a quarter on a phone on its side (358 → 262 px tall at 390), where the screen
+ * is better big with the bar over its edge. So the vertical gap is 64 px from a 640 px tall board
+ * up (every laptop), the edge gap of 16 px at 400 px and below, and in between in proportion.
+ */
+export function screenViewPadding(boardHeight: number): { x: number; y: number } {
+  const y = Math.round(Math.min(SCREEN_VIEW_PADDING.y, Math.max(SCREEN_VIEW_PADDING.x, SCREEN_VIEW_PADDING.x + (boardHeight - 400) * 0.2)));
+  return { x: SCREEN_VIEW_PADDING.x, y };
+}
 export const MAX_SCREENS = 50;
 
 export interface ScreenMeta {
@@ -87,6 +98,7 @@ export type ScreensEditor = Pick<
   | "getCameraOptions"
   | "setCamera"
   | "getCamera"
+  | "getViewportScreenBounds"
   | "run"
 >;
 
@@ -125,7 +137,7 @@ export function applyScreenCamera(editor: ScreensEditor): void {
     wheelBehavior: "pan",
     constraints: {
       bounds: { x: screen.x, y: screen.y, w: screen.w, h: screen.h },
-      padding: { ...SCREEN_VIEW_PADDING },
+      padding: screenViewPadding(editor.getViewportScreenBounds().h),
       origin: { x: 0.5, y: 0.5 },
       initialZoom: "fit-max",
       baseZoom: "fit-max",

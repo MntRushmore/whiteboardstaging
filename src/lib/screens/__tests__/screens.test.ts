@@ -12,6 +12,7 @@ import {
   readScreenMeta,
   screenForContent,
   screenPosition,
+  screenViewPadding,
   type ScreensEditor,
 } from "../screens";
 
@@ -62,7 +63,7 @@ describe("screenPosition", () => {
 });
 
 /** Just enough editor for the screen helpers: pages, one current page, shapes by page. */
-function fakeEditor(opts: { pages?: number; shapes?: Record<string, Box[]> } = {}) {
+function fakeEditor(opts: { pages?: number; shapes?: Record<string, Box[]>; boardHeight?: number } = {}) {
   let pages: TLPage[] = Array.from({ length: opts.pages ?? 1 }, (_, i) => ({
     id: `page:${i + 1}` as TLPageId,
     typeName: "page",
@@ -106,6 +107,7 @@ function fakeEditor(opts: { pages?: number; shapes?: Record<string, Box[]> } = {
     getCameraOptions: () => ({ isLocked: false, panSpeed: 1, zoomSpeed: 1, zoomSteps: [0.1, 1, 8], wheelBehavior: "pan" as const }),
     setCamera,
     getCamera: () => ({ x: 0, y: 0, z: 1 }),
+    getViewportScreenBounds: () => new Box(0, 0, 1280, opts.boardHeight ?? 800),
     run: (fn: () => void) => fn(),
     // deleting and restoring a screen (tldraw's deletePage moves to the page before, else after)
     getShape: (id: TLShapeId) => {
@@ -172,6 +174,19 @@ describe("applyScreenCamera", () => {
     // the help tabs end 52 px down and tldraw's toolbar is 56 px tall: the screen starts below both
     expect(padding.y).toBeGreaterThanOrEqual(60);
     expect(padding.x).toBe(16);
+  });
+
+  it("on a phone on its side the screen stays big: the gap shrinks with the board's height", () => {
+    const at = (boardHeight: number) => {
+      const { editor, setCameraOptions } = fakeEditor({ boardHeight });
+      applyScreenCamera(editor);
+      return setCameraOptions.mock.calls[0][0].constraints.padding.y;
+    };
+    expect(at(390)).toBe(16);
+    expect(at(520)).toBe(40);
+    expect(at(640)).toBe(64);
+    expect(at(1080)).toBe(64);
+    expect(screenViewPadding(300)).toEqual({ x: 16, y: 16 });
   });
 });
 
