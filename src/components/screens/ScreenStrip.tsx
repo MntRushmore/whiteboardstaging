@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
-import { useEditor, useValue } from "tldraw";
+import { PORTRAIT_BREAKPOINT, useBreakpoint, useEditor, useValue } from "tldraw";
 import { addScreen, goToScreen, MAX_SCREENS, screenPosition } from "@/lib/screens/screens";
 
 export const SCREEN_COPY = {
@@ -12,11 +12,30 @@ export const SCREEN_COPY = {
   full: `A board holds up to ${MAX_SCREENS} screens`,
 } as const;
 
+/**
+ * Where the strip goes for a board this wide (tldraw's breakpoint). Below TABLET_SM tldraw folds
+ * the style panel into its toolbar and needs the whole bottom row for it — beside the strip it ran
+ * off the right edge of a phone (and of an iPad's board with the Ask panel open), taking the pen's
+ * colour with it — so the strip moves up to the top-right corner the style panel has left empty.
+ */
+export function screenStripSlot(breakpoint: number): "bottom" | "corner" {
+  return breakpoint < PORTRAIT_BREAKPOINT.TABLET_SM ? "corner" : "bottom";
+}
+
 const buttonClass =
   "inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent dark:text-slate-200 dark:hover:bg-slate-800";
 
-/** ‹ 2 / 5 › + — moves between the board's fixed screens (tldraw pages). */
+/** ‹ 2 / 5 › + — moves between the board's fixed screens (tldraw pages). The NavigationPanel slot. */
 export function ScreenStrip() {
+  return screenStripSlot(useBreakpoint()) === "bottom" ? <Strip /> : null;
+}
+
+/** The same strip in the top-right corner of a narrow board (tldraw's SharePanel slot). */
+export function ScreenStripCorner() {
+  return screenStripSlot(useBreakpoint()) === "corner" ? <Strip /> : null;
+}
+
+function Strip() {
   const editor = useEditor();
   const pageIds = useValue("screen ids", () => editor.getPages().map((p) => p.id), [editor]);
   const current = useValue("current screen", () => editor.getCurrentPageId(), [editor]);

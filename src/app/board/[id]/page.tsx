@@ -2,6 +2,7 @@
 
 import {
   Tldraw,
+  useBreakpoint,
   useEditor,
   type TLAssetId,
   DefaultColorThemePalette,
@@ -71,7 +72,7 @@ import { liveShapeUtils, liveTools, liveUiOverrides, LiveToolbar } from "@/shape
 import { LIVE_KILL_SWITCH } from "@/lib/live/contracts";
 import { useLiveMath } from "@/lib/live/useLiveMath";
 import { useLiveSettings } from "@/lib/live/liveSettings";
-import { ScreenStrip } from "@/components/screens/ScreenStrip";
+import { ScreenStrip, ScreenStripCorner, screenStripSlot } from "@/components/screens/ScreenStrip";
 import { PenStyleButton } from "@/components/board/PenStyleButton";
 import { LiveDebugPanel } from "@/components/live/LiveDebugPanel";
 import { ScreenBackground, ScreenFrame } from "@/components/screens/ScreenFrame";
@@ -289,6 +290,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   // An "Untitled Whiteboard" is named after its first line of maths once it saves.
   useBoardAutoTitle(id, sync);
 
+  const narrowBoard = screenStripSlot(useBreakpoint()) === "corner";
+
   // One place decides what the bar shows (see src/components/live/toolbar.ts).
   const toolbar = boardToolbarView({
     mode: assistanceMode,
@@ -311,23 +314,25 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
           left: '16px',
           zIndex: 1000,
           display: 'flex',
-          alignItems: 'center',
+          alignItems: 'flex-start',
           gap: '12px',
-          // Wrap on narrow screens (400 px) so the status pill stays reachable;
-          // leave room for tldraw's style panel pinned at the top-right.
-          flexWrap: 'wrap',
-          maxWidth: 'calc(100% - 180px)',
+          // The controls wrap beside the back button (an upright iPad keeps one row) and leave
+          // room for the pen's swatch at the top-right. On a phone-narrow board they drop under
+          // the back button instead: the screen strip takes that corner (screenStripSlot).
+          flexWrap: narrowBoard ? 'wrap' : 'nowrap',
+          maxWidth: 'calc(100% - 72px)',
         }}
       >
         <Button
           variant="ghost"
           size="icon"
+          className="shrink-0"
           aria-label="Back to my whiteboards"
           onClick={() => router.push("/")}
         >
           <ArrowLeft01Icon size={20} strokeWidth={2} />
         </Button>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Tabs
             value={assistanceMode}
             onValueChange={(value) => setAssistanceMode(value as AssistanceMode)}
@@ -388,7 +393,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
             onClick={() => setReportOpen(true)}
           >
             <Bug className="size-3.5" aria-hidden />
-            <span className="hidden text-xs font-medium sm:inline">Report a bug</span>
+            <span className="hidden text-xs font-medium lg:inline">Report a bug</span>
           </Button>
           {features.stickers && <StickerLibrary />}
           {features.pdfUpload && <PdfUpload />}
@@ -589,6 +594,8 @@ export default function BoardPage() {
         components={{
           MenuPanel: null,
           NavigationPanel: ScreenStrip,
+          // a narrow board's strip, in the corner the style panel leaves free (screenStripSlot)
+          SharePanel: ScreenStripCorner,
           HelperButtons: null,
           Background: ScreenBackground,
           OnTheCanvas: ScreenFrame,
