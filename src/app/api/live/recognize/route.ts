@@ -11,7 +11,8 @@ import { getLiveModels } from "@/lib/env";
 import { json, requireUser } from "@/lib/server/auth";
 import { enforceInk, runCharged } from "@/lib/server/billing";
 import { errorResponse } from "@/lib/server/request";
-import { isMathpixAuthFailure, isMathpixConfigured, recognizeStrokes, type MathpixFailure } from "@/lib/server/mathpix";
+import { isMathpixConfigured, recognizeStrokes, type MathpixFailure } from "@/lib/server/mathpix";
+import { recognizeFailureHints } from "@/lib/server/recognizeHints";
 import { chatJson } from "@/lib/server/openrouter";
 import { buildVisionMessages, VisionTranscriptionSchema } from "@/lib/server/prompts/recognizeVision";
 import { liveDebugEnabled, liveLogger, livePreamble, withRequestId } from "@/lib/server/live-route";
@@ -46,29 +47,6 @@ export async function GET(req: Request) {
 /* ------------------------------------------------------------------------- */
 /* POST: strokes -> latex                                                     */
 /* ------------------------------------------------------------------------- */
-
-/**
- * Additive fields on the existing `recognizer_failed` 502 body (the response schema in
- * src/lib/live/contracts.ts is frozen and describes success only). Both are hints, never
- * requirements: an old client that ignores them behaves exactly as before.
- *
- *  - `needsCrop`      we had no crop to fall back on; send one and this line can still be
- *                     read by the vision recognizer. The client retries the line once.
- *  - `recognizerDown` Mathpix rejected our credentials, so every line will fail the same
- *                     way: the client flips to the vision recognizer for the rest of the
- *                     session instead of paying a failed round-trip per line.
- */
-export type RecognizeFailureHints = { needsCrop?: true; recognizerDown?: true };
-
-export function recognizeFailureHints(
-  hadCrop: boolean,
-  mathpixFailure: MathpixFailure | null,
-): RecognizeFailureHints {
-  return {
-    ...(hadCrop ? {} : { needsCrop: true as const }),
-    ...(mathpixFailure && isMathpixAuthFailure(mathpixFailure) ? { recognizerDown: true as const } : {}),
-  };
-}
 
 export async function POST(req: Request) {
   const ctx = await livePreamble(req, "recognize", "liveRecognize", RecognizeRequestSchema);
