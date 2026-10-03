@@ -64,6 +64,10 @@ export const WEBHOOK_EVENTS = Object.freeze([
   "checkout.session.completed",
   "checkout.session.async_payment_succeeded",
   "charge.refunded",
+  // Agathon Unlimited: the subscription's state (its checkout comes through the first one)
+  "customer.subscription.created",
+  "customer.subscription.updated",
+  "customer.subscription.deleted",
 ]);
 
 /** The subscription plans this script sold before ink; their objects are retired on every run. */

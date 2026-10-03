@@ -23,17 +23,24 @@ vi.mock("@/lib/server/billingWebhook", async (importOriginal) => {
 import { POST } from "@/app/api/billing/webhook/route";
 import {
   HANDLED_EVENTS,
+  linkOutcomeOf,
   livemodeAccepted,
   mapBillingEvent,
   packIdOf,
   paidAmountOf,
+  periodEndOf,
+  subscriptionPlanOf,
+  type ApplyOutcome,
   type BillingEvent,
   type BillingStore,
   type GrantOutcome,
   type InkPurchase,
   type InkRefund,
   type InkReview,
+  type LinkOutcome,
   type ReverseOutcome,
+  type UnlimitedLink,
+  type UnlimitedSubscription,
   type WebhookDeps,
   type WebhookEnv,
 } from "@/lib/server/billingWebhook";
@@ -114,6 +121,68 @@ const FUIME_CHARGE = {
   metadata: { fuime_event_id: "evt_founders_weekend" },
 };
 
+/* Agathon Unlimited fixtures: what the subscription Payment Link (scripts/stripe-setup.mjs) produces. */
+const WEEK = 7 * 86_400;
+const UNLIMITED_TAG = { app: "agathon-classroom", plan_id: "unlimited" };
+
+/** The Unlimited link's Checkout Session: a free week, so nothing is paid at checkout. */
+function unlimitedSession(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "cs_sub_1",
+    object: "checkout.session",
+    mode: "subscription",
+    payment_status: "no_payment_required",
+    status: "complete",
+    client_reference_id: USER_ID,
+    customer: "cus_u",
+    subscription: "sub_1",
+    amount_total: 0,
+    currency: "usd",
+    livemode: false,
+    customer_details: { email: "parent@example.com" },
+    metadata: { ...UNLIMITED_TAG, price_id: "price_unlimited" },
+    ...overrides,
+  };
+}
+
+/** A subscription as customer.subscription.* carries it (the API shape before 2025-03-31: period end on the subscription). */
+function subscription(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "sub_1",
+    object: "subscription",
+    customer: "cus_u",
+    status: "trialing",
+    cancel_at_period_end: false,
+    cancel_at: null,
+    canceled_at: null,
+    ended_at: null,
+    trial_start: NOW,
+    trial_end: NOW + WEEK,
+    current_period_start: NOW,
+    current_period_end: NOW + WEEK,
+    livemode: false,
+    metadata: UNLIMITED_TAG,
+    items: {
+      object: "list",
+      data: [{ id: "si_1", price: { id: "price_unlimited", unit_amount: 2500, recurring: { interval: "month" }, metadata: UNLIMITED_TAG } }],
+    },
+    ...overrides,
+  };
+}
+
+/** Fuime sells subscriptions on the shared account too (its handlers key on fuime_subscription_kind). */
+const FUIME_SUBSCRIPTION = subscription({
+  id: "sub_fuime",
+  customer: "cus_fuime",
+  status: "active",
+  metadata: { fuime_subscription_kind: "membership" },
+  items: { object: "list", data: [{ id: "si_f", price: { id: "price_fuime", metadata: {} } }] },
+});
+
+function subEvent(type: string, object: Record<string, unknown>, id: string, created: number): BillingEvent {
+  return { id, type, created, data: { object } };
+}
+
 describe("mapBillingEvent: checkout", () => {
   it("a paid one-time checkout grants the pack in metadata.pack_id to client_reference_id", () => {
     expect(mapBillingEvent(event("checkout.session.completed", session()), {})).toEqual({
@@ -155,8 +224,10 @@ describe("mapBillingEvent: checkout", () => {
     expect(paidAmountOf(session({ amount_total: 2000, currency: "USD" }))).toEqual({ amountCents: 2000, currency: "usd" });
   });
 
-  it("ignores a subscription checkout (the retired Plus/Pro links) and a session without a mode", () => {
+  it("ignores a subscription checkout that is not Agathon Unlimited (the retired Plus/Pro links) and a session without a mode", () => {
     expect(mapBillingEvent(event("checkout.session.completed", session({ mode: "subscription" })), {})).toMatchObject({ kind: "ignored", reason: /mode subscription/ });
+    const plus = session({ mode: "subscription", subscription: "sub_plus", metadata: { app: "agathon-classroom", plan_id: "plus" } });
+    expect(mapBillingEvent(event("checkout.session.completed", plus), {})).toMatchObject({ kind: "ignored", reason: /plan plus/ });
     expect(mapBillingEvent(event("checkout.session.completed", session({ mode: undefined })), {})).toMatchObject({ kind: "ignored", reason: /mode missing/ });
   });
 
@@ -249,21 +320,144 @@ describe("mapBillingEvent: refunds and the rest", () => {
     expect(mapBillingEvent(event("charge.refunded", charge({ payment_intent: null, metadata: { fuime_event_id: "e" } })), {})).toMatchObject({ kind: "foreign" });
   });
 
-  it("the retired subscription events and anything else are foreign", () => {
-    for (const type of ["customer.subscription.updated", "customer.subscription.deleted", "invoice.paid", "checkout.session.async_payment_failed"]) {
-      expect(mapBillingEvent(event(type, { id: "x", metadata: { app: "agathon-classroom" } }), {})).toMatchObject({
+  it("event types the endpoint does not subscribe to are foreign", () => {
+    for (const type of ["invoice.paid", "invoice.payment_failed", "checkout.session.async_payment_failed", "customer.subscription.trial_will_end"]) {
+      expect(mapBillingEvent(event(type, { id: "x", metadata: { app: "agathon-classroom", plan_id: "unlimited" } }), {})).toMatchObject({
         kind: "foreign",
         reason: new RegExp(type.replace(/\./g, "\\.")),
       });
     }
   });
 
+  it("the retired Plus/Pro subscriptions (tagged, no Unlimited plan) are ignored, writing nothing", () => {
+    for (const type of ["customer.subscription.updated", "customer.subscription.deleted"]) {
+      expect(mapBillingEvent(event(type, { id: "sub_old", status: "active", metadata: { app: "agathon-classroom" } }), {})).toMatchObject({
+        kind: "ignored",
+        reason: /not an Agathon Unlimited subscription \(plan missing\)/,
+      });
+    }
+  });
+
   it("HANDLED_EVENTS are exactly the types that can do something", () => {
-    expect([...HANDLED_EVENTS]).toEqual(["checkout.session.completed", "checkout.session.async_payment_succeeded", "charge.refunded"]);
+    expect([...HANDLED_EVENTS]).toEqual([
+      "checkout.session.completed",
+      "checkout.session.async_payment_succeeded",
+      "charge.refunded",
+      "customer.subscription.created",
+      "customer.subscription.updated",
+      "customer.subscription.deleted",
+    ]);
     for (const type of HANDLED_EVENTS) {
       const mapped = mapBillingEvent(event(type, { metadata: { app: "agathon-classroom" } }), {});
       if (mapped.kind === "ignored" || mapped.kind === "foreign") expect(mapped.reason).not.toMatch(/unhandled event type/);
     }
+  });
+});
+
+describe("mapBillingEvent: Agathon Unlimited", () => {
+  it("the Unlimited checkout links its subscription to the user in client_reference_id, paid or not (a free week pays nothing)", () => {
+    expect(mapBillingEvent(event("checkout.session.completed", unlimitedSession()), {})).toEqual({
+      kind: "link",
+      link: {
+        subscriptionId: "sub_1",
+        userId: USER_ID,
+        clientReferenceId: USER_ID,
+        customerId: "cus_u",
+        checkoutSessionId: "cs_sub_1",
+        livemode: false,
+        problem: null,
+      },
+    });
+    const expanded = unlimitedSession({ subscription: { id: "sub_2" }, customer: { id: "cus_2" }, payment_status: "paid", client_reference_id: USER_ID.toUpperCase() });
+    expect(mapBillingEvent(event("checkout.session.completed", expanded), {})).toMatchObject({ kind: "link", link: { subscriptionId: "sub_2", customerId: "cus_2", userId: USER_ID } });
+  });
+
+  it("an Unlimited checkout without a usable user is still a link, to nobody, saying why", () => {
+    expect(mapBillingEvent(event("checkout.session.completed", unlimitedSession({ client_reference_id: null })), {})).toMatchObject({
+      kind: "link",
+      link: { userId: null, problem: /opened outside the app/ },
+    });
+    expect(mapBillingEvent(event("checkout.session.completed", unlimitedSession({ client_reference_id: "kid-42" })), {})).toMatchObject({
+      kind: "link",
+      link: { userId: null, clientReferenceId: "kid-42", problem: /not a user id/ },
+    });
+    expect(mapBillingEvent(event("checkout.session.completed", unlimitedSession({ subscription: null })), {})).toMatchObject({ kind: "ignored", reason: /without a subscription id/ });
+  });
+
+  it("an untagged subscription checkout is foreign, like any other session", () => {
+    expect(mapBillingEvent(event("checkout.session.completed", unlimitedSession({ metadata: { plan_id: "unlimited" } })), {})).toMatchObject({ kind: "foreign" });
+  });
+
+  it("a subscription event carries the plan's state, with Stripe's Unix times as ISO and the event's time for ordering", () => {
+    expect(mapBillingEvent(subEvent("customer.subscription.created", subscription(), "evt_sub", NOW + 5), {})).toEqual({
+      kind: "subscription",
+      subscription: {
+        subscriptionId: "sub_1",
+        customerId: "cus_u",
+        status: "trialing",
+        priceId: "price_unlimited",
+        trialEnd: new Date((NOW + WEEK) * 1000).toISOString(),
+        currentPeriodEnd: new Date((NOW + WEEK) * 1000).toISOString(),
+        cancelAtPeriodEnd: false,
+        cancelAt: null,
+        canceledAt: null,
+        endedAt: null,
+        livemode: false,
+        eventAt: new Date((NOW + 5) * 1000).toISOString(),
+      },
+    });
+    const cancelling = subscription({ status: "active", cancel_at_period_end: true, cancel_at: NOW + 30 * 86_400, canceled_at: NOW + 60 });
+    expect(mapBillingEvent(subEvent("customer.subscription.updated", cancelling, "evt_c", NOW + 60), {})).toMatchObject({
+      kind: "subscription",
+      subscription: { status: "active", cancelAtPeriodEnd: true, cancelAt: new Date((NOW + 30 * 86_400) * 1000).toISOString() },
+    });
+  });
+
+  it("reads the period end from the items when the API version moved it there (2025-03-31 and later)", () => {
+    const basil = subscription({
+      current_period_end: undefined,
+      items: { data: [{ id: "si_1", current_period_end: NOW + 100, price: { id: "price_unlimited", metadata: UNLIMITED_TAG } }, { id: "si_2", current_period_end: NOW + 200, price: "price_x" }] },
+    });
+    expect(periodEndOf(basil)).toBe(new Date((NOW + 200) * 1000).toISOString());
+    expect(periodEndOf({})).toBeNull();
+    expect(mapBillingEvent(subEvent("customer.subscription.updated", basil, "evt_b", NOW), {})).toMatchObject({
+      kind: "subscription",
+      subscription: { currentPeriodEnd: new Date((NOW + 200) * 1000).toISOString(), priceId: "price_unlimited" },
+    });
+  });
+
+  it("knows the plan by the subscription's metadata, or by its price's when the subscription has none", () => {
+    expect(subscriptionPlanOf(subscription())).toEqual({ tagged: true, plan: "unlimited" });
+    const priceOnly = subscription({ metadata: {} });
+    expect(subscriptionPlanOf(priceOnly)).toEqual({ tagged: true, plan: "unlimited" });
+    expect(mapBillingEvent(subEvent("customer.subscription.created", priceOnly, "evt_p", NOW), {})).toMatchObject({ kind: "subscription" });
+    expect(subscriptionPlanOf(FUIME_SUBSCRIPTION)).toEqual({ tagged: false, plan: null });
+  });
+
+  it("Fuime's subscriptions are foreign; ours of another plan are ignored", () => {
+    for (const type of ["customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"]) {
+      expect(mapBillingEvent(subEvent(type, FUIME_SUBSCRIPTION, "evt_f", NOW), {})).toEqual({ kind: "foreign", reason: "subscription is not tagged app=agathon-classroom" });
+    }
+    const pro = subscription({ metadata: { app: "agathon-classroom", plan_id: "pro" }, items: { data: [] } });
+    expect(mapBillingEvent(subEvent("customer.subscription.updated", pro, "evt_pro", NOW), {})).toMatchObject({ kind: "ignored", reason: /plan pro/ });
+  });
+
+  it("a deleted subscription has ended, whatever its object says; an unknown status is ignored", () => {
+    expect(mapBillingEvent(subEvent("customer.subscription.deleted", subscription({ status: "canceled", ended_at: NOW + 9 }), "evt_d", NOW + 9), {})).toMatchObject({
+      kind: "subscription",
+      subscription: { status: "canceled", endedAt: new Date((NOW + 9) * 1000).toISOString() },
+    });
+    expect(mapBillingEvent(subEvent("customer.subscription.deleted", subscription({ status: "active" }), "evt_d2", NOW), {})).toMatchObject({ subscription: { status: "canceled" } });
+    expect(mapBillingEvent(subEvent("customer.subscription.deleted", subscription({ status: "incomplete_expired" }), "evt_d3", NOW), {})).toMatchObject({ subscription: { status: "incomplete_expired" } });
+    expect(mapBillingEvent(subEvent("customer.subscription.updated", subscription({ status: "frozen" }), "evt_u", NOW), {})).toEqual({ kind: "ignored", reason: "unknown subscription status frozen" });
+    expect(mapBillingEvent(subEvent("customer.subscription.updated", subscription({ id: undefined }), "evt_u2", NOW), {})).toMatchObject({ kind: "ignored", reason: /no id/ });
+  });
+
+  it("linkOutcomeOf reads the RPC's answer", () => {
+    expect(linkOutcomeOf({ linked: true, user_id: USER_ID, status: "trialing" }, { problem: null })).toEqual({ status: "linked", userId: USER_ID, subscriptionStatus: "trialing" });
+    expect(linkOutcomeOf({ linked: false, conflict: true, user_id: "someone" }, { problem: null })).toEqual({ status: "conflict", userId: "someone" });
+    expect(linkOutcomeOf({ linked: false, no_account: true, user_id: null }, { problem: null })).toMatchObject({ status: "unlinked", reason: /no account/ });
+    expect(linkOutcomeOf({ linked: false, user_id: null }, { problem: "no client_reference_id" })).toEqual({ status: "unlinked", reason: "no client_reference_id" });
   });
 });
 
@@ -280,6 +474,19 @@ type StoreLog = {
   reviews: InkReview[];
   reversals: InkRefund[];
   lookups: string[];
+  links: UnlimitedLink[];
+  applies: UnlimitedSubscription[];
+};
+
+/** An unlimited_subscriptions row as the fake keeps it. */
+type PlanRow = {
+  userId: string | null;
+  status: string | null;
+  eventAt: number | null;
+  cancelAtPeriodEnd: boolean;
+  currentPeriodEnd: string | null;
+  trialEnd: string | null;
+  customerId: string | null;
 };
 
 const PRICE: Record<string, number> = { small: 500, medium: 2000, large: 5000 };
@@ -296,9 +503,22 @@ function fakeStore(
     reverse?: (r: InkRefund) => ReverseOutcome | null;
     forgetError?: string;
     balance?: number;
+    link?: (l: UnlimitedLink) => LinkOutcome | null;
+    apply?: (s: UnlimitedSubscription) => ApplyOutcome | null;
   } = {},
-): BillingStore & { log: StoreLog; balance: () => number; spend: (ink: number) => void } {
-  const log: StoreLog = { recorded: [], payloads: [], forgotten: [], grants: [], reviews: [], reversals: [], lookups: [] };
+): BillingStore & { log: StoreLog; balance: () => number; spend: (ink: number) => void; plan: (subscriptionId: string) => PlanRow | undefined } {
+  const log: StoreLog = { recorded: [], payloads: [], forgotten: [], grants: [], reviews: [], reversals: [], lookups: [], links: [], applies: [] };
+  // unlimited_subscriptions, with the semantics of link_unlimited_checkout / apply_unlimited_subscription
+  const plans = new Map<string, PlanRow>();
+  const accounts = new Set([USER_ID]);
+  const planRow = (id: string): PlanRow => {
+    let row = plans.get(id);
+    if (!row) {
+      row = { userId: null, status: null, eventAt: null, cancelAtPeriodEnd: false, currentPeriodEnd: null, trialEnd: null, customerId: null };
+      plans.set(id, row);
+    }
+    return row;
+  };
   const sessions = new Map<string, { ink: number; paymentIntent: string | null; refundedCents: number; asked: number; amount: number }>();
   let balance = opts.balance ?? 300;
   const INK: Record<string, number> = { small: 1000, medium: 5000, large: 14000 };
@@ -307,6 +527,31 @@ function fakeStore(
     balance: () => balance,
     spend: (ink) => {
       balance = Math.max(0, balance - ink);
+    },
+    plan: (id) => plans.get(id),
+    async linkSubscription(l) {
+      const forced = opts.link?.(l);
+      if (forced) return forced;
+      log.links.push(l);
+      const user = l.userId && accounts.has(l.userId) ? l.userId : null;
+      const row = planRow(l.subscriptionId);
+      row.userId ??= user;
+      row.customerId ??= l.customerId;
+      if (user && row.userId === user) return { status: "linked", userId: user, subscriptionStatus: row.status };
+      if (user) return { status: "conflict", userId: row.userId };
+      return { status: "unlinked", reason: l.userId ? "no account for this user" : (l.problem ?? "no user") };
+    },
+    async applySubscription(s) {
+      const forced = opts.apply?.(s);
+      if (forced) return forced;
+      log.applies.push(s);
+      const row = planRow(s.subscriptionId);
+      const at = s.eventAt ? Date.parse(s.eventAt) : Date.now();
+      const final = (status: string | null) => status === "canceled" || status === "incomplete_expired";
+      if ((final(row.status) && !final(s.status)) || (row.eventAt !== null && at < row.eventAt)) return { status: "stale", current: row.status };
+      Object.assign(row, { status: s.status, eventAt: at, cancelAtPeriodEnd: s.cancelAtPeriodEnd, currentPeriodEnd: s.currentPeriodEnd, trialEnd: s.trialEnd });
+      row.customerId ??= s.customerId;
+      return { status: "applied", userId: row.userId, unlimited: (s.status === "trialing" || s.status === "active") && row.userId !== null };
     },
     async isInkPayment(pi) {
       log.lookups.push(pi);
@@ -724,5 +969,127 @@ describe("POST /api/billing/webhook", () => {
     expect(limited.status).toBe(429);
     expect(limited.headers.get("retry-after")).toMatch(/^\d+$/);
     expect((await handler(await signedRequest(checkoutBody, { header: null, ip: "198.51.100.45" }))).status).toBe(400);
+  });
+});
+
+describe("POST /api/billing/webhook: Agathon Unlimited", () => {
+  beforeEach(() => resetRateLimits());
+
+  const send = async (handler: (req: Request) => Promise<Response>, ev: BillingEvent) => {
+    const res = await handler(await signedRequest(JSON.stringify(ev)));
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  };
+  const checkoutEv = (id = "evt_cs", overrides: Record<string, unknown> = {}) => subEvent("checkout.session.completed", unlimitedSession(overrides), id, NOW + 2);
+  const createdEv = (id = "evt_created", overrides: Record<string, unknown> = {}) => subEvent("customer.subscription.created", subscription(overrides), id, NOW + 1);
+
+  it("the free week starts whichever event lands first: subscription.created, then the checkout that names the user", async () => {
+    const store = fakeStore();
+    const handler = handlerWith(store);
+    expect(await send(handler, createdEv())).toEqual({ status: 200, body: { received: true } });
+    expect(store.plan("sub_1")).toMatchObject({ userId: null, status: "trialing" }); // nobody's yet: no plan for anyone
+    expect(await send(handler, checkoutEv())).toEqual({ status: 200, body: { received: true } });
+    expect(store.plan("sub_1")).toMatchObject({ userId: USER_ID, status: "trialing", customerId: "cus_u" });
+    expect(store.log.recorded).toEqual(["evt_created", "evt_cs"]);
+    // ink is not touched by any of it
+    expect(store.log.grants).toEqual([]);
+    expect(store.balance()).toBe(300);
+  });
+
+  it("…or the checkout first, then the subscription: the same end state", async () => {
+    const store = fakeStore();
+    const handler = handlerWith(store);
+    await send(handler, checkoutEv());
+    expect(store.plan("sub_1")).toMatchObject({ userId: USER_ID, status: null });
+    await send(handler, createdEv());
+    expect(store.plan("sub_1")).toMatchObject({ userId: USER_ID, status: "trialing", trialEnd: new Date((NOW + WEEK) * 1000).toISOString() });
+  });
+
+  it("redeliveries are applied again and change nothing", async () => {
+    const store = fakeStore();
+    const handler = handlerWith(store);
+    await send(handler, checkoutEv());
+    await send(handler, createdEv());
+    const before = { ...store.plan("sub_1") };
+    expect(await send(handler, checkoutEv())).toEqual({ status: 200, body: { received: true } });
+    // the same event time again is applied again (equal is not older), to the same values
+    expect(await send(handler, createdEv())).toEqual({ status: 200, body: { received: true } });
+    expect(store.plan("sub_1")).toEqual(before);
+    expect(store.log.links).toHaveLength(2);
+    expect(store.log.recorded).toEqual(["evt_cs", "evt_created"]);
+  });
+
+  it("an older event that arrives late never overwrites a newer one; a deleted plan is never revived", async () => {
+    const store = fakeStore();
+    const handler = handlerWith(store);
+    await send(handler, checkoutEv());
+    // trial over, first $25 paid
+    await send(handler, subEvent("customer.subscription.updated", subscription({ status: "active", current_period_end: NOW + WEEK + 30 * 86_400 }), "evt_active", NOW + WEEK));
+    // the original created (trialing) shows up late: stale
+    expect(await send(handler, createdEv())).toEqual({ status: 200, body: { received: true, duplicate: true } });
+    expect(store.plan("sub_1")).toMatchObject({ status: "active" });
+    // cancelled in the portal, then ended
+    await send(handler, subEvent("customer.subscription.updated", subscription({ status: "active", cancel_at_period_end: true }), "evt_cancel", NOW + WEEK + 100));
+    expect(store.plan("sub_1")).toMatchObject({ status: "active", cancelAtPeriodEnd: true });
+    await send(handler, subEvent("customer.subscription.deleted", subscription({ status: "canceled", ended_at: NOW + 40 * 86_400 }), "evt_deleted", NOW + 40 * 86_400));
+    // a stray update stamped after the deletion still cannot bring it back
+    await send(handler, subEvent("customer.subscription.updated", subscription({ status: "active" }), "evt_stray", NOW + 41 * 86_400));
+    expect(store.plan("sub_1")).toMatchObject({ status: "canceled" });
+  });
+
+  it("past_due is recorded as it is (help spends ink until the card is fixed)", async () => {
+    const store = fakeStore();
+    const handler = handlerWith(store);
+    await send(handler, checkoutEv());
+    await send(handler, subEvent("customer.subscription.updated", subscription({ status: "past_due" }), "evt_pd", NOW + WEEK + 3600));
+    expect(store.plan("sub_1")).toMatchObject({ userId: USER_ID, status: "past_due" });
+    expect(store.log.applies.at(-1)).toMatchObject({ status: "past_due" });
+  });
+
+  it("an Unlimited checkout without a usable user is recorded, linked to nobody (200, for the owner to link)", async () => {
+    const store = fakeStore();
+    const handler = handlerWith(store);
+    for (const [id, ref] of [["evt_none", null], ["evt_bad", "kid-42"], ["evt_gone", "11111111-2222-4333-8444-555555555555"]] as const) {
+      const res = await send(handler, subEvent("checkout.session.completed", unlimitedSession({ client_reference_id: ref, subscription: `sub_${id}`, id: `cs_${id}` }), id, NOW));
+      expect(res, id).toEqual({ status: 200, body: { received: true } });
+      expect(store.plan(`sub_${id}`), id).toMatchObject({ userId: null });
+    }
+    expect(store.log.recorded).toEqual(["evt_none", "evt_bad", "evt_gone"]);
+  });
+
+  it("the first link stands when another checkout names someone else", async () => {
+    const store = fakeStore({ link: (l) => (l.checkoutSessionId === "cs_other" ? { status: "conflict", userId: USER_ID } : null) });
+    const handler = handlerWith(store);
+    await send(handler, checkoutEv());
+    expect(await send(handler, checkoutEv("evt_other", { id: "cs_other" }))).toEqual({ status: 200, body: { received: true } });
+    expect(store.plan("sub_1")).toMatchObject({ userId: USER_ID });
+  });
+
+  it("Fuime's subscription events are ignored: no row, no billing_events entry, no payload", async () => {
+    const store = fakeStore();
+    const handler = handlerWith(store);
+    for (const type of ["customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"]) {
+      expect(await send(handler, subEvent(type, FUIME_SUBSCRIPTION, `evt_${type}`, NOW))).toEqual({ status: 200, body: { received: true, ignored: true } });
+    }
+    expect(store.log.recorded).toEqual([]);
+    expect(store.log.payloads).toEqual([]);
+    expect(store.log.applies).toEqual([]);
+    expect(store.plan("sub_fuime")).toBeUndefined();
+  });
+
+  it("a database failure answers 500 and forgets the event, so Stripe redelivers it", async () => {
+    const linkFails = fakeStore({ link: () => ({ status: "error", message: "connection reset" }) });
+    expect((await send(handlerWith(linkFails), checkoutEv())).status).toBe(500);
+    expect(linkFails.log.forgotten).toEqual(["evt_cs"]);
+    const applyFails = fakeStore({ apply: () => ({ status: "error", message: "deadlock" }) });
+    expect((await send(handlerWith(applyFails), createdEv())).status).toBe(500);
+    expect(applyFails.log.forgotten).toEqual(["evt_created"]);
+  });
+
+  it("an ink pack checkout next to the plan is still granted the usual way", async () => {
+    const store = fakeStore();
+    const handler = handlerWith(store);
+    await send(handler, checkoutEv());
+    expect(await send(handler, event("checkout.session.completed", session(), "evt_pack"))).toEqual({ status: 200, body: { received: true } });
+    expect(store.balance()).toBe(5300);
   });
 });

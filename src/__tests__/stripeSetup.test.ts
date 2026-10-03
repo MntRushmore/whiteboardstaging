@@ -135,8 +135,11 @@ describe("request bodies", () => {
       if (mapped.kind === "foreign" || mapped.kind === "ignored") expect(mapped.reason).not.toMatch(/unhandled event type/);
     }
     expect(webhookEventsMatch({ enabled_events: [...WEBHOOK_EVENTS] })).toBe(true);
-    // the plan-era events are dropped, not kept alongside
-    expect(webhookEventsMatch({ enabled_events: [...WEBHOOK_EVENTS, "customer.subscription.updated"] })).toBe(false);
+    // Agathon Unlimited's subscription events are among them
+    for (const type of ["customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"]) expect(WEBHOOK_EVENTS).toContain(type);
+    // anything else is dropped, not kept alongside
+    expect(webhookEventsMatch({ enabled_events: [...WEBHOOK_EVENTS, "invoice.paid"] })).toBe(false);
+    expect(webhookEventsMatch({ enabled_events: ["checkout.session.completed", "checkout.session.async_payment_succeeded", "charge.refunded"] })).toBe(false);
     expect(webhookEventsMatch({ enabled_events: ["checkout.session.completed"] })).toBe(false);
     expect(webhookEventsMatch({ enabled_events: ["*"] })).toBe(false);
   });
@@ -441,14 +444,14 @@ describe("setup()", () => {
     expect(dry.posts).toEqual([]);
   });
 
-  it("narrows our old endpoint to exactly the ink events", async () => {
+  it("re-subscribes our existing endpoint to exactly the handled events (the ink-only one gains the subscription events)", async () => {
     const stripe = fakeStripe({
       hooks: [
         {
           id: "we_ours",
           created: 1,
           url: "https://a.example.com/api/billing/webhook",
-          enabled_events: ["checkout.session.completed", "customer.subscription.updated", "customer.subscription.deleted"],
+          enabled_events: ["checkout.session.completed", "checkout.session.async_payment_succeeded", "charge.refunded"],
           metadata: { app: APP_TAG },
         },
       ],
