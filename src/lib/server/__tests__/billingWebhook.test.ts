@@ -4,9 +4,25 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.hoisted(() => {
   process.env.LOG_LEVEL = "silent";
 });
+
+// The route takes its env, store and clock from `webhookDeps`; each handler below brings its own.
+const deps = vi.hoisted(() => ({ current: null as WebhookDeps | null }));
+vi.mock("@/lib/server/billingWebhook", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/server/billingWebhook")>();
+  const pick = () => deps.current ?? real.webhookDeps;
+  return {
+    ...real,
+    webhookDeps: {
+      getEnv: () => pick().getEnv(),
+      createStore: (url: string, key: string) => pick().createStore(url, key),
+      now: () => pick().now(),
+    },
+  };
+});
+
+import { POST } from "@/app/api/billing/webhook/route";
 import {
   HANDLED_EVENTS,
-  createWebhookHandler,
   livemodeAccepted,
   mapBillingEvent,
   packIdOf,
@@ -20,7 +36,15 @@ import {
   type ReverseOutcome,
   type WebhookDeps,
   type WebhookEnv,
-} from "@/app/api/billing/webhook/route";
+} from "@/lib/server/billingWebhook";
+
+/** The route's POST with `handlerDeps` standing in for its env, store and clock. */
+function createWebhookHandler(handlerDeps: WebhookDeps): (req: Request) => Promise<Response> {
+  return (req) => {
+    deps.current = handlerDeps;
+    return POST(req);
+  };
+}
 import { resetRateLimits } from "@/lib/server/rate-limit";
 import { signStripePayload } from "@/lib/server/webhookSignature";
 

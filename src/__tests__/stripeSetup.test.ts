@@ -35,7 +35,7 @@ import {
   webhookBody,
   webhookEventsMatch,
 } from "../../scripts/stripe-setup.mjs";
-import { APP_TAG as WEBHOOK_APP_TAG, HANDLED_EVENTS, mapBillingEvent } from "@/app/api/billing/webhook/route";
+import { APP_TAG as WEBHOOK_APP_TAG, HANDLED_EVENTS, mapBillingEvent } from "@/lib/server/billingWebhook";
 import { parseInkPriceMap } from "@/lib/env";
 import { parseBillingLinks } from "@/lib/billing/checkout";
 
