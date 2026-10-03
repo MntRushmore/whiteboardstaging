@@ -89,6 +89,10 @@ describe("signUpRequest", () => {
     });
     // the database's format (profiles_terms_version_format, signup_terms_version())
     expect(TERMS_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // ... and in its range: a real date from 2026-01-01, never in the future
+    expect(Number.isNaN(Date.parse(`${TERMS_VERSION}T00:00:00Z`))).toBe(false);
+    expect(TERMS_VERSION >= "2026-01-01").toBe(true);
+    expect(Date.parse(`${TERMS_VERSION}T00:00:00Z`)).toBeLessThanOrEqual(Date.now() + 86_400_000);
   });
 });
 

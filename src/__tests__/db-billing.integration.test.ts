@@ -182,6 +182,11 @@ suite(title, () => {
     const attempts: Array<[string, Promise<Response>]> = [
       ["no metadata", fetch(`${url}/auth/v1/signup`, { method: "POST", headers: { apikey: anonKey, "Content-Type": "application/json" }, body: JSON.stringify({ email: `consent-none-${tag}@example.com`, password: "Consent-Test-1" }) })],
       ["not a version", fetch(`${url}/auth/v1/signup`, { method: "POST", headers: { apikey: anonKey, "Content-Type": "application/json" }, body: JSON.stringify({ email: `consent-bad-${tag}@example.com`, password: "Consent-Test-1", data: { terms_version: true } }) })],
+      // date-shaped but not a version: no such day, before 2026, or in the future
+      ...["2026-99-99", "2026-02-30", "1900-01-01", "2099-01-01"].map((v, i): [string, Promise<Response>] => [
+        `version ${v}`,
+        fetch(`${url}/auth/v1/signup`, { method: "POST", headers: { apikey: anonKey, "Content-Type": "application/json" }, body: JSON.stringify({ email: `consent-date${i}-${tag}@example.com`, password: "Consent-Test-1", data: { terms_version: v } }) }),
+      ]),
       ["admin API", fetch(`${url}/auth/v1/admin/users`, { method: "POST", headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ email: `consent-admin-${tag}@example.com`, password: "Consent-Test-1", email_confirm: true }) })],
     ];
     for (const [what, attempt] of attempts) {
@@ -349,7 +354,7 @@ suite(title, () => {
 
     const row = await ctx.b.rest("GET", "ink_purchases", { query: { checkout_session_id: `eq.${args.p_checkout_session_id}`, select: "status,refunded_cents,refunded_ink,refund_unrecovered_ink" } });
     expect(rows(row)).toEqual([{ status: "refunded", refunded_cents: 2000, refunded_ink: 2250, refund_unrecovered_ink: 2750 }]);
-    const grants = await ctx.b.rest("GET", "ink_grants", { query: { kind: "eq.refund", select: "units" } });
+    const grants = await ctx.b.rest("GET", "ink_grants", { query: { kind: "eq.refund", select: "units", order: "id.asc" } });
     expect(rows(grants).map((g) => g.units)).toEqual([-1250, -1000]);
 
     // Unknown payments: not found, nothing written (the webhook decides whether to wait for a grant).

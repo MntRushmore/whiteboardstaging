@@ -32,13 +32,28 @@
 -- No new grant: a user reads these columns with their profile and cannot write them (the only
 -- column grant on profiles is update (display_name)).
 --
+-- What counts as a version: a real calendar date from 2026-01-01 to tomorrow (UTC), written
+-- YYYY-MM-DD. Not a fixed list, so bumping TERMS_VERSION is a code change only; a client cannot
+-- record a version from before 2026 or from the future, or a non-date such as 2026-99-99.
+--
+-- DEPLOY ORDER (RUNBOOK-billing section 7): apply this migration only AFTER the frontend that sends
+-- terms_version is live. Applied first, every sign-up from the old form fails ("Database error
+-- saving new user") until the deploy. The new frontend before this migration is harmless: GoTrue
+-- keeps the metadata, the previous handle_new_user() ignores it, and the backfill below records
+-- it for the accounts made in between.
+--
+-- Re-runnable without ownership of auth.users: the trigger is created only when it is missing
+-- (a DO block over pg_trigger), never dropped and re-created; the functions are create-or-replace.
+--
 -- Objects:
 --   columns     profiles.accepted_terms_at, profiles.terms_version
 --   constraints profiles_terms_version_format, profiles_terms_recorded_together
 --   functions   signup_terms_version(jsonb), require_signup_terms()
 --   trigger     auth_users_require_terms (auth.users, BEFORE INSERT)
 --   replaced    handle_new_user(), ensure_ink_account(uuid): unchanged except that they copy the
---               acceptance
+--               acceptance (the 300 starter ink as in 20261002000000_ink.sql)
+--   data        profiles of accounts made between the frontend deploy and this migration get the
+--               version their sign-up carried (only nulls are filled; idempotent)
 -- =============================================================================
 
 alter table public.profiles add column if not exists accepted_terms_at timestamptz;
@@ -46,24 +61,38 @@ alter table public.profiles add column if not exists terms_version text;
 
 alter table public.profiles drop constraint if exists profiles_terms_version_format;
 alter table public.profiles add constraint profiles_terms_version_format
-  check (terms_version is null or terms_version ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+  check (terms_version is null or (terms_version ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' and terms_version >= '2026-01-01'));
 
 alter table public.profiles drop constraint if exists profiles_terms_recorded_together;
 alter table public.profiles add constraint profiles_terms_recorded_together
   check ((accepted_terms_at is null) = (terms_version is null));
 
--- The version a sign-up's user metadata carries, when it is a well-formed one; else null.
+-- The version a sign-up's user metadata carries, when it is a valid one; else null. Valid: a string
+-- YYYY-MM-DD that is a real calendar date from 2026-01-01 to tomorrow (UTC). Stable, not
+-- immutable: "tomorrow" moves.
 create or replace function public.signup_terms_version(p_meta jsonb)
 returns text
-language sql
-immutable
+language plpgsql
+stable
 set search_path = public
 as $$
-  select case
-    when jsonb_typeof(p_meta -> 'terms_version') = 'string'
-     and (p_meta ->> 'terms_version') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
-    then p_meta ->> 'terms_version'
-  end
+declare
+  v text := p_meta ->> 'terms_version';
+  d date;
+begin
+  if jsonb_typeof(p_meta -> 'terms_version') is distinct from 'string' or v !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then
+    return null;
+  end if;
+  begin
+    d := make_date(substr(v, 1, 4)::int, substr(v, 6, 2)::int, substr(v, 9, 2)::int);
+  exception when others then
+    return null; -- 2026-99-99, 2026-02-30
+  end;
+  if d < date '2026-01-01' or d > (now() at time zone 'utc')::date + 1 then
+    return null;
+  end if;
+  return v;
+end;
 $$;
 revoke all on function public.signup_terms_version(jsonb) from public, anon, authenticated;
 
@@ -78,17 +107,27 @@ begin
   if public.signup_terms_version(new.raw_user_meta_data) is null then
     raise exception 'sign-up refused: the Terms and Privacy Policy were not accepted (user_metadata.terms_version is missing)'
       using errcode = '23514',
-            hint = 'Sign up from the app, or pass user_metadata.terms_version (YYYY-MM-DD) to the admin API.';
+            hint = 'Sign up from the app, or pass user_metadata.terms_version (YYYY-MM-DD, 2026-01-01 to tomorrow) to the admin API.';
   end if;
   return new;
 end;
 $$;
 revoke all on function public.require_signup_terms() from public, anon, authenticated;
 
-drop trigger if exists auth_users_require_terms on auth.users;
-create trigger auth_users_require_terms
-  before insert on auth.users
-  for each row execute function public.require_signup_terms();
+-- Created once; a re-run finds it and leaves it (dropping a trigger needs ownership of auth.users,
+-- which the hosted project's postgres role may not have). The function above is what a re-run updates.
+do $$
+begin
+  if not exists (
+    select 1 from pg_trigger
+    where tgrelid = 'auth.users'::regclass and tgname = 'auth_users_require_terms' and not tgisinternal
+  ) then
+    create trigger auth_users_require_terms
+      before insert on auth.users
+      for each row execute function public.require_signup_terms();
+  end if;
+end;
+$$;
 
 -- The sign-up trigger (20261002000000_ink.sql), now also recording the acceptance on the profile.
 create or replace function public.handle_new_user()
@@ -139,7 +178,7 @@ begin
   end if;
   insert into public.profiles (user_id, accepted_terms_at, terms_version)
   select u.id,
-         case when public.signup_terms_version(u.raw_user_meta_data) is not null then u.created_at end,
+         case when public.signup_terms_version(u.raw_user_meta_data) is not null then coalesce(u.created_at, now()) end,
          public.signup_terms_version(u.raw_user_meta_data)
   from auth.users u where u.id = p_uid
   on conflict (user_id) do nothing;
@@ -153,5 +192,18 @@ begin
 end;
 $$;
 revoke all on function public.ensure_ink_account(uuid) from public, anon, authenticated;
+
+-- Accounts made after the frontend that sends terms_version went live and before this migration:
+-- their sign-up carried a version that the previous handle_new_user() did not copy. Only empty
+-- profiles are filled, and only from accounts created on or after the version's own date (a
+-- version cannot have been accepted before it existed), so a re-run changes nothing.
+update public.profiles p
+set accepted_terms_at = coalesce(u.created_at, now()),
+    terms_version = public.signup_terms_version(u.raw_user_meta_data)
+from auth.users u
+where u.id = p.user_id
+  and p.accepted_terms_at is null
+  and public.signup_terms_version(u.raw_user_meta_data) is not null
+  and u.created_at >= public.signup_terms_version(u.raw_user_meta_data)::date;
 
 notify pgrst, 'reload schema';
