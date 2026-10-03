@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Editor, TLRecord, TLShapeId } from "tldraw";
 import { Flame } from "lucide-react";
-import { markKindOf } from "@/lib/onboarding/state";
+import { markKindOf } from "@/lib/onboarding/marks";
 import { celebrate, INITIAL_CELEBRATE, MarkSettler, STREAK_FROM, streakText, type Cheer } from "@/lib/live/celebrate";
 import { confettiPieces as confetti, type ConfettiPiece } from "@/lib/confetti";
 import { cn } from "@/lib/utils";

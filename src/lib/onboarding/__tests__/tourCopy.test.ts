@@ -4,9 +4,9 @@
  */
 import { describe, expect, it } from "vitest";
 import { LIVE_COPY } from "@/components/live/copy";
-import { CHAT_COPY, CHAT_INK, CHAT_SUGGESTIONS, MORE_LIKE_THESE } from "@/components/chat/chatView";
-import { initialTour, type TourHelp, type TourState } from "../state";
-import { askCopy, helpCopy, TOUR_COPY, writeCopy, type CoachCopy } from "../tourCopy";
+import { CHAT_COPY, CHAT_INK, CHAT_SUGGESTIONS } from "@/components/chat/chatView";
+import { initialTour, type TourHelp, type TourState } from "../tour";
+import { askCopy, helpCopy, MORE_LIKE_THESE, TOUR_COPY, writeCopy, type CoachCopy } from "../tourCopy";
 
 const HELPS: TourHelp[] = ["waiting", "asked", "empty", "unread", "slow"];
 const HINT = "Try taking 3 from both sides.";

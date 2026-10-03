@@ -6,8 +6,9 @@ import { toast } from "sonner";
 import { clientMetric } from "@/lib/logger";
 import { isUnlimitedReturn } from "@/lib/billing/unlimited";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
-import { browserStorage, readPlanMarker, writePlanMarker } from "@/lib/onboarding/marker";
-import { PLAN_COPY, PLAN_PATH, planDue, withoutUnlimitedReturn } from "@/lib/onboarding/plan";
+import { browserStorage } from "@/lib/onboarding/marker";
+import { PLAN_PATH, planDue, readPlanMarker, writePlanMarker } from "@/lib/onboarding/planMarker";
+import { ARRIVAL_COPY, withoutUnlimitedReturn } from "@/lib/onboarding/arrival";
 
 /** how long the welcome-back confetti stays mounted (its animation is about a second) */
 const CHEER_MS = 2400;
@@ -37,7 +38,7 @@ export function useHomeArrival(userId: string | undefined): boolean {
     clientMetric("onboarding.plan.returned", {});
     const { pathname, search, hash } = window.location;
     window.history.replaceState(window.history.state, "", `${pathname}${withoutUnlimitedReturn(search)}${hash}`);
-    toast.success(PLAN_COPY.started, { description: PLAN_COPY.startedHint, duration: 6000 });
+    toast.success(ARRIVAL_COPY.started, { description: ARRIVAL_COPY.startedHint, duration: 6000 });
     setCheer(true); // eslint-disable-line react-hooks/set-state-in-effect -- the URL is read once, after hydration (the server has none)
     refresh();
   }, [refresh]);

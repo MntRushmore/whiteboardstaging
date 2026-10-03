@@ -36,19 +36,13 @@ export const CHAT_COPY = {
   },
 } as const;
 
-/** The first ask the guided board's last coach mark points at (`BoardTour`): more of the starter problem. */
-export const MORE_LIKE_THESE = "3 more like these";
-
 /** Four first asks: a problem set, a graph, a figure, "more like these". */
 export const CHAT_SUGGESTIONS = [
   "5 two-step equations",
   "Graph y = x² − 4x + 3",
   "A right triangle with legs 3 and 4, hypotenuse x",
-  MORE_LIKE_THESE,
+  "3 more like these",
 ] as const;
-
-/** On each suggestion button in the panel, its text: what the tour's coach mark anchors on. */
-export const CHAT_SUGGESTION_ATTR = "data-chat-suggestion";
 
 export type ChatErrorKind = "ink" | "rate_limited" | "unauthorized" | "network" | "timeout" | "other";
 

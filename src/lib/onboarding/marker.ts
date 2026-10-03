@@ -8,16 +8,12 @@
  * - done: `agathon.onboarding.done.<userId>` = "1" once the welcome or the tour was finished or
  *   skipped, so the home does not ask the profile again, and a save that failed (offline) does
  *   not bring the welcome back on this device.
- * - the plan: `agathon.onboarding.plan.<userId>` = "pending" once the guided board was finished
- *   (not skipped), "seen" once the plan screen has shown. The tour's last button opens the plan
- *   screen itself; "pending" covers the student who never got there (a reload on the finish
- *   card), so the home sends them to it once. The profile has no column for it and needs none:
- *   the plan screen follows the tour, which runs once per account, on one device.
  *
- * Kept tiny and import-free: this file is part of the board's first load.
+ * Kept tiny and import-free: this file is part of the board's first load (the plan screen's marker,
+ * which the board never reads, is in `planMarker.ts`).
  */
 
-type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+export type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 /** Where the tour is: resumable steps only (a result on screen resumes at the next coach mark). */
 export type TourMarkerStep = "problem" | "write" | "help" | "ask";
@@ -42,7 +38,6 @@ export interface TourMarker {
 
 export const tourKey = (userId: string) => `agathon.onboarding.tour.${userId}`;
 export const doneKey = (userId: string) => `agathon.onboarding.done.${userId}`;
-export const planKey = (userId: string) => `agathon.onboarding.plan.${userId}`;
 
 export function browserStorage(): StorageLike | null {
   try {
@@ -105,26 +100,5 @@ export function writeLocalDone(storage: StorageLike | null | undefined, userId: 
     storage?.setItem(doneKey(userId), "1");
   } catch {
     /* the profile still says so */
-  }
-}
-
-/** The plan screen after the guided board: still to show, already shown, or never due (null). */
-export type PlanMarker = "pending" | "seen";
-
-export function readPlanMarker(storage: StorageLike | null | undefined, userId: string | null | undefined): PlanMarker | null {
-  if (!storage || !userId) return null;
-  try {
-    const v = storage.getItem(planKey(userId));
-    return v === "pending" || v === "seen" ? v : null;
-  } catch {
-    return null;
-  }
-}
-
-export function writePlanMarker(storage: StorageLike | null | undefined, userId: string, value: PlanMarker): void {
-  try {
-    storage?.setItem(planKey(userId), value);
-  } catch {
-    /* private mode: the tour's own button still opens the plan screen, once */
   }
 }

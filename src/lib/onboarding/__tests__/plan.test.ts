@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { NO_UNLIMITED, UNLIMITED_PLAN, trialEndsOn } from "@/lib/billing/unlimited";
-import { chargeDateText, dollars, HOME_PATH, PLAN_COPY, PLAN_PATH, planDue, planView, withoutUnlimitedReturn } from "../plan";
+import { ARRIVAL_COPY, withoutUnlimitedReturn } from "../arrival";
+import { chargeDateText, dollars, PLAN_COPY, planView } from "../plan";
+import { HOME_PATH, PLAN_PATH, planDue } from "../planMarker";
 
 const URL = "https://buy.stripe.com/test_123?client_reference_id=u1";
 
@@ -80,6 +82,11 @@ describe("the day the card is charged", () => {
 });
 
 describe("back from checkout", () => {
+  it("says welcome to the free week, warmly and briefly", () => {
+    expect(ARRIVAL_COPY.started).toBe("Your free week has started!");
+    expect(ARRIVAL_COPY.startedHint.length).toBeLessThanOrEqual(60);
+  });
+
   it("takes ?unlimited=… out of the URL and keeps the rest", () => {
     expect(withoutUnlimitedReturn("?unlimited=started")).toBe("");
     expect(withoutUnlimitedReturn("?unlimited=started&tab=boards")).toBe("?tab=boards");

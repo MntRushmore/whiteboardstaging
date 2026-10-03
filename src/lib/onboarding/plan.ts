@@ -5,14 +5,11 @@
  * grown-up's card is charged when the week ends. A student who skipped the tour never sees it
  * (they asked to get going; the pitch can wait for a grown-up and the account page).
  *
- * Pure: what the screen shows, its words, and the dates and URLs it needs. The route is
- * src/app/(platform)/welcome/plan; the device marker that it is due lives in `marker.ts`.
+ * Pure: what the screen shows, its words, and the date it needs. The route is
+ * src/app/(platform)/welcome/plan; where it is and whether it is due, `planMarker.ts`; the home's
+ * welcome back from checkout, `arrival.ts`.
  */
-import { UNLIMITED_PLAN, UNLIMITED_RETURN_PARAM, isUnlimited, type UnlimitedState } from "@/lib/billing/unlimited";
-import type { PlanMarker } from "./marker";
-
-export const PLAN_PATH = "/welcome/plan";
-export const HOME_PATH = "/";
+import { UNLIMITED_PLAN, isUnlimited, type UnlimitedState } from "@/lib/billing/unlimited";
 
 /**
  * - `checking`: the subscription is still being read (nothing shows: a subscriber is never pitched);
@@ -26,11 +23,6 @@ export function planView({ loading, unlimited, checkoutUrl }: { loading: boolean
   if (loading) return "checking";
   if (isUnlimited(unlimited)) return "skip";
   return checkoutUrl ? "offer" : "soon";
-}
-
-/** The home sends the student to the plan screen only while it is due and has not shown (`marker.ts`). */
-export function planDue(marker: PlanMarker | null): boolean {
-  return marker === "pending";
 }
 
 /** "$25", for a whole-dollar price. */
@@ -80,18 +72,4 @@ export const PLAN_COPY = {
   soonTitle: "Unlimited isn't open yet",
   soonNote: "Your starter ink is ready to use. Have fun!",
   continue: "Continue",
-  /** back from checkout on the home (`?unlimited=started`) */
-  started: "Your free week has started!",
-  startedHint: "Help me, Solve and Ask are unlimited now. Have fun!",
 } as const;
-
-/**
- * The query string without `?unlimited=…` (and with everything else kept), for replacing the URL
- * once the home has said welcome back: a reload must not cheer again. "" when nothing is left.
- */
-export function withoutUnlimitedReturn(search: string): string {
-  const params = new URLSearchParams(search);
-  params.delete(UNLIMITED_RETURN_PARAM);
-  const rest = params.toString();
-  return rest ? `?${rest}` : "";
-}

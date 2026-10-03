@@ -7,16 +7,14 @@ import {
   clearTourMarker,
   doneKey,
   isGuidedBoard,
-  planKey,
   readLocalDone,
-  readPlanMarker,
   readTourMarker,
   tourKey,
   writeLocalDone,
-  writePlanMarker,
   writeTourMarker,
   type TourMarker,
 } from "../marker";
+import { planKey, readPlanMarker, writePlanMarker } from "../planMarker";
 import { createFirstBoard, fetchOnboardingProfile, saveOnboarding, type OnboardingClient } from "../storage";
 
 // ---------------------------------------------------------------- the profile, via a fake client

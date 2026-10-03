@@ -7,7 +7,14 @@
  * Its own module, not `copy.ts`: that one is on the home's and the sign-in page's first load, and
  * these words are only ever needed by the tour's lazy chunk.
  */
-import type { TourHelp, TourState } from "./state";
+import type { TourHelp, TourState } from "./tour";
+
+/**
+ * The Ask panel's suggestion coach mark 3 points at: one of its own first asks (`CHAT_SUGGESTIONS`
+ * in src/components/chat/chatView.ts, pinned in the tests). Spelled out here rather than exported
+ * from the panel, which is on the board's first load.
+ */
+export const MORE_LIKE_THESE = "3 more like these";
 
 export interface CoachCopy {
   title: string;

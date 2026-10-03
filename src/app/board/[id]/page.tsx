@@ -66,7 +66,6 @@ import { clearInkErrorIfAffordable } from "@/lib/live/liveStore";
 import { BugReportButton } from "@/components/BugReportButton";
 import { captureBoardScreenshot } from "@/components/board/boardScreenshot";
 import { BETA_COPY } from "@/components/app/BetaBadge";
-import { Celebrations } from "@/components/live/Celebrations";
 import { useFeatureLabs } from "@/lib/featureLabs";
 import { liveShapeUtils, liveTools, liveUiOverrides, LiveToolbar } from "@/shapes";
 import { LIVE_KILL_SWITCH } from "@/lib/live/contracts";
@@ -95,6 +94,9 @@ import { attachKeyboardFit, browserKeyboardFitEnv } from "@/components/board/key
 
 // The guided first board's tour (the welcome's Start): loaded on that board only, after the board.
 const BoardTour = React.lazy(() => import("@/components/onboarding/BoardTour"));
+// The cheers on a tick (words and confetti): nothing to show until the tutor marks a line, so they
+// load just after the board rather than with it (docs/BUNDLE.md).
+const Celebrations = React.lazy(() => import("@/components/live/Celebrations").then((m) => ({ default: m.Celebrations })));
 // Feature Labs extras (off by default) and the Mathpix debug panel (development, or opted in on the
 // device): fetched only when shown, not with every board (docs/BUNDLE.md).
 const StickerLibrary = React.lazy(() => import("@/components/StickerLibrary").then((m) => ({ default: m.StickerLibrary })));
@@ -452,7 +454,13 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
       {/* The explainer opens from Board options; the report from there or its button in the bar. */}
       <ModeInfoDialog open={modeInfoOpen} onOpenChange={setModeInfoOpen} />
       <BugReportButton boardId={id} open={reportOpen} onOpenChange={setReportOpen} screenshot={() => captureBoardScreenshot(editor)} />
-      {liveEnabled && live.celebrations && <Celebrations editor={editor} />}
+      {liveEnabled && live.celebrations && (
+        <LiveErrorBoundary>
+          <React.Suspense fallback={null}>
+            <Celebrations editor={editor} />
+          </React.Suspense>
+        </LiveErrorBoundary>
+      )}
 
       {/* a Live 402 or "Get ink" opens the ink dialog (lazy); a 402's never mid-stroke */}
       <OutOfInkWatcher editor={editor} />

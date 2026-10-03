@@ -11,15 +11,16 @@ import { clientMetric } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
 import { ASK_BUTTON_ATTR } from "@/components/live/AskButton";
 import { CHAT_TOGGLE_ATTR } from "@/components/chat/BoardChatPanel";
-import { CHAT_INK, CHAT_SUGGESTION_ATTR, MORE_LIKE_THESE } from "@/components/chat/chatView";
+import { CHAT_INK } from "@/components/chat/chatView";
 import { useChatMessages } from "@/components/chat/useBoardChat";
 import { startersFor, type StarterProblem } from "@/lib/onboarding/courses";
-import { browserStorage, clearTourMarker, readTourMarker, writeLocalDone, writePlanMarker, writeTourMarker } from "@/lib/onboarding/marker";
-import { HOME_PATH, PLAN_PATH } from "@/lib/onboarding/plan";
+import { browserStorage, clearTourMarker, readTourMarker, writeLocalDone, writeTourMarker } from "@/lib/onboarding/marker";
+import { HOME_PATH, PLAN_PATH, writePlanMarker } from "@/lib/onboarding/planMarker";
 import type { Box } from "@/lib/onboarding/placement";
-import { askProgress, COACH_COUNT, coachNumber, initialTour, isTutorWork, markKindOf, markerStepOf, questionWhyOf, tourReducer } from "@/lib/onboarding/state";
+import { isTutorWork, markKindOf, questionWhyOf } from "@/lib/onboarding/marks";
+import { askProgress, COACH_COUNT, coachNumber, initialTour, markerStepOf, tourReducer } from "@/lib/onboarding/tour";
 import { asOnboardingClient, saveOnboarding } from "@/lib/onboarding/storage";
-import { askCopy, helpCopy, TOUR_COPY, writeCopy } from "@/lib/onboarding/tourCopy";
+import { askCopy, helpCopy, MORE_LIKE_THESE, TOUR_COPY, writeCopy } from "@/lib/onboarding/tourCopy";
 import { CoachMark } from "./CoachMark";
 import { TourFinish } from "./TourFinish";
 import styles from "./tour.module.css";
@@ -59,7 +60,8 @@ const PEN = '[data-testid="tools.draw"]';
 const MODES = '[aria-label="How much help"]';
 const HELP = `[${ASK_BUTTON_ATTR}]`;
 const ASK = `[${CHAT_TOGGLE_ATTR}]`;
-const SUGGESTION = `[${CHAT_SUGGESTION_ATTR}="${MORE_LIKE_THESE}"]`;
+/** the Ask panel, and its suggestions (buttons with their words: the tour finds one by its text) */
+const PANEL = "[data-board-chat]";
 /** how long a tutor's mark must stand before the first coach mark says what it means */
 const MARK_SETTLE_MS = 900;
 /** the tutor's hand writes a step stroke by stroke: it is done once nothing new came for this long */
@@ -134,11 +136,19 @@ function shapesRect(editor: Editor, ids: ReadonlySet<TLShapeId>): Box | null {
   return Number.isFinite(minX) ? screenBox(editor, { minX, minY, maxX, maxY }) : null;
 }
 
-function rectOfSelector(selector: string): Box | null {
-  const el = document.querySelector(selector);
+function rectOf(el: Element | null | undefined): Box | null {
   if (!el || el.getClientRects().length === 0) return null;
   const r = el.getBoundingClientRect();
   return { x: r.left, y: r.top, w: r.width, h: r.height };
+}
+
+function rectOfSelector(selector: string): Box | null {
+  return rectOf(document.querySelector(selector));
+}
+
+/** The panel's "3 more like these" while it still shows its suggestions. */
+function suggestionButton(): Element | undefined {
+  return [...document.querySelectorAll(`${PANEL} button`)].find((b) => b.textContent?.trim() === MORE_LIKE_THESE);
 }
 
 export default function BoardTour({ boardId, userId, controller, mode, onModeChange, chatOpen, helpAsk, onFinished }: BoardTourProps) {
@@ -339,8 +349,8 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
   const helpFallback = useCallback(() => rectOfSelector(MODES) ?? penFallback(), [penFallback]);
   // the step the tutor wrote, else the button that asked for it
   const wroteFallback = useCallback(() => shapesRect(editor, wrote.current) ?? helpFallback(), [editor, helpFallback]);
-  // the panel's suggestions are gone once it has messages: its text box
-  const askFallback = useCallback(() => rectOfSelector("[data-board-chat] form") ?? rectOfSelector(ASK), []);
+  // "3 more like these" in the panel; its suggestions are gone once it has messages: its text box
+  const askFallback = useCallback(() => rectOf(suggestionButton()) ?? rectOfSelector(`${PANEL} form`) ?? rectOfSelector(ASK), []);
 
   if (state.step === "problem") return <TourStatus text={TOUR_COPY.writingProblem} />;
   if (state.step === "finish") return <TourFinish onContinue={next} />;
@@ -398,7 +408,7 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
       return (
         <CoachMark
           {...common}
-          anchor={asking ? SUGGESTION : ASK}
+          anchor={asking ? undefined : ASK}
           fallback={asking ? askFallback : undefined}
           prefer={asking ? ["left", "top", "bottom"] : ["bottom", "right", "left"]}
           icon={<MessageSquare />}
