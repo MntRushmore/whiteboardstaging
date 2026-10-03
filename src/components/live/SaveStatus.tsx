@@ -11,9 +11,10 @@ import { ASSET_COPY } from "./copy";
  * nothing is shown while the board is saved (after a short "Saved" confirmation) or while
  * a save is merely debounced; it speaks up when work is unsaved because of the network,
  * a failed write (with a Retry), a merge with another tab, or a board too large to save.
- * It is the bar's last item, so appearing never moves the other controls; below `lg` the
- * routine states (Saving… / Saved / Retrying…) are an icon (the words stay for screen readers
- * and as its tooltip), so an upright iPad keeps the bar on one row while a save runs.
+ * It is the bar's last item, so appearing never moves the other controls; on a board under
+ * 1024 px (the bar's `@5xl/bar` container query) the routine states (Saving… / Saved /
+ * Retrying…) are an icon (the words stay for screen readers and as its tooltip), so an upright
+ * iPad keeps the bar on one row while a save runs.
  */
 
 /** How long "Saved" stays visible after a successful write. */
@@ -102,7 +103,7 @@ export interface SaveStatusProps {
 }
 
 /**
- * The icon a routine state shrinks to below `lg` ("saved": a tick, "busy": a spinner), or null
+ * The icon a routine state shrinks to on a board under 1024 px ("saved": a tick, "busy": a spinner), or null
  * for the states that must be read (offline, failed, merging, too large, a notice): those keep
  * their words at every width.
  */
@@ -125,11 +126,11 @@ export function SaveStatus({ sync, onRetry }: SaveStatusProps) {
       data-testid="save-status"
       data-status={sync.status}
       title={view.title ?? (icon ? view.label : undefined)}
-      className={`inline-flex h-9 items-center gap-1.5 rounded-md border text-xs font-medium shadow-sm ${icon ? "px-2 lg:px-2.5" : "px-2.5"} ${TONE_CLASS[view.tone]}`}
+      className={`inline-flex h-9 items-center gap-1.5 rounded-md border text-xs font-medium shadow-sm ${icon ? "px-2 @5xl/bar:px-2.5" : "px-2.5"} ${TONE_CLASS[view.tone]}`}
     >
-      {icon === "saved" && <Check className="size-4 lg:hidden" aria-hidden />}
-      {icon === "busy" && <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none lg:hidden" aria-hidden />}
-      <span className={icon ? "sr-only lg:not-sr-only" : undefined}>{view.label}</span>
+      {icon === "saved" && <Check className="size-4 @5xl/bar:hidden" aria-hidden />}
+      {icon === "busy" && <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none @5xl/bar:hidden" aria-hidden />}
+      <span className={icon ? "sr-only @5xl/bar:not-sr-only" : undefined}>{view.label}</span>
       {view.showRetry && (
         <button
           type="button"

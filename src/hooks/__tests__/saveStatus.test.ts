@@ -96,7 +96,7 @@ describe("saveStatusViewFor", () => {
   });
 });
 
-describe("the pill's compact form (an icon below lg, so an upright iPad's bar keeps one row)", () => {
+describe("the pill's compact form (an icon on a board under 1024 px, so an upright iPad's bar keeps one row)", () => {
   it("only the routine states shrink to an icon; anything the student must read keeps its words", () => {
     const icon = (state: SyncState, savedVisible = false) => {
       const view = saveStatusViewFor(state, savedVisible);
@@ -110,11 +110,11 @@ describe("the pill's compact form (an icon below lg, so an upright iPad's bar ke
     expect(icon(at({ notice: "This board is nearly full" }))).toBeNull();
   });
 
-  it("renders the icon below lg with the words for screen readers and as the tooltip; errors in words", () => {
+  it("renders the icon on a narrow board with the words for screen readers and as the tooltip; errors in words", () => {
     const saving = renderToStaticMarkup(createElement(SaveStatus, { sync: at({ status: "saving" }), onRetry: () => {} }));
     expect(saving).toContain('title="Saving…"');
-    expect(saving).toMatch(/<svg[^>]*lg:hidden/);
-    expect(saving).toContain('<span class="sr-only lg:not-sr-only">Saving…</span>');
+    expect(saving).toMatch(/<svg[^>]*@5xl\/bar:hidden/);
+    expect(saving).toContain('<span class="sr-only @5xl/bar:not-sr-only">Saving…</span>');
     const failed = renderToStaticMarkup(createElement(SaveStatus, { sync: at({ status: "error", message: "network" }), onRetry: () => {} })).replace(/&#x27;/g, "'");
     expect(failed).not.toContain("<svg");
     expect(failed).toContain(`<span>${SAVE_STATUS_COPY.error}</span>`);
