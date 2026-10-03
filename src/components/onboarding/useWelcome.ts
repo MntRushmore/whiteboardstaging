@@ -7,6 +7,7 @@ import type { CourseId } from "@/lib/onboarding/courseIds";
 import { browserStorage, readLocalDone, writeLocalDone } from "@/lib/onboarding/marker";
 import { needsProfile, welcomeDecision, type OnboardingProfile, type WelcomeDecision } from "@/lib/onboarding/state";
 import { asOnboardingClient, fetchOnboardingProfile, saveOnboarding } from "@/lib/onboarding/storage";
+import { sendWelcomeEmail } from "@/lib/email/client";
 
 const client = asOnboardingClient(supabase);
 
@@ -53,6 +54,8 @@ export function useWelcome(userId: string | undefined, boards: "loading" | "erro
       setSkipped(true);
       void saveOnboarding(client, { course, complete: true }).then((res) => {
         if (!res.ok) clientMetric("onboarding.save.failed", { error: res.error });
+        // a student who skips gets the welcome email too: it is where Help me and Ask are explained
+        else void sendWelcomeEmail();
       });
     },
     [userId],

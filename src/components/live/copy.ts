@@ -4,6 +4,18 @@
  */
 import type { LiveStatus, RecognizerKind } from "@/lib/live/contracts";
 
+/**
+ * How long until a rate limit lifts, as a person says it: "12 s", "4 min", "about 3 hours". A
+ * subscriber over Agathon Unlimited's daily fair-use cap waits hours, and "12000 s" means nothing.
+ */
+export function waitPhrase(seconds: number): string {
+  const s = Math.max(1, Math.ceil(seconds));
+  if (s < 90) return `${s} s`;
+  const min = Math.round(s / 60);
+  if (min < 90) return `${min} min`;
+  return `about ${Math.round(min / 60)} hours`;
+}
+
 export const LIVE_COPY = {
   toggleLabel: "Live",
   toggleHint: "Live is on: the tutor reads each line as you write it",
@@ -82,7 +94,7 @@ export const LIVE_COPY = {
     network: "Couldn't reach the tutor service",
     unauthorized: "Please sign in again",
     /** seconds until the rate limit lifts */
-    rateLimited: (seconds: number) => `Slowing down — try again in ${seconds} s`,
+    rateLimited: (seconds: number) => `Slowing down — try again in ${waitPhrase(seconds)}`,
     rateLimitedReady: "You can try again now",
     /** 402 without a usable server message; "Get ink" opens the packs */
     ink: "You're out of ink — grab an ink pack to keep the tutor going",

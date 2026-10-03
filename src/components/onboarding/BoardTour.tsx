@@ -20,6 +20,7 @@ import type { Box } from "@/lib/onboarding/placement";
 import { isTutorWork, markKindOf, questionWhyOf } from "@/lib/onboarding/marks";
 import { askProgress, COACH_COUNT, coachNumber, initialTour, markerStepOf, tourReducer } from "@/lib/onboarding/tour";
 import { asOnboardingClient, saveOnboarding } from "@/lib/onboarding/storage";
+import { sendWelcomeEmail } from "@/lib/email/client";
 import { askCopy, helpCopy, MORE_LIKE_THESE, TOUR_COPY, writeCopy } from "@/lib/onboarding/tourCopy";
 import { CoachMark } from "./CoachMark";
 import { TourFinish } from "./TourFinish";
@@ -323,6 +324,8 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
       clientMetric(state.skipped ? "onboarding.tour.skip" : "onboarding.tour.done", { course: marker?.course ?? null });
       void saveOnboarding(asOnboardingClient(supabase), { complete: true }).then((res) => {
         if (!res.ok) clientMetric("onboarding.save.failed", { error: res.error });
+        // after the save: the route sends only once profiles.onboarded_at is stamped (and only once)
+        else void sendWelcomeEmail();
       });
     }
     if (state.step !== "done" || left.current) return;
