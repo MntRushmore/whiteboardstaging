@@ -39,8 +39,15 @@ export const LEGAL = {
   // Facts, not placeholders (from the product; change them with the product).
   productName: "Agathon",
   siteHost: "whiteboard.rushilchopra.com",
-  /** The seller name Stripe shows at checkout, on receipts and on card statements. */
+  /** The seller name Stripe shows at checkout and on receipts (the Stripe account is shared with Fuime). */
   stripeSellerName: "Fuime",
+  /**
+   * What a card statement shows. Ink packs: the account's prefix (FUIME) and the Payment Links'
+   * `statement_descriptor_suffix`; Agathon Unlimited: the product's own `statement_descriptor`
+   * (subscription charges take no suffix). Both set by scripts/stripe-setup.mjs (legal.test.ts pins
+   * them to it); the Unlimited one was checked on a real test-mode charge on 2026-10-03.
+   */
+  statementDescriptors: { inkPacks: "FUIME* AGATHON", unlimited: "AGATHON" },
   /** Unused ink from a pack can be refunded within this many days of buying it. */
   refundWindowDays: 14,
   /** Ink packs: one-time purchases (USD). Kept equal to the packs on sale. */

@@ -139,8 +139,9 @@ export default function TermsPage() {
             and never renew.
           </li>
           <li>
-            Payments are processed by Stripe. Checkout, your receipt and your card statement show the seller name{" "}
-            <strong>“{LEGAL.stripeSellerName}”</strong>. We never see or store your full card number.
+            Payments are processed by Stripe. Checkout and your receipt show the seller name{" "}
+            <strong>“{LEGAL.stripeSellerName}”</strong>, and your card statement shows{" "}
+            <strong>“{LEGAL.statementDescriptors.inkPacks}”</strong>. We never see or store your full card number.
           </li>
           <li>
             <strong>Ink never expires.</strong> It has no cash value, cannot be transferred to another account, and can
@@ -235,7 +236,8 @@ export default function TermsPage() {
             agrees to these terms for the plan and is responsible for its charges.
           </li>
           <li>
-            Payments are processed by Stripe, under the seller name <strong>“{LEGAL.stripeSellerName}”</strong>.
+            Payments are processed by Stripe, under the seller name <strong>“{LEGAL.stripeSellerName}”</strong>; your
+            card statement shows the plan’s charges as <strong>“{LEGAL.statementDescriptors.unlimited}”</strong>.
             Stripe’s billing page shows the plan, its invoices and the card. We never see or store your full card
             number.
           </li>

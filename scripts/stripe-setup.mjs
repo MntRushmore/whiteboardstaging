@@ -295,11 +295,24 @@ export function paymentLinkBody(pack, priceId, site) {
 /** "$25" */
 const dollars = (cents) => `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
 
-/** The Unlimited product: what Checkout, the receipt and the portal call the plan. */
+/**
+ * What a card statement shows for the plan's charges. The account is shared with Fuime, so its own
+ * descriptor is FUIME, and a subscription's charges cannot take a suffix the way the packs' do
+ * (`payment_intent_data` is payment mode only: Stripe makes renewal charges itself). Stripe takes a
+ * subscription payment's descriptor from its invoice, else from the first item's PRODUCT
+ * `statement_descriptor`, else the account's (docs.stripe.com/get-started/account/statement-descriptors),
+ * so it is set on the product: every invoice of every Unlimited subscription, the first $25 after
+ * the free week included, shows it. Stripe's rules: 5 to 22 Latin characters, at least one letter,
+ * none of < > \ ' " *.
+ */
+export const UNLIMITED_STATEMENT_DESCRIPTOR = "AGATHON";
+
+/** The Unlimited product: what Checkout, the receipt and the portal call the plan, and what the card statement shows. */
 export function unlimitedProductBody() {
   return {
     name: UNLIMITED.name,
     description: `Help from the AI tutor without counting ink. ${UNLIMITED.trialDays} days free, then ${dollars(UNLIMITED.priceCents)} a ${UNLIMITED.interval}. Cancel any time.`,
+    statement_descriptor: UNLIMITED_STATEMENT_DESCRIPTOR,
     metadata: { app: APP_TAG, plan_id: UNLIMITED.id },
   };
 }
@@ -739,9 +752,11 @@ export async function setup(opts, deps = {}) {
   if (!uProduct) {
     would(`create product "${uBody.name}"`);
     uProduct = dry ? { id: "(new unlimited product)", name: uBody.name } : await api.post("/v1/products", uBody);
-  } else if (uProduct.name !== uBody.name || uProduct.description !== uBody.description) {
-    would(`update product ${uProduct.id} name/description`);
-    if (!dry) uProduct = await api.post(`/v1/products/${uProduct.id}`, { name: uBody.name, description: uBody.description });
+  } else if (uProduct.name !== uBody.name || uProduct.description !== uBody.description || uProduct.statement_descriptor !== uBody.statement_descriptor) {
+    would(`update product ${uProduct.id} name/description/statement descriptor (${uBody.statement_descriptor})`);
+    if (!dry) {
+      uProduct = await api.post(`/v1/products/${uProduct.id}`, { name: uBody.name, description: uBody.description, statement_descriptor: uBody.statement_descriptor });
+    }
   }
   log(`  product ${uProduct.id}`);
 

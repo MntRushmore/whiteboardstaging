@@ -713,3 +713,20 @@ only; the one constant is `billing_event_payload_retention()` in the go-live mig
 dry run) and reports `billingPayloadsPurged`; a failure is logged and reported as `null` without
 failing the storage pass. The Privacy Policy states the 90 days (`legalPages.test.tsx` reads it
 from the migration). By hand: `select public.purge_billing_event_payloads();`.
+
+### Card statements say AGATHON
+
+The Stripe account is Fuime's, so its own statement descriptor is `FUIME`. Ink packs already add
+the suffix: their Payment Links set `payment_intent_data.statement_descriptor_suffix = AGATHON`, so a
+statement reads `FUIME* AGATHON`. A subscription's charges cannot take a suffix (Stripe makes the
+renewal charges itself; `payment_intent_data` is payment mode only), but Stripe takes a
+subscription payment's descriptor from the first item's **product** `statement_descriptor`. The
+setup script now sets `statement_descriptor = AGATHON` on the Unlimited product (and updates an
+existing product in place: same product, price and link). **Checked in test mode on 2026-10-03:**
+after `node scripts/stripe-setup.mjs --mode test`, a test subscription on the Unlimited price
+(no trial, `pm_card_visa`) produced charge `ch_3UMadU2Uz4P3wrXO1HcQo3jf` with
+`calculated_statement_descriptor: "AGATHON"`; the test customer was then deleted. What stays
+"Fuime": Checkout, receipts, invoices and the customer portal show the account's public business
+name, which is account-wide (only a separate Stripe account would change it). The Terms and the
+Refund Policy say exactly this (`LEGAL.statementDescriptors`, pinned to the script by
+`stripeSetup.test.ts`).
