@@ -68,7 +68,7 @@ export default function AccountPage() {
 
   if (!user && authError) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
+      <div className="flex grow items-center justify-center bg-gray-50 p-4">
         <div className="w-full max-w-md">
           <AuthErrorBanner />
         </div>
@@ -78,7 +78,7 @@ export default function AccountPage() {
 
   if (authLoading || !user) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50">
+      <div className="flex grow items-center justify-center bg-gray-50">
         <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
       </div>
     );
@@ -89,7 +89,7 @@ export default function AccountPage() {
   const payer = { userId: user.id, email };
 
   return (
-    <div className="min-h-screen bg-muted/40">
+    <div className="grow bg-muted/40">
       <AppHeader />
       <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         <AuthErrorBanner className="mb-4" />

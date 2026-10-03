@@ -15,6 +15,19 @@ describe("loginErrorMessage", () => {
     expect(classifyLoginError(authError("Invalid login credentials", 400))).toBe("invalid-credentials");
   });
 
+  it("a sign-up the database refused (no Terms acceptance: a page from before the consent box) asks for a reload", () => {
+    const refused = authError("Database error saving new user", 500, "unexpected_failure");
+    expect(classifyLoginError(refused)).toBe("signup-refused");
+    expect(loginErrorMessage(refused)).toBe(LOGIN_COPY.signupRefused);
+    expect(loginErrorField(refused)).toBe("form");
+    // the local GoTrue passes the trigger's own message through, with no error code
+    const passedThrough = authError(
+      "sign-up refused: the Terms and Privacy Policy were not accepted (user_metadata.terms_version is missing)",
+      500,
+    );
+    expect(loginErrorMessage(passedThrough)).toBe(LOGIN_COPY.signupRefused);
+  });
+
   it("maps unconfirmed email", () => {
     expect(loginErrorMessage(authError("Email not confirmed", 400, "email_not_confirmed"))).toBe(
       LOGIN_COPY.emailNotConfirmed,

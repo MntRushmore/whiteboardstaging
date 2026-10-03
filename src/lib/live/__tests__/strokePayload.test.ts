@@ -81,6 +81,59 @@ describe("buildPayload", () => {
   });
 });
 
+/**
+ * Release QA 2026-10-03: whatever ink a student makes, the request the client builds either passes
+ * the route's schema or is not sent at all (null: "Too much ink for one line"). A seeded random
+ * walk stands in for real handwriting at its extremes: long dense strokes, many of them, a big
+ * screen far from the origin, a flat line, a single dot.
+ */
+describe("every payload the client sends passes the recognize route's schema", () => {
+  let seed = 7;
+  const rand = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+  const walk = (x0: number, y0: number, n: number, step: number, amp: number) => {
+    const pts = [{ x: x0, y: y0 }];
+    for (let i = 1; i < n; i++) {
+      const p = pts[i - 1];
+      pts.push({ x: p.x + step * rand(), y: y0 + amp * Math.sin(i / 7) + (rand() - 0.5) * amp * 0.3 });
+    }
+    return pts;
+  };
+  const lineOf = (segments: Array<Array<{ x: number; y: number }>>, id = "s"): { line: InkLine; strokes: InkStroke[] } => {
+    const strokes: InkStroke[] = segments.map((seg, i) => {
+      const xs = seg.map((p) => p.x);
+      const ys = seg.map((p) => p.y);
+      const b = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+      return { id: `shape:${id}${i}` as never, bounds: b, segments: [seg] };
+    });
+    const bx = Math.min(...strokes.map((s) => s.bounds.x));
+    const by = Math.min(...strokes.map((s) => s.bounds.y));
+    const bw = Math.max(...strokes.map((s) => s.bounds.x + s.bounds.w)) - bx;
+    const bh = Math.max(...strokes.map((s) => s.bounds.y + s.bounds.h)) - by;
+    return { line: { id: "ln_fuzz", strokeIds: strokes.map((s) => s.id), bounds: { x: bx, y: by, w: bw, h: bh }, column: 0, row: 0, hash: "" }, strokes };
+  };
+  // [what, the ink, sent?] -- not sent means over the caps: the line reads "Too much ink for one line"
+  const cases: Array<[string, Array<Array<{ x: number; y: number }>>, boolean]> = [
+    ["two dense 4,000-point strokes (1,970 points each once simplified)", [walk(100, 100, 4000, 0.4, 30), walk(1800, 100, 4000, 0.4, 30)], true],
+    ["80 strokes of 300 points", Array.from({ length: 80 }, (_, i) => walk(i * 40, 500, 300, 0.2, 25)), true],
+    ["a flat line, 1 px tall, on a wide screen", [walk(0, 0, 500, 2, 0.5)], true],
+    ["one dot", [[{ x: 3.25, y: -7.5 }]], true],
+    ["a 12,000 px scribble far from the origin (over the point cap)", [walk(250_000, -90_000, 3000, 4, 60)], false],
+  ];
+  it.each(cases)("%s", (_name, segments, sent) => {
+    const { line, strokes } = lineOf(segments);
+    const p = buildPayload(line, strokes);
+    expect(Boolean(p)).toBe(sent);
+    if (!p) return;
+    const parsed = RecognizeRequestSchema.safeParse({
+      boardId: "9a69089c-e108-4db2-bd76-cec1c2909f6b",
+      lineId: line.id,
+      strokes: { x: p.x, y: p.y },
+      bounds: { w: p.w, h: p.h },
+    });
+    expect(parsed.success, JSON.stringify(parsed.error?.issues.slice(0, 2))).toBe(true);
+  });
+});
+
 describe("rdp", () => {
   it("collapses a straight line to its endpoints and keeps corners", () => {
     const straight = Array.from({ length: 50 }, (_, i) => ({ x: i, y: i * 0.5 }));

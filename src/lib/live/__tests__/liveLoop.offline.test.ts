@@ -366,6 +366,32 @@ describe("live loop — offline queue and replay", () => {
     expect(liveStore.status.get()).toBe("idle");
   });
 
+  it("(f''') a read that fails with a TypeError while the browser says online: the next success ends 'offline' and replays it", async () => {
+    // a dropped connection the browser does not notice: navigator.onLine stays true, no 'online' event
+    let failNext = true;
+    fetchJson.mockImplementation(async (_path, body): Promise<RecognizeResponse> => {
+      if (failNext) {
+        failNext = false;
+        throw new TypeError("Failed to fetch");
+      }
+      return { latex: (body as RecognizeRequest).lineId ? "2x=8" : "", text: "", kind: "math", confidence: 0.97, provider: "mathpix", ms: 300 };
+    });
+    await penUp(writeLine("2x=8", 100, 200, 40));
+    const [first] = Object.keys(liveStore.lines.get());
+    expect(liveStore.status.get()).toBe("offline");
+    expect(liveStore.offlineQueued.get()).toBe(1);
+
+    // the next line is read: the network is evidently back
+    await penUp(writeLine("2x=8", 100, 320, 40));
+    await vi.advanceTimersByTimeAsync(QUIET);
+    await settle(12);
+    expect(liveStore.status.get()).not.toBe("offline");
+    expect(liveStore.offlineQueued.get()).toBe(0);
+    expect(recognizedLineIds().filter((id) => id === first).length).toBeGreaterThanOrEqual(2);
+    expect(echoesByLine().get(first)).toBe(1);
+    expect(pillLabelFor(liveStore.status.get(), "mathpix", liveStore.offlineQueued.get())).not.toMatch(/Offline/);
+  });
+
   it("(g) offlineQueued mirrors the queue and returns to 0 after replay; stop() clears it", async () => {
     expect(liveStore.offlineQueued.get()).toBe(0);
     goOffline();

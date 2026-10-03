@@ -1,8 +1,12 @@
 /* /login and /reset-password: layout and type from Arc's tokens (src/registry/foundation.css). */
 
 /* ---- /login: the product panel beside the form from 1024 px ---------------------------------- */
+/* Fills the platform layout above the legal footer (src/app/(platform)/platform.css), so the
+   footer is in view on a laptop or an iPad and follows the form on a phone. */
 .split {
-  min-height: 100dvh;
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
   background: var(--background);
 }
 @media (min-width: 1024px) {
@@ -91,16 +95,30 @@
   flex: none;
   color: var(--text-secondary);
 }
-/* Width follows the viewport height too, so the stack fits on a short laptop screen. */
+/* Width follows the viewport height too, so the stack and the legal footer under it fit on a
+   laptop screen (36rem: the panel's text, paddings and the footer). */
 .panelPictures {
-  width: min(100% - var(--space-6), (100dvh - 29rem) * 1.38);
+  width: min(100% - var(--space-6), (100dvh - 36rem) * 1.38);
   min-width: 18rem;
   margin-top: var(--space-10);
+}
+/* A short laptop (1280 x 720, 1366 x 768): tighter paddings keep the footer in view. */
+@media (min-width: 1024px) and (max-height: 800px) {
+  .panel {
+    padding-block: var(--space-6);
+  }
+  .panelBody {
+    padding-block: var(--space-4) var(--space-2);
+  }
+  .panelPictures {
+    min-width: 16rem;
+    margin-top: var(--space-6);
+  }
 }
 
 .formColumn {
   display: flex;
-  min-height: 100dvh;
+  flex: 1 0 auto;
   flex-direction: column;
   align-items: center;
   padding: var(--space-12) var(--space-4) var(--space-10);
@@ -181,6 +199,67 @@
   margin-top: var(--space-1);
 }
 
+/* Sign-up's consent box: the whole label is the tap target (links inside it still open). */
+.consent {
+  display: grid;
+}
+.consentLabel {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  cursor: pointer;
+}
+.checkbox {
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  /* centres the box on the first line of 1.5 line-height text */
+  margin: calc((1.5em - 1.125rem) / 2) 0 0;
+  accent-color: var(--control-on);
+  cursor: pointer;
+}
+.checkbox[aria-invalid="true"] {
+  outline: 2px solid var(--danger);
+  outline-offset: 1px;
+}
+.consentText {
+  display: grid;
+  gap: var(--space-1);
+  text-wrap: pretty;
+}
+.consentLink {
+  border-radius: var(--space-1);
+  color: var(--foreground);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, currentColor 35%, transparent);
+  text-underline-offset: 3px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .consentLink:hover {
+    text-decoration-color: currentColor;
+  }
+}
+.consentError {
+  margin: 0;
+  padding-top: var(--space-2);
+  padding-left: calc(1.125rem + var(--space-3));
+  color: var(--danger);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* A quiet text action under the form: "Forgot your password?", "Back to sign in". */
 .textButton {
   display: inline-flex;
@@ -243,7 +322,7 @@
 /* ---- /reset-password: one card on a quiet page ----------------------------------------------- */
 .centered {
   display: flex;
-  min-height: 100dvh;
+  flex: 1 0 auto;
   flex-direction: column;
   align-items: center;
   padding: var(--space-12) var(--space-4) var(--space-10);

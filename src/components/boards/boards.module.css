@@ -11,7 +11,8 @@
 
 /* ---- Page ------------------------------------------------------------------------------------- */
 .page {
-  min-height: 100dvh;
+  /* fills the platform layout above the legal footer (platform.css) */
+  flex: 1 0 auto;
   background: var(--surface-muted);
 }
 .main {

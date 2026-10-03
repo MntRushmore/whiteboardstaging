@@ -323,7 +323,7 @@ group by route order by ink desc;
 
 `usage_events` is append-only and grows with every AI call (one row per call, ~100 bytes). Prune rows older than the retention you want (`delete from public.usage_events where created_at < now() - interval '13 months';`) - only the current month is ever consulted for balances.
 
-**Account deletion and storage garbage collection.** `delete_own_account()` deletes the caller's `auth.users` row. That cascades (`on delete cascade`) to `profiles`, `whiteboards` (-> `whiteboard_snapshots`, `board_assets`), `user_settings`, `trainers`, `training_samples`, `usage_events`, `credit_grants`, `ink_grants` and `ink_purchases`; `bug_reports` keeps its rows with `user_id = null`; Auth removes identities, sessions and refresh tokens itself. The user's JWT stays signature-valid until it expires, but every table is empty for it and `consume_credits()` answers `403 account not found`.
+**Account deletion and storage garbage collection.** `delete_own_account()` deletes the caller's `auth.users` row. That cascades (`on delete cascade`) to `profiles`, `whiteboards` (-> `whiteboard_snapshots`, `board_assets`), `user_settings`, `trainers`, `training_samples`, `usage_events`, `credit_grants`, `ink_grants`, `ink_purchases` and, since `20261003010100_bug_reports_leave_with_account.sql`, `bug_reports` (they hold the account's email, message, a board screenshot and logs); Auth removes identities, sessions and refresh tokens itself. The user's JWT stays signature-valid until it expires, but every table is empty for it and `consume_credits()` answers `403 account not found`.
 
 Storage objects are **not** removed by the RPC: `storage.objects` has no FK to `auth.users`, and the Storage trigger described in section 12 rejects direct row deletes because the file behind the row would stay in the backing store. So: (1) the client does this itself — `src/components/account/DangerZone.tsx` calls `deleteOwnAccount()` from `src/lib/billing/deleteAccount.ts`, which reads its own `board_assets.object_path` rows and calls `storage.from('board-assets').remove(paths)` *before* the RPC (the owner-delete policy allows it; a Storage failure is logged and does not block the deletion; `training-data` has no delete policy on purpose), and (2) the operator runs this after deletions, because `board-assets` is a public bucket and an orphaned image stays reachable by URL until it is removed:
 
@@ -390,3 +390,35 @@ select user_id, route, units, model, created_at from public.usage_events where r
 ### 13.2 Usage by day
 
 Migration `supabase/migrations/20260927000000_usage_by_day.sql` (idempotent; `npm run db:push`). One read-only RPC, `usage_by_day(p_time_zone text default 'UTC')` -> rows `{day date, route text, events int, credits int}`: the caller's own `usage_events` for the current credit period (the same UTC calendar month `credit_summary()` counts, so the credits add up to its `used`), grouped by calendar day in `p_time_zone` and by route, newest day first. It is `security invoker`, so the existing `usage_events: owner select` policy decides the rows; `execute` for `authenticated` only (anon gets `42501` / HTTP 401). An unknown zone raises `22023` (HTTP 400). The account page's Usage card is its only caller. Verify with `npm run db:verify` (checks named `usage_by_day:`).
+
+### 13.3 Sign-up consent, and creating an account by hand
+
+Migration `supabase/migrations/20261003010000_signup_consent.sql` (idempotent). Sign-up has one required box: "I agree to the Terms and Privacy Policy. I'm 13 or older, or I'm a parent or guardian setting this up for my child." The form sends `terms_version` (`TERMS_VERSION` in `src/lib/legal.ts`, a date) in the new account's user metadata; the database keeps it on the profile:
+
+| Column | Meaning |
+| --- | --- |
+| `profiles.accepted_terms_at` | when the account was created with the box ticked (the account's `created_at`) |
+| `profiles.terms_version` | which version of that text it agreed to (`YYYY-MM-DD`) |
+
+Both are null for accounts made before the migration; those are never asked. Users can read their own, never write them.
+
+**No acceptance, no account.** A `BEFORE INSERT` trigger on `auth.users` (`auth_users_require_terms`) refuses any new user without a well-formed `user_metadata.terms_version`: a client that skips the box, a page cached from before the release, or a direct `POST /auth/v1/signup`. The sign-up page then says "We couldn't create your account. Reload this page and try again." GoTrue's admin API and the public sign-up look the same to a trigger, so this applies to accounts made with the service role too:
+
+- **The dashboard's *Authentication -> Add user* is refused** (it cannot send metadata). Ask the person to sign up, or create the account with the admin API and say which version they agreed to:
+
+  ```bash
+  curl -X POST "$SUPABASE_URL/auth/v1/admin/users" \
+    -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"email":"student@example.com","password":"...","email_confirm":true,"user_metadata":{"terms_version":"2026-10-03"}}'
+  ```
+
+- The scripts (`seed-local`, `verify-rls`, the DB tests) send it themselves (`scripts/lib/supabaseHttp.mjs`).
+
+```sql
+-- who agreed to what
+select u.email, p.terms_version, p.accepted_terms_at
+from public.profiles p join auth.users u on u.id = p.user_id order by p.accepted_terms_at desc nulls last;
+```
+
+When the Terms or Privacy Policy change in a way that matters, bump `TERMS_VERSION`; new sign-ups record the new date. Asking existing accounts to agree again is not built.
