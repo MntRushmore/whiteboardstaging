@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api-client";
 import { ROUTE_COSTS } from "@/lib/server/billing";
+import { CHAT_TIMEOUT_MS, ChatTimeoutError, requestChat } from "@/lib/live/chat/client";
 import { CHAT_COPY, CHAT_CREDITS, CHAT_SUGGESTIONS, chatErrorFor, historyFor, problemFor, runNotes, sendsOnKey, type ChatMessage } from "../chatView";
 
 describe("board chat panel — view logic", () => {
@@ -21,6 +22,45 @@ describe("board chat panel — view logic", () => {
     expect(chatErrorFor(new ApiError("x", 502, "upstream_error"))).toEqual({ kind: "other", message: CHAT_COPY.errors.other, retry: true });
     expect(chatErrorFor(new TypeError("Failed to fetch")).kind).toBe("network");
     expect(chatErrorFor(new Error("?")).kind).toBe("other");
+  });
+
+  it("a request that never answers ends as a timeout with Retry, not a spinner", async () => {
+    expect(chatErrorFor(new ChatTimeoutError())).toEqual({ kind: "timeout", message: CHAT_COPY.errors.timeout, retry: true });
+    vi.useFakeTimers();
+    try {
+      let signal: AbortSignal | undefined;
+      const fetchJson = vi.fn(
+        (_path: string, _body: unknown, init?: { signal?: AbortSignal }) =>
+          new Promise<unknown>((_resolve, reject) => {
+            signal = init?.signal;
+            init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+          }),
+      );
+      const req = { boardId: "b", message: "3 equations", history: [], screen: { empty: true, student: [], tutor: [], problems: [] } };
+      const pending = requestChat(req as never, {}, fetchJson);
+      const assertion = expect(pending).rejects.toBeInstanceOf(ChatTimeoutError);
+      await vi.advanceTimersByTimeAsync(CHAT_TIMEOUT_MS + 1);
+      await assertion;
+      expect(signal?.aborted).toBe(true);
+      // the stalled connection is cut well after the route's own 45 s limit, never before it
+      expect(CHAT_TIMEOUT_MS).toBeGreaterThan(45_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("closing the board mid-request aborts it as an abort, not a timeout", async () => {
+    const ctrl = new AbortController();
+    const fetchJson = vi.fn(
+      (_path: string, _body: unknown, init?: { signal?: AbortSignal }) =>
+        new Promise<unknown>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        }),
+    );
+    const req = { boardId: "b", message: "3 equations", history: [], screen: { empty: true, student: [], tutor: [], problems: [] } };
+    const pending = requestChat(req as never, { signal: ctrl.signal }, fetchJson);
+    ctrl.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
   });
 
   it("the chat so far: finished turns only, a failed ask left out, the last six", () => {

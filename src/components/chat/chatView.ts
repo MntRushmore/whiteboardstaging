@@ -30,6 +30,7 @@ export const CHAT_COPY = {
     rateLimited: (seconds: number) => `That's a lot of requests. Try again in ${seconds} s.`,
     unauthorized: "Please sign in again.",
     network: "Couldn't reach the tutor. Check your connection and try again.",
+    timeout: "The tutor took too long to answer. Try again.",
     other: "Something went wrong. Try again.",
     board: "The board isn't ready yet. Try again in a moment.",
   },
@@ -43,7 +44,7 @@ export const CHAT_SUGGESTIONS = [
   "3 more like these",
 ] as const;
 
-export type ChatErrorKind = "credits" | "rate_limited" | "unauthorized" | "network" | "other";
+export type ChatErrorKind = "credits" | "rate_limited" | "unauthorized" | "network" | "timeout" | "other";
 
 export interface ChatError {
   kind: ChatErrorKind;
@@ -77,6 +78,8 @@ export function chatErrorFor(err: unknown): ChatError {
     return { kind: "other", message: CHAT_COPY.errors.other, retry: true };
   }
   if (err instanceof TypeError) return { kind: "network", message: CHAT_COPY.errors.network, retry: true };
+  // the request outlived CHAT_TIMEOUT_MS (a stalled connection): never a "Thinking…" for ever
+  if (err instanceof Error && err.name === "TimeoutError") return { kind: "timeout", message: CHAT_COPY.errors.timeout, retry: true };
   return { kind: "other", message: CHAT_COPY.errors.other, retry: true };
 }
 
