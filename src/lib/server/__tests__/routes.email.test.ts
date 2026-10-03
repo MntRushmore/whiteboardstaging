@@ -44,6 +44,7 @@ vi.mock("@/lib/email/server", async (importOriginal) => {
       logStore: () => pick().logStore(),
       readOnboardedAt: (token: string, userId: string) => pick().readOnboardedAt(token, userId),
       findTrials: (from: Date, to: Date) => pick().findTrials(from, to),
+      findSubscription: (subscriptionId: string) => pick().findSubscription(subscriptionId),
       emailOf: (userId: string) => pick().emailOf(userId),
       send: (m: Parameters<typeof real.emailDeps.send>[0], c: Parameters<typeof real.emailDeps.send>[1]) => pick().send(m, c),
       now: () => pick().now(),
@@ -188,6 +189,7 @@ function dueTrial(now: Date): TrialRow {
     trialEnd: new Date(now.getTime() + 60 * HOUR).toISOString(),
     cancelAtPeriodEnd: false,
     cancelAt: null,
+    payerEmail: null,
   };
 }
 
@@ -229,6 +231,26 @@ describe("GET /api/cron/trial-reminders", () => {
     const again = await trialReminders(cronRequest());
     expect(await again.json()).toMatchObject({ sent: 0, alreadySent: 1 });
     expect(d.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("catches up a 'free week started' email the webhook could not send, to the payer, once", async () => {
+    const trialRow = { ...dueTrial(now), trialEnd: new Date(now.getTime() + 6 * 24 * HOUR).toISOString(), payerEmail: "payer@example.com" };
+    const d = use(
+      fakeDeps({
+        now,
+        trials: [trialRow],
+        subscriptions: { sub_due: { ...trialRow, repeat: false } },
+      }),
+    );
+    const res = await trialReminders(cronRequest());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ started: { found: 1, sent: 1, failed: 0 } });
+    expect(d.sent.map((m) => [m.to, m.tags])).toContainEqual(["payer@example.com", { kind: "unlimited_started" }]);
+    expect(await (await trialReminders(cronRequest())).json()).toMatchObject({ started: { found: 1, sent: 0, alreadySent: 1 } });
+    // a dry run only lists
+    const dry = use(fakeDeps({ now, trials: [trialRow], subscriptions: { sub_due: { ...trialRow, repeat: false } } }));
+    expect(await (await trialReminders(cronRequest({ query: "?dryRun=1" }))).json()).toMatchObject({ started: { wouldSend: ["sub_due"], sent: 0 } });
+    expect(dry.send).not.toHaveBeenCalled();
   });
 
   it("500 when the subscriptions cannot be read", async () => {

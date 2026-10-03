@@ -1,7 +1,8 @@
 /**
  * What the email routes read from outside the request: the env, the service-role email log, the
  * caller's profile, the subscriptions, an account's address, Resend, the clock. The routes
- * (src/app/api/email/welcome, src/app/api/cron/trial-reminders) call `emailDeps`; tests replace it.
+ * (src/app/api/email/welcome, src/app/api/cron/trial-reminders, and the billing webhook's
+ * "free week started" email) call `emailDeps`; tests replace it.
  * Route files may not read process.env or export helpers (routeProtection.test.ts), so all of this
  * lives here.
  *
@@ -12,6 +13,7 @@ import { LEGAL } from "@/lib/legal";
 import { supabaseEmailLog, type EmailLogStore } from "@/lib/email/log";
 import { DEFAULT_EMAIL_FROM, sendEmail, type ResendConfig, type SendEmailInput, type SendEmailResult } from "@/lib/email/resend";
 import { trialsEndingBetween, type TrialRow } from "@/lib/email/trialReminders";
+import { startedSubscription, type StartedRow } from "@/lib/email/unlimitedStarted";
 import { serviceClient, userClient } from "@/lib/server/billing";
 
 /** Where links point when NEXT_PUBLIC_SITE_URL is unset: production (an email never links to localhost by accident). */
@@ -76,6 +78,8 @@ export type EmailDeps = {
   readOnboardedAt: (token: string, userId: string) => Promise<{ onboardedAt: string | null } | { error: string }>;
   /** Trialing subscriptions whose free week ends in [from, to), through the service role. */
   findTrials: (from: Date, to: Date) => Promise<TrialRow[] | { error: string }>;
+  /** One subscription by its Stripe id (null when there is none), through the service role. */
+  findSubscription: (subscriptionId: string) => Promise<StartedRow | null | { error: string }>;
   /** An account's email address (auth.users), through the service role; null when it has none. */
   emailOf: (userId: string) => Promise<{ email: string | null } | { error: string }>;
   send: (message: SendEmailInput, config: ResendConfig) => Promise<SendEmailResult>;
@@ -99,6 +103,7 @@ export const emailDeps: EmailDeps = {
     return { onboardedAt: typeof value === "string" ? value : null };
   },
   findTrials: (from, to) => trialsEndingBetween(admin(), from, to),
+  findSubscription: (subscriptionId) => startedSubscription(admin(), subscriptionId),
   async emailOf(userId) {
     const { data, error } = await admin().auth.admin.getUserById(userId);
     if (error) return { error: error.message };

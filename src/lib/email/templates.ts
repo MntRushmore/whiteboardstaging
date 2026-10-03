@@ -330,3 +330,83 @@ export function trialReminderEmail(input: TrialReminderInput): RenderedEmail {
   ]);
   return { subject, html, text };
 }
+
+/* ------------------------------------------------------------------------- */
+/* Free week started                                                          */
+/* ------------------------------------------------------------------------- */
+
+export type UnlimitedStartedInput = {
+  /** When the free week ends and the first charge is made (Stripe's `trial_end`). */
+  trialEnd: Date;
+  /** Where to manage or cancel (NEXT_PUBLIC_BILLING_PORTAL_URL, else the account page). */
+  manageUrl: string;
+  /** The site's origin: the plan's terms and the refund policy are linked from it. */
+  siteUrl: string;
+  /** The plan as sold (UNLIMITED_PLAN in src/lib/billing/unlimited.ts). */
+  planName: string;
+  monthlyUsd: number;
+  /**
+   * A second (or later) plan on the account: its trial runs in Stripe, but the free week's help is
+   * for a first plan only (has_unlimited() in 20261003040000_go_live_gaps.sql), so the email says
+   * the plan starts with the first charge instead of welcoming a free week.
+   */
+  repeat?: boolean;
+  timeZone?: string;
+};
+
+/** The section of the Terms on how the plan renews and is cancelled (what the plan screens link to). */
+export const UNLIMITED_TERMS_PATH = "/terms#unlimited";
+/** The refund policy's section on the plan. */
+export const UNLIMITED_REFUNDS_PATH = "/refunds#subscriptions";
+
+/**
+ * Sent once per subscription, to the person who paid, when the webhook first sees the plan in its
+ * free week and linked to an account (src/lib/email/unlimitedStarted.ts). Auto-renewal laws ask for
+ * this acknowledgment: that the plan renews by itself, what it costs, when the card is first
+ * charged and how to cancel, with the terms. Plain facts first; the cancel link is in the body.
+ */
+export function unlimitedStartedEmail(input: UnlimitedStartedInput): RenderedEmail {
+  const { day, time } = formatEmailDate(input.trialEnd, input.timeZone);
+  const price = formatUsd(input.monthlyUsd);
+  const manage = emailHref(input.manageUrl);
+  const site = siteLink(input.siteUrl, "/");
+  const terms = siteLink(input.siteUrl, UNLIMITED_TERMS_PATH);
+  const refunds = siteLink(input.siteUrl, UNLIMITED_REFUNDS_PATH);
+  const plan = input.planName;
+
+  const subject = input.repeat ? `Your ${plan} plan starts on ${day}` : `Your free week of ${plan} has started`;
+  const title = input.repeat ? "Your plan is set up" : "Your free week has started";
+  const preheader = `Nothing was charged today. Your card will be charged ${price} on ${day} unless you cancel before then.`;
+  const started = input.repeat ? `Your ${plan} plan is set up. Nothing was charged today.` : `Your free week of ${plan} has started. Nothing was charged today.`;
+  const charge = `On ${day} at ${time}, your card will be charged ${price}, then ${price} every month until you cancel.`;
+  const firstPlanOnly = "The free week is for a first plan only, so until then help uses ink.";
+  const cancelLead = "To cancel, use";
+  const cancelTail = `Cancel before ${day} at ${time} and you won't be charged.`;
+  const footer = `You're getting this email because ${plan} was started at checkout with this email address, for an Agathon account.`;
+
+  const card = [
+    heading(title),
+    paragraph(escapeHtml(started)),
+    paragraph(escapeHtml(charge)),
+    ...(input.repeat ? [paragraph(escapeHtml(firstPlanOnly))] : []),
+    paragraph(`${escapeHtml(cancelLead)} ${link("Manage or cancel", manage)}. ${escapeHtml(cancelTail)}`),
+    button("Manage or cancel", manage),
+    paragraph(`${escapeHtml("The plan's terms:")} ${link("How the plan works", terms)} ${escapeHtml("and our")} ${link("refund policy", refunds)}.`, { muted: true, size: 14 }),
+  ].join("\n");
+
+  const html = layout({ title: subject, preheader, card, footer: `${escapeHtml(footer)} ${link("Open Agathon", site)}` });
+  const text = textBody([
+    title,
+    started,
+    charge,
+    ...(input.repeat ? [firstPlanOnly] : []),
+    `To cancel, use Manage or cancel: ${manage}`,
+    cancelTail,
+    `How the plan works: ${terms}`,
+    `Refund policy: ${refunds}`,
+    "--",
+    footer,
+    `Agathon: ${site}`,
+  ]);
+  return { subject, html, text };
+}

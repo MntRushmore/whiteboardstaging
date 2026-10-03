@@ -104,7 +104,9 @@ describe("terms: Agathon Unlimited as sold", () => {
   it("promises the reminder the cron actually sends: 2 to 3 days before the free week ends", () => {
     // a daily run reminds trials ending 24 to 72 hours out, so the first run to see one is 2 to 3 days ahead
     expect(TRIAL_REMINDER_WINDOW).toEqual({ fromMs: 24 * HOUR_MS, toMs: 72 * HOUR_MS });
-    expect(terms).toContain("About 2 to 3 days before the free week ends, we email the address on the Agathon account");
+    expect(terms).toContain("About 2 to 3 days before the free week ends, we email them again");
+    // the confirmation, and both to the payer (src/lib/email/payer.ts)
+    expect(terms).toContain("When the free week starts, we email the person who paid, at the email used at checkout");
     expect(text(PAGES["/privacy"])).toContain("one reminder about 2 to 3 days before the free week ends");
   });
 
@@ -149,7 +151,8 @@ describe("privacy: who gets what", () => {
   it("lists the emails we send, from the domain we send them from", () => {
     expect(DEFAULT_EMAIL_FROM).toContain("@mail.agathon.app");
     expect(privacy).toContain("mail.agathon.app");
-    for (const email of ["Password reset:", "Welcome:", "Free week ending:"]) expect(privacy).toContain(email);
+    for (const email of ["Password reset:", "Welcome:", "Free week started:", "Free week ending:"]) expect(privacy).toContain(email);
+    expect(privacy).toContain("emails about Agathon Unlimited, which go to the person who paid, at the email used at checkout");
     expect(privacy).toContain("We send no newsletters or marketing emails.");
   });
 

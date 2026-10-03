@@ -16,6 +16,8 @@ vi.mock("@/lib/server/billingWebhook", async (importOriginal) => {
       getEnv: () => pick().getEnv(),
       createStore: (url: string, key: string) => pick().createStore(url, key),
       now: () => pick().now(),
+      confirmStarted: (subscriptionId: string, log: import("pino").Logger) => pick().confirmStarted(subscriptionId, log),
+      defer: (work: () => Promise<unknown>) => pick().defer(work),
     },
   };
 });
@@ -23,6 +25,7 @@ vi.mock("@/lib/server/billingWebhook", async (importOriginal) => {
 import { POST } from "@/app/api/billing/webhook/route";
 import {
   HANDLED_EVENTS,
+  deferAfterResponse,
   linkOutcomeOf,
   livemodeAccepted,
   mapBillingEvent,
@@ -54,6 +57,8 @@ function createWebhookHandler(handlerDeps: WebhookDeps): (req: Request) => Promi
   };
 }
 import { resetRateLimits } from "@/lib/server/rate-limit";
+import { sendUnlimitedStarted } from "@/lib/email/unlimitedStarted";
+import { fakeDeps as fakeEmailDeps } from "@/lib/email/__tests__/fakes";
 import { signStripePayload } from "@/lib/server/webhookSignature";
 import realEvents from "./fixtures/stripe-unlimited-subscription-events.json";
 
@@ -690,8 +695,11 @@ const fullEnv: WebhookEnv = {
   INK_PRICE_MAP: JSON.stringify(PRICE_MAP),
 };
 
-function handlerWith(store: BillingStore, env: Partial<WebhookEnv> = {}): (req: Request) => Promise<Response> {
-  const deps: WebhookDeps = { getEnv: () => ({ ...fullEnv, ...env }), createStore: () => store, now: () => NOW };
+/** No email by default: the plan's confirmation has its own tests below (`emailWorld`). */
+const NO_EMAIL: Pick<WebhookDeps, "confirmStarted" | "defer"> = { confirmStarted: async () => undefined, defer: () => undefined };
+
+function handlerWith(store: BillingStore, env: Partial<WebhookEnv> = {}, email: Pick<WebhookDeps, "confirmStarted" | "defer"> = NO_EMAIL): (req: Request) => Promise<Response> {
+  const deps: WebhookDeps = { getEnv: () => ({ ...fullEnv, ...env }), createStore: () => store, now: () => NOW, ...email };
   return createWebhookHandler(deps);
 }
 
@@ -972,7 +980,7 @@ describe("POST /api/billing/webhook", () => {
     expect(store.log.recorded).toEqual([]);
     expect((await strict(await signedRequest(live))).status).toBe(200);
     // unset on a deployment: live only
-    const prod = createWebhookHandler({ getEnv: () => ({ ...fullEnv }), createStore: () => store, now: () => NOW });
+    const prod = createWebhookHandler({ getEnv: () => ({ ...fullEnv }), createStore: () => store, now: () => NOW, ...NO_EMAIL });
     const onProd = (body: string) => signedRequest(body, { url: "https://whiteboard.rushilchopra.com/api/billing/webhook" });
     expect((await prod(await onProd(test))).status).toBe(400);
     expect((await prod(await onProd(JSON.stringify({ ...event("checkout.session.completed", session({ id: "cs_l2" }), "evt_live_2"), livemode: true })))).status).toBe(200);
@@ -1185,5 +1193,143 @@ describe("POST /api/billing/webhook: Agathon Unlimited", () => {
     await send(handler, checkoutEv());
     expect(await send(handler, event("checkout.session.completed", session(), "evt_pack"))).toEqual({ status: 200, body: { received: true } });
     expect(store.balance()).toBe(5300);
+  });
+
+  /**
+   * The free week's confirmation through the real `sendUnlimitedStarted`, with fake email deps
+   * (email_log in memory, Resend recorded) reading the fake store's subscription row. `defer`
+   * collects the work instead of running it, so a test sees exactly what happens before the
+   * answer to Stripe (nothing) and after it (`settle`).
+   */
+  function emailWorld(store: ReturnType<typeof fakeStore>) {
+    const email = fakeEmailDeps({ now: new Date(NOW * 1000) });
+    email.findSubscription = vi.fn(async (id: string) => {
+      const row = store.plan(id);
+      if (!row) return null;
+      return { subscriptionId: id, userId: row.userId, status: row.status, trialEnd: row.trialEnd, cancelAtPeriodEnd: row.cancelAtPeriodEnd, cancelAt: null, payerEmail: row.payerEmail, repeat: false };
+    });
+    const queued: Array<() => Promise<unknown>> = [];
+    const requested: string[] = [];
+    const webhook: Pick<WebhookDeps, "confirmStarted" | "defer"> = {
+      confirmStarted: (id, log) => {
+        requested.push(id);
+        return sendUnlimitedStarted(email, id, log);
+      },
+      defer: (work) => {
+        queued.push(work);
+      },
+    };
+    /** Run what the route deferred (after its answers), in order. */
+    const settle = async () => {
+      while (queued.length) await queued.shift()!();
+    };
+    return { email, webhook, settle, requested, queued };
+  }
+
+  it("the free week's confirmation goes to the PAYER, once, after the answer, whichever event completes the plan and however often Stripe redelivers", async () => {
+    const store = fakeStore();
+    const world = emailWorld(store);
+    const handler = handlerWith(store, {}, world.webhook);
+
+    // the subscription first: trialing but nobody's yet, so nothing is due
+    expect(await send(handler, createdEv())).toEqual({ status: 200, body: { received: true } });
+    await world.settle();
+    expect(world.email.sent).toEqual([]);
+
+    // the checkout links it: the email is asked for, but only after the answer
+    expect(await send(handler, checkoutEv())).toEqual({ status: 200, body: { received: true } });
+    expect(world.queued).toHaveLength(1);
+    expect(world.requested).toEqual([]); // not even started before the answer
+    expect(world.email.sent).toEqual([]);
+    await world.settle();
+    expect(world.requested).toEqual(["sub_1"]);
+    expect(world.email.sent).toHaveLength(1);
+    const [message] = world.email.sent;
+    expect(message.to).toBe("parent@example.com"); // the payer from the checkout, not the account's address
+    expect(world.email.emailOf).not.toHaveBeenCalled();
+    expect(message.subject).toBe("Your free week of Agathon Unlimited has started");
+    expect(message.text).toContain("Nothing was charged today.");
+    expect(message.text).toContain("your card will be charged $25, then $25 every month until you cancel.");
+    expect(message.text).toMatch(/\/terms#unlimited/);
+    expect(message.idempotencyKey).toBe("unlimited-started/sub_1");
+    expect(world.email.log.rows).toEqual([expect.objectContaining({ user_id: USER_ID, kind: "unlimited_started", ref: "sub_1", resend_id: "re_1" })]);
+
+    // Stripe redelivers both, and an update arrives: asked again each time, sent never again
+    await send(handler, checkoutEv());
+    await send(handler, createdEv());
+    await send(handler, subEvent("customer.subscription.updated", subscription(), "evt_upd", NOW + 5));
+    await world.settle();
+    expect(world.requested.length).toBeGreaterThanOrEqual(4);
+    expect(world.email.sent).toHaveLength(1);
+    expect(world.email.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("…the checkout first, then the subscription event: the same single email", async () => {
+    const store = fakeStore();
+    const world = emailWorld(store);
+    const handler = handlerWith(store, {}, world.webhook);
+    await send(handler, checkoutEv()); // linked, no status yet: nothing asked
+    expect(world.requested).toEqual([]);
+    await send(handler, createdEv()); // now linked AND trialing
+    await world.settle();
+    expect(world.email.sent.map((m) => m.to)).toEqual(["parent@example.com"]);
+  });
+
+  it("email never fails or slows the webhook: Resend down, an email step that throws or hangs, all answer 200; a later delivery sends it", async () => {
+    const store = fakeStore();
+    const world = emailWorld(store);
+    const handler = handlerWith(store, {}, world.webhook);
+    world.email.sendReplies.push({ ok: false, error: "timed out" });
+    expect((await send(handler, createdEv())).status).toBe(200);
+    expect(await send(handler, checkoutEv())).toEqual({ status: 200, body: { received: true } });
+    await world.settle();
+    expect(world.email.sent).toEqual([]);
+    expect(world.email.log.rows).toEqual([]); // the claim was released, so it can be sent later
+    expect(store.log.forgotten).toEqual([]); // and the webhook did not undo anything
+    // the next delivery for the subscription (or the daily cron) sends it
+    await send(handler, subEvent("customer.subscription.updated", subscription(), "evt_upd", NOW + 5));
+    await world.settle();
+    expect(world.email.sent).toHaveLength(1);
+
+    // an email step that throws, or never finishes, with the real `defer`: the answer is still 200, at once
+    for (const confirmStarted of [
+      async () => {
+        throw new Error("boom");
+      },
+      () => new Promise<never>(() => undefined),
+    ]) {
+      const s = fakeStore();
+      const h = handlerWith(s, {}, { confirmStarted, defer: deferAfterResponse });
+      expect(await send(h, createdEv())).toEqual({ status: 200, body: { received: true } });
+      expect(await send(h, checkoutEv())).toEqual({ status: 200, body: { received: true } });
+      expect(s.log.forgotten).toEqual([]);
+    }
+  });
+
+  it("deferAfterResponse never throws, even outside a request (where next/server's `after` refuses) or for work that fails", async () => {
+    let ran = 0;
+    expect(() => deferAfterResponse(async () => void ran++)).not.toThrow();
+    expect(() => deferAfterResponse(() => Promise.reject(new Error("smtp down")))).not.toThrow();
+    expect(() =>
+      deferAfterResponse(() => {
+        throw new Error("sync throw");
+      }),
+    ).not.toThrow();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(ran).toBe(1);
+  });
+
+  it("no confirmation for a plan linked to nobody, a pack, or a plan already set to cancel", async () => {
+    const store = fakeStore();
+    const world = emailWorld(store);
+    const handler = handlerWith(store, {}, world.webhook);
+    await send(handler, subEvent("checkout.session.completed", unlimitedSession({ client_reference_id: USER_ID, subscription: "sub_x", id: "cs_x" }), "evt_x", NOW));
+    await send(handler, subEvent("customer.subscription.created", subscription({ id: "sub_x" }), "evt_x_sub", NOW + 1));
+    await send(handler, event("checkout.session.completed", session(), "evt_pack"));
+    await send(handler, subEvent("customer.subscription.created", subscription({ id: "sub_c", cancel_at_period_end: true }), "evt_c_sub", NOW + 1));
+    await send(handler, subEvent("checkout.session.completed", unlimitedSession({ subscription: "sub_c", id: "cs_c" }), "evt_c", NOW + 2));
+    await world.settle();
+    expect(world.requested).toEqual(["sub_c"]); // asked (linked and trialing), but it will not charge
+    expect(world.email.sent).toEqual([]);
   });
 });

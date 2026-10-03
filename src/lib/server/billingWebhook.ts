@@ -1,7 +1,11 @@
+import { after } from "next/server";
+import type pino from "pino";
 import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
 import { getServerEnv, type InkPriceMap } from "@/lib/env";
 import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
+import { emailDeps } from "@/lib/email/server";
+import { sendUnlimitedStarted } from "@/lib/email/unlimitedStarted";
 
 /**
  * The billing webhook's event schema, its pure mapping of a Stripe event to an ink change or an
@@ -662,14 +666,46 @@ export type WebhookDeps = {
   createStore: (url: string, serviceRoleKey: string) => BillingStore;
   /** Unix seconds (signature tolerance). */
   now: () => number;
+  /**
+   * The "free week started" email for a subscription that may just have become linked and trialing
+   * (src/lib/email/unlimitedStarted.ts: it checks, and email_log sends it once). Never throws.
+   */
+  confirmStarted: (subscriptionId: string, log: pino.Logger) => Promise<unknown>;
+  /**
+   * Run work AFTER the response has gone to Stripe: next/server's `after` (Vercel keeps the function
+   * alive for it, up to its maxDuration). So email can neither fail the webhook (a non-2xx makes
+   * Stripe redeliver) nor slow its answer.
+   */
+  defer: (work: () => Promise<unknown>) => void;
 };
 
+/** `after(work)`, or (outside a request, where `after` throws) work started now and not awaited. Never throws. */
+export function deferAfterResponse(work: () => Promise<unknown>): void {
+  // async: a work that throws synchronously becomes a rejection, swallowed like any other (the
+  // email step logs its own failures).
+  const run = async () => {
+    try {
+      await work();
+    } catch {
+      /* never the webhook's problem */
+    }
+  };
+  try {
+    after(run);
+  } catch {
+    void run();
+  }
+}
+
 /**
- * What the webhook reads from outside the request: the env, the service-role store and the clock
- * (Unix seconds, for the signature tolerance). The route calls these; tests replace them.
+ * What the webhook reads from outside the request: the env, the service-role store, the clock
+ * (Unix seconds, for the signature tolerance), and the plan's confirmation email with the way it
+ * runs after the response. The route calls these; tests replace them.
  */
 export const webhookDeps: WebhookDeps = {
   getEnv: () => getServerEnv(),
   createStore: supabaseBillingStore,
   now: () => Math.floor(Date.now() / 1000),
+  confirmStarted: (subscriptionId, log) => sendUnlimitedStarted(emailDeps, subscriptionId, log),
+  defer: deferAfterResponse,
 };

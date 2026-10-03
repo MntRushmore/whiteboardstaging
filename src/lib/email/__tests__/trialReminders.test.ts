@@ -32,6 +32,7 @@ function trial(over: Partial<TrialRow> = {}): TrialRow {
     trialEnd: at(60),
     cancelAtPeriodEnd: false,
     cancelAt: null,
+    payerEmail: null,
     ...over,
   };
 }
@@ -108,7 +109,7 @@ describe("trialsEndingBetween (the one query against the subscriptions table)", 
     expect(await trialsEndingBetween(admin, from, to)).toEqual([]);
     expect(calls).toEqual([
       ["from", "unlimited_subscriptions"],
-      ["select", "stripe_subscription_id,user_id,status,trial_end,cancel_at_period_end,cancel_at"],
+      ["select", "stripe_subscription_id,user_id,status,trial_end,cancel_at_period_end,cancel_at,payer_email"],
       ["eq", "status", "trialing"],
       ["not", "user_id", "is", null],
       ["gte", "trial_end", from.toISOString()],
@@ -121,16 +122,24 @@ describe("trialsEndingBetween (the one query against the subscriptions table)", 
   it("maps rows by the column names in SUBSCRIPTIONS and drops a row without an id", async () => {
     const { admin } = recordingAdmin({
       data: [
-        { stripe_subscription_id: "sub_a", user_id: "u1", status: "trialing", trial_end: "2026-10-10T03:04:00+00:00", cancel_at_period_end: false, cancel_at: null },
+        { stripe_subscription_id: "sub_a", user_id: "u1", status: "trialing", trial_end: "2026-10-10T03:04:00+00:00", cancel_at_period_end: false, cancel_at: null, payer_email: "payer@example.com" },
         { stripe_subscription_id: "sub_b", user_id: "u2", status: "trialing", trial_end: "2026-10-10T05:00:00+00:00", cancel_at_period_end: true, cancel_at: "2026-10-10T05:00:00+00:00" },
         { stripe_subscription_id: null, user_id: "u3" },
       ],
     });
     expect(await trialsEndingBetween(admin, from, to)).toEqual([
-      { subscriptionId: "sub_a", userId: "u1", status: "trialing", trialEnd: "2026-10-10T03:04:00+00:00", cancelAtPeriodEnd: false, cancelAt: null },
-      { subscriptionId: "sub_b", userId: "u2", status: "trialing", trialEnd: "2026-10-10T05:00:00+00:00", cancelAtPeriodEnd: true, cancelAt: "2026-10-10T05:00:00+00:00" },
+      { subscriptionId: "sub_a", userId: "u1", status: "trialing", trialEnd: "2026-10-10T03:04:00+00:00", cancelAtPeriodEnd: false, cancelAt: null, payerEmail: "payer@example.com" },
+      { subscriptionId: "sub_b", userId: "u2", status: "trialing", trialEnd: "2026-10-10T05:00:00+00:00", cancelAtPeriodEnd: true, cancelAt: "2026-10-10T05:00:00+00:00", payerEmail: null },
     ]);
-    expect(toTrialRow({ [SUBSCRIPTIONS.columns.subscriptionId]: "sub_c" })).toEqual({ subscriptionId: "sub_c", userId: null, status: null, trialEnd: null, cancelAtPeriodEnd: false, cancelAt: null });
+    expect(toTrialRow({ [SUBSCRIPTIONS.columns.subscriptionId]: "sub_c" })).toEqual({
+      subscriptionId: "sub_c",
+      userId: null,
+      status: null,
+      trialEnd: null,
+      cancelAtPeriodEnd: false,
+      cancelAt: null,
+      payerEmail: null,
+    });
   });
 
   it("passes a database error on", async () => {
@@ -177,6 +186,28 @@ describe("runTrialReminders", () => {
     expect(again).toMatchObject({ due: 1, alreadySent: 1, sent: 0 });
     expect(deps.send).toHaveBeenCalledTimes(1);
     expect(deps.emailOf).toHaveBeenCalledTimes(1);
+  });
+
+  it("goes to the payer's email from the checkout, not the account's (often the child's); the account's only without one", async () => {
+    const deps = fakeDeps({
+      now: NOW,
+      trials: [
+        trial({ subscriptionId: "sub_paid_by_parent", userId: "u_kid", payerEmail: "parent@example.com" }),
+        trial({ subscriptionId: "sub_old_row", userId: "u_old", payerEmail: null }),
+        trial({ subscriptionId: "sub_bad_payer", userId: "u_bad", payerEmail: "not an address" }),
+      ],
+      emails: { u_kid: "kid@school.example", u_old: "account@example.com", u_bad: "account2@example.com" },
+    });
+    expect(await runTrialReminders(deps, testEnv(), { dryRun: false }, silentLog())).toMatchObject({ due: 3, sent: 3 });
+    expect(deps.sent.map((m) => m.to)).toEqual(["parent@example.com", "account@example.com", "account2@example.com"]);
+    // the payer's address needs no account lookup
+    expect(deps.emailOf).not.toHaveBeenCalledWith("u_kid");
+    // the log is still per account and subscription
+    expect(deps.log.rows.map((r) => [r.user_id, r.ref])).toEqual([
+      ["u_kid", "sub_paid_by_parent"],
+      ["u_old", "sub_old_row"],
+      ["u_bad", "sub_bad_payer"],
+    ]);
   });
 
   it("a dry run lists what it would send and touches nothing", async () => {

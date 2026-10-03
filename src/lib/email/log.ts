@@ -25,7 +25,7 @@ import type { SendEmailInput, SendEmailResult } from "@/lib/email/resend";
 export const EMAIL_LOG_TABLE = "email_log";
 
 /** Kinds as the table's check allows them (`^[a-z][a-z0-9_]{0,39}$`). */
-export type EmailKind = "welcome" | "trial_reminder";
+export type EmailKind = "welcome" | "trial_reminder" | "unlimited_started";
 
 /** One email: who, which kind, and what about (`''` for once-per-account emails). */
 export type EmailLogKey = { userId: string; kind: EmailKind; ref: string };

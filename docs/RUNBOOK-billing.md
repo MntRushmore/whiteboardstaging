@@ -680,3 +680,26 @@ weeks may be limited to one per person, family or card, which covers cancelling 
   (`src/lib/server/mathpix.ts`): Mathpix persists no image data or result and keeps only the
   request's metadata for billing. An account-level `improve_mathpix` value (set by Mathpix support)
   overrides the per-request one: leave it unset, or have it set to false.
+
+### The plan's emails go to the payer; the free week is confirmed
+
+- **Payer email.** Stripe gives the payer's email only on the checkout (`customer_details.email`,
+  else `customer_email`); `link_unlimited_checkout(…, p_payer_email)` stores it on the row
+  (`unlimited_subscriptions.payer_email`, first wins). The free-week reminder and the confirmation
+  go there, and fall back to the account's address only when the row has none
+  (`src/lib/email/payer.ts`). The account reads its own row (RLS unchanged); when the account is
+  deleted, the trigger `unlimited_subscriptions_forget_payer` blanks the email with the user id, so
+  the row kept for the owner names nobody.
+- **"Your free week of Agathon Unlimited has started"** (`src/lib/email/unlimitedStarted.ts`,
+  template `unlimitedStartedEmail`): nothing charged today; the date, time (Eastern) and amount of
+  the first charge, then $25 every month until cancelled; *Manage or cancel*; cancel before that
+  moment and nothing is charged; links to `/terms#unlimited` and `/refunds#subscriptions`. A second
+  plan's version says the plan starts with the first charge (its free week grants nothing). Sent
+  when the webhook sees the subscription both linked and `trialing` (either event may complete
+  that), **after** answering Stripe (`after()` from `next/server`): email never fails or slows the
+  webhook. Once per subscription (`email_log` kind `unlimited_started`, ref = subscription id; Resend
+  idempotency key `unlimited-started/<sub>`), however often Stripe redelivers. If Resend fails, the
+  daily cron (`/api/cron/trial-reminders`, its `started` block) sends it while the trial has more
+  than a day left. Not sent when the plan is set to cancel by the trial's end, or is linked to nobody.
+- **Check after the first real signup:** `select kind, ref, resend_id, sent_at from public.email_log
+  where kind = 'unlimited_started' order by claimed_at desc limit 5;` and the Resend dashboard.
