@@ -45,6 +45,7 @@ import { useBoardAutoTitle } from "@/hooks/useBoardAutoTitle";
 import { createBoardAssetStore } from "@/lib/assets/boardAssetStore";
 import {
   BOARD_LOAD_COPY,
+  BoardCrashed,
   BoardLoadError,
   BoardLoading,
   loadStateFor,
@@ -592,6 +593,8 @@ export default function BoardPage() {
           Toolbar: LiveToolbar,
           // the pen's colour and size on request, not a panel always open over the screen
           StylePanel: PenStyleButton,
+          // tldraw's own error screen offers "Reset data", which clears localStorage
+          ErrorFallback: BoardCrashed,
         }}
         onMount={(editor) => {
           assetStoreBundle?.attach(editor);
