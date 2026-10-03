@@ -40,16 +40,19 @@ export interface SaveStatusView {
  * `savedVisible` is the fade window: `saved` is only shown for SAVED_FADE_MS after a write.
  */
 export function saveStatusViewFor(state: SyncState, savedVisible: boolean): SaveStatusView | null {
+  // A nearly full board says so for as long as it is merely saving normally.
+  const notice: SaveStatusView | null = state.notice ? { label: state.notice, tone: "amber", showRetry: false, title: null } : null;
   switch (state.status) {
     case "saved":
-      if (!savedVisible || state.lastSavedAt === null) return null;
+      if (!savedVisible || state.lastSavedAt === null) return notice;
       return { label: SAVE_STATUS_COPY.saved, tone: "neutral", showRetry: false, title: null };
     case "dirty":
       // A debounced save is not worth a pill; a retry after a failure is.
       if (state.attempt > 0) return { label: SAVE_STATUS_COPY.retrying, tone: "neutral", showRetry: false, title: null };
-      return null;
+      return notice;
     case "saving":
-      return { label: SAVE_STATUS_COPY.saving, tone: "neutral", showRetry: false, title: null };
+      // a retry after a failure (a hung or refused write) is not an ordinary save
+      return { label: state.attempt > 0 ? SAVE_STATUS_COPY.retrying : SAVE_STATUS_COPY.saving, tone: "neutral", showRetry: false, title: null };
     case "offline":
       return { label: SAVE_STATUS_COPY.offline, tone: "amber", showRetry: false, title: state.message };
     case "merging":

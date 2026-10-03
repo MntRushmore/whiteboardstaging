@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TLShapeId, TLStore } from "tldraw";
+import { react, type TLShapeId, type TLStore } from "tldraw";
 import {
   backoffDelay,
   createSaveQueue,
   extractStoreMap,
+  MAX_BACKUP_WAIT_MS,
+  MAX_SAVE_WAIT_MS,
   MSG_BOARD_GONE,
   MSG_MERGE_FAILED,
+  MSG_SAVE_TIMEOUT,
+  PERSIST_TIMEOUT_MS,
+  persistTimeoutMs,
   RETRY_BACKOFF_MS,
 } from "../saveQueue";
 import { buildFrom, cloneStore, fakeRemote, makeStore, putShape, shapeIds } from "../__fixtures__/store";
@@ -305,7 +310,7 @@ describe("createSaveQueue", () => {
     queue.dispose();
   });
 
-  it("markDirty during an in-flight save triggers exactly one follow-up save carrying the new edit", async () => {
+  it("markDirty during an in-flight save triggers exactly one follow-up save, after the debounce, carrying the new edit", async () => {
     const store = makeStore();
     const remote = fakeRemote(store);
     let release: (() => void) | null = null;
@@ -326,6 +331,9 @@ describe("createSaveQueue", () => {
     expect(queue.state.get()).toMatchObject({ status: "saving", pending: true });
     release!();
     await tick();
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(queue.state.get()).toMatchObject({ status: "saved", version: 2, pending: true });
+    await vi.advanceTimersByTimeAsync(2000);
     expect(persist).toHaveBeenCalledTimes(2);
     expect(persist.mock.calls[1][1]).toBe(2);
     expect(queue.state.get()).toMatchObject({ status: "saved", version: 3, pending: false });
@@ -373,9 +381,194 @@ describe("createSaveQueue", () => {
     release!();
     await tick();
     await tick();
+    // the removal made during the save is saved after the debounce
+    expect(backup.map.get("b1")).toMatchObject({ changed: [], removed: ["shape:a"] });
+    await vi.advanceTimersByTimeAsync(2000);
     expect(queue.state.get()).toMatchObject({ status: "saved", version: 3, pending: false });
     expect(backup.map.has("b1")).toBe(false);
     expect(queue.writeBackupNow()).toBe(false);
+    queue.dispose();
+  });
+
+  it("edits that never pause for the debounce are still saved and backed up (max wait)", async () => {
+    const store = makeStore();
+    const remote = fakeRemote(store);
+    const persist = vi.fn(remote.persist);
+    const backup = memoryBackup();
+    const queue = createSaveQueue(makeDeps(store, { persist, backup }));
+    // a stroke every 300 ms: shorter than both debounces, so neither ever settles on its own
+    let n = 0;
+    const edit = () => {
+      putShape(store, `shape:s${n++}`);
+      queue.markDirty();
+    };
+    edit();
+    for (let t = 300; t < MAX_BACKUP_WAIT_MS; t += 300) {
+      await vi.advanceTimersByTimeAsync(300);
+      edit();
+    }
+    expect(backup.map.has("b1")).toBe(false);
+    await vi.advanceTimersByTimeAsync(300);
+    edit();
+    expect(backup.map.get("b1")?.changed.length).toBeGreaterThan(0);
+    for (let t = 2100; t < MAX_SAVE_WAIT_MS - 300; t += 300) {
+      await vi.advanceTimersByTimeAsync(300);
+      edit();
+    }
+    expect(persist).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(remote.shapeIds().length).toBeGreaterThan(30);
+    // the next burst gets its own full max wait
+    edit();
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(persist).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(persist).toHaveBeenCalledTimes(2);
+    queue.dispose();
+  });
+
+  it("edits that keep coming while saves are in flight do not chain saves back to back", async () => {
+    const store = makeStore();
+    const remote = fakeRemote(store);
+    // each write takes 150 ms, like a real round trip
+    const persist = vi.fn(async (u: Record<string, unknown>, v: number | null): Promise<PersistResult> => {
+      await new Promise((r) => setTimeout(r, 150));
+      return remote.persist(u, v);
+    });
+    const queue = createSaveQueue(makeDeps(store, { persist }));
+    // typing: a change every 100 ms for 30 s
+    for (let i = 0; i < 300; i++) {
+      putShape(store, "shape:text", i);
+      queue.markDirty();
+      await vi.advanceTimersByTimeAsync(100);
+    }
+    // one save per MAX_SAVE_WAIT_MS window, not one per round trip (that was ~150 in 30 s)
+    expect(persist.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(persist.mock.calls.length).toBeLessThanOrEqual(4);
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(queue.state.get()).toMatchObject({ status: "saved", pending: false });
+    expect((remote.row?.data as { document: { store: Record<string, { x: number }> } }).document.store["shape:text"].x).toBe(299);
+    queue.dispose();
+  });
+
+  it("changes that leave the board as it was persisted write nothing and never show 'Saving…'", async () => {
+    const store = makeStore();
+    const original = putShape(store, "shape:a", 10);
+    const remote = fakeRemote(store);
+    const persist = vi.fn(remote.persist);
+    const backup = memoryBackup();
+    const queue = createSaveQueue(makeDeps(store, { persist, backup }));
+    const statuses: string[] = [];
+    const stop = react("statuses", () => void statuses.push(queue.state.get().status));
+
+    // what Live does when a board opens: rewrites records with what they already hold
+    store.put([{ ...original, props: { ...original.props } }]);
+    putShape(store, "shape:a", 99);
+    store.put([original]);
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(persist).not.toHaveBeenCalled();
+    expect(statuses).not.toContain("saving");
+    expect(queue.state.get()).toMatchObject({ status: "saved", pending: false, version: 1 });
+    expect(backup.map.has("b1")).toBe(false);
+
+    // a real change still saves, and the saved state becomes the new baseline
+    const at50 = putShape(store, "shape:a", 50);
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(persist).toHaveBeenCalledTimes(1);
+    store.put([{ ...at50, x: 70 }]);
+    store.put([{ ...at50 }]);
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(persist).toHaveBeenCalledTimes(1);
+    // ...and a shape added then erased before the save is nothing to save either
+    putShape(store, "shape:tmp");
+    store.remove(["shape:tmp" as TLShapeId]);
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(persist).toHaveBeenCalledTimes(1);
+    stop();
+    queue.dispose();
+  });
+
+  it("a write that never answers is aborted after persistTimeoutMs, shown as an error and retried", async () => {
+    const store = makeStore();
+    const remote = fakeRemote(store);
+    let hang = true;
+    const signals: Array<AbortSignal | undefined> = [];
+    const persist = vi.fn((u: Record<string, unknown>, v: number | null, signal?: AbortSignal): Promise<PersistResult> => {
+      signals.push(signal);
+      return hang ? new Promise<PersistResult>(() => {}) : remote.persist(u, v);
+    });
+    const inner = buildFrom(store);
+    const buildUpdate = async (): Promise<BuildResult> => ({ ...(await inner()), bytes: 200_000 } as BuildResult);
+    const queue = createSaveQueue(makeDeps(store, { persist, buildUpdate }));
+    putShape(store, "shape:a");
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(queue.state.get().status).toBe("saving");
+    const limit = persistTimeoutMs(200_000);
+    expect(limit).toBe(PERSIST_TIMEOUT_MS + 10_000);
+    await vi.advanceTimersByTimeAsync(limit - 1);
+    expect(queue.state.get().status).toBe("saving");
+    await vi.advanceTimersByTimeAsync(1);
+    expect(signals[0]?.aborted).toBe(true);
+    expect(queue.state.get()).toMatchObject({ status: "error", message: MSG_SAVE_TIMEOUT, pending: true, attempt: 1 });
+
+    hang = false;
+    await vi.advanceTimersByTimeAsync(RETRY_BACKOFF_MS[0]);
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect(queue.state.get()).toMatchObject({ status: "saved", version: 2, pending: false });
+    expect(remote.shapeIds()).toEqual(["shape:a"]);
+    queue.dispose();
+  });
+
+  it("a conflict fetch that never answers fails the round instead of leaving 'Merging…' up", async () => {
+    const store = makeStore();
+    const persist = vi.fn(async (): Promise<PersistResult> => ({ ok: false, kind: "conflict" }));
+    const fetchRemote = vi.fn(() => new Promise<{ data: unknown; version: number } | null>(() => {}));
+    const queue = createSaveQueue(makeDeps(store, { persist, fetchRemote }));
+    putShape(store, "shape:a");
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(queue.state.get().status).toBe("merging");
+    await vi.advanceTimersByTimeAsync(PERSIST_TIMEOUT_MS);
+    expect(queue.state.get()).toMatchObject({ status: "error", message: MSG_SAVE_TIMEOUT, pending: true });
+    queue.dispose();
+  });
+
+  it("the backup holds only the unsaved records, not the whole board", async () => {
+    const store = makeStore();
+    for (let i = 0; i < 50; i++) putShape(store, `shape:saved${i}`);
+    const backup = memoryBackup();
+    const queue = createSaveQueue(makeDeps(store, { backup }));
+    putShape(store, "shape:new");
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(500);
+    const written = backup.map.get("b1")!;
+    expect(Object.keys(written.snapshot.store)).toEqual(["shape:new"]);
+    expect(written.snapshot.schema).toEqual(store.schema.serialize());
+    queue.dispose();
+  });
+
+  it("a build's notice (nearly full) becomes the state's notice once that write lands", async () => {
+    const store = makeStore();
+    const inner = buildFrom(store);
+    let notice: string | undefined = "Board almost full";
+    const buildUpdate = async (): Promise<BuildResult> => ({ ...(await inner()), notice } as BuildResult);
+    const queue = createSaveQueue(makeDeps(store, { buildUpdate }));
+    putShape(store, "shape:a");
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(queue.state.get()).toMatchObject({ status: "saved", notice: "Board almost full" });
+    putShape(store, "shape:b");
+    queue.markDirty();
+    expect(queue.state.get()).toMatchObject({ status: "dirty", notice: "Board almost full" });
+    notice = undefined;
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(queue.state.get()).toMatchObject({ status: "saved", notice: null });
     queue.dispose();
   });
 

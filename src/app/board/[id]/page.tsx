@@ -40,13 +40,13 @@ import {
   Image01Icon,
   AddSquareIcon,
 } from "hugeicons-react";
-import { dropPendingAiOverlays } from "@/hooks/useAiOverlayShapes";
 import { useAssistanceMode, type AssistanceMode } from "@/hooks/useAssistanceMode";
 import { offloadAssetsOnce, useSnapshotSave } from "@/hooks/useSnapshotSave";
 import { useBoardAutoTitle } from "@/hooks/useBoardAutoTitle";
 import { createBoardAssetStore } from "@/lib/assets/boardAssetStore";
 import {
   BOARD_LOAD_COPY,
+  BoardCrashed,
   BoardLoadError,
   BoardLoading,
   loadStateFor,
@@ -521,9 +521,11 @@ export default function BoardPage() {
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.replace("/login");
+      // Signed out (or the session ended mid-board): come back here after signing in. Unsaved
+      // strokes are in the device backup and are restored when the board reopens.
+      router.replace(`/login?next=/board/${id}`);
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, router, id]);
 
   const retryLoad = useCallback(() => {
     setInitialData(null);
@@ -540,11 +542,12 @@ export default function BoardPage() {
       let snapshot: BoardSnapshot | null = null;
       let version: number | null = null;
       try {
+        // maybeSingle: a missing (or another account's) board is a null row, not a 406 error.
         const { data, error } = await supabase
           .from('whiteboards')
           .select('data, version')
           .eq('id', id)
-          .single();
+          .maybeSingle();
 
         result = loadStateFor({ error, row: data });
         if (result.kind === "ready" && data) {
@@ -612,6 +615,8 @@ export default function BoardPage() {
           Toolbar: LiveToolbar,
           // the pen's colour and size on request, not a panel always open over the screen
           StylePanel: PenStyleButton,
+          // tldraw's own error screen offers "Reset data", which clears localStorage
+          ErrorFallback: BoardCrashed,
         }}
         onMount={(editor) => {
           assetStoreBundle?.attach(editor);
@@ -628,9 +633,14 @@ export default function BoardPage() {
           }
           // An overlay the student never accepted is a proposal, not part of the board: it
           // would otherwise reopen full-canvas over work they have moved on from. Dropping
-          // it here is the same outcome as Reject (see dropPendingAiOverlays).
-          const dropped = dropPendingAiOverlays(editor);
-          if (dropped.length > 0) logger.info({ id, count: dropped.length }, "Dropped pending AI overlays on load");
+          // it here is the same outcome as Reject (see dropPendingAiOverlays). Only boards
+          // from the retired image pipeline have any, so the module loads for those alone.
+          if (editor.getCurrentPageShapes().some((s) => s.meta.aiOverlay === true)) {
+            void import("@/hooks/useAiOverlayShapes").then(({ dropPendingAiOverlays }) => {
+              const dropped = dropPendingAiOverlays(editor);
+              if (dropped.length > 0) logger.info({ id, count: dropped.length }, "Dropped pending AI overlays on load");
+            });
+          }
           // Boards saved before the asset store shipped still carry base64 images: move
           // them to Storage in the background. The rewrite is a store change, so the
           // autosave persists the new URLs; only failures are surfaced.

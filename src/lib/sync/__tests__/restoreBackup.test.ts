@@ -35,6 +35,56 @@ describe("restoreBackupInto", () => {
     expect(records["shape:d"].x).toBe(7);
   });
 
+  it("restores a backup that holds only the changed records (the format the queue writes)", () => {
+    const loaded = makeStore();
+    putShape(loaded, "shape:a", 1);
+    putShape(loaded, "shape:b", 1);
+    const crashed = cloneStore(loaded);
+    const moved = putShape(crashed, "shape:a", 300);
+    const added = putShape(crashed, "shape:new", 4);
+    const backup: BackupPayload = {
+      snapshot: { store: { "shape:a": moved, "shape:new": added }, schema: crashed.schema.serialize() } as BackupPayload["snapshot"],
+      baseVersion: 2,
+      changed: ["shape:a", "shape:new"],
+      removed: ["shape:b"],
+      at: 1,
+    };
+    expect(restoreBackupInto(loaded, backup, 2)).toEqual({ applied: 3 });
+    expect(shapeIds(loaded)).toEqual(["shape:a", "shape:new"]);
+    expect((docRecords(loaded) as Record<string, { x: number }>)["shape:a"].x).toBe(300);
+  });
+
+  it("applies nothing when the save landed before the tab closed (the board already has every record)", () => {
+    const loaded = makeStore();
+    const a = putShape(loaded, "shape:a", 9);
+    const backup: BackupPayload = {
+      snapshot: { store: { "shape:a": a }, schema: loaded.schema.serialize() } as BackupPayload["snapshot"],
+      baseVersion: 1,
+      changed: ["shape:a"],
+      removed: ["shape:gone"],
+      at: 1,
+    };
+    expect(restoreBackupInto(loaded, backup, 2)).toEqual({ applied: 0 });
+  });
+
+  it("migrates records a previous deploy backed up (older schema) before restoring them", () => {
+    const loaded = makeStore();
+    const schema = loaded.schema.serialize() as { sequences: Record<string, number> };
+    const older = { ...schema, sequences: { ...schema.sequences, "com.tldraw.shape.draw": 1 } };
+    const { scale: _scale, ...propsWithoutScale } = putShape(cloneStore(loaded), "shape:old", 5).props;
+    void _scale;
+    const record = { ...putShape(cloneStore(loaded), "shape:old", 5), props: propsWithoutScale };
+    const backup: BackupPayload = {
+      snapshot: { store: { "shape:old": record }, schema: older } as unknown as BackupPayload["snapshot"],
+      baseVersion: 1,
+      changed: ["shape:old"],
+      removed: [],
+      at: 1,
+    };
+    expect(restoreBackupInto(loaded, backup, 1)).toEqual({ applied: 1 });
+    expect((docRecords(loaded) as Record<string, { props: { scale: number } }>)["shape:old"].props.scale).toBe(1);
+  });
+
   it("is a no-op when the backup has nothing pending", () => {
     const loaded = makeStore();
     putShape(loaded, "shape:a");
