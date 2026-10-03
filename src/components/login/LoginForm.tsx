@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/registry/components/
 import { loginErrorField, loginErrorMessage } from "@/lib/loginErrorMessage";
 import {
   FORM_COPY,
+  afterSignInPath,
   hasFieldErrors,
   validateLoginForm,
   type FieldErrors,
@@ -61,7 +62,7 @@ export function LoginForm() {
 
   useEffect(() => {
     if (!authLoading && user) {
-      router.replace("/");
+      router.replace(afterSignInPath(window.location.search));
     }
   }, [user, authLoading, router]);
 
@@ -110,12 +111,12 @@ export function LoginForm() {
         });
         if (error) throw error;
         // no toast: the boards opening is the confirmation (a toast lingered over the cards)
-        router.replace("/");
+        router.replace(afterSignInPath(window.location.search));
       } else if (mode === "signup") {
         const { data, error } = await supabase.auth.signUp({ email: address, password });
         if (error) throw error;
         if (data.session) {
-          router.replace("/");
+          router.replace(afterSignInPath(window.location.search));
         } else {
           // Email confirmation is on: there is no session until the link is opened.
           setSent({ kind: "confirm-signup", email: address });

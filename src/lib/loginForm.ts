@@ -60,6 +60,16 @@ export function hasFieldErrors(errors: FieldErrors): boolean {
   return Boolean(errors.email || errors.password);
 }
 
+/**
+ * Where to go once signed in: the board a signed-out visit (or an expired session) was sent to
+ * /login from (`?next=/board/<id>`), else the boards home. Only a board path on this site is
+ * honoured, never an absolute URL or `//host`, so the parameter cannot redirect anywhere else.
+ */
+export function afterSignInPath(search: string): string {
+  const next = new URLSearchParams(search).get("next");
+  return next && /^\/board\/[\w-]+$/.test(next) ? next : "/";
+}
+
 export const RESET_LINK_COPY = {
   expiredTitle: "This link no longer works",
   expired:

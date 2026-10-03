@@ -507,9 +507,11 @@ export default function BoardPage() {
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.replace("/login");
+      // Signed out (or the session ended mid-board): come back here after signing in. Unsaved
+      // strokes are in the device backup and are restored when the board reopens.
+      router.replace(`/login?next=/board/${id}`);
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, router, id]);
 
   const retryLoad = useCallback(() => {
     setInitialData(null);
