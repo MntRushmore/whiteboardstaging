@@ -20,6 +20,7 @@ import {
   checkCreditsConsumption,
   checkCrossUserIsolation,
   checkDeleteOwnAccount,
+  checkEmailLog,
   checkInkPurchases,
   checkInkTables,
   checkOnboarding,
@@ -131,7 +132,11 @@ type Leak =
   | "inkNoStarter"
   | "inkAmountUnchecked"
   | "inkReviewsReadable"
-  | "inkLedgerDeletable";
+  | "inkLedgerDeletable"
+  // email log (20261003030000_email_log.sql)
+  | "emailLogReadable"
+  | "emailLogWritable"
+  | "emailLogTwice";
 
 const USER_A = "aaaaaaaa-0000-4000-8000-000000000001";
 const USER_B = "bbbbbbbb-0000-4000-8000-000000000002";
@@ -170,6 +175,7 @@ function makeWorld(leaks: Leak[] = []) {
   const inkGrants: Row[] = [];
   const purchases: Row[] = [];
   const reviews: Row[] = []; // ink_checkout_reviews: service role only
+  const emailLog: Row[] = []; // email_log: service role only, unique (user_id, kind, ref)
   const grantStarter = (uid: string) => {
     if (!leak("inkNoStarter")) inkGrants.push({ id: inkGrants.length + 1, user_id: uid, kind: "starter", units: STARTER_INK, created_at: new Date().toISOString() });
   };
@@ -699,6 +705,16 @@ function makeWorld(leaks: Leak[] = []) {
         if (method === "GET" && leak("inkReviewsReadable")) return ok(reviews.filter((r) => matches(r, query)));
         return denied(uid);
       }
+      case "email_log": {
+        // No grants for authenticated at all (service role only).
+        if (method === "GET") return leak("emailLogReadable") ? ok(emailLog.filter((r) => matches(r, query))) : denied(uid);
+        if (!leak("emailLogWritable")) return denied(uid);
+        if (method === "POST") {
+          emailLog.push({ id: emailLog.length + 1, ...body });
+          return ok(null, 201);
+        }
+        return ok(rep ? [] : null);
+      }
       case "rate_limit_counters": {
         // Function-only table: no grants for authenticated at all.
         if (method === "GET" && leak("countersReadable")) return ok([...counters.values()].filter((c) => c.user_id === uid));
@@ -737,6 +753,22 @@ function makeWorld(leaks: Leak[] = []) {
         if (method === "DELETE") {
           const gone = reviews.filter((r) => matches(r, query));
           for (const r of gone) reviews.splice(reviews.indexOf(r), 1);
+          return ok(gone);
+        }
+        break;
+      }
+      case "email_log": {
+        if (method === "POST") {
+          const dup = emailLog.some((r) => r.user_id === body.user_id && r.kind === body.kind && r.ref === (body.ref ?? ""));
+          if (dup && !leak("emailLogTwice")) return { status: 409, body: { code: "23505", message: 'duplicate key value violates unique constraint "email_log_once"' } };
+          const row: Row = { id: emailLog.length + 1, ref: "", resend_id: null, sent_at: null, ...body };
+          emailLog.push(row);
+          return ok([row], 201);
+        }
+        if (method === "GET") return ok(emailLog.filter((r) => matches(r, query)));
+        if (method === "DELETE") {
+          const gone = emailLog.filter((r) => matches(r, query));
+          for (const r of gone) emailLog.splice(emailLog.indexOf(r), 1);
           return ok(gone);
         }
         break;
@@ -796,7 +828,7 @@ function makeWorld(leaks: Leak[] = []) {
   };
 
   const ctx: CheckContext = { anon: client(null), a: client(USER_A), b: client(USER_B), newUser, service: client(SERVICE) };
-  return { ctx, state: { boards, settings, bugReports, snapshots, assets, objects, users, profiles, usage, grants, counters, inkGrants, purchases, reviews } };
+  return { ctx, state: { boards, settings, bugReports, snapshots, assets, objects, users, profiles, usage, grants, counters, inkGrants, purchases, reviews, emailLog } };
 }
 
 const failures = (results: CheckResult[]) => results.filter((r) => !r.pass).map((r) => r.name);
@@ -817,8 +849,8 @@ describe("rlsChecks against a correctly secured fake", () => {
       expect(results.map((r) => r.name)).toContain(`anon: select ${table} denied`);
       expect(results.map((r) => r.name)).toContain(`anon: insert ${table} denied`);
     }
-    expect(PUBLIC_TABLES).toHaveLength(17);
-    for (const table of ["plans", "profiles", "usage_events", "credit_grants", "billing_events", "rate_limit_counters", "ink_packs", "ink_grants", "ink_purchases", "ink_checkout_reviews"]) {
+    expect(PUBLIC_TABLES).toHaveLength(18);
+    for (const table of ["plans", "profiles", "usage_events", "credit_grants", "billing_events", "rate_limit_counters", "ink_packs", "ink_grants", "ink_purchases", "ink_checkout_reviews", "email_log"]) {
       expect(PUBLIC_TABLES).toContain(table);
     }
   });
@@ -892,6 +924,17 @@ describe("rlsChecks against a correctly secured fake", () => {
     // the underpaid and the euro checkouts went to review with no ink, and the check removed its rows again
     expect(state.reviews).toEqual([]);
     expect(state.inkGrants.filter((g) => g.user_id === USER_B && g.kind !== "starter")).toEqual([]);
+  });
+
+  it("the email log check claims once through the service role and leaves no row behind", async () => {
+    const { ctx, state } = makeWorld();
+    const results = await checkEmailLog(ctx);
+    expect(failures(results)).toEqual([]);
+    expect(results.length).toBe(9);
+    expect(state.emailLog).toEqual([]);
+    const without = await checkEmailLog({ anon: ctx.anon, a: ctx.a, b: ctx.b });
+    expect(failures(without)).toEqual([]);
+    expect(without.map((r) => r.name)).toContain("email_log with the service role (skipped: no service role client)");
   });
 
   it("the ink purchase check reports its service-role part as skipped (still passing) without a service client", async () => {
@@ -1017,6 +1060,16 @@ describe("rlsChecks detect individual leaks", () => {
     ["termsNotRecorded", checkSignupConsent, "consent: A's profile records the Terms version and when it was accepted"],
     ["termsPatchable", checkSignupConsent, "consent: A cannot rewrite own Terms acceptance (42501)"],
     ["termsPatchable", checkSignupConsent, "consent: A's Terms acceptance unchanged after the attempt"],
+    // email log
+    ["anonSelect", checkAnonDenied, "anon: select email_log denied"],
+    ["anonInsert", checkAnonDenied, "anon: insert email_log denied"],
+    ["emailLogReadable", checkEmailLog, "email_log: A cannot read it"],
+    ["emailLogReadable", checkEmailLog, "email_log: A still cannot read the row about them"],
+    ["emailLogReadable", checkEmailLog, "email_log: B cannot read it either"],
+    ["emailLogWritable", checkEmailLog, "email_log: A cannot mark an email as sent (insert denied)"],
+    ["emailLogWritable", checkEmailLog, "email_log: A cannot update it"],
+    ["emailLogWritable", checkEmailLog, "email_log: A cannot delete from it"],
+    ["emailLogTwice", checkEmailLog, "email_log: a second claim of the same email conflicts (409: sent at most once)"],
   ];
 
   it.each(cases)("leak %s makes '%s' fail", async (leak, check, failingName) => {
