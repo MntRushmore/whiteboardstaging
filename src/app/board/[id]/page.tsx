@@ -620,6 +620,8 @@ export default function BoardPage() {
         }}
         onMount={(editor) => {
           assetStoreBundle?.attach(editor);
+          // Pasted/dropped pictures: one whose upload fails is removed again, not saved broken.
+          editor.registerExternalContentHandler("files", (c) => import("@/lib/assets/addImageFiles").then((m) => m.addImageFiles(editor, c)));
           if (initialData) {
             try {
               loadSnapshot(editor.store, initialData);
