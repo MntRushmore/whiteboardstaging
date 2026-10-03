@@ -730,3 +730,30 @@ after `node scripts/stripe-setup.mjs --mode test`, a test subscription on the Un
 name, which is account-wide (only a separate Stripe account would change it). The Terms and the
 Refund Policy say exactly this (`LEGAL.statementDescriptors`, pinned to the script by
 `stripeSetup.test.ts`).
+
+### Go-live order for these changes
+
+1. **Back up production first** (the free plan has no backups or PITR): `pg_dump "$DB" -n public
+   -f ~/.config/agathon-classroom/backups/pre-go-live-gaps.sql`.
+2. **Apply `20261003040000_go_live_gaps.sql`** right before the deploy, after
+   `20261003020000_unlimited.sql` and `20261003030000_email_log.sql`. If the security audit's
+   `20261003100000_*` / `20261003100100_*` are already applied, `supabase db push` refuses an
+   older-stamped file: apply it with `psql "$DB" -v ON_ERROR_STOP=1 --single-transaction -f
+   supabase/migrations/20261003040000_go_live_gaps.sql` and record it with `npx supabase migration
+   repair --db-url "$DB" --status applied 20261003040000`. It is idempotent.
+3. **Deploy the code at once.** In between, only Agathon Unlimited's link breaks: old code calls
+   `link_unlimited_checkout(p_user_id)`, which no longer exists (500; Stripe retries for 3 days, so
+   nothing is lost once the code is out). Ink packs, spending and everything else work either way.
+4. `SUPABASE_SERVICE_ROLE_KEY=… node scripts/verify-rls.mjs` against production: the checkout-ref,
+   one-free-week, payer-email and billing-retention checks pass.
+5. **Stripe (live):** `node scripts/stripe-setup.mjs --mode live --site https://whiteboard.rushilchopra.com --dry-run`,
+   then without `--dry-run`: it sets `statement_descriptor = AGATHON` on the Unlimited product (or
+   makes the product with it). Nothing to do in the Dashboard for the descriptor.
+6. **Vercel Production env:** `RESEND_API_KEY` (the confirmation and the reminder send nothing
+   without it; on 2026-10-03 it was only in `.env.local`), `CRON_SECRET` (set),
+   `NEXT_PUBLIC_BILLING_PORTAL_URL` (else the emails' cancel link opens `/account`). Redeploy after
+   adding.
+7. **OpenRouter:** <https://openrouter.ai/settings/privacy>: input/output logging OFF.
+8. After the first real Unlimited signup: `select kind, ref, sent_at from public.email_log where kind
+   = 'unlimited_started';`, the Resend dashboard shows it delivered to the payer's address, and
+   `select payer_email is not null from public.unlimited_subscriptions order by id desc limit 1;`.
