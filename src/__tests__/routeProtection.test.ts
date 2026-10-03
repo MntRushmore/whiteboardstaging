@@ -118,11 +118,12 @@ describe("route discovery", () => {
 });
 
 describe("allow-lists", () => {
-  it("PUBLIC_ROUTES is exactly config/status, the billing webhook, the GC cron, client errors and health", () => {
+  it("PUBLIC_ROUTES is exactly config/status, the billing webhook, the two crons, client errors and health", () => {
     // config/status: reports which provider keys exist as booleans (never values,
     // prefixes or lengths) so the setup screen can render before sign-in.
     // billing/webhook: the provider has no user JWT; the Stripe-Signature HMAC is the auth.
-    // admin/gc: Vercel cron has no user JWT; the shared CRON_SECRET bearer token is the auth.
+    // admin/gc, cron/trial-reminders: Vercel cron has no user JWT; the shared CRON_SECRET bearer
+    // token is the auth.
     // client-errors: browser crash reports, signed out too; it only writes a log line.
     // health: an uptime monitor has no user; it answers { ok, db, release } only.
     expect([...PUBLIC_ROUTES].sort()).toEqual([
@@ -130,6 +131,7 @@ describe("allow-lists", () => {
       "src/app/api/billing/webhook/route.ts",
       "src/app/api/client-errors/route.ts",
       "src/app/api/config/status/route.ts",
+      "src/app/api/cron/trial-reminders/route.ts",
       "src/app/api/health/route.ts",
     ]);
   });
@@ -159,6 +161,20 @@ describe("allow-lists", () => {
     }
     expect(PUBLIC_ROUTE_REASONS["src/app/api/billing/webhook/route.ts"]).toBe("signature-verified provider webhook");
     expect(PUBLIC_ROUTE_REASONS["src/app/api/admin/gc/route.ts"]).toBe("Vercel cron; requires Authorization: Bearer CRON_SECRET");
+    expect(PUBLIC_ROUTE_REASONS["src/app/api/cron/trial-reminders/route.ts"]).toBe("Vercel cron; requires Authorization: Bearer CRON_SECRET");
+  });
+
+  it("the trial-reminder cron authenticates with CRON_SECRET and answers 401 without it", async () => {
+    // Same invariant as the GC cron: the file names the secret, compares it with bearerMatches, and
+    // refuses an unauthenticated request before any subscription is read or email sent
+    // (behaviour in detail: src/lib/server/__tests__/routes.email.test.ts).
+    const src = sources.get("src/app/api/cron/trial-reminders/route.ts") ?? "";
+    expect(src).toMatch(/CRON_SECRET/);
+    expect(/\bbearerMatches\s*\(/.test(src)).toBe(true);
+    expect(/\brunTrialReminders\b/.test(src)).toBe(true);
+    const bearerAt = src.indexOf("bearerMatches(");
+    expect(bearerAt).toBeGreaterThan(-1);
+    expect(src.indexOf("runTrialReminders(")).toBeGreaterThan(bearerAt);
   });
 
   it("the GC cron route authenticates with CRON_SECRET and answers 401 without it", async () => {

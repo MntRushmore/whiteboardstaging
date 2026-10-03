@@ -33,6 +33,8 @@ export const PUBLIC_ROUTES = Object.freeze([
   "src/app/api/client-errors/route.ts",
   // Uptime monitor probe: answers { ok, db, release } only.
   "src/app/api/health/route.ts",
+  // Trial-reminder cron: no user JWT exists; the shared CRON_SECRET bearer token is the auth.
+  "src/app/api/cron/trial-reminders/route.ts",
 ]);
 
 /** Why each public route may skip requireUser (enforced by routeProtection.test.ts). */
@@ -42,6 +44,7 @@ export const PUBLIC_ROUTE_REASONS = Object.freeze({
   "src/app/api/admin/gc/route.ts": "Vercel cron; requires Authorization: Bearer CRON_SECRET",
   "src/app/api/client-errors/route.ts": "browser error reports, sent signed out too; per-IP limit, 16 KB body cap, zod; logs only",
   "src/app/api/health/route.ts": "uptime monitor probe; answers { ok, db, release } only",
+  "src/app/api/cron/trial-reminders/route.ts": "Vercel cron; requires Authorization: Bearer CRON_SECRET",
 });
 
 /** Routes whose handlers legitimately have no zod body schema. */
@@ -51,6 +54,8 @@ export const NO_BODY_ROUTES = Object.freeze([
   "src/app/api/admin/gc/route.ts", // GET (Vercel cron) or POST with an empty body; options are query params
   "src/app/api/live/lecture/token/route.ts", // POST with an empty body: mints a speech-to-text token for the caller
   "src/app/api/health/route.ts", // GET only
+  "src/app/api/cron/trial-reminders/route.ts", // GET only (Vercel cron); ?dryRun=1 is a query param
+  "src/app/api/email/welcome/route.ts", // POST with an empty body: the server decides who and whether
 ]);
 
 export const API_ROUTES = Object.freeze([
@@ -103,6 +108,18 @@ export const API_ROUTES = Object.freeze([
     status: "active",
   },
   {
+    path: "/api/cron/trial-reminders",
+    file: "src/app/api/cron/trial-reminders/route.ts",
+    methods: ["GET"],
+    auth: "public",
+    limit: "ip:trialReminders",
+    body: "none",
+    // 401 without `Authorization: Bearer <CRON_SECRET>`; 503 when CRON_SECRET / the service role key / RESEND_API_KEY are unset.
+    withoutTokenStatus: [401, 503],
+    purpose: "Agathon Unlimited trial reminders (Vercel cron, daily): one email per subscription whose free week ends 24-72 h from now; ?dryRun=1 lists them",
+    status: "active",
+  },
+  {
     path: "/api/credits",
     file: "src/app/api/credits/route.ts",
     methods: ["GET"],
@@ -110,6 +127,16 @@ export const API_ROUTES = Object.freeze([
     limit: "credits",
     body: "none",
     purpose: "The operator's OpenRouter balance (operators, smoke tests)",
+    status: "active",
+  },
+  {
+    path: "/api/email/welcome",
+    file: "src/app/api/email/welcome/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "emailWelcome",
+    body: "none",
+    purpose: "The caller's welcome email, once per account, after onboarding (address from the verified account, never the client)",
     status: "active",
   },
   {
