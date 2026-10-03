@@ -582,6 +582,8 @@ export default function BoardPage() {
         shapeUtils={liveShapeUtils}
         tools={liveTools}
         overrides={boardOverrides}
+        // a board is for writing: the pen is in hand when it opens, not the selection arrow
+        initialState="draw"
         licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
         assets={assetStoreBundle?.store}
         components={{
