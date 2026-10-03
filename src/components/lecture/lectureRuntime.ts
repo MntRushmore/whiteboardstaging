@@ -2,6 +2,7 @@ import { requestLecture, requestLectureSketch } from "@/lib/live/lecture/client"
 import { createScriptSource, createSpeechSource } from "@/lib/live/lecture/speech";
 import { LectureRunner } from "./lectureRunner";
 import { browserStorage } from "./lectureView";
+import { createScreenWakeLock } from "./wakeLock";
 
 /**
  * Everything a lecture runs on — the session, the speech sources, the director's client — behind
@@ -16,5 +17,6 @@ export function createLectureRunner(boardId: string): LectureRunner {
     request: (req, signal) => requestLecture(req, signal),
     requestSketch: (req, signal) => requestLectureSketch(req, signal),
     storage: browserStorage,
+    wakeLock: createScreenWakeLock(),
   });
 }

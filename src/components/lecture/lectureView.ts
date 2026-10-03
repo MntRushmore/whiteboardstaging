@@ -65,6 +65,7 @@ export const LECTURE_COPY = {
     unsupported: "Lecture mode needs Chrome, Edge or Safari.",
     "mic-denied": "Lecture mode needs your microphone. Allow it in the browser's address bar, then try again.",
     "mic-missing": "No microphone found. Plug one in, or close other apps using it, then try again.",
+    "speech-off": "Speech recognition is turned off. On an iPad, turn on Dictation (Settings › General › Keyboard) and allow Safari in Settings › Privacy & Security › Speech Recognition, then try again.",
     /** OUT_OF_INK_COPY.title (pinned equal in the tests; a literal so the lazy panel's module stays out of the first load) */
     ink: "You're out of ink",
     unauthorized: "Please sign in again.",
@@ -139,7 +140,7 @@ function noticeText(notice: LectureNotice, now: number): string {
   }
 }
 
-const RETRYABLE: ReadonlySet<LectureErrorCode> = new Set(["mic-denied", "mic-missing", "network", "recognizer", "board"]);
+const RETRYABLE: ReadonlySet<LectureErrorCode> = new Set(["mic-denied", "mic-missing", "speech-off", "network", "recognizer", "board"]);
 
 export function lectureErrorView(code: LectureErrorCode): NonNullable<LectureBarModel["error"]> {
   return { code, message: LECTURE_COPY.errors[code], ink: code === "ink", retry: RETRYABLE.has(code) };

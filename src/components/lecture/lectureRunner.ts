@@ -1,6 +1,7 @@
 import type { LectureRequest, LectureResponse, SketchRequest, SketchResponse, SpeechSource } from "@/lib/live/lecture/contracts";
 import { LectureSession, timingForSpeed, type LectureErrorCode, type LectureSnapshot, type LectureTiming } from "@/lib/live/lecture/session";
 import { handleStatusFor, hasLectureConsent, lectureBoardFor, rememberLectureConsent, type LectureControllerLike, type LectureHandleStatus } from "./lectureView";
+import type { ScreenWakeLock } from "./wakeLock";
 
 /**
  * Lecture mode on one board, without React: one `LectureSession` at a time, the consent note the
@@ -47,6 +48,8 @@ export interface LectureRunnerDeps {
   requestSketch?(req: SketchRequest, signal: AbortSignal): Promise<SketchResponse>;
   /** where the consent is remembered (localStorage; null when unavailable) */
   storage(): ConsentStorage;
+  /** keeps the screen on while listening (an iPad that locks itself suspends the page, mic and all) */
+  wakeLock?: ScreenWakeLock;
   now?(): number;
   /** session overrides for tests (timers, clock) */
   session?: { setTimeout?(fn: () => void, ms: number): ReturnType<typeof setTimeout>; clearTimeout?(t: ReturnType<typeof setTimeout>): void };
@@ -180,5 +183,8 @@ export class LectureRunner {
     const prev = this.coarseStore.get();
     if (prev.status === next.status && prev.error === next.error && prev.source === next.source) return;
     this.coarseStore.set(next);
+    // the screen stays on while the lecture is starting or listening; paused, stopped or failed, it may sleep
+    if (next.status === "starting" || next.status === "listening") this.deps.wakeLock?.hold();
+    else this.deps.wakeLock?.release();
   }
 }

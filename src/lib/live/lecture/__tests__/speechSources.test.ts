@@ -423,6 +423,18 @@ describe("browser source", () => {
     expect(b.rec().starts).toBe(1);
   });
 
+  it("a recognizer whose service is off (Safari: Dictation off) is fatal as speech-off, not 'unsupported'", async () => {
+    const b = browserSource();
+    const rec = recorder();
+    const p = b.source.start(rec.cb);
+    b.rec().onerror?.({ error: "service-not-allowed" });
+    await expect(p).rejects.toMatchObject({ code: "speech-off" });
+    expect(rec.states.at(-1)).toEqual(["error", "speech-off"]);
+    // Safari sends no end after it: nothing is started again either way
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(b.rec().starts).toBe(1);
+  });
+
   it("no-speech is not an error: it starts again", async () => {
     const b = browserSource();
     const rec = recorder();

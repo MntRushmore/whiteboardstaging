@@ -168,6 +168,15 @@
   background-color: #ffffff !important;
 }
 
+/* The board page never scrolls (its root is fixed, src/app/board/[id]/page.tsx), but iOS Safari
+ * still rubber-bands the page, and pulls it down to reload, when a finger or the Pencil drags on
+ * a bar, the toolbar or the Ask panel rather than the canvas. Not on the platform pages: they do
+ * scroll, and the bounce is how iOS feels there. */
+html:has([data-board-root]),
+html:has([data-board-root]) body {
+  overscroll-behavior: none;
+}
+
 /* Keyboard focus on the board's own controls (the top bar, the status pill and its menu button,
  * the screen strip, hint cards, the lecture bar) and in the Ask panel. tldraw sets `outline: none`
  * on everything inside its container and shadcn's ring is a 50 % light grey (about 1.4:1 on
