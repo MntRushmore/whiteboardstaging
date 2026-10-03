@@ -218,6 +218,10 @@ interface LineRuntime {
   markWriter?: HandWriter | null;
   /** its read failed for a reason that is not the ink (signed out, out of credits, rate limited): no "?" */
   readRefused?: boolean;
+  /** when a change of its mark was scheduled (`syncMark`) and has not finished writing; 0 when none */
+  markBusySince?: number;
+  /** what waits for the tutor's pen to lift from this line's mark (`afterMark`) */
+  afterMark?: Array<() => void>;
 }
 
 type CheckOpts = {
@@ -282,6 +286,9 @@ const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream
  * a moment's wait, firing early takes the problem out of the student's hands.
  */
 export const ANSWER_SETTLE_MS = 2500;
+
+/** The longest a mark's write may hold up what waits for it (`afterMark`): a ring takes about a second. */
+const MARK_BUSY_MAX_MS = 4000;
 
 const CHECK_PATH = "/api/live/check";
 const SOLVE_PATH = "/api/live/solve";
@@ -3901,29 +3908,65 @@ export class LiveLoop implements LiveController {
     rt.markKey = want;
     rt.markWriter?.cancel();
     rt.markWriter = null;
+    rt.markBusySince = this.deps.now();
     this.write(() => {
       if (this.runtime(lineId).markKey !== want) return; // superseded before it ran
-      const lines = liveStore.lines.get();
-      const place = want ? want.slice(want.indexOf(":")) : null;
-      const marks: TLShape[] = [];
-      const orphans: TLShapeId[] = [];
-      for (const s of this.editor.getCurrentPageShapes()) {
-        const key = isLiveMeta(s.meta) ? metaString(s.meta, MARK_META) : "";
-        if (!key || !isLiveMeta(s.meta)) continue;
-        if (s.meta.lineId === lineId) marks.push(s);
-        else if (place && !lines[s.meta.lineId] && key.slice(key.indexOf(":")) === place) orphans.push(s.id);
+      // whatever happens below, the pen is free for this line when it is done (`markDone`)
+      let writing = false;
+      try {
+        writing = this.writeMark(lineId, want, kind, state, why);
+      } finally {
+        if (!writing) this.markDone(lineId, null);
       }
-      const stale = [...marks.filter((s) => metaString(s.meta, MARK_META) !== want).map((s) => s.id), ...orphans];
-      if (stale.length > 0) this.editor.deleteShapes(stale);
-      if (!want || !kind || marks.some((s) => metaString(s.meta, MARK_META) === want)) return;
-      const plan = planFromStrokes(kind, markStrokes(kind, state.line.bounds, handSeedFor(`${lineId}:${want}`)), HAND_WRITE.minSize);
-      if (!plan) return;
-      const writer = this.makeWriter();
-      this.runtime(lineId).markWriter = writer;
-      const extraMeta: JsonObject = { [MARK_META]: want };
-      if (kind === "question") extraMeta[MARK_WHY_META] = why ?? "unread";
-      writer.start(plan, { meta: makeMeta("ai", lineId, this.deps.now()), extraMeta });
     });
+  }
+
+  /**
+   * Waits for the tutor's pen to lift from this line's mark when a change of it is under way, then
+   * runs `fn` — one pen at a time: the step written beside a ring comes after the ring (raising the
+   * dial from Off used to draw both at once). True when `fn` was queued.
+   */
+  private afterMark(lineId: string, fn: () => void): boolean {
+    const rt = this.rt.get(lineId);
+    // a write that never finished (it threw) holds nothing up for longer than a mark takes
+    if (!rt?.markBusySince || this.deps.now() - rt.markBusySince > MARK_BUSY_MAX_MS) return false;
+    (rt.afterMark ??= []).push(fn);
+    return true;
+  }
+
+  /** This line's mark is written, or none was wanted: what waited for it goes now. */
+  private markDone(lineId: string, writer: HandWriter | null): void {
+    const rt = this.rt.get(lineId);
+    // a newer mark took over (it cancelled this writer): its own end releases the line
+    if (!rt || (writer && rt.markWriter !== writer)) return;
+    rt.markBusySince = 0;
+    const next = rt.afterMark?.splice(0) ?? [];
+    if (next.length > 0) queueMicrotask(() => next.forEach((fn) => this.started && fn()));
+  }
+
+  /** The body of `syncMark`'s write: true when a writer was started (it calls `markDone` when it ends). */
+  private writeMark(lineId: string, want: string | null, kind: MarkKind | null, state: LiveLineState, why: UnjudgedReason | undefined): boolean {
+    const lines = liveStore.lines.get();
+    const place = want ? want.slice(want.indexOf(":")) : null;
+    const marks: TLShape[] = [];
+    const orphans: TLShapeId[] = [];
+    for (const s of this.editor.getCurrentPageShapes()) {
+      const key = isLiveMeta(s.meta) ? metaString(s.meta, MARK_META) : "";
+      if (!key || !isLiveMeta(s.meta)) continue;
+      if (s.meta.lineId === lineId) marks.push(s);
+      else if (place && !lines[s.meta.lineId] && key.slice(key.indexOf(":")) === place) orphans.push(s.id);
+    }
+    const stale = [...marks.filter((s) => metaString(s.meta, MARK_META) !== want).map((s) => s.id), ...orphans];
+    if (stale.length > 0) this.editor.deleteShapes(stale);
+    if (!want || !kind || marks.some((s) => metaString(s.meta, MARK_META) === want)) return false;
+    const plan = planFromStrokes(kind, markStrokes(kind, state.line.bounds, handSeedFor(`${lineId}:${want}`)), HAND_WRITE.minSize);
+    if (!plan) return false;
+    const writer = this.makeWriter();
+    this.runtime(lineId).markWriter = writer;
+    const extraMeta: JsonObject = { [MARK_META]: want };
+    if (kind === "question") extraMeta[MARK_WHY_META] = why ?? "unread";
+    writer.start(plan, { meta: makeMeta("ai", lineId, this.deps.now()), extraMeta, onDone: () => this.markDone(lineId, writer) });
+    return true;
   }
 
   private startHandwriting(plan: HandPlan, lineId: string, extraMeta?: JsonObject): void {
@@ -4634,6 +4677,8 @@ export class LiveLoop implements LiveController {
       this.pendingSuggestions.add(lineId);
       return true;
     }
+    // one pen at a time: a ring still being drawn round the line is finished first
+    if (this.afterMark(lineId, () => this.suggestNextStep(lineId, opts))) return true;
     if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
     const { plan, unsupported } = planHandwriting([step], { size: handSizeFor(state.line.bounds.h), seed: handSeedFor(`${lineId}:suggest`) });
     if (!plan || unsupported.length > 0) return false;
