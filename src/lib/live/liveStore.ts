@@ -81,10 +81,17 @@ export function setLiveError(err: Omit<LiveError, "id" | "at"> & { at?: number }
  * The board's meter saw the balance: an "out of ink" error goes once the balance covers the call
  * that was refused (its `inkNeeded`; 1 when the server did not say). A balance of 5 does not
  * clear a refused worked solution (10).
+ *
+ * Ink being back also does what was refused, once, through the running loop's retry: the line
+ * written while the student had none is read (and checked) now, and a Solve or Help they asked
+ * for runs. Before, it stayed unread after they bought ink, until they wrote it out again.
  */
 export function clearInkErrorIfAffordable(balance: number): void {
   const current = liveStore.lastError.get();
-  if (current?.code === "ink" && balance >= Math.max(1, current.inkNeeded ?? 1)) liveStore.lastError.set(null);
+  if (current?.code !== "ink" || balance < Math.max(1, current.inkNeeded ?? 1)) return;
+  liveStore.retryHandler.get()?.();
+  // the retry may already have replaced the error with its own outcome; otherwise it goes now
+  if (liveStore.lastError.get()?.id === current.id) liveStore.lastError.set(null);
 }
 
 export function clearLiveError(code?: LiveErrorCode): void {

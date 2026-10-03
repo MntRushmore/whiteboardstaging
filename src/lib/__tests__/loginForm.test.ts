@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { TERMS_VERSION } from "@/lib/legal";
 import {
   FORM_COPY,
   NEW_PASSWORD_MIN_LENGTH,
   afterSignInPath,
   hasFieldErrors,
   hashHasAuthError,
+  signUpRequest,
   validateEmail,
   validateLoginForm,
   validateNewPassword,
@@ -51,8 +53,20 @@ describe("validateLoginForm", () => {
   });
 
   it("sign-up holds a new password to the minimum", () => {
-    expect(validateLoginForm("signup", "new@example.com", "short").password).toMatch(/at least 8/);
-    expect(validateLoginForm("signup", "new@example.com", "password123")).toEqual({});
+    expect(validateLoginForm("signup", "new@example.com", "short", true).password).toMatch(/at least 8/);
+    expect(validateLoginForm("signup", "new@example.com", "password123", true)).toEqual({});
+  });
+
+  it("sign-up needs the consent box ticked; sign-in and reset never ask", () => {
+    expect(validateLoginForm("signup", "new@example.com", "password123", false)).toEqual({
+      consent: FORM_COPY.consentRequired,
+    });
+    expect(validateLoginForm("signup", "new@example.com", "password123")).toEqual({
+      consent: FORM_COPY.consentRequired,
+    });
+    expect(hasFieldErrors({ consent: FORM_COPY.consentRequired })).toBe(true);
+    expect(validateLoginForm("signin", "qa-student@example.com", "abc", false)).toEqual({});
+    expect(validateLoginForm("forgot", "qa-student@example.com", "", false)).toEqual({});
   });
 
   it("forgot-password only looks at the email", () => {
@@ -63,6 +77,18 @@ describe("validateLoginForm", () => {
   it("hasFieldErrors is true only when a field has a message", () => {
     expect(hasFieldErrors({})).toBe(false);
     expect(hasFieldErrors({ password: FORM_COPY.passwordRequired })).toBe(true);
+  });
+});
+
+describe("signUpRequest", () => {
+  it("sends the Terms version in the new account's metadata, which the database requires", () => {
+    expect(signUpRequest("new@example.com", "password123")).toEqual({
+      email: "new@example.com",
+      password: "password123",
+      options: { data: { terms_version: TERMS_VERSION } },
+    });
+    // the database's format (profiles_terms_version_format, signup_terms_version())
+    expect(TERMS_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });
 

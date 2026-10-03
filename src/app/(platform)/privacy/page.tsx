@@ -193,7 +193,7 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>Deleting a child’s data:</strong> a parent can delete the account at any time from the Account
-            page (Delete account), which deletes the boards, ink and profile, or email us and we will delete it. A parent
+            page (Delete account), which deletes the boards, ink, profile and bug reports, or email us and we will delete it. A parent
             can also tell us to stop collecting the child’s information; the account then has to be closed.
           </li>
           <li>
@@ -211,8 +211,8 @@ export default function PrivacyPage() {
             database straight away; files such as images are cleared within a couple of days by a nightly clean-up.</li>
           <li>Purchase records: as long as we need them for tax and accounting. Stripe keeps its own records.</li>
           <li>
-            Bug reports you sent: kept after you delete your account, with your email address; ask us and we will delete
-            them.
+            Bug reports you sent: until you delete your account, which deletes them with it, email address included.
+            Ask us and we will delete them sooner.
           </li>
           <li>Server logs and error reports: kept by our hosting provider for a limited time, then deleted.</li>
           <li>Backups held by our providers expire on their own schedule.</li>

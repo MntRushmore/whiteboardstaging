@@ -79,7 +79,10 @@ export function InkCard({
               )}
               {summary.granted - summary.starter - summary.purchased + summary.refunded !== 0 && (
                 <div className={STAT}>
-                  <dt className="text-muted-foreground">Added by us</dt>
+                  {/* a correction we made by hand can take ink away too (a lost chargeback) */}
+                  <dt className="text-muted-foreground">
+                    {summary.granted - summary.starter - summary.purchased + summary.refunded > 0 ? "Added by us" : "Adjusted by us"}
+                  </dt>
                   <dd className="font-medium tabular-nums">
                     {signed(summary.granted - summary.starter - summary.purchased + summary.refunded)}
                   </dd>
