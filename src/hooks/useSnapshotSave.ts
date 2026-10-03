@@ -54,6 +54,18 @@ export const SAVE_COPY = {
   cannotPrepare: "Couldn't prepare this board to save — try reloading",
 } as const;
 
+/**
+ * The toast a finished restore shows, if any. Each has one id per board, so a second restore of
+ * the same board in this page (React's doubled effects in dev, or an editor re-created after the
+ * first restore: its fresh store needs the records again) updates the toast on screen instead of
+ * stacking another.
+ */
+export function restoreToastFor(report: { applied: number; stale: number }, boardId: string): { level: "info" | "warning"; message: string; id: string } | null {
+  if (report.stale > 0) return { level: "warning", message: SAVE_COPY.staleBackup, id: `restore-stale:${boardId}` };
+  if (report.applied > 0) return { level: "info", message: SAVE_COPY.restoredBackup, id: `restore:${boardId}` };
+  return null;
+}
+
 export type PgErrorLike = {
   code?: string | null;
   message?: string | null;
@@ -666,8 +678,8 @@ export function useSnapshotSave(
         .then((report) => {
           if (!report) return;
           logger.info({ id: boardId, ...report }, "Restored autosave backups");
-          if (report.stale > 0) toast.warning(SAVE_COPY.staleBackup);
-          else if (report.applied > 0) toast.info(SAVE_COPY.restoredBackup);
+          const shown = restoreToastFor(report, boardId);
+          if (shown) toast[shown.level](shown.message, { id: shown.id });
         })
         .catch((e) => logger.warn({ id: boardId, error: errorInfo(e) }, "Could not restore autosave backup"));
     }

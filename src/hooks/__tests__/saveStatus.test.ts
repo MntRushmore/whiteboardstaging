@@ -1,6 +1,8 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ASSET_COPY } from "@/components/live/copy";
-import { SAVE_STATUS_COPY, SAVED_FADE_MS, saveStatusViewFor } from "@/components/live/SaveStatus";
+import { SAVE_STATUS_COPY, SAVED_FADE_MS, SaveStatus, saveStatusIcon, saveStatusViewFor } from "@/components/live/SaveStatus";
 import type { SyncState } from "@/lib/sync";
 
 const base: SyncState = { status: "saved", message: null, notice: null, lastSavedAt: 1000, version: 3, pending: false, attempt: 0 };
@@ -91,5 +93,31 @@ describe("saveStatusViewFor", () => {
     for (const status of ["dirty", "saving", "offline", "merging", "error", "refused"] as const) {
       expect(saveStatusViewFor(at({ status }), true)).toEqual(saveStatusViewFor(at({ status }), false));
     }
+  });
+});
+
+describe("the pill's compact form (an icon on a board under 1024 px, so an upright iPad's bar keeps one row)", () => {
+  it("only the routine states shrink to an icon; anything the student must read keeps its words", () => {
+    const icon = (state: SyncState, savedVisible = false) => {
+      const view = saveStatusViewFor(state, savedVisible);
+      return view && saveStatusIcon(view);
+    };
+    expect(icon(at({}), true)).toBe("saved");
+    expect(icon(at({ status: "saving" }))).toBe("busy");
+    expect(icon(at({ status: "saving", attempt: 1 }))).toBe("busy");
+    expect(icon(at({ status: "dirty", attempt: 2 }))).toBe("busy");
+    for (const status of ["offline", "merging", "error", "refused"] as const) expect(icon(at({ status, message: "x" })), status).toBeNull();
+    expect(icon(at({ notice: "This board is nearly full" }))).toBeNull();
+  });
+
+  it("renders the icon on a narrow board with the words for screen readers and as the tooltip; errors in words", () => {
+    const saving = renderToStaticMarkup(createElement(SaveStatus, { sync: at({ status: "saving" }), onRetry: () => {} }));
+    expect(saving).toContain('title="Saving…"');
+    expect(saving).toMatch(/<svg[^>]*@5xl\/bar:hidden/);
+    expect(saving).toContain('<span class="sr-only @5xl/bar:not-sr-only">Saving…</span>');
+    const failed = renderToStaticMarkup(createElement(SaveStatus, { sync: at({ status: "error", message: "network" }), onRetry: () => {} })).replace(/&#x27;/g, "'");
+    expect(failed).not.toContain("<svg");
+    expect(failed).toContain(`<span>${SAVE_STATUS_COPY.error}</span>`);
+    expect(failed).toContain(">Retry</button>");
   });
 });

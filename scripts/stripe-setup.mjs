@@ -59,7 +59,7 @@ export const PACKS = Object.freeze([
   Object.freeze({ id: "large", name: "Large", ink: 14000, priceCents: 5000, currency: "usd" }),
 ]);
 
-/** The events src/app/api/billing/webhook/route.ts acts on (its HANDLED_EVENTS). */
+/** The events src/app/api/billing/webhook/route.ts acts on (HANDLED_EVENTS in src/lib/server/billingWebhook.ts). */
 export const WEBHOOK_EVENTS = Object.freeze([
   "checkout.session.completed",
   "checkout.session.async_payment_succeeded",

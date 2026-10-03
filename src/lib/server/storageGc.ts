@@ -64,6 +64,27 @@ export function bearerMatches(header: string | null, secret: string): boolean {
   return diff === 0;
 }
 
+/**
+ * True when a Vercel cron triggered this request. Vercel documents both markers: every
+ * cron invocation carries the `vercel-cron/1.0` user agent and an `x-vercel-cron-schedule`
+ * header with the expression that fired.
+ */
+export function isCronRequest(req: Request): boolean {
+  if (req.headers.get("x-vercel-cron-schedule")) return true;
+  return (req.headers.get("user-agent") ?? "").toLowerCase().startsWith("vercel-cron/");
+}
+
+/**
+ * `?dryRun=0|false|no` -> collect; any other explicit value -> report only.
+ * Without the parameter: collect for a cron invocation, report for a manual request.
+ */
+export function isDryRun(req: Request): boolean {
+  const raw = new URL(req.url).searchParams.get("dryRun");
+  if (raw === null) return !isCronRequest(req);
+  const v = raw.trim().toLowerCase();
+  return !(v === "0" || v === "false" || v === "no");
+}
+
 export type RunStorageGcOptions = {
   url: string;
   serviceKey: string;

@@ -59,6 +59,8 @@ import { Bug, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import { InkMeter } from "@/components/billing/InkMeter";
+import { inkTone } from "@/lib/billing/inkSummary";
+import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { OutOfInkWatcher } from "@/components/billing/OutOfInkWatcher";
 import { clearInkErrorIfAffordable } from "@/lib/live/liveStore";
 import { BugReportButton } from "@/components/BugReportButton";
@@ -99,6 +101,9 @@ const BoardTour = React.lazy(() => import("@/components/onboarding/BoardTour"));
 const StickerLibrary = React.lazy(() => import("@/components/StickerLibrary").then((m) => ({ default: m.StickerLibrary })));
 const PdfUpload = React.lazy(() => import("@/components/PdfUpload").then((m) => ({ default: m.PdfUpload })));
 const LiveDebugPanel = React.lazy(() => import("@/components/live/LiveDebugPanel").then((m) => ({ default: m.LiveDebugPanel })));
+
+/** The help tabs: 6 px of padding on a board under 768 px (a 10.2" iPad sideways with Ask docked), 8 px from there. */
+const HELP_TAB_CLASS = "px-1.5 @3xl/bar:px-2";
 
 // Ensure the tldraw canvas background is pure white in both light and dark modes
 DefaultColorThemePalette.lightMode.background = "#FFFFFF";
@@ -296,6 +301,10 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   useBoardAutoTitle(id, sync);
 
   const narrowBoard = screenStripSlot(useBreakpoint()) === "corner";
+  // The meter says "Get ink" whenever ink is low or gone; the Live pill's out-of-ink error then
+  // leaves it to the meter, so the bar says it once (one shared read per page: useInkSummary).
+  const inkBalance = useInkSummary().summary?.balance;
+  const meterOffersInk = typeof inkBalance === "number" && inkTone(inkBalance) !== "ok";
 
   // One place decides what the bar shows (see src/components/live/toolbar.ts).
   const toolbar = boardToolbarView({
@@ -312,12 +321,16 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
         preference, the help-mode explainer — hangs off the status pill's "…" menu rather
         than competing with them. Report a bug has a button of its own while we are in beta.
       */}
+      {/*
+        The bar's width class is the board's width, not the window's (a container, `bar`): with
+        Ask docked beside the board, an iPad held sideways has an upright iPad's board.
+      */}
+      <div className="@container/bar absolute inset-x-0 top-0 z-1000 h-0">
       <div
         style={{
           position: 'absolute',
           top: '16px',
           left: '16px',
-          zIndex: 1000,
           display: 'flex',
           alignItems: 'flex-start',
           gap: '12px',
@@ -337,17 +350,25 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
         >
           <ArrowLeft01Icon size={20} strokeWidth={2} />
         </Button>
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+        {/*
+          A board 768–1023 px wide (an upright iPad, or one sideways with Ask docked) fits this
+          row only just: below @5xl the gaps are 6 px, the ink meter is the bottle and the number,
+          Report a bug, a routine save and an open Ask are icons; below @3xl (a 10.2" iPad
+          sideways with Ask) the help tabs are tighter. The save pill comes last, so neither it
+          nor a long status ever pushes the other controls onto a second row (Solve's steps
+          button still wraps the status end there).
+        */}
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5 @5xl/bar:gap-2">
           <Tabs
             value={assistanceMode}
             onValueChange={(value) => setAssistanceMode(value as AssistanceMode)}
             className="w-auto shadow-sm rounded-lg"
           >
             <TabsList aria-label="How much help">
-              <TabsTrigger value="off">Off</TabsTrigger>
-              <TabsTrigger value="feedback">Feedback</TabsTrigger>
-              <TabsTrigger value="suggest">Suggest</TabsTrigger>
-              <TabsTrigger value="answer">Solve</TabsTrigger>
+              <TabsTrigger value="off" className={HELP_TAB_CLASS}>Off</TabsTrigger>
+              <TabsTrigger value="feedback" className={HELP_TAB_CLASS}>Feedback</TabsTrigger>
+              <TabsTrigger value="suggest" className={HELP_TAB_CLASS}>Suggest</TabsTrigger>
+              <TabsTrigger value="answer" className={HELP_TAB_CLASS}>Solve</TabsTrigger>
             </TabsList>
           </Tabs>
           {toolbar.showSolveSteps && (
@@ -367,12 +388,14 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
             size="sm"
             className={chat.open ? "shadow-sm" : "bg-white shadow-sm"}
             title={CHAT_COPY.buttonHint}
+            aria-label={CHAT_COPY.button}
             aria-expanded={chat.open}
             {...{ [CHAT_TOGGLE_ATTR]: "" }}
             onClick={() => chat.onOpenChange(!chat.open)}
           >
             <MessageSquare className="h-4 w-4" />
-            <span className="ml-1.5">{CHAT_COPY.button}</span>
+            {/* open, the panel names itself: the button is its icon unless the board is wide */}
+            <span className={chat.open ? "ml-1.5 hidden @5xl/bar:inline" : "ml-1.5"}>{CHAT_COPY.button}</span>
           </Button>
           <LectureButton lecture={lecture} />
           <LiveErrorBoundary>
@@ -386,9 +409,9 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
               onClearMarks={() => controller.clearMarks()}
               onShowModeInfo={() => setModeInfoOpen(true)}
               onReportProblem={() => setReportOpen(true)}
+              meterOffersInk={meterOffersInk}
             />
           </LiveErrorBoundary>
-          <SaveStatus sync={sync} onRetry={() => void retrySave()} />
           {/* ink left; tapping it (or its "Get ink" when low) opens the ink dialog */}
           {/* once the balance covers the refused call again (a pack landed), its "out of ink" pill goes */}
           <InkMeter onBalance={clearInkErrorIfAffordable} />
@@ -401,7 +424,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
             onClick={() => setReportOpen(true)}
           >
             <Bug className="size-3.5" aria-hidden />
-            <span className="hidden text-xs font-medium lg:inline">Report a bug</span>
+            <span className="hidden text-xs font-medium @5xl/bar:inline">Report a bug</span>
           </Button>
           {/* a chunk that fails to load (an offline tab, a stale deploy) hides the button, not the board */}
           {(features.stickers || features.pdfUpload) && (
@@ -412,7 +435,10 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
               </React.Suspense>
             </LiveErrorBoundary>
           )}
+          {/* last: it comes and goes with every save, and must not move the controls before it */}
+          <SaveStatus sync={sync} onRetry={() => void retrySave()} />
         </div>
+      </div>
       </div>
 
       {/* The explainer opens from Board options; the report from there or its button in the bar. */}

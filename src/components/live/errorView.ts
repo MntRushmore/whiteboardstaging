@@ -146,6 +146,15 @@ function liveErrorViewBase(err: LiveError, now: number): LiveErrorView {
   }
 }
 
+/**
+ * The status pill's way out of an error. Out of ink, the bar's ink meter already says "Get ink"
+ * (it does whenever ink is low or gone): the pill leaves that to the meter, so the bar shows it
+ * once, and keeps its own only when the meter does not (its balance has not loaded).
+ */
+export function pillPrimary(view: Pick<LiveErrorView, "primary">, meterOffersInk: boolean): LiveErrorView["primary"] {
+  return view.primary === "ink" && meterOffersInk ? null : view.primary;
+}
+
 /** True when the error should also appear as an inline card next to its line. */
 export function showsHintCard(err: LiveError | null): err is LiveError & { lineId: string } {
   return Boolean(err && (err.kind === "check" || err.kind === "solve") && err.userAsked && err.lineId);

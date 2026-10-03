@@ -17,6 +17,7 @@ import {
   persistResultFromThrown,
   resetInlineAssetFallbackWarning,
   resolvePersistResult,
+  restoreToastFor,
   runSnapshotSave,
   singleFlight,
   storeSnapshotOf,
@@ -593,5 +594,17 @@ describe("blockedMessageForSync / idleSyncState", () => {
   it("idle state carries the loaded version and no lastSavedAt", () => {
     expect(idleSyncState(42)).toEqual({ status: "saved", message: null, notice: null, lastSavedAt: null, version: 42, pending: false, attempt: 0 });
     expect(idleSyncState(null).version).toBeNull();
+  });
+});
+
+describe("restoreToastFor", () => {
+  it("one toast per board and kind: a second restore of the board updates it instead of stacking", () => {
+    const first = restoreToastFor({ applied: 3, stale: 0 }, "b1");
+    expect(first).toEqual({ level: "info", message: SAVE_COPY.restoredBackup, id: "restore:b1" });
+    expect(restoreToastFor({ applied: 1, stale: 0 }, "b1")?.id).toBe(first?.id);
+    expect(restoreToastFor({ applied: 1, stale: 0 }, "b2")?.id).not.toBe(first?.id);
+    // the warning never shares an id with (and so is never replaced by) the plain toast
+    expect(restoreToastFor({ applied: 2, stale: 1 }, "b1")).toEqual({ level: "warning", message: SAVE_COPY.staleBackup, id: "restore-stale:b1" });
+    expect(restoreToastFor({ applied: 0, stale: 0 }, "b1")).toBeNull();
   });
 });

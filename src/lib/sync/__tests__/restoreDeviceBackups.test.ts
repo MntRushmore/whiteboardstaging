@@ -98,6 +98,37 @@ describe("restoreDeviceBackups (two tabs, one device: N1)", () => {
     expect(storage.map.has(backupKey("b1", "open"))).toBe(true);
   });
 
+  it("storage full: the replayed backups make room for this tab's own, which then holds their records", async () => {
+    const { storage, server, loaded, queue } = setup();
+    // Safari-like quota: just room for the two old backups and nothing more.
+    const closed = JSON.stringify(strokeBackup(server, "shape:closed", 20));
+    const legacy = JSON.stringify(strokeBackup(server, "shape:legacy", 10));
+    const quota = closed.length + legacy.length + 100;
+    const used = () => [...storage.map].reduce((n, [k, v]) => n + k.length + v.length, 0);
+    const setItem = storage.setItem;
+    storage.setItem = (k: string, v: string) => {
+      if (used() - (storage.map.get(k)?.length ?? 0) + v.length + k.length > quota) throw new DOMException("full", "QuotaExceededError");
+      setItem(k, v);
+    };
+    storage.setItem(backupKey("b1", "closed"), closed);
+    storage.setItem(backupKey("b1"), legacy);
+    const mine = createLocalStorageBackup(storage, undefined, "mine", () => 100); // the old ones are recent
+    let wrote = false;
+    queue.writeBackupNow.mockImplementation(() => {
+      // what the save queue writes: both restored strokes as this tab's unsaved changes
+      const records = Object.fromEntries(["shape:closed", "shape:legacy"].map((id) => [id, loaded.get(id as never)]));
+      wrote = mine.write("b1", { snapshot: { store: records, schema: loaded.schema.serialize() } as unknown as BackupPayload["snapshot"], baseVersion: 1, changed: Object.keys(records), removed: [], at: 50 });
+      return wrote;
+    });
+
+    const report = await restoreDeviceBackups({ store: loaded, boardId: "b1", loadedVersion: 1, backup: mine, queue, cancelled: () => false, openTabs: async () => null });
+
+    expect(report).toEqual({ applied: 2, stale: 0 });
+    expect(wrote).toBe(true);
+    expect([...storage.map.keys()]).toEqual([backupKey("b1", "mine")]);
+    expect(mine.read("b1")?.changed.sort()).toEqual(["shape:closed", "shape:legacy"]);
+  });
+
   it("an unmounted board applies nothing and keeps the keys for the next mount", async () => {
     const { storage, server, loaded, mine, queue, write } = setup();
     write("closed", strokeBackup(server, "shape:closed", 1));

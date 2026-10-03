@@ -9,6 +9,17 @@ vi.hoisted(() => {
   process.env.LOG_LEVEL = "silent";
 });
 
+// The route reads its env and runner from src/lib/server/storageGc; the handler tests swap them.
+const gcDeps = vi.hoisted(() => ({ current: null as GcDeps | null }));
+vi.mock("@/lib/server/storageGc", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/server/storageGc")>();
+  return {
+    ...real,
+    getGcEnv: () => (gcDeps.current ? gcDeps.current.getEnv() : real.getGcEnv()),
+    runStorageGc: (opts: Parameters<GcDeps["run"]>[0]) => (gcDeps.current ? gcDeps.current.run(opts) : real.runStorageGc(opts)),
+  };
+});
+
 import {
   BOARD_ASSETS_BUCKET,
   DEFAULT_MIN_AGE_MS,
@@ -26,9 +37,22 @@ import {
   type GcSummary,
 } from "../../scripts/lib/storageGc.mjs";
 import { parseArgs } from "../../scripts/gc-storage.mjs";
-import { createGcHandler, isDryRun, isCronRequest, type GcDeps } from "@/app/api/admin/gc/route";
+import { GET as gcGet, POST as gcPost } from "@/app/api/admin/gc/route";
 import { resetRateLimits } from "@/lib/server/rate-limit";
-import { bearerMatches, readCronSecret, toResponseBody } from "@/lib/server/storageGc";
+import { bearerMatches, isCronRequest, isDryRun, readCronSecret, toResponseBody, type GcEnv } from "@/lib/server/storageGc";
+
+type GcDeps = {
+  getEnv: () => GcEnv;
+  run: (opts: { url: string; serviceKey: string; dryRun: boolean }) => Promise<GcSummary>;
+};
+
+/** The route's GET/POST with `deps` standing in for its env and runner. */
+function createGcHandler(deps: GcDeps): (req: Request) => Promise<Response> {
+  return (req) => {
+    gcDeps.current = deps;
+    return (req.method === "POST" ? gcPost : gcGet)(req);
+  };
+}
 
 const UID = "11111111-1111-4111-8111-111111111111";
 const BOARD = "aaaaaaaa-0000-4000-8000-000000000001";

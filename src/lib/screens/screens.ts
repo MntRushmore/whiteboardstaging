@@ -121,6 +121,21 @@ export function ensureScreen(editor: ScreensEditor, page: TLPage = editor.getCur
   return screen;
 }
 
+/** Page-space room kept between a screen's edge and something sized to fill it (a PDF page). */
+export const SCREEN_FIT_MARGIN = 40;
+
+/**
+ * Where something of `size` goes to fill `screen`: scaled down (never up) to fit inside it with
+ * `margin` on every side, and centred. A portrait worksheet page fills the screen's height.
+ */
+export function fitInScreen(size: { w: number; h: number }, screen: ScreenMeta, margin = SCREEN_FIT_MARGIN): ScreenMeta {
+  const room = { w: Math.max(1, screen.w - 2 * margin), h: Math.max(1, screen.h - 2 * margin) };
+  const scale = Math.min(1, room.w / size.w, room.h / size.h);
+  const w = size.w * scale;
+  const h = size.h * scale;
+  return { x: screen.x + (screen.w - w) / 2, y: screen.y + (screen.h - h) / 2, w, h };
+}
+
 /** The current screen rect without writing anything (for readers such as Live placement). */
 export function currentScreen(editor: Pick<Editor, "getCurrentPage">): ScreenMeta | null {
   return readScreenMeta(editor.getCurrentPage().meta);

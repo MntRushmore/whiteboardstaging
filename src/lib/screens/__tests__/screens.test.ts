@@ -8,13 +8,50 @@ import {
   deleteScreen,
   applyScreenCamera,
   ensureScreen,
+  fitInScreen,
   goToScreen,
   readScreenMeta,
+  SCREEN_FIT_MARGIN,
   screenForContent,
   screenPosition,
   screenViewPadding,
   type ScreensEditor,
 } from "../screens";
+
+describe("fitInScreen (where an inserted PDF page goes)", () => {
+  const inside = (r: { x: number; y: number; w: number; h: number }, s: { x: number; y: number; w: number; h: number }, m: number) =>
+    r.x >= s.x + m - 1e-9 && r.y >= s.y + m - 1e-9 && r.x + r.w <= s.x + s.w - m + 1e-9 && r.y + r.h <= s.y + s.h - m + 1e-9;
+
+  it("a portrait worksheet (A4 rendered 1600 px wide) fills the screen's height inside the margin, centred", () => {
+    const page = { w: 1600, h: 2263 };
+    const r = fitInScreen(page, DEFAULT_SCREEN);
+    expect(inside(r, DEFAULT_SCREEN, SCREEN_FIT_MARGIN)).toBe(true);
+    expect(r.h).toBeCloseTo(DEFAULT_SCREEN.h - 2 * SCREEN_FIT_MARGIN);
+    expect(r.w / r.h).toBeCloseTo(page.w / page.h);
+    expect(r.x + r.w / 2).toBeCloseTo(DEFAULT_SCREEN.w / 2);
+  });
+
+  it("a landscape page fills the width; any screen (a later one, offset) is respected", () => {
+    const screen = { x: 3200, y: -450, w: 1600, h: 900 };
+    const r = fitInScreen({ w: 3000, h: 1000 }, screen);
+    expect(inside(r, screen, SCREEN_FIT_MARGIN)).toBe(true);
+    expect(r.w).toBeCloseTo(screen.w - 2 * SCREEN_FIT_MARGIN);
+    expect(r.y + r.h / 2).toBeCloseTo(screen.y + screen.h / 2);
+  });
+
+  it("never enlarges a small page", () => {
+    expect(fitInScreen({ w: 400, h: 300 }, DEFAULT_SCREEN)).toEqual({ x: 600, y: 300, w: 400, h: 300 });
+  });
+
+  it("the old placement (90% of an upright iPad's viewport) overflowed the screen's frame", () => {
+    // An 834x1194 window shows the 1600x900 screen across its width: the viewport is ~1600x2290
+    // page units, so 90% of it let a portrait page grow to ~2060 tall, more than twice the screen.
+    const viewport = { w: 1632, h: 2336 };
+    const old = Math.min(1, (viewport.w * 0.9) / 1600, (viewport.h * 0.9) / 2263);
+    expect(2263 * old).toBeGreaterThan(DEFAULT_SCREEN.h);
+    expect(fitInScreen({ w: 1600, h: 2263 }, DEFAULT_SCREEN).h).toBeLessThan(DEFAULT_SCREEN.h);
+  });
+});
 
 describe("readScreenMeta", () => {
   it("reads a stored screen", () => {
