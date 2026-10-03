@@ -819,6 +819,11 @@ export class LiveLoop implements LiveController {
     const cur = liveStore.lastError.get();
     if (cur && cur.kind === kind && cur.lineId === lineId) clearLiveError();
     if (this.retryKey === `${kind}:${lineId ?? ""}`) this.resetRetry();
+    // A request just came back, so the network is up. An "offline" left by a fetch that failed
+    // while the browser still said online (a dropped connection; no 'online' event will ever
+    // follow) ends here, and what it queued or deferred is replayed once, as on a reconnect.
+    // Before, the pill kept saying "Offline" while every line was read.
+    if (liveStore.status.get() === "offline" && this.deps.isOnline()) this.replayOffline();
   }
 
   private resetRetry(): void {
