@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { OUT_OF_CREDITS_COPY } from "@/lib/billing/outOfCredits";
+import { OUT_OF_INK_COPY } from "@/lib/billing/outOfInk";
 import { LECTURE_TIMING } from "@/lib/live/lecture/contracts";
 import type { LectureSnapshot } from "@/lib/live/lecture/session";
 import { ROUTE_COSTS } from "@/lib/server/billing";
@@ -48,13 +48,13 @@ describe("lecture copy", () => {
     // the director is billed per started minute of a session, plus 1 per speech session
     expect(ROUTE_COSTS["live/lecture"]).toBe(2);
     expect(ROUTE_COSTS["live/listen"]).toBe(1);
-    expect(LECTURE_COPY.consent.cost).toMatch(/about 2 credits a minute/);
+    expect(LECTURE_COPY.consent.cost).toMatch(/about 2 ink a minute/);
     // a picture is billed per panel the illustrator draws
     expect(LECTURE_COPY.consent.cost).toContain(`${ROUTE_COSTS["live/sketch"]} for each picture it draws`);
   });
 
-  it("out of credits says what the board dialog says", () => {
-    expect(LECTURE_COPY.errors.credits).toBe(OUT_OF_CREDITS_COPY.title);
+  it("out of ink says what the board dialog says", () => {
+    expect(LECTURE_COPY.errors.ink).toBe(OUT_OF_INK_COPY.title);
   });
 
   it("the idle notice names the real pause", () => {
@@ -159,8 +159,8 @@ describe("lectureBarModel", () => {
   });
 
   it("errors: words for each, retry where trying again can help", () => {
-    expect(lectureBarModel({ status: "error", error: "mic-denied", snap: null, now: 0 }).error).toEqual({ code: "mic-denied", message: LECTURE_COPY.errors["mic-denied"], credits: false, retry: true });
-    expect(lectureErrorView("credits")).toMatchObject({ credits: true, retry: false });
+    expect(lectureBarModel({ status: "error", error: "mic-denied", snap: null, now: 0 }).error).toEqual({ code: "mic-denied", message: LECTURE_COPY.errors["mic-denied"], ink: false, retry: true });
+    expect(lectureErrorView("ink")).toMatchObject({ ink: true, retry: false });
     expect(lectureErrorView("unsupported").retry).toBe(false);
     expect(lectureErrorView("unauthorized").retry).toBe(false);
     expect(lectureErrorView("network").retry).toBe(true);

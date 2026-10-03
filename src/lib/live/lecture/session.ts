@@ -1,4 +1,4 @@
-import { isApiError } from "@/lib/api-client";
+import { isApiError, isOutOfInk } from "@/lib/api-client";
 import { LIVE_RATE_LIMITS } from "../contracts";
 import {
   LECTURE_LIMITS,
@@ -28,7 +28,7 @@ import { cleanSpeech, TranscriptBuffer, type TranscriptMark, type TranscriptWind
  * timers in node.
  *
  *  - States: starting → listening ⇄ paused → stopped, or error (listening could not start, the
- *    microphone was lost for good, the credits ran out, signed out).
+ *    microphone was lost for good, the ink ran out, signed out).
  *  - Two paces. LIVE — while what was said since the last ask is salient (numbers, amounts,
  *    changes, steps, lists: `salience.ts`) or a chart or diagram was drawn or updated within
  *    `activeWindowMs` — the director is asked `liveTickMinMs` after the last ask once
@@ -48,8 +48,8 @@ import { cleanSpeech, TranscriptBuffer, type TranscriptMark, type TranscriptWind
  *  - `recent`: what this lecture drew on screens before the current one (the director's "drawn
  *    before"), newest first; an updated chart counts once, as it is now.
  *  - Silence for `idlePauseMs`: the session pauses itself (the microphone is let go).
- *  - Failures: 402 stops the lecture with "out of credits" (the panel shows the board's own
- *    out-of-credits panel, as the Ask panel does); two 401s in a row stop it signed out (one is
+ *  - Failures: 402 stops the lecture with "out of ink" (the panel shows the board's own
+ *    out-of-ink panel, as the Ask panel does); two 401s in a row stop it signed out (one is
  *    retried at the next ask: the auth server may be slow, a token refreshing); 429 skips asks until
  *    the server's retry-after; anything else (the network, a 5xx, a timeout) keeps listening and
  *    the next ask tries again with the same unread words.
@@ -661,8 +661,8 @@ export class LectureSession {
 
   private requestFailed(err: unknown): void {
     if (isApiError(err)) {
-      if (err.status === 402 || err.code === "credits_exhausted") {
-        this.fail("credits");
+      if (isOutOfInk(err)) {
+        this.fail("ink");
         return;
       }
       if (err.status === 401 || err.code === "unauthorized") {

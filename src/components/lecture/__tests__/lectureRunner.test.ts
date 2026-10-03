@@ -155,14 +155,14 @@ describe("LectureRunner: running", () => {
     let fail = true;
     const h = runner({
       openSpeech: async () => {
-        if (fail) throw new ApiError("x", 402, "credits_exhausted");
+        if (fail) throw new ApiError("x", 402, "ink_empty");
         return new MicSource();
       },
     });
     h.storage.set(LECTURE_CONSENT_KEY, "1");
     h.r.start();
     await vi.advanceTimersByTimeAsync(0);
-    expect(h.r.coarse.get()).toMatchObject({ status: "error", error: "credits" });
+    expect(h.r.coarse.get()).toMatchObject({ status: "error", error: "ink" });
     fail = false;
     h.r.start();
     await vi.advanceTimersByTimeAsync(0);

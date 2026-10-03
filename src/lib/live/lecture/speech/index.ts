@@ -18,7 +18,7 @@ export { SpeechError, speechErrorCodeFor, type SpeechErrorCode } from "./errors"
  *  3. Neither: a `SpeechError("unsupported")` the panel explains ("Lecture mode needs Chrome,
  *     Edge or Safari").
  *
- * Any other failure of the token route (out of credits, signed out, the network) is thrown as it
+ * Any other failure of the token route (out of ink, signed out, the network) is thrown as it
  * is, for the session to report.
  */
 

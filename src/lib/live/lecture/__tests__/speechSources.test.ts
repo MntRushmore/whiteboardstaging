@@ -216,13 +216,13 @@ describe("ElevenLabs source", () => {
     expect(e.sockets).toHaveLength(3);
   });
 
-  it("the token route's 402 while reconnecting ends it: out of credits", async () => {
-    const e = elevenlabs({ tokens: [new ApiError("x", 402, "credits_exhausted")] });
+  it("the token route's 402 while reconnecting ends it: out of ink", async () => {
+    const e = elevenlabs({ tokens: [new ApiError("x", 402, "ink_empty")] });
     const rec = recorder();
     await started(e, rec);
     e.socket().drop();
     await vi.advanceTimersByTimeAsync(0);
-    expect(rec.states.at(-1)).toEqual(["error", "credits"]);
+    expect(rec.states.at(-1)).toEqual(["error", "ink"]);
   });
 
   it("a 429 from the token route waits its retry-after", async () => {
@@ -558,7 +558,7 @@ describe("createSpeechSource", () => {
   });
 
   it("any other failure of the token route is thrown as it is", async () => {
-    const err = new ApiError("x", 402, "credits_exhausted");
+    const err = new ApiError("x", 402, "ink_empty");
     await expect(
       createSpeechSource({
         requestToken: async () => {
@@ -574,7 +574,7 @@ describe("createSpeechSource", () => {
 describe("speech error codes", () => {
   it("maps failures to what the panel can explain", () => {
     expect(speechErrorCodeFor(new SpeechError("mic-missing"))).toBe("mic-missing");
-    expect(speechErrorCodeFor(new ApiError("x", 402, "credits_exhausted"))).toBe("credits");
+    expect(speechErrorCodeFor(new ApiError("x", 402, "ink_empty"))).toBe("ink");
     expect(speechErrorCodeFor(new ApiError("x", 401, "unauthorized"))).toBe("unauthorized");
     expect(speechErrorCodeFor(new ApiError("x", 502, "upstream_error"))).toBe("network");
     expect(speechErrorCodeFor(new TypeError("Failed to fetch"))).toBe("network");

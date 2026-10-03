@@ -1,32 +1,38 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   AUTH_RETRY_DELAY_MS,
-  CREDIT_SUMMARY_FALLBACK,
+  INK_CHANGED_EVENT,
+  INK_CHANGED_KEY,
+  INK_CHECKOUT_EVENT,
+  notifyInkChanged,
+  watchInkCheckout,
+  INK_SUMMARY_FALLBACK,
   isRetryableAuthError,
-  readCreditSummary,
-  type CreditSummaryRpc,
-} from "@/lib/billing/useCreditSummary";
+  readInkSummary,
+  type InkSummaryRpc,
+} from "@/lib/billing/useInkSummary";
 
-/** Shape the RPC returns on success (credit_summary() jsonb). */
+/** Shape the RPC returns on success (ink_summary() jsonb). */
 const SUMMARY = {
-  plan_id: "free",
-  plan_name: "Free",
-  monthly_credits: 300,
+  balance: 297,
+  granted: 300,
+  purchased: 0,
+  refunded: 0,
   used: 3,
-  granted: 0,
-  remaining: 297,
-  period_start: "2026-09-01T00:00:00Z",
-  period_end: "2026-10-01T00:00:00Z",
+  starter: 300,
+  starter_at: "2026-10-02T00:00:00Z",
+  purchases: 0,
+  last_purchase: null,
 };
 
 /** An rpc that returns each queued result in turn and records how often it was called. */
 function fakeRpc(results: Array<{ data?: unknown; error?: unknown }>): {
-  rpc: CreditSummaryRpc;
+  rpc: InkSummaryRpc;
   calls: () => number;
 } {
   let i = 0;
   let calls = 0;
-  const rpc: CreditSummaryRpc = () => {
+  const rpc: InkSummaryRpc = () => {
     calls++;
     const next = results[Math.min(i++, results.length - 1)];
     return Promise.resolve({ data: next.data ?? null, error: next.error ?? null });
@@ -44,7 +50,7 @@ describe("isRetryableAuthError", () => {
   });
 
   it("is false for real failures that a retry cannot fix", () => {
-    expect(isRetryableAuthError({ code: "42501", message: "permission denied for function credit_summary" })).toBe(false);
+    expect(isRetryableAuthError({ code: "42501", message: "permission denied for function ink_summary" })).toBe(false);
     expect(isRetryableAuthError({ code: "PGRST202", message: "Could not find the function" })).toBe(false);
     expect(isRetryableAuthError({ status: 500, message: "boom" })).toBe(false);
     expect(isRetryableAuthError(new TypeError("Failed to fetch"))).toBe(false);
@@ -57,12 +63,12 @@ describe("isRetryableAuthError", () => {
   });
 });
 
-describe("readCreditSummary", () => {
+describe("readInkSummary", () => {
   it("returns the parsed summary on the first try", async () => {
     const { rpc, calls } = fakeRpc([{ data: SUMMARY }]);
     const sleep = vi.fn(async () => undefined);
-    await expect(readCreditSummary(rpc, { sleep })).resolves.toEqual({
-      summary: expect.objectContaining({ plan_id: "free", remaining: 297 }),
+    await expect(readInkSummary(rpc, { sleep })).resolves.toEqual({
+      summary: expect.objectContaining({ starter: 300, balance: 297 }),
     });
     expect(calls()).toBe(1);
     expect(sleep).not.toHaveBeenCalled();
@@ -71,8 +77,8 @@ describe("readCreditSummary", () => {
   it("retries once after a transient auth error and then succeeds", async () => {
     const { rpc, calls } = fakeRpc([{ error: { code: "PGRST303", message: "JWT issued at future" } }, { data: SUMMARY }]);
     const sleep = vi.fn(async () => undefined);
-    await expect(readCreditSummary(rpc, { sleep, retryDelayMs: 42 })).resolves.toEqual({
-      summary: expect.objectContaining({ remaining: 297 }),
+    await expect(readInkSummary(rpc, { sleep, retryDelayMs: 42 })).resolves.toEqual({
+      summary: expect.objectContaining({ balance: 297 }),
     });
     expect(calls()).toBe(2);
     expect(sleep).toHaveBeenCalledWith(42);
@@ -81,31 +87,78 @@ describe("readCreditSummary", () => {
   it("defaults the retry delay to AUTH_RETRY_DELAY_MS", async () => {
     const { rpc } = fakeRpc([{ error: { status: 401 } }, { data: SUMMARY }]);
     const sleep = vi.fn(async () => undefined);
-    await readCreditSummary(rpc, { sleep });
+    await readInkSummary(rpc, { sleep });
     expect(sleep).toHaveBeenCalledWith(AUTH_RETRY_DELAY_MS);
   });
 
   it("reports the error when the retry also fails", async () => {
     const { rpc, calls } = fakeRpc([{ error: { status: 401, message: "Unauthorized" } }]);
-    const result = await readCreditSummary(rpc, { sleep: async () => undefined });
+    const result = await readInkSummary(rpc, { sleep: async () => undefined });
     expect(calls()).toBe(2);
     expect(result).toHaveProperty("error");
   });
 
   it("does not retry an error a retry cannot fix", async () => {
-    const { rpc, calls } = fakeRpc([{ error: { code: "42501", message: "permission denied for function credit_summary" } }]);
+    const { rpc, calls } = fakeRpc([{ error: { code: "42501", message: "permission denied for function ink_summary" } }]);
     const sleep = vi.fn(async () => undefined);
-    const result = await readCreditSummary(rpc, { sleep });
+    const result = await readInkSummary(rpc, { sleep });
     expect(calls()).toBe(1);
     expect(sleep).not.toHaveBeenCalled();
     expect(result).toHaveProperty("error");
   });
 
   it("falls back when the payload does not parse, without retrying", async () => {
-    const { rpc, calls } = fakeRpc([{ data: { plan_id: "free" } }]);
-    await expect(readCreditSummary(rpc, { sleep: async () => undefined })).resolves.toEqual({
-      error: CREDIT_SUMMARY_FALLBACK,
+    const { rpc, calls } = fakeRpc([{ data: { balance: 3 } }]);
+    await expect(readInkSummary(rpc, { sleep: async () => undefined })).resolves.toEqual({
+      error: INK_SUMMARY_FALLBACK,
     });
     expect(calls()).toBe(1);
+  });
+});
+
+describe("telling the other ink surfaces", () => {
+  it("notifyInkChanged fires the window event and pings the other tabs through storage", () => {
+    const seen: string[] = [];
+    const store = new Map<string, string>();
+    vi.stubGlobal("window", {
+      dispatchEvent: (e: Event) => seen.push(e.type),
+      localStorage: { setItem: (k: string, v: string) => store.set(k, v) },
+    });
+    try {
+      notifyInkChanged();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(seen).toEqual([INK_CHANGED_EVENT]);
+    expect(Number(store.get(INK_CHANGED_KEY))).toBeGreaterThan(0);
+  });
+
+  it("still tells this tab when storage is blocked", () => {
+    const seen: string[] = [];
+    vi.stubGlobal("window", {
+      dispatchEvent: (e: Event) => seen.push(e.type),
+      localStorage: {
+        setItem: () => {
+          throw new Error("SecurityError");
+        },
+      },
+    });
+    try {
+      expect(() => notifyInkChanged()).not.toThrow();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(seen).toEqual([INK_CHANGED_EVENT]);
+  });
+
+  it("watchInkCheckout fires the event the hooks start their checkout watch on", () => {
+    const seen: string[] = [];
+    vi.stubGlobal("window", { dispatchEvent: (e: Event) => seen.push(e.type) });
+    try {
+      watchInkCheckout();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(seen).toEqual([INK_CHECKOUT_EVENT]);
   });
 });

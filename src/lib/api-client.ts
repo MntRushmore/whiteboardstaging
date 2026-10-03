@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 /**
  * Error thrown by API helpers when the server responds with a non-2xx status.
  * `code` is the machine-readable `error` field returned by our routes
- * (e.g. "unauthorized", "rate_limited", "credits_exhausted").
+ * (e.g. "unauthorized", "rate_limited", "ink_empty").
  */
 export class ApiError extends Error {
   status: number;
@@ -107,4 +107,15 @@ export async function apiJson<T = unknown>(
 /** True when the error is an ApiError with the given code. */
 export function isApiError(err: unknown, code?: string): err is ApiError {
   return err instanceof ApiError && (code === undefined || err.code === code);
+}
+
+/**
+ * True when the student is out of ink: the API's `402 ink_empty` (src/lib/server/billing.ts).
+ * Any 402 counts, because ink is the only thing the API answers 402 for (the provider's own
+ * account running dry is a 503); `credits_exhausted` is the same answer from a server deployed
+ * before ink, for the minutes a tab outlives a deploy.
+ */
+export function isOutOfInk(err: { status?: number; code?: string } | null | undefined): boolean {
+  if (!err) return false;
+  return err.status === 402 || err.code === "ink_empty" || err.code === "credits_exhausted";
 }

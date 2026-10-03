@@ -57,8 +57,8 @@ import { useParams, useRouter } from "next/navigation";
 import { Bug, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
-import { CreditsBanner } from "@/components/CreditsBanner";
-import { OutOfCreditsWatcher } from "@/components/billing/OutOfCreditsWatcher";
+import { InkMeter } from "@/components/billing/InkMeter";
+import { OutOfInkWatcher } from "@/components/billing/OutOfInkWatcher";
 import { StickerLibrary } from "@/components/StickerLibrary";
 import { PdfUpload } from "@/components/PdfUpload";
 import { BugReportButton } from "@/components/BugReportButton";
@@ -379,6 +379,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
             />
           </LiveErrorBoundary>
           <SaveStatus sync={sync} onRetry={() => void retrySave()} />
+          {/* ink left; tapping it (or its "Get ink" when low) opens the ink dialog */}
+          <InkMeter />
           <Button
             variant="outline"
             size="sm"
@@ -400,19 +402,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
       <BugReportButton boardId={id} open={reportOpen} onOpenChange={setReportOpen} screenshot={() => captureBoardScreenshot(editor)} />
       {liveEnabled && live.celebrations && <Celebrations editor={editor} />}
 
-      <div
-        style={{
-          position: "absolute",
-          bottom: "16px",
-          right: "16px",
-          zIndex: 1000,
-          maxWidth: "360px",
-        }}
-      >
-        <CreditsBanner />
-      </div>
-      {/* a Live 402 opens the out-of-credits dialog (lazy), never mid-stroke */}
-      <OutOfCreditsWatcher editor={editor} />
+      {/* a Live 402 or "Get ink" opens the ink dialog (lazy); a 402's never mid-stroke */}
+      <OutOfInkWatcher editor={editor} />
       <LiveErrorBoundary>
         <LectureBar lecture={lecture} />
       </LiveErrorBoundary>

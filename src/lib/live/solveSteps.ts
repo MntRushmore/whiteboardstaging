@@ -10,7 +10,7 @@
  *     model, which answered `= r + 9\varepsilon`. But `engine.analyzeLine(latex, { mode:
  *     'answer' })` has the result for exactly that line (`38`), and `engine.calculate` has it
  *     for bare arithmetic the echo's calculator rule suppresses. When either does, the tutor
- *     writes the answer itself: no model, no credits, no network, no hallucination.
+ *     writes the answer itself: no model, no ink, no network, no hallucination.
  *
  *  2. `checkSolveStep` — the interlock on the steps that genuinely do come from the model
  *     (a word problem, an equation the CAS cannot take). A step is drawn only when the local

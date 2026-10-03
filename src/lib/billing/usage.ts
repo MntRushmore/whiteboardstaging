@@ -1,16 +1,18 @@
 /**
- * Pure view model for the Usage card on /account: what each metered route is
- * called in plain words, and this month's `usage_by_day()` rows summed by day
- * and by kind. No React, no network, no browser APIs at module scope;
- * unit-tested in src/lib/billing/__tests__/usage.test.ts.
+ * Pure view model for the Usage card on /account: what each metered route is called in plain
+ * words, and the last 30 days of `usage_by_day()` rows summed by day and by kind. No React, no
+ * network, no browser APIs at module scope; unit-tested in src/lib/billing/__tests__/usage.test.ts.
  *
- * The rows come from the RPC in supabase/migrations/20260927000000_usage_by_day.sql:
- * one per (calendar day in the student's time zone, route) for the current credit
- * period, so the credits add up to `credit_summary().used`.
+ * The rows come from the RPC in supabase/migrations/20260927000000_usage_by_day.sql (given its
+ * `p_days` window by 20261002000000_ink.sql): one per (calendar day in the student's time zone,
+ * route), with the ink spent in the column still called `credits`.
  */
 
 import { z } from "zod";
-import { canonicalRouteKey, formatCredits } from "@/lib/billing/viewModel";
+import { formatInk } from "@/lib/billing/inkSummary";
+
+/** Days of history the Usage card asks for (`usage_by_day(p_time_zone, p_days)`). */
+export const USAGE_WINDOW_DAYS = 30;
 
 /** A kind of work the tutor charges for, keyed by canonical route (see canonicalRouteKey). */
 export type UsageKind = {
@@ -19,11 +21,25 @@ export type UsageKind = {
   label: string;
   /** Count noun, singular and plural: "1 read", "342 reads". */
   unit: readonly [string, string];
-  /** Credits per call for the routes billed today; mirrors ROUTE_COSTS (asserted in the tests). */
+  /** Ink per call for the routes billed today; mirrors ROUTE_COSTS (asserted in the tests). */
   cost?: number;
 };
 
 const TIMES = ["time", "times"] as const;
+
+/**
+ * Canonical key for a metered route: leading "/api/" removed, "/" and "_" folded to "-",
+ * lower-case (so "live/recognize", "/api/live/recognize" and "live_recognize" all match).
+ */
+export function canonicalRouteKey(route: string): string {
+  return route
+    .trim()
+    .toLowerCase()
+    .replace(/^\/+/, "")
+    .replace(/^api\//, "")
+    .replace(/[/_]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
 
 /**
  * Every route that has ever been charged. The live routes carry their price; the retired
@@ -62,24 +78,19 @@ export function usageKindFor(route: string): UsageKind {
 /** "1 read", "342 reads", "1,345 reads". */
 export function countLabel(kind: Pick<UsageKind, "unit">, count: number): string {
   const n = Math.round(count);
-  return `${formatCredits(n)} ${n === 1 ? kind.unit[0] : kind.unit[1]}`;
-}
-
-/** "1 credit", "342 credits". */
-export function creditsLabel(credits: number): string {
-  return `${formatCredits(credits)} credit${Math.round(credits) === 1 ? "" : "s"}`;
+  return `${formatInk(n)} ${n === 1 ? kind.unit[0] : kind.unit[1]}`;
 }
 
 /**
- * The honest one-liner for "what does a credit buy": reading is most of the work at 1
- * credit; setup, checking and solutions cost more. The numbers come from USAGE_KINDS.
+ * The honest one-liner for "what does ink buy": reading is most of the work at 1 ink; setup,
+ * checking and solutions cost more. The numbers come from USAGE_KINDS.
  */
-export function creditPriceSentence(): string {
+export function inkPriceSentence(): string {
   const cost = (key: string) => USAGE_KINDS[key].cost ?? 0;
   return (
-    `Most of the tutor's work is reading your handwriting, at ${creditsLabel(cost("live-recognize"))} a read. ` +
+    `Most of the tutor's work is reading your handwriting, at ${cost("live-recognize")} ink a line. ` +
     `Setting up a word problem costs ${cost("live-setup")}, checking your work ${cost("live-check")}, ` +
-    `and a worked solution ${cost("live-solve")}.`
+    `and a worked solution ${cost("live-solve")}. Drawing on your own is free.`
   );
 }
 
@@ -94,6 +105,7 @@ export const UsageDayRowSchema = z.object({
   day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   route: z.string(),
   events: count,
+  /** Ink spent (the column kept its pre-ink name). */
   credits: count,
 });
 
@@ -116,7 +128,7 @@ export type UsageKindTotal = {
   count: number;
   /** "342 reads" */
   countLabel: string;
-  credits: number;
+  ink: number;
 };
 
 export type UsageDay = {
@@ -126,44 +138,44 @@ export type UsageDay = {
   label: string;
   /** "Sep 27" beside Today / Yesterday; "" otherwise (the label already carries the date). */
   date: string;
-  credits: number;
+  ink: number;
   count: number;
-  /** Most credits first. */
+  /** Most ink first. */
   kinds: UsageKindTotal[];
 };
 
 export type UsageSummary = {
   /** Newest first. */
   days: UsageDay[];
-  /** The whole period by kind, most credits first. */
+  /** The whole window by kind, most ink first. */
   kinds: UsageKindTotal[];
-  credits: number;
+  ink: number;
   count: number;
 };
 
-function byCreditsThenCount(a: UsageKindTotal, b: UsageKindTotal): number {
-  return b.credits - a.credits || b.count - a.count || a.label.localeCompare(b.label);
+function byInkThenCount(a: UsageKindTotal, b: UsageKindTotal): number {
+  return b.ink - a.ink || b.count - a.count || a.label.localeCompare(b.label);
 }
 
 /** Sums rows by kind: routes that canonicalise to the same kind are merged. */
 function kindTotals(rows: ReadonlyArray<UsageDayRow>): UsageKindTotal[] {
-  const totals = new Map<string, { kind: UsageKind; count: number; credits: number }>();
+  const totals = new Map<string, { kind: UsageKind; count: number; ink: number }>();
   for (const row of rows) {
     const kind = usageKindFor(row.route);
-    const t = totals.get(kind.key) ?? { kind, count: 0, credits: 0 };
+    const t = totals.get(kind.key) ?? { kind, count: 0, ink: 0 };
     t.count += row.events;
-    t.credits += row.credits;
+    t.ink += row.credits;
     totals.set(kind.key, t);
   }
   return [...totals.values()]
-    .map(({ kind, count: n, credits }) => ({
+    .map(({ kind, count: n, ink }) => ({
       key: kind.key,
       label: kind.label,
       count: n,
       countLabel: countLabel(kind, n),
-      credits,
+      ink,
     }))
-    .sort(byCreditsThenCount);
+    .sort(byInkThenCount);
 }
 
 const DAY_MS = 86_400_000;
@@ -196,7 +208,7 @@ export function dayLabel(day: string, today: string): { label: string; date: str
   return { label, date: "" };
 }
 
-/** Rows summed per day (newest first, each with its kinds) and over the whole period by kind. */
+/** Rows summed per day (newest first, each with its kinds) and over the whole window by kind. */
 export function usageSummaryFor(rows: ReadonlyArray<UsageDayRow>, today: string): UsageSummary {
   const byDay = new Map<string, UsageDayRow[]>();
   for (const row of rows) {
@@ -211,7 +223,7 @@ export function usageSummaryFor(rows: ReadonlyArray<UsageDayRow>, today: string)
       return {
         day,
         ...dayLabel(day, today),
-        credits: kinds.reduce((n, k) => n + k.credits, 0),
+        ink: kinds.reduce((n, k) => n + k.ink, 0),
         count: kinds.reduce((n, k) => n + k.count, 0),
         kinds,
       };
@@ -220,7 +232,7 @@ export function usageSummaryFor(rows: ReadonlyArray<UsageDayRow>, today: string)
   return {
     days,
     kinds,
-    credits: kinds.reduce((n, k) => n + k.credits, 0),
+    ink: kinds.reduce((n, k) => n + k.ink, 0),
     count: kinds.reduce((n, k) => n + k.count, 0),
   };
 }

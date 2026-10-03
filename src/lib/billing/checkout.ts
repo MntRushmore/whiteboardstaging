@@ -1,149 +1,139 @@
 /**
- * Pure helpers for paying through Stripe with no server secret: Payment Links for checkout,
- * the customer portal's login page for everything after it (switch plan, cancel, update the
- * card). The links come from NEXT_PUBLIC_BILLING_LINKS (src/lib/billing/links.ts, made by
- * scripts/stripe-setup.mjs); the plan change itself arrives later through the webhook, which
- * is why the account page polls after a return (upgradeReturnState below).
+ * Pure helpers for buying ink through Stripe with no server secret: one Payment Link per pack
+ * (NEXT_PUBLIC_BILLING_LINKS, made by scripts/stripe-setup.mjs, read in links.ts), opened with
+ * this user's id and email, and the account page's wait for the webhook after paying. The ink
+ * itself arrives through the webhook, which is why the page polls after a return
+ * (inkReturnState below).
  *
  * No React, no network: unit-tested in __tests__/checkout.test.ts.
  */
-import { hasSubscription, periodEndLabel, type BillingLinks, type CreditSummary } from "@/lib/billing/viewModel";
+import type { InkSummary } from "@/lib/billing/inkSummary";
+
+/** Pack id -> Payment Link URL, from NEXT_PUBLIC_BILLING_LINKS. */
+export type BillingLinks = Readonly<Record<string, string>>;
 
 /** Who is paying: the id goes back to us in the webhook, the email is prefilled at Stripe. */
 export type Payer = { userId: string; email?: string | null };
 
-/** Query parameter a Payment Link's after-completion redirect sets: /account?upgraded=<plan id>. */
-export const UPGRADE_PARAM = "upgraded";
+/** Query parameter a Payment Link's after-completion redirect sets: /account?ink=<pack id>. */
+export const INK_RETURN_PARAM = "ink";
 
-/** Plan ids as the `plans` table allows them (plans_id_format). */
-const PLAN_ID_RE = /^[a-z][a-z0-9_-]{0,31}$/;
+/** Pack ids as `ink_packs` allows them (ink_packs_id_format). */
+const PACK_ID_RE = /^[a-z][a-z0-9_-]{0,31}$/;
 
-function withParams(base: string | undefined | null, params: Record<string, string | null | undefined>): string | null {
-  if (!base) return null;
+const ALLOWED_LINK_PROTOCOLS = new Set(["https:", "http:"]);
+
+/**
+ * Parses the JSON in NEXT_PUBLIC_BILLING_LINKS (`{"small":"https://…","medium":"https://…",…}`).
+ * Never throws: an absent or malformed value yields `{}` (every buy button then says "Coming
+ * soon"), and only absolute http(s) URLs survive, so a bad env cannot inject `javascript:` links.
+ */
+export function parseBillingLinks(envString: string | undefined | null): BillingLinks {
+  if (!envString || !envString.trim()) return {};
+  let raw: unknown;
+  try {
+    raw = JSON.parse(envString);
+  } catch {
+    return {};
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const links: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value !== "string" || !PACK_ID_RE.test(key)) continue;
+    try {
+      const url = new URL(value);
+      if (ALLOWED_LINK_PROTOCOLS.has(url.protocol)) links[key] = url.toString();
+    } catch {
+      /* not an absolute URL: skip */
+    }
+  }
+  return links;
+}
+
+/**
+ * A pack's Payment Link for this user: `client_reference_id` is how the webhook
+ * (checkout.session.completed) knows whose ink it is, and `prefilled_email` saves typing.
+ * Null without a link or a user id: a checkout that cannot be matched to anyone must not start.
+ */
+export function checkoutUrl(link: string | undefined | null, payer: Payer | null | undefined): string | null {
+  if (!link || !payer?.userId) return null;
   let url: URL;
   try {
-    url = new URL(base);
+    url = new URL(link);
   } catch {
     return null;
   }
-  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
-  for (const [key, value] of Object.entries(params)) {
-    if (value) url.searchParams.set(key, value);
-  }
+  if (!ALLOWED_LINK_PROTOCOLS.has(url.protocol)) return null;
+  url.searchParams.set("client_reference_id", payer.userId);
+  const email = payer.email?.trim();
+  if (email) url.searchParams.set("prefilled_email", email);
   return url.toString();
 }
 
 /**
- * A plan's Payment Link for this user: `client_reference_id` is how the webhook
- * (checkout.session.completed) knows whose plan to change, and `prefilled_email` saves typing.
- * Null without a link or a user id: a checkout that cannot be matched to anyone must not start.
- */
-export function checkoutUrl(link: string | undefined | null, payer: Payer | null | undefined): string | null {
-  if (!payer?.userId) return null;
-  return withParams(link, { client_reference_id: payer.userId, prefilled_email: payer.email?.trim() || null });
-}
-
-/** The portal's login page with the email filled in (Stripe then emails a one-time link). */
-export function portalUrl(link: string | undefined | null, email?: string | null): string | null {
-  return withParams(link, { prefilled_email: email?.trim() || null });
-}
-
-/**
- * NEXT_PUBLIC_BILLING_LINKS made ready to follow for this user: every plan's Payment Link
- * carries their id and email, the portal link their email. A link that cannot be used (no
- * user id yet, a malformed URL) is left out, so the UI shows no button rather than a bad one.
+ * NEXT_PUBLIC_BILLING_LINKS made ready to follow for this user. A link that cannot be used (no
+ * user id yet, a malformed URL) is left out, so its pack shows "Coming soon" rather than a bad link.
  */
 export function payerLinks(links: BillingLinks, payer: Payer | null | undefined): BillingLinks {
   const out: Record<string, string> = {};
-  for (const [key, link] of Object.entries(links)) {
-    const url = key === "portal" ? portalUrl(link, payer?.email) : checkoutUrl(link, payer);
-    if (url) out[key] = url;
+  for (const [packId, link] of Object.entries(links)) {
+    const url = checkoutUrl(link, payer);
+    if (url) out[packId] = url;
   }
   return out;
 }
 
-/** The plan the student just paid for, from `?upgraded=plus`; null when absent or malformed. */
-export function parseUpgradeReturn(search: string | URLSearchParams | null | undefined): string | null {
+/** The pack the student just paid for, from `?ink=medium`; null when absent or malformed. */
+export function parseInkReturn(search: string | URLSearchParams | null | undefined): string | null {
   if (!search) return null;
   const params = typeof search === "string" ? new URLSearchParams(search) : search;
-  const value = params.get(UPGRADE_PARAM)?.trim().toLowerCase() ?? "";
-  return PLAN_ID_RE.test(value) ? value : null;
-}
-
-/* ------------------------------------------------------------------------- */
-/* Subscription state (from credit_summary's billing_status / current_period_end) */
-/* ------------------------------------------------------------------------- */
-
-type BillingFields = Pick<CreditSummary, "plan_id"> & Partial<Pick<CreditSummary, "billing_status" | "current_period_end">>;
-
-export type SubscriptionView =
-  | { kind: "none" }
-  | { kind: "active"; line: string }
-  | { kind: "canceling"; line: string }
-  | { kind: "past_due"; line: string };
-
-/**
- * One line about the subscription for the plan card: when it renews, that it is cancelled
- * and until when the plan lasts, or that a payment failed. `planName` is the current plan's.
- */
-export function subscriptionView(summary: (BillingFields & { plan_name?: string }) | null | undefined, now: Date = new Date()): SubscriptionView {
-  if (!hasSubscription(summary) || !summary) return { kind: "none" };
-  const plan = summary.plan_name ?? "your plan";
-  const date = periodEndLabel(summary.current_period_end ?? null, now);
-  switch (summary.billing_status) {
-    case "canceling":
-      return {
-        kind: "canceling",
-        line: date
-          ? `Cancelled: you keep ${plan} until ${date}, then move to Free.`
-          : `Cancelled: you keep ${plan} until the end of this billing period, then move to Free.`,
-      };
-    case "past_due":
-    case "unpaid":
-    case "incomplete":
-      return { kind: "past_due", line: `Your last payment didn't go through. Update your card to keep ${plan}.` };
-    default:
-      return { kind: "active", line: date ? `${plan} renews on ${date}.` : `${plan} renews every month.` };
-  }
+  const value = params.get(INK_RETURN_PARAM)?.trim().toLowerCase() ?? "";
+  return PACK_ID_RE.test(value) ? value : null;
 }
 
 /* ------------------------------------------------------------------------- */
 /* Back from checkout: wait for the webhook                                   */
 /* ------------------------------------------------------------------------- */
 
-/** How often the account page re-reads credit_summary while it waits for the webhook. */
-export const UPGRADE_POLL_MS = 2_000;
+/** How often the account page re-reads ink_summary while it waits for the webhook. */
+export const INK_RETURN_POLL_MS = 2_000;
 /** After this long the page stops waiting and says so (the webhook may still land later). */
-export const UPGRADE_TIMEOUT_MS = 60_000;
+export const INK_RETURN_TIMEOUT_MS = 60_000;
+/**
+ * A purchase this recent counts as the one just paid for. Generous, because the webhook can land
+ * before the redirect (the page then finds the purchase on its first read) and the server's clock
+ * is not the browser's.
+ */
+export const INK_RETURN_WINDOW_MS = 30 * 60_000;
 
-export type UpgradeReturnState = "waiting" | "done" | "timeout";
+export type InkReturnState = "waiting" | "done" | "timeout";
 
 /**
- * Where the "Upgrading…" notice is: done as soon as credit_summary reports the plan paid for,
- * timeout once `timeoutMs` has passed without it, waiting otherwise (also while the first read
- * is still in flight).
+ * Where the "Adding your ink…" notice is: done once ink_summary's last purchase is the pack paid
+ * for and recent (whichever arrived first, the webhook or the page), timeout once `timeoutMs` has
+ * passed without it, waiting otherwise (also while the first read is still in flight).
  */
-export function upgradeReturnState(input: {
+export function inkReturnState(input: {
   target: string;
-  summary: Pick<CreditSummary, "plan_id"> | null | undefined;
+  summary: Pick<InkSummary, "last_purchase"> | null | undefined;
   startedAt: number;
   now: number;
   timeoutMs?: number;
-}): UpgradeReturnState {
-  if (input.summary?.plan_id === input.target) return "done";
-  return input.now - input.startedAt >= (input.timeoutMs ?? UPGRADE_TIMEOUT_MS) ? "timeout" : "waiting";
+}): InkReturnState {
+  const last = input.summary?.last_purchase;
+  const at = last ? Date.parse(last.created_at) : Number.NaN;
+  if (last?.pack_id === input.target && Number.isFinite(at) && at >= input.startedAt - INK_RETURN_WINDOW_MS) return "done";
+  return input.now - input.startedAt >= (input.timeoutMs ?? INK_RETURN_TIMEOUT_MS) ? "timeout" : "waiting";
 }
 
 export const CHECKOUT_COPY = {
-  upgrading: (plan: string) => `Upgrading you to ${plan}…`,
-  upgradingDetail: "Your payment went through. Your new credits appear here in a few seconds.",
-  done: (plan: string) => `You're on ${plan}`,
-  doneDetail: (credits: string) => `${credits} credits a month, starting now.`,
-  timeout: "Your plan hasn't updated yet",
+  waiting: (pack: string) => `Adding your ${pack} pack…`,
+  waitingDetail: "Your payment went through. The ink appears here in a few seconds.",
+  done: "Ink added",
+  doneDetail: (ink: string, balance: string) => `${ink} is yours. You have ${balance} now, and it never expires.`,
+  timeout: "Your ink hasn't arrived yet",
   timeoutDetail:
-    "Stripe has your payment, but its confirmation hasn't reached us yet. It usually lands within a minute, so check again shortly. If your plan still hasn't changed after a few minutes, report it and we'll switch it by hand.",
+    "Stripe has your payment, but its confirmation hasn't reached us yet. It usually lands within a minute, so check again shortly. If the ink still isn't here after a few minutes, report it and we'll add it by hand.",
   checkAgain: "Check again",
   dismiss: "Dismiss",
-  manage: "Manage subscription",
-  manageHint: "Change plan, update your card or cancel on Stripe. You'll get a one-time sign-in link by email.",
 } as const;

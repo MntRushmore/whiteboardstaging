@@ -10,7 +10,7 @@ import { SECTION_BODY, SectionHeader } from "@/components/account/SectionHeader"
 import { useSection } from "@/components/account/useSection";
 import { ACCOUNT_COPY } from "@/lib/billing/accountState";
 import {
-  creditsLabel,
+  USAGE_WINDOW_DAYS,
   localDayKey,
   parseUsageDayRows,
   runtimeTimeZone,
@@ -19,7 +19,7 @@ import {
   type UsageDayRow,
   type UsageKindTotal,
 } from "@/lib/billing/usage";
-import { formatCredits } from "@/lib/billing/viewModel";
+import { formatInk, inkLabel } from "@/lib/billing/inkSummary";
 import { cn } from "@/lib/utils";
 
 /** Days shown before "Show earlier days"; a busy month has ~30. */
@@ -28,7 +28,7 @@ const USAGE_DAYS_SHOWN = 7;
 type UsageRead = { rows: UsageDayRow[]; timeZone: string };
 
 /**
- * This month's usage from the RPC `usage_by_day(p_time_zone)`, grouped in the
+ * The last 30 days of usage from the RPC `usage_by_day(p_time_zone, p_days)`, grouped in the
  * database (a month can be thousands of ledger rows). The RPC is SECURITY INVOKER
  * over `usage_events`, whose RLS policy limits it to the caller's own rows. A zone
  * Postgres does not know (22023) is retried once in UTC, and the days are then
@@ -36,18 +36,18 @@ type UsageRead = { rows: UsageDayRow[]; timeZone: string };
  */
 async function readUsage(): Promise<UsageRead> {
   const zone = runtimeTimeZone();
-  const first = await supabase.rpc("usage_by_day", { p_time_zone: zone });
+  const first = await supabase.rpc("usage_by_day", { p_time_zone: zone, p_days: USAGE_WINDOW_DAYS });
   if (!first.error) return { rows: parseUsageDayRows(first.data), timeZone: zone };
   if (first.error.code !== "22023" || zone === "UTC") throw first.error;
-  const utc = await supabase.rpc("usage_by_day", { p_time_zone: "UTC" });
+  const utc = await supabase.rpc("usage_by_day", { p_time_zone: "UTC", p_days: USAGE_WINDOW_DAYS });
   if (utc.error) throw utc.error;
   return { rows: parseUsageDayRows(utc.data), timeZone: "UTC" };
 }
 
 /**
- * "Handwriting reading · 342 reads ........ 342 credits". On a phone the count drops
+ * "Handwriting reading · 342 reads ........ 342 ink". On a phone the count drops
  * to its own line instead of wrapping mid-phrase. With `share`, a thin bar shows the
- * kind's part of the month; `nested` is the lighter variant inside an open day.
+ * kind's part of the window; `nested` is the lighter variant inside an open day.
  */
 function KindRow({ kind, share, nested = false }: { kind: UsageKindTotal; share?: number; nested?: boolean }) {
   return (
@@ -58,7 +58,7 @@ function KindRow({ kind, share, nested = false }: { kind: UsageKindTotal; share?
           <span className="hidden text-muted-foreground sm:inline"> · </span>
           <span className="block text-xs text-muted-foreground sm:inline sm:text-sm">{kind.countLabel}</span>
         </span>
-        <span className={cn("shrink-0 tabular-nums", nested && "text-muted-foreground")}>{creditsLabel(kind.credits)}</span>
+        <span className={cn("shrink-0 tabular-nums", nested && "text-muted-foreground")}>{inkLabel(kind.ink)}</span>
       </div>
       {share !== undefined && (
         <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-muted" aria-hidden>
@@ -89,7 +89,7 @@ function DayRow({ day }: { day: UsageDay }) {
           <span className="font-medium">{day.label}</span>
           {day.date && <span className="text-muted-foreground"> · {day.date}</span>}
         </span>
-        <span className="shrink-0 tabular-nums">{creditsLabel(day.credits)}</span>
+        <span className="shrink-0 tabular-nums">{inkLabel(day.ink)}</span>
       </button>
       {open && (
         <ul id={panelId} className="mb-2 ml-2 border-l pl-4" data-state="expanded">
@@ -128,16 +128,16 @@ function UsageSkeleton() {
 const SUBHEAD = "text-xs font-medium uppercase tracking-wide text-muted-foreground";
 
 /**
- * This month's usage: totals by kind of work (with each kind's share), then one row
+ * The last 30 days of usage: totals by kind of work (with each kind's share), then one row
  * per day, newest first, that expands to that day's kinds. Individual ledger rows
- * are not shown: a busy day is hundreds of identical one-credit reads.
+ * are not shown: a busy day is hundreds of identical one-ink reads.
  */
-export function UsageCard({ usedCredits }: { usedCredits?: number }) {
+export function UsageCard({ usedInk }: { usedInk?: number }) {
   const read = useCallback(() => {
-    // Re-read whenever the plan card's `used` moves (it refreshes on window focus), so the two agree.
-    void usedCredits;
+    // Re-read whenever the Ink card's `used` moves (it refreshes on window focus), so the two agree.
+    void usedInk;
     return readUsage();
-  }, [usedCredits]);
+  }, [usedInk]);
   const { state, retry } = useSection<UsageRead>(read, true, ACCOUNT_COPY.usageFallback);
   const [showAll, setShowAll] = useState(false);
 
@@ -150,11 +150,11 @@ export function UsageCard({ usedCredits }: { usedCredits?: number }) {
     <Card>
       <SectionHeader
         title="Usage"
-        description="What your credits went to this month."
+        description="What your ink went to in the last 30 days."
         aside={
-          summary && summary.credits > 0 ? (
+          summary && summary.ink > 0 ? (
             <span className="text-sm font-medium tabular-nums" data-testid="usage-total">
-              {creditsLabel(summary.credits)}
+              {inkLabel(summary.ink)}
             </span>
           ) : undefined
         }
@@ -176,16 +176,16 @@ export function UsageCard({ usedCredits }: { usedCredits?: number }) {
           </div>
         ) : (
           <div className="space-y-6" data-state="list">
-            <section aria-label="This month by kind">
+            <section aria-label="The last 30 days by kind">
               <h4 className={SUBHEAD}>By kind</h4>
               <ul className="mt-3 space-y-3.5">
                 {summary.kinds.map((kind) => (
-                  <KindRow key={kind.key} kind={kind} share={summary.credits > 0 ? kind.credits / summary.credits : 0} />
+                  <KindRow key={kind.key} kind={kind} share={summary.ink > 0 ? kind.ink / summary.ink : 0} />
                 ))}
               </ul>
             </section>
 
-            <section aria-label="This month by day">
+            <section aria-label="The last 30 days by day">
               <h4 className={SUBHEAD}>By day</h4>
               <ul className="mt-1 divide-y">
                 {days.map((day) => (
@@ -194,7 +194,7 @@ export function UsageCard({ usedCredits }: { usedCredits?: number }) {
               </ul>
               {hidden > 0 && (
                 <Button variant="ghost" size="sm" className="mt-1 -ml-2 text-muted-foreground" onClick={() => setShowAll(true)}>
-                  Show {formatCredits(hidden)} earlier day{hidden === 1 ? "" : "s"}
+                  Show {formatInk(hidden)} earlier day{hidden === 1 ? "" : "s"}
                 </Button>
               )}
             </section>

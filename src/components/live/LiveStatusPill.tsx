@@ -17,7 +17,7 @@ import { isLiveMeta, LIVE_LIMITS, LIVE_TIMING, type LiveStatus } from "@/lib/liv
 import { clearLiveError, liveStore, retryLiveError, type LiveError } from "@/lib/live/liveStore";
 import { scheduleLiveWrite } from "@/lib/live/liveWrite";
 import { useLiveSettings } from "@/lib/live/liveSettings";
-import { ACCOUNT_PATH } from "@/lib/billing/viewModel";
+import { openInkDialog } from "@/lib/billing/inkDialog";
 import { LIVE_COPY } from "./copy";
 import { liveErrorView, secondsLeftFor } from "./errorView";
 import { boardMenuView, statusPillView } from "./toolbar";
@@ -167,10 +167,16 @@ function LiveErrorFace({ error, now, canRetry }: { error: LiveError; now: number
           {LIVE_COPY.errors.signIn}
         </Link>
       )}
-      {view.primary === "account" && (
-        <Link href={ACCOUNT_PATH} className={`${ERROR_BUTTON} ml-1 bg-red-50 text-red-700 hover:bg-red-100`} data-testid="live-error-account">
-          {LIVE_COPY.errors.viewPlan}
-        </Link>
+      {view.primary === "ink" && (
+        // The board's ink dialog (packs open in a new tab), so the student never leaves the board.
+        <button
+          type="button"
+          className={`${ERROR_BUTTON} ml-1 bg-red-50 text-red-700 hover:bg-red-100`}
+          onClick={openInkDialog}
+          data-testid="live-error-ink"
+        >
+          {LIVE_COPY.errors.getInk}
+        </button>
       )}
       <button
         type="button"

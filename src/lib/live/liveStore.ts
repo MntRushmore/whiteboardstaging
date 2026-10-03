@@ -17,7 +17,7 @@ export interface LiveDiagram {
 /** Which network/model call of the Live layer failed. */
 export type LiveErrorKind = "capabilities" | "recognize" | "check" | "solve";
 /** Why it failed, mapped from the transport / API error contract. */
-export type LiveErrorCode = "network" | "unauthorized" | "rate_limited" | "credits" | "upstream" | "timeout" | "unknown";
+export type LiveErrorCode = "network" | "unauthorized" | "rate_limited" | "ink" | "upstream" | "timeout" | "unknown";
 
 /**
  * The one visible Live error. It never clears on a timer: only a successful retry, a

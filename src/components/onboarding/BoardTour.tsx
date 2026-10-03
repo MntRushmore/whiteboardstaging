@@ -17,7 +17,7 @@ import { CoachMark } from "./CoachMark";
 /**
  * The guided first board (loaded with a dynamic import, only on the board the welcome created):
  * the tutor writes one starter problem from the student's course through the board chat's own
- * executor — the engine checks it and the tutor's hand writes it, no model and no credits — and
+ * executor — the engine checks it and the tutor's hand writes it, no model and no ink — and
  * then three coach marks, one at a time: the pen (waits for the tutor's tick or ring on the
  * student's step), the help modes, and Ask. Finishing or closing it stores completion on the
  * profile (`save_onboarding`) and on this device, and it never shows again.
@@ -286,7 +286,7 @@ export default function BoardTour({ boardId, userId, controller, onModeChange, c
           primary={{ label: "Done", onClick: next }}
           onClose={skip}
         >
-          Try typing &ldquo;3 more like this&rdquo;. Each request uses 3 credits.
+          Try typing &ldquo;3 more like this&rdquo;. Each request uses 3 ink.
         </CoachMark>
       );
     default:

@@ -281,8 +281,8 @@ describe("live loop — word problems: the model sets up, the engine solves", ()
     expect(liveStore.lastError.get()).toBeNull();
   });
 
-  it("out of credits on the setup: the error is shown and the solve model is not asked too", async () => {
-    setupReply = new ApiError("You have used this month's credits.", 402, "credits_exhausted");
+  it("out of ink on the setup: the error is shown and the solve model is not asked too", async () => {
+    setupReply = new ApiError("You're out of ink. Grab an ink pack to keep going.", 402, "ink_empty");
     const lineId = await write();
     await run(() => loop.requestSolve(lineId));
     expect(solves()).toEqual([]);
