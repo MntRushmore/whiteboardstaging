@@ -654,10 +654,12 @@ export function useSnapshotSave(
       const pending = backup.read(boardId);
       if (pending) {
         const { applied } = restoreBackupInto(store, pending, initialVersion);
-        backup.clear(boardId);
         logger.info({ id: boardId, applied, baseVersion: pending.baseVersion }, "Restored autosave backup");
         if (applied > 0) toast.info(SAVE_COPY.restoredBackup);
         queue.markDirty();
+        // Replaces the old backup with what is still unsaved now (nothing: it is cleared), at
+        // once: clearing it and waiting for the next backup would leave a window with none.
+        queue.writeBackupNow();
       }
     } catch (e) {
       logger.warn({ id: boardId, error: errorInfo(e) }, "Could not restore autosave backup");
