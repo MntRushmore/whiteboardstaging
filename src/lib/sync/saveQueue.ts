@@ -189,6 +189,7 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
     }
     if (pending.changed.size === 0 && pending.removed.size === 0) {
       deps.backup.clear(deps.boardId);
+      noteBackup(true);
       return false;
     }
     try {
@@ -203,18 +204,27 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
         if (has(persisted, id)) base[id] = persisted[id];
       }
       for (const id of pending.removed) if (has(persisted, id)) base[id] = persisted[id];
-      return deps.backup.write(deps.boardId, {
-        snapshot: { store: records, schema: deps.store.schema.serialize() } as TLStoreSnapshot,
-        baseVersion: state.get().version,
-        changed: [...pending.changed],
-        removed: [...pending.removed],
-        at: now(),
-        base,
-        ...(sent ? { sent } : {}),
-      });
+      return noteBackup(
+        deps.backup.write(deps.boardId, {
+          snapshot: { store: records, schema: deps.store.schema.serialize() } as TLStoreSnapshot,
+          baseVersion: state.get().version,
+          changed: [...pending.changed],
+          removed: [...pending.removed],
+          at: now(),
+          base,
+          ...(sent ? { sent } : {}),
+        }),
+      );
     } catch {
-      return false;
+      return noteBackup(false);
     }
+  }
+
+  /** The pill says when unsaved work is not backed up on this device (storage full); returns `ok`. */
+  function noteBackup(ok: boolean): boolean {
+    if (!!state.get().backupFailed === !ok) return ok;
+    patch({ backupFailed: !ok });
+    return ok;
   }
 
   function scheduleBackup(): void {
@@ -262,6 +272,7 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
       dirty = false;
       patch({ status: "saved", message: null, pending: false, attempt: 0 });
       deps.backup?.clear(deps.boardId);
+      noteBackup(true);
       return state.get();
     }
     patch({ status: "saving", message: null });
@@ -318,7 +329,10 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
           attempt: 0,
           pending: hasPending(),
         });
-        if (!hasPending()) deps.backup?.clear(deps.boardId);
+        if (!hasPending()) {
+          deps.backup?.clear(deps.boardId);
+          noteBackup(true);
+        }
         return state.get();
       }
 

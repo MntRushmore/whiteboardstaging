@@ -604,6 +604,25 @@ describe("createSaveQueue", () => {
     queue.dispose();
   });
 
+  it("flags a backup that could not be written (storage full) until one is, or none is needed", async () => {
+    const store = makeStore();
+    const backup = memoryBackup();
+    let full = true;
+    const write = backup.write;
+    backup.write = (id, p) => (full ? false : write(id, p));
+    const queue = createSaveQueue(makeDeps(store, { backup, isOnline: () => false }));
+    putShape(store, "shape:a");
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(queue.state.get()).toMatchObject({ status: "offline", backupFailed: true });
+    full = false;
+    putShape(store, "shape:b");
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(queue.state.get().backupFailed).toBe(false);
+    queue.dispose();
+  });
+
   it("what an unanswered write sent stays in the backups until a write settles it", async () => {
     const store = makeStore();
     const remote = fakeRemote(store);

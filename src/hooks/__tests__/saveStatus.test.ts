@@ -16,6 +16,20 @@ describe("saveStatusViewFor", () => {
     expect(SAVED_FADE_MS).toBe(1500);
   });
 
+  it("says when unsaved work is not backed up on this device either (storage full)", () => {
+    expect(saveStatusViewFor(at({ status: "offline", pending: true, message: "offline", backupFailed: true }), false)).toEqual({
+      label: SAVE_STATUS_COPY.offlineNotBackedUp,
+      tone: "red",
+      showRetry: false,
+      title: SAVE_STATUS_COPY.notBackedUp,
+    });
+    expect(saveStatusViewFor(at({ status: "error", pending: true, message: "Save timed out.", backupFailed: true }), false)).toMatchObject({
+      label: SAVE_STATUS_COPY.error,
+      title: `Save timed out. ${SAVE_STATUS_COPY.notBackedUp}`,
+    });
+    expect(saveStatusViewFor(at({ status: "offline", pending: true, message: "offline" }), false)).toMatchObject({ label: SAVE_STATUS_COPY.offline });
+  });
+
   it("stays quiet while a save is merely debounced, but shows retries", () => {
     expect(saveStatusViewFor(at({ status: "dirty", pending: true }), false)).toBeNull();
     expect(saveStatusViewFor(at({ status: "dirty", pending: true, attempt: 2 }), false)).toMatchObject({

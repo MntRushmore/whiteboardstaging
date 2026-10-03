@@ -25,6 +25,9 @@ export const SAVE_STATUS_COPY = {
   saving: "Saving…",
   retrying: "Retrying…",
   offline: "Unsaved changes — offline",
+  /** offline, and the backup on this device could not be written either (its storage is full) */
+  offlineNotBackedUp: "Unsaved changes — offline, not backed up on this device",
+  notBackedUp: "Not backed up on this device either: its storage is full.",
   error: "Couldn't save",
   retry: "Retry",
   merging: "Merging changes from another tab…",
@@ -59,11 +62,17 @@ export function saveStatusViewFor(state: SyncState, savedVisible: boolean): Save
       // a retry after a failure (a hung or refused write) is not an ordinary save
       return { label: state.attempt > 0 ? SAVE_STATUS_COPY.retrying : SAVE_STATUS_COPY.saving, tone: "neutral", showRetry: false, title: null };
     case "offline":
+      if (state.backupFailed) return { label: SAVE_STATUS_COPY.offlineNotBackedUp, tone: "red", showRetry: false, title: SAVE_STATUS_COPY.notBackedUp };
       return { label: SAVE_STATUS_COPY.offline, tone: "amber", showRetry: false, title: state.message };
     case "merging":
       return { label: SAVE_STATUS_COPY.merging, tone: "info", showRetry: false, title: null };
     case "error":
-      return { label: SAVE_STATUS_COPY.error, tone: "red", showRetry: true, title: state.message };
+      return {
+        label: SAVE_STATUS_COPY.error,
+        tone: "red",
+        showRetry: true,
+        title: state.backupFailed ? [state.message, SAVE_STATUS_COPY.notBackedUp].filter(Boolean).join(" ") : state.message,
+      };
     case "refused":
       return { label: state.message ?? ASSET_COPY.boardTooLarge, tone: "red", showRetry: false, title: state.message };
     default:

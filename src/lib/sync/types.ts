@@ -21,6 +21,8 @@ export interface SyncState {
   pending: boolean;
   /** consecutive failed attempts since the last success (drives the backoff) */
   attempt: number;
+  /** true when the last backup of unsaved work could not be written (this device's storage is full) */
+  backupFailed?: boolean;
 }
 
 export type PersistResult =
