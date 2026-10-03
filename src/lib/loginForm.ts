@@ -25,6 +25,14 @@ export const FORM_COPY = {
 
 export type FieldErrors = { email?: string; password?: string };
 
+/**
+ * Every form that takes a password posts. A form without `method` is a GET: submitted before
+ * React attached onSubmit (a slow load, a quick Enter on an iPad), the browser put
+ * `?email=…&password=…` in the URL, and so in history and the server and Vercel logs. `#` posts
+ * to the page itself, which reads no body.
+ */
+export const AUTH_FORM_METHOD = { method: "post", action: "#" } as const;
+
 // Deliberately loose: something@something.tld. Supabase does the real check.
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

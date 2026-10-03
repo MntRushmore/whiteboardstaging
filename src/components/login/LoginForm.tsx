@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, MailCheck } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -12,6 +12,7 @@ import { PasswordField } from "@/registry/components/password-field/password-fie
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/registry/components/tabs/tabs";
 import { loginErrorField, loginErrorMessage } from "@/lib/loginErrorMessage";
 import {
+  AUTH_FORM_METHOD,
   FORM_COPY,
   afterSignInPath,
   hasFieldErrors,
@@ -41,9 +42,16 @@ type Sent = { kind: "confirm-signup" | "reset"; email: string };
 
 type FocusTarget = "email" | "password" | "heading";
 
+const subscribeNever = () => () => {};
+
 export function LoginForm() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  // The form is in the server HTML, so it can be submitted before React attaches onSubmit (a
+  // slow load, a quick Enter on an iPad). Submit stays disabled until hydration, which also stops
+  // Enter (implicit submission does nothing while the default button is disabled); the form
+  // posts (AUTH_FORM_METHOD) in case anything submits it anyway.
+  const hydrated = useSyncExternalStore(subscribeNever, () => true, () => false);
   const [mode, setMode] = useState<LoginMode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -173,7 +181,7 @@ export function LoginForm() {
   const label = SUBMIT_LABEL[mode];
 
   const form = (
-    <form onSubmit={handleSubmit} noValidate aria-busy={busy} className={styles.form}>
+    <form {...AUTH_FORM_METHOD} onSubmit={handleSubmit} noValidate aria-busy={busy} className={styles.form}>
       <Input
         ref={emailRef}
         id="login-email"
@@ -223,7 +231,7 @@ export function LoginForm() {
 
       {formError && <Alert id="login-error" data-state="error" tone="danger" title={formError} />}
 
-      <Button type="submit" size="lg" className={styles.submit} loading={busy}>
+      <Button type="submit" size="lg" className={styles.submit} loading={busy} disabled={!hydrated}>
         {redirecting ? "Opening your boards…" : busy ? label.busy : label.idle}
       </Button>
 
