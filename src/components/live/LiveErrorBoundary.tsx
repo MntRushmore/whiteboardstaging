@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { reportClientError } from "@/lib/clientErrors";
 import { logger } from "@/lib/logger";
 
 interface Props {
@@ -11,7 +12,8 @@ interface State {
 }
 
 /**
- * Keeps a Live UI crash from taking the whole board down: logs once and renders nothing.
+ * Keeps a Live UI crash from taking the whole board down: logs once, reports it to the server
+ * (src/lib/clientErrors.ts) and renders nothing.
  * The canvas, autosave and the legacy pipeline keep working underneath.
  */
 export class LiveErrorBoundary extends React.Component<Props, State> {
@@ -30,6 +32,7 @@ export class LiveErrorBoundary extends React.Component<Props, State> {
       },
       "Live UI crashed; hiding the Live layer for this session",
     );
+    reportClientError("live", error);
   }
 
   render(): React.ReactNode {

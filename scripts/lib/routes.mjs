@@ -28,6 +28,9 @@ export const PUBLIC_ROUTES = Object.freeze([
   "src/app/api/billing/webhook/route.ts",
   // Storage GC cron: no user JWT exists; the shared CRON_SECRET bearer token is the auth.
   "src/app/api/admin/gc/route.ts",
+  // Browser crash reports: errors happen signed out too, and a beacon cannot carry a token. Per-IP
+  // limit, 16 KB body cap, zod; a token, when sent, only names the user in the log line.
+  "src/app/api/client-errors/route.ts",
 ]);
 
 /** Why each public route may skip requireUser (enforced by routeProtection.test.ts). */
@@ -35,6 +38,7 @@ export const PUBLIC_ROUTE_REASONS = Object.freeze({
   "src/app/api/config/status/route.ts": "booleans-only setup status",
   "src/app/api/billing/webhook/route.ts": "signature-verified provider webhook",
   "src/app/api/admin/gc/route.ts": "Vercel cron; requires Authorization: Bearer CRON_SECRET",
+  "src/app/api/client-errors/route.ts": "browser error reports, sent signed out too; per-IP limit, 16 KB body cap, zod; logs only",
 });
 
 /** Routes whose handlers legitimately have no zod body schema. */
@@ -69,6 +73,18 @@ export const API_ROUTES = Object.freeze([
     // Without a valid Stripe-Signature it answers 400; without the secrets, 503.
     withoutTokenStatus: [400, 503],
     purpose: "Stripe-compatible billing webhook: plan changes via the service role",
+    status: "active",
+  },
+  {
+    path: "/api/client-errors",
+    file: "src/app/api/client-errors/route.ts",
+    methods: ["POST"],
+    auth: "public",
+    limit: "ip:clientErrors",
+    body: "zod",
+    // A valid report answers 204; the smoke probe's empty body is malformed JSON.
+    withoutTokenStatus: [400],
+    purpose: "Client error reports (window errors, unhandled rejections, error boundaries) -> one structured log line",
     status: "active",
   },
   {
