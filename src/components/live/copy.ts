@@ -80,6 +80,8 @@ export const LIVE_COPY = {
     credits: "This month's credits are used up — see your account",
     upstream: "The tutor service had a hiccup",
     timeout: "Reading took too long",
+    /** a check or a solve whose stream went silent (a stalled connection) */
+    answerTimeout: "The tutor took too long to answer",
     unknown: "Something went sideways",
     /** appended once the same call has failed more than once */
     attempts: (n: number) => `tried ${n} times`,
