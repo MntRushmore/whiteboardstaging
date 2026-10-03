@@ -19,7 +19,7 @@ const fake = vi.hoisted(() => ({
   calls: [] as Array<{ fn: string; args?: Record<string, unknown>; key?: string }>,
   replies: {} as Record<string, (args?: Record<string, unknown>) => RpcReply>,
   /** the user's usage_events rows (what consume_credits wrote and refund_ink_for has not deleted) */
-  rows: [] as Array<{ user_id: string; request_id: string; units: number }>,
+  rows: [] as Array<{ user_id: string; request_id: string; units: number; route: string }>,
   /** the next usage_events select fails with this */
   selectError: null as string | null,
   /** the figure drawer's check: [] is a clean figure */
@@ -41,16 +41,25 @@ vi.mock("@supabase/supabase-js", () => ({
     // the one table read the route makes: the user's own charge row for this minute (RLS: owner select)
     from: (table: string) => {
       const filters: Record<string, unknown> = {};
+      const atLeast: Record<string, number> = {};
       const query = {
         select: () => query,
         eq: (col: string, v: unknown) => {
           filters[col] = v;
           return query;
         },
+        gte: (col: string, v: number) => {
+          atLeast[col] = v;
+          return query;
+        },
         limit: async (n: number) => {
-          fake.calls.push({ fn: `select ${table}`, args: { ...filters } });
+          fake.calls.push({ fn: `select ${table}`, args: { ...filters, ...Object.fromEntries(Object.entries(atLeast).map(([k, v]) => [`${k}>=`, v])) } });
           if (fake.selectError) return { data: null, error: { message: fake.selectError } };
-          const rows = fake.rows.filter((r) => Object.entries(filters).every(([k, v]) => (r as Record<string, unknown>)[k] === v));
+          const rows = fake.rows.filter(
+            (r) =>
+              Object.entries(filters).every(([k, v]) => (r as Record<string, unknown>)[k] === v) &&
+              Object.entries(atLeast).every(([k, v]) => Number((r as Record<string, unknown>)[k]) >= v),
+          );
           return { data: rows.slice(0, n).map((_, i) => ({ id: i + 1 })), error: null };
         },
       };
@@ -132,7 +141,7 @@ beforeEach(() => {
   for (const key of Object.keys(fake.replies)) delete fake.replies[key];
   fake.replies.rate_limit_hit = () => ({ data: { allowed: true, remaining: 11, retry_after_ms: 0, backend: "db" } });
   fake.replies.consume_credits = (args) => {
-    fake.rows.push({ user_id: fake.USER_ID, request_id: String(args?.p_request_id), units: Number(args?.p_units) });
+    fake.rows.push({ user_id: fake.USER_ID, request_id: String(args?.p_request_id), units: Number(args?.p_units), route: String(args?.p_route) });
     return { data: { ok: true, remaining: 100, reason: null } };
   };
   fake.replies.refund_ink_for = (args) => {
@@ -198,7 +207,7 @@ describe("live/lecture", () => {
       expect((await post()).body?.charged).toBe(true);
       expect(callsTo("consume_credits").map((c) => c.args)).toEqual([{ p_route: "live/lecture", p_units: 2, p_request_id: minute, p_model: LIVE_MODELS.lecture }]);
       // the lookup is the user's own row for this minute
-      expect(callsTo("select usage_events")[0].args).toEqual({ user_id: fake.USER_ID, request_id: minute });
+      expect(callsTo("select usage_events")[0].args).toEqual({ user_id: fake.USER_ID, request_id: minute, route: "live/lecture", "units>=": 2 });
 
       vi.setSystemTime(T0 + 45_000); // 12:00:55, the same minute
       expect((await post()).body?.charged).toBe(false);
@@ -251,6 +260,45 @@ describe("live/lecture", () => {
       expect(callsTo("refund_ink_for")).toEqual([]);
     });
 
+    it("a charging request the client aborts keeps its charge: the minute's other requests rode on it (security audit)", async () => {
+      const minute = lectureMinuteId(SESSION, T0);
+      const controller = new AbortController();
+      // R1, the minute's first request: charged, then abandoned by the client while the model runs
+      vi.mocked(chatJsonWithFallback).mockImplementationOnce(async () => {
+        controller.abort();
+        throw new DOMException("The operation was aborted.", "AbortError");
+      });
+      const r1 = await lecture(
+        new Request("http://localhost/api/live/lecture", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${fake.GOOD_TOKEN}` },
+          body: JSON.stringify(BODY),
+          signal: controller.signal,
+        }),
+      );
+      expect(r1.ok).toBe(false);
+      expect(callsTo("consume_credits").map((c) => c.args?.p_request_id)).toEqual([minute]);
+      expect(callsTo("refund_ink_for")).toEqual([]);
+      expect(fake.rows.map((r) => r.request_id)).toEqual([minute]);
+
+      // the rest of the minute stays paid by it, so it is still free, and still nothing is refunded
+      vi.setSystemTime(T0 + 20_000);
+      modelReplies({ actions: [BAR] });
+      expect((await post()).body?.charged).toBe(false);
+      expect(callsTo("consume_credits")).toHaveLength(1);
+      expect(callsTo("refund_ink_for")).toEqual([]);
+    });
+
+    it("only the route's own charge pays a minute: a 1-ink row the user wrote under the minute's id does not (security audit)", async () => {
+      const minute = lectureMinuteId(SESSION, T0);
+      // what a direct rpc('consume_credits', { p_route: 'x', p_units: 1, p_request_id: minute }) leaves behind
+      fake.rows.push({ user_id: fake.USER_ID, request_id: minute, units: 1, route: "x" });
+      fake.rows.push({ user_id: fake.USER_ID, request_id: minute, units: 1, route: "live/lecture" });
+      modelReplies({ actions: [BAR] });
+      expect((await post()).body?.charged).toBe(true);
+      expect(callsTo("consume_credits").map((c) => c.args)).toEqual([{ p_route: "live/lecture", p_units: 2, p_request_id: minute, p_model: LIVE_MODELS.lecture }]);
+    });
+
     it("402 when out of credits, before any model call", async () => {
       fake.replies.consume_credits = () => ({ data: { ok: false, remaining: 0, reason: "insufficient_credits" } });
       const res = await lecture(request(BODY));
@@ -260,7 +308,7 @@ describe("live/lecture", () => {
     });
 
     it("a lookup that fails charges: a minute is never given away on an error", async () => {
-      fake.rows.push({ user_id: fake.USER_ID, request_id: lectureMinuteId(SESSION, T0), units: 2 });
+      fake.rows.push({ user_id: fake.USER_ID, request_id: lectureMinuteId(SESSION, T0), units: 2, route: "live/lecture" });
       fake.selectError = "connection reset";
       modelReplies({ actions: [] });
       expect((await post()).body?.charged).toBe(true);
