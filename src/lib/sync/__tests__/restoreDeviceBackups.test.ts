@@ -1,13 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { TLStore } from "tldraw";
-import { restoreDeviceBackups } from "../useSnapshotSave";
-import { createLocalStorageBackup, backupKey } from "@/lib/sync/localBackup";
-import { restoreBackups } from "@/lib/sync/restoreBackup";
-import { cloneStore, docRecords, makeStore, putShape, shapeIds } from "@/lib/sync/__fixtures__/store";
-import type { BackupPayload } from "@/lib/sync";
-
-vi.mock("sonner", () => ({ toast: { warning: vi.fn(), error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
-vi.mock("@/lib/logger", () => ({ logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
+import { createLocalStorageBackup, backupKey } from "../localBackup";
+import { restoreDeviceBackups } from "../restoreBackup";
+import { cloneStore, docRecords, makeStore, putShape, shapeIds } from "../__fixtures__/store";
+import type { BackupPayload } from "../types";
 
 function memoryStorage(): Storage & { map: Map<string, string> } {
   const map = new Map<string, string>();
@@ -64,7 +60,6 @@ describe("restoreDeviceBackups (two tabs, one device: N1)", () => {
       queue,
       cancelled: () => false,
       openTabs: async () => new Set(["open", "mine"]),
-      restore: async () => restoreBackups,
     });
 
     expect(report).toEqual({ applied: 2, stale: 0 });
@@ -86,21 +81,21 @@ describe("restoreDeviceBackups (two tabs, one device: N1)", () => {
       queue,
       cancelled: () => false,
       openTabs: async () => null,
-      restore: async () => restoreBackups,
     });
     expect(report).toEqual({ applied: 2, stale: 0 });
     expect(storage.map.size).toBe(0);
   });
 
-  it("does nothing, and loads nothing, when no other backup exists or every one belongs to an open tab", async () => {
-    const { server, loaded, mine, queue, write } = setup();
-    const restore = vi.fn(async () => restoreBackups);
-    const args = { store: loaded, boardId: "b1", loadedVersion: 1, backup: mine, queue, cancelled: () => false, restore };
+  it("does nothing when no other backup exists or every one belongs to an open tab", async () => {
+    const { storage, server, loaded, mine, queue, write } = setup();
+    const before = docRecords(loaded);
+    const args = { store: loaded, boardId: "b1", loadedVersion: 1, backup: mine, queue, cancelled: () => false };
     expect(await restoreDeviceBackups({ ...args, openTabs: async () => new Set<string>() })).toBeNull();
     write("open", strokeBackup(server, "shape:open", 1));
     expect(await restoreDeviceBackups({ ...args, openTabs: async () => new Set(["open"]) })).toBeNull();
-    expect(restore).not.toHaveBeenCalled();
     expect(queue.markDirty).not.toHaveBeenCalled();
+    expect(docRecords(loaded)).toEqual(before);
+    expect(storage.map.has(backupKey("b1", "open"))).toBe(true);
   });
 
   it("an unmounted board applies nothing and keeps the keys for the next mount", async () => {
@@ -115,7 +110,6 @@ describe("restoreDeviceBackups (two tabs, one device: N1)", () => {
       queue,
       cancelled: () => true,
       openTabs: async () => null,
-      restore: async () => restoreBackups,
     });
     expect(report).toBeNull();
     expect(docRecords(loaded)).toEqual(before);

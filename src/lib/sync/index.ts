@@ -43,4 +43,4 @@ export {
   MSG_SAVE_FAILED,
   MSG_SAVE_TIMEOUT,
 } from "./saveQueue";
-export { holdTabLock, openTabIds } from "./tabLock";
+export { holdTabLock } from "./tabLock";

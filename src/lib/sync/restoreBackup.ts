@@ -2,7 +2,9 @@ import type { TLStore, TLStoreSnapshot } from "tldraw";
 import { applyRemotePlan } from "./applyRemotePlan";
 import { deepEqual } from "./deepEqual";
 import { SESSION_TYPE_NAMES } from "./mergeDocumentRecords";
-import type { BackupPayload } from "./types";
+import type { DeviceBackups } from "./localBackup";
+import { openTabIds } from "./tabLock";
+import type { BackupPayload, SaveQueue } from "./types";
 
 const has = (o: object, id: string): boolean => Object.prototype.hasOwnProperty.call(o, id);
 const valueOf = (o: Record<string, unknown>, id: string): unknown => (has(o, id) ? o[id] : undefined);
@@ -100,4 +102,52 @@ export function restoreBackups(store: TLStore, backups: readonly BackupPayload[]
 /** One backup (see `restoreBackups`). */
 export function restoreBackupInto(store: TLStore, backup: BackupPayload, loadedVersion: number | null): RestoreReport {
   return restoreBackups(store, [backup], loadedVersion);
+}
+
+export interface RestoreDeviceBackupsArgs {
+  store: TLStore;
+  boardId: string;
+  /** `whiteboards.version` of the row the store was loaded from */
+  loadedVersion: number | null;
+  /** this mount's backup (its own key is never replayed) */
+  backup: DeviceBackups;
+  queue: Pick<SaveQueue, "markDirty" | "writeBackupNow">;
+  /** true once the board unmounted: nothing is applied */
+  cancelled: () => boolean;
+  /** injectable for tests */
+  openTabs?: () => Promise<Set<string> | null>;
+}
+
+/**
+ * Replay the unsaved work this device kept for the board over the loaded row: every backup key
+ * whose tab is gone (closed, crashed, an earlier page load, the shared key of older deploys), oldest
+ * first; a tab that is still open saves its own. Restored records are this tab's unsaved changes
+ * from then on (saved, and in its own backup, written at once) and the replayed keys are removed.
+ * Without Web Locks every other key counts as gone. Null when there was nothing to replay.
+ * (src/hooks/useSnapshotSave.ts loads this module only when such a key exists.)
+ */
+export async function restoreDeviceBackups({
+  store,
+  boardId,
+  loadedVersion,
+  backup,
+  queue,
+  cancelled,
+  openTabs = openTabIds,
+}: RestoreDeviceBackupsArgs): Promise<RestoreReport | null> {
+  const found = backup.list(boardId).filter((b) => b.tabId !== backup.tabId);
+  if (found.length === 0) return null;
+  const open = await openTabs();
+  const gone = found.filter((b) => !(b.tabId && open?.has(b.tabId)));
+  if (gone.length === 0 || cancelled()) return null;
+  const payloads = gone.flatMap((b) => (b.payload ? [b.payload] : []));
+  let report: RestoreReport = { applied: 0, stale: 0 };
+  if (payloads.length > 0) {
+    report = restoreBackups(store, payloads, loadedVersion);
+    queue.markDirty();
+    // What is still unsaved now goes into this tab's backup before the old keys go: no window without one.
+    queue.writeBackupNow();
+  }
+  for (const b of gone) backup.remove(b.key);
+  return report;
 }
