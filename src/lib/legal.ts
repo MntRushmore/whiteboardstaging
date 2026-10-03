@@ -38,6 +38,15 @@ export const LEGAL = {
   ],
 } as const;
 
+/**
+ * The version of what sign-up asks a new account to agree to: the Terms, the Privacy Policy, and
+ * "I'm 13 or older, or I'm a parent or guardian setting this up for my child". The database
+ * stores it on the profile (`terms_version`, with `accepted_terms_at`) at sign-up. A date, so a
+ * profile reads "agreed to the 2026-10-03 text"; change it when that text changes in a way that
+ * matters.
+ */
+export const TERMS_VERSION = "2026-10-03";
+
 /** True for a value still in [square brackets]. */
 export function isPlaceholder(value: string): boolean {
   return /^\[.*\]$/.test(value.trim());

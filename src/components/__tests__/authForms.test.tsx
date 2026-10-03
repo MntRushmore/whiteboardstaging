@@ -10,7 +10,7 @@ vi.mock("@/components/AuthProvider", () => ({
   AuthErrorBanner: () => null,
 }));
 
-import { LoginForm } from "../login/LoginForm";
+import { ConsentField, LoginForm } from "../login/LoginForm";
 import { ResetPasswordForm } from "../login/ResetPasswordForm";
 
 /** the opening tag of every <form> in the markup */
@@ -42,5 +42,32 @@ describe("password forms never submit credentials in a URL", () => {
     expect(forms).toHaveLength(1);
     expect(forms[0]).toContain('method="post"');
     expect(html).toMatch(/type="password"/);
+  });
+});
+
+describe("sign-up consent", () => {
+  it("sign-in (the opening tab) never shows the consent box", () => {
+    auth.value = { user: null, loading: true, authError: null };
+    const html = renderToStaticMarkup(<LoginForm />);
+    expect(html).not.toContain('type="checkbox"');
+  });
+
+  it("the box links the Terms and the Privacy Policy in a new tab and states the age rule", () => {
+    const html = renderToStaticMarkup(<ConsentField checked={false} onChange={() => {}} />);
+    expect(html).toMatch(/<input[^>]*type="checkbox"[^>]*required/);
+    const links = html.match(/<a\b[^>]*>/g) ?? [];
+    expect(links).toHaveLength(2);
+    expect(links.find((tag) => tag.includes('href="/terms"'))).toContain('target="_blank"');
+    expect(links.find((tag) => tag.includes('href="/privacy"'))).toContain('target="_blank"');
+    expect(html).toContain("I\u2019m 13 or older, or I\u2019m a parent or guardian setting this up for my child.");
+    expect(html).not.toContain("login-consent-error");
+  });
+
+  it("an unticked submit says why, tied to the box", () => {
+    const html = renderToStaticMarkup(<ConsentField checked={false} onChange={() => {}} error="Tick the box." />);
+    const box = html.match(/<input\b[^>]*>/)?.[0] ?? "";
+    expect(box).toContain('aria-invalid="true"');
+    expect(box).toContain('aria-describedby="login-consent-error"');
+    expect(html).toContain('id="login-consent-error"');
   });
 });

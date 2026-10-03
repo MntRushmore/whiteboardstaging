@@ -1536,8 +1536,52 @@ export const ALL_CHECKS = [
   { name: "onboarding: course and onboarded_at written only through save_onboarding", run: checkOnboarding },
   { name: "ink tables: packs read-only, own grants and purchases only, no way to add ink", run: checkInkTables },
   { name: "ink: summary, purchases/refunds/reviews only through the service role, append-only ledgers", run: checkInkPurchases },
+  { name: "sign-up consent: the Terms version is on the profile, readable, never writable", run: checkSignupConsent },
   { name: "delete_own_account removes the caller's account and data", run: checkDeleteOwnAccount },
 ];
+
+/**
+ * Sign-up consent (migration 20261003010000_signup_consent.sql): every account made since then
+ * carries the Terms version it agreed to (the database refuses one without it), and its owner can
+ * read that record but never rewrite it. The throwaway users here are made after the migration, so
+ * theirs is set.
+ * @param {CheckContext} ctx
+ */
+export async function checkSignupConsent({ a }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const select = "accepted_terms_at,terms_version";
+  const own = await a.rest("GET", "profiles", { query: { select } });
+  const row = rows(own)[0] ? { ...rows(own)[0] } : undefined;
+  out.push(
+    result(
+      "consent: A's profile records the Terms version and when it was accepted",
+      isOk(own) && !!row && /^\d{4}-\d{2}-\d{2}$/.test(String(row.terms_version ?? "")) && !Number.isNaN(Date.parse(String(row.accepted_terms_at ?? ""))),
+      describe(own),
+    ),
+  );
+  const forged = await a.rest("PATCH", "profiles", {
+    query: { user_id: `eq.${a.userId}` },
+    body: { accepted_terms_at: "2020-01-01T00:00:00Z", terms_version: "2020-01-01" },
+    prefer: "return=representation",
+  });
+  out.push(
+    result(
+      "consent: A cannot rewrite own Terms acceptance (42501)",
+      isDenied(forged) && String(asObject(forged.body)?.code ?? "") === "42501",
+      describe(forged),
+    ),
+  );
+  const after = rows(await a.rest("GET", "profiles", { query: { select } }))[0];
+  out.push(
+    result(
+      "consent: A's Terms acceptance unchanged after the attempt",
+      !!row && !!after && after.terms_version === row.terms_version && after.accepted_terms_at === row.accepted_terms_at,
+      JSON.stringify(after ?? null).slice(0, 200),
+    ),
+  );
+  return out;
+}
 
 /**
  * Run one check, converting a thrown error into a single failing result.

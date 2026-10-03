@@ -25,6 +25,9 @@ export const LOGIN_COPY = {
   emailNotAuthorized:
     "Emails can't be sent to this address yet. Ask your teacher or school to reset your password.",
   fallback: "Sign-in didn't complete. Try again in a moment.",
+  // The database refuses an account whose sign-up did not carry the Terms acceptance
+  // (20261003010000_signup_consent.sql): in practice, a page loaded before that release.
+  signupRefused: "We couldn't create your account. Reload this page and try again.",
 } as const;
 
 export type LoginErrorKind =
@@ -39,6 +42,7 @@ export type LoginErrorKind =
   | "invalid-email"
   | "signup-disabled"
   | "email-not-authorized"
+  | "signup-refused"
   | "clock-skew"
   | "other";
 
@@ -118,6 +122,12 @@ export function classifyLoginError(err: unknown): LoginErrorKind {
   if (code === "email_address_not_authorized" || msg.includes("cannot be used as it is not authorized")) {
     return "email-not-authorized";
   }
+  // A database trigger refused the new auth.users row (the sign-up consent): GoTrue passes the
+  // trigger's message through ("sign-up refused: ...", seen locally) or, in some versions, says
+  // "Database error saving new user".
+  if (msg.includes("sign-up refused") || msg.includes("database error saving new user")) {
+    return "signup-refused";
+  }
   return "other";
 }
 
@@ -165,6 +175,8 @@ export function loginErrorMessage(err: unknown): string {
       return LOGIN_COPY.signupDisabled;
     case "email-not-authorized":
       return LOGIN_COPY.emailNotAuthorized;
+    case "signup-refused":
+      return LOGIN_COPY.signupRefused;
     case "clock-skew":
     case "other":
       return describeError(err, LOGIN_COPY.fallback);

@@ -25,6 +25,7 @@ import {
   checkOnboarding,
   checkRateLimit,
   checkRefunds,
+  checkSignupConsent,
   checkSnapshots,
   checkStorage,
   checkTrainersNotWritable,
@@ -53,9 +54,11 @@ import {
   parseEnvText,
   provisionUser,
   resolveSupabaseEnv,
+  TERMS_VERSION as SCRIPT_TERMS_VERSION,
   toResult,
   waitForHealth,
 } from "../../scripts/lib/supabaseHttp.mjs";
+import { TERMS_VERSION } from "@/lib/legal";
 
 // ---------------------------------------------------------------- fake world
 
@@ -114,6 +117,8 @@ type Leak =
   | "inkSelfGrant"
   | "inkGrantsCrossRead"
   | "inkBalancePatchable"
+  | "termsPatchable"
+  | "termsNotRecorded"
   | "inkPurchaseRpcOpen"
   | "inkPurchaseReplay"
   | "inkPurchaseCrossRead"
@@ -147,7 +152,12 @@ function makeWorld(leaks: Leak[] = []) {
   const objects = new Map<string, string>(); // "bucket/path" -> owner
   const users = new Set<string>([USER_A, USER_B]); // auth.users
   const profiles = new Map<string, Row>();
-  for (const u of users) profiles.set(u, { user_id: u, plan_id: "free", display_name: null, course: null, onboarded_at: null });
+  // 20261003010000_signup_consent.sql: the sign-up trigger copies the Terms version onto the profile
+  const signupTerms = (): Row =>
+    leak("termsNotRecorded")
+      ? { accepted_terms_at: null, terms_version: null }
+      : { accepted_terms_at: "2026-10-03T08:00:00.000Z", terms_version: TERMS_VERSION };
+  for (const u of users) profiles.set(u, { user_id: u, plan_id: "free", display_name: null, course: null, onboarded_at: null, ...signupTerms() });
   const usage: Row[] = [];
   const grants: Row[] = [];
   const billingEvents: Row[] = [];
@@ -616,7 +626,8 @@ function makeWorld(leaks: Leak[] = []) {
             k === "display_name" ||
             (leak("planIdUpdatable") && k === "plan_id") ||
             (leak("onboardingPatchable") && (k === "course" || k === "onboarded_at")) ||
-            (leak("inkBalancePatchable") && k === "ink_balance");
+            (leak("inkBalancePatchable") && k === "ink_balance") ||
+            (leak("termsPatchable") && (k === "accepted_terms_at" || k === "terms_version"));
           if (Object.keys(body).some((k) => !updatable(k))) return denied(uid);
           const own = visible.filter((r) => r.user_id === uid);
           for (const r of own) Object.assign(r, body);
@@ -759,7 +770,7 @@ function makeWorld(leaks: Leak[] = []) {
   const newUser = async (): Promise<RlsClient> => {
     const uid = uuid();
     users.add(uid);
-    profiles.set(uid, { user_id: uid, plan_id: "free", display_name: null, course: null, onboarded_at: null });
+    profiles.set(uid, { user_id: uid, plan_id: "free", display_name: null, course: null, onboarded_at: null, ...signupTerms() });
     grantStarter(uid);
     return client(uid);
   };
@@ -977,6 +988,10 @@ describe("rlsChecks detect individual leaks", () => {
     ["inkLedgerDeletable", checkInkPurchases, "ink: A's balance and ledger unchanged by the denied deletes"],
     ["anonRpc", checkInkPurchases, "ink_summary: anon cannot call it"],
     ["anonRpc", checkInkPurchases, "grant_ink_purchase: anon cannot call it"],
+    // sign-up consent
+    ["termsNotRecorded", checkSignupConsent, "consent: A's profile records the Terms version and when it was accepted"],
+    ["termsPatchable", checkSignupConsent, "consent: A cannot rewrite own Terms acceptance (42501)"],
+    ["termsPatchable", checkSignupConsent, "consent: A's Terms acceptance unchanged after the attempt"],
   ];
 
   it.each(cases)("leak %s makes '%s' fail", async (leak, check, failingName) => {
@@ -1318,6 +1333,13 @@ describe("supabaseHttp", () => {
     const s = await provisionUser({ url: "http://x", anonKey: "anon", email: "e@example.com", password: "p", fetchImpl: f });
     expect(s).toEqual({ accessToken: "t", userId: "u1", email: "e@example.com" });
     expect(f.calls[0].url).toBe("http://x/auth/v1/signup");
+    // the database refuses a new account without the Terms version (20261003010000_signup_consent.sql)
+    expect(JSON.parse(String(f.calls[0].init?.body))).toMatchObject({ data: { terms_version: TERMS_VERSION } });
+  });
+
+  it("script-made accounts carry the same Terms version as the sign-up form", () => {
+    expect(SCRIPT_TERMS_VERSION).toBe(TERMS_VERSION);
+    expect(TERMS_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it("provisionUser: explains how to fix disabled signups and pending confirmations", async () => {
@@ -1339,7 +1361,7 @@ describe("supabaseHttp", () => {
     expect(s.userId).toBe("u9");
     expect(s.accessToken).toBe("tok9");
     expect((f.calls[0].init?.headers as Record<string, string>).Authorization).toBe("Bearer svc");
-    expect(JSON.parse(String(f.calls[0].init?.body))).toMatchObject({ email_confirm: true });
+    expect(JSON.parse(String(f.calls[0].init?.body))).toMatchObject({ email_confirm: true, user_metadata: { terms_version: TERMS_VERSION } });
     expect(f.calls[1].url).toBe("http://x/auth/v1/token?grant_type=password");
   });
 });

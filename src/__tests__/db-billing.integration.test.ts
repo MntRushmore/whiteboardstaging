@@ -26,7 +26,13 @@
  *     real purchase that a later refund reverses
  *   - ink_packs: the catalogue as seeded
  *   - delete_own_account(): auth.users row, profile, boards, ledgers, purchases, storage rows
- *     (the delete guards let the account's cascade through); a review outlives the account
+ *     (the delete guards let the account's cascade through); a review outlives the account;
+ *     the account's bug reports go with it, email included (20261003010100)
+ *
+ * Covered (sign-up consent; 20261003010000_signup_consent.sql):
+ *   - the profile records the Terms version and when; the user can read it, not write it
+ *   - no account without an accepted Terms version: sign-up without one, with a malformed one,
+ *     or through the admin API is refused and creates nothing
  *
  * Covered (refunds of failed calls; 20260917030000_refunds_ratelimit.sql, made service-role
  * only by 20261002000000_ink.sql):
@@ -41,6 +47,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ASSETS_BUCKET, TINY_PNG, isCreditSummary, isInkSummary, isRateLimitResult, rows, rpc } from "../../scripts/lib/rlsChecks.mjs";
 import type { CheckContext, RlsClient } from "../../scripts/lib/rlsChecks.mjs";
 import { createSupabaseHttp, resolveSupabaseEnv, waitForHealth } from "../../scripts/lib/supabaseHttp.mjs";
+import { TERMS_VERSION } from "@/lib/legal";
 import { bootstrapVerifyContext } from "../../scripts/lib/verifyContext.mjs";
 
 const enabled = process.env.RUN_DB_TESTS === "1";
@@ -152,6 +159,40 @@ suite(title, () => {
     // a second starter is impossible (one per account)
     const dup = await service.rest("POST", "ink_grants", { body: { user_id: ctx.a.userId, units: 300, kind: "starter" }, prefer: "return=minimal" });
     expect(dup.status, JSON.stringify(dup.body)).toBe(409);
+  }, 30_000);
+
+  it("records the sign-up's Terms acceptance on the profile; the user can read it but never write it", async () => {
+    const res = await ctx.a.rest("GET", "profiles", { query: { select: "accepted_terms_at,terms_version" } });
+    expect(res.status).toBe(200);
+    const [p] = rows(res) as Array<{ accepted_terms_at: string; terms_version: string }>;
+    expect(p.terms_version).toBe(TERMS_VERSION);
+    expect(Date.parse(p.accepted_terms_at)).toBeGreaterThan(Date.now() - DAY);
+
+    const forged = await ctx.a.rest("PATCH", "profiles", {
+      query: { user_id: `eq.${ctx.a.userId}` },
+      body: { accepted_terms_at: "2020-01-01T00:00:00Z", terms_version: "2020-01-01" },
+    });
+    expect(forged.status, JSON.stringify(forged.body)).toBe(403);
+    expect(rows(await ctx.a.rest("GET", "profiles", { query: { select: "terms_version" } }))).toEqual([{ terms_version: TERMS_VERSION }]);
+  }, 30_000);
+
+  it("refuses an account whose sign-up did not accept the Terms, by sign-up or with the service role", async () => {
+    const anonKey = resolveSupabaseEnv(process.env).anonKey as string;
+    const tag = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const attempts: Array<[string, Promise<Response>]> = [
+      ["no metadata", fetch(`${url}/auth/v1/signup`, { method: "POST", headers: { apikey: anonKey, "Content-Type": "application/json" }, body: JSON.stringify({ email: `consent-none-${tag}@example.com`, password: "Consent-Test-1" }) })],
+      ["not a version", fetch(`${url}/auth/v1/signup`, { method: "POST", headers: { apikey: anonKey, "Content-Type": "application/json" }, body: JSON.stringify({ email: `consent-bad-${tag}@example.com`, password: "Consent-Test-1", data: { terms_version: true } }) })],
+      ["admin API", fetch(`${url}/auth/v1/admin/users`, { method: "POST", headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ email: `consent-admin-${tag}@example.com`, password: "Consent-Test-1", email_confirm: true }) })],
+    ];
+    for (const [what, attempt] of attempts) {
+      const res = await attempt;
+      const body = await res.text();
+      expect(res.status, `${what}: ${body}`).toBeGreaterThanOrEqual(400);
+    }
+    // no account was created for any of them
+    const listed = await fetch(`${url}/auth/v1/admin/users?per_page=1000`, { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } });
+    const users = ((await listed.json()) as { users: Array<{ email: string }> }).users;
+    expect(users.filter((u) => u.email.includes(tag))).toEqual([]);
   }, 30_000);
 
   it("ink_summary reports the starter; credit_summary keeps its old keys, consistent for ink", async () => {

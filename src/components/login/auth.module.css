@@ -199,6 +199,67 @@
   margin-top: var(--space-1);
 }
 
+/* Sign-up's consent box: the whole label is the tap target (links inside it still open). */
+.consent {
+  display: grid;
+}
+.consentLabel {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  cursor: pointer;
+}
+.checkbox {
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  /* centres the box on the first line of 1.5 line-height text */
+  margin: calc((1.5em - 1.125rem) / 2) 0 0;
+  accent-color: var(--control-on);
+  cursor: pointer;
+}
+.checkbox[aria-invalid="true"] {
+  outline: 2px solid var(--danger);
+  outline-offset: 1px;
+}
+.consentText {
+  display: grid;
+  gap: var(--space-1);
+  text-wrap: pretty;
+}
+.consentLink {
+  border-radius: var(--space-1);
+  color: var(--foreground);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, currentColor 35%, transparent);
+  text-underline-offset: 3px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .consentLink:hover {
+    text-decoration-color: currentColor;
+  }
+}
+.consentError {
+  margin: 0;
+  padding-top: var(--space-2);
+  padding-left: calc(1.125rem + var(--space-3));
+  color: var(--danger);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* A quiet text action under the form: "Forgot your password?", "Back to sign in". */
 .textButton {
   display: inline-flex;
