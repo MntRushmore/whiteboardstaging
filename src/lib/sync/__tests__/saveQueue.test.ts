@@ -4,8 +4,13 @@ import {
   backoffDelay,
   createSaveQueue,
   extractStoreMap,
+  MAX_BACKUP_WAIT_MS,
+  MAX_SAVE_WAIT_MS,
   MSG_BOARD_GONE,
   MSG_MERGE_FAILED,
+  MSG_SAVE_TIMEOUT,
+  PERSIST_TIMEOUT_MS,
+  persistTimeoutMs,
   RETRY_BACKOFF_MS,
 } from "../saveQueue";
 import { buildFrom, cloneStore, fakeRemote, makeStore, putShape, shapeIds } from "../__fixtures__/store";
@@ -376,6 +381,90 @@ describe("createSaveQueue", () => {
     expect(queue.state.get()).toMatchObject({ status: "saved", version: 3, pending: false });
     expect(backup.map.has("b1")).toBe(false);
     expect(queue.writeBackupNow()).toBe(false);
+    queue.dispose();
+  });
+
+  it("edits that never pause for the debounce are still saved and backed up (max wait)", async () => {
+    const store = makeStore();
+    const remote = fakeRemote(store);
+    const persist = vi.fn(remote.persist);
+    const backup = memoryBackup();
+    const queue = createSaveQueue(makeDeps(store, { persist, backup }));
+    // a stroke every 300 ms: shorter than both debounces, so neither ever settles on its own
+    let n = 0;
+    const edit = () => {
+      putShape(store, `shape:s${n++}`);
+      queue.markDirty();
+    };
+    edit();
+    for (let t = 300; t < MAX_BACKUP_WAIT_MS; t += 300) {
+      await vi.advanceTimersByTimeAsync(300);
+      edit();
+    }
+    expect(backup.map.has("b1")).toBe(false);
+    await vi.advanceTimersByTimeAsync(300);
+    edit();
+    expect(backup.map.get("b1")?.changed.length).toBeGreaterThan(0);
+    for (let t = 2100; t < MAX_SAVE_WAIT_MS - 300; t += 300) {
+      await vi.advanceTimersByTimeAsync(300);
+      edit();
+    }
+    expect(persist).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(remote.shapeIds().length).toBeGreaterThan(30);
+    // the next burst gets its own full max wait
+    edit();
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(persist).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(persist).toHaveBeenCalledTimes(2);
+    queue.dispose();
+  });
+
+  it("a write that never answers is aborted after persistTimeoutMs, shown as an error and retried", async () => {
+    const store = makeStore();
+    const remote = fakeRemote(store);
+    let hang = true;
+    const signals: Array<AbortSignal | undefined> = [];
+    const persist = vi.fn((u: Record<string, unknown>, v: number | null, signal?: AbortSignal): Promise<PersistResult> => {
+      signals.push(signal);
+      return hang ? new Promise<PersistResult>(() => {}) : remote.persist(u, v);
+    });
+    const inner = buildFrom(store);
+    const buildUpdate = async (): Promise<BuildResult> => ({ ...(await inner()), bytes: 200_000 } as BuildResult);
+    const queue = createSaveQueue(makeDeps(store, { persist, buildUpdate }));
+    putShape(store, "shape:a");
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(queue.state.get().status).toBe("saving");
+    const limit = persistTimeoutMs(200_000);
+    expect(limit).toBe(PERSIST_TIMEOUT_MS + 10_000);
+    await vi.advanceTimersByTimeAsync(limit - 1);
+    expect(queue.state.get().status).toBe("saving");
+    await vi.advanceTimersByTimeAsync(1);
+    expect(signals[0]?.aborted).toBe(true);
+    expect(queue.state.get()).toMatchObject({ status: "error", message: MSG_SAVE_TIMEOUT, pending: true, attempt: 1 });
+
+    hang = false;
+    await vi.advanceTimersByTimeAsync(RETRY_BACKOFF_MS[0]);
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect(queue.state.get()).toMatchObject({ status: "saved", version: 2, pending: false });
+    expect(remote.shapeIds()).toEqual(["shape:a"]);
+    queue.dispose();
+  });
+
+  it("a conflict fetch that never answers fails the round instead of leaving 'Merging…' up", async () => {
+    const store = makeStore();
+    const persist = vi.fn(async (): Promise<PersistResult> => ({ ok: false, kind: "conflict" }));
+    const fetchRemote = vi.fn(() => new Promise<{ data: unknown; version: number } | null>(() => {}));
+    const queue = createSaveQueue(makeDeps(store, { persist, fetchRemote }));
+    putShape(store, "shape:a");
+    queue.markDirty();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(queue.state.get().status).toBe("merging");
+    await vi.advanceTimersByTimeAsync(PERSIST_TIMEOUT_MS);
+    expect(queue.state.get()).toMatchObject({ status: "error", message: MSG_SAVE_TIMEOUT, pending: true });
     queue.dispose();
   });
 

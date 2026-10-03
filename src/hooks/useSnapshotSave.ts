@@ -466,12 +466,15 @@ export async function persistBoardUpdate(
   boardId: string,
   update: Record<string, unknown>,
   expectedVersion: number | null,
+  signal?: AbortSignal,
 ): Promise<PersistResult> {
   if (!navigatorOnline()) return { ok: false, kind: "offline" };
   try {
     let query = supabase.from("whiteboards").update(update).eq("id", boardId);
     if (expectedVersion !== null) query = query.eq("version", expectedVersion);
-    const { data, error } = await query.select("version");
+    const select = query.select("version");
+    // The queue aborts a write that hangs (then retries it); see PERSIST_TIMEOUT_MS.
+    const { data, error } = await (signal ? select.abortSignal(signal) : select);
     return resolvePersistResult(
       { error, rows: data },
       { expectedVersion, online: navigatorOnline(), exists: () => boardExists(boardId) },
@@ -482,8 +485,9 @@ export async function persistBoardUpdate(
 }
 
 /** The other tab's row, for the merge. */
-export async function fetchRemoteBoard(boardId: string): Promise<{ data: unknown; version: number } | null> {
-  const { data, error } = await supabase.from("whiteboards").select("data, version").eq("id", boardId).maybeSingle();
+export async function fetchRemoteBoard(boardId: string, signal?: AbortSignal): Promise<{ data: unknown; version: number } | null> {
+  const query = supabase.from("whiteboards").select("data, version").eq("id", boardId);
+  const { data, error } = await (signal ? query.abortSignal(signal) : query).maybeSingle();
   if (error) throw error;
   if (!data) return null;
   const row = data as { data: unknown; version: unknown };
@@ -631,8 +635,8 @@ export function useSnapshotSave(
       store,
       initialVersion,
       buildUpdate: () => buildEditorUpdate(editor, boardId),
-      persist: (update, expectedVersion) => persistBoardUpdate(boardId, update, expectedVersion),
-      fetchRemote: () => fetchRemoteBoard(boardId),
+      persist: (update, expectedVersion, signal) => persistBoardUpdate(boardId, update, expectedVersion, signal),
+      fetchRemote: (signal) => fetchRemoteBoard(boardId, signal),
       backup,
       isOnline: navigatorOnline,
       debounceMs: SAVE_DEBOUNCE_MS,

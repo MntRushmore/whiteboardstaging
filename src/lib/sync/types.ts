@@ -33,6 +33,10 @@ export type BuildResult =
       update: Record<string, unknown>;
       /** the document snapshot `update.data` was built from (used for merging on conflict) */
       snapshot: TLStoreSnapshot;
+      /** serialized size of `update.data`; a bigger write gets longer before it counts as hung */
+      bytes?: number;
+      /** becomes `SyncState.notice` once this write lands (e.g. the board is nearly full) */
+      notice?: string;
     }
   | { kind: "refused"; message: string };
 
@@ -56,8 +60,9 @@ export interface SaveQueueDeps {
   store: TLStore;
   initialVersion: number | null;
   buildUpdate(): Promise<BuildResult>;
-  persist(update: Record<string, unknown>, expectedVersion: number | null): Promise<PersistResult>;
-  fetchRemote(): Promise<{ data: unknown; version: number } | null>;
+  /** `signal` aborts when the write has been in flight too long (the queue then retries) */
+  persist(update: Record<string, unknown>, expectedVersion: number | null, signal?: AbortSignal): Promise<PersistResult>;
+  fetchRemote(signal?: AbortSignal): Promise<{ data: unknown; version: number } | null>;
   backup?: LocalBackup;
   isOnline(): boolean;
   now?(): number;

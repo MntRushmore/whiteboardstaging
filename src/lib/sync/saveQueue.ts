@@ -7,20 +7,41 @@ import type { BuildResult, DirtyToken, PersistResult, SaveQueue, SaveQueueDeps, 
 export const DEFAULT_DEBOUNCE_MS = 2000;
 /** delay before the unsaved-changes backup is written after a change */
 export const BACKUP_DEBOUNCE_MS = 500;
+/**
+ * The debounces restart on every change, so edits that never pause (steady writing, the tutor's
+ * hand drawing) would otherwise never be saved or backed up: these cap how long a burst waits.
+ */
+export const MAX_SAVE_WAIT_MS = 10_000;
+export const MAX_BACKUP_WAIT_MS = 2_000;
 /** retry delays after a failed persist; the last one repeats */
 export const RETRY_BACKOFF_MS: readonly number[] = [2000, 5000, 15000, 60000];
 /** a conflict round is fetch -> merge -> persist; after this many the user has to reload */
 export const MAX_CONFLICT_ROUNDS = 3;
+/**
+ * A write (or the conflict fetch) with no answer after this long, plus 1 ms per
+ * PERSIST_TIMEOUT_BYTES_PER_MS bytes written (a 4 MB board gets ~200 s more: a 20 KB/s link), is
+ * treated as hung: aborted and retried. Without it a stalled request leaves "Saving…" up forever
+ * and blocks every later save.
+ */
+export const PERSIST_TIMEOUT_MS = 30_000;
+export const PERSIST_TIMEOUT_BYTES_PER_MS = 20;
 
 export const MSG_BOARD_GONE = "This board no longer exists";
 export const MSG_MERGE_FAILED = "Could not merge changes made in another tab. Reload to continue.";
 export const MSG_OFFLINE = "You're offline. Changes will be saved when the connection returns.";
 export const MSG_SAVE_FAILED = "Saving failed. Retrying…";
+export const MSG_SAVE_TIMEOUT = "Save timed out. Retrying…";
 
 export function backoffDelay(attempt: number): number {
   const index = Math.min(Math.max(attempt, 1), RETRY_BACKOFF_MS.length) - 1;
   return RETRY_BACKOFF_MS[index];
 }
+
+export function persistTimeoutMs(bytes = 0): number {
+  return PERSIST_TIMEOUT_MS + Math.max(0, bytes) / PERSIST_TIMEOUT_BYTES_PER_MS;
+}
+
+const TIMED_OUT = Symbol("timed out");
 
 /** `whiteboards.data` is either a TLEditorSnapshot (`{ document: { store } }`) or a bare TLStoreSnapshot (`{ store }`). */
 export function extractStoreMap(data: unknown): Record<string, unknown> | null {
@@ -40,11 +61,13 @@ export function extractStoreMap(data: unknown): Record<string, unknown> | null {
  *    conflict    -> merging: fetch the remote row, merge record-by-record (local edits win), adopt the
  *                   remote version and immediately persist again (max MAX_CONFLICT_ROUNDS rounds)
  *    offline/timeout/other -> dirty sets restored, retry with backoff (2 s, 5 s, 15 s, 60 s…)
+ *                             (a write with no answer after persistTimeoutMs is a timeout)
  *    too-large / refused   -> refused; pending stays true and the next edit retries
  *    gone        -> error, stop
  *
  * Only one cycle runs at a time. Offline is detected up front so buildUpdate (thumbnail, offload)
- * is not paid for a write that cannot happen.
+ * is not paid for a write that cannot happen. The debounce never holds a burst of edits longer
+ * than MAX_SAVE_WAIT_MS (MAX_BACKUP_WAIT_MS for the backup).
  */
 export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
   const debounceMs = deps.debounceMs ?? DEFAULT_DEBOUNCE_MS;
@@ -81,10 +104,28 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let backupTimer: ReturnType<typeof setTimeout> | null = null;
+  /** when the edits the debounce / backup timer is waiting on started */
+  let saveBurstAt: number | null = null;
+  let backupBurstAt: number | null = null;
 
   const isOnline = (): boolean => onlineHint ?? deps.isOnline();
   const hasPending = (): boolean => dirty || tracker.hasPending();
   const patch = (p: Partial<SyncState>): SyncState => state.update((s) => ({ ...s, ...p }));
+  /** `wait` after the latest edit, but never more than `max` after the first one of the burst */
+  const burstDelay = (since: number, wait: number, max: number): number => Math.max(0, Math.min(wait, since + max - now()));
+
+  /** Run `task` with an abort signal; resolves to TIMED_OUT (and aborts it) after `ms`. */
+  function withTimeout<T>(task: (signal?: AbortSignal) => Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const expired = new Promise<typeof TIMED_OUT>((resolve) => {
+      timer = timers.set(() => {
+        controller.abort();
+        resolve(TIMED_OUT);
+      }, ms);
+    });
+    return Promise.race([task(controller.signal), expired]).finally(() => timers.clear(timer));
+  }
 
   function clearTimer(which: "debounce" | "retry" | "backup"): void {
     if (which === "debounce") {
@@ -133,11 +174,13 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
 
   function scheduleBackup(): void {
     if (!deps.backup) return;
+    backupBurstAt ??= now();
     clearTimer("backup");
     backupTimer = timers.set(() => {
       backupTimer = null;
+      backupBurstAt = null;
       writeBackupNow();
-    }, BACKUP_DEBOUNCE_MS);
+    }, burstDelay(backupBurstAt, BACKUP_DEBOUNCE_MS, MAX_BACKUP_WAIT_MS));
   }
 
   function fail(token: DirtyToken, p: Partial<SyncState>): void {
@@ -149,6 +192,7 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
   async function cycle(): Promise<SyncState> {
     clearTimer("debounce");
     clearTimer("retry");
+    saveBurstAt = null;
     if (!isOnline()) {
       const attempt = state.get().attempt + 1;
       patch({ status: "offline", message: MSG_OFFLINE, pending: hasPending(), attempt });
@@ -180,7 +224,9 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
 
       let result: PersistResult;
       try {
-        result = await deps.persist(built.update, state.get().version);
+        const expected = state.get().version;
+        const sent = await withTimeout((signal) => deps.persist(built.update, expected, signal), persistTimeoutMs(built.bytes));
+        result = sent === TIMED_OUT ? { ok: false, kind: "timeout", message: MSG_SAVE_TIMEOUT } : sent;
       } catch (e) {
         result = { ok: false, kind: isOnline() ? "other" : "offline", message: e instanceof Error ? e.message : String(e) };
       }
@@ -209,7 +255,9 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
           patch({ status: "merging", message: null });
           let remote: { data: unknown; version: number } | null;
           try {
-            remote = await deps.fetchRemote();
+            const fetched = await withTimeout((signal) => deps.fetchRemote(signal), persistTimeoutMs(built.bytes));
+            if (fetched === TIMED_OUT) throw new Error(MSG_SAVE_TIMEOUT);
+            remote = fetched;
           } catch (e) {
             fail(token, {
               status: isOnline() ? "error" : "offline",
@@ -311,11 +359,12 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
     } else {
       patch({ status: "dirty", message: null, pending: true });
     }
+    saveBurstAt ??= now();
     clearTimer("debounce");
     debounceTimer = timers.set(() => {
       debounceTimer = null;
       void run();
-    }, debounceMs);
+    }, burstDelay(saveBurstAt, debounceMs, MAX_SAVE_WAIT_MS));
   }
 
   return {
@@ -323,6 +372,7 @@ export function createSaveQueue(deps: SaveQueueDeps): SaveQueue {
     markDirty,
     async flush() {
       clearTimer("debounce");
+      saveBurstAt = null;
       if (inFlight) await inFlight;
       if (!disposed && !halted && hasPending()) await run();
       return state.get();
