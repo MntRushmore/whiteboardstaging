@@ -48,7 +48,7 @@ What the migration creates (idempotent, safe to re-run):
 | Functions | `set_updated_at()`, `is_trainer()` (security definer), `whiteboards_bump_version()`, `whiteboards_record_snapshot()` |
 | Triggers | `updated_at` on whiteboards/user_settings/training_samples; `version` bump on every `whiteboards.data` change; board history in `whiteboard_snapshots` (since `20261003000000_snapshot_retention.sql`: the replaced state at most every 10 minutes and before a wipe, pruned to the newest 8 + one a day for 7 days within 4 MB; section 10.1) |
 | Policies | owner-only CRUD keyed on `auth.uid()`; `bug_reports` insert-only; trainer tables/objects gated by `is_trainer()` |
-| Storage | bucket `board-assets` (public read, 15 MB, image/*) and `training-data` (private, 10 MB, image/png) + `storage.objects` policies scoped to `<uid>/...` folders |
+| Storage | bucket `board-assets` (public read by URL, not listable except your own folder, 15 MB, image/*) and `training-data` (private, 10 MB, image/png) + `storage.objects` policies scoped to `<uid>/...` folders |
 | Seed | `trainers` row for `rushilchopra123@gmail.com` (no-op until that user signs up) |
 
 If `db push` says "no migrations to apply" on a brand-new project, the `supabase_migrations` table was created earlier; run `npx supabase migration repair --status reverted 20260911000000` then push again.

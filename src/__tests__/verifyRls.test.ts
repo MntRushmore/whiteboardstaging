@@ -82,6 +82,9 @@ type Leak =
   | "assetCrossRead"
   | "storageForeignUpload"
   | "storagePublicRead"
+  | "storageAnonList"
+  | "storageForeignList"
+  | "storageOwnList"
   | "storageForeignDelete"
   | "trainingUpload"
   | "noVersionBump"
@@ -937,6 +940,25 @@ function makeWorld(leaks: Leak[] = []) {
     return bucket === "board-assets" && objects.has(`${bucket}/${path}`) ? ok(null) : { status: 404, body: null };
   }
 
+  /** Storage's list: one level under `prefix`, only inside the caller's own folder (owner SELECT policy). */
+  function storageList(uid: string | null, bucket: string, prefix: string): HttpResult {
+    const clean = prefix.replace(/^\/+|\/+$/g, "");
+    const visible = [...objects.entries()].filter(([key, owner]) => {
+      if (!key.startsWith(`${bucket}/`)) return false;
+      if (uid === null) return leak("storageAnonList");
+      if (owner === uid) return !leak("storageOwnList");
+      return leak("storageForeignList");
+    });
+    const names = new Set<string>();
+    for (const [key] of visible) {
+      const path = key.slice(bucket.length + 1);
+      if (clean && !path.startsWith(`${clean}/`)) continue;
+      const rest = clean ? path.slice(clean.length + 1) : path;
+      names.add(rest.split("/")[0]);
+    }
+    return ok([...names].map((name) => ({ name })));
+  }
+
   function storageDelete(uid: string | null, bucket: string, path: string): HttpResult {
     const key = `${bucket}/${path}`;
     const owner = objects.get(key);
@@ -952,6 +974,7 @@ function makeWorld(leaks: Leak[] = []) {
     rest: async (method, table, opts) => rest(uid, method, table, opts),
     upload: async (bucket, path) => upload(uid, bucket, path),
     publicRead: async (bucket, path) => publicRead(bucket, path),
+    storageList: async (bucket, prefix) => storageList(uid, bucket, prefix),
     storageDelete: async (bucket, path) => storageDelete(uid, bucket, path),
   });
 
@@ -1129,6 +1152,11 @@ describe("rlsChecks detect individual leaks", () => {
     ["assetCrossRead", checkBoardAssets, "board_assets: B cannot read A's assets"],
     ["storageForeignUpload", checkStorage, "storage: B cannot upload into A's board-assets folder"],
     ["storagePublicRead", checkStorage, "storage: board-assets object is publicly readable"],
+    ["storageAnonList", checkStorage, "storage: anon cannot list board-assets (no user folders)"],
+    ["storageAnonList", checkStorage, "storage: anon cannot list A's board-assets folder"],
+    ["storageForeignList", checkStorage, "storage: B cannot list A's user folder at the bucket root"],
+    ["storageForeignList", checkStorage, "storage: B cannot list A's board-assets folder"],
+    ["storageOwnList", checkStorage, "storage: A lists own board-assets folder"],
     ["storageForeignDelete", checkStorage, "storage: B cannot delete A's board-assets object"],
     ["trainingUpload", checkStorage, "storage: non-trainer cannot upload to training-data"],
     ["noVersionBump", checkVersionTrigger, "version: data update bumps version 1 -> 2"],
@@ -1476,6 +1504,7 @@ describe("predicates", () => {
       },
       upload: async () => ({ status: 200, body: null }),
       publicRead: async () => ({ status: 200, body: null }),
+      storageList: async () => ({ status: 200, body: [] }),
       storageDelete: async () => ({ status: 200, body: null }),
     };
     await rpc(client, "consume_credits", { p_route: "x", p_units: 1 });
@@ -1577,6 +1606,12 @@ describe("supabaseHttp", () => {
 
     await client.storageDelete("board-assets", "u1/b/ok.png");
     expect(f.calls[3].init?.method).toBe("DELETE");
+
+    await client.storageList("board-assets", "u1/b");
+    expect(f.calls[4].url).toBe("http://x/storage/v1/object/list/board-assets");
+    expect(f.calls[4].init?.method).toBe("POST");
+    expect(JSON.parse(String(f.calls[4].init?.body))).toMatchObject({ prefix: "u1/b" });
+    expect((f.calls[4].init?.headers as Record<string, string>).Authorization).toBe("Bearer tok");
   });
 
   it("provisionUser: signup returns a session", async () => {

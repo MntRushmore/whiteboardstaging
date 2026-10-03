@@ -226,6 +226,21 @@ export function createSupabaseHttp(cfg) {
     },
 
     /**
+     * Storage's list API (what `supabase.storage.from(bucket).list(prefix)` calls): the names one
+     * level under `prefix`, as far as this identity's SELECT policies on storage.objects allow.
+     * @param {string} bucket
+     * @param {string} prefix
+     */
+    async storageList(bucket, prefix) {
+      const res = await fetchImpl(`${base}/storage/v1/object/list/${bucket}`, {
+        method: "POST",
+        headers: headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ prefix, limit: 100, offset: 0 }),
+      });
+      return toResult(res);
+    },
+
+    /**
      * @param {string} bucket
      * @param {string} path
      */

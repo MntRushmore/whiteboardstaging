@@ -135,7 +135,7 @@ The rest are `security definer` functions for the service role only (the API's r
 | `reverse_ink_purchase(payment_intent_id, cumulative_refunded_cents, charge_cents?, fully_refunded?)` | the webhook | Takes the refunded share of the pack's ink back, at most the balance, acting only on the growth of the refunded amount; a refund of a reviewed checkout marks the review `refunded` and takes nothing; `found: false` when neither exists |
 | `grant_ink(user, units, reason)` | the operator | Manual grants; a negative one stops at zero |
 
-Storage: bucket `board-assets` (public read, owner-folder writes, `<uid>/<boardId>/<assetId>.<ext>`) and `training-data` (private, trainers, `<uid>/<sampleId>/...`). `storage.objects` has no FK to `auth.users`; ownership is the first path segment, and objects are only ever deleted through the Storage API.
+Storage: bucket `board-assets` (public read by URL, owner-folder writes, listing only of the caller's own folder since `20261003100000_board_assets_no_listing.sql`, `<uid>/<boardId>/<assetId>.<ext>`) and `training-data` (private, trainers, `<uid>/<sampleId>/...`). `storage.objects` has no FK to `auth.users`; ownership is the first path segment, and objects are only ever deleted through the Storage API.
 
 ## Routes
 
