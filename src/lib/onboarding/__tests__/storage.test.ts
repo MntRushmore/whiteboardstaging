@@ -14,6 +14,7 @@ import {
   writeTourMarker,
   type TourMarker,
 } from "../marker";
+import { planKey, readPlanMarker, writePlanMarker } from "../planMarker";
 import { createFirstBoard, fetchOnboardingProfile, saveOnboarding, type OnboardingClient } from "../storage";
 
 // ---------------------------------------------------------------- the profile, via a fake client
@@ -178,8 +179,8 @@ describe("the guided-board marker", () => {
   it("keeps the step as the tour moves on, and is gone once cleared", () => {
     const s = memoryStorage();
     writeTourMarker(s, "u1", MARKER);
-    writeTourMarker(s, "u1", { ...MARKER, step: "modes" });
-    expect(readTourMarker(s, "u1")?.step).toBe("modes");
+    writeTourMarker(s, "u1", { ...MARKER, step: "help" });
+    expect(readTourMarker(s, "u1")?.step).toBe("help");
     clearTourMarker(s, "u1");
     expect(readTourMarker(s, "u1")).toBeNull();
     expect(isGuidedBoard(s, "u1", "b1")).toBe(false);
@@ -190,6 +191,11 @@ describe("the guided-board marker", () => {
     expect(readTourMarker(memoryStorage({ [tourKey("u1")]: JSON.stringify({ step: "write" }) }), "u1")).toBeNull();
     const odd = readTourMarker(memoryStorage({ [tourKey("u1")]: JSON.stringify({ boardId: "b1", step: "result", starter: "x", course: 5 }) }), "u1");
     expect(odd).toEqual({ boardId: "b1", course: null, starter: 0, step: "problem" });
+  });
+
+  it("a tour paused on the old help-modes coach mark resumes on Help me", () => {
+    const old = memoryStorage({ [tourKey("u1")]: JSON.stringify({ ...MARKER, step: "modes" }) });
+    expect(readTourMarker(old, "u1")?.step).toBe("help");
   });
 
   it("never throws when storage is blocked (private mode, quota)", () => {
@@ -215,5 +221,27 @@ describe("done on this device", () => {
     expect(readLocalDone(null, "u1")).toBe(false);
     expect(readLocalDone(throwing, "u1")).toBe(false);
     expect(() => writeLocalDone(throwing, "u1")).not.toThrow();
+  });
+});
+
+describe("the plan screen on this device", () => {
+  it("is due once the tour is finished, and seen once it has shown, per user", () => {
+    const s = memoryStorage();
+    expect(readPlanMarker(s, "u1")).toBeNull();
+    writePlanMarker(s, "u1", "pending");
+    expect(readPlanMarker(s, "u1")).toBe("pending");
+    expect(readPlanMarker(s, "u2")).toBeNull();
+    writePlanMarker(s, "u1", "seen");
+    expect(readPlanMarker(s, "u1")).toBe("seen");
+    expect(s.map.get(planKey("u1"))).toBe("seen");
+  });
+
+  it("reads garbage, no user and blocked storage as never due, and never throws", () => {
+    expect(readPlanMarker(memoryStorage({ [planKey("u1")]: "yes" }), "u1")).toBeNull();
+    expect(readPlanMarker(memoryStorage(), undefined)).toBeNull();
+    expect(readPlanMarker(null, "u1")).toBeNull();
+    expect(readPlanMarker(throwing, "u1")).toBeNull();
+    expect(() => writePlanMarker(throwing, "u1", "pending")).not.toThrow();
+    expect(() => writePlanMarker(null, "u1", "pending")).not.toThrow();
   });
 });

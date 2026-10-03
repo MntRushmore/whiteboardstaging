@@ -66,7 +66,6 @@ import { clearInkErrorIfAffordable } from "@/lib/live/liveStore";
 import { BugReportButton } from "@/components/BugReportButton";
 import { captureBoardScreenshot } from "@/components/board/boardScreenshot";
 import { BETA_COPY } from "@/components/app/BetaBadge";
-import { Celebrations } from "@/components/live/Celebrations";
 import { useFeatureLabs } from "@/lib/featureLabs";
 import { liveShapeUtils, liveTools, liveUiOverrides, LiveToolbar } from "@/shapes";
 import { LIVE_KILL_SWITCH } from "@/lib/live/contracts";
@@ -95,6 +94,9 @@ import { attachKeyboardFit, browserKeyboardFitEnv } from "@/components/board/key
 
 // The guided first board's tour (the welcome's Start): loaded on that board only, after the board.
 const BoardTour = React.lazy(() => import("@/components/onboarding/BoardTour"));
+// The cheers on a tick (words and confetti): nothing to show until the tutor marks a line, so they
+// load just after the board rather than with it (docs/BUNDLE.md).
+const Celebrations = React.lazy(() => import("@/components/live/Celebrations").then((m) => ({ default: m.Celebrations })));
 // Feature Labs extras (off by default) and the Mathpix debug panel (development, or opted in on the
 // device): fetched only when shown, not with every board (docs/BUNDLE.md).
 const StickerLibrary = React.lazy(() => import("@/components/StickerLibrary").then((m) => ({ default: m.StickerLibrary })));
@@ -269,6 +271,9 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   const { user } = useAuth();
   const [guided, setGuided] = useState(() => isGuidedBoard(onboardingStorage(), user?.id, id));
   const endTour = useCallback(() => setGuided(false), []);
+  // Each tap on Help me / Solve it, for the guided board's second coach mark (it waits for what the
+  // tutor writes, and says so when there was nothing to help with). Only counted on that board.
+  const [tourHelpAsk, setTourHelpAsk] = useState<{ n: number; ok: boolean } | null>(null);
 
   // Live Math layer: per-device switch (localStorage) gated by the deploy-time kill switch.
   const { settings: live, update: updateLive } = useLiveSettings();
@@ -376,7 +381,17 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
             </TabsList>
           </Tabs>
           {/* stuck? the one thing to tap: the next step, or in Solve the rest of them */}
-          {toolbar.askButton && <AskButton kind={toolbar.askButton} glow={askGlow} onAsk={() => controller.requestHelp()} />}
+          {toolbar.askButton && (
+            <AskButton
+              kind={toolbar.askButton}
+              glow={askGlow}
+              onAsk={() => {
+                const ok = controller.requestHelp();
+                if (guided) setTourHelpAsk((a) => ({ n: (a?.n ?? 0) + 1, ok }));
+                return ok;
+              }}
+            />
+          )}
           <Button
             variant={chat.open ? "secondary" : "outline"}
             size="sm"
@@ -439,7 +454,13 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
       {/* The explainer opens from Board options; the report from there or its button in the bar. */}
       <ModeInfoDialog open={modeInfoOpen} onOpenChange={setModeInfoOpen} />
       <BugReportButton boardId={id} open={reportOpen} onOpenChange={setReportOpen} screenshot={() => captureBoardScreenshot(editor)} />
-      {liveEnabled && live.celebrations && <Celebrations editor={editor} />}
+      {liveEnabled && live.celebrations && (
+        <LiveErrorBoundary>
+          <React.Suspense fallback={null}>
+            <Celebrations editor={editor} />
+          </React.Suspense>
+        </LiveErrorBoundary>
+      )}
 
       {/* a Live 402 or "Get ink" opens the ink dialog (lazy); a 402's never mid-stroke */}
       <OutOfInkWatcher editor={editor} />
@@ -461,7 +482,16 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
       {guided && user && (
         <LiveErrorBoundary>
           <React.Suspense fallback={null}>
-            <BoardTour boardId={id} userId={user.id} controller={controller} onModeChange={setAssistanceMode} chatOpen={chat.open} onFinished={endTour} />
+            <BoardTour
+              boardId={id}
+              userId={user.id}
+              controller={controller}
+              mode={assistanceMode}
+              onModeChange={setAssistanceMode}
+              chatOpen={chat.open}
+              helpAsk={tourHelpAsk}
+              onFinished={endTour}
+            />
           </React.Suspense>
         </LiveErrorBoundary>
       )}

@@ -26,6 +26,7 @@ import { DEFAULT_BOARD_TITLE, isDefaultBoardTitle } from '@/lib/boards/boardTitl
 import { settleExitWrites } from '@/lib/boards/exitWrites';
 import { EmptyBoards } from '@/components/boards/EmptyBoards';
 import { useWelcome } from '@/components/onboarding/useWelcome';
+import { useHomeArrival } from '@/components/onboarding/useHomeArrival';
 import { homeView } from '@/lib/onboarding/state';
 import { Alert } from '@/registry/components/alert/alert';
 import { Button } from '@/registry/components/button/button';
@@ -42,6 +43,8 @@ const EXIT_WRITE_WAIT_MS = 3000;
 
 // First-run welcome: loaded only for a new student with no boards (see useWelcome).
 const Welcome = lazy(() => import('@/components/onboarding/Welcome'));
+// The confetti that welcomes a student back from starting their free week (useHomeArrival).
+const ConfettiBurst = lazy(() => import('@/components/onboarding/ConfettiBurst').then((m) => ({ default: m.ConfettiBurst })));
 
 const SORT_OPTIONS = BOARD_SORTS.map((s) => ({ value: s.value, label: s.label }));
 const VIEW_OPTIONS = [
@@ -136,6 +139,9 @@ export default function Dashboard() {
   useEffect(() => {
     toast.dismiss();
   }, []);
+  // Onboarding's last screens: back from starting the free week (a toast and confetti), or the
+  // plan screen still due. After the dismiss above, so the welcome toast stays.
+  const cheer = useHomeArrival(user?.id);
 
   const fetchWhiteboards = useCallback(async () => {
     setLoading(true);
@@ -320,6 +326,11 @@ export default function Dashboard() {
   return (
     <div className={styles.page}>
       <AppHeader />
+      {cheer && (
+        <Suspense fallback={null}>
+          <ConfettiBurst count={60} spread={220} style={{ position: 'fixed', left: '50%', top: '28%', zIndex: 60 }} />
+        </Suspense>
+      )}
       <main className={`${APP_CONTENT_CLASS} ${styles.main}`}>
         <div className={styles.banners}>
           <AuthErrorBanner />

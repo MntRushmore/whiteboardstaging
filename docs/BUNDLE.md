@@ -163,6 +163,16 @@ most boards never show: `StickerLibrary` and `PdfUpload` (Feature Labs, off by d
 `LiveDebugPanel` (development, or opted in on the device) — `React.lazy` in `app/board/[id]/page.tsx`.
 See `docs/QA-2026-10-02-feel.md`.
 
+## 2026-10-03: onboarding v2 (`feat/onboarding-v2`)
+
+`/board/[id]` was 1,059,708 B gzip (292 B under budget) at `89dbc65`. The new guided board stays in its
+lazy chunk; what the board itself gained (reporting Help me taps to the tour, the tour marker's resume)
+was paid for by keeping onboarding modules off the board: the tour's state machine moved out of
+`src/lib/onboarding/state.ts` into `tour.ts` (the board's cheers now import only the tiny `marks.ts`),
+the plan screen's marker into `planMarker.ts`, and `Celebrations` became `React.lazy` (behind
+`LiveErrorBoundary`; nothing to show until the tutor marks a line). After: 1,058,899 B gzip. The plan
+screen is its own route (`/welcome/plan`, 331 KB gzip, no budget).
+
 ## Recommendations not done here (files owned elsewhere)
 
 1. `src/app/globals.css`: drop `@import "katex/dist/katex.min.css"` and import it from

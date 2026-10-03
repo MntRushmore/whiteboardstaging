@@ -1,0 +1,109 @@
+/*
+ * The guided board's motion (CoachMark, TourFinish, the status line). A module, so it ships in the
+ * tour's lazy chunk and never in the board's first load. Every animation stops under
+ * prefers-reduced-motion: the coach marks and the finish card then simply appear.
+ */
+
+/* A coach mark arriving, and its content changing (keyed on the message, so it replays). */
+.enter {
+  animation: coach-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes coach-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The ring round the button to tap, while the board waits for the tap: a slow, soft heartbeat. */
+.pulse {
+  animation: coach-pulse 1.8s ease-out infinite;
+}
+@keyframes coach-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(37 99 235 / 0.45);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 14px rgb(37 99 235 / 0);
+  }
+}
+
+/* The status line while the tutor writes the problem: the pencil writes along. */
+.wiggle {
+  animation: coach-wiggle 900ms ease-in-out infinite;
+  transform-origin: 20% 80%;
+}
+@keyframes coach-wiggle {
+  0%,
+  100% {
+    transform: rotate(-8deg) translateX(-1px);
+  }
+  50% {
+    transform: rotate(6deg) translateX(1px);
+  }
+}
+
+/* The finish card: the board fades back, the card springs up, its badge pops, the recap follows. */
+.backdrop {
+  animation: finish-fade 320ms ease-out both;
+}
+@keyframes finish-fade {
+  from {
+    opacity: 0;
+  }
+}
+.finish {
+  animation: finish-up 520ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+@keyframes finish-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.badge {
+  animation: finish-pop 600ms cubic-bezier(0.34, 1.56, 0.64, 1) 120ms both;
+}
+@keyframes finish-pop {
+  from {
+    transform: scale(0.4) rotate(-12deg);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.recap > * {
+  animation: coach-in 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.recap > :nth-child(1) {
+  animation-delay: 260ms;
+}
+.recap > :nth-child(2) {
+  animation-delay: 360ms;
+}
+.recap > :nth-child(3) {
+  animation-delay: 460ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .enter,
+  .pulse,
+  .wiggle,
+  .backdrop,
+  .finish,
+  .badge,
+  .recap > * {
+    animation: none;
+  }
+}
