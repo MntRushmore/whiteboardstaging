@@ -302,7 +302,19 @@ Fuime's buyers' names, emails and addresses included.
    Decide on tax (the Payment Links do not collect tax). Leave Adaptive Pricing as it is: the
    webhook checks the USD amount either way.
 3. **Apply the migration** `20261002000000_ink.sql` to the production database (the Marketplace
-   project; see the note at the top of `RUNBOOK-supabase.md`):
+   project; see the note at the top of `RUNBOOK-supabase.md`). **First back up the board history**:
+   production is on the free plan (no backups, no PITR), and `20261003000000_snapshot_retention.sql`,
+   pushed with it, deletes most of `public.whiteboard_snapshots` (the copies of every board kept by
+   the old every-save rule):
+
+   ```bash
+   mkdir -p backups && pg_dump "$POSTGRES_URL_NON_POOLING" -t public.whiteboard_snapshots -Fc \
+     -f backups/whiteboard_snapshots-$(date +%F).dump
+   gpg -c backups/whiteboard_snapshots-$(date +%F).dump && rm backups/whiteboard_snapshots-$(date +%F).dump
+   ```
+
+   It holds students' work: keep the encrypted file off the repo and off shared drives (a full
+   `pg_dump --schema=public` the same way is better still; `RUNBOOK-supabase.md` section 10). Then
    `npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING" --include-all`, then
    `node scripts/verify-rls.mjs` against production (with `SUPABASE_SERVICE_ROLE_KEY`, so the
    service-role checks run too). On the way in it gives every existing account one starter of

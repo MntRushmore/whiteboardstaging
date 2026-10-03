@@ -10,7 +10,8 @@
  * Covered (20261003000000_snapshot_retention.sql):
  *   - recording: a new board's empty start is never kept; a change keeps the version it REPLACED
  *     when the board has no history row younger than 10 minutes; within 10 minutes nothing; a write
- *     that drops more than half of a board (16 KB or more) keeps the state before it regardless
+ *     that drops more than half of a board (16 KB or more) keeps the state before it regardless,
+ *     marked pre_drop, and the newest 3 of those are kept for a week whatever follows
  *   - retention: the newest 8 plus the newest of each UTC day for the last 7 days; older days go
  *   - the 4 MB budget: in order of value (newest, then each earlier day's newest, then the rest),
  *     never fewer than 2 -- a heavy board keeps its latest state and the day before's
@@ -88,9 +89,9 @@ suite(title, () => {
     expect(res.status, JSON.stringify(res.body)).toBe(204);
   }
 
-  async function plant(board: string, version: number, agoMs: number, data: unknown = { v: version }) {
+  async function plant(board: string, version: number, agoMs: number, data: unknown = { v: version }, reason = "interval") {
     const res = await service.rest("POST", "whiteboard_snapshots", {
-      body: { whiteboard_id: board, user_id: ctx.a.userId, version, data, created_at: new Date(Date.now() - agoMs).toISOString() },
+      body: { whiteboard_id: board, user_id: ctx.a.userId, version, data, reason, created_at: new Date(Date.now() - agoMs).toISOString() },
       prefer: "return=minimal",
     });
     expect(res.status, JSON.stringify(res.body).slice(0, 300)).toBe(201);
@@ -132,6 +133,40 @@ suite(title, () => {
     const kept = await service.rest("GET", "whiteboard_snapshots", { query: { whiteboard_id: `eq.${board}`, version: "eq.5", select: "data" } });
     expect(String((rows(kept)[0]?.data as { strokes?: string })?.strokes).length).toBe(30_000);
   }, 60_000);
+
+  it("the state before a wipe survives the history that follows (saves past 10 minutes, newer copies, the budget)", async () => {
+    const board = await newBoard();
+    await save(board, { v: 1 });
+    await save(board, { v: 2 }); // history: [2]
+    const big = { strokes: noise(1_700_000) }; // ~1.7 MB stored: with two more it would pass 4 MB
+    await save(board, big); // v4
+    expect(await save(board, { strokes: "" })).toBe(5); // wiped
+    expect(await history(board)).toEqual([2, 4]);
+    const reasons = await service.rest("GET", "whiteboard_snapshots", { query: { whiteboard_id: `eq.${board}`, select: "version,reason", order: "version.asc" } });
+    expect(rows(reasons)).toEqual([
+      { version: 2, reason: "interval" },
+      { version: 4, reason: "pre_drop" },
+    ]);
+
+    // The student keeps working: ten minutes on, the next save keeps a copy and prunes.
+    await age(board, 11 * MIN);
+    await save(board, { v: "after the wipe" }); // keeps v5 (the empty board)
+    expect(await history(board)).toEqual([2, 4, 5]);
+    // A busy session later: 10 newer copies, two of them heavy enough to fill the budget.
+    for (let i = 0; i < 10; i++) await plant(board, 100 + i, (10 - i) * MIN, i >= 8 ? { strokes: noise(1_700_000) } : { v: i });
+    await prune(board);
+    // The newest 8 ordinary copies (3.4 MB, within the budget) and, outside it, the 1.7 MB copy from
+    // before the wipe; the older ordinary ones (2, 5, 100, 101) are gone.
+    expect(await history(board)).toEqual([4, 102, 103, 104, 105, 106, 107, 108, 109]);
+  }, 240_000);
+
+  it("guarantees at most the 3 newest pre-wipe copies; an older one competes like any other", async () => {
+    const board = await newBoard();
+    for (let i = 0; i < 4; i++) await plant(board, 10 + i, (60 - i) * MIN, { v: i }, "pre_drop");
+    for (let i = 0; i < 8; i++) await plant(board, 20 + i, (30 - i) * MIN);
+    await prune(board);
+    expect(await history(board)).toEqual([11, 12, 13, 20, 21, 22, 23, 24, 25, 26, 27]);
+  }, 120_000);
 
   it("retention keeps the newest 8 and the newest of each of the last 7 days", async () => {
     const board = await newBoard();

@@ -13,6 +13,13 @@ tables, RLS, storage buckets (`board-assets` public, `training-data` private), t
 ledger and its RPCs are all in place (the ink migration `20261002000000_ink.sql` adds the ink
 ledger and packs; see `RUNBOOK-billing.md` "Going live").
 
+**Before every `db push` to production, back it up.** The project is on the free plan: no daily
+backups, no PITR. At least dump the board history, which `20261003000000_snapshot_retention.sql`
+prunes: `pg_dump "$POSTGRES_URL_NON_POOLING" -t public.whiteboard_snapshots -Fc -f
+backups/whiteboard_snapshots-$(date +%F).dump`, encrypted (`gpg -c`) and kept off the repo and
+shared drives, since it holds students' work (better: the whole `public` schema the same way,
+`RUNBOOK-supabase.md` section 10; `RUNBOOK-billing.md` "Going live" step 3 has the commands).
+
 Two settings live only in the Supabase dashboard, so they still need you (open it with
 `vercel integration open supabase`, then Authentication -> URL configuration / Providers):
 
