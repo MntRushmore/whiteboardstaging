@@ -61,7 +61,14 @@ export async function livePreamble<S extends z.ZodTypeAny>(
 
   const parsed = await parseJsonBody(req, schema);
   if ("response" in parsed) {
-    log.warn("invalid request body");
+    if (parsed.failure === "unreadable") {
+      // Not a client bug: the request was abandoned on its way (the client's timeout fired while
+      // a slow or cold server had not read it yet, or a newer request for the same line replaced
+      // it). Nobody is waiting for this answer, and nothing was charged.
+      log.info("request abandoned by the client before its body arrived");
+    } else {
+      log.warn({ failure: parsed.failure, issues: parsed.issues?.slice(0, 5) }, "invalid request body");
+    }
     return { response: withRequestId(parsed.response, requestId) };
   }
 
