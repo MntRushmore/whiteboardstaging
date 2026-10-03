@@ -618,6 +618,27 @@ suite(title, () => {
     expect(rows(counter)).toEqual([{ hits: 20 }]);
   }, 60_000);
 
+  it("delete_own_account takes the account's bug reports with it, email included", async () => {
+    if (!ctx.newUser) throw new Error("bootstrapVerifyContext did not provide newUser()");
+    const c = await ctx.newUser();
+    const uid = c.userId as string;
+    const email = `${uid}@example.com`;
+    // what BugReportButton sends: the account's email, a message, a screenshot and logs (all personal)
+    const report = await c.rest("POST", "bug_reports", {
+      body: { user_id: uid, user_email: email, board_id: "b1", message: "my board froze", screenshot: "data:image/png;base64,AAAA", logs: [{ level: "info", args: ["x"] }] },
+      prefer: "return=minimal",
+    });
+    expect(report.status, JSON.stringify(report.body)).toBe(201);
+    expect(rows(await service.rest("GET", "bug_reports", { query: { user_id: `eq.${uid}`, select: "user_email" } }))).toEqual([{ user_email: email }]);
+
+    const del = await rpc(c, "delete_own_account");
+    expect(del.status, JSON.stringify(del.body)).toBeLessThan(300);
+
+    // service role (RLS bypassed): nothing left, by account or by email (20261003010100)
+    expect(rows(await service.rest("GET", "bug_reports", { query: { user_id: `eq.${uid}`, select: "id" } }))).toEqual([]);
+    expect(rows(await service.rest("GET", "bug_reports", { query: { user_email: `eq.${email}`, select: "id" } }))).toEqual([]);
+  }, 60_000);
+
   it("delete_own_account removes the auth user, profile, boards, ledger and storage rows", async () => {
     if (!ctx.newUser) throw new Error("bootstrapVerifyContext did not provide newUser()");
     const c = await ctx.newUser();
