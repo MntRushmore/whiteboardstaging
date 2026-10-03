@@ -1,8 +1,9 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { PORTRAIT_BREAKPOINT, useBreakpoint, useEditor, useValue } from "tldraw";
-import { addScreen, goToScreen, MAX_SCREENS, screenPosition } from "@/lib/screens/screens";
+import { addScreen, deleteScreen, goToScreen, MAX_SCREENS, screenPosition } from "@/lib/screens/screens";
 
 export const SCREEN_COPY = {
   label: (index: number, count: number) => `Screen ${index} of ${count}`,
@@ -10,6 +11,9 @@ export const SCREEN_COPY = {
   next: "Next screen",
   add: "New screen",
   full: `A board holds up to ${MAX_SCREENS} screens`,
+  remove: "Delete this screen",
+  removed: (index: number) => `Screen ${index} deleted`,
+  undo: "Undo",
 } as const;
 
 /**
@@ -66,6 +70,21 @@ function Strip() {
       >
         <Plus className="h-4 w-4" />
       </button>
+      {/* a screen added by mistake (or finished with) goes; the toast brings it back */}
+      {count > 1 && (
+        <button
+          type="button"
+          className={buttonClass}
+          aria-label={SCREEN_COPY.remove}
+          title={SCREEN_COPY.remove}
+          onClick={() => {
+            const restore = deleteScreen(editor);
+            if (restore) toast(SCREEN_COPY.removed(index), { duration: 8000, action: { label: SCREEN_COPY.undo, onClick: restore } });
+          }}
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      )}
     </nav>
   );
 }

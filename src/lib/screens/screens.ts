@@ -147,6 +147,28 @@ export function addScreen(editor: ScreensEditor): boolean {
   return true;
 }
 
+/**
+ * Deletes the current screen (never the only one) with its ink, and shows the one before it (the
+ * next, when it was the first). Returns a function that puts it back as it was — the strip's
+ * "Undo" — or null when there was nothing to delete. The restore does not lean on the undo stack,
+ * which by then may hold the student's next strokes.
+ */
+export function deleteScreen(editor: ScreensEditor & Pick<Editor, "deletePage" | "getShape" | "getBindingsInvolvingShape" | "store">): (() => void) | null {
+  const pages = editor.getPages();
+  const page = editor.getCurrentPage();
+  if (pages.length <= 1) return null;
+  const shapes = [...editor.getPageShapeIds(page.id)].map((id) => editor.getShape(id)).filter((s) => s !== undefined);
+  const bindings = new Map(shapes.flatMap((s) => editor.getBindingsInvolvingShape(s)).map((b) => [b.id, b]));
+  editor.deletePage(page.id);
+  return () => {
+    if (editor.getPages().length >= MAX_SCREENS) return;
+    editor.run(() => {
+      editor.store.put([page, ...shapes, ...bindings.values()]);
+      editor.setCurrentPage(page.id);
+    });
+  };
+}
+
 /** Moves `delta` screens forward/back; clamps at the ends. Returns whether it moved. */
 export function goToScreen(editor: ScreensEditor, delta: number): boolean {
   const ids = editor.getPages().map((p) => p.id);

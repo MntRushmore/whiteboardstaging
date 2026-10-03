@@ -5,6 +5,7 @@ import {
   MAX_SCREENS,
   SCREEN_ASPECT,
   addScreen,
+  deleteScreen,
   applyScreenCamera,
   ensureScreen,
   goToScreen,
@@ -104,8 +105,28 @@ function fakeEditor(opts: { pages?: number; shapes?: Record<string, Box[]> } = {
     setCamera,
     getCamera: () => ({ x: 0, y: 0, z: 1 }),
     run: (fn: () => void) => fn(),
+    // deleting and restoring a screen (tldraw's deletePage moves to the page before, else after)
+    getShape: (id: TLShapeId) => {
+      const pageId = [...byPage].find(([, ids]) => ids.includes(id))?.[0];
+      return pageId ? { id, typeName: "shape", parentId: pageId } : undefined;
+    },
+    getBindingsInvolvingShape: () => [],
+    deletePage: (id: TLPageId) => {
+      const i = pages.findIndex((p) => p.id === id);
+      if (current === id) current = (pages[i - 1] ?? pages[i + 1]).id;
+      pages = pages.filter((p) => p.id !== id);
+      byPage.delete(id);
+    },
+    store: {
+      put: (records: Array<{ id: string; typeName: string; parentId?: string }>) => {
+        for (const r of records) {
+          if (r.typeName === "page") pages = [...pages, r as TLPage].sort((a, b) => (a.index < b.index ? -1 : 1));
+          else if (r.parentId) byPage.set(r.parentId, [...(byPage.get(r.parentId) ?? []), r.id as TLShapeId]);
+        }
+      },
+    },
   };
-  return { editor: editor as unknown as ScreensEditor, setCameraOptions, setCamera, pages: () => pages };
+  return { editor: editor as unknown as ScreensEditor, setCameraOptions, setCamera, pages: () => pages, shapesOn: (id: string) => byPage.get(id) ?? [] };
 }
 
 describe("ensureScreen", () => {
@@ -163,6 +184,26 @@ describe("addScreen / goToScreen", () => {
     const { editor } = fakeEditor({ pages: MAX_SCREENS });
     expect(addScreen(editor)).toBe(false);
     expect(editor.getPages()).toHaveLength(MAX_SCREENS);
+  });
+
+  it("deletes the current screen and its ink, shows the one before it, and puts it all back on Undo", () => {
+    const { editor, pages, shapesOn } = fakeEditor({ pages: 3, shapes: { "page:2": [new Box(0, 0, 10, 10), new Box(20, 0, 10, 10)] } });
+    goToScreen(editor, 1);
+    const restore = deleteScreen(editor as never);
+    expect(restore).toBeTypeOf("function");
+    expect(pages().map((p) => p.id)).toEqual(["page:1", "page:3"]);
+    expect(editor.getCurrentPageId()).toBe("page:1");
+    expect(shapesOn("page:2")).toEqual([]);
+    restore!();
+    // the screen and both of its strokes come back where they were, and the student is shown it
+    expect(pages().map((p) => p.id)).toEqual(["page:1", "page:2", "page:3"]);
+    expect(shapesOn("page:2")).toHaveLength(2);
+    expect(editor.getCurrentPageId()).toBe("page:2");
+  });
+
+  it("never deletes a board's only screen", () => {
+    const { editor } = fakeEditor();
+    expect(deleteScreen(editor as never)).toBeNull();
   });
 
   it("moves between screens and clamps at the ends", () => {
