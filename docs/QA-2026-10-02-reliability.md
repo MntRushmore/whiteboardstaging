@@ -149,3 +149,77 @@ Fix (in the queue, so any such writer is covered): it keeps the document as last
 - New regression tests: `src/lib/sync/__tests__/saveQueue.test.ts` (max wait, hung write and hung conflict fetch, changed-only backup, notice, no chained saves, nothing to save), `restoreBackup.test.ts` (changed-only backup, no-op restore, schema migration), `src/hooks/__tests__/useSnapshotSave.test.ts` (board-full vs. images copy, nearly-full notice, lazy offloader), `saveStatus.test.ts` (notice, "Retrying…"), `src/components/__tests__/boardCrashed.test.tsx`, `boardLoadState.test.ts` (22P02), `authForms.test.tsx` (password forms post, submit disabled before hydration), `src/lib/__tests__/loginForm.test.ts` (`afterSignInPath`). Each new queue test was checked to fail on the code before its fix.
 - Browser re-run on the fixed code (dev server, `t02`–`t21`): every check passes except the two known N4 cases in `t03` (the row lags a tab closed within the debounce; reopening restores it) and `t03`'s back/forward step (N9, dev only). Production build (`next start`, `prod-smoke.mjs`, run on the build before the last four commits a677e93…697a903, which were verified on the dev server only): a signed-out board link returns to the board after sign-in, strokes are saved, a hidden tab saves before the debounce, a reload shows 4 of 4 shapes in 0.4 s, back/forward re-opens the board, a mistyped link says not found, a 4.4 MB board shows its first shapes in 2.0 s.
 - Not verified: anything involving Storage uploads (N7); real iPad Safari (visibility was simulated in Chromium); a real multi-minute TCP stall (simulated by holding requests in Playwright).
+
+## Follow-ups (2026-10-03)
+
+Branch `fix/sync-followups` from `release/ink-and-board` (`ce2b2f7`). Same environment as above (dev server on 3001, shared local stack, Live off, user `qa-sync@example.com`). Scripts and screenshots: the session scratchpad, `sync/s01…s04-*.mjs` and `sync/shots/`.
+
+| # | What | Status | Commit |
+| --- | --- | --- | --- |
+| N6 | History growth | Fixed: time-based history, 4 MB per board | dbe846a |
+| N1 | Two tabs share one backup key | Fixed: a key per tab, replay of gone tabs' keys | d9164b0, 589604b |
+| N2 | A stale backup overwrites newer edits | Fixed: record-level, base-aware restore | d9164b0 |
+| N8 | A failed image upload leaves a broken shape | Fixed: own `files` handler | 1641698 |
+| N10 | Duplicate `credit_summary` / `ink_summary` reads | Fixed: one shared read per page | 96a3105 |
+| — | `tsc` fails once `next dev` compiled the recognize route ("Other areas") | Fixed for that route | 92d8682 |
+| F1 | New, High (data loss): another tab of the app makes an open board overwrite newer work | Fixed | 04225d6 |
+
+### N6 — history (High, ops) — fixed
+
+Readers of `whiteboard_snapshots`, checked first: nothing in the app (no restore UI; the conflict merge works from the client's dirty sets; account and board deletion are FK cascades; storage GC reads `whiteboards.data` and `board_assets` only); `scripts/verify-rls.mjs` (insert policy and a "versions 2 and 3" check); the operator, by hand. So history is the operator's undo after a wipe or a mess-up, and the design keeps what that needs (`supabase/migrations/20261003000000_snapshot_retention.sql`, `docs/RUNBOOK-supabase.md` 10.1):
+
+- A history row is the state a save replaced (`old.version`, `old.data`), so the row and its newest copy are never the same thing, and the state a session ended in is kept when the next one starts. One is written when the board has none younger than 10 minutes (first save of a session, then at most one per 10 minutes), and before any save that drops more than half of a board of 16 KB or more (stored size), whatever the 10-minute rule says. A new board's empty `{}` is never kept.
+- `prune_whiteboard_snapshots(board)` runs after each write: candidates are the newest 8 and the newest of each UTC day for the last 7 days; in order of value (newest; each earlier day's newest; the rest) they are kept up to 4 MB of stored size, never fewer than 2. A one-time pass prunes what the old rule stored.
+- Only the trigger writes history: `authenticated` lost INSERT (and the owner-insert policy), which also closes a way for a user to store unbounded 8 MB rows or plant a future-dated row that stops their history. The prune is service-role only.
+
+Size per heavy board (stored, i.e. TOAST-compressed; ink compresses 2.2–3.4×):
+
+| Board (JSON → stored) | Before: 20 copies | After: at most | Why |
+| --- | --- | --- | --- |
+| 2.47 MB → 0.74 MB (QA ink board) | 14.8 MB | 3.7 MB (5 copies) | budget |
+| ~4 MB → ~1.2 MB (the client's cap, ink) | ~24 MB | 3.6 MB (3) | budget |
+| 3.86 MB → 1.76 MB (heaviest local board) | 35 MB (measured 32.9 MB) | 3.5 MB (2) | the 2 always kept |
+| 110 KB → ~33 KB (a page of handwriting) | 0.66 MB | 0.5 MB (15), usually 2–6 | count |
+
+A board drawn on once for 20 minutes keeps 2 copies (was 20). History writes drop from one per save (every 2–10 s of drawing) to one per 10 minutes. With the row itself, a heavy board now costs about 4.5–5.5 MB of the free plan's 500 MB instead of 15–37 MB.
+
+On the shared local stack the one-time prune took 3.2 s: 1,226 → 880 rows, 192 MB → 91 MB of stored data; the heaviest board went from 20 rows / 32.9 MB to 2 / 3.5 MB. The table file stays at 248 MB until `vacuum (full, analyze) public.whiteboard_snapshots` (not run on the shared stack; the runbook says when to run it in production).
+
+### N1 — two tabs, one backup key — fixed
+
+Each mount of a board backs up to `agathon.unsaved.<boardId>.<tabId>` and holds the Web Lock `agathon.tab.<tabId>` while its queue lives (released after the unmount flush). On open, the board lists every backup key of the board on the device (other tabs, earlier page loads, the old shared key), asks Web Locks which tabs are still open, replays the keys of the gone ones oldest first (record by record, below), writes its own backup at once and only then removes the replayed keys. An open tab's backup is left to that tab: replaying it would make its records this tab's local changes and could later win a merge over the open tab's newer edit. Without Web Locks (Safari before 15.4) every other key counts as gone, which is the old behaviour. The restore module is fetched only when such a key exists.
+
+Browser (`s01-two-tabs.mjs`, tabs in one context, tab B's saves aborted): B's stroke is backed up under its own key; A's successful saves leave it alone; a tab opened while B is open does not replay it; B's backup survives B closing; the next open replays it, saves it (row has 3 of 3), removes the key and says "Restored unsaved changes from this device". 9 of 9.
+
+### N2 — stale backups — fixed
+
+The backup now carries, for each changed or removed record, the record as the server had it at the backup's base version (`base`; from the queue's view of the server's document, which now also follows a conflict merge), and for ids edited again while a write was in flight, what that write sent (`sent`). The restore (`restoreBackups`) decides per record against the row it loaded: the server still has the base → only this device changed it → restored (put or removed); the server holds exactly this device's own unacknowledged write → restored; the server changed it too (edited or deleted) → the server's record stays, the local change is dropped, and the student sees "Some unsaved changes from this device were older than the board and weren't restored". Several backups are replayed oldest first; a newer backup's decision about a record wins. Backups written before this change have no `base`: at the same version everything is restored; once the row moved on, records the server has are kept as the server has them and only records it lacks (new strokes) are restored. If `base` would push a backup past its 2 MB cap it is dropped (that backup then restores by the version rule).
+
+Browser (`s02-stale-backup.mjs`, two contexts as two devices): the iPad moves S and draws N with its saves failing and closes; the laptop moves S; the iPad reopens: N restored and saved, S stays where the laptop put it (777 on screen and in the row), the warning is shown. A backup newer than the row (nobody else touched it) is restored in full with the plain toast. 7 of 7. Unit tests: stale vs newer server, deleted on the server vs edited here, edited on the server vs deleted here, newer than the server, own landed write, several tabs, legacy backups.
+
+### N8 — broken image after a failed upload — fixed
+
+The board registers its own `files` external-content handler (`src/lib/assets/addImageFiles.ts`, fetched on the first paste or drop). Same flow as tldraw's (preview while the board asset store uploads), but a failed upload removes the image shape again (and the placeholder asset unless another shape uses it), without an undo entry, and toasts "Couldn't add that image. Try again." Files the bucket would refuse (not PNG/JPEG/GIF/WebP/SVG, over 10 MB) are refused before anything is created. Tested on a real tldraw `Editor` (headless in node) with a failing asset store. Not browser-checked (Storage uploads fail in the local stack, N7). Left as is: an undo followed by a redo right after a failed upload brings the empty shape back (rewinding the paste's history entry could also take strokes drawn during the upload).
+
+### N10 — duplicate ink reads — fixed
+
+`useInkSummary` now reads from one module-level store per page (`createInkStore`): one request in flight, one cached answer, one set of window listeners while any surface is mounted. A mount, focus or tab-visible within 5 s of the last answer reads nothing; a balance change (ink-changed event, another tab's ping, paid calls, the checkout watch, reload()) always reads, once more after a read already in flight. Browser (`s03-ink-reads.mjs`, dev with StrictMode): sign-in → boards home 1 read (was 4), reload 1 (was 2), back to the tab right after a read 0, later 1 for focus + visibilitychange together (was 2 per surface per event), ink changed 1, board 1, account page 1.
+
+### Typecheck with `.next/dev/types` — fixed for the recognize route
+
+`recognizeFailureHints` moved to `src/lib/server/recognizeHints.ts`; a test pins the route's exports. `npm run typecheck` passes with a fresh dev server's `.next` (board page and recognize route compiled). Not fixed: `src/app/api/admin/gc/route.ts` (`isCronRequest`, `isDryRun`, `createGcHandler`) and `src/app/api/billing/webhook/route.ts` (`APP_TAG`, `HANDLED_EVENTS`, `mapBillingEvent`, …) export helpers the same way, so `tsc` fails again once `next dev` has compiled either of those routes (verified). Moving them out means teaching `routeProtection.test.ts`, which greps those route files for their auth checks, to read the helper module too; left for the owner of those routes.
+
+### F1 — another tab of the app makes an open board overwrite newer work (High, data loss) — fixed
+
+Found while checking N1. The board page re-read its row whenever the AuthProvider's `user` object changed, and supabase-js hands out a new session object on every auth event, including another tab of the app starting up. The re-read did not reload the editor but changed `initialVersion`, so the autosave rebuilt its queue at the row's newest version on top of the document still on screen: that tab's next save passed the version check and replaced the row with its stale document, and the tab's own unsaved edits stopped being tracked. Repro (`s04-other-tab-reload.mjs`): board open in tabs A and B; A draws and saves; the boards home opens in tab C; B draws and saves: A's stroke is gone from the row (4 of 5). Fix: the load is keyed on the user's id, and the autosave pins the version the editor was loaded at for the life of the mount. After: B does not reload, its save conflicts and merges, the row keeps every stroke (7 of 7, then 4 of 4 on the final code).
+
+### Verification
+
+- `npm run typecheck`: exit 0 with no `.next`, and exit 0 with a fresh dev server's `.next/dev/types` (board page and recognize route compiled; see above for gc/webhook).
+- `npm run lint`: 0 errors, 4 warnings (the pre-existing `<img>` warnings).
+- `npx vitest run --maxWorkers=4`: 229 files passed, 8 skipped; 4,921 tests passed, 62 skipped.
+- `RUN_DB_TESTS=1`: `src/__tests__/db-history.integration.test.ts` 5 of 5 (recording rules, 10-minute spacing via back-dated rows, wipe, daily retention, the 4 MB budget, cascade on delete); `db-rls.integration.test.ts` 24 of 25, the failure being the storage policies (42P10, N7).
+- `node scripts/verify-rls.mjs`: 210 of 214; the 4 failures are storage only (42P10, N7): A uploads into board-assets, the object is publicly readable, B cannot delete A's object, A deletes own object.
+- `next build`: exit 0; `npm run bundle:check`: all budgets ok. First-load JS (gzip) against a build of `ce2b2f7`: `/board/[id]` 1,054,882 → 1,056,203 B (+1,321; 3,797 B under the 1,060,000 budget), `/` +321, `/account` +303, `/train` +285, other routes unchanged. `.next` deleted.
+- Browser (dev server): `s01` 9/9, `s02` 7/7, `s03` 4/4, `s04` row keeps every stroke.
+- Environment notes: the migration was applied to the shared stack with `psql --single-transaction` and is not recorded in `supabase_migrations.schema_migrations`, because `supabase migration up` refuses while the stack holds versions this branch lacks (`20261003010000`, `20261003010100` from another branch); it is idempotent, so a later `migration up` re-applies it harmlessly. That other branch's sign-up trigger refuses accounts without `user_metadata.terms_version`, so the DB tests and verify-rls here ran with that branch's `scripts/lib/supabaseHttp.mjs` change applied locally and not committed. Until this branch is merged, other branches' verify-rls against the shared stack will fail "A inserts snapshot for own board" and "snapshot history recorded for versions 2 and 3".
