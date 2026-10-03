@@ -145,7 +145,9 @@ export async function restoreDeviceBackups({
   if (payloads.length > 0) {
     report = restoreBackups(store, payloads, loadedVersion);
     queue.markDirty();
-    // What is still unsaved now goes into this tab's backup before the old keys go: no window without one.
+    // What is still unsaved now goes into this tab's backup before the old keys go: no window
+    // without one. If storage is full, the old keys (their records are in it) make the room.
+    backup.absorb(gone.map((b) => b.key));
     queue.writeBackupNow();
   }
   for (const b of gone) backup.remove(b.key);
