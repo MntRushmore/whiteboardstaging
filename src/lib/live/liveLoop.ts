@@ -2386,6 +2386,15 @@ export class LiveLoop implements LiveController {
       // line Live has since dropped. It is taken over, never written a second time beside it.
       const adopted = own ? undefined : this.adoptOrphanEcho(lineId, anchorIds);
       const existing = own ?? adopted;
+      // The readback Undo brought back was one the student had typed over (a misread they fixed):
+      // the line takes it back as typed, not the recognizer's cached misread of the same ink.
+      const typed = adopted && isLiveMeta(adopted.meta) && adopted.meta.edited ? (adopted.props as MathShapeProps).latex : "";
+      if (adopted && typed && typed !== wanted.latex) {
+        this.editor.updateShapes([{ id: adopted.id, type: "math", props: { anchorIds, lineId }, meta: { ...(adopted.meta as LiveShapeMeta), lineId } } satisfies TLShapePartial<MathShape>]);
+        setLine(lineId, { mathShapeId: adopted.id });
+        queueMicrotask(() => this.retypeLine(lineId, typed));
+        return;
+      }
       if (existing && existing.type === "math") {
         const cur = existing.props as MathShapeProps;
         // BUG-4: a note the model wrote is not something the local engine can reproduce.
