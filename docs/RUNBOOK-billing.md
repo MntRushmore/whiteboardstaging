@@ -293,6 +293,14 @@ The owner's steps, **in this order**. The live webhook endpoint is created only 
 is deployed: `main` before it stores every payload that reaches the webhook in `billing_events`,
 Fuime's buyers' names, emails and addresses included.
 
+The release carries four migrations, applied in **two halves around the deploy** (steps 3 and 5),
+never all at once with a plain `db push`:
+
+| When | Migrations | Why then |
+| --- | --- | --- |
+| Before the deploy (step 3) | `20261002000000_ink.sql`, `20261003000000_snapshot_retention.sql` | The new code needs the ink schema; `main` keeps working on it |
+| After the deploy (step 5) | `20261003010000_signup_consent.sql`, `20261003010100_bug_reports_leave_with_account.sql` | The consent migration refuses any sign-up that does not send `terms_version`, which `main`'s form does not: applied before the deploy, every sign-up fails ("Database error saving new user") until the new form is live. The new code is fine without either: the version it sends is kept in the account's metadata and recorded on the profile by step 5's backfill; bug reports simply outlive a deleted account until then |
+
 1. **Stripe access.** Give the live restricted key write permission (Products, Prices, Payment
    Links, Webhook Endpoints; read on the account) or run `stripe login` for the live account.
 2. **Check what the customer will see** (*Settings → Business → Public details*, *Settings →
@@ -301,11 +309,20 @@ Fuime's buyers' names, emails and addresses included.
    Turn on receipt emails for successful payments and refunds (*Settings → Customer emails*).
    Decide on tax (the Payment Links do not collect tax). Leave Adaptive Pricing as it is: the
    webhook checks the USD amount either way.
-3. **Apply the migration** `20261002000000_ink.sql` to the production database (the Marketplace
-   project; see the note at the top of `RUNBOOK-supabase.md`):
-   `npx supabase db push --db-url "$POSTGRES_URL_NON_POOLING" --include-all`, then
-   `node scripts/verify-rls.mjs` against production (with `SUPABASE_SERVICE_ROLE_KEY`, so the
-   service-role checks run too). On the way in it gives every existing account one starter of
+3. **Apply the first half of the migrations**, ink and snapshot retention, to the production
+   database (the Marketplace project; see the note at the top of `RUNBOOK-supabase.md`). Not with
+   `db push`, which would apply the consent migration too: run the two files, then record them so
+   step 5's `db push` skips them.
+
+   ```bash
+   DB="$POSTGRES_URL_NON_POOLING"                       # from `vercel env pull`
+   psql "$DB" -v ON_ERROR_STOP=1 --single-transaction -f supabase/migrations/20261002000000_ink.sql
+   psql "$DB" -v ON_ERROR_STOP=1 --single-transaction -f supabase/migrations/20261003000000_snapshot_retention.sql
+   npx supabase migration repair --db-url "$DB" --status applied 20261002000000 20261003000000
+   npx supabase migration list --db-url "$DB"           # 20261003010000 and 20261003010100 still pending
+   ```
+
+   On the way in the ink migration gives every existing account one starter of
    `max(300, what it had left this month)`, deactivates Plus/Pro and moves everyone to `free`. Apply
    it right before the deploy: the old app keeps working on the new schema, but shows "0 credits a
    month", and cannot refund failed calls (it calls `refund_credits` as the user, which the
@@ -320,8 +337,23 @@ Fuime's buyers' names, emails and addresses included.
    `SUPABASE_SERVICE_ROLE_KEY` is already in Production (the Supabase Marketplace integration); the
    paid routes now use it for refunds of failed calls. Without `NEXT_PUBLIC_BILLING_LINKS` every buy
    button says "Coming soon"; everything else works. Check the deploy: sign in, see the starter ink
-   in the header and on `/account`.
-5. **Create the live objects**, now that the deployed webhook ignores what is not Agathon's:
+   in the header and on `/account`; the sign-up form shows the Terms box.
+5. **Apply the second half of the migrations**, sign-up consent and bug reports, once the
+   deployment from step 4 is serving production (an old tab still open on the previous sign-up form
+   gets "We couldn't create your account. Reload this page and try again." after this, and a reload
+   fixes it):
+
+   ```bash
+   npx supabase migration list --db-url "$DB"           # exactly 20261003010000 and 20261003010100 pending
+   npx supabase db push --db-url "$DB" --include-all
+   ```
+
+   Then `node scripts/verify-rls.mjs` against production (with `SUPABASE_SERVICE_ROLE_KEY`, so the
+   service-role checks run too; its `consent:` checks pass only from here on), and sign up once on
+   the site: `select terms_version, accepted_terms_at from public.profiles order by created_at desc
+   limit 1;` shows `2026-10-03`. Accounts made between steps 4 and 5 got the same record from the
+   migration's backfill. Both migrations are safe to re-run.
+6. **Create the live objects**, now that the deployed webhook ignores what is not Agathon's:
 
    ```bash
    node scripts/stripe-setup.mjs --mode live --site https://whiteboard.rushilchopra.com --dry-run   # read-only preview
@@ -332,7 +364,7 @@ Fuime's buyers' names, emails and addresses included.
    secret to `~/.config/agathon-classroom/stripe-webhook-secret-live`. Until the next step the
    endpoint's deliveries fail with `503` (no secret yet) and Stripe retries them; nothing is sold
    yet, so nothing is lost.
-6. **Set the remaining Production variables** (project `whiteboardstaging`, team `rushmore`):
+7. **Set the remaining Production variables** (project `whiteboardstaging`, team `rushmore`):
 
    ```bash
    vercel env add NEXT_PUBLIC_BILLING_LINKS production   # paste the printed JSON
@@ -340,10 +372,10 @@ Fuime's buyers' names, emails and addresses included.
    vercel env add STRIPE_WEBHOOK_SECRET production --sensitive < ~/.config/agathon-classroom/stripe-webhook-secret-live
    ```
 
-7. **Redeploy** production (`vercel --prod`, or an empty commit to `main`). The `NEXT_PUBLIC_*`
+8. **Redeploy** production (`vercel --prod`, or an empty commit to `main`). The `NEXT_PUBLIC_*`
    values are built into the client bundle, so a deploy that predates them keeps showing "Coming
    soon".
-8. **A real purchase and refund** on https://whiteboard.rushilchopra.com:
+9. **A real purchase and refund** on https://whiteboard.rushilchopra.com:
    1. Sign in, open a board, tap the ink meter, buy the Small pack (a new tab opens). Pay.
    2. Back on the board tab the meter should read +1,000 within seconds; the other tab ends on
       `/account?ink=small` saying "Ink added". In the Dashboard, *Developers → Webhooks → the

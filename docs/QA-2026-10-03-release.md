@@ -155,7 +155,9 @@ delete confirmation. Not checked on a real iPhone.
 This branch's migrations were applied first, so `supabase migration up` refused the sync
 follow-ups' older `20261003000000_snapshot_retention.sql` in its worktree; that pass applied it by
 psql without recording it. After merging, `npx supabase migration up --local --include-all`
-recorded it (idempotent). Production: `db push --include-all` applies all three in order. The
+recorded it (idempotent). Production: not one `db push` of everything; ink and snapshot
+retention before the deploy, consent and bug reports after it (RUNBOOK-billing section 7, steps 3
+and 5; fixed after review on `fix/consent-review`). The
 consent trigger also refused accounts that other branches' scripts made without the version until
 those branches had this `supabaseHttp.mjs`; after the merge they do.
 
