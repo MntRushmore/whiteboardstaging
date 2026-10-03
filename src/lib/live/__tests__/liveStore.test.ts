@@ -1,5 +1,20 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { liveStore, resetLiveStore, setLiveError } from "../liveStore";
+import { clearLiveError, liveStore, resetLiveStore, setLiveError } from "../liveStore";
+
+describe("liveStore.clearLiveError", () => {
+  beforeEach(() => resetLiveStore());
+
+  it("clears any error, or with a code only an error of that code (the board drops 'ink' once ink is back)", () => {
+    setLiveError({ kind: "recognize", code: "ink", message: "You're out of ink" });
+    clearLiveError("upstream");
+    expect(liveStore.lastError.get()?.code).toBe("ink");
+    clearLiveError("ink");
+    expect(liveStore.lastError.get()).toBeNull();
+    setLiveError({ kind: "check", code: "upstream", message: "m" });
+    clearLiveError();
+    expect(liveStore.lastError.get()).toBeNull();
+  });
+});
 
 describe("liveStore.setLiveError", () => {
   beforeEach(() => resetLiveStore());

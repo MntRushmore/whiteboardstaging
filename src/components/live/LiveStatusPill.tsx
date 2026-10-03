@@ -181,7 +181,7 @@ function LiveErrorFace({ error, now, canRetry }: { error: LiveError; now: number
       <button
         type="button"
         className={`${ERROR_BUTTON} text-gray-500 hover:bg-gray-100 hover:text-gray-800`}
-        onClick={clearLiveError}
+        onClick={() => clearLiveError()}
         data-testid="live-error-dismiss"
       >
         {LIVE_COPY.errors.dismiss}

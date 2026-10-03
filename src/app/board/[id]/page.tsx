@@ -59,6 +59,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import { InkMeter } from "@/components/billing/InkMeter";
 import { OutOfInkWatcher } from "@/components/billing/OutOfInkWatcher";
+import { clearLiveError } from "@/lib/live/liveStore";
 import { StickerLibrary } from "@/components/StickerLibrary";
 import { PdfUpload } from "@/components/PdfUpload";
 import { BugReportButton } from "@/components/BugReportButton";
@@ -90,6 +91,11 @@ import { useLecture } from "@/components/lecture/useLecture";
 import { LectureButton } from "@/components/lecture/LectureButton";
 import { LectureBar } from "@/components/lecture/LectureBar";
 import { browserStorage as onboardingStorage, isGuidedBoard } from "@/lib/onboarding/marker";
+
+/** Ink is back (a pack landed, maybe bought in another tab): the pill's "out of ink" no longer holds. */
+function clearInkErrorWhenRefilled(balance: number) {
+  if (balance > 0) clearLiveError("ink");
+}
 
 // The guided first board's tour (the welcome's Start): loaded on that board only, after the board.
 const BoardTour = React.lazy(() => import("@/components/onboarding/BoardTour"));
@@ -380,7 +386,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
           </LiveErrorBoundary>
           <SaveStatus sync={sync} onRetry={() => void retrySave()} />
           {/* ink left; tapping it (or its "Get ink" when low) opens the ink dialog */}
-          <InkMeter />
+          <InkMeter onBalance={clearInkErrorWhenRefilled} />
           <Button
             variant="outline"
             size="sm"

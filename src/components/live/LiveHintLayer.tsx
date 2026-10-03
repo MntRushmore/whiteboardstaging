@@ -126,7 +126,7 @@ function LiveErrorCard({ error, left, top, width }: { error: LiveError } & Place
             {LIVE_COPY.errors.retry}
           </Button>
         )}
-        <Button variant="secondary" size="sm" className="h-7 px-2.5 text-xs" onClick={clearLiveError}>
+        <Button variant="secondary" size="sm" className="h-7 px-2.5 text-xs" onClick={() => clearLiveError()}>
           {LIVE_COPY.errors.dismiss}
         </Button>
       </div>

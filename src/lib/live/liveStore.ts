@@ -69,8 +69,9 @@ export function setLiveError(err: Omit<LiveError, "id" | "at"> & { at?: number }
   return full;
 }
 
-export function clearLiveError(): void {
-  if (liveStore.lastError.get() !== null) liveStore.lastError.set(null);
+export function clearLiveError(code?: LiveErrorCode): void {
+  const current = liveStore.lastError.get();
+  if (current !== null && (code === undefined || current.code === code)) liveStore.lastError.set(null);
 }
 
 /** Runs the loop's retry for the current error (no-op without a loop or an error). */

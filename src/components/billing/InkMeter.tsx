@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { InkBottle } from "@/components/billing/InkBottle";
 import { openInkDialog } from "@/lib/billing/inkDialog";
 import { INK_COPY, bottleFill, formatInk, inkTone } from "@/lib/billing/inkSummary";
@@ -20,8 +21,13 @@ const TONE_CLASS = {
  * explained. The balance re-reads on focus, on return to the tab and after a checkout
  * (useInkSummary), so bought ink appears without a reload.
  */
-export function InkMeter({ className }: { className?: string }) {
+export function InkMeter({ className, onBalance }: { className?: string; onBalance?: (balance: number) => void }) {
   const { summary } = useInkSummary();
+  const balance = summary?.balance ?? null;
+  // The board clears a stale "out of ink" error here once ink is back (bought in another tab).
+  useEffect(() => {
+    if (balance !== null) onBalance?.(balance);
+  }, [balance, onBalance]);
   if (!summary) return null;
   const tone = inkTone(summary.balance);
   const label = INK_COPY.meterLabel(summary.balance);
