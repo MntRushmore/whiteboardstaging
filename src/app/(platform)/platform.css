@@ -49,3 +49,16 @@ body:has([data-platform]) {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+
+/* The page above the legal footer fills the window: a short page (sign-in on a laptop or an iPad)
+   shows the footer without scrolling, and a long one pushes it below its content. Each page's root
+   grows (`flex: 1 0 auto`) instead of taking a full window height of its own, which used to put the
+   footer one scroll down on every platform page. */
+[data-platform] {
+  display: flex;
+  min-height: 100dvh;
+  flex-direction: column;
+}
+[data-platform] > footer {
+  flex: none;
+}
