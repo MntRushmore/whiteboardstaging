@@ -11,18 +11,18 @@ type RpcReply = { data?: unknown; error?: { message: string; code?: string } | n
 const fake = vi.hoisted(() => ({
   GOOD_TOKEN: "aaaa.bbbb.cccc",
   USER_ID: "11111111-2222-4333-8444-555555555555",
-  calls: [] as Array<{ fn: string; args?: Record<string, unknown> }>,
+  calls: [] as Array<{ fn: string; args?: Record<string, unknown>; key?: string }>,
   replies: {} as Record<string, (args?: Record<string, unknown>) => RpcReply>,
 }));
 
 vi.mock("@supabase/supabase-js", () => ({
-  createClient: () => ({
+  createClient: (_url: string, key: string) => ({
     auth: {
       getUser: async (token: string) =>
         token === fake.GOOD_TOKEN ? { data: { user: { id: fake.USER_ID, email: "qa@example.com" } }, error: null } : { data: { user: null }, error: { message: "invalid token" } },
     },
     rpc: async (fn: string, args?: Record<string, unknown>) => {
-      fake.calls.push({ fn, args });
+      fake.calls.push({ fn, args, key });
       const reply = fake.replies[fn]?.(args) ?? { error: { message: `no fake reply for ${fn}` } };
       if (reply instanceof Error) throw reply;
       return { data: reply.data ?? null, error: reply.error ?? null };
@@ -43,7 +43,7 @@ import { chatJsonWithFallback, UpstreamError } from "@/lib/server/openrouter";
 import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rate-limit";
 import { POST as proof } from "@/app/api/live/proof/route";
 
-const ENV_VARS = ["BILLING_ENFORCE", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "LIVE_MODEL_PROOF"];
+const ENV_VARS = ["BILLING_ENFORCE", "SUPABASE_SERVICE_ROLE_KEY", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "LIVE_MODEL_PROOF"];
 const savedEnv: Record<string, string | undefined> = {};
 const CROP = "data:image/jpeg;base64,ZmFrZQ==";
 const FIGURE_BODY = { boardId: "board-1", task: "figure", givens: ["\\overline{AB} \\cong \\overline{CB}"], prove: "\\triangle ABD \\cong \\triangle CBD", labels: ["A", "B", "C", "D"], crop: CROP };
@@ -71,6 +71,7 @@ beforeEach(() => {
     delete process.env[name];
   }
   process.env.NEXT_PUBLIC_SUPABASE_URL = "http://127.0.0.1:54321";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test";
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
   process.env.OPENROUTER_API_KEY = "sk-or-test";
   resetServerEnvCache();
@@ -81,7 +82,7 @@ beforeEach(() => {
   for (const key of Object.keys(fake.replies)) delete fake.replies[key];
   fake.replies.rate_limit_hit = () => ({ data: { allowed: true, remaining: 19, retry_after_ms: 0, backend: "db" } });
   fake.replies.consume_credits = () => ({ data: { ok: true, remaining: 100, reason: null } });
-  fake.replies.refund_credits = () => ({ data: { refunded: 2, remaining: 102 } });
+  fake.replies.refund_ink_for = () => ({ data: { refunded: 2, remaining: 102 } });
   vi.mocked(chatJsonWithFallback).mockReset();
 });
 
@@ -118,7 +119,7 @@ describe("live/proof", () => {
     const body = ProofResponseSchema.parse(await res.json());
     expect(body.figure).toEqual({ points: { A: [10, 50], B: [50, 8], C: [90, 50], D: [50, 95] }, lines: ["AB", "BC", "CD", "DA", "BD"], angles: { "1": "ABD" } });
     expect(callsTo("consume_credits")[0].args).toMatchObject({ p_route: "live/proof", p_units: 2 });
-    expect(callsTo("refund_credits")).toEqual([]);
+    expect(callsTo("refund_ink_for")).toEqual([]);
     const [primary, fallback, opts] = vi.mocked(chatJsonWithFallback).mock.calls[0];
     expect([primary, fallback]).toEqual([LIVE_MODELS.proof, LIVE_MODELS.proofFallback]);
     const user = opts.messages.find((m) => m.role === "user");
@@ -147,7 +148,7 @@ describe("live/proof", () => {
     vi.mocked(chatJsonWithFallback).mockRejectedValue(new UpstreamError(504, "timed out"));
     expect((await proof(request(STEP_BODY))).status).toBe(502);
     const charged = callsTo("consume_credits").map((c) => c.args?.p_request_id);
-    const refunded = callsTo("refund_credits").map((c) => c.args?.p_request_id);
+    const refunded = callsTo("refund_ink_for").map((c) => c.args?.p_request_id);
     expect(charged).toHaveLength(3);
     expect(refunded).toEqual(charged);
   });

@@ -35,7 +35,7 @@ async function* textDeltas(
 export async function POST(req: Request) {
   const ctx = await livePreamble(req, "check", "liveCheck", CheckRequestSchema);
   if ("response" in ctx) return ctx.response;
-  const { requestId, token, log, data, startedAt } = ctx;
+  const { requestId, token, user, log, data, startedAt } = ctx;
 
   const models = getLiveModels();
 
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
     req,
     async (emit, signal) => {
       let sent = 0;
-      await runChargedStream({ token, requestId }, log, () => sent > 0, async () => {
+      await runChargedStream({ userId: user.id, requestId }, log, () => sent > 0, async () => {
         let model = models.check;
         emit("meta", { requestId, model });
 

@@ -22,12 +22,12 @@ type RpcReply = { data?: unknown; error?: { message: string; code?: string } | n
 const fake = vi.hoisted(() => ({
   GOOD_TOKEN: "aaaa.bbbb.cccc",
   USER_ID: "11111111-2222-4333-8444-555555555555",
-  calls: [] as Array<{ fn: string; args?: Record<string, unknown> }>,
+  calls: [] as Array<{ fn: string; args?: Record<string, unknown>; key?: string }>,
   replies: {} as Record<string, (args?: Record<string, unknown>) => RpcReply>,
 }));
 
 vi.mock("@supabase/supabase-js", () => ({
-  createClient: () => ({
+  createClient: (_url: string, key: string) => ({
     auth: {
       getUser: async (token: string) =>
         token === fake.GOOD_TOKEN
@@ -35,7 +35,7 @@ vi.mock("@supabase/supabase-js", () => ({
           : { data: { user: null }, error: { message: "invalid token" } },
     },
     rpc: async (fn: string, args?: Record<string, unknown>) => {
-      fake.calls.push({ fn, args });
+      fake.calls.push({ fn, args, key });
       const reply = fake.replies[fn]?.(args) ?? { error: { message: `no fake reply for ${fn}` } };
       if (reply instanceof Error) throw reply;
       return { data: reply.data ?? null, error: reply.error ?? null };
@@ -65,7 +65,7 @@ import { GET as credits } from "@/app/api/credits/route";
 /* Fixtures                                                                   */
 /* ------------------------------------------------------------------------- */
 
-const ENV_VARS = ["BILLING_ENFORCE", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "LIVE_MODEL_CHECK", "LIVE_MODEL_SOLVE", "LIVE_MODEL_VISION", "MATHPIX_APP_ID", "MATHPIX_APP_KEY"];
+const ENV_VARS = ["BILLING_ENFORCE", "SUPABASE_SERVICE_ROLE_KEY", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "LIVE_MODEL_CHECK", "LIVE_MODEL_SOLVE", "LIVE_MODEL_VISION", "MATHPIX_APP_ID", "MATHPIX_APP_KEY"];
 const savedEnv: Record<string, string | undefined> = {};
 
 const IMAGE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
@@ -92,23 +92,27 @@ function request(path: string, body: unknown | undefined, token: string | null =
 function happyDatabase(): void {
   fake.replies.rate_limit_hit = () => ({ data: { allowed: true, remaining: 9, retry_after_ms: 0, backend: "db" } });
   fake.replies.consume_credits = () => ({ data: { ok: true, remaining: 100, reason: null } });
-  fake.replies.refund_credits = () => ({ data: { refunded: 3, remaining: 103 } });
+  fake.replies.refund_ink_for = () => ({ data: { refunded: 3, remaining: 103 } });
 }
 
 const callsTo = (fn: string) => fake.calls.filter((c) => c.fn === fn);
 
 function expectChargedAndRefunded(): void {
   const charged = callsTo("consume_credits");
-  const refunded = callsTo("refund_credits");
+  const refunded = callsTo("refund_ink_for");
   expect(charged.length, "charged exactly once").toBe(1);
   expect(refunded.length, "refunded exactly once").toBe(1);
   expect(refunded[0].args?.p_request_id, "the refunded request id is the charged one").toBe(charged[0].args?.p_request_id);
   expect(typeof charged[0].args?.p_request_id).toBe("string");
+  // The refund runs with the service role for the user requireUser verified, never with the user's key.
+  expect(refunded[0].args?.p_user_id, "the refund names the verified user").toBe(fake.USER_ID);
+  expect(refunded[0].key, "the refund uses the service role").toBe("service-role-test");
+  expect(charged[0].key, "the charge runs as the user (anon key + their JWT)").not.toBe("service-role-test");
 }
 
 function expectChargedNotRefunded(): void {
   expect(callsTo("consume_credits").length).toBe(1);
-  expect(callsTo("refund_credits")).toEqual([]);
+  expect(callsTo("refund_ink_for")).toEqual([]);
 }
 
 function fakeStream(events: Array<FallbackStreamEvent | Error>): void {
@@ -143,6 +147,7 @@ beforeEach(() => {
     delete process.env[name];
   }
   process.env.NEXT_PUBLIC_SUPABASE_URL = "http://127.0.0.1:54321";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test";
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
   process.env.OPENROUTER_API_KEY = "sk-or-test";
   resetServerEnvCache();
@@ -228,15 +233,15 @@ describe.each(FAMILIES)("$name: charge + refund", (family) => {
     const res = await family.handler(request(family.path, family.body));
     expect(res.status).toBe(402);
     expect(family.upstream).not.toHaveBeenCalled();
-    expect(callsTo("refund_credits")).toEqual([]);
+    expect(callsTo("refund_ink_for")).toEqual([]);
   });
 
   it("still answers the mapped error when the refund RPC itself fails (only logged)", async () => {
-    fake.replies.refund_credits = () => new Error("refund db down");
+    fake.replies.refund_ink_for = () => new Error("refund db down");
     vi.mocked(family.upstream).mockRejectedValue(new UpstreamError(503, "unavailable"));
     const res = await family.handler(request(family.path, family.body));
     expect(res.status).toBe(502);
-    expect(callsTo("refund_credits").length).toBe(1);
+    expect(callsTo("refund_ink_for").length).toBe(1);
   });
 
   it("does not touch the database at all with BILLING_ENFORCE=0", async () => {
@@ -245,7 +250,7 @@ describe.each(FAMILIES)("$name: charge + refund", (family) => {
     vi.mocked(family.upstream).mockRejectedValue(new UpstreamError(500, "boom"));
     expect((await family.handler(request(family.path, family.body))).status).toBe(502);
     expect(callsTo("consume_credits")).toEqual([]);
-    expect(callsTo("refund_credits")).toEqual([]);
+    expect(callsTo("refund_ink_for")).toEqual([]);
   });
 });
 
@@ -355,11 +360,11 @@ describe.each([
   });
 
   it("a failing refund is only logged; the error frame still reaches the client", async () => {
-    fake.replies.refund_credits = () => ({ error: { message: "refund failed" } });
+    fake.replies.refund_ink_for = () => ({ error: { message: "refund failed" } });
     fakeStream([new UpstreamError(500, "boom")]);
     const events = await readSse(await family.handler(request(family.path, family.body)));
     expect(events.map((e) => e.event)).toEqual(["meta", "error"]);
-    expect(callsTo("refund_credits").length).toBe(1);
+    expect(callsTo("refund_ink_for").length).toBe(1);
   });
 });
 
@@ -508,10 +513,11 @@ describe("static: every route that charges ink refunds through runCharged / runC
   });
 
   for (const file of charged) {
-    it(`${file} charges and refunds the same { token, requestId }`, () => {
+    it(`${file} charges the user's token and refunds the same requestId for the verified user`, () => {
       const src = readFileSync(join(REPO_ROOT, file), "utf8");
       expect(src).toMatch(/enforceInk\(\s*\{\s*token,\s*route:\s*"[^"]+",\s*requestId\b/);
-      expect(/\brunCharged\(\s*\{\s*token,\s*requestId\s*\}/.test(src) || /\brunChargedStream\(\s*\{\s*token,\s*requestId\s*\}/.test(src), `${file} must wrap its paid work in runCharged or runChargedStream`).toBe(true);
+      const wrapped = /\brunCharged(Stream)?\(\s*\{\s*userId:\s*user\.id,\s*requestId\s*\}/;
+      expect(wrapped.test(src), `${file} must wrap its paid work in runCharged or runChargedStream with { userId: user.id, requestId }`).toBe(true);
     });
   }
 

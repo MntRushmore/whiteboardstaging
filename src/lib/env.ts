@@ -58,6 +58,8 @@ const envSchema = z.object({
   // Billing: ink packs (all optional; see docs/ARCHITECTURE.md "Billing").
   BILLING_ENFORCE: optionalString,
   STRIPE_WEBHOOK_SECRET: optionalString,
+  // "true" / "false": which Stripe mode the webhook accepts events from (see the webhook route).
+  STRIPE_LIVEMODE: optionalString,
   INK_PRICE_MAP: optionalString,
   NEXT_PUBLIC_BILLING_LINKS: optionalString,
 

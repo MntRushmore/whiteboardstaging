@@ -59,7 +59,7 @@ export async function POST(req: Request) {
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   return runCharged(
-    { token, requestId },
+    { userId: user.id, requestId },
     log,
     async () => {
       const key = getServerEnv().ELEVENLABS_API_KEY ?? "";

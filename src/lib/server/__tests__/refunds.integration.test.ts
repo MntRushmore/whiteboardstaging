@@ -28,6 +28,7 @@ const PASSWORD = process.env.SMOKE_PASSWORD || "password123";
 
 suite(title, () => {
   let token: string;
+  let userId: string;
   let url: string;
   let anonKey: string;
 
@@ -47,30 +48,48 @@ suite(title, () => {
     process.env.NEXT_PUBLIC_SUPABASE_URL = env.url;
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = env.anonKey;
     process.env.OPENROUTER_API_KEY ||= "sk-or-integration-placeholder";
+    // Refunds run with the service role (refund_ink_for); the local stack provides the key.
+    if (!env.serviceKey) throw new Error("refunds need SUPABASE_SERVICE_ROLE_KEY (the local stack provides it)");
+    process.env.SUPABASE_SERVICE_ROLE_KEY = env.serviceKey;
     delete process.env.BILLING_ENFORCE;
     resetServerEnvCache();
 
     const session = await ensureUser({ url: env.url, anonKey: env.anonKey, serviceKey: env.serviceKey, email: EMAIL, password: PASSWORD });
     token = session.accessToken;
+    userId = session.userId;
   }, 240_000);
 
-  it("refund_credits gives back exactly what consume_credits charged for the same request id (idempotent)", async () => {
+  it("refundInk (service role) gives back exactly what consume_credits charged for the same request id (idempotent)", async () => {
     const before = await remaining();
     const requestId = `it-refund-${Date.now()}`;
     const charged = await consumeInk({ token, route: "live/solve", requestId, model: "test" });
     expect(charged).toEqual({ ok: true, remaining: before - 10 });
 
-    const refund = await refundInk({ token, requestId });
+    const refund = await refundInk({ userId, requestId });
     expect(refund).toEqual({ refunded: 10, remaining: before });
     expect(await remaining()).toBe(before);
 
     // A second refund of the same id finds nothing to undo.
-    expect(await refundInk({ token, requestId })).toEqual({ refunded: 0, remaining: before });
+    expect(await refundInk({ userId, requestId })).toEqual({ refunded: 0, remaining: before });
   });
 
-  it("refund_credits for an unknown request id refunds nothing and leaves the balance alone", async () => {
+  it("a user cannot refund their own call over PostgREST: refund_credits and refund_ink_for are denied", async () => {
     const before = await remaining();
-    expect(await refundInk({ token, requestId: `it-unknown-${Date.now()}` })).toEqual({ refunded: 0, remaining: before });
+    const requestId = `it-self-refund-${Date.now()}`;
+    expect((await consumeInk({ token, route: "live/check", requestId })).ok).toBe(true);
+    const own = await userClient(token).rpc("refund_credits", { p_request_id: requestId });
+    expect(own.error?.code).toBe("42501");
+    expect(own.error?.message).toMatch(/permission denied/i);
+    const direct = await userClient(token).rpc("refund_ink_for", { p_user_id: userId, p_request_id: requestId });
+    expect(direct.error?.code).toBe("42501");
+    expect(await remaining()).toBe(before - 3);
+    // the server's refund still works, once
+    expect(await refundInk({ userId, requestId })).toEqual({ refunded: 3, remaining: before });
+  });
+
+  it("a refund for an unknown request id refunds nothing and leaves the balance alone", async () => {
+    const before = await remaining();
+    expect(await refundInk({ userId, requestId: `it-unknown-${Date.now()}` })).toEqual({ refunded: 0, remaining: before });
   });
 
   it("rate_limit_hit allows exactly p_limit hits per window and then denies with retry_after_ms (backend db)", async () => {

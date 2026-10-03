@@ -7,13 +7,16 @@ vi.hoisted(() => {
 import {
   HANDLED_EVENTS,
   createWebhookHandler,
+  livemodeAccepted,
   mapBillingEvent,
   packIdOf,
+  paidAmountOf,
   type BillingEvent,
   type BillingStore,
   type GrantOutcome,
   type InkPurchase,
   type InkRefund,
+  type InkReview,
   type ReverseOutcome,
   type WebhookDeps,
   type WebhookEnv,
@@ -99,6 +102,7 @@ describe("mapBillingEvent: checkout", () => {
         customerId: "cus_1",
         amountCents: 2000,
         currency: "usd",
+        customerEmail: null,
       },
     });
   });
@@ -111,13 +115,20 @@ describe("mapBillingEvent: checkout", () => {
   it("a delayed method's completed-but-unpaid session waits for async_payment_succeeded", () => {
     expect(mapBillingEvent(event("checkout.session.completed", session({ payment_status: "unpaid" })), {})).toEqual({
       kind: "ignored",
-      reason: "not paid (payment_status unpaid)",
+      reason: "not paid yet (payment_status unpaid)",
     });
   });
 
-  it("a free checkout (100 % promotion code) still buys the pack", () => {
+  it("a checkout where nothing was paid (no_payment_required, e.g. a 100 % code) is recorded for review, never granted", () => {
     const mapped = mapBillingEvent(event("checkout.session.completed", session({ payment_status: "no_payment_required", amount_total: 0, payment_intent: null })), {});
-    expect(mapped).toMatchObject({ kind: "grant", purchase: { amountCents: 0, paymentIntentId: null } });
+    expect(mapped).toMatchObject({ kind: "review", review: { reason: "not paid (payment_status no_payment_required)", amountCents: 0, packId: "medium", clientReferenceId: USER_ID } });
+  });
+
+  it("under Adaptive Pricing the amount checked is the one in the merchant's currency", () => {
+    const local = session({ amount_total: 1890, currency: "eur", currency_conversion: { amount_total: 2000, source_currency: "usd", fx_rate: "0.945" } });
+    expect(paidAmountOf(local)).toEqual({ amountCents: 2000, currency: "usd" });
+    expect(mapBillingEvent(event("checkout.session.completed", local), {})).toMatchObject({ kind: "grant", purchase: { amountCents: 2000, currency: "usd" } });
+    expect(paidAmountOf(session({ amount_total: 2000, currency: "USD" }))).toEqual({ amountCents: 2000, currency: "usd" });
   });
 
   it("ignores a subscription checkout (the retired Plus/Pro links) and a session without a mode", () => {
@@ -136,14 +147,21 @@ describe("mapBillingEvent: checkout", () => {
     expect(mapBillingEvent(event("checkout.session.completed", session({ metadata: { price_id: "price_small" } })), PRICE_MAP)).toMatchObject({ kind: "foreign" });
   });
 
-  it("ignores a session without a user id, with a non-uuid one, without an id, or without a resolvable pack", () => {
-    expect(mapBillingEvent(event("checkout.session.completed", session({ client_reference_id: null })), {})).toMatchObject({ kind: "ignored", reason: /client_reference_id/ });
-    expect(mapBillingEvent(event("checkout.session.completed", session({ client_reference_id: "not-a-uuid" })), {})).toMatchObject({ kind: "ignored", reason: /not a user id/ });
-    expect(mapBillingEvent(event("checkout.session.completed", session({ id: undefined })), {})).toMatchObject({ kind: "ignored", reason: /no id/ });
-    expect(mapBillingEvent(event("checkout.session.completed", session({ metadata: { app: "agathon-classroom" } })), PRICE_MAP)).toMatchObject({
-      kind: "ignored",
-      reason: /INK_PRICE_MAP/,
+  it("a paid Agathon session without a user id, with a non-uuid one, or without a resolvable pack is recorded for review", () => {
+    expect(mapBillingEvent(event("checkout.session.completed", session({ client_reference_id: null, customer_details: { email: "kid@example.com" } })), {})).toMatchObject({
+      kind: "review",
+      review: { reason: /client_reference_id/, customerEmail: "kid@example.com", checkoutSessionId: "cs_test_1", paymentIntentId: "pi_1" },
     });
+    expect(mapBillingEvent(event("checkout.session.completed", session({ client_reference_id: "not-a-uuid" })), {})).toMatchObject({
+      kind: "review",
+      review: { reason: /not a user id/, clientReferenceId: "not-a-uuid" },
+    });
+    expect(mapBillingEvent(event("checkout.session.completed", session({ metadata: { app: "agathon-classroom" } })), PRICE_MAP)).toMatchObject({
+      kind: "review",
+      review: { reason: /INK_PRICE_MAP/, packId: null },
+    });
+    // without a session id there is nothing to key a review on
+    expect(mapBillingEvent(event("checkout.session.completed", session({ id: undefined })), {})).toMatchObject({ kind: "ignored", reason: /no id/ });
   });
 
   it("falls back to metadata.user_id when client_reference_id is missing, and lower-cases the id", () => {
@@ -157,6 +175,7 @@ describe("mapBillingEvent: checkout", () => {
   it("missing amount / currency / ids map to null, not to wrong values", () => {
     const mapped = mapBillingEvent(event("checkout.session.completed", session({ amount_total: "2000", currency: undefined, customer: null, payment_intent: { id: "pi_x" } })), {});
     expect(mapped).toMatchObject({ kind: "grant", purchase: { amountCents: null, currency: null, customerId: null, paymentIntentId: "pi_x" } });
+    // (the database then grants nothing and records the session: no amount, no ink)
   });
 });
 
@@ -173,6 +192,20 @@ describe("packIdOf", () => {
     expect(packIdOf({ metadata: { pack_id: "Robert'); drop table" } }, {})).toBeNull();
     expect(packIdOf({ metadata: { price_id: "price_x" } }, { price_x: "NOT OK" })).toBeNull();
     expect(packIdOf({}, PRICE_MAP)).toBeNull();
+  });
+});
+
+describe("livemodeAccepted", () => {
+  it("STRIPE_LIVEMODE pins the mode; unset, deployments take live only and a localhost dev server either", () => {
+    expect(livemodeAccepted(true, "true", "whiteboard.rushilchopra.com")).toBe(true);
+    expect(livemodeAccepted(false, "true", "whiteboard.rushilchopra.com")).toBe(false);
+    expect(livemodeAccepted(false, "false", "preview.example.vercel.app")).toBe(true);
+    expect(livemodeAccepted(true, " FALSE ", "localhost")).toBe(false);
+    expect(livemodeAccepted(true, undefined, "whiteboard.rushilchopra.com")).toBe(true);
+    expect(livemodeAccepted(false, undefined, "whiteboard.rushilchopra.com")).toBe(false);
+    expect(livemodeAccepted(undefined, undefined, "whiteboard.rushilchopra.com")).toBe(false);
+    expect(livemodeAccepted(false, undefined, "localhost")).toBe(true);
+    expect(livemodeAccepted(undefined, undefined, "127.0.0.1")).toBe(true);
   });
 });
 
@@ -220,9 +253,12 @@ type StoreLog = {
   payloads: unknown[];
   forgotten: string[];
   grants: InkPurchase[];
+  reviews: InkReview[];
   reversals: InkRefund[];
   lookups: string[];
 };
+
+const PRICE: Record<string, number> = { small: 500, medium: 2000, large: 5000 };
 
 /**
  * An in-memory store with the database's semantics: one grant per session id, refunds act on the
@@ -234,10 +270,11 @@ function fakeStore(
     lookupError?: string;
     grant?: (p: InkPurchase) => GrantOutcome | null;
     reverse?: (r: InkRefund) => ReverseOutcome | null;
+    forgetError?: string;
     balance?: number;
   } = {},
 ): BillingStore & { log: StoreLog; balance: () => number; spend: (ink: number) => void } {
-  const log: StoreLog = { recorded: [], payloads: [], forgotten: [], grants: [], reversals: [], lookups: [] };
+  const log: StoreLog = { recorded: [], payloads: [], forgotten: [], grants: [], reviews: [], reversals: [], lookups: [] };
   const sessions = new Map<string, { ink: number; paymentIntent: string | null; refundedCents: number; asked: number; amount: number }>();
   let balance = opts.balance ?? 300;
   const INK: Record<string, number> = { small: 1000, medium: 5000, large: 14000 };
@@ -250,7 +287,7 @@ function fakeStore(
     async isInkPayment(pi) {
       log.lookups.push(pi);
       if (opts.lookupError) return { error: opts.lookupError };
-      return [...sessions.values()].some((s) => s.paymentIntent === pi);
+      return [...sessions.values()].some((s) => s.paymentIntent === pi) || log.reviews.some((r) => r.paymentIntentId === pi);
     },
     async recordEvent(ev) {
       if (opts.recordError) return { status: "error", message: opts.recordError };
@@ -260,15 +297,34 @@ function fakeStore(
       return { status: "inserted" };
     },
     async forgetEvent(id) {
+      if (opts.forgetError) return { error: opts.forgetError };
       log.forgotten.push(id);
       log.recorded = log.recorded.filter((r) => r !== id);
+      return { ok: true };
+    },
+    async recordReview(r) {
+      if (log.reviews.some((x) => x.checkoutSessionId === r.checkoutSessionId)) return { recorded: false };
+      log.reviews.push(r);
+      return { recorded: true };
     },
     async grantPurchase(p) {
       const forced = opts.grant?.(p);
       if (forced) return forced;
       log.grants.push(p);
-      if (!(p.packId in INK)) return { status: "unknown_pack" };
       if (sessions.has(p.checkoutSessionId)) return { status: "duplicate" };
+      if (log.reviews.some((x) => x.checkoutSessionId === p.checkoutSessionId)) return { status: "duplicate" };
+      // grant_ink_purchase's checks: a known pack, paid in USD, at least the pack's price
+      const reason = !(p.packId in INK)
+        ? `unknown pack ${p.packId}`
+        : p.amountCents === null || p.currency !== "usd"
+          ? "no amount on the session"
+          : p.amountCents < PRICE[p.packId]
+            ? `paid ${p.amountCents} cents for the ${p.packId} pack`
+            : null;
+      if (reason) {
+        log.reviews.push({ ...p, reason, clientReferenceId: p.userId });
+        return { status: "review", reason };
+      }
       sessions.set(p.checkoutSessionId, { ink: INK[p.packId], paymentIntent: p.paymentIntentId, refundedCents: 0, asked: 0, amount: p.amountCents ?? 0 });
       balance += INK[p.packId];
       return { status: "granted", granted: INK[p.packId], balance };
@@ -278,7 +334,7 @@ function fakeStore(
       if (forced) return forced;
       log.reversals.push(r);
       const s = [...sessions.values()].find((x) => x.paymentIntent === r.paymentIntentId);
-      if (!s) return { status: "not_found" };
+      if (!s) return log.reviews.some((x) => x.paymentIntentId === r.paymentIntentId) ? { status: "review" } : { status: "not_found" };
       const cum = r.fullyRefunded ? s.amount : Math.min(r.refundedCents, s.amount);
       if (cum <= s.refundedCents) return { status: "duplicate" };
       const target = cum >= s.amount ? s.ink : Math.round((s.ink * cum) / s.amount);
@@ -304,11 +360,11 @@ function handlerWith(store: BillingStore, env: Partial<WebhookEnv> = {}): (req: 
   return createWebhookHandler(deps);
 }
 
-async function signedRequest(body: string, opts: { secret?: string; t?: number; header?: string | null; ip?: string } = {}): Promise<Request> {
+async function signedRequest(body: string, opts: { secret?: string; t?: number; header?: string | null; ip?: string; url?: string } = {}): Promise<Request> {
   const header = opts.header === undefined ? await signStripePayload(body, opts.secret ?? SECRET, opts.t ?? NOW) : opts.header;
   const headers: Record<string, string> = { "content-type": "application/json", "x-forwarded-for": opts.ip ?? "203.0.113.9" };
   if (header) headers["stripe-signature"] = header;
-  return new Request("http://localhost/api/billing/webhook", { method: "POST", headers, body });
+  return new Request(opts.url ?? "http://localhost/api/billing/webhook", { method: "POST", headers, body });
 }
 
 const checkoutBody = JSON.stringify(event("checkout.session.completed", session(), "evt_checkout"));
@@ -333,7 +389,8 @@ describe("POST /api/billing/webhook", () => {
     const again = await handler(await signedRequest(checkoutBody));
     expect(again.status).toBe(200);
     expect(await again.json()).toEqual({ received: true, duplicate: true });
-    expect(store.log.grants).toHaveLength(1);
+    // the redelivery is applied again (idempotent in the database), so it still grants nothing more
+    expect(store.log.grants).toHaveLength(2);
     expect(store.balance()).toBe(5300);
   });
 
@@ -474,25 +531,116 @@ describe("POST /api/billing/webhook", () => {
 
   it("uses INK_PRICE_MAP when the session has no pack in its metadata", async () => {
     const store = fakeStore();
-    const body = JSON.stringify(event("checkout.session.completed", session({ id: "cs_map", metadata: { app: "agathon-classroom", price_id: "price_large" } }), "evt_map"));
+    const body = JSON.stringify(event("checkout.session.completed", session({ id: "cs_map", amount_total: 5000, metadata: { app: "agathon-classroom", price_id: "price_large" } }), "evt_map"));
     expect((await handlerWith(store)(await signedRequest(body))).status).toBe(200);
     expect(store.balance()).toBe(14300);
   });
 
-  it("answers 200 ignored for unknown event types and our unpaid sessions, writing nothing", async () => {
+  it("answers 200 ignored for unknown event types and our not-yet-paid sessions, writing nothing", async () => {
     const store = fakeStore();
     const handler = handlerWith(store);
-    for (const body of [
-      event("invoice.paid", { id: "in_1" }, "evt_inv"),
-      event("checkout.session.completed", session({ payment_status: "unpaid" }), "evt_unpaid"),
-      event("checkout.session.completed", session({ client_reference_id: null }), "evt_no_user"),
-    ]) {
+    for (const body of [event("invoice.paid", { id: "in_1" }, "evt_inv"), event("checkout.session.completed", session({ payment_status: "unpaid" }), "evt_unpaid")]) {
       const res = await handler(await signedRequest(JSON.stringify(body)));
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ received: true, ignored: true });
     }
     expect(store.log.recorded).toEqual([]);
     expect(store.log.grants).toEqual([]);
+  });
+
+  it("a paid Agathon checkout without a user is recorded for review (our own data), with no ink", async () => {
+    const store = fakeStore();
+    const res = await handlerWith(store)(
+      await signedRequest(JSON.stringify(event("checkout.session.completed", session({ client_reference_id: null, customer_details: { email: "kid@example.com" } }), "evt_no_user"))),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ received: true });
+    expect(store.log.recorded).toEqual(["evt_no_user"]);
+    expect(store.log.reviews).toEqual([expect.objectContaining({ checkoutSessionId: "cs_test_1", customerEmail: "kid@example.com", reason: expect.stringMatching(/client_reference_id/) })]);
+    expect(store.log.grants).toEqual([]);
+    expect(store.balance()).toBe(300);
+  });
+
+  it("an underpaid or unpriced session (a promotion code, another currency) gets no ink, only a review", async () => {
+    const store = fakeStore();
+    const handler = handlerWith(store);
+    for (const [id, overrides] of [
+      ["evt_cheap", { id: "cs_cheap", amount_total: 100 }],
+      ["evt_eur", { id: "cs_eur", currency: "eur" }],
+      ["evt_free", { id: "cs_free", payment_status: "no_payment_required", amount_total: 0 }],
+    ] as const) {
+      const res = await handler(await signedRequest(JSON.stringify(event("checkout.session.completed", session(overrides), id))));
+      expect(res.status, id).toBe(200);
+    }
+    expect(store.log.reviews.map((r) => r.checkoutSessionId)).toEqual(["cs_cheap", "cs_eur", "cs_free"]);
+    expect(store.balance()).toBe(300);
+    // the same session again is still only a review
+    const again = await handler(await signedRequest(JSON.stringify(event("checkout.session.completed", session({ id: "cs_cheap", amount_total: 100 }), "evt_cheap_2"))));
+    expect(await again.json()).toEqual({ received: true, duplicate: true });
+    expect(store.balance()).toBe(300);
+  });
+
+  it("a refund of a reviewed (ungranted) checkout is acknowledged with nothing to take back", async () => {
+    const store = fakeStore();
+    const handler = handlerWith(store);
+    await handler(await signedRequest(JSON.stringify(event("checkout.session.completed", session({ amount_total: 100 }), "evt_cheap"))));
+    const res = await handler(await signedRequest(JSON.stringify(event("charge.refunded", charge({ amount: 100, amount_refunded: 100 }), "evt_cheap_refund"))));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ received: true });
+    expect(store.balance()).toBe(300);
+  });
+
+  it("a redelivered event is applied again: a grant that failed and could not forget its event still lands on the retry", async () => {
+    let failOnce = true;
+    const store = fakeStore({
+      forgetError: "connection reset",
+      grant: () => {
+        if (!failOnce) return null;
+        failOnce = false;
+        return { status: "error", message: "deadlock" };
+      },
+    });
+    const handler = handlerWith(store);
+    const first = await handler(await signedRequest(checkoutBody));
+    expect(first.status).toBe(500);
+    expect(store.log.recorded).toEqual(["evt_checkout"]); // the forget failed: the id stays logged
+    const retry = await handler(await signedRequest(checkoutBody));
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toEqual({ received: true });
+    expect(store.balance()).toBe(5300);
+    // and a third delivery is a true duplicate
+    expect(await (await handler(await signedRequest(checkoutBody))).json()).toEqual({ received: true, duplicate: true });
+    expect(store.balance()).toBe(5300);
+  });
+
+  it("a tagged refund that arrives before its grant answers 500 (Stripe retries), then reverses once the grant landed", async () => {
+    const store = fakeStore();
+    const handler = handlerWith(store);
+    const refundBody = JSON.stringify(event("charge.refunded", charge(), "evt_early_refund"));
+    const early = await handler(await signedRequest(refundBody));
+    expect(early.status).toBe(500);
+    await handler(await signedRequest(checkoutBody));
+    expect(store.balance()).toBe(5300);
+    const retried = await handler(await signedRequest(refundBody));
+    expect(retried.status).toBe(200);
+    expect(store.balance()).toBe(300);
+  });
+
+  it("STRIPE_LIVEMODE: an event from the other mode is refused (400) before anything is stored", async () => {
+    const store = fakeStore();
+    const live = JSON.stringify({ ...event("checkout.session.completed", session(), "evt_live"), livemode: true });
+    const test = JSON.stringify({ ...event("checkout.session.completed", session({ id: "cs_t" }), "evt_test"), livemode: false });
+    const strict = handlerWith(store, { STRIPE_LIVEMODE: "true" });
+    const refused = await strict(await signedRequest(test));
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toEqual({ error: "invalid_request", message: "livemode mismatch" });
+    expect(store.log.recorded).toEqual([]);
+    expect((await strict(await signedRequest(live))).status).toBe(200);
+    // unset on a deployment: live only
+    const prod = createWebhookHandler({ getEnv: () => ({ ...fullEnv }), createStore: () => store, now: () => NOW });
+    const onProd = (body: string) => signedRequest(body, { url: "https://whiteboard.rushilchopra.com/api/billing/webhook" });
+    expect((await prod(await onProd(test))).status).toBe(400);
+    expect((await prod(await onProd(JSON.stringify({ ...event("checkout.session.completed", session({ id: "cs_l2" }), "evt_live_2"), livemode: true })))).status).toBe(200);
   });
 
   it("answers 400 for a signed body that is not JSON or not an event", async () => {
@@ -510,14 +658,21 @@ describe("POST /api/billing/webhook", () => {
     expect(await res.json()).toMatchObject({ error: "feature_unavailable" });
   });
 
-  it("answers 500 and forgets the event id when the grant fails or names an unknown pack, so Stripe's retry reprocesses it", async () => {
-    for (const forced of [{ status: "error", message: "connection reset" }, { status: "unknown_pack" }] as GrantOutcome[]) {
-      const store = fakeStore({ grant: () => forced });
-      const res = await handlerWith(store)(await signedRequest(checkoutBody));
-      expect(res.status).toBe(500);
-      expect(await res.json()).toMatchObject({ error: "internal_error" });
-      expect(store.log.forgotten).toEqual(["evt_checkout"]);
-    }
+  it("answers 500 and forgets the event id when the grant fails, so Stripe's retry reprocesses it", async () => {
+    const store = fakeStore({ grant: () => ({ status: "error", message: "connection reset" }) as GrantOutcome });
+    const res = await handlerWith(store)(await signedRequest(checkoutBody));
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({ error: "internal_error" });
+    expect(store.log.forgotten).toEqual(["evt_checkout"]);
+  });
+
+  it("an unknown pack is recorded for review (no 500 loop, no ink)", async () => {
+    const store = fakeStore();
+    const body = JSON.stringify(event("checkout.session.completed", session({ metadata: { app: "agathon-classroom", pack_id: "huge" } }), "evt_huge"));
+    const res = await handlerWith(store)(await signedRequest(body));
+    expect(res.status).toBe(200);
+    expect(store.log.reviews).toEqual([expect.objectContaining({ reason: "unknown pack huge" })]);
+    expect(store.balance()).toBe(300);
   });
 
   it("answers 500 and forgets the event when a refund reversal fails", async () => {
@@ -527,11 +682,11 @@ describe("POST /api/billing/webhook", () => {
     expect(store.log.forgotten).toEqual(["evt_r"]);
   });
 
-  it("a purchase for a deleted account is acknowledged (a retry cannot help) and not forgotten", async () => {
-    const store = fakeStore({ grant: () => ({ status: "no_account" }) });
+  it("a purchase the database sends to review (e.g. a deleted account) is acknowledged and not forgotten", async () => {
+    const store = fakeStore({ grant: () => ({ status: "review", reason: "no account for this user" }) });
     const res = await handlerWith(store)(await signedRequest(checkoutBody));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ received: true, ignored: true });
+    expect(await res.json()).toEqual({ received: true });
     expect(store.log.forgotten).toEqual([]);
   });
 

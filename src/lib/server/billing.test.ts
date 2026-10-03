@@ -16,11 +16,12 @@ import {
   refundInk,
   resetBillingWarnings,
   runCharged,
+  serviceClient,
   type RpcClient,
   type RpcError,
 } from "@/lib/server/billing";
 
-const ENV_VARS = ["BILLING_ENFORCE", "NEXT_PUBLIC_BILLING_LINKS", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY"];
+const ENV_VARS = ["BILLING_ENFORCE", "NEXT_PUBLIC_BILLING_LINKS", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 const saved: Record<string, string | undefined> = {};
 
 beforeEach(() => {
@@ -208,7 +209,8 @@ describe("enforceInk", () => {
     expect("response" in result).toBe(true);
     const res = (result as { response: Response }).response;
     expect(res.status).toBe(402);
-    expect(await res.json()).toMatchObject({ error: "ink_empty", remaining: 4, buyUrl: "/account" });
+    // `cost` is what the refused call needs (a worked solution: 10), so the board knows when it is affordable
+    expect(await res.json()).toMatchObject({ error: "ink_empty", remaining: 4, cost: 10, buyUrl: "/account" });
   });
 
   it("fails closed with 503 when the RPC is unavailable and billing is enforced", async () => {
@@ -251,20 +253,30 @@ describe("normalizeRefundResult", () => {
 
   it("treats an unexpected payload as refunded 0 with a reason (never throws)", () => {
     for (const payload of [null, undefined, 7, "ok", {}, { refunded: 1 }, { refunded: "x", remaining: 1 }, []]) {
-      expect(normalizeRefundResult(payload), JSON.stringify(payload)).toMatchObject({ refunded: 0, reason: expect.stringMatching(/refund_credits/) });
+      expect(normalizeRefundResult(payload), JSON.stringify(payload)).toMatchObject({ refunded: 0, reason: expect.stringMatching(/refund_ink_for/) });
     }
   });
 });
 
 describe("refundInk", () => {
-  const input = { token: "jwt", requestId: "req-42" };
+  const USER = "11111111-2222-4333-8444-555555555555";
+  const input = { userId: USER, requestId: "req-42" };
 
-  it("calls refund_credits with exactly the request id and reports refunded + remaining", async () => {
+  it("calls refund_ink_for (service role) with exactly the verified user and the request id", async () => {
     const client = fakeRpc({ data: { refunded: 25, remaining: 300 } });
     const log = recordingLog();
     await expect(refundInk(input, log, client)).resolves.toEqual({ refunded: 25, remaining: 300 });
-    expect(client.calls).toEqual([{ fn: "refund_credits", args: { p_request_id: "req-42" } }]);
+    expect(client.calls).toEqual([{ fn: "refund_ink_for", args: { p_user_id: USER, p_request_id: "req-42" } }]);
     expect(log.lines).toEqual(["info:ink refunded"]);
+  });
+
+  it("without SUPABASE_SERVICE_ROLE_KEY nothing is refunded (logged), and the user's own token is never used", async () => {
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    resetServerEnvCache();
+    const log = recordingLog();
+    await expect(refundInk(input, log)).resolves.toEqual({ refunded: 0, reason: expect.stringMatching(/SUPABASE_SERVICE_ROLE_KEY/) });
+    expect(log.lines).toEqual(["warn:ink refund failed"]);
+    expect(serviceClient()).toBeNull();
   });
 
   it("a refund that matched nothing is refunded 0 without a reason (idempotent, not an error)", async () => {
@@ -275,19 +287,19 @@ describe("refundInk", () => {
 
   it("maps a missing function, an RPC error and a thrown error to refunded 0 + reason, only logging", async () => {
     const missing = recordingLog();
-    await expect(refundInk(input, missing, fakeRpc({ error: { message: "Could not find the function public.refund_credits in the schema cache", code: "PGRST202" } }))).resolves.toEqual({
+    await expect(refundInk(input, missing, fakeRpc({ error: { message: "Could not find the function public.refund_ink_for in the schema cache", code: "PGRST202" } }))).resolves.toEqual({
       refunded: 0,
-      reason: "refund_credits RPC is missing (run the migrations).",
+      reason: "refund_ink_for RPC is missing (run the migrations).",
     });
     expect(missing.lines).toEqual(["warn:ink refund failed"]);
 
     await expect(refundInk(input, recordingLog(), fakeRpc({ error: { message: "deadlock detected" } }))).resolves.toEqual({
       refunded: 0,
-      reason: "refund_credits failed: deadlock detected",
+      reason: "refund_ink_for failed: deadlock detected",
     });
     await expect(refundInk(input, recordingLog(), fakeRpc(new Error("network down")))).resolves.toEqual({
       refunded: 0,
-      reason: "refund_credits threw: network down",
+      reason: "refund_ink_for threw: network down",
     });
   });
 
@@ -301,7 +313,7 @@ describe("refundInk", () => {
 });
 
 describe("runCharged", () => {
-  const input = { token: "jwt", requestId: "req-7" };
+  const input = { userId: "11111111-2222-4333-8444-555555555555", requestId: "req-7" };
   const onError = (err: unknown) => Response.json({ error: "upstream_error", message: String(err) }, { status: 502 });
 
   it("returns a 2xx untouched and never refunds (a text-only model answer is still a 2xx)", async () => {
@@ -317,7 +329,7 @@ describe("runCharged", () => {
     const log = recordingLog();
     const res = await runCharged(input, log, async () => Response.json({ error: "recognizer_failed" }, { status: 502 }), onError, client);
     expect(res.status).toBe(502);
-    expect(client.calls).toEqual([{ fn: "refund_credits", args: { p_request_id: "req-7" } }]);
+    expect(client.calls).toEqual([{ fn: "refund_ink_for", args: { p_user_id: "11111111-2222-4333-8444-555555555555", p_request_id: "req-7" } }]);
     expect(log.lines).toEqual(["info:ink refunded"]);
   });
 
@@ -334,7 +346,7 @@ describe("runCharged", () => {
     );
     expect(res.status).toBe(502);
     expect(await res.json()).toMatchObject({ error: "upstream_error", message: "Error: timeout" });
-    expect(client.calls.map((c) => c.fn)).toEqual(["refund_credits"]);
+    expect(client.calls.map((c) => c.fn)).toEqual(["refund_ink_for"]);
   });
 
   it("still returns the error response when the refund itself fails (only logged)", async () => {

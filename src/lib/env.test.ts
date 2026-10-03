@@ -31,6 +31,7 @@ const ALL_VARS = [
   "ELEVENLABS_API_KEY",
   "BILLING_ENFORCE",
   "STRIPE_WEBHOOK_SECRET",
+  "STRIPE_LIVEMODE",
   "INK_PRICE_MAP",
   "NEXT_PUBLIC_BILLING_LINKS",
   "RATE_LIMIT_BACKEND",
@@ -209,6 +210,7 @@ describe("billing env", () => {
     const env = getServerEnv();
     expect(env.BILLING_ENFORCE).toBeUndefined();
     expect(env.STRIPE_WEBHOOK_SECRET).toBeUndefined();
+    expect(env.STRIPE_LIVEMODE).toBeUndefined();
     expect(env.INK_PRICE_MAP).toBeUndefined();
     expect(env.NEXT_PUBLIC_BILLING_LINKS).toBeUndefined();
   });

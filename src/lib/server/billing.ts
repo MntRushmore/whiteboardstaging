@@ -16,13 +16,15 @@ import { json } from "@/lib/server/auth";
  *
  * Placement in a route: after auth + rate limit + body validation and BEFORE the
  * upstream provider call. Charging up-front keeps the check atomic; when the paid
- * work then fails, `refundInk` (RPC `refund_credits`) gives the charge back:
+ * work then fails, `refundInk` (RPC `refund_ink_for`, SERVICE ROLE ONLY) gives the charge back.
+ * The refund never runs as the user: a user allowed to refund their own request ids could get
+ * the ink of any call back (every 2xx carries its X-Request-Id), so ink would never run out.
  *   - non-streaming routes run their provider call inside `runCharged`, which refunds
  *     whenever the response handed to the client is not a 2xx;
  *   - the SSE routes (live/check, live/solve) refund only when the stream fails before
  *     the first annotation/step was emitted (see `runChargedStream` in live-route.ts).
- * The refund uses the SAME requestId the charge used; the RPC only touches the
- * caller's own usage_events rows younger than 15 minutes.
+ * The refund uses the SAME requestId the charge used and the user `requireUser` verified; the
+ * RPC only touches that user's usage_events rows younger than 15 minutes.
  */
 
 export const billingLogger = logger.child({ module: "billing" });
@@ -88,11 +90,33 @@ export type RpcError = { message: string; code?: string | null; details?: string
 export const CONSUME_INK_RPC = "consume_credits";
 
 /**
- * The SECURITY DEFINER function (20260917030000_refunds_ratelimit.sql, pointed at the ink
- * balance by 20261002000000_ink.sql):
- * `refund_credits(p_request_id text) returns jsonb` -> `{ refunded: int, remaining: int }`.
+ * The SECURITY DEFINER function (20261002000000_ink.sql), executable by the service role only:
+ * `refund_ink_for(p_user_id uuid, p_request_id text) returns jsonb` -> `{ refunded: int, remaining: int }`.
+ * (`refund_credits(p_request_id)`, which a user could call, is no longer executable by them.)
  */
-export const REFUND_INK_RPC = "refund_credits";
+export const REFUND_INK_RPC = "refund_ink_for";
+
+let serviceCache: { key: string; client: SupabaseClient } | null = null;
+
+/**
+ * The service-role client refunds use, or null without SUPABASE_SERVICE_ROLE_KEY (then failed
+ * calls are not refunded, and each attempt is logged). Never handed a user's request body: it only
+ * ever calls `refund_ink_for` with the user id `requireUser` verified.
+ */
+export function serviceClient(): SupabaseClient | null {
+  const env = getServerEnv();
+  if (!env.SUPABASE_SERVICE_ROLE_KEY) return null;
+  const key = `${env.NEXT_PUBLIC_SUPABASE_URL}|${env.SUPABASE_SERVICE_ROLE_KEY}`;
+  if (serviceCache?.key !== key) {
+    serviceCache = {
+      key,
+      client: createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      }),
+    };
+  }
+  return serviceCache.client;
+}
 
 /**
  * A supabase-js client that acts as the user: anon key + `Authorization: Bearer <token>`,
@@ -181,8 +205,8 @@ export async function consumeInk(input: ConsumeInput, client?: RpcClient): Promi
 /* ------------------------------------------------------------------------- */
 
 export type RefundInput = {
-  /** The caller's verified Supabase access token (from `requireUser`). */
-  token: string;
+  /** The user `requireUser` / `livePreamble` verified: whose charge to give back. */
+  userId: string;
   /** Must be the very requestId that was passed to `consumeInk` / `enforceInk`. */
   requestId: string;
 };
@@ -197,41 +221,45 @@ export type BillingLog = {
   info?: (obj: object, msg: string) => void;
 };
 
-/** Normalise the `refund_credits` payload (object, one-row set or jsonb). Exported for tests. */
+/** Normalise the `refund_ink_for` payload (object, one-row set or jsonb). Exported for tests. */
 export function normalizeRefundResult(data: unknown): RefundResult {
   const row = Array.isArray(data) ? data[0] : data;
-  if (!row || typeof row !== "object") return { refunded: 0, reason: "refund_credits returned no row." };
+  if (!row || typeof row !== "object") return { refunded: 0, reason: "refund_ink_for returned no row." };
   const r = row as Record<string, unknown>;
   const refunded = asNumber(r.refunded);
   const remaining = asNumber(r.remaining);
-  if (refunded === null || remaining === null) return { refunded: 0, reason: "refund_credits returned an unexpected shape." };
+  if (refunded === null || remaining === null) return { refunded: 0, reason: "refund_ink_for returned an unexpected shape." };
   return { refunded: Math.max(0, refunded), remaining: Math.max(0, remaining) };
 }
 
 /**
- * Give back what `consumeInk` charged for `requestId`. Never throws; a refund that
- * cannot happen is logged and reported as `{ refunded: 0, reason }` so the route can
- * still answer the client. With `BILLING_ENFORCE=0` nothing was charged, so nothing
- * is refunded and the database is not touched.
+ * Give back what `consumeInk` charged for `requestId`, with the service role. Never throws; a
+ * refund that cannot happen is logged and reported as `{ refunded: 0, reason }` so the route can
+ * still answer the client. With `BILLING_ENFORCE=0` nothing was charged, so nothing is refunded
+ * and the database is not touched.
  */
 export async function refundInk(input: RefundInput, log: BillingLog = billingLogger, client?: RpcClient): Promise<RefundResult> {
   if (!billingEnforced()) return { refunded: 0, reason: "not_enforced" };
 
   let result: RefundResult;
   try {
-    const rpcClient = client ?? userClient(input.token);
-    const { data, error } = await rpcClient.rpc(REFUND_INK_RPC, { p_request_id: input.requestId });
-    if (error) {
-      const text = `${error.message ?? ""} ${error.details ?? ""} ${error.hint ?? ""}`;
-      result =
-        error.code === "42883" || error.code === "PGRST202" || MISSING_FUNCTION_RE.test(text)
-          ? { refunded: 0, reason: "refund_credits RPC is missing (run the migrations)." }
-          : { refunded: 0, reason: `refund_credits failed: ${error.message}` };
+    const rpcClient = client ?? serviceClient();
+    if (!rpcClient) {
+      result = { refunded: 0, reason: "SUPABASE_SERVICE_ROLE_KEY is not set, so failed calls cannot be refunded." };
     } else {
-      result = normalizeRefundResult(data);
+      const { data, error } = await rpcClient.rpc(REFUND_INK_RPC, { p_user_id: input.userId, p_request_id: input.requestId });
+      if (error) {
+        const text = `${error.message ?? ""} ${error.details ?? ""} ${error.hint ?? ""}`;
+        result =
+          error.code === "42883" || error.code === "PGRST202" || MISSING_FUNCTION_RE.test(text)
+            ? { refunded: 0, reason: "refund_ink_for RPC is missing (run the migrations)." }
+            : { refunded: 0, reason: `refund_ink_for failed: ${error.message}` };
+      } else {
+        result = normalizeRefundResult(data);
+      }
     }
   } catch (err) {
-    result = { refunded: 0, reason: `refund_credits threw: ${err instanceof Error ? err.message : String(err)}` };
+    result = { refunded: 0, reason: `refund_ink_for threw: ${err instanceof Error ? err.message : String(err)}` };
   }
 
   if ("reason" in result) {
@@ -280,13 +308,15 @@ export const BILLING_UNAVAILABLE_MESSAGE = "Billing is not set up on this deploy
 export const BUY_INK_PATH = "/account";
 
 /**
- * 402 following the shared error contract, with additive `remaining` (the ink left, less than
- * the call costs) and `buyUrl`. It is the only 402 the API sends: the provider's own account
- * running dry is a 503 (request.ts), so a client may read any 402 as "this user is out of ink".
+ * 402 following the shared error contract, with additive `remaining` (the ink left), `cost` (what
+ * the refused call needs, so the board knows when the balance covers it again) and `buyUrl`. It is
+ * the only 402 the API sends: the provider's own account running dry is a 503 (request.ts), so a
+ * client may read any 402 as "this user is out of ink".
  */
-export function inkEmptyResponse(remaining: number): Response {
+export function inkEmptyResponse(remaining: number, cost?: number): Response {
   return json(402, "ink_empty", INK_EMPTY_MESSAGE, {
     remaining: Math.max(0, remaining),
+    ...(cost !== undefined ? { cost } : {}),
     buyUrl: BUY_INK_PATH,
   });
 }
@@ -333,7 +363,7 @@ export async function enforceInk(
 
   if (result.reason === "insufficient_ink") {
     log.warn({ route: input.route, remaining: result.remaining, cost: ROUTE_COSTS[input.route] }, "out of ink");
-    return { response: inkEmptyResponse(result.remaining) };
+    return { response: inkEmptyResponse(result.remaining, ROUTE_COSTS[input.route]) };
   }
 
   log.warn({ route: input.route, error: result.message }, "billing unavailable; failing closed");

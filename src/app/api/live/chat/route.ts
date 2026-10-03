@@ -75,14 +75,14 @@ function teachEngine(): Promise<LiveEngine> {
 export async function POST(req: Request) {
   const ctx = await livePreamble(req, "chat", "liveChat", ChatRequestSchema);
   if ("response" in ctx) return ctx.response;
-  const { requestId, token, log, data, startedAt } = ctx;
+  const { requestId, token, user, log, data, startedAt } = ctx;
 
   const models = getLiveModels();
   const billing = await enforceInk({ token, route: "live/chat", requestId, model: models.chat }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   return runCharged(
-    { token, requestId },
+    { userId: user.id, requestId },
     log,
     async () => {
       const { data: raw, model } = await chatJsonWithFallback(models.chat, models.chatFallback, {
@@ -245,7 +245,7 @@ export async function POST(req: Request) {
                   ? present.notes[0]
                   : "Sorry, I couldn't do that on the board. Try asking another way.";
         notes.length = 0;
-        const r = await refundInk({ token, requestId }, log);
+        const r = await refundInk({ userId: user.id, requestId }, log);
         refunded = r.refunded > 0;
       }
       if (!reply) reply = actions.length > 0 ? "Here you go." : "I can only help with maths on this board.";

@@ -27,7 +27,7 @@ export const maxDuration = 60;
 export async function POST(req: Request) {
   const ctx = await livePreamble(req, "lecture/sketch", "liveSketch", SketchRequestSchema);
   if ("response" in ctx) return ctx.response;
-  const { requestId, token, log, data, startedAt } = ctx;
+  const { requestId, token, user, log, data, startedAt } = ctx;
   const models = getLiveModels();
   const charged = billingEnforced();
 
@@ -62,5 +62,5 @@ export async function POST(req: Request) {
     if (err instanceof NoDrawingError) log.warn({ attempts: err.attempts }, "sketch: no usable drawing");
     return withRequestId(errorResponse(err, log, { ms: Date.now() - startedAt, charged }), requestId);
   };
-  return runCharged({ token, requestId }, log, draw, failed);
+  return runCharged({ userId: user.id, requestId }, log, draw, failed);
 }

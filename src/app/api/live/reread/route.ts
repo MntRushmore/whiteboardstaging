@@ -23,14 +23,14 @@ const REREAD_ATTEMPT_MS = 8_000;
 export async function POST(req: Request) {
   const ctx = await livePreamble(req, "reread", "liveReread", RereadRequestSchema);
   if ("response" in ctx) return ctx.response;
-  const { requestId, token, log, data, startedAt } = ctx;
+  const { requestId, token, user, log, data, startedAt } = ctx;
 
   const models = getLiveModels();
   const billing = await enforceInk({ token, route: "live/reread", requestId, model: models.reread }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   return runCharged(
-    { token, requestId },
+    { userId: user.id, requestId },
     log,
     async () => {
       const { data: reply, model } = await chatJsonWithFallback(models.reread, models.rereadFallback, {

@@ -75,7 +75,7 @@ export async function POST(req: Request) {
   const charge = async (requestId: string): Promise<Response> => {
     const billing = await enforceInk({ token, route: "live/lecture", requestId, model: models.lecture }, log);
     if ("response" in billing) return withRequestId(billing.response, traceId);
-    return runCharged({ token, requestId }, log, () => direct(true), failed);
+    return runCharged({ userId: user.id, requestId }, log, () => direct(true), failed);
   };
 
   if (billingEnforced() && !(await minutePaid(token, user.id, minute, log))) return charge(minute);

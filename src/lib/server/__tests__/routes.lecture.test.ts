@@ -1,7 +1,7 @@
 /**
  * POST /api/live/lecture (lecture mode's director), driven through its real handler with fakes for
  * supabase-js (auth, RPCs, and the user's own `usage_events` rows, which `consume_credits` writes
- * and `refund_credits` deletes as the real ones do), OpenRouter (`chatJsonWithFallback`) and the
+ * and `refund_ink_for` deletes as the real ones do), OpenRouter (`chatJsonWithFallback`) and the
  * figure drawer's check. The Live contract: 401 before anything, 429 before the charge, zod 400
  * before the charge. Billing is PER MINUTE of a session: the first request in each wall-clock
  * minute is charged 1 credit under `lec:<session>:<minute>` (`charged: true`), the rest of that
@@ -16,9 +16,9 @@ type RpcReply = { data?: unknown; error?: { message: string; code?: string } | n
 const fake = vi.hoisted(() => ({
   GOOD_TOKEN: "aaaa.bbbb.cccc",
   USER_ID: "11111111-2222-4333-8444-555555555555",
-  calls: [] as Array<{ fn: string; args?: Record<string, unknown> }>,
+  calls: [] as Array<{ fn: string; args?: Record<string, unknown>; key?: string }>,
   replies: {} as Record<string, (args?: Record<string, unknown>) => RpcReply>,
-  /** the user's usage_events rows (what consume_credits wrote and refund_credits has not deleted) */
+  /** the user's usage_events rows (what consume_credits wrote and refund_ink_for has not deleted) */
   rows: [] as Array<{ user_id: string; request_id: string; units: number }>,
   /** the next usage_events select fails with this */
   selectError: null as string | null,
@@ -27,13 +27,13 @@ const fake = vi.hoisted(() => ({
 }));
 
 vi.mock("@supabase/supabase-js", () => ({
-  createClient: () => ({
+  createClient: (_url: string, key: string) => ({
     auth: {
       getUser: async (token: string) =>
         token === fake.GOOD_TOKEN ? { data: { user: { id: fake.USER_ID, email: "qa@example.com" } }, error: null } : { data: { user: null }, error: { message: "invalid token" } },
     },
     rpc: async (fn: string, args?: Record<string, unknown>) => {
-      fake.calls.push({ fn, args });
+      fake.calls.push({ fn, args, key });
       const reply = fake.replies[fn]?.(args) ?? { error: { message: `no fake reply for ${fn}` } };
       if (reply instanceof Error) throw reply;
       return { data: reply.data ?? null, error: reply.error ?? null };
@@ -80,7 +80,7 @@ import { LECTURE_SYSTEM_PROMPT } from "@/lib/server/prompts/lecture";
 import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rate-limit";
 import { maxDuration, POST as lecture } from "@/app/api/live/lecture/route";
 
-const ENV_VARS = ["BILLING_ENFORCE", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "LIVE_MODEL_LECTURE"];
+const ENV_VARS = ["BILLING_ENFORCE", "SUPABASE_SERVICE_ROLE_KEY", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "LIVE_MODEL_LECTURE"];
 const savedEnv: Record<string, string | undefined> = {};
 const SESSION = "sess_abc12345";
 const BODY = {
@@ -119,6 +119,7 @@ beforeEach(() => {
     delete process.env[name];
   }
   process.env.NEXT_PUBLIC_SUPABASE_URL = "http://127.0.0.1:54321";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test";
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
   process.env.OPENROUTER_API_KEY = "sk-or-test";
   resetServerEnvCache();
@@ -134,7 +135,7 @@ beforeEach(() => {
     fake.rows.push({ user_id: fake.USER_ID, request_id: String(args?.p_request_id), units: Number(args?.p_units) });
     return { data: { ok: true, remaining: 100, reason: null } };
   };
-  fake.replies.refund_credits = (args) => {
+  fake.replies.refund_ink_for = (args) => {
     const before = fake.rows.length;
     fake.rows.splice(0, fake.rows.length, ...fake.rows.filter((r) => r.request_id !== args?.p_request_id));
     return { data: { refunded: before - fake.rows.length, remaining: 101 } };
@@ -210,7 +211,7 @@ describe("live/lecture", () => {
       // another session in the same minute is its own
       expect((await post({ ...BODY, session: "sess_other999" })).body?.charged).toBe(true);
       expect(callsTo("consume_credits")).toHaveLength(3);
-      expect(callsTo("refund_credits")).toEqual([]);
+      expect(callsTo("refund_ink_for")).toEqual([]);
     });
 
     it("a charging request that fails is refunded under the minute's id, and the next request that minute pays instead", async () => {
@@ -219,7 +220,7 @@ describe("live/lecture", () => {
       expect(failed.res.status).toBe(502);
       expect(failed.res.headers.get("X-Request-Id")).toBeTruthy();
       const minute = lectureMinuteId(SESSION, T0);
-      expect(callsTo("refund_credits").map((c) => c.args)).toEqual([{ p_request_id: minute }]);
+      expect(callsTo("refund_ink_for").map((c) => c.args)).toEqual([{ p_user_id: fake.USER_ID, p_request_id: minute }]);
       expect(fake.rows).toEqual([]);
 
       modelReplies({ actions: [BAR] });
@@ -234,7 +235,7 @@ describe("live/lecture", () => {
       vi.mocked(chatJsonWithFallback).mockRejectedValueOnce(new UpstreamError(504, "slow"));
       vi.setSystemTime(T0 + 20_000);
       expect((await post()).res.status).toBe(502);
-      expect(callsTo("refund_credits")).toEqual([]);
+      expect(callsTo("refund_ink_for")).toEqual([]);
       expect(fake.rows).toHaveLength(1);
     });
 
@@ -247,7 +248,7 @@ describe("live/lecture", () => {
       expect(body?.refunded).toBeUndefined();
       // one call: no repair round-trip for a figure
       expect(chatJsonWithFallback).toHaveBeenCalledTimes(1);
-      expect(callsTo("refund_credits")).toEqual([]);
+      expect(callsTo("refund_ink_for")).toEqual([]);
     });
 
     it("402 when out of credits, before any model call", async () => {
