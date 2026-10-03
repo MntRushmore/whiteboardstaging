@@ -9,7 +9,8 @@ const ROOT = path.resolve(__dirname, "../../../..");
 describe("board embeds (security audit, 2026-10-03)", () => {
   it("drop the GitHub Gist, whose srcdoc frame tldraw leaves unsandboxed in our origin", () => {
     expect(DEFAULT_EMBED_DEFINITIONS.some((d) => d.type === "github_gist")).toBe(true);
-    expect(BOARD_EMBEDS.some((d) => d.type === "github_gist")).toBe(false);
+    // (the filter narrows the type too; the runtime check is the point)
+    expect((BOARD_EMBEDS as readonly { type: string }[]).some((d) => d.type === "github_gist")).toBe(false);
   });
 
   it("keep every other default embed", () => {
