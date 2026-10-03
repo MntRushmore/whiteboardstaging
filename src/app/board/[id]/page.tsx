@@ -68,7 +68,6 @@ import { captureBoardScreenshot } from "@/components/board/boardScreenshot";
 import { BETA_COPY } from "@/components/app/BetaBadge";
 import { Celebrations } from "@/components/live/Celebrations";
 import { useFeatureLabs } from "@/lib/featureLabs";
-import { ListOrdered } from "lucide-react";
 import { liveShapeUtils, liveTools, liveUiOverrides, LiveToolbar } from "@/shapes";
 import { LIVE_KILL_SWITCH } from "@/lib/live/contracts";
 import { useLiveMath } from "@/lib/live/useLiveMath";
@@ -85,11 +84,11 @@ import { LiveHintLayer } from "@/components/live/LiveHintLayer";
 import { LiveErrorBoundary } from "@/components/live/LiveErrorBoundary";
 import { ASSET_COPY, LIVE_COPY } from "@/components/live/copy";
 import { boardToolbarView } from "@/components/live/toolbar";
+import { AskButton } from "@/components/live/AskButton";
 import { BoardChatPanel, CHAT_TOGGLE_ATTR } from "@/components/chat/BoardChatPanel";
 import { CHAT_COPY } from "@/components/chat/chatView";
 import { useChatOpen } from "@/components/chat/useBoardChat";
 import { useLecture } from "@/components/lecture/useLecture";
-import { LectureButton } from "@/components/lecture/LectureButton";
 import { LectureBar } from "@/components/lecture/LectureBar";
 import { browserStorage as onboardingStorage, isGuidedBoard } from "@/lib/onboarding/marker";
 import { attachKeyboardFit, browserKeyboardFitEnv } from "@/components/board/keyboardFit";
@@ -261,6 +260,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   const { features } = useFeatureLabs();
   // Help mode is remembered per board on this device (default Feedback).
   const [assistanceMode, setAssistanceMode] = useAssistanceMode(id);
+  // Bumped each time the student moves the dial: the ask button glows (AskButton).
+  const [askGlow, setAskGlow] = useState(0);
   // The (i) explainer and the bug report both used to be buttons in the bar; they open from
   // Board options now, so the page owns their open state.
   const [modeInfoOpen, setModeInfoOpen] = useState(false);
@@ -316,8 +317,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   return (
     <>
       {/*
-        The board's one primary row: go back, choose how much help, see what the tutor is
-        doing, and (in Solve) ask for the worked steps. Everything rare — the Live
+        The board's one primary row: go back, choose how much help, ask for it (Help me / Solve it),
+        and see what the tutor is doing. Everything rare — the Live
         preference, the help-mode explainer — hangs off the status pill's "…" menu rather
         than competing with them. Report a bug has a button of its own while we are in beta.
       */}
@@ -361,7 +362,10 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
         <div className="flex min-w-0 flex-wrap items-center gap-1.5 @5xl/bar:gap-2">
           <Tabs
             value={assistanceMode}
-            onValueChange={(value) => setAssistanceMode(value as AssistanceMode)}
+            onValueChange={(value) => {
+              setAssistanceMode(value as AssistanceMode);
+              setAskGlow((n) => n + 1);
+            }}
             className="w-auto shadow-sm rounded-lg"
           >
             <TabsList aria-label="How much help">
@@ -371,18 +375,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
               <TabsTrigger value="answer" className={HELP_TAB_CLASS}>Solve</TabsTrigger>
             </TabsList>
           </Tabs>
-          {toolbar.showSolveSteps && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="bg-white shadow-sm"
-              title={LIVE_COPY.solve.stepsHint}
-              onClick={() => controller.requestSolve()}
-            >
-              <ListOrdered className="h-4 w-4" />
-              <span className="ml-1.5">{LIVE_COPY.solve.steps}</span>
-            </Button>
-          )}
+          {/* stuck? the one thing to tap: the next step, or in Solve the rest of them */}
+          {toolbar.askButton && <AskButton kind={toolbar.askButton} glow={askGlow} onAsk={() => controller.requestHelp()} />}
           <Button
             variant={chat.open ? "secondary" : "outline"}
             size="sm"
@@ -397,7 +391,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
             {/* open, the panel names itself: the button is its icon unless the board is wide */}
             <span className={chat.open ? "ml-1.5 hidden @5xl/bar:inline" : "ml-1.5"}>{CHAT_COPY.button}</span>
           </Button>
-          <LectureButton lecture={lecture} />
+          {/* Lecture mode is hidden for now (owner, 2026-10-03): its button is out of the bar; the
+              code, LectureBar and the dev handles stay, so it comes back with this one line. */}
           <LiveErrorBoundary>
             <LiveStatusPill
               editor={editor}

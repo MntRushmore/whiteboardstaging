@@ -232,6 +232,23 @@ html:has([data-board-root]) body {
 .live-pill__label {
   transition: opacity 1500ms ease; /* = LIVE_TIMING.pillFadeMs */
 }
+/* The bar's ask button (AskButton) glows when the dial moves: a stuck student sees what to tap. */
+.ask-glow {
+  animation: ask-glow 1s ease-out 3;
+}
+@keyframes ask-glow {
+  0% {
+    box-shadow: 0 0 0 0 rgb(37 99 235 / 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 12px rgb(37 99 235 / 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ask-glow {
+    animation: none;
+  }
+}
 .live-pill__label--fading {
   opacity: 0.35;
 }

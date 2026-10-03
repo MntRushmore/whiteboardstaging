@@ -737,8 +737,9 @@ export interface LiveController {
    * The board's one "Help" action, on the latest line: Solve writes the solution, Feedback /
    * Suggest escalate that line's hint. Ink Live could not read as maths goes to the check
    * model with a crop of the ink ("Ask about this"). Always explicit; never fired on a timer.
+   * False when there is nothing on the screen to help with yet (or help is Off).
    */
-  requestHelp(): void;
+  requestHelp(): boolean;
   escalate(lineId: string): void;
   dismissHint(hintId: string): void;
   clearMarks(): void;

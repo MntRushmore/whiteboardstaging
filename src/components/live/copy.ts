@@ -57,9 +57,17 @@ export const LIVE_COPY = {
     region: "Hints from Live",
   },
 
-  solve: {
-    steps: "Solve steps",
-    stepsHint: "Stream the worked steps below your last line",
+  /**
+   * The bar's big ask button, beside the dial: the one thing a stuck student taps. Words a
+   * six-year-old reads at a glance.
+   */
+  ask: {
+    help: "Help me",
+    helpHint: "Stuck? Your tutor writes the next step for you",
+    solve: "Solve it",
+    solveHint: "Your tutor writes the rest of the steps",
+    /** tapped with nothing on the screen yet */
+    nothingYet: "Write a line of maths first, then tap Help me",
   },
 
   modeInfo: {

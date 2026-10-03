@@ -47,16 +47,16 @@ const ERROR: LiveError = {
 };
 
 describe("boardToolbarView", () => {
-  it("offers Solve steps only in Solve, not as a permanent button", () => {
-    expect(toolbar({ mode: "off" }).showSolveSteps).toBe(false);
-    expect(toolbar({ mode: "feedback" }).showSolveSteps).toBe(false);
-    expect(toolbar({ mode: "suggest" }).showSolveSteps).toBe(false);
-    expect(toolbar({ mode: "answer" }).showSolveSteps).toBe(true);
+  it("always offers a stuck student something to tap: Help me in Feedback and Suggest, Solve it in Solve, none in Off", () => {
+    expect(toolbar({ mode: "off" }).askButton).toBe(null);
+    expect(toolbar({ mode: "feedback" }).askButton).toBe("help");
+    expect(toolbar({ mode: "suggest" }).askButton).toBe("help");
+    expect(toolbar({ mode: "answer" }).askButton).toBe("solve");
   });
 
-  it("hides Solve steps when Live is off: only Live writes the steps", () => {
-    expect(toolbar({ mode: "answer", liveEnabled: false }).showSolveSteps).toBe(false);
-    expect(toolbar({ mode: "answer", liveAvailable: false }).showSolveSteps).toBe(false);
+  it("hides the ask button when Live is off: only Live writes the steps", () => {
+    expect(toolbar({ mode: "answer", liveEnabled: false }).askButton).toBe(null);
+    expect(toolbar({ mode: "suggest", liveAvailable: false }).askButton).toBe(null);
   });
 
   it("knows when Live is not running (the pill, and so the board's only menu, stays in the bar)", () => {

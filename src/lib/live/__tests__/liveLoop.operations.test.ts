@@ -198,6 +198,74 @@ describe("live loop — operation lines under an equation", () => {
     expect(inkBox(written).y).toBeGreaterThan(opBox.y + opBox.h);
   });
 
+  it("the owner's board: stuck after the ticked ÷ 2 in Feedback, the dial moved to Suggest writes \\sin x = \\frac{1}{2} under it", async () => {
+    start("feedback");
+    await run([{ type: "write_problems", problems: [["2 \\sin x = 1"]] }]);
+    const head = inkBox(tutor().filter((s) => problemMetaOf(s.meta)));
+    const op = await pen(barAndTwo(head), "2");
+    await vi.advanceTimersByTimeAsync(3000);
+    await settleStable(() => String(tutor().length));
+    expect(marksOf(op)).toEqual(["check"]);
+    const result = () => tutor().filter((s) => s.meta.lineId === op && (s.meta as Record<string, unknown>).operationResult);
+    expect(result()).toEqual([]);
+    // the student has long stopped: no new ink, only the dial
+    loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true });
+    await vi.advanceTimersByTimeAsync(50);
+    await settleStable(() => String(tutor().length));
+    expect(handLinesOf(result())).toEqual(["\\sin x = \\frac{1}{2}"]);
+    const opBox = liveStore.lines.get()[op].line.bounds;
+    expect(inkBox(result()).y).toBeGreaterThan(opBox.y + opBox.h);
+  });
+
+  it("the owner's board: Help after the ticked ÷ 2 writes \\sin x = \\frac{1}{2} under it, then the step after it (a domain goes with its step), never stacked", async () => {
+    start("feedback");
+    await run([{ type: "write_problems", problems: [["2 \\sin x = 1"]] }]);
+    const head = inkBox(tutor().filter((s) => problemMetaOf(s.meta)));
+    const op = await pen(barAndTwo(head), "2");
+    await vi.advanceTimersByTimeAsync(3000);
+    await settleStable(() => String(tutor().length));
+    const onOp = () => tutor().filter((s) => s.meta.lineId === op && !(s.meta as Record<string, unknown>).mark);
+    const opBox = liveStore.lines.get()[op].line.bounds;
+    // Help in Feedback: the equation the ÷ 2 leads to, by hand, under it — no model asked
+    loop.requestHelp();
+    await settleStable(() => String(tutor().length));
+    expect(handLinesOf(onOp())).toEqual(["\\sin x = \\frac{1}{2}"]);
+    expect(inkBox(onOp()).y).toBeGreaterThan(opBox.y + opBox.h);
+    const first = inkBox(onOp());
+    // asked again: the step after it, under it, and the first stays
+    loop.requestHelp();
+    await settleStable(() => String(tutor().length));
+    const lines = handLinesOf(onOp());
+    expect(lines[0]).toBe("\\sin x = \\frac{1}{2}");
+    // the engine states the domain first; on its own it is no help, so the step after it comes with it
+    expect(lines).toEqual(["\\sin x = \\frac{1}{2}", "0^{\\circ} \\le x < 360^{\\circ}", "\\sin^{-1}\\left(\\frac{1}{2}\\right) = 30^{\\circ}"]);
+    const second = onOp().filter((s) => !(s.meta as Record<string, unknown>).operationResult);
+    expect(inkBox(second).y).toBeGreaterThan(first.y + first.h);
+    // asked a third time: the same step again, never stacked
+    loop.requestHelp();
+    await settleStable(() => String(tutor().length));
+    expect(handLinesOf(onOp())).toEqual(lines);
+    expect(requests).toEqual([]);
+  });
+
+  it("the owner's board in Solve: Solve steps on the ticked ÷ 2 writes \\sin x = \\frac{1}{2} and the rest under it", async () => {
+    start("answer");
+    await run([{ type: "write_problems", problems: [["2 \\sin x = 1"]] }]);
+    const head = inkBox(tutor().filter((s) => problemMetaOf(s.meta)));
+    const op = await pen(barAndTwo(head), "2");
+    loop.requestSolve();
+    await settleStable(() => String(tutor().length));
+    await vi.advanceTimersByTimeAsync(3000);
+    await settleStable(() => String(tutor().length));
+    const onOp = tutor().filter((s) => s.meta.lineId === op && !(s.meta as Record<string, unknown>).mark);
+    const lines = handLinesOf(onOp);
+    // once: the settle's own result block does not write it a second time
+    expect(lines.filter((l) => l === "\\sin x = \\frac{1}{2}")).toHaveLength(1);
+    expect(lines[0]).toBe("\\sin x = \\frac{1}{2}");
+    expect(lines.length).toBeGreaterThan(1);
+    expect(requests).toEqual([]);
+  });
+
   it("Feedback writes nothing under it; nor does Suggest once the student has written the next line", async () => {
     start("feedback");
     await pen(inkLine("2x+3=11", 100, 200, 40), "2x + 3 = 11");

@@ -26,8 +26,13 @@ export interface BoardToolbarState {
 }
 
 export interface BoardToolbarView {
-  /** "Solve steps" is a Solve-mode action, not a permanent button */
-  showSolveSteps: boolean;
+  /**
+   * The bar's big ask button, beside the dial: "Help me" (the next step) in Feedback and
+   * Suggest, "Solve it" (the rest of the steps) in Solve. Turning the dial is choosing how much
+   * help; this is asking for it, so a stuck student always has something to tap. None in Off
+   * (no help at all) or with Live off (only Live writes the steps).
+   */
+  askButton: "help" | "solve" | null;
   /** the floating hint cards Live draws next to the ink */
   showHintLayer: boolean;
   /** Live is switched on AND allowed by the build */
@@ -42,9 +47,7 @@ export interface BoardToolbarView {
 export function boardToolbarView(state: BoardToolbarState): BoardToolbarView {
   const liveRunning = state.liveEnabled && state.liveAvailable;
   return {
-    // Streaming the worked steps only means anything once the student has asked for
-    // solutions, and only Live can write them.
-    showSolveSteps: liveRunning && state.mode === "answer",
+    askButton: !liveRunning || state.mode === "off" ? null : state.mode === "answer" ? "solve" : "help",
     showHintLayer: liveRunning,
     liveRunning,
     canHelp: liveRunning && state.mode !== "off",
