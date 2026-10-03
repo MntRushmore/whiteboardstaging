@@ -526,11 +526,12 @@ export default function BoardPage() {
       let snapshot: BoardSnapshot | null = null;
       let version: number | null = null;
       try {
+        // maybeSingle: a missing (or another account's) board is a null row, not a 406 error.
         const { data, error } = await supabase
           .from('whiteboards')
           .select('data, version')
           .eq('id', id)
-          .single();
+          .maybeSingle();
 
         result = loadStateFor({ error, row: data });
         if (result.kind === "ready" && data) {

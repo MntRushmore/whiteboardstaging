@@ -48,6 +48,8 @@ export interface LoadStateInput {
 
 /** PostgREST: `.single()` found zero rows (also what an RLS-hidden row looks like). */
 const NO_ROWS_CODE = "PGRST116";
+/** Postgres invalid_text_representation: the id in the URL is not a uuid, so no board has it. */
+const BAD_ID_CODE = "22P02";
 
 function detailOf(e: unknown): string | undefined {
   if (e instanceof Error) return e.message || undefined;
@@ -62,6 +64,7 @@ function detailOf(e: unknown): string | undefined {
  * Pure decision for the board route:
  *   restoreError            -> error   (snapshot unreadable; never mount an empty editor)
  *   error PGRST116 / 0 rows -> not-found
+ *   error 22P02 (not a uuid) -> not-found (a mistyped link, not a connection problem)
  *   any other error         -> error
  *   no row                  -> not-found
  *   row                     -> ready
@@ -72,7 +75,7 @@ export function loadStateFor(input: LoadStateInput): BoardLoadState {
   }
   const { error, row } = input;
   if (error) {
-    const zeroRows = error.code === NO_ROWS_CODE || /0 rows/i.test(error.details ?? "");
+    const zeroRows = error.code === NO_ROWS_CODE || error.code === BAD_ID_CODE || /0 rows/i.test(error.details ?? "");
     if (zeroRows) return { kind: "not-found", message: BOARD_LOAD_COPY.notFoundTitle };
     return { kind: "error", message: BOARD_LOAD_COPY.errorTitle, detail: detailOf(error) };
   }
