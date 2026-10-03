@@ -50,10 +50,11 @@ describe("the contract", () => {
     expect(isUnlimited(null)).toBe(false);
   });
 
-  it("the checkout carries the account's checkout reference (and email), never the user id; nothing without a link or a ref", () => {
+  it("the checkout carries the account's checkout reference, never the user id, and no prefilled email; nothing without a link or a ref", () => {
     const url = new URL(unlimitedCheckoutUrl({ checkoutRef: REF, email: USER.email }, "https://buy.stripe.com/test_u")!);
     expect(url.searchParams.get("client_reference_id")).toBe(REF);
-    expect(url.searchParams.get("prefilled_email")).toBe(USER.email);
+    // the account's email is often the child's: the grown-up who pays types their own
+    expect(url.searchParams.get("prefilled_email")).toBeNull();
     expect(url.toString()).not.toContain(USER.userId);
     expect(unlimitedCheckoutUrl({ checkoutRef: REF }, null)).toBeNull();
     expect(unlimitedCheckoutUrl(null, "https://buy.stripe.com/test_u")).toBeNull();

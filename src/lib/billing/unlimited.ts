@@ -91,7 +91,9 @@ export function unlimitedCheckoutUrl(payer: UnlimitedPayer | null | undefined, l
   const ref = payer?.checkoutRef?.trim();
   if (!ref || !UUID_RE.test(ref)) return null;
   // checkoutUrl sets `client_reference_id` from `userId`: here it carries the ref, never the id.
-  return checkoutUrl(link, { userId: ref, email: payer?.email });
+  // No prefilled email: the account's is often the child's, and the checkout's email is where the
+  // billing emails and the portal's sign-in go — the grown-up who pays types their own.
+  return checkoutUrl(link, { userId: ref, email: null });
 }
 
 /** The day the free week ends if it starts now, for "You won't be charged until Friday, 10 October". */

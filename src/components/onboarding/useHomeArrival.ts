@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { clientMetric } from "@/lib/logger";
-import { isUnlimitedReturn } from "@/lib/billing/unlimited";
+import { isUnlimitedReturn, unlimitedLink } from "@/lib/billing/unlimited";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
 import { browserStorage } from "@/lib/onboarding/marker";
 import { PLAN_PATH, planDue, readPlanMarker, writePlanMarker } from "@/lib/onboarding/planMarker";
@@ -56,7 +56,7 @@ export function useHomeArrival(userId: string | undefined): boolean {
       writePlanMarker(storage, userId, "seen");
       return;
     }
-    if (planDue(readPlanMarker(storage, userId))) router.replace(PLAN_PATH);
+    if (planDue(readPlanMarker(storage, userId), unlimitedLink() !== null)) router.replace(PLAN_PATH);
   }, [userId, router]);
 
   return cheer;

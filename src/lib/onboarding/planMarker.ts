@@ -8,7 +8,8 @@
  * - "pending" once the guided board was finished (not skipped): the tour's finish card opens the
  *   plan screen itself, and "pending" covers the student who never got there (a reload on the
  *   finish card), so the home sends them to it once;
- * - "seen" once the plan screen has shown.
+ * - "seen" once the plan screen has shown;
+ * - "soon" once it showed "Coming soon" (no Payment Link yet): due once more when the link exists.
  *
  * The profile has no column for it and needs none (no migration): the plan screen follows the
  * tour, which runs once per account, on one device. Apart from `marker.ts` too, which is on the
@@ -19,7 +20,7 @@ import type { StorageLike } from "./marker";
 export const PLAN_PATH = "/welcome/plan";
 export const HOME_PATH = "/";
 
-export type PlanMarker = "pending" | "seen";
+export type PlanMarker = "pending" | "seen" | "soon";
 
 export const planKey = (userId: string) => `agathon.onboarding.plan.${userId}`;
 
@@ -28,7 +29,7 @@ export function readPlanMarker(storage: StorageLike | null | undefined, userId: 
   if (!storage || !userId) return null;
   try {
     const v = storage.getItem(planKey(userId));
-    return v === "pending" || v === "seen" ? v : null;
+    return v === "pending" || v === "seen" || v === "soon" ? v : null;
   } catch {
     return null;
   }
@@ -42,7 +43,10 @@ export function writePlanMarker(storage: StorageLike | null | undefined, userId:
   }
 }
 
-/** The home sends the student to the plan screen only while it is due and has not shown. */
-export function planDue(marker: PlanMarker | null): boolean {
-  return marker === "pending";
+/**
+ * The home sends the student to the plan screen only while it is due and has not shown — or it
+ * showed "Coming soon" and the plan can be started now (`checkoutOpen`).
+ */
+export function planDue(marker: PlanMarker | null, checkoutOpen = false): boolean {
+  return marker === "pending" || (marker === "soon" && checkoutOpen);
 }

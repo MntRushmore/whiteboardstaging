@@ -22,9 +22,11 @@ describe("what the plan screen shows", () => {
   it("offers the free week with a checkout, and says Coming soon without one", () => {
     expect(planView({ loading: false, unlimited: NO_UNLIMITED, checkoutUrl: URL })).toBe("offer");
     expect(planView({ loading: false, unlimited: null, checkoutUrl: null })).toBe("soon");
-    // a lapsed plan is offered again
-    for (const status of ["past_due", "canceled", "incomplete"] as const) {
-      expect(planView({ loading: false, unlimited: { status }, checkoutUrl: URL })).toBe("offer");
+    // an ended plan is offered again
+    expect(planView({ loading: false, unlimited: { status: "canceled" }, checkoutUrl: URL })).toBe("offer");
+    // a plan that exists (being set up, a payment to fix) is never offered a second checkout
+    for (const status of ["past_due", "incomplete"] as const) {
+      expect(planView({ loading: false, unlimited: { status }, checkoutUrl: URL })).toBe("skip");
     }
   });
 
@@ -32,6 +34,9 @@ describe("what the plan screen shows", () => {
     expect(planDue("pending")).toBe(true);
     expect(planDue("seen")).toBe(false);
     expect(planDue(null)).toBe(false);
+    // shown as "Coming soon": due once more when the plan can be started
+    expect(planDue("soon")).toBe(false);
+    expect(planDue("soon", true)).toBe(true);
   });
 
   it("lives on its own route, apart from the home", () => {

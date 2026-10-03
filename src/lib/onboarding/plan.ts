@@ -13,8 +13,8 @@ import { UNLIMITED_PLAN, isUnlimited, type UnlimitedState } from "@/lib/billing/
 
 /**
  * - `checking`: the subscription is still being read (nothing shows: a subscriber is never pitched);
- * - `skip`: already on the plan (trialing or paid up), or a second plan waiting for its first
- *   charge (repeat_trial): straight on to the home;
+ * - `skip`: already on the plan (trialing or paid up), a second plan waiting for its first charge
+ *   (repeat_trial), or a plan being set up or with a payment to fix: straight on to the home;
  * - `offer`: the pitch, with Start the free week;
  * - `soon`: the pitch without a checkout (the Payment Link is not configured): "Coming soon".
  */
@@ -22,7 +22,9 @@ export type PlanView = "checking" | "skip" | "offer" | "soon";
 
 export function planView({ loading, unlimited, checkoutUrl }: { loading: boolean; unlimited: Pick<UnlimitedState, "status"> | null; checkoutUrl: string | null }): PlanView {
   if (loading) return "checking";
-  if (isUnlimited(unlimited) || unlimited?.status === "repeat_trial") return "skip";
+  // A subscription that exists but is not (yet) unlimited — being set up, or a payment to fix — is
+  // never offered a second checkout: that would be a second $25 a month.
+  if (isUnlimited(unlimited) || unlimited?.status === "repeat_trial" || unlimited?.status === "incomplete" || unlimited?.status === "past_due") return "skip";
   return checkoutUrl ? "offer" : "soon";
 }
 

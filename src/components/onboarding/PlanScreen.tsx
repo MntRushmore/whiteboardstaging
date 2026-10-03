@@ -42,7 +42,7 @@ export function PlanScreen() {
 
   useEffect(() => {
     if (!userId || view === "checking") return;
-    writePlanMarker(browserStorage(), userId, "seen");
+    writePlanMarker(browserStorage(), userId, view === "soon" ? "soon" : "seen");
     if (view === "skip") {
       router.replace(HOME_PATH);
       return;

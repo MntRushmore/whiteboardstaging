@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { NO_UNLIMITED, isUnlimited, isUnlimitedReturn, parseUnlimitedState, type UnlimitedState } from "@/lib/billing/unlimited";
 import { useInkSummary, watchCheckoutResult } from "@/lib/billing/useInkSummary";
 
@@ -24,15 +24,18 @@ export function useUnlimited(): { state: UnlimitedState; loading: boolean; refre
   const state = useMemo(() => (raw === undefined ? NO_UNLIMITED : parseUnlimitedState(raw)), [raw]);
   const on = isUnlimited(state);
 
+  // Back from checkout? Read on the first render: the home strips `?unlimited=started` from the
+  // address as it mounts (useHomeArrival), before the first summary read lands.
+  const [fromCheckout] = useState(() => typeof window !== "undefined" && isUnlimitedReturn(window.location.search));
   // Once per mount: back from checkout and the plan is not here yet, so watch for it. After
   // useInkSummary's own effect (declared first), so the store is attached to this user already.
   const watched = useRef(false);
   const ready = ink.state.status === "ready";
   useEffect(() => {
-    if (watched.current || !ready || on || typeof window === "undefined") return;
+    if (watched.current || !ready || on || !fromCheckout) return;
     watched.current = true;
-    if (isUnlimitedReturn(window.location.search)) watchCheckoutResult();
-  }, [ready, on]);
+    watchCheckoutResult();
+  }, [ready, on, fromCheckout]);
 
   return { state, loading: ink.loading, refresh: ink.reload };
 }

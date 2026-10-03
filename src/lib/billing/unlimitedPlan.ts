@@ -46,6 +46,9 @@ export const PLAN_COPY = {
   offer: `Help from the tutor without counting ink. Free for ${UNLIMITED_PLAN.trialDays} days, then ${PRICE} a month. Cancel any time.`,
   offerDetail: (firstCharge: string) => `A grown-up's card is needed at checkout. Nothing is charged until ${firstCharge}.`,
   start: `Try Unlimited free for ${UNLIMITED_PLAN.trialDays} days`,
+  /** after a plan ended: a second plan has no free week (`has_unlimited`'s first-trial rule) */
+  restart: "Start Unlimited again",
+  restartDetail: `The free week is for a first plan only: the first ${PRICE} is charged ${UNLIMITED_PLAN.trialDays} days after checkout, and help uses ink until then.`,
   comingSoon: "Coming soon",
   manage: "Manage or cancel",
   fixPayment: "Update your card",
@@ -155,9 +158,9 @@ export function unlimitedPlanView(state: UnlimitedState, opts: { now: Date; time
         kind: "ended",
         badge: null,
         headline: PLAN_COPY.ended(periodEnd),
-        detail: PLAN_COPY.offer,
+        detail: PLAN_COPY.restartDetail,
         action: "start",
-        actionLabel: PLAN_COPY.start,
+        actionLabel: PLAN_COPY.restart,
       };
     default:
       return {
