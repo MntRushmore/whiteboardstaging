@@ -48,6 +48,8 @@ export const PUBLIC_TABLES = [
   "ink_grants",
   "ink_purchases",
   "ink_checkout_reviews",
+  // transactional email (20261003030000_email_log.sql)
+  "email_log",
 ];
 
 /** Keys every rate_limit_hit() payload must carry. */
@@ -198,6 +200,8 @@ export function minimalInsert(table, userId = ZERO_UUID) {
       return { user_id: userId, pack_id: "large", ink: 14000, amount_cents: 0, checkout_session_id: `cs_rls_verify_${uuid()}` };
     case "ink_checkout_reviews":
       return { checkout_session_id: `cs_rls_verify_${uuid()}`, reason: "rls-verify", user_id: userId };
+    case "email_log":
+      return { user_id: userId, kind: "welcome", ref: "" };
     default:
       return {};
   }
@@ -1581,6 +1585,7 @@ export const ALL_CHECKS = [
   { name: "ink tables: packs read-only, own grants and purchases only, no way to add ink", run: checkInkTables },
   { name: "ink: summary, purchases/refunds/reviews only through the service role, append-only ledgers", run: checkInkPurchases },
   { name: "sign-up consent: the Terms version is on the profile, readable, never writable", run: checkSignupConsent },
+  { name: "email_log: the service role's alone, each email claimed once", run: checkEmailLog },
   { name: "delete_own_account removes the caller's account and data", run: checkDeleteOwnAccount },
 ];
 
@@ -1624,6 +1629,47 @@ export async function checkSignupConsent({ a }) {
       JSON.stringify(after ?? null).slice(0, 200),
     ),
   );
+  return out;
+}
+
+/**
+ * Email log (migration 20261003030000_email_log.sql): the record of which transactional emails
+ * went out (the welcome, the Unlimited trial reminders), written only by the server with the
+ * service role. No user may read it (it says who got which email), insert into it (a forged
+ * "already sent" would stop their own reminder before a charge), change or delete it (a deleted
+ * row would send the email again). With the service role: a claim works once, a second claim of
+ * the same email conflicts (409, the unique key sendOnce relies on), and the check removes its own
+ * row. A user is only ever denied, so these run on A's real account without side effects.
+ * @param {CheckContext} ctx
+ */
+export async function checkEmailLog({ a, b, service }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const sel = await a.rest("GET", "email_log", { query: { select: "id" } });
+  out.push(result("email_log: A cannot read it", isDenied(sel), describe(sel)));
+  const ins = await a.rest("POST", "email_log", { body: minimalInsert("email_log", a.userId ?? ZERO_UUID), prefer: "return=minimal" });
+  out.push(result("email_log: A cannot mark an email as sent (insert denied)", isDenied(ins), describe(ins)));
+  const upd = await a.rest("PATCH", "email_log", { query: { user_id: `eq.${a.userId}` }, body: { resend_id: "rls-verify" }, prefer: "return=representation" });
+  out.push(result("email_log: A cannot update it", isDenied(upd), describe(upd)));
+  const del = await a.rest("DELETE", "email_log", { query: { user_id: `eq.${a.userId}` }, prefer: "return=representation" });
+  out.push(result("email_log: A cannot delete from it", isDenied(del), describe(del)));
+
+  if (!service) {
+    out.push(result("email_log with the service role (skipped: no service role client)", true));
+    return out;
+  }
+  const ref = `rls-verify-${uuid()}`;
+  const row = { user_id: a.userId, kind: "rls_verify", ref };
+  const claim = await service.rest("POST", "email_log", { body: row, prefer: "return=representation" });
+  out.push(result("email_log: the service role claims an email for A", isOk(claim) && rows(claim).length === 1, describe(claim)));
+  const again = await service.rest("POST", "email_log", { body: row, prefer: "return=minimal" });
+  out.push(result("email_log: a second claim of the same email conflicts (409: sent at most once)", again.status === 409, describe(again)));
+  const aSees = await a.rest("GET", "email_log", { query: { ref: `eq.${ref}`, select: "id" } });
+  out.push(result("email_log: A still cannot read the row about them", isDenied(aSees), describe(aSees)));
+  const bSees = await b.rest("GET", "email_log", { query: { ref: `eq.${ref}`, select: "id" } });
+  out.push(result("email_log: B cannot read it either", isDenied(bSees), describe(bSees)));
+  const cleared = await service.rest("DELETE", "email_log", { query: { ref: `eq.${ref}` }, prefer: "return=representation" });
+  out.push(result("email_log: the check's own row is removed again", isOk(cleared) && rows(cleared).length === 1, describe(cleared)));
   return out;
 }
 
