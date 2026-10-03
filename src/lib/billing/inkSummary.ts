@@ -26,6 +26,7 @@ export const INK_PACKS_PATH = "/account#ink-packs";
 const count = z.coerce.number().finite();
 
 const LastPurchaseSchema = z.object({
+  id: count,
   pack_id: z.string(),
   pack_name: z.string(),
   ink: count,

@@ -4,7 +4,11 @@ import {
   INK_CHANGED_EVENT,
   INK_CHANGED_KEY,
   INK_CHECKOUT_EVENT,
+  CHECKOUT_MARK_MAX_AGE_MS,
+  INK_CHECKOUT_MARK_KEY,
+  clearCheckoutMark,
   notifyInkChanged,
+  readCheckoutMark,
   watchInkCheckout,
   INK_SUMMARY_FALLBACK,
   isRetryableAuthError,
@@ -151,11 +155,42 @@ describe("telling the other ink surfaces", () => {
     expect(seen).toEqual([INK_CHANGED_EVENT]);
   });
 
-  it("watchInkCheckout fires the event the hooks start their checkout watch on", () => {
+  it("watchInkCheckout remembers the purchase the student had, and fires the event the hooks watch on", () => {
     const seen: string[] = [];
-    vi.stubGlobal("window", { dispatchEvent: (e: Event) => seen.push(e.type) });
+    const store = new Map<string, string>();
+    const localStorage = {
+      setItem: (k: string, v: string) => store.set(k, v),
+      getItem: (k: string) => store.get(k) ?? null,
+      removeItem: (k: string) => store.delete(k),
+    };
+    vi.stubGlobal("window", { dispatchEvent: (e: Event) => seen.push(e.type), localStorage });
     try {
-      watchInkCheckout();
+      watchInkCheckout(7);
+      expect(seen).toEqual([INK_CHECKOUT_EVENT]);
+      const mark = readCheckoutMark();
+      expect(mark).toMatchObject({ lastPurchaseId: 7 });
+      expect(JSON.parse(store.get(INK_CHECKOUT_MARK_KEY) ?? "{}")).toMatchObject({ lastPurchaseId: 7 });
+      // a mark from a checkout abandoned hours ago is ignored
+      expect(readCheckoutMark((mark?.at ?? 0) + CHECKOUT_MARK_MAX_AGE_MS + 1)).toBeNull();
+      clearCheckoutMark();
+      expect(readCheckoutMark()).toBeNull();
+      watchInkCheckout(null);
+      expect(readCheckoutMark()).toMatchObject({ lastPurchaseId: null });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("a blocked storage never breaks the buy button (the event still fires; no mark)", () => {
+    const seen: string[] = [];
+    const blocked = () => {
+      throw new Error("SecurityError");
+    };
+    vi.stubGlobal("window", { dispatchEvent: (e: Event) => seen.push(e.type), localStorage: { setItem: blocked, getItem: blocked, removeItem: blocked } });
+    try {
+      expect(() => watchInkCheckout(3)).not.toThrow();
+      expect(readCheckoutMark()).toBeNull();
+      expect(() => clearCheckoutMark()).not.toThrow();
     } finally {
       vi.unstubAllGlobals();
     }

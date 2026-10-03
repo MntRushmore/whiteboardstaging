@@ -131,7 +131,7 @@ export default function AccountPage() {
         ) : (
           <div className="space-y-6" data-state="ready">
             {ink.summary && <InkCard summary={ink.summary} error={ink.error} refreshing={ink.loading} onRetry={ink.reload} />}
-            <InkPacksGrid payer={payer} />
+            <InkPacksGrid payer={payer} lastPurchaseId={ink.summary?.last_purchase?.id ?? null} />
             <PurchaseHistory purchases={ink.summary?.purchases} />
             <UsageCard usedInk={ink.summary?.used} />
             <ProfileCard userId={user.id} email={email} />

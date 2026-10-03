@@ -130,7 +130,7 @@ export function OutOfInkPanel({
               </div>
               {card.href ? (
                 <Button asChild size="sm" className="shrink-0 tabular-nums">
-                  <a href={card.href} target="_blank" rel="noopener noreferrer" onClick={watchInkCheckout} data-testid={`buy-ink-${card.id}`}>
+                  <a href={card.href} target="_blank" rel="noopener noreferrer" onClick={() => watchInkCheckout(summary?.last_purchase?.id ?? null)} data-testid={`buy-ink-${card.id}`}>
                     {card.price}
                     <ExternalLink className="size-3.5" />
                   </a>

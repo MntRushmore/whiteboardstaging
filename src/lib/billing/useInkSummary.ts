@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useReducer } from "react";
 import { supabase } from "@/lib/supabase";
+import { INK_SPENT_EVENT } from "@/lib/api-client";
 import { useAuth } from "@/components/AuthProvider";
 import { describeError } from "@/lib/errorMessage";
 import { parseInkSummary, type InkSummary } from "@/lib/billing/inkSummary";
+import type { CheckoutMark } from "@/lib/billing/checkout";
 import { initialSection, sectionReducer, type SectionState } from "@/lib/billing/accountState";
 
 export const INK_SUMMARY_FALLBACK = "Couldn't read your ink. Retry in a moment.";
@@ -63,6 +65,9 @@ export const INK_CHANGED_KEY = "agathon:ink-changed";
 /** Window event: a Payment Link was just opened, so watch for the ink to arrive. */
 export const INK_CHECKOUT_EVENT = "agathon:ink-checkout";
 
+/** After paid calls, one re-read this long after the last of a burst (2xx answers do not carry the balance). */
+export const SPENT_REREAD_MS = 1_500;
+
 /** After a buy button opens Stripe: re-read this often, for this long, until the balance grows. */
 export const CHECKOUT_WATCH_MS = 3_000;
 export const CHECKOUT_WATCH_FOR_MS = 10 * 60_000;
@@ -81,9 +86,50 @@ export function notifyInkChanged(): void {
   }
 }
 
-/** A buy button opened a Payment Link (in a new tab): watch for the purchase's ink. */
-export function watchInkCheckout(): void {
-  if (typeof window !== "undefined") window.dispatchEvent(new Event(INK_CHECKOUT_EVENT));
+/**
+ * localStorage key of the checkout mark: which purchase was the newest when the student left for
+ * checkout, so the return page knows the next one is theirs. localStorage, not sessionStorage: the
+ * board opens Stripe in a noopener tab, which does not share the board tab's sessionStorage.
+ */
+export const INK_CHECKOUT_MARK_KEY = "agathon:ink-checkout";
+/** An older mark is stale (checkout abandoned). */
+export const CHECKOUT_MARK_MAX_AGE_MS = 6 * 60 * 60_000;
+
+/**
+ * A buy button opened a Payment Link: remember the purchase the student had (`lastPurchaseId`,
+ * null for none) and watch for the new one's ink.
+ */
+export function watchInkCheckout(lastPurchaseId: number | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    const mark: CheckoutMark = { at: Date.now(), lastPurchaseId };
+    window.localStorage.setItem(INK_CHECKOUT_MARK_KEY, JSON.stringify(mark));
+  } catch {
+    /* storage blocked: the return page falls back to a short time window */
+  }
+  window.dispatchEvent(new Event(INK_CHECKOUT_EVENT));
+}
+
+/** The checkout mark, or null (none, unreadable, or older than CHECKOUT_MARK_MAX_AGE_MS). */
+export function readCheckoutMark(now: number = Date.now()): CheckoutMark | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(INK_CHECKOUT_MARK_KEY) ?? "null") as Partial<CheckoutMark> | null;
+    if (!raw || typeof raw.at !== "number" || now - raw.at > CHECKOUT_MARK_MAX_AGE_MS || now < raw.at - 60_000) return null;
+    return { at: raw.at, lastPurchaseId: typeof raw.lastPurchaseId === "number" ? raw.lastPurchaseId : null };
+  } catch {
+    return null;
+  }
+}
+
+/** Forget the mark once its purchase has arrived. */
+export function clearCheckoutMark(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(INK_CHECKOUT_MARK_KEY);
+  } catch {
+    /* nothing to do */
+  }
 }
 
 export type UseInkSummaryOptions = {
@@ -101,7 +147,9 @@ export type UseInkSummaryOptions = {
  * (the student comes back from the Stripe tab), on INK_CHANGED_EVENT and the other tabs' storage
  * ping, every `pollMs` when set, and every CHECKOUT_WATCH_MS for up to CHECKOUT_WATCH_FOR_MS after
  * a buy button opened checkout (the webhook usually lands within seconds of paying, often after
- * the student is back), so bought ink appears without a reload.
+ * the student is back), so bought ink appears without a reload. After the board's paid calls
+ * (INK_SPENT_EVENT from authedFetch) it re-reads once a burst has settled, and a 402's own
+ * `remaining` is shown at once.
  */
 export function useInkSummary(options: UseInkSummaryOptions = {}) {
   const { session } = useAuth();
@@ -124,6 +172,8 @@ export function useInkSummary(options: UseInkSummaryOptions = {}) {
     let watch: ReturnType<typeof setInterval> | null = null;
     let watchUntil = 0;
     let watchFrom: number | null = null;
+    let latest: InkSummary | null = null;
+    let spentTimer: ReturnType<typeof setTimeout> | null = null;
 
     async function read() {
       const result = await readInkSummary(() => supabase.rpc("ink_summary"));
@@ -132,6 +182,7 @@ export function useInkSummary(options: UseInkSummaryOptions = {}) {
         dispatch({ type: "failed", message: result.error });
         return;
       }
+      latest = result.summary;
       dispatch({ type: "loaded", data: result.summary });
       // The checkout watch ends when the ink has arrived (or its time is up).
       if (watch && (Date.now() > watchUntil || (watchFrom !== null && result.summary.balance > watchFrom))) stopWatch();
@@ -151,6 +202,17 @@ export function useInkSummary(options: UseInkSummaryOptions = {}) {
     const onStorage = (e: StorageEvent) => {
       if (e.key === INK_CHANGED_KEY) void read();
     };
+    const onSpent = (e: Event) => {
+      const remaining = (e as CustomEvent<{ remaining?: number }>).detail?.remaining;
+      if (typeof remaining === "number" && latest) {
+        // a 402 carries the exact balance (read under the same lock as the refusal)
+        latest = { ...latest, balance: remaining, used: Math.max(0, latest.granted - remaining) };
+        dispatch({ type: "loaded", data: latest });
+        return;
+      }
+      if (spentTimer) clearTimeout(spentTimer);
+      spentTimer = setTimeout(() => void read(), SPENT_REREAD_MS);
+    };
     const onCheckout = () => {
       watchUntil = Date.now() + CHECKOUT_WATCH_FOR_MS;
       if (watch) return;
@@ -160,6 +222,7 @@ export function useInkSummary(options: UseInkSummaryOptions = {}) {
     window.addEventListener("focus", onChange);
     window.addEventListener(INK_CHANGED_EVENT, onChange);
     window.addEventListener(INK_CHECKOUT_EVENT, onCheckout);
+    window.addEventListener(INK_SPENT_EVENT, onSpent);
     window.addEventListener("storage", onStorage);
     document.addEventListener("visibilitychange", onVisible);
     const interval = pollMs > 0 ? setInterval(() => void read(), pollMs) : null;
@@ -169,7 +232,9 @@ export function useInkSummary(options: UseInkSummaryOptions = {}) {
       window.removeEventListener("focus", onChange);
       window.removeEventListener(INK_CHANGED_EVENT, onChange);
       window.removeEventListener(INK_CHECKOUT_EVENT, onCheckout);
+      window.removeEventListener(INK_SPENT_EVENT, onSpent);
       window.removeEventListener("storage", onStorage);
+      if (spentTimer) clearTimeout(spentTimer);
       document.removeEventListener("visibilitychange", onVisible);
       if (interval) clearInterval(interval);
     };

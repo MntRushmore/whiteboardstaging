@@ -100,29 +100,43 @@ export const INK_RETURN_POLL_MS = 2_000;
 /** After this long the page stops waiting and says so (the webhook may still land later). */
 export const INK_RETURN_TIMEOUT_MS = 60_000;
 /**
- * A purchase this recent counts as the one just paid for. Generous, because the webhook can land
- * before the redirect (the page then finds the purchase on its first read) and the server's clock
- * is not the browser's.
+ * Without a checkout mark (storage blocked, or the link opened elsewhere), a purchase this recent
+ * counts as the one just paid for: the webhook can land a little before the redirect, and the
+ * server's clock is not the browser's. Short, so an earlier purchase of the same pack is not it.
  */
-export const INK_RETURN_WINDOW_MS = 30 * 60_000;
+export const INK_RETURN_WINDOW_MS = 2 * 60_000;
+
+/** What a buy button remembers when it opens checkout (useInkSummary watchInkCheckout). */
+export type CheckoutMark = {
+  /** When the student left for checkout (browser clock). */
+  at: number;
+  /** ink_summary's last purchase id at that moment; null when there was none. */
+  lastPurchaseId: number | null;
+};
 
 export type InkReturnState = "waiting" | "done" | "timeout";
 
 /**
  * Where the "Adding your ink…" notice is: done once ink_summary's last purchase is the pack paid
- * for and recent (whichever arrived first, the webhook or the page), timeout once `timeoutMs` has
- * passed without it, waiting otherwise (also while the first read is still in flight).
+ * for AND newer than the purchase the student had when they left for checkout (`mark`; no clocks
+ * involved), or, without a mark, made in the last couple of minutes; timeout once `timeoutMs` has
+ * passed without it; waiting otherwise (also while the first read is still in flight).
  */
 export function inkReturnState(input: {
   target: string;
   summary: Pick<InkSummary, "last_purchase"> | null | undefined;
+  mark?: CheckoutMark | null;
   startedAt: number;
   now: number;
   timeoutMs?: number;
 }): InkReturnState {
   const last = input.summary?.last_purchase;
-  const at = last ? Date.parse(last.created_at) : Number.NaN;
-  if (last?.pack_id === input.target && Number.isFinite(at) && at >= input.startedAt - INK_RETURN_WINDOW_MS) return "done";
+  if (last?.pack_id === input.target) {
+    const isNew = input.mark
+      ? last.id !== input.mark.lastPurchaseId
+      : Date.parse(last.created_at) >= input.startedAt - INK_RETURN_WINDOW_MS;
+    if (isNew) return "done";
+  }
   return input.now - input.startedAt >= (input.timeoutMs ?? INK_RETURN_TIMEOUT_MS) ? "timeout" : "waiting";
 }
 

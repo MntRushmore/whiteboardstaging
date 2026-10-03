@@ -69,7 +69,8 @@ export function classifyLiveFailure(err: unknown, ctx: ClassifyContext): LiveErr
       return make("rate_limited", LIVE_COPY.errors.rateLimited(Math.ceil(retryAfterMs / 1000)), { retryAfterMs });
     }
     if (isOutOfInk(err)) {
-      return make("ink", humanMessage(err) ?? LIVE_COPY.errors.ink);
+      const inkNeeded = readNumber(err.body, "cost");
+      return make("ink", humanMessage(err) ?? LIVE_COPY.errors.ink, inkNeeded !== undefined ? { inkNeeded } : {});
     }
     if (err.status >= 500 || err.code === "recognizer_failed" || err.code === "upstream_error") {
       return make("upstream", LIVE_COPY.errors.upstream);

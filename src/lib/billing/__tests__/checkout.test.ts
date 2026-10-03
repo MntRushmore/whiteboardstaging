@@ -76,17 +76,27 @@ describe("parseInkReturn", () => {
 
 describe("inkReturnState (waiting for the webhook)", () => {
   const startedAt = Date.parse("2026-10-02T12:00:00Z");
-  const purchase = (pack: string, at: string) => ({ last_purchase: { pack_id: pack, pack_name: pack, ink: 5000, status: "paid", created_at: at } });
+  const purchase = (pack: string, at: string, id = 7) => ({ last_purchase: { id, pack_id: pack, pack_name: pack, ink: 5000, status: "paid", created_at: at } });
 
-  it("is done once the last purchase is the pack paid for, whether the webhook landed before or after the page", () => {
-    expect(inkReturnState({ target: "medium", summary: purchase("medium", "2026-10-02T12:00:05Z"), startedAt, now: startedAt + 6000 })).toBe("done");
-    expect(inkReturnState({ target: "medium", summary: purchase("medium", "2026-10-02T11:59:20Z"), startedAt, now: startedAt })).toBe("done");
+  it("with the checkout mark: done once a purchase NEWER than the one the student had arrives (no clocks)", () => {
+    const mark = { at: startedAt - 90_000, lastPurchaseId: 7 };
+    // the same Medium bought half an hour ago is not this one, however recent
+    expect(inkReturnState({ target: "medium", summary: purchase("medium", "2026-10-02T11:59:00Z", 7), mark, startedAt, now: startedAt + 2000 })).toBe("waiting");
+    expect(inkReturnState({ target: "medium", summary: purchase("medium", "2026-10-02T12:00:05Z", 8), mark, startedAt, now: startedAt + 6000 })).toBe("done");
+    // a first purchase ever (nothing before): any purchase of the pack is it, even if the webhook beat the page
+    expect(inkReturnState({ target: "medium", summary: purchase("medium", "2026-10-02T11:58:00Z", 1), mark: { at: startedAt - 90_000, lastPurchaseId: null }, startedAt, now: startedAt })).toBe(
+      "done",
+    );
+    // a newer purchase of another pack is not it
+    expect(inkReturnState({ target: "large", summary: purchase("medium", "2026-10-02T12:00:05Z", 8), mark, startedAt, now: startedAt + 2000 })).toBe("waiting");
   });
 
-  it("keeps waiting for an older purchase of the same pack, or another pack, or no summary yet", () => {
-    const old = new Date(startedAt - INK_RETURN_WINDOW_MS - 1000).toISOString();
-    expect(inkReturnState({ target: "medium", summary: purchase("medium", old), startedAt, now: startedAt + 2000 })).toBe("waiting");
-    expect(inkReturnState({ target: "large", summary: purchase("medium", "2026-10-02T12:00:05Z"), startedAt, now: startedAt + 2000 })).toBe("waiting");
+  it("without a mark: only a purchase from the last couple of minutes counts", () => {
+    expect(INK_RETURN_WINDOW_MS).toBe(120_000);
+    expect(inkReturnState({ target: "medium", summary: purchase("medium", "2026-10-02T12:00:05Z"), startedAt, now: startedAt + 6000 })).toBe("done");
+    expect(inkReturnState({ target: "medium", summary: purchase("medium", "2026-10-02T11:59:20Z"), startedAt, now: startedAt })).toBe("done");
+    const earlier = new Date(startedAt - INK_RETURN_WINDOW_MS - 1000).toISOString();
+    expect(inkReturnState({ target: "medium", summary: purchase("medium", earlier), startedAt, now: startedAt + 2000 })).toBe("waiting");
     expect(inkReturnState({ target: "medium", summary: null, startedAt, now: startedAt })).toBe("waiting");
     expect(inkReturnState({ target: "medium", summary: { last_purchase: null }, startedAt, now: startedAt })).toBe("waiting");
   });

@@ -68,6 +68,29 @@ function retryAfterMsFrom(body: ApiErrorBody, headers: Headers): number | undefi
 }
 
 /**
+ * Window event after a paid call (a POST to /api/live/*) came back: the ink surfaces re-read the
+ * balance. `detail.remaining` is set for a 402, whose body already carries the balance.
+ */
+export const INK_SPENT_EVENT = "agathon:ink-spent";
+
+/** Tells the ink meter that a paid call happened (no-op outside the browser and for free calls). */
+export function noteInkSpend(input: string, method: string, res: Response): void {
+  if (typeof window === "undefined" || method.toUpperCase() !== "POST" || !input.startsWith("/api/live/")) return;
+  if (res.status === 402) {
+    void res
+      .clone()
+      .json()
+      .then((body: { remaining?: unknown }) => {
+        const remaining = typeof body?.remaining === "number" ? body.remaining : undefined;
+        window.dispatchEvent(new CustomEvent(INK_SPENT_EVENT, { detail: { remaining } }));
+      })
+      .catch(() => window.dispatchEvent(new CustomEvent(INK_SPENT_EVENT, { detail: {} })));
+  } else if (res.ok) {
+    window.dispatchEvent(new CustomEvent(INK_SPENT_EVENT, { detail: {} }));
+  }
+}
+
+/**
  * fetch() that attaches the current Supabase access token as a Bearer token.
  * All /api/* routes require it. Throws ApiError(401, "unauthorized") when
  * there is no active session so callers can redirect to /login.
@@ -80,7 +103,9 @@ export async function authedFetch(input: string, init: RequestInit = {}): Promis
   }
   const headers = new Headers(init.headers ?? {});
   headers.set("Authorization", `Bearer ${token}`);
-  return fetch(input, { ...init, headers });
+  const res = await fetch(input, { ...init, headers });
+  noteInkSpend(input, init.method ?? "GET", res);
+  return res;
 }
 
 /**

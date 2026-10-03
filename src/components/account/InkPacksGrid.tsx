@@ -20,7 +20,7 @@ async function readPacks(): Promise<InkPack[]> {
   return parseInkPacks(data);
 }
 
-function BuyButton({ card }: { card: PackCard }) {
+function BuyButton({ card, lastPurchaseId }: { card: PackCard; lastPurchaseId: number | null }) {
   if (!card.href) {
     return (
       <Button variant="outline" size="sm" className="w-full" disabled aria-disabled>
@@ -31,7 +31,7 @@ function BuyButton({ card }: { card: PackCard }) {
   // Same tab: the Payment Link comes back to /account?ink=<pack>, where InkReturnNotice waits for it.
   return (
     <Button asChild variant={card.bestValue ? "default" : "outline"} size="sm" className="w-full">
-      <a href={card.href} onClick={watchInkCheckout} data-testid={`buy-ink-${card.id}`}>
+      <a href={card.href} onClick={() => watchInkCheckout(lastPurchaseId)} data-testid={`buy-ink-${card.id}`}>
         {PACKS_COPY.buy(card.price)}
         <ExternalLink className="size-3.5" />
       </a>
@@ -44,7 +44,7 @@ function BuyButton({ card }: { card: PackCard }) {
  * the smallest pack. Buttons are real links only when NEXT_PUBLIC_BILLING_LINKS provides them (the
  * pack's Stripe Payment Link carrying this user's id and email); otherwise "Coming soon".
  */
-export function InkPacksGrid({ payer }: { payer: Payer | null }) {
+export function InkPacksGrid({ payer, lastPurchaseId = null }: { payer: Payer | null; lastPurchaseId?: number | null }) {
   // readPacks is module-level, so it is already stable; useCallback keeps the hook contract explicit.
   const read = useCallback(() => readPacks(), []);
   const { state, retry } = useSection<InkPack[]>(read, true, PACKS_COPY.loadFallback);
@@ -89,7 +89,7 @@ export function InkPacksGrid({ payer }: { payer: Payer | null }) {
                     {card.bonus && <span className="ml-1 font-medium text-emerald-700">{card.bonus.replace(" per $1", "")}</span>}
                   </p>
                   <div className="mt-auto pt-4">
-                    <BuyButton card={card} />
+                    <BuyButton card={card} lastPurchaseId={lastPurchaseId} />
                   </div>
                 </div>
               ))}

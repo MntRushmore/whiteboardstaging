@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2, Clock, Loader2, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { notifyInkChanged, useInkSummary } from "@/lib/billing/useInkSummary";
+import { clearCheckoutMark, notifyInkChanged, readCheckoutMark, useInkSummary } from "@/lib/billing/useInkSummary";
 import { CHECKOUT_COPY, INK_RETURN_POLL_MS, inkReturnState, parseInkReturn } from "@/lib/billing/checkout";
 import { inkLabel } from "@/lib/billing/inkSummary";
 import { cn } from "@/lib/utils";
@@ -34,8 +34,10 @@ function InkWait({ target }: { target: string }) {
   const pathname = usePathname();
   const [startedAt, setStartedAt] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
+  // Which purchase the student had when they left for checkout: the next one is theirs.
+  const [mark] = useState(() => readCheckoutMark());
   const { summary, reload } = useInkSummary();
-  const state = inkReturnState({ target, summary, startedAt, now });
+  const state = inkReturnState({ target, summary, mark, startedAt, now });
   const last = summary?.last_purchase;
   const packName = last?.pack_id === target ? last.pack_name : titleCase(target);
 
@@ -51,7 +53,9 @@ function InkWait({ target }: { target: string }) {
 
   // The ink arrived: every other ink surface (the header meter here, the board in its own tab) re-reads.
   useEffect(() => {
-    if (state === "done") notifyInkChanged();
+    if (state !== "done") return;
+    clearCheckoutMark();
+    notifyInkChanged();
   }, [state]);
 
   const dismiss = () => router.replace(pathname);

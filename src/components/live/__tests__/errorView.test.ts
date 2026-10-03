@@ -49,6 +49,11 @@ describe("classifyLiveFailure", () => {
     });
     expect(classifyLiveFailure(new ApiError("ink_empty", 402, "ink_empty"), ONLINE)).toMatchObject({ message: LIVE_COPY.errors.ink });
     expect(classifyLiveFailure(new ApiError("Request failed (402)", 402), ONLINE)).toMatchObject({ message: LIVE_COPY.errors.ink });
+    // the 402's `cost` rides along, so the pill stays until the balance covers the refused call
+    const refused = new ApiError("You're out of ink.", 402, "ink_empty");
+    refused.body = { error: "ink_empty", remaining: 4, cost: 10 };
+    expect(classifyLiveFailure(refused, ONLINE)).toMatchObject({ code: "ink", inkNeeded: 10 });
+    expect(classifyLiveFailure(new ApiError("x", 402, "ink_empty"), ONLINE)).not.toHaveProperty("inkNeeded");
     // the provider's own outage is not the student's ink
     expect(classifyLiveFailure(new ApiError("The tutor is unavailable right now.", 503, "upstream_error"), ONLINE)).toMatchObject({ code: "upstream" });
   });
