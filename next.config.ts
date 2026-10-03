@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import type { NextConfig } from "next";
+import { SECURITY_HEADERS } from "./src/lib/securityHeaders";
 
 /**
  * The release name of this build (src/lib/release.ts): NEXT_PUBLIC_RELEASE when set by hand, else
@@ -33,6 +34,10 @@ const nextConfig: NextConfig = {
   productionBrowserSourceMaps: process.env.BUNDLE_SOURCEMAPS === "1",
   // The board's screen strip owns the bottom-left corner; keep the dev badge off it.
   devIndicators: { position: "bottom-right" },
+  // Anti-framing and the other headers that cannot break the board (src/lib/securityHeaders.ts).
+  async headers() {
+    return [{ source: "/:path*", headers: [...SECURITY_HEADERS] }];
+  },
 };
 
 export default nextConfig;

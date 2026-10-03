@@ -1,7 +1,7 @@
 import type pino from "pino";
 import { getLiveModels } from "@/lib/env";
 import { LectureRequestSchema, LectureResponseSchema, type LectureResponse } from "@/lib/live/lecture/contracts";
-import { billingEnforced, enforceInk, runCharged, userClient } from "@/lib/server/billing";
+import { billingEnforced, enforceInk, ROUTE_COSTS, runCharged, userClient } from "@/lib/server/billing";
 import { directLecture, lectureMinuteId } from "@/lib/server/lectureDirector";
 import { errorResponse } from "@/lib/server/request";
 import { livePreamble, withRequestId } from "@/lib/server/live-route";
@@ -27,6 +27,13 @@ export const maxDuration = 30;
  * deleted), so the next request that minute is charged instead; a free request that fails refunds
  * nothing (it would give back the minute another request paid for). A reply with nothing drawn,
  * or everything dropped, keeps the charge: the minute of listening is the product.
+ *
+ * Two holes closed by the security audit (2026-10-03). A charging request the CLIENT aborts keeps
+ * its charge: the others that minute may already have been served on it, so a refund then made
+ * every minute free (send the first tick, send the rest while it is in flight, abort the first).
+ * And only the route's own charge pays a minute: a row the user wrote themselves through
+ * `consume_credits` (callable by any signed-in user, with any route, units and request id) under
+ * the minute's id would otherwise buy the minute for 1 ink.
  *
  * The session asks one request at a time, so two requests of one session never race for a
  * minute; a client that sent them in parallel could only pay twice for it, never not at all.
@@ -75,7 +82,7 @@ export async function POST(req: Request) {
   const charge = async (requestId: string): Promise<Response> => {
     const billing = await enforceInk({ token, route: "live/lecture", requestId, model: models.lecture }, log);
     if ("response" in billing) return withRequestId(billing.response, traceId);
-    return runCharged({ userId: user.id, requestId }, log, () => direct(true), failed);
+    return runCharged({ userId: user.id, requestId }, log, () => direct(true), failed, undefined, { keepChargeWhenAborted: req.signal });
   };
 
   if (billingEnforced() && !(await minutePaid(token, user.id, minute, log))) return charge(minute);
@@ -88,12 +95,20 @@ export async function POST(req: Request) {
 
 /**
  * Whether this minute of the session is paid already: the user's own charge row for it (RLS
- * "usage_events: owner select"; `refund_credits` deletes a refunded one). A lookup that fails
- * charges: a minute is never given away on an error.
+ * "usage_events: owner select"; `refund_ink_for` deletes a refunded one), and only a full
+ * `live/lecture` charge counts (see the header). A lookup that fails charges: a minute is never
+ * given away on an error.
  */
 async function minutePaid(token: string, userId: string, requestId: string, log: pino.Logger): Promise<boolean> {
   try {
-    const { data, error } = await userClient(token).from("usage_events").select("id").eq("user_id", userId).eq("request_id", requestId).limit(1);
+    const { data, error } = await userClient(token)
+      .from("usage_events")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("request_id", requestId)
+      .eq("route", "live/lecture")
+      .gte("units", ROUTE_COSTS["live/lecture"])
+      .limit(1);
     if (error) {
       log.warn({ error: error.message }, "lecture minute lookup failed; charging");
       return false;

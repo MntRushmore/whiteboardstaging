@@ -376,6 +376,24 @@ describe("runCharged", () => {
     expect(log.lines).toEqual(["info:ink refunded"]);
   });
 
+  it("keeps the charge when the client abandoned a request that asked for it (keepChargeWhenAborted); refunds when not aborted", async () => {
+    const aborted = new AbortController();
+    aborted.abort();
+    const client = fakeRpc({ data: { refunded: 2, remaining: 2 } });
+    const log = recordingLog();
+    const fail = async () => {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    };
+    const res = await runCharged(input, log, fail, onError, client, { keepChargeWhenAborted: aborted.signal });
+    expect(res.status).toBe(502);
+    expect(client.calls).toEqual([]);
+    expect(log.lines).toEqual(["info:request abandoned by the client after it was charged; charge kept"]);
+
+    const live = new AbortController();
+    await runCharged(input, recordingLog(), async () => Response.json({}, { status: 502 }), onError, client, { keepChargeWhenAborted: live.signal });
+    expect(client.calls.map((c) => c.fn)).toEqual(["refund_ink_for"]);
+  });
+
   it("maps a thrown error through onError and refunds", async () => {
     const client = fakeRpc({ data: { refunded: 2, remaining: 2 } });
     const res = await runCharged(

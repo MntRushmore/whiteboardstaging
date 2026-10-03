@@ -14,6 +14,7 @@
  *   rest: (method: string, table: string, opts?: RestOptions) => Promise<HttpResult>,
  *   upload: (bucket: string, path: string, bytes: Uint8Array, contentType: string) => Promise<HttpResult>,
  *   publicRead: (bucket: string, path: string) => Promise<HttpResult>,
+ *   storageList: (bucket: string, prefix: string) => Promise<HttpResult>,
  *   storageDelete: (bucket: string, path: string) => Promise<HttpResult>,
  * }} RlsClient
  * `newUser` provisions one more throwaway user (needed by the delete_own_account
@@ -442,7 +443,7 @@ export async function checkUserSettingsIsolation({ a, b }) {
 }
 
 /** @param {CheckContext} ctx */
-export async function checkBugReports({ a, b }) {
+export async function checkBugReports({ a, b, service }) {
   /** @type {CheckResult[]} */
   const out = [];
   const own = await a.rest("POST", "bug_reports", {
@@ -456,6 +457,34 @@ export async function checkBugReports({ a, b }) {
     prefer: "return=minimal",
   });
   out.push(result("bug_reports: A cannot insert report with B's user_id", isDenied(foreign), describe(foreign)));
+
+  // A report with no user id is nobody's: it never leaves with an account and can carry any
+  // email (20261003100100_bug_reports_own_only.sql).
+  const nobody = await a.rest("POST", "bug_reports", {
+    body: { user_id: null, user_email: "someone-else@example.com", message: "rls-verify no user" },
+    prefer: "return=minimal",
+  });
+  out.push(result("bug_reports: A cannot insert a report with no user id", isDenied(nobody), describe(nobody)));
+
+  if (!service) {
+    out.push(result("bug_reports: the reporter's email comes from the JWT (skipped: no service role client)", true));
+  } else {
+    const tag = `rls-verify-email-${uuid()}`;
+    const spoof = await a.rest("POST", "bug_reports", {
+      body: { user_id: a.userId, user_email: "someone-else@example.com", message: tag },
+      prefer: "return=minimal",
+    });
+    const stored = await service.rest("GET", "bug_reports", { query: { message: `eq.${tag}`, select: "user_email" } });
+    const email = rows(stored)[0]?.user_email;
+    out.push(
+      result(
+        "bug_reports: the reporter's email comes from the JWT, not the client (no reports in another person's name)",
+        isOk(spoof) && rows(stored).length === 1 && email !== "someone-else@example.com",
+        `insert ${describe(spoof)}; stored ${describe(stored)}`,
+      ),
+    );
+    await service.rest("DELETE", "bug_reports", { query: { message: `eq.${tag}` } });
+  }
 
   const read = await a.rest("GET", "bug_reports", { query: { select: "id", limit: "1" } });
   out.push(result("bug_reports: not readable back by the reporter", deniedOrEmpty(read), describe(read)));
@@ -618,6 +647,21 @@ export async function checkStorage({ a, b, anon }) {
 
   const pub = await anon.publicRead(ASSETS_BUCKET, pathA);
   out.push(result("storage: board-assets object is publicly readable", pub.status === 200, describe(pub)));
+
+  // Readable by URL is not listable: a listing would hand out every user's id, board ids and
+  // file names (20261003100000_board_assets_no_listing.sql). Storage answers a list it may not
+  // show with 200 [] (or an error): either way, no names.
+  const listed = (/** @type {HttpResult} */ r) => (isOk(r) && Array.isArray(r.body) ? r.body.map((o) => String(o?.name ?? "")) : []);
+  const anonRoot = await anon.storageList(ASSETS_BUCKET, "");
+  out.push(result("storage: anon cannot list board-assets (no user folders)", listed(anonRoot).length === 0, describe(anonRoot)));
+  const anonFolder = await anon.storageList(ASSETS_BUCKET, `${a.userId}/${folder}`);
+  out.push(result("storage: anon cannot list A's board-assets folder", listed(anonFolder).length === 0, describe(anonFolder)));
+  const bRoot = await b.storageList(ASSETS_BUCKET, "");
+  out.push(result("storage: B cannot list A's user folder at the bucket root", !listed(bRoot).includes(String(a.userId)), describe(bRoot)));
+  const bFolder = await b.storageList(ASSETS_BUCKET, `${a.userId}/${folder}`);
+  out.push(result("storage: B cannot list A's board-assets folder", listed(bFolder).length === 0, describe(bFolder)));
+  const aFolder = await a.storageList(ASSETS_BUCKET, `${a.userId}/${folder}`);
+  out.push(result("storage: A lists own board-assets folder", listed(aFolder).includes("a.png"), describe(aFolder)));
 
   const bDel = await b.storageDelete(ASSETS_BUCKET, pathA);
   const pubAfter = await anon.publicRead(ASSETS_BUCKET, pathA);

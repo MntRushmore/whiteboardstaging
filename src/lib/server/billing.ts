@@ -296,13 +296,25 @@ export async function refundInk(input: RefundInput, log: BillingLog = billingLog
 
 const isSuccess = (res: Response) => res.status >= 200 && res.status < 300;
 
+export type RunChargedOptions = {
+  /**
+   * The request's own signal (`req.signal`). When it has fired, the CLIENT abandoned the request,
+   * and a failure that follows is kept, not refunded. For a charge that other requests ride on
+   * (lecture mode's minute: every later tick of that minute is served free because this one paid),
+   * a refund on abort is free work on demand: send the minute's first tick, send the rest while it
+   * is in flight, abort the first, get the ink back (security audit, 2026-10-03).
+   */
+  keepChargeWhenAborted?: AbortSignal;
+};
+
 /**
  * Run the paid part of a non-streaming route after `enforceInk` succeeded.
  * `run` returns the Response for the client; a thrown error is turned into one by
  * `onError` (normally `errorResponse`). Whenever that Response is NOT a 2xx — upstream
  * error, the provider's own account out of funds, recognizer failure, timeout, abort — the
- * charge for `input.requestId` is refunded before the Response is returned. A 2xx is never
- * refunded, even when the model answered with text instead of an image.
+ * charge for `input.requestId` is refunded before the Response is returned, except after the
+ * client abandoned a request whose route asked to keep it (`opts.keepChargeWhenAborted`). A 2xx is
+ * never refunded, even when the model answered with text instead of an image.
  */
 export async function runCharged(
   input: RefundInput,
@@ -310,6 +322,7 @@ export async function runCharged(
   run: () => Promise<Response>,
   onError: (err: unknown) => Response,
   client?: RpcClient,
+  opts: RunChargedOptions = {},
 ): Promise<Response> {
   let res: Response;
   try {
@@ -317,7 +330,13 @@ export async function runCharged(
   } catch (err) {
     res = onError(err);
   }
-  if (!isSuccess(res)) await refundInk(input, log, client);
+  if (!isSuccess(res)) {
+    if (opts.keepChargeWhenAborted?.aborted) {
+      log.info?.({ requestId: input.requestId, status: res.status }, "request abandoned by the client after it was charged; charge kept");
+    } else {
+      await refundInk(input, log, client);
+    }
+  }
   return res;
 }
 
