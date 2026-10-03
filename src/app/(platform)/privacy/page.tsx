@@ -356,7 +356,9 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>Payment notices from Stripe:</strong> kept after an account is deleted, for our accounts and to sort
-            out payment questions and refunds. Stripe keeps its own payment records under its own policy and the law.
+            out payment questions and refunds. After 90 days we delete what a notice says about the payer (name, email,
+            address and card details) and keep only a record that it came. Stripe keeps its own payment records under
+            its own policy and the law.
           </li>
           <li>
             <strong>Server logs and error reports:</strong> kept by our hosting provider for a limited time, then

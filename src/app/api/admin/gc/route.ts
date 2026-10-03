@@ -1,6 +1,6 @@
 import { json } from "@/lib/server/auth";
 import { checkRateLimit, rateLimitedResponse } from "@/lib/server/rate-limit";
-import { bearerMatches, gcLogger, getGcEnv, isDryRun, runStorageGc, toResponseBody, type GcEnv } from "@/lib/server/storageGc";
+import { bearerMatches, gcLogger, getGcEnv, isDryRun, purgeBillingPayloads, runStorageGc, toResponseBody, type GcEnv } from "@/lib/server/storageGc";
 import type { GcSummary } from "../../../../../scripts/lib/storageGc.mjs";
 
 export const runtime = "nodejs";
@@ -28,7 +28,13 @@ export const maxDuration = 60;
  * The service role is needed because objects span every user's folder. Same planner as
  * scripts/gc-storage.mjs, which stays dry-run-by-default for operators.
  *
- * Body: `{ scanned, orphans, deleted, bytes, dryRun, failed, buckets }` (additive only).
+ * The same nightly job applies the retention of Stripe payloads: when collecting (never in a dry
+ * run), purge_billing_event_payloads() blanks billing_events payloads older than 90 days
+ * (`purgeBillingPayloads`, 20261003040000_go_live_gaps.sql). Its failure is logged at error and
+ * reported as null; it never fails the storage pass, nor the other way round.
+ *
+ * Body: `{ scanned, orphans, deleted, bytes, dryRun, failed, buckets, billingPayloadsPurged }`
+ * (additive only; `billingPayloadsPurged` is null in a dry run or when the purge failed).
  *
  * This file exports only the handlers and segment config: `next dev` type-checks a route's
  * exports (.next/dev/types), so helpers live in src/lib/server/storageGc.ts, where tests also
@@ -73,6 +79,18 @@ async function handleGc(req: Request): Promise<Response> {
 
   const dryRun = isDryRun(req);
   const startedAt = Date.now();
+
+  // Stripe payloads past their 90 days (a write, so only when collecting).
+  let billingPayloadsPurged: number | null = null;
+  if (!dryRun) {
+    try {
+      billingPayloadsPurged = await purgeBillingPayloads({ url: env.url, serviceKey: env.serviceKey });
+      if (billingPayloadsPurged > 0) log.info({ requestId, billingPayloadsPurged }, "billing_events payloads older than the retention blanked");
+    } catch (err) {
+      log.error({ requestId, error: err instanceof Error ? err.message : String(err) }, "could not purge old billing_events payloads (is the go-live migration applied?)");
+    }
+  }
+
   let summary: GcSummary;
   try {
     summary = await runStorageGc({ url: env.url, serviceKey: env.serviceKey, dryRun });
@@ -80,9 +98,9 @@ async function handleGc(req: Request): Promise<Response> {
     log.error({ requestId, dryRun, error: err instanceof Error ? err.message : String(err) }, "storage gc failed");
     return json(500, "internal_error", "Storage GC could not complete.");
   }
-  const body = toResponseBody(summary);
+  const body = { ...toResponseBody(summary), billingPayloadsPurged };
   log.info(
-    { requestId, dryRun, durationMs: Date.now() - startedAt, scanned: body.scanned, orphans: body.orphans, deleted: body.deleted, failed: body.failed, bytes: body.bytes, buckets: body.buckets },
+    { requestId, dryRun, durationMs: Date.now() - startedAt, scanned: body.scanned, orphans: body.orphans, deleted: body.deleted, failed: body.failed, bytes: body.bytes, buckets: body.buckets, billingPayloadsPurged },
     "storage gc summary",
   );
   if (summary.failures.length) {

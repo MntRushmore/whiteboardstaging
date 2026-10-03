@@ -161,6 +161,13 @@ describe("privacy: who gets what", () => {
     expect(privacy).toContain("Payment notices from Stripe: kept after an account is deleted");
   });
 
+  it("states how long Stripe's payment notices keep the payer's details: the retention the nightly purge applies", () => {
+    const sql = readFileSync(join(MIGRATIONS, "20261003040000_go_live_gaps.sql"), "utf8");
+    const retention = /function public\.billing_event_payload_retention\(\)[\s\S]*?select interval '(\d+) days'/.exec(sql);
+    expect(retention?.[1]).toBe("90");
+    expect(privacy).toContain(`After ${retention?.[1]} days we delete what a notice says about the payer (name, email, address and card details) and keep only a record that it came.`);
+  });
+
   it("says AI services neither keep nor train on what we send, only because every request asks and is refused otherwise", () => {
     expect(isPlaceholder(LEGAL.aiProviderTraining)).toBe(false);
     expect(privacy).toContain(LEGAL.aiProviderTraining);

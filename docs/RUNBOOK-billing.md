@@ -703,3 +703,13 @@ weeks may be limited to one per person, family or card, which covers cancelling 
   than a day left. Not sent when the plan is set to cancel by the trial's end, or is linked to nobody.
 - **Check after the first real signup:** `select kind, ref, resend_id, sent_at from public.email_log
   where kind = 'unlimited_started' order by claimed_at desc limit 5;` and the Resend dashboard.
+
+### Stripe payloads are kept 90 days
+
+`billing_events.payload` (the whole Stripe event: the payer's name, email, billing address, card
+brand and last four) is blanked after **90 days** by `purge_billing_event_payloads()` (service role
+only; the one constant is `billing_event_payload_retention()` in the go-live migration). The row
+(event id, type, time) stays. The nightly `GET /api/admin/gc` calls it when collecting (never in a
+dry run) and reports `billingPayloadsPurged`; a failure is logged and reported as `null` without
+failing the storage pass. The Privacy Policy states the 90 days (`legalPages.test.tsx` reads it
+from the migration). By hand: `select public.purge_billing_event_payloads();`.
