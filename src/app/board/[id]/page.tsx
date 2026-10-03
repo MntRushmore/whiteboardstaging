@@ -63,7 +63,6 @@ import { inkTone } from "@/lib/billing/inkSummary";
 import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { OutOfInkWatcher } from "@/components/billing/OutOfInkWatcher";
 import { clearInkErrorIfAffordable } from "@/lib/live/liveStore";
-import { BugReportButton } from "@/components/BugReportButton";
 import { captureBoardScreenshot } from "@/components/board/boardScreenshot";
 import { BETA_COPY } from "@/components/app/BetaBadge";
 import { useFeatureLabs } from "@/lib/featureLabs";
@@ -101,6 +100,8 @@ const Celebrations = React.lazy(() => import("@/components/live/Celebrations").t
 // device): fetched only when shown, not with every board (docs/BUNDLE.md).
 const StickerLibrary = React.lazy(() => import("@/components/StickerLibrary").then((m) => ({ default: m.StickerLibrary })));
 const PdfUpload = React.lazy(() => import("@/components/PdfUpload").then((m) => ({ default: m.PdfUpload })));
+// The bug report's dialog: opened rarely, so it loads the first time it is (the board's first load is at its budget).
+const BugReportButton = React.lazy(() => import("@/components/BugReportButton").then((m) => ({ default: m.BugReportButton })));
 const LiveDebugPanel = React.lazy(() => import("@/components/live/LiveDebugPanel").then((m) => ({ default: m.LiveDebugPanel })));
 
 /** The help tabs: 6 px of padding on a board under 768 px (a 10.2" iPad sideways with Ask docked), 8 px from there. */
@@ -268,6 +269,12 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   // Board options now, so the page owns their open state.
   const [modeInfoOpen, setModeInfoOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  // mounted from the first open on, so its dialog can animate closed and keeps the student's words
+  const [reportMounted, setReportMounted] = useState(false);
+  const openReport = useCallback(() => {
+    setReportMounted(true);
+    setReportOpen(true);
+  }, []);
   const { user } = useAuth();
   const [guided, setGuided] = useState(() => isGuidedBoard(onboardingStorage(), user?.id, id));
   const endTour = useCallback(() => setGuided(false), []);
@@ -418,7 +425,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
               canHelp={toolbar.canHelp}
               onClearMarks={() => controller.clearMarks()}
               onShowModeInfo={() => setModeInfoOpen(true)}
-              onReportProblem={() => setReportOpen(true)}
+              onReportProblem={openReport}
               meterOffersInk={meterOffersInk}
             />
           </LiveErrorBoundary>
@@ -431,7 +438,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
             className="h-8 gap-1.5 rounded-full bg-white px-3 shadow-sm"
             title={BETA_COPY.hint}
             aria-label="Report a bug"
-            onClick={() => setReportOpen(true)}
+            onClick={openReport}
           >
             <Bug className="size-3.5" aria-hidden />
             <span className="hidden text-xs font-medium @5xl/bar:inline">Report a bug</span>
@@ -453,7 +460,13 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
 
       {/* The explainer opens from Board options; the report from there or its button in the bar. */}
       <ModeInfoDialog open={modeInfoOpen} onOpenChange={setModeInfoOpen} />
-      <BugReportButton boardId={id} open={reportOpen} onOpenChange={setReportOpen} screenshot={() => captureBoardScreenshot(editor)} />
+      {reportMounted && (
+        <LiveErrorBoundary>
+          <React.Suspense fallback={null}>
+            <BugReportButton boardId={id} open={reportOpen} onOpenChange={setReportOpen} screenshot={() => captureBoardScreenshot(editor)} />
+          </React.Suspense>
+        </LiveErrorBoundary>
+      )}
       {liveEnabled && live.celebrations && (
         <LiveErrorBoundary>
           <React.Suspense fallback={null}>
