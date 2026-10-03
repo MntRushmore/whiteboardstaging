@@ -32,7 +32,11 @@ export function PenStyleButton() {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      // this Esc closes the panel; it must not also reach tldraw, which takes Esc as "cancel the
+      // tool" and swaps the student's pen for the selection arrow
+      e.stopPropagation();
     };
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("keydown", onKeyDown, true);

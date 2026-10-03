@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, lazy, useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { Suspense, lazy, useEffect, useRef, type ReactNode } from "react";
 import { AlertCircle, Check, Info, Loader2, Mic, Pause, PenLine, Play, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -26,14 +26,15 @@ const OutOfCreditsPanel = lazy(() => import("@/components/billing/OutOfCreditsPa
  * manner — a large soft radius, a hairline border, the floating shadow, near-black for the one
  * primary action — without loading Arc on the board. Nothing here imports tldraw.
  */
-export function LectureBarPanel({ lecture }: { lecture: LectureHandle }) {
+export function LectureBarPanel({ lecture, raised = false }: { lecture: LectureHandle; raised?: boolean }) {
   const live = useLectureLive(lecture);
   const model = lectureBarModel({ status: lecture.status, error: lecture.error, snap: live?.snapshot ?? null, now: live?.at ?? 0 });
   if (model.mode === "hidden") return null;
 
   return (
-    // a full-width lane centres the panel without a transform (the entrance animation owns that)
-    <div className="pointer-events-none absolute inset-x-0 bottom-20 z-[1000] flex justify-center px-4">
+    // a full-width lane centres the panel without a transform (the entrance animation owns that);
+    // `raised` clears the second row a narrower board's toolbar has (undo, redo, delete…)
+    <div className={cn("pointer-events-none absolute inset-x-0 z-[1000] flex justify-center px-4", raised ? "bottom-28" : "bottom-20")}>
       <section
         aria-label={LECTURE_COPY.title}
         data-lecture-bar={model.mode}
@@ -63,16 +64,27 @@ const ROUND_GHOST = "rounded-full text-gray-600 hover:bg-gray-100 hover:text-gra
 
 function Consent({ lecture }: { lecture: LectureHandle }) {
   const startRef = useRef<HTMLButtonElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   // the note is a question: its answer is in reach of the keyboard at once
   useEffect(() => startRef.current?.focus(), []);
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Escape") {
+  // Esc cancels. A native listener on the note itself: the board's own key handler sits on tldraw's
+  // container, between this note and React's root, and took the same Esc as "cancel the tool" —
+  // dropping the student's pen for the selection arrow.
+  const { cancelConsent } = lecture;
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
       e.preventDefault();
-      lecture.cancelConsent();
-    }
-  };
+      e.stopPropagation();
+      cancelConsent();
+    };
+    el.addEventListener("keydown", onKeyDown);
+    return () => el.removeEventListener("keydown", onKeyDown);
+  }, [cancelConsent]);
   return (
-    <div className="p-5" role="dialog" aria-labelledby="lecture-consent-title" aria-describedby="lecture-consent-body" onKeyDown={onKeyDown}>
+    <div ref={rootRef} className="p-5" role="dialog" aria-labelledby="lecture-consent-title" aria-describedby="lecture-consent-body">
       <div className="flex items-start gap-3.5">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-gray-900 text-white" aria-hidden>
           <Mic className="size-[18px]" />
