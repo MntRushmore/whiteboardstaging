@@ -29,6 +29,7 @@ import {
   packIdOf,
   paidAmountOf,
   periodEndOf,
+  subscriptionEventAt,
   subscriptionPlanOf,
   type ApplyOutcome,
   type BillingEvent,
@@ -54,6 +55,7 @@ function createWebhookHandler(handlerDeps: WebhookDeps): (req: Request) => Promi
 }
 import { resetRateLimits } from "@/lib/server/rate-limit";
 import { signStripePayload } from "@/lib/server/webhookSignature";
+import realEvents from "./fixtures/stripe-unlimited-subscription-events.json";
 
 const USER_ID = "8d2a3f1e-4b6c-4d7e-9f01-23456789abcd";
 const SECRET = "whsec_unit";
@@ -182,6 +184,13 @@ const FUIME_SUBSCRIPTION = subscription({
 function subEvent(type: string, object: Record<string, unknown>, id: string, created: number): BillingEvent {
   return { id, type, created, data: { object } };
 }
+
+/**
+ * Real events from Stripe test mode (2026-10-03, this account's API version 2026-07-29.dahlia): an
+ * Unlimited subscription with the free week, cancelled in the same second, then deleted. Made with
+ * the API (customer + subscription with the plan's price and metadata), not through Checkout.
+ */
+const REAL = realEvents as unknown as Record<"customer.subscription.created" | "customer.subscription.updated" | "customer.subscription.deleted", BillingEvent>;
 
 describe("mapBillingEvent: checkout", () => {
   it("a paid one-time checkout grants the pack in metadata.pack_id to client_reference_id", () => {
@@ -451,6 +460,42 @@ describe("mapBillingEvent: Agathon Unlimited", () => {
     expect(mapBillingEvent(subEvent("customer.subscription.deleted", subscription({ status: "incomplete_expired" }), "evt_d3", NOW), {})).toMatchObject({ subscription: { status: "incomplete_expired" } });
     expect(mapBillingEvent(subEvent("customer.subscription.updated", subscription({ status: "frozen" }), "evt_u", NOW), {})).toEqual({ kind: "ignored", reason: "unknown subscription status frozen" });
     expect(mapBillingEvent(subEvent("customer.subscription.updated", subscription({ id: undefined }), "evt_u2", NOW), {})).toMatchObject({ kind: "ignored", reason: /no id/ });
+  });
+
+  it("reads Stripe's real events (test mode, API 2026-07-29.dahlia: the period end lives on the items)", () => {
+    const created = mapBillingEvent(REAL["customer.subscription.created"], {});
+    const end = new Date(1791663937 * 1000).toISOString();
+    expect(created).toEqual({
+      kind: "subscription",
+      subscription: {
+        subscriptionId: "sub_1UMZUz2Uz4P3wrXOxRDhRuaN",
+        customerId: "cus_VNK9o1nLWvGYkL",
+        status: "trialing",
+        priceId: "price_1UMZTx2Uz4P3wrXOCCQT6Bl1",
+        trialEnd: end,
+        currentPeriodEnd: end,
+        cancelAtPeriodEnd: false,
+        cancelAt: null,
+        canceledAt: null,
+        endedAt: null,
+        livemode: false,
+        eventAt: new Date(1791059139 * 1000).toISOString(),
+      },
+    });
+    // cancelled in the free week: Stripe sets cancel_at to the trial's end as well
+    expect(mapBillingEvent(REAL["customer.subscription.updated"], {})).toMatchObject({
+      subscription: { status: "trialing", cancelAtPeriodEnd: true, cancelAt: end, eventAt: new Date(1791059139 * 1000 + 1).toISOString() },
+    });
+    expect(mapBillingEvent(REAL["customer.subscription.deleted"], {})).toMatchObject({
+      subscription: { status: "canceled", endedAt: new Date(1791059154 * 1000).toISOString() },
+    });
+  });
+
+  it("orders same-second events by type: created, then updated, then deleted", () => {
+    expect(subscriptionEventAt({ type: "customer.subscription.created", created: 100 })).toBe(new Date(100_000).toISOString());
+    expect(subscriptionEventAt({ type: "customer.subscription.updated", created: 100 })).toBe(new Date(100_001).toISOString());
+    expect(subscriptionEventAt({ type: "customer.subscription.deleted", created: 100 })).toBe(new Date(100_002).toISOString());
+    expect(subscriptionEventAt({ type: "customer.subscription.updated", created: undefined })).toBeNull();
   });
 
   it("linkOutcomeOf reads the RPC's answer", () => {
@@ -1034,6 +1079,18 @@ describe("POST /api/billing/webhook: Agathon Unlimited", () => {
     // a stray update stamped after the deletion still cannot bring it back
     await send(handler, subEvent("customer.subscription.updated", subscription({ status: "active" }), "evt_stray", NOW + 41 * 86_400));
     expect(store.plan("sub_1")).toMatchObject({ status: "canceled" });
+  });
+
+  it("Stripe's real same-second created + updated, delivered backwards, still end cancelling (then deleted)", async () => {
+    const store = fakeStore();
+    const handler = handlerWith(store);
+    const sub = "sub_1UMZUz2Uz4P3wrXOxRDhRuaN";
+    // the cancellation (updated) overtakes the creation, both stamped 1791059139
+    expect((await send(handler, REAL["customer.subscription.updated"])).status).toBe(200);
+    expect(await send(handler, REAL["customer.subscription.created"])).toEqual({ status: 200, body: { received: true, duplicate: true } });
+    expect(store.plan(sub)).toMatchObject({ status: "trialing", cancelAtPeriodEnd: true });
+    await send(handler, REAL["customer.subscription.deleted"]);
+    expect(store.plan(sub)).toMatchObject({ status: "canceled" });
   });
 
   it("past_due is recorded as it is (help spends ink until the card is fixed)", async () => {

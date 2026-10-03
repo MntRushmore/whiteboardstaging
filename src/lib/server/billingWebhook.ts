@@ -282,6 +282,24 @@ function mapSubscriptionCheckout(event: BillingEvent, obj: Record<string, unknow
   };
 }
 
+/**
+ * Stripe stamps events to the second, and a subscription's `created` and first `updated` often share
+ * one (a change made right after checkout). Within a second a subscription is created before it is
+ * updated, and updated before it is deleted, so the type breaks the tie: the event's time plus 0, 1
+ * or 2 milliseconds. Two updates in the same second stay in arrival order.
+ */
+const SAME_SECOND_ORDER: Record<string, number> = {
+  "customer.subscription.created": 0,
+  "customer.subscription.updated": 1,
+  "customer.subscription.deleted": 2,
+};
+
+/** The event's time as ISO, with SAME_SECOND_ORDER's tie-break; null when the event has none. */
+export function subscriptionEventAt(event: Pick<BillingEvent, "type" | "created">): string | null {
+  if (typeof event.created !== "number" || event.created <= 0) return null;
+  return new Date(event.created * 1000 + (SAME_SECOND_ORDER[event.type] ?? 0)).toISOString();
+}
+
 /** customer.subscription.created / updated / deleted. */
 function mapSubscription(event: BillingEvent, obj: Record<string, unknown>): MappedEvent {
   const { tagged, plan } = subscriptionPlanOf(obj);
@@ -309,7 +327,7 @@ function mapSubscription(event: BillingEvent, obj: Record<string, unknown>): Map
       canceledAt: isoOf(obj.canceled_at),
       endedAt: isoOf(obj.ended_at),
       livemode: typeof obj.livemode === "boolean" ? obj.livemode : (event.livemode ?? null),
-      eventAt: isoOf(event.created),
+      eventAt: subscriptionEventAt(event),
     },
   };
 }
