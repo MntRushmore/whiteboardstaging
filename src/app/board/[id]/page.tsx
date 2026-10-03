@@ -269,6 +269,9 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   const { user } = useAuth();
   const [guided, setGuided] = useState(() => isGuidedBoard(onboardingStorage(), user?.id, id));
   const endTour = useCallback(() => setGuided(false), []);
+  // Each tap on Help me / Solve it, for the guided board's second coach mark (it waits for what the
+  // tutor writes, and says so when there was nothing to help with). Only counted on that board.
+  const [tourHelpAsk, setTourHelpAsk] = useState<{ n: number; ok: boolean } | null>(null);
 
   // Live Math layer: per-device switch (localStorage) gated by the deploy-time kill switch.
   const { settings: live, update: updateLive } = useLiveSettings();
@@ -376,7 +379,17 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
             </TabsList>
           </Tabs>
           {/* stuck? the one thing to tap: the next step, or in Solve the rest of them */}
-          {toolbar.askButton && <AskButton kind={toolbar.askButton} glow={askGlow} onAsk={() => controller.requestHelp()} />}
+          {toolbar.askButton && (
+            <AskButton
+              kind={toolbar.askButton}
+              glow={askGlow}
+              onAsk={() => {
+                const ok = controller.requestHelp();
+                if (guided) setTourHelpAsk((a) => ({ n: (a?.n ?? 0) + 1, ok }));
+                return ok;
+              }}
+            />
+          )}
           <Button
             variant={chat.open ? "secondary" : "outline"}
             size="sm"
@@ -461,7 +474,16 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
       {guided && user && (
         <LiveErrorBoundary>
           <React.Suspense fallback={null}>
-            <BoardTour boardId={id} userId={user.id} controller={controller} onModeChange={setAssistanceMode} chatOpen={chat.open} onFinished={endTour} />
+            <BoardTour
+              boardId={id}
+              userId={user.id}
+              controller={controller}
+              mode={assistanceMode}
+              onModeChange={setAssistanceMode}
+              chatOpen={chat.open}
+              helpAsk={tourHelpAsk}
+              onFinished={endTour}
+            />
           </React.Suspense>
         </LiveErrorBoundary>
       )}

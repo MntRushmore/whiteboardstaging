@@ -5,7 +5,7 @@ import { ArrowUp, Loader2, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { LiveController } from "@/lib/live/contracts";
-import { CHAT_COPY, CHAT_SUGGESTIONS, sendsOnKey, type ChatMessage } from "./chatView";
+import { CHAT_COPY, CHAT_SUGGESTION_ATTR, CHAT_SUGGESTIONS, sendsOnKey, type ChatMessage } from "./chatView";
 import { useBoardChat } from "./useBoardChat";
 
 interface BoardChatPanelProps {
@@ -103,6 +103,7 @@ export function BoardChatPanel({ boardId, controller, onClose }: BoardChatPanelP
                   key={s}
                   type="button"
                   disabled={busy}
+                  {...{ [CHAT_SUGGESTION_ATTR]: s }}
                   onClick={() => submit(s)}
                   className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-left text-sm text-gray-800 shadow-xs transition-colors hover:bg-gray-50 disabled:opacity-50"
                 >
