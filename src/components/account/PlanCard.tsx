@@ -1,6 +1,7 @@
 "use client";
 
 import { ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { SECTION_BODY, SectionHeader } from "@/components/account/SectionHeader";
@@ -84,6 +85,17 @@ export function PlanCard({ email, payer }: { email: string; payer: Payer | null 
             {view.actionLabel}
           </Button>
         )}
+
+        {/* The plan's terms (renewal, cancelling, fair use) and refunds, for the grown-up who pays. */}
+        <p className="text-xs text-muted-foreground">
+          <Link href="/terms#unlimited" className="underline underline-offset-2 hover:text-foreground">
+            How the plan works
+          </Link>
+          {" · "}
+          <Link href="/refunds#subscriptions" className="underline underline-offset-2 hover:text-foreground">
+            Refunds
+          </Link>
+        </p>
       </CardContent>
     </Card>
   );

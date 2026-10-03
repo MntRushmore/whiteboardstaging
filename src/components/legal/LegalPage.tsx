@@ -4,8 +4,11 @@ import { BetaBadge } from "@/components/app/BetaBadge";
 import { isDraft, isPlaceholder, LEGAL } from "@/lib/legal";
 import styles from "./legal.module.css";
 
-/** The date these drafts were last edited; change it with the text. */
-export const LEGAL_LAST_UPDATED = "October 3, 2026";
+/**
+ * The date of this version of the three pages; change it with the text, and with TERMS_VERSION
+ * (src/lib/legal.ts) when the change is one sign-up should record.
+ */
+export const LEGAL_LAST_UPDATED = "October 4, 2026";
 
 /**
  * The frame of /terms, /privacy and /refunds: a plain top bar back to Agathon, the title, the dates,

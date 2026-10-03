@@ -21,6 +21,15 @@ export const LEGAL = {
   disputeVenue: "[Courts for disputes]",
   /** When these versions take effect. */
   effectiveDate: "[Effective date]",
+  /**
+   * What the AI services may do with what we send them, as one sentence in the Privacy Policy
+   * ("AI and your boards"). A placeholder because the code cannot answer it: no request sets a
+   * "no training / no retention" flag (OpenRouter's `provider.data_collection` / `zdr`, Mathpix's
+   * `metadata.improve_mathpix`), so it depends on the OpenRouter account's privacy settings and on
+   * each provider's own policy. Check those, then state what is true, e.g. "Our settings do not
+   * allow these services to train their models on what we send."
+   */
+  aiProviderTraining: "[Whether AI services may keep or train on what we send: check the OpenRouter and Mathpix settings, then say so here]",
   /** Set to true once counsel has reviewed the pages and the placeholders above are filled. */
   reviewed: false,
 
@@ -29,6 +38,7 @@ export const LEGAL = {
   siteHost: "whiteboard.rushilchopra.com",
   /** The seller name Stripe shows at checkout, on receipts and on card statements. */
   stripeSellerName: "Fuime",
+  /** Unused ink from a pack can be refunded within this many days of buying it. */
   refundWindowDays: 14,
   /** Ink packs: one-time purchases (USD). Kept equal to the packs on sale. */
   inkPacks: [
@@ -36,16 +46,36 @@ export const LEGAL = {
     { ink: 5_000, priceUsd: 20 },
     { ink: 14_000, priceUsd: 50 },
   ],
+  /**
+   * Agathon Unlimited, beyond its price and free week (those are UNLIMITED_PLAN in
+   * src/lib/billing/unlimited.ts, which the pages read directly).
+   */
+  unlimited: {
+    /** AI actions per rolling 24 hours: unlimited_fair_use_per_day() in 20261003020000_unlimited.sql (legal.test.ts pins the two). */
+    fairUseActionsPerDay: 1_500,
+    /** A charge the subscriber did not mean to keep is refunded in full when asked within this many days (owner's policy). */
+    refundWindowDays: 7,
+    /** A new price reaches a current subscriber only after an email at least this many days ahead (owner's policy). */
+    priceChangeNoticeDays: 7,
+  },
 } as const;
 
 /**
  * The version of what sign-up asks a new account to agree to: the Terms, the Privacy Policy, and
  * "I'm 13 or older, or I'm a parent or guardian setting this up for my child". The database
  * stores it on the profile (`terms_version`, with `accepted_terms_at`) at sign-up. A date, so a
- * profile reads "agreed to the 2026-10-03 text"; change it when that text changes in a way that
- * matters.
+ * profile reads "agreed to the 2026-10-04 text"; change it when that text changes in a way that
+ * matters, together with LEGAL_LAST_UPDATED (src/components/legal/LegalPage.tsx) and the copy in
+ * scripts/lib/supabaseHttp.mjs.
+ *
+ * The date must not be later than tomorrow (UTC) when the code goes live: the database refuses a
+ * sign-up whose version is in the future (signup_terms_version() in
+ * 20261003010000_signup_consent.sql), so a version dated next week would stop every sign-up.
+ *
+ * History: 2026-10-03, the first text (live with sign-up consent on 2026-10-03); 2026-10-04,
+ * Agathon Unlimited, the emails, and the AI services named.
  */
-export const TERMS_VERSION = "2026-10-03";
+export const TERMS_VERSION = "2026-10-04";
 
 /** True for a value still in [square brackets]. */
 export function isPlaceholder(value: string): boolean {

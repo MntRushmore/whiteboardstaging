@@ -14,6 +14,7 @@ const FILLED = {
   governingLaw: "the State of Example",
   disputeVenue: "the courts of Example County",
   effectiveDate: "January 1, 2027",
+  aiProviderTraining: "Our settings do not allow these services to train their models on what we send.",
 };
 
 describe("legal config", () => {
@@ -26,7 +27,7 @@ describe("legal config", () => {
 
   it("ships with the operator fields as placeholders, never invented values", () => {
     expect(unfilledLegalFields().sort()).toEqual(
-      ["contactEmail", "contactPhone", "disputeVenue", "effectiveDate", "governingLaw", "operatorName", "postalAddress"].sort(),
+      ["aiProviderTraining", "contactEmail", "contactPhone", "disputeVenue", "effectiveDate", "governingLaw", "operatorName", "postalAddress"].sort(),
     );
     expect(LEGAL.contactEmail).not.toMatch(/@/);
   });
@@ -46,5 +47,9 @@ describe("legal config", () => {
     ]);
     expect(LEGAL.refundWindowDays).toBe(14);
     expect(LEGAL.stripeSellerName).toBe("Fuime");
+  });
+
+  it("states Agathon Unlimited's own terms (the price and the free week are UNLIMITED_PLAN's)", () => {
+    expect(LEGAL.unlimited).toEqual({ fairUseActionsPerDay: 1_500, refundWindowDays: 7, priceChangeNoticeDays: 7 });
   });
 });

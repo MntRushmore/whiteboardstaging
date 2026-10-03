@@ -267,7 +267,7 @@ export async function signInWithPassword(url, anonKey, email, password, fetchImp
  * (supabase/migrations/20261003010000_signup_consent.sql), whether it signs up or is created with
  * the service role. Kept equal to TERMS_VERSION in src/lib/legal.ts (verifyRls.test.ts checks).
  */
-export const TERMS_VERSION = "2026-10-03";
+export const TERMS_VERSION = "2026-10-04";
 
 /**
  * @param {string} url
