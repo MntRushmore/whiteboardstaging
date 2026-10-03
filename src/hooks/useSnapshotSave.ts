@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { logger } from "@/lib/logger";
 import { decideSave, type SaveDecision, type SaveDecisionInput } from "@/lib/assets/savePolicy";
-import { offloadEditorAssets, type OffloadResult } from "@/lib/assets/offloadSnapshotAssets";
+import type { OffloadResult } from "@/lib/assets/offloadSnapshotAssets";
 import {
   createLocalStorageBackup,
   createSaveQueue,
@@ -183,7 +183,6 @@ function toSafeSnapshot(snapshot: unknown, boardId: string): unknown | null {
   try {
     return JSON.parse(JSON.stringify(snapshot));
   } catch (e) {
-    console.error("Failed to serialize board snapshot:", e);
     logger.error({ error: errorInfo(e), id: boardId }, "Failed to serialize board snapshot for auto-save");
     return null;
   }
@@ -202,10 +201,8 @@ export async function buildSnapshotUpdate(deps: SnapshotBuildDeps): Promise<Buil
 
   try {
     let snapshot = deps.takeSnapshot();
-    if (!snapshot) {
-      console.warn("Failed to get snapshot from editor");
-      return { kind: "skipped", reason: "no-snapshot" };
-    }
+    // (each outcome below is logged once, through `logger`, which also writes to the console)
+    if (!snapshot) return { kind: "skipped", reason: "no-snapshot" };
     let safeSnapshot = toSafeSnapshot(snapshot, boardId);
     if (safeSnapshot === null) return { kind: "skipped", reason: "unserializable" };
 
@@ -219,7 +216,6 @@ export async function buildSnapshotUpdate(deps: SnapshotBuildDeps): Promise<Buil
     }
 
     if (decision.action === "refuse") {
-      console.warn("Auto-save refused: board snapshot too large.", { id: boardId, ...measured });
       return { kind: "refused", bytes: measured.bytes, inlineAssets: measured.inlineAssets };
     }
 
@@ -246,7 +242,6 @@ export async function buildSnapshotUpdate(deps: SnapshotBuildDeps): Promise<Buil
       // limit (uploads failed, or the bulk is not inline images) refuse instead of
       // letting the DB size constraint be the first thing the user hears about it.
       if (measured.bytes > SNAPSHOT_LIMITS.hardBytes) {
-        console.warn("Auto-save refused: board snapshot still too large after asset offload.", { id: boardId, ...measured });
         logger.warn({ id: boardId, ...measured, hardBytes: SNAPSHOT_LIMITS.hardBytes }, "Snapshot still over the hard limit after offload; refusing to save");
         return { kind: "refused", bytes: measured.bytes, inlineAssets: measured.inlineAssets };
       }
@@ -260,7 +255,6 @@ export async function buildSnapshotUpdate(deps: SnapshotBuildDeps): Promise<Buil
       try {
         previewUrl = await deps.makePreview();
       } catch (e) {
-        console.warn("Thumbnail generation failed:", e);
         logger.warn({ error: errorInfo(e), id: boardId }, "Thumbnail generation failed, continuing without preview");
       }
     }
@@ -274,7 +268,6 @@ export async function buildSnapshotUpdate(deps: SnapshotBuildDeps): Promise<Buil
       update.preview = null;
     } else if (previewUrl) {
       if (previewUrl.length > MAX_PREVIEW_LENGTH) {
-        console.warn(`Preview too large (${previewUrl.length} bytes), skipping`);
         logger.warn(
           { id: boardId, length: previewUrl.length, maxLength: MAX_PREVIEW_LENGTH },
           "Preview too large, skipping storing preview in database",
@@ -287,7 +280,6 @@ export async function buildSnapshotUpdate(deps: SnapshotBuildDeps): Promise<Buil
     return { kind: "update", update, snapshot: safeSnapshot, bytes: measured.bytes, offloaded };
   } catch (error) {
     const info = { id: boardId, ...errorInfo(error) };
-    console.error("Error preparing board auto-save:", info);
     logger.error({ error: info, id: boardId }, "Error preparing board auto-save");
     return { kind: "error", error };
   }
@@ -528,10 +520,20 @@ export function singleFlight<T>(fn: () => Promise<T>): SingleFlight<T> {
 
 const offloadByEditor = new WeakMap<Editor, SingleFlight<OffloadResult>>();
 
+/** Only boards saved before the asset store shipped still hold images as data: URLs. */
+export function hasInlineImages(editor: Pick<Editor, "getAssets">): boolean {
+  return editor.getAssets().some((a) => !!a.props.src?.startsWith("data:"));
+}
+
 function offloadFlightFor(editor: Editor): SingleFlight<OffloadResult> {
   let flight = offloadByEditor.get(editor);
   if (!flight) {
-    flight = singleFlight(() => offloadEditorAssets(editor));
+    // The offloader is fetched for a board that needs it, not on every board's first load.
+    flight = singleFlight(async () =>
+      hasInlineImages(editor)
+        ? (await import("@/lib/assets/offloadSnapshotAssets")).offloadEditorAssets(editor)
+        : { migrated: 0, failed: [], bytesBefore: 0, bytesAfter: 0, aborted: false },
+    );
     offloadByEditor.set(editor, flight);
   }
   return flight;
@@ -602,14 +604,10 @@ export function idleSyncState(version: number | null): SyncState {
 }
 
 export interface UseSnapshotSaveResult {
-  /** non-null while the board cannot be persisted (too large); cleared by the next successful save */
-  blockedMessage: string | null;
-  /** live queue state for the SaveStatus pill */
+  /** live queue state for the SaveStatus pill (a board that cannot be saved is `refused`, see blockedMessageForSync) */
   sync: SyncState;
   /** re-run a failed save now (Retry button) */
   retry: () => Promise<SyncState>;
-  /** save whatever is pending now (navigation away) */
-  flush: () => Promise<SyncState>;
 }
 
 /**
@@ -731,10 +729,5 @@ export function useSnapshotSave(
     () => queueAtom.get()?.retry() ?? Promise.resolve(idleSyncState(initialVersion)),
     [queueAtom, initialVersion],
   );
-  const flush = useCallback(
-    () => queueAtom.get()?.flush() ?? Promise.resolve(idleSyncState(initialVersion)),
-    [queueAtom, initialVersion],
-  );
-
-  return { blockedMessage: blockedMessageForSync(sync), sync, retry, flush };
+  return { sync, retry };
 }

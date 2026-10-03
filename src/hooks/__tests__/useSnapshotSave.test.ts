@@ -8,9 +8,11 @@ import {
   blockedMessageForSync,
   buildSnapshotUpdate,
   classifySaveError,
+  hasInlineImages,
   idleSyncState,
   isNetworkFailure,
   measureSnapshot,
+  offloadAssetsOnce,
   persistErrorResult,
   persistResultFromThrown,
   resetInlineAssetFallbackWarning,
@@ -24,6 +26,7 @@ import {
   type SnapshotSaveDeps,
 } from "../useSnapshotSave";
 import type { SyncState } from "@/lib/sync";
+import type { Editor } from "tldraw";
 import type { SaveDecision, SaveDecisionInput } from "@/lib/assets/savePolicy";
 import { SNAPSHOT_LIMITS } from "../../../scripts/lib/snapshotAssets.mjs";
 
@@ -330,6 +333,29 @@ describe("singleFlight", () => {
     resolve(2);
     expect(await c).toBe(2);
     expect(calls).toBe(2);
+  });
+});
+
+describe("offloadAssetsOnce / hasInlineImages", () => {
+  const editorWith = (...srcs: string[]) =>
+    ({ getAssets: () => srcs.map((src) => ({ type: "image", props: { src } })) }) as unknown as Editor;
+
+  it("finds assets still held as data: URLs", () => {
+    expect(hasInlineImages(editorWith())).toBe(false);
+    expect(hasInlineImages(editorWith("https://x.supabase.co/storage/v1/object/public/board-assets/a.png"))).toBe(false);
+    expect(hasInlineImages(editorWith("https://x/a.png", PNG_1x1))).toBe(true);
+    const bookmark = { getAssets: () => [{ type: "bookmark", props: { src: "https://example.com" } }] } as unknown as Editor;
+    expect(hasInlineImages(bookmark)).toBe(false);
+  });
+
+  it("answers 'nothing to move' without loading the offloader (and without serializing the board)", async () => {
+    expect(await offloadAssetsOnce(editorWith("https://x/a.png"))).toEqual({
+      migrated: 0,
+      failed: [],
+      bytesBefore: 0,
+      bytesAfter: 0,
+      aborted: false,
+    });
   });
 });
 

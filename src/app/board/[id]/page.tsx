@@ -39,7 +39,6 @@ import {
   Image01Icon,
   AddSquareIcon,
 } from "hugeicons-react";
-import { dropPendingAiOverlays } from "@/hooks/useAiOverlayShapes";
 import { useAssistanceMode, type AssistanceMode } from "@/hooks/useAssistanceMode";
 import { offloadAssetsOnce, useSnapshotSave } from "@/hooks/useSnapshotSave";
 import { useBoardAutoTitle } from "@/hooks/useBoardAutoTitle";
@@ -609,9 +608,14 @@ export default function BoardPage() {
           }
           // An overlay the student never accepted is a proposal, not part of the board: it
           // would otherwise reopen full-canvas over work they have moved on from. Dropping
-          // it here is the same outcome as Reject (see dropPendingAiOverlays).
-          const dropped = dropPendingAiOverlays(editor);
-          if (dropped.length > 0) logger.info({ id, count: dropped.length }, "Dropped pending AI overlays on load");
+          // it here is the same outcome as Reject (see dropPendingAiOverlays). Only boards
+          // from the retired image pipeline have any, so the module loads for those alone.
+          if (editor.getCurrentPageShapes().some((s) => s.meta.aiOverlay === true)) {
+            void import("@/hooks/useAiOverlayShapes").then(({ dropPendingAiOverlays }) => {
+              const dropped = dropPendingAiOverlays(editor);
+              if (dropped.length > 0) logger.info({ id, count: dropped.length }, "Dropped pending AI overlays on load");
+            });
+          }
           // Boards saved before the asset store shipped still carry base64 images: move
           // them to Storage in the background. The rewrite is a store change, so the
           // autosave persists the new URLs; only failures are surfaced.
