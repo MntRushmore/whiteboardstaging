@@ -8,6 +8,7 @@ import { SECTION_BODY, SectionHeader } from "@/components/account/SectionHeader"
 import { ACCOUNT_COPY } from "@/lib/billing/accountState";
 import { INK_COPY, LOW_INK, bottleFill, formatInk, inkTone, type InkSummary } from "@/lib/billing/inkSummary";
 import { inkPriceSentence } from "@/lib/billing/usage";
+import { PLAN_COPY } from "@/lib/billing/unlimitedPlan";
 import { cn } from "@/lib/utils";
 
 /** Same amber and red as the meter, so "low" and "out" look alike across the app. */
@@ -23,24 +24,35 @@ const STAT = "flex items-center justify-between gap-3 px-3 py-2";
  * where it came from (the starter, packs bought, refunds taken back) and went (used), in plain
  * words. Ink never expires, so there is no reset date. A calm notice and "Get ink" (the packs
  * just below) when it runs low or out.
+ *
+ * With Agathon Unlimited on (`unlimited`), help spends none of it: no low or out-of-ink warning,
+ * just a note that the ink is kept for later (a subscriber with 0 ink is not out of anything).
  */
 export function InkCard({
   summary,
   error,
   refreshing = false,
+  unlimited = false,
   onRetry,
 }: {
   summary: InkSummary;
   /** A refresh failed after a successful load; the last good numbers stay on screen. */
   error?: string | null;
   refreshing?: boolean;
+  /** Agathon Unlimited is on: the balance is not being spent. */
+  unlimited?: boolean;
   onRetry: () => void;
 }) {
-  const tone = inkTone(summary.balance);
+  const tone = unlimited ? "ok" : inkTone(summary.balance);
   return (
-    <Card data-tone={tone}>
+    <Card data-tone={unlimited ? "unlimited" : tone}>
       <SectionHeader title="Ink" description="Ink pays for the tutor's work, and it never runs out on a date. Drawing on your own is always free." />
       <CardContent className={cn(SECTION_BODY, "space-y-5")}>
+        {unlimited && (
+          <div role="status" data-tone="unlimited" className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
+            {PLAN_COPY.inkNote}
+          </div>
+        )}
         {tone !== "ok" && (
           <div role={tone === "empty" ? "alert" : "status"} data-tone={tone} className={cn("flex items-start gap-2 rounded-lg border px-3 py-2 text-sm", NOTICE_CLASS[tone])}>
             {tone === "empty" ? <OctagonAlert className="mt-0.5 size-4 shrink-0" /> : <AlertTriangle className="mt-0.5 size-4 shrink-0" />}
