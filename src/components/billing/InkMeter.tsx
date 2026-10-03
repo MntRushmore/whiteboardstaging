@@ -14,7 +14,9 @@ const TONE_CLASS = {
 } as const;
 
 /**
- * The board bar's ink meter: the bottle (its fill is the balance) and the number. A calm amber
+ * The board bar's ink meter: the bottle (its fill is the balance) and the number ("300 ink" from
+ * `lg` up; the bottle and the number alone below, so an upright iPad's bar keeps one row; the
+ * aria-label always says "300 ink left"). A calm amber
  * with "Get ink" under LOW_INK, red at zero. Tapping it opens the board's ink dialog (the packs,
  * bought in a new tab) through openInkDialog, so the student never leaves the board. Hidden until
  * the balance has loaded, and silent on failure: the bar is not where a metering hiccup is
@@ -47,7 +49,7 @@ export function InkMeter({ className, onBalance }: { className?: string; onBalan
     >
       <InkBottle fill={bottleFill(summary.balance)} tone={tone} className="shrink-0" />
       <span>{formatInk(summary.balance)}</span>
-      <span className="hidden sm:inline">ink</span>
+      <span className="hidden lg:inline">ink</span>
       {tone !== "ok" && <span className="ml-0.5 font-semibold underline underline-offset-2">{INK_COPY.getInk}</span>}
     </button>
   );

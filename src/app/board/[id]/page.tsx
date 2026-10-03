@@ -337,7 +337,13 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
         >
           <ArrowLeft01Icon size={20} strokeWidth={2} />
         </Button>
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+        {/*
+          An upright iPad (768–834 px) fits this row only just: below lg the gaps are 6 px, the ink
+          meter is the bottle and the number, Report a bug and a routine save are icons, and the
+          save pill comes last, so neither it nor a long status ever pushes the other controls
+          onto a second row (Solve's steps button still wraps the status end there).
+        */}
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5 lg:gap-2">
           <Tabs
             value={assistanceMode}
             onValueChange={(value) => setAssistanceMode(value as AssistanceMode)}
@@ -388,7 +394,6 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
               onReportProblem={() => setReportOpen(true)}
             />
           </LiveErrorBoundary>
-          <SaveStatus sync={sync} onRetry={() => void retrySave()} />
           {/* ink left; tapping it (or its "Get ink" when low) opens the ink dialog */}
           {/* once the balance covers the refused call again (a pack landed), its "out of ink" pill goes */}
           <InkMeter onBalance={clearInkErrorIfAffordable} />
@@ -412,6 +417,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
               </React.Suspense>
             </LiveErrorBoundary>
           )}
+          {/* last: it comes and goes with every save, and must not move the controls before it */}
+          <SaveStatus sync={sync} onRetry={() => void retrySave()} />
         </div>
       </div>
 
