@@ -85,6 +85,8 @@ function fakeEditor(opts: { pages?: number; shapes?: Record<string, Box[]> } = {
   }
   const setCameraOptions = vi.fn();
   const setCamera = vi.fn();
+  /** the order things happened in when a screen was deleted */
+  const log: string[] = [];
   const editor = {
     getPages: () => pages,
     getCurrentPage: () => pages.find((p) => p.id === current)!,
@@ -111,7 +113,9 @@ function fakeEditor(opts: { pages?: number; shapes?: Record<string, Box[]> } = {
       return pageId ? { id, typeName: "shape", parentId: pageId } : undefined;
     },
     getBindingsInvolvingShape: () => [],
+    markHistoryStoppingPoint: (name: string) => log.push(`mark:${name}`),
     deletePage: (id: TLPageId) => {
+      log.push(`delete:${id}`);
       const i = pages.findIndex((p) => p.id === id);
       if (current === id) current = (pages[i - 1] ?? pages[i + 1]).id;
       pages = pages.filter((p) => p.id !== id);
@@ -126,7 +130,7 @@ function fakeEditor(opts: { pages?: number; shapes?: Record<string, Box[]> } = {
       },
     },
   };
-  return { editor: editor as unknown as ScreensEditor, setCameraOptions, setCamera, pages: () => pages, shapesOn: (id: string) => byPage.get(id) ?? [] };
+  return { editor: editor as unknown as ScreensEditor, setCameraOptions, setCamera, pages: () => pages, shapesOn: (id: string) => byPage.get(id) ?? [], log };
 }
 
 describe("ensureScreen", () => {
@@ -186,10 +190,10 @@ describe("addScreen / goToScreen", () => {
     expect(editor.getPages()).toHaveLength(MAX_SCREENS);
   });
 
-  it("deletes the current screen and its ink, shows the one before it, and puts it all back on Undo", () => {
+  it("deletes the current screen and its ink, shows the one before it, and puts it all back on Undo", async () => {
     const { editor, pages, shapesOn } = fakeEditor({ pages: 3, shapes: { "page:2": [new Box(0, 0, 10, 10), new Box(20, 0, 10, 10)] } });
     goToScreen(editor, 1);
-    const restore = deleteScreen(editor as never);
+    const restore = await deleteScreen(editor as never);
     expect(restore).toBeTypeOf("function");
     expect(pages().map((p) => p.id)).toEqual(["page:1", "page:3"]);
     expect(editor.getCurrentPageId()).toBe("page:1");
@@ -201,9 +205,45 @@ describe("addScreen / goToScreen", () => {
     expect(editor.getCurrentPageId()).toBe("page:2");
   });
 
-  it("never deletes a board's only screen", () => {
+  it("the tutor's pens finish (and their writes land) before the screen goes, and the delete is its own undo step", async () => {
+    const { editor, log } = fakeEditor({ pages: 2 });
+    goToScreen(editor, 1);
+    // a finished pen's last strokes are written a microtask later, as Live's writes are
+    const finishWriting = vi.fn(() => queueMicrotask(() => log.push("strokes landed")));
+    await deleteScreen(editor as never, finishWriting);
+    expect(finishWriting).toHaveBeenCalled();
+    expect(log.slice(-2)).toEqual(["mark:delete screen", "delete:page:2"]);
+    expect(log.indexOf("strokes landed")).toBeLessThan(log.indexOf("delete:page:2"));
+  });
+
+  it("Undo from the toast does nothing once Ctrl+Z has brought the screen back", async () => {
+    const { editor, pages } = fakeEditor({ pages: 2 });
+    goToScreen(editor, 1);
+    const page = editor.getCurrentPage();
+    const restore = await deleteScreen(editor as never);
+    // Ctrl+Z: tldraw puts the page back itself (the student may have changed it since)
+    (editor as unknown as { store: { put: (r: unknown[]) => void } }).store.put([page]);
+    const before = pages().length;
+    restore!();
+    expect(pages()).toHaveLength(before);
+  });
+
+  it("a screen added since takes no index from the one put back: it returns to where it was", async () => {
+    const { editor, pages } = fakeEditor({ pages: 2 });
+    goToScreen(editor, 1);
+    const restore = await deleteScreen(editor as never);
+    // a new screen at the end now has the deleted screen's index (tldraw: the index above the last)
+    (editor as unknown as { store: { put: (r: unknown[]) => void } }).store.put([{ id: "page:new", typeName: "page", name: "Screen 2", index: "a2", meta: {} }]);
+    expect(pages().map((p) => p.index)).toEqual(["a1", "a2"]);
+    restore!();
+    const indexes = pages().map((p) => p.index);
+    expect(new Set(indexes).size).toBe(3);
+    expect(pages().map((p) => p.id)[1]).toBe("page:2");
+  });
+
+  it("never deletes a board's only screen", async () => {
     const { editor } = fakeEditor();
-    expect(deleteScreen(editor as never)).toBeNull();
+    expect(await deleteScreen(editor as never)).toBeNull();
   });
 
   it("moves between screens and clamps at the ends", () => {

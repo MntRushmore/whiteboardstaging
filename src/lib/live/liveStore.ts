@@ -59,6 +59,12 @@ export const liveStore = {
    * UI reaches the loop through the store). null when no loop is mounted.
    */
   retryHandler: atom<(() => void) | null>("live.retryHandler", null),
+  /**
+   * Finishes every pen of the tutor's in place, installed by the running loop: deleting a screen
+   * calls it first so a step half written there is neither carried to the next screen nor brought
+   * back half written by Undo (`deleteScreen`). null when no loop is mounted.
+   */
+  finishWriting: atom<(() => void) | null>("live.finishWriting", null),
 };
 
 let errorSeq = 0;

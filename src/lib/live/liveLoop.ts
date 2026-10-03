@@ -578,6 +578,7 @@ export class LiveLoop implements LiveController {
   /** how many times the student pressed Retry for `retryKey` */
   private retryAttempt = 0;
   private readonly retryHandler = () => this.retryLastError();
+  private readonly finishWritingHandler = () => this.finishWriting();
   private readonly onOnline = () => this.setOnline(true);
   private readonly onOffline = () => this.setOnline(false);
   private readonly onBadgeTap = (e: Event): void => {
@@ -668,6 +669,7 @@ export class LiveLoop implements LiveController {
       })
       .catch((e) => console.warn("[live] engine failed to load", e));
     liveStore.retryHandler.set(this.retryHandler);
+    liveStore.finishWriting.set(this.finishWritingHandler);
     this.fetchCaps();
     liveStore.status.set(this.opts.enabled ? "idle" : "paused");
   }
@@ -704,7 +706,23 @@ export class LiveLoop implements LiveController {
     // what lecture mode heard since the last write is saved with the board, not lost with the loop
     this.flushPageMeta();
     if (liveStore.retryHandler.get() === this.retryHandler) liveStore.retryHandler.set(null);
+    if (liveStore.finishWriting.get() === this.finishWritingHandler) liveStore.finishWriting.set(null);
     this.resetRetry();
+  }
+
+  /**
+   * Every pen of the tutor's finishes what it started, in place (`HandWriter.cancel`: a line it had
+   * begun is completed, one it had not is dropped) — the solution or answer being written, a graph
+   * or sketch, and each line's mark, step and operation result. On leaving a screen, and before one
+   * is deleted (`deleteScreen`), so nothing half written is left behind or carried to the next one.
+   */
+  private finishWriting(): void {
+    this.cancelHandwriting();
+    for (const r of this.rt.values()) {
+      r.markWriter?.cancel();
+      r.stepWriter?.writer.cancel();
+      r.resultWriter?.cancel();
+    }
   }
 
   /** Timers, in-flight calls and per-line runtime: everything that belongs to the ink on screen. */
@@ -715,7 +733,7 @@ export class LiveLoop implements LiveController {
     this.settleTimer = null;
     this.settled = false;
     // Leaving the board / unmounting must not freeze a half-written step on the canvas.
-    this.cancelHandwriting();
+    this.finishWriting();
     this.deps.recognizer.abortAll();
     for (const r of this.rt.values()) {
       r.checkAbort?.abort();
@@ -3869,7 +3887,12 @@ export class LiveLoop implements LiveController {
     return new HandWriter(
       {
         write: (fn) => this.write(fn),
-        createShapes: (shapes) => this.editor.createShapes(page ? shapes.map((sh) => (sh.parentId ? sh : { ...sh, parentId: page })) : shapes),
+        createShapes: (shapes) => {
+          // ...and when that screen was deleted, nowhere: tldraw would put strokes with a missing
+          // parent on the current page — the rest of a step on the next screen (`deleteScreen`)
+          if (page && !this.editor.store.get(page)) return;
+          this.editor.createShapes(page ? shapes.map((sh) => (sh.parentId ? sh : { ...sh, parentId: page })) : shapes);
+        },
         updateShapes: (shapes) => this.editor.updateShapes(shapes),
         getShape: (id) => this.editor.getShape(id),
       },
@@ -4714,7 +4737,9 @@ export class LiveLoop implements LiveController {
       const candidate: Rect = { x: Math.min(ink.x, above?.line.bounds.x ?? ink.x), y: rectMaxY(ink) + PLACEMENT.stepGap, w: plan.bounds.w, h: plan.bounds.h };
       const placed = keepOnScreen(candidate, this.screenRect(), ink);
       const slot = findFreeSlot(placed, [...this.avoidRects(state.line.id), ink], ink, placed.x === candidate.x ? "below" : "right");
-      this.makeWriter().start(placeHandPlan(plan, { x: slot.x, y: slot.y }), {
+      const writer = this.makeWriter();
+      this.runtime(state.line.id).resultWriter = writer;
+      writer.start(placeHandPlan(plan, { x: slot.x, y: slot.y }), {
         meta: makeMeta("ai", state.line.id, this.deps.now()),
         extraMeta: { [OPERATION_RESULT_META]: result },
       });
