@@ -53,7 +53,7 @@ import {
   type SolveRequest,
   type UseLiveMathOptions,
 } from "./contracts";
-import { endsWithRelation } from "./answer";
+import { endsWithRelation, startsWithRelation } from "./answer";
 import { LIVE_COPY } from "@/components/live/copy";
 import { classifyLiveFailure, sseFailure, type ClassifyContext } from "@/components/live/errorView";
 import {
@@ -68,6 +68,7 @@ import {
 import { liveWrite, scheduleLiveWrite } from "./liveWrite";
 import { recordReread, recordRecognition } from "./liveDebug";
 import { analyzeColumn, localSolve } from "./localSolve";
+import { evaluatedLineFor, givensFor, givensOf, type Given } from "./givens";
 import { requestReread, requestSetup, type CallOptions } from "./modelCalls";
 import { acceptChainReread, acceptReread, rereadTrigger, type RereadTrigger } from "./readCheck";
 import { isProblemProse, setupBlock, validateSetupLines, wordProblemKey } from "./wordProblem";
@@ -429,6 +430,11 @@ const AI_WARN_META = "aiWarnLatex";
 const SUGGEST_META = "suggestFor";
 /** the equation written under a right operation line (`-3 \quad -3` → `2x = 8`): what it was written for */
 const OPERATION_RESULT_META = "operationResult";
+/**
+ * on the values put into a line ending in `=` (`3(3) + 24` after `3x + 24 =` over `x = 3`, Help's
+ * next step): the line and the values it was written for (`answerSourceOf`)
+ */
+const SUBSTITUTION_META = "substitutionFor";
 /** on the strokes of a tutor's mark (tick / ring / question mark): its `markKey` */
 const MARK_META = "mark";
 /** on a question mark's strokes: why the tutor put it there (`UnjudgedReason`) */
@@ -444,6 +450,36 @@ function metaString(meta: unknown, key: string): string {
 /** The student line this shape is the tutor's answer to, or "" when it is not answer ink. */
 function answerSrcOf(meta: unknown): string {
   return metaString(meta, ANSWER_SRC_META);
+}
+
+/**
+ * What an answer to this line is an answer TO (`answerFor`): the line as read — and, for a line
+ * evaluated at the values its column gives (`LineAnalysis.substituted`), those values too
+ * (`3x+24= @ 3(3)+24`). `x = 3` rewritten as `x = 4` leaves `3x + 24 =` reading the same, and its
+ * `33` would otherwise stay beside it.
+ */
+function answerSourceOf(state: Pick<LiveLineState, "latex" | "analysis">): string {
+  const at = state.analysis?.substituted;
+  return at ? `${state.latex} @ ${at}` : state.latex;
+}
+
+/** `3x + 24 =`, `36 + 2 =`: a line the student ended with `=` (not `\le`, `<=`, `!=`). */
+function endsWithEquals(latex: string): boolean {
+  return /=\s*$/.test(latex) && !/[<>!]=\s*$/.test(latex);
+}
+
+/** `= 3(x + 8)` → `3(x + 8)`: a step's leading relation, which the line it continues already ends with. */
+function withoutRelation(step: string): string {
+  return step.replace(/^\s*=\s*/, "").trim() || step;
+}
+
+/**
+ * `3x + 24 = 3(x + 8)`: a block continuing `line` (it ends with `=`), its first step restated as
+ * that line, for a block that cannot be written beside or straight under it.
+ */
+function restated(line: string, steps: readonly string[]): string[] {
+  if (steps.length === 0) return [];
+  return [`${line.replace(/=\s*$/, "").trim()} ${steps[0].trim()}`, ...steps.slice(1)];
 }
 
 function answerLatexOf(meta: unknown): string {
@@ -2366,7 +2402,7 @@ export class LiveLoop implements LiveController {
       .sort((a, b) => a.line.row - b.line.row);
   }
 
-  private columnContext(state: LiveLineState): { previous?: LineAnalysis; original?: LineAnalysis } {
+  private columnContext(state: LiveLineState): { previous?: LineAnalysis; original?: LineAnalysis; givens?: Record<string, string> } {
     const col = this.columnLines(state.line.column);
     let previous: LineAnalysis | undefined;
     let original: LineAnalysis | undefined;
@@ -2384,7 +2420,66 @@ export class LiveLoop implements LiveController {
       if (!s.latex) continue;
       take(s.analysis);
     }
-    return { previous, original };
+    // the values the rest of the column gives its letters, above it or under it (`givens.ts`):
+    // `3x + 24 =` over `x = 3` asks for 33
+    const index = col.findIndex((s) => s.line.id === state.line.id);
+    const givens = index === -1 ? undefined : givensFor(this.columnGivens(col), index);
+    return givens ? { previous, original, givens } : { previous, original };
+  }
+
+  /** The values a column's lines give its letters (`givens.ts`), indexed as `col`. */
+  private columnGivens(col: readonly LiveLineState[]): Given[] {
+    return givensOf(
+      col.map((s) => s.latex),
+      col.map((s) => s.analysis),
+    );
+  }
+
+  /**
+   * The line an ask about `state` is for. The student asked on a value they gave — `x = 3` under
+   * `3x + 24 =`, or the `3` of an `x =` read apart from it — and the column has a line evaluated
+   * at it (`LineAnalysis.substituted`): that line is the question, finished where they left off
+   * (`33` after its `=`). The given is no step to go on from: asked on it, Solve went to a model,
+   * which wrote `= 3(x+8)` under the `x = 3`. Any other line is asked about as it is.
+   */
+  private askedLine<T extends LiveLineState | undefined>(state: T): T | LiveLineState {
+    if (!state) return state;
+    const col = this.columnLines(state.line.column);
+    const index = col.findIndex((s) => s.line.id === state.line.id);
+    if (index === -1) return state;
+    const at = evaluatedLineFor(
+      col.map((s) => s.latex),
+      col.map((s) => s.analysis),
+      this.columnGivens(col),
+      index,
+    );
+    return at === -1 ? state : col[at];
+  }
+
+  /**
+   * A value given in this column appeared, changed or went (`x = 3` read, rewritten, rubbed out):
+   * the lines it evaluates (`3x + 24 =`, wherever they are in the column) are analysed again — and
+   * the lines under each, whose line above changed — and re-rendered: the answer written for the
+   * old value goes (`dropStaleAnswer`), the new one is written as any answer is. A line ending in
+   * `=` is the only kind that reads the givens (`AnalyzeContext.givens`).
+   */
+  private refreshEvaluated(column: number, skipLineId?: string): void {
+    if (!this.engine) return;
+    const col = this.columnLines(column).filter((s) => s.latex);
+    const first = col.findIndex((s) => {
+      if (s.line.id === skipLineId || !/=\s*$/.test(s.latex)) return false;
+      const a = this.analyze(s);
+      const b = s.analysis;
+      return (a?.kind ?? "") !== (b?.kind ?? "") || (a?.substituted ?? "") !== (b?.substituted ?? "") || (a?.resultLatex ?? "") !== (b?.resultLatex ?? "");
+    });
+    if (first === -1) return;
+    for (const s of col.slice(first)) {
+      const cur = liveStore.lines.get()[s.line.id];
+      if (!cur?.latex) continue;
+      setLine(cur.line.id, { analysis: this.analyze(cur) });
+      const fresh = liveStore.lines.get()[cur.line.id];
+      if (fresh) this.render(fresh, this.decisionFor(fresh));
+    }
   }
 
   // ---------------------------------------------------------------- the chat's problems as column heads
@@ -2728,6 +2823,8 @@ export class LiveLoop implements LiveController {
         if (b) this.render(b, this.decisionFor(b));
       }
     }
+    // a value this line gives (`x = 3`) may finish a line above it too (`3x + 24 =`)
+    this.refreshEvaluated(fresh.line.column, lineId);
 
     // A read that lands after the pause is due at once; one before it waits for the settle
     // (`autoPause`). The whole column: a line whose line above just changed is checked again.
@@ -2800,7 +2897,9 @@ export class LiveLoop implements LiveController {
    */
   private autoKey(kind: "check" | "solve" | "step", state: LiveLineState): string {
     const column = this.columnLines(state.line.column).filter((s) => s.line.row <= state.line.row && s.latex);
-    return `${kind}|${this.pageKey()}|${column.map((s) => s.latex).join("\n")}`;
+    // a line evaluated at a value written under it (`3x + 24 =` over `x = 3`) is another problem at another value
+    const at = state.analysis?.substituted ? ` @ ${state.analysis.substituted}` : "";
+    return `${kind}|${this.pageKey()}|${column.map((s) => s.latex).join("\n")}${at}`;
   }
 
   /** True the first time this key is seen (and remembers it). */
@@ -2891,7 +2990,8 @@ export class LiveLoop implements LiveController {
    */
   private autoTarget(): LiveLineState | undefined {
     if (!this.penStrokeId || this.picked()) return undefined;
-    return penLine(liveStore.lines.get(), this.penStrokeId, this.penLineId) ?? undefined;
+    // the `x = 3` just written under `3x + 24 =` is that line's value, not a problem of its own (`askedLine`)
+    return this.askedLine(penLine(liveStore.lines.get(), this.penStrokeId, this.penLineId) ?? undefined);
   }
 
   /** Suggest's stuck pause starts again from now (Auto on; it looks at the mode again when it ends). */
@@ -3016,6 +3116,7 @@ export class LiveLoop implements LiveController {
     const rt = this.runtime(lineId);
     // The line changed under an answer the tutor had already written: that answer is stale.
     this.dropStaleAnswer(state);
+    this.dropStaleSubstitution(state);
     this.dropStaleOperationResult(state);
     // Its column's graph follows its maths: erased when that changed, sketched when wanted (Solve, settled).
     if (!opts.keepStatus && !decision.capped) this.syncGraph(state.line.column);
@@ -3599,8 +3700,12 @@ export class LiveLoop implements LiveController {
     }
     this.deleteLineShapes(lineId);
     removeLine(lineId);
-    // the rest of its column may have lost a relation its graph was drawn from
-    if (column !== undefined) this.syncGraph(column);
+    // the rest of its column may have lost a relation its graph was drawn from, or a value a line
+    // ending in `=` was evaluated at (its answer goes with it)
+    if (column !== undefined) {
+      this.refreshEvaluated(column);
+      this.syncGraph(column);
+    }
     if (this.retryContext && "lineId" in this.retryContext && this.retryContext.lineId === lineId) this.resetRetry();
   }
 
@@ -3837,11 +3942,15 @@ export class LiveLoop implements LiveController {
    */
   private planInlineAnswer(state: LiveLineState, answer: string): HandPlan | null {
     const ink = state.line.bounds;
+    // after the values Help put in (`3x + 24 = 3(3) + 24`) the line goes on from them: `= 33`
+    const put = this.substitutionRect(state);
+    const end = put ? rectMaxX(unionRects([ink, put])) : rectMaxX(ink);
+    const text = put && !startsWithRelation(answer) ? `= ${answer}` : answer;
     const size = inlineHandSizeFor(ink.h, this.boardZoom());
-    const { plan, unsupported } = planHandwriting([answer], { size, seed: handSeedFor(`${state.line.id}:answer`) });
+    const { plan, unsupported } = planHandwriting([text], { size, seed: handSeedFor(`${state.line.id}:answer`) });
     if (!plan || unsupported.length > 0) return null;
     const placed = placeHandPlanOnBaseline(plan, {
-      x: rectMaxX(ink) + inlineAnswerGap(ink.h),
+      x: end + inlineAnswerGap(ink.h),
       baselineY: rectMaxY(ink),
     });
     const viewport = this.placementBounds();
@@ -3850,9 +3959,64 @@ export class LiveLoop implements LiveController {
     return placed;
   }
 
+  /** Where Help's values-put-in step for this line is (`writeSubstitution`), when it is on the page for the line as it reads now. */
+  private substitutionRect(state: LiveLineState): Rect | null {
+    const key = answerSourceOf(state);
+    const rects: Rect[] = [];
+    for (const s of this.editor.getCurrentPageShapes()) {
+      if (!isLiveMeta(s.meta) || s.meta.lineId !== state.line.id || metaString(s.meta, SUBSTITUTION_META) !== key) continue;
+      const b = this.editor.getShapePageBounds(s);
+      if (b) rects.push(boxToRect(b));
+    }
+    return rects.length > 0 ? unionRects(rects) : null;
+  }
+
+  /**
+   * Help me on a line the column's givens evaluate (`3x + 24 =` over `x = 3`), in Feedback and
+   * Suggest: the next step is the values put in — `3(3) + 24` — written after the student's `=`,
+   * where they left off, so their line reads `3x + 24 = 3(3) + 24` and the arithmetic is theirs to
+   * do. By hand beside their line, as `inlineAnswer` writes an answer; where it cannot go there, as
+   * any step continuing that line goes (`drawStepsByHand`: under it, or restated under the work —
+   * never under the `x = 3`, where `= 3(3) + 24` would read as `x = 3 = 3(3) + 24`). Asked again
+   * with it on the page, nothing new. False when the line is not evaluated at givens.
+   */
+  private writeSubstitution(state: LiveLineState): boolean {
+    const step = state.analysis?.substituted;
+    if (!step) return false;
+    if (this.substitutionRect(state) || this.writerFor === state.line.id) return true;
+    if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
+    const meta: JsonObject = { [SUBSTITUTION_META]: answerSourceOf(state) };
+    const inline = this.deps.handwritingEnabled() ? this.planInlineAnswer(state, step) : null;
+    if (inline) {
+      this.startHandwriting(inline, state.line.id, meta);
+      clientMetric("live.substitution.hand", { lineId: state.line.id });
+      return true;
+    }
+    const built = this.buildCheckLines(state.line.column);
+    if (!built) return false;
+    const steps = [`= ${step}`];
+    const opts: SolveOpts = { lineId: state.line.id, onlyFirstStep: true };
+    if (!(this.deps.handwritingEnabled() && this.drawStepsByHand(built, opts, state, steps, meta, state))) this.typesetSteps(built, opts, steps, meta, state);
+    clientMetric("live.substitution.under", { lineId: state.line.id });
+    return true;
+  }
+
+  /** The values put in for another value, or a line no longer evaluated: Help's step for it goes. */
+  private dropStaleSubstitution(state: LiveLineState): void {
+    const want = state.analysis?.substituted ? answerSourceOf(state) : "";
+    const stale = this.editor
+      .getCurrentPageShapes()
+      .filter((s) => isLiveMeta(s.meta) && s.meta.lineId === state.line.id && metaString(s.meta, SUBSTITUTION_META) !== "" && metaString(s.meta, SUBSTITUTION_META) !== want);
+    if (stale.length === 0) return;
+    this.write(() => {
+      const ids = stale.map((s) => s.id).filter((id) => this.editor.getShape(id));
+      if (ids.length > 0) this.editor.deleteShapes(ids);
+    });
+  }
+
   private answerMeta(state: LiveLineState, answer: string): JsonObject {
     return {
-      [ANSWER_SRC_META]: state.latex,
+      [ANSWER_SRC_META]: answerSourceOf(state),
       [ANSWER_LATEX_META]: answer,
       [ANSWER_ANCHORS_META]: [...state.line.strokeIds],
     };
@@ -3879,7 +4043,7 @@ export class LiveLoop implements LiveController {
   /** Rewriting the line replaces its answer: the old one goes before the new one is written. */
   private dropStaleAnswer(state: LiveLineState): void {
     if (!this.hasAnswerInk) return;
-    const stale = this.answerBlocksFor(state.line.id).filter((s) => answerSrcOf(s.meta) !== state.latex);
+    const stale = this.answerBlocksFor(state.line.id).filter((s) => answerSrcOf(s.meta) !== answerSourceOf(state));
     if (stale.length === 0) return;
     this.write(() => {
       const ids = stale.map((s) => s.id).filter((id) => this.editor.getShape(id));
@@ -4639,8 +4803,6 @@ export class LiveLoop implements LiveController {
       lines: built.lines,
       fromLineId,
     };
-    const lastLine = built.states[built.states.length - 1].line;
-    const columnRect = unionRects(built.states.map((s) => s.line.bounds));
     // Every solve is asked for (Solve steps, More help, the board chat).
     const errCtx = { kind: "solve" as const, lineId: opts.lineId, userAsked: true };
     const retry: RetryContext = { kind: "solve", lineId: opts.lineId, fromLineId, opts };
@@ -4694,7 +4856,7 @@ export class LiveLoop implements LiveController {
             this.fail(sseFailure(ev.data), errCtx, retry);
           }
         }
-        if (accepted.length > 0 && (doneEarly || !ctrl.signal.aborted)) this.writeModelSteps(built, opts, accepted, columnRect, lastLine.bounds);
+        if (accepted.length > 0 && (doneEarly || !ctrl.signal.aborted)) this.writeModelSteps(built, opts, accepted);
         // The model answered, but nothing it said survived the interlock. Better to say so than
         // to leave the student staring at a page where Solve visibly did nothing.
         if (!failed && drawn === 0 && discarded > 0) {
@@ -4721,7 +4883,7 @@ export class LiveLoop implements LiveController {
    * The model's verified steps, replacing any earlier solution for this work: in the tutor's
    * hand when every step can be drawn, typeset only when the hand lacks a symbol.
    */
-  private writeModelSteps(built: { states: LiveLineState[] }, opts: SolveOpts, steps: string[], column: Rect, lastLine: Rect): void {
+  private writeModelSteps(built: { states: LiveLineState[] }, opts: SolveOpts, steps: string[]): void {
     const state = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
     if (opts.problem) {
       // the model's worked solution of a problem the chat wrote: continued after the tutor's own work there
@@ -4730,7 +4892,7 @@ export class LiveLoop implements LiveController {
     }
     this.clearSolveOutput(built.states.map((s) => s.line.id));
     if (this.deps.handwritingEnabled() && state && this.drawStepsByHand(built, opts, state, steps)) return;
-    steps.forEach((step, i) => this.placeSolutionStep(column, lastLine, i + 1, step, "", opts.lineId));
+    this.typesetSteps(built, opts, steps);
   }
 
   /**
@@ -4786,12 +4948,16 @@ export class LiveLoop implements LiveController {
     });
 
     if (local.source === "localAnswer" && local.answer) {
+      // `3x + 24 =` over `x = 3`: the answer is that line's, finished after its `=` (`drawStepsByHand`)
+      const line = local.line === undefined ? undefined : built.states[local.line];
+      const answered = line ?? state;
       // `36 + 2 =`: the tutor may already have finished it (inline, or Solve pressed twice)
-      if (this.answerBlocksFor(opts.lineId).some((s) => answerLatexOf(s.meta) === local.answer)) return written();
+      if (this.answerBlocksFor(answered.line.id).some((s) => answerLatexOf(s.meta) === local.answer)) return written();
       if (atCap) return written();
-      const handBlock = hand ? this.drawStepsByHand(built, opts, state, steps, this.answerMeta(state, local.answer)) : null;
+      const meta = this.answerMeta(answered, local.answer);
+      const handBlock = hand ? this.drawStepsByHand(built, opts, state, steps, meta, line) : null;
       if (handBlock) return written(handBlock);
-      this.placeSolutionStep(column, lastLine, 0, steps[0], "", opts.lineId);
+      this.typesetSteps(built, opts, steps, line ? meta : undefined, line, 0);
       clientMetric("live.solve.local.typeset", { lineId: opts.lineId });
       return written(typesetBlock(0));
     }
@@ -4861,6 +5027,16 @@ export class LiveLoop implements LiveController {
   /**
    * Lays `steps` out under the student's last line and starts the reveal.
    *
+   * A block that continues a line the student ended with `=` (`continuedLine`: it starts with
+   * `=`, `= 3(x + 8)`) is that line's, wherever the work goes on under it. The owner's board
+   * wrote the model's `= 3(x+8)` for `3x + 24 =` on the free row under the `x = 3` below it, where
+   * it read `x = 3 = 3(x+8)`. So when that line is not the last of the work: one step goes after its
+   * `=`, as `inlineAnswer` writes `38` after `36 + 2 =`; else the block goes straight under it when
+   * it fits there as it is; else under the work as any block, its first line restated as that line
+   * (`3x + 24 = 3(x + 8)`), which reads as nothing else. `continues` names the line (Solve's
+   * answer to the line the givens evaluate, `localSolve`'s `line`); without it, the asked-for line
+   * when it ends with `=`, else the nearest line above it that does.
+   *
    * Returns null when the hand engine reports ANY `unsupported` construct for the block —
    * the safety interlock: a dropped `\frac` would show the student wrong maths, so the block
    * is never drawn partly. Otherwise where the block is being written, and for how long.
@@ -4871,28 +5047,51 @@ export class LiveLoop implements LiveController {
     state: LiveLineState,
     steps: readonly string[],
     extraMeta?: JsonObject,
+    continues?: LiveLineState,
   ): { rect: Rect; wallMs: number } | null {
     if (opts.problem) return this.drawProblemWork(built, opts, opts.problem, state, steps, extraMeta);
     // the student's size, on this board (`handSizeFor`'s zoom: a phone's writing is 5x a desktop's in page px)
     const size = handSizeFor(state.line.bounds.h, this.boardZoom());
     const k = this.handScale();
-    const { plan, unsupported } = planHandwriting(steps, { size, seed: handSeedFor(opts.lineId) });
+    const wall = (plan: HandPlan) => (this.deps.reducedMotion() ? 0 : wallMsOf(plan));
+    const cont = this.continuedLine(built, opts.lineId, steps, continues);
+    if (cont && steps.length === 1) {
+      const inline = this.planInlineAnswer(cont, withoutRelation(steps[0]));
+      if (inline) {
+        this.startHandwriting(inline, opts.lineId, extraMeta);
+        return { rect: inline.bounds, wallMs: wall(inline) };
+      }
+    }
+    const seed = handSeedFor(opts.lineId);
+    let { plan, unsupported } = planHandwriting(steps, { size, seed });
     if (!plan || unsupported.length > 0) return null;
 
     const lastLine = built.states[built.states.length - 1].line.bounds;
     const column = unionRects(built.states.map((s) => s.line.bounds));
+    // avoidRects skips this line's own ink and echo; for a block written *under* the work they
+    // are obstacles like any other, so they go back in — and so does every line of the work.
+    const avoid = this.avoidRects(opts.lineId);
+    avoid.push(state.line.bounds, ...built.states.map((s) => s.line.bounds));
+    const echo = this.echoRect(opts.lineId);
+    if (echo) avoid.push(echo);
+    if (cont) {
+      // straight under the line it continues, when it fits there without moving
+      const under: Rect = { x: cont.line.bounds.x, y: rectMaxY(cont.line.bounds) + PLACEMENT.stepGap * k, w: plan.bounds.w, h: plan.bounds.h };
+      if (!avoid.some((r) => rectsIntersect(r, under))) {
+        const block = placeHandPlan(plan, { x: under.x, y: under.y });
+        this.startHandwriting(block, opts.lineId, extraMeta);
+        return { rect: block.bounds, wallMs: wall(plan) };
+      }
+      // under the work, its first line restated as the line it continues
+      ({ plan, unsupported } = planHandwriting(restated(cont.latex, steps), { size, seed }));
+      if (!plan || unsupported.length > 0) return null;
+    }
     const candidate: Rect = {
       x: column.x,
       y: rectMaxY(lastLine) + PLACEMENT.stepGap * k,
       w: plan.bounds.w,
       h: plan.bounds.h,
     };
-    // avoidRects skips this line's own ink and echo; for a block written *under* the work they
-    // are obstacles like any other, so they go back in.
-    const avoid = this.avoidRects(opts.lineId);
-    avoid.push(state.line.bounds);
-    const echo = this.echoRect(opts.lineId);
-    if (echo) avoid.push(echo);
     // Under the work, a blocked block slides down past what is in the way; moved beside the work
     // (no room below on this screen), it slides right as an echo does.
     const placed = keepOnScreen(candidate, this.screenRect(), column, 0, PLACEMENT.sideGap * k);
@@ -4901,7 +5100,58 @@ export class LiveLoop implements LiveController {
     const block = placeHandPlan(plan, { x: slot.x, y: slot.y });
     this.startHandwriting(block, opts.lineId, extraMeta);
     clientMetric("live.solve.hand.ms", { ms: Math.round(wallMsOf(plan)), lineId: opts.lineId });
-    return { rect: block.bounds, wallMs: this.deps.reducedMotion() ? 0 : wallMsOf(plan) };
+    return { rect: block.bounds, wallMs: wall(plan) };
+  }
+
+  /**
+   * The typeset form of `drawStepsByHand` (the hand is off, or lacks a glyph): `placeSolutionStep`
+   * under the work from step `first` on — a block continuing a line ending in `=` straight under
+   * that line when it fits there, else restated as it (`3x + 24 = 33`). Never under a later line,
+   * where `= 33` read as the end of the `x = 3` above it.
+   */
+  private typesetSteps(built: { states: LiveLineState[] }, opts: SolveOpts, steps: readonly string[], extraMeta?: JsonObject, continues?: LiveLineState, first = 1): void {
+    const lastLine = built.states[built.states.length - 1].line.bounds;
+    const column = unionRects(built.states.map((s) => s.line.bounds));
+    const cont = this.continuedLine(built, opts.lineId, steps, continues);
+    if (!cont) {
+      steps.forEach((step, i) => this.placeSolutionStep(column, lastLine, i + first, step, "", opts.lineId, extraMeta));
+      return;
+    }
+    const block: Rect = {
+      x: column.x,
+      y: rectMaxY(cont.line.bounds) + PLACEMENT.stepGap,
+      w: Math.max(...steps.map((st) => estimateEchoWidth(st))),
+      h: steps.length * PLACEMENT.stepPitch,
+    };
+    const avoid = [...this.avoidRects(opts.lineId), ...built.states.map((s) => s.line.bounds)];
+    const fits = !avoid.some((r) => rectsIntersect(r, block));
+    const lines = fits ? steps : restated(cont.latex, steps);
+    lines.forEach((step, i) => this.placeSolutionStep(column, fits ? cont.line.bounds : lastLine, i + 1, step, "", opts.lineId, extraMeta));
+  }
+
+  /**
+   * The line the student ended with `=` that `steps` continue, when it is not the last line of the
+   * work (under the last line, a block is straight under it already): `continues` when given,
+   * else `askingLine`'s. Null when the block does not start with `=` (`3(3) + 24`, `x = 4`: a line
+   * of its own).
+   */
+  private continuedLine(built: { states: LiveLineState[] }, askedId: string, steps: readonly string[], continues?: LiveLineState): LiveLineState | null {
+    if (steps.length === 0 || !/^\s*=/.test(steps[0])) return null;
+    const cont = continues && endsWithEquals(continues.latex) ? continues : this.askingLine(built, askedId);
+    const last = built.states[built.states.length - 1];
+    return cont && last && last.line.id !== cont.line.id ? cont : null;
+  }
+
+  /**
+   * The line of the work that asks what it equals: the asked-for line when the student ended it with
+   * `=`, else the nearest line above it that they did (`3x + 24 =` over the `x = 3` Solve was asked
+   * on). Null when no line of the work ends with `=`.
+   */
+  private askingLine(built: { states: LiveLineState[] }, askedId: string): LiveLineState | null {
+    const states = built.states;
+    const asked = states.findIndex((s) => s.line.id === askedId);
+    for (let i = asked === -1 ? states.length - 1 : asked; i >= 0; i--) if (endsWithEquals(states[i].latex)) return states[i];
+    return null;
   }
 
   private makeWriter(): HandWriter {
@@ -5708,7 +5958,8 @@ export class LiveLoop implements LiveController {
       this.askAboutDrawing(figure, { lineId: figure.id });
       return;
     }
-    let target = lineId ? liveStore.lines.get()[lineId] : this.helpTargetLine();
+    // asked on the `x = 3` under `3x + 24 =`: the line it evaluates is the question (`askedLine`)
+    let target = this.askedLine(lineId ? liveStore.lines.get()[lineId] : this.helpTargetLine());
     // The chat's problems: with no line of the student's to act on, Solve steps is about the current
     // problem — worked out under it; pressed again once it is, the next one (`chat/work.ts`).
     if (!lineId && this.opts.enabled && this.opts.mode === "answer" && !this.actsOn(target)) {
@@ -5816,7 +6067,8 @@ export class LiveLoop implements LiveController {
       this.askAboutDrawing(figure, { lineId: figure.id, onlyFirstStep: this.opts.mode !== "answer" });
       return true;
     }
-    const target = this.helpTargetLine();
+    // asked on the `x = 3` under `3x + 24 =` (or the lone `3` of an `x =` read apart): that line (`askedLine`)
+    const target = this.askedLine(this.helpTargetLine());
     // The chat's problems: with no line of the student's to help with, Help is about the current one.
     if (!this.actsOn(target) && this.helpWithProblem(target)) return true;
     // nothing on this screen to help with: the button says so
@@ -6100,9 +6352,11 @@ export class LiveLoop implements LiveController {
    * More help on a line: the right next step by hand from the engine, straight away; when the
    * engine has none, one model step for this line (still checked, still drawn by hand).
    */
-  escalate(lineId: string): void {
-    const target = liveStore.lines.get()[lineId];
+  escalate(askedId: string): void {
+    // on the `x = 3` under `3x + 24 =`: help with the line it evaluates (`askedLine`)
+    const target = this.askedLine(liveStore.lines.get()[askedId]);
     if (!target || !target.latex || this.opts.mode === "off") return;
+    const lineId = target.line.id;
     if (this.proofs.ask(lineId, null, { all: false })) return;
     this.closeHintsFor(lineId);
     const wrong = target.analysis?.verdict === "mismatch" || this.modelFlagged(target);
@@ -6116,6 +6370,8 @@ export class LiveLoop implements LiveController {
     }
     // Stuck after a right operation (`\div 2` under `2\sin x = 1`): the equation it leads to, then the step after it.
     if (this.continueOperation(target, { all: false })) return;
+    // Stuck on `3x + 24 =` over `x = 3`: the value put in, after their `=` (`3(3) + 24`).
+    if (this.writeSubstitution(target)) return;
     // Stuck on a line that is fine: when its work graphs (`y = 2x + 1`, a system, `x > 4`), the
     // graph is the help — sketched from the engine, no model asked. Otherwise the next step.
     if (this.syncGraph(target.line.column, { asked: true, anchorLineId: lineId })) return;
