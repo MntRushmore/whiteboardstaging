@@ -856,6 +856,44 @@ function judgeComplexSteps(problem: EvalProblem, steps: readonly string[]): Tran
 }
 
 /**
+ * `3x + 24 =` with `x = 3` written beside it (above or under, or read apart as `x =` and `3`): the
+ * line ending in `=` whose letters the other lines all give asks for its value there (the board's
+ * `givens.ts`). That value, as an expression with the letters fixed; null when the lines are not
+ * that. Independent of the engine: the values are read by the oracle.
+ */
+export function evaluatedLine(lines: readonly string[]): { latex: string; value: Expr } | null {
+  const parsed = lines.map(parseLine);
+  const known: Record<string, number> = {};
+  parsed.forEach((p, i) => {
+    const a = assignmentOf(p);
+    if (a) known[a.variable] = a.value;
+    // `x =`, then a lone number
+    const next = parsed[i + 1];
+    const v = p.kind === "question" && next?.kind === "expr" && next.vars.length === 0 ? next.at({}) : null;
+    if (p.kind === "question" && typeof v === "number") known[p.variable] = v;
+  });
+  for (let i = 0; i < lines.length; i++) {
+    const p = parsed[i];
+    if (!/=\s*$/.test(lines[i]) || p.kind !== "expr" || p.vars.length === 0 || !p.vars.every((v) => v in known)) continue;
+    const value: Expr = { ...p, vars: [], at: (scope) => p.at({ ...scope, ...known }), complexAt: (scope) => p.complexAt({ ...scope, ...known }), complexAtC: undefined };
+    return { latex: lines[i], value };
+  }
+  return null;
+}
+
+/** The steps for an evaluated line (`evaluatedLine`): each one a value, its value there (`3(3) + 24`, `= 33`). */
+function judgeEvaluatedSteps(at: { latex: string; value: Expr }, steps: readonly string[]): Transition[] {
+  return steps.map((s) => {
+    const t = (status: TransitionStatus, reason = ""): Transition => ({ from: at.latex, to: s, status, reason });
+    const p = parseLine(s);
+    if (p.kind !== "expr") return t("unverified", "not a value");
+    const c = compareExprs(p, at.value);
+    if (c.unknown) return t("unverified", "no value to compare");
+    return c.exact || c.approx ? t("ok", "the line's value at the given values") : t("broken", "not the line's value at the given values");
+  });
+}
+
+/**
  * A step of a problem whose answer is a point: a numeric point on it (the last one, as in
  * `(2, 3) \to (1 + 3, 4 - 2)`) must BE the answer; a tuple of letters (`(x, y) \to (-y, x)`,
  * `(h, k)`) is the rule beside the working. Null for a step with no tuple (a circle's equation
@@ -876,6 +914,9 @@ function pointStep(problem: EvalProblem, step: string): Omit<Transition, "from" 
 
 function judgeSteps(problem: EvalProblem, lines: readonly string[], steps: readonly string[]): Transition[] {
   if (problem.expect.complexValues) return judgeComplexSteps(problem, steps);
+  // `3x + 24 =` with `x = 3` beside it: every step is its value there
+  const evaluated = evaluatedLine(lines.filter(Boolean));
+  if (evaluated) return judgeEvaluatedSteps(evaluated, steps);
   const parsedLines = lines.filter(Boolean).map(parseLine);
   const parsedSteps = steps.map(parseLine);
   const candidates = numbersIn([...parsedLines, ...parsedSteps], problem.expect);

@@ -198,6 +198,14 @@ export interface LineAnalysis {
    * lie inside, and lists all of its solutions there to count as solved.
    */
   domain?: LineDomain;
+  /**
+   * A line the student ended with `=` whose letters the column gives (`AnalyzeContext.givens`):
+   * `3x + 24 =` with `x = 3` written above or under it asks for its value at x = 3. This is the
+   * line with the values put in (`3(3) + 24`) — the next step, as Suggest writes it — and the
+   * rest of the analysis is of that line: an `expression`, whose `resultLatex` (Solve only, as
+   * for any line ending in `=`) is the value it asks for (`33`).
+   */
+  substituted?: string;
 }
 /**
  * A domain in the measure the unknown is read in: radians for an angle (`0^{\circ}` → 0,
@@ -232,6 +240,13 @@ export interface AnalyzeContext {
   previous?: LineAnalysis;
   original?: LineAnalysis;
   mode: HelpMode;
+  /**
+   * The values other lines of the column give its letters (`givens.ts`: `x = 3` written above or
+   * under, or read apart as `x =` and `3`), letter → the value as written (`{ x: "3" }`). Only a
+   * line ending in `=` uses them: every letter of it given, it asks for its value there
+   * (`LineAnalysis.substituted`). Absent: no line gives any.
+   */
+  givens?: Readonly<Record<string, string>>;
 }
 
 /**

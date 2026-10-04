@@ -149,3 +149,47 @@ describe("localSolve — the loop's order and fall-through", () => {
     expect(localSolve({ ...engine, solveLatex: boom, solveFromLines: boom, simplifySteps: boom, calculate: boom, analyzeLine: boom }, ["2x = 8"])).toEqual({ source: null, steps: [] });
   });
 });
+
+describe("localSolve — a line ending in `=` at the values the column gives (`givens.ts`)", () => {
+  it.each([
+    // the owner's board: answered after the `=` of the line it evaluates, asked on either line
+    [["3x + 24 =", "x = 3"], 0, "33"],
+    [["x = 3", "3x + 24 ="], 1, "33"],
+    [["3x + 24 =", "x =", "3"], 0, "33"],
+    [["2x + 3y =", "x = 3", "y = 2"], 0, "12"],
+    [["x^{2} - 4x =", "x = -2"], 0, "12"],
+    [["4x + 1 =", "x = \\frac{1}{2}"], 0, "3"],
+    [["r = 5", "A = \\pi r^{2} ="], 1, "25\\pi"],
+  ] as const)("%j → %s after line %i's `=`", (lines, line, answer) => {
+    for (let asked = 0; asked < lines.length; asked++) {
+      expect(localSolve(engine, lines, asked)).toEqual({ source: "localAnswer", steps: [`= ${answer}`], answer, line });
+    }
+  });
+
+  it("never simplifies or factorises the line instead (`= 3(x + 8)`), and never asks a model", () => {
+    const s = spied();
+    expect(localSolve(s.engine, ["3x + 24 =", "x = 3"]).steps).toEqual(["= 33"]);
+    expect(s.simplifySteps).not.toHaveBeenCalled();
+    expect(s.solveLatex).not.toHaveBeenCalled();
+  });
+
+  it("leaves alone what is not that: a letter not given, two values for one letter, a value that does not exist, an equation", () => {
+    // `y = 3` gives nothing to x: as before
+    expect(localSolve(engine, ["3x + 24 =", "y = 3"], 0)).toEqual({ source: "simplifySteps", steps: ["= 3(x + 8)"] });
+    // x = 3 or x = 4? a guess either way
+    expect(localSolve(engine, ["3x + 24 =", "x = 3", "x = 4"], 0).answer).toBeUndefined();
+    // 1/0 is no number
+    expect(localSolve(engine, ["\\frac{1}{x - 3} =", "x = 3"]).source).toBeNull();
+    // `2x - y = 3`, `x = 4`, `y =`: the unknown asked for, solved from the lines (as before)
+    expect(localSolve(engine, ["2x - y = 3", "x = 4", "y ="]).source).toBe("solveFromLines");
+    // the answer under an equation is not a given
+    expect(localSolve(engine, ["2x + 3 = 11", "x = 4", "5x - 1 ="]).line).toBeUndefined();
+  });
+
+  it("the column's analyses carry the value put in (`substituted`), Solve's answer only in Solve", () => {
+    const [problem, given] = analyzeColumn(engine, ["3x + 24 =", "x = 3"]);
+    expect(problem).toMatchObject({ kind: "expression", substituted: "3(3) + 24", resultLatex: "33" });
+    expect(given).toMatchObject({ kind: "assignment", verdict: "none" });
+    expect(analyzeColumn(engine, ["3x + 24 =", "x = 3"], "suggest")[0]).toMatchObject({ kind: "expression", substituted: "3(3) + 24", resultLatex: "" });
+  });
+});

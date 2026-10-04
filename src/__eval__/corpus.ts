@@ -261,6 +261,12 @@ export const BASE_CORPUS: readonly EvalProblem[] = [
   { id: "su-03", topic: "substitution", lines: ["a = 5", "b = 2a - 3", "b = ?"], expect: { values: { b: [7] } } },
   { id: "su-04", topic: "substitution", lines: ["2x - y = 3", "x = 4", "y ="], expect: { values: { y: [5] } } },
   { id: "su-05", topic: "substitution", lines: ["v = u + a t", "u = 3", "a = 2", "t = 5", "v = ?"], expect: { values: { v: [13] } }, note: "several knowns into one formula" },
+  // a line ended with `=`, its letter's value written beside it: evaluated there (`givens.ts`)
+  { id: "su-06", topic: "substitution", lines: ["3x + 24 =", "x = 3"], expect: { answer: "33" }, oracle: ["3(3) + 24"], note: "the value under the line (the owner's board: `= 3(x+8)` was written under the `x = 3`)" },
+  { id: "su-07", topic: "substitution", lines: ["x = 3", "3x + 24 ="], expect: { answer: "33" }, oracle: ["3(3) + 24"], note: "the value above the line" },
+  { id: "su-08", topic: "substitution", lines: ["2x + 3y =", "x = 3", "y = 2"], expect: { answer: "12" }, oracle: ["2(3) + 3(2)"], note: "two values" },
+  { id: "su-09", topic: "substitution", lines: ["x^{2} - 4x =", "x = -2"], expect: { answer: "12" }, oracle: ["(-2)^{2} - 4(-2)"], note: "a negative value, bracketed" },
+  { id: "su-10", topic: "substitution", lines: ["3x + 24 =", "x =", "3"], expect: { answer: "33" }, oracle: ["3(3) + 24"], note: "`x = 3` read as two lines" },
 
   // ---------------------------------------------------------------- quadratics
   { id: "qu-01", topic: "quadratic", lines: ["x^{2} - 5x + 6 = 0"], expect: { values: { x: [2, 3] } } },

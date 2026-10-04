@@ -12,6 +12,11 @@
  *      taken out of the column first, and a target that is one becomes the line above it;
  *   0. a word problem — the TARGET line reads as prose (`analyzeLine(...).kind === 'text'`) —
  *      skips every local path (the model sets it up);
+ *  0b. a line the student ended with `=` whose letters the column gives (`givens.ts`: `3x + 24 =`
+ *      over `x = 3`) is evaluated there — `= 33`, as `localAnswer`, with `line` saying which line it
+ *      finishes. Asked on the given (`x = 3`, or the `3` of an `x =` read apart from it), it is that
+ *      line that is answered: the given is what the question is evaluated at, not a step to go on
+ *      from — and never a line for a model to "continue" (`= 3(x + 8)` under `x = 3`);
  *   1. `engine.solveLatex(target, { column, complexRoots })` (`writeSolutionByHand`) — only with
  *      the hand on, and only when the hand can draw the steps: the loop's `drawStepsByHand`
  *      returns false on ANY `unsupported` construct and the next path gets its turn. The column
@@ -35,6 +40,7 @@
  */
 import { LIVE_LIMITS, type HelpMode, type LineAnalysis, type LiveEngine } from "./contracts";
 import { allowComplexRoots, DEFAULT_COMPLEX_ROOTS, type ComplexRootsSetting } from "./engine/complexSetting";
+import { evaluatedLineFor, givensFor, givensOf, type Given } from "./givens";
 import { localAnswerFor, localAnswerStep } from "./solveSteps";
 
 export type LocalSolveSource = "solveLatex" | "solveFromLines" | "simplifySteps" | "localAnswer";
@@ -46,6 +52,12 @@ export interface LocalSolveResult {
   steps: string[];
   /** `localAnswer` only: the bare answer (`38`), which the board records on the ink it writes */
   answer?: string;
+  /**
+   * The index into `lines` of the line the answer finishes, when it is a line the column's givens
+   * evaluate (`3x + 24 =` over `x = 3`): the board writes it after THAT line's `=`, wherever Solve
+   * was asked.
+   */
+  line?: number;
 }
 
 export interface LocalSolveOptions {
@@ -113,15 +125,24 @@ function contextAbove(analyses: readonly (LineAnalysis | null)[], latex: readonl
 
 /**
  * Each line's analysis as the loop holds it: `analyzeLine(latex, { ...columnContext, mode })`,
- * top to bottom, so a line sees the analyses of the lines above it.
+ * top to bottom, so a line sees the analyses of the lines above it — and the values the column
+ * gives its letters wherever they are written (`givens.ts`, `LiveLoop.columnContext`): `3x + 24 =`
+ * over `x = 3` is read once to find the `x = 3`, then again with it.
  */
 export function analyzeColumn(engine: LiveEngine, lines: readonly string[], mode: HelpMode = "answer"): (LineAnalysis | null)[] {
-  const out: (LineAnalysis | null)[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const latex = lines[i];
-    out.push(latex ? safely(() => engine.analyzeLine(latex, { ...contextAbove(out, lines, i), mode })) : null);
-  }
-  return out;
+  const pass = (givens: readonly Given[]): (LineAnalysis | null)[] => {
+    const out: (LineAnalysis | null)[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const latex = lines[i];
+      const ctx = { ...contextAbove(out, lines, i), mode, givens: givensFor(givens, i) };
+      out.push(latex ? safely(() => engine.analyzeLine(latex, ctx)) : null);
+    }
+    return out;
+  };
+  const first = pass([]);
+  const givens = givensOf(lines, first);
+  // only a line ending in `=` uses them
+  return givens.length > 0 && lines.some((l) => /=\s*$/.test(l)) ? pass(givens) : first;
 }
 
 /**
@@ -156,6 +177,11 @@ export function localSolve(engine: LiveEngine, lines: readonly string[], targetI
   const targetAnalysis = analyses[index] ?? null;
 
   if (targetAnalysis?.kind === "text") return NONE;
+
+  // 0b. evaluated at the column's givens: `3x + 24 =` over `x = 3`, asked on either line
+  const evaluated = evaluatedLineFor(lines, analyses, givensOf(lines, analyses), index);
+  const value = evaluated === -1 ? "" : (analyses[evaluated]?.resultLatex ?? "");
+  if (value) return { source: "localAnswer", steps: [localAnswerStep(value)], answer: value, line: evaluated };
 
   // 1. writeSolutionByHand — with the column down to the target, so a function defined above is
   //    not read as a product (`f(4)` is not `4f`) and `i` above allows complex roots

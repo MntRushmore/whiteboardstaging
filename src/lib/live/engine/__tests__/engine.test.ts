@@ -573,3 +573,30 @@ describe("engine: steps with two or more unknowns (x and y)", () => {
     expect(step("x+y=10", "y=10-x").plot?.expr).toBe("10 - x");
   });
 });
+
+describe("engine: a line ending in `=` at the values its column gives (ctx.givens)", () => {
+  const at = (latex: string, givens: Record<string, string>, mode: "answer" | "feedback" = "answer") => engine.analyzeLine(latex, { mode, givens });
+
+  it("`3x + 24 =` with x = 3 is `3(3) + 24`, whose value Solve writes: 33", () => {
+    expect(at("3x + 24 =", { x: "3" })).toMatchObject({ kind: "expression", substituted: "3(3) + 24", resultLatex: "33" });
+    // the value is an answer: only Solve has it, as for `36 + 2 =`
+    expect(at("3x + 24 =", { x: "3" }, "feedback")).toMatchObject({ kind: "expression", substituted: "3(3) + 24", resultLatex: "" });
+  });
+
+  it("brackets a value as a teacher writes it in: negatives, fractions, powers, several letters", () => {
+    expect(at("x^{2} - 4x =", { x: "-2" })).toMatchObject({ substituted: "(-2)^{2} - 4(-2)", resultLatex: "12" });
+    expect(at("4x + 1 =", { x: "\\frac{1}{2}" })).toMatchObject({ substituted: "4(\\frac{1}{2}) + 1", resultLatex: "3" });
+    expect(at("2x + 3y =", { x: "3", y: "2" })).toMatchObject({ substituted: "2(3) + 3(2)", resultLatex: "12" });
+    // a named quantity: `A = \pi r^{2} =`
+    expect(at("A = \\pi r^{2} =", { r: "5" })).toMatchObject({ resultLatex: "25\\pi" });
+  });
+
+  it("stays unfinished unless every letter is given and the value exists", () => {
+    expect(at("3x + 2y =", { x: "3" }).kind).toBe("incomplete");
+    expect(at("\\frac{1}{x - 3} =", { x: "3" }).kind).toBe("incomplete");
+    expect(at("3x + 24 =", {}).kind).toBe("incomplete");
+    // only a line ending in `=` reads them
+    expect(at("3x + 24", { x: "3" }).substituted).toBeUndefined();
+    expect(at("3x + 24 = 33", { x: "3" }).substituted).toBeUndefined();
+  });
+});

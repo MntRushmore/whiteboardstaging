@@ -29,7 +29,7 @@ import { createGraphIntent } from "./graphIntent";
 import { APPROX_OP, latexToMath, preprocessLatex, splitRelations, UnsupportedLatex, type Translated } from "./latex";
 import { countOperations, createMathInstance, integralsExact, isComplexValue, isNodeValue, isUnitValue, safeEvaluate, safeParse, toNumber, translate, type MathModule } from "./math";
 import { evaluateUnits, unitValueToLatex, valuesMatch } from "./units";
-import { solveFromLines, type SystemDeps } from "./systems";
+import { solveFromLines, substituteLatex, type SystemDeps } from "./systems";
 import { combineTerms, linearSolveSteps, simplifyExpressionSteps, standardOrder, termsLatex, termsOf, type LinearSteps, type RelOp } from "./algebra";
 import { createCalculus } from "./calculus";
 import { createIntegration } from "./integration";
@@ -777,6 +777,42 @@ export function createEngine(mod: MathModule): LiveEngine {
   };
 
   /**
+   * The value of a line the student ended with `=` at the values the column gives its letters
+   * (`ctx.givens`, from `givens.ts`):
+   *
+   *   3x + 24 =        →  substituted `3(3) + 24`, and in Solve the answer `33`
+   *   x = 3
+   *
+   * `valueLatex` is what comes before the `=` (`3x + 24`, or the value side of `A = \pi r^{2} =`).
+   * It is analysed as the line with every letter replaced by its value, bracketed as a teacher
+   * writes it (`substituteLatex`: `3x` at 3 is `3(3)`, `x^{2}` at -2 is `(-2)^{2}`), so the result
+   * is exactly what Solve writes for `3(3) + 24 =`. Null unless every letter is given, the line is
+   * no relation, and what is left has a value (`\frac{1}{x - 3}` at x = 3 has none): the line then
+   * stays the unfinished line it was.
+   */
+  const valueAtGivens = (valueLatex: string, ctx: AnalyzeContext): LineAnalysis | null => {
+    const givens = ctx.givens;
+    if (!givens || Object.keys(givens).length === 0) return null;
+    try {
+      if (splitRelations(valueLatex).ops.length > 0) return null;
+      const t = tr(valueLatex);
+      const unknowns = unknownsOf(t);
+      if (unknowns.length === 0 || isSymbolic(t) || t.hasUnits || !unknowns.every((v) => typeof givens[v] === "string")) return null;
+      const substituted = substituteLatex(valueLatex, Object.fromEntries(unknowns.map((v) => [v, givens[v]])));
+      if (unknownsOf(tr(substituted)).length > 0) return null;
+      // worked out as Solve would answer it, so a line with no value is never called one
+      const a = analyzeExpression(substituted, { ...ctx, mode: "answer" }, true);
+      if (a.kind !== "expression" || a.error || !a.resultLatex) return null;
+      // `\frac{1}{x - 3}` at 3 is no number at all, not `\infty`
+      const v = safeEvaluate(math, a.math);
+      if (!v.ok || (typeof v.value === "number" && !Number.isFinite(v.value))) return null;
+      return { ...a, resultLatex: ctx.mode === "answer" ? a.resultLatex : "", substituted };
+    } catch {
+      return null;
+    }
+  };
+
+  /**
    * `-3 \quad -3`, `\div 2 \div 2`, `\div 2` under an equation: what is done to both sides next
    * (`operationLine.ts`), checked against the relation above. Null when the line is not one: a
    * sum or difference of terms with no relation above it is arithmetic (`-3 - 3` is -6).
@@ -848,6 +884,9 @@ export function createEngine(mod: MathModule): LiveEngine {
             // `\lim ... =`, `\begin{pmatrix} ... =`: not an unfinished line, a line we cannot read
             if (e instanceof UnsupportedLatex) return { ...UNKNOWN, error: errorMessage(e) };
           }
+          // `3x + 24 =` with `x = 3` in the column: its value there
+          const at = valueAtGivens(pre.lhs, ctx);
+          if (at) return at;
         }
         const value = pre.trailingEquals ? namedValue(expanded) : null;
         if (value) {
@@ -856,6 +895,9 @@ export function createEngine(mod: MathModule): LiveEngine {
             const a = analyzeExpression(value, ctx, true);
             if (a.kind === "expression" && !a.error) return a;
           }
+          // `A = \pi r^{2} =` with `r = 5` in the column
+          const at = valueAtGivens(value, ctx);
+          if (at) return at;
         }
         return base("incomplete");
       }

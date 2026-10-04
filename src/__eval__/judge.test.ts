@@ -545,4 +545,17 @@ describe("judge: Algebra 1's new answer shapes still catch wrong answers", () =>
     expect(judge(s, sd, solved(["\\sigma = \\sqrt{\\frac{86}{4}}", "\\sigma \\approx 4.64"], "solveFromLines"), drawAll).answer.status).toBe("wrong");
     expect(judge(s, sd, solved(["\\sigma = \\frac{86}{5}"], "solveFromLines"), drawAll).answer.status).toBe("wrong");
   });
+
+  it("a line ending in `=` with its letter's value beside it: judged at that value", () => {
+    for (const lines of [["3x + 24 =", "x = 3"], ["x = 3", "3x + 24 ="], ["3x + 24 =", "x =", "3"]]) {
+      const p = problem({ topic: "substitution", lines, expect: { answer: "33" } });
+      expect(judge(p, lines, solved(["= 33"], "localAnswer"), drawAll).pass, lines.join(" | ")).toBe(true);
+      expect(judge(p, lines, solved(["3(3) + 24", "= 33"], "localAnswer"), drawAll).pass).toBe(true);
+      // the owner's board: the line factorised, the given ignored
+      const bad = judge(p, lines, solved(["= 3(x + 8)"], "simplifySteps"), drawAll);
+      expect(bad.pass).toBe(false);
+      expect(bad.transitions.map((t) => t.status)).toEqual(["broken"]);
+      expect(judge(p, lines, solved(["= 30"], "localAnswer"), drawAll).transitions.map((t) => t.status)).toEqual(["broken"]);
+    }
+  });
 });
