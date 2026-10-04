@@ -60,6 +60,16 @@ export function getLiveSettings(): LiveSettings {
   return read();
 }
 
+/**
+ * Whether Auto acts — what the Live loop is told (`useLiveMath`'s `auto`): the student's switch,
+ * paused while "Hide AI shapes" is on. Auto spends ink on model checks and solves unasked; with the
+ * tutor's marks and steps hidden, that was ink spent on work the student could not see. Asking
+ * (Help me / Solve it) still works; showing the shapes again resumes Auto where the switch says.
+ */
+export function autoActs(settings: Pick<LiveSettings, "auto" | "hideAiShapes">): boolean {
+  return settings.auto && !settings.hideAiShapes;
+}
+
 export function updateLiveSettings(patch: Partial<LiveSettings>): void {
   write({ ...read(), ...patch });
 }

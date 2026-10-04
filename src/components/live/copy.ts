@@ -109,6 +109,8 @@ export const LIVE_COPY = {
     label: "Auto",
     onHint: "Auto is on: your tutor checks and helps when you stop writing",
     offHint: "Auto is off: your tutor waits until you ask",
+    /** on, but paused while "Hide AI shapes" is on (`autoActs`) */
+    pausedHint: "Auto is paused while AI shapes are hidden: your tutor waits until you ask",
   },
 
   /** The notes under the modes in the help-modes explainer (Board options → "How help modes work"). */

@@ -63,7 +63,7 @@ import { useFeatureLabs } from "@/lib/featureLabs";
 import { liveShapeUtils, liveTools, liveUiOverrides, LiveToolbar } from "@/shapes";
 import { LIVE_KILL_SWITCH } from "@/lib/live/contracts";
 import { useLiveMath } from "@/lib/live/useLiveMath";
-import { useLiveSettings } from "@/lib/live/liveSettings";
+import { autoActs, useLiveSettings } from "@/lib/live/liveSettings";
 import { ScreenStrip, ScreenStripCorner, screenStripSlot } from "@/components/screens/ScreenStrip";
 import { PenStyleButton } from "@/components/board/PenStyleButton";
 import { liveDebugEnabled } from "@/lib/live/liveDebug";
@@ -220,7 +220,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     boardId: id,
     mode: assistanceMode,
     enabled: liveEnabled,
-    auto: live.auto,
+    // paused while AI shapes are hidden: no ink spent on marks and steps the student cannot see
+    auto: autoActs(live),
   });
   // Lecture mode: the mic and the tutor sketching what is said. Not gated on Live or the help
   // mode: the controller's lecture methods work whatever they say.
@@ -257,6 +258,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     liveEnabled: live.enabled,
     liveAvailable: !LIVE_KILL_SWITCH,
     auto: live.auto,
+    hideAiShapes: live.hideAiShapes,
   });
 
   return (

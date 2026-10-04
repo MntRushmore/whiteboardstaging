@@ -27,13 +27,16 @@ export interface BoardToolbarState {
   liveAvailable: boolean;
   /** the student's per-device Auto preference (`LiveSettings.auto`) */
   auto: boolean;
+  /** "Hide AI shapes" is on: Auto is paused (`autoActs`), whatever the switch says */
+  hideAiShapes?: boolean;
 }
 
 export interface BoardToolbarView {
   /**
    * The Auto switch beside the dial, or null where it would do nothing: Off (no help at all) and
    * with Live off (only Live acts) — exactly where there is no ask button. `hint` says what the
-   * current position does, for the title and screen readers.
+   * current position does, for the title and screen readers: on, while AI shapes are hidden, that
+   * Auto is paused (the switch keeps the student's choice for when they show them again).
    */
   autoSwitch: { on: boolean; hint: string } | null;
   /**
@@ -58,7 +61,7 @@ export function boardToolbarView(state: BoardToolbarState): BoardToolbarView {
   const liveRunning = state.liveEnabled && state.liveAvailable;
   const helping = liveRunning && state.mode !== "off";
   return {
-    autoSwitch: helping ? { on: state.auto, hint: state.auto ? LIVE_COPY.auto.onHint : LIVE_COPY.auto.offHint } : null,
+    autoSwitch: helping ? { on: state.auto, hint: !state.auto ? LIVE_COPY.auto.offHint : state.hideAiShapes ? LIVE_COPY.auto.pausedHint : LIVE_COPY.auto.onHint } : null,
     askButton: !helping ? null : state.mode === "answer" ? "solve" : "help",
     showHintLayer: liveRunning,
     liveRunning,

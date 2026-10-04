@@ -62,6 +62,11 @@ describe("boardToolbarView", () => {
     }
   });
 
+  it("says Auto is paused while AI shapes are hidden (the switch keeps the student's choice)", () => {
+    expect(toolbar({ hideAiShapes: true }).autoSwitch).toEqual({ on: true, hint: LIVE_COPY.auto.pausedHint });
+    expect(toolbar({ hideAiShapes: true, auto: false }).autoSwitch).toEqual({ on: false, hint: LIVE_COPY.auto.offHint });
+  });
+
   it("hides the Auto switch where it would do nothing: Off, and with Live off (exactly where there is no ask button)", () => {
     for (const auto of [true, false]) {
       expect(toolbar({ mode: "off", auto }).autoSwitch).toBe(null);
