@@ -170,6 +170,8 @@ export function createFakeEditor(store: TLStore = createHeadlessStore(), viewpor
     graph: GRAPH_SHAPE_DEFAULTS,
   };
   let lastIndex: IndexKey = "a1" as IndexKey;
+  /** the index each shape the student put was given, kept for when Undo puts it back */
+  const indexOf = new Map<TLShapeId, IndexKey>();
 
   const editor: FakeEditor = {
     store,
@@ -240,7 +242,20 @@ export function createFakeEditor(store: TLStore = createHeadlessStore(), viewpor
       }
     },
     deleteShapes: (ids) => store.remove(ids),
-    putUser: (records) => store.put(records.map((r) => ({ ...r, parentId: currentPageId() }) as TLShape)),
+    // as tldraw does: a new shape is stacked above everything on the page (its index, and so the
+    // order things were written in); Undo brings a shape back where it was
+    putUser: (records) =>
+      store.put(
+        records.map((r) => {
+          let index = (store.get(r.id) as TLShape | undefined)?.index ?? indexOf.get(r.id);
+          if (!index) {
+            lastIndex = getIndexAbove(lastIndex);
+            index = lastIndex;
+          }
+          indexOf.set(r.id, index);
+          return { ...r, index, parentId: currentPageId() } as TLShape;
+        }),
+      ),
     removeUser: (ids) => store.remove(ids),
     updateUser: (id, fn) => {
       const cur = store.get(id) as TLShape | undefined;

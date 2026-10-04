@@ -124,7 +124,7 @@ import {
   recognizeFailureHints,
 } from "./recognizeClient";
 import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient";
-import { assignColumns, clusterLines, inkScale, rebuildFromMathShapes, unionRects, type EchoShapeSeed } from "./strokeClusters";
+import { assignColumns, clusterLines, inkScale, rebuildFromMathShapes, unionRects, type ColumnOptions, type EchoShapeSeed } from "./strokeClusters";
 import { buildPayload, hashPayload } from "./strokePayload";
 import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
@@ -138,7 +138,7 @@ import { PROOF_ROWS_META, proofRowsPlan } from "./proof/place";
 import { PROOF_FIGURE_META, PROOF_TABLE_META, tutorFiguresOf } from "./proof/tutorFigure";
 import type { PlannedRow } from "./proof/planner";
 import type { BoardLine, ProofRead } from "./proof/read";
-import { problemKeyOf, problemLines, problemMetaOf, readProblemCells, splitColumnsAtProblems, type ProblemCell } from "./chat/cells";
+import { cellOf, problemKeyOf, problemLines, problemMetaOf, readProblemCells, splitColumnsAtProblems, type ProblemCell } from "./chat/cells";
 import { nextHelpTarget, penLine, pickedLine, problemCount, problemTarget, type HelpTargetDraft } from "./helpTarget";
 import {
   PROBLEM_WORK_META,
@@ -801,6 +801,14 @@ export class LiveLoop implements LiveController {
    * the column's first line, the context its first line is checked against (`chat/cells.ts`).
    */
   private columnHeads = new Map<number, ProblemCell>();
+  /**
+   * The lines each line has been one problem with (by id: the others of its column at some
+   * assignment). A gap that opens between them later — a line between them rubbed out, the tutor's
+   * working there rubbed out — does not part them (`ColumnOptions.together`): the steps under it
+   * would be judged with nothing above them, and Solve would start them over. Forgotten with the
+   * screen; a reload starts from the ink as it is.
+   */
+  private problemMates = new Map<string, Set<string>>();
   /** a head's lines analysed as a column, per mode (the problem does not change) */
   private readonly headMemo = new Map<string, (LineAnalysis | null)[]>();
   /**
@@ -958,6 +966,7 @@ export class LiveLoop implements LiveController {
     this.labelsOf.clear();
     this.lastTouchedDiagramId = null;
     this.touchedProblem = null;
+    this.problemMates.clear();
     this.penStrokeId = null;
     this.penLineId = null;
     this.goneStrokeIds.clear();
@@ -1609,7 +1618,8 @@ export class LiveLoop implements LiveController {
     }
     if (seeds.length === 0) return;
     const bounds = this.strokeBoundsMap();
-    const rebuilt = rebuildFromMathShapes(seeds, bounds, this.boardZoom());
+    const anchored = new Set(seeds.flatMap((s) => s.anchorIds));
+    const rebuilt = rebuildFromMathShapes(seeds, bounds, this.columnOptions(anchored));
     // a second readback of a line rebuilt from another one: one line, one echo
     const kept = new Set<string>(rebuilt.map((r) => r.mathShapeId));
     const extra = seeds.filter((s) => s.lineId && !kept.has(s.shapeId) && s.anchorIds.some((id) => bounds.has(id))).map((s) => s.shapeId);
@@ -1617,6 +1627,7 @@ export class LiveLoop implements LiveController {
     // the chat's problems head the columns under them, as at every flush
     const split = new Map(this.withProblemColumns(rebuilt.map((r) => r.line)).map((l) => [l.id, l]));
     for (const r of rebuilt) r.line = split.get(r.line.id) ?? r.line;
+    this.rememberProblems(rebuilt.map((r) => r.line));
     const next: Record<string, LiveLineState> = { ...liveStore.lines.get() };
     for (const r of rebuilt) {
       const shape = this.editor.getShape(r.mathShapeId);
@@ -1684,7 +1695,11 @@ export class LiveLoop implements LiveController {
     const { split, touched: drawn } = this.splitDrawings(ink, wrote);
     const prevStates = liveStore.lines.get();
     const prevLines = Object.values(prevStates).map((s) => s.line);
-    const lines = this.withProblemColumns(clusterLines(split.writing, prevLines, barGroups(split.bars, ink), { zoom: this.boardZoom() }));
+    // what the columns know besides the lines: what fills a gap under one, and which lines were one problem
+    const inLines = new Set<string>([...split.writing.map((s) => s.id), ...split.bars.flatMap((b) => [b.bar, ...b.divisor])]);
+    const columns = this.columnOptions(inLines);
+    const lines = this.withProblemColumns(clusterLines(split.writing, prevLines, barGroups(split.bars, ink), { zoom: this.boardZoom(), columns }));
+    this.rememberProblems(lines);
     const nextIds = new Set(lines.map((l) => l.id));
 
     for (const prev of prevLines) if (!nextIds.has(prev.id)) this.dropLine(prev.id);
@@ -2521,6 +2536,81 @@ export class LiveLoop implements LiveController {
       .map((c) => c.head);
   }
 
+  // ---------------------------------------------------------------- problems one under another
+  /**
+   * What the columns know besides the student's lines (`assignColumns`). A blank gap under a column
+   * starts a new problem; what fills one is not blank:
+   *  - the tutor's writing there (its steps, answers, readbacks, marks, graphs; hidden or not) that
+   *    was on the page BEFORE the line under it was written: a student going on under the tutor's
+   *    step is still in that problem, but working the problem above into the gap over a problem
+   *    already written below does not join the two. tldraw stacks every new shape above all the
+   *    others, so "before" is a lower index than the line's first stroke — also after a reload;
+   *  - the student's ink that is in no line (`inLines`): a drawing, a table.
+   * And the lines that were one problem before stay one (`problemMates`), as do the lines under one
+   * of the chat's problems: its cell is the problem, gap or no gap (`chat/cells.ts`).
+   */
+  private columnOptions(inLines: ReadonlySet<string>): ColumnOptions {
+    // read off the page only when a gap is wide enough to ask (most flushes never do), once
+    let ink: { tutor: Array<{ rect: Rect; index: string }>; other: Rect[] } | null = null;
+    const pageInk = () => {
+      if (ink) return ink;
+      ink = { tutor: [], other: [] };
+      for (const s of this.editor.getCurrentPageShapes()) {
+        const live = isLiveMeta(s.meta);
+        // the chat's problems head columns of their own (`withProblemColumns`)
+        if (live ? Boolean(problemMetaOf(s.meta)) : !isStudentInk(s) || inLines.has(s.id)) continue;
+        const b = this.editor.getShapePageBounds(s);
+        if (!b) continue;
+        if (live) ink.tutor.push({ rect: boxToRect(b), index: s.index });
+        else ink.other.push(boxToRect(b));
+      }
+      return ink;
+    };
+    const byLine = new Map<string, Rect[]>();
+    let cells: ProblemCell[] | null = null;
+    const cellKey = (line: InkLine) => cellOf(line.bounds, (cells ??= this.problemCells()))?.key ?? null;
+    return {
+      filled: (line) => {
+        const known = byLine.get(line.id);
+        if (known) return known;
+        // when the line was written: its first stroke's place in the stack
+        let first = "";
+        for (const id of line.strokeIds) {
+          const index = this.editor.getShape(id)?.index;
+          if (index && (first === "" || index < first)) first = index;
+        }
+        const { tutor, other } = pageInk();
+        const rects = [...other, ...tutor.filter((t) => first !== "" && t.index < first).map((t) => t.rect)];
+        byLine.set(line.id, rects);
+        return rects;
+      },
+      together: (line, other) => {
+        if (this.problemMates.get(line.id)?.has(other.id)) return true;
+        const cell = cellKey(line);
+        return cell !== null && cell === cellKey(other);
+      },
+    };
+  }
+
+  /** Remembers which lines are one problem now (`problemMates`), and forgets the lines that are gone. */
+  private rememberProblems(lines: readonly InkLine[]): void {
+    const ids = new Set(lines.map((l) => l.id));
+    for (const [id, mates] of this.problemMates) {
+      if (!ids.has(id)) this.problemMates.delete(id);
+      else for (const m of mates) if (!ids.has(m)) mates.delete(m);
+    }
+    const byColumn = new Map<number, string[]>();
+    for (const l of lines) byColumn.set(l.column, [...(byColumn.get(l.column) ?? []), l.id]);
+    for (const column of byColumn.values()) {
+      if (column.length < 2) continue;
+      for (const id of column) {
+        const mates = this.problemMates.get(id) ?? new Set<string>();
+        for (const m of column) if (m !== id) mates.add(m);
+        this.problemMates.set(id, mates);
+      }
+    }
+  }
+
   /** `lines` with the columns split at the chat's problems; remembers which problem heads which column. */
   private withProblemColumns(lines: InkLine[]): InkLine[] {
     const cells = this.problemCells();
@@ -2561,7 +2651,13 @@ export class LiveLoop implements LiveController {
     if (!this.started) return;
     const states = Object.values(liveStore.lines.get());
     const before = [...this.columnHeads.entries()].map(([c, h]) => `${c}:${h.key}`).join(",");
-    const next = this.withProblemColumns(assignColumns(states.map((s) => ({ ...s.line })), this.boardZoom()));
+    const next = this.withProblemColumns(
+      assignColumns(
+        states.map((s) => ({ ...s.line })),
+        this.columnOptions(new Set(states.flatMap((s) => s.line.strokeIds))),
+      ),
+    );
+    this.rememberProblems(next);
     const after = [...this.columnHeads.entries()].map(([c, h]) => `${c}:${h.key}`).join(",");
     let changed = before !== after;
     for (const l of next) {
