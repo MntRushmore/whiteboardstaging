@@ -73,6 +73,7 @@ import { useScreenCamera } from "@/lib/screens/useScreenCamera";
 import { LiveStatusPill } from "@/components/live/LiveStatusPill";
 import { SaveStatus } from "@/components/live/SaveStatus";
 import { LiveHintLayer } from "@/components/live/LiveHintLayer";
+import { BOARD_BAR_ATTR } from "@/components/live/hintPlacement";
 import { LiveErrorBoundary } from "@/components/live/LiveErrorBoundary";
 import { ASSET_COPY } from "@/components/live/copy";
 import { boardToolbarView } from "@/components/live/toolbar";
@@ -269,7 +270,9 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
         Ask docked beside the board, an iPad held sideways has an upright iPad's board.
       */}
       <div className="@container/bar absolute inset-x-0 top-0 z-1000 h-0">
+      {/* measured by the Live hint layer, whose cards stay below the bar's last row (hintPlacement.ts) */}
       <div
+        {...{ [BOARD_BAR_ATTR]: "" }}
         style={{
           position: 'absolute',
           top: '16px',

@@ -224,9 +224,18 @@ interface LineRuntime {
   processing: number;
   /** the tutor's mark wanted on this line (`markKey`), null for none; undefined until first render */
   markKey?: string | null;
+  /**
+   * its ring was taken off because new ink looked like more of this line (`unringGrowingLines`):
+   * its strokes then, so the next flush can tell whether that ink really joined it
+   */
+  unrungStrokes?: readonly string[] | null;
   markWriter?: HandWriter | null;
   /** its read failed for a reason that is not the handwriting (signed out, out of ink, rate limited): no "?" */
   readRefused?: boolean;
+  /** the ink version (`hash`) whose failed read was already tried once more on its own (`retryReadSoon`) */
+  readRetriedHash?: string;
+  /** that one more try, waiting `READ_RETRY_MS` */
+  readRetryTimer?: ReturnType<typeof setTimeout> | null;
   /** when a change of its mark was scheduled (`syncMark`) and has not finished writing; 0 when none */
   markBusySince?: number;
   /** what waits for the tutor's pen to lift from this line's mark (`afterMark`) */
@@ -264,6 +273,25 @@ type RetryContext =
   | { kind: "proof"; lineId: string; all: boolean };
 
 /**
+ * What the student asked for, read off the call that failed, so its error card can say so
+ * (`errorCardTitle`): Help me and More help ask for one step (`onlyFirstStep`, a proof's next
+ * row), which is a hint; Solve it asks for the rest. Reads and capability calls ask for nothing.
+ */
+function askedFor(retry: RetryContext): LiveError["asked"] {
+  switch (retry.kind) {
+    case "check":
+      return retry.opts.forceHint ? "hint" : "check";
+    case "solve":
+    case "figure":
+      return retry.opts.onlyFirstStep ? "hint" : "solve";
+    case "proof":
+      return retry.all ? "solve" : "hint";
+    default:
+      return undefined;
+  }
+}
+
+/**
  * "The tutor reads the figure": how near a line must be to a drawing for Solve on it to read the
  * drawing too (page px, or this many glyphs when that is more) — `x = ?` written beside a triangle.
  */
@@ -280,6 +308,29 @@ const MAX_FIGURE_DISMISSALS = 20;
 
 /** Recognition failures that leave a chip under the ink (the pill carries the rest). */
 const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream", "timeout", "unknown"]);
+
+/**
+ * A read that failed the way a blip fails (it timed out, or the server answered 5xx) is tried once
+ * more on its own this long after, before the student is told (`retryReadSoon`).
+ */
+const READ_RETRY_MS = 1500;
+
+/**
+ * A failed read worth one more try of the same ink: a timeout or a server error. Not a
+ * `recognizer_failed` (the recognizer, with a crop, could not read this ink: it would not read it
+ * the second time either), nor a 4xx, which says the request itself was refused. A dropped request
+ * (fetch's TypeError) is the offline queue's to replay.
+ */
+/**
+ * How long the offline queue waits before it is replayed on its own while the browser still says
+ * online, one wait per replay in a row that found the network unreachable (the last repeats).
+ */
+const OFFLINE_REPLAY_MS = [2000, 4000, 8000, 15_000] as const;
+
+function transientReadFailure(err: unknown): boolean {
+  if (err instanceof RecognizeTimeoutError) return true;
+  return isApiError(err) && err.status >= 500 && err.code !== "recognizer_failed";
+}
 
 /**
  * How long the whole canvas must go without student ink before the tutor will write an
@@ -516,6 +567,10 @@ export class LiveLoop implements LiveController {
   private readonly rt = new Map<string, LineRuntime>();
   /** lines whose recognition could not reach the network; replayed on reconnect (no cap) */
   private readonly offlineQueue = new Set<string>();
+  /** the queue's next replay while the browser says online (`scheduleOfflineReplay`) */
+  private offlineReplayTimer: ReturnType<typeof setTimeout> | null = null;
+  /** how many replays in a row have found the network still unreachable (picks the next wait) */
+  private offlineReplayStep = 0;
   /** lines the next flush must recognize even when their stroke set is unchanged */
   private readonly forceRecognize = new Set<string>();
   /** LLM checks asked for while offline (focus line id -> userAsked); re-run once after reconnect */
@@ -764,6 +819,7 @@ export class LiveLoop implements LiveController {
       r.solveAbort?.abort();
       if (r.unreadableTimer) clearTimeout(r.unreadableTimer);
       if (r.idleTimer) clearTimeout(r.idleTimer);
+      if (r.readRetryTimer) clearTimeout(r.readRetryTimer);
     }
     for (const ctrl of this.rereadAborts) ctrl.abort();
     this.rereadAborts.clear();
@@ -786,6 +842,9 @@ export class LiveLoop implements LiveController {
     this.dirtyStrokeIds.clear();
     this.forceRecognize.clear();
     this.offlineQueue.clear();
+    if (this.offlineReplayTimer) clearTimeout(this.offlineReplayTimer);
+    this.offlineReplayTimer = null;
+    this.offlineReplayStep = 0;
     this.pendingChecks.clear();
     this.pendingSolve = null;
     liveStore.offlineQueued.set(0);
@@ -849,7 +908,8 @@ export class LiveLoop implements LiveController {
       this.retryAttempt = 0;
     }
     this.retryContext = retry;
-    return setLiveError(fields);
+    const asked = askedFor(retry);
+    return setLiveError(asked ? { ...fields, asked } : fields);
   }
 
   /** The call succeeded: drop its error (if it is the one showing) and its retry state. */
@@ -857,6 +917,8 @@ export class LiveLoop implements LiveController {
     const cur = liveStore.lastError.get();
     if (cur && cur.kind === kind && cur.lineId === lineId) clearLiveError();
     if (this.retryKey === `${kind}:${lineId ?? ""}`) this.resetRetry();
+    // the network answered: the offline queue's next replay on its own waits the shortest time again
+    this.offlineReplayStep = 0;
     // A request just came back, so the network is up. An "offline" left by a fetch that failed
     // while the browser still said online (a dropped connection; no 'online' event will ever
     // follow) ends here, and what it queued or deferred is replayed once, as on a reconnect.
@@ -1209,8 +1271,34 @@ export class LiveLoop implements LiveController {
   private unringGrowingLines(strokes: readonly TLShape[]): void {
     const inks = strokes.map((s) => this.editor.getShapePageBounds(s)).filter((b): b is Box => Boolean(b));
     for (const state of Object.values(liveStore.lines.get())) {
-      if (!this.rt.get(state.line.id)?.markKey?.startsWith("circle:")) continue;
-      if (inks.some((b) => inkExtendsLine(boxToRect(b), state.line.bounds))) this.syncMark(state, null);
+      const rt = this.rt.get(state.line.id);
+      if (!rt?.markKey?.startsWith("circle:")) continue;
+      if (!inks.some((b) => inkExtendsLine(boxToRect(b), state.line.bounds))) continue;
+      // the clustering has the last word on whether this ink is more of the line (`reringUnchanged`)
+      rt.unrungStrokes = [...state.line.strokeIds];
+      this.syncMark(state, null);
+    }
+  }
+
+  /**
+   * The flush's clustering says which ringed lines the new ink really joined. `inkExtendsLine` is a
+   * guess made as the stroke lands (on the row, up to two line heights past the end), and ink just
+   * past a line that clusters as a line of its own (`2x = 1`, then `y` written a gap to the right)
+   * left the line it guessed at un-ringed for good: its strokes had not changed, so it was never
+   * read again, and only a read puts a ring back. A line whose strokes are the ones it had when its
+   * ring came off gets the ring back now; a line that did grow is read again, and the read marks it.
+   */
+  private reringUnchanged(lines: readonly InkLine[], force: ReadonlySet<string>): void {
+    for (const line of lines) {
+      const rt = this.rt.get(line.id);
+      const before = rt?.unrungStrokes;
+      if (!rt || !before) continue;
+      rt.unrungStrokes = null;
+      // something marked it again since (a re-render): that mark stands
+      if (rt.markKey !== null || force.has(line.id) || this.opts.mode === "off") continue;
+      if (!sameStrokeSet(before, line.strokeIds)) continue;
+      const state = liveStore.lines.get()[line.id];
+      if (state) this.syncMark(state, "circle");
     }
   }
 
@@ -1449,6 +1537,8 @@ export class LiveLoop implements LiveController {
       setLine(line.id, { line: { ...line, hash: same ? prev.line.hash : "" } });
       if (touched) affected.push({ line: { ...line, hash: same ? prev.line.hash : "" }, moveOnly: same && !forced });
     }
+    // a ring taken off for ink that turned out to be a line of its own goes back on
+    this.reringUnchanged(lines, force);
 
     // What the student wrote last decides what Help is about: a line they wrote, or else a
     // drawing (or its labels) they drew.
@@ -1521,8 +1611,10 @@ export class LiveLoop implements LiveController {
     this.lastTouchedLineId = lineId;
     if (rt.unreadableTimer) clearTimeout(rt.unreadableTimer);
     if (rt.idleTimer) clearTimeout(rt.idleTimer);
+    if (rt.readRetryTimer) clearTimeout(rt.readRetryTimer);
     rt.unreadableTimer = null;
     rt.idleTimer = null;
+    rt.readRetryTimer = null;
     this.closeHintsFor(lineId);
 
     const payload = buildPayload(line, ink);
@@ -1546,6 +1638,10 @@ export class LiveLoop implements LiveController {
     this.abortLlm(lineId);
     this.clearErrorsForLine(lineId);
     rt.readRefused = false;
+    // ...and so is its "couldn't read this": the new read earns its own "?" (after the same delay)
+    // if it is unsure too. Left set, a second unsure read lost its "?" for good: the render took it
+    // off and the delay that puts it back never ran again.
+    rt.unreadableShown = false;
     this.reading.add(lineId);
     const startedAt = this.deps.now();
     const readingTimer = setTimeout(() => {
@@ -1588,7 +1684,20 @@ export class LiveLoop implements LiveController {
       const network = !(err instanceof RecognizeTimeoutError) && !isApiError(err) && (err instanceof TypeError || !this.deps.isOnline());
       if (network) this.queueOffline(lineId);
       if (network && !this.deps.isOnline()) return;
+      // A dropped request while the browser says online (Safari's "Load failed"): the queue's own
+      // replay, 2 s from now (`scheduleOfflineReplay`), is this ink's one more try; the pill says
+      // "Offline — 1 line waiting" meanwhile. Only when that fails too is it shown on the line.
+      if (network && rt.readRetriedHash !== hash) {
+        rt.readRetriedHash = hash;
+        return;
+      }
       if (!network) console.warn("[live] recognize failed", err);
+      // Most failed reads are a blip (a timeout, a 502): the same ink is read once more on its own
+      // before the student hears about it. Meanwhile the line counts as still being read (no "?").
+      if (!network && this.retryReadSoon(lineId, hash, err)) {
+        this.reading.add(lineId);
+        return;
+      }
       const failure = this.fail(err, { kind: "recognize", lineId }, { kind: "recognize", lineId });
       // Never a silent blank: transport/model trouble leaves a chip pointing at Retry; sign-in,
       // rate-limit and credit problems are the pill's job (their message is not about the line).
@@ -1601,7 +1710,7 @@ export class LiveLoop implements LiveController {
       // a read that failed under one of the chat's problems, the student already stopped: its "?"
       this.questionIfSettled(lineId);
     } finally {
-      if (rt.processing === ticket) this.reading.delete(lineId);
+      if (rt.processing === ticket && !rt.readRetryTimer) this.reading.delete(lineId);
       clearTimeout(readingTimer);
       if (this.deps.recognizer.inFlight === 0 && liveStore.status.get() === "reading") liveStore.status.set("idle");
     }
@@ -1635,6 +1744,36 @@ export class LiveLoop implements LiveController {
     }
   }
 
+  /**
+   * One more read of the same ink, on its own, `READ_RETRY_MS` after a failure that is usually a
+   * blip (`transientReadFailure`). Once per ink version: when that read fails too, the failure is
+   * shown (the pill, the chip, the "?"), and Retry is the student's. New ink on the line, or the
+   * line rubbed out, cancels it (processLine takes over). False when this failure gets no retry.
+   *
+   * The retry joins the quiet gate's flush when the student is mid-line, so it never reads their
+   * half-written next line early.
+   */
+  private retryReadSoon(lineId: string, hash: string, err: unknown): boolean {
+    const rt = this.runtime(lineId);
+    if (!transientReadFailure(err) || rt.readRetriedHash === hash) return false;
+    rt.readRetriedHash = hash;
+    const ticket = rt.processing;
+    if (rt.readRetryTimer) clearTimeout(rt.readRetryTimer);
+    rt.readRetryTimer = setTimeout(() => {
+      rt.readRetryTimer = null;
+      if (rt.processing !== ticket) return;
+      const st = liveStore.lines.get()[lineId];
+      if (!st || !this.started || !this.opts.enabled) {
+        this.reading.delete(lineId);
+        return;
+      }
+      for (const sid of st.line.strokeIds) this.dirtyStrokeIds.add(sid);
+      this.forceRecognize.add(lineId);
+      if (!this.quietTimer) this.armQuietTimer(0);
+    }, READ_RETRY_MS);
+    return true;
+  }
+
   /** A JPEG data URL of these strokes in `bounds`, at most `maxWidth` px wide (≤ `maxCropBytes`), or undefined. */
   private async captureCrop(ids: readonly TLShapeId[], bounds: Rect, maxWidth = 512): Promise<string | undefined> {
     const toImage = this.editor.toImage;
@@ -1665,6 +1804,28 @@ export class LiveLoop implements LiveController {
     liveStore.status.set("offline");
     this.offlineQueue.add(lineId);
     liveStore.offlineQueued.set(this.offlineQueue.size);
+    if (this.deps.isOnline()) this.scheduleOfflineReplay();
+  }
+
+  /**
+   * A request that failed although the browser says online (Safari's "Load failed", a connection
+   * the OS has not noticed dropping) queues its line, and no 'online' event will ever come to
+   * replay it. It used to wait for the student's next ink or the next request that got through:
+   * the last line they wrote before stopping stayed unread for good. The queue is now replayed on
+   * its own, 2 s after, then 4, 8 and every 15 s while it keeps failing, as long as the browser
+   * says online (offline, the 'online' event replays it). A success anywhere starts the waits over.
+   * The replay rides the next flush, so a student mid-line keeps their quiet gate.
+   */
+  private scheduleOfflineReplay(): void {
+    if (this.offlineReplayTimer || !this.started) return;
+    const wait = OFFLINE_REPLAY_MS[Math.min(this.offlineReplayStep, OFFLINE_REPLAY_MS.length - 1)];
+    this.offlineReplayStep++;
+    this.offlineReplayTimer = setTimeout(() => {
+      this.offlineReplayTimer = null;
+      if (!this.started || !this.deps.isOnline() || this.offlineQueue.size === 0) return;
+      // `flush` absorbs the queue (online) into the reads it makes
+      if (!this.quietTimer) this.armQuietTimer(0);
+    }, wait);
   }
 
   /** Connectivity changed (window event, or `isOnline()` read in setOptions). */
@@ -1865,7 +2026,12 @@ export class LiveLoop implements LiveController {
     this.deleteLineShapes(lineId, { keepAi: true });
   }
 
-  /** Recognition failed for reasons a retry can fix: keep the line, show a chip that says so. */
+  /**
+   * Recognition failed for reasons a retry can fix: keep the line, and say so on it. The chip
+   * points at Retry, but a readback only shows while the pen is NOT in hand (MathShapeUtil), and on
+   * a writing board it nearly always is: so the line also gets the tutor's "?", the same mark an
+   * unreadable line gets, which a successful read (Retry, the offline replay) replaces.
+   */
   private applyFailedRead(lineId: string, note: string): void {
     const state = liveStore.lines.get()[lineId];
     if (!state) return;
@@ -1876,6 +2042,8 @@ export class LiveLoop implements LiveController {
       analysis: { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note },
     });
     this.upsertEcho(lineId, { latex: "", status: "unknown", resultLatex: "", note });
+    const fresh = liveStore.lines.get()[lineId];
+    if (fresh && this.opts.mode !== "off") this.syncMark(fresh, "question", "unread");
   }
 
   private columnLines(column: number): LiveLineState[] {
@@ -2310,15 +2478,12 @@ export class LiveLoop implements LiveController {
       if (!opts.quiet) {
         // silent — unless it is under one of the chat's problems and the student has stopped: "?"
         const why = this.questionNow(state);
-        this.syncMark(state, why ? "question" : null, why ?? undefined);
+        // ...or this very read already earned its "couldn't read this" "?": a re-render of it (the
+        // line above was read again) keeps the "?" instead of taking it off
+        const unread = !why && rt.unreadableShown && this.opts.mode !== "off" && this.unreadableRead(state);
+        this.syncMark(state, why || unread ? "question" : null, why ?? (unread ? "unread" : undefined));
       }
-      if (
-        state.latex !== "" &&
-        state.confidence < LIVE_LIMITS.minConfidence &&
-        !rt.unreadableShown &&
-        !rt.unreadableTimer &&
-        !opts.quiet
-      ) {
+      if (this.unreadableRead(state) && !rt.unreadableShown && !rt.unreadableTimer && !opts.quiet) {
         const ticket = rt.processing;
         rt.unreadableTimer = setTimeout(() => {
           rt.unreadableTimer = null;
@@ -2364,6 +2529,11 @@ export class LiveLoop implements LiveController {
       this.dropStaleSuggestion(state, ring);
       if (ring && !opts.quiet) this.suggestNextStep(lineId);
     }
+  }
+
+  /** A read the recognizer was unsure of: the "couldn't read this" chip and "?" are for it. */
+  private unreadableRead(state: LiveLineState): boolean {
+    return state.latex !== "" && state.confidence < LIVE_LIMITS.minConfidence;
   }
 
   // ---------------------------------------------------------------- "?" under the chat's problems
@@ -2426,9 +2596,9 @@ export class LiveLoop implements LiveController {
   }
 
   /**
-   * Live shapes on the page, for the cap and the pill's "lots of marks" warning. The tutor's
-   * handwriting is one draw shape per stroke, so a written block counts as ONE mark (its
-   * `meta.handBlock` key), not as its thirteen strokes.
+   * The tutor's marks on the page, for the cap and the pill's "lots of marks" warning: what Clear
+   * marks takes away. The tutor's handwriting is one draw shape per stroke, so a written block
+   * counts as ONE mark (its `meta.handBlock` key), not as its thirteen strokes.
    */
   private recount(): void {
     let n = 0;
@@ -2440,6 +2610,10 @@ export class LiveLoop implements LiveController {
       // lecture must not use up the cap and leave the tutor unable to mark what they write
       if (metaString(s.meta, LECTURE_BLOCK_META)) continue;
       if (answerSrcOf(s.meta)) answers = true;
+      // Nor is a readback: the student's own line, one per line, which Clear marks leaves alone.
+      // Counted, every line used two of the cap (its readback and its tick), so after about 30
+      // lines nothing new was marked, and Clear marks could not bring the page back under it.
+      if (s.meta.source === "echo") continue;
       const block = handBlockOf(s.meta);
       if (block) blocks.add(block);
       else n++;

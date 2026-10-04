@@ -287,7 +287,7 @@ describe("handwriting: wired into Solve", () => {
       expect(shape.props.segments[0].points.length).toBeGreaterThan(0);
     }
     // the whole written block counts as one mark against the live shape cap
-    expect(liveStore.liveShapeCount.get()).toBe(2); // the echo + this block
+    expect(liveStore.liveShapeCount.get()).toBe(1); // this block (the echo is not a mark)
 
     // below the student's last line, never on top of their ink or the echo
     const inkRects = ink.map((s) => boundsOf(editor.getShape(s.id)!));
