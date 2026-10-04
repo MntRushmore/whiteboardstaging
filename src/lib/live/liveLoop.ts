@@ -219,6 +219,11 @@ interface LineRuntime {
   processing: number;
   /** the tutor's mark wanted on this line (`markKey`), null for none; undefined until first render */
   markKey?: string | null;
+  /**
+   * its ring was taken off because new ink looked like more of this line (`unringGrowingLines`):
+   * its strokes then, so the next flush can tell whether that ink really joined it
+   */
+  unrungStrokes?: readonly string[] | null;
   markWriter?: HandWriter | null;
   /** its read failed for a reason that is not the handwriting (signed out, out of ink, rate limited): no "?" */
   readRefused?: boolean;
@@ -1222,8 +1227,34 @@ export class LiveLoop implements LiveController {
   private unringGrowingLines(strokes: readonly TLShape[]): void {
     const inks = strokes.map((s) => this.editor.getShapePageBounds(s)).filter((b): b is Box => Boolean(b));
     for (const state of Object.values(liveStore.lines.get())) {
-      if (!this.rt.get(state.line.id)?.markKey?.startsWith("circle:")) continue;
-      if (inks.some((b) => inkExtendsLine(boxToRect(b), state.line.bounds))) this.syncMark(state, null);
+      const rt = this.rt.get(state.line.id);
+      if (!rt?.markKey?.startsWith("circle:")) continue;
+      if (!inks.some((b) => inkExtendsLine(boxToRect(b), state.line.bounds))) continue;
+      // the clustering has the last word on whether this ink is more of the line (`reringUnchanged`)
+      rt.unrungStrokes = [...state.line.strokeIds];
+      this.syncMark(state, null);
+    }
+  }
+
+  /**
+   * The flush's clustering says which ringed lines the new ink really joined. `inkExtendsLine` is a
+   * guess made as the stroke lands (on the row, up to two line heights past the end), and ink just
+   * past a line that clusters as a line of its own (`2x = 1`, then `y` written a gap to the right)
+   * left the line it guessed at un-ringed for good: its strokes had not changed, so it was never
+   * read again, and only a read puts a ring back. A line whose strokes are the ones it had when its
+   * ring came off gets the ring back now; a line that did grow is read again, and the read marks it.
+   */
+  private reringUnchanged(lines: readonly InkLine[], force: ReadonlySet<string>): void {
+    for (const line of lines) {
+      const rt = this.rt.get(line.id);
+      const before = rt?.unrungStrokes;
+      if (!rt || !before) continue;
+      rt.unrungStrokes = null;
+      // something marked it again since (a re-render): that mark stands
+      if (rt.markKey !== null || force.has(line.id) || this.opts.mode === "off") continue;
+      if (!sameStrokeSet(before, line.strokeIds)) continue;
+      const state = liveStore.lines.get()[line.id];
+      if (state) this.syncMark(state, "circle");
     }
   }
 
@@ -1459,6 +1490,8 @@ export class LiveLoop implements LiveController {
       setLine(line.id, { line: { ...line, hash: same ? prev.line.hash : "" } });
       if (touched) affected.push({ line: { ...line, hash: same ? prev.line.hash : "" }, moveOnly: same && !forced });
     }
+    // a ring taken off for ink that turned out to be a line of its own goes back on
+    this.reringUnchanged(lines, force);
 
     // What the student worked on last decides what Help is about: a line they wrote, or else a
     // drawing (or its labels) they drew.
