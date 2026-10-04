@@ -311,6 +311,12 @@ const READ_RETRY_MS = 1500;
  * the second time either), nor a 4xx, which says the request itself was refused. A dropped request
  * (fetch's TypeError) is the offline queue's to replay.
  */
+/**
+ * How long the offline queue waits before it is replayed on its own while the browser still says
+ * online, one wait per replay in a row that found the network unreachable (the last repeats).
+ */
+const OFFLINE_REPLAY_MS = [2000, 4000, 8000, 15_000] as const;
+
 function transientReadFailure(err: unknown): boolean {
   if (err instanceof RecognizeTimeoutError) return true;
   return isApiError(err) && err.status >= 500 && err.code !== "recognizer_failed";
@@ -551,6 +557,10 @@ export class LiveLoop implements LiveController {
   private readonly rt = new Map<string, LineRuntime>();
   /** lines whose recognition could not reach the network; replayed on reconnect (no cap) */
   private readonly offlineQueue = new Set<string>();
+  /** the queue's next replay while the browser says online (`scheduleOfflineReplay`) */
+  private offlineReplayTimer: ReturnType<typeof setTimeout> | null = null;
+  /** how many replays in a row have found the network still unreachable (picks the next wait) */
+  private offlineReplayStep = 0;
   /** lines the next flush must recognize even when their stroke set is unchanged */
   private readonly forceRecognize = new Set<string>();
   /** LLM checks asked for while offline (focus line id -> userAsked); re-run once after reconnect */
@@ -801,6 +811,9 @@ export class LiveLoop implements LiveController {
     this.dirtyStrokeIds.clear();
     this.forceRecognize.clear();
     this.offlineQueue.clear();
+    if (this.offlineReplayTimer) clearTimeout(this.offlineReplayTimer);
+    this.offlineReplayTimer = null;
+    this.offlineReplayStep = 0;
     this.pendingChecks.clear();
     this.pendingSolve = null;
     liveStore.offlineQueued.set(0);
@@ -862,6 +875,8 @@ export class LiveLoop implements LiveController {
     const cur = liveStore.lastError.get();
     if (cur && cur.kind === kind && cur.lineId === lineId) clearLiveError();
     if (this.retryKey === `${kind}:${lineId ?? ""}`) this.resetRetry();
+    // the network answered: the offline queue's next replay on its own waits the shortest time again
+    this.offlineReplayStep = 0;
     // A request just came back, so the network is up. An "offline" left by a fetch that failed
     // while the browser still said online (a dropped connection; no 'online' event will ever
     // follow) ends here, and what it queued or deferred is replayed once, as on a reconnect.
@@ -1575,6 +1590,13 @@ export class LiveLoop implements LiveController {
       const network = !(err instanceof RecognizeTimeoutError) && !isApiError(err) && (err instanceof TypeError || !this.deps.isOnline());
       if (network) this.queueOffline(lineId);
       if (network && !this.deps.isOnline()) return;
+      // A dropped request while the browser says online (Safari's "Load failed"): the queue's own
+      // replay, 2 s from now (`scheduleOfflineReplay`), is this ink's one more try; the pill says
+      // "Offline — 1 line waiting" meanwhile. Only when that fails too is it shown on the line.
+      if (network && rt.readRetriedHash !== hash) {
+        rt.readRetriedHash = hash;
+        return;
+      }
       if (!network) console.warn("[live] recognize failed", err);
       // Most failed reads are a blip (a timeout, a 502): the same ink is read once more on its own
       // before the student hears about it. Meanwhile the line counts as still being read (no "?").
@@ -1688,6 +1710,28 @@ export class LiveLoop implements LiveController {
     liveStore.status.set("offline");
     this.offlineQueue.add(lineId);
     liveStore.offlineQueued.set(this.offlineQueue.size);
+    if (this.deps.isOnline()) this.scheduleOfflineReplay();
+  }
+
+  /**
+   * A request that failed although the browser says online (Safari's "Load failed", a connection
+   * the OS has not noticed dropping) queues its line, and no 'online' event will ever come to
+   * replay it. It used to wait for the student's next ink or the next request that got through:
+   * the last line they wrote before stopping stayed unread for good. The queue is now replayed on
+   * its own, 2 s after, then 4, 8 and every 15 s while it keeps failing, as long as the browser
+   * says online (offline, the 'online' event replays it). A success anywhere starts the waits over.
+   * The replay rides the next flush, so a student mid-line keeps their quiet gate.
+   */
+  private scheduleOfflineReplay(): void {
+    if (this.offlineReplayTimer || !this.started) return;
+    const wait = OFFLINE_REPLAY_MS[Math.min(this.offlineReplayStep, OFFLINE_REPLAY_MS.length - 1)];
+    this.offlineReplayStep++;
+    this.offlineReplayTimer = setTimeout(() => {
+      this.offlineReplayTimer = null;
+      if (!this.started || !this.deps.isOnline() || this.offlineQueue.size === 0) return;
+      // `flush` absorbs the queue (online) into the reads it makes
+      if (!this.quietTimer) this.armQuietTimer(0);
+    }, wait);
   }
 
   /** Connectivity changed (window event, or `isOnline()` read in setOptions). */

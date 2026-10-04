@@ -325,9 +325,16 @@ describe("live loop — visible errors and retry", () => {
   });
 
   it("a fetch TypeError while the browser says online is a visible 'network' error and still replays on reconnect", async () => {
-    recognizeScript.push(new TypeError("Failed to fetch"));
+    recognizeScript.push(new TypeError("Failed to fetch"), new TypeError("Failed to fetch"));
     await penUp(fixtureSingleLine());
     const [lineId] = Object.keys(liveStore.lines.get());
+    // the first one waits for the queue's own replay (2 s): only "Offline — 1 line waiting" meanwhile
+    expect(liveStore.lastError.get()).toBeNull();
+    expect(liveStore.offlineQueued.get()).toBe(1);
+    await vi.advanceTimersByTimeAsync(2000);
+    await settleUntil(() => fetchJson.mock.calls.length > 1);
+    await settle(8);
+    expect(fetchJson).toHaveBeenCalledTimes(2);
     expect(liveStore.lastError.get()).toMatchObject({ kind: "recognize", code: "network", lineId, message: "Couldn't reach the tutor service" });
     expect(echoOf(lineId)).toMatchObject({ status: "unknown", note: "Couldn't read this line — tap Retry" });
     expect(liveStore.offlineQueued.get()).toBe(1);
@@ -335,7 +342,7 @@ describe("live loop — visible errors and retry", () => {
     recognizeScript.push("2x=8");
     loop.retryLastError();
     await settle(8);
-    expect(fetchJson).toHaveBeenCalledTimes(2);
+    expect(fetchJson).toHaveBeenCalledTimes(3);
     expect(liveStore.lastError.get()).toBeNull();
     expect(liveStore.offlineQueued.get()).toBe(0);
     expect(echoOf(lineId)?.latex).toBe("2x=8");

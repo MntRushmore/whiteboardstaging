@@ -48,14 +48,18 @@ describe("live loop — reads that fail or come back unsure", () => {
   let online: boolean;
   /** what the recognizer does next, FIFO; the last one repeats */
   let script: Array<RecognizeResponse | Error>;
+  /** when each recognize call was made (fake clock) */
+  let callTimes: number[];
 
   beforeEach(async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
     resetLiveStore();
     editor = createFakeEditor();
     script = [read("2x=8")];
+    callTimes = [];
     online = true;
     fetchJson = vi.fn<FetchJson>(async (): Promise<RecognizeResponse> => {
+      callTimes.push(Date.now());
       const next = script.length > 1 ? script.shift()! : script[0];
       if (next instanceof Error) throw next;
       return next;
@@ -152,6 +156,63 @@ describe("live loop — reads that fail or come back unsure", () => {
       await wait(600);
       expect(liveStore.lastError.get()).toMatchObject({ kind: "recognize" });
       expect(questions()).toHaveLength(0);
+    });
+  });
+
+  // ---------------------------------------------------------------- "Load failed" while online
+  describe("a read whose request was dropped while the browser says online (Safari's 'Load failed')", () => {
+    it("the last line written is read 2 s later on its own: no new ink, no 'online' event needed", async () => {
+      script = [new TypeError("Load failed"), read("x=4")];
+      await penUp(writeLine("x=4", 100, 200));
+      expect(calls()).toBe(1);
+      expect(liveStore.status.get()).toBe("offline");
+      expect(liveStore.offlineQueued.get()).toBe(1);
+      // the first drop is not shown on the line: the replay is its one more try
+      expect(liveStore.lastError.get()).toBeNull();
+      expect(questions()).toHaveLength(0);
+
+      // before: it waited for the next ink or request; the student had stopped writing
+      await wait(2100);
+      expect(calls()).toBe(2);
+      expect(liveStore.offlineQueued.get()).toBe(0);
+      expect(liveStore.status.get()).not.toBe("offline");
+      expect(Object.values(liveStore.lines.get())[0].latex).toBe("x=4");
+      expect(liveStore.lastError.get()).toBeNull();
+    });
+
+    it("keeps trying while it fails, waiting 2, 4, 8, then 15 s; the line says so after the second drop", async () => {
+      script = [new TypeError("Load failed")];
+      await penUp(writeLine("x=4", 100, 200));
+      expect(calls()).toBe(1);
+      await wait(2100);
+      expect(calls()).toBe(2);
+      expect(liveStore.lastError.get()).toMatchObject({ kind: "recognize", code: "network" });
+      expect(questions()).toHaveLength(1);
+      await wait(4000 + 8000 + 15_000 + 15_000);
+      expect(calls()).toBe(6);
+      // each wait after a replay that failed (a flush in between: a few ms)
+      const gaps = callTimes.slice(1).map((t, i) => t - callTimes[i]);
+      expect(gaps.map((g) => Math.round(g / 100) * 100)).toEqual([2000, 4000, 8000, 15_000, 15_000]);
+
+      // the network is back: read, and the "?" and the error go
+      script = [read("x=4")];
+      await wait(15_100);
+      expect(calls()).toBe(7);
+      expect(liveStore.lastError.get()).toBeNull();
+      expect(questions()).toHaveLength(0);
+      expect(liveStore.status.get()).not.toBe("offline");
+    });
+
+    it("not while the browser says offline: the 'online' event replays it, as before", async () => {
+      online = false;
+      loop.setOptions({ ...opts });
+      await penUp(writeLine("x=4", 100, 200));
+      await wait(20_000);
+      expect(calls()).toBe(0);
+      online = true;
+      loop.setOptions({ ...opts });
+      await wait(QUIET + 200);
+      expect(calls()).toBe(1);
     });
   });
 
