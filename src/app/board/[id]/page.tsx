@@ -85,6 +85,7 @@ import { useLecture } from "@/components/lecture/useLecture";
 import { LectureBar } from "@/components/lecture/LectureBar";
 import { browserStorage as onboardingStorage, isGuidedBoard } from "@/lib/onboarding/marker";
 import { attachKeyboardFit, browserKeyboardFitEnv } from "@/components/board/keyboardFit";
+import { useBoardLearning } from "@/components/learning/useBoardLearning";
 
 // The guided first board's tour (the welcome's Start): loaded on that board only, after the board.
 const BoardTour = React.lazy(() => import("@/components/onboarding/BoardTour"));
@@ -223,6 +224,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     // paused while AI shapes are hidden: no ink spent on marks and steps the student cannot see
     auto: autoActs(live),
   });
+  // The learning record (src/lib/learning): the problems the student works here, loaded in idle time.
+  useBoardLearning(id, user?.id);
   // Lecture mode: the mic and the tutor sketching what is said. Not gated on Live or the help
   // mode: the controller's lecture methods work whatever they say.
   const lecture = useLecture(id, controller);
