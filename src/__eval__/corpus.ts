@@ -339,6 +339,11 @@ export const BASE_CORPUS: readonly EvalProblem[] = [
   { id: "xf-11", topic: "expand-factor", lines: ["6x^{2} + 9x"], expect: { answer: "3x(2x + 3)", form: "factored" } },
   { id: "xf-12", topic: "expand-factor", lines: ["2x^{2} - 7x + 3"], expect: { answer: "(2x - 1)(x - 3)", form: "factored" } },
   { id: "xf-13", topic: "expand-factor", course: "algebra-2", lines: ["\\frac{x^{2} - 1}{x - 1}"], expect: { answer: "x + 1" }, note: "cancel a common factor" },
+  // the same asked with a `=` after it: the simplest form, written after the student's `=`
+  { id: "xf-14", topic: "expand-factor", lines: ["(x + y)^{2} ="], expect: { answer: "x^{2} + 2xy + y^{2}", form: "expanded" }, note: "a line ending in `=`" },
+  { id: "xf-15", topic: "expand-factor", lines: ["(x - 3)(x + 2) ="], expect: { answer: "x^{2} - x - 6", form: "expanded" }, note: "a line ending in `=`" },
+  { id: "xf-16", topic: "expand-factor", lines: ["2(x + 4) - 3x ="], expect: { answer: "8 - x", form: "expanded" }, note: "a line ending in `=`" },
+  { id: "xf-17", topic: "expand-factor", lines: ["(a + b)^{3} ="], expect: { answer: "a^{3} + 3a^{2}b + 3ab^{2} + b^{3}", form: "expanded" }, note: "a line ending in `=`" },
 
   // ---------------------------------------------------------------- derivatives
   { id: "de-01", topic: "derivative", lines: ["\\frac{d}{dx}(3x^{2} + 2x) ="], expect: { answer: "6x + 2" } },

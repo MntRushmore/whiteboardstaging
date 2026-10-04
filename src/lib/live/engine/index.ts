@@ -38,6 +38,7 @@ import { createTrig } from "./trig";
 import { solveTrigEquation } from "./trigEquation";
 import { solveAdvanced, solveExactly, type AdvancedDeps } from "./advanced";
 import { factorExpressionSteps, rationalExpressionSteps } from "./polynomial";
+import { hasFunctionCall } from "./functionNotation";
 import { chainRelation, isSolutionSet, relaxVerdict, splitAtCommas, unionRelation, type Part } from "./compound";
 import { ALL_REALS, EVERY_REAL, LIST_SEP, NO_SOLUTION } from "./solution";
 import { createCourses } from "./courses";
@@ -794,7 +795,8 @@ export function createEngine(mod: MathModule): LiveEngine {
     const givens = ctx.givens;
     if (!givens || Object.keys(givens).length === 0) return null;
     try {
-      if (splitRelations(valueLatex).ops.length > 0) return null;
+      // `f(4)` is a call, not `4f` (`functionNotation.ts` has it)
+      if (splitRelations(valueLatex).ops.length > 0 || hasFunctionCall(valueLatex)) return null;
       const t = tr(valueLatex);
       const unknowns = unknownsOf(t);
       if (unknowns.length === 0 || isSymbolic(t) || t.hasUnits || !unknowns.every((v) => typeof givens[v] === "string")) return null;
@@ -806,7 +808,43 @@ export function createEngine(mod: MathModule): LiveEngine {
       // `\frac{1}{x - 3}` at 3 is no number at all, not `\infty`
       const v = safeEvaluate(math, a.math);
       if (!v.ok || (typeof v.value === "number" && !Number.isFinite(v.value))) return null;
-      return { ...a, resultLatex: ctx.mode === "answer" ? a.resultLatex : "", substituted };
+      return { ...a, resultLatex: ctx.mode === "answer" ? a.resultLatex : "", substituted, nextStep: substituted };
+    } catch {
+      return null;
+    }
+  };
+
+  /**
+   * A line in letters the student ended with `=` to have it expanded or simplified:
+   *
+   *   (x + y)^{2} =        →  x^{2} + 2xy + y^{2}
+   *   (x - 3)(x + 2) =     →  x^{2} + 2x - 3x - 6, then x^{2} - x - 6
+   *   2(x + 4) - 3x =      →  2x + 8 - 3x, then 8 - x
+   *   \frac{x^{2} - 1}{x - 1} =  →  x + 1
+   *
+   * Its simplest form is unambiguous when the working expands brackets and collects like terms
+   * (`simplifyExpressionSteps`) or cancels a common factor (`rationalExpressionSteps`): the line is
+   * then an `expression` whose `resultLatex` (Solve only, as for `36 + 2 =`) is that form, written
+   * after the student's `=`, and whose `nextStep` is the first line of the working (Help's step).
+   * Null otherwise, and the line stays the unfinished line it was: one already as simple as it
+   * goes (`x^{2} + 3x + 5 =`), or one whose only "simplification" is a factorisation, which is a
+   * choice and not the answer to a `=` (`3x + 24 =` is not asking to become `3(x + 8)`).
+   */
+  const simplestForm = (lhs: string, ctx: AnalyzeContext): LineAnalysis | null => {
+    try {
+      const pre = preprocessLatex(lhs).trim();
+      if (!pre || /\d\.\d/.test(pre) || splitRelations(pre).ops.length > 0 || hasFunctionCall(pre)) return null;
+      const t = tr(pre);
+      if (t.hasUnits || t.hasText || t.hasPercent || t.hasPm || t.functions.length > 0 || isSymbolic(t)) return null;
+      const unknowns = unknownsOf(t);
+      if (unknowns.length === 0 || unknowns.some((v) => !/^[a-zA-Z]$/.test(v))) return null;
+      const node = safeParse(math, t.source);
+      if (!node) return null;
+      const steps = simplifyExpressionSteps(node, unknowns, pre, stepKey) ?? rationalExpressionSteps(node, unknowns, pre, stepKey);
+      if (!steps || steps.length === 0) return null;
+      const a = analyzeExpression(pre, ctx, false);
+      if (a.kind !== "expression" || a.error) return null;
+      return { ...a, resultLatex: ctx.mode === "answer" ? steps[steps.length - 1] : "", nextStep: steps[0] };
     } catch {
       return null;
     }
@@ -887,6 +925,9 @@ export function createEngine(mod: MathModule): LiveEngine {
           // `3x + 24 =` with `x = 3` in the column: its value there
           const at = valueAtGivens(pre.lhs, ctx);
           if (at) return at;
+          // `(x + y)^{2} =`: expanded and collected
+          const simplest = simplestForm(pre.lhs, ctx);
+          if (simplest) return simplest;
         }
         const value = pre.trailingEquals ? namedValue(expanded) : null;
         if (value) {

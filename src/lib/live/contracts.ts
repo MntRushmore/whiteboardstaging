@@ -206,6 +206,14 @@ export interface LineAnalysis {
    * for any line ending in `=`) is the value it asks for (`33`).
    */
   substituted?: string;
+  /**
+   * A line the student ended with `=` that the engine finishes by working it out — expanded and
+   * collected (`(x - 3)(x + 2) =`), a common factor cancelled, or its letters' given values put in
+   * (`substituted`): the first line of that working (`x^{2} + 2x - 3x - 6`, `3(3) + 24`), the next
+   * step as Help writes it after the student's `=`. `resultLatex` (Solve only) is where the
+   * working ends (`x^{2} - x - 6`, `33`).
+   */
+  nextStep?: string;
 }
 /**
  * A domain in the measure the unknown is read in: radians for an angle (`0^{\circ}` → 0,

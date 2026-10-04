@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { TLShape } from "tldraw";
+import { LIVE_COPY } from "@/components/live/copy";
 import { createFakeEditor, type FakeEditor } from "../__fixtures__/fakeEditor";
 import { writeLine as inkLine } from "../__fixtures__/strokes";
 import { settleStable, settleUntil } from "@/lib/live/__fixtures__/settle";
@@ -23,7 +24,7 @@ import { liveStore, resetLiveStore } from "../liveStore";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
 
 /**
- * A line the student ended with `=`, and the value of its letter written in the same column.
+ * A line in letters the student ended with `=`: a question, finished where they left off.
  *
  * The owner wrote, stacked on a desktop board,
  *
@@ -32,8 +33,11 @@ import { RecognizeClient, type FetchJson } from "../recognizeClient";
  *
  * and the board asked the solve model, which answered `= 3(x+8)` — written in blue on the free row
  * under the `x = 3`, where it read `x = 3 = 3(x+8)`. The question is "3x + 24 at x = 3": 33, which
- * the engine works out with no model, written where the student left off, after their `=`. And a
- * step that does continue a line ending in `=` belongs to THAT line, never to a later one.
+ * the engine works out with no model, written after their `=`. And a step that does continue a
+ * line ending in `=` belongs to THAT line, never to a later one.
+ *
+ * With no value given, `(x + y)^{2} =` asks for it expanded: `x^{2} + 2xy + y^{2}` after the `=`, as
+ * `36 + 2 =` gets `38` — but only where the simplest form is not a matter of taste.
  *
  * The real engine and the real hand engine; the recognizer and the model are scripted.
  */
@@ -45,7 +49,7 @@ beforeAll(async () => {
 
 type Reply = { events?: LiveSseEvent[] };
 
-describe("live loop — a line ending in `=` evaluated at the value the column gives (`3x + 24 =` over `x = 3`)", () => {
+describe("live loop — a line ending in `=`, finished where the student left off", () => {
   useSyncHash();
 
   let editor: FakeEditor;
@@ -54,6 +58,8 @@ describe("live loop — a line ending in `=` evaluated at the value the column g
   let calls: Array<{ path: string; body: unknown }>;
   let replies: { check: Reply[]; solve: Reply[] };
   let handwriting: boolean;
+  /** the quiet notes the board showed (`deps.notify`) */
+  let notes: string[];
   /** latex the recognizer gives each line, in the order the lines are first read */
   let script: string[];
   let assigned: Map<string, string>;
@@ -84,7 +90,7 @@ describe("live loop — a line ending in `=` evaluated at the value the column g
         reread: async () => {
           throw new Error("no second reader here");
         },
-        notify: () => undefined,
+        notify: (message) => notes.push(message),
       },
     );
     loop.start();
@@ -145,7 +151,10 @@ describe("live loop — a line ending in `=` evaluated at the value the column g
   function expectAfter(written: Rect, line: Rect): void {
     expect(written.x).toBeGreaterThan(line.x + line.w);
     expect(written.x - (line.x + line.w)).toBeLessThan(40);
-    expect(Math.abs(written.y + written.h - (line.y + line.h))).toBeLessThan(Math.max(6, line.h * 0.2));
+    // on the same row: mostly level with the line (a `y` or a power reaches below or above it)
+    const overlap = Math.min(written.y + written.h, line.y + line.h) - Math.max(written.y, line.y);
+    expect(overlap).toBeGreaterThan(0.6 * Math.min(written.h, line.h));
+    expect(written.y + written.h).toBeLessThan(line.y + line.h * 1.5);
   }
 
   beforeEach(() => {
@@ -154,6 +163,7 @@ describe("live loop — a line ending in `=` evaluated at the value the column g
     calls = [];
     replies = { check: [], solve: [] };
     handwriting = true;
+    notes = [];
     script = [];
     assigned = new Map();
     fetchJson = vi.fn<FetchJson>(async (_path, body): Promise<RecognizeResponse> => {
@@ -176,7 +186,7 @@ describe("live loop — a line ending in `=` evaluated at the value the column g
 
   // ------------------------------------------------------------------ Solve
 
-  describe("Solve", () => {
+  describe("Solve: `3x + 24 =` over `x = 3` is 33", () => {
     it("Auto on: `33` after the `=` of `3x + 24 =` at the pause — no model, nothing under the `x = 3`", async () => {
       start("answer");
       const problem = await penLine("3x+24=", "3x+24=", 200);
@@ -324,7 +334,7 @@ describe("live loop — a line ending in `=` evaluated at the value the column g
 
   // ------------------------------------------------------------------ Suggest and Feedback
 
-  describe("Suggest and Feedback: the next step is the value put in", () => {
+  describe("Suggest and Feedback on `3x + 24 =` over `x = 3`: the next step is the value put in", () => {
     it("Suggest, Help me on the `x = 3`: `3(3) + 24` after the `=`; asked again, nothing new", async () => {
       start("suggest", { auto: false });
       const problem = await penLine("3x+24=", "3x+24=", 200);
@@ -361,7 +371,7 @@ describe("live loop — a line ending in `=` evaluated at the value the column g
       loop.noteAsked();
       loop.requestSolve();
       await wait(1000);
-      expect(work()).toEqual(["3(3)+24", "= 33"]);
+      expect(work().sort()).toEqual(["3(3)+24", "= 33"].sort());
       const step = whereIs("3(3)+24");
       expectAfter(whereIs("= 33"), { ...bounds(problem), w: step.x + step.w - bounds(problem).x });
     });
@@ -442,6 +452,94 @@ describe("live loop — a line ending in `=` evaluated at the value the column g
       const req = solves()[0].body as SolveRequest;
       expect(req.lines.map((l) => l.latex)).toEqual(["3x+24=", "y=3"]);
       expect(req.goal).toContain(`line id ${problem} equals (3x+24=)`);
+    });
+  });
+
+  // ------------------------------------------------------------------ expand / simplify this =
+
+  describe("`(x + y)^{2} =`: expanded and collected after the `=`, with no model", () => {
+    it("Solve, Auto on: written at the pause, as `36 + 2 =` gets `38`", async () => {
+      start("answer");
+      const line = await penLine("x+2=", "(x+y)^{2}=", 200);
+      await wait(ANSWER_SETTLE_MS);
+      expect(work()).toEqual(["x^{2} + 2xy + y^{2}"]);
+      expect(calls).toEqual([]);
+      expectAfter(whereIs("x^{2} + 2xy + y^{2}"), bounds(line));
+    });
+
+    it("Solve, Auto off: nothing until Solve it, then the simplest form only (no working under the line)", async () => {
+      start("answer", { auto: false });
+      const products = await penLine("x+3=", "(x-3)(x+2)=", 200);
+      const brackets = await penLine("2x+4=", "2(x+4)-3x=", 200, 700);
+      const cube = await penLine("2x+8=", "(a+b)^{3}=", 440);
+      await wait(LIVE_TIMING.stuckMs);
+      expect(work()).toEqual([]);
+      for (const id of [products, brackets, cube]) {
+        loop.noteAsked();
+        loop.requestSolve(id);
+        await wait(1000);
+      }
+      expect(work().sort()).toEqual(["8 - x", "a^{3} + 3a^{2}b + 3ab^{2} + b^{3}", "x^{2} - x - 6"]);
+      expectAfter(whereIs("x^{2} - x - 6"), bounds(products));
+      expectAfter(whereIs("8 - x"), bounds(brackets));
+      expect(calls).toEqual([]);
+    });
+
+    it("Suggest, Help me: one expansion step after the `=`; Solve then finishes the line after it", async () => {
+      start("suggest", { auto: false });
+      const line = await penLine("x+3=", "(x-3)(x+2)=", 200);
+      loop.noteAsked();
+      loop.requestHelp();
+      await wait(1000);
+      expect(work()).toEqual(["x^{2} + 2x - 3x - 6"]);
+      expectAfter(whereIs("x^{2} + 2x - 3x - 6"), bounds(line));
+      loop.noteAsked();
+      loop.requestHelp();
+      await wait(1000);
+      expect(work()).toEqual(["x^{2} + 2x - 3x - 6"]);
+
+      loop.setOptions({ ...loop.getOptions(), mode: "answer" });
+      loop.noteAsked();
+      loop.requestSolve();
+      await wait(1000);
+      expect(work().sort()).toEqual(["= x^{2} - x - 6", "x^{2} + 2x - 3x - 6"]);
+      const step = whereIs("x^{2} + 2x - 3x - 6");
+      expectAfter(whereIs("= x^{2} - x - 6"), { ...bounds(line), w: step.x + step.w - bounds(line).x });
+      expect(calls).toEqual([]);
+    });
+
+    it("Feedback: the line is read back, nothing is marked or written unasked", async () => {
+      start("feedback");
+      await penLine("x+2=", "(x+y)^{2}=", 200);
+      await wait(LIVE_TIMING.stuckMs + 500);
+      expect(work()).toEqual([]);
+      expect(marks()).toEqual([]);
+      expect(calls).toEqual([]);
+    });
+
+    it("already as simple as it goes: Solve says so, and asks no model", async () => {
+      start("answer");
+      await penLine("x+3=", "x^{2}+3x+5=", 200);
+      await wait(ANSWER_SETTLE_MS * 2);
+      expect(work()).toEqual([]);
+      loop.noteAsked();
+      loop.requestSolve();
+      await wait(1000);
+      expect(notes).toEqual([LIVE_COPY.solve.simplest]);
+      expect(work()).toEqual([]);
+      expect(calls).toEqual([]);
+    });
+
+    it("no single simplest form (`3x + 24 =` only factorises): nothing after the `=` unasked; Solve it works as before", async () => {
+      start("answer");
+      await penLine("3x+24=", "3x+24=", 200);
+      await wait(ANSWER_SETTLE_MS * 2);
+      expect(work()).toEqual([]);
+      loop.noteAsked();
+      loop.requestSolve();
+      await wait(1000);
+      expect(work()).toEqual(["= 3(x + 8)"]);
+      expect(calls).toEqual([]);
     });
   });
 });

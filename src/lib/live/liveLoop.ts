@@ -431,10 +431,11 @@ const SUGGEST_META = "suggestFor";
 /** the equation written under a right operation line (`-3 \quad -3` → `2x = 8`): what it was written for */
 const OPERATION_RESULT_META = "operationResult";
 /**
- * on the values put into a line ending in `=` (`3(3) + 24` after `3x + 24 =` over `x = 3`, Help's
- * next step): the line and the values it was written for (`answerSourceOf`)
+ * on Help's next step after the `=` of a line the engine works out (`LineAnalysis.nextStep`:
+ * `3(3) + 24` after `3x + 24 =` over `x = 3`, `x^{2} + 2x - 3x - 6` after `(x - 3)(x + 2) =`): the
+ * line, and any values it was evaluated at, that it was written for (`answerSourceOf`)
  */
-const SUBSTITUTION_META = "substitutionFor";
+const NEXT_STEP_META = "nextStepFor";
 /** on the strokes of a tutor's mark (tick / ring / question mark): its `markKey` */
 const MARK_META = "mark";
 /** on a question mark's strokes: why the tutor put it there (`UnjudgedReason`) */
@@ -3116,7 +3117,7 @@ export class LiveLoop implements LiveController {
     const rt = this.runtime(lineId);
     // The line changed under an answer the tutor had already written: that answer is stale.
     this.dropStaleAnswer(state);
-    this.dropStaleSubstitution(state);
+    this.dropStaleNextStep(state);
     this.dropStaleOperationResult(state);
     // Its column's graph follows its maths: erased when that changed, sketched when wanted (Solve, settled).
     if (!opts.keepStatus && !decision.capped) this.syncGraph(state.line.column);
@@ -3942,8 +3943,8 @@ export class LiveLoop implements LiveController {
    */
   private planInlineAnswer(state: LiveLineState, answer: string): HandPlan | null {
     const ink = state.line.bounds;
-    // after the values Help put in (`3x + 24 = 3(3) + 24`) the line goes on from them: `= 33`
-    const put = this.substitutionRect(state);
+    // after the step Help wrote there (`3x + 24 = 3(3) + 24`) the line goes on from it: `= 33`
+    const put = this.nextStepRect(state);
     const end = put ? rectMaxX(unionRects([ink, put])) : rectMaxX(ink);
     const text = put && !startsWithRelation(answer) ? `= ${answer}` : answer;
     const size = inlineHandSizeFor(ink.h, this.boardZoom());
@@ -3959,12 +3960,12 @@ export class LiveLoop implements LiveController {
     return placed;
   }
 
-  /** Where Help's values-put-in step for this line is (`writeSubstitution`), when it is on the page for the line as it reads now. */
-  private substitutionRect(state: LiveLineState): Rect | null {
+  /** Where Help's next step for this line is (`writeNextStep`), when it is on the page for the line as it reads now. */
+  private nextStepRect(state: LiveLineState): Rect | null {
     const key = answerSourceOf(state);
     const rects: Rect[] = [];
     for (const s of this.editor.getCurrentPageShapes()) {
-      if (!isLiveMeta(s.meta) || s.meta.lineId !== state.line.id || metaString(s.meta, SUBSTITUTION_META) !== key) continue;
+      if (!isLiveMeta(s.meta) || s.meta.lineId !== state.line.id || metaString(s.meta, NEXT_STEP_META) !== key) continue;
       const b = this.editor.getShapePageBounds(s);
       if (b) rects.push(boxToRect(b));
     }
@@ -3972,24 +3973,25 @@ export class LiveLoop implements LiveController {
   }
 
   /**
-   * Help me on a line the column's givens evaluate (`3x + 24 =` over `x = 3`), in Feedback and
-   * Suggest: the next step is the values put in — `3(3) + 24` — written after the student's `=`,
-   * where they left off, so their line reads `3x + 24 = 3(3) + 24` and the arithmetic is theirs to
-   * do. By hand beside their line, as `inlineAnswer` writes an answer; where it cannot go there, as
-   * any step continuing that line goes (`drawStepsByHand`: under it, or restated under the work —
-   * never under the `x = 3`, where `= 3(3) + 24` would read as `x = 3 = 3(3) + 24`). Asked again
-   * with it on the page, nothing new. False when the line is not evaluated at givens.
+   * Help me on a line the student ended with `=` that the engine works out (`LineAnalysis.nextStep`),
+   * in Feedback and Suggest: the first line of that working, written after their `=`, where they
+   * left off — the values put in for `3x + 24 =` over `x = 3` (`3x + 24 = 3(3) + 24`), one expansion
+   * for `(x - 3)(x + 2) =` (`= x^{2} + 2x - 3x - 6`) — and the rest is theirs to do. By hand beside
+   * their line, as `inlineAnswer` writes an answer; where it cannot go there, as any step
+   * continuing that line goes (`drawStepsByHand`: under it, or restated under the work — never
+   * under the `x = 3`, where `= 3(3) + 24` would read as `x = 3 = 3(3) + 24`). Asked again with it
+   * on the page, nothing new. False when the engine has no such step for the line.
    */
-  private writeSubstitution(state: LiveLineState): boolean {
-    const step = state.analysis?.substituted;
+  private writeNextStep(state: LiveLineState): boolean {
+    const step = state.analysis?.nextStep;
     if (!step) return false;
-    if (this.substitutionRect(state) || this.writerFor === state.line.id) return true;
+    if (this.nextStepRect(state) || this.writerFor === state.line.id) return true;
     if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
-    const meta: JsonObject = { [SUBSTITUTION_META]: answerSourceOf(state) };
+    const meta: JsonObject = { [NEXT_STEP_META]: answerSourceOf(state) };
     const inline = this.deps.handwritingEnabled() ? this.planInlineAnswer(state, step) : null;
     if (inline) {
       this.startHandwriting(inline, state.line.id, meta);
-      clientMetric("live.substitution.hand", { lineId: state.line.id });
+      clientMetric("live.nextStep.hand", { lineId: state.line.id });
       return true;
     }
     const built = this.buildCheckLines(state.line.column);
@@ -3997,16 +3999,16 @@ export class LiveLoop implements LiveController {
     const steps = [`= ${step}`];
     const opts: SolveOpts = { lineId: state.line.id, onlyFirstStep: true };
     if (!(this.deps.handwritingEnabled() && this.drawStepsByHand(built, opts, state, steps, meta, state))) this.typesetSteps(built, opts, steps, meta, state);
-    clientMetric("live.substitution.under", { lineId: state.line.id });
+    clientMetric("live.nextStep.under", { lineId: state.line.id });
     return true;
   }
 
-  /** The values put in for another value, or a line no longer evaluated: Help's step for it goes. */
-  private dropStaleSubstitution(state: LiveLineState): void {
-    const want = state.analysis?.substituted ? answerSourceOf(state) : "";
+  /** The line rewritten, its given value changed, or nothing to work out any more: Help's step for it goes. */
+  private dropStaleNextStep(state: LiveLineState): void {
+    const want = state.analysis?.nextStep ? answerSourceOf(state) : "";
     const stale = this.editor
       .getCurrentPageShapes()
-      .filter((s) => isLiveMeta(s.meta) && s.meta.lineId === state.line.id && metaString(s.meta, SUBSTITUTION_META) !== "" && metaString(s.meta, SUBSTITUTION_META) !== want);
+      .filter((s) => isLiveMeta(s.meta) && s.meta.lineId === state.line.id && metaString(s.meta, NEXT_STEP_META) !== "" && metaString(s.meta, NEXT_STEP_META) !== want);
     if (stale.length === 0) return;
     this.write(() => {
       const ids = stale.map((s) => s.id).filter((id) => this.editor.getShape(id));
@@ -4120,11 +4122,17 @@ export class LiveLoop implements LiveController {
     this.deps.notify(message);
   }
 
-  /** Solve's line is a lone expression in letters with nothing left to do to it (`engine.alreadySimplest`). */
+  /**
+   * Solve's line is a lone expression in letters with nothing left to do to it (`engine.alreadySimplest`)
+   * — written alone, or ended with `=` (`x^{2} + 3x + 5 =` asks no more than `x^{2} + 3x + 5`: the
+   * engine leaves it unfinished, and Solve went on to ask a model about it).
+   */
   private alreadySimplest(built: BuiltColumn, opts: SolveOpts): boolean {
     const asked = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
-    if (!asked?.latex || asked.analysis?.kind !== "expression") return false;
-    return this.engine?.alreadySimplest?.(asked.latex) === true;
+    if (!asked?.latex) return false;
+    const unfinished = asked.analysis?.kind === "incomplete" && endsWithEquals(asked.latex);
+    if (asked.analysis?.kind !== "expression" && !unfinished) return false;
+    return this.engine?.alreadySimplest?.(unfinished ? asked.latex.replace(/=\s*$/, "") : asked.latex) === true;
   }
 
   /**
@@ -6375,8 +6383,9 @@ export class LiveLoop implements LiveController {
     }
     // Stuck after a right operation (`\div 2` under `2\sin x = 1`): the equation it leads to, then the step after it.
     if (this.continueOperation(target, { all: false })) return;
-    // Stuck on `3x + 24 =` over `x = 3`: the value put in, after their `=` (`3(3) + 24`).
-    if (this.writeSubstitution(target)) return;
+    // Stuck on a line ending in `=` the engine works out: its first step, after their `=` (`3x + 24 =` over
+    // `x = 3` → `3(3) + 24`; `(x - 3)(x + 2) =` → `x^{2} + 2x - 3x - 6`).
+    if (this.writeNextStep(target)) return;
     // Stuck on a line that is fine: when its work graphs (`y = 2x + 1`, a system, `x > 4`), the
     // graph is the help — sketched from the engine, no model asked. Otherwise the next step.
     if (this.syncGraph(target.line.column, { asked: true, anchorLineId: lineId })) return;
