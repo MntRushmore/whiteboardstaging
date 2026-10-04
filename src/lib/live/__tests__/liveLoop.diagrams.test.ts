@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { LIVE_COPY } from "@/components/live/copy";
 import type { TLShapeId } from "tldraw";
-import { boundsOf, DRAWINGS, labelAt, writeAt, type Drawing } from "@/__eval__/drawings";
+import { boundsOf, DRAWINGS, labelAt, Pen, writeAt, type Drawing } from "@/__eval__/drawings";
 import { VARIANTS } from "@/__eval__/handwriting";
 import { createFakeEditor, type FakeEditor } from "../__fixtures__/fakeEditor";
 import { drawShapeFromPoints } from "../__fixtures__/strokes";
@@ -16,6 +16,7 @@ import {
   type RecognizeRequest,
   type RecognizeResponse,
   type SetupRequest,
+  type SolveRequest,
   type UseLiveMathOptions,
 } from "../contracts";
 import { getEngine } from "../engine";
@@ -71,7 +72,12 @@ describe("live loop — drawings", () => {
   let loop: LiveLoop;
   let calls: string[];
   let lineRead: string;
+  /** a read of a row of ink as one line (`ink_…`); null: the same as `lineRead` */
+  let inkRead: string | null;
   let labelRead: string;
+  /** the solve model's steps, and what it was asked */
+  let streamSteps: string[];
+  let solveBodies: SolveRequest[];
   let setupReply: string[] | Error;
   let setupBodies: SetupRequest[];
   /** the quiet notes the board showed (`deps.notify`) */
@@ -92,9 +98,11 @@ describe("live loop — drawings", () => {
       { boardId: "board-1", mode, enabled: true },
       {
         recognizer: new RecognizeClient({ fetchJson }),
-        stream: async function* (path: string): AsyncGenerator<LiveSseEvent, void, undefined> {
+        stream: async function* (path: string, body: unknown): AsyncGenerator<LiveSseEvent, void, undefined> {
           calls.push(path);
+          if (path.endsWith("/solve")) solveBodies.push(body as SolveRequest);
           if (streamGate) await streamGate;
+          for (const [i, latex] of streamSteps.entries()) yield { event: "step", data: { index: i + 1, latex, explanation: "", final: i === streamSteps.length - 1 } };
         },
         getEngine: async () => engine,
         fetchCapabilities: async () => ({ recognizer: "mathpix", liveEnabled: true, models: { check: "c", solve: "s", vision: "v" } }),
@@ -149,7 +157,10 @@ describe("live loop — drawings", () => {
     editor.toImage = (async () => ({ blob: new Blob(["jpeg-bytes"], { type: "image/jpeg" }), width: 300, height: 200 })) as unknown as FakeEditor["toImage"];
     calls = [];
     lineRead = "a^{2}+b^{2}=c^{2}";
+    inkRead = null;
     labelRead = "\\begin{array}{l}\nx \\\\\n3 \\\\\n4\n\\end{array}";
+    streamSteps = [];
+    solveBodies = [];
     setupReply = PYTHAGORAS;
     setupBodies = [];
     notes = [];
@@ -158,7 +169,7 @@ describe("live loop — drawings", () => {
     fetchJson = vi.fn<FetchJson>(async (_path, body): Promise<RecognizeResponse> => {
       const req = body as RecognizeRequest;
       if (req.lineId.startsWith("ink_") && inkGate) await inkGate;
-      const latex = req.lineId.startsWith("dg_") ? labelRead : lineRead;
+      const latex = req.lineId.startsWith("dg_") ? labelRead : req.lineId.startsWith("ink_") ? (inkRead ?? lineRead) : lineRead;
       return { latex, text: latex, kind: "math", confidence: 0.98, provider: "mathpix", ms: 90 };
     });
     start();
@@ -416,6 +427,91 @@ describe("live loop — drawings", () => {
     expect(setupBodies).toEqual([]);
     expect(tutorInk().length).toBeGreaterThan(0);
     expect(liveStore.lastError.get()).toBeNull();
+  });
+
+  /**
+   * A line of ordinary writing with one letter written big: its x — two 140 px diagonals beside a
+   * 44 px hand — is still a drawing to `splitInk` (and the `2` before it its label), so the line is
+   * read without them (`+3=11`, `!=24`). Before, Solve sent the "figure" to the vision model; when it
+   * said nothing was asked, the worked solution was asked for the torn line, and a step naming the x
+   * was thrown away as a symbol from nowhere: "Couldn't solve this one — try writing it again a bit
+   * clearer". Now the row — the line and the drawing on it — is read as one line and solved.
+   */
+  function bigXIn(before: string, after: string): { line: InkStroke[]; drawn: InkStroke[] } {
+    const left = before ? writeAt(before, 200, 300) : [];
+    const lb = left.length > 0 ? boundsOf(left) : { x: 186, y: 300, w: 0, h: 26 };
+    const right0 = writeAt(after, 0, 0);
+    const mid = lb.y + lb.h / 2;
+    const x0 = lb.x + lb.w + 14;
+    const pen = new Pen("bigx", 3);
+    const x = [pen.stroke({ x: x0, y: mid - 70 }, { x: x0 + 120, y: mid + 70 }), pen.stroke({ x: x0 + 120, y: mid - 70 }, { x: x0, y: mid + 70 })];
+    const right = writeAt(after, x0 + 134, mid - boundsOf(right0).h / 2);
+    return { line: right, drawn: [...left, ...x] };
+  }
+
+  it("Solve on a line with a big x torn out of it: the row is read as one line, the engine's answer goes under it, no figure model", async () => {
+    lineRead = "+3=11";
+    inkRead = "2x+3=11";
+    const { line, drawn } = bigXIn("2", "+ 3 = 11");
+    await draw([...drawn, ...line]);
+    // the misreading this is about: the x (and the 2 beside it) a drawing, the line without them
+    expect(liveStore.diagrams.get()).toEqual([expect.objectContaining({ kinds: ["segment"] })]);
+    const state = lineOf(line)!;
+    expect([...state.line.strokeIds].sort()).toEqual([...idsOf(line)].sort());
+
+    await run(() => loop.requestSolve(state.line.id));
+    // one read of the whole row: the line's strokes, the x's and the 2's
+    expect(inkReads()).toHaveLength(1);
+    expect(inkReads()[0].strokes.x).toHaveLength(line.length + drawn.length);
+    expect(setupBodies).toEqual([]);
+    expect(calls).toEqual([]);
+    const steps = localSolve(engine, ["2x+3=11"], 0, { handwriting: true }).steps;
+    expect(steps[steps.length - 1]).toBe("x = 4");
+    expect(handLinesOf(tutorInk())).toEqual(steps);
+    // under the work: the line and the ink on its row
+    const bottom = Math.max(...[...line, ...drawn].map((st) => st.bounds.y + st.bounds.h));
+    expect(Math.min(...tutorInk().map((sh) => sh.y))).toBeGreaterThan(bottom);
+    expect(tutorInk().every((sh) => isLiveMeta(sh.meta) && sh.meta.lineId === state.line.id)).toBe(true);
+    expect(liveStore.lastError.get()).toBeNull();
+    expect(liveStore.solving.get()).toBe(0);
+
+    // asked again: the answer is there, nothing is written twice and no model is asked
+    const written = tutorInk().length;
+    await run(() => loop.requestSolve(state.line.id));
+    expect(tutorInk()).toHaveLength(written);
+    expect(setupBodies).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
+  it("...and when the engine has nothing for the whole line, the model is asked with it, and its steps naming the x are kept", async () => {
+    lineRead = "!=24";
+    inkRead = "x!=24";
+    streamSteps = ["x! = 4!", "x = 4"];
+    const { line, drawn } = bigXIn("", "! = 24");
+    await draw([...drawn, ...line]);
+    expect(liveStore.diagrams.get()).toHaveLength(1);
+    const state = lineOf(line)!;
+    await run(() => loop.requestSolve(state.line.id));
+
+    expect(setupBodies).toEqual([]);
+    expect(calls).toEqual(["/api/live/solve"]);
+    // the model was told the whole line, not the torn one
+    expect(solveBodies[0].lines.find((l) => l.id === state.line.id)?.latex).toBe("x!=24");
+    expect(handLinesOf(tutorInk())).toEqual(["x! = 4!", "x = 4"]);
+    expect(liveStore.lastError.get()).toBeNull();
+    expect(liveStore.solving.get()).toBe(0);
+  });
+
+  it("a big x read with its row that is no maths goes on to the figure model and its fallback, as any drawing beside the work", async () => {
+    lineRead = "+3=11";
+    inkRead = "\\nearrow \\searrow";
+    setupReply = new Error("no figure here");
+    const { line, drawn } = bigXIn("2", "+ 3 = 11");
+    await draw([...drawn, ...line]);
+    await run(() => loop.requestSolve(lineOf(line)!.line.id));
+    expect(inkReads()).toHaveLength(1);
+    expect(setupBodies).toHaveLength(1);
+    expect(calls).toEqual(["/api/live/solve"]);
   });
 
   it("a real figure is never read as a line of maths", async () => {

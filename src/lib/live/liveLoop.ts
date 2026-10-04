@@ -267,6 +267,21 @@ type ProblemWork = { cell: ProblemCell; depth: ProblemDepth; written: string[]; 
 type SolveOpts = { onlyFirstStep?: boolean; lineId: string; problem?: ProblemWork };
 /** A column as `buildCheckLines` returns it: the lines with a read, their check payload, the region. */
 type BuiltColumn = { lines: CheckLine[]; region: Rect; states: LiveLineState[] };
+
+/**
+ * The column with one line read again together with the ink on its row (`solveLineWithRow`): its
+ * latex, its box grown to the row (the work goes under all of it), and what the model is told the
+ * engine made of it. The store's line is not changed: its ink is still only its own strokes.
+ */
+function withLineRead(built: BuiltColumn, lineId: string, read: { latex: string; kind: LineKind; row: { bounds: Rect } }): BuiltColumn {
+  return {
+    ...built,
+    lines: built.lines.map((l) => (l.id === lineId ? { ...l, latex: read.latex.slice(0, 2000), local: { kind: read.kind, verdict: "unknown" } } : l)),
+    states: built.states.map((s) =>
+      s.line.id === lineId ? { ...s, latex: read.latex, analysis: null, line: { ...s.line, bounds: unionRects([s.line.bounds, read.row.bounds]) } } : s,
+    ),
+  };
+}
 /** What Solve wrote locally: its lines, and where the block is being written (null: nothing new) and for how long. */
 type LocalWritten = { steps: string[]; block: Rect | null; wallMs: number };
 
@@ -3938,6 +3953,14 @@ export class LiveLoop implements LiveController {
     // when that gives nothing do the paths below get their turn.
     const figure = this.figureBeside(built);
     if (figure) {
+      // ...unless it is no figure and sits on the row of the line asked about: the line's own big
+      // writing, taken from it (`solveLineWithRow`)
+      const row = this.engine && !this.isRealFigure(figure) ? this.inkRowOf(figure) : null;
+      const asked = liveStore.lines.get()[opts.lineId];
+      if (row && asked && built.states.some((s) => s.line.id === opts.lineId) && row.strokes.some((st) => asked.line.strokeIds.includes(st.id))) {
+        this.solveLineWithRow(figure, row, built, fromLineId, opts);
+        return "model";
+      }
       this.startFigure(figure, opts, { built, fromLineId });
       return "model";
     }
@@ -4027,32 +4050,10 @@ export class LiveLoop implements LiveController {
   private async solveInkAsMaths(diagram: Diagram, opts: SolveOpts, gen = this.generation): Promise<boolean> {
     const engine = this.engine;
     if (!engine) return false;
-    const gone = () => !this.started || this.generation !== gen;
-    const row = this.inkRowOf(diagram);
-    const line: InkLine = { id: diagram.id, strokeIds: row.strokes.map((st) => st.id), bounds: row.bounds, column: 0, row: 0, hash: "" };
-    const payload = buildPayload(line, row.strokes);
-    if (!payload) return false;
-    const hash = await hashPayload(payload);
-    if (gone()) return true;
-    if (!this.deps.isOnline() && !this.deps.recognizer.peek(hash)) return false;
-    const req: RecognizeRequest = { boardId: this.opts.boardId, lineId: `ink_${diagram.id}`, strokes: { x: payload.x, y: payload.y }, bounds: { w: payload.w, h: payload.h } };
-    let res: RecognizeResponse;
-    try {
-      res = await this.deps.recognizer.recognize(req, hash);
-    } catch {
-      return gone();
-    }
-    if (gone()) return true;
-    const latex = (res.latex ?? "").trim();
-    // a read the recognizer is not sure of is a picture's, not a line's
-    if (!latex || res.kind !== "math" || res.confidence < LIVE_LIMITS.minConfidence) return false;
-    let kind: LineAnalysis["kind"] | null = null;
-    try {
-      kind = engine.analyzeLine(latex, { mode: "answer" }).kind;
-    } catch {
-      kind = null;
-    }
-    if (kind !== "expression" && kind !== "equation" && kind !== "inequality") return false;
+    const read = await this.readInkRow(diagram, this.inkRowOf(diagram), gen);
+    if (read === "gone") return true;
+    if (!read) return false;
+    const { latex, row } = read;
     const hand = this.deps.handwritingEnabled();
     const local = localSolve(engine, [latex], 0, { handwriting: hand });
     clientMetric("live.figure.asMaths", { diagramId: diagram.id, source: local.source ?? "", kinds: diagram.kinds.join(","), strokes: row.strokes.length });
@@ -4064,6 +4065,125 @@ export class LiveLoop implements LiveController {
         this.writeFigureSolution({ ...diagram, bounds: row.bounds }, null, opts, local.steps, key);
       }
       this.noteSuccess("solve", diagram.id);
+      return true;
+    }
+    if (engine.alreadySimplest?.(latex)) {
+      this.noteFor(opts.lineId, LIVE_COPY.solve.simplest);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * A row of ink (`inkRowOf`) read as ONE line of maths: its latex and the engine's kind for it when
+   * the recognizer is sure it is maths and the engine reads an expression, an equation or an
+   * inequality — or a line left open for its answer (`incomplete`: `(x+y)^{2} =`, which `localSolve`
+   * finishes); null when it is not (a picture's read); "gone" when the screen was left or the loop
+   * stopped while it was hashed or read (`gen`: the runtime it was asked in).
+   */
+  private async readInkRow(
+    diagram: Diagram,
+    row: { strokes: InkStroke[]; bounds: Rect },
+    gen: number,
+  ): Promise<{ latex: string; kind: LineKind; row: { strokes: InkStroke[]; bounds: Rect } } | null | "gone"> {
+    const engine = this.engine;
+    if (!engine) return null;
+    const gone = () => !this.started || this.generation !== gen;
+    const line: InkLine = { id: diagram.id, strokeIds: row.strokes.map((st) => st.id), bounds: row.bounds, column: 0, row: 0, hash: "" };
+    const payload = buildPayload(line, row.strokes);
+    if (!payload) return null;
+    const hash = await hashPayload(payload);
+    if (gone()) return "gone";
+    if (!this.deps.isOnline() && !this.deps.recognizer.peek(hash)) return null;
+    const req: RecognizeRequest = { boardId: this.opts.boardId, lineId: `ink_${diagram.id}`, strokes: { x: payload.x, y: payload.y }, bounds: { w: payload.w, h: payload.h } };
+    let res: RecognizeResponse;
+    try {
+      res = await this.deps.recognizer.recognize(req, hash);
+    } catch {
+      return gone() ? "gone" : null;
+    }
+    if (gone()) return "gone";
+    const latex = (res.latex ?? "").trim();
+    // a read the recognizer is not sure of is a picture's, not a line's
+    if (!latex || res.kind !== "math" || res.confidence < LIVE_LIMITS.minConfidence) return null;
+    let kind: LineAnalysis["kind"] | null = null;
+    try {
+      kind = engine.analyzeLine(latex, { mode: "answer" }).kind;
+    } catch {
+      kind = null;
+    }
+    if (kind !== "expression" && kind !== "equation" && kind !== "inequality" && kind !== "incomplete") return null;
+    return { latex, kind, row };
+  }
+
+  /**
+   * Solve on a line with a drawing on its row that is no figure (`isRealFigure`: open strokes with
+   * nothing on them) — the line's own big writing, taken from it. `(x+y)^2 =` written 220 px tall on
+   * a desktop had the strokes of its `x` taken for a drawing: the line was read without them, the
+   * figure model was asked what the "figure" asks and rightly said nothing, and the worked solution
+   * then asked for the line named an `x` the line did not have — the step interlock threw it away as
+   * a symbol from nowhere, and the student got "Couldn't solve this one — try writing it again a bit
+   * clearer" for a line they had written perfectly well.
+   *
+   * Now the row — the line and the drawing, and whatever else of no figure is level with them — is
+   * read as ONE line (`readInkRow`), and Solve goes on with that line in place of the torn one: the
+   * engine's answer under the work, or its note that there is nothing to do, else the model (the
+   * word problem / worked solution paths), whose steps are checked against the whole line. Only ink
+   * that does not read as maths goes to the figure model, as any drawing beside the work does.
+   */
+  private solveLineWithRow(figure: Diagram, row: { strokes: InkStroke[]; bounds: Rect }, built: BuiltColumn, fromLineId: string | undefined, opts: SolveOpts): void {
+    // the pill says "Solving…" while the row is read, as it does for the figure
+    liveStore.status.set("checking");
+    const ended = this.solvingStarted();
+    const gen = this.generation;
+    void this.readInkRow(figure, row, gen)
+      .catch((err) => {
+        console.warn("[live] reading the line with the ink on its row failed", err);
+        return null;
+      })
+      .then((read) => {
+        // asked on a screen the student has left (or deleted): nothing more, here
+        if (!ended() || read === "gone" || !this.started) return;
+        if (!read) {
+          if (this.diagrams.some((d) => d.id === figure.id)) this.startFigure(figure, opts, { built, fromLineId });
+          else this.solveWithoutFigure(built, fromLineId, opts);
+          return;
+        }
+        const whole = withLineRead(built, opts.lineId, read);
+        clientMetric("live.solve.inkRow", { lineId: opts.lineId, diagramId: figure.id, kinds: figure.kinds.join(","), strokes: read.row.strokes.length });
+        if (this.writeRowLocal(figure, whole, opts, read.latex)) {
+          if (liveStore.status.get() !== "offline") liveStore.status.set("idle");
+          return;
+        }
+        if (!this.deps.isOnline()) {
+          this.deferLlm("solve", opts.lineId);
+          return;
+        }
+        this.solveWithoutFigure(whole, fromLineId, opts);
+      });
+  }
+
+  /**
+   * `solveLineWithRow`'s engine half: the column with the line read whole (`whole`) solved locally
+   * (`localSolve`) and written under the work, or the note that the line has nothing to do. False
+   * when the engine has nothing: the model is asked.
+   */
+  private writeRowLocal(figure: Diagram, whole: BuiltColumn, opts: SolveOpts, latex: string): boolean {
+    const engine = this.engine;
+    if (!engine) return false;
+    const idx = whole.states.findIndex((s) => s.line.id === opts.lineId);
+    const local = localSolve(
+      engine,
+      whole.states.map((s) => s.latex),
+      idx === -1 ? undefined : idx,
+      { handwriting: this.deps.handwritingEnabled() },
+    );
+    if (local.source && local.steps.length > 0) {
+      const key = `ink: ${latex}`;
+      if ((opts.onlyFirstStep || !this.hasHandSolution(opts.lineId, key)) && liveStore.liveShapeCount.get() < LIVE_LIMITS.maxLiveShapesPerBoard) {
+        this.writeFigureSolution(figure, whole, opts, local.steps, key);
+      }
+      this.noteSuccess("solve", opts.lineId);
       return true;
     }
     if (engine.alreadySimplest?.(latex)) {
