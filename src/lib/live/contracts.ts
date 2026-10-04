@@ -670,7 +670,19 @@ export type LiveRateLimitRoute = keyof typeof LIVE_RATE_LIMITS;
 export const LIVE_TIMING = {
   quietMs: 600, // pen-up -> recognize; resets on new ink in the same line
   rewriteQuietMs: 450, // when the line already has an echo
-  unknownIdleMs: 5000, // Feedback: LLM check for 'unknown' only after this idle
+  /**
+   * The pause: no student ink ANYWHERE on the canvas for this long (the loop's settle). Answers
+   * wait for it, and so does everything Auto does unasked — a model check of a line the engine
+   * cannot judge, Solve finishing the problem. `ANSWER_SETTLE_MS` in liveLoop.ts explains 2.5 s.
+   */
+  settleMs: 2500,
+  /**
+   * Auto in Suggest: the student has stayed paused this long on a problem that is not finished,
+   * so the tutor writes its next step (once per line). Long enough to be "stuck", not "thinking".
+   */
+  stuckMs: 6000,
+  /** a line just read: its typeset readback shows this long, even with the pen in hand */
+  readbackMs: 2500,
   unreadableChipMs: 3000, // low confidence: "Couldn't read this" chip only after this
   recognizeTimeoutMs: 6000,
   checkWatchdogMs: 4000, // no model bytes -> fallback model
@@ -767,4 +779,10 @@ export interface UseLiveMathOptions {
   boardId: string;
   mode: HelpMode;
   enabled: boolean;
+  /**
+   * Auto (the bar's switch, per device): on, the tutor acts by itself once the student pauses —
+   * marks, model checks, Suggest's next step, Solve finishing the problem; off, only when they ask.
+   * Absent means on.
+   */
+  auto?: boolean;
 }

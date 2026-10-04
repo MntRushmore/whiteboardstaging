@@ -15,9 +15,15 @@ export type LiveSettings = {
   handwriting: boolean;
   /** a cheer and confetti when the tutor ticks a line (src/components/live/Celebrations.tsx) */
   celebrations: boolean;
+  /**
+   * The Auto switch beside the help tabs: the tutor acts by itself once the student pauses (on), or
+   * only when they tap Help me / Solve it (off). On by default: a tutor that waits to be asked
+   * looks broken to a student who does not know there is a button.
+   */
+  auto: boolean;
 };
 
-export const DEFAULT_LIVE_SETTINGS: LiveSettings = { enabled: true, hideAiShapes: false, handwriting: true, celebrations: true };
+export const DEFAULT_LIVE_SETTINGS: LiveSettings = { enabled: true, hideAiShapes: false, handwriting: true, celebrations: true, auto: true };
 
 const STORAGE_KEY = "agathon.live.v1";
 const listeners = new Set<() => void>();

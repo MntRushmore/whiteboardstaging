@@ -28,6 +28,7 @@ import {
 } from "@/lib/live/contracts";
 import { scheduleLiveWrite } from "@/lib/live/liveWrite";
 import { getLiveSettings } from "@/lib/live/liveSettings";
+import { liveStore } from "@/lib/live/liveStore";
 import { badgeLabel, badgeTitle, dispatchBadgeTap, isBadgeStatus, noteLineFor } from "./badge";
 import { renderLatex } from "./katex";
 import { MathEditor } from "./MathEditor";
@@ -144,6 +145,9 @@ const STYLE = `
 .live-math[data-source="echo"][data-reveal="hover"] .live-math__inner{opacity:0}
 .live-math[data-source="echo"][data-reveal="hover"] .live-math__inner:hover{opacity:1}
 .live-math[data-source="echo"][data-reveal="off"] .live-math__inner{opacity:0;pointer-events:none}
+.live-math[data-source="echo"][data-reveal="read"] .live-math__inner{pointer-events:none;animation:live-math-read .3s ease-out}
+@keyframes live-math-read{from{opacity:0}}
+@media (prefers-reduced-motion:reduce){.live-math[data-reveal="read"] .live-math__inner{animation:none}}
 `;
 
 function MathShapeView({ shape }: { shape: MathShape }) {
@@ -172,12 +176,23 @@ function MathShapeView({ shape }: { shape: MathShape }) {
   // While the student writes (the pen or any tool but select), the cursor rests over the readback
   // after every line: it must not pop up then, and must not catch the pen either.
   const writing = useValue("echo: writing", () => editor.getCurrentToolId() !== "select", [editor]);
+  // ...except for a moment after the line is read (`LiveLoop.showReadback`): it fades in, faint and
+  // out of the pen's way, so the student sees the tutor read it, then goes back to the above.
+  const lineId = shape.props.lineId;
+  const justRead = useValue("echo: just read", () => source === "echo" && lineId in liveStore.readbacks.get(), [source, lineId]);
   // A result stays visible only when the student asked for it with a trailing `=` and the hand
   // could not write it after their `=` (the typeset fallback). A result the engine merely knows
   // (`\int_0^2 3x^2 dx` with no `=`) is not written unasked — Solve writes it by hand.
   const askedResult = Boolean(resultLatex) && endsWithRelation(latex);
+  const settings = getLiveSettings();
   const reveal =
-    source !== "echo" || isEditing || touched || askedResult || !getLiveSettings().handwriting ? "always" : writing ? "off" : "hover";
+    source !== "echo" || isEditing || touched || askedResult || !settings.handwriting
+      ? "always"
+      : justRead && !settings.hideAiShapes
+        ? "read"
+        : writing
+          ? "off"
+          : "hover";
 
   return (
     <HTMLContainer

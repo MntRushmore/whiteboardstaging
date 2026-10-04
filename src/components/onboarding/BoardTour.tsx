@@ -7,6 +7,7 @@ import { Check, CircleDashed, Lightbulb, MessageSquare, Pencil, Sparkles } from 
 import type { AssistanceMode } from "@/hooks/useAssistanceMode";
 import type { LiveController } from "@/lib/live/contracts";
 import { problemMetaOf } from "@/lib/live/chat/cells";
+import { getLiveSettings, updateLiveSettings } from "@/lib/live/liveSettings";
 import { clientMetric } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
 import { ASK_BUTTON_ATTR } from "@/components/live/AskButton";
@@ -171,10 +172,13 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
     };
   }, []);
 
-  // The tour starts in Feedback with the pen in hand; a resumed tour keeps the student's choices.
+  // The tour starts in Feedback with the pen in hand, and Auto on: coach mark 1 waits for the
+  // tick or ring the tutor puts on the student's line by itself, which Auto off never does. A
+  // resumed tour keeps the student's choices.
   useEffect(() => {
     if (marker?.step !== "problem" && marker !== null) return;
     onModeChange("feedback");
+    if (!getLiveSettings().auto) updateLiveSettings({ auto: true });
     editor.setCurrentTool("draw");
   }, [editor, marker, onModeChange]);
 

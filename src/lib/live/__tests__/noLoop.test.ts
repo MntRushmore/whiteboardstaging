@@ -262,20 +262,21 @@ describe("useLiveMath loop isolation (noLoop)", () => {
     expect(streamCalls).toBe(1);
   });
 
-  it("feedback: an 'unknown' equation triggers the LLM check only after the idle window, once", async () => {
+  it("feedback: an 'unknown' equation gets the model check once the student pauses, once", async () => {
     editor.putUser(fixtureSingleLine());
     await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 1);
     await settle(8);
     expect(editor.shapesOfType("math")).toHaveLength(1);
     expect(streamCalls).toBe(0);
-    await vi.advanceTimersByTimeAsync(LIVE_TIMING.unknownIdleMs - 10);
+    // the pause runs from the last ink: just before it nothing, just after it the check
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.settleMs - LIVE_TIMING.quietMs - 20);
     await settle();
     expect(streamCalls).toBe(0);
-    await vi.advanceTimersByTimeAsync(20);
+    await vi.advanceTimersByTimeAsync(40);
     await settle(4);
     expect(streamCalls).toBe(1);
-    // The idle re-render must not arm another idle timer (no repeated checks).
-    await vi.advanceTimersByTimeAsync(LIVE_TIMING.unknownIdleMs * 2);
+    // Nothing changed, so never again, however long the student waits.
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.stuckMs * 2);
     await settle(4);
     expect(streamCalls).toBe(1);
     expect(fetchJson).toHaveBeenCalledTimes(1);

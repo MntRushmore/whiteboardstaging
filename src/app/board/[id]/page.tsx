@@ -21,6 +21,7 @@ import { createPortal } from "react-dom";
 import "tldraw/tldraw.css";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -63,7 +64,7 @@ import { InkMeter } from "@/components/billing/InkMeter";
 import { inkTone } from "@/lib/billing/inkSummary";
 import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { OutOfInkWatcher } from "@/components/billing/OutOfInkWatcher";
-import { clearInkErrorIfAffordable } from "@/lib/live/liveStore";
+import { noteInkBalance } from "@/lib/live/liveStore";
 import { captureBoardScreenshot } from "@/components/board/boardScreenshot";
 import { BETA_COPY } from "@/components/app/BetaBadge";
 import { useFeatureLabs } from "@/lib/featureLabs";
@@ -183,7 +184,7 @@ const boardOverrides: TLUiOverrides = {
 
 /**
  * The (i) explainer, opened from Board options rather than from a button in the bar: it is
- * help, not chrome. Copy tracks what the tabs actually do today, Live included.
+ * help, not chrome. Copy tracks what the tabs and the Auto switch actually do today, Live included.
  */
 function ModeInfoDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   return (
@@ -192,9 +193,9 @@ function ModeInfoDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
         <DialogHeader>
           <DialogTitle>Help modes</DialogTitle>
           <DialogDescription>
-            The tabs at the top of your board set how much the tutor helps. New boards start
-            in Feedback, and your choice is remembered for this board on this device. Off
-            stops every check, hint and solution.
+            The tabs at the top of your board set how much the tutor helps, and the Auto switch
+            beside them sets when. New boards start in Feedback, and your choice is remembered for
+            this board on this device. Off stops every check, hint and solution.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-wrap gap-6">
@@ -206,7 +207,7 @@ function ModeInfoDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
             />
             <p className="text-sm font-medium mb-1">Feedback</p>
             <p className="text-sm text-muted-foreground">
-              Light annotations pointing out mistakes without giving away answers.
+              A tick beside each right step, and a circle round one to look at again. No answers.
             </p>
           </div>
 
@@ -218,7 +219,7 @@ function ModeInfoDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
             />
             <p className="text-sm font-medium mb-1">Suggest</p>
             <p className="text-sm text-muted-foreground">
-              Hints and partial steps to nudge you in the right direction.
+              The next step, written beside a circled line, or when you seem stuck.
             </p>
           </div>
 
@@ -230,19 +231,33 @@ function ModeInfoDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
             />
             <p className="text-sm font-medium mb-1">Solve</p>
             <p className="text-sm text-muted-foreground">
-              Worked steps written under your last line, in the tutor&apos;s hand or typeset.
+              The rest of the problem, worked out under your last line.
             </p>
           </div>
 
         </div>
-        {/* Live is not a fourth mode: it runs underneath all three, so it reads as a note. */}
-        <div className="flex items-start gap-3 rounded-md border bg-muted/40 p-3">
-          <span aria-hidden className="font-serif text-3xl leading-none text-gray-400">
-            &Sigma;
-          </span>
-          <div>
-            <p className="text-sm font-medium mb-1">{LIVE_COPY.modeInfo.title}</p>
-            <p className="text-sm text-muted-foreground">{LIVE_COPY.modeInfo.body}</p>
+        {/* Live and Auto are not modes: they run under all three, so they read as notes. */}
+        <div className="flex flex-col gap-3 rounded-md border bg-muted/40 p-3">
+          <div className="flex items-start gap-3">
+            <span aria-hidden className="flex w-7 shrink-0 justify-center font-serif text-3xl leading-none text-gray-400">
+              &Sigma;
+            </span>
+            <div>
+              <p className="text-sm font-medium mb-1">{LIVE_COPY.modeInfo.title}</p>
+              <p className="text-sm text-muted-foreground">{LIVE_COPY.modeInfo.body}</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            {/* the bar's switch in miniature, on */}
+            <span aria-hidden className="mt-1 flex w-7 shrink-0 justify-center">
+              <span className="inline-flex h-4 w-7 items-center rounded-full bg-primary p-0.5">
+                <span className="ml-auto block size-3 rounded-full bg-background" />
+              </span>
+            </span>
+            <div>
+              <p className="text-sm font-medium mb-1">{LIVE_COPY.modeInfo.autoTitle}</p>
+              <p className="text-sm text-muted-foreground">{LIVE_COPY.modeInfo.autoBody}</p>
+            </div>
           </div>
         </div>
       </DialogContent>
@@ -290,6 +305,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     boardId: id,
     mode: assistanceMode,
     enabled: liveEnabled,
+    auto: live.auto,
   });
   // Lecture mode: the mic and the tutor sketching what is said. Not gated on Live or the help
   // mode: the controller's lecture methods work whatever they say.
@@ -325,6 +341,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     mode: assistanceMode,
     liveEnabled: live.enabled,
     liveAvailable: !LIVE_KILL_SWITCH,
+    auto: live.auto,
   });
 
   return (
@@ -388,6 +405,19 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
               <TabsTrigger value="answer" className={HELP_TAB_CLASS}>Solve</TabsTrigger>
             </TabsList>
           </Tabs>
+          {/*
+            Auto: the tabs say how much help, this says when — by itself once the student pauses
+            (on), or only on the ask button (off). The whole pill is the touch target (32 px tall).
+          */}
+          {toolbar.autoSwitch && (
+            <label
+              title={toolbar.autoSwitch.hint}
+              className="flex h-8 shrink-0 cursor-pointer select-none items-center gap-1.5 rounded-full border bg-white pl-2.5 pr-1.5 text-xs font-medium shadow-sm"
+            >
+              {LIVE_COPY.auto.label}
+              <Switch checked={toolbar.autoSwitch.on} onCheckedChange={(auto) => updateLive({ auto })} />
+            </label>
+          )}
           {/* stuck? the one thing to tap: the next step, or in Solve the rest of them */}
           {toolbar.askButton && (
             <AskButton
@@ -431,8 +461,9 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
             />
           </LiveErrorBoundary>
           {/* ink left; tapping it (or its "Get ink" when low) opens the ink dialog */}
-          {/* once the balance covers the refused call again (a pack landed), its "out of ink" pill goes */}
-          <InkMeter onBalance={clearInkErrorIfAffordable} />
+          {/* once the balance covers the refused call again (a pack landed), its "out of ink" pill goes;
+              with none left, Auto spends nothing */}
+          <InkMeter onBalance={noteInkBalance} />
           <Button
             variant="outline"
             size="sm"

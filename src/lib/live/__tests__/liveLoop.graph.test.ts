@@ -77,10 +77,10 @@ describe("live loop — graphs sketched by hand", () => {
   }
 
   /** One line of ink the scripted recognizer reads as `latex`; returns its line id. */
-  async function penLine(row: number, latex: string): Promise<string> {
+  async function penLine(row: number, latex: string, x = 100): Promise<string> {
     script.push(latex);
     const before = new Set(Object.keys(liveStore.lines.get()));
-    editor.putUser(inkLine(INK[row], 100, 120 + row * 110, 40));
+    editor.putUser(inkLine(INK[row], x, 120 + row * 110, 40));
     await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 300);
     await settleUntil(() => Object.entries(liveStore.lines.get()).some(([id, st]) => !before.has(id) && Boolean(st.latex)));
     return Object.keys(liveStore.lines.get()).find((id) => !before.has(id))!;
@@ -268,7 +268,9 @@ describe("live loop — graphs sketched by hand", () => {
     editor.removeUser(ids);
     await quiesce();
 
-    await penLine(1, "2x=8");
+    // more work elsewhere, and another stop (in a column of its own: Auto finishes `2x = 8` under
+    // it, and that solution would be part of the graph's column)
+    await penLine(1, "2x=8", 700);
     await settleAnswers();
     expect(graphStrokes()).toHaveLength(0);
 

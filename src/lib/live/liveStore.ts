@@ -57,6 +57,16 @@ export const liveStore = {
   /** number of open solve streams (status stays 'checking'; the pill says "Solving…") */
   solving: atom<number>("live.solving", 0),
   /**
+   * The ink left as the board's meter last read it (Infinity with Agathon Unlimited), null until
+   * it has: Auto spends nothing while it is 0 (`noteInkBalance`).
+   */
+  inkBalance: atom<number | null>("live.inkBalance", null),
+  /**
+   * Lines just read (by line id, when): their typeset readback shows for `LIVE_TIMING.readbackMs`
+   * even with the pen in hand — the sign the tutor saw the line (`MathShapeUtil`).
+   */
+  readbacks: atom<Record<string, number>>("live.readbacks", {}),
+  /**
    * Retry entry point installed by the running loop (LiveController is frozen, so the
    * UI reaches the loop through the store). null when no loop is mounted.
    */
@@ -92,6 +102,15 @@ export function clearInkErrorIfAffordable(balance: number): void {
   liveStore.retryHandler.get()?.();
   // the retry may already have replaced the error with its own outcome; otherwise it goes now
   if (liveStore.lastError.get()?.id === current.id) liveStore.lastError.set(null);
+}
+
+/**
+ * The board's meter read the balance: Auto knows whether it may spend (an unasked model call with
+ * no ink would only open the ink dialog unasked), and an "out of ink" error goes once it is covered.
+ */
+export function noteInkBalance(balance: number): void {
+  liveStore.inkBalance.set(balance);
+  clearInkErrorIfAffordable(balance);
 }
 
 export function clearLiveError(code?: LiveErrorCode): void {
@@ -134,4 +153,5 @@ export function resetLiveStore(): void {
   liveStore.offlineQueued.set(0);
   liveStore.lastError.set(null);
   liveStore.solving.set(0);
+  liveStore.readbacks.set({});
 }

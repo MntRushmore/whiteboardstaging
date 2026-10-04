@@ -160,6 +160,7 @@ describe("live loop — Solve answers locally, and checks the model when it cann
     latex = line;
     await writeStudentLine();
     streamCalls.length = 0; // the recognition that got us here is not the subject
+    loop.noteAsked(); // the controller says so first, as for the bar's Solve it
     loop.requestSolve();
     await settle();
     await vi.advanceTimersByTimeAsync(20_000);
@@ -325,8 +326,10 @@ describe("live loop — Solve answers locally, and checks the model when it cann
     streamCalls.length = 0;
     solveScript = [[], [step(1, "= r + 9\\varepsilon"), step(2, "60 \\div 2 = 30"), step(3, "\\boxed{30}", true)]];
 
+    loop.noteAsked(lineId);
     loop.escalate(lineId); // rung 1: a check
     await settle();
+    loop.noteAsked(lineId);
     loop.escalate(lineId); // rung 2: one solve step
     await settle();
     await vi.advanceTimersByTimeAsync(20_000);

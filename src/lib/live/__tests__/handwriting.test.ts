@@ -162,6 +162,8 @@ describe("handwriting: wired into Solve", () => {
   let loop: LiveLoop;
   let handwriting: boolean;
   let reducedMotion: boolean;
+  /** the Auto switch (on, as on a new device) */
+  let auto: boolean;
   let engine: LiveEngine;
 
   function makeLoop(): LiveLoop {
@@ -170,7 +172,7 @@ describe("handwriting: wired into Solve", () => {
     };
     return createLiveLoop(
       editor,
-      { boardId: "board-1", mode: "answer", enabled: true },
+      { boardId: "board-1", mode: "answer", enabled: true, auto },
       {
         recognizer: new RecognizeClient({ fetchJson }),
         stream,
@@ -184,7 +186,13 @@ describe("handwriting: wired into Solve", () => {
     );
   }
 
-  /** Solve streams only: the idle "unknown" check opens its own stream and is not the subject here. */
+  /** The student taps Solve it: the controller says so first (`noteAsked`), then asks. */
+  function solve(): void {
+    loop.noteAsked();
+    loop.requestSolve();
+  }
+
+  /** Solve streams only: Auto's "unknown" check opens its own stream and is not the subject here. */
   function solveCalls(): string[] {
     return streamCalls.filter((p) => p.endsWith("/solve"));
   }
@@ -242,6 +250,7 @@ describe("handwriting: wired into Solve", () => {
     editor = createFakeEditor();
     handwriting = true;
     reducedMotion = false;
+    auto = true;
     engine = engineWith(STEPS);
     fetchJson = vi.fn<FetchJson>(async (): Promise<RecognizeResponse> => ({
       latex: STUDENT_LATEX,
@@ -265,7 +274,7 @@ describe("handwriting: wired into Solve", () => {
     const ink = await writeStudentLine();
     expect(handShapes()).toHaveLength(0);
 
-    loop.requestSolve();
+    solve();
     await settle();
     await vi.advanceTimersByTimeAsync(20_000);
     await settle(4);
@@ -313,7 +322,7 @@ describe("handwriting: wired into Solve", () => {
 
   it("reveals the strokes progressively rather than all at once", async () => {
     await writeStudentLine();
-    loop.requestSolve();
+    solve();
     await settle();
 
     await vi.advanceTimersByTimeAsync(HAND_WRITE.frameMs * 3);
@@ -335,8 +344,14 @@ describe("handwriting: wired into Solve", () => {
   });
 
   it("cancels when the student writes again and leaves complete writing, never half a step", async () => {
+    // Auto off: with it on, the new line is finished once the student pauses (liveLoop.auto.test.ts)
+    auto = false;
+    loop.stop();
+    loop = makeLoop();
+    loop.start();
+    await settle();
     await writeStudentLine();
-    loop.requestSolve();
+    solve();
     await settle();
     await vi.advanceTimersByTimeAsync(200);
     await settle();
@@ -363,7 +378,7 @@ describe("handwriting: wired into Solve", () => {
 
   it("completes the writing when the loop stops mid-reveal (unmount / leaving the board)", async () => {
     await writeStudentLine();
-    loop.requestSolve();
+    solve();
     await settle();
     await vi.advanceTimersByTimeAsync(200);
     await settle();
@@ -388,7 +403,7 @@ describe("handwriting: wired into Solve", () => {
   it("draws the finished result with no animation when the device asks for reduced motion", async () => {
     reducedMotion = true;
     await writeStudentLine();
-    loop.requestSolve();
+    solve();
     await settle();
     // no timer has run at all
     expect(handLines()).toHaveLength(STEPS.length);
@@ -407,7 +422,7 @@ describe("handwriting: wired into Solve", () => {
     await settle();
 
     await writeStudentLine();
-    loop.requestSolve();
+    solve();
     await settle();
     await vi.advanceTimersByTimeAsync(20_000);
     await settle();
@@ -419,7 +434,7 @@ describe("handwriting: wired into Solve", () => {
   it("falls back to the typeset solve stream when the hand setting is off", async () => {
     handwriting = false;
     await writeStudentLine();
-    loop.requestSolve();
+    solve();
     await settle();
     await vi.advanceTimersByTimeAsync(20_000);
     await settle();
@@ -437,7 +452,7 @@ describe("handwriting: wired into Solve", () => {
     await settle();
 
     await writeStudentLine();
-    loop.requestSolve();
+    solve();
     await settle();
     await vi.advanceTimersByTimeAsync(20_000);
     await settle();
@@ -448,8 +463,10 @@ describe("handwriting: wired into Solve", () => {
   it("writes only the first step when Live escalates one rung", async () => {
     await writeStudentLine();
     const lineId = Object.keys(liveStore.lines.get())[0];
+    loop.noteAsked(lineId);
     loop.escalate(lineId); // rung 1: a check
     await settle();
+    loop.noteAsked(lineId);
     loop.escalate(lineId); // rung 2: one solve step
     await settle();
     await vi.advanceTimersByTimeAsync(20_000);
@@ -462,7 +479,7 @@ describe("handwriting: wired into Solve", () => {
     expect(fetchJson).toHaveBeenCalledTimes(1);
     const lineCount = Object.keys(liveStore.lines.get()).length;
 
-    loop.requestSolve();
+    solve();
     await settle();
     await vi.advanceTimersByTimeAsync(20_000);
     await settle(8);
@@ -483,7 +500,7 @@ describe("handwriting: wired into Solve", () => {
 
   it("clearMarks removes the handwriting and stops a reveal in flight", async () => {
     await writeStudentLine();
-    loop.requestSolve();
+    solve();
     await settle();
     await vi.advanceTimersByTimeAsync(200);
     await settle();

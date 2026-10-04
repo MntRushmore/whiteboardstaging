@@ -38,6 +38,7 @@ import {
   type LiveSseEvent,
   type LiveTranscript,
   type LiveTranscriptLine,
+  type LineKind,
   type MathShape,
   type MathShapeProps,
   type MathTone,
@@ -213,7 +214,6 @@ interface LineRuntime {
   solveAbort: AbortController | null;
   unreadableShown: boolean;
   unreadableTimer: ReturnType<typeof setTimeout> | null;
-  idleTimer: ReturnType<typeof setTimeout> | null;
   shownHintTexts: Set<string>;
   escalation: number;
   processing: number;
@@ -278,7 +278,7 @@ const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream
 
 /**
  * How long the whole canvas must go without student ink before the tutor will write an
- * ANSWER (`contracts.ts` is frozen, so the constant lives with the timer that arms it).
+ * ANSWER — or, with Auto on, do anything else it does unasked (`LIVE_TIMING.settleMs`).
  *
  * `LIVE_TIMING.quietMs` (600 ms) is a different question: it asks "is this line finished",
  * which is all recognition and a badge need. This one asks "has the student stopped", which
@@ -293,7 +293,12 @@ const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream
  * as "a beat later" when you put the pen down. The asymmetry is deliberate: firing late costs
  * a moment's wait, firing early takes the problem out of the student's hands.
  */
-export const ANSWER_SETTLE_MS = 2500;
+export const ANSWER_SETTLE_MS = LIVE_TIMING.settleMs;
+
+/** What Auto in Solve finishes unasked: a line with a next step to write (not a label, a lone number, a graph). */
+const AUTO_SOLVE_KINDS: ReadonlySet<LineKind> = new Set<LineKind>(["equation", "expression", "inequality"]);
+/** ...and what Auto in Suggest writes the next step of, once stuck: those, and a right `-3 \quad -3` */
+const AUTO_STEP_KINDS: ReadonlySet<LineKind> = new Set<LineKind>([...AUTO_SOLVE_KINDS, "operation"]);
 
 /** The longest a mark's write may hold up what waits for it (`afterMark`): a ring takes about a second. */
 const MARK_BUSY_MAX_MS = 4000;
@@ -506,6 +511,18 @@ export class LiveLoop implements LiveController {
    * has written something and then stopped.
    */
   private settled = false;
+  /** Auto in Suggest: `stuckMs` of no ink, then the next step (`autoStuck`) */
+  private stuckTimer: ReturnType<typeof setTimeout> | null = null;
+  /** what Auto has done, per problem state (`autoKey`): every unasked action, and its ink, at most once */
+  private readonly autoDone = new Set<string>();
+  /** lines Auto started work on: their failures stay quiet, and new ink stops their answers (`autoRun`) */
+  private readonly autoLines = new Set<string>();
+  /** the student asked since they last wrote: Auto adds no answer of its own on top (`noteAsked`) */
+  private askedSinceInk = false;
+  /** Auto off: the lines of the problems the student asked about, as they read then (`autoFor`) */
+  private readonly askedLines = new Map<string, string>();
+  /** a line's readback, shown after its read (`showReadback`) */
+  private readonly readbackTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private dirtyStrokeIds = new Set<string>();
   private pendingRewrite = false;
   private readonly rt = new Map<string, LineRuntime>();
@@ -734,6 +751,14 @@ export class LiveLoop implements LiveController {
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
     this.settled = false;
+    if (this.stuckTimer) clearTimeout(this.stuckTimer);
+    this.stuckTimer = null;
+    for (const t of this.readbackTimers.values()) clearTimeout(t);
+    this.readbackTimers.clear();
+    liveStore.readbacks.set({});
+    this.autoLines.clear();
+    this.askedLines.clear();
+    this.askedSinceInk = false;
     // Leaving the board / unmounting must not freeze a half-written step on the canvas.
     this.finishWriting();
     this.deps.recognizer.abortAll();
@@ -741,7 +766,6 @@ export class LiveLoop implements LiveController {
       r.checkAbort?.abort();
       r.solveAbort?.abort();
       if (r.unreadableTimer) clearTimeout(r.unreadableTimer);
-      if (r.idleTimer) clearTimeout(r.idleTimer);
     }
     for (const ctrl of this.rereadAborts) ctrl.abort();
     this.rereadAborts.clear();
@@ -803,6 +827,13 @@ export class LiveLoop implements LiveController {
    * of the same call after Retry carry the attempt count in the message.
    */
   private fail(err: unknown, ctx: Omit<ClassifyContext, "online" | "attempts">, retry: RetryContext): LiveError | null {
+    // What Auto did unasked fails without a word: nothing for the student to retry, and no ink
+    // dialog they did not ask for. Logged for us; their own ask on it shows its errors again.
+    if (ctx.lineId && ctx.kind !== "recognize" && this.autoLines.has(ctx.lineId)) {
+      console.warn(`[live] auto ${ctx.kind} failed`, err);
+      clientMetric("live.auto.failed", { kind: ctx.kind, lineId: ctx.lineId });
+      return null;
+    }
     const key = `${ctx.kind}:${ctx.lineId ?? ""}`;
     const attempts = this.retryKey === key ? this.retryAttempt + 1 : 1;
     const fields = classifyLiveFailure(err, { ...ctx, online: this.deps.isOnline(), attempts });
@@ -847,6 +878,8 @@ export class LiveLoop implements LiveController {
     const err = liveStore.lastError.get();
     const ctx = this.retryContext;
     if (!err || !ctx || !this.started) return;
+    // Retry is an ask: its failure is shown, whatever Auto did on the line since
+    this.autoLines.clear();
     this.retryAttempt++;
     const lines = liveStore.lines.get();
     switch (ctx.kind) {
@@ -942,6 +975,19 @@ export class LiveLoop implements LiveController {
         });
       }
     }
+    const autoChanged = this.autoOn(prev) !== this.autoOn(next);
+    if (autoChanged && !this.autoOn()) {
+      // Auto off: what it was about to do, or had not finished asking for, stops (a hand already
+      // writing finishes its line); the marks on the page stay
+      this.autoInk();
+    } else if (autoChanged && next.enabled) {
+      // Auto on: the lines get their marks, and what is due at a pause is done now if the student is stopped
+      this.reanalyzeAll();
+      if (next.mode === "suggest" || next.mode === "answer") this.checkMismatchesAfterLadderRise();
+    }
+    // the dial moved, or Auto came on: the checks the old state never ran are due (the bug was that
+    // an unknown line read in Off, or before a dial change, was never checked at all)
+    if ((autoChanged || prev.mode !== next.mode) && next.enabled) queueMicrotask(() => this.autoResume());
   }
 
   /**
@@ -952,7 +998,7 @@ export class LiveLoop implements LiveController {
    * is left as it is, and only the current problem is touched, never every problem on the screen.
    */
   private dialMovedTo(mode: "answer" | "suggest"): void {
-    if (!this.started || !this.opts.enabled || this.opts.mode !== mode) return;
+    if (!this.started || !this.opts.enabled || this.opts.mode !== mode || !this.autoOn()) return;
     const cells = this.problemCells();
     if (cells.length === 0) return;
     const cell = currentProblem(cells, this.touchedProblem, (c) => this.problemState(c));
@@ -970,7 +1016,7 @@ export class LiveLoop implements LiveController {
    * Mid-writing, the settle still decides.
    */
   private dialRoseWhileStopped(mode: "answer" | "suggest"): void {
-    if (!this.started || !this.opts.enabled || this.opts.mode !== mode || this.settleTimer) return;
+    if (!this.started || !this.opts.enabled || this.opts.mode !== mode || this.settleTimer || !this.autoOn()) return;
     this.writeOperationResults();
     this.drawWantedGraphs();
     this.solveWantedFigures();
@@ -989,7 +1035,7 @@ export class LiveLoop implements LiveController {
   private checkMismatchesAfterLadderRise(): void {
     if (!this.engine || !this.opts.enabled) return;
     for (const st of Object.values(liveStore.lines.get())) {
-      if (st.latex && (st.analysis?.verdict === "mismatch" || this.modelFlagged(st))) this.suggestNextStep(st.line.id);
+      if (st.latex && this.autoFor(st) && (st.analysis?.verdict === "mismatch" || this.modelFlagged(st))) this.suggestNextStep(st.line.id);
     }
   }
 
@@ -999,6 +1045,7 @@ export class LiveLoop implements LiveController {
     if (!st?.latex || !this.opts.enabled) return;
     const mode = this.opts.mode;
     if (mode === "off") return;
+    this.noteAsked(lineId);
     const rt = this.runtime(lineId);
     if ((mode === "suggest" || mode === "answer") && st.hintsShown > 0 && rt.escalation < 2) {
       this.escalate(lineId);
@@ -1217,8 +1264,10 @@ export class LiveLoop implements LiveController {
    * re-armed from now, so there is no backlog of answers to land in a rush when they finally
    * stop. (An answer already being written is stopped by `cancelHandwriting` on the same
    * change, which finishes the stroke it is mid-way through rather than leaving half a glyph.)
+   * So is one of Auto's still on its way from a model (`autoInk`).
    */
   private markUnsettled(): void {
+    this.autoInk();
     this.settled = false;
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = setTimeout(() => {
@@ -1231,9 +1280,11 @@ export class LiveLoop implements LiveController {
   /**
    * The student has stopped writing everywhere: render the lines that were holding an answer.
    *
-   * Only `render` re-runs. Nothing here re-recognizes, re-analyses or opens a model call — a
-   * settle cannot make the tutor say something NEW, it can only place the answer the local
-   * engine already had and the ladder was keeping back.
+   * Only `render` re-runs, and nothing here re-recognizes or re-analyses: a settle places the
+   * answers the local engine already had and the ladder was keeping back. The one thing it adds
+   * is Auto's (`autoPause`): the model asked about what the engine could not judge, and in Solve
+   * the problem finished — at most once per state of the problem. With Auto off, none of it: the
+   * unasked answers below wait for an ask.
    */
   private renderSettled(): void {
     if (!this.opts.enabled || !this.engine) return;
@@ -1248,14 +1299,19 @@ export class LiveLoop implements LiveController {
     this.pendingSuggestions.clear();
     for (const lineId of waiting) this.suggestNextStep(lineId);
     // ...and so is the equation a right operation line leads to (`-3 \quad -3` → `2x = 8`)
-    this.writeOperationResults();
+    if (this.autoOn()) this.writeOperationResults();
     // and so is a graph (Solve only): `y = 2x + 1`, a system, a finished inequality's number line
     this.drawWantedGraphs();
     // A drawing's labels are its context, not something to answer: read once the student has
     // stopped, one recognizer call per drawing (and only when its labels changed).
     for (const d of this.diagrams) if (d.labels.length > 0) void this.readLabels(d);
     // ...and in Solve, a figure labelled with an unknown and left: worked out beside it, unasked
-    this.solveWantedFigures();
+    if (this.autoOn()) this.solveWantedFigures();
+    // Auto's turn comes after what the settle just wrote has landed (live writes are queued), so
+    // Solve's finish sees an answer the settle wrote rather than writing it a second time
+    queueMicrotask(() => {
+      if (this.settled) this.autoPause();
+    });
   }
 
   private lineOfStroke(strokeId: string): InkLine | null {
@@ -1354,7 +1410,6 @@ export class LiveLoop implements LiveController {
         solveAbort: null,
         unreadableShown: false,
         unreadableTimer: null,
-        idleTimer: null,
         shownHintTexts: new Set(),
         escalation: 0,
         processing: 0,
@@ -1459,9 +1514,7 @@ export class LiveLoop implements LiveController {
     const ticket = ++rt.processing;
     this.lastTouchedLineId = lineId;
     if (rt.unreadableTimer) clearTimeout(rt.unreadableTimer);
-    if (rt.idleTimer) clearTimeout(rt.idleTimer);
     rt.unreadableTimer = null;
-    rt.idleTimer = null;
     this.closeHintsFor(lineId);
 
     const payload = buildPayload(line, ink);
@@ -2137,14 +2190,14 @@ export class LiveLoop implements LiveController {
     }
   }
 
-  private decisionFor(state: LiveLineState, extra: { userAsked?: boolean; idleMs?: number } = {}): PolicyDecision {
+  private decisionFor(state: LiveLineState, extra: { userAsked?: boolean; settled?: boolean } = {}): PolicyDecision {
     return decide({
       mode: this.opts.mode,
       analysis: state.analysis,
       latex: state.latex,
       confidence: state.confidence,
-      idleMs: extra.idleMs ?? this.deps.now() - state.updatedAt,
-      settled: this.settled,
+      settled: extra.settled ?? this.settled,
+      auto: this.autoFor(state),
       userAsked: extra.userAsked ?? false,
       hintsShownForLine: state.hintsShown,
       openHintCount: liveStore.openHints.get().length,
@@ -2154,21 +2207,23 @@ export class LiveLoop implements LiveController {
   }
 
   /**
-   * Runs the engine for one line, renders the echo/graph, cascades to the rows below
-   * (their `previous` changed) and starts an LLM check when the ladder permits.
+   * Runs the engine for one line (every caller is a read: the recognizer, the second reader, a
+   * retype), renders the echo/graph, cascades to the rows below (their `previous` changed), shows
+   * what was read, and — once the student has paused — runs Auto's model check on the column.
    */
-  private analyzeAndRender(lineId: string, opts: { cascade?: boolean; idleMs?: number; fromIdle?: boolean } = {}): void {
+  private analyzeAndRender(lineId: string, opts: { cascade?: boolean } = {}): void {
     const state = liveStore.lines.get()[lineId];
     if (!state) return;
     const analysis = this.analyze(state);
     const wasWarn = state.analysis?.verdict === "mismatch";
     const isWarn = analysis?.verdict === "mismatch";
-    const rewritesWithWarn = isWarn ? state.rewritesWithWarn + (wasWarn && !opts.fromIdle ? 1 : 0) : 0;
+    const rewritesWithWarn = isWarn ? state.rewritesWithWarn + (wasWarn ? 1 : 0) : 0;
     setLine(lineId, { analysis, rewritesWithWarn });
     const fresh = liveStore.lines.get()[lineId];
     if (!fresh) return;
-    const decision = this.decisionFor(fresh, { idleMs: opts.idleMs });
+    const decision = this.decisionFor(fresh);
     this.render(fresh, decision);
+    if (decision.echo && this.opts.mode !== "off") this.showReadback(lineId);
 
     if (opts.cascade) {
       for (const below of this.columnLines(fresh.line.column)) {
@@ -2180,32 +2235,238 @@ export class LiveLoop implements LiveController {
       }
     }
 
-    if (decision.echo && !opts.fromIdle) this.armIdleTimer(lineId);
-    if (decision.runLlmCheck) this.startCheck(fresh.line.column, lineId, { userAsked: false });
+    // A read that lands after the pause is due at once; one before it waits for the settle
+    // (`autoPause`). The whole column: a line whose line above just changed is checked again.
+    if (this.settled) this.autoChecks(fresh.line.column);
     // a new read can make a proof of lines around it (or change a row's verdict): re-mark them
     this.proofs.sync();
   }
 
-  private armIdleTimer(lineId: string): void {
-    const rt = this.runtime(lineId);
-    if (rt.idleTimer) clearTimeout(rt.idleTimer);
-    if (this.opts.mode === "off") return;
-    const state = liveStore.lines.get()[lineId];
-    if (!state?.analysis) return;
-    // Only the LLM check waits on this timer now. The answer used to as well ('answer' mode
-    // plus a resultLatex, after `unknownIdleMs`), but a per-line idle is the wrong clock for
-    // it: it kept running while the student wrote the next three lines, and then answered the
-    // first one under them. The canvas-level settle (`markUnsettled`) owns the answer instead.
-    if (state.analysis.verdict !== "unknown") return;
-    // `updatedAt` is bumped by every setLine (including our own scheduled writes), so the
-    // per-line processing ticket is the "ink or text changed since" signal.
-    const ticket = rt.processing;
-    rt.idleTimer = setTimeout(() => {
-      rt.idleTimer = null;
-      const cur = liveStore.lines.get()[lineId];
-      if (!cur || rt.processing !== ticket || !this.opts.enabled) return;
-      this.analyzeAndRender(lineId, { idleMs: LIVE_TIMING.unknownIdleMs, fromIdle: true });
-    }, LIVE_TIMING.unknownIdleMs);
+  /**
+   * "The tutor saw it": a line just read shows its typeset readback for `readbackMs`, even with
+   * the pen in hand (`MathShapeUtil` hides it while the student writes otherwise) — a line with
+   * nothing to judge too (`2 \times 2`, a first `x + 5 = 9`), Auto on or off. Nothing is written
+   * for it: the echo is on the page already, so it costs no shape and nothing in the saved board.
+   */
+  private showReadback(lineId: string): void {
+    const prev = this.readbackTimers.get(lineId);
+    if (prev) clearTimeout(prev);
+    liveStore.readbacks.set({ ...liveStore.readbacks.get(), [lineId]: this.deps.now() });
+    this.readbackTimers.set(
+      lineId,
+      setTimeout(() => {
+        this.readbackTimers.delete(lineId);
+        const { [lineId]: _shown, ...rest } = liveStore.readbacks.get();
+        void _shown;
+        liveStore.readbacks.set(rest);
+      }, LIVE_TIMING.readbackMs),
+    );
+  }
+
+  // ---------------------------------------------------------------- Auto
+  //
+  // The Auto switch beside the dial. On (the default), the tutor acts by itself once the student
+  // pauses: ticks and rings as the engine judges (they never wait), a model check of what the
+  // engine cannot judge, Suggest's next step when they stay stuck, Solve finishing the problem.
+  // Off, it acts only when asked (`noteAsked`): the lines are still read back, nothing more.
+  //
+  // Every unasked action goes through the entry points the button uses (`requestSolve`,
+  // `requestHelp`, `startCheck`), so Auto and the button act on the same target the same way.
+  // Auto spends ink, so each action runs at most once per state of its problem (`autoKey`),
+  // never with no ink left, never offline, and fails without a word (`fail`).
+
+  /** The Auto switch (absent: on). */
+  private autoOn(opts: UseLiveMathOptions = this.opts): boolean {
+    return opts.auto !== false;
+  }
+
+  /**
+   * Auto acts on this line: the switch is on, or — off — the student asked about its problem
+   * (`noteAsked`) and the line still reads as it did then.
+   */
+  private autoFor(state: LiveLineState): boolean {
+    return this.autoOn() || this.askedLines.get(state.line.id) === state.latex;
+  }
+
+  /**
+   * The line Help me and Solve it act on, as `requestHelp` / `requestSolve` choose it (today: the
+   * latest line). Auto only reads it to know whether there is anything to finish and what it did
+   * already — the action itself goes through those entry points — so this follows their choice.
+   */
+  private helpTargetLine(): LiveLineState | undefined {
+    return this.latestLine();
+  }
+
+  /**
+   * Auto may spend now: switched on, Live running in a help mode, the engine loaded, online and
+   * ink left. With no ink an unasked call would only open the ink dialog unasked; offline nothing
+   * is put off for later — the next pause looks again.
+   */
+  private autoReady(): boolean {
+    if (!this.started || !this.opts.enabled || this.opts.mode === "off" || !this.autoOn() || !this.engine || !this.deps.isOnline()) return false;
+    const ink = liveStore.inkBalance.get();
+    return !(ink !== null && ink <= 0) && liveStore.lastError.get()?.code !== "ink";
+  }
+
+  /**
+   * A problem as Auto remembers what it did about it: the screen and its column down to this line.
+   * The same problem, unchanged, is never paid for twice — after a dial change, or a trip to
+   * another screen and back, too. A line under it, or a line above it rewritten, is a new state.
+   */
+  private autoKey(kind: "check" | "solve" | "step", state: LiveLineState): string {
+    const column = this.columnLines(state.line.column).filter((s) => s.line.row <= state.line.row && s.latex);
+    return `${kind}|${this.pageKey()}|${column.map((s) => s.latex).join("\n")}`;
+  }
+
+  /** True the first time this key is seen (and remembers it). */
+  private autoOnce(key: string): boolean {
+    if (this.autoDone.has(key)) return false;
+    this.autoDone.add(key);
+    if (this.autoDone.size > LIVE_LIMITS.cacheEntries) this.autoDone.delete(this.autoDone.values().next().value as string);
+    return true;
+  }
+
+  /**
+   * The student has paused (the settle) — or `stopped` when the dial moved, or Auto came on, while
+   * they were not writing: the model checks what the engine cannot judge, and in Solve the latest
+   * problem is finished. Suggest's next step waits for the longer stuck pause (`autoStuck`).
+   */
+  private autoPause(stopped = this.settled): void {
+    this.autoChecks(undefined, stopped);
+    this.autoSolve();
+  }
+
+  /**
+   * Auto's model check, in every help mode: the lines the engine cannot judge (`runLlmCheck`:
+   * verdict unknown, a kind the model can reason about), once the student has paused. One check
+   * per column — the model reads the whole column and may annotate any line of it — about its
+   * lowest such line, and once per state of the column down to each line: a line whose line above
+   * changed is checked again, an unchanged one never is. A ring it brings is drawn by
+   * `applyAnnotation` (Suggest and Solve then write the right step beside it, as for the engine's).
+   */
+  private autoChecks(column?: number, stopped = this.settled): void {
+    if (!this.autoReady()) return;
+    const due = new Map<number, LiveLineState[]>();
+    for (const st of Object.values(liveStore.lines.get())) {
+      if ((column !== undefined && st.line.column !== column) || !st.latex || this.rt.get(st.line.id)?.checkAbort) continue;
+      if (!this.decisionFor(st, { settled: stopped }).runLlmCheck || this.autoDone.has(this.autoKey("check", st))) continue;
+      due.set(st.line.column, [...(due.get(st.line.column) ?? []), st]);
+    }
+    for (const lines of due.values()) {
+      const focus = lines.reduce((a, b) => (b.line.row > a.line.row ? b : a));
+      for (const st of lines) this.autoOnce(this.autoKey("check", st));
+      this.autoLines.add(focus.line.id);
+      clientMetric("live.auto", { kind: "check", mode: this.opts.mode, lineId: focus.line.id });
+      this.startCheck(focus.line.column, focus.line.id, { userAsked: false });
+    }
+  }
+
+  /**
+   * Auto in Solve, at the pause: the latest problem finished, as Solve it finishes it
+   * (`requestSolve` picks the path: the engine, a graph, a model). Once per state of the problem;
+   * never on a line with nothing to solve (a label, a lone number, unreadable ink, prose, a solved
+   * line), never in a column with a ring (the right step beside the ring is Solve's answer there),
+   * never over the tutor's hand already writing (the settle may just have started an answer, a
+   * graph or a figure) and never right after the student asked.
+   */
+  private autoSolve(): void {
+    if (this.opts.mode !== "answer" || !this.autoReady() || !this.autoMayAnswer()) return;
+    const target = this.helpTargetLine();
+    if (!target || !this.autoWorkable(target, AUTO_SOLVE_KINDS) || !this.autoOnce(this.autoKey("solve", target))) return;
+    this.autoRun("solve", target, () => this.requestSolve());
+  }
+
+  /**
+   * Auto in Suggest: the student has stayed paused for `stuckMs` on a problem that is not finished
+   * (its latest line right, or with nothing above to judge it by, but not solved): its next step,
+   * written as Help me writes it (`requestHelp`). Once per line, as it reads.
+   */
+  private autoStuck(): void {
+    this.stuckTimer = null;
+    if (this.opts.mode !== "suggest" || !this.autoReady() || !this.autoMayAnswer()) return;
+    const target = this.helpTargetLine();
+    if (!target || !this.autoWorkable(target, AUTO_STEP_KINDS) || !this.autoOnce(this.autoKey("step", target))) return;
+    this.autoRun("step", target, () => this.requestHelp());
+  }
+
+  /** Suggest's stuck pause starts again from now (Auto on; it looks at the mode again when it ends). */
+  private armStuck(): void {
+    if (this.stuckTimer) clearTimeout(this.stuckTimer);
+    this.stuckTimer = this.autoOn() && this.opts.mode === "suggest" ? setTimeout(() => this.autoStuck(), LIVE_TIMING.stuckMs) : null;
+  }
+
+  /**
+   * An answer may be written unasked now: the student did not just ask, the tutor's hand is free,
+   * and their last ink was a line, not a drawing (a figure is Solve's to read: `solveWantedFigures`).
+   */
+  private autoMayAnswer(): boolean {
+    return !this.askedSinceInk && !this.writer && !this.graphWriter && liveStore.solving.get() === 0 && !this.touchedDiagram();
+  }
+
+  /**
+   * A line Auto may continue: maths the tutor can judge, of a kind with a next step, not solved, no
+   * ring in its column, no model check of it still out (it may ring it) — and not a `36 + 2 =` the
+   * engine answers (the settle wrote that answer, after their `=` or in the readback).
+   */
+  private autoWorkable(state: LiveLineState, kinds: ReadonlySet<LineKind>): boolean {
+    const a = state.analysis;
+    const id = state.line.id;
+    if (!a || !kinds.has(a.kind) || a.solved || !this.judgeable(state) || this.reading.has(id) || this.rt.get(id)?.checkAbort) return false;
+    if (a.resultLatex && endsWithRelation(state.latex)) return false;
+    return !this.columnLines(state.line.column).some((s) => s.analysis?.verdict === "mismatch" || this.modelFlagged(s));
+  }
+
+  /**
+   * Runs an unasked action through the help entry points. What it starts is Auto's: its failure
+   * stays quiet (`fail`), and new ink stops it (`autoInk`), so an answer nobody asked for never
+   * lands after the student started writing again.
+   */
+  private autoRun(kind: "solve" | "step", target: LiveLineState, act: () => void): void {
+    const before = new Map([...this.rt].map(([id, r]) => [id, r.solveAbort]));
+    this.autoLines.add(target.line.id);
+    act();
+    for (const [id, r] of this.rt) if (r.solveAbort && r.solveAbort !== before.get(id)) this.autoLines.add(id);
+    clientMetric("live.auto", { kind, mode: this.opts.mode, lineId: target.line.id });
+  }
+
+  /** The student is writing again: Auto's answers not yet written are stopped, and the stuck pause starts over. */
+  private autoInk(): void {
+    this.askedSinceInk = false;
+    for (const id of this.autoLines) this.rt.get(id)?.solveAbort?.abort();
+    this.armStuck();
+  }
+
+  /**
+   * The dial moved, or Auto came on, while the student was stopped (no settle running): Auto picks
+   * up as if they had paused in this mode — the checks the old mode did not run, Solve's finish,
+   * Suggest's stuck pause from now. Mid-writing, the settle decides as usual.
+   */
+  private autoResume(): void {
+    if (!this.started || !this.opts.enabled || this.settleTimer) return;
+    this.autoPause(true);
+    this.armStuck();
+  }
+
+  /**
+   * The student asked: Help me, Solve it, a badge, More help (the controller calls this first). What
+   * fails from here is theirs to see, so Auto's quiet ends, and Auto adds no answer of its own until
+   * they write again. With Auto off, the problem they asked about — the line's column, or the line
+   * Help acts on — gets its marks now: asking for help is also asking how it is going.
+   */
+  noteAsked(lineId?: string): void {
+    this.autoLines.clear();
+    this.askedSinceInk = true;
+    if (this.autoOn() || !this.opts.enabled || this.opts.mode === "off") return;
+    const target = lineId ? liveStore.lines.get()[lineId] : this.helpTargetLine();
+    if (!target) return;
+    for (const st of this.columnLines(target.line.column)) {
+      if (this.askedLines.get(st.line.id) === st.latex) continue;
+      this.askedLines.set(st.line.id, st.latex);
+      // its marks (and in Suggest / Solve a ring's right step): an answer is the ask's own to
+      // write — rendered as if mid-writing, so the ask that follows does not find this one
+      // half-landed and write it a second time
+      if (st.latex) this.render(st, this.decisionFor(st, { settled: false }));
+    }
   }
 
   /**
@@ -2292,13 +2553,17 @@ export class LiveLoop implements LiveController {
     // The mark IS the feedback now: a tick after a right step, a ring round a wrong one. The
     // echo that used to carry the badge only shows on hover. Mode off keeps what is there.
     if (!opts.keepStatus) {
-      const ring = status === "warn" || (status !== "ok" && status !== "solved" && this.modelFlagged(state));
-      const tick = status === "ok" || status === "solved";
+      // With Auto off the line's own verdict still says which mark already on the page fits it
+      // (`syncMark` keeps that one and writes none unasked); the echo shows none (`status`).
+      const auto = this.autoFor(state);
+      const marked = auto || decision.capped ? status : badgeFor(this.opts.mode, analysis);
+      const ring = marked === "warn" || (marked !== "ok" && marked !== "solved" && this.modelFlagged(state));
+      const tick = marked === "ok" || marked === "solved";
       // a line the engine cannot read at all, under one of the chat's problems: its "?" (`questionNow`)
       const why = ring || tick ? null : this.questionNow(state);
       this.syncMark(state, ring ? "circle" : tick ? "check" : why ? "question" : null, why ?? undefined);
       this.dropStaleSuggestion(state, ring);
-      if (ring && !opts.quiet) this.suggestNextStep(lineId);
+      if (ring && !opts.quiet && auto) this.suggestNextStep(lineId);
     }
   }
 
@@ -2621,13 +2886,13 @@ export class LiveLoop implements LiveController {
     if (head && this.graphShapesOn(new Set([problemLineId(head)])).some((s) => metaString(s.meta, GRAPH_META) === wanted.key)) return true;
     if (!this.opts.enabled || liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
     if (opts.asked) this.undismissGraph(wanted.key, states);
-    else if (this.opts.mode !== "answer" || !this.settled || this.graphWriter || this.dismissedGraphs.has(wanted.key)) return false;
+    else if (this.opts.mode !== "answer" || !this.settled || !this.autoOn() || this.graphWriter || this.dismissedGraphs.has(wanted.key)) return false;
     return this.drawGraph(wanted, states, opts);
   }
 
-  /** Solve, and the student has stopped: every column that wants a graph gets one, one sketch at a time. */
+  /** Solve with Auto on, and the student has stopped: every column that wants a graph gets one, one sketch at a time. */
   private drawWantedGraphs(): void {
-    if (!this.started || !this.opts.enabled || this.opts.mode !== "answer" || !this.engine?.graphFor || this.graphWriter) return;
+    if (!this.started || !this.opts.enabled || this.opts.mode !== "answer" || !this.autoOn() || !this.engine?.graphFor || this.graphWriter) return;
     const columns = [...new Set(Object.values(liveStore.lines.get()).filter((s) => s.latex).map((s) => s.line.column))].sort((a, b) => a - b);
     for (const column of columns) {
       this.syncGraph(column);
@@ -2725,7 +2990,7 @@ export class LiveLoop implements LiveController {
         this.write(() => {
           if (this.graphWriter === null && this.graphWriterKey === key) this.graphWriterKey = null;
           if (this.settled && this.graphWriter === null) this.drawWantedGraphs();
-          if (this.settled && this.graphWriter === null) this.solveWantedFigures();
+          if (this.settled && this.graphWriter === null && this.autoOn()) this.solveWantedFigures();
         });
       },
     });
@@ -2805,7 +3070,6 @@ export class LiveLoop implements LiveController {
     const rt = this.rt.get(lineId);
     if (rt) {
       if (rt.unreadableTimer) clearTimeout(rt.unreadableTimer);
-      if (rt.idleTimer) clearTimeout(rt.idleTimer);
       this.rt.delete(lineId);
     }
     this.deleteLineShapes(lineId);
@@ -3018,6 +3282,8 @@ export class LiveLoop implements LiveController {
         clientMetric("live.answer.hand", { lineId });
         return true;
       }
+      // Auto off: no answer is coming at the pause (Solve it brings it), so the readback stays
+      if (!this.autoFor(state)) return false;
     }
     this.dropEcho(lineId);
     return true;
@@ -3973,6 +4239,10 @@ export class LiveLoop implements LiveController {
    *
    * A mark left on this very ink under a line id that is gone is replaced, not doubled: a line with
    * no echo (a lone `2`) is not rebuilt on a reload, and comes back with a new id when it is read.
+   *
+   * With Auto off, nothing is written on a line the student has not asked about (`autoFor`): a mark
+   * already on the page that still fits it stays (a tick from before, after a reload), one that no
+   * longer fits still goes (a ring on a line they have since put right).
    */
   private syncMark(state: LiveLineState, kind: MarkKind | null, why?: UnjudgedReason): void {
     const lineId = state.line.id;
@@ -3999,6 +4269,11 @@ export class LiveLoop implements LiveController {
       if (stale.length > 0) this.editor.deleteShapes(stale);
       // nothing to write leaves the pen free for this line at once; a writer frees it when it ends
       if (!want || !kind || marks.some((s) => metaString(s.meta, MARK_META) === want)) return this.markDone(lineId, null);
+      if (!this.autoFor(state)) {
+        // unasked with Auto off: none written, and none remembered, so an ask writes it
+        this.runtime(lineId).markKey = null;
+        return this.markDone(lineId, null);
+      }
       const plan = planFromStrokes(kind, markStrokes(kind, state.line.bounds, handSeedFor(`${lineId}:${want}`)), HAND_WRITE.minSize);
       if (!plan) return this.markDone(lineId, null);
       const writer = this.makeWriter();
@@ -4047,7 +4322,7 @@ export class LiveLoop implements LiveController {
           this.writerFor = null;
         }
         // a figure waiting for the hand to be free is written after it
-        if (this.settled && this.writer === null) this.solveWantedFigures();
+        if (this.settled && this.writer === null && this.autoOn()) this.solveWantedFigures();
       },
     });
   }
@@ -4463,6 +4738,8 @@ export class LiveLoop implements LiveController {
 
   /** A chat reply's actions, written one block at a time; resolves when the last is on the page. */
   runChatActions(actions: readonly ChatAction[]): Promise<ChatRunReport> {
+    // typed into the chat is asked for: what fails is shown, whatever Auto did on those lines
+    this.autoLines.clear();
     return this.chat.run(actions);
   }
 
