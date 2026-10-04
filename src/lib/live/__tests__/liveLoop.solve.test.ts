@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { LIVE_COPY } from "@/components/live/copy";
 import type { TLDrawShape } from "tldraw";
 import { ApiError } from "@/lib/api-client";
 import { createFakeEditor, type FakeEditor } from "../__fixtures__/fakeEditor";
@@ -303,7 +304,7 @@ describe("live loop — Solve answers locally, and checks the model when it cann
     expect(typesetSteps()).toEqual([]);
     expect(handShapes()).toHaveLength(0);
     const err = liveStore.lastError.get();
-    expect(err).toMatchObject({ kind: "solve", userAsked: true, message: "Couldn't work this out" });
+    expect(err).toMatchObject({ kind: "solve", userAsked: true, message: LIVE_COPY.solve.failed });
     // the retry affordance solve errors already have
     expect(liveStore.retryHandler.get()).toBeTypeOf("function");
   });

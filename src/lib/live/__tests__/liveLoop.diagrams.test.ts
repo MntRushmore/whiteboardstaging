@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { LIVE_COPY } from "@/components/live/copy";
 import type { TLShapeId } from "tldraw";
 import { boundsOf, DRAWINGS, labelAt, writeAt, type Drawing } from "@/__eval__/drawings";
 import { createFakeEditor, type FakeEditor } from "../__fixtures__/fakeEditor";
@@ -262,7 +263,7 @@ describe("live loop — drawings", () => {
     expect(setupBodies).toHaveLength(2);
     expect(setupBodies[1].lines).toEqual([]);
     expect(tutorInk()).toEqual([]);
-    expect(liveStore.lastError.get()).toMatchObject({ kind: "solve", message: "Couldn't work this out" });
+    expect(liveStore.lastError.get()).toMatchObject({ kind: "solve", message: LIVE_COPY.solve.failed });
   });
 
   it("a drawing stroke does not hold back a line waiting to be read", async () => {

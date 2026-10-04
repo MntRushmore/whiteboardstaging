@@ -1,5 +1,6 @@
 "use client";
 
+import { toast } from "sonner";
 import { Box, createShapeId } from "tldraw";
 import type {
   Editor,
@@ -206,6 +207,12 @@ export interface LiveLoopDeps {
   planFigure: (spec: FigureSpec, opts: FigurePlanOptions) => FigurePlanResult | null;
   /** lecture mode's planners (`src/lib/live/lecture/plan.ts`); absent, they are loaded on the first lecture run */
   lecturePlanners?: LecturePlanners | LoadLecturePlanners;
+  /**
+   * A quiet note for the student that is not an error — Solve with nothing to work out
+   * (`LIVE_COPY.solve`): the board's toast, as the ask button's "Write a line of maths first". Never
+   * `liveStore.lastError`, whose red card and Retry say something failed.
+   */
+  notify: (message: string) => void;
 }
 
 interface LineRuntime {
@@ -305,10 +312,13 @@ const CHECK_PATH = "/api/live/check";
 const SOLVE_PATH = "/api/live/solve";
 const UNREADABLE_NOTE = "Couldn't read this — tap to type it";
 /**
- * Shown when every step the solve stream sent failed the local interlock. It goes through the
- * same path as a server-sent solve error, so the student gets the pill, the inline card and
- * the Retry they already know — and nothing is drawn.
+ * Shown when every step the solve stream sent failed the local interlock, or a figure's reply did
+ * not hold up. It goes through the same path as a server-sent solve error, so the student gets the
+ * pill, the inline card and the Retry they already know — and nothing is drawn. It says what to
+ * try next: the usual reason is a line or a drawing the tutor could not make sense of.
  */
+const SOLVE_FAILED = LIVE_COPY.solve.failed;
+/** The same failure for a proof's next row the checker could not confirm (`ProofDesk`). */
 const UNUSABLE_SOLUTION = "Couldn't work this out";
 /** Dispatched on window by the math shape's warn/ok badge: `detail: { lineId, shapeId }`. */
 export const BADGE_TAP_EVENT = "live:badge-tap";
@@ -467,6 +477,9 @@ function defaultDeps(): LiveLoopDeps {
     reread: (req, opts) => requestReread(req, opts),
     proof: (req, opts) => requestProof(req, opts),
     planFigure: (spec, opts) => defaultPlanFigure(spec, opts),
+    notify: (message) => {
+      toast(message);
+    },
   };
 }
 
@@ -3228,7 +3241,9 @@ export class LiveLoop implements LiveController {
    * One model call per figure-and-labels version (`figureKey`): the reply is kept
    * (`figureReplies`), so asking again, or the unasked path at the next settle, costs nothing. From
    * a line, a figure that gives nothing falls back to the word problem / solve paths; asked on the
-   * drawing, the pill says it could not work it out, with Retry. Unasked, every failure is silent.
+   * drawing, the pill says it could not work it out, with Retry — unless the model said nothing on it
+   * asks for anything (`reason: "nothing_asked"`), which is no failure: a quiet note on what to write
+   * (`deps.notify`). Unasked, every outcome but an answer is silent.
    */
   private startFigure(diagram: Diagram, opts: SolveOpts, from?: { built: BuiltColumn; fromLineId: string | undefined }, unasked = false): void {
     const engine = this.engine;
@@ -3253,8 +3268,8 @@ export class LiveLoop implements LiveController {
     liveStore.status.set("checking");
     liveStore.solving.set(liveStore.solving.get() + 1);
     void (async () => {
-      /** written: on the page; fallback: nothing usable; stop: nothing more to do */
-      let outcome: "written" | "fallback" | "stop" = "fallback";
+      /** written: on the page; fallback: nothing usable; nothing: the model says nothing is asked; stop: nothing more to do */
+      let outcome: "written" | "fallback" | "nothing" | "stop" = "fallback";
       let reason = "";
       let source = "";
       let key = "";
@@ -3291,6 +3306,8 @@ export class LiveLoop implements LiveController {
           }
           if (res && outcome !== "stop") {
             if (ctrl.signal.aborted || !this.started) outcome = "stop";
+            // the model read it and nothing on it asks for anything: not a failure, nothing to write
+            else if (res.reason === "nothing_asked") outcome = "nothing";
             else {
               const answer = figureAnswer(engine, res, [...labels, ...column]);
               source = answer.source;
@@ -3324,12 +3341,15 @@ export class LiveLoop implements LiveController {
         liveStore.solving.set(Math.max(0, liveStore.solving.get() - 1));
       }
       clientMetric("live.figure", { outcome, reason, source, called, unasked, ms: this.deps.now() - startedAt, lineId: opts.lineId, kinds: diagram.kinds.join(","), fromLine: Boolean(from) });
-      if (outcome === "fallback" && !ctrl.signal.aborted && this.started && !unasked) {
+      if ((outcome === "fallback" || outcome === "nothing") && !ctrl.signal.aborted && this.started && !unasked) {
         if (from) {
           this.solveWithoutFigure(from.built, from.fromLineId, opts);
           return;
         }
-        this.fail(sseFailure({ error: "unusable_steps", message: UNUSABLE_SOLUTION }), errCtx, retry);
+        // Asked on the drawing. Nothing asked is what to write next, quietly — the red card and its
+        // Retry would say something broke, and asking again would only be told the same.
+        if (outcome === "nothing") this.deps.notify(LIVE_COPY.solve.nothingAsked);
+        else this.fail(sseFailure({ error: "unusable_steps", message: SOLVE_FAILED }), errCtx, retry);
       }
       if (outcome === "written") this.noteSuccess("solve", opts.lineId);
       if (liveStore.status.get() !== "offline") liveStore.status.set("idle");
@@ -3737,7 +3757,7 @@ export class LiveLoop implements LiveController {
         // to leave the student staring at a page where Solve visibly did nothing.
         if (!failed && drawn === 0 && discarded > 0) {
           failed = true;
-          this.fail(sseFailure({ error: "unusable_steps", message: UNUSABLE_SOLUTION }), errCtx, retry);
+          this.fail(sseFailure({ error: "unusable_steps", message: SOLVE_FAILED }), errCtx, retry);
         }
       } catch (err) {
         if (!isAbortLike(err) && !ctrl.signal.aborted) {

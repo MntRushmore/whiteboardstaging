@@ -1,7 +1,7 @@
 import { SetupRequestSchema, SetupResponseSchema, type SetupResponse } from "@/lib/live/contracts";
 import { FigureReplySchema } from "@/lib/live/figure";
 import { getLiveModels } from "@/lib/env";
-import { enforceInk, runCharged } from "@/lib/server/billing";
+import { enforceInk, refundInk, runCharged } from "@/lib/server/billing";
 import { chatJsonWithFallback, UpstreamError } from "@/lib/server/openrouter";
 import { errorResponse } from "@/lib/server/request";
 import { buildSetupMessages, cleanSetupReply, SetupReplySchema, type SetupReply } from "@/lib/server/prompts/setup";
@@ -19,7 +19,8 @@ const SETUP_ATTEMPT_MS = 12_000;
  * POST /api/live/setup — a word problem → the equations under it (LaTeX only, no arithmetic
  * done, no words). The client solves them with the local engine and writes setup + steps by
  * hand; when the setup is unusable it falls back to /api/live/solve. Charged `live/setup`
- * (below solve), refunded by `runCharged` on any non-2xx.
+ * (below solve), refunded by `runCharged` on any non-2xx — and on the one 200 that writes nothing:
+ * `{ lines: [], reason: "nothing_asked" }`, the model saying nothing there asks for anything.
  *
  * With a `crop` it is a hand-drawn FIGURE ("the tutor reads the figure"): a vision model
  * (`LIVE_MODELS.figure`, prompt `prompts/figure.ts`) describes what the figure shows — which label
@@ -54,8 +55,17 @@ export async function POST(req: Request) {
         title: figure ? "Agathon Live - figure" : "Agathon Live - setup",
       });
       const setup = figure ? figureSetup(reply, data) : cleanSetupReply(reply as SetupReply);
-      // Nothing to set up is a failed call for billing (refunded); the board falls back to solve.
-      if (setup.lines.length === 0) throw new UpstreamError(502, "The model returned no setup lines");
+      if (setup.lines.length === 0) {
+        // The model named an unknown but wrote nothing to find it with: it failed (refunded, a 502).
+        if (setup.unknown) throw new UpstreamError(502, "The model returned no setup lines");
+        // It read the ink and nothing there asks for anything (`{"unknown": "", "lines": []}` — a
+        // `2x2` the board took for a drawing). Not an error: a 200 the board turns into a note on
+        // what to write; the student is not charged for being told.
+        await refundInk({ userId: user.id, requestId }, log);
+        const ms = Date.now() - startedAt;
+        log.info({ model, ms, figure, labels: data.labels?.length ?? 0, problemLines: data.lines.length, reason: "nothing_asked" }, "setup: nothing asked");
+        return withRequestId(Response.json(SetupResponseSchema.parse({ lines: [], reason: "nothing_asked", model, ms } satisfies SetupResponse)), requestId);
+      }
       const body: SetupResponse = SetupResponseSchema.parse({
         lines: setup.lines,
         ...(setup.unknown ? { unknown: setup.unknown } : {}),
