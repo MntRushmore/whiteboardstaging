@@ -1,11 +1,11 @@
 "use client";
 
 import { Suspense, lazy, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { ArrowUp, Loader2, RotateCcw, X } from "lucide-react";
+import { ArrowUp, Loader2, RotateCcw, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { LiveController } from "@/lib/live/contracts";
-import { CHAT_COPY, CHAT_SUGGESTIONS, sendsOnKey, type ChatMessage } from "./chatView";
+import { CHAT_COPY, CHAT_SUGGESTIONS, sendsOnKey, WEAK_SPOTS_COPY, type ChatMessage } from "./chatView";
 import { useBoardChat } from "./useBoardChat";
 
 interface BoardChatPanelProps {
@@ -26,7 +26,7 @@ export const CHAT_TOGGLE_ATTR = "data-chat-toggle";
  * out; this is its content). The words stay here — the board only ever gets maths.
  */
 export function BoardChatPanel({ boardId, controller, onClose }: BoardChatPanelProps) {
-  const { messages, busy, send, retry } = useBoardChat(boardId, controller);
+  const { messages, busy, send, retry, weakSpot, practiceWeakSpots } = useBoardChat(boardId, controller);
   const [draft, setDraft] = useState("");
   const panelRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -98,6 +98,19 @@ export function BoardChatPanel({ boardId, controller, onClose }: BoardChatPanelP
           <div className="space-y-3">
             <p className="text-sm text-gray-600">{CHAT_COPY.intro}</p>
             <div className="flex flex-col items-start gap-2">
+              {/* the student's own record: problems on what they are learning, made on the device (no ink) */}
+              {weakSpot && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  title={WEAK_SPOTS_COPY.chipHint}
+                  onClick={() => void practiceWeakSpots()}
+                  className="flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-left text-sm font-medium text-blue-800 shadow-xs transition-colors hover:bg-blue-100 disabled:opacity-50"
+                >
+                  <Sparkles className="size-3.5 shrink-0" aria-hidden />
+                  {WEAK_SPOTS_COPY.chip}
+                </button>
+              )}
               {CHAT_SUGGESTIONS.map((s) => (
                 <button
                   key={s}
