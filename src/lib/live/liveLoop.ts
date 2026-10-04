@@ -6142,17 +6142,19 @@ export class LiveLoop implements LiveController {
   private learnLine(given: LiveLineState, decided: MarkKind | null): void {
     try {
       const state = liveStore.lines.get()[given.line.id];
-      if (!this.started || !state?.latex || this.proofs.owns(state.line.id)) return;
+      if (!this.started || !state?.latex) return;
       const id = state.line.id;
       const mark = this.learnMarkOf(state, decided);
       const solved = Boolean(state.analysis?.solved) && mark === "check";
       const kind = state.analysis?.kind ?? "unknown";
       const problemKey = this.learnKeyFor(state);
       const said = `${problemKey}\n${state.latex}\n${kind}\n${mark ?? ""}\n${solved}`;
+      // most renders change nothing: they stop here
       if (this.learnSent.get(id) === said) return;
       this.learnSent.set(id, said);
       forgetOldest(this.learnSent);
       if (!this.learnFresh.has(id) && !this.columnLines(state.line.column).some((s) => this.learnFresh.has(s.line.id))) return;
+      if (this.proofs.owns(id)) return;
       const previous = this.previousLine(state)?.latex ?? this.learnHeadAbove(state);
       this.learn({
         type: "line",
