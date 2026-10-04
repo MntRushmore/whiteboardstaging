@@ -255,6 +255,42 @@ describe("live loop — Auto", () => {
       expect(liveStore.lastError.get()).toMatchObject({ kind: "check", lineId: unjudged });
     });
 
+    it("a reload, or a first visit to a screen, does not check again what was already on it", async () => {
+      const second = editor.addPage();
+      editor.switchPage(second);
+      start("feedback", { engine: withUnjudged() });
+      const first = await penLine(0, "2x+3=11");
+      await penLine(1, UNJUDGED);
+      await wait(ANSWER_SETTLE_MS);
+      expect(checks()).toHaveLength(1);
+
+      // a new session that opens on the other screen; then the student goes to this one (its lines
+      // come back from their readbacks) and writes something new in another column
+      const firstScreen = editor.getPages()[0].id;
+      editor.switchPage(firstScreen);
+      start("feedback", { engine: withUnjudged() });
+      editor.switchPage(second);
+      await quiesce();
+      expect(Object.values(liveStore.lines.get()).map((s) => s.latex).sort()).toEqual(["2x+3=11", UNJUDGED].sort());
+      await penLine(2, "8+1=", 900);
+      await wait(ANSWER_SETTLE_MS);
+      expect(checks()).toHaveLength(1);
+
+      // a reload, right here
+      start("feedback", { engine: withUnjudged() });
+      await quiesce();
+      await penLine(3, "1+2=", 900);
+      await wait(ANSWER_SETTLE_MS);
+      expect(checks()).toHaveLength(1);
+
+      // ...but the column is a new problem once the line above it is rewritten: checked again
+      loop.retypeLine(first, "2x+5=11");
+      await settleUntil(() => checks().length > 1);
+      await quiesce();
+      expect(checks()).toHaveLength(2);
+      expect(checks()[1].lines.map((l) => l.latex)).toEqual(["2x+5=11", UNJUDGED]);
+    });
+
     it("a check the network dropped says nothing: no 'Offline' for a call the student never made", async () => {
       vi.spyOn(console, "warn").mockImplementation(() => undefined);
       start("feedback", { engine: withUnjudged() });

@@ -1574,6 +1574,15 @@ export class LiveLoop implements LiveController {
       };
     }
     liveStore.lines.set(next);
+    // What was on this screen before this session — a reload, the first visit to a screen — had its
+    // pauses then: Auto does not pay for a model check of it again (`autoDone` is in memory, so
+    // every new session checked every unjudged line on screen at its first pause, and every screen
+    // at its first visit). Remembered as checked, per state of its column (`autoKey`): a line above
+    // it rewritten now is a new problem, and is checked as one.
+    for (const r of rebuilt) {
+      const st = next[r.line.id];
+      if (st.latex) this.autoOnce(this.autoKey("check", st));
+    }
   }
 
   private runtime(lineId: string): LineRuntime {
