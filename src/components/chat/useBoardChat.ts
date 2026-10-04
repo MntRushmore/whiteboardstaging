@@ -180,20 +180,23 @@ export function useBoardChat(boardId: string, controller: LiveController): Board
 
   // The chip shows among the first suggestions once the student's record names a skill with
   // practice problems: the generators load then (the chip waits for them), not with the board.
+  // The record loads after the board, so a panel already open picks it up when it arrives.
   const [weakSpot, setWeakSpot] = useState<WeakSpot | null>(null);
+  const [learner, setLearner] = useState(() => learningBus.learner());
+  useEffect(() => learningBus.onLearner(setLearner), []);
   const fresh = messages.length === 0;
   useEffect(() => {
-    if (!fresh || !learningBus.learner()?.weakSkills.length) return;
+    if (!fresh || !learner?.weakSkills.length) return;
     let live = true;
     loadPractice()
       .then((practice) => {
-        if (live) setWeakSpot(weakSpotSkill(learningBus.learner(), practice.hasPractice));
+        if (live) setWeakSpot(weakSpotSkill(learner, practice.hasPractice));
       })
       .catch(() => undefined);
     return () => {
       live = false;
     };
-  }, [fresh]);
+  }, [fresh, learner]);
 
   return {
     messages,
