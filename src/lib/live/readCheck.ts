@@ -330,7 +330,7 @@ export function acceptReread(
 // ---------------------------------------------------------------- (d) a step that does not follow
 
 /** A chain re-read may change this many characters of Mathpix's read, no more. */
-export const CHAIN_MAX_EDIT = 2;
+const CHAIN_MAX_EDIT = 2;
 
 /**
  * The second reader's LaTeX for a `chain` re-read, when it should replace Mathpix's. A step the
