@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { LineAnalysis, LiveEngine } from "../contracts";
 import { getEngine } from "../engine";
 import { analyzeColumn } from "../localSolve";
-import { acceptReread, engineReads, hasWords, isProse, rereadTrigger, sameRead, suspiciousRead } from "../readCheck";
+import { acceptChainReread, acceptReread, engineReads, hasWords, isProse, readDistance, rereadTrigger, sameRead, suspiciousRead } from "../readCheck";
 
 /**
  * The second reader's trigger and acceptance. The table is the model benchmark's misread set
@@ -268,6 +268,40 @@ describe("accepting the second reader's LaTeX", () => {
     expect(hasWords("15\\% \\text{ of } 80")).toBe(false);
     expect(hasWords("5 \\mathrm{km} \\text{ to } \\mathrm{m}")).toBe(false);
     expect(hasWords("\\sin \\theta + \\log_{2} 8")).toBe(false);
+  });
+});
+
+describe("the second look before a ring (chain re-reads)", () => {
+  it("measures how far apart two reads are, spacing and braces aside", () => {
+    expect(readDistance("3(x-2)=17", "3(x - 2) = 17")).toBe(0);
+    expect(readDistance("x^{2}=4", "x^2=4")).toBe(0);
+    expect(readDistance("3(x-2)=17", "3(x-2)=12")).toBe(1);
+    expect(readDistance("2x=8", "2x-8")).toBe(1);
+    expect(readDistance("5x-2x=9-3", "3x=12")).toBe(7);
+  });
+
+  it.each([
+    ["a 2 read as a 7", "3(x-2)=17", "3(x-2)=12"],
+    ["a 1 read as a 7", "x+7=4", "x+1=4"],
+    ["an = read as a -", "2x-8", "2x=8"],
+    ["21 read as 11", "x=11", "x=21"],
+    ["an x read as a y", "y^{2}-5x+6=0", "x^{2}-5x+6=0"],
+  ])("believes a look-alike: %s", (_why, read, truth) => {
+    expect(acceptChainReread(engine, read, truth)).toBe(truth);
+  });
+
+  it.each([
+    ["the next step instead of the line", "5x-2x=9-3", "3x=6"],
+    ["the student's maths fixed", "5x-2x=9-3", "5x-2x=9+3+0"],
+    ["a different equation", "3(x-2)=17", "3x-6=12"],
+  ])("ignores more than a look-alike: %s", (_why, read, answer) => {
+    expect(acceptChainReread(engine, read, answer)).toBeNull();
+  });
+
+  it("asks everything acceptReread asks: a change, no words, maths the engine reads", () => {
+    expect(acceptChainReread(engine, "3(x-2)=17", "3(x-2) = 17")).toBeNull();
+    expect(acceptChainReread(engine, "x=11", "x=1(")).toBeNull();
+    expect(acceptChainReread(engine, "U=3", "V=3", ["v=u+a t"])).toBeNull();
   });
 });
 

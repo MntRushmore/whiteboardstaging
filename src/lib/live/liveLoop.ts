@@ -69,7 +69,7 @@ import { liveWrite, scheduleLiveWrite } from "./liveWrite";
 import { recordReread, recordRecognition } from "./liveDebug";
 import { analyzeColumn, localSolve } from "./localSolve";
 import { requestReread, requestSetup, type CallOptions } from "./modelCalls";
-import { acceptReread, rereadTrigger } from "./readCheck";
+import { acceptChainReread, acceptReread, rereadTrigger, type RereadTrigger } from "./readCheck";
 import { isProblemProse, setupBlock, validateSetupLines, wordProblemKey } from "./wordProblem";
 import { markKey, markStrokes, ringRect, type MarkKind } from "./marks";
 import { inkExtendsLine } from "./celebrate";
@@ -571,6 +571,13 @@ function newLineState(line: InkLine): LiveLineState {
   };
 }
 
+/** One line of a ring's second look (`checkChain`): the second reader's answer, and its read if believable. */
+interface ChainRead {
+  state: LiveLineState;
+  reply: RereadResponse;
+  latex: string | null;
+}
+
 export class LiveLoop implements LiveController {
   readonly editor: LiveEditorLike;
   private opts: UseLiveMathOptions;
@@ -639,6 +646,13 @@ export class LiveLoop implements LiveController {
   private readonly rereads = new Map<string, string | null>();
   /** second readings in flight, aborted with the rest of the runtime */
   private readonly rereadAborts = new Set<AbortController>();
+  /**
+   * Rings waiting for a second look (`holdRing`): the step's line id → the key of the pair of inks
+   * (the line above's and its own) being read again. A pair in `chainsDone` had its second look;
+   * its ring is drawn at once from then on.
+   */
+  private readonly chainHolds = new Map<string, string>();
+  private readonly chainsDone = new Set<string>();
   /** lines being read right now (the recognizer, or the second reader): nothing to say about them yet */
   private readonly reading = new Set<string>();
   /**
@@ -874,6 +888,7 @@ export class LiveLoop implements LiveController {
     }
     for (const ctrl of this.rereadAborts) ctrl.abort();
     this.rereadAborts.clear();
+    this.chainHolds.clear();
     this.reading.clear();
     this.dismissedGraphs.clear();
     this.dismissedFigures.clear();
@@ -2027,62 +2042,233 @@ export class LiveLoop implements LiveController {
     const engine = this.engine;
     const hash = line.hash;
     if (!engine || !hash || res.provider !== "mathpix" || this.rereads.has(hash) || !this.deps.isOnline()) return;
-    const lineId = line.id;
-    const state = liveStore.lines.get()[lineId];
+    const state = liveStore.lines.get()[line.id];
     if (!state || state.latex !== res.latex) return;
     const { above, below } = this.columnNeighbours(state);
+    const others = [...above, ...below];
     const signal = rereadTrigger({
       latex: res.latex,
       confidence: res.confidence,
       analysis: state.analysis,
       strokeCount: line.strokeIds.length,
-      others: [...above, ...below],
+      others,
     });
     if (!signal) return;
+    await this.readAgain(line, res, { signal, above, below, others });
+  }
+
+  /**
+   * One line to the second reader, its answer believed as always (`acceptReread`, given the column
+   * as `others`): a read taken is re-analysed and re-rendered (`applyReread`). True when replaced.
+   */
+  private async readAgain(
+    line: InkLine,
+    read: { latex: string; confidence: number },
+    opts: { signal: RereadTrigger; above: string[]; below: string[]; others: readonly string[] },
+  ): Promise<boolean> {
+    const reply = await this.askAgain(line, read, opts);
+    if (!reply || !this.engine) return false;
+    const accepted = acceptReread(this.engine, read.latex, reply.latex, opts.others);
+    this.recordAgain(line.id, opts.signal, read.latex, reply, Boolean(accepted));
+    const current = this.readsAs(line.id, line.hash, read.latex);
+    if (!accepted || !current || !this.started) {
+      // Mathpix's read stands: if the student stopped while it was being read again, its "?" is due now
+      if (this.started && current) this.questionIfSettled(line.id);
+      return false;
+    }
+    this.rereads.set(line.hash, accepted);
+    this.applyReread(line.id, accepted, read.confidence);
+    return true;
+  }
+
+  /**
+   * The second reader's answer for one line: a crop of its ink, `read` (Mathpix's, on the board
+   * now) and the lines `above` / `below` sent with it. Marks the ink as asked before anything is
+   * awaited, so it is never asked twice. Null — and silent — when there is no crop, the request
+   * fails, or the line was written on or retyped meanwhile.
+   */
+  private async askAgain(
+    line: InkLine,
+    read: { latex: string },
+    opts: { signal: RereadTrigger; above: string[]; below: string[] },
+  ): Promise<RereadResponse | null> {
+    const hash = line.hash;
+    if (!hash) return null;
+    const lineId = line.id;
+    const { signal } = opts;
     this.rereads.set(hash, null);
     while (this.rereads.size > LIVE_LIMITS.cacheEntries) this.rereads.delete(this.rereads.keys().next().value as string);
     // the line must still read this way when the answer lands: new ink or a retype wins
-    const current = () => {
-      const cur = liveStore.lines.get()[lineId];
-      return Boolean(cur && cur.line.hash === hash && cur.latex === res.latex);
-    };
-    const record = (r: Omit<Parameters<typeof recordReread>[1], "signal" | "mathpix">) => recordReread(lineId, { signal, mathpix: res.latex, ...r });
-
+    const current = () => this.readsAs(lineId, hash, read.latex);
     const crop = await this.captureCrop(line.strokeIds, line.bounds);
     if (!crop) {
-      record({ latex: "", accepted: false, error: "no crop" });
-      return;
+      recordReread(lineId, { signal, mathpix: read.latex, latex: "", accepted: false, error: "no crop" });
+      return null;
     }
-    if (!current()) return;
+    if (!current()) return null;
     const ctrl = new AbortController();
     this.rereadAborts.add(ctrl);
     // being read again: no "?" on it until the second read is in
     this.reading.add(lineId);
-    let reply: RereadResponse;
     try {
-      reply = await this.deps.reread({ boardId: this.opts.boardId, lineId, crop, latex: res.latex, above, below }, { signal: ctrl.signal });
+      const reply = await this.deps.reread({ boardId: this.opts.boardId, lineId, crop, latex: read.latex, above: opts.above, below: opts.below }, { signal: ctrl.signal });
+      return current() ? reply : null;
     } catch (err) {
       if (ctrl.signal.aborted) this.rereads.delete(hash);
-      else record({ latex: "", accepted: false, error: err instanceof Error ? err.message : String(err) });
+      else recordReread(lineId, { signal, mathpix: read.latex, latex: "", accepted: false, error: err instanceof Error ? err.message : String(err) });
       clientMetric("live.reread.failed", { signal, lineId });
-      this.rereadAborts.delete(ctrl);
-      if (current() || !liveStore.lines.get()[lineId]) this.reading.delete(lineId);
-      if (this.started && !ctrl.signal.aborted && current()) this.questionIfSettled(lineId);
-      return;
+      if (this.started && !ctrl.signal.aborted && current()) {
+        this.reading.delete(lineId);
+        this.questionIfSettled(lineId);
+      }
+      return null;
     } finally {
       this.rereadAborts.delete(ctrl);
       if (current() || !liveStore.lines.get()[lineId]) this.reading.delete(lineId);
     }
-    const accepted = acceptReread(engine, res.latex, reply.latex, [...above, ...below]);
-    record({ latex: reply.latex, accepted: Boolean(accepted), model: reply.model, ms: reply.ms });
-    clientMetric("live.reread", { signal, accepted: Boolean(accepted), ms: reply.ms, lineId });
-    if (!accepted || !current() || !this.started) {
-      // Mathpix's read stands: if the student stopped while it was being read again, its "?" is due now
-      if (this.started && current()) this.questionIfSettled(lineId);
-      return;
+  }
+
+  /** The line still holds this ink, read this way. */
+  private readsAs(lineId: string, hash: string, latex: string): boolean {
+    const cur = liveStore.lines.get()[lineId];
+    return Boolean(cur && cur.line.hash === hash && cur.latex === latex);
+  }
+
+  /** The dev panel and the metrics: what the second reader answered, and whether it was taken. */
+  private recordAgain(lineId: string, signal: RereadTrigger, mathpix: string, reply: RereadResponse, accepted: boolean): void {
+    recordReread(lineId, { signal, mathpix, latex: reply.latex, accepted, model: reply.model, ms: reply.ms });
+    clientMetric("live.reread", { signal, accepted, ms: reply.ms, lineId });
+  }
+
+  // ---------------------------------------------------------------- a ring waits for a second look
+  /**
+   * The line a step is judged against (`columnContext`'s `previous`) when it is the student's own
+   * ink: null when that is a problem the chat wrote, which has nothing to misread.
+   */
+  private previousLine(state: LiveLineState): LiveLineState | null {
+    let previous: LiveLineState | null = null;
+    for (const s of this.columnLines(state.line.column)) {
+      if (s.line.row >= state.line.row) break;
+      const a = s.analysis;
+      if (!s.latex || !a || a.kind === "label" || a.kind === "incomplete" || a.kind === "unknown" || a.kind === "operation") continue;
+      previous = s;
     }
-    this.rereads.set(hash, accepted);
-    this.applyReread(lineId, accepted, res.confidence);
+    return previous;
+  }
+
+  /**
+   * Does this step's ring wait (`render`)? The engine says the step does not follow from the line
+   * above — and on messy ink that is as often a misread as a slip (a problem's `12` read as `17`
+   * rings the right step under it). So when either line is a read of Mathpix's the second reader
+   * has not seen, both are read again first (`checkChain`), and the ring waits for them, at most
+   * `chainHoldMs`. Once per pair of inks; never offline, and never for a line under one of the
+   * chat's problems with nothing of the student's above it.
+   */
+  private holdRing(state: LiveLineState): boolean {
+    const lineId = state.line.id;
+    const above = this.previousLine(state);
+    if (!above || !above.line.hash || !state.line.hash) return false;
+    const key = `${above.line.hash}|${state.line.hash}`;
+    if (this.chainHolds.get(lineId) === key) return true;
+    if (this.chainsDone.has(key) || !this.engine || !this.started || !this.deps.isOnline()) return false;
+    const due = [above, state].filter((s) => s.provider === "mathpix" && !this.rereads.has(s.line.hash));
+    if (due.length === 0) return false;
+    this.chainHolds.set(lineId, key);
+    void this.checkChain(lineId, key, due);
+    return true;
+  }
+
+  /**
+   * The second look before a ring (`holdRing`): the step and the line it follows, read again side
+   * by side. A line sent for a reason of its own (`rereadTrigger`) is read as the second reader
+   * always reads it. Any other goes WITHOUT the column (shown the next line, a model can make a
+   * line "follow" by changing it), and its read is taken only when it is a near transcription
+   * (`acceptChainReread`) AND it makes the step follow (`chainFix`): the second look can take a
+   * ring back, never move one — on very messy ink the model misreads too (`+` read as `-`, a `3`
+   * dropped), and a "fix" that leaves the step wrong only ringed more of the student's right work.
+   * Then the step is drawn as it reads now (`releaseRing`): ticked, or ringed after all.
+   */
+  private async checkChain(lineId: string, key: string, due: LiveLineState[]): Promise<void> {
+    const ids = [...new Set([...due.map((s) => s.line.id), lineId])];
+    const hashes = new Map(ids.map((id) => [id, liveStore.lines.get()[id]?.line.hash]));
+    for (const id of ids) this.reading.add(id);
+    const timer = setTimeout(() => this.releaseRing(lineId, key), LIVE_TIMING.chainHoldMs);
+    clientMetric("live.reread.chain", { lineId, lines: due.length });
+    const looked = await Promise.all(
+      due.map(async (s): Promise<ChainRead | null> => {
+        const { above, below } = this.columnNeighbours(s);
+        const others = [...above, ...below];
+        const signal = rereadTrigger({ latex: s.latex, confidence: s.confidence, analysis: s.analysis, strokeCount: s.line.strokeIds.length, others });
+        if (signal) {
+          await this.readAgain(s.line, s, { signal, above, below, others });
+          return null;
+        }
+        const reply = await this.askAgain(s.line, s, { signal: "chain", above: [], below: [] });
+        const latex = reply && this.engine ? acceptChainReread(this.engine, s.latex, reply.latex, others) : null;
+        return reply ? { state: s, reply, latex } : null;
+      }),
+    );
+    clearTimeout(timer);
+    const reads = looked.filter((r): r is ChainRead => r !== null);
+    const take = this.started ? this.chainFix(lineId, reads) : [];
+    for (const r of reads) this.recordAgain(r.state.line.id, "chain", r.state.latex, r.reply, take.includes(r));
+    for (const r of take) {
+      if (!r.latex || !this.readsAs(r.state.line.id, r.state.line.hash, r.state.latex)) continue;
+      this.rereads.set(r.state.line.hash, r.latex);
+      this.applyReread(r.state.line.id, r.latex, r.state.confidence);
+    }
+    for (const id of ids) {
+      const cur = liveStore.lines.get()[id];
+      if (!cur || cur.line.hash === hashes.get(id)) this.reading.delete(id);
+    }
+    this.releaseRing(lineId, key);
+  }
+
+  /**
+   * The fewest of the second look's reads that make the step follow from the line above — one of
+   * them alone first, the line above's before the step's, then both. None: Mathpix's reads stand.
+   */
+  private chainFix(lineId: string, reads: ChainRead[]): ChainRead[] {
+    const step = liveStore.lines.get()[lineId];
+    const above = step ? this.previousLine(step) : null;
+    if (!step || !above) return [];
+    const options = reads.filter((r) => r.latex && liveStore.lines.get()[r.state.line.id]?.latex === r.state.latex);
+    options.sort((a, b) => (a.state.line.id === above.line.id ? -1 : b.state.line.id === above.line.id ? 1 : 0));
+    const sets = [...options.map((r) => [r]), ...(options.length > 1 ? [options] : [])];
+    for (const set of sets) {
+      const read = (s: LiveLineState) => set.find((r) => r.state.line.id === s.line.id)?.latex ?? s.latex;
+      if (this.follows(step, above, read(above), read(step))) return set;
+    }
+    return [];
+  }
+
+  /** Would the step follow from the line above, the two read as given? The engine, as `analyze` asks it. */
+  private follows(step: LiveLineState, above: LiveLineState, aboveLatex: string, stepLatex: string): boolean {
+    const engine = this.engine;
+    if (!engine) return false;
+    const mode = this.opts.mode;
+    try {
+      const ctx = this.columnContext(step);
+      const previous = aboveLatex === above.latex ? ctx.previous : engine.analyzeLine(aboveLatex, { ...this.columnContext(above), mode });
+      const original = ctx.original === above.analysis ? previous : ctx.original;
+      const a = engine.analyzeLine(stepLatex, { previous, original, mode });
+      return a.verdict === "ok" || Boolean(a.solved);
+    } catch {
+      return false;
+    }
+  }
+
+  /** The second look is over (or took too long): the step is drawn as it reads now. */
+  private releaseRing(lineId: string, key: string): void {
+    if (this.chainHolds.get(lineId) !== key) return;
+    this.chainHolds.delete(lineId);
+    this.chainsDone.add(key);
+    while (this.chainsDone.size > LIVE_LIMITS.cacheEntries) this.chainsDone.delete(this.chainsDone.values().next().value as string);
+    const cur = liveStore.lines.get()[lineId];
+    if (!cur || !this.started) return;
+    this.render(cur, this.decisionFor(cur));
+    // no ring after all: the problem may be Auto's to finish at this pause
+    if (this.settled) this.autoPause();
   }
 
   /** The second reader's read replaces Mathpix's: re-analysed and re-rendered like any new read. */
@@ -2782,7 +2968,9 @@ export class LiveLoop implements LiveController {
       return;
     }
     const analysis = state.analysis;
-    const status = decision.capped ? "none" : decision.badge;
+    // a step about to be ringed waits while it and the line above are read again (`holdRing`)
+    const held = decision.badge === "warn" && !opts.keepStatus && this.holdRing(state);
+    const status = decision.capped || held ? "none" : decision.badge;
     const resultLatex = decision.showResult && analysis ? analysis.resultLatex : "";
     let note = "";
     if (status === "warn") note = localNoteFor(analysis, this.opts.mode);
@@ -5575,6 +5763,8 @@ export class LiveLoop implements LiveController {
     const state = liveStore.lines.get()[lineId];
     if (!state?.latex) return false;
     if (this.hasSuggestion(lineId, state.latex) || this.stepInFlight(lineId, state.latex)) return true;
+    // its ring is waiting for a second look (`holdRing`): the ring, if it comes, asks again
+    if (!opts.now && !opts.typed && this.chainHolds.has(lineId)) return true;
     const step = this.rightNextStep(state);
     if (!step) return false;
     if (!opts.now && !this.settled) {

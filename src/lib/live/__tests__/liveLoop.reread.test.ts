@@ -277,4 +277,124 @@ describe("live loop — the second reader", () => {
     await drain();
     expect(lineOf(lineId)).toMatchObject({ latex: "b=5", provider: "typed" });
   });
+
+  // ------------------------------------------------------------ a ring waits for a second look
+  /** Every ring the tutor ever wrote, from now on (a ring taken off again still counts). */
+  function trackRings(): () => number {
+    let rings = 0;
+    editor.store.listen(
+      (entry) => {
+        for (const r of Object.values(entry.changes.added)) {
+          const mark = (r as { meta?: Record<string, unknown> }).meta?.mark;
+          if (typeof mark === "string" && mark.startsWith("circle:")) rings++;
+        }
+      },
+      { source: "all", scope: "document" },
+    );
+    return () => rings;
+  }
+
+  it("a step that does not follow waits: the line above, misread, is read again and the right step is ticked — never ringed", async () => {
+    reads = [{ latex: "3(x-2)=17" }, { latex: "3x-6=12" }];
+    answer = async (req) => reply(req.latex === "3(x-2)=17" ? "3(x-2)=12" : req.latex);
+    const rings = trackRings();
+    const top = await write(writeLine("2x+3=11", 100, 200, 40));
+    const step = await write(writeLine("x=4", 100, 300, 40));
+    await drain();
+
+    // both lines read again, each on its own: no column for the model to make the step follow
+    expect(rereadBodies).toEqual([
+      expect.objectContaining({ lineId: top, latex: "3(x-2)=17", above: [], below: [] }),
+      expect.objectContaining({ lineId: step, latex: "3x-6=12", above: [], below: [] }),
+    ]);
+    expect(lineOf(top)).toMatchObject({ latex: "3(x-2)=12", provider: "reread" });
+    expect(liveDebugStore.get()[top].reread).toMatchObject({ signal: "chain", accepted: true });
+    expect(lineOf(step).analysis?.verdict).toBe("ok");
+    expect(marksOf("check").map((s) => (s.meta as Record<string, unknown>).lineId)).toEqual([step]);
+    expect(rings()).toBe(0);
+  });
+
+  it("a real slip keeps its ring: both reads stand, and the ring is drawn after the second look", async () => {
+    reads = [{ latex: "5x-3=2x+9" }, { latex: "5x-2x=9-3" }];
+    answer = async (req) => reply(req.latex);
+    await write(writeLine("2x+3=11", 100, 200, 40));
+    const step = await write(writeLine("x=4", 100, 300, 40));
+    await drain();
+    expect(rereadBodies).toHaveLength(2);
+    expect(lineOf(step)).toMatchObject({ latex: "5x-2x=9-3", provider: "mathpix" });
+    expect(marksOf("circle").map((s) => (s.meta as Record<string, unknown>).lineId)).toEqual([step]);
+
+    // once per pair of inks: the ring drawn again (the dial moved) is not held or read again
+    loop.setOptions({ boardId: "board-1", mode: "suggest", enabled: true });
+    await drain();
+    expect(rereadBodies).toHaveLength(2);
+    expect(marksOf("circle")).toHaveLength(1);
+  });
+
+  it("the second look may fix a look-alike, never the maths: a read more than two characters away is ignored", async () => {
+    reads = [{ latex: "5x-3=2x+9" }, { latex: "5x-2x=9-3" }];
+    answer = async (req) => reply(req.latex === "5x-2x=9-3" ? "3x=12" : req.latex);
+    await write(writeLine("2x+3=11", 100, 200, 40));
+    const step = await write(writeLine("x=4", 100, 300, 40));
+    await drain();
+    expect(lineOf(step)).toMatchObject({ latex: "5x-2x=9-3", provider: "mathpix" });
+    expect(liveDebugStore.get()[step].reread).toMatchObject({ signal: "chain", latex: "3x=12", accepted: false });
+    expect(marksOf("circle")).toHaveLength(1);
+  });
+
+  it("a misread step is read again too: its right read is taken, and it is ticked", async () => {
+    reads = [{ latex: "2x+3=11" }, { latex: "2x=3" }];
+    answer = async (req) => reply(req.latex === "2x=3" ? "2x=8" : req.latex);
+    const rings = trackRings();
+    await write(writeLine("2x+3=11", 100, 200, 40));
+    const step = await write(writeLine("x=4", 100, 300, 40));
+    await drain();
+    expect(lineOf(step)).toMatchObject({ latex: "2x=8", provider: "reread" });
+    expect(marksOf("check").map((s) => (s.meta as Record<string, unknown>).lineId)).toEqual([step]);
+    expect(rings()).toBe(0);
+  });
+
+  it("a look-alike that leaves the step wrong is not taken: the second look takes rings back, never moves them", async () => {
+    // the model's `+` for `-` on the line above is believable on its own, but the step still does not follow
+    reads = [{ latex: "3(x-2)=12" }, { latex: "x-6=12" }];
+    answer = async (req) => reply(req.latex === "3(x-2)=12" ? "3(x+2)=12" : req.latex);
+    const top = await write(writeLine("2x+3=11", 100, 200, 40));
+    const step = await write(writeLine("x=4", 100, 300, 40));
+    await drain();
+    expect(lineOf(top)).toMatchObject({ latex: "3(x-2)=12", provider: "mathpix" });
+    expect(liveDebugStore.get()[top].reread).toMatchObject({ signal: "chain", latex: "3(x+2)=12", accepted: false });
+    expect(marksOf("circle").map((s) => (s.meta as Record<string, unknown>).lineId)).toEqual([step]);
+  });
+
+  it("a second look that never comes back holds the ring no longer than chainHoldMs", async () => {
+    reads = [{ latex: "5x-3=2x+9" }, { latex: "5x-2x=9-3" }];
+    answer = () => new Promise<RereadResponse>(() => undefined);
+    await write(writeLine("2x+3=11", 100, 200, 40));
+    await write(writeLine("x=4", 100, 300, 40));
+    await drain();
+    expect(marksOf("circle")).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(4_000);
+    await settle(8);
+    expect(marksOf("circle")).toHaveLength(1);
+  });
+
+  it("new ink on the step: only the new ink is looked at again, not the line above", async () => {
+    reads = [{ latex: "5x-3=2x+9" }, { latex: "5x-2x=9-3" }];
+    answer = async (req) => reply(req.latex);
+    await write(writeLine("2x+3=11", 100, 200, 40));
+    const step = await write(writeLine("x=4", 100, 300, 40));
+    await drain();
+    expect(rereadBodies).toHaveLength(2);
+    // a stroke added to the step (a new ink version, read the same)
+    const extra = drawShapeFromPoints([
+      { x: 150, y: 312 },
+      { x: 156, y: 318 },
+    ]);
+    editor.putUser([extra]);
+    await vi.advanceTimersByTimeAsync(2000);
+    await drain();
+    expect(lineOf(step).line.strokeIds).toContain(extra.id);
+    expect(rereadBodies.map((r) => r.lineId)).toEqual([expect.any(String), step, step]);
+    expect(marksOf("circle")).toHaveLength(1);
+  });
 });

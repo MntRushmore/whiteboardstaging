@@ -311,10 +311,12 @@ describe("live loop — Help (and Ask about this)", () => {
     reads = [{ latex: "2x+3=11" }, { latex: "x=5" }];
     await write(writeLine("2x+3=11", 100, 200, 40));
     await write(writeLine("x=3", 100, 300, 40)); // read as x=5
+    // (the ring's second look reads both lines again: liveLoop.reread.test.ts)
+    const looked = crops;
     await help();
     expect(calls).toEqual([]);
     expect(suggestions().length).toBeGreaterThan(0);
-    expect(crops).toBe(0);
+    expect(crops).toBe(looked);
   });
 
   // ------------------------------------------------------------ word problems

@@ -703,6 +703,8 @@ export const LIVE_TIMING = {
   /** a line just read: its typeset readback shows this long, even with the pen in hand */
   readbackMs: 2500,
   unreadableChipMs: 3000, // low confidence: "Couldn't read this" chip only after this
+  /** a ring waits at most this long for the step and its line above to be read again (`acceptChainReread`) */
+  chainHoldMs: 4000,
   recognizeTimeoutMs: 6000,
   checkWatchdogMs: 4000, // no model bytes -> fallback model
   pillFadeMs: 1500,
