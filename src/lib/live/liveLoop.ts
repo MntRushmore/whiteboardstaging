@@ -1994,8 +1994,19 @@ export class LiveLoop implements LiveController {
     if (solve && !skip.has(solve) && this.opts.mode === "answer" && lines[solve]?.latex) this.requestSolve(solve);
   }
 
-  /** LLM stream could not start (offline / fetch TypeError): remember it, never spin. */
+  /**
+   * LLM stream could not start (offline / fetch TypeError): remember it, never spin — but only what
+   * the student asked for. Auto's own work (an unasked check, a solve on a line Auto started:
+   * `autoLines`) is dropped, not put off. Queued, a solve Safari's "Load failed" dropped was replayed
+   * by the next read that got through (`noteSuccess` → `replayOffline`) as `requestSolve`, with none
+   * of Auto's guards — no pause, nothing asked since, the switch maybe off by then — and wrote under
+   * the student's pen mid-line; and the "Offline" it set told them about a call they never made. So
+   * nothing of Auto's ever waits here, and `autoInk` has nothing to clear: the next state of the
+   * problem gets Auto's next try.
+   */
   private deferLlm(kind: "check" | "solve", lineId: string, userAsked = false): void {
+    const asked = kind === "check" ? userAsked : !this.autoLines.has(lineId);
+    if (!asked) return;
     if (kind === "check") this.pendingChecks.set(lineId, userAsked || (this.pendingChecks.get(lineId) ?? false));
     else this.pendingSolve = lineId;
     liveStore.status.set("offline");

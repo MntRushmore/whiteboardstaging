@@ -55,8 +55,8 @@ function withUnjudged(): LiveEngine {
   });
 }
 
-/** What a scripted model call does: its events, after an optional gate. */
-type Reply = { events?: LiveSseEvent[]; gate?: Promise<void> };
+/** What a scripted model call does: its events, after an optional gate — or it throws (a dropped request). */
+type Reply = { events?: LiveSseEvent[]; gate?: Promise<void>; throwErr?: unknown };
 
 describe("live loop — Auto", () => {
   useSyncHash();
@@ -71,6 +71,8 @@ describe("live loop — Auto", () => {
   let assigned: Map<string, string>;
   /** while set, reads wait for it */
   let readGate: Promise<void> | null;
+  /** the quiet notes the board showed (`deps.notify`) */
+  let notes: string[];
 
   function start(mode: HelpMode, opts: { auto?: boolean; engine?: LiveEngine } = {}): void {
     loop?.stop();
@@ -79,6 +81,7 @@ describe("live loop — Auto", () => {
       calls.push({ path, body });
       const reply = (path.endsWith("/solve") ? replies.solve : replies.check).shift() ?? {};
       if (reply.gate) await reply.gate;
+      if (reply.throwErr) throw reply.throwErr;
       for (const ev of reply.events ?? []) yield ev;
     };
     loop = createLiveLoop(
@@ -99,6 +102,7 @@ describe("live loop — Auto", () => {
         reread: async () => {
           throw new Error("no second reader here");
         },
+        notify: (message) => notes.push(message),
       },
     );
     loop.start();
@@ -147,6 +151,7 @@ describe("live loop — Auto", () => {
     script = [];
     assigned = new Map();
     readGate = null;
+    notes = [];
     fetchJson = vi.fn<FetchJson>(async (_path, body): Promise<RecognizeResponse> => {
       const { lineId } = body as RecognizeRequest;
       let latex = assigned.get(lineId);
@@ -247,6 +252,19 @@ describe("live loop — Auto", () => {
       loop.requestCheck(unjudged);
       await quiesce();
       expect(liveStore.lastError.get()).toMatchObject({ kind: "check", lineId: unjudged });
+    });
+
+    it("a check the network dropped says nothing: no 'Offline' for a call the student never made", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      start("feedback", { engine: withUnjudged() });
+      await penLine(0, "2x+3=11");
+      await penLine(1, UNJUDGED);
+      replies.check.push({ throwErr: new TypeError("Load failed") });
+      await wait(ANSWER_SETTLE_MS);
+      expect(checks()).toHaveLength(1);
+      expect(liveStore.status.get()).not.toBe("offline");
+      expect(liveStore.offlineQueued.get()).toBe(0);
+      expect(liveStore.lastError.get()).toBeNull();
     });
 
     it("spends nothing with no ink left, or while an out-of-ink error is showing", async () => {
@@ -432,6 +450,28 @@ describe("live loop — Auto", () => {
       await quiesce();
       expect(solves()).toHaveLength(2);
       expect(liveStore.lastError.get()).toMatchObject({ kind: "solve", lineId: line });
+    });
+
+    it("a solve the network dropped is not put off for later: no 'Offline', and the next read that gets through replays nothing", async () => {
+      // Safari's "Load failed" while the browser still says online. Before, the solve was queued as
+      // the student's own (`pendingSolve`), the pill said "Offline", and the next read that got
+      // through ran it with none of Auto's guards: mid-writing, unasked.
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      start("answer");
+      replies.solve.push({ throwErr: new TypeError("Load failed") });
+      await penLine(0, "2a+b=8");
+      await wait(ANSWER_SETTLE_MS);
+      expect(solves()).toHaveLength(1);
+      expect(liveStore.status.get()).not.toBe("offline");
+      expect(liveStore.lastError.get()).toBeNull();
+
+      // the student writes on elsewhere, and that line's read succeeds
+      await penLine(1, "y=3", 700);
+      await quiesce();
+      expect(solves()).toHaveLength(1);
+      await wait(ANSWER_SETTLE_MS);
+      expect(solves()).toHaveLength(1);
+      expect(work()).toEqual([]);
     });
 
     it("spends nothing with no ink left", async () => {
