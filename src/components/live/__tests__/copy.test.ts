@@ -1,6 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { LIVE_COPY, waitPhrase } from "../copy";
 
+/** Every string under a copy object, however deep. */
+function strings(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (value && typeof value === "object") return Object.values(value).flatMap(strings);
+  return [];
+}
+
+describe("the help-modes explainer and the Auto switch", () => {
+  it("keeps the tone: no exclamation marks, never 'wrong'", () => {
+    for (const s of [...strings(LIVE_COPY.modeInfo), ...strings(LIVE_COPY.auto)]) {
+      expect(s, s).not.toMatch(/!|\bwrong\b/i);
+    }
+  });
+
+  it("says what Auto does, and that the tutor shows what it read", () => {
+    expect(LIVE_COPY.modeInfo.autoBody).toMatch(/Auto on/);
+    expect(LIVE_COPY.modeInfo.autoBody).toMatch(/Auto off/);
+    expect(LIVE_COPY.modeInfo.body).toMatch(/what it read/);
+  });
+});
+
 describe("waitPhrase", () => {
   it.each([
     [0.2, "1 s"],

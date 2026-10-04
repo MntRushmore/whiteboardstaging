@@ -10,7 +10,9 @@
  *
  *  (a) `unreadable`      the engine cannot make sense of a line that looks like maths;
  *  (b) `suspiciousRead`  the read contains something implausible in its column (below);
- *  (c) `low-confidence`  Mathpix was unsure, so the board would otherwise show nothing.
+ *  (c) `low-confidence`  Mathpix was unsure, so the board would otherwise show nothing;
+ *  (d) `chain`           a step the engine is about to ring: the step and the line it follows are
+ *                        read again first (`acceptChainReread`, below).
  *
  * And its answer is only taken when it differs from Mathpix's, has no words, and the engine can
  * read it (`acceptReread`); otherwise Mathpix's read stands.
@@ -207,7 +209,7 @@ export function suspiciousRead(latex: string, others: readonly string[] = []): R
 
 // ---------------------------------------------------------------- the trigger
 
-export type RereadTrigger = ReadSignal | "unreadable" | "low-confidence";
+export type RereadTrigger = ReadSignal | "unreadable" | "low-confidence" | "chain";
 
 export interface RereadInput {
   latex: string;
@@ -282,9 +284,23 @@ export function engineReads(engine: Pick<LiveEngine, "analyzeLine">, latex: stri
 }
 
 /** Comparable form of a read: spacing, sizing and braces ignored (`e^{x}` is `e^x`). */
+const comparable = (s: string) => (s ?? "").replace(/\\(?:left|right)(?![a-zA-Z])|\\[,;:! ]|~|\s|[{}]/g, "");
+
 export function sameRead(a: string, b: string): boolean {
-  const norm = (s: string) => (s ?? "").replace(/\\(?:left|right)(?![a-zA-Z])|\\[,;:! ]|~|\s|[{}]/g, "");
-  return norm(a) === norm(b);
+  return comparable(a) === comparable(b);
+}
+
+/** How many characters apart two reads are (edit distance of their comparable forms). */
+export function readDistance(a: string, b: string): number {
+  const s = comparable(a);
+  const t = comparable(b);
+  let prev = Array.from({ length: t.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= s.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= t.length; j++) row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (s[i - 1] === t[j - 1] ? 0 : 1));
+    prev = row;
+  }
+  return prev[t.length];
 }
 
 /**
@@ -309,4 +325,31 @@ export function acceptReread(
   if (len(next) > was * 2 + 4 || len(next) * 2 + 4 < was) return null;
   if (suspiciousRead(next, others)) return null;
   return engineReads(engine, next) ? next : null;
+}
+
+// ---------------------------------------------------------------- (d) a step that does not follow
+
+/** A chain re-read may change this many characters of Mathpix's read, no more. */
+const CHAIN_MAX_EDIT = 2;
+
+/**
+ * The second reader's LaTeX for a `chain` re-read, when it should replace Mathpix's. A step the
+ * engine says does not follow from the line above is about to be ringed, and on messy ink that is
+ * as often a misread as a slip (the messy-ink sweep: a problem's `12` read as `17` got the right
+ * step under it ringed). So the step and the line it follows are read again before the ring.
+ *
+ * What a wrong "fix" costs here is worse than elsewhere: it hides the student's real mistake. So
+ * the line goes to the model WITHOUT the column (shown the next line, a model can make a line
+ * "follow" by changing it), and only a near transcription is believed — everything
+ * `acceptReread` asks, and at most `CHAIN_MAX_EDIT` characters changed: a look-alike digit,
+ * letter or sign (`7`→`2`, `-`→`=`), never new maths.
+ */
+export function acceptChainReread(
+  engine: Pick<LiveEngine, "analyzeLine">,
+  mathpixLatex: string,
+  candidate: string,
+  others: readonly string[] = [],
+): string | null {
+  const next = acceptReread(engine, mathpixLatex, candidate, others);
+  return next && readDistance(next, mathpixLatex) <= CHAIN_MAX_EDIT ? next : null;
 }

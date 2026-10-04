@@ -112,7 +112,10 @@ export function tourReducer(state: TourState, event: TourEvent): TourState {
           // Help me on ink the tutor cannot read answers with a question mark, not a step
           return event.mark === "question" ? { ...state, help: "unread" } : state;
         case "tutorWrote":
-          return { ...state, step: "helped" };
+          // Only what it wrote for the student's own Help me is the lesson: with Auto on, the tutor
+          // also writes by itself (Suggest's step at a pause, Solve finishing the problem), and that
+          // moved the tour on as if the student had tapped the button it was teaching.
+          return state.help === "asked" || state.help === "slow" ? { ...state, step: "helped" } : state;
         case "next":
           return { ...state, step: "ask" };
         default:
@@ -152,6 +155,26 @@ export function markerStepOf(step: TourStep): TourMarkerStep | null {
     case "done":
       return null;
   }
+}
+
+/**
+ * The tour needs Auto on — coach mark 1 waits for the tick or ring the tutor puts on the student's
+ * line by itself — so it turns it on, and gives the student their own setting back when it ends.
+ * `tourAutoBefore`: the setting to give back, taken when the tour starts; one a tour under way
+ * already remembered (`TourMarker.autoBefore`, a reload mid-tour) wins over Auto now, which is the
+ * tour's doing.
+ */
+export function tourAutoBefore(current: boolean, remembered: boolean | undefined): boolean {
+  return remembered ?? current;
+}
+
+/**
+ * At the tour's end, finished or skipped: the Auto setting to give back, or null to leave it — it was
+ * on before, the student switched it off themselves during the tour, or the tour began before this
+ * was remembered. Before, the tour left Auto on for good.
+ */
+export function tourAutoAtEnd(before: boolean | undefined, current: boolean): boolean | null {
+  return before === false && current ? false : null;
 }
 
 /** "1 of 3" for the coach marks; null while the problem is being written, on the finish card and once done. */

@@ -206,12 +206,20 @@ describe("live loop — the tutor answers the line instead of restating it", () 
 
   // ------------------------------------------------------------ every other line is untouched
 
-  it("leaves `36 + 2` — no `=`, so no question — with today's silent echo", async () => {
+  /** Everything the tutor wrote sits under the student's line, none of it after it on their writing line. */
+  function onlyUnderTheLine(): boolean {
+    const line = studentInk();
+    return handShapes().every((s) => editor.getShapePageBounds(s)!.y >= line.y + line.h);
+  }
+
+  it("leaves `36 + 2` — no `=`, so no question — with today's silent echo (Solve finishes it under the work)", async () => {
     latex = "36+2";
     await writeLine();
 
-    expect(handShapes()).toEqual([]);
     expect(echoes()).toMatchObject([{ latex: "36+2", resultLatex: "", source: "echo" }]);
+    // Auto in Solve finishes the problem at the pause, under the work: never after their line
+    expect(handShapes().length).toBeGreaterThan(0);
+    expect(onlyUnderTheLine()).toBe(true);
     expect(streamCalls).toEqual([]);
   });
 
@@ -219,8 +227,37 @@ describe("live loop — the tutor answers the line instead of restating it", () 
     latex = "2x+3=11";
     await writeLine();
 
-    expect(handShapes()).toEqual([]);
     expect(echoes()).toMatchObject([{ latex: "2x+3=11", source: "echo" }]);
+    expect(onlyUnderTheLine()).toBe(true);
+    expect(streamCalls).toEqual([]);
+  });
+
+  it("with Auto off, Solve writes nothing it was not asked for: the readback alone", async () => {
+    loop.stop();
+    resetLiveStore();
+    loop = createLiveLoop(editor, { ...loop.getOptions(), auto: false }, {
+      recognizer: new RecognizeClient({ fetchJson }),
+      stream: async function* (path: string): AsyncGenerator<LiveSseEvent, void, undefined> {
+        streamCalls.push(path);
+      },
+      getEngine: async () => engine,
+      fetchCapabilities: async () => ({ recognizer: "mathpix", liveEnabled: true, models: { check: "c", solve: "s", vision: "v" } }),
+      events: null,
+      isOnline: () => true,
+      handwritingEnabled: () => true,
+      reducedMotion: () => true,
+    });
+    loop.start();
+    await writeLine();
+
+    // `36 + 2 =` keeps its readback, with no answer in it or after it
+    expect(handShapes()).toEqual([]);
+    expect(echoes()).toMatchObject([{ latex: "36+2=", resultLatex: "", source: "echo" }]);
+    // ...until the student asks
+    loop.noteAsked();
+    loop.requestSolve();
+    await rest();
+    expect(handWriting()).toBe(expectedAnswerWriting("38"));
     expect(streamCalls).toEqual([]);
   });
 

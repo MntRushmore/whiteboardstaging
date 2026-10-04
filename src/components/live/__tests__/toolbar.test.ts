@@ -19,6 +19,7 @@ function toolbar(partial: Partial<BoardToolbarState> = {}) {
     mode: "feedback",
     liveEnabled: true,
     liveAvailable: true,
+    auto: true,
     ...partial,
   });
 }
@@ -52,6 +53,40 @@ describe("boardToolbarView", () => {
     expect(toolbar({ mode: "feedback" }).askButton).toBe("help");
     expect(toolbar({ mode: "suggest" }).askButton).toBe("help");
     expect(toolbar({ mode: "answer" }).askButton).toBe("solve");
+  });
+
+  it("shows the Auto switch beside the dial in every help mode, as the student left it", () => {
+    for (const mode of ["feedback", "suggest", "answer"] as const) {
+      expect(toolbar({ mode }).autoSwitch).toEqual({ on: true, hint: LIVE_COPY.auto.onHint });
+      expect(toolbar({ mode, auto: false }).autoSwitch).toEqual({ on: false, hint: LIVE_COPY.auto.offHint });
+    }
+  });
+
+  it("says Auto is paused while AI shapes are hidden (the switch keeps the student's choice)", () => {
+    expect(toolbar({ hideAiShapes: true }).autoSwitch).toEqual({ on: true, hint: LIVE_COPY.auto.pausedHint });
+    expect(toolbar({ hideAiShapes: true, auto: false }).autoSwitch).toEqual({ on: false, hint: LIVE_COPY.auto.offHint });
+  });
+
+  it("hides the Auto switch where it would do nothing: Off, and with Live off (exactly where there is no ask button)", () => {
+    for (const auto of [true, false]) {
+      expect(toolbar({ mode: "off", auto }).autoSwitch).toBe(null);
+      expect(toolbar({ mode: "answer", liveEnabled: false, auto }).autoSwitch).toBe(null);
+      expect(toolbar({ mode: "suggest", liveAvailable: false, auto }).autoSwitch).toBe(null);
+    }
+    for (const mode of ["off", "feedback", "suggest", "answer"] as const) {
+      for (const liveEnabled of [true, false]) {
+        const view = toolbar({ mode, liveEnabled });
+        expect(view.autoSwitch === null).toBe(view.askButton === null);
+      }
+    }
+  });
+
+  it("labels the switch with one word a young reader gets at a glance, and says what each position does", () => {
+    expect(LIVE_COPY.auto.label).toBe("Auto");
+    for (const hint of [LIVE_COPY.auto.onHint, LIVE_COPY.auto.offHint]) {
+      expect(hint).not.toMatch(/!|wrong/i);
+      expect(hint).toMatch(/your tutor/);
+    }
   });
 
   it("hides the ask button when Live is off: only Live writes the steps", () => {

@@ -30,7 +30,7 @@ import { APPROX_OP, latexToMath, preprocessLatex, splitRelations, UnsupportedLat
 import { countOperations, createMathInstance, integralsExact, isComplexValue, isNodeValue, isUnitValue, safeEvaluate, safeParse, toNumber, translate, type MathModule } from "./math";
 import { evaluateUnits, unitValueToLatex, valuesMatch } from "./units";
 import { solveFromLines, type SystemDeps } from "./systems";
-import { linearSolveSteps, simplifyExpressionSteps, type LinearSteps, type RelOp } from "./algebra";
+import { combineTerms, linearSolveSteps, simplifyExpressionSteps, standardOrder, termsLatex, termsOf, type LinearSteps, type RelOp } from "./algebra";
 import { createCalculus } from "./calculus";
 import { createIntegration } from "./integration";
 import { createLimits } from "./limits";
@@ -1330,6 +1330,30 @@ export function createEngine(mod: MathModule): LiveEngine {
     }
   };
 
+  /**
+   * `2x^{2}`, `3x + 2`: Solve on a lone expression with nothing to do. Only a polynomial the engine
+   * reads term by term counts, and only when collecting it gives back what is written, in the
+   * engine's own form — `\frac{8x}{2}` is one term too, but it is `4x`, and the model gets to say so.
+   */
+  const alreadySimplest = (latex: string): boolean => {
+    try {
+      const pre = preprocessLatex(latex ?? "").trim();
+      if (!pre || /\d\.\d/.test(pre) || splitRelations(pre).ops.length > 0) return false;
+      if (simplifySteps(latex)) return false;
+      const t = tr(pre);
+      if (t.hasUnits || t.hasText || t.hasPercent || t.hasPm || t.functions.length > 0 || isSymbolic(t)) return false;
+      const unknowns = unknownsOf(t);
+      if (unknowns.length === 0 || unknowns.some((v) => !/^[a-zA-Z]$/.test(v))) return false;
+      const node = safeParse(math, t.source);
+      const terms = node ? termsOf(node, unknowns) : null;
+      if (!terms || terms.length === 0) return false;
+      const collected = standardOrder(combineTerms(terms));
+      return collected.length === terms.length && stepKey(termsLatex(collected)) === stepKey(pre);
+    } catch {
+      return false;
+    }
+  };
+
   const isExactValue = (r: RootValue): boolean => {
     const exactNumber = (n: number) => Number.isInteger(Number(n.toFixed(9))) || asSmallFraction(n) !== null;
     return typeof r === "number" ? exactNumber(r) : exactNumber(r.re) && exactNumber(r.im);
@@ -1536,6 +1560,7 @@ export function createEngine(mod: MathModule): LiveEngine {
     },
     solveLatex,
     simplifySteps,
+    alreadySimplest,
     graphFor: (lines: readonly string[]) => {
       try {
         return graphing.graphFor(lines);
@@ -1556,6 +1581,7 @@ const stub: LiveEngine = {
   solveLatex: () => null,
   solveFromLines: () => null,
   simplifySteps: () => null,
+  alreadySimplest: () => false,
   graphFor: () => null,
   verifyExpected: () => "unknown",
   balance: () => null,

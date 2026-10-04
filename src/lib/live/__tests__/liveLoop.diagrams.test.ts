@@ -1,6 +1,8 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { LIVE_COPY } from "@/components/live/copy";
 import type { TLShapeId } from "tldraw";
 import { boundsOf, DRAWINGS, labelAt, writeAt, type Drawing } from "@/__eval__/drawings";
+import { VARIANTS } from "@/__eval__/handwriting";
 import { createFakeEditor, type FakeEditor } from "../__fixtures__/fakeEditor";
 import { drawShapeFromPoints } from "../__fixtures__/strokes";
 import { settle, settleStable, settleUntil } from "@/lib/live/__fixtures__/settle";
@@ -72,6 +74,11 @@ describe("live loop — drawings", () => {
   let labelRead: string;
   let setupReply: string[] | Error;
   let setupBodies: SetupRequest[];
+  /** the quiet notes the board showed (`deps.notify`) */
+  let notes: string[];
+  /** while set, a read of a drawing's ink as maths (`ink_…`) waits for it; the solve stream likewise */
+  let inkGate: Promise<void> | null;
+  let streamGate: Promise<void> | null;
 
   const recognizeBodies = () => fetchJson.mock.calls.map((c) => c[1] as RecognizeRequest);
   const lineReads = () => recognizeBodies().filter((b) => !b.lineId.startsWith("dg_"));
@@ -87,6 +94,7 @@ describe("live loop — drawings", () => {
         recognizer: new RecognizeClient({ fetchJson }),
         stream: async function* (path: string): AsyncGenerator<LiveSseEvent, void, undefined> {
           calls.push(path);
+          if (streamGate) await streamGate;
         },
         getEngine: async () => engine,
         fetchCapabilities: async () => ({ recognizer: "mathpix", liveEnabled: true, models: { check: "c", solve: "s", vision: "v" } }),
@@ -102,6 +110,7 @@ describe("live loop — drawings", () => {
         reread: async () => {
           throw new Error("no second reader in this file");
         },
+        notify: (message) => notes.push(message),
       },
     );
     loop.start();
@@ -143,8 +152,12 @@ describe("live loop — drawings", () => {
     labelRead = "\\begin{array}{l}\nx \\\\\n3 \\\\\n4\n\\end{array}";
     setupReply = PYTHAGORAS;
     setupBodies = [];
+    notes = [];
+    inkGate = null;
+    streamGate = null;
     fetchJson = vi.fn<FetchJson>(async (_path, body): Promise<RecognizeResponse> => {
       const req = body as RecognizeRequest;
+      if (req.lineId.startsWith("ink_") && inkGate) await inkGate;
       const latex = req.lineId.startsWith("dg_") ? labelRead : lineRead;
       return { latex, text: latex, kind: "math", confidence: 0.98, provider: "mathpix", ms: 90 };
     });
@@ -174,6 +187,18 @@ describe("live loop — drawings", () => {
     expect(echoes().every((p) => p.anchorIds.every((id) => !drawn.has(id)))).toBe(true);
     expect(marks().filter((m) => String((m.meta as Record<string, unknown>).mark).startsWith("question"))).toEqual([]);
     expect(labelReads()).toEqual([]);
+  });
+
+  it("on a phone, where the board is shown at a fifth of its size, `2x2` written big is a line of maths, not a drawing", async () => {
+    // 130 page px tall: an ordinary hand on a phone held upright. Judged in desktop page px, both
+    // 2s were "big curves" and the x their label, and Solve sent the "figure" to the vision model
+    editor.getBaseZoom = () => 0.2;
+    const ink = writeAt("2x2", 200, 200, undefined, 5);
+    await draw(ink);
+    expect(liveStore.diagrams.get()).toEqual([]);
+    expect(lineReads()).toHaveLength(1);
+    expect(lineReads()[0].strokes.x).toHaveLength(ink.length);
+    expect(Object.values(liveStore.lines.get()).map((st) => [...st.line.strokeIds].sort())).toEqual([[...idsOf(ink)].sort()]);
   });
 
   it("reads the labels once the student stops: one call for all of them, and not again for the same ink", async () => {
@@ -262,7 +287,122 @@ describe("live loop — drawings", () => {
     expect(setupBodies).toHaveLength(2);
     expect(setupBodies[1].lines).toEqual([]);
     expect(tutorInk()).toEqual([]);
-    expect(liveStore.lastError.get()).toMatchObject({ kind: "solve", message: "Couldn't work this out" });
+    expect(liveStore.lastError.get()).toMatchObject({ kind: "solve", message: LIVE_COPY.solve.failed });
+  });
+
+  // ------------------------------------------------------------ writing taken for a drawing
+  /**
+   * The prod bug: `2x2` written with a finger on a phone, Solve it, "Couldn't work this out". Written
+   * that large the ink comes apart into "drawings" (`splitInk`); the figure model was asked what the
+   * figure asks and rightly said nothing. Now a drawing that is no figure is read as maths first.
+   */
+  const largeInk = (latex: string) => writeAt(latex, 150, 200, VARIANTS[0], 8);
+  const inkReads = () => recognizeBodies().filter((b) => b.lineId.startsWith("ink_"));
+
+  it("Solve on `2x2` written large and taken for drawings: read as one line of maths, `= 4` beside it, no figure model", async () => {
+    lineRead = "2x2";
+    const ink = largeInk("2x2");
+    await draw(ink);
+    // the misreading this is about: no line, only drawings, none of them a figure
+    expect(liveStore.diagrams.get().length).toBeGreaterThan(1);
+    expect(Object.keys(liveStore.lines.get())).toEqual([]);
+    await run(() => loop.requestSolve());
+
+    // one read of the WHOLE row — every stroke — not of the piece that was touched last
+    expect(inkReads()).toHaveLength(1);
+    expect(inkReads()[0].strokes.x).toHaveLength(ink.reduce((n, st) => n + st.segments.length, 0));
+    expect(setupBodies).toEqual([]);
+    expect(handLinesOf(tutorInk())).toEqual(["= 4"]);
+    const right = Math.max(...ink.map((st) => st.bounds.x + st.bounds.w));
+    const below = Math.max(...ink.map((st) => st.bounds.y + st.bounds.h));
+    expect(tutorInk().every((sh) => sh.x >= right || sh.y >= below)).toBe(true);
+    expect(liveStore.lastError.get()).toBeNull();
+    expect(liveStore.solving.get()).toBe(0);
+
+    // asking again: the answer is there already, nothing new is written and nothing else is asked
+    const written = tutorInk().length;
+    await run(() => loop.requestHelp());
+    expect(tutorInk()).toHaveLength(written);
+    expect(setupBodies).toEqual([]);
+  });
+
+  it("an expression with nothing to do (`2x^{2}`), written large: the note, not an error and not the figure model", async () => {
+    lineRead = "2x^{2}";
+    await draw(largeInk("2x^{2}"));
+    await run(() => loop.requestSolve());
+    expect(inkReads()).toHaveLength(1);
+    expect(setupBodies).toEqual([]);
+    expect(tutorInk()).toEqual([]);
+    expect(notes).toEqual([LIVE_COPY.solve.simplest]);
+    expect(liveStore.lastError.get()).toBeNull();
+  });
+
+  it("the screen left while the ink is read: nothing is written on the next screen, and its own solve keeps the pill's count", async () => {
+    // a problem of the student's on a second screen, from before
+    const first = editor.getCurrentPage().id;
+    const second = editor.addPage();
+    editor.switchPage(second);
+    await settle();
+    lineRead = "2a+b=8";
+    await draw(writeAt("2a + b = 8", 200, 300));
+    expect(echoes()).toHaveLength(1);
+    editor.switchPage(first);
+    await settle();
+
+    // Solve on `2x2` written large: its ink is read as maths, slowly
+    lineRead = "2x2";
+    await draw(largeInk("2x2"));
+    let release!: () => void;
+    inkGate = new Promise<void>((r) => (release = r));
+    // the read lands although the screen was left (it was still being hashed, or its reply was
+    // already on its way): the recognizer's abort cannot be what keeps it off the next screen
+    const abortAll = vi.spyOn(RecognizeClient.prototype, "abortAll").mockImplementation(() => {});
+    let releaseStream!: () => void;
+    try {
+      loop.requestSolve();
+      await settle();
+      expect(inkReads()).toHaveLength(1);
+      expect(liveStore.solving.get()).toBe(1);
+
+      // the student goes to the other screen and asks Solve there: the model is on it
+      streamGate = new Promise<void>((r) => (releaseStream = r));
+      editor.switchPage(second);
+      await settle();
+      loop.requestSolve();
+      await settle();
+      expect(calls).toEqual(["/api/live/solve"]);
+      expect(liveStore.solving.get()).toBe(1);
+
+      release();
+      await settle();
+      await vi.advanceTimersByTimeAsync(500);
+      await settle();
+      const here = editor.getCurrentPageShapes().filter((sh) => sh.type === "draw" && isLiveMeta(sh.meta) && sh.meta.source === "ai" && !(sh.meta as Record<string, unknown>).mark);
+      expect(handLinesOf(here)).toEqual([]);
+      expect(liveStore.solving.get()).toBe(1);
+    } finally {
+      abortAll.mockRestore();
+      releaseStream?.();
+    }
+    await settle();
+    expect(liveStore.solving.get()).toBe(0);
+  });
+
+  it("ink that does not read as maths goes on to the figure model, as before", async () => {
+    lineRead = "\\nearrow \\searrow";
+    await draw(largeInk("2x2"));
+    await run(() => loop.requestSolve());
+    expect(inkReads()).toHaveLength(1);
+    expect(setupBodies).toHaveLength(1);
+    expect(setupBodies[0].crop).toBe(CROP);
+  });
+
+  it("a real figure is never read as a line of maths", async () => {
+    const tri = triangleAt(400, 200);
+    await draw([...tri.strokes, ...tri.labels.flat()]);
+    await run(() => loop.requestHelp());
+    expect(inkReads()).toEqual([]);
+    expect(setupBodies).toHaveLength(1);
   });
 
   it("a drawing stroke does not hold back a line waiting to be read", async () => {

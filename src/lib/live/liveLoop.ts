@@ -1,5 +1,6 @@
 "use client";
 
+import { toast } from "sonner";
 import { Box, createShapeId } from "tldraw";
 import type {
   Editor,
@@ -38,6 +39,7 @@ import {
   type LiveSseEvent,
   type LiveTranscript,
   type LiveTranscriptLine,
+  type LineKind,
   type MathShape,
   type MathShapeProps,
   type MathTone,
@@ -67,7 +69,7 @@ import { liveWrite, scheduleLiveWrite } from "./liveWrite";
 import { recordReread, recordRecognition } from "./liveDebug";
 import { analyzeColumn, localSolve } from "./localSolve";
 import { requestReread, requestSetup, type CallOptions } from "./modelCalls";
-import { acceptReread, rereadTrigger } from "./readCheck";
+import { acceptChainReread, acceptReread, rereadTrigger, type RereadTrigger } from "./readCheck";
 import { isProblemProse, setupBlock, validateSetupLines, wordProblemKey } from "./wordProblem";
 import { markKey, markStrokes, ringRect, type MarkKind } from "./marks";
 import { inkExtendsLine } from "./celebrate";
@@ -111,7 +113,7 @@ import {
   rectsIntersect,
 } from "./placement";
 import { badgeFor, decide, isSingleSymbolLatex, localNoteFor, unjudgedReason, type PolicyDecision, type UnjudgedReason } from "./policy";
-import { createSolveStepGuard, engineParsesStep, localAnswerFor, unwrapBoxed as unwrapBoxedAnywhere } from "./solveSteps";
+import { createSolveStepGuard, engineParsesStep, localAnswerFor, mathSymbols, unwrapBoxed as unwrapBoxedAnywhere } from "./solveSteps";
 import {
   RecognizeClient,
   RecognizeTimeoutError,
@@ -121,12 +123,12 @@ import {
   recognizeFailureHints,
 } from "./recognizeClient";
 import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient";
-import { assignColumns, clusterLines, rebuildFromMathShapes, unionRects, type EchoShapeSeed } from "./strokeClusters";
+import { assignColumns, clusterLines, inkScale, rebuildFromMathShapes, unionRects, type EchoShapeSeed } from "./strokeClusters";
 import { buildPayload, hashPayload } from "./strokePayload";
-import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type InkSplit } from "./diagrams";
+import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
 import { parseDomainPiece } from "./engine/domain";
-import { figureAnswer, labelKey, looksLikeUnknown } from "./figure";
+import { figureAnswer, isValueLabel, labelKey, looksLikeUnknown } from "./figure";
 import { HAND_LINE_META } from "./handwriting";
 import { requestProof } from "./proof/client";
 import type { ProofRequest, ProofResponse } from "./proof/contracts";
@@ -135,7 +137,8 @@ import { PROOF_ROWS_META, proofRowsPlan } from "./proof/place";
 import { PROOF_FIGURE_META, PROOF_TABLE_META, tutorFiguresOf } from "./proof/tutorFigure";
 import type { PlannedRow } from "./proof/planner";
 import type { BoardLine, ProofRead } from "./proof/read";
-import { problemLines, problemMetaOf, readProblemCells, splitColumnsAtProblems, type ProblemCell } from "./chat/cells";
+import { problemKeyOf, problemLines, problemMetaOf, readProblemCells, splitColumnsAtProblems, type ProblemCell } from "./chat/cells";
+import { nextHelpTarget, penLine, pickedLine, problemCount, problemTarget, type HelpTargetDraft } from "./helpTarget";
 import {
   PROBLEM_WORK_META,
   currentProblem,
@@ -179,6 +182,10 @@ export interface LiveEditorLike {
   toImage?: Editor["toImage"];
   /** the tool state (`draw.drawing`: a stroke is being drawn); optional: test editors have no tools */
   isIn?(path: string): boolean;
+  /** what the student picked with the select tool (`helpTargetLine`); optional: test editors may have none */
+  getSelectedShapeIds?(): TLShapeId[];
+  /** the camera's fit zoom (`boardZoom`); optional: test editors have no camera */
+  getBaseZoom?(): number;
 }
 
 export type StreamFn = (path: string, body: unknown, opts?: StreamOptions) => AsyncGenerator<LiveSseEvent, void, undefined>;
@@ -206,6 +213,12 @@ export interface LiveLoopDeps {
   planFigure: (spec: FigureSpec, opts: FigurePlanOptions) => FigurePlanResult | null;
   /** lecture mode's planners (`src/lib/live/lecture/plan.ts`); absent, they are loaded on the first lecture run */
   lecturePlanners?: LecturePlanners | LoadLecturePlanners;
+  /**
+   * A quiet note for the student that is not an error — Solve with nothing to work out
+   * (`LIVE_COPY.solve`): the board's toast, as the ask button's "Write a line of maths first". Never
+   * `liveStore.lastError`, whose red card and Retry say something failed.
+   */
+  notify: (message: string) => void;
 }
 
 interface LineRuntime {
@@ -213,15 +226,23 @@ interface LineRuntime {
   solveAbort: AbortController | null;
   unreadableShown: boolean;
   unreadableTimer: ReturnType<typeof setTimeout> | null;
-  idleTimer: ReturnType<typeof setTimeout> | null;
   shownHintTexts: Set<string>;
   escalation: number;
   processing: number;
   /** the tutor's mark wanted on this line (`markKey`), null for none; undefined until first render */
   markKey?: string | null;
+  /**
+   * its ring was taken off because new ink looked like more of this line (`unringGrowingLines`):
+   * its strokes then, so the next flush can tell whether that ink really joined it
+   */
+  unrungStrokes?: readonly string[] | null;
   markWriter?: HandWriter | null;
   /** its read failed for a reason that is not the handwriting (signed out, out of ink, rate limited): no "?" */
   readRefused?: boolean;
+  /** the ink version (`hash`) whose failed read was already tried once more on its own (`retryReadSoon`) */
+  readRetriedHash?: string;
+  /** that one more try, waiting `READ_RETRY_MS` */
+  readRetryTimer?: ReturnType<typeof setTimeout> | null;
   /** when a change of its mark was scheduled (`syncMark`) and has not finished writing; 0 when none */
   markBusySince?: number;
   /** what waits for the tutor's pen to lift from this line's mark (`afterMark`) */
@@ -259,6 +280,25 @@ type RetryContext =
   | { kind: "proof"; lineId: string; all: boolean };
 
 /**
+ * What the student asked for, read off the call that failed, so its error card can say so
+ * (`errorCardTitle`): Help me and More help ask for one step (`onlyFirstStep`, a proof's next
+ * row), which is a hint; Solve it asks for the rest. Reads and capability calls ask for nothing.
+ */
+function askedFor(retry: RetryContext): LiveError["asked"] {
+  switch (retry.kind) {
+    case "check":
+      return retry.opts.forceHint ? "hint" : "check";
+    case "solve":
+    case "figure":
+      return retry.opts.onlyFirstStep ? "hint" : "solve";
+    case "proof":
+      return retry.all ? "solve" : "hint";
+    default:
+      return undefined;
+  }
+}
+
+/**
  * "The tutor reads the figure": how near a line must be to a drawing for Solve on it to read the
  * drawing too (page px, or this many glyphs when that is more) — `x = ?` written beside a triangle.
  */
@@ -272,13 +312,44 @@ const FIGURE_CROP_WIDTH = 768;
  */
 const FIGURES_DISMISSED_META = "liveFiguresDismissed";
 const MAX_FIGURE_DISMISSALS = 20;
+/** The closed shapes `splitInk` recognizes (`Diagram.kinds`): a drawing with one is a figure (`isRealFigure`). */
+const FIGURE_SHAPES: ReadonlySet<DiagramKind> = new Set<DiagramKind>(["triangle", "quadrilateral", "polygon", "circle"]);
+/**
+ * Help tapped while the latest line is still being read: how often it looks whether the read has
+ * landed, and for how long at most — the recognizer's own timeout and a moment more.
+ */
+const HELP_READ_POLL_MS = 100;
+const HELP_READ_WAIT_MS = LIVE_TIMING.recognizeTimeoutMs + 1_000;
 
 /** Recognition failures that leave a chip under the ink (the pill carries the rest). */
 const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream", "timeout", "unknown"]);
 
 /**
+ * A read that failed the way a blip fails (it timed out, or the server answered 5xx) is tried once
+ * more on its own this long after, before the student is told (`retryReadSoon`).
+ */
+const READ_RETRY_MS = 1500;
+
+/**
+ * A failed read worth one more try of the same ink: a timeout or a server error. Not a
+ * `recognizer_failed` (the recognizer, with a crop, could not read this ink: it would not read it
+ * the second time either), nor a 4xx, which says the request itself was refused. A dropped request
+ * (fetch's TypeError) is the offline queue's to replay.
+ */
+/**
+ * How long the offline queue waits before it is replayed on its own while the browser still says
+ * online, one wait per replay in a row that found the network unreachable (the last repeats).
+ */
+const OFFLINE_REPLAY_MS = [2000, 4000, 8000, 15_000] as const;
+
+function transientReadFailure(err: unknown): boolean {
+  if (err instanceof RecognizeTimeoutError) return true;
+  return isApiError(err) && err.status >= 500 && err.code !== "recognizer_failed";
+}
+
+/**
  * How long the whole canvas must go without student ink before the tutor will write an
- * ANSWER (`contracts.ts` is frozen, so the constant lives with the timer that arms it).
+ * ANSWER — or, with Auto on, do anything else it does unasked (`LIVE_TIMING.settleMs`).
  *
  * `LIVE_TIMING.quietMs` (600 ms) is a different question: it asks "is this line finished",
  * which is all recognition and a badge need. This one asks "has the student stopped", which
@@ -293,7 +364,12 @@ const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream
  * as "a beat later" when you put the pen down. The asymmetry is deliberate: firing late costs
  * a moment's wait, firing early takes the problem out of the student's hands.
  */
-export const ANSWER_SETTLE_MS = 2500;
+export const ANSWER_SETTLE_MS = LIVE_TIMING.settleMs;
+
+/** What Auto in Solve finishes unasked: a line with a next step to write (not a label, a lone number, a graph). */
+const AUTO_SOLVE_KINDS: ReadonlySet<LineKind> = new Set<LineKind>(["equation", "expression", "inequality"]);
+/** ...and what Auto in Suggest writes the next step of, once stuck: those, and a right `-3 \quad -3` */
+const AUTO_STEP_KINDS: ReadonlySet<LineKind> = new Set<LineKind>([...AUTO_SOLVE_KINDS, "operation"]);
 
 /** The longest a mark's write may hold up what waits for it (`afterMark`): a ring takes about a second. */
 const MARK_BUSY_MAX_MS = 4000;
@@ -305,10 +381,13 @@ const CHECK_PATH = "/api/live/check";
 const SOLVE_PATH = "/api/live/solve";
 const UNREADABLE_NOTE = "Couldn't read this — tap to type it";
 /**
- * Shown when every step the solve stream sent failed the local interlock. It goes through the
- * same path as a server-sent solve error, so the student gets the pill, the inline card and
- * the Retry they already know — and nothing is drawn.
+ * Shown when every step the solve stream sent failed the local interlock, or a figure's reply did
+ * not hold up. It goes through the same path as a server-sent solve error, so the student gets the
+ * pill, the inline card and the Retry they already know — and nothing is drawn. It says what to
+ * try next: the usual reason is a line or a drawing the tutor could not make sense of.
  */
+const SOLVE_FAILED = LIVE_COPY.solve.failed;
+/** The same failure for a proof's next row the checker could not confirm (`ProofDesk`). */
 const UNUSABLE_SOLUTION = "Couldn't work this out";
 /** Dispatched on window by the math shape's warn/ok badge: `detail: { lineId, shapeId }`. */
 export const BADGE_TAP_EVENT = "live:badge-tap";
@@ -467,6 +546,9 @@ function defaultDeps(): LiveLoopDeps {
     reread: (req, opts) => requestReread(req, opts),
     proof: (req, opts) => requestProof(req, opts),
     planFigure: (spec, opts) => defaultPlanFigure(spec, opts),
+    notify: (message) => {
+      toast(message);
+    },
   };
 }
 
@@ -489,6 +571,13 @@ function newLineState(line: InkLine): LiveLineState {
   };
 }
 
+/** One line of a ring's second look (`checkChain`): the second reader's answer, and its read if believable. */
+interface ChainRead {
+  state: LiveLineState;
+  reply: RereadResponse;
+  latex: string | null;
+}
+
 export class LiveLoop implements LiveController {
   readonly editor: LiveEditorLike;
   private opts: UseLiveMathOptions;
@@ -506,11 +595,27 @@ export class LiveLoop implements LiveController {
    * has written something and then stopped.
    */
   private settled = false;
+  /** Auto in Suggest: `stuckMs` of no ink, then the next step (`autoStuck`) */
+  private stuckTimer: ReturnType<typeof setTimeout> | null = null;
+  /** what Auto has done, per problem state (`autoKey`): every unasked action, and its ink, at most once */
+  private readonly autoDone = new Set<string>();
+  /** lines Auto started work on: their failures stay quiet, and new ink stops their answers (`autoRun`) */
+  private readonly autoLines = new Set<string>();
+  /** the student asked since they last wrote: Auto adds no answer of its own on top (`noteAsked`) */
+  private askedSinceInk = false;
+  /** Auto off: the lines of the problems the student asked about, as they read then (`autoFor`) */
+  private readonly askedLines = new Map<string, string>();
+  /** a line's readback, shown after its read (`showReadback`) */
+  private readonly readbackTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private dirtyStrokeIds = new Set<string>();
   private pendingRewrite = false;
   private readonly rt = new Map<string, LineRuntime>();
   /** lines whose recognition could not reach the network; replayed on reconnect (no cap) */
   private readonly offlineQueue = new Set<string>();
+  /** the queue's next replay while the browser says online (`scheduleOfflineReplay`) */
+  private offlineReplayTimer: ReturnType<typeof setTimeout> | null = null;
+  /** how many replays in a row have found the network still unreachable (picks the next wait) */
+  private offlineReplayStep = 0;
   /** lines the next flush must recognize even when their stroke set is unchanged */
   private readonly forceRecognize = new Set<string>();
   /** LLM checks asked for while offline (focus line id -> userAsked); re-run once after reconnect */
@@ -541,6 +646,13 @@ export class LiveLoop implements LiveController {
   private readonly rereads = new Map<string, string | null>();
   /** second readings in flight, aborted with the rest of the runtime */
   private readonly rereadAborts = new Set<AbortController>();
+  /**
+   * Rings waiting for a second look (`holdRing`): the step's line id → the key of the pair of inks
+   * (the line above's and its own) being read again. A pair in `chainsDone` had its second look;
+   * its ring is drawn at once from then on.
+   */
+  private readonly chainHolds = new Map<string, string>();
+  private readonly chainsDone = new Set<string>();
   /** lines being read right now (the recognizer, or the second reader): nothing to say about them yet */
   private readonly reading = new Set<string>();
   /**
@@ -571,7 +683,23 @@ export class LiveLoop implements LiveController {
   /** figure answers the student rubbed out (`figureKey`): not written again unasked (page meta) */
   private readonly dismissedFigures = new Set<string>();
   private lastOnline: boolean | null = null;
+  /** the line read last, whatever made it read again: Help's line only before the pen has written (`helpTargetLine`) */
   private lastTouchedLineId: string | null = null;
+  /**
+   * The student's last FRESH pen stroke on this screen, and the line it was last seen in: where Help
+   * acts (`helpTargetLine`). Only the pen moves it — a stroke rubbed out, dragged, brought back by
+   * Undo or synced from elsewhere does not. Null until the pen writes on this screen.
+   */
+  private penStrokeId: string | null = null;
+  private penLineId: string | null = null;
+  /** the student's strokes rubbed out on this screen: one coming back is Undo, not the pen */
+  private readonly goneStrokeIds = new Set<string>();
+  /**
+   * Which came last, the pen or a pick with the select tool (a count of both): the newer one decides
+   * (`picked`). tldraw keeps a selection, unseen, while the pen writes elsewhere; it is no pick then.
+   */
+  private penSeq = 0;
+  private pickSeq = 0;
   private started = false;
   /** the failed call the pill's Retry re-runs */
   private retryContext: RetryContext | null = null;
@@ -602,6 +730,17 @@ export class LiveLoop implements LiveController {
   private tableStrokeIds = new Set<string>();
   /** division bars under an equation (`splitInk`): a line holding one is read as `\div n` */
   private barStrokeIds = new Set<string>();
+  /** marks on a drawing (`splitInk` role `mark`: an angle arc, a right-angle box, a tick): a figure's (`isRealFigure`) */
+  private markStrokeIds = new Set<string>();
+  /** Help waiting for the latest line's read to land before it acts (`helpAfterRead`) */
+  private helpWaitTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Which runtime this is: bumped by `resetRuntime` (a screen left or deleted, the loop stopped).
+   * Work begun before a reset was about the ink on screen then: what it brings back after it is
+   * dropped (`askAboutDrawing`), and its end does not count itself off the pill's `solving`, which
+   * the reset already zeroed (`solvingStarted`).
+   */
+  private generation = 0;
 
   /** the board chat's hand: its actions, one block at a time (`src/lib/live/chat/desk.ts`) */
   private readonly chat: ChatDesk;
@@ -662,6 +801,7 @@ export class LiveLoop implements LiveController {
     this.lastOnline = this.deps.isOnline();
     this.rebuild();
     this.recount();
+    this.publishHelpTarget();
     this.screenSeen = this.pageKey();
     void this.deps
       .getEngine()
@@ -729,11 +869,22 @@ export class LiveLoop implements LiveController {
 
   /** Timers, in-flight calls and per-line runtime: everything that belongs to the ink on screen. */
   private resetRuntime(): void {
+    this.generation++;
     if (this.quietTimer) clearTimeout(this.quietTimer);
     this.quietTimer = null;
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
+    if (this.helpWaitTimer) clearTimeout(this.helpWaitTimer);
+    this.helpWaitTimer = null;
     this.settled = false;
+    if (this.stuckTimer) clearTimeout(this.stuckTimer);
+    this.stuckTimer = null;
+    for (const t of this.readbackTimers.values()) clearTimeout(t);
+    this.readbackTimers.clear();
+    liveStore.readbacks.set({});
+    this.autoLines.clear();
+    this.askedLines.clear();
+    this.askedSinceInk = false;
     // Leaving the board / unmounting must not freeze a half-written step on the canvas.
     this.finishWriting();
     this.deps.recognizer.abortAll();
@@ -741,10 +892,11 @@ export class LiveLoop implements LiveController {
       r.checkAbort?.abort();
       r.solveAbort?.abort();
       if (r.unreadableTimer) clearTimeout(r.unreadableTimer);
-      if (r.idleTimer) clearTimeout(r.idleTimer);
+      if (r.readRetryTimer) clearTimeout(r.readRetryTimer);
     }
     for (const ctrl of this.rereadAborts) ctrl.abort();
     this.rereadAborts.clear();
+    this.chainHolds.clear();
     this.reading.clear();
     this.dismissedGraphs.clear();
     this.dismissedFigures.clear();
@@ -754,12 +906,19 @@ export class LiveLoop implements LiveController {
     this.labelsOf.clear();
     this.lastTouchedDiagramId = null;
     this.touchedProblem = null;
+    this.penStrokeId = null;
+    this.penLineId = null;
+    this.goneStrokeIds.clear();
+    liveStore.helpTarget.set(null);
     liveStore.diagrams.set([]);
     this.proofs.reset();
     this.rt.clear();
     this.dirtyStrokeIds.clear();
     this.forceRecognize.clear();
     this.offlineQueue.clear();
+    if (this.offlineReplayTimer) clearTimeout(this.offlineReplayTimer);
+    this.offlineReplayTimer = null;
+    this.offlineReplayStep = 0;
     this.pendingChecks.clear();
     this.pendingSolve = null;
     liveStore.offlineQueued.set(0);
@@ -767,13 +926,23 @@ export class LiveLoop implements LiveController {
   }
 
   private onSessionChange(entry: HistoryEntry<TLRecord>): void {
+    let picked = false;
     for (const [from, to] of Object.values(entry.changes.updated)) {
+      // a tap or a lasso with the select tool: Help may now act on another problem
+      if (from.typeName === "instance_page_state" && to.typeName === "instance_page_state") {
+        if (from.selectedShapeIds === to.selectedShapeIds) continue;
+        picked = true;
+        // something newly picked; a shape leaving the selection (rubbed out, say) picks nothing
+        if (to.selectedShapeIds.some((id) => !from.selectedShapeIds.includes(id))) this.pickSeq = this.penSeq + 1;
+        continue;
+      }
       if (to.typeName !== "instance" || from.typeName !== "instance") continue;
       if (from.currentPageId !== to.currentPageId) {
         this.switchScreen();
         return;
       }
     }
+    if (picked) this.publishHelpTarget();
   }
 
   /**
@@ -793,6 +962,7 @@ export class LiveLoop implements LiveController {
     this.rebuild();
     this.recount();
     this.reanalyzeAll();
+    this.publishHelpTarget();
     if (liveStore.status.get() !== "offline") liveStore.status.set(this.opts.enabled ? "idle" : "paused");
   }
 
@@ -803,6 +973,13 @@ export class LiveLoop implements LiveController {
    * of the same call after Retry carry the attempt count in the message.
    */
   private fail(err: unknown, ctx: Omit<ClassifyContext, "online" | "attempts">, retry: RetryContext): LiveError | null {
+    // What Auto did unasked fails without a word: nothing for the student to retry, and no ink
+    // dialog they did not ask for. Logged for us; their own ask on it shows its errors again.
+    if (ctx.lineId && ctx.kind !== "recognize" && this.autoLines.has(ctx.lineId)) {
+      console.warn(`[live] auto ${ctx.kind} failed`, err);
+      clientMetric("live.auto.failed", { kind: ctx.kind, lineId: ctx.lineId });
+      return null;
+    }
     const key = `${ctx.kind}:${ctx.lineId ?? ""}`;
     const attempts = this.retryKey === key ? this.retryAttempt + 1 : 1;
     const fields = classifyLiveFailure(err, { ...ctx, online: this.deps.isOnline(), attempts });
@@ -812,7 +989,8 @@ export class LiveLoop implements LiveController {
       this.retryAttempt = 0;
     }
     this.retryContext = retry;
-    return setLiveError(fields);
+    const asked = askedFor(retry);
+    return setLiveError(asked ? { ...fields, asked } : fields);
   }
 
   /** The call succeeded: drop its error (if it is the one showing) and its retry state. */
@@ -820,6 +998,8 @@ export class LiveLoop implements LiveController {
     const cur = liveStore.lastError.get();
     if (cur && cur.kind === kind && cur.lineId === lineId) clearLiveError();
     if (this.retryKey === `${kind}:${lineId ?? ""}`) this.resetRetry();
+    // the network answered: the offline queue's next replay on its own waits the shortest time again
+    this.offlineReplayStep = 0;
     // A request just came back, so the network is up. An "offline" left by a fetch that failed
     // while the browser still said online (a dropped connection; no 'online' event will ever
     // follow) ends here, and what it queued or deferred is replayed once, as on a reconnect.
@@ -847,6 +1027,8 @@ export class LiveLoop implements LiveController {
     const err = liveStore.lastError.get();
     const ctx = this.retryContext;
     if (!err || !ctx || !this.started) return;
+    // Retry is an ask: its failure is shown, whatever Auto did on the line since
+    this.autoLines.clear();
     this.retryAttempt++;
     const lines = liveStore.lines.get();
     switch (ctx.kind) {
@@ -942,6 +1124,21 @@ export class LiveLoop implements LiveController {
         });
       }
     }
+    // Help in Solve may pick another of the chat's problems than a step would; Live off has none
+    if (prev.enabled !== next.enabled || prev.mode !== next.mode) this.publishHelpTarget();
+    const autoChanged = this.autoOn(prev) !== this.autoOn(next);
+    if (autoChanged && !this.autoOn()) {
+      // Auto off: what it was about to do, or had not finished asking for, stops (a hand already
+      // writing finishes its line); the marks on the page stay
+      this.autoInk();
+    } else if (autoChanged && next.enabled) {
+      // Auto on: the lines get their marks, and what is due at a pause is done now if the student is stopped
+      this.reanalyzeAll();
+      if (next.mode === "suggest" || next.mode === "answer") this.checkMismatchesAfterLadderRise();
+    }
+    // the dial moved, or Auto came on: the checks the old state never ran are due (the bug was that
+    // an unknown line read in Off, or before a dial change, was never checked at all)
+    if ((autoChanged || prev.mode !== next.mode) && next.enabled) queueMicrotask(() => this.autoResume());
   }
 
   /**
@@ -952,10 +1149,10 @@ export class LiveLoop implements LiveController {
    * is left as it is, and only the current problem is touched, never every problem on the screen.
    */
   private dialMovedTo(mode: "answer" | "suggest"): void {
-    if (!this.started || !this.opts.enabled || this.opts.mode !== mode) return;
+    if (!this.started || !this.opts.enabled || this.opts.mode !== mode || !this.autoOn()) return;
     const cells = this.problemCells();
     if (cells.length === 0) return;
-    const cell = currentProblem(cells, this.touchedProblem, (c) => this.problemState(c));
+    const cell = currentProblem(cells, this.targetProblem(), (c) => this.problemState(c));
     if (!cell) return;
     const s = this.problemState(cell);
     if (s.work || (mode === "answer" ? s.solved : s.started)) return;
@@ -970,7 +1167,7 @@ export class LiveLoop implements LiveController {
    * Mid-writing, the settle still decides.
    */
   private dialRoseWhileStopped(mode: "answer" | "suggest"): void {
-    if (!this.started || !this.opts.enabled || this.opts.mode !== mode || this.settleTimer) return;
+    if (!this.started || !this.opts.enabled || this.opts.mode !== mode || this.settleTimer || !this.autoOn()) return;
     this.writeOperationResults();
     this.drawWantedGraphs();
     this.solveWantedFigures();
@@ -989,7 +1186,7 @@ export class LiveLoop implements LiveController {
   private checkMismatchesAfterLadderRise(): void {
     if (!this.engine || !this.opts.enabled) return;
     for (const st of Object.values(liveStore.lines.get())) {
-      if (st.latex && (st.analysis?.verdict === "mismatch" || this.modelFlagged(st))) this.suggestNextStep(st.line.id);
+      if (st.latex && this.autoFor(st) && (st.analysis?.verdict === "mismatch" || this.modelFlagged(st))) this.suggestNextStep(st.line.id);
     }
   }
 
@@ -999,6 +1196,7 @@ export class LiveLoop implements LiveController {
     if (!st?.latex || !this.opts.enabled) return;
     const mode = this.opts.mode;
     if (mode === "off") return;
+    this.noteAsked(lineId);
     const rt = this.runtime(lineId);
     if ((mode === "suggest" || mode === "answer") && st.hintsShown > 0 && rt.escalation < 2) {
       this.escalate(lineId);
@@ -1051,6 +1249,8 @@ export class LiveLoop implements LiveController {
         finished.push(rec);
         penUp = true;
         if (!this.looksDrawn(rec)) writingUp = true;
+        // a stroke made in one frame (a dot) is the pen; one the student had rubbed out is Undo
+        if (!this.goneStrokeIds.has(rec.id)) this.wrote(rec.id);
       } else penDown = true;
     }
 
@@ -1065,6 +1265,7 @@ export class LiveLoop implements LiveController {
           finished.push(to);
           penUp = true;
           if (!this.looksDrawn(to)) writingUp = true;
+          this.wrote(to.id);
         } else if (
           to.props.isComplete &&
           (f.x !== to.x || f.y !== to.y || f.props.segments !== to.props.segments || f.parentId !== to.parentId)
@@ -1108,14 +1309,16 @@ export class LiveLoop implements LiveController {
         continue;
       }
       if (isDraw(rec)) {
+        if (isStudentInk(rec)) this.goneStrokeIds.add(rec.id);
         const line = this.lineOfStroke(rec.id);
         if (line) {
           for (const sid of line.strokeIds) if (sid !== rec.id) this.dirtyStrokeIds.add(sid);
           this.dirtyStrokeIds.add(rec.id);
           erased = true;
-          // rubbing out under a problem is working on it too (the line may be gone after the flush)
+          // rubbing out under a problem is working on it too (the line may be gone after the flush) —
+          // until the pen has written on this screen: then the problem is where it wrote last
           const head = this.columnHeads.get(line.column);
-          if (head) this.touchedProblem = head.key;
+          if (head && !this.penStrokeId) this.touchedProblem = head.key;
         } else if (this.diagramOfStroke(rec.id)) {
           // part of a drawing rubbed out: the drawings (and what counts as their labels) change
           this.dirtyStrokeIds.add(rec.id);
@@ -1165,8 +1368,34 @@ export class LiveLoop implements LiveController {
   private unringGrowingLines(strokes: readonly TLShape[]): void {
     const inks = strokes.map((s) => this.editor.getShapePageBounds(s)).filter((b): b is Box => Boolean(b));
     for (const state of Object.values(liveStore.lines.get())) {
-      if (!this.rt.get(state.line.id)?.markKey?.startsWith("circle:")) continue;
-      if (inks.some((b) => inkExtendsLine(boxToRect(b), state.line.bounds))) this.syncMark(state, null);
+      const rt = this.rt.get(state.line.id);
+      if (!rt?.markKey?.startsWith("circle:")) continue;
+      if (!inks.some((b) => inkExtendsLine(boxToRect(b), state.line.bounds))) continue;
+      // the clustering has the last word on whether this ink is more of the line (`reringUnchanged`)
+      rt.unrungStrokes = [...state.line.strokeIds];
+      this.syncMark(state, null);
+    }
+  }
+
+  /**
+   * The flush's clustering says which ringed lines the new ink really joined. `inkExtendsLine` is a
+   * guess made as the stroke lands (on the row, up to two line heights past the end), and ink just
+   * past a line that clusters as a line of its own (`2x = 1`, then `y` written a gap to the right)
+   * left the line it guessed at un-ringed for good: its strokes had not changed, so it was never
+   * read again, and only a read puts a ring back. A line whose strokes are the ones it had when its
+   * ring came off gets the ring back now; a line that did grow is read again, and the read marks it.
+   */
+  private reringUnchanged(lines: readonly InkLine[], force: ReadonlySet<string>): void {
+    for (const line of lines) {
+      const rt = this.rt.get(line.id);
+      const before = rt?.unrungStrokes;
+      if (!rt || !before) continue;
+      rt.unrungStrokes = null;
+      // something marked it again since (a re-render): that mark stands
+      if (rt.markKey !== null || force.has(line.id) || this.opts.mode === "off") continue;
+      if (!sameStrokeSet(before, line.strokeIds)) continue;
+      const state = liveStore.lines.get()[line.id];
+      if (state) this.syncMark(state, "circle");
     }
   }
 
@@ -1217,8 +1446,10 @@ export class LiveLoop implements LiveController {
    * re-armed from now, so there is no backlog of answers to land in a rush when they finally
    * stop. (An answer already being written is stopped by `cancelHandwriting` on the same
    * change, which finishes the stroke it is mid-way through rather than leaving half a glyph.)
+   * So is one of Auto's still on its way from a model (`autoInk`).
    */
   private markUnsettled(): void {
+    this.autoInk();
     this.settled = false;
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = setTimeout(() => {
@@ -1231,9 +1462,11 @@ export class LiveLoop implements LiveController {
   /**
    * The student has stopped writing everywhere: render the lines that were holding an answer.
    *
-   * Only `render` re-runs. Nothing here re-recognizes, re-analyses or opens a model call — a
-   * settle cannot make the tutor say something NEW, it can only place the answer the local
-   * engine already had and the ladder was keeping back.
+   * Only `render` re-runs, and nothing here re-recognizes or re-analyses: a settle places the
+   * answers the local engine already had and the ladder was keeping back. The one thing it adds
+   * is Auto's (`autoPause`): the model asked about what the engine could not judge, and in Solve
+   * the problem finished — at most once per state of the problem. With Auto off, none of it: the
+   * unasked answers below wait for an ask.
    */
   private renderSettled(): void {
     if (!this.opts.enabled || !this.engine) return;
@@ -1248,14 +1481,19 @@ export class LiveLoop implements LiveController {
     this.pendingSuggestions.clear();
     for (const lineId of waiting) this.suggestNextStep(lineId);
     // ...and so is the equation a right operation line leads to (`-3 \quad -3` → `2x = 8`)
-    this.writeOperationResults();
+    if (this.autoOn()) this.writeOperationResults();
     // and so is a graph (Solve only): `y = 2x + 1`, a system, a finished inequality's number line
     this.drawWantedGraphs();
     // A drawing's labels are its context, not something to answer: read once the student has
     // stopped, one recognizer call per drawing (and only when its labels changed).
     for (const d of this.diagrams) if (d.labels.length > 0) void this.readLabels(d);
     // ...and in Solve, a figure labelled with an unknown and left: worked out beside it, unasked
-    this.solveWantedFigures();
+    if (this.autoOn()) this.solveWantedFigures();
+    // Auto's turn comes after what the settle just wrote has landed (live writes are queued), so
+    // Solve's finish sees an answer the settle wrote rather than writing it a second time
+    queueMicrotask(() => {
+      if (this.settled) this.autoPause();
+    });
   }
 
   private lineOfStroke(strokeId: string): InkLine | null {
@@ -1319,7 +1557,7 @@ export class LiveLoop implements LiveController {
     }
     if (seeds.length === 0) return;
     const bounds = this.strokeBoundsMap();
-    const rebuilt = rebuildFromMathShapes(seeds, bounds);
+    const rebuilt = rebuildFromMathShapes(seeds, bounds, this.boardZoom());
     // a second readback of a line rebuilt from another one: one line, one echo
     const kept = new Set<string>(rebuilt.map((r) => r.mathShapeId));
     const extra = seeds.filter((s) => s.lineId && !kept.has(s.shapeId) && s.anchorIds.some((id) => bounds.has(id))).map((s) => s.shapeId);
@@ -1344,6 +1582,15 @@ export class LiveLoop implements LiveController {
       };
     }
     liveStore.lines.set(next);
+    // What was on this screen before this session — a reload, the first visit to a screen — had its
+    // pauses then: Auto does not pay for a model check of it again (`autoDone` is in memory, so
+    // every new session checked every unjudged line on screen at its first pause, and every screen
+    // at its first visit). Remembered as checked, per state of its column (`autoKey`): a line above
+    // it rewritten now is a new problem, and is checked as one.
+    for (const r of rebuilt) {
+      const st = next[r.line.id];
+      if (st.latex) this.autoOnce(this.autoKey("check", st));
+    }
   }
 
   private runtime(lineId: string): LineRuntime {
@@ -1354,7 +1601,6 @@ export class LiveLoop implements LiveController {
         solveAbort: null,
         unreadableShown: false,
         unreadableTimer: null,
-        idleTimer: null,
         shownHintTexts: new Set(),
         escalation: 0,
         processing: 0,
@@ -1378,12 +1624,15 @@ export class LiveLoop implements LiveController {
     const force = new Set(this.forceRecognize);
     this.forceRecognize.clear();
     const ink = this.collectInk();
+    // Where the student last WROTE: their last pen stroke, not ink rubbed out, dragged or brought
+    // back by Undo (`helpTargetLine`). Before the pen has written on this screen, what they touched.
+    const wrote: ReadonlySet<string> = this.penStrokeId ? new Set([this.penStrokeId]) : dirty;
     // Drawings (and their marks and labels) first: only handwriting is grouped into lines. A bar
     // under an equation with a number under it ("divide both sides") is a line of its own.
-    const { split, touched: drawn } = this.splitDrawings(ink, dirty);
+    const { split, touched: drawn } = this.splitDrawings(ink, wrote);
     const prevStates = liveStore.lines.get();
     const prevLines = Object.values(prevStates).map((s) => s.line);
-    const lines = this.withProblemColumns(clusterLines(split.writing, prevLines, barGroups(split.bars, ink)));
+    const lines = this.withProblemColumns(clusterLines(split.writing, prevLines, barGroups(split.bars, ink), { zoom: this.boardZoom() }));
     const nextIds = new Set(lines.map((l) => l.id));
 
     for (const prev of prevLines) if (!nextIds.has(prev.id)) this.dropLine(prev.id);
@@ -1402,18 +1651,23 @@ export class LiveLoop implements LiveController {
       setLine(line.id, { line: { ...line, hash: same ? prev.line.hash : "" } });
       if (touched) affected.push({ line: { ...line, hash: same ? prev.line.hash : "" }, moveOnly: same && !forced });
     }
+    // a ring taken off for ink that turned out to be a line of its own goes back on
+    this.reringUnchanged(lines, force);
 
-    // What the student worked on last decides what Help is about: a line they wrote, or else a
+    // What the student wrote last decides what Help is about: a line they wrote, or else a
     // drawing (or its labels) they drew.
-    if (lines.some((l) => l.strokeIds.some((id) => dirty.has(id)))) this.lastTouchedDiagramId = null;
+    const pen = lines.find((l) => l.strokeIds.some((id) => wrote.has(id)));
+    if (pen) this.lastTouchedDiagramId = null;
     else if (drawn) this.lastTouchedDiagramId = drawn.id;
+    if (pen && this.penStrokeId) this.penLineId = pen.id;
     // ...and which of the chat's problems is the current one: the one they last wrote under
     for (const l of lines) {
-      const head = l.strokeIds.some((id) => dirty.has(id)) ? this.columnHeads.get(l.column) : undefined;
+      const head = l.strokeIds.some((id) => wrote.has(id)) ? this.columnHeads.get(l.column) : undefined;
       if (head) this.touchedProblem = head.key;
     }
 
     for (const { line, moveOnly } of affected) void this.processLine(line, ink, moveOnly);
+    this.publishHelpTarget();
   }
 
   /**
@@ -1422,12 +1676,13 @@ export class LiveLoop implements LiveController {
    */
   private splitDrawings(ink: InkStroke[], dirty: ReadonlySet<string>): { split: InkSplit; touched: Diagram | null } {
     // the tutor's problems are equations a division bar may be drawn under (their ink is not ink here)
-    const split = splitInk(ink, this.diagrams, { equations: this.problemEquations() });
+    const split = splitInk(ink, this.diagrams, { equations: this.problemEquations(), zoom: this.boardZoom() });
     const gone = this.diagrams.filter((d) => !split.diagrams.some((n) => n.id === d.id));
     this.diagrams = split.diagrams;
     this.glyph = split.glyph;
     this.tableStrokeIds = new Set([...split.roles].filter(([, v]) => v.role === "table").map(([id]) => id));
     this.barStrokeIds = new Set(split.bars.map((b) => b.bar));
+    this.markStrokeIds = new Set([...split.roles].filter(([, v]) => v.role === "mark").map(([id]) => id));
     for (const d of gone) {
       this.labelsOf.delete(d.id);
       if (this.editor.getCurrentPageShapes().some((s) => isLiveMeta(s.meta) && s.meta.lineId === d.id)) this.deleteLineShapes(d.id);
@@ -1436,6 +1691,26 @@ export class LiveLoop implements LiveController {
     const touched = split.diagrams.find((d) => [...d.strokeIds, ...d.labels.flat()].some((id) => dirty.has(id))) ?? null;
     this.publishDiagrams();
     return { split, touched };
+  }
+
+  /**
+   * The board's fit zoom: what the drawing / writing split and the columns size handwriting by
+   * (`inkScale`). A board is a 1600 x 900 screen fitted to the window, so a phone shows it at ~0.2
+   * and the same hand is five times bigger in page px there; the fit, not the current zoom, so
+   * pinching in to write does not change how the lines already written are read. None on an editor
+   * without a camera (tests): a desktop.
+   */
+  private boardZoom(): number | undefined {
+    return this.editor.getBaseZoom?.();
+  }
+
+  /**
+   * How much bigger in page px the tutor's hand is on this board than on a desktop (`inkScale` of the
+   * fit zoom): what the gaps that set its writing off from the student's are multiplied by, so a
+   * block sized for a phone (`handSizeFor(h, zoom)`) is not squeezed against their ink. 1 on a desktop.
+   */
+  private handScale(): number {
+    return inkScale(this.boardZoom());
   }
 
   /** The drawings as the dev panel shows them. */
@@ -1459,9 +1734,9 @@ export class LiveLoop implements LiveController {
     const ticket = ++rt.processing;
     this.lastTouchedLineId = lineId;
     if (rt.unreadableTimer) clearTimeout(rt.unreadableTimer);
-    if (rt.idleTimer) clearTimeout(rt.idleTimer);
+    if (rt.readRetryTimer) clearTimeout(rt.readRetryTimer);
     rt.unreadableTimer = null;
-    rt.idleTimer = null;
+    rt.readRetryTimer = null;
     this.closeHintsFor(lineId);
 
     const payload = buildPayload(line, ink);
@@ -1485,6 +1760,10 @@ export class LiveLoop implements LiveController {
     this.abortLlm(lineId);
     this.clearErrorsForLine(lineId);
     rt.readRefused = false;
+    // ...and so is its "couldn't read this": the new read earns its own "?" (after the same delay)
+    // if it is unsure too. Left set, a second unsure read lost its "?" for good: the render took it
+    // off and the delay that puts it back never ran again.
+    rt.unreadableShown = false;
     this.reading.add(lineId);
     const startedAt = this.deps.now();
     const readingTimer = setTimeout(() => {
@@ -1527,7 +1806,20 @@ export class LiveLoop implements LiveController {
       const network = !(err instanceof RecognizeTimeoutError) && !isApiError(err) && (err instanceof TypeError || !this.deps.isOnline());
       if (network) this.queueOffline(lineId);
       if (network && !this.deps.isOnline()) return;
+      // A dropped request while the browser says online (Safari's "Load failed"): the queue's own
+      // replay, 2 s from now (`scheduleOfflineReplay`), is this ink's one more try; the pill says
+      // "Offline — 1 line waiting" meanwhile. Only when that fails too is it shown on the line.
+      if (network && rt.readRetriedHash !== hash) {
+        rt.readRetriedHash = hash;
+        return;
+      }
       if (!network) console.warn("[live] recognize failed", err);
+      // Most failed reads are a blip (a timeout, a 502): the same ink is read once more on its own
+      // before the student hears about it. Meanwhile the line counts as still being read (no "?").
+      if (!network && this.retryReadSoon(lineId, hash, err)) {
+        this.reading.add(lineId);
+        return;
+      }
       const failure = this.fail(err, { kind: "recognize", lineId }, { kind: "recognize", lineId });
       // Never a silent blank: transport/model trouble leaves a chip pointing at Retry; sign-in,
       // rate-limit and credit problems are the pill's job (their message is not about the line).
@@ -1540,7 +1832,7 @@ export class LiveLoop implements LiveController {
       // a read that failed under one of the chat's problems, the student already stopped: its "?"
       this.questionIfSettled(lineId);
     } finally {
-      if (rt.processing === ticket) this.reading.delete(lineId);
+      if (rt.processing === ticket && !rt.readRetryTimer) this.reading.delete(lineId);
       clearTimeout(readingTimer);
       if (this.deps.recognizer.inFlight === 0 && liveStore.status.get() === "reading") liveStore.status.set("idle");
     }
@@ -1574,6 +1866,36 @@ export class LiveLoop implements LiveController {
     }
   }
 
+  /**
+   * One more read of the same ink, on its own, `READ_RETRY_MS` after a failure that is usually a
+   * blip (`transientReadFailure`). Once per ink version: when that read fails too, the failure is
+   * shown (the pill, the chip, the "?"), and Retry is the student's. New ink on the line, or the
+   * line rubbed out, cancels it (processLine takes over). False when this failure gets no retry.
+   *
+   * The retry joins the quiet gate's flush when the student is mid-line, so it never reads their
+   * half-written next line early.
+   */
+  private retryReadSoon(lineId: string, hash: string, err: unknown): boolean {
+    const rt = this.runtime(lineId);
+    if (!transientReadFailure(err) || rt.readRetriedHash === hash) return false;
+    rt.readRetriedHash = hash;
+    const ticket = rt.processing;
+    if (rt.readRetryTimer) clearTimeout(rt.readRetryTimer);
+    rt.readRetryTimer = setTimeout(() => {
+      rt.readRetryTimer = null;
+      if (rt.processing !== ticket) return;
+      const st = liveStore.lines.get()[lineId];
+      if (!st || !this.started || !this.opts.enabled) {
+        this.reading.delete(lineId);
+        return;
+      }
+      for (const sid of st.line.strokeIds) this.dirtyStrokeIds.add(sid);
+      this.forceRecognize.add(lineId);
+      if (!this.quietTimer) this.armQuietTimer(0);
+    }, READ_RETRY_MS);
+    return true;
+  }
+
   /** A JPEG data URL of these strokes in `bounds`, at most `maxWidth` px wide (≤ `maxCropBytes`), or undefined. */
   private async captureCrop(ids: readonly TLShapeId[], bounds: Rect, maxWidth = 512): Promise<string | undefined> {
     const toImage = this.editor.toImage;
@@ -1604,6 +1926,28 @@ export class LiveLoop implements LiveController {
     liveStore.status.set("offline");
     this.offlineQueue.add(lineId);
     liveStore.offlineQueued.set(this.offlineQueue.size);
+    if (this.deps.isOnline()) this.scheduleOfflineReplay();
+  }
+
+  /**
+   * A request that failed although the browser says online (Safari's "Load failed", a connection
+   * the OS has not noticed dropping) queues its line, and no 'online' event will ever come to
+   * replay it. It used to wait for the student's next ink or the next request that got through:
+   * the last line they wrote before stopping stayed unread for good. The queue is now replayed on
+   * its own, 2 s after, then 4, 8 and every 15 s while it keeps failing, as long as the browser
+   * says online (offline, the 'online' event replays it). A success anywhere starts the waits over.
+   * The replay rides the next flush, so a student mid-line keeps their quiet gate.
+   */
+  private scheduleOfflineReplay(): void {
+    if (this.offlineReplayTimer || !this.started) return;
+    const wait = OFFLINE_REPLAY_MS[Math.min(this.offlineReplayStep, OFFLINE_REPLAY_MS.length - 1)];
+    this.offlineReplayStep++;
+    this.offlineReplayTimer = setTimeout(() => {
+      this.offlineReplayTimer = null;
+      if (!this.started || !this.deps.isOnline() || this.offlineQueue.size === 0) return;
+      // `flush` absorbs the queue (online) into the reads it makes
+      if (!this.quietTimer) this.armQuietTimer(0);
+    }, wait);
   }
 
   /** Connectivity changed (window event, or `isOnline()` read in setOptions). */
@@ -1676,8 +2020,19 @@ export class LiveLoop implements LiveController {
     if (solve && !skip.has(solve) && this.opts.mode === "answer" && lines[solve]?.latex) this.requestSolve(solve);
   }
 
-  /** LLM stream could not start (offline / fetch TypeError): remember it, never spin. */
+  /**
+   * LLM stream could not start (offline / fetch TypeError): remember it, never spin — but only what
+   * the student asked for. Auto's own work (an unasked check, a solve on a line Auto started:
+   * `autoLines`) is dropped, not put off. Queued, a solve Safari's "Load failed" dropped was replayed
+   * by the next read that got through (`noteSuccess` → `replayOffline`) as `requestSolve`, with none
+   * of Auto's guards — no pause, nothing asked since, the switch maybe off by then — and wrote under
+   * the student's pen mid-line; and the "Offline" it set told them about a call they never made. So
+   * nothing of Auto's ever waits here, and `autoInk` has nothing to clear: the next state of the
+   * problem gets Auto's next try.
+   */
   private deferLlm(kind: "check" | "solve", lineId: string, userAsked = false): void {
+    const asked = kind === "check" ? userAsked : !this.autoLines.has(lineId);
+    if (!asked) return;
     if (kind === "check") this.pendingChecks.set(lineId, userAsked || (this.pendingChecks.get(lineId) ?? false));
     else this.pendingSolve = lineId;
     liveStore.status.set("offline");
@@ -1724,62 +2079,243 @@ export class LiveLoop implements LiveController {
     const engine = this.engine;
     const hash = line.hash;
     if (!engine || !hash || res.provider !== "mathpix" || this.rereads.has(hash) || !this.deps.isOnline()) return;
-    const lineId = line.id;
-    const state = liveStore.lines.get()[lineId];
+    const state = liveStore.lines.get()[line.id];
     if (!state || state.latex !== res.latex) return;
     const { above, below } = this.columnNeighbours(state);
+    const others = [...above, ...below];
     const signal = rereadTrigger({
       latex: res.latex,
       confidence: res.confidence,
       analysis: state.analysis,
       strokeCount: line.strokeIds.length,
-      others: [...above, ...below],
+      others,
     });
     if (!signal) return;
+    await this.readAgain(line, res, { signal, above, below, others });
+  }
+
+  /**
+   * One line to the second reader, its answer believed as always (`acceptReread`, given the column
+   * as `others`): a read taken is re-analysed and re-rendered (`applyReread`). True when replaced.
+   */
+  private async readAgain(
+    line: InkLine,
+    read: { latex: string; confidence: number },
+    opts: { signal: RereadTrigger; above: string[]; below: string[]; others: readonly string[] },
+  ): Promise<boolean> {
+    const reply = await this.askAgain(line, read, opts);
+    if (!reply || !this.engine) return false;
+    const accepted = acceptReread(this.engine, read.latex, reply.latex, opts.others);
+    this.recordAgain(line.id, opts.signal, read.latex, reply, Boolean(accepted));
+    const current = this.readsAs(line.id, line.hash, read.latex);
+    if (!accepted || !current || !this.started) {
+      if (this.started && current) this.readStands(line.id);
+      return false;
+    }
+    this.rereads.set(line.hash, accepted);
+    this.applyReread(line.id, accepted, read.confidence);
+    return true;
+  }
+
+  /**
+   * The second reader's answer for one line: a crop of its ink, `read` (Mathpix's, on the board
+   * now) and the lines `above` / `below` sent with it. Marks the ink as asked before anything is
+   * awaited, so it is never asked twice. Null — and silent — when there is no crop, the request
+   * fails, or the line was written on or retyped meanwhile.
+   */
+  private async askAgain(
+    line: InkLine,
+    read: { latex: string },
+    opts: { signal: RereadTrigger; above: string[]; below: string[] },
+  ): Promise<RereadResponse | null> {
+    const hash = line.hash;
+    if (!hash) return null;
+    const lineId = line.id;
+    const { signal } = opts;
     this.rereads.set(hash, null);
     while (this.rereads.size > LIVE_LIMITS.cacheEntries) this.rereads.delete(this.rereads.keys().next().value as string);
     // the line must still read this way when the answer lands: new ink or a retype wins
-    const current = () => {
-      const cur = liveStore.lines.get()[lineId];
-      return Boolean(cur && cur.line.hash === hash && cur.latex === res.latex);
-    };
-    const record = (r: Omit<Parameters<typeof recordReread>[1], "signal" | "mathpix">) => recordReread(lineId, { signal, mathpix: res.latex, ...r });
-
+    const current = () => this.readsAs(lineId, hash, read.latex);
     const crop = await this.captureCrop(line.strokeIds, line.bounds);
     if (!crop) {
-      record({ latex: "", accepted: false, error: "no crop" });
-      return;
+      recordReread(lineId, { signal, mathpix: read.latex, latex: "", accepted: false, error: "no crop" });
+      return null;
     }
-    if (!current()) return;
+    if (!current()) return null;
     const ctrl = new AbortController();
     this.rereadAborts.add(ctrl);
     // being read again: no "?" on it until the second read is in
     this.reading.add(lineId);
-    let reply: RereadResponse;
     try {
-      reply = await this.deps.reread({ boardId: this.opts.boardId, lineId, crop, latex: res.latex, above, below }, { signal: ctrl.signal });
+      const reply = await this.deps.reread({ boardId: this.opts.boardId, lineId, crop, latex: read.latex, above: opts.above, below: opts.below }, { signal: ctrl.signal });
+      return current() ? reply : null;
     } catch (err) {
       if (ctrl.signal.aborted) this.rereads.delete(hash);
-      else record({ latex: "", accepted: false, error: err instanceof Error ? err.message : String(err) });
+      else recordReread(lineId, { signal, mathpix: read.latex, latex: "", accepted: false, error: err instanceof Error ? err.message : String(err) });
       clientMetric("live.reread.failed", { signal, lineId });
-      this.rereadAborts.delete(ctrl);
-      if (current() || !liveStore.lines.get()[lineId]) this.reading.delete(lineId);
-      if (this.started && !ctrl.signal.aborted && current()) this.questionIfSettled(lineId);
-      return;
+      if (this.started && !ctrl.signal.aborted && current()) {
+        this.reading.delete(lineId);
+        this.readStands(lineId);
+      }
+      return null;
     } finally {
       this.rereadAborts.delete(ctrl);
       if (current() || !liveStore.lines.get()[lineId]) this.reading.delete(lineId);
     }
-    const accepted = acceptReread(engine, res.latex, reply.latex, [...above, ...below]);
-    record({ latex: reply.latex, accepted: Boolean(accepted), model: reply.model, ms: reply.ms });
-    clientMetric("live.reread", { signal, accepted: Boolean(accepted), ms: reply.ms, lineId });
-    if (!accepted || !current() || !this.started) {
-      // Mathpix's read stands: if the student stopped while it was being read again, its "?" is due now
-      if (this.started && current()) this.questionIfSettled(lineId);
-      return;
+  }
+
+  /** The line still holds this ink, read this way. */
+  private readsAs(lineId: string, hash: string, latex: string): boolean {
+    const cur = liveStore.lines.get()[lineId];
+    return Boolean(cur && cur.line.hash === hash && cur.latex === latex);
+  }
+
+  /** The dev panel and the metrics: what the second reader answered, and whether it was taken. */
+  private recordAgain(lineId: string, signal: RereadTrigger, mathpix: string, reply: RereadResponse, accepted: boolean): void {
+    recordReread(lineId, { signal, mathpix, latex: reply.latex, accepted, model: reply.model, ms: reply.ms });
+    clientMetric("live.reread", { signal, accepted, ms: reply.ms, lineId });
+  }
+
+  // ---------------------------------------------------------------- a ring waits for a second look
+  /**
+   * The line a step is judged against (`columnContext`'s `previous`) when it is the student's own
+   * ink: null when that is a problem the chat wrote, which has nothing to misread.
+   */
+  private previousLine(state: LiveLineState): LiveLineState | null {
+    let previous: LiveLineState | null = null;
+    for (const s of this.columnLines(state.line.column)) {
+      if (s.line.row >= state.line.row) break;
+      const a = s.analysis;
+      if (!s.latex || !a || a.kind === "label" || a.kind === "incomplete" || a.kind === "unknown" || a.kind === "operation") continue;
+      previous = s;
     }
-    this.rereads.set(hash, accepted);
-    this.applyReread(lineId, accepted, res.confidence);
+    return previous;
+  }
+
+  /**
+   * Does this step's ring wait (`render`)? The engine says the step does not follow from the line
+   * above — and on messy ink that is as often a misread as a slip (a problem's `12` read as `17`
+   * rings the right step under it). So when either line is a read of Mathpix's the second reader
+   * has not seen, both are read again first (`checkChain`), and the ring waits for them, at most
+   * `chainHoldMs`. Once per pair of inks; never offline, and never for a line under one of the
+   * chat's problems with nothing of the student's above it.
+   */
+  private holdRing(state: LiveLineState): boolean {
+    const lineId = state.line.id;
+    const above = this.previousLine(state);
+    if (!above || !above.line.hash || !state.line.hash) return false;
+    const key = `${above.line.hash}|${state.line.hash}`;
+    if (this.chainHolds.get(lineId) === key) return true;
+    if (this.chainsDone.has(key) || !this.engine || !this.started || !this.deps.isOnline()) return false;
+    const due = [above, state].filter((s) => s.provider === "mathpix" && !this.rereads.has(s.line.hash));
+    if (due.length === 0) return false;
+    this.chainHolds.set(lineId, key);
+    void this.checkChain(lineId, key, due);
+    return true;
+  }
+
+  /**
+   * The second look before a ring (`holdRing`): the step and the line it follows, read again side
+   * by side. A line sent for a reason of its own (`rereadTrigger`) is read as the second reader
+   * always reads it. Any other goes WITHOUT the column (shown the next line, a model can make a
+   * line "follow" by changing it), and its read is taken only when it is a near transcription
+   * (`acceptChainReread`) AND it makes the step follow (`chainFix`): the second look can take a
+   * ring back, never move one — on very messy ink the model misreads too (`+` read as `-`, a `3`
+   * dropped), and a "fix" that leaves the step wrong only ringed more of the student's right work.
+   * Then the step is drawn as it reads now (`releaseRing`): ticked, or ringed after all.
+   */
+  private async checkChain(lineId: string, key: string, due: LiveLineState[]): Promise<void> {
+    const ids = [...new Set([...due.map((s) => s.line.id), lineId])];
+    const hashes = new Map(ids.map((id) => [id, liveStore.lines.get()[id]?.line.hash]));
+    for (const id of ids) this.reading.add(id);
+    const timer = setTimeout(() => this.releaseRing(lineId, key), LIVE_TIMING.chainHoldMs);
+    clientMetric("live.reread.chain", { lineId, lines: due.length });
+    const looked = await Promise.all(
+      due.map(async (s): Promise<ChainRead | null> => {
+        const { above, below } = this.columnNeighbours(s);
+        const others = [...above, ...below];
+        const signal = rereadTrigger({ latex: s.latex, confidence: s.confidence, analysis: s.analysis, strokeCount: s.line.strokeIds.length, others });
+        if (signal) {
+          await this.readAgain(s.line, s, { signal, above, below, others });
+          return null;
+        }
+        const reply = await this.askAgain(s.line, s, { signal: "chain", above: [], below: [] });
+        const latex = reply && this.engine ? acceptChainReread(this.engine, s.latex, reply.latex, others) : null;
+        return reply ? { state: s, reply, latex } : null;
+      }),
+    );
+    clearTimeout(timer);
+    const reads = looked.filter((r): r is ChainRead => r !== null);
+    const take = this.started ? this.chainFix(lineId, reads) : [];
+    for (const r of reads) this.recordAgain(r.state.line.id, "chain", r.state.latex, r.reply, take.includes(r));
+    for (const r of take) {
+      if (!r.latex || !this.readsAs(r.state.line.id, r.state.line.hash, r.state.latex)) continue;
+      this.rereads.set(r.state.line.hash, r.latex);
+      this.applyReread(r.state.line.id, r.latex, r.state.confidence);
+    }
+    for (const id of ids) {
+      const cur = liveStore.lines.get()[id];
+      if (!cur || cur.line.hash === hashes.get(id)) this.reading.delete(id);
+    }
+    this.releaseRing(lineId, key);
+  }
+
+  /**
+   * The fewest of the second look's reads that make the step follow from the line above — one of
+   * them alone first, the line above's before the step's, then both. None: Mathpix's reads stand.
+   */
+  private chainFix(lineId: string, reads: ChainRead[]): ChainRead[] {
+    const step = liveStore.lines.get()[lineId];
+    const above = step ? this.previousLine(step) : null;
+    if (!step || !above) return [];
+    const options = reads.filter((r) => r.latex && liveStore.lines.get()[r.state.line.id]?.latex === r.state.latex);
+    options.sort((a, b) => (a.state.line.id === above.line.id ? -1 : b.state.line.id === above.line.id ? 1 : 0));
+    const sets = [...options.map((r) => [r]), ...(options.length > 1 ? [options] : [])];
+    for (const set of sets) {
+      const read = (s: LiveLineState) => set.find((r) => r.state.line.id === s.line.id)?.latex ?? s.latex;
+      if (this.follows(step, above, read(above), read(step))) return set;
+    }
+    return [];
+  }
+
+  /** Would the step follow from the line above, the two read as given? The engine, as `analyze` asks it. */
+  private follows(step: LiveLineState, above: LiveLineState, aboveLatex: string, stepLatex: string): boolean {
+    const engine = this.engine;
+    if (!engine) return false;
+    const mode = this.opts.mode;
+    try {
+      const ctx = this.columnContext(step);
+      const previous = aboveLatex === above.latex ? ctx.previous : engine.analyzeLine(aboveLatex, { ...this.columnContext(above), mode });
+      const original = ctx.original === above.analysis ? previous : ctx.original;
+      const a = engine.analyzeLine(stepLatex, { previous, original, mode });
+      return a.verdict === "ok" || Boolean(a.solved);
+    } catch {
+      return false;
+    }
+  }
+
+  /** The second look is over (or took too long): the step is drawn as it reads now. */
+  private releaseRing(lineId: string, key: string): void {
+    if (this.chainHolds.get(lineId) !== key) return;
+    this.chainHolds.delete(lineId);
+    this.chainsDone.add(key);
+    while (this.chainsDone.size > LIVE_LIMITS.cacheEntries) this.chainsDone.delete(this.chainsDone.values().next().value as string);
+    const cur = liveStore.lines.get()[lineId];
+    if (!cur || !this.started) return;
+    this.render(cur, this.decisionFor(cur));
+    // no ring after all: the problem may be Auto's to finish at this pause
+    if (this.settled) this.autoPause();
+  }
+
+  /**
+   * The second reader is done and Mathpix's read stands: what waited for it is due now if the
+   * student stopped meanwhile — its "?", and Auto's check of its column (`autoChecks` skips a line
+   * still being read; an accepted read gets both from `analyzeAndRender`).
+   */
+  private readStands(lineId: string): void {
+    this.questionIfSettled(lineId);
+    const state = liveStore.lines.get()[lineId];
+    if (state && this.settled) this.autoChecks(state.line.column);
   }
 
   /** The second reader's read replaces Mathpix's: re-analysed and re-rendered like any new read. */
@@ -1804,7 +2340,12 @@ export class LiveLoop implements LiveController {
     this.deleteLineShapes(lineId, { keepAi: true });
   }
 
-  /** Recognition failed for reasons a retry can fix: keep the line, show a chip that says so. */
+  /**
+   * Recognition failed for reasons a retry can fix: keep the line, and say so on it. The chip
+   * points at Retry, but a readback only shows while the pen is NOT in hand (MathShapeUtil), and on
+   * a writing board it nearly always is: so the line also gets the tutor's "?", the same mark an
+   * unreadable line gets, which a successful read (Retry, the offline replay) replaces.
+   */
   private applyFailedRead(lineId: string, note: string): void {
     const state = liveStore.lines.get()[lineId];
     if (!state) return;
@@ -1815,6 +2356,8 @@ export class LiveLoop implements LiveController {
       analysis: { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note },
     });
     this.upsertEcho(lineId, { latex: "", status: "unknown", resultLatex: "", note });
+    const fresh = liveStore.lines.get()[lineId];
+    if (fresh && this.opts.mode !== "off") this.syncMark(fresh, "question", "unread");
   }
 
   private columnLines(column: number): LiveLineState[] {
@@ -1907,7 +2450,7 @@ export class LiveLoop implements LiveController {
     if (!this.started) return;
     const states = Object.values(liveStore.lines.get());
     const before = [...this.columnHeads.entries()].map(([c, h]) => `${c}:${h.key}`).join(",");
-    const next = this.withProblemColumns(assignColumns(states.map((s) => ({ ...s.line }))));
+    const next = this.withProblemColumns(assignColumns(states.map((s) => ({ ...s.line })), this.boardZoom()));
     const after = [...this.columnHeads.entries()].map(([c, h]) => `${c}:${h.key}`).join(",");
     let changed = before !== after;
     for (const l of next) {
@@ -1917,6 +2460,7 @@ export class LiveLoop implements LiveController {
       changed = true;
     }
     if (changed) this.reanalyzeAll();
+    this.publishHelpTarget();
   }
 
   // ---------------------------------------------------------------- the tutor works the chat's problems
@@ -1937,11 +2481,12 @@ export class LiveLoop implements LiveController {
     return this.columnHeads.has(state.line.column) ? this.judgeable(state) : !needsLook(state);
   }
 
-  /** The student's work under a problem: their line there the tutor can judge — the one touched last, else the lowest. */
+  /** The student's work under a problem: their line there the tutor can judge — the one picked or written in last, else the lowest. */
   private workUnder(cell: ProblemCell): LiveLineState | null {
     const mine = Object.values(liveStore.lines.get()).filter((s) => this.columnHeads.get(s.line.column)?.key === cell.key && this.judgeable(s));
     if (mine.length === 0) return null;
-    return mine.find((s) => s.line.id === this.lastTouchedLineId) ?? mine.sort((a, b) => a.line.bounds.y - b.line.bounds.y)[mine.length - 1];
+    const last = (this.picked()?.line ?? this.wroteLine())?.line.id;
+    return mine.find((s) => s.line.id === last) ?? mine.sort((a, b) => a.line.bounds.y - b.line.bounds.y)[mine.length - 1];
   }
 
   /** What the tutor has written under a problem (`problemWork`): its lines in writing order, where they are, whether the solution is among them. */
@@ -1982,7 +2527,8 @@ export class LiveLoop implements LiveController {
     const cells = this.problemCells();
     if (cells.length === 0) return null;
     const state = (c: ProblemCell) => this.problemState(c);
-    return depth === "solve" ? pickForSolve(cells, this.touchedProblem, state) : pickForStep(cells, this.touchedProblem, state);
+    const touched = this.targetProblem();
+    return depth === "solve" ? pickForSolve(cells, touched, state) : pickForStep(cells, touched, state);
   }
 
   /**
@@ -2079,7 +2625,8 @@ export class LiveLoop implements LiveController {
    * the hand cannot write a glyph of it (the typeset fallback's turn).
    */
   private drawProblemWork(built: { states: LiveLineState[] }, opts: SolveOpts, work: ProblemWork, state: LiveLineState, steps: readonly string[], extraMeta?: JsonObject): { rect: Rect; wallMs: number } | null {
-    // the hand the problem was written in (its ink is a digit's height of it), as large as a student's line allows
+    // the hand the problem was written in (its ink is a digit's height of it), as large as a student's
+    // line allows — the chat's problem, laid out on the board's own 1600 x 900 screen, so no zoom here
     const base = handSizeFor(state.line.bounds.h / HAND_WRITE.digitRatio);
     const seed = handSeedFor(`${opts.lineId}:${work.written.length}`);
     const at = { x: unionRects(built.states.map((s) => s.line.bounds)).x, y: rectMaxY(work.below) + WORK_PLACE.gap };
@@ -2137,14 +2684,14 @@ export class LiveLoop implements LiveController {
     }
   }
 
-  private decisionFor(state: LiveLineState, extra: { userAsked?: boolean; idleMs?: number } = {}): PolicyDecision {
+  private decisionFor(state: LiveLineState, extra: { userAsked?: boolean; settled?: boolean } = {}): PolicyDecision {
     return decide({
       mode: this.opts.mode,
       analysis: state.analysis,
       latex: state.latex,
       confidence: state.confidence,
-      idleMs: extra.idleMs ?? this.deps.now() - state.updatedAt,
-      settled: this.settled,
+      settled: extra.settled ?? this.settled,
+      auto: this.autoFor(state),
       userAsked: extra.userAsked ?? false,
       hintsShownForLine: state.hintsShown,
       openHintCount: liveStore.openHints.get().length,
@@ -2154,21 +2701,23 @@ export class LiveLoop implements LiveController {
   }
 
   /**
-   * Runs the engine for one line, renders the echo/graph, cascades to the rows below
-   * (their `previous` changed) and starts an LLM check when the ladder permits.
+   * Runs the engine for one line (every caller is a read: the recognizer, the second reader, a
+   * retype), renders the echo/graph, cascades to the rows below (their `previous` changed), shows
+   * what was read, and — once the student has paused — runs Auto's model check on the column.
    */
-  private analyzeAndRender(lineId: string, opts: { cascade?: boolean; idleMs?: number; fromIdle?: boolean } = {}): void {
+  private analyzeAndRender(lineId: string, opts: { cascade?: boolean } = {}): void {
     const state = liveStore.lines.get()[lineId];
     if (!state) return;
     const analysis = this.analyze(state);
     const wasWarn = state.analysis?.verdict === "mismatch";
     const isWarn = analysis?.verdict === "mismatch";
-    const rewritesWithWarn = isWarn ? state.rewritesWithWarn + (wasWarn && !opts.fromIdle ? 1 : 0) : 0;
+    const rewritesWithWarn = isWarn ? state.rewritesWithWarn + (wasWarn ? 1 : 0) : 0;
     setLine(lineId, { analysis, rewritesWithWarn });
     const fresh = liveStore.lines.get()[lineId];
     if (!fresh) return;
-    const decision = this.decisionFor(fresh, { idleMs: opts.idleMs });
+    const decision = this.decisionFor(fresh);
     this.render(fresh, decision);
+    if (decision.echo && this.opts.mode !== "off") this.showReadback(lineId);
 
     if (opts.cascade) {
       for (const below of this.columnLines(fresh.line.column)) {
@@ -2180,32 +2729,261 @@ export class LiveLoop implements LiveController {
       }
     }
 
-    if (decision.echo && !opts.fromIdle) this.armIdleTimer(lineId);
-    if (decision.runLlmCheck) this.startCheck(fresh.line.column, lineId, { userAsked: false });
+    // A read that lands after the pause is due at once; one before it waits for the settle
+    // (`autoPause`). The whole column: a line whose line above just changed is checked again.
+    if (this.settled) this.autoChecks(fresh.line.column);
     // a new read can make a proof of lines around it (or change a row's verdict): re-mark them
     this.proofs.sync();
   }
 
-  private armIdleTimer(lineId: string): void {
-    const rt = this.runtime(lineId);
-    if (rt.idleTimer) clearTimeout(rt.idleTimer);
-    if (this.opts.mode === "off") return;
-    const state = liveStore.lines.get()[lineId];
-    if (!state?.analysis) return;
-    // Only the LLM check waits on this timer now. The answer used to as well ('answer' mode
-    // plus a resultLatex, after `unknownIdleMs`), but a per-line idle is the wrong clock for
-    // it: it kept running while the student wrote the next three lines, and then answered the
-    // first one under them. The canvas-level settle (`markUnsettled`) owns the answer instead.
-    if (state.analysis.verdict !== "unknown") return;
-    // `updatedAt` is bumped by every setLine (including our own scheduled writes), so the
-    // per-line processing ticket is the "ink or text changed since" signal.
-    const ticket = rt.processing;
-    rt.idleTimer = setTimeout(() => {
-      rt.idleTimer = null;
-      const cur = liveStore.lines.get()[lineId];
-      if (!cur || rt.processing !== ticket || !this.opts.enabled) return;
-      this.analyzeAndRender(lineId, { idleMs: LIVE_TIMING.unknownIdleMs, fromIdle: true });
-    }, LIVE_TIMING.unknownIdleMs);
+  /**
+   * "The tutor saw it": a line just read shows its typeset readback for `readbackMs`, even with
+   * the pen in hand (`MathShapeUtil` hides it while the student writes otherwise) — a line with
+   * nothing to judge too (`2 \times 2`, a first `x + 5 = 9`), Auto on or off. Nothing is written
+   * for it: the echo is on the page already, so it costs no shape and nothing in the saved board.
+   */
+  private showReadback(lineId: string): void {
+    const prev = this.readbackTimers.get(lineId);
+    if (prev) clearTimeout(prev);
+    liveStore.readbacks.set({ ...liveStore.readbacks.get(), [lineId]: this.deps.now() });
+    this.readbackTimers.set(
+      lineId,
+      setTimeout(() => {
+        this.readbackTimers.delete(lineId);
+        const { [lineId]: _shown, ...rest } = liveStore.readbacks.get();
+        void _shown;
+        liveStore.readbacks.set(rest);
+      }, LIVE_TIMING.readbackMs),
+    );
+  }
+
+  // ---------------------------------------------------------------- Auto
+  //
+  // The Auto switch beside the dial. On (the default), the tutor acts by itself once the student
+  // pauses: ticks and rings as the engine judges (they never wait), a model check of what the
+  // engine cannot judge, Suggest's next step when they stay stuck, Solve finishing the problem.
+  // Off, it acts only when asked (`noteAsked`): the lines are still read back, nothing more.
+  //
+  // Every unasked action goes through the entry points the button uses (`requestSolve`,
+  // `requestHelp`, `startCheck`), so Auto and the button act on the same target the same way.
+  // Auto spends ink, so each action runs at most once per state of its problem (`autoKey`),
+  // never with no ink left, never offline, and fails without a word (`fail`).
+
+  /** The Auto switch (absent: on). */
+  private autoOn(opts: UseLiveMathOptions = this.opts): boolean {
+    return opts.auto !== false;
+  }
+
+  /**
+   * Auto acts on this line: the switch is on, or — off — the student asked about its problem
+   * (`noteAsked`) and the line still reads as it did then.
+   */
+  private autoFor(state: LiveLineState): boolean {
+    return this.autoOn() || this.askedLines.get(state.line.id) === state.latex;
+  }
+
+  /**
+   * Auto may spend now: switched on, Live running in a help mode, the engine loaded, online and
+   * ink left. With no ink an unasked call would only open the ink dialog unasked; offline nothing
+   * is put off for later — the next pause looks again.
+   */
+  private autoReady(): boolean {
+    if (!this.started || !this.opts.enabled || this.opts.mode === "off" || !this.autoOn() || !this.engine || !this.deps.isOnline()) return false;
+    const ink = liveStore.inkBalance.get();
+    return !(ink !== null && ink <= 0) && liveStore.lastError.get()?.code !== "ink";
+  }
+
+  /**
+   * A problem as Auto remembers what it did about it: the screen and its column down to this line.
+   * The same problem, unchanged, is never paid for twice — after a dial change, or a trip to
+   * another screen and back, too. A line under it, or a line above it rewritten, is a new state.
+   */
+  private autoKey(kind: "check" | "solve" | "step", state: LiveLineState): string {
+    const column = this.columnLines(state.line.column).filter((s) => s.line.row <= state.line.row && s.latex);
+    return `${kind}|${this.pageKey()}|${column.map((s) => s.latex).join("\n")}`;
+  }
+
+  /** True the first time this key is seen (and remembers it). */
+  private autoOnce(key: string): boolean {
+    if (this.autoDone.has(key)) return false;
+    this.autoDone.add(key);
+    if (this.autoDone.size > LIVE_LIMITS.cacheEntries) this.autoDone.delete(this.autoDone.values().next().value as string);
+    return true;
+  }
+
+  /**
+   * The student has paused (the settle) — or `stopped` when the dial moved, or Auto came on, while
+   * they were not writing: the model checks what the engine cannot judge, and in Solve the latest
+   * problem is finished. Suggest's next step waits for the longer stuck pause (`autoStuck`).
+   */
+  private autoPause(stopped = this.settled): void {
+    this.autoChecks(undefined, stopped);
+    this.autoSolve();
+  }
+
+  /**
+   * Auto's model check, in every help mode: the lines the engine cannot judge (`runLlmCheck`:
+   * verdict unknown, a kind the model can reason about), once the student has paused. One check
+   * per column — the model reads the whole column and may annotate any line of it — about its
+   * lowest such line, and once per state of the column down to each line: a line whose line above
+   * changed is checked again, an unchanged one never is. A ring it brings is drawn by
+   * `applyAnnotation` (Suggest and Solve then write the right step beside it, as for the engine's).
+   *
+   * Not a line still being read (`reading`, as `autoWorkable`): its latex is the read before the
+   * ink changed, and the check paid for that stale read. Its own read, when it lands after the
+   * pause, checks its column (`analyzeAndRender`).
+   */
+  private autoChecks(column?: number, stopped = this.settled): void {
+    if (!this.autoReady()) return;
+    const due = new Map<number, LiveLineState[]>();
+    for (const st of Object.values(liveStore.lines.get())) {
+      if ((column !== undefined && st.line.column !== column) || !st.latex || this.reading.has(st.line.id) || this.rt.get(st.line.id)?.checkAbort) continue;
+      if (!this.decisionFor(st, { settled: stopped }).runLlmCheck || this.autoDone.has(this.autoKey("check", st))) continue;
+      due.set(st.line.column, [...(due.get(st.line.column) ?? []), st]);
+    }
+    for (const lines of due.values()) {
+      const focus = lines.reduce((a, b) => (b.line.row > a.line.row ? b : a));
+      for (const st of lines) this.autoOnce(this.autoKey("check", st));
+      this.autoLines.add(focus.line.id);
+      clientMetric("live.auto", { kind: "check", mode: this.opts.mode, lineId: focus.line.id });
+      this.startCheck(focus.line.column, focus.line.id, { userAsked: false });
+    }
+  }
+
+  /**
+   * Auto in Solve, at the pause: the latest problem finished, as Solve it finishes it
+   * (`requestSolve` picks the path: the engine, a graph, a model). Once per state of the problem;
+   * never on a line with nothing to solve (a label, a lone number, unreadable ink, prose, a solved
+   * line), never in a column with a ring (the right step beside the ring is Solve's answer there),
+   * never over the tutor's hand already writing (the settle may just have started an answer, a
+   * graph or a figure) and never right after the student asked.
+   */
+  private autoSolve(): void {
+    if (this.opts.mode !== "answer" || !this.autoReady() || !this.autoMayAnswer()) return;
+    const target = this.autoTarget();
+    if (!target || !this.autoWorkable(target, AUTO_SOLVE_KINDS) || !this.autoOnce(this.autoKey("solve", target))) return;
+    this.autoRun("solve", target, () => this.solveTarget());
+  }
+
+  /**
+   * Auto in Suggest: the student has stayed paused for `stuckMs` on a problem that is not finished
+   * (its latest line right, or with nothing above to judge it by, but not solved): its next step,
+   * written as Help me writes it (`requestHelp`). Once per line, as it reads.
+   */
+  private autoStuck(): void {
+    this.stuckTimer = null;
+    if (this.opts.mode !== "suggest" || !this.autoReady() || !this.autoMayAnswer()) return;
+    const target = this.autoTarget();
+    if (!target || !this.autoWorkable(target, AUTO_STEP_KINDS) || !this.autoOnce(this.autoKey("step", target))) return;
+    this.autoRun("step", target, () => this.help());
+  }
+
+  /**
+   * The line Auto finishes or writes the next step of: the line of the student's last FRESH pen
+   * stroke on this screen, in this session — never `helpTargetLine`'s fallbacks, which are for an
+   * ask. Before the pen has written here (a load, a screen switch) that fallback is the line read
+   * last, i.e. whichever line was rebuilt from its readback last: turning the dial to Solve, or
+   * Auto on, solved an old problem nobody was working on. And never a pick with the select tool:
+   * a pick is how the student aims Help me / Solve it, and tldraw keeps it, unseen, through what
+   * comes next — the next pause solved a problem tapped minutes before. While a pick wins
+   * (`picked`), Auto leaves the problem to the student's ask; the pen writing takes it back.
+   * Explicit asks keep `helpTargetLine`.
+   */
+  private autoTarget(): LiveLineState | undefined {
+    if (!this.penStrokeId || this.picked()) return undefined;
+    return penLine(liveStore.lines.get(), this.penStrokeId, this.penLineId) ?? undefined;
+  }
+
+  /** Suggest's stuck pause starts again from now (Auto on; it looks at the mode again when it ends). */
+  private armStuck(): void {
+    if (this.stuckTimer) clearTimeout(this.stuckTimer);
+    this.stuckTimer = this.autoOn() && this.opts.mode === "suggest" ? setTimeout(() => this.autoStuck(), LIVE_TIMING.stuckMs) : null;
+  }
+
+  /**
+   * An answer may be written unasked now: the student did not just ask, the tutor's hand is free,
+   * and their last ink was a line, not a drawing (a figure is Solve's to read: `solveWantedFigures`).
+   */
+  private autoMayAnswer(): boolean {
+    return !this.askedSinceInk && !this.writer && !this.graphWriter && liveStore.solving.get() === 0 && !this.touchedDiagram();
+  }
+
+  /**
+   * A line Auto may continue: maths the tutor can judge, of a kind with a next step, not solved, no
+   * ring in its column, no model check of it still out (it may ring it) — and not a `36 + 2 =` the
+   * engine answers (the settle wrote that answer, after their `=` or in the readback).
+   *
+   * Nor a lone expression with no `=` after it — `2x + 3` half written, `x^{2} + 3x + 5` already as
+   * simple as it goes (`engine.alreadySimplest`), `2x + 3x` — which asks nothing until the student
+   * says what they want of it; Solve it still answers it, asked. Only arithmetic the engine works
+   * out is finished unasked: `2 \times 2` → `= 4` (`arithmeticAnswer`).
+   */
+  private autoWorkable(state: LiveLineState, kinds: ReadonlySet<LineKind>): boolean {
+    const a = state.analysis;
+    const id = state.line.id;
+    if (!a || !kinds.has(a.kind) || a.solved || !this.judgeable(state) || this.reading.has(id) || this.rt.get(id)?.checkAbort) return false;
+    if (a.resultLatex && endsWithRelation(state.latex)) return false;
+    if (a.kind === "expression" && !endsWithRelation(state.latex) && !this.arithmeticAnswer(state)) return false;
+    return !this.columnLines(state.line.column).some((s) => s.analysis?.verdict === "mismatch" || this.modelFlagged(s));
+  }
+
+  /** A line of numbers alone (no letter in it) that the engine evaluates (`localAnswerFor`): `2 \times 2`, `36 + 2`. */
+  private arithmeticAnswer(state: LiveLineState): boolean {
+    if (!this.engine || mathSymbols(state.latex).length > 0) return false;
+    return localAnswerFor(this.engine, state.latex, this.columnContext(state)) !== null;
+  }
+
+  /**
+   * Runs an unasked action through the help entry points. What it starts is Auto's: its failure
+   * stays quiet (`fail`), and new ink stops it (`autoInk`), so an answer nobody asked for never
+   * lands after the student started writing again.
+   */
+  private autoRun(kind: "solve" | "step", target: LiveLineState, act: () => void): void {
+    const before = new Map([...this.rt].map(([id, r]) => [id, r.solveAbort]));
+    this.autoLines.add(target.line.id);
+    act();
+    for (const [id, r] of this.rt) if (r.solveAbort && r.solveAbort !== before.get(id)) this.autoLines.add(id);
+    clientMetric("live.auto", { kind, mode: this.opts.mode, lineId: target.line.id });
+  }
+
+  /** The student is writing again: Auto's answers not yet written are stopped, and the stuck pause starts over. */
+  private autoInk(): void {
+    this.askedSinceInk = false;
+    for (const id of this.autoLines) this.rt.get(id)?.solveAbort?.abort();
+    this.armStuck();
+  }
+
+  /**
+   * The dial moved, or Auto came on, while the student was stopped (no settle running): Auto picks
+   * up as if they had paused in this mode — the checks the old mode did not run, Solve's finish,
+   * Suggest's stuck pause from now. Mid-writing, the settle decides as usual.
+   */
+  private autoResume(): void {
+    if (!this.started || !this.opts.enabled || this.settleTimer) return;
+    this.autoPause(true);
+    this.armStuck();
+  }
+
+  /**
+   * The student asked: Help me, Solve it, a badge, More help (the controller calls this first). What
+   * fails from here is theirs to see, so Auto's quiet ends, and Auto adds no answer of its own until
+   * they write again. With Auto off, the problem they asked about — the line's column, or the line
+   * Help acts on — gets its marks now: asking for help is also asking how it is going.
+   */
+  noteAsked(lineId?: string): void {
+    this.autoLines.clear();
+    this.askedSinceInk = true;
+    if (this.autoOn() || !this.opts.enabled || this.opts.mode === "off") return;
+    const target = lineId ? liveStore.lines.get()[lineId] : this.helpTargetLine();
+    if (!target) return;
+    for (const st of this.columnLines(target.line.column)) {
+      if (this.askedLines.get(st.line.id) === st.latex) continue;
+      this.askedLines.set(st.line.id, st.latex);
+      // its marks (and in Suggest / Solve a ring's right step): an answer is the ask's own to
+      // write — rendered as if mid-writing, so the ask that follows does not find this one
+      // half-landed and write it a second time
+      if (st.latex) this.render(st, this.decisionFor(st, { settled: false }));
+    }
   }
 
   /**
@@ -2246,15 +3024,12 @@ export class LiveLoop implements LiveController {
       if (!opts.quiet) {
         // silent — unless it is under one of the chat's problems and the student has stopped: "?"
         const why = this.questionNow(state);
-        this.syncMark(state, why ? "question" : null, why ?? undefined);
+        // ...or this very read already earned its "couldn't read this" "?": a re-render of it (the
+        // line above was read again) keeps the "?" instead of taking it off
+        const unread = !why && rt.unreadableShown && this.opts.mode !== "off" && this.unreadableRead(state);
+        this.syncMark(state, why || unread ? "question" : null, why ?? (unread ? "unread" : undefined));
       }
-      if (
-        state.latex !== "" &&
-        state.confidence < LIVE_LIMITS.minConfidence &&
-        !rt.unreadableShown &&
-        !rt.unreadableTimer &&
-        !opts.quiet
-      ) {
+      if (this.unreadableRead(state) && !rt.unreadableShown && !rt.unreadableTimer && !opts.quiet) {
         const ticket = rt.processing;
         rt.unreadableTimer = setTimeout(() => {
           rt.unreadableTimer = null;
@@ -2273,7 +3048,9 @@ export class LiveLoop implements LiveController {
       return;
     }
     const analysis = state.analysis;
-    const status = decision.capped ? "none" : decision.badge;
+    // a step about to be ringed waits while it and the line above are read again (`holdRing`)
+    const held = decision.badge === "warn" && !opts.keepStatus && this.holdRing(state);
+    const status = decision.capped || held ? "none" : decision.badge;
     const resultLatex = decision.showResult && analysis ? analysis.resultLatex : "";
     let note = "";
     if (status === "warn") note = localNoteFor(analysis, this.opts.mode);
@@ -2292,14 +3069,23 @@ export class LiveLoop implements LiveController {
     // The mark IS the feedback now: a tick after a right step, a ring round a wrong one. The
     // echo that used to carry the badge only shows on hover. Mode off keeps what is there.
     if (!opts.keepStatus) {
-      const ring = status === "warn" || (status !== "ok" && status !== "solved" && this.modelFlagged(state));
-      const tick = status === "ok" || status === "solved";
+      // With Auto off the line's own verdict still says which mark already on the page fits it
+      // (`syncMark` keeps that one and writes none unasked); the echo shows none (`status`).
+      const auto = this.autoFor(state);
+      const marked = auto || decision.capped ? status : badgeFor(this.opts.mode, analysis);
+      const ring = marked === "warn" || (marked !== "ok" && marked !== "solved" && this.modelFlagged(state));
+      const tick = marked === "ok" || marked === "solved";
       // a line the engine cannot read at all, under one of the chat's problems: its "?" (`questionNow`)
       const why = ring || tick ? null : this.questionNow(state);
       this.syncMark(state, ring ? "circle" : tick ? "check" : why ? "question" : null, why ?? undefined);
       this.dropStaleSuggestion(state, ring);
-      if (ring && !opts.quiet) this.suggestNextStep(lineId);
+      if (ring && !opts.quiet && auto) this.suggestNextStep(lineId);
     }
+  }
+
+  /** A read the recognizer was unsure of: the "couldn't read this" chip and "?" are for it. */
+  private unreadableRead(state: LiveLineState): boolean {
+    return state.latex !== "" && state.confidence < LIVE_LIMITS.minConfidence;
   }
 
   // ---------------------------------------------------------------- "?" under the chat's problems
@@ -2362,9 +3148,9 @@ export class LiveLoop implements LiveController {
   }
 
   /**
-   * Live shapes on the page, for the cap and the pill's "lots of marks" warning. The tutor's
-   * handwriting is one draw shape per stroke, so a written block counts as ONE mark (its
-   * `meta.handBlock` key), not as its thirteen strokes.
+   * The tutor's marks on the page, for the cap and the pill's "lots of marks" warning: what Clear
+   * marks takes away. The tutor's handwriting is one draw shape per stroke, so a written block
+   * counts as ONE mark (its `meta.handBlock` key), not as its thirteen strokes.
    */
   private recount(): void {
     let n = 0;
@@ -2376,6 +3162,10 @@ export class LiveLoop implements LiveController {
       // lecture must not use up the cap and leave the tutor unable to mark what they write
       if (metaString(s.meta, LECTURE_BLOCK_META)) continue;
       if (answerSrcOf(s.meta)) answers = true;
+      // Nor is a readback: the student's own line, one per line, which Clear marks leaves alone.
+      // Counted, every line used two of the cap (its readback and its tick), so after about 30
+      // lines nothing new was marked, and Clear marks could not bring the page back under it.
+      if (s.meta.source === "echo") continue;
       const block = handBlockOf(s.meta);
       if (block) blocks.add(block);
       else n++;
@@ -2621,13 +3411,13 @@ export class LiveLoop implements LiveController {
     if (head && this.graphShapesOn(new Set([problemLineId(head)])).some((s) => metaString(s.meta, GRAPH_META) === wanted.key)) return true;
     if (!this.opts.enabled || liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
     if (opts.asked) this.undismissGraph(wanted.key, states);
-    else if (this.opts.mode !== "answer" || !this.settled || this.graphWriter || this.dismissedGraphs.has(wanted.key)) return false;
+    else if (this.opts.mode !== "answer" || !this.settled || !this.autoOn() || this.graphWriter || this.dismissedGraphs.has(wanted.key)) return false;
     return this.drawGraph(wanted, states, opts);
   }
 
-  /** Solve, and the student has stopped: every column that wants a graph gets one, one sketch at a time. */
+  /** Solve with Auto on, and the student has stopped: every column that wants a graph gets one, one sketch at a time. */
   private drawWantedGraphs(): void {
-    if (!this.started || !this.opts.enabled || this.opts.mode !== "answer" || !this.engine?.graphFor || this.graphWriter) return;
+    if (!this.started || !this.opts.enabled || this.opts.mode !== "answer" || !this.autoOn() || !this.engine?.graphFor || this.graphWriter) return;
     const columns = [...new Set(Object.values(liveStore.lines.get()).filter((s) => s.latex).map((s) => s.line.column))].sort((a, b) => a - b);
     for (const column of columns) {
       this.syncGraph(column);
@@ -2725,7 +3515,7 @@ export class LiveLoop implements LiveController {
         this.write(() => {
           if (this.graphWriter === null && this.graphWriterKey === key) this.graphWriterKey = null;
           if (this.settled && this.graphWriter === null) this.drawWantedGraphs();
-          if (this.settled && this.graphWriter === null) this.solveWantedFigures();
+          if (this.settled && this.graphWriter === null && this.autoOn()) this.solveWantedFigures();
         });
       },
     });
@@ -2805,7 +3595,6 @@ export class LiveLoop implements LiveController {
     const rt = this.rt.get(lineId);
     if (rt) {
       if (rt.unreadableTimer) clearTimeout(rt.unreadableTimer);
-      if (rt.idleTimer) clearTimeout(rt.idleTimer);
       this.rt.delete(lineId);
     }
     this.deleteLineShapes(lineId);
@@ -3018,6 +3807,8 @@ export class LiveLoop implements LiveController {
         clientMetric("live.answer.hand", { lineId });
         return true;
       }
+      // Auto off: no answer is coming at the pause (Solve it brings it), so the readback stays
+      if (!this.autoFor(state)) return false;
     }
     this.dropEcho(lineId);
     return true;
@@ -3046,7 +3837,7 @@ export class LiveLoop implements LiveController {
    */
   private planInlineAnswer(state: LiveLineState, answer: string): HandPlan | null {
     const ink = state.line.bounds;
-    const size = inlineHandSizeFor(ink.h);
+    const size = inlineHandSizeFor(ink.h, this.boardZoom());
     const { plan, unsupported } = planHandwriting([answer], { size, seed: handSeedFor(`${state.line.id}:answer`) });
     if (!plan || unsupported.length > 0) return null;
     const placed = placeHandPlanOnBaseline(plan, {
@@ -3126,6 +3917,14 @@ export class LiveLoop implements LiveController {
     // own — `y = 2x + 1` has no steps, its graph IS the answer, and no model is asked for one.
     const graphed = this.solveGraph(opts, local, built);
     if (local || graphed) return local && local.steps.length === 0 && !graphed ? "nothing" : "local";
+    // A lone expression already as simple as it goes (`2x^{2}`): there is nothing to solve, and a
+    // model asked for its "solution" wrote the line back (dropped) or nothing — Solve looked dead.
+    // The student is told what would make it a question instead.
+    if (!opts.problem && this.alreadySimplest(built, opts)) {
+      this.noteFor(opts.lineId, LIVE_COPY.solve.simplest);
+      clientMetric("live.solve.simplest", { lineId: opts.lineId });
+      return "nothing";
+    }
     if (!this.deps.isOnline()) {
       this.deferLlm("solve", opts.lineId);
       return "deferred";
@@ -3147,6 +3946,24 @@ export class LiveLoop implements LiveController {
   }
 
   /**
+   * A quiet note (`deps.notify`) about a request — only one the student made. Auto's own try at a
+   * line (`autoLines`) that turns out to ask nothing says nothing: "This is as simple as it gets"
+   * popped up unasked when Auto in Solve looked at `x^{2} + 3x + 5`, or Suggest's stuck pause at a
+   * half-written `2x + 3`, as if the student had pressed something.
+   */
+  private noteFor(lineId: string, message: string): void {
+    if (this.autoLines.has(lineId)) return;
+    this.deps.notify(message);
+  }
+
+  /** Solve's line is a lone expression in letters with nothing left to do to it (`engine.alreadySimplest`). */
+  private alreadySimplest(built: BuiltColumn, opts: SolveOpts): boolean {
+    const asked = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
+    if (!asked?.latex || asked.analysis?.kind !== "expression") return false;
+    return this.engine?.alreadySimplest?.(asked.latex) === true;
+  }
+
+  /**
    * A word problem: a model sets it up, the engine solves the setup (`startSetup`); the worked
    * solution from the solve model is only the fallback.
    */
@@ -3162,6 +3979,126 @@ export class LiveLoop implements LiveController {
   /** The drawing the student touched last, when their last ink was a drawing and not a line. */
   private touchedDiagram(): Diagram | null {
     return this.lastTouchedDiagramId ? (this.diagrams.find((d) => d.id === this.lastTouchedDiagramId) ?? null) : null;
+  }
+
+  /**
+   * Solve / Help with a drawing the last thing touched. A real figure (`isRealFigure`) is read as a
+   * figure (`startFigure`). Anything else is first read as a line of maths (`solveInkAsMaths`):
+   * `2x2` written large on a phone was taken for three drawings, the figure model was asked what the
+   * "figure" asks, said nothing, and the student got "Couldn't work this out" for 2 × 2. Only when
+   * the ink is not maths the engine can answer does the figure model get its turn.
+   */
+  private askAboutDrawing(diagram: Diagram, opts: SolveOpts): void {
+    if (this.isRealFigure(diagram) || !this.engine) {
+      this.startFigure(diagram, opts);
+      return;
+    }
+    // the pill says "Solving…" while the ink is read, as it does for the figure
+    liveStore.status.set("checking");
+    const ended = this.solvingStarted();
+    const gen = this.generation;
+    void this.solveInkAsMaths(diagram, opts, gen)
+      .catch((err) => {
+        console.warn("[live] reading the drawing as maths failed", err);
+        return false;
+      })
+      .then((settled) => {
+        // asked on a screen the student has left (or deleted): nothing more, here
+        if (!ended()) return;
+        if (!settled && this.started && this.diagrams.some((d) => d.id === diagram.id)) {
+          this.startFigure(diagram, opts);
+          return;
+        }
+        if (liveStore.status.get() !== "offline") liveStore.status.set("idle");
+      });
+  }
+
+  /**
+   * The drawing's ink — and the non-figure drawings and writing on its row, which is how large
+   * writing comes apart (`inkRowOf`) — read as ONE line of maths, and answered by the engine alone
+   * (`localSolve`): `= 4` beside `2x2`, or the note that `2x^{2}` has nothing to do. Never a model's
+   * answer: ink that is not clearly maths goes on to the figure. True when that settled it (written,
+   * a note, or the loop stopped); false: read it as a figure.
+   *
+   * `gen`: the runtime it was asked in. A screen switch (or delete) while the ink is hashed or read
+   * settles it with nothing written: `= 4` for the screen the student left was written on the one
+   * they went to (the writer writes on the current page).
+   */
+  private async solveInkAsMaths(diagram: Diagram, opts: SolveOpts, gen = this.generation): Promise<boolean> {
+    const engine = this.engine;
+    if (!engine) return false;
+    const gone = () => !this.started || this.generation !== gen;
+    const row = this.inkRowOf(diagram);
+    const line: InkLine = { id: diagram.id, strokeIds: row.strokes.map((st) => st.id), bounds: row.bounds, column: 0, row: 0, hash: "" };
+    const payload = buildPayload(line, row.strokes);
+    if (!payload) return false;
+    const hash = await hashPayload(payload);
+    if (gone()) return true;
+    if (!this.deps.isOnline() && !this.deps.recognizer.peek(hash)) return false;
+    const req: RecognizeRequest = { boardId: this.opts.boardId, lineId: `ink_${diagram.id}`, strokes: { x: payload.x, y: payload.y }, bounds: { w: payload.w, h: payload.h } };
+    let res: RecognizeResponse;
+    try {
+      res = await this.deps.recognizer.recognize(req, hash);
+    } catch {
+      return gone();
+    }
+    if (gone()) return true;
+    const latex = (res.latex ?? "").trim();
+    // a read the recognizer is not sure of is a picture's, not a line's
+    if (!latex || res.kind !== "math" || res.confidence < LIVE_LIMITS.minConfidence) return false;
+    let kind: LineAnalysis["kind"] | null = null;
+    try {
+      kind = engine.analyzeLine(latex, { mode: "answer" }).kind;
+    } catch {
+      kind = null;
+    }
+    if (kind !== "expression" && kind !== "equation" && kind !== "inequality") return false;
+    const hand = this.deps.handwritingEnabled();
+    const local = localSolve(engine, [latex], 0, { handwriting: hand });
+    clientMetric("live.figure.asMaths", { diagramId: diagram.id, source: local.source ?? "", kinds: diagram.kinds.join(","), strokes: row.strokes.length });
+    if (local.source && local.steps.length > 0) {
+      const key = `ink: ${latex}`;
+      if (opts.onlyFirstStep || !this.hasHandSolution(diagram.id, key)) {
+        if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return true;
+        // beside the whole row of ink, not just the piece of it that was touched
+        this.writeFigureSolution({ ...diagram, bounds: row.bounds }, null, opts, local.steps, key);
+      }
+      this.noteSuccess("solve", diagram.id);
+      return true;
+    }
+    if (engine.alreadySimplest?.(latex)) {
+      this.noteFor(opts.lineId, LIVE_COPY.solve.simplest);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * The drawing's strokes and labels, and every stroke on the same row as them that is no figure's:
+   * level with the ink gathered so far (overlapping half its height) and within a glyph-sized gap of
+   * it, grown until nothing more joins. `2x2` written with a finger came apart into a `2` (a
+   * drawing), an `x` (labels, or a line of its own) and a `2`: read alone, the touched piece is `2`.
+   */
+  private inkRowOf(diagram: Diagram): { strokes: InkStroke[]; bounds: Rect } {
+    const ink = this.collectInk();
+    const figures = new Set<string>(this.diagrams.filter((d) => d.id !== diagram.id && this.isRealFigure(d)).flatMap((d) => [...d.strokeIds, ...d.labels.flat()]));
+    const members = new Set<string>([...diagram.strokeIds, ...diagram.labels.flat()]);
+    const own = ink.filter((st) => members.has(st.id));
+    let box = own.length > 0 ? unionRects(own.map((st) => st.bounds)) : diagram.bounds;
+    for (let grown = true; grown; ) {
+      grown = false;
+      for (const st of ink) {
+        if (members.has(st.id) || figures.has(st.id)) continue;
+        const b = st.bounds;
+        const overlap = Math.min(b.y + b.h, box.y + box.h) - Math.max(b.y, box.y);
+        const gap = Math.max(0, b.x - (box.x + box.w), box.x - (b.x + b.w));
+        if (overlap < 0.5 * Math.min(b.h, box.h) || gap > Math.max(box.h, 2 * this.glyph)) continue;
+        members.add(st.id);
+        box = unionRects([box, b]);
+        grown = true;
+      }
+    }
+    return { strokes: ink.filter((st) => members.has(st.id)), bounds: box };
   }
 
   /** The drawing beside a column of work, if one is near enough to be what it is about. */
@@ -3228,7 +4165,9 @@ export class LiveLoop implements LiveController {
    * One model call per figure-and-labels version (`figureKey`): the reply is kept
    * (`figureReplies`), so asking again, or the unasked path at the next settle, costs nothing. From
    * a line, a figure that gives nothing falls back to the word problem / solve paths; asked on the
-   * drawing, the pill says it could not work it out, with Retry. Unasked, every failure is silent.
+   * drawing, the pill says it could not work it out, with Retry — unless the model said nothing on it
+   * asks for anything (`reason: "nothing_asked"`), which is no failure: a quiet note on what to write
+   * (`deps.notify`). Unasked, every outcome but an answer is silent.
    */
   private startFigure(diagram: Diagram, opts: SolveOpts, from?: { built: BuiltColumn; fromLineId: string | undefined }, unasked = false): void {
     const engine = this.engine;
@@ -3251,10 +4190,10 @@ export class LiveLoop implements LiveController {
     const retry: RetryContext = from ? { kind: "solve", lineId: opts.lineId, fromLineId: from.fromLineId, opts } : { kind: "figure", diagramId: diagram.id, opts };
     const startedAt = this.deps.now();
     liveStore.status.set("checking");
-    liveStore.solving.set(liveStore.solving.get() + 1);
+    const ended = this.solvingStarted();
     void (async () => {
-      /** written: on the page; fallback: nothing usable; stop: nothing more to do */
-      let outcome: "written" | "fallback" | "stop" = "fallback";
+      /** written: on the page; fallback: nothing usable; nothing: the model says nothing is asked; stop: nothing more to do */
+      let outcome: "written" | "fallback" | "nothing" | "stop" = "fallback";
       let reason = "";
       let source = "";
       let key = "";
@@ -3291,6 +4230,8 @@ export class LiveLoop implements LiveController {
           }
           if (res && outcome !== "stop") {
             if (ctrl.signal.aborted || !this.started) outcome = "stop";
+            // the model read it and nothing on it asks for anything: not a failure, nothing to write
+            else if (res.reason === "nothing_asked") outcome = "nothing";
             else {
               const answer = figureAnswer(engine, res, [...labels, ...column]);
               source = answer.source;
@@ -3321,15 +4262,18 @@ export class LiveLoop implements LiveController {
         }
       } finally {
         if (rt.solveAbort === ctrl) rt.solveAbort = null;
-        liveStore.solving.set(Math.max(0, liveStore.solving.get() - 1));
+        ended();
       }
       clientMetric("live.figure", { outcome, reason, source, called, unasked, ms: this.deps.now() - startedAt, lineId: opts.lineId, kinds: diagram.kinds.join(","), fromLine: Boolean(from) });
-      if (outcome === "fallback" && !ctrl.signal.aborted && this.started && !unasked) {
+      if ((outcome === "fallback" || outcome === "nothing") && !ctrl.signal.aborted && this.started && !unasked) {
         if (from) {
           this.solveWithoutFigure(from.built, from.fromLineId, opts);
           return;
         }
-        this.fail(sseFailure({ error: "unusable_steps", message: UNUSABLE_SOLUTION }), errCtx, retry);
+        // Asked on the drawing. Nothing asked is what to write next, quietly — the red card and its
+        // Retry would say something broke, and asking again would only be told the same.
+        if (outcome === "nothing") this.noteFor(opts.lineId, LIVE_COPY.solve.nothingAsked);
+        else this.fail(sseFailure({ error: "unusable_steps", message: SOLVE_FAILED }), errCtx, retry);
       }
       if (outcome === "written") this.noteSuccess("solve", opts.lineId);
       if (liveStore.status.get() !== "offline") liveStore.status.set("idle");
@@ -3390,10 +4334,27 @@ export class LiveLoop implements LiveController {
     return this.started && this.opts.enabled && this.opts.mode === "answer" && this.settled && this.engine !== null;
   }
 
-  /** A drawing the unasked path may look at: labelled, a figure (not a graph's axes), not being solved, nothing written beside it. */
+  /**
+   * A drawing the unasked path may look at: labelled, a real figure (`isRealFigure`; not a graph's
+   * axes), not being solved, nothing written beside it. Every pause in Solve used to send any
+   * labelled "drawing" to the figure model — writing the board took for a drawing included — and
+   * every such call came back with nothing.
+   */
   private figureWanted(d: Diagram): boolean {
     if (d.labels.length === 0 || d.kinds.includes("axes") || d.kinds.includes("numberLine")) return false;
-    return !this.runtime(d.id).solveAbort && this.nothingBeside(d);
+    return this.isRealFigure(d) && !this.runtime(d.id).solveAbort && this.nothingBeside(d);
+  }
+
+  /**
+   * A drawing that is a figure, as `splitInk` sees it: a closed shape (a triangle, a quadrilateral,
+   * a polygon, a circle), or lines carrying marks (an angle arc, a right-angle box, ticks) — angles
+   * on a line, parallel lines. Axes and a number line are drawings too, a graph's. What is left —
+   * open strokes with nothing on them — is as likely to be large writing (`2x2` written with a
+   * finger on a phone came out as three "drawings") as a picture.
+   */
+  private isRealFigure(d: Diagram): boolean {
+    if (d.kinds.some((k) => FIGURE_SHAPES.has(k) || k === "axes" || k === "numberLine")) return true;
+    return d.strokeIds.some((id) => this.markStrokeIds.has(id));
   }
 
   /** No line of writing within reach of the drawing (`x = ?` beside it is a question for Solve). */
@@ -3418,7 +4379,7 @@ export class LiveLoop implements LiveController {
     // it changed while its labels were being read: the next stop looks again
     const inkOf = (x: Diagram) => [...x.strokeIds, ...x.labels.flat()];
     if (!current || !sameStrokeSet(inkOf(current), inkOf(d))) return;
-    if (!labels.some(looksLikeUnknown) || labels.some((l) => /\b(given|prove)\b/i.test(l))) return;
+    if (!unaskedFigureLabels(labels)) return;
     const key = figureKey(d, labels, []);
     if (this.dismissedFigures.has(key) || this.figureReplies.get(key) === null || this.figuresInFlight.has(key)) return;
     if (this.hasHandSolution(d.id, key)) return;
@@ -3462,18 +4423,19 @@ export class LiveLoop implements LiveController {
    * has no room to the right) and starts the reveal. False when the hand cannot draw every step.
    */
   private drawBesideFigure(diagram: Diagram, steps: readonly string[], extraMeta?: JsonObject): boolean {
-    const size = handSizeFor(3 * this.glyph);
+    const size = handSizeFor(3 * this.glyph, this.boardZoom());
+    const k = this.handScale();
     const { plan, unsupported } = planHandwriting(steps, { size, seed: handSeedFor(diagram.id) });
     if (!plan || unsupported.length > 0) return false;
     const b = diagram.bounds;
     const screen = this.placementBounds();
-    let candidate: Rect = { x: rectMaxX(b) + PLACEMENT.sideGap, y: b.y, w: plan.bounds.w, h: plan.bounds.h };
+    let candidate: Rect = { x: rectMaxX(b) + PLACEMENT.sideGap * k, y: b.y, w: plan.bounds.w, h: plan.bounds.h };
     if (rectMaxX(candidate) > rectMaxX(screen) - PLACEMENT.viewportMargin) {
-      candidate = keepInsideX({ x: b.x, y: rectMaxY(b) + PLACEMENT.stepGap, w: plan.bounds.w, h: plan.bounds.h }, screen);
+      candidate = keepInsideX({ x: b.x, y: rectMaxY(b) + PLACEMENT.stepGap * k, w: plan.bounds.w, h: plan.bounds.h }, screen);
     }
     const avoid = this.avoidRects(diagram.id);
     avoid.push(b);
-    const slot = findFreeSlot(candidate, avoid, b, "below");
+    const slot = findFreeSlot(candidate, avoid, b, "below", k);
     this.startHandwriting(placeHandPlan(plan, { x: slot.x, y: slot.y }), diagram.id, extraMeta);
     clientMetric("live.figure.hand", { diagramId: diagram.id, lines: steps.length });
     return true;
@@ -3537,7 +4499,7 @@ export class LiveLoop implements LiveController {
     const retry: RetryContext = { kind: "solve", lineId: opts.lineId, fromLineId, opts };
     const startedAt = this.deps.now();
     liveStore.status.set("checking");
-    liveStore.solving.set(liveStore.solving.get() + 1);
+    const ended = this.solvingStarted();
     void (async () => {
       /** written: the block is on the page; fallback: ask the solve model; stop: nothing more */
       let outcome: "written" | "fallback" | "stop" = "fallback";
@@ -3569,7 +4531,7 @@ export class LiveLoop implements LiveController {
         }
       } finally {
         if (rt.solveAbort === ctrl) rt.solveAbort = null;
-        liveStore.solving.set(Math.max(0, liveStore.solving.get() - 1));
+        ended();
       }
       clientMetric("live.setup", { outcome, reason, ms: this.deps.now() - startedAt, lineId: opts.lineId });
       if (outcome === "fallback" && !ctrl.signal.aborted && this.started) {
@@ -3692,7 +4654,7 @@ export class LiveLoop implements LiveController {
     });
     const restated = new Set(built.states.map((st) => normalizeStep(st.latex)));
     liveStore.status.set("checking");
-    liveStore.solving.set(liveStore.solving.get() + 1);
+    const ended = this.solvingStarted();
     void (async () => {
       let failed = false;
       let doneEarly = false;
@@ -3737,7 +4699,7 @@ export class LiveLoop implements LiveController {
         // to leave the student staring at a page where Solve visibly did nothing.
         if (!failed && drawn === 0 && discarded > 0) {
           failed = true;
-          this.fail(sseFailure({ error: "unusable_steps", message: UNUSABLE_SOLUTION }), errCtx, retry);
+          this.fail(sseFailure({ error: "unusable_steps", message: SOLVE_FAILED }), errCtx, retry);
         }
       } catch (err) {
         if (!isAbortLike(err) && !ctrl.signal.aborted) {
@@ -3748,7 +4710,7 @@ export class LiveLoop implements LiveController {
         }
       } finally {
         if (rt.solveAbort === ctrl) rt.solveAbort = null;
-        liveStore.solving.set(Math.max(0, liveStore.solving.get() - 1));
+        ended();
         if (!failed && (doneEarly || !ctrl.signal.aborted)) this.noteSuccess("solve", opts.lineId);
         if (liveStore.status.get() !== "offline") liveStore.status.set("idle");
       }
@@ -3801,7 +4763,7 @@ export class LiveLoop implements LiveController {
         // `solveLatex` is only ever written by hand: with the hand off (or no room) its line
         // goes to the paths that can also typeset.
         handwriting: hand && !atCap,
-        canDraw: (steps) => planHandwriting(steps, { size: handSizeFor(state.line.bounds.h), seed: handSeedFor(opts.lineId) }).unsupported.length === 0,
+        canDraw: (steps) => planHandwriting(steps, { size: handSizeFor(state.line.bounds.h, this.boardZoom()), seed: handSeedFor(opts.lineId) }).unsupported.length === 0,
         // the chat's problem above the work, written with its interval: the work is solved in it
         domain: this.headAnalyses(state.line.column).at(-1)?.domain?.latex,
       },
@@ -3911,7 +4873,9 @@ export class LiveLoop implements LiveController {
     extraMeta?: JsonObject,
   ): { rect: Rect; wallMs: number } | null {
     if (opts.problem) return this.drawProblemWork(built, opts, opts.problem, state, steps, extraMeta);
-    const size = handSizeFor(state.line.bounds.h);
+    // the student's size, on this board (`handSizeFor`'s zoom: a phone's writing is 5x a desktop's in page px)
+    const size = handSizeFor(state.line.bounds.h, this.boardZoom());
+    const k = this.handScale();
     const { plan, unsupported } = planHandwriting(steps, { size, seed: handSeedFor(opts.lineId) });
     if (!plan || unsupported.length > 0) return null;
 
@@ -3919,7 +4883,7 @@ export class LiveLoop implements LiveController {
     const column = unionRects(built.states.map((s) => s.line.bounds));
     const candidate: Rect = {
       x: column.x,
-      y: rectMaxY(lastLine) + PLACEMENT.stepGap,
+      y: rectMaxY(lastLine) + PLACEMENT.stepGap * k,
       w: plan.bounds.w,
       h: plan.bounds.h,
     };
@@ -3931,8 +4895,8 @@ export class LiveLoop implements LiveController {
     if (echo) avoid.push(echo);
     // Under the work, a blocked block slides down past what is in the way; moved beside the work
     // (no room below on this screen), it slides right as an echo does.
-    const placed = keepOnScreen(candidate, this.screenRect(), column);
-    const slot = findFreeSlot(placed, avoid, lastLine, placed.x === candidate.x ? "below" : "right");
+    const placed = keepOnScreen(candidate, this.screenRect(), column, 0, PLACEMENT.sideGap * k);
+    const slot = findFreeSlot(placed, avoid, lastLine, placed.x === candidate.x ? "below" : "right", k);
 
     const block = placeHandPlan(plan, { x: slot.x, y: slot.y });
     this.startHandwriting(block, opts.lineId, extraMeta);
@@ -3973,6 +4937,10 @@ export class LiveLoop implements LiveController {
    *
    * A mark left on this very ink under a line id that is gone is replaced, not doubled: a line with
    * no echo (a lone `2`) is not rebuilt on a reload, and comes back with a new id when it is read.
+   *
+   * With Auto off, nothing is written on a line the student has not asked about (`autoFor`): a mark
+   * already on the page that still fits it stays (a tick from before, after a reload), one that no
+   * longer fits still goes (a ring on a line they have since put right).
    */
   private syncMark(state: LiveLineState, kind: MarkKind | null, why?: UnjudgedReason): void {
     const lineId = state.line.id;
@@ -3999,6 +4967,11 @@ export class LiveLoop implements LiveController {
       if (stale.length > 0) this.editor.deleteShapes(stale);
       // nothing to write leaves the pen free for this line at once; a writer frees it when it ends
       if (!want || !kind || marks.some((s) => metaString(s.meta, MARK_META) === want)) return this.markDone(lineId, null);
+      if (!this.autoFor(state)) {
+        // unasked with Auto off: none written, and none remembered, so an ask writes it
+        this.runtime(lineId).markKey = null;
+        return this.markDone(lineId, null);
+      }
       const plan = planFromStrokes(kind, markStrokes(kind, state.line.bounds, handSeedFor(`${lineId}:${want}`)), HAND_WRITE.minSize);
       if (!plan) return this.markDone(lineId, null);
       const writer = this.makeWriter();
@@ -4047,7 +5020,7 @@ export class LiveLoop implements LiveController {
           this.writerFor = null;
         }
         // a figure waiting for the hand to be free is written after it
-        if (this.settled && this.writer === null) this.solveWantedFigures();
+        if (this.settled && this.writer === null && this.autoOn()) this.solveWantedFigures();
       },
     });
   }
@@ -4065,6 +5038,25 @@ export class LiveLoop implements LiveController {
     const sketch = this.sketchWriter;
     this.sketchWriter = null;
     sketch?.cancel();
+  }
+
+  /**
+   * One more request the pill's "Solving…" counts (`liveStore.solving`). The function returned
+   * counts it off, once, and says whether it was still this runtime's: after a reset (`generation`:
+   * a screen left or deleted) the count was zeroed with it, and counting off the old screen's request
+   * took one of the new screen's — a solve in flight there looked finished, and Auto, which waits
+   * for none (`autoMayAnswer`), started another alongside it.
+   */
+  private solvingStarted(): () => boolean {
+    const gen = this.generation;
+    liveStore.solving.set(liveStore.solving.get() + 1);
+    let open = true;
+    return () => {
+      const mine = gen === this.generation;
+      if (open && mine) liveStore.solving.set(Math.max(0, liveStore.solving.get() - 1));
+      open = false;
+      return mine;
+    };
   }
 
   /** fetch rejects with a TypeError when the network is unreachable. */
@@ -4130,14 +5122,12 @@ export class LiveLoop implements LiveController {
       boardId: () => this.opts.boardId,
       rerender: (ids) => this.rerenderLines(ids),
       writeRows: (read, rows, anchor) => this.writeProofRows(read, rows, anchor),
-      busy: (on) => {
-        if (on) {
-          liveStore.status.set("checking");
-          liveStore.solving.set(liveStore.solving.get() + 1);
-          return;
-        }
-        liveStore.solving.set(Math.max(0, liveStore.solving.get() - 1));
-        if (liveStore.status.get() !== "offline") liveStore.status.set("idle");
+      busy: () => {
+        liveStore.status.set("checking");
+        const ended = this.solvingStarted();
+        return () => {
+          if (ended() && liveStore.status.get() !== "offline") liveStore.status.set("idle");
+        };
       },
       failed: (err, lineId, all) => {
         const errCtx = { kind: "solve" as const, lineId, userAsked: true };
@@ -4208,7 +5198,7 @@ export class LiveLoop implements LiveController {
   private writeProofRows(read: ProofRead, rows: readonly PlannedRow[], anchor: string): boolean {
     if (!this.deps.handwritingEnabled() || liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
     const texts = rows.map((r) => ({ statement: r.statement, reasonLatex: r.reasonLatex }));
-    const size = handSizeFor(read.lineHeight);
+    const size = handSizeFor(read.lineHeight, this.boardZoom());
     const seed = handSeedFor(`proof:${anchor}:${read.rows.length}:${texts.map((t) => t.statement).join(";")}`);
     const avoid: Rect[] = [];
     for (const s of this.editor.getCurrentPageShapes()) {
@@ -4463,6 +5453,8 @@ export class LiveLoop implements LiveController {
 
   /** A chat reply's actions, written one block at a time; resolves when the last is on the page. */
   runChatActions(actions: readonly ChatAction[]): Promise<ChatRunReport> {
+    // typed into the chat is asked for: what fails is shown, whatever Auto did on those lines
+    this.autoLines.clear();
     return this.chat.run(actions);
   }
 
@@ -4571,8 +5563,121 @@ export class LiveLoop implements LiveController {
     return Object.values(all).sort((a, b) => b.updatedAt - a.updatedAt)[0];
   }
 
+  // ---------------------------------------------------------------- which problem Help acts on
+  /**
+   * The line Help me and Solve it act on (and Check, Solve steps and the chat's "help me" on the
+   * student's own work): what they picked with the select tool when that holds a line of theirs, else
+   * the line they last wrote in with the pen (`src/lib/live/helpTarget.ts`). Rubbing out, dragging,
+   * Undo or a remote change elsewhere re-read lines, but never move it. A pick of one of the chat's
+   * problems is the student's work under it — undefined with none yet, and Help then works the
+   * problem itself (`targetProblem`); a pick of a drawing is the drawing (`helpTargetDiagram`).
+   */
+  helpTargetLine(): LiveLineState | undefined {
+    const picked = this.picked();
+    if (!picked) return this.wroteLine();
+    if (picked.line) return picked.line;
+    const cell = picked.problem ? this.problemCells().find((c) => c.key === picked.problem) : undefined;
+    return (cell && this.workUnder(cell)) || undefined;
+  }
+
+  /** A fresh stroke of the student's pen: Help follows it (over an older pick). */
+  private wrote(strokeId: string): void {
+    this.penStrokeId = strokeId;
+    this.penSeq = this.pickSeq + 1;
+  }
+
+  /** The line the pen last wrote in on this screen; before it has written there, the line read last. */
+  private wroteLine(): LiveLineState | undefined {
+    return penLine(liveStore.lines.get(), this.penStrokeId, this.penLineId) ?? this.latestLine();
+  }
+
+  /** The drawing Help reads: the one picked, else the one drawn last — none when something else is picked. */
+  private helpTargetDiagram(): Diagram | null {
+    const picked = this.picked();
+    return picked ? picked.diagram : this.touchedDiagram();
+  }
+
+  /** The chat's problem an ask is about ("the current problem", `chat/work.ts`): the one picked, else the one written under last. */
+  private targetProblem(): string | null {
+    return this.picked()?.problem ?? this.touchedProblem;
+  }
+
+  /**
+   * What the student picked with the select tool (a tap, a lasso), when Help can act on it: a line
+   * of theirs — its ink, its readback, anything the tutor wrote for it — one of the chat's problems
+   * (or the tutor's work under one), or a drawing. Null with nothing selected, nothing of these (a
+   * sticky note, a picture), or a pick the pen has written since: Help follows the pen.
+   */
+  private picked(): { line: LiveLineState | null; diagram: Diagram | null; problem: string | null } | null {
+    const ids = this.penSeq > this.pickSeq ? [] : (this.editor.getSelectedShapeIds?.() ?? []);
+    if (ids.length === 0) return null;
+    const lines = liveStore.lines.get();
+    const byStroke = new Map<string, LiveLineState>();
+    for (const st of Object.values(lines)) for (const sid of st.line.strokeIds) byStroke.set(sid, st);
+    const mine: LiveLineState[] = [];
+    let diagram: Diagram | null = null;
+    let problem: string | null = null;
+    for (const id of ids) {
+      const shape = this.editor.getShape(id);
+      if (!shape) continue;
+      if (!isLiveMeta(shape.meta)) {
+        const st = byStroke.get(id);
+        if (st) mine.push(st);
+        else diagram ??= this.diagramOfStroke(id);
+        continue;
+      }
+      const lineId = shape.meta.lineId;
+      const p = problemMetaOf(shape.meta);
+      if (p) problem ??= problemKeyOf(handBlockOf(shape.meta), p);
+      // the tutor's work under one of the chat's problems (`problemLineId`)
+      else if (lineId.startsWith("problem:")) problem ??= lineId.slice("problem:".length);
+      else if (lines[lineId]) mine.push(lines[lineId]);
+      else diagram ??= this.diagrams.find((d) => d.id === lineId) ?? null;
+    }
+    const line = pickedLine(mine);
+    if (line) return { line, diagram: null, problem: this.columnHeads.get(line.line.column)?.key ?? null };
+    if (problem) return { line: null, diagram: null, problem };
+    return diagram ? { line: null, diagram, problem: null } : null;
+  }
+
+  /**
+   * Publishes the problem the ask button would act on now (`liveStore.helpTarget`) for the outline
+   * around it (`ProblemHighlight`): after every flush, a change of selection, mode or screen.
+   */
+  private publishHelpTarget(): void {
+    const prev = liveStore.helpTarget.get();
+    const next = nextHelpTarget(prev, this.started && this.opts.enabled ? this.helpTargetNow() : null, this.deps.now());
+    if (next !== prev) liveStore.helpTarget.set(next);
+  }
+
+  /** What `requestHelp` would act on, in its order — a drawing, the target line's column, one of the chat's problems — without acting. */
+  private helpTargetNow(): HelpTargetDraft | null {
+    const states = Object.values(liveStore.lines.get());
+    const cells = this.problemCells();
+    const headed = new Set([...this.columnHeads.values()].map((h) => h.key));
+    const base = { by: this.picked() ? ("selection" as const) : ("pen" as const), problems: problemCount(states, cells.filter((c) => !headed.has(c.key)).length) };
+    const figure = this.helpTargetDiagram();
+    if (figure) return { ...base, key: `d:${figure.id}`, column: -1, bounds: figure.bounds };
+    const line = this.helpTargetLine();
+    let column = line ? line.line.column : null;
+    let cell: ProblemCell | null = null;
+    // a line still being read is the one Help waits for; one read that it cannot act on hands over to the chat's problems
+    if (cells.length > 0 && (!line || (line.analysis && !this.actsOn(line)))) {
+      const pick = this.problemPick(this.opts.mode === "answer" ? "solve" : "step");
+      if (pick && pick.kind !== "none") {
+        const work = pick.kind === "student" ? this.workUnder(pick.cell) : null;
+        if (pick.kind === "tutor" || work) {
+          cell = pick.cell;
+          column = work ? work.line.column : null;
+        }
+      }
+    }
+    const target = problemTarget(states, column, cell ?? (column === null ? null : (this.columnHeads.get(column) ?? null)));
+    return target && { ...base, ...target };
+  }
+
   requestCheck(lineId?: string): void {
-    const target = lineId ? liveStore.lines.get()[lineId] : this.latestLine();
+    const target = lineId ? liveStore.lines.get()[lineId] : this.helpTargetLine();
     if (!target || !target.latex) return;
     if (this.opts.mode === "off") return;
     // a proof line is checked by the proof checker (its mark is already there): no model check
@@ -4584,15 +5689,26 @@ export class LiveLoop implements LiveController {
   }
 
   requestSolve(lineId?: string): void {
+    // asked about the problem the student is on (not a given line): the outline shows which (`ProblemHighlight`)
+    if (!lineId) liveStore.askedAt.set(this.deps.now());
+    this.solveTarget(lineId);
+  }
+
+  /**
+   * Solve it, on `lineId` or the problem the student is on, without saying it was asked: Auto's own
+   * solve goes through here, so the outline round the ask button's problem (`askedAt`) shows for the
+   * student's ask and not, unasked, at every pause.
+   */
+  private solveTarget(lineId?: string): void {
     // A two-column proof: the rest of it in Solve, the next row otherwise (`ProofDesk`).
-    if (this.opts.enabled && this.proofs.ask(lineId ?? this.latestLine()?.line.id ?? null, lineId ? null : this.touchedDiagram(), { all: this.opts.mode === "answer" })) return;
-    // Solve with a drawing the last thing drawn: the tutor reads the figure.
-    const figure = lineId ? null : this.touchedDiagram();
+    if (this.opts.enabled && this.proofs.ask(lineId ?? this.helpTargetLine()?.line.id ?? null, lineId ? null : this.helpTargetDiagram(), { all: this.opts.mode === "answer" })) return;
+    // Solve with a drawing the last thing drawn (or picked): the tutor reads the figure.
+    const figure = lineId ? null : this.helpTargetDiagram();
     if (figure && this.opts.enabled && this.opts.mode === "answer") {
-      this.startFigure(figure, { lineId: figure.id });
+      this.askAboutDrawing(figure, { lineId: figure.id });
       return;
     }
-    let target = lineId ? liveStore.lines.get()[lineId] : this.latestLine();
+    let target = lineId ? liveStore.lines.get()[lineId] : this.helpTargetLine();
     // The chat's problems: with no line of the student's to act on, Solve steps is about the current
     // problem — worked out under it; pressed again once it is, the next one (`chat/work.ts`).
     if (!lineId && this.opts.enabled && this.opts.mode === "answer" && !this.actsOn(target)) {
@@ -4636,7 +5752,8 @@ export class LiveLoop implements LiveController {
   }
 
   /**
-   * The board's one "Help" action, on the line the student touched last. Nothing here runs on
+   * The board's one "Help" action, on the problem the student is working on: the one they picked
+   * with the select tool, else the one they last wrote in (`helpTargetLine`). Nothing here runs on
    * a timer: every branch is an explicit request.
    *
    *  - ink Live could not read as maths (a failed or low-confidence read, a diagram label, a
@@ -4647,17 +5764,59 @@ export class LiveLoop implements LiveController {
    */
   requestHelp(): boolean {
     if (!this.opts.enabled || this.opts.mode === "off") return false;
+    liveStore.askedAt.set(this.deps.now());
+    return this.help();
+  }
+
+  /** Help me, without saying it was asked (`askedAt`): Auto's stuck step in Suggest (see `solveTarget`). */
+  private help(): boolean {
+    if (!this.opts.enabled || this.opts.mode === "off") return false;
+    // The line it is about is still being read: Help acts once the read lands, not on the empty
+    // read the line has now — that drew a "?" ("write it again") beside ink nobody had read yet.
+    if (this.helpAfterRead()) return true;
+    return this.helpNow();
+  }
+
+  /**
+   * Help tapped while the latest line is still being read (`reading`): it waits for that read — at
+   * most the recognizer's own timeout and a moment (`HELP_READ_WAIT_MS`) — then helps with what was
+   * read; a read that never lands gets what an unread line gets. A second tap joins the wait. True
+   * while Help is waiting; false when there is nothing in flight to wait for.
+   */
+  private helpAfterRead(): boolean {
+    const target = this.helpTargetLine();
+    if (!target || !this.reading.has(target.line.id)) return false;
+    if (this.helpWaitTimer) return true;
+    const lineId = target.line.id;
+    const deadline = this.deps.now() + HELP_READ_WAIT_MS;
+    const look = () => {
+      this.helpWaitTimer = null;
+      if (!this.started) return;
+      if (this.reading.has(lineId) && this.deps.now() < deadline) {
+        this.helpWaitTimer = setTimeout(look, HELP_READ_POLL_MS);
+        return;
+      }
+      this.helpNow();
+    };
+    this.helpWaitTimer = setTimeout(look, HELP_READ_POLL_MS);
+    clientMetric("live.help.waitRead", { lineId });
+    return true;
+  }
+
+  /** `requestHelp` on what is on the page now. */
+  private helpNow(): boolean {
+    if (!this.opts.enabled || this.opts.mode === "off") return false;
     // On a two-column proof (or its figure): the next row — in Solve, the rest of the proof.
-    if (this.proofs.ask(this.latestLine()?.line.id ?? null, this.touchedDiagram(), { all: this.opts.mode === "answer" })) return true;
+    if (this.proofs.ask(this.helpTargetLine()?.line.id ?? null, this.helpTargetDiagram(), { all: this.opts.mode === "answer" })) return true;
     // The student's last ink was a drawing (or its labels): the tutor reads the figure — in Solve
     // the whole setup and its answer, in Feedback / Suggest the first line of the setup. A drawing
     // never gets a "?": it is not ink that failed to read as maths.
-    const figure = this.touchedDiagram();
+    const figure = this.helpTargetDiagram();
     if (figure) {
-      this.startFigure(figure, { lineId: figure.id, onlyFirstStep: this.opts.mode !== "answer" });
+      this.askAboutDrawing(figure, { lineId: figure.id, onlyFirstStep: this.opts.mode !== "answer" });
       return true;
     }
-    const target = this.latestLine();
+    const target = this.helpTargetLine();
     // The chat's problems: with no line of the student's to help with, Help is about the current one.
     if (!this.actsOn(target) && this.helpWithProblem(target)) return true;
     // nothing on this screen to help with: the button says so
@@ -4738,6 +5897,8 @@ export class LiveLoop implements LiveController {
     const state = liveStore.lines.get()[lineId];
     if (!state?.latex) return false;
     if (this.hasSuggestion(lineId, state.latex) || this.stepInFlight(lineId, state.latex)) return true;
+    // its ring is waiting for a second look (`holdRing`): the ring, if it comes, asks again
+    if (!opts.now && !opts.typed && this.chainHolds.has(lineId)) return true;
     const step = this.rightNextStep(state);
     if (!step) return false;
     if (!opts.now && !this.settled) {
@@ -4747,16 +5908,17 @@ export class LiveLoop implements LiveController {
     // one pen at a time: a ring still being drawn round the line is finished first
     if (this.afterMark(lineId, () => this.suggestNextStep(lineId, opts))) return true;
     if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
-    const { plan, unsupported } = planHandwriting([step], { size: handSizeFor(state.line.bounds.h), seed: handSeedFor(`${lineId}:suggest`) });
+    const { plan, unsupported } = planHandwriting([step], { size: handSizeFor(state.line.bounds.h, this.boardZoom()), seed: handSeedFor(`${lineId}:suggest`) });
     if (!plan || unsupported.length > 0) return false;
     const ink = state.line.bounds;
+    const k = this.handScale();
     const candidate: Rect = {
-      x: rectMaxX(ringRect(ink)) + PLACEMENT.sideGap / 2,
+      x: rectMaxX(ringRect(ink)) + (PLACEMENT.sideGap * k) / 2,
       y: ink.y + ink.h / 2 - plan.bounds.h / 2,
       w: plan.bounds.w,
       h: plan.bounds.h,
     };
-    const slot = findFreeSlot(keepInsideX(candidate, this.placementBounds()), this.avoidRects(lineId), ink);
+    const slot = findFreeSlot(keepInsideX(candidate, this.placementBounds()), this.avoidRects(lineId), ink, "right", k);
     const writer = this.makeWriter();
     const entry = { writer, latex: state.latex, landed: false };
     this.runtime(lineId).stepWriter = entry;
@@ -4795,7 +5957,7 @@ export class LiveLoop implements LiveController {
       if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return;
       // one pen at a time: the dial raised from Off draws the operation's tick first
       if (this.afterMark(state.line.id, () => this.writeOperationResults())) continue;
-      const { plan, unsupported } = planHandwriting([result], { size: handSizeFor(state.line.bounds.h), seed: handSeedFor(`${state.line.id}:result`) });
+      const { plan, unsupported } = planHandwriting([result], { size: handSizeFor(state.line.bounds.h, this.boardZoom()), seed: handSeedFor(`${state.line.id}:result`) });
       if (!plan || unsupported.length > 0) continue;
       const slot = this.underOperation(state, plan.bounds);
       const writer = this.makeWriter();
@@ -4826,9 +5988,10 @@ export class LiveLoop implements LiveController {
   private underOperation(state: LiveLineState, size: { w: number; h: number }, anchor: Rect = state.line.bounds): Rect {
     const ink = state.line.bounds;
     const above = [...this.columnLines(state.line.column)].reverse().find((s) => s.line.row < state.line.row && !isOperationLine(s));
-    const candidate: Rect = { x: Math.min(ink.x, above?.line.bounds.x ?? ink.x), y: rectMaxY(anchor) + PLACEMENT.stepGap, w: size.w, h: size.h };
-    const placed = keepOnScreen(candidate, this.screenRect(), anchor);
-    return findFreeSlot(placed, [...this.avoidRects(state.line.id), ink, anchor], anchor, placed.x === candidate.x ? "below" : "right");
+    const k = this.handScale();
+    const candidate: Rect = { x: Math.min(ink.x, above?.line.bounds.x ?? ink.x), y: rectMaxY(anchor) + PLACEMENT.stepGap * k, w: size.w, h: size.h };
+    const placed = keepOnScreen(candidate, this.screenRect(), anchor, 0, PLACEMENT.sideGap * k);
+    return findFreeSlot(placed, [...this.avoidRects(state.line.id), ink, anchor], anchor, placed.x === candidate.x ? "below" : "right", k);
   }
 
   /**
@@ -4858,7 +6021,7 @@ export class LiveLoop implements LiveController {
     const resultBlock = this.operationResultShapes(lineId).filter((s) => metaString(s.meta, OPERATION_RESULT_META) === result);
     const written = resultBlock.length > 0;
     const hand = this.deps.handwritingEnabled();
-    const size = handSizeFor(state.line.bounds.h);
+    const size = handSizeFor(state.line.bounds.h, this.boardZoom());
     const seed = handSeedFor(`${lineId}:result`);
     const canDraw = (steps: readonly string[]) => planHandwriting(steps, { size, seed }).unsupported.length === 0;
     const after = localSolve(engine, [result], 0, { handwriting: hand, canDraw, domain: this.headAnalyses(state.line.column).at(-1)?.domain?.latex });
@@ -5085,6 +6248,21 @@ export function normalizeStep(latex: string): string {
 export function figureKey(diagram: Pick<Diagram, "strokeIds"> & Partial<Pick<Diagram, "labels">>, labels: readonly string[], column: readonly string[]): string {
   const ink = [...diagram.strokeIds, ...(diagram.labels ?? []).flat()].sort().join(",");
   return `figure: ${handSeedFor(ink)} | ${labels.map(labelKey).join(", ")} | ${column.join(" ; ")}`;
+}
+
+/**
+ * A figure's labels that ask for something, clearly enough to work it out unasked: an unknown
+ * (`x`, `?`, `2x + 10`, `θ`) and something known to find it from — another value with a number in it
+ * (`40°`, `5`, `3x`). A lone `x`, `x` and `y`, vertex names, a proof's Given / Prove: not sent.
+ */
+export function unaskedFigureLabels(labels: readonly string[]): boolean {
+  if (labels.some((l) => /\b(given|prove)\b/i.test(l))) return false;
+  const unknowns = labels.filter(looksLikeUnknown);
+  if (unknowns.length === 0) return false;
+  const numbered = labels.filter((l) => isValueLabel(l) && /\d/.test(l));
+  // something to find it from: a number that is not the unknown itself (`2x + 10` alone is not), or
+  // a second expression in it (`x` and `3x` on a straight line)
+  return numbered.some((l) => !looksLikeUnknown(l)) || (numbered.length > 0 && unknowns.length > 1);
 }
 
 /**

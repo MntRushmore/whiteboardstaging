@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HELP_MODES, LIVE_TIMING, type EngineVerdict, type HelpMode, type LineAnalysis, type LineKind } from "../contracts";
+import { HELP_MODES, type EngineVerdict, type HelpMode, type LineAnalysis, type LineKind } from "../contracts";
 import { badgeFor, decide, isSingleSymbolLatex, localNoteFor, unjudgedReason, type PolicyInput } from "../policy";
 
 function analysis(verdict: EngineVerdict, kind: LineKind = "equation", extra: Partial<LineAnalysis> = {}): LineAnalysis {
@@ -11,8 +11,8 @@ function input(over: Partial<PolicyInput> = {}): PolicyInput {
     mode: "suggest",
     analysis: analysis("ok"),
     confidence: 0.95,
-    idleMs: 0,
     settled: false,
+    auto: true,
     userAsked: false,
     hintsShownForLine: 0,
     openHintCount: 0,
@@ -55,29 +55,30 @@ describe("decide — badge table", () => {
 });
 
 describe("decide — runLlmCheck ladder", () => {
-  const idle = LIVE_TIMING.unknownIdleMs;
-  const cases: Array<[HelpMode, EngineVerdict, number, boolean, number, boolean]> = [
-    // mode, verdict, idleMs, userAsked, hintsShown, expected
-    ["off", "mismatch", idle, true, 0, false],
-    ["off", "unknown", idle, false, 0, false],
-    ["feedback", "mismatch", 0, false, 0, false],
-    ["feedback", "mismatch", 0, true, 0, true],
-    ["feedback", "unknown", 0, false, 0, false],
-    ["feedback", "unknown", idle, false, 0, true],
-    ["feedback", "ok", idle, false, 0, false],
+  // Auto on: an unknown line is checked once the student has paused (the settle), not on a
+  // per-line timer — so a read that lands after the pause is due at once.
+  const cases: Array<[HelpMode, EngineVerdict, boolean, boolean, number, boolean]> = [
+    // mode, verdict, settled, userAsked, hintsShown, expected
+    ["off", "mismatch", true, true, 0, false],
+    ["off", "unknown", true, false, 0, false],
+    ["feedback", "mismatch", false, false, 0, false],
+    ["feedback", "mismatch", false, true, 0, true],
+    ["feedback", "unknown", false, false, 0, false],
+    ["feedback", "unknown", true, false, 0, true],
+    ["feedback", "ok", true, false, 0, false],
     // a mismatch the engine found is ringed and answered locally: no model hint
-    ["suggest", "mismatch", 0, false, 0, false],
-    ["suggest", "mismatch", 0, false, 1, false],
-    ["suggest", "mismatch", 0, true, 1, true],
-    ["suggest", "unknown", idle, false, 0, true],
-    ["suggest", "ok", idle, false, 0, false],
-    ["answer", "mismatch", 0, false, 0, false],
-    ["answer", "unknown", idle - 1, false, 0, false],
-
+    ["suggest", "mismatch", false, false, 0, false],
+    ["suggest", "mismatch", true, false, 1, false],
+    ["suggest", "mismatch", false, true, 1, true],
+    ["suggest", "unknown", true, false, 0, true],
+    ["suggest", "ok", true, false, 0, false],
+    ["answer", "mismatch", true, false, 0, false],
+    ["answer", "unknown", false, false, 0, false],
+    ["answer", "unknown", true, false, 0, true],
   ];
-  for (const [mode, verdict, idleMs, userAsked, hintsShownForLine, expected] of cases) {
-    it(`${mode} ${verdict} idle=${idleMs} asked=${userAsked} hints=${hintsShownForLine} -> ${expected}`, () => {
-      const d = decide(input({ mode, analysis: analysis(verdict), idleMs, userAsked, hintsShownForLine }));
+  for (const [mode, verdict, settled, userAsked, hintsShownForLine, expected] of cases) {
+    it(`${mode} ${verdict} settled=${settled} asked=${userAsked} hints=${hintsShownForLine} -> ${expected}`, () => {
+      const d = decide(input({ mode, analysis: analysis(verdict), settled, userAsked, hintsShownForLine }));
       expect(d.runLlmCheck).toBe(expected);
     });
   }
@@ -85,15 +86,23 @@ describe("decide — runLlmCheck ladder", () => {
   it("never calls the LLM in off mode for any combination", () => {
     for (const verdict of ["ok", "mismatch", "unknown", "none"] as EngineVerdict[]) {
       for (const userAsked of [true, false]) {
-        expect(decide(input({ mode: "off", analysis: analysis(verdict), userAsked, idleMs: 99999 })).runLlmCheck).toBe(false);
+        expect(decide(input({ mode: "off", analysis: analysis(verdict), userAsked, settled: true })).runLlmCheck).toBe(false);
       }
     }
   });
 
   it("only checks unknown lines of checkable kinds", () => {
-    expect(decide(input({ mode: "feedback", analysis: analysis("unknown", "text"), idleMs: idle })).runLlmCheck).toBe(false);
-    expect(decide(input({ mode: "feedback", analysis: analysis("unknown", "chem"), idleMs: idle })).runLlmCheck).toBe(false);
-    expect(decide(input({ mode: "feedback", analysis: analysis("unknown", "expression"), idleMs: idle })).runLlmCheck).toBe(true);
+    expect(decide(input({ mode: "feedback", analysis: analysis("unknown", "text"), settled: true })).runLlmCheck).toBe(false);
+    expect(decide(input({ mode: "feedback", analysis: analysis("unknown", "chem"), settled: true })).runLlmCheck).toBe(false);
+    expect(decide(input({ mode: "feedback", analysis: analysis("unknown", "expression"), settled: true })).runLlmCheck).toBe(true);
+  });
+
+  it("a line with nothing to judge (a first line, `2 + 3`) is read back, never sent to a model", () => {
+    for (const kind of ["equation", "expression"] as const) {
+      const d = decide(input({ mode: "feedback", analysis: analysis("none", kind), settled: true }));
+      expect(d.echo).toBe(true);
+      expect(d.runLlmCheck).toBe(false);
+    }
   });
 
   it("does not check silent lines even in suggest", () => {
@@ -122,7 +131,7 @@ describe("decide — results, hints, steps, chem, cap", () => {
     for (const mode of ["off", "feedback", "suggest"] as const) {
       for (const settled of [false, true]) {
         for (const userAsked of [false, true]) {
-          const d = decide(input({ mode, analysis: trailing, settled, userAsked, idleMs: LIVE_TIMING.unknownIdleMs }));
+          const d = decide(input({ mode, analysis: trailing, settled, userAsked }));
           expect(d.showResult).toBe(false);
         }
       }
@@ -180,6 +189,60 @@ describe("decide — results, hints, steps, chem, cap", () => {
     expect(d.badge).toBe("none");
     expect(d.runLlmCheck).toBe(false);
     expect(d.allowHint).toBe(false);
+  });
+});
+
+describe("decide — the Auto switch", () => {
+  const helpModes = ["feedback", "suggest", "answer"] as const;
+  const trailing = analysis("none", "expression", { math: "3+4=", resultLatex: "7" });
+  const calc = analysis("none", "expression", { math: "3.2*4.5", resultLatex: "14.4" });
+
+  it("Auto on: ticks and rings at once, answers and model checks at the pause, in every help mode", () => {
+    for (const mode of helpModes) {
+      expect(decide(input({ mode, analysis: analysis("ok") })).badge).toBe("ok");
+      expect(decide(input({ mode, analysis: analysis("mismatch") })).badge).toBe("warn");
+      expect(decide(input({ mode, analysis: analysis("unknown"), settled: true })).runLlmCheck).toBe(true);
+      expect(decide(input({ mode, analysis: calc, settled: true })).showResult).toBe(true);
+    }
+    expect(decide(input({ mode: "answer", analysis: trailing, settled: true })).showResult).toBe(true);
+  });
+
+  it("Auto off: the line is still read back, but nothing unasked — no mark, no answer, no model, no hint", () => {
+    for (const mode of helpModes) {
+      for (const verdict of ["ok", "mismatch", "unknown", "none"] as EngineVerdict[]) {
+        const d = decide(input({ mode, analysis: analysis(verdict), settled: true, auto: false }));
+        expect(d.echo, `${mode} ${verdict}`).toBe(true);
+        expect(d.badge, `${mode} ${verdict}`).toBe("none");
+        expect(d.runLlmCheck, `${mode} ${verdict}`).toBe(false);
+        expect(d.allowHint, `${mode} ${verdict}`).toBe(false);
+      }
+      expect(decide(input({ mode, analysis: calc, settled: true, auto: false })).showResult).toBe(false);
+    }
+    expect(decide(input({ mode: "answer", analysis: trailing, settled: true, auto: false })).showResult).toBe(false);
+    const chem = analysis("mismatch", "chem", { chem: { balanced: false, balancedLatex: "2H_2+O_2" } });
+    expect(decide(input({ mode: "answer", analysis: chem, auto: false })).revealChemBalance).toBe(false);
+  });
+
+  it("Auto off, asked: the tap marks, answers and checks as Auto would have", () => {
+    for (const mode of helpModes) {
+      const asked = (a: LineAnalysis) => decide(input({ mode, analysis: a, auto: false, userAsked: true }));
+      expect(asked(analysis("ok")).badge).toBe("ok");
+      expect(asked(analysis("mismatch")).badge).toBe("warn");
+      expect(asked(analysis("unknown")).runLlmCheck).toBe(true);
+    }
+    expect(decide(input({ mode: "answer", analysis: trailing, auto: false, userAsked: true })).showResult).toBe(true);
+    // the mode gate still holds: asking in Feedback asks for feedback, not the answer
+    expect(decide(input({ mode: "feedback", analysis: trailing, auto: false, userAsked: true })).showResult).toBe(false);
+  });
+
+  it("Off mode is the same whichever way the switch is (the switch is not shown there)", () => {
+    for (const a of [analysis("ok"), analysis("mismatch"), calc]) {
+      for (const settled of [false, true]) {
+        const on = decide(input({ mode: "off", analysis: a, settled, auto: true }));
+        const off = decide(input({ mode: "off", analysis: a, settled, auto: false }));
+        expect(off).toEqual(on);
+      }
+    }
   });
 });
 

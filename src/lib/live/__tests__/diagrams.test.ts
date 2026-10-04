@@ -3,7 +3,8 @@ import { boundsOf, DRAWINGS, labelAt, Pen, writeAt, type Drawing } from "@/__eva
 import { VARIANTS } from "@/__eval__/handwriting";
 import type { InkStroke } from "../contracts";
 import { barGroups, diagramNear, glyphScale, hasRelation, labelPayload, labelStack, parseLabelRead, splitInk, DIAGRAM_RULES } from "../diagrams";
-import { clusterLines } from "../strokeClusters";
+import { clusterLines, inkScale } from "../strokeClusters";
+import { DEVICE_ZOOMS, inkAtZoom } from "../__fixtures__/strokes";
 
 /**
  * The drawing / writing split (`splitInk`), as a table: writing that looks like drawing must stay
@@ -77,6 +78,77 @@ describe("splitInk: writing that looks like a drawing stays writing", () => {
     const r = boundsOf(answer);
     const split = splitInk([...answer, pen.stroke({ x: r.x - 4, y: r.y + r.h + 6 }, { x: r.x + r.w + 6, y: r.y + r.h + 7 })]);
     expect(split.diagrams).toEqual([]);
+  });
+});
+
+describe("splitInk at the board's zoom: handwriting is as big as it looks on the student's screen", () => {
+  it("scales the cap of the glyph scale, and nothing on a desktop", () => {
+    expect([undefined, 1, 1.4].map(inkScale)).toEqual([1, 1, 1]);
+    expect(inkScale(0.5)).toBe(2);
+    expect(inkScale(0.2)).toBe(5);
+    expect(inkScale(0.05)).toBe(6);
+    const tri = DRAWINGS.triangle(300, 250, 3).strokes;
+    expect(glyphScale(tri, 1)).toBe(DIAGRAM_RULES.glyphMax);
+    expect(glyphScale(inkAtZoom(tri, 0.2), 0.2)).toBe(5 * DIAGRAM_RULES.glyphMax);
+  });
+
+  it("the owner's board: `2x2` written 50 px tall on a phone is one line of maths, not two drawings and a label", () => {
+    // 250 page px tall: the board on a phone held upright is shown at ~0.2
+    const ink = writeAt("2x2", 100, 100, VARIANTS[0], 250 / boundsOf(writeAt("2x2", 0, 0)).h);
+    const split = splitInk(ink, [], { zoom: 0.2 });
+    expect(split.diagrams).toEqual([]);
+    expect(split.writing).toHaveLength(ink.length);
+    expect(clusterLines(split.writing, [], [], { zoom: 0.2 })).toHaveLength(1);
+    // (judged in desktop page px, as it was, none of it was writing: both 2s "big curves", and the x
+    // two "long diagonals")
+    expect(splitInk(ink).writing).toEqual([]);
+  });
+
+  describe.each(DEVICE_ZOOMS)("on %s", (_device, zoom) => {
+    it.each(["2x2", "2x + 3 = 11", "x = \\frac{-b \\pm \\sqrt{b^{2} - 4ac}}{2a}"])("`%s` is writing, one line", (latex) => {
+      const ink = inkAtZoom(writeAt(latex, 200, 300), zoom);
+      const split = splitInk(ink, [], { zoom });
+      expect(split.diagrams).toEqual([]);
+      expect(split.writing).toHaveLength(ink.length);
+      const lines = clusterLines(split.writing, [], [], { zoom });
+      expect(lines.map((l) => l.strokeIds.length)).toEqual([ink.length]);
+    });
+
+    it("writing that looks like a drawing stays writing", () => {
+      for (const latex of ["\\frac{x^{2} - 9}{x^{2} + 6x + 9}", "\\sqrt{\\frac{x + 1}{x - 1}}", "3 \\overline{)126}", "\\int_{0}^{2} 3x^{2} \\, dx", "\\left| \\frac{x}{2} - 1 \\right| = 3"]) {
+        const ink = inkAtZoom(writeAt(latex, 200, 300), zoom);
+        expect(splitInk(ink, [], { zoom }).diagrams, latex).toEqual([]);
+      }
+    });
+
+    it.each(["triangle", "axesAndLine", "numberLine", "circle"] as const)("a %s with its labels is still a drawing, its labels attached", (name) => {
+      const d = DRAWINGS[name](300, 250, 7);
+      const ink = inkAtZoom([...d.strokes, ...d.labels.flat()], zoom);
+      const split = splitInk(ink, [], { zoom });
+      expect(split.writing).toEqual([]);
+      expect(split.diagrams).toHaveLength(1);
+      expect(split.diagrams[0].kinds).toEqual(expect.arrayContaining(d.kinds));
+      expect(split.diagrams[0].labels).toHaveLength(d.labels.length);
+    });
+
+    it("a triangle with nothing else on the screen is a drawing (measured against the cap)", () => {
+      const split = splitInk(inkAtZoom(DRAWINGS.triangle(300, 250, 3).strokes, zoom), [], { zoom });
+      expect(split.writing).toEqual([]);
+      expect(split.diagrams.map((x) => x.kinds)).toEqual([["triangle"]]);
+    });
+
+    it("a graph sketched beside `y = 2x + 1`: the line is exactly its strokes, the axes a drawing", () => {
+      const math = writeAt("y = 2x + 1", 600, 420);
+      const line = boundsOf(math);
+      const raw = DRAWINGS.axesAndLine(0, 0, 11);
+      const rb = boundsOf([...raw.strokes, ...raw.labels.flat()]);
+      const d = DRAWINGS.axesAndLine(line.x - rb.w - 24 - rb.x, line.y + line.h / 2 - rb.h / 2 - rb.y, 11);
+      const ink = inkAtZoom([...math, ...d.strokes, ...d.labels.flat()], zoom);
+      const split = splitInk(ink, [], { zoom });
+      expect(split.diagrams.map((x) => x.kinds)).toEqual([["axes"]]);
+      const lines = clusterLines(split.writing, [], [], { zoom });
+      expect(lines.map((l) => [...l.strokeIds].sort())).toEqual([math.map((s) => s.id as string).sort()]);
+    });
   });
 });
 

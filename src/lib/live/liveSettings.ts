@@ -15,9 +15,15 @@ export type LiveSettings = {
   handwriting: boolean;
   /** a cheer and confetti when the tutor ticks a line (src/components/live/Celebrations.tsx) */
   celebrations: boolean;
+  /**
+   * The Auto switch beside the help tabs: the tutor acts by itself once the student pauses (on), or
+   * only when they tap Help me / Solve it (off). On by default: a tutor that waits to be asked
+   * looks broken to a student who does not know there is a button.
+   */
+  auto: boolean;
 };
 
-export const DEFAULT_LIVE_SETTINGS: LiveSettings = { enabled: true, hideAiShapes: false, handwriting: true, celebrations: true };
+export const DEFAULT_LIVE_SETTINGS: LiveSettings = { enabled: true, hideAiShapes: false, handwriting: true, celebrations: true, auto: true };
 
 const STORAGE_KEY = "agathon.live.v1";
 const listeners = new Set<() => void>();
@@ -52,6 +58,16 @@ function subscribe(cb: () => void): () => void {
 
 export function getLiveSettings(): LiveSettings {
   return read();
+}
+
+/**
+ * Whether Auto acts — what the Live loop is told (`useLiveMath`'s `auto`): the student's switch,
+ * paused while "Hide AI shapes" is on. Auto spends ink on model checks and solves unasked; with the
+ * tutor's marks and steps hidden, that was ink spent on work the student could not see. Asking
+ * (Help me / Solve it) still works; showing the shapes again resumes Auto where the switch says.
+ */
+export function autoActs(settings: Pick<LiveSettings, "auto" | "hideAiShapes">): boolean {
+  return settings.auto && !settings.hideAiShapes;
 }
 
 export function updateLiveSettings(patch: Partial<LiveSettings>): void {

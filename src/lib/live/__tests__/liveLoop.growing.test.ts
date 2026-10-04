@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TLShape } from "tldraw";
 import { createFakeEditor, type FakeEditor } from "../__fixtures__/fakeEditor";
-import { writeLine } from "../__fixtures__/strokes";
+import { fixtureFraction, writeLine } from "../__fixtures__/strokes";
 import { LIVE_TIMING, type LineAnalysis, type LiveEngine, type LiveSseEvent, type RecognizeResponse } from "../contracts";
 import { createLiveLoop, type LiveLoop } from "../liveLoop";
-import { resetLiveStore } from "../liveStore";
+import { liveStore, resetLiveStore } from "../liveStore";
 import { RecognizeClient, type FetchJson } from "../recognizeClient";
 import { settle } from "@/lib/live/__fixtures__/settle";
 import { useSyncHash } from "@/lib/live/__fixtures__/syncHash";
@@ -106,6 +106,34 @@ describe("live loop — a ring on a line the student is still writing", () => {
     await frames(120);
     expect(rings()).toHaveLength(0);
     expect(ticks().length).toBeGreaterThan(0);
+  });
+
+  it("ink just past the ringed line that turns out to be a line of its own: the ring comes back", async () => {
+    // a tall line (a fraction, 78 px) of ordinary glyphs (26 px): its two line heights reach
+    // further than the clustering's same-row join (three glyphs)
+    reads = ["2x=1"];
+    editor.putUser(fixtureFraction());
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 1);
+    await settle(8);
+    await frames(120);
+    const ringed = Object.keys(liveStore.lines.get());
+    expect(ringed).toHaveLength(1);
+    expect(rings().length).toBeGreaterThan(0);
+    // on the row, 120 px past its end: `inkExtendsLine` takes it for more of the line...
+    reads = ["y"];
+    editor.putUser(writeLine("4", 360, 200));
+    await settle(4);
+    expect(rings()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.rewriteQuietMs + LIVE_TIMING.quietMs + 1);
+    await settle(8);
+    await frames(120);
+    // ...but the clustering makes it a line of its own: the ringed line is unchanged, not read again
+    const lines = liveStore.lines.get();
+    expect(Object.keys(lines)).toHaveLength(2);
+    expect(lines[ringed[0]]).toBeDefined();
+    // before: the ring stayed off for good (only a read puts one back)
+    expect(rings().length).toBeGreaterThan(0);
+    expect(new Set(rings().map((s) => (s.meta as Record<string, unknown>).lineId))).toEqual(new Set(ringed));
   });
 
   it("a stroke on the next line leaves the ring where it is", async () => {

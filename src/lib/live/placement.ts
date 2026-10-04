@@ -95,17 +95,21 @@ export function placeEcho(line: Rect, latex: string, size: MathSize, viewport: R
  * Below means just under whatever is in the way — never jumps of the block's own height, which
  * sent an 8-line solution to the bottom of the screen when a ring sat under the last line.
  */
-export function findFreeSlot(candidate: Rect, avoid: Rect[], line: Rect, prefer: "right" | "below" = "right"): Rect {
+export function findFreeSlot(candidate: Rect, avoid: Rect[], line: Rect, prefer: "right" | "below" = "right", scale = 1): Rect {
+  // `scale`: the tutor's hand on a board shown below zoom 1 is bigger in page px (`inkScale`), and so
+  // are the gaps that set it off from what it slides past
+  const belowGap = PLACEMENT.belowGapY * scale;
+  const rowGap = PLACEMENT.rowGap * scale;
   const free = (r: Rect) => !avoid.some((a) => rectsIntersect(r, a));
   const below = (): Rect | null => {
-    let r: Rect = { ...candidate, x: prefer === "below" ? candidate.x : line.x, y: Math.max(candidate.y, rectMaxY(line) + PLACEMENT.belowGapY) };
-    if (prefer === "right") r = { ...r, y: rectMaxY(line) + PLACEMENT.belowGapY + candidate.h + PLACEMENT.rowGap };
+    let r: Rect = { ...candidate, x: prefer === "below" ? candidate.x : line.x, y: Math.max(candidate.y, rectMaxY(line) + belowGap) };
+    if (prefer === "right") r = { ...r, y: rectMaxY(line) + belowGap + candidate.h + rowGap };
     // no further below the line than the old row search reached (4 rows of the block)
-    const limit = rectMaxY(line) + PLACEMENT.belowGapY + PLACEMENT.rowTries * (candidate.h + PLACEMENT.rowGap);
+    const limit = rectMaxY(line) + belowGap + PLACEMENT.rowTries * (candidate.h + rowGap);
     for (let k = 0; k < 12 && r.y <= limit; k++) {
       const hits = avoid.filter((a) => rectsIntersect(r, a));
       if (hits.length === 0) return r;
-      r = { ...r, y: Math.max(...hits.map(rectMaxY)) + PLACEMENT.rowGap };
+      r = { ...r, y: Math.max(...hits.map(rectMaxY)) + rowGap };
     }
     return null;
   };
@@ -114,7 +118,7 @@ export function findFreeSlot(candidate: Rect, avoid: Rect[], line: Rect, prefer:
     return below() ?? candidate;
   }
   for (let i = 0; i < PLACEMENT.slotTries; i++) {
-    const r = { ...candidate, x: candidate.x + i * PLACEMENT.slotStepX };
+    const r = { ...candidate, x: candidate.x + i * PLACEMENT.slotStepX * scale };
     if (free(r)) return r;
   }
   return below() ?? candidate;
@@ -147,11 +151,11 @@ export function placeStep(column: Rect, lastLine: Rect, index: number, latex: st
  * where it was when it fits, when there is no screen, or when beside does not fit either —
  * on a full screen, below is still better than nowhere.
  */
-export function keepOnScreen(rect: Rect, screen: Rect | null, column: Rect, offsetY = 0): Rect {
+export function keepOnScreen(rect: Rect, screen: Rect | null, column: Rect, offsetY = 0, sideGap: number = PLACEMENT.sideGap): Rect {
   if (!screen) return rect;
   const bottom = rectMaxY(screen) - PLACEMENT.viewportMargin;
   if (rectMaxY(rect) <= bottom) return rect;
-  const beside: Rect = { ...rect, x: rectMaxX(column) + PLACEMENT.sideGap, y: column.y + offsetY };
+  const beside: Rect = { ...rect, x: rectMaxX(column) + sideGap, y: column.y + offsetY };
   if (rectMaxX(beside) <= rectMaxX(screen) - PLACEMENT.viewportMargin && rectMaxY(beside) <= bottom) return beside;
   return rect;
 }

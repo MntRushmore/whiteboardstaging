@@ -6,12 +6,15 @@ import { LIVE_COPY, pillLabelFor } from "../copy";
 import {
   RATE_LIMIT_FALLBACK_MS,
   classifyLiveFailure,
+  errorCardTitle,
   liveErrorView,
+  pillError,
   pillPrimary,
   secondsLeftFor,
   showsHintCard,
   sseFailure,
 } from "../errorView";
+import { statusPillView } from "../toolbar";
 
 /** Pure mappings behind the Live error pill and hint card. */
 
@@ -155,6 +158,40 @@ describe("showsHintCard", () => {
     expect(showsHintCard(err({ kind: "check", lineId: "L1", userAsked: true }))).toBe(true);
     expect(showsHintCard(err({ kind: "solve", lineId: "L1", userAsked: true }))).toBe(true);
     expect(showsHintCard(err({ kind: "solve", userAsked: true }))).toBe(false);
+  });
+
+  it("signed out and out of ink stay in the pill: their way out (Sign in, Get ink) is in the bar, not on a card", () => {
+    expect(showsHintCard(err({ kind: "solve", lineId: "L1", userAsked: true, code: "ink" }))).toBe(false);
+    expect(showsHintCard(err({ kind: "check", lineId: "L1", userAsked: true, code: "unauthorized" }))).toBe(false);
+    for (const code of ["network", "upstream", "timeout", "unknown", "rate_limited"] as const) {
+      expect(showsHintCard(err({ kind: "solve", lineId: "L1", userAsked: true, code }))).toBe(true);
+    }
+  });
+});
+
+describe("one error, one place", () => {
+  const asked = err({ kind: "solve", lineId: "L1", userAsked: true, message: "The tutor took too long to answer" });
+  const pill = (error: LiveError | null) =>
+    statusPillView({ liveRunning: true, liveAvailable: true, status: "idle", shownStatus: "idle", recognizer: "mathpix", offlineQueued: 0, solving: false, error, atCap: false });
+
+  it("while the card beside the line shows the error, the pill says what Live is doing instead of repeating it", () => {
+    const onCard = pill(pillError(asked, true));
+    expect(onCard.showError).toBe(false);
+    expect(onCard.label).toBe("Live");
+    // no card (its line is not on the screen, or it is a drawing's): the pill has it, with Retry and Dismiss
+    const inPill = pill(pillError(asked, false));
+    expect(inPill.showError).toBe(true);
+    expect(inPill.label).toBeNull();
+  });
+
+  it("the card's heading says what did not come back: the solve, the check, or the hint", () => {
+    expect(errorCardTitle({ kind: "solve" })).toBe("Couldn't solve this");
+    expect(errorCardTitle({ kind: "solve", asked: "solve" })).toBe("Couldn't solve this");
+    expect(errorCardTitle({ kind: "check" })).toBe("Couldn't check this line");
+    expect(errorCardTitle({ kind: "check", asked: "check" })).toBe("Couldn't check this line");
+    // Help me / More help: one step, which is a hint
+    expect(errorCardTitle({ kind: "solve", asked: "hint" })).toBe(LIVE_COPY.errors.hintCard);
+    expect(errorCardTitle({ kind: "check", asked: "hint" })).toBe("Couldn't get a hint right now");
   });
 });
 

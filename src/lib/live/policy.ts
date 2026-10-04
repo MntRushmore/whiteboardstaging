@@ -1,7 +1,6 @@
 import { endsWithRelation } from "./answer";
 import {
   LIVE_LIMITS,
-  LIVE_TIMING,
   type HelpMode,
   type LineAnalysis,
   type LineKind,
@@ -17,22 +16,30 @@ import {
  * and a hint are about work the student has already done, so they land on the per-line
  * cadence. A result is the next thing they were going to write, so it waits for them to put
  * the pen down — and, being the work rather than a comment on it, only Solve shows it at all.
+ *
+ * And a second line, the Auto switch: with Auto off the tutor says nothing it was not asked
+ * for. The line is still read back (the echo), but it gets no mark, no answer and no model
+ * check until the student taps Help me / Solve it on its problem.
  */
 
 export interface PolicyInput {
   mode: HelpMode;
   analysis: LineAnalysis | null;
   confidence: number;
-  /** ms since the line last changed */
-  idleMs: number;
   /**
-   * Canvas-level: no student ink ANYWHERE for the settle period (`ANSWER_SETTLE_MS`).
+   * Canvas-level: no student ink ANYWHERE for the settle period (`LIVE_TIMING.settleMs`).
    *
    * The per-line quiet gate says "this line is finished"; this says "the student has
    * stopped". They are not the same thing halfway down a derivation, and only the second
-   * one licenses an answer — see `showResult` below.
+   * one licenses an answer — see `showResult` below — or a model check (`runLlmCheck`).
    */
   settled: boolean;
+  /**
+   * Auto is on for this line: the bar's switch, or (switch off) the student asked about its
+   * problem. Off, nothing is shown or asked unless `userAsked`. Off mode ignores it: there is
+   * nothing for Auto to do there.
+   */
+  auto: boolean;
   userAsked: boolean;
   hintsShownForLine: number;
   openHintCount: number;
@@ -119,17 +126,20 @@ export function badgeFor(mode: HelpMode, analysis: LineAnalysis | null): LiveVer
 }
 
 export function decide(input: PolicyInput): PolicyDecision {
-  const { mode, analysis, confidence, idleMs, userAsked } = input;
+  const { mode, analysis, confidence, userAsked } = input;
   const kind: LineKind = analysis?.kind ?? "unknown";
   const verdict = analysis?.verdict ?? "unknown";
   const capped = input.liveShapeCount >= LIVE_LIMITS.maxLiveShapesPerBoard;
+  // 1. Auto: may the tutor say anything about this line unasked? (Off mode is unchanged by the switch.)
+  const unasked = input.auto || mode === "off";
 
-  // 2. echo (labels, incomplete lines, prose and lone symbols are silent)
+  // 2. echo (labels, incomplete lines, prose and lone symbols are silent). The readback is not
+  // help, so Auto does not gate it: it is how the student knows the tutor read the line.
   const loneSymbol = input.latex !== undefined && isSingleSymbolLatex(input.latex);
   const echo = !SILENT_KINDS.has(kind) && !loneSymbol && confidence >= LIVE_LIMITS.minConfidence;
 
-  // 3. badge (never warn from unknown)
-  const badge: LiveVerdict = echo && !capped ? badgeFor(mode, analysis) : "none";
+  // 3. badge (never warn from unknown); with Auto off, a tick or ring only on an ask
+  const badge: LiveVerdict = echo && !capped && (unasked || userAsked) ? badgeFor(mode, analysis) : "none";
 
   // 4. showResult — marks may be immediate; ANSWERS wait. Two independent gates:
   //
@@ -145,7 +155,7 @@ export function decide(input: PolicyInput): PolicyDecision {
   //
   // An explicit request (Solve steps, a badge tap, the board chat) means "now": `userAsked`
   // bypasses the settle wait entirely. It does not bypass the mode gate — asking in Feedback
-  // asks for feedback.
+  // asks for feedback. With Auto off the settle licenses nothing: only an ask does.
   const hasResult = Boolean(analysis?.resultLatex);
   // `analysis.math` is the TRANSLATED line, and the translator drops the trailing `=` (it is
   // passed to the engine as a flag, not as syntax) — so this test alone read `36 + 2 =` as an
@@ -153,32 +163,31 @@ export function decide(input: PolicyInput): PolicyDecision {
   const trailingEquals =
     kind === "incomplete" || /=\s*$/.test(analysis?.math ?? "") || endsWithRelation(input.latex ?? "");
   const answerAllowedHere = !trailingEquals || mode === "answer";
-  const showResult = echo && hasResult && answerAllowedHere && (userAsked || input.settled);
+  const showResult = echo && hasResult && answerAllowedHere && (userAsked || (unasked && input.settled));
 
-  // 5. runLlmCheck
+  // 5. runLlmCheck. A step the engine already calls wrong needs no model to say so: the ring is
+  // drawn and (Suggest / Solve) the right next step is written by hand from the engine. The model
+  // is only asked about lines the engine cannot judge — with Auto on, once the student has paused
+  // (the settle, not a per-line timer: a line read after the pause is due at once) — or when the
+  // student asks.
   let runLlmCheck = false;
   if (mode !== "off" && echo && !capped) {
-    const feedbackRule =
-      userAsked ||
-      (verdict === "unknown" && idleMs >= LIVE_TIMING.unknownIdleMs && CHECKABLE_KINDS.has(kind));
-    // A step the engine already calls wrong needs no model to say so: the ring is drawn and
-    // (Suggest / Solve) the right next step is written by hand from the engine. The model is
-    // only asked about lines the engine cannot judge, or when the student asks.
-    runLlmCheck = feedbackRule;
+    runLlmCheck = userAsked || (input.auto && input.settled && verdict === "unknown" && CHECKABLE_KINDS.has(kind));
   }
 
   // 6. allowHint
   const allowHint =
     (mode === "suggest" || mode === "answer") &&
     !capped &&
+    (unasked || userAsked) &&
     input.hintsShownForLine < LIVE_LIMITS.maxHintsPerLine &&
     input.openHintCount === 0;
 
   // 7. allowSteps (explicit tap only; the caller passes userAsked for the tap)
   const allowSteps = mode === "answer" && userAsked && !capped;
 
-  // 8.
-  const revealChemBalance = mode === "answer" && !capped;
+  // 8. the balanced equation is an answer: Solve only, and with Auto off only on an ask
+  const revealChemBalance = mode === "answer" && !capped && (unasked || userAsked);
 
   // 9.
   const offerHintPrompt = mode !== "off" && input.rewritesWithWarn >= 2;

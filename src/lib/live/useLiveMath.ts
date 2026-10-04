@@ -20,7 +20,7 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
     optsRef.current = opts;
   });
 
-  const { boardId, mode, enabled } = opts;
+  const { boardId, mode, enabled, auto } = opts;
 
   useEffect(() => {
     const loop = createLiveLoop(editor, optsRef.current);
@@ -34,18 +34,24 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
   }, [editor, boardId]);
 
   useEffect(() => {
-    loopRef.current?.setOptions({ boardId, mode, enabled });
-  }, [boardId, mode, enabled]);
+    loopRef.current?.setOptions({ boardId, mode, enabled, auto });
+  }, [boardId, mode, enabled, auto]);
 
-  return useMemo<LiveController>(
-    () => ({
+  return useMemo<LiveController>(() => {
+    // Every ask from the UI says so first (`LiveLoop.noteAsked`): its failures are shown, and with
+    // Auto off its problem gets the marks Auto would have drawn. Auto's own actions skip this.
+    const asked = (lineId?: string): LiveLoop | null => {
+      loopRef.current?.noteAsked(lineId);
+      return loopRef.current;
+    };
+    return {
       getTranscript: () => loopRef.current?.getTranscript() ?? { lines: [], summary: "Live is not ready." },
       placeMath: (args) => loopRef.current?.placeMath(args) ?? null,
       plotFunction: (args) => loopRef.current?.plotFunction(args) ?? null,
-      requestCheck: (lineId) => loopRef.current?.requestCheck(lineId),
-      requestSolve: (lineId) => loopRef.current?.requestSolve(lineId),
-      requestHelp: () => loopRef.current?.requestHelp() ?? false,
-      escalate: (lineId) => loopRef.current?.escalate(lineId),
+      requestCheck: (lineId) => asked(lineId)?.requestCheck(lineId),
+      requestSolve: (lineId) => asked(lineId)?.requestSolve(lineId),
+      requestHelp: () => asked()?.requestHelp() ?? false,
+      escalate: (lineId) => asked(lineId)?.escalate(lineId),
       dismissHint: (hintId) => loopRef.current?.dismissHint(hintId),
       clearMarks: () => loopRef.current?.clearMarks(),
       retypeLine: (lineId, latex) => loopRef.current?.retypeLine(lineId, latex),
@@ -63,7 +69,6 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
         return loop.runLectureActions(actions, opts);
       },
       saveLectureTranscript: (text) => loopRef.current?.saveLectureTranscript(text),
-    }),
-    [],
-  );
+    };
+  }, []);
 }

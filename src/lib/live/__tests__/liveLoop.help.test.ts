@@ -18,6 +18,7 @@ import {
   type UseLiveMathOptions,
 } from "../contracts";
 import { getEngine } from "../engine";
+import { handLinesOf } from "../handwriting";
 import { createLiveLoop, needsLook, type LiveLoop } from "../liveLoop";
 import { proseWordCount } from "../wordProblem";
 import { liveStore, resetLiveStore } from "../liveStore";
@@ -216,6 +217,68 @@ describe("live loop — Help (and Ask about this)", () => {
     expect(tutorInk()).toEqual([]);
   });
 
+  // ------------------------------------------------------------ Help while the line is being read
+  /**
+   * Help me / Solve it tapped while the student's latest line was still being read: the line had no
+   * read yet, so it was "ink Live cannot read" and got a "?" — write it again — about ink nobody had
+   * finished reading. Help now waits for the read (as long as the recognizer's own timeout), then helps.
+   */
+  function slowRead(latex: string): () => void {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    fetchJson.mockImplementation(async (): Promise<RecognizeResponse> => {
+      await gate;
+      return { latex, text: "", kind: "math", confidence: 0.97, provider: "mathpix", ms: 100 };
+    });
+    return release;
+  }
+
+  async function startWriting(): Promise<void> {
+    editor.putUser(fixtureSingleLine());
+    await vi.advanceTimersByTimeAsync(2000);
+    await settleUntil(() => fetchJson.mock.calls.length > 0);
+  }
+
+  const workedSteps = () => tutorInk().filter((s) => !(s.meta as Record<string, unknown>).mark);
+
+  it("Help tapped while the line is still being read waits for the read, then helps — no \"?\" about unread ink", async () => {
+    start("answer");
+    const release = slowRead("2x+3=11");
+    await startWriting();
+    expect(Object.values(liveStore.lines.get()).map((st) => st.latex)).toEqual([""]);
+
+    expect(loop.requestHelp()).toBe(true);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await settle(8);
+    // nothing about the line yet: it has not been read
+    expect(marksOf("question")).toEqual([]);
+    expect(workedSteps()).toEqual([]);
+
+    release();
+    await settle(8);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await settleStable(() => [tutorInk().length, liveStore.solving.get()].join("|"));
+    expect(marksOf("question")).toEqual([]);
+    expect(handLinesOf(workedSteps())).toEqual(["2x = 8", "x = 4"]);
+    expect(calls).toEqual([]);
+  });
+
+  it("a read that never lands: Help gives up waiting after the recognizer's timeout and does what it does for unread ink", async () => {
+    slowRead("2x+3=11");
+    await startWriting();
+    expect(loop.requestHelp()).toBe(true);
+    // a second tap joins the same wait
+    expect(loop.requestHelp()).toBe(true);
+    await vi.advanceTimersByTimeAsync(3_000);
+    await settle(8);
+    expect(marksOf("question")).toEqual([]);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await settle(8);
+    await settleStable(() => String(tutorInk().length));
+    expect(calls).toEqual([]);
+    expect(marksOf("question").length).toBeGreaterThan(0);
+  });
+
   // ------------------------------------------------------------ marks
   it("marks instead of words: a tick after a right step, a ring round a wrong one", async () => {
     reads = [{ latex: "2x+3=11" }, { latex: "2x=8" }, { latex: "x=5" }];
@@ -248,10 +311,12 @@ describe("live loop — Help (and Ask about this)", () => {
     reads = [{ latex: "2x+3=11" }, { latex: "x=5" }];
     await write(writeLine("2x+3=11", 100, 200, 40));
     await write(writeLine("x=3", 100, 300, 40)); // read as x=5
+    // (the ring's second look reads both lines again: liveLoop.reread.test.ts)
+    const looked = crops;
     await help();
     expect(calls).toEqual([]);
     expect(suggestions().length).toBeGreaterThan(0);
-    expect(crops).toBe(0);
+    expect(crops).toBe(looked);
   });
 
   // ------------------------------------------------------------ word problems

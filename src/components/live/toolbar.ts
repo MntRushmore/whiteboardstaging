@@ -6,8 +6,10 @@
  * pill, and everything rare behind the pill's "…" menu.
  *
  * Model, for reference when reading the rules below:
- *  - The TABS are the only visible on/off. They answer "how much help do you want", and
- *    `off` means no feedback, no hints, no solutions.
+ *  - The TABS answer "how much help do you want", and `off` means no feedback, no hints, no
+ *    solutions.
+ *  - AUTO, the switch beside them, answers "when": by itself once you pause (on, the default),
+ *    or only when you tap Help me / Solve it (off). A per-device preference like Live.
  *  - LIVE (typeset echo + instant checking) is a per-device preference, not a mode. It lives
  *    in the menu; the pill reports what it is doing right now.
  */
@@ -23,9 +25,20 @@ export interface BoardToolbarState {
   liveEnabled: boolean;
   /** false when the deploy-time kill switch has taken Live away entirely */
   liveAvailable: boolean;
+  /** the student's per-device Auto preference (`LiveSettings.auto`) */
+  auto: boolean;
+  /** "Hide AI shapes" is on: Auto is paused (`autoActs`), whatever the switch says */
+  hideAiShapes?: boolean;
 }
 
 export interface BoardToolbarView {
+  /**
+   * The Auto switch beside the dial, or null where it would do nothing: Off (no help at all) and
+   * with Live off (only Live acts) — exactly where there is no ask button. `hint` says what the
+   * current position does, for the title and screen readers: on, while AI shapes are hidden, that
+   * Auto is paused (the switch keeps the student's choice for when they show them again).
+   */
+  autoSwitch: { on: boolean; hint: string } | null;
   /**
    * The bar's big ask button, beside the dial: "Help me" (the next step) in Feedback and
    * Suggest, "Solve it" (the rest of the steps) in Solve. Turning the dial is choosing how much
@@ -46,11 +59,13 @@ export interface BoardToolbarView {
 
 export function boardToolbarView(state: BoardToolbarState): BoardToolbarView {
   const liveRunning = state.liveEnabled && state.liveAvailable;
+  const helping = liveRunning && state.mode !== "off";
   return {
-    askButton: !liveRunning || state.mode === "off" ? null : state.mode === "answer" ? "solve" : "help",
+    autoSwitch: helping ? { on: state.auto, hint: !state.auto ? LIVE_COPY.auto.offHint : state.hideAiShapes ? LIVE_COPY.auto.pausedHint : LIVE_COPY.auto.onHint } : null,
+    askButton: !helping ? null : state.mode === "answer" ? "solve" : "help",
     showHintLayer: liveRunning,
     liveRunning,
-    canHelp: liveRunning && state.mode !== "off",
+    canHelp: helping,
   };
 }
 

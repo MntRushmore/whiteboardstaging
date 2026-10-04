@@ -78,14 +78,49 @@ export const LIVE_COPY = {
     helpHint: "Stuck? Your tutor writes the next step for you",
     solve: "Solve it",
     solveHint: "Your tutor writes the rest of the steps",
+    /**
+     * after either hint: it acts on the problem written in last, unless the student picks another
+     * with the select tool (the arrow) — the outline shows which while it is hovered
+     */
+    pickHint: "Several problems? Tap one with the arrow tool to choose it",
     /** tapped with nothing on the screen yet */
     nothingYet: "Write a line of maths first, then tap Help me",
   },
 
+  /**
+   * What Solve (and Help on a drawing) says when it has nothing to write. The two notes are not
+   * errors — nothing failed, there is just nothing to work out yet — so they come as a quiet toast,
+   * never the red card; `failed` is the one that is, and says what to try next.
+   */
+  solve: {
+    /** the tutor read the drawing (or the ink) and nothing on it asks for anything */
+    nothingAsked: "Nothing to solve here yet — write what to find, like x = ?",
+    /** a lone expression already in its simplest form (`2x^{2}`): nothing to simplify, nothing to solve */
+    simplest: "This is as simple as it gets — add = something to solve",
+    /** Solve genuinely could not answer: no step it was given held up */
+    failed: "Couldn't solve this one — try writing it again a bit clearer",
+  },
+
+  /**
+   * The Auto switch beside the help tabs: on, the tutor helps by itself when the student stops
+   * writing; off, only when they tap the ask button. One word on the switch itself.
+   */
+  auto: {
+    label: "Auto",
+    onHint: "Auto is on: your tutor checks and helps when you stop writing",
+    offHint: "Auto is off: your tutor waits until you ask",
+    /** on, but paused while "Hide AI shapes" is on (`autoActs`) */
+    pausedHint: "Auto is paused while AI shapes are hidden: your tutor waits until you ask",
+  },
+
+  /** The notes under the modes in the help-modes explainer (Board options → "How help modes work"). */
   modeInfo: {
     title: "Live",
     body:
-      "Underneath all three modes, your handwriting is typeset into neat maths as you write. In Feedback, Suggest and Solve each new line is also checked against the one above it. You can switch this off under Board options.",
+      "In every mode the tutor reads each line as you write it and shows it as neat maths for a moment, so you can see what it read. You can switch Live off under Board options.",
+    autoTitle: "Auto",
+    autoBody:
+      "With Auto on, the tutor helps by itself when you stop writing: it marks each step, checks lines it is not sure about, writes the next step in Suggest when you seem stuck and finishes the problem in Solve. With Auto off, it waits until you tap Help me or Solve it, then marks that problem and helps.",
   },
 
   errors: {
@@ -107,8 +142,12 @@ export const LIVE_COPY = {
     attempts: (n: number) => `tried ${n} times`,
     /** echo chip under ink whose recognition failed (low confidence keeps its own chip) */
     recognizeChip: "Couldn't read this line — tap Retry",
-    /** inline card when a hint the student asked for could not be fetched */
+    /** error card heading when a hint or next step the student asked for (Help me, More help) could not be fetched */
     hintCard: "Couldn't get a hint right now",
+    /** error card heading when Solve it could not finish the working */
+    solveCard: "Couldn't solve this",
+    /** error card heading when the check of a line the student asked about failed */
+    checkCard: "Couldn't check this line",
     retry: "Retry",
     dismiss: "Dismiss",
     signIn: "Sign in",

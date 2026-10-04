@@ -28,6 +28,9 @@ import type { FigureSpec } from "../figureDraw/contracts";
 let engine: LiveEngine;
 beforeAll(async () => {
   engine = await getEngine();
+  // the proof writer the desk loads on first use (`await import("./proofWrite")`): loaded now, so the
+  // fake clock's 30 s of chat time — ~130 ms of real time — never runs out before a cold import lands
+  await import("../chat/proofWrite");
 });
 
 /** A kite ABCD: AB ≅ CB, AD ≅ CD, its diagonal BD. */

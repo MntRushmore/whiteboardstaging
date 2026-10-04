@@ -22,6 +22,7 @@ import {
 import { TUTOR_INK_COLOR } from "./answer";
 import type { LiveShapeMeta, Rect } from "./contracts";
 import { INK_PRECISION, roundInk, roundInkPoints } from "./inkCompact";
+import { inkScale } from "./strokeClusters";
 
 /**
  * The tutor's handwriting on the tldraw canvas.
@@ -79,6 +80,11 @@ export const HAND_WRITE = {
   digitRatio: 0.63,
   /** ceiling for an answer written INTO the student's line, where their size is the target */
   maxInlineSize: 96,
+  /**
+   * On a board shown below zoom 1 (a phone, an iPad, a small laptop), the least a plain digit of the
+   * tutor's measures ON SCREEN, in CSS px (`handBounds`). A desktop keeps `minSize`.
+   */
+  minScreenPx: 14,
   /** animation tick; a frame that arrives late catches up, it never falls behind */
   frameMs: 32,
   /** the pause between two lines of a worked solution — someone thinking, not a print-out */
@@ -140,10 +146,33 @@ function atInkPrecision(plan: HandPlan): HandPlan {
   };
 }
 
-/** Hand size for ink of this height, clamped to something readable. */
-export function handSizeFor(lineHeight: number): number {
+/**
+ * The bounds of the tutor's hand on a board shown at `zoom`, its FIT zoom (`inkScale`).
+ *
+ * A board is a 1600 x 900 screen fitted to the window, so on a phone (zoom ~0.2) the student's 50 px
+ * of writing is 250 page px, and a hand bounded at a desktop's 40 page px came out a fifth of the
+ * size of theirs: `x = 2` about 7 px tall on screen beside writing 50 px tall (a WebKit iPhone run,
+ * zoom 0.224). Below zoom 1 the bounds grow by `inkScale` — the tutor's hand looks on screen as it
+ * does on a desktop beside writing that looks the same — and a digit is never under `minScreenPx`
+ * on screen. At zoom 1 and above, or with no zoom known, they are exactly the desktop's.
+ */
+function handBounds(min: number, max: number, zoom?: number): { min: number; max: number } {
+  const k = inkScale(zoom);
+  if (k === 1) return { min, max };
+  // a digit is `digitRatio` of `size` in page px, and `1 / k` of that on screen
+  const readable = Math.ceil((HAND_WRITE.minScreenPx * k) / HAND_WRITE.digitRatio);
+  const lo = Math.max(Math.round(min * k), readable);
+  return { min: lo, max: Math.max(lo, Math.round(max * k)) };
+}
+
+/**
+ * Hand size for ink of this height, clamped to something readable. `zoom`: the board's fit zoom
+ * (`LiveLoop.boardZoom`), which moves the bounds below 1 (`handBounds`); none is a desktop.
+ */
+export function handSizeFor(lineHeight: number, zoom?: number): number {
+  const { min, max } = handBounds(HAND_WRITE.minSize, HAND_WRITE.maxSize, zoom);
   const n = Math.round(lineHeight * HAND_WRITE.sizeFactor);
-  return Math.min(HAND_WRITE.maxSize, Math.max(HAND_WRITE.minSize, Number.isFinite(n) ? n : HAND_WRITE.minSize));
+  return Math.min(max, Math.max(min, Number.isFinite(n) ? n : min));
 }
 
 /**
@@ -152,11 +181,13 @@ export function handSizeFor(lineHeight: number): number {
  *
  * `handSizeFor` sizes a block written UNDER the work, where a slightly smaller hand reads as a
  * margin note and a 40 px ceiling keeps a worked solution compact. Beside the student's own
- * glyphs that same hand reads as an afterthought instead of as the end of their line.
+ * glyphs that same hand reads as an afterthought instead of as the end of their line. `zoom`: the
+ * board's fit zoom, whose bounds below 1 grow with it (`handBounds`).
  */
-export function inlineHandSizeFor(lineHeight: number): number {
+export function inlineHandSizeFor(lineHeight: number, zoom?: number): number {
+  const { min, max } = handBounds(HAND_WRITE.minSize, HAND_WRITE.maxInlineSize, zoom);
   const n = Math.round(lineHeight / HAND_WRITE.digitRatio);
-  return Math.min(HAND_WRITE.maxInlineSize, Math.max(HAND_WRITE.minSize, Number.isFinite(n) && n > 0 ? n : HAND_WRITE.minSize));
+  return Math.min(max, Math.max(min, Number.isFinite(n) && n > 0 ? n : min));
 }
 
 /** Stable per-line seed so re-rendering the same line does not re-write it in another hand. */

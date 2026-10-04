@@ -328,6 +328,13 @@ export interface LiveEngine {
    */
   simplifySteps?(latex: string): string[] | null;
   /**
+   * An expression in letters already written as simply as it goes (`2x^{2}`, `3x + 2`, `x^{2} + 3x +
+   * 5`): a polynomial with nothing to expand, collect, cancel or factor, in the form the engine would
+   * write it. False for anything it cannot be sure of (`\frac{8x}{2}`, `\sin x`, a relation, a
+   * number). Optional so engine doubles need not implement it.
+   */
+  alreadySimplest?(latex: string): boolean;
+  /**
    * What to graph for a column of work (the student's lines, then any solution under them),
    * top to bottom: `y = f(x)` / `f(x) = …`, a line in any form, two or three of them (with where
    * they cross), a region (`y < 2x + 1`), a circle, or — from the last line — a one-variable
@@ -484,39 +491,51 @@ export const SetupRequestSchema = z
   .refine((r) => r.lines.length > 0 || Boolean(r.crop), { message: "a problem needs lines or a figure", path: ["lines"] })
   .refine((r) => !r.labels || Boolean(r.crop), { message: "labels only come with a figure crop", path: ["labels"] });
 export type SetupRequest = z.infer<typeof SetupRequestSchema>;
-export const SetupResponseSchema = z.object({
-  /**
-   * A word problem that describes a picture (a ladder against a wall, two angles of a triangle, a
-   * rectangle's sides): the figure the tutor draws beside the working, true to scale, labelled with
-   * the problem's numbers and the unknown's letter (`src/lib/live/figureDraw`). Only ever a spec
-   * that `checkFigure` passed; absent otherwise.
-   */
-  sketch: FigureSpecSchema.optional(),
-  /** LaTeX only: assignments / equations, one short letter per quantity, top to bottom */
-  lines: z.array(z.string().min(1).max(500)).min(1).max(6),
-  /** the letter of the asked-for quantity, when the model named one */
-  unknown: z.string().max(20).optional(),
-  model: z.string(),
-  ms: z.number(),
-  /**
-   * With a figure crop: where `lines` came from. `facts`: the model's structured read of the figure,
-   * turned into equations by `planFigure` (src/lib/live/figure), one stage per unknown, each with
-   * the value the board's engine must agree with. `lines`: the model's own free-form setup (the
-   * read did not hold up: `reason`), kept by the board only when its engine solves it to a sensible
-   * size (`kind`: what the labels say is asked). Absent: a word problem, or an older server.
-   */
-  figure: z
-    .object({
-      source: z.enum(["facts", "lines"]),
-      reason: z.string().max(300).optional(),
-      kind: z.enum(["angle", "length"]).optional(),
-      stages: z
-        .array(z.object({ letter: z.string().min(1).max(20), lines: z.array(z.string().min(1).max(500)).min(1).max(6), value: z.number(), kind: z.enum(["angle", "length"]) }))
-        .max(3)
-        .optional(),
-    })
-    .optional(),
-});
+export const SetupResponseSchema = z
+  .object({
+    /**
+     * A word problem that describes a picture (a ladder against a wall, two angles of a triangle, a
+     * rectangle's sides): the figure the tutor draws beside the working, true to scale, labelled with
+     * the problem's numbers and the unknown's letter (`src/lib/live/figureDraw`). Only ever a spec
+     * that `checkFigure` passed; absent otherwise.
+     */
+    sketch: FigureSpecSchema.optional(),
+    /**
+     * LaTeX only: assignments / equations, one short letter per quantity, top to bottom. Empty only
+     * with `reason: "nothing_asked"`.
+     */
+    lines: z.array(z.string().min(1).max(500)).max(6),
+    /**
+     * `nothing_asked`: the model read the problem (or the figure) and nothing in it asks for
+     * anything — no unknown, no lines (`{"unknown": "", "lines": []}`: a `2x2` the board took for a
+     * drawing). Not a failure: the board says what to write instead of showing an error, and the
+     * call is refunded like one. Absent on every reply with lines.
+     */
+    reason: z.literal("nothing_asked").optional(),
+    /** the letter of the asked-for quantity, when the model named one */
+    unknown: z.string().max(20).optional(),
+    model: z.string(),
+    ms: z.number(),
+    /**
+     * With a figure crop: where `lines` came from. `facts`: the model's structured read of the figure,
+     * turned into equations by `planFigure` (src/lib/live/figure), one stage per unknown, each with
+     * the value the board's engine must agree with. `lines`: the model's own free-form setup (the
+     * read did not hold up: `reason`), kept by the board only when its engine solves it to a sensible
+     * size (`kind`: what the labels say is asked). Absent: a word problem, or an older server.
+     */
+    figure: z
+      .object({
+        source: z.enum(["facts", "lines"]),
+        reason: z.string().max(300).optional(),
+        kind: z.enum(["angle", "length"]).optional(),
+        stages: z
+          .array(z.object({ letter: z.string().min(1).max(20), lines: z.array(z.string().min(1).max(500)).min(1).max(6), value: z.number(), kind: z.enum(["angle", "length"]) }))
+          .max(3)
+          .optional(),
+      })
+      .optional(),
+  })
+  .refine((r) => r.lines.length > 0 || r.reason === "nothing_asked", { message: "a setup has lines unless nothing is asked", path: ["lines"] });
 export type SetupResponse = z.infer<typeof SetupResponseSchema>;
 
 /**
@@ -670,8 +689,22 @@ export type LiveRateLimitRoute = keyof typeof LIVE_RATE_LIMITS;
 export const LIVE_TIMING = {
   quietMs: 600, // pen-up -> recognize; resets on new ink in the same line
   rewriteQuietMs: 450, // when the line already has an echo
-  unknownIdleMs: 5000, // Feedback: LLM check for 'unknown' only after this idle
+  /**
+   * The pause: no student ink ANYWHERE on the canvas for this long (the loop's settle). Answers
+   * wait for it, and so does everything Auto does unasked — a model check of a line the engine
+   * cannot judge, Solve finishing the problem. `ANSWER_SETTLE_MS` in liveLoop.ts explains 2.5 s.
+   */
+  settleMs: 2500,
+  /**
+   * Auto in Suggest: the student has stayed paused this long on a problem that is not finished,
+   * so the tutor writes its next step (once per line). Long enough to be "stuck", not "thinking".
+   */
+  stuckMs: 6000,
+  /** a line just read: its typeset readback shows this long, even with the pen in hand */
+  readbackMs: 2500,
   unreadableChipMs: 3000, // low confidence: "Couldn't read this" chip only after this
+  /** a ring waits at most this long for the step and its line above to be read again (`acceptChainReread`) */
+  chainHoldMs: 4000,
   recognizeTimeoutMs: 6000,
   checkWatchdogMs: 4000, // no model bytes -> fallback model
   pillFadeMs: 1500,
@@ -767,4 +800,10 @@ export interface UseLiveMathOptions {
   boardId: string;
   mode: HelpMode;
   enabled: boolean;
+  /**
+   * Auto (the bar's switch, per device): on, the tutor acts by itself once the student pauses —
+   * marks, model checks, Suggest's next step, Solve finishing the problem; off, only when they ask.
+   * Absent means on.
+   */
+  auto?: boolean;
 }

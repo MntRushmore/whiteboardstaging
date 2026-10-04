@@ -210,11 +210,26 @@ describe("live/setup", () => {
     expect(callsTo("consume_credits")[0].args).toMatchObject({ p_model: "google/gemini-3.5-flash-lite" });
   });
 
-  it("a reply with no setup lines is a failed call: 502 and refunded (the board falls back to solve)", async () => {
+  it("a problem that asks nothing is not an error: 200 `nothing_asked`, no lines, and refunded", async () => {
     vi.mocked(chatJsonWithFallback).mockResolvedValue({ data: { unknown: "", lines: [] }, model: LIVE_MODELS.setup } as never);
+    const res = await setup(request("/api/live/setup", SETUP_BODY));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-Request-Id")).toBeTruthy();
+    expect(SetupResponseSchema.parse(await res.json())).toMatchObject({ lines: [], reason: "nothing_asked", model: LIVE_MODELS.setup });
+    expectChargedAndRefunded();
+  });
+
+  it("an unknown named with no lines to find it is still a failed call: 502 and refunded (the board falls back to solve)", async () => {
+    vi.mocked(chatJsonWithFallback).mockResolvedValue({ data: { unknown: "v", lines: [] }, model: LIVE_MODELS.setup } as never);
     const res = await setup(request("/api/live/setup", SETUP_BODY));
     expect(res.status).toBe(502);
     expectChargedAndRefunded();
+  });
+
+  it("the reply contract: lines may be empty only when nothing is asked", () => {
+    expect(SetupResponseSchema.safeParse({ lines: [], model: "m", ms: 1 }).success).toBe(false);
+    expect(SetupResponseSchema.safeParse({ lines: [], reason: "nothing_asked", model: "m", ms: 1 }).success).toBe(true);
+    expect(SetupResponseSchema.safeParse({ lines: ["x = 1"], model: "m", ms: 1 }).success).toBe(true);
   });
 
   it("refuses an empty problem and more than 40 lines", async () => {
@@ -314,8 +329,16 @@ describe("live/setup with a figure crop", () => {
     expect(body.figure?.reason).toMatch(/not in the read|not on the figure/);
   });
 
-  it("a figure that asks nothing is a failed call: 502 and refunded", async () => {
+  it("a figure that asks nothing (`2x2` taken for a drawing) is a 200 `nothing_asked`, refunded — not a 502", async () => {
     vi.mocked(chatJsonWithFallback).mockResolvedValue({ data: { unknown: "", lines: [] }, model: LIVE_MODELS.figure } as never);
+    const res = await setup(request("/api/live/setup", { boardId: "b", lines: [], labels: [], crop: CROP }));
+    expect(res.status).toBe(200);
+    expect(SetupResponseSchema.parse(await res.json())).toMatchObject({ lines: [], reason: "nothing_asked", model: LIVE_MODELS.figure });
+    expectChargedAndRefunded();
+  });
+
+  it("a figure whose model fails is still an error: 502 and refunded", async () => {
+    vi.mocked(chatJsonWithFallback).mockRejectedValue(new UpstreamError(502, "both models failed"));
     expect((await setup(request("/api/live/setup", FIGURE_BODY))).status).toBe(502);
     expectChargedAndRefunded();
   });

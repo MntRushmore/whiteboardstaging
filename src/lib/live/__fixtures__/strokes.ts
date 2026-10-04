@@ -233,6 +233,27 @@ export function toInkStrokes(shapes: TLDrawShape[]): InkStroke[] {
   });
 }
 
+/**
+ * Ink as a student draws it at the board's zoom: the same picture, `1 / zoom` times bigger in page
+ * px. A board is a 1600 x 900 screen fitted to the window, so a phone held upright shows it at ~0.2
+ * and an iPad at ~0.52; a hand that is 40 px tall on screen is 200 page px on the phone.
+ */
+export function inkAtZoom(ink: readonly InkStroke[], zoom: number): InkStroke[] {
+  const k = 1 / zoom;
+  return ink.map((s) => ({
+    id: s.id,
+    bounds: { x: s.bounds.x * k, y: s.bounds.y * k, w: s.bounds.w * k, h: s.bounds.h * k },
+    segments: s.segments.map((seg) => seg.map((p) => ({ x: p.x * k, y: p.y * k }))),
+  }));
+}
+
+/** The board's fit zoom on each kind of screen (`editor.getBaseZoom()`). */
+export const DEVICE_ZOOMS = [
+  ["a desktop", 1],
+  ["an iPad held upright", 0.52],
+  ["a phone held upright", 0.2],
+] as const;
+
 export function translateShapes(shapes: TLDrawShape[], dx: number, dy: number): TLDrawShape[] {
   return shapes.map((s) => ({ ...s, x: s.x + dx, y: s.y + dy }));
 }

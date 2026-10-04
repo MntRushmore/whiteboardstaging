@@ -2,6 +2,7 @@
 
 import { atom } from "tldraw";
 import type { LiveLineState, LiveStatus, OpenHint, RecognizerKind, Rect } from "./contracts";
+import type { HelpTarget } from "./helpTarget";
 
 /** A drawing on the screen as the dev panel shows it (`src/lib/live/diagrams.ts`). */
 export interface LiveDiagram {
@@ -36,6 +37,11 @@ export interface LiveError {
   retryAfterMs?: number;
   /** check/solve: the student asked for this (badge tap / More help / Solve steps) */
   userAsked?: boolean;
+  /**
+   * check/solve: what the student asked for, for the error card's heading (`errorCardTitle`): the
+   * whole working (`solve`), a check of the line (`check`), or the next step or a hint (`hint`)
+   */
+  asked?: "solve" | "check" | "hint";
   /** ink (402): what the refused call costs (the 402's `cost`), so the error stays until it is affordable */
   inkNeeded?: number;
   at: number;
@@ -57,6 +63,16 @@ export const liveStore = {
   /** number of open solve streams (status stays 'checking'; the pill says "Solving…") */
   solving: atom<number>("live.solving", 0),
   /**
+   * The ink left as the board's meter last read it (Infinity with Agathon Unlimited), null until
+   * it has: Auto spends nothing while it is 0 (`noteInkBalance`).
+   */
+  inkBalance: atom<number | null>("live.inkBalance", null),
+  /**
+   * Lines just read (by line id, when): their typeset readback shows for `LIVE_TIMING.readbackMs`
+   * even with the pen in hand — the sign the tutor saw the line (`MathShapeUtil`).
+   */
+  readbacks: atom<Record<string, number>>("live.readbacks", {}),
+  /**
    * Retry entry point installed by the running loop (LiveController is frozen, so the
    * UI reaches the loop through the store). null when no loop is mounted.
    */
@@ -67,6 +83,15 @@ export const liveStore = {
    * back half written by Undo (`deleteScreen`). null when no loop is mounted.
    */
   finishWriting: atom<(() => void) | null>("live.finishWriting", null),
+  /**
+   * The problem Help me / Solve it act on now (`src/lib/live/helpTarget.ts`), published by the loop
+   * after every flush and change of selection; the outline around it (`ProblemHighlight`) reads it.
+   */
+  helpTarget: atom<HelpTarget | null>("live.helpTarget", null),
+  /** the ask button is hovered, or has keyboard focus: the outline shows what it would act on */
+  askHover: atom<boolean>("live.askHover", false),
+  /** when Help or Solve was last asked for (ms; 0: not yet) */
+  askedAt: atom<number>("live.askedAt", 0),
 };
 
 let errorSeq = 0;
@@ -92,6 +117,15 @@ export function clearInkErrorIfAffordable(balance: number): void {
   liveStore.retryHandler.get()?.();
   // the retry may already have replaced the error with its own outcome; otherwise it goes now
   if (liveStore.lastError.get()?.id === current.id) liveStore.lastError.set(null);
+}
+
+/**
+ * The board's meter read the balance: Auto knows whether it may spend (an unasked model call with
+ * no ink would only open the ink dialog unasked), and an "out of ink" error goes once it is covered.
+ */
+export function noteInkBalance(balance: number): void {
+  liveStore.inkBalance.set(balance);
+  clearInkErrorIfAffordable(balance);
 }
 
 export function clearLiveError(code?: LiveErrorCode): void {
@@ -134,4 +168,7 @@ export function resetLiveStore(): void {
   liveStore.offlineQueued.set(0);
   liveStore.lastError.set(null);
   liveStore.solving.set(0);
+  liveStore.helpTarget.set(null);
+  liveStore.askedAt.set(0);
+  liveStore.readbacks.set({});
 }

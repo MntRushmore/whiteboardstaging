@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CHAT_PROBLEM_META } from "@/lib/live/chat/cells";
 import { isTutorWork, markKindOf, questionWhyOf } from "../marks";
-import { askProgress, COACH_COUNT, coachNumber, initialTour, markerStepOf, tourReducer, type TourEvent, type TourState, type TourStep } from "../tour";
+import { askProgress, COACH_COUNT, coachNumber, initialTour, markerStepOf, tourAutoAtEnd, tourAutoBefore, tourReducer, type TourEvent, type TourState, type TourStep } from "../tour";
 
 function run(events: TourEvent[], from: TourState = initialTour()): TourState {
   return events.reduce(tourReducer, from);
@@ -75,8 +75,13 @@ describe("coach marks", () => {
 describe("coach mark 2: Help me", () => {
   const help = { ...initialTour(), step: "help" } as const;
 
-  it("waits for the tutor to write, whatever the student does first", () => {
-    expect(tourReducer(help, { type: "tutorWrote" }).step).toBe("helped");
+  it("waits for the tutor to write for the student's own Help me — not for what it writes by itself (Auto)", () => {
+    // Auto's step at a pause, or Solve finishing the problem, is not the lesson "tap Help me"
+    expect(tourReducer(help, { type: "tutorWrote" })).toBe(help);
+    const empty = tourReducer(help, { type: "helpAsked", ok: false });
+    expect(tourReducer(empty, { type: "tutorWrote" })).toBe(empty);
+    const unread = tourReducer(help, { type: "mark", mark: "question" });
+    expect(tourReducer(unread, { type: "tutorWrote" })).toBe(unread);
     expect(run([{ type: "helpAsked", ok: true }, { type: "tutorWrote" }], help).step).toBe("helped");
   });
 
@@ -123,6 +128,26 @@ describe("coach mark 2: Help me", () => {
       expect(tourReducer(s, { type: "helpAsked", ok: true })).toBe(s);
       if (step !== "result") expect(tourReducer(s, { type: "tutorWrote" })).toBe(s);
     }
+  });
+});
+
+describe("Auto during the tour", () => {
+  it("remembers the student's own setting when the tour turns Auto on — a tour resumed after a reload keeps the first one", () => {
+    expect(tourAutoBefore(false, undefined)).toBe(false);
+    expect(tourAutoBefore(true, undefined)).toBe(true);
+    // reloaded mid-tour: Auto is on because the tour turned it on; the student's setting is the remembered one
+    expect(tourAutoBefore(true, false)).toBe(false);
+  });
+
+  it("gives it back when the tour ends, finished or skipped — unless the student switched it themselves", () => {
+    // off before, on for the tour: off again
+    expect(tourAutoAtEnd(false, true)).toBe(false);
+    // on before: nothing to give back
+    expect(tourAutoAtEnd(true, true)).toBeNull();
+    // the student switched it off during the tour: theirs already
+    expect(tourAutoAtEnd(false, false)).toBeNull();
+    // a tour from before this was remembered: left as it is
+    expect(tourAutoAtEnd(undefined, true)).toBeNull();
   });
 });
 
