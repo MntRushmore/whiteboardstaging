@@ -392,6 +392,7 @@ describe("live loop — a figure worked out unasked", () => {
     await draw(inkOf(triangleAt(300, 200)));
     await stop();
     expect(setupBodies).toHaveLength(1);
+    lineRead = "y"; // read as what it is: a stray letter, nothing for Auto to finish
     await draw(writeAt("y", 1200, 750));
     await stop();
     expect(setupBodies).toHaveLength(1);
