@@ -2532,9 +2532,9 @@ export class LiveLoop implements LiveController {
   }
 
   /**
-   * Live shapes on the page, for the cap and the pill's "lots of marks" warning. The tutor's
-   * handwriting is one draw shape per stroke, so a written block counts as ONE mark (its
-   * `meta.handBlock` key), not as its thirteen strokes.
+   * The tutor's marks on the page, for the cap and the pill's "lots of marks" warning: what Clear
+   * marks takes away. The tutor's handwriting is one draw shape per stroke, so a written block
+   * counts as ONE mark (its `meta.handBlock` key), not as its thirteen strokes.
    */
   private recount(): void {
     let n = 0;
@@ -2546,6 +2546,10 @@ export class LiveLoop implements LiveController {
       // lecture must not use up the cap and leave the tutor unable to mark what they write
       if (metaString(s.meta, LECTURE_BLOCK_META)) continue;
       if (answerSrcOf(s.meta)) answers = true;
+      // Nor is a readback: the student's own line, one per line, which Clear marks leaves alone.
+      // Counted, every line used two of the cap (its readback and its tick), so after about 30
+      // lines nothing new was marked, and Clear marks could not bring the page back under it.
+      if (s.meta.source === "echo") continue;
       const block = handBlockOf(s.meta);
       if (block) blocks.add(block);
       else n++;

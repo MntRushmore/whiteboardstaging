@@ -155,7 +155,8 @@ describe("useLiveMath loop isolation (noLoop)", () => {
     // 24 px right of the ink
     const inkRight = Math.max(...strokes.map((s) => editor.getShapePageBounds(s.id)!.maxX));
     expect(echoes[0].x).toBe(inkRight + 24);
-    expect(liveStore.liveShapeCount.get()).toBe(1);
+    // a readback is not a mark: it does not count against the cap
+    expect(liveStore.liveShapeCount.get()).toBe(0);
 
     // The echo write itself must not have re-triggered anything.
     await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs * 3);
@@ -329,10 +330,13 @@ describe("useLiveMath loop isolation (noLoop)", () => {
     const echoBounds = editor.getShapePageBounds(liveStore.lines.get()[t.lines[0].id].mathShapeId!)!;
     expect(placed.y).toBeGreaterThanOrEqual(echoBounds.maxY);
     expect(editor.getShape(gid!)!.type).toBe("graph");
-    expect(liveStore.liveShapeCount.get()).toBe(3);
+    // the placed maths and the graph; the echo is not a mark
+    expect(liveStore.liveShapeCount.get()).toBe(2);
     // clearMarks removes AI shapes and keeps the echo
     loop.clearMarks();
     await settle();
+    // ...which takes the page back to no marks at all
+    expect(liveStore.liveShapeCount.get()).toBe(0);
     expect(editor.shapesOfType("math")).toHaveLength(1);
     expect(editor.shapesOfType("graph")).toHaveLength(0);
     expect(fetchJson).toHaveBeenCalledTimes(1);
