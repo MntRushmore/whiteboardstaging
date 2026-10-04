@@ -6,6 +6,8 @@
 import { isApiError, isOutOfInk } from "@/lib/api-client";
 import { waitPhrase } from "@/components/live/copy";
 import { CHAT_LIMITS, type ChatRunReport, type ChatTurn } from "@/lib/live/chat/contracts";
+import type { PracticeProblem, SkillId } from "@/lib/learning/contracts";
+import type { LearnerHint } from "@/lib/learning/hint";
 
 /** Ink per request: ROUTE_COSTS["live/chat"] on the server (pinned equal in the tests). */
 export const CHAT_INK = 3;
@@ -65,6 +67,8 @@ export interface ChatMessage {
   error?: ChatError;
   /** a failed tutor message: the request to send again */
   retryText?: string;
+  /** a failed tutor message whose request ran on the device, not the model (Retry runs it there again) */
+  local?: "weak_spots";
 }
 
 /** A failure of the chat call as the panel shows it. */
@@ -129,4 +133,53 @@ export function runNotes(report: ChatRunReport | null): string[] {
 /** Enter sends; Shift+Enter (or composing an IME character) makes a new line. */
 export function sendsOnKey(e: { key: string; shiftKey: boolean; isComposing?: boolean }): boolean {
   return e.key === "Enter" && !e.shiftKey && !e.isComposing;
+}
+
+// ------------------------------------------------------------------ "Practice my weak spots"
+
+/**
+ * The first suggestion when the student's record has a skill to practise: tapped, the board writes
+ * problems on their weakest skill that has practice problems, made on the device (`practice.ts`) —
+ * no model, no ink. The chip is the student's own words; the reply is about the skill, and never
+ * says "weak". Typed instead, the same words go to the model as any request does.
+ */
+export const WEAK_SPOTS_COPY = {
+  chip: "Practice my weak spots",
+  chipHint: "Problems on what you're learning, free (no ink)",
+  /** how many problems one tap writes */
+  count: 4,
+  reply: (n: number, skill: string) => (n === 1 ? `Here is 1 problem on ${skill} to practise.` : `Here are ${n} problems on ${skill} to practise.`),
+  /** the record changed under the chip (nothing left to practise) */
+  none: "Let's practise! Ask me for some problems on anything you like.",
+  failed: "I couldn't write those problems just now. Try again.",
+} as const;
+
+/** What the chip needs of `practice.ts` (loaded on demand: the board's first load never has it). */
+export interface PracticeSource {
+  hasPractice: (skill: string) => boolean;
+  practiceProblems: (skill: SkillId, count: number, seed: number) => PracticeProblem[];
+}
+
+export type WeakSpot = LearnerHint["weakSkills"][number];
+
+/** The skill the chip practises: the weakest one with practice problems; null shows no chip. */
+export function weakSpotSkill(hint: LearnerHint | undefined, hasPractice: PracticeSource["hasPractice"]): WeakSpot | null {
+  for (const s of hint?.weakSkills ?? []) if (hasPractice(s.id)) return s;
+  return null;
+}
+
+/** The problems one tap writes: `count` on the weakest practicable skill (the next one if it makes none). */
+export function weakSpotPractice(
+  hint: LearnerHint | undefined,
+  practice: PracticeSource,
+  seed: number,
+  count: number = WEAK_SPOTS_COPY.count,
+): { skill: WeakSpot; problems: PracticeProblem[] } | null {
+  for (const s of hint?.weakSkills ?? []) {
+    // a skill with practice is one of SKILLS (only those have generators)
+    if (!practice.hasPractice(s.id)) continue;
+    const problems = practice.practiceProblems(s.id as SkillId, count, seed).filter((p) => p.length > 0);
+    if (problems.length > 0) return { skill: s, problems: problems.map((p) => [...p]) };
+  }
+  return null;
 }
