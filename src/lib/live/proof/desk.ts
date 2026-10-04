@@ -55,7 +55,8 @@ export interface ProofHost {
   rerender(ids: readonly string[]): void;
   /** writes rows under the proof in the tutor's hand; false when it could not */
   writeRows(read: ProofRead, rows: readonly PlannedRow[], anchorLineId: string): boolean;
-  busy(on: boolean): void;
+  /** an ask started: the pill says "Solving…"; returns its end, called once when the ask is over */
+  busy(): () => void;
   /** the ask failed: `err` from a call, or null for "couldn't work this out" */
   failed(err: unknown, lineId: string, all: boolean): void;
   succeeded(lineId: string): void;
@@ -313,7 +314,7 @@ export class ProofDesk {
     this.inflight.get(key)?.abort();
     const ctrl = new AbortController();
     this.inflight.set(key, ctrl);
-    this.host.busy(true);
+    const done = this.host.busy();
     let source = "planner";
     try {
       let view = start;
@@ -365,7 +366,7 @@ export class ProofDesk {
       this.host.failed(err, anchor, all);
     } finally {
       if (this.inflight.get(key) === ctrl) this.inflight.delete(key);
-      this.host.busy(false);
+      done();
     }
   }
 

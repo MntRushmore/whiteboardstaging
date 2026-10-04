@@ -76,6 +76,9 @@ describe("live loop — drawings", () => {
   let setupBodies: SetupRequest[];
   /** the quiet notes the board showed (`deps.notify`) */
   let notes: string[];
+  /** while set, a read of a drawing's ink as maths (`ink_…`) waits for it; the solve stream likewise */
+  let inkGate: Promise<void> | null;
+  let streamGate: Promise<void> | null;
 
   const recognizeBodies = () => fetchJson.mock.calls.map((c) => c[1] as RecognizeRequest);
   const lineReads = () => recognizeBodies().filter((b) => !b.lineId.startsWith("dg_"));
@@ -91,6 +94,7 @@ describe("live loop — drawings", () => {
         recognizer: new RecognizeClient({ fetchJson }),
         stream: async function* (path: string): AsyncGenerator<LiveSseEvent, void, undefined> {
           calls.push(path);
+          if (streamGate) await streamGate;
         },
         getEngine: async () => engine,
         fetchCapabilities: async () => ({ recognizer: "mathpix", liveEnabled: true, models: { check: "c", solve: "s", vision: "v" } }),
@@ -149,8 +153,11 @@ describe("live loop — drawings", () => {
     setupReply = PYTHAGORAS;
     setupBodies = [];
     notes = [];
+    inkGate = null;
+    streamGate = null;
     fetchJson = vi.fn<FetchJson>(async (_path, body): Promise<RecognizeResponse> => {
       const req = body as RecognizeRequest;
+      if (req.lineId.startsWith("ink_") && inkGate) await inkGate;
       const latex = req.lineId.startsWith("dg_") ? labelRead : lineRead;
       return { latex, text: latex, kind: "math", confidence: 0.98, provider: "mathpix", ms: 90 };
     });
@@ -328,6 +335,57 @@ describe("live loop — drawings", () => {
     expect(tutorInk()).toEqual([]);
     expect(notes).toEqual([LIVE_COPY.solve.simplest]);
     expect(liveStore.lastError.get()).toBeNull();
+  });
+
+  it("the screen left while the ink is read: nothing is written on the next screen, and its own solve keeps the pill's count", async () => {
+    // a problem of the student's on a second screen, from before
+    const first = editor.getCurrentPage().id;
+    const second = editor.addPage();
+    editor.switchPage(second);
+    await settle();
+    lineRead = "2a+b=8";
+    await draw(writeAt("2a + b = 8", 200, 300));
+    expect(echoes()).toHaveLength(1);
+    editor.switchPage(first);
+    await settle();
+
+    // Solve on `2x2` written large: its ink is read as maths, slowly
+    lineRead = "2x2";
+    await draw(largeInk("2x2"));
+    let release!: () => void;
+    inkGate = new Promise<void>((r) => (release = r));
+    // the read lands although the screen was left (it was still being hashed, or its reply was
+    // already on its way): the recognizer's abort cannot be what keeps it off the next screen
+    const abortAll = vi.spyOn(RecognizeClient.prototype, "abortAll").mockImplementation(() => {});
+    let releaseStream!: () => void;
+    try {
+      loop.requestSolve();
+      await settle();
+      expect(inkReads()).toHaveLength(1);
+      expect(liveStore.solving.get()).toBe(1);
+
+      // the student goes to the other screen and asks Solve there: the model is on it
+      streamGate = new Promise<void>((r) => (releaseStream = r));
+      editor.switchPage(second);
+      await settle();
+      loop.requestSolve();
+      await settle();
+      expect(calls).toEqual(["/api/live/solve"]);
+      expect(liveStore.solving.get()).toBe(1);
+
+      release();
+      await settle();
+      await vi.advanceTimersByTimeAsync(500);
+      await settle();
+      const here = editor.getCurrentPageShapes().filter((sh) => sh.type === "draw" && isLiveMeta(sh.meta) && sh.meta.source === "ai" && !(sh.meta as Record<string, unknown>).mark);
+      expect(handLinesOf(here)).toEqual([]);
+      expect(liveStore.solving.get()).toBe(1);
+    } finally {
+      abortAll.mockRestore();
+      releaseStream?.();
+    }
+    await settle();
+    expect(liveStore.solving.get()).toBe(0);
   });
 
   it("ink that does not read as maths goes on to the figure model, as before", async () => {

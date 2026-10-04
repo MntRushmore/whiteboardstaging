@@ -734,6 +734,13 @@ export class LiveLoop implements LiveController {
   private markStrokeIds = new Set<string>();
   /** Help waiting for the latest line's read to land before it acts (`helpAfterRead`) */
   private helpWaitTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Which runtime this is: bumped by `resetRuntime` (a screen left or deleted, the loop stopped).
+   * Work begun before a reset was about the ink on screen then: what it brings back after it is
+   * dropped (`askAboutDrawing`), and its end does not count itself off the pill's `solving`, which
+   * the reset already zeroed (`solvingStarted`).
+   */
+  private generation = 0;
 
   /** the board chat's hand: its actions, one block at a time (`src/lib/live/chat/desk.ts`) */
   private readonly chat: ChatDesk;
@@ -862,6 +869,7 @@ export class LiveLoop implements LiveController {
 
   /** Timers, in-flight calls and per-line runtime: everything that belongs to the ink on screen. */
   private resetRuntime(): void {
+    this.generation++;
     if (this.quietTimer) clearTimeout(this.quietTimer);
     this.quietTimer = null;
     if (this.settleTimer) clearTimeout(this.settleTimer);
@@ -3961,14 +3969,16 @@ export class LiveLoop implements LiveController {
     }
     // the pill says "Solving…" while the ink is read, as it does for the figure
     liveStore.status.set("checking");
-    liveStore.solving.set(liveStore.solving.get() + 1);
-    void this.solveInkAsMaths(diagram, opts)
+    const ended = this.solvingStarted();
+    const gen = this.generation;
+    void this.solveInkAsMaths(diagram, opts, gen)
       .catch((err) => {
         console.warn("[live] reading the drawing as maths failed", err);
         return false;
       })
       .then((settled) => {
-        liveStore.solving.set(Math.max(0, liveStore.solving.get() - 1));
+        // asked on a screen the student has left (or deleted): nothing more, here
+        if (!ended()) return;
         if (!settled && this.started && this.diagrams.some((d) => d.id === diagram.id)) {
           this.startFigure(diagram, opts);
           return;
@@ -3983,24 +3993,30 @@ export class LiveLoop implements LiveController {
    * (`localSolve`): `= 4` beside `2x2`, or the note that `2x^{2}` has nothing to do. Never a model's
    * answer: ink that is not clearly maths goes on to the figure. True when that settled it (written,
    * a note, or the loop stopped); false: read it as a figure.
+   *
+   * `gen`: the runtime it was asked in. A screen switch (or delete) while the ink is hashed or read
+   * settles it with nothing written: `= 4` for the screen the student left was written on the one
+   * they went to (the writer writes on the current page).
    */
-  private async solveInkAsMaths(diagram: Diagram, opts: SolveOpts): Promise<boolean> {
+  private async solveInkAsMaths(diagram: Diagram, opts: SolveOpts, gen = this.generation): Promise<boolean> {
     const engine = this.engine;
     if (!engine) return false;
+    const gone = () => !this.started || this.generation !== gen;
     const row = this.inkRowOf(diagram);
     const line: InkLine = { id: diagram.id, strokeIds: row.strokes.map((st) => st.id), bounds: row.bounds, column: 0, row: 0, hash: "" };
     const payload = buildPayload(line, row.strokes);
     if (!payload) return false;
     const hash = await hashPayload(payload);
+    if (gone()) return true;
     if (!this.deps.isOnline() && !this.deps.recognizer.peek(hash)) return false;
     const req: RecognizeRequest = { boardId: this.opts.boardId, lineId: `ink_${diagram.id}`, strokes: { x: payload.x, y: payload.y }, bounds: { w: payload.w, h: payload.h } };
     let res: RecognizeResponse;
     try {
       res = await this.deps.recognizer.recognize(req, hash);
     } catch {
-      return false;
+      return gone();
     }
-    if (!this.started) return true;
+    if (gone()) return true;
     const latex = (res.latex ?? "").trim();
     // a read the recognizer is not sure of is a picture's, not a line's
     if (!latex || res.kind !== "math" || res.confidence < LIVE_LIMITS.minConfidence) return false;
@@ -4148,7 +4164,7 @@ export class LiveLoop implements LiveController {
     const retry: RetryContext = from ? { kind: "solve", lineId: opts.lineId, fromLineId: from.fromLineId, opts } : { kind: "figure", diagramId: diagram.id, opts };
     const startedAt = this.deps.now();
     liveStore.status.set("checking");
-    liveStore.solving.set(liveStore.solving.get() + 1);
+    const ended = this.solvingStarted();
     void (async () => {
       /** written: on the page; fallback: nothing usable; nothing: the model says nothing is asked; stop: nothing more to do */
       let outcome: "written" | "fallback" | "nothing" | "stop" = "fallback";
@@ -4220,7 +4236,7 @@ export class LiveLoop implements LiveController {
         }
       } finally {
         if (rt.solveAbort === ctrl) rt.solveAbort = null;
-        liveStore.solving.set(Math.max(0, liveStore.solving.get() - 1));
+        ended();
       }
       clientMetric("live.figure", { outcome, reason, source, called, unasked, ms: this.deps.now() - startedAt, lineId: opts.lineId, kinds: diagram.kinds.join(","), fromLine: Boolean(from) });
       if ((outcome === "fallback" || outcome === "nothing") && !ctrl.signal.aborted && this.started && !unasked) {
@@ -4456,7 +4472,7 @@ export class LiveLoop implements LiveController {
     const retry: RetryContext = { kind: "solve", lineId: opts.lineId, fromLineId, opts };
     const startedAt = this.deps.now();
     liveStore.status.set("checking");
-    liveStore.solving.set(liveStore.solving.get() + 1);
+    const ended = this.solvingStarted();
     void (async () => {
       /** written: the block is on the page; fallback: ask the solve model; stop: nothing more */
       let outcome: "written" | "fallback" | "stop" = "fallback";
@@ -4488,7 +4504,7 @@ export class LiveLoop implements LiveController {
         }
       } finally {
         if (rt.solveAbort === ctrl) rt.solveAbort = null;
-        liveStore.solving.set(Math.max(0, liveStore.solving.get() - 1));
+        ended();
       }
       clientMetric("live.setup", { outcome, reason, ms: this.deps.now() - startedAt, lineId: opts.lineId });
       if (outcome === "fallback" && !ctrl.signal.aborted && this.started) {
@@ -4611,7 +4627,7 @@ export class LiveLoop implements LiveController {
     });
     const restated = new Set(built.states.map((st) => normalizeStep(st.latex)));
     liveStore.status.set("checking");
-    liveStore.solving.set(liveStore.solving.get() + 1);
+    const ended = this.solvingStarted();
     void (async () => {
       let failed = false;
       let doneEarly = false;
@@ -4667,7 +4683,7 @@ export class LiveLoop implements LiveController {
         }
       } finally {
         if (rt.solveAbort === ctrl) rt.solveAbort = null;
-        liveStore.solving.set(Math.max(0, liveStore.solving.get() - 1));
+        ended();
         if (!failed && (doneEarly || !ctrl.signal.aborted)) this.noteSuccess("solve", opts.lineId);
         if (liveStore.status.get() !== "offline") liveStore.status.set("idle");
       }
@@ -4995,6 +5011,25 @@ export class LiveLoop implements LiveController {
     sketch?.cancel();
   }
 
+  /**
+   * One more request the pill's "Solving…" counts (`liveStore.solving`). The function returned
+   * counts it off, once, and says whether it was still this runtime's: after a reset (`generation`:
+   * a screen left or deleted) the count was zeroed with it, and counting off the old screen's request
+   * took one of the new screen's — a solve in flight there looked finished, and Auto, which waits
+   * for none (`autoMayAnswer`), started another alongside it.
+   */
+  private solvingStarted(): () => boolean {
+    const gen = this.generation;
+    liveStore.solving.set(liveStore.solving.get() + 1);
+    let open = true;
+    return () => {
+      const mine = gen === this.generation;
+      if (open && mine) liveStore.solving.set(Math.max(0, liveStore.solving.get() - 1));
+      open = false;
+      return mine;
+    };
+  }
+
   /** fetch rejects with a TypeError when the network is unreachable. */
   private isNetworkFailure(err: unknown): boolean {
     return err instanceof TypeError || !this.deps.isOnline();
@@ -5058,14 +5093,12 @@ export class LiveLoop implements LiveController {
       boardId: () => this.opts.boardId,
       rerender: (ids) => this.rerenderLines(ids),
       writeRows: (read, rows, anchor) => this.writeProofRows(read, rows, anchor),
-      busy: (on) => {
-        if (on) {
-          liveStore.status.set("checking");
-          liveStore.solving.set(liveStore.solving.get() + 1);
-          return;
-        }
-        liveStore.solving.set(Math.max(0, liveStore.solving.get() - 1));
-        if (liveStore.status.get() !== "offline") liveStore.status.set("idle");
+      busy: () => {
+        liveStore.status.set("checking");
+        const ended = this.solvingStarted();
+        return () => {
+          if (ended() && liveStore.status.get() !== "offline") liveStore.status.set("idle");
+        };
       },
       failed: (err, lineId, all) => {
         const errCtx = { kind: "solve" as const, lineId, userAsked: true };
