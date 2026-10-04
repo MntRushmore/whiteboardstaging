@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEVICE_ZOOMS,
   fixtureDetachedCrossbar,
   fixtureFloatingMark,
   fixtureFraction,
@@ -7,11 +8,13 @@ import {
   fixtureSuperscript,
   fixtureTwoColumns,
   fixtureTwoLines,
+  inkAtZoom,
   toInkStrokes,
   translateShapes,
   writeLine,
 } from "../__fixtures__/strokes";
 import {
+  assignColumns,
   clusterLines,
   inflateRect,
   inflationFor,
@@ -21,7 +24,7 @@ import {
   rebuildFromMathShapes,
   unionRects,
 } from "../strokeClusters";
-import type { InkStroke, Rect } from "../contracts";
+import type { InkLine, InkStroke, Rect } from "../contracts";
 import { writeAt } from "@/__eval__/drawings";
 import { VARIANTS } from "@/__eval__/handwriting";
 
@@ -296,5 +299,175 @@ describe("clusterLines — an operation row under an equation (`mergeOperationRo
     const roots = withRow("x^{2} - 5x + 6 = 0", [["x = 2", ""], ["x = 3", "x^{2} - 5x + 6"]]);
     const rootLines = linesOf(roots.ink);
     for (const piece of roots.row) expect(rootLines).toContainEqual(ids(piece));
+  });
+});
+
+// ---------------------------------------------------------------- columns
+
+const sortedIds = (strokes: readonly InkStroke[]) => strokes.map((s) => s.id as string).sort();
+const widthOf = (latex: string) => unionRects(writeAt(latex, 0, 0).map((s) => s.bounds)).w;
+const bottomOf = (strokes: readonly InkStroke[]) => {
+  const r = unionRects(strokes.map((s) => s.bounds));
+  return r.y + r.h;
+};
+/** A problem worked down the page: one written line per entry, `step` px apart, from (x, y). */
+const worked = (latex: string[], x: number, y: number, step = 50) => latex.map((l, i) => writeAt(l, x, y + i * step));
+/** Where each written line went: the [column, row] of the line holding exactly its strokes, or null. */
+function placed(lines: readonly InkLine[], written: readonly InkStroke[][]): Array<[number, number] | null> {
+  return written.map((w) => {
+    const want = sortedIds(w).join(",");
+    const line = lines.find((l) => [...l.strokeIds].sort().join(",") === want);
+    return line ? [line.column, line.row] : null;
+  });
+}
+
+describe("clusterLines at the board's zoom: lines and columns as the student sees them", () => {
+  describe.each(DEVICE_ZOOMS)("on %s", (_device, zoom) => {
+    /** the written lines as drawn at this zoom (ids kept), clustered as the loop does */
+    const cluster = (written: readonly InkStroke[][]) => clusterLines(inkAtZoom(written.flat(), zoom), [], [], { zoom });
+
+    it("a three-line derivation is one column of three rows", () => {
+      const work = worked(["2x + 3 = 11", "2x = 8", "x = 4"], 100, 100);
+      expect(placed(cluster(work), work)).toEqual([
+        [0, 0],
+        [0, 1],
+        [0, 2],
+      ]);
+    });
+
+    it("two problems side by side are two columns", () => {
+      const a = worked(["2x + 3 = 11", "2x = 8", "x = 4"], 100, 100);
+      const b = worked(["4x - 5 = 3", "4x = 8", "x = 2"], 100 + widthOf("2x + 3 = 11") + 80, 100);
+      expect(placed(cluster([...a, ...b]), [...a, ...b])).toEqual([
+        [0, 0],
+        [0, 1],
+        [0, 2],
+        [1, 0],
+        [1, 1],
+        [1, 2],
+      ]);
+    });
+
+    it("two problems squeezed side by side, their rows level, are two columns too", () => {
+      // 30 px apart, inside the same-row join's reach: each row of the two was ONE line, and the
+      // second problem's lines were steps of the first
+      const a = worked(["2x + 3 = 11", "2x + 1 = 7", "x = 3"], 100, 100);
+      const b = worked(["4x - 5 = 3", "4x - 1 = 7", "x = 2"], 100 + widthOf("2x + 3 = 11") + 30, 100);
+      expect(placed(cluster([...a, ...b]), [...a, ...b])).toEqual([
+        [0, 0],
+        [0, 1],
+        [0, 2],
+        [1, 0],
+        [1, 1],
+        [1, 2],
+      ]);
+    });
+
+    it("the next step a little lower is still the next step, and a problem further down a new one", () => {
+      // 100 px below: inside the column break on a desktop (120 px) — and, in page px, 190 on an
+      // iPad and 500 on a phone, past a break of 120 page px or three lines (a "new problem" with
+      // nothing above it, so no mark)
+      const first = writeAt("2x = 8", 100, 100);
+      const next = writeAt("x = 4", 100, bottomOf(first) + 100);
+      const far = writeAt("3x = 9", 100, bottomOf(next) + 200);
+      expect(placed(cluster([first, next, far]), [first, next, far])).toEqual([
+        [0, 0],
+        [0, 1],
+        [1, 0],
+      ]);
+    });
+  });
+
+  it("scales the column break's floor with the zoom, and only below zoom 1", () => {
+    const line = (y: number, id: string): InkLine => ({ id, strokeIds: [], bounds: { x: 0, y, w: 100, h: 20 }, column: 0, row: 0, hash: "" });
+    // 150 px of blank under a 20 px line: past 120 px, inside 120 / 0.52
+    const columns = (zoom?: number) => assignColumns([line(0, "a"), line(170, "b")], zoom).map((l) => l.column);
+    expect(columns()).toEqual([0, 1]);
+    expect(columns(1.5)).toEqual([0, 1]);
+    expect(columns(0.52)).toEqual([0, 0]);
+  });
+});
+
+describe("columns: a line goes under the last row above it, not under a wide line long gone", () => {
+  const columnsOf = (written: readonly InkStroke[][]) => placed(clusterLines(written.flat()), written).map((p) => p?.[0] ?? null);
+
+  it("a problem started beside the narrower later lines of one with a wide first line is a column of its own", () => {
+    // the first line reaches over where the second problem is written: with the column as wide as
+    // all its lines ever were, `y + 1 = 5` and `y = 4` were steps 4 and 5 of the first problem
+    const a = worked(["3(x + 2) + 4(x - 1) = 2x + 22", "7x + 2 = 2x + 22", "5x = 20", "x = 4"], 100, 100);
+    const b = worked(["y + 1 = 5", "y = 4"], 330, 200);
+    expect(placed(clusterLines([...a, ...b].flat()), [...a, ...b])).toEqual([
+      [0, 0],
+      [0, 1],
+      [0, 2],
+      [0, 3],
+      [1, 0],
+      [1, 1],
+    ]);
+  });
+
+  it("but a derivation is one column however its lines sit under one another", () => {
+    // a step indented under the `=`, then the next back at the margin
+    const eq = writeAt("2x + 3 = 11", 100, 100);
+    const indented = writeAt("2x = 8", 100 + widthOf("2x + 3") - widthOf("2x"), 150);
+    expect(columnsOf([eq, indented, writeAt("x = 4", 100, 200)])).toEqual([0, 0, 0]);
+    // each line starting further right than the last
+    expect(columnsOf([writeAt("3(x - 2) = 2x + 4", 100, 100), writeAt("3x - 6 = 2x + 4", 140, 150), writeAt("x - 6 = 4", 190, 200), writeAt("x = 10", 220, 250)])).toEqual([0, 0, 0, 0]);
+    // a wide first line and narrower ones under it
+    expect(columnsOf(worked(["3(x + 2) + 4(x - 1) = 2x + 22", "7x + 2 = 2x + 22", "5x = 20", "x = 4"], 100, 100))).toEqual([0, 0, 0, 0]);
+    // two answers written apart on one row, then the next line at the margin
+    const factored = writeAt("(x - 2)(x - 3) = 0", 100, 100);
+    const answers = [writeAt("x = 2", 100, 150), writeAt("x = 3", 100 + widthOf("(x - 2)(x - 3)"), 150)];
+    expect(columnsOf([factored, ...answers, writeAt("x = 2", 100, 200)])).toEqual([0, 0, 0, 0]);
+  });
+});
+
+describe("splitAtGutters: rows of two problems side by side are cut apart, and nothing else is", () => {
+  const linesOf = (ink: readonly InkStroke[]) => clusterLines([...ink]).map((l) => [...l.strokeIds].sort());
+
+  it("one row of two equations with nothing above or below it stays one line (nothing shows it is two)", () => {
+    const row = [...writeAt("2x + 3 = 11", 100, 100), ...writeAt("4x - 5 = 3", 100 + widthOf("2x + 3 = 11") + 30, 100)];
+    expect(linesOf(row)).toEqual([sortedIds(row)]);
+  });
+
+  it("a line spaced out round its `=`, the `=` aligned down the page, stays whole: one side is no equation", () => {
+    const sides = ["2x + 3", "2x + 1", "4x - 1"];
+    const eqX = 100 + Math.max(...sides.map(widthOf)) + 25;
+    const rows = sides.map((lhs, i) => [...writeAt(lhs, 100, 100 + 50 * i), ...writeAt("=", eqX, 100 + 50 * i), ...writeAt(String(11 - 2 * i), eqX + widthOf("=") + 25, 100 + 50 * i)]);
+    expect(linesOf(rows.flat()).sort()).toEqual(rows.map(sortedIds).sort());
+  });
+
+  it("`x = 2   x = 3` under `(x - 2)(x - 3) = 0` stays one line: the line above crosses the gap", () => {
+    const factored = writeAt("(x - 2)(x - 3) = 0", 100, 100);
+    const answers = [...writeAt("x = 2", 100, 150), ...writeAt("x = 3", 100 + widthOf("x = 2") + 25, 150)];
+    expect(linesOf([...factored, ...answers])).toContainEqual(sortedIds(answers));
+  });
+
+  it("a system written on one row, worked under its left half, stays one line", () => {
+    const system = [...writeAt("x + y = 10", 100, 100), ...writeAt("x - y = 2", 100 + widthOf("x + y = 10") + 25, 100)];
+    const work = [...writeAt("2x = 12", 100, 150), ...writeAt("x = 6", 100, 200), ...writeAt("y = 4", 100 + widthOf("x + y = 10") + 25, 200)];
+    expect(linesOf([...system, ...work])).toContainEqual(sortedIds(system));
+  });
+
+  it("is cut where the next column starts, not at a wider gap round the `=` of a first line longer than the lines under it", () => {
+    // `2x + 3 =   11`: the gap before `11` is wider than the one between the problems, and clear
+    // all the way down (the lines under it are shorter), with an `=` on both sides of it
+    const lhs = writeAt("2x + 3 =", 100, 100);
+    const rhs = writeAt("11", 100 + widthOf("2x + 3 =") + 28, 100);
+    const a = [[...lhs, ...rhs], writeAt("2x = 8", 100, 150), writeAt("x = 4", 100, 200)];
+    const first = unionRects(a[0].map((s) => s.bounds));
+    const b = worked(["4x - 5 = 3", "4x = 8", "x = 2"], first.x + first.w + 20, 100);
+    expect(placed(clusterLines([...a, ...b].flat()), [...a, ...b]).map((p) => p?.[0] ?? null)).toEqual([0, 0, 0, 1, 1, 1]);
+  });
+
+  it("three problems side by side: each row is cut twice", () => {
+    const at = (k: number) => 100 + k * (widthOf("2x + 3 = 11") + 30);
+    const cols = [
+      worked(["2x + 3 = 11", "2x = 8", "x = 4"], at(0), 100),
+      worked(["4x - 5 = 3", "4x = 8", "x = 2"], at(1), 100),
+      worked(["3x + 1 = 7", "3x = 6", "x = 2"], at(2), 100),
+    ];
+    const lines = clusterLines(cols.flat(2));
+    expect(placed(lines, cols.flat()).map((p) => p?.[0])).toEqual([0, 0, 0, 1, 1, 1, 2, 2, 2]);
   });
 });

@@ -176,6 +176,18 @@ describe("live loop — drawings", () => {
     expect(labelReads()).toEqual([]);
   });
 
+  it("on a phone, where the board is shown at a fifth of its size, `2x2` written big is a line of maths, not a drawing", async () => {
+    // 130 page px tall: an ordinary hand on a phone held upright. Judged in desktop page px, both
+    // 2s were "big curves" and the x their label, and Solve sent the "figure" to the vision model
+    editor.getBaseZoom = () => 0.2;
+    const ink = writeAt("2x2", 200, 200, undefined, 5);
+    await draw(ink);
+    expect(liveStore.diagrams.get()).toEqual([]);
+    expect(lineReads()).toHaveLength(1);
+    expect(lineReads()[0].strokes.x).toHaveLength(ink.length);
+    expect(Object.values(liveStore.lines.get()).map((st) => [...st.line.strokeIds].sort())).toEqual([[...idsOf(ink)].sort()]);
+  });
+
   it("reads the labels once the student stops: one call for all of them, and not again for the same ink", async () => {
     const tri = triangleAt(400, 200);
     await draw([...tri.strokes, ...tri.labels.flat()]);

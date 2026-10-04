@@ -14,8 +14,13 @@ import type { InkLine, InkStroke, Rect } from "./contracts";
  *    adjacent) joins that neighbour.
  * Every stroke rect is inflated by max(3 px, 0.1 x median height) before the overlap /
  * gap tests so zero-height bars (F/E/T cross-bars, minus signs) join their letters.
- * Lines are then sorted top-to-bottom into columns by x-overlap >= 40 %, and a line
- * separated from the column above it by a wide blank gap starts a column of its own.
+ * Lines are then sorted top-to-bottom into columns by x-overlap >= 40 % with the last row of
+ * the column above them, and a line separated from the column above it by a wide blank gap
+ * starts a column of its own.
+ *
+ * The thresholds scale with the writing's own median glyph, but for a few px of slack for hairline
+ * strokes and the column break's floor (`columnBreakMinPx`): page px on a desktop, scaled to the
+ * board's zoom (`inkScale`) — the same hand is five times bigger in page px on a phone.
  */
 
 export const CLUSTER_RULES = {
@@ -68,12 +73,23 @@ export const CLUSTER_RULES = {
   opBarWidthFactor: 1.6,
   opRowReachFactor: 2,
   /**
-   * A blank gap taller than max(columnBreakMinPx, columnBreakFactor x the taller of the two
-   * lines) between a line and the bottom of the column above it ends that column: a problem
-   * written further down is a new problem, not the next step of the one above.
+   * A blank gap taller than max(columnBreakMinPx x `inkScale`, columnBreakFactor x the taller of
+   * the two lines) between a line and the bottom of the column above it ends that column: a
+   * problem written further down is a new problem, not the next step of the one above.
    */
   columnBreakFactor: 3,
   columnBreakMinPx: 120,
+  /**
+   * A gutter between two problems written side by side (`splitAtGutters`): a gap of the line's at
+   * least `gutterMinFactor` medians wide, holding a band at least `gutterClearFactor` medians wide
+   * that no ink crosses within a column break above or below, with the column on its right
+   * starting within `gutterAlignFactor` medians of where the line's right part starts.
+   */
+  gutterMinFactor: 1.2,
+  gutterClearFactor: 0.5,
+  gutterAlignFactor: 1.5,
+  /** `inkScale` never goes past this (a phone held upright is ~5: zoom ~0.2) */
+  maxInkScale: 6,
   idReuseRatio: 0.5,
   /** rect inflation before the join tests: max(inflateMinPx, inflateFactor x median) */
   inflateMinPx: 3,
@@ -84,6 +100,25 @@ export const CLUSTER_RULES = {
   superDropFactor: 0.25,
   superGapFactor: 0.8,
 } as const;
+
+/**
+ * How much bigger in page px the same handwriting is on this board than on a desktop. A board is a
+ * fixed 1600 x 900 screen fitted to the window (`lib/screens/screens.ts`), so a hand is about five
+ * times bigger in page px on a phone held upright (zoom ~0.2), and twice as big on an iPad (~0.5),
+ * as on a desktop: `2x2` written 50 px tall on a phone is 250 page px. The few thresholds that are
+ * absolute page px rather than relative to the writing's own glyphs (the glyph cap in
+ * `diagrams.ts`, the column break's floor here) were tuned on a desktop, so they are multiplied by
+ * this, and judge the ink by how big it looks on the student's screen. 1 at zoom 1 and above (a
+ * desktop is unchanged), 1 / zoom below it, at most `maxInkScale`; 1 when the zoom is unknown.
+ *
+ * `zoom` is the board's FIT zoom (`editor.getBaseZoom()`), not the camera's current zoom. The camera
+ * never zooms out past the fit, so no ink looked smaller than this when it was written; and pinching
+ * in to write the next line small does not turn the big lines written before it into drawings.
+ */
+export function inkScale(zoom?: number): number {
+  if (zoom === undefined || !Number.isFinite(zoom) || zoom <= 0) return 1;
+  return Math.min(CLUSTER_RULES.maxInkScale, Math.max(1, 1 / zoom));
+}
 
 export function unionRects(rects: Rect[]): Rect {
   if (rects.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
@@ -433,6 +468,127 @@ export function mergeOperationRows(groups: InkStroke[][], medianH: number): InkS
   return [...merged.values()];
 }
 
+/**
+ * An `=` among these strokes: two level bars of about one length, one close over the other. The
+ * same pair `hasRelation` (`diagrams.ts`) reads as an `=`.
+ */
+function holdsEquals(strokes: readonly InkStroke[], medianH: number): boolean {
+  const bars = strokes.filter((s) => s.bounds.w >= 0.25 * medianH && isFlat(s.bounds, medianH));
+  for (let i = 0; i < bars.length; i++) {
+    for (let j = i + 1; j < bars.length; j++) {
+      const a = bars[i].bounds;
+      const b = bars[j].bounds;
+      const ratio = a.w / b.w;
+      if (ratio < 0.4 || ratio > 2.5) continue;
+      if (overlap1d(a.x, a.x + a.w, b.x, b.x + b.w) < 0.5 * Math.min(a.w, b.w)) continue;
+      const gap = Math.abs(a.y + a.h / 2 - (b.y + b.h / 2));
+      if (gap >= 0.08 * medianH && gap <= 0.9 * medianH) return true;
+    }
+  }
+  return false;
+}
+
+/** The widest stretch of [g0, g1] that none of `blocks` covers, or null when it is all covered. */
+function widestClear(g0: number, g1: number, blocks: Array<[number, number]>): [number, number] | null {
+  const clear: Array<[number, number]> = [];
+  let at = g0;
+  for (const [lo, hi] of [...blocks].sort((p, q) => p[0] - q[0])) {
+    if (hi <= at || lo >= g1) continue;
+    if (lo > at) clear.push([at, lo]);
+    at = Math.max(at, hi);
+  }
+  if (g1 > at) clear.push([at, g1]);
+  return clear.reduce<[number, number] | null>((best, c) => (!best || c[1] - c[0] > best[1] - best[0] ? c : best), null);
+}
+
+/** How many rows these strokes are on: runs of strokes that overlap one another vertically. */
+function rowCount(strokes: readonly InkStroke[]): number {
+  let rows = 0;
+  let bottom = -Infinity;
+  for (const s of [...strokes].sort((a, b) => a.bounds.y - b.bounds.y)) {
+    if (s.bounds.y > bottom) rows += 1;
+    bottom = Math.max(bottom, s.bounds.y + s.bounds.h);
+  }
+  return rows;
+}
+
+/**
+ * Where a line of two problems' rows splits: its left and right strokes, or null (see
+ * `splitAtGutters`). `all` is every stroke being clustered.
+ */
+function gutterCut(line: readonly InkStroke[], all: readonly InkStroke[], medianH: number, scale: number): [InkStroke[], InkStroke[]] | null {
+  const R = CLUSTER_RULES;
+  // an `=` on each side takes two strokes each
+  if (line.length < 4) return null;
+  const minGap = R.gutterMinFactor * medianH;
+  // the line's own gaps: between its strokes' x-ranges, merged
+  const sorted = [...line].sort((a, b) => a.bounds.x - b.bounds.x);
+  const gaps: Array<[number, number]> = [];
+  let reach = sorted[0].bounds.x + sorted[0].bounds.w;
+  for (const s of sorted.slice(1)) {
+    if (s.bounds.x - reach >= minGap) gaps.push([reach, s.bounds.x]);
+    reach = Math.max(reach, s.bounds.x + s.bounds.w);
+  }
+  if (gaps.length === 0) return null;
+  gaps.sort((p, q) => q[1] - q[0] - (p[1] - p[0]));
+  const rect = unionRects(line.map((s) => s.bounds));
+  let near: InkStroke[] | null = null;
+  let offRow: InkStroke[] = [];
+  for (const [g0, g1] of gaps) {
+    const left = line.filter((s) => s.bounds.x + s.bounds.w <= g0);
+    const right = line.filter((s) => s.bounds.x >= g1);
+    if (!holdsEquals(left, medianH) || !holdsEquals(right, medianH)) continue;
+    if (!near) {
+      const mine = new Set(line);
+      const vReach = Math.max(R.columnBreakMinPx * scale, R.columnBreakFactor * rect.h);
+      near = all.filter((s) => !mine.has(s) && s.bounds.y <= rect.y + rect.h + vReach && s.bounds.y + s.bounds.h >= rect.y - vReach);
+      offRow = near.filter((s) => {
+        const cy = s.bounds.y + s.bounds.h / 2;
+        return cy < rect.y || cy > rect.y + rect.h;
+      });
+    }
+    // nothing within a column break above or below crosses it (a `1` has no width: it still blocks)
+    const band = widestClear(g0, g1, near.map((s) => [s.bounds.x, s.bounds.x + Math.max(1, s.bounds.w)]));
+    if (!band || band[1] - band[0] < R.gutterClearFactor * medianH) continue;
+    // ...it runs on past this row, other rows' ink on both sides of it, and the column on its
+    // right starts where this line's right part does. A gap round the `=` of a line wider than
+    // the lines under it is clear there too, but the next column starts well to its right.
+    const beyond = offRow.filter((s) => s.bounds.x >= band[1]);
+    const margin = Math.min(...beyond.map((s) => s.bounds.x));
+    if (!offRow.some((s) => s.bounds.x + s.bounds.w <= band[0])) continue;
+    if (Math.abs(margin - g1) > R.gutterAlignFactor * medianH) continue;
+    // ...and the column on the right is a column: two more rows of it. A system written on one
+    // row (`x + y = 10   x - y = 2`) with the working under it and `y = 4` under its right half
+    // stays one line, as it always was.
+    if (rowCount(beyond) >= 2) return [left, right];
+  }
+  return null;
+}
+
+/**
+ * Two problems written side by side, their rows level, are two columns. But the same-row join
+ * reaches `sameRowMaxGapFactor` medians across, and a student short of room (on a phone, or with
+ * a second problem squeezed in beside the first) leaves less than that between them: each row of
+ * the two came out as ONE line, `2x + 3 = 11 4x - 5 = 3`, read as nonsense. A line is cut at a gap
+ * of its own at least `gutterMinFactor` medians wide (only the same-row join reaches across one)
+ * when that gap holds a gutter between columns: a band in it that no other ink crosses within a
+ * column break above or below, other rows' ink on both sides of it, the column on its right
+ * starting where the line's right part does and two rows long besides it — and an `=` on each
+ * side of the cut (`holdsEquals`). A line spaced out round its `=`, the `=` aligned down the page
+ * (`2x + 3   =   11` over `2x   =   8`), has a gutter too, but `2x + 3` is no equation;
+ * `x = 2   x = 3` under `(x - 2)(x - 3) = 0` has no gutter; one row with nothing above or below
+ * it shows nothing and stays one line, as before. A part may be cut again (three problems side
+ * by side). `scale`: `inkScale` of the board's zoom, for the column break's floor.
+ */
+export function splitAtGutters(groups: InkStroke[][], medianH: number, scale = 1): InkStroke[][] {
+  const all = groups.flat();
+  const split = (line: InkStroke[]): InkStroke[][] => {
+    const cut = gutterCut(line, all, medianH, scale);
+    return cut ? [...split(cut[0]), ...split(cut[1])] : [line];
+  };
+  return groups.flatMap(split);
+}
+
 let idCounter = 0;
 export function newLineId(): string {
   idCounter = (idCounter + 1) % 0xffff;
@@ -441,10 +597,42 @@ export function newLineId(): string {
   return `ln_${hex}`;
 }
 
-/** Assigns `column`/`row` to lines sorted top-to-bottom; mutates and returns `lines`. */
-export function assignColumns(lines: InkLine[]): InkLine[] {
+/** Two boxes on one row: they overlap vertically by at least half the shorter one's height. */
+function sameRowRect(a: Rect, b: Rect): boolean {
+  return overlap1d(a.y, a.y + a.h, b.y, b.y + b.h) >= 0.5 * Math.max(1, Math.min(a.h, b.h));
+}
+
+/**
+ * How far right a column reaches for the line `b` written under it: the right end of the column's
+ * last row above `b` (its lowest line above `b` and the lines level with that one), not of the
+ * widest line it has ever had. With the union, one wide line — a first line written across the
+ * screen — made the column claim that width for good, and the first line of a problem started
+ * beside its later, narrower lines was pulled into it as the next step. A line level with `b` is
+ * beside it, not above it (`x = 2` and `x = 3` written apart on one row both go under the row
+ * above them). With nothing of the column above `b`, the union, as before.
+ */
+function columnRight(members: readonly Rect[], b: Rect): number {
+  const cy = b.y + b.h / 2;
+  const above = members.filter((m) => !sameRowRect(m, b) && m.y + m.h / 2 < cy);
+  const from = above.length > 0 ? above : members;
+  let last = from[0];
+  for (const m of from) if (m.y + m.h > last.y + last.h) last = m;
+  let right = -Infinity;
+  for (const m of from) if (above.length === 0 || m === last || sameRowRect(m, last)) right = Math.max(right, m.x + m.w);
+  return right;
+}
+
+/**
+ * Assigns `column`/`row` to lines sorted top-to-bottom; mutates and returns `lines`. A line joins
+ * the column whose span it overlaps most (at least `columnOverlapRatio` of the narrower): from the
+ * column's left edge — steps start at its margin or indented from it — to the right end of its last
+ * row above the line (`columnRight`). `zoom`: the board's fit zoom, which scales the column break's
+ * floor (`inkScale`).
+ */
+export function assignColumns(lines: InkLine[], zoom?: number): InkLine[] {
   const sorted = [...lines].sort((a, b) => a.bounds.y - b.bounds.y || a.bounds.x - b.bounds.x);
-  const columns: Array<{ x0: number; x1: number; rows: number; bottom: number; lastH: number; y0: number }> = [];
+  const columns: Array<{ x0: number; members: Rect[]; rows: number; bottom: number; lastH: number; y0: number }> = [];
+  const breakMin = CLUSTER_RULES.columnBreakMinPx * inkScale(zoom);
   for (const line of sorted) {
     const x0 = line.bounds.x;
     const x1 = line.bounds.x + line.bounds.w;
@@ -452,13 +640,11 @@ export function assignColumns(lines: InkLine[]): InkLine[] {
     let bestOverlap = 0;
     columns.forEach((col, idx) => {
       const gap = line.bounds.y - col.bottom;
-      const breakAt = Math.max(
-        CLUSTER_RULES.columnBreakMinPx,
-        CLUSTER_RULES.columnBreakFactor * Math.max(line.bounds.h, col.lastH),
-      );
+      const breakAt = Math.max(breakMin, CLUSTER_RULES.columnBreakFactor * Math.max(line.bounds.h, col.lastH));
       if (gap > breakAt) return;
-      const ov = overlap1d(x0, x1, col.x0, col.x1);
-      const smaller = Math.max(1, Math.min(x1 - x0, col.x1 - col.x0));
+      const right = columnRight(col.members, line.bounds);
+      const ov = overlap1d(x0, x1, col.x0, right);
+      const smaller = Math.max(1, Math.min(x1 - x0, right - col.x0));
       const ratio = ov / smaller;
       if (ratio >= CLUSTER_RULES.columnOverlapRatio && ratio > bestOverlap) {
         best = idx;
@@ -467,13 +653,13 @@ export function assignColumns(lines: InkLine[]): InkLine[] {
     });
     const lineBottom = line.bounds.y + line.bounds.h;
     if (best === -1) {
-      columns.push({ x0, x1, rows: 1, bottom: lineBottom, lastH: line.bounds.h, y0: line.bounds.y });
+      columns.push({ x0, members: [line.bounds], rows: 1, bottom: lineBottom, lastH: line.bounds.h, y0: line.bounds.y });
       line.column = columns.length - 1;
       line.row = 0;
     } else {
       const col = columns[best];
       col.x0 = Math.min(col.x0, x0);
-      col.x1 = Math.max(col.x1, x1);
+      col.members.push(line.bounds);
       col.bottom = Math.max(col.bottom, lineBottom);
       col.lastH = line.bounds.h;
       line.column = best;
@@ -498,10 +684,18 @@ export function assignColumns(lines: InkLine[]): InkLine[] {
  * `hash` is left as the previous line's hash when the stroke set is identical, else "".
  * `fixed`: groups of strokes that are one line each whatever the clusterer would make of them —
  * a division bar and the divisor under it (`diagrams.ts`, `DivisionBar`) — given ids and
- * columns with the rest.
+ * columns with the rest. `opts.zoom`: the board's fit zoom (`inkScale`); none is a desktop.
  */
-export function clusterLines(strokes: InkStroke[], previous: InkLine[] = [], fixed: ReadonlyArray<readonly InkStroke[]> = []): InkLine[] {
-  const clustered = mergeOperationRows(clusterStrokeGroups(strokes).map((idxs) => idxs.map((i) => strokes[i])), medianStrokeHeight(strokes));
+export function clusterLines(
+  strokes: InkStroke[],
+  previous: InkLine[] = [],
+  fixed: ReadonlyArray<readonly InkStroke[]> = [],
+  opts: { zoom?: number } = {},
+): InkLine[] {
+  const medianH = medianStrokeHeight(strokes);
+  // two problems' rows cut apart first: an operation row joins pieces under ONE line above them
+  const rows = splitAtGutters(clusterStrokeGroups(strokes).map((idxs) => idxs.map((i) => strokes[i])), medianH, inkScale(opts.zoom));
+  const clustered = mergeOperationRows(rows, medianH);
   const groups = [...clustered, ...fixed.filter((g) => g.length > 0)];
   const usedIds = new Set<string>();
   const lines: InkLine[] = groups.map((members) => {
@@ -545,7 +739,7 @@ export function clusterLines(strokes: InkStroke[], previous: InkLine[] = [], fix
       usedIds.add(id);
     }
   }
-  return assignColumns(lines);
+  return assignColumns(lines, opts.zoom);
 }
 
 /** Minimal view of a `math` shape needed to rebuild lines on load. */
@@ -568,10 +762,12 @@ export interface RebuiltLine {
  * surviving anchor are skipped (the loop deletes them when their line is gone).
  * A stroke belongs to one line: an echo on ink an earlier echo already holds (a second
  * readback of the same line, left by an Undo before Live adopted it) is skipped too.
+ * `zoom`: the board's fit zoom, for the columns (`assignColumns`).
  */
 export function rebuildFromMathShapes(
   echoes: EchoShapeSeed[],
   strokeBounds: Map<string, Rect>,
+  zoom?: number,
 ): RebuiltLine[] {
   const out: RebuiltLine[] = [];
   const seen = new Set<string>();
@@ -596,6 +792,6 @@ export function rebuildFromMathShapes(
       mathShapeId: echo.shapeId,
     });
   }
-  assignColumns(out.map((r) => r.line));
+  assignColumns(out.map((r) => r.line), zoom);
   return out;
 }
