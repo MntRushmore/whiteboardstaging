@@ -14,29 +14,12 @@
  * engine reads an unbalanced equation as false) and `other`.
  */
 import type { LiveEngine } from "@/lib/live/contracts";
-import type { PracticeProblem, SkillId } from "./contracts";
-import { drawProblems, formsFor } from "./generators";
+import type { PracticeProblem } from "./contracts";
 import { findVariant } from "./generators/variant";
+import { hasPractice, practiceProblems } from "./practiceSet";
 import { classifyProblem } from "./skills";
 
-/** True when `practiceProblems` can make problems for this skill. */
-export function hasPractice(skill: string): boolean {
-  return typeof skill === "string" && formsFor(skill).length > 0;
-}
-
-/**
- * `count` problems for a skill, different from each other, with clean answers, each one the board
- * chat's `write_problems` accepts (`verifyProblem`) and the hand can write. Same seed, same
- * problems. Pure, no engine (clean by construction; the tests hold every generator to the engine).
- * Empty when the skill has no generator.
- */
-export function practiceProblems(skill: SkillId, count: number, seed: number): PracticeProblem[] {
-  try {
-    return drawProblems(skill, count, seed);
-  } catch {
-    return [];
-  }
-}
+export { hasPractice, practiceProblems } from "./practiceSet";
 
 /** Practice problems the fallback offers: the first is `practiceProblems(skill, 1, seed)`'s. */
 const FALLBACK_TRIES = 3;

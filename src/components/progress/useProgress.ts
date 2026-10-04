@@ -10,7 +10,7 @@ import { DEFAULT_BOARD_TITLE } from "@/lib/boards/boardTitle";
 import { isCourseId, type CourseId } from "@/lib/onboarding/courseIds";
 import { asOnboardingClient, createFirstBoard } from "@/lib/onboarding/storage";
 import type { AttemptRecord, LearningSummary, SkillId } from "@/lib/learning/contracts";
-import { hasPractice, practiceProblems } from "@/lib/learning/practice";
+import { hasPractice, practiceProblems } from "@/lib/learning/practiceSet";
 import { writePracticeMarker } from "@/lib/learning/practiceMarker";
 import { PROGRESS_COPY, practiceTitle } from "@/lib/learning/progressView";
 import { loadAttempts } from "@/lib/learning/store";

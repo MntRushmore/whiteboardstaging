@@ -21,6 +21,7 @@ import type { PracticeProblem } from "../contracts";
 import { looseSkeleton, skeletonOf, tidy } from "../generators/shape";
 import { answerKey, answerShape, findVariant, VARIANT_LIMITS } from "../generators/variant";
 import { practiceProblems, variantOf } from "../practice";
+import { classifyProblem } from "../skills";
 
 // the engine works every problem: generous limits for a busy test runner (as `oracle.test.ts`)
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
@@ -179,7 +180,9 @@ describe("variantOf", () => {
       expect(() => (v = variantOf(engine, p as PracticeProblem, 1)), JSON.stringify(p)).not.toThrow();
       if (v) expect(verifyProblem(engine, v, canDraw).ok, JSON.stringify(p)).toBe(true);
     }
-    for (const p of [[], [""], ["hello there"], ["x = 4"], ["2x + 3y = 12"]]) expect(variantOf(engine, p, 1), JSON.stringify(p)).toBeNull();
+    for (const p of [[], [""], ["hello there"], ["x = 4"]]) expect(variantOf(engine, p, 1), JSON.stringify(p)).toBeNull();
+    // a line in standard form has no variant of its own, so the fallback gives a lines-and-slope problem
+    expect(classifyProblem(["2x + 3y = 12"])).toBe("linear_functions");
     // a stray empty line is not part of the problem
     expect(variantOf(engine, ["2x+3=11", ""], 1)).not.toBeNull();
   });

@@ -728,7 +728,9 @@ function linearEquations(p: Problem): SkillId | null {
   const d1 = polyDegree(eq[1]);
   if (d0 === null || d1 === null || Math.max(d0, d1) !== 1) return null;
   const steps = inverseSteps(eq[0], eq[1]);
-  return steps <= 1 ? "one_step_equations" : steps === 2 ? "two_step_equations" : "multi_step_equations";
+  // `x = 4` has nothing left to undo: an answer (or a given), not a problem to practise
+  if (steps === 0) return null;
+  return steps === 1 ? "one_step_equations" : steps === 2 ? "two_step_equations" : "multi_step_equations";
 }
 
 function arithmetic(p: Problem): SkillId | null {

@@ -54,7 +54,7 @@ class BoardNotReadyError extends Error {}
 
 /** The practice problems' generators: loaded the first time the chip may show, never with the board. */
 function loadPractice(): Promise<PracticeSource> {
-  return import("@/lib/learning/practice");
+  return import("@/lib/learning/practiceSet");
 }
 
 const randomSeed = () => Math.floor(Math.random() * 0x7fffffff);

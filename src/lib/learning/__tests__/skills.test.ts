@@ -363,6 +363,9 @@ const OTHER: Case[] = [
   ["", "other"],
   ["\\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix}", "other"],
   ["hello", "other"],
+  // an answer or a given is not a problem to practise
+  ["x = 4", "other"],
+  [["x = 4", "y = 2"], "other"],
 ];
 
 /** The onboarding starters (`src/lib/onboarding/courses.ts`), each with its course. */
