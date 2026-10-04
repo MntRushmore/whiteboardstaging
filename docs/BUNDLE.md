@@ -33,7 +33,7 @@ Run it with `npm run bundle:check` (`node scripts/check-bundle.mjs`). Unit tests
 
 | Route | Measured first-load JS (gzip) | Budget (gzip) |
 | --- | --- | --- |
-| `/board/[id]` | 918,532 B (897.0 KB) | **1,060,000 B (~1.01 MB)** = measured + 15 % (1,056,312), rounded up to 10 KB |
+| `/board/[id]` | ~1,070,200 B (1.02 MB) at `fix/board-reading` | **1,100,000 B (~1.05 MB)**: raised from 1,060,000 on 2026-10-04 (below) |
 
 The budget lives in `BUDGETS` in `scripts/check-bundle.mjs`. Raising it needs a line in this file saying
 what was added and why it could not be lazy-loaded. `/train` has no budget: trainer-only route, same
@@ -193,6 +193,17 @@ help-modes explainer (`src/components/board/ModeInfoDialog.tsx`, moved out of th
 `ui/dialog` wrappers only it used there) the first time Board options opens it: -1,184 B, measured
 together with the ask button's new hint (`LIVE_COPY.ask.pickHint`). After: 1,059,547 B gzip, 453 B
 under budget.
+
+## 2026-10-04: budget raised to 1,100,000 B (`fix/live-reliability`, `fix/board-reading`)
+
+The live-reliability batch (PR #21: the Auto switch, readback under each line, zoom-aware drawings
+and columns, re-read before a ring, the tutor's hand sized to the student's) put `/board/[id]` 6.5 KB
+over 1,060,000 B. PR #22 added about 3.5 KB more: values given in a column (`src/lib/live/givens.ts`),
+answers written after a line's `=`, big desktop writing kept as writing (`diagrams.ts`), and a blank
+gap starting a new problem (`strokeClusters.ts`). That makes about 1,070,200 B gzip. This is the
+live loop itself, which reads and marks ink from the first stroke, so it cannot be lazy-loaded the
+way a dialog can. The owner chose to raise the budget rather than cut first. The new 1,100,000 B
+leaves about 30 KB of room. katex (below) is still the big lever when the next cut is needed.
 
 ## Recommendations not done here (files owned elsewhere)
 

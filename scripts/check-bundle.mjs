@@ -34,12 +34,13 @@ import { pathToFileURL } from "node:url";
 /**
  * Gzip budgets per route (bytes of first-load JS, gzip level 6 = zlib default).
  * Measured on 2026-09-17 (Next 16.2.4, tldraw 4.2.0, katex 0.18.7): /board/[id] = 918,532 B gzip
- * (897 KB); budget = measured + 15 % = 1,056,312, rounded up to the next 10 KB.
+ * (897 KB); budget = measured + 15 % = 1,056,312, rounded up to the next 10 KB. Raised to 1,100,000
+ * on 2026-10-04 for the live tutor's reading fixes (docs/BUNDLE.md has why).
  * See docs/BUNDLE.md before raising a budget.
  * @type {Readonly<Record<string, number>>}
  */
 export const BUDGETS = Object.freeze({
-  "/board/[id]": 1_060_000,
+  "/board/[id]": 1_100_000,
 });
 
 /** @typedef {{ path: string, inlined?: boolean }} CssEntry */
