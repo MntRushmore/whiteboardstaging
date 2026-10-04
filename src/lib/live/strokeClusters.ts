@@ -14,8 +14,9 @@ import type { InkLine, InkStroke, Rect } from "./contracts";
  *    adjacent) joins that neighbour.
  * Every stroke rect is inflated by max(3 px, 0.1 x median height) before the overlap /
  * gap tests so zero-height bars (F/E/T cross-bars, minus signs) join their letters.
- * Lines are then sorted top-to-bottom into columns by x-overlap >= 40 %, and a line
- * separated from the column above it by a wide blank gap starts a column of its own.
+ * Lines are then sorted top-to-bottom into columns by x-overlap >= 40 % with the last row of
+ * the column above them, and a line separated from the column above it by a wide blank gap
+ * starts a column of its own.
  *
  * The thresholds scale with the writing's own median glyph, but for a few px of slack for hairline
  * strokes and the column break's floor (`columnBreakMinPx`): page px on a desktop, scaled to the
@@ -466,13 +467,41 @@ export function newLineId(): string {
   return `ln_${hex}`;
 }
 
+/** Two boxes on one row: they overlap vertically by at least half the shorter one's height. */
+function sameRowRect(a: Rect, b: Rect): boolean {
+  return overlap1d(a.y, a.y + a.h, b.y, b.y + b.h) >= 0.5 * Math.max(1, Math.min(a.h, b.h));
+}
+
 /**
- * Assigns `column`/`row` to lines sorted top-to-bottom; mutates and returns `lines`. `zoom`: the
- * board's fit zoom, which scales the column break's floor (`inkScale`).
+ * How far right a column reaches for the line `b` written under it: the right end of the column's
+ * last row above `b` (its lowest line above `b` and the lines level with that one), not of the
+ * widest line it has ever had. With the union, one wide line — a first line written across the
+ * screen — made the column claim that width for good, and the first line of a problem started
+ * beside its later, narrower lines was pulled into it as the next step. A line level with `b` is
+ * beside it, not above it (`x = 2` and `x = 3` written apart on one row both go under the row
+ * above them). With nothing of the column above `b`, the union, as before.
+ */
+function columnRight(members: readonly Rect[], b: Rect): number {
+  const cy = b.y + b.h / 2;
+  const above = members.filter((m) => !sameRowRect(m, b) && m.y + m.h / 2 < cy);
+  const from = above.length > 0 ? above : members;
+  let last = from[0];
+  for (const m of from) if (m.y + m.h > last.y + last.h) last = m;
+  let right = -Infinity;
+  for (const m of from) if (above.length === 0 || m === last || sameRowRect(m, last)) right = Math.max(right, m.x + m.w);
+  return right;
+}
+
+/**
+ * Assigns `column`/`row` to lines sorted top-to-bottom; mutates and returns `lines`. A line joins
+ * the column whose span it overlaps most (at least `columnOverlapRatio` of the narrower): from the
+ * column's left edge — steps start at its margin or indented from it — to the right end of its last
+ * row above the line (`columnRight`). `zoom`: the board's fit zoom, which scales the column break's
+ * floor (`inkScale`).
  */
 export function assignColumns(lines: InkLine[], zoom?: number): InkLine[] {
   const sorted = [...lines].sort((a, b) => a.bounds.y - b.bounds.y || a.bounds.x - b.bounds.x);
-  const columns: Array<{ x0: number; x1: number; rows: number; bottom: number; lastH: number; y0: number }> = [];
+  const columns: Array<{ x0: number; members: Rect[]; rows: number; bottom: number; lastH: number; y0: number }> = [];
   const breakMin = CLUSTER_RULES.columnBreakMinPx * inkScale(zoom);
   for (const line of sorted) {
     const x0 = line.bounds.x;
@@ -483,8 +512,9 @@ export function assignColumns(lines: InkLine[], zoom?: number): InkLine[] {
       const gap = line.bounds.y - col.bottom;
       const breakAt = Math.max(breakMin, CLUSTER_RULES.columnBreakFactor * Math.max(line.bounds.h, col.lastH));
       if (gap > breakAt) return;
-      const ov = overlap1d(x0, x1, col.x0, col.x1);
-      const smaller = Math.max(1, Math.min(x1 - x0, col.x1 - col.x0));
+      const right = columnRight(col.members, line.bounds);
+      const ov = overlap1d(x0, x1, col.x0, right);
+      const smaller = Math.max(1, Math.min(x1 - x0, right - col.x0));
       const ratio = ov / smaller;
       if (ratio >= CLUSTER_RULES.columnOverlapRatio && ratio > bestOverlap) {
         best = idx;
@@ -493,13 +523,13 @@ export function assignColumns(lines: InkLine[], zoom?: number): InkLine[] {
     });
     const lineBottom = line.bounds.y + line.bounds.h;
     if (best === -1) {
-      columns.push({ x0, x1, rows: 1, bottom: lineBottom, lastH: line.bounds.h, y0: line.bounds.y });
+      columns.push({ x0, members: [line.bounds], rows: 1, bottom: lineBottom, lastH: line.bounds.h, y0: line.bounds.y });
       line.column = columns.length - 1;
       line.row = 0;
     } else {
       const col = columns[best];
       col.x0 = Math.min(col.x0, x0);
-      col.x1 = Math.max(col.x1, x1);
+      col.members.push(line.bounds);
       col.bottom = Math.max(col.bottom, lineBottom);
       col.lastH = line.bounds.h;
       line.column = best;

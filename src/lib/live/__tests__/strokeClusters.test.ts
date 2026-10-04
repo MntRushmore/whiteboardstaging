@@ -372,3 +372,37 @@ describe("clusterLines at the board's zoom: lines and columns as the student see
     expect(columns(0.52)).toEqual([0, 0]);
   });
 });
+
+describe("columns: a line goes under the last row above it, not under a wide line long gone", () => {
+  const columnsOf = (written: readonly InkStroke[][]) => placed(clusterLines(written.flat()), written).map((p) => p?.[0] ?? null);
+
+  it("a problem started beside the narrower later lines of one with a wide first line is a column of its own", () => {
+    // the first line reaches over where the second problem is written: with the column as wide as
+    // all its lines ever were, `y + 1 = 5` and `y = 4` were steps 4 and 5 of the first problem
+    const a = worked(["3(x + 2) + 4(x - 1) = 2x + 22", "7x + 2 = 2x + 22", "5x = 20", "x = 4"], 100, 100);
+    const b = worked(["y + 1 = 5", "y = 4"], 330, 200);
+    expect(placed(clusterLines([...a, ...b].flat()), [...a, ...b])).toEqual([
+      [0, 0],
+      [0, 1],
+      [0, 2],
+      [0, 3],
+      [1, 0],
+      [1, 1],
+    ]);
+  });
+
+  it("but a derivation is one column however its lines sit under one another", () => {
+    // a step indented under the `=`, then the next back at the margin
+    const eq = writeAt("2x + 3 = 11", 100, 100);
+    const indented = writeAt("2x = 8", 100 + widthOf("2x + 3") - widthOf("2x"), 150);
+    expect(columnsOf([eq, indented, writeAt("x = 4", 100, 200)])).toEqual([0, 0, 0]);
+    // each line starting further right than the last
+    expect(columnsOf([writeAt("3(x - 2) = 2x + 4", 100, 100), writeAt("3x - 6 = 2x + 4", 140, 150), writeAt("x - 6 = 4", 190, 200), writeAt("x = 10", 220, 250)])).toEqual([0, 0, 0, 0]);
+    // a wide first line and narrower ones under it
+    expect(columnsOf(worked(["3(x + 2) + 4(x - 1) = 2x + 22", "7x + 2 = 2x + 22", "5x = 20", "x = 4"], 100, 100))).toEqual([0, 0, 0, 0]);
+    // two answers written apart on one row, then the next line at the margin
+    const factored = writeAt("(x - 2)(x - 3) = 0", 100, 100);
+    const answers = [writeAt("x = 2", 100, 150), writeAt("x = 3", 100 + widthOf("(x - 2)(x - 3)"), 150)];
+    expect(columnsOf([factored, ...answers, writeAt("x = 2", 100, 200)])).toEqual([0, 0, 0, 0]);
+  });
+});
