@@ -18,6 +18,7 @@ export class LearningBus {
   private buffer: LearningSignal[] = [];
   private readonly signalListeners = new Set<Listener<LearningSignal>>();
   private readonly attemptListeners = new Set<Listener<AttemptRecord>>();
+  private readonly learnerListeners = new Set<Listener<LearnerHint | undefined>>();
   private hint: LearnerHint | undefined;
 
   emit(signal: LearningSignal): void {
@@ -56,6 +57,15 @@ export class LearningBus {
 
   setLearner(hint: LearnerHint | undefined): void {
     this.hint = hint;
+    for (const fn of [...this.learnerListeners]) safely(fn, hint);
+  }
+
+  /** Called each time the learner hint is set (the Ask panel's "Practice my weak spots" chip). */
+  onLearner(fn: Listener<LearnerHint | undefined>): () => void {
+    this.learnerListeners.add(fn);
+    return () => {
+      this.learnerListeners.delete(fn);
+    };
   }
 
   /** The student's learner hint, once loaded; undefined before (or for a student with no record). */

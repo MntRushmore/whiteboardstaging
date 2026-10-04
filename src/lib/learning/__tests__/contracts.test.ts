@@ -68,8 +68,11 @@ describe("LearningBus", () => {
   it("holds the learner hint until reset", () => {
     const bus = new LearningBus();
     const hint = LearnerHintSchema.parse({ recurringMistakes: [{ kind: "sign", count: 4 }] });
+    const seen: unknown[] = [];
+    bus.onLearner((h) => seen.push(h));
     bus.setLearner(hint);
     expect(bus.learner()).toBe(hint);
+    expect(seen).toEqual([hint]);
     bus.reset();
     expect(bus.learner()).toBeUndefined();
   });
