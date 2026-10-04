@@ -328,6 +328,13 @@ export interface LiveEngine {
    */
   simplifySteps?(latex: string): string[] | null;
   /**
+   * An expression in letters already written as simply as it goes (`2x^{2}`, `3x + 2`, `x^{2} + 3x +
+   * 5`): a polynomial with nothing to expand, collect, cancel or factor, in the form the engine would
+   * write it. False for anything it cannot be sure of (`\frac{8x}{2}`, `\sin x`, a relation, a
+   * number). Optional so engine doubles need not implement it.
+   */
+  alreadySimplest?(latex: string): boolean;
+  /**
    * What to graph for a column of work (the student's lines, then any solution under them),
    * top to bottom: `y = f(x)` / `f(x) = …`, a line in any form, two or three of them (with where
    * they cross), a region (`y < 2x + 1`), a circle, or — from the last line — a one-variable

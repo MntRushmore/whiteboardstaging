@@ -57,6 +57,8 @@ describe("live loop — Solve answers locally, and checks the model when it cann
   let latex: string;
   /** word problems ask /api/live/setup first; here it always fails, so the stream is the subject */
   let setupCalls: number;
+  /** the quiet notes the board showed (`deps.notify`: the toast, never the red card) */
+  let notes: string[];
 
   function makeLoop(): LiveLoop {
     const stream = async function* (path: string): AsyncGenerator<LiveSseEvent, void, undefined> {
@@ -82,6 +84,7 @@ describe("live loop — Solve answers locally, and checks the model when it cann
         reread: async () => {
           throw new Error("no second reader in this file");
         },
+        notify: (message) => notes.push(message),
       },
     );
   }
@@ -187,6 +190,7 @@ describe("live loop — Solve answers locally, and checks the model when it cann
     streamCalls = [];
     solveScript = [];
     setupCalls = 0;
+    notes = [];
     latex = "36+2=";
     fetchJson = vi.fn<FetchJson>(async (): Promise<RecognizeResponse> => ({
       latex,
@@ -266,7 +270,41 @@ describe("live loop — Solve answers locally, and checks the model when it cann
     expect(streamCalls).toEqual([]);
   });
 
+  // ------------------------------------------------------------ 1b. nothing to work out, said so
+
+  it.each([
+    // the line                 what the tutor writes under it
+    ["2x2", "= 4"], // the times sign as a phone writes it (engine `timesBetweenNumbers`)
+    ["2 \\times 2", "= 4"],
+    ["3x+2x", "= 5x"],
+  ])("Solve on %s writes %s locally", async (line, written) => {
+    await solve(line);
+    expect(handWriting()).toBe(expectedWriting([written]));
+    expect(streamCalls).toEqual([]);
+    expect(notes).toEqual([]);
+    expect(liveStore.lastError.get()).toBeNull();
+  });
+
+  it.each(["2x^{2}", "x^{2}+3x+5"])("Solve on %s, already as simple as it gets: the quiet note — no model, no error, nothing written", async (line) => {
+    await solve(line);
+    expect(notes).toEqual([LIVE_COPY.solve.simplest]);
+    expect(streamCalls).toEqual([]);
+    expect(handShapes()).toHaveLength(0);
+    expect(liveStore.lastError.get()).toBeNull();
+  });
+
   // ------------------------------------------------------------ 2. guarding the model
+
+  it("a model's answer that is a monomial (`= 4x`) is drawn — not thrown away as unreadable", async () => {
+    // one term the engine has no steps for: the model is asked, and `4x` is what it says
+    solveScript = [[step(1, "= \\frac{8}{2}x"), step(2, "\\boxed{= 4x}", true)]];
+    await solve("\\frac{8x}{2}");
+    expect(solveCalls()).toEqual(["/api/live/solve"]);
+    expect(typesetSteps()).toEqual(["= \\frac{8}{2}x", "= 4x"]);
+    expect(liveStore.lastError.get()).toBeNull();
+    expect(notes).toEqual([]);
+  });
+
 
   it("a word problem whose setup fails still reaches the stream, and its steps are drawn", async () => {
     solveScript = [[step(1, "60 \\div 2 = 30"), step(2, "\\boxed{30\\,\\mathrm{km/h}}", true)]];
