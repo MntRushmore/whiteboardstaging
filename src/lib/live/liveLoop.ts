@@ -84,11 +84,13 @@ import {
   handSeedFor,
   handSizeFor,
   inlineHandSizeFor,
+  joinHandPlans,
   placeHandPlan,
   placeHandPlanOnBaseline,
   planFromStrokes,
   planHandwriting,
   wallMsOf,
+  HAND_PART_META,
   HAND_WRITE,
   type HandPlan,
   type HandWriteOptions,
@@ -128,6 +130,8 @@ import { assignColumns, clusterLines, inkScale, rebuildFromMathShapes, unionRect
 import { buildPayload, hashPayload } from "./strokePayload";
 import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
+import { nextStep as stackNextStep, parseStacked, placesLeft, rowPlaces, workStacked, type StackedWork } from "./engine/columnArithmetic";
+import { stackGrid, stackGroups, type StackGrid, type StackedSum } from "./stackedSums";
 import { parseDomainPiece } from "./engine/domain";
 import { figureAnswer, isValueLabel, labelKey, looksLikeUnknown } from "./figure";
 import { HAND_LINE_META } from "./handwriting";
@@ -451,11 +455,49 @@ const OPERATION_RESULT_META = "operationResult";
  * line, and any values it was evaluated at, that it was written for (`answerSourceOf`)
  */
 const NEXT_STEP_META = "nextStepFor";
+/**
+ * On the digits the tutor writes into a stacked sum (`writeStackDigits`): the sum they belong to —
+ * its operator and numbers (`stackKey`) — and, per digit, where it is (`HAND_PART_META`: `a2` the
+ * answer's hundreds, `c2` a carry over them, `f2` a right digit under a wrong one). A column the
+ * tutor wrote is not written again, and a sum rewritten takes the tutor's digits with it.
+ */
+const STACK_META = "stackFor";
+/**
+ * A wrong digit in a stacked sum is ringed only on a read this sure of it: a child's sum ringed for
+ * a digit Mathpix misread is worse than one left unmarked (the second reader, which re-reads a line
+ * before its ring, reads one line, not a block). Mathpix read every stacked block at ~1.
+ */
+const STACK_RING_CONFIDENCE = 0.85;
+/** between two digits of a stacked sum the tutor writes, a beat (not a whole line's pause) */
+const STACK_DIGIT_GAP_MS = 200;
+/**
+ * A read that is a stacked sum's last row over its answer, read as a fraction: no one writes a
+ * fraction whose numerator starts with `+` or `x` — `\frac{+680}{966}` is `+ 680` over a rule over
+ * `966`. Should `stackedSums.ts` ever miss the layout, the line is still never answered as a
+ * fraction (`= 0.7039`): it is treated as a stacked sum this cannot work, quiet.
+ */
+const MISREAD_STACK = /^\s*\\frac\s*\{\s*(?:\+|\\times(?![a-zA-Z])|\\cdot(?![a-zA-Z]))/;
 /** on the strokes of a tutor's mark (tick / ring / question mark): its `markKey` */
 const MARK_META = "mark";
 /** on a question mark's strokes: why the tutor put it there (`UnjudgedReason`) */
 const MARK_WHY_META = "markWhy";
 const ANSWER_ANCHORS_META = "answerAnchors";
+
+/** A stacked sum on the board, worked (`LiveLoop.stackWork`). */
+interface StackState {
+  sum: StackedSum;
+  grid: StackGrid;
+  work: StackedWork;
+  /** its operator and numbers: what the tutor's digits in it belong to (`STACK_META`) */
+  key: string;
+}
+
+/** A digit the tutor writes into a stacked sum: on the answer row (`a`), as a carry (`c`), under a wrong answer (`f`). */
+interface StackItem {
+  row: "a" | "c" | "f";
+  place: number;
+  digit: string;
+}
 
 function metaString(meta: unknown, key: string): string {
   if (typeof meta !== "object" || meta === null) return "";
@@ -782,6 +824,8 @@ export class LiveLoop implements LiveController {
   private tableStrokeIds = new Set<string>();
   /** division bars under an equation (`splitInk`): a line holding one is read as `\div n` */
   private barStrokeIds = new Set<string>();
+  /** the stacked sums on this screen (`splitInk`, `stackedSums.ts`): each one line of its own, worked by `stackWork` */
+  private stacks: StackedSum[] = [];
   /** marks on a drawing (`splitInk` role `mark`: an angle arc, a right-angle box, a tick): a figure's (`isRealFigure`) */
   private markStrokeIds = new Set<string>();
   /** Help waiting for the latest line's read to land before it acts (`helpAfterRead`) */
@@ -962,6 +1006,7 @@ export class LiveLoop implements LiveController {
     this.dismissedFigures.clear();
     this.figuresInFlight.clear();
     this.diagrams = [];
+    this.stacks = [];
     this.labelReading.clear();
     this.labelsOf.clear();
     this.lastTouchedDiagramId = null;
@@ -1696,9 +1741,11 @@ export class LiveLoop implements LiveController {
     const prevStates = liveStore.lines.get();
     const prevLines = Object.values(prevStates).map((s) => s.line);
     // what the columns know besides the lines: what fills a gap under one, and which lines were one problem
-    const inLines = new Set<string>([...split.writing.map((s) => s.id), ...split.bars.flatMap((b) => [b.bar, ...b.divisor])]);
+    const inLines = new Set<string>([...split.writing.map((s) => s.id), ...split.bars.flatMap((b) => [b.bar, ...b.divisor]), ...split.stacks.flatMap((s) => s.strokeIds)]);
     const columns = this.columnOptions(inLines);
-    const lines = this.withProblemColumns(clusterLines(split.writing, prevLines, barGroups(split.bars, ink), { zoom: this.boardZoom(), columns }));
+    // a division bar with its divisor, and a stacked sum, are a line each whatever the clusterer makes of them
+    const fixed = [...barGroups(split.bars, ink), ...stackGroups(split.stacks, ink)];
+    const lines = this.withProblemColumns(clusterLines(split.writing, prevLines, fixed, { zoom: this.boardZoom(), columns }));
     this.rememberProblems(lines);
     const nextIds = new Set(lines.map((l) => l.id));
 
@@ -1722,8 +1769,9 @@ export class LiveLoop implements LiveController {
     this.reringUnchanged(lines, force);
 
     // What the student wrote last decides what Help is about: a line they wrote, or else a
-    // drawing (or its labels) they drew.
-    const pen = lines.find((l) => l.strokeIds.some((id) => wrote.has(id)));
+    // drawing (or its labels) they drew. A carry over a stacked sum is that sum's.
+    const carried = split.stacks.find((s) => s.marks.some((id) => wrote.has(id)));
+    const pen = lines.find((l) => l.strokeIds.some((id) => wrote.has(id))) ?? (carried && lines.find((l) => l.strokeIds.includes(carried.rule)));
     if (pen) this.lastTouchedDiagramId = null;
     else if (drawn) this.lastTouchedDiagramId = drawn.id;
     if (pen && this.penStrokeId) this.penLineId = pen.id;
@@ -1749,6 +1797,7 @@ export class LiveLoop implements LiveController {
     this.glyph = split.glyph;
     this.tableStrokeIds = new Set([...split.roles].filter(([, v]) => v.role === "table").map(([id]) => id));
     this.barStrokeIds = new Set(split.bars.map((b) => b.bar));
+    this.stacks = split.stacks;
     this.markStrokeIds = new Set([...split.roles].filter(([, v]) => v.role === "mark").map(([id]) => id));
     for (const d of gone) {
       this.labelsOf.delete(d.id);
@@ -2146,6 +2195,9 @@ export class LiveLoop implements LiveController {
     const engine = this.engine;
     const hash = line.hash;
     if (!engine || !hash || res.provider !== "mathpix" || this.rereads.has(hash) || !this.deps.isOnline()) return;
+    // a stacked sum is a block, not a line for the second reader; a doubtful read of it stays quiet
+    // (`stackAnalysis`) — and one misread as a fraction is not read again into a "plainer" fraction
+    if (this.stackOf(line) || MISREAD_STACK.test(res.latex)) return;
     const state = liveStore.lines.get()[line.id];
     if (!state || state.latex !== res.latex) return;
     const { above, below } = this.columnNeighbours(state);
@@ -2253,7 +2305,7 @@ export class LiveLoop implements LiveController {
     for (const s of this.columnLines(state.line.column)) {
       if (s.line.row >= state.line.row) break;
       const a = s.analysis;
-      if (!s.latex || !a || a.kind === "label" || a.kind === "incomplete" || a.kind === "unknown" || a.kind === "operation") continue;
+      if (!s.latex || !a || a.kind === "label" || a.kind === "incomplete" || a.kind === "unknown" || a.kind === "operation" || this.stackOf(s.line)) continue;
       previous = s;
     }
     return previous;
@@ -2269,6 +2321,8 @@ export class LiveLoop implements LiveController {
    */
   private holdRing(state: LiveLineState): boolean {
     const lineId = state.line.id;
+    // a stacked sum is judged on its own, not against a line above (its ring needs a sure read instead)
+    if (this.stackOf(state.line)) return false;
     const above = this.previousLine(state);
     if (!above || !above.line.hash || !state.line.hash) return false;
     const key = `${above.line.hash}|${state.line.hash}`;
@@ -2448,7 +2502,8 @@ export class LiveLoop implements LiveController {
     for (const a of this.headAnalyses(state.line.column)) take(a);
     for (const s of col) {
       if (s.line.row >= state.line.row) break;
-      if (!s.latex) continue;
+      // a stacked sum is a problem of its own: no line under it follows from it
+      if (!s.latex || this.stackOf(s.line)) continue;
       take(s.analysis);
     }
     // the values the rest of the column gives its letters, above it or under it (`givens.ts`):
@@ -2883,6 +2938,8 @@ export class LiveLoop implements LiveController {
     if (!this.engine || !state.latex) return null;
     // a proof's statements and reasons are checked as a proof, not one by one
     if (this.proofs.owns(state.line.id)) return PROOF_LINE;
+    // a stacked sum is worked column by column, never as a line (its rule is no fraction bar)
+    if (this.stackLike(state)) return this.stackAnalysis(state);
     try {
       return this.engine.analyzeLine(state.latex, { ...this.columnContext(state), mode: this.opts.mode });
     } catch (e) {
@@ -3131,6 +3188,8 @@ export class LiveLoop implements LiveController {
    * out is finished unasked: `2 \times 2` → `= 4` (`arithmeticAnswer`).
    */
   private autoWorkable(state: LiveLineState, kinds: ReadonlySet<LineKind>): boolean {
+    // a stacked sum: a column left to write, and nothing wrong in it (`stackLeft`)
+    if (this.stackLike(state)) return this.stackLeft(state, kinds === AUTO_STEP_KINDS);
     const a = state.analysis;
     const id = state.line.id;
     if (!a || !kinds.has(a.kind) || a.solved || !this.judgeable(state) || this.reading.has(id) || this.rt.get(id)?.checkAbort) return false;
@@ -3230,6 +3289,7 @@ export class LiveLoop implements LiveController {
     this.dropStaleAnswer(state);
     this.dropStaleNextStep(state);
     this.dropStaleOperationResult(state);
+    this.dropStaleStack(state);
     // Its column's graph follows its maths: erased when that changed, sketched when wanted (Solve, settled).
     if (!opts.keepStatus && !decision.capped) this.syncGraph(state.line.column);
     if (!decision.echo) {
@@ -3838,8 +3898,9 @@ export class LiveLoop implements LiveController {
   // ---------------------------------------------------------------- LLM check
   private buildCheckLines(column: number): { lines: CheckLine[]; region: Rect; states: LiveLineState[] } | null {
     // an operation line (`-3 \quad -3`) is not a line of working for a model to check or to
-    // solve from: the line after it follows from the equation above it (`isOperationLine`)
-    const states = this.columnLines(column).filter((s) => s.latex && !isOperationLine(s));
+    // solve from: the line after it follows from the equation above it (`isOperationLine`); a
+    // stacked sum is the engine's alone (`stackAnalysis`), and no line of anyone else's working
+    const states = this.columnLines(column).filter((s) => s.latex && !isOperationLine(s) && !this.stackLike(s));
     if (states.length === 0) return null;
     // a problem the chat wrote at the top of the column is its first line for the model too
     const head = this.columnHeads.get(column);
@@ -5424,7 +5485,8 @@ export class LiveLoop implements LiveController {
   private syncMark(state: LiveLineState, kind: MarkKind | null, why?: UnjudgedReason): void {
     const lineId = state.line.id;
     const rt = this.runtime(lineId);
-    const want = kind && this.deps.handwritingEnabled() ? markKey(kind, state.line.bounds) : null;
+    const at = kind ? this.markRect(state, kind) : state.line.bounds;
+    const want = kind && this.deps.handwritingEnabled() ? markKey(kind, at) : null;
     if (rt.markKey === want) return;
     rt.markKey = want;
     rt.markWriter?.cancel();
@@ -5451,7 +5513,7 @@ export class LiveLoop implements LiveController {
         this.runtime(lineId).markKey = null;
         return this.markDone(lineId, null);
       }
-      const plan = planFromStrokes(kind, markStrokes(kind, state.line.bounds, handSeedFor(`${lineId}:${want}`)), HAND_WRITE.minSize);
+      const plan = planFromStrokes(kind, markStrokes(kind, at, handSeedFor(`${lineId}:${want}`)), HAND_WRITE.minSize);
       if (!plan) return this.markDone(lineId, null);
       const writer = this.makeWriter();
       this.runtime(lineId).markWriter = writer;
@@ -6161,6 +6223,11 @@ export class LiveLoop implements LiveController {
     if (this.opts.mode === "off") return;
     // a proof line is checked by the proof checker (its mark is already there): no model check
     if (this.proofs.owns(target.line.id)) return;
+    // a stacked sum is checked by the engine, column by column: its marks, now (no model is asked)
+    if (this.stackLike(target)) {
+      this.render(target, this.decisionFor(target, { userAsked: true }));
+      return;
+    }
     // Asking means now: a result this line was holding back for the settle is written at once
     // (the mode gate still applies — asking in Feedback asks for feedback, not for the answer).
     if (target.analysis?.resultLatex) this.render(target, this.decisionFor(target, { userAsked: true }));
@@ -6204,6 +6271,11 @@ export class LiveLoop implements LiveController {
     if (!target || !target.latex) return;
     if (this.opts.mode !== "answer") {
       this.requestCheck(target.line.id);
+      return;
+    }
+    // a stacked sum: the digits still missing, in their columns — never a fraction's decimal
+    if (this.stackLike(target)) {
+      if (this.opts.enabled) this.solveStack(target);
       return;
     }
     // A line the student ended with `=` is finished where they left off, not restated under
@@ -6380,8 +6452,11 @@ export class LiveLoop implements LiveController {
     if (this.hasSuggestion(lineId, state.latex) || this.stepInFlight(lineId, state.latex)) return true;
     // its ring is waiting for a second look (`holdRing`): the ring, if it comes, asks again
     if (!opts.now && !opts.typed && this.chainHolds.has(lineId)) return true;
-    const step = this.rightNextStep(state);
-    if (!step) return false;
+    // a stacked sum's step is the right digit, under the wrong one in its column (`stackFix`)
+    const stacked = this.stackOf(state.line) !== null;
+    const fix = stacked ? this.stackFix(state) : null;
+    const step = stacked ? null : this.rightNextStep(state);
+    if (!step && !fix) return false;
     if (!opts.now && !this.settled) {
       this.pendingSuggestions.add(lineId);
       return true;
@@ -6389,6 +6464,14 @@ export class LiveLoop implements LiveController {
     // one pen at a time: a ring still being drawn round the line is finished first
     if (this.afterMark(lineId, () => this.suggestNextStep(lineId, opts))) return true;
     if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
+    if (fix) {
+      if (!this.writeStackDigits(state, fix.s, fix.items, { [SUGGEST_META]: state.latex, [STACK_META]: fix.s.key }) || !this.writer) return false;
+      const entry = { writer: this.writer, latex: state.latex, landed: false };
+      this.runtime(lineId).stepWriter = entry;
+      queueMicrotask(() => (entry.landed = true));
+      return true;
+    }
+    if (!step) return false;
     const { plan, unsupported } = planHandwriting([step], { size: handSizeFor(state.line.bounds.h, this.boardZoom()), seed: handSeedFor(`${lineId}:suggest`) });
     if (!plan || unsupported.length > 0) return false;
     const ink = state.line.bounds;
@@ -6554,6 +6637,193 @@ export class LiveLoop implements LiveController {
     });
   }
 
+  // ---------------------------------------------------------------- stacked (column) sums
+  //
+  // `286` over `+ 680`, a rule, `966` under it: one line (`stackedSums.ts`), read as an array and
+  // worked column by column (`engine/columnArithmetic.ts`) — never as a fraction (the `= 0.7039`
+  // the owner saw), never by a model. Marked as any line is, in every mode: a tick after a right
+  // answer, a ring round the first wrong digit (rightmost first) with its note on the readback,
+  // nothing on a partial answer that is right so far. Help writes the next column's digit and its
+  // carry, Solve the digits still missing — in the student's hand, in their columns.
+
+  /** The stacked sum this line is (its rule is one of the line's strokes), or null. */
+  private stackOf(line: InkLine): StackedSum | null {
+    return this.stacks.find((s) => line.strokeIds.includes(s.rule)) ?? null;
+  }
+
+  /** A stacked sum, or a read of one as a fraction (`MISREAD_STACK`): the engine's column work alone, never a line's. */
+  private stackLike(state: LiveLineState): boolean {
+    return this.stackOf(state.line) !== null || MISREAD_STACK.test(state.latex);
+  }
+
+  /**
+   * The stacked sum on this line, worked: the read parsed, its columns found in the ink, the
+   * student's answer judged where its digits sit. Null when the read is not a sum this can work
+   * (long multiplication, a misread, a negative difference) or does not match the ink (a row more
+   * or fewer than Mathpix read).
+   */
+  private stackWork(state: LiveLineState): StackState | null {
+    const sum = this.stackOf(state.line);
+    const read = sum && !sum.more ? parseStacked(state.latex) : null;
+    if (!sum || !read || read.operands.length !== sum.rows.length) return null;
+    const grid = stackGrid(sum, rowPlaces(read));
+    const work = workStacked(read, grid.answerLast === null ? {} : { answerLast: grid.answerLast });
+    return work ? { sum, grid, work, key: `${read.op} ${read.operands.join(" ")}` } : null;
+  }
+
+  /**
+   * A stacked sum's analysis: complete and right is `solved` (a tick); a wrong digit is a `mismatch`
+   * with its note (a ring) — only on a read sure of it (`STACK_RING_CONFIDENCE`); empty or right so
+   * far is nothing yet. A sum this cannot work is `unknown`: read back, never marked, never
+   * answered, never sent to a model.
+   */
+  private stackAnalysis(state: LiveLineState): LineAnalysis {
+    const quiet: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
+    const work = this.stackWork(state)?.work;
+    if (!work) return quiet;
+    const wrong = work.wrong !== -1;
+    if (wrong && state.confidence < STACK_RING_CONFIDENCE) return quiet;
+    return {
+      kind: wrong || work.right ? "equation" : "expression",
+      math: "",
+      resultLatex: "",
+      verdict: wrong ? "mismatch" : work.right ? "ok" : "none",
+      note: work.note,
+      ...(work.right ? { solved: true } : {}),
+    };
+  }
+
+  /** What the tutor has written into this sum already, by row (`STACK_META`, `HAND_PART_META`). */
+  private tutorStackPlaces(state: LiveLineState, key: string): Record<StackItem["row"], Set<number>> {
+    const out = { a: new Set<number>(), c: new Set<number>(), f: new Set<number>() };
+    for (const s of this.editor.getCurrentPageShapes()) {
+      if (!isLiveMeta(s.meta) || s.meta.lineId !== state.line.id || metaString(s.meta, STACK_META) !== key) continue;
+      const m = /^([acf])(\d+)$/.exec(metaString(s.meta, HAND_PART_META));
+      if (m) out[m[1] as StackItem["row"]].add(Number(m[2]));
+    }
+    return out;
+  }
+
+  /**
+   * The sum was rewritten (another number, another operator), or is no sum any more (its rule rubbed
+   * out): the digits the tutor wrote into it go. A read that does not parse for a moment keeps them.
+   */
+  private dropStaleStack(state: LiveLineState): void {
+    const stacked = this.stackOf(state.line) !== null;
+    const read = stacked ? parseStacked(state.latex) : null;
+    if (stacked && !read) return;
+    const key = read ? `${read.op} ${read.operands.join(" ")}` : "";
+    const stale = this.editor
+      .getCurrentPageShapes()
+      .filter((s) => isLiveMeta(s.meta) && s.meta.lineId === state.line.id && metaString(s.meta, STACK_META) !== "" && metaString(s.meta, STACK_META) !== key);
+    if (stale.length === 0) return;
+    this.write(() => {
+      const ids = stale.map((s) => s.id).filter((id) => this.editor.getShape(id));
+      if (ids.length > 0) this.editor.deleteShapes(ids);
+    });
+  }
+
+  /**
+   * Where a line's mark goes: round the line, or after it — and on a stacked sum, round the first
+   * wrong digit where the student wrote it, and after the answer row, level with it.
+   */
+  private markRect(state: LiveLineState, kind: MarkKind): Rect {
+    const sum = kind === "question" ? null : this.stackOf(state.line);
+    const answer = sum?.answer?.rect;
+    if (!answer) return state.line.bounds;
+    if (kind === "check") return { ...answer, w: rectMaxX(state.line.bounds) - answer.x };
+    const s = this.stackWork(state);
+    return (s && s.work.wrong !== -1 && s.grid.answerGlyph(s.work.wrong)) || answer;
+  }
+
+  /** Auto may go on with this stacked sum: read, nothing wrong, and a column (in Suggest: a next column) left. */
+  private stackLeft(state: LiveLineState, step: boolean): boolean {
+    const id = state.line.id;
+    const s = this.reading.has(id) || this.rt.get(id)?.checkAbort ? null : this.stackWork(state);
+    if (!s || s.work.wrong !== -1) return false;
+    const tutor = this.tutorStackPlaces(state, s.key).a;
+    return step ? stackNextStep(s.work, tutor) !== null : placesLeft(s.work, tutor).length > 0;
+  }
+
+  /**
+   * Help on a stacked sum (Help me in Feedback and Suggest, Suggest's stuck pause): a wrong digit
+   * gets the right one under it (`suggestNextStep`, as any ring gets its step); else the next column
+   * — its digit under the rule and the carry it sends over the column on its left, unless the
+   * student carried it already. Nothing on a sum this cannot work, or a doubtful read of one.
+   */
+  private helpStack(state: LiveLineState): void {
+    const s = this.stackWork(state);
+    if (!s) return;
+    if (s.work.wrong !== -1) {
+      if (state.analysis?.verdict === "mismatch") this.suggestNextStep(state.line.id, { now: true });
+      return;
+    }
+    const step = stackNextStep(s.work, this.tutorStackPlaces(state, s.key).a);
+    if (!step) return;
+    const items: StackItem[] = step.digits.map((d) => ({ row: "a", place: d.place, digit: String(d.digit) }));
+    if (step.carry && !s.grid.carried.has(step.carry.place)) items.push({ row: "c", place: step.carry.place, digit: String(step.carry.digit) });
+    this.writeStackDigits(state, s, items, { [STACK_META]: s.key });
+  }
+
+  /**
+   * Solve on a stacked sum: the digits still missing under the rule, right to left, each followed by
+   * the carry it sends on (not one the student wrote, nor over the empty column left of the sum),
+   * and the point of a decimal answer — or, under a wrong answer, the right one on a row under it,
+   * column for column. Nothing when it is all written.
+   */
+  private solveStack(state: LiveLineState): void {
+    const s = this.stackWork(state);
+    if (!s) return;
+    const { work, grid } = s;
+    if (work.wrong !== -1 && state.analysis?.verdict !== "mismatch") return;
+    const tutor = this.tutorStackPlaces(state, s.key);
+    const items: StackItem[] = [];
+    if (work.wrong !== -1) {
+      for (let p = 0; p < work.digits.length; p++) if (!tutor.f.has(p)) items.push({ row: "f", place: p, digit: String(work.digits[p]) });
+    } else {
+      for (const p of placesLeft(work, tutor.a)) {
+        items.push({ row: "a", place: p, digit: String(work.digits[p]) });
+        if (p === work.decimals - 1 && !work.answer.includes(".")) items.push({ row: "a", place: p + 0.5, digit: "." });
+        const carry = work.op === "-" ? 0 : (work.carries[p + 1] ?? 0);
+        if (carry > 0 && p + 1 < work.width && !grid.carried.has(p + 1) && !tutor.c.has(p + 1)) items.push({ row: "c", place: p + 1, digit: String(carry) });
+      }
+    }
+    this.writeStackDigits(state, s, items, { [STACK_META]: s.key });
+  }
+
+  /** The right digit for the first wrong place of a ringed stacked sum (Suggest beside a ring), or null. */
+  private stackFix(state: LiveLineState): { s: StackState; items: StackItem[] } | null {
+    const s = state.analysis?.verdict === "mismatch" ? this.stackWork(state) : null;
+    const p = s?.work.wrong ?? -1;
+    if (!s || p < 0 || p >= s.work.digits.length || this.tutorStackPlaces(state, s.key).f.has(p)) return null;
+    return { s, items: [{ row: "f", place: p, digit: String(s.work.digits[p]) }] };
+  }
+
+  /**
+   * Writes digits into a stacked sum in the student's hand, each centred in its column: on the answer
+   * row (`a`), small over the top row (`c`, a carry), or on a row under the answer (`f`) — one block,
+   * in the order given (right to left, as the sum is done), a beat between digits. False when the
+   * hand is off, cannot draw them, or the shape cap is reached.
+   */
+  private writeStackDigits(state: LiveLineState, s: StackState, items: readonly StackItem[], meta: JsonObject): boolean {
+    if (items.length === 0 || !this.deps.handwritingEnabled() || liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
+    const { grid } = s;
+    const size = inlineHandSizeFor(grid.digit, this.boardZoom());
+    const seed = handSeedFor(`${state.line.id}:stack`);
+    const plans: HandPlan[] = [];
+    for (const it of items) {
+      const { plan, unsupported } = planHandwriting([it.digit], { size: it.row === "c" ? Math.max(HAND_WRITE.minSize, Math.round(size * 0.55)) : size, seed: seed + plans.length });
+      if (!plan || unsupported.length > 0) return false;
+      const baselineY = it.row === "c" ? grid.carryBaseline : it.row === "f" ? grid.fixBaseline : grid.answerBaseline;
+      plans.push(placeHandPlanOnBaseline(plan, { x: grid.x(it.place) - plan.bounds.w / 2, baselineY }));
+    }
+    const block = joinHandPlans(plans, STACK_DIGIT_GAP_MS, items.map((it) => `${it.row}${it.place}`));
+    if (!block) return false;
+    this.startHandwriting(block, state.line.id, meta);
+    clientMetric("live.stack.write", { lineId: state.line.id, digits: items.length });
+    return true;
+  }
+
   private hasSuggestion(lineId: string, latex: string): boolean {
     return this.editor
       .getCurrentPageShapes()
@@ -6588,6 +6858,8 @@ export class LiveLoop implements LiveController {
     const lineId = target.line.id;
     if (this.proofs.ask(lineId, null, { all: false })) return;
     this.closeHintsFor(lineId);
+    // a stacked sum: its next column (or the right digit under a wrong one), from the engine alone
+    if (this.stackLike(target)) return this.helpStack(target);
     const wrong = target.analysis?.verdict === "mismatch" || this.modelFlagged(target);
     if (wrong) {
       if (this.suggestNextStep(lineId, { now: true })) return;
@@ -6624,6 +6896,11 @@ export class LiveLoop implements LiveController {
     if (!line) return this.workProblem(cell, depth, "chat");
     if (line.analysis?.solved) return "done";
     const column = line.line.column;
+    if (this.stackLike(line)) {
+      if (depth === "solve") this.solveStack(line);
+      else this.helpStack(line);
+      return "writing";
+    }
     if (this.continueOperation(line, { all: depth === "solve" })) return "writing";
     if (depth === "solve") {
       const lastOk = this.columnLines(column)

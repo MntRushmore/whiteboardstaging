@@ -3,6 +3,7 @@ import type { InkLine, InkStroke, Rect, StrokePayload } from "./contracts";
 import { clusterStrokeGroups, inkScale, median, medianStrokeHeight, unionRects } from "./strokeClusters";
 import { buildPayload, rdp, type Pt } from "./strokePayload";
 import { tableRules } from "./proof/table";
+import { findStackedSums, type StackedSum } from "./stackedSums";
 
 /**
  * Drawings vs writing. Pure: no editor, no DOM.
@@ -59,6 +60,11 @@ import { tableRules } from "./proof/table";
  * `2` under it a label); under the student's line it was a fraction bar, and the whole equation a
  * fraction over 2. Now the bar and the divisor are one line of their own (`InkSplit.bars`),
  * written `\div 2` for the engine (`engine/operationLine.ts`).
+ *
+ * Before anything, a third kind of rule: the one under a stacked sum (`stackedSums.ts`) — numbers
+ * right-aligned in rows, a rule, the answer under it. With a rule there is writing above and below,
+ * so it was a fraction bar: `+680` over `966` a fraction, and `= 0.7039` its "answer". The block is
+ * one line of its own (`InkSplit.stacks`), read once; its carry and borrow marks are in no line.
  */
 
 export const DIAGRAM_RULES = {
@@ -162,9 +168,10 @@ export const DIAGRAM_RULES = {
 
 /**
  * `table`: a rule of a proof's T-table (`proof/table.ts`) — neither writing nor a drawing;
- * `operation`: a "divide both sides" bar under an equation, or the divisor under it (`DivisionBar`)
+ * `operation`: a "divide both sides" bar under an equation, or the divisor under it (`DivisionBar`);
+ * `stack`: a stacked sum's rows, rule and answer (`StackedSum`); `carry`: its carry and borrow marks
  */
-export type StrokeRole = "writing" | "drawing" | "mark" | "label" | "table" | "operation";
+export type StrokeRole = "writing" | "drawing" | "mark" | "label" | "table" | "operation" | "stack" | "carry";
 export type DiagramKind = "triangle" | "quadrilateral" | "polygon" | "circle" | "axes" | "numberLine" | "arrow" | "segment" | "curve";
 
 export interface Diagram {
@@ -220,6 +227,8 @@ export interface InkSplit {
   diagrams: Diagram[];
   /** division bars under an equation, each one line of its own (its strokes are in no other) */
   bars: DivisionBar[];
+  /** stacked sums, each one line of its own (`StackedSum.strokeIds`); their marks are in none */
+  stacks: StackedSum[];
   /** the glyph scale G the split was made with (page px) */
   glyph: number;
   roles: Map<string, StrokeVerdict>;
@@ -1106,6 +1115,7 @@ const writingOnly = (strokes: InkStroke[], glyph: number, reason = "glyph"): Ink
   writing: strokes,
   diagrams: [],
   bars: [],
+  stacks: [],
   glyph,
   roles: new Map(strokes.map((s) => [s.id as string, { role: "writing" as const, reason }])),
 });
@@ -1122,6 +1132,20 @@ export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagr
   const all = [...strokes];
   const G = glyphScale(all, opts.zoom);
   if (all.length === 0) return writingOnly(all, G);
+  // A stacked sum (`286` over `+ 680` over a rule): one line of its own, its carries in none. Set
+  // aside before the rule could be a fraction bar (two short rows of digits make no drawing either,
+  // so this comes before the cheap exit below: a one-digit sum's rule is under two glyphs long).
+  const stacks = findStackedSums(all, G);
+  if (stacks.length > 0) {
+    const taken = new Set<string>(stacks.flatMap((s) => [...s.strokeIds, ...s.marks]));
+    const split = splitInk(all.filter((s) => !taken.has(s.id)), previous, opts);
+    for (const s of stacks) {
+      for (const id of s.strokeIds) split.roles.set(id, { role: "stack", reason: "a stacked sum, read as one" });
+      for (const id of s.marks) split.roles.set(id, { role: "carry", reason: "a carry or borrow mark" });
+    }
+    split.stacks = [...stacks, ...split.stacks];
+    return split;
+  }
   // Nothing on the screen longer than two glyphs: no drawing (the common case, and cheap).
   if (all.every((s) => Math.max(s.bounds.w, s.bounds.h) < R.mediumFactor * G)) return writingOnly(all, G);
   // A proof's T-table: its rules are set aside, so the rows it separates are read as lines.
@@ -1414,7 +1438,7 @@ export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagr
     else roles.set(all[g.i].id, roleOf.get(g.i) ?? { role: "writing", reason: reasons.get(g.i) ?? "glyph" });
   });
   const writing = all.filter((s) => roles.get(s.id)?.role === "writing");
-  return { writing, diagrams, bars: [], glyph: G, roles };
+  return { writing, diagrams, bars: [], stacks: [], glyph: G, roles };
 }
 
 /**
