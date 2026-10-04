@@ -1,6 +1,8 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { LIVE_COPY } from "@/components/live/copy";
 import type { TLShapeId } from "tldraw";
 import { boundsOf, DRAWINGS, labelAt, writeAt, type Drawing } from "@/__eval__/drawings";
+import { VARIANTS } from "@/__eval__/handwriting";
 import { createFakeEditor, type FakeEditor } from "../__fixtures__/fakeEditor";
 import { drawShapeFromPoints } from "../__fixtures__/strokes";
 import { settle, settleStable, settleUntil } from "@/lib/live/__fixtures__/settle";
@@ -72,6 +74,8 @@ describe("live loop — drawings", () => {
   let labelRead: string;
   let setupReply: string[] | Error;
   let setupBodies: SetupRequest[];
+  /** the quiet notes the board showed (`deps.notify`) */
+  let notes: string[];
 
   const recognizeBodies = () => fetchJson.mock.calls.map((c) => c[1] as RecognizeRequest);
   const lineReads = () => recognizeBodies().filter((b) => !b.lineId.startsWith("dg_"));
@@ -102,6 +106,7 @@ describe("live loop — drawings", () => {
         reread: async () => {
           throw new Error("no second reader in this file");
         },
+        notify: (message) => notes.push(message),
       },
     );
     loop.start();
@@ -143,6 +148,7 @@ describe("live loop — drawings", () => {
     labelRead = "\\begin{array}{l}\nx \\\\\n3 \\\\\n4\n\\end{array}";
     setupReply = PYTHAGORAS;
     setupBodies = [];
+    notes = [];
     fetchJson = vi.fn<FetchJson>(async (_path, body): Promise<RecognizeResponse> => {
       const req = body as RecognizeRequest;
       const latex = req.lineId.startsWith("dg_") ? labelRead : lineRead;
@@ -274,7 +280,71 @@ describe("live loop — drawings", () => {
     expect(setupBodies).toHaveLength(2);
     expect(setupBodies[1].lines).toEqual([]);
     expect(tutorInk()).toEqual([]);
-    expect(liveStore.lastError.get()).toMatchObject({ kind: "solve", message: "Couldn't work this out" });
+    expect(liveStore.lastError.get()).toMatchObject({ kind: "solve", message: LIVE_COPY.solve.failed });
+  });
+
+  // ------------------------------------------------------------ writing taken for a drawing
+  /**
+   * The prod bug: `2x2` written with a finger on a phone, Solve it, "Couldn't work this out". Written
+   * that large the ink comes apart into "drawings" (`splitInk`); the figure model was asked what the
+   * figure asks and rightly said nothing. Now a drawing that is no figure is read as maths first.
+   */
+  const largeInk = (latex: string) => writeAt(latex, 150, 200, VARIANTS[0], 8);
+  const inkReads = () => recognizeBodies().filter((b) => b.lineId.startsWith("ink_"));
+
+  it("Solve on `2x2` written large and taken for drawings: read as one line of maths, `= 4` beside it, no figure model", async () => {
+    lineRead = "2x2";
+    const ink = largeInk("2x2");
+    await draw(ink);
+    // the misreading this is about: no line, only drawings, none of them a figure
+    expect(liveStore.diagrams.get().length).toBeGreaterThan(1);
+    expect(Object.keys(liveStore.lines.get())).toEqual([]);
+    await run(() => loop.requestSolve());
+
+    // one read of the WHOLE row — every stroke — not of the piece that was touched last
+    expect(inkReads()).toHaveLength(1);
+    expect(inkReads()[0].strokes.x).toHaveLength(ink.reduce((n, st) => n + st.segments.length, 0));
+    expect(setupBodies).toEqual([]);
+    expect(handLinesOf(tutorInk())).toEqual(["= 4"]);
+    const right = Math.max(...ink.map((st) => st.bounds.x + st.bounds.w));
+    const below = Math.max(...ink.map((st) => st.bounds.y + st.bounds.h));
+    expect(tutorInk().every((sh) => sh.x >= right || sh.y >= below)).toBe(true);
+    expect(liveStore.lastError.get()).toBeNull();
+    expect(liveStore.solving.get()).toBe(0);
+
+    // asking again: the answer is there already, nothing new is written and nothing else is asked
+    const written = tutorInk().length;
+    await run(() => loop.requestHelp());
+    expect(tutorInk()).toHaveLength(written);
+    expect(setupBodies).toEqual([]);
+  });
+
+  it("an expression with nothing to do (`2x^{2}`), written large: the note, not an error and not the figure model", async () => {
+    lineRead = "2x^{2}";
+    await draw(largeInk("2x^{2}"));
+    await run(() => loop.requestSolve());
+    expect(inkReads()).toHaveLength(1);
+    expect(setupBodies).toEqual([]);
+    expect(tutorInk()).toEqual([]);
+    expect(notes).toEqual([LIVE_COPY.solve.simplest]);
+    expect(liveStore.lastError.get()).toBeNull();
+  });
+
+  it("ink that does not read as maths goes on to the figure model, as before", async () => {
+    lineRead = "\\nearrow \\searrow";
+    await draw(largeInk("2x2"));
+    await run(() => loop.requestSolve());
+    expect(inkReads()).toHaveLength(1);
+    expect(setupBodies).toHaveLength(1);
+    expect(setupBodies[0].crop).toBe(CROP);
+  });
+
+  it("a real figure is never read as a line of maths", async () => {
+    const tri = triangleAt(400, 200);
+    await draw([...tri.strokes, ...tri.labels.flat()]);
+    await run(() => loop.requestHelp());
+    expect(inkReads()).toEqual([]);
+    expect(setupBodies).toHaveLength(1);
   });
 
   it("a drawing stroke does not hold back a line waiting to be read", async () => {

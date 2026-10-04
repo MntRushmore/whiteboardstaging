@@ -7,6 +7,7 @@ import {
   definedSymbol,
   engineParsesStep,
   isIntervalAnswer,
+  isMonomial,
   localAnswerFor,
   localAnswerStep,
   mathSymbols,
@@ -161,6 +162,37 @@ describe("solveSteps: the interlock on a streamed step", () => {
     ["", false],
   ])("engineParsesStep(%s)", (latex, expected) => {
     expect(parses(latex)).toBe(expected);
+  });
+
+  // `4x` is a label to the engine (a lone `2x` on the page names something), so the model's right
+  // answer to `3x + x` was refused, every step with it, and Solve said "Couldn't work this out"
+  it.each([
+    ["4x", true],
+    ["= 4x", true],
+    ["\\boxed{4x}", true],
+    ["-2y", true],
+    ["x", true],
+    ["3ab^{2}", true],
+    ["\\frac{1}{2}\\theta", true],
+    ["= 5x", true],
+    // not letters, or not maths
+    ["\\sin", false],
+    ["\\cdot x", false],
+    ["\\text{x}", false],
+  ])("a monomial answer is a step: engineParsesStep(%s) = %s", (latex, expected) => {
+    expect(parses(latex)).toBe(expected);
+  });
+
+  it("isMonomial: one term, a number times letters to whole powers", () => {
+    for (const yes of ["4x", "-2y", "x", "3ab^{2}", "\\frac{1}{2}\\theta", "2.5x^2", "7 x"]) expect(isMonomial(yes), yes).toBe(true);
+    for (const no of ["4x + 1", "x\\frac{1}{2}", "\\sin x", "2\\cdot x", "4", "x^{y}", "\\text{x}", ""]) expect(isMonomial(no), no).toBe(false);
+  });
+
+  it("a solution that ends in a monomial is drawn whole", () => {
+    const guard = createSolveStepGuard({ sourceLatex: ["3x + x"], parses });
+    expect(["= 4x"].map((s) => guard.check(s).ok)).toEqual([true]);
+    // its letters are still checked: a monomial in a name from nowhere is not
+    expect(guard.check("= 4r").ok).toBe(false);
   });
 });
 

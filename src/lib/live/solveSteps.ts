@@ -18,6 +18,7 @@
  *     seen. `r` and `\varepsilon` appeared from nowhere; that is what this rejects.
  */
 import type { AnalyzeContext, LineAnalysis, LiveEngine } from "./contracts";
+import { timesBetweenNumbers } from "./engine/latex";
 import { continueLine } from "./engine/solution";
 
 // ---------------------------------------------------------------- LaTeX symbols
@@ -104,7 +105,8 @@ function stripDifferentials(latex: string): string {
 }
 
 export function mathSymbols(latex: string): string[] {
-  const src = stripTextMacros(stripDifferentials(latex ?? ""));
+  // `2x2` is 2 × 2 to the engine (`timesBetweenNumbers`): its x is a times sign, not a name
+  const src = stripTextMacros(stripDifferentials(timesBetweenNumbers(latex ?? "")));
   const out: string[] = [];
   const add = (name: string) => {
     if (!out.includes(name)) out.push(name);
@@ -304,6 +306,10 @@ export function engineParsesStep(engine: Pick<LiveEngine, "analyzeLine">, latex:
   // A bare number is a 'label' to the engine (a problem number written on the page). As the
   // body of a solve step it is the answer, so it is read here rather than thrown away.
   if (/^[-+]?\d+(?:\.\d+)?$/.test(body.replace(/\\,|[\s,]/g, ""))) return true;
+  // So is a monomial (`4x`, `-\frac{1}{2}y`, `3ab`): a label to the engine too (a lone `2x` on the
+  // page names something), but as a step it is what `3x + x =` simplifies to. Rejecting it threw the
+  // whole solution away and the student got "Couldn't work this out" for a right answer.
+  if (isMonomial(body)) return true;
   let analysis: LineAnalysis;
   try {
     analysis = engine.analyzeLine(body, { mode: "answer" });
@@ -312,6 +318,27 @@ export function engineParsesStep(engine: Pick<LiveEngine, "analyzeLine">, latex:
   }
   if (!analysis || analysis.kind === "unknown" || analysis.kind === "incomplete" || analysis.kind === "text") return false;
   return Boolean(analysis.math?.trim());
+}
+
+const MONOMIAL_COEFFICIENT = String.raw`(?:\d+(?:\.\d+)?|\\frac\{\d+\}\{\d+\})`;
+const MONOMIAL_FACTOR = String.raw`(?:[a-zA-Z]|\\([a-zA-Z]+))(?:\^(?:\d|\{-?\d+\}))?`;
+const MONOMIAL = new RegExp(String.raw`^[-+]?${MONOMIAL_COEFFICIENT}?(?:${MONOMIAL_FACTOR})+$`);
+
+/**
+ * A number times letters, each to a whole power: `4x`, `-2y`, `x`, `3ab^{2}`, `\frac{1}{2}\theta`.
+ * Letters only from the alphabet and the Greek quantity names — never a function or an operator
+ * (`\sin`, `\cdot`), so nothing but a single term can pass. Whether its letters belong to the work
+ * is the symbol check's job, not this one's.
+ */
+export function isMonomial(latex: string): boolean {
+  const s = (latex ?? "").replace(/\\[,;!]|\\ |\s/g, "");
+  if (!MONOMIAL.test(s)) return false;
+  // `\frac` only as the coefficient, in front; every other command a Greek letter
+  const lead = /^[-+]?/.exec(s)?.[0].length ?? 0;
+  for (const m of s.matchAll(/\\([a-zA-Z]+)/g)) {
+    if (m[1] === "frac" ? m.index !== lead : !GREEK_SYMBOLS.has(m[1])) return false;
+  }
+  return true;
 }
 
 const INTERVAL_END = String.raw`(?:-?\s*\\infty|[-+]?\s*\d+(?:\.\d+)?|[-+]?\s*\\frac\s*\{\s*-?\d+\s*\}\s*\{\s*\d+\s*\}|[-+]?\s*\d*\\sqrt\s*\{\s*\d+\s*\}|[-+]?\s*\d*\\pi)`;
@@ -371,7 +398,9 @@ export function localAnswerFor(engine: LiveEngine, latex: string, ctx: Omit<Anal
   if (direct) return direct;
   if (!analysis.math.trim()) return null;
   if (mathSymbols(line).length > 0) return null;
-  return usable(safely(() => engine.calculate(line))?.latex);
+  // `calculate` reads a line with no backslash as calculator text, where `2x2` keeps its x: the
+  // times sign goes in as LaTeX, as every other reader of the line sees it
+  return usable(safely(() => engine.calculate(timesBetweenNumbers(line)))?.latex);
 }
 
 /**

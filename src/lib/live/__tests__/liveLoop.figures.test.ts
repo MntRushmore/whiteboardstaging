@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import { boundsOf, DRAWINGS, writeAt, type Drawing } from "@/__eval__/drawings";
+import { LIVE_COPY } from "@/components/live/copy";
+import { angleArc, angleLabel, boundsOf, DRAWINGS, Pen, writeAt, type Drawing } from "@/__eval__/drawings";
 import { createFakeEditor, type FakeEditor } from "../__fixtures__/fakeEditor";
 import { drawShapeFromPoints } from "../__fixtures__/strokes";
 import { settle, settleStable } from "@/lib/live/__fixtures__/settle";
@@ -66,6 +67,8 @@ describe("live loop — a figure worked out unasked", () => {
   let reply: SetupResponse | Error;
   let setupBodies: SetupRequest[];
   let streams: string[];
+  /** the quiet notes the board showed (`deps.notify`: the toast, never the red card) */
+  let notes: string[];
 
   function start(mode: UseLiveMathOptions["mode"] = "answer"): void {
     loop?.stop();
@@ -92,6 +95,7 @@ describe("live loop — a figure worked out unasked", () => {
         reread: async () => {
           throw new Error("no second reader in this file");
         },
+        notify: (message) => notes.push(message),
       },
     );
     loop.start();
@@ -140,6 +144,7 @@ describe("live loop — a figure worked out unasked", () => {
     reply = FACTS;
     setupBodies = [];
     streams = [];
+    notes = [];
     fetchJson = vi.fn<FetchJson>(async (_path, body): Promise<RecognizeResponse> => {
       const req = body as RecognizeRequest;
       const latex = req.lineId.startsWith("dg_") ? labelRead : lineRead;
@@ -359,12 +364,86 @@ describe("live loop — a figure worked out unasked", () => {
     expect(handLinesOf(tutorInk())).toEqual(BLOCK);
   });
 
+  // ------------------------------------------------------------ nothing asked; not a figure
+
+  const NOTHING_ASKED: SetupResponse = { lines: [], reason: "nothing_asked", model: "google/gemini-3.1-flash-lite", ms: 700 };
+
+  it("asked on the drawing, a figure that asks nothing: a quiet note, never the red card; asking again costs nothing", async () => {
+    start("feedback");
+    reply = NOTHING_ASKED;
+    labelRead = "\\begin{array}{l}\nA \\\\\nB\n\\end{array}";
+    await draw(inkOf(triangleAt(300, 200)));
+    await run(() => loop.requestHelp());
+    expect(setupBodies).toHaveLength(1);
+    expect(tutorInk()).toEqual([]);
+    expect(liveStore.lastError.get()).toBeNull();
+    expect(notes).toEqual([LIVE_COPY.solve.nothingAsked]);
+    await run(() => loop.requestHelp());
+    expect(setupBodies).toHaveLength(1);
+    expect(notes).toEqual([LIVE_COPY.solve.nothingAsked, LIVE_COPY.solve.nothingAsked]);
+    expect(liveStore.lastError.get()).toBeNull();
+  });
+
+  it("unasked, a figure that asks nothing is silent and not asked again", async () => {
+    reply = NOTHING_ASKED;
+    await draw(inkOf(triangleAt(300, 200)));
+    await stop();
+    expect(setupBodies).toHaveLength(1);
+    await draw(writeAt("y", 1200, 750));
+    await stop();
+    expect(setupBodies).toHaveLength(1);
+    expect(notes).toEqual([]);
+    expect(liveStore.lastError.get()).toBeNull();
+    expect(tutorInk()).toEqual([]);
+  });
+
+  /** Two lines crossing (open strokes), labelled x and 40°; with an arc in the x angle when `marked`. */
+  function crossingAt(x: number, y: number, marked: boolean): InkStroke[] {
+    const pen = new Pen(`cross${x}_${marked ? 1 : 0}`, 3);
+    const v = { x: x + 150, y: y + 100 };
+    const a = { x, y: y + 20 }, b = { x: x + 300, y: y + 180 }, c = { x: x + 40, y: y + 200 }, d = { x: x + 260, y };
+    const strokes = [pen.stroke(a, b), pen.stroke(c, d)];
+    if (marked) strokes.push(angleArc(pen, v, a, c, 24));
+    return [...strokes, ...angleLabel("x", v, a, c, 60), ...angleLabel("40^{\\circ}", v, a, d, 60)];
+  }
+
+  it("unasked, open strokes with nothing on them are not a figure: not sent, whatever their labels say", async () => {
+    // the prod bug: every pause in Solve sent large writing the board took for a drawing to the figure model
+    labelRead = "\\begin{array}{l}\nx \\\\\n40^{\\circ}\n\\end{array}";
+    await draw(crossingAt(300, 200, false));
+    await stop();
+    // a labelled drawing, its labels read (`x` asks): only that it is no figure keeps it from the model
+    expect(liveStore.diagrams.get()).toEqual([expect.objectContaining({ labels: 2, read: ["x", "40^{\\circ}"] })]);
+    expect(liveStore.diagrams.get().every((d) => !d.kinds.some((k) => ["triangle", "quadrilateral", "polygon", "circle"].includes(k)))).toBe(true);
+    expect(setupBodies).toEqual([]);
+    expect(liveStore.lastError.get()).toBeNull();
+  });
+
+  it("unasked, lines carrying an angle mark are a figure: sent", async () => {
+    labelRead = "\\begin{array}{l}\nx \\\\\n40^{\\circ}\n\\end{array}";
+    reply = { lines: ["x + 40 = 180"], unknown: "x", model: "m", ms: 900, figure: { source: "lines", reason: "r", kind: "angle" } };
+    await draw(crossingAt(300, 200, true));
+    await stop();
+    expect(setupBodies).toHaveLength(1);
+  });
+
+  it.each([
+    ["a lone unknown", "x"],
+    ["an expression with nothing to find it from", "2x+10"],
+    ["two letters", "\\begin{array}{l}\nx \\\\\ny\n\\end{array}"],
+  ])("unasked, a figure whose labels give %s is not sent", async (_what, read) => {
+    labelRead = read;
+    await draw(inkOf(triangleAt(300, 200)));
+    await stop();
+    expect(setupBodies).toEqual([]);
+  });
+
   it("asked on the drawing, a facts reply the engine disagrees with shows the pill and writes nothing", async () => {
     start("feedback");
     reply = { ...FACTS, figure: { source: "facts", stages: [{ letter: "x", lines: ["x + 40 + 65 = 180"], value: 70, kind: "angle" }] } };
     await draw(inkOf(triangleAt(300, 200)));
     await run(() => loop.requestHelp());
     expect(tutorInk()).toEqual([]);
-    expect(liveStore.lastError.get()).toMatchObject({ kind: "solve", message: "Couldn't work this out" });
+    expect(liveStore.lastError.get()).toMatchObject({ kind: "solve", message: LIVE_COPY.solve.failed });
   });
 });

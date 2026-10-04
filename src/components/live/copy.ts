@@ -87,6 +87,20 @@ export const LIVE_COPY = {
     nothingYet: "Write a line of maths first, then tap Help me",
   },
 
+  /**
+   * What Solve (and Help on a drawing) says when it has nothing to write. The two notes are not
+   * errors — nothing failed, there is just nothing to work out yet — so they come as a quiet toast,
+   * never the red card; `failed` is the one that is, and says what to try next.
+   */
+  solve: {
+    /** the tutor read the drawing (or the ink) and nothing on it asks for anything */
+    nothingAsked: "Nothing to solve here yet — write what to find, like x = ?",
+    /** a lone expression already in its simplest form (`2x^{2}`): nothing to simplify, nothing to solve */
+    simplest: "This is as simple as it gets — add = something to solve",
+    /** Solve genuinely could not answer: no step it was given held up */
+    failed: "Couldn't solve this one — try writing it again a bit clearer",
+  },
+
   modeInfo: {
     title: "Live",
     body:

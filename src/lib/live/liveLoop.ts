@@ -1,5 +1,6 @@
 "use client";
 
+import { toast } from "sonner";
 import { Box, createShapeId } from "tldraw";
 import type {
   Editor,
@@ -123,10 +124,10 @@ import {
 import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient";
 import { assignColumns, clusterLines, rebuildFromMathShapes, unionRects, type EchoShapeSeed } from "./strokeClusters";
 import { buildPayload, hashPayload } from "./strokePayload";
-import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type InkSplit } from "./diagrams";
+import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
 import { parseDomainPiece } from "./engine/domain";
-import { figureAnswer, labelKey, looksLikeUnknown } from "./figure";
+import { figureAnswer, isValueLabel, labelKey, looksLikeUnknown } from "./figure";
 import { HAND_LINE_META } from "./handwriting";
 import { requestProof } from "./proof/client";
 import type { ProofRequest, ProofResponse } from "./proof/contracts";
@@ -211,6 +212,12 @@ export interface LiveLoopDeps {
   planFigure: (spec: FigureSpec, opts: FigurePlanOptions) => FigurePlanResult | null;
   /** lecture mode's planners (`src/lib/live/lecture/plan.ts`); absent, they are loaded on the first lecture run */
   lecturePlanners?: LecturePlanners | LoadLecturePlanners;
+  /**
+   * A quiet note for the student that is not an error — Solve with nothing to work out
+   * (`LIVE_COPY.solve`): the board's toast, as the ask button's "Write a line of maths first". Never
+   * `liveStore.lastError`, whose red card and Retry say something failed.
+   */
+  notify: (message: string) => void;
 }
 
 interface LineRuntime {
@@ -305,6 +312,14 @@ const FIGURE_CROP_WIDTH = 768;
  */
 const FIGURES_DISMISSED_META = "liveFiguresDismissed";
 const MAX_FIGURE_DISMISSALS = 20;
+/** The closed shapes `splitInk` recognizes (`Diagram.kinds`): a drawing with one is a figure (`isRealFigure`). */
+const FIGURE_SHAPES: ReadonlySet<DiagramKind> = new Set<DiagramKind>(["triangle", "quadrilateral", "polygon", "circle"]);
+/**
+ * Help tapped while the latest line is still being read: how often it looks whether the read has
+ * landed, and for how long at most — the recognizer's own timeout and a moment more.
+ */
+const HELP_READ_POLL_MS = 100;
+const HELP_READ_WAIT_MS = LIVE_TIMING.recognizeTimeoutMs + 1_000;
 
 /** Recognition failures that leave a chip under the ink (the pill carries the rest). */
 const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream", "timeout", "unknown"]);
@@ -361,10 +376,13 @@ const CHECK_PATH = "/api/live/check";
 const SOLVE_PATH = "/api/live/solve";
 const UNREADABLE_NOTE = "Couldn't read this — tap to type it";
 /**
- * Shown when every step the solve stream sent failed the local interlock. It goes through the
- * same path as a server-sent solve error, so the student gets the pill, the inline card and
- * the Retry they already know — and nothing is drawn.
+ * Shown when every step the solve stream sent failed the local interlock, or a figure's reply did
+ * not hold up. It goes through the same path as a server-sent solve error, so the student gets the
+ * pill, the inline card and the Retry they already know — and nothing is drawn. It says what to
+ * try next: the usual reason is a line or a drawing the tutor could not make sense of.
  */
+const SOLVE_FAILED = LIVE_COPY.solve.failed;
+/** The same failure for a proof's next row the checker could not confirm (`ProofDesk`). */
 const UNUSABLE_SOLUTION = "Couldn't work this out";
 /** Dispatched on window by the math shape's warn/ok badge: `detail: { lineId, shapeId }`. */
 export const BADGE_TAP_EVENT = "live:badge-tap";
@@ -523,6 +541,9 @@ function defaultDeps(): LiveLoopDeps {
     reread: (req, opts) => requestReread(req, opts),
     proof: (req, opts) => requestProof(req, opts),
     planFigure: (spec, opts) => defaultPlanFigure(spec, opts),
+    notify: (message) => {
+      toast(message);
+    },
   };
 }
 
@@ -678,6 +699,10 @@ export class LiveLoop implements LiveController {
   private tableStrokeIds = new Set<string>();
   /** division bars under an equation (`splitInk`): a line holding one is read as `\div n` */
   private barStrokeIds = new Set<string>();
+  /** marks on a drawing (`splitInk` role `mark`: an angle arc, a right-angle box, a tick): a figure's (`isRealFigure`) */
+  private markStrokeIds = new Set<string>();
+  /** Help waiting for the latest line's read to land before it acts (`helpAfterRead`) */
+  private helpWaitTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** the board chat's hand: its actions, one block at a time (`src/lib/live/chat/desk.ts`) */
   private readonly chat: ChatDesk;
@@ -810,6 +835,8 @@ export class LiveLoop implements LiveController {
     this.quietTimer = null;
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
+    if (this.helpWaitTimer) clearTimeout(this.helpWaitTimer);
+    this.helpWaitTimer = null;
     this.settled = false;
     // Leaving the board / unmounting must not freeze a half-written step on the canvas.
     this.finishWriting();
@@ -1568,6 +1595,7 @@ export class LiveLoop implements LiveController {
     this.glyph = split.glyph;
     this.tableStrokeIds = new Set([...split.roles].filter(([, v]) => v.role === "table").map(([id]) => id));
     this.barStrokeIds = new Set(split.bars.map((b) => b.bar));
+    this.markStrokeIds = new Set([...split.roles].filter(([, v]) => v.role === "mark").map(([id]) => id));
     for (const d of gone) {
       this.labelsOf.delete(d.id);
       if (this.editor.getCurrentPageShapes().some((s) => isLiveMeta(s.meta) && s.meta.lineId === d.id)) this.deleteLineShapes(d.id);
@@ -3364,6 +3392,14 @@ export class LiveLoop implements LiveController {
     // own — `y = 2x + 1` has no steps, its graph IS the answer, and no model is asked for one.
     const graphed = this.solveGraph(opts, local, built);
     if (local || graphed) return local && local.steps.length === 0 && !graphed ? "nothing" : "local";
+    // A lone expression already as simple as it goes (`2x^{2}`): there is nothing to solve, and a
+    // model asked for its "solution" wrote the line back (dropped) or nothing — Solve looked dead.
+    // The student is told what would make it a question instead.
+    if (!opts.problem && this.alreadySimplest(built, opts)) {
+      this.deps.notify(LIVE_COPY.solve.simplest);
+      clientMetric("live.solve.simplest", { lineId: opts.lineId });
+      return "nothing";
+    }
     if (!this.deps.isOnline()) {
       this.deferLlm("solve", opts.lineId);
       return "deferred";
@@ -3384,6 +3420,13 @@ export class LiveLoop implements LiveController {
     return "model";
   }
 
+  /** Solve's line is a lone expression in letters with nothing left to do to it (`engine.alreadySimplest`). */
+  private alreadySimplest(built: BuiltColumn, opts: SolveOpts): boolean {
+    const asked = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
+    if (!asked?.latex || asked.analysis?.kind !== "expression") return false;
+    return this.engine?.alreadySimplest?.(asked.latex) === true;
+  }
+
   /**
    * A word problem: a model sets it up, the engine solves the setup (`startSetup`); the worked
    * solution from the solve model is only the fallback.
@@ -3400,6 +3443,118 @@ export class LiveLoop implements LiveController {
   /** The drawing the student touched last, when their last ink was a drawing and not a line. */
   private touchedDiagram(): Diagram | null {
     return this.lastTouchedDiagramId ? (this.diagrams.find((d) => d.id === this.lastTouchedDiagramId) ?? null) : null;
+  }
+
+  /**
+   * Solve / Help with a drawing the last thing touched. A real figure (`isRealFigure`) is read as a
+   * figure (`startFigure`). Anything else is first read as a line of maths (`solveInkAsMaths`):
+   * `2x2` written large on a phone was taken for three drawings, the figure model was asked what the
+   * "figure" asks, said nothing, and the student got "Couldn't work this out" for 2 × 2. Only when
+   * the ink is not maths the engine can answer does the figure model get its turn.
+   */
+  private askAboutDrawing(diagram: Diagram, opts: SolveOpts): void {
+    if (this.isRealFigure(diagram) || !this.engine) {
+      this.startFigure(diagram, opts);
+      return;
+    }
+    // the pill says "Solving…" while the ink is read, as it does for the figure
+    liveStore.status.set("checking");
+    liveStore.solving.set(liveStore.solving.get() + 1);
+    void this.solveInkAsMaths(diagram, opts)
+      .catch((err) => {
+        console.warn("[live] reading the drawing as maths failed", err);
+        return false;
+      })
+      .then((settled) => {
+        liveStore.solving.set(Math.max(0, liveStore.solving.get() - 1));
+        if (!settled && this.started && this.diagrams.some((d) => d.id === diagram.id)) {
+          this.startFigure(diagram, opts);
+          return;
+        }
+        if (liveStore.status.get() !== "offline") liveStore.status.set("idle");
+      });
+  }
+
+  /**
+   * The drawing's ink — and the non-figure drawings and writing on its row, which is how large
+   * writing comes apart (`inkRowOf`) — read as ONE line of maths, and answered by the engine alone
+   * (`localSolve`): `= 4` beside `2x2`, or the note that `2x^{2}` has nothing to do. Never a model's
+   * answer: ink that is not clearly maths goes on to the figure. True when that settled it (written,
+   * a note, or the loop stopped); false: read it as a figure.
+   */
+  private async solveInkAsMaths(diagram: Diagram, opts: SolveOpts): Promise<boolean> {
+    const engine = this.engine;
+    if (!engine) return false;
+    const row = this.inkRowOf(diagram);
+    const line: InkLine = { id: diagram.id, strokeIds: row.strokes.map((st) => st.id), bounds: row.bounds, column: 0, row: 0, hash: "" };
+    const payload = buildPayload(line, row.strokes);
+    if (!payload) return false;
+    const hash = await hashPayload(payload);
+    if (!this.deps.isOnline() && !this.deps.recognizer.peek(hash)) return false;
+    const req: RecognizeRequest = { boardId: this.opts.boardId, lineId: `ink_${diagram.id}`, strokes: { x: payload.x, y: payload.y }, bounds: { w: payload.w, h: payload.h } };
+    let res: RecognizeResponse;
+    try {
+      res = await this.deps.recognizer.recognize(req, hash);
+    } catch {
+      return false;
+    }
+    if (!this.started) return true;
+    const latex = (res.latex ?? "").trim();
+    // a read the recognizer is not sure of is a picture's, not a line's
+    if (!latex || res.kind !== "math" || res.confidence < LIVE_LIMITS.minConfidence) return false;
+    let kind: LineAnalysis["kind"] | null = null;
+    try {
+      kind = engine.analyzeLine(latex, { mode: "answer" }).kind;
+    } catch {
+      kind = null;
+    }
+    if (kind !== "expression" && kind !== "equation" && kind !== "inequality") return false;
+    const hand = this.deps.handwritingEnabled();
+    const local = localSolve(engine, [latex], 0, { handwriting: hand });
+    clientMetric("live.figure.asMaths", { diagramId: diagram.id, source: local.source ?? "", kinds: diagram.kinds.join(","), strokes: row.strokes.length });
+    if (local.source && local.steps.length > 0) {
+      const key = `ink: ${latex}`;
+      if (opts.onlyFirstStep || !this.hasHandSolution(diagram.id, key)) {
+        if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return true;
+        // beside the whole row of ink, not just the piece of it that was touched
+        this.writeFigureSolution({ ...diagram, bounds: row.bounds }, null, opts, local.steps, key);
+      }
+      this.noteSuccess("solve", diagram.id);
+      return true;
+    }
+    if (engine.alreadySimplest?.(latex)) {
+      this.deps.notify(LIVE_COPY.solve.simplest);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * The drawing's strokes and labels, and every stroke on the same row as them that is no figure's:
+   * level with the ink gathered so far (overlapping half its height) and within a glyph-sized gap of
+   * it, grown until nothing more joins. `2x2` written with a finger came apart into a `2` (a
+   * drawing), an `x` (labels, or a line of its own) and a `2`: read alone, the touched piece is `2`.
+   */
+  private inkRowOf(diagram: Diagram): { strokes: InkStroke[]; bounds: Rect } {
+    const ink = this.collectInk();
+    const figures = new Set<string>(this.diagrams.filter((d) => d.id !== diagram.id && this.isRealFigure(d)).flatMap((d) => [...d.strokeIds, ...d.labels.flat()]));
+    const members = new Set<string>([...diagram.strokeIds, ...diagram.labels.flat()]);
+    const own = ink.filter((st) => members.has(st.id));
+    let box = own.length > 0 ? unionRects(own.map((st) => st.bounds)) : diagram.bounds;
+    for (let grown = true; grown; ) {
+      grown = false;
+      for (const st of ink) {
+        if (members.has(st.id) || figures.has(st.id)) continue;
+        const b = st.bounds;
+        const overlap = Math.min(b.y + b.h, box.y + box.h) - Math.max(b.y, box.y);
+        const gap = Math.max(0, b.x - (box.x + box.w), box.x - (b.x + b.w));
+        if (overlap < 0.5 * Math.min(b.h, box.h) || gap > Math.max(box.h, 2 * this.glyph)) continue;
+        members.add(st.id);
+        box = unionRects([box, b]);
+        grown = true;
+      }
+    }
+    return { strokes: ink.filter((st) => members.has(st.id)), bounds: box };
   }
 
   /** The drawing beside a column of work, if one is near enough to be what it is about. */
@@ -3466,7 +3621,9 @@ export class LiveLoop implements LiveController {
    * One model call per figure-and-labels version (`figureKey`): the reply is kept
    * (`figureReplies`), so asking again, or the unasked path at the next settle, costs nothing. From
    * a line, a figure that gives nothing falls back to the word problem / solve paths; asked on the
-   * drawing, the pill says it could not work it out, with Retry. Unasked, every failure is silent.
+   * drawing, the pill says it could not work it out, with Retry — unless the model said nothing on it
+   * asks for anything (`reason: "nothing_asked"`), which is no failure: a quiet note on what to write
+   * (`deps.notify`). Unasked, every outcome but an answer is silent.
    */
   private startFigure(diagram: Diagram, opts: SolveOpts, from?: { built: BuiltColumn; fromLineId: string | undefined }, unasked = false): void {
     const engine = this.engine;
@@ -3491,8 +3648,8 @@ export class LiveLoop implements LiveController {
     liveStore.status.set("checking");
     liveStore.solving.set(liveStore.solving.get() + 1);
     void (async () => {
-      /** written: on the page; fallback: nothing usable; stop: nothing more to do */
-      let outcome: "written" | "fallback" | "stop" = "fallback";
+      /** written: on the page; fallback: nothing usable; nothing: the model says nothing is asked; stop: nothing more to do */
+      let outcome: "written" | "fallback" | "nothing" | "stop" = "fallback";
       let reason = "";
       let source = "";
       let key = "";
@@ -3529,6 +3686,8 @@ export class LiveLoop implements LiveController {
           }
           if (res && outcome !== "stop") {
             if (ctrl.signal.aborted || !this.started) outcome = "stop";
+            // the model read it and nothing on it asks for anything: not a failure, nothing to write
+            else if (res.reason === "nothing_asked") outcome = "nothing";
             else {
               const answer = figureAnswer(engine, res, [...labels, ...column]);
               source = answer.source;
@@ -3562,12 +3721,15 @@ export class LiveLoop implements LiveController {
         liveStore.solving.set(Math.max(0, liveStore.solving.get() - 1));
       }
       clientMetric("live.figure", { outcome, reason, source, called, unasked, ms: this.deps.now() - startedAt, lineId: opts.lineId, kinds: diagram.kinds.join(","), fromLine: Boolean(from) });
-      if (outcome === "fallback" && !ctrl.signal.aborted && this.started && !unasked) {
+      if ((outcome === "fallback" || outcome === "nothing") && !ctrl.signal.aborted && this.started && !unasked) {
         if (from) {
           this.solveWithoutFigure(from.built, from.fromLineId, opts);
           return;
         }
-        this.fail(sseFailure({ error: "unusable_steps", message: UNUSABLE_SOLUTION }), errCtx, retry);
+        // Asked on the drawing. Nothing asked is what to write next, quietly — the red card and its
+        // Retry would say something broke, and asking again would only be told the same.
+        if (outcome === "nothing") this.deps.notify(LIVE_COPY.solve.nothingAsked);
+        else this.fail(sseFailure({ error: "unusable_steps", message: SOLVE_FAILED }), errCtx, retry);
       }
       if (outcome === "written") this.noteSuccess("solve", opts.lineId);
       if (liveStore.status.get() !== "offline") liveStore.status.set("idle");
@@ -3628,10 +3790,27 @@ export class LiveLoop implements LiveController {
     return this.started && this.opts.enabled && this.opts.mode === "answer" && this.settled && this.engine !== null;
   }
 
-  /** A drawing the unasked path may look at: labelled, a figure (not a graph's axes), not being solved, nothing written beside it. */
+  /**
+   * A drawing the unasked path may look at: labelled, a real figure (`isRealFigure`; not a graph's
+   * axes), not being solved, nothing written beside it. Every pause in Solve used to send any
+   * labelled "drawing" to the figure model — writing the board took for a drawing included — and
+   * every such call came back with nothing.
+   */
   private figureWanted(d: Diagram): boolean {
     if (d.labels.length === 0 || d.kinds.includes("axes") || d.kinds.includes("numberLine")) return false;
-    return !this.runtime(d.id).solveAbort && this.nothingBeside(d);
+    return this.isRealFigure(d) && !this.runtime(d.id).solveAbort && this.nothingBeside(d);
+  }
+
+  /**
+   * A drawing that is a figure, as `splitInk` sees it: a closed shape (a triangle, a quadrilateral,
+   * a polygon, a circle), or lines carrying marks (an angle arc, a right-angle box, ticks) — angles
+   * on a line, parallel lines. Axes and a number line are drawings too, a graph's. What is left —
+   * open strokes with nothing on them — is as likely to be large writing (`2x2` written with a
+   * finger on a phone came out as three "drawings") as a picture.
+   */
+  private isRealFigure(d: Diagram): boolean {
+    if (d.kinds.some((k) => FIGURE_SHAPES.has(k) || k === "axes" || k === "numberLine")) return true;
+    return d.strokeIds.some((id) => this.markStrokeIds.has(id));
   }
 
   /** No line of writing within reach of the drawing (`x = ?` beside it is a question for Solve). */
@@ -3656,7 +3835,7 @@ export class LiveLoop implements LiveController {
     // it changed while its labels were being read: the next stop looks again
     const inkOf = (x: Diagram) => [...x.strokeIds, ...x.labels.flat()];
     if (!current || !sameStrokeSet(inkOf(current), inkOf(d))) return;
-    if (!labels.some(looksLikeUnknown) || labels.some((l) => /\b(given|prove)\b/i.test(l))) return;
+    if (!unaskedFigureLabels(labels)) return;
     const key = figureKey(d, labels, []);
     if (this.dismissedFigures.has(key) || this.figureReplies.get(key) === null || this.figuresInFlight.has(key)) return;
     if (this.hasHandSolution(d.id, key)) return;
@@ -3975,7 +4154,7 @@ export class LiveLoop implements LiveController {
         // to leave the student staring at a page where Solve visibly did nothing.
         if (!failed && drawn === 0 && discarded > 0) {
           failed = true;
-          this.fail(sseFailure({ error: "unusable_steps", message: UNUSABLE_SOLUTION }), errCtx, retry);
+          this.fail(sseFailure({ error: "unusable_steps", message: SOLVE_FAILED }), errCtx, retry);
         }
       } catch (err) {
         if (!isAbortLike(err) && !ctrl.signal.aborted) {
@@ -4942,7 +5121,7 @@ export class LiveLoop implements LiveController {
     // Solve with a drawing the last thing drawn (or picked): the tutor reads the figure.
     const figure = lineId ? null : this.helpTargetDiagram();
     if (figure && this.opts.enabled && this.opts.mode === "answer") {
-      this.startFigure(figure, { lineId: figure.id });
+      this.askAboutDrawing(figure, { lineId: figure.id });
       return;
     }
     let target = lineId ? liveStore.lines.get()[lineId] : this.helpTargetLine();
@@ -5002,6 +5181,41 @@ export class LiveLoop implements LiveController {
   requestHelp(): boolean {
     if (!this.opts.enabled || this.opts.mode === "off") return false;
     liveStore.askedAt.set(this.deps.now());
+    // The line it is about is still being read: Help acts once the read lands, not on the empty
+    // read the line has now — that drew a "?" ("write it again") beside ink nobody had read yet.
+    if (this.helpAfterRead()) return true;
+    return this.helpNow();
+  }
+
+  /**
+   * Help tapped while the latest line is still being read (`reading`): it waits for that read — at
+   * most the recognizer's own timeout and a moment (`HELP_READ_WAIT_MS`) — then helps with what was
+   * read; a read that never lands gets what an unread line gets. A second tap joins the wait. True
+   * while Help is waiting; false when there is nothing in flight to wait for.
+   */
+  private helpAfterRead(): boolean {
+    const target = this.helpTargetLine();
+    if (!target || !this.reading.has(target.line.id)) return false;
+    if (this.helpWaitTimer) return true;
+    const lineId = target.line.id;
+    const deadline = this.deps.now() + HELP_READ_WAIT_MS;
+    const look = () => {
+      this.helpWaitTimer = null;
+      if (!this.started) return;
+      if (this.reading.has(lineId) && this.deps.now() < deadline) {
+        this.helpWaitTimer = setTimeout(look, HELP_READ_POLL_MS);
+        return;
+      }
+      this.helpNow();
+    };
+    this.helpWaitTimer = setTimeout(look, HELP_READ_POLL_MS);
+    clientMetric("live.help.waitRead", { lineId });
+    return true;
+  }
+
+  /** `requestHelp` on what is on the page now. */
+  private helpNow(): boolean {
+    if (!this.opts.enabled || this.opts.mode === "off") return false;
     // On a two-column proof (or its figure): the next row — in Solve, the rest of the proof.
     if (this.proofs.ask(this.helpTargetLine()?.line.id ?? null, this.helpTargetDiagram(), { all: this.opts.mode === "answer" })) return true;
     // The student's last ink was a drawing (or its labels): the tutor reads the figure — in Solve
@@ -5009,7 +5223,7 @@ export class LiveLoop implements LiveController {
     // never gets a "?": it is not ink that failed to read as maths.
     const figure = this.helpTargetDiagram();
     if (figure) {
-      this.startFigure(figure, { lineId: figure.id, onlyFirstStep: this.opts.mode !== "answer" });
+      this.askAboutDrawing(figure, { lineId: figure.id, onlyFirstStep: this.opts.mode !== "answer" });
       return true;
     }
     const target = this.helpTargetLine();
@@ -5440,6 +5654,21 @@ export function normalizeStep(latex: string): string {
 export function figureKey(diagram: Pick<Diagram, "strokeIds"> & Partial<Pick<Diagram, "labels">>, labels: readonly string[], column: readonly string[]): string {
   const ink = [...diagram.strokeIds, ...(diagram.labels ?? []).flat()].sort().join(",");
   return `figure: ${handSeedFor(ink)} | ${labels.map(labelKey).join(", ")} | ${column.join(" ; ")}`;
+}
+
+/**
+ * A figure's labels that ask for something, clearly enough to work it out unasked: an unknown
+ * (`x`, `?`, `2x + 10`, `θ`) and something known to find it from — another value with a number in it
+ * (`40°`, `5`, `3x`). A lone `x`, `x` and `y`, vertex names, a proof's Given / Prove: not sent.
+ */
+export function unaskedFigureLabels(labels: readonly string[]): boolean {
+  if (labels.some((l) => /\b(given|prove)\b/i.test(l))) return false;
+  const unknowns = labels.filter(looksLikeUnknown);
+  if (unknowns.length === 0) return false;
+  const numbered = labels.filter((l) => isValueLabel(l) && /\d/.test(l));
+  // something to find it from: a number that is not the unknown itself (`2x + 10` alone is not), or
+  // a second expression in it (`x` and `3x` on a straight line)
+  return numbered.some((l) => !looksLikeUnknown(l)) || (numbered.length > 0 && unknowns.length > 1);
 }
 
 /**

@@ -184,6 +184,7 @@ export function preprocessLatex(latex: string): string {
   s = s.replace(/∞/g, "\\infty ").replace(/≤/g, "\\le ").replace(/≥/g, "\\ge ").replace(/≠/g, "\\ne ").replace(/≈/g, "\\approx ");
   s = s.replace(/\\(?:checkmark|square|blacksquare|qed|hfill|newline|par|noindent|allowbreak)\b/g, " ").replace(/[✓✔☐■□]/g, " ");
   s = s.replace(/＝/g, "=");
+  s = timesBetweenNumbers(s);
   // `5^{2} + 12^{2} \stackrel{?}{=} 13^{2}`: a check is an equation to test
   s = s.replace(/\\(?:stackrel|overset)\s*\{\s*\?\s*\}\s*\{\s*=\s*\}/g, "=");
   s = s.replace(/\\text\s*\{\s*\}/g, " ");
@@ -191,6 +192,41 @@ export function preprocessLatex(latex: string): string {
   // geometry names: `m\angle A` is `\angle A`, and `AB` in a geometry line is one length (`geometryNotation.ts`)
   s = markGeometry(s.replace(/\s+/g, " ").trim());
   return s.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * `2x2`, `2 x 2`, `3x4 = 12`: the times sign as it is written in a hurry or with a finger on a
+ * phone — the letter x between two numbers. Read as the product of the numbers (`2 \times 2`), so
+ * Solve writes `= 4` and Feedback ticks `2x2 = 4`; before, it was `2 · x · 2`, an expression in x
+ * with nothing to work out, and Solve went to a model for it.
+ *
+ * Only when EVERY x on the line sits between two numbers: one x used as a letter anywhere on it —
+ * `x = 2x2`, `2x^{2}`, `2x + 3`, `x2`, `\frac{d}{dx}`, `\text{x}` — and the line reads x as a letter,
+ * as it always has. The column above is deliberately not consulted: under `x = 4`, the check
+ * `2x4 + 3 = 11` is 2 × 4 + 3 (the student putting the answer back in), which is exactly this reading.
+ */
+export function timesBetweenNumbers(latex: string): string {
+  if (!latex.includes("x")) return latex;
+  const at: number[] = [];
+  for (let i = 0; i < latex.length; i++) {
+    const ch = latex[i];
+    if (ch === "\\") {
+      // a command (`\times`, `\max`, `\exp`) is not the letter; nor is an escaped symbol (`\,`)
+      const cmd = /^\\[a-zA-Z]+/.exec(latex.slice(i));
+      i += cmd ? cmd[0].length - 1 : 1;
+      continue;
+    }
+    if (ch !== "x") continue;
+    let before = i - 1;
+    while (before >= 0 && latex[before] === " ") before--;
+    let after = i + 1;
+    while (after < latex.length && latex[after] === " ") after++;
+    if (!/\d/.test(latex[before] ?? "") || !/\d/.test(latex[after] ?? "")) return latex;
+    at.push(i);
+  }
+  let out = latex;
+  for (const i of at.reverse()) out = `${out.slice(0, i)} \\times ${out.slice(i + 1)}`;
+  return out;
 }
 
 const INSTRUCTION_VERBS = "graph|plot|sketch|draw|solve|simplify|evaluate|factor|factori[sz]e|expand|find|calculate|compute|differentiate|integrate";
