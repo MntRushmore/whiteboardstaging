@@ -3,8 +3,11 @@
  * cleaned, how batches are split and ordered, and what each failure is called (the tracker retries
  * only "network" and "unknown").
  */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { LEARNING_LIMITS, type AttemptRecord } from "../contracts";
+import { COURSE_IDS } from "@/lib/onboarding/courseIds";
+import { ATTEMPT_ORIGINS, LEARNING_LIMITS, MISTAKE_KINDS, OUTCOMES, SKILL_IDS, type AttemptRecord } from "../contracts";
 
 type Row = Record<string, unknown>;
 interface Reply {
@@ -491,5 +494,39 @@ describe("loadAttempts", () => {
     expect(e.message).toMatch(/learning record/);
     fake.select = () => failWith("42501", 403);
     expect((await caught(store.loadAttempts())).code).toBe("unauthorized");
+  });
+});
+
+// ------------------------------------------------------------------ the database agrees with the contract
+
+describe("the migration's lists and limits match the contract", () => {
+  const sql = readFileSync(resolve(__dirname, "../../../../supabase/migrations/20261004000000_learning.sql"), "utf8");
+  /** the quoted values of the first `in (...)` after `marker` */
+  const listAfter = (marker: string): string[] => {
+    const at = sql.indexOf(marker);
+    expect(at, marker).toBeGreaterThan(-1);
+    const list = /in \(([^)]*)\)/.exec(sql.slice(at))?.[1] ?? "";
+    return [...list.matchAll(/'([^']*)'/g)].map((m) => m[1]);
+  };
+
+  it("course, origin, outcome and mistake kinds are the code's lists (a new value needs a migration first)", () => {
+    expect(listAfter("constraint learning_attempts_course_known")).toEqual([...COURSE_IDS]);
+    expect(listAfter("constraint learning_attempts_origin_known")).toEqual([...ATTEMPT_ORIGINS]);
+    expect(listAfter("constraint learning_attempts_outcome_known")).toEqual([...OUTCOMES]);
+    expect(listAfter("if k not in")).toEqual([...MISTAKE_KINDS]);
+  });
+
+  it("every skill id fits the skill format", () => {
+    const format = /skill ~ '([^']+)'/.exec(sql)?.[1];
+    expect(format).toBe("^[a-z0-9_]{1,40}$");
+    for (const id of SKILL_IDS) expect(id).toMatch(new RegExp(format ?? "^$"));
+  });
+
+  it("the limits are LEARNING_LIMITS", () => {
+    expect(sql).toContain(`char_length(problem_latex) between 1 and ${LEARNING_LIMITS.problemLatex}`);
+    expect(sql).toContain(`active_ms between 0 and ${LEARNING_LIMITS.maxActiveMs}`);
+    expect(sql.match(/between 0 and 32767/g)).toHaveLength(7);
+    expect(LEARNING_LIMITS.maxCount).toBe(32_767);
+    expect(sql).toContain("'^(0|[1-9][0-9]{0,3})$'"); // a mistake count: 0..9999, as LearnerHintSchema
   });
 });
