@@ -101,10 +101,24 @@ export const LIVE_COPY = {
     failed: "Couldn't solve this one — try writing it again a bit clearer",
   },
 
+  /**
+   * The Auto switch beside the help tabs: on, the tutor helps by itself when the student stops
+   * writing; off, only when they tap the ask button. One word on the switch itself.
+   */
+  auto: {
+    label: "Auto",
+    onHint: "Auto is on: your tutor checks and helps when you stop writing",
+    offHint: "Auto is off: your tutor waits until you ask",
+  },
+
+  /** The notes under the modes in the help-modes explainer (Board options → "How help modes work"). */
   modeInfo: {
     title: "Live",
     body:
-      "Underneath all three modes, your handwriting is typeset into neat maths as you write. In Feedback, Suggest and Solve each new line is also checked against the one above it. You can switch this off under Board options.",
+      "In every mode the tutor reads each line as you write it and shows it as neat maths for a moment, so you can see what it read. You can switch Live off under Board options.",
+    autoTitle: "Auto",
+    autoBody:
+      "With Auto on, the tutor helps by itself when you stop writing: it marks each step, checks lines it is not sure about, writes the next step in Suggest when you seem stuck and finishes the problem in Solve. With Auto off, it waits until you tap Help me or Solve it, then marks that problem and helps.",
   },
 
   errors: {

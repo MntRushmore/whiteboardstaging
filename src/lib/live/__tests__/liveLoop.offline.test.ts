@@ -303,7 +303,7 @@ describe("live loop — offline queue and replay", () => {
     await settle(6);
     expect(streamCalls).toEqual(["/api/live/check"]);
     // Once only: nothing else is retried later.
-    await vi.advanceTimersByTimeAsync(LIVE_TIMING.unknownIdleMs * 2);
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.stuckMs * 2);
     await settle(6);
     expect(streamCalls).toHaveLength(1);
   });

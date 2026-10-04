@@ -133,7 +133,7 @@ describe("live loop — screens", () => {
     const screen2 = editor.addPage({ screen: { ...DEFAULT_SCREEN } });
     editor.switchPage(screen2);
     editor.switchPage(editor.store.allRecords().find((r) => r.typeName === "page" && r.id !== screen2)!.id as typeof screen2);
-    await vi.advanceTimersByTimeAsync(LIVE_TIMING.unknownIdleMs + 100);
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.stuckMs + 100);
     expect(fetchJson.mock.calls.length).toBe(reads);
     expect(streamCalls).toEqual([]);
   });

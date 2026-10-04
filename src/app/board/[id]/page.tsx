@@ -56,7 +56,7 @@ import { InkMeter } from "@/components/billing/InkMeter";
 import { inkTone } from "@/lib/billing/inkSummary";
 import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { OutOfInkWatcher } from "@/components/billing/OutOfInkWatcher";
-import { clearInkErrorIfAffordable } from "@/lib/live/liveStore";
+import { noteInkBalance } from "@/lib/live/liveStore";
 import { captureBoardScreenshot } from "@/components/board/boardScreenshot";
 import { BETA_COPY } from "@/components/app/BetaBadge";
 import { useFeatureLabs } from "@/lib/featureLabs";
@@ -75,7 +75,7 @@ import { SaveStatus } from "@/components/live/SaveStatus";
 import { LiveHintLayer } from "@/components/live/LiveHintLayer";
 import { BOARD_BAR_ATTR } from "@/components/live/hintPlacement";
 import { LiveErrorBoundary } from "@/components/live/LiveErrorBoundary";
-import { ASSET_COPY } from "@/components/live/copy";
+import { ASSET_COPY, LIVE_COPY } from "@/components/live/copy";
 import { boardToolbarView } from "@/components/live/toolbar";
 import { AskButton } from "@/components/live/AskButton";
 import { BoardChatPanel, CHAT_TOGGLE_ATTR } from "@/components/chat/BoardChatPanel";
@@ -220,6 +220,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     boardId: id,
     mode: assistanceMode,
     enabled: liveEnabled,
+    auto: live.auto,
   });
   // Lecture mode: the mic and the tutor sketching what is said. Not gated on Live or the help
   // mode: the controller's lecture methods work whatever they say.
@@ -255,6 +256,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     mode: assistanceMode,
     liveEnabled: live.enabled,
     liveAvailable: !LIVE_KILL_SWITCH,
+    auto: live.auto,
   });
 
   return (
@@ -320,6 +322,27 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
               <TabsTrigger value="answer" className={HELP_TAB_CLASS}>Solve</TabsTrigger>
             </TabsList>
           </Tabs>
+          {/*
+            Auto: the tabs say how much help, this says when — by itself once the student pauses
+            (on), or only on the ask button (off). The whole pill is the touch target (32 px tall).
+            A plain button with role="switch" rather than the Radix switch: the board's first load is
+            at its budget, and this needs nothing a button does not already do.
+          */}
+          {toolbar.autoSwitch && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={toolbar.autoSwitch.on}
+              title={toolbar.autoSwitch.hint}
+              onClick={() => updateLive({ auto: !toolbar.autoSwitch?.on })}
+              className="group flex h-8 shrink-0 cursor-pointer select-none items-center gap-1.5 rounded-full border bg-white pl-2.5 pr-1.5 text-xs font-medium shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {LIVE_COPY.auto.label}
+              <span aria-hidden className="inline-flex h-5 w-9 items-center rounded-full bg-input p-0.5 transition-colors group-aria-checked:bg-primary">
+                <span className="block size-4 rounded-full bg-background shadow transition-transform group-aria-checked:translate-x-4" />
+              </span>
+            </button>
+          )}
           {/* stuck? the one thing to tap: the next step, or in Solve the rest of them */}
           {toolbar.askButton && (
             <AskButton
@@ -363,8 +386,9 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
             />
           </LiveErrorBoundary>
           {/* ink left; tapping it (or its "Get ink" when low) opens the ink dialog */}
-          {/* once the balance covers the refused call again (a pack landed), its "out of ink" pill goes */}
-          <InkMeter onBalance={clearInkErrorIfAffordable} />
+          {/* once the balance covers the refused call again (a pack landed), its "out of ink" pill goes;
+              with none left, Auto spends nothing */}
+          <InkMeter onBalance={noteInkBalance} />
           <Button
             variant="outline"
             size="sm"

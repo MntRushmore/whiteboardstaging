@@ -238,6 +238,7 @@ describe("live loop — a figure worked out unasked", () => {
     editor.removeUser(tutorInk().map((s) => s.id));
     await settle();
     expect((editor.getCurrentPage().meta as Record<string, unknown>).liveFiguresDismissed).toEqual([key]);
+    lineRead = "y"; // read as what it is: a stray letter, nothing for Auto to finish
     await draw(writeAt("y", 1200, 750));
     await stop();
     expect(tutorInk()).toEqual([]);
@@ -309,6 +310,7 @@ describe("live loop — a figure worked out unasked", () => {
     await stop();
     expect(setupBodies).toHaveLength(1);
     expect(liveStore.lastError.get()).toBeNull();
+    lineRead = "y"; // read as what it is: a stray letter, nothing for Auto to finish
     await draw(writeAt("y", 1200, 750));
     await stop();
     expect(setupBodies).toHaveLength(1);
@@ -354,6 +356,7 @@ describe("live loop — a figure worked out unasked", () => {
     await settle(20);
     expect(setupBodies).toHaveLength(1);
     // pen down somewhere else, then the reply
+    lineRead = "y"; // read as what it is: a stray letter, nothing for Auto to finish
     await draw(writeAt("y", 1200, 750));
     release!();
     await settle(20);
