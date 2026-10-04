@@ -1,6 +1,6 @@
 import type { TLShapeId } from "tldraw";
 import type { InkLine, InkStroke, Rect, StrokePayload } from "./contracts";
-import { clusterStrokeGroups, median, medianStrokeHeight, unionRects } from "./strokeClusters";
+import { clusterStrokeGroups, inkScale, median, medianStrokeHeight, unionRects } from "./strokeClusters";
 import { buildPayload, rdp, type Pt } from "./strokePayload";
 import { tableRules } from "./proof/table";
 
@@ -17,7 +17,10 @@ import { tableRules } from "./proof/table";
  *  1. The glyph scale G: the median stroke height (in practice the x-height, ~12 px for the tutor's
  *     44 px hand), measured again without the strokes plainly bigger than it (a drawing of many
  *     strokes would otherwise set it), capped at `glyphMax` so a screen with nothing but a drawing
- *     on it still has a scale.
+ *     on it still has a scale. The cap is what a big hand looks like on a desktop, so it is scaled
+ *     to the board's zoom (`SplitOptions.zoom`, `inkScale`): on a phone held upright the board is
+ *     shown at a fifth of its size and the same hand is five times bigger in page px — capped at
+ *     30 px, `2x2` written 130 px tall was two "big curves" and a label, and never read.
  *  2. Each stroke by its own shape. Under `bigFactor` x G both ways it is a glyph (a `0` is closed
  *     and a `1` straight: size is what makes a drawing). Bigger: a long DIAGONAL (a triangle's
  *     side, a sketched line) or a BIG shape both ways (a circle, a triangle in one stroke, a
@@ -64,7 +67,8 @@ export const DIAGRAM_RULES = {
   /**
    * The glyph scale is clamped to this range (page px). The cap is what gives a screen with only
    * a drawing on it a scale (its own strokes would otherwise be the "glyphs"); the tutor's hand
-   * writes ~44 px lines on a 1600 x 900 screen.
+   * writes ~44 px lines on a 1600 x 900 screen. The cap is for a desktop: it is multiplied by
+   * `inkScale` of the board's zoom (`SplitOptions.zoom`).
    */
   glyphMin: 8,
   glyphMax: 30,
@@ -192,6 +196,12 @@ export interface SplitOptions {
    * (`chat/cells.ts`), each as the box of its ink. A bar drawn under one is a division bar.
    */
   equations?: readonly Rect[];
+  /**
+   * The board's fit zoom (screen px per page px, `editor.getBaseZoom()`): ~0.2 on a phone held
+   * upright, ~0.5 on an iPad, ~1 on a desktop. The glyph cap is scaled by it (`glyphScale`), so
+   * handwriting is judged by how big it looks on the student's screen. None: a desktop.
+   */
+  zoom?: number;
 }
 
 export interface InkSplit {
@@ -408,15 +418,17 @@ export function strokeLooksDrawn(stroke: InkStroke, glyph: number): boolean {
 
 /**
  * The glyph scale: the median stroke height, then again without the strokes that are plainly
- * bigger than that (a drawing of many strokes would otherwise set it), clamped.
+ * bigger than that (a drawing of many strokes would otherwise set it), clamped. `zoom`: the
+ * board's fit zoom — the cap is `glyphMax` on a desktop and `inkScale` times that below zoom 1.
  */
-export function glyphScale(strokes: readonly InkStroke[]): number {
+export function glyphScale(strokes: readonly InkStroke[], zoom?: number): number {
   const R = DIAGRAM_RULES;
-  if (strokes.length === 0) return R.glyphMax;
+  const max = R.glyphMax * inkScale(zoom);
+  if (strokes.length === 0) return max;
   const g0 = medianStrokeHeight([...strokes]);
   const small = strokes.filter((s) => Math.max(s.bounds.w, s.bounds.h) < R.bigFactor * g0);
   const g = small.length > 0 ? medianStrokeHeight(small) : g0;
-  return Math.min(R.glyphMax, Math.max(R.glyphMin, g));
+  return Math.min(max, Math.max(R.glyphMin, g));
 }
 
 // ---------------------------------------------------------------- evidence
@@ -1004,12 +1016,13 @@ const writingOnly = (strokes: InkStroke[], glyph: number, reason = "glyph"): Ink
  * Splits the screen's ink into handwriting and drawings (see the module comment). `previous`
  * keeps diagram ids stable: a drawing reuses the id of the previous one sharing at least half
  * of its strokes. `opts.equations`: the tutor's problems on the screen, which a division bar may
- * be drawn under. Deterministic and pure.
+ * be drawn under; `opts.zoom`: the board's fit zoom, which scales the glyph cap. Deterministic and
+ * pure.
  */
 export function splitInk(strokes: readonly InkStroke[], previous: readonly Diagram[] = [], opts: SplitOptions = {}): InkSplit {
   const R = DIAGRAM_RULES;
   const all = [...strokes];
-  const G = glyphScale(all);
+  const G = glyphScale(all, opts.zoom);
   if (all.length === 0) return writingOnly(all, G);
   // Nothing on the screen longer than two glyphs: no drawing (the common case, and cheap).
   if (all.every((s) => Math.max(s.bounds.w, s.bounds.h) < R.mediumFactor * G)) return writingOnly(all, G);

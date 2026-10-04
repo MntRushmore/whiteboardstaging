@@ -179,6 +179,8 @@ export interface LiveEditorLike {
   toImage?: Editor["toImage"];
   /** the tool state (`draw.drawing`: a stroke is being drawn); optional: test editors have no tools */
   isIn?(path: string): boolean;
+  /** the camera's fit zoom (`boardZoom`); optional: test editors have no camera */
+  getBaseZoom?(): number;
 }
 
 export type StreamFn = (path: string, body: unknown, opts?: StreamOptions) => AsyncGenerator<LiveSseEvent, void, undefined>;
@@ -1319,7 +1321,7 @@ export class LiveLoop implements LiveController {
     }
     if (seeds.length === 0) return;
     const bounds = this.strokeBoundsMap();
-    const rebuilt = rebuildFromMathShapes(seeds, bounds);
+    const rebuilt = rebuildFromMathShapes(seeds, bounds, this.boardZoom());
     // a second readback of a line rebuilt from another one: one line, one echo
     const kept = new Set<string>(rebuilt.map((r) => r.mathShapeId));
     const extra = seeds.filter((s) => s.lineId && !kept.has(s.shapeId) && s.anchorIds.some((id) => bounds.has(id))).map((s) => s.shapeId);
@@ -1383,7 +1385,7 @@ export class LiveLoop implements LiveController {
     const { split, touched: drawn } = this.splitDrawings(ink, dirty);
     const prevStates = liveStore.lines.get();
     const prevLines = Object.values(prevStates).map((s) => s.line);
-    const lines = this.withProblemColumns(clusterLines(split.writing, prevLines, barGroups(split.bars, ink)));
+    const lines = this.withProblemColumns(clusterLines(split.writing, prevLines, barGroups(split.bars, ink), { zoom: this.boardZoom() }));
     const nextIds = new Set(lines.map((l) => l.id));
 
     for (const prev of prevLines) if (!nextIds.has(prev.id)) this.dropLine(prev.id);
@@ -1422,7 +1424,7 @@ export class LiveLoop implements LiveController {
    */
   private splitDrawings(ink: InkStroke[], dirty: ReadonlySet<string>): { split: InkSplit; touched: Diagram | null } {
     // the tutor's problems are equations a division bar may be drawn under (their ink is not ink here)
-    const split = splitInk(ink, this.diagrams, { equations: this.problemEquations() });
+    const split = splitInk(ink, this.diagrams, { equations: this.problemEquations(), zoom: this.boardZoom() });
     const gone = this.diagrams.filter((d) => !split.diagrams.some((n) => n.id === d.id));
     this.diagrams = split.diagrams;
     this.glyph = split.glyph;
@@ -1436,6 +1438,17 @@ export class LiveLoop implements LiveController {
     const touched = split.diagrams.find((d) => [...d.strokeIds, ...d.labels.flat()].some((id) => dirty.has(id))) ?? null;
     this.publishDiagrams();
     return { split, touched };
+  }
+
+  /**
+   * The board's fit zoom: what the drawing / writing split and the columns size handwriting by
+   * (`inkScale`). A board is a 1600 x 900 screen fitted to the window, so a phone shows it at ~0.2
+   * and the same hand is five times bigger in page px there; the fit, not the current zoom, so
+   * pinching in to write does not change how the lines already written are read. None on an editor
+   * without a camera (tests): a desktop.
+   */
+  private boardZoom(): number | undefined {
+    return this.editor.getBaseZoom?.();
   }
 
   /** The drawings as the dev panel shows them. */
@@ -1907,7 +1920,7 @@ export class LiveLoop implements LiveController {
     if (!this.started) return;
     const states = Object.values(liveStore.lines.get());
     const before = [...this.columnHeads.entries()].map(([c, h]) => `${c}:${h.key}`).join(",");
-    const next = this.withProblemColumns(assignColumns(states.map((s) => ({ ...s.line }))));
+    const next = this.withProblemColumns(assignColumns(states.map((s) => ({ ...s.line })), this.boardZoom()));
     const after = [...this.columnHeads.entries()].map(([c, h]) => `${c}:${h.key}`).join(",");
     let changed = before !== after;
     for (const l of next) {

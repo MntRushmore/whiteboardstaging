@@ -16,6 +16,10 @@ import type { InkLine, InkStroke, Rect } from "./contracts";
  * gap tests so zero-height bars (F/E/T cross-bars, minus signs) join their letters.
  * Lines are then sorted top-to-bottom into columns by x-overlap >= 40 %, and a line
  * separated from the column above it by a wide blank gap starts a column of its own.
+ *
+ * The thresholds scale with the writing's own median glyph, but for a few px of slack for hairline
+ * strokes and the column break's floor (`columnBreakMinPx`): page px on a desktop, scaled to the
+ * board's zoom (`inkScale`) — the same hand is five times bigger in page px on a phone.
  */
 
 export const CLUSTER_RULES = {
@@ -68,12 +72,14 @@ export const CLUSTER_RULES = {
   opBarWidthFactor: 1.6,
   opRowReachFactor: 2,
   /**
-   * A blank gap taller than max(columnBreakMinPx, columnBreakFactor x the taller of the two
-   * lines) between a line and the bottom of the column above it ends that column: a problem
-   * written further down is a new problem, not the next step of the one above.
+   * A blank gap taller than max(columnBreakMinPx x `inkScale`, columnBreakFactor x the taller of
+   * the two lines) between a line and the bottom of the column above it ends that column: a
+   * problem written further down is a new problem, not the next step of the one above.
    */
   columnBreakFactor: 3,
   columnBreakMinPx: 120,
+  /** `inkScale` never goes past this (a phone held upright is ~5: zoom ~0.2) */
+  maxInkScale: 6,
   idReuseRatio: 0.5,
   /** rect inflation before the join tests: max(inflateMinPx, inflateFactor x median) */
   inflateMinPx: 3,
@@ -84,6 +90,25 @@ export const CLUSTER_RULES = {
   superDropFactor: 0.25,
   superGapFactor: 0.8,
 } as const;
+
+/**
+ * How much bigger in page px the same handwriting is on this board than on a desktop. A board is a
+ * fixed 1600 x 900 screen fitted to the window (`lib/screens/screens.ts`), so a hand is about five
+ * times bigger in page px on a phone held upright (zoom ~0.2), and twice as big on an iPad (~0.5),
+ * as on a desktop: `2x2` written 50 px tall on a phone is 250 page px. The few thresholds that are
+ * absolute page px rather than relative to the writing's own glyphs (the glyph cap in
+ * `diagrams.ts`, the column break's floor here) were tuned on a desktop, so they are multiplied by
+ * this, and judge the ink by how big it looks on the student's screen. 1 at zoom 1 and above (a
+ * desktop is unchanged), 1 / zoom below it, at most `maxInkScale`; 1 when the zoom is unknown.
+ *
+ * `zoom` is the board's FIT zoom (`editor.getBaseZoom()`), not the camera's current zoom. The camera
+ * never zooms out past the fit, so no ink looked smaller than this when it was written; and pinching
+ * in to write the next line small does not turn the big lines written before it into drawings.
+ */
+export function inkScale(zoom?: number): number {
+  if (zoom === undefined || !Number.isFinite(zoom) || zoom <= 0) return 1;
+  return Math.min(CLUSTER_RULES.maxInkScale, Math.max(1, 1 / zoom));
+}
 
 export function unionRects(rects: Rect[]): Rect {
   if (rects.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
@@ -441,10 +466,14 @@ export function newLineId(): string {
   return `ln_${hex}`;
 }
 
-/** Assigns `column`/`row` to lines sorted top-to-bottom; mutates and returns `lines`. */
-export function assignColumns(lines: InkLine[]): InkLine[] {
+/**
+ * Assigns `column`/`row` to lines sorted top-to-bottom; mutates and returns `lines`. `zoom`: the
+ * board's fit zoom, which scales the column break's floor (`inkScale`).
+ */
+export function assignColumns(lines: InkLine[], zoom?: number): InkLine[] {
   const sorted = [...lines].sort((a, b) => a.bounds.y - b.bounds.y || a.bounds.x - b.bounds.x);
   const columns: Array<{ x0: number; x1: number; rows: number; bottom: number; lastH: number; y0: number }> = [];
+  const breakMin = CLUSTER_RULES.columnBreakMinPx * inkScale(zoom);
   for (const line of sorted) {
     const x0 = line.bounds.x;
     const x1 = line.bounds.x + line.bounds.w;
@@ -452,10 +481,7 @@ export function assignColumns(lines: InkLine[]): InkLine[] {
     let bestOverlap = 0;
     columns.forEach((col, idx) => {
       const gap = line.bounds.y - col.bottom;
-      const breakAt = Math.max(
-        CLUSTER_RULES.columnBreakMinPx,
-        CLUSTER_RULES.columnBreakFactor * Math.max(line.bounds.h, col.lastH),
-      );
+      const breakAt = Math.max(breakMin, CLUSTER_RULES.columnBreakFactor * Math.max(line.bounds.h, col.lastH));
       if (gap > breakAt) return;
       const ov = overlap1d(x0, x1, col.x0, col.x1);
       const smaller = Math.max(1, Math.min(x1 - x0, col.x1 - col.x0));
@@ -498,9 +524,14 @@ export function assignColumns(lines: InkLine[]): InkLine[] {
  * `hash` is left as the previous line's hash when the stroke set is identical, else "".
  * `fixed`: groups of strokes that are one line each whatever the clusterer would make of them —
  * a division bar and the divisor under it (`diagrams.ts`, `DivisionBar`) — given ids and
- * columns with the rest.
+ * columns with the rest. `opts.zoom`: the board's fit zoom (`inkScale`); none is a desktop.
  */
-export function clusterLines(strokes: InkStroke[], previous: InkLine[] = [], fixed: ReadonlyArray<readonly InkStroke[]> = []): InkLine[] {
+export function clusterLines(
+  strokes: InkStroke[],
+  previous: InkLine[] = [],
+  fixed: ReadonlyArray<readonly InkStroke[]> = [],
+  opts: { zoom?: number } = {},
+): InkLine[] {
   const clustered = mergeOperationRows(clusterStrokeGroups(strokes).map((idxs) => idxs.map((i) => strokes[i])), medianStrokeHeight(strokes));
   const groups = [...clustered, ...fixed.filter((g) => g.length > 0)];
   const usedIds = new Set<string>();
@@ -545,7 +576,7 @@ export function clusterLines(strokes: InkStroke[], previous: InkLine[] = [], fix
       usedIds.add(id);
     }
   }
-  return assignColumns(lines);
+  return assignColumns(lines, opts.zoom);
 }
 
 /** Minimal view of a `math` shape needed to rebuild lines on load. */
@@ -568,10 +599,12 @@ export interface RebuiltLine {
  * surviving anchor are skipped (the loop deletes them when their line is gone).
  * A stroke belongs to one line: an echo on ink an earlier echo already holds (a second
  * readback of the same line, left by an Undo before Live adopted it) is skipped too.
+ * `zoom`: the board's fit zoom, for the columns (`assignColumns`).
  */
 export function rebuildFromMathShapes(
   echoes: EchoShapeSeed[],
   strokeBounds: Map<string, Rect>,
+  zoom?: number,
 ): RebuiltLine[] {
   const out: RebuiltLine[] = [];
   const seen = new Set<string>();
@@ -596,6 +629,6 @@ export function rebuildFromMathShapes(
       mathShapeId: echo.shapeId,
     });
   }
-  assignColumns(out.map((r) => r.line));
+  assignColumns(out.map((r) => r.line), zoom);
   return out;
 }

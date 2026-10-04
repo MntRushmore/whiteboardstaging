@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEVICE_ZOOMS,
   fixtureDetachedCrossbar,
   fixtureFloatingMark,
   fixtureFraction,
@@ -7,11 +8,13 @@ import {
   fixtureSuperscript,
   fixtureTwoColumns,
   fixtureTwoLines,
+  inkAtZoom,
   toInkStrokes,
   translateShapes,
   writeLine,
 } from "../__fixtures__/strokes";
 import {
+  assignColumns,
   clusterLines,
   inflateRect,
   inflationFor,
@@ -21,7 +24,7 @@ import {
   rebuildFromMathShapes,
   unionRects,
 } from "../strokeClusters";
-import type { InkStroke, Rect } from "../contracts";
+import type { InkLine, InkStroke, Rect } from "../contracts";
 import { writeAt } from "@/__eval__/drawings";
 import { VARIANTS } from "@/__eval__/handwriting";
 
@@ -296,5 +299,76 @@ describe("clusterLines — an operation row under an equation (`mergeOperationRo
     const roots = withRow("x^{2} - 5x + 6 = 0", [["x = 2", ""], ["x = 3", "x^{2} - 5x + 6"]]);
     const rootLines = linesOf(roots.ink);
     for (const piece of roots.row) expect(rootLines).toContainEqual(ids(piece));
+  });
+});
+
+// ---------------------------------------------------------------- columns
+
+const sortedIds = (strokes: readonly InkStroke[]) => strokes.map((s) => s.id as string).sort();
+const widthOf = (latex: string) => unionRects(writeAt(latex, 0, 0).map((s) => s.bounds)).w;
+const bottomOf = (strokes: readonly InkStroke[]) => {
+  const r = unionRects(strokes.map((s) => s.bounds));
+  return r.y + r.h;
+};
+/** A problem worked down the page: one written line per entry, `step` px apart, from (x, y). */
+const worked = (latex: string[], x: number, y: number, step = 50) => latex.map((l, i) => writeAt(l, x, y + i * step));
+/** Where each written line went: the [column, row] of the line holding exactly its strokes, or null. */
+function placed(lines: readonly InkLine[], written: readonly InkStroke[][]): Array<[number, number] | null> {
+  return written.map((w) => {
+    const want = sortedIds(w).join(",");
+    const line = lines.find((l) => [...l.strokeIds].sort().join(",") === want);
+    return line ? [line.column, line.row] : null;
+  });
+}
+
+describe("clusterLines at the board's zoom: lines and columns as the student sees them", () => {
+  describe.each(DEVICE_ZOOMS)("on %s", (_device, zoom) => {
+    /** the written lines as drawn at this zoom (ids kept), clustered as the loop does */
+    const cluster = (written: readonly InkStroke[][]) => clusterLines(inkAtZoom(written.flat(), zoom), [], [], { zoom });
+
+    it("a three-line derivation is one column of three rows", () => {
+      const work = worked(["2x + 3 = 11", "2x = 8", "x = 4"], 100, 100);
+      expect(placed(cluster(work), work)).toEqual([
+        [0, 0],
+        [0, 1],
+        [0, 2],
+      ]);
+    });
+
+    it("two problems side by side are two columns", () => {
+      const a = worked(["2x + 3 = 11", "2x = 8", "x = 4"], 100, 100);
+      const b = worked(["4x - 5 = 3", "4x = 8", "x = 2"], 100 + widthOf("2x + 3 = 11") + 80, 100);
+      expect(placed(cluster([...a, ...b]), [...a, ...b])).toEqual([
+        [0, 0],
+        [0, 1],
+        [0, 2],
+        [1, 0],
+        [1, 1],
+        [1, 2],
+      ]);
+    });
+
+    it("the next step a little lower is still the next step, and a problem further down a new one", () => {
+      // 100 px below: inside the column break on a desktop (120 px) — and, in page px, 190 on an
+      // iPad and 500 on a phone, past a break of 120 page px or three lines (a "new problem" with
+      // nothing above it, so no mark)
+      const first = writeAt("2x = 8", 100, 100);
+      const next = writeAt("x = 4", 100, bottomOf(first) + 100);
+      const far = writeAt("3x = 9", 100, bottomOf(next) + 200);
+      expect(placed(cluster([first, next, far]), [first, next, far])).toEqual([
+        [0, 0],
+        [0, 1],
+        [1, 0],
+      ]);
+    });
+  });
+
+  it("scales the column break's floor with the zoom, and only below zoom 1", () => {
+    const line = (y: number, id: string): InkLine => ({ id, strokeIds: [], bounds: { x: 0, y, w: 100, h: 20 }, column: 0, row: 0, hash: "" });
+    // 150 px of blank under a 20 px line: past 120 px, inside 120 / 0.52
+    const columns = (zoom?: number) => assignColumns([line(0, "a"), line(170, "b")], zoom).map((l) => l.column);
+    expect(columns()).toEqual([0, 1]);
+    expect(columns(1.5)).toEqual([0, 1]);
+    expect(columns(0.52)).toEqual([0, 0]);
   });
 });
