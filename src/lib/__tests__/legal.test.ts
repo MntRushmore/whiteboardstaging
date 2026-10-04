@@ -24,16 +24,17 @@ describe("legal config", () => {
     expect(isPlaceholder("Fuime [beta]")).toBe(false);
   });
 
-  it("ships with the operator fields as placeholders, never invented values", () => {
-    expect(unfilledLegalFields().sort()).toEqual(
-      ["contactEmail", "contactPhone", "disputeVenue", "effectiveDate", "governingLaw", "operatorName", "postalAddress"].sort(),
-    );
-    expect(LEGAL.contactEmail).not.toMatch(/@/);
+  it("names the operator the owner gave (2026-10-03), with no placeholder left", () => {
+    expect(unfilledLegalFields()).toEqual([]);
+    expect(LEGAL.operatorName).toBe("Ninth Street Labs");
+    expect(LEGAL.contactEmail).toBe("rushil@ninthstreetlabs.com");
+    expect(LEGAL.governingLaw).toMatch(/California/);
+    // published as final by the owner: no Draft notice
+    expect(isDraft()).toBe(false);
   });
 
   it("is a draft until every placeholder is filled and it has been reviewed", () => {
-    expect(isDraft()).toBe(true);
-    expect(isDraft({ ...LEGAL, reviewed: true })).toBe(true);
+    expect(isDraft({ ...LEGAL, operatorName: "[Legal entity name]", reviewed: true })).toBe(true);
     expect(isDraft({ ...FILLED, reviewed: false })).toBe(true);
     expect(isDraft({ ...FILLED, reviewed: true })).toBe(false);
   });
@@ -49,6 +50,6 @@ describe("legal config", () => {
   });
 
   it("states Agathon Unlimited's own terms (the price and the free week are UNLIMITED_PLAN's)", () => {
-    expect(LEGAL.unlimited).toEqual({ fairUseActionsPerDay: 1_500, refundWindowDays: 7, priceChangeNoticeDays: 7 });
+    expect(LEGAL.unlimited).toEqual({ fairUseActionsPerDay: 1_500, refundWindowDays: 14, priceChangeNoticeDays: 7 });
   });
 });

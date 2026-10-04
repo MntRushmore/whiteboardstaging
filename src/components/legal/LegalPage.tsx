@@ -74,8 +74,12 @@ export function ContactBlock() {
       {LEGAL.postalAddress}
       <br />
       Email: <ContactEmail />
-      <br />
-      Phone: {LEGAL.contactPhone}
+      {LEGAL.contactPhone && (
+        <>
+          <br />
+          Phone: {LEGAL.contactPhone}
+        </>
+      )}
     </p>
   );
 }
