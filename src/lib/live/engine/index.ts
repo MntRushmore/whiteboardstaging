@@ -29,7 +29,7 @@ import { createGraphIntent } from "./graphIntent";
 import { APPROX_OP, latexToMath, preprocessLatex, splitRelations, UnsupportedLatex, type Translated } from "./latex";
 import { countOperations, createMathInstance, integralsExact, isComplexValue, isNodeValue, isUnitValue, safeEvaluate, safeParse, toNumber, translate, type MathModule } from "./math";
 import { evaluateUnits, unitValueToLatex, valuesMatch } from "./units";
-import { solveFromLines, type SystemDeps } from "./systems";
+import { solveFromLines, substituteLatex, type SystemDeps } from "./systems";
 import { combineTerms, linearSolveSteps, simplifyExpressionSteps, standardOrder, termsLatex, termsOf, type LinearSteps, type RelOp } from "./algebra";
 import { createCalculus } from "./calculus";
 import { createIntegration } from "./integration";
@@ -38,6 +38,7 @@ import { createTrig } from "./trig";
 import { solveTrigEquation } from "./trigEquation";
 import { solveAdvanced, solveExactly, type AdvancedDeps } from "./advanced";
 import { factorExpressionSteps, rationalExpressionSteps } from "./polynomial";
+import { hasFunctionCall } from "./functionNotation";
 import { chainRelation, isSolutionSet, relaxVerdict, splitAtCommas, unionRelation, type Part } from "./compound";
 import { ALL_REALS, EVERY_REAL, LIST_SEP, NO_SOLUTION } from "./solution";
 import { createCourses } from "./courses";
@@ -777,6 +778,79 @@ export function createEngine(mod: MathModule): LiveEngine {
   };
 
   /**
+   * The value of a line the student ended with `=` at the values the column gives its letters
+   * (`ctx.givens`, from `givens.ts`):
+   *
+   *   3x + 24 =        →  substituted `3(3) + 24`, and in Solve the answer `33`
+   *   x = 3
+   *
+   * `valueLatex` is what comes before the `=` (`3x + 24`, or the value side of `A = \pi r^{2} =`).
+   * It is analysed as the line with every letter replaced by its value, bracketed as a teacher
+   * writes it (`substituteLatex`: `3x` at 3 is `3(3)`, `x^{2}` at -2 is `(-2)^{2}`), so the result
+   * is exactly what Solve writes for `3(3) + 24 =`. Null unless every letter is given, the line is
+   * no relation, and what is left has a value (`\frac{1}{x - 3}` at x = 3 has none): the line then
+   * stays the unfinished line it was.
+   */
+  const valueAtGivens = (valueLatex: string, ctx: AnalyzeContext): LineAnalysis | null => {
+    const givens = ctx.givens;
+    if (!givens || Object.keys(givens).length === 0) return null;
+    try {
+      // `f(4)` is a call, not `4f` (`functionNotation.ts` has it)
+      if (splitRelations(valueLatex).ops.length > 0 || hasFunctionCall(valueLatex)) return null;
+      const t = tr(valueLatex);
+      const unknowns = unknownsOf(t);
+      if (unknowns.length === 0 || isSymbolic(t) || t.hasUnits || !unknowns.every((v) => typeof givens[v] === "string")) return null;
+      const substituted = substituteLatex(valueLatex, Object.fromEntries(unknowns.map((v) => [v, givens[v]])));
+      if (unknownsOf(tr(substituted)).length > 0) return null;
+      // worked out as Solve would answer it, so a line with no value is never called one
+      const a = analyzeExpression(substituted, { ...ctx, mode: "answer" }, true);
+      if (a.kind !== "expression" || a.error || !a.resultLatex) return null;
+      // `\frac{1}{x - 3}` at 3 is no number at all, not `\infty`
+      const v = safeEvaluate(math, a.math);
+      if (!v.ok || (typeof v.value === "number" && !Number.isFinite(v.value))) return null;
+      return { ...a, resultLatex: ctx.mode === "answer" ? a.resultLatex : "", substituted, nextStep: substituted };
+    } catch {
+      return null;
+    }
+  };
+
+  /**
+   * A line in letters the student ended with `=` to have it expanded or simplified:
+   *
+   *   (x + y)^{2} =        →  x^{2} + 2xy + y^{2}
+   *   (x - 3)(x + 2) =     →  x^{2} + 2x - 3x - 6, then x^{2} - x - 6
+   *   2(x + 4) - 3x =      →  2x + 8 - 3x, then 8 - x
+   *   \frac{x^{2} - 1}{x - 1} =  →  x + 1
+   *
+   * Its simplest form is unambiguous when the working expands brackets and collects like terms
+   * (`simplifyExpressionSteps`) or cancels a common factor (`rationalExpressionSteps`): the line is
+   * then an `expression` whose `resultLatex` (Solve only, as for `36 + 2 =`) is that form, written
+   * after the student's `=`, and whose `nextStep` is the first line of the working (Help's step).
+   * Null otherwise, and the line stays the unfinished line it was: one already as simple as it
+   * goes (`x^{2} + 3x + 5 =`), or one whose only "simplification" is a factorisation, which is a
+   * choice and not the answer to a `=` (`3x + 24 =` is not asking to become `3(x + 8)`).
+   */
+  const simplestForm = (lhs: string, ctx: AnalyzeContext): LineAnalysis | null => {
+    try {
+      const pre = preprocessLatex(lhs).trim();
+      if (!pre || /\d\.\d/.test(pre) || splitRelations(pre).ops.length > 0 || hasFunctionCall(pre)) return null;
+      const t = tr(pre);
+      if (t.hasUnits || t.hasText || t.hasPercent || t.hasPm || t.functions.length > 0 || isSymbolic(t)) return null;
+      const unknowns = unknownsOf(t);
+      if (unknowns.length === 0 || unknowns.some((v) => !/^[a-zA-Z]$/.test(v))) return null;
+      const node = safeParse(math, t.source);
+      if (!node) return null;
+      const steps = simplifyExpressionSteps(node, unknowns, pre, stepKey) ?? rationalExpressionSteps(node, unknowns, pre, stepKey);
+      if (!steps || steps.length === 0) return null;
+      const a = analyzeExpression(pre, ctx, false);
+      if (a.kind !== "expression" || a.error) return null;
+      return { ...a, resultLatex: ctx.mode === "answer" ? steps[steps.length - 1] : "", nextStep: steps[0] };
+    } catch {
+      return null;
+    }
+  };
+
+  /**
    * `-3 \quad -3`, `\div 2 \div 2`, `\div 2` under an equation: what is done to both sides next
    * (`operationLine.ts`), checked against the relation above. Null when the line is not one: a
    * sum or difference of terms with no relation above it is arithmetic (`-3 - 3` is -6).
@@ -848,6 +922,12 @@ export function createEngine(mod: MathModule): LiveEngine {
             // `\lim ... =`, `\begin{pmatrix} ... =`: not an unfinished line, a line we cannot read
             if (e instanceof UnsupportedLatex) return { ...UNKNOWN, error: errorMessage(e) };
           }
+          // `3x + 24 =` with `x = 3` in the column: its value there
+          const at = valueAtGivens(pre.lhs, ctx);
+          if (at) return at;
+          // `(x + y)^{2} =`: expanded and collected
+          const simplest = simplestForm(pre.lhs, ctx);
+          if (simplest) return simplest;
         }
         const value = pre.trailingEquals ? namedValue(expanded) : null;
         if (value) {
@@ -856,6 +936,9 @@ export function createEngine(mod: MathModule): LiveEngine {
             const a = analyzeExpression(value, ctx, true);
             if (a.kind === "expression" && !a.error) return a;
           }
+          // `A = \pi r^{2} =` with `r = 5` in the column
+          const at = valueAtGivens(value, ctx);
+          if (at) return at;
         }
         return base("incomplete");
       }

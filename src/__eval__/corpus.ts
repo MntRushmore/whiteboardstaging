@@ -261,6 +261,12 @@ export const BASE_CORPUS: readonly EvalProblem[] = [
   { id: "su-03", topic: "substitution", lines: ["a = 5", "b = 2a - 3", "b = ?"], expect: { values: { b: [7] } } },
   { id: "su-04", topic: "substitution", lines: ["2x - y = 3", "x = 4", "y ="], expect: { values: { y: [5] } } },
   { id: "su-05", topic: "substitution", lines: ["v = u + a t", "u = 3", "a = 2", "t = 5", "v = ?"], expect: { values: { v: [13] } }, note: "several knowns into one formula" },
+  // a line ended with `=`, its letter's value written beside it: evaluated there (`givens.ts`)
+  { id: "su-06", topic: "substitution", lines: ["3x + 24 =", "x = 3"], expect: { answer: "33" }, oracle: ["3(3) + 24"], note: "the value under the line (the owner's board: `= 3(x+8)` was written under the `x = 3`)" },
+  { id: "su-07", topic: "substitution", lines: ["x = 3", "3x + 24 ="], expect: { answer: "33" }, oracle: ["3(3) + 24"], note: "the value above the line" },
+  { id: "su-08", topic: "substitution", lines: ["2x + 3y =", "x = 3", "y = 2"], expect: { answer: "12" }, oracle: ["2(3) + 3(2)"], note: "two values" },
+  { id: "su-09", topic: "substitution", lines: ["x^{2} - 4x =", "x = -2"], expect: { answer: "12" }, oracle: ["(-2)^{2} - 4(-2)"], note: "a negative value, bracketed" },
+  { id: "su-10", topic: "substitution", lines: ["3x + 24 =", "x =", "3"], expect: { answer: "33" }, oracle: ["3(3) + 24"], note: "`x = 3` read as two lines" },
 
   // ---------------------------------------------------------------- quadratics
   { id: "qu-01", topic: "quadratic", lines: ["x^{2} - 5x + 6 = 0"], expect: { values: { x: [2, 3] } } },
@@ -333,6 +339,11 @@ export const BASE_CORPUS: readonly EvalProblem[] = [
   { id: "xf-11", topic: "expand-factor", lines: ["6x^{2} + 9x"], expect: { answer: "3x(2x + 3)", form: "factored" } },
   { id: "xf-12", topic: "expand-factor", lines: ["2x^{2} - 7x + 3"], expect: { answer: "(2x - 1)(x - 3)", form: "factored" } },
   { id: "xf-13", topic: "expand-factor", course: "algebra-2", lines: ["\\frac{x^{2} - 1}{x - 1}"], expect: { answer: "x + 1" }, note: "cancel a common factor" },
+  // the same asked with a `=` after it: the simplest form, written after the student's `=`
+  { id: "xf-14", topic: "expand-factor", lines: ["(x + y)^{2} ="], expect: { answer: "x^{2} + 2xy + y^{2}", form: "expanded" }, note: "a line ending in `=`" },
+  { id: "xf-15", topic: "expand-factor", lines: ["(x - 3)(x + 2) ="], expect: { answer: "x^{2} - x - 6", form: "expanded" }, note: "a line ending in `=`" },
+  { id: "xf-16", topic: "expand-factor", lines: ["2(x + 4) - 3x ="], expect: { answer: "8 - x", form: "expanded" }, note: "a line ending in `=`" },
+  { id: "xf-17", topic: "expand-factor", lines: ["(a + b)^{3} ="], expect: { answer: "a^{3} + 3a^{2}b + 3ab^{2} + b^{3}", form: "expanded" }, note: "a line ending in `=`" },
 
   // ---------------------------------------------------------------- derivatives
   { id: "de-01", topic: "derivative", lines: ["\\frac{d}{dx}(3x^{2} + 2x) ="], expect: { answer: "6x + 2" } },

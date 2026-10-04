@@ -364,12 +364,14 @@ describe("clusterLines at the board's zoom: lines and columns as the student see
     });
 
     it("the next step a little lower is still the next step, and a problem further down a new one", () => {
-      // 100 px below: inside the column break on a desktop (120 px) — and, in page px, 190 on an
-      // iPad and 500 on a phone, past a break of 120 page px or three lines (a "new problem" with
-      // nothing above it, so no mark)
+      // two lines of blank under a ~27 px hand: a student's step can be that far down; three is a
+      // new problem's gap ("new problem": nothing above it, so no mark). This used to keep the
+      // next step 100 px (nearly four lines) down, inside a break of 120 desktop px, but a gap
+      // that wide is the blank a student leaves before a new problem (`problemGapFactor`).
       const first = writeAt("2x = 8", 100, 100);
-      const next = writeAt("x = 4", 100, bottomOf(first) + 100);
-      const far = writeAt("3x = 9", 100, bottomOf(next) + 200);
+      const h = bottomOf(first) - 100;
+      const next = writeAt("x = 4", 100, bottomOf(first) + 2 * h);
+      const far = writeAt("3x = 9", 100, bottomOf(next) + 3 * h);
       expect(placed(cluster([first, next, far]), [first, next, far])).toEqual([
         [0, 0],
         [0, 1],
@@ -377,14 +379,58 @@ describe("clusterLines at the board's zoom: lines and columns as the student see
       ]);
     });
   });
+});
 
-  it("scales the column break's floor with the zoom, and only below zoom 1", () => {
-    const line = (y: number, id: string): InkLine => ({ id, strokeIds: [], bounds: { x: 0, y, w: 100, h: 20 }, column: 0, row: 0, hash: "" });
-    // 150 px of blank under a 20 px line: past 120 px, inside 120 / 0.52
-    const columns = (zoom?: number) => assignColumns([line(0, "a"), line(170, "b")], zoom).map((l) => l.column);
-    expect(columns()).toEqual([0, 1]);
-    expect(columns(1.5)).toEqual([0, 1]);
-    expect(columns(0.52)).toEqual([0, 0]);
+describe("assignColumns: a blank gap under a column starts a new problem", () => {
+  const line = (id: string, y: number, h = 20, x = 0, w = 100): InkLine => ({ id, strokeIds: [], bounds: { x, y, w, h }, column: 0, row: 0, hash: "" });
+  const columns = (lines: InkLine[], opts?: Parameters<typeof assignColumns>[1]) => {
+    const out = assignColumns(lines, opts);
+    return lines.map((l) => out.find((o) => o.id === l.id)?.column);
+  };
+  /** the same lines, `k` times bigger (a phone shows a hand ~5 times bigger in page px) */
+  const scaled = (lines: InkLine[], k: number) => lines.map((l) => ({ ...l, bounds: { x: l.bounds.x * k, y: l.bounds.y * k, w: l.bounds.w * k, h: l.bounds.h * k } }));
+
+  it("measures the gap in the column's own lines, the same at any zoom and in any hand", () => {
+    // 20 px lines: 2.4 lines of blank under them is the next step, 2.6 a new problem
+    const near = [line("a", 0), line("b", 20 + 48)];
+    const far = [line("a", 0), line("b", 20 + 52)];
+    for (const k of [1, 1 / 0.52, 5]) {
+      expect(columns(scaled(near, k))).toEqual([0, 0]);
+      expect(columns(scaled(far, k))).toEqual([0, 1]);
+    }
+  });
+
+  it("by the median of the column's lines: one tall line (a fraction) does not stretch the gap a problem needs", () => {
+    const lines = [line("a", 0), line("frac", 30, 60), line("c", 100), line("d", 130), line("e", 130 + 20 + 55)];
+    expect(columns(lines)).toEqual([0, 0, 0, 0, 1]);
+  });
+
+  it("a gap the tutor's writing fills is not blank: the student going on under its step is in the same problem", () => {
+    const lines = [line("a", 0), line("b", 30), line("c", 30 + 20 + 100)];
+    expect(columns(lines)).toEqual([0, 0, 1]);
+    // the tutor's step and answer in the gap, written before `c`
+    const steps = [
+      { x: 0, y: 60, w: 80, h: 20 },
+      { x: 0, y: 90, w: 60, h: 20 },
+    ];
+    expect(columns(lines, { filled: (l) => (l.id === "c" ? steps : []) })).toEqual([0, 0, 0]);
+    // ...but only where the column is: the tutor's writing off to the side fills nothing here
+    expect(columns(lines, { filled: () => steps.map((s) => ({ ...s, x: 400 })) })).toEqual([0, 0, 1]);
+    // ...and a blank stretch under the tutor's writing as tall as a new problem's gap is still one
+    expect(columns([line("a", 0), line("b", 30), line("c", 30 + 20 + 160)], { filled: () => steps })).toEqual([0, 0, 1]);
+  });
+
+  it("lines that were one problem stay one when a gap opens between them (a step between them rubbed out)", () => {
+    const lines = [line("a", 0), line("c", 120)];
+    expect(columns(lines)).toEqual([0, 1]);
+    expect(columns(lines, { together: (p, q) => [p.id, q.id].sort().join() === "a,c" })).toEqual([0, 0]);
+  });
+
+  it("a line under another problem's line is that problem's, not the one above both", () => {
+    // `b` was written under `a` past a new problem's gap; `c` under `b`: the tutor's working fills
+    // the gap above `b` for `c` (written after it), but `c` is under `b`
+    const lines = [line("a", 0), line("b", 80), line("c", 110)];
+    expect(columns(lines, { filled: (l) => (l.id === "c" ? [{ x: 0, y: 25, w: 100, h: 50 }] : []) })).toEqual([0, 1, 1]);
   });
 });
 

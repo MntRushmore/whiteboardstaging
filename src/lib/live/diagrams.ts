@@ -20,7 +20,9 @@ import { tableRules } from "./proof/table";
  *     on it still has a scale. The cap is what a big hand looks like on a desktop, so it is scaled
  *     to the board's zoom (`SplitOptions.zoom`, `inkScale`): on a phone held upright the board is
  *     shown at a fifth of its size and the same hand is five times bigger in page px — capped at
- *     30 px, `2x2` written 130 px tall was two "big curves" and a label, and never read.
+ *     30 px, `2x2` written 130 px tall was two "big curves" and a label, and never read. And ink
+ *     that is rows of writing (`writingRows`: three glyph columns or more side by side in a line,
+ *     not shapes) is its own scale on any screen: a big hand on a desktop is no drawing either.
  *  2. Each stroke by its own shape. Under `bigFactor` x G both ways it is a glyph (a `0` is closed
  *     and a `1` straight: size is what makes a drawing). Bigger: a long DIAGONAL (a triangle's
  *     side, a sketched line) or a BIG shape both ways (a circle, a triangle in one stroke, a
@@ -68,10 +70,18 @@ export const DIAGRAM_RULES = {
    * The glyph scale is clamped to this range (page px). The cap is what gives a screen with only
    * a drawing on it a scale (its own strokes would otherwise be the "glyphs"); the tutor's hand
    * writes ~44 px lines on a 1600 x 900 screen. The cap is for a desktop: it is multiplied by
-   * `inkScale` of the board's zoom (`SplitOptions.zoom`).
+   * `inkScale` of the board's zoom (`SplitOptions.zoom`). Ink that is rows of writing
+   * (`writingRows`) is its own scale, cap or not.
    */
   glyphMin: 8,
   glyphMax: 30,
+  /**
+   * Rows of writing (`writingRows`): a line holding at least `rowMinColumns` glyph columns that are
+   * not shapes — strokes whose x-ranges overlap by `columnOverlapShare` of the narrower are one
+   * column (the two strokes of an `x`, a `+`, an `=`).
+   */
+  rowMinColumns: 3,
+  columnOverlapShare: 0.5,
   /** polyline simplification: the fine one for distances (x G), the coarse one for shape (x the stroke's size) */
   fineFactor: 0.05,
   shapeFactor: 0.06,
@@ -420,6 +430,11 @@ export function strokeLooksDrawn(stroke: InkStroke, glyph: number): boolean {
  * The glyph scale: the median stroke height, then again without the strokes that are plainly
  * bigger than that (a drawing of many strokes would otherwise set it), clamped. `zoom`: the
  * board's fit zoom — the cap is `glyphMax` on a desktop and `inkScale` times that below zoom 1.
+ *
+ * Over the cap, ink that is rows of writing (`writingRows`) keeps its own scale: the cap is for a
+ * screen with nothing but a drawing on it, and a big hand is not that on any screen. `(x+y)^2 =`
+ * written 220 px tall on a desktop was measured against 30 px: the strokes of its `x` were two
+ * "long diagonals", its `2` a "big curve", and Solve sent the "figure" to the vision model.
  */
 export function glyphScale(strokes: readonly InkStroke[], zoom?: number): number {
   const R = DIAGRAM_RULES;
@@ -428,7 +443,90 @@ export function glyphScale(strokes: readonly InkStroke[], zoom?: number): number
   const g0 = medianStrokeHeight([...strokes]);
   const small = strokes.filter((s) => Math.max(s.bounds.w, s.bounds.h) < R.bigFactor * g0);
   const g = small.length > 0 ? medianStrokeHeight(small) : g0;
+  if (g > max && writingRows(strokes, g)) return g;
   return Math.min(max, Math.max(R.glyphMin, g));
+}
+
+/** A stroke's ends and the length of its path. */
+function trace(s: InkStroke): { ends: [Pt, Pt]; length: number } {
+  const pts = s.segments.flat();
+  let length = 0;
+  for (let k = 1; k < pts.length; k++) length += dist(pts[k - 1], pts[k]);
+  return { ends: [pts[0] ?? { x: s.bounds.x, y: s.bounds.y }, pts[pts.length - 1] ?? { x: s.bounds.x, y: s.bounds.y }], length };
+}
+
+/** A stroke whose ends meet and whose path goes round (an `O`, a circle, a square in one stroke). */
+function closedStroke(s: InkStroke): boolean {
+  const { ends, length } = trace(s);
+  const size = Math.max(s.bounds.w, s.bounds.h);
+  return s.segments.flat().length > 2 && dist(ends[0], ends[1]) <= DIAGRAM_RULES.closeShare * size && length >= 2 * size;
+}
+
+/**
+ * A glyph column that is a shape, not a glyph: a closed stroke the size of the column (a circle and
+ * its radius, an `O`), or at least three straight strokes whose ends pair up into a closed loop (a
+ * triangle, a rectangle in strokes) — strokes with an end that meets no other's end are pruned
+ * first, so labels and marks inside it, and the free ends of an `A`, an `N`, an `x`, leave nothing.
+ */
+function shapeColumn(col: readonly InkStroke[]): boolean {
+  const box = unionRects(col.map((s) => s.bounds));
+  const size = Math.max(box.w, box.h);
+  if (col.some((s) => closedStroke(s) && Math.max(s.bounds.w, s.bounds.h) >= 0.6 * size)) return true;
+  const reach = Math.max(DIAGRAM_RULES.touchMinPx, DIAGRAM_RULES.closeShare * size);
+  let sides = col
+    .map(trace)
+    .filter((t) => t.length > 0 && dist(t.ends[0], t.ends[1]) >= t.length / 1.1);
+  for (let pruned = true; pruned && sides.length >= 3; ) {
+    const kept = sides.filter((t) => t.ends.every((p) => sides.some((o) => o !== t && o.ends.some((q) => dist(p, q) <= reach))));
+    pruned = kept.length < sides.length;
+    sides = kept;
+  }
+  return sides.length >= 3;
+}
+
+/**
+ * A line's strokes in glyph columns: strokes whose x-ranges overlap by `columnOverlapShare` of the
+ * narrower are one column (the two strokes of an `x` or a `+`, the bars of an `=`, a `y`; a
+ * fraction, its bar spanning both).
+ */
+function glyphColumns(cells: readonly InkStroke[]): InkStroke[][] {
+  const R = DIAGRAM_RULES;
+  const uf = new UnionFind(cells.length);
+  for (let a = 0; a < cells.length; a++) {
+    for (let b = a + 1; b < cells.length; b++) {
+      const p = cells[a].bounds;
+      const q = cells[b].bounds;
+      const overlap = Math.min(p.x + p.w, q.x + q.w) - Math.max(p.x, q.x);
+      if (overlap >= 0 && overlap >= R.columnOverlapShare * Math.min(p.w, q.w)) uf.union(a, b);
+    }
+  }
+  const cols = new Map<number, InkStroke[]>();
+  cells.forEach((s, k) => {
+    const root = uf.find(k);
+    const col = cols.get(root);
+    if (col) col.push(s);
+    else cols.set(root, [s]);
+  });
+  return [...cols.values()];
+}
+
+/**
+ * Rows of writing at the ink's own glyph scale `g`: a line (`clusterStrokeGroups`, which scales with
+ * the ink) of glyph-sized strokes holding at least `rowMinColumns` glyph columns side by side
+ * (`glyphColumns`) that are not shapes (`shapeColumn`). A drawing on its own is one column — a
+ * triangle's base spans its other sides, the axes span the line sketched on them, a circle its radius
+ * — and a row of circles or triangles (a pattern) is shapes. `(x+y)^2 =` is seven columns: `(`, `x`,
+ * `+`, `y`, `)`, `2`, `=`.
+ */
+function writingRows(strokes: readonly InkStroke[], g: number): boolean {
+  const R = DIAGRAM_RULES;
+  const glyphs = strokes.filter((s) => Math.max(s.bounds.w, s.bounds.h) < R.bigFactor * g);
+  if (glyphs.length < R.rowMinColumns) return false;
+  return clusterStrokeGroups([...glyphs]).some((cluster) => {
+    if (cluster.length < R.rowMinColumns) return false;
+    const cols = glyphColumns(cluster.map((k) => glyphs[k]));
+    return cols.length >= R.rowMinColumns && cols.filter((c) => !shapeColumn(c)).length >= R.rowMinColumns;
+  });
 }
 
 // ---------------------------------------------------------------- evidence

@@ -573,3 +573,59 @@ describe("engine: steps with two or more unknowns (x and y)", () => {
     expect(step("x+y=10", "y=10-x").plot?.expr).toBe("10 - x");
   });
 });
+
+describe("engine: a line ending in `=` at the values its column gives (ctx.givens)", () => {
+  const at = (latex: string, givens: Record<string, string>, mode: "answer" | "feedback" = "answer") => engine.analyzeLine(latex, { mode, givens });
+
+  it("`3x + 24 =` with x = 3 is `3(3) + 24`, whose value Solve writes: 33", () => {
+    expect(at("3x + 24 =", { x: "3" })).toMatchObject({ kind: "expression", substituted: "3(3) + 24", resultLatex: "33" });
+    // the value is an answer: only Solve has it, as for `36 + 2 =`
+    expect(at("3x + 24 =", { x: "3" }, "feedback")).toMatchObject({ kind: "expression", substituted: "3(3) + 24", resultLatex: "" });
+  });
+
+  it("brackets a value as a teacher writes it in: negatives, fractions, powers, several letters", () => {
+    expect(at("x^{2} - 4x =", { x: "-2" })).toMatchObject({ substituted: "(-2)^{2} - 4(-2)", resultLatex: "12" });
+    expect(at("4x + 1 =", { x: "\\frac{1}{2}" })).toMatchObject({ substituted: "4(\\frac{1}{2}) + 1", resultLatex: "3" });
+    expect(at("2x + 3y =", { x: "3", y: "2" })).toMatchObject({ substituted: "2(3) + 3(2)", resultLatex: "12" });
+    // a named quantity: `A = \pi r^{2} =`
+    expect(at("A = \\pi r^{2} =", { r: "5" })).toMatchObject({ resultLatex: "25\\pi" });
+  });
+
+  it("a given value wins over expanding: its first step is the values put in", () => {
+    expect(at("(x + 1)^{2} =", { x: "2" })).toMatchObject({ substituted: "(2 + 1)^{2}", nextStep: "(2 + 1)^{2}", resultLatex: "9" });
+  });
+
+  it("stays unfinished unless every letter is given and the value exists", () => {
+    expect(at("3x + 2y =", { x: "3" }).kind).toBe("incomplete");
+    expect(at("\\frac{1}{x - 3} =", { x: "3" }).kind).toBe("incomplete");
+    expect(at("3x + 24 =", {}).kind).toBe("incomplete");
+    // only a line ending in `=` reads them
+    expect(at("3x + 24", { x: "3" }).substituted).toBeUndefined();
+    expect(at("3x + 24 = 33", { x: "3" }).substituted).toBeUndefined();
+  });
+});
+
+describe("engine: a line in letters ending in `=` asks for its simplest form", () => {
+  it.each([
+    ["(x+y)^{2}=", "x^{2} + 2xy + y^{2}", "x^{2} + 2xy + y^{2}"],
+    ["(x-3)(x+2)=", "x^{2} + 2x - 3x - 6", "x^{2} - x - 6"],
+    ["2(x+4)-3x=", "2x + 8 - 3x", "8 - x"],
+    ["(a+b)^{3}=", "a^{3} + 3a^{2}b + 3ab^{2} + b^{3}", "a^{3} + 3a^{2}b + 3ab^{2} + b^{3}"],
+    ["2x + 3x =", "5x", "5x"],
+    ["\\frac{x^{2}-1}{x-1}=", "\\frac{(x + 1)(x - 1)}{x - 1}", "x + 1"],
+  ])("%s → next step %s, answer %s (Solve only)", (latex, nextStep, final) => {
+    expect(engine.analyzeLine(latex, answer)).toMatchObject({ kind: "expression", nextStep, resultLatex: final });
+    expect(engine.analyzeLine(latex, feedback)).toMatchObject({ kind: "expression", nextStep, resultLatex: "" });
+  });
+
+  it("leaves alone a line already as simple as it goes, and one whose only change is a factorisation", () => {
+    for (const latex of ["x^{2} + 3x + 5 =", "2x + 3 =", "3x + 24 =", "x^{2} - 9 =", "6x^{2} + 9x ="]) {
+      expect(engine.analyzeLine(latex, answer), latex).toMatchObject({ kind: "incomplete", resultLatex: "" });
+    }
+    // and anything that is not a polynomial in plain letters — `g(2)` is a call, never `2g`
+    expect(engine.analyzeLine("\\sin x \\cos x =", answer).resultLatex).toBe("");
+    expect(engine.analyzeLine("x_{1} + x_{1} =", answer).resultLatex).toBe("");
+    expect(engine.analyzeLine("g(2) =", answer).resultLatex).toBe("");
+    expect(engine.analyzeLine("x(x + 1) =", answer).resultLatex).toBe("x^{2} + x");
+  });
+});

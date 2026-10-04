@@ -5,7 +5,9 @@ import { unionRects } from "./strokeClusters";
 /**
  * Which problem Help me / Solve it act on when the screen holds several.
  *
- * A column of lines is one problem (`assignColumns`), and the line Help starts from decides which.
+ * A column of lines is one problem (`assignColumns`): lines one under another, until a blank gap of
+ * a few lines (`problemGapFactor`) — a problem written further down is a problem of its own. The
+ * line Help starts from decides which.
  * That line FOLLOWS THE PEN: the line holding the student's last fresh stroke. It used to be the line
  * Live happened to read last, and rubbing something out, dragging ink, Undo and a remote change all
  * re-read lines: rub out a slip in problem A while working on B, tap Help, and the tutor wrote under

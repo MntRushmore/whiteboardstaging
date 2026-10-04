@@ -53,7 +53,7 @@ import {
   type SolveRequest,
   type UseLiveMathOptions,
 } from "./contracts";
-import { endsWithRelation } from "./answer";
+import { endsWithRelation, startsWithRelation } from "./answer";
 import { LIVE_COPY } from "@/components/live/copy";
 import { classifyLiveFailure, sseFailure, type ClassifyContext } from "@/components/live/errorView";
 import {
@@ -68,6 +68,7 @@ import {
 import { liveWrite, scheduleLiveWrite } from "./liveWrite";
 import { recordReread, recordRecognition } from "./liveDebug";
 import { analyzeColumn, localSolve } from "./localSolve";
+import { evaluatedLineFor, givensFor, givensOf, type Given } from "./givens";
 import { requestReread, requestSetup, type CallOptions } from "./modelCalls";
 import { acceptChainReread, acceptReread, rereadTrigger, type RereadTrigger } from "./readCheck";
 import { isProblemProse, setupBlock, validateSetupLines, wordProblemKey } from "./wordProblem";
@@ -123,7 +124,7 @@ import {
   recognizeFailureHints,
 } from "./recognizeClient";
 import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient";
-import { assignColumns, clusterLines, inkScale, rebuildFromMathShapes, unionRects, type EchoShapeSeed } from "./strokeClusters";
+import { assignColumns, clusterLines, inkScale, rebuildFromMathShapes, unionRects, type ColumnOptions, type EchoShapeSeed } from "./strokeClusters";
 import { buildPayload, hashPayload } from "./strokePayload";
 import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
@@ -137,7 +138,7 @@ import { PROOF_ROWS_META, proofRowsPlan } from "./proof/place";
 import { PROOF_FIGURE_META, PROOF_TABLE_META, tutorFiguresOf } from "./proof/tutorFigure";
 import type { PlannedRow } from "./proof/planner";
 import type { BoardLine, ProofRead } from "./proof/read";
-import { problemKeyOf, problemLines, problemMetaOf, readProblemCells, splitColumnsAtProblems, type ProblemCell } from "./chat/cells";
+import { cellOf, problemKeyOf, problemLines, problemMetaOf, readProblemCells, splitColumnsAtProblems, type ProblemCell } from "./chat/cells";
 import { nextHelpTarget, penLine, pickedLine, problemCount, problemTarget, type HelpTargetDraft } from "./helpTarget";
 import {
   PROBLEM_WORK_META,
@@ -267,6 +268,21 @@ type ProblemWork = { cell: ProblemCell; depth: ProblemDepth; written: string[]; 
 type SolveOpts = { onlyFirstStep?: boolean; lineId: string; problem?: ProblemWork };
 /** A column as `buildCheckLines` returns it: the lines with a read, their check payload, the region. */
 type BuiltColumn = { lines: CheckLine[]; region: Rect; states: LiveLineState[] };
+
+/**
+ * The column with one line read again together with the ink on its row (`solveLineWithRow`): its
+ * latex, its box grown to the row (the work goes under all of it), and what the model is told the
+ * engine made of it. The store's line is not changed: its ink is still only its own strokes.
+ */
+function withLineRead(built: BuiltColumn, lineId: string, read: { latex: string; kind: LineKind; row: { bounds: Rect } }): BuiltColumn {
+  return {
+    ...built,
+    lines: built.lines.map((l) => (l.id === lineId ? { ...l, latex: read.latex.slice(0, 2000), local: { kind: read.kind, verdict: "unknown" } } : l)),
+    states: built.states.map((s) =>
+      s.line.id === lineId ? { ...s, latex: read.latex, analysis: null, line: { ...s.line, bounds: unionRects([s.line.bounds, read.row.bounds]) } } : s,
+    ),
+  };
+}
 /** What Solve wrote locally: its lines, and where the block is being written (null: nothing new) and for how long. */
 type LocalWritten = { steps: string[]; block: Rect | null; wallMs: number };
 
@@ -429,6 +445,12 @@ const AI_WARN_META = "aiWarnLatex";
 const SUGGEST_META = "suggestFor";
 /** the equation written under a right operation line (`-3 \quad -3` → `2x = 8`): what it was written for */
 const OPERATION_RESULT_META = "operationResult";
+/**
+ * on Help's next step after the `=` of a line the engine works out (`LineAnalysis.nextStep`:
+ * `3(3) + 24` after `3x + 24 =` over `x = 3`, `x^{2} + 2x - 3x - 6` after `(x - 3)(x + 2) =`): the
+ * line, and any values it was evaluated at, that it was written for (`answerSourceOf`)
+ */
+const NEXT_STEP_META = "nextStepFor";
 /** on the strokes of a tutor's mark (tick / ring / question mark): its `markKey` */
 const MARK_META = "mark";
 /** on a question mark's strokes: why the tutor put it there (`UnjudgedReason`) */
@@ -444,6 +466,36 @@ function metaString(meta: unknown, key: string): string {
 /** The student line this shape is the tutor's answer to, or "" when it is not answer ink. */
 function answerSrcOf(meta: unknown): string {
   return metaString(meta, ANSWER_SRC_META);
+}
+
+/**
+ * What an answer to this line is an answer TO (`answerFor`): the line as read — and, for a line
+ * evaluated at the values its column gives (`LineAnalysis.substituted`), those values too
+ * (`3x+24= @ 3(3)+24`). `x = 3` rewritten as `x = 4` leaves `3x + 24 =` reading the same, and its
+ * `33` would otherwise stay beside it.
+ */
+function answerSourceOf(state: Pick<LiveLineState, "latex" | "analysis">): string {
+  const at = state.analysis?.substituted;
+  return at ? `${state.latex} @ ${at}` : state.latex;
+}
+
+/** `3x + 24 =`, `36 + 2 =`: a line the student ended with `=` (not `\le`, `<=`, `!=`). */
+function endsWithEquals(latex: string): boolean {
+  return /=\s*$/.test(latex) && !/[<>!]=\s*$/.test(latex);
+}
+
+/** `= 3(x + 8)` → `3(x + 8)`: a step's leading relation, which the line it continues already ends with. */
+function withoutRelation(step: string): string {
+  return step.replace(/^\s*=\s*/, "").trim() || step;
+}
+
+/**
+ * `3x + 24 = 3(x + 8)`: a block continuing `line` (it ends with `=`), its first step restated as
+ * that line, for a block that cannot be written beside or straight under it.
+ */
+function restated(line: string, steps: readonly string[]): string[] {
+  if (steps.length === 0) return [];
+  return [`${line.replace(/=\s*$/, "").trim()} ${steps[0].trim()}`, ...steps.slice(1)];
 }
 
 function answerLatexOf(meta: unknown): string {
@@ -749,6 +801,14 @@ export class LiveLoop implements LiveController {
    * the column's first line, the context its first line is checked against (`chat/cells.ts`).
    */
   private columnHeads = new Map<number, ProblemCell>();
+  /**
+   * The lines each line has been one problem with (by id: the others of its column at some
+   * assignment). A gap that opens between them later — a line between them rubbed out, the tutor's
+   * working there rubbed out — does not part them (`ColumnOptions.together`): the steps under it
+   * would be judged with nothing above them, and Solve would start them over. Forgotten with the
+   * screen; a reload starts from the ink as it is.
+   */
+  private problemMates = new Map<string, Set<string>>();
   /** a head's lines analysed as a column, per mode (the problem does not change) */
   private readonly headMemo = new Map<string, (LineAnalysis | null)[]>();
   /**
@@ -906,6 +966,7 @@ export class LiveLoop implements LiveController {
     this.labelsOf.clear();
     this.lastTouchedDiagramId = null;
     this.touchedProblem = null;
+    this.problemMates.clear();
     this.penStrokeId = null;
     this.penLineId = null;
     this.goneStrokeIds.clear();
@@ -1557,7 +1618,8 @@ export class LiveLoop implements LiveController {
     }
     if (seeds.length === 0) return;
     const bounds = this.strokeBoundsMap();
-    const rebuilt = rebuildFromMathShapes(seeds, bounds, this.boardZoom());
+    const anchored = new Set(seeds.flatMap((s) => s.anchorIds));
+    const rebuilt = rebuildFromMathShapes(seeds, bounds, this.columnOptions(anchored));
     // a second readback of a line rebuilt from another one: one line, one echo
     const kept = new Set<string>(rebuilt.map((r) => r.mathShapeId));
     const extra = seeds.filter((s) => s.lineId && !kept.has(s.shapeId) && s.anchorIds.some((id) => bounds.has(id))).map((s) => s.shapeId);
@@ -1565,6 +1627,7 @@ export class LiveLoop implements LiveController {
     // the chat's problems head the columns under them, as at every flush
     const split = new Map(this.withProblemColumns(rebuilt.map((r) => r.line)).map((l) => [l.id, l]));
     for (const r of rebuilt) r.line = split.get(r.line.id) ?? r.line;
+    this.rememberProblems(rebuilt.map((r) => r.line));
     const next: Record<string, LiveLineState> = { ...liveStore.lines.get() };
     for (const r of rebuilt) {
       const shape = this.editor.getShape(r.mathShapeId);
@@ -1632,7 +1695,11 @@ export class LiveLoop implements LiveController {
     const { split, touched: drawn } = this.splitDrawings(ink, wrote);
     const prevStates = liveStore.lines.get();
     const prevLines = Object.values(prevStates).map((s) => s.line);
-    const lines = this.withProblemColumns(clusterLines(split.writing, prevLines, barGroups(split.bars, ink), { zoom: this.boardZoom() }));
+    // what the columns know besides the lines: what fills a gap under one, and which lines were one problem
+    const inLines = new Set<string>([...split.writing.map((s) => s.id), ...split.bars.flatMap((b) => [b.bar, ...b.divisor])]);
+    const columns = this.columnOptions(inLines);
+    const lines = this.withProblemColumns(clusterLines(split.writing, prevLines, barGroups(split.bars, ink), { zoom: this.boardZoom(), columns }));
+    this.rememberProblems(lines);
     const nextIds = new Set(lines.map((l) => l.id));
 
     for (const prev of prevLines) if (!nextIds.has(prev.id)) this.dropLine(prev.id);
@@ -2366,7 +2433,7 @@ export class LiveLoop implements LiveController {
       .sort((a, b) => a.line.row - b.line.row);
   }
 
-  private columnContext(state: LiveLineState): { previous?: LineAnalysis; original?: LineAnalysis } {
+  private columnContext(state: LiveLineState): { previous?: LineAnalysis; original?: LineAnalysis; givens?: Record<string, string> } {
     const col = this.columnLines(state.line.column);
     let previous: LineAnalysis | undefined;
     let original: LineAnalysis | undefined;
@@ -2384,7 +2451,66 @@ export class LiveLoop implements LiveController {
       if (!s.latex) continue;
       take(s.analysis);
     }
-    return { previous, original };
+    // the values the rest of the column gives its letters, above it or under it (`givens.ts`):
+    // `3x + 24 =` over `x = 3` asks for 33
+    const index = col.findIndex((s) => s.line.id === state.line.id);
+    const givens = index === -1 ? undefined : givensFor(this.columnGivens(col), index);
+    return givens ? { previous, original, givens } : { previous, original };
+  }
+
+  /** The values a column's lines give its letters (`givens.ts`), indexed as `col`. */
+  private columnGivens(col: readonly LiveLineState[]): Given[] {
+    return givensOf(
+      col.map((s) => s.latex),
+      col.map((s) => s.analysis),
+    );
+  }
+
+  /**
+   * The line an ask about `state` is for. The student asked on a value they gave — `x = 3` under
+   * `3x + 24 =`, or the `3` of an `x =` read apart from it — and the column has a line evaluated
+   * at it (`LineAnalysis.substituted`): that line is the question, finished where they left off
+   * (`33` after its `=`). The given is no step to go on from: asked on it, Solve went to a model,
+   * which wrote `= 3(x+8)` under the `x = 3`. Any other line is asked about as it is.
+   */
+  private askedLine<T extends LiveLineState | undefined>(state: T): T | LiveLineState {
+    if (!state) return state;
+    const col = this.columnLines(state.line.column);
+    const index = col.findIndex((s) => s.line.id === state.line.id);
+    if (index === -1) return state;
+    const at = evaluatedLineFor(
+      col.map((s) => s.latex),
+      col.map((s) => s.analysis),
+      this.columnGivens(col),
+      index,
+    );
+    return at === -1 ? state : col[at];
+  }
+
+  /**
+   * A value given in this column appeared, changed or went (`x = 3` read, rewritten, rubbed out):
+   * the lines it evaluates (`3x + 24 =`, wherever they are in the column) are analysed again — and
+   * the lines under each, whose line above changed — and re-rendered: the answer written for the
+   * old value goes (`dropStaleAnswer`), the new one is written as any answer is. A line ending in
+   * `=` is the only kind that reads the givens (`AnalyzeContext.givens`).
+   */
+  private refreshEvaluated(column: number, skipLineId?: string): void {
+    if (!this.engine) return;
+    const col = this.columnLines(column).filter((s) => s.latex);
+    const first = col.findIndex((s) => {
+      if (s.line.id === skipLineId || !/=\s*$/.test(s.latex)) return false;
+      const a = this.analyze(s);
+      const b = s.analysis;
+      return (a?.kind ?? "") !== (b?.kind ?? "") || (a?.substituted ?? "") !== (b?.substituted ?? "") || (a?.resultLatex ?? "") !== (b?.resultLatex ?? "");
+    });
+    if (first === -1) return;
+    for (const s of col.slice(first)) {
+      const cur = liveStore.lines.get()[s.line.id];
+      if (!cur?.latex) continue;
+      setLine(cur.line.id, { analysis: this.analyze(cur) });
+      const fresh = liveStore.lines.get()[cur.line.id];
+      if (fresh) this.render(fresh, this.decisionFor(fresh));
+    }
   }
 
   // ---------------------------------------------------------------- the chat's problems as column heads
@@ -2408,6 +2534,81 @@ export class LiveLoop implements LiveController {
     return this.problemCells()
       .filter((c) => c.lines.length === 1 && /=|<|>|\\[lg]eq?(?![a-zA-Z])/.test(c.lines[0]))
       .map((c) => c.head);
+  }
+
+  // ---------------------------------------------------------------- problems one under another
+  /**
+   * What the columns know besides the student's lines (`assignColumns`). A blank gap under a column
+   * starts a new problem; what fills one is not blank:
+   *  - the tutor's writing there (its steps, answers, readbacks, marks, graphs; hidden or not) that
+   *    was on the page BEFORE the line under it was written: a student going on under the tutor's
+   *    step is still in that problem, but working the problem above into the gap over a problem
+   *    already written below does not join the two. tldraw stacks every new shape above all the
+   *    others, so "before" is a lower index than the line's first stroke — also after a reload;
+   *  - the student's ink that is in no line (`inLines`): a drawing, a table.
+   * And the lines that were one problem before stay one (`problemMates`), as do the lines under one
+   * of the chat's problems: its cell is the problem, gap or no gap (`chat/cells.ts`).
+   */
+  private columnOptions(inLines: ReadonlySet<string>): ColumnOptions {
+    // read off the page only when a gap is wide enough to ask (most flushes never do), once
+    let ink: { tutor: Array<{ rect: Rect; index: string }>; other: Rect[] } | null = null;
+    const pageInk = () => {
+      if (ink) return ink;
+      ink = { tutor: [], other: [] };
+      for (const s of this.editor.getCurrentPageShapes()) {
+        const live = isLiveMeta(s.meta);
+        // the chat's problems head columns of their own (`withProblemColumns`)
+        if (live ? Boolean(problemMetaOf(s.meta)) : !isStudentInk(s) || inLines.has(s.id)) continue;
+        const b = this.editor.getShapePageBounds(s);
+        if (!b) continue;
+        if (live) ink.tutor.push({ rect: boxToRect(b), index: s.index });
+        else ink.other.push(boxToRect(b));
+      }
+      return ink;
+    };
+    const byLine = new Map<string, Rect[]>();
+    let cells: ProblemCell[] | null = null;
+    const cellKey = (line: InkLine) => cellOf(line.bounds, (cells ??= this.problemCells()))?.key ?? null;
+    return {
+      filled: (line) => {
+        const known = byLine.get(line.id);
+        if (known) return known;
+        // when the line was written: its first stroke's place in the stack
+        let first = "";
+        for (const id of line.strokeIds) {
+          const index = this.editor.getShape(id)?.index;
+          if (index && (first === "" || index < first)) first = index;
+        }
+        const { tutor, other } = pageInk();
+        const rects = [...other, ...tutor.filter((t) => first !== "" && t.index < first).map((t) => t.rect)];
+        byLine.set(line.id, rects);
+        return rects;
+      },
+      together: (line, other) => {
+        if (this.problemMates.get(line.id)?.has(other.id)) return true;
+        const cell = cellKey(line);
+        return cell !== null && cell === cellKey(other);
+      },
+    };
+  }
+
+  /** Remembers which lines are one problem now (`problemMates`), and forgets the lines that are gone. */
+  private rememberProblems(lines: readonly InkLine[]): void {
+    const ids = new Set(lines.map((l) => l.id));
+    for (const [id, mates] of this.problemMates) {
+      if (!ids.has(id)) this.problemMates.delete(id);
+      else for (const m of mates) if (!ids.has(m)) mates.delete(m);
+    }
+    const byColumn = new Map<number, string[]>();
+    for (const l of lines) byColumn.set(l.column, [...(byColumn.get(l.column) ?? []), l.id]);
+    for (const column of byColumn.values()) {
+      if (column.length < 2) continue;
+      for (const id of column) {
+        const mates = this.problemMates.get(id) ?? new Set<string>();
+        for (const m of column) if (m !== id) mates.add(m);
+        this.problemMates.set(id, mates);
+      }
+    }
   }
 
   /** `lines` with the columns split at the chat's problems; remembers which problem heads which column. */
@@ -2450,7 +2651,13 @@ export class LiveLoop implements LiveController {
     if (!this.started) return;
     const states = Object.values(liveStore.lines.get());
     const before = [...this.columnHeads.entries()].map(([c, h]) => `${c}:${h.key}`).join(",");
-    const next = this.withProblemColumns(assignColumns(states.map((s) => ({ ...s.line })), this.boardZoom()));
+    const next = this.withProblemColumns(
+      assignColumns(
+        states.map((s) => ({ ...s.line })),
+        this.columnOptions(new Set(states.flatMap((s) => s.line.strokeIds))),
+      ),
+    );
+    this.rememberProblems(next);
     const after = [...this.columnHeads.entries()].map(([c, h]) => `${c}:${h.key}`).join(",");
     let changed = before !== after;
     for (const l of next) {
@@ -2728,6 +2935,8 @@ export class LiveLoop implements LiveController {
         if (b) this.render(b, this.decisionFor(b));
       }
     }
+    // a value this line gives (`x = 3`) may finish a line above it too (`3x + 24 =`)
+    this.refreshEvaluated(fresh.line.column, lineId);
 
     // A read that lands after the pause is due at once; one before it waits for the settle
     // (`autoPause`). The whole column: a line whose line above just changed is checked again.
@@ -2800,7 +3009,9 @@ export class LiveLoop implements LiveController {
    */
   private autoKey(kind: "check" | "solve" | "step", state: LiveLineState): string {
     const column = this.columnLines(state.line.column).filter((s) => s.line.row <= state.line.row && s.latex);
-    return `${kind}|${this.pageKey()}|${column.map((s) => s.latex).join("\n")}`;
+    // a line evaluated at a value written under it (`3x + 24 =` over `x = 3`) is another problem at another value
+    const at = state.analysis?.substituted ? ` @ ${state.analysis.substituted}` : "";
+    return `${kind}|${this.pageKey()}|${column.map((s) => s.latex).join("\n")}${at}`;
   }
 
   /** True the first time this key is seen (and remembers it). */
@@ -2891,7 +3102,8 @@ export class LiveLoop implements LiveController {
    */
   private autoTarget(): LiveLineState | undefined {
     if (!this.penStrokeId || this.picked()) return undefined;
-    return penLine(liveStore.lines.get(), this.penStrokeId, this.penLineId) ?? undefined;
+    // the `x = 3` just written under `3x + 24 =` is that line's value, not a problem of its own (`askedLine`)
+    return this.askedLine(penLine(liveStore.lines.get(), this.penStrokeId, this.penLineId) ?? undefined);
   }
 
   /** Suggest's stuck pause starts again from now (Auto on; it looks at the mode again when it ends). */
@@ -3016,6 +3228,7 @@ export class LiveLoop implements LiveController {
     const rt = this.runtime(lineId);
     // The line changed under an answer the tutor had already written: that answer is stale.
     this.dropStaleAnswer(state);
+    this.dropStaleNextStep(state);
     this.dropStaleOperationResult(state);
     // Its column's graph follows its maths: erased when that changed, sketched when wanted (Solve, settled).
     if (!opts.keepStatus && !decision.capped) this.syncGraph(state.line.column);
@@ -3599,8 +3812,12 @@ export class LiveLoop implements LiveController {
     }
     this.deleteLineShapes(lineId);
     removeLine(lineId);
-    // the rest of its column may have lost a relation its graph was drawn from
-    if (column !== undefined) this.syncGraph(column);
+    // the rest of its column may have lost a relation its graph was drawn from, or a value a line
+    // ending in `=` was evaluated at (its answer goes with it)
+    if (column !== undefined) {
+      this.refreshEvaluated(column);
+      this.syncGraph(column);
+    }
     if (this.retryContext && "lineId" in this.retryContext && this.retryContext.lineId === lineId) this.resetRetry();
   }
 
@@ -3837,11 +4054,15 @@ export class LiveLoop implements LiveController {
    */
   private planInlineAnswer(state: LiveLineState, answer: string): HandPlan | null {
     const ink = state.line.bounds;
+    // after the step Help wrote there (`3x + 24 = 3(3) + 24`) the line goes on from it: `= 33`
+    const put = this.nextStepRect(state);
+    const end = put ? rectMaxX(unionRects([ink, put])) : rectMaxX(ink);
+    const text = put && !startsWithRelation(answer) ? `= ${answer}` : answer;
     const size = inlineHandSizeFor(ink.h, this.boardZoom());
-    const { plan, unsupported } = planHandwriting([answer], { size, seed: handSeedFor(`${state.line.id}:answer`) });
+    const { plan, unsupported } = planHandwriting([text], { size, seed: handSeedFor(`${state.line.id}:answer`) });
     if (!plan || unsupported.length > 0) return null;
     const placed = placeHandPlanOnBaseline(plan, {
-      x: rectMaxX(ink) + inlineAnswerGap(ink.h),
+      x: end + inlineAnswerGap(ink.h),
       baselineY: rectMaxY(ink),
     });
     const viewport = this.placementBounds();
@@ -3850,9 +4071,65 @@ export class LiveLoop implements LiveController {
     return placed;
   }
 
+  /** Where Help's next step for this line is (`writeNextStep`), when it is on the page for the line as it reads now. */
+  private nextStepRect(state: LiveLineState): Rect | null {
+    const key = answerSourceOf(state);
+    const rects: Rect[] = [];
+    for (const s of this.editor.getCurrentPageShapes()) {
+      if (!isLiveMeta(s.meta) || s.meta.lineId !== state.line.id || metaString(s.meta, NEXT_STEP_META) !== key) continue;
+      const b = this.editor.getShapePageBounds(s);
+      if (b) rects.push(boxToRect(b));
+    }
+    return rects.length > 0 ? unionRects(rects) : null;
+  }
+
+  /**
+   * Help me on a line the student ended with `=` that the engine works out (`LineAnalysis.nextStep`),
+   * in Feedback and Suggest: the first line of that working, written after their `=`, where they
+   * left off — the values put in for `3x + 24 =` over `x = 3` (`3x + 24 = 3(3) + 24`), one expansion
+   * for `(x - 3)(x + 2) =` (`= x^{2} + 2x - 3x - 6`) — and the rest is theirs to do. By hand beside
+   * their line, as `inlineAnswer` writes an answer; where it cannot go there, as any step
+   * continuing that line goes (`drawStepsByHand`: under it, or restated under the work — never
+   * under the `x = 3`, where `= 3(3) + 24` would read as `x = 3 = 3(3) + 24`). Asked again with it
+   * on the page, nothing new. False when the engine has no such step for the line.
+   */
+  private writeNextStep(state: LiveLineState): boolean {
+    const step = state.analysis?.nextStep;
+    if (!step) return false;
+    if (this.nextStepRect(state) || this.writerFor === state.line.id) return true;
+    if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
+    const meta: JsonObject = { [NEXT_STEP_META]: answerSourceOf(state) };
+    const inline = this.deps.handwritingEnabled() ? this.planInlineAnswer(state, step) : null;
+    if (inline) {
+      this.startHandwriting(inline, state.line.id, meta);
+      clientMetric("live.nextStep.hand", { lineId: state.line.id });
+      return true;
+    }
+    const built = this.buildCheckLines(state.line.column);
+    if (!built) return false;
+    const steps = [`= ${step}`];
+    const opts: SolveOpts = { lineId: state.line.id, onlyFirstStep: true };
+    if (!(this.deps.handwritingEnabled() && this.drawStepsByHand(built, opts, state, steps, meta, state))) this.typesetSteps(built, opts, steps, meta, state);
+    clientMetric("live.nextStep.under", { lineId: state.line.id });
+    return true;
+  }
+
+  /** The line rewritten, its given value changed, or nothing to work out any more: Help's step for it goes. */
+  private dropStaleNextStep(state: LiveLineState): void {
+    const want = state.analysis?.nextStep ? answerSourceOf(state) : "";
+    const stale = this.editor
+      .getCurrentPageShapes()
+      .filter((s) => isLiveMeta(s.meta) && s.meta.lineId === state.line.id && metaString(s.meta, NEXT_STEP_META) !== "" && metaString(s.meta, NEXT_STEP_META) !== want);
+    if (stale.length === 0) return;
+    this.write(() => {
+      const ids = stale.map((s) => s.id).filter((id) => this.editor.getShape(id));
+      if (ids.length > 0) this.editor.deleteShapes(ids);
+    });
+  }
+
   private answerMeta(state: LiveLineState, answer: string): JsonObject {
     return {
-      [ANSWER_SRC_META]: state.latex,
+      [ANSWER_SRC_META]: answerSourceOf(state),
       [ANSWER_LATEX_META]: answer,
       [ANSWER_ANCHORS_META]: [...state.line.strokeIds],
     };
@@ -3879,7 +4156,7 @@ export class LiveLoop implements LiveController {
   /** Rewriting the line replaces its answer: the old one goes before the new one is written. */
   private dropStaleAnswer(state: LiveLineState): void {
     if (!this.hasAnswerInk) return;
-    const stale = this.answerBlocksFor(state.line.id).filter((s) => answerSrcOf(s.meta) !== state.latex);
+    const stale = this.answerBlocksFor(state.line.id).filter((s) => answerSrcOf(s.meta) !== answerSourceOf(state));
     if (stale.length === 0) return;
     this.write(() => {
       const ids = stale.map((s) => s.id).filter((id) => this.editor.getShape(id));
@@ -3938,6 +4215,14 @@ export class LiveLoop implements LiveController {
     // when that gives nothing do the paths below get their turn.
     const figure = this.figureBeside(built);
     if (figure) {
+      // ...unless it is no figure and sits on the row of the line asked about: the line's own big
+      // writing, taken from it (`solveLineWithRow`)
+      const row = this.engine && !this.isRealFigure(figure) ? this.inkRowOf(figure) : null;
+      const asked = liveStore.lines.get()[opts.lineId];
+      if (row && asked && built.states.some((s) => s.line.id === opts.lineId) && row.strokes.some((st) => asked.line.strokeIds.includes(st.id))) {
+        this.solveLineWithRow(figure, row, built, fromLineId, opts);
+        return "model";
+      }
       this.startFigure(figure, opts, { built, fromLineId });
       return "model";
     }
@@ -3956,11 +4241,17 @@ export class LiveLoop implements LiveController {
     this.deps.notify(message);
   }
 
-  /** Solve's line is a lone expression in letters with nothing left to do to it (`engine.alreadySimplest`). */
+  /**
+   * Solve's line is a lone expression in letters with nothing left to do to it (`engine.alreadySimplest`)
+   * — written alone, or ended with `=` (`x^{2} + 3x + 5 =` asks no more than `x^{2} + 3x + 5`: the
+   * engine leaves it unfinished, and Solve went on to ask a model about it).
+   */
   private alreadySimplest(built: BuiltColumn, opts: SolveOpts): boolean {
     const asked = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
-    if (!asked?.latex || asked.analysis?.kind !== "expression") return false;
-    return this.engine?.alreadySimplest?.(asked.latex) === true;
+    if (!asked?.latex) return false;
+    const unfinished = asked.analysis?.kind === "incomplete" && endsWithEquals(asked.latex);
+    if (asked.analysis?.kind !== "expression" && !unfinished) return false;
+    return this.engine?.alreadySimplest?.(unfinished ? asked.latex.replace(/=\s*$/, "") : asked.latex) === true;
   }
 
   /**
@@ -4027,32 +4318,10 @@ export class LiveLoop implements LiveController {
   private async solveInkAsMaths(diagram: Diagram, opts: SolveOpts, gen = this.generation): Promise<boolean> {
     const engine = this.engine;
     if (!engine) return false;
-    const gone = () => !this.started || this.generation !== gen;
-    const row = this.inkRowOf(diagram);
-    const line: InkLine = { id: diagram.id, strokeIds: row.strokes.map((st) => st.id), bounds: row.bounds, column: 0, row: 0, hash: "" };
-    const payload = buildPayload(line, row.strokes);
-    if (!payload) return false;
-    const hash = await hashPayload(payload);
-    if (gone()) return true;
-    if (!this.deps.isOnline() && !this.deps.recognizer.peek(hash)) return false;
-    const req: RecognizeRequest = { boardId: this.opts.boardId, lineId: `ink_${diagram.id}`, strokes: { x: payload.x, y: payload.y }, bounds: { w: payload.w, h: payload.h } };
-    let res: RecognizeResponse;
-    try {
-      res = await this.deps.recognizer.recognize(req, hash);
-    } catch {
-      return gone();
-    }
-    if (gone()) return true;
-    const latex = (res.latex ?? "").trim();
-    // a read the recognizer is not sure of is a picture's, not a line's
-    if (!latex || res.kind !== "math" || res.confidence < LIVE_LIMITS.minConfidence) return false;
-    let kind: LineAnalysis["kind"] | null = null;
-    try {
-      kind = engine.analyzeLine(latex, { mode: "answer" }).kind;
-    } catch {
-      kind = null;
-    }
-    if (kind !== "expression" && kind !== "equation" && kind !== "inequality") return false;
+    const read = await this.readInkRow(diagram, this.inkRowOf(diagram), gen);
+    if (read === "gone") return true;
+    if (!read) return false;
+    const { latex, row } = read;
     const hand = this.deps.handwritingEnabled();
     const local = localSolve(engine, [latex], 0, { handwriting: hand });
     clientMetric("live.figure.asMaths", { diagramId: diagram.id, source: local.source ?? "", kinds: diagram.kinds.join(","), strokes: row.strokes.length });
@@ -4064,6 +4333,125 @@ export class LiveLoop implements LiveController {
         this.writeFigureSolution({ ...diagram, bounds: row.bounds }, null, opts, local.steps, key);
       }
       this.noteSuccess("solve", diagram.id);
+      return true;
+    }
+    if (engine.alreadySimplest?.(latex)) {
+      this.noteFor(opts.lineId, LIVE_COPY.solve.simplest);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * A row of ink (`inkRowOf`) read as ONE line of maths: its latex and the engine's kind for it when
+   * the recognizer is sure it is maths and the engine reads an expression, an equation or an
+   * inequality — or a line left open for its answer (`incomplete`: `(x+y)^{2} =`, which `localSolve`
+   * finishes); null when it is not (a picture's read); "gone" when the screen was left or the loop
+   * stopped while it was hashed or read (`gen`: the runtime it was asked in).
+   */
+  private async readInkRow(
+    diagram: Diagram,
+    row: { strokes: InkStroke[]; bounds: Rect },
+    gen: number,
+  ): Promise<{ latex: string; kind: LineKind; row: { strokes: InkStroke[]; bounds: Rect } } | null | "gone"> {
+    const engine = this.engine;
+    if (!engine) return null;
+    const gone = () => !this.started || this.generation !== gen;
+    const line: InkLine = { id: diagram.id, strokeIds: row.strokes.map((st) => st.id), bounds: row.bounds, column: 0, row: 0, hash: "" };
+    const payload = buildPayload(line, row.strokes);
+    if (!payload) return null;
+    const hash = await hashPayload(payload);
+    if (gone()) return "gone";
+    if (!this.deps.isOnline() && !this.deps.recognizer.peek(hash)) return null;
+    const req: RecognizeRequest = { boardId: this.opts.boardId, lineId: `ink_${diagram.id}`, strokes: { x: payload.x, y: payload.y }, bounds: { w: payload.w, h: payload.h } };
+    let res: RecognizeResponse;
+    try {
+      res = await this.deps.recognizer.recognize(req, hash);
+    } catch {
+      return gone() ? "gone" : null;
+    }
+    if (gone()) return "gone";
+    const latex = (res.latex ?? "").trim();
+    // a read the recognizer is not sure of is a picture's, not a line's
+    if (!latex || res.kind !== "math" || res.confidence < LIVE_LIMITS.minConfidence) return null;
+    let kind: LineAnalysis["kind"] | null = null;
+    try {
+      kind = engine.analyzeLine(latex, { mode: "answer" }).kind;
+    } catch {
+      kind = null;
+    }
+    if (kind !== "expression" && kind !== "equation" && kind !== "inequality" && kind !== "incomplete") return null;
+    return { latex, kind, row };
+  }
+
+  /**
+   * Solve on a line with a drawing on its row that is no figure (`isRealFigure`: open strokes with
+   * nothing on them) — the line's own big writing, taken from it. `(x+y)^2 =` written 220 px tall on
+   * a desktop had the strokes of its `x` taken for a drawing: the line was read without them, the
+   * figure model was asked what the "figure" asks and rightly said nothing, and the worked solution
+   * then asked for the line named an `x` the line did not have — the step interlock threw it away as
+   * a symbol from nowhere, and the student got "Couldn't solve this one — try writing it again a bit
+   * clearer" for a line they had written perfectly well.
+   *
+   * Now the row — the line and the drawing, and whatever else of no figure is level with them — is
+   * read as ONE line (`readInkRow`), and Solve goes on with that line in place of the torn one: the
+   * engine's answer under the work, or its note that there is nothing to do, else the model (the
+   * word problem / worked solution paths), whose steps are checked against the whole line. Only ink
+   * that does not read as maths goes to the figure model, as any drawing beside the work does.
+   */
+  private solveLineWithRow(figure: Diagram, row: { strokes: InkStroke[]; bounds: Rect }, built: BuiltColumn, fromLineId: string | undefined, opts: SolveOpts): void {
+    // the pill says "Solving…" while the row is read, as it does for the figure
+    liveStore.status.set("checking");
+    const ended = this.solvingStarted();
+    const gen = this.generation;
+    void this.readInkRow(figure, row, gen)
+      .catch((err) => {
+        console.warn("[live] reading the line with the ink on its row failed", err);
+        return null;
+      })
+      .then((read) => {
+        // asked on a screen the student has left (or deleted): nothing more, here
+        if (!ended() || read === "gone" || !this.started) return;
+        if (!read) {
+          if (this.diagrams.some((d) => d.id === figure.id)) this.startFigure(figure, opts, { built, fromLineId });
+          else this.solveWithoutFigure(built, fromLineId, opts);
+          return;
+        }
+        const whole = withLineRead(built, opts.lineId, read);
+        clientMetric("live.solve.inkRow", { lineId: opts.lineId, diagramId: figure.id, kinds: figure.kinds.join(","), strokes: read.row.strokes.length });
+        if (this.writeRowLocal(figure, whole, opts, read.latex)) {
+          if (liveStore.status.get() !== "offline") liveStore.status.set("idle");
+          return;
+        }
+        if (!this.deps.isOnline()) {
+          this.deferLlm("solve", opts.lineId);
+          return;
+        }
+        this.solveWithoutFigure(whole, fromLineId, opts);
+      });
+  }
+
+  /**
+   * `solveLineWithRow`'s engine half: the column with the line read whole (`whole`) solved locally
+   * (`localSolve`) and written under the work, or the note that the line has nothing to do. False
+   * when the engine has nothing: the model is asked.
+   */
+  private writeRowLocal(figure: Diagram, whole: BuiltColumn, opts: SolveOpts, latex: string): boolean {
+    const engine = this.engine;
+    if (!engine) return false;
+    const idx = whole.states.findIndex((s) => s.line.id === opts.lineId);
+    const local = localSolve(
+      engine,
+      whole.states.map((s) => s.latex),
+      idx === -1 ? undefined : idx,
+      { handwriting: this.deps.handwritingEnabled() },
+    );
+    if (local.source && local.steps.length > 0) {
+      const key = `ink: ${latex}`;
+      if ((opts.onlyFirstStep || !this.hasHandSolution(opts.lineId, key)) && liveStore.liveShapeCount.get() < LIVE_LIMITS.maxLiveShapesPerBoard) {
+        this.writeFigureSolution(figure, whole, opts, local.steps, key);
+      }
+      this.noteSuccess("solve", opts.lineId);
       return true;
     }
     if (engine.alreadySimplest?.(latex)) {
@@ -4633,14 +5021,17 @@ export class LiveLoop implements LiveController {
     rt.solveAbort?.abort();
     const ctrl = new AbortController();
     rt.solveAbort = ctrl;
+    // A line the student ended with `=` is the question: the model is told which one, so it finishes
+    // that line (its step is written after that `=`, `continuedLine`) rather than "going on" from the
+    // `x = 3` under it — which is how `= 3(x+8)` came to be written under an `x = 3`.
+    const asks = this.askingLine(built, opts.lineId);
     const req: SolveRequest = {
       boardId: this.opts.boardId,
       region: built.region,
       lines: built.lines,
       fromLineId,
+      ...(asks ? { goal: `what line id ${asks.line.id} equals (${asks.latex.slice(0, 80)}): continue it after its =, using any values the other lines give`.slice(0, 200) } : {}),
     };
-    const lastLine = built.states[built.states.length - 1].line;
-    const columnRect = unionRects(built.states.map((s) => s.line.bounds));
     // Every solve is asked for (Solve steps, More help, the board chat).
     const errCtx = { kind: "solve" as const, lineId: opts.lineId, userAsked: true };
     const retry: RetryContext = { kind: "solve", lineId: opts.lineId, fromLineId, opts };
@@ -4694,7 +5085,7 @@ export class LiveLoop implements LiveController {
             this.fail(sseFailure(ev.data), errCtx, retry);
           }
         }
-        if (accepted.length > 0 && (doneEarly || !ctrl.signal.aborted)) this.writeModelSteps(built, opts, accepted, columnRect, lastLine.bounds);
+        if (accepted.length > 0 && (doneEarly || !ctrl.signal.aborted)) this.writeModelSteps(built, opts, accepted);
         // The model answered, but nothing it said survived the interlock. Better to say so than
         // to leave the student staring at a page where Solve visibly did nothing.
         if (!failed && drawn === 0 && discarded > 0) {
@@ -4721,7 +5112,7 @@ export class LiveLoop implements LiveController {
    * The model's verified steps, replacing any earlier solution for this work: in the tutor's
    * hand when every step can be drawn, typeset only when the hand lacks a symbol.
    */
-  private writeModelSteps(built: { states: LiveLineState[] }, opts: SolveOpts, steps: string[], column: Rect, lastLine: Rect): void {
+  private writeModelSteps(built: { states: LiveLineState[] }, opts: SolveOpts, steps: string[]): void {
     const state = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
     if (opts.problem) {
       // the model's worked solution of a problem the chat wrote: continued after the tutor's own work there
@@ -4730,7 +5121,7 @@ export class LiveLoop implements LiveController {
     }
     this.clearSolveOutput(built.states.map((s) => s.line.id));
     if (this.deps.handwritingEnabled() && state && this.drawStepsByHand(built, opts, state, steps)) return;
-    steps.forEach((step, i) => this.placeSolutionStep(column, lastLine, i + 1, step, "", opts.lineId));
+    this.typesetSteps(built, opts, steps);
   }
 
   /**
@@ -4786,12 +5177,16 @@ export class LiveLoop implements LiveController {
     });
 
     if (local.source === "localAnswer" && local.answer) {
+      // `3x + 24 =` over `x = 3`: the answer is that line's, finished after its `=` (`drawStepsByHand`)
+      const line = local.line === undefined ? undefined : built.states[local.line];
+      const answered = line ?? state;
       // `36 + 2 =`: the tutor may already have finished it (inline, or Solve pressed twice)
-      if (this.answerBlocksFor(opts.lineId).some((s) => answerLatexOf(s.meta) === local.answer)) return written();
+      if (this.answerBlocksFor(answered.line.id).some((s) => answerLatexOf(s.meta) === local.answer)) return written();
       if (atCap) return written();
-      const handBlock = hand ? this.drawStepsByHand(built, opts, state, steps, this.answerMeta(state, local.answer)) : null;
+      const meta = this.answerMeta(answered, local.answer);
+      const handBlock = hand ? this.drawStepsByHand(built, opts, state, steps, meta, line) : null;
       if (handBlock) return written(handBlock);
-      this.placeSolutionStep(column, lastLine, 0, steps[0], "", opts.lineId);
+      this.typesetSteps(built, opts, steps, line ? meta : undefined, line, 0);
       clientMetric("live.solve.local.typeset", { lineId: opts.lineId });
       return written(typesetBlock(0));
     }
@@ -4861,6 +5256,16 @@ export class LiveLoop implements LiveController {
   /**
    * Lays `steps` out under the student's last line and starts the reveal.
    *
+   * A block that continues a line the student ended with `=` (`continuedLine`: it starts with
+   * `=`, `= 3(x + 8)`) is that line's, wherever the work goes on under it. The owner's board
+   * wrote the model's `= 3(x+8)` for `3x + 24 =` on the free row under the `x = 3` below it, where
+   * it read `x = 3 = 3(x+8)`. So when that line is not the last of the work: one step goes after its
+   * `=`, as `inlineAnswer` writes `38` after `36 + 2 =`; else the block goes straight under it when
+   * it fits there as it is; else under the work as any block, its first line restated as that line
+   * (`3x + 24 = 3(x + 8)`), which reads as nothing else. `continues` names the line (Solve's
+   * answer to the line the givens evaluate, `localSolve`'s `line`); without it, the asked-for line
+   * when it ends with `=`, else the nearest line above it that does.
+   *
    * Returns null when the hand engine reports ANY `unsupported` construct for the block —
    * the safety interlock: a dropped `\frac` would show the student wrong maths, so the block
    * is never drawn partly. Otherwise where the block is being written, and for how long.
@@ -4871,28 +5276,51 @@ export class LiveLoop implements LiveController {
     state: LiveLineState,
     steps: readonly string[],
     extraMeta?: JsonObject,
+    continues?: LiveLineState,
   ): { rect: Rect; wallMs: number } | null {
     if (opts.problem) return this.drawProblemWork(built, opts, opts.problem, state, steps, extraMeta);
     // the student's size, on this board (`handSizeFor`'s zoom: a phone's writing is 5x a desktop's in page px)
     const size = handSizeFor(state.line.bounds.h, this.boardZoom());
     const k = this.handScale();
-    const { plan, unsupported } = planHandwriting(steps, { size, seed: handSeedFor(opts.lineId) });
+    const wall = (plan: HandPlan) => (this.deps.reducedMotion() ? 0 : wallMsOf(plan));
+    const cont = this.continuedLine(built, opts.lineId, steps, continues);
+    if (cont && steps.length === 1) {
+      const inline = this.planInlineAnswer(cont, withoutRelation(steps[0]));
+      if (inline) {
+        this.startHandwriting(inline, opts.lineId, extraMeta);
+        return { rect: inline.bounds, wallMs: wall(inline) };
+      }
+    }
+    const seed = handSeedFor(opts.lineId);
+    let { plan, unsupported } = planHandwriting(steps, { size, seed });
     if (!plan || unsupported.length > 0) return null;
 
     const lastLine = built.states[built.states.length - 1].line.bounds;
     const column = unionRects(built.states.map((s) => s.line.bounds));
+    // avoidRects skips this line's own ink and echo; for a block written *under* the work they
+    // are obstacles like any other, so they go back in — and so does every line of the work.
+    const avoid = this.avoidRects(opts.lineId);
+    avoid.push(state.line.bounds, ...built.states.map((s) => s.line.bounds));
+    const echo = this.echoRect(opts.lineId);
+    if (echo) avoid.push(echo);
+    if (cont) {
+      // straight under the line it continues, when it fits there without moving
+      const under: Rect = { x: cont.line.bounds.x, y: rectMaxY(cont.line.bounds) + PLACEMENT.stepGap * k, w: plan.bounds.w, h: plan.bounds.h };
+      if (!avoid.some((r) => rectsIntersect(r, under))) {
+        const block = placeHandPlan(plan, { x: under.x, y: under.y });
+        this.startHandwriting(block, opts.lineId, extraMeta);
+        return { rect: block.bounds, wallMs: wall(plan) };
+      }
+      // under the work, its first line restated as the line it continues
+      ({ plan, unsupported } = planHandwriting(restated(cont.latex, steps), { size, seed }));
+      if (!plan || unsupported.length > 0) return null;
+    }
     const candidate: Rect = {
       x: column.x,
       y: rectMaxY(lastLine) + PLACEMENT.stepGap * k,
       w: plan.bounds.w,
       h: plan.bounds.h,
     };
-    // avoidRects skips this line's own ink and echo; for a block written *under* the work they
-    // are obstacles like any other, so they go back in.
-    const avoid = this.avoidRects(opts.lineId);
-    avoid.push(state.line.bounds);
-    const echo = this.echoRect(opts.lineId);
-    if (echo) avoid.push(echo);
     // Under the work, a blocked block slides down past what is in the way; moved beside the work
     // (no room below on this screen), it slides right as an echo does.
     const placed = keepOnScreen(candidate, this.screenRect(), column, 0, PLACEMENT.sideGap * k);
@@ -4901,7 +5329,58 @@ export class LiveLoop implements LiveController {
     const block = placeHandPlan(plan, { x: slot.x, y: slot.y });
     this.startHandwriting(block, opts.lineId, extraMeta);
     clientMetric("live.solve.hand.ms", { ms: Math.round(wallMsOf(plan)), lineId: opts.lineId });
-    return { rect: block.bounds, wallMs: this.deps.reducedMotion() ? 0 : wallMsOf(plan) };
+    return { rect: block.bounds, wallMs: wall(plan) };
+  }
+
+  /**
+   * The typeset form of `drawStepsByHand` (the hand is off, or lacks a glyph): `placeSolutionStep`
+   * under the work from step `first` on — a block continuing a line ending in `=` straight under
+   * that line when it fits there, else restated as it (`3x + 24 = 33`). Never under a later line,
+   * where `= 33` read as the end of the `x = 3` above it.
+   */
+  private typesetSteps(built: { states: LiveLineState[] }, opts: SolveOpts, steps: readonly string[], extraMeta?: JsonObject, continues?: LiveLineState, first = 1): void {
+    const lastLine = built.states[built.states.length - 1].line.bounds;
+    const column = unionRects(built.states.map((s) => s.line.bounds));
+    const cont = this.continuedLine(built, opts.lineId, steps, continues);
+    if (!cont) {
+      steps.forEach((step, i) => this.placeSolutionStep(column, lastLine, i + first, step, "", opts.lineId, extraMeta));
+      return;
+    }
+    const block: Rect = {
+      x: column.x,
+      y: rectMaxY(cont.line.bounds) + PLACEMENT.stepGap,
+      w: Math.max(...steps.map((st) => estimateEchoWidth(st))),
+      h: steps.length * PLACEMENT.stepPitch,
+    };
+    const avoid = [...this.avoidRects(opts.lineId), ...built.states.map((s) => s.line.bounds)];
+    const fits = !avoid.some((r) => rectsIntersect(r, block));
+    const lines = fits ? steps : restated(cont.latex, steps);
+    lines.forEach((step, i) => this.placeSolutionStep(column, fits ? cont.line.bounds : lastLine, i + 1, step, "", opts.lineId, extraMeta));
+  }
+
+  /**
+   * The line the student ended with `=` that `steps` continue, when it is not the last line of the
+   * work (under the last line, a block is straight under it already): `continues` when given,
+   * else `askingLine`'s. Null when the block does not start with `=` (`3(3) + 24`, `x = 4`: a line
+   * of its own).
+   */
+  private continuedLine(built: { states: LiveLineState[] }, askedId: string, steps: readonly string[], continues?: LiveLineState): LiveLineState | null {
+    if (steps.length === 0 || !/^\s*=/.test(steps[0])) return null;
+    const cont = continues && endsWithEquals(continues.latex) ? continues : this.askingLine(built, askedId);
+    const last = built.states[built.states.length - 1];
+    return cont && last && last.line.id !== cont.line.id ? cont : null;
+  }
+
+  /**
+   * The line of the work that asks what it equals: the asked-for line when the student ended it with
+   * `=`, else the nearest line above it that they did (`3x + 24 =` over the `x = 3` Solve was asked
+   * on). Null when no line of the work ends with `=`.
+   */
+  private askingLine(built: { states: LiveLineState[] }, askedId: string): LiveLineState | null {
+    const states = built.states;
+    const asked = states.findIndex((s) => s.line.id === askedId);
+    for (let i = asked === -1 ? states.length - 1 : asked; i >= 0; i--) if (endsWithEquals(states[i].latex)) return states[i];
+    return null;
   }
 
   private makeWriter(): HandWriter {
@@ -5708,7 +6187,8 @@ export class LiveLoop implements LiveController {
       this.askAboutDrawing(figure, { lineId: figure.id });
       return;
     }
-    let target = lineId ? liveStore.lines.get()[lineId] : this.helpTargetLine();
+    // asked on the `x = 3` under `3x + 24 =`: the line it evaluates is the question (`askedLine`)
+    let target = this.askedLine(lineId ? liveStore.lines.get()[lineId] : this.helpTargetLine());
     // The chat's problems: with no line of the student's to act on, Solve steps is about the current
     // problem — worked out under it; pressed again once it is, the next one (`chat/work.ts`).
     if (!lineId && this.opts.enabled && this.opts.mode === "answer" && !this.actsOn(target)) {
@@ -5816,7 +6296,8 @@ export class LiveLoop implements LiveController {
       this.askAboutDrawing(figure, { lineId: figure.id, onlyFirstStep: this.opts.mode !== "answer" });
       return true;
     }
-    const target = this.helpTargetLine();
+    // asked on the `x = 3` under `3x + 24 =` (or the lone `3` of an `x =` read apart): that line (`askedLine`)
+    const target = this.askedLine(this.helpTargetLine());
     // The chat's problems: with no line of the student's to help with, Help is about the current one.
     if (!this.actsOn(target) && this.helpWithProblem(target)) return true;
     // nothing on this screen to help with: the button says so
@@ -6100,9 +6581,11 @@ export class LiveLoop implements LiveController {
    * More help on a line: the right next step by hand from the engine, straight away; when the
    * engine has none, one model step for this line (still checked, still drawn by hand).
    */
-  escalate(lineId: string): void {
-    const target = liveStore.lines.get()[lineId];
+  escalate(askedId: string): void {
+    // on the `x = 3` under `3x + 24 =`: help with the line it evaluates (`askedLine`)
+    const target = this.askedLine(liveStore.lines.get()[askedId]);
     if (!target || !target.latex || this.opts.mode === "off") return;
+    const lineId = target.line.id;
     if (this.proofs.ask(lineId, null, { all: false })) return;
     this.closeHintsFor(lineId);
     const wrong = target.analysis?.verdict === "mismatch" || this.modelFlagged(target);
@@ -6116,6 +6599,9 @@ export class LiveLoop implements LiveController {
     }
     // Stuck after a right operation (`\div 2` under `2\sin x = 1`): the equation it leads to, then the step after it.
     if (this.continueOperation(target, { all: false })) return;
+    // Stuck on a line ending in `=` the engine works out: its first step, after their `=` (`3x + 24 =` over
+    // `x = 3` → `3(3) + 24`; `(x - 3)(x + 2) =` → `x^{2} + 2x - 3x - 6`).
+    if (this.writeNextStep(target)) return;
     // Stuck on a line that is fine: when its work graphs (`y = 2x + 1`, a system, `x > 4`), the
     // graph is the help — sketched from the engine, no model asked. Otherwise the next step.
     if (this.syncGraph(target.line.column, { asked: true, anchorLineId: lineId })) return;

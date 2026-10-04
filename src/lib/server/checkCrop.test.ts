@@ -96,3 +96,31 @@ describe("buildSolveMessages — word problems", () => {
     expect(user.content as string).not.toMatch(/word problem/);
   });
 });
+
+describe("buildSolveMessages — a line ending in `=` and a value given beside it", () => {
+  // the owner's board: `3x + 24 =` over `x = 3`, answered `= 3(x+8)` under the `x = 3`
+  const req = SolveRequestSchema.parse({
+    boardId: "board-1",
+    region: REGION,
+    lines: [
+      { id: "a", latex: "3x+24=", bbox: [0, 0, 1, 0.5], local: { kind: "incomplete", verdict: "none" } },
+      { id: "b", latex: "x=3", bbox: [0, 0.5, 1, 1], local: { kind: "assignment", verdict: "none" } },
+    ],
+    fromLineId: "b",
+    goal: "what line id a equals (3x+24=): continue it after its =, using any values the other lines give",
+  });
+
+  it("marks the line that asks and the given, and says what each is for", () => {
+    const [system, user] = buildSolveMessages(req);
+    expect(system.content).toMatch(/ends with = asks what it equals/);
+    expect(system.content).toMatch(/given value, not working to continue/);
+    expect(user.content as string).toMatch(/3x\+24=\s+\[[^\]]*ends with =: asks what it equals\]/);
+    expect(user.content as string).toMatch(/x=3\s+\[[^\]]*a given value\]/);
+    expect(user.content as string).toMatch(/goal: what line id a equals/);
+  });
+
+  it("an inequality's `>=` is not a line asking for its value", () => {
+    const [, user] = buildSolveMessages({ ...req, lines: [{ ...req.lines[0], latex: "x>=", local: { kind: "incomplete", verdict: "none" } }], goal: undefined });
+    expect(user.content as string).not.toMatch(/asks what it equals/);
+  });
+});
