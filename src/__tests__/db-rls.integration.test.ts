@@ -10,7 +10,7 @@
  * are created and, when a service role key is available, deleted afterwards.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ALL_CHECKS, runCheck } from "../../scripts/lib/rlsChecks.mjs";
+import { ALL_CHECKS, LEARNING_CHECKS, runCheck } from "../../scripts/lib/rlsChecks.mjs";
 import type { CheckContext } from "../../scripts/lib/rlsChecks.mjs";
 import { resolveSupabaseEnv, waitForHealth } from "../../scripts/lib/supabaseHttp.mjs";
 import { bootstrapVerifyContext } from "../../scripts/lib/verifyContext.mjs";
@@ -50,7 +50,9 @@ suite(title, () => {
     if (cleanup) await cleanup();
   }, 60_000);
 
-  for (const check of ALL_CHECKS) {
+  // LEARNING_CHECKS: the learning record (learning_attempts), kept out of ALL_CHECKS because the
+  // in-memory fake in verifyRls.test.ts does not model it; same users, after the rest.
+  for (const check of [...ALL_CHECKS, ...LEARNING_CHECKS]) {
     it(
       check.name,
       async () => {

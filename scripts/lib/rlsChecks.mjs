@@ -2027,6 +2027,199 @@ export async function checkEmailLog({ a, b, service }) {
 }
 
 /**
+ * One learning_attempts row as src/lib/learning/store.ts writes it: no user_id (the database fills
+ * it), no created_at / updated_at (server time).
+ * @param {string} id
+ * @param {Record<string, unknown>} [over]
+ */
+export function learningRow(id, over = {}) {
+  return {
+    id,
+    board_id: null,
+    problem_latex: "2x + 3 = 11",
+    skill: "two_step_equations",
+    course: "algebra1",
+    origin: "student",
+    parent_id: null,
+    outcome: "in_progress",
+    lines_written: 1,
+    lines_right: 1,
+    lines_ringed: 0,
+    hints: 0,
+    tutor_steps: 0,
+    solves: 0,
+    asks: 0,
+    mistakes: {},
+    active_ms: 1000,
+    started_at: new Date().toISOString(),
+    finished_at: null,
+    ...over,
+  };
+}
+
+/** The store's write: an upsert by id. */
+const LEARNING_UPSERT = { query: { on_conflict: "id" }, prefer: "resolution=merge-duplicates,return=representation" };
+
+/**
+ * The learning record (migration 20261004000000_learning.sql): one row per problem a student
+ * works, read by the Progress page. Anon gets nothing. A student reads, writes and deletes only
+ * their own rows; a write may point only at their own board and their own earlier attempt; the
+ * owner, the id and the server's timestamps cannot be rewritten; the database refuses values the
+ * code would never send (each check constraint, and a start time from the future); deleting a
+ * board keeps its attempts with board_id null, deleting an attempt keeps the ones that followed it
+ * with parent_id null, and deleting the account (delete_own_account(), as a throwaway user D)
+ * takes every row with it. The per-account cap (100,000 rows) is not exercised here. Removes its
+ * own rows and boards afterwards.
+ *
+ * Kept out of ALL_CHECKS: src/__tests__/verifyRls.test.ts runs ALL_CHECKS against an in-memory
+ * fake that does not model this table. scripts/verify-rls.mjs and the DB integration test run
+ * LEARNING_CHECKS after ALL_CHECKS.
+ * @param {CheckContext} ctx
+ */
+export async function checkLearning({ anon, a, b, service, newUser }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const code = (/** @type {HttpResult} */ res) => String(asObject(res.body)?.code ?? "");
+  const refusedWith = (/** @type {HttpResult} */ res, /** @type {string} */ want) => !isOk(res) && code(res) === want;
+  const upsert = (/** @type {RlsClient} */ c, /** @type {unknown} */ body) => c.rest("POST", "learning_attempts", { ...LEARNING_UPSERT, body });
+  const readA = (/** @type {string} */ id) => a.rest("GET", "learning_attempts", { query: { id: `eq.${id}`, select: "*" } });
+
+  const boardA = await createBoard(a, "rls-verify learning");
+  const boardB = await createBoard(b, "rls-verify learning B");
+  const ids = { parent: uuid(), child: uuid(), other: uuid() };
+  try {
+    // ---------------------------------------------------------------- anon
+    const anonSel = await anon.rest("GET", "learning_attempts", { query: { select: "id", limit: "1" } });
+    out.push(result("learning: anon cannot select learning_attempts", isDenied(anonSel), describe(anonSel)));
+    const anonIns = await anon.rest("POST", "learning_attempts", { body: learningRow(uuid()), prefer: "return=minimal" });
+    out.push(result("learning: anon cannot insert into learning_attempts", isDenied(anonIns), describe(anonIns)));
+
+    // ---------------------------------------------------------------- A's own rows
+    const created = await upsert(a, learningRow(ids.parent, { board_id: boardA.id }));
+    const row = rows(created)[0];
+    out.push(
+      result(
+        "learning: A saves an attempt on own board; the database makes it A's, with server times",
+        isOk(created) && row?.user_id === a.userId && row?.board_id === boardA.id && typeof row?.created_at === "string" && row.created_at === row.updated_at,
+        describe(created),
+      ),
+    );
+    const again = await upsert(a, learningRow(ids.parent, { board_id: boardA.id, outcome: "tutor_solved", solves: 1, mistakes: { sign: 2 }, finished_at: new Date().toISOString() }));
+    const row2 = rows(again)[0];
+    out.push(
+      result(
+        "learning: saving the same attempt again updates it (created_at kept, updated_at moves on)",
+        isOk(again) && row2?.outcome === "tutor_solved" && row2?.mistakes?.sign === 2 && row2?.created_at === row?.created_at && Date.parse(row2?.updated_at) >= Date.parse(row?.updated_at),
+        describe(again),
+      ),
+    );
+    const child = await upsert(a, learningRow(ids.child, { board_id: boardA.id, origin: "now_you_try", parent_id: ids.parent }));
+    out.push(result("learning: A links a Now-you-try to own attempt", isOk(child) && rows(child)[0]?.parent_id === ids.parent, describe(child)));
+
+    const ghostParent = await upsert(a, learningRow(uuid(), { origin: "now_you_try", parent_id: uuid() }));
+    out.push(result("learning: A cannot link to an attempt that does not exist", refusedWith(ghostParent, "42501"), describe(ghostParent)));
+    const onB = await upsert(a, learningRow(uuid(), { board_id: boardB.id }));
+    out.push(result("learning: A cannot file an attempt under B's board", refusedWith(onB, "42501"), describe(onB)));
+    const asB = await upsert(a, { ...learningRow(uuid()), user_id: b.userId });
+    out.push(result("learning: A cannot save an attempt as B", refusedWith(asB, "42501"), describe(asB)));
+    const moveOwner = await a.rest("PATCH", "learning_attempts", { query: { id: `eq.${ids.parent}` }, body: { user_id: b.userId }, prefer: "return=representation" });
+    out.push(result("learning: A cannot hand an attempt to B (no update grant on user_id)", refusedWith(moveOwner, "42501"), describe(moveOwner)));
+    const moveId = await a.rest("PATCH", "learning_attempts", { query: { id: `eq.${ids.parent}` }, body: { id: uuid() }, prefer: "return=representation" });
+    out.push(result("learning: A cannot change an attempt's id", refusedWith(moveId, "42501"), describe(moveId)));
+    const stamp = await upsert(a, { ...learningRow(uuid()), created_at: "2026-01-02T00:00:00Z" });
+    out.push(result("learning: A cannot set created_at (server time only)", refusedWith(stamp, "42501"), describe(stamp)));
+
+    // ---------------------------------------------------------------- values the database refuses
+    const future = new Date(Date.now() + 2 * 86_400_000).toISOString();
+    /** @type {Array<[string, Record<string, unknown>, string]>} */
+    const bad = [
+      ["an empty problem", { problem_latex: "" }, "23514"],
+      ["a problem over 500 characters", { problem_latex: "x".repeat(501) }, "23514"],
+      ["a skill that is not lower-case snake_case", { skill: "Two-Step" }, "23514"],
+      ["an unknown course", { course: "calculus" }, "23514"],
+      ["an unknown origin", { origin: "homework" }, "23514"],
+      ["an unknown outcome", { outcome: "aced" }, "23514"],
+      ["a negative count", { hints: -1 }, "23514"],
+      ["an unknown mistake kind", { mistakes: { spelling: 1 } }, "23514"],
+      ["a mistake count over 9999", { mistakes: { sign: 10000 } }, "23514"],
+      ["active time over 4 hours", { active_ms: 14_400_001 }, "23514"],
+      ["a start before 2026", { started_at: "2025-12-31T23:00:00Z" }, "23514"],
+      ["a start more than a day ahead", { started_at: future }, "23514"],
+    ];
+    for (const [what, over, want] of bad) {
+      const res = await upsert(a, learningRow(uuid(), over));
+      out.push(result(`learning: the database refuses ${what} (${want})`, refusedWith(res, want), describe(res)));
+    }
+    const newSkill = await upsert(a, learningRow(ids.other, { skill: "a_skill_added_later" }));
+    out.push(result("learning: a new skill id needs no migration (a format, not a list)", isOk(newSkill), describe(newSkill)));
+
+    // ---------------------------------------------------------------- B
+    const bSel = await b.rest("GET", "learning_attempts", { query: { user_id: `eq.${a.userId}`, select: "id" } });
+    out.push(result("learning: B cannot read A's attempts", affectedNoRows(bSel), describe(bSel)));
+    const bUpd = await b.rest("PATCH", "learning_attempts", { query: { id: `eq.${ids.parent}` }, body: { outcome: "unfinished" }, prefer: "return=representation" });
+    out.push(result("learning: B cannot update A's attempt (0 rows)", deniedOrEmpty(bUpd), describe(bUpd)));
+    const bDel = await b.rest("DELETE", "learning_attempts", { query: { id: `eq.${ids.parent}` }, prefer: "return=representation" });
+    out.push(result("learning: B cannot delete A's attempt (0 rows)", deniedOrEmpty(bDel), describe(bDel)));
+    const bOver = await upsert(b, learningRow(ids.parent, { outcome: "unfinished" }));
+    out.push(result("learning: B cannot overwrite A's attempt by upserting its id", refusedWith(bOver, "42501"), describe(bOver)));
+    const bLink = await upsert(b, learningRow(uuid(), { origin: "now_you_try", parent_id: ids.parent }));
+    out.push(result("learning: B cannot link to A's attempt", refusedWith(bLink, "42501"), describe(bLink)));
+    const intact = rows(await readA(ids.parent))[0];
+    out.push(
+      result(
+        "learning: A's attempt intact after B's attempts",
+        intact?.outcome === "tutor_solved" && intact?.user_id === a.userId,
+        JSON.stringify(intact ?? null).slice(0, 200),
+      ),
+    );
+
+    // ---------------------------------------------------------------- deleting a board, an attempt
+    await deleteBoard(a, boardA.id);
+    const afterBoard = rows(await readA(ids.parent))[0];
+    out.push(result("learning: deleting the board keeps its attempts, with board_id null", !!afterBoard && afterBoard.board_id === null, JSON.stringify(afterBoard ?? null).slice(0, 200)));
+    const delParent = await a.rest("DELETE", "learning_attempts", { query: { id: `eq.${ids.parent}` }, prefer: "return=representation" });
+    out.push(result("learning: A deletes own attempt", isOk(delParent) && rows(delParent).length === 1, describe(delParent)));
+    const orphan = rows(await readA(ids.child))[0];
+    out.push(result("learning: the attempt that followed it stays, with parent_id null", !!orphan && orphan.parent_id === null, JSON.stringify(orphan ?? null).slice(0, 200)));
+
+    // ---------------------------------------------------------------- deleting the account
+    if (!newUser) {
+      out.push(result("learning: delete_own_account takes the record (skipped: no newUser in the context)", true));
+    } else {
+      const d = await newUser();
+      const boardD = await createBoard(d, "rls-verify learning D");
+      const dParent = uuid();
+      const dSave = await upsert(d, [learningRow(dParent, { board_id: boardD.id, outcome: "tutor_solved" })]);
+      const dChild = await upsert(d, [learningRow(uuid(), { board_id: boardD.id, origin: "now_you_try", parent_id: dParent })]);
+      out.push(result("learning: D saves attempts (one following the other)", isOk(dSave) && isOk(dChild), `${describe(dSave)} / ${describe(dChild)}`));
+      const del = await rpc(d, "delete_own_account");
+      out.push(result("learning: D can still delete the account (the record does not block it)", isOk(del), describe(del)));
+      if (service) {
+        const left = await service.rest("GET", "learning_attempts", { query: { user_id: `eq.${d.userId}`, select: "id" } });
+        out.push(result("learning: D's attempts are gone with the account", affectedNoRows(left), describe(left)));
+      } else {
+        out.push(result("learning: D's attempts are gone with the account (skipped: no service role client)", true));
+      }
+    }
+  } finally {
+    await a.rest("DELETE", "learning_attempts", { query: { user_id: `eq.${a.userId}` } });
+    await b.rest("DELETE", "learning_attempts", { query: { user_id: `eq.${b.userId}` } });
+    await deleteBoard(a, boardA.id);
+    await deleteBoard(b, boardB.id);
+  }
+  return out;
+}
+
+/**
+ * Checks for tables the in-memory fake in src/__tests__/verifyRls.test.ts does not model, run after
+ * ALL_CHECKS by scripts/verify-rls.mjs and src/__tests__/db-rls.integration.test.ts.
+ * @type {CheckDef[]}
+ */
+export const LEARNING_CHECKS = [
+  { name: "learning_attempts: own rows only, own boards and attempts, checked values, gone with the account", run: checkLearning },
+];
+
+/**
  * Run one check, converting a thrown error into a single failing result.
  * @param {CheckDef} check
  * @param {CheckContext} ctx

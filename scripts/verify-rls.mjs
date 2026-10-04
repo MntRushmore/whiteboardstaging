@@ -8,8 +8,8 @@
  * Covers every public table (including the accounts & billing tables: plans,
  * profiles, usage_events, credit_grants, billing_events, rate_limit_counters, the
  * ink tables ink_packs, ink_grants, ink_purchases, ink_checkout_reviews, Agathon
- * Unlimited's unlimited_subscriptions and unlimited_usage, and the service-role-only
- * email_log), the
+ * Unlimited's unlimited_subscriptions and unlimited_usage, the service-role-only
+ * email_log, and the learning record's learning_attempts: LEARNING_CHECKS, run after the rest), the
  * storage buckets, the version and history triggers and the RPCs (consume_credits, credit_summary,
  * ink_summary, rate_limit_hit, usage_by_day, save_onboarding, delete_own_account;
  * and that a user can call none of the service-role RPCs refund_credits,
@@ -35,7 +35,7 @@
  */
 import { createSupabaseHttp, loadDotEnvLocal, resolveSupabaseEnv, waitForHealth } from "./lib/supabaseHttp.mjs";
 import { bootstrapVerifyContext } from "./lib/verifyContext.mjs";
-import { formatResults, runAllChecks } from "./lib/rlsChecks.mjs";
+import { ALL_CHECKS, formatResults, LEARNING_CHECKS, runAllChecks } from "./lib/rlsChecks.mjs";
 
 loadDotEnvLocal();
 
@@ -83,7 +83,7 @@ const ctx = {
 
 let results = [];
 try {
-  results = await runAllChecks(ctx);
+  results = await runAllChecks(ctx, [...ALL_CHECKS, ...LEARNING_CHECKS]);
 } finally {
   const notes = await bootstrap.cleanup();
   console.log(formatResults(results));
