@@ -120,12 +120,14 @@ describe("live loop — a figure worked out unasked", () => {
 
   const tutorInk = () => editor.shapesOfType("draw").filter((s) => isLiveMeta(s.meta) && s.meta.source === "ai" && !(s.meta as Record<string, unknown>).mark);
 
-  /** The student lifts one stroke of the figure and puts it back: the figure is the last thing touched, the same ink. */
+  /**
+   * The student taps the figure with the select tool: Help is about it (a pick wins over where the pen
+   * last wrote, `helpTargetLine`), the same ink. Lifting a stroke and putting it back no longer did:
+   * that is Undo, which never moves Help.
+   */
   async function touch(d: Drawing): Promise<void> {
-    const s = d.strokes[0];
-    editor.removeUser([s.id]);
+    editor.select(shapesOf(d.strokes).map((s) => s.id));
     await settle();
-    await draw([s]);
   }
 
   beforeEach(() => {

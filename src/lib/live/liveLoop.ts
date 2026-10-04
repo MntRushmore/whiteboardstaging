@@ -135,7 +135,8 @@ import { PROOF_ROWS_META, proofRowsPlan } from "./proof/place";
 import { PROOF_FIGURE_META, PROOF_TABLE_META, tutorFiguresOf } from "./proof/tutorFigure";
 import type { PlannedRow } from "./proof/planner";
 import type { BoardLine, ProofRead } from "./proof/read";
-import { problemLines, problemMetaOf, readProblemCells, splitColumnsAtProblems, type ProblemCell } from "./chat/cells";
+import { problemKeyOf, problemLines, problemMetaOf, readProblemCells, splitColumnsAtProblems, type ProblemCell } from "./chat/cells";
+import { nextHelpTarget, penLine, pickedLine, problemCount, problemTarget, type HelpTargetDraft } from "./helpTarget";
 import {
   PROBLEM_WORK_META,
   currentProblem,
@@ -179,6 +180,8 @@ export interface LiveEditorLike {
   toImage?: Editor["toImage"];
   /** the tool state (`draw.drawing`: a stroke is being drawn); optional: test editors have no tools */
   isIn?(path: string): boolean;
+  /** what the student picked with the select tool (`helpTargetLine`); optional: test editors may have none */
+  getSelectedShapeIds?(): TLShapeId[];
 }
 
 export type StreamFn = (path: string, body: unknown, opts?: StreamOptions) => AsyncGenerator<LiveSseEvent, void, undefined>;
@@ -571,7 +574,23 @@ export class LiveLoop implements LiveController {
   /** figure answers the student rubbed out (`figureKey`): not written again unasked (page meta) */
   private readonly dismissedFigures = new Set<string>();
   private lastOnline: boolean | null = null;
+  /** the line read last, whatever made it read again: Help's line only before the pen has written (`helpTargetLine`) */
   private lastTouchedLineId: string | null = null;
+  /**
+   * The student's last FRESH pen stroke on this screen, and the line it was last seen in: where Help
+   * acts (`helpTargetLine`). Only the pen moves it — a stroke rubbed out, dragged, brought back by
+   * Undo or synced from elsewhere does not. Null until the pen writes on this screen.
+   */
+  private penStrokeId: string | null = null;
+  private penLineId: string | null = null;
+  /** the student's strokes rubbed out on this screen: one coming back is Undo, not the pen */
+  private readonly goneStrokeIds = new Set<string>();
+  /**
+   * Which came last, the pen or a pick with the select tool (a count of both): the newer one decides
+   * (`picked`). tldraw keeps a selection, unseen, while the pen writes elsewhere; it is no pick then.
+   */
+  private penSeq = 0;
+  private pickSeq = 0;
   private started = false;
   /** the failed call the pill's Retry re-runs */
   private retryContext: RetryContext | null = null;
@@ -662,6 +681,7 @@ export class LiveLoop implements LiveController {
     this.lastOnline = this.deps.isOnline();
     this.rebuild();
     this.recount();
+    this.publishHelpTarget();
     this.screenSeen = this.pageKey();
     void this.deps
       .getEngine()
@@ -754,6 +774,10 @@ export class LiveLoop implements LiveController {
     this.labelsOf.clear();
     this.lastTouchedDiagramId = null;
     this.touchedProblem = null;
+    this.penStrokeId = null;
+    this.penLineId = null;
+    this.goneStrokeIds.clear();
+    liveStore.helpTarget.set(null);
     liveStore.diagrams.set([]);
     this.proofs.reset();
     this.rt.clear();
@@ -767,13 +791,23 @@ export class LiveLoop implements LiveController {
   }
 
   private onSessionChange(entry: HistoryEntry<TLRecord>): void {
+    let picked = false;
     for (const [from, to] of Object.values(entry.changes.updated)) {
+      // a tap or a lasso with the select tool: Help may now act on another problem
+      if (from.typeName === "instance_page_state" && to.typeName === "instance_page_state") {
+        if (from.selectedShapeIds === to.selectedShapeIds) continue;
+        picked = true;
+        // something newly picked; a shape leaving the selection (rubbed out, say) picks nothing
+        if (to.selectedShapeIds.some((id) => !from.selectedShapeIds.includes(id))) this.pickSeq = this.penSeq + 1;
+        continue;
+      }
       if (to.typeName !== "instance" || from.typeName !== "instance") continue;
       if (from.currentPageId !== to.currentPageId) {
         this.switchScreen();
         return;
       }
     }
+    if (picked) this.publishHelpTarget();
   }
 
   /**
@@ -793,6 +827,7 @@ export class LiveLoop implements LiveController {
     this.rebuild();
     this.recount();
     this.reanalyzeAll();
+    this.publishHelpTarget();
     if (liveStore.status.get() !== "offline") liveStore.status.set(this.opts.enabled ? "idle" : "paused");
   }
 
@@ -942,6 +977,8 @@ export class LiveLoop implements LiveController {
         });
       }
     }
+    // Help in Solve may pick another of the chat's problems than a step would; Live off has none
+    if (prev.enabled !== next.enabled || prev.mode !== next.mode) this.publishHelpTarget();
   }
 
   /**
@@ -955,7 +992,7 @@ export class LiveLoop implements LiveController {
     if (!this.started || !this.opts.enabled || this.opts.mode !== mode) return;
     const cells = this.problemCells();
     if (cells.length === 0) return;
-    const cell = currentProblem(cells, this.touchedProblem, (c) => this.problemState(c));
+    const cell = currentProblem(cells, this.targetProblem(), (c) => this.problemState(c));
     if (!cell) return;
     const s = this.problemState(cell);
     if (s.work || (mode === "answer" ? s.solved : s.started)) return;
@@ -1051,6 +1088,8 @@ export class LiveLoop implements LiveController {
         finished.push(rec);
         penUp = true;
         if (!this.looksDrawn(rec)) writingUp = true;
+        // a stroke made in one frame (a dot) is the pen; one the student had rubbed out is Undo
+        if (!this.goneStrokeIds.has(rec.id)) this.wrote(rec.id);
       } else penDown = true;
     }
 
@@ -1065,6 +1104,7 @@ export class LiveLoop implements LiveController {
           finished.push(to);
           penUp = true;
           if (!this.looksDrawn(to)) writingUp = true;
+          this.wrote(to.id);
         } else if (
           to.props.isComplete &&
           (f.x !== to.x || f.y !== to.y || f.props.segments !== to.props.segments || f.parentId !== to.parentId)
@@ -1108,14 +1148,16 @@ export class LiveLoop implements LiveController {
         continue;
       }
       if (isDraw(rec)) {
+        if (isStudentInk(rec)) this.goneStrokeIds.add(rec.id);
         const line = this.lineOfStroke(rec.id);
         if (line) {
           for (const sid of line.strokeIds) if (sid !== rec.id) this.dirtyStrokeIds.add(sid);
           this.dirtyStrokeIds.add(rec.id);
           erased = true;
-          // rubbing out under a problem is working on it too (the line may be gone after the flush)
+          // rubbing out under a problem is working on it too (the line may be gone after the flush) —
+          // until the pen has written on this screen: then the problem is where it wrote last
           const head = this.columnHeads.get(line.column);
-          if (head) this.touchedProblem = head.key;
+          if (head && !this.penStrokeId) this.touchedProblem = head.key;
         } else if (this.diagramOfStroke(rec.id)) {
           // part of a drawing rubbed out: the drawings (and what counts as their labels) change
           this.dirtyStrokeIds.add(rec.id);
@@ -1378,9 +1420,12 @@ export class LiveLoop implements LiveController {
     const force = new Set(this.forceRecognize);
     this.forceRecognize.clear();
     const ink = this.collectInk();
+    // Where the student last WROTE: their last pen stroke, not ink rubbed out, dragged or brought
+    // back by Undo (`helpTargetLine`). Before the pen has written on this screen, what they touched.
+    const wrote: ReadonlySet<string> = this.penStrokeId ? new Set([this.penStrokeId]) : dirty;
     // Drawings (and their marks and labels) first: only handwriting is grouped into lines. A bar
     // under an equation with a number under it ("divide both sides") is a line of its own.
-    const { split, touched: drawn } = this.splitDrawings(ink, dirty);
+    const { split, touched: drawn } = this.splitDrawings(ink, wrote);
     const prevStates = liveStore.lines.get();
     const prevLines = Object.values(prevStates).map((s) => s.line);
     const lines = this.withProblemColumns(clusterLines(split.writing, prevLines, barGroups(split.bars, ink)));
@@ -1403,17 +1448,20 @@ export class LiveLoop implements LiveController {
       if (touched) affected.push({ line: { ...line, hash: same ? prev.line.hash : "" }, moveOnly: same && !forced });
     }
 
-    // What the student worked on last decides what Help is about: a line they wrote, or else a
+    // What the student wrote last decides what Help is about: a line they wrote, or else a
     // drawing (or its labels) they drew.
-    if (lines.some((l) => l.strokeIds.some((id) => dirty.has(id)))) this.lastTouchedDiagramId = null;
+    const pen = lines.find((l) => l.strokeIds.some((id) => wrote.has(id)));
+    if (pen) this.lastTouchedDiagramId = null;
     else if (drawn) this.lastTouchedDiagramId = drawn.id;
+    if (pen && this.penStrokeId) this.penLineId = pen.id;
     // ...and which of the chat's problems is the current one: the one they last wrote under
     for (const l of lines) {
-      const head = l.strokeIds.some((id) => dirty.has(id)) ? this.columnHeads.get(l.column) : undefined;
+      const head = l.strokeIds.some((id) => wrote.has(id)) ? this.columnHeads.get(l.column) : undefined;
       if (head) this.touchedProblem = head.key;
     }
 
     for (const { line, moveOnly } of affected) void this.processLine(line, ink, moveOnly);
+    this.publishHelpTarget();
   }
 
   /**
@@ -1917,6 +1965,7 @@ export class LiveLoop implements LiveController {
       changed = true;
     }
     if (changed) this.reanalyzeAll();
+    this.publishHelpTarget();
   }
 
   // ---------------------------------------------------------------- the tutor works the chat's problems
@@ -1937,11 +1986,12 @@ export class LiveLoop implements LiveController {
     return this.columnHeads.has(state.line.column) ? this.judgeable(state) : !needsLook(state);
   }
 
-  /** The student's work under a problem: their line there the tutor can judge — the one touched last, else the lowest. */
+  /** The student's work under a problem: their line there the tutor can judge — the one picked or written in last, else the lowest. */
   private workUnder(cell: ProblemCell): LiveLineState | null {
     const mine = Object.values(liveStore.lines.get()).filter((s) => this.columnHeads.get(s.line.column)?.key === cell.key && this.judgeable(s));
     if (mine.length === 0) return null;
-    return mine.find((s) => s.line.id === this.lastTouchedLineId) ?? mine.sort((a, b) => a.line.bounds.y - b.line.bounds.y)[mine.length - 1];
+    const last = (this.picked()?.line ?? this.wroteLine())?.line.id;
+    return mine.find((s) => s.line.id === last) ?? mine.sort((a, b) => a.line.bounds.y - b.line.bounds.y)[mine.length - 1];
   }
 
   /** What the tutor has written under a problem (`problemWork`): its lines in writing order, where they are, whether the solution is among them. */
@@ -1982,7 +2032,8 @@ export class LiveLoop implements LiveController {
     const cells = this.problemCells();
     if (cells.length === 0) return null;
     const state = (c: ProblemCell) => this.problemState(c);
-    return depth === "solve" ? pickForSolve(cells, this.touchedProblem, state) : pickForStep(cells, this.touchedProblem, state);
+    const touched = this.targetProblem();
+    return depth === "solve" ? pickForSolve(cells, touched, state) : pickForStep(cells, touched, state);
   }
 
   /**
@@ -4571,8 +4622,121 @@ export class LiveLoop implements LiveController {
     return Object.values(all).sort((a, b) => b.updatedAt - a.updatedAt)[0];
   }
 
+  // ---------------------------------------------------------------- which problem Help acts on
+  /**
+   * The line Help me and Solve it act on (and Check, Solve steps and the chat's "help me" on the
+   * student's own work): what they picked with the select tool when that holds a line of theirs, else
+   * the line they last wrote in with the pen (`src/lib/live/helpTarget.ts`). Rubbing out, dragging,
+   * Undo or a remote change elsewhere re-read lines, but never move it. A pick of one of the chat's
+   * problems is the student's work under it — undefined with none yet, and Help then works the
+   * problem itself (`targetProblem`); a pick of a drawing is the drawing (`helpTargetDiagram`).
+   */
+  helpTargetLine(): LiveLineState | undefined {
+    const picked = this.picked();
+    if (!picked) return this.wroteLine();
+    if (picked.line) return picked.line;
+    const cell = picked.problem ? this.problemCells().find((c) => c.key === picked.problem) : undefined;
+    return (cell && this.workUnder(cell)) || undefined;
+  }
+
+  /** A fresh stroke of the student's pen: Help follows it (over an older pick). */
+  private wrote(strokeId: string): void {
+    this.penStrokeId = strokeId;
+    this.penSeq = this.pickSeq + 1;
+  }
+
+  /** The line the pen last wrote in on this screen; before it has written there, the line read last. */
+  private wroteLine(): LiveLineState | undefined {
+    return penLine(liveStore.lines.get(), this.penStrokeId, this.penLineId) ?? this.latestLine();
+  }
+
+  /** The drawing Help reads: the one picked, else the one drawn last — none when something else is picked. */
+  private helpTargetDiagram(): Diagram | null {
+    const picked = this.picked();
+    return picked ? picked.diagram : this.touchedDiagram();
+  }
+
+  /** The chat's problem an ask is about ("the current problem", `chat/work.ts`): the one picked, else the one written under last. */
+  private targetProblem(): string | null {
+    return this.picked()?.problem ?? this.touchedProblem;
+  }
+
+  /**
+   * What the student picked with the select tool (a tap, a lasso), when Help can act on it: a line
+   * of theirs — its ink, its readback, anything the tutor wrote for it — one of the chat's problems
+   * (or the tutor's work under one), or a drawing. Null with nothing selected, nothing of these (a
+   * sticky note, a picture), or a pick the pen has written since: Help follows the pen.
+   */
+  private picked(): { line: LiveLineState | null; diagram: Diagram | null; problem: string | null } | null {
+    const ids = this.penSeq > this.pickSeq ? [] : (this.editor.getSelectedShapeIds?.() ?? []);
+    if (ids.length === 0) return null;
+    const lines = liveStore.lines.get();
+    const byStroke = new Map<string, LiveLineState>();
+    for (const st of Object.values(lines)) for (const sid of st.line.strokeIds) byStroke.set(sid, st);
+    const mine: LiveLineState[] = [];
+    let diagram: Diagram | null = null;
+    let problem: string | null = null;
+    for (const id of ids) {
+      const shape = this.editor.getShape(id);
+      if (!shape) continue;
+      if (!isLiveMeta(shape.meta)) {
+        const st = byStroke.get(id);
+        if (st) mine.push(st);
+        else diagram ??= this.diagramOfStroke(id);
+        continue;
+      }
+      const lineId = shape.meta.lineId;
+      const p = problemMetaOf(shape.meta);
+      if (p) problem ??= problemKeyOf(handBlockOf(shape.meta), p);
+      // the tutor's work under one of the chat's problems (`problemLineId`)
+      else if (lineId.startsWith("problem:")) problem ??= lineId.slice("problem:".length);
+      else if (lines[lineId]) mine.push(lines[lineId]);
+      else diagram ??= this.diagrams.find((d) => d.id === lineId) ?? null;
+    }
+    const line = pickedLine(mine);
+    if (line) return { line, diagram: null, problem: this.columnHeads.get(line.line.column)?.key ?? null };
+    if (problem) return { line: null, diagram: null, problem };
+    return diagram ? { line: null, diagram, problem: null } : null;
+  }
+
+  /**
+   * Publishes the problem the ask button would act on now (`liveStore.helpTarget`) for the outline
+   * around it (`ProblemHighlight`): after every flush, a change of selection, mode or screen.
+   */
+  private publishHelpTarget(): void {
+    const prev = liveStore.helpTarget.get();
+    const next = nextHelpTarget(prev, this.started && this.opts.enabled ? this.helpTargetNow() : null, this.deps.now());
+    if (next !== prev) liveStore.helpTarget.set(next);
+  }
+
+  /** What `requestHelp` would act on, in its order — a drawing, the target line's column, one of the chat's problems — without acting. */
+  private helpTargetNow(): HelpTargetDraft | null {
+    const states = Object.values(liveStore.lines.get());
+    const cells = this.problemCells();
+    const headed = new Set([...this.columnHeads.values()].map((h) => h.key));
+    const base = { by: this.picked() ? ("selection" as const) : ("pen" as const), problems: problemCount(states, cells.filter((c) => !headed.has(c.key)).length) };
+    const figure = this.helpTargetDiagram();
+    if (figure) return { ...base, key: `d:${figure.id}`, column: -1, bounds: figure.bounds };
+    const line = this.helpTargetLine();
+    let column = line ? line.line.column : null;
+    let cell: ProblemCell | null = null;
+    // a line still being read is the one Help waits for; one read that it cannot act on hands over to the chat's problems
+    if (cells.length > 0 && (!line || (line.analysis && !this.actsOn(line)))) {
+      const pick = this.problemPick(this.opts.mode === "answer" ? "solve" : "step");
+      if (pick && pick.kind !== "none") {
+        const work = pick.kind === "student" ? this.workUnder(pick.cell) : null;
+        if (pick.kind === "tutor" || work) {
+          cell = pick.cell;
+          column = work ? work.line.column : null;
+        }
+      }
+    }
+    const target = problemTarget(states, column, cell ?? (column === null ? null : (this.columnHeads.get(column) ?? null)));
+    return target && { ...base, ...target };
+  }
+
   requestCheck(lineId?: string): void {
-    const target = lineId ? liveStore.lines.get()[lineId] : this.latestLine();
+    const target = lineId ? liveStore.lines.get()[lineId] : this.helpTargetLine();
     if (!target || !target.latex) return;
     if (this.opts.mode === "off") return;
     // a proof line is checked by the proof checker (its mark is already there): no model check
@@ -4584,15 +4748,17 @@ export class LiveLoop implements LiveController {
   }
 
   requestSolve(lineId?: string): void {
+    // asked about the problem the student is on (not a given line): the outline shows which (`ProblemHighlight`)
+    if (!lineId) liveStore.askedAt.set(this.deps.now());
     // A two-column proof: the rest of it in Solve, the next row otherwise (`ProofDesk`).
-    if (this.opts.enabled && this.proofs.ask(lineId ?? this.latestLine()?.line.id ?? null, lineId ? null : this.touchedDiagram(), { all: this.opts.mode === "answer" })) return;
-    // Solve with a drawing the last thing drawn: the tutor reads the figure.
-    const figure = lineId ? null : this.touchedDiagram();
+    if (this.opts.enabled && this.proofs.ask(lineId ?? this.helpTargetLine()?.line.id ?? null, lineId ? null : this.helpTargetDiagram(), { all: this.opts.mode === "answer" })) return;
+    // Solve with a drawing the last thing drawn (or picked): the tutor reads the figure.
+    const figure = lineId ? null : this.helpTargetDiagram();
     if (figure && this.opts.enabled && this.opts.mode === "answer") {
       this.startFigure(figure, { lineId: figure.id });
       return;
     }
-    let target = lineId ? liveStore.lines.get()[lineId] : this.latestLine();
+    let target = lineId ? liveStore.lines.get()[lineId] : this.helpTargetLine();
     // The chat's problems: with no line of the student's to act on, Solve steps is about the current
     // problem — worked out under it; pressed again once it is, the next one (`chat/work.ts`).
     if (!lineId && this.opts.enabled && this.opts.mode === "answer" && !this.actsOn(target)) {
@@ -4636,7 +4802,8 @@ export class LiveLoop implements LiveController {
   }
 
   /**
-   * The board's one "Help" action, on the line the student touched last. Nothing here runs on
+   * The board's one "Help" action, on the problem the student is working on: the one they picked
+   * with the select tool, else the one they last wrote in (`helpTargetLine`). Nothing here runs on
    * a timer: every branch is an explicit request.
    *
    *  - ink Live could not read as maths (a failed or low-confidence read, a diagram label, a
@@ -4647,17 +4814,18 @@ export class LiveLoop implements LiveController {
    */
   requestHelp(): boolean {
     if (!this.opts.enabled || this.opts.mode === "off") return false;
+    liveStore.askedAt.set(this.deps.now());
     // On a two-column proof (or its figure): the next row — in Solve, the rest of the proof.
-    if (this.proofs.ask(this.latestLine()?.line.id ?? null, this.touchedDiagram(), { all: this.opts.mode === "answer" })) return true;
+    if (this.proofs.ask(this.helpTargetLine()?.line.id ?? null, this.helpTargetDiagram(), { all: this.opts.mode === "answer" })) return true;
     // The student's last ink was a drawing (or its labels): the tutor reads the figure — in Solve
     // the whole setup and its answer, in Feedback / Suggest the first line of the setup. A drawing
     // never gets a "?": it is not ink that failed to read as maths.
-    const figure = this.touchedDiagram();
+    const figure = this.helpTargetDiagram();
     if (figure) {
       this.startFigure(figure, { lineId: figure.id, onlyFirstStep: this.opts.mode !== "answer" });
       return true;
     }
-    const target = this.latestLine();
+    const target = this.helpTargetLine();
     // The chat's problems: with no line of the student's to help with, Help is about the current one.
     if (!this.actsOn(target) && this.helpWithProblem(target)) return true;
     // nothing on this screen to help with: the button says so

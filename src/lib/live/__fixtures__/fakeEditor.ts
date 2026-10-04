@@ -8,12 +8,14 @@ import {
   defaultBindingUtils,
   defaultShapeUtils,
   getIndexAbove,
+  InstancePageStateRecordType,
   loadSnapshot,
   PageRecordType,
   TLINSTANCE_ID,
   type IndexKey,
   type JsonObject,
   type TLInstance,
+  type TLInstancePageState,
   type TLPage,
   type RecordProps,
   type TLDrawShape,
@@ -154,6 +156,9 @@ export interface FakeEditor extends LiveEditorLike {
   createPage(page: { name: string; meta?: JsonObject }): void;
   setCurrentPage(id: TLPageId): void;
   run(fn: () => void): void;
+  /** what the select tool does on a tap or a lasso (a session change, as in tldraw); [] clears it */
+  select(ids: TLShapeId[]): void;
+  getSelectedShapeIds(): TLShapeId[];
 }
 
 /** An editor double over a headless store implementing exactly what LiveLoop uses. */
@@ -242,6 +247,12 @@ export function createFakeEditor(store: TLStore = createHeadlessStore(), viewpor
       if (cur) store.put([fn(cur)]);
     },
     shapesOfType: (type) => store.allRecords().filter(isShape).filter((s) => s.type === type),
+    select: (ids) => {
+      const id = InstancePageStateRecordType.createId(currentPageId());
+      const cur = (store.get(id) as TLInstancePageState | undefined) ?? InstancePageStateRecordType.create({ id, pageId: currentPageId() });
+      store.put([{ ...cur, selectedShapeIds: ids }]);
+    },
+    getSelectedShapeIds: () => (store.get(InstancePageStateRecordType.createId(currentPageId())) as TLInstancePageState | undefined)?.selectedShapeIds ?? [],
   };
   return editor;
 }

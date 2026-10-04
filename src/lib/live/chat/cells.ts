@@ -42,6 +42,11 @@ export function problemMetaOf(meta: unknown): { n: number; lines: string[]; cell
   return { n: typeof p.n === "number" ? p.n : 0, lines, cell: p.cell };
 }
 
+/** A problem's cell key (`ProblemCell.key`): the block it was written as, else its number and lines. */
+export function problemKeyOf(block: string, p: { n: number; lines: string[] }): string {
+  return block || `${p.n}:${p.lines.join(";")}`;
+}
+
 /**
  * The problems on a screen, from the tutor's strokes: grouped by the block they were written as,
  * each with where its ink is. A problem the student rubbed out entirely is gone; one partly rubbed
@@ -52,7 +57,7 @@ export function readProblemCells(shapes: ReadonlyArray<{ block: string; meta: un
   for (const s of shapes) {
     const p = problemMetaOf(s.meta);
     if (!p) continue;
-    const key = s.block || `${p.n}:${p.lines.join(";")}`;
+    const key = problemKeyOf(s.block, p);
     const cur = byKey.get(key);
     if (!cur) {
       byKey.set(key, { key, n: p.n, lines: p.lines, head: { ...s.bounds }, cell: p.cell });
@@ -77,7 +82,7 @@ export function problemLines(shapes: ReadonlyArray<{ block: string; meta: unknow
   const rects = cell.lines.map((): Rect | null => null);
   for (const s of shapes) {
     const p = problemMetaOf(s.meta);
-    if (!p || (s.block || `${p.n}:${p.lines.join(";")}`) !== cell.key) continue;
+    if (!p || problemKeyOf(s.block, p) !== cell.key) continue;
     const i = cell.lines.indexOf(s.line);
     if (i === -1) continue;
     const cur = rects[i];

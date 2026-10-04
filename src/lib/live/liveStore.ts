@@ -2,6 +2,7 @@
 
 import { atom } from "tldraw";
 import type { LiveLineState, LiveStatus, OpenHint, RecognizerKind, Rect } from "./contracts";
+import type { HelpTarget } from "./helpTarget";
 
 /** A drawing on the screen as the dev panel shows it (`src/lib/live/diagrams.ts`). */
 export interface LiveDiagram {
@@ -67,6 +68,15 @@ export const liveStore = {
    * back half written by Undo (`deleteScreen`). null when no loop is mounted.
    */
   finishWriting: atom<(() => void) | null>("live.finishWriting", null),
+  /**
+   * The problem Help me / Solve it act on now (`src/lib/live/helpTarget.ts`), published by the loop
+   * after every flush and change of selection; the outline around it (`ProblemHighlight`) reads it.
+   */
+  helpTarget: atom<HelpTarget | null>("live.helpTarget", null),
+  /** the ask button is hovered, or has keyboard focus: the outline shows what it would act on */
+  askHover: atom<boolean>("live.askHover", false),
+  /** when Help or Solve was last asked for (ms; 0: not yet) */
+  askedAt: atom<number>("live.askedAt", 0),
 };
 
 let errorSeq = 0;
@@ -134,4 +144,6 @@ export function resetLiveStore(): void {
   liveStore.offlineQueued.set(0);
   liveStore.lastError.set(null);
   liveStore.solving.set(0);
+  liveStore.helpTarget.set(null);
+  liveStore.askedAt.set(0);
 }
