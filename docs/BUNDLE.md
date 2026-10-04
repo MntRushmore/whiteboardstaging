@@ -182,6 +182,18 @@ Unlimited ink meter (`parseUnlimitedState`, the ∞ state) and `waitPhrase` onto
 (`React.lazy` behind `LiveErrorBoundary`, mounted from the first open on). After: 1,059,676 B gzip,
 324 B under budget. The next board feature needs a cut first; katex (below) is the big lever left.
 
+## 2026-10-03: which problem Help acts on (`feat/problem-targeting`)
+
+`main` (`48d280e`) measured 1,059,975 B gzip on `/board/[id]` (25 B under budget). Help following the
+pen and the select tool's pick (`src/lib/live/helpTarget.ts`, the loop's target tracking, the
+`liveStore.helpTarget` / `askHover` / `askedAt` atoms, the ask button's hover) cost +688 B in the
+first load, and the pen-or-pick ordering +68 B more. The outline itself (`ProblemHighlight` and
+`problemHighlightView.ts`) is a lazy chunk, fetched just after the board. Paid for by loading the
+help-modes explainer (`src/components/board/ModeInfoDialog.tsx`, moved out of the page with the
+`ui/dialog` wrappers only it used there) the first time Board options opens it: -1,184 B, measured
+together with the ask button's new hint (`LIVE_COPY.ask.pickHint`). After: 1,059,547 B gzip, 453 B
+under budget.
+
 ## Recommendations not done here (files owned elsewhere)
 
 1. `src/app/globals.css`: drop `@import "katex/dist/katex.min.css"` and import it from

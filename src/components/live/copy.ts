@@ -78,6 +78,11 @@ export const LIVE_COPY = {
     helpHint: "Stuck? Your tutor writes the next step for you",
     solve: "Solve it",
     solveHint: "Your tutor writes the rest of the steps",
+    /**
+     * after either hint: it acts on the problem written in last, unless the student picks another
+     * with the select tool (the arrow) — the outline shows which while it is hovered
+     */
+    pickHint: "Several problems? Tap one with the arrow tool to choose it",
     /** tapped with nothing on the screen yet */
     nothingYet: "Write a line of maths first, then tap Help me",
   },
