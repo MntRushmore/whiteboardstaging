@@ -9,7 +9,7 @@
  * finds, whatever the load on the test runner), and `variantOf` itself — the real clock — is held to
  * what holds at any speed.
  */
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { PROBLEM_GRID } from "@/lib/live/chat/layout";
 import { answerOf, isCleanAnswer, verifyProblem } from "@/lib/live/chat/verify";
 import type { LiveEngine } from "@/lib/live/contracts";
@@ -21,6 +21,9 @@ import type { PracticeProblem } from "../contracts";
 import { looseSkeleton, skeletonOf, tidy } from "../generators/shape";
 import { answerKey, answerShape, findVariant, VARIANT_LIMITS } from "../generators/variant";
 import { practiceProblems, variantOf } from "../practice";
+
+// the engine works every problem: generous limits for a busy test runner (as `oracle.test.ts`)
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 let engine: LiveEngine;
 beforeAll(async () => {

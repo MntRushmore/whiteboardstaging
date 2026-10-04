@@ -6,7 +6,7 @@
  * answer is clean, and where the engine marks a student's working (one-line problems outside
  * derivatives and indefinite integrals) a first step gets a tick under it in Feedback.
  */
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { WriteProblemsSchema } from "@/lib/live/chat/contracts";
 import { PROBLEM_GRID } from "@/lib/live/chat/layout";
 import { answerOf, hasWords, isCleanAnswer, verifyProblem } from "@/lib/live/chat/verify";
@@ -22,6 +22,9 @@ import { MAX_PRACTICE } from "../generators";
 import { looseSkeleton, skeletonOf } from "../generators/shape";
 import { hasPractice, practiceProblems } from "../practice";
 import { classifyProblem } from "../skills";
+
+// the engine works every problem: generous limits for a busy test runner (as `oracle.test.ts`)
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 let engine: LiveEngine;
 beforeAll(async () => {

@@ -14,6 +14,9 @@ vi.mock("../skills", () => ({ classifyProblem: vi.fn(() => classify.skill) }));
 import { practiceProblems, variantOf } from "../practice";
 import { classifyProblem } from "../skills";
 
+// the engine works every problem: generous limits for a busy test runner (as `oracle.test.ts`)
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
 let engine: LiveEngine;
 beforeAll(async () => {
   engine = await getEngine();
