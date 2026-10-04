@@ -44,12 +44,15 @@ beforeAll(async () => {
 /** A line the engine cannot judge (verdict unknown): only a model can say whether it follows. */
 const UNJUDGED = "x^{2}+y=\\sin y";
 
-/** The real engine, except that `UNJUDGED` comes back unknown. */
+/** Unjudged too, and its `\lambda` — used nowhere else in the column — sends it to the second reader (`rereadTrigger`). */
+const UNJUDGED_ODD = "x^{2}+\\lambda y=7";
+
+/** The real engine, except that `UNJUDGED` (and `UNJUDGED_ODD`) come back unknown. */
 function withUnjudged(): LiveEngine {
   const unknown = (latex: string): LineAnalysis => ({ kind: "equation", math: latex, resultLatex: "", verdict: "unknown", note: "" });
   return new Proxy(engine, {
     get(target, prop, receiver) {
-      if (prop === "analyzeLine") return (latex: string, ctx: Parameters<LiveEngine["analyzeLine"]>[1]) => (latex === UNJUDGED ? unknown(latex) : target.analyzeLine(latex, ctx));
+      if (prop === "analyzeLine") return (latex: string, ctx: Parameters<LiveEngine["analyzeLine"]>[1]) => (latex === UNJUDGED || latex === UNJUDGED_ODD ? unknown(latex) : target.analyzeLine(latex, ctx));
       const v = Reflect.get(target, prop, receiver) as unknown;
       return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
     },
@@ -74,6 +77,9 @@ describe("live loop — Auto", () => {
   let readGate: Promise<void> | null;
   /** the quiet notes the board showed (`deps.notify`) */
   let notes: string[];
+  /** while set, the second reader waits for it (and then declines, as it always does here) */
+  let rereadGate: Promise<void> | null;
+  let rereadCalls: number;
 
   function start(mode: HelpMode, opts: { auto?: boolean; engine?: LiveEngine } = {}): void {
     loop?.stop();
@@ -101,6 +107,8 @@ describe("live loop — Auto", () => {
           throw new Error("no word problems here");
         },
         reread: async () => {
+          rereadCalls++;
+          if (rereadGate) await rereadGate;
           throw new Error("no second reader here");
         },
         notify: (message) => notes.push(message),
@@ -153,6 +161,8 @@ describe("live loop — Auto", () => {
     assigned = new Map();
     readGate = null;
     notes = [];
+    rereadGate = null;
+    rereadCalls = 0;
     fetchJson = vi.fn<FetchJson>(async (_path, body): Promise<RecognizeResponse> => {
       const { lineId } = body as RecognizeRequest;
       let latex = assigned.get(lineId);
@@ -253,6 +263,62 @@ describe("live loop — Auto", () => {
       loop.requestCheck(unjudged);
       await quiesce();
       expect(liveStore.lastError.get()).toMatchObject({ kind: "check", lineId: unjudged });
+    });
+
+    it("a line still being read when the pause comes is not checked as it read before: its check waits for the read", async () => {
+      start("feedback", { engine: withUnjudged() });
+      await penLine(0, "2x+3=11");
+      const line = await penLine(1, UNJUDGED);
+      // more of the same line, read slowly: the pause arrives while it is being read again
+      let release!: () => void;
+      readGate = new Promise<void>((r) => (release = r));
+      const b = liveStore.lines.get()[line].line.bounds;
+      editor.putUser(inkLine("+1", b.x + b.w + 12, b.y, 40));
+      await wait(ANSWER_SETTLE_MS + 500);
+      expect(fetchJson.mock.calls.length).toBeGreaterThan(2);
+      expect(checks()).toEqual([]);
+
+      release();
+      readGate = null;
+      await settleUntil(() => checks().length > 0);
+      await quiesce();
+      expect(checks()).toHaveLength(1);
+      expect(checks()[0].focusLineId).toBe(line);
+    });
+
+    it("...and a line the second reader is still reading waits for it too: checked once its read stands", async () => {
+      // the second reader needs a crop of the ink
+      editor.toImage = (async () => ({ blob: new Blob(["jpeg"], { type: "image/jpeg" }), width: 300, height: 200 })) as unknown as FakeEditor["toImage"];
+      vi.stubGlobal(
+        "FileReader",
+        class {
+          result: string | null = null;
+          onload: (() => void) | null = null;
+          onerror: (() => void) | null = null;
+          readAsDataURL(): void {
+            this.result = "data:image/jpeg;base64,eA==";
+            queueMicrotask(() => this.onload?.());
+          }
+        },
+      );
+      try {
+        start("feedback", { engine: withUnjudged() });
+        let release!: () => void;
+        rereadGate = new Promise<void>((r) => (release = r));
+        await penLine(0, "2x+3=11");
+        const line = await penLine(1, UNJUDGED_ODD);
+        await wait(ANSWER_SETTLE_MS + 500);
+        expect(rereadCalls).toBeGreaterThan(0);
+        expect(checks()).toEqual([]);
+
+        release();
+        await settleUntil(() => checks().length > 0);
+        await quiesce();
+        expect(checks()).toHaveLength(1);
+        expect(checks()[0].focusLineId).toBe(line);
+      } finally {
+        vi.unstubAllGlobals();
+      }
     });
 
     it("a reload, or a first visit to a screen, does not check again what was already on it", async () => {

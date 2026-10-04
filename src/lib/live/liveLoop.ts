@@ -2092,8 +2092,7 @@ export class LiveLoop implements LiveController {
     this.recordAgain(line.id, opts.signal, read.latex, reply, Boolean(accepted));
     const current = this.readsAs(line.id, line.hash, read.latex);
     if (!accepted || !current || !this.started) {
-      // Mathpix's read stands: if the student stopped while it was being read again, its "?" is due now
-      if (this.started && current) this.questionIfSettled(line.id);
+      if (this.started && current) this.readStands(line.id);
       return false;
     }
     this.rereads.set(line.hash, accepted);
@@ -2139,7 +2138,7 @@ export class LiveLoop implements LiveController {
       clientMetric("live.reread.failed", { signal, lineId });
       if (this.started && !ctrl.signal.aborted && current()) {
         this.reading.delete(lineId);
-        this.questionIfSettled(lineId);
+        this.readStands(lineId);
       }
       return null;
     } finally {
@@ -2289,6 +2288,17 @@ export class LiveLoop implements LiveController {
     this.render(cur, this.decisionFor(cur));
     // no ring after all: the problem may be Auto's to finish at this pause
     if (this.settled) this.autoPause();
+  }
+
+  /**
+   * The second reader is done and Mathpix's read stands: what waited for it is due now if the
+   * student stopped meanwhile — its "?", and Auto's check of its column (`autoChecks` skips a line
+   * still being read; an accepted read gets both from `analyzeAndRender`).
+   */
+  private readStands(lineId: string): void {
+    this.questionIfSettled(lineId);
+    const state = liveStore.lines.get()[lineId];
+    if (state && this.settled) this.autoChecks(state.line.column);
   }
 
   /** The second reader's read replaces Mathpix's: re-analysed and re-rendered like any new read. */
@@ -2800,12 +2810,16 @@ export class LiveLoop implements LiveController {
    * lowest such line, and once per state of the column down to each line: a line whose line above
    * changed is checked again, an unchanged one never is. A ring it brings is drawn by
    * `applyAnnotation` (Suggest and Solve then write the right step beside it, as for the engine's).
+   *
+   * Not a line still being read (`reading`, as `autoWorkable`): its latex is the read before the
+   * ink changed, and the check paid for that stale read. Its own read, when it lands after the
+   * pause, checks its column (`analyzeAndRender`).
    */
   private autoChecks(column?: number, stopped = this.settled): void {
     if (!this.autoReady()) return;
     const due = new Map<number, LiveLineState[]>();
     for (const st of Object.values(liveStore.lines.get())) {
-      if ((column !== undefined && st.line.column !== column) || !st.latex || this.rt.get(st.line.id)?.checkAbort) continue;
+      if ((column !== undefined && st.line.column !== column) || !st.latex || this.reading.has(st.line.id) || this.rt.get(st.line.id)?.checkAbort) continue;
       if (!this.decisionFor(st, { settled: stopped }).runLlmCheck || this.autoDone.has(this.autoKey("check", st))) continue;
       due.set(st.line.column, [...(due.get(st.line.column) ?? []), st]);
     }
