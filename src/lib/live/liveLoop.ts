@@ -123,7 +123,7 @@ import {
   recognizeFailureHints,
 } from "./recognizeClient";
 import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient";
-import { assignColumns, clusterLines, rebuildFromMathShapes, unionRects, type EchoShapeSeed } from "./strokeClusters";
+import { assignColumns, clusterLines, inkScale, rebuildFromMathShapes, unionRects, type EchoShapeSeed } from "./strokeClusters";
 import { buildPayload, hashPayload } from "./strokePayload";
 import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
@@ -1704,6 +1704,15 @@ export class LiveLoop implements LiveController {
     return this.editor.getBaseZoom?.();
   }
 
+  /**
+   * How much bigger in page px the tutor's hand is on this board than on a desktop (`inkScale` of the
+   * fit zoom): what the gaps that set its writing off from the student's are multiplied by, so a
+   * block sized for a phone (`handSizeFor(h, zoom)`) is not squeezed against their ink. 1 on a desktop.
+   */
+  private handScale(): number {
+    return inkScale(this.boardZoom());
+  }
+
   /** The drawings as the dev panel shows them. */
   private publishDiagrams(): void {
     liveStore.diagrams.set(
@@ -2616,7 +2625,8 @@ export class LiveLoop implements LiveController {
    * the hand cannot write a glyph of it (the typeset fallback's turn).
    */
   private drawProblemWork(built: { states: LiveLineState[] }, opts: SolveOpts, work: ProblemWork, state: LiveLineState, steps: readonly string[], extraMeta?: JsonObject): { rect: Rect; wallMs: number } | null {
-    // the hand the problem was written in (its ink is a digit's height of it), as large as a student's line allows
+    // the hand the problem was written in (its ink is a digit's height of it), as large as a student's
+    // line allows — the chat's problem, laid out on the board's own 1600 x 900 screen, so no zoom here
     const base = handSizeFor(state.line.bounds.h / HAND_WRITE.digitRatio);
     const seed = handSeedFor(`${opts.lineId}:${work.written.length}`);
     const at = { x: unionRects(built.states.map((s) => s.line.bounds)).x, y: rectMaxY(work.below) + WORK_PLACE.gap };
@@ -3827,7 +3837,7 @@ export class LiveLoop implements LiveController {
    */
   private planInlineAnswer(state: LiveLineState, answer: string): HandPlan | null {
     const ink = state.line.bounds;
-    const size = inlineHandSizeFor(ink.h);
+    const size = inlineHandSizeFor(ink.h, this.boardZoom());
     const { plan, unsupported } = planHandwriting([answer], { size, seed: handSeedFor(`${state.line.id}:answer`) });
     if (!plan || unsupported.length > 0) return null;
     const placed = placeHandPlanOnBaseline(plan, {
@@ -4413,18 +4423,19 @@ export class LiveLoop implements LiveController {
    * has no room to the right) and starts the reveal. False when the hand cannot draw every step.
    */
   private drawBesideFigure(diagram: Diagram, steps: readonly string[], extraMeta?: JsonObject): boolean {
-    const size = handSizeFor(3 * this.glyph);
+    const size = handSizeFor(3 * this.glyph, this.boardZoom());
+    const k = this.handScale();
     const { plan, unsupported } = planHandwriting(steps, { size, seed: handSeedFor(diagram.id) });
     if (!plan || unsupported.length > 0) return false;
     const b = diagram.bounds;
     const screen = this.placementBounds();
-    let candidate: Rect = { x: rectMaxX(b) + PLACEMENT.sideGap, y: b.y, w: plan.bounds.w, h: plan.bounds.h };
+    let candidate: Rect = { x: rectMaxX(b) + PLACEMENT.sideGap * k, y: b.y, w: plan.bounds.w, h: plan.bounds.h };
     if (rectMaxX(candidate) > rectMaxX(screen) - PLACEMENT.viewportMargin) {
-      candidate = keepInsideX({ x: b.x, y: rectMaxY(b) + PLACEMENT.stepGap, w: plan.bounds.w, h: plan.bounds.h }, screen);
+      candidate = keepInsideX({ x: b.x, y: rectMaxY(b) + PLACEMENT.stepGap * k, w: plan.bounds.w, h: plan.bounds.h }, screen);
     }
     const avoid = this.avoidRects(diagram.id);
     avoid.push(b);
-    const slot = findFreeSlot(candidate, avoid, b, "below");
+    const slot = findFreeSlot(candidate, avoid, b, "below", k);
     this.startHandwriting(placeHandPlan(plan, { x: slot.x, y: slot.y }), diagram.id, extraMeta);
     clientMetric("live.figure.hand", { diagramId: diagram.id, lines: steps.length });
     return true;
@@ -4752,7 +4763,7 @@ export class LiveLoop implements LiveController {
         // `solveLatex` is only ever written by hand: with the hand off (or no room) its line
         // goes to the paths that can also typeset.
         handwriting: hand && !atCap,
-        canDraw: (steps) => planHandwriting(steps, { size: handSizeFor(state.line.bounds.h), seed: handSeedFor(opts.lineId) }).unsupported.length === 0,
+        canDraw: (steps) => planHandwriting(steps, { size: handSizeFor(state.line.bounds.h, this.boardZoom()), seed: handSeedFor(opts.lineId) }).unsupported.length === 0,
         // the chat's problem above the work, written with its interval: the work is solved in it
         domain: this.headAnalyses(state.line.column).at(-1)?.domain?.latex,
       },
@@ -4862,7 +4873,9 @@ export class LiveLoop implements LiveController {
     extraMeta?: JsonObject,
   ): { rect: Rect; wallMs: number } | null {
     if (opts.problem) return this.drawProblemWork(built, opts, opts.problem, state, steps, extraMeta);
-    const size = handSizeFor(state.line.bounds.h);
+    // the student's size, on this board (`handSizeFor`'s zoom: a phone's writing is 5x a desktop's in page px)
+    const size = handSizeFor(state.line.bounds.h, this.boardZoom());
+    const k = this.handScale();
     const { plan, unsupported } = planHandwriting(steps, { size, seed: handSeedFor(opts.lineId) });
     if (!plan || unsupported.length > 0) return null;
 
@@ -4870,7 +4883,7 @@ export class LiveLoop implements LiveController {
     const column = unionRects(built.states.map((s) => s.line.bounds));
     const candidate: Rect = {
       x: column.x,
-      y: rectMaxY(lastLine) + PLACEMENT.stepGap,
+      y: rectMaxY(lastLine) + PLACEMENT.stepGap * k,
       w: plan.bounds.w,
       h: plan.bounds.h,
     };
@@ -4882,8 +4895,8 @@ export class LiveLoop implements LiveController {
     if (echo) avoid.push(echo);
     // Under the work, a blocked block slides down past what is in the way; moved beside the work
     // (no room below on this screen), it slides right as an echo does.
-    const placed = keepOnScreen(candidate, this.screenRect(), column);
-    const slot = findFreeSlot(placed, avoid, lastLine, placed.x === candidate.x ? "below" : "right");
+    const placed = keepOnScreen(candidate, this.screenRect(), column, 0, PLACEMENT.sideGap * k);
+    const slot = findFreeSlot(placed, avoid, lastLine, placed.x === candidate.x ? "below" : "right", k);
 
     const block = placeHandPlan(plan, { x: slot.x, y: slot.y });
     this.startHandwriting(block, opts.lineId, extraMeta);
@@ -5185,7 +5198,7 @@ export class LiveLoop implements LiveController {
   private writeProofRows(read: ProofRead, rows: readonly PlannedRow[], anchor: string): boolean {
     if (!this.deps.handwritingEnabled() || liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
     const texts = rows.map((r) => ({ statement: r.statement, reasonLatex: r.reasonLatex }));
-    const size = handSizeFor(read.lineHeight);
+    const size = handSizeFor(read.lineHeight, this.boardZoom());
     const seed = handSeedFor(`proof:${anchor}:${read.rows.length}:${texts.map((t) => t.statement).join(";")}`);
     const avoid: Rect[] = [];
     for (const s of this.editor.getCurrentPageShapes()) {
@@ -5895,16 +5908,17 @@ export class LiveLoop implements LiveController {
     // one pen at a time: a ring still being drawn round the line is finished first
     if (this.afterMark(lineId, () => this.suggestNextStep(lineId, opts))) return true;
     if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
-    const { plan, unsupported } = planHandwriting([step], { size: handSizeFor(state.line.bounds.h), seed: handSeedFor(`${lineId}:suggest`) });
+    const { plan, unsupported } = planHandwriting([step], { size: handSizeFor(state.line.bounds.h, this.boardZoom()), seed: handSeedFor(`${lineId}:suggest`) });
     if (!plan || unsupported.length > 0) return false;
     const ink = state.line.bounds;
+    const k = this.handScale();
     const candidate: Rect = {
-      x: rectMaxX(ringRect(ink)) + PLACEMENT.sideGap / 2,
+      x: rectMaxX(ringRect(ink)) + (PLACEMENT.sideGap * k) / 2,
       y: ink.y + ink.h / 2 - plan.bounds.h / 2,
       w: plan.bounds.w,
       h: plan.bounds.h,
     };
-    const slot = findFreeSlot(keepInsideX(candidate, this.placementBounds()), this.avoidRects(lineId), ink);
+    const slot = findFreeSlot(keepInsideX(candidate, this.placementBounds()), this.avoidRects(lineId), ink, "right", k);
     const writer = this.makeWriter();
     const entry = { writer, latex: state.latex, landed: false };
     this.runtime(lineId).stepWriter = entry;
@@ -5943,7 +5957,7 @@ export class LiveLoop implements LiveController {
       if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return;
       // one pen at a time: the dial raised from Off draws the operation's tick first
       if (this.afterMark(state.line.id, () => this.writeOperationResults())) continue;
-      const { plan, unsupported } = planHandwriting([result], { size: handSizeFor(state.line.bounds.h), seed: handSeedFor(`${state.line.id}:result`) });
+      const { plan, unsupported } = planHandwriting([result], { size: handSizeFor(state.line.bounds.h, this.boardZoom()), seed: handSeedFor(`${state.line.id}:result`) });
       if (!plan || unsupported.length > 0) continue;
       const slot = this.underOperation(state, plan.bounds);
       const writer = this.makeWriter();
@@ -5974,9 +5988,10 @@ export class LiveLoop implements LiveController {
   private underOperation(state: LiveLineState, size: { w: number; h: number }, anchor: Rect = state.line.bounds): Rect {
     const ink = state.line.bounds;
     const above = [...this.columnLines(state.line.column)].reverse().find((s) => s.line.row < state.line.row && !isOperationLine(s));
-    const candidate: Rect = { x: Math.min(ink.x, above?.line.bounds.x ?? ink.x), y: rectMaxY(anchor) + PLACEMENT.stepGap, w: size.w, h: size.h };
-    const placed = keepOnScreen(candidate, this.screenRect(), anchor);
-    return findFreeSlot(placed, [...this.avoidRects(state.line.id), ink, anchor], anchor, placed.x === candidate.x ? "below" : "right");
+    const k = this.handScale();
+    const candidate: Rect = { x: Math.min(ink.x, above?.line.bounds.x ?? ink.x), y: rectMaxY(anchor) + PLACEMENT.stepGap * k, w: size.w, h: size.h };
+    const placed = keepOnScreen(candidate, this.screenRect(), anchor, 0, PLACEMENT.sideGap * k);
+    return findFreeSlot(placed, [...this.avoidRects(state.line.id), ink, anchor], anchor, placed.x === candidate.x ? "below" : "right", k);
   }
 
   /**
@@ -6006,7 +6021,7 @@ export class LiveLoop implements LiveController {
     const resultBlock = this.operationResultShapes(lineId).filter((s) => metaString(s.meta, OPERATION_RESULT_META) === result);
     const written = resultBlock.length > 0;
     const hand = this.deps.handwritingEnabled();
-    const size = handSizeFor(state.line.bounds.h);
+    const size = handSizeFor(state.line.bounds.h, this.boardZoom());
     const seed = handSeedFor(`${lineId}:result`);
     const canDraw = (steps: readonly string[]) => planHandwriting(steps, { size, seed }).unsupported.length === 0;
     const after = localSolve(engine, [result], 0, { handwriting: hand, canDraw, domain: this.headAnalyses(state.line.column).at(-1)?.domain?.latex });

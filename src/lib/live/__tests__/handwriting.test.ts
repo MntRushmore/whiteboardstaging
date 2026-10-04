@@ -135,6 +135,35 @@ describe("handwriting: planning and the unsupported interlock", () => {
     expect(handSizeFor(400)).toBe(HAND_WRITE.maxSize);
   });
 
+  it("on a desktop (the board's fit zoom 1 or more, or unknown) the bounds are exactly as they were", () => {
+    for (const h of [0, 4, 18, 25, 40, 63, 90, 400, 4000]) {
+      expect(handSizeFor(h, 1)).toBe(handSizeFor(h));
+      expect(handSizeFor(h, 1.6)).toBe(handSizeFor(h));
+      expect(inlineHandSizeFor(h, 1)).toBe(inlineHandSizeFor(h));
+      expect(inlineHandSizeFor(h, 2)).toBe(inlineHandSizeFor(h));
+    }
+    expect([handSizeFor(4), handSizeFor(30), handSizeFor(400)]).toEqual([18, 30, 40]);
+    expect([inlineHandSizeFor(4), inlineHandSizeFor(40), inlineHandSizeFor(4000)]).toEqual([18, 63, 96]);
+  });
+
+  it("on a smaller board (an iPad, a phone) the hand grows with the student's writing, as it looks on screen — never under 14 px tall there", () => {
+    for (const zoom of [0.52, 0.2]) {
+      // a line that looks 40 px tall on screen gets the hand it gets on a desktop, on screen
+      expect(handSizeFor(40 / zoom, zoom) * zoom).toBeCloseTo(handSizeFor(40), 0);
+      // the largest hand is a desktop's largest, as it looks on screen (not 40 page px: 8 px on a phone)
+      expect(handSizeFor(4000, zoom) * zoom).toBeCloseTo(HAND_WRITE.maxSize, 0);
+      // small writing still gets a hand whose digits are readable on that screen
+      for (const h of [0, 4, 20, 40]) expect(handSizeFor(h, zoom) * HAND_WRITE.digitRatio * zoom).toBeGreaterThanOrEqual(14);
+      // an answer in the student's own line is their glyph height, however big their writing is in page px
+      for (const onScreen of [24, 40, 60]) {
+        const h = onScreen / zoom;
+        const plan = planHandwriting(["38"], { size: inlineHandSizeFor(h, zoom), seed: 1 }).plan;
+        expect(plan!.bounds.h).toBeGreaterThan(h * 0.85);
+        expect(plan!.bounds.h).toBeLessThan(h * 1.15);
+      }
+    }
+  });
+
   it("pins `digitRatio`: `size` is not the height of what gets written", () => {
     // A digit fills neither the 14-unit em box nor the 11 units above the baseline. An answer
     // written into the student's own line divides by this to come out the height of theirs,
