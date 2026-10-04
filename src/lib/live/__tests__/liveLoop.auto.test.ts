@@ -515,6 +515,55 @@ describe("live loop — Auto", () => {
       expect(work()).toEqual(["2x = 8", "x = 4"]);
     });
 
+    it("only on what the pen wrote in this session: not the last line rebuilt after a load when the dial turns to Solve", async () => {
+      start("feedback");
+      await penLine(0, "2x+3=11");
+      await wait(ANSWER_SETTLE_MS);
+      // a reload: the line comes back from its readback; the pen has not written yet
+      start("feedback");
+      await quiesce();
+      loop.setOptions({ ...loop.getOptions(), mode: "answer" });
+      await wait(LIVE_TIMING.stuckMs);
+      expect(work()).toEqual([]);
+      expect(calls).toEqual([]);
+
+      // the pen writes: that problem is Auto's to finish
+      await penLine(1, "3x+1=7", 700);
+      await wait(ANSWER_SETTLE_MS);
+      expect(work()).toEqual(["3x = 6", "x = 2"]);
+    });
+
+    it("...nor when Auto is switched on after a load", async () => {
+      start("answer", { auto: false });
+      await penLine(0, "2x+3=11");
+      await wait(ANSWER_SETTLE_MS);
+      start("answer", { auto: false });
+      await quiesce();
+      loop.setOptions({ ...loop.getOptions(), auto: true });
+      await wait(LIVE_TIMING.stuckMs);
+      expect(work()).toEqual([]);
+    });
+
+    it("never on a problem picked with the select tool: a pick is for Help me / Solve it", async () => {
+      start("answer", { auto: false });
+      await penLine(0, "2x+3=11");
+      await penLine(1, "3x+1=7", 700);
+      await wait(ANSWER_SETTLE_MS);
+      // A picked, then Auto switched on: the outline is on A, and nothing is written unasked
+      const a = Object.values(liveStore.lines.get()).find((s) => s.latex === "2x+3=11")!;
+      editor.select([...a.line.strokeIds]);
+      await quiesce();
+      loop.setOptions({ ...loop.getOptions(), auto: true });
+      await wait(LIVE_TIMING.stuckMs);
+      expect(work()).toEqual([]);
+
+      // the pen writes again: Auto follows it
+      editor.select([]);
+      await penLine(2, "4x=8", 400);
+      await wait(ANSWER_SETTLE_MS);
+      expect(work()).toEqual(["x = 2"]);
+    });
+
     it("never on a line with nothing to solve: a lone number, a symbol, a solved line", async () => {
       start("answer");
       await penLine(0, "7");

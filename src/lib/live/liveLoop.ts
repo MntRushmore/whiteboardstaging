@@ -2850,7 +2850,7 @@ export class LiveLoop implements LiveController {
    */
   private autoSolve(): void {
     if (this.opts.mode !== "answer" || !this.autoReady() || !this.autoMayAnswer()) return;
-    const target = this.helpTargetLine();
+    const target = this.autoTarget();
     if (!target || !this.autoWorkable(target, AUTO_SOLVE_KINDS) || !this.autoOnce(this.autoKey("solve", target))) return;
     this.autoRun("solve", target, () => this.requestSolve());
   }
@@ -2863,9 +2863,25 @@ export class LiveLoop implements LiveController {
   private autoStuck(): void {
     this.stuckTimer = null;
     if (this.opts.mode !== "suggest" || !this.autoReady() || !this.autoMayAnswer()) return;
-    const target = this.helpTargetLine();
+    const target = this.autoTarget();
     if (!target || !this.autoWorkable(target, AUTO_STEP_KINDS) || !this.autoOnce(this.autoKey("step", target))) return;
     this.autoRun("step", target, () => this.requestHelp());
+  }
+
+  /**
+   * The line Auto finishes or writes the next step of: the line of the student's last FRESH pen
+   * stroke on this screen, in this session — never `helpTargetLine`'s fallbacks, which are for an
+   * ask. Before the pen has written here (a load, a screen switch) that fallback is the line read
+   * last, i.e. whichever line was rebuilt from its readback last: turning the dial to Solve, or
+   * Auto on, solved an old problem nobody was working on. And never a pick with the select tool:
+   * a pick is how the student aims Help me / Solve it, and tldraw keeps it, unseen, through what
+   * comes next — the next pause solved a problem tapped minutes before. While a pick wins
+   * (`picked`), Auto leaves the problem to the student's ask; the pen writing takes it back.
+   * Explicit asks keep `helpTargetLine`.
+   */
+  private autoTarget(): LiveLineState | undefined {
+    if (!this.penStrokeId || this.picked()) return undefined;
+    return penLine(liveStore.lines.get(), this.penStrokeId, this.penLineId) ?? undefined;
   }
 
   /** Suggest's stuck pause starts again from now (Auto on; it looks at the mode again when it ends). */
