@@ -56,10 +56,11 @@ export function useLiveMath(editor: Editor, opts: UseLiveMathOptions): LiveContr
       clearMarks: () => loopRef.current?.clearMarks(),
       retypeLine: (lineId, latex) => loopRef.current?.retypeLine(lineId, latex),
       chatScreen: () => loopRef.current?.chatScreen() ?? { empty: true, student: [], tutor: [], problems: [] },
-      runChatActions: async (actions) => {
+      // `from`: where the problems it writes come from, for the learning record (the chat's own by default)
+      runChatActions: async (actions, from) => {
         const loop = loopRef.current;
         if (!loop) throw new Error("The board is not ready yet.");
-        return loop.runChatActions(actions);
+        return loop.runChatActions(actions, from);
       },
       // Lecture mode: the loop runs whatever the Live switch and the help mode say (see `lectureHost`)
       lectureScreen: () => loopRef.current?.lectureScreen() ?? { empty: true, topic: null, drawn: [], room: 1, active: [] },

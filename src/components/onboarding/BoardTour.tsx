@@ -205,7 +205,7 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
       }
       if (!controller.runChatActions) return;
       for (const s of starters) {
-        const report = await controller.runChatActions([{ type: "write_problems", problems: [[...s.lines]] }]);
+        const report = await controller.runChatActions([{ type: "write_problems", problems: [[...s.lines]] }], { origin: "starter" });
         if (report.problemsWritten > 0) {
           setStarter(s);
           clientMetric("onboarding.tour.problem", { course: marker?.course ?? null, problem: s.lines.join("; "), ms: Date.now() - startedAt });
