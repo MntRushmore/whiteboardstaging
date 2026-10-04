@@ -36,6 +36,11 @@ export interface LiveError {
   retryAfterMs?: number;
   /** check/solve: the student asked for this (badge tap / More help / Solve steps) */
   userAsked?: boolean;
+  /**
+   * check/solve: what the student asked for, for the error card's heading (`errorCardTitle`): the
+   * whole working (`solve`), a check of the line (`check`), or the next step or a hint (`hint`)
+   */
+  asked?: "solve" | "check" | "hint";
   /** ink (402): what the refused call costs (the 402's `cost`), so the error stays until it is affordable */
   inkNeeded?: number;
   at: number;

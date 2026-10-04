@@ -155,7 +155,29 @@ export function pillPrimary(view: Pick<LiveErrorView, "primary">, meterOffersInk
   return view.primary === "ink" && meterOffersInk ? null : view.primary;
 }
 
-/** True when the error should also appear as an inline card next to its line. */
+/**
+ * True when the error is one that can sit beside its line as a card: a check or solve the student
+ * asked for, about a line, whose way out is Retry. Signed out and out of ink are about the account,
+ * not the line, and their way out (Sign in, Get ink) lives in the bar: those stay in the pill.
+ * Whether the card is actually shown also needs the line on the screen (`errorCardAnchor`).
+ */
 export function showsHintCard(err: LiveError | null): err is LiveError & { lineId: string } {
-  return Boolean(err && (err.kind === "check" || err.kind === "solve") && err.userAsked && err.lineId);
+  return Boolean(
+    err && (err.kind === "check" || err.kind === "solve") && err.userAsked && err.lineId && err.code !== "unauthorized" && err.code !== "ink",
+  );
+}
+
+/**
+ * The error the status pill shows: none while the card beside the line shows it. One error, one
+ * place, one Retry and one Dismiss; the pill goes back to saying what Live is doing.
+ */
+export function pillError(err: LiveError | null, onCard: boolean): LiveError | null {
+  return onCard ? null : err;
+}
+
+/** The error card's heading: what the student asked for that did not come back. */
+export function errorCardTitle(err: Pick<LiveError, "kind" | "asked">): string {
+  const asked = err.asked ?? (err.kind === "check" ? "check" : "solve");
+  if (asked === "hint") return LIVE_COPY.errors.hintCard;
+  return asked === "check" ? LIVE_COPY.errors.checkCard : LIVE_COPY.errors.solveCard;
 }

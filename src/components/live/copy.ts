@@ -107,8 +107,12 @@ export const LIVE_COPY = {
     attempts: (n: number) => `tried ${n} times`,
     /** echo chip under ink whose recognition failed (low confidence keeps its own chip) */
     recognizeChip: "Couldn't read this line — tap Retry",
-    /** inline card when a hint the student asked for could not be fetched */
+    /** error card heading when a hint or next step the student asked for (Help me, More help) could not be fetched */
     hintCard: "Couldn't get a hint right now",
+    /** error card heading when Solve it could not finish the working */
+    solveCard: "Couldn't solve this",
+    /** error card heading when the check of a line the student asked about failed */
+    checkCard: "Couldn't check this line",
     retry: "Retry",
     dismiss: "Dismiss",
     signIn: "Sign in",

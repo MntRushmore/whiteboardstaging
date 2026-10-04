@@ -259,6 +259,25 @@ type RetryContext =
   | { kind: "proof"; lineId: string; all: boolean };
 
 /**
+ * What the student asked for, read off the call that failed, so its error card can say so
+ * (`errorCardTitle`): Help me and More help ask for one step (`onlyFirstStep`, a proof's next
+ * row), which is a hint; Solve it asks for the rest. Reads and capability calls ask for nothing.
+ */
+function askedFor(retry: RetryContext): LiveError["asked"] {
+  switch (retry.kind) {
+    case "check":
+      return retry.opts.forceHint ? "hint" : "check";
+    case "solve":
+    case "figure":
+      return retry.opts.onlyFirstStep ? "hint" : "solve";
+    case "proof":
+      return retry.all ? "solve" : "hint";
+    default:
+      return undefined;
+  }
+}
+
+/**
  * "The tutor reads the figure": how near a line must be to a drawing for Solve on it to read the
  * drawing too (page px, or this many glyphs when that is more) — `x = ?` written beside a triangle.
  */
@@ -812,7 +831,8 @@ export class LiveLoop implements LiveController {
       this.retryAttempt = 0;
     }
     this.retryContext = retry;
-    return setLiveError(fields);
+    const asked = askedFor(retry);
+    return setLiveError(asked ? { ...fields, asked } : fields);
   }
 
   /** The call succeeded: drop its error (if it is the one showing) and its retry state. */

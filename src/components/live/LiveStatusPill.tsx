@@ -19,7 +19,8 @@ import { scheduleLiveWrite } from "@/lib/live/liveWrite";
 import { useLiveSettings } from "@/lib/live/liveSettings";
 import { openInkDialog } from "@/lib/billing/inkDialog";
 import { LIVE_COPY } from "./copy";
-import { liveErrorView, pillPrimary, secondsLeftFor } from "./errorView";
+import { liveErrorView, pillError, pillPrimary, secondsLeftFor } from "./errorView";
+import { errorCardAnchor } from "./hintPlacement";
 import { boardMenuView, statusPillView } from "./toolbar";
 
 interface LiveStatusPillProps {
@@ -210,7 +211,17 @@ export function LiveStatusPill({
   const shapeCount = useValue(liveStore.liveShapeCount);
   const offlineQueued = useValue(liveStore.offlineQueued);
   const solving = useValue(liveStore.solving);
-  const lastError = useValue(liveStore.lastError);
+  // An error the card beside its line is showing is not repeated here (`errorCardAnchor`, the same
+  // test the hint layer places that card by): the pill says what Live is doing instead.
+  const errorOnCard = useValue(
+    "live.errorOnCard",
+    () => {
+      editor.getCamera();
+      return errorCardAnchor(editor, liveStore.lastError.get(), liveStore.lines.get()) !== null;
+    },
+    [editor],
+  );
+  const lastError = pillError(useValue(liveStore.lastError), errorOnCard);
   const canRetry = useValue(liveStore.retryHandler) !== null;
   const now = useLiveErrorClock(lastError);
   const shown = useLingeringStatus();

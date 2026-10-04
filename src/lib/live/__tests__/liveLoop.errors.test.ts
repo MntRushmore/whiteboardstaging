@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { TLDrawShape } from "tldraw";
 import { pillLabelFor } from "@/components/live/copy";
-import { RATE_LIMIT_FALLBACK_MS, showsHintCard } from "@/components/live/errorView";
+import { RATE_LIMIT_FALLBACK_MS, errorCardTitle, showsHintCard } from "@/components/live/errorView";
 import { ApiError } from "@/lib/api-client";
 import { createFakeEditor, type FakeEditor } from "../__fixtures__/fakeEditor";
 import { fixtureSingleLine, writeLine } from "../__fixtures__/strokes";
@@ -324,8 +324,9 @@ describe("live loop — visible errors and retry", () => {
     await settle(6);
     expect(streamCalls).toEqual(["/api/live/check"]);
     const err = liveStore.lastError.get();
-    expect(err).toMatchObject({ kind: "check", code: "upstream", lineId, userAsked: true, message: "The model is busy" });
+    expect(err).toMatchObject({ kind: "check", code: "upstream", lineId, userAsked: true, message: "The model is busy", asked: "check" });
     expect(showsHintCard(err)).toBe(true);
+    expect(errorCardTitle(err!)).toBe("Couldn't check this line");
     expect(liveStore.status.get()).toBe("idle");
 
     // No timer clears it.
@@ -401,7 +402,8 @@ describe("live loop — visible errors and retry", () => {
     await settle(6);
     expect(liveStore.solving.get()).toBe(0);
     expect(liveStore.status.get()).toBe("idle");
-    expect(liveStore.lastError.get()).toMatchObject({ kind: "solve", code: "upstream", lineId, userAsked: true, message: "No steps right now" });
+    expect(liveStore.lastError.get()).toMatchObject({ kind: "solve", code: "upstream", lineId, userAsked: true, message: "No steps right now", asked: "solve" });
+    expect(errorCardTitle(liveStore.lastError.get()!)).toBe("Couldn't solve this");
 
     solveGate = null;
     streamScript.push([{ event: "step", data: { index: 1, latex: "x=4", explanation: "Divide both sides by 2", final: true } }]);
@@ -410,6 +412,24 @@ describe("live loop — visible errors and retry", () => {
     expect(streamCalls.slice(before)).toEqual(["/api/live/solve", "/api/live/solve"]);
     expect(liveStore.lastError.get()).toBeNull();
     expect(liveStore.solving.get()).toBe(0);
+  });
+
+  it("More help that fails is a hint that did not come back, not a failed solve (the card's heading)", async () => {
+    loop.stop();
+    resetLiveStore();
+    loop = makeLoop("suggest");
+    loop.start();
+    recognizeScript.push("x=5");
+    await penUp(fixtureSingleLine());
+    const [lineId] = Object.keys(liveStore.lines.get());
+    const before = streamCalls.length;
+    streamScript.push([{ event: "error", data: { error: "upstream_error", message: "No steps right now" } }]);
+    loop.escalate(lineId);
+    await settle(8);
+    expect(streamCalls.slice(before)).toEqual(["/api/live/solve"]);
+    const err = liveStore.lastError.get();
+    expect(err).toMatchObject({ kind: "solve", lineId, userAsked: true, asked: "hint" });
+    expect(errorCardTitle(err!)).toBe("Couldn't get a hint right now");
   });
 
   // ------------------------------------------------------------------ capabilities
