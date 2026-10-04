@@ -1505,6 +1505,10 @@ export class LiveLoop implements LiveController {
     this.abortLlm(lineId);
     this.clearErrorsForLine(lineId);
     rt.readRefused = false;
+    // ...and so is its "couldn't read this": the new read earns its own "?" (after the same delay)
+    // if it is unsure too. Left set, a second unsure read lost its "?" for good: the render took it
+    // off and the delay that puts it back never ran again.
+    rt.unreadableShown = false;
     this.reading.add(lineId);
     const startedAt = this.deps.now();
     const readingTimer = setTimeout(() => {
@@ -2266,15 +2270,12 @@ export class LiveLoop implements LiveController {
       if (!opts.quiet) {
         // silent — unless it is under one of the chat's problems and the student has stopped: "?"
         const why = this.questionNow(state);
-        this.syncMark(state, why ? "question" : null, why ?? undefined);
+        // ...or this very read already earned its "couldn't read this" "?": a re-render of it (the
+        // line above was read again) keeps the "?" instead of taking it off
+        const unread = !why && rt.unreadableShown && this.opts.mode !== "off" && this.unreadableRead(state);
+        this.syncMark(state, why || unread ? "question" : null, why ?? (unread ? "unread" : undefined));
       }
-      if (
-        state.latex !== "" &&
-        state.confidence < LIVE_LIMITS.minConfidence &&
-        !rt.unreadableShown &&
-        !rt.unreadableTimer &&
-        !opts.quiet
-      ) {
+      if (this.unreadableRead(state) && !rt.unreadableShown && !rt.unreadableTimer && !opts.quiet) {
         const ticket = rt.processing;
         rt.unreadableTimer = setTimeout(() => {
           rt.unreadableTimer = null;
@@ -2320,6 +2321,11 @@ export class LiveLoop implements LiveController {
       this.dropStaleSuggestion(state, ring);
       if (ring && !opts.quiet) this.suggestNextStep(lineId);
     }
+  }
+
+  /** A read the recognizer was unsure of: the "couldn't read this" chip and "?" are for it. */
+  private unreadableRead(state: LiveLineState): boolean {
+    return state.latex !== "" && state.confidence < LIVE_LIMITS.minConfidence;
   }
 
   // ---------------------------------------------------------------- "?" under the chat's problems
