@@ -26,10 +26,15 @@ export const SOLVE_SYSTEM_PROMPT = [
   "10. NO WORDS in latex: the board shows only maths. Never \\text{...}, never \"or\", \"and\", \"so\", \"therefore\" or sentences inside latex (units as \\mathrm{m/s} are maths and fine).",
   "    Several solutions are a comma list: x = 2, \\ x = 3 (or x = 1 \\pm \\sqrt{2}). No real solution: \\varnothing. Every real number: x \\in \\mathbb{R}.",
   "    Inequalities: 2 < x < 3, or x < 2, \\ x > 3, or interval notation (2, \\infty). Antiderivatives end in + C. Exact values (\\frac{\\sqrt{3}}{2}, \\ln 2, \\pi), not decimals, unless the problem is in decimals.",
+  "11. A line that ends with = asks what it equals: that line is the question, whatever line you start from. Your steps continue THAT line, each starting with =.",
+  "    A line that only gives a letter a number (x = 3, kind assignment) is a given value, not working to continue: substitute it into the line that asks.",
+  "    3x + 24 = with x = 3 on another line is answered = 3(3) + 24, = 33 (never = 3(x + 8), which ignores the given value).",
 ].join("\n");
 
 function describeLine(line: SolveRequest["lines"][number], index: number): string {
-  return `line ${index + 1} (id ${line.id}): ${line.latex || "(empty)"}  [local verdict: ${line.local.verdict}, kind: ${line.local.kind}]`;
+  const asks = /=\s*$/.test(line.latex) && !/[<>!]=\s*$/.test(line.latex) ? ", ends with =: asks what it equals" : "";
+  const given = line.local.kind === "assignment" ? ", a given value" : "";
+  return `line ${index + 1} (id ${line.id}): ${line.latex || "(empty)"}  [local verdict: ${line.local.verdict}, kind: ${line.local.kind}${asks}${given}]`;
 }
 
 /** Build the chat messages for a solve request. */

@@ -4797,11 +4797,16 @@ export class LiveLoop implements LiveController {
     rt.solveAbort?.abort();
     const ctrl = new AbortController();
     rt.solveAbort = ctrl;
+    // A line the student ended with `=` is the question: the model is told which one, so it finishes
+    // that line (its step is written after that `=`, `continuedLine`) rather than "going on" from the
+    // `x = 3` under it — which is how `= 3(x+8)` came to be written under an `x = 3`.
+    const asks = this.askingLine(built, opts.lineId);
     const req: SolveRequest = {
       boardId: this.opts.boardId,
       region: built.region,
       lines: built.lines,
       fromLineId,
+      ...(asks ? { goal: `what line id ${asks.line.id} equals (${asks.latex.slice(0, 80)}): continue it after its =, using any values the other lines give`.slice(0, 200) } : {}),
     };
     // Every solve is asked for (Solve steps, More help, the board chat).
     const errCtx = { kind: "solve" as const, lineId: opts.lineId, userAsked: true };

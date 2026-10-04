@@ -14,6 +14,7 @@ import {
   type RecognizeRequest,
   type RecognizeResponse,
   type Rect,
+  type SolveRequest,
 } from "../contracts";
 import { getEngine } from "../engine";
 import { handBlockOf, handLinesOf } from "../handwriting";
@@ -428,6 +429,19 @@ describe("live loop — a line ending in `=` evaluated at the value the column g
       await wait(1000);
       expect(work()).toEqual(["3x+24 = 3(x+8)"]);
       expect(whereIs("3x+24 = 3(x+8)").y).toBeGreaterThan(bounds(other).y + bounds(other).h);
+    });
+
+    it("the solve request says which line asks what it equals", async () => {
+      start("answer", { auto: false });
+      replies.solve.push({ events: [SOLVED] });
+      const problem = await penLine("3x+24=", "3x+24=", 200);
+      await penLine("x=3", "y=3", 320);
+      loop.noteAsked();
+      loop.requestSolve();
+      await wait(1000);
+      const req = solves()[0].body as SolveRequest;
+      expect(req.lines.map((l) => l.latex)).toEqual(["3x+24=", "y=3"]);
+      expect(req.goal).toContain(`line id ${problem} equals (3x+24=)`);
     });
   });
 });
