@@ -293,15 +293,17 @@ describe("live loop — drawings", () => {
   // ------------------------------------------------------------ writing taken for a drawing
   /**
    * The prod bug: `2x2` written with a finger on a phone, Solve it, "Couldn't work this out". Written
-   * that large the ink comes apart into "drawings" (`splitInk`); the figure model was asked what the
+   * that large the ink came apart into "drawings" (`splitInk`); the figure model was asked what the
    * figure asks and rightly said nothing. Now a drawing that is no figure is read as maths first.
+   * (`2x2` itself is a line now, at any size: three glyph columns in a row are writing. Two glyphs
+   * side by side, `2^{3}`, could as well be two drawings, and still come apart.)
    */
   const largeInk = (latex: string) => writeAt(latex, 150, 200, VARIANTS[0], 8);
   const inkReads = () => recognizeBodies().filter((b) => b.lineId.startsWith("ink_"));
 
-  it("Solve on `2x2` written large and taken for drawings: read as one line of maths, `= 4` beside it, no figure model", async () => {
-    lineRead = "2x2";
-    const ink = largeInk("2x2");
+  it("Solve on `2^{3}` written large and taken for drawings: read as one line of maths, `= 8` beside it, no figure model", async () => {
+    lineRead = "2^{3}";
+    const ink = largeInk("2^{3}");
     await draw(ink);
     // the misreading this is about: no line, only drawings, none of them a figure
     expect(liveStore.diagrams.get().length).toBeGreaterThan(1);
@@ -312,7 +314,7 @@ describe("live loop — drawings", () => {
     expect(inkReads()).toHaveLength(1);
     expect(inkReads()[0].strokes.x).toHaveLength(ink.reduce((n, st) => n + st.segments.length, 0));
     expect(setupBodies).toEqual([]);
-    expect(handLinesOf(tutorInk())).toEqual(["= 4"]);
+    expect(handLinesOf(tutorInk())).toEqual(["= 8"]);
     const right = Math.max(...ink.map((st) => st.bounds.x + st.bounds.w));
     const below = Math.max(...ink.map((st) => st.bounds.y + st.bounds.h));
     expect(tutorInk().every((sh) => sh.x >= right || sh.y >= below)).toBe(true);
@@ -326,9 +328,9 @@ describe("live loop — drawings", () => {
     expect(setupBodies).toEqual([]);
   });
 
-  it("an expression with nothing to do (`2x^{2}`), written large: the note, not an error and not the figure model", async () => {
-    lineRead = "2x^{2}";
-    await draw(largeInk("2x^{2}"));
+  it("an expression with nothing to do (`x^{2}`), written large: the note, not an error and not the figure model", async () => {
+    lineRead = "x^{2}";
+    await draw(largeInk("x^{2}"));
     await run(() => loop.requestSolve());
     expect(inkReads()).toHaveLength(1);
     expect(setupBodies).toEqual([]);
@@ -349,9 +351,9 @@ describe("live loop — drawings", () => {
     editor.switchPage(first);
     await settle();
 
-    // Solve on `2x2` written large: its ink is read as maths, slowly
-    lineRead = "2x2";
-    await draw(largeInk("2x2"));
+    // Solve on `2^{3}` written large: its ink is read as maths, slowly
+    lineRead = "2^{3}";
+    await draw(largeInk("2^{3}"));
     let release!: () => void;
     inkGate = new Promise<void>((r) => (release = r));
     // the read lands although the screen was left (it was still being hashed, or its reply was
@@ -390,11 +392,30 @@ describe("live loop — drawings", () => {
 
   it("ink that does not read as maths goes on to the figure model, as before", async () => {
     lineRead = "\\nearrow \\searrow";
-    await draw(largeInk("2x2"));
+    await draw(largeInk("2^{3}"));
     await run(() => loop.requestSolve());
     expect(inkReads()).toHaveLength(1);
     expect(setupBodies).toHaveLength(1);
     expect(setupBodies[0].crop).toBe(CROP);
+  });
+
+  // ------------------------------------------------------------ big writing on a desktop
+  it("the owner's board: `(x+y)^2 =` written with 220 px brackets on a desktop is one line of maths, and Solve never asks the figure model", async () => {
+    // before: the 30 px glyph cap made the x's two 120 px strokes "long diagonals" — a drawing
+    // beside the line — and Solve sent it to the vision model, which said nothing was asked
+    lineRead = "(x+y)^{2}=";
+    const ink = writeAt("(x+y)^{2} =", 150, 200, VARIANTS[0], 7.5);
+    expect(ink[0].bounds.h).toBeGreaterThan(210);
+    await draw(ink);
+    expect(liveStore.diagrams.get()).toEqual([]);
+    expect(lineReads()).toHaveLength(1);
+    expect(lineReads()[0].strokes.x).toHaveLength(ink.length);
+    const state = lineOf(ink)!;
+    expect([...state.line.strokeIds].sort()).toEqual([...idsOf(ink)].sort());
+    await run(() => loop.requestSolve(state.line.id));
+    expect(setupBodies).toEqual([]);
+    expect(tutorInk().length).toBeGreaterThan(0);
+    expect(liveStore.lastError.get()).toBeNull();
   });
 
   it("a real figure is never read as a line of maths", async () => {
