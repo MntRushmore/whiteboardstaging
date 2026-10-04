@@ -1,26 +1,25 @@
 /**
  * Everything the legal pages (/terms, /privacy, /refunds) say about who runs Agathon, in one place.
  *
- * DRAFTS: the pages were written for the owner to review with a lawyer, not as final terms. Every
- * value in [square brackets] is a placeholder the owner must fill in; until all are filled and
- * `reviewed` is true, each page shows a "Draft" notice (`isDraft`). Never put a made-up company,
- * address or someone's personal email here.
+ * Published as final by the owner on 2026-10-03 (see `reviewed`). Any value in [square brackets]
+ * is a placeholder; while one is left or `reviewed` is false, each page shows a "Draft" notice
+ * (`isDraft`). Never put a made-up company, address or someone's personal email here.
  */
 export const LEGAL = {
   /** The legal entity (or person) that operates Agathon and is the party to the terms. */
-  operatorName: "[Legal entity name]",
+  operatorName: "Ninth Street Labs",
   /** A postal address for notices; COPPA requires one in the children's section. */
-  postalAddress: "[Postal address]",
+  postalAddress: "2099 Pacific Blvd, San Mateo, CA",
   /** Where users, parents and refund requests write to. */
-  contactEmail: "[Contact email]",
-  /** COPPA asks for a telephone number in the notice to parents. */
-  contactPhone: "[Contact phone number]",
+  contactEmail: "rushil@ninthstreetlabs.com",
+  /** COPPA asks for a telephone number in the notice to parents. Optional: empty shows no phone line (none given yet). */
+  contactPhone: "",
   /** e.g. "the State of California, USA". */
-  governingLaw: "[Governing law: state and country]",
+  governingLaw: "the State of California, USA",
   /** e.g. "the state and federal courts in San Francisco County, California". */
-  disputeVenue: "[Courts for disputes]",
+  disputeVenue: "the state and federal courts located in San Mateo County, California",
   /** When these versions take effect. */
-  effectiveDate: "[Effective date]",
+  effectiveDate: "October 4, 2026",
   /**
    * What the AI services may do with what we send them, as one sentence in the Privacy Policy
    * ("AI and your boards"). True because every request says so and is refused where it cannot be
@@ -33,8 +32,13 @@ export const LEGAL = {
    * the two flags to this sentence.
    */
   aiProviderTraining: "We ask every AI service we use not to keep or train on what we send, and we only use providers that agree.",
-  /** Set to true once counsel has reviewed the pages and the placeholders above are filled. */
-  reviewed: false,
+  /**
+   * True once the pages are published as final: the owner published them on 2026-10-03 (effective
+   * 2026-10-04) for the first paying users, before a lawyer's review — when counsel reviews them,
+   * any change is an ordinary Terms update (a new TERMS_VERSION). Placeholders above still make
+   * them a draft whatever this says.
+   */
+  reviewed: true,
 
   // Facts, not placeholders (from the product; change them with the product).
   productName: "Agathon",
@@ -63,8 +67,8 @@ export const LEGAL = {
   unlimited: {
     /** AI actions per rolling 24 hours: unlimited_fair_use_per_day() in 20261003020000_unlimited.sql (legal.test.ts pins the two). */
     fairUseActionsPerDay: 1_500,
-    /** A charge the subscriber did not mean to keep is refunded in full when asked within this many days (owner's policy). */
-    refundWindowDays: 7,
+    /** A charge the subscriber did not mean to keep is refunded in full when asked within this many days (owner's policy, 2026-10-03: 14). */
+    refundWindowDays: 14,
     /** A new price reaches a current subscriber only after an email at least this many days ahead (owner's policy). */
     priceChangeNoticeDays: 7,
   },
