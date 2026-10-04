@@ -2852,7 +2852,7 @@ export class LiveLoop implements LiveController {
     if (this.opts.mode !== "answer" || !this.autoReady() || !this.autoMayAnswer()) return;
     const target = this.autoTarget();
     if (!target || !this.autoWorkable(target, AUTO_SOLVE_KINDS) || !this.autoOnce(this.autoKey("solve", target))) return;
-    this.autoRun("solve", target, () => this.requestSolve());
+    this.autoRun("solve", target, () => this.solveTarget());
   }
 
   /**
@@ -2865,7 +2865,7 @@ export class LiveLoop implements LiveController {
     if (this.opts.mode !== "suggest" || !this.autoReady() || !this.autoMayAnswer()) return;
     const target = this.autoTarget();
     if (!target || !this.autoWorkable(target, AUTO_STEP_KINDS) || !this.autoOnce(this.autoKey("step", target))) return;
-    this.autoRun("step", target, () => this.requestHelp());
+    this.autoRun("step", target, () => this.help());
   }
 
   /**
@@ -5678,6 +5678,15 @@ export class LiveLoop implements LiveController {
   requestSolve(lineId?: string): void {
     // asked about the problem the student is on (not a given line): the outline shows which (`ProblemHighlight`)
     if (!lineId) liveStore.askedAt.set(this.deps.now());
+    this.solveTarget(lineId);
+  }
+
+  /**
+   * Solve it, on `lineId` or the problem the student is on, without saying it was asked: Auto's own
+   * solve goes through here, so the outline round the ask button's problem (`askedAt`) shows for the
+   * student's ask and not, unasked, at every pause.
+   */
+  private solveTarget(lineId?: string): void {
     // A two-column proof: the rest of it in Solve, the next row otherwise (`ProofDesk`).
     if (this.opts.enabled && this.proofs.ask(lineId ?? this.helpTargetLine()?.line.id ?? null, lineId ? null : this.helpTargetDiagram(), { all: this.opts.mode === "answer" })) return;
     // Solve with a drawing the last thing drawn (or picked): the tutor reads the figure.
@@ -5743,6 +5752,12 @@ export class LiveLoop implements LiveController {
   requestHelp(): boolean {
     if (!this.opts.enabled || this.opts.mode === "off") return false;
     liveStore.askedAt.set(this.deps.now());
+    return this.help();
+  }
+
+  /** Help me, without saying it was asked (`askedAt`): Auto's stuck step in Suggest (see `solveTarget`). */
+  private help(): boolean {
+    if (!this.opts.enabled || this.opts.mode === "off") return false;
     // The line it is about is still being read: Help acts once the read lands, not on the empty
     // read the line has now — that drew a "?" ("write it again") beside ink nobody had read yet.
     if (this.helpAfterRead()) return true;

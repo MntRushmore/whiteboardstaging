@@ -564,6 +564,25 @@ describe("live loop — Auto", () => {
       expect(work()).toEqual(["x = 2"]);
     });
 
+    it("does not flash the outline of the ask button's problem: only the student's ask does (askedAt)", async () => {
+      start("answer");
+      await penLine(0, "2x+3=11");
+      await wait(ANSWER_SETTLE_MS);
+      expect(work()).toEqual(["2x = 8", "x = 4"]);
+      expect(liveStore.askedAt.get()).toBe(0);
+
+      // nor Suggest's step at the stuck pause
+      loop.setOptions({ ...loop.getOptions(), mode: "suggest" });
+      await penLine(1, "3x+1=7", 700);
+      await wait(LIVE_TIMING.stuckMs + 500);
+      expect(work()).toEqual(["2x = 8", "x = 4", "3x = 6"]);
+      expect(liveStore.askedAt.get()).toBe(0);
+
+      loop.noteAsked();
+      loop.requestHelp();
+      expect(liveStore.askedAt.get()).toBeGreaterThan(0);
+    });
+
     it("never on a line with nothing to solve: a lone number, a symbol, a solved line", async () => {
       start("answer");
       await penLine(0, "7");
