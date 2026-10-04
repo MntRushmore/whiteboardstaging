@@ -348,6 +348,21 @@ describe("clusterLines at the board's zoom: lines and columns as the student see
       ]);
     });
 
+    it("two problems squeezed side by side, their rows level, are two columns too", () => {
+      // 30 px apart, inside the same-row join's reach: each row of the two was ONE line, and the
+      // second problem's lines were steps of the first
+      const a = worked(["2x + 3 = 11", "2x + 1 = 7", "x = 3"], 100, 100);
+      const b = worked(["4x - 5 = 3", "4x - 1 = 7", "x = 2"], 100 + widthOf("2x + 3 = 11") + 30, 100);
+      expect(placed(cluster([...a, ...b]), [...a, ...b])).toEqual([
+        [0, 0],
+        [0, 1],
+        [0, 2],
+        [1, 0],
+        [1, 1],
+        [1, 2],
+      ]);
+    });
+
     it("the next step a little lower is still the next step, and a problem further down a new one", () => {
       // 100 px below: inside the column break on a desktop (120 px) — and, in page px, 190 on an
       // iPad and 500 on a phone, past a break of 120 page px or three lines (a "new problem" with
@@ -404,5 +419,55 @@ describe("columns: a line goes under the last row above it, not under a wide lin
     const factored = writeAt("(x - 2)(x - 3) = 0", 100, 100);
     const answers = [writeAt("x = 2", 100, 150), writeAt("x = 3", 100 + widthOf("(x - 2)(x - 3)"), 150)];
     expect(columnsOf([factored, ...answers, writeAt("x = 2", 100, 200)])).toEqual([0, 0, 0, 0]);
+  });
+});
+
+describe("splitAtGutters: rows of two problems side by side are cut apart, and nothing else is", () => {
+  const linesOf = (ink: readonly InkStroke[]) => clusterLines([...ink]).map((l) => [...l.strokeIds].sort());
+
+  it("one row of two equations with nothing above or below it stays one line (nothing shows it is two)", () => {
+    const row = [...writeAt("2x + 3 = 11", 100, 100), ...writeAt("4x - 5 = 3", 100 + widthOf("2x + 3 = 11") + 30, 100)];
+    expect(linesOf(row)).toEqual([sortedIds(row)]);
+  });
+
+  it("a line spaced out round its `=`, the `=` aligned down the page, stays whole: one side is no equation", () => {
+    const sides = ["2x + 3", "2x + 1", "4x - 1"];
+    const eqX = 100 + Math.max(...sides.map(widthOf)) + 25;
+    const rows = sides.map((lhs, i) => [...writeAt(lhs, 100, 100 + 50 * i), ...writeAt("=", eqX, 100 + 50 * i), ...writeAt(String(11 - 2 * i), eqX + widthOf("=") + 25, 100 + 50 * i)]);
+    expect(linesOf(rows.flat()).sort()).toEqual(rows.map(sortedIds).sort());
+  });
+
+  it("`x = 2   x = 3` under `(x - 2)(x - 3) = 0` stays one line: the line above crosses the gap", () => {
+    const factored = writeAt("(x - 2)(x - 3) = 0", 100, 100);
+    const answers = [...writeAt("x = 2", 100, 150), ...writeAt("x = 3", 100 + widthOf("x = 2") + 25, 150)];
+    expect(linesOf([...factored, ...answers])).toContainEqual(sortedIds(answers));
+  });
+
+  it("a system written on one row, worked under its left half, stays one line", () => {
+    const system = [...writeAt("x + y = 10", 100, 100), ...writeAt("x - y = 2", 100 + widthOf("x + y = 10") + 25, 100)];
+    const work = [...writeAt("2x = 12", 100, 150), ...writeAt("x = 6", 100, 200), ...writeAt("y = 4", 100 + widthOf("x + y = 10") + 25, 200)];
+    expect(linesOf([...system, ...work])).toContainEqual(sortedIds(system));
+  });
+
+  it("is cut where the next column starts, not at a wider gap round the `=` of a first line longer than the lines under it", () => {
+    // `2x + 3 =   11`: the gap before `11` is wider than the one between the problems, and clear
+    // all the way down (the lines under it are shorter), with an `=` on both sides of it
+    const lhs = writeAt("2x + 3 =", 100, 100);
+    const rhs = writeAt("11", 100 + widthOf("2x + 3 =") + 28, 100);
+    const a = [[...lhs, ...rhs], writeAt("2x = 8", 100, 150), writeAt("x = 4", 100, 200)];
+    const first = unionRects(a[0].map((s) => s.bounds));
+    const b = worked(["4x - 5 = 3", "4x = 8", "x = 2"], first.x + first.w + 20, 100);
+    expect(placed(clusterLines([...a, ...b].flat()), [...a, ...b]).map((p) => p?.[0] ?? null)).toEqual([0, 0, 0, 1, 1, 1]);
+  });
+
+  it("three problems side by side: each row is cut twice", () => {
+    const at = (k: number) => 100 + k * (widthOf("2x + 3 = 11") + 30);
+    const cols = [
+      worked(["2x + 3 = 11", "2x = 8", "x = 4"], at(0), 100),
+      worked(["4x - 5 = 3", "4x = 8", "x = 2"], at(1), 100),
+      worked(["3x + 1 = 7", "3x = 6", "x = 2"], at(2), 100),
+    ];
+    const lines = clusterLines(cols.flat(2));
+    expect(placed(lines, cols.flat()).map((p) => p?.[0])).toEqual([0, 0, 0, 1, 1, 1, 2, 2, 2]);
   });
 });

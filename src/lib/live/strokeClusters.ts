@@ -79,6 +79,15 @@ export const CLUSTER_RULES = {
    */
   columnBreakFactor: 3,
   columnBreakMinPx: 120,
+  /**
+   * A gutter between two problems written side by side (`splitAtGutters`): a gap of the line's at
+   * least `gutterMinFactor` medians wide, holding a band at least `gutterClearFactor` medians wide
+   * that no ink crosses within a column break above or below, with the column on its right
+   * starting within `gutterAlignFactor` medians of where the line's right part starts.
+   */
+  gutterMinFactor: 1.2,
+  gutterClearFactor: 0.5,
+  gutterAlignFactor: 1.5,
   /** `inkScale` never goes past this (a phone held upright is ~5: zoom ~0.2) */
   maxInkScale: 6,
   idReuseRatio: 0.5,
@@ -459,6 +468,127 @@ export function mergeOperationRows(groups: InkStroke[][], medianH: number): InkS
   return [...merged.values()];
 }
 
+/**
+ * An `=` among these strokes: two level bars of about one length, one close over the other. The
+ * same pair `hasRelation` (`diagrams.ts`) reads as an `=`.
+ */
+function holdsEquals(strokes: readonly InkStroke[], medianH: number): boolean {
+  const bars = strokes.filter((s) => s.bounds.w >= 0.25 * medianH && isFlat(s.bounds, medianH));
+  for (let i = 0; i < bars.length; i++) {
+    for (let j = i + 1; j < bars.length; j++) {
+      const a = bars[i].bounds;
+      const b = bars[j].bounds;
+      const ratio = a.w / b.w;
+      if (ratio < 0.4 || ratio > 2.5) continue;
+      if (overlap1d(a.x, a.x + a.w, b.x, b.x + b.w) < 0.5 * Math.min(a.w, b.w)) continue;
+      const gap = Math.abs(a.y + a.h / 2 - (b.y + b.h / 2));
+      if (gap >= 0.08 * medianH && gap <= 0.9 * medianH) return true;
+    }
+  }
+  return false;
+}
+
+/** The widest stretch of [g0, g1] that none of `blocks` covers, or null when it is all covered. */
+function widestClear(g0: number, g1: number, blocks: Array<[number, number]>): [number, number] | null {
+  const clear: Array<[number, number]> = [];
+  let at = g0;
+  for (const [lo, hi] of [...blocks].sort((p, q) => p[0] - q[0])) {
+    if (hi <= at || lo >= g1) continue;
+    if (lo > at) clear.push([at, lo]);
+    at = Math.max(at, hi);
+  }
+  if (g1 > at) clear.push([at, g1]);
+  return clear.reduce<[number, number] | null>((best, c) => (!best || c[1] - c[0] > best[1] - best[0] ? c : best), null);
+}
+
+/** How many rows these strokes are on: runs of strokes that overlap one another vertically. */
+function rowCount(strokes: readonly InkStroke[]): number {
+  let rows = 0;
+  let bottom = -Infinity;
+  for (const s of [...strokes].sort((a, b) => a.bounds.y - b.bounds.y)) {
+    if (s.bounds.y > bottom) rows += 1;
+    bottom = Math.max(bottom, s.bounds.y + s.bounds.h);
+  }
+  return rows;
+}
+
+/**
+ * Where a line of two problems' rows splits: its left and right strokes, or null (see
+ * `splitAtGutters`). `all` is every stroke being clustered.
+ */
+function gutterCut(line: readonly InkStroke[], all: readonly InkStroke[], medianH: number, scale: number): [InkStroke[], InkStroke[]] | null {
+  const R = CLUSTER_RULES;
+  // an `=` on each side takes two strokes each
+  if (line.length < 4) return null;
+  const minGap = R.gutterMinFactor * medianH;
+  // the line's own gaps: between its strokes' x-ranges, merged
+  const sorted = [...line].sort((a, b) => a.bounds.x - b.bounds.x);
+  const gaps: Array<[number, number]> = [];
+  let reach = sorted[0].bounds.x + sorted[0].bounds.w;
+  for (const s of sorted.slice(1)) {
+    if (s.bounds.x - reach >= minGap) gaps.push([reach, s.bounds.x]);
+    reach = Math.max(reach, s.bounds.x + s.bounds.w);
+  }
+  if (gaps.length === 0) return null;
+  gaps.sort((p, q) => q[1] - q[0] - (p[1] - p[0]));
+  const rect = unionRects(line.map((s) => s.bounds));
+  let near: InkStroke[] | null = null;
+  let offRow: InkStroke[] = [];
+  for (const [g0, g1] of gaps) {
+    const left = line.filter((s) => s.bounds.x + s.bounds.w <= g0);
+    const right = line.filter((s) => s.bounds.x >= g1);
+    if (!holdsEquals(left, medianH) || !holdsEquals(right, medianH)) continue;
+    if (!near) {
+      const mine = new Set(line);
+      const vReach = Math.max(R.columnBreakMinPx * scale, R.columnBreakFactor * rect.h);
+      near = all.filter((s) => !mine.has(s) && s.bounds.y <= rect.y + rect.h + vReach && s.bounds.y + s.bounds.h >= rect.y - vReach);
+      offRow = near.filter((s) => {
+        const cy = s.bounds.y + s.bounds.h / 2;
+        return cy < rect.y || cy > rect.y + rect.h;
+      });
+    }
+    // nothing within a column break above or below crosses it (a `1` has no width: it still blocks)
+    const band = widestClear(g0, g1, near.map((s) => [s.bounds.x, s.bounds.x + Math.max(1, s.bounds.w)]));
+    if (!band || band[1] - band[0] < R.gutterClearFactor * medianH) continue;
+    // ...it runs on past this row, other rows' ink on both sides of it, and the column on its
+    // right starts where this line's right part does. A gap round the `=` of a line wider than
+    // the lines under it is clear there too, but the next column starts well to its right.
+    const beyond = offRow.filter((s) => s.bounds.x >= band[1]);
+    const margin = Math.min(...beyond.map((s) => s.bounds.x));
+    if (!offRow.some((s) => s.bounds.x + s.bounds.w <= band[0])) continue;
+    if (Math.abs(margin - g1) > R.gutterAlignFactor * medianH) continue;
+    // ...and the column on the right is a column: two more rows of it. A system written on one
+    // row (`x + y = 10   x - y = 2`) with the working under it and `y = 4` under its right half
+    // stays one line, as it always was.
+    if (rowCount(beyond) >= 2) return [left, right];
+  }
+  return null;
+}
+
+/**
+ * Two problems written side by side, their rows level, are two columns. But the same-row join
+ * reaches `sameRowMaxGapFactor` medians across, and a student short of room (on a phone, or with
+ * a second problem squeezed in beside the first) leaves less than that between them: each row of
+ * the two came out as ONE line, `2x + 3 = 11 4x - 5 = 3`, read as nonsense. A line is cut at a gap
+ * of its own at least `gutterMinFactor` medians wide (only the same-row join reaches across one)
+ * when that gap holds a gutter between columns: a band in it that no other ink crosses within a
+ * column break above or below, other rows' ink on both sides of it, the column on its right
+ * starting where the line's right part does and two rows long besides it — and an `=` on each
+ * side of the cut (`holdsEquals`). A line spaced out round its `=`, the `=` aligned down the page
+ * (`2x + 3   =   11` over `2x   =   8`), has a gutter too, but `2x + 3` is no equation;
+ * `x = 2   x = 3` under `(x - 2)(x - 3) = 0` has no gutter; one row with nothing above or below
+ * it shows nothing and stays one line, as before. A part may be cut again (three problems side
+ * by side). `scale`: `inkScale` of the board's zoom, for the column break's floor.
+ */
+export function splitAtGutters(groups: InkStroke[][], medianH: number, scale = 1): InkStroke[][] {
+  const all = groups.flat();
+  const split = (line: InkStroke[]): InkStroke[][] => {
+    const cut = gutterCut(line, all, medianH, scale);
+    return cut ? [...split(cut[0]), ...split(cut[1])] : [line];
+  };
+  return groups.flatMap(split);
+}
+
 let idCounter = 0;
 export function newLineId(): string {
   idCounter = (idCounter + 1) % 0xffff;
@@ -562,7 +692,10 @@ export function clusterLines(
   fixed: ReadonlyArray<readonly InkStroke[]> = [],
   opts: { zoom?: number } = {},
 ): InkLine[] {
-  const clustered = mergeOperationRows(clusterStrokeGroups(strokes).map((idxs) => idxs.map((i) => strokes[i])), medianStrokeHeight(strokes));
+  const medianH = medianStrokeHeight(strokes);
+  // two problems' rows cut apart first: an operation row joins pieces under ONE line above them
+  const rows = splitAtGutters(clusterStrokeGroups(strokes).map((idxs) => idxs.map((i) => strokes[i])), medianH, inkScale(opts.zoom));
+  const clustered = mergeOperationRows(rows, medianH);
   const groups = [...clustered, ...fixed.filter((g) => g.length > 0)];
   const usedIds = new Set<string>();
   const lines: InkLine[] = groups.map((members) => {
