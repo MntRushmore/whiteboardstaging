@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { TLDrawShape, TLShape } from "tldraw";
+import { ApiError } from "@/lib/api-client";
 import { createFakeEditor, type FakeEditor } from "../__fixtures__/fakeEditor";
 import { writeLine } from "../__fixtures__/strokes";
 import { LIVE_TIMING, type LineAnalysis, type LiveEngine, type LiveSseEvent, type RecognizeResponse, type UseLiveMathOptions } from "../contracts";
@@ -98,6 +99,61 @@ describe("live loop — reads that fail or come back unsure", () => {
   const questions = () => [...new Set(editor.getCurrentPageShapes().map(markOf).filter((m) => m.startsWith("question:")))];
   const calls = () => fetchJson.mock.calls.length;
   const lineIds = () => Object.keys(liveStore.lines.get());
+
+  // ---------------------------------------------------------------- a read that failed
+  describe("a read that failed", () => {
+    it("a blip (a 502) is read again on its own 1.5 s later, and the student never sees it", async () => {
+      script = [new ApiError("bad gateway", 502, "upstream_error"), read("x=4")];
+      await penUp(writeLine("x=4", 100, 200));
+      expect(calls()).toBe(1);
+      // before: the error, the chip and nothing else, at once
+      expect(liveStore.lastError.get()).toBeNull();
+      await wait(1600);
+      expect(calls()).toBe(2);
+      expect(liveStore.lastError.get()).toBeNull();
+      expect(Object.values(liveStore.lines.get())[0].latex).toBe("x=4");
+      expect(questions()).toHaveLength(0);
+    });
+
+    it("failing again, the line gets the tutor's '?' (the chip alone is hidden while the pen is in hand), and a good read replaces it", async () => {
+      script = [new ApiError("boom", 500, "internal_error"), new ApiError("boom", 500, "internal_error"), read("x=4")];
+      await penUp(writeLine("x=4", 100, 200));
+      await wait(1600);
+      expect(calls()).toBe(2);
+      await wait(600);
+      expect(liveStore.lastError.get()).toMatchObject({ kind: "recognize", code: "upstream" });
+      expect(questions()).toHaveLength(1);
+      // never a third read on its own
+      await wait(5000);
+      expect(calls()).toBe(2);
+
+      loop.retryLastError();
+      await settle(8);
+      await wait(600);
+      expect(calls()).toBe(3);
+      expect(liveStore.lastError.get()).toBeNull();
+      expect(questions()).toHaveLength(0);
+    });
+
+    it("a recognizer that could not read the ink is not asked twice: the '?' goes up at once", async () => {
+      script = [new ApiError("could not read", 502, "recognizer_failed"), read("x=4")];
+      await penUp(writeLine("x=4", 100, 200));
+      await wait(600);
+      expect(liveStore.lastError.get()).toMatchObject({ kind: "recognize", code: "upstream" });
+      expect(questions()).toHaveLength(1);
+      await wait(3000);
+      expect(calls()).toBe(1);
+    });
+
+    it("in Off the tutor makes no marks: the pill says it, no '?'", async () => {
+      loop.setOptions({ ...opts, mode: "off" });
+      script = [new ApiError("could not read", 502, "recognizer_failed")];
+      await penUp(writeLine("x=4", 100, 200));
+      await wait(600);
+      expect(liveStore.lastError.get()).toMatchObject({ kind: "recognize" });
+      expect(questions()).toHaveLength(0);
+    });
+  });
 
   // ---------------------------------------------------------------- the unsure read's "?"
   describe("a read the recognizer is unsure of", () => {

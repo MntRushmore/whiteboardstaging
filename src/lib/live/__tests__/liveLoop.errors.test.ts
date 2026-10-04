@@ -45,6 +45,8 @@ const engine: LiveEngine = {
 
 const CAPS: CapabilitiesResponse = { recognizer: "mathpix", liveEnabled: true, models: { check: "c", solve: "s", vision: "v" } };
 const QUIET = LIVE_TIMING.rewriteQuietMs + LIVE_TIMING.quietMs + 1;
+/** liveLoop's READ_RETRY_MS: the one automatic retry of a failed read */
+const READ_RETRY_MS = 1500;
 
 function ok(latex: string): RecognizeResponse {
   return { latex, text: "", kind: "math", confidence: 0.97, provider: "mathpix", ms: 300 };
@@ -107,6 +109,17 @@ describe("live loop — visible errors and retry", () => {
     await settle(8);
   }
 
+  /**
+   * A read that fails the way a blip fails (a 5xx, a timeout) is read once more on its own, 1.5 s
+   * later, before anything is shown: this lets that second read happen (and fail, as scripted).
+   */
+  async function autoRetry(): Promise<void> {
+    const before = fetchJson.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(READ_RETRY_MS + 1);
+    await settleUntil(() => fetchJson.mock.calls.length > before);
+    await settle(8);
+  }
+
   function echoOf(lineId: string): MathShapeProps | null {
     const id = liveStore.lines.get()[lineId]?.mathShapeId;
     const shape = id ? editor.getShape(id) : undefined;
@@ -148,9 +161,13 @@ describe("live loop — visible errors and retry", () => {
 
   // ------------------------------------------------------------------ recognize
   it("recognizer 500: lastError recognize/upstream, chip under the ink, retry recognizes once and clears", async () => {
-    recognizeScript.push(new ApiError("boom", 500, "internal_error"));
+    recognizeScript.push(new ApiError("boom", 500, "internal_error"), new ApiError("boom", 500, "internal_error"));
     await penUp(fixtureSingleLine());
     expect(fetchJson).toHaveBeenCalledTimes(1);
+    // the first failure is not shown: the same ink is read once more on its own
+    expect(liveStore.lastError.get()).toBeNull();
+    await autoRetry();
+    expect(fetchJson).toHaveBeenCalledTimes(2);
     const [lineId] = Object.keys(liveStore.lines.get());
 
     const err = liveStore.lastError.get();
@@ -168,7 +185,7 @@ describe("live loop — visible errors and retry", () => {
     recognizeScript.push("2x=8");
     retryLiveError();
     await settle(8);
-    expect(fetchJson).toHaveBeenCalledTimes(2);
+    expect(fetchJson).toHaveBeenCalledTimes(3);
     expect(liveStore.lastError.get()).toBeNull();
     expect(liveStore.lines.get()[lineId].latex).toBe("2x=8");
     // the chip became a real echo again (the fixture engine has no verdict for 2x=8: badge 'none')
@@ -177,17 +194,19 @@ describe("live loop — visible errors and retry", () => {
   });
 
   it("a repeated failure after Retry updates the error with the attempt count", async () => {
-    recognizeScript.push(new ApiError("boom", 502, "upstream_error"), new ApiError("boom", 502, "upstream_error"));
+    recognizeScript.push(...[1, 2, 3].map(() => new ApiError("boom", 502, "upstream_error")));
     await penUp(fixtureSingleLine());
+    await autoRetry();
     const first = liveStore.lastError.get();
     expect(first?.message).toBe("The tutor service had a hiccup");
+    // the student's Retry is shown at once: the automatic one was spent on this ink
     loop.retryLastError();
     await settle(8);
     const second = liveStore.lastError.get();
     expect(second).not.toBeNull();
     expect(second?.id).not.toBe(first?.id);
     expect(second?.message).toBe("The tutor service had a hiccup — tried 2 times");
-    expect(fetchJson).toHaveBeenCalledTimes(2);
+    expect(fetchJson).toHaveBeenCalledTimes(3);
   });
 
   it("429 -> rate_limited with retryAfterMs from the error, or the fallback when it is missing", async () => {
@@ -224,11 +243,17 @@ describe("live loop — visible errors and retry", () => {
     loop.stop();
     loop = makeLoop("feedback", 200);
     loop.start();
-    recognizeScript.push("<hang>");
+    recognizeScript.push("<hang>", "<hang>");
     editor.putUser(fixtureSingleLine());
     await vi.advanceTimersByTimeAsync(QUIET);
     await settle(4);
     expect(fetchJson).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(250);
+    await settle(8);
+    // timed out once: read again on its own before anything is shown
+    expect(liveStore.lastError.get()).toBeNull();
+    await autoRetry();
+    expect(fetchJson).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(250);
     await settle(8);
     const [lineId] = Object.keys(liveStore.lines.get());
@@ -238,27 +263,29 @@ describe("live loop — visible errors and retry", () => {
     recognizeScript.push("2x=8");
     loop.retryLastError();
     await settle(8);
-    expect(fetchJson).toHaveBeenCalledTimes(2);
+    expect(fetchJson).toHaveBeenCalledTimes(3);
     expect(liveStore.lastError.get()).toBeNull();
     expect(echoOf(lineId)?.latex).toBe("2x=8");
   });
 
   it("rewriting the failed line clears the recognize error (new ink makes it stale)", async () => {
-    recognizeScript.push(new ApiError("boom", 500, "internal_error"));
+    recognizeScript.push(new ApiError("boom", 500, "internal_error"), new ApiError("boom", 500, "internal_error"));
     const strokes = fixtureSingleLine();
     await penUp(strokes.slice(0, -1));
+    await autoRetry();
     expect(liveStore.lastError.get()?.kind).toBe("recognize");
     recognizeScript.push("2x+3=11");
     await penUp(strokes.slice(-1));
-    expect(fetchJson).toHaveBeenCalledTimes(2);
+    expect(fetchJson).toHaveBeenCalledTimes(3);
     expect(liveStore.lastError.get()).toBeNull();
     expect(Object.values(liveStore.lines.get())[0].latex).toBe("2x+3=11");
   });
 
   it("erasing the failed line removes its error", async () => {
-    recognizeScript.push(new ApiError("boom", 500, "internal_error"));
+    recognizeScript.push(new ApiError("boom", 500, "internal_error"), new ApiError("boom", 500, "internal_error"));
     const strokes = fixtureSingleLine();
     await penUp(strokes);
+    await autoRetry();
     expect(liveStore.lastError.get()).not.toBeNull();
     editor.removeUser(strokes.map((s) => s.id));
     await vi.advanceTimersByTimeAsync(QUIET);
@@ -268,19 +295,22 @@ describe("live loop — visible errors and retry", () => {
   });
 
   it("errors never auto-clear on a timer; Dismiss clears them", async () => {
-    recognizeScript.push(new ApiError("boom", 500, "internal_error"));
+    recognizeScript.push(new ApiError("boom", 500, "internal_error"), new ApiError("boom", 500, "internal_error"));
     await penUp(fixtureSingleLine());
+    await autoRetry();
     expect(liveStore.lastError.get()).not.toBeNull();
     await vi.advanceTimersByTimeAsync(60_000);
     await settle(4);
     expect(liveStore.lastError.get()).not.toBeNull();
     expect(liveStore.status.get()).toBe("idle");
+    // one automatic retry per ink, never a loop
+    expect(fetchJson).toHaveBeenCalledTimes(2);
     clearLiveError();
     expect(liveStore.lastError.get()).toBeNull();
     // Dismissed: retry is a no-op.
     retryLiveError();
     await settle(4);
-    expect(fetchJson).toHaveBeenCalledTimes(1);
+    expect(fetchJson).toHaveBeenCalledTimes(2);
   });
 
   it("offline path is unchanged: a network failure while offline queues the line and sets no error", async () => {
@@ -468,8 +498,9 @@ describe("live loop — visible errors and retry", () => {
   // ------------------------------------------------------------------ no image pipeline behind Live
   describe("a failed read is Live's alone: there is no image pipeline to pause or hand off to", () => {
     it("recognizer 500 -> one error, no second line about 'drawn help'", async () => {
-      recognizeScript.push(new ApiError("boom", 500, "internal_error"));
+      recognizeScript.push(new ApiError("boom", 500, "internal_error"), new ApiError("boom", 500, "internal_error"));
       await penUp(fixtureSingleLine());
+      await autoRetry();
       expect(liveStore.lastError.get()).toMatchObject({ kind: "recognize", code: "upstream" });
       expect(liveStore.lastError.get()?.detail).toBeUndefined();
     });
