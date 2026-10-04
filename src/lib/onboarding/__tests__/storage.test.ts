@@ -186,6 +186,14 @@ describe("the guided-board marker", () => {
     expect(isGuidedBoard(s, "u1", "b1")).toBe(false);
   });
 
+  it("keeps the student's Auto setting from before the tour, for its end", () => {
+    const s = memoryStorage();
+    writeTourMarker(s, "u1", { ...MARKER, autoBefore: false });
+    expect(readTourMarker(s, "u1")).toEqual({ ...MARKER, autoBefore: false });
+    const odd = memoryStorage({ [tourKey("u1")]: JSON.stringify({ ...MARKER, autoBefore: "no" }) });
+    expect(readTourMarker(odd, "u1")).toEqual(MARKER);
+  });
+
   it("survives garbage: bad JSON, a missing board, an unknown step", () => {
     expect(readTourMarker(memoryStorage({ [tourKey("u1")]: "{not json" }), "u1")).toBeNull();
     expect(readTourMarker(memoryStorage({ [tourKey("u1")]: JSON.stringify({ step: "write" }) }), "u1")).toBeNull();

@@ -19,7 +19,7 @@ import { browserStorage, clearTourMarker, readTourMarker, writeLocalDone, writeT
 import { HOME_PATH, PLAN_PATH, writePlanMarker } from "@/lib/onboarding/planMarker";
 import type { Box } from "@/lib/onboarding/placement";
 import { isTutorWork, markKindOf, questionWhyOf } from "@/lib/onboarding/marks";
-import { askProgress, COACH_COUNT, coachNumber, initialTour, markerStepOf, tourReducer } from "@/lib/onboarding/tour";
+import { askProgress, COACH_COUNT, coachNumber, initialTour, markerStepOf, tourAutoAtEnd, tourAutoBefore, tourReducer } from "@/lib/onboarding/tour";
 import { asOnboardingClient, saveOnboarding } from "@/lib/onboarding/storage";
 import { sendWelcomeEmail } from "@/lib/email/client";
 import { askCopy, helpCopy, MORE_LIKE_THESE, TOUR_COPY, writeCopy } from "@/lib/onboarding/tourCopy";
@@ -173,14 +173,19 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
   }, []);
 
   // The tour starts in Feedback with the pen in hand, and Auto on: coach mark 1 waits for the
-  // tick or ring the tutor puts on the student's line by itself, which Auto off never does. A
+  // tick or ring the tutor puts on the student's line by itself, which Auto off never does. The
+  // student's own Auto setting is remembered with the marker and given back when the tour ends. A
   // resumed tour keeps the student's choices.
+  const autoBefore = useRef<boolean | undefined>(marker?.autoBefore);
   useEffect(() => {
     if (marker?.step !== "problem" && marker !== null) return;
     onModeChange("feedback");
-    if (!getLiveSettings().auto) updateLiveSettings({ auto: true });
+    const auto = getLiveSettings().auto;
+    autoBefore.current = tourAutoBefore(auto, autoBefore.current);
+    if (marker) writeTourMarker(browserStorage(), userId, { ...marker, autoBefore: autoBefore.current });
+    if (!auto) updateLiveSettings({ auto: true });
     editor.setCurrentTool("draw");
-  }, [editor, marker, onModeChange]);
+  }, [editor, marker, onModeChange, userId]);
 
   // Coach mark 2 needs a Help me button: with the dial on Off there is none, so it goes to Feedback.
   useEffect(() => {
@@ -250,11 +255,14 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
   }, [editor, marking]);
 
   // Help me, tapped (the page reports each tap): coach mark 2 waits for what it writes.
+  const wrote = useRef(new Set<TLShapeId>());
   const seenAsk = useRef(helpAsk?.n ?? 0);
   useEffect(() => {
     if (!helpAsk || helpAsk.n === seenAsk.current) return;
     seenAsk.current = helpAsk.n;
     clientMetric("onboarding.tour.help", { ok: helpAsk.ok, step: state.step });
+    // what coach mark 2 points at is what the tutor writes for this ask, not what it wrote by itself before
+    wrote.current = new Set();
     dispatch({ type: "helpAsked", ok: helpAsk.ok });
   }, [helpAsk, state.step]);
 
@@ -265,8 +273,7 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
   }, [state.help, state.asks]);
 
   // What the tutor writes for Help me (a step, a graph; never a mark or a problem): reported once
-  // its hand has stopped, and remembered so coach mark 2 can point at it.
-  const wrote = useRef(new Set<TLShapeId>());
+  // its hand has stopped, and remembered (`wrote`, above) so coach mark 2 can point at it.
   const watchingWork = state.step === "help" || (state.step === "write" && state.help === "asked");
   useEffect(() => {
     if (!watchingWork) return;
@@ -316,11 +323,14 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
     clientMetric("onboarding.tour.step", { step: state.step, outcome: state.outcome });
     const step = markerStepOf(state.step);
     if (step && marker) {
-      writeTourMarker(browserStorage(), userId, { ...marker, boardId, step });
+      writeTourMarker(browserStorage(), userId, { ...marker, boardId, step, ...(autoBefore.current === undefined ? {} : { autoBefore: autoBefore.current }) });
       return;
     }
     if ((state.step === "finish" || state.step === "done") && !completed.current) {
       completed.current = true;
+      // the tour turned Auto on for itself: the student's own setting comes back
+      const auto = tourAutoAtEnd(autoBefore.current, getLiveSettings().auto);
+      if (auto !== null) updateLiveSettings({ auto });
       const storage = browserStorage();
       clearTourMarker(storage, userId);
       writeLocalDone(storage, userId);

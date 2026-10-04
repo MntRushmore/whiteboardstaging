@@ -34,6 +34,8 @@ export interface TourMarker {
   /** index of the student's starter within the course's list */
   starter: number;
   step: TourMarkerStep;
+  /** the student's Auto setting before the tour turned it on, given back at its end (`tourAutoAtEnd`) */
+  autoBefore?: boolean;
 }
 
 export const tourKey = (userId: string) => `agathon.onboarding.tour.${userId}`;
@@ -59,6 +61,7 @@ export function readTourMarker(storage: StorageLike | null | undefined, userId: 
       course: typeof v.course === "string" ? v.course : null,
       starter: typeof v.starter === "number" && Number.isFinite(v.starter) ? v.starter : 0,
       step: stepOf(v.step),
+      ...(typeof v.autoBefore === "boolean" ? { autoBefore: v.autoBefore } : {}),
     };
   } catch {
     return null;
