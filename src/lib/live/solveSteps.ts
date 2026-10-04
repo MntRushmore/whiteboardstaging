@@ -18,6 +18,7 @@
  *     seen. `r` and `\varepsilon` appeared from nowhere; that is what this rejects.
  */
 import type { AnalyzeContext, LineAnalysis, LiveEngine } from "./contracts";
+import { timesBetweenNumbers } from "./engine/latex";
 import { continueLine } from "./engine/solution";
 
 // ---------------------------------------------------------------- LaTeX symbols
@@ -104,7 +105,8 @@ function stripDifferentials(latex: string): string {
 }
 
 export function mathSymbols(latex: string): string[] {
-  const src = stripTextMacros(stripDifferentials(latex ?? ""));
+  // `2x2` is 2 × 2 to the engine (`timesBetweenNumbers`): its x is a times sign, not a name
+  const src = stripTextMacros(stripDifferentials(timesBetweenNumbers(latex ?? "")));
   const out: string[] = [];
   const add = (name: string) => {
     if (!out.includes(name)) out.push(name);
@@ -371,7 +373,9 @@ export function localAnswerFor(engine: LiveEngine, latex: string, ctx: Omit<Anal
   if (direct) return direct;
   if (!analysis.math.trim()) return null;
   if (mathSymbols(line).length > 0) return null;
-  return usable(safely(() => engine.calculate(line))?.latex);
+  // `calculate` reads a line with no backslash as calculator text, where `2x2` keeps its x: the
+  // times sign goes in as LaTeX, as every other reader of the line sees it
+  return usable(safely(() => engine.calculate(timesBetweenNumbers(line)))?.latex);
 }
 
 /**
