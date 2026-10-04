@@ -99,9 +99,9 @@ describe("splitInk at the board's zoom: handwriting is as big as it looks on the
     expect(split.diagrams).toEqual([]);
     expect(split.writing).toHaveLength(ink.length);
     expect(clusterLines(split.writing, [], [], { zoom: 0.2 })).toHaveLength(1);
-    // (judged in desktop page px, as it was, none of it was writing: both 2s "big curves", and the x
-    // two "long diagonals")
-    expect(splitInk(ink).writing).toEqual([]);
+    // (judged in desktop page px, none of it was writing: both 2s "big curves", and the x two "long
+    // diagonals". Now three glyph columns in a row are a row of writing, its own scale on any screen)
+    expect(splitInk(ink).writing).toHaveLength(ink.length);
   });
 
   describe.each(DEVICE_ZOOMS)("on %s", (_device, zoom) => {
@@ -149,6 +149,113 @@ describe("splitInk at the board's zoom: handwriting is as big as it looks on the
       const lines = clusterLines(split.writing, [], [], { zoom });
       expect(lines.map((l) => [...l.strokeIds].sort())).toEqual([math.map((s) => s.id as string).sort()]);
     });
+  });
+});
+
+describe("splitInk: big handwriting on a desktop is writing (a row of writing keeps its own scale)", () => {
+  /**
+   * The owner's board (a desktop, fit zoom ~1): `(x+y)^2 =` written big — the brackets ~220 px
+   * tall, the x two crossing ~120 px diagonals, the y ~95 px. Measured against the 30 px cap, the
+   * x was two "long diagonals" (a drawing), Solve sent the "figure" to the vision model, which said
+   * nothing was asked, and the student got "Couldn't solve this one".
+   */
+  function ownersLine(): InkStroke[] {
+    const pen = new Pen("owner", 5);
+    const mid = 310;
+    const two = writeAt("2", 560, 170, VARIANTS[0], 90 / boundsOf(writeAt("2", 0, 0)).h);
+    return [
+      pen.arc(150, mid, 40, 116, 0.6 * Math.PI, 1.4 * Math.PI),
+      pen.stroke({ x: 160, y: mid - 50 }, { x: 280, y: mid + 70 }),
+      pen.stroke({ x: 280, y: mid - 50 }, { x: 160, y: mid + 70 }),
+      pen.stroke({ x: 305, y: mid + 10 }, { x: 385, y: mid + 11 }),
+      pen.stroke({ x: 345, y: mid - 30 }, { x: 346, y: mid + 50 }),
+      pen.stroke({ x: 410, y: mid - 35 }, { x: 445, y: mid + 25 }),
+      pen.stroke({ x: 480, y: mid - 35 }, { x: 420, y: mid + 60 }),
+      pen.arc(500, mid, 40, 116, -0.4 * Math.PI, 0.4 * Math.PI),
+      ...two,
+      ...longEquals(pen, 660, mid - 5, 90),
+    ];
+  }
+
+  it("the owner's board: `(x+y)^2 =` with 220 px brackets is one line of maths, every stroke of it", () => {
+    const ink = ownersLine();
+    // the strokes the cap made a drawing of: the x's two diagonals are 120 px, over 3.5 x 30
+    expect(Math.max(ink[1].bounds.w, ink[1].bounds.h)).toBeGreaterThan(DIAGRAM_RULES.bigFactor * DIAGRAM_RULES.glyphMax);
+    const split = splitInk(ink, [], { zoom: 1 });
+    expect(split.glyph).toBeGreaterThan(DIAGRAM_RULES.glyphMax);
+    expect(split.diagrams).toEqual([]);
+    expect(split.writing).toHaveLength(ink.length);
+    expect(clusterLines(split.writing, [], [], { zoom: 1 }).map((l) => [...l.strokeIds].sort())).toEqual([ink.map((s) => s.id as string).sort()]);
+  });
+
+  describe.each(VARIANTS.map((v) => [v.name, v] as const))("in the %s hand, on a desktop", (name, variant) => {
+    it.each(["(x+y)^{2} =", "2x + 3 = 7", "x^{2} = 9"].flatMap((latex) => [100, 150, 200, 250].map((px) => [latex, px] as const)))("`%s` written %i px tall is writing", (latex, px) => {
+      const ink = writeAt(latex, 200, 200, variant, px / boundsOf(writeAt(latex, 0, 0, variant)).h);
+      const split = splitInk(ink, [], { zoom: 1 });
+      expect(split.diagrams).toEqual([]);
+      expect(split.writing).toHaveLength(ink.length);
+      // one line (the messy hand's wider gaps can split it in the clusterer, at any zoom: not a drawing matter)
+      if (name !== "messy") expect(clusterLines(split.writing, [], [], { zoom: 1 })).toHaveLength(1);
+    });
+  });
+
+  it.each([
+    ["triangle", "a^{2} + b^{2} = c^{2}", "right"],
+    ["rightTriangle", "3^{2} + 4^{2} = x^{2}", "left"],
+    ["circle", "A = \\pi r^{2}", "right"],
+    ["numberLine", "2x + 3 > 11", "right"],
+    ["axesAndLine", "y = 2x + 1", "left"],
+    ["arrow", "\\frac{x}{2} + 3 = 7", "left"],
+    ["rectangle", "A = 7 \\times 3", "right"],
+  ] as const)("a %s beside `%s`, both drawn big (x 4): the line is exactly its strokes, the drawing is out with its labels", (name, latex, where) => {
+    const math = writeAt(latex, 600, 420);
+    const line = boundsOf(math);
+    const raw = DRAWINGS[name](0, 0, 11);
+    const rb = boundsOf([...raw.strokes, ...raw.labels.flat()]);
+    const at = where === "right" ? { x: line.x + line.w + 24, y: line.y + line.h / 2 - rb.h / 2 } : { x: line.x - rb.w - 24, y: line.y + line.h / 2 - rb.h / 2 };
+    const d = DRAWINGS[name](at.x - rb.x, at.y - rb.y, 11);
+    // a big hand draws big too: the scene four times its size, on a desktop
+    const ink = inkAtZoom([...math, ...d.strokes, ...d.labels.flat()], 0.25);
+    const split = splitInk(ink, [], { zoom: 1 });
+    expect(split.glyph).toBeGreaterThan(DIAGRAM_RULES.glyphMax);
+    expect(split.diagrams).toHaveLength(1);
+    expect(split.diagrams[0].kinds).toEqual(expect.arrayContaining(d.kinds));
+    expect(split.diagrams[0].labels).toHaveLength(d.labels.length);
+    const lines = clusterLines(split.writing, [], [], { zoom: 1 });
+    expect(lines.map((l) => [...l.strokeIds].sort())).toEqual([math.map((s) => s.id as string).sort()]);
+  });
+
+  it.each(Object.keys(DRAWINGS))("a %s alone on the screen, drawn up to five times as big, is still a drawing (measured against the cap)", (name) => {
+    for (const k of [1, 2, 3, 5]) {
+      const d = DRAWINGS[name](300, 250, 7);
+      const split = splitInk(inkAtZoom(d.strokes, 1 / k), [], { zoom: 1 });
+      expect(split.writing, `x ${k}`).toEqual([]);
+      // (what it looks like is judged against the cap too: five times as big, a triangle's corners are
+      // too far apart to pair up, as they always were)
+      if (k <= 3) expect(split.diagrams.flatMap((x) => x.kinds), `x ${k}`).toEqual(expect.arrayContaining(d.kinds));
+    }
+  });
+
+  it("a row of shapes is not a row of writing: three triangles, three circles", () => {
+    const tris = [0, 1, 2].flatMap((k) => DRAWINGS.triangle(100 + k * 260, 200, k + 1).strokes);
+    expect(splitInk(tris, [], { zoom: 1 }).diagrams.map((x) => x.kinds)).toEqual([["triangle"], ["triangle"], ["triangle"]]);
+    const pen = new Pen("rings", 3);
+    const rings = [200, 360, 520].map((x) => pen.arc(x, 300, 60, 60));
+    expect(splitInk(rings, [], { zoom: 1 }).diagrams.map((x) => x.kinds)).toEqual([["circle"], ["circle"], ["circle"]]);
+  });
+
+  it("`a^2 + b^2 = c^2` written 200 px tall beside a triangle drawn in proportion: the line is writing, the triangle a drawing", () => {
+    const math = writeAt("a^{2} + b^{2} = c^{2}", 100, 300, VARIANTS[0], 200 / boundsOf(writeAt("a^{2} + b^{2} = c^{2}", 0, 0)).h);
+    const line = boundsOf(math);
+    // as at an ordinary size (a 170 px triangle beside a 44 px hand): ~4 times the writing's height
+    const tri = inkAtZoom(DRAWINGS.triangle(0, 0, 3).strokes, 0.22).map((s) => ({
+      ...s,
+      bounds: { ...s.bounds, x: s.bounds.x + line.x + line.w + 60 },
+      segments: s.segments.map((seg) => seg.map((p) => ({ x: p.x + line.x + line.w + 60, y: p.y }))),
+    }));
+    const split = splitInk([...math, ...tri], [], { zoom: 1 });
+    expect(split.writing.map((s) => s.id).sort()).toEqual(math.map((s) => s.id as string).sort());
+    expect(split.diagrams.map((x) => x.kinds)).toEqual([["triangle"]]);
   });
 });
 
