@@ -281,6 +281,12 @@ const FIGURES_DISMISSED_META = "liveFiguresDismissed";
 const MAX_FIGURE_DISMISSALS = 20;
 /** The closed shapes `splitInk` recognizes (`Diagram.kinds`): a drawing with one is a figure (`isRealFigure`). */
 const FIGURE_SHAPES: ReadonlySet<DiagramKind> = new Set<DiagramKind>(["triangle", "quadrilateral", "polygon", "circle"]);
+/**
+ * Help tapped while the latest line is still being read: how often it looks whether the read has
+ * landed, and for how long at most — the recognizer's own timeout and a moment more.
+ */
+const HELP_READ_POLL_MS = 100;
+const HELP_READ_WAIT_MS = LIVE_TIMING.recognizeTimeoutMs + 1_000;
 
 /** Recognition failures that leave a chip under the ink (the pill carries the rest). */
 const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream", "timeout", "unknown"]);
@@ -619,6 +625,8 @@ export class LiveLoop implements LiveController {
   private barStrokeIds = new Set<string>();
   /** marks on a drawing (`splitInk` role `mark`: an angle arc, a right-angle box, a tick): a figure's (`isRealFigure`) */
   private markStrokeIds = new Set<string>();
+  /** Help waiting for the latest line's read to land before it acts (`helpAfterRead`) */
+  private helpWaitTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** the board chat's hand: its actions, one block at a time (`src/lib/live/chat/desk.ts`) */
   private readonly chat: ChatDesk;
@@ -750,6 +758,8 @@ export class LiveLoop implements LiveController {
     this.quietTimer = null;
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = null;
+    if (this.helpWaitTimer) clearTimeout(this.helpWaitTimer);
+    this.helpWaitTimer = null;
     this.settled = false;
     // Leaving the board / unmounting must not freeze a half-written step on the canvas.
     this.finishWriting();
@@ -4815,6 +4825,41 @@ export class LiveLoop implements LiveController {
    *  - Feedback / Suggest: that line's next hint (`escalate`).
    */
   requestHelp(): boolean {
+    if (!this.opts.enabled || this.opts.mode === "off") return false;
+    // The line it is about is still being read: Help acts once the read lands, not on the empty
+    // read the line has now — that drew a "?" ("write it again") beside ink nobody had read yet.
+    if (this.helpAfterRead()) return true;
+    return this.helpNow();
+  }
+
+  /**
+   * Help tapped while the latest line is still being read (`reading`): it waits for that read — at
+   * most the recognizer's own timeout and a moment (`HELP_READ_WAIT_MS`) — then helps with what was
+   * read; a read that never lands gets what an unread line gets. A second tap joins the wait. True
+   * while Help is waiting; false when there is nothing in flight to wait for.
+   */
+  private helpAfterRead(): boolean {
+    const target = this.latestLine();
+    if (!target || !this.reading.has(target.line.id)) return false;
+    if (this.helpWaitTimer) return true;
+    const lineId = target.line.id;
+    const deadline = this.deps.now() + HELP_READ_WAIT_MS;
+    const look = () => {
+      this.helpWaitTimer = null;
+      if (!this.started) return;
+      if (this.reading.has(lineId) && this.deps.now() < deadline) {
+        this.helpWaitTimer = setTimeout(look, HELP_READ_POLL_MS);
+        return;
+      }
+      this.helpNow();
+    };
+    this.helpWaitTimer = setTimeout(look, HELP_READ_POLL_MS);
+    clientMetric("live.help.waitRead", { lineId });
+    return true;
+  }
+
+  /** `requestHelp` on what is on the page now. */
+  private helpNow(): boolean {
     if (!this.opts.enabled || this.opts.mode === "off") return false;
     // On a two-column proof (or its figure): the next row — in Solve, the rest of the proof.
     if (this.proofs.ask(this.latestLine()?.line.id ?? null, this.touchedDiagram(), { all: this.opts.mode === "answer" })) return true;
