@@ -113,7 +113,7 @@ import {
   rectsIntersect,
 } from "./placement";
 import { badgeFor, decide, isSingleSymbolLatex, localNoteFor, unjudgedReason, type PolicyDecision, type UnjudgedReason } from "./policy";
-import { createSolveStepGuard, engineParsesStep, localAnswerFor, unwrapBoxed as unwrapBoxedAnywhere } from "./solveSteps";
+import { createSolveStepGuard, engineParsesStep, localAnswerFor, mathSymbols, unwrapBoxed as unwrapBoxedAnywhere } from "./solveSteps";
 import {
   RecognizeClient,
   RecognizeTimeoutError,
@@ -2855,13 +2855,25 @@ export class LiveLoop implements LiveController {
    * A line Auto may continue: maths the tutor can judge, of a kind with a next step, not solved, no
    * ring in its column, no model check of it still out (it may ring it) — and not a `36 + 2 =` the
    * engine answers (the settle wrote that answer, after their `=` or in the readback).
+   *
+   * Nor a lone expression with no `=` after it — `2x + 3` half written, `x^{2} + 3x + 5` already as
+   * simple as it goes (`engine.alreadySimplest`), `2x + 3x` — which asks nothing until the student
+   * says what they want of it; Solve it still answers it, asked. Only arithmetic the engine works
+   * out is finished unasked: `2 \times 2` → `= 4` (`arithmeticAnswer`).
    */
   private autoWorkable(state: LiveLineState, kinds: ReadonlySet<LineKind>): boolean {
     const a = state.analysis;
     const id = state.line.id;
     if (!a || !kinds.has(a.kind) || a.solved || !this.judgeable(state) || this.reading.has(id) || this.rt.get(id)?.checkAbort) return false;
     if (a.resultLatex && endsWithRelation(state.latex)) return false;
+    if (a.kind === "expression" && !endsWithRelation(state.latex) && !this.arithmeticAnswer(state)) return false;
     return !this.columnLines(state.line.column).some((s) => s.analysis?.verdict === "mismatch" || this.modelFlagged(s));
+  }
+
+  /** A line of numbers alone (no letter in it) that the engine evaluates (`localAnswerFor`): `2 \times 2`, `36 + 2`. */
+  private arithmeticAnswer(state: LiveLineState): boolean {
+    if (!this.engine || mathSymbols(state.latex).length > 0) return false;
+    return localAnswerFor(this.engine, state.latex, this.columnContext(state)) !== null;
   }
 
   /**
@@ -3852,7 +3864,7 @@ export class LiveLoop implements LiveController {
     // model asked for its "solution" wrote the line back (dropped) or nothing — Solve looked dead.
     // The student is told what would make it a question instead.
     if (!opts.problem && this.alreadySimplest(built, opts)) {
-      this.deps.notify(LIVE_COPY.solve.simplest);
+      this.noteFor(opts.lineId, LIVE_COPY.solve.simplest);
       clientMetric("live.solve.simplest", { lineId: opts.lineId });
       return "nothing";
     }
@@ -3874,6 +3886,17 @@ export class LiveLoop implements LiveController {
     }
     this.solveWithoutFigure(built, fromLineId, opts);
     return "model";
+  }
+
+  /**
+   * A quiet note (`deps.notify`) about a request — only one the student made. Auto's own try at a
+   * line (`autoLines`) that turns out to ask nothing says nothing: "This is as simple as it gets"
+   * popped up unasked when Auto in Solve looked at `x^{2} + 3x + 5`, or Suggest's stuck pause at a
+   * half-written `2x + 3`, as if the student had pressed something.
+   */
+  private noteFor(lineId: string, message: string): void {
+    if (this.autoLines.has(lineId)) return;
+    this.deps.notify(message);
   }
 
   /** Solve's line is a lone expression in letters with nothing left to do to it (`engine.alreadySimplest`). */
@@ -3979,7 +4002,7 @@ export class LiveLoop implements LiveController {
       return true;
     }
     if (engine.alreadySimplest?.(latex)) {
-      this.deps.notify(LIVE_COPY.solve.simplest);
+      this.noteFor(opts.lineId, LIVE_COPY.solve.simplest);
       return true;
     }
     return false;
@@ -4184,7 +4207,7 @@ export class LiveLoop implements LiveController {
         }
         // Asked on the drawing. Nothing asked is what to write next, quietly — the red card and its
         // Retry would say something broke, and asking again would only be told the same.
-        if (outcome === "nothing") this.deps.notify(LIVE_COPY.solve.nothingAsked);
+        if (outcome === "nothing") this.noteFor(opts.lineId, LIVE_COPY.solve.nothingAsked);
         else this.fail(sseFailure({ error: "unusable_steps", message: SOLVE_FAILED }), errCtx, retry);
       }
       if (outcome === "written") this.noteSuccess("solve", opts.lineId);

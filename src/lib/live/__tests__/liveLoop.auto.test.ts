@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { TLShape } from "tldraw";
+import { LIVE_COPY } from "@/components/live/copy";
 import { createFakeEditor, type FakeEditor } from "../__fixtures__/fakeEditor";
 import { writeLine as inkLine } from "../__fixtures__/strokes";
 import { settle, settleStable, settleUntil } from "@/lib/live/__fixtures__/settle";
@@ -365,6 +366,15 @@ describe("live loop — Auto", () => {
       expect(work()).toEqual(["x = 4"]);
     });
 
+    it("nothing for a half-written expression: no step, and no \"as simple as it gets\" nobody asked for", async () => {
+      start("suggest");
+      await penLine(0, "2x+3");
+      await wait(LIVE_TIMING.stuckMs * 2);
+      expect(notes).toEqual([]);
+      expect(work()).toEqual([]);
+      expect(calls).toEqual([]);
+    });
+
     it("nothing for a solved problem, a lone number, or right after the student asked", async () => {
       start("suggest");
       await penLine(0, "x+5=9");
@@ -414,6 +424,33 @@ describe("live loop — Auto", () => {
       await wait(ANSWER_SETTLE_MS * 2);
       expect(work()).toEqual([]);
       expect(calls).toEqual([]);
+    });
+
+    it("a lone expression asks for nothing: no note, nothing written — unless it is a sum the engine works out", async () => {
+      start("answer");
+      // already as simple as it goes: "This is as simple as it gets" popped up although nobody asked
+      await penLine(0, "x^{2}+3x+5");
+      await wait(ANSWER_SETTLE_MS * 2);
+      expect(notes).toEqual([]);
+      expect(work()).toEqual([]);
+      // letters that would simplify are no question either until there is a `=` to answer
+      await penLine(1, "2x+3x", 700);
+      await wait(ANSWER_SETTLE_MS * 2);
+      expect(notes).toEqual([]);
+      expect(work()).toEqual([]);
+      expect(calls).toEqual([]);
+
+      // Solve it on the simplest one: asked, so the note says what would make it a question
+      loop.noteAsked();
+      loop.requestSolve(Object.values(liveStore.lines.get()).find((s) => s.latex === "x^{2}+3x+5")!.line.id);
+      await quiesce();
+      expect(notes).toEqual([LIVE_COPY.solve.simplest]);
+
+      // `2 \times 2` with nothing after it is still finished: arithmetic the engine evaluates
+      await penLine(2, "2\\times2", 400);
+      await wait(ANSWER_SETTLE_MS * 2);
+      expect(work()).toEqual(["= 4"]);
+      expect(notes).toEqual([LIVE_COPY.solve.simplest]);
     });
 
     it("the student writing again stops a model solve still on its way: nothing lands", async () => {
