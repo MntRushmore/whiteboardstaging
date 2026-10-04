@@ -437,3 +437,38 @@ from public.profiles p join auth.users u on u.id = p.user_id order by p.accepted
 ```
 
 When the Terms or Privacy Policy change in a way that matters, bump `TERMS_VERSION`; new sign-ups record the new date. Asking existing accounts to agree again is not built.
+
+## 14. Learning record (`learning_attempts`)
+
+Migration `supabase/migrations/20261004000000_learning.sql` (idempotent; `npm run db:push`). One row per problem a student works on a board: the problem, its skill, how it went, the mistakes, the help used and the time spent. The board writes it with the student's own JWT through `src/lib/learning/store.ts`, and the Progress page reads it back (`docs/ARCHITECTURE.md`, flow 6). The migration header lists every object.
+
+| Kind | Objects |
+| --- | --- |
+| Table | `learning_attempts` (RLS on, no `anon` grants; `authenticated` select/delete own rows, insert and update on the store's columns only) |
+| Functions | `learning_mistakes_valid(jsonb)` (the `mistakes` check), `learning_attempt_is_own(uuid)` (security definer, the write policies' `parent_id` check), `learning_attempts_before_write()` and `learning_attempts_enforce_cap()` (triggers) |
+| Triggers | `learning_attempts_before_write` (server `created_at` / `updated_at`, fixed `id` and owner, no start time more than a day ahead), `learning_attempts_cap` (100,000 attempts per account) |
+| Policies | owner select / insert / update / delete; insert and update also require `board_id` to be an own board and `parent_id` an own attempt |
+
+**Deploy order.** Any time. Without the table the store answers `unavailable`: the board records nothing and the Progress page shows an empty record. Verify with `npm run db:verify` (checks named `learning:`, run after the others as `LEARNING_CHECKS`).
+
+**Adding a value.** A new skill needs no migration (`skill` is a format: lower-case snake_case, at most 40 characters). A new course, origin, outcome or mistake kind does: replace the constraint (`learning_attempts_course_known`, `_origin_known`, `_outcome_known`) or `learning_mistakes_valid()` in a new migration, and apply it **before** the code that writes the new value. The other way round, every attempt carrying it is refused (`23514`, the store's `invalid`).
+
+**The cap.** 100,000 attempts per account (six years of 40 problems a day), against a runaway client or someone filling the database. It is checked once per insert statement by counting that account's index entries, which on a 300,000-row table took about 2 ms for a student with 500 attempts and about 16 ms for one at the cap. Past it a new attempt is refused (`23514`, hint `learning_attempts_cap`) and existing ones can still be updated. To change it, replace `learning_attempts_enforce_cap()` in a new migration.
+
+**Times.** `started_at` and `finished_at` come from the student's device. One before 2026-01-01 or more than a day ahead of the server is refused, so a device whose clock is far off records nothing until its clock is fixed (the store reports `invalid`; nothing else breaks).
+
+```sql
+-- one student's record, newest first
+select a.started_at, a.skill, a.outcome, a.problem_latex, a.mistakes, a.active_ms
+from public.learning_attempts a join auth.users u on u.id = a.user_id
+where u.email = 'student@example.com' order by a.started_at desc limit 50;
+
+-- size, and the heaviest accounts
+select count(*), pg_size_pretty(pg_total_relation_size('public.learning_attempts')) from public.learning_attempts;
+select user_id, count(*) from public.learning_attempts group by user_id order by 2 desc limit 10;
+
+-- a parent asks for the record to be erased but the account kept
+delete from public.learning_attempts where user_id = (select id from auth.users where email = 'student@example.com');
+```
+
+Deleting the account (Delete account, `delete_own_account()`, or the dashboard) deletes the record with it. Deleting a board keeps its attempts with `board_id` null.
