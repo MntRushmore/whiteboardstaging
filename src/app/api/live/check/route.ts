@@ -44,6 +44,7 @@ export async function POST(req: Request) {
   const billing = await enforceInk({ token, route: "live/check", requestId, model: models.check }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
+  // the request as parsed, `learner` (the student's recurring mistakes) included
   const messages = buildCheckMessages(data);
 
   const res = sseResponse(
@@ -92,7 +93,7 @@ export async function POST(req: Request) {
 
         const ms = Date.now() - startedAt;
         log.info(
-          { model, ms, ttfaMs: firstAt === null ? null : firstAt - startedAt, sent, dropped, parsed: count, invalid, lines: data.lines.length, mode: data.mode, crop: Boolean(data.crop) },
+          { model, ms, ttfaMs: firstAt === null ? null : firstAt - startedAt, sent, dropped, parsed: count, invalid, lines: data.lines.length, mode: data.mode, crop: Boolean(data.crop), learnerMistakes: data.learner?.recurringMistakes.length ?? 0 },
           "check completed",
         );
         emit("done", { count: sent, ms });

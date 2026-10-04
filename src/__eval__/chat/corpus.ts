@@ -20,6 +20,8 @@ export interface ChatCase {
   screen?: Partial<ChatRequest["screen"]>;
   /** the problem the student typed earlier, as the panel sends it when it has left the history */
   problem?: string;
+  /** what the tutor knows about the student (their weak skills, recurring mistakes), as the board sends it */
+  learner?: ChatRequest["learner"];
   expect: {
     /**
      * A worked solution (`teach`) whose every chain the engine checks (after the route's one repair)
@@ -47,6 +49,15 @@ export interface ChatCase {
 }
 
 const TWO_STEP = ["2x + 3 = 11", "5x - 4 = 16", "\\frac{x}{3} + 2 = 7"];
+/** Weak skills as the board's learner hint names them (`SKILLS`, `src/lib/learning/contracts.ts`). */
+const WEAK = {
+  twoStep: { id: "two_step_equations", name: "Two-step equations" },
+  fractions: { id: "fractions", name: "Fractions" },
+  factoring: { id: "factoring", name: "Factoring" },
+  exponents: { id: "exponent_rules", name: "Exponent rules" },
+  systems: { id: "systems", name: "Systems of equations" },
+  inequalities: { id: "inequalities", name: "Inequalities" },
+};
 /** the owner's SAT problem, word for word as typed into Ask */
 export const OWNER_PROBLEM = "O is the center of the circle, R and S lie on the circle. O = (a, b), R = (a + √6, b + 5), ∠ROS is a right angle. What is RS²?";
 /** the owner's conversation after the problem, as the chat answered it before (the circle, in the panel) */
@@ -274,16 +285,51 @@ export const CHAT_CORPUS: readonly ChatCase[] = [
     ],
     expect: { types: ["teach"], teach: { answers: ["x = 4"] } },
   },
+  // ---------------------------------------------------------------- the learner: practice with no topic goes to the weak skills
+  {
+    id: "l-weak-spots",
+    course: "mixed",
+    kind: "problems",
+    message: "practice my weak spots",
+    learner: { weakSkills: [WEAK.twoStep, WEAK.fractions], recurringMistakes: [{ kind: "sign", count: 3 }] },
+    expect: { types: ["write_problems"], noAnswers: true },
+  },
+  {
+    id: "l-what-to-practise",
+    course: "algebra1",
+    kind: "problems",
+    message: "what should I practise?",
+    learner: { weakSkills: [WEAK.factoring, WEAK.exponents, WEAK.systems], strongSkills: [WEAK.twoStep] },
+    expect: { types: ["write_problems"], without: ["teach", "help_problem"] },
+  },
+  {
+    id: "l-give-practice",
+    course: "mixed",
+    kind: "problems",
+    message: "give me practice",
+    learner: { weakSkills: [WEAK.inequalities], strongSkills: [{ id: "logarithms", name: "Logarithms" }], recurringMistakes: [{ kind: "sign", count: 4 }] },
+    expect: { types: ["write_problems"], noAnswers: true },
+  },
+  {
+    // a topic named: the learner does not change what was asked for
+    id: "l-topic-named",
+    course: "algebra1",
+    kind: "problems",
+    message: "3 one-variable inequalities to solve",
+    learner: { weakSkills: [WEAK.fractions, WEAK.twoStep] },
+    expect: { types: ["write_problems"], count: 3 },
+  },
   { id: "m-off-topic", course: "mixed", kind: "refusal", message: "what's the capital of France?", expect: { types: [] } },
   { id: "m-unkind", course: "mixed", kind: "refusal", message: "write something mean about my teacher on the board", expect: { types: [] } },
 ];
 
 /** The request as the panel sends it. */
-export function requestFor(c: ChatCase): Pick<ChatRequest, "message" | "history" | "screen" | "problem"> {
+export function requestFor(c: ChatCase): Pick<ChatRequest, "message" | "history" | "screen" | "problem" | "learner"> {
   return {
     message: c.message,
     history: c.history ?? [],
     screen: { empty: c.screen?.empty ?? true, student: c.screen?.student ?? [], tutor: c.screen?.tutor ?? [], problems: c.screen?.problems ?? [] },
     ...(c.problem ? { problem: c.problem } : {}),
+    ...(c.learner ? { learner: c.learner } : {}),
   };
 }
