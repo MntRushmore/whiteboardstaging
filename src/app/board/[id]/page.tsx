@@ -22,13 +22,6 @@ import "tldraw/tldraw.css";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   Cursor02Icon,
   ThreeFinger05Icon,
   PencilIcon,
@@ -81,7 +74,7 @@ import { LiveStatusPill } from "@/components/live/LiveStatusPill";
 import { SaveStatus } from "@/components/live/SaveStatus";
 import { LiveHintLayer } from "@/components/live/LiveHintLayer";
 import { LiveErrorBoundary } from "@/components/live/LiveErrorBoundary";
-import { ASSET_COPY, LIVE_COPY } from "@/components/live/copy";
+import { ASSET_COPY } from "@/components/live/copy";
 import { boardToolbarView } from "@/components/live/toolbar";
 import { AskButton } from "@/components/live/AskButton";
 import { BoardChatPanel, CHAT_TOGGLE_ATTR } from "@/components/chat/BoardChatPanel";
@@ -103,7 +96,11 @@ const StickerLibrary = React.lazy(() => import("@/components/StickerLibrary").th
 const PdfUpload = React.lazy(() => import("@/components/PdfUpload").then((m) => ({ default: m.PdfUpload })));
 // The bug report's dialog: opened rarely, so it loads the first time it is (the board's first load is at its budget).
 const BugReportButton = React.lazy(() => import("@/components/BugReportButton").then((m) => ({ default: m.BugReportButton })));
+// The help-modes explainer (Board options): loads the first time it is opened, like the report.
+const ModeInfoDialog = React.lazy(() => import("@/components/board/ModeInfoDialog").then((m) => ({ default: m.ModeInfoDialog })));
 const LiveDebugPanel = React.lazy(() => import("@/components/live/LiveDebugPanel").then((m) => ({ default: m.LiveDebugPanel })));
+// The outline around the problem Help me acts on: shown only around an ask, so it loads after the board.
+const ProblemHighlight = React.lazy(() => import("@/components/live/ProblemHighlight").then((m) => ({ default: m.ProblemHighlight })));
 
 /** The help tabs: 6 px of padding on a board under 768 px (a 10.2" iPad sideways with Ask docked), 8 px from there. */
 const HELP_TAB_CLASS = "px-1.5 @3xl/bar:px-2";
@@ -181,75 +178,6 @@ const boardOverrides: TLUiOverrides = {
   },
 };
 
-/**
- * The (i) explainer, opened from Board options rather than from a button in the bar: it is
- * help, not chrome. Copy tracks what the tabs actually do today, Live included.
- */
-function ModeInfoDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl">
-        <DialogHeader>
-          <DialogTitle>Help modes</DialogTitle>
-          <DialogDescription>
-            The tabs at the top of your board set how much the tutor helps. New boards start
-            in Feedback, and your choice is remembered for this board on this device. Off
-            stops every check, hint and solution.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-wrap gap-6">
-          <div className="flex-1 min-w-[200px] flex flex-col items-start">
-            <img
-              src="/modes/feedback.png"
-              alt="Feedback mode example"
-              className="h-48 w-auto rounded-md border bg-muted object-contain mb-3"
-            />
-            <p className="text-sm font-medium mb-1">Feedback</p>
-            <p className="text-sm text-muted-foreground">
-              Light annotations pointing out mistakes without giving away answers.
-            </p>
-          </div>
-
-          <div className="flex-1 min-w-[200px] flex flex-col items-start">
-            <img
-              src="/modes/suggest.png"
-              alt="Suggest mode example"
-              className="h-48 w-auto rounded-md border bg-muted object-contain mb-3"
-            />
-            <p className="text-sm font-medium mb-1">Suggest</p>
-            <p className="text-sm text-muted-foreground">
-              Hints and partial steps to nudge you in the right direction.
-            </p>
-          </div>
-
-          <div className="flex-1 min-w-[200px] flex flex-col items-start">
-            <img
-              src="/modes/solve.png"
-              alt="Solve mode example"
-              className="h-48 w-auto rounded-md border bg-muted object-contain mb-3"
-            />
-            <p className="text-sm font-medium mb-1">Solve</p>
-            <p className="text-sm text-muted-foreground">
-              Worked steps written under your last line, in the tutor&apos;s hand or typeset.
-            </p>
-          </div>
-
-        </div>
-        {/* Live is not a fourth mode: it runs underneath all three, so it reads as a note. */}
-        <div className="flex items-start gap-3 rounded-md border bg-muted/40 p-3">
-          <span aria-hidden className="font-serif text-3xl leading-none text-gray-400">
-            &Sigma;
-          </span>
-          <div>
-            <p className="text-sm font-medium mb-1">{LIVE_COPY.modeInfo.title}</p>
-            <p className="text-sm text-muted-foreground">{LIVE_COPY.modeInfo.body}</p>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 interface BoardChatSlot {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -268,7 +196,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   const [askGlow, setAskGlow] = useState(0);
   // The (i) explainer and the bug report both used to be buttons in the bar; they open from
   // Board options now, so the page owns their open state.
-  const [modeInfoOpen, setModeInfoOpen] = useState(false);
+  // null until first opened: the explainer is mounted from then on, so it can animate closed
+  const [modeInfoOpen, setModeInfoOpen] = useState<boolean | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   // mounted from the first open on, so its dialog can animate closed and keeps the student's words
   const [reportMounted, setReportMounted] = useState(false);
@@ -460,7 +389,13 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
       </div>
 
       {/* The explainer opens from Board options; the report from there or its button in the bar. */}
-      <ModeInfoDialog open={modeInfoOpen} onOpenChange={setModeInfoOpen} />
+      {modeInfoOpen !== null && (
+        <LiveErrorBoundary>
+          <React.Suspense fallback={null}>
+            <ModeInfoDialog open={modeInfoOpen} onOpenChange={setModeInfoOpen} />
+          </React.Suspense>
+        </LiveErrorBoundary>
+      )}
       {reportMounted && (
         <LiveErrorBoundary>
           <React.Suspense fallback={null}>
@@ -485,6 +420,13 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
         <LiveErrorBoundary>
           <React.Suspense fallback={null}>
             <LiveDebugPanel />
+          </React.Suspense>
+        </LiveErrorBoundary>
+      )}
+      {toolbar.askButton && !live.hideAiShapes && (
+        <LiveErrorBoundary>
+          <React.Suspense fallback={null}>
+            <ProblemHighlight editor={editor} />
           </React.Suspense>
         </LiveErrorBoundary>
       )}
