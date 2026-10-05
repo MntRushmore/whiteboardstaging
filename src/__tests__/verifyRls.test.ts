@@ -175,7 +175,7 @@ const PLANS: Row[] = [
   { id: "pro", name: "Pro", monthly_credits: 12000, price_cents: 3900, sort: 2, active: false },
 ];
 const PACKS: Row[] = INK_PACKS.map(([id, ink, price], i) => ({ id, name: String(id), ink, price_cents: price, sort: i + 1, active: true }));
-const STARTER_INK = 300;
+const STARTER_INK = 100;
 
 function makeWorld(leaks: Leak[] = []) {
   const leak = (l: Leak) => leaks.includes(l);
@@ -1300,8 +1300,8 @@ describe("rlsChecks detect individual leaks", () => {
     ["inkSelfGrant", checkInkTables, "ink: A's balance unchanged by all of the attempts above"],
     ["inkGrantsCrossRead", checkInkTables, "ink_grants: A cannot read B's grants (select returns [])"],
     ["inkBalancePatchable", checkInkTables, "profiles: A cannot set own ink_balance (42501)"],
-    ["inkNoStarter", checkInkTables, "ink_grants: A reads own ledger, which starts with the 300-ink starter (sign-up trigger)"],
-    ["inkNoStarter", checkInkPurchases, "ink_summary: a new account starts with its 300 starter ink"],
+    ["inkNoStarter", checkInkTables, "ink_grants: A reads own ledger, which starts with the 100-ink starter (sign-up trigger)"],
+    ["inkNoStarter", checkInkPurchases, "ink_summary: a new account starts with its 100 starter ink"],
     ["inkPurchaseRpcOpen", checkInkPurchases, "grant_ink_purchase: A cannot call it"],
     ["inkPurchaseRpcOpen", checkInkPurchases, "grant_ink: A cannot call it"],
     ["inkPurchaseRpcOpen", checkInkPurchases, "ink: A's balance unchanged after the denied calls"],

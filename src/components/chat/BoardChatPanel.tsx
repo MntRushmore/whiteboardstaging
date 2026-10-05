@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils";
 import type { LiveController } from "@/lib/live/contracts";
 import { CHAT_COPY, CHAT_SUGGESTIONS, sendsOnKey, WEAK_SPOTS_COPY, type ChatMessage } from "./chatView";
 import { useBoardChat } from "./useBoardChat";
+import { hasPlan, isUnlimited } from "@/lib/billing/unlimited";
+import { useUnlimited } from "@/lib/billing/useUnlimited";
 
 interface BoardChatPanelProps {
   boardId: string;
@@ -26,6 +28,10 @@ export const CHAT_TOGGLE_ATTR = "data-chat-toggle";
  * out; this is its content). The words stay here — the board only ever gets maths.
  */
 export function BoardChatPanel({ boardId, controller, onClose }: BoardChatPanelProps) {
+  // What an ask costs, only where asks spend ink: a plan not giving free help right now. Not for
+  // a subscriber (unlimited), nor on the guided first board (no plan: its starter ink is the tour's).
+  const plan = useUnlimited().state;
+  const showCost = hasPlan(plan) && !isUnlimited(plan);
   const { messages, busy, send, retry, weakSpot, practiceWeakSpots } = useBoardChat(boardId, controller);
   const [draft, setDraft] = useState("");
   const panelRef = useRef<HTMLElement | null>(null);
@@ -151,7 +157,7 @@ export function BoardChatPanel({ boardId, controller, onClose }: BoardChatPanelP
             {busy ? <Loader2 className="animate-spin" /> : <ArrowUp />}
           </Button>
         </div>
-        <p className="mt-1.5 text-xs text-gray-500">{CHAT_COPY.cost}</p>
+        {showCost && <p className="mt-1.5 text-xs text-gray-500">{CHAT_COPY.cost}</p>}
       </form>
     </section>
   );

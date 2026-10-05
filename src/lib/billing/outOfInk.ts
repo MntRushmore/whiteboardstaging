@@ -1,46 +1,46 @@
 /**
- * The words of the ink dialog and panel (the board's dialog, the Ask and lecture panels): out of
- * ink, or just getting more. When the dialog may open is inkDialog.ts (that part is in the board's
- * first load; this one only arrives with the lazy dialog). No React, no network: unit-tested in
- * __tests__/outOfInk.test.ts.
+ * The words of the ink dialog and panel (the board's dialog, the Ask and lecture panels). There is
+ * no free plan and no ink packs any more (owner, 2026-10-05): a 402 means help needs Agathon
+ * Unlimited, so the panel is about the plan. When the dialog may open is inkDialog.ts (that part
+ * is in the board's first load; this one only arrives with the lazy dialog). No React, no
+ * network: unit-tested in __tests__/outOfInk.test.ts.
  *
  * The path of a 402: a Live route answers `402 ink_empty` -> classifyLiveFailure
  * (src/components/live/errorView.ts) records a LiveError with code 'ink' -> the board's
  * OutOfInkWatcher opens the dialog once the pen has rested, at most once per visit to the board.
  * The Ask and lecture panels map their own 402 and show the same panel inline.
+ *
+ * Who meets it: a student on the guided first board whose starter ink ran out (`offer`), and one
+ * whose plan is not giving free help right now — a second plan before its first charge, a payment
+ * to fix, a plan being set up — whose help spends what ink they have (`plan`).
  */
-import { inkLabel } from "@/lib/billing/inkSummary";
+import { UNLIMITED_PLAN, hasPlan, isUnlimited, type UnlimitedState } from "@/lib/billing/unlimited";
 
-export type InkPanelMood = "empty" | "buy";
+/**
+ * - `unlimited`: the plan is on (it arrived while the panel was open): all set;
+ * - `offer`: no plan: start the free week (the plan screen);
+ * - `plan`: a plan that is not giving free help yet or any more: what it is doing, and the fix.
+ */
+export type InkPanelMood = "unlimited" | "offer" | "plan";
+
+export function inkPanelMood(state: Pick<UnlimitedState, "status">): InkPanelMood {
+  if (isUnlimited(state)) return "unlimited";
+  return hasPlan(state) ? "plan" : "offer";
+}
 
 export const OUT_OF_INK_COPY = {
-  title: "You're out of ink",
-  body: "The tutor needs ink to read and check your work. Your board is saved, and drawing on your own is always free.",
-  buyTitle: "Get more ink",
-  buyBody: (balance: number) => `You have ${inkLabel(balance)} left. Ink never expires, so a pack lasts as long as you need it to.`,
-  lead: "Pick a pack to keep the tutor going:",
-  newTab: "Checkout opens in a new tab; your ink shows up here when you're done.",
-  comingSoon: "Ink packs aren't on sale yet.",
-  added: "Ink added",
-  addedBody: (balance: number) => `You have ${inkLabel(balance)} now. The tutor is ready when you are.`,
+  /** the 402's title, here and in the Ask and lecture panels (literals there keep the panel lazy) */
+  title: `Help needs ${UNLIMITED_PLAN.name}`,
+  offerBody: `Help me, Solve and Ask come with ${UNLIMITED_PLAN.name}: free for ${UNLIMITED_PLAN.trialDays} days, then $${UNLIMITED_PLAN.monthlyUsd} a month. Your board is saved.`,
+  start: "Start the free week",
+  restart: "Start Unlimited again",
+  comingSoon: "Coming soon",
+  /** a plan whose help spends ink right now, with none left */
+  outOfInk: "You're out of ink",
+  planTitle: UNLIMITED_PLAN.name,
+  allSet: "You're all set",
+  allSetBody: `${UNLIMITED_PLAN.name} is on, so help is unlimited. The tutor is ready when you are.`,
   backToBoard: "Back to the board",
   notNow: "Not now",
-  seeAccount: "See your ink",
+  seePlan: "See your plan",
 } as const;
-
-/**
- * Which way the panel reads: 'empty' when the student has no ink (or a 402 brought them here and
- * the balance has not arrived yet), else 'buy'.
- */
-export function inkPanelMood(balance: number | null | undefined, outOfInk: boolean): InkPanelMood {
-  if (typeof balance === "number" && Number.isFinite(balance)) return balance <= 0 ? "empty" : "buy";
-  return outOfInk ? "empty" : "buy";
-}
-
-/**
- * True once ink arrived while the panel was open: the balance it opened with was 0 (or unknown
- * at the time) and is now above it. The panel then says "Ink added" instead of asking again.
- */
-export function inkArrived(openedWith: number | null, now: number | null | undefined): boolean {
-  return typeof now === "number" && now > 0 && (openedWith === null || now > openedWith);
-}

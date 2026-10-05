@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { LIVE_COPY } from "@/components/live/copy";
-import { CHAT_COPY, CHAT_INK, CHAT_SUGGESTIONS } from "@/components/chat/chatView";
+import { CHAT_COPY, CHAT_SUGGESTIONS } from "@/components/chat/chatView";
 import { initialTour, type TourHelp, type TourState } from "../tour";
 import { askCopy, helpCopy, MORE_LIKE_THESE, TOUR_COPY, writeCopy, type CoachCopy } from "../tourCopy";
 
@@ -26,7 +26,7 @@ function everyCopy(): CoachCopy[] {
   const all: CoachCopy[] = [];
   for (const s of writeStates()) all.push(writeCopy(s, HINT), writeCopy(s, null));
   for (const h of HELPS) for (const solve of [false, true]) all.push(helpCopy("help", h, solve), helpCopy("helped", h, solve));
-  for (const busy of [false, true]) for (const suggestion of [MORE_LIKE_THESE, null]) for (const step of ["ask", "asking"] as const) all.push(askCopy(step, { busy, suggestion, ink: CHAT_INK }));
+  for (const busy of [false, true]) for (const suggestion of [MORE_LIKE_THESE, null]) for (const step of ["ask", "asking"] as const) all.push(askCopy(step, { busy, suggestion }));
   return all;
 }
 
@@ -49,10 +49,10 @@ describe("the guided board's words", () => {
     expect(helpCopy("help", "waiting").title).toContain(LIVE_COPY.ask.help);
     expect(helpCopy("help", "waiting", true).title).toContain(LIVE_COPY.ask.solve);
     expect(helpCopy("help", "empty").body).toContain(LIVE_COPY.ask.help);
-    expect(askCopy("ask", { busy: false, suggestion: null, ink: CHAT_INK }).title).toContain(CHAT_COPY.button);
+    expect(askCopy("ask", { busy: false, suggestion: null }).title).toContain(CHAT_COPY.button);
     // the suggestion it points at is one the panel offers
     expect(CHAT_SUGGESTIONS).toContain(MORE_LIKE_THESE);
-    expect(askCopy("asking", { busy: false, suggestion: MORE_LIKE_THESE, ink: CHAT_INK }).title).toContain(MORE_LIKE_THESE);
+    expect(askCopy("asking", { busy: false, suggestion: MORE_LIKE_THESE }).title).toContain(MORE_LIKE_THESE);
     expect(TOUR_COPY.finish.recap.map((r) => r.text).join(" ")).toContain(LIVE_COPY.ask.help);
   });
 
@@ -73,8 +73,8 @@ describe("the guided board's words", () => {
     for (const c of everyCopy()) expect(c.button).toBe(TOUR_COPY.next);
   });
 
-  it("says what each ask costs, in the panel's own number", () => {
-    expect(askCopy("asking", { busy: false, suggestion: MORE_LIKE_THESE, ink: CHAT_INK }).body).toContain(`${CHAT_INK} ink`);
+  it("never counts ink: the tour comes before the plan, and with the plan an ask spends none", () => {
+    for (const c of everyCopy()) expect(`${c.title} ${c.body}`).not.toMatch(/\bink\b/i);
   });
 
   it("tells a stuck Help me apart: nothing to help with, unreadable, slow", () => {

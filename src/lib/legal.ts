@@ -54,7 +54,7 @@ export const LEGAL = {
   statementDescriptors: { inkPacks: "FUIME* AGATHON", unlimited: "AGATHON" },
   /** Unused ink from a pack can be refunded within this many days of buying it. */
   refundWindowDays: 14,
-  /** Ink packs: one-time purchases (USD). Kept equal to the packs on sale. */
+  /** Ink packs: one-time purchases (USD), no longer sold from 2026-10-05; kept for the refund rules of packs bought before. */
   inkPacks: [
     { ink: 1_000, priceUsd: 5 },
     { ink: 5_000, priceUsd: 20 },
@@ -87,9 +87,10 @@ export const LEGAL = {
  * 20261003010000_signup_consent.sql), so a version dated next week would stop every sign-up.
  *
  * History: 2026-10-03, the first text (live with sign-up consent on 2026-10-03); 2026-10-04,
- * Agathon Unlimited, the emails, and the AI services named.
+ * Agathon Unlimited, the emails, and the AI services named; 2026-10-05, no free plan (the app needs
+ * Agathon Unlimited after the guided first board) and ink packs no longer sold.
  */
-export const TERMS_VERSION = "2026-10-04";
+export const TERMS_VERSION = "2026-10-05";
 
 /** True for a value still in [square brackets]. */
 export function isPlaceholder(value: string): boolean {

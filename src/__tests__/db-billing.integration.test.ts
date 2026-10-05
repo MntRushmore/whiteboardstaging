@@ -10,7 +10,7 @@
  * because nothing exposed to `authenticated` can add ink.
  *
  * Covered (migration 20261002000000_ink.sql, on top of 20260917020000_accounts_billing.sql):
- *   - sign-up: a 'free' profile and the 300-ink starter (once), ink_balance = the ledger
+ *   - sign-up: a 'free' profile and the 100-ink starter (once; the guided first board's, 20261005100000_no_free_plan.sql), ink_balance = the ledger
  *   - ink_summary(): shape, starter; credit_summary() keeps its old keys, consistent for ink
  *   - consume_credits(): decrement + usage row, argument validation, refusal without writes
  *   - the balance is all-time: a usage row or a grant from another month counts like today's
@@ -160,13 +160,13 @@ suite(title, () => {
     if (cleanup) await cleanup();
   }, 60_000);
 
-  it("creates a 'free' profile and grants the 300 starter ink once for every new user (sign-up trigger)", async () => {
+  it("creates a 'free' profile and grants the 100 starter ink once for every new user (sign-up trigger)", async () => {
     for (const client of [ctx.a, ctx.b]) {
       const res = await client.rest("GET", "profiles", { query: { select: "user_id,plan_id,display_name,billing_status,ink_balance" } });
       expect(res.status).toBe(200);
-      expect(rows(res)).toEqual([{ user_id: client.userId, plan_id: "free", display_name: null, billing_status: null, ink_balance: 300 }]);
+      expect(rows(res)).toEqual([{ user_id: client.userId, plan_id: "free", display_name: null, billing_status: null, ink_balance: 100 }]);
       const grants = await client.rest("GET", "ink_grants", { query: { select: "kind,units,reason" } });
-      expect(rows(grants)).toEqual([{ kind: "starter", units: 300, reason: "Starter ink" }]);
+      expect(rows(grants)).toEqual([{ kind: "starter", units: 100, reason: "Starter ink" }]);
     }
     // a second starter is impossible (one per account)
     const dup = await service.rest("POST", "ink_grants", { body: { user_id: ctx.a.userId, units: 300, kind: "starter" }, prefer: "return=minimal" });
@@ -214,10 +214,10 @@ suite(title, () => {
 
   it("ink_summary reports the starter; credit_summary keeps its old keys, consistent for ink", async () => {
     const s = await ink(ctx.a);
-    expect(s).toMatchObject({ balance: 300, granted: 300, purchased: 0, refunded: 0, used: 0, starter: 300, purchases: 0, last_purchase: null });
+    expect(s).toMatchObject({ balance: 100, granted: 100, purchased: 0, refunded: 0, used: 0, starter: 100, purchases: 0, last_purchase: null });
     expect(Date.parse(String(s.starter_at))).toBeGreaterThan(Date.now() - DAY);
     const c = await summary(ctx.a);
-    expect(c).toMatchObject({ plan_id: "free", monthly_credits: 0, used: 0, granted: 300, remaining: 300 });
+    expect(c).toMatchObject({ plan_id: "free", monthly_credits: 0, used: 0, granted: 100, remaining: 100 });
   }, 30_000);
 
   it("ink_packs holds the three packs, as seeded", async () => {

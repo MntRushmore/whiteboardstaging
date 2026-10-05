@@ -69,7 +69,7 @@ export const LECTURE_COPY = {
     "mic-missing": "No microphone found. Plug one in, or close other apps using it, then try again.",
     "speech-off": "Speech recognition is turned off. On an iPad, turn on Dictation (Settings › General › Keyboard) and allow Safari in Settings › Privacy & Security › Speech Recognition, then try again.",
     /** OUT_OF_INK_COPY.title (pinned equal in the tests; a literal so the lazy panel's module stays out of the first load) */
-    ink: "You're out of ink",
+    ink: "Help needs Agathon Unlimited",
     unauthorized: "Please sign in again.",
     network: "Lost the connection to the transcriber. Check your connection and try again.",
     recognizer: "The transcriber stopped working. Try again in a moment.",

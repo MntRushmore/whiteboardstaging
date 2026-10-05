@@ -29,6 +29,7 @@ import { settleExitWrites } from '@/lib/boards/exitWrites';
 import { EmptyBoards } from '@/components/boards/EmptyBoards';
 import { useWelcome } from '@/components/onboarding/useWelcome';
 import { useHomeArrival } from '@/components/onboarding/useHomeArrival';
+import { usePlanGate } from '@/components/billing/usePlanGate';
 import { homeView } from '@/lib/onboarding/state';
 import { Alert } from '@/registry/components/alert/alert';
 import { Button } from '@/registry/components/button/button';
@@ -300,6 +301,9 @@ export default function Dashboard() {
     listState === 'loading' ? 'loading' : listState === 'error' ? 'error' : whiteboards.length,
   );
   const dashboardState = homeView(listState, welcome.decision);
+  // No free plan: without Agathon Unlimited the home sends the student to the plan screen. Not
+  // while the welcome may show: a new student's guided first board comes before the plan.
+  usePlanGate({ enabled: welcome.decision === 'hide', page: 'home' });
 
   const groups = useMemo(
     () => groupBoards(sortBoards(filterBoards(whiteboards, searchQuery), sort), sort, now),

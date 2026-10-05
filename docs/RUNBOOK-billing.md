@@ -13,7 +13,12 @@ Unlimited** subscription is sections 10 and 11; its schema is
   (`ROUTE_COSTS` in `src/lib/server/billing.ts`: reading a line 1, checking 3, a worked solution 10,
   a word-problem setup 2, a board-chat request 3, lecture mode 2 a minute and 4 a drawing). Drawing
   on your own is always free.
-- **Ink never expires and never resets.** A new account gets **300 starter ink once**, at sign-up
+- **No free plan (2026-10-05).** The app needs Agathon Unlimited after the guided first board
+  (section 10); ink packs are no longer sold, and the pack Payment Links should be deactivated in
+  Stripe. The pack rows, the webhook's pack handling and the refund rules stay for packs bought
+  before.
+- **Ink never expires and never resets.** A new account gets **100 starter ink once** (300 before
+  2026-10-05; `ink_starter_amount()`), enough for the guided first board, at sign-up
   (`handle_new_user()`; a failure never blocks sign-up, and the first summary or AI action grants a
   missing starter). Beta accounts that existed when the migration ran got one starter of
   `max(300, what they had left that month)`. There is no monthly refill.
@@ -448,8 +453,9 @@ small server route with a restricted key (Checkout Sessions: write).
 ## 10. Agathon Unlimited
 
 **$25 a month after a 7-day free trial** (owner, 2026-10-03). While a user's subscription is
-`trialing` or `active`, help spends **no ink**; ink packs stay for everyone else, and a subscriber
-keeps whatever ink they had for later.
+`trialing` or `active`, help spends **no ink**, and a subscriber keeps whatever ink they had. Since
+2026-10-05 there is no free plan: without a plan (none, or a plan that ended) the home, the boards
+and Progress send the student to the plan screen (`usePlanGate`, `src/lib/billing/planGate.ts`).
 
 - **Checkout.** One subscription Payment Link (`NEXT_PUBLIC_UNLIMITED_LINK`) with the free week on
   it (`subscription_data.trial_period_days = 7`) and the card taken up front

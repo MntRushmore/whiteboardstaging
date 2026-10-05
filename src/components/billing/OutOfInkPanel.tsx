@@ -1,34 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, ExternalLink } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import Link from "next/link";
+import { CheckCircle2, ExternalLink, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
-import { useSection } from "@/components/account/useSection";
-import { InkBottle } from "@/components/billing/InkBottle";
 import { Button } from "@/components/ui/button";
-import { payerLinks } from "@/lib/billing/checkout";
-import { PACKS_COPY, allComingSoon, packCardsFor, parseInkPacks, type InkPack } from "@/lib/billing/inkPacks";
-import { ACCOUNT_PATH, bottleFill, inkTone } from "@/lib/billing/inkSummary";
-import { billingLinks } from "@/lib/billing/links";
-import { OUT_OF_INK_COPY, inkArrived, inkPanelMood } from "@/lib/billing/outOfInk";
-import { reportUserError } from "@/lib/reportAppError";
-import { useInkSummary, watchInkCheckout } from "@/lib/billing/useInkSummary";
+import { ACCOUNT_PATH } from "@/lib/billing/inkSummary";
+import { OUT_OF_INK_COPY, inkPanelMood } from "@/lib/billing/outOfInk";
+import { billingPortalUrl, unlimitedLink } from "@/lib/billing/unlimited";
+import { unlimitedPlanView } from "@/lib/billing/unlimitedPlan";
+import { useUnlimited } from "@/lib/billing/useUnlimited";
+import { PLAN_PATH } from "@/lib/onboarding/planMarker";
 import { cn } from "@/lib/utils";
 
-async function readPacks(): Promise<InkPack[]> {
-  const { data, error } = await supabase.from("ink_packs").select("id,name,ink,price_cents,sort,active").eq("active", true).order("sort");
-  if (error) throw error;
-  return parseInkPacks(data);
-}
-
 /**
- * Ink and the way to more of it, shared by the board's dialog and the Ask and lecture panels so
- * all three say the same thing: out of ink (or just getting more), the three packs with their
- * prices and a buy button each (its Stripe Payment Link with this user's id and email, in a NEW
- * TAB so the board stays as it is), and "Ink added" once the purchase lands while it is open
- * (useInkSummary watches for it after a buy). Without NEXT_PUBLIC_BILLING_LINKS the buttons say
- * "Coming soon". Loaded lazily: nothing here is in the board's first load.
+ * Help that needs the plan, shared by the board's dialog and the Ask and lecture panels so all
+ * three say the same thing. There is no free plan and no ink packs (owner, 2026-10-05), so:
+ *  - no plan (the guided first board's starter ink ran out): Agathon Unlimited, free for 7 days,
+ *    and Start the free week, which opens the plan screen in this tab (the board is saved);
+ *  - a plan whose help spends ink right now (a second plan before its first charge, a payment to
+ *    fix, one being set up): what it is doing, and its fix (the billing portal, in a new tab);
+ *  - the plan arrived while it was open: all set, back to the board.
+ * Loaded lazily: nothing here is in the board's first load.
  */
 export function OutOfInkPanel({
   variant,
@@ -40,50 +32,32 @@ export function OutOfInkPanel({
   onDone,
 }: {
   variant: "dialog" | "inline";
-  /** A 402 brought the student here: it reads "You're out of ink" until the balance says otherwise. */
+  /** A 402 brought the student here (rather than a tap on the meter). */
   outOfInk?: boolean;
   /** The dialog passes its accessible Title / Description; the inline panel uses plain text. */
   titleAs?: React.ElementType;
   bodyAs?: React.ElementType;
   className?: string;
-  /** Extra buttons next to "See your ink" (the dialog's "Not now"). */
+  /** Extra buttons next to "See your plan" (the dialog's "Not now"). */
   footer?: React.ReactNode;
-  /** "Back to the board" once ink arrived (the dialog closes itself). */
+  /** "Back to the board" once the plan is on (the dialog closes itself). */
   onDone?: () => void;
 }) {
   const { user } = useAuth();
-  const { summary } = useInkSummary();
-  const read = useCallback(() => readPacks(), []);
-  const { state: packs } = useSection<InkPack[]>(read, true, PACKS_COPY.loadFallback);
-  // the packs would not load: a student who wants ink sees none to buy (the admin page hears of it)
-  const packsFailed = packs.status === "error";
-  useEffect(() => {
-    if (packsFailed) reportUserError({ kind: "live.ink", code: "packs_load_failed", message: PACKS_COPY.loadFailedTitle });
-  }, [packsFailed]);
-  const links = payerLinks(billingLinks(), user ? { userId: user.id, email: user.email } : null);
-  const cards = packCardsFor(packs.data ?? [], links);
+  const { state, loading, refresh } = useUnlimited();
+  const mood = inkPanelMood(state);
   const inline = variant === "inline";
+  const titleClass = cn("font-semibold", inline ? "text-sm" : "text-lg");
 
-  // The balance the panel opened with (its first read): ink above it arrived while it was open.
-  // Set during render, once, rather than in an effect (React's "adjusting state on a prop change").
-  const [openedWith, setOpenedWith] = useState<number | null>(null);
-  const balance = summary?.balance ?? null;
-  if (openedWith === null && balance !== null) setOpenedWith(balance);
-  const arrived = openedWith !== null && inkArrived(openedWith, balance);
-  const mood = inkPanelMood(balance, outOfInk);
-
-  if (arrived && balance !== null) {
+  if (mood === "unlimited") {
     return (
-      <div className={cn("space-y-3", className)} data-testid="out-of-ink" data-variant={variant} data-state="added" role="status">
-        <div className="flex items-center gap-3">
-          <InkBottle size="sm" fill={bottleFill(balance)} tone={inkTone(balance)} className="size-8 shrink-0 text-gray-700" />
-          <div className="space-y-0.5">
-            <Title className={cn("font-semibold", inline ? "text-sm text-emerald-800" : "text-lg")}>
-              <CheckCircle2 className="mr-1.5 inline size-4 align-[-2px] text-emerald-600" aria-hidden />
-              {OUT_OF_INK_COPY.added}
-            </Title>
-            <Body className="text-sm text-muted-foreground">{OUT_OF_INK_COPY.addedBody(balance)}</Body>
-          </div>
+      <div className={cn("space-y-3", className)} data-testid="out-of-ink" data-variant={variant} data-state="unlimited" role="status">
+        <div className="space-y-0.5">
+          <Title className={cn(titleClass, inline && "text-emerald-800")}>
+            <CheckCircle2 className="mr-1.5 inline size-4 align-[-2px] text-emerald-600" aria-hidden />
+            {OUT_OF_INK_COPY.allSet}
+          </Title>
+          <Body className="text-sm text-muted-foreground">{OUT_OF_INK_COPY.allSetBody}</Body>
         </div>
         {onDone && (
           <div className="flex justify-end">
@@ -96,69 +70,76 @@ export function OutOfInkPanel({
     );
   }
 
-  const comingSoon = allComingSoon(cards);
+  const seePlan = (
+    <Button asChild variant={inline ? "link" : "outline"} size="sm" className={inline ? "h-auto px-0 text-gray-900" : ""}>
+      <a href={`${ACCOUNT_PATH}#billing`} target="_blank" rel="noopener noreferrer">
+        {OUT_OF_INK_COPY.seePlan}
+      </a>
+    </Button>
+  );
+  const actions = (main: React.ReactNode) => (
+    <div className={cn("flex flex-wrap items-center gap-2", inline ? "" : "justify-end pt-1")}>
+      {footer}
+      {main}
+    </div>
+  );
+
+  if (mood === "offer") {
+    const restart = state.status === "canceled";
+    return (
+      <div className={cn("space-y-3", className)} data-testid="out-of-ink" data-variant={variant} data-state="offer">
+        <div className="space-y-1">
+          <Title className={titleClass}>{OUT_OF_INK_COPY.title}</Title>
+          <Body className={cn("text-sm", inline ? "text-gray-700" : "text-muted-foreground")}>{OUT_OF_INK_COPY.offerBody}</Body>
+        </div>
+        {actions(
+          unlimitedLink() ? (
+            // Same tab: the plan screen opens checkout, which comes back to the home.
+            <Button asChild size="sm">
+              <Link href={PLAN_PATH} data-testid="plan-offer-start">
+                <Sparkles className="size-3.5" aria-hidden />
+                {restart ? OUT_OF_INK_COPY.restart : OUT_OF_INK_COPY.start}
+              </Link>
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" disabled aria-disabled>
+              {OUT_OF_INK_COPY.comingSoon}
+            </Button>
+          ),
+        )}
+      </div>
+    );
+  }
+
+  // A plan, but help spends ink right now: what the plan is doing, and the one thing to do.
+  const view = unlimitedPlanView(state, { now: new Date() });
+  const portal = billingPortalUrl(user?.email ?? null);
   return (
-    <div className={cn("space-y-3", className)} data-testid="out-of-ink" data-variant={variant} data-state={mood}>
+    <div className={cn("space-y-3", className)} data-testid="out-of-ink" data-variant={variant} data-state="plan">
       <div className="space-y-1">
-        <Title className={cn("font-semibold", inline ? (mood === "empty" ? "text-sm text-red-800" : "text-sm") : "text-lg")}>
-          {mood === "empty" ? OUT_OF_INK_COPY.title : OUT_OF_INK_COPY.buyTitle}
-        </Title>
-        <Body className={cn("text-sm", inline && mood === "empty" ? "text-red-800/90" : "text-muted-foreground")}>
-          {mood === "empty" || balance === null ? OUT_OF_INK_COPY.body : OUT_OF_INK_COPY.buyBody(balance)}
+        <Title className={titleClass}>{outOfInk ? OUT_OF_INK_COPY.outOfInk : OUT_OF_INK_COPY.planTitle}</Title>
+        <Body className={cn("text-sm", inline ? "text-gray-700" : "text-muted-foreground")}>
+          {view.headline}
+          {view.detail && ` ${view.detail}`}
         </Body>
       </div>
-      {cards.length > 0 && <p className={cn("text-sm", inline ? "text-gray-700" : "text-foreground")}>{OUT_OF_INK_COPY.lead}</p>}
-      {packs.status === "loading" && !packs.data ? (
-        <ul className="space-y-2" aria-busy data-state="loading">
-          {[1, 2, 3].map((i) => (
-            <li key={i} className="h-12 animate-pulse rounded-lg border bg-muted/40" />
-          ))}
-        </ul>
-      ) : (
-        <ul className="space-y-2">
-          {cards.map((card) => (
-            <li
-              key={card.id}
-              data-pack={card.id}
-              className={cn("flex items-center justify-between gap-3 rounded-lg border bg-white", inline ? "px-2.5 py-2" : "px-3 py-2.5", card.bestValue && "border-indigo-200")}
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-medium">
-                  {card.name}
-                  <span className="font-normal text-muted-foreground"> · {card.inkLabel}</span>
-                  {card.bestValue && (
-                    <span className="ml-1.5 rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">
-                      {PACKS_COPY.bestValue}
-                    </span>
-                  )}
-                </p>
-                <p className="text-xs text-muted-foreground">{card.bonus ? `${card.value} (${card.bonus.replace(" per $1", "")})` : card.value}</p>
-              </div>
-              {card.href ? (
-                <Button asChild size="sm" className="shrink-0 tabular-nums">
-                  <a href={card.href} target="_blank" rel="noopener noreferrer" onClick={() => watchInkCheckout(summary?.last_purchase?.id ?? null)} data-testid={`buy-ink-${card.id}`}>
-                    {card.price}
-                    <ExternalLink className="size-3.5" />
-                  </a>
-                </Button>
-              ) : (
-                <Button size="sm" variant="outline" className="shrink-0" disabled aria-disabled>
-                  {PACKS_COPY.comingSoon}
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
+      {actions(
+        view.action === "refresh" ? (
+          <Button size="sm" variant="outline" onClick={refresh} disabled={loading}>
+            {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+            {view.actionLabel}
+          </Button>
+        ) : (view.action === "manage" || view.action === "fix-payment") && portal ? (
+          <Button asChild size="sm" variant={view.action === "fix-payment" ? "default" : "outline"}>
+            <a href={portal} target="_blank" rel="noopener noreferrer">
+              {view.actionLabel}
+              <ExternalLink className="size-3.5" />
+            </a>
+          </Button>
+        ) : (
+          seePlan
+        ),
       )}
-      <p className="text-xs text-muted-foreground">{comingSoon ? OUT_OF_INK_COPY.comingSoon : OUT_OF_INK_COPY.newTab}</p>
-      <div className={cn("flex flex-wrap items-center gap-2", inline ? "" : "justify-end pt-1")}>
-        {footer}
-        <Button asChild variant={inline ? "link" : "outline"} size="sm" className={inline ? "h-auto px-0 text-gray-900" : ""}>
-          <a href={ACCOUNT_PATH} target="_blank" rel="noopener noreferrer">
-            {OUT_OF_INK_COPY.seeAccount}
-          </a>
-        </Button>
-      </div>
     </div>
   );
 }

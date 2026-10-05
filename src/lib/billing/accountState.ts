@@ -79,7 +79,7 @@ export function deleteConfirmed(typed: string): boolean {
 
 export const ACCOUNT_COPY = {
   title: "Account",
-  subtitle: "Your ink, purchases and usage.",
+  subtitle: "Your plan, billing and profile.",
   back: "Back to boards",
   loadFailedTitle: "Couldn't load your account",
   loadFallback: "Something interrupted the request. Retry in a moment.",

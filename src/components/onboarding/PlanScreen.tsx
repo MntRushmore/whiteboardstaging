@@ -21,7 +21,9 @@ import styles from "./plan.module.css";
  *
  * Start the free week opens the plan's Stripe Payment Link for this account (its checkout
  * reference, `unlimitedCheckoutUrl`) in this tab; its return
- * lands on the home (`/?unlimited=started`), which welcomes them. Maybe later goes home.
+ * lands on the home (`/?unlimited=started`), which welcomes them. There is no free plan, so no
+ * Maybe later: the home, the boards and Progress send a student without a plan back here
+ * (`usePlanGate`).
  */
 export function PlanScreen() {
   const router = useRouter();
@@ -64,7 +66,7 @@ export function PlanScreen() {
     <div className={styles.page}>
       <AppHeader />
       <main className={styles.main}>
-        {view === "offer" || view === "soon" ? (
+        {view === "offer" || view === "restart" || view === "soon" ? (
           <PlanOffer
             view={view}
             chargeDate={chargeDateText(trialEndsOn(now))}
@@ -72,11 +74,11 @@ export function PlanScreen() {
             onStart={() => {
               if (!checkout) return;
               setStarting(true);
-              clientMetric("onboarding.plan.start", {});
+              clientMetric("onboarding.plan.start", { view });
               window.location.assign(checkout);
             }}
-            onLater={() => {
-              clientMetric("onboarding.plan.later", { view });
+            onContinue={() => {
+              clientMetric("onboarding.plan.continue", { view });
               router.replace(HOME_PATH);
             }}
           />

@@ -1377,8 +1377,8 @@ export async function checkInkTables({ a, b }) {
   const starter = rows(own).find((g) => g.kind === "starter");
   out.push(
     result(
-      "ink_grants: A reads own ledger, which starts with the 300-ink starter (sign-up trigger)",
-      isOk(own) && rows(own).every((g) => g.user_id === a.userId) && starter?.units === 300,
+      "ink_grants: A reads own ledger, which starts with the 100-ink starter (sign-up trigger)",
+      isOk(own) && rows(own).every((g) => g.user_id === a.userId) && starter?.units === 100,
       describe(own),
     ),
   );
@@ -1440,7 +1440,7 @@ export async function checkInkPurchases({ a, b, anon, service }) {
   const sumA = await rpc(a, "ink_summary");
   const a0 = asObject(sumA.body);
   out.push(result("ink_summary: A gets a well-formed summary", isOk(sumA) && isInkSummary(sumA.body), describe(sumA)));
-  out.push(result("ink_summary: a new account starts with its 300 starter ink", a0?.starter === 300 && typeof a0.starter_at === "string", describe(sumA)));
+  out.push(result("ink_summary: a new account starts with its 100 starter ink", a0?.starter === 100 && typeof a0.starter_at === "string", describe(sumA)));
   const credit = asObject((await rpc(a, "credit_summary")).body);
   out.push(
     result(

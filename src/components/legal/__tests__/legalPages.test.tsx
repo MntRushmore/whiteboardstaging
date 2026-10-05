@@ -119,11 +119,24 @@ describe("terms: Agathon Unlimited as sold", () => {
   });
 });
 
+describe("terms: no free plan", () => {
+  const terms = text(PAGES["/terms"]);
+
+  it("says the app needs the plan after the guided first board, and that ink packs are no longer sold", () => {
+    expect(terms).toContain("There is no free plan.");
+    expect(terms).toContain("After the guided first board, the app needs it.");
+    expect(terms).toContain("Ink packs are no longer sold");
+    expect(terms).not.toMatch(/optional|with ink instead|sold in one-time packs/i);
+  });
+});
+
 describe("refunds: the plan", () => {
   const refunds = text(PAGES["/refunds"]);
 
-  it("keeps the ink-pack rule and adds the plan's", () => {
-    expect(refunds).toContain(`Within ${LEGAL.refundWindowDays} days of buying a pack`);
+  it("puts the plan's rule first and keeps the ink-pack rule for packs bought before they were retired", () => {
+    expect(refunds).toContain(`within ${LEGAL.refundWindowDays} days of buying a pack`);
+    expect(refunds).toContain("They are no longer sold, from October 5, 2026");
+    expect(refunds.indexOf("The free week is free.")).toBeLessThan(refunds.indexOf("Ink packs: what can be refunded"));
     expect(refunds).toContain("The free week is free.");
     expect(refunds).toContain(`within ${LEGAL.unlimited.refundWindowDays} days of that charge`);
     expect(refunds).toContain("no refunds for part of a month");

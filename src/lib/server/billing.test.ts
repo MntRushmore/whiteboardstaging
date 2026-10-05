@@ -179,16 +179,16 @@ describe("consumeInk", () => {
 });
 
 describe("responses", () => {
-  it("402 ink_empty keeps the error contract and adds remaining + buyUrl (the account page's packs)", async () => {
+  it("402 ink_empty keeps the error contract and adds remaining + buyUrl (the plan screen)", async () => {
     const res = inkEmptyResponse(4);
     expect(res.status).toBe(402);
     expect(await res.json()).toEqual({ error: "ink_empty", message: INK_EMPTY_MESSAGE, remaining: 4, buyUrl: BUY_INK_PATH });
-    expect(BUY_INK_PATH).toBe("/account");
-    expect(INK_EMPTY_MESSAGE).toBe("You're out of ink. Grab an ink pack to keep going.");
+    expect(BUY_INK_PATH).toBe("/welcome/plan");
+    expect(INK_EMPTY_MESSAGE).toBe("Help needs Agathon Unlimited. Start your free week to keep going.");
     // never a negative balance, and no billing link: Payment Links need the user's id, which only the client has
     process.env.NEXT_PUBLIC_BILLING_LINKS = JSON.stringify({ medium: "https://buy.stripe.com/x" });
     resetServerEnvCache();
-    expect(await inkEmptyResponse(-3).json()).toEqual({ error: "ink_empty", message: INK_EMPTY_MESSAGE, remaining: 0, buyUrl: "/account" });
+    expect(await inkEmptyResponse(-3).json()).toEqual({ error: "ink_empty", message: INK_EMPTY_MESSAGE, remaining: 0, buyUrl: "/welcome/plan" });
   });
 
   it("the fair-use 429 says how long, in words a student reads at a glance", async () => {
@@ -236,7 +236,7 @@ describe("enforceInk", () => {
     const res = (result as { response: Response }).response;
     expect(res.status).toBe(402);
     // `cost` is what the refused call needs (a worked solution: 10), so the board knows when it is affordable
-    expect(await res.json()).toMatchObject({ error: "ink_empty", remaining: 4, cost: 10, buyUrl: "/account" });
+    expect(await res.json()).toMatchObject({ error: "ink_empty", remaining: 4, cost: 10, buyUrl: "/welcome/plan" });
   });
 
   it("lets an Agathon Unlimited subscriber through with the balance untouched", async () => {

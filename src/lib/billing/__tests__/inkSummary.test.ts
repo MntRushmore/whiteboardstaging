@@ -3,7 +3,7 @@ import {
   ACCOUNT_PATH,
   FULL_BOTTLE_INK,
   INK_COPY,
-  INK_PACKS_PATH,
+  BILLING_PATH,
   LOW_INK,
   bottleFill,
   formatInk,
@@ -50,9 +50,9 @@ describe("formatting", () => {
     expect(INK_COPY.meterLabel(300)).toBe("300 ink left");
   });
 
-  it("links to the account page and its packs", () => {
+  it("links to the account page and its Billing section", () => {
     expect(ACCOUNT_PATH).toBe("/account");
-    expect(INK_PACKS_PATH).toBe("/account#ink-packs");
+    expect(BILLING_PATH).toBe("/account#billing");
   });
 });
 

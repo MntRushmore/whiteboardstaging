@@ -3,17 +3,20 @@ import { ApiError } from "@/lib/api-client";
 import { classifyLiveFailure } from "@/components/live/errorView";
 import { CHAT_COPY, chatErrorFor } from "@/components/chat/chatView";
 import { LECTURE_COPY } from "@/components/lecture/lectureView";
-import { INK_EMPTY_MESSAGE } from "@/lib/server/billing";
+import { BUY_INK_PATH, INK_EMPTY_MESSAGE } from "@/lib/server/billing";
 import { OPEN_INK_DIALOG_EVENT, PEN_REST_MS, inkDialogWanted, openInkDialog, penIsResting } from "../inkDialog";
-import { OUT_OF_INK_COPY, inkArrived, inkPanelMood } from "../outOfInk";
+import { OUT_OF_INK_COPY, inkPanelMood } from "../outOfInk";
 
 describe("the dialog's words", () => {
-  it("say what happened, that the board is safe and drawing is free", () => {
-    expect(OUT_OF_INK_COPY.title).toBe("You're out of ink");
-    expect(OUT_OF_INK_COPY.body).toMatch(/board is saved/);
-    expect(OUT_OF_INK_COPY.body).toMatch(/drawing on your own is always free/);
-    expect(OUT_OF_INK_COPY.buyBody(42)).toBe("You have 42 ink left. Ink never expires, so a pack lasts as long as you need it to.");
-    expect(OUT_OF_INK_COPY.addedBody(5000)).toBe("You have 5,000 ink now. The tutor is ready when you are.");
+  it("say help needs the plan, what it costs, and that the board is safe", () => {
+    expect(OUT_OF_INK_COPY.title).toBe("Help needs Agathon Unlimited");
+    expect(OUT_OF_INK_COPY.offerBody).toBe("Help me, Solve and Ask come with Agathon Unlimited: free for 7 days, then $25 a month. Your board is saved.");
+    expect(OUT_OF_INK_COPY.start).toBe("Start the free week");
+  });
+
+  it("never offers ink packs: there are none to buy", () => {
+    const words = Object.values(OUT_OF_INK_COPY).join(" ");
+    expect(words).not.toMatch(/\bpacks?\b|get (more )?ink|buy/i);
   });
 
   it("the Ask and lecture panels use the same title (literals there keep the panel's module lazy)", () => {
@@ -21,25 +24,19 @@ describe("the dialog's words", () => {
     expect(LECTURE_COPY.errors.ink).toBe(OUT_OF_INK_COPY.title);
   });
 
-  it("the server's 402 says the same thing in its own words", () => {
-    expect(INK_EMPTY_MESSAGE).toBe("You're out of ink. Grab an ink pack to keep going.");
+  it("the server's 402 says the same thing in its own words, and sends the student to the plan screen", () => {
+    expect(INK_EMPTY_MESSAGE).toBe("Help needs Agathon Unlimited. Start your free week to keep going.");
+    expect(BUY_INK_PATH).toBe("/welcome/plan");
   });
 });
 
-describe("inkPanelMood / inkArrived", () => {
-  it("reads 'empty' at no ink (or a 402 before the balance loads), else 'buy'", () => {
-    expect(inkPanelMood(0, false)).toBe("empty");
-    expect(inkPanelMood(250, true)).toBe("buy");
-    expect(inkPanelMood(null, true)).toBe("empty");
-    expect(inkPanelMood(undefined, false)).toBe("buy");
-  });
-  it("says ink arrived once the balance grows above what the panel opened with", () => {
-    expect(inkArrived(0, 5000)).toBe(true);
-    expect(inkArrived(null, 300)).toBe(true);
-    expect(inkArrived(0, 0)).toBe(false);
-    expect(inkArrived(40, 40)).toBe(false);
-    expect(inkArrived(40, 5040)).toBe(true);
-    expect(inkArrived(0, null)).toBe(false);
+describe("inkPanelMood", () => {
+  it("all set with the plan on; the free week without a plan; the plan's own fix otherwise", () => {
+    expect(inkPanelMood({ status: "trialing" })).toBe("unlimited");
+    expect(inkPanelMood({ status: "active" })).toBe("unlimited");
+    expect(inkPanelMood({ status: "none" })).toBe("offer");
+    expect(inkPanelMood({ status: "canceled" })).toBe("offer");
+    for (const status of ["repeat_trial", "past_due", "incomplete"] as const) expect(inkPanelMood({ status })).toBe("plan");
   });
 });
 

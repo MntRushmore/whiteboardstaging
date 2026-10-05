@@ -22,8 +22,9 @@ describe("what the plan screen shows", () => {
   it("offers the free week with a checkout, and says Coming soon without one", () => {
     expect(planView({ loading: false, unlimited: NO_UNLIMITED, checkoutUrl: URL })).toBe("offer");
     expect(planView({ loading: false, unlimited: null, checkoutUrl: null })).toBe("soon");
-    // an ended plan is offered again
-    expect(planView({ loading: false, unlimited: { status: "canceled" }, checkoutUrl: URL })).toBe("offer");
+    // an ended plan is offered again, without a free week (a first plan's only)
+    expect(planView({ loading: false, unlimited: { status: "canceled" }, checkoutUrl: URL })).toBe("restart");
+    expect(planView({ loading: false, unlimited: { status: "canceled" }, checkoutUrl: null })).toBe("soon");
     // a plan that exists (being set up, a payment to fix) is never offered a second checkout
     for (const status of ["past_due", "incomplete"] as const) {
       expect(planView({ loading: false, unlimited: { status }, checkoutUrl: URL })).toBe("skip");
@@ -46,11 +47,11 @@ describe("what the plan screen shows", () => {
 });
 
 describe("the plan screen's words", () => {
-  it("crosses out the plan's own price and says the beta week is free", () => {
+  it("crosses out the plan's own price and says the first 7 days are free", () => {
     expect(dollars(UNLIMITED_PLAN.monthlyUsd)).toBe("$25");
     expect(PLAN_COPY.title).toBe("Agathon Unlimited");
     expect(PLAN_COPY.price).toBe("$25/month");
-    expect(PLAN_COPY.free).toBe("Free for your beta week");
+    expect(PLAN_COPY.free).toBe("Free for 7 days");
     expect(PLAN_COPY.then).toBe("Then $25/month. Cancel anytime.");
   });
 
@@ -60,7 +61,11 @@ describe("the plan screen's words", () => {
     );
     expect(PLAN_COPY.grownUp).toBe("This part is for a grown-up");
     expect(PLAN_COPY.start).toBe("Start the free week");
-    expect(PLAN_COPY.later).toBe("Maybe later");
+  });
+
+  it("has no way to skip the plan: there is no free plan", () => {
+    expect(PLAN_COPY).not.toHaveProperty("later");
+    expect(Object.values(PLAN_COPY).filter((v) => typeof v === "string").join(" ")).not.toMatch(/maybe later|not now|skip/i);
   });
 
   it("lists four perks, short enough for one line on a phone", () => {

@@ -1,14 +1,15 @@
 /**
- * Agathon Unlimited: the monthly plan offered on the last screen of onboarding, after the guided
- * board and before the home (owner, 2026-10-03).
+ * Agathon Unlimited: THE plan. There is no free plan (owner, 2026-10-05): a new student gets the
+ * guided first board (its starter ink covers it), then the plan screen, which they cannot skip.
  *
- *  - $25 a month after a 7-day free trial (the "beta week"): the price is shown crossed out and
+ *  - $25 a month after a 7-day free trial (the "free week"): the price is shown crossed out and
  *    nothing is charged today. A grown-up's card is taken up front at Stripe Checkout, through a
  *    subscription Payment Link with the trial on it (NEXT_PUBLIC_UNLIMITED_LINK, made by
  *    scripts/stripe-setup.mjs), opened with this account's CHECKOUT REFERENCE (not its user id:
  *    `unlimitedCheckoutUrl`), which the webhook resolves to the account.
  *  - While the subscription is trialing or active, help spends no ink (a fair-use limit instead).
- *    Ink packs stay for everyone who does not subscribe.
+ *  - Without a plan (`hasPlan`), the home, the boards and Progress send the student to the plan
+ *    screen (`usePlanGate`). Ink packs are no longer sold.
  *
  * Pure: no React, no network. The subscription row and the hook that reads it live beside this
  * (`useUnlimited`), written by the Stripe webhook.
@@ -54,6 +55,17 @@ export const NO_UNLIMITED: UnlimitedState = { status: "none", trialEnd: null, cu
 /** Help spends no ink: the plan is in its free week or paid up. */
 export function isUnlimited(state: Pick<UnlimitedState, "status"> | null | undefined): boolean {
   return state?.status === "trialing" || state?.status === "active";
+}
+
+/**
+ * The account has a plan, so the app is open: in its free week or paid up, a second plan waiting
+ * for its first charge (repeat_trial), one being set up (incomplete), or one with a payment to fix
+ * (past_due: the account page and the ink dialog say how). Never offered a second checkout either:
+ * that would be a second $25 a month. `none` and `canceled` have no plan: the plan screen.
+ */
+export function hasPlan(state: Pick<UnlimitedState, "status"> | null | undefined): boolean {
+  const s = state?.status;
+  return s === "trialing" || s === "active" || s === "repeat_trial" || s === "incomplete" || s === "past_due";
 }
 
 /**

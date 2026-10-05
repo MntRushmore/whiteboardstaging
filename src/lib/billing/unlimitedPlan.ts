@@ -1,7 +1,9 @@
 /**
- * The account page's Plan section, as words: what the student's Agathon Unlimited plan is doing
- * and the one thing to do about it. The grown-up who pays reads this too, so it says plainly when
- * money moves. No React, no network: unit-tested in __tests__/unlimitedPlan.test.ts.
+ * The account page's Billing section, as words: what the student's Agathon Unlimited plan is doing,
+ * its facts (price, status, the next date money moves) and the one thing to do about it. The
+ * grown-up who pays reads this too, so it says plainly when money moves. There is no free plan
+ * (2026-10-05): without Agathon Unlimited the app is closed, so an ended plan says to start it
+ * again. No React, no network: unit-tested in __tests__/unlimitedPlan.test.ts.
  *
  * Loaded with the account page only (not the board), so the copy can be generous.
  */
@@ -43,19 +45,22 @@ export function planDate(iso: string | null | undefined, timeZone?: string): str
 
 export const PLAN_COPY = {
   title: UNLIMITED_PLAN.name,
-  offer: `Help from the tutor without counting ink. Free for ${UNLIMITED_PLAN.trialDays} days, then ${PRICE} a month. Cancel any time.`,
+  /** the account page's section (`#billing`, the header menu's Billing) */
+  billingTitle: "Billing",
+  billingSubtitle: "Your plan, your card and your invoices.",
+  offer: `Agathon is ${UNLIMITED_PLAN.name}: ${PRICE} a month, and your first ${UNLIMITED_PLAN.trialDays} days are free. Cancel any time.`,
   offerDetail: (firstCharge: string) => `A grown-up's card is needed at checkout. Nothing is charged until ${firstCharge}.`,
-  start: `Try Unlimited free for ${UNLIMITED_PLAN.trialDays} days`,
+  start: "Start the free week",
   /** after a plan ended: a second plan has no free week (`has_unlimited`'s first-trial rule) */
   restart: "Start Unlimited again",
-  restartDetail: `The free week is for a first plan only: the first ${PRICE} is charged ${UNLIMITED_PLAN.trialDays} days after checkout, and help uses ink until then.`,
+  restartDetail: `Start it again to keep using Agathon. The free week is for a first plan only: the first ${PRICE} is charged ${UNLIMITED_PLAN.trialDays} days after checkout, and help uses ink until then.`,
   comingSoon: "Coming soon",
   manage: "Manage or cancel",
   fixPayment: "Update your card",
   refresh: "Check again",
-  portalHint: "You'll sign in with the email used at checkout.",
+  portalHint: "Change your card, see your invoices or cancel, on Stripe's billing page. You'll sign in with the email used at checkout.",
   noPortal: "To manage or cancel your plan, use the link in the email Stripe sent when it started.",
-  ended: (on: string | null) => (on ? `Your plan ended on ${on}. Help uses ink again.` : "Your plan has ended. Help uses ink again."),
+  ended: (on: string | null) => (on ? `Your plan ended on ${on}.` : "Your plan has ended."),
   /** Delete account, while the plan would charge again (DangerZone). */
   deleteBlockedTitle: `Cancel ${UNLIMITED_PLAN.name} first`,
   deleteBlockedBody:
@@ -172,4 +177,57 @@ export function unlimitedPlanView(state: UnlimitedState, opts: { now: Date; time
         actionLabel: PLAN_COPY.start,
       };
   }
+}
+
+/* ------------------------------------------------------------------------- */
+/* The Billing section's facts                                                */
+/* ------------------------------------------------------------------------- */
+
+export interface BillingFact {
+  id: "plan" | "price" | "status" | "date";
+  label: string;
+  value: string;
+}
+
+const STATUS_WORDS: Record<UnlimitedState["status"], string> = {
+  none: "Not started",
+  trialing: "Free week",
+  repeat_trial: "Starting",
+  active: "Active",
+  past_due: "Payment needed",
+  incomplete: "Setting up",
+  canceled: "Ended",
+};
+
+/**
+ * The plan in a few rows, for the grown-up who pays: what it is, what it costs, where it stands,
+ * and the next day money moves (or the plan ends). The date row is left out when there is no date.
+ */
+export function billingFacts(state: UnlimitedState, opts: { timeZone?: string } = {}): BillingFact[] {
+  const tz = opts.timeZone;
+  const status = state.cancelAtPeriodEnd && state.status !== "canceled" ? "Set to cancel" : STATUS_WORDS[state.status];
+  const facts: BillingFact[] = [
+    { id: "plan", label: "Plan", value: UNLIMITED_PLAN.name },
+    { id: "price", label: "Price", value: `${PRICE} a month` },
+    { id: "status", label: "Status", value: status },
+  ];
+  const trialEnd = planDate(state.trialEnd ?? state.currentPeriodEnd, tz);
+  const periodEnd = planDate(state.currentPeriodEnd, tz);
+  let date: Omit<BillingFact, "id"> | null = null;
+  switch (state.status) {
+    case "trialing":
+    case "repeat_trial":
+      if (trialEnd) date = state.cancelAtPeriodEnd ? { label: "Ends on", value: trialEnd } : { label: "First charge", value: `${PRICE} on ${trialEnd}` };
+      break;
+    case "active":
+      if (periodEnd) date = state.cancelAtPeriodEnd ? { label: "Ends on", value: periodEnd } : { label: "Next charge", value: `${PRICE} on ${periodEnd}` };
+      break;
+    case "canceled":
+      if (periodEnd) date = { label: "Ended on", value: periodEnd };
+      break;
+    default:
+      break;
+  }
+  if (date) facts.push({ id: "date", ...date });
+  return facts;
 }
