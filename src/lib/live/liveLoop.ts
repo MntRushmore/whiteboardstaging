@@ -566,6 +566,11 @@ export function isAiNote(meta: unknown): boolean {
   return typeof meta === "object" && meta !== null && (meta as Record<string, unknown>)[AI_NOTE_META] === true;
 }
 
+/** A step the engine rings (it does not follow), or one carried on from such a step (`LineAnalysis.carried`). */
+function isSlip(a: LineAnalysis): boolean {
+  return a.verdict === "mismatch" || Boolean(a.carried);
+}
+
 function isShapeRecord(r: unknown): r is TLShape {
   return typeof r === "object" && r !== null && (r as { typeName?: string }).typeName === "shape";
 }
@@ -2357,9 +2362,27 @@ export class LiveLoop implements LiveController {
       if (s.line.row >= state.line.row) break;
       const a = s.analysis;
       if (!s.latex || !a || a.kind === "label" || a.kind === "incomplete" || a.kind === "unknown" || a.kind === "operation" || this.stackOf(s.line)) continue;
+      // a ringed step (or one carried on from it) is not what the next step is judged against
+      if (isSlip(a)) continue;
       previous = s;
     }
     return previous;
+  }
+
+  /**
+   * The step right above `state` when it is a slip (ringed, or carried on from one): what a step that
+   * does not follow from the last right line may have carried on from (`analyze`). Undefined when the
+   * step above is right, or there is none.
+   */
+  private slipAbove(state: LiveLineState): LineAnalysis | undefined {
+    let last: LineAnalysis | undefined;
+    for (const s of this.columnLines(state.line.column)) {
+      if (s.line.row >= state.line.row) break;
+      const a = s.analysis;
+      if (!s.latex || !a || a.kind === "label" || a.kind === "incomplete" || a.kind === "unknown" || a.kind === "operation" || this.stackOf(s.line)) continue;
+      last = a;
+    }
+    return last && isSlip(last) ? last : undefined;
   }
 
   /**
@@ -2555,6 +2578,9 @@ export class LiveLoop implements LiveController {
       if (s.line.row >= state.line.row) break;
       // a stacked sum is a problem of its own: no line under it follows from it
       if (!s.latex || this.stackOf(s.line)) continue;
+      // a ringed step is not what the next one is judged against: the last right line is. A fix
+      // written under a slip (`3x = 5` ringed, then `3x = 15`) follows from `3x - 5 = 10` and is ticked
+      if (s.analysis && isSlip(s.analysis)) continue;
       take(s.analysis);
     }
     // the values the rest of the column gives its letters, above it or under it (`givens.ts`):
@@ -2995,7 +3021,15 @@ export class LiveLoop implements LiveController {
     // a stacked sum is worked column by column, never as a line (its rule is no fraction bar)
     if (this.stackLike(state)) return this.stackAnalysis(state);
     try {
-      return this.engine.analyzeLine(state.latex, { ...this.columnContext(state), mode: this.opts.mode });
+      const ctx = this.columnContext(state);
+      const a = this.engine.analyzeLine(state.latex, { ...ctx, mode: this.opts.mode });
+      if (a.verdict !== "mismatch" || a.solved) return a;
+      // not right from the last right line: carried on from the slip right above it? Then the
+      // mistake is that slip's (ringed already), and this step gets no mark of its own
+      const slip = this.slipAbove(state);
+      if (!slip) return a;
+      const fromSlip = this.engine.analyzeLine(state.latex, { ...ctx, previous: slip, mode: this.opts.mode });
+      return fromSlip.verdict === "ok" ? { ...a, verdict: "none", carried: true } : a;
     } catch (e) {
       console.warn("[live] analyzeLine threw", e);
       return { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };

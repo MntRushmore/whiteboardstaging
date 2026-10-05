@@ -195,6 +195,13 @@ export interface LineAnalysis {
    */
   operation?: { op: "add" | "subtract" | "multiply" | "divide"; operand: string; operandMath: string; result: string };
   /**
+   * The step does not follow from the last right line, but does from the ringed step above it: the
+   * student carried on from their slip. Not right (no tick), and the mistake is already ringed where
+   * it was made (no second ring): verdict `none`. Like a ringed step, never what a later step is
+   * judged against (`liveLoop.ts`, `columnContext`).
+   */
+  carried?: boolean;
+  /**
    * Where the unknown lives, written with the equation (`2\cos x = 1, 0^{\circ} \le x < 360^{\circ}`)
    * or on a line of its own (`engine/domain.ts`). Carried down the column: an answer under it must
    * lie inside, and lists all of its solutions there to count as solved.

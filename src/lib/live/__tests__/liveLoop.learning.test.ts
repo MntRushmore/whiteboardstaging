@@ -232,6 +232,44 @@ describe("live loop — the learning record's signals", () => {
     expect(signals.some((s) => s.type === "help")).toBe(false);
   });
 
+  it("a fix written under a ringed step is ticked: judged against the last right line, not the slip", async () => {
+    start("feedback");
+    await penLine(0, "3x-5=10");
+    await penLine(1, "3x=5");
+    const fix = await penLine(2, "3x=15");
+    await penLine(3, "x=5");
+    await wait(ANSWER_SETTLE_MS);
+    const last = new Map(lineSignals().map((s) => [s.latex, s.mark]));
+    expect(Object.fromEntries(last)).toMatchObject({ "3x=5": "circle", "3x=15": "check", "x=5": "check" });
+    expect(lineSignals().find((s) => s.lineId === fix)).toMatchObject({ previousLatex: "3x-5=10" });
+    expect(lineSignals().at(-1)).toMatchObject({ latex: "x=5", solved: true });
+  });
+
+  it("a step carried on from a slip gets no mark (the slip is ringed already); the right answer after it is ticked", async () => {
+    start("feedback");
+    await penLine(0, "3x-5=10");
+    await penLine(1, "3x=5");
+    const carried = await penLine(2, "x=\\frac{5}{3}");
+    await wait(ANSWER_SETTLE_MS);
+    expect(liveStore.lines.get()[carried].analysis).toMatchObject({ verdict: "none", carried: true });
+    expect(lineSignals().filter((s) => s.lineId === carried).at(-1)?.mark ?? null).toBeNull();
+    // the student spots it and writes the answer: right from the problem
+    await penLine(3, "x=5");
+    await wait(ANSWER_SETTLE_MS);
+    expect(lineSignals().at(-1)).toMatchObject({ latex: "x=5", mark: "check", solved: true });
+    // one ring on the board for one slip
+    expect(lineSignals().filter((s) => s.mark === "circle").map((s) => s.latex)).toEqual(["3x=5"]);
+  });
+
+  it("a chain of right steps is ticked as before", async () => {
+    start("feedback");
+    await penLine(0, "2x+3=11");
+    await penLine(1, "2x=8");
+    await penLine(2, "x=4");
+    await wait(ANSWER_SETTLE_MS);
+    expect(brief().filter((b) => b.startsWith("line"))).toEqual(["line 2x+3=11 -", "line 2x=8 check", "line x=4 check solved"]);
+  });
+
   it("Suggest's step when stuck is Auto's help; the dial to Solve then has Auto finish it", async () => {
     start("suggest");
     const head = await penLine(0, "2x+3=11");
