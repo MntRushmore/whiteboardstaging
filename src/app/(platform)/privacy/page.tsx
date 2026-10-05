@@ -28,7 +28,7 @@ const PROVIDERS = [
   {
     name: "Supabase",
     role: "Database, sign-in and file storage, in the United States.",
-    data: "Your account, boards and their recent history, images and PDFs you add, purchases, your plan, ink and AI usage, the email log, bug reports.",
+    data: "Your account, boards and their recent history, images and PDFs you add, your learning record, purchases, your plan, ink and AI usage, the email log, bug reports.",
   },
   {
     name: "Vercel",
@@ -129,6 +129,13 @@ export default function PrivacyPage() {
         <h3>Collected as you use Agathon</h3>
         <ul>
           <li>
+            <strong>Learning record:</strong> we keep a record of the problems you work on your boards and how they went:
+            the problem, the skill it is about, whether you solved it on your own, solved it with help or the tutor solved
+            it, the kinds of mistakes made, the help you asked for and the time spent. It is there so you and your parent can see
+            your progress on the Progress page, and so the tutor can pick practice and hints that fit you. It is deleted
+            with your account, and it is never sold or used to train AI models.
+          </li>
+          <li>
             <strong>Ink purchases:</strong> which ink pack, the amount, the date, refunds, and the Stripe customer and
             payment ids.
           </li>
@@ -170,6 +177,10 @@ export default function PrivacyPage() {
           <li>To run {LEGAL.productName}: save your boards, read your handwriting, check your working and answer.</li>
           <li>To give each board a short name from the maths on it, such as “Solving trig equations”.</li>
           <li>
+            To show you and your parent your progress on the Progress page, and to suggest practice for the skills you
+            find hardest.
+          </li>
+          <li>
             To sell and refund ink, keep track of your balance, and run {plan}: know whether your plan is on, apply
             the fair-use limit, and remind you before a free week ends.
           </li>
@@ -206,6 +217,11 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>Naming a board:</strong> the lines of maths on it.
+          </li>
+          <li>
+            <strong>Hints that fit you:</strong> with each check and chat message, the names of up to three skills you
+            find hardest and three you have mastered, and the kinds of mistakes you make most often, taken from your
+            learning record.
           </li>
         </ul>
         <p>
@@ -284,7 +300,8 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>What we collect from a child:</strong> their handwriting and drawings, the maths on their boards,
-            what they type to the tutor, images and PDFs they add, and bug reports if they send one; the email address
+            what they type to the tutor, images and PDFs they add, a record of the problems they work and how they went
+            (their learning record), and bug reports if they send one; the email address
             and password used to sign in, the course they pick and an optional display name; and how they use the
             tutor (see <a href="#collect">What we collect</a>). Only what the tutor needs. We do not ask a child for
             their address, phone number, photo or location.
@@ -307,15 +324,16 @@ export default function PrivacyPage() {
             and {plan} are paid with a grown-up’s card.
           </li>
           <li>
-            <strong>Reviewing a child’s data:</strong> a parent can see the child’s boards by signing in to
-            the account, and can ask us for a copy of everything we hold about the child by emailing <ContactEmail />{" "}
+            <strong>Reviewing a child’s data:</strong> a parent can see the child’s boards and their progress (the
+            Progress page) by signing in to the account, and can ask us for a copy of everything we hold about the
+            child by emailing <ContactEmail />{" "}
             from the account’s email address (or with other proof that they are the parent).
           </li>
           <li>
             <strong>Deleting a child’s data:</strong> a parent can delete the account at any time from the Account
-            page (Delete account; if {plan} is on, cancel it first), which deletes the boards, ink, usage records,
-            profile, email log and bug reports, or email us and we will delete it. A parent can also tell us to stop
-            collecting the child’s information; the account then has to be closed.
+            page (Delete account; if {plan} is on, cancel it first), which deletes the boards, the learning record, ink,
+            usage records, profile, email log and bug reports, or email us and we will delete it. A parent can also
+            tell us to stop collecting the child’s information; the account then has to be closed.
           </li>
           <li>
             <strong>How long we keep it:</strong> only while the account is open, then as described in{" "}
@@ -340,6 +358,11 @@ export default function PrivacyPage() {
           <li>
             <strong>Board history:</strong> a few earlier versions of each board, from about the last week, so we can
             restore a board that was wiped by mistake. They are deleted with the board.
+          </li>
+          <li>
+            <strong>Your learning record:</strong> while your account is open, so the Progress page can show how you
+            have done over time, and deleted with your account. Deleting a board keeps the record of the problems worked
+            on it. Ask us and we will delete the record sooner.
           </li>
           <li>
             <strong>Ink, usage, the fair-use record, ink purchases and the email log:</strong> deleted with your

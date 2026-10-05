@@ -2,7 +2,7 @@
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, Plus, RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, ChartColumn, Plus, RefreshCw, Search } from 'lucide-react';
 import { toast } from "sonner";
 import { supabase } from '@/lib/supabase';
 import { AuthErrorBanner, useAuth } from '@/components/AuthProvider';
@@ -20,6 +20,7 @@ import {
 } from '@/app/dashboardState';
 import { describeError } from '@/lib/errorMessage';
 import { AppHeader, APP_CONTENT_CLASS } from '@/components/app/AppHeader';
+import { ButtonLink } from '@/components/app/ButtonLink';
 import { BoardGroups, BoardSkeletons, type BoardActions, type BoardView } from '@/components/boards/BoardList';
 import { asDeleteBoardClient, deleteBoardWithAssets } from '@/lib/assets/deleteBoard';
 import { DEFAULT_BOARD_TITLE, isDefaultBoardTitle } from '@/lib/boards/boardTitle';
@@ -342,8 +343,14 @@ export default function Dashboard() {
             {dashboardState === 'list' && <p className={styles.count}>{boardCountLabel(whiteboards.length)}</p>}
             {dashboardState === 'loading' && <div aria-hidden className={`${styles.countPlaceholder} ${styles.pulse}`} />}
           </div>
-          {/* The empty state carries its own New Board: one call to action, not two. */}
-          {dashboardState !== 'empty' && newBoardButton}
+          <div className={styles.headerActions}>
+            <ButtonLink href="/progress" variant="secondary">
+              <ChartColumn size={16} strokeWidth={1.9} aria-hidden />
+              My progress
+            </ButtonLink>
+            {/* The empty state carries its own New Board: one call to action, not two. */}
+            {dashboardState !== 'empty' && newBoardButton}
+          </div>
         </div>
 
         {createError && (

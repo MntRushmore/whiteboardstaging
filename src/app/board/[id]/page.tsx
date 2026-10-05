@@ -84,7 +84,9 @@ import { useChatOpen } from "@/components/chat/useBoardChat";
 import { useLecture } from "@/components/lecture/useLecture";
 import { LectureBar } from "@/components/lecture/LectureBar";
 import { browserStorage as onboardingStorage, isGuidedBoard } from "@/lib/onboarding/marker";
+import { hasPracticeMarker } from "@/lib/learning/practiceMarker";
 import { attachKeyboardFit, browserKeyboardFitEnv } from "@/components/board/keyboardFit";
+import { useBoardLearning } from "@/components/learning/useBoardLearning";
 
 // The guided first board's tour (the welcome's Start): loaded on that board only, after the board.
 const BoardTour = React.lazy(() => import("@/components/onboarding/BoardTour"));
@@ -102,6 +104,10 @@ const ModeInfoDialog = React.lazy(() => import("@/components/board/ModeInfoDialo
 const LiveDebugPanel = React.lazy(() => import("@/components/live/LiveDebugPanel").then((m) => ({ default: m.LiveDebugPanel })));
 // The outline around the problem Help me acts on: shown only around an ask, so it loads after the board.
 const ProblemHighlight = React.lazy(() => import("@/components/live/ProblemHighlight").then((m) => ({ default: m.ProblemHighlight })));
+// Learning: "Now you try one!" after the tutor solves or helps, and a practice board's problems
+// (the Progress page's marker): both load after the board, the second only on a practice board.
+const NowYouTry = React.lazy(() => import("@/components/learning/NowYouTry"));
+const PracticeBoard = React.lazy(() => import("@/components/learning/PracticeBoard"));
 
 /** The help tabs: 6 px of padding on a board under 768 px (a 10.2" iPad sideways with Ask docked), 8 px from there. */
 const HELP_TAB_CLASS = "px-1.5 @3xl/bar:px-2";
@@ -212,6 +218,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   // Each tap on Help me / Solve it, for the guided board's second coach mark (it waits for what the
   // tutor writes, and says so when there was nothing to help with). Only counted on that board.
   const [tourHelpAsk, setTourHelpAsk] = useState<{ n: number; ok: boolean } | null>(null);
+  // a practice board opened from the Progress page: its problems are written once (PracticeBoard)
+  const [practiceBoard] = useState(() => hasPracticeMarker(id));
 
   // Live Math layer: per-device switch (localStorage) gated by the deploy-time kill switch.
   const { settings: live, update: updateLive } = useLiveSettings();
@@ -223,6 +231,8 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
     // paused while AI shapes are hidden: no ink spent on marks and steps the student cannot see
     auto: autoActs(live),
   });
+  // The learning record (src/lib/learning): the problems the student works here, loaded in idle time.
+  useBoardLearning(id, user?.id);
   // Lecture mode: the mic and the tutor sketching what is said. Not gated on Live or the help
   // mode: the controller's lecture methods work whatever they say.
   const lecture = useLecture(id, controller);
@@ -477,6 +487,21 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
               helpAsk={tourHelpAsk}
               onFinished={endTour}
             />
+          </React.Suspense>
+        </LiveErrorBoundary>
+      )}
+      {/* the problem it offers is written in the tutor's hand: not while the tutor's writing is hidden */}
+      {liveEnabled && !live.hideAiShapes && (
+        <LiveErrorBoundary>
+          <React.Suspense fallback={null}>
+            <NowYouTry controller={controller} tour={guided} />
+          </React.Suspense>
+        </LiveErrorBoundary>
+      )}
+      {practiceBoard && (
+        <LiveErrorBoundary>
+          <React.Suspense fallback={null}>
+            <PracticeBoard boardId={id} controller={controller} onModeChange={setAssistanceMode} />
           </React.Suspense>
         </LiveErrorBoundary>
       )}

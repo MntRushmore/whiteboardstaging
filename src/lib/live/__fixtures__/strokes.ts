@@ -1,4 +1,5 @@
 import type { TLDrawShape, TLShapeId } from "tldraw";
+import { layoutMath } from "@/lib/hand";
 import type { InkStroke } from "../contracts";
 
 /**
@@ -295,4 +296,74 @@ export function fixtureFloatingMark(): TLDrawShape[] {
   for (const s of glyphs.x(100, 212, 28, 28)) shapes.push(drawShapeFromPoints(s));
   for (const s of glyphs.two(132, 150, 13, 18)) shapes.push(drawShapeFromPoints(s));
   return shapes;
+}
+
+/**
+ * A row of maths in the tutor's hand (`layoutMath`) as the student's ink, its right edge at `right`
+ * and its top at `top`: realistic glyphs (an `8` in two loops, a `+` in two strokes) for layouts the
+ * fixture glyphs above do not cover.
+ */
+export function handRow(latex: string, right: number, top: number, size = 40, handSeed = 3): TLDrawShape[] {
+  const lay = layoutMath(latex, { size, seed: handSeed });
+  const dx = right - lay.width;
+  return lay.strokes.map((st) => drawShapeFromPoints(st.points.map((p) => ({ x: p.x + dx, y: p.y + top }))));
+}
+
+/** A level rule, as a student draws one under a sum (a little wobble). */
+export function handRule(x0: number, x1: number, y: number): TLDrawShape {
+  return drawShapeFromPoints(Array.from({ length: 40 }, (_, i) => ({ x: x0 + ((x1 - x0) * i) / 39, y: y + Math.sin(i / 5) * 0.8 })));
+}
+
+export interface StackInk {
+  /** the right edge of the numbers (page px); default 400 */
+  right?: number;
+  /** the top of the first row; default 200 */
+  top?: number;
+  /** the hand's size (a digit is ~0.6 of it); default 40 */
+  size?: number;
+  /** from one row's top to the next; default 44 */
+  rowPitch?: number;
+  handSeed?: number;
+  /** carry marks: a small digit over the top row, over this place (0 = ones) */
+  carries?: Array<{ place: number; digit: string }>;
+  /** a borrow: the top row's digit at `place` crossed out, and `digit` written small over it ('' for none) */
+  borrow?: { place: number; digit: string };
+}
+
+export interface StackShapes {
+  rows: TLDrawShape[][];
+  rule: TLDrawShape;
+  answer: TLDrawShape[];
+  marks: TLDrawShape[];
+  all: TLDrawShape[];
+}
+
+/**
+ * A stacked sum written by hand: `rows` right-aligned one under the other (`["286", "+680"]`), a rule
+ * under them, and `answer` under the rule (null: nothing written there yet), with the carry and borrow
+ * marks asked for. In its parts, so a test can write them one at a time, in the order a student does.
+ */
+export function writeStack(rows: readonly string[], answer: string | null, o: StackInk = {}): StackShapes {
+  const size = o.size ?? 40;
+  const R = o.right ?? 400;
+  const top = o.top ?? 200;
+  const pitch = o.rowPitch ?? 44;
+  const seed0 = o.handSeed ?? 3;
+  const rowInk = rows.map((r, i) => handRow(r, R, top + i * pitch, size, seed0 + i));
+  const strokes = toInkStrokes(rowInk.flat());
+  const lastBottom = Math.max(...toInkStrokes(rowInk[rowInk.length - 1]).map((s) => s.bounds.y + s.bounds.h));
+  const lead = Math.min(...strokes.map((s) => s.bounds.x));
+  const ruleY = lastBottom + 0.2 * size;
+  const rule = handRule(lead - 0.15 * size, R + 0.15 * size, ruleY);
+  const ans = answer ? handRow(answer, R, ruleY + 0.25 * size, size, seed0 + 9) : [];
+  const firstRow = toInkStrokes(rowInk[0]);
+  const digitPitch = (R - Math.min(...firstRow.map((s) => s.bounds.x))) / rows[0].replace(/[^0-9.]/g, "").length;
+  const marks: TLDrawShape[] = [];
+  for (const c of o.carries ?? []) marks.push(...handRow(c.digit, R - c.place * digitPitch - digitPitch * 0.25, top - size * 0.55, size * 0.45, seed0 + 20));
+  if (o.borrow) {
+    const cx = R - (o.borrow.place + 0.5) * digitPitch;
+    marks.push(drawShapeFromPoints(sampleLine({ x: cx + digitPitch * 0.35, y: top - 3 }, { x: cx - digitPitch * 0.35, y: top + size * 0.7 })));
+    if (o.borrow.digit) marks.push(...handRow(o.borrow.digit, cx + digitPitch * 0.3, top - size * 0.55, size * 0.45, seed0 + 21));
+  }
+  return { rows: rowInk, rule, answer: ans, marks, all: [...rowInk.flat(), rule, ...ans, ...marks] };
 }

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FlaskConical, InfinityIcon, UserRound } from "lucide-react";
+import { ChartColumn, FlaskConical, InfinityIcon, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthProvider";
@@ -71,7 +71,7 @@ function UnlimitedLink() {
 
 /**
  * The app bar for signed-in pages: product name and the beta badge on the left; Report a bug,
- * the ink meter and the account menu (Account, Feature Labs, Sign out) on the right. Self-contained
+ * the ink meter and the account menu (Progress, Account, Feature Labs, Sign out) on the right. Self-contained
  * (reads the session and the ink summary itself), so any page can drop it in above an
  * `APP_CONTENT_CLASS` container.
  * The menu is Arc's UserMenu: a panel on desktop, a bottom sheet below 640 px.
@@ -116,6 +116,12 @@ export function AppHeader({ className }: { className?: string }) {
               showName
               showTheme={false}
               items={[
+                {
+                  // the path only: importing the Progress page's modules here would load them on every page
+                  label: "Progress",
+                  icon: <ChartColumn size={16} strokeWidth={1.75} />,
+                  onSelect: () => router.push("/progress"),
+                },
                 {
                   label: "Account",
                   icon: <UserRound size={16} strokeWidth={1.75} />,

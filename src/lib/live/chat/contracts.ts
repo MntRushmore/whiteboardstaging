@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { FigureSpecSchema } from "../figureDraw/contracts";
+import { LearnerHintSchema } from "@/lib/learning/hint";
 
 /**
  * The board chat (POST /api/live/chat): a student or teacher types a request — "5 two-step
@@ -112,6 +113,8 @@ export const ChatRequestSchema = z.object({
    * six turns after the problem was asked): what "it" is.
    */
   problem: z.string().trim().min(1).max(CHAT_LIMITS.problem).optional(),
+  /** what the tutor knows about this student: "practice my weak spots" and recurring mistakes */
+  learner: LearnerHintSchema.optional(),
 });
 export type ChatRequest = z.input<typeof ChatRequestSchema>;
 

@@ -84,11 +84,13 @@ import {
   handSeedFor,
   handSizeFor,
   inlineHandSizeFor,
+  joinHandPlans,
   placeHandPlan,
   placeHandPlanOnBaseline,
   planFromStrokes,
   planHandwriting,
   wallMsOf,
+  HAND_PART_META,
   HAND_WRITE,
   type HandPlan,
   type HandWriteOptions,
@@ -128,6 +130,8 @@ import { assignColumns, clusterLines, inkScale, rebuildFromMathShapes, unionRect
 import { buildPayload, hashPayload } from "./strokePayload";
 import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
+import { nextStep as stackNextStep, parseStacked, placesLeft, rowPlaces, workStacked, type StackedWork } from "./engine/columnArithmetic";
+import { stackGrid, stackGroups, type StackGrid, type StackedSum } from "./stackedSums";
 import { parseDomainPiece } from "./engine/domain";
 import { figureAnswer, isValueLabel, labelKey, looksLikeUnknown } from "./figure";
 import { HAND_LINE_META } from "./handwriting";
@@ -163,6 +167,11 @@ import { appendHeard, LECTURE_BLOCK_META, LECTURE_PAGE_META } from "./lecture/me
 // proof check (a lazy chunk) uses — through the index it would land in the board's first load
 import { planFigure as defaultPlanFigure } from "./figureDraw/plan";
 import type { FigurePlanOptions, FigurePlanResult, FigureSpec } from "./figureDraw/contracts";
+// the learning record: the bus (tiny, no imports) and the mistake kinds only; the tracker that
+// listens is loaded after the board (`src/lib/learning/boardLearning.ts`)
+import { learningBus } from "@/lib/learning/bus";
+import { MISTAKE_KINDS } from "@/lib/learning/hint";
+import type { ChatRunOrigin, LearningSignal, LineMark } from "@/lib/learning/contracts";
 
 /**
  * The client live loop (spec §6). Everything the hook does lives here so it can be
@@ -451,11 +460,49 @@ const OPERATION_RESULT_META = "operationResult";
  * line, and any values it was evaluated at, that it was written for (`answerSourceOf`)
  */
 const NEXT_STEP_META = "nextStepFor";
+/**
+ * On the digits the tutor writes into a stacked sum (`writeStackDigits`): the sum they belong to —
+ * its operator and numbers (`stackKey`) — and, per digit, where it is (`HAND_PART_META`: `a2` the
+ * answer's hundreds, `c2` a carry over them, `f2` a right digit under a wrong one). A column the
+ * tutor wrote is not written again, and a sum rewritten takes the tutor's digits with it.
+ */
+const STACK_META = "stackFor";
+/**
+ * A wrong digit in a stacked sum is ringed only on a read this sure of it: a child's sum ringed for
+ * a digit Mathpix misread is worse than one left unmarked (the second reader, which re-reads a line
+ * before its ring, reads one line, not a block). Mathpix read every stacked block at ~1.
+ */
+const STACK_RING_CONFIDENCE = 0.85;
+/** between two digits of a stacked sum the tutor writes, a beat (not a whole line's pause) */
+const STACK_DIGIT_GAP_MS = 200;
+/**
+ * A read that is a stacked sum's last row over its answer, read as a fraction: no one writes a
+ * fraction whose numerator starts with `+` or `x` — `\frac{+680}{966}` is `+ 680` over a rule over
+ * `966`. Should `stackedSums.ts` ever miss the layout, the line is still never answered as a
+ * fraction (`= 0.7039`): it is treated as a stacked sum this cannot work, quiet.
+ */
+const MISREAD_STACK = /^\s*\\frac\s*\{\s*(?:\+|\\times(?![a-zA-Z])|\\cdot(?![a-zA-Z]))/;
 /** on the strokes of a tutor's mark (tick / ring / question mark): its `markKey` */
 const MARK_META = "mark";
 /** on a question mark's strokes: why the tutor put it there (`UnjudgedReason`) */
 const MARK_WHY_META = "markWhy";
 const ANSWER_ANCHORS_META = "answerAnchors";
+
+/** A stacked sum on the board, worked (`LiveLoop.stackWork`). */
+interface StackState {
+  sum: StackedSum;
+  grid: StackGrid;
+  work: StackedWork;
+  /** its operator and numbers: what the tutor's digits in it belong to (`STACK_META`) */
+  key: string;
+}
+
+/** A digit the tutor writes into a stacked sum: on the answer row (`a`), as a carry (`c`), under a wrong answer (`f`). */
+interface StackItem {
+  row: "a" | "c" | "f";
+  place: number;
+  digit: string;
+}
 
 function metaString(meta: unknown, key: string): string {
   if (typeof meta !== "object" || meta === null) return "";
@@ -606,6 +653,18 @@ function defaultDeps(): LiveLoopDeps {
 
 /** A line of a two-column proof, to the line-by-line paths: nothing to compute, ring or answer (`ProofDesk` marks it). */
 const PROOF_LINE: LineAnalysis = { kind: "label", math: "", resultLatex: "", verdict: "none", note: "" };
+
+/** Where the problems a chat run writes come from when its caller does not say (`runChatActions`). */
+const CHAT_PROBLEM_ORIGIN: ChatRunOrigin = { origin: "tutor_problem" };
+/** The most of each thing the learning record remembers per session (lines, keys, problems told). */
+const LEARN_MEMORY = 2000;
+/** Line kinds that are not a problem's statement: its head line is the first line of another kind (`learnProblemOf`). */
+const LEARN_NOT_HEAD: ReadonlySet<LineKind> = new Set<LineKind>(["label", "unknown", "operation"]);
+
+/** Forgets the oldest entries past `max` (a Map or a Set keeps insertion order). */
+function forgetOldest(memory: Set<string> | Map<string, unknown>, max = LEARN_MEMORY): void {
+  while (memory.size > max) memory.delete(memory.keys().next().value as string);
+}
 
 function newLineState(line: InkLine): LiveLineState {
   return {
@@ -782,6 +841,8 @@ export class LiveLoop implements LiveController {
   private tableStrokeIds = new Set<string>();
   /** division bars under an equation (`splitInk`): a line holding one is read as `\div n` */
   private barStrokeIds = new Set<string>();
+  /** the stacked sums on this screen (`splitInk`, `stackedSums.ts`): each one line of its own, worked by `stackWork` */
+  private stacks: StackedSum[] = [];
   /** marks on a drawing (`splitInk` role `mark`: an angle arc, a right-angle box, a tick): a figure's (`isRealFigure`) */
   private markStrokeIds = new Set<string>();
   /** Help waiting for the latest line's read to land before it acts (`helpAfterRead`) */
@@ -832,6 +893,26 @@ export class LiveLoop implements LiveController {
    * transcript does not make the autosave upload the whole board after every sentence.
    */
   private readonly pendingPageMeta = new Map<string, { patch: Partial<LecturePageMeta>; timer: ReturnType<typeof setTimeout> | null }>();
+
+  // ---- the learning record (`src/lib/learning`, `learningBus`): what this loop tells it
+  /** the problem key each student line was given (`learnKeyFor`); a line keeps its key for the session */
+  private readonly learnKeys = new Map<string, string>();
+  /** what the record was last told about each line (`learnLine`): a line says something only when that changes */
+  private readonly learnSent = new Map<string, string>();
+  /**
+   * Lines whose ink was read in this session (`applyRecognition`, a retype): new work. A line brought
+   * back from its readback (a load, a screen switch) is not, until a line of its problem is.
+   */
+  private readonly learnFresh = new Set<string>();
+  /** the chat's problems the record was told about, by problem key (`learnProblemWritten`) */
+  private readonly learnProblems = new Set<string>();
+  /**
+   * The origin of each chat run asked for and not yet finished, oldest first (`runChatActions`): runs
+   * are written one at a time, in order, so the run being written is always the first here.
+   */
+  private readonly chatOrigins: ChatRunOrigin[] = [];
+  /** Auto is acting (`autoRun`): what is written meanwhile is Auto's */
+  private learnAuto = false;
 
   constructor(editor: LiveEditorLike, opts: UseLiveMathOptions, deps: Partial<LiveLoopDeps> = {}) {
     this.editor = editor;
@@ -910,6 +991,8 @@ export class LiveLoop implements LiveController {
     if (liveStore.retryHandler.get() === this.retryHandler) liveStore.retryHandler.set(null);
     if (liveStore.finishWriting.get() === this.finishWritingHandler) liveStore.finishWriting.set(null);
     this.resetRetry();
+    // the board is closed: the problems on it are over, as far as the learning record goes
+    this.learn({ type: "closed", at: this.deps.now(), boardId: this.opts.boardId });
   }
 
   /**
@@ -962,6 +1045,7 @@ export class LiveLoop implements LiveController {
     this.dismissedFigures.clear();
     this.figuresInFlight.clear();
     this.diagrams = [];
+    this.stacks = [];
     this.labelReading.clear();
     this.labelsOf.clear();
     this.lastTouchedDiagramId = null;
@@ -1017,6 +1101,8 @@ export class LiveLoop implements LiveController {
     if (!this.started) return;
     this.resetRuntime();
     this.screenSeen = this.pageKey();
+    // the learning record: the problems on the screen the student left are over (for now)
+    this.learn({ type: "screen", at: this.deps.now(), boardId: this.opts.boardId, pageId: this.screenSeen });
     liveStore.lines.set({});
     liveStore.openHints.set([]);
     clearLiveError();
@@ -1217,7 +1303,13 @@ export class LiveLoop implements LiveController {
     if (!cell) return;
     const s = this.problemState(cell);
     if (s.work || (mode === "answer" ? s.solved : s.started)) return;
-    this.workProblem(cell, mode === "answer" ? "solve" : "step");
+    // Auto's, for the learning record: the student moved the dial, nobody asked about this problem
+    this.learnAuto = true;
+    try {
+      this.workProblem(cell, mode === "answer" ? "solve" : "step");
+    } finally {
+      this.learnAuto = false;
+    }
   }
 
   /**
@@ -1434,7 +1526,8 @@ export class LiveLoop implements LiveController {
       if (!inks.some((b) => inkExtendsLine(boxToRect(b), state.line.bounds))) continue;
       // the clustering has the last word on whether this ink is more of the line (`reringUnchanged`)
       rt.unrungStrokes = [...state.line.strokeIds];
-      this.syncMark(state, null);
+      // (the learning record waits for the read of the whole line: this is no verdict)
+      this.syncMark(state, null, undefined, false);
     }
   }
 
@@ -1696,9 +1789,11 @@ export class LiveLoop implements LiveController {
     const prevStates = liveStore.lines.get();
     const prevLines = Object.values(prevStates).map((s) => s.line);
     // what the columns know besides the lines: what fills a gap under one, and which lines were one problem
-    const inLines = new Set<string>([...split.writing.map((s) => s.id), ...split.bars.flatMap((b) => [b.bar, ...b.divisor])]);
+    const inLines = new Set<string>([...split.writing.map((s) => s.id), ...split.bars.flatMap((b) => [b.bar, ...b.divisor]), ...split.stacks.flatMap((s) => s.strokeIds)]);
     const columns = this.columnOptions(inLines);
-    const lines = this.withProblemColumns(clusterLines(split.writing, prevLines, barGroups(split.bars, ink), { zoom: this.boardZoom(), columns }));
+    // a division bar with its divisor, and a stacked sum, are a line each whatever the clusterer makes of them
+    const fixed = [...barGroups(split.bars, ink), ...stackGroups(split.stacks, ink)];
+    const lines = this.withProblemColumns(clusterLines(split.writing, prevLines, fixed, { zoom: this.boardZoom(), columns }));
     this.rememberProblems(lines);
     const nextIds = new Set(lines.map((l) => l.id));
 
@@ -1722,8 +1817,9 @@ export class LiveLoop implements LiveController {
     this.reringUnchanged(lines, force);
 
     // What the student wrote last decides what Help is about: a line they wrote, or else a
-    // drawing (or its labels) they drew.
-    const pen = lines.find((l) => l.strokeIds.some((id) => wrote.has(id)));
+    // drawing (or its labels) they drew. A carry over a stacked sum is that sum's.
+    const carried = split.stacks.find((s) => s.marks.some((id) => wrote.has(id)));
+    const pen = lines.find((l) => l.strokeIds.some((id) => wrote.has(id))) ?? (carried && lines.find((l) => l.strokeIds.includes(carried.rule)));
     if (pen) this.lastTouchedDiagramId = null;
     else if (drawn) this.lastTouchedDiagramId = drawn.id;
     if (pen && this.penStrokeId) this.penLineId = pen.id;
@@ -1749,6 +1845,7 @@ export class LiveLoop implements LiveController {
     this.glyph = split.glyph;
     this.tableStrokeIds = new Set([...split.roles].filter(([, v]) => v.role === "table").map(([id]) => id));
     this.barStrokeIds = new Set(split.bars.map((b) => b.bar));
+    this.stacks = split.stacks;
     this.markStrokeIds = new Set([...split.roles].filter(([, v]) => v.role === "mark").map(([id]) => id));
     for (const d of gone) {
       this.labelsOf.delete(d.id);
@@ -2115,6 +2212,9 @@ export class LiveLoop implements LiveController {
   private async applyRecognition(lineId: string, res: RecognizeResponse, reread: string | null = null): Promise<void> {
     const state = liveStore.lines.get()[lineId];
     if (!state) return;
+    // ink read in this session: new work for the learning record
+    this.learnFresh.add(lineId);
+    forgetOldest(this.learnFresh);
     // a division bar and the number under it: Mathpix drops the bar and reads `2` — the line is
     // "divide both sides by 2" (`engine/operationLine.ts`)
     const read = reread ?? res.latex;
@@ -2146,6 +2246,9 @@ export class LiveLoop implements LiveController {
     const engine = this.engine;
     const hash = line.hash;
     if (!engine || !hash || res.provider !== "mathpix" || this.rereads.has(hash) || !this.deps.isOnline()) return;
+    // a stacked sum is a block, not a line for the second reader; a doubtful read of it stays quiet
+    // (`stackAnalysis`) — and one misread as a fraction is not read again into a "plainer" fraction
+    if (this.stackOf(line) || MISREAD_STACK.test(res.latex)) return;
     const state = liveStore.lines.get()[line.id];
     if (!state || state.latex !== res.latex) return;
     const { above, below } = this.columnNeighbours(state);
@@ -2253,7 +2356,7 @@ export class LiveLoop implements LiveController {
     for (const s of this.columnLines(state.line.column)) {
       if (s.line.row >= state.line.row) break;
       const a = s.analysis;
-      if (!s.latex || !a || a.kind === "label" || a.kind === "incomplete" || a.kind === "unknown" || a.kind === "operation") continue;
+      if (!s.latex || !a || a.kind === "label" || a.kind === "incomplete" || a.kind === "unknown" || a.kind === "operation" || this.stackOf(s.line)) continue;
       previous = s;
     }
     return previous;
@@ -2269,6 +2372,8 @@ export class LiveLoop implements LiveController {
    */
   private holdRing(state: LiveLineState): boolean {
     const lineId = state.line.id;
+    // a stacked sum is judged on its own, not against a line above (its ring needs a sure read instead)
+    if (this.stackOf(state.line)) return false;
     const above = this.previousLine(state);
     if (!above || !above.line.hash || !state.line.hash) return false;
     const key = `${above.line.hash}|${state.line.hash}`;
@@ -2448,7 +2553,8 @@ export class LiveLoop implements LiveController {
     for (const a of this.headAnalyses(state.line.column)) take(a);
     for (const s of col) {
       if (s.line.row >= state.line.row) break;
-      if (!s.latex) continue;
+      // a stacked sum is a problem of its own: no line under it follows from it
+      if (!s.latex || this.stackOf(s.line)) continue;
       take(s.analysis);
     }
     // the values the rest of the column gives its letters, above it or under it (`givens.ts`):
@@ -2883,6 +2989,8 @@ export class LiveLoop implements LiveController {
     if (!this.engine || !state.latex) return null;
     // a proof's statements and reasons are checked as a proof, not one by one
     if (this.proofs.owns(state.line.id)) return PROOF_LINE;
+    // a stacked sum is worked column by column, never as a line (its rule is no fraction bar)
+    if (this.stackLike(state)) return this.stackAnalysis(state);
     try {
       return this.engine.analyzeLine(state.latex, { ...this.columnContext(state), mode: this.opts.mode });
     } catch (e) {
@@ -3131,6 +3239,8 @@ export class LiveLoop implements LiveController {
    * out is finished unasked: `2 \times 2` → `= 4` (`arithmeticAnswer`).
    */
   private autoWorkable(state: LiveLineState, kinds: ReadonlySet<LineKind>): boolean {
+    // a stacked sum: a column left to write, and nothing wrong in it (`stackLeft`)
+    if (this.stackLike(state)) return this.stackLeft(state, kinds === AUTO_STEP_KINDS);
     const a = state.analysis;
     const id = state.line.id;
     if (!a || !kinds.has(a.kind) || a.solved || !this.judgeable(state) || this.reading.has(id) || this.rt.get(id)?.checkAbort) return false;
@@ -3153,7 +3263,13 @@ export class LiveLoop implements LiveController {
   private autoRun(kind: "solve" | "step", target: LiveLineState, act: () => void): void {
     const before = new Map([...this.rt].map(([id, r]) => [id, r.solveAbort]));
     this.autoLines.add(target.line.id);
-    act();
+    // what is written while it acts is Auto's, for the learning record (`learnAutoFor`)
+    this.learnAuto = true;
+    try {
+      act();
+    } finally {
+      this.learnAuto = false;
+    }
     for (const [id, r] of this.rt) if (r.solveAbort && r.solveAbort !== before.get(id)) this.autoLines.add(id);
     clientMetric("live.auto", { kind, mode: this.opts.mode, lineId: target.line.id });
   }
@@ -3183,6 +3299,8 @@ export class LiveLoop implements LiveController {
    * Help acts on — gets its marks now: asking for help is also asking how it is going.
    */
   noteAsked(lineId?: string): void {
+    // the learning record: an explicit ask about this problem (before what it changes below)
+    this.learnAsk(lineId);
     this.autoLines.clear();
     this.askedSinceInk = true;
     if (this.autoOn() || !this.opts.enabled || this.opts.mode === "off") return;
@@ -3230,6 +3348,7 @@ export class LiveLoop implements LiveController {
     this.dropStaleAnswer(state);
     this.dropStaleNextStep(state);
     this.dropStaleOperationResult(state);
+    this.dropStaleStack(state);
     // Its column's graph follows its maths: erased when that changed, sketched when wanted (Solve, settled).
     if (!opts.keepStatus && !decision.capped) this.syncGraph(state.line.column);
     if (!decision.echo) {
@@ -3838,8 +3957,9 @@ export class LiveLoop implements LiveController {
   // ---------------------------------------------------------------- LLM check
   private buildCheckLines(column: number): { lines: CheckLine[]; region: Rect; states: LiveLineState[] } | null {
     // an operation line (`-3 \quad -3`) is not a line of working for a model to check or to
-    // solve from: the line after it follows from the equation above it (`isOperationLine`)
-    const states = this.columnLines(column).filter((s) => s.latex && !isOperationLine(s));
+    // solve from: the line after it follows from the equation above it (`isOperationLine`); a
+    // stacked sum is the engine's alone (`stackAnalysis`), and no line of anyone else's working
+    const states = this.columnLines(column).filter((s) => s.latex && !isOperationLine(s) && !this.stackLike(s));
     if (states.length === 0) return null;
     // a problem the chat wrote at the top of the column is its first line for the model too
     const head = this.columnHeads.get(column);
@@ -3881,6 +4001,9 @@ export class LiveLoop implements LiveController {
     rt.checkAbort?.abort();
     const ctrl = new AbortController();
     rt.checkAbort = ctrl;
+    // what the tutor knows about this student (their weak skills, the mistakes they keep making),
+    // once the board has loaded it (`learningBus`); absent until then, so the request is as it was
+    const learner = learningBus.learner();
     const req: CheckRequest = {
       boardId: this.opts.boardId,
       mode: checkMode,
@@ -3888,6 +4011,7 @@ export class LiveLoop implements LiveController {
       lines: built.lines,
       focusLineId,
       userAsked: opts.userAsked,
+      ...(learner ? { learner } : {}),
     };
     const startedAt = this.deps.now();
     const errCtx = { kind: "check" as const, lineId: focusLineId, userAsked: opts.userAsked };
@@ -3904,7 +4028,7 @@ export class LiveLoop implements LiveController {
               first = false;
               clientMetric("live.check.ttfa.ms", { ms: this.deps.now() - startedAt, lineId: focusLineId });
             }
-            this.applyAnnotation(ev.data, focusLineId);
+            this.applyAnnotation(ev.data, focusLineId, opts.userAsked);
           } else if (ev.event === "error") {
             failed = true;
             console.warn("[live] check error", ev.data);
@@ -3933,7 +4057,7 @@ export class LiveLoop implements LiveController {
    * then writes the right next step by hand once the student has stopped. Praise changes
    * nothing — a tick is only ever what the engine verified.
    */
-  private applyAnnotation(a: Annotation, focusLineId: string): void {
+  private applyAnnotation(a: Annotation, focusLineId: string, userAsked = false): void {
     const lineId = a.lineId ?? focusLineId;
     const state = liveStore.lines.get()[lineId];
     if (!state) return;
@@ -3945,6 +4069,8 @@ export class LiveLoop implements LiveController {
     rt.shownHintTexts.add(a.message);
     this.setEchoNote(lineId, a.message, "warn");
     this.syncMark(state, "circle");
+    // the learning record: the kind of mistake the model saw — and, asked for, its words are a hint
+    this.learnAnnotation(state, a, userAsked);
     this.suggestNextStep(lineId);
   }
 
@@ -4022,6 +4148,8 @@ export class LiveLoop implements LiveController {
         this.dropEcho(lineId);
         this.startHandwriting(plan, lineId, this.answerMeta(state, answer));
         clientMetric("live.answer.hand", { lineId });
+        // the learning record: the tutor answered it — the student's ask, or the settle's (Auto)
+        this.learnInlineAnswer(state);
         return true;
       }
       // Auto off: no answer is coming at the pause (Solve it brings it), so the readback stays
@@ -4103,6 +4231,7 @@ export class LiveLoop implements LiveController {
     if (inline) {
       this.startHandwriting(inline, state.line.id, meta);
       clientMetric("live.nextStep.hand", { lineId: state.line.id });
+      this.learnWrote(state.line.id, "step");
       return true;
     }
     const built = this.buildCheckLines(state.line.column);
@@ -4111,6 +4240,7 @@ export class LiveLoop implements LiveController {
     const opts: SolveOpts = { lineId: state.line.id, onlyFirstStep: true };
     if (!(this.deps.handwritingEnabled() && this.drawStepsByHand(built, opts, state, steps, meta, state))) this.typesetSteps(built, opts, steps, meta, state);
     clientMetric("live.nextStep.under", { lineId: state.line.id });
+    this.learnWrote(state.line.id, "step");
     return true;
   }
 
@@ -4189,10 +4319,13 @@ export class LiveLoop implements LiveController {
     // Everything the engine can answer is written locally — by hand where the hand can draw it,
     // typeset where it cannot — and never asked of a model. `localSolve` makes that decision;
     // it is the same function the maths scoreboard (src/__eval__) measures.
+    const graphBefore = this.graphWriter;
     const local = this.writeLocal(built, opts);
     // A graph is part of the answer: sketched beside the steps once they are written, or on its
     // own — `y = 2x + 1` has no steps, its graph IS the answer, and no model is asked for one.
     const graphed = this.solveGraph(opts, local, built);
+    // the learning record: the tutor wrote something new (not what was on the page already)
+    if (local?.block || (this.graphWriter && this.graphWriter !== graphBefore)) this.learnSolveWritten(opts);
     if (local || graphed) return local && local.steps.length === 0 && !graphed ? "nothing" : "local";
     // A lone expression already as simple as it goes (`2x^{2}`): there is nothing to solve, and a
     // model asked for its "solution" wrote the line back (dropped) or nothing — Solve looked dead.
@@ -4685,6 +4818,8 @@ export class LiveLoop implements LiveController {
     const meta = opts.onlyFirstStep ? undefined : { [SOLVED_META]: key };
     const hand = this.deps.handwritingEnabled();
     if (built) {
+      // the learning record: the tutor's answer about the work (a drawing's own answer is no problem's)
+      this.learnSolveWritten(opts);
       const state = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
       this.clearSolveOutput(built.states.map((s) => s.line.id));
       if (hand && state && this.drawStepsByHand(built, opts, state, lines, meta)) return;
@@ -4959,6 +5094,7 @@ export class LiveLoop implements LiveController {
     }
     // the picture the problem describes, beside the work: only with the whole solution, not a hint
     if (sketch && !opts.onlyFirstStep) this.drawSketch(sketch, built, opts, written, meta);
+    this.learnSolveWritten(opts);
     return true;
   }
 
@@ -5116,9 +5252,12 @@ export class LiveLoop implements LiveController {
     const state = liveStore.lines.get()[opts.lineId] ?? built.states[built.states.length - 1];
     if (opts.problem) {
       // the model's worked solution of a problem the chat wrote: continued after the tutor's own work there
-      this.writeProblemLocal(built, opts, opts.problem, state, steps, liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard);
+      const written = this.writeProblemLocal(built, opts, opts.problem, state, steps, liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard);
+      if (written.block) this.learnSolveWritten(opts);
       return;
     }
+    // the learning record: the model's steps for the student's work, written below
+    this.learnSolveWritten(opts);
     this.clearSolveOutput(built.states.map((s) => s.line.id));
     if (this.deps.handwritingEnabled() && state && this.drawStepsByHand(built, opts, state, steps)) return;
     this.typesetSteps(built, opts, steps);
@@ -5421,10 +5560,13 @@ export class LiveLoop implements LiveController {
    * already on the page that still fits it stays (a tick from before, after a reload), one that no
    * longer fits still goes (a ring on a line they have since put right).
    */
-  private syncMark(state: LiveLineState, kind: MarkKind | null, why?: UnjudgedReason): void {
+  private syncMark(state: LiveLineState, kind: MarkKind | null, why?: UnjudgedReason, learn = true): void {
+    // the learning record hears the mark decided, drawn or not (the hand off, Auto off, the cap)
+    if (learn) this.learnLine(state, kind);
     const lineId = state.line.id;
     const rt = this.runtime(lineId);
-    const want = kind && this.deps.handwritingEnabled() ? markKey(kind, state.line.bounds) : null;
+    const at = kind ? this.markRect(state, kind) : state.line.bounds;
+    const want = kind && this.deps.handwritingEnabled() ? markKey(kind, at) : null;
     if (rt.markKey === want) return;
     rt.markKey = want;
     rt.markWriter?.cancel();
@@ -5451,7 +5593,7 @@ export class LiveLoop implements LiveController {
         this.runtime(lineId).markKey = null;
         return this.markDone(lineId, null);
       }
-      const plan = planFromStrokes(kind, markStrokes(kind, state.line.bounds, handSeedFor(`${lineId}:${want}`)), HAND_WRITE.minSize);
+      const plan = planFromStrokes(kind, markStrokes(kind, at, handSeedFor(`${lineId}:${want}`)), HAND_WRITE.minSize);
       if (!plan) return this.markDone(lineId, null);
       const writer = this.makeWriter();
       this.runtime(lineId).markWriter = writer;
@@ -5728,6 +5870,8 @@ export class LiveLoop implements LiveController {
           const writer = this.makeWriter();
           this.writer = writer;
           this.writerFor = CHAT_LINE_ID;
+          // the screen the block is written on (the learning record's problem key)
+          const page = this.pageKey();
           // a variable, not a literal: `leadMeta` is a HandWriter option from its next version on
           const options: HandWriteOptions & { leadMeta?: JsonObject } = {
             meta: makeMeta("ai", CHAT_LINE_ID, this.deps.now()),
@@ -5741,6 +5885,8 @@ export class LiveLoop implements LiveController {
                 this.writerFor = null;
               }
               if (leadMeta) this.stampLead(writer, leadMeta);
+              // one of the chat's problems, on the page: the learning record has a new problem
+              this.learnProblemWritten(extraMeta, page, writer);
               // after the write queued with its last strokes (a microtask): then it is on the page
               setTimeout(resolve, 0);
             },
@@ -5761,6 +5907,8 @@ export class LiveLoop implements LiveController {
             } satisfies TLShapePartial<MathShape>,
           ]);
         });
+        // a problem typeset (the hand is off): the learning record has a new problem
+        this.learnProblemWritten(extraMeta, this.pageKey(), null);
         return rect;
       },
       addScreen: () => {
@@ -5930,11 +6078,330 @@ export class LiveLoop implements LiveController {
     return this.chat.picture();
   }
 
-  /** A chat reply's actions, written one block at a time; resolves when the last is on the page. */
-  runChatActions(actions: readonly ChatAction[]): Promise<ChatRunReport> {
+  /**
+   * A chat reply's actions, written one block at a time; resolves when the last is on the page.
+   * `from`: where the problems it writes come from, for the learning record (the board chat's own by
+   * default; the onboarding's starter, a practice board, Now you try say so).
+   */
+  runChatActions(actions: readonly ChatAction[], from?: ChatRunOrigin): Promise<ChatRunReport> {
     // typed into the chat is asked for: what fails is shown, whatever Auto did on those lines
     this.autoLines.clear();
-    return this.chat.run(actions);
+    this.chatOrigins.push(from ?? CHAT_PROBLEM_ORIGIN);
+    const run = this.chat.run(actions);
+    // Its origin goes when it ends — before the next run starts (`ChatDesk.exclusive` chains each on
+    // the one before, and this reaction is queued ahead of that one's start).
+    void run.then(
+      (report) => {
+        this.chatOrigins.shift();
+        this.learnChatRun(actions, report);
+      },
+      () => {
+        this.chatOrigins.shift();
+      },
+    );
+    return run;
+  }
+
+  // ---------------------------------------------------------------- the learning record
+  //
+  // What the board tells the learning tracker (`learningBus`, `src/lib/learning`), at the moments the
+  // loop already knows about: a problem the chat wrote, a line's mark decided or changed, a mistake
+  // the model named, the tutor's help, the tutor finishing a problem, a screen left, the board
+  // closed. Each is cheap, and none is ever thrown into the loop: the record is never worth the board.
+  //
+  // `problemKey` names one problem on one screen, and stays the same while the problem is there:
+  //  - one of the chat's problems: `<page>#cell:<cell key>`. The cell's key is the problem's own hand
+  //    block, on every stroke of it (`readProblemCells`): it outlives the student's work under it,
+  //    the columns being clustered again and a reload, and every line under it is in its column;
+  //  - the student's own: `<page>#ink:<line id>`, the id of its column's head line when the problem
+  //    was first seen. Every line of the column keeps the key it was given (`learnKeys`), and a line
+  //    new to it takes the key of its topmost line that has one: so the key outlives the head being
+  //    rewritten (a new id), lines added, rubbed out or read again, and the column being clustered
+  //    again (a problem's lines stay together, `problemMates`). A problem below a blank gap is a new
+  //    column with a key of its own. Line ids survive a reload (the readback keeps them);
+  //  - a worked solution the chat taught: `<page>#teach:<seed of its steps>`.
+  // Never the tutor's own ink (it is no line), a readback brought back by a load or a screen switch
+  // (`learnFresh`), a proof's rows, or lecture mode's writing.
+
+  /** Tells the learning record (`learningBus`); never throws into the loop. */
+  private learn(signal: LearningSignal): void {
+    try {
+      learningBus.emit(signal);
+    } catch {
+      // the record is never worth the board
+    }
+  }
+
+  /** What is being written for this line is Auto's: it is acting now (`autoRun`), or a solve it started lands. */
+  private learnAutoFor(lineId: string): boolean {
+    return this.learnAuto || this.autoLines.has(lineId);
+  }
+
+  /** The learning record's key for the problem a student line is in (see above). */
+  private learnKeyFor(state: LiveLineState): string {
+    const page = this.pageKey();
+    const head = this.columnHeads.get(state.line.column);
+    if (head) return `${page}#cell:${head.key}`;
+    // a line keeps the key it was given, even in a column clustered together with another problem
+    const own = this.learnKeys.get(state.line.id);
+    if (own) return own;
+    const col = this.columnLines(state.line.column);
+    let key: string | undefined;
+    for (const s of col) {
+      key = this.learnKeys.get(s.line.id);
+      if (key) break;
+    }
+    key ??= `${page}#ink:${(col[0] ?? state).line.id}`;
+    for (const s of col) if (!this.learnKeys.has(s.line.id)) this.learnKeys.set(s.line.id, key);
+    if (!this.learnKeys.has(state.line.id)) this.learnKeys.set(state.line.id, key);
+    forgetOldest(this.learnKeys);
+    return key;
+  }
+
+  /** The problem a line is in, as LaTeX: one of the chat's, or the student's head line (the first that is not a label, an operation or unread). */
+  private learnProblemOf(state: LiveLineState): string[] {
+    const head = this.columnHeads.get(state.line.column);
+    if (head) return [...head.lines];
+    const col = this.columnLines(state.line.column).filter((s) => s.latex);
+    const first = col.find((s) => !LEARN_NOT_HEAD.has(s.analysis?.kind ?? "unknown")) ?? col[0];
+    return first ? [first.latex] : [];
+  }
+
+  /** One of the chat's problems, as the record names it. */
+  private learnCell(cell: ProblemCell): { key: string; problem: string[] } {
+    return { key: `${this.pageKey()}#cell:${cell.key}`, problem: [...cell.lines] };
+  }
+
+  /** The problem `lineId` is in: a line of the student's, or one of the chat's problems (`problem:<key>`, the tutor working it). */
+  private learnTargetOf(lineId: string): { key: string; problem: string[] } | null {
+    const state = liveStore.lines.get()[lineId];
+    if (state) return { key: this.learnKeyFor(state), problem: this.learnProblemOf(state) };
+    const cell = lineId.startsWith("problem:") ? this.problemCells().find((c) => problemLineId(c) === lineId) : undefined;
+    return cell ? this.learnCell(cell) : null;
+  }
+
+  /**
+   * The mark the record takes for a line: the one decided (`syncMark`'s, drawn or not). In Off, or at
+   * the shape cap, the tutor draws no tick or ring at all: then the one its verdict gives, as
+   * Feedback would draw it — a student working with the dial at Off still has a record.
+   */
+  private learnMarkOf(state: LiveLineState, decided: MarkKind | null): LineMark {
+    if (this.opts.mode !== "off" && liveStore.liveShapeCount.get() < LIVE_LIMITS.maxLiveShapesPerBoard) return decided;
+    if (decided === "question") return decided;
+    const badge = badgeFor("feedback", state.analysis);
+    if (badge === "ok" || badge === "solved") return "check";
+    return badge === "warn" || this.modelFlagged(state) ? "circle" : decided;
+  }
+
+  /** A first line under one of the chat's one-line problems: the problem is the line above it. */
+  private learnHeadAbove(state: LiveLineState): string | undefined {
+    const head = this.columnHeads.get(state.line.column);
+    return head && head.lines.length === 1 ? head.lines[0] : undefined;
+  }
+
+  /**
+   * A student line's mark was decided (`syncMark`): the record hears the line when what it says about
+   * it changes — its read, its kind, its mark, whether it is the answer — and only for work of this
+   * session: a line brought back from its readback says nothing until a line of its problem is new.
+   */
+  private learnLine(given: LiveLineState, decided: MarkKind | null): void {
+    try {
+      const state = liveStore.lines.get()[given.line.id];
+      if (!this.started || !state?.latex) return;
+      const id = state.line.id;
+      const mark = this.learnMarkOf(state, decided);
+      const solved = Boolean(state.analysis?.solved) && mark === "check";
+      const kind = state.analysis?.kind ?? "unknown";
+      const problemKey = this.learnKeyFor(state);
+      const said = `${problemKey}\n${state.latex}\n${kind}\n${mark ?? ""}\n${solved}`;
+      // most renders change nothing: they stop here
+      if (this.learnSent.get(id) === said) return;
+      if (this.proofs.owns(id)) return;
+      // a readback stays quiet, and unsent, until a line of its problem is new: then it is told
+      if (!this.learnFresh.has(id) && !this.columnLines(state.line.column).some((s) => this.learnFresh.has(s.line.id))) return;
+      this.learnSent.set(id, said);
+      forgetOldest(this.learnSent);
+      const previous = this.previousLine(state)?.latex ?? this.learnHeadAbove(state);
+      this.learn({
+        type: "line",
+        at: this.deps.now(),
+        boardId: this.opts.boardId,
+        pageId: this.pageKey(),
+        problemKey,
+        problemLatex: this.learnProblemOf(state),
+        lineId: id,
+        latex: state.latex,
+        kind,
+        ...(previous ? { previousLatex: previous } : {}),
+        mark,
+        solved,
+      });
+    } catch {
+      // the record is never worth the board
+    }
+  }
+
+  /** The tutor wrote for a problem: its next step, or the rest of it — which finishes it. */
+  private learnTutor(target: { key: string; problem: string[] } | null, depth: "step" | "solve", auto: boolean): void {
+    if (!target) return;
+    const at = this.deps.now();
+    this.learn({ type: "help", at, problemKey: target.key, help: depth === "step" ? "next_step" : "solve", auto });
+    if (depth === "solve") {
+      this.learn({ type: "tutor_solved", at, boardId: this.opts.boardId, pageId: this.pageKey(), problemKey: target.key, problemLatex: target.problem });
+    }
+  }
+
+  /** The tutor wrote for the problem `lineId` is in (`learnTutor`). */
+  private learnWrote(lineId: string, depth: "step" | "solve", auto: boolean = this.learnAutoFor(lineId)): void {
+    try {
+      this.learnTutor(this.learnTargetOf(lineId), depth, auto);
+    } catch {
+      // the record is never worth the board
+    }
+  }
+
+  /** Solve's paths wrote something new for `opts` (`solveBuilt` and the model's replies): a step (Help), or the rest. */
+  private learnSolveWritten(opts: SolveOpts): void {
+    try {
+      const target = opts.problem ? this.learnCell(opts.problem.cell) : this.learnTargetOf(opts.lineId);
+      this.learnTutor(target, opts.onlyFirstStep ? "step" : "solve", this.learnAutoFor(opts.lineId));
+    } catch {
+      // the record is never worth the board
+    }
+  }
+
+  /** The answer after a line's `=`, written by the tutor (`inlineAnswer`): the line, then the tutor finishing it. */
+  private learnInlineAnswer(state: LiveLineState): void {
+    // the line first: render marks it only after the answer has started
+    this.learnLine(state, null);
+    // asked (Solve it) since the student last wrote, or the settle's own
+    this.learnWrote(state.line.id, "solve", !this.askedSinceInk);
+  }
+
+  /** A graph sketched as Help's answer on a line that is fine: a hint. */
+  private learnHint(lineId: string): void {
+    try {
+      const target = this.learnTargetOf(lineId);
+      if (target) this.learn({ type: "help", at: this.deps.now(), problemKey: target.key, help: "hint", auto: this.learnAutoFor(lineId) });
+    } catch {
+      // the record is never worth the board
+    }
+  }
+
+  /**
+   * A model check rang a line (`applyAnnotation`): the kind of mistake it named, when it is one the
+   * record counts — and, when the student asked for the check, its words (the line's note) are a hint.
+   * A check Auto ran is a mark like the engine's ring, not help.
+   */
+  private learnAnnotation(state: LiveLineState, a: Annotation, userAsked: boolean): void {
+    try {
+      const target = this.learnTargetOf(state.line.id);
+      if (!target) return;
+      const at = this.deps.now();
+      const kind = (MISTAKE_KINDS as readonly string[]).includes(a.kind) ? (a.kind as (typeof MISTAKE_KINDS)[number]) : null;
+      if (kind) this.learn({ type: "mistake", at, problemKey: target.key, lineId: state.line.id, kind, source: "model" });
+      if (userAsked) this.learn({ type: "help", at, problemKey: target.key, help: "hint", auto: false });
+    } catch {
+      // the record is never worth the board
+    }
+  }
+
+  /**
+   * An explicit ask (`noteAsked`: Help me, Solve it, a check, a badge): about the line asked on, else
+   * what Help would act on — the line written last (its problem), or one of the chat's problems.
+   */
+  private learnAsk(lineId?: string): void {
+    try {
+      if (!this.started || !this.opts.enabled || this.opts.mode === "off") return;
+      let target: { key: string; problem: string[] } | null = null;
+      if (lineId) target = this.learnTargetOf(lineId);
+      else if (!this.helpTargetDiagram()) {
+        const line = this.askedLine(this.helpTargetLine());
+        if (line && (this.actsOn(line) || this.columnHeads.has(line.line.column))) target = this.learnTargetOf(line.line.id);
+        else {
+          const pick = this.problemPick(this.opts.mode === "answer" ? "solve" : "step");
+          if (pick && pick.kind !== "none") target = this.learnCell(pick.cell);
+          else if (line) target = this.learnTargetOf(line.line.id);
+        }
+      }
+      if (target) this.learn({ type: "help", at: this.deps.now(), problemKey: target.key, help: "ask", auto: false });
+    } catch {
+      // the record is never worth the board
+    }
+  }
+
+  /** A chat request about one of the chat's problems (`chatHelp`): an ask. */
+  private learnAskCell(cell: ProblemCell): void {
+    try {
+      this.learn({ type: "help", at: this.deps.now(), problemKey: this.learnCell(cell).key, help: "ask", auto: false });
+    } catch {
+      // the record is never worth the board
+    }
+  }
+
+  /**
+   * One of the chat's problems was written (`chatHost.write` / `typeset`, a block carrying its problem
+   * meta): a new problem, from where the run writing it says (`chatOrigins`). Its key is the block's,
+   * read off its strokes once they are on the page (the writer's last write is queued just before).
+   */
+  private learnProblemWritten(meta: JsonObject | undefined, page: string, writer: HandWriter | null): void {
+    try {
+      const p = problemMetaOf(meta);
+      if (!p) return;
+      const at = this.deps.now();
+      const from = this.chatOrigins[0] ?? CHAT_PROBLEM_ORIGIN;
+      const tell = (block: string) => {
+        const problemKey = `${page}#cell:${problemKeyOf(block, p)}`;
+        if (this.learnProblems.has(problemKey)) return;
+        this.learnProblems.add(problemKey);
+        forgetOldest(this.learnProblems);
+        this.learn({
+          type: "problem",
+          at,
+          boardId: this.opts.boardId,
+          pageId: page,
+          problemKey,
+          problemLatex: [...p.lines],
+          origin: from.origin,
+          ...(from.parentId ? { parentId: from.parentId } : {}),
+        });
+      };
+      if (!writer) {
+        tell("");
+        return;
+      }
+      queueMicrotask(() => {
+        try {
+          const block = writer.shapeIds.map((id) => handBlockOf(this.editor.getShape(id)?.meta)).find(Boolean) ?? "";
+          tell(block);
+        } catch {
+          // the record is never worth the board
+        }
+      });
+    } catch {
+      // the record is never worth the board
+    }
+  }
+
+  /** A chat run ended: each worked solution it taught (`teach`) is a problem the tutor solved. */
+  private learnChatRun(actions: readonly ChatAction[], report: ChatRunReport): void {
+    try {
+      actions.forEach((action, i) => {
+        if (action.type !== "teach" || !report.outcomes[i]?.ok) return;
+        const maths = action.steps.flatMap((s) => s.math ?? []);
+        const problem = maths.length > 0 ? [maths[0]] : action.answer ? [action.answer] : [];
+        if (problem.length === 0) return;
+        const page = this.pageKey();
+        const problemKey = `${page}#teach:${handSeedFor(`${JSON.stringify(action.steps).slice(0, 400)}|${action.answer ?? ""}`)}`;
+        const at = this.deps.now();
+        const base = { at, boardId: this.opts.boardId, pageId: page, problemKey, problemLatex: problem };
+        this.learn({ type: "problem", ...base, origin: "teach" });
+        this.learn({ type: "help", at, problemKey, help: "solve", auto: false });
+        this.learn({ type: "tutor_solved", ...base, origin: "teach" });
+      });
+    } catch {
+      // the record is never worth the board
+    }
   }
 
   // ---------------------------------------------------------------- LiveController
@@ -6161,6 +6628,11 @@ export class LiveLoop implements LiveController {
     if (this.opts.mode === "off") return;
     // a proof line is checked by the proof checker (its mark is already there): no model check
     if (this.proofs.owns(target.line.id)) return;
+    // a stacked sum is checked by the engine, column by column: its marks, now (no model is asked)
+    if (this.stackLike(target)) {
+      this.render(target, this.decisionFor(target, { userAsked: true }));
+      return;
+    }
     // Asking means now: a result this line was holding back for the settle is written at once
     // (the mode gate still applies — asking in Feedback asks for feedback, not for the answer).
     if (target.analysis?.resultLatex) this.render(target, this.decisionFor(target, { userAsked: true }));
@@ -6204,6 +6676,11 @@ export class LiveLoop implements LiveController {
     if (!target || !target.latex) return;
     if (this.opts.mode !== "answer") {
       this.requestCheck(target.line.id);
+      return;
+    }
+    // a stacked sum: the digits still missing, in their columns — never a fraction's decimal
+    if (this.stackLike(target)) {
+      if (this.opts.enabled) this.solveStack(target);
       return;
     }
     // A line the student ended with `=` is finished where they left off, not restated under
@@ -6380,8 +6857,11 @@ export class LiveLoop implements LiveController {
     if (this.hasSuggestion(lineId, state.latex) || this.stepInFlight(lineId, state.latex)) return true;
     // its ring is waiting for a second look (`holdRing`): the ring, if it comes, asks again
     if (!opts.now && !opts.typed && this.chainHolds.has(lineId)) return true;
-    const step = this.rightNextStep(state);
-    if (!step) return false;
+    // a stacked sum's step is the right digit, under the wrong one in its column (`stackFix`)
+    const stacked = this.stackOf(state.line) !== null;
+    const fix = stacked ? this.stackFix(state) : null;
+    const step = stacked ? null : this.rightNextStep(state);
+    if (!step && !fix) return false;
     if (!opts.now && !this.settled) {
       this.pendingSuggestions.add(lineId);
       return true;
@@ -6389,6 +6869,14 @@ export class LiveLoop implements LiveController {
     // one pen at a time: a ring still being drawn round the line is finished first
     if (this.afterMark(lineId, () => this.suggestNextStep(lineId, opts))) return true;
     if (liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
+    if (fix) {
+      if (!this.writeStackDigits(state, fix.s, fix.items, { [SUGGEST_META]: state.latex, [STACK_META]: fix.s.key }) || !this.writer) return false;
+      const entry = { writer: this.writer, latex: state.latex, landed: false };
+      this.runtime(lineId).stepWriter = entry;
+      queueMicrotask(() => (entry.landed = true));
+      return true;
+    }
+    if (!step) return false;
     const { plan, unsupported } = planHandwriting([step], { size: handSizeFor(state.line.bounds.h, this.boardZoom()), seed: handSeedFor(`${lineId}:suggest`) });
     if (!plan || unsupported.length > 0) return false;
     const ink = state.line.bounds;
@@ -6407,6 +6895,8 @@ export class LiveLoop implements LiveController {
       meta: makeMeta("ai", lineId, this.deps.now()),
       extraMeta: { [SUGGEST_META]: state.latex },
     });
+    // the learning record: the tutor wrote the step — unasked beside a ring (Auto), or asked (Help, the chat)
+    this.learnWrote(lineId, "step", !opts.now && !opts.typed ? true : this.learnAutoFor(lineId));
     // queued after the writer's first write (live writes are microtasks): from here its strokes are
     // on the page for `hasSuggestion`
     queueMicrotask(() => (entry.landed = true));
@@ -6448,6 +6938,8 @@ export class LiveLoop implements LiveController {
         extraMeta: { [OPERATION_RESULT_META]: result },
       });
       clientMetric("live.operation.result", { lineId: state.line.id });
+      // the learning record: the student's next line, written for them at the pause
+      this.learnWrote(state.line.id, "step", true);
     }
   }
 
@@ -6536,6 +7028,7 @@ export class LiveLoop implements LiveController {
       steps.forEach((step, i) => this.placeSolutionStep(anchor, anchor, i + 1, step, "", lineId, extraMeta));
     }
     clientMetric("live.operation.continue", { lineId, all: opts.all, written, steps: steps.length });
+    this.learnWrote(lineId, opts.all ? "solve" : "step");
     return true;
   }
 
@@ -6552,6 +7045,193 @@ export class LiveLoop implements LiveController {
       const ids = stale.map((s) => s.id).filter((id) => this.editor.getShape(id));
       if (ids.length > 0) this.editor.deleteShapes(ids);
     });
+  }
+
+  // ---------------------------------------------------------------- stacked (column) sums
+  //
+  // `286` over `+ 680`, a rule, `966` under it: one line (`stackedSums.ts`), read as an array and
+  // worked column by column (`engine/columnArithmetic.ts`) — never as a fraction (the `= 0.7039`
+  // the owner saw), never by a model. Marked as any line is, in every mode: a tick after a right
+  // answer, a ring round the first wrong digit (rightmost first) with its note on the readback,
+  // nothing on a partial answer that is right so far. Help writes the next column's digit and its
+  // carry, Solve the digits still missing — in the student's hand, in their columns.
+
+  /** The stacked sum this line is (its rule is one of the line's strokes), or null. */
+  private stackOf(line: InkLine): StackedSum | null {
+    return this.stacks.find((s) => line.strokeIds.includes(s.rule)) ?? null;
+  }
+
+  /** A stacked sum, or a read of one as a fraction (`MISREAD_STACK`): the engine's column work alone, never a line's. */
+  private stackLike(state: LiveLineState): boolean {
+    return this.stackOf(state.line) !== null || MISREAD_STACK.test(state.latex);
+  }
+
+  /**
+   * The stacked sum on this line, worked: the read parsed, its columns found in the ink, the
+   * student's answer judged where its digits sit. Null when the read is not a sum this can work
+   * (long multiplication, a misread, a negative difference) or does not match the ink (a row more
+   * or fewer than Mathpix read).
+   */
+  private stackWork(state: LiveLineState): StackState | null {
+    const sum = this.stackOf(state.line);
+    const read = sum && !sum.more ? parseStacked(state.latex) : null;
+    if (!sum || !read || read.operands.length !== sum.rows.length) return null;
+    const grid = stackGrid(sum, rowPlaces(read));
+    const work = workStacked(read, grid.answerLast === null ? {} : { answerLast: grid.answerLast });
+    return work ? { sum, grid, work, key: `${read.op} ${read.operands.join(" ")}` } : null;
+  }
+
+  /**
+   * A stacked sum's analysis: complete and right is `solved` (a tick); a wrong digit is a `mismatch`
+   * with its note (a ring) — only on a read sure of it (`STACK_RING_CONFIDENCE`); empty or right so
+   * far is nothing yet. A sum this cannot work is `unknown`: read back, never marked, never
+   * answered, never sent to a model.
+   */
+  private stackAnalysis(state: LiveLineState): LineAnalysis {
+    const quiet: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
+    const work = this.stackWork(state)?.work;
+    if (!work) return quiet;
+    const wrong = work.wrong !== -1;
+    if (wrong && state.confidence < STACK_RING_CONFIDENCE) return quiet;
+    return {
+      kind: wrong || work.right ? "equation" : "expression",
+      math: "",
+      resultLatex: "",
+      verdict: wrong ? "mismatch" : work.right ? "ok" : "none",
+      note: work.note,
+      ...(work.right ? { solved: true } : {}),
+    };
+  }
+
+  /** What the tutor has written into this sum already, by row (`STACK_META`, `HAND_PART_META`). */
+  private tutorStackPlaces(state: LiveLineState, key: string): Record<StackItem["row"], Set<number>> {
+    const out = { a: new Set<number>(), c: new Set<number>(), f: new Set<number>() };
+    for (const s of this.editor.getCurrentPageShapes()) {
+      if (!isLiveMeta(s.meta) || s.meta.lineId !== state.line.id || metaString(s.meta, STACK_META) !== key) continue;
+      const m = /^([acf])(\d+)$/.exec(metaString(s.meta, HAND_PART_META));
+      if (m) out[m[1] as StackItem["row"]].add(Number(m[2]));
+    }
+    return out;
+  }
+
+  /**
+   * The sum was rewritten (another number, another operator), or is no sum any more (its rule rubbed
+   * out): the digits the tutor wrote into it go. A read that does not parse for a moment keeps them.
+   */
+  private dropStaleStack(state: LiveLineState): void {
+    const stacked = this.stackOf(state.line) !== null;
+    const read = stacked ? parseStacked(state.latex) : null;
+    if (stacked && !read) return;
+    const key = read ? `${read.op} ${read.operands.join(" ")}` : "";
+    const stale = this.editor
+      .getCurrentPageShapes()
+      .filter((s) => isLiveMeta(s.meta) && s.meta.lineId === state.line.id && metaString(s.meta, STACK_META) !== "" && metaString(s.meta, STACK_META) !== key);
+    if (stale.length === 0) return;
+    this.write(() => {
+      const ids = stale.map((s) => s.id).filter((id) => this.editor.getShape(id));
+      if (ids.length > 0) this.editor.deleteShapes(ids);
+    });
+  }
+
+  /**
+   * Where a line's mark goes: round the line, or after it — and on a stacked sum, round the first
+   * wrong digit where the student wrote it, and after the answer row, level with it.
+   */
+  private markRect(state: LiveLineState, kind: MarkKind): Rect {
+    const sum = kind === "question" ? null : this.stackOf(state.line);
+    const answer = sum?.answer?.rect;
+    if (!answer) return state.line.bounds;
+    if (kind === "check") return { ...answer, w: rectMaxX(state.line.bounds) - answer.x };
+    const s = this.stackWork(state);
+    return (s && s.work.wrong !== -1 && s.grid.answerGlyph(s.work.wrong)) || answer;
+  }
+
+  /** Auto may go on with this stacked sum: read, nothing wrong, and a column (in Suggest: a next column) left. */
+  private stackLeft(state: LiveLineState, step: boolean): boolean {
+    const id = state.line.id;
+    const s = this.reading.has(id) || this.rt.get(id)?.checkAbort ? null : this.stackWork(state);
+    if (!s || s.work.wrong !== -1) return false;
+    const tutor = this.tutorStackPlaces(state, s.key).a;
+    return step ? stackNextStep(s.work, tutor) !== null : placesLeft(s.work, tutor).length > 0;
+  }
+
+  /**
+   * Help on a stacked sum (Help me in Feedback and Suggest, Suggest's stuck pause): a wrong digit
+   * gets the right one under it (`suggestNextStep`, as any ring gets its step); else the next column
+   * — its digit under the rule and the carry it sends over the column on its left, unless the
+   * student carried it already. Nothing on a sum this cannot work, or a doubtful read of one.
+   */
+  private helpStack(state: LiveLineState): void {
+    const s = this.stackWork(state);
+    if (!s) return;
+    if (s.work.wrong !== -1) {
+      if (state.analysis?.verdict === "mismatch") this.suggestNextStep(state.line.id, { now: true });
+      return;
+    }
+    const step = stackNextStep(s.work, this.tutorStackPlaces(state, s.key).a);
+    if (!step) return;
+    const items: StackItem[] = step.digits.map((d) => ({ row: "a", place: d.place, digit: String(d.digit) }));
+    if (step.carry && !s.grid.carried.has(step.carry.place)) items.push({ row: "c", place: step.carry.place, digit: String(step.carry.digit) });
+    this.writeStackDigits(state, s, items, { [STACK_META]: s.key });
+  }
+
+  /**
+   * Solve on a stacked sum: the digits still missing under the rule, right to left, each followed by
+   * the carry it sends on (not one the student wrote, nor over the empty column left of the sum),
+   * and the point of a decimal answer — or, under a wrong answer, the right one on a row under it,
+   * column for column. Nothing when it is all written.
+   */
+  private solveStack(state: LiveLineState): void {
+    const s = this.stackWork(state);
+    if (!s) return;
+    const { work, grid } = s;
+    if (work.wrong !== -1 && state.analysis?.verdict !== "mismatch") return;
+    const tutor = this.tutorStackPlaces(state, s.key);
+    const items: StackItem[] = [];
+    if (work.wrong !== -1) {
+      for (let p = 0; p < work.digits.length; p++) if (!tutor.f.has(p)) items.push({ row: "f", place: p, digit: String(work.digits[p]) });
+    } else {
+      for (const p of placesLeft(work, tutor.a)) {
+        items.push({ row: "a", place: p, digit: String(work.digits[p]) });
+        if (p === work.decimals - 1 && !work.answer.includes(".")) items.push({ row: "a", place: p + 0.5, digit: "." });
+        const carry = work.op === "-" ? 0 : (work.carries[p + 1] ?? 0);
+        if (carry > 0 && p + 1 < work.width && !grid.carried.has(p + 1) && !tutor.c.has(p + 1)) items.push({ row: "c", place: p + 1, digit: String(carry) });
+      }
+    }
+    this.writeStackDigits(state, s, items, { [STACK_META]: s.key });
+  }
+
+  /** The right digit for the first wrong place of a ringed stacked sum (Suggest beside a ring), or null. */
+  private stackFix(state: LiveLineState): { s: StackState; items: StackItem[] } | null {
+    const s = state.analysis?.verdict === "mismatch" ? this.stackWork(state) : null;
+    const p = s?.work.wrong ?? -1;
+    if (!s || p < 0 || p >= s.work.digits.length || this.tutorStackPlaces(state, s.key).f.has(p)) return null;
+    return { s, items: [{ row: "f", place: p, digit: String(s.work.digits[p]) }] };
+  }
+
+  /**
+   * Writes digits into a stacked sum in the student's hand, each centred in its column: on the answer
+   * row (`a`), small over the top row (`c`, a carry), or on a row under the answer (`f`) — one block,
+   * in the order given (right to left, as the sum is done), a beat between digits. False when the
+   * hand is off, cannot draw them, or the shape cap is reached.
+   */
+  private writeStackDigits(state: LiveLineState, s: StackState, items: readonly StackItem[], meta: JsonObject): boolean {
+    if (items.length === 0 || !this.deps.handwritingEnabled() || liveStore.liveShapeCount.get() >= LIVE_LIMITS.maxLiveShapesPerBoard) return false;
+    const { grid } = s;
+    const size = inlineHandSizeFor(grid.digit, this.boardZoom());
+    const seed = handSeedFor(`${state.line.id}:stack`);
+    const plans: HandPlan[] = [];
+    for (const it of items) {
+      const { plan, unsupported } = planHandwriting([it.digit], { size: it.row === "c" ? Math.max(HAND_WRITE.minSize, Math.round(size * 0.55)) : size, seed: seed + plans.length });
+      if (!plan || unsupported.length > 0) return false;
+      const baselineY = it.row === "c" ? grid.carryBaseline : it.row === "f" ? grid.fixBaseline : grid.answerBaseline;
+      plans.push(placeHandPlanOnBaseline(plan, { x: grid.x(it.place) - plan.bounds.w / 2, baselineY }));
+    }
+    const block = joinHandPlans(plans, STACK_DIGIT_GAP_MS, items.map((it) => `${it.row}${it.place}`));
+    if (!block) return false;
+    this.startHandwriting(block, state.line.id, meta);
+    clientMetric("live.stack.write", { lineId: state.line.id, digits: items.length });
+    return true;
   }
 
   private hasSuggestion(lineId: string, latex: string): boolean {
@@ -6588,6 +7268,8 @@ export class LiveLoop implements LiveController {
     const lineId = target.line.id;
     if (this.proofs.ask(lineId, null, { all: false })) return;
     this.closeHintsFor(lineId);
+    // a stacked sum: its next column (or the right digit under a wrong one), from the engine alone
+    if (this.stackLike(target)) return this.helpStack(target);
     const wrong = target.analysis?.verdict === "mismatch" || this.modelFlagged(target);
     if (wrong) {
       if (this.suggestNextStep(lineId, { now: true })) return;
@@ -6604,7 +7286,12 @@ export class LiveLoop implements LiveController {
     if (this.writeNextStep(target)) return;
     // Stuck on a line that is fine: when its work graphs (`y = 2x + 1`, a system, `x > 4`), the
     // graph is the help — sketched from the engine, no model asked. Otherwise the next step.
-    if (this.syncGraph(target.line.column, { asked: true, anchorLineId: lineId })) return;
+    const graphBefore = this.graphWriter;
+    if (this.syncGraph(target.line.column, { asked: true, anchorLineId: lineId })) {
+      // the learning record: a graph sketched as the help is a hint
+      if (this.graphWriter && this.graphWriter !== graphBefore) this.learnHint(lineId);
+      return;
+    }
     this.startSolve(target.line.column, lineId, { onlyFirstStep: true, lineId });
   }
 
@@ -6620,10 +7307,17 @@ export class LiveLoop implements LiveController {
   private chatHelp(n: number, depth: ProblemDepth): "writing" | "done" | "busy" | "missing" {
     const cell = this.problemCells().find((c) => c.n === n);
     if (!cell) return "missing";
+    // the learning record: a chat request about this problem is an ask
+    this.learnAskCell(cell);
     const line = this.workUnder(cell);
     if (!line) return this.workProblem(cell, depth, "chat");
     if (line.analysis?.solved) return "done";
     const column = line.line.column;
+    if (this.stackLike(line)) {
+      if (depth === "solve") this.solveStack(line);
+      else this.helpStack(line);
+      return "writing";
+    }
     if (this.continueOperation(line, { all: depth === "solve" })) return "writing";
     if (depth === "solve") {
       const lastOk = this.columnLines(column)
@@ -6638,7 +7332,11 @@ export class LiveLoop implements LiveController {
       const good = this.lastGoodLineAbove(line);
       if (good) return this.solveColumn(column, good.line.id, { onlyFirstStep: true, lineId: good.line.id });
     }
-    if (this.syncGraph(column, { asked: true, anchorLineId: line.line.id })) return "writing";
+    const graphBefore = this.graphWriter;
+    if (this.syncGraph(column, { asked: true, anchorLineId: line.line.id })) {
+      if (this.graphWriter && this.graphWriter !== graphBefore) this.learnHint(line.line.id);
+      return "writing";
+    }
     return this.solveColumn(column, line.line.id, { onlyFirstStep: true, lineId: line.line.id });
   }
 
@@ -6702,6 +7400,9 @@ export class LiveLoop implements LiveController {
     this.clearErrorsForLine(lineId);
     this.clearAiNote(lineId);
     setLine(lineId, { latex, provider: "typed", edited: true, confidence: latex.trim() ? 1 : 0 });
+    // typed in this session: new work for the learning record
+    this.learnFresh.add(lineId);
+    forgetOldest(this.learnFresh);
     void this.ensureEngine().then(() => {
       if (liveStore.lines.get()[lineId]?.latex !== latex) return;
       this.analyzeAndRender(lineId, { cascade: true });

@@ -378,6 +378,31 @@ export function placeHandPlan(plan: HandPlan, at: { x: number; y: number }): Han
   };
 }
 
+/**
+ * Plans already placed, written one after another as ONE block, `gapMs` apart — a column sum's
+ * digits, each in its own column, its carries small over theirs. `parts[i]` names plan i's lines
+ * (`HandLinePlan.part`, stamped on their strokes). Null with nothing to write.
+ */
+export function joinHandPlans(plans: readonly HandPlan[], gapMs: number, parts: readonly string[] = []): HandPlan | null {
+  const lines: HandLinePlan[] = [];
+  let t = 0;
+  plans.forEach((plan, i) => {
+    for (const l of plan.lines) lines.push({ ...l, startMs: t + l.startMs, ...(parts[i] ? { part: parts[i] } : {}) });
+    t += plan.totalMs + gapMs;
+  });
+  if (lines.length === 0) return null;
+  const x = Math.min(...plans.map((p) => p.bounds.x));
+  const y = Math.min(...plans.map((p) => p.bounds.y));
+  const totalMs = Math.max(0, t - gapMs);
+  return {
+    lines,
+    bounds: { x, y, w: Math.max(...plans.map((p) => p.bounds.x + p.bounds.w)) - x, h: Math.max(...plans.map((p) => p.bounds.y + p.bounds.h)) - y },
+    size: Math.max(...plans.map((p) => p.size)),
+    totalMs,
+    pace: paceFor(totalMs),
+  };
+}
+
 
 /**
  * How many points of each stroke are on the canvas at `localMs` into a line: `0` for a stroke

@@ -11,6 +11,8 @@ import type { TLBaseShape, TLShapeId } from "tldraw";
 import type { ChatAction, ChatRunReport, ChatScreen } from "./chat/contracts";
 import type { LectureAction, LectureRunReport, LectureScreen } from "./lecture/contracts";
 import type { LectureRunOptions } from "./lecture/desk";
+import { LearnerHintSchema } from "@/lib/learning/hint";
+import type { ChatRunOrigin } from "@/lib/learning/contracts";
 
 // 1. Modes, verdicts, kinds -------------------------------------------------
 export const HELP_MODES = ["off", "feedback", "suggest", "answer"] as const;
@@ -444,6 +446,8 @@ export const CheckRequestSchema = z
      * writing). Same size cap as RecognizeRequest's crop. Never on an automatic check.
      */
     crop: z.string().startsWith("data:image/").max(280_000).optional(),
+    /** what the tutor knows about this student (their weak skills, the mistakes they keep making) */
+    learner: LearnerHintSchema.optional(),
   })
   .refine((r) => !r.crop || (r.userAsked && Boolean(r.focusLineId)), {
     message: "crop is only accepted on an explicit request for a focus line",
@@ -808,7 +812,7 @@ export interface LiveController {
    * (problems checked by the engine first). Optional, so a controller double need not have them.
    */
   chatScreen?(): ChatScreen;
-  runChatActions?(actions: readonly ChatAction[]): Promise<ChatRunReport>;
+  runChatActions?(actions: readonly ChatAction[], from?: ChatRunOrigin): Promise<ChatRunReport>;
   /**
    * Lecture mode (`src/lib/live/lecture`): the current screen in words for the director, the
    * director's actions sketched one block at a time (`LectureDesk`), and heard text saved on the

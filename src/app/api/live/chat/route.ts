@@ -86,6 +86,7 @@ export async function POST(req: Request) {
     log,
     async () => {
       const { data: raw, model } = await chatJsonWithFallback(models.chat, models.chatFallback, {
+        // the request as parsed, `learner` (weak skills, recurring mistakes) included
         messages: buildChatMessages(data),
         schema: ChatReplyRawSchema,
         signal: req.signal,
@@ -273,6 +274,7 @@ export async function POST(req: Request) {
           teachesDropped,
           teachChecked,
           problemSent: Boolean(data.problem),
+          learnerWeak: data.learner?.weakSkills.length ?? 0,
           refunded,
           history: data.history.length,
           screenEmpty: data.screen.empty,

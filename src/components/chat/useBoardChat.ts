@@ -1,9 +1,22 @@
 "use client";
 
-import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { LiveController } from "@/lib/live/contracts";
 import { requestChat } from "@/lib/live/chat/client";
-import { chatErrorFor, CHAT_COPY, historyFor, problemFor, runNotes, type ChatMessage } from "./chatView";
+import { learningBus } from "@/lib/learning/bus";
+import {
+  chatErrorFor,
+  CHAT_COPY,
+  historyFor,
+  problemFor,
+  runNotes,
+  WEAK_SPOTS_COPY,
+  weakSpotPractice,
+  weakSpotSkill,
+  type ChatMessage,
+  type PracticeSource,
+  type WeakSpot,
+} from "./chatView";
 
 /**
  * The board chat's state: the messages of each board, kept in memory for the session (closing the
@@ -39,6 +52,13 @@ const nextId = () => `cm_${Date.now().toString(36)}_${++seq}`;
 
 class BoardNotReadyError extends Error {}
 
+/** The practice problems' generators: loaded the first time the chip may show, never with the board. */
+function loadPractice(): Promise<PracticeSource> {
+  return import("@/lib/learning/practiceSet");
+}
+
+const randomSeed = () => Math.floor(Math.random() * 0x7fffffff);
+
 export interface BoardChat {
   messages: ChatMessage[];
   /** a request is in flight or its actions are being written */
@@ -46,6 +66,10 @@ export interface BoardChat {
   send: (text: string) => Promise<void>;
   /** sends a failed request again (its user message and the error are replaced) */
   retry: (messageId: string) => void;
+  /** "Practice my weak spots": the skill a tap would practise, once known; null shows no chip */
+  weakSpot: WeakSpot | null;
+  /** the chip, tapped: problems on that skill, made and written on the device (no model, no ink) */
+  practiceWeakSpots: () => Promise<void>;
 }
 
 /**
@@ -79,7 +103,9 @@ export function useBoardChat(boardId: string, controller: LiveController): Board
         const history = historyFor(before);
         // the problem typed earlier, when the turns sent no longer hold it ("do the actual problem")
         const problem = problemFor(before, history);
-        const res = await requestChat({ boardId, message, history, screen: controller.chatScreen(), ...(problem ? { problem } : {}) });
+        // what the tutor knows about this student (their record), once the board has loaded it
+        const learner = learningBus.learner();
+        const res = await requestChat({ boardId, message, history, screen: controller.chatScreen(), ...(problem ? { problem } : {}), ...(learner ? { learner } : {}) });
         patch(boardId, tutorId, () => ({ text: res.reply, notes: res.notes, state: res.actions.length > 0 ? "writing" : "done" }));
         if (res.actions.length > 0) {
           const report = await controller.runChatActions(res.actions);
@@ -96,6 +122,46 @@ export function useBoardChat(boardId: string, controller: LiveController): Board
     [boardId, controller],
   );
 
+  /**
+   * "Practice my weak spots": the problems are made here (`practice.ts`) and written by the chat's
+   * executor, tagged `practice` for the learning record; the panel shows the chip's words and a
+   * tutor reply as for any request, so the conversation (and "help me with 2") carries on from it.
+   */
+  const practiceWeakSpots = useCallback(
+    async (prior?: ChatMessage[]) => {
+      if (busyRef.current) return;
+      busyRef.current = true;
+      setBusy(true);
+      const before = prior ?? histories.get(boardId) ?? EMPTY;
+      const tutorId = nextId();
+      setHistory(boardId, [...before, { id: nextId(), role: "user", text: WEAK_SPOTS_COPY.chip }, { id: tutorId, role: "tutor", text: "", state: "thinking" }]);
+      const failed = (message: string) =>
+        patch(boardId, tutorId, () => ({ state: "error", error: { kind: "other", message, retry: true }, text: message, retryText: WEAK_SPOTS_COPY.chip, local: "weak_spots" }));
+      try {
+        if (!controller.runChatActions) throw new BoardNotReadyError();
+        const plan = weakSpotPractice(learningBus.learner(), await loadPractice(), randomSeed());
+        if (!plan) {
+          patch(boardId, tutorId, () => ({ text: WEAK_SPOTS_COPY.none, state: "done" }));
+          return;
+        }
+        patch(boardId, tutorId, () => ({ text: WEAK_SPOTS_COPY.reply(plan.problems.length, plan.skill.name), state: "writing" }));
+        const report = await controller.runChatActions([{ type: "write_problems", problems: plan.problems }], { origin: "practice" });
+        if (report.problemsWritten === 0) {
+          failed(WEAK_SPOTS_COPY.failed);
+          return;
+        }
+        // the count the board wrote (one the engine refused is left out, with a note)
+        patch(boardId, tutorId, () => ({ text: WEAK_SPOTS_COPY.reply(report.problemsWritten, plan.skill.name), notes: runNotes(report), state: "done" }));
+      } catch (err) {
+        failed(err instanceof BoardNotReadyError ? CHAT_COPY.errors.board : WEAK_SPOTS_COPY.failed);
+      } finally {
+        busyRef.current = false;
+        setBusy(false);
+      }
+    },
+    [boardId, controller],
+  );
+
   const retry = useCallback(
     (messageId: string) => {
       const cur = histories.get(boardId) ?? EMPTY;
@@ -104,12 +170,43 @@ export function useBoardChat(boardId: string, controller: LiveController): Board
       if (!failed?.retryText) return;
       // the failed ask and its error go; the same words are sent again
       const start = i > 0 && cur[i - 1].role === "user" ? i - 1 : i;
-      void send(failed.retryText, [...cur.slice(0, start), ...cur.slice(i + 1)]);
+      const rest = [...cur.slice(0, start), ...cur.slice(i + 1)];
+      // the chip ran on the device, and so does its retry (typed, the same words go to the model)
+      if (failed.local === "weak_spots") void practiceWeakSpots(rest);
+      else void send(failed.retryText, rest);
     },
-    [boardId, send],
+    [boardId, send, practiceWeakSpots],
   );
 
-  return { messages, busy, send: (text: string) => send(text), retry };
+  // The chip shows among the first suggestions once the student's record names a skill with
+  // practice problems: the generators load then (the chip waits for them), not with the board.
+  // The record loads after the board, so a panel already open picks it up when it arrives.
+  const [weakSpot, setWeakSpot] = useState<WeakSpot | null>(null);
+  const [learner, setLearner] = useState(() => learningBus.learner());
+  useEffect(() => learningBus.onLearner(setLearner), []);
+  const fresh = messages.length === 0;
+  useEffect(() => {
+    if (!fresh || !learner?.weakSkills.length) return;
+    let live = true;
+    loadPractice()
+      .then((practice) => {
+        if (live) setWeakSpot(weakSpotSkill(learner, practice.hasPractice));
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [fresh, learner]);
+
+  return {
+    messages,
+    busy,
+    send: (text: string) => send(text),
+    retry,
+    // only while the hint still names it: a skill mastered since, or another student, drops the chip
+    weakSpot: fresh && weakSpot && learner?.weakSkills.some((s) => s.id === weakSpot.id) ? weakSpot : null,
+    practiceWeakSpots: () => practiceWeakSpots(),
+  };
 }
 
 // ------------------------------------------------------------------ open or closed, per device
