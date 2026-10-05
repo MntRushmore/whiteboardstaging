@@ -4,7 +4,8 @@ import { Suspense, lazy, useEffect, useRef, type ReactNode } from "react";
 import { AlertCircle, Check, Info, Loader2, Mic, Pause, PenLine, Play, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { LECTURE_COPY, lectureBarModel, type LectureBarModel } from "./lectureView";
+import { reportUserError } from "@/lib/reportAppError";
+import { LECTURE_COPY, lectureBarModel, lectureFailureReport, type LectureBarModel } from "./lectureView";
 import { useLectureLive, type LectureHandle } from "./useLecture";
 
 /** Running out of ink: the board dialog's panel, fetched only when a 402 arrives (as in the Ask panel). */
@@ -29,6 +30,14 @@ const OutOfInkPanel = lazy(() => import("@/components/billing/OutOfInkPanel").th
 export function LectureBarPanel({ lecture, raised = false }: { lecture: LectureHandle; raised?: boolean }) {
   const live = useLectureLive(lecture);
   const model = lectureBarModel({ status: lecture.status, error: lecture.error, snap: live?.snapshot ?? null, now: live?.at ?? 0 });
+  // each failure the panel shows, once as it appears (the reporter holds repeats to one a minute)
+  const failure = lectureFailureReport(model, live?.snapshot?.notice);
+  const failureCode = failure?.code ?? null;
+  const failureMessage = failure?.message ?? "";
+  const failureLevel = failure?.level;
+  useEffect(() => {
+    if (failureCode) reportUserError({ kind: "live.lecture", code: failureCode, message: failureMessage, ...(failureLevel ? { level: failureLevel } : {}) });
+  }, [failureCode, failureMessage, failureLevel]);
   if (model.mode === "hidden") return null;
 
   return (

@@ -47,6 +47,7 @@ import {
   type BoardLoadState,
 } from "@/components/BoardLoadError";
 import { logger } from "@/lib/logger";
+import { reportUserError } from "@/lib/reportAppError";
 import { supabase } from "@/lib/supabase";
 import { useParams, useRouter } from "next/navigation";
 import { Bug, MessageSquare } from "lucide-react";
@@ -736,11 +737,13 @@ export default function BoardPage() {
               if (result.failed.length > 0) {
                 logger.warn({ id, failed: result.failed }, "On-load asset offload left images inline");
                 toast.warning(ASSET_COPY.offloadPartial);
+                reportUserError({ kind: "live.image", code: "offload_partial", message: ASSET_COPY.offloadPartial, boardId: id, level: "warn" });
               }
             })
             .catch((e) => {
               logger.warn({ id, error: e instanceof Error ? e.message : String(e) }, "On-load asset offload failed");
               toast.warning(ASSET_COPY.offloadPartial);
+              reportUserError({ kind: "live.image", code: "offload_failed", message: ASSET_COPY.offloadPartial, boardId: id, level: "warn" });
             });
           // The board is a stack of fixed screens: hold the camera on the current one (a page
           // saved before screens gets a screen that fits its existing ink, see ensureScreen).

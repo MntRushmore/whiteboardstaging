@@ -10,6 +10,7 @@ import type { PracticeProblem } from "@/lib/learning/contracts";
 import { initialNowYouTry, NOW_YOU_TRY_COPY, nowYouTryReducer, type Offer } from "@/lib/learning/nowYouTry";
 import type { LiveController } from "@/lib/live/contracts";
 import { clientMetric } from "@/lib/logger";
+import { reportUserError } from "@/lib/reportAppError";
 import { BOTTOM_UI_SELECTOR } from "@/components/live/hintPlacement";
 
 /**
@@ -115,10 +116,14 @@ export default function NowYouTry({ controller, tour }: NowYouTryProps) {
       try {
         if (!controller.runChatActions) throw new Error("The board is not ready yet.");
         const report = await controller.runChatActions([{ type: "write_problems", problems: [[...o.problem]] }], { origin: "now_you_try", parentId: o.attemptId });
-        if (report.problemsWritten === 0) toast(NOW_YOU_TRY_COPY.failed);
+        if (report.problemsWritten === 0) {
+          toast(NOW_YOU_TRY_COPY.failed);
+          reportUserError({ kind: "live.practice", code: "now_you_try_none_written", message: NOW_YOU_TRY_COPY.failed });
+        }
       } catch (e) {
         clientMetric("learning.now_you_try.failed", { error: e instanceof Error ? e.message : String(e) });
         toast(NOW_YOU_TRY_COPY.failed);
+        reportUserError({ kind: "live.practice", code: controller.runChatActions ? "now_you_try_failed" : "now_you_try_board_not_ready", message: NOW_YOU_TRY_COPY.failed });
       }
     },
     [controller],

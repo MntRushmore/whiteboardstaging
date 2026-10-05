@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { Check, LoaderCircle } from "lucide-react";
 import { atom, useValue } from "tldraw";
-import type { SyncState } from "@/lib/sync";
+import type { UserErrorInput } from "@/lib/clientErrors";
+import { reportUserError } from "@/lib/reportAppError";
+import { MSG_BOARD_GONE, MSG_MERGE_FAILED, MSG_SAVE_FAILED, MSG_SAVE_TIMEOUT, type SyncState } from "@/lib/sync";
 import { ASSET_COPY } from "./copy";
 
 /**
@@ -80,6 +82,57 @@ export function saveStatusViewFor(state: SyncState, savedVisible: boolean): Save
   }
 }
 
+/** The save queue's own words for a failed write -> its code for the admin page. */
+const SAVE_FAILURE_CODES: ReadonlyArray<[string, string]> = [
+  [MSG_SAVE_TIMEOUT, "timeout"],
+  [MSG_BOARD_GONE, "gone"],
+  [MSG_MERGE_FAILED, "merge_failed"],
+  [MSG_SAVE_FAILED, "save_failed"],
+];
+/** What a refused save says (`refused`), when it is our own copy -> its code. */
+const SAVE_REFUSED_CODES: ReadonlyArray<[string, string]> = [
+  [ASSET_COPY.boardTooLarge, "too_large"],
+  [ASSET_COPY.boardFull, "board_full"],
+  ["This board is too large to save.", "too_large"],
+];
+
+/**
+ * A save failure the pill shows in red, as the admin page hears of it (`live.save`), or null for
+ * anything else (saved, saving, merging, plain offline: the student's own connection, not ours).
+ * Only our own words are sent: the queue's message for a failed write can be the database's raw
+ * error, so it becomes a code — the queue's known failures by name, a PostgREST/Postgres error by
+ * its code (`pg_42501`, `pg_pgrst301`), anything else `save_failed` — under the pill's "Couldn't save".
+ */
+export function saveErrorReport(state: Pick<SyncState, "status" | "message" | "backupFailed">): UserErrorInput | null {
+  const message = state.message ?? "";
+  switch (state.status) {
+    case "error": {
+      const known = SAVE_FAILURE_CODES.find(([m]) => m === message)?.[1];
+      const pg = /\(code: ([\w.-]{1,30})\)$/.exec(message)?.[1];
+      const code = known ?? (pg ? `pg_${pg}` : "save_failed");
+      return { kind: "live.save", code: state.backupFailed ? `${code}_no_backup` : code, message: SAVE_STATUS_COPY.error };
+    }
+    case "refused": {
+      const known = SAVE_REFUSED_CODES.find(([m]) => m === message);
+      return known ? { kind: "live.save", code: known[1], message: known[0] } : { kind: "live.save", code: "refused", message: SAVE_STATUS_COPY.error };
+    }
+    case "offline":
+      // offline is the student's connection; offline with no backup on the device (its storage is
+      // full) puts their work at risk
+      return state.backupFailed ? { kind: "live.save", code: "offline_no_backup", message: SAVE_STATUS_COPY.offlineNotBackedUp, level: "warn" } : null;
+    default:
+      return null;
+  }
+}
+
+/** Reports each red state of the pill once as it appears (and the reporter's dedupe holds repeats to one a minute). */
+function useReportSaveError({ status, message, backupFailed }: SyncState): void {
+  useEffect(() => {
+    const report = saveErrorReport({ status, message, backupFailed });
+    if (report) reportUserError(report);
+  }, [status, message, backupFailed]);
+}
+
 const TONE_CLASS: Record<SaveStatusTone, string> = {
   neutral: "border-gray-200 bg-white text-gray-600",
   amber: "border-amber-200 bg-amber-50 text-amber-800",
@@ -125,6 +178,7 @@ export function saveStatusIcon(view: SaveStatusView): "saved" | "busy" | null {
 
 export function SaveStatus({ sync, onRetry }: SaveStatusProps) {
   const savedVisible = useSavedVisible(sync);
+  useReportSaveError(sync);
   const view = saveStatusViewFor(sync, savedVisible);
   if (!view) return null;
   const icon = saveStatusIcon(view);

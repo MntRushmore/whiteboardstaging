@@ -9,6 +9,7 @@ import {
   type TLShapeId,
   type VecLike,
 } from "tldraw";
+import { reportUserError } from "@/lib/reportAppError";
 
 /**
  * The board's handler for files pasted, dropped or inserted (tldraw's `files` external content).
@@ -116,5 +117,9 @@ export async function addImageFiles(
       }
     }),
   );
-  if (failed > 0) notify(ADD_IMAGE_COPY.failed);
+  if (failed > 0) {
+    notify(ADD_IMAGE_COPY.failed);
+    // the upload failed (storage, not the student's file): the admin page hears of it
+    reportUserError({ kind: "live.image", code: "upload_failed", message: ADD_IMAGE_COPY.failed });
+  }
 }

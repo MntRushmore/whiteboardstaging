@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, ExternalLink } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthProvider";
@@ -12,6 +12,7 @@ import { PACKS_COPY, allComingSoon, packCardsFor, parseInkPacks, type InkPack } 
 import { ACCOUNT_PATH, bottleFill, inkTone } from "@/lib/billing/inkSummary";
 import { billingLinks } from "@/lib/billing/links";
 import { OUT_OF_INK_COPY, inkArrived, inkPanelMood } from "@/lib/billing/outOfInk";
+import { reportUserError } from "@/lib/reportAppError";
 import { useInkSummary, watchInkCheckout } from "@/lib/billing/useInkSummary";
 import { cn } from "@/lib/utils";
 
@@ -54,6 +55,11 @@ export function OutOfInkPanel({
   const { summary } = useInkSummary();
   const read = useCallback(() => readPacks(), []);
   const { state: packs } = useSection<InkPack[]>(read, true, PACKS_COPY.loadFallback);
+  // the packs would not load: a student who wants ink sees none to buy (the admin page hears of it)
+  const packsFailed = packs.status === "error";
+  useEffect(() => {
+    if (packsFailed) reportUserError({ kind: "live.ink", code: "packs_load_failed", message: PACKS_COPY.loadFailedTitle });
+  }, [packsFailed]);
   const links = payerLinks(billingLinks(), user ? { userId: user.id, email: user.email } : null);
   const cards = packCardsFor(packs.data ?? [], links);
   const inline = variant === "inline";

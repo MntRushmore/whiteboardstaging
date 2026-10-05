@@ -54,7 +54,7 @@ export function PurchaseHistory({ purchases }: { purchases?: number }) {
             ))}
           </div>
         ) : state.status === "error" && !state.data ? (
-          <SectionError title={PURCHASES_COPY.failedTitle} message={state.error} onRetry={retry} />
+          <SectionError kind="live.ink" code="purchases_load_failed" title={PURCHASES_COPY.failedTitle} message={state.error} onRetry={retry} />
         ) : lines.length === 0 ? (
           <div className="rounded-lg border border-dashed px-4 py-6 text-center" data-state="empty">
             <p className="text-sm font-medium">{PURCHASES_COPY.empty}</p>
@@ -76,7 +76,7 @@ export function PurchaseHistory({ purchases }: { purchases?: number }) {
             ))}
           </ul>
         )}
-        {state.status === "error" && state.data && <SectionError className="mt-3" title={PURCHASES_COPY.failedTitle} message={state.error} onRetry={retry} />}
+        {state.status === "error" && state.data && <SectionError className="mt-3" kind="live.ink" code="purchases_load_failed" title={PURCHASES_COPY.failedTitle} message={state.error} onRetry={retry} />}
       </CardContent>
     </Card>
   );
