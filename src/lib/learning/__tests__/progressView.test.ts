@@ -339,6 +339,10 @@ describe("for grown-ups", () => {
     expect(text).toContain("A good one to practice next: Factoring.");
     expect(text.match(/Two-step equations/g)).toHaveLength(1);
   });
+  it("names a slip only once it has happened twice", () => {
+    expect(grownUpsSummary({ ...base, mistakes: [{ kind: "both_sides", count: 1 }] })).not.toMatch(/tripping/);
+    expect(grownUpsSummary({ ...base, mistakes: [{ kind: "both_sides", count: 2 }] })).toMatch(/Keeps tripping on/);
+  });
   it("stays short", () => {
     const text = grownUpsSummary(base);
     expect(text.split(/(?<=\.)\s/).length).toBeLessThanOrEqual(5);
