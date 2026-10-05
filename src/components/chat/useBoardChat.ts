@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { isApiError } from "@/lib/api-client";
+import type { UserErrorInput } from "@/lib/clientErrors";
 import type { LiveController } from "@/lib/live/contracts";
+import type { ChatRunReport } from "@/lib/live/chat/contracts";
 import { requestChat } from "@/lib/live/chat/client";
 import { learningBus } from "@/lib/learning/bus";
 import {
@@ -13,10 +16,12 @@ import {
   WEAK_SPOTS_COPY,
   weakSpotPractice,
   weakSpotSkill,
+  type ChatError,
   type ChatMessage,
   type PracticeSource,
   type WeakSpot,
 } from "./chatView";
+import { reportUserError } from "@/lib/reportAppError";
 
 /**
  * The board chat's state: the messages of each board, kept in memory for the session (closing the
@@ -51,6 +56,31 @@ let seq = 0;
 const nextId = () => `cm_${Date.now().toString(36)}_${++seq}`;
 
 class BoardNotReadyError extends Error {}
+
+/**
+ * A failed ask as the admin page hears of it (`live.chat`): the panel's own words and a code — the
+ * chat error's kind, or for the rest the API's error code (a 5xx is `upstream`), `board_not_ready`
+ * before the board is up. Never what the student asked.
+ */
+export function chatFailureReport(error: ChatError, err: unknown, boardId?: string): UserErrorInput {
+  let code: string = error.kind;
+  if (err instanceof BoardNotReadyError) code = "board_not_ready";
+  else if (error.kind === "other") code = isApiError(err) ? (err.status >= 500 ? "upstream" : err.code || `http_${err.status}`) : "unknown";
+  return { kind: "live.chat", code, message: error.message, ...(boardId ? { boardId } : {}) };
+}
+
+/**
+ * The tutor's notes on a run that say something it promised could not be done ("I couldn't graph
+ * that.", "2 of 5 problems couldn't be checked…"), as warnings for the admin page (`live.chat`,
+ * `note_<action>`). Not the notes about the board or the student ("There's no room left", "I'm
+ * still writing on problem 2"): those are not failures.
+ */
+export function chatNoteReports(report: ChatRunReport | null, boardId?: string): UserErrorInput[] {
+  if (!report) return [];
+  return report.outcomes
+    .filter((o): o is typeof o & { note: string } => typeof o.note === "string" && /\bcouldn't\b/i.test(o.note))
+    .map((o) => ({ kind: "live.chat" as const, code: `note_${o.type}`, message: o.note, level: "warn" as const, ...(boardId ? { boardId } : {}) }));
+}
 
 /** The practice problems' generators: loaded the first time the chip may show, never with the board. */
 function loadPractice(): Promise<PracticeSource> {
@@ -110,10 +140,12 @@ export function useBoardChat(boardId: string, controller: LiveController): Board
         if (res.actions.length > 0) {
           const report = await controller.runChatActions(res.actions);
           patch(boardId, tutorId, (m) => ({ notes: [...new Set([...(m.notes ?? []), ...runNotes(report)])], state: "done" }));
+          for (const note of chatNoteReports(report, boardId)) reportUserError(note);
         }
       } catch (err) {
         const error = err instanceof BoardNotReadyError ? { kind: "other" as const, message: CHAT_COPY.errors.board, retry: true } : chatErrorFor(err);
         patch(boardId, tutorId, () => ({ state: "error", error, text: error.message, retryText: message }));
+        reportUserError(chatFailureReport(error, err, boardId));
       } finally {
         busyRef.current = false;
         setBusy(false);
@@ -135,8 +167,10 @@ export function useBoardChat(boardId: string, controller: LiveController): Board
       const before = prior ?? histories.get(boardId) ?? EMPTY;
       const tutorId = nextId();
       setHistory(boardId, [...before, { id: nextId(), role: "user", text: WEAK_SPOTS_COPY.chip }, { id: tutorId, role: "tutor", text: "", state: "thinking" }]);
-      const failed = (message: string) =>
+      const failed = (message: string, code: string) => {
         patch(boardId, tutorId, () => ({ state: "error", error: { kind: "other", message, retry: true }, text: message, retryText: WEAK_SPOTS_COPY.chip, local: "weak_spots" }));
+        reportUserError({ kind: "live.chat", code, message, boardId });
+      };
       try {
         if (!controller.runChatActions) throw new BoardNotReadyError();
         const plan = weakSpotPractice(learningBus.learner(), await loadPractice(), randomSeed());
@@ -147,13 +181,14 @@ export function useBoardChat(boardId: string, controller: LiveController): Board
         patch(boardId, tutorId, () => ({ text: WEAK_SPOTS_COPY.reply(plan.problems.length, plan.skill.name), state: "writing" }));
         const report = await controller.runChatActions([{ type: "write_problems", problems: plan.problems }], { origin: "practice" });
         if (report.problemsWritten === 0) {
-          failed(WEAK_SPOTS_COPY.failed);
+          failed(WEAK_SPOTS_COPY.failed, "weak_spots_none_written");
           return;
         }
         // the count the board wrote (one the engine refused is left out, with a note)
         patch(boardId, tutorId, () => ({ text: WEAK_SPOTS_COPY.reply(report.problemsWritten, plan.skill.name), notes: runNotes(report), state: "done" }));
       } catch (err) {
-        failed(err instanceof BoardNotReadyError ? CHAT_COPY.errors.board : WEAK_SPOTS_COPY.failed);
+        if (err instanceof BoardNotReadyError) failed(CHAT_COPY.errors.board, "board_not_ready");
+        else failed(WEAK_SPOTS_COPY.failed, "weak_spots_failed");
       } finally {
         busyRef.current = false;
         setBusy(false);

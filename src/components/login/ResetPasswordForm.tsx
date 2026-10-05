@@ -11,7 +11,8 @@ import { Alert } from "@/registry/components/alert/alert";
 import { Button } from "@/registry/components/button/button";
 import { PasswordField } from "@/registry/components/password-field/password-field";
 import { Skeleton } from "@/registry/components/skeleton/skeleton";
-import { loginErrorField, loginErrorMessage } from "@/lib/loginErrorMessage";
+import { loginErrorField, loginErrorMessage, loginFailureReport } from "@/lib/loginErrorMessage";
+import { reportUserError } from "@/lib/reportAppError";
 import { AUTH_FORM_METHOD, FORM_COPY, RESET_LINK_COPY, hashHasAuthError, validateNewPassword } from "@/lib/loginForm";
 import styles from "./auth.module.css";
 
@@ -65,6 +66,8 @@ export function ResetPasswordForm() {
       const message = loginErrorMessage(error);
       if (loginErrorField(error) === "password") setFieldError(message);
       else setFormError(message);
+      const failure = loginFailureReport(error, "reset");
+      if (failure) reportUserError(failure);
       passwordRef.current?.focus();
     } finally {
       setSubmitting(false);

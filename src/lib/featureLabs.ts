@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthProvider";
 import { describeError } from "@/lib/errorMessage";
+import { reportUserError } from "@/lib/reportAppError";
 import {
   FEATURE_SAVE_FAILED_MESSAGE,
   FEATURE_SAVE_FAILED_TOAST,
@@ -164,6 +165,7 @@ export function useFeatureLabs() {
           message: describeError(error, FEATURE_SAVE_FAILED_MESSAGE),
         });
         toast.error(FEATURE_SAVE_FAILED_TOAST);
+        reportUserError({ kind: "live.settings", code: error.code ? `save_failed_${error.code}` : "save_failed", message: FEATURE_SAVE_FAILED_TOAST });
         return;
       }
       dispatch({ type: "persisted", key });

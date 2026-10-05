@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { getClientLogs } from "@/lib/logger";
+import { reportUserError } from "@/lib/reportAppError";
 import { useAuth } from "@/components/AuthProvider";
 import { describeError } from "@/lib/errorMessage";
 
@@ -121,6 +122,9 @@ export function BugReportButton({ boardId, open: openProp, onOpenChange, variant
       const detail = describeError(e, SEND_FAILED_FALLBACK);
       setSendError(detail);
       toast.error(`Couldn't send the report: ${detail}`);
+      // our words and the database's code only: the detail can be the server's, and the report the student's
+      const code = typeof (e as { code?: unknown })?.code === "string" ? `send_failed_${(e as { code: string }).code}` : "send_failed";
+      reportUserError({ kind: "live.report", code, message: "Couldn't send the report", ...(boardId ? { boardId } : {}) });
     } finally {
       setSubmitting(false);
     }

@@ -1,13 +1,17 @@
 "use client";
 
+import { useEffect } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ACCOUNT_COPY } from "@/lib/billing/accountState";
+import type { UserErrorKind } from "@/lib/clientErrors";
+import { reportUserError } from "@/lib/reportAppError";
 
 /**
  * Inline error row with an optional Retry, shown next to the card or control
- * that failed (same shape as the dashboard's InlineError).
+ * that failed (same shape as the dashboard's InlineError). Each one shown is reported to the admin
+ * page (`kind`, `code`, and the title: our words; the message line can be the server's, so never it).
  */
 export function SectionError({
   title,
@@ -15,13 +19,21 @@ export function SectionError({
   onRetry,
   retrying = false,
   className,
+  kind = "live.account",
+  code = "failed",
 }: {
   title: string;
   message: string;
   onRetry?: () => void;
   retrying?: boolean;
   className?: string;
+  /** what failed, for the admin page: `live.ink` for the ink balance, packs and purchases */
+  kind?: UserErrorKind;
+  code?: string;
 }) {
+  useEffect(() => {
+    reportUserError({ kind, code, message: title });
+  }, [kind, code, title]);
   return (
     <div
       role="alert"

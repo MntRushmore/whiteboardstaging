@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ChartColumn, FlaskConical, InfinityIcon, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { reportUserError } from "@/lib/reportAppError";
 import { useAuth } from "@/components/AuthProvider";
 import { FeatureLabsPanel } from "@/components/FeatureLabsPanel";
 import { BugReportButton } from "@/components/BugReportButton";
@@ -91,7 +92,9 @@ export function AppHeader({ className }: { className?: string }) {
   async function signOut() {
     const { error } = await supabase.auth.signOut();
     if (error) {
-      toast.error("Couldn't sign you out. Try again in a moment.");
+      const message = "Couldn't sign you out. Try again in a moment.";
+      toast.error(message);
+      reportUserError({ kind: "live.auth", code: "signout_failed", message });
       return;
     }
     router.replace("/login");

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { describeError } from "@/lib/errorMessage";
 import { clientMetric } from "@/lib/logger";
+import { reportUserError } from "@/lib/reportAppError";
 import { DEFAULT_BOARD_TITLE } from "@/lib/boards/boardTitle";
 import { isCourseId, type CourseId } from "@/lib/onboarding/courseIds";
 import { asOnboardingClient, createFirstBoard } from "@/lib/onboarding/storage";
@@ -68,6 +69,7 @@ async function fetchProgress(userId: string): Promise<ProgressData> {
     return { status: "ready", attempts, summary, profile, now, tzOffsetMinutes };
   } catch (error) {
     console.error("Error loading progress:", error);
+    reportUserError({ kind: "live.progress", code: "load_failed", message: PROGRESS_COPY.loadFailedTitle });
     return { status: "error", error: describeError(error, PROGRESS_COPY.loadFallback) };
   }
 }
@@ -130,6 +132,7 @@ export function useBoardActions(userId: string | undefined): BoardActions {
       const board = await createFirstBoard(client, userId, title);
       if (!board.ok) {
         toast.error(failedTitle, { description: describeError(new Error(board.error), PROGRESS_COPY.practiceFallback) });
+        reportUserError({ kind: kind === "new" ? "live.boards" : "live.practice", code: "create_failed", message: failedTitle });
         setBusy(null);
         return;
       }
@@ -149,6 +152,7 @@ export function useBoardActions(userId: string | undefined): BoardActions {
       const problems = practiceProblems(skill.skill, PRACTICE_COUNT, practiceSeed());
       if (problems.length === 0) {
         toast.error(PROGRESS_COPY.practiceFailedTitle, { description: PROGRESS_COPY.practiceNone });
+        reportUserError({ kind: "live.practice", code: "no_problems", message: PROGRESS_COPY.practiceFailedTitle });
         return;
       }
       clientMetric("progress.practice.start", { skill: skill.skill, problems: problems.length });

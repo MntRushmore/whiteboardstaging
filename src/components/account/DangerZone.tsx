@@ -153,6 +153,7 @@ export function DangerZone({ email }: { email: string }) {
               {error && (
                 <SectionError
                   className="mt-3"
+                  code="delete_account_failed"
                   title={ACCOUNT_COPY.deleteFailedTitle}
                   message={error}
                   onRetry={() => void deleteAccount()}

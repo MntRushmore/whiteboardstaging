@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { loadPdfThumbnails, renderPdfPage, type PdfPagePreview } from "@/lib/pdf";
 import { uploadDataUrlAsset } from "@/lib/assets/uploadDataUrl";
 import { warnInlineAssetFallbackOnce } from "@/hooks/useSnapshotSave";
+import { reportUserError } from "@/lib/reportAppError";
 import { currentScreen, fitInScreen } from "@/lib/screens/screens";
 
 const MAX_BYTES = 25 * 1024 * 1024; // 25 MB
@@ -96,7 +97,10 @@ export function PdfUpload() {
       // Back to the drop zone, with the reason and (for transient failures) a Retry.
       setFile(null);
       setThumbs([]);
-      setError(pdfReadErrorFor(e));
+      const failure = pdfReadErrorFor(e);
+      setError(failure);
+      // a damaged file or a reader that did not load (a password is the file's, not ours)
+      if (failure.retryable) reportUserError({ kind: "live.pdf", code: "unreadable", message: failure.message });
     } finally {
       setLoading(false);
     }
@@ -162,6 +166,7 @@ export function PdfUpload() {
       console.error("PDF page insert failed", e);
       // The page grid stays so Retry re-renders the same page.
       setError({ message: PDF_COPY.insertFailed, retryable: true, step: "insert" });
+      reportUserError({ kind: "live.pdf", code: "insert_failed", message: PDF_COPY.insertFailed });
     } finally {
       setInserting(false);
     }

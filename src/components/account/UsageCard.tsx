@@ -163,7 +163,7 @@ export function UsageCard({ usedInk }: { usedInk?: number }) {
         {state.status === "loading" && !data ? (
           <UsageSkeleton />
         ) : state.status === "error" && !data ? (
-          <SectionError title={ACCOUNT_COPY.usageFailedTitle} message={state.error} onRetry={retry} />
+          <SectionError kind="live.ink" code="usage_load_failed" title={ACCOUNT_COPY.usageFailedTitle} message={state.error} onRetry={retry} />
         ) : !summary || summary.days.length === 0 ? (
           <div className="space-y-3">
             <div className="rounded-lg border border-dashed px-4 py-8 text-center" data-state="empty">
@@ -171,7 +171,7 @@ export function UsageCard({ usedInk }: { usedInk?: number }) {
               <p className="mt-1 text-sm text-muted-foreground">{ACCOUNT_COPY.usageEmptyHint}</p>
             </div>
             {state.status === "error" && (
-              <SectionError title={ACCOUNT_COPY.usageFailedTitle} message={state.error} onRetry={retry} />
+              <SectionError kind="live.ink" code="usage_load_failed" title={ACCOUNT_COPY.usageFailedTitle} message={state.error} onRetry={retry} />
             )}
           </div>
         ) : (
@@ -200,7 +200,7 @@ export function UsageCard({ usedInk }: { usedInk?: number }) {
             </section>
 
             {state.status === "error" && (
-              <SectionError title={ACCOUNT_COPY.usageFailedTitle} message={state.error} onRetry={retry} />
+              <SectionError kind="live.ink" code="usage_load_failed" title={ACCOUNT_COPY.usageFailedTitle} message={state.error} onRetry={retry} />
             )}
           </div>
         )}
