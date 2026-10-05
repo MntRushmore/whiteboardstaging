@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { EVENT_KIND } from "@/lib/admin/contracts";
 import { MAX_MESSAGE, MAX_REPORT_BYTES, MAX_STACK, stripUrlQueries } from "@/lib/clientErrors";
 import { logger } from "@/lib/logger";
 import { identifyUser, json } from "@/lib/server/auth";
@@ -24,6 +25,9 @@ const ReportSchema = z.object({
   userAgent: z.string().max(512).optional(),
   release: z.string().min(1).max(64),
   digest: z.string().max(64).optional(),
+  /** what failed (`EVENT_KIND`, src/lib/admin/contracts.ts) and how, for the admin page */
+  kind: z.string().regex(EVENT_KIND).optional(),
+  code: z.string().max(40).optional(),
 });
 
 const log = logger.child({ module: "client-error" });

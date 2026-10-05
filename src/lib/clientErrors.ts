@@ -46,6 +46,10 @@ export type ClientErrorReport = {
   release: string;
   /** the server's error digest, when a boundary caught a server-rendered error */
   digest?: string;
+  /** what failed, for the admin page (`EVENT_KIND` in src/lib/admin/contracts.ts): `live.solve`, `live.chat`… */
+  kind?: string;
+  /** a short machine code: network, timeout, rate_limited, ink, upstream… */
+  code?: string;
 };
 
 /**
