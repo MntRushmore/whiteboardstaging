@@ -19,6 +19,7 @@ import {
   type BoardSort,
 } from '@/app/dashboardState';
 import { describeError } from '@/lib/errorMessage';
+import { reportUserError } from '@/lib/reportAppError';
 import { AppHeader, APP_CONTENT_CLASS } from '@/components/app/AppHeader';
 import { ButtonLink } from '@/components/app/ButtonLink';
 import { BoardGroups, BoardSkeletons, type BoardActions, type BoardView } from '@/components/boards/BoardList';
@@ -83,6 +84,15 @@ function InlineError({
       )}
     </Alert>
   );
+}
+
+/**
+ * A failed board action, for the admin page (`live.boards`): the heading the student saw and a
+ * code, with the database's own code when it has one (`load_failed_pgrst301`) — never its message.
+ */
+function reportBoardsError(code: string, error: unknown, message: string): void {
+  const pg = (error as { code?: unknown } | null)?.code;
+  reportUserError({ kind: 'live.boards', code: typeof pg === 'string' && pg ? `${code}_${pg}` : code, message });
 }
 
 /** Re-renders every `ms` so "Edited 2 min ago" keeps up while the page is open. */
@@ -163,6 +173,7 @@ export default function Dashboard() {
       // "JWT issued at future" rejection is local clock skew; describeError
       // names that instead of echoing the raw token error.
       setFetchError(describeError(error, DASHBOARD_COPY.loadFallback));
+      reportBoardsError('load_failed', error, DASHBOARD_COPY.loadFailedTitle);
     } finally {
       setLoading(false);
     }
@@ -192,6 +203,7 @@ export default function Dashboard() {
       console.error('Error creating whiteboard:', error);
       // Button stays enabled; the error sits right under it with Retry.
       setCreateError(describeError(error, DASHBOARD_COPY.createFallback));
+      reportBoardsError('create_failed', error, DASHBOARD_COPY.createFailedTitle);
       setCreating(false);
     }
   }
@@ -208,6 +220,7 @@ export default function Dashboard() {
       if (result.assetErrors.length > 0) {
         console.warn('Some board images could not be removed:', result.assetErrors);
         toast.warning('Board deleted, but some images could not be removed');
+        reportUserError({ kind: 'live.boards', code: 'delete_images_left', message: 'Board deleted, but some images could not be removed', level: 'warn' });
       } else {
         toast.success('Board deleted');
       }
@@ -216,6 +229,7 @@ export default function Dashboard() {
       console.error('Error deleting whiteboard:', error);
       // Dialog stays open with the message and a Retry.
       setDeleteError(describeError(error, DASHBOARD_COPY.deleteFallback));
+      reportBoardsError('delete_failed', error, DASHBOARD_COPY.deleteFailedTitle);
     } finally {
       setDeleting(false);
     }
@@ -243,6 +257,7 @@ export default function Dashboard() {
       console.error('Error renaming whiteboard:', error);
       // Dialog stays open with the message; Save becomes "Try again".
       setRenameError(describeError(error, DASHBOARD_COPY.renameFallback));
+      reportBoardsError('rename_failed', error, DASHBOARD_COPY.renameFailedTitle);
     } finally {
       setRenaming(false);
     }

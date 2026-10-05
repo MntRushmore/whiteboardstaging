@@ -9,6 +9,7 @@ import type { LectureRunOptions } from "@/lib/live/lecture/desk";
 import { LECTURE_BUTTON_COPY } from "./lectureCopy";
 import { waitPhrase } from "@/components/live/copy";
 import type { LectureErrorCode, LectureNotice, LectureSessionBoard, LectureSnapshot } from "@/lib/live/lecture/session";
+import type { UserErrorInput } from "@/lib/clientErrors";
 import { tailChars } from "@/lib/live/lecture/transcript";
 
 export type LectureHandleStatus = "off" | "consent" | "starting" | "listening" | "paused" | "error";
@@ -203,6 +204,35 @@ export function lectureBarModel(input: { status: LectureHandleStatus; error: Lec
     paused,
     error: null,
   };
+}
+
+/** A lecture that cannot run because of the student's device or settings, not because of us: `info`. */
+const DEVICE_ERRORS: ReadonlySet<LectureErrorCode> = new Set(["unsupported", "mic-denied", "mic-missing", "speech-off"]);
+
+/**
+ * What the admin page hears of the lecture panel (`live.lecture`): the error that ended the lecture,
+ * or a notice that something failed (the tutor unreachable, a drawing that could not go on the
+ * board, panels that could not be drawn, a rate limit); null otherwise. Our words only (never what
+ * was heard); a countdown or a count is reported as one message (`#` in clientErrors).
+ */
+export function lectureFailureReport(model: Pick<LectureBarModel, "error">, notice: LectureNotice | null | undefined): UserErrorInput | null {
+  if (model.error) {
+    const { code, message } = model.error;
+    return { kind: "live.lecture", code, message, ...(DEVICE_ERRORS.has(code) ? { level: "info" as const } : {}) };
+  }
+  switch (notice?.kind) {
+    case "retrying":
+      return { kind: "live.lecture", code: "retrying", message: LECTURE_COPY.notices.retrying };
+    case "board_failed":
+      return { kind: "live.lecture", code: "board_failed", message: LECTURE_COPY.notices.boardFailed };
+    case "sketch_failed":
+      return { kind: "live.lecture", code: "sketch_failed", message: LECTURE_COPY.notices.sketchFailed(notice.failed, notice.panels) };
+    case "rate_limited":
+      // the countdown ticks every second: one message for all of it
+      return { kind: "live.lecture", code: "rate_limited", message: LECTURE_COPY.notices.rateLimited(1) };
+    default:
+      return null;
+  }
 }
 
 /** The session's state as the handle's (a stopped lecture is simply off). */

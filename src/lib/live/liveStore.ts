@@ -3,6 +3,7 @@
 import { atom } from "tldraw";
 import type { LiveLineState, LiveStatus, OpenHint, RecognizerKind, Rect } from "./contracts";
 import type { HelpTarget } from "./helpTarget";
+import { reportUserError } from "@/lib/reportAppError";
 
 /** A drawing on the screen as the dev panel shows it (`src/lib/live/diagrams.ts`). */
 export interface LiveDiagram {
@@ -96,9 +97,15 @@ export const liveStore = {
 
 let errorSeq = 0;
 
+/**
+ * Shows a Live error (a new id each time), and reports it once (src/lib/reportAppError.ts, a few
+ * hundred bytes; the reporter itself is lazy): `live.<kind>`, its code, and the words the student
+ * was shown. Out of ink and a rate limit go at a lower level, from the code (`userErrorLevel`).
+ */
 export function setLiveError(err: Omit<LiveError, "id" | "at"> & { at?: number }): LiveError {
   const full: LiveError = { ...err, id: `e_${++errorSeq}`, at: err.at ?? Date.now() };
   liveStore.lastError.set(full);
+  reportUserError({ kind: `live.${full.kind}`, code: full.code, message: full.message });
   return full;
 }
 

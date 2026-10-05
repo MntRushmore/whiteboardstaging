@@ -61,7 +61,7 @@ export function InkPacksGrid({ payer, lastPurchaseId = null }: { payer: Payer | 
             ))}
           </div>
         ) : state.status === "error" && !state.data ? (
-          <SectionError title={PACKS_COPY.loadFailedTitle} message={state.error} onRetry={retry} />
+          <SectionError kind="live.ink" code="packs_load_failed" title={PACKS_COPY.loadFailedTitle} message={state.error} onRetry={retry} />
         ) : (
           <>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" data-state="list">
@@ -95,7 +95,7 @@ export function InkPacksGrid({ payer, lastPurchaseId = null }: { payer: Payer | 
               ))}
             </div>
             {allComingSoon(cards) && <p className="text-xs text-muted-foreground">{PACKS_COPY.comingSoonNote}</p>}
-            {state.status === "error" && state.data && <SectionError title={PACKS_COPY.loadFailedTitle} message={state.error} onRetry={retry} />}
+            {state.status === "error" && state.data && <SectionError kind="live.ink" code="packs_load_failed" title={PACKS_COPY.loadFailedTitle} message={state.error} onRetry={retry} />}
           </>
         )}
       </CardContent>

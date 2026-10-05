@@ -28,6 +28,9 @@ export const PUBLIC_ROUTES = Object.freeze([
   "src/app/api/billing/webhook/route.ts",
   // Storage GC cron: no user JWT exists; the shared CRON_SECRET bearer token is the auth.
   "src/app/api/admin/gc/route.ts",
+  // Health checks: pg_cron has no user JWT, so the CRON_SECRET bearer (from Supabase Vault) is the
+  // auth; anything else must be an admin's token (requireAdmin: 401 signed out, 404 not an admin).
+  "src/app/api/admin/health/route.ts",
   // Browser crash reports: errors happen signed out too, and a beacon cannot carry a token. Per-IP
   // limit, 16 KB body cap, zod; a token, when sent, only names the user in the log line.
   "src/app/api/client-errors/route.ts",
@@ -42,6 +45,7 @@ export const PUBLIC_ROUTE_REASONS = Object.freeze({
   "src/app/api/config/status/route.ts": "booleans-only setup status",
   "src/app/api/billing/webhook/route.ts": "signature-verified provider webhook",
   "src/app/api/admin/gc/route.ts": "Vercel cron; requires Authorization: Bearer CRON_SECRET",
+  "src/app/api/admin/health/route.ts": "pg_cron health checks; requires Authorization: Bearer CRON_SECRET or an admin's token (requireAdmin)",
   "src/app/api/client-errors/route.ts": "browser error reports, sent signed out too; per-IP limit, 16 KB body cap, zod; logs only",
   "src/app/api/health/route.ts": "uptime monitor probe; answers { ok, db, release } only",
   "src/app/api/cron/trial-reminders/route.ts": "Vercel cron; requires Authorization: Bearer CRON_SECRET",
@@ -52,10 +56,12 @@ export const NO_BODY_ROUTES = Object.freeze([
   "src/app/api/credits/route.ts", // GET only
   "src/app/api/config/status/route.ts", // GET only
   "src/app/api/admin/gc/route.ts", // GET (Vercel cron) or POST with an empty body; options are query params
+  "src/app/api/admin/health/route.ts", // GET only (pg_cron, or an admin's "check now")
   "src/app/api/live/lecture/token/route.ts", // POST with an empty body: mints a speech-to-text token for the caller
   "src/app/api/health/route.ts", // GET only
   "src/app/api/cron/trial-reminders/route.ts", // GET only (Vercel cron); ?dryRun=1 is a query param
   "src/app/api/email/welcome/route.ts", // POST with an empty body: the server decides who and whether
+  "src/app/api/admin/overview/route.ts", // GET only
 ]);
 
 export const API_ROUTES = Object.freeze([
@@ -69,6 +75,29 @@ export const API_ROUTES = Object.freeze([
     // 401 without `Authorization: Bearer <CRON_SECRET>`; 503 when CRON_SECRET / the service role key are unset.
     withoutTokenStatus: [401, 503],
     purpose: "Storage garbage collection (Vercel cron): orphaned board-assets / training-data objects; ?dryRun=1 default",
+    status: "active",
+  },
+  {
+    path: "/api/admin/health",
+    file: "src/app/api/admin/health/route.ts",
+    methods: ["GET"],
+    auth: "public",
+    limit: "ip:adminHealth",
+    body: "none",
+    // Without the cron secret it is requireAdmin's answer: 401 with no token, 404 for a non-admin.
+    withoutTokenStatus: [401, 404],
+    purpose: "Health checks (pg_cron every 5 min, or an admin's check now): app, database, OpenRouter, Mathpix, Resend, Stripe; rows, events, alert emails",
+    status: "active",
+  },
+  {
+    path: "/api/admin/overview",
+    file: "src/app/api/admin/overview/route.ts",
+    methods: ["GET"],
+    // requireAdmin = requireUser (401 without a token) + is_admin() (404 for a non-admin).
+    auth: "user",
+    limit: "credits",
+    body: "none",
+    purpose: "The /admin page's overview (admins only): service health, errors students saw, AI failures, users, bug reports",
     status: "active",
   },
   {

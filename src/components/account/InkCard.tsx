@@ -120,7 +120,7 @@ export function InkCard({
           <p className="mt-1 text-sm text-muted-foreground">{inkPriceSentence()}</p>
         </div>
 
-        {error && <SectionError title={ACCOUNT_COPY.loadFailedTitle} message={error} onRetry={onRetry} retrying={refreshing} />}
+        {error && <SectionError kind="live.ink" code="balance_load_failed" title={ACCOUNT_COPY.loadFailedTitle} message={error} onRetry={onRetry} retrying={refreshing} />}
       </CardContent>
     </Card>
   );

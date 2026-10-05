@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { clearCheckoutMark, notifyInkChanged, readCheckoutMark, useInkSummary } from "@/lib/billing/useInkSummary";
 import { CHECKOUT_COPY, INK_RETURN_POLL_MS, inkReturnState, parseInkReturn } from "@/lib/billing/checkout";
 import { inkLabel } from "@/lib/billing/inkSummary";
+import { reportUserError } from "@/lib/reportAppError";
 import { cn } from "@/lib/utils";
 
 /** "medium" -> "Medium" until ink_summary names the pack. */
@@ -56,6 +57,11 @@ function InkWait({ target }: { target: string }) {
     if (state !== "done") return;
     clearCheckoutMark();
     notifyInkChanged();
+  }, [state]);
+
+  // Paid, and a minute later still no ink: Stripe's webhook has not reached us (the admin page hears of it).
+  useEffect(() => {
+    if (state === "timeout") reportUserError({ kind: "live.ink", code: "checkout_ink_late", message: CHECKOUT_COPY.timeout });
   }, [state]);
 
   const dismiss = () => router.replace(pathname);

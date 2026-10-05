@@ -118,16 +118,19 @@ describe("route discovery", () => {
 });
 
 describe("allow-lists", () => {
-  it("PUBLIC_ROUTES is exactly config/status, the billing webhook, the two crons, client errors and health", () => {
+  it("PUBLIC_ROUTES is exactly config/status, the billing webhook, the crons, client errors and health", () => {
     // config/status: reports which provider keys exist as booleans (never values,
     // prefixes or lengths) so the setup screen can render before sign-in.
     // billing/webhook: the provider has no user JWT; the Stripe-Signature HMAC is the auth.
     // admin/gc, cron/trial-reminders: Vercel cron has no user JWT; the shared CRON_SECRET bearer
     // token is the auth.
+    // admin/health: pg_cron has no user JWT either (CRON_SECRET); otherwise requireAdmin
+    // (behaviour: src/lib/server/__tests__/routes.adminHealth.test.ts).
     // client-errors: browser crash reports, signed out too; it only writes a log line.
     // health: an uptime monitor has no user; it answers { ok, db, release } only.
     expect([...PUBLIC_ROUTES].sort()).toEqual([
       "src/app/api/admin/gc/route.ts",
+      "src/app/api/admin/health/route.ts",
       "src/app/api/billing/webhook/route.ts",
       "src/app/api/client-errors/route.ts",
       "src/app/api/config/status/route.ts",

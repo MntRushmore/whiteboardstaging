@@ -18,6 +18,17 @@ import { RELEASE } from "@/lib/release";
  * typed. When signed in, the request carries the session's access token so the server can log
  * who it was (the user id, never the token).
  *
+ * Errors a student SAW go the same way (`reportUserError`, through `reportUserError` in
+ * src/lib/reportAppError.ts): the board's error card and pill (`setLiveError`), the chat's failures,
+ * a save that failed, a board that would not load, a practice set that could not be written, a
+ * failed ink or account read. Each says what failed (`kind`: `live.solve`, `live.chat`…, the
+ * contract's EVENT_KIND conventions in src/lib/admin/contracts.ts), how (`code`), at what level
+ * (`level`: out of ink is `info`, a rate limit `warn`, anything else `error`), and the words the
+ * student was shown — our own copy, never what they wrote or typed, never a stack. They have a
+ * budget of their own (MAX_USER_REPORTS per page load), apart from the crashes' MAX_REPORTS, so a
+ * student tapping Help with no ink cannot use up the reports a real crash needs, nor the other way
+ * round; and the same kind + code + message is sent again only after USER_REPORT_WINDOW_MS.
+ *
  * Not in any page's first load: the board's budget is nearly spent (docs/BUNDLE.md), so this
  * module is a lazy chunk, fetched a few seconds after the page loads (or at the first error, if
  * sooner) — from the same deployment, so a tab left open across a deploy can still report.
@@ -26,6 +37,17 @@ import { RELEASE } from "@/lib/release";
 export const CLIENT_ERRORS_PATH = "/api/client-errors";
 /** Reports per page load, after dedupe. */
 export const MAX_REPORTS = 10;
+/**
+ * Reports of errors a student saw per page load, after dedupe: their own budget, not the crashes'.
+ * With the dedupe window, the same failure hit again and again (a tutor service that is down for a
+ * whole lesson) is reported about once a minute for twenty minutes: enough to tell a blip from an
+ * outage, never a flood.
+ */
+export const MAX_USER_REPORTS = 20;
+/** The same error a student saw (kind + code + message) is reported again only after this long. */
+export const USER_REPORT_WINDOW_MS = 60_000;
+/** Our own copy is short: anything longer is cut here. */
+export const MAX_USER_MESSAGE = 300;
 export const MAX_MESSAGE = 1000;
 /** ~4 KB of stack: the frames that matter are at the top. */
 export const MAX_STACK = 4000;
@@ -46,7 +68,78 @@ export type ClientErrorReport = {
   release: string;
   /** the server's error digest, when a boundary caught a server-rendered error */
   digest?: string;
+  /** what failed, for the admin page (`EVENT_KIND` in src/lib/admin/contracts.ts): `live.solve`, `live.chat`… */
+  kind?: string;
+  /** a short machine code: network, timeout, rate_limited, ink, upstream… */
+  code?: string;
+  /** an error a student saw (`reportUserError`): how bad (`userErrorLevel`); a crash has none (an error) */
+  level?: UserErrorLevel;
 };
+
+/**
+ * What failed, as a student saw it (`live.<what>`, the contract's EVENT_KIND conventions):
+ *  - `live.recognize` `live.check` `live.solve` `live.capabilities`  the board's error card and pill (`setLiveError`)
+ *  - `live.chat`      the Ask panel's failed request (and its weak-spots chip); what it could not write (warn)
+ *  - `live.lecture`   lecture mode's error, or its notice that a drawing failed or the tutor is unreachable
+ *  - `live.save`      the save pill's "Couldn't save", a board too large to save, images kept on the device
+ *  - `live.load`      the board's "Couldn't load / restore this board" screen, a board not there (warn)
+ *  - `live.practice`  a practice set or a "Now you try" problem that could not be written or made
+ *  - `live.progress`  the Progress page's record that would not load
+ *  - `live.ink`       the ink balance, packs or purchases that would not load; ink that never arrived after checkout
+ *  - `live.account`   another /account section that failed (profile, usage, deleting the account)
+ *  - `live.boards`    the home page's board list, or a board that could not be made, renamed or deleted
+ *  - `live.image` `live.pdf`  a picture, a sticker or a PDF page that could not be added to the board
+ *  - `live.report`    a bug report that could not be sent
+ *  - `live.auth`      a sign-in, sign-up, reset that failed on our side (never a wrong password), the
+ *                     sign-in service unreachable, a sign out that failed
+ *  - `live.settings`  a Labs setting that could not be saved
+ */
+export type UserErrorKind =
+  | "live.recognize"
+  | "live.check"
+  | "live.solve"
+  | "live.capabilities"
+  | "live.chat"
+  | "live.lecture"
+  | "live.save"
+  | "live.load"
+  | "live.practice"
+  | "live.progress"
+  | "live.ink"
+  | "live.account"
+  | "live.boards"
+  | "live.image"
+  | "live.pdf"
+  | "live.report"
+  | "live.auth"
+  | "live.settings";
+
+/** The contract's EVENT_LEVELS (src/lib/admin/contracts.ts; not imported: it brings zod). */
+export type UserErrorLevel = "error" | "warn" | "info";
+
+/** An error a student saw, as its surface reports it. */
+export interface UserErrorInput {
+  kind: UserErrorKind;
+  /** a short machine code: network, timeout, upstream, rate_limited, ink, unauthorized, unknown, save_failed… */
+  code: string;
+  /** the words the student was shown: OUR copy, never anything they wrote or typed, never a server's raw error */
+  message: string;
+  /** the board it happened on, when the page's path does not say (a uuid; anything else is dropped) */
+  boardId?: string;
+  /** only to override `userErrorLevel(code)` (a warning about images kept on the device, a missing board) */
+  level?: UserErrorLevel;
+}
+
+/**
+ * How bad an error a student saw is, from its code: out of ink (`ink`) and a rate limit
+ * (`rate_limited`) are expected states, not outages — `info` and `warn`, so they never count
+ * towards the admin page's errors or the error-spike alert. Everything else is an `error`.
+ */
+export function userErrorLevel(code: string | undefined): UserErrorLevel {
+  if (code === "ink") return "info";
+  if (code === "rate_limited") return "warn";
+  return "error";
+}
 
 /**
  * Not worth a report: the ResizeObserver loop warning, a cross-origin "Script error." with nothing
@@ -146,3 +239,83 @@ function deliver(report: ClientErrorReport): void {
 
 /** Report an error from a boundary or a listener: `reportClientError("boundary", error, error.digest)`. */
 export const reportClientError = createReporter(deliver);
+
+/** `live.` and a name: EVENT_KIND (src/lib/admin/contracts.ts; pinned equal in the tests) for a `live.` kind. */
+const USER_KIND = /^live\.[a-z0-9_.:-]{1,59}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A code the route accepts: lower case, `[a-z0-9_.:-]`, at most 40 chars; "unknown" when empty. */
+export function userErrorCode(code: unknown): string {
+  const clean = String(code ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_.:-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+  return clean || "unknown";
+}
+
+/**
+ * The words reported for an error a student saw: one line, no URL query strings, and every number
+ * as `#` — a countdown ("try again in 12 seconds") or an attempt count ("tried 3 times") would
+ * otherwise split one failure into a group per number on the admin page, and slip past the dedupe.
+ */
+export function userErrorMessage(message: unknown): string {
+  return stripUrlQueries(String(message ?? ""))
+    .replace(/\d+(?:[.,:]\d+)*/g, "#")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, MAX_USER_MESSAGE);
+}
+
+/**
+ * One page load's reporter of errors a student saw: builds the report from scratch (only the kind,
+ * code, level, our words, the path, the board id, the browser and the release — nothing else the
+ * caller passed), sends the same kind + code + message at most once per `windowMs`, and stops after
+ * `max`. Never throws. Exported for tests.
+ */
+export function createUserReporter(
+  send: (report: ClientErrorReport) => void,
+  page: () => Page = currentPage,
+  { max = MAX_USER_REPORTS, windowMs = USER_REPORT_WINDOW_MS, now = Date.now }: { max?: number; windowMs?: number; now?: () => number } = {},
+) {
+  const lastSent = new Map<string, number>();
+  let sent = 0;
+  return (input: UserErrorInput): void => {
+    try {
+      if (sent >= max || !input) return;
+      const kind = String(input.kind);
+      if (!USER_KIND.test(kind)) return;
+      const code = userErrorCode(input.code);
+      const message = userErrorMessage(input.message) || kind;
+      const key = `${kind}\n${code}\n${message}`;
+      const at = now();
+      const last = lastSent.get(key);
+      if (last !== undefined && at - last < windowMs) return;
+      const { path: rawPath, userAgent } = page();
+      const path = rawPath.replace(/[?#][\s\S]*/, "");
+      const boardId = typeof input.boardId === "string" && UUID.test(input.boardId) ? input.boardId : boardIdFromPath(path);
+      const level = input.level === "error" || input.level === "warn" || input.level === "info" ? input.level : userErrorLevel(code);
+      lastSent.set(key, at);
+      sent++;
+      send({
+        source: "live",
+        kind,
+        code,
+        level,
+        message,
+        path,
+        ...(boardId ? { boardId } : {}),
+        userAgent: userAgent.slice(0, 512),
+        release: RELEASE,
+      });
+    } catch {
+      // Reporting must never become the next error.
+    }
+  };
+}
+
+/**
+ * Report an error a student saw: `reportUserError({ kind: "live.chat", code: "timeout", message })`.
+ * Through `reportUserError` in src/lib/reportAppError.ts, which loads this module lazily.
+ */
+export const reportUserError = createUserReporter(deliver);

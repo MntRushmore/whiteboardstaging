@@ -5,6 +5,7 @@ import type { ChatRunOrigin } from "@/lib/learning/contracts";
 import { clearPracticeMarker, readPracticeMarker, type StorageLike } from "@/lib/learning/practiceMarker";
 import type { ChatAction, ChatRunReport, ChatScreen } from "@/lib/live/chat/contracts";
 import type { LiveController } from "@/lib/live/contracts";
+import { reportUserError } from "@/lib/reportAppError";
 
 /**
  * A practice board (the Progress page's Practice button, `practiceMarker.ts`): the page made the
@@ -45,6 +46,8 @@ export interface PracticeRunDeps {
   /** once the problems are about to be written: help mode and pen for practice */
   prepare?: () => void;
   metric?: (name: string, fields: Record<string, unknown>) => void;
+  /** the failure toast was shown: tell the admin page (`live.practice`, src/lib/reportAppError.ts) */
+  reportFailure?: (code: "none_written" | "board_not_ready", message: string) => void;
   storage?: StorageLike | null;
   now?: () => number;
   wait?: (ms: number) => Promise<void>;
@@ -76,12 +79,14 @@ export async function runPracticeMarker(deps: PracticeRunDeps): Promise<Practice
       deps.metric?.("learning.practice.board", { skill: marker.skill, written: report.problemsWritten, dropped: report.problemsDropped });
       if (report.problemsWritten > 0) return "written";
       deps.toast(PRACTICE_COPY.failed);
+      deps.reportFailure?.("none_written", PRACTICE_COPY.failed);
       return "failed";
     } catch (e) {
       // only "the board is not ready yet" throws before anything is written
       if (i >= RUN_TRIES) {
         deps.metric?.("learning.practice.board.failed", { skill: marker.skill, error: e instanceof Error ? e.message : String(e) });
         deps.toast(PRACTICE_COPY.failed);
+        deps.reportFailure?.("board_not_ready", PRACTICE_COPY.failed);
         return "failed";
       }
       await wait(RUN_RETRY_MS * i);
@@ -114,6 +119,7 @@ export function usePracticeBoard(
       toast: (text) => depsRef.current.toast(text),
       prepare: d.prepare ? () => depsRef.current.prepare?.() : undefined,
       metric: (name, fields) => depsRef.current.metric?.(name, fields),
+      reportFailure: (code, message) => reportUserError({ kind: "live.practice", code, message, boardId }),
       run: (actions, from) => controller.runChatActions!(actions, from),
       screen: controller.chatScreen ? () => controller.chatScreen!() : undefined,
     });

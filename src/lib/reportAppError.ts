@@ -1,4 +1,4 @@
-import type { ClientErrorSource } from "@/lib/clientErrors";
+import type { ClientErrorSource, UserErrorInput } from "@/lib/clientErrors";
 
 /**
  * The front door of client error reporting, and the only part in every page's first load (a few
@@ -10,9 +10,22 @@ import type { ClientErrorSource } from "@/lib/clientErrors";
  */
 const load = () => import("@/lib/clientErrors");
 
+/** A crash: a window error, a rejection, an error boundary. */
 export function reportAppError(source: ClientErrorSource, error: unknown, digest?: string): void {
   load().then(
     (m) => m.reportClientError(source, error, digest),
+    () => {},
+  );
+}
+
+/**
+ * An error a student SAW — an error card, a failed save, a chat request that failed: what failed
+ * (`kind`, `live.<what>`), how (`code`) and the words they were shown (our copy only, never what
+ * they wrote or typed). Deduped and capped in src/lib/clientErrors.ts (`createUserReporter`).
+ */
+export function reportUserError(error: UserErrorInput): void {
+  load().then(
+    (m) => m.reportUserError(error),
     () => {},
   );
 }

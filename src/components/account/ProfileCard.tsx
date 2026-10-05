@@ -107,7 +107,7 @@ export function ProfileCard({ userId, email }: { userId: string; email: string }
               {state.status === "loading" && !state.data && saved === undefined ? (
                 <div className="h-8 w-40 animate-pulse rounded bg-muted/60" data-state="loading" />
               ) : state.status === "error" && !state.data && saved === undefined ? (
-                <SectionError title={ACCOUNT_COPY.profileFailedTitle} message={state.error} onRetry={retry} />
+                <SectionError code="profile_load_failed" title={ACCOUNT_COPY.profileFailedTitle} message={state.error} onRetry={retry} />
               ) : editing ? (
                 <form
                   className="space-y-2"
@@ -140,6 +140,7 @@ export function ProfileCard({ userId, email }: { userId: string; email: string }
                   )}
                   {saveError && (
                     <SectionError
+                      code="profile_save_failed"
                       title={ACCOUNT_COPY.saveNameFailedTitle}
                       message={saveError}
                       onRetry={() => void save()}

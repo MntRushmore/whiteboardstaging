@@ -17,6 +17,7 @@ import {
 } from "@/lib/stickers";
 import { uploadDataUrlAsset } from "@/lib/assets/uploadDataUrl";
 import { warnInlineAssetFallbackOnce } from "@/hooks/useSnapshotSave";
+import { reportUserError } from "@/lib/reportAppError";
 
 const CATEGORIES: { id: StickerCategory; label: string }[] = [
   { id: "math", label: "Math" },
@@ -81,6 +82,7 @@ export function StickerLibrary() {
       console.error("Sticker insert failed", e);
       // Stay open with the reason and a Retry for the same sticker.
       setError({ message: STICKER_COPY.failed(sticker.label), sticker });
+      reportUserError({ kind: "live.image", code: "sticker_failed", message: STICKER_COPY.failed("a sticker") });
     } finally {
       setInsertingId(null);
     }

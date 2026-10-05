@@ -12,7 +12,8 @@ import { Button } from "@/registry/components/button/button";
 import { Input } from "@/registry/components/input/input";
 import { PasswordField } from "@/registry/components/password-field/password-field";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/registry/components/tabs/tabs";
-import { loginErrorField, loginErrorMessage } from "@/lib/loginErrorMessage";
+import { loginErrorField, loginErrorMessage, loginFailureReport } from "@/lib/loginErrorMessage";
+import { reportUserError } from "@/lib/reportAppError";
 import {
   AUTH_FORM_METHOD,
   FORM_COPY,
@@ -209,6 +210,10 @@ export function LoginForm() {
       console.warn("Auth submit failed:", error);
       const message = loginErrorMessage(error);
       const field = loginErrorField(error);
+      // Our failures (the network, a rate limit, the sign-in service) go to the admin page — never
+      // the student's own mistakes (a wrong password, a weak one), never the address.
+      const failure = loginFailureReport(error, mode);
+      if (failure) reportUserError(failure);
       if (field === "form") setFormError(message);
       else setFieldErrors({ [field]: message });
       // Inline only: a toast repeating the same sentence read as noise, on phones especially.

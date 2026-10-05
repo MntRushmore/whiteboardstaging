@@ -5,6 +5,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { RefreshCw, WifiOff } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { installClientLogCapture } from "@/lib/logger";
+import { reportUserError } from "@/lib/reportAppError";
 import { classifyAuthLoadError } from "@/lib/authState";
 import { Button } from "@/components/ui/button";
 
@@ -57,6 +58,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (outcome.kind === "error") {
         console.error("Failed to reach the auth service:", err);
         setAuthError(outcome.message);
+        // the banner's heading and the status (a 429 or 5xx from Auth, or none: offline, DNS)
+        const status = (err as { status?: unknown } | null)?.status;
+        reportUserError({ kind: "live.auth", code: typeof status === "number" ? `unreachable_${status}` : "unreachable", message: AUTH_BANNER_TITLE });
       } else {
         // Stored session is simply not valid any more: behave as signed out.
         console.warn("Auth session not restored:", err);

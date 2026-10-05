@@ -1,8 +1,11 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { UserErrorInput } from "@/lib/clientErrors";
+import { reportAppError, reportUserError } from "@/lib/reportAppError";
 
 /**
  * Full-page states for the board route before <Tldraw> mounts. The editor is only mounted
@@ -85,6 +88,28 @@ export function loadStateFor(input: LoadStateInput): BoardLoadState {
   return { kind: "ready", message: "" };
 }
 
+/** The detail line's gist, as a code suffix: never the line itself. */
+const LOAD_DETAIL_CODES: ReadonlyArray<[RegExp, string]> = [
+  [/failed to fetch|network|load failed|fetch failed/i, "network"],
+  [/time(d)? ?out|statement timeout/i, "timeout"],
+  [/jwt|unauthori[sz]ed|permission denied|not authenticated/i, "auth"],
+];
+
+/**
+ * The load error screen as the admin page hears of it (`live.load`), or null for the crash screen
+ * (`BoardCrashed` reports the crash itself, with its stack). The heading is the message; the code
+ * says which screen it was and the gist of the detail (`load_failed_network`, `load_failed_timeout`)
+ * — never the detail line itself, which can be anything the database or the snapshot reader said.
+ * A board that is not there (deleted, or someone else's) is a warning: usually an old link.
+ */
+export function loadErrorReport(state: Exclude<BoardLoadState, { kind: "ready" }>): UserErrorInput | null {
+  if (state.message === BOARD_LOAD_COPY.crashTitle) return null;
+  if (state.kind === "not-found") return { kind: "live.load", code: "not_found", message: state.message, level: "warn" };
+  const base = state.message === BOARD_LOAD_COPY.restoreTitle ? "restore_failed" : "load_failed";
+  const gist = state.detail ? LOAD_DETAIL_CODES.find(([re]) => re.test(state.detail!))?.[1] : undefined;
+  return { kind: "live.load", code: gist ? `${base}_${gist}` : base, message: state.message };
+}
+
 export function BoardLoading({ label = BOARD_LOAD_COPY.loading }: { label?: string }) {
   return (
     <div className="flex h-screen items-center justify-center bg-gray-50" role="status" aria-live="polite">
@@ -102,6 +127,11 @@ export function BoardLoading({ label = BOARD_LOAD_COPY.loading }: { label?: stri
  * board's autosave has already backed up and flushed as the editor unmounted; a reload restores.
  */
 export function BoardCrashed({ error }: { error: unknown }) {
+  // tldraw's error boundary caught it, so it never reached the window's listeners: a crash report
+  // (src/lib/clientErrors.ts), with its stack, from here
+  useEffect(() => {
+    reportAppError("boundary", error);
+  }, [error]);
   return (
     <BoardLoadError
       state={{ kind: "error", message: BOARD_LOAD_COPY.crashTitle, detail: detailOf(error) }}
@@ -117,6 +147,12 @@ interface BoardLoadErrorProps {
 
 export function BoardLoadError({ state, onRetry }: BoardLoadErrorProps) {
   const crashed = state.message === BOARD_LOAD_COPY.crashTitle;
+  // once per screen shown (a Retry that fails the same way again is held to one a minute by the reporter)
+  const { kind, message, detail } = state;
+  useEffect(() => {
+    const report = loadErrorReport(kind === "not-found" ? { kind, message } : { kind, message, detail });
+    if (report) reportUserError(report);
+  }, [kind, message, detail]);
   const body =
     state.kind === "not-found"
       ? BOARD_LOAD_COPY.notFoundBody

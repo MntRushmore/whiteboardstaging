@@ -5,6 +5,7 @@ import { atom, getSnapshot, useValue, type Editor, type TLStoreSnapshot } from "
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { logger } from "@/lib/logger";
+import { reportUserError } from "@/lib/reportAppError";
 import { decideSave, type SaveDecision, type SaveDecisionInput } from "@/lib/assets/savePolicy";
 import type { OffloadResult } from "@/lib/assets/offloadSnapshotAssets";
 import {
@@ -572,6 +573,8 @@ export function warnInlineAssetFallbackOnce(): boolean {
   if (inlineFallbackWarned) return false;
   inlineFallbackWarned = true;
   toast.warning(ASSET_COPY.inlineFallback);
+  // the upload to storage failed; the picture is safe in the board, so a warning
+  reportUserError({ kind: "live.image", code: "inline_fallback", message: ASSET_COPY.inlineFallback, level: "warn" });
   return true;
 }
 
@@ -680,6 +683,8 @@ export function useSnapshotSave(
           logger.info({ id: boardId, ...report }, "Restored autosave backups");
           const shown = restoreToastFor(report, boardId);
           if (shown) toast[shown.level](shown.message, { id: shown.id });
+          // changes this device kept were dropped as older than the board: the student lost work
+          if (shown?.level === "warning") reportUserError({ kind: "live.save", code: "stale_backup", message: shown.message, boardId, level: "warn" });
         })
         .catch((e) => logger.warn({ id: boardId, error: errorInfo(e) }, "Could not restore autosave backup"));
     }

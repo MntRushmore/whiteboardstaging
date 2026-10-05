@@ -1,3 +1,4 @@
+import type { UserErrorInput } from "@/lib/clientErrors";
 import { describeError, isClockSkewError, isNetworkError, messageOf } from "@/lib/errorMessage";
 
 /**
@@ -201,4 +202,34 @@ export function loginErrorField(err: unknown): LoginErrorField {
     default:
       return "form";
   }
+}
+
+/**
+ * Login failures that are ours, not the student's: the network, a rate limit, the sign-in service,
+ * its mail settings refusing the address (`email-not-authorized`), a sign-up the database turned
+ * down (`signup-refused`). Never a wrong or weak password, never an existing account.
+ */
+const LOGIN_FAILURES: ReadonlySet<LoginErrorKind> = new Set<LoginErrorKind>([
+  "network",
+  "rate-limited",
+  "clock-skew",
+  "signup-refused",
+  "email-not-authorized",
+  "other",
+]);
+
+/**
+ * A failed sign-in, sign-up, reset email or password update as the admin page hears of it
+ * (`live.auth`, code `<action>_<kind>`), or null when it was the student's own mistake. Our words
+ * only (never the server's, never the address); a rate limit is a warning.
+ */
+export function loginFailureReport(err: unknown, action: string): UserErrorInput | null {
+  const kind = classifyLoginError(err);
+  if (!LOGIN_FAILURES.has(kind)) return null;
+  return {
+    kind: "live.auth",
+    code: `${action}_${kind.replace(/-/g, "_")}`,
+    message: kind === "other" || kind === "clock-skew" ? LOGIN_COPY.fallback : loginErrorMessage(err),
+    ...(kind === "rate-limited" ? { level: "warn" as const } : {}),
+  };
 }
