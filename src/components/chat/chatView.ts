@@ -29,7 +29,7 @@ export const CHAT_COPY = {
      * OUT_OF_INK_COPY.title, the board dialog's words (pinned equal in the tests; a literal so
      * the panel does not pull the lazy dialog's module into the board's first load)
      */
-    ink: "You're out of ink",
+    ink: "Help needs Agathon Unlimited",
     rateLimited: (seconds: number) => `That's a lot of requests. Try again in ${waitPhrase(seconds)}.`,
     unauthorized: "Please sign in again.",
     network: "Couldn't reach the tutor. Check your connection and try again.",

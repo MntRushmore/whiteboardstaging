@@ -131,8 +131,8 @@ export const LIVE_COPY = {
     /** seconds until the rate limit lifts */
     rateLimited: (seconds: number) => `Slowing down — try again in ${waitPhrase(seconds)}`,
     rateLimitedReady: "You can try again now",
-    /** 402 without a usable server message; "Get ink" opens the packs */
-    ink: "You're out of ink — grab an ink pack to keep the tutor going",
+    /** 402 without a usable server message; "Unlock help" opens the plan dialog */
+    ink: "Help needs Agathon Unlimited — start your free week to keep going",
     upstream: "The tutor service had a hiccup",
     timeout: "Reading took too long",
     /** a check or a solve whose stream went silent (a stalled connection) */
@@ -151,8 +151,8 @@ export const LIVE_COPY = {
     retry: "Retry",
     dismiss: "Dismiss",
     signIn: "Sign in",
-    /** 402: opens the ink dialog (the packs) */
-    getInk: "Get ink",
+    /** 402: opens the ink dialog (the plan: start the free week, or fix it) */
+    getInk: "Unlock help",
     /** aria label of the error region */
     region: "Live needs attention",
   },

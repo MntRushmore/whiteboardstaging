@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, BookOpen, Plus, RefreshCw, Sprout } from "lucide-react";
 import { AuthErrorBanner, useAuth } from "@/components/AuthProvider";
 import { AppHeader, APP_CONTENT_CLASS } from "@/components/app/AppHeader";
+import { usePlanGate } from "@/components/billing/usePlanGate";
 import { PROGRESS_COPY, buildProgressView, progressStateFor, type ProgressState, type ProgressView } from "@/lib/learning/progressView";
 import { Button } from "@/registry/components/button/button";
 import { EmptyState } from "@/registry/components/empty-state/empty-state";
@@ -135,6 +136,8 @@ export function ProgressScreen() {
   useEffect(() => {
     if (!authLoading && !user && !authError) router.replace("/login");
   }, [user, authLoading, authError, router]);
+  // No free plan: without Agathon Unlimited, the plan screen.
+  usePlanGate({ page: "progress" });
 
   const view = useMemo(
     () =>

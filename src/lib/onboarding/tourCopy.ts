@@ -92,14 +92,15 @@ export function helpCopy(step: "help" | "helped", help: TourHelp, solve = false)
  * Coach mark 3: tap Ask (`ask`), then tap a question in the panel (`asking`) — "3 more like these"
  * when the panel still shows its suggestions, any question once it has messages.
  */
-export function askCopy(step: "ask" | "asking", opts: { busy: boolean; suggestion: string | null; ink: number }): CoachCopy {
+export function askCopy(step: "ask" | "asking", opts: { busy: boolean; suggestion: string | null }): CoachCopy {
   if (step === "ask") {
     return { title: "Want more practice? Tap Ask.", body: "Your tutor writes new problems on your board.", button: TOUR_COPY.next, waiting: true };
   }
   if (opts.busy) return { title: "Your tutor is on it!", body: "Watch your board. New problems are on the way.", button: TOUR_COPY.next, waiting: true };
   return {
     title: opts.suggestion ? `Tap “${opts.suggestion}”.` : "Ask your tutor for more practice.",
-    body: `${opts.suggestion ? "Or type what you want to practise." : "Type what you want to practise, then send it."} Each ask uses ${opts.ink} ink.`,
+    // no ink count: the tour comes before the plan, and with the plan an ask spends none
+    body: opts.suggestion ? "Or type what you want to practise." : "Type what you want to practise, then send it.",
     button: TOUR_COPY.next,
     waiting: true,
   };

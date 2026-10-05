@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { SECTION_BODY, SectionHeader } from "@/components/account/SectionHeader";
 import { billingPortalUrl, unlimitedCheckoutUrl } from "@/lib/billing/unlimited";
-import { PLAN_COPY, unlimitedPlanView } from "@/lib/billing/unlimitedPlan";
+import { PLAN_COPY, billingFacts, unlimitedPlanView } from "@/lib/billing/unlimitedPlan";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
 import { cn } from "@/lib/utils";
 
@@ -18,26 +18,28 @@ const BADGE_CLASS: Record<string, string> = {
 };
 
 /**
- * Agathon Unlimited on the account page (`#plan`): what the plan is doing, in the words the
- * grown-up who pays needs (when the free week ends, the next charge, the day a cancelled plan
- * ends), and the one way forward: start the free week (the plan's Payment Link, same tab; it comes
- * back to the home), or manage it in Stripe's customer portal (cancel, change the card, invoices)
- * through its login page, NEXT_PUBLIC_BILLING_PORTAL_URL, in a new tab. The app holds no Stripe
- * key, so the portal is the only place a plan is cancelled. The plan re-reads when this tab gets
- * focus again (useUnlimited), so a cancellation shows once the webhook has it. The checkout carries
- * the account's checkout reference from the same read (never the user id), so the start button
- * shows "Coming soon" until that read has landed.
+ * Billing on the account page (`#billing`, the header menu's Billing): Agathon Unlimited, the one
+ * plan. What it costs, where it stands and the next day money moves (`billingFacts`), what that
+ * means in a sentence for the grown-up who pays (`unlimitedPlanView`), and the one way forward:
+ * start the free week (the plan's Payment Link, same tab; it comes back to the home), or Stripe's
+ * customer portal through its login page (NEXT_PUBLIC_BILLING_PORTAL_URL, a new tab) to change the
+ * card, see invoices or cancel. The app holds no Stripe key, so the portal is the only place a plan
+ * is cancelled. The plan re-reads when this tab gets focus again (useUnlimited), so a cancellation
+ * shows once the webhook has it. The checkout carries the account's checkout reference from the
+ * same read (never the user id), so the start button shows "Coming soon" until that read has landed.
  */
-export function PlanCard({ email }: { email: string }) {
+export function BillingCard({ email }: { email: string }) {
   const { state, loading, refresh } = useUnlimited();
   const view = unlimitedPlanView(state, { now: new Date() });
+  const facts = billingFacts(state);
   const checkout = unlimitedCheckoutUrl({ checkoutRef: state.checkoutRef, email });
   const portal = billingPortalUrl(email);
 
   return (
-    <Card id="plan" className="scroll-mt-6" data-plan={view.kind}>
+    <Card id="billing" className="scroll-mt-6" data-plan={view.kind}>
       <SectionHeader
-        title={PLAN_COPY.title}
+        title={PLAN_COPY.billingTitle}
+        description={PLAN_COPY.billingSubtitle}
         aside={
           view.badge && (
             <span className={cn("rounded-full border px-2.5 py-0.5 text-xs font-medium", BADGE_CLASS[view.badge] ?? "bg-muted")}>{view.badge}</span>
@@ -45,6 +47,15 @@ export function PlanCard({ email }: { email: string }) {
         }
       />
       <CardContent className={cn(SECTION_BODY, "space-y-4")}>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 rounded-lg border bg-muted/30 px-4 py-3 text-sm" data-testid="billing-facts">
+          {facts.map((f) => (
+            <div key={f.id} className="contents">
+              <dt className="text-muted-foreground">{f.label}</dt>
+              <dd className="font-medium tabular-nums">{f.value}</dd>
+            </div>
+          ))}
+        </dl>
+
         <div className="space-y-1">
           <p className="text-sm font-medium" data-testid="plan-headline">
             {view.headline}

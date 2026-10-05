@@ -54,9 +54,8 @@ import { Bug, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import { InkMeter } from "@/components/billing/InkMeter";
-import { inkTone } from "@/lib/billing/inkSummary";
-import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { OutOfInkWatcher } from "@/components/billing/OutOfInkWatcher";
+import { usePlanGate } from "@/components/billing/usePlanGate";
 import { noteInkBalance } from "@/lib/live/liveStore";
 import { captureBoardScreenshot } from "@/components/board/boardScreenshot";
 import { BETA_COPY } from "@/components/app/BetaBadge";
@@ -258,10 +257,6 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   useBoardAutoTitle(editor, id, sync);
 
   const narrowBoard = screenStripSlot(useBreakpoint()) === "corner";
-  // The meter says "Get ink" whenever ink is low or gone; the Live pill's out-of-ink error then
-  // leaves it to the meter, so the bar says it once (one shared read per page: useInkSummary).
-  const inkBalance = useInkSummary().summary?.balance;
-  const meterOffersInk = typeof inkBalance === "number" && inkTone(inkBalance) !== "ok";
 
   // One place decides what the bar shows (see src/components/live/toolbar.ts).
   const toolbar = boardToolbarView({
@@ -395,10 +390,9 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
               onClearMarks={() => controller.clearMarks()}
               onShowModeInfo={() => setModeInfoOpen(true)}
               onReportProblem={openReport}
-              meterOffersInk={meterOffersInk}
             />
           </LiveErrorBoundary>
-          {/* ink left; tapping it (or its "Get ink" when low) opens the ink dialog */}
+          {/* the plan (∞), or the ink a plan spends right now; none on the guided board. Tapping a count opens the ink dialog */}
           {/* once the balance covers the refused call again (a pack landed), its "out of ink" pill goes;
               with none left, Auto spends nothing */}
           <InkMeter onBalance={noteInkBalance} />
@@ -451,7 +445,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
         </LiveErrorBoundary>
       )}
 
-      {/* a Live 402 or "Get ink" opens the ink dialog (lazy); a 402's never mid-stroke */}
+      {/* a Live 402 or "Unlock help" opens the ink dialog (lazy: the plan); a 402's never mid-stroke */}
       <OutOfInkWatcher editor={editor} />
       <LiveErrorBoundary>
         <LectureBar lecture={lecture} />
@@ -593,6 +587,12 @@ export default function BoardPage() {
       router.replace(`/login?next=/board/${id}`);
     }
   }, [user, authLoading, router, id]);
+
+  // No free plan: without Agathon Unlimited a board sends the student to the plan screen — except
+  // the guided first board, the tour before the plan screen (its marker is read once the user is
+  // known, and the tour clears it as it ends: the next board is gated).
+  const guidedBoard = useMemo(() => (userId ? isGuidedBoard(onboardingStorage(), userId, id) : false), [userId, id]);
+  usePlanGate({ enabled: !guidedBoard, page: "board" });
 
   const retryLoad = useCallback(() => {
     setInitialData(null);

@@ -5,7 +5,7 @@ import { InfinityIcon } from "lucide-react";
 import { InkBottle } from "@/components/billing/InkBottle";
 import { openInkDialog } from "@/lib/billing/inkDialog";
 import { INK_COPY, bottleFill, formatInk, inkTone } from "@/lib/billing/inkSummary";
-import { UNLIMITED_METER_COPY, isUnlimited } from "@/lib/billing/unlimited";
+import { UNLIMITED_METER_COPY, hasPlan, isUnlimited } from "@/lib/billing/unlimited";
 import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
 import { cn } from "@/lib/utils";
@@ -19,14 +19,17 @@ const TONE_CLASS = {
 const PILL = "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium tabular-nums shadow-sm transition-colors";
 
 /**
- * The board bar's ink meter: the bottle (its fill is the balance) and the number ("300 ink" on a
+ * The board bar's ink meter: the bottle (its fill is the balance) and the number ("80 ink" on a
  * board 1024 px wide or more, `@5xl/bar`; the bottle and the number alone on a narrower one, so an
- * upright iPad's bar keeps one row; the aria-label always says "300 ink left"). A calm amber
- * with "Get ink" under LOW_INK, red at zero. Tapping it opens the board's ink dialog (the packs,
- * bought in a new tab) through openInkDialog, so the student never leaves the board. Hidden until
- * the balance has loaded, and silent on failure: the bar is not where a metering hiccup is
- * explained. The balance re-reads on focus, on return to the tab and after a checkout
- * (useInkSummary), so bought ink appears without a reload.
+ * upright iPad's bar keeps one row; the aria-label always says "80 ink left"). A calm amber under
+ * LOW_INK, red at zero. Tapping it opens the board's ink dialog (what the plan is doing, and its
+ * fix) through openInkDialog, so the student never leaves the board. Hidden until the balance has
+ * loaded, and silent on failure: the bar is not where a metering hiccup is explained.
+ *
+ * There is no free plan and no ink packs (2026-10-05). A count shows only while a plan is not
+ * giving free help (a second plan before its first charge, a payment to fix): then help spends
+ * that ink. Without a plan — the guided first board, the tour before the plan screen — there is
+ * no meter: its starter ink is the tour's, not something to watch.
  *
  * With Agathon Unlimited on (trialing or active), help spends no ink, so the count would only
  * worry the student: the meter shows ∞ and "Unlimited" instead, quietly, and offers no packs (it
@@ -44,6 +47,7 @@ export function InkMeter({ className, onBalance }: { className?: string; onBalan
     onBalance?.(unlimited ? Number.POSITIVE_INFINITY : balance);
   }, [balance, unlimited, onBalance]);
   if (!summary) return null;
+  if (!unlimited && !hasPlan(state)) return null;
   if (unlimited) {
     return (
       <span
@@ -67,14 +71,13 @@ export function InkMeter({ className, onBalance }: { className?: string; onBalan
       onClick={openInkDialog}
       data-testid="ink-meter"
       data-tone={tone}
-      title={tone === "ok" ? label : `${label}: ${INK_COPY.getInk.toLowerCase()}`}
-      aria-label={tone === "ok" ? label : `${label}. ${INK_COPY.getInk}`}
+      title={label}
+      aria-label={label}
       className={cn(PILL, TONE_CLASS[tone], className)}
     >
       <InkBottle fill={bottleFill(summary.balance)} tone={tone} className="shrink-0" />
       <span>{formatInk(summary.balance)}</span>
       <span className="hidden @5xl/bar:inline">ink</span>
-      {tone !== "ok" && <span className="ml-0.5 font-semibold underline underline-offset-2">{INK_COPY.getInk}</span>}
     </button>
   );
 }

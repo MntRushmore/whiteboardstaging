@@ -11,7 +11,7 @@ const DATE = "Saturday, October 10";
 
 describe("the plan screen's card", () => {
   it("offers the free week: the price crossed out, the grown-up, the button, and the renewal said right under it", () => {
-    const html = render(<PlanOffer view="offer" chargeDate={DATE} onStart={vi.fn()} onLater={vi.fn()} />);
+    const html = render(<PlanOffer view="offer" chargeDate={DATE} onStart={vi.fn()} onContinue={vi.fn()} />);
     expect(html).toContain('data-view="offer"');
     expect(html).toMatch(/<h1[^>]*id="plan-title"[^>]*>Agathon Unlimited<\/h1>/);
     expect(html).toContain("<s>$25/month</s>");
@@ -23,23 +23,24 @@ describe("the plan screen's card", () => {
     expect(html).toContain(PLAN_COPY.grownUp);
     const start = html.indexOf(PLAN_COPY.start);
     const disclosure = html.indexOf(PLAN_COPY.disclosure(DATE));
-    const later = html.indexOf(PLAN_COPY.later);
     expect(start).toBeGreaterThan(-1);
-    // in reading order: the button, what it costs and when, then the way out
+    // in reading order: the button, then what it costs and when
     expect(disclosure).toBeGreaterThan(start);
-    expect(later).toBeGreaterThan(disclosure);
+    // no free plan: no way past it but the free week (the header's menu has Account and Sign out)
+    expect(text(html)).not.toMatch(/Maybe later|Continue/);
+    expect(html.match(/<button/g)).toHaveLength(1);
     expect(html).toMatch(/aria-describedby="plan-disclosure"/);
     expect(html).toMatch(/id="plan-disclosure"/);
   });
 
   it("says what is happening while checkout opens", () => {
-    const html = render(<PlanOffer view="offer" chargeDate={DATE} starting onStart={vi.fn()} onLater={vi.fn()} />);
+    const html = render(<PlanOffer view="offer" chargeDate={DATE} starting onStart={vi.fn()} onContinue={vi.fn()} />);
     expect(html).toContain(PLAN_COPY.opening);
     expect(html).toContain('aria-busy="true"');
   });
 
   it("without a checkout: Coming soon (disabled), no charge line, and Continue goes on", () => {
-    const html = render(<PlanOffer view="soon" chargeDate={DATE} onStart={vi.fn()} onLater={vi.fn()} />);
+    const html = render(<PlanOffer view="soon" chargeDate={DATE} onStart={vi.fn()} onContinue={vi.fn()} />);
     expect(html).toContain('data-view="soon"');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>[\s\S]*?Coming soon/);
     expect(html).not.toContain(PLAN_COPY.start);
@@ -49,6 +50,17 @@ describe("the plan screen's card", () => {
     expect(html).toContain(PLAN_COPY.soonTitle);
     expect(html).not.toContain(PLAN_COPY.grownUp);
     expect(html).toContain(PLAN_COPY.continue);
-    expect(html).not.toContain(PLAN_COPY.later);
+  });
+
+  it("a plan that ended is offered again: welcome back, no crossed-out price, and when the first charge is", () => {
+    const html = render(<PlanOffer view="restart" chargeDate={DATE} onStart={vi.fn()} onContinue={vi.fn()} />);
+    expect(html).toContain('data-view="restart"');
+    expect(html).toContain(PLAN_COPY.welcomeBack);
+    expect(html).not.toContain("<s>");
+    expect(html).not.toContain(PLAN_COPY.free);
+    expect(html).toContain(PLAN_COPY.restart);
+    expect(html).toContain(PLAN_COPY.disclosure(DATE));
+    expect(html).toContain(PLAN_COPY.restartNote);
+    expect(text(html)).not.toMatch(/Continue/);
   });
 });

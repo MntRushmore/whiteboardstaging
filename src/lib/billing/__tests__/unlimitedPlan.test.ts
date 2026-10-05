@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NO_UNLIMITED, type UnlimitedState } from "@/lib/billing/unlimited";
-import { PLAN_COPY, planDate, unlimitedPlanView } from "@/lib/billing/unlimitedPlan";
+import { PLAN_COPY, billingFacts, planDate, unlimitedPlanView } from "@/lib/billing/unlimitedPlan";
 
 const NOW = new Date("2026-10-03T15:00:00Z");
 const TZ = "America/Chicago";
@@ -21,10 +21,10 @@ describe("unlimitedPlanView", () => {
     expect(view({})).toEqual({
       kind: "offer",
       badge: null,
-      headline: "Help from the tutor without counting ink. Free for 7 days, then $25 a month. Cancel any time.",
+      headline: "Agathon is Agathon Unlimited: $25 a month, and your first 7 days are free. Cancel any time.",
       detail: "A grown-up's card is needed at checkout. Nothing is charged until Saturday, October 10.",
       action: "start",
-      actionLabel: "Try Unlimited free for 7 days",
+      actionLabel: "Start the free week",
     });
   });
 
@@ -93,13 +93,15 @@ describe("unlimitedPlanView", () => {
     expect(view({ status: "incomplete" })).toMatchObject({ kind: "pending", action: "refresh", actionLabel: PLAN_COPY.refresh });
   });
 
-  it("an ended plan says so and offers it again", () => {
+  it("an ended plan says so and offers it again: without it the app is closed", () => {
     expect(view({ status: "canceled", currentPeriodEnd: "2026-10-10T15:00:00Z" })).toMatchObject({
       kind: "ended",
-      headline: "Your plan ended on Saturday, October 10. Help uses ink again.",
+      headline: "Your plan ended on Saturday, October 10.",
       action: "start",
+      actionLabel: "Start Unlimited again",
     });
-    expect(view({ status: "canceled" }).headline).toBe("Your plan has ended. Help uses ink again.");
+    expect(view({ status: "canceled" }).detail).toMatch(/^Start it again to keep using Agathon\./);
+    expect(view({ status: "canceled" }).headline).toBe("Your plan has ended.");
   });
 
   it("dates that are missing still read as sentences", () => {
@@ -115,5 +117,36 @@ describe("unlimitedPlanView", () => {
       expect(text).not.toMatch(/!/);
       expect(text.toLowerCase()).not.toMatch(/\bwrong\b/);
     }
+  });
+});
+
+describe("billingFacts", () => {
+  const facts = (state: Partial<UnlimitedState>) =>
+    Object.fromEntries(billingFacts({ ...NO_UNLIMITED, ...state }, { timeZone: TZ }).map((f) => [f.label, f.value]));
+
+  it("says what the plan is and costs, whatever its state", () => {
+    expect(facts({})).toEqual({ Plan: "Agathon Unlimited", Price: "$25 a month", Status: "Not started" });
+  });
+
+  it("the free week: when the first charge is", () => {
+    expect(facts({ status: "trialing", trialEnd: "2026-10-10T15:00:00Z" })).toMatchObject({ Status: "Free week", "First charge": "$25 on Saturday, October 10" });
+    expect(facts({ status: "repeat_trial", trialEnd: "2026-10-10T15:00:00Z" })).toMatchObject({ Status: "Starting", "First charge": "$25 on Saturday, October 10" });
+  });
+
+  it("a paid plan: the next charge; set to cancel: the day it ends, and no charge", () => {
+    expect(facts({ status: "active", currentPeriodEnd: "2026-11-10T15:00:00Z" })).toMatchObject({ Status: "Active", "Next charge": "$25 on Tuesday, November 10" });
+    const ending = facts({ status: "active", currentPeriodEnd: "2026-11-10T15:00:00Z", cancelAtPeriodEnd: true });
+    expect(ending).toMatchObject({ Status: "Set to cancel", "Ends on": "Tuesday, November 10" });
+    expect(ending).not.toHaveProperty("Next charge");
+  });
+
+  it("a payment problem, a plan being set up, an ended plan", () => {
+    expect(facts({ status: "past_due" })).toMatchObject({ Status: "Payment needed" });
+    expect(facts({ status: "incomplete" })).toMatchObject({ Status: "Setting up" });
+    expect(facts({ status: "canceled", currentPeriodEnd: "2026-10-10T15:00:00Z" })).toMatchObject({ Status: "Ended", "Ended on": "Saturday, October 10" });
+  });
+
+  it("leaves the date out when there is none", () => {
+    expect(billingFacts({ ...NO_UNLIMITED, status: "active" }).map((f) => f.id)).toEqual(["plan", "price", "status"]);
   });
 });

@@ -4,12 +4,14 @@ import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { isApiError, isOutOfInk } from "@/lib/api-client";
-import { INK_COPY, INK_PACKS_PATH } from "@/lib/billing/inkSummary";
+import { PLAN_PATH } from "@/lib/onboarding/planMarker";
 
-/** 402 without a usable server message. The toast links to the ink packs on /account. */
-export const INK_EMPTY_MESSAGE = "You're out of ink. Grab an ink pack to keep going.";
-/** Where a 402 sends the user: the ink packs. */
-export const INK_BUY_PATH = INK_PACKS_PATH;
+/** 402 without a usable server message (the server's own words). The toast links to the plan screen. */
+export const INK_EMPTY_MESSAGE = "Help needs Agathon Unlimited. Start your free week to keep going.";
+/** Where a 402 sends the user: the plan screen. */
+export const INK_BUY_PATH = PLAN_PATH;
+/** The 402 toast's action. */
+export const INK_ACTION_LABEL = "Unlock help";
 export const SIGN_IN_AGAIN_MESSAGE = "Please sign in again";
 export const RATE_LIMITED_MESSAGE =
   "Slow down a little — try again in a few seconds";
@@ -189,7 +191,7 @@ type HandleOptions = {
  * Uniform handling for errors thrown by `apiJson` / `authedFetch`:
  *   401 -> toast "Please sign in again" and redirect to /login
  *   429 -> toast the server's retry hint
- *   402 / ink_empty -> the out-of-ink toast with a "Get ink" action to the packs on /account
+ *   402 / ink_empty -> the toast with an "Unlock help" action to the plan screen
  *   anything else -> the server's human message (toasted if `toastOthers`)
  *
  * Returns the human-readable message so callers can also show it inline.
@@ -216,7 +218,7 @@ export function useApiErrorHandler() {
           const href = described.accountHref;
           toast.error(described.message, {
             duration: 8000,
-            action: { label: INK_COPY.getInk, onClick: () => router.push(href) },
+            action: { label: INK_ACTION_LABEL, onClick: () => router.push(href) },
           });
         } else {
           toast.error(described.message);

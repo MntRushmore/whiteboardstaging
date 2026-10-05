@@ -7,8 +7,9 @@ import { json } from "@/lib/server/auth";
  * Ink metering for the paid API routes.
  *
  * Ink is the unit (1 ink = 1 of the old monthly credits). It never expires: a student gets
- * 300 starter ink once, buys more in packs, and every AI action below spends some; drawing on
- * your own is free. The balance is all ink granted minus all ink used, stored on the profile
+ * 100 starter ink once, for the guided first board, and every AI action below spends some unless
+ * Agathon Unlimited is on (there is no free plan and no ink packs since 2026-10-05: past the guided
+ * board the app needs the plan, src/lib/billing/planGate.ts). The balance is all ink granted minus all ink used, stored on the profile
  * (supabase/migrations/20261002000000_ink.sql). Consumption runs AS THE USER: `consumeInk`
  * calls the SECURITY DEFINER RPC `consume_credits(...)` (its name predates ink) with the
  * caller's own JWT, so a user can only ever spend their own ink and nothing here can add
@@ -344,11 +345,13 @@ export async function runCharged(
 /* Responses                                                                  */
 /* ------------------------------------------------------------------------- */
 
-export const INK_EMPTY_MESSAGE = "You're out of ink. Grab an ink pack to keep going.";
+// No free plan and no ink packs (2026-10-05): help without ink is help that needs the plan. The
+// words fit both who meet it: a student without a plan, and one whose plan spends ink right now.
+export const INK_EMPTY_MESSAGE = "Help needs Agathon Unlimited. Start your free week to keep going.";
 export const BILLING_UNAVAILABLE_MESSAGE = "Billing is not set up on this deployment — run the migrations.";
 
-/** Where the 402 sends the user: the account page, whose ink packs are the way to buy more. */
-export const BUY_INK_PATH = "/account";
+/** Where the 402 sends the user: the plan screen (a student with a plan is sent on to the home). */
+export const BUY_INK_PATH = "/welcome/plan";
 
 /**
  * 402 following the shared error contract, with additive `remaining` (the ink left), `cost` (what

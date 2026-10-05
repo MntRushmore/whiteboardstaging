@@ -6,10 +6,8 @@ import { LEGAL } from "@/lib/legal";
 
 export const metadata: Metadata = {
   title: "Terms of Service",
-  description: "The terms for using Agathon, the AI math tutor on a whiteboard, including ink packs and Agathon Unlimited.",
+  description: "The terms for using Agathon, the AI math tutor on a whiteboard, including Agathon Unlimited.",
 };
-
-const packs = LEGAL.inkPacks.map((p) => `${p.ink.toLocaleString("en-US")} ink for $${p.priceUsd}`).join(", ");
 
 /** Agathon Unlimited as sold (src/lib/billing/unlimited.ts, scripts/stripe-setup.mjs). */
 const plan = UNLIMITED_PLAN.name;
@@ -31,14 +29,14 @@ export default function TermsPage() {
           <li>Agathon is an AI maths tutor in beta. The AI can be wrong; check what matters.</li>
           <li>Children under 13 need a parent or guardian to set up and agree to their account.</li>
           <li>Your boards are yours. We use them only to run Agathon for you.</li>
-          <li>Ink is bought in one-time packs, never expires and is spent on AI help.</li>
           <li>
-            {plan} is {price} a month after a free week. It renews by itself until you cancel, and you can cancel
-            online at any time. Cancel during the free week and you pay nothing (<a href="#unlimited">how it works</a>).
+            Using {LEGAL.productName} takes {plan}: {price} a month after a free week. There is no free plan. It renews
+            by itself until you cancel, and you can cancel online at any time. Cancel during the free week and you pay
+            nothing (<a href="#unlimited">how it works</a>).
           </li>
           <li>
-            Unused ink can be refunded within {LEGAL.refundWindowDays} days of purchase. See the{" "}
-            <Link href="/refunds">Refund Policy</Link> for ink and the plan.
+            Ink packs are no longer sold. See the <Link href="/refunds">Refund Policy</Link> for the plan, and for ink
+            bought before.
           </li>
         </ul>
       }
@@ -85,8 +83,8 @@ export default function TermsPage() {
           </li>
           <li>
             <strong>Under 18</strong> (or the age of majority where you live): you may use {LEGAL.productName} with a
-            parent’s or guardian’s permission. Purchases, including ink packs and {plan}, must be made or approved by
-            a parent or guardian.
+            parent’s or guardian’s permission. {plan}, and any other purchase, must be made or approved by a parent or
+            guardian.
           </li>
           <li>One person per account. You are responsible for what happens under your account; tell us if you think
             someone else is using it.</li>
@@ -116,8 +114,8 @@ export default function TermsPage() {
         <ul>
           <li>break the law, or use {LEGAL.productName} to harass, harm or deceive anyone;</li>
           <li>
-            try to get around ink, the fair-use limit, rate limits or security, or access other people’s accounts or
-            boards;
+            try to get around the plan, ink, the fair-use limit, rate limits or security, or access other people’s
+            accounts or boards;
           </li>
           <li>share one account, or one plan, between several people;</li>
           <li>scrape, copy or resell the service, or access it with bots or scripts;</li>
@@ -127,35 +125,32 @@ export default function TermsPage() {
         <p>We may limit, suspend or close an account that breaks these rules.</p>
       </LegalSection>
 
-      <LegalSection id="ink" title="Ink packs">
+      <LegalSection id="ink" title="Ink">
         <ul>
           <li>
-            AI help, such as reading your handwriting, checking, hints, worked solutions and chat, uses{" "}
-            <strong>ink</strong>, unless you have <a href="#unlimited">{plan}</a>. Writing and drawing on your own costs
-            nothing. The app shows how much ink an action uses; those amounts may change for future actions.
+            AI help, such as reading your handwriting, checking, hints, worked solutions and chat, is counted in{" "}
+            <strong>ink</strong>. While <a href="#unlimited">{plan}</a> is on, help uses no ink.
           </li>
           <li>
-            Ink is sold in one-time packs: {packs} (US dollars, plus any tax that applies). Packs are not subscriptions
-            and never renew.
+            A new account gets a little free starter ink for its guided first board. After that, {LEGAL.productName}{" "}
+            needs {plan}. Free ink has no cash value and is not refundable.
           </li>
           <li>
-            Payments are processed by Stripe. Checkout and your receipt show the seller name{" "}
-            <strong>“{LEGAL.stripeSellerName}”</strong>, and your card statement shows{" "}
-            <strong>“{LEGAL.statementDescriptors.inkPacks}”</strong>. We never see or store your full card number.
+            <strong>Ink packs are no longer sold</strong> (from October 5, 2026). Ink from a pack bought before then
+            never expires, has no cash value, cannot be transferred to another account, and can only be refunded as the{" "}
+            <Link href="/refunds">Refund Policy</Link> says. Pack payments were processed by Stripe under the seller
+            name <strong>“{LEGAL.stripeSellerName}”</strong>, shown on a card statement as{" "}
+            <strong>“{LEGAL.statementDescriptors.inkPacks}”</strong>.
           </li>
-          <li>
-            <strong>Ink never expires.</strong> It has no cash value, cannot be transferred to another account, and can
-            only be refunded as the <Link href="/refunds">Refund Policy</Link> says.
-          </li>
-          <li>New accounts may get some free starter ink. Free ink has no cash value and is not refundable.</li>
+          <li>Help uses ink you have only while your plan is not giving free help, for example while a payment is being fixed.</li>
           <li>If we ever shut {LEGAL.productName} down, we will refund purchased ink you have not used.</li>
         </ul>
       </LegalSection>
 
       <LegalSection id="unlimited" title={`${plan} (subscription)`}>
         <p>
-          {plan} is a monthly plan. While it is on, AI help does not use ink. It is optional: you can always use{" "}
-          {LEGAL.productName} with ink instead.
+          {plan} is a monthly plan, and the way to use {LEGAL.productName}: there is no free plan. After the guided
+          first board, the app needs it. While it is on, AI help does not use ink.
         </p>
 
         <h3>Price and free week</h3>
@@ -184,7 +179,7 @@ export default function TermsPage() {
         <ul>
           <li>
             Cancel online at any time, in a few clicks. No phone call or email is needed. On your Account page, choose{" "}
-            <strong>Manage or cancel</strong> in the {plan} section (the reminder email has the same link), sign in to
+            <strong>Manage or cancel</strong> in the Billing section (the reminder email has the same link), sign in to
             Stripe’s billing page with the email used at checkout, and cancel the plan.
           </li>
           <li>
@@ -251,8 +246,7 @@ export default function TermsPage() {
 
         <h3>Your ink, and if we shut down</h3>
         <p>
-          Ink you already have stays on your account while the plan is on, and is there to use if the plan ends. If we
-          ever shut {LEGAL.productName} down, we will cancel every plan so nobody is charged again, and refund the
+          Ink you already have stays on your account while the plan is on. If we ever shut {LEGAL.productName} down, we will cancel every plan so nobody is charged again, and refund the
           unused part of the current paid month.
         </p>
       </LegalSection>

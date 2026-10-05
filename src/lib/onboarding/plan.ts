@@ -1,31 +1,36 @@
 /**
- * The plan screen: the last screen of onboarding, once, after the guided board and before the
- * home (owner, 2026-10-03). It offers Agathon Unlimited (`src/lib/billing/unlimited.ts`) with its
- * free beta week — the price crossed out, nothing charged today — and says plainly that a
- * grown-up's card is charged when the week ends. A student who skipped the tour never sees it
- * (they asked to get going; the pitch can wait for a grown-up and the account page).
+ * The plan screen: where every student without a plan ends up. There is no free plan (owner,
+ * 2026-10-05): it comes right after the guided board, and the home, the boards and Progress send
+ * anyone without Agathon Unlimited back to it (`usePlanGate`). It offers the plan
+ * (`src/lib/billing/unlimited.ts`) with its free week — the price crossed out, nothing charged
+ * today — says plainly that a grown-up's card is charged when the week ends, and has no "Maybe
+ * later": the way on is the free week (or the app header's menu: Account, Sign out).
  *
  * Pure: what the screen shows, its words, and the date it needs. The route is
- * src/app/(platform)/welcome/plan; where it is and whether it is due, `planMarker.ts`; the home's
- * welcome back from checkout, `arrival.ts`.
+ * src/app/(platform)/welcome/plan; where it is, `planMarker.ts`; the home's welcome back from
+ * checkout, `arrival.ts`.
  */
-import { UNLIMITED_PLAN, isUnlimited, type UnlimitedState } from "@/lib/billing/unlimited";
+import { UNLIMITED_PLAN, hasPlan, type UnlimitedState } from "@/lib/billing/unlimited";
 
 /**
  * - `checking`: the subscription is still being read (nothing shows: a subscriber is never pitched);
- * - `skip`: already on the plan (trialing or paid up), a second plan waiting for its first charge
- *   (repeat_trial), or a plan being set up or with a payment to fix: straight on to the home;
+ * - `skip`: the account has a plan (`hasPlan`: in its free week, paid up, a second plan waiting for
+ *   its first charge, one being set up or with a payment to fix): straight on to the home;
  * - `offer`: the pitch, with Start the free week;
- * - `soon`: the pitch without a checkout (the Payment Link is not configured): "Coming soon".
+ * - `restart`: a plan that ended, offered again: a second plan has no free week (`has_unlimited`'s
+ *   first-plan rule), so nothing is crossed out;
+ * - `soon`: the pitch without a checkout (the Payment Link is not configured): "Coming soon", and
+ *   Continue goes home (the paywall is off without a checkout too: `planGate`).
  */
-export type PlanView = "checking" | "skip" | "offer" | "soon";
+export type PlanView = "checking" | "skip" | "offer" | "restart" | "soon";
 
 export function planView({ loading, unlimited, checkoutUrl }: { loading: boolean; unlimited: Pick<UnlimitedState, "status"> | null; checkoutUrl: string | null }): PlanView {
   if (loading) return "checking";
   // A subscription that exists but is not (yet) unlimited — being set up, or a payment to fix — is
   // never offered a second checkout: that would be a second $25 a month.
-  if (isUnlimited(unlimited) || unlimited?.status === "repeat_trial" || unlimited?.status === "incomplete" || unlimited?.status === "past_due") return "skip";
-  return checkoutUrl ? "offer" : "soon";
+  if (hasPlan(unlimited)) return "skip";
+  if (!checkoutUrl) return "soon";
+  return unlimited?.status === "canceled" ? "restart" : "offer";
 }
 
 /** "$25", for a whole-dollar price. */
@@ -54,7 +59,7 @@ export const PLAN_COPY = {
   /** the struck-through price, and what a screen reader hears before it */
   price: `${PRICE}/month`,
   priceWas: "Usually",
-  free: "Free for your beta week",
+  free: `Free for ${UNLIMITED_PLAN.trialDays} days`,
   then: `Then ${PRICE}/month. Cancel anytime.`,
   perksTitle: "What you get",
   perks: [
@@ -72,10 +77,13 @@ export const PLAN_COPY = {
   /** the auto-renewal disclosure, right under the button */
   disclosure: (date: string) =>
     `Nothing is charged today. The card is charged ${PRICE} on ${date}, then every month, unless you cancel before then.`,
+  /** a plan that ended, offered again (`restart`): no free week, so no crossed-out price */
+  welcomeBack: "Welcome back",
+  restart: "Start Unlimited again",
+  restartNote: "The free week is for a first plan only, so help uses your ink until the first charge.",
   /** under the disclosure: the plan's terms, and the fair-use limit "Unlimited" is subject to */
   termsLink: { href: "/terms#unlimited", text: "How the plan works" },
   fairUseLink: { href: "/terms#fair-use", text: "Fair use" },
-  later: "Maybe later",
   soon: "Coming soon",
   /** without a checkout, in place of the grown-up's line */
   soonTitle: "Unlimited isn't open yet",

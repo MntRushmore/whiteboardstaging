@@ -8,46 +8,60 @@ import styles from "./plan.module.css";
 const PERK_ICONS = { help: Lightbulb, ask: MessageSquare, check: CheckCheck, courses: GraduationCap } as const;
 
 export interface PlanOfferProps {
-  /** `offer`: Start the free week opens checkout; `soon`: no checkout yet, Continue goes home */
-  view: "offer" | "soon";
+  /**
+   * `offer`: Start the free week opens checkout; `restart`: a plan that ended, started again (no
+   * free week); `soon`: no checkout yet, Continue goes home
+   */
+  view: "offer" | "restart" | "soon";
   /** the day the card is first charged, in words (`chargeDateText`) */
   chargeDate: string;
   /** checkout is opening (the button says so and stops taking taps) */
   starting?: boolean;
   onStart: () => void;
-  /** Maybe later (`offer`) / Continue (`soon`): on to the home */
-  onLater: () => void;
+  /** Continue (`soon` only): on to the home */
+  onContinue: () => void;
 }
 
 /**
  * The plan screen's card (the route is src/app/(platform)/welcome/plan): Agathon Unlimited, its
- * price crossed out under "Free for your beta week", what it gives in four pictures, and — because
- * the student is a child and the card is a grown-up's — "This part is for a grown-up"
- * above the one button, with the auto-renewal said plainly right under it. "Maybe later" is always
- * there and goes home. Without a checkout link the button says Coming soon and Continue goes home.
+ * price crossed out under "Free for 7 days", what it gives in four pictures, and — because the
+ * student is a child and the card is a grown-up's — "This part is for a grown-up" above the one
+ * button, with the auto-renewal said plainly right under it. There is no free plan, so there is no
+ * "Maybe later" (the app header's menu still has Account and Sign out). A plan that ended is
+ * offered again without the free week. Without a checkout link the button says Coming soon and
+ * Continue goes home.
  *
  * Presentational: the route reads the session and the subscription and decides `view`.
  */
-export function PlanOffer({ view, chargeDate, starting = false, onStart, onLater }: PlanOfferProps) {
+export function PlanOffer({ view, chargeDate, starting = false, onStart, onContinue }: PlanOfferProps) {
   const soon = view === "soon";
+  const restart = view === "restart";
   return (
     <section aria-labelledby="plan-title" data-onboarding="plan" data-view={view} className={styles.card}>
       <div className={styles.hero}>
         <p className={`${styles.kicker} ${styles.rise}`}>
           <Sparkles size={16} strokeWidth={2} aria-hidden />
-          {PLAN_COPY.kicker}
+          {restart ? PLAN_COPY.welcomeBack : PLAN_COPY.kicker}
         </p>
         <h1 id="plan-title" className={`${styles.title} ${styles.rise}`}>
           {PLAN_COPY.title}
         </h1>
-        <p className={`${styles.price} ${styles.rise}`}>
-          <span className={styles.was}>
-            <span className={styles.srOnly}>{PLAN_COPY.priceWas} </span>
-            <s>{PLAN_COPY.price}</s>
-          </span>
-          <span className={styles.free}>{PLAN_COPY.free}</span>
-        </p>
-        <p className={`${styles.then} ${styles.rise}`}>{PLAN_COPY.then}</p>
+        {restart ? (
+          <p className={`${styles.price} ${styles.rise}`}>
+            <span className={styles.free}>{PLAN_COPY.price}</span>
+          </p>
+        ) : (
+          <>
+            <p className={`${styles.price} ${styles.rise}`}>
+              <span className={styles.was}>
+                <span className={styles.srOnly}>{PLAN_COPY.priceWas} </span>
+                <s>{PLAN_COPY.price}</s>
+              </span>
+              <span className={styles.free}>{PLAN_COPY.free}</span>
+            </p>
+            <p className={`${styles.then} ${styles.rise}`}>{PLAN_COPY.then}</p>
+          </>
+        )}
       </div>
 
       <div className={styles.body}>
@@ -84,13 +98,13 @@ export function PlanOffer({ view, chargeDate, starting = false, onStart, onLater
           ) : (
             // while checkout opens the label itself says so (Arc's loading state would hide it)
             <Button size="lg" className={styles.cta} onClick={() => !starting && onStart()} aria-busy={starting || undefined} aria-describedby="plan-disclosure">
-              {starting ? PLAN_COPY.opening : PLAN_COPY.start}
+              {starting ? PLAN_COPY.opening : restart ? PLAN_COPY.restart : PLAN_COPY.start}
               {!starting && <ArrowRight size={18} strokeWidth={2} aria-hidden />}
             </Button>
           )}
           {!soon && (
             <p id="plan-disclosure" className={styles.disclosure}>
-              {PLAN_COPY.disclosure(chargeDate)}{" "}
+              {PLAN_COPY.disclosure(chargeDate)} {restart && `${PLAN_COPY.restartNote} `}
               <a href={PLAN_COPY.termsLink.href} className="underline underline-offset-2">
                 {PLAN_COPY.termsLink.text}
               </a>
@@ -100,9 +114,11 @@ export function PlanOffer({ view, chargeDate, starting = false, onStart, onLater
               </a>
             </p>
           )}
-          <Button size="lg" variant={soon ? "secondary" : "ghost"} className={styles.later} onClick={onLater} disabled={starting}>
-            {soon ? PLAN_COPY.continue : PLAN_COPY.later}
-          </Button>
+          {soon && (
+            <Button size="lg" variant="secondary" className={styles.later} onClick={onContinue}>
+              {PLAN_COPY.continue}
+            </Button>
+          )}
         </div>
       </div>
     </section>

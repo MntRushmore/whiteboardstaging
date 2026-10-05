@@ -16,8 +16,8 @@ import { z } from "zod";
 
 /** Path of the account page every ink surface links to. */
 export const ACCOUNT_PATH = "/account";
-/** The packs on the account page (the header meter's "Get ink"). */
-export const INK_PACKS_PATH = "/account#ink-packs";
+/** The account page's Billing section: the plan, its next charge, the card and invoices, cancelling. */
+export const BILLING_PATH = "/account#billing";
 
 /**
  * PostgREST returns `numeric` as strings and `integer` as numbers; coerce so the view never does

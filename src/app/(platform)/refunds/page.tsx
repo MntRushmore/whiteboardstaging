@@ -7,7 +7,7 @@ import { LEGAL } from "@/lib/legal";
 
 export const metadata: Metadata = {
   title: "Refund Policy",
-  description: "How refunds work for Agathon ink packs and Agathon Unlimited.",
+  description: "How refunds work for Agathon Unlimited, and for Agathon ink packs bought before they were retired.",
 };
 
 const days = LEGAL.refundWindowDays;
@@ -31,20 +31,41 @@ export default function RefundsPage() {
       title="Refund Policy"
       summary={
         <ul>
-          <li>Unused ink from a pack can be refunded within {days} days of buying it. Just ask.</li>
-          <li>Ink you have already used is not refundable.</li>
           <li>
             {plan}: cancel during the free week and you are never charged. Charged {price} and did not mean to keep
             the plan? Ask within {planDays} days and we refund that charge.
+          </li>
+          <li>
+            Ink packs are no longer sold. Unused ink from a pack bought before can be refunded within {days} days of
+            buying it; ink you have already used is not refundable.
           </li>
           <li>If something went wrong on our side, we put it right or refund you in full, at any time.</li>
         </ul>
       }
     >
+      <LegalSection id="subscriptions" title={`${plan} (subscription)`}>
+        <ul>
+          <li>
+            <strong>The free week is free.</strong> Cancel before it ends and you are never charged. See{" "}
+            <Link href="/terms#unlimited">how to cancel</Link>.
+          </li>
+          <li>
+            <strong>Charged and did not mean to keep it?</strong> If you forgot to cancel, or a charge was a mistake, ask
+            within <strong>{planDays} days</strong> of that charge (the first {price} after the free week, or any monthly
+            renewal). We refund that charge in full and end the plan straight away.
+          </li>
+          <li>
+            <strong>Otherwise, no refunds for part of a month.</strong> When you cancel, you are not charged again, and
+            the plan stays on until the end of the month you have paid for.
+          </li>
+          <li>A refund for the plan never takes any ink from your account.</li>
+        </ul>
+      </LegalSection>
+
       <LegalSection id="rule" title="Ink packs: what can be refunded">
         <p>
-          Ink packs are one-time purchases ({LEGAL.inkPacks.map((p) => `${ink(p.ink)} ink for $${p.priceUsd}`).join(", ")}
-          ). Within <strong>{days} days</strong> of buying a pack you can ask for a refund of the ink from that pack you
+          Ink packs were one-time purchases ({LEGAL.inkPacks.map((p) => `${ink(p.ink)} ink for $${p.priceUsd}`).join(", ")}
+          ). They are no longer sold, from October 5, 2026; for a pack bought before then, within <strong>{days} days</strong> of buying a pack you can ask for a refund of the ink from that pack you
           have not used. Ink you have used is not refundable, because the AI work it paid for has been done.
         </p>
         <p>
@@ -67,25 +88,6 @@ export default function RefundsPage() {
           <li>Ink you have used.</li>
           <li>Packs bought more than {days} days ago, unless something below applies.</li>
           <li>Free starter ink or other free ink: it has no cash value.</li>
-        </ul>
-      </LegalSection>
-
-      <LegalSection id="subscriptions" title={`${plan} (subscription)`}>
-        <ul>
-          <li>
-            <strong>The free week is free.</strong> Cancel before it ends and you are never charged. See{" "}
-            <Link href="/terms#unlimited">how to cancel</Link>.
-          </li>
-          <li>
-            <strong>Charged and did not mean to keep it?</strong> If you forgot to cancel, or a charge was a mistake, ask
-            within <strong>{planDays} days</strong> of that charge (the first {price} after the free week, or any monthly
-            renewal). We refund that charge in full and end the plan straight away. From then on, help uses ink again.
-          </li>
-          <li>
-            <strong>Otherwise, no refunds for part of a month.</strong> When you cancel, you are not charged again, and
-            the plan stays on until the end of the month you have paid for.
-          </li>
-          <li>A refund for the plan never takes any ink from your account.</li>
         </ul>
       </LegalSection>
 
