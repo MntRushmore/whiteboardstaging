@@ -566,6 +566,23 @@ export function isAiNote(meta: unknown): boolean {
   return typeof meta === "object" && meta !== null && (meta as Record<string, unknown>)[AI_NOTE_META] === true;
 }
 
+/** A number, as a young student writes an answer: `14`, `-3`, `2.5`, `\frac{3}{4}`, `3/4` (an `=` before it allowed). */
+const BARE_NUMBER = /^\s*=?\s*-?\s*(?:\d+(?:\.\d+)?|\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\}|\d+\s*\/\s*\d+)\s*$/;
+/** The same, as the last side of a line (`7 + 5 = 12`'s `12`): the line ends in the answer. */
+const PLAIN_NUMBER = /^\s*-?\s*(?:\d+(?:\.\d+)?|\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\}|\d+\s*\/\s*\d+)\s*$/;
+
+/** What follows a line's last `=` (the whole line when it has none). */
+function lastSide(latex: string): string {
+  const at = latex.lastIndexOf("=");
+  return at === -1 ? latex : latex.slice(at + 1);
+}
+
+/** Maths with digits and no letters: arithmetic (`18 + 15 - 19`, `6 \times 4 = 24`, `\frac{1}{2} + \frac{1}{4}`). */
+function isArithmetic(latex: string): boolean {
+  const bare = latex.replace(/\\(?:frac|dfrac|tfrac|times|div|cdot|left|right|quad|qquad|,|;|:|!)/g, " ");
+  return /\d/.test(bare) && !/[a-zA-Z\\]/.test(bare);
+}
+
 /** A step the engine rings (it does not follow), or one carried on from such a step (`LineAnalysis.carried`). */
 function isSlip(a: LineAnalysis): boolean {
   return a.verdict === "mismatch" || Boolean(a.carried);
@@ -2370,6 +2387,17 @@ export class LiveLoop implements LiveController {
   }
 
   /**
+   * The problem `state` is in has no letters: a sum, a product, a fraction to work out (one of the
+   * chat's, or the student's own first line — `state` itself when it is that line). Arithmetic: its
+   * answer is a number, and a young student writes just the number.
+   */
+  private arithmeticProblem(state: LiveLineState): boolean {
+    const head = this.columnHeads.get(state.line.column);
+    const lines = head ? head.lines : [this.columnLines(state.line.column).find((s) => s.latex && s.line.row <= state.line.row)?.latex ?? state.latex];
+    return lines.length > 0 && lines.every(isArithmetic);
+  }
+
+  /**
    * The step right above `state` when it is a slip (ringed, or carried on from one): what a step that
    * does not follow from the last right line may have carried on from (`analyze`). Undefined when the
    * step above is right, or there is none.
@@ -3022,7 +3050,16 @@ export class LiveLoop implements LiveController {
     if (this.stackLike(state)) return this.stackAnalysis(state);
     try {
       const ctx = this.columnContext(state);
-      const a = this.engine.analyzeLine(state.latex, { ...ctx, mode: this.opts.mode });
+      let a = this.engine.analyzeLine(state.latex, { ...ctx, mode: this.opts.mode });
+      // arithmetic (no letters anywhere in the problem): a lone number is the answer, and a right
+      // plain number — or a true fact, `7 + 5 = 12` — is the problem solved
+      if (this.arithmeticProblem(state)) {
+        if (ctx.previous && BARE_NUMBER.test(state.latex)) {
+          const answer = this.engine.analyzeLine(`= ${state.latex.trim()}`, { ...ctx, mode: this.opts.mode });
+          if (answer.verdict === "ok" || answer.verdict === "mismatch") a = { ...answer, bareAnswer: true };
+        }
+        if (a.verdict === "ok" && !a.solved && PLAIN_NUMBER.test(lastSide(state.latex))) a = { ...a, solved: true };
+      }
       if (a.verdict !== "mismatch" || a.solved) return a;
       // not right from the last right line: carried on from the slip right above it? Then the
       // mistake is that slip's (ringed already), and this step gets no mark of its own
@@ -7510,6 +7547,8 @@ export function unaskedFigureLabels(labels: readonly string[]): boolean {
 export function needsLook(state: Pick<LiveLineState, "latex" | "confidence" | "analysis">): boolean {
   if (!state.latex.trim()) return true;
   if (state.confidence < LIVE_LIMITS.minConfidence) return true;
+  // a young student's answer to a sum (`4` under `2 + 2`): judged, not a label or a lone symbol
+  if (state.analysis?.bareAnswer) return false;
   if (state.analysis?.kind === "label") return true;
   if (state.analysis?.kind === "text" && !isProblemProse(state)) return true;
   return isSingleSymbolLatex(state.latex);

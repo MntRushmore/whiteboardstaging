@@ -135,7 +135,7 @@ export function decide(input: PolicyInput): PolicyDecision {
 
   // 2. echo (labels, incomplete lines, prose and lone symbols are silent). The readback is not
   // help, so Auto does not gate it: it is how the student knows the tutor read the line.
-  const loneSymbol = input.latex !== undefined && isSingleSymbolLatex(input.latex);
+  const loneSymbol = input.latex !== undefined && isSingleSymbolLatex(input.latex) && !analysis?.bareAnswer;
   const echo = !SILENT_KINDS.has(kind) && !loneSymbol && confidence >= LIVE_LIMITS.minConfidence;
 
   // 3. badge (never warn from unknown); with Auto off, a tick or ring only on an ask
@@ -231,6 +231,7 @@ export function unjudgedReason(line: { latex: string; confidence: number; provid
   if (line.provider === "none" && !line.analysis) return null;
   if (!line.latex.trim() || line.confidence < LIVE_LIMITS.minConfidence) return "unread";
   if (!line.analysis) return null;
+  if (line.analysis.bareAnswer) return null;
   if (isSingleSymbolLatex(line.latex) || UNJUDGED_KINDS.has(line.analysis.kind)) return "unjudged";
   return null;
 }

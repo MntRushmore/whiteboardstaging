@@ -261,6 +261,16 @@ describe("live loop — the learning record's signals", () => {
     expect(lineSignals().filter((s) => s.mark === "circle").map((s) => s.latex)).toEqual(["3x=5"]);
   });
 
+  it("a young student's own sum: a true fact is ticked and solved, a false one ringed", async () => {
+    start("feedback");
+    await penLine(0, "7+5=12", { ink: "3+4=" });
+    await penLine(3, "9-3=5", { x: 900, y: 200, ink: "8+1=" });
+    await wait(ANSWER_SETTLE_MS);
+    const last = new Map(lineSignals().map((s) => [s.latex, s]));
+    expect(last.get("7+5=12")).toMatchObject({ mark: "check", solved: true });
+    expect(last.get("9-3=5")).toMatchObject({ mark: "circle", solved: false });
+  });
+
   it("a chain of right steps is ticked as before", async () => {
     start("feedback");
     await penLine(0, "2x+3=11");
