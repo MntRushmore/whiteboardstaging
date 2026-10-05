@@ -32,7 +32,7 @@
  * can be practised or praised under it).
  */
 import type { CourseId } from "@/lib/onboarding/courseIds";
-import { INDEPENDENT_OUTCOMES, MISTAKE_KINDS, SKILLS, skillDef, type AttemptRecord, type DayActivity, type LearningSummary, type MasteryLevel, type MistakeKind, type Outcome, type SkillId, type SkillProgress } from "./contracts";
+import { INDEPENDENT_OUTCOMES, LEARNING_LIMITS, MISTAKE_KINDS, SKILLS, skillDef, type AttemptRecord, type DayActivity, type LearningSummary, type MasteryLevel, type MistakeKind, type Outcome, type SkillId, type SkillProgress } from "./contracts";
 import type { LearnerHint } from "./hint";
 
 export interface SummarizeOptions {
@@ -252,7 +252,7 @@ export function learnerHint(summary: LearningSummary): LearnerHint | undefined {
   const weakSkills = summary.weakSkills.slice(0, 3).map(ref);
   const strongSkills = summary.strongSkills.slice(0, 3).map(ref);
   const recurringMistakes = summary.mistakes
-    .filter((m) => m.count >= 2)
+    .filter((m) => m.count >= LEARNING_LIMITS.recurringMistake)
     .slice(0, 3)
     .map((m) => ({ kind: m.kind, count: Math.min(9999, m.count) }));
   if (weakSkills.length === 0 && strongSkills.length === 0 && recurringMistakes.length === 0) return undefined;

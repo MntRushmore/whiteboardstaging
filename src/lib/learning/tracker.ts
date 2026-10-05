@@ -86,6 +86,8 @@ export const TRACKER_LIMITS = {
   /** problems whose help is kept before their attempt starts, and how much of it */
   orphanKeys: 50,
   orphanHelps: 10,
+  /** attempts of one board kept on the device between visits (`snapshot`), newest first */
+  savedPerBoard: 25,
 } as const;
 
 type HelpKind = Extract<LearningSignal, { type: "help" }>["help"];
@@ -134,6 +136,25 @@ interface Attempt {
   saving: boolean;
   /** what it said last (`commit`), updatedAt aside */
   said: string;
+}
+
+/**
+ * One attempt as the device keeps it between visits to its board (`snapshot`, `restore`): coming
+ * back to a problem goes on with the same attempt — its id, its lines and the help so far — rather
+ * than a new one beside an unfinished one.
+ */
+export interface SavedAttempt {
+  key: string;
+  record: AttemptRecord;
+  pageId: string;
+  lines: Array<[string, LineState]>;
+  mistakes: Array<[string, Array<[string, LineMistake]>]>;
+  help: Record<HelpKind, number>;
+  active: number;
+  solvedByStudent: boolean;
+  tutorFinished: boolean;
+  answered: Outcome | null;
+  given: boolean;
 }
 
 function iso(ms: number): string {
@@ -209,6 +230,65 @@ export class AttemptTracker {
   /** The recorded attempts not saved yet (changed, or being saved): what the device keeps until they are. */
   pending(): AttemptRecord[] {
     return [...this.byKey.values()].filter((a) => a.recordable && (a.dirty || a.saving)).map((a) => copy(a.record));
+  }
+
+  /** This board's recorded attempts, as the device keeps them for its next visit: the newest `savedPerBoard`. */
+  snapshot(boardId: string): SavedAttempt[] {
+    return [...this.byKey.values()]
+      .filter((a) => a.recordable && a.record.boardId === boardId)
+      .sort((x, y) => y.lastAt - x.lastAt)
+      .slice(0, TRACKER_LIMITS.savedPerBoard)
+      .map((a) => ({
+        key: a.key,
+        record: copy(a.record),
+        pageId: a.pageId,
+        lines: [...a.lines],
+        mistakes: [...a.mistakes].map(([id, reads]) => [id, [...reads]] as [string, Array<[string, LineMistake]>]),
+        help: { ...a.help },
+        active: a.active,
+        solvedByStudent: a.solvedByStudent,
+        tutorFinished: a.tutorFinished,
+        answered: a.answered,
+        given: a.given,
+      }));
+  }
+
+  /**
+   * The attempts an earlier visit to this board left (`snapshot`), before its first signal: a line
+   * of one of their problems goes on with that attempt. They come back closed and saved (a record
+   * of theirs not saved then is in the device's pending records); the time before this visit is
+   * never counted. One that cannot be read is skipped.
+   */
+  restore(saved: readonly SavedAttempt[]): void {
+    for (const s of saved) {
+      try {
+        if (!s || typeof s.key !== "string" || this.byKey.has(s.key) || typeof s.record?.id !== "string") continue;
+        const record = copy(s.record);
+        const a: Attempt = {
+          key: s.key,
+          record,
+          pageId: String(s.pageId),
+          lines: new Map(s.lines),
+          mistakes: new Map(s.mistakes.map(([id, reads]) => [id, new Map(reads)])),
+          help: { hint: Number(s.help?.hint) || 0, next_step: Number(s.help?.next_step) || 0, solve: Number(s.help?.solve) || 0, ask: Number(s.help?.ask) || 0 },
+          active: Number(s.active) || 0,
+          lastAt: -Infinity,
+          closed: true,
+          solvedByStudent: Boolean(s.solvedByStudent),
+          tutorFinished: Boolean(s.tutorFinished),
+          answered: s.answered ?? null,
+          given: Boolean(s.given),
+          recordable: true,
+          dirty: false,
+          saving: false,
+          said: JSON.stringify({ ...record, updatedAt: "" }),
+        };
+        this.byKey.set(s.key, a);
+      } catch {
+        // an attempt the device kept in a shape this version cannot read: a new one starts instead
+      }
+    }
+    this.prune();
   }
 
   /**
@@ -543,8 +623,9 @@ export class AttemptTracker {
     try {
       await this.deps.save(records);
     } catch (err) {
-      // saved with the next batch (a change meanwhile marked it again already)
-      for (const a of batch) a.dirty = true;
+      // saved with the next batch (a change meanwhile marked it again already) — unless the store
+      // refused a record as invalid: it saved the rest, and that one would fail every time
+      if ((err as { code?: unknown } | null)?.code !== "invalid") for (const a of batch) a.dirty = true;
       throw err;
     } finally {
       for (const a of batch) a.saving = false;

@@ -242,6 +242,8 @@ export const LEARNING_LIMITS = {
   maxActiveMs: 4 * 60 * 60_000,
   /** each count column's ceiling (smallint) */
   maxCount: 32_767,
+  /** a mistake counts as one the student keeps making (the tutor's hint, the grown-ups summary) from this many */
+  recurringMistake: 2,
   /** the Progress page and the board's learner hint read this many days back */
   readDays: 120,
   /** and at most this many attempts */

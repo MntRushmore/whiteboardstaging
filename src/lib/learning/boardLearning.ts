@@ -25,7 +25,7 @@ import { LEARNING_LIMITS, OUTCOMES, type AttemptRecord, type LearningSignal } fr
 import type { LearnerHint } from "./hint";
 import { loadAttempts, saveAttempts } from "./store";
 import { learnerHint, summarize } from "./summary";
-import { AttemptTracker } from "./tracker";
+import { AttemptTracker, type SavedAttempt } from "./tracker";
 
 export const LEARNING_SAVE = {
   /** a save this long after the last change… */
@@ -91,7 +91,8 @@ export class SaveScheduler {
   private failures = 0;
   private running: Promise<void> | null = null;
   private stopped = false;
-  /** the store said no for good this session (`unavailable`, `unauthorized`, `invalid`) */
+  /** the store said no for good this session (`unavailable`, `unauthorized`); `invalid` is not this:
+   * the store saved every record it could, and the refused ones are dropped */
   halted: string | null = null;
 
   constructor(private readonly deps: SaveSchedulerDeps) {}
@@ -160,6 +161,12 @@ export class SaveScheduler {
       this.deps.onSaved?.();
     } catch (err) {
       const code = storeErrorCode(err);
+      if (code === "invalid") {
+        // what could be saved was; whatever this round did not reach yet goes in the next save
+        this.firstChange ??= t;
+        this.deps.onFailed?.(code, false);
+        return;
+      }
       if (!retryable(err)) {
         this.halted = code;
         this.clear();
@@ -232,6 +239,50 @@ export function writePending(userId: string, records: readonly AttemptRecord[], 
   }
 }
 
+export function boardsKey(userId: string): string {
+  return `agathon.learning.boards.${userId}`;
+}
+
+/** How many boards' attempts the device keeps between visits (the most recently left first). */
+export const SAVED_BOARDS = 8;
+
+type SavedBoards = Record<string, { at: number; attempts: SavedAttempt[] }>;
+
+function readSavedBoards(userId: string, storage: PendingStorage | null): SavedBoards {
+  if (!storage) return {};
+  try {
+    const raw = storage.getItem(boardsKey(userId));
+    const v = raw ? (JSON.parse(raw) as unknown) : null;
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as SavedBoards) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** The attempts an earlier visit to this board left on the device (`AttemptTracker.restore`); [] when none. */
+export function readBoardAttempts(userId: string, boardId: string, storage: PendingStorage | null): SavedAttempt[] {
+  const entry = readSavedBoards(userId, storage)[boardId];
+  return entry && Array.isArray(entry.attempts) ? entry.attempts : [];
+}
+
+/** Keeps this board's attempts for its next visit (`AttemptTracker.snapshot`), and the `SAVED_BOARDS` boards left last. */
+export function writeBoardAttempts(userId: string, boardId: string, attempts: readonly SavedAttempt[], at: number, storage: PendingStorage | null): void {
+  if (!storage) return;
+  try {
+    const boards = readSavedBoards(userId, storage);
+    if (attempts.length > 0) boards[boardId] = { at, attempts: [...attempts] };
+    else delete boards[boardId];
+    const kept = Object.entries(boards)
+      .filter(([, b]) => b && typeof b.at === "number")
+      .sort(([, x], [, y]) => y.at - x.at)
+      .slice(0, SAVED_BOARDS);
+    if (kept.length === 0) storage.removeItem(boardsKey(userId));
+    else storage.setItem(boardsKey(userId), JSON.stringify(Object.fromEntries(kept)));
+  } catch {
+    // a full or blocked storage: a problem worked again on the next visit starts a new attempt
+  }
+}
+
 /** A record left on the device by a visit that ended without closing it: it is over now. */
 export function closedPending(record: AttemptRecord): AttemptRecord {
   if (record.outcome !== "in_progress") return record;
@@ -261,6 +312,8 @@ export interface BoardLearningDeps {
   newId: () => string;
   timers: SchedulerTimers;
   storage: PendingStorage | null;
+  /** who is signed in on this tab now (null when no one): a record is only ever saved for its own student */
+  sessionUserId: () => Promise<string | null>;
   /** `pagehide` (the window) */
   window: EventTargetLike | null;
   /** `visibilitychange` (the document) and whether it is hidden */
@@ -274,6 +327,12 @@ async function readProfileFromSupabase(userId: string): Promise<LearningProfile>
   if (error || !data) return { course: null, displayName: null };
   const row = data as { course?: unknown; display_name?: unknown };
   return { course: isCourseId(row.course) ? row.course : null, displayName: typeof row.display_name === "string" && row.display_name.trim() ? row.display_name.trim() : null };
+}
+
+async function sessionUserIdFromSupabase(): Promise<string | null> {
+  const { supabase } = await import("@/lib/supabase");
+  const { data } = await supabase.auth.getSession();
+  return data.session?.user.id ?? null;
 }
 
 function newUuid(): string {
@@ -311,6 +370,7 @@ function defaultDeps(): BoardLearningDeps {
       clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
     },
     storage,
+    sessionUserId: sessionUserIdFromSupabase,
     window: hasWindow ? window : null,
     document: typeof document !== "undefined" ? document : null,
   };
@@ -345,18 +405,40 @@ export function startBoardLearning(opts: BoardLearningOptions, overrides: Partia
   /** what the last visits left on the device, saved first */
   const replay: AttemptRecord[] = readPending(opts.userId, deps.storage).map(closedPending);
 
-  // what is not saved yet, kept on the device — not records the store called invalid: they would fail on every visit
-  const persist = () => writePending(opts.userId, scheduler.halted === "invalid" ? [] : [...replay, ...(tracker?.pending() ?? [])], deps.storage);
+  // what is not saved yet, kept on the device (the store drops what it calls invalid: it is never pending
+  // again), and this board's attempts, so coming back to a problem goes on with its attempt
+  const persist = () => {
+    writePending(opts.userId, [...replay, ...(tracker?.pending() ?? [])], deps.storage);
+    if (tracker) writeBoardAttempts(opts.userId, opts.boardId, tracker.snapshot(opts.boardId), timers.now(), deps.storage);
+  };
+
+  /**
+   * Saves what earlier visits left. A board deleted since then refuses its attempts (RLS: not the
+   * student's board any more): they are saved again without it — as the database itself unlinks a
+   * deleted board's attempts — but only while this student is the one signed in, so a record never
+   * lands in another account.
+   */
+  const saveReplay = async (batch: readonly AttemptRecord[]): Promise<void> => {
+    try {
+      await deps.save(batch);
+    } catch (err) {
+      if (storeErrorCode(err) !== "unauthorized" || (await deps.sessionUserId().catch(() => null)) !== opts.userId) throw err;
+      await deps.save(batch.map((r) => ({ ...r, boardId: null })));
+    }
+  };
 
   const flushAll = async (): Promise<void> => {
     if (replay.length > 0) {
-      const batch = replay.splice(0);
+      // kept until it is saved: the page going away mid-save still finds it on the device
+      const batch = [...replay];
       try {
-        await deps.save(batch);
+        await saveReplay(batch);
       } catch (err) {
-        replay.unshift(...batch);
+        // the store saved what it could of it; what it refused would fail on every visit
+        if (storeErrorCode(err) === "invalid") replay.splice(0, batch.length);
         throw err;
       }
+      replay.splice(0, batch.length);
     }
     await tracker?.flush();
   };
@@ -365,10 +447,7 @@ export function startBoardLearning(opts: BoardLearningOptions, overrides: Partia
     flush: flushAll,
     timers,
     onSaved: () => persist(),
-    onFailed: (code) => {
-      if (code === "invalid") replay.splice(0);
-      persist();
-    },
+    onFailed: () => persist(),
   });
 
   // ---- the learner hint
@@ -446,6 +525,8 @@ export function startBoardLearning(opts: BoardLearningOptions, overrides: Partia
         engine: deps.engine,
       });
       const mine = tracker;
+      // this board's attempts from the last visit: a problem worked again goes on with its attempt
+      mine.restore(readBoardAttempts(opts.userId, opts.boardId, deps.storage));
       // the board's signals (those it said before this runtime was here come first)
       unsubscribe = bus.onSignal((signal: LearningSignal) => {
         if ("boardId" in signal && signal.boardId !== opts.boardId) return;

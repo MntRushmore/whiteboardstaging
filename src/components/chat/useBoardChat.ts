@@ -203,7 +203,8 @@ export function useBoardChat(boardId: string, controller: LiveController): Board
     busy,
     send: (text: string) => send(text),
     retry,
-    weakSpot: fresh ? weakSpot : null,
+    // only while the hint still names it: a skill mastered since, or another student, drops the chip
+    weakSpot: fresh && weakSpot && learner?.weakSkills.some((s) => s.id === weakSpot.id) ? weakSpot : null,
     practiceWeakSpots: () => practiceWeakSpots(),
   };
 }

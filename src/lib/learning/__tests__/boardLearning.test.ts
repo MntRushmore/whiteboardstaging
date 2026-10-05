@@ -168,7 +168,19 @@ describe("SaveScheduler", () => {
     expect(saves).toEqual([5, 20, 50, 110, 125]);
   });
 
-  it.each(["unavailable", "unauthorized", "invalid"])("%s: no more tries this session", async (code) => {
+  it("invalid: what could be saved was, and saving goes on", async () => {
+    fail = () => storeError("invalid");
+    scheduler.changed();
+    await vi.advanceTimersByTimeAsync(5 * SEC);
+    expect(scheduler.halted).toBeNull();
+    expect(failed).toEqual([["invalid", false]]);
+    fail = null;
+    scheduler.changed();
+    await scheduler.flushNow();
+    expect(saves.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it.each(["unavailable", "unauthorized"])("%s: no more tries this session", async (code) => {
     fail = () => storeError(code);
     scheduler.changed();
     await vi.advanceTimersByTimeAsync(5 * SEC);
@@ -268,6 +280,7 @@ describe("startBoardLearning", () => {
         return attempts.length > 0 ? { weakSkills: [{ id: "two_step_equations", name: "Two-step equations" }], strongSkills: [], recurringMistakes: [] } : undefined;
       },
       engine: async () => ({}) as LiveEngine,
+      sessionUserId: async () => "u1",
       newId: () => `att-${++ids}`,
       timers: realTimers,
       storage,
@@ -384,6 +397,79 @@ describe("startBoardLearning", () => {
     await vi.advanceTimersByTimeAsync(LEARNING_SAVE.debounceMs);
     b.stop();
     expect(readPending("u1", storage)).toEqual([]);
+  });
+
+  it("a board deleted since a visit left its attempts: they are saved without it, for the student signed in", async () => {
+    const left = { ...record("old-1"), boardId: "board-gone" };
+    writePending("u1", [left], storage);
+    const tried: Array<Array<string | null>> = [];
+    const handle = startBoardLearning({ boardId: "board-1", userId: "u1" }, deps({
+      save: async (records) => {
+        tried.push(records.map((r) => r.boardId));
+        if (records.some((r) => r.boardId === "board-gone")) throw storeError("unauthorized");
+        saved.push([...records]);
+      },
+    }));
+    await vi.advanceTimersByTimeAsync(LEARNING_SAVE.debounceMs);
+    expect(tried).toEqual([["board-gone"], [null]]);
+    expect(handle.scheduler().halted).toBeNull();
+    expect(readPending("u1", storage)).toEqual([]);
+    handle.stop();
+  });
+
+  it("…but never into another account: another student signed in, they stay on the device", async () => {
+    writePending("u1", [{ ...record("old-1"), boardId: "board-gone" }], storage);
+    const handle = startBoardLearning({ boardId: "board-1", userId: "u1" }, deps({
+      sessionUserId: async () => "someone-else",
+      save: async () => {
+        throw storeError("unauthorized");
+      },
+    }));
+    await vi.advanceTimersByTimeAsync(LEARNING_SAVE.debounceMs);
+    expect(handle.scheduler().halted).toBe("unauthorized");
+    handle.stop();
+    expect(readPending("u1", storage).map((r) => r.id)).toEqual(["old-1"]);
+  });
+
+  it("what earlier visits left stays on the device while its save is in flight", async () => {
+    writePending("u1", [record("old-1")], storage);
+    let release: () => void = () => undefined;
+    const handle = startBoardLearning({ boardId: "board-1", userId: "u1" }, deps({
+      save: (records) => {
+        saved.push([...records]);
+        return new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      },
+    }));
+    await vi.advanceTimersByTimeAsync(LEARNING_SAVE.debounceMs);
+    expect(saved).toHaveLength(1);
+    // the tab hidden mid-save: the device still has it
+    doc.visibilityState = "hidden";
+    doc.fire("visibilitychange");
+    expect(readPending("u1", storage).map((r) => r.id)).toEqual(["old-1"]);
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    handle.stop();
+  });
+
+  it("a problem worked again after the board was left goes on with the same attempt", async () => {
+    const first = startBoardLearning({ boardId: "board-1", userId: "u1" }, deps());
+    await vi.advanceTimersByTimeAsync(0);
+    bus.emit(line("a", "2x=5", "circle", { previousLatex: "2x+3=11" }));
+    await vi.advanceTimersByTimeAsync(LEARNING_SAVE.debounceMs);
+    first.stop();
+    await vi.advanceTimersByTimeAsync(0);
+    // the board opened again (a reload): the same problem, a new line of it
+    const second = startBoardLearning({ boardId: "board-1", userId: "u1" }, deps());
+    await vi.advanceTimersByTimeAsync(0);
+    bus.emit(line("b", "x=4", "check", { solved: true }));
+    await vi.advanceTimersByTimeAsync(LEARNING_SAVE.debounceMs);
+    const last = saved.flat().at(-1)!;
+    expect(last.id).toBe("att-1");
+    expect(last).toMatchObject({ outcome: "self_corrected", linesWritten: 2, linesRinged: 1 });
+    expect(new Set(saved.flat().map((r) => r.id))).toEqual(new Set(["att-1"]));
+    second.stop();
   });
 
   it("the tab hidden: saved at once", async () => {

@@ -6142,6 +6142,9 @@ export class LiveLoop implements LiveController {
     const page = this.pageKey();
     const head = this.columnHeads.get(state.line.column);
     if (head) return `${page}#cell:${head.key}`;
+    // a line keeps the key it was given, even in a column clustered together with another problem
+    const own = this.learnKeys.get(state.line.id);
+    if (own) return own;
     const col = this.columnLines(state.line.column);
     let key: string | undefined;
     for (const s of col) {
@@ -6213,10 +6216,11 @@ export class LiveLoop implements LiveController {
       const said = `${problemKey}\n${state.latex}\n${kind}\n${mark ?? ""}\n${solved}`;
       // most renders change nothing: they stop here
       if (this.learnSent.get(id) === said) return;
+      if (this.proofs.owns(id)) return;
+      // a readback stays quiet, and unsent, until a line of its problem is new: then it is told
+      if (!this.learnFresh.has(id) && !this.columnLines(state.line.column).some((s) => this.learnFresh.has(s.line.id))) return;
       this.learnSent.set(id, said);
       forgetOldest(this.learnSent);
-      if (!this.learnFresh.has(id) && !this.columnLines(state.line.column).some((s) => this.learnFresh.has(s.line.id))) return;
-      if (this.proofs.owns(id)) return;
       const previous = this.previousLine(state)?.latex ?? this.learnHeadAbove(state);
       this.learn({
         type: "line",

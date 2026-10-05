@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { learningBus } from "@/lib/learning/bus";
 
 /** How long the board waits for an idle moment before loading the learning runtime anyway. */
 const IDLE_TIMEOUT_MS = 4_000;
@@ -38,6 +39,8 @@ export function useBoardLearning(boardId: string, userId: string | undefined): v
       if (idle !== null) w.cancelIdleCallback?.(idle);
       if (timer !== null) clearTimeout(timer);
       stop?.();
+      // what this board said that no runtime heard (left before one started) is not the next board's
+      learningBus.reset();
     };
   }, [boardId, userId]);
 }

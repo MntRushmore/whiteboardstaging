@@ -14,6 +14,7 @@ import { COURSES } from "@/lib/onboarding/courses";
 import type { CourseId } from "@/lib/onboarding/courseIds";
 import {
   INDEPENDENT_OUTCOMES,
+  LEARNING_LIMITS,
   MISTAKES,
   SKILL_AREAS,
   SKILLS,
@@ -592,8 +593,8 @@ export function grownUpsSummary(input: GrownUpsInput): string {
   const next = input.weakSkills.find((id) => id !== growing?.skill && !input.strongSkills.includes(id));
   if (next) sentences.push(`A good one to practice next: ${nameOf(next)}.`);
 
-  // "keeps tripping" needs a pattern: twice or more, as the tutor's learner hint counts a recurring mistake
-  const slip = input.mistakes.find((m) => m.count >= 2 && MISTAKES[m.kind]);
+  // "keeps tripping" needs a pattern, counted as the tutor's learner hint counts a recurring mistake
+  const slip = input.mistakes.find((m) => m.count >= LEARNING_LIMITS.recurringMistake && MISTAKES[m.kind]);
   if (slip) sentences.push(`Keeps tripping on ${TRIP_PHRASES[slip.kind]}; a tip: ${MISTAKES[slip.kind].tip}`);
 
   if (sentences.length === 1 && week.problems > 0) sentences.push(`${Who} is off to a good start.`);
