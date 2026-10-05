@@ -61,6 +61,7 @@ export const NO_BODY_ROUTES = Object.freeze([
   "src/app/api/health/route.ts", // GET only
   "src/app/api/cron/trial-reminders/route.ts", // GET only (Vercel cron); ?dryRun=1 is a query param
   "src/app/api/email/welcome/route.ts", // POST with an empty body: the server decides who and whether
+  "src/app/api/admin/overview/route.ts", // GET only
 ]);
 
 export const API_ROUTES = Object.freeze([
@@ -86,6 +87,17 @@ export const API_ROUTES = Object.freeze([
     // Without the cron secret it is requireAdmin's answer: 401 with no token, 404 for a non-admin.
     withoutTokenStatus: [401, 404],
     purpose: "Health checks (pg_cron every 5 min, or an admin's check now): app, database, OpenRouter, Mathpix, Resend, Stripe; rows, events, alert emails",
+    status: "active",
+  },
+  {
+    path: "/api/admin/overview",
+    file: "src/app/api/admin/overview/route.ts",
+    methods: ["GET"],
+    // requireAdmin = requireUser (401 without a token) + is_admin() (404 for a non-admin).
+    auth: "user",
+    limit: "credits",
+    body: "none",
+    purpose: "The /admin page's overview (admins only): service health, errors students saw, AI failures, users, bug reports",
     status: "active",
   },
   {
