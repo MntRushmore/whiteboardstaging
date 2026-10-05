@@ -1,7 +1,6 @@
 "use client";
 
 import type { ReactNode } from "react";
-import Link from "next/link";
 import { CircleCheck, CircleHelp, CircleX, Clock, OctagonAlert, RefreshCw, TriangleAlert } from "lucide-react";
 import type { CheckState } from "./useAdminOverview";
 import { ADMIN_COPY, type AiTableView, type BugReportView, type ErrorGroupView, type ServiceCardView, type ServiceState, type StatTile, type StatusSummaryView, type SummaryTone } from "@/lib/admin/view";
@@ -163,10 +162,11 @@ export function ErrorGroupItem({ group }: { group: ErrorGroupView }) {
                 <span className={styles.sampleWho} data-missing={s.who === ADMIN_COPY.signedOut || undefined}>
                   {s.who}
                 </span>
+                {/* not a link: a board is readable by its own student only (RLS), an admin included */}
                 {s.boardHref && (
-                  <Link href={s.boardHref} className={styles.sampleLink}>
-                    {ADMIN_COPY.openBoard} <span className={styles.mono}>{s.boardShort}</span>
-                  </Link>
+                  <span className={styles.mono} title={s.boardHref.slice("/board/".length)}>
+                    {ADMIN_COPY.openBoard} {s.boardShort}
+                  </span>
                 )}
                 {s.route && <span className={styles.mono}>{s.route}</span>}
                 {s.requestId && (

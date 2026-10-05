@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { EVENT_KIND } from "@/lib/admin/contracts";
-import { MAX_MESSAGE, MAX_REPORT_BYTES, MAX_STACK, stripUrlQueries } from "@/lib/clientErrors";
+import { EVENT_KIND, EVENT_LEVELS } from "@/lib/admin/contracts";
+import { MAX_MESSAGE, MAX_REPORT_BYTES, MAX_STACK, stripUrlQueries, userErrorLevel } from "@/lib/clientErrors";
 import { logger } from "@/lib/logger";
 import { identifyUser, json } from "@/lib/server/auth";
 import { recordEvent } from "@/lib/server/events";
@@ -11,10 +11,13 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 10;
 
 /**
- * Per-IP budget. One page load sends at most MAX_REPORTS (10); this lets a couple of crashing
- * loads a minute through and stops a loop, or anyone with curl, from filling the logs.
+ * Per-IP budget. A classroom shares one school IP: during an outage thirty students each see the
+ * same error card, and the admin page needs all of them, so the IP budget is generous; a loop, or
+ * anyone with curl, is stopped by it all the same. A signed-in student has a budget of their own.
  */
-const CLIENT_ERRORS_LIMIT = { limit: 20, windowMs: 60_000 } as const;
+const CLIENT_ERRORS_LIMIT = { limit: 120, windowMs: 60_000 } as const;
+/** Per signed-in user: one page load sends at most MAX_REPORTS crashes and 20 errors it showed. */
+const CLIENT_ERRORS_USER_LIMIT = { limit: 30, windowMs: 60_000 } as const;
 
 /** ClientErrorReport (src/lib/clientErrors.ts). Unknown keys are dropped, never logged. */
 const ReportSchema = z.object({
@@ -28,6 +31,8 @@ const ReportSchema = z.object({
   digest: z.string().max(64).optional(),
   /** what failed (`EVENT_KIND`, src/lib/admin/contracts.ts) and how, for the admin page */
   kind: z.string().regex(EVENT_KIND).optional(),
+  /** how bad, as the page judged it (out of ink is info, a rate limit warn); else from `code` */
+  level: z.enum(EVENT_LEVELS).optional(),
   code: z.string().max(40).optional(),
 });
 
@@ -92,13 +97,22 @@ export async function POST(req: Request) {
 
   const report = parsed.data;
   const userId = await identifyUser(req);
+  if (userId) {
+    const mine = checkRateLimit(`user:${userId}:clientErrors`, CLIENT_ERRORS_USER_LIMIT);
+    if (!mine.ok) return rateLimitedResponse(mine.retryAfterMs);
+  }
+  // An error a student saw carries what failed (`kind`); a report with none is a crash — even one
+  // the board's error boundary caught (source "live", no kind).
+  const shown = report.kind !== undefined;
+  const level = shown ? (report.level ?? userErrorLevel(report.code)) : "error";
   const message = stripUrlQueries(report.message);
   const stack = report.stack ? stripUrlQueries(report.stack) : undefined;
   const path = report.path.replace(/[?#][\s\S]*/, "");
   const userAgent = report.userAgent ?? req.headers.get("user-agent")?.slice(0, 512);
-  log.error(
+  log[level](
     {
       source: report.source,
+      level,
       kind: report.kind,
       code: report.code,
       message,
@@ -115,8 +129,8 @@ export async function POST(req: Request) {
   // The same report as an app event, for the admin page and the error-spike alert (fire and
   // forget: the 204 never waits for it).
   recordEvent({
-    source: report.source === "live" ? "live" : "client",
-    level: "error",
+    source: shown && report.source === "live" ? "live" : "client",
+    level,
     kind: report.kind ?? `client.${report.source}`,
     code: report.code,
     message,

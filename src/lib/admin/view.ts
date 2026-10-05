@@ -51,7 +51,7 @@ export const ADMIN_COPY = {
   groupsEmpty: "Nothing went wrong in the last 24 hours.",
   samplesToggle: (n: number) => (n === 1 ? "See the latest one" : `See the latest ${n}`),
   signedOut: "signed out",
-  openBoard: "Open board",
+  openBoard: "Board",
 
   aiTitle: "AI",
   aiHint: "Each AI route over the last 24 hours. A failed call is refunded, so calls are the ones that went through; failure % is failures out of calls plus failures.",

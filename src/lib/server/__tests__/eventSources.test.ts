@@ -276,7 +276,13 @@ describe("POST /api/client-errors: each report is an event", () => {
     await clientErrors(post({ ...REPORT, source: "live", kind: "live.solve", code: "timeout", message: "The tutor took too long" }));
     expect(events()[0]).toMatchObject({ source: "live", kind: "live.solve", code: "timeout", userId: undefined });
     await clientErrors(post({ ...REPORT, source: "live", message: "Something else" }));
-    expect(events()[1]).toMatchObject({ source: "live", kind: "client.live" });
+    // no kind: a crash the board's error boundary caught, not an error the student was shown
+    expect(events()[1]).toMatchObject({ source: "client", kind: "client.live", level: "error" });
+    // out of ink is a state, not an outage: info, from its code (or the level the page sent)
+    await clientErrors(post({ ...REPORT, source: "live", kind: "live.check", code: "ink", message: "Out of ink" }));
+    expect(events()[2]).toMatchObject({ source: "live", kind: "live.check", level: "info" });
+    await clientErrors(post({ ...REPORT, source: "live", kind: "live.chat", code: "note_graph", level: "warn", message: "I couldn't graph that" }));
+    expect(events()[3]).toMatchObject({ level: "warn" });
   });
 
   it("a board id app_events could not store is left out; a refused report is no event", async () => {

@@ -77,6 +77,8 @@ const envSchema = z.object({
   RESEND_API_KEY: optionalString,
   // `Name <address>` on a domain verified in Resend; default `Agathon <hello@mail.agathon.app>`.
   EMAIL_FROM: optionalString,
+  // Admin alerts (src/lib/server/health): where "a service is down" / "errors spiking" emails go.
+  ALERT_EMAIL: optionalString,
 });
 
 export type ServerEnv = z.infer<typeof envSchema>;

@@ -76,7 +76,9 @@ describe("the admin page body", () => {
     // the samples sit behind a toggle that says how many
     expect(html).toMatch(/<summary>See the latest 2<\/summary>/);
     expect(html).toMatch(/<summary>See the latest one<\/summary>/);
-    expect(html).toContain(`href="/board/${BOARD_ID}"`);
+    // the board's id, not a link: a board is readable by its own student only (RLS), an admin included
+    expect(html).toContain(`title="${BOARD_ID}"`);
+    expect(html).not.toContain(`href="/board/${BOARD_ID}"`);
     expect(t).toContain("maya@example.com");
     expect(t).toContain("signed out");
     expect(t).toContain("req_7f3a9c");

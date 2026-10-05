@@ -89,6 +89,9 @@ describe("POST /api/client-errors", () => {
     expect(line.msg).toBe("client error");
     expect(line.fields).toEqual({
       source: "error",
+      level: "error",
+      kind: undefined,
+      code: undefined,
       message: REPORT.message,
       stack: REPORT.stack,
       path: REPORT.path,
@@ -170,15 +173,15 @@ describe("POST /api/client-errors", () => {
     expect(fake.lines).toHaveLength(0);
   });
 
-  it("rate limited per IP: 20 a minute, then 429 with Retry-After; other IPs unaffected", async () => {
-    for (let i = 0; i < 20; i++) {
+  it("rate limited per IP: 120 a minute (a classroom shares one IP), then 429 with Retry-After; other IPs unaffected", async () => {
+    for (let i = 0; i < 120; i++) {
       expect((await POST(post(REPORT, { ip: "198.51.100.7" }))).status).toBe(204);
     }
     const limited = await POST(post(REPORT, { ip: "198.51.100.7" }));
     expect(limited.status).toBe(429);
     expect(limited.headers.get("retry-after")).toMatch(/^\d+$/);
     expect(((await limited.json()) as { error: string }).error).toBe("rate_limited");
-    expect(fake.lines).toHaveLength(20);
+    expect(fake.lines).toHaveLength(120);
     expect((await POST(post(REPORT, { ip: "198.51.100.8" }))).status).toBe(204);
   });
 });
