@@ -1,0 +1,35 @@
+# The backstop for the health checks (src/lib/server/health): those run inside the Supabase
+# project (pg_cron every 5 minutes), so when the database itself is down or the project is paused
+# nothing runs them and no alert email goes out. This runs outside it, every hour: when the site's
+# /api/health does not answer 200 {"ok":true}, the run fails and GitHub emails the repository's
+# owner (a failed scheduled run notifies whoever last changed the schedule). About 720 one-minute
+# runs a month.
+name: Uptime
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: The site and its database answer
+        env:
+          URL: https://www.agathon.app/api/health
+        run: |
+          for attempt in 1 2 3; do
+            body=$(curl -sS --max-time 20 -w '\n%{http_code}' "$URL" || true)
+            code=$(printf '%s' "$body" | tail -n1)
+            json=$(printf '%s' "$body" | sed '$d')
+            echo "attempt $attempt: HTTP $code $json"
+            if [ "$code" = "200" ] && printf '%s' "$json" | grep -q '"ok":true'; then exit 0; fi
+            sleep 20
+          done
+          echo "::error::$URL did not answer 200 {\"ok\":true} three times in a row"
+          exit 1
