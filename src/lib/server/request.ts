@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type pino from "pino";
 import { json } from "@/lib/server/auth";
+import { recordEvent } from "@/lib/server/events";
 import { CreditsExhaustedError, UpstreamError } from "@/lib/server/openrouter";
 
 /* ------------------------------------------------------------------------- */
@@ -102,15 +103,111 @@ export async function parseJsonBody<S extends z.ZodTypeAny>(
 /** What the student reads when the provider account behind the tutor has run dry. */
 export const PROVIDER_UNAVAILABLE_MESSAGE = "The tutor is unavailable right now. Try again in a few minutes.";
 
+/** What a route's child logger says about the request it serves (its pino bindings). */
+export type LogContext = { module?: string; route?: string; requestId?: string; userId?: string };
+
+/**
+ * The bindings of a route's child logger: `module` (`live`, `credits`), `route` (`solve`,
+ * `lecture/token`, `recognize.GET`), `requestId`, `userId`, as `livePreamble` and the other routes
+ * bind them. How the app events learn which route failed and for whom without every caller passing
+ * them again. Empty for a logger without bindings (a test's fake); never throws.
+ */
+export function logContext(log: unknown): LogContext {
+  try {
+    const bindings = (log as { bindings?: () => unknown } | null)?.bindings?.();
+    if (!bindings || typeof bindings !== "object") return {};
+    const b = bindings as Record<string, unknown>;
+    const text = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+    return { module: text(b.module), route: text(b.route), requestId: text(b.requestId), userId: text(b.userId) };
+  } catch {
+    return {};
+  }
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** `route.<module>.<route>` (`route.live.solve`, `route.live.lecture.token`, `route.credits`). */
+export function routeEventKind({ module, route }: LogContext): string {
+  const name = [module, route]
+    .filter(Boolean)
+    .join(".")
+    .toLowerCase()
+    .replace(/\//g, ".")
+    .replace(/[^a-z0-9_.:-]/g, "_")
+    .replace(/^[^a-z0-9]+/, "");
+  return `route.${name || "unknown"}`.slice(0, 64);
+}
+
+/**
+ * The route, user and request an app event is about, from a route logger's bindings, in the shape
+ * the event takes: the API path by the convention the routes follow (module `live` + route
+ * `lecture/token` -> `/api/live/lecture/token`; `recognize.GET` -> `/api/live/recognize`), the user
+ * id only when it is a uuid (anything else would void the whole event).
+ */
+export function eventContext(log: unknown): { route?: string; userId?: string; requestId?: string } {
+  const { module, route, requestId, userId } = logContext(log);
+  const base = route?.split(".")[0];
+  return {
+    route: module ? `/api/${module}${base ? `/${base}` : ""}` : undefined,
+    userId: userId && UUID.test(userId) ? userId : undefined,
+    requestId,
+  };
+}
+
+/**
+ * A route's failure as an app event: `route.<module>.<route>`, source server, level error, with the
+ * route, request id and user id from the logger's bindings and the context's numbers and flags
+ * (`ms`, `charged`, `delivered`) in `meta`. The status and code follow the error contract
+ * (`errorResponse`, `sseErrorPayload`): out of credits 503 `credits`; an UpstreamError 502
+ * `upstream`, or `timeout` for a provider that did not answer in time (its 504); anything else 500
+ * `internal` (`timeout` for a first-byte watchdog or a fired AbortSignal.timeout). A client's abort
+ * is not a failure and records nothing. Fire and forget (`recordEvent`): it never slows or breaks
+ * the answer. Called by `errorResponse` for every JSON 5xx and by `runChargedStream`
+ * (live-route.ts) for an SSE route's error frame.
+ */
+export function recordRouteError(err: unknown, log: unknown, context: Record<string, unknown> = {}): void {
+  if (err instanceof Error && err.name === "AbortError") return;
+  let status = 500;
+  let code = "internal";
+  let message: string;
+  const extra: Record<string, unknown> = {};
+  if (err instanceof CreditsExhaustedError) {
+    status = 503;
+    code = "credits";
+    message = "OpenRouter is out of credits";
+  } else if (err instanceof UpstreamError) {
+    status = 502;
+    code = err.status === 504 ? "timeout" : "upstream";
+    message = err.message;
+    extra.upstreamStatus = err.status;
+  } else {
+    if (err instanceof Error && (err.name === "WatchdogTimeoutError" || err.name === "TimeoutError")) code = "timeout";
+    message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+  }
+  const scalars = Object.fromEntries(Object.entries(context).filter(([, v]) => typeof v === "number" || typeof v === "boolean"));
+  recordEvent({
+    source: "server",
+    level: "error",
+    kind: routeEventKind(logContext(log)),
+    code,
+    message: message.slice(0, 200),
+    ...eventContext(log),
+    meta: { status, ...extra, ...scalars },
+  });
+}
+
 /**
  * Map an error thrown inside a route handler to the shared error contract and
- * log it with the route's child logger.
+ * log it with the route's child logger. Every 5xx it answers (but a client's abort) is also an
+ * app event for the /admin page (`recordRouteError`).
  */
 export function errorResponse(
   err: unknown,
   log: pino.Logger,
   context: Record<string, unknown> = {},
 ): Response {
+  recordRouteError(err, log, context);
+
   if (err instanceof CreditsExhaustedError) {
     // The operator's provider account, not the student's ink: a 503 the student can only wait out
     // (a 402 would tell them to buy ink that could not help). Logged as an error so it gets seen.

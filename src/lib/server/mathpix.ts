@@ -1,6 +1,8 @@
 import { getServerEnv, hasMathpix } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import type { StrokePayload } from "@/lib/live/contracts";
+import { recordEvent } from "@/lib/server/events";
+import { eventContext } from "@/lib/server/request";
 
 /**
  * Mathpix handwriting recognition over the strokes API.
@@ -138,12 +140,55 @@ function errorDetail(data: Pick<MathpixStrokesResponse, "error" | "error_info">)
 }
 
 /**
+ * The failures that are Mathpix's (or the way to it), as app events: kind `mathpix`, with the
+ * level, code and message each records. Not the others: `api_error` is Mathpix saying it could not
+ * read the ink (a scribble, not an outage), `aborted` is the client going away, and
+ * `unconfigured` / `invalid_payload` never reach Mathpix. A timeout is a warn: the route goes on to
+ * the vision reader, and the health checks watch Mathpix itself.
+ */
+function mathpixEvent(f: MathpixFailure): { level: "error" | "warn"; code: string; message: string } | null {
+  switch (f.reason) {
+    case "auth":
+      return { level: "error", code: "unauthorized", message: "Mathpix rejected our credentials" };
+    case "http":
+      return { level: "error", code: f.status === 429 ? "rate_limited" : "upstream", message: `Mathpix answered HTTP ${f.status ?? "?"}` };
+    case "timeout":
+      return { level: "warn", code: "timeout", message: "Mathpix did not answer in time" };
+    case "network":
+      return { level: "error", code: "network", message: "Mathpix could not be reached" };
+    default:
+      return null;
+  }
+}
+
+/** A failed call as an app event (fire and forget), with the route, user and request from the caller's logger. */
+function recordMathpixFailure(f: MathpixFailure, requestId: string | undefined, log: unknown, timeoutMs: number): void {
+  const what = mathpixEvent(f);
+  if (!what) return;
+  const at = eventContext(log);
+  recordEvent({
+    source: "server",
+    kind: "mathpix",
+    ...what,
+    ...at,
+    requestId: requestId ?? at.requestId,
+    meta: {
+      reason: f.reason,
+      ...(f.status ? { status: f.status } : {}),
+      ...(f.detail ? { detail: f.detail } : {}),
+      ...(f.reason === "timeout" ? { timeoutMs } : {}),
+    },
+  });
+}
+
+/**
  * Recognize a normalized stroke payload with Mathpix. 4 s timeout.
  *
  * Never throws. On failure it returns `{ ok: false, reason, status?, detail? }` and logs
  * the HTTP status plus Mathpix's `error` / `error_info` at warn — never the strokes and
  * never a credential — so `401 invalid_credentials` is distinguishable from an unreadable
- * scribble both in the logs and to the caller (which uses `auth` to degrade to vision).
+ * scribble both in the logs and to the caller (which uses `auth` to degrade to vision). A
+ * failure that is Mathpix's is also an app event (`recordMathpixFailure`).
  */
 export async function recognizeStrokes(
   payload: StrokePayload,
@@ -151,8 +196,11 @@ export async function recognizeStrokes(
   opts: { timeoutMs?: number; requestId?: string; log?: WarnLogger } = {},
 ): Promise<MathpixOutcome> {
   const log = opts.log ?? mathpixLogger;
+  const timeoutMs = opts.timeoutMs ?? MATHPIX_TIMEOUT_MS;
   const fail = (f: MathpixFailure, msg: string): MathpixFailure => {
     log.warn({ requestId: opts.requestId, reason: f.reason, status: f.status, error: f.detail }, msg);
+    // the route's own logger names the route and the user; this module's own names neither
+    recordMathpixFailure(f, opts.requestId, opts.log, timeoutMs);
     return f;
   };
 
@@ -163,7 +211,6 @@ export async function recognizeStrokes(
 
   const env = getServerEnv();
   const controller = new AbortController();
-  const timeoutMs = opts.timeoutMs ?? MATHPIX_TIMEOUT_MS;
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;

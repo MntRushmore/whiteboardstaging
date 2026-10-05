@@ -3,7 +3,7 @@ import type pino from "pino";
 import { logger } from "@/lib/logger";
 import { requireUser, type AuthedUser } from "@/lib/server/auth";
 import { checkRateLimitDistributed, rateLimitedResponse, type RateLimitBucket } from "@/lib/server/rate-limit";
-import { PROVIDER_UNAVAILABLE_MESSAGE, parseJsonBody } from "@/lib/server/request";
+import { PROVIDER_UNAVAILABLE_MESSAGE, parseJsonBody, recordRouteError } from "@/lib/server/request";
 import { refundInk, type RefundInput, type RpcClient } from "@/lib/server/billing";
 import { CreditsExhaustedError, UpstreamError } from "@/lib/server/openrouter";
 
@@ -81,6 +81,10 @@ export async function livePreamble<S extends z.ZodTypeAny>(
  * `input.requestId` is refunded and the error is rethrown so `sseResponse` still emits the
  * `error` frame. A failure after the first item is NOT refunded: the user received
  * (and keeps) partial output, and the model was paid for it.
+ *
+ * Either way the failure is an app event (`recordRouteError`: `route.live.<route>`, with
+ * `delivered` in `meta`), as a JSON route's 5xx is: the stream answered 200, but the student gets
+ * its `error` frame. A client that went away records nothing.
  */
 export async function runChargedStream(
   input: RefundInput,
@@ -92,6 +96,7 @@ export async function runChargedStream(
   try {
     await run();
   } catch (err) {
+    recordRouteError(err, log, { stream: true, delivered: delivered() });
     if (delivered()) {
       log.info({ requestId: input.requestId }, "stream failed after partial output; charge kept");
     } else {

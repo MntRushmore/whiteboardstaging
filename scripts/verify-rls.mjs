@@ -9,7 +9,9 @@
  * profiles, usage_events, credit_grants, billing_events, rate_limit_counters, the
  * ink tables ink_packs, ink_grants, ink_purchases, ink_checkout_reviews, Agathon
  * Unlimited's unlimited_subscriptions and unlimited_usage, the service-role-only
- * email_log, and the learning record's learning_attempts: LEARNING_CHECKS, run after the rest), the
+ * email_log, the learning record's learning_attempts: LEARNING_CHECKS, and the admin system's
+ * service-role-only admins, app_events, health_checks and alert_state with is_admin() and
+ * prune_admin_rows(): ADMIN_CHECKS, both run after the rest), the
  * storage buckets, the version and history triggers and the RPCs (consume_credits, credit_summary,
  * ink_summary, rate_limit_hit, usage_by_day, save_onboarding, delete_own_account;
  * and that a user can call none of the service-role RPCs refund_credits,
@@ -35,7 +37,7 @@
  */
 import { createSupabaseHttp, loadDotEnvLocal, resolveSupabaseEnv, waitForHealth } from "./lib/supabaseHttp.mjs";
 import { bootstrapVerifyContext } from "./lib/verifyContext.mjs";
-import { ALL_CHECKS, formatResults, LEARNING_CHECKS, runAllChecks } from "./lib/rlsChecks.mjs";
+import { ADMIN_CHECKS, ALL_CHECKS, formatResults, LEARNING_CHECKS, runAllChecks } from "./lib/rlsChecks.mjs";
 
 loadDotEnvLocal();
 
@@ -83,7 +85,7 @@ const ctx = {
 
 let results = [];
 try {
-  results = await runAllChecks(ctx, [...ALL_CHECKS, ...LEARNING_CHECKS]);
+  results = await runAllChecks(ctx, [...ALL_CHECKS, ...LEARNING_CHECKS, ...ADMIN_CHECKS]);
 } finally {
   const notes = await bootstrap.cleanup();
   console.log(formatResults(results));

@@ -6,11 +6,12 @@ Where a crash shows up, how to know the site is up, and how to tell which commit
 
 | `module` | Written by | When | Fields |
 | --- | --- | --- | --- |
-| `client-error` | `POST /api/client-errors` (`src/app/api/client-errors/route.ts`) | A student's browser hit an uncaught error, an unhandled promise rejection, or an error boundary (`error.tsx`, `global-error.tsx`, the board's `LiveErrorBoundary`) | `source` (`error`, `rejection`, `boundary`, `global`, `live`), `message`, `stack` (~4 KB), `path` (never a query string or hash), `boardId` on a board, `release`, `digest` (boundaries), `userAgent`, `userId` when signed in. Level `error`. |
+| `client-error` | `POST /api/client-errors` (`src/app/api/client-errors/route.ts`) | A student's browser hit an uncaught error, an unhandled promise rejection, or an error boundary (`error.tsx`, `global-error.tsx`, the board's `LiveErrorBoundary`), or the board showed a student an error (`source: live`) | `source` (`error`, `rejection`, `boundary`, `global`, `live`), `kind` and `code` when the client named them (`live.solve`, `timeout`), `message`, `stack` (~4 KB), `path` (never a query string or hash), `boardId` on a board, `release`, `digest` (boundaries), `userAgent`, `userId` when signed in. Level `error`. |
+| `app-events` | `src/lib/server/events.ts` | An app event could not be written to `app_events` (at most one line a minute per instance, with how many more failed), an invalid event was dropped, or events were dropped past the per-instance budget (`dropped`) | `status`, `error`, `kind`; `suppressed`. Level `warn`. Section 7. |
 | `server-error` | `onRequestError` in `src/instrumentation.ts` | The Next server caught an error nothing else handled: a server component that threw, a route handler's uncaught error, a server action | `route` (the route file, e.g. `/board/[id]`), `routeType` (`render`, `route`, `action`, `proxy`), `method`, `path` (no query string), `digest`, `name`, `error`, `stack`, `release`. Level `error`. Never the request body or headers. |
 | `health` | `GET /api/health` | The database did not answer the health probe | `reason` (`timeout`, `status 503 PGRST001`, `network: …`), `ms`, `release`. Level `warn`. |
 
-Route handlers that map their own errors (`errorResponse` in `src/lib/server/request.ts`, the Live routes) keep logging under their own modules (`live`, `storage-gc`, …) as before.
+Route handlers that map their own errors (`errorResponse` in `src/lib/server/request.ts`, the Live routes) keep logging under their own modules (`live`, `storage-gc`, …) as before; each 5xx they answer, each model fallback or failure and each Mathpix failure is also an app event for `/admin` (section 7).
 
 What the browser sends is deliberately thin: per page load each distinct error once, at most 10, and nothing from ResizeObserver loops, aborted fetches, "Script error.", tldraw's "No active pointer" or browser extensions (`src/lib/clientErrors.ts`). The endpoint is rate limited per IP (20 a minute), so a crash loop cannot flood the logs. No board content and nothing the student typed is sent, but an error *message* can quote anything the code put in it; treat the lines as personal data (they carry a user id).
 
@@ -116,3 +117,42 @@ curl -sS -H "Authorization: Bearer $CRON_SECRET" https://whiteboard.rushilchopra
 4. Ship the app change that calls `sendWelcomeEmail()` after the tour saves `onboarded_at`.
 
 Without `RESEND_API_KEY` (local development, previews) nothing is sent and nothing breaks: the welcome route answers `503 feature_unavailable`, the cron too (except `?dryRun=1`), and `sendEmail` returns `{ ok: false, error: "not configured" }` with one log line.
+
+## 7. Admin: the error log and who may see it
+
+`/admin` shows what students saw go wrong and whether each service is up (design: `docs/ARCHITECTURE.md`, "Admin"). Its data is in four service-role-only tables (migration `supabase/migrations/20261005000000_admin.sql`): `admins`, `app_events`, `health_checks`, `alert_state`. Unlike the log lines above, app events stay 30 days (health checks 14), whatever the Vercel plan keeps.
+
+**Making the owner an admin.** The migration names nobody; once per project, after the account has signed up:
+
+```bash
+# local stack (no .env.local, or one pointing at it)
+node scripts/make-admin.mjs rushilchopra@gmail.com
+
+# production: the URL and service role key on the command line win over .env.local
+NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co SUPABASE_SERVICE_ROLE_KEY=<service role key> \
+  node scripts/make-admin.mjs rushilchopra@gmail.com
+```
+
+It prints the project it acts on first (`(local)` or `(NOT local)`), finds the account by email in Supabase Auth, and adds the row; repeating it changes nothing. `--remove` takes admin away. Each server instance remembers the answer for 60 s, so a change takes up to a minute. Anyone else who opens an admin route gets a 404 (a `warn` line, module `admin`, `admin route refused: not an admin`).
+
+**What is in app_events.** One row per event: `client.*` (a browser crash), `live.*` (an error a student saw on the board), `route.*` (a route answered 5xx), `model.*` (a model fell back, code `fallback`, level `warn`, or failed: `timeout`, `upstream`, `invalid`, `credits`), `mathpix`, `health.*`. Repeats of the same event for the same user within 30 s are written once, and each server instance writes at most 60 a minute, so counts under a flood are a floor, not exact. Straight from the database (SQL editor):
+
+```sql
+-- the last hour, newest first
+select at, source, level, kind, code, message, route, user_id, request_id from public.app_events
+ where at > now() - interval '1 hour' order by at desc limit 100;
+-- what students hit most today, and how many of them
+select kind, code, message, count(*), count(distinct user_id) as users from public.app_events
+ where level = 'error' and at > now() - interval '24 hours' group by 1, 2, 3 order by 4 desc limit 30;
+-- one student's errors (their id: Authentication -> Users)
+select at, kind, code, message, route, board_id from public.app_events where user_id = '<uuid>' order by at desc limit 50;
+-- the model fallbacks: which primary keeps failing
+select meta->>'primary' as primary, meta->>'reason' as why, count(*) from public.app_events
+ where code = 'fallback' and at > now() - interval '24 hours' group by 1, 2 order by 3 desc;
+```
+
+A `request_id` finds the same request's log lines in Vercel (search it), and the event's `release` the commit.
+
+**When nothing is recorded.** Events need `SUPABASE_SERVICE_ROLE_KEY` on the deployment (without it the writer does nothing, silently) and the migration applied (without the table every write fails: an `app-events` warn line, `app event not recorded`, `status: 404` and `42P01`). Recording never slows or breaks a response either way. Check with `npm run env:check`, and apply the migration with `npx supabase db push` (then `npm run db:verify`: the `admin:` checks must pass).
+
+**Retention.** `prune_admin_rows()` (service role) deletes events older than 30 days and checks older than 14; the health run calls it. By hand: `select public.prune_admin_rows();`.

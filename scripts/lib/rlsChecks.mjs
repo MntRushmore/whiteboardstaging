@@ -2219,6 +2219,162 @@ export const LEARNING_CHECKS = [
   { name: "learning_attempts: own rows only, own boards and attempts, checked values, gone with the account", run: checkLearning },
 ];
 
+/** The admin system's tables (migration 20261005000000_admin.sql): the service role's alone. */
+export const ADMIN_TABLES = ["admins", "app_events", "health_checks", "alert_state"];
+
+/** The marker every row the admin check writes carries, so its cleanup finds them. */
+const ADMIN_MARK = "rls-verify";
+
+/**
+ * A valid row per admin table: refused for a user before any constraint is read, and taken from
+ * the service role.
+ * @param {string} table
+ * @param {string} [userId]
+ */
+export function adminRow(table, userId = ZERO_UUID) {
+  switch (table) {
+    case "admins":
+      return { user_id: userId };
+    case "app_events":
+      return { source: "server", level: "info", kind: "rls.verify", message: ADMIN_MARK };
+    case "health_checks":
+      return { service: "app", ok: true, latency_ms: 1, detail: ADMIN_MARK };
+    case "alert_state":
+      return { key: `${ADMIN_MARK}:${uuid()}`, status: "ok", failures: 0 };
+    default:
+      return {};
+  }
+}
+
+/**
+ * The admin system (migration 20261005000000_admin.sql): who may open /admin (`admins`), what went
+ * wrong (`app_events`), whether each service is up (`health_checks`) and the alert emails' state
+ * (`alert_state`). Anon and every user are denied every read and write of all four: a student who
+ * could insert into `admins` would make themself an admin, and one who could read `app_events`
+ * would read other students' errors. `is_admin()` answers false for a user who is not one and,
+ * once the service role adds them, true (and only for them: B stays false); anon cannot call it.
+ * Nobody but the service role may run `prune_admin_rows()`. With the service role: each table takes
+ * a valid row, the checks refuse a kind, source or service the code never sends, the prune answers
+ * its counts, and an event outlives its user's account with user_id null (D deletes itself). Removes
+ * every row it wrote.
+ *
+ * Kept out of ALL_CHECKS (the in-memory fake in verifyRls.test.ts does not model these tables);
+ * scripts/verify-rls.mjs and the DB integration test run ADMIN_CHECKS after LEARNING_CHECKS.
+ * @param {CheckContext} ctx
+ */
+export async function checkAdmin({ anon, a, b, service, newUser }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const code = (/** @type {HttpResult} */ res) => String(asObject(res.body)?.code ?? "");
+
+  // ---------------------------------------------------------------- anon and users: nothing
+  for (const table of ADMIN_TABLES) {
+    const anonSel = await anon.rest("GET", table, { query: { select: "*", limit: "1" } });
+    out.push(result(`admin: anon cannot select ${table}`, isDenied(anonSel), describe(anonSel)));
+    const anonIns = await anon.rest("POST", table, { body: adminRow(table), prefer: "return=minimal" });
+    out.push(result(`admin: anon cannot insert into ${table}`, isDenied(anonIns), describe(anonIns)));
+    const sel = await a.rest("GET", table, { query: { select: "*", limit: "1" } });
+    out.push(result(`admin: A cannot select ${table}`, isDenied(sel), describe(sel)));
+    const ins = await a.rest("POST", table, { body: adminRow(table, a.userId ?? ZERO_UUID), prefer: "return=minimal" });
+    out.push(result(`admin: A cannot insert into ${table}${table === "admins" ? " (cannot make themself an admin)" : ""}`, isDenied(ins), describe(ins)));
+    const filter = table === "alert_state" ? { key: `like.${ADMIN_MARK}*` } : table === "admins" ? { user_id: `eq.${a.userId}` } : { id: "gt.0" };
+    const upd = await a.rest("PATCH", table, { query: filter, body: table === "admins" ? { added_at: new Date().toISOString() } : table === "app_events" ? { message: "x" } : table === "health_checks" ? { ok: false } : { status: "firing" }, prefer: "return=representation" });
+    out.push(result(`admin: A cannot update ${table}`, isDenied(upd), describe(upd)));
+    const del = await a.rest("DELETE", table, { query: filter, prefer: "return=representation" });
+    out.push(result(`admin: A cannot delete from ${table}`, isDenied(del), describe(del)));
+  }
+
+  // ---------------------------------------------------------------- the functions
+  const anonIsAdmin = await rpc(anon, "is_admin");
+  out.push(result("admin: anon cannot call is_admin()", isDenied(anonIsAdmin), describe(anonIsAdmin)));
+  const aBefore = await rpc(a, "is_admin");
+  out.push(result("admin: is_admin() is false for a user who is not an admin", isOk(aBefore) && aBefore.body === false, describe(aBefore)));
+  for (const [who, client] of /** @type {Array<[string, RlsClient]>} */ ([["anon", anon], ["A", a]])) {
+    const prune = await rpc(client, "prune_admin_rows");
+    out.push(result(`admin: ${who} cannot run prune_admin_rows()`, isDenied(prune), describe(prune)));
+  }
+
+  if (!service) {
+    out.push(result("admin: the service role's half (skipped: no service role client)", true));
+    return out;
+  }
+
+  // ---------------------------------------------------------------- the service role
+  try {
+    const made = await service.rest("POST", "admins", { body: adminRow("admins", a.userId ?? ZERO_UUID), prefer: "return=representation" });
+    out.push(result("admin: the service role makes A an admin", isOk(made) && rows(made)[0]?.user_id === a.userId, describe(made)));
+    const aAdmin = await rpc(a, "is_admin");
+    out.push(result("admin: is_admin() is true for A once A is an admin", isOk(aAdmin) && aAdmin.body === true, describe(aAdmin)));
+    const bAdmin = await rpc(b, "is_admin");
+    out.push(result("admin: is_admin() stays false for B", isOk(bAdmin) && bAdmin.body === false, describe(bAdmin)));
+    const aReads = await a.rest("GET", "admins", { query: { select: "user_id" } });
+    out.push(result("admin: an admin still cannot read admins (only the server reads it)", isDenied(aReads), describe(aReads)));
+    const aEvents = await a.rest("GET", "app_events", { query: { select: "id", limit: "1" } });
+    out.push(result("admin: an admin still cannot read app_events directly (the admin API reads it)", isDenied(aEvents), describe(aEvents)));
+
+    for (const table of ["app_events", "health_checks", "alert_state"]) {
+      const ins = await service.rest("POST", table, { body: adminRow(table), prefer: "return=representation" });
+      out.push(result(`admin: the service role writes ${table}`, isOk(ins) && rows(ins).length === 1, describe(ins)));
+    }
+    const refused = [
+      ["app_events", { ...adminRow("app_events"), kind: "Not A Kind" }, "an event kind outside EVENT_KIND"],
+      ["app_events", { ...adminRow("app_events"), source: "elsewhere" }, "an event source outside EVENT_SOURCES"],
+      ["app_events", { ...adminRow("app_events"), message: "x".repeat(501) }, "an event message over 500 characters"],
+      ["app_events", { ...adminRow("app_events"), meta: ["not", "an", "object"] }, "an event meta that is not an object"],
+      ["health_checks", { ...adminRow("health_checks"), service: "elsewhere" }, "a health check of a service outside SERVICES"],
+      ["alert_state", { ...adminRow("alert_state"), status: "maybe" }, "an alert status other than ok / firing"],
+    ];
+    for (const [table, body, what] of refused) {
+      const res = await service.rest("POST", /** @type {string} */ (table), { body, prefer: "return=minimal" });
+      out.push(result(`admin: the database refuses ${what} (23514)`, !isOk(res) && code(res) === "23514", describe(res)));
+    }
+    const pruned = await rpc(service, "prune_admin_rows");
+    const counts = asObject(pruned.body);
+    out.push(
+      result(
+        "admin: the service role runs prune_admin_rows() and gets its counts (a fresh row is kept)",
+        isOk(pruned) && Number.isInteger(counts?.app_events) && Number.isInteger(counts?.health_checks),
+        describe(pruned),
+      ),
+    );
+    const kept = await service.rest("GET", "app_events", { query: { message: `eq.${ADMIN_MARK}`, select: "id" } });
+    out.push(result("admin: the prune keeps today's events", isOk(kept) && rows(kept).length >= 1, describe(kept)));
+
+    // ---------------------------------------------------------------- an event outlives its user
+    if (!newUser) {
+      out.push(result("admin: an event outlives its user's account (skipped: no newUser in the context)", true));
+    } else {
+      const d = await newUser();
+      const ev = await service.rest("POST", "app_events", { body: { ...adminRow("app_events"), user_id: d.userId }, prefer: "return=representation" });
+      const id = rows(ev)[0]?.id;
+      const del = await rpc(d, "delete_own_account");
+      out.push(result("admin: D can delete the account with an event on it", isOk(ev) && isOk(del), `${describe(ev)} / ${describe(del)}`));
+      const left = await service.rest("GET", "app_events", { query: { id: `eq.${id}`, select: "id,user_id" } });
+      out.push(result("admin: D's event stays, with user_id null", rows(left).length === 1 && rows(left)[0]?.user_id === null, describe(left)));
+    }
+
+    const removed = await service.rest("DELETE", "admins", { query: { user_id: `eq.${a.userId}` }, prefer: "return=representation" });
+    out.push(result("admin: the service role removes A again", isOk(removed) && rows(removed).length === 1, describe(removed)));
+    const aAfter = await rpc(a, "is_admin");
+    out.push(result("admin: is_admin() is false again for A", isOk(aAfter) && aAfter.body === false, describe(aAfter)));
+  } finally {
+    await service.rest("DELETE", "admins", { query: { user_id: `in.(${a.userId},${b.userId})` } });
+    await service.rest("DELETE", "app_events", { query: { message: `eq.${ADMIN_MARK}` } });
+    await service.rest("DELETE", "health_checks", { query: { detail: `eq.${ADMIN_MARK}` } });
+    await service.rest("DELETE", "alert_state", { query: { key: `like.${ADMIN_MARK}:*` } });
+  }
+  return out;
+}
+
+/**
+ * The admin system's checks, run after LEARNING_CHECKS by scripts/verify-rls.mjs and
+ * src/__tests__/db-rls.integration.test.ts (the in-memory fake does not model these tables).
+ * @type {CheckDef[]}
+ */
+export const ADMIN_CHECKS = [
+  { name: "admin: admins, app_events, health_checks, alert_state are the service role's alone; is_admin() answers only about the caller", run: checkAdmin },
+];
+
 /**
  * Run one check, converting a thrown error into a single failing result.
  * @param {CheckDef} check
