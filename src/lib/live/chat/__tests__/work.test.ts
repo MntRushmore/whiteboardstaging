@@ -39,6 +39,18 @@ describe("which problem the tutor works", () => {
     expect(pickForStep(CELLS, null, states({ hb_1: { solved: true }, hb_2: { solved: true }, hb_3: { solved: true } }))).toEqual({ kind: "none" });
   });
 
+  it("a problem the tutor is writing now is the one an ask is about: never the next one meanwhile", () => {
+    // writing problem 1 (its state says solved and started, as the loop reports a busy problem)
+    const writing = { solved: true, started: true, busy: true };
+    expect(pickForSolve(CELLS, null, states({ hb_1: writing }))).toEqual({ kind: "busy", cell: ONE });
+    expect(pickForStep(CELLS, null, states({ hb_1: writing }))).toEqual({ kind: "busy", cell: ONE });
+    expect(currentProblem(CELLS, null, states({ hb_1: { solved: true }, hb_2: writing }))).toBe(TWO);
+    // a problem the student wrote under (or picked) still wins: that ask is about it
+    expect(pickForSolve(CELLS, "hb_3", states({ hb_1: writing }))).toEqual({ kind: "tutor", cell: THREE });
+    // written out: the next ask is the next problem, as before
+    expect(pickForSolve(CELLS, null, states({ hb_1: { solved: true, started: true } }))).toEqual({ kind: "tutor", cell: TWO });
+  });
+
   it("the tutor's work on a problem has a line id of its own, stable across a reload", () => {
     expect(problemLineId(ONE)).toBe("problem:hb_1");
   });

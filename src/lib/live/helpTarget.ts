@@ -88,11 +88,12 @@ export function problemCount(lines: readonly Line[], openProblems: number): numb
 /**
  * The target to publish after `next` was worked out: `prev` itself when nothing changed (the atom
  * is not set again, so the outline does not re-render at every flush), `changedAt` = `now` when it
- * moved to another problem — not when it first appears, on a load or a fresh screen.
+ * moved to another problem — not when it first appears, on a load or a fresh screen, and not when
+ * `quiet`: the tutor's own work moved it (a problem being written, then done), not the student.
  */
-export function nextHelpTarget(prev: HelpTarget | null, next: HelpTargetDraft | null, now: number): HelpTarget | null {
+export function nextHelpTarget(prev: HelpTarget | null, next: HelpTargetDraft | null, now: number, opts: { quiet?: boolean } = {}): HelpTarget | null {
   if (!next) return null;
-  const changedAt = prev && prev.key !== next.key ? now : (prev?.changedAt ?? 0);
+  const changedAt = prev && prev.key !== next.key && !opts.quiet ? now : (prev?.changedAt ?? 0);
   const b = prev?.bounds;
   const same =
     prev !== null &&

@@ -44,6 +44,13 @@ export interface ProblemState {
   solved: boolean;
   /** the tutor has written anything under it — a step, the solution — or is writing it now */
   started: boolean;
+  /**
+   * the tutor is writing its work now (or the model's worked solution is on its way): an ask about
+   * the current problem is about this one, already being answered — never the next problem, whose
+   * work would take the tutor's pen off this one halfway (a tap on Solve it while Auto was writing
+   * problem 1 left it at its first line and worked problem 2). Absent: false.
+   */
+  busy?: boolean;
 }
 
 /**
@@ -51,21 +58,26 @@ export interface ProblemState {
  * good line, as Solve and Help always have), the problem itself (`tutor`: the tutor works it from
  * the problem), or nothing (`none`: no problem is open).
  */
-export type ProblemPick = { kind: "student"; cell: ProblemCell } | { kind: "tutor"; cell: ProblemCell } | { kind: "none" };
+export type ProblemPick =
+  | { kind: "student"; cell: ProblemCell }
+  | { kind: "tutor"; cell: ProblemCell }
+  /** the tutor is writing this one's work now: the ask is answered by what it is writing */
+  | { kind: "busy"; cell: ProblemCell }
+  | { kind: "none" };
 
 const NONE: ProblemPick = { kind: "none" };
 
 /**
  * "The current problem": the one whose cell the student last wrote in (`touched`, a cell key), else
- * the first in reading order with no work of the student's under it and no solution of the tutor's.
- * Null when there is none.
+ * the first in reading order the tutor is writing now (`busy`) or with no work of the student's
+ * under it and no solution of the tutor's. Null when there is none.
  */
 export function currentProblem(cells: readonly ProblemCell[], touched: string | null, state: (cell: ProblemCell) => ProblemState): ProblemCell | null {
   const mine = touched ? cells.find((c) => c.key === touched) : undefined;
   if (mine) return mine;
   return cells.find((c) => {
     const s = state(c);
-    return !s.work && !s.solved;
+    return Boolean(s.busy) || (!s.work && !s.solved);
   }) ?? null;
 }
 
@@ -78,6 +90,7 @@ export function pickForSolve(cells: readonly ProblemCell[], touched: string | nu
   const cur = currentProblem(cells, touched, state);
   if (!cur) return NONE;
   const s = state(cur);
+  if (s.busy) return { kind: "busy", cell: cur };
   if (s.work) return { kind: "student", cell: cur };
   if (!s.solved) return { kind: "tutor", cell: cur };
   const at = cells.indexOf(cur);
@@ -97,7 +110,9 @@ export function pickForSolve(cells: readonly ProblemCell[], touched: string | nu
 export function pickForStep(cells: readonly ProblemCell[], touched: string | null, state: (cell: ProblemCell) => ProblemState): ProblemPick {
   const cur = currentProblem(cells, touched, state);
   if (!cur) return NONE;
-  return state(cur).work ? { kind: "student", cell: cur } : { kind: "tutor", cell: cur };
+  const s = state(cur);
+  if (s.busy) return { kind: "busy", cell: cur };
+  return s.work ? { kind: "student", cell: cur } : { kind: "tutor", cell: cur };
 }
 
 /**
