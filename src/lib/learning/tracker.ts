@@ -264,7 +264,9 @@ export class AttemptTracker {
       judged: Boolean(prev?.judged) || s.mark === "check" || s.mark === "circle" || s.solved,
     });
     if (s.solved && s.mark === "check") a.solvedByStudent = true;
-    if (s.mark === "circle" && s.previousLatex) this.classify(a, s.lineId, s.previousLatex, s.latex);
+    // under a ringed line, a ring usually means the student is correcting it (`3x = 5` ringed, then
+    // `3x = 15`): compared with the wrong line, the fix would read as a mistake of its own
+    if (s.mark === "circle" && s.previousLatex && !this.ringedLineReads(a, s.lineId, s.previousLatex)) this.classify(a, s.lineId, s.previousLatex, s.latex);
     if (started) this.adoptOrphans(a);
     this.commit(a, s.at);
   }
@@ -499,6 +501,12 @@ export class AttemptTracker {
     reads.set(latex, mistake);
     while (reads.size > MISTAKE_READS) reads.delete(reads.keys().next().value as string);
     a.mistakes.set(lineId, reads);
+  }
+
+  /** Another line of this attempt reads `latex` and wears a ring now. */
+  private ringedLineReads(a: Attempt, lineId: string, latex: string): boolean {
+    for (const [id, l] of a.lines) if (id !== lineId && l.latex === latex && l.mark === "circle") return true;
+    return false;
   }
 
   /** A ringed line, compared with the line above it by the board's own classifier (async; a model mistake for the same read wins). */

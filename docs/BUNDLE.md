@@ -205,6 +205,12 @@ live loop itself, which reads and marks ink from the first stroke, so it cannot 
 way a dialog can. The owner chose to raise the budget rather than cut first. The new 1,100,000 B
 leaves about 30 KB of room. katex (below) is still the big lever when the next cut is needed.
 
+The learning system (2026-10-04) measured 1,076,308 B (+6.1 KB). The board's first load gains only
+the live loop's signals (`learn()` and its emit sites), the learning bus (`src/lib/learning/bus.ts`),
+the learner hint's schema (`hint.ts`, in the check request) and the hook that loads the rest. The
+tracker, store, skill classifier, mistake classifier, summary, practice generators, Now you try and
+the practice board all load after the board, with a dynamic import. About 23.7 KB of room remains.
+
 ## Recommendations not done here (files owned elsewhere)
 
 1. `src/app/globals.css`: drop `@import "katex/dist/katex.min.css"` and import it from

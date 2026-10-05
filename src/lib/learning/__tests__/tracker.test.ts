@@ -198,14 +198,23 @@ describe("AttemptTracker", () => {
     });
 
     it("each kind once per line; a line read again is classified again, and keeps what it had", async () => {
-      feed(line(0, "a", "2x+3=11", null), line(10, "b", "2x=-8", "circle", { previousLatex: "2x+3=11" }), line(20, "c", "x=-4", "circle", { previousLatex: "2x=-8" }));
-      await vi.waitFor(() => expect(latest().mistakes).toEqual({ sign: 2 }));
+      feed(line(0, "a", "2x+3=11", null), line(10, "b", "2x=-8", "circle", { previousLatex: "2x+3=11" }), line(20, "c", "x=-4", "check", { previousLatex: "2x=-8" }));
+      await vi.waitFor(() => expect(latest().mistakes).toEqual({ sign: 1 }));
       feed(line(30, "b", "2x=7", "circle", { previousLatex: "2x+3=11" }));
-      await vi.waitFor(() => expect(latest().mistakes).toEqual({ sign: 2, arithmetic: 1 }));
+      await vi.waitFor(() => expect(latest().mistakes).toEqual({ sign: 1, arithmetic: 1 }));
       // the same slip again on that line is not a new one
       feed(line(40, "b", "2x=-6", "circle", { previousLatex: "2x+3=11" }));
       await new Promise((r) => setTimeout(r, 0));
-      expect(latest().mistakes).toEqual({ sign: 2, arithmetic: 1 });
+      expect(latest().mistakes).toEqual({ sign: 1, arithmetic: 1 });
+    });
+
+    it("a ringed line under a ringed line is a correction: not compared with the wrong line", async () => {
+      // 3x - 5 = 10, then 3x = -5 (ringed), then the fix 3x = 15 written under it (ringed by the board too)
+      feed(line(0, "a", "3x-5=10", null), line(10, "b", "3x=-5", "circle", { previousLatex: "3x-5=10" }), line(20, "c", "3x=15", "circle", { previousLatex: "3x=-5" }));
+      await vi.waitFor(() => expect(latest().mistakes).toEqual({ sign: 1 }));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(classifyMistake).toHaveBeenCalledTimes(1);
+      expect(latest().linesRinged).toBe(2);
     });
 
     it("a model mistake for a read the board already classified replaces that read's", async () => {
