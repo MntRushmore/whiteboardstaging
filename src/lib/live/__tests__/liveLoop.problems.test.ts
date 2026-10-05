@@ -353,6 +353,25 @@ describe("live loop — the tutor works the problems it wrote", () => {
       expect(streamCalls).toEqual([]);
     });
 
+    it("a young student's answer to a sum is the number alone: right, it is ticked and the problem solved", async () => {
+      start("feedback");
+      await run([{ type: "write_problems", problems: [["18 + 15 - 19"]] }]);
+      const answer = await penLine("14", 120, 170, "14");
+      await stop();
+      expect(liveStore.lines.get()[answer].analysis).toMatchObject({ verdict: "ok", solved: true, bareAnswer: true });
+      expect(kinds(answer)).toEqual(["check"]);
+      expect(streamCalls).toEqual([]);
+    });
+
+    it("…and a wrong one, even a single digit, is ringed — never silent, never a ?", async () => {
+      start("feedback");
+      await run([{ type: "write_problems", problems: [["2 + 2"]] }]);
+      const answer = await penLine("3", 120, 170, "5");
+      await stop();
+      expect(liveStore.lines.get()[answer].analysis).toMatchObject({ verdict: "mismatch", bareAnswer: true });
+      expect(kinds(answer)).toEqual(["circle"]);
+    });
+
     it("in Suggest and Solve too; never in Off", async () => {
       for (const m of ["suggest", "answer", "off"] as const) {
         loop?.stop();
