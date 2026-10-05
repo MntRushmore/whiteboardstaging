@@ -3,13 +3,15 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChartColumn, FlaskConical, InfinityIcon, UserRound } from "lucide-react";
+import { ChartColumn, FlaskConical, InfinityIcon, ShieldCheck, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthProvider";
 import { FeatureLabsPanel } from "@/components/FeatureLabsPanel";
 import { BugReportButton } from "@/components/BugReportButton";
 import { BetaBadge } from "@/components/app/BetaBadge";
+// The is_admin() hint only (no admin page code): asked once the page is idle, then remembered.
+import { useIsAdmin } from "@/components/admin/useIsAdmin";
 // Nothing imported here may reach tldraw: this header renders on prerendered pages (see InkBottle).
 import { InkBottle } from "@/components/billing/InkBottle";
 import { useInkSummary } from "@/lib/billing/useInkSummary";
@@ -71,7 +73,7 @@ function UnlimitedLink() {
 
 /**
  * The app bar for signed-in pages: product name and the beta badge on the left; Report a bug,
- * the ink meter and the account menu (Progress, Account, Feature Labs, Sign out) on the right. Self-contained
+ * the ink meter and the account menu (Progress, Account, Feature Labs, Admin for admins, Sign out) on the right. Self-contained
  * (reads the session and the ink summary itself), so any page can drop it in above an
  * `APP_CONTENT_CLASS` container.
  * The menu is Arc's UserMenu: a panel on desktop, a bottom sheet below 640 px.
@@ -83,6 +85,8 @@ export function AppHeader({ className }: { className?: string }) {
   // The same shared read: the plan is part of the ink summary.
   const unlimited = isUnlimited(useUnlimited().state);
   const [labsOpen, setLabsOpen] = useState(false);
+  // Asked once the page is idle and remembered for the tab session: a student's header never waits on it.
+  const isAdmin = useIsAdmin(user?.id);
   const email = user?.email ?? "";
   // No display name in the session; the address before the @ stands in (initial on the avatar).
   const name = email.split("@")[0] || "Account";
@@ -132,6 +136,15 @@ export function AppHeader({ className }: { className?: string }) {
                   icon: <FlaskConical size={16} strokeWidth={1.75} />,
                   onSelect: () => setLabsOpen(true),
                 },
+                ...(isAdmin
+                  ? [
+                      {
+                        label: "Admin",
+                        icon: <ShieldCheck size={16} strokeWidth={1.75} />,
+                        onSelect: () => router.push("/admin"),
+                      },
+                    ]
+                  : []),
               ]}
               onSignOut={signOut}
             />

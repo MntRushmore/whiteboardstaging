@@ -56,6 +56,7 @@ export const NO_BODY_ROUTES = Object.freeze([
   "src/app/api/health/route.ts", // GET only
   "src/app/api/cron/trial-reminders/route.ts", // GET only (Vercel cron); ?dryRun=1 is a query param
   "src/app/api/email/welcome/route.ts", // POST with an empty body: the server decides who and whether
+  "src/app/api/admin/overview/route.ts", // GET only
 ]);
 
 export const API_ROUTES = Object.freeze([
@@ -69,6 +70,17 @@ export const API_ROUTES = Object.freeze([
     // 401 without `Authorization: Bearer <CRON_SECRET>`; 503 when CRON_SECRET / the service role key are unset.
     withoutTokenStatus: [401, 503],
     purpose: "Storage garbage collection (Vercel cron): orphaned board-assets / training-data objects; ?dryRun=1 default",
+    status: "active",
+  },
+  {
+    path: "/api/admin/overview",
+    file: "src/app/api/admin/overview/route.ts",
+    methods: ["GET"],
+    // requireAdmin = requireUser (401 without a token) + is_admin() (404 for a non-admin).
+    auth: "user",
+    limit: "credits",
+    body: "none",
+    purpose: "The /admin page's overview (admins only): service health, errors students saw, AI failures, users, bug reports",
     status: "active",
   },
   {
