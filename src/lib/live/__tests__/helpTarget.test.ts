@@ -111,6 +111,13 @@ describe("nextHelpTarget: what the loop publishes", () => {
     expect(nextHelpTarget(prev, draft("c:b1", { column: 1 }), 9000)?.changedAt).toBe(9000);
   });
 
+  it("moved by the tutor's own work (quiet): the new problem, with no flash of its own", () => {
+    const prev: HelpTarget = { ...draft("c:a1"), changedAt: 4000 };
+    const next = nextHelpTarget(prev, draft("c:b1", { column: 1 }), 9000, { quiet: true });
+    expect(next?.key).toBe("c:b1");
+    expect(next?.changedAt).toBe(4000);
+  });
+
   it("the same problem, unchanged: the same object (nothing re-renders at every flush)", () => {
     const prev: HelpTarget = { ...draft("c:a1"), changedAt: 1234 };
     expect(nextHelpTarget(prev, draft("c:a1"), 9000)).toBe(prev);

@@ -522,4 +522,71 @@ describe("live loop — the tutor works the problems it wrote", () => {
       expect(workOn(1).map((w) => w.lines)).toEqual([["x = 4"]]);
     });
   });
+  describe("an ask while the tutor is writing a problem's work", () => {
+    /** the tutor's hand at its real pace: its work is in flight until the clock moves on */
+    const motion = { reducedMotion: () => false };
+    /** lets every line in flight be written out */
+    async function writeOut(): Promise<void> {
+      for (let i = 0; i < 60; i++) await vi.advanceTimersByTimeAsync(500);
+      await landed();
+    }
+    const at = (n: number) => {
+      const t = liveStore.helpTarget.get();
+      return t !== null && overlaps({ x: t.bounds.x, y: t.bounds.y, r: t.bounds.x + t.bounds.w, b: t.bounds.y + t.bounds.h }, box(problemInk(n)));
+    };
+
+    it("Solve it while Auto writes problem 1: problem 1 is finished whole, problem 2 waits for the next ask", async () => {
+      start("feedback", motion);
+      await run([{ type: "write_problems", problems: [["2x + 3 = 11"], ["3x = 12"]] }]);
+      await writeOut();
+      // the dial to Solve: Auto works problem 1 — still being written when the student taps Solve it
+      mode = "answer";
+      loop.setOptions({ boardId: "board-1", mode: "answer", enabled: true });
+      await settle();
+      await vi.advanceTimersByTimeAsync(300);
+      loop.requestSolve();
+      await settle();
+      await writeOut();
+      expect(workOn(1).map((w) => w.lines)).toEqual([["2x = 8", "x = 4"]]);
+      expect(workOn(2)).toEqual([]);
+      // the next ask is the next problem
+      loop.requestSolve();
+      await writeOut();
+      expect(workOn(2).map((w) => w.lines)).toEqual([["x = 4"]]);
+    });
+
+    it("Help me in Feedback while the tutor writes problem 1's step: no step of problem 2 meanwhile", async () => {
+      start("feedback", motion);
+      await run([{ type: "write_problems", problems: [["2x + 3 = 11"], ["3x = 12"]] }]);
+      await writeOut();
+      loop.requestHelp();
+      await settle();
+      await vi.advanceTimersByTimeAsync(300);
+      expect(loop.requestHelp()).toBe(true);
+      await writeOut();
+      expect(workOn(1).map((w) => w.lines)).toEqual([["2x = 8"]]);
+      expect(workOn(2)).toEqual([]);
+    });
+
+    it("the outline is around the problem being worked, and moves on quietly once it is done", async () => {
+      start("answer", motion);
+      await run([{ type: "write_problems", problems: [["2x + 3 = 11"], ["3x = 12"], ["4x + 4 = 12"]] }]);
+      await writeOut();
+      // problem 1 worked first (the earlier ask), then Solve it: problem 2 is the one being written
+      loop.requestSolve();
+      await writeOut();
+      expect(workOn(1)).toHaveLength(1);
+      expect(at(2)).toBe(true);
+      const changedAt = liveStore.helpTarget.get()!.changedAt;
+      loop.requestSolve();
+      await settle();
+      await vi.advanceTimersByTimeAsync(300);
+      expect(workOn(2)).toHaveLength(1);
+      expect(at(2)).toBe(true);
+      await writeOut();
+      // done: the next ask's problem, without the flash a student's own move gives
+      expect(at(3)).toBe(true);
+      expect(liveStore.helpTarget.get()!.changedAt).toBe(changedAt);
+    });
+  });
 });

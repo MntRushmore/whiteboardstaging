@@ -2832,7 +2832,7 @@ export class LiveLoop implements LiveController {
   private problemState(cell: ProblemCell): ProblemState {
     const busy = this.problemBusy(cell);
     const work = this.tutorWorkOn(cell);
-    return { work: this.workUnder(cell) !== null, solved: work.solved || busy, started: work.solved || work.lines.length > 0 || busy };
+    return { work: this.workUnder(cell) !== null, solved: work.solved || busy, started: work.solved || work.lines.length > 0 || busy, busy };
   }
 
   /** Which of the chat's problems an ask is about (`chat/work.ts`); null with none on this screen. */
@@ -2867,7 +2867,10 @@ export class LiveLoop implements LiveController {
       const below = work.rect ? unionRects([fresh.head, work.rect]) : fresh.head;
       const opts: SolveOpts = { lineId: problemLineId(fresh), onlyFirstStep: depth === "step", problem: { cell: fresh, depth, written: work.lines, below } };
       clientMetric("live.problem.work", { depth, from, n: fresh.n, written: work.lines.length });
-      return this.solveBuilt(built, undefined, opts) === "nothing" ? "done" : "writing";
+      const result = this.solveBuilt(built, undefined, opts) === "nothing" ? "done" : "writing";
+      // the problem being written is the one an ask is about now: the outline follows (quietly)
+      this.publishHelpTarget({ quiet: true });
+      return result;
     };
     if (this.engine) return run();
     void this.ensureEngine().then(run, () => undefined);
@@ -5639,6 +5642,8 @@ export class LiveLoop implements LiveController {
         if (this.writer === writer) {
           this.writer = null;
           this.writerFor = null;
+          // a problem's work finished: the next ask is about the next problem, and the outline says so
+          if (lineId.startsWith("problem:")) this.publishHelpTarget({ quiet: true });
         }
         // a figure waiting for the hand to be free is written after it
         if (this.settled && this.writer === null && this.autoOn()) this.solveWantedFigures();
@@ -6590,9 +6595,9 @@ export class LiveLoop implements LiveController {
    * Publishes the problem the ask button would act on now (`liveStore.helpTarget`) for the outline
    * around it (`ProblemHighlight`): after every flush, a change of selection, mode or screen.
    */
-  private publishHelpTarget(): void {
+  private publishHelpTarget(opts: { quiet?: boolean } = {}): void {
     const prev = liveStore.helpTarget.get();
-    const next = nextHelpTarget(prev, this.started && this.opts.enabled ? this.helpTargetNow() : null, this.deps.now());
+    const next = nextHelpTarget(prev, this.started && this.opts.enabled ? this.helpTargetNow() : null, this.deps.now(), opts);
     if (next !== prev) liveStore.helpTarget.set(next);
   }
 
@@ -6612,7 +6617,7 @@ export class LiveLoop implements LiveController {
       const pick = this.problemPick(this.opts.mode === "answer" ? "solve" : "step");
       if (pick && pick.kind !== "none") {
         const work = pick.kind === "student" ? this.workUnder(pick.cell) : null;
-        if (pick.kind === "tutor" || work) {
+        if (pick.kind === "tutor" || pick.kind === "busy" || work) {
           cell = pick.cell;
           column = work ? work.line.column : null;
         }
@@ -6643,6 +6648,8 @@ export class LiveLoop implements LiveController {
     // asked about the problem the student is on (not a given line): the outline shows which (`ProblemHighlight`)
     if (!lineId) liveStore.askedAt.set(this.deps.now());
     this.solveTarget(lineId);
+    // the outline is around what the ask acts on: as it is now, not as the last flush left it
+    if (!lineId) this.publishHelpTarget();
   }
 
   /**
@@ -6665,6 +6672,8 @@ export class LiveLoop implements LiveController {
     // problem — worked out under it; pressed again once it is, the next one (`chat/work.ts`).
     if (!lineId && this.opts.enabled && this.opts.mode === "answer" && !this.actsOn(target)) {
       const pick = this.problemPick("solve");
+      // the tutor is writing the current problem's work already: that is the answer to this ask
+      if (pick?.kind === "busy") return;
       if (pick?.kind === "tutor") {
         this.workProblem(pick.cell, "solve");
         return;
@@ -6722,7 +6731,10 @@ export class LiveLoop implements LiveController {
   requestHelp(): boolean {
     if (!this.opts.enabled || this.opts.mode === "off") return false;
     liveStore.askedAt.set(this.deps.now());
-    return this.help();
+    const helped = this.help();
+    // the outline is around what the ask acts on: as it is now, not as the last flush left it
+    this.publishHelpTarget();
+    return helped;
   }
 
   /** Help me, without saying it was asked (`askedAt`): Auto's stuck step in Suggest (see `solveTarget`). */
@@ -6801,6 +6813,8 @@ export class LiveLoop implements LiveController {
     const depth: ProblemDepth = this.opts.mode === "answer" ? "solve" : "step";
     const pick = this.problemPick(depth);
     if (!pick || pick.kind === "none") return false;
+    // the tutor is writing the current problem's work already: the help is on its way
+    if (pick.kind === "busy") return true;
     if (target && needsLook(target)) this.syncMark(target, "question", unjudgedReason(target) ?? "unread");
     if (pick.kind === "tutor") {
       this.workProblem(pick.cell, depth);
