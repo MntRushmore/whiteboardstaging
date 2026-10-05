@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NO_UNLIMITED, UNLIMITED_PLAN, trialEndsOn } from "@/lib/billing/unlimited";
 import { ARRIVAL_COPY, withoutUnlimitedReturn } from "../arrival";
-import { chargeDateText, dollars, PLAN_COPY, planView } from "../plan";
+import { chargeDateText, chargeDayText, dollars, PLAN_COPY, planView } from "../plan";
 import { HOME_PATH, PLAN_PATH, planDue } from "../planMarker";
 
 const URL = "https://buy.stripe.com/test_123?client_reference_id=u1";
@@ -47,12 +47,19 @@ describe("what the plan screen shows", () => {
 });
 
 describe("the plan screen's words", () => {
-  it("crosses out the plan's own price and says the first 7 days are free", () => {
+  it("says the offer in one plain sentence: no struck-through price, no gradient", () => {
     expect(dollars(UNLIMITED_PLAN.monthlyUsd)).toBe("$25");
     expect(PLAN_COPY.title).toBe("Agathon Unlimited");
-    expect(PLAN_COPY.price).toBe("$25/month");
-    expect(PLAN_COPY.free).toBe("Free for 7 days");
-    expect(PLAN_COPY.then).toBe("Then $25/month. Cancel anytime.");
+    expect(PLAN_COPY.offer).toBe("7 days free, then $25 a month.");
+    // a plan that ended has no free week: it starts with the first charge
+    expect(PLAN_COPY.restartOffer("Mon, Oct 12")).toBe("$25 a month, starting Mon, Oct 12.");
+  });
+
+  it("the bill: today nothing, the first charge's day, then every month", () => {
+    expect(PLAN_COPY.bill).toMatchObject({ today: "Today", starts: "Free week starts", first: "First charge", monthly: "Every month", untilCancel: "Until you cancel", nothing: "$0", price: "$25" });
+    // a second plan's week is no free week: the bill says help uses ink until the first charge
+    expect(PLAN_COPY.bill.restartStarts).toBe("Your ink until then");
+    expect(PLAN_COPY.bill.restartFirst).toMatch(/Unlimited starts/);
   });
 
   it("says plainly, under the button, that nothing is charged today and when the grown-up's card is", () => {
@@ -80,11 +87,19 @@ describe("the plan screen's words", () => {
     expect(PLAN_COPY.disclosure("Saturday, October 10")).toMatch(/then every month/);
   });
 
-  it("never says wrong", () => {
-    const words = Object.values(PLAN_COPY).flatMap((v): string[] =>
-      typeof v === "string" ? [v] : typeof v === "function" ? [v("today")] : Array.isArray(v) ? v.map((p) => p.text) : [(v as { text: string }).text],
-    );
-    for (const w of words) expect(w).not.toMatch(/\bwrong\b/i);
+  it("never says wrong, and never shouts", () => {
+    const words = (v: unknown): string[] =>
+      typeof v === "string" ? [v] : typeof v === "function" ? [String(v("today"))] : Array.isArray(v) ? v.flatMap(words) : v && typeof v === "object" ? Object.values(v).flatMap(words) : [];
+    for (const w of words(PLAN_COPY)) {
+      expect(w).not.toMatch(/\bwrong\b/i);
+      expect(w).not.toMatch(/!/);
+    }
+  });
+
+  it("the sheet is the board as the student saw it: a problem, two right steps and the tutor's note", () => {
+    expect(PLAN_COPY.sheet.problem).toBe("3x + 5 = 20");
+    expect(PLAN_COPY.sheet.steps).toEqual(["3x = 15", "x = 5"]);
+    expect(PLAN_COPY.sheet.label).toMatch(/tick/);
   });
 });
 
@@ -94,6 +109,8 @@ describe("the day the card is charged", () => {
     const end = trialEndsOn(now);
     expect(chargeDateText(end, "en-US")).toBe("Saturday, October 10");
     expect(chargeDateText(end, "en-GB")).toBe("Saturday 10 October");
+    expect(chargeDayText(end, "en-US")).toBe("Sat, Oct 10");
+    expect(chargeDayText(end, "en-GB")).toBe("Sat 10 Oct");
   });
 
   it("falls back to the default format for a locale tag it cannot use", () => {

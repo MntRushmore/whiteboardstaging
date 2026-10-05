@@ -9,7 +9,7 @@ import { trialEndsOn, unlimitedCheckoutUrl } from "@/lib/billing/unlimited";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
 import { browserStorage } from "@/lib/onboarding/marker";
 import { HOME_PATH, writePlanMarker } from "@/lib/onboarding/planMarker";
-import { chargeDateText, planView } from "@/lib/onboarding/plan";
+import { chargeDateText, chargeDayText, planView } from "@/lib/onboarding/plan";
 import { PlanOffer } from "./PlanOffer";
 import styles from "./plan.module.css";
 
@@ -70,6 +70,7 @@ export function PlanScreen() {
           <PlanOffer
             view={view}
             chargeDate={chargeDateText(trialEndsOn(now))}
+            chargeDay={chargeDayText(trialEndsOn(now))}
             starting={starting}
             onStart={() => {
               if (!checkout) return;

@@ -13,7 +13,7 @@ export function BetaBadge({ className }: { className?: string }) {
     <span
       title={BETA_COPY.hint}
       className={cn(
-        "inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] leading-none font-semibold tracking-wider text-violet-700 uppercase ring-1 ring-violet-200 ring-inset",
+        "inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[11px] leading-none font-semibold tracking-wider text-violet-700 uppercase ring-1 ring-violet-200 ring-inset",
         className,
       )}
     >

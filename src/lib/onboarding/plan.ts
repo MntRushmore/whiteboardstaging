@@ -43,50 +43,82 @@ export function dollars(usd: number): string {
  * "Saturday 10 October" (en-GB). `locale` undefined is the browser's own.
  */
 export function chargeDateText(date: Date, locale?: string): string {
+  return formatDay(date, { weekday: "long", month: "long", day: "numeric" }, locale);
+}
+
+/** The same day, short, for the bill's date column: "Sat, Oct 10" (en-US), "Sat 10 Oct" (en-GB). */
+export function chargeDayText(date: Date, locale?: string): string {
+  return formatDay(date, { weekday: "short", month: "short", day: "numeric" }, locale);
+}
+
+function formatDay(date: Date, options: Intl.DateTimeFormatOptions, locale?: string): string {
   try {
-    return new Intl.DateTimeFormat(locale, { weekday: "long", month: "long", day: "numeric" }).format(date);
+    return new Intl.DateTimeFormat(locale, options).format(date);
   } catch {
     // an unknown locale tag: the default format is still a date
-    return new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" }).format(date);
+    return new Intl.DateTimeFormat(undefined, options).format(date);
   }
 }
 
 const PRICE = dollars(UNLIMITED_PLAN.monthlyUsd);
 
 export const PLAN_COPY = {
-  kicker: "One more thing",
   title: UNLIMITED_PLAN.name,
-  /** the struck-through price, and what a screen reader hears before it */
-  price: `${PRICE}/month`,
-  priceWas: "Usually",
-  free: `Free for ${UNLIMITED_PLAN.trialDays} days`,
-  then: `Then ${PRICE}/month. Cancel anytime.`,
+  lede: "Your tutor checks every line you write, and helps the moment you're stuck.",
+  /** a plan that ended, offered again (`restart`) */
+  welcomeBack: "Welcome back. Your boards are where you left them.",
+  /**
+   * The board, as the student just saw it: their working, and the tutor's ticks and note. Written
+   * in the board's own handwriting face; the label is what a screen reader hears for the figure.
+   */
+  sheet: {
+    label: "An example of the tutor at work: each right step gets a tick.",
+    prompt: "Solve for x",
+    problem: "3x + 5 = 20",
+    steps: ["3x = 15", "x = 5"],
+    note: "Nice. Want three more like this?",
+  },
   perksTitle: "What you get",
   perks: [
-    { id: "help", text: "Unlimited Help me and Solve" },
-    { id: "ask", text: "Ask your tutor anything" },
-    { id: "check", text: "Checks every line you write" },
-    { id: "courses", text: "Every course, from Algebra to Calculus" },
+    { id: "help", text: "Help me and Solve", detail: "as often as you need" },
+    { id: "ask", text: "Ask your tutor anything", detail: "practice, graphs and figures" },
+    { id: "check", text: "Every line checked", detail: "as you write it" },
+    { id: "courses", text: "Every course", detail: "Algebra to Calculus" },
   ],
   // Said TO the grown-up, not "ask a grown-up": guidance on advertising to children (CARU) is
   // against urging a child to ask a parent to buy.
   grownUp: "This part is for a grown-up",
-  grownUpHint: "A parent or guardian adds a card at checkout. It takes a minute.",
+  /** the offer, plainly: no struck-through price, no gradient */
+  offer: `${UNLIMITED_PLAN.trialDays} days free, then ${PRICE} a month.`,
+  /** a plan that ended has no free week (`has_unlimited`'s first-plan rule): from the first charge */
+  restartOffer: (day: string) => `${PRICE} a month, starting ${day}.`,
+  grownUpHint: "A parent or guardian adds a card at checkout.",
+  /** the bill: when the card is charged, and how much */
+  bill: {
+    label: "When the card is charged",
+    today: "Today",
+    starts: "Free week starts",
+    /** a plan that ended: Stripe charges nothing until the first charge, but help uses ink until then */
+    restartStarts: "Your ink until then",
+    first: "First charge",
+    restartFirst: "Unlimited starts, first charge",
+    monthly: "Every month",
+    untilCancel: "Until you cancel",
+    nothing: "$0",
+    price: PRICE,
+  },
   start: "Start the free week",
   opening: "Opening checkout…",
   /** the auto-renewal disclosure, right under the button */
   disclosure: (date: string) =>
     `Nothing is charged today. The card is charged ${PRICE} on ${date}, then every month, unless you cancel before then.`,
-  /** a plan that ended, offered again (`restart`): no free week, so no crossed-out price */
-  welcomeBack: "Welcome back",
   restart: "Start Unlimited again",
   restartNote: "The free week is for a first plan only, so help uses your ink until the first charge.",
   /** under the disclosure: the plan's terms, and the fair-use limit "Unlimited" is subject to */
   termsLink: { href: "/terms#unlimited", text: "How the plan works" },
   fairUseLink: { href: "/terms#fair-use", text: "Fair use" },
-  soon: "Coming soon",
-  /** without a checkout, in place of the grown-up's line */
-  soonTitle: "Unlimited isn't open yet",
-  soonNote: "Your starter ink is ready to use. Have fun!",
+  /** without a checkout (the Payment Link is not configured): the offer line, and a way on */
+  soonTitle: "Unlimited isn't open yet.",
+  soonNote: "Your starter ink is ready to use.",
   continue: "Continue",
 } as const;

@@ -1,4 +1,9 @@
-/* The plan screen (PlanOffer, src/app/(platform)/welcome/plan): Arc tokens only, like the welcome. */
+/*
+ * The plan screen (PlanOffer, src/app/(platform)/welcome/plan): "the marked page". A crop of the
+ * board as the student just saw it, beside a tear-off slip for the grown-up. Its own small palette,
+ * named by job and taken from the board: the board's white, the student's pen, the tutor's tick, and
+ * that tick's green as the one accent: the button.
+ */
 
 .srOnly {
   position: absolute;
@@ -10,295 +15,457 @@
 }
 
 .page {
+  --pl-ground: oklch(97% 0.006 150); /* a step below the board's white, a breath of the tick */
+  --pl-sheet: oklch(100% 0 0); /* the board itself */
+  --pl-ink: oklch(22% 0.015 160);
+  --pl-ink-2: oklch(44% 0.015 160); /* secondary text: 7:1 on the ground, 7.5:1 on the sheet */
+  --pl-rule: oklch(89% 0.01 160);
+  --pl-pencil: oklch(28% 0.01 260); /* the student's pen */
+  --pl-tick: oklch(55% 0.14 150); /* the tutor's tick */
+  --pl-tick-ink: oklch(45% 0.12 150); /* the tutor's words: 4.5:1 on the sheet */
+  --pl-accent: oklch(46% 0.125 150); /* the one action, the colour of "right" */
+  --pl-accent-hover: oklch(41% 0.12 150);
+  --pl-accent-ink: oklch(99% 0 0);
+  --pl-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --pl-gutter: var(--space-4);
+
   /* fills the platform layout above the legal footer (platform.css) */
   flex: 1 0 auto;
-  background: var(--surface-muted);
-}
-.main {
-  display: flex;
-  justify-content: center;
-  padding: var(--space-6) var(--space-4) var(--space-16);
+  /* the board runs off the left edge of the screen; nothing scrolls sideways */
+  overflow-x: clip;
+  color-scheme: light;
+  background: var(--pl-ground);
+  color: var(--pl-ink);
 }
 @media (min-width: 640px) {
+  .page {
+    --pl-gutter: var(--space-6);
+  }
+}
+.main {
+  padding: var(--space-6) var(--pl-gutter) var(--space-16);
+}
+@media (min-width: 720px) {
   .main {
     padding-top: var(--space-12);
   }
 }
-
-.card {
-  width: 100%;
-  max-width: 38rem;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-surface);
-  background: var(--surface);
-  box-shadow: var(--shadow-raised);
-}
-
-/* ---- the price, on the brand's soft gradient ------------------------------------------------- */
-.hero {
-  padding: var(--space-8) var(--space-6) var(--space-6);
-  background: var(--arc-gradient-soft);
-  text-align: center;
-}
-@media (min-width: 640px) {
-  .hero {
-    padding: var(--space-10) var(--space-10) var(--space-8);
+@media (min-width: 1024px) {
+  .main {
+    padding-top: 4.5rem;
   }
 }
-.kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0;
-  border-radius: var(--radius-pill);
-  padding: var(--space-1) var(--space-3);
-  background: var(--surface);
-  box-shadow: var(--shadow-resting);
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  font-weight: 500;
+
+/* ---- the grid -----------------------------------------------------------------------------------
+   Phone: title, the page, the slip, what you get (the DOM's order). From an upright iPad up: the
+   title beside the slip's offer (the slip's perforation level with the title), the page beside the
+   bill and the button (the page's top edge level with the bill's first rule, and its bottom with the
+   last line under the button), then what you get across both. */
+.plan {
+  display: grid;
+  max-width: 68rem;
+  margin-inline: auto;
+  grid-template-areas: "head" "sheet" "slipHead" "slipBody" "gets";
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-6);
+  font-family: var(--font-plan), var(--font-display), system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+}
+@media (min-width: 720px) {
+  .plan {
+    grid-template-areas: "head slipHead" "sheet slipBody" "gets gets";
+    grid-template-columns: minmax(0, 7fr) minmax(18rem, 5fr);
+    column-gap: clamp(2.5rem, 6vw - 1rem, 4.5rem);
+    row-gap: var(--space-8);
+  }
+}
+
+.head {
+  grid-area: head;
 }
 .title {
-  margin: var(--space-4) 0 0;
-  font-family: var(--font-display);
-  font-size: clamp(var(--text-3xl), 7vw, var(--text-4xl));
-  font-weight: 600;
-  letter-spacing: var(--tracking-display);
-  line-height: var(--leading-display);
+  margin: 0;
+  font-size: clamp(2.25rem, 1.8rem + 1.4vw, 2.875rem);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-optical-sizing: auto;
   text-wrap: balance;
 }
-.price {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-1);
-  margin: var(--space-5) 0 0;
-}
-.was {
-  color: var(--text-muted);
-  font-size: var(--text-lg);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-.was s {
-  text-decoration-thickness: 2px;
-}
-.free {
-  background: var(--arc-gradient-ink);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  font-family: var(--font-display);
-  font-size: clamp(var(--text-2xl), 5.5vw, var(--text-3xl));
-  font-weight: 650;
-  letter-spacing: var(--tracking-display);
-  line-height: 1.15;
-  text-wrap: balance;
-}
-.then {
-  margin: var(--space-2) 0 0;
-  color: var(--text-secondary);
-  font-size: var(--text-base);
-}
-
-/* ---- what it gives ---------------------------------------------------------------------------- */
-/* the perks, the grown-up and the buttons: under the price, or beside it held sideways */
-.body {
-  min-width: 0;
-}
-.perks {
-  display: grid;
-  gap: var(--space-3);
-  margin: 0;
-  padding: var(--space-6) var(--space-6) 0;
-  list-style: none;
-}
-@media (min-width: 560px) {
-  .perks {
-    grid-template-columns: 1fr 1fr;
-    padding-inline: var(--space-10);
-  }
-}
-.perk {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  font-size: var(--text-base);
-  font-weight: 500;
-  line-height: 1.35;
-}
-.perkIcon {
-  display: grid;
-  flex-shrink: 0;
-  width: 2.5rem;
-  height: 2.5rem;
-  place-items: center;
-  border-radius: var(--radius-control);
-  background: var(--surface-muted);
-  color: var(--foreground);
-}
-
-/* ---- the grown-up, and the button --------------------------------------------------------------- */
-.grownUp {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  margin: var(--space-6) var(--space-6) 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-panel);
-  padding: var(--space-4);
-  background: var(--surface-muted);
-}
-@media (min-width: 560px) {
-  .grownUp {
-    margin-inline: var(--space-10);
-  }
-}
-.grownUpIcon {
-  display: grid;
-  flex-shrink: 0;
-  width: 2.5rem;
-  height: 2.5rem;
-  place-items: center;
-  border-radius: var(--radius-pill);
-  background: var(--surface);
-  box-shadow: var(--shadow-resting);
-  color: oklch(58% 0.19 15);
-}
-.grownUpTitle {
-  margin: 0;
-  font-size: var(--text-lg);
-  font-weight: 600;
-  line-height: 1.3;
-}
-.grownUpHint {
-  margin: var(--space-1) 0 0;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  line-height: 1.5;
-}
-
-.actions {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--space-3);
-  padding: var(--space-6) var(--space-6) var(--space-8);
-}
-@media (min-width: 560px) {
-  .actions {
-    padding-inline: var(--space-10);
-  }
-}
-/* Big enough for a small finger; a pill, the one shape on the page that says "tap me". */
-.cta.cta {
-  min-height: 3.5rem;
-  border-radius: var(--radius-pill);
-  font-size: var(--text-lg);
-  font-weight: 600;
-}
-.later.later {
-  border-radius: var(--radius-pill);
-  font-size: var(--text-base);
-}
-.disclosure {
-  margin: 0 auto;
-  max-width: 30rem;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  line-height: 1.55;
-  text-align: center;
+.lede {
+  max-width: 34ch;
+  margin: var(--space-3) 0 0;
+  color: var(--pl-ink-2);
+  font-size: 1.125rem;
+  line-height: 1.45;
   text-wrap: pretty;
 }
 
-/*
- * Held sideways (an iPad in landscape, a laptop): the price on the left, what it gives and the
- * button on the right, so the whole offer and both buttons fit an 820 px-tall screen unscrolled.
- */
-@media (min-width: 900px) and (orientation: landscape) {
-  .main {
-    padding-top: var(--space-8);
-  }
-  .card {
-    display: grid;
-    max-width: 62rem;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-  }
-  .hero {
+/* ---- the page of the board: a crop of it, square, running off the screen ---------------------- */
+.sheet {
+  position: relative;
+  grid-area: sheet;
+  /* the phone: edge to edge */
+  margin: 0 calc(-1 * var(--pl-gutter));
+  border-block: 1px solid var(--pl-rule);
+  padding: var(--space-4) var(--pl-gutter) var(--space-5);
+  background: var(--pl-sheet);
+  font-family: var(--font-plan-hand), "Comic Sans MS", "Chalkboard SE", cursive;
+}
+@media (min-width: 720px) {
+  .sheet {
+    /* square right edge at the gutter; to the left the board carries on past the screen's edge,
+       and the working starts on the title's line. It is as tall as the slip beside it: the note
+       sits on its bottom line, so spare room reads as board above the note, not a gap below it */
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: var(--space-10) var(--space-8);
+    margin: 0;
+    border-right: 1px solid var(--pl-rule);
+    padding: var(--space-8) var(--space-8) var(--space-8) 0;
+  }
+  .sheet > .note {
+    margin-top: auto;
+    padding-top: var(--space-3);
+  }
+  .sheet::before {
+    position: absolute;
+    top: -1px;
+    right: 100%;
+    bottom: -1px;
+    width: 100vmax;
+    border-block: 1px solid var(--pl-rule);
+    background: var(--pl-sheet);
+    content: "";
+  }
+}
+.prompt {
+  margin: 0;
+  color: var(--pl-ink-2);
+  font-size: 1.0625rem;
+}
+.line {
+  display: flex;
+  min-height: 1.45em;
+  align-items: center;
+  gap: 0.35em;
+  margin: 0;
+  color: var(--pl-pencil);
+  font-size: clamp(1.625rem, 0.9rem + 2.9vw, 3.5rem);
+  line-height: 1.2;
+  font-variant-numeric: lining-nums;
+}
+
+/* the tutor's ticks: a little bigger than the writing, each at its own angle, the long arm over */
+.tick {
+  flex: none;
+  overflow: visible;
+}
+.tick1 {
+  width: 1.3em;
+  height: 1.08em;
+  transform: translateY(-0.12em) rotate(-5deg);
+}
+.tick2 {
+  width: 1.1em;
+  height: 0.92em;
+  transform: translateY(-0.06em) rotate(4deg);
+}
+.tickInk {
+  fill: var(--pl-tick);
+}
+.tickPen {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 13;
+  stroke-linecap: round; /* a round leading edge; the dash starts far enough back that no dot shows */
+  stroke-linejoin: round;
+  stroke-dasharray: 1 1.3;
+  stroke-dashoffset: 0;
+}
+
+.note {
+  margin-top: var(--space-3);
+  color: var(--pl-tick-ink);
+  font-size: clamp(1.125rem, 0.95rem + 0.5vw, 1.375rem);
+  font-weight: 600;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+.word {
+  display: inline-block;
+}
+
+/* ---- the slip for the grown-up: perforated across the top, like the slips parents sign ---------- */
+.slipHead {
+  grid-area: slipHead;
+  padding-top: var(--space-5);
+  background: linear-gradient(to right, var(--pl-ink-2) 6px, transparent 6px) top left / 11px 1.5px repeat-x;
+}
+.slipBody {
+  grid-area: slipBody;
+}
+.links {
+  white-space: nowrap;
+}
+.grownUpTitle {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.offer {
+  margin: var(--space-2) 0 0;
+  font-size: clamp(1.5rem, 1.25rem + 0.8vw, 2rem);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.hint {
+  margin: var(--space-3) 0 0;
+  color: var(--pl-ink-2);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.slipBody {
+  container-type: inline-size;
+}
+.bill {
+  margin: 0;
+  border-bottom: 1px solid var(--pl-rule);
+  font-size: 1.125rem;
+  font-variant-numeric: tabular-nums;
+}
+.billRow {
+  display: grid;
+  grid-template-columns: 8rem minmax(0, 1fr) auto;
+  column-gap: var(--space-3);
+  align-items: baseline;
+  border-top: 1px solid var(--pl-rule);
+  padding: 0.75rem 0;
+}
+.billRow dt {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.billRow dd {
+  margin: 0;
+  color: var(--pl-ink-2);
+}
+.billRow .amount {
+  color: var(--pl-ink);
+  font-weight: 600;
+  text-align: right;
+}
+/* a narrow slip (an upright iPad): what happens goes under its date, the amount stays on the date's line */
+@container (max-width: 339px) {
+  .slipBody .billRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 0.125rem;
+  }
+  .slipBody .billRow dd:not(.amount) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    font-size: 0.9375rem;
+  }
+}
+
+.actions {
+  margin-top: var(--space-5);
+}
+.slipBody > .actions:first-child {
+  margin-top: 0;
+}
+.cta {
+  display: flex;
+  width: 100%;
+  min-height: 3.5rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent; /* a shape in Windows High Contrast */
+  border-radius: 10px;
+  padding: 0 var(--space-6);
+  background: var(--pl-accent);
+  color: var(--pl-accent-ink);
+  font: inherit;
+  font-size: 1.125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 160ms var(--pl-ease),
+    transform 160ms var(--pl-ease);
+}
+.cta:hover {
+  background: var(--pl-accent-hover);
+}
+.cta:active {
+  transform: translateY(1px);
+}
+.cta[aria-busy="true"] {
+  cursor: progress;
+}
+.cta:focus-visible,
+.disclosure a:focus-visible {
+  outline: 2px solid var(--pl-ink);
+  outline-offset: 3px;
+}
+
+.disclosure {
+  margin: var(--space-3) 0 0;
+  color: var(--pl-ink-2);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.disclosure a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.disclosure a:hover {
+  color: var(--pl-ink);
+}
+
+/* ---- what you get: type and hairlines, no icons; across both columns ---------------------------- */
+.gets {
+  grid-area: gets;
+}
+.perks {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 720px) {
+  .gets {
+    padding-top: var(--space-4);
   }
   .perks {
-    grid-template-columns: 1fr;
-    padding: var(--space-8) var(--space-8) 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .grownUp {
-    margin: var(--space-5) var(--space-8) 0;
+}
+@media (min-width: 1024px) {
+  .perks {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.perks li {
+  border-top: 1px solid var(--pl-rule);
+  padding: var(--space-3) 0 var(--space-4);
+  line-height: 1.4;
+}
+.perks strong {
+  display: block;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+.perks span {
+  color: var(--pl-ink-2);
+  font-size: 0.9375rem;
+}
+
+/* ---- the phone: the page, the offer and the button in the first screen -------------------------- */
+@media (max-width: 719px) {
+  .title {
+    font-size: 2.25rem;
+  }
+  .lede {
+    font-size: 1.0625rem;
+  }
+  .prompt {
+    font-size: 0.9375rem;
+  }
+  .line {
+    font-size: 1.625rem;
+  }
+  .note {
+    margin-top: var(--space-2);
+    font-size: 1.0625rem;
+  }
+  /* one line between the page and the slip: the page's bottom edge is the tear */
+  .sheet {
+    border-bottom: 0;
+    padding-bottom: calc(var(--space-5) + 1.5px);
+    background:
+      linear-gradient(to right, var(--pl-ink-2) 6px, transparent 6px) bottom left / 11px 1.5px repeat-x,
+      var(--pl-sheet);
+  }
+  .slipHead {
+    padding-top: 0;
+    background: none;
+  }
+  .offer {
+    font-size: 1.5rem;
+  }
+  .hint {
+    margin-top: var(--space-2);
+  }
+  .bill {
+    font-size: 1rem;
+  }
+  .billRow {
+    grid-template-columns: 7rem minmax(0, 1fr) auto;
+    padding-block: 0.625rem;
   }
   .actions {
-    padding: var(--space-5) var(--space-8) var(--space-8);
+    margin-top: var(--space-4);
   }
 }
 
-/* Holds the card's place while the session and the plan are read. */
-.placeholder {
-  width: 100%;
-  max-width: 38rem;
-  height: 40rem;
-  border-radius: var(--radius-surface);
-  background: var(--surface);
-  animation: plan-pulse 1.8s var(--ease-in-out) infinite both;
-}
-@keyframes plan-pulse {
-  50% {
-    opacity: 0.6;
+/* ---- the signature: the tutor marks the page ---------------------------------------------------
+   The working is already written. The pen flicks the first tick on at once, the second a beat
+   later, then writes its note a letter at a time; all done by about 1.7 s. Once. Without motion
+   everything is simply there. */
+@media (prefers-reduced-motion: no-preference) {
+  .tickPen {
+    stroke-dashoffset: 1.15;
+    animation: plan-tick 260ms var(--pl-ease) forwards;
+  }
+  .tick1 .tickPen {
+    animation-delay: 120ms;
+  }
+  .tick2 .tickPen {
+    animation-delay: 470ms;
+  }
+  .glyph {
+    display: inline-block;
+    animation: plan-glyph 90ms var(--pl-ease) calc(880ms + var(--i) * 22ms) both;
   }
 }
-
-/* Each part rises in after the one before: the price first, the button last. */
-.rise {
-  animation: plan-rise 520ms var(--ease-enter) both;
+@keyframes plan-tick {
+  to {
+    stroke-dashoffset: 0;
+  }
 }
-.hero > .rise:nth-child(2) {
-  animation-delay: 60ms;
-}
-.hero > .rise:nth-child(3) {
-  animation-delay: 140ms;
-}
-.hero > .rise:nth-child(4) {
-  animation-delay: 200ms;
-}
-.perk:nth-child(1) {
-  animation-delay: 260ms;
-}
-.perk:nth-child(2) {
-  animation-delay: 310ms;
-}
-.perk:nth-child(3) {
-  animation-delay: 360ms;
-}
-.perk:nth-child(4) {
-  animation-delay: 410ms;
-}
-.grownUp.rise {
-  animation-delay: 480ms;
-}
-.actions.rise {
-  animation-delay: 540ms;
-}
-@keyframes plan-rise {
+@keyframes plan-glyph {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(1px);
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .rise,
-  .placeholder {
-    animation: none;
+
+@media (forced-colors: active) {
+  .tickInk {
+    fill: CanvasText;
   }
+  .slipHead {
+    border-top: 1px dashed CanvasText;
+  }
+  .cta:focus-visible {
+    outline-color: Highlight;
+  }
+}
+
+/* Holds the page's place while the session and the plan are read. */
+.placeholder {
+  width: 100%;
+  max-width: 68rem;
+  height: 36rem;
+  margin-inline: auto;
 }
