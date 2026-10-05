@@ -48,7 +48,7 @@ export const PLAN_COPY = {
   /** the account page's section (`#billing`, the header menu's Billing) */
   billingTitle: "Billing",
   billingSubtitle: "Your plan, your card and your invoices.",
-  offer: `Agathon is ${UNLIMITED_PLAN.name}: ${PRICE} a month, and your first ${UNLIMITED_PLAN.trialDays} days are free. Cancel any time.`,
+  offer: `${UNLIMITED_PLAN.trialDays} days free, then ${PRICE} a month. Cancel any time.`,
   offerDetail: (firstCharge: string) => `A grown-up's card is needed at checkout. Nothing is charged until ${firstCharge}.`,
   start: "Start the free week",
   /** after a plan ended: a second plan has no free week (`has_unlimited`'s first-trial rule) */

@@ -21,7 +21,7 @@ describe("unlimitedPlanView", () => {
     expect(view({})).toEqual({
       kind: "offer",
       badge: null,
-      headline: "Agathon is Agathon Unlimited: $25 a month, and your first 7 days are free. Cancel any time.",
+      headline: "7 days free, then $25 a month. Cancel any time.",
       detail: "A grown-up's card is needed at checkout. Nothing is charged until Saturday, October 10.",
       action: "start",
       actionLabel: "Start the free week",
