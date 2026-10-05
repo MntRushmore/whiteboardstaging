@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type pino from "pino";
 import { json } from "@/lib/server/auth";
+import { recordEvent } from "@/lib/server/events";
 import { CreditsExhaustedError, UpstreamError } from "@/lib/server/openrouter";
 
 /* ------------------------------------------------------------------------- */
@@ -102,9 +103,88 @@ export async function parseJsonBody<S extends z.ZodTypeAny>(
 /** What the student reads when the provider account behind the tutor has run dry. */
 export const PROVIDER_UNAVAILABLE_MESSAGE = "The tutor is unavailable right now. Try again in a few minutes.";
 
+/** What a route's child logger says about the request it serves (its pino bindings). */
+export type LogContext = { module?: string; route?: string; requestId?: string; userId?: string };
+
+/**
+ * The bindings of a route's child logger: `module` (`live`, `credits`), `route` (`solve`,
+ * `lecture/token`, `recognize.GET`), `requestId`, `userId`, as `livePreamble` and the other routes
+ * bind them. How the app events learn which route failed and for whom without every caller passing
+ * them again. Empty for a logger without bindings (a test's fake); never throws.
+ */
+export function logContext(log: unknown): LogContext {
+  try {
+    const bindings = (log as { bindings?: () => unknown } | null)?.bindings?.();
+    if (!bindings || typeof bindings !== "object") return {};
+    const b = bindings as Record<string, unknown>;
+    const text = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+    return { module: text(b.module), route: text(b.route), requestId: text(b.requestId), userId: text(b.userId) };
+  } catch {
+    return {};
+  }
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** `route.<module>.<route>` (`route.live.solve`, `route.live.lecture.token`, `route.credits`). */
+export function routeEventKind({ module, route }: LogContext): string {
+  const name = [module, route]
+    .filter(Boolean)
+    .join(".")
+    .toLowerCase()
+    .replace(/\//g, ".")
+    .replace(/[^a-z0-9_.:-]/g, "_")
+    .replace(/^[^a-z0-9]+/, "");
+  return `route.${name || "unknown"}`.slice(0, 64);
+}
+
+/**
+ * The route, user and request an app event is about, from a route logger's bindings, in the shape
+ * the event takes: the API path by the convention the routes follow (module `live` + route
+ * `lecture/token` -> `/api/live/lecture/token`; `recognize.GET` -> `/api/live/recognize`), the user
+ * id only when it is a uuid (anything else would void the whole event).
+ */
+export function eventContext(log: unknown): { route?: string; userId?: string; requestId?: string } {
+  const { module, route, requestId, userId } = logContext(log);
+  const base = route?.split(".")[0];
+  return {
+    route: module ? `/api/${module}${base ? `/${base}` : ""}` : undefined,
+    userId: userId && UUID.test(userId) ? userId : undefined,
+    requestId,
+  };
+}
+
+/**
+ * A 5xx this route is about to answer, as an app event (`route.<module>.<route>`, source server,
+ * level error) with the request id and user id from the logger's bindings, and the context's numbers
+ * and flags (`ms`, `charged`) in `meta`. Fire and forget (`recordEvent`), so it never slows or
+ * breaks the answer.
+ */
+function recordRouteFailure(
+  log: unknown,
+  status: number,
+  code: string,
+  message: string,
+  context: Record<string, unknown>,
+  extra: Record<string, unknown> = {},
+): void {
+  const scalars = Object.fromEntries(Object.entries(context).filter(([, v]) => typeof v === "number" || typeof v === "boolean"));
+  recordEvent({
+    source: "server",
+    level: "error",
+    kind: routeEventKind(logContext(log)),
+    code,
+    message,
+    ...eventContext(log),
+    meta: { status, ...extra, ...scalars },
+  });
+}
+
 /**
  * Map an error thrown inside a route handler to the shared error contract and
- * log it with the route's child logger.
+ * log it with the route's child logger. Every 5xx it answers (but a client's abort) is also an
+ * app event for the /admin page (`recordRouteFailure`): code `credits`, `upstream`, `timeout` (a
+ * provider that did not answer in time, 504) or `internal`.
  */
 export function errorResponse(
   err: unknown,
@@ -115,11 +195,13 @@ export function errorResponse(
     // The operator's provider account, not the student's ink: a 503 the student can only wait out
     // (a 402 would tell them to buy ink that could not help). Logged as an error so it gets seen.
     log.error({ ...context }, "OpenRouter credits exhausted: top up the provider account");
+    recordRouteFailure(log, 503, "credits", "OpenRouter is out of credits", context);
     return json(503, "upstream_error", PROVIDER_UNAVAILABLE_MESSAGE);
   }
 
   if (err instanceof UpstreamError) {
     log.error({ ...context, upstreamStatus: err.status, error: err.message }, "Upstream API error");
+    recordRouteFailure(log, 502, err.status === 504 ? "timeout" : "upstream", err.message.slice(0, 200), context, { upstreamStatus: err.status });
     return json(502, "upstream_error", "The AI service returned an error. Please try again.", {
       details: err.message,
     });
@@ -138,5 +220,9 @@ export function errorResponse(
     },
     "Unhandled route error",
   );
+  const what = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+  // a stream's first-byte watchdog (WatchdogTimeoutError) or an AbortSignal.timeout that fired
+  const timedOut = err instanceof Error && (err.name === "WatchdogTimeoutError" || err.name === "TimeoutError");
+  recordRouteFailure(log, 500, timedOut ? "timeout" : "internal", what.slice(0, 200), context);
   return json(500, "internal_error", "Something went wrong on our side. Please try again.");
 }

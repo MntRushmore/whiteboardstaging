@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import { getServerEnv } from "@/lib/env";
+import { recordEvent } from "@/lib/server/events";
 import { repairJsonEscapes } from "./sse";
 
 /**
@@ -289,6 +290,111 @@ async function* withFirstByteWatchdog(
   }
 }
 
+/* ------------------------------------------------------------------------- */
+/* Model failures as app events (the /admin page's AI routes)                 */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * The X-Title words that are not the route's own name: the setup route's figure read
+ * ("Agathon Live - figure") and the title route's "board title".
+ */
+const MODEL_ROUTE_ALIASES: Record<string, string> = { figure: "setup", board: "title" };
+
+/**
+ * An event's `kind` for a model call: `model.<route>`, the route named like usage_events.route
+ * with `.` for `/` (`live/solve` -> `model.live.solve`), read from the X-Title every Live call
+ * sends ("Agathon Live - solve", "Agathon Live - chat proof" -> `model.live.chat`). The fallback
+ * helpers know no route otherwise, and the title is already set at every call. `model.other`
+ * without one.
+ */
+export function modelEventKind(title: string | undefined): string {
+  const word = /^Agathon Live - ([a-z]+)/i.exec(title ?? "")?.[1]?.toLowerCase();
+  return word ? `model.live.${MODEL_ROUTE_ALIASES[word] ?? word}` : "model.other";
+}
+
+/**
+ * Why a model call failed, as an event's code: `credits` (the operator's OpenRouter account is
+ * empty), `timeout` (the first-byte watchdog, or the per-attempt timeout's 504), `invalid` (it
+ * answered, but not JSON or not the schema), else `upstream` (an error status, a network failure).
+ */
+export function modelFailureCode(err: unknown): "credits" | "timeout" | "invalid" | "upstream" {
+  if (err instanceof CreditsExhaustedError) return "credits";
+  if (err instanceof WatchdogTimeoutError) return "timeout";
+  if (err instanceof UpstreamError) {
+    if (err.status === 504) return "timeout";
+    // chatJson's own wording for a reply it could not use
+    if (/^Model (returned|output)/.test(err.message)) return "invalid";
+    return "upstream";
+  }
+  if (err instanceof Error && err.name === "TimeoutError") return "timeout";
+  return "upstream";
+}
+
+/** One fallback-wrapped call, for its events. */
+type ModelCall = { primary: string; fallback: string; title?: string; requestId?: string; startedAt: number };
+
+const errorText = (err: unknown) => (err instanceof Error ? `${err.name}: ${err.message}` : String(err)).slice(0, 200);
+
+/** What the call was for, from its title ("chat proof"), so `meta` tells a route's calls apart. */
+const callName = (title: string | undefined) => title?.replace(/^Agathon Live - /, "").slice(0, 40);
+
+/** The primary failed and the fallback answered: a warn, code `fallback` (fire and forget). */
+function recordModelFallback(call: ModelCall, primaryErr: unknown, primaryMs: number): void {
+  const reason = modelFailureCode(primaryErr);
+  recordEvent({
+    source: "server",
+    level: "warn",
+    kind: modelEventKind(call.title),
+    code: "fallback",
+    message: `${call.primary} failed (${reason}); ${call.fallback} answered`,
+    requestId: call.requestId,
+    meta: {
+      primary: call.primary,
+      fallback: call.fallback,
+      call: callName(call.title),
+      reason,
+      primaryMs,
+      ms: Date.now() - call.startedAt,
+      error: errorText(primaryErr),
+    },
+  });
+}
+
+/**
+ * A call that failed for good: both models (`both`, after `primaryErr`), the only one there was
+ * (`only`: no distinct fallback, or out of credits, which is never retried), or a model that broke
+ * off after it had started answering (`mid-answer`, never retried). An error, code from
+ * `modelFailureCode`. A caller that went away is never recorded.
+ */
+function recordModelFailure(call: ModelCall, model: string, err: unknown, how: "both" | "only" | "mid-answer", primaryErr?: unknown): void {
+  const code = modelFailureCode(err);
+  const message =
+    code === "credits"
+      ? "OpenRouter is out of credits"
+      : how === "both"
+        ? `${call.primary} and ${call.fallback} both failed`
+        : how === "mid-answer"
+          ? `${model} failed mid-answer`
+          : `${model} failed`;
+  recordEvent({
+    source: "server",
+    level: "error",
+    kind: modelEventKind(call.title),
+    code,
+    message,
+    requestId: call.requestId,
+    meta: {
+      model,
+      primary: call.primary,
+      fallback: call.fallback,
+      call: callName(call.title),
+      ms: Date.now() - call.startedAt,
+      error: errorText(err),
+      ...(primaryErr === undefined ? {} : { primaryCode: modelFailureCode(primaryErr), primaryError: errorText(primaryErr) }),
+    },
+  });
+}
+
 export type FallbackStreamEvent = { type: "model"; model: string } | { type: "text"; text: string };
 
 /**
@@ -296,6 +402,10 @@ export type FallbackStreamEvent = { type: "model"; model: string } | { type: "te
  * before yielding any content) abort it and retry once on `fallback`.
  * Yields a `model` event first (which model is actually answering) and then `text` deltas.
  * Credits exhaustion and client aborts are never retried.
+ *
+ * App events (`model.<route>`, fire and forget): a warn `fallback` once the fallback answers, and
+ * an error when the call fails for good (both models, the only one, or mid-answer); nothing when
+ * the client went away.
  */
 export async function* streamWithFallback(
   primary: string,
@@ -306,8 +416,11 @@ export async function* streamWithFallback(
   const attempt = async function* (model: string, guard: boolean): AsyncGenerator<string, void, undefined> {
     yield* guard ? withFirstByteWatchdog({ ...opts, model }, watchdogMs) : streamChatText({ ...opts, model });
   };
+  const call: ModelCall = { primary, fallback, title: opts.title, requestId: opts.requestId, startedAt: Date.now() };
+  const callerLeft = (err: unknown) => Boolean(opts.signal?.aborted) || isAbortError(err);
 
   let yieldedAny = false;
+  let primaryErr: unknown;
   yield { type: "model", model: primary };
   try {
     for await (const text of attempt(primary, true)) {
@@ -316,12 +429,31 @@ export async function* streamWithFallback(
     }
     return;
   } catch (err) {
-    if (yieldedAny || err instanceof CreditsExhaustedError || opts.signal?.aborted || isAbortError(err)) throw err;
-    if (!fallback || fallback === primary) throw err;
+    if (callerLeft(err)) throw err;
+    if (yieldedAny || err instanceof CreditsExhaustedError || !fallback || fallback === primary) {
+      recordModelFailure(call, primary, err, yieldedAny ? "mid-answer" : "only");
+      throw err;
+    }
+    primaryErr = err;
   }
+  const primaryMs = Date.now() - call.startedAt;
 
   yield { type: "model", model: fallback };
-  for await (const text of attempt(fallback, false)) yield { type: "text", text };
+  let answered = false;
+  try {
+    for await (const text of attempt(fallback, false)) {
+      if (!answered) {
+        answered = true;
+        recordModelFallback(call, primaryErr, primaryMs);
+      }
+      yield { type: "text", text };
+    }
+  } catch (err) {
+    if (!callerLeft(err)) recordModelFailure(call, fallback, err, answered ? "mid-answer" : "both", primaryErr);
+    throw err;
+  }
+  // an empty answer is still the fallback answering
+  if (!answered) recordModelFallback(call, primaryErr, primaryMs);
 }
 
 /** Strip ```json fences and surrounding prose from a model reply and return the first JSON object. */
@@ -395,6 +527,9 @@ export type ChatJsonFallbackOptions<S extends z.ZodTypeAny> = Omit<ChatJsonOptio
  * `chatJson` on `primary`, then once on `fallback` when the primary fails or times out — the
  * non-streaming twin of `streamWithFallback`. Out-of-credits and a caller abort are never
  * retried. Resolves with the parsed reply and the model that produced it.
+ *
+ * App events as the stream's (`model.<route>`): a warn `fallback` when the fallback answered, an
+ * error when the call failed for good, nothing when the caller went away.
  */
 export async function chatJsonWithFallback<S extends z.ZodTypeAny>(
   primary: string,
@@ -418,11 +553,25 @@ export async function chatJsonWithFallback<S extends z.ZodTypeAny>(
       throw err;
     }
   };
+  const call: ModelCall = { primary, fallback, title: rest.title, requestId: rest.requestId, startedAt: Date.now() };
+  let primaryErr: unknown;
   try {
     return await attempt(primary);
   } catch (err) {
-    if (err instanceof CreditsExhaustedError || signal?.aborted) throw err;
-    if (!fallback || fallback === primary) throw err;
-    return attempt(fallback);
+    if (signal?.aborted) throw err;
+    if (err instanceof CreditsExhaustedError || !fallback || fallback === primary) {
+      recordModelFailure(call, primary, err, "only");
+      throw err;
+    }
+    primaryErr = err;
+  }
+  const primaryMs = Date.now() - call.startedAt;
+  try {
+    const answer = await attempt(fallback);
+    recordModelFallback(call, primaryErr, primaryMs);
+    return answer;
+  } catch (err) {
+    if (!signal?.aborted) recordModelFailure(call, fallback, err, "both", primaryErr);
+    throw err;
   }
 }
