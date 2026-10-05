@@ -3,6 +3,7 @@
  * replaced by a spy:
  *  - errorResponse (request.ts): every 5xx a route answers is `route.<module>.<route>`, with the
  *    request id, user id and API path read from the route's logger; a client's abort is not one;
+ *  - runChargedStream (live-route.ts): an SSE route's failure (its `error` frame) is one too;
  *  - recognizeStrokes (mathpix.ts): a failure that is Mathpix's is `mathpix`; an unreadable
  *    scribble is not;
  *  - POST /api/client-errors: each report is an event (`client.<source>` or the report's own kind).
@@ -27,6 +28,7 @@ vi.mock("@supabase/supabase-js", () => ({
 import { resetServerEnvCache } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { recordEvent } from "@/lib/server/events";
+import { runChargedStream } from "@/lib/server/live-route";
 import { recognizeStrokes } from "@/lib/server/mathpix";
 import { CreditsExhaustedError, UpstreamError, WatchdogTimeoutError } from "@/lib/server/openrouter";
 import { resetRateLimits } from "@/lib/server/rate-limit";
@@ -119,6 +121,33 @@ describe("errorResponse: a 5xx is a route event", () => {
       ["route.credits", "/api/credits", fake.USER_ID],
       ["route.live.recognize.get", "/api/live/recognize", undefined],
     ]);
+  });
+});
+
+describe("runChargedStream: an SSE route's error frame is a route event too", () => {
+  const rpc = { rpc: vi.fn(async () => ({ data: { refunded: 10, remaining: 100 }, error: null })) };
+  beforeEach(() => {
+    logger.level = "silent";
+  });
+  afterEach(() => {
+    logger.level = process.env.LOG_LEVEL || "info";
+  });
+
+  it("before or after the first step, with `delivered` in meta; never for a client's abort", async () => {
+    const fail = (err: unknown, delivered: boolean) =>
+      runChargedStream({ userId: fake.USER_ID, requestId: "req-9" }, liveLog("solve"), () => delivered, async () => Promise.reject(err), rpc);
+    await expect(fail(new UpstreamError(502, "OpenRouter stream error"), false)).rejects.toThrow();
+    await expect(fail(new WatchdogTimeoutError("m", 40), true)).rejects.toThrow();
+    await expect(fail(Object.assign(new Error("aborted"), { name: "AbortError" }), false)).rejects.toThrow();
+    expect(events()).toEqual([
+      expect.objectContaining({ kind: "route.live.solve", code: "upstream", route: "/api/live/solve", userId: fake.USER_ID, requestId: "req-9", meta: { status: 502, upstreamStatus: 502, stream: true, delivered: false } }),
+      expect.objectContaining({ kind: "route.live.solve", code: "timeout", meta: { status: 500, stream: true, delivered: true } }),
+    ]);
+  });
+
+  it("a stream that completes records nothing", async () => {
+    await runChargedStream({ userId: fake.USER_ID, requestId: "req-9" }, liveLog("check"), () => true, async () => undefined, rpc);
+    expect(events()).toEqual([]);
   });
 });
 

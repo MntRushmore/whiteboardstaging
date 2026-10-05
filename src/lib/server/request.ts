@@ -155,26 +155,42 @@ export function eventContext(log: unknown): { route?: string; userId?: string; r
 }
 
 /**
- * A 5xx this route is about to answer, as an app event (`route.<module>.<route>`, source server,
- * level error) with the request id and user id from the logger's bindings, and the context's numbers
- * and flags (`ms`, `charged`) in `meta`. Fire and forget (`recordEvent`), so it never slows or
- * breaks the answer.
+ * A route's failure as an app event: `route.<module>.<route>`, source server, level error, with the
+ * route, request id and user id from the logger's bindings and the context's numbers and flags
+ * (`ms`, `charged`, `delivered`) in `meta`. The status and code follow the error contract
+ * (`errorResponse`, `sseErrorPayload`): out of credits 503 `credits`; an UpstreamError 502
+ * `upstream`, or `timeout` for a provider that did not answer in time (its 504); anything else 500
+ * `internal` (`timeout` for a first-byte watchdog or a fired AbortSignal.timeout). A client's abort
+ * is not a failure and records nothing. Fire and forget (`recordEvent`): it never slows or breaks
+ * the answer. Called by `errorResponse` for every JSON 5xx and by `runChargedStream`
+ * (live-route.ts) for an SSE route's error frame.
  */
-function recordRouteFailure(
-  log: unknown,
-  status: number,
-  code: string,
-  message: string,
-  context: Record<string, unknown>,
-  extra: Record<string, unknown> = {},
-): void {
+export function recordRouteError(err: unknown, log: unknown, context: Record<string, unknown> = {}): void {
+  if (err instanceof Error && err.name === "AbortError") return;
+  let status = 500;
+  let code = "internal";
+  let message: string;
+  const extra: Record<string, unknown> = {};
+  if (err instanceof CreditsExhaustedError) {
+    status = 503;
+    code = "credits";
+    message = "OpenRouter is out of credits";
+  } else if (err instanceof UpstreamError) {
+    status = 502;
+    code = err.status === 504 ? "timeout" : "upstream";
+    message = err.message;
+    extra.upstreamStatus = err.status;
+  } else {
+    if (err instanceof Error && (err.name === "WatchdogTimeoutError" || err.name === "TimeoutError")) code = "timeout";
+    message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+  }
   const scalars = Object.fromEntries(Object.entries(context).filter(([, v]) => typeof v === "number" || typeof v === "boolean"));
   recordEvent({
     source: "server",
     level: "error",
     kind: routeEventKind(logContext(log)),
     code,
-    message,
+    message: message.slice(0, 200),
     ...eventContext(log),
     meta: { status, ...extra, ...scalars },
   });
@@ -183,25 +199,24 @@ function recordRouteFailure(
 /**
  * Map an error thrown inside a route handler to the shared error contract and
  * log it with the route's child logger. Every 5xx it answers (but a client's abort) is also an
- * app event for the /admin page (`recordRouteFailure`): code `credits`, `upstream`, `timeout` (a
- * provider that did not answer in time, 504) or `internal`.
+ * app event for the /admin page (`recordRouteError`).
  */
 export function errorResponse(
   err: unknown,
   log: pino.Logger,
   context: Record<string, unknown> = {},
 ): Response {
+  recordRouteError(err, log, context);
+
   if (err instanceof CreditsExhaustedError) {
     // The operator's provider account, not the student's ink: a 503 the student can only wait out
     // (a 402 would tell them to buy ink that could not help). Logged as an error so it gets seen.
     log.error({ ...context }, "OpenRouter credits exhausted: top up the provider account");
-    recordRouteFailure(log, 503, "credits", "OpenRouter is out of credits", context);
     return json(503, "upstream_error", PROVIDER_UNAVAILABLE_MESSAGE);
   }
 
   if (err instanceof UpstreamError) {
     log.error({ ...context, upstreamStatus: err.status, error: err.message }, "Upstream API error");
-    recordRouteFailure(log, 502, err.status === 504 ? "timeout" : "upstream", err.message.slice(0, 200), context, { upstreamStatus: err.status });
     return json(502, "upstream_error", "The AI service returned an error. Please try again.", {
       details: err.message,
     });
@@ -220,9 +235,5 @@ export function errorResponse(
     },
     "Unhandled route error",
   );
-  const what = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-  // a stream's first-byte watchdog (WatchdogTimeoutError) or an AbortSignal.timeout that fired
-  const timedOut = err instanceof Error && (err.name === "WatchdogTimeoutError" || err.name === "TimeoutError");
-  recordRouteFailure(log, 500, timedOut ? "timeout" : "internal", what.slice(0, 200), context);
   return json(500, "internal_error", "Something went wrong on our side. Please try again.");
 }
