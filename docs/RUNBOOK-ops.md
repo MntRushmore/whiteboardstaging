@@ -116,3 +116,78 @@ curl -sS -H "Authorization: Bearer $CRON_SECRET" https://whiteboard.rushilchopra
 4. Ship the app change that calls `sendWelcomeEmail()` after the tour saves `onboarded_at`.
 
 Without `RESEND_API_KEY` (local development, previews) nothing is sent and nothing breaks: the welcome route answers `503 feature_unavailable`, the cron too (except `?dryRun=1`), and `sendEmail` returns `{ ok: false, error: "not configured" }` with one log line.
+
+## Health checks and alerts
+
+Every 5 minutes the Supabase project's own scheduler (pg_cron, through pg_net) calls `GET /api/admin/health` with `Authorization: Bearer <CRON_SECRET>`. Vercel's plan allows only daily crons, so the schedule lives in the database. The route checks every service Agathon depends on, keeps the results, and emails the owner when something is down or students are hitting errors. Code: `src/app/api/admin/health/route.ts`, `src/lib/server/health/` (checks, alerts, tables), `src/lib/email/alerts.ts` (the emails), `scripts/schedule-health.mjs` (the schedule). Rules: `ALERT_RULES` in `src/lib/admin/contracts.ts`.
+
+### What is checked
+
+All six run in parallel, each with its own 8-second limit. None costs money or calls a model.
+
+| Service | What it asks | Fails when |
+| --- | --- | --- |
+| `app` | `GET <NEXT_PUBLIC_SITE_URL>/api/health` (the public URL) | Anything but `200 {"ok":true}`. A `503 {"db":"down"}` also fails, but while the database check fails too it does not alert separately (one outage, one email). |
+| `database` | `profiles?select=user_id&limit=1` with the service role | PostgREST errors, times out or is unreachable. |
+| `openrouter` | `GET https://openrouter.ai/api/v1/key` (free; the key's own limit) and `GET /api/v1/credits` (the account balance; OpenRouter documents it as management-key only, so a refusal just means "unknown") | The key is rejected, OpenRouter errors, or credit left is $0 or less. `detail` is `$12.40 credit left` (the lower of the two known values). |
+| `mathpix` | `POST https://api.mathpix.com/v3/app-tokens` with `{"expires":30}`: mints a short-lived token, which Mathpix documents as "free of charge"; no ink is read and no strokes session is opened | The keys are rejected (401/403) or Mathpix errors. |
+| `email` | `GET https://api.resend.com/domains` with `RESEND_API_KEY` | The key is rejected, or the domain of `EMAIL_FROM` (`mail.agathon.app`) is missing or not `verified`. A sending-only key (401 `restricted_api_key`) passes: it proves the key works, but the domain is not checked. |
+| `stripe` | `STRIPE_WEBHOOK_SECRET` is set; `billing_events` (the latest) and `app_events` at level error naming the webhook in the last 30 minutes | The secret is unset, or a webhook failure was recorded in the last 30 minutes. No events at all is **not** a failure (a quiet day has no purchases); `detail` says when the last one came. Stripe itself emails the account when an endpoint keeps failing. |
+
+Each run writes one `health_checks` row per service (kept 14 days) and, for each failure, an `app_events` row with `source = 'health'`, `kind = 'health.<service>'`, a `code` (`timeout`, `network`, `unauthorized`, `upstream`, `unconfigured`, `unverified`, `out_of_credit`, `failures`, …) and the detail as `message`. The `/admin` page reads both. Once a day, in the run between 08:00 and 08:05 UTC, it calls `prune_admin_rows()` to apply the retention (`RETENTION_DAYS`).
+
+An admin's **Check now** on `/admin` calls the same route with their own token. It runs the checks, writes the rows and records the events, but never decides an alert: the down rule counts failures 5 minutes apart, and two clicks must not page anyone. The next scheduled run (at most 5 minutes later) judges the alerts.
+
+### When an email goes out
+
+To `ALERT_EMAIL` (one address), from `EMAIL_FROM` through Resend. The state of each alert lives in `alert_state` (`down:<service>`, `spike:errors`, `credits:openrouter`).
+
+| Alert | Fires | Repeats | Ends |
+| --- | --- | --- | --- |
+| Service down | 2 failed checks in a row (`downAfterFailures`): "Mathpix is down: keys rejected (401)" | "Mathpix is still down (1 h 5 min): …" every 60 minutes (`repeatAfterMin`) | "Mathpix is back up (down 12 min)" on the first passing check, only if the owner was told it was down |
+| Error spike | At least 10 errors (`level = 'error'`, source `live`, `client` or `server`) from at least 3 distinct users in the last 15 minutes: "Errors spiking: 42 in 15 min from 7 people", with the top 3 groups (kind, code, message, count) | Every 60 minutes while it lasts | "Errors are back to normal (spike lasted 35 min)" |
+| Low OpenRouter credit | Credit left under $5 (`lowCreditsUsd`): "OpenRouter credit is low: $4.20 left", with the top-up link | Never: once per episode | Re-arms silently when credit is back at $5 or more (at $0 the OpenRouter check fails, and the down alert takes over) |
+
+Every email links `/admin`. Throttle: a firing email (down, still down, spike, low credit) goes at most once per 60 minutes per alert, even across a quick recovery and relapse. A firing email that could not be sent (no `ALERT_EMAIL`, no `RESEND_API_KEY`, Resend refused) is retried on the next run. Each send carries a Resend `Idempotency-Key` (`alert/<key>/<down|still|spike|up|over|low|stateless>/<hour bucket or episode start>`), so if `alert_state` cannot be saved after a send, the next run's identical decision does not email twice.
+
+If `alert_state` cannot be read at all and the database check failed, one "The database is down" email goes out per hour without the two-in-a-row rule (nothing else is decided that run).
+
+Logs (module `admin-health`): one `health checks summary` line per run (`trigger`, `failing`, `alerts.firing/sent/skipped/failed`), `alert sent` / `alert not sent`, and `ALERT_EMAIL is not set: alert not sent` when unconfigured.
+
+### Going live
+
+1. Apply the admin migration (`20261005000000_admin.sql`: `health_checks`, `alert_state`, `app_events`, `prune_admin_rows()`).
+2. Vercel Production: add `ALERT_EMAIL` (`printf '%s' 'rushil.chopra@alpha.school' | vercel env add ALERT_EMAIL production`). `CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `STRIPE_WEBHOOK_SECRET`, `MATHPIX_APP_ID`/`MATHPIX_APP_KEY` and `NEXT_PUBLIC_SITE_URL` are already there. Deploy.
+3. Run it once by hand (it answers the six results; it may email if something is already down twice):
+   ```bash
+   curl -sS -H "Authorization: Bearer $CRON_SECRET" https://whiteboard.rushilchopra.com/api/admin/health | jq
+   ```
+4. Schedule it. The script needs the Management API token (`SUPABASE_ACCESS_TOKEN`, or the macOS keychain item "Supabase CLI" from `npx supabase login`) and the same `CRON_SECRET` as Vercel. `vercel env pull` writes sensitive values as empty strings, so take the secret from where it was made, or rotate it (below).
+   ```bash
+   # what it will run, secret redacted, nothing sent
+   CRON_SECRET=... node scripts/schedule-health.mjs --ref sgolkponjdkphndosrea --site https://whiteboard.rushilchopra.com --dry-run
+   # do it: enables pg_cron and pg_net, stores the secret in Vault, (re)schedules agathon-health
+   CRON_SECRET=... node scripts/schedule-health.mjs --ref sgolkponjdkphndosrea --site https://whiteboard.rushilchopra.com
+   ```
+   It is idempotent: run it again after changing the site or the secret. The secret goes into Supabase Vault (`agathon_cron_secret`), never into the job's command (which `cron.job` stores in plain text); the job reads it from `vault.decrypted_secrets` at each run. `--env-file <file>` reads `KEY=VALUE` lines first; `--secret` works too but lands in shell history.
+
+**Is it running?** In the Supabase SQL editor:
+
+```sql
+-- the job
+select jobid, schedule, active from cron.job where jobname = 'agathon-health';
+-- its last runs (did pg_cron fire the request?)
+select status, return_message, start_time from cron.job_run_details
+where jobid = (select jobid from cron.job where jobname = 'agathon-health') order by start_time desc limit 10;
+-- the route's answers (pg_net keeps them 6 hours): 200 is good; 401 means the Vault secret and Vercel's CRON_SECRET differ
+select id, status_code, timed_out, error_msg, left(content, 200), created from net._http_response order by id desc limit 10;
+-- the results themselves
+select at, service, ok, latency_ms, detail from public.health_checks order by at desc limit 12;
+select key, status, since, last_sent_at, failures from public.alert_state order by key;
+```
+
+**Rotating `CRON_SECRET`.** Set the new value in Vercel (it is shared with the GC and trial-reminder crons), redeploy, then run the script again with the new value: it updates the Vault secret in place. Between the deploy and the script, the scheduled calls answer 401 (no alert is lost for more than those minutes).
+
+**Snoozing.** To silence an alert for an hour: `update public.alert_state set last_sent_at = now() where key = 'down:mathpix';`. To stop all alert email, remove `ALERT_EMAIL` from Vercel (the checks keep running and logging). To stop the checks: `node scripts/schedule-health.mjs --ref sgolkponjdkphndosrea --unschedule` (the Vault secret stays).
+
+**Limits.** pg_cron runs inside the database: if the project is paused or Postgres is down, nothing calls the route and no alert goes out. The external uptime monitor on `/api/health` (section 3) is what catches that. The database alert covers the cases pg_cron survives: PostgREST or the pooler failing while Postgres runs. The Mathpix and Resend checks prove the keys and the service answer, not that every request succeeds; the error-spike alert covers what students actually hit.
