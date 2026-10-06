@@ -26,10 +26,20 @@ const props = { loading: false, error: null, check: IDLE, onRefresh: vi.fn(), on
 describe("the admin page body", () => {
   const html = render(<AdminContent {...props} view={buildAdminView(overviewFixture(), CLOCK)} />);
 
+  it("shows the money: six tiles, the charges coming, and the funnel under the users", () => {
+    expect(html).toContain("Monthly revenue");
+    expect(html).toContain("$200");
+    expect(html).toContain("In free trial");
+    expect(html).toContain("Charges in the next 14 days");
+    expect(html).toContain("Tomorrow");
+    expect(html).toContain("412 accounts → 301 finished the welcome → 23 started a trial → 9 paying");
+  });
+
   it("has its sections in order, each a labelled region", () => {
     const headings = [...html.matchAll(/<h2 id="([^"]+)"[^>]*>([^<]+)<\/h2>/g)].map((m) => [m[1], m[2]]);
     expect(headings).toEqual([
       ["status-title", "Status"],
+      ["money-title", "Money"],
       ["errors-title", "Errors students saw"],
       ["ai-title", "AI"],
       ["users-title", "Users and learning"],

@@ -1,6 +1,6 @@
 /**
  * Just enough of PostgREST and Supabase Auth's admin API for the admin overview's tests: the
- * filters it sends (eq, neq, gt, gte, in), order, limit, offset, select with `alias:col->>key`,
+ * filters it sends (eq, neq, gt, gte, in, not.is.null), order, limit, offset, select with `alias:col->>key`,
  * HEAD with `Prefer: count=exact`, a 1,000-row page cap, a missing table's PGRST205, and
  * /auth/v1/admin/users/<id>. Every request is recorded.
  */
@@ -47,6 +47,10 @@ function matches(value: unknown, filter: string): boolean {
       return value !== null && value !== undefined && compare(value, arg) < 0;
     case "in":
       return arg.replace(/^\(|\)$/g, "").split(",").includes(String(value));
+    case "not":
+      // only `not.is.null` (PostgREST's "has a value")
+      if (arg === "is.null") return value !== null && value !== undefined;
+      throw new Error(`fake PostgREST: unsupported filter ${filter}`);
     default:
       throw new Error(`fake PostgREST: unsupported filter ${filter}`);
   }

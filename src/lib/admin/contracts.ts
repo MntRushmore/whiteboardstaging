@@ -168,6 +168,41 @@ export const AdminOverviewSchema = z.object({
     routes: z.array(z.object({ route: z.string(), calls24h: z.number().int(), failures24h: z.number().int(), fallbacks24h: z.number().int() })),
   }),
   users: z.object({ total: z.number().int(), signups24h: z.number().int(), signups7d: z.number().int(), active24h: z.number().int(), active7d: z.number().int() }),
+  /**
+   * Agathon Unlimited, from `unlimited_subscriptions` (what Stripe's webhooks wrote), admins' own
+   * subscriptions left out. Statuses are Stripe's: trialing, active, past_due / unpaid (a charge
+   * failing), canceled / incomplete_expired (over). "Set to cancel" is `cancel_at_period_end` or a
+   * `cancel_at`: no further charge is coming.
+   */
+  money: z.object({
+    /** the plan's monthly price (UNLIMITED_PLAN.monthlyUsd) */
+    priceUsd: z.number(),
+    /** subscriptions in `active`, set to cancel or not */
+    paying: z.number().int(),
+    /** of those, set to cancel */
+    payingCancelling: z.number().int(),
+    /** active and not set to cancel, times the price */
+    mrrUsd: z.number(),
+    /** subscriptions in their free trial */
+    trialing: z.number().int(),
+    /** of those, set to cancel (no first charge is coming) */
+    trialsCancelling: z.number().int(),
+    /** in trial and not set to cancel, times the price: the monthly revenue if every trial converts */
+    pipelineUsd: z.number(),
+    /** a charge failing (past_due, unpaid) */
+    failing: z.number().int(),
+    /** over (canceled, incomplete_expired) */
+    ended: z.number().int(),
+    /** subscriptions whose trial has ended, and how many of those went on to pay (active) */
+    trialsOver: z.number().int(),
+    trialsConverted: z.number().int(),
+    /** subscriptions started in the last 7 days */
+    started7d: z.number().int(),
+    /** charges coming in the next 14 days, soonest first: a trial's first charge or a renewal (not set to cancel) */
+    upcoming: z.array(z.object({ at: z.string(), kind: z.enum(["first", "renewal"]), usd: z.number() })),
+  }),
+  /** how far accounts get: signed up, finished the welcome, started a trial (ever), paying now (admins left out of the last two) */
+  funnel: z.object({ accounts: z.number().int(), onboarded: z.number().int(), trials: z.number().int(), paying: z.number().int() }),
   learning: z.object({ attempts24h: z.number().int(), solvedAlone24h: z.number().int() }),
   bugReports: z.array(z.object({ at: z.string(), email: z.string().nullable(), message: z.string(), path: z.string().nullable() })),
 });

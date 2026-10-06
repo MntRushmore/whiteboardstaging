@@ -847,6 +847,9 @@
   .tiles {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
+  .tiles[data-columns="3"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 .tile {
   display: flex;
@@ -878,6 +881,38 @@
   color: var(--text-secondary);
   font-size: var(--text-xs);
   line-height: var(--leading-body);
+}
+
+/* ---- Money ---------------------------------------------------------------------------------------- */
+.upcoming {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-variant-numeric: tabular-nums;
+}
+.upcoming li {
+  display: grid;
+  grid-template-columns: minmax(6.5rem, auto) minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+.upcomingDay {
+  font-weight: 500;
+}
+.upcomingWhat {
+  color: var(--text-secondary);
+}
+.upcomingAmount {
+  font-weight: 600;
+  text-align: right;
+}
+.funnel {
+  margin: var(--space-3) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
 }
 
 /* ---- Bug reports ---------------------------------------------------------------------------------- */

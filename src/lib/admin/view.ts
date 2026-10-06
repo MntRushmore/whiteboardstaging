@@ -59,6 +59,10 @@ export const ADMIN_COPY = {
   aiIdle: (labels: string) => `No calls in 24 hours: ${labels}.`,
   aiColumns: { route: "Route", calls: "Calls", failures: "Failed", rate: "Failure %", fallbacks: "Fallbacks" },
 
+  moneyTitle: "Money",
+  moneyHint: "Agathon Unlimited, from Stripe's webhooks. Admin accounts are left out. Monthly revenue counts paying plans not set to cancel.",
+  upcomingTitle: "Charges in the next 14 days",
+  upcomingEmpty: "No charges in the next 14 days.",
   usersTitle: "Users and learning",
   usersHint: "Active means an AI call or a problem worked on a board.",
 
@@ -691,7 +695,7 @@ export function buildAiTable(routes: AdminOverview["ai"]["routes"]): AiTableView
 // ------------------------------------------------------------------ users and learning
 
 export interface StatTile {
-  key: "accounts" | "signups" | "active" | "problems";
+  key: "accounts" | "signups" | "active" | "problems" | "mrr" | "trials" | "due" | "converted" | "signupToTrial" | "lost";
   value: string;
   label: string;
   hint: string;
@@ -710,6 +714,126 @@ export function statTiles(users: AdminOverview["users"], learning: AdminOverview
       hint: alone ? `${formatCount(learning.solvedAlone24h)} solved alone (${alone})` : "None worked yet",
     },
   ];
+}
+
+/** "80 accounts → 59 finished the welcome → 8 started a trial → 0 paying" */
+export function funnelLine(funnel: AdminOverview["funnel"]): string {
+  return [
+    plural(funnel.accounts, "account"),
+    `${formatCount(funnel.onboarded)} finished the welcome`,
+    `${formatCount(funnel.trials)} started a trial`,
+    `${formatCount(funnel.paying)} paying`,
+  ].join(" → ");
+}
+
+// ------------------------------------------------------------------ money
+
+/** "$25", "$1,250", "$12.50": whole dollars without cents. */
+export function formatDollars(usd: number): string {
+  return Number.isInteger(usd)
+    ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(usd)
+    : formatUsd(usd);
+}
+
+export interface UpcomingDayView {
+  key: string;
+  /** "Mon, Oct 12" (or "Today", "Tomorrow") */
+  day: string;
+  /** "3 first charges, 1 renewal" */
+  what: string;
+  amount: string;
+}
+
+export interface MoneyView {
+  tiles: StatTile[];
+  upcoming: UpcomingDayView[];
+}
+
+/** Charges due within `days` of now. */
+function dueWithin(money: AdminOverview["money"], now: number, days: number) {
+  return money.upcoming.filter((c) => Date.parse(c.at) < now + days * DAY_MS);
+}
+
+export function moneyTiles(money: AdminOverview["money"], signups7d: number, clock: ViewClock): StatTile[] {
+  const due7 = dueWithin(money, clock.now, 7);
+  const due7Usd = due7.reduce((n, c) => n + c.usd, 0);
+  const firsts = due7.filter((c) => c.kind === "first").length;
+  const conversion = money.trialsOver > 0 ? formatPercent(money.trialsConverted / money.trialsOver) : null;
+  const toTrial = signups7d > 0 ? formatPercent(money.started7d / signups7d) : null;
+  return [
+    {
+      key: "mrr",
+      value: formatDollars(money.mrrUsd),
+      label: "Monthly revenue",
+      hint:
+        money.paying === 0
+          ? "Nobody paying yet"
+          : `${plural(money.paying, "paying plan")} × ${formatDollars(money.priceUsd)}${money.payingCancelling ? `, ${formatCount(money.payingCancelling)} set to cancel` : ""}`,
+    },
+    {
+      key: "trials",
+      value: formatCount(money.trialing),
+      label: "In free trial",
+      hint:
+        money.trialing === 0
+          ? "No trials right now"
+          : `${formatDollars(money.pipelineUsd)}/month if they all pay${money.trialsCancelling ? `; ${formatCount(money.trialsCancelling)} set to cancel` : ""}`,
+    },
+    {
+      key: "due",
+      value: formatDollars(due7Usd),
+      label: "Due in 7 days",
+      hint: due7.length === 0 ? "No charges due" : `${plural(due7.length, "charge")}${firsts ? `, ${formatCount(firsts)} of them first charges` : ""}`,
+    },
+    {
+      key: "converted",
+      value: conversion ?? "—",
+      label: "Trial → paid",
+      hint: money.trialsOver === 0 ? "No trial has ended yet" : `${formatCount(money.trialsConverted)} of ${plural(money.trialsOver, "ended trial")}`,
+    },
+    {
+      key: "signupToTrial",
+      value: toTrial ?? "—",
+      label: "Sign-up → trial",
+      hint: `${plural(money.started7d, "trial")} from ${plural(signups7d, "sign-up")} this week`,
+    },
+    {
+      key: "lost",
+      value: formatCount(money.failing + money.ended),
+      label: "Cancelled or failing",
+      hint: `${formatCount(money.ended)} cancelled, ${formatCount(money.failing)} with a failing charge`,
+    },
+  ];
+}
+
+/** The next 14 days' charges, one row per day in the reader's zone. */
+export function upcomingDays(money: AdminOverview["money"], clock: ViewClock): UpcomingDayView[] {
+  const byDay = new Map<string, { at: number; first: number; renewal: number; usd: number }>();
+  const dayKey = (t: number) => new Intl.DateTimeFormat("en-CA", { timeZone: clock.timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(t));
+  for (const c of money.upcoming) {
+    const t = Date.parse(c.at);
+    if (!Number.isFinite(t)) continue;
+    const key = dayKey(t);
+    const day = byDay.get(key) ?? { at: t, first: 0, renewal: 0, usd: 0 };
+    day[c.kind === "first" ? "first" : "renewal"] += 1;
+    day.usd += c.usd;
+    byDay.set(key, day);
+  }
+  const today = dayKey(clock.now);
+  const tomorrow = dayKey(clock.now + DAY_MS);
+  return [...byDay.entries()]
+    .sort((a, b) => a[1].at - b[1].at)
+    .map(([key, d]) => ({
+      key,
+      day:
+        key === today
+          ? "Today"
+          : key === tomorrow
+            ? "Tomorrow"
+            : new Intl.DateTimeFormat("en-US", { timeZone: clock.timeZone, weekday: "short", month: "short", day: "numeric" }).format(new Date(d.at)),
+      what: [d.first ? plural(d.first, "first charge") : null, d.renewal ? plural(d.renewal, "renewal") : null].filter(Boolean).join(", "),
+      amount: formatDollars(d.usd),
+    }));
 }
 
 // ------------------------------------------------------------------ bug reports
@@ -746,7 +870,10 @@ export interface AdminView {
     groups: ErrorGroupView[];
   };
   ai: AiTableView;
+  money: MoneyView;
   tiles: StatTile[];
+  /** "80 accounts → 59 finished the welcome → 8 started a trial → 0 paying" */
+  funnel: string;
   bugs: BugReportView[];
   /** "Updated just now" */
   updated: string;
@@ -766,7 +893,9 @@ export function buildAdminView(overview: AdminOverview, clock: ViewClock): Admin
       groups: overview.errors.groups.map((g, i) => errorGroupView(g, clock, i)),
     },
     ai: buildAiTable(overview.ai.routes),
+    money: { tiles: moneyTiles(overview.money, overview.users.signups7d, clock), upcoming: upcomingDays(overview.money, clock) },
     tiles: statTiles(overview.users, overview.learning),
+    funnel: funnelLine(overview.funnel),
     bugs: bugReportViews(overview.bugReports, clock),
     updated: ADMIN_COPY.updated(relativeTime(overview.generatedAt, clock.now) ?? formatWhen(overview.generatedAt, clock)),
   };

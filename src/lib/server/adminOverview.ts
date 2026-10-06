@@ -10,7 +10,9 @@
  *   usage_events      7 d of metered calls (route, user, time) ─┐ AI calls per route (24 h),
  *   unlimited_usage   7 d of Unlimited subscribers' calls ──────┤ active users (24 h, 7 d)
  *   learning_attempts 7 d of problems worked (user, time) ──────┘ + exact counts of today's attempts
- *   profiles          exact counts: accounts, sign-ups in 24 h and 7 d
+ *   profiles          exact counts: accounts, sign-ups in 24 h and 7 d, finished the welcome
+ *   unlimited_subscriptions  every subscription (money: paying, in trial, charges coming, conversion)
+ *   admins            whose subscriptions to leave out of the money (the owner's own tests)
  *   bug_reports       the latest 20
  *   auth admin API    the email of each user in an error group's samples (cached 10 minutes)
  *
@@ -23,6 +25,7 @@
  */
 import { SERVICES, type AdminOverview, type ErrorGroup, type EventLevel, type EventSource, type Service, type ServiceStatus } from "@/lib/admin/contracts";
 import { normalizeRoute } from "@/lib/admin/view";
+import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
 import { getServerEnv } from "@/lib/env";
 import { logger } from "@/lib/logger";
 
@@ -493,6 +496,68 @@ export function reportPath(url: string | null): string | null {
   }
 }
 
+// ------------------------------------------------------------------ money
+
+/** One subscription as the money needs it (unlimited_subscriptions, service role). */
+export interface SubscriptionRow {
+  user_id: string | null;
+  status: string | null;
+  trial_end: string | null;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean | null;
+  cancel_at: string | null;
+  created_at: string;
+}
+
+/** How far ahead the money lists charges. */
+export const UPCOMING_DAYS = 14;
+
+const PAYING = new Set(["active"]);
+const FAILING = new Set(["past_due", "unpaid"]);
+const ENDED = new Set(["canceled", "incomplete_expired"]);
+
+/**
+ * The money section from every subscription: admins' own left out (the owner trying the checkout is
+ * not revenue). Pure, so the tests can hold it to Stripe's statuses.
+ */
+export function moneyOverview(subs: readonly SubscriptionRow[], adminIds: ReadonlySet<string>, now: number, priceUsd = UNLIMITED_PLAN.monthlyUsd): AdminOverview["money"] {
+  const mine = subs.filter((s) => !(s.user_id && adminIds.has(s.user_id)));
+  const cancelling = (s: SubscriptionRow) => s.cancel_at_period_end === true || s.cancel_at !== null;
+  const paying = mine.filter((s) => s.status !== null && PAYING.has(s.status));
+  const trialing = mine.filter((s) => s.status === "trialing");
+  const over = mine.filter((s) => s.trial_end !== null && time(s.trial_end) < now && s.status !== "trialing" && s.status !== "incomplete");
+  const horizon = now + UPCOMING_DAYS * DAY_MS;
+  const upcoming: AdminOverview["money"]["upcoming"] = [];
+  for (const s of mine) {
+    if (cancelling(s)) continue;
+    const at = s.status === "trialing" ? s.trial_end : s.status === "active" ? s.current_period_end : null;
+    if (!at || time(at) < now || time(at) >= horizon) continue;
+    upcoming.push({ at, kind: s.status === "trialing" ? "first" : "renewal", usd: priceUsd });
+  }
+  upcoming.sort((a, b) => time(a.at) - time(b.at));
+  return {
+    priceUsd,
+    paying: paying.length,
+    payingCancelling: paying.filter(cancelling).length,
+    mrrUsd: paying.filter((s) => !cancelling(s)).length * priceUsd,
+    trialing: trialing.length,
+    trialsCancelling: trialing.filter(cancelling).length,
+    pipelineUsd: trialing.filter((s) => !cancelling(s)).length * priceUsd,
+    failing: mine.filter((s) => s.status !== null && FAILING.has(s.status)).length,
+    ended: mine.filter((s) => s.status !== null && ENDED.has(s.status)).length,
+    trialsOver: over.length,
+    trialsConverted: over.filter((s) => s.status !== null && PAYING.has(s.status)).length,
+    started7d: mine.filter((s) => time(s.created_at) >= now - 7 * DAY_MS).length,
+    upcoming,
+  };
+}
+
+/** Distinct accounts (admins left out) that ever started a trial, and that pay now. */
+export function funnelCounts(subs: readonly SubscriptionRow[], adminIds: ReadonlySet<string>): { trials: number; paying: number } {
+  const users = (rows: readonly SubscriptionRow[]) => new Set(rows.map((s) => s.user_id).filter((id): id is string => Boolean(id) && !adminIds.has(id!))).size;
+  return { trials: users(subs), paying: users(subs.filter((s) => s.status !== null && PAYING.has(s.status))) };
+}
+
 // ------------------------------------------------------------------ the overview
 
 /**
@@ -508,7 +573,7 @@ export async function buildAdminOverview(deps: OverviewDeps): Promise<AdminOverv
   const since7d = now - 7 * DAY_MS;
   const since48 = hourStart(now) - 47 * HOUR_MS;
 
-  const [health, events, errors24hTotal, usage, unlimited, learning, attempts24h, solvedAlone24h, usersTotal, signups24h, signups7d, bugs] = await Promise.all([
+  const [health, events, errors24hTotal, usage, unlimited, learning, attempts24h, solvedAlone24h, usersTotal, signups24h, signups7d, bugs, subs, admins, onboarded] = await Promise.all([
     rest.paged<HealthRow>({ table: "health_checks", params: { select: "at,service,ok,latency_ms,detail", at: `gte.${iso(since24)}`, order: "at.desc" } }),
     rest.paged<EventRow>({
       table: "app_events",
@@ -524,6 +589,12 @@ export async function buildAdminOverview(deps: OverviewDeps): Promise<AdminOverv
     rest.count({ table: "profiles", params: { select: "user_id", created_at: `gte.${iso(since24)}` } }),
     rest.count({ table: "profiles", params: { select: "user_id", created_at: `gte.${iso(since7d)}` } }),
     rest.rows<BugRow>({ table: "bug_reports", params: { select: "created_at,user_email,message,url:diagnostics->>url", order: "created_at.desc", limit: String(BUG_REPORTS) } }),
+    rest.paged<SubscriptionRow>({
+      table: "unlimited_subscriptions",
+      params: { select: "user_id,status,trial_end,current_period_end,cancel_at_period_end,cancel_at,created_at", order: "created_at.desc" },
+    }),
+    rest.rows<{ user_id: string }>({ table: "admins", params: { select: "user_id" } }),
+    rest.count({ table: "profiles", params: { select: "user_id", onboarded_at: "not.is.null" } }),
   ]);
 
   const events24h = events.rows.filter((e) => time(e.at) >= since24);
@@ -564,6 +635,8 @@ export async function buildAdminOverview(deps: OverviewDeps): Promise<AdminOverv
     ...learning.rows.map((l) => ({ user_id: l.user_id, at: l.updated_at })),
   ];
   const emails = new Map(emailList);
+  const adminIds = new Set(admins.map((a) => a.user_id));
+  if (subs.truncated) log.warn({ subscriptions: subs.rows.length }, "admin overview: more subscriptions than the row cap; money is partial");
 
   return {
     generatedAt: iso(now),
@@ -583,6 +656,8 @@ export async function buildAdminOverview(deps: OverviewDeps): Promise<AdminOverv
       active24h: distinctUsers(activity, since24),
       active7d: distinctUsers(activity, since7d),
     },
+    money: moneyOverview(subs.rows, adminIds, now),
+    funnel: { accounts: usersTotal, onboarded, ...funnelCounts(subs.rows, adminIds) },
     learning: { attempts24h, solvedAlone24h },
     bugReports: bugs.map((b) => ({
       at: b.created_at,

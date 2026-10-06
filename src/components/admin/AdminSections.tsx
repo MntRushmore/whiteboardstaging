@@ -3,7 +3,18 @@
 import type { ReactNode } from "react";
 import { CircleCheck, CircleHelp, CircleX, Clock, OctagonAlert, RefreshCw, TriangleAlert } from "lucide-react";
 import type { CheckState } from "./useAdminOverview";
-import { ADMIN_COPY, type AiTableView, type BugReportView, type ErrorGroupView, type ServiceCardView, type ServiceState, type StatTile, type StatusSummaryView, type SummaryTone } from "@/lib/admin/view";
+import {
+  ADMIN_COPY,
+  type AiTableView,
+  type BugReportView,
+  type ErrorGroupView,
+  type ServiceCardView,
+  type ServiceState,
+  type StatTile,
+  type StatusSummaryView,
+  type SummaryTone,
+  type UpcomingDayView,
+} from "@/lib/admin/view";
 import { Button } from "@/registry/components/button/button";
 import styles from "./admin.module.css";
 
@@ -260,9 +271,9 @@ export function AiTable({ table }: { table: AiTableView }) {
 
 // ------------------------------------------------------------------ users and learning
 
-export function StatTiles({ tiles }: { tiles: readonly StatTile[] }) {
+export function StatTiles({ tiles, columns = 4 }: { tiles: readonly StatTile[]; columns?: 3 | 4 }) {
   return (
-    <ul className={styles.tiles}>
+    <ul className={styles.tiles} data-columns={columns}>
       {tiles.map((t) => (
         <li key={t.key} className={styles.tile}>
           <p className={styles.tileValue}>
@@ -276,6 +287,30 @@ export function StatTiles({ tiles }: { tiles: readonly StatTile[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+// ------------------------------------------------------------------ money
+
+/** The next 14 days' charges, a row per day: when, what, how much. */
+export function UpcomingCharges({ days }: { days: readonly UpcomingDayView[] }) {
+  return (
+    <div className={styles.panel}>
+      <h3 className={styles.chartTitle}>{ADMIN_COPY.upcomingTitle}</h3>
+      {days.length === 0 ? (
+        <p className={styles.quiet}>{ADMIN_COPY.upcomingEmpty}</p>
+      ) : (
+        <ul className={styles.upcoming}>
+          {days.map((d) => (
+            <li key={d.key}>
+              <span className={styles.upcomingDay}>{d.day}</span>
+              <span className={styles.upcomingWhat}>{d.what}</span>
+              <span className={styles.upcomingAmount}>{d.amount}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

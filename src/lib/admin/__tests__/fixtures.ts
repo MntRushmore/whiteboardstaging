@@ -80,6 +80,32 @@ export function perHourFixture(): AdminOverview["errors"]["perHour"] {
   });
 }
 
+/** 9 paying (1 set to cancel), 8 in trial (1 set to cancel), first charges tomorrow and in 3 days, a renewal in 10. */
+export function moneyFixture(overrides: Partial<AdminOverview["money"]> = {}): AdminOverview["money"] {
+  const inDays = (d: number) => new Date(NOW + d * 24 * 60 * 60_000).toISOString();
+  return {
+    priceUsd: 25,
+    paying: 9,
+    payingCancelling: 1,
+    mrrUsd: 200,
+    trialing: 8,
+    trialsCancelling: 1,
+    pipelineUsd: 175,
+    failing: 1,
+    ended: 2,
+    trialsOver: 12,
+    trialsConverted: 9,
+    started7d: 6,
+    upcoming: [
+      { at: inDays(1), kind: "first", usd: 25 },
+      { at: inDays(1.01), kind: "first", usd: 25 },
+      { at: inDays(3), kind: "first", usd: 25 },
+      { at: inDays(10), kind: "renewal", usd: 25 },
+    ],
+    ...overrides,
+  };
+}
+
 export function overviewFixture(overrides: Partial<AdminOverview> = {}): AdminOverview {
   return {
     generatedAt: new Date(NOW - 20_000).toISOString(),
@@ -98,6 +124,8 @@ export function overviewFixture(overrides: Partial<AdminOverview> = {}): AdminOv
       ],
     },
     users: { total: 412, signups24h: 3, signups7d: 19, active24h: 37, active7d: 121 },
+    money: moneyFixture(),
+    funnel: { accounts: 412, onboarded: 301, trials: 23, paying: 9 },
     learning: { attempts24h: 268, solvedAlone24h: 166 },
     bugReports: [
       { at: minutesAgo(12), email: "maya@example.com", message: "Solve keeps spinning on my quadratic\nthen says try again", path: `/board/${BOARD_ID}` },

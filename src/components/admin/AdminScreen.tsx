@@ -9,7 +9,7 @@ import { AppHeader, APP_CONTENT_CLASS } from "@/components/app/AppHeader";
 import { ADMIN_COPY, buildAdminView, serviceCards, statusSummary, statusesFromResults, type AdminView } from "@/lib/admin/view";
 import { Button } from "@/registry/components/button/button";
 import { EmptyState } from "@/registry/components/empty-state/empty-state";
-import { AdminSkeleton, AiTable, BugReports, CheckNow, ErrorGroups, RefreshBar, Section, ServiceGrid, StatTiles, StatusSummary } from "./AdminSections";
+import { AdminSkeleton, AiTable, BugReports, CheckNow, ErrorGroups, RefreshBar, Section, ServiceGrid, StatTiles, StatusSummary, UpcomingCharges } from "./AdminSections";
 import { ErrorChart } from "./ErrorChart";
 import { useAdminOverview, type CheckState } from "./useAdminOverview";
 import { useIsAdmin } from "./useIsAdmin";
@@ -89,6 +89,11 @@ export function AdminContent({ view, loading, error, check, onRefresh, onCheckNo
             <ServiceGrid cards={view.services} />
           </Section>
 
+          <Section id="money-title" title={ADMIN_COPY.moneyTitle} hint={ADMIN_COPY.moneyHint}>
+            <StatTiles tiles={view.money.tiles} columns={3} />
+            <UpcomingCharges days={view.money.upcoming} />
+          </Section>
+
           <Section id="errors-title" title={ADMIN_COPY.errorsTitle} hint={ADMIN_COPY.errorsHint}>
             <div className={styles.panel}>
               <p className={styles.totals} data-some={view.errors.chart.hasData || undefined}>
@@ -106,6 +111,7 @@ export function AdminContent({ view, loading, error, check, onRefresh, onCheckNo
 
           <Section id="users-title" title={ADMIN_COPY.usersTitle} hint={ADMIN_COPY.usersHint}>
             <StatTiles tiles={view.tiles} />
+            <p className={styles.funnel}>{view.funnel}</p>
           </Section>
 
           <Section id="bugs-title" title={ADMIN_COPY.bugsTitle} hint={ADMIN_COPY.bugsHint}>
