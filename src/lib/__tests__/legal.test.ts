@@ -49,7 +49,7 @@ describe("legal config", () => {
     expect(LEGAL.stripeSellerName).toBe("Fuime");
   });
 
-  it("states Agathon Unlimited's own terms (the price and the free week are UNLIMITED_PLAN's)", () => {
+  it("states Agathon Unlimited's own terms (the price and the free trial are UNLIMITED_PLAN's)", () => {
     expect(LEGAL.unlimited).toEqual({ fairUseActionsPerDay: 1_500, refundWindowDays: 14, priceChangeNoticeDays: 7 });
   });
 });

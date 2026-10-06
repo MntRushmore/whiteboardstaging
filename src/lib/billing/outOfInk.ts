@@ -18,7 +18,7 @@ import { UNLIMITED_PLAN, hasPlan, isUnlimited, type UnlimitedState } from "@/lib
 
 /**
  * - `unlimited`: the plan is on (it arrived while the panel was open): all set;
- * - `offer`: no plan: start the free week (the plan screen);
+ * - `offer`: no plan: start the free trial (the plan screen);
  * - `plan`: a plan that is not giving free help yet or any more: what it is doing, and the fix.
  */
 export type InkPanelMood = "unlimited" | "offer" | "plan";
@@ -32,7 +32,7 @@ export const OUT_OF_INK_COPY = {
   /** the 402's title, here and in the Ask and lecture panels (literals there keep the panel lazy) */
   title: `Help needs ${UNLIMITED_PLAN.name}`,
   offerBody: `Help me, Solve and Ask come with ${UNLIMITED_PLAN.name}: free for ${UNLIMITED_PLAN.trialDays} days, then $${UNLIMITED_PLAN.monthlyUsd} a month. Your board is saved.`,
-  start: "Start the free week",
+  start: "Start the free trial",
   restart: "Start Unlimited again",
   comingSoon: "Coming soon",
   /** a plan whose help spends ink right now, with none left */

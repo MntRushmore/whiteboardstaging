@@ -2,8 +2,9 @@
  * Agathon Unlimited: THE plan. There is no free plan (owner, 2026-10-05): a new student gets the
  * guided first board (its starter ink covers it), then the plan screen, which they cannot skip.
  *
- *  - $25 a month after a 7-day free trial (the "free week"): the price is shown crossed out and
- *    nothing is charged today. A grown-up's card is taken up front at Stripe Checkout, through a
+ *  - $25 a month after a 3-day free trial (7 days until 2026-10-06: the owner heard a week was too
+ *    long; trials started before keep their 7 days, Stripe fixes a trial's length at checkout).
+ *    Nothing is charged today. A grown-up's card is taken up front at Stripe Checkout, through a
  *    subscription Payment Link with the trial on it (NEXT_PUBLIC_UNLIMITED_LINK, made by
  *    scripts/stripe-setup.mjs), opened with this account's CHECKOUT REFERENCE (not its user id:
  *    `unlimitedCheckoutUrl`), which the webhook resolves to the account.
@@ -20,7 +21,7 @@ export const UNLIMITED_PLAN = {
   id: "unlimited",
   name: "Agathon Unlimited",
   monthlyUsd: 25,
-  trialDays: 7,
+  trialDays: 3,
 } as const;
 
 /** Query parameter the Payment Link's after-completion redirect sets: `/?unlimited=started`. */
@@ -29,7 +30,7 @@ export const UNLIMITED_RETURN_VALUE = "started";
 
 /**
  * A Stripe subscription's status, as the webhook stores it; `none` without a subscription.
- * `repeat_trial`: Stripe says trialing, but the account had a plan before, and a free week is for a
+ * `repeat_trial`: Stripe says trialing, but the account had a plan before, and a free trial is for a
  * first plan only (has_unlimited() in 20261003040000_go_live_gaps.sql): help spends ink until the
  * first charge, when it turns `active`.
  */
@@ -37,7 +38,7 @@ export type UnlimitedStatus = "none" | "trialing" | "repeat_trial" | "active" | 
 
 export interface UnlimitedState {
   status: UnlimitedStatus;
-  /** when the free week ends (ISO), while trialing */
+  /** when the free trial ends (ISO), while trialing */
   trialEnd: string | null;
   /** when the current period ends (ISO): the next charge, or the end of a cancelled plan */
   currentPeriodEnd: string | null;
@@ -52,13 +53,13 @@ export interface UnlimitedState {
 
 export const NO_UNLIMITED: UnlimitedState = { status: "none", trialEnd: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, checkoutRef: null };
 
-/** Help spends no ink: the plan is in its free week or paid up. */
+/** Help spends no ink: the plan is in its free trial or paid up. */
 export function isUnlimited(state: Pick<UnlimitedState, "status"> | null | undefined): boolean {
   return state?.status === "trialing" || state?.status === "active";
 }
 
 /**
- * The account has a plan, so the app is open: in its free week or paid up, a second plan waiting
+ * The account has a plan, so the app is open: in its free trial or paid up, a second plan waiting
  * for its first charge (repeat_trial), one being set up (incomplete), or one with a payment to fix
  * (past_due: the account page and the ink dialog say how). Never offered a second checkout either:
  * that would be a second $25 a month. `none` and `canceled` have no plan: the plan screen.
@@ -108,7 +109,7 @@ export function unlimitedCheckoutUrl(payer: UnlimitedPayer | null | undefined, l
   return checkoutUrl(link, { userId: ref, email: null });
 }
 
-/** The day the free week ends if it starts now, for "You won't be charged until Friday, 10 October". */
+/** The day the free trial ends if it starts now, for "You won't be charged until Friday, 10 October". */
 export function trialEndsOn(now: Date, days: number = UNLIMITED_PLAN.trialDays): Date {
   return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
 }
@@ -132,7 +133,7 @@ const isoOrNull = (v: unknown): string | null => (typeof v === "string" && !Numb
  * status is Stripe's. Never throws; anything missing or malformed (an older database, a failed
  * read) is NO_UNLIMITED, so nobody is told they have a plan they may not have.
  *
- *  - trialing with `repeat_trial: true` (a free week on a second plan, which grants nothing) ->
+ *  - trialing with `repeat_trial: true` (a free trial on a second plan, which grants nothing) ->
  *    repeat_trial: help spends ink until the first charge
  *  - trialing / active -> as they are, unless the server says `unlimited: false` (the renewal is
  *    overdue past the grace): then past_due, the "check your payment" state, matching the server,
@@ -184,7 +185,7 @@ export function parseUnlimitedState(raw: unknown): UnlimitedState {
 }
 
 /**
- * True while the plan would charge the card again (in its free week, paid up, or retrying a failed
+ * True while the plan would charge the card again (in its free trial, paid up, or retrying a failed
  * payment) and is not set to cancel. Deleting the account then must wait until it is cancelled in
  * the portal: nothing in the app can cancel a Stripe subscription (no server key), and
  * delete_own_account() refuses too.

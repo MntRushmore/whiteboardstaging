@@ -61,7 +61,7 @@ export const LEGAL = {
     { ink: 14_000, priceUsd: 50 },
   ],
   /**
-   * Agathon Unlimited, beyond its price and free week (those are UNLIMITED_PLAN in
+   * Agathon Unlimited, beyond its price and free trial (those are UNLIMITED_PLAN in
    * src/lib/billing/unlimited.ts, which the pages read directly).
    */
   unlimited: {
@@ -88,9 +88,10 @@ export const LEGAL = {
  *
  * History: 2026-10-03, the first text (live with sign-up consent on 2026-10-03); 2026-10-04,
  * Agathon Unlimited, the emails, and the AI services named; 2026-10-05, no free plan (the app needs
- * Agathon Unlimited after the guided first board) and ink packs no longer sold.
+ * Agathon Unlimited after the guided first board) and ink packs no longer sold; 2026-10-06, a 3-day
+ * free trial instead of 7, and its reminder 1 to 2 days ahead.
  */
-export const TERMS_VERSION = "2026-10-05";
+export const TERMS_VERSION = "2026-10-06";
 
 /** True for a value still in [square brackets]. */
 export function isPlaceholder(value: string): boolean {

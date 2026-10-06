@@ -1626,7 +1626,7 @@ export async function checkInkPurchases({ a, b, anon, service }) {
  * Go-live gaps (20261003040000_go_live_gaps.sql): the checkout names the account by its
  * `profiles.checkout_ref`, which only its owner reads and nobody writes, and a USER ID sent as the
  * ref links nobody (so nobody can start a plan on someone else's account); the payer's email is on
- * the row its owner reads; and a second plan's free week grants nothing until it is paid.
+ * the row its owner reads; and a second plan's free trial grants nothing until it is paid.
  * @param {CheckContext} ctx
  */
 export async function checkUnlimited({ a, b, anon, service, newUser }) {
@@ -1723,7 +1723,7 @@ export async function checkUnlimited({ a, b, anon, service, newUser }) {
   const a1 = asObject((await rpc(a, "ink_summary")).body);
   out.push(
     result(
-      "apply + link (service role): A's free week is on (ink_summary reads trialing, unlimited)",
+      "apply + link (service role): A's free trial is on (ink_summary reads trialing, unlimited)",
       isOk(applied) && isOk(linked) && asObject(linked.body)?.linked === true && a1?.unlimited?.status === "trialing" && a1?.unlimited?.unlimited === true,
       `${describe(linked)} / ${JSON.stringify(a1?.unlimited ?? null)}`.slice(0, 200),
     ),
@@ -1829,7 +1829,7 @@ export async function checkUnlimited({ a, b, anon, service, newUser }) {
     ),
   );
 
-  // One free week per account: A's plan was cancelled, so a second plan's trial grants nothing
+  // One free trial per account: A's plan was cancelled, so a second plan's trial grants nothing
   // until its first payment (then it is Unlimited like any paid plan).
   const subA2 = `sub_rls_verify_${tag}_a2`;
   await rpc(service, "link_unlimited_checkout", { p_subscription_id: subA2, p_checkout_ref: refA });
@@ -1838,7 +1838,7 @@ export async function checkUnlimited({ a, b, anon, service, newUser }) {
   const second = asObject((await rpc(a, "consume_credits", { p_route: "rls-verify-repeat-trial", p_units: 1, p_request_id: `${request}-repeat` })).body);
   out.push(
     result(
-      "has_unlimited: a second plan's free week grants nothing (repeat_trial: help spends ink until it is paid)",
+      "has_unlimited: a second plan's free trial grants nothing (repeat_trial: help spends ink until it is paid)",
       a7?.unlimited?.status === "trialing" && a7?.unlimited?.unlimited === false && a7?.unlimited?.repeat_trial === true && second?.unlimited === undefined,
       `${JSON.stringify(a7?.unlimited ?? null)} / ${JSON.stringify(second)}`.slice(0, 200),
     ),

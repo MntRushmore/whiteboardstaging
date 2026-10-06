@@ -395,7 +395,7 @@ describe("the shared ink store (one request, one cache, one set of listeners per
       await h.answer(0, none); // before the webhook
       vi.advanceTimersByTime(CHECKOUT_WATCH_MS);
       expect(h.read).toHaveBeenCalledTimes(3);
-      await h.answer(0, trialing); // the free week arrived
+      await h.answer(0, trialing); // the free trial arrived
       vi.advanceTimersByTime(CHECKOUT_WATCH_MS * 10);
       expect(h.read).toHaveBeenCalledTimes(3);
       expect(h.store.getState().data?.unlimited).toEqual(trialing);

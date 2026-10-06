@@ -38,7 +38,7 @@
  * Covered (go-live gaps; 20261003040000_go_live_gaps.sql):
  *   - the checkout links by the account's checkout_ref (never its user id), with the payer's email,
  *     which goes when the account goes
- *   - a second plan's free week grants nothing (repeat_trial) until it turns active
+ *   - a second plan's free trial grants nothing (repeat_trial) until it turns active
  *   - purge_billing_event_payloads() blanks payloads older than 90 days, keeps the rows, service role only
  *
  * Covered (sign-up consent; 20261003010000_signup_consent.sql):
@@ -704,7 +704,7 @@ suite(title, () => {
     await service.rest("DELETE", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${sub}` } });
   }, 60_000);
 
-  it("go-live gaps: a user id links nobody, one free week per account, Stripe payloads purged after 90 days", async () => {
+  it("go-live gaps: a user id links nobody, one free trial per account, Stripe payloads purged after 90 days", async () => {
     if (!ctx.newUser) throw new Error("bootstrapVerifyContext did not provide newUser()");
     const c = await ctx.newUser();
     const uid = c.userId as string;
@@ -721,11 +721,11 @@ suite(title, () => {
     await apply(subs[0], "trialing", Date.now());
     expect(await plan()).toMatchObject({ status: "none", unlimited: false, checkout_ref: ref });
 
-    // the first plan's free week is Unlimited
+    // the first plan's free trial is Unlimited
     await rpc(service, "link_unlimited_checkout", { p_subscription_id: subs[1], p_checkout_ref: ref });
     await apply(subs[1], "trialing", Date.now());
     expect(await plan()).toMatchObject({ status: "trialing", unlimited: true, repeat_trial: false });
-    // cancelled, then a second checkout: its free week grants nothing, help spends ink
+    // cancelled, then a second checkout: its free trial grants nothing, help spends ink
     await apply(subs[1], "canceled", Date.now() + 1000, { p_ended_at: new Date().toISOString() });
     await rpc(service, "link_unlimited_checkout", { p_subscription_id: subs[2], p_checkout_ref: ref });
     await apply(subs[2], "trialing", Date.now() + 2000);

@@ -73,19 +73,19 @@ describe("terms: Agathon Unlimited as sold", () => {
   const terms = text(PAGES["/terms"]);
   const price = `$${UNLIMITED_PLAN.monthlyUsd}`;
 
-  it("states the price, the free week, the automatic renewal and when the card is charged", () => {
-    expect(UNLIMITED_PLAN).toMatchObject({ monthlyUsd: 25, trialDays: 7 });
+  it("states the price, the free trial, the automatic renewal and when the card is charged", () => {
+    expect(UNLIMITED_PLAN).toMatchObject({ monthlyUsd: 25, trialDays: 3 });
     expect(terms).toContain(`${price} a month`);
-    expect(terms).toContain(`When the free week ends, ${UNLIMITED_PLAN.trialDays} days after checkout, the card is charged ${price}.`);
+    expect(terms).toContain(`When the free trial ends, ${UNLIMITED_PLAN.trialDays} days after checkout, the card is charged ${price}.`);
     expect(terms).toContain("Checkout asks for a card but charges nothing that day.");
     expect(terms).toContain("It renews automatically");
     expect(terms).toContain("until you cancel");
   });
 
-  it("says how to cancel online, and that cancelling in the free week costs nothing", () => {
+  it("says how to cancel online, and that cancelling in the free trial costs nothing", () => {
     expect(terms).toContain("Cancel online at any time, in a few clicks. No phone call or email is needed.");
     expect(terms).toContain("Manage or cancel");
-    expect(terms).toContain("Cancel before the free week ends and you will not be charged.");
+    expect(terms).toContain("Cancel before the free trial ends and you will not be charged.");
     expect(terms).toContain("The plan stays on until the end of the month you have paid for");
   });
 
@@ -101,21 +101,31 @@ describe("terms: Agathon Unlimited as sold", () => {
     expect(terms).toContain(`${LEGAL.unlimited.fairUseActionsPerDay.toLocaleString("en-US")} AI actions in any 24 hours`);
   });
 
-  it("promises the reminder the cron actually sends: 2 to 3 days before the free week ends", () => {
-    // a daily run reminds trials ending 24 to 72 hours out, so the first run to see one is 2 to 3 days ahead
-    expect(TRIAL_REMINDER_WINDOW).toEqual({ fromMs: 24 * HOUR_MS, toMs: 72 * HOUR_MS });
-    expect(terms).toContain("About 2 to 3 days before the free week ends, we email them again");
+  it("promises the reminder the cron actually sends: 1 to 2 days before the free trial ends", () => {
+    // a daily run reminds trials ending 12 to 48 hours out, so the first run to see one is 1 to 2 days ahead
+    expect(TRIAL_REMINDER_WINDOW).toEqual({ fromMs: 12 * HOUR_MS, toMs: 48 * HOUR_MS });
+    expect(terms).toContain("About 1 to 2 days before the free trial ends, we email them again");
     // the confirmation, and both to the payer (src/lib/email/payer.ts)
-    expect(terms).toContain("When the free week starts, we email the person who paid, at the email used at checkout");
-    expect(text(PAGES["/privacy"])).toContain("one reminder about 2 to 3 days before the free week ends");
+    expect(terms).toContain("When the free trial starts, we email the person who paid, at the email used at checkout");
+    expect(text(PAGES["/privacy"])).toContain("one reminder about 1 to 2 days before the free trial ends");
   });
 
-  it("covers failed payments, price changes, who pays, repeat free weeks and deleting an account", () => {
+  it("covers failed payments, price changes, who pays, repeat free trials and deleting an account", () => {
     expect(terms).toContain("Until a payment goes through, help uses ink again");
     expect(terms).toContain(`at least ${LEGAL.unlimited.priceChangeNoticeDays} days ahead`);
     expect(terms).toContain("a parent or guardian starts the plan with their own card");
     expect(terms).toContain("We may limit it to one per person, family or card.");
     expect(terms).toContain("The app will not delete an account whose plan would charge the card again.");
+  });
+});
+
+describe("terms: the 3-day trial", () => {
+  const terms = text(PAGES["/terms"]);
+
+  it("states the trial's length, and that trials started before keep their 7 days", () => {
+    expect(terms).toContain("$25 a month after a 3-day free trial");
+    expect(terms).toContain("Trials started before October 6, 2026 keep the 7 days they started with.");
+    expect(terms).toContain("When the free trial ends, 3 days after checkout");
   });
 });
 
@@ -136,8 +146,8 @@ describe("refunds: the plan", () => {
   it("puts the plan's rule first and keeps the ink-pack rule for packs bought before they were retired", () => {
     expect(refunds).toContain(`within ${LEGAL.refundWindowDays} days of buying a pack`);
     expect(refunds).toContain("They are no longer sold, from October 5, 2026");
-    expect(refunds.indexOf("The free week is free.")).toBeLessThan(refunds.indexOf("Ink packs: what can be refunded"));
-    expect(refunds).toContain("The free week is free.");
+    expect(refunds.indexOf("The free trial costs nothing.")).toBeLessThan(refunds.indexOf("Ink packs: what can be refunded"));
+    expect(refunds).toContain("The free trial costs nothing.");
     expect(refunds).toContain(`within ${LEGAL.unlimited.refundWindowDays} days of that charge`);
     expect(refunds).toContain("no refunds for part of a month");
   });
@@ -164,7 +174,7 @@ describe("privacy: who gets what", () => {
   it("lists the emails we send, from the domain we send them from", () => {
     expect(DEFAULT_EMAIL_FROM).toContain("@mail.agathon.app");
     expect(privacy).toContain("mail.agathon.app");
-    for (const email of ["Password reset:", "Welcome:", "Free week started:", "Free week ending:"]) expect(privacy).toContain(email);
+    for (const email of ["Password reset:", "Welcome:", "Free trial started:", "Free trial ending:"]) expect(privacy).toContain(email);
     expect(privacy).toContain("emails about Agathon Unlimited, which go to the person who paid, at the email used at checkout");
     expect(privacy).toContain("We send no newsletters or marketing emails.");
   });

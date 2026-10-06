@@ -258,11 +258,11 @@ ${tip(pill("Ask", { filled: false }), askHtml)}
 }
 
 /* ------------------------------------------------------------------------- */
-/* Free week ending                                                           */
+/* Free trial ending                                                           */
 /* ------------------------------------------------------------------------- */
 
 export type TrialReminderInput = {
-  /** When the free week ends and the first charge is made (Stripe's `trial_end`). */
+  /** When the free trial ends and the first charge is made (Stripe's `trial_end`). */
   trialEnd: Date;
   /** Where to manage or cancel (NEXT_PUBLIC_BILLING_PORTAL_URL, else the account page). */
   manageUrl: string;
@@ -281,7 +281,7 @@ export function formatUsd(amount: number): string {
 }
 
 /**
- * Sent once per subscription, about two days before the free week ends (GET
+ * Sent once per subscription, about two days before the free trial ends (GET
  * /api/cron/trial-reminders). It says when the card will be charged and how much, that nothing is
  * needed to keep the plan, and how to cancel: the email that prevents a surprise charge, and so a
  * chargeback. Plain facts first; the cancel link is in the body, not hidden in the footer.
@@ -293,17 +293,17 @@ export function trialReminderEmail(input: TrialReminderInput): RenderedEmail {
   const site = siteLink(input.siteUrl, "/");
   const plan = input.planName;
 
-  const subject = `Your free week of ${plan} ends on ${day}`;
+  const subject = `Your free trial of ${plan} ends on ${day}`;
   const preheader = `On ${day}, your card will be charged ${price}. Nothing to do if you'd like to keep it.`;
-  const ends = `Your free week ends on ${day}, at ${time}.`;
+  const ends = `Your free trial ends on ${day}, at ${time}.`;
   const charge = `On ${day}, your card will be charged ${price} for ${plan}. After that it's ${price} a month until you cancel.`;
   const keep = "Nothing to do if you'd like to keep it.";
   const cancelLead = "To cancel, use";
-  const cancelTail = "Cancel before the free week ends and you won't be charged.";
-  const footer = `You're getting this email because ${plan} was started with a free week on your Agathon account.`;
+  const cancelTail = "Cancel before the free trial ends and you won't be charged.";
+  const footer = `You're getting this email because ${plan} was started with a free trial on your Agathon account.`;
 
   const card = [
-    heading("Your free week is almost over"),
+    heading("Your free trial is almost over"),
     paragraph(escapeHtml(ends)),
     paragraph(escapeHtml(charge)),
     paragraph(escapeHtml(keep)),
@@ -318,7 +318,7 @@ export function trialReminderEmail(input: TrialReminderInput): RenderedEmail {
     footer: `${escapeHtml(footer)} ${link("Open Agathon", site)}`,
   });
   const text = textBody([
-    "Your free week is almost over",
+    "Your free trial is almost over",
     ends,
     charge,
     keep,
@@ -332,11 +332,11 @@ export function trialReminderEmail(input: TrialReminderInput): RenderedEmail {
 }
 
 /* ------------------------------------------------------------------------- */
-/* Free week started                                                          */
+/* Free trial started                                                          */
 /* ------------------------------------------------------------------------- */
 
 export type UnlimitedStartedInput = {
-  /** When the free week ends and the first charge is made (Stripe's `trial_end`). */
+  /** When the free trial ends and the first charge is made (Stripe's `trial_end`). */
   trialEnd: Date;
   /** Where to manage or cancel (NEXT_PUBLIC_BILLING_PORTAL_URL, else the account page). */
   manageUrl: string;
@@ -346,9 +346,9 @@ export type UnlimitedStartedInput = {
   planName: string;
   monthlyUsd: number;
   /**
-   * A second (or later) plan on the account: its trial runs in Stripe, but the free week's help is
+   * A second (or later) plan on the account: its trial runs in Stripe, but the free trial's help is
    * for a first plan only (has_unlimited() in 20261003040000_go_live_gaps.sql), so the email says
-   * the plan starts with the first charge instead of welcoming a free week.
+   * the plan starts with the first charge instead of welcoming a free trial.
    */
   repeat?: boolean;
   timeZone?: string;
@@ -361,7 +361,7 @@ export const UNLIMITED_REFUNDS_PATH = "/refunds#subscriptions";
 
 /**
  * Sent once per subscription, to the person who paid, when the webhook first sees the plan in its
- * free week and linked to an account (src/lib/email/unlimitedStarted.ts). Auto-renewal laws ask for
+ * free trial and linked to an account (src/lib/email/unlimitedStarted.ts). Auto-renewal laws ask for
  * this acknowledgment: that the plan renews by itself, what it costs, when the card is first
  * charged and how to cancel, with the terms. Plain facts first; the cancel link is in the body.
  */
@@ -374,12 +374,12 @@ export function unlimitedStartedEmail(input: UnlimitedStartedInput): RenderedEma
   const refunds = siteLink(input.siteUrl, UNLIMITED_REFUNDS_PATH);
   const plan = input.planName;
 
-  const subject = input.repeat ? `Your ${plan} plan starts on ${day}` : `Your free week of ${plan} has started`;
-  const title = input.repeat ? "Your plan is set up" : "Your free week has started";
+  const subject = input.repeat ? `Your ${plan} plan starts on ${day}` : `Your free trial of ${plan} has started`;
+  const title = input.repeat ? "Your plan is set up" : "Your free trial has started";
   const preheader = `Nothing was charged today. Your card will be charged ${price} on ${day} unless you cancel before then.`;
-  const started = input.repeat ? `Your ${plan} plan is set up. Nothing was charged today.` : `Your free week of ${plan} has started. Nothing was charged today.`;
+  const started = input.repeat ? `Your ${plan} plan is set up. Nothing was charged today.` : `Your free trial of ${plan} has started. Nothing was charged today.`;
   const charge = `On ${day} at ${time}, your card will be charged ${price}, then ${price} every month until you cancel.`;
-  const firstPlanOnly = "The free week is for a first plan only, so until then help uses ink.";
+  const firstPlanOnly = "The free trial is for a first plan only, so until then help uses ink.";
   const cancelLead = "To cancel, use";
   const cancelTail = `Cancel before ${day} at ${time} and you won't be charged.`;
   const footer = `You're getting this email because ${plan} was started at checkout with this email address, for an Agathon account.`;

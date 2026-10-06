@@ -15,7 +15,7 @@ import { useInkSummary, watchCheckoutResult } from "@/lib/billing/useInkSummary"
  *
  * Back from checkout (`?unlimited=started` in the address), it watches for the plan: the webhook
  * usually lands within seconds of the redirect, often just after it, so the page re-reads every few
- * seconds (CHECKOUT_WATCH_MS) until the free week shows up, for up to ten minutes. `refresh()` reads
+ * seconds (CHECKOUT_WATCH_MS) until the free trial shows up, for up to ten minutes. `refresh()` reads
  * again now; a page that opens the checkout in a new tab can call `watchUnlimitedCheckout()`.
  */
 export function useUnlimited(): { state: UnlimitedState; loading: boolean; known: boolean; refresh: () => void } {

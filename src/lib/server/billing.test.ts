@@ -184,7 +184,7 @@ describe("responses", () => {
     expect(res.status).toBe(402);
     expect(await res.json()).toEqual({ error: "ink_empty", message: INK_EMPTY_MESSAGE, remaining: 4, buyUrl: BUY_INK_PATH });
     expect(BUY_INK_PATH).toBe("/welcome/plan");
-    expect(INK_EMPTY_MESSAGE).toBe("Help needs Agathon Unlimited. Start your free week to keep going.");
+    expect(INK_EMPTY_MESSAGE).toBe("Help needs Agathon Unlimited. Start your free trial to keep going.");
     // never a negative balance, and no billing link: Payment Links need the user's id, which only the client has
     process.env.NEXT_PUBLIC_BILLING_LINKS = JSON.stringify({ medium: "https://buy.stripe.com/x" });
     resetServerEnvCache();

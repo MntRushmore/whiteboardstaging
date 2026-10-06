@@ -10,7 +10,7 @@
 import { UNLIMITED_PLAN, trialEndsOn, type UnlimitedState } from "@/lib/billing/unlimited";
 
 export type PlanAction =
-  /** start the free week (the plan's Payment Link) */
+  /** start the free trial (the plan's Payment Link) */
   | "start"
   /** the customer portal: cancel, change the card, invoices */
   | "manage"
@@ -22,7 +22,7 @@ export type PlanAction =
 export interface PlanView {
   /** for tests and styling: which state the section is in */
   kind: "offer" | "trialing" | "repeat_trial" | "active" | "ending" | "past_due" | "pending" | "ended";
-  /** short label next to the title ("Free week", "Active", …); null for none */
+  /** short label next to the title ("Free trial", "Active", …); null for none */
   badge: string | null;
   /** the main sentence */
   headline: string;
@@ -48,12 +48,12 @@ export const PLAN_COPY = {
   /** the account page's section (`#billing`, the header menu's Billing) */
   billingTitle: "Billing",
   billingSubtitle: "Your plan, your card and your invoices.",
-  offer: `Agathon is ${UNLIMITED_PLAN.name}: ${PRICE} a month, and your first ${UNLIMITED_PLAN.trialDays} days are free. Cancel any time.`,
+  offer: `${UNLIMITED_PLAN.trialDays} days free, then ${PRICE} a month. Cancel any time.`,
   offerDetail: (firstCharge: string) => `A grown-up's card is needed at checkout. Nothing is charged until ${firstCharge}.`,
-  start: "Start the free week",
-  /** after a plan ended: a second plan has no free week (`has_unlimited`'s first-trial rule) */
+  start: "Start the free trial",
+  /** after a plan ended: a second plan has no free trial (`has_unlimited`'s first-trial rule) */
   restart: "Start Unlimited again",
-  restartDetail: `Start it again to keep using Agathon. The free week is for a first plan only: the first ${PRICE} is charged ${UNLIMITED_PLAN.trialDays} days after checkout, and help uses ink until then.`,
+  restartDetail: `Start it again to keep using Agathon. The free trial is for a first plan only: the first ${PRICE} is charged ${UNLIMITED_PLAN.trialDays} days after checkout, and help uses ink until then.`,
   comingSoon: "Coming soon",
   manage: "Manage or cancel",
   fixPayment: "Update your card",
@@ -65,8 +65,8 @@ export const PLAN_COPY = {
   deleteBlockedTitle: `Cancel ${UNLIMITED_PLAN.name} first`,
   deleteBlockedBody:
     "Deleting your account doesn't cancel your plan, so cancel it first. Once it's set to cancel, you won't be charged again and you can delete your account here.",
-  /** A second plan's free week (repeat_trial): no free help, said before the reader wonders why. */
-  repeatTrial: "The free week is for a first plan only, so help uses ink until then. Cancel before that day and you won't be charged.",
+  /** A second plan's free trial (repeat_trial): no free help, said before the reader wonders why. */
+  repeatTrial: "The free trial is for a first plan only, so help uses ink until then. Cancel before that day and you won't be charged.",
   /** The ink card's note for a subscriber: the balance is not being spent. */
   inkNote: "Agathon Unlimited is on, so help uses no ink. Your ink stays here for later.",
 } as const;
@@ -86,16 +86,16 @@ export function unlimitedPlanView(state: UnlimitedState, opts: { now: Date; time
       return ending
         ? {
             kind: "ending",
-            badge: "Free week",
-            headline: trialEnd ? `Your free week ends on ${trialEnd}, and your plan ends with it.` : "Your free week is on, and your plan ends with it.",
+            badge: "Free trial",
+            headline: trialEnd ? `Your free trial ends on ${trialEnd}, and your plan ends with it.` : "Your free trial is on, and your plan ends with it.",
             detail: "You won't be charged. Until then, help uses no ink.",
             action: "manage",
             actionLabel: PLAN_COPY.manage,
           }
         : {
             kind: "trialing",
-            badge: "Free week",
-            headline: trialEnd ? `Your free week ends on ${trialEnd}.` : "Your free week is on.",
+            badge: "Free trial",
+            headline: trialEnd ? `Your free trial ends on ${trialEnd}.` : "Your free trial is on.",
             detail: trialEnd
               ? `Then ${PRICE} a month, starting that day, until you cancel. Help uses no ink meanwhile.`
               : `Then ${PRICE} a month until you cancel. Help uses no ink meanwhile.`,
@@ -191,7 +191,7 @@ export interface BillingFact {
 
 const STATUS_WORDS: Record<UnlimitedState["status"], string> = {
   none: "Not started",
-  trialing: "Free week",
+  trialing: "Free trial",
   repeat_trial: "Starting",
   active: "Active",
   past_due: "Payment needed",

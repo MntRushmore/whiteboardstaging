@@ -347,7 +347,7 @@ export async function runCharged(
 
 // No free plan and no ink packs (2026-10-05): help without ink is help that needs the plan. The
 // words fit both who meet it: a student without a plan, and one whose plan spends ink right now.
-export const INK_EMPTY_MESSAGE = "Help needs Agathon Unlimited. Start your free week to keep going.";
+export const INK_EMPTY_MESSAGE = "Help needs Agathon Unlimited. Start your free trial to keep going.";
 export const BILLING_UNAVAILABLE_MESSAGE = "Billing is not set up on this deployment — run the migrations.";
 
 /** Where the 402 sends the user: the plan screen (a student with a plan is sent on to the home). */

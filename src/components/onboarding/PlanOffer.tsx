@@ -9,8 +9,8 @@ const PERK_ICONS = { help: Lightbulb, ask: MessageSquare, check: CheckCheck, cou
 
 export interface PlanOfferProps {
   /**
-   * `offer`: Start the free week opens checkout; `restart`: a plan that ended, started again (no
-   * free week); `soon`: no checkout yet, Continue goes home
+   * `offer`: Start the free trial opens checkout; `restart`: a plan that ended, started again (no
+   * free trial); `soon`: no checkout yet, Continue goes home
    */
   view: "offer" | "restart" | "soon";
   /** the day the card is first charged, in words (`chargeDateText`) */
@@ -24,11 +24,11 @@ export interface PlanOfferProps {
 
 /**
  * The plan screen's card (the route is src/app/(platform)/welcome/plan): Agathon Unlimited, its
- * price crossed out under "Free for 7 days", what it gives in four pictures, and — because the
+ * price crossed out under "Free for 3 days", what it gives in four pictures, and — because the
  * student is a child and the card is a grown-up's — "This part is for a grown-up" above the one
  * button, with the auto-renewal said plainly right under it. There is no free plan, so there is no
  * "Maybe later" (the app header's menu still has Account and Sign out). A plan that ended is
- * offered again without the free week. Without a checkout link the button says Coming soon and
+ * offered again without the free trial. Without a checkout link the button says Coming soon and
  * Continue goes home.
  *
  * Presentational: the route reads the session and the subscription and decides `view`.

@@ -10,7 +10,7 @@ const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " "
 const DATE = "Saturday, October 10";
 
 describe("the plan screen's card", () => {
-  it("offers the free week: the price crossed out, the grown-up, the button, and the renewal said right under it", () => {
+  it("offers the free trial: the price crossed out, the grown-up, the button, and the renewal said right under it", () => {
     const html = render(<PlanOffer view="offer" chargeDate={DATE} onStart={vi.fn()} onContinue={vi.fn()} />);
     expect(html).toContain('data-view="offer"');
     expect(html).toMatch(/<h1[^>]*id="plan-title"[^>]*>Agathon Unlimited<\/h1>/);
@@ -26,7 +26,7 @@ describe("the plan screen's card", () => {
     expect(start).toBeGreaterThan(-1);
     // in reading order: the button, then what it costs and when
     expect(disclosure).toBeGreaterThan(start);
-    // no free plan: no way past it but the free week (the header's menu has Account and Sign out)
+    // no free plan: no way past it but the free trial (the header's menu has Account and Sign out)
     expect(text(html)).not.toMatch(/Maybe later|Continue/);
     expect(html.match(/<button/g)).toHaveLength(1);
     expect(html).toMatch(/aria-describedby="plan-disclosure"/);
