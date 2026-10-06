@@ -52,7 +52,7 @@ export const dynamic = "force-dynamic";
  * other mode answers 400. Unset, a deployment accepts live events only, and a localhost dev
  * server accepts either (`stripe listen` forwards test events there).
  *
- * The free week's confirmation email (auto-renewal laws: the terms and how to cancel, to the payer):
+ * The free trial's confirmation email (auto-renewal laws: the terms and how to cancel, to the payer):
  * once the subscription is both linked to an account and trialing, by whichever of its events
  * completes that, the route asks for it AFTER answering (`deps.defer`, next/server's `after`), so
  * email never fails or slows this endpoint. Every redelivery asks again; email_log sends it once
@@ -189,7 +189,7 @@ export async function POST(req: Request): Promise<Response> {
     return json(500, "internal_error", "Could not apply the billing update.");
   };
   const done = (duplicate: boolean) => Response.json(duplicate ? { received: true, duplicate: true } : { received: true });
-  // The plan's "free week started" email, after the response (see the header): never awaited here.
+  // The plan's "free trial started" email, after the response (see the header): never awaited here.
   const confirmStartedLater = (subscriptionId: string) => deps.defer(() => deps.confirmStarted(subscriptionId, eventLog));
 
   if (mapped.kind === "review") {
@@ -237,7 +237,7 @@ export async function POST(req: Request): Promise<Response> {
         eventLog.warn({ subscription: l.subscriptionId, linkedTo: outcome.userId }, "Agathon Unlimited already linked to another account; the first link stands");
         return done(false);
       case "unlinked":
-        // Paid for (or in its free week) but nobody gets the plan: loud, so the owner links it by hand.
+        // Paid for (or in its free trial) but nobody gets the plan: loud, so the owner links it by hand.
         eventLog.warn(
           { subscription: l.subscriptionId, session: l.checkoutSessionId, customer: l.customerId, reason: outcome.reason },
           "Agathon Unlimited checkout NOT linked to an account: link it by hand (docs/RUNBOOK-billing.md)",

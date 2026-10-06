@@ -1,5 +1,5 @@
 /**
- * "Your free week of Agathon Unlimited has started": the acknowledgment auto-renewal laws ask for
+ * "Your free trial of Agathon Unlimited has started": the acknowledgment auto-renewal laws ask for
  * when a plan that renews by itself begins. Sent once per subscription, to the person who paid
  * (src/lib/email/payer.ts), saying nothing was charged today, when the card will be charged $25 and
  * then every month, how to cancel and that cancelling before then costs nothing, with the plan's
@@ -15,7 +15,7 @@
  * (`runStartedSweep`), while the trial still has more than a day to go.
  *
  * Who gets none: a subscription linked to nobody, not trialing, already set to cancel by the end of
- * the free week (no charge is coming), with its trial end passed or less than an hour away, or
+ * the free trial (no charge is coming), with its trial end passed or less than an hour away, or
  * where neither the payer nor the account has an address.
  *
  * Never throws: `sendUnlimitedStarted` answers what happened, for the caller's log.
@@ -31,11 +31,15 @@ import { SEND_SPACING_MS } from "@/lib/email/trialReminders";
 
 const HOUR_MS = 60 * 60 * 1000;
 
-/** No "has started" email for a free week that ends sooner than this: the reminder has gone already. */
+/** No "has started" email for a free trial that ends sooner than this: the reminder has gone already. */
 export const STARTED_MIN_LEAD_MS = HOUR_MS;
 
-/** The daily sweep confirms trials ending in [now + 24 h, now + 8 days): started within the week, not ending tomorrow. */
-export const STARTED_SWEEP_WINDOW = { fromMs: 24 * HOUR_MS, toMs: 8 * 24 * HOUR_MS } as const;
+/**
+ * The daily sweep confirms trials ending in [now + 48 h, now + 8 days): started recently, and not
+ * yet in the reminder's window (TRIAL_REMINDER_WINDOW ends at 48 h), so a late "has started" never
+ * lands beside the reminder. With the 3-day trial that leaves the sweep the trial's first day.
+ */
+export const STARTED_SWEEP_WINDOW = { fromMs: 48 * HOUR_MS, toMs: 8 * 24 * HOUR_MS } as const;
 
 /** One subscription as the email needs it (unlimited_subscriptions, service role). */
 export type StartedRow = {
@@ -46,7 +50,7 @@ export type StartedRow = {
   cancelAtPeriodEnd: boolean;
   cancelAt: string | null;
   payerEmail: string | null;
-  /** The account had an Unlimited plan before this one: its free week grants nothing (has_unlimited()). */
+  /** The account had an Unlimited plan before this one: its free trial grants nothing (has_unlimited()). */
   repeat: boolean;
 };
 
@@ -133,17 +137,17 @@ export async function sendUnlimitedStarted(deps: EmailDeps, subscriptionId: stri
   try {
     const env: EmailEnv = deps.getEnv();
     if (!env.hasServiceRole || !env.resend.apiKey) {
-      log.warn(where, "free week started email not sent: RESEND_API_KEY or SUPABASE_SERVICE_ROLE_KEY is not set");
+      log.warn(where, "free trial started email not sent: RESEND_API_KEY or SUPABASE_SERVICE_ROLE_KEY is not set");
       return { status: "skipped", reason: "not_configured" };
     }
     const row = await deps.findSubscription(subscriptionId);
     if (row && "error" in row) {
-      log.error({ ...where, error: row.error }, "free week started email: could not read the subscription; the daily cron retries");
+      log.error({ ...where, error: row.error }, "free trial started email: could not read the subscription; the daily cron retries");
       return { status: "failed", error: row.error };
     }
     const skip = startedSkipReason(row, deps.now());
     if (skip || !row || !row.userId) {
-      log.info({ ...where, reason: skip }, "free week started email not due");
+      log.info({ ...where, reason: skip }, "free trial started email not due");
       return { status: "skipped", reason: skip ?? "no_user" };
     }
     const store = deps.logStore();
@@ -152,11 +156,11 @@ export async function sendUnlimitedStarted(deps: EmailDeps, subscriptionId: stri
 
     const to = await billingRecipient({ payerEmail: row.payerEmail, userId: row.userId }, deps.emailOf);
     if ("error" in to) {
-      log.error({ ...where, error: to.error }, "free week started email: could not look up the account's email; the daily cron retries");
+      log.error({ ...where, error: to.error }, "free trial started email: could not look up the account's email; the daily cron retries");
       return { status: "failed", error: to.error };
     }
     if (!to.email) {
-      log.warn({ ...where, userId: row.userId }, "free week started email not sent: neither the payer nor the account has an email address");
+      log.warn({ ...where, userId: row.userId }, "free trial started email not sent: neither the payer nor the account has an email address");
       return { status: "skipped", reason: "no_email" };
     }
     if (!env.manageIsPortal) log.warn(where, "NEXT_PUBLIC_BILLING_PORTAL_URL is not set: the email's cancel link opens the account page");
@@ -177,23 +181,23 @@ export async function sendUnlimitedStarted(deps: EmailDeps, subscriptionId: stri
     });
     switch (outcome.status) {
       case "sent":
-        log.info({ ...where, userId: row.userId, to: to.source, repeat: row.repeat, resendId: outcome.id }, "free week started email sent");
+        log.info({ ...where, userId: row.userId, to: to.source, repeat: row.repeat, resendId: outcome.id }, "free trial started email sent");
         return { status: "sent", id: outcome.id, to: to.source };
       case "already_sent":
         return { status: "already_sent" };
       default:
-        log.error({ ...where, status: outcome.status, error: outcome.error }, "free week started email not sent; the daily cron retries");
+        log.error({ ...where, status: outcome.status, error: outcome.error }, "free trial started email not sent; the daily cron retries");
         return { status: "failed", error: outcome.error };
     }
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    log.error({ ...where, error }, "free week started email failed; the daily cron retries");
+    log.error({ ...where, error }, "free trial started email failed; the daily cron retries");
     return { status: "failed", error };
   }
 }
 
 export type StartedSweepSummary = {
-  /** trialing subscriptions with an account whose free week ends 1 to 8 days from now */
+  /** trialing subscriptions with an account whose free trial ends 1 to 8 days from now */
   found: number;
   alreadySent: number;
   sent: number;

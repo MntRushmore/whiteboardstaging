@@ -372,7 +372,7 @@ function mapSubscription(event: BillingEvent, obj: Record<string, unknown>): Map
  *        paid: a 100 % promotion code), or paid without a usable user id or pack -> review.
  *        Ours with `mode: "subscription"` and `metadata.plan_id = unlimited` -> link the
  *        subscription to the account whose checkout ref is `client_reference_id` (whatever
- *        `payment_status` says: a free week's checkout pays nothing, and the subscription's own
+ *        `payment_status` says: a free trial's checkout pays nothing, and the subscription's own
  *        status decides the plan), with the payer's email; without a usable ref it is still
  *        recorded, linked to nobody, for the owner. Any other subscription checkout
  *        (the retired Plus/Pro links) -> ignored.
@@ -667,7 +667,7 @@ export type WebhookDeps = {
   /** Unix seconds (signature tolerance). */
   now: () => number;
   /**
-   * The "free week started" email for a subscription that may just have become linked and trialing
+   * The "free trial started" email for a subscription that may just have become linked and trialing
    * (src/lib/email/unlimitedStarted.ts: it checks, and email_log sends it once). Never throws.
    */
   confirmStarted: (subscriptionId: string, log: pino.Logger) => Promise<unknown>;

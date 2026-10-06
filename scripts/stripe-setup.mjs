@@ -21,7 +21,7 @@
  *     Session, where the webhook reads it) and a redirect back to the account page; the app appends
  *     `client_reference_id=<user id>` and `prefilled_email=<email>` (src/lib/billing/checkout.ts)
  *   - Agathon Unlimited (UNLIMITED below): a product, a $25 MONTHLY price, and a subscription
- *     Payment Link with the 7-day free trial on it (`subscription_data.trial_period_days`), the card
+ *     Payment Link with the 3-day free trial on it (`subscription_data.trial_period_days`), the card
  *     taken up front (`payment_method_collection: always`), `metadata.plan_id = unlimited` on the
  *     link (so on its Checkout Sessions) and on every subscription it starts
  *     (`subscription_data.metadata`), and a redirect to `<site>/?unlimited=started`
@@ -79,13 +79,14 @@ export const WEBHOOK_EVENTS = Object.freeze([
 ]);
 
 /**
- * Agathon Unlimited, at the owner's price (2026-10-03): $25 a month after a 7-day free trial. Keep it
+ * Agathon Unlimited, at the owner's price (2026-10-03): $25 a month after a 3-day free trial (7 days
+ * until 2026-10-06; the live link was updated in place, `trial_days` metadata with it). Keep it
  * equal to UNLIMITED_PLAN in src/lib/billing/unlimited.ts (what the app shows): stripeSetup.test.ts
  * pins the two together. Changing the price or the trial makes a new price and Payment Link (the old
  * link is deactivated; subscribers on the old price keep it until they cancel).
  * @type {Readonly<{ id: string, name: string, priceCents: number, currency: string, interval: "month", trialDays: number }>}
  */
-export const UNLIMITED = Object.freeze({ id: "unlimited", name: "Agathon Unlimited", priceCents: 2500, currency: "usd", interval: "month", trialDays: 7 });
+export const UNLIMITED = Object.freeze({ id: "unlimited", name: "Agathon Unlimited", priceCents: 2500, currency: "usd", interval: "month", trialDays: 3 });
 
 /** The subscription plans this script sold before ink; their objects are retired on every run. */
 export const RETIRED_PLAN_IDS = Object.freeze(["plus", "pro"]);
@@ -302,7 +303,7 @@ const dollars = (cents) => `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}
  * subscription payment's descriptor from its invoice, else from the first item's PRODUCT
  * `statement_descriptor`, else the account's (docs.stripe.com/get-started/account/statement-descriptors),
  * so it is set on the product: every invoice of every Unlimited subscription, the first $25 after
- * the free week included, shows it. Stripe's rules: 5 to 22 Latin characters, at least one letter,
+ * the free trial included, shows it. Stripe's rules: 5 to 22 Latin characters, at least one letter,
  * none of < > \ ' " *.
  */
 export const UNLIMITED_STATEMENT_DESCRIPTOR = "AGATHON";
@@ -329,11 +330,11 @@ export function unlimitedPriceBody(productId) {
   };
 }
 
-/** Shown above Checkout's button: what happens after the free week, in plain words. */
-export const UNLIMITED_CHECKOUT_NOTE = `Free for ${UNLIMITED.trialDays} days, then ${dollars(UNLIMITED.priceCents)} a ${UNLIMITED.interval} until you cancel. Cancel before the free week ends and you won't be charged.`;
+/** Shown above Checkout's button: what happens after the free trial, in plain words. */
+export const UNLIMITED_CHECKOUT_NOTE = `Free for ${UNLIMITED.trialDays} days, then ${dollars(UNLIMITED.priceCents)} a ${UNLIMITED.interval} until you cancel. Cancel before the free trial ends and you won't be charged.`;
 
 /**
- * The Unlimited Payment Link, in subscription mode (a recurring price makes it one). The free week
+ * The Unlimited Payment Link, in subscription mode (a recurring price makes it one). The free trial
  * is on the link (`subscription_data.trial_period_days`), and the card is collected up front
  * (`payment_method_collection: always`), so the plan renews by itself unless cancelled. `metadata`
  * goes onto every Checkout Session (the webhook links the subscription to `client_reference_id`
@@ -358,7 +359,7 @@ export function unlimitedLinkBody(priceId, site) {
 }
 
 /**
- * The customer portal for Unlimited: cancel (at the end of the free week or the paid month, so the
+ * The customer portal for Unlimited: cancel (at the end of the free trial or the paid month, so the
  * time paid for is kept and nothing more is charged), update the card, see invoices. No plan
  * switching (there is one plan) and no changes to the customer's details. `login_page.enabled`
  * gives the no-code login link the account page opens (NEXT_PUBLIC_BILLING_PORTAL_URL): the
@@ -745,7 +746,7 @@ export async function setup(opts, deps = {}) {
     priceMap[price.id] = pack.id;
   }
 
-  // Agathon Unlimited: the monthly plan with the free week.
+  // Agathon Unlimited: the monthly plan with the free trial.
   log(`\n${UNLIMITED.name}: ${dollars(UNLIMITED.priceCents)} a ${UNLIMITED.interval} after ${UNLIMITED.trialDays} days free`);
   let uProduct = findUnlimitedProduct(products);
   const uBody = unlimitedProductBody();

@@ -1,12 +1,12 @@
 /**
- * The boards home, back from starting the free week (the plan's Payment Link returns to
+ * The boards home, back from starting the free trial (the plan's Payment Link returns to
  * `/?unlimited=started`, `isUnlimitedReturn`): what it says, and the URL without the parameter.
  * Pure, and apart from the plan screen's words (`plan.ts`): the home loads only these.
  */
 import { UNLIMITED_RETURN_PARAM } from "@/lib/billing/unlimited";
 
 export const ARRIVAL_COPY = {
-  started: "Your free week has started!",
+  started: "Your free trial has started!",
   startedHint: "Help me, Solve and Ask are unlimited now. Have fun!",
 } as const;
 

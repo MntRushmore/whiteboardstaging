@@ -1176,7 +1176,7 @@ describe("rlsChecks against a correctly secured fake", () => {
     expect(failures(results)).toEqual([]);
     expect(results.length).toBeGreaterThanOrEqual(20);
     expect(state.subs).toEqual([]);
-    // the paid spends are the check's own "after the plan ends" call and the second plan's free week (it grants nothing)
+    // the paid spends are the check's own "after the plan ends" call and the second plan's free trial (it grants nothing)
     expect(state.usage.filter((r) => r.user_id === USER_A).map((r) => r.route)).toEqual(["rls-verify-unlimited", "rls-verify-repeat-trial"]);
     expect(state.inkGrants.filter((g) => g.kind === "manual")).toEqual([]);
     // C (whose deletion had to wait for the cancellation) is gone again
@@ -1353,7 +1353,7 @@ describe("rlsChecks detect individual leaks", () => {
     ["profileCrossRead", checkUnlimited, "profiles: B cannot read A's checkout_ref (select returns [])"],
     ["checkoutRefPatchable", checkUnlimited, "profiles: A cannot change own checkout_ref (42501), and it is unchanged"],
     ["checkoutRefByUserId", checkUnlimited, "link_unlimited_checkout: A's user id as the checkout reference links nobody (no plan on A's account)"],
-    ["unlimitedRepeatTrial", checkUnlimited, "has_unlimited: a second plan's free week grants nothing (repeat_trial: help spends ink until it is paid)"],
+    ["unlimitedRepeatTrial", checkUnlimited, "has_unlimited: a second plan's free trial grants nothing (repeat_trial: help spends ink until it is paid)"],
     ["payerEmailDropped", checkUnlimited, "unlimited_subscriptions: A's row carries the payer's email from the checkout"],
     ["purgeOpen", checkBillingRetention, "purge_billing_event_payloads: A cannot call it"],
     ["purgeKeepsOld", checkBillingRetention, "purge_billing_event_payloads (service role): a payload older than 90 days is blanked, its row kept"],

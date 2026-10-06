@@ -35,8 +35,8 @@ describe("describeApiError", () => {
     });
     expect(INK_BUY_PATH).toBe("/welcome/plan");
     expect(INK_EMPTY_MESSAGE).not.toMatch(/rushil|credit/i);
-    expect(describeApiError(new ApiError("Help needs Agathon Unlimited. Start your free week to keep going.", 402, "ink_empty")).message).toBe(
-      "Help needs Agathon Unlimited. Start your free week to keep going.",
+    expect(describeApiError(new ApiError("Help needs Agathon Unlimited. Start your free trial to keep going.", 402, "ink_empty")).message).toBe(
+      "Help needs Agathon Unlimited. Start your free trial to keep going.",
     );
     // apiJson's own fallback text is not a human message either
     expect(describeApiError(new ApiError("Request failed (402)", 402)).message).toBe(INK_EMPTY_MESSAGE);

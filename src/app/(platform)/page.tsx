@@ -46,7 +46,7 @@ const EXIT_WRITE_WAIT_MS = 3000;
 
 // First-run welcome: loaded only for a new student with no boards (see useWelcome).
 const Welcome = lazy(() => import('@/components/onboarding/Welcome'));
-// The confetti that welcomes a student back from starting their free week (useHomeArrival).
+// The confetti that welcomes a student back from starting their free trial (useHomeArrival).
 const ConfettiBurst = lazy(() => import('@/components/onboarding/ConfettiBurst').then((m) => ({ default: m.ConfettiBurst })));
 
 const SORT_OPTIONS = BOARD_SORTS.map((s) => ({ value: s.value, label: s.label }));
@@ -151,7 +151,7 @@ export default function Dashboard() {
   useEffect(() => {
     toast.dismiss();
   }, []);
-  // Onboarding's last screens: back from starting the free week (a toast and confetti), or the
+  // Onboarding's last screens: back from starting the free trial (a toast and confetti), or the
   // plan screen still due. After the dismiss above, so the welcome toast stays.
   const cheer = useHomeArrival(user?.id);
 

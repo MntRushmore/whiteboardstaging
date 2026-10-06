@@ -452,17 +452,22 @@ small server route with a restricted key (Checkout Sessions: write).
 
 ## 10. Agathon Unlimited
 
-**$25 a month after a 7-day free trial** (owner, 2026-10-03). While a user's subscription is
+**$25 a month after a 3-day free trial** (owner, 2026-10-03; the trial was 7 days until 2026-10-06).
+The live Payment Link was changed in place on 2026-10-06, right after the app's copy deployed:
+`stripe payment_links update <plink> --live -d "subscription_data[trial_period_days]=3" -d "metadata[trial_days]=3"`
+(the URL stays the same, so NEXT_PUBLIC_UNLIMITED_LINK did not change). Trials started before keep
+their 7 days: Stripe fixes a subscription's trial at checkout. Change the app first, then the link,
+so the date the app promises is never later than the day Stripe charges. While a user's subscription is
 `trialing` or `active`, help spends **no ink**, and a subscriber keeps whatever ink they had. Since
 2026-10-05 there is no free plan: without a plan (none, or a plan that ended) the home, the boards
 and Progress send the student to the plan screen (`usePlanGate`, `src/lib/billing/planGate.ts`).
 
-- **Checkout.** One subscription Payment Link (`NEXT_PUBLIC_UNLIMITED_LINK`) with the free week on
+- **Checkout.** One subscription Payment Link (`NEXT_PUBLIC_UNLIMITED_LINK`) with the free trial on
   it (`subscription_data.trial_period_days = 7`) and the card taken up front
   (`payment_method_collection: always`), so it renews at $25 unless cancelled. The app opens it
   with `client_reference_id=<the account's checkout_ref>` (NOT the user id, unlike the packs: see
   section 12) from the last onboarding screen and from `/account`'s Plan section ("Try Unlimited
-  free for 7 days"). After checkout Stripe redirects to
+  free for 3 days"). After checkout Stripe redirects to
   `<site>/?unlimited=started`, where the page re-reads every few seconds until the plan shows up.
   Nothing is charged at checkout; Stripe charges $25 when the trial ends.
 - **Tags.** The product, price, link and its Checkout Sessions carry `metadata.app =
@@ -494,7 +499,7 @@ and Progress send the student to the plan screen (`usePlanGate`, `src/lib/billin
   failed call's count is given back with its (zero) ink refund.
 - **The customer portal** (`NEXT_PUBLIC_BILLING_PORTAL_URL`): Stripe's no-code login page for the
   Unlimited portal configuration, where the grown-up signs in with the checkout's email (a one-time
-  code) and cancels (at the end of the free week or the paid month), changes the card or reads
+  code) and cancels (at the end of the free trial or the paid month), changes the card or reads
   invoices. "Manage or cancel" on `/account` opens it with the email prefilled.
 - **Deleting an account** with a plan that would charge again (trialing, active or past_due, not
   set to cancel) is refused, in the app and in `delete_own_account()`: the dialog sends the
@@ -569,7 +574,7 @@ The owner's steps, **in this order**:
    subscription**; `unpaid` also works but leaves it lingering), the failed-payment and
    trial-ending emails, and receipts for successful payments.
 6. **Update the legal pages** before selling. Terms: the plan renews at $25 a month, charged
-   automatically to the card given at checkout when the 7-day free trial ends and every month
+   automatically to the card given at checkout when the 3-day free trial ends and every month
    after, until cancelled; how to cancel (the customer portal, any time; before the trial ends
    means no charge; a cancellation takes effect at the end of the paid period); the fair-use
    limit; what happens when a payment fails (help uses ink until it is fixed); that a grown-up's
@@ -578,17 +583,17 @@ The owner's steps, **in this order**:
    Stripe ids, the plan's status and dates, and a record of the help a subscriber used; the
    subscription record stays (without the account link) after an account is deleted.
 7. **A real trial signup and cancel** on https://whiteboard.rushilchopra.com:
-   1. Sign in with a real account and start the free week (onboarding's last screen, or `/account`
-      → *Try Unlimited free for 7 days*). Checkout shows "7 days free, then $25.00 per month" and
+   1. Sign in with a real account and start the free trial (onboarding's last screen, or `/account`
+      → *Try Unlimited free for 3 days*). Checkout shows "3 days free, then $25.00 per month" and
       the note under the button; pay with a real card (nothing is charged today).
    2. Back on the home (`/?unlimited=started`), the header shows **∞ Unlimited** within seconds;
-      `/account` says "Your free week ends on …". In the Dashboard, the endpoint shows
+      `/account` says "Your free trial ends on …". In the Dashboard, the endpoint shows
       `checkout.session.completed` and `customer.subscription.created` answered `200`.
    3. Use help on a board: the ink balance does not move, and
       `select route, units, created_at from public.unlimited_usage order by id desc limit 5;`
       shows the actions.
    4. *Manage or cancel* → sign in to the portal with the checkout's email → cancel. Back on
-      `/account` (it re-reads on focus): "Your free week ends on …, and your plan ends with it. You
+      `/account` (it re-reads on focus): "Your free trial ends on …, and your plan ends with it. You
       won't be charged." `customer.subscription.updated` answered `200`.
    5. *Delete account* is now allowed (before the cancellation it sent you to the portal).
       Optionally end the subscription at once in the Dashboard (*Cancel immediately*): the plan
@@ -605,7 +610,7 @@ select u.email, s.status, s.trial_end, s.current_period_end, s.cancel_at_period_
 from public.unlimited_subscriptions s left join auth.users u on u.id = s.user_id
 order by s.updated_at desc;
 
--- paid for (or in the free week) but linked to nobody: the link was opened outside the app, or the
+-- paid for (or in the free trial) but linked to nobody: the link was opened outside the app, or the
 -- account is gone. Find the customer in the Dashboard by the subscription id, then link it:
 select stripe_subscription_id, stripe_customer_id, checkout_session_id, status, created_at
 from public.unlimited_subscriptions
@@ -657,14 +662,14 @@ Ink packs still carry the user id: buying ink for someone else is a gift, harmle
 `scripts/verify-rls.mjs` checks that B cannot read A's ref, A cannot change it, and A's user id as
 the ref links nothing.
 
-### One free week per account (the trade-off)
+### One free trial per account (the trade-off)
 
-Every checkout through the Payment Link starts a new 7-day trial in Stripe, so an account could
+Every checkout through the Payment Link starts a new 3-day trial in Stripe, so an account could
 cancel and start again forever without paying. `has_unlimited()` now counts a `trialing`
 subscription only when it is the account's **first** Unlimited subscription (no earlier row of
 theirs that ever started, i.e. anything but `incomplete_expired`). A later trial still runs in
 Stripe and charges $25 when it ends, as its checkout said; until then **help spends ink**, and the
-Plan section says "Your plan starts on <date>, with the first $25 charge. The free week is for a
+Plan section says "Your plan starts on <date>, with the first $25 charge. The free trial is for a
 first plan only, so help uses ink until then." The trade-off, accepted: **a returning subscriber
 who starts a second plan pays in ink during that week** (or cancels in the portal before it ends
 and is not charged). It does not stop a new account with the same card: the Terms already say free
@@ -687,7 +692,7 @@ weeks may be limited to one per person, family or card, which covers cancelling 
   request's metadata for billing. An account-level `improve_mathpix` value (set by Mathpix support)
   overrides the per-request one: leave it unset, or have it set to false.
 
-### The plan's emails go to the payer; the free week is confirmed
+### The plan's emails go to the payer; the free trial is confirmed
 
 - **Payer email.** Stripe gives the payer's email only on the checkout (`customer_details.email`,
   else `customer_email`); `link_unlimited_checkout(…, p_payer_email)` stores it on the row
@@ -696,11 +701,11 @@ weeks may be limited to one per person, family or card, which covers cancelling 
   (`src/lib/email/payer.ts`). The account reads its own row (RLS unchanged); when the account is
   deleted, the trigger `unlimited_subscriptions_forget_payer` blanks the email with the user id, so
   the row kept for the owner names nobody.
-- **"Your free week of Agathon Unlimited has started"** (`src/lib/email/unlimitedStarted.ts`,
+- **"Your free trial of Agathon Unlimited has started"** (`src/lib/email/unlimitedStarted.ts`,
   template `unlimitedStartedEmail`): nothing charged today; the date, time (Eastern) and amount of
   the first charge, then $25 every month until cancelled; *Manage or cancel*; cancel before that
   moment and nothing is charged; links to `/terms#unlimited` and `/refunds#subscriptions`. A second
-  plan's version says the plan starts with the first charge (its free week grants nothing). Sent
+  plan's version says the plan starts with the first charge (its free trial grants nothing). Sent
   when the webhook sees the subscription both linked and `trialing` (either event may complete
   that), **after** answering Stripe (`after()` from `next/server`): email never fails or slows the
   webhook. Once per subscription (`email_log` kind `unlimited_started`, ref = subscription id; Resend

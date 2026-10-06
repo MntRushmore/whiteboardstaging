@@ -2,9 +2,9 @@
  * The plan screen: where every student without a plan ends up. There is no free plan (owner,
  * 2026-10-05): it comes right after the guided board, and the home, the boards and Progress send
  * anyone without Agathon Unlimited back to it (`usePlanGate`). It offers the plan
- * (`src/lib/billing/unlimited.ts`) with its free week — the price crossed out, nothing charged
- * today — says plainly that a grown-up's card is charged when the week ends, and has no "Maybe
- * later": the way on is the free week (or the app header's menu: Account, Sign out).
+ * (`src/lib/billing/unlimited.ts`) with its free trial — the price crossed out, nothing charged
+ * today — says plainly that a grown-up's card is charged when the trial ends, and has no "Maybe
+ * later": the way on is the free trial (or the app header's menu: Account, Sign out).
  *
  * Pure: what the screen shows, its words, and the date it needs. The route is
  * src/app/(platform)/welcome/plan; where it is, `planMarker.ts`; the home's welcome back from
@@ -14,10 +14,10 @@ import { UNLIMITED_PLAN, hasPlan, type UnlimitedState } from "@/lib/billing/unli
 
 /**
  * - `checking`: the subscription is still being read (nothing shows: a subscriber is never pitched);
- * - `skip`: the account has a plan (`hasPlan`: in its free week, paid up, a second plan waiting for
+ * - `skip`: the account has a plan (`hasPlan`: in its free trial, paid up, a second plan waiting for
  *   its first charge, one being set up or with a payment to fix): straight on to the home;
- * - `offer`: the pitch, with Start the free week;
- * - `restart`: a plan that ended, offered again: a second plan has no free week (`has_unlimited`'s
+ * - `offer`: the pitch, with Start the free trial;
+ * - `restart`: a plan that ended, offered again: a second plan has no free trial (`has_unlimited`'s
  *   first-plan rule), so nothing is crossed out;
  * - `soon`: the pitch without a checkout (the Payment Link is not configured): "Coming soon", and
  *   Continue goes home (the paywall is off without a checkout too: `planGate`).
@@ -72,15 +72,15 @@ export const PLAN_COPY = {
   // against urging a child to ask a parent to buy.
   grownUp: "This part is for a grown-up",
   grownUpHint: "A parent or guardian adds a card at checkout. It takes a minute.",
-  start: "Start the free week",
+  start: "Start the free trial",
   opening: "Opening checkout…",
   /** the auto-renewal disclosure, right under the button */
   disclosure: (date: string) =>
     `Nothing is charged today. The card is charged ${PRICE} on ${date}, then every month, unless you cancel before then.`,
-  /** a plan that ended, offered again (`restart`): no free week, so no crossed-out price */
+  /** a plan that ended, offered again (`restart`): no free trial, so no crossed-out price */
   welcomeBack: "Welcome back",
   restart: "Start Unlimited again",
-  restartNote: "The free week is for a first plan only, so help uses your ink until the first charge.",
+  restartNote: "The free trial is for a first plan only, so help uses your ink until the first charge.",
   /** under the disclosure: the plan's terms, and the fair-use limit "Unlimited" is subject to */
   termsLink: { href: "/terms#unlimited", text: "How the plan works" },
   fairUseLink: { href: "/terms#fair-use", text: "Fair use" },

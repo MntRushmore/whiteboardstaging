@@ -132,7 +132,7 @@ export const LIVE_COPY = {
     rateLimited: (seconds: number) => `Slowing down — try again in ${waitPhrase(seconds)}`,
     rateLimitedReady: "You can try again now",
     /** 402 without a usable server message; "Unlock help" opens the plan dialog */
-    ink: "Help needs Agathon Unlimited — start your free week to keep going",
+    ink: "Help needs Agathon Unlimited — start your free trial to keep going",
     upstream: "The tutor service had a hiccup",
     timeout: "Reading took too long",
     /** a check or a solve whose stream went silent (a stalled connection) */
@@ -151,7 +151,7 @@ export const LIVE_COPY = {
     retry: "Retry",
     dismiss: "Dismiss",
     signIn: "Sign in",
-    /** 402: opens the ink dialog (the plan: start the free week, or fix it) */
+    /** 402: opens the ink dialog (the plan: start the free trial, or fix it) */
     getInk: "Unlock help",
     /** aria label of the error region */
     region: "Live needs attention",

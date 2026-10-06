@@ -67,7 +67,7 @@ export function fakeDeps(opts: {
   onboardedAt?: string | null | { error: string };
   trials?: TrialRow[] | { error: string };
   emails?: Record<string, string | null | { error: string }>;
-  /** unlimited_subscriptions by Stripe id, for the "free week started" email */
+  /** unlimited_subscriptions by Stripe id, for the "free trial started" email */
   subscriptions?: Record<string, StartedRow | { error: string }>;
 } = {}): FakeDeps {
   const log = memoryEmailLog();

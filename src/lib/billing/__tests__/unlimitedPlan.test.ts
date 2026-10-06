@@ -17,43 +17,43 @@ describe("planDate", () => {
 });
 
 describe("unlimitedPlanView", () => {
-  it("offers the free week to someone without the plan, saying when the first charge would be", () => {
+  it("offers the free trial to someone without the plan, saying when the first charge would be", () => {
     expect(view({})).toEqual({
       kind: "offer",
       badge: null,
-      headline: "Agathon is Agathon Unlimited: $25 a month, and your first 7 days are free. Cancel any time.",
-      detail: "A grown-up's card is needed at checkout. Nothing is charged until Saturday, October 10.",
+      headline: "3 days free, then $25 a month. Cancel any time.",
+      detail: "A grown-up's card is needed at checkout. Nothing is charged until Tuesday, October 6.",
       action: "start",
-      actionLabel: "Start the free week",
+      actionLabel: "Start the free trial",
     });
   });
 
-  it("the free week: when it ends and what happens then", () => {
+  it("the free trial: when it ends and what happens then", () => {
     expect(view({ status: "trialing", trialEnd: "2026-10-10T15:00:00Z", currentPeriodEnd: "2026-10-10T15:00:00Z" })).toMatchObject({
       kind: "trialing",
-      badge: "Free week",
-      headline: "Your free week ends on Saturday, October 10.",
+      badge: "Free trial",
+      headline: "Your free trial ends on Saturday, October 10.",
       detail: "Then $25 a month, starting that day, until you cancel. Help uses no ink meanwhile.",
       action: "manage",
       actionLabel: "Manage or cancel",
     });
   });
 
-  it("a free week set to cancel: no charge", () => {
+  it("a free trial set to cancel: no charge", () => {
     expect(view({ status: "trialing", trialEnd: "2026-10-10T15:00:00Z", currentPeriodEnd: "2026-10-10T15:00:00Z", cancelAtPeriodEnd: true })).toMatchObject({
       kind: "ending",
-      headline: "Your free week ends on Saturday, October 10, and your plan ends with it.",
+      headline: "Your free trial ends on Saturday, October 10, and your plan ends with it.",
       detail: "You won't be charged. Until then, help uses no ink.",
       action: "manage",
     });
   });
 
-  it("a second plan's free week: it starts with the first charge, and help uses ink until then", () => {
+  it("a second plan's free trial: it starts with the first charge, and help uses ink until then", () => {
     expect(view({ status: "repeat_trial", trialEnd: "2026-10-10T15:00:00Z", currentPeriodEnd: "2026-10-10T15:00:00Z" })).toEqual({
       kind: "repeat_trial",
       badge: "Starting",
       headline: "Your plan starts on Saturday, October 10, with the first $25 charge.",
-      detail: "The free week is for a first plan only, so help uses ink until then. Cancel before that day and you won't be charged.",
+      detail: "The free trial is for a first plan only, so help uses ink until then. Cancel before that day and you won't be charged.",
       action: "manage",
       actionLabel: "Manage or cancel",
     });
@@ -105,7 +105,7 @@ describe("unlimitedPlanView", () => {
   });
 
   it("dates that are missing still read as sentences", () => {
-    expect(view({ status: "trialing" }).headline).toBe("Your free week is on.");
+    expect(view({ status: "trialing" }).headline).toBe("Your free trial is on.");
     expect(view({ status: "active" }).headline).toBe("$25 a month until you cancel.");
   });
 
@@ -128,8 +128,8 @@ describe("billingFacts", () => {
     expect(facts({})).toEqual({ Plan: "Agathon Unlimited", Price: "$25 a month", Status: "Not started" });
   });
 
-  it("the free week: when the first charge is", () => {
-    expect(facts({ status: "trialing", trialEnd: "2026-10-10T15:00:00Z" })).toMatchObject({ Status: "Free week", "First charge": "$25 on Saturday, October 10" });
+  it("the free trial: when the first charge is", () => {
+    expect(facts({ status: "trialing", trialEnd: "2026-10-10T15:00:00Z" })).toMatchObject({ Status: "Free trial", "First charge": "$25 on Saturday, October 10" });
     expect(facts({ status: "repeat_trial", trialEnd: "2026-10-10T15:00:00Z" })).toMatchObject({ Status: "Starting", "First charge": "$25 on Saturday, October 10" });
   });
 

@@ -1,5 +1,5 @@
 /**
- * The free-week reminder (src/lib/email/trialReminders.ts): the date window, who is skipped, the
+ * The free-trial reminder (src/lib/email/trialReminders.ts): the date window, who is skipped, the
  * one query against the subscriptions table, and a whole run with fake deps.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -21,7 +21,7 @@ import {
 import { PORTAL, fakeDeps, silentLog, testEnv } from "./fakes";
 
 const HOUR = 60 * 60 * 1000;
-const NOW = new Date("2026-10-07T15:00:00Z");
+const NOW = new Date("2026-10-08T15:00:00Z");
 const at = (hoursFromNow: number) => new Date(NOW.getTime() + hoursFromNow * HOUR).toISOString();
 
 function trial(over: Partial<TrialRow> = {}): TrialRow {
@@ -29,7 +29,7 @@ function trial(over: Partial<TrialRow> = {}): TrialRow {
     subscriptionId: "sub_1",
     userId: "11111111-2222-4333-8444-555555555555",
     status: "trialing",
-    trialEnd: at(60),
+    trialEnd: at(30),
     cancelAtPeriodEnd: false,
     cancelAt: null,
     payerEmail: null,
@@ -38,15 +38,15 @@ function trial(over: Partial<TrialRow> = {}): TrialRow {
 }
 
 describe("reminderWindow / reminderSkipReason", () => {
-  it("covers trials ending 24 to 72 hours from now", () => {
-    expect(reminderWindow(NOW)).toEqual({ from: new Date(at(24)), to: new Date(at(72)) });
+  it("covers trials ending 12 to 48 hours from now (sized for the 3-day trial)", () => {
+    expect(reminderWindow(NOW)).toEqual({ from: new Date(at(12)), to: new Date(at(48)) });
   });
 
   it("reminds a trialing subscription with a user, ending inside the window", () => {
     const w = reminderWindow(NOW);
     expect(reminderSkipReason(trial(), w)).toBeNull();
-    expect(reminderSkipReason(trial({ trialEnd: at(24) }), w)).toBeNull(); // from is inclusive
-    expect(reminderSkipReason(trial({ trialEnd: at(71.99) }), w)).toBeNull();
+    expect(reminderSkipReason(trial({ trialEnd: at(12) }), w)).toBeNull(); // from is inclusive
+    expect(reminderSkipReason(trial({ trialEnd: at(47.99) }), w)).toBeNull();
   });
 
   it("skips what will not be charged, or cannot be told", () => {
@@ -54,24 +54,25 @@ describe("reminderWindow / reminderSkipReason", () => {
     expect(reminderSkipReason(trial({ userId: null }), w)).toBe("no_user");
     expect(reminderSkipReason(trial({ status: "active" }), w)).toBe("not_trialing");
     expect(reminderSkipReason(trial({ status: null }), w)).toBe("not_trialing");
-    expect(reminderSkipReason(trial({ trialEnd: at(72) }), w)).toBe("outside_window"); // to is exclusive
-    expect(reminderSkipReason(trial({ trialEnd: at(23) }), w)).toBe("outside_window");
+    expect(reminderSkipReason(trial({ trialEnd: at(48) }), w)).toBe("outside_window"); // to is exclusive
+    expect(reminderSkipReason(trial({ trialEnd: at(11) }), w)).toBe("outside_window");
     expect(reminderSkipReason(trial({ trialEnd: null }), w)).toBe("outside_window");
     expect(reminderSkipReason(trial({ cancelAtPeriodEnd: true }), w)).toBe("cancelling");
-    expect(reminderSkipReason(trial({ cancelAt: at(60) }), w)).toBe("cancelling"); // at the trial end
-    expect(reminderSkipReason(trial({ cancelAt: at(30) }), w)).toBe("cancelling"); // before it
+    expect(reminderSkipReason(trial({ cancelAt: at(30) }), w)).toBe("cancelling"); // at the trial end
+    expect(reminderSkipReason(trial({ cancelAt: at(20) }), w)).toBe("cancelling"); // before it
     expect(reminderSkipReason(trial({ cancelAt: at(24 * 40) }), w)).toBeNull(); // after the first charge: it still charges
   });
 
-  it("with one run a day, every trial is reminded on exactly one run 48-72 h ahead, with one more run to retry", () => {
+  it("with one run a day, every trial is first reminded 24-48 h ahead, and a retry run follows when 36 h or more were left", () => {
     const runs = Array.from({ length: 20 }, (_, d) => new Date(Date.UTC(2026, 9, 1, 15, 0) + d * 24 * HOUR));
     for (let minutes = 0; minutes < 7 * 24 * 60; minutes += 37) {
       const end = new Date(Date.UTC(2026, 9, 8, 0, 0) + minutes * 60_000).toISOString();
       const inWindow = runs.filter((now) => reminderSkipReason(trial({ trialEnd: end }), reminderWindow(now)) === null);
-      expect(inWindow, end).toHaveLength(2);
       const lead = (Date.parse(end) - inWindow[0].getTime()) / HOUR;
-      expect(lead, end).toBeGreaterThanOrEqual(48);
-      expect(lead, end).toBeLessThan(72);
+      expect(lead, end).toBeGreaterThanOrEqual(24);
+      expect(lead, end).toBeLessThan(48);
+      // a 3-day trial is never reminded on the day it starts: the first lead is under 72 h
+      expect(inWindow, end).toHaveLength(lead >= 36 ? 2 : 1);
     }
   });
 
@@ -101,8 +102,8 @@ function recordingAdmin(result: { data?: unknown; error?: { message: string } | 
 }
 
 describe("trialsEndingBetween (the one query against the subscriptions table)", () => {
-  const from = new Date(at(24));
-  const to = new Date(at(72));
+  const from = new Date(at(12));
+  const to = new Date(at(48));
 
   it("asks for trialing rows with a user, ending in [from, to), soonest first", async () => {
     const { admin, calls } = recordingAdmin({ data: [] });
@@ -152,7 +153,7 @@ describe("runTrialReminders", () => {
   const rows = [
     trial({ subscriptionId: "sub_due", userId: "u_due", trialEnd: "2026-10-10T03:04:00.000Z" }),
     trial({ subscriptionId: "sub_cancel", userId: "u_cancel", cancelAtPeriodEnd: true }),
-    trial({ subscriptionId: "sub_cancel_at", userId: "u_cancel_at", cancelAt: at(50) }),
+    trial({ subscriptionId: "sub_cancel_at", userId: "u_cancel_at", cancelAt: at(20) }),
     trial({ subscriptionId: "sub_nobody", userId: null }),
   ];
 
@@ -161,7 +162,7 @@ describe("runTrialReminders", () => {
     const summary = await runTrialReminders(deps, testEnv(), { dryRun: false }, silentLog());
     expect(summary).toEqual({
       dryRun: false,
-      window: { from: at(24), to: at(72) },
+      window: { from: at(12), to: at(48) },
       found: 4,
       due: 1,
       alreadySent: 0,
@@ -170,11 +171,11 @@ describe("runTrialReminders", () => {
       skipped: { noUser: 1, cancelling: 2, noEmail: 0 },
       deferred: 0,
     });
-    expect(deps.findTrials).toHaveBeenCalledWith(new Date(at(24)), new Date(at(72)));
+    expect(deps.findTrials).toHaveBeenCalledWith(new Date(at(12)), new Date(at(48)));
     expect(deps.emailOf).toHaveBeenCalledTimes(1);
     const [message] = deps.sent;
     expect(message.to).toBe("parent@example.com");
-    expect(message.subject).toBe(`Your free week of ${UNLIMITED_PLAN.name} ends on Friday, October 9`);
+    expect(message.subject).toBe(`Your free trial of ${UNLIMITED_PLAN.name} ends on Friday, October 9`);
     expect(message.text).toContain(`On Friday, October 9, your card will be charged $${UNLIMITED_PLAN.monthlyUsd} for ${UNLIMITED_PLAN.name}.`);
     expect(message.text).toContain(PORTAL);
     expect(message.idempotencyKey).toBe("trial-reminder/sub_due/1791601440");

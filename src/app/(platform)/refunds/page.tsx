@@ -32,7 +32,7 @@ export default function RefundsPage() {
       summary={
         <ul>
           <li>
-            {plan}: cancel during the free week and you are never charged. Charged {price} and did not mean to keep
+            {plan}: cancel during the free trial and you are never charged. Charged {price} and did not mean to keep
             the plan? Ask within {planDays} days and we refund that charge.
           </li>
           <li>
@@ -46,12 +46,12 @@ export default function RefundsPage() {
       <LegalSection id="subscriptions" title={`${plan} (subscription)`}>
         <ul>
           <li>
-            <strong>The free week is free.</strong> Cancel before it ends and you are never charged. See{" "}
+            <strong>The free trial costs nothing.</strong> Cancel before it ends and you are never charged. See{" "}
             <Link href="/terms#unlimited">how to cancel</Link>.
           </li>
           <li>
             <strong>Charged and did not mean to keep it?</strong> If you forgot to cancel, or a charge was a mistake, ask
-            within <strong>{planDays} days</strong> of that charge (the first {price} after the free week, or any monthly
+            within <strong>{planDays} days</strong> of that charge (the first {price} after the free trial, or any monthly
             renewal). We refund that charge in full and end the plan straight away.
           </li>
           <li>

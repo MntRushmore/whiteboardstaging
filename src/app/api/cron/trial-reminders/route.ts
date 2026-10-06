@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * GET /api/cron/trial-reminders — "Your free week ends on <date>" for every Agathon Unlimited
+ * GET /api/cron/trial-reminders — "Your free trial ends on <date>" for every Agathon Unlimited
  * trial ending 24 to 72 hours from now, once per subscription (Vercel cron, daily; logic in
  * src/lib/email/trialReminders.ts).
  *
@@ -26,7 +26,7 @@ export const maxDuration = 60;
  * second run the same day finds nothing new. `?dryRun=1` lists what would be sent and sends nothing
  * (and needs no RESEND_API_KEY).
  *
- * The same run catches up the "free week started" emails the billing webhook could not send
+ * The same run catches up the "free trial started" emails the billing webhook could not send
  * (`runStartedSweep`, src/lib/email/unlimitedStarted.ts: trials with more than a day left and no
  * such email in email_log). Its failure is logged and reported, never a 500 for the reminders.
  *
@@ -82,7 +82,7 @@ export async function GET(req: Request) {
     started = await runStartedSweep(emailDeps, { dryRun }, log.child({ requestId }));
   } catch (err) {
     started = { error: "could not run" };
-    log.error({ requestId, dryRun, error: err instanceof Error ? err.message : String(err) }, "free week started catch-up failed");
+    log.error({ requestId, dryRun, error: err instanceof Error ? err.message : String(err) }, "free trial started catch-up failed");
   }
   const { wouldSend, ...counts } = summary;
   log.info({ requestId, durationMs: Date.now() - startedAt, ...counts, wouldSend: wouldSend?.length, started }, "trial reminders summary");

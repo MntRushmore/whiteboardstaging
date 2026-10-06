@@ -1,5 +1,5 @@
 /**
- * "Your free week of Agathon Unlimited has started" (src/lib/email/unlimitedStarted.ts): when it is
+ * "Your free trial of Agathon Unlimited has started" (src/lib/email/unlimitedStarted.ts): when it is
  * due, the one query for the subscription, who it goes to (the payer, else the account), once per
  * subscription, the second-plan wording, and the daily catch-up. The webhook's side (after the
  * answer, never failing it) is in src/lib/server/__tests__/billingWebhook.test.ts.
@@ -39,7 +39,7 @@ function row(over: Partial<StartedRow> = {}): StartedRow {
 }
 
 describe("startedSkipReason", () => {
-  it("is due for a linked plan in its free week, set to renew", () => {
+  it("is due for a linked plan in its free trial, set to renew", () => {
     expect(startedSkipReason(row(), NOW)).toBeNull();
     expect(startedSkipReason(row({ cancelAt: at(40 * 24) }), NOW)).toBeNull(); // cancels after the first charge: still charges
   });
@@ -158,8 +158,8 @@ describe("sendUnlimitedStarted", () => {
     expect(await sendUnlimitedStarted(deps, "sub_1", log)).toEqual({ status: "sent", id: "re_1", to: "payer" });
     const [message] = deps.sent;
     expect(message.to).toBe("parent@example.com");
-    expect(message.subject).toBe("Your free week of Agathon Unlimited has started");
-    expect(message.text).toContain("Your free week of Agathon Unlimited has started. Nothing was charged today.");
+    expect(message.subject).toBe("Your free trial of Agathon Unlimited has started");
+    expect(message.text).toContain("Your free trial of Agathon Unlimited has started. Nothing was charged today.");
     expect(message.text).toContain("On Saturday, October 10 at 3:30 PM EDT, your card will be charged $25, then $25 every month until you cancel.");
     expect(message.text).toContain(`To cancel, use Manage or cancel: ${PORTAL}`);
     expect(message.text).toContain("Cancel before Saturday, October 10 at 3:30 PM EDT and you won't be charged.");
@@ -180,12 +180,12 @@ describe("sendUnlimitedStarted", () => {
     expect(deps.sent[0].to).toBe("account@example.com");
   });
 
-  it("a second plan's email says the plan starts with the first charge (its free week grants nothing)", async () => {
+  it("a second plan's email says the plan starts with the first charge (its free trial grants nothing)", async () => {
     const deps = fakeDeps({ now: NOW, subscriptions: { sub_1: row({ repeat: true, trialEnd: "2026-10-10T19:30:00.000Z" }) } });
     await sendUnlimitedStarted(deps, "sub_1", silentLog());
     expect(deps.sent[0].subject).toBe("Your Agathon Unlimited plan starts on Saturday, October 10");
-    expect(deps.sent[0].text).toContain("The free week is for a first plan only, so until then help uses ink.");
-    expect(deps.sent[0].text).not.toContain("Your free week of");
+    expect(deps.sent[0].text).toContain("The free trial is for a first plan only, so until then help uses ink.");
+    expect(deps.sent[0].text).not.toContain("Your free trial of");
   });
 
   it("sends nothing that is not due, and says why", async () => {

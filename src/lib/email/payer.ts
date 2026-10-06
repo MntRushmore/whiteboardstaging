@@ -4,7 +4,7 @@
  * school address nobody reads). Stripe knows the payer's email from the checkout
  * (`customer_details.email`); the webhook stores it on the subscription row
  * (`unlimited_subscriptions.payer_email`, 20261003040000_go_live_gaps.sql). The plan's emails (the
- * free week started, the free week ending) go there, and fall back to the account's address only
+ * free trial started, the free trial ending) go there, and fall back to the account's address only
  * when the row has none (a subscription linked before payer_email existed, or a checkout without
  * an email).
  */

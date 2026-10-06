@@ -39,8 +39,8 @@ function row(overrides: Record<string, unknown> = {}) {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("the contract", () => {
-  it("the plan is $25 a month after a 7-day free trial", () => {
-    expect(UNLIMITED_PLAN).toEqual({ id: "unlimited", name: "Agathon Unlimited", monthlyUsd: 25, trialDays: 7 });
+  it("the plan is $25 a month after a 3-day free trial", () => {
+    expect(UNLIMITED_PLAN).toEqual({ id: "unlimited", name: "Agathon Unlimited", monthlyUsd: 25, trialDays: 3 });
   });
 
   it("only trialing and active spend no ink", () => {
@@ -71,8 +71,8 @@ describe("the contract", () => {
     expect(parseUnlimitedLink("")).toBeNull();
   });
 
-  it("the free week ends seven days from now; the return is ?unlimited=started", () => {
-    expect(trialEndsOn(new Date("2026-10-03T12:00:00Z")).toISOString()).toBe("2026-10-10T12:00:00.000Z");
+  it("the free trial ends three days from now; the return is ?unlimited=started", () => {
+    expect(trialEndsOn(new Date("2026-10-03T12:00:00Z")).toISOString()).toBe("2026-10-06T12:00:00.000Z");
     expect(isUnlimitedReturn("?unlimited=started")).toBe(true);
     expect(isUnlimitedReturn(new URLSearchParams("a=1&unlimited=started"))).toBe(true);
     expect(isUnlimitedReturn("?unlimited=maybe")).toBe(false);
@@ -81,7 +81,7 @@ describe("the contract", () => {
 });
 
 describe("parseUnlimitedState (ink_summary().unlimited)", () => {
-  it("a free week, as it is", () => {
+  it("a free trial, as it is", () => {
     expect(parseUnlimitedState(row())).toEqual({ status: "trialing", trialEnd: WEEK, currentPeriodEnd: WEEK, cancelAtPeriodEnd: false, checkoutRef: REF });
   });
 
@@ -95,7 +95,7 @@ describe("parseUnlimitedState (ink_summary().unlimited)", () => {
     });
   });
 
-  it("a second plan's free week (repeat_trial: the server grants nothing) is its own state, not a payment problem", () => {
+  it("a second plan's free trial (repeat_trial: the server grants nothing) is its own state, not a payment problem", () => {
     expect(parseUnlimitedState(row({ unlimited: false, repeat_trial: true }))).toMatchObject({ status: "repeat_trial", trialEnd: WEEK });
     expect(isUnlimited(parseUnlimitedState(row({ unlimited: false, repeat_trial: true })))).toBe(false);
     // once it is paid it is active like any other plan
@@ -147,7 +147,7 @@ describe("mustCancelBeforeDeleting", () => {
     expect(mustCancelBeforeDeleting({ status: "trialing", cancelAtPeriodEnd: false })).toBe(true);
     expect(mustCancelBeforeDeleting({ status: "active", cancelAtPeriodEnd: false })).toBe(true);
     expect(mustCancelBeforeDeleting({ status: "past_due", cancelAtPeriodEnd: false })).toBe(true);
-    // a second plan's free week charges when it ends, like the first
+    // a second plan's free trial charges when it ends, like the first
     expect(mustCancelBeforeDeleting({ status: "repeat_trial", cancelAtPeriodEnd: false })).toBe(true);
     expect(mustCancelBeforeDeleting({ status: "active", cancelAtPeriodEnd: true })).toBe(false);
     for (const status of ["none", "canceled", "incomplete"] as const) expect(mustCancelBeforeDeleting({ status, cancelAtPeriodEnd: false })).toBe(false);

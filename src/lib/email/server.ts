@@ -2,7 +2,7 @@
  * What the email routes read from outside the request: the env, the service-role email log, the
  * caller's profile, the subscriptions, an account's address, Resend, the clock. The routes
  * (src/app/api/email/welcome, src/app/api/cron/trial-reminders, and the billing webhook's
- * "free week started" email) call `emailDeps`; tests replace it.
+ * "free trial started" email) call `emailDeps`; tests replace it.
  * Route files may not read process.env or export helpers (routeProtection.test.ts), so all of this
  * lives here.
  *
@@ -76,7 +76,7 @@ export type EmailDeps = {
   logStore: () => EmailLogStore;
   /** The caller's profiles.onboarded_at, read AS the caller (RLS: a user reads only their own profile). */
   readOnboardedAt: (token: string, userId: string) => Promise<{ onboardedAt: string | null } | { error: string }>;
-  /** Trialing subscriptions whose free week ends in [from, to), through the service role. */
+  /** Trialing subscriptions whose free trial ends in [from, to), through the service role. */
   findTrials: (from: Date, to: Date) => Promise<TrialRow[] | { error: string }>;
   /** One subscription by its Stripe id (null when there is none), through the service role. */
   findSubscription: (subscriptionId: string) => Promise<StartedRow | null | { error: string }>;

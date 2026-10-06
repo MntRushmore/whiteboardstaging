@@ -7,7 +7,7 @@ import { isApiError, isOutOfInk } from "@/lib/api-client";
 import { PLAN_PATH } from "@/lib/onboarding/planMarker";
 
 /** 402 without a usable server message (the server's own words). The toast links to the plan screen. */
-export const INK_EMPTY_MESSAGE = "Help needs Agathon Unlimited. Start your free week to keep going.";
+export const INK_EMPTY_MESSAGE = "Help needs Agathon Unlimited. Start your free trial to keep going.";
 /** Where a 402 sends the user: the plan screen. */
 export const INK_BUY_PATH = PLAN_PATH;
 /** The 402 toast's action. */

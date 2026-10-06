@@ -16,7 +16,7 @@ const trialDays = UNLIMITED_PLAN.trialDays;
 const fairUse = LEGAL.unlimited.fairUseActionsPerDay.toLocaleString("en-US");
 
 // DRAFT for the owner and counsel to review (src/lib/legal.ts). Static: no request data.
-// Every statement about the plan is what the code does: the Payment Link (free week, card up front,
+// Every statement about the plan is what the code does: the Payment Link (free trial, card up front,
 // monthly renewal), the customer portal (cancel at the period end), has_unlimited() (past_due spends
 // ink), unlimited_fair_use_per_day(), delete_own_account() (refuses while a plan would charge again)
 // and the trial-reminder cron (src/lib/email/trialReminders.ts).
@@ -30,8 +30,8 @@ export default function TermsPage() {
           <li>Children under 13 need a parent or guardian to set up and agree to their account.</li>
           <li>Your boards are yours. We use them only to run Agathon for you.</li>
           <li>
-            Using {LEGAL.productName} takes {plan}: {price} a month after a free week. There is no free plan. It renews
-            by itself until you cancel, and you can cancel online at any time. Cancel during the free week and you pay
+            Using {LEGAL.productName} takes {plan}: {price} a month after a {trialDays}-day free trial. There is no free plan. It renews
+            by itself until you cancel, and you can cancel online at any time. Cancel during the free trial and you pay
             nothing (<a href="#unlimited">how it works</a>).
           </li>
           <li>
@@ -153,25 +153,26 @@ export default function TermsPage() {
           first board, the app needs it. While it is on, AI help does not use ink.
         </p>
 
-        <h3>Price and free week</h3>
+        <h3>Price and free trial</h3>
         <ul>
           <li>
             <strong>{price} a month</strong> (US dollars, plus any tax that applies), after a{" "}
-            <strong>free week</strong>.
+            <strong>{trialDays}-day free trial</strong>. Trials started before October 6, 2026 keep the 7 days they
+            started with.
           </li>
-          <li>The free week starts when you finish checkout. Checkout asks for a card but charges nothing that day.</li>
+          <li>The free trial starts when you finish checkout. Checkout asks for a card but charges nothing that day.</li>
           <li>
-            When the free week ends, {trialDays} days after checkout, the card is charged {price}. After that it is
+            When the free trial ends, {trialDays} days after checkout, the card is charged {price}. After that it is
             charged {price} once a month, on the same day of the month, until you cancel.
           </li>
         </ul>
 
         <h3>It renews automatically</h3>
         <p>
-          By starting the free week, you agree that we may charge the card you gave {price} when the free week ends and
-          then every month, until you cancel. You do not need to do anything to keep the plan. When the free week
+          By starting the free trial, you agree that we may charge the card you gave {price} when the free trial ends and
+          then every month, until you cancel. You do not need to do anything to keep the plan. When the free trial
           starts, we email the person who paid, at the email used at checkout, to confirm it: nothing was charged, the
-          date and amount of the first charge, and how to cancel. About 2 to 3 days before the free week ends, we email
+          date and amount of the first charge, and how to cancel. About 1 to 2 days before the free trial ends, we email
           them again with the date and the amount, and a link to cancel.
         </p>
 
@@ -183,8 +184,8 @@ export default function TermsPage() {
             Stripe’s billing page with the email used at checkout, and cancel the plan.
           </li>
           <li>
-            <strong>Cancel before the free week ends and you will not be charged.</strong> Help stays unlimited until
-            the free week is over.
+            <strong>Cancel before the free trial ends and you will not be charged.</strong> Help stays unlimited until
+            the free trial is over.
           </li>
           <li>
             After that, cancelling stops the next charge. The plan stays on until the end of the month you have paid for,
@@ -238,10 +239,10 @@ export default function TermsPage() {
           </li>
         </ul>
 
-        <h3>Free weeks</h3>
+        <h3>Free trials</h3>
         <p>
-          The free week is for new subscribers. We may limit it to one per person, family or card. If we find a repeat
-          free week, we may cancel it (nothing is charged) or not offer one.
+          The free trial is for new subscribers. We may limit it to one per person, family or card. If we find a repeat
+          free trial, we may cancel it (nothing is charged) or not offer one.
         </p>
 
         <h3>Your ink, and if we shut down</h3>
