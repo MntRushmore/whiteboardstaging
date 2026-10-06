@@ -39,8 +39,8 @@ function row(overrides: Record<string, unknown> = {}) {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("the contract", () => {
-  it("the plan is $25 a month after a 3-day free trial", () => {
-    expect(UNLIMITED_PLAN).toEqual({ id: "unlimited", name: "Agathon Unlimited", monthlyUsd: 25, trialDays: 3 });
+  it("the plan is $25 a month after a 7-day free trial", () => {
+    expect(UNLIMITED_PLAN).toEqual({ id: "unlimited", name: "Agathon Unlimited", monthlyUsd: 25, trialDays: 7 });
   });
 
   it("only trialing and active spend no ink", () => {
@@ -71,8 +71,8 @@ describe("the contract", () => {
     expect(parseUnlimitedLink("")).toBeNull();
   });
 
-  it("the free trial ends three days from now; the return is ?unlimited=started", () => {
-    expect(trialEndsOn(new Date("2026-10-03T12:00:00Z")).toISOString()).toBe("2026-10-06T12:00:00.000Z");
+  it("the free trial ends seven days from now; the return is ?unlimited=started", () => {
+    expect(trialEndsOn(new Date("2026-10-03T12:00:00Z")).toISOString()).toBe("2026-10-10T12:00:00.000Z");
     expect(isUnlimitedReturn("?unlimited=started")).toBe(true);
     expect(isUnlimitedReturn(new URLSearchParams("a=1&unlimited=started"))).toBe(true);
     expect(isUnlimitedReturn("?unlimited=maybe")).toBe(false);

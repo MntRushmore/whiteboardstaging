@@ -157,8 +157,8 @@ export default function TermsPage() {
         <ul>
           <li>
             <strong>{price} a month</strong> (US dollars, plus any tax that applies), after a{" "}
-            <strong>{trialDays}-day free trial</strong>. Trials started before October 6, 2026 keep the 7 days they
-            started with.
+            <strong>{trialDays}-day free trial</strong>. If your checkout showed a different length, your free trial is
+            the length checkout showed.
           </li>
           <li>The free trial starts when you finish checkout. Checkout asks for a card but charges nothing that day.</li>
           <li>
@@ -172,7 +172,7 @@ export default function TermsPage() {
           By starting the free trial, you agree that we may charge the card you gave {price} when the free trial ends and
           then every month, until you cancel. You do not need to do anything to keep the plan. When the free trial
           starts, we email the person who paid, at the email used at checkout, to confirm it: nothing was charged, the
-          date and amount of the first charge, and how to cancel. About 1 to 2 days before the free trial ends, we email
+          date and amount of the first charge, and how to cancel. About 2 to 3 days before the free trial ends, we email
           them again with the date and the amount, and a link to cancel.
         </p>
 

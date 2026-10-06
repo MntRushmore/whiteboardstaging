@@ -2,9 +2,9 @@
  * Agathon Unlimited: THE plan. There is no free plan (owner, 2026-10-05): a new student gets the
  * guided first board (its starter ink covers it), then the plan screen, which they cannot skip.
  *
- *  - $25 a month after a 3-day free trial (7 days until 2026-10-06: the owner heard a week was too
- *    long; trials started before keep their 7 days, Stripe fixes a trial's length at checkout).
- *    Nothing is charged today. A grown-up's card is taken up front at Stripe Checkout, through a
+ *  - $25 a month after a 7-day free trial. (For a few hours on 2026-10-06 it was 3 days; the two
+ *    trials started then keep their 3 days: Stripe fixes a trial's length at checkout.) Nothing is
+ *    charged today. A grown-up's card is taken up front at Stripe Checkout, through a
  *    subscription Payment Link with the trial on it (NEXT_PUBLIC_UNLIMITED_LINK, made by
  *    scripts/stripe-setup.mjs), opened with this account's CHECKOUT REFERENCE (not its user id:
  *    `unlimitedCheckoutUrl`), which the webhook resolves to the account.
@@ -21,7 +21,7 @@ export const UNLIMITED_PLAN = {
   id: "unlimited",
   name: "Agathon Unlimited",
   monthlyUsd: 25,
-  trialDays: 3,
+  trialDays: 7,
 } as const;
 
 /** Query parameter the Payment Link's after-completion redirect sets: `/?unlimited=started`. */

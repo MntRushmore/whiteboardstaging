@@ -74,7 +74,7 @@ describe("terms: Agathon Unlimited as sold", () => {
   const price = `$${UNLIMITED_PLAN.monthlyUsd}`;
 
   it("states the price, the free trial, the automatic renewal and when the card is charged", () => {
-    expect(UNLIMITED_PLAN).toMatchObject({ monthlyUsd: 25, trialDays: 3 });
+    expect(UNLIMITED_PLAN).toMatchObject({ monthlyUsd: 25, trialDays: 7 });
     expect(terms).toContain(`${price} a month`);
     expect(terms).toContain(`When the free trial ends, ${UNLIMITED_PLAN.trialDays} days after checkout, the card is charged ${price}.`);
     expect(terms).toContain("Checkout asks for a card but charges nothing that day.");
@@ -101,13 +101,13 @@ describe("terms: Agathon Unlimited as sold", () => {
     expect(terms).toContain(`${LEGAL.unlimited.fairUseActionsPerDay.toLocaleString("en-US")} AI actions in any 24 hours`);
   });
 
-  it("promises the reminder the cron actually sends: 1 to 2 days before the free trial ends", () => {
-    // a daily run reminds trials ending 12 to 48 hours out, so the first run to see one is 1 to 2 days ahead
-    expect(TRIAL_REMINDER_WINDOW).toEqual({ fromMs: 12 * HOUR_MS, toMs: 48 * HOUR_MS });
-    expect(terms).toContain("About 1 to 2 days before the free trial ends, we email them again");
+  it("promises the reminder the cron actually sends: 2 to 3 days before the free trial ends", () => {
+    // a daily run reminds trials ending 24 to 72 hours out, so the first run to see one is 2 to 3 days ahead
+    expect(TRIAL_REMINDER_WINDOW).toEqual({ fromMs: 24 * HOUR_MS, toMs: 72 * HOUR_MS });
+    expect(terms).toContain("About 2 to 3 days before the free trial ends, we email them again");
     // the confirmation, and both to the payer (src/lib/email/payer.ts)
     expect(terms).toContain("When the free trial starts, we email the person who paid, at the email used at checkout");
-    expect(text(PAGES["/privacy"])).toContain("one reminder about 1 to 2 days before the free trial ends");
+    expect(text(PAGES["/privacy"])).toContain("one reminder about 2 to 3 days before the free trial ends");
   });
 
   it("covers failed payments, price changes, who pays, repeat free trials and deleting an account", () => {
@@ -119,13 +119,13 @@ describe("terms: Agathon Unlimited as sold", () => {
   });
 });
 
-describe("terms: the 3-day trial", () => {
+describe("terms: the trial's length", () => {
   const terms = text(PAGES["/terms"]);
 
-  it("states the trial's length, and that trials started before keep their 7 days", () => {
-    expect(terms).toContain("$25 a month after a 3-day free trial");
-    expect(terms).toContain("Trials started before October 6, 2026 keep the 7 days they started with.");
-    expect(terms).toContain("When the free trial ends, 3 days after checkout");
+  it("states the 7-day trial, and that a checkout showing another length is what counts", () => {
+    expect(terms).toContain("$25 a month after a 7-day free trial");
+    expect(terms).toContain("If your checkout showed a different length, your free trial is the length checkout showed.");
+    expect(terms).toContain("When the free trial ends, 7 days after checkout");
   });
 });
 

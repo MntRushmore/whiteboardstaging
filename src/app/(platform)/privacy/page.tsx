@@ -253,7 +253,7 @@ export default function PrivacyPage() {
             was charged, the date and amount of the first charge, and how to cancel.
           </li>
           <li>
-            <strong>Free trial ending:</strong> if you start {plan}, one reminder about 1 to 2 days before the free trial
+            <strong>Free trial ending:</strong> if you start {plan}, one reminder about 2 to 3 days before the free trial
             ends, with the date of the first charge and a link to cancel. None if the plan is already set to cancel.
           </li>
         </ul>

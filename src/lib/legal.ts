@@ -88,8 +88,9 @@ export const LEGAL = {
  *
  * History: 2026-10-03, the first text (live with sign-up consent on 2026-10-03); 2026-10-04,
  * Agathon Unlimited, the emails, and the AI services named; 2026-10-05, no free plan (the app needs
- * Agathon Unlimited after the guided first board) and ink packs no longer sold; 2026-10-06, a 3-day
- * free trial instead of 7, and its reminder 1 to 2 days ahead.
+ * Agathon Unlimited after the guided first board) and ink packs no longer sold; 2026-10-06, "free
+ * week" became "free trial" (the trial was 3 days for a few hours that day, then 7 again: the text
+ * now says the trial is the length checkout showed; accepted_terms_at tells the two texts apart).
  */
 export const TERMS_VERSION = "2026-10-06";
 

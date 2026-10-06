@@ -21,7 +21,7 @@
  *     Session, where the webhook reads it) and a redirect back to the account page; the app appends
  *     `client_reference_id=<user id>` and `prefilled_email=<email>` (src/lib/billing/checkout.ts)
  *   - Agathon Unlimited (UNLIMITED below): a product, a $25 MONTHLY price, and a subscription
- *     Payment Link with the 3-day free trial on it (`subscription_data.trial_period_days`), the card
+ *     Payment Link with the 7-day free trial on it (`subscription_data.trial_period_days`), the card
  *     taken up front (`payment_method_collection: always`), `metadata.plan_id = unlimited` on the
  *     link (so on its Checkout Sessions) and on every subscription it starts
  *     (`subscription_data.metadata`), and a redirect to `<site>/?unlimited=started`
@@ -79,14 +79,14 @@ export const WEBHOOK_EVENTS = Object.freeze([
 ]);
 
 /**
- * Agathon Unlimited, at the owner's price (2026-10-03): $25 a month after a 3-day free trial (7 days
- * until 2026-10-06; the live link was updated in place, `trial_days` metadata with it). Keep it
+ * Agathon Unlimited, at the owner's price (2026-10-03): $25 a month after a 7-day free trial (3 days
+ * for a few hours on 2026-10-06; the live link was updated in place both ways). Keep it
  * equal to UNLIMITED_PLAN in src/lib/billing/unlimited.ts (what the app shows): stripeSetup.test.ts
  * pins the two together. Changing the price or the trial makes a new price and Payment Link (the old
  * link is deactivated; subscribers on the old price keep it until they cancel).
  * @type {Readonly<{ id: string, name: string, priceCents: number, currency: string, interval: "month", trialDays: number }>}
  */
-export const UNLIMITED = Object.freeze({ id: "unlimited", name: "Agathon Unlimited", priceCents: 2500, currency: "usd", interval: "month", trialDays: 3 });
+export const UNLIMITED = Object.freeze({ id: "unlimited", name: "Agathon Unlimited", priceCents: 2500, currency: "usd", interval: "month", trialDays: 7 });
 
 /** The subscription plans this script sold before ink; their objects are retired on every run. */
 export const RETIRED_PLAN_IDS = Object.freeze(["plus", "pro"]);

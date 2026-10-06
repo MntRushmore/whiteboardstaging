@@ -24,7 +24,7 @@ export interface PlanOfferProps {
 
 /**
  * The plan screen's card (the route is src/app/(platform)/welcome/plan): Agathon Unlimited, its
- * price crossed out under "Free for 3 days", what it gives in four pictures, and — because the
+ * price crossed out under "Free for 7 days", what it gives in four pictures, and — because the
  * student is a child and the card is a grown-up's — "This part is for a grown-up" above the one
  * button, with the auto-renewal said plainly right under it. There is no free plan, so there is no
  * "Maybe later" (the app header's menu still has Account and Sign out). A plan that ended is

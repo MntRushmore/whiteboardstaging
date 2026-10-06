@@ -166,7 +166,7 @@ describe("request bodies", () => {
 });
 
 describe("Agathon Unlimited", () => {
-  it("the script charges what the app shows: $25 a month after 3 days free (UNLIMITED_PLAN)", () => {
+  it("the script charges what the app shows: $25 a month after 7 days free (UNLIMITED_PLAN)", () => {
     expect(UNLIMITED.id).toBe(UNLIMITED_PLAN.id);
     expect(UNLIMITED.name).toBe(UNLIMITED_PLAN.name);
     expect(UNLIMITED.priceCents).toBe(UNLIMITED_PLAN.monthlyUsd * 100);
@@ -177,7 +177,7 @@ describe("Agathon Unlimited", () => {
   it("a tagged product and a MONTHLY price, both marked plan_id unlimited", () => {
     expect(unlimitedProductBody()).toEqual({
       name: "Agathon Unlimited",
-      description: "Help from the AI tutor without counting ink. 3 days free, then $25 a month. Cancel any time.",
+      description: "Help from the AI tutor without counting ink. 7 days free, then $25 a month. Cancel any time.",
       statement_descriptor: "AGATHON",
       metadata: { app: APP_TAG, plan_id: "unlimited" },
     });
@@ -204,10 +204,10 @@ describe("Agathon Unlimited", () => {
   it("the Payment Link starts a subscription with the free trial, takes the card up front and comes back to /?unlimited=started", () => {
     const body = unlimitedLinkBody("price_u", "https://a.example.com");
     expect(body.line_items).toEqual([{ price: "price_u", quantity: 1 }]);
-    expect(body.subscription_data).toEqual({ trial_period_days: 3, metadata: { app: APP_TAG, plan_id: "unlimited" } });
+    expect(body.subscription_data).toEqual({ trial_period_days: 7, metadata: { app: APP_TAG, plan_id: "unlimited" } });
     expect(body.payment_method_collection).toBe("always");
     expect(body.allow_promotion_codes).toBe(false);
-    expect(body.metadata).toEqual({ app: APP_TAG, plan_id: "unlimited", price_id: "price_u", trial_days: "3" });
+    expect(body.metadata).toEqual({ app: APP_TAG, plan_id: "unlimited", price_id: "price_u", trial_days: "7" });
     expect(body.after_completion).toEqual({ type: "redirect", redirect: { url: "https://a.example.com/?unlimited=started" } });
     // the home recognises the return the app's own way
     expect(isUnlimitedReturn(new URL(unlimitedReturnUrl("https://a.example.com")).search)).toBe(true);
@@ -215,7 +215,7 @@ describe("Agathon Unlimited", () => {
     expect(body).not.toHaveProperty("submit_type");
     expect(body).not.toHaveProperty("payment_intent_data");
     expect(body.custom_text.submit.message).toBe(UNLIMITED_CHECKOUT_NOTE);
-    expect(UNLIMITED_CHECKOUT_NOTE).toBe("Free for 3 days, then $25 a month until you cancel. Cancel before the free trial ends and you won't be charged.");
+    expect(UNLIMITED_CHECKOUT_NOTE).toBe("Free for 7 days, then $25 a month until you cancel. Cancel before the free trial ends and you won't be charged.");
     expect(UNLIMITED_CHECKOUT_NOTE.length).toBeLessThanOrEqual(1200);
   });
 
@@ -258,8 +258,8 @@ describe("Agathon Unlimited", () => {
     expect(findUnlimitedPrice(prices, "prod_u")?.id).toBe("price_ok");
     expect(findUnlimitedPrice(prices.slice(0, 4), "prod_u")).toBeNull();
     const links = [
-      { id: "plink_7day", active: true, metadata: { ...tag, price_id: "price_ok", trial_days: "7" } },
-      { id: "plink_ok", active: true, metadata: { ...tag, price_id: "price_ok", trial_days: "3" } },
+      { id: "plink_3day", active: true, metadata: { ...tag, price_id: "price_ok", trial_days: "3" } },
+      { id: "plink_ok", active: true, metadata: { ...tag, price_id: "price_ok", trial_days: "7" } },
     ];
     expect(findUnlimitedLink(links, "price_ok")?.id).toBe("plink_ok");
     expect(findPortalConfig([{ id: "bpc_old", active: true, metadata: { app: APP_TAG } }, { id: "bpc_u", active: true, metadata: tag }])?.id).toBe("bpc_u");
@@ -648,7 +648,7 @@ describe("setup()", () => {
     const text = lines.join("\n");
     expect(text).toMatch(/would create product "Agathon Unlimited"/);
     expect(text).toMatch(/would create monthly price 2500 usd/);
-    expect(text).toMatch(/would create subscription Payment Link \(3-day trial, card up front\) redirecting to https:\/\/a\.example\.com\/\?unlimited=started/);
+    expect(text).toMatch(/would create subscription Payment Link \(7-day trial, card up front\) redirecting to https:\/\/a\.example\.com\/\?unlimited=started/);
     expect(text).toMatch(/would create portal configuration/);
     expect(text).toMatch(/NEXT_PUBLIC_UNLIMITED_LINK: \(printed by the real run\)/);
     expect(result.unlimitedLink).toBeNull();

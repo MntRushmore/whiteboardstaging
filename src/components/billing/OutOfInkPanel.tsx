@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 /**
  * Help that needs the plan, shared by the board's dialog and the Ask and lecture panels so all
  * three say the same thing. There is no free plan and no ink packs (owner, 2026-10-05), so:
- *  - no plan (the guided first board's starter ink ran out): Agathon Unlimited, free for 3 days,
+ *  - no plan (the guided first board's starter ink ran out): Agathon Unlimited, free for 7 days,
  *    and Start the free trial, which opens the plan screen in this tab (the board is saved);
  *  - a plan whose help spends ink right now (a second plan before its first charge, a payment to
  *    fix, one being set up): what it is doing, and its fix (the billing portal, in a new tab);

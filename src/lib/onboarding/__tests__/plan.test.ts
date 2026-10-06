@@ -47,11 +47,11 @@ describe("what the plan screen shows", () => {
 });
 
 describe("the plan screen's words", () => {
-  it("crosses out the plan's own price and says the first 3 days are free", () => {
+  it("crosses out the plan's own price and says the first 7 days are free", () => {
     expect(dollars(UNLIMITED_PLAN.monthlyUsd)).toBe("$25");
     expect(PLAN_COPY.title).toBe("Agathon Unlimited");
     expect(PLAN_COPY.price).toBe("$25/month");
-    expect(PLAN_COPY.free).toBe("Free for 3 days");
+    expect(PLAN_COPY.free).toBe("Free for 7 days");
     expect(PLAN_COPY.then).toBe("Then $25/month. Cancel anytime.");
   });
 
@@ -92,8 +92,8 @@ describe("the day the card is charged", () => {
   it("is the end of the free trial, in the reader's own words", () => {
     const now = new Date(2026, 9, 3, 15, 0); // Saturday 3 October 2026, local time
     const end = trialEndsOn(now);
-    expect(chargeDateText(end, "en-US")).toBe("Tuesday, October 6");
-    expect(chargeDateText(end, "en-GB")).toBe("Tuesday 6 October");
+    expect(chargeDateText(end, "en-US")).toBe("Saturday, October 10");
+    expect(chargeDateText(end, "en-GB")).toBe("Saturday 10 October");
   });
 
   it("falls back to the default format for a locale tag it cannot use", () => {

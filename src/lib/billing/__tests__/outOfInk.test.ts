@@ -10,7 +10,7 @@ import { OUT_OF_INK_COPY, inkPanelMood } from "../outOfInk";
 describe("the dialog's words", () => {
   it("say help needs the plan, what it costs, and that the board is safe", () => {
     expect(OUT_OF_INK_COPY.title).toBe("Help needs Agathon Unlimited");
-    expect(OUT_OF_INK_COPY.offerBody).toBe("Help me, Solve and Ask come with Agathon Unlimited: free for 3 days, then $25 a month. Your board is saved.");
+    expect(OUT_OF_INK_COPY.offerBody).toBe("Help me, Solve and Ask come with Agathon Unlimited: free for 7 days, then $25 a month. Your board is saved.");
     expect(OUT_OF_INK_COPY.start).toBe("Start the free trial");
   });
 

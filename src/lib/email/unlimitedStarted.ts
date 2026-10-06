@@ -34,12 +34,8 @@ const HOUR_MS = 60 * 60 * 1000;
 /** No "has started" email for a free trial that ends sooner than this: the reminder has gone already. */
 export const STARTED_MIN_LEAD_MS = HOUR_MS;
 
-/**
- * The daily sweep confirms trials ending in [now + 48 h, now + 8 days): started recently, and not
- * yet in the reminder's window (TRIAL_REMINDER_WINDOW ends at 48 h), so a late "has started" never
- * lands beside the reminder. With the 3-day trial that leaves the sweep the trial's first day.
- */
-export const STARTED_SWEEP_WINDOW = { fromMs: 48 * HOUR_MS, toMs: 8 * 24 * HOUR_MS } as const;
+/** The daily sweep confirms trials ending in [now + 24 h, now + 8 days): started within the week, not ending tomorrow. */
+export const STARTED_SWEEP_WINDOW = { fromMs: 24 * HOUR_MS, toMs: 8 * 24 * HOUR_MS } as const;
 
 /** One subscription as the email needs it (unlimited_subscriptions, service role). */
 export type StartedRow = {
