@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { PlanScreen } from "@/components/onboarding/PlanScreen";
 
 export const metadata: Metadata = {
-  title: "Your free week",
+  title: "Your free trial",
 };
 
 // The last screen of onboarding, after the guided board: a route of its own, so its code is its

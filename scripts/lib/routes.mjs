@@ -145,7 +145,7 @@ export const API_ROUTES = Object.freeze([
     body: "none",
     // 401 without `Authorization: Bearer <CRON_SECRET>`; 503 when CRON_SECRET / the service role key / RESEND_API_KEY are unset.
     withoutTokenStatus: [401, 503],
-    purpose: "Agathon Unlimited trial reminders (Vercel cron, daily): one email per subscription whose free week ends 24-72 h from now; ?dryRun=1 lists them",
+    purpose: "Agathon Unlimited trial reminders (Vercel cron, daily): one email per subscription whose free trial ends 24-72 h from now; ?dryRun=1 lists them",
     status: "active",
   },
   {

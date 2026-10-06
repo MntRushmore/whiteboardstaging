@@ -16,7 +16,7 @@ const DAY = "Mon, Oct 12";
 const props = { chargeDate: DATE, chargeDay: DAY, onStart: vi.fn(), onContinue: vi.fn() };
 
 describe("the plan screen", () => {
-  it("offers the free week: the offer, the bill, the one button, and the renewal said right under it", () => {
+  it("offers the free trial: the offer, the bill, the one button, and the renewal said right under it", () => {
     const html = render(<PlanOffer view="offer" {...props} />);
     expect(html).toContain('data-view="offer"');
     expect(html).toMatch(/<h1[^>]*id="plan-title"[^>]*>Agathon Unlimited<\/h1>/);
@@ -34,7 +34,7 @@ describe("the plan screen", () => {
     expect(html).toMatch(/aria-describedby="plan-disclosure"/);
     expect(html).toContain(`href="${PLAN_COPY.termsLink.href}"`);
     expect(html).toContain(`href="${PLAN_COPY.fairUseLink.href}"`);
-    // no free plan: one button, and no way past it but the free week (the header's menu has Account and Sign out)
+    // no free plan: one button, and no way past it but the free trial (the header's menu has Account and Sign out)
     expect(html.match(/<button/g)).toHaveLength(1);
     expect(text(html)).not.toMatch(/Maybe later|Continue|Not now/);
     // the refused defaults stay refused
@@ -72,7 +72,7 @@ describe("the plan screen", () => {
     expect(html).toContain(PLAN_COPY.continue);
   });
 
-  it("a plan that ended is offered again: welcome back, no free week, and the bill says help uses ink until the first charge", () => {
+  it("a plan that ended is offered again: welcome back, no free trial, and the bill says help uses ink until the first charge", () => {
     const html = render(<PlanOffer view="restart" {...props} />);
     expect(html).toContain('data-view="restart"');
     expect(html).toContain(PLAN_COPY.welcomeBack);

@@ -7,8 +7,8 @@ import styles from "./plan.module.css";
 
 export interface PlanOfferProps {
   /**
-   * `offer`: Start the free week opens checkout; `restart`: a plan that ended, started again (no
-   * free week); `soon`: no checkout yet, Continue goes home
+   * `offer`: Start the free trial opens checkout; `restart`: a plan that ended, started again (no
+   * free trial); `soon`: no checkout yet, Continue goes home
    */
   view: "offer" | "restart" | "soon";
   /** the day the card is first charged, in words (`chargeDateText`): the disclosure's date */
@@ -72,7 +72,7 @@ function Written({ text }: { text: string }) {
  * On the right, a tear-off slip for the grown-up: the offer in one plain sentence, the bill (today
  * $0, the first charge's day, then every month), the one action, and the auto-renewal said plainly
  * right under it. There is no free plan, so there is no "Maybe later" (the app header's menu still
- * has Account and Sign out). A plan that ended is offered again without the free week. Without a
+ * has Account and Sign out). A plan that ended is offered again without the free trial. Without a
  * checkout link, the slip says so and Continue goes home.
  *
  * The DOM order is the phone's reading order (title, page, slip, what you get); the grid places

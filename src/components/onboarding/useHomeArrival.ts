@@ -16,7 +16,7 @@ const CHEER_MS = 2400;
 /**
  * What the boards home does on arrival, for onboarding's last two screens:
  *
- * - back from starting the free week (`/?unlimited=started`, the Payment Link's return): a warm
+ * - back from starting the free trial (`/?unlimited=started`, the Payment Link's return): a warm
  *   toast and a burst of confetti, the subscription read again, and the parameter taken out of the
  *   URL so a reload does not cheer twice. Returns true while the confetti should show.
  * - the plan screen still due (the tour was finished but its finish card never got there, e.g. a

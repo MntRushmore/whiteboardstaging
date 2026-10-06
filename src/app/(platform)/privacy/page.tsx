@@ -57,7 +57,7 @@ const PROVIDERS = [
   },
   {
     name: "Resend",
-    role: "Sends our emails: password resets, the welcome email, and the confirmation and reminder for a free week.",
+    role: "Sends our emails: password resets, the welcome email, and the confirmation and reminder for a free trial.",
     data: "Your email address (for a plan’s emails, the email used at checkout) and the email we send.",
   },
   {
@@ -140,8 +140,8 @@ export default function PrivacyPage() {
             payment ids.
           </li>
           <li>
-            <strong>{plan}:</strong> the plan’s Stripe ids, its status (free week, active, payment problem, cancelled),
-            its dates (when the free week ends, the next charge, when it was cancelled or ends), and the email of the
+            <strong>{plan}:</strong> the plan’s Stripe ids, its status (free trial, active, payment problem, cancelled),
+            its dates (when the free trial ends, the next charge, when it was cancelled or ends), and the email of the
             person who paid, from checkout, where the plan’s emails go.
           </li>
           <li>
@@ -182,7 +182,7 @@ export default function PrivacyPage() {
           </li>
           <li>
             To sell and refund ink, keep track of your balance, and run {plan}: know whether your plan is on, apply
-            the fair-use limit, and remind you before a free week ends.
+            the fair-use limit, and remind you before a free trial ends.
           </li>
           <li>To send the emails listed under <a href="#emails">Emails we send</a>.</li>
           <li>To keep the service safe and fair: sign-in, rate limits, preventing abuse.</li>
@@ -249,11 +249,11 @@ export default function PrivacyPage() {
             <strong>Welcome:</strong> once, after you finish your first guided board, with two tips for using the tutor.
           </li>
           <li>
-            <strong>Free week started:</strong> if you start {plan}, one email when it starts, confirming that nothing
+            <strong>Free trial started:</strong> if you start {plan}, one email when it starts, confirming that nothing
             was charged, the date and amount of the first charge, and how to cancel.
           </li>
           <li>
-            <strong>Free week ending:</strong> if you start {plan}, one reminder about 2 to 3 days before the free week
+            <strong>Free trial ending:</strong> if you start {plan}, one reminder about 1 to 2 days before the free trial
             ends, with the date of the first charge and a link to cancel. None if the plan is already set to cancel.
           </li>
         </ul>

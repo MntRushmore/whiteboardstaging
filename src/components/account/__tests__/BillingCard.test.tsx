@@ -31,7 +31,7 @@ describe("the account page's Billing section", () => {
     expect(html).toMatch(/<dt[^>]*>Status<\/dt><dd[^>]*>Not started<\/dd>/);
   });
 
-  it("without a plan: starts the free week at the plan's checkout, for this account's checkout reference", () => {
+  it("without a plan: starts the free trial at the plan's checkout, for this account's checkout reference", () => {
     vi.stubEnv("NEXT_PUBLIC_UNLIMITED_LINK", "https://buy.stripe.com/test_unlimited");
     const html = render({});
     expect(html).toContain('data-plan="offer"');

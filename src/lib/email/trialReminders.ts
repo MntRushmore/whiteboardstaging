@@ -1,12 +1,14 @@
 /**
- * "Your free week ends on <date>": one email per Agathon Unlimited subscription, about two days
+ * "Your free trial ends on <date>": one email per Agathon Unlimited subscription, a day or two
  * before its trial ends and the card is first charged (GET /api/cron/trial-reminders, daily).
  * This is the email that stops a surprise charge, and so a chargeback.
  *
- * The window. A daily run looks for trials ending between now + 24 h and now + 72 h. A trial
- * enters that 48-hour window on exactly one run (the one before saw it more than 72 h out), so the
- * reminder goes out 2 to 3 days ahead; if that send fails, the next day's run is still inside the
- * window (24 to 48 h ahead) and tries again. Vercel's Hobby crons fire anywhere in their hour,
+ * The window. A daily run looks for trials ending between now + 12 h and now + 48 h. A trial
+ * enters that 36-hour window on exactly one run (the one before saw it more than 48 h out), so the
+ * reminder goes out 1 to 2 days ahead; if that send fails and the trial was still 36 h or more out,
+ * the next day's run is inside the window too and tries again. Sized for the 3-day trial
+ * (2026-10-06): the old 24 to 72 h window took in a whole 3-day trial, so the reminder could land
+ * an hour after the "has started" email. Vercel's Hobby crons fire anywhere in their hour,
  * which moves this by under an hour. Inside the window, email_log (kind 'trial_reminder',
  * ref = the Stripe subscription id) keeps it to once per subscription.
  *
@@ -35,7 +37,7 @@ import { trialReminderEmail } from "@/lib/email/templates";
 const HOUR_MS = 60 * 60 * 1000;
 
 /** Trials ending in [now + fromMs, now + toMs) are reminded. */
-export const TRIAL_REMINDER_WINDOW = { fromMs: 24 * HOUR_MS, toMs: 72 * HOUR_MS } as const;
+export const TRIAL_REMINDER_WINDOW = { fromMs: 12 * HOUR_MS, toMs: 48 * HOUR_MS } as const;
 
 /** At most this many sends per run (60 s function budget at SEND_SPACING_MS); the rest wait a day, still in the window. */
 export const MAX_SENDS_PER_RUN = 50;
@@ -61,8 +63,8 @@ export const SUBSCRIPTIONS = {
   columns: {
     subscriptionId: "stripe_subscription_id", // text, unique: the email_log ref
     userId: "user_id", // uuid, nullable
-    status: "status", // text: 'trialing' while in the free week
-    trialEnd: "trial_end", // timestamptz: when the free week ends and the first charge is made
+    status: "status", // text: 'trialing' while in the free trial
+    trialEnd: "trial_end", // timestamptz: when the free trial ends and the first charge is made
     cancelAtPeriodEnd: "cancel_at_period_end", // boolean
     cancelAt: "cancel_at", // timestamptz, nullable
     payerEmail: "payer_email", // text, nullable: the checkout's email (20261003040000_go_live_gaps.sql)
@@ -138,7 +140,7 @@ export function toTrialRow(raw: Record<string, unknown>): TrialRow | null {
 }
 
 /**
- * Trialing subscriptions with a user whose free week ends in [from, to), soonest first. The only
+ * Trialing subscriptions with a user whose free trial ends in [from, to), soonest first. The only
  * query against the subscriptions table (service role: the table has no policy for anyone else's
  * rows).
  */

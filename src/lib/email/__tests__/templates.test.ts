@@ -140,14 +140,14 @@ describe("trialReminderEmail", () => {
   };
   const email = trialReminderEmail(input);
 
-  it("says when the free week ends, when the card is charged and how much, in both parts", () => {
-    expect(email.subject).toBe("Your free week of Agathon Unlimited ends on Friday, October 9");
+  it("says when the free trial ends, when the card is charged and how much, in both parts", () => {
+    expect(email.subject).toBe("Your free trial of Agathon Unlimited ends on Friday, October 9");
     for (const part of [visibleText(email.html), email.text]) {
-      expect(part).toContain("Your free week ends on Friday, October 9, at 11:04 PM EDT.");
+      expect(part).toContain("Your free trial ends on Friday, October 9, at 11:04 PM EDT.");
       expect(part).toContain("On Friday, October 9, your card will be charged $25 for Agathon Unlimited.");
       expect(part).toContain("After that it's $25 a month until you cancel.");
       expect(part).toContain("Nothing to do if you'd like to keep it.");
-      expect(part).toContain("Cancel before the free week ends and you won't be charged.");
+      expect(part).toContain("Cancel before the free trial ends and you won't be charged.");
     }
   });
 
@@ -160,7 +160,7 @@ describe("trialReminderEmail", () => {
 
   it("follows the plan's name and price", () => {
     const other = trialReminderEmail({ ...input, planName: "Agathon Family", monthlyUsd: 12.5 });
-    expect(other.subject).toBe("Your free week of Agathon Family ends on Friday, October 9");
+    expect(other.subject).toBe("Your free trial of Agathon Family ends on Friday, October 9");
     expect(other.text).toContain("your card will be charged $12.50 for Agathon Family");
   });
 
@@ -186,9 +186,9 @@ describe("unlimitedStartedEmail (the auto-renewal acknowledgment)", () => {
   const email = unlimitedStartedEmail(input);
 
   it("says nothing was charged, when and how much the card will be charged, that it renews monthly, and how to cancel free", () => {
-    expect(email.subject).toBe("Your free week of Agathon Unlimited has started");
+    expect(email.subject).toBe("Your free trial of Agathon Unlimited has started");
     for (const part of [visibleText(email.html), email.text]) {
-      expect(part).toContain("Your free week of Agathon Unlimited has started. Nothing was charged today.");
+      expect(part).toContain("Your free trial of Agathon Unlimited has started. Nothing was charged today.");
       expect(part).toContain("On Friday, October 9 at 11:04 PM EDT, your card will be charged $25, then $25 every month until you cancel.");
       expect(part).toContain("Cancel before Friday, October 9 at 11:04 PM EDT and you won't be charged.");
     }
@@ -202,11 +202,11 @@ describe("unlimitedStartedEmail (the auto-renewal acknowledgment)", () => {
     expect(email.text).toContain(`Refund policy: ${SITE}/refunds#subscriptions`);
   });
 
-  it("a second plan says it starts with the first charge, not a free week of help", () => {
+  it("a second plan says it starts with the first charge, not a free trial of help", () => {
     const repeat = unlimitedStartedEmail({ ...input, repeat: true });
     expect(repeat.subject).toBe("Your Agathon Unlimited plan starts on Friday, October 9");
     expect(repeat.text).toContain("Your Agathon Unlimited plan is set up. Nothing was charged today.");
-    expect(repeat.text).toContain("The free week is for a first plan only, so until then help uses ink.");
+    expect(repeat.text).toContain("The free trial is for a first plan only, so until then help uses ink.");
     expect(repeat.text).toContain("your card will be charged $25, then $25 every month until you cancel.");
   });
 

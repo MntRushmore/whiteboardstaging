@@ -186,7 +186,7 @@ function dueTrial(now: Date): TrialRow {
     subscriptionId: "sub_due",
     userId: fake.USER_ID,
     status: "trialing",
-    trialEnd: new Date(now.getTime() + 60 * HOUR).toISOString(),
+    trialEnd: new Date(now.getTime() + 30 * HOUR).toISOString(),
     cancelAtPeriodEnd: false,
     cancelAt: null,
     payerEmail: null,
@@ -233,7 +233,7 @@ describe("GET /api/cron/trial-reminders", () => {
     expect(d.send).toHaveBeenCalledTimes(1);
   });
 
-  it("catches up a 'free week started' email the webhook could not send, to the payer, once", async () => {
+  it("catches up a 'free trial started' email the webhook could not send, to the payer, once", async () => {
     const trialRow = { ...dueTrial(now), trialEnd: new Date(now.getTime() + 6 * 24 * HOUR).toISOString(), payerEmail: "payer@example.com" };
     const d = use(
       fakeDeps({

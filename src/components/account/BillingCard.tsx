@@ -11,7 +11,7 @@ import { useUnlimited } from "@/lib/billing/useUnlimited";
 import { cn } from "@/lib/utils";
 
 const BADGE_CLASS: Record<string, string> = {
-  "Free week": "bg-indigo-50 text-indigo-800 border-indigo-200",
+  "Free trial": "bg-indigo-50 text-indigo-800 border-indigo-200",
   Starting: "bg-indigo-50 text-indigo-800 border-indigo-200",
   Active: "bg-emerald-50 text-emerald-800 border-emerald-200",
   "Payment needed": "bg-amber-50 text-amber-900 border-amber-200",
@@ -21,7 +21,7 @@ const BADGE_CLASS: Record<string, string> = {
  * Billing on the account page (`#billing`, the header menu's Billing): Agathon Unlimited, the one
  * plan. What it costs, where it stands and the next day money moves (`billingFacts`), what that
  * means in a sentence for the grown-up who pays (`unlimitedPlanView`), and the one way forward:
- * start the free week (the plan's Payment Link, same tab; it comes back to the home), or Stripe's
+ * start the free trial (the plan's Payment Link, same tab; it comes back to the home), or Stripe's
  * customer portal through its login page (NEXT_PUBLIC_BILLING_PORTAL_URL, a new tab) to change the
  * card, see invoices or cancel. The app holds no Stripe key, so the portal is the only place a plan
  * is cancelled. The plan re-reads when this tab gets focus again (useUnlimited), so a cancellation

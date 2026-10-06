@@ -134,7 +134,7 @@ const FUIME_CHARGE = {
 const WEEK = 7 * 86_400;
 const UNLIMITED_TAG = { app: "agathon-classroom", plan_id: "unlimited" };
 
-/** The Unlimited link's Checkout Session: a free week, so nothing is paid at checkout. */
+/** The Unlimited link's Checkout Session: a free trial, so nothing is paid at checkout. */
 function unlimitedSession(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: "cs_sub_1",
@@ -194,7 +194,7 @@ function subEvent(type: string, object: Record<string, unknown>, id: string, cre
 
 /**
  * Real events from Stripe test mode (2026-10-03, this account's API version 2026-07-29.dahlia): an
- * Unlimited subscription with the free week, cancelled in the same second, then deleted. Made with
+ * Unlimited subscription with the free trial, cancelled in the same second, then deleted. Made with
  * the API (customer + subscription with the plan's price and metadata), not through Checkout.
  */
 const REAL = realEvents as unknown as Record<"customer.subscription.created" | "customer.subscription.updated" | "customer.subscription.deleted", BillingEvent>;
@@ -505,7 +505,7 @@ describe("mapBillingEvent: Agathon Unlimited", () => {
         eventAt: new Date(1791059139 * 1000).toISOString(),
       },
     });
-    // cancelled in the free week: Stripe sets cancel_at to the trial's end as well
+    // cancelled in the free trial: Stripe sets cancel_at to the trial's end as well
     expect(mapBillingEvent(REAL["customer.subscription.updated"], {})).toMatchObject({
       subscription: { status: "trialing", cancelAtPeriodEnd: true, cancelAt: end, eventAt: new Date(1791059139 * 1000 + 1).toISOString() },
     });
@@ -1056,7 +1056,7 @@ describe("POST /api/billing/webhook: Agathon Unlimited", () => {
   const checkoutEv = (id = "evt_cs", overrides: Record<string, unknown> = {}) => subEvent("checkout.session.completed", unlimitedSession(overrides), id, NOW + 2);
   const createdEv = (id = "evt_created", overrides: Record<string, unknown> = {}) => subEvent("customer.subscription.created", subscription(overrides), id, NOW + 1);
 
-  it("the free week starts whichever event lands first: subscription.created, then the checkout that names the user", async () => {
+  it("the free trial starts whichever event lands first: subscription.created, then the checkout that names the user", async () => {
     const store = fakeStore();
     const handler = handlerWith(store);
     expect(await send(handler, createdEv())).toEqual({ status: 200, body: { received: true } });
@@ -1196,7 +1196,7 @@ describe("POST /api/billing/webhook: Agathon Unlimited", () => {
   });
 
   /**
-   * The free week's confirmation through the real `sendUnlimitedStarted`, with fake email deps
+   * The free trial's confirmation through the real `sendUnlimitedStarted`, with fake email deps
    * (email_log in memory, Resend recorded) reading the fake store's subscription row. `defer`
    * collects the work instead of running it, so a test sees exactly what happens before the
    * answer to Stripe (nothing) and after it (`settle`).
@@ -1226,7 +1226,7 @@ describe("POST /api/billing/webhook: Agathon Unlimited", () => {
     return { email, webhook, settle, requested, queued };
   }
 
-  it("the free week's confirmation goes to the PAYER, once, after the answer, whichever event completes the plan and however often Stripe redelivers", async () => {
+  it("the free trial's confirmation goes to the PAYER, once, after the answer, whichever event completes the plan and however often Stripe redelivers", async () => {
     const store = fakeStore();
     const world = emailWorld(store);
     const handler = handlerWith(store, {}, world.webhook);
@@ -1247,7 +1247,7 @@ describe("POST /api/billing/webhook: Agathon Unlimited", () => {
     const [message] = world.email.sent;
     expect(message.to).toBe("parent@example.com"); // the payer from the checkout, not the account's address
     expect(world.email.emailOf).not.toHaveBeenCalled();
-    expect(message.subject).toBe("Your free week of Agathon Unlimited has started");
+    expect(message.subject).toBe("Your free trial of Agathon Unlimited has started");
     expect(message.text).toContain("Nothing was charged today.");
     expect(message.text).toContain("your card will be charged $25, then $25 every month until you cancel.");
     expect(message.text).toMatch(/\/terms#unlimited/);

@@ -10,8 +10,8 @@ import { OUT_OF_INK_COPY, inkPanelMood } from "../outOfInk";
 describe("the dialog's words", () => {
   it("say help needs the plan, what it costs, and that the board is safe", () => {
     expect(OUT_OF_INK_COPY.title).toBe("Help needs Agathon Unlimited");
-    expect(OUT_OF_INK_COPY.offerBody).toBe("Help me, Solve and Ask come with Agathon Unlimited: free for 7 days, then $25 a month. Your board is saved.");
-    expect(OUT_OF_INK_COPY.start).toBe("Start the free week");
+    expect(OUT_OF_INK_COPY.offerBody).toBe("Help me, Solve and Ask come with Agathon Unlimited: free for 3 days, then $25 a month. Your board is saved.");
+    expect(OUT_OF_INK_COPY.start).toBe("Start the free trial");
   });
 
   it("never offers ink packs: there are none to buy", () => {
@@ -25,13 +25,13 @@ describe("the dialog's words", () => {
   });
 
   it("the server's 402 says the same thing in its own words, and sends the student to the plan screen", () => {
-    expect(INK_EMPTY_MESSAGE).toBe("Help needs Agathon Unlimited. Start your free week to keep going.");
+    expect(INK_EMPTY_MESSAGE).toBe("Help needs Agathon Unlimited. Start your free trial to keep going.");
     expect(BUY_INK_PATH).toBe("/welcome/plan");
   });
 });
 
 describe("inkPanelMood", () => {
-  it("all set with the plan on; the free week without a plan; the plan's own fix otherwise", () => {
+  it("all set with the plan on; the free trial without a plan; the plan's own fix otherwise", () => {
     expect(inkPanelMood({ status: "trialing" })).toBe("unlimited");
     expect(inkPanelMood({ status: "active" })).toBe("unlimited");
     expect(inkPanelMood({ status: "none" })).toBe("offer");
