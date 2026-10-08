@@ -183,9 +183,43 @@ class UnionFind {
   }
 }
 
-/** Median height of the "glyph-like" strokes (flat bars excluded when possible). */
+/** How far the pen travelled drawing this stroke (page px); 0 for a stroke with no points. */
+export function strokeLength(s: InkStroke): number {
+  let length = 0;
+  for (const seg of s.segments) for (let i = 1; i < seg.length; i++) length += Math.hypot(seg[i].x - seg[i - 1].x, seg[i].y - seg[i - 1].y);
+  return length;
+}
+
+/**
+ * A dot: a tap, a full stop, the dot of an `i`, a stray touch of the pen. tldraw draws a stroke whose
+ * points all fit inside its pen's width as a round dot, so the box of one is a pen-wide circle (9 page
+ * px for the board's pen) although the pen hardly moved: its path is shorter than its own box. No
+ * stroke of a glyph is like that — a stroke that crosses its box is at least as long as the box is
+ * wide. A stroke with next to no box at all is a dot too.
+ */
+export function isDotStroke(s: InkStroke): boolean {
+  const size = Math.max(s.bounds.w, s.bounds.h);
+  if (size < 4) return true;
+  const points = s.segments.reduce((n, seg) => n + seg.length, 0);
+  return points > 0 && strokeLength(s) < 0.8 * size;
+}
+
+/** Wider than `barAspect` times its height: a level bar (an `=`'s, a minus, a fraction bar, a `+`'s), whatever the hand's size. */
+function isLevelBar(r: Rect): boolean {
+  return r.w > CLUSTER_RULES.barAspect * r.h;
+}
+
+/**
+ * Median height of the glyph strokes: the size of the hand, which every threshold here is relative
+ * to. Dots (`isDotStroke`) and level bars are left out when there is anything else: their heights
+ * say nothing about how big the student writes. A young student's `=` is two wobbly bars 6–16 px tall
+ * beside digits 100 px tall, and a few taps of the pen are 9 px dots: counted, they made the median
+ * "glyph" 12 px on a board of 100 px digits (2026-10-06, iPad) — the two bars of every `=` were too
+ * far apart to be one sign, and the digits were "big curves" (drawings) never read at all.
+ */
 export function medianStrokeHeight(strokes: InkStroke[]): number {
-  const heights = strokes.map((s) => s.bounds.h);
+  const glyphs = strokes.filter((s) => !isDotStroke(s) && !isLevelBar(s.bounds));
+  const heights = (glyphs.length > 0 ? glyphs : strokes).map((s) => s.bounds.h);
   const tall = heights.filter((h) => h >= 4);
   const m = median(tall.length > 0 ? tall : heights);
   return Math.max(m, 8);
