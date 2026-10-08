@@ -135,7 +135,24 @@ NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co SUPABASE_SERVICE_ROLE_KEY=<se
 
 It prints the project it acts on first (`(local)` or `(NOT local)`), finds the account by email in Supabase Auth, and adds the row; repeating it changes nothing. `--remove` takes admin away. Each server instance remembers the answer for 60 s, so a change takes up to a minute. Anyone else who opens an admin route gets a 404 (a `warn` line, module `admin`, `admin route refused: not an admin`).
 
-**What is in app_events.** One row per event: `client.*` (a browser crash), `live.*` (an error a student saw on the board), `route.*` (a route answered 5xx), `model.*` (a model fell back, code `fallback`, level `warn`, or failed: `timeout`, `upstream`, `invalid`, `credits`), `mathpix`, `health.*`. Repeats of the same event for the same user within 30 s are written once, and each server instance writes at most 60 a minute, so counts under a flood are a floor, not exact. Straight from the database (SQL editor):
+**What is in app_events.** One row per event: `client.*` (a browser crash), `live.*` (an error a student saw on the board), `route.*` (a route answered 5xx, or answered something a student meets as a failure — below), `model.*` (a model fell back, code `fallback`, level `warn`, or failed: `timeout`, `upstream`, `invalid`, `credits`), `mathpix`, `auth`, `health.*`. Repeats of the same event for the same user within 30 s are written once, and each server instance writes at most 60 a minute, so counts under a flood are a floor, not exact.
+
+The codes that are not a 5xx (2026-10-08):
+
+| kind | code | level | what happened |
+| --- | --- | --- | --- |
+| `route.live.recognize` | `unreadable` | info | Mathpix answered that it could not read the ink (a scribble, a young child's `=`), and there was no crop for the vision reader: the board shows its gentle "Couldn't read this — tap to type it" and "?", no error |
+| `route.live.recognize` | `recognizer_failed` | warn | Mathpix read nothing for another reason (`meta.reason`: `timeout`, `http`, `network`, `auth`); the board retries with a crop, or once more on its own |
+| `route.live.recognize` | `client_timeout` | info | the board stopped waiting (its 6 s) while the route was still reading (`meta.stage`: `mathpix` or `vision`) |
+| `route.live.<route>` | `billing_unavailable` | error | the ink check failed closed (503 `feature_unavailable`): the student saw "The tutor service had a hiccup" |
+| `route.live.solve` | `unusable_steps` | warn | the model answered, and the board's step guard refused every step, also after the route's one retry (`meta.reason`: the first refusal's, `meta.retried`); refunded |
+| `route.live.chat` | `problems_dropped_<reason>` | warn | problems the engine could not check were left out (`unsolved`, `words`, `unreadable`, `false`), after the route's one repair |
+| `route.live.chat` | `budget` | warn | a repair was not started because the route's 40 s budget was running out |
+| `auth` | `unavailable` | error | Supabase Auth could not verify a token (unreachable, a 5xx): the student was told to sign in again |
+
+On the board's side (`live.*`): `live.recognize` `unreadable` is `info`; a solve the board could draw nothing of is `live.solve` `unusable_steps:<reason>` (`unknown-symbol`, `unparseable`, `figure_*`, `proof_row`) rather than `upstream`; a chat note says why (`note_write_problems_unsolved`). A `live.*` report carries the failed request's `request_id` when it had one (its `X-Request-Id`, or the stream's `meta`), so it joins the route's own row, and `meta.vercelError` when Vercel answered instead of the route (`FUNCTION_INVOCATION_TIMEOUT`: a function killed at its maxDuration, which records nothing itself).
+
+Straight from the database (SQL editor):
 
 ```sql
 -- the last hour, newest first
@@ -149,6 +166,11 @@ select at, kind, code, message, route, board_id from public.app_events where use
 -- the model fallbacks: which primary keeps failing
 select meta->>'primary' as primary, meta->>'reason' as why, count(*) from public.app_events
  where code = 'fallback' and at > now() - interval '24 hours' group by 1, 2 order by 3 desc;
+-- what a student saw, beside what the server recorded for the same request
+select b.at, b.kind, b.code, b.message, s.kind as server_kind, s.code as server_code, s.message as server_message
+  from public.app_events b left join public.app_events s
+    on s.request_id = b.request_id and s.source = 'server'
+ where b.source = 'live' and b.request_id is not null and b.at > now() - interval '24 hours' order by b.at desc;
 ```
 
 A `request_id` finds the same request's log lines in Vercel (search it), and the event's `release` the commit.

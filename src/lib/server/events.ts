@@ -7,6 +7,10 @@
  *   POST /api/client-errors         a crash in a student's browser (`client.*`) and an error card a
  *                                   student saw (`live.*`)
  *   errorResponse (request.ts)      a server route that answered 5xx (`route.<module>.<route>`)
+ *   recordRouteEvent (request.ts)   a route answer that is no thrown error but that a student meets
+ *                                   (recognize `unreadable`, solve `unusable_steps`, billing failing
+ *                                   closed, chat problems dropped…: docs/RUNBOOK-ops.md)
+ *   requireUser (auth.ts)           Supabase Auth unreachable (`auth`, `unavailable`)
  *   openrouter.ts                   a model call that fell back (`model.<route>`, code `fallback`,
  *                                   warn) or failed (code timeout | upstream | invalid | credits)
  *   mathpix.ts                      a Mathpix call that failed (`mathpix`)

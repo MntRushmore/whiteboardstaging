@@ -33,6 +33,13 @@ export const maxDuration = 30;
  */
 const VISION_DEADLINE_MS = LIVE_TIMING.recognizeTimeoutMs - 1_000;
 const VISION_MIN_MS = 1_500;
+/**
+ * A read the client abandoned this late is almost always its own 6 s timeout — the student's
+ * "Reading took too long" — rather than newer ink on the line superseding it (that comes within
+ * the quiet gate's moments). Its client report has no request id (the client never got a
+ * response), so the route says it saw it: an info event `client_timeout`.
+ */
+const CLIENT_GAVE_UP_MS = LIVE_TIMING.recognizeTimeoutMs - 2_000;
 
 /* ------------------------------------------------------------------------- */
 /* GET: capabilities + warmup                                                 */
@@ -74,6 +81,18 @@ export async function POST(req: Request) {
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
   const payload: StrokePayload = { x: data.strokes.x, y: data.strokes.y, w: data.bounds.w, h: data.bounds.h };
+  /** what the read had done when the client left (for `clientGone`) */
+  let stage: "mathpix" | "vision" = "mathpix";
+  const clientGone = () => {
+    const ms = Date.now() - startedAt;
+    if (ms < CLIENT_GAVE_UP_MS) return;
+    recordRouteEvent(log, {
+      level: "info",
+      code: "client_timeout",
+      message: `The client stopped waiting after ${Math.round(ms / 100) / 10} s (${stage})`,
+      meta: { ms, stage, hadCrop: Boolean(data.crop), cropOnly: Boolean(data.cropOnly) },
+    });
+  };
 
   return runCharged({ userId: user.id, requestId }, log, async () => {
     let result: RecognizeResponse | null = null;
@@ -101,6 +120,7 @@ export async function POST(req: Request) {
     }
 
     if (!result && data.crop) {
+      stage = "vision";
       const models = getLiveModels();
       const visionMs = Math.max(VISION_MIN_MS, VISION_DEADLINE_MS - (Date.now() - startedAt));
       const deadline = AbortSignal.timeout(visionMs);
@@ -149,7 +169,8 @@ export async function POST(req: Request) {
       // answering that it could not read the ink is `unreadable` (info: a scribble, not an
       // outage); anything else is the recognizer failing (warn: the client retries with a crop,
       // and Mathpix's own failure is already a `mathpix` event). Nothing when the client left.
-      if (!req.signal.aborted) {
+      if (req.signal.aborted) clientGone();
+      else {
         const reason = mathpixFailure?.reason ?? (isMathpixConfigured() ? "none" : "unconfigured");
         recordRouteEvent(log, {
           level: hints.unreadable ? "info" : "warn",
@@ -177,5 +198,8 @@ export async function POST(req: Request) {
     const body = RecognizeResponseSchema.parse(result);
     log.info({ provider: body.provider, ms: body.ms, confidence: body.confidence, kind: body.kind }, "recognized");
     return withRequestId(Response.json(body), requestId);
-  }, (err) => withRequestId(errorResponse(err, log, { ms: Date.now() - startedAt }), requestId));
+  }, (err) => {
+    if (req.signal.aborted) clientGone();
+    return withRequestId(errorResponse(err, log, { ms: Date.now() - startedAt }), requestId);
+  });
 }

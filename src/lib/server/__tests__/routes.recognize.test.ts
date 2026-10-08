@@ -127,6 +127,31 @@ describe("live/recognize: a read that read nothing is an event, and says why", (
   });
 });
 
+describe("live/recognize: a read the client gave up on", () => {
+  it("abandoned near the client's 6 s timeout: an info event `client_timeout` (the client's report has no request id to join)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const client = new AbortController();
+    vi.mocked(recognizeStrokes).mockImplementationOnce(async () => {
+      // Mathpix was slow: 5 s in, the client's timer fires and it aborts
+      vi.setSystemTime(Date.now() + 5_000);
+      client.abort();
+      return { ok: false, reason: "aborted" };
+    });
+    await recognize(request(BODY, client.signal));
+    expect(events()).toEqual([expect.objectContaining({ level: "info", kind: "route.live.recognize", code: "client_timeout", meta: expect.objectContaining({ stage: "mathpix", ms: expect.any(Number) }) })]);
+  });
+
+  it("abandoned at once (newer ink on the line superseded it): nothing", async () => {
+    const client = new AbortController();
+    vi.mocked(recognizeStrokes).mockImplementationOnce(async () => {
+      client.abort();
+      return { ok: false, reason: "aborted" };
+    });
+    await recognize(request(BODY, client.signal));
+    expect(events()).toEqual([]);
+  });
+});
+
 describe("live/recognize: the crop retry", () => {
   it("`cropOnly` with a crop goes straight to vision: Mathpix is not asked about the same strokes again", async () => {
     fake.mathpix = { ok: false, reason: "api_error" };
