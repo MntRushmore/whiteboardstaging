@@ -205,7 +205,7 @@ export function isDotStroke(s: InkStroke): boolean {
 }
 
 /** Wider than `barAspect` times its height: a level bar (an `=`'s, a minus, a fraction bar, a `+`'s), whatever the hand's size. */
-function isLevelBar(r: Rect): boolean {
+export function isLevelBar(r: Rect): boolean {
   return r.w > CLUSTER_RULES.barAspect * r.h;
 }
 

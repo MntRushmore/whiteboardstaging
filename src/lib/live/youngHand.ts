@@ -31,7 +31,7 @@
  */
 
 import type { InkStroke } from "./contracts";
-import { isDotStroke, strokeLength } from "./strokeClusters";
+import { isDotStroke, isLevelBar, strokeLength } from "./strokeClusters";
 
 export interface YoungReadContext {
   /**
@@ -101,6 +101,21 @@ export function answerAfterRestatedEnd(line: string, problem: string): string | 
   const before = p.slice(0, p.length - left.length);
   if (!/^[+\-×÷]/.test(left) && !/(?:[+\-×÷/(]|\\div)$/.test(before)) return null;
   return `= ${right}`;
+}
+
+/**
+ * Nothing but level bars (and taps of the pen): `-`, `=`, `= -` — the signs of an answer, its number
+ * still to come. Under one of the chat's problems such a line is not read until the number joins it
+ * (`LiveLoop.withoutStrays`): Mathpix reads a lone minus as `\backslash`, and `= -` as `=`.
+ */
+export function isSignsOnly(strokes: readonly InkStroke[]): boolean {
+  let bars = 0;
+  for (const s of strokes) {
+    if (isDotStroke(s)) continue;
+    if (!isLevelBar(s.bounds)) return false;
+    bars += 1;
+  }
+  return bars > 0;
 }
 
 /** The line as a young student meant it (see the file comment); unchanged when nothing applies. */

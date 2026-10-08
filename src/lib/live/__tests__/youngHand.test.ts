@@ -6,8 +6,8 @@ import { getEngine } from "../engine";
 import { analyzeColumn } from "../localSolve";
 import { isLoneRelation } from "../policy";
 import { clusterLines, medianStrokeHeight, unionRects } from "../strokeClusters";
-import { answerAfterRestatedEnd, isSpeckLine, isTickStroke, ownTicks, readYoungHand } from "../youngHand";
-import { youngGlyphs, youngInk, youngLine } from "../__fixtures__/youngInk";
+import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, isTickStroke, ownTicks, readYoungHand } from "../youngHand";
+import { negativeAnswers, PHOTO_HEADS, youngGlyphs, youngInk, youngLine } from "../__fixtures__/youngInk";
 import { CORPUS } from "@/__eval__/corpus";
 
 const ARITHMETIC = { arithmetic: true };
@@ -245,5 +245,17 @@ describe("readYoungHand: what the engine makes of her answers once they read as 
   it("and a wrong one is still wrong", () => {
     expect(judged("4+3", "\\approx 8")).toMatchObject({ verdict: "mismatch" });
     expect(judged("5+6", "\\smile 12")).toMatchObject({ verdict: "mismatch" });
+  });
+});
+
+describe("negative answers: an answer's signs before its number", () => {
+  const board = negativeAnswers(PHOTO_HEADS);
+
+  it("isSignsOnly: `-`, `=`, `= -` with no number yet", () => {
+    expect(isSignsOnly(youngInk(board.two.minus))).toBe(true);
+    expect(isSignsOnly(youngInk([...board.three.eq, ...board.three.minus]))).toBe(true);
+    expect(isSignsOnly(youngInk([...board.one.eq, ...youngGlyphs.dot(150, 150)]))).toBe(true);
+    expect(isSignsOnly(youngInk([...board.three.eq, ...board.three.minus, ...board.three.three]))).toBe(false);
+    expect(isSignsOnly(youngInk(youngGlyphs.dot(150, 150)))).toBe(false);
   });
 });

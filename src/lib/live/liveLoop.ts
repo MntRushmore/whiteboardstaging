@@ -130,7 +130,7 @@ import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient"
 import { assignColumns, clusterLines, inkScale, medianStrokeHeight, rebuildFromMathShapes, unionRects, type ColumnOptions, type EchoShapeSeed } from "./strokeClusters";
 import { buildPayload, hashPayload } from "./strokePayload";
 import { captureInkCrop } from "./inkCrop";
-import { answerAfterRestatedEnd, isSpeckLine, ownTicks, readYoungHand } from "./youngHand";
+import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, ownTicks, readYoungHand } from "./youngHand";
 import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
 import { nextStep as stackNextStep, parseStacked, placesLeft, rowPlaces, workStacked, type StackedWork } from "./engine/columnArithmetic";
@@ -1829,9 +1829,11 @@ export class LiveLoop implements LiveController {
     const columns = this.columnOptions(inLines);
     // a division bar with its divisor, and a stacked sum, are a line each whatever the clusterer makes of them
     const fixed = [...barGroups(split.bars, ink), ...stackGroups(split.stacks, ink)];
+    const cells = this.problemCells();
     const clustered = clusterLines(split.writing, prevLines, fixed, { zoom: this.boardZoom(), columns });
-    // a young student's own tick after her answer, and taps of the pen, are no line of maths
-    const lines = this.withProblemColumns(this.withoutStrays(clustered, split.writing, columns));
+    // a young student's own tick after her answer, taps of the pen, and an answer's signs before its
+    // number are no line of maths (yet)
+    const lines = this.withProblemColumns(this.withoutStrays(clustered, split.writing, columns, cells));
     this.rememberProblems(lines);
     const nextIds = new Set(lines.map((l) => l.id));
 
@@ -1873,15 +1875,17 @@ export class LiveLoop implements LiveController {
 
   /**
    * The lines without what a young student puts on the page that is no maths (`youngHand.ts`): a
-   * line of nothing but taps of the pen is no line (`isSpeckLine`: never read, so never given a "?"),
-   * and under one of the chat's sums her own tick after her answer is not part of it (`ownTicks`; a
-   * line that was only a tick is none). Those strokes stay on the page in no line, like a drawing's.
-   * A division bar's or a stacked sum's line is left as it is. `writing`: the strokes clustered.
+   * line of nothing but taps of the pen is no line (`isSpeckLine`: never read, so never given a "?");
+   * under one of the chat's problems, nor is one of nothing but level bars — `-`, `=`, `= -`, an answer
+   * started whose number is still to come (`isSignsOnly`: Mathpix reads a lone minus `\backslash`,
+   * and `= -` as `=`) — until the number joins it; and under one of the chat's sums her own tick after
+   * her answer is not part of it (`ownTicks`; a line that was only a tick is none). Those strokes stay
+   * on the page in no line, like a drawing's. A division bar's or a stacked sum's line is left as it
+   * is. `writing`: the strokes clustered; `cells`: the chat's problems.
    */
-  private withoutStrays(lines: InkLine[], writing: readonly InkStroke[], columns: ColumnOptions): InkLine[] {
+  private withoutStrays(lines: InkLine[], writing: readonly InkStroke[], columns: ColumnOptions, cells: readonly ProblemCell[]): InkLine[] {
     const byId = new Map(writing.map((s) => [s.id as string, s]));
     const glyph = medianStrokeHeight([...writing]);
-    let cells: ProblemCell[] | null = null;
     let changed = false;
     const out: InkLine[] = [];
     for (const line of lines) {
@@ -1895,7 +1899,12 @@ export class LiveLoop implements LiveController {
         changed = true;
         continue;
       }
-      const cell = cellOf(line.bounds, (cells ??= this.problemCells()));
+      const cell = cellOf(line.bounds, cells);
+      // `-`, `=`, `= -` under one of the chat's problems: an answer started, its number still to come
+      if (cell && isSignsOnly(strokes)) {
+        changed = true;
+        continue;
+      }
       const ticks = cell && cell.lines.every(isArithmetic) ? ownTicks(strokes) : [];
       if (ticks.length === 0) {
         out.push(line);

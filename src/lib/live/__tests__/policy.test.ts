@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HELP_MODES, type EngineVerdict, type HelpMode, type LineAnalysis, type LineKind } from "../contracts";
-import { badgeFor, decide, isLoneRelation, isSingleSymbolLatex, localNoteFor, unjudgedReason, type PolicyInput } from "../policy";
+import { badgeFor, decide, isAnswerStart, isLoneRelation, isSingleSymbolLatex, localNoteFor, unjudgedReason, type PolicyInput } from "../policy";
 
 function analysis(verdict: EngineVerdict, kind: LineKind = "equation", extra: Partial<LineAnalysis> = {}): LineAnalysis {
   return { kind, math: "2x+3=11", resultLatex: "", verdict, note: "", ...extra };
@@ -328,16 +328,25 @@ describe("unjudgedReason — a line the tutor read but cannot judge", () => {
     expect(unjudgedReason(line("<", "unknown", "unknown"))).toBeNull();
     expect(unjudgedReason(line("\\geq", "unknown", "unknown"))).toBeNull();
     expect(unjudgedReason(line("=", "incomplete", "none", { confidence: 0.4 }))).toBeNull();
-    // ...once the number is there it is judged as ever, and a lone minus is no relation
+    // ...and so is a negative answer's start: a minus, `= -`
+    expect(unjudgedReason(line("-", "unknown", "unknown"))).toBeNull();
+    expect(unjudgedReason(line("=-", "incomplete", "none"))).toBeNull();
+    expect(unjudgedReason(line("= -", "incomplete", "none"))).toBeNull();
+    // ...once the number is there it is judged as ever
     expect(unjudgedReason(line("= 7", "expression", "none"))).toBeNull();
-    expect(unjudgedReason(line("-", "unknown", "unknown"))).toBe("unjudged");
     expect(unjudgedReason(line("3 =", "incomplete", "none"))).toBe("unjudged");
+    expect(unjudgedReason(line("- -", "unknown", "unknown"))).toBe("unjudged");
   });
 });
 
-describe("isLoneRelation", () => {
+describe("isLoneRelation / isAnswerStart", () => {
   it("a relation and nothing else", () => {
     for (const s of ["=", " = ", "{=}", "<", ">", "\\le", "\\geq", "\\neq", "\\approx", "\\text{=}"]) expect(isLoneRelation(s), s).toBe(true);
     for (const s of ["", "-", "==7", "= 7", "x =", "\\leq 3", "\\sim", "\\lessdot"]) expect(isLoneRelation(s), s).toBe(false);
+  });
+
+  it("an answer's signs, its number still to come", () => {
+    for (const s of ["=", "-", " - ", "=-", "= -", "\\ge -", "<-"]) expect(isAnswerStart(s), s).toBe(true);
+    for (const s of ["", "-3", "=-3", "--", "-=", "x-", "= 7", "\\backslash"]) expect(isAnswerStart(s), s).toBe(false);
   });
 });
