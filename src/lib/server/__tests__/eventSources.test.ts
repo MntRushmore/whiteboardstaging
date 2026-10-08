@@ -32,7 +32,8 @@ import { runChargedStream } from "@/lib/server/live-route";
 import { recognizeStrokes } from "@/lib/server/mathpix";
 import { CreditsExhaustedError, UpstreamError, WatchdogTimeoutError } from "@/lib/server/openrouter";
 import { resetRateLimits } from "@/lib/server/rate-limit";
-import { errorResponse, eventContext, logContext, routeEventKind } from "@/lib/server/request";
+import { errorResponse, eventContext, logContext, recordRouteEvent, routeEventKind } from "@/lib/server/request";
+import { enforceInk, resetBillingWarnings, type RpcClient } from "@/lib/server/billing";
 import { POST as clientErrors } from "@/app/api/client-errors/route";
 
 const ENV_VARS = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "MATHPIX_APP_ID", "MATHPIX_APP_KEY", "LOG_LEVEL"] as const;
@@ -148,6 +149,56 @@ describe("runChargedStream: an SSE route's error frame is a route event too", ()
   it("a stream that completes records nothing", async () => {
     await runChargedStream({ userId: fake.USER_ID, requestId: "req-9" }, liveLog("check"), () => true, async () => undefined, rpc);
     expect(events()).toEqual([]);
+  });
+});
+
+describe("recordRouteEvent: an answer that is not a thrown error, but that a student meets", () => {
+  it("route.live.<route> at the caller's level and code, with the route, request and user; only short scalars in meta", () => {
+    recordRouteEvent(liveLog("recognize"), {
+      level: "info",
+      code: "unreadable",
+      message: "Mathpix could not read the ink",
+      meta: { status: 502, hadCrop: false, reason: "api_error", nested: { no: 1 }, long: "x".repeat(300) },
+    });
+    expect(events()).toEqual([
+      {
+        source: "server",
+        level: "info",
+        kind: "route.live.recognize",
+        code: "unreadable",
+        message: "Mathpix could not read the ink",
+        route: "/api/live/recognize",
+        userId: fake.USER_ID,
+        requestId: "req-9",
+        meta: { status: 502, hadCrop: false, reason: "api_error" },
+      },
+    ]);
+  });
+});
+
+describe("enforceInk failing closed: the 503 a student meets as a hiccup is an event", () => {
+  beforeEach(() => {
+    logger.level = "silent";
+    resetBillingWarnings();
+  });
+  afterEach(() => {
+    logger.level = process.env.LOG_LEVEL || "info";
+  });
+
+  const rpc = (reply: { data?: unknown; error?: { message: string; code?: string } | null }): RpcClient => ({
+    rpc: async () => ({ data: reply.data ?? null, error: reply.error ?? null }),
+  });
+
+  it("billing unavailable: an error `billing_unavailable` on the route; out of ink and fair use are not events", async () => {
+    const input = { token: "jwt", route: "live/recognize" as const, requestId: "req-9", model: "mathpix" };
+    const down = await enforceInk(input, liveLog("recognize"), rpc({ error: { message: "schema cache", code: "PGRST202" } }));
+    expect((down as { response: Response }).response.status).toBe(503);
+    expect(events()).toEqual([
+      expect.objectContaining({ level: "error", kind: "route.live.recognize", code: "billing_unavailable", route: "/api/live/recognize", requestId: "req-9", meta: expect.objectContaining({ status: 503, inkRoute: "live/recognize" }) }),
+    ]);
+    await enforceInk(input, liveLog("recognize"), rpc({ data: { ok: false, remaining: 0, reason: "insufficient_credits" } }));
+    await enforceInk(input, liveLog("recognize"), rpc({ data: { ok: false, remaining: 0, reason: "fair_use", retry_after_ms: 60_000 } }));
+    expect(events()).toHaveLength(1);
   });
 });
 
@@ -283,6 +334,24 @@ describe("POST /api/client-errors: each report is an event", () => {
     expect(events()[2]).toMatchObject({ source: "live", kind: "live.check", level: "info" });
     await clientErrors(post({ ...REPORT, source: "live", kind: "live.chat", code: "note_graph", level: "warn", message: "I couldn't graph that" }));
     expect(events()[3]).toMatchObject({ level: "warn" });
+  });
+
+  it("noise (isNoise) from a tab on an older release is no event", async () => {
+    const injected = { ...REPORT, message: "ReferenceError: Can't find variable: __firefox__", stack: "global code@https://www.agathon.app/login:1:12", path: "/login" };
+    expect((await clientErrors(post(injected))).status).toBe(204);
+    expect((await clientErrors(post({ ...REPORT, message: "TypeError: x", stack: "f@webkit-masked-url://hidden/:1:1" }))).status).toBe(204);
+    expect(events()).toHaveLength(0);
+    await clientErrors(post({ ...injected, message: "TypeError: x is undefined", stack: `${injected.stack}\nsubmit@https://www.agathon.app/_next/static/chunks/b.js:4:5` }));
+    expect(events()).toHaveLength(1);
+  });
+
+  it("the failed request's id is the event's request id (joined to the route's own row); Vercel's error goes in meta", async () => {
+    await clientErrors(
+      post({ ...REPORT, source: "live", kind: "live.recognize", code: "upstream", message: "The tutor service had a hiccup", requestId: "4f1c2d3e-aaaa-4bbb-8ccc-123456789abc", vercelError: "FUNCTION_INVOCATION_TIMEOUT" }),
+    );
+    expect(events()[0]).toMatchObject({ kind: "live.recognize", requestId: "4f1c2d3e-aaaa-4bbb-8ccc-123456789abc", meta: expect.objectContaining({ vercelError: "FUNCTION_INVOCATION_TIMEOUT" }) });
+    // one that is not an id is refused with the report, never stored
+    expect((await clientErrors(post({ ...REPORT, requestId: "x".repeat(65) }))).status).toBe(400);
   });
 
   it("a board id app_events could not store is left out; a refused report is no event", async () => {

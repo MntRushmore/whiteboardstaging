@@ -57,3 +57,37 @@ export function buildSolveMessages(req: SolveRequest): ChatMessage[] {
     { role: "user", content: user },
   ];
 }
+
+/** What a refused step's reason asks the model to do differently (the board's interlock, `checkSolveStep`). */
+const RETRY_WHY: Record<string, (introduced: readonly string[]) => string> = {
+  "unknown-symbol": (introduced) =>
+    `it uses ${introduced.length > 0 ? introduced.map((s) => `"${s}"`).join(", ") : "a letter"} that the student's lines never use. Use only the student's own letters and numbers; a new quantity is allowed only when a step first defines it on its own (v = \\frac{60}{2}).`,
+  unparseable: () =>
+    "the board cannot read it as maths. One relation per step, KaTeX only, no \\text{...}, no words, no interval notation, no \\quad lists of several equations.",
+  empty: () => "it is empty.",
+};
+
+/**
+ * The one retry of POST /api/live/solve when the board would draw none of the steps (every one
+ * refused by its interlock): the same request, the model's own steps as its earlier answer, and
+ * what the board refused first and why — so the second answer is maths the board can check.
+ */
+export function buildSolveRetryMessages(
+  req: SolveRequest,
+  steps: ReadonlyArray<{ index: number; latex: string; explanation: string; final: boolean }>,
+  refused: { reason: string; introduced: readonly string[]; latex: string },
+): ChatMessage[] {
+  const why = (RETRY_WHY[refused.reason] ?? RETRY_WHY.unparseable)(refused.introduced);
+  const earlier = steps.map((s) => JSON.stringify(s)).join("\n") || "(no steps)";
+  return [
+    ...buildSolveMessages(req),
+    { role: "assistant", content: earlier },
+    {
+      role: "user",
+      content: [
+        `The board could not use any of those steps. The first one it refused was ${JSON.stringify(refused.latex.slice(0, 200))}: ${why}`,
+        "Write the whole worked solution again, following every rule. JSON Lines only.",
+      ].join("\n"),
+    },
+  ];
+}

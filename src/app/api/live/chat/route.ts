@@ -6,13 +6,16 @@ import type { LiveEngine } from "@/lib/live/contracts";
 import { FigureSpecSchema } from "@/lib/live/figureDraw/contracts";
 import { enforceInk, refundInk, runCharged } from "@/lib/server/billing";
 import { gateChatProof, PROOF_NOT_WRITTEN } from "@/lib/server/chatProof";
+import { gateChatProblems, PROBLEM_DROP_WHY, type ProblemDropReason, type ProblemsRepair } from "@/lib/server/chatProblems";
 import { gateChatTeach, TEACH_NOT_WRITTEN } from "@/lib/server/chatTeach";
+import { commonestReason } from "@/lib/live/chat/verify";
 import { chatJsonWithFallback } from "@/lib/server/openrouter";
-import { errorResponse } from "@/lib/server/request";
+import { errorResponse, recordRouteEvent } from "@/lib/server/request";
 import {
   actionTypes,
   buildChatMessages,
   buildFigureRepairMessages,
+  buildProblemsRepairMessages,
   buildProofRepairMessages,
   buildTeachRepairMessages,
   ChatReplyRawSchema,
@@ -20,6 +23,8 @@ import {
   cleanReplyText,
   dropMissingProblems,
   FigureRepairReplySchema,
+  problemsFromRepair,
+  ProblemsRepairReplySchema,
   ProofRepairReplySchema,
   teachFromRepair,
   TeachRepairReplySchema,
@@ -38,6 +43,19 @@ const REPAIR_ATTEMPT_MS = 10_000;
 const PROOF_REPAIR_ATTEMPT_MS = 14_000;
 /** A worked solution's repair works the problem again (at most one per request). */
 const TEACH_REPAIR_ATTEMPT_MS = 16_000;
+/** A problem set's repair: new problems for the ones the engine refused (at most one per request). */
+const PROBLEMS_REPAIR_ATTEMPT_MS = 10_000;
+/**
+ * Everything the route does ends this long after it started (maxDuration 45). Two 18 s attempts and
+ * a repair after them could run past 45 s, and the platform then kills the function: no event, no
+ * refund, and the student waits for nothing. Every model call gets what is left of this
+ * (`deadline`), and a repair is not started with less than REPAIR_MIN_MS left.
+ */
+const CHAT_BUDGET_MS = 40_000;
+const REPAIR_MIN_MS = 6_000;
+
+const PROBLEMS_NOT_WRITTEN = "I couldn't check those problems, so I didn't write them.";
+const problemsLeftOut = (n: number, of: number) => `${n} of ${of} problems couldn't be checked, so I left ${n === 1 ? "it" : "them"} out.`;
 
 const FIGURE_NOT_DRAWN = "The figure couldn't be drawn.";
 
@@ -63,6 +81,11 @@ function teachEngine(): Promise<LiveEngine> {
  * the engine, loaded on the first one); one it cannot check gets ONE repair round-trip with the
  * engine's findings, else it is dropped with a note — never written unchecked. Its figure, when the
  * drawer still finds problems with it after that, is left out and the working goes on.
+ * A `write_problems` goes on with only the problems the engine verifies (`gateChatProblems` →
+ * `verifyProblem`, the board's own check, run here first); the ones it refuses get ONE repair
+ * round-trip (new problems of the same skill, told why), else they are left out with a note — the
+ * whole set dropped when none is left. Every model call and repair fits the route's time
+ * (`CHAT_BUDGET_MS`, `deadline`), so the platform never kills a request mid-way.
  * A `help_problem` ("help me with 3") names a problem on the screen by its number there; one about
  * a number the screen does not have is dropped with a note ("There's no problem 7 on this
  * screen."), which is the reply when nothing else is left.
@@ -81,6 +104,15 @@ export async function POST(req: Request) {
   const billing = await enforceInk({ token, route: "live/chat", requestId, model: models.chat }, log);
   if ("response" in billing) return withRequestId(billing.response, requestId);
 
+  const deadline = startedAt + CHAT_BUDGET_MS;
+  /** repairs not started because the route's time was running out (an event when any) */
+  let repairsSkipped = 0;
+  const repairTime = () => {
+    if (deadline - Date.now() >= REPAIR_MIN_MS) return true;
+    repairsSkipped++;
+    return false;
+  };
+
   return runCharged(
     { userId: user.id, requestId },
     log,
@@ -95,6 +127,7 @@ export async function POST(req: Request) {
         reasoningFor: () => "low",
         latencyFirst: true,
         attemptTimeoutMs: CHAT_ATTEMPT_MS,
+        deadline,
         title: "Agathon Live - chat",
       });
       const proposed = raw.actions.length;
@@ -103,6 +136,7 @@ export async function POST(req: Request) {
 
       /** One repair round-trip for a proof the engine could not prove: the model gets the engine's problems. */
       const repairProof = async (action: WriteProofAction, problems: readonly string[]) => {
+        if (!repairTime()) return null;
         try {
           const { data: fixed } = await chatJsonWithFallback(models.chat, models.chatFallback, {
             messages: buildProofRepairMessages(data.message, action, problems),
@@ -113,6 +147,7 @@ export async function POST(req: Request) {
             reasoningFor: () => "low",
             latencyFirst: true,
             attemptTimeoutMs: PROOF_REPAIR_ATTEMPT_MS,
+            deadline,
             title: "Agathon Live - chat proof",
           });
           return fixed;
@@ -124,6 +159,7 @@ export async function POST(req: Request) {
 
       /** One repair round-trip for a worked solution the engine could not check: the model gets its findings. */
       const repairTeach = async (action: TeachAction, problems: readonly string[]) => {
+        if (!repairTime()) return null;
         try {
           const { data: fixed } = await chatJsonWithFallback(models.chat, models.chatFallback, {
             messages: buildTeachRepairMessages(data, action, problems),
@@ -134,11 +170,35 @@ export async function POST(req: Request) {
             reasoningFor: () => "low",
             latencyFirst: true,
             attemptTimeoutMs: TEACH_REPAIR_ATTEMPT_MS,
+            deadline,
             title: "Agathon Live - chat teach",
           });
           return teachFromRepair(fixed);
         } catch (err) {
           log.warn({ err: err instanceof Error ? err.message : String(err) }, "chat teach repair failed");
+          return null;
+        }
+      };
+
+      /** One repair round-trip for problems the engine could not check: new ones, told why. */
+      const repairProblems: ProblemsRepair = async (failed) => {
+        if (!repairTime()) return null;
+        try {
+          const { data: fixed } = await chatJsonWithFallback(models.chat, models.chatFallback, {
+            messages: buildProblemsRepairMessages(data.message, failed.map((f) => ({ problem: f.problem, why: PROBLEM_DROP_WHY[f.reason] }))),
+            schema: ProblemsRepairReplySchema,
+            signal: req.signal,
+            requestId,
+            maxTokens: 1500,
+            reasoningFor: () => "low",
+            latencyFirst: true,
+            attemptTimeoutMs: PROBLEMS_REPAIR_ATTEMPT_MS,
+            deadline,
+            title: "Agathon Live - chat problems",
+          });
+          return problemsFromRepair(fixed);
+        } catch (err) {
+          log.warn({ err: err instanceof Error ? err.message : String(err) }, "chat problems repair failed");
           return null;
         }
       };
@@ -154,9 +214,30 @@ export async function POST(req: Request) {
       let teachRepairs = 0;
       let teachesDropped = 0;
       let teachChecked = 0;
+      // Problem sets: every problem verified by the engine (`gateChatProblems`), one repair, else left out.
+      let problemRepairs = 0;
+      let problemSetsDropped = 0;
+      const problemDrops: ProblemDropReason[] = [];
+      let problemsProposed = 0;
+      let problemsReplaced = 0;
       // "the hardest proof ever" is held to it: a proof that takes a few rows is sent back once
       const proofCheck = wantsHardProof(data.message) ? { minRows: PROOF_CHECK.hardMinRows } : {};
       for (const action of valid) {
+        if (action.type === "write_problems") {
+          problemsProposed += action.problems.length;
+          const gated = await gateChatProblems(action, await teachEngine(), problemRepairs === 0 ? repairProblems : null);
+          if (gated.repaired) problemRepairs++;
+          problemDrops.push(...gated.dropped);
+          if (gated.ok) {
+            actions.push(gated.action);
+            problemsReplaced += gated.replaced;
+            if (gated.dropped.length > 0) notes.push(problemsLeftOut(gated.dropped.length, action.problems.length));
+          } else {
+            problemSetsDropped++;
+            dropped.push({ type: "write_problems", reason: `none checked (${commonestReason(gated.dropped) ?? "?"})` });
+          }
+          continue;
+        }
         if (action.type === "teach") {
           const gated = await gateChatTeach(action, await teachEngine(), teachRepairs === 0 ? (problems) => repairTeach(action, problems) : null);
           if (gated.repaired) teachRepairs++;
@@ -185,7 +266,7 @@ export async function POST(req: Request) {
           continue;
         }
         let problems = figureProblems(action.figure);
-        if (problems.length > 0 && repairs === 0) {
+        if (problems.length > 0 && repairs === 0 && repairTime()) {
           repairs++;
           try {
             const { data: fixed } = await chatJsonWithFallback(models.chat, models.chatFallback, {
@@ -197,6 +278,7 @@ export async function POST(req: Request) {
               reasoningFor: () => "low",
               latencyFirst: true,
               attemptTimeoutMs: REPAIR_ATTEMPT_MS,
+              deadline,
               title: "Agathon Live - chat figure",
             });
             const spec = FigureSpecSchema.parse(fixed.figure);
@@ -219,11 +301,12 @@ export async function POST(req: Request) {
       if (figuresDropped > 0 && !notes.includes(FIGURE_NOT_DRAWN)) notes.push(FIGURE_NOT_DRAWN);
       if (proofsDropped > 0) notes.push(PROOF_NOT_WRITTEN);
       if (teachesDropped > 0) notes.push(TEACH_NOT_WRITTEN);
+      if (problemSetsDropped > 0) notes.push(PROBLEMS_NOT_WRITTEN);
 
       // A screen added (or the tutor's ink cleared) only to make room for a figure, a proof or a
       // worked solution that could not be written is not something the student asked for: with
       // nothing else left, nothing is done.
-      if (figuresDropped + proofsDropped + teachesDropped > 0 && actions.every((a) => a.type === "new_screen" || a.type === "clear_tutor")) actions.length = 0;
+      if (figuresDropped + proofsDropped + teachesDropped + problemSetsDropped > 0 && actions.every((a) => a.type === "new_screen" || a.type === "clear_tutor")) actions.length = 0;
 
       // Help with a problem that is not on this screen: dropped, and the panel says there is none.
       const present = dropMissingProblems(actions, data.screen);
@@ -242,14 +325,37 @@ export async function POST(req: Request) {
               ? "Sorry, I couldn't check that proof, so I didn't write it. Try asking for another one."
               : figuresDropped > 0
                 ? "Sorry, I couldn't draw that figure."
-                : present.notes.length > 0
-                  ? present.notes[0]
-                  : "Sorry, I couldn't do that on the board. Try asking another way.";
+                : problemSetsDropped > 0
+                  ? "Sorry, I couldn't check those problems, so I didn't write them. Try asking for them another way."
+                  : present.notes.length > 0
+                    ? present.notes[0]
+                    : "Sorry, I couldn't do that on the board. Try asking another way.";
         notes.length = 0;
         const r = await refundInk({ userId: user.id, requestId }, log);
         refunded = r.refunded > 0;
       }
       if (!reply) reply = actions.length > 0 ? "Here you go." : "I can only help with maths on this board.";
+
+      // Problems the engine refused (left out, or a whole set dropped): the student reads a note
+      // about it, so the admin page hears of it too — with the engine's commonest reason in the code.
+      const why = commonestReason(problemDrops);
+      if (why) {
+        recordRouteEvent(log, {
+          level: "warn",
+          code: `problems_dropped_${why}`,
+          message: `${problemDrops.length} of ${problemsProposed} problems failed the engine's check`,
+          meta: { dropped: problemDrops.length, proposed: problemsProposed, reasons: [...new Set(problemDrops)].join(","), replaced: problemsReplaced, repaired: problemRepairs > 0, setsDropped: problemSetsDropped, model },
+        });
+      }
+      // A repair the route's time did not allow: what it would have fixed went out as it was.
+      if (repairsSkipped > 0) {
+        recordRouteEvent(log, {
+          level: "warn",
+          code: "budget",
+          message: `${repairsSkipped} repair${repairsSkipped === 1 ? "" : "s"} not started: the route's time was running out`,
+          meta: { skipped: repairsSkipped, ms: Date.now() - startedAt, budgetMs: CHAT_BUDGET_MS, model },
+        });
+      }
 
       const body: ChatResponse = ChatResponseSchema.parse({
         reply,
@@ -273,6 +379,10 @@ export async function POST(req: Request) {
           teachRepairs,
           teachesDropped,
           teachChecked,
+          problemRepairs,
+          problemsDropped: problemDrops.length,
+          problemsReplaced,
+          repairsSkipped,
           problemSent: Boolean(data.problem),
           learnerWeak: data.learner?.weakSkills.length ?? 0,
           refunded,

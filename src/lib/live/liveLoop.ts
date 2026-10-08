@@ -14,7 +14,8 @@ import type {
   TLShapeId,
   TLShapePartial,
 } from "tldraw";
-import { isApiError, isOutOfInk } from "@/lib/api-client";
+import { errorTrace, isApiError, isOutOfInk } from "@/lib/api-client";
+import { reportUserError } from "@/lib/reportAppError";
 import { clientMetric } from "@/lib/logger";
 import {
   GRAPH_COLORS,
@@ -116,7 +117,7 @@ import {
   rectsIntersect,
 } from "./placement";
 import { badgeFor, decide, isSingleSymbolLatex, localNoteFor, unjudgedReason, type PolicyDecision, type UnjudgedReason } from "./policy";
-import { createSolveStepGuard, engineParsesStep, localAnswerFor, mathSymbols, unwrapBoxed as unwrapBoxedAnywhere } from "./solveSteps";
+import { createSolveStepGuard, engineParsesStep, localAnswerFor, mathSymbols, stepKey, unwrapBoxed as unwrapBoxedAnywhere } from "./solveSteps";
 import {
   RecognizeClient,
   RecognizeTimeoutError,
@@ -126,8 +127,10 @@ import {
   recognizeFailureHints,
 } from "./recognizeClient";
 import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient";
-import { assignColumns, clusterLines, inkScale, rebuildFromMathShapes, unionRects, type ColumnOptions, type EchoShapeSeed } from "./strokeClusters";
+import { assignColumns, clusterLines, inkScale, medianStrokeHeight, rebuildFromMathShapes, unionRects, type ColumnOptions, type EchoShapeSeed } from "./strokeClusters";
 import { buildPayload, hashPayload } from "./strokePayload";
+import { captureInkCrop } from "./inkCrop";
+import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, leadingSigns, ownTicks, readYoungHand } from "./youngHand";
 import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
 import { nextStep as stackNextStep, parseStacked, placesLeft, rowPlaces, workStacked, type StackedWork } from "./engine/columnArithmetic";
@@ -142,7 +145,7 @@ import { PROOF_ROWS_META, proofRowsPlan } from "./proof/place";
 import { PROOF_FIGURE_META, PROOF_TABLE_META, tutorFiguresOf } from "./proof/tutorFigure";
 import type { PlannedRow } from "./proof/planner";
 import type { BoardLine, ProofRead } from "./proof/read";
-import { cellOf, problemKeyOf, problemLines, problemMetaOf, readProblemCells, splitColumnsAtProblems, type ProblemCell } from "./chat/cells";
+import { besideProblem, cellOf, problemKeyOf, problemLines, problemMetaOf, readProblemCells, splitAcrossProblems, splitColumnsAtProblems, type ProblemCell } from "./chat/cells";
 import { nextHelpTarget, penLine, pickedLine, problemCount, problemTarget, type HelpTargetDraft } from "./helpTarget";
 import {
   PROBLEM_WORK_META,
@@ -356,10 +359,11 @@ const CHIP_CODES: ReadonlySet<LiveError["code"]> = new Set(["network", "upstream
 const READ_RETRY_MS = 1500;
 
 /**
- * A failed read worth one more try of the same ink: a timeout or a server error. Not a
- * `recognizer_failed` (the recognizer, with a crop, could not read this ink: it would not read it
- * the second time either), nor a 4xx, which says the request itself was refused. A dropped request
- * (fetch's TypeError) is the offline queue's to replay.
+ * A failed read worth one more try of the same ink: a timeout or a server error. A
+ * `recognizer_failed` only when the server says it was a blip (`transient`: Mathpix timed out or
+ * could not be reached, and no crop could be sent instead) — not when the recognizer could not read
+ * this ink (it would not read it the second time either) — nor a 4xx, which says the request itself
+ * was refused. A dropped request (fetch's TypeError) is the offline queue's to replay.
  */
 /**
  * How long the offline queue waits before it is replayed on its own while the browser still says
@@ -369,7 +373,17 @@ const OFFLINE_REPLAY_MS = [2000, 4000, 8000, 15_000] as const;
 
 function transientReadFailure(err: unknown): boolean {
   if (err instanceof RecognizeTimeoutError) return true;
-  return isApiError(err) && err.status >= 500 && err.code !== "recognizer_failed";
+  if (isApiError(err, "recognizer_failed")) return recognizeFailureHints(err).transient;
+  return isApiError(err) && err.status >= 500;
+}
+
+/**
+ * The recognizer answered that it could not make sense of this ink (Mathpix's `api_error`) and no
+ * crop could be read instead: a line the tutor could not read, as an unsure read is — not the tutor
+ * service failing.
+ */
+function unreadableInk(err: unknown): boolean {
+  return isApiError(err, "recognizer_failed") && recognizeFailureHints(err).unreadable;
 }
 
 /**
@@ -1815,7 +1829,13 @@ export class LiveLoop implements LiveController {
     const columns = this.columnOptions(inLines);
     // a division bar with its divisor, and a stacked sum, are a line each whatever the clusterer makes of them
     const fixed = [...barGroups(split.bars, ink), ...stackGroups(split.stacks, ink)];
-    const lines = this.withProblemColumns(clusterLines(split.writing, prevLines, fixed, { zoom: this.boardZoom(), columns }));
+    // ink beside one of the chat's problems is never one line with ink under another (`splitAcrossProblems`)
+    const cells = this.problemCells();
+    const apart = cells.length > 1 ? (group: InkStroke[]) => splitAcrossProblems(group, cells) : undefined;
+    const clustered = clusterLines(split.writing, prevLines, fixed, { zoom: this.boardZoom(), columns, apart });
+    // a young student's own tick after her answer, taps of the pen, and an answer's signs before its
+    // number are no line of maths (yet)
+    const lines = this.withProblemColumns(this.withoutStrays(clustered, split.writing, columns, cells));
     this.rememberProblems(lines);
     const nextIds = new Set(lines.map((l) => l.id));
 
@@ -1853,6 +1873,50 @@ export class LiveLoop implements LiveController {
 
     for (const { line, moveOnly } of affected) void this.processLine(line, ink, moveOnly);
     this.publishHelpTarget();
+  }
+
+  /**
+   * The lines without what a young student puts on the page that is no maths (`youngHand.ts`): a
+   * line of nothing but taps of the pen is no line (`isSpeckLine`: never read, so never given a "?");
+   * under one of the chat's problems, nor is one of nothing but level bars — `-`, `=`, `= -`, an answer
+   * started whose number is still to come (`isSignsOnly`: Mathpix reads a lone minus `\backslash`,
+   * and `= -` as `=`) — until the number joins it; and under one of the chat's sums her own tick after
+   * her answer is not part of it (`ownTicks`; a line that was only a tick is none). Those strokes stay
+   * on the page in no line, like a drawing's. A division bar's or a stacked sum's line is left as it
+   * is. `writing`: the strokes clustered; `cells`: the chat's problems.
+   */
+  private withoutStrays(lines: InkLine[], writing: readonly InkStroke[], columns: ColumnOptions, cells: readonly ProblemCell[]): InkLine[] {
+    const byId = new Map(writing.map((s) => [s.id as string, s]));
+    const glyph = medianStrokeHeight([...writing]);
+    let changed = false;
+    const out: InkLine[] = [];
+    for (const line of lines) {
+      const strokes = line.strokeIds.map((id) => byId.get(id)).filter((s): s is InkStroke => Boolean(s));
+      // a division bar's line, a stacked sum's: not the clusterer's, left alone
+      if (strokes.length !== line.strokeIds.length) {
+        out.push(line);
+        continue;
+      }
+      if (isSpeckLine(strokes, glyph)) {
+        changed = true;
+        continue;
+      }
+      const cell = cellOf(line.bounds, cells);
+      // `-`, `=`, `= -` under one of the chat's problems: an answer started, its number still to come
+      if (cell && isSignsOnly(strokes)) {
+        changed = true;
+        continue;
+      }
+      const ticks = cell && cell.lines.every(isArithmetic) ? ownTicks(strokes) : [];
+      if (ticks.length === 0) {
+        out.push(line);
+        continue;
+      }
+      changed = true;
+      const kept = strokes.filter((s) => !ticks.includes(s));
+      if (kept.length > 0) out.push({ ...line, strokeIds: kept.map((s) => s.id), bounds: unionRects(kept.map((s) => s.bounds)) });
+    }
+    return changed ? assignColumns(out, columns) : lines;
   }
 
   /**
@@ -1999,6 +2063,12 @@ export class LiveLoop implements LiveController {
         rt.readRetriedHash = hash;
         return;
       }
+      // Ink the recognizer could not make sense of (a young child's `=`, a scribble): the gentle
+      // "couldn't read this" and "?", as for an unsure read. No pill, no error card.
+      if (unreadableInk(err)) {
+        this.applyUnreadable(lineId, err);
+        return;
+      }
       if (!network) console.warn("[live] recognize failed", err);
       // Most failed reads are a blip (a timeout, a 502): the same ink is read once more on its own
       // before the student hears about it. Meanwhile the line counts as still being read (no "?").
@@ -2048,7 +2118,8 @@ export class LiveLoop implements LiveController {
       if (!hints.needsCrop || req.crop) throw err;
       const crop = await this.captureCrop(line.strokeIds, line.bounds);
       if (!crop) throw err;
-      return await this.deps.recognizer.recognize({ ...req, crop }, hash);
+      // `cropOnly`: Mathpix just read nothing from these strokes; the route goes straight to vision
+      return await this.deps.recognizer.recognize({ ...req, crop, cropOnly: true }, hash);
     }
   }
 
@@ -2082,20 +2153,30 @@ export class LiveLoop implements LiveController {
     return true;
   }
 
-  /** A JPEG data URL of these strokes in `bounds`, at most `maxWidth` px wide (≤ `maxCropBytes`), or undefined. */
+  /**
+   * A JPEG data URL of these strokes in `bounds`, about `maxWidth` px wide and ≤ `maxCropBytes`, or
+   * undefined. tldraw's export first; when it fails (iPads) or is too big, a smaller export, then the
+   * strokes drawn on a canvas of our own (`captureInkCrop`, src/lib/live/inkCrop.ts).
+   */
   private async captureCrop(ids: readonly TLShapeId[], bounds: Rect, maxWidth = 512): Promise<string | undefined> {
+    if (typeof FileReader === "undefined" || bounds.w <= 0) return undefined;
     const toImage = this.editor.toImage;
-    if (!toImage || typeof FileReader === "undefined" || bounds.w <= 0) return undefined;
+    const want = new Set<string>(ids);
+    const startedAt = this.deps.now();
     try {
-      const { blob } = await toImage.call(this.editor, [...ids], {
-        format: "jpeg",
-        quality: 0.8,
-        background: true,
-        padding: 8,
-        bounds: Box.From(expandRect(bounds, 8)),
-        scale: Math.min(1, maxWidth / bounds.w),
+      const res = await captureInkCrop({
+        toImage: toImage ? (o) => toImage.call(this.editor, [...ids], { ...o, bounds: Box.From(o.bounds) }) : null,
+        strokes: () => this.collectInk().flatMap((s) => (want.has(s.id) ? s.segments : [])),
+        bounds,
+        maxWidth,
+        maxBytes: LIVE_LIMITS.maxCropBytes,
       });
-      if (blob.size > LIVE_LIMITS.maxCropBytes) return undefined;
+      if (!res.ok) {
+        clientMetric("live.crop.failed", { tried: res.tried.join(","), ms: this.deps.now() - startedAt });
+        return undefined;
+      }
+      if (res.how !== "export") clientMetric("live.crop.fallback", { how: res.how, tried: res.tried.join(","), bytes: res.blob.size });
+      const blob = res.blob;
       return await new Promise<string | undefined>((resolve) => {
         const reader = new FileReader();
         reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : undefined);
@@ -2238,13 +2319,27 @@ export class LiveLoop implements LiveController {
     this.learnFresh.add(lineId);
     forgetOldest(this.learnFresh);
     // a division bar and the number under it: Mathpix drops the bar and reads `2` — the line is
-    // "divide both sides by 2" (`engine/operationLine.ts`)
-    const read = reread ?? res.latex;
+    // "divide both sides by 2" (`engine/operationLine.ts`). A young hand's wobbly `=` is an `=`.
+    const read = this.youngRead(state, reread ?? res.latex);
     const latex = state.line.strokeIds.some((id) => this.barStrokeIds.has(id)) ? (barDivisionLatex(read) ?? read) : read;
     if (reread) setLine(lineId, { latex, confidence: Math.max(res.confidence, LIVE_LIMITS.minConfidence), provider: "reread" });
     else setLine(lineId, { latex, confidence: res.confidence, provider: res.provider });
     await this.ensureEngine();
     this.analyzeAndRender(lineId, { cascade: true });
+  }
+
+  /**
+   * A read of the student's line as they meant it (`youngHand.ts`): a young hand's wobbly `=` read as
+   * `\smile`, `\asymp`, `\approx 7` is an `=`, and in arithmetic the tick drawn after an answer is none
+   * of it and the answer's signs are its ink's (`leadingSigns`: `-54` for a wobbly `= 54` is `= 54`).
+   * Every read goes through it: Mathpix's, the second reader's.
+   */
+  private youngRead(state: LiveLineState, latex: string): string {
+    const arithmetic = this.arithmeticProblem(state);
+    // the signs her answer starts with, as its ink has them: a wobbly `=` is read as a minus too
+    const ink = arithmetic ? state.line.strokeIds.map((id) => this.editor.getShape(id)).map((s) => (s ? this.inkOf(s) : null)) : [];
+    const signs = arithmetic ? leadingSigns(ink.filter((s): s is InkStroke => s !== null)) : null;
+    return readYoungHand(latex, { arithmetic, signs });
   }
 
   // ---------------------------------------------------------------- the second reader
@@ -2272,18 +2367,20 @@ export class LiveLoop implements LiveController {
     // (`stackAnalysis`) — and one misread as a fraction is not read again into a "plainer" fraction
     if (this.stackOf(line) || MISREAD_STACK.test(res.latex)) return;
     const state = liveStore.lines.get()[line.id];
-    if (!state || state.latex !== res.latex) return;
+    // the read as it stands on the board (a young hand's `=` put right: `youngRead`)
+    if (!state || state.latex !== this.youngRead(state, res.latex)) return;
+    const read = { latex: state.latex, confidence: res.confidence };
     const { above, below } = this.columnNeighbours(state);
     const others = [...above, ...below];
     const signal = rereadTrigger({
-      latex: res.latex,
-      confidence: res.confidence,
+      latex: read.latex,
+      confidence: read.confidence,
       analysis: state.analysis,
       strokeCount: line.strokeIds.length,
       others,
     });
     if (!signal) return;
-    await this.readAgain(line, res, { signal, above, below, others });
+    await this.readAgain(line, read, { signal, above, below, others });
   }
 
   /**
@@ -2395,6 +2492,17 @@ export class LiveLoop implements LiveController {
     const head = this.columnHeads.get(state.line.column);
     const lines = head ? head.lines : [this.columnLines(state.line.column).find((s) => s.latex && s.line.row <= state.line.row)?.latex ?? state.latex];
     return lines.length > 0 && lines.every(isArithmetic);
+  }
+
+  /**
+   * A line on the row of one of the chat's problems, after it, that writes the problem's end again and
+   * then its answer (`3 = 7` after the tutor's `4 + 3`, its 3 rubbed out and written again): that
+   * answer, as a line of its own (`= 7`, `answerAfterRestatedEnd`). Null for any other line.
+   */
+  private answerBeside(state: LiveLineState): string | null {
+    const head = this.columnHeads.get(state.line.column);
+    if (!head || head.lines.length !== 1 || !besideProblem(state.line.bounds, head.head)) return null;
+    return answerAfterRestatedEnd(state.latex, head.lines[0]);
   }
 
   /**
@@ -2547,7 +2655,8 @@ export class LiveLoop implements LiveController {
     // a "couldn't read this" chip waiting for the low-confidence read is not wanted any more
     if (rt.unreadableTimer) clearTimeout(rt.unreadableTimer);
     rt.unreadableTimer = null;
-    setLine(lineId, { latex, provider: "reread", confidence: Math.max(confidence, LIVE_LIMITS.minConfidence) });
+    const state = liveStore.lines.get()[lineId];
+    setLine(lineId, { latex: state ? this.youngRead(state, latex) : latex, provider: "reread", confidence: Math.max(confidence, LIVE_LIMITS.minConfidence) });
     this.analyzeAndRender(lineId, { cascade: true });
   }
 
@@ -2561,6 +2670,41 @@ export class LiveLoop implements LiveController {
       analysis: { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note },
     });
     this.deleteLineShapes(lineId, { keepAi: true });
+  }
+
+  /**
+   * The recognizer could not make sense of this ink (`unreadableInk`): the line is one the tutor
+   * could not read, the way an unsure read is (`unreadableRead`) — the same "Couldn't read this — tap
+   * to type it" and "?", after the same delay (the student may still be writing it), and no pill or
+   * error card: nothing failed that Retry would fix. Reported at `info` (`unreadable`), with the
+   * request's id, so the admin page can tell young kids' ink from an outage.
+   */
+  private applyUnreadable(lineId: string, err: unknown): void {
+    const state = liveStore.lines.get()[lineId];
+    if (!state) return;
+    const rt = this.runtime(lineId);
+    setLine(lineId, {
+      latex: "",
+      confidence: 0,
+      provider: "none",
+      analysis: { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: UNREADABLE_NOTE },
+    });
+    this.deleteLineShapes(lineId, { keepAi: true });
+    // the server answered: the network is up, and the read is done (no blip retry, no offline replay)
+    this.noteSuccess("recognize", lineId);
+    reportUserError({ kind: "live.recognize", code: "unreadable", message: UNREADABLE_NOTE, level: "info", ...errorTrace(err) });
+    clientMetric("live.recognize.unreadable", { lineId });
+    if (rt.unreadableTimer) clearTimeout(rt.unreadableTimer);
+    const ticket = rt.processing;
+    rt.unreadableTimer = setTimeout(() => {
+      rt.unreadableTimer = null;
+      const cur = liveStore.lines.get()[lineId];
+      if (!cur || rt.processing !== ticket || !this.opts.enabled) return;
+      rt.unreadableShown = true;
+      this.upsertEcho(lineId, { latex: "", status: "unknown", resultLatex: "", note: UNREADABLE_NOTE });
+      const fresh = liveStore.lines.get()[lineId];
+      if (fresh && this.opts.mode !== "off") this.syncMark(fresh, "question", "unread");
+    }, LIVE_TIMING.unreadableChipMs);
   }
 
   /**
@@ -3051,11 +3195,13 @@ export class LiveLoop implements LiveController {
     try {
       const ctx = this.columnContext(state);
       let a = this.engine.analyzeLine(state.latex, { ...ctx, mode: this.opts.mode });
-      // arithmetic (no letters anywhere in the problem): a lone number is the answer, and a right
-      // plain number — or a true fact, `7 + 5 = 12` — is the problem solved
+      // arithmetic (no letters anywhere in the problem): a lone number is the answer (`= 9` too), and
+      // so is the one after the end of the problem written again beside it (`3 = 7` after `4 +`); a
+      // right plain number — or a true fact, `7 + 5 = 12` — is the problem solved
       if (this.arithmeticProblem(state)) {
-        if (ctx.previous && BARE_NUMBER.test(state.latex)) {
-          const answer = this.engine.analyzeLine(`= ${state.latex.trim()}`, { ...ctx, mode: this.opts.mode });
+        const bare = this.answerBeside(state) ?? (BARE_NUMBER.test(state.latex) ? `= ${withoutRelation(state.latex)}` : null);
+        if (ctx.previous && bare) {
+          const answer = this.engine.analyzeLine(bare, { ...ctx, mode: this.opts.mode });
           if (answer.verdict === "ok" || answer.verdict === "mismatch") a = { ...answer, bareAnswer: true };
         }
         if (a.verdict === "ok" && !a.solved && PLAIN_NUMBER.test(lastSide(state.latex))) a = { ...a, solved: true };
@@ -4094,10 +4240,13 @@ export class LiveLoop implements LiveController {
     void (async () => {
       let first = true;
       let failed = false;
+      /** the stream's request id (its `meta` frame), so a failure the student sees joins the server's rows */
+      let requestId: string | undefined;
       try {
         for await (const ev of this.deps.stream(CHECK_PATH, req, { signal: ctrl.signal })) {
           if (ctrl.signal.aborted) break;
-          if (ev.event === "annotation") {
+          if (ev.event === "meta") requestId = ev.data.requestId;
+          else if (ev.event === "annotation") {
             if (first) {
               first = false;
               clientMetric("live.check.ttfa.ms", { ms: this.deps.now() - startedAt, lineId: focusLineId });
@@ -4106,7 +4255,7 @@ export class LiveLoop implements LiveController {
           } else if (ev.event === "error") {
             failed = true;
             console.warn("[live] check error", ev.data);
-            this.fail(sseFailure(ev.data), errCtx, retry);
+            this.fail(sseFailure(ev.data, { requestId }), errCtx, retry);
           }
         }
       } catch (err) {
@@ -4115,7 +4264,7 @@ export class LiveLoop implements LiveController {
           // A network failure is also deferred so a reconnect replays it once, as before.
           if (this.isNetworkFailure(err)) this.deferLlm("check", focusLineId, opts.userAsked);
           else console.warn("[live] check failed", err);
-          if (this.deps.isOnline()) this.fail(err, errCtx, retry);
+          if (this.deps.isOnline()) this.fail(err, { ...errCtx, requestId }, retry);
         }
       } finally {
         if (rt.checkAbort === ctrl) rt.checkAbort = null;
@@ -4868,7 +5017,7 @@ export class LiveLoop implements LiveController {
         // Asked on the drawing. Nothing asked is what to write next, quietly — the red card and its
         // Retry would say something broke, and asking again would only be told the same.
         if (outcome === "nothing") this.noteFor(opts.lineId, LIVE_COPY.solve.nothingAsked);
-        else this.fail(sseFailure({ error: "unusable_steps", message: SOLVE_FAILED }), errCtx, retry);
+        else this.fail(sseFailure({ error: "unusable_steps", message: SOLVE_FAILED }, { reason: `figure_${reason || "unusable"}` }), errCtx, retry);
       }
       if (outcome === "written") this.noteSuccess("solve", opts.lineId);
       if (liveStore.status.get() !== "offline") liveStore.status.set("idle");
@@ -5262,10 +5411,15 @@ export class LiveLoop implements LiveController {
       let drawn = 0;
       let discarded = 0;
       const accepted: string[] = [];
+      /** the stream's request id (its `meta` frame), so a failure the student sees joins the server's rows */
+      let requestId: string | undefined;
+      /** why the guard refused the first step it refused: the report says it (`unusable_steps:<reason>`) */
+      let firstRejection: string | undefined;
       try {
         for await (const ev of this.deps.stream(SOLVE_PATH, req, { signal: ctrl.signal })) {
           if (ctrl.signal.aborted) break;
-          if (ev.event === "step") {
+          if (ev.event === "meta") requestId = ev.data.requestId;
+          else if (ev.event === "step") {
             const latex = unwrapBoxed(ev.data.latex);
             // The student's own line read back to them is not a step, and neither is the step
             // before it again (the model boxes its last line as the answer, often a repeat).
@@ -5275,6 +5429,7 @@ export class LiveLoop implements LiveController {
             const verdict = guard.check(latex);
             if (!verdict.ok) {
               discarded++;
+              firstRejection ??= verdict.reason;
               console.warn("[live] solve step discarded", { reason: verdict.reason, introduced: verdict.introduced, latex: ev.data.latex });
               clientMetric("live.solve.step.discarded", { reason: verdict.reason ?? "", lineId: opts.lineId });
               continue;
@@ -5292,7 +5447,7 @@ export class LiveLoop implements LiveController {
           } else if (ev.event === "error") {
             failed = true;
             console.warn("[live] solve error", ev.data);
-            this.fail(sseFailure(ev.data), errCtx, retry);
+            this.fail(sseFailure(ev.data, { requestId }), errCtx, retry);
           }
         }
         if (accepted.length > 0 && (doneEarly || !ctrl.signal.aborted)) this.writeModelSteps(built, opts, accepted);
@@ -5300,14 +5455,14 @@ export class LiveLoop implements LiveController {
         // to leave the student staring at a page where Solve visibly did nothing.
         if (!failed && drawn === 0 && discarded > 0) {
           failed = true;
-          this.fail(sseFailure({ error: "unusable_steps", message: SOLVE_FAILED }), errCtx, retry);
+          this.fail(sseFailure({ error: "unusable_steps", message: SOLVE_FAILED }, { reason: firstRejection, requestId }), errCtx, retry);
         }
       } catch (err) {
         if (!isAbortLike(err) && !ctrl.signal.aborted) {
           failed = true;
           if (this.isNetworkFailure(err)) this.deferLlm("solve", opts.lineId);
           else console.warn("[live] solve failed", err);
-          if (this.deps.isOnline()) this.fail(err, errCtx, retry);
+          if (this.deps.isOnline()) this.fail(err, { ...errCtx, requestId }, retry);
         }
       } finally {
         if (rt.solveAbort === ctrl) rt.solveAbort = null;
@@ -5829,7 +5984,7 @@ export class LiveLoop implements LiveController {
       failed: (err, lineId, all) => {
         const errCtx = { kind: "solve" as const, lineId, userAsked: true };
         const retry: RetryContext = { kind: "proof", lineId, all };
-        if (err === null) this.fail(sseFailure({ error: "unusable_steps", message: UNUSABLE_SOLUTION }), errCtx, retry);
+        if (err === null) this.fail(sseFailure({ error: "unusable_steps", message: UNUSABLE_SOLUTION }, { reason: "proof_row" }), errCtx, retry);
         else if (!this.isNetworkFailure(err)) this.fail(err, errCtx, retry);
       },
       succeeded: (lineId) => this.noteSuccess("solve", lineId),
@@ -7500,12 +7655,9 @@ export function unwrapBoxed(latex: string): string {
   return unwrapBoxedAnywhere(latex);
 }
 
-/** Comparable form of a step: spacing, `\left`/`\right` and `\cdot` vs juxtaposition ignored. */
+/** Comparable form of a step: spacing, `\left`/`\right` and `\cdot` vs juxtaposition ignored (`stepKey`, shared with the solve route). */
 export function normalizeStep(latex: string): string {
-  return unwrapBoxed(latex)
-    .replace(/\\(?:left|right|,|;|!|quad|qquad)|~|\s/g, "")
-    .replace(/[{}]/g, "")
-    .replace(/\\cdot|\\times|\*/g, "");
+  return stepKey(latex);
 }
 
 

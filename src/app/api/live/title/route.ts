@@ -16,7 +16,7 @@ const TITLE_ATTEMPT_MS = 6_000;
 /**
  * POST /api/live/title — a board's name from the maths on it ("Solving trig equations"). The
  * board page asks once the board has saved some maths, and at most a few times a session
- * (`useBoardAutoTitle`). Text only, on the second reader's small fast models. Not charged: it
+ * (`useBoardAutoTitle`). Text only, on small fast models of its own (`LIVE_MODELS.title`). Not charged: it
  * costs a fraction of a cent, and the student never asked for it; the rate limit (`liveTitle`)
  * bounds it instead.
  */
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
 
   const models = getLiveModels();
   try {
-    const { data: reply, model } = await chatJsonWithFallback(models.reread, models.rereadFallback, {
+    const { data: reply, model } = await chatJsonWithFallback(models.title, models.titleFallback, {
       messages: buildTitleMessages(data.lines),
       schema: TitleReplySchema,
       signal: req.signal,

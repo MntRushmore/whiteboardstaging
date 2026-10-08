@@ -320,6 +320,71 @@ export function engineParsesStep(engine: Pick<LiveEngine, "analyzeLine">, latex:
   return Boolean(analysis.math?.trim());
 }
 
+/** Comparable form of a step: spacing, `\left`/`\right` and `\cdot` vs juxtaposition ignored. */
+export function stepKey(latex: string): string {
+  return unwrapBoxed(latex)
+    .replace(/\\(?:left|right|,|;|!|quad|qquad)|~|\s/g, "")
+    .replace(/[{}]/g, "")
+    .replace(/\\cdot|\\times|\*/g, "");
+}
+
+/** The board's verdict on one streamed step of a worked solution (`SolveStepJudge`). */
+export type StepJudgement =
+  | { drawn: true }
+  | { drawn: false; skipped: true }
+  | { drawn: false; skipped: false; reason: SolveStepRejection; introduced: string[] };
+
+export interface SolveStepJudge {
+  judge(latex: string): StepJudgement;
+  /** steps the board would draw */
+  readonly drawn: number;
+  /** steps it would refuse (a restatement is skipped, not refused) */
+  readonly discarded: number;
+  /** why the first refused step was refused, and the step */
+  readonly firstRejection: { reason: SolveStepRejection; introduced: string[]; latex: string } | null;
+}
+
+/**
+ * The board's reading of a solve stream, step by step, exactly as `openSolveStream` (liveLoop.ts)
+ * reads it: a step that restates the student's own line or a step before it is skipped; every
+ * other step goes through the interlock (`createSolveStepGuard`), and only an accepted one is drawn.
+ * The solve route runs the same judge on the steps it sends, so it knows when the board will draw
+ * nothing ("Couldn't solve this one") and can ask once more before the student sees that.
+ */
+export function createSolveStepJudge(opts: { sourceLatex: readonly string[]; parses: (latex: string) => boolean }): SolveStepJudge {
+  const guard = createSolveStepGuard(opts);
+  const restated = new Set(opts.sourceLatex.map(stepKey));
+  let drawn = 0;
+  let discarded = 0;
+  let firstRejection: SolveStepJudge["firstRejection"] = null;
+  return {
+    judge(raw: string): StepJudgement {
+      const latex = unwrapBoxed(raw);
+      const key = stepKey(latex);
+      if (restated.has(key)) return { drawn: false, skipped: true };
+      restated.add(key);
+      const verdict = guard.check(latex);
+      if (verdict.ok) {
+        drawn++;
+        return { drawn: true };
+      }
+      discarded++;
+      const reason = verdict.reason ?? "unparseable";
+      firstRejection ??= { reason, introduced: verdict.introduced, latex };
+      return { drawn: false, skipped: false, reason, introduced: verdict.introduced };
+    },
+    get drawn() {
+      return drawn;
+    },
+    get discarded() {
+      return discarded;
+    },
+    get firstRejection() {
+      return firstRejection;
+    },
+  };
+}
+
 const MONOMIAL_COEFFICIENT = String.raw`(?:\d+(?:\.\d+)?|\\frac\{\d+\}\{\d+\})`;
 const MONOMIAL_FACTOR = String.raw`(?:[a-zA-Z]|\\([a-zA-Z]+))(?:\^(?:\d|\{-?\d+\}))?`;
 const MONOMIAL = new RegExp(String.raw`^[-+]?${MONOMIAL_COEFFICIENT}?(?:${MONOMIAL_FACTOR})+$`);

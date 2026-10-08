@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { reportAppError } from "@/lib/reportAppError";
+import { CHUNK_FAILED_REPORT, isChunkLoadError } from "@/lib/chunkReload";
+import { reportAppError, reportUserError } from "@/lib/reportAppError";
 import { logger } from "@/lib/logger";
 
 interface Props {
@@ -32,7 +33,10 @@ export class LiveErrorBoundary extends React.Component<Props, State> {
       },
       "Live UI crashed; hiding the Live layer for this session",
     );
-    reportAppError("live", error);
+    // A lazy part whose chunk is gone (a deploy since the board opened): hidden, and a warning
+    // rather than a crash. No reload: the student is working on the board, which still works.
+    if (isChunkLoadError(error)) reportUserError(CHUNK_FAILED_REPORT);
+    else reportAppError("live", error);
   }
 
   render(): React.ReactNode {

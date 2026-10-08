@@ -215,3 +215,311 @@ export const ADMIN_ROUTES = {
   /** GET: run the checks (Authorization: Bearer CRON_SECRET from pg_cron; or an admin's token, "check now") */
   health: "/api/admin/health",
 } as const;
+
+// ------------------------------------------------------------------ the admin console (2026-10-08)
+//
+// /admin grows from one overview page into a console: who uses Agathon (users, one page per user),
+// their boards (a read-only viewer and a replay), what they reported (a bug inbox with screenshots)
+// and what broke (issues: error groups you can mute or mark fixed). Every route below is admin-only
+// (`requireAdmin`), reads with the service role, and is listed in scripts/lib/routes.mjs.
+//
+// Privacy. An admin opening a student's board, replay or bug screenshot is written to `admin_audit`
+// (who, what, when), and the privacy policy says staff may look at a board to support and improve
+// the service. Nothing here leaves the server except to the admin's own browser.
+//
+// Later (not built here): student accounts under a parent, and live study rooms. Keep a board view
+// a function of (snapshot, who may see it), so a parent's view of a child's board and a room's
+// shared board reuse the same viewer and replay (src/components/replay).
+
+/** Where an account stands with Agathon Unlimited, from `unlimited_subscriptions` (the newest row). */
+export const PLAN_STATES = [
+  /** never started a subscription */
+  "none",
+  /** in the free trial, first charge coming */
+  "trialing",
+  /** in the free trial but set to cancel: no charge is coming */
+  "trial_cancelling",
+  /** paying */
+  "active",
+  /** paying but set to cancel at the period's end */
+  "cancelling",
+  /** a charge is failing (past_due, unpaid) */
+  "failing",
+  /** over (canceled, incomplete_expired) */
+  "ended",
+] as const;
+export type PlanState = (typeof PLAN_STATES)[number];
+
+export const AdminUserRowSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string().nullable(),
+  /** profiles.display_name */
+  name: z.string().nullable(),
+  /** profiles.course */
+  course: z.string().nullable(),
+  createdAt: z.string(),
+  onboardedAt: z.string().nullable(),
+  /** the latest of: a board saved, an AI call, a learning attempt updated, a sign-in (auth last_sign_in_at) */
+  lastActiveAt: z.string().nullable(),
+  plan: z.enum(PLAN_STATES),
+  /** ISO, while trialing */
+  trialEndsAt: z.string().nullable(),
+  /** boards not deleted */
+  boards: z.number().int(),
+  /** learning attempts in the last 7 days, and how many of those the student solved alone (INDEPENDENT_OUTCOMES) */
+  attempts7d: z.number().int(),
+  solvedAlone7d: z.number().int(),
+  /** metered AI calls in the last 7 days (usage_events + unlimited_usage) */
+  aiCalls7d: z.number().int(),
+  /** app_events at level error in the last 7 days, noise left out */
+  errors7d: z.number().int(),
+  bugReports: z.number().int(),
+  isAdmin: z.boolean(),
+});
+export type AdminUserRow = z.infer<typeof AdminUserRowSchema>;
+
+/** GET ADMIN_ROUTES.users: every account (at most ADMIN_LIMITS.users), most recently active first. The page filters and sorts in the browser. */
+export const AdminUserListSchema = z.object({
+  generatedAt: z.string(),
+  total: z.number().int(),
+  users: z.array(AdminUserRowSchema),
+});
+export type AdminUserList = z.infer<typeof AdminUserListSchema>;
+
+export const AdminBoardRowSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string().uuid(),
+  ownerEmail: z.string().nullable(),
+  ownerName: z.string().nullable(),
+  title: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  /** whiteboards.preview: an inline image data URL of the student's current screen, null when empty */
+  preview: z.string().nullable(),
+  version: z.number().int(),
+  /** pg_column_size(data) / 1024, rounded */
+  sizeKb: z.number().int(),
+  /** learning attempts on this board */
+  attempts: z.number().int(),
+  /** app_events at level error on this board in the last 7 days, noise left out */
+  errors7d: z.number().int(),
+});
+export type AdminBoardRow = z.infer<typeof AdminBoardRowSchema>;
+
+/** GET ADMIN_ROUTES.boards (?userId= one user's; ?live=1 updated in the last ADMIN_LIMITS.liveWindowMin; ?before=<updatedAt ISO> next page). Newest first. */
+export const AdminBoardListSchema = z.object({
+  generatedAt: z.string(),
+  boards: z.array(AdminBoardRowSchema),
+  /** pass as ?before= for the next page; null at the end */
+  nextBefore: z.string().nullable(),
+});
+export type AdminBoardList = z.infer<typeof AdminBoardListSchema>;
+
+export const AdminEventSchema = z.object({
+  id: z.number().int(),
+  at: z.string(),
+  source: z.enum(EVENT_SOURCES),
+  level: z.enum(EVENT_LEVELS),
+  kind: z.string(),
+  code: z.string().nullable(),
+  message: z.string(),
+  route: z.string().nullable(),
+  userId: z.string().nullable(),
+  userEmail: z.string().nullable(),
+  boardId: z.string().nullable(),
+  requestId: z.string().nullable(),
+  meta: z.record(z.string(), z.unknown()).nullable(),
+  release: z.string().nullable(),
+  /** isNoise (src/lib/clientErrors.ts): a browser's or extension's own script, not ours */
+  noise: z.boolean(),
+});
+export type AdminEvent = z.infer<typeof AdminEventSchema>;
+
+export const ATTEMPT_OUTCOMES = ["in_progress", "first_try", "self_corrected", "with_help", "tutor_solved", "unfinished"] as const;
+
+export const AdminAttemptSchema = z.object({
+  id: z.string(),
+  boardId: z.string().nullable(),
+  problemLatex: z.string(),
+  skill: z.string(),
+  outcome: z.enum(ATTEMPT_OUTCOMES),
+  hints: z.number().int(),
+  solves: z.number().int(),
+  linesRinged: z.number().int(),
+  activeMs: z.number().int(),
+  startedAt: z.string(),
+  finishedAt: z.string().nullable(),
+});
+export type AdminAttempt = z.infer<typeof AdminAttemptSchema>;
+
+export const BUG_STATUSES = ["new", "seen", "fixed", "wontfix"] as const;
+export type BugStatus = (typeof BUG_STATUSES)[number];
+
+export const AdminBugSchema = z.object({
+  id: z.string(),
+  at: z.string(),
+  userId: z.string().nullable(),
+  email: z.string().nullable(),
+  boardId: z.string().nullable(),
+  message: z.string(),
+  /** diagnostics.url's path */
+  path: z.string().nullable(),
+  status: z.enum(BUG_STATUSES),
+  note: z.string().nullable(),
+  resolvedAt: z.string().nullable(),
+  /** GET ADMIN_ROUTES.bugScreenshot(id) serves it (image bytes); false when the report has none */
+  hasScreenshot: z.boolean(),
+  /** bug_reports.diagnostics as stored (device, viewport, browser) */
+  diagnostics: z.record(z.string(), z.unknown()).nullable(),
+  /** bug_reports.logs, noise entries removed, newest last, at most 200 */
+  logs: z.array(z.object({ level: z.string(), time: z.string(), text: z.string() })),
+});
+export type AdminBug = z.infer<typeof AdminBugSchema>;
+
+/** GET ADMIN_ROUTES.bugs: newest first (at most ADMIN_LIMITS.bugs). */
+export const AdminBugListSchema = z.object({ generatedAt: z.string(), bugs: z.array(AdminBugSchema) });
+export type AdminBugList = z.infer<typeof AdminBugListSchema>;
+
+/** PATCH ADMIN_ROUTES.bug(id) */
+export const AdminBugPatchSchema = z.object({ status: z.enum(BUG_STATUSES).optional(), note: z.string().max(2000).nullable().optional() });
+
+export const ISSUE_STATUSES = ["open", "muted", "fixed"] as const;
+export type IssueStatus = (typeof ISSUE_STATUSES)[number];
+
+/**
+ * An issue: the app_events that are the same problem, by fingerprint = issueFingerprint(kind, code,
+ * message) (digits in the message already read "#"). Muting hides it from the inbox and the alert
+ * spike count; "fixed" hides it until an event arrives after `fixedAt` (then `regressed`).
+ */
+export const AdminIssueSchema = z.object({
+  fingerprint: z.string(),
+  kind: z.string(),
+  code: z.string().nullable(),
+  source: z.enum(EVENT_SOURCES),
+  level: z.enum(EVENT_LEVELS),
+  message: z.string(),
+  count: z.number().int(),
+  users: z.number().int(),
+  boards: z.number().int(),
+  firstAt: z.string(),
+  lastAt: z.string(),
+  /** events per day for the window, oldest first, every day present */
+  perDay: z.array(z.number().int()),
+  status: z.enum(ISSUE_STATUSES),
+  note: z.string().nullable(),
+  fixedAt: z.string().nullable(),
+  /** marked fixed, then seen again after fixedAt */
+  regressed: z.boolean(),
+  /** every event of it is noise (isNoise) */
+  noise: z.boolean(),
+  /** the latest few, with the board and user to open */
+  samples: z.array(AdminEventSchema),
+});
+export type AdminIssue = z.infer<typeof AdminIssueSchema>;
+
+/** GET ADMIN_ROUTES.issues (?days=1|7|30, default 7): most recent first. */
+export const AdminIssueListSchema = z.object({ generatedAt: z.string(), days: z.number().int(), issues: z.array(AdminIssueSchema) });
+export type AdminIssueList = z.infer<typeof AdminIssueListSchema>;
+
+/** PATCH ADMIN_ROUTES.issues */
+export const AdminIssuePatchSchema = z.object({ fingerprint: z.string().min(1).max(400), status: z.enum(ISSUE_STATUSES), note: z.string().max(2000).nullable().optional() });
+
+/** The key an issue is grouped by. Pure: the server groups with it, the page links with it. */
+export function issueFingerprint(kind: string, code: string | null | undefined, message: string): string {
+  const msg = message.replace(/\d+/g, "#").replace(/\s+/g, " ").trim().slice(0, 200);
+  return `${kind}|${code ?? ""}|${msg}`;
+}
+
+/** GET ADMIN_ROUTES.user(id): everything about one account. */
+export const AdminUserDetailSchema = z.object({
+  generatedAt: z.string(),
+  user: AdminUserRowSchema,
+  subscription: z
+    .object({
+      status: z.string(),
+      trialEnd: z.string().nullable(),
+      currentPeriodEnd: z.string().nullable(),
+      cancelAtPeriodEnd: z.boolean(),
+      cancelAt: z.string().nullable(),
+      payerEmail: z.string().nullable(),
+      createdAt: z.string(),
+    })
+    .nullable(),
+  inkBalance: z.number().int().nullable(),
+  /** the user's boards, newest first (no deleted ones) */
+  boards: z.array(AdminBoardRowSchema),
+  learning: z.object({
+    attempts: z.number().int(),
+    solvedAlone: z.number().int(),
+    withHelp: z.number().int(),
+    tutorSolved: z.number().int(),
+    activeMinutes: z.number().int(),
+    /** by skill, most attempts first */
+    skills: z.array(z.object({ skill: z.string(), attempts: z.number().int(), solvedAlone: z.number().int() })),
+    /** the latest 50 */
+    recent: z.array(AdminAttemptSchema),
+  }),
+  /** the last 30 days, oldest first, every day present (the user's time zone is unknown: UTC days) */
+  activity: z.array(z.object({ day: z.string(), attempts: z.number().int(), aiCalls: z.number().int(), boards: z.number().int() })),
+  /** the latest 100 app_events of this user, noise included (flagged) */
+  events: z.array(AdminEventSchema),
+  bugs: z.array(AdminBugSchema),
+  emails: z.array(z.object({ kind: z.string(), sentAt: z.string().nullable() })),
+});
+export type AdminUserDetail = z.infer<typeof AdminUserDetailSchema>;
+
+/**
+ * GET ADMIN_ROUTES.board(id): one board for the viewer and the replay. `snapshot` is
+ * whiteboards.data as stored (a tldraw store snapshot `{document:{store,schema}, session}`, or an
+ * older bare store snapshot). With ?since=<version> and the board unchanged, the answer is
+ * `{ unchanged: true, version }` and nothing else (the viewer's "follow live" poll).
+ * Each read that returns a snapshot writes admin_audit (action 'board.view').
+ */
+export const AdminBoardDocSchema = z.object({
+  generatedAt: z.string(),
+  board: AdminBoardRowSchema,
+  snapshot: z.unknown(),
+  events: z.array(AdminEventSchema),
+  attempts: z.array(AdminAttemptSchema),
+  /** whiteboard_snapshots kept for it (the operator's undo), newest first; not their data */
+  history: z.array(z.object({ id: z.number().int(), at: z.string(), version: z.number().int(), reason: z.string() })),
+});
+export type AdminBoardDoc = z.infer<typeof AdminBoardDocSchema>;
+export const AdminBoardUnchangedSchema = z.object({ unchanged: z.literal(true), version: z.number().int() });
+
+export const ADMIN_LIMITS = {
+  users: 2000,
+  boardsPage: 48,
+  bugs: 200,
+  /** a board saved this recently counts as "live now" */
+  liveWindowMin: 5,
+  /** the viewer's follow-live poll */
+  followPollMs: 4000,
+} as const;
+
+/** The console's pages (all behind requireAdmin's answer: a non-admin gets the app's 404). */
+export const ADMIN_PAGES = {
+  overview: "/admin",
+  users: "/admin/users",
+  user: (id: string) => `/admin/users/${id}`,
+  boards: "/admin/boards",
+  /** the read-only viewer and replay (its own bundle: it loads tldraw) */
+  board: (id: string) => `/admin/boards/${id}`,
+  bugs: "/admin/bugs",
+  issues: "/admin/issues",
+} as const;
+
+/** The console's API routes (bearer token of an admin; 401 signed out, 404 non-admin). */
+export const ADMIN_API = {
+  users: "/api/admin/users",
+  user: (id: string) => `/api/admin/users/${id}`,
+  boards: "/api/admin/boards",
+  board: (id: string) => `/api/admin/boards/${id}`,
+  bugs: "/api/admin/bugs",
+  /** PATCH */
+  bug: (id: string) => `/api/admin/bugs/${id}`,
+  /** GET: the screenshot's bytes (image/png), Cache-Control private */
+  bugScreenshot: (id: string) => `/api/admin/bugs/${id}/screenshot`,
+  /** GET list, PATCH state */
+  issues: "/api/admin/issues",
+} as const;

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { EVENT_KIND, EVENT_LEVELS } from "@/lib/admin/contracts";
-import { MAX_MESSAGE, MAX_REPORT_BYTES, MAX_STACK, stripUrlQueries, userErrorLevel } from "@/lib/clientErrors";
+import { isNoise, MAX_MESSAGE, MAX_REPORT_BYTES, MAX_STACK, stripUrlQueries, userErrorLevel } from "@/lib/clientErrors";
 import { logger } from "@/lib/logger";
 import { identifyUser, json } from "@/lib/server/auth";
 import { recordEvent } from "@/lib/server/events";
@@ -34,6 +34,10 @@ const ReportSchema = z.object({
   /** how bad, as the page judged it (out of ink is info, a rate limit warn); else from `code` */
   level: z.enum(EVENT_LEVELS).optional(),
   code: z.string().max(40).optional(),
+  /** the failed request's X-Request-Id: the event's `request_id`, joining it to the route's own */
+  requestId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional(),
+  /** Vercel's x-vercel-error on the failed response (FUNCTION_INVOCATION_TIMEOUT…), in `meta` */
+  vercelError: z.string().regex(/^[A-Z0-9_]{1,64}$/).optional(),
 });
 
 const log = logger.child({ module: "client-error" });
@@ -73,7 +77,8 @@ async function readCapped(req: Request, max: number): Promise<string | null> {
  *
  * PUBLIC BY DESIGN (allow-listed in scripts/lib/routes.mjs): errors happen signed out too, and a
  * beacon cannot carry a token. Per-IP rate limit -> 16 KB body cap (413) -> JSON + zod (400) ->
- * one log line and one event -> 204 with no body. A bearer token, when sent, only names the user in
+ * noise (`isNoise`, for tabs on an older release) is only a debug line -> one log line and one
+ * event -> 204 with no body. A bearer token, when sent, only names the user in
  * the line and the event (`identifyUser`: the user id, never the token); a missing or bad one is
  * not an error. Query
  * strings and hashes are stripped from the path and from every URL in the message and stack again
@@ -96,19 +101,27 @@ export async function POST(req: Request) {
   if (!parsed.success) return json(400, "invalid_request", "Invalid error report.");
 
   const report = parsed.data;
+  // An error a student saw carries what failed (`kind`); a report with none is a crash — even one
+  // the board's error boundary caught (source "live", no kind).
+  const shown = report.kind !== undefined;
+  const message = stripUrlQueries(report.message);
+  const stack = report.stack ? stripUrlQueries(report.stack) : undefined;
+  const path = report.path.replace(/[?#][\s\S]*/, "");
+  const userAgent = report.userAgent ?? req.headers.get("user-agent")?.slice(0, 512);
+  // A crash the current release's reporter would have dropped (`isNoise`: a script the browser
+  // injected, an extension's, ResizeObserver…), from a tab still running an older one: a debug line,
+  // no event, so it never reaches the admin page or the error-spike alert (nor costs a token check).
+  // An error a student saw is our own words, never noise.
+  if (!shown && isNoise(message, stack)) {
+    log.debug({ source: report.source, message, stack, path, release: report.release, userAgent }, "client error (noise, not recorded)");
+    return new Response(null, { status: 204 });
+  }
   const userId = await identifyUser(req);
   if (userId) {
     const mine = checkRateLimit(`user:${userId}:clientErrors`, CLIENT_ERRORS_USER_LIMIT);
     if (!mine.ok) return rateLimitedResponse(mine.retryAfterMs);
   }
-  // An error a student saw carries what failed (`kind`); a report with none is a crash — even one
-  // the board's error boundary caught (source "live", no kind).
-  const shown = report.kind !== undefined;
   const level = shown ? (report.level ?? userErrorLevel(report.code)) : "error";
-  const message = stripUrlQueries(report.message);
-  const stack = report.stack ? stripUrlQueries(report.stack) : undefined;
-  const path = report.path.replace(/[?#][\s\S]*/, "");
-  const userAgent = report.userAgent ?? req.headers.get("user-agent")?.slice(0, 512);
   log[level](
     {
       source: report.source,
@@ -121,6 +134,8 @@ export async function POST(req: Request) {
       boardId: report.boardId,
       release: report.release,
       digest: report.digest,
+      requestId: report.requestId,
+      vercelError: report.vercelError,
       userAgent,
       userId: userId ?? undefined,
     },
@@ -138,7 +153,9 @@ export async function POST(req: Request) {
     userId: userId ?? undefined,
     boardId: report.boardId && BOARD_UUID.test(report.boardId) ? report.boardId : undefined,
     release: report.release,
+    requestId: report.requestId,
     meta: {
+      ...(report.vercelError ? { vercelError: report.vercelError } : {}),
       ...(report.digest ? { digest: report.digest } : {}),
       ...(stack ? { stack: stack.split("\n").slice(0, 4).join("\n").slice(0, STACK_HEAD) } : {}),
       ...(userAgent ? { userAgent: userAgent.slice(0, 200) } : {}),

@@ -10,10 +10,12 @@ import {
   BOARD_SORTS,
   DASHBOARD_COPY,
   boardCountLabel,
+  boardsErrorCode,
   dashboardStateFor,
   displayTitle,
   filterBoards,
   groupBoards,
+  retryOnNetworkError,
   sortBoards,
   type BoardListItem,
   type BoardSort,
@@ -89,11 +91,25 @@ function InlineError({
 
 /**
  * A failed board action, for the admin page (`live.boards`): the heading the student saw and a
- * code, with the database's own code when it has one (`load_failed_pgrst301`) — never its message.
+ * code, with the database's own code when it has one (`load_failed_pgrst301`) or `_network` when
+ * the request never reached it (`boardsErrorCode`) — never its message.
  */
 function reportBoardsError(code: string, error: unknown, message: string): void {
-  const pg = (error as { code?: unknown } | null)?.code;
-  reportUserError({ kind: 'live.boards', code: typeof pg === 'string' && pg ? `${code}_${pg}` : code, message });
+  reportUserError({ kind: 'live.boards', code: boardsErrorCode(code, error), message });
+}
+
+/**
+ * The student's boards, last edited first. All of them, thumbnails included: search and the other
+ * sorts work on the whole list here, and every card shows its thumbnail (`preview`, at most 20,000
+ * characters each by a check constraint).
+ */
+async function readBoards(): Promise<BoardListItem[]> {
+  const { data, error } = await supabase
+    .from('whiteboards')
+    .select('id, title, created_at, updated_at, preview, version')
+    .order('updated_at', { ascending: false });
+  if (error) throw error;
+  return data ?? [];
 }
 
 /** Re-renders every `ms` so "Edited 2 min ago" keeps up while the page is open. */
@@ -161,13 +177,9 @@ export default function Dashboard() {
     try {
       // A board closed a moment ago may still be writing its thumbnail and name.
       await settleExitWrites(EXIT_WRITE_WAIT_MS);
-      const { data, error } = await supabase
-        .from('whiteboards')
-        .select('id, title, created_at, updated_at, preview, version')
-        .order('updated_at', { ascending: false });
-
-      if (error) throw error;
-      setWhiteboards(data || []);
+      // A request that never reached the database is tried once more a second later, before the
+      // student sees "Couldn't load your boards" for a blip.
+      setWhiteboards(await retryOnNetworkError(readBoards));
     } catch (error) {
       console.error('Error fetching whiteboards:', error);
       // Rendered as an inline panel with Retry (see dashboardStateFor). A
@@ -184,6 +196,21 @@ export default function Dashboard() {
   useEffect(() => {
     if (userId) void fetchWhiteboards();
   }, [userId, fetchWhiteboards]);
+
+  // A list that failed to load is read again when the student comes back to the tab or the
+  // connection returns (an iPad woken from sleep), without waiting for them to press Retry.
+  useEffect(() => {
+    if (!fetchError || !userId) return;
+    const reload = () => {
+      if (document.visibilityState === 'visible') void fetchWhiteboards();
+    };
+    window.addEventListener('online', reload);
+    document.addEventListener('visibilitychange', reload);
+    return () => {
+      window.removeEventListener('online', reload);
+      document.removeEventListener('visibilitychange', reload);
+    };
+  }, [fetchError, userId, fetchWhiteboards]);
 
   async function createWhiteboard() {
     if (creating || !user) return;

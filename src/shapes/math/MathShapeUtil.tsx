@@ -30,7 +30,8 @@ import { scheduleLiveWrite } from "@/lib/live/liveWrite";
 import { getLiveSettings } from "@/lib/live/liveSettings";
 import { liveStore } from "@/lib/live/liveStore";
 import { badgeLabel, badgeTitle, dispatchBadgeTap, isBadgeStatus, noteLineFor } from "./badge";
-import { renderLatex } from "./katex";
+import { escapeHtml, renderLatex } from "./katex";
+import { latexToPlainText } from "@/lib/boards/boardTitle";
 import { MathEditor } from "./MathEditor";
 
 export { BADGE_TAP_EVENT, type BadgeTapDetail } from "./badge";
@@ -100,9 +101,17 @@ export class MathShapeUtil extends ShapeUtil<MathShape> {
     return <rect width={shape.props.w} height={shape.props.h} rx={6} />;
   }
 
+  /**
+   * What an export (the bug report's screenshot) shows of it: what the student sees. A readback the
+   * board only shows on hover is left out, as on the board; anything else is written as text — the
+   * maths as it reads (`\frac{1}{2}` as 1/2), never as a LaTeX command (a child's misread `=` printed
+   * `\smile` on the screenshot of her board).
+   */
   override toSvg(shape: MathShape) {
-    const { latex, resultLatex, tone, size } = shape.props;
-    const text = resultLatex ? composeAnswer(latex, resultLatex) : latex;
+    const { latex, resultLatex, tone, size, status } = shape.props;
+    if (readbackHidden(shape.props, getLiveSettings().handwriting)) return null;
+    const text = mathText(resultLatex ? composeAnswer(latex, resultLatex) : latex) || (status === "unknown" && !latex.trim() ? UNREADABLE_COPY : "");
+    if (!text) return null;
     return (
       <text
         fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
@@ -118,6 +127,34 @@ export class MathShapeUtil extends ShapeUtil<MathShape> {
 }
 
 // ---------------------------------------------------------------------------
+
+/** A result the student asked for with a trailing `=` (`36 + 2 =`): the readback carrying it always shows. */
+function asksResult(props: Pick<MathShape["props"], "latex" | "resultLatex">): boolean {
+  return Boolean(props.resultLatex) && endsWithRelation(props.latex);
+}
+
+/**
+ * The readback of the student's line, hidden on the board until it is hovered or its ink is touched
+ * (`MathShapeView`): unless it carries an answer asked for, or the tutor's hand is off on this device
+ * (`handwriting`) — then it IS the feedback, and always shows.
+ */
+export function readbackHidden(props: Pick<MathShape["props"], "source" | "latex" | "resultLatex">, handwriting: boolean): boolean {
+  return props.source === "echo" && !asksResult(props) && handwriting;
+}
+
+/** The maths as text, as it reads (`\frac{1}{2} + x` → "1/2 + x"): never a LaTeX command. */
+export function mathText(latex: string): string {
+  return latexToPlainText(latex.replace(/^\$+|\$+$/g, ""));
+}
+
+/**
+ * KaTeX's HTML for the maths — or, for LaTeX it cannot typeset, the maths as text. KaTeX shows what it
+ * cannot read as its source in red (its `errorColor`): a parse error whole, an unknown command inline.
+ */
+export function mathHtml(latex: string): string {
+  const html = renderLatex(latex);
+  return /katex-error|color:#cc0000/.test(html) ? escapeHtml(mathText(latex)) : html;
+}
 
 const STYLE = `
 .live-math{font-family:KaTeX_Main,"Times New Roman",serif;color:#111827;overflow:visible}
@@ -183,7 +220,7 @@ function MathShapeView({ shape }: { shape: MathShape }) {
   // A result stays visible only when the student asked for it with a trailing `=` and the hand
   // could not write it after their `=` (the typeset fallback). A result the engine merely knows
   // (`\int_0^2 3x^2 dx` with no `=`) is not written unasked — Solve writes it by hand.
-  const askedResult = Boolean(resultLatex) && endsWithRelation(latex);
+  const askedResult = asksResult(shape.props);
   const settings = getLiveSettings();
   const reveal =
     source !== "echo" || isEditing || touched || askedResult || !settings.handwriting
@@ -218,13 +255,13 @@ function MathShapeView({ shape }: { shape: MathShape }) {
               {unreadable ? (
                 <span className="live-math__unreadable">{UNREADABLE_COPY}</span>
               ) : (
-                <span className="live-math__latex" dangerouslySetInnerHTML={{ __html: renderLatex(latex) }} />
+                <span className="live-math__latex" dangerouslySetInnerHTML={{ __html: mathHtml(latex) }} />
               )}
               {resultLatex ? (
                 <span
                   className="live-math__result"
                   // `36 + 2 =` already ends in a relation: what follows is `38`, not `= 38`.
-                  dangerouslySetInnerHTML={{ __html: renderLatex(answerContinuation(latex, resultLatex)) }}
+                  dangerouslySetInnerHTML={{ __html: mathHtml(answerContinuation(latex, resultLatex)) }}
                 />
               ) : null}
             </div>
@@ -277,7 +314,7 @@ export function NoteLine({ line, title }: { line: { text: string; latex: string 
       {line.latex ? (
         <>
           {" "}
-          <span dangerouslySetInnerHTML={{ __html: renderLatex(line.latex) }} />
+          <span dangerouslySetInnerHTML={{ __html: mathHtml(line.latex) }} />
         </>
       ) : null}
     </div>

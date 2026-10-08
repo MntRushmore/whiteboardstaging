@@ -44,7 +44,7 @@ import { chatJsonWithFallback, UpstreamError } from "@/lib/server/openrouter";
 import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rate-limit";
 import { POST as title } from "@/app/api/live/title/route";
 
-const ENV_VARS = ["BILLING_ENFORCE", "SUPABASE_SERVICE_ROLE_KEY", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "LIVE_MODEL_REREAD"];
+const ENV_VARS = ["BILLING_ENFORCE", "SUPABASE_SERVICE_ROLE_KEY", "RATE_LIMIT_BACKEND", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "LIVE_MODEL_REREAD", "LIVE_MODEL_TITLE"];
 const savedEnv: Record<string, string | undefined> = {};
 const BODY = { boardId: "board-1", lines: ["2 \\sin x = 1", "\\sin x = \\frac{1}{2}"] };
 
@@ -107,19 +107,20 @@ describe("POST /api/live/title", () => {
     expect((await title(request("{nope"))).status).toBe(400);
   });
 
-  it("names the board on the reread models, uncharged, and cleans the name", async () => {
-    vi.mocked(chatJsonWithFallback).mockResolvedValue({ data: { title: '"solving trig equations."' }, model: LIVE_MODELS.reread } as never);
+  it("names the board on its own pair of models (not the reread's), uncharged, and cleans the name", async () => {
+    vi.mocked(chatJsonWithFallback).mockResolvedValue({ data: { title: '"solving trig equations."' }, model: LIVE_MODELS.title } as never);
     const res = await title(request(BODY));
     expect(res.status).toBe(200);
     expect(res.headers.get("X-Request-Id")).toBeTruthy();
     const body = TitleResponseSchema.parse(await res.json());
     expect(body.title).toBe("Solving trig equations");
-    expect(vi.mocked(chatJsonWithFallback).mock.calls[0][0]).toBe(LIVE_MODELS.reread);
+    expect(vi.mocked(chatJsonWithFallback).mock.calls[0][0]).toBe(LIVE_MODELS.title);
+    expect(vi.mocked(chatJsonWithFallback).mock.calls[0][1]).toBe(LIVE_MODELS.titleFallback);
     expect(callsTo("consume_credits")).toEqual([]);
   });
 
   it("a name with maths in it is no name: null, and the board keeps its first-line name", async () => {
-    vi.mocked(chatJsonWithFallback).mockResolvedValue({ data: { title: "2 sin x = 1" }, model: LIVE_MODELS.reread } as never);
+    vi.mocked(chatJsonWithFallback).mockResolvedValue({ data: { title: "2 sin x = 1" }, model: LIVE_MODELS.title } as never);
     const body = TitleResponseSchema.parse(await (await title(request(BODY))).json());
     expect(body.title).toBeNull();
   });

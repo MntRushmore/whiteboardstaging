@@ -57,4 +57,18 @@ describe("setLiveError reports what the student saw", () => {
       { kind: "live.check", code: "rate_limited", message: limited!.message },
     ]);
   });
+
+  it("carries the failed request's id (and Vercel's error) so the admin page can join the report to the server's rows", () => {
+    const err = Object.assign(new ApiError("Couldn't read this line right now.", 502, "recognizer_failed"), { requestId: "4f1c2d3e-aaaa-4bbb-8ccc-123456789abc" });
+    setLiveError(classifyLiveFailure(err, { kind: "recognize", lineId: "l1", online: true })!);
+    const killed = Object.assign(new ApiError("Request failed (504)", 504), { vercelError: "FUNCTION_INVOCATION_TIMEOUT" });
+    setLiveError(classifyLiveFailure(killed, { kind: "check", online: true })!);
+    // a stream's failure that carries none: the request id of its `meta` frame
+    setLiveError(classifyLiveFailure(Object.assign(new Error("The tutor stopped answering"), { name: "TimeoutError" }), { kind: "solve", online: true, requestId: "req-7" })!);
+    expect(reported).toEqual([
+      { kind: "live.recognize", code: "upstream", message: "The tutor service had a hiccup", requestId: "4f1c2d3e-aaaa-4bbb-8ccc-123456789abc" },
+      { kind: "live.check", code: "upstream", message: "The tutor service had a hiccup", vercelError: "FUNCTION_INVOCATION_TIMEOUT" },
+      { kind: "live.solve", code: "timeout", message: "The tutor took too long to answer", requestId: "req-7" },
+    ]);
+  });
 });

@@ -96,6 +96,64 @@ describe("isNoise", () => {
     expect(isNoise(message, "removeChild@[native code]\ncommitDeletion@https://app.test/_next/static/chunks/b.js:1:2")).toBe(false);
     expect(isNoise(message)).toBe(false);
   });
+
+  it("tldraw's uncaught icon preload (image.decode) failing in WebKit is noise; other EncodingErrors are not", () => {
+    // as production received it: an unhandled rejection on iOS, AssetUrlsProvider's decode() of a cdn.tldraw.com icon
+    const message = "EncodingError: Loading error.";
+    expect(isNoise(message, "decode@[native code]")).toBe(true);
+    expect(isNoise(message, "decode@[native code]\n@https://www.agathon.app/_next/static/chunks/tldraw.js:1:2")).toBe(true);
+    // an EncodingError from anything else (a canvas export, a decoder of ours) is reported
+    expect(isNoise(message, "toBlob@[native code]\nexportBoard@https://www.agathon.app/_next/static/chunks/a.js:1:2")).toBe(false);
+    expect(isNoise("EncodingError: The source image cannot be decoded.", "at exportBoard (https://www.agathon.app/_next/static/chunks/a.js:1:2)")).toBe(false);
+    expect(isNoise(message)).toBe(false);
+    // decode@[native code] with another error is reported too
+    expect(isNoise("TypeError: x is not a function", "decode@[native code]")).toBe(false);
+  });
+
+  describe("scripts the browser injects into the page (Brave on iOS/iPadOS)", () => {
+    // as production received them, 2026-10-01..07: 31 of 36 client errors
+    const BOARD_PAGE = "global code@https://www.agathon.app/board/f32500d3-36cc-42ef-896f-cd7094a747fe:1:16";
+    const LOGIN_PAGE = "global code@https://www.agathon.app/login:1:12";
+
+    it.each([
+      ["TypeError: undefined is not an object (evaluating 'window.ethereum.selectedAddress = undefined')", BOARD_PAGE],
+      ["ReferenceError: Can't find variable: __firefox__", LOGIN_PAGE],
+      ["TypeError: undefined is not an object (evaluating 'window.__firefox__.reader')", BOARD_PAGE],
+      ["ReferenceError: Can't find variable: refresh_youtube_quality_8f3a2c", BOARD_PAGE],
+    ])("%j from the page itself is noise", (message, stack) => {
+      expect(isNoise(message, stack)).toBe(true);
+    });
+
+    it("the names give it away whatever the stack", () => {
+      expect(isNoise("TypeError: undefined is not an object (evaluating 'window.ethereum.selectedAddress = undefined')")).toBe(true);
+      expect(isNoise("ReferenceError: Can't find variable: __gCrWeb")).toBe(true);
+      expect(isNoise("TypeError: undefined is not an object (evaluating 'window.webkit.messageHandlers.x.postMessage')")).toBe(true);
+    });
+
+    it("any message whose whole stack is one inline frame at a page URL", () => {
+      expect(isNoise("TypeError: null is not an object (evaluating 'a.b')", LOGIN_PAGE)).toBe(true);
+      expect(isNoise("SyntaxError: Unexpected token ')'", "eval code@https://www.agathon.app/:1:3")).toBe(true);
+      expect(isNoise("TypeError: x", `  ${BOARD_PAGE}\n`)).toBe(true);
+    });
+
+    it("keeps errors of our own: a second frame, a frame in a /_next/ or .js file, Chrome's frames", () => {
+      const message = "TypeError: undefined is not an object (evaluating 'e.props.shape')";
+      // one inline frame at the page and one in our chunk: ours
+      expect(isNoise(message, `${BOARD_PAGE}\nrender@https://www.agathon.app/_next/static/chunks/a1b2c3.js:2:345`)).toBe(false);
+      expect(isNoise(message, `onPointerDown@https://www.agathon.app/_next/static/chunks/a1b2c3.js:2:345\n${BOARD_PAGE}`)).toBe(false);
+      // a single frame, but in a script file
+      expect(isNoise(message, "global code@https://www.agathon.app/_next/static/chunks/a1b2c3.js:1:16")).toBe(false);
+      expect(isNoise(message, "global code@https://www.agathon.app/board/f32500d3-36cc-42ef-896f-cd7094a747fe/worker.mjs:1:16")).toBe(false);
+      expect(isNoise(message, "global code@https://www.agathon.app/_next/data/build/page:1:16")).toBe(false);
+      // a single frame of a named function: not an injected script's global code
+      expect(isNoise(message, "render@https://www.agathon.app/_next/static/chunks/a1b2c3.js:2:345")).toBe(false);
+      // Chrome words its frames differently; an inline frame there is still reported
+      expect(isNoise(message, "TypeError: x\n    at https://www.agathon.app/login:1:23")).toBe(false);
+      // no stack at all: nothing says it is not ours
+      expect(isNoise("ReferenceError: Can't find variable: boardId")).toBe(false);
+      expect(isNoise("ReferenceError: Can't find variable: boardId", "")).toBe(false);
+    });
+  });
 });
 
 describe("boardIdFromPath", () => {
@@ -263,6 +321,7 @@ const USER_KINDS: UserErrorKind[] = [
   "live.report",
   "live.auth",
   "live.settings",
+  "live.app",
 ];
 
 function userReporter(path = `/board/${BOARD}`, opts: { max?: number; windowMs?: number } = {}) {
@@ -381,6 +440,15 @@ describe("createUserReporter", () => {
     expect(body).not.toContain("hunter2");
     expect(body).not.toContain("frag");
     expect(sent[0].stack).toBeUndefined();
+  });
+
+  it("sends the failed request's id and Vercel's error when they have their shape, and nothing else of them", () => {
+    const { sent, report } = userReporter();
+    report({ ...SOLVE_ERR, requestId: "4f1c2d3e-aaaa-4bbb-8ccc-123456789abc", vercelError: "FUNCTION_INVOCATION_TIMEOUT" });
+    report({ ...SOLVE_ERR, code: "other", requestId: "not an id; drop table", vercelError: "lower" });
+    expect(sent[0]).toMatchObject({ requestId: "4f1c2d3e-aaaa-4bbb-8ccc-123456789abc", vercelError: "FUNCTION_INVOCATION_TIMEOUT" });
+    expect(sent[1]).not.toHaveProperty("requestId");
+    expect(sent[1]).not.toHaveProperty("vercelError");
   });
 
   it("takes a board id that is a uuid, else the one in the path, else none", () => {

@@ -197,6 +197,32 @@ export function recordRouteError(err: unknown, log: unknown, context: Record<str
 }
 
 /**
+ * A route's answer that is not a thrown error, but that a student still meets — a recognize 502
+ * that read nothing, billing failing closed, a solve whose steps did not hold up — as an app event:
+ * `route.<module>.<route>` like `recordRouteError`, with the level and code the caller chose, the
+ * route, request and user from the logger's bindings, and the context's numbers, flags and short
+ * strings in `meta`. Before, these answers were only log lines: a student's error card had no
+ * server row to join. Fire and forget.
+ */
+export function recordRouteEvent(
+  log: unknown,
+  event: { level: "error" | "warn" | "info"; code: string; message: string; meta?: Record<string, unknown> },
+): void {
+  const meta = Object.fromEntries(
+    Object.entries(event.meta ?? {}).filter(([, v]) => typeof v === "number" || typeof v === "boolean" || (typeof v === "string" && v.length <= 200)),
+  );
+  recordEvent({
+    source: "server",
+    level: event.level,
+    kind: routeEventKind(logContext(log)),
+    code: event.code,
+    message: event.message.slice(0, 200),
+    ...eventContext(log),
+    meta,
+  });
+}
+
+/**
  * Map an error thrown inside a route handler to the shared error contract and
  * log it with the route's child logger. Every 5xx it answers (but a client's abort) is also an
  * app event for the /admin page (`recordRouteError`).

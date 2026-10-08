@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect } from "react";
 import { AlertTriangle, Home, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CHUNK_RELOAD_COPY, useChunkReload } from "@/lib/chunkReload";
 import { reportAppError } from "@/lib/reportAppError";
 import {
   Card,
@@ -21,10 +22,21 @@ export default function ErrorPage({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  // A chunk of an older release (a deploy since this page loaded): reload once, not a crash.
+  const reloading = useChunkReload(error);
   useEffect(() => {
+    if (reloading) return;
     console.error("[app error boundary]", error);
     reportAppError("boundary", error, error.digest);
-  }, [error]);
+  }, [error, reloading]);
+
+  if (reloading) {
+    return (
+      <div role="status" className="flex min-h-screen items-center justify-center bg-background p-4 text-sm text-muted-foreground">
+        {CHUNK_RELOAD_COPY}
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">

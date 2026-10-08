@@ -52,6 +52,14 @@ export function verifyProblem(engine: LiveEngine, lines: readonly string[], canD
   return { ok: true, steps };
 }
 
+/** The most common of these reasons (the first on a tie), or null for none: what a report names. */
+export function commonestReason<R extends string>(reasons: readonly R[]): R | null {
+  if (reasons.length === 0) return null;
+  const counts = new Map<R, number>();
+  for (const r of reasons) counts.set(r, (counts.get(r) ?? 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+}
+
 export type LinesVerdict = { ok: true } | { ok: false; reason: "words" | "false" | "unchecked" | "unwritable" };
 
 /**

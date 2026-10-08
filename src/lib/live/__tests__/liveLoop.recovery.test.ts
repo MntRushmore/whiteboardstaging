@@ -159,14 +159,15 @@ describe("live loop — vision fallback (BUG-2) and note provenance (BUG-4)", ()
       { status: 502 },
     );
     const err = await apiErrorFromResponse(res);
-    expect(recognizeFailureHints(err)).toEqual({ needsCrop: true, recognizerDown: true });
+    const none = { needsCrop: false, recognizerDown: false, unreadable: false, transient: false };
+    expect(recognizeFailureHints(err)).toEqual({ ...none, needsCrop: true, recognizerDown: true });
     // a plain recognizer_failed (no hints) and any other error mean "no fallback available"
-    expect(recognizeFailureHints(recognizerFailed())).toEqual({ needsCrop: false, recognizerDown: false });
-    expect(recognizeFailureHints(new ApiError("boom", 500, "internal_error"))).toEqual({
-      needsCrop: false,
-      recognizerDown: false,
-    });
-    expect(recognizeFailureHints(new TypeError("Failed to fetch"))).toEqual({ needsCrop: false, recognizerDown: false });
+    expect(recognizeFailureHints(recognizerFailed())).toEqual(none);
+    expect(recognizeFailureHints(new ApiError("boom", 500, "internal_error"))).toEqual(none);
+    expect(recognizeFailureHints(new TypeError("Failed to fetch"))).toEqual(none);
+    // Mathpix could not read the ink / timed out
+    expect(recognizeFailureHints(recognizerFailed({ needsCrop: true, unreadable: true }))).toEqual({ ...none, needsCrop: true, unreadable: true });
+    expect(recognizeFailureHints(recognizerFailed({ needsCrop: true, transient: true }))).toEqual({ ...none, needsCrop: true, transient: true });
   });
 
   it("Mathpix down + needsCrop: exactly one retry, WITH a crop, and the echo appears", async () => {
@@ -177,6 +178,9 @@ describe("live loop — vision fallback (BUG-2) and note provenance (BUG-4)", ()
     expect(requests[0].crop).toBeUndefined();
     expect(requests[1].crop).toBe(CROP);
     expect(requests[1].lineId).toBe(requests[0].lineId);
+    // Mathpix already read nothing from these strokes: the route goes straight to vision
+    expect(requests[0].cropOnly).toBeUndefined();
+    expect(requests[1].cropOnly).toBe(true);
     expect(crops).toBe(1);
 
     const [lineId] = Object.keys(liveStore.lines.get());
