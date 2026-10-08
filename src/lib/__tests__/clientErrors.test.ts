@@ -97,6 +97,19 @@ describe("isNoise", () => {
     expect(isNoise(message)).toBe(false);
   });
 
+  it("tldraw's uncaught icon preload (image.decode) failing in WebKit is noise; other EncodingErrors are not", () => {
+    // as production received it: an unhandled rejection on iOS, AssetUrlsProvider's decode() of a cdn.tldraw.com icon
+    const message = "EncodingError: Loading error.";
+    expect(isNoise(message, "decode@[native code]")).toBe(true);
+    expect(isNoise(message, "decode@[native code]\n@https://www.agathon.app/_next/static/chunks/tldraw.js:1:2")).toBe(true);
+    // an EncodingError from anything else (a canvas export, a decoder of ours) is reported
+    expect(isNoise(message, "toBlob@[native code]\nexportBoard@https://www.agathon.app/_next/static/chunks/a.js:1:2")).toBe(false);
+    expect(isNoise("EncodingError: The source image cannot be decoded.", "at exportBoard (https://www.agathon.app/_next/static/chunks/a.js:1:2)")).toBe(false);
+    expect(isNoise(message)).toBe(false);
+    // decode@[native code] with another error is reported too
+    expect(isNoise("TypeError: x is not a function", "decode@[native code]")).toBe(false);
+  });
+
   describe("scripts the browser injects into the page (Brave on iOS/iPadOS)", () => {
     // as production received them, 2026-10-01..07: 31 of 36 client errors
     const BOARD_PAGE = "global code@https://www.agathon.app/board/f32500d3-36cc-42ef-896f-cd7094a747fe:1:16";

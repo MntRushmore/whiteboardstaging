@@ -145,8 +145,9 @@ export function userErrorLevel(code: string | undefined): UserErrorLevel {
  * Not worth a report: the ResizeObserver loop warning, a cross-origin "Script error." with nothing
  * in it, aborted fetches (navigating away, a cancelled request), and a pen lifted before tldraw's
  * setPointerCapture ran ("No active pointer with the given id"). Besides these messages: scripts
- * from browser extensions (EXTENSION) and scripts the browser injects into the page
- * (INJECTED_NAMES, INLINE_ONLY_FRAME).
+ * from browser extensions (EXTENSION), scripts the browser injects into the page (INJECTED_NAMES,
+ * INLINE_ONLY_FRAME), and WebKit errors known by message and stack together
+ * (SAFARI_POINTER_CAPTURE, TLDRAW_ICON_PRELOAD).
  */
 const NOISE = /ResizeObserver loop|^Script error\.?$|\babort(ed|error)\b|No active pointer with the given id/i;
 /** Thrown from a browser extension's script, not ours (Safari masks extension URLs). */
@@ -156,6 +157,14 @@ const EXTENSION = /-extension:\/\/|webkit-masked-url:/;
  * (its message for every NotFoundError, so only when the stack's top frame is setPointerCapture).
  */
 const SAFARI_POINTER_CAPTURE = { message: /^NotFoundError\b/, stack: /^setPointerCapture@\[native code\]/ };
+/**
+ * tldraw's icon preload: its AssetUrlsProvider calls `image.decode()` on every UI icon and embed
+ * icon from cdn.tldraw.com (178 URLs) and never catches it, so a device that cannot load them (no
+ * connection, a network filter) gets an unhandled "EncodingError: Loading error." from WebKit, its
+ * stack starting at `decode@[native code]`. The app has no `decode()` of its own. Whether the icons
+ * then show is the icons' business (CSS masks of the same sprite), not a crash.
+ */
+const TLDRAW_ICON_PRELOAD = { message: /^EncodingError\b/, stack: /^decode@\[native code\]/ };
 /**
  * A script the browser or app put into the page, by the names it uses: Brave and Firefox on iOS
  * (`window.__firefox__`, Brave's `refresh_youtube_quality_…`), Chrome on iOS (`__gCrWeb`), a crypto
@@ -186,6 +195,7 @@ function isInjectedInlineScript(stack: string): boolean {
  */
 export function isNoise(message: string, stack = ""): boolean {
   if (SAFARI_POINTER_CAPTURE.message.test(message) && SAFARI_POINTER_CAPTURE.stack.test(stack)) return true;
+  if (TLDRAW_ICON_PRELOAD.message.test(message) && TLDRAW_ICON_PRELOAD.stack.test(stack)) return true;
   if (INJECTED_NAMES.test(message) || isInjectedInlineScript(stack)) return true;
   return !message || NOISE.test(message) || EXTENSION.test(stack);
 }
