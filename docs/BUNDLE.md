@@ -211,6 +211,16 @@ the learner hint's schema (`hint.ts`, in the check request) and the hook that lo
 tracker, store, skill classifier, mistake classifier, summary, practice generators, Now you try and
 the practice board all load after the board, with a dynamic import. About 23.7 KB of room remains.
 
+## 2026-10-08: the board replay (`feat/admin-v2-replay`)
+
+`/board/[id]` measures 1,085,873 B, +613 B over the same tree without the board-side changes
+(1,085,260 B); 14.1 KB under the budget. In the first load: the stroke-time stamps
+(`src/lib/replay/stampTimes.ts`, `strokeTime.ts`), "Replay my board" in Board options and its
+loading line, and the learning bus remembering this session's attempts. Lazy: the whole replay
+(`src/components/replay/KidReplay.tsx`, the timeline, the player, the stage; about 40 KB raw), fetched
+on the first tap of "Replay my board". The admin's viewer (`/admin/boards/[id]`) loads the same player
+as a chunk of its own after the board is read; that route's first load is 343,378 B, like `/admin`.
+
 ## Recommendations not done here (files owned elsewhere)
 
 1. `src/app/globals.css`: drop `@import "katex/dist/katex.min.css"` and import it from

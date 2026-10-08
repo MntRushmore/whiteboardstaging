@@ -1,0 +1,343 @@
+/* The board viewer and replay (src/components/replay). Arc's tokens where the page has them (the
+   admin's viewer), plain values where it does not (the student's replay, on the board route). */
+
+.player {
+  --r-surface: var(--surface, #fff);
+  --r-muted: var(--surface-muted, #f4f4f5);
+  --r-border: var(--border, #e7e7e9);
+  --r-text: var(--foreground, #18181b);
+  --r-text-2: var(--text-secondary, #52525b);
+  --r-text-3: var(--text-muted, #71717a);
+  --r-accent: var(--accent, #27272a);
+  --r-check: #0f9f6e;
+  --r-ring: #e03131;
+  --r-question: #d97706;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  outline: none;
+}
+
+/* The canvas: an echo's badge (a button that asks the board's tutor for a hint) and a graph's
+   buttons are pictures here. */
+.root :global(.live-math__badge),
+.root :global(.live-graph__btn) {
+  pointer-events: none;
+}
+
+/* ---- top: mode and screens ------------------------------------------------------------------- */
+.topBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.modes {
+  display: inline-flex;
+  flex: none;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--r-muted);
+  border: 1px solid var(--r-border);
+}
+.modeButton {
+  min-height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--r-text-2);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 550;
+  cursor: pointer;
+}
+.modeButton[aria-pressed="true"] {
+  background: var(--r-surface);
+  color: var(--r-text);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
+}
+.modeButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.modeButton:focus-visible,
+.pageChip:focus-visible,
+.playButton:focus-visible,
+.speedButton:focus-visible,
+.scrubber:focus-visible {
+  outline: 2px solid var(--focus-ring, #2563eb);
+  outline-offset: 2px;
+}
+
+.pages {
+  display: flex;
+  gap: 8px;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 2px;
+  scrollbar-width: thin;
+}
+.pageChip {
+  display: grid;
+  gap: 3px;
+  flex: none;
+  padding: 3px;
+  border: 1px solid var(--r-border);
+  border-radius: 10px;
+  background: var(--r-surface);
+  color: var(--r-text-2);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.pageChip[aria-current="page"] {
+  border-color: var(--r-accent);
+  box-shadow: 0 0 0 1px var(--r-accent);
+  color: var(--r-text);
+}
+.pageThumb {
+  display: block;
+  width: 96px;
+  height: 54px;
+  border-radius: 7px;
+  background: #fff;
+  border: 1px solid var(--r-border);
+}
+.pageName {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  padding-inline: 2px;
+}
+
+/* ---- the canvas ------------------------------------------------------------------------------- */
+.stage {
+  position: relative;
+  /* the screen is 16:9; the canvas is a little taller so it never crops a screen's edge */
+  aspect-ratio: 16 / 9.6;
+  max-height: min(72vh, 820px);
+  width: 100%;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid var(--r-border);
+  background: var(--r-muted);
+  isolation: isolate;
+}
+.canvas {
+  position: absolute;
+  inset: 0;
+}
+/* a move to another screen fades in */
+.stage[data-turn="0"] .canvas {
+  animation: replay-turn-a 320ms ease-out;
+}
+.stage[data-turn="1"] .canvas {
+  animation: replay-turn-b 320ms ease-out;
+}
+@keyframes replay-turn-a {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
+}
+@keyframes replay-turn-b {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage .canvas {
+    animation: none !important;
+  }
+}
+.emptyNote {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 16px;
+  color: var(--r-text-3);
+  font-size: 0.875rem;
+  text-align: center;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ---- transport -------------------------------------------------------------------------------- */
+.transport {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "play scrub scrub"
+    "speeds speeds times";
+  align-items: center;
+  gap: 8px 12px;
+}
+@media (min-width: 760px) {
+  .transport {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "play scrub speeds times";
+  }
+}
+.playButton {
+  grid-area: play;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--r-accent);
+  color: var(--accent-foreground, #fff);
+  cursor: pointer;
+}
+.playButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.speeds {
+  grid-area: speeds;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--r-muted);
+  border: 1px solid var(--r-border);
+  justify-self: start;
+}
+.speedButton {
+  min-width: 34px;
+  min-height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--r-text-2);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.speedButton[aria-pressed="true"] {
+  background: var(--r-surface);
+  color: var(--r-text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.1);
+}
+.times {
+  grid-area: times;
+  display: grid;
+  justify-items: end;
+  margin: 0;
+  line-height: 1.25;
+  font-size: 0.8125rem;
+}
+.clock {
+  font-variant-numeric: tabular-nums;
+  color: var(--r-text);
+  font-weight: 550;
+}
+.real {
+  color: var(--r-text-3);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.keysHint {
+  margin: 0;
+  color: var(--r-text-3);
+  font-size: 0.75rem;
+}
+@media (pointer: coarse) {
+  .keysHint {
+    display: none;
+  }
+}
+
+/* ---- the scrubber ----------------------------------------------------------------------------- */
+.scrubber {
+  --track: 6px;
+  --thumb: 16px;
+  grid-area: scrub;
+  position: relative;
+  height: 36px;
+  min-width: 0;
+  cursor: pointer;
+  touch-action: none;
+  border-radius: 8px;
+  color: var(--r-accent, #27272a);
+}
+.scrubber[data-size="lg"] {
+  --track: 12px;
+  --thumb: 26px;
+  height: 52px;
+}
+.scrubTrack {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: var(--track);
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: color-mix(in oklab, currentColor 14%, transparent);
+  overflow: hidden;
+}
+.scrubFill {
+  height: 100%;
+  background: currentColor;
+  border-radius: inherit;
+}
+.scrubThumb {
+  position: absolute;
+  top: 50%;
+  width: var(--thumb);
+  height: var(--thumb);
+  border-radius: 999px;
+  background: #fff;
+  border: 2px solid currentColor;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.25);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+/* the tutor's marks above the track, the board's errors below */
+.marker {
+  position: absolute;
+  left: var(--at);
+  width: 3px;
+  height: 9px;
+  border-radius: 2px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  top: calc(50% - var(--track) / 2 - 11px);
+}
+.marker[data-kind="check"] {
+  background: var(--r-check, #0f9f6e);
+}
+.marker[data-kind="circle"] {
+  background: var(--r-ring, #e03131);
+}
+.marker[data-kind="question"] {
+  background: var(--r-question, #d97706);
+}
+.marker[data-kind="error"],
+.marker[data-kind="warn"] {
+  top: calc(50% + var(--track) / 2 + 3px);
+  width: 0;
+  height: 0;
+  border-radius: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 8px solid var(--r-ring, #e03131);
+}
+.marker[data-kind="warn"] {
+  border-bottom-color: var(--r-question, #d97706);
+}
+.scrubber[data-size="lg"] .marker {
+  width: 5px;
+  height: 14px;
+  top: calc(50% - var(--track) / 2 - 17px);
+}

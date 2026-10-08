@@ -49,3 +49,6 @@ next-env.d.ts
 
 # Database dumps from the go-live runbooks (students' work; never commit)
 /backups/
+
+# A real board export for the admin viewer's dev fixture (?fixture=file): students' work, never commit
+/public/dev-fixtures/
