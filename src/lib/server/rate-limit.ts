@@ -37,6 +37,11 @@ const MINUTE = 60_000;
 /** Per-user limits for each API route (requests per window). */
 export const LIMITS = {
   credits: { limit: 30, windowMs: MINUTE },
+  // The admin console's routes (src/app/api/admin/{users,boards,bugs,issues}; admins only): page loads,
+  // triage, and the board viewer's follow-live poll (one every ADMIN_LIMITS.followPollMs, 15 a minute).
+  adminConsole: { limit: 120, windowMs: MINUTE },
+  // A bug report's screenshot (the inbox may load several at once; the browser keeps each 5 minutes).
+  adminScreenshot: { limit: 240, windowMs: MINUTE },
   // POST /api/email/welcome: the app asks once, at the end of the tour; the email itself goes at most once.
   emailWelcome: { limit: 5, windowMs: MINUTE },
   // Live Math routes (budgets are defined once, in the shared contracts).
