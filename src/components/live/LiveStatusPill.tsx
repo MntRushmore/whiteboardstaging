@@ -42,6 +42,8 @@ interface LiveStatusPillProps {
   onReportProblem: () => void;
   /** the bar's ink meter shows "Get ink" (ink low or gone): an out-of-ink error leaves it to the meter */
   meterOffersInk?: boolean;
+  /** opens "Replay my board" (the board drawn again, stroke by stroke); no item without it */
+  onReplay?: () => void;
 }
 
 /** meta key that remembers a shape's opacity while "Hide AI shapes" is on */
@@ -205,6 +207,7 @@ export function LiveStatusPill({
   onShowModeInfo,
   onReportProblem,
   meterOffersInk = false,
+  onReplay,
 }: LiveStatusPillProps) {
   const status = useValue(liveStore.status);
   const recognizer = useValue(liveStore.recognizer);
@@ -327,6 +330,11 @@ export function LiveStatusPill({
           <DropdownMenuItem className="pl-8" onSelect={onClearMarks}>
             {LIVE_COPY.pill.clearMarks}
           </DropdownMenuItem>
+          {onReplay && (
+            <DropdownMenuItem className="pl-8" onSelect={onReplay} title={LIVE_COPY.pill.replayHint} data-testid="board-replay-item">
+              {LIVE_COPY.pill.replay}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuCheckboxItem
             checked={hidden}
             onCheckedChange={(v) => update({ hideAiShapes: v === true })}

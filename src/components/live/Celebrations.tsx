@@ -29,7 +29,7 @@ const SHOW_MS = 2200;
 const EDGE = 12;
 const BUBBLE_W = 200;
 
-interface Pop {
+export interface Pop {
   id: number;
   cheer: Cheer;
   /** the mark's right edge, middle, in client pixels */
@@ -134,7 +134,16 @@ export function Celebrations({ editor }: { editor: Editor }) {
   }, [editor]);
 
   if (typeof document === "undefined") return null;
-  return createPortal(
+  return createPortal(<CheerPops pops={pops} said={said} />, document.body);
+}
+
+/**
+ * The cheers themselves: each a bubble of praise (or a kind word) beside its mark, with its burst of
+ * confetti, and what was said for screen readers. Drawn by the board's cheers above and by the
+ * student's replay (src/components/replay/KidReplay.tsx), which cheers its ticks again as they land.
+ */
+export function CheerPops({ pops, said, zClass = "z-1180" }: { pops: readonly Pop[]; said: string; zClass?: string }) {
+  return (
     <>
       <div role="status" aria-live="polite" className="sr-only">
         {said}
@@ -144,7 +153,7 @@ export function Celebrations({ editor }: { editor: Editor }) {
           key={pop.id}
           aria-hidden
           data-celebration={pop.cheer.tone}
-          className="pointer-events-none fixed z-1180"
+          className={cn("pointer-events-none fixed", zClass)}
           style={{ left: pop.x, top: pop.y }}
         >
           {pop.pieces.map((p, i) => (
@@ -180,7 +189,6 @@ export function Celebrations({ editor }: { editor: Editor }) {
           </div>
         </div>
       ))}
-    </>,
-    document.body,
+    </>
   );
 }

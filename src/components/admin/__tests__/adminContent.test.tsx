@@ -166,8 +166,17 @@ describe("what the page loads", () => {
       return /\.(ts|tsx)$/.test(f) ? [full] : [];
     });
 
+  // The board viewer (/admin/boards/[id]) is the one admin route that draws a board: its page loads
+  // the replay (tldraw) in a chunk of its own, so it is left out here and checked on its own below.
+  const VIEWER_ROUTE = join(ROOT, "src/app/(platform)/admin/boards/[id]");
+
   it("nothing on the admin page imports tldraw or the board", () => {
-    const sources = [...files(join(ROOT, "src/components/admin")), ...files(join(ROOT, "src/app/(platform)/admin")), join(ROOT, "src/lib/admin/view.ts"), join(ROOT, "src/lib/admin/contracts.ts")];
+    const sources = [
+      ...files(join(ROOT, "src/components/admin")),
+      ...files(join(ROOT, "src/app/(platform)/admin")).filter((f) => !f.startsWith(VIEWER_ROUTE)),
+      join(ROOT, "src/lib/admin/view.ts"),
+      join(ROOT, "src/lib/admin/contracts.ts"),
+    ];
     expect(sources.length).toBeGreaterThan(5);
     for (const file of sources) {
       const imports = [...readFileSync(file, "utf8").matchAll(/from\s+["']([^"']+)["']/g)].map((m) => m[1]);
@@ -175,6 +184,15 @@ describe("what the page loads", () => {
         expect(spec, file).not.toMatch(/tldraw|\/board|@\/lib\/live|@\/shapes|@\/hooks\/use(Snapshot|AiOverlay)/);
       }
     }
+  });
+
+  it("only the board viewer's route reaches the replay, and it fetches it as a chunk of its own", () => {
+    const others = [...files(join(ROOT, "src/components/admin")), ...files(join(ROOT, "src/app/(platform)/admin")).filter((f) => !f.startsWith(VIEWER_ROUTE))];
+    for (const file of others) expect(readFileSync(file, "utf8"), file).not.toMatch(/components\/(replay|adminBoard)/);
+    const screen = readFileSync(join(ROOT, "src/components/adminBoard/AdminBoardScreen.tsx"), "utf8");
+    const staticImports = [...screen.matchAll(/^import[^;]*from\s+["']([^"']+)["']/gm)].map((m) => m[1]);
+    for (const spec of staticImports) expect(spec).not.toMatch(/tldraw|@\/components\/replay|AdminBoardBody/);
+    expect(screen).toMatch(/dynamic\(\(\) => import\("\.\/AdminBoardBody"\)/);
   });
 
   it("the header asks is_admin() through the small hint module only", () => {

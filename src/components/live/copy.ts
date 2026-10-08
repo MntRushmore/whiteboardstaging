@@ -47,6 +47,10 @@ export const LIVE_COPY = {
     /** Help is greyed out while there is nothing to ask (help set to Off, or Live off) */
     helpOffHint: "Pick Feedback, Suggest or Solve to ask for help",
     clearMarks: "Clear marks",
+    /** the board drawn again, stroke by stroke (src/components/replay/KidReplay.tsx) */
+    replay: "Replay my board",
+    replayHint: "Watch your board get drawn again, stroke by stroke",
+    replayLoading: "Getting your replay ready…",
     hideAiShapes: "Hide AI shapes",
     celebrations: "Celebrations",
     celebrationsHint: "A cheer and confetti when the tutor ticks your step",
