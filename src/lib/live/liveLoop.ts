@@ -127,9 +127,10 @@ import {
   recognizeFailureHints,
 } from "./recognizeClient";
 import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient";
-import { assignColumns, clusterLines, inkScale, rebuildFromMathShapes, unionRects, type ColumnOptions, type EchoShapeSeed } from "./strokeClusters";
+import { assignColumns, clusterLines, inkScale, medianStrokeHeight, rebuildFromMathShapes, unionRects, type ColumnOptions, type EchoShapeSeed } from "./strokeClusters";
 import { buildPayload, hashPayload } from "./strokePayload";
 import { captureInkCrop } from "./inkCrop";
+import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, leadingSigns, ownTicks, readYoungHand } from "./youngHand";
 import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
 import { nextStep as stackNextStep, parseStacked, placesLeft, rowPlaces, workStacked, type StackedWork } from "./engine/columnArithmetic";
@@ -144,7 +145,7 @@ import { PROOF_ROWS_META, proofRowsPlan } from "./proof/place";
 import { PROOF_FIGURE_META, PROOF_TABLE_META, tutorFiguresOf } from "./proof/tutorFigure";
 import type { PlannedRow } from "./proof/planner";
 import type { BoardLine, ProofRead } from "./proof/read";
-import { cellOf, problemKeyOf, problemLines, problemMetaOf, readProblemCells, splitColumnsAtProblems, type ProblemCell } from "./chat/cells";
+import { besideProblem, cellOf, problemKeyOf, problemLines, problemMetaOf, readProblemCells, splitAcrossProblems, splitColumnsAtProblems, type ProblemCell } from "./chat/cells";
 import { nextHelpTarget, penLine, pickedLine, problemCount, problemTarget, type HelpTargetDraft } from "./helpTarget";
 import {
   PROBLEM_WORK_META,
@@ -1828,7 +1829,13 @@ export class LiveLoop implements LiveController {
     const columns = this.columnOptions(inLines);
     // a division bar with its divisor, and a stacked sum, are a line each whatever the clusterer makes of them
     const fixed = [...barGroups(split.bars, ink), ...stackGroups(split.stacks, ink)];
-    const lines = this.withProblemColumns(clusterLines(split.writing, prevLines, fixed, { zoom: this.boardZoom(), columns }));
+    // ink beside one of the chat's problems is never one line with ink under another (`splitAcrossProblems`)
+    const cells = this.problemCells();
+    const apart = cells.length > 1 ? (group: InkStroke[]) => splitAcrossProblems(group, cells) : undefined;
+    const clustered = clusterLines(split.writing, prevLines, fixed, { zoom: this.boardZoom(), columns, apart });
+    // a young student's own tick after her answer, taps of the pen, and an answer's signs before its
+    // number are no line of maths (yet)
+    const lines = this.withProblemColumns(this.withoutStrays(clustered, split.writing, columns, cells));
     this.rememberProblems(lines);
     const nextIds = new Set(lines.map((l) => l.id));
 
@@ -1866,6 +1873,50 @@ export class LiveLoop implements LiveController {
 
     for (const { line, moveOnly } of affected) void this.processLine(line, ink, moveOnly);
     this.publishHelpTarget();
+  }
+
+  /**
+   * The lines without what a young student puts on the page that is no maths (`youngHand.ts`): a
+   * line of nothing but taps of the pen is no line (`isSpeckLine`: never read, so never given a "?");
+   * under one of the chat's problems, nor is one of nothing but level bars — `-`, `=`, `= -`, an answer
+   * started whose number is still to come (`isSignsOnly`: Mathpix reads a lone minus `\backslash`,
+   * and `= -` as `=`) — until the number joins it; and under one of the chat's sums her own tick after
+   * her answer is not part of it (`ownTicks`; a line that was only a tick is none). Those strokes stay
+   * on the page in no line, like a drawing's. A division bar's or a stacked sum's line is left as it
+   * is. `writing`: the strokes clustered; `cells`: the chat's problems.
+   */
+  private withoutStrays(lines: InkLine[], writing: readonly InkStroke[], columns: ColumnOptions, cells: readonly ProblemCell[]): InkLine[] {
+    const byId = new Map(writing.map((s) => [s.id as string, s]));
+    const glyph = medianStrokeHeight([...writing]);
+    let changed = false;
+    const out: InkLine[] = [];
+    for (const line of lines) {
+      const strokes = line.strokeIds.map((id) => byId.get(id)).filter((s): s is InkStroke => Boolean(s));
+      // a division bar's line, a stacked sum's: not the clusterer's, left alone
+      if (strokes.length !== line.strokeIds.length) {
+        out.push(line);
+        continue;
+      }
+      if (isSpeckLine(strokes, glyph)) {
+        changed = true;
+        continue;
+      }
+      const cell = cellOf(line.bounds, cells);
+      // `-`, `=`, `= -` under one of the chat's problems: an answer started, its number still to come
+      if (cell && isSignsOnly(strokes)) {
+        changed = true;
+        continue;
+      }
+      const ticks = cell && cell.lines.every(isArithmetic) ? ownTicks(strokes) : [];
+      if (ticks.length === 0) {
+        out.push(line);
+        continue;
+      }
+      changed = true;
+      const kept = strokes.filter((s) => !ticks.includes(s));
+      if (kept.length > 0) out.push({ ...line, strokeIds: kept.map((s) => s.id), bounds: unionRects(kept.map((s) => s.bounds)) });
+    }
+    return changed ? assignColumns(out, columns) : lines;
   }
 
   /**
@@ -2268,13 +2319,27 @@ export class LiveLoop implements LiveController {
     this.learnFresh.add(lineId);
     forgetOldest(this.learnFresh);
     // a division bar and the number under it: Mathpix drops the bar and reads `2` — the line is
-    // "divide both sides by 2" (`engine/operationLine.ts`)
-    const read = reread ?? res.latex;
+    // "divide both sides by 2" (`engine/operationLine.ts`). A young hand's wobbly `=` is an `=`.
+    const read = this.youngRead(state, reread ?? res.latex);
     const latex = state.line.strokeIds.some((id) => this.barStrokeIds.has(id)) ? (barDivisionLatex(read) ?? read) : read;
     if (reread) setLine(lineId, { latex, confidence: Math.max(res.confidence, LIVE_LIMITS.minConfidence), provider: "reread" });
     else setLine(lineId, { latex, confidence: res.confidence, provider: res.provider });
     await this.ensureEngine();
     this.analyzeAndRender(lineId, { cascade: true });
+  }
+
+  /**
+   * A read of the student's line as they meant it (`youngHand.ts`): a young hand's wobbly `=` read as
+   * `\smile`, `\asymp`, `\approx 7` is an `=`, and in arithmetic the tick drawn after an answer is none
+   * of it and the answer's signs are its ink's (`leadingSigns`: `-54` for a wobbly `= 54` is `= 54`).
+   * Every read goes through it: Mathpix's, the second reader's.
+   */
+  private youngRead(state: LiveLineState, latex: string): string {
+    const arithmetic = this.arithmeticProblem(state);
+    // the signs her answer starts with, as its ink has them: a wobbly `=` is read as a minus too
+    const ink = arithmetic ? state.line.strokeIds.map((id) => this.editor.getShape(id)).map((s) => (s ? this.inkOf(s) : null)) : [];
+    const signs = arithmetic ? leadingSigns(ink.filter((s): s is InkStroke => s !== null)) : null;
+    return readYoungHand(latex, { arithmetic, signs });
   }
 
   // ---------------------------------------------------------------- the second reader
@@ -2302,18 +2367,20 @@ export class LiveLoop implements LiveController {
     // (`stackAnalysis`) — and one misread as a fraction is not read again into a "plainer" fraction
     if (this.stackOf(line) || MISREAD_STACK.test(res.latex)) return;
     const state = liveStore.lines.get()[line.id];
-    if (!state || state.latex !== res.latex) return;
+    // the read as it stands on the board (a young hand's `=` put right: `youngRead`)
+    if (!state || state.latex !== this.youngRead(state, res.latex)) return;
+    const read = { latex: state.latex, confidence: res.confidence };
     const { above, below } = this.columnNeighbours(state);
     const others = [...above, ...below];
     const signal = rereadTrigger({
-      latex: res.latex,
-      confidence: res.confidence,
+      latex: read.latex,
+      confidence: read.confidence,
       analysis: state.analysis,
       strokeCount: line.strokeIds.length,
       others,
     });
     if (!signal) return;
-    await this.readAgain(line, res, { signal, above, below, others });
+    await this.readAgain(line, read, { signal, above, below, others });
   }
 
   /**
@@ -2425,6 +2492,17 @@ export class LiveLoop implements LiveController {
     const head = this.columnHeads.get(state.line.column);
     const lines = head ? head.lines : [this.columnLines(state.line.column).find((s) => s.latex && s.line.row <= state.line.row)?.latex ?? state.latex];
     return lines.length > 0 && lines.every(isArithmetic);
+  }
+
+  /**
+   * A line on the row of one of the chat's problems, after it, that writes the problem's end again and
+   * then its answer (`3 = 7` after the tutor's `4 + 3`, its 3 rubbed out and written again): that
+   * answer, as a line of its own (`= 7`, `answerAfterRestatedEnd`). Null for any other line.
+   */
+  private answerBeside(state: LiveLineState): string | null {
+    const head = this.columnHeads.get(state.line.column);
+    if (!head || head.lines.length !== 1 || !besideProblem(state.line.bounds, head.head)) return null;
+    return answerAfterRestatedEnd(state.latex, head.lines[0]);
   }
 
   /**
@@ -2577,7 +2655,8 @@ export class LiveLoop implements LiveController {
     // a "couldn't read this" chip waiting for the low-confidence read is not wanted any more
     if (rt.unreadableTimer) clearTimeout(rt.unreadableTimer);
     rt.unreadableTimer = null;
-    setLine(lineId, { latex, provider: "reread", confidence: Math.max(confidence, LIVE_LIMITS.minConfidence) });
+    const state = liveStore.lines.get()[lineId];
+    setLine(lineId, { latex: state ? this.youngRead(state, latex) : latex, provider: "reread", confidence: Math.max(confidence, LIVE_LIMITS.minConfidence) });
     this.analyzeAndRender(lineId, { cascade: true });
   }
 
@@ -3116,11 +3195,13 @@ export class LiveLoop implements LiveController {
     try {
       const ctx = this.columnContext(state);
       let a = this.engine.analyzeLine(state.latex, { ...ctx, mode: this.opts.mode });
-      // arithmetic (no letters anywhere in the problem): a lone number is the answer, and a right
-      // plain number — or a true fact, `7 + 5 = 12` — is the problem solved
+      // arithmetic (no letters anywhere in the problem): a lone number is the answer (`= 9` too), and
+      // so is the one after the end of the problem written again beside it (`3 = 7` after `4 +`); a
+      // right plain number — or a true fact, `7 + 5 = 12` — is the problem solved
       if (this.arithmeticProblem(state)) {
-        if (ctx.previous && BARE_NUMBER.test(state.latex)) {
-          const answer = this.engine.analyzeLine(`= ${state.latex.trim()}`, { ...ctx, mode: this.opts.mode });
+        const bare = this.answerBeside(state) ?? (BARE_NUMBER.test(state.latex) ? `= ${withoutRelation(state.latex)}` : null);
+        if (ctx.previous && bare) {
+          const answer = this.engine.analyzeLine(bare, { ...ctx, mode: this.opts.mode });
           if (answer.verdict === "ok" || answer.verdict === "mismatch") a = { ...answer, bareAnswer: true };
         }
         if (a.verdict === "ok" && !a.solved && PLAIN_NUMBER.test(lastSide(state.latex))) a = { ...a, solved: true };

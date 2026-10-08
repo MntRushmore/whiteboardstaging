@@ -69,8 +69,8 @@ export async function makeScreenThumbnail(editor: Editor, maxChars: number): Pro
   const content = editor.getCurrentPageBounds();
   const screen = thumbnailRect(editor.getCurrentPage().meta, content ? { x: content.x, y: content.y, w: content.w, h: content.h } : null);
   const largest = THUMBNAIL_WIDTHS[0];
-  // Live's typeset echoes export as their LaTeX source in monospace (MathShapeUtil.toSvg),
-  // which at card size is noise beside the ink: the card shows the page as it was written.
+  // Live's typeset maths exports as a line of monospace text (MathShapeUtil.toSvg), which at
+  // card size is noise beside the ink: the card shows the page as it was written.
   const inked = [...shapeIds].filter((id) => editor.getShape(id)?.type !== "math");
   // One export at the largest size, pixelRatio 1 (the default of 2 doubles every side);
   // the smaller sizes and qualities are re-encodes of that bitmap, which are cheap.

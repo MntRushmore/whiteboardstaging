@@ -54,11 +54,53 @@ export const youngGlyphs = {
   dot(x: number, y: number): Pt[][] {
     return [[{ x, y }]];
   },
+  /** a minus: one nearly flat bar `w` long, a little lower at its right end */
+  minus(x: number, y: number, w: number): Pt[][] {
+    return [youngGlyphs.bar(x, y, w, 1, -3)];
+  },
+  /** a wavy bar (one bar of a wobbly `=`) */
+  wave(x: number, y: number, w: number, a = 5): Pt[][] {
+    return [Array.from({ length: 16 }, (_, i) => ({ x: x + (w * i) / 15, y: y + a * Math.sin((i / 15) * Math.PI * 2) }))];
+  },
+  /** an oval, `h` tall, drawn round from the top */
+  zero(x: number, y: number, h: number): Pt[][] {
+    const rx = h * 0.42;
+    const ry = h / 2;
+    return [Array.from({ length: 24 }, (_, i) => ({ x: x + rx + rx * Math.sin((i / 23) * Math.PI * 2.05), y: y + ry - ry * Math.cos((i / 23) * Math.PI * 2.05) }))];
+  },
+  /** two bumps on the right, one under the other */
+  three(x: number, y: number, h: number): Pt[][] {
+    const r = h / 4;
+    const w = h * 0.7;
+    const bump = (cy: number, from: number, to: number) =>
+      Array.from({ length: 10 }, (_, i) => {
+        const a = from + ((to - from) * i) / 9;
+        return { x: x + w / 2 + (w / 2) * Math.cos(a), y: cy + r * Math.sin(a) };
+      });
+    return [[...bump(y + r, -Math.PI * 0.9, Math.PI / 2), ...bump(y + 3 * r, -Math.PI / 2, Math.PI * 0.9)]];
+  },
+  /** a flag, a stem down, and a belly round to the left */
+  five(x: number, y: number, h: number): Pt[][] {
+    const w = h * 0.7;
+    const belly = Array.from({ length: 12 }, (_, i) => {
+      const a = -Math.PI * 0.6 + (Math.PI * 1.5 * i) / 11;
+      return { x: x + w * 0.45 + w * 0.5 * Math.cos(a), y: y + h * 0.68 + h * 0.3 * Math.sin(a) };
+    });
+    return [[...steps({ x: x + w, y }, { x: x + w * 0.1, y }, 6), ...steps({ x: x + w * 0.1, y }, { x: x + w * 0.05, y: y + h * 0.42 }, 4), ...belly]];
+  },
+  /** a 4 in one stroke (down-left, across) and its long stem */
+  four(x: number, y: number, h: number): Pt[][] {
+    const w = h * 0.75;
+    return [
+      [...steps({ x: x + w * 0.45, y: y + h * 0.05 }, { x, y: y + h * 0.55 }, 8), ...steps({ x, y: y + h * 0.55 }, { x: x + w, y: y + h * 0.5 }, 8)],
+      steps({ x: x + w * 0.62, y }, { x: x + w * 0.6, y: y + h * 1.1 }, 10),
+    ];
+  },
 };
 
 /**
- * An answer as a young student writes it, left to right from (x, y): `=`, digits `1` `7` `9`, a space,
- * `✓` (her own tick) and `.` (a tap). Strokes, in the order she writes them.
+ * An answer as a young student writes it, left to right from (x, y): `=`, `-`, digits `0` `1` `3` `4`
+ * `5` `7` `9`, a space, `✓` (her own tick) and `.` (a tap). Strokes, in the order she writes them.
  */
 export function youngLine(text: string, x: number, y: number, h = 100): Pt[][] {
   const out: Pt[][] = [];
@@ -81,6 +123,26 @@ export function youngLine(text: string, x: number, y: number, h = 100): Pt[][] {
         out.push(...youngGlyphs.nine(cx, y, h * 0.85));
         cx += h * 0.55 + 25;
         break;
+      case "-":
+        out.push(...youngGlyphs.minus(cx, y + h * 0.5, 60));
+        cx += 85;
+        break;
+      case "0":
+        out.push(...youngGlyphs.zero(cx, y + h * 0.3, h * 0.7));
+        cx += h * 0.6 + 25;
+        break;
+      case "3":
+        out.push(...youngGlyphs.three(cx, y, h * 0.85));
+        cx += h * 0.6 + 25;
+        break;
+      case "5":
+        out.push(...youngGlyphs.five(cx, y, h));
+        cx += h * 0.7 + 25;
+        break;
+      case "4":
+        out.push(...youngGlyphs.four(cx, y, h));
+        cx += h * 0.75 + 25;
+        break;
       case "✓":
         out.push(...youngGlyphs.tick(cx, y, h * 0.95));
         cx += h + 20;
@@ -98,6 +160,64 @@ export function youngLine(text: string, x: number, y: number, h = 100): Pt[][] {
   }
   return out;
 }
+
+/** Where the tutor's problem is: its ink's left, top and right edges. */
+export interface HeadAt {
+  x: number;
+  y: number;
+  r: number;
+}
+
+/**
+ * Negative answers on an iPad, as in two photos of a real board (2026-10-08): the tutor's
+ * `1. -3 - 7`, `2. (-4)(-3)`, `3. -12 + 9`, `4. (-6) × (-9)` in a 2 × 2 grid (`heads`, by problem), and
+ * the child's answers measured off the photos in page px (the board fitted at ~0.5):
+ *
+ *  - `one`: `= - 10` beside problem 1, an `=` of a 91 px bar over a 59 px one, 126 px to a minus, 80 px
+ *    to a 115 px `1`, then a `0` ending 29 px before problem 2's number;
+ *  - `two`: a lone minus under problem 2, an answer just started;
+ *  - `three`: `= -3` beside problem 3, a short bar over a longer one, a minus level with the lower bar
+ *    67 px further on, a `3` against the minus;
+ *  - `four`: a wobbly `= 54` under problem 4, a wave with a bar half over it, a `5` and a long-stemmed `4`.
+ */
+export function negativeAnswers(heads: readonly HeadAt[]) {
+  const [p1, p2, p3, p4] = heads;
+  const g = youngGlyphs;
+  const zeroX = p2.x - 29 - 63;
+  const oneX = zeroX - 64;
+  const minusX = oneX - 146;
+  const eqX = minusX - 217;
+  const x3 = p3.r + 24;
+  return {
+    one: {
+      eq: [g.bar(eqX, p1.y, 91, 0, 4), g.bar(eqX, p1.y + 29, 59, 4)],
+      minus: g.minus(minusX, p1.y + 38, 66),
+      ten: [...g.one(oneX, p1.y - 14, 115), ...g.zero(zeroX, p1.y + 18, 71)],
+      /** a point on its `=` */
+      at: { x: eqX + 20, y: p1.y + 30 },
+    },
+    two: { minus: g.minus(p2.x + 52, p2.y + 66, 48), at: { x: p2.x + 70, y: p2.y + 66 } },
+    three: {
+      eq: [g.bar(x3 + 19, p3.y - 1, 40, 2, 4), g.bar(x3, p3.y + 22, 55, -2)],
+      minus: g.minus(x3 + 126, p3.y + 18, 59),
+      three: g.three(x3 + 185, p3.y - 29, 83),
+      at: { x: x3 + 20, y: p3.y + 22 },
+    },
+    four: {
+      eq: [...g.wave(p4.x + 57, p4.y + 101, 61, 8), g.bar(p4.x + 92, p4.y + 83, 65, 1, 4)],
+      digits: [...g.five(p4.x + 187, p4.y + 53, 118), ...g.four(p4.x + 322, p4.y + 84, 138)],
+      at: { x: p4.x + 100, y: p4.y + 90 },
+    },
+  };
+}
+
+/** The heads of the photographed board, in page px (problem 1, 2, 3, 4). */
+export const PHOTO_HEADS: readonly HeadAt[] = [
+  { x: 62, y: 86, r: 204 },
+  { x: 814, y: 86, r: 1000 },
+  { x: 62, y: 486, r: 236 },
+  { x: 814, y: 486, r: 1040 },
+];
 
 let n = 0;
 

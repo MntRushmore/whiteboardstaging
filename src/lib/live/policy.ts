@@ -238,11 +238,22 @@ export function isLoneRelation(latex: string): boolean {
   return /^(?:=|<|>|\\(?:le|ge|leq|geq|lt|gt|ne|neq|approx))$/.test(s);
 }
 
+/**
+ * An answer's signs with its number still to come: a lone relation (`isLoneRelation`), a minus on its
+ * own, or a relation and a minus (`= -`). A young student starting `= -10` writes the minus, stops,
+ * then writes the 10: nothing to question yet.
+ */
+export function isAnswerStart(latex: string): boolean {
+  if (isLoneRelation(latex)) return true;
+  const s = latex.replace(/\\[,;:! ]|[{}\s~]/g, "");
+  return s === "-" || /^(?:=|<|>|\\(?:le|ge|leq|geq|lt|gt))-$/.test(s);
+}
+
 export function unjudgedReason(line: { latex: string; confidence: number; provider: string; analysis: LineAnalysis | null }): UnjudgedReason | null {
   // not read yet: nothing to say about it
   if (line.provider === "none" && !line.analysis) return null;
-  // an `=` waiting for its answer: nothing to say about it yet either
-  if (isLoneRelation(line.latex)) return null;
+  // an `=` (or `-`, `= -`) waiting for its answer: nothing to say about it yet either
+  if (isAnswerStart(line.latex)) return null;
   if (!line.latex.trim() || line.confidence < LIVE_LIMITS.minConfidence) return "unread";
   if (!line.analysis) return null;
   if (line.analysis.bareAnswer) return null;
