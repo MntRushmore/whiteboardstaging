@@ -849,18 +849,21 @@ export function assignColumns(lines: InkLine[], opts: ColumnOptions = {}): InkLi
  * `fixed`: groups of strokes that are one line each whatever the clusterer would make of them —
  * a division bar and the divisor under it (`diagrams.ts`, `DivisionBar`) — given ids and
  * columns with the rest. `opts.zoom`: the board's fit zoom (`inkScale`); none is a desktop.
- * `opts.columns`: what the columns know besides the lines (`ColumnOptions`).
+ * `opts.columns`: what the columns know besides the lines (`ColumnOptions`). `opts.apart`: a group
+ * the clusterer made, as the lines it really is (the loop's: ink under two of the chat's problems,
+ * `splitAcrossProblems`), before ids are given.
  */
 export function clusterLines(
   strokes: InkStroke[],
   previous: InkLine[] = [],
   fixed: ReadonlyArray<readonly InkStroke[]> = [],
-  opts: { zoom?: number; columns?: ColumnOptions } = {},
+  opts: { zoom?: number; columns?: ColumnOptions; apart?: (group: InkStroke[]) => InkStroke[][] } = {},
 ): InkLine[] {
   const medianH = medianStrokeHeight(strokes);
   // two problems' rows cut apart first: an operation row joins pieces under ONE line above them
   const rows = splitAtGutters(clusterStrokeGroups(strokes).map((idxs) => idxs.map((i) => strokes[i])), medianH, inkScale(opts.zoom));
-  const clustered = mergeOperationRows(rows, medianH);
+  const merged = mergeOperationRows(rows, medianH);
+  const clustered = opts.apart ? merged.flatMap((g) => opts.apart?.(g) ?? [g]).filter((g) => g.length > 0) : merged;
   const groups = [...clustered, ...fixed.filter((g) => g.length > 0)];
   const usedIds = new Set<string>();
   const lines: InkLine[] = groups.map((members) => {

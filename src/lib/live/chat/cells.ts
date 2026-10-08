@@ -107,6 +107,39 @@ export function besideProblem(bounds: Rect, head: Rect): boolean {
   return overlap >= Math.max(1, Math.min(bounds.h, head.h)) / 3 && bounds.x >= head.x + head.w / 2;
 }
 
+/** The middle of `r` is in the cell's column (between its left and right edges). */
+function inColumn(r: Rect, c: ProblemCell): boolean {
+  const cx = r.x + r.w / 2;
+  return cx >= c.cell.x && cx <= c.cell.x + c.cell.w;
+}
+
+/**
+ * Strokes the clusterer made one line that are two problems' work: some beside one of the chat's
+ * problems, on its row (`besideProblem`), and others UNDER another one — in its cell, below its
+ * number and its sum. A young hand's `= - 10` beside `1. -3 - 7`, its 0 ending just before
+ * `2. (-4)(-3)`, ran into the minus she had started under problem 2 (a row apart only by the
+ * problems' layout: the minus is level with her tall digits), and `=-10-` was read. The strokes under
+ * the other problem are lines of their own, one per problem; anything else stays as it was — a line
+ * written under its problem that runs on under the next one (nothing of it beside a problem) is one line.
+ */
+export function splitAcrossProblems<S extends { bounds: Rect }>(group: S[], cells: readonly ProblemCell[]): S[][] {
+  if (cells.length < 2 || group.length < 2) return [group];
+  const besideOf = (s: S) => cells.find((c) => inColumn(s.bounds, c) && besideProblem(s.bounds, c.head))?.key;
+  const underOf = (s: S) =>
+    cells.find((c) => inColumn(s.bounds, c) && s.bounds.y >= c.head.y + c.head.h && s.bounds.y + s.bounds.h / 2 <= c.cell.y + c.cell.h)?.key;
+  const homes = new Set(group.map(besideOf).filter((k): k is string => Boolean(k)));
+  if (homes.size !== 1) return [group];
+  const [home] = homes;
+  const rest: S[] = [];
+  const others = new Map<string, S[]>();
+  for (const s of group) {
+    const under = besideOf(s) ? undefined : underOf(s);
+    if (under && under !== home) others.set(under, [...(others.get(under) ?? []), s]);
+    else rest.push(s);
+  }
+  return others.size === 0 || rest.length === 0 ? [group] : [rest, ...others.values()];
+}
+
 /**
  * The problem a line of the student's is written under: the cell its middle is in, level with
  * the problem or below it (a line beside the problem, `= 4` after it, counts — however tall; one

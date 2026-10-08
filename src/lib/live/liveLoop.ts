@@ -145,7 +145,7 @@ import { PROOF_ROWS_META, proofRowsPlan } from "./proof/place";
 import { PROOF_FIGURE_META, PROOF_TABLE_META, tutorFiguresOf } from "./proof/tutorFigure";
 import type { PlannedRow } from "./proof/planner";
 import type { BoardLine, ProofRead } from "./proof/read";
-import { besideProblem, cellOf, problemKeyOf, problemLines, problemMetaOf, readProblemCells, splitColumnsAtProblems, type ProblemCell } from "./chat/cells";
+import { besideProblem, cellOf, problemKeyOf, problemLines, problemMetaOf, readProblemCells, splitAcrossProblems, splitColumnsAtProblems, type ProblemCell } from "./chat/cells";
 import { nextHelpTarget, penLine, pickedLine, problemCount, problemTarget, type HelpTargetDraft } from "./helpTarget";
 import {
   PROBLEM_WORK_META,
@@ -1829,8 +1829,10 @@ export class LiveLoop implements LiveController {
     const columns = this.columnOptions(inLines);
     // a division bar with its divisor, and a stacked sum, are a line each whatever the clusterer makes of them
     const fixed = [...barGroups(split.bars, ink), ...stackGroups(split.stacks, ink)];
+    // ink beside one of the chat's problems is never one line with ink under another (`splitAcrossProblems`)
     const cells = this.problemCells();
-    const clustered = clusterLines(split.writing, prevLines, fixed, { zoom: this.boardZoom(), columns });
+    const apart = cells.length > 1 ? (group: InkStroke[]) => splitAcrossProblems(group, cells) : undefined;
+    const clustered = clusterLines(split.writing, prevLines, fixed, { zoom: this.boardZoom(), columns, apart });
     // a young student's own tick after her answer, taps of the pen, and an answer's signs before its
     // number are no line of maths (yet)
     const lines = this.withProblemColumns(this.withoutStrays(clustered, split.writing, columns, cells));

@@ -233,4 +233,49 @@ describe("live loop — negative answers in a young hand", () => {
       expect(marksAt(a.at), read).toEqual(["check"]);
     }
   });
+
+  it("problem 2's minus, written before problem 1's `= - 10` ends right beside it, stays problem 2's", async () => {
+    start();
+    await run([{ type: "write_problems", problems: PROBLEMS }]);
+    const two = answers().two;
+    reads.set("2:1", "\\backslash").set("1:5", "=-10").set("1:6", "=-10-");
+    await write(two.minus);
+    await stop();
+    const a = answer1();
+    await write([...a.eq, ...a.minus, ...a.ten]);
+    await stop();
+    const line = lineAt(a.at);
+    expect(line?.line.strokeIds).toHaveLength(5);
+    expect(line?.latex).toBe("=-10");
+    expect(marksAt(a.at)).toEqual(["check"]);
+    // ...and the minus under problem 2 is still an answer being started there: no mark of its own
+    expect(lineAt(two.at)?.latex ?? "").toBe("");
+    expect(allMarks()).toEqual(["check"]);
+  });
+
+  it("the whole board: three ticks, no ?, no raw LaTeX", async () => {
+    start();
+    await run([{ type: "write_problems", problems: PROBLEMS }]);
+    reads.set("2:1", "\\backslash").set("1:5", "=-10").set("3:4", "=-3").set("4:5", "=54").set("1:2", "=").set("3:2", "=").set("3:3", "=-");
+    const a4 = answer4();
+    await write([...a4.eq, ...a4.digits]);
+    await write(answers().two.minus);
+    const a1 = answer1();
+    await write(a1.eq);
+    await write(a1.minus);
+    await write(a1.ten);
+    const a3 = answer3();
+    await write(a3.eq);
+    await stop();
+    await write(a3.minus);
+    await stop();
+    await write(a3.three);
+    await stop();
+    expect(marksAt(a1.at)).toEqual(["check"]);
+    expect(marksAt(a3.at)).toEqual(["check"]);
+    expect(marksAt(a4.at)).toEqual(["check"]);
+    expect(allMarks()).toEqual(["check", "check", "check"]);
+    const echoes = editor.getCurrentPageShapes().filter((s) => s.type === "math").map((s) => (s.props as { latex: string }).latex);
+    expect(echoes.filter((l) => /\\[a-zA-Z]/.test(l))).toEqual([]);
+  });
 });

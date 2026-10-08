@@ -1,13 +1,13 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import type { LiveEngine, Rect } from "../contracts";
-import { cellOf, type ProblemCell } from "../chat/cells";
+import { cellOf, splitAcrossProblems, type ProblemCell } from "../chat/cells";
 import { splitInk } from "../diagrams";
 import { getEngine } from "../engine";
 import { analyzeColumn } from "../localSolve";
 import { isLoneRelation } from "../policy";
-import { clusterLines, medianStrokeHeight, unionRects } from "../strokeClusters";
+import { clusterLines, isEqualsPair, medianStrokeHeight, unionRects } from "../strokeClusters";
 import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, isTickStroke, leadingSigns, ownTicks, readYoungHand } from "../youngHand";
-import { negativeAnswers, PHOTO_HEADS, youngGlyphs, youngInk, youngLine } from "../__fixtures__/youngInk";
+import { negativeAnswers, PHOTO_HEADS, youngGlyphs, youngInk, youngLine, type Pt } from "../__fixtures__/youngInk";
 import { CORPUS } from "@/__eval__/corpus";
 
 const ARITHMETIC = { arithmetic: true };
@@ -319,5 +319,39 @@ describe("negative answers: the signs as the ink has them", () => {
     expect(isSignsOnly(youngInk([...board.one.eq, ...youngGlyphs.dot(150, 150)]))).toBe(true);
     expect(isSignsOnly(youngInk([...board.three.eq, ...board.three.minus, ...board.three.three]))).toBe(false);
     expect(isSignsOnly(youngInk(youngGlyphs.dot(150, 150)))).toBe(false);
+  });
+
+  it("the board: each answer one line, problem 1's not joined to the minus under problem 2, no `≡`", () => {
+    const ink = (s: Pt[][]) => youngInk(s);
+    const one = ink([...board.one.eq, ...board.one.minus, ...board.one.ten]);
+    const two = ink(board.two.minus);
+    const three = ink([...board.three.eq, ...board.three.minus, ...board.three.three]);
+    const four = ink([...board.four.eq, ...board.four.digits]);
+    const all = [...one, ...two, ...three, ...four];
+    const cells: ProblemCell[] = PHOTO_HEADS.map((h, i) => ({
+      key: `hb_${i + 1}`,
+      n: i + 1,
+      lines: [["-3 - 7", "(-4)(-3)", "-12 + 9", "(-6) \\times (-9)"][i]],
+      head: { x: h.x, y: h.y, w: h.r - h.x, h: 30 },
+      cell: { x: i % 2 ? 800 : 48, y: i < 2 ? 72 : 472, w: 752, h: 400 },
+    }));
+    const split = splitInk(all, [], { zoom: 0.49 });
+    expect(split.writing).toHaveLength(all.length);
+    const ids = (s: readonly { id: string }[]) => s.map((x) => x.id).sort();
+    // the clusterer alone runs problem 1's 0 into problem 2's minus, a row apart only by the layout
+    const joined = clusterLines(split.writing, [], [], { zoom: 0.49 });
+    expect(joined.find((l) => l.strokeIds.includes(two[0].id))?.strokeIds).toHaveLength(6);
+    const lines = clusterLines(split.writing, [], [], { zoom: 0.49, apart: (g) => splitAcrossProblems(g, cells) });
+    const lineOf = (s: { id: string }) => [...(lines.find((l) => l.strokeIds.includes(s.id as never))?.strokeIds ?? [])].sort();
+    expect(lineOf(one[0])).toEqual(ids(one));
+    expect(lineOf(two[0])).toEqual(ids(two));
+    expect(lineOf(three[0])).toEqual(ids(three));
+    expect(lineOf(four[0])).toEqual(ids(four));
+    // problem 3's `=` is two bars and its minus a third beside them, not one `≡`
+    expect(isEqualsPair(three[0].bounds, three[1].bounds, three.map((s) => s.bounds))).toBe(true);
+    expect(isEqualsPair(three[1].bounds, three[2].bounds, three.map((s) => s.bounds))).toBe(false);
+    expect(isEqualsPair(three[0].bounds, three[2].bounds, three.map((s) => s.bounds))).toBe(false);
+    // each in its problem's cell
+    for (const [k, strokes] of [one, two, three, four].entries()) expect(cellOf(unionRects(strokes.map((s) => s.bounds)), cells)?.n).toBe(k + 1);
   });
 });
