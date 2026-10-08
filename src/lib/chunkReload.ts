@@ -31,6 +31,17 @@ export const CHUNK_RELOAD_COPY = "Loading the latest version of Agathon…";
 const KEY_PREFIX = "agathon:chunk-reload:";
 
 export const CHUNK_RELOAD_REPORT: UserErrorInput = { kind: "live.app", code: "chunk_reload", message: CHUNK_RELOAD_COPY, level: "info" };
+/**
+ * A stale chunk outside the page's error boundaries: an `import()` in a handler that nothing
+ * caught (src/instrumentation-client.ts), or a lazy part of the board its LiveErrorBoundary hid.
+ * No reload there (the student is mid-work, and the board still works): a warning, not a crash.
+ */
+export const CHUNK_FAILED_REPORT: UserErrorInput = {
+  kind: "live.app",
+  code: "chunk_failed",
+  message: "A part of the app could not load (a new release, or the connection dropped)",
+  level: "warn",
+};
 
 export function isChunkLoadError(error: unknown): boolean {
   try {

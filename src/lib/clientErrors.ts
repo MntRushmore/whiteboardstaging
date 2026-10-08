@@ -93,8 +93,8 @@ export type ClientErrorReport = {
  *  - `live.auth`      a sign-in, sign-up, reset that failed on our side (never a wrong password), the
  *                     sign-in service unreachable, a sign out that failed
  *  - `live.settings`  a Labs setting that could not be saved
- *  - `live.app`       the app itself: a page reloaded for a new release (`chunk_reload`, info;
- *                     src/lib/chunkReload.ts)
+ *  - `live.app`       the app itself: a page reloaded for a new release (`chunk_reload`, info), a
+ *                     part of it that could not load one (`chunk_failed`, warn; src/lib/chunkReload.ts)
  */
 export type UserErrorKind =
   | "live.recognize"
