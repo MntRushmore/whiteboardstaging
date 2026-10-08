@@ -128,7 +128,7 @@ import {
 import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient";
 import { assignColumns, clusterLines, inkScale, rebuildFromMathShapes, unionRects, type ColumnOptions, type EchoShapeSeed } from "./strokeClusters";
 import { buildPayload, hashPayload } from "./strokePayload";
-import { readYoungHand } from "./youngHand";
+import { answerAfterRestatedEnd, readYoungHand } from "./youngHand";
 import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
 import { nextStep as stackNextStep, parseStacked, placesLeft, rowPlaces, workStacked, type StackedWork } from "./engine/columnArithmetic";
@@ -143,7 +143,7 @@ import { PROOF_ROWS_META, proofRowsPlan } from "./proof/place";
 import { PROOF_FIGURE_META, PROOF_TABLE_META, tutorFiguresOf } from "./proof/tutorFigure";
 import type { PlannedRow } from "./proof/planner";
 import type { BoardLine, ProofRead } from "./proof/read";
-import { cellOf, problemKeyOf, problemLines, problemMetaOf, readProblemCells, splitColumnsAtProblems, type ProblemCell } from "./chat/cells";
+import { besideProblem, cellOf, problemKeyOf, problemLines, problemMetaOf, readProblemCells, splitColumnsAtProblems, type ProblemCell } from "./chat/cells";
 import { nextHelpTarget, penLine, pickedLine, problemCount, problemTarget, type HelpTargetDraft } from "./helpTarget";
 import {
   PROBLEM_WORK_META,
@@ -2410,6 +2410,17 @@ export class LiveLoop implements LiveController {
   }
 
   /**
+   * A line on the row of one of the chat's problems, after it, that writes the problem's end again and
+   * then its answer (`3 = 7` after the tutor's `4 + 3`, its 3 rubbed out and written again): that
+   * answer, as a line of its own (`= 7`, `answerAfterRestatedEnd`). Null for any other line.
+   */
+  private answerBeside(state: LiveLineState): string | null {
+    const head = this.columnHeads.get(state.line.column);
+    if (!head || head.lines.length !== 1 || !besideProblem(state.line.bounds, head.head)) return null;
+    return answerAfterRestatedEnd(state.latex, head.lines[0]);
+  }
+
+  /**
    * The step right above `state` when it is a slip (ringed, or carried on from one): what a step that
    * does not follow from the last right line may have carried on from (`analyze`). Undefined when the
    * step above is right, or there is none.
@@ -3064,11 +3075,13 @@ export class LiveLoop implements LiveController {
     try {
       const ctx = this.columnContext(state);
       let a = this.engine.analyzeLine(state.latex, { ...ctx, mode: this.opts.mode });
-      // arithmetic (no letters anywhere in the problem): a lone number is the answer, and a right
-      // plain number — or a true fact, `7 + 5 = 12` — is the problem solved
+      // arithmetic (no letters anywhere in the problem): a lone number is the answer (`= 9` too), and
+      // so is the one after the end of the problem written again beside it (`3 = 7` after `4 +`); a
+      // right plain number — or a true fact, `7 + 5 = 12` — is the problem solved
       if (this.arithmeticProblem(state)) {
-        if (ctx.previous && BARE_NUMBER.test(state.latex)) {
-          const answer = this.engine.analyzeLine(`= ${state.latex.trim()}`, { ...ctx, mode: this.opts.mode });
+        const bare = this.answerBeside(state) ?? (BARE_NUMBER.test(state.latex) ? `= ${withoutRelation(state.latex)}` : null);
+        if (ctx.previous && bare) {
+          const answer = this.engine.analyzeLine(bare, { ...ctx, mode: this.opts.mode });
           if (answer.verdict === "ok" || answer.verdict === "mismatch") a = { ...answer, bareAnswer: true };
         }
         if (a.verdict === "ok" && !a.solved && PLAIN_NUMBER.test(lastSide(state.latex))) a = { ...a, solved: true };

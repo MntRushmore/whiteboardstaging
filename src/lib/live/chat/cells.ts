@@ -98,16 +98,27 @@ export function problemLines(shapes: ReadonlyArray<{ block: string; meta: unknow
 }
 
 /**
+ * The line is written on the problem's own row, after it: `= 4` beside `2 + 2`. Level with it (they
+ * overlap by at least a third of the shorter one's height) and starting past the middle of it — a
+ * young hand's digits stand taller than the tutor's problem, their middle often above its top.
+ */
+export function besideProblem(bounds: Rect, head: Rect): boolean {
+  const overlap = Math.min(bounds.y + bounds.h, head.y + head.h) - Math.max(bounds.y, head.y);
+  return overlap >= Math.max(1, Math.min(bounds.h, head.h)) / 3 && bounds.x >= head.x + head.w / 2;
+}
+
+/**
  * The problem a line of the student's is written under: the cell its middle is in, level with
- * the problem or below it (a line beside the problem, `= 4` after it, counts; one above it does not).
+ * the problem or below it (a line beside the problem, `= 4` after it, counts — however tall; one
+ * above it does not).
  */
 export function cellOf(bounds: Rect, cells: readonly ProblemCell[]): ProblemCell | null {
   const cx = bounds.x + bounds.w / 2;
   const cy = bounds.y + bounds.h / 2;
   for (const c of cells) {
     const r = c.cell;
-    if (cx < r.x || cx > r.x + r.w || cy < r.y || cy > r.y + r.h) continue;
-    if (cy < c.head.y) continue;
+    if (cx < r.x || cx > r.x + r.w || cy > r.y + r.h) continue;
+    if ((cy < r.y || cy < c.head.y) && !besideProblem(bounds, c.head)) continue;
     return c;
   }
   return null;

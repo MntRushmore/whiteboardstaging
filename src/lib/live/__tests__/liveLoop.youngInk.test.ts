@@ -21,9 +21,10 @@ import type { ChatAction, ChatRunReport } from "../chat/contracts";
  */
 
 let engine: LiveEngine;
+// the engine's modules load on first use: slow on a busy machine
 beforeAll(async () => {
   engine = await getEngine();
-});
+}, 60_000);
 
 describe("live loop — a young student's answers beside the tutor's sums", () => {
   useSyncHash();
@@ -195,6 +196,43 @@ describe("live loop — a young student's answers beside the tutor's sums", () =
     await write([sum, ...youngLine("=7", 170, 280)]);
     await stop();
     expect(Object.values(liveStore.lines.get()).map((s) => s.latex)).toEqual(["4+3 = 7"]);
+  });
+
+  it("`= 9` on the problem's own row is its answer, however much taller than the problem she writes", async () => {
+    start();
+    await run([{ type: "write_problems", problems: [["4+3"], ["7+2"], ["5+6"], ["8+1"]] }]);
+    const p = head(2);
+    // her digits stand 100 px tall beside a problem 30 px tall: the line's middle is above its top
+    const at = { x: p.r + 30, y: p.y - 60 };
+    reads.set(4, "=9");
+    await write(youngLine("=9", at.x, at.y));
+    await stop();
+    const line = lineAt(onEquals(at));
+    expect(line!.line.bounds.y + line!.line.bounds.h / 2).toBeLessThan(p.y);
+    expect(line?.analysis).toMatchObject({ verdict: "ok", solved: true, bareAnswer: true });
+    expect(marksAt(onEquals(at))).toEqual(["check"]);
+  });
+
+  it("`3 = 7` after the tutor's `4 +` (she rubbed its 3 out and wrote her own) is the answer 7: ticked, not ringed", async () => {
+    start();
+    await run([{ type: "write_problems", problems: [["4+3"], ["7+2"], ["5+6"], ["8+1"]] }]);
+    const p = head(1);
+    const three: Pt[] = [
+      ...Array.from({ length: 10 }, (_, i) => ({ x: p.r + 5 + 20 * Math.sin((i / 9) * Math.PI), y: p.y - 10 + 4 * i })),
+      ...Array.from({ length: 10 }, (_, i) => ({ x: p.r + 5 + 22 * Math.sin((i / 9) * Math.PI), y: p.y + 30 + 4 * i })),
+    ];
+    reads.set(4, "3=7");
+    const at = { x: p.r + 50, y: p.y - 20 };
+    await write([three, ...youngLine("=7", at.x, at.y)]);
+    await stop();
+    expect(lineAt(onEquals(at))?.analysis).toMatchObject({ verdict: "ok", solved: true, bareAnswer: true });
+    expect(marksAt(onEquals(at))).toEqual(["check"]);
+    // ...and `3 = 8` there is a wrong answer, ringed
+    reads.set(5, "3=8");
+    await write([[{ x: at.x + 130, y: at.y + 90 }, { x: at.x + 140, y: at.y + 92 }, { x: at.x + 150, y: at.y + 94 }]]);
+    await stop();
+    expect(lineAt(onEquals(at))?.analysis).toMatchObject({ verdict: "mismatch", bareAnswer: true });
+    expect(marksAt(onEquals(at))).toEqual(["circle"]);
   });
 
   it("an `=` alone on an empty screen waits, unread and unmarked, for its number", async () => {

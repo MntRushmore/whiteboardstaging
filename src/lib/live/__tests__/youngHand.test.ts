@@ -3,7 +3,7 @@ import type { LiveEngine } from "../contracts";
 import { getEngine } from "../engine";
 import { analyzeColumn } from "../localSolve";
 import { isLoneRelation } from "../policy";
-import { readYoungHand } from "../youngHand";
+import { answerAfterRestatedEnd, readYoungHand } from "../youngHand";
 
 const ARITHMETIC = { arithmetic: true };
 const ANYWHERE = { arithmetic: false };
@@ -102,11 +102,33 @@ describe("readYoungHand: a wobbly `=` as Mathpix reads it", () => {
   });
 });
 
+describe("answerAfterRestatedEnd: the end of the problem written again beside it, then the answer", () => {
+  it("is the answer to the problem", () => {
+    expect(answerAfterRestatedEnd("3=7", "4+3")).toBe("= 7");
+    expect(answerAfterRestatedEnd("3 = 7", "4 + 3")).toBe("= 7");
+    expect(answerAfterRestatedEnd("+3=7", "4+3")).toBe("= 7");
+    expect(answerAfterRestatedEnd("3 = 17", "14 + 3")).toBe("= 17");
+    expect(answerAfterRestatedEnd("\\frac{1}{4} = \\frac{3}{4}", "\\frac{1}{2} + \\frac{1}{4}")).toBe("= \\frac{3}{4}");
+    expect(answerAfterRestatedEnd("4 = 2", "8 \\div 4")).toBe("= 2");
+  });
+
+  it("but not the whole problem again, another number, or no answer", () => {
+    expect(answerAfterRestatedEnd("4+3=7", "4+3")).toBeNull();
+    expect(answerAfterRestatedEnd("13=17", "4+3")).toBeNull();
+    expect(answerAfterRestatedEnd("3=17", "4+13")).toBeNull();
+    expect(answerAfterRestatedEnd("3=", "4+3")).toBeNull();
+    expect(answerAfterRestatedEnd("=7", "4+3")).toBeNull();
+    expect(answerAfterRestatedEnd("3=x", "4+3")).toBeNull();
+    expect(answerAfterRestatedEnd("7", "4+3")).toBeNull();
+  });
+});
+
 describe("readYoungHand: what the engine makes of her answers once they read as she wrote them", () => {
   let engine: LiveEngine;
+  // the engine's modules load on first use: slow on a busy machine
   beforeAll(async () => {
     engine = await getEngine();
-  });
+  }, 60_000);
 
   const judged = (problem: string, read: string) => analyzeColumn(engine, [problem, readYoungHand(read, ARITHMETIC)], "feedback")[1];
 

@@ -73,6 +73,33 @@ function numbersOnly(latex: string): boolean {
 
 const tidy = (s: string) => s.replace(/=(?:\s*=)+/g, "=").replace(/\s+/g, " ").trim();
 
+/** A number as a young student writes an answer: `14`, `-3`, `2.5`, `\frac{3}{4}`, `3/4`. */
+const ANSWER_NUMBER = /^\s*-?\s*(?:\d+(?:\.\d+)?|\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\}|\d+\s*\/\s*\d+)\s*$/;
+
+/** LaTeX with its spacing, braces and sizing taken out, to compare two writings of one sum. */
+const squash = (s: string) => s.replace(/\\(?:left|right)(?![a-zA-Z])|\\[,;:! ]|[{}\s]/g, "").replace(/\\cdot|\\times/g, "×");
+
+/**
+ * The answer of a line that writes the END of the problem beside it again, then its answer: `3 = 7`
+ * after `4 +` of the tutor's `4 + 3` (she rubbed out its 3 and wrote her own), `+ 3 = 7`, `3 = 17`
+ * after `14 + 3`. Its answer as a line of its own (`= 7`), to judge as the answer to the problem;
+ * null for anything else — the whole problem again (`4 + 3 = 7` is judged as it is written), a
+ * number that is not the problem's last (`13 = 17` after `4 + 3`; `3 = 17` after `4 + 13`).
+ */
+export function answerAfterRestatedEnd(line: string, problem: string): string | null {
+  const at = line.indexOf("=");
+  if (at <= 0) return null;
+  const left = squash(line.slice(0, at));
+  const right = line.slice(at + 1).trim();
+  if (!left || !ANSWER_NUMBER.test(right)) return null;
+  const p = squash(problem);
+  if (left === p || !p.endsWith(left)) return null;
+  // the part written again starts a term of the problem: after its operator, or with one
+  const before = p.slice(0, p.length - left.length);
+  if (!/^[+\-×÷]/.test(left) && !/(?:[+\-×÷/(]|\\div)$/.test(before)) return null;
+  return `= ${right}`;
+}
+
 /** The line as a young student meant it (see the file comment); unchanged when nothing applies. */
 export function readYoungHand(latex: string, ctx: YoungReadContext): string {
   let s = latex.replace(/⌣/g, "\\smile ").replace(/⌢/g, "\\frown ");
