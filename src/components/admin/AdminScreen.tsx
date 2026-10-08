@@ -1,18 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { ArrowLeft, RefreshCw, TriangleAlert } from "lucide-react";
-import { AuthErrorBanner, useAuth } from "@/components/AuthProvider";
-import { AppHeader, APP_CONTENT_CLASS } from "@/components/app/AppHeader";
+import { useMemo, type ReactNode } from "react";
+import { ADMIN_API, AdminBoardListSchema, AdminBugListSchema, AdminIssueListSchema } from "@/lib/admin/contracts";
+import { BOARDS_COPY, boardsUrl, liveNowView, type LiveNowView } from "@/lib/admin/boardsView";
+import { newBugsPreview, type NewBugsPreview } from "@/lib/admin/bugsView";
+import { CONSOLE_COPY } from "@/lib/admin/consoleView";
+import { issuesUrl, topIssues, type TopIssuesView } from "@/lib/admin/issuesView";
 import { ADMIN_COPY, buildAdminView, serviceCards, statusSummary, statusesFromResults, type AdminView } from "@/lib/admin/view";
-import { Button } from "@/registry/components/button/button";
-import { EmptyState } from "@/registry/components/empty-state/empty-state";
-import { AdminSkeleton, AiTable, BugReports, CheckNow, ErrorGroups, RefreshBar, Section, ServiceGrid, StatTiles, StatusSummary, UpcomingCharges } from "./AdminSections";
+import { AdminSkeleton, AiTable, BugReports, CheckNow, ErrorGroups, NewBugs, Section, ServiceGrid, StatTiles, StatusSummary, TopIssues, UpcomingCharges } from "./AdminSections";
+import { AdminFrame, PageHeader, useAdminAccess } from "./AdminFrame";
+import { LiveNow } from "./BoardTiles";
+import { LoadFailed } from "./ConsoleBits";
 import { ErrorChart } from "./ErrorChart";
 import { useAdminOverview, type CheckState } from "./useAdminOverview";
-import { useIsAdmin } from "./useIsAdmin";
+import { useAdminResource } from "./useAdminResource";
+import { useNow } from "./useNow";
 import styles from "./admin.module.css";
 
 export interface AdminContentProps {
@@ -26,58 +28,52 @@ export interface AdminContentProps {
   onCheckNow: () => void;
   /** ms since the epoch, for the live check's cards */
   now: number;
+  /** who is on a board now (the boards route, ?live=1); null until read */
+  live?: LiveNowView | null;
+  liveError?: string | null;
+  /** the top open issues (the issues route); null until read or when it can't be (the 24-hour groups stand in) */
+  issues?: TopIssuesView | null;
+  /** the newest new bug reports (the bugs route); null until read or when it can't be (the latest 20 stand in) */
+  bugs?: NewBugsPreview | null;
 }
 
 /**
- * The page under the header: the title and refresh, then Status, Errors students saw, AI, Users and
- * learning, Bug reports. Skeletons on the first read; a failed first read says what failed, with
- * Try again and Check now (the checks still run when the overview cannot be read: a paused database
- * is exactly when). A failed refresh keeps the last overview and says so. Takes a finished view
- * (`buildAdminView`), so it renders from fixtures too.
+ * The overview under the header: the title and refresh, then Status, Money, Live now, Errors
+ * students saw (the chart and the top open issues), AI, Users and learning, Bug reports (the newest
+ * new ones). Skeletons on the first read; a failed first read says what failed, with Try again and
+ * Check now (the checks still run when the overview cannot be read: a paused database is exactly
+ * when). A failed refresh keeps the last overview and says so. Takes finished views, so it renders
+ * from fixtures too.
  */
-export function AdminContent({ view, loading, error, check, onRefresh, onCheckNow, now }: AdminContentProps) {
+export function AdminContent({ view, loading, error, check, onRefresh, onCheckNow, now, live = null, liveError = null, issues = null, bugs = null }: AdminContentProps) {
   // only the services the check covered: one it did not run is not "not checked yet"
-  const live = check.results
+  const liveCheck = check.results
     ? serviceCards({ services: statusesFromResults(check.results), openrouter: null }, { now }).filter((c) => check.results?.some((r) => r.service === c.service))
     : null;
 
   return (
     <div className={styles.inner}>
-      <header className={styles.hero}>
-        <Link href="/" className={styles.back}>
-          <ArrowLeft size={16} strokeWidth={1.9} aria-hidden />
-          {ADMIN_COPY.back}
-        </Link>
-        <div className={styles.titleRow}>
-          <h1 className={styles.title}>{ADMIN_COPY.title}</h1>
-          {view && <RefreshBar updated={view.updated} refreshing={loading} stale={error ? ADMIN_COPY.loadFailedTitle : null} onRefresh={onRefresh} />}
-        </div>
-        {view && <p className={styles.heroHint}>{ADMIN_COPY.autoRefresh}</p>}
-      </header>
+      <PageHeader
+        title={ADMIN_COPY.overviewTitle}
+        back={{ href: "/", label: ADMIN_COPY.back }}
+        hint={view ? ADMIN_COPY.autoRefresh : undefined}
+        updated={view ? view.updated : null}
+        refreshing={loading}
+        stale={error ? ADMIN_COPY.loadFailedTitle : null}
+        onRefresh={onRefresh}
+      />
 
       {!view && loading ? (
         <AdminSkeleton />
       ) : !view ? (
         <>
-          <div role="alert" className={styles.state}>
-            <EmptyState
-              icon={<TriangleAlert size={22} strokeWidth={1.6} />}
-              title={ADMIN_COPY.loadFailedTitle}
-              description={error ?? ADMIN_COPY.loadFallback}
-              action={
-                <Button variant="secondary" onClick={onRefresh}>
-                  <RefreshCw size={15} strokeWidth={1.75} aria-hidden />
-                  {ADMIN_COPY.retry}
-                </Button>
-              }
-            />
-          </div>
+          <LoadFailed title={ADMIN_COPY.loadFailedTitle} error={error ?? ADMIN_COPY.loadFallback} onRetry={onRefresh} />
           <Section id="status-title" title={ADMIN_COPY.statusTitle} hint={ADMIN_COPY.statusHint} action={<CheckNow check={check} onCheck={onCheckNow} />}>
-            {live && (
+            {liveCheck && (
               <>
-                <StatusSummary summary={statusSummary(live, statusesFromResults(check.results ?? []), { now })} />
+                <StatusSummary summary={statusSummary(liveCheck, statusesFromResults(check.results ?? []), { now })} />
                 <h3 className={styles.subTitle}>{ADMIN_COPY.liveCheckTitle}</h3>
-                <ServiceGrid cards={live} />
+                <ServiceGrid cards={liveCheck} />
               </>
             )}
           </Section>
@@ -94,6 +90,10 @@ export function AdminContent({ view, loading, error, check, onRefresh, onCheckNo
             <UpcomingCharges days={view.money.upcoming} />
           </Section>
 
+          <Section id="live-title" title={ADMIN_COPY.liveTitle} hint={BOARDS_COPY.liveHint}>
+            <LiveNow live={live} error={liveError} compact />
+          </Section>
+
           <Section id="errors-title" title={ADMIN_COPY.errorsTitle} hint={ADMIN_COPY.errorsHint}>
             <div className={styles.panel}>
               <p className={styles.totals} data-some={view.errors.chart.hasData || undefined}>
@@ -102,7 +102,17 @@ export function AdminContent({ view, loading, error, check, onRefresh, onCheckNo
               <h3 className={styles.chartTitle}>{ADMIN_COPY.chartTitle}</h3>
               <ErrorChart chart={view.errors.chart} />
             </div>
-            <ErrorGroups groups={view.errors.groups} />
+            {issues ? (
+              <>
+                <h3 className={styles.subTitle}>{ADMIN_COPY.topIssuesTitle}</h3>
+                <TopIssues top={issues} />
+              </>
+            ) : (
+              <>
+                <h3 className={styles.subTitle}>{ADMIN_COPY.groupsTitle}</h3>
+                <ErrorGroups groups={view.errors.groups} />
+              </>
+            )}
           </Section>
 
           <Section id="ai-title" title={ADMIN_COPY.aiTitle} hint={ADMIN_COPY.aiHint}>
@@ -114,8 +124,8 @@ export function AdminContent({ view, loading, error, check, onRefresh, onCheckNo
             <p className={styles.funnel}>{view.funnel}</p>
           </Section>
 
-          <Section id="bugs-title" title={ADMIN_COPY.bugsTitle} hint={ADMIN_COPY.bugsHint}>
-            <BugReports reports={view.bugs} />
+          <Section id="bugs-title" title={ADMIN_COPY.bugsTitle} hint={bugs ? ADMIN_COPY.bugsHint : ADMIN_COPY.bugsFallbackHint}>
+            {bugs ? <NewBugs preview={bugs} /> : <BugReports reports={view.bugs} />}
           </Section>
         </div>
       )}
@@ -123,64 +133,54 @@ export function AdminContent({ view, loading, error, check, onRefresh, onCheckNo
   );
 }
 
-/** "Now", ticking every 15 s, so "Updated 2 min ago" stays true between reads. */
-function useNow(everyMs = 15_000): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), everyMs);
-    return () => window.clearInterval(timer);
-  }, [everyMs]);
-  return now;
-}
-
 /**
- * /admin: the owner's view of whether the backend and the AI are up and what errors students see.
- * Signed out goes to /login. Anyone who is not an admin gets the plain "Page not found" (`notFound`,
- * the app's own 404, rendered by the server page), never a hint that the page exists: the
- * is_admin() hint (cached) answers at once for a known non-admin, and the overview route's 404
- * answers for everyone else. Nothing here imports tldraw or the board.
+ * /admin: the owner's view of whether the backend and the AI are up, who is on a board, what
+ * broke and what came in. Admins only (AdminFrame: signed out goes to /login, anyone else gets the
+ * app's own 404). The issues, bugs and live boards are read once the overview has proved this is
+ * an admin; while those routes can't answer, the overview's own errors and bug reports stand in.
+ * Nothing here imports tldraw or the board.
  */
 export function AdminScreen({ notFound }: { notFound: ReactNode }) {
-  const router = useRouter();
-  const { user, loading: authLoading, authError } = useAuth();
-  const hint = useIsAdmin(user?.id, { lazy: false });
-  const { data, refresh, check, checkNow } = useAdminOverview(user && hint !== false ? user.id : undefined);
+  const access = useAdminAccess();
+  const { data, refresh, check, checkNow } = useAdminOverview(access.canRead ? (access.user?.id ?? "fixtures") : undefined);
   const now = useNow();
+  const clock = useMemo(() => ({ now }), [now]);
+  const proven = access.canRead && (data.overview !== null || access.hint === true);
+  const live = useAdminResource(proven ? boardsUrl({ live: true }) : null, AdminBoardListSchema, { pollMs: 15_000 });
+  const issues = useAdminResource(proven ? issuesUrl() : null, AdminIssueListSchema, { pollMs: 60_000 });
+  const bugs = useAdminResource(proven ? ADMIN_API.bugs : null, AdminBugListSchema, { pollMs: 60_000 });
 
-  const hidden = hint === false || data.notFound;
-  const signedOut = (!authLoading && !user && !authError) || data.signedOut;
-
-  useEffect(() => {
-    if (signedOut) router.replace("/login");
-  }, [signedOut, router]);
-
-  useEffect(() => {
-    if (hidden) document.title = ADMIN_COPY.notFoundTitle;
-    else if (data.overview) document.title = ADMIN_COPY.documentTitle;
-  }, [hidden, data.overview]);
-
-  const view = useMemo(() => (data.overview ? buildAdminView(data.overview, { now }) : null), [data.overview, now]);
-
-  if (!user && authError) {
-    return (
-      <div className={`${styles.page} ${styles.authError}`}>
-        <div className={styles.authErrorInner}>
-          <AuthErrorBanner />
-        </div>
-      </div>
-    );
-  }
-  if (hidden) return <>{notFound}</>;
-  // Until the server has answered, a non-admin must not see an admin page's frame: a blank page,
-  // unless the cached hint already says this is an admin.
-  if (!user || (!data.overview && !data.error && hint !== true)) return <div className={styles.page} />;
+  const view = useMemo(() => (data.overview ? buildAdminView(data.overview, clock) : null), [data.overview, clock]);
+  const liveView = useMemo(() => (live.data ? liveNowView(live.data.boards, clock) : null), [live.data, clock]);
+  const top = useMemo(() => (issues.data ? topIssues(issues.data.issues, clock) : null), [issues.data, clock]);
+  const fresh = useMemo(() => (bugs.data ? newBugsPreview(bugs.data.bugs, clock) : null), [bugs.data, clock]);
 
   return (
-    <div className={styles.page}>
-      <AppHeader />
-      <main className={`${APP_CONTENT_CLASS} ${styles.main}`}>
-        <AdminContent view={view} loading={data.loading} error={data.error} check={check} onRefresh={refresh} onCheckNow={checkNow} now={now} />
-      </main>
-    </div>
+    <AdminFrame
+      notFound={notFound}
+      access={access}
+      resource={{ data: data.overview, error: data.error, notFound: data.notFound, signedOut: data.signedOut }}
+      page="overview"
+      documentTitle={ADMIN_COPY.documentTitle}
+    >
+      <AdminContent
+        view={view}
+        loading={data.loading}
+        error={data.error}
+        check={check}
+        onRefresh={() => {
+          refresh();
+          live.refresh();
+          issues.refresh();
+          bugs.refresh();
+        }}
+        onCheckNow={checkNow}
+        now={now}
+        live={liveView}
+        liveError={live.error ?? (live.notFound ? CONSOLE_COPY.loadFallback : null)}
+        issues={top}
+        bugs={fresh}
+      />
+    </AdminFrame>
   );
 }
