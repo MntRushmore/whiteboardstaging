@@ -33,6 +33,17 @@ describe("errorMessage", () => {
     expect(describeError(new TypeError("Failed to fetch"), "fallback")).toBe(NETWORK_MESSAGE);
   });
 
+  it("recognises supabase-js's failed fetch: a plain object, no code, the fetch error's name in its words", () => {
+    // what postgrest-js returns when fetch rejects (PostgrestBuilder: `${name}: ${message}`, code "")
+    for (const message of ["TypeError: Load failed", "TypeError: Failed to fetch", "TypeError: NetworkError when attempting to fetch resource.", "FetchError: fetch failed"]) {
+      const error = { message, details: `${message}\n    at fetch`, hint: "", code: "" };
+      expect(isNetworkError(error), message).toBe(true);
+      expect(describeError(error, "fallback")).toBe(NETWORK_MESSAGE);
+    }
+    expect(isNetworkError({ message: "TypeError: x is undefined", code: "" })).toBe(false);
+    expect(isNetworkError({ message: "JWT expired", code: "PGRST301" })).toBe(false);
+  });
+
   it("falls back to the error's own message, then the caller fallback", () => {
     expect(describeError(new Error("Permission denied for table whiteboards"), "fb")).toBe(
       "Permission denied for table whiteboards",

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  BOARDS_RETRY_MS,
   DASHBOARD_COPY,
   UNTITLED_LABEL,
   boardCountLabel,
+  boardsErrorCode,
   dashboardStateFor,
   displayTitle,
   editedLabel,
@@ -11,6 +13,7 @@ import {
   groupBoards,
   recencyBucket,
   relativeTime,
+  retryOnNetworkError,
   sortBoards,
   thumbnailStateFor,
   type BoardListItem,
@@ -166,5 +169,54 @@ describe("thumbnailStateFor / boardCountLabel", () => {
   it("counts boards", () => {
     expect(boardCountLabel(1)).toBe("1 board");
     expect(boardCountLabel(44)).toBe("44 boards");
+  });
+});
+
+describe("a board list that failed to load (live.boards)", () => {
+  // what supabase-js returns when the fetch itself fails: a plain object with no code
+  const dropped = { message: "TypeError: Load failed", details: "TypeError: Load failed", hint: "", code: "" };
+
+  it("reports the database's code when it answered, `_network` when the request never reached it", () => {
+    expect(boardsErrorCode("load_failed", dropped)).toBe("load_failed_network");
+    expect(boardsErrorCode("load_failed", new TypeError("Failed to fetch"))).toBe("load_failed_network");
+    expect(boardsErrorCode("load_failed", { message: "JWT expired", code: "PGRST301" })).toBe("load_failed_PGRST301");
+    expect(boardsErrorCode("create_failed", { message: "canceling statement due to statement timeout", code: "57014" })).toBe("create_failed_57014");
+    expect(boardsErrorCode("load_failed", new Error("something else"))).toBe("load_failed");
+    expect(boardsErrorCode("load_failed", null)).toBe("load_failed");
+  });
+
+  it("a dropped request is read again once, after a pause", async () => {
+    const pauses: number[] = [];
+    const sleep = async (ms: number) => void pauses.push(ms);
+    let calls = 0;
+    const read = async () => {
+      calls++;
+      if (calls === 1) throw dropped;
+      return ["board"];
+    };
+    await expect(retryOnNetworkError(read, { sleep })).resolves.toEqual(["board"]);
+    expect(calls).toBe(2);
+    expect(pauses).toEqual([BOARDS_RETRY_MS]);
+  });
+
+  it("only once: a second dropped request is the error", async () => {
+    let calls = 0;
+    const read = async () => {
+      calls++;
+      throw dropped;
+    };
+    await expect(retryOnNetworkError(read, { sleep: async () => {} })).rejects.toBe(dropped);
+    expect(calls).toBe(2);
+  });
+
+  it("the database's answer is not retried", async () => {
+    const refused = { message: "permission denied for table whiteboards", code: "42501" };
+    let calls = 0;
+    const read = async () => {
+      calls++;
+      throw refused;
+    };
+    await expect(retryOnNetworkError(read, { sleep: async () => {} })).rejects.toBe(refused);
+    expect(calls).toBe(1);
   });
 });
