@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HELP_MODES, type EngineVerdict, type HelpMode, type LineAnalysis, type LineKind } from "../contracts";
-import { badgeFor, decide, isSingleSymbolLatex, localNoteFor, unjudgedReason, type PolicyInput } from "../policy";
+import { badgeFor, decide, isLoneRelation, isSingleSymbolLatex, localNoteFor, unjudgedReason, type PolicyInput } from "../policy";
 
 function analysis(verdict: EngineVerdict, kind: LineKind = "equation", extra: Partial<LineAnalysis> = {}): LineAnalysis {
   return { kind, math: "2x+3=11", resultLatex: "", verdict, note: "", ...extra };
@@ -320,5 +320,24 @@ describe("unjudgedReason — a line the tutor read but cannot judge", () => {
     expect(unjudgedReason(line("x = 6", "assignment", "none"))).toBeNull();
     expect(unjudgedReason(line("", null, "none", { provider: "none" }))).toBeNull();
     expect(unjudgedReason(line("2x = 8", null))).toBeNull();
+  });
+
+  it("an `=` on its own is an answer being started: no ? while its number is still to come", () => {
+    expect(unjudgedReason(line("=", "incomplete", "none"))).toBeNull();
+    expect(unjudgedReason(line(" = ", "incomplete", "none"))).toBeNull();
+    expect(unjudgedReason(line("<", "unknown", "unknown"))).toBeNull();
+    expect(unjudgedReason(line("\\geq", "unknown", "unknown"))).toBeNull();
+    expect(unjudgedReason(line("=", "incomplete", "none", { confidence: 0.4 }))).toBeNull();
+    // ...once the number is there it is judged as ever, and a lone minus is no relation
+    expect(unjudgedReason(line("= 7", "expression", "none"))).toBeNull();
+    expect(unjudgedReason(line("-", "unknown", "unknown"))).toBe("unjudged");
+    expect(unjudgedReason(line("3 =", "incomplete", "none"))).toBe("unjudged");
+  });
+});
+
+describe("isLoneRelation", () => {
+  it("a relation and nothing else", () => {
+    for (const s of ["=", " = ", "{=}", "<", ">", "\\le", "\\geq", "\\neq", "\\approx", "\\text{=}"]) expect(isLoneRelation(s), s).toBe(true);
+    for (const s of ["", "-", "==7", "= 7", "x =", "\\leq 3", "\\sim", "\\lessdot"]) expect(isLoneRelation(s), s).toBe(false);
   });
 });

@@ -232,6 +232,15 @@ describe("the columns under the chat's problems", () => {
     expect(cellOf({ x: 30, y: 600, w: 100, h: 40 }, cells)).toBeNull();
   });
 
+  it("an answer written beside its problem, taller than it, is in its cell", () => {
+    // the head is at y 14..44; a young hand's `= 7` after it, 100 px tall, its middle above the head's top
+    const cells = [cell(1, 0, 0, ["4+3"]), cell(2, 500, 0, ["7+2"])];
+    expect(cellOf({ x: 240, y: -50, w: 120, h: 100 }, cells)?.n).toBe(1);
+    // ...but not one level with the problem's number, before it, nor one wholly above the row
+    expect(cellOf({ x: 0, y: -50, w: 60, h: 100 }, cells)).toBeNull();
+    expect(cellOf({ x: 240, y: -80, w: 120, h: 90 }, cells)).toBeNull();
+  });
+
   it("work in two cells is never one column, and each column under a problem knows its head", () => {
     const cells = [cell(1, 0, 0, ["2x + 3 = 11"]), cell(4, 0, 400, ["5x - 2 = 13"])];
     // clusterLines put all three in one column: the last line under problem 1 sits close above problem 4's work
