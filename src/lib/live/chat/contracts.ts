@@ -203,6 +203,7 @@ export const WriteProofSchema = z.object({
   worked: z.boolean().default(true),
 });
 export type WriteProofAction = z.infer<typeof WriteProofSchema>;
+export type WriteProblemsAction = z.infer<typeof WriteProblemsSchema>;
 
 /**
  * One step of a worked solution: what happens, in a sentence (`say`, plain words), and the maths
@@ -271,6 +272,11 @@ export interface ChatActionOutcome {
   ok: boolean;
   /** a short note for the panel when something was left out ("2 of 5 problems couldn't be checked…") */
   note?: string;
+  /**
+   * Why it was left out, for the report (`note_<type>_<why>`): the engine's reason a problem or a
+   * line failed its check (`unsolved`, `words`, `unreadable`, `false`, `unwritable`, `unchecked`).
+   */
+  why?: string;
 }
 
 export interface ChatRunReport {
