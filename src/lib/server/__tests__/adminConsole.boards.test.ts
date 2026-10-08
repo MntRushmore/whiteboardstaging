@@ -159,6 +159,42 @@ describe("openBoardDoc", () => {
 
   it("the look cannot be logged: nothing is answered", async () => {
     await expect(openBoardDoc(deps(consoleFake(consoleTables(), { fail: { admin_audit: 500 } })), B1, { adminId: ADMIN })).rejects.toMatchObject({ name: "AuditError" });
+    // nor for a follow-live poll, which reads the log first
+    await expect(openBoardDoc(deps(consoleFake(consoleTables(), { fail: { admin_audit: 500 } })), B1, { since: 11, adminId: ADMIN })).rejects.toMatchObject({ name: "AuditError" });
+  });
+
+  describe("following live is one look", () => {
+    const OTHER_ADMIN = "00000000-0000-4000-8000-000000000098";
+    const looked = (adminId: string, msAgo: number, targetId = B1) => ({ id: 500 + msAgo, at: iso(msAgo), admin_id: adminId, action: "board.view", target_kind: "board", target_id: targetId, meta: null });
+
+    it("a poll's new version, within 10 minutes of the admin's last look at the board: shown, no new row", async () => {
+      const tables = consoleTables();
+      tables.admin_audit = [looked(ADMIN, 9 * MIN)];
+      const db = consoleFake(tables);
+      const body = JSON.parse(await text(await openBoardDoc(deps(db), B1, { since: 11, adminId: ADMIN })));
+      expect(body.board.version).toBe(12);
+      expect(db.tables.admin_audit).toHaveLength(1);
+    });
+
+    it("a poll with no row of the admin's for this board in 10 minutes writes one, marked as following", async () => {
+      for (const seed of [[looked(ADMIN, 11 * MIN)], [looked(OTHER_ADMIN, MIN)], [looked(ADMIN, MIN, B2)], []]) {
+        const tables = consoleTables();
+        tables.admin_audit = [...seed];
+        const db = consoleFake(tables);
+        await text(await openBoardDoc(deps(db), B1, { since: 11, adminId: ADMIN }));
+        expect(db.tables.admin_audit).toHaveLength(seed.length + 1);
+        expect(db.tables.admin_audit.at(-1)).toMatchObject({ admin_id: ADMIN, action: "board.view", target_kind: "board", target_id: B1, meta: { version: 12, ownerId: MAYA, follow: true } });
+      }
+    });
+
+    it("opening the board always writes, however recent the last look", async () => {
+      const tables = consoleTables();
+      tables.admin_audit = [looked(ADMIN, MIN)];
+      const db = consoleFake(tables);
+      await text(await openBoardDoc(deps(db), B1, { adminId: ADMIN }));
+      expect(db.tables.admin_audit).toHaveLength(2);
+      expect(db.tables.admin_audit.at(-1)).toMatchObject({ meta: { version: 12, ownerId: MAYA } });
+    });
   });
 
   it("a read that fails names its table", async () => {

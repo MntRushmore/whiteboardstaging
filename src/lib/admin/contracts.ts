@@ -473,7 +473,9 @@ export type AdminUserDetail = z.infer<typeof AdminUserDetailSchema>;
  * whiteboards.data as stored (a tldraw store snapshot `{document:{store,schema}, session}`, or an
  * older bare store snapshot). With ?since=<version> and the board unchanged, the answer is
  * `{ unchanged: true, version }` and nothing else (the viewer's "follow live" poll).
- * Each read that returns a snapshot writes admin_audit (action 'board.view').
+ * Each read that returns a snapshot writes admin_audit (action 'board.view'), but a follow-live poll
+ * (`since` given) only when the admin has no row for the board in the last 10 minutes: a follow
+ * session is one logged look (src/lib/server/adminConsole/audit.ts, REPEAT_LOOK_MS).
  */
 export const AdminBoardDocSchema = z.object({
   generatedAt: z.string(),

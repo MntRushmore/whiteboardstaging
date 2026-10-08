@@ -15,11 +15,13 @@
  * next follow-live poll fetches it again, never that one is missed.
  *
  * Privacy: a page of rows (their thumbnails are students' screens) and every answer with a snapshot
- * write admin_audit first (`boards.list`, `board.view`); when that fails, nothing is shown.
+ * write admin_audit first (`boards.list`, `board.view`); when that fails, nothing is shown. Following
+ * a board live is one look: its polls write again only REPEAT_LOOK_MS after the admin's last row
+ * for that board (`auditRepeatLook`), while opening it always writes.
  */
 import { ADMIN_LIMITS, type AdminBoardDoc, type AdminBoardList, type AdminBoardRow } from "@/lib/admin/contracts";
 import { toAdminAttempt, ATTEMPT_SELECT, type AttemptRow } from "./attempts";
-import { auditLook } from "./audit";
+import { auditLook, auditRepeatLook } from "./audit";
 import { DAY_MS, errorCounts, inList, latestEvents, toAdminEvent } from "./events";
 import { ConsoleQueryError, failureOf, restClient, type ConsoleDeps, type Rest } from "./rest";
 
@@ -200,7 +202,10 @@ export async function openBoardDoc(deps: ConsoleDeps, id: string, opts: { since?
         table: "whiteboard_snapshots",
         params: { select: "id,created_at,version,reason", whiteboard_id: `eq.${id}`, order: "created_at.desc", limit: String(DOC_HISTORY) },
       }),
-      auditLook(rest, { adminId: opts.adminId, action: "board.view", targetKind: "board", targetId: id, meta: { version, ownerId: row.user_id } }),
+      // an open always logs; a follow-live poll (`since`) is the same look, logged again only after REPEAT_LOOK_MS
+      opts.since === undefined
+        ? auditLook(rest, { adminId: opts.adminId, action: "board.view", targetKind: "board", targetId: id, meta: { version, ownerId: row.user_id } })
+        : auditRepeatLook(rest, { adminId: opts.adminId, action: "board.view", targetKind: "board", targetId: id, meta: { version, ownerId: row.user_id, follow: true } }),
     ]);
     const opened = await snapshot;
     clearTimeout(firstByte);
