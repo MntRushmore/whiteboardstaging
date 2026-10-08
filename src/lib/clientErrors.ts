@@ -9,7 +9,7 @@ import { RELEASE } from "@/lib/release";
  * hydration on every page) and by the error boundaries that catch what never reaches the window:
  * error.tsx, global-error.tsx and LiveErrorBoundary. They all go through `reportAppError`
  * (src/lib/reportAppError.ts), which loads this module lazily. Per page load each distinct error is
- * sent once, at most MAX_REPORTS in all, and noise is dropped (NOISE, extension scripts).
+ * sent once, at most MAX_REPORTS in all, and noise is dropped (`isNoise`: NOISE, extension and injected scripts).
  *
  * What it sends is a ClientErrorReport and nothing else: the page's path without its query string
  * or hash (a query string once carried a login form's credentials), the board id on a board, the
@@ -144,7 +144,9 @@ export function userErrorLevel(code: string | undefined): UserErrorLevel {
 /**
  * Not worth a report: the ResizeObserver loop warning, a cross-origin "Script error." with nothing
  * in it, aborted fetches (navigating away, a cancelled request), and a pen lifted before tldraw's
- * setPointerCapture ran ("No active pointer with the given id").
+ * setPointerCapture ran ("No active pointer with the given id"). Besides these messages: scripts
+ * from browser extensions (EXTENSION) and scripts the browser injects into the page
+ * (INJECTED_NAMES, INLINE_ONLY_FRAME).
  */
 const NOISE = /ResizeObserver loop|^Script error\.?$|\babort(ed|error)\b|No active pointer with the given id/i;
 /** Thrown from a browser extension's script, not ours (Safari masks extension URLs). */
@@ -154,9 +156,37 @@ const EXTENSION = /-extension:\/\/|webkit-masked-url:/;
  * (its message for every NotFoundError, so only when the stack's top frame is setPointerCapture).
  */
 const SAFARI_POINTER_CAPTURE = { message: /^NotFoundError\b/, stack: /^setPointerCapture@\[native code\]/ };
+/**
+ * A script the browser or app put into the page, by the names it uses: Brave and Firefox on iOS
+ * (`window.__firefox__`, Brave's `refresh_youtube_quality_…`), Chrome on iOS (`__gCrWeb`), a crypto
+ * wallet probing `window.ethereum`, an app's WebView bridge (`webkit.messageHandlers`). The app
+ * uses none of them.
+ */
+const INJECTED_NAMES = /__firefox__|window\.ethereum|__gCrWeb|webkit\.messageHandlers|refresh_youtube_quality_/;
+/**
+ * WebKit's whole stack for a script injected into the page (Brave on iOS/iPadOS): one
+ * `global code@` or `eval code@` frame at the page's own URL, no script file
+ * (`global code@https://www.agathon.app/login:1:12`).
+ */
+const INLINE_ONLY_FRAME = /^(?:global|eval) code@(https?:\/\/\S+):\d+:\d+$/;
 
+/**
+ * Thrown by a script that is not ours but runs inline in our page. The app has no inline scripts of
+ * its own (its code is in /_next/static/….js files): a stack with a frame in one of those, or with
+ * a second frame anywhere, is ours and is reported.
+ */
+function isInjectedInlineScript(stack: string): boolean {
+  const url = INLINE_ONLY_FRAME.exec(stack.trim())?.[1];
+  return url !== undefined && !url.includes("/_next/") && !/\.m?js$/i.test(url);
+}
+
+/**
+ * Whether a crash is not worth a report. Also used by POST /api/client-errors (tabs still running
+ * an older release send what it would drop) and by the admin console to hide old noisy rows.
+ */
 export function isNoise(message: string, stack = ""): boolean {
   if (SAFARI_POINTER_CAPTURE.message.test(message) && SAFARI_POINTER_CAPTURE.stack.test(stack)) return true;
+  if (INJECTED_NAMES.test(message) || isInjectedInlineScript(stack)) return true;
   return !message || NOISE.test(message) || EXTENSION.test(stack);
 }
 
