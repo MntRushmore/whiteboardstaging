@@ -2366,13 +2366,153 @@ export async function checkAdmin({ anon, a, b, service, newUser }) {
   return out;
 }
 
+/** The admin console's tables (migration 20261008000000_admin_console.sql): the service role's alone. */
+export const ADMIN_CONSOLE_TABLES = ["admin_audit", "admin_issues"];
+/** Its views (no data, no screenshot) and functions (every account's numbers): the service role's alone. */
+export const ADMIN_CONSOLE_VIEWS = ["admin_board_rows", "admin_bug_rows"];
+export const ADMIN_CONSOLE_FUNCTIONS = [
+  ["admin_user_stats", { p_since: "2026-01-01T00:00:00Z" }],
+  ["admin_user_days", { p_user: ZERO_UUID, p_since: "2026-01-01T00:00:00Z" }],
+];
+
+/**
+ * A valid row per console table.
+ * @param {string} table
+ * @param {string | null} [userId]
+ */
+export function adminConsoleRow(table, userId = null) {
+  switch (table) {
+    case "admin_audit":
+      return { admin_id: userId, action: "rls.verify", target_kind: "board", target_id: ADMIN_MARK, meta: {} };
+    case "admin_issues":
+      return { fingerprint: `${ADMIN_MARK}|${uuid()}`, status: "muted" };
+    default:
+      return {};
+  }
+}
+
+/**
+ * The admin console (migration 20261008000000_admin_console.sql). Anon and every user are denied
+ * every read and write of admin_audit (who looked at which student's board) and admin_issues, every
+ * read of the admin_board_rows / admin_bug_rows views and every call of admin_user_stats() /
+ * admin_user_days(). bug_reports' triage: a student still files their own report, but whatever they
+ * send it is stored new, with no note and no resolved_at, they cannot change its status afterwards,
+ * and they still cannot read it back. With the service role: both tables take a valid row and refuse
+ * what the code never writes (an action outside `<what>.<verb>`, an issue status outside the list,
+ * fixed without fixed_at, a bug status outside the list); resolved_at follows the bug's status; the
+ * views and functions answer (A's report counted in admin_user_stats); prune_admin_rows() answers
+ * its admin_audit count. Removes every row it wrote.
+ * @param {CheckContext} ctx
+ */
+export async function checkAdminConsole({ anon, a, service }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const code = (/** @type {HttpResult} */ res) => String(asObject(res.body)?.code ?? "");
+  const tag = `rls-verify-triage-${uuid()}`;
+
+  // ---------------------------------------------------------------- anon and users: nothing
+  for (const table of ADMIN_CONSOLE_TABLES) {
+    for (const [who, client] of /** @type {Array<[string, RlsClient]>} */ ([["anon", anon], ["A", a]])) {
+      const sel = await client.rest("GET", table, { query: { select: "*", limit: "1" } });
+      out.push(result(`admin console: ${who} cannot select ${table}`, isDenied(sel), describe(sel)));
+      const ins = await client.rest("POST", table, { body: adminConsoleRow(table, client.userId), prefer: "return=minimal" });
+      out.push(result(`admin console: ${who} cannot insert into ${table}`, isDenied(ins), describe(ins)));
+    }
+    const filter = table === "admin_audit" ? { id: "gt.0" } : { fingerprint: `like.${ADMIN_MARK}*` };
+    const upd = await a.rest("PATCH", table, { query: filter, body: table === "admin_audit" ? { action: "x.y" } : { status: "open" }, prefer: "return=representation" });
+    out.push(result(`admin console: A cannot update ${table}`, isDenied(upd), describe(upd)));
+    const del = await a.rest("DELETE", table, { query: filter, prefer: "return=representation" });
+    out.push(result(`admin console: A cannot delete from ${table}${table === "admin_audit" ? " (cannot erase a look)" : ""}`, isDenied(del), describe(del)));
+  }
+  for (const view of ADMIN_CONSOLE_VIEWS) {
+    for (const [who, client] of /** @type {Array<[string, RlsClient]>} */ ([["anon", anon], ["A", a]])) {
+      const sel = await client.rest("GET", view, { query: { select: "id", limit: "1" } });
+      out.push(result(`admin console: ${who} cannot read the ${view} view`, isDenied(sel), describe(sel)));
+    }
+  }
+  for (const [fn, args] of /** @type {Array<[string, Record<string, unknown>]>} */ (ADMIN_CONSOLE_FUNCTIONS)) {
+    for (const [who, client] of /** @type {Array<[string, RlsClient]>} */ ([["anon", anon], ["A", a]])) {
+      const res = await rpc(client, fn, args);
+      out.push(result(`admin console: ${who} cannot call ${fn}()`, isDenied(res), describe(res)));
+    }
+  }
+
+  // ---------------------------------------------------------------- bug triage: a student's report is always new
+  const filed = await a.rest("POST", "bug_reports", {
+    body: { user_id: a.userId, message: tag, diagnostics: {}, logs: [], status: "fixed", admin_note: "mine", resolved_at: new Date().toISOString() },
+    prefer: "return=minimal",
+  });
+  out.push(result("admin console: A still files a bug report (sending a status and a note of their own)", isOk(filed), describe(filed)));
+  const triage = await a.rest("PATCH", "bug_reports", { query: { message: `eq.${tag}` }, body: { status: "wontfix" }, prefer: "return=representation" });
+  out.push(result("admin console: A cannot change a report's status", deniedOrEmpty(triage), describe(triage)));
+  const readBack = await a.rest("GET", "bug_reports", { query: { message: `eq.${tag}`, select: "status" } });
+  out.push(result("admin console: A still cannot read the report back", deniedOrEmpty(readBack), describe(readBack)));
+
+  if (!service) {
+    out.push(result("admin console: the service role's half (skipped: no service role client)", true));
+    return out;
+  }
+
+  try {
+    const stored = await service.rest("GET", "bug_reports", { query: { message: `eq.${tag}`, select: "id,status,admin_note,resolved_at" } });
+    const bug = rows(stored)[0];
+    out.push(
+      result(
+        "admin console: A's report is stored new, with no note and no resolved_at, whatever A sent",
+        isOk(stored) && rows(stored).length === 1 && bug?.status === "new" && bug?.admin_note === null && bug?.resolved_at === null,
+        describe(stored),
+      ),
+    );
+    const fixed = await service.rest("PATCH", "bug_reports", { query: { id: `eq.${bug?.id}` }, body: { status: "fixed", admin_note: "rls-verify" }, prefer: "return=representation" });
+    out.push(result("admin console: marked fixed by the service role, resolved_at is set", isOk(fixed) && rows(fixed)[0]?.status === "fixed" && typeof rows(fixed)[0]?.resolved_at === "string", describe(fixed)));
+    const reopened = await service.rest("PATCH", "bug_reports", { query: { id: `eq.${bug?.id}` }, body: { status: "seen" }, prefer: "return=representation" });
+    out.push(result("admin console: back to seen, resolved_at is cleared", isOk(reopened) && rows(reopened)[0]?.resolved_at === null, describe(reopened)));
+    const badStatus = await service.rest("PATCH", "bug_reports", { query: { id: `eq.${bug?.id}` }, body: { status: "closed" }, prefer: "return=minimal" });
+    out.push(result("admin console: the database refuses a bug status outside new/seen/fixed/wontfix (23514)", !isOk(badStatus) && code(badStatus) === "23514", describe(badStatus)));
+
+    for (const table of ADMIN_CONSOLE_TABLES) {
+      const ins = await service.rest("POST", table, { body: adminConsoleRow(table, a.userId), prefer: "return=representation" });
+      out.push(result(`admin console: the service role writes ${table}`, isOk(ins) && rows(ins).length === 1, describe(ins)));
+    }
+    const refused = [
+      ["admin_audit", { ...adminConsoleRow("admin_audit"), action: "Viewed A Board" }, "an audit action outside <what>.<verb>"],
+      ["admin_audit", { ...adminConsoleRow("admin_audit"), meta: ["not", "an", "object"] }, "an audit meta that is not an object"],
+      ["admin_issues", { ...adminConsoleRow("admin_issues"), status: "closed" }, "an issue status outside open/muted/fixed"],
+      ["admin_issues", { ...adminConsoleRow("admin_issues"), status: "fixed" }, "an issue marked fixed without fixed_at"],
+    ];
+    for (const [table, body, what] of refused) {
+      const res = await service.rest("POST", /** @type {string} */ (table), { body, prefer: "return=minimal" });
+      out.push(result(`admin console: the database refuses ${what} (23514)`, !isOk(res) && code(res) === "23514", describe(res)));
+    }
+
+    for (const view of ADMIN_CONSOLE_VIEWS) {
+      const sel = await service.rest("GET", view, { query: { select: view === "admin_board_rows" ? "id,size_bytes,attempts" : "id,has_screenshot,status", limit: "1" } });
+      out.push(result(`admin console: the service role reads the ${view} view`, isOk(sel), describe(sel)));
+    }
+    const stats = await rpc(service, "admin_user_stats", { p_since: "2026-01-01T00:00:00Z", p_user: a.userId });
+    const mine = Array.isArray(stats.body) ? stats.body[0] : null;
+    out.push(result("admin console: admin_user_stats() answers for A, A's report counted", isOk(stats) && mine?.user_id === a.userId && Number(mine?.bug_reports) >= 1, describe(stats)));
+    const days = await rpc(service, "admin_user_days", { p_user: a.userId, p_since: "2026-01-01T00:00:00Z" });
+    out.push(result("admin console: admin_user_days() answers a list of days", isOk(days) && Array.isArray(days.body), describe(days)));
+    const pruned = await rpc(service, "prune_admin_rows");
+    out.push(result("admin console: prune_admin_rows() answers its admin_audit count", isOk(pruned) && Number.isInteger(asObject(pruned.body)?.admin_audit), describe(pruned)));
+  } finally {
+    await service.rest("DELETE", "bug_reports", { query: { message: `eq.${tag}` } });
+    await service.rest("DELETE", "admin_audit", { query: { target_id: `eq.${ADMIN_MARK}` } });
+    await service.rest("DELETE", "admin_issues", { query: { fingerprint: `like.${ADMIN_MARK}|*` } });
+  }
+  return out;
+}
+
 /**
  * The admin system's checks, run after LEARNING_CHECKS by scripts/verify-rls.mjs and
- * src/__tests__/db-rls.integration.test.ts (the in-memory fake does not model these tables).
+ * src/__tests__/db-rls.integration.test.ts (the in-memory fake does not model these tables;
+ * verifyRls.test.ts holds checkAdminConsole to a small fake of its own).
  * @type {CheckDef[]}
  */
 export const ADMIN_CHECKS = [
   { name: "admin: admins, app_events, health_checks, alert_state are the service role's alone; is_admin() answers only about the caller", run: checkAdmin },
+  { name: "admin console: admin_audit, admin_issues, the views and the stats functions are the service role's alone; a student's bug report is always filed new", run: checkAdminConsole },
 ];
 
 /**

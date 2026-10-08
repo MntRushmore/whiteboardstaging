@@ -6,7 +6,11 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  ADMIN_CHECKS,
+  ADMIN_CONSOLE_TABLES,
+  ADMIN_CONSOLE_VIEWS,
   ALL_CHECKS,
+  checkAdminConsole,
   CREDIT_SUMMARY_KEYS,
   INK_PACKS,
   INK_SUMMARY_KEYS,
@@ -1736,5 +1740,151 @@ describe("supabaseHttp", () => {
     expect((f.calls[0].init?.headers as Record<string, string>).Authorization).toBe("Bearer svc");
     expect(JSON.parse(String(f.calls[0].init?.body))).toMatchObject({ email_confirm: true, user_metadata: { terms_version: TERMS_VERSION } });
     expect(f.calls[1].url).toBe("http://x/auth/v1/token?grant_type=password");
+  });
+});
+
+// ---------------------------------------------------------------- the admin console (20261008000000_admin_console.sql)
+
+type ConsoleLeak =
+  | "auditReadable"
+  | "auditWritable"
+  | "issuesWritable"
+  | "viewsReadable"
+  | "statsCallable"
+  | "bugStatusFromClient"
+  | "bugTriageByUser"
+  | "bugReadable"
+  | "noResolvedAt"
+  | "auditUnchecked"
+  | "issueFixedWithoutDate"
+  | "pruneKeepsAudit";
+
+/** Just the console's objects and bug_reports, as 20261008000000_admin_console.sql makes them. */
+function consoleWorld(leaks: ConsoleLeak[] = []) {
+  const leak = (l: ConsoleLeak) => leaks.includes(l);
+  const tables: Record<string, Row[]> = { admin_audit: [], admin_issues: [], bug_reports: [] };
+  let id = 1;
+  const ok = (body: unknown, status = 200): HttpResult => ({ status, body });
+  const denied = (uid: string | null): HttpResult => ({ status: uid ? 403 : 401, body: { code: "42501", message: "permission denied" } });
+  const check = (): HttpResult => ({ status: 400, body: { code: "23514", message: "new row violates check constraint" } });
+  const match = (row: Row, query: Record<string, string> = {}) =>
+    Object.entries(query).every(([k, f]) => {
+      if (FILTER_KEYS.has(k)) return true;
+      const [op, ...rest] = f.split(".");
+      const arg = rest.join(".");
+      if (op === "eq") return String(row[k]) === arg;
+      if (op === "gt") return Number(row[k]) > Number(arg);
+      if (op === "like") return String(row[k]).startsWith(arg.replace(/\*$/, ""));
+      return false;
+    });
+  const valid = (table: string, row: Row) => {
+    if (table === "admin_audit") return leak("auditUnchecked") || (/^[a-z][a-z_]{0,31}\.[a-z][a-z_]{0,31}$/.test(String(row.action)) && (row.meta === null || row.meta === undefined || (typeof row.meta === "object" && !Array.isArray(row.meta))));
+    if (table === "admin_issues") return ["open", "muted", "fixed"].includes(String(row.status)) && (leak("issueFixedWithoutDate") || (row.status === "fixed") === Boolean(row.fixed_at));
+    if (table === "bug_reports") return ["new", "seen", "fixed", "wontfix"].includes(String(row.status ?? "new"));
+    return true;
+  };
+
+  const client = (uid: string | null): RlsClient => ({
+    userId: uid,
+    async rest(method, table, opts = {}) {
+      const service = uid === SERVICE;
+      const user = service ? null : uid;
+      if (table.startsWith("rpc/")) {
+        const fn = table.slice(4);
+        if (!service && !leak("statsCallable")) return denied(user);
+        if (fn === "admin_user_stats") return ok([{ user_id: (opts.body as Row)?.p_user, bug_reports: tables.bug_reports.filter((b) => b.user_id === (opts.body as Row)?.p_user).length }]);
+        if (fn === "admin_user_days") return ok([]);
+        if (fn === "prune_admin_rows") return ok({ app_events: 0, health_checks: 0, ...(leak("pruneKeepsAudit") ? {} : { admin_audit: 0 }) });
+        return { status: 404, body: { code: "PGRST202" } };
+      }
+      if (table === "admin_board_rows" || table === "admin_bug_rows") return service || leak("viewsReadable") ? ok([]) : denied(user);
+      const rows = tables[table];
+      if (!rows) return { status: 404, body: { code: "PGRST205" } };
+      if (table === "admin_audit" && !service && !(method === "GET" ? leak("auditReadable") : leak("auditWritable"))) return denied(user);
+      if (table === "admin_issues" && !service && !leak("issuesWritable")) return denied(user);
+      if (table === "bug_reports" && !service) {
+        if (method === "GET" && !leak("bugReadable")) return denied(user);
+        if (method === "PATCH" && !leak("bugTriageByUser")) return denied(user);
+        if (method === "DELETE") return denied(user);
+      }
+      switch (method) {
+        case "GET":
+          return ok(rows.filter((r) => match(r, opts.query)));
+        case "POST": {
+          const raw = { ...(opts.body as Row) };
+          if (table === "bug_reports" && !service && !leak("bugStatusFromClient")) Object.assign(raw, { status: "new", admin_note: null, resolved_at: null });
+          if (table === "bug_reports" && raw.status === undefined) raw.status = "new";
+          if (!valid(table, raw)) return check();
+          const row = { id: id++, ...raw };
+          rows.push(row);
+          return ok(opts.prefer?.includes("representation") ? [row] : null, 201);
+        }
+        case "PATCH": {
+          const hit = rows.filter((r) => match(r, opts.query));
+          for (const r of hit) {
+            const next = { ...r, ...(opts.body as Row) };
+            if (!valid(table, next)) return check();
+            if (table === "bug_reports" && next.status !== r.status && !leak("noResolvedAt")) next.resolved_at = next.status === "fixed" || next.status === "wontfix" ? "2026-10-08T12:00:00Z" : null;
+            Object.assign(r, next);
+          }
+          return ok(hit);
+        }
+        case "DELETE": {
+          const gone = rows.filter((r) => match(r, opts.query));
+          tables[table] = rows.filter((r) => !gone.includes(r));
+          return ok(gone);
+        }
+        default:
+          return ok(null);
+      }
+    },
+    upload: async () => ok(null),
+    publicRead: async () => ok(null),
+    storageList: async () => ok([]),
+    storageDelete: async () => ok(null),
+  });
+  return { tables, ctx: { anon: client(null), a: client(USER_A), b: client(USER_B), service: client(SERVICE) } as CheckContext };
+}
+
+describe("checkAdminConsole (admin_audit, admin_issues, the views, the stats functions, bug triage)", () => {
+  it("passes against the intended rules, and leaves nothing behind", async () => {
+    const world = consoleWorld();
+    const results = await checkAdminConsole(world.ctx);
+    expect(failures(results)).toEqual([]);
+    expect(results.length).toBeGreaterThanOrEqual(38);
+    expect(world.tables.admin_audit).toEqual([]);
+    expect(world.tables.admin_issues).toEqual([]);
+    expect(world.tables.bug_reports).toEqual([]);
+  });
+
+  it("is one of the admin checks, and every console table is named", () => {
+    expect(ADMIN_CHECKS.map((c) => c.run)).toContain(checkAdminConsole);
+    expect([...ADMIN_CONSOLE_TABLES].sort()).toEqual(["admin_audit", "admin_issues"]);
+    expect([...ADMIN_CONSOLE_VIEWS].sort()).toEqual(["admin_board_rows", "admin_bug_rows"]);
+  });
+
+  const cases: Array<[ConsoleLeak, string]> = [
+    ["auditReadable", "admin console: A cannot select admin_audit"],
+    ["auditWritable", "admin console: A cannot delete from admin_audit (cannot erase a look)"],
+    ["issuesWritable", "admin console: A cannot update admin_issues"],
+    ["viewsReadable", "admin console: A cannot read the admin_board_rows view"],
+    ["statsCallable", "admin console: anon cannot call admin_user_stats()"],
+    ["bugStatusFromClient", "admin console: A's report is stored new, with no note and no resolved_at, whatever A sent"],
+    ["bugTriageByUser", "admin console: A cannot change a report's status"],
+    ["bugReadable", "admin console: A still cannot read the report back"],
+    ["noResolvedAt", "admin console: marked fixed by the service role, resolved_at is set"],
+    ["auditUnchecked", "admin console: the database refuses an audit action outside <what>.<verb> (23514)"],
+    ["issueFixedWithoutDate", "admin console: the database refuses an issue marked fixed without fixed_at (23514)"],
+    ["pruneKeepsAudit", "admin console: prune_admin_rows() answers its admin_audit count"],
+  ];
+  it.each(cases)("fails when %s", async (l, name) => {
+    expect(failures(await checkAdminConsole(consoleWorld([l]).ctx))).toContain(name);
+  });
+
+  it("without the service role, only the users' half runs (the rest reported as skipped)", async () => {
+    const { ctx } = consoleWorld();
+    const results = await checkAdminConsole({ ...ctx, service: undefined });
+    expect(failures(results)).toEqual([]);
+    expect(results.map((r) => r.name)).toContain("admin console: the service role's half (skipped: no service role client)");
   });
 });

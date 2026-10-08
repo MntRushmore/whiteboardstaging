@@ -8,6 +8,8 @@ export type ApiErrorCode =
   | "ink_empty"
   | "upstream_error"
   | "feature_unavailable"
+  // a row that does not exist (the admin console's users, boards, bug reports)
+  | "not_found"
   | "internal_error"
   | "recognizer_failed";
 

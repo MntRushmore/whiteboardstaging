@@ -8,7 +8,7 @@ import styles from "./legal.module.css";
  * The date of this version of the three pages; change it with the text, and with TERMS_VERSION
  * (src/lib/legal.ts) when the change is one sign-up should record.
  */
-export const LEGAL_LAST_UPDATED = "October 6, 2026";
+export const LEGAL_LAST_UPDATED = "October 8, 2026";
 
 /**
  * The frame of /terms, /privacy and /refunds: a plain top bar back to Agathon, the title, the dates,
