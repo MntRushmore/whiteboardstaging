@@ -226,9 +226,23 @@ export type UnjudgedReason = "unread" | "unjudged";
 
 const UNJUDGED_KINDS: ReadonlySet<LineKind> = new Set<LineKind>(["label", "incomplete", "text", "unknown"]);
 
+/**
+ * A relation on its own (`=`, `<`, `\le`, …): an answer being started, its number still to come. A
+ * young student writes `=`, stops to think, then writes `7` — the `=` is no line to question: it gets
+ * no "?" (and, a lone symbol, no readback) while it waits; the `7` joins it and the two are marked.
+ */
+export function isLoneRelation(latex: string): boolean {
+  const s = latex
+    .replace(/\\(?:text|mathrm)\s*\{([^{}]*)\}/g, "$1")
+    .replace(/\\[,;:! ]|[{}\s~]/g, "");
+  return /^(?:=|<|>|\\(?:le|ge|leq|geq|lt|gt|ne|neq|approx))$/.test(s);
+}
+
 export function unjudgedReason(line: { latex: string; confidence: number; provider: string; analysis: LineAnalysis | null }): UnjudgedReason | null {
   // not read yet: nothing to say about it
   if (line.provider === "none" && !line.analysis) return null;
+  // an `=` waiting for its answer: nothing to say about it yet either
+  if (isLoneRelation(line.latex)) return null;
   if (!line.latex.trim() || line.confidence < LIVE_LIMITS.minConfidence) return "unread";
   if (!line.analysis) return null;
   if (line.analysis.bareAnswer) return null;
