@@ -111,43 +111,47 @@ function Stat({ icon, value, label, tone }: { icon: React.ReactNode; value: numb
   );
 }
 
-/** The card at the end: what the student did, big, with confetti. */
+/** The card at the end: what the student did, big, with confetti flying out from behind it. */
 function DoneCard({ summary, onAgain, onClose }: { summary: ReplaySummary; onAgain: () => void; onClose: () => void }) {
   const minutes = workMinutes(summary);
   const again = useRef<HTMLButtonElement>(null);
   useEffect(() => again.current?.focus(), []);
   return (
     <div className="absolute inset-0 z-10 grid place-items-center bg-white/55 p-4 backdrop-blur-[2px]">
-      <div role="status" className="relative w-full max-w-md rounded-3xl bg-white p-6 text-center shadow-2xl ring-1 ring-violet-100 animate-in fade-in zoom-in-95 duration-300 motion-reduce:animate-none">
-        <ConfettiBurst count={48} spread={170} style={{ left: "50%", top: 24 }} />
-        <ConfettiBurst count={28} spread={120} style={{ left: "18%", top: 60 }} />
-        <ConfettiBurst count={28} spread={120} style={{ left: "82%", top: 60 }} />
-        <Sparkles className="mx-auto size-9 text-amber-400" aria-hidden />
-        <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-gray-900">{KID_REPLAY_COPY.doneTitle(summary)}</h2>
-        <p className="sr-only">{summaryLine(summary)}</p>
-        <ul className="mt-5 flex flex-wrap justify-center gap-2.5 text-left">
-          {summary.strokes > 0 && <Stat icon={<PenLine className="size-5 text-violet-600" />} value={summary.strokes} label={summary.strokes === 1 ? "stroke" : "strokes"} tone="bg-violet-50 text-violet-950" />}
-          {summary.ticks > 0 && <Stat icon={<Check className="size-5 text-emerald-600" strokeWidth={3} />} value={summary.ticks} label={summary.ticks === 1 ? "line right" : "lines right"} tone="bg-emerald-50 text-emerald-950" />}
-          {!!summary.fixed && <Stat icon={<Wrench className="size-5 text-amber-600" />} value={summary.fixed} label={summary.fixed === 1 ? "mistake fixed" : "mistakes fixed"} tone="bg-amber-50 text-amber-950" />}
-          {minutes !== null && <Stat icon={<Clock3 className="size-5 text-sky-600" />} value={minutes} label={minutes === 1 ? "minute of work" : "minutes of work"} tone="bg-sky-50 text-sky-950" />}
-        </ul>
-        <div className="mt-6 flex flex-col gap-2.5 sm:flex-row sm:justify-center">
-          <button
-            ref={again}
-            type="button"
-            onClick={onAgain}
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-violet-600 px-6 text-base font-bold text-white shadow-md transition hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-300"
-          >
-            <RotateCcw className="size-5" aria-hidden />
-            {KID_REPLAY_COPY.again}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex h-12 items-center justify-center rounded-full border-2 border-gray-200 bg-white px-6 text-base font-semibold text-gray-800 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-200"
-          >
-            {KID_REPLAY_COPY.back}
-          </button>
+      <div className="relative w-full max-w-md">
+        {/* Behind the card (earlier in the order, the card's z-10 above): the bursts start at its top
+            and its sides and fly out round it, never across its words. */}
+        <ConfettiBurst count={44} spread={190} style={{ left: "50%", top: 8 }} />
+        <ConfettiBurst count={28} spread={150} style={{ left: 8, top: "30%" }} />
+        <ConfettiBurst count={28} spread={150} style={{ left: "calc(100% - 8px)", top: "30%" }} />
+        <div role="status" className="relative z-10 w-full rounded-3xl bg-white p-6 text-center shadow-2xl ring-1 ring-violet-100 animate-in fade-in zoom-in-95 duration-300 motion-reduce:animate-none">
+          <Sparkles className="mx-auto size-9 text-amber-400" aria-hidden />
+          <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-gray-900">{KID_REPLAY_COPY.doneTitle(summary)}</h2>
+          <p className="sr-only">{summaryLine(summary)}</p>
+          <ul className="mt-5 flex flex-wrap justify-center gap-2.5 text-left">
+            {summary.strokes > 0 && <Stat icon={<PenLine className="size-5 text-violet-600" />} value={summary.strokes} label={summary.strokes === 1 ? "stroke" : "strokes"} tone="bg-violet-50 text-violet-950" />}
+            {summary.ticks > 0 && <Stat icon={<Check className="size-5 text-emerald-600" strokeWidth={3} />} value={summary.ticks} label={summary.ticks === 1 ? "line right" : "lines right"} tone="bg-emerald-50 text-emerald-950" />}
+            {!!summary.fixed && <Stat icon={<Wrench className="size-5 text-amber-600" />} value={summary.fixed} label={summary.fixed === 1 ? "mistake fixed" : "mistakes fixed"} tone="bg-amber-50 text-amber-950" />}
+            {minutes !== null && <Stat icon={<Clock3 className="size-5 text-sky-600" />} value={minutes} label={minutes === 1 ? "minute of work" : "minutes of work"} tone="bg-sky-50 text-sky-950" />}
+          </ul>
+          <div className="mt-6 flex flex-col gap-2.5 sm:flex-row sm:justify-center">
+            <button
+              ref={again}
+              type="button"
+              onClick={onAgain}
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-violet-600 px-6 text-base font-bold text-white shadow-md transition hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-300"
+            >
+              <RotateCcw className="size-5" aria-hidden />
+              {KID_REPLAY_COPY.again}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-12 items-center justify-center rounded-full border-2 border-gray-200 bg-white px-6 text-base font-semibold text-gray-800 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-200"
+            >
+              {KID_REPLAY_COPY.back}
+            </button>
+          </div>
         </div>
       </div>
     </div>
