@@ -150,12 +150,23 @@ export type StreamChatOptions = {
   maxTokens?: number;
   requestId?: string;
   title?: string;
+  /**
+   * Called on every reasoning delta (`delta.reasoning`, `delta.reasoning_details`): the model is
+   * thinking, not stuck. The text itself is never kept or shown.
+   */
+  onReasoning?: () => void;
 };
 
 type StreamDelta = {
-  choices?: Array<{ delta?: { content?: unknown }; finish_reason?: string | null }>;
+  choices?: Array<{ delta?: { content?: unknown; reasoning?: unknown; reasoning_details?: unknown }; finish_reason?: string | null }>;
   error?: { code?: number | string; message?: string };
 };
+
+/** A delta that carries the model's reasoning (OpenRouter streams it as `reasoning` text or `reasoning_details`). */
+function isReasoningDelta(delta: { reasoning?: unknown; reasoning_details?: unknown } | undefined): boolean {
+  if (!delta) return false;
+  return (typeof delta.reasoning === "string" && delta.reasoning.length > 0) || (Array.isArray(delta.reasoning_details) && delta.reasoning_details.length > 0);
+}
 
 function isAbortError(err: unknown): boolean {
   return err instanceof Error && err.name === "AbortError";
@@ -228,7 +239,9 @@ export async function* streamChatText(opts: StreamChatOptions): AsyncGenerator<s
           if (frame.error.code === 402 || CREDITS_MESSAGE_RE.test(msg.toLowerCase())) throw new CreditsExhaustedError();
           throw new UpstreamError(typeof frame.error.code === "number" ? frame.error.code : 502, msg);
         }
-        const content = frame.choices?.[0]?.delta?.content;
+        const delta = frame.choices?.[0]?.delta;
+        if (isReasoningDelta(delta)) opts.onReasoning?.();
+        const content = delta?.content;
         if (typeof content === "string" && content.length > 0) yield content;
       }
     }
@@ -240,51 +253,81 @@ export async function* streamChatText(opts: StreamChatOptions): AsyncGenerator<s
 }
 
 export class WatchdogTimeoutError extends Error {
-  constructor(model: string, ms: number) {
-    super(`No content from ${model} within ${ms} ms`);
+  /** `thinking`: it was streaming its reasoning, never content; `deadline`: the route's time ran out */
+  constructor(model: string, ms: number, how?: "thinking" | "deadline") {
+    super(
+      how === "deadline"
+        ? `${model} did not finish within ${ms} ms (the route's time ran out)`
+        : `No content from ${model} within ${ms} ms${how === "thinking" ? " (it was still thinking)" : ""}`,
+    );
     this.name = "WatchdogTimeoutError";
   }
 }
 
 /**
- * Wrap a text stream with a first-byte watchdog: if no content arrives within `ms`
- * the upstream request is aborted and the generator throws WatchdogTimeoutError.
+ * The watchdogs on one streamed attempt (`withWatchdog`). Every one is optional; none set is a
+ * plain stream.
+ *  - `firstMs`    no sign of life within this long: abort (WatchdogTimeoutError). Content is life;
+ *                 with `thinkingMs` set, so is a reasoning delta.
+ *  - `thinkingMs` a model that is thinking (reasoning deltas) may go this long from the start
+ *                 before its first content. Unset, reasoning does not count as life (the old
+ *                 first-byte watchdog: only content clears it).
+ *  - `deadline`   the attempt ends by this time (epoch ms), content or not: the route's own budget,
+ *                 so a model that never finishes fails with an event before the platform kills
+ *                 the function (which records nothing and refunds nothing).
  */
-async function* withFirstByteWatchdog(
-  opts: StreamChatOptions,
-  ms: number,
-): AsyncGenerator<string, void, undefined> {
+export type AttemptWatch = { firstMs?: number; thinkingMs?: number; deadline?: number };
+
+/** Wrap a text stream with the watchdogs of `watch` (see AttemptWatch). */
+async function* withWatchdog(opts: StreamChatOptions, watch: AttemptWatch): AsyncGenerator<string, void, undefined> {
   const controller = new AbortController();
   const onOuterAbort = () => controller.abort();
   opts.signal?.addEventListener("abort", onOuterAbort, { once: true });
   if (opts.signal?.aborted) controller.abort();
 
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
+  const startedAt = Date.now();
+  let timedOut: WatchdogTimeoutError | null = null;
+  const fire = (err: WatchdogTimeoutError) => () => {
+    timedOut = err;
     controller.abort();
-  }, ms);
+  };
+  let firstTimer: ReturnType<typeof setTimeout> | null =
+    watch.firstMs !== undefined ? setTimeout(fire(new WatchdogTimeoutError(opts.model, watch.firstMs)), watch.firstMs) : null;
+  const deadlineMs = watch.deadline !== undefined ? Math.max(0, watch.deadline - startedAt) : null;
+  const deadlineTimer = deadlineMs !== null ? setTimeout(fire(new WatchdogTimeoutError(opts.model, deadlineMs, "deadline")), deadlineMs) : null;
+  let content = false;
+  let thinking = false;
+  const onReasoning = () => {
+    opts.onReasoning?.();
+    if (content || thinking || watch.thinkingMs === undefined) return;
+    // alive and thinking: the first-sign watchdog is satisfied; it may think until `thinkingMs`
+    thinking = true;
+    if (firstTimer) clearTimeout(firstTimer);
+    const left = Math.max(0, startedAt + watch.thinkingMs - Date.now());
+    firstTimer = setTimeout(fire(new WatchdogTimeoutError(opts.model, watch.thinkingMs, "thinking")), left);
+  };
 
-  const inner = streamChatText({ ...opts, signal: controller.signal });
+  const inner = streamChatText({ ...opts, signal: controller.signal, onReasoning });
   try {
-    let first = true;
     for (;;) {
       let next: IteratorResult<string, void>;
       try {
         next = await inner.next();
       } catch (err) {
-        if (timedOut) throw new WatchdogTimeoutError(opts.model, ms);
+        if (timedOut) throw timedOut;
         throw err;
       }
       if (next.done) break;
-      if (first) {
-        clearTimeout(timer);
-        first = false;
+      if (!content) {
+        content = true;
+        if (firstTimer) clearTimeout(firstTimer);
+        firstTimer = null;
       }
       yield next.value;
     }
   } finally {
-    clearTimeout(timer);
+    if (firstTimer) clearTimeout(firstTimer);
+    if (deadlineTimer) clearTimeout(deadlineTimer);
     opts.signal?.removeEventListener("abort", onOuterAbort);
     await inner.return(undefined).catch(() => undefined);
   }
@@ -398,10 +441,22 @@ function recordModelFailure(call: ModelCall, model: string, err: unknown, how: "
 export type FallbackStreamEvent = { type: "model"; model: string } | { type: "text"; text: string };
 
 /**
+ * What `streamWithFallback` allows beyond the primary's first-content watchdog. Every one is
+ * optional, and none set is the old behaviour (reasoning is no sign of life; the fallback has no
+ * watchdog of its own).
+ *  - `primaryThinkingMs`  the primary, once it shows it is thinking (reasoning deltas), may go
+ *                         this long before its first content (from the start of the attempt).
+ *  - `fallbackWatchdogMs` the fallback's own first-content watchdog.
+ *  - `deadline`           both attempts end by this time (epoch ms): the route's budget.
+ */
+export type StreamLimits = { primaryThinkingMs?: number; fallbackWatchdogMs?: number; deadline?: number };
+
+/**
  * Stream from `primary`; when nothing has arrived within `watchdogMs` (or the primary fails
  * before yielding any content) abort it and retry once on `fallback`.
  * Yields a `model` event first (which model is actually answering) and then `text` deltas.
- * Credits exhaustion and client aborts are never retried.
+ * Credits exhaustion and client aborts are never retried. `limits` (StreamLimits) can let a
+ * thinking primary go longer, give the fallback a watchdog, and end both by a deadline.
  *
  * App events (`model.<route>`, fire and forget): a warn `fallback` once the fallback answers, and
  * an error when the call fails for good (both models, the only one, or mid-answer); nothing when
@@ -412,9 +467,14 @@ export async function* streamWithFallback(
   fallback: string,
   opts: Omit<StreamChatOptions, "model">,
   watchdogMs: number,
+  limits: StreamLimits = {},
 ): AsyncGenerator<FallbackStreamEvent, void, undefined> {
-  const attempt = async function* (model: string, guard: boolean): AsyncGenerator<string, void, undefined> {
-    yield* guard ? withFirstByteWatchdog({ ...opts, model }, watchdogMs) : streamChatText({ ...opts, model });
+  const attempt = async function* (model: string, isPrimary: boolean): AsyncGenerator<string, void, undefined> {
+    const watch: AttemptWatch = isPrimary
+      ? { firstMs: watchdogMs, thinkingMs: limits.primaryThinkingMs, deadline: limits.deadline }
+      : { firstMs: limits.fallbackWatchdogMs, deadline: limits.deadline };
+    const plain = watch.firstMs === undefined && watch.thinkingMs === undefined && watch.deadline === undefined;
+    yield* plain ? streamChatText({ ...opts, model }) : withWatchdog({ ...opts, model }, watch);
   };
   const call: ModelCall = { primary, fallback, title: opts.title, requestId: opts.requestId, startedAt: Date.now() };
   const callerLeft = (err: unknown) => Boolean(opts.signal?.aborted) || isAbortError(err);

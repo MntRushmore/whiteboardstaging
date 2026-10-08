@@ -344,6 +344,8 @@ describe("live loop — Solve answers locally, and checks the model when it cann
     expect(handShapes()).toHaveLength(0);
     const err = liveStore.lastError.get();
     expect(err).toMatchObject({ kind: "solve", userAsked: true, message: LIVE_COPY.solve.failed });
+    // the admin page hears what it was: no step the board could use, and why the first was refused
+    expect(err?.reportCode).toBe("unusable_steps:unknown-symbol");
     // the retry affordance solve errors already have
     expect(liveStore.retryHandler.get()).toBeTypeOf("function");
   });

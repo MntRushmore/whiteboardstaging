@@ -117,7 +117,7 @@ import {
   rectsIntersect,
 } from "./placement";
 import { badgeFor, decide, isSingleSymbolLatex, localNoteFor, unjudgedReason, type PolicyDecision, type UnjudgedReason } from "./policy";
-import { createSolveStepGuard, engineParsesStep, localAnswerFor, mathSymbols, unwrapBoxed as unwrapBoxedAnywhere } from "./solveSteps";
+import { createSolveStepGuard, engineParsesStep, localAnswerFor, mathSymbols, stepKey, unwrapBoxed as unwrapBoxedAnywhere } from "./solveSteps";
 import {
   RecognizeClient,
   RecognizeTimeoutError,
@@ -4936,7 +4936,7 @@ export class LiveLoop implements LiveController {
         // Asked on the drawing. Nothing asked is what to write next, quietly — the red card and its
         // Retry would say something broke, and asking again would only be told the same.
         if (outcome === "nothing") this.noteFor(opts.lineId, LIVE_COPY.solve.nothingAsked);
-        else this.fail(sseFailure({ error: "unusable_steps", message: SOLVE_FAILED }), errCtx, retry);
+        else this.fail(sseFailure({ error: "unusable_steps", message: SOLVE_FAILED }, { reason: `figure_${reason || "unusable"}` }), errCtx, retry);
       }
       if (outcome === "written") this.noteSuccess("solve", opts.lineId);
       if (liveStore.status.get() !== "offline") liveStore.status.set("idle");
@@ -5332,6 +5332,8 @@ export class LiveLoop implements LiveController {
       const accepted: string[] = [];
       /** the stream's request id (its `meta` frame), so a failure the student sees joins the server's rows */
       let requestId: string | undefined;
+      /** why the guard refused the first step it refused: the report says it (`unusable_steps:<reason>`) */
+      let firstRejection: string | undefined;
       try {
         for await (const ev of this.deps.stream(SOLVE_PATH, req, { signal: ctrl.signal })) {
           if (ctrl.signal.aborted) break;
@@ -5346,6 +5348,7 @@ export class LiveLoop implements LiveController {
             const verdict = guard.check(latex);
             if (!verdict.ok) {
               discarded++;
+              firstRejection ??= verdict.reason;
               console.warn("[live] solve step discarded", { reason: verdict.reason, introduced: verdict.introduced, latex: ev.data.latex });
               clientMetric("live.solve.step.discarded", { reason: verdict.reason ?? "", lineId: opts.lineId });
               continue;
@@ -5371,7 +5374,7 @@ export class LiveLoop implements LiveController {
         // to leave the student staring at a page where Solve visibly did nothing.
         if (!failed && drawn === 0 && discarded > 0) {
           failed = true;
-          this.fail(sseFailure({ error: "unusable_steps", message: SOLVE_FAILED }), errCtx, retry);
+          this.fail(sseFailure({ error: "unusable_steps", message: SOLVE_FAILED }, { reason: firstRejection, requestId }), errCtx, retry);
         }
       } catch (err) {
         if (!isAbortLike(err) && !ctrl.signal.aborted) {
@@ -5900,7 +5903,7 @@ export class LiveLoop implements LiveController {
       failed: (err, lineId, all) => {
         const errCtx = { kind: "solve" as const, lineId, userAsked: true };
         const retry: RetryContext = { kind: "proof", lineId, all };
-        if (err === null) this.fail(sseFailure({ error: "unusable_steps", message: UNUSABLE_SOLUTION }), errCtx, retry);
+        if (err === null) this.fail(sseFailure({ error: "unusable_steps", message: UNUSABLE_SOLUTION }, { reason: "proof_row" }), errCtx, retry);
         else if (!this.isNetworkFailure(err)) this.fail(err, errCtx, retry);
       },
       succeeded: (lineId) => this.noteSuccess("solve", lineId),
@@ -7571,12 +7574,9 @@ export function unwrapBoxed(latex: string): string {
   return unwrapBoxedAnywhere(latex);
 }
 
-/** Comparable form of a step: spacing, `\left`/`\right` and `\cdot` vs juxtaposition ignored. */
+/** Comparable form of a step: spacing, `\left`/`\right` and `\cdot` vs juxtaposition ignored (`stepKey`, shared with the solve route). */
 export function normalizeStep(latex: string): string {
-  return unwrapBoxed(latex)
-    .replace(/\\(?:left|right|,|;|!|quad|qquad)|~|\s/g, "")
-    .replace(/[{}]/g, "")
-    .replace(/\\cdot|\\times|\*/g, "");
+  return stepKey(latex);
 }
 
 

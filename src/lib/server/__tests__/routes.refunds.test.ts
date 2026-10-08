@@ -15,7 +15,7 @@
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 type RpcReply = { data?: unknown; error?: { message: string; code?: string } | null } | Error;
 
@@ -140,6 +140,12 @@ async function readSse(res: Response): Promise<Array<{ event: string; data: unkn
       return { event, data: JSON.parse(data) as unknown };
     });
 }
+
+// live/solve loads the board's engine (mathjs) on its first request, to judge the steps it sends:
+// load it once here, so no test's clock pays for it
+beforeAll(async () => {
+  await import("@/lib/live/engine").then((m) => m.getEngine());
+}, 60_000);
 
 beforeEach(() => {
   for (const name of ENV_VARS) {

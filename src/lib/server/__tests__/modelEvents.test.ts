@@ -211,6 +211,92 @@ describe("streamWithFallback", () => {
   });
 });
 
+/**
+ * An SSE answer whose frames arrive over time: `[afterMs, frame]` pairs (each delay from the one
+ * before). The body errors like fetch's when the request is aborted.
+ */
+const timed = (...frames: Array<[number, unknown]>): Answer => async (init) => {
+  const encoder = new TextEncoder();
+  const timers: Array<ReturnType<typeof setTimeout>> = [];
+  const body = new ReadableStream<Uint8Array>({
+    start(ctrl) {
+      const abort = () => {
+        timers.forEach(clearTimeout);
+        try {
+          ctrl.error(Object.assign(new Error("This operation was aborted"), { name: "AbortError" }));
+        } catch {
+          /* already closed */
+        }
+      };
+      init.signal?.addEventListener("abort", abort, { once: true });
+      let at = 0;
+      frames.forEach(([after, frame], i) => {
+        at += after;
+        timers.push(
+          setTimeout(() => {
+            try {
+              ctrl.enqueue(encoder.encode(`data: ${typeof frame === "string" ? frame : JSON.stringify(frame)}\n\n`));
+              if (i === frames.length - 1) ctrl.close();
+            } catch {
+              /* aborted */
+            }
+          }, at),
+        );
+      });
+    },
+  });
+  return new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+};
+const thinking = (text = "Let me work this out") => ({ choices: [{ delta: { content: "", reasoning: text } }] });
+const thinkingDetails = () => ({ choices: [{ delta: { reasoning_details: [{ type: "reasoning.summary", summary: "..." }] } }] });
+const solveWith = (limits: Parameters<typeof streamWithFallback>[4]) =>
+  streamWithFallback(PRIMARY, FALLBACK, { messages: [{ role: "user", content: "solve" }], requestId: "req-3", title: "Agathon Live - solve" }, 60, limits);
+
+describe("streamWithFallback: a thinking primary, the fallback's watchdog, the route's deadline", () => {
+  it("reasoning deltas are a sign of life when the route allows thinking: the primary answers, no fallback", async () => {
+    // 4 x 40 ms of thinking: well past the 60 ms first-content watchdog
+    answers[PRIMARY] = timed([30, thinking()], [40, thinkingDetails()], [40, thinking()], [40, delta("x = 3")], [5, "[DONE]"]);
+    answers[FALLBACK] = sse(delta("x = 4"), "[DONE]");
+    const out = await drain(solveWith({ primaryThinkingMs: 1000 }));
+    expect(out).toEqual([{ type: "model", model: PRIMARY }, { type: "text", text: "x = 3" }]);
+    expect(asked).toEqual([PRIMARY]);
+    expect(events()).toEqual([]);
+  });
+
+  it("without it, reasoning is no content (the old first-byte watchdog): the fallback answers", async () => {
+    answers[PRIMARY] = timed([30, thinking()], [40, thinking()], [40, delta("x = 3")], [5, "[DONE]"]);
+    answers[FALLBACK] = sse(delta("x = 4"), "[DONE]");
+    const out = await drain(solveWith({}));
+    expect(out).toContainEqual({ type: "text", text: "x = 4" });
+    expect(events()).toEqual([expect.objectContaining({ code: "fallback", meta: expect.objectContaining({ reason: "timeout" }) })]);
+  });
+
+  it("thinking past its allowance still goes to the fallback, a timeout `it was still thinking`", async () => {
+    answers[PRIMARY] = timed([20, thinking()], [40, thinking()], [40, thinking()], [40, thinking()], [400, delta("x = 3")]);
+    answers[FALLBACK] = sse(delta("x = 4"), "[DONE]");
+    const out = await drain(solveWith({ primaryThinkingMs: 120 }));
+    expect(out).toContainEqual({ type: "text", text: "x = 4" });
+    expect(events()).toEqual([expect.objectContaining({ code: "fallback", meta: expect.objectContaining({ reason: "timeout", error: expect.stringContaining("still thinking") }) })]);
+  });
+
+  it("the fallback's own watchdog: a silent fallback fails as a timeout instead of running until the platform kills the function", async () => {
+    answers[PRIMARY] = hang;
+    answers[FALLBACK] = hang;
+    await expect(drain(solveWith({ fallbackWatchdogMs: 60 }))).rejects.toBeInstanceOf(WatchdogTimeoutError);
+    expect(events()).toEqual([expect.objectContaining({ level: "error", code: "timeout", message: `${PRIMARY} and ${FALLBACK} both failed` })]);
+  });
+
+  it("the route's deadline ends a fallback that started answering and never finished: an error, mid-answer", async () => {
+    answers[PRIMARY] = status(500);
+    answers[FALLBACK] = timed([10, delta('{"index":1')], [5_000, "[DONE]"]);
+    await expect(drain(solveWith({ deadline: Date.now() + 150 }))).rejects.toBeInstanceOf(WatchdogTimeoutError);
+    expect(events()).toEqual([
+      expect.objectContaining({ level: "warn", code: "fallback" }),
+      expect.objectContaining({ level: "error", code: "timeout", message: `${FALLBACK} failed mid-answer`, meta: expect.objectContaining({ error: expect.stringContaining("the route's time ran out") }) }),
+    ]);
+  });
+});
+
 describe("modelFailureCode", () => {
   it("names each way a model call fails", () => {
     expect(modelFailureCode(new CreditsExhaustedError())).toBe("credits");

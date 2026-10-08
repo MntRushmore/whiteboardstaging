@@ -4,6 +4,7 @@ import { getEngine } from "../engine";
 import {
   checkSolveStep,
   createSolveStepGuard,
+  createSolveStepJudge,
   definedSymbol,
   engineParsesStep,
   isIntervalAnswer,
@@ -11,8 +12,10 @@ import {
   localAnswerFor,
   localAnswerStep,
   mathSymbols,
+  stepKey,
   unwrapBoxed,
 } from "../solveSteps";
+import { normalizeStep } from "../liveLoop";
 
 /**
  * The two halves of "what Solve is allowed to draw" (see solveSteps.ts).
@@ -290,5 +293,39 @@ describe("the step check lets through what a right answer looks like (model benc
     expect(isIntervalAnswer("(-\\infty, -1) \\cup (3, \\infty)")).toBe(true);
     expect(isIntervalAnswer("\\left(\\frac{1}{2}, 5\\right]".replace(/\\left|\\right/g, ""))).toBe(true);
     expect(isIntervalAnswer("(so, x is big)")).toBe(false);
+  });
+});
+
+describe("solveSteps: the board's judge of a whole solve stream (shared with the solve route)", () => {
+  const judgeFor = (lines: string[]) => createSolveStepJudge({ sourceLatex: lines, parses: (latex) => engineParsesStep(engine, latex) });
+
+  it("skips a restatement, draws what the guard accepts, refuses the rest and keeps the first refusal's reason", () => {
+    const judge = judgeFor(["2x + 3 = 11"]);
+    // the student's own line read back is skipped, not refused
+    expect(judge.judge("2x+3=11")).toEqual({ drawn: false, skipped: true });
+    expect(judge.judge("2x + 3 - 3 = 11 - y")).toMatchObject({ drawn: false, skipped: false, reason: "unknown-symbol", introduced: ["y"] });
+    expect(judge.judge("\\text{Sorry, I can't}")).toMatchObject({ drawn: false, reason: "unparseable" });
+    expect(judge.judge("2x = 8")).toEqual({ drawn: true });
+    expect(judge.judge("\\boxed{x = 4}")).toEqual({ drawn: true });
+    // the same step again is a restatement now
+    expect(judge.judge("x=4")).toEqual({ drawn: false, skipped: true });
+    expect(judge.drawn).toBe(2);
+    expect(judge.discarded).toBe(2);
+    expect(judge.firstRejection).toEqual({ reason: "unknown-symbol", introduced: ["y"], latex: "2x + 3 - 3 = 11 - y" });
+  });
+
+  it("a solve the board can draw nothing of: drawn 0, discarded > 0 (what the route retries once)", () => {
+    const judge = judgeFor(["3(x+2)=21"]);
+    judge.judge("u = x + 2");
+    expect(judge.drawn).toBe(1);
+    const none = judgeFor(["3(x+2)=21"]);
+    none.judge("y = 7 + z");
+    none.judge("\\boxed{x = 5w}");
+    expect(none.drawn).toBe(0);
+    expect(none.discarded).toBe(2);
+  });
+
+  it("compares steps exactly as the board does (`normalizeStep` is `stepKey`)", () => {
+    for (const latex of ["\\boxed{x = 4}", "2 \\cdot x \\quad = 8", "\\left(x+1\\right)^{2}", "x\\times y"]) expect(normalizeStep(latex)).toBe(stepKey(latex));
   });
 });
