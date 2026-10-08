@@ -82,7 +82,7 @@ export type ClientErrorReport = {
  *  - `live.chat`      the Ask panel's failed request (and its weak-spots chip); what it could not write (warn)
  *  - `live.lecture`   lecture mode's error, or its notice that a drawing failed or the tutor is unreachable
  *  - `live.save`      the save pill's "Couldn't save", a board too large to save, images kept on the device
- *  - `live.load`      the board's "Couldn't load / restore this board" screen, a board not there (warn)
+ *  - `live.load`      the board's "Couldn't load / restore this board" screen, a board not there (info)
  *  - `live.practice`  a practice set or a "Now you try" problem that could not be written or made
  *  - `live.progress`  the Progress page's record that would not load
  *  - `live.ink`       the ink balance, packs or purchases that would not load; ink that never arrived after checkout

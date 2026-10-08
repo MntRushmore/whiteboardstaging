@@ -101,11 +101,14 @@ const LOAD_DETAIL_CODES: ReadonlyArray<[RegExp, string]> = [
  * (`BoardCrashed` reports the crash itself, with its stack). The heading is the message; the code
  * says which screen it was and the gist of the detail (`load_failed_network`, `load_failed_timeout`)
  * — never the detail line itself, which can be anything the database or the snapshot reader said.
- * A board that is not there (deleted, or someone else's) is a warning: usually an old link.
+ * A board that is not there (deleted, someone else's, a mistyped link) is `info`: the database
+ * answered, and the student has no board there to load — not an app error. (The load reads with
+ * maybeSingle under RLS; a signed-out or expired session is sent to sign in, or is a PGRST301
+ * error, never this.)
  */
 export function loadErrorReport(state: Exclude<BoardLoadState, { kind: "ready" }>): UserErrorInput | null {
   if (state.message === BOARD_LOAD_COPY.crashTitle) return null;
-  if (state.kind === "not-found") return { kind: "live.load", code: "not_found", message: state.message, level: "warn" };
+  if (state.kind === "not-found") return { kind: "live.load", code: "not_found", message: state.message, level: "info" };
   const base = state.message === BOARD_LOAD_COPY.restoreTitle ? "restore_failed" : "load_failed";
   const gist = state.detail ? LOAD_DETAIL_CODES.find(([re]) => re.test(state.detail!))?.[1] : undefined;
   return { kind: "live.load", code: gist ? `${base}_${gist}` : base, message: state.message };
