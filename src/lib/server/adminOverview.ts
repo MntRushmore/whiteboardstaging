@@ -6,7 +6,9 @@
  * Reads (24 h / 48 h / 7 d back from `now`):
  *   health_checks     24 h of checks: each service's latest, uptime, latency, down since; OpenRouter's credit
  *   app_events        48 h of errors and warnings (not health checks): per hour, groups, AI failures
- *                     + an exact count of the last 24 h's errors
+ *                     + an exact count of the last 24 h's errors. Noise (a browser's or an extension's
+ *                     own script: eventIsNoise, src/lib/server/adminConsole/noise.ts) is left out of
+ *                     all of it; the exact count less the noise among the rows read
  *   usage_events      7 d of metered calls (route, user, time) ─┐ AI calls per route (24 h),
  *   unlimited_usage   7 d of Unlimited subscribers' calls ──────┤ active users (24 h, 7 d)
  *   learning_attempts 7 d of problems worked (user, time) ──────┘ + exact counts of today's attempts
@@ -25,6 +27,7 @@
  */
 import { SERVICES, type AdminOverview, type ErrorGroup, type EventLevel, type EventSource, type Service, type ServiceStatus } from "@/lib/admin/contracts";
 import { normalizeRoute } from "@/lib/admin/view";
+import { eventIsNoise } from "@/lib/server/adminConsole/noise";
 import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
 import { getServerEnv } from "@/lib/env";
 import { logger } from "@/lib/logger";
@@ -251,6 +254,8 @@ export interface EventRow {
   user_id: string | null;
   board_id: string | null;
   request_id: string | null;
+  /** meta->>stack: the top of a browser crash's stack, for the noise rule */
+  stack?: string | null;
 }
 
 export interface UsageRow {
@@ -577,7 +582,7 @@ export async function buildAdminOverview(deps: OverviewDeps): Promise<AdminOverv
     rest.paged<HealthRow>({ table: "health_checks", params: { select: "at,service,ok,latency_ms,detail", at: `gte.${iso(since24)}`, order: "at.desc" } }),
     rest.paged<EventRow>({
       table: "app_events",
-      params: { select: "at,source,level,kind,code,message,route,user_id,board_id,request_id", at: `gte.${iso(since48)}`, source: "neq.health", level: "in.(error,warn)", order: "at.desc" },
+      params: { select: "at,source,level,kind,code,message,route,user_id,board_id,request_id,stack:meta->>stack", at: `gte.${iso(since48)}`, source: "neq.health", level: "in.(error,warn)", order: "at.desc" },
     }),
     rest.count({ table: "app_events", params: { select: "id", at: `gte.${iso(since24)}`, source: "neq.health", level: "eq.error" } }),
     rest.paged<UsageRow>({ table: "usage_events", params: { select: "route,user_id,created_at", created_at: `gte.${iso(since7d)}`, order: "created_at.desc" } }),
@@ -597,7 +602,11 @@ export async function buildAdminOverview(deps: OverviewDeps): Promise<AdminOverv
     rest.count({ table: "profiles", params: { select: "user_id", onboarded_at: "not.is.null" } }),
   ]);
 
-  const events24h = events.rows.filter((e) => time(e.at) >= since24);
+  // Noise is not ours to fix: left out of every number and group. The exact count of the day's errors
+  // loses the noise among the rows read (all of it, unless 48 h passed the row cap).
+  const kept = events.rows.filter((e) => !eventIsNoise(e));
+  const noiseErrors24h = events.rows.filter((e) => e.level === "error" && time(e.at) >= since24 && eventIsNoise(e)).length;
+  const events24h = kept.filter((e) => time(e.at) >= since24);
   const metered24h = [...usage.rows, ...unlimited.rows].filter((u) => time(u.created_at) >= since24);
   // Past the cap the newest 5,000 may not reach back a day: count each route's calls exactly instead.
   const usageShort = (r: { rows: UsageRow[]; truncated: boolean }) => r.truncated && time(r.rows[r.rows.length - 1]?.created_at) > since24;
@@ -643,9 +652,9 @@ export async function buildAdminOverview(deps: OverviewDeps): Promise<AdminOverv
     services: serviceStatuses(health.rows, olderBy, downSince),
     openrouter: openrouterCredits(health.rows, olderBy.openrouter),
     errors: {
-      total24h: errors24hTotal,
+      total24h: Math.max(0, errors24hTotal - noiseErrors24h),
       users24h: new Set(events24h.filter((e) => e.level === "error" && e.user_id).map((e) => e.user_id)).size,
-      perHour: perHour(events.rows, now),
+      perHour: perHour(kept, now),
       groups: errorGroups(events24h, emails),
     },
     ai: { routes: aiRoutes(metered24h, events24h, exactCalls) },
