@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CHUNK_RELOAD_COPY, useChunkReload } from "@/lib/chunkReload";
 import type { UserErrorInput } from "@/lib/clientErrors";
 import { reportAppError, reportUserError } from "@/lib/reportAppError";
 
@@ -100,11 +101,14 @@ const LOAD_DETAIL_CODES: ReadonlyArray<[RegExp, string]> = [
  * (`BoardCrashed` reports the crash itself, with its stack). The heading is the message; the code
  * says which screen it was and the gist of the detail (`load_failed_network`, `load_failed_timeout`)
  * — never the detail line itself, which can be anything the database or the snapshot reader said.
- * A board that is not there (deleted, or someone else's) is a warning: usually an old link.
+ * A board that is not there (deleted, someone else's, a mistyped link) is `info`: the database
+ * answered, and the student has no board there to load — not an app error. (The load reads with
+ * maybeSingle under RLS; a signed-out or expired session is sent to sign in, or is a PGRST301
+ * error, never this.)
  */
 export function loadErrorReport(state: Exclude<BoardLoadState, { kind: "ready" }>): UserErrorInput | null {
   if (state.message === BOARD_LOAD_COPY.crashTitle) return null;
-  if (state.kind === "not-found") return { kind: "live.load", code: "not_found", message: state.message, level: "warn" };
+  if (state.kind === "not-found") return { kind: "live.load", code: "not_found", message: state.message, level: "info" };
   const base = state.message === BOARD_LOAD_COPY.restoreTitle ? "restore_failed" : "load_failed";
   const gist = state.detail ? LOAD_DETAIL_CODES.find(([re]) => re.test(state.detail!))?.[1] : undefined;
   return { kind: "live.load", code: gist ? `${base}_${gist}` : base, message: state.message };
@@ -127,11 +131,15 @@ export function BoardLoading({ label = BOARD_LOAD_COPY.loading }: { label?: stri
  * board's autosave has already backed up and flushed as the editor unmounted; a reload restores.
  */
 export function BoardCrashed({ error }: { error: unknown }) {
+  // A chunk of an older release (a deploy since the board opened): reload once, not a crash. The
+  // autosave has backed up and flushed already, as for Retry.
+  const reloading = useChunkReload(error);
   // tldraw's error boundary caught it, so it never reached the window's listeners: a crash report
   // (src/lib/clientErrors.ts), with its stack, from here
   useEffect(() => {
-    reportAppError("boundary", error);
-  }, [error]);
+    if (!reloading) reportAppError("boundary", error);
+  }, [error, reloading]);
+  if (reloading) return <BoardLoading label={CHUNK_RELOAD_COPY} />;
   return (
     <BoardLoadError
       state={{ kind: "error", message: BOARD_LOAD_COPY.crashTitle, detail: detailOf(error) }}

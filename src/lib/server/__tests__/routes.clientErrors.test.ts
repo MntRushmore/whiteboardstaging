@@ -27,6 +27,7 @@ vi.mock("@/lib/logger", () => {
     error: (fields: Record<string, unknown>, msg: string) => fake.lines.push({ fields, msg, level: "error", bindings }),
     warn: (fields: Record<string, unknown>, msg: string) => fake.lines.push({ fields, msg, level: "warn", bindings }),
     info: (fields: Record<string, unknown>, msg: string) => fake.lines.push({ fields, msg, level: "info", bindings }),
+    debug: (fields: Record<string, unknown>, msg: string) => fake.lines.push({ fields, msg, level: "debug", bindings }),
   });
   return { logger: make({}) };
 });
@@ -129,6 +130,29 @@ describe("POST /api/client-errors", () => {
     expect(fields.path).toBe("/login");
     expect(fields.stack).toBe("Error\n    at https://app.test/login:1:23");
     expect(JSON.stringify(fields)).not.toMatch(/hunter2|a%40b|student's working|boardContent/);
+  });
+
+  it("noise from a tab on an older release (isNoise): 204 and only a debug line", async () => {
+    const injected = {
+      ...REPORT,
+      message: "TypeError: undefined is not an object (evaluating 'window.ethereum.selectedAddress = undefined')",
+      stack: `global code@https://www.agathon.app/board/${BOARD}:1:16`,
+    };
+    for (const body of [injected, { ...REPORT, message: "ResizeObserver loop completed with undelivered notifications." }]) {
+      fake.lines.length = 0;
+      const res = await POST(post(body, { token: fake.GOOD_TOKEN }));
+      expect(res.status).toBe(204);
+      expect(fake.lines.map((l) => [l.level, l.msg])).toEqual([["debug", "client error (noise, not recorded)"]]);
+    }
+    // one inline frame at the page and one of our own: a real crash
+    fake.lines.length = 0;
+    await POST(post({ ...REPORT, stack: `${injected.stack}\nrender@https://www.agathon.app/_next/static/chunks/a.js:2:3` }));
+    expect(fake.lines.map((l) => l.level)).toEqual(["error"]);
+  });
+
+  it("an error a student saw is never noise, whatever its words", async () => {
+    await POST(post({ ...REPORT, source: "live", kind: "live.chat", code: "aborted", message: "The request was aborted" }));
+    expect(fake.lines.map((l) => [l.level, l.msg])).toEqual([["error", "client error"]]);
   });
 
   it("falls back to the User-Agent header when the report has none", async () => {

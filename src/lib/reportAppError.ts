@@ -24,7 +24,15 @@ export function reportAppError(source: ClientErrorSource, error: unknown, digest
  * they wrote or typed). Deduped and capped in src/lib/clientErrors.ts (`createUserReporter`).
  */
 export function reportUserError(error: UserErrorInput): void {
-  load().then(
+  void reportUserErrorBeforeLeaving(error);
+}
+
+/**
+ * As `reportUserError`, for a page about to go away (a reload): resolves once the report is on its
+ * way — a beacon or a keepalive fetch, which outlive the page — or could not be sent. Never rejects.
+ */
+export function reportUserErrorBeforeLeaving(error: UserErrorInput): Promise<void> {
+  return load().then(
     (m) => m.reportUserError(error),
     () => {},
   );
