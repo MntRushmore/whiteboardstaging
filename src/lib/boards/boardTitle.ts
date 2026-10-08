@@ -63,6 +63,12 @@ sym("rel", "⊥", "perp");
 sym("rel", "∥", "parallel");
 sym("rel", "|", "mid");
 sym("rel", "∼", "backsim");
+sym("rel", "≃", "simeq");
+sym("rel", "≍", "asymp");
+// a child's curved `=` bar, as Mathpix reads it (`youngHand.ts`): drawn as the curve, never by name
+sym("rel", "⌣", "smile");
+sym("rel", "⌢", "frown");
+sym("ord", "✓", "checkmark");
 sym("ord", "∞", "infty");
 sym("ord", "°", "degree");
 sym("ord", "∘", "circ");
