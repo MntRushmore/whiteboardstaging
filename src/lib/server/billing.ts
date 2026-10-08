@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { billingEnforced, getServerEnv } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { json } from "@/lib/server/auth";
+import { recordRouteEvent } from "@/lib/server/request";
 
 /**
  * Ink metering for the paid API routes.
@@ -443,5 +444,13 @@ export async function enforceInk(
   }
 
   log.warn({ route: input.route, error: result.message }, "billing unavailable; failing closed");
+  // The student meets this 503 as the tutor failing ("had a hiccup"): an event, not only a log
+  // line (`route.<module>.<route>`, code `billing_unavailable`), so the admin page sees it.
+  recordRouteEvent(log, {
+    level: "error",
+    code: "billing_unavailable",
+    message: "Billing is unavailable: the ink check failed closed",
+    meta: { status: 503, inkRoute: input.route, error: (result.message ?? "").slice(0, 160) },
+  });
   return { response: billingUnavailableResponse() };
 }

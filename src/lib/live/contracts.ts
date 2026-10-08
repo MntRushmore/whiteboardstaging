@@ -407,6 +407,13 @@ export const RecognizeRequestSchema = z.object({
   /** data:image/jpeg;base64 crop, only when the recognizer is 'vision' (<= 200 KB raw) */
   crop: z.string().startsWith("data:image/").max(280_000).optional(),
   hint: z.enum(["math", "chem", "physics"]).optional(),
+  /**
+   * The crop retry after a `recognizer_failed` + `needsCrop`: the stroke recognizer already had
+   * these very strokes and read nothing, so the route goes straight to the vision reader with the
+   * crop (Mathpix would answer the same again, after up to its 4 s timeout, out of the 6 s the
+   * client waits). Ignored without a crop; an older server ignores it altogether.
+   */
+  cropOnly: z.boolean().optional(),
 });
 export type RecognizeRequest = z.infer<typeof RecognizeRequestSchema>;
 export const RecognizeResponseSchema = z.object({
