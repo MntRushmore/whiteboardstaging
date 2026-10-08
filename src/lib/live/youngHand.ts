@@ -30,7 +30,7 @@
  *    precalculus (`x \approx 2.41`), an `\approx` is meant, and stays.
  */
 
-import type { InkStroke } from "./contracts";
+import type { InkStroke, Rect } from "./contracts";
 import { isDotStroke, isLevelBar, strokeLength } from "./strokeClusters";
 
 export interface YoungReadContext {
@@ -39,6 +39,12 @@ export interface YoungReadContext {
    * its answer is a number, and the student may be young enough to write just that.
    */
   arithmetic: boolean;
+  /**
+   * The signs the line starts with as its INK has them (`leadingSigns`: `=`, `-`, `=-`), when it is
+   * known. In arithmetic the ink has the last word on an answer's signs: Mathpix read a wobbly `=`
+   * (a wave and a bar) as one minus, `-54` for `= 54`, and the right answer was ringed.
+   */
+  signs?: string | null;
 }
 
 const commands = (names: readonly string[]) => names.map((n) => `\\\\${n}(?![a-zA-Z])`).join("|");
@@ -59,8 +65,10 @@ const STACKED_RE = new RegExp(`\\\\(?:stackrel|overset|underset|frac|dfrac|tfrac
 const CURVED_RE = new RegExp(CURVED, "g");
 const LONE_STRONG_RE = new RegExp(`^(?:${STRONG}\\s*){1,3}$`);
 const LONE_ANY_RE = new RegExp(`^(?:(?:${STRONG}|${WEAK})\\s*){1,3}$`);
-/** the start of an answer: one or two look-alikes before a number (never a minus: that is `-7`) */
-const LEADING_RE = new RegExp(`^(?:(?:${UNREADABLE}|${APPROX}|${BAR})\\s*){1,2}(?=\\d|\\.\\d|\\\\frac)`);
+/** the start of an answer: one or two look-alikes before a number, or its minus (never a minus alone: that is `-7`) */
+const LEADING_RE = new RegExp(`^(?:(?:${UNREADABLE}|${APPROX}|${BAR})\\s*){1,2}(?=-?\\s*(?:\\d|\\.\\d|\\\\frac))`);
+/** an answer as read: its signs (`=`, `-`, in any number and order), then a number without one */
+const SIGNED_ANSWER_RE = /^((?:\s*[=-])*)\s*(\d+(?:\.\d+)?|\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\})$/;
 /** between two sides: after a number (or a bracket closing) and before one */
 const between = (look: string) => new RegExp(`(?<=[\\d)}])\\s*(?:${look})\\s*(?=\\d|\\.\\d|[(-]|\\\\(?:frac|left))`, "g");
 const MIDDLE_ANY_RE = between(`${UNREADABLE}|${APPROX}`);
@@ -104,6 +112,63 @@ export function answerAfterRestatedEnd(line: string, problem: string): string | 
 }
 
 /**
+ * An answer read as its signs and a number (`-54`, `=3`, `=-10`), its signs as the ink has them
+ * (`signs`, `leadingSigns`) when Mathpix read no more signs than the ink has: a wobbly `=` read as a
+ * minus (`-54` → `= 54`), a minus it dropped (`=3` → `= -3` when the ink is `=` then `-`), the two
+ * swapped (`-=3`). Never a sign taken away that the ink may have had: with more signs read than the
+ * ink's bars say (`=-3` for ink of one `=`), the read stands.
+ */
+function withSignsOfInk(s: string, signs: string | null | undefined): string {
+  if (!signs) return s;
+  const m = SIGNED_ANSWER_RE.exec(s);
+  if (!m) return s;
+  const read = m[1].replace(/\s/g, "");
+  if (read === signs || read.length > signs.length) return s;
+  return signs.startsWith("=") ? `= ${signs.slice(1)}${m[2]}` : `${signs}${m[2]}`;
+}
+
+/**
+ * The signs a line starts with, as its INK has them — `=`, `-` or `=-` — or null when it starts with
+ * no bar, is nothing but bars, or its bars say nothing clear. Its level bars (`isLevelBar`) before its
+ * first glyph, left to right: bars one over another (overlapping across a third of the shorter) are
+ * one sign — two levels an `=`, one a `-` (a bar traced twice is still one) — and a bar beside them is
+ * another. A young hand's `=` is a wave and a bar half over it, `= -` two bars and a third well to
+ * their right; Mathpix reads them as it likes (`-54`, `=3`).
+ */
+export function leadingSigns(strokes: readonly InkStroke[]): string | null {
+  const ink = strokes.filter((s) => !isDotStroke(s));
+  const glyphs = ink.filter((s) => !isLevelBar(s.bounds));
+  if (glyphs.length === 0) return null;
+  const lead = glyphs.reduce((m, s) => (s.bounds.x < m.bounds.x ? s : m)).bounds;
+  // wholly before the first glyph (touching it at most): a 7's top bar drawn on its own spans the 7
+  const bars = ink
+    .filter((s) => isLevelBar(s.bounds) && s.bounds.x + s.bounds.w <= lead.x + 0.3 * lead.w)
+    .map((s) => s.bounds)
+    .sort((a, b) => a.x - b.x);
+  if (bars.length === 0) return null;
+  const groups: Rect[][] = [];
+  for (const b of bars) {
+    const g = groups[groups.length - 1];
+    const over = g?.some((o) => Math.min(o.x + o.w, b.x + b.w) - Math.max(o.x, b.x) >= Math.min(o.w, b.w) / 3);
+    if (g && over) g.push(b);
+    else groups.push([b]);
+  }
+  let signs = "";
+  for (const g of groups) {
+    // the levels of a group: bars whose heights overlap (within a few px) are one
+    let levels = 0;
+    let bottom = -Infinity;
+    for (const b of [...g].sort((p, q) => p.y - q.y)) {
+      if (b.y > bottom + 3) levels += 1;
+      bottom = Math.max(bottom, b.y + b.h);
+    }
+    if (levels > 2) return null;
+    signs += levels === 2 ? "=" : "-";
+  }
+  return signs === "=" || signs === "-" || signs === "=-" ? signs : null;
+}
+
+/**
  * Nothing but level bars (and taps of the pen): `-`, `=`, `= -` — the signs of an answer, its number
  * still to come. Under one of the chat's problems such a line is not read until the number joins it
  * (`LiveLoop.withoutStrays`): Mathpix reads a lone minus as `\backslash`, and `= -` as `=`.
@@ -127,6 +192,7 @@ export function readYoungHand(latex: string, ctx: YoungReadContext): string {
   if (ctx.arithmetic) {
     s = s.replace(TRAILING_TICK_RE, "$1").trim();
     s = s.replace(LEADING_RE, "= ");
+    s = withSignsOfInk(s, ctx.signs);
   }
   // between two sides: in arithmetic any look-alike; anywhere, one the engine cannot read on a line of numbers
   const swapped = s.replace(ctx.arithmetic ? MIDDLE_ANY_RE : MIDDLE_UNREADABLE_RE, " = ");

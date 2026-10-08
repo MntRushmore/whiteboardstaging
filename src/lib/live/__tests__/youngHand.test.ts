@@ -6,7 +6,7 @@ import { getEngine } from "../engine";
 import { analyzeColumn } from "../localSolve";
 import { isLoneRelation } from "../policy";
 import { clusterLines, medianStrokeHeight, unionRects } from "../strokeClusters";
-import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, isTickStroke, ownTicks, readYoungHand } from "../youngHand";
+import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, isTickStroke, leadingSigns, ownTicks, readYoungHand } from "../youngHand";
 import { negativeAnswers, PHOTO_HEADS, youngGlyphs, youngInk, youngLine } from "../__fixtures__/youngInk";
 import { CORPUS } from "@/__eval__/corpus";
 
@@ -246,10 +246,72 @@ describe("readYoungHand: what the engine makes of her answers once they read as 
     expect(judged("4+3", "\\approx 8")).toMatchObject({ verdict: "mismatch" });
     expect(judged("5+6", "\\smile 12")).toMatchObject({ verdict: "mismatch" });
   });
+
+  it("a negative answer keeps its minus, and is judged right — or wrong — as written", () => {
+    for (const [problem, read] of [
+      ["-3 - 7", "=-10"],
+      ["-3 - 7", "= - 10"],
+      ["-3 - 7", "-3-7=-10"],
+      ["-12 + 9", "=-3"],
+      ["-12 + 9", "\\approx -3"],
+      ["-12 + 9", "\\asymp -3"],
+      ["(-4)(-3)", "=12"],
+      ["(-6) \\times (-9)", "\\simeq 54"],
+    ]) {
+      // a minus read is a minus kept
+      expect((readYoungHand(read, ARITHMETIC).match(/-/g) ?? []).length, read).toBe((read.match(/-/g) ?? []).length);
+      expect(judged(problem, read), `${problem} | ${read}`).toMatchObject({ verdict: "ok" });
+    }
+    expect(readYoungHand("=-10", ARITHMETIC)).toBe("=-10");
+    expect(readYoungHand("\\approx -3", ARITHMETIC)).toBe("= -3");
+    // the minus is not rewritten away, nor added
+    expect(judged("-3 - 7", "=10")).toMatchObject({ verdict: "mismatch" });
+    expect(judged("-12 + 9", "=3")).toMatchObject({ verdict: "mismatch" });
+    expect(judged("(-4)(-3)", "=-12")).toMatchObject({ verdict: "mismatch" });
+  });
 });
 
-describe("negative answers: an answer's signs before its number", () => {
+describe("negative answers: the signs as the ink has them", () => {
   const board = negativeAnswers(PHOTO_HEADS);
+
+  it("leadingSigns: `= -` for an `=` and a minus apart, `=` for a wave under a bar, `-` for a minus", () => {
+    expect(leadingSigns(youngInk([...board.one.eq, ...board.one.minus, ...board.one.ten]))).toBe("=-");
+    expect(leadingSigns(youngInk([...board.three.eq, ...board.three.minus, ...board.three.three]))).toBe("=-");
+    expect(leadingSigns(youngInk([...board.four.eq, ...board.four.digits]))).toBe("=");
+    expect(leadingSigns(youngInk([...board.three.minus, ...board.three.three]))).toBe("-");
+    expect(leadingSigns(youngInk(youngLine("=7", 100, 100)))).toBe("=");
+    // a bar traced twice is one minus
+    expect(leadingSigns(youngInk([youngGlyphs.bar(100, 150, 60), youngGlyphs.bar(102, 152, 58), ...youngGlyphs.three(180, 100, 83)]))).toBe("-");
+  });
+
+  it("…and nothing for a line with no bar before its number, nothing but bars, or a 7 whose top bar is a stroke of its own", () => {
+    expect(leadingSigns(youngInk(youngLine("11", 100, 100)))).toBeNull();
+    expect(leadingSigns(youngInk([...board.one.eq, ...board.one.minus]))).toBeNull();
+    const seven = [youngGlyphs.bar(200, 100, 55), [{ x: 255, y: 100 }, { x: 240, y: 150 }, { x: 225, y: 200 }]];
+    expect(leadingSigns(youngInk([...youngGlyphs.equals(100, 130), ...seven]))).toBe("=");
+    // three bars one over another: no telling
+    expect(leadingSigns(youngInk([youngGlyphs.bar(100, 100, 50), youngGlyphs.bar(100, 120, 50), youngGlyphs.bar(100, 140, 50), ...youngGlyphs.one(180, 80, 100)]))).toBeNull();
+  });
+
+  it("in arithmetic, Mathpix's signs give way to the ink's when it read no more of them", () => {
+    const signed = (read: string, signs: string) => readYoungHand(read, { arithmetic: true, signs });
+    // a wobbly `=` read as a minus — a right 54 ringed
+    expect(signed("-54", "=")).toBe("= 54");
+    // a minus it dropped, or swapped round
+    expect(signed("=3", "=-")).toBe("= -3");
+    expect(signed("-3", "=-")).toBe("= -3");
+    expect(signed("-=3", "=-")).toBe("= -3");
+    expect(signed("10", "=-")).toBe("= -10");
+    expect(signed("54", "=")).toBe("= 54");
+    // what it read as the ink has it stands
+    expect(signed("=-10", "=-")).toBe("=-10");
+    expect(signed("=54", "=")).toBe("=54");
+    // more signs read than the ink's bars say: the read stands (a minus is never taken away)
+    expect(signed("=-3", "=")).toBe("=-3");
+    // not an answer of signs and a number, or not arithmetic: untouched
+    expect(signed("-3-7=-10", "-")).toBe("-3-7=-10");
+    expect(readYoungHand("-54", { arithmetic: false, signs: "=" })).toBe("-54");
+  });
 
   it("isSignsOnly: `-`, `=`, `= -` with no number yet", () => {
     expect(isSignsOnly(youngInk(board.two.minus))).toBe(true);

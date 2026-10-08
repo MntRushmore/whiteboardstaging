@@ -130,7 +130,7 @@ import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient"
 import { assignColumns, clusterLines, inkScale, medianStrokeHeight, rebuildFromMathShapes, unionRects, type ColumnOptions, type EchoShapeSeed } from "./strokeClusters";
 import { buildPayload, hashPayload } from "./strokePayload";
 import { captureInkCrop } from "./inkCrop";
-import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, ownTicks, readYoungHand } from "./youngHand";
+import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, leadingSigns, ownTicks, readYoungHand } from "./youngHand";
 import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
 import { nextStep as stackNextStep, parseStacked, placesLeft, rowPlaces, workStacked, type StackedWork } from "./engine/columnArithmetic";
@@ -2329,10 +2329,15 @@ export class LiveLoop implements LiveController {
   /**
    * A read of the student's line as they meant it (`youngHand.ts`): a young hand's wobbly `=` read as
    * `\smile`, `\asymp`, `\approx 7` is an `=`, and in arithmetic the tick drawn after an answer is none
-   * of it. Every read goes through it: Mathpix's, the second reader's.
+   * of it and the answer's signs are its ink's (`leadingSigns`: `-54` for a wobbly `= 54` is `= 54`).
+   * Every read goes through it: Mathpix's, the second reader's.
    */
   private youngRead(state: LiveLineState, latex: string): string {
-    return readYoungHand(latex, { arithmetic: this.arithmeticProblem(state) });
+    const arithmetic = this.arithmeticProblem(state);
+    // the signs her answer starts with, as its ink has them: a wobbly `=` is read as a minus too
+    const ink = arithmetic ? state.line.strokeIds.map((id) => this.editor.getShape(id)).map((s) => (s ? this.inkOf(s) : null)) : [];
+    const signs = arithmetic ? leadingSigns(ink.filter((s): s is InkStroke => s !== null)) : null;
+    return readYoungHand(latex, { arithmetic, signs });
   }
 
   // ---------------------------------------------------------------- the second reader
