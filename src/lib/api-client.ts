@@ -19,6 +19,18 @@ export class ApiError extends Error {
    * one conventional field, so keep the whole body for callers that know their route.
    */
   body?: Record<string, unknown>;
+  /**
+   * The server's `X-Request-Id`, when it sent one: an error a student saw is reported with it
+   * (`reportUserError`), so the admin page can join the report to the route's own event and log
+   * lines. Absent when the request never reached our handler (a platform error, a dropped request).
+   */
+  requestId?: string;
+  /**
+   * Vercel's `x-vercel-error` (`FUNCTION_INVOCATION_TIMEOUT`, `FUNCTION_INVOCATION_FAILED`, ...):
+   * the platform answered, not our route — a function killed at its maxDuration records nothing
+   * on the server, so this is the only trace of it.
+   */
+  vercelError?: string;
 
   constructor(message: string, status: number, code?: string, details?: unknown, retryAfterMs?: number) {
     super(message);
@@ -52,7 +64,34 @@ export async function apiErrorFromResponse(res: Response): Promise<ApiError> {
     retryAfterMsFrom(errBody, res.headers),
   );
   if (errBody && typeof errBody === "object") err.body = errBody as Record<string, unknown>;
+  Object.assign(err, responseTrace(res.headers));
   return err;
+}
+
+const REQUEST_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const VERCEL_ERROR = /^[A-Z0-9_]{1,64}$/;
+
+/**
+ * What a response says about where it came from, for an error report: our `X-Request-Id` and
+ * Vercel's `x-vercel-error`, each only when it has the shape it should (never anything else the
+ * headers carry).
+ */
+export function responseTrace(headers: Headers): { requestId?: string; vercelError?: string } {
+  const requestId = headers.get("X-Request-Id") ?? "";
+  const vercelError = headers.get("x-vercel-error") ?? "";
+  return {
+    ...(REQUEST_ID.test(requestId) ? { requestId } : {}),
+    ...(VERCEL_ERROR.test(vercelError) ? { vercelError } : {}),
+  };
+}
+
+/** The request id and platform error an ApiError carries, for `reportUserError` (empty otherwise). */
+export function errorTrace(err: unknown): { requestId?: string; vercelError?: string } {
+  if (!(err instanceof ApiError)) return {};
+  return {
+    ...(err.requestId ? { requestId: err.requestId } : {}),
+    ...(err.vercelError ? { vercelError: err.vercelError } : {}),
+  };
 }
 
 function retryAfterMsFrom(body: ApiErrorBody, headers: Headers): number | undefined {

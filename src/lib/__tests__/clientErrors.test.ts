@@ -383,6 +383,15 @@ describe("createUserReporter", () => {
     expect(sent[0].stack).toBeUndefined();
   });
 
+  it("sends the failed request's id and Vercel's error when they have their shape, and nothing else of them", () => {
+    const { sent, report } = userReporter();
+    report({ ...SOLVE_ERR, requestId: "4f1c2d3e-aaaa-4bbb-8ccc-123456789abc", vercelError: "FUNCTION_INVOCATION_TIMEOUT" });
+    report({ ...SOLVE_ERR, code: "other", requestId: "not an id; drop table", vercelError: "lower" });
+    expect(sent[0]).toMatchObject({ requestId: "4f1c2d3e-aaaa-4bbb-8ccc-123456789abc", vercelError: "FUNCTION_INVOCATION_TIMEOUT" });
+    expect(sent[1]).not.toHaveProperty("requestId");
+    expect(sent[1]).not.toHaveProperty("vercelError");
+  });
+
   it("takes a board id that is a uuid, else the one in the path, else none", () => {
     const other = "11111111-2222-4333-8444-555555555555";
     const onBoard = userReporter();

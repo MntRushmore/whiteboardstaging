@@ -4094,10 +4094,13 @@ export class LiveLoop implements LiveController {
     void (async () => {
       let first = true;
       let failed = false;
+      /** the stream's request id (its `meta` frame), so a failure the student sees joins the server's rows */
+      let requestId: string | undefined;
       try {
         for await (const ev of this.deps.stream(CHECK_PATH, req, { signal: ctrl.signal })) {
           if (ctrl.signal.aborted) break;
-          if (ev.event === "annotation") {
+          if (ev.event === "meta") requestId = ev.data.requestId;
+          else if (ev.event === "annotation") {
             if (first) {
               first = false;
               clientMetric("live.check.ttfa.ms", { ms: this.deps.now() - startedAt, lineId: focusLineId });
@@ -4106,7 +4109,7 @@ export class LiveLoop implements LiveController {
           } else if (ev.event === "error") {
             failed = true;
             console.warn("[live] check error", ev.data);
-            this.fail(sseFailure(ev.data), errCtx, retry);
+            this.fail(sseFailure(ev.data, { requestId }), errCtx, retry);
           }
         }
       } catch (err) {
@@ -4115,7 +4118,7 @@ export class LiveLoop implements LiveController {
           // A network failure is also deferred so a reconnect replays it once, as before.
           if (this.isNetworkFailure(err)) this.deferLlm("check", focusLineId, opts.userAsked);
           else console.warn("[live] check failed", err);
-          if (this.deps.isOnline()) this.fail(err, errCtx, retry);
+          if (this.deps.isOnline()) this.fail(err, { ...errCtx, requestId }, retry);
         }
       } finally {
         if (rt.checkAbort === ctrl) rt.checkAbort = null;
@@ -5262,10 +5265,13 @@ export class LiveLoop implements LiveController {
       let drawn = 0;
       let discarded = 0;
       const accepted: string[] = [];
+      /** the stream's request id (its `meta` frame), so a failure the student sees joins the server's rows */
+      let requestId: string | undefined;
       try {
         for await (const ev of this.deps.stream(SOLVE_PATH, req, { signal: ctrl.signal })) {
           if (ctrl.signal.aborted) break;
-          if (ev.event === "step") {
+          if (ev.event === "meta") requestId = ev.data.requestId;
+          else if (ev.event === "step") {
             const latex = unwrapBoxed(ev.data.latex);
             // The student's own line read back to them is not a step, and neither is the step
             // before it again (the model boxes its last line as the answer, often a repeat).
@@ -5292,7 +5298,7 @@ export class LiveLoop implements LiveController {
           } else if (ev.event === "error") {
             failed = true;
             console.warn("[live] solve error", ev.data);
-            this.fail(sseFailure(ev.data), errCtx, retry);
+            this.fail(sseFailure(ev.data, { requestId }), errCtx, retry);
           }
         }
         if (accepted.length > 0 && (doneEarly || !ctrl.signal.aborted)) this.writeModelSteps(built, opts, accepted);
@@ -5307,7 +5313,7 @@ export class LiveLoop implements LiveController {
           failed = true;
           if (this.isNetworkFailure(err)) this.deferLlm("solve", opts.lineId);
           else console.warn("[live] solve failed", err);
-          if (this.deps.isOnline()) this.fail(err, errCtx, retry);
+          if (this.deps.isOnline()) this.fail(err, { ...errCtx, requestId }, retry);
         }
       } finally {
         if (rt.solveAbort === ctrl) rt.solveAbort = null;

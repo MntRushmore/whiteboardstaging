@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { isApiError } from "@/lib/api-client";
+import { errorTrace, isApiError } from "@/lib/api-client";
 import type { UserErrorInput } from "@/lib/clientErrors";
 import type { LiveController } from "@/lib/live/contracts";
 import type { ChatRunReport } from "@/lib/live/chat/contracts";
@@ -66,7 +66,7 @@ export function chatFailureReport(error: ChatError, err: unknown, boardId?: stri
   let code: string = error.kind;
   if (err instanceof BoardNotReadyError) code = "board_not_ready";
   else if (error.kind === "other") code = isApiError(err) ? (err.status >= 500 ? "upstream" : err.code || `http_${err.status}`) : "unknown";
-  return { kind: "live.chat", code, message: error.message, ...(boardId ? { boardId } : {}) };
+  return { kind: "live.chat", code, message: error.message, ...(boardId ? { boardId } : {}), ...errorTrace(err) };
 }
 
 /**

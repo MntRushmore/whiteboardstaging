@@ -2,7 +2,7 @@
  * Pure mappings for the Live error surface: a thrown failure -> LiveError fields, and a
  * LiveError -> what the pill / hint card shows. No React, no store: unit-tested directly.
  */
-import { isApiError, isOutOfInk } from "@/lib/api-client";
+import { errorTrace, isApiError, isOutOfInk } from "@/lib/api-client";
 import type { LiveError, LiveErrorCode, LiveErrorKind } from "@/lib/live/liveStore";
 import { LIVE_COPY } from "./copy";
 
@@ -19,6 +19,8 @@ export interface ClassifyContext {
   /** how many times this exact call has now failed in a row (1 = first failure) */
   attempts?: number;
   userAsked?: boolean;
+  /** the stream's request id (its `meta` frame), for a failure that carries none of its own (a stalled stream) */
+  requestId?: string;
 }
 
 function readNumber(obj: unknown, key: string): number | undefined {
@@ -52,7 +54,10 @@ function withAttempts(message: string, attempts: number | undefined): string {
  *   anything else                              -> unknown
  */
 export function classifyLiveFailure(err: unknown, ctx: ClassifyContext): LiveErrorFields | null {
-  const base = { kind: ctx.kind, lineId: ctx.lineId, userAsked: ctx.userAsked };
+  // which request it was, for the report (never shown): the response's X-Request-Id, or the stream's `meta`
+  const trace: { requestId?: string; vercelError?: string } = isSseError(err) ? (err.requestId ? { requestId: err.requestId } : {}) : errorTrace(err);
+  if (!trace.requestId && ctx.requestId) trace.requestId = ctx.requestId;
+  const base = { kind: ctx.kind, lineId: ctx.lineId, userAsked: ctx.userAsked, ...trace };
   const make = (code: LiveErrorCode, message: string, extra: Partial<LiveErrorFields> = {}): LiveErrorFields => ({
     ...base,
     code,
@@ -60,7 +65,11 @@ export function classifyLiveFailure(err: unknown, ctx: ClassifyContext): LiveErr
     ...extra,
   });
 
-  if (isSseError(err)) return make("upstream", err.message?.trim() || LIVE_COPY.errors.upstream);
+  if (isSseError(err)) {
+    // the board's own verdict on a solve that answered (every step refused): its code and why, for the report
+    const reportCode = err.error === "unusable_steps" ? `unusable_steps${err.reason ? `:${err.reason}` : ""}` : undefined;
+    return make("upstream", err.message?.trim() || LIVE_COPY.errors.upstream, reportCode ? { reportCode } : {});
+  }
 
   if (isApiError(err)) {
     if (err.status === 401 || err.code === "unauthorized") return make("unauthorized", LIVE_COPY.errors.unauthorized);
@@ -92,14 +101,26 @@ export function classifyLiveFailure(err: unknown, ctx: ClassifyContext): LiveErr
   return make("unknown", LIVE_COPY.errors.unknown);
 }
 
-/** Marker for a server-sent `error` SSE frame so it can flow through the same classifier. */
+/**
+ * Marker for a server-sent `error` SSE frame so it can flow through the same classifier — or the
+ * board's own `unusable_steps` (a solve whose every step the guard refused, `reason` the first
+ * refusal's). `requestId` is the stream's (its `meta` frame), for the report.
+ */
 export interface SseFailure {
   sse: true;
   error: string;
   message: string;
+  reason?: string;
+  requestId?: string;
 }
-export function sseFailure(data: { error: string; message: string }): SseFailure {
-  return { sse: true, error: data.error, message: data.message };
+export function sseFailure(data: { error: string; message: string }, extra: { reason?: string; requestId?: string } = {}): SseFailure {
+  return {
+    sse: true,
+    error: data.error,
+    message: data.message,
+    ...(extra.reason ? { reason: extra.reason } : {}),
+    ...(extra.requestId ? { requestId: extra.requestId } : {}),
+  };
 }
 function isSseError(err: unknown): err is SseFailure {
   return typeof err === "object" && err !== null && (err as { sse?: unknown }).sse === true;

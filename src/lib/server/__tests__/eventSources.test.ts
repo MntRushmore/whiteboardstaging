@@ -336,6 +336,15 @@ describe("POST /api/client-errors: each report is an event", () => {
     expect(events()[3]).toMatchObject({ level: "warn" });
   });
 
+  it("the failed request's id is the event's request id (joined to the route's own row); Vercel's error goes in meta", async () => {
+    await clientErrors(
+      post({ ...REPORT, source: "live", kind: "live.recognize", code: "upstream", message: "The tutor service had a hiccup", requestId: "4f1c2d3e-aaaa-4bbb-8ccc-123456789abc", vercelError: "FUNCTION_INVOCATION_TIMEOUT" }),
+    );
+    expect(events()[0]).toMatchObject({ kind: "live.recognize", requestId: "4f1c2d3e-aaaa-4bbb-8ccc-123456789abc", meta: expect.objectContaining({ vercelError: "FUNCTION_INVOCATION_TIMEOUT" }) });
+    // one that is not an id is refused with the report, never stored
+    expect((await clientErrors(post({ ...REPORT, requestId: "x".repeat(65) }))).status).toBe(400);
+  });
+
   it("a board id app_events could not store is left out; a refused report is no event", async () => {
     await clientErrors(post({ ...REPORT, boardId: "------------------------------------" }));
     expect(events()[0].boardId).toBeUndefined();
