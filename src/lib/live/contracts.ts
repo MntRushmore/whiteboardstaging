@@ -647,8 +647,12 @@ export type ApiErrorBody = z.infer<typeof ApiErrorSchema>;
  * Setup (word problem → equations) is benchmark job 1: every model scored 24–25/25, so latency,
  * cost and a US primary decide — GPT-5.4 mini, with DeepSeek v4.1 Flash (25/25, cheapest) as the
  * fallback from another provider. Reread (the second reader for messy ink) is job 3: Gemini 3.1
- * Flash Lite fixed 14/18 real Mathpix misreads and broke 0/20 correct reads at ~0.9 s; Haiku 4.5
- * (another provider, also 0 breaks) is its fallback.
+ * Flash Lite and 3.5 Flash Lite tie on it (14/18 real Mathpix misreads fixed, 0/20 correct reads
+ * broken on 2026-09-27; 16/20 vs 14/20 and 71 vs 73 of 100 fixes, 0 breaks, on 2026-10-08), and
+ * Gemini 3.5 Flash Lite is the primary since 2026-10-08: 3.1's only ZDR endpoint OpenRouter routes
+ * to (google-vertex/global) was at 77 % uptime, and production saw it time out (reread 8 s, title
+ * 6 s), where 3.5's is at 99–100 % and faster (p50 0.88 vs 1.14 s). Haiku 4.5 (another provider,
+ * 0 breaks) is its fallback. docs/eval/models.md, "2026-10-08".
  */
 export const LIVE_MODELS = {
   check: "google/gemini-3.5-flash",
@@ -658,14 +662,23 @@ export const LIVE_MODELS = {
   vision: "google/gemini-3.1-flash-lite",
   setup: "openai/gpt-5.4-mini",
   setupFallback: "deepseek/deepseek-v4.1-flash",
-  reread: "google/gemini-3.1-flash-lite",
+  reread: "google/gemini-3.5-flash-lite",
   rereadFallback: "anthropic/claude-haiku-4.5",
+  /**
+   * A board's smart name (POST /api/live/title), text only. Its own pair since 2026-10-08 (it used
+   * the reread pair): Gemini 3.5 Flash Lite named 75/75 boards at 0.57 s p50 / 0.75 s p95 (3.1:
+   * 75/75, 0.82 / 1.22 s, on the unhealthy endpoint), Haiku 4.5 (Bedrock, 75/75) the fallback.
+   */
+  title: "google/gemini-3.5-flash-lite",
+  titleFallback: "anthropic/claude-haiku-4.5",
   /**
    * A hand-drawn figure (a crop) read as facts (`npm run eval:figures`, docs/eval/figures.md, 47
    * figures): Gemini 3.1 Flash Lite 47/47 right, none wrong, 1.1 s p50, ~$0.0009 a figure; Gemini 3.5
    * Flash Lite 45/47 (2 wrong) is the fallback — Haiku 4.5, the reread's fallback, wrote 4 wrong
    * answers of 47 at nearly three times the cost. Both are Google's (a US provider); OpenRouter
-   * routes each to more than one Google endpoint.
+   * routes each to more than one Google endpoint. Kept on 2026-10-08 although 3.1's endpoint was
+   * timing out: on figures it is still the most accurate (65/70 vs 59/70 on the 14 hardest, Haiku
+   * 35/70), and the 3.5 fallback answers when it does not (docs/eval/models.md, "2026-10-08").
    */
   figure: "google/gemini-3.1-flash-lite",
   figureFallback: "google/gemini-3.5-flash-lite",
