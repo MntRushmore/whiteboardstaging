@@ -19,6 +19,7 @@ import {
   inflateRect,
   inflationFor,
   isDotStroke,
+  isEqualsPair,
   isFractionBar,
   isSuperscriptOf,
   medianStrokeHeight,
@@ -557,6 +558,35 @@ describe("a young hand: its dots and the bars of its `=` do not set the size of 
       at += n;
       expect(lines.filter((l) => l.strokeIds.some((id) => ids.includes(id))).map((l) => l.strokeIds.length)).toEqual([n]);
     }
+  });
+
+  it("the two bars of an `=` are one sign however far apart, even with nothing else on the screen to size the hand by", () => {
+    // the first thing written beside the problem: a wobbly `=`, its bars 40 or 48 px apart
+    for (const gap of [40, 48]) {
+      const ink = youngInk(youngGlyphs.equals(230, 110, { gap, bowTop: 8, bowBottom: -6 }));
+      expect(clusterLines(ink), `gap ${gap}`).toHaveLength(1);
+      expect(isEqualsPair(ink[0].bounds, ink[1].bounds, ink.map((s) => s.bounds))).toBe(true);
+    }
+    // ...with a tap of the pen before it, as she wrote it
+    const tapped = youngInk([...youngGlyphs.dot(222, 114), ...youngGlyphs.equals(230, 110)]);
+    expect(clusterLines(tapped).map((l) => l.strokeIds.length)).toEqual([3]);
+  });
+
+  it("…but not two bars a row apart, bars of very different lengths, or bars with writing between them", () => {
+    const bar = (x: number, y: number, w: number): Rect => ({ x, y, w, h: 3 });
+    // a minus on each of two rows (`x - 3`, then `x - 5` under it): a row apart, further than they are long
+    expect(isEqualsPair(bar(100, 100, 18), bar(100, 150, 18), [])).toBe(false);
+    // a stacked sum's rule under a `-`: lengths 4x apart
+    expect(isEqualsPair(bar(100, 100, 30), bar(90, 130, 120), [])).toBe(false);
+    // two fraction bars with a number between them
+    const two: Rect = { x: 120, y: 112, w: 20, h: 30 };
+    expect(isEqualsPair(bar(100, 100, 60), bar(100, 150, 60), [two])).toBe(false);
+    // side by side, not one over the other
+    expect(isEqualsPair(bar(100, 100, 40), bar(160, 120, 40), [])).toBe(false);
+    // an adult's `=` is a pair too (it was joined anyway)
+    expect(isEqualsPair(bar(100, 100, 20), bar(100, 108, 20), [])).toBe(true);
+    // rows of `x - 3 = 5` written under each other stay rows
+    expect(clusterLines(toInkStrokes([...writeLine("x=4", 100, 100, 40), ...writeLine("x=4", 100, 160, 40)]))).toHaveLength(2);
   });
 
   it("…written one stroke at a time: the answer joins the `=` before it", () => {

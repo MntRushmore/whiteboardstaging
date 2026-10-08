@@ -241,6 +241,7 @@ export function isFractionBar(stroke: InkStroke, strokes: InkStroke[], medianH: 
   if (!isFlat(stroke.bounds, medianH)) return false;
   if (w < CLUSTER_RULES.barMinWidthFactor * medianH) return false;
   const h = stroke.bounds.h;
+  let blockers: Rect[] | null = null;
   for (const other of strokes) {
     if (other.id === stroke.id) continue;
     const ob = other.bounds;
@@ -249,8 +250,35 @@ export function isFractionBar(stroke: InkStroke, strokes: InkStroke[], medianH: 
     const smallerW = Math.min(w, ob.w);
     const centerGap = Math.abs(ob.y + ob.h / 2 - (stroke.bounds.y + h / 2));
     if (smallerW > 0 && xOverlap / smallerW >= 0.7 && centerGap <= 0.5 * medianH) return false;
+    // ...or a young hand's `=`, its bars further apart than that
+    blockers ??= strokes.filter((s) => !isDotStroke(s)).map((s) => s.bounds);
+    if (isEqualsPair(stroke.bounds, ob, blockers)) return false;
   }
   return true;
+}
+
+/**
+ * The two bars of one `=`, however a young hand draws them: level bars (`isLevelBar`) of about one
+ * length (within 2x), one over the other across most of the shorter, their middles no further apart
+ * than the longer is long, and nothing written between them (`others`: the strokes around, the two
+ * bars among them or not). A child's `=` is two wobbly bars 50 px long and 40 px apart: with nothing
+ * else on the screen yet to size the hand by, the bars were two lines, each a lone `-` given a "?",
+ * until the answer came. Two minus signs or `=`s on rows one above the other are a row apart, further
+ * than they are long; two fraction bars have their numbers between them.
+ */
+export function isEqualsPair(a: Rect, b: Rect, others: readonly Rect[]): boolean {
+  if (!isLevelBar(a) || !isLevelBar(b) || a.w <= 0 || b.w <= 0) return false;
+  const ratio = a.w / b.w;
+  if (ratio < 0.5 || ratio > 2) return false;
+  const x0 = Math.max(a.x, b.x);
+  const x1 = Math.min(a.x + a.w, b.x + b.w);
+  if (x1 - x0 < 0.6 * Math.min(a.w, b.w)) return false;
+  const [top, bottom] = a.y + a.h / 2 <= b.y + b.h / 2 ? [a, b] : [b, a];
+  if (bottom.y + bottom.h / 2 - (top.y + top.h / 2) > Math.max(a.w, b.w)) return false;
+  const y0 = top.y + top.h;
+  const y1 = bottom.y;
+  if (y1 <= y0) return true;
+  return !others.some((o) => o !== a && o !== b && o.x < x1 && o.x + o.w > x0 && o.y < y1 && o.y + o.h > y0);
 }
 
 function shouldJoin(a: Rect, b: Rect, medianH: number): boolean {
@@ -397,6 +425,7 @@ export function clusterStrokeGroups(strokes: InkStroke[]): number[][] {
       if (isDotOf(raw[i], raw[j], medianH) || isDotOf(raw[j], raw[i], medianH)) uf.union(i, j);
     }
   }
+  joinEqualsPairs(uf, strokes, raw, order);
   mergeClusters(uf, raw, medianH);
   const groups = new Map<number, number[]>();
   for (let i = 0; i < n; i++) {
@@ -406,6 +435,27 @@ export function clusterStrokeGroups(strokes: InkStroke[]): number[][] {
     else groups.set(root, [i]);
   }
   return [...groups.values()];
+}
+
+/**
+ * The bars of each `=` are one sign however far apart a young hand draws them (`isEqualsPair`): a
+ * reach of their own, the bars' length, not the glyph size's. `order`: the strokes top to bottom.
+ */
+function joinEqualsPairs(uf: UnionFind, strokes: readonly InkStroke[], raw: readonly Rect[], order: readonly number[]): void {
+  const bars = order.filter((i) => isLevelBar(raw[i]) && raw[i].w > 0 && !isDotStroke(strokes[i]));
+  if (bars.length < 2) return;
+  let others: Rect[] | null = null;
+  for (let s = 0; s < bars.length; s++) {
+    const i = bars[s];
+    for (let t = s + 1; t < bars.length; t++) {
+      const j = bars[t];
+      // a pair's middles are at most the longer bar's length apart, and that is at most twice this one
+      if (raw[j].y - (raw[i].y + raw[i].h) > 2 * raw[i].w) break;
+      if (uf.find(i) === uf.find(j)) continue;
+      others ??= strokes.filter((st) => !isDotStroke(st)).map((st) => st.bounds);
+      if (isEqualsPair(raw[i], raw[j], others)) uf.union(i, j);
+    }
+  }
 }
 
 /**
