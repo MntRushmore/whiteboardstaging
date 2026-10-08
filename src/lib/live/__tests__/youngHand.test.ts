@@ -8,6 +8,7 @@ import { isLoneRelation } from "../policy";
 import { clusterLines, medianStrokeHeight, unionRects } from "../strokeClusters";
 import { answerAfterRestatedEnd, isSpeckLine, isTickStroke, ownTicks, readYoungHand } from "../youngHand";
 import { youngGlyphs, youngInk, youngLine } from "../__fixtures__/youngInk";
+import { CORPUS } from "@/__eval__/corpus";
 
 const ARITHMETIC = { arithmetic: true };
 const ANYWHERE = { arithmetic: false };
@@ -96,6 +97,15 @@ describe("readYoungHand: a wobbly `=` as Mathpix reads it", () => {
     // ...not in algebra, where `2v` is two v's
     expect(readYoungHand("x = 2v", ANYWHERE)).toBe("x = 2v");
     expect(readYoungHand("=9 \\vee", ANYWHERE)).toBe("=9 \\vee");
+  });
+
+  it("leaves every line of the eval corpus as it is (algebra, geometry, trigonometry, calculus, statistics …)", () => {
+    const changed: string[] = [];
+    for (const p of CORPUS) {
+      const arithmetic = p.lines.every((l) => !/[a-zA-Z\\]/.test(l.replace(/\\(?:frac|dfrac|times|div|cdot|left|right)/g, "")) && /\d/.test(l));
+      for (const l of p.lines) if (readYoungHand(l, { arithmetic }) !== l) changed.push(`${p.id}: ${l}`);
+    }
+    expect(changed).toEqual([]);
   });
 
   it("a read with nothing to change is returned as it came", () => {
