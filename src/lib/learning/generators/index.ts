@@ -9,11 +9,13 @@ import { CALCULUS } from "./calculus";
 import type { Form, FormTable } from "./form";
 import { FUNCTIONS } from "./functions";
 import { GEOMETRY } from "./geometry";
+import { drawLadderFrom, type Ladder } from "./ladder";
 import { makeRng, seedFrom } from "./rng";
 import { SCIENCE } from "./science";
 import { TRIG } from "./trig";
 
 export type { Form, FormTable } from "./form";
+export { difficultyOf, type Ladder } from "./ladder";
 
 export const GENERATORS: FormTable = { ...ARITHMETIC, ...ALGEBRA, ...FUNCTIONS, ...GEOMETRY, ...TRIG, ...CALCULUS, ...SCIENCE };
 
@@ -49,4 +51,12 @@ export function drawProblems(skill: string, count: number, seed: number): Practi
     out.push([...problem]);
   }
   return out;
+}
+
+/**
+ * A topic's ladder (`ladder.ts`): `count` problems from easy to hard and a few worked-example
+ * candidates from the easiest form, none repeated. Same seed, same ladder.
+ */
+export function drawLadder(skill: string, count: number, seed: number): Ladder {
+  return drawLadderFrom(skill, formsFor(skill), Math.min(MAX_PRACTICE, count), seed);
 }

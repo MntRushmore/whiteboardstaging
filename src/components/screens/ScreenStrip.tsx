@@ -1,10 +1,11 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { BookOpen, ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { PORTRAIT_BREAKPOINT, useBreakpoint, useEditor, useValue } from "tldraw";
 import { liveStore } from "@/lib/live/liveStore";
 import { addScreen, deleteScreen, goToScreen, MAX_SCREENS, screenPosition } from "@/lib/screens/screens";
+import { topicSheetOpen } from "@/components/topics/topicSheetState";
 
 export const SCREEN_COPY = {
   label: (index: number, count: number) => `Screen ${index} of ${count}`,
@@ -15,6 +16,8 @@ export const SCREEN_COPY = {
   remove: "Delete this screen",
   removed: (index: number) => `Screen ${index} deleted`,
   undo: "Undo",
+  topic: "New topic",
+  topicHint: "Pick a topic: a worked example, then a few to try, on a new screen",
 } as const;
 
 /**
@@ -29,18 +32,21 @@ export function screenStripSlot(breakpoint: number): "bottom" | "corner" {
 
 const buttonClass =
   "inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent dark:text-slate-200 dark:hover:bg-slate-800";
+/** New topic, with its words where the strip has room (the bottom of a tablet or a desktop board) */
+const topicButtonClass =
+  "inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent dark:text-slate-200 dark:hover:bg-slate-800";
 
 /** ‹ 2 / 5 › + — moves between the board's fixed screens (tldraw pages). The NavigationPanel slot. */
 export function ScreenStrip() {
-  return screenStripSlot(useBreakpoint()) === "bottom" ? <Strip /> : null;
+  return screenStripSlot(useBreakpoint()) === "bottom" ? <Strip wide /> : null;
 }
 
 /** The same strip in the top-right corner of a narrow board (tldraw's SharePanel slot). */
 export function ScreenStripCorner() {
-  return screenStripSlot(useBreakpoint()) === "corner" ? <Strip /> : null;
+  return screenStripSlot(useBreakpoint()) === "corner" ? <Strip wide={false} /> : null;
 }
 
-function Strip() {
+function Strip({ wide }: { wide: boolean }) {
   const editor = useEditor();
   const pageIds = useValue("screen ids", () => editor.getPages().map((p) => p.id), [editor]);
   const current = useValue("current screen", () => editor.getCurrentPageId(), [editor]);
@@ -70,6 +76,19 @@ function Strip() {
         onClick={() => addScreen(editor)}
       >
         <Plus className="h-4 w-4" />
+      </button>
+      {/* a topic: its worked example and problems, on a new screen (TopicSheet, loaded on the first tap) */}
+      <button
+        type="button"
+        className={wide ? topicButtonClass : buttonClass}
+        aria-label={SCREEN_COPY.topic}
+        aria-haspopup="dialog"
+        title={full ? SCREEN_COPY.full : SCREEN_COPY.topicHint}
+        disabled={full}
+        onClick={() => topicSheetOpen.set(true)}
+      >
+        <BookOpen className="h-4 w-4" />
+        {wide && <span aria-hidden>{SCREEN_COPY.topic}</span>}
       </button>
       {/* a screen added by mistake (or finished with) goes; the toast brings it back */}
       {count > 1 && (

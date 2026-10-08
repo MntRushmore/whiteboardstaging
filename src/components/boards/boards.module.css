@@ -401,6 +401,12 @@
   background: color-mix(in oklch, var(--border-strong) 24%, var(--surface));
   animation: boards-pulse 1.8s var(--ease-in-out) 11 both;
 }
+/* Holds the topic picker's place (Up next and the words box) while its code loads. */
+.topicFallback {
+  height: 17rem;
+  margin-bottom: var(--space-10);
+  border-radius: var(--radius-panel);
+}
 .skeletonHeading {
   width: 4rem;
   height: var(--space-4);

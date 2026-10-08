@@ -4,6 +4,7 @@ import {
   Tldraw,
   useBreakpoint,
   useEditor,
+  useValue,
   type TLAssetId,
   DefaultColorThemePalette,
   type TLUiOverrides,
@@ -85,6 +86,9 @@ import { useLecture } from "@/components/lecture/useLecture";
 import { LectureBar } from "@/components/lecture/LectureBar";
 import { browserStorage as onboardingStorage, isGuidedBoard } from "@/lib/onboarding/marker";
 import { hasPracticeMarker } from "@/lib/learning/practiceMarker";
+import { clearAskKickoff, readAskKickoff } from "@/lib/boards/askKickoff";
+import { topicSheetOpen } from "@/components/topics/topicSheetState";
+import type { ChatKickoff } from "@/components/chat/BoardChatPanel";
 import { attachKeyboardFit, browserKeyboardFitEnv } from "@/components/board/keyboardFit";
 import { useBoardLearning } from "@/components/learning/useBoardLearning";
 
@@ -108,6 +112,8 @@ const ProblemHighlight = React.lazy(() => import("@/components/live/ProblemHighl
 // (the Progress page's marker): both load after the board, the second only on a practice board.
 const NowYouTry = React.lazy(() => import("@/components/learning/NowYouTry"));
 const PracticeBoard = React.lazy(() => import("@/components/learning/PracticeBoard"));
+// New topic (the screen strip's button): the topic picker as a sheet, loaded on the first tap.
+const TopicSheet = React.lazy(() => import("@/components/topics/TopicSheet"));
 
 /** The help tabs: 6 px of padding on a board under 768 px (a 10.2" iPad sideways with Ask docked), 8 px from there. */
 const HELP_TAB_CLASS = "px-1.5 @3xl/bar:px-2";
@@ -220,6 +226,28 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   const [tourHelpAsk, setTourHelpAsk] = useState<{ n: number; ok: boolean } | null>(null);
   // a practice board opened from the Progress page: its problems are written once (PracticeBoard)
   const [practiceBoard] = useState(() => hasPracticeMarker(id));
+  // words from the topic picker ("What do you want to work on?"): Ask opens and sends them once
+  const [kickoff, setKickoff] = useState<ChatKickoff | null>(() => {
+    const k = readAskKickoff(id);
+    return k ? { id: 1, message: k.message } : null;
+  });
+  const { onOpenChange: openChat } = chat;
+  useEffect(() => {
+    if (kickoff) openChat(true);
+  }, [kickoff, openChat]);
+  const askTutor = useCallback((message: string) => setKickoff((k) => ({ id: (k?.id ?? 0) + 1, message })), []);
+  // New topic: the sheet is mounted from its first opening on (so it can close with its own motion)
+  const topicOpen = useValue("topic sheet open", () => topicSheetOpen.get(), []);
+  const [topicMounted, setTopicMounted] = useState(false);
+  useEffect(() => {
+    if (topicOpen) setTopicMounted(true);
+  }, [topicOpen]);
+  useEffect(
+    () => () => {
+      topicSheetOpen.set(false);
+    },
+    [],
+  );
 
   // Live Math layer: per-device switch (localStorage) gated by the deploy-time kill switch.
   const { settings: live, update: updateLive } = useLiveSettings();
@@ -295,12 +323,15 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
           // the back button instead: the screen strip takes that corner (screenStripSlot).
           flexWrap: narrowBoard ? 'wrap' : 'nowrap',
           maxWidth: 'calc(100% - 72px)',
+          // the wrapped bar's empty space is no target: on a phone the screen strip in the corner
+          // sits under it (its ‹ › + and New topic were not tappable); the controls take taps
+          pointerEvents: 'none',
         }}
       >
         <Button
           variant="ghost"
           size="icon"
-          className="shrink-0"
+          className="pointer-events-auto shrink-0"
           aria-label="Back to my whiteboards"
           onClick={() => router.push("/")}
         >
@@ -314,7 +345,7 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
           nor a long status ever pushes the other controls onto a second row (Solve's steps
           button still wraps the status end there).
         */}
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5 @5xl/bar:gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5 *:pointer-events-auto @5xl/bar:gap-2">
           <Tabs
             value={assistanceMode}
             onValueChange={(value) => {
@@ -500,11 +531,18 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
           </React.Suspense>
         </LiveErrorBoundary>
       )}
+      {topicMounted && user && (
+        <LiveErrorBoundary>
+          <React.Suspense fallback={null}>
+            <TopicSheet boardId={id} userId={user.id} controller={controller} onModeChange={setAssistanceMode} onAsk={askTutor} />
+          </React.Suspense>
+        </LiveErrorBoundary>
+      )}
       {chat.open &&
         chat.host &&
         createPortal(
           <LiveErrorBoundary>
-            <BoardChatPanel boardId={id} controller={controller} onClose={() => chat.onOpenChange(false)} />
+            <BoardChatPanel boardId={id} controller={controller} onClose={() => chat.onOpenChange(false)} kickoff={kickoff} onKickoffSent={() => clearAskKickoff(id)} />
           </LiveErrorBoundary>,
           chat.host,
         )}

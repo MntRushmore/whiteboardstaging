@@ -10,10 +10,46 @@ import { useBoardChat } from "./useBoardChat";
 import { hasPlan, isUnlimited } from "@/lib/billing/unlimited";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
 
+/** Words to send as soon as the panel is up (the topic picker's "What do you want to work on?"). */
+export interface ChatKickoff {
+  /** a new id sends again (the board's New topic sheet, a second time) */
+  id: number;
+  message: string;
+}
+
 interface BoardChatPanelProps {
   boardId: string;
   controller: LiveController;
   onClose: () => void;
+  kickoff?: ChatKickoff | null;
+  /** the kickoff is being sent (the board clears its marker: a reload never sends it twice) */
+  onKickoffSent?: () => void;
+}
+
+/** A moment after the panel opens, so the board's loop is up when the words go. */
+export const KICKOFF_DELAY_MS = 400;
+/** Kickoffs sent in this tab (`<boardId>:<id>`): React's development double effects send once. */
+const sentKickoffs = new Set<string>();
+
+/**
+ * Sends a kickoff's words once, `delayMs` from now (the panel's effect; its cleanup cancels a send
+ * not yet made). A kickoff already sent in this tab is never sent again: a remount, or React's
+ * development double effects, start it twice.
+ */
+export function startKickoff(key: string | null, text: string, act: { send: (text: string) => void; sent?: () => void }, delayMs: number = KICKOFF_DELAY_MS): () => void {
+  if (!key || !text.trim() || sentKickoffs.has(key)) return () => {};
+  const timer = setTimeout(() => {
+    if (sentKickoffs.has(key)) return;
+    sentKickoffs.add(key);
+    act.sent?.();
+    act.send(text);
+  }, delayMs);
+  return () => clearTimeout(timer);
+}
+
+/** Forget the kickoffs sent in this tab (tests). */
+export function resetKickoffs(): void {
+  sentKickoffs.clear();
 }
 
 /** Running out of ink: the board dialog's panel (the packs to buy), fetched only when a 402 arrives. */
@@ -27,7 +63,7 @@ export const CHAT_TOGGLE_ATTR = "data-chat-toggle";
  * a one-line reply. Docked on the right on a desktop, a bottom sheet on a phone (the page lays it
  * out; this is its content). The words stay here — the board only ever gets maths.
  */
-export function BoardChatPanel({ boardId, controller, onClose }: BoardChatPanelProps) {
+export function BoardChatPanel({ boardId, controller, onClose, kickoff, onKickoffSent }: BoardChatPanelProps) {
   // What an ask costs, only where asks spend ink: a plan not giving free help right now. Not for
   // a subscriber (unlimited), nor on the guided first board (no plan: its starter ink is the tour's).
   const plan = useUnlimited().state;
@@ -37,6 +73,17 @@ export function BoardChatPanel({ boardId, controller, onClose }: BoardChatPanelP
   const panelRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // the topic picker's words, sent once as the student's first ask
+  const sendRef = useRef(send);
+  const sentRef = useRef(onKickoffSent);
+  useEffect(() => {
+    sendRef.current = send;
+    sentRef.current = onKickoffSent;
+  });
+  const kickoffId = kickoff ? `${boardId}:${kickoff.id}` : null;
+  const kickoffText = kickoff?.message ?? "";
+  useEffect(() => startKickoff(kickoffId, kickoffText, { send: (text) => void sendRef.current(text), sent: () => sentRef.current?.() }), [kickoffId, kickoffText]);
 
   // the newest message in view
   useEffect(() => {
