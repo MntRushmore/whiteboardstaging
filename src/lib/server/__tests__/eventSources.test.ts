@@ -285,6 +285,15 @@ describe("POST /api/client-errors: each report is an event", () => {
     expect(events()[3]).toMatchObject({ level: "warn" });
   });
 
+  it("noise (isNoise) from a tab on an older release is no event", async () => {
+    const injected = { ...REPORT, message: "ReferenceError: Can't find variable: __firefox__", stack: "global code@https://www.agathon.app/login:1:12", path: "/login" };
+    expect((await clientErrors(post(injected))).status).toBe(204);
+    expect((await clientErrors(post({ ...REPORT, message: "TypeError: x", stack: "f@webkit-masked-url://hidden/:1:1" }))).status).toBe(204);
+    expect(events()).toHaveLength(0);
+    await clientErrors(post({ ...injected, message: "TypeError: x is undefined", stack: `${injected.stack}\nsubmit@https://www.agathon.app/_next/static/chunks/b.js:4:5` }));
+    expect(events()).toHaveLength(1);
+  });
+
   it("a board id app_events could not store is left out; a refused report is no event", async () => {
     await clientErrors(post({ ...REPORT, boardId: "------------------------------------" }));
     expect(events()[0].boardId).toBeUndefined();

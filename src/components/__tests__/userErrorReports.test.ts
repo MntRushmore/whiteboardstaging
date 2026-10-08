@@ -63,8 +63,8 @@ describe("the board load screen (live.load)", () => {
     expect(JSON.stringify(restore)).not.toContain("unknown record type");
   });
 
-  it("a board that is not there is a warning; the crash screen reports the crash itself instead", () => {
-    expect(loadErrorReport({ kind: "not-found", message: BOARD_LOAD_COPY.notFoundTitle })).toEqual({ kind: "live.load", code: "not_found", message: BOARD_LOAD_COPY.notFoundTitle, level: "warn" });
+  it("a board that is not there (deleted, not yours) is info, not an app error; the crash screen reports the crash itself instead", () => {
+    expect(loadErrorReport({ kind: "not-found", message: BOARD_LOAD_COPY.notFoundTitle })).toEqual({ kind: "live.load", code: "not_found", message: BOARD_LOAD_COPY.notFoundTitle, level: "info" });
     expect(loadErrorReport({ kind: "error", message: BOARD_LOAD_COPY.crashTitle, detail: "x is undefined" })).toBeNull();
   });
 });

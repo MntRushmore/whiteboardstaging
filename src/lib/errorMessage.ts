@@ -46,13 +46,19 @@ export function isClockSkewError(err: unknown): boolean {
   );
 }
 
-/** True when the request never reached a server (offline, DNS, CORS, abort). */
+/**
+ * True when the request never reached a server (offline, DNS, CORS, abort). supabase-js hands a
+ * failed fetch back as a plain object with no code and the fetch error's name in its words
+ * ("TypeError: Load failed"), so the name is read past.
+ */
 export function isNetworkError(err: unknown): boolean {
   const e = asErrorLike(err);
   const name = typeof e.name === "string" ? e.name : "";
   if (name === "AuthRetryableFetchError") return true;
   if (e.status === 0) return true;
-  const msg = messageOf(err).toLowerCase();
+  const msg = messageOf(err)
+    .toLowerCase()
+    .replace(/^(?:typeerror|fetcherror):\s*/, "");
   if (err instanceof TypeError && /fetch|network|load failed/.test(msg)) return true;
   return (
     msg === "failed to fetch" ||

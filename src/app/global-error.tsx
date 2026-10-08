@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
+import { CHUNK_RELOAD_COPY, useChunkReload } from "@/lib/chunkReload";
 import { reportAppError } from "@/lib/reportAppError";
 
 export default function GlobalError({
@@ -11,10 +12,13 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  // A chunk of an older release (a deploy since this page loaded): reload once, not a crash.
+  const reloading = useChunkReload(error);
   useEffect(() => {
+    if (reloading) return;
     console.error("[global error boundary]", error);
     reportAppError("global", error, error.digest);
-  }, [error]);
+  }, [error, reloading]);
 
   return (
     <html lang="en">
@@ -32,60 +36,66 @@ export default function GlobalError({
           padding: 16,
         }}
       >
-        <div
-          style={{
-            maxWidth: 420,
-            width: "100%",
-            background: "#fff",
-            border: "1px solid #e5e5e5",
-            borderRadius: 12,
-            padding: 24,
-            boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-          }}
-        >
-          <h1 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 8px" }}>
-            Agathon crashed
-          </h1>
-          <p style={{ fontSize: 14, color: "#525252", margin: "0 0 16px" }}>
-            A fatal error prevented the app from rendering. Reloading usually
-            fixes it.
+        {reloading ? (
+          <p role="status" style={{ fontSize: 14, color: "#525252", margin: 0 }}>
+            {CHUNK_RELOAD_COPY}
           </p>
-          {error.digest && (
-            <p style={{ fontSize: 12, color: "#737373", margin: "0 0 16px" }}>
-              Reference: <code>{error.digest}</code>
+        ) : (
+          <div
+            style={{
+              maxWidth: 420,
+              width: "100%",
+              background: "#fff",
+              border: "1px solid #e5e5e5",
+              borderRadius: 12,
+              padding: 24,
+              boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+            }}
+          >
+            <h1 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 8px" }}>
+              Agathon crashed
+            </h1>
+            <p style={{ fontSize: 14, color: "#525252", margin: "0 0 16px" }}>
+              A fatal error prevented the app from rendering. Reloading usually
+              fixes it.
             </p>
-          )}
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              type="button"
-              onClick={() => reset()}
-              style={{
-                background: "#171717",
-                color: "#fff",
-                border: 0,
-                borderRadius: 6,
-                padding: "8px 14px",
-                fontSize: 14,
-                cursor: "pointer",
-              }}
-            >
-              Try again
-            </button>
-            <Link
-              href="/"
-              style={{
-                border: "1px solid #e5e5e5",
-                borderRadius: 6,
-                padding: "8px 14px",
-                fontSize: 14,
-                color: "#171717",
-                textDecoration: "none",
-              }}
-            >
-              Go home
-            </Link>
+            {error.digest && (
+              <p style={{ fontSize: 12, color: "#737373", margin: "0 0 16px" }}>
+                Reference: <code>{error.digest}</code>
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => reset()}
+                style={{
+                  background: "#171717",
+                  color: "#fff",
+                  border: 0,
+                  borderRadius: 6,
+                  padding: "8px 14px",
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                Try again
+              </button>
+              <Link
+                href="/"
+                style={{
+                  border: "1px solid #e5e5e5",
+                  borderRadius: 6,
+                  padding: "8px 14px",
+                  fontSize: 14,
+                  color: "#171717",
+                  textDecoration: "none",
+                }}
+              >
+                Go home
+              </Link>
+            </div>
           </div>
-        </div>
+        )}
       </body>
     </html>
   );

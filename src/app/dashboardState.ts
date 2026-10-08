@@ -5,6 +5,7 @@
  */
 
 import { isDefaultBoardTitle } from "@/lib/boards/boardTitle";
+import { isNetworkError } from "@/lib/errorMessage";
 
 export type DashboardState = "loading" | "error" | "empty" | "list";
 
@@ -46,6 +47,38 @@ export const DASHBOARD_COPY = {
   noMatchesTitle: "No boards match your search",
   noMatchesHint: "Try another word, or clear the search.",
 } as const;
+
+/**
+ * The code a failed board action is reported with (`live.boards`): the database's own code when it
+ * answered (`load_failed_pgrst301`), `_network` when the request never reached it (no connection
+ * for a moment, a phone waking up: `load_failed_network`), else the action's alone. Never the
+ * error's words.
+ */
+export function boardsErrorCode(base: string, error: unknown): string {
+  const pg = (error as { code?: unknown } | null)?.code;
+  if (typeof pg === "string" && pg) return `${base}_${pg}`;
+  return isNetworkError(error) ? `${base}_network` : base;
+}
+
+/** The pause before the board list is read again after a request that never reached the database. */
+export const BOARDS_RETRY_MS = 1000;
+
+const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * `read`, and once more after `delayMs` when it failed for the network (`isNetworkError`): a
+ * dropped request is usually gone a second later, and the student should not see an error for it.
+ * Any other failure, or the second one, is thrown.
+ */
+export async function retryOnNetworkError<T>(read: () => Promise<T>, { delayMs = BOARDS_RETRY_MS, sleep = pause } = {}): Promise<T> {
+  try {
+    return await read();
+  } catch (error) {
+    if (!isNetworkError(error)) throw error;
+    await sleep(delayMs);
+    return read();
+  }
+}
 
 // ---------------------------------------------------------------------------
 // The board list: search, sort, recency groups, "Edited 2 h ago", thumbnails
