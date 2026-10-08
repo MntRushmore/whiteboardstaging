@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TLRecord } from "tldraw";
 import { diffRecords } from "../diff";
-import { formatClock, formatRealTime, formatSize } from "../format";
+import { formatClock, formatRealTime, formatSize, screenName } from "../format";
 import { KID_REPLAY_COPY, replaySummary, summaryLine, summaryParts, workMinutes } from "../summary";
 import { syntheticBoard } from "../synthetic";
 import { pageThumbnailSvg, svgDataUrl } from "../thumbnail";
@@ -65,6 +65,11 @@ describe("format", () => {
     expect(formatSize(840)).toBe("840 KB");
     expect(formatSize(1229)).toBe("1.2 MB");
     expect(formatSize(20_480)).toBe("20 MB");
+  });
+
+  it("a screen is named by its place, as the board's strip names it (never tldraw's \"Page 1\")", () => {
+    expect(screenName(1)).toBe("Screen 1");
+    expect(screenName(12)).toBe("Screen 12");
   });
 });
 
