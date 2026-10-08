@@ -23,6 +23,8 @@ export function kidSpeed(durationMs: number): number {
 
 /** how long a cheer stays up (the `celebrate-pop` animation) */
 const CHEER_MS = 2200;
+/** a cheer's bubble needs about this much room to its right */
+const BUBBLE_ROOM = 172;
 
 /** The tutor's ticks cheered again as the replay draws them: the board's own words and confetti. */
 function useReplayCheers(playerRef: { current: ReplayPlayer | null }) {
@@ -38,6 +40,7 @@ function useReplayCheers(playerRef: { current: ReplayPlayer | null }) {
     return () => live.forEach((t) => clearTimeout(t));
   }, []);
 
+  const clear = useCallback(() => setPops([]), []);
   const reset = useCallback(() => {
     state.current = INITIAL_CELEBRATE;
     marks.current = new Set();
@@ -63,10 +66,13 @@ function useReplayCheers(playerRef: { current: ReplayPlayer | null }) {
         if (!shape || shape.parentId !== (editor.getCurrentPageId() as TLPageId)) continue;
         const b = editor.getShapePageBounds(shape);
         if (!b) continue;
-        const p = editor.pageToScreen({ x: b.maxX + 12, y: b.midY });
         const v = editor.getViewportScreenBounds();
-        const x = Math.min(Math.max(p.x, v.x + 12), v.x + v.w - 212);
-        const y = Math.min(Math.max(p.y, v.y + 40), v.y + v.h - 40);
+        // beside the tick when there is room (as on the board), else just above it (a phone)
+        const right = editor.pageToScreen({ x: b.maxX + 12, y: b.midY });
+        const above = editor.pageToScreen({ x: b.midX, y: b.minY });
+        const beside = v.x + v.w - right.x >= BUBBLE_ROOM;
+        const x = Math.min(Math.max(beside ? right.x : above.x - 60, v.x + 12), v.x + v.w - BUBBLE_ROOM);
+        const y = Math.min(Math.max(beside ? right.y : above.y - 30, v.y + 40), v.y + v.h - 40);
         const id = ++seq.current;
         const pieces = cheer.burst === "big" ? confettiPieces(36, 110) : confettiPieces(16, 64);
         setPops((all) => [...all.slice(-2), { id, cheer, x, y, pieces }]);
@@ -81,8 +87,11 @@ function useReplayCheers(playerRef: { current: ReplayPlayer | null }) {
     [playerRef],
   );
 
-  return { pops, said, onItems, reset };
+  return { pops, said, onItems, reset, clear };
 }
+
+/** the end card waits this long after the replay ends, so its last cheer is seen first */
+const DONE_DELAY_MS = 1200;
 
 function SpeedIcon({ speed }: { speed: number }) {
   if (speed <= 2) return <Turtle className="size-5" aria-hidden />;
@@ -179,12 +188,17 @@ export default function KidReplay({ editor, boardId, onClose }: { editor: Editor
   const empty = timeline.items.length === 0;
   const playButton = useRef<HTMLButtonElement>(null);
 
-  // the board underneath stops listening to the keyboard while the replay is up
+  // the board underneath stops listening to the keyboard while the replay is up, and Tab stays in
+  // the replay (the board's page is inert behind it)
   useEffect(() => {
     const wasFocused = editor.getInstanceState().isFocused;
     editor.blur({ blurContainer: false });
+    const root = document.querySelector<HTMLElement>("[data-board-root]");
+    const wasInert = root?.inert ?? false;
+    if (root) root.inert = true;
     playButton.current?.focus();
     return () => {
+      if (root) root.inert = wasInert;
       if (wasFocused) editor.focus({ focusContainer: false });
     };
   }, [editor]);
@@ -194,6 +208,19 @@ export default function KidReplay({ editor, boardId, onClose }: { editor: Editor
     player.seek(0);
     player.play();
   }, [cheers, player]);
+
+  // the card, a moment after each time the replay plays to its end (its last cheer first)
+  const [cardFor, setCardFor] = useState(0);
+  const { clear: clearCheers } = cheers;
+  useEffect(() => {
+    if (!state.ended || state.endings === 0) return;
+    const timer = setTimeout(() => {
+      clearCheers();
+      setCardFor(state.endings);
+    }, DONE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [state.ended, state.endings, clearCheers]);
+  const showCard = state.ended && cardFor === state.endings && !empty;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -246,13 +273,17 @@ export default function KidReplay({ editor, boardId, onClose }: { editor: Editor
 
       <main className="relative min-h-0 flex-1 px-3 sm:px-4">
         <div className="relative h-full overflow-hidden rounded-3xl bg-white shadow-xl ring-1 ring-violet-100">
-          <ReplayCanvas player={player} className="absolute inset-0" />
+          {/* one white card: no table round the screen, no screen edge (the camera holds the ink) */}
+          <ReplayCanvas
+            player={player}
+            className="absolute inset-0 [&_.tl-background]:bg-white! **:data-[testid=screen-frame]:border-transparent! **:data-[testid=screen-frame]:bg-white! **:data-[testid=screen-frame]:shadow-none!"
+          />
           {empty && (
             <div className="absolute inset-0 grid place-items-center p-6 text-center">
               <p className="max-w-xs text-lg font-semibold text-gray-700">{KID_REPLAY_COPY.empty}</p>
             </div>
           )}
-          {state.ended && !empty && <DoneCard summary={summary} onAgain={again} onClose={onClose} />}
+          {showCard && <DoneCard summary={summary} onAgain={again} onClose={onClose} />}
         </div>
       </main>
 

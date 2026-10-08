@@ -29,6 +29,8 @@ export interface PlayerState {
   pageId: string | null;
   /** the replay reached its end (by playing) */
   ended: boolean;
+  /** how many times it has played to its end (the student's card shows once per ending) */
+  endings: number;
   /** bumped each time the replay moves to another screen (the UI fades it in) */
   pageTurns: number;
 }
@@ -93,6 +95,7 @@ export class ReplayPlayer {
       durationMs: timeline.durationMs,
       pageId: board.currentPageId,
       ended: false,
+      endings: 0,
       pageTurns: 0,
     };
   }
@@ -151,8 +154,9 @@ export class ReplayPlayer {
     editor.updateInstanceState({ isReadonly: true });
     editor.setCurrentTool("hand");
     this.stage = new ReplayStage(editor.store, this.board.records, this.timeline);
-    // every screen's rect, from its meta or (a board from before screens) from all its ink
-    this.stage.showAll();
+    // the whole board goes on the store once; every screen's rect, from its meta or (a board from
+    // before screens) from all its ink
+    this.stage.mount(frameAt(this.timeline, Infinity));
     this.screens = new Map(editor.getPages().map((p) => [p.id, this.screenOf(p.id)]));
     if (this.opts.fit === "ink") {
       for (const [id, screen] of this.screens) {
@@ -213,14 +217,14 @@ export class ReplayPlayer {
 
   /**
    * `fit: "ink"`: the part of the screen with ink on it, a little room round it, and never less than
-   * half the screen each way (one small sum stays a sum, not a poster). Null with no ink.
+   * a third of the screen each way (one small sum stays a sum, not a poster). Null with no ink.
    */
   private inkOf(pageId: string, screen: ScreenMeta): ScreenMeta | null {
     const ink = this.contentOf(pageId);
     if (!ink) return null;
     const pad = 48;
-    const w = Math.min(screen.w, Math.max(ink.w + 2 * pad, screen.w / 2));
-    const h = Math.min(screen.h, Math.max(ink.h + 2 * pad, screen.h / 2));
+    const w = Math.min(screen.w, Math.max(ink.w + 2 * pad, screen.w / 3));
+    const h = Math.min(screen.h, Math.max(ink.h + 2 * pad, screen.h / 3));
     const cx = ink.x + ink.w / 2;
     const cy = ink.y + ink.h / 2;
     // inside the screen where it can be, so the frame's edge does not show for nothing
@@ -287,7 +291,7 @@ export class ReplayPlayer {
     this.lastTick = now;
     const ms = Math.min(this.state.durationMs, this.state.ms + dt * this.state.speed);
     const ended = ms >= this.state.durationMs;
-    this.state = { ...this.state, ms, ended, playing: !ended };
+    this.state = { ...this.state, ms, ended, playing: !ended, endings: this.state.endings + (ended ? 1 : 0) };
     this.render({ seek: false });
     for (const fn of [...this.listeners]) fn();
     if (!ended) this.raf = requestAnimationFrame(this.tick);

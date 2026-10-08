@@ -57,13 +57,13 @@ function strokePath(props: Record<string, unknown>): string {
   return d;
 }
 
-function shapeSvg(s: Shape, children: string): string {
+function shapeSvg(s: Shape, children: string, minStroke: number): string {
   const p = s.props;
   let body = "";
   if (s.type === "draw" || s.type === "highlight") {
     const d = strokePath(p);
     if (d) {
-      const w = (STROKE[String(p.size)] ?? 4.5) * num(p.scale, 1) * (s.type === "highlight" ? 4 : 1);
+      const w = Math.max(minStroke, (STROKE[String(p.size)] ?? 4.5) * num(p.scale, 1) * (s.type === "highlight" ? 4 : 1));
       const color = INK[String(p.color)] ?? INK.black;
       body = `<path d="${d}" fill="none" stroke="${color}" stroke-width="${r1(w)}" stroke-linecap="round" stroke-linejoin="round"${s.type === "highlight" ? ' stroke-opacity="0.35"' : ""}/>`;
     }
@@ -89,12 +89,14 @@ export function pageThumbnailSvg(records: readonly TLRecord[], pageId: string, s
     if (list) list.push(s);
     else kids.set(s.parentId, [s]);
   }
+  // a stroke at least 1.6 px wide in the thumbnail, or a screen of writing reads as a smudge
+  const minStroke = (1.6 * screen.w) / Math.max(1, width);
   const draw = (parent: string, depth: number): string => {
     const list = kids.get(parent);
     if (!list || depth > 32) return "";
     return [...list]
       .sort((a, b) => (a.index < b.index ? -1 : a.index > b.index ? 1 : 0))
-      .map((s) => shapeSvg(s, draw(s.id, depth + 1)))
+      .map((s) => shapeSvg(s, draw(s.id, depth + 1), minStroke))
       .join("");
   };
   const height = Math.round((width * screen.h) / Math.max(1, screen.w));

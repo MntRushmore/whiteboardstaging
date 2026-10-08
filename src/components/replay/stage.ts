@@ -4,24 +4,26 @@ import type { ReplayFrame, Timeline } from "@/lib/replay/timeline";
 
 /**
  * Puts a replay frame on the replay's own store (never a board's: the player owns a throwaway
- * editor). The store already holds the board's document, pages and assets; the stage adds and takes
- * away its shapes (and the bindings between them) so the store shows `frame`.
+ * editor). The store holds the board's document, pages and assets; the stage holds its shapes.
  *
- * Incremental: playing forward puts only the items started since the last frame, and the stroke
- * being drawn with its points so far (`isComplete: false`); going back takes off only the items
- * after the new position. Anything a group or frame is involved in (a shape inside another) is
- * synced in full instead, since taking a child out of a group makes tldraw tidy the group away. All
- * writes are one `mergeRemoteChanges` per frame: no undo entry, one store change.
+ * Every shape is on the store from the start (`mount`), the ones not drawn yet at opacity 0: a frame
+ * only ever updates records — reveals what started since the last frame, cuts the stroke being drawn
+ * to its points so far (`isComplete: false`), hides again what comes after a seek back. Measured on a
+ * 2,448-shape screen (production build), adding or removing a shape costs a frame about four times
+ * what updating one does (tldraw re-lays the whole shape list), and this keeps groups and arrows'
+ * bindings intact (nothing is ever taken out from under them). A shape with others inside it (a
+ * group, a frame) is never hidden: hiding it would hide what is inside. All writes are one
+ * `mergeRemoteChanges` per frame, and only of records that changed: no undo entry, one store change.
  */
 export class ReplayStage {
   private timeline: Timeline;
   private byId = new Map<string, TLRecord>();
-  /** shape id -> its parent shape (only shapes inside shapes) */
-  private parentOf = new Map<string, string>();
-  private hasChildren = new Set<string>();
-  private bindings: TLRecord[] = [];
-  /** shape ids on the store, each with the record put (whole: the board's own object; part drawn: a copy) */
-  private present = new Map<string, TLRecord>();
+  private containers = new Set<string>();
+  private bindings = new Map<string, TLRecord>();
+  /** what the store holds for each shape this stage put: the board's own record, its hidden copy, or a part-drawn copy */
+  private shown = new Map<string, TLRecord>();
+  private shownBindings = new Map<string, TLRecord>();
+  private hiddenCopies = new Map<string, { of: TLRecord; copy: TLRecord }>();
   private upTo = 0;
   private partial: { id: string; index: number; points: number } | null = null;
   /** store writes so far (tests, the perf readout) */
@@ -38,25 +40,26 @@ export class ReplayStage {
 
   private index(records: readonly TLRecord[]): void {
     this.byId = new Map();
-    this.parentOf = new Map();
-    this.hasChildren = new Set();
-    this.bindings = [];
+    this.containers = new Set();
+    this.bindings = new Map();
     for (const r of records) {
       if (r.typeName === "shape") this.byId.set(r.id, r);
-      else if (r.typeName === "binding") this.bindings.push(r);
+      else if (r.typeName === "binding") this.bindings.set(r.id, r);
     }
     for (const r of this.byId.values()) {
       const parent = (r as { parentId?: string }).parentId;
-      if (parent && this.byId.has(parent)) {
-        this.parentOf.set(r.id, parent);
-        this.hasChildren.add(parent);
-      }
+      if (parent && this.byId.has(parent)) this.containers.add(parent);
     }
   }
 
-  /** How many timeline items are on the store (the last perhaps part drawn). */
+  /** How many timeline items are drawn (the last perhaps part drawn). */
   get shownCount(): number {
     return this.upTo;
+  }
+
+  /** Puts the board's shapes (and bindings) on the store as `frame` shows them. */
+  mount(frame: ReplayFrame): void {
+    this.sync(frame);
   }
 
   /** Brings the store to `frame`, writing only what changed since the last one. */
@@ -65,46 +68,34 @@ export class ReplayStage {
     const target = frame.upTo;
     const partialIndex = frame.current && frame.currentPoints !== Infinity ? target - 1 : -1;
     const puts: TLRecord[] = [];
-    const removes: TLRecord["id"][] = [];
 
-    // back: take off what starts after the new position
+    // back: hide what starts after the new position
     if (target < this.upTo) {
-      for (let i = target; i < this.upTo; i++) {
-        const id = items[i].id;
-        if (!this.present.has(id)) continue;
-        if (this.hasChildren.has(id) || this.parentOf.has(id)) return this.sync(frame);
-        removes.push(id as TLRecord["id"]);
-        this.present.delete(id);
-      }
+      for (let i = target; i < this.upTo; i++) this.show(items[i].id, "hidden", puts);
       if (this.partial && this.partial.index >= target) this.partial = null;
       this.upTo = target;
     }
-
     // the stroke that was being drawn, now whole
-    if (this.partial && this.partial.index !== partialIndex && this.partial.index < target) this.add(this.partial.id, null, puts);
+    if (this.partial && this.partial.index !== partialIndex && this.partial.index < target) this.show(this.partial.id, "whole", puts);
     // forward: what started since
-    for (let i = this.upTo; i < target; i++) if (i !== partialIndex) this.add(items[i].id, null, puts);
+    for (let i = this.upTo; i < target; i++) if (i !== partialIndex) this.show(items[i].id, "whole", puts);
     // the stroke being drawn, its points so far
     if (partialIndex >= 0 && (!this.partial || this.partial.index !== partialIndex || this.partial.points !== frame.currentPoints)) {
-      this.add(items[partialIndex].id, frame.currentPoints, puts);
+      this.show(items[partialIndex].id, frame.currentPoints, puts);
     }
     this.partial = partialIndex >= 0 ? { id: items[partialIndex].id, index: partialIndex, points: frame.currentPoints } : null;
     this.upTo = target;
-    this.commit(puts, removes);
+    this.commit(puts, []);
   }
 
-  /** Everything on the board. */
+  /** Everything drawn. */
   showAll(): void {
     this.apply({ upTo: this.timeline.items.length, current: null, currentPoints: Infinity, pageId: null, shown: new Map() });
   }
 
-  /** None of the board's shapes. */
+  /** Nothing drawn yet. */
   clear(): void {
-    const removes = [...this.present.keys()] as TLRecord["id"][];
-    this.present.clear();
-    this.upTo = 0;
-    this.partial = null;
-    this.commit([], removes);
+    this.apply({ upTo: 0, current: null, currentPoints: Infinity, pageId: null, shown: new Map() });
   }
 
   /**
@@ -115,69 +106,80 @@ export class ReplayStage {
     const before = this.byId;
     this.timeline = timeline;
     this.index(records);
-    for (const [id, shown] of this.present) {
-      const now = this.byId.get(id);
+    // an unchanged shape keeps what is on the store (adopting the new object, so it is not put again)
+    for (const [id, now] of this.byId) {
       const old = before.get(id);
-      // unchanged and whole: adopt the new object, so it is not put again. A changed shape keeps the
-      // old one (no longer the board's: `add` puts it again); a shape gone is removed by `sync`.
-      if (now && shown === old && deepEqual(old, now)) this.present.set(id, now);
+      if (!old || old === now || !deepEqual(old, now)) continue;
+      if (this.shown.get(id) === old) this.shown.set(id, now);
+      const hidden = this.hiddenCopies.get(id);
+      if (hidden?.of === old) this.hiddenCopies.set(id, { of: now, copy: hidden.copy });
+    }
+    for (const [id, now] of this.bindings) {
+      const old = this.shownBindings.get(id);
+      if (old && old !== now && deepEqual(old, now)) this.shownBindings.set(id, now);
     }
     this.partial = null;
     this.sync(frame);
   }
 
-  /** The store to `frame` whatever it held: put what is missing or different, remove the rest. */
+  /** The store to `frame` whatever it held: every shape and binding put as it should be (only those that differ), the rest removed. */
   private sync(frame: ReplayFrame): void {
     const items = this.timeline.items;
     const partialIndex = frame.current && frame.currentPoints !== Infinity ? frame.upTo - 1 : -1;
-    const want = new Set<string>();
-    for (let i = 0; i < frame.upTo; i++) want.add(items[i].id);
-    // a shape inside another needs its ancestors
-    for (const id of [...want]) {
-      let up = this.parentOf.get(id);
-      while (up && !want.has(up)) {
-        want.add(up);
-        up = this.parentOf.get(up);
-      }
-    }
-    const removes: TLRecord["id"][] = [];
-    for (const id of [...this.present.keys()]) {
-      if (want.has(id)) continue;
-      removes.push(id as TLRecord["id"]);
-      this.present.delete(id);
-    }
     const puts: TLRecord[] = [];
-    for (let i = 0; i < frame.upTo; i++) this.add(items[i].id, i === partialIndex ? frame.currentPoints : null, puts);
-    for (const id of want) if (!this.present.has(id)) this.add(id, null, puts);
+    const removes: TLRecord["id"][] = [];
+    for (const id of [...this.shown.keys()]) {
+      if (this.byId.has(id)) continue;
+      removes.push(id as TLRecord["id"]);
+      this.shown.delete(id);
+      this.hiddenCopies.delete(id);
+    }
+    for (const id of [...this.shownBindings.keys()]) {
+      if (this.bindings.has(id)) continue;
+      removes.push(id as TLRecord["id"]);
+      this.shownBindings.delete(id);
+    }
+    // containers first: their children's parent must be there
+    for (const id of this.containers) this.show(id, "whole", puts);
+    items.forEach((item, i) => this.show(item.id, i < frame.upTo ? (i === partialIndex ? frame.currentPoints : "whole") : "hidden", puts));
     this.upTo = frame.upTo;
     this.partial = partialIndex >= 0 ? { id: items[partialIndex].id, index: partialIndex, points: frame.currentPoints } : null;
-    this.commit(puts, removes);
+    // bindings, once the shapes at both ends are there
+    const bindingPuts: TLRecord[] = [];
+    for (const [id, b] of this.bindings) {
+      const { fromId, toId } = b as unknown as { fromId: string; toId: string };
+      if (this.shownBindings.get(id) === b || !this.shown.has(fromId) || !this.shown.has(toId)) continue;
+      bindingPuts.push(b);
+      this.shownBindings.set(id, b);
+    }
+    this.commit([...puts, ...bindingPuts], removes);
   }
 
-  /** Queues `id` (its ancestors first): whole when `points` is null, else its first `points` points. */
-  private add(id: string, points: number | null, puts: TLRecord[]): void {
+  /** Queues `id` drawn whole, hidden, or as its first `points` points. */
+  private show(id: string, want: "whole" | "hidden" | number, puts: TLRecord[]): void {
     const rec = this.byId.get(id);
     if (!rec) return;
-    if (points === null && this.present.get(id) === rec) return;
-    const parent = this.parentOf.get(id);
-    if (parent && !this.present.has(parent)) this.add(parent, null, puts);
-    const out = points === null ? rec : partialStroke(rec, points);
+    const out = want === "whole" || this.containers.has(id) ? rec : want === "hidden" ? this.hiddenCopy(rec) : partialStroke(rec, want);
+    if (this.shown.get(id) === out) return;
     puts.push(out);
-    this.present.set(id, out);
+    this.shown.set(id, out);
+  }
+
+  private hiddenCopy(rec: TLRecord): TLRecord {
+    const known = this.hiddenCopies.get(rec.id);
+    if (known?.of === rec) return known.copy;
+    const copy = { ...rec, opacity: 0 } as TLRecord;
+    this.hiddenCopies.set(rec.id, { of: rec, copy });
+    return copy;
   }
 
   private commit(puts: TLRecord[], removes: TLRecord["id"][]): void {
-    const bindings = this.bindings.filter((b) => {
-      const { fromId, toId } = b as unknown as { fromId: string; toId: string };
-      return this.present.has(fromId) && this.present.has(toId) && !this.store.has(b.id);
-    });
-    if (puts.length === 0 && removes.length === 0 && bindings.length === 0) return;
+    if (puts.length === 0 && removes.length === 0) return;
     this.writes++;
     this.store.mergeRemoteChanges(() => {
       const gone = removes.filter((id) => this.store.has(id));
       if (gone.length) this.store.remove(gone);
       if (puts.length) this.store.put(puts);
-      if (bindings.length) this.store.put(bindings);
     });
   }
 }

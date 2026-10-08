@@ -5,6 +5,7 @@ import "tldraw/tldraw.css";
 import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Tldraw, type TLComponents } from "tldraw";
 import { ScreenBackground, ScreenFrame } from "@/components/screens/ScreenFrame";
+import { BOARD_EMBEDS } from "@/lib/boards/embeds";
 import { liveShapeUtils } from "@/shapes";
 import { buildTimeline, type Timeline } from "@/lib/replay/timeline";
 import { loadBoard, type LoadedBoard } from "./loadBoard";
@@ -50,6 +51,9 @@ export const ReplayCanvas = memo(function ReplayCanvas({ player, className }: { 
         hideUi
         shapeUtils={liveShapeUtils}
         components={COMPONENTS}
+        // the board's own list (no GitHub Gist: tldraw runs its script unsandboxed, in our origin —
+        // here that would be the admin's session; src/lib/boards/embeds.ts)
+        embeds={BOARD_EMBEDS}
         licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
         autoFocus={false}
         onMount={(editor) => {
