@@ -47,8 +47,13 @@ let server: Promise<FixtureServer> | null = null;
 
 /** A fetch answered by the fixtures (after a short pause, so loading states show). */
 export async function fixtureFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  // The import sits inside a NODE_ENV branch the bundler folds away: in a production build the
+  // fixtures are not even emitted as a chunk.
+  if (process.env.NODE_ENV !== "production") {
+    server ??= import("@/lib/admin/fixtures/consoleFixtures").then((m) => new m.FixtureServer(() => Date.now()));
+  }
+  if (!server) throw new Error("The admin fixtures are for development only.");
   const mode = fixtureMode() ?? "1";
-  server ??= import("@/lib/admin/fixtures/consoleFixtures").then((m) => new m.FixtureServer(() => Date.now()));
   const fake = await server;
   await new Promise((r) => setTimeout(r, 250 + Math.random() * 250));
   const method = (init.method ?? "GET").toUpperCase();

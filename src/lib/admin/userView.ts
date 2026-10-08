@@ -34,6 +34,7 @@ import { LEVEL_LABELS, formatCount, formatWhen, kindLabel, niceMax, plural, rela
 export const USER_COPY = {
   back: "All users",
   loadWhat: "this account",
+  loadingTitle: "Account",
   notFoundTitle: "No such account",
   notFoundHint: "It may have been deleted, or the link is wrong.",
   facts: { signedUp: "Signed up", lastActive: "Last active", onboarded: "Welcome", ink: "Ink", course: "Course", id: "Account id" },

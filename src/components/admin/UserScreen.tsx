@@ -108,7 +108,7 @@ export function UserContent({ view, loading, error, updated, onRefresh }: { view
   if (!view) {
     return (
       <div className={styles.inner}>
-        <PageHeader title={loading ? " " : CONSOLE_COPY.loadFailed(USER_COPY.loadWhat)} back={back} />
+        <PageHeader title={loading ? USER_COPY.loadingTitle : CONSOLE_COPY.loadFailed(USER_COPY.loadWhat)} back={back} />
         {loading ? <SkeletonRows rows={5} height="7rem" /> : <LoadFailed title={CONSOLE_COPY.loadFailed(USER_COPY.loadWhat)} error={error} onRetry={onRefresh} />}
       </div>
     );

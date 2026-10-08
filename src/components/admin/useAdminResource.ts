@@ -90,6 +90,11 @@ export function mutateResources<T>(match: (url: string) => boolean, change: (dat
   }
 }
 
+/** What is known of `url` right now (outside React). */
+export function peekResource<T>(url: string): ResourceState<T> {
+  return (entries.get(url)?.state ?? UNREAD) as ResourceState<T>;
+}
+
 /** Tests only. */
 export function resetResources(): void {
   entries.clear();

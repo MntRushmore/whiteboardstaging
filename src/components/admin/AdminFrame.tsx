@@ -135,6 +135,8 @@ const NAV_ICONS: Record<ConsolePage, ReactNode> = {
 export function ConsoleNav({ items }: { items: readonly NavItemView[] }) {
   const list = useRef<HTMLUListElement>(null);
   const current = items.find((i) => i.current)?.page;
+  // the counts arrive after the first paint and widen their links
+  const counts = items.map((i) => i.count ?? "").join("|");
   // on a phone the list scrolls: bring the current section into view
   useEffect(() => {
     const ul = list.current;
@@ -146,7 +148,7 @@ export function ConsoleNav({ items }: { items: readonly NavItemView[] }) {
     // clear of the fade at the right edge (24 px)
     if (right > ul.scrollLeft + ul.clientWidth - 32) ul.scrollLeft = right - ul.clientWidth + 32;
     else if (left < ul.scrollLeft) ul.scrollLeft = Math.max(0, left - 8);
-  }, [current]);
+  }, [current, counts]);
   return (
     <nav aria-label={CONSOLE_COPY.navLabel} className={c.navBar}>
       <div className={`${APP_CONTENT_CLASS} ${c.navInner}`}>

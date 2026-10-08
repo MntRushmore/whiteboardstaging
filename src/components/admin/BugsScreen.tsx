@@ -327,7 +327,9 @@ function useInboxAddress(): [BugStatus, (t: BugStatus) => void, string | null, (
     else url.searchParams.delete("id");
     if (url.href !== window.location.href) window.history.replaceState(window.history.state, "", url);
   }, [state]);
-  return [state.tab, (tab) => setState({ tab, id: null }), state.id, (id) => setState((s) => ({ ...s, id }))];
+  const setTab = useCallback((tab: BugStatus) => setState({ tab, id: null }), []);
+  const setId = useCallback((id: string | null) => setState((s) => ({ ...s, id })), []);
+  return [state.tab, setTab, state.id, setId];
 }
 
 /** /admin/bugs: the inbox. Admins only (see AdminFrame). */
@@ -353,6 +355,11 @@ export function BugsScreen({ notFound }: { notFound: ReactNode }) {
   const ids = useMemo(() => (bugs ? bugsInTab(bugs, tab).map((b) => b.id) : []), [bugs, tab]);
   // the split view always has one open: the first, until another is picked
   const shownId = selectedId && ids.includes(selectedId) ? selectedId : split ? (ids[0] ?? null) : null;
+
+  // a phone shows one report at a time: open it from its top
+  useEffect(() => {
+    if (!split && shownId) window.scrollTo({ top: 0 });
+  }, [split, shownId]);
 
   const setStatus = useCallback(
     (bug: AdminBug, status: BugStatus, note?: string) => {

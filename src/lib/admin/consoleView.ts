@@ -381,9 +381,9 @@ export function sparkline(values: readonly number[], clock: ViewClock, unit: [st
   const bars = values.map((value, i) => ({ key: `${i}`, value, ratio: max > 0 ? value / max : 0, label: `${dayOf(i)}: ${formatCount(value)}` }));
   const total = values.reduce((n, v) => n + v, 0);
   const peak = values.indexOf(max);
-  const span = values.length === 1 ? "today" : `${values.length} days`;
+  const span = values.length === 1 ? "today" : `in ${values.length} days`;
   const summary =
-    total === 0 ? `None in ${span}` : `${formatCount(total)} ${total === 1 ? unit[0] : unit[1]} in ${span}${values.length > 1 ? `, most on ${dayOf(peak)} (${formatCount(max)})` : ""}`;
+    total === 0 ? `None ${span}` : `${formatCount(total)} ${total === 1 ? unit[0] : unit[1]} ${span}${values.length > 1 ? `, most on ${dayOf(peak)} (${formatCount(max)})` : ""}`;
   return { bars, total, summary };
 }
 

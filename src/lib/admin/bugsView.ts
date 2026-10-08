@@ -105,6 +105,8 @@ export interface LogLineView {
   text: string;
 }
 
+const LOG_LEVEL_LABELS: Record<LogLineView["level"], string> = { error: "ERROR", warn: "WARN", info: "INFO", debug: "DEBUG" };
+
 function logLevel(level: string): LogLineView["level"] {
   const l = level.toLowerCase();
   if (l === "error" || l === "fatal") return "error";
@@ -176,7 +178,7 @@ export function bugView(bug: AdminBug, clock: ViewClock): BugView {
     device: deviceView(bug.diagnostics),
     hasScreenshot: bug.hasScreenshot,
     screenshotUrl: bug.hasScreenshot ? ADMIN_API.bugScreenshot(bug.id) : null,
-    logs: bug.logs.map((l, i) => ({ key: `${i}`, level: logLevel(l.level), levelLabel: l.level.toUpperCase().slice(0, 5), time: clockWithSeconds(l.time, clock.timeZone), text: l.text })),
+    logs: bug.logs.map((l, i) => ({ key: `${i}`, level: logLevel(l.level), levelLabel: LOG_LEVEL_LABELS[logLevel(l.level)], time: clockWithSeconds(l.time, clock.timeZone), text: l.text })),
     note: bug.note ?? "",
     resolved: resolvedWhen ? BUGS_COPY.resolved(bug.status, resolvedWhen) : null,
   };
