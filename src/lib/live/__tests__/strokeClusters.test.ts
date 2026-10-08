@@ -18,6 +18,7 @@ import {
   clusterLines,
   inflateRect,
   inflationFor,
+  isDotStroke,
   isFractionBar,
   isSuperscriptOf,
   medianStrokeHeight,
@@ -25,6 +26,8 @@ import {
   unionRects,
 } from "../strokeClusters";
 import type { InkLine, InkStroke, Rect } from "../contracts";
+import { splitInk } from "../diagrams";
+import { youngGlyphs, youngInk, youngLine } from "../__fixtures__/youngInk";
 import { writeAt } from "@/__eval__/drawings";
 import { VARIANTS } from "@/__eval__/handwriting";
 
@@ -515,5 +518,52 @@ describe("splitAtGutters: rows of two problems side by side are cut apart, and n
     ];
     const lines = clusterLines(cols.flat(2));
     expect(placed(lines, cols.flat()).map((p) => p?.[0])).toEqual([0, 0, 0, 1, 1, 1, 2, 2, 2]);
+  });
+});
+
+describe("a young hand: its dots and the bars of its `=` do not set the size of its glyphs", () => {
+  // `= 7`, `= 9`, `= 11`, `= 9` beside four sums, a tap of the pen and a row of taps: digits ~100 page
+  // px tall (an iPad), the bars of each `=` 6–16 px tall and 40 px apart, the taps 9 px dots
+  const answers = () => [youngLine("=7", 230, 80), youngLine("=9", 980, 80), youngLine("=11", 230, 460), youngLine("=9", 980, 480)];
+  const taps = () => [...youngGlyphs.dot(1460, 748), ...[0, 8, 24, 33, 45].flatMap((dx) => youngGlyphs.dot(1472 + dx, 405))];
+  const board = () => youngInk([...answers().flat(), ...taps()]);
+
+  it("a dot is a tap of the pen — a pen-wide circle it hardly moved in — and no stroke of a glyph is one", () => {
+    const [tap, two] = youngInk([...youngGlyphs.dot(100, 100), [{ x: 100, y: 100 }, { x: 103, y: 102 }]]);
+    expect(tap.bounds).toMatchObject({ w: 9, h: 9 });
+    expect(isDotStroke(tap)).toBe(true);
+    expect(isDotStroke(two)).toBe(true);
+    const [top, bottom, seven] = youngInk(youngLine("=7", 0, 0));
+    for (const s of [top, bottom, seven]) expect(isDotStroke(s)).toBe(false);
+    expect(isDotStroke({ id: "shape:z" as never, bounds: { x: 0, y: 0, w: 0, h: 0 }, segments: [[{ x: 0, y: 0 }]] })).toBe(true);
+    // a `1` has no width, and is no dot
+    expect(isDotStroke(toInkStrokes(writeLine("1", 0, 0, 40))[0])).toBe(false);
+  });
+
+  it("the glyph size is the digits', not the taps' or the bars' (it was 12 px on a board of 100 px digits)", () => {
+    expect(medianStrokeHeight(board())).toBeGreaterThan(70);
+    // the bars alone: there is nothing else to go by
+    expect(medianStrokeHeight(youngInk(youngGlyphs.equals(0, 0)))).toBeLessThan(20);
+  });
+
+  it("each `= N` is one line, its bars together and its digits writing, not drawings", () => {
+    const ink = board();
+    const split = splitInk(ink, [], { zoom: 0.49 });
+    expect(split.writing).toHaveLength(ink.length);
+    const lines = clusterLines(split.writing, [], [], { zoom: 0.49 });
+    let at = 0;
+    for (const n of answers().map((a) => a.length)) {
+      const ids = ink.slice(at, at + n).map((s) => s.id);
+      at += n;
+      expect(lines.filter((l) => l.strokeIds.some((id) => ids.includes(id))).map((l) => l.strokeIds.length)).toEqual([n]);
+    }
+  });
+
+  it("…written one stroke at a time: the answer joins the `=` before it", () => {
+    const ink = board();
+    // the first `=` on the screen, after the taps, then its 7
+    const taps = ink.slice(-6);
+    const lines = clusterLines([...taps, ...ink.slice(0, 3)]);
+    expect(lines.find((l) => l.strokeIds.includes(ink[0].id))?.strokeIds).toHaveLength(3);
   });
 });
