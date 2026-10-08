@@ -56,13 +56,18 @@ export function isAbortLike(err: unknown): boolean {
  *                     a crop and the vision recognizer can still read it (one retry).
  *  - `recognizerDown` Mathpix rejected our credentials, so every following line would fail
  *                     the same way: switch to the vision recognizer now.
+ *  - `unreadable`     Mathpix answered, and could not make sense of the ink: a line the tutor
+ *                     could not read (its gentle "?"), not the tutor service failing.
+ *  - `transient`      Mathpix timed out or could not be reached: worth one more try on its own.
  */
 export interface RecognizeFailureHints {
   needsCrop: boolean;
   recognizerDown: boolean;
+  unreadable: boolean;
+  transient: boolean;
 }
 
-const NO_HINTS: RecognizeFailureHints = { needsCrop: false, recognizerDown: false };
+const NO_HINTS: RecognizeFailureHints = { needsCrop: false, recognizerDown: false, unreadable: false, transient: false };
 
 function flagOn(obj: unknown, key: string): boolean {
   return typeof obj === "object" && obj !== null && (obj as Record<string, unknown>)[key] === true;
@@ -74,6 +79,8 @@ export function recognizeFailureHints(err: unknown): RecognizeFailureHints {
   return {
     needsCrop: bags.some((b) => flagOn(b, "needsCrop")),
     recognizerDown: bags.some((b) => flagOn(b, "recognizerDown")),
+    unreadable: bags.some((b) => flagOn(b, "unreadable")),
+    transient: bags.some((b) => flagOn(b, "transient")),
   };
 }
 

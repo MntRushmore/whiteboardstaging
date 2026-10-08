@@ -7,7 +7,7 @@ import { CHAT_PROBLEM_META, problemMetaOf } from "./cells";
 import type { ChatAction, ChatActionOutcome, ChatRunReport, ChatScreen, ChatWindow } from "./contracts";
 import { CHAT_LIMITS, noProblemNote } from "./contracts";
 import { chunkProblems, findFreeArea, joinPlans, planGrid, PROBLEM_GRID } from "./layout";
-import { verifyLines, verifyProblem } from "./verify";
+import { commonestReason, verifyLines, verifyProblem } from "./verify";
 import type { LecturePageMeta } from "../lecture/contracts";
 import { LECTURE_BLOCK_META } from "../lecture/meta";
 
@@ -377,17 +377,21 @@ export class ChatDesk {
   private async writeProblems(problems: readonly string[][], engine: LiveEngine, report: Report): Promise<ChatActionOutcome> {
     const kept: string[][] = [];
     let unchecked = 0;
+    const reasons: string[] = [];
     for (const p of problems) {
       const v = verifyProblem(engine, p, this.canDraw);
       if (v.ok) kept.push(p.map((l) => l.trim()));
       else {
         unchecked++;
+        reasons.push(v.reason);
         this.host.metric?.("live.chat.problem.dropped", { reason: v.reason });
       }
     }
+    // why, for the report (`note_write_problems_<why>`): the engine's commonest reason
+    const why = commonestReason(reasons) ?? undefined;
     if (kept.length === 0) {
       report.problemsDropped += unchecked;
-      return { type: "write_problems", ok: false, note: `I couldn't check ${plural(problems.length, "that problem", "those problems")}, so I didn't write ${plural(problems.length, "it", "them")}.` };
+      return { type: "write_problems", ok: false, note: `I couldn't check ${plural(problems.length, "that problem", "those problems")}, so I didn't write ${plural(problems.length, "it", "them")}.`, ...(why ? { why } : {}) };
     }
     const hand = this.host.handwriting();
     let written = 0;
@@ -436,7 +440,7 @@ export class ChatDesk {
     if (unchecked > 0) notes.push(`${unchecked} of ${problems.length} problems couldn't be checked, so I left ${plural(unchecked, "it", "them")} out.`);
     if (stopped) notes.push(stopped);
     else if (unplaced > 0) notes.push(`${unplaced} ${plural(unplaced, "problem", "problems")} didn't fit, so I left ${plural(unplaced, "it", "them")} out.`);
-    return { type: "write_problems", ok: written > 0, ...(notes.length ? { note: notes.join(" ") } : {}) };
+    return { type: "write_problems", ok: written > 0, ...(notes.length ? { note: notes.join(" ") } : {}), ...(unchecked > 0 && why ? { why } : {}) };
   }
 
   // ---------------------------------------------------------------- lines
@@ -445,7 +449,7 @@ export class ChatDesk {
     const v = verifyLines(engine, lines, this.canDraw);
     if (!v.ok) {
       const note = v.reason === "false" ? "I left out lines that didn't check out." : v.reason === "unchecked" ? "I couldn't check those lines, so I didn't write them." : "I couldn't write that on the board.";
-      return { type: "write_lines", ok: false, note };
+      return { type: "write_lines", ok: false, note, why: v.reason };
     }
     const clean = lines.map((l) => l.trim()).filter(Boolean);
     const meta: JsonObject = { [CHAT_BLOCK_META]: "lines" };

@@ -34,6 +34,10 @@ const ReportSchema = z.object({
   /** how bad, as the page judged it (out of ink is info, a rate limit warn); else from `code` */
   level: z.enum(EVENT_LEVELS).optional(),
   code: z.string().max(40).optional(),
+  /** the failed request's X-Request-Id: the event's `request_id`, joining it to the route's own */
+  requestId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional(),
+  /** Vercel's x-vercel-error on the failed response (FUNCTION_INVOCATION_TIMEOUT…), in `meta` */
+  vercelError: z.string().regex(/^[A-Z0-9_]{1,64}$/).optional(),
 });
 
 const log = logger.child({ module: "client-error" });
@@ -130,6 +134,8 @@ export async function POST(req: Request) {
       boardId: report.boardId,
       release: report.release,
       digest: report.digest,
+      requestId: report.requestId,
+      vercelError: report.vercelError,
       userAgent,
       userId: userId ?? undefined,
     },
@@ -147,7 +153,9 @@ export async function POST(req: Request) {
     userId: userId ?? undefined,
     boardId: report.boardId && BOARD_UUID.test(report.boardId) ? report.boardId : undefined,
     release: report.release,
+    requestId: report.requestId,
     meta: {
+      ...(report.vercelError ? { vercelError: report.vercelError } : {}),
       ...(report.digest ? { digest: report.digest } : {}),
       ...(stack ? { stack: stack.split("\n").slice(0, 4).join("\n").slice(0, STACK_HEAD) } : {}),
       ...(userAgent ? { userAgent: userAgent.slice(0, 200) } : {}),

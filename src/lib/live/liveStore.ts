@@ -45,6 +45,15 @@ export interface LiveError {
   asked?: "solve" | "check" | "hint";
   /** ink (402): what the refused call costs (the 402's `cost`), so the error stays until it is affordable */
   inkNeeded?: number;
+  /**
+   * The code the admin page hears when it says more than `code` (which drives what the board
+   * shows): `unusable_steps:unknown-symbol` for a solve whose every step the board's guard refused.
+   */
+  reportCode?: string;
+  /** the failed request's `X-Request-Id` (or its stream's `meta`), reported with the error to join the server's rows */
+  requestId?: string;
+  /** Vercel's `x-vercel-error` on the failed response: the platform answered, not our route */
+  vercelError?: string;
   at: number;
 }
 
@@ -105,7 +114,13 @@ let errorSeq = 0;
 export function setLiveError(err: Omit<LiveError, "id" | "at"> & { at?: number }): LiveError {
   const full: LiveError = { ...err, id: `e_${++errorSeq}`, at: err.at ?? Date.now() };
   liveStore.lastError.set(full);
-  reportUserError({ kind: `live.${full.kind}`, code: full.code, message: full.message });
+  reportUserError({
+    kind: `live.${full.kind}`,
+    code: full.reportCode ?? full.code,
+    message: full.message,
+    ...(full.requestId ? { requestId: full.requestId } : {}),
+    ...(full.vercelError ? { vercelError: full.vercelError } : {}),
+  });
   return full;
 }
 

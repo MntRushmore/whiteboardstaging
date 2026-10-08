@@ -23,6 +23,7 @@ const ALL_VARS = [
   "LIVE_MODEL_VISION",
   "LIVE_MODEL_SETUP",
   "LIVE_MODEL_REREAD",
+  "LIVE_MODEL_TITLE",
   "LIVE_MODEL_FIGURE",
   "LIVE_MODEL_PROOF",
   "LIVE_MODEL_CHAT",
@@ -125,6 +126,8 @@ describe("getLiveModels", () => {
       setupFallback: LIVE_MODELS.setupFallback,
       reread: LIVE_MODELS.reread,
       rereadFallback: LIVE_MODELS.rereadFallback,
+      title: LIVE_MODELS.title,
+      titleFallback: LIVE_MODELS.titleFallback,
       figure: LIVE_MODELS.figure,
       figureFallback: LIVE_MODELS.figureFallback,
       proof: LIVE_MODELS.proof,
@@ -184,6 +187,15 @@ describe("getLiveModels", () => {
     // an override equal to the fallback swaps the two
     expect(models.reread).toBe(LIVE_MODELS.rereadFallback);
     expect(models.rereadFallback).toBe(LIVE_MODELS.reread);
+  });
+
+  it("LIVE_MODEL_TITLE overrides the board title's primary, apart from the second reader's", () => {
+    setRequired();
+    process.env.LIVE_MODEL_TITLE = "google/gemini-3.1-flash-lite";
+    const models = getLiveModels();
+    expect(models.title).toBe("google/gemini-3.1-flash-lite");
+    expect(models.titleFallback).toBe(LIVE_MODELS.titleFallback);
+    expect(models.reread).toBe(LIVE_MODELS.reread);
   });
 
   it("LIVE_MODEL_FIGURE overrides the model that reads a drawn figure", () => {
