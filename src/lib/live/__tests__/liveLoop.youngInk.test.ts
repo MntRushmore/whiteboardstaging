@@ -3,7 +3,7 @@ import type { TLShape } from "tldraw";
 import { createFakeEditor, type FakeEditor } from "../__fixtures__/fakeEditor";
 import { settle, settleStable, settleUntil } from "../__fixtures__/settle";
 import { useSyncHash } from "../__fixtures__/syncHash";
-import { youngLine, youngShapes, type Pt } from "../__fixtures__/youngInk";
+import { youngGlyphs, youngLine, youngShapes, type Pt } from "../__fixtures__/youngInk";
 import { isLiveMeta, LIVE_TIMING, type LiveEngine, type LiveSseEvent, type RecognizeRequest, type RecognizeResponse } from "../contracts";
 import { getEngine } from "../engine";
 import { createLiveLoop, type LiveLoop } from "../liveLoop";
@@ -233,6 +233,77 @@ describe("live loop — a young student's answers beside the tutor's sums", () =
     await stop();
     expect(lineAt(onEquals(at))?.analysis).toMatchObject({ verdict: "mismatch", bareAnswer: true });
     expect(marksAt(onEquals(at))).toEqual(["circle"]);
+  });
+
+  it("the tick she draws after `= 11` is not read with it: the 11 is ticked, not read as 11² and ringed", async () => {
+    start();
+    await run([{ type: "write_problems", problems: [["4+3"], ["7+2"], ["5+6"], ["8+1"]] }]);
+    const at = answerAt(3);
+    // as Mathpix reads them: with the tick, `=11^{2}` (a real read of child-like ink)
+    reads.set(4, "=11").set(5, "=11^{2}");
+    await write(youngLine("=11✓", at.x, at.y));
+    await stop();
+    expect(recognized).toEqual([4]);
+    expect(lineAt(onEquals(at))?.line.strokeIds).toHaveLength(4);
+    expect(marksAt(onEquals(at))).toEqual(["check"]);
+    // ...and a tick written a moment later, on its own, changes nothing
+    await write(youngLine("=11✓", at.x, at.y + 160).slice(4));
+    await stop();
+    expect(recognized).toEqual([4]);
+    expect(allMarks()).toEqual(["check"]);
+  });
+
+  it("taps of the pen, one or a row of them, are never read and never get a ?", async () => {
+    start();
+    await run([{ type: "write_problems", problems: [["4+3"], ["7+2"], ["5+6"], ["8+1"]] }]);
+    reads.set(1, "\\text { - }").set(6, "\\cdots");
+    // a tap at the right of problem 4's cell, then a row of them in problem 2's
+    editor.putUser(youngShapes(youngGlyphs.dot(1460, 748)));
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 300);
+    await stop();
+    editor.putUser(youngShapes([0, 8, 24, 33, 45].flatMap((dx) => youngGlyphs.dot(1472 + dx, 405))));
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 300);
+    await stop();
+    expect(recognized).toEqual([]);
+    expect(allMarks()).toEqual([]);
+    expect(editor.getCurrentPageShapes().filter((s) => s.type === "math")).toEqual([]);
+    // ...and with an answer on the screen (her digits now size the hand) still none
+    reads.set(4, "=9");
+    await write(youngLine("=9", answerAt(2).x, answerAt(2).y));
+    editor.putUser(youngShapes(youngGlyphs.dot(1400, 300)));
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 300);
+    await stop();
+    expect(recognized).toEqual([4]);
+    expect(allMarks()).toEqual(["check"]);
+  });
+
+  it("the reported board, synthetic: four right answers, four ticks — no ?, no raw LaTeX", async () => {
+    start();
+    await run([{ type: "write_problems", problems: [["4+3"], ["7+2"], ["5+6"], ["8+1"]] }]);
+    // Mathpix's reads of each, by its strokes: `= 7` (3), `= 9` (4: the 9 a loop and a stem), `= 11` (4)
+    const answers: Array<[number, string, string]> = [
+      [1, "=7✓", "\\approx 7"],
+      [2, "=9", "=9"],
+      [3, "=11✓", "\\asymp 11"],
+      [4, "=9✓", "\\smile 9"],
+    ];
+    editor.putUser(youngShapes(youngGlyphs.dot(1460, 748)));
+    for (const [n, text, read] of answers) {
+      const at = answerAt(n);
+      const strokes = youngLine(text, at.x, at.y);
+      // the `=` first (read as one of her `=`s: a smile), a pause, then the rest
+      reads.set(2, "\\smile");
+      await write(strokes.slice(0, 2));
+      reads.set(strokes.length - (text.endsWith("✓") ? 1 : 0), read);
+      await write(strokes.slice(2));
+    }
+    editor.putUser(youngShapes([0, 8, 24, 33, 45].flatMap((dx) => youngGlyphs.dot(1472 + dx, 405))));
+    await vi.advanceTimersByTimeAsync(LIVE_TIMING.quietMs + 300);
+    await stop();
+    for (const [n] of answers) expect(marksAt(onEquals(answerAt(n))), `problem ${n}`).toEqual(["check"]);
+    expect(allMarks()).toEqual(["check", "check", "check", "check"]);
+    const echoes = editor.getCurrentPageShapes().filter((s) => s.type === "math").map((s) => (s.props as { latex: string }).latex);
+    expect(echoes.filter((l) => /\\[a-zA-Z]/.test(l))).toEqual([]);
   });
 
   it("an `=` alone on an empty screen waits, unread and unmarked, for its number", async () => {

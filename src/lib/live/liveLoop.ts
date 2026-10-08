@@ -126,9 +126,9 @@ import {
   recognizeFailureHints,
 } from "./recognizeClient";
 import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient";
-import { assignColumns, clusterLines, inkScale, rebuildFromMathShapes, unionRects, type ColumnOptions, type EchoShapeSeed } from "./strokeClusters";
+import { assignColumns, clusterLines, inkScale, medianStrokeHeight, rebuildFromMathShapes, unionRects, type ColumnOptions, type EchoShapeSeed } from "./strokeClusters";
 import { buildPayload, hashPayload } from "./strokePayload";
-import { answerAfterRestatedEnd, readYoungHand } from "./youngHand";
+import { answerAfterRestatedEnd, isSpeckLine, ownTicks, readYoungHand } from "./youngHand";
 import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
 import { nextStep as stackNextStep, parseStacked, placesLeft, rowPlaces, workStacked, type StackedWork } from "./engine/columnArithmetic";
@@ -1816,7 +1816,9 @@ export class LiveLoop implements LiveController {
     const columns = this.columnOptions(inLines);
     // a division bar with its divisor, and a stacked sum, are a line each whatever the clusterer makes of them
     const fixed = [...barGroups(split.bars, ink), ...stackGroups(split.stacks, ink)];
-    const lines = this.withProblemColumns(clusterLines(split.writing, prevLines, fixed, { zoom: this.boardZoom(), columns }));
+    const clustered = clusterLines(split.writing, prevLines, fixed, { zoom: this.boardZoom(), columns });
+    // a young student's own tick after her answer, and taps of the pen, are no line of maths
+    const lines = this.withProblemColumns(this.withoutStrays(clustered, split.writing, columns));
     this.rememberProblems(lines);
     const nextIds = new Set(lines.map((l) => l.id));
 
@@ -1854,6 +1856,43 @@ export class LiveLoop implements LiveController {
 
     for (const { line, moveOnly } of affected) void this.processLine(line, ink, moveOnly);
     this.publishHelpTarget();
+  }
+
+  /**
+   * The lines without what a young student puts on the page that is no maths (`youngHand.ts`): a
+   * line of nothing but taps of the pen is no line (`isSpeckLine`: never read, so never given a "?"),
+   * and under one of the chat's sums her own tick after her answer is not part of it (`ownTicks`; a
+   * line that was only a tick is none). Those strokes stay on the page in no line, like a drawing's.
+   * A division bar's or a stacked sum's line is left as it is. `writing`: the strokes clustered.
+   */
+  private withoutStrays(lines: InkLine[], writing: readonly InkStroke[], columns: ColumnOptions): InkLine[] {
+    const byId = new Map(writing.map((s) => [s.id as string, s]));
+    const glyph = medianStrokeHeight([...writing]);
+    let cells: ProblemCell[] | null = null;
+    let changed = false;
+    const out: InkLine[] = [];
+    for (const line of lines) {
+      const strokes = line.strokeIds.map((id) => byId.get(id)).filter((s): s is InkStroke => Boolean(s));
+      // a division bar's line, a stacked sum's: not the clusterer's, left alone
+      if (strokes.length !== line.strokeIds.length) {
+        out.push(line);
+        continue;
+      }
+      if (isSpeckLine(strokes, glyph)) {
+        changed = true;
+        continue;
+      }
+      const cell = cellOf(line.bounds, (cells ??= this.problemCells()));
+      const ticks = cell && cell.lines.every(isArithmetic) ? ownTicks(strokes) : [];
+      if (ticks.length === 0) {
+        out.push(line);
+        continue;
+      }
+      changed = true;
+      const kept = strokes.filter((s) => !ticks.includes(s));
+      if (kept.length > 0) out.push({ ...line, strokeIds: kept.map((s) => s.id), bounds: unionRects(kept.map((s) => s.bounds)) });
+    }
+    return changed ? assignColumns(out, columns) : lines;
   }
 
   /**

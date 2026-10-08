@@ -30,6 +30,9 @@
  *    precalculus (`x \approx 2.41`), an `\approx` is meant, and stays.
  */
 
+import type { InkStroke } from "./contracts";
+import { isDotStroke, strokeLength } from "./strokeClusters";
+
 export interface YoungReadContext {
   /**
    * The problem the line is part of has no letters — a sum, a product (`LiveLoop.arithmeticProblem`):
@@ -115,4 +118,61 @@ export function readYoungHand(latex: string, ctx: YoungReadContext): string {
   if (swapped !== s && numbersOnly(swapped)) s = swapped;
   s = tidy(s);
   return s === tidy(latex) ? latex : s;
+}
+
+// ---------------------------------------------------------------- what is on the page but no maths
+
+/**
+ * Her own tick: ONE stroke shaped like a ✓ — two straight-ish arms meeting at its lowest point, the
+ * corner in the left half, the long arm reaching up to the top on the right and at least 1.3 times
+ * the short one, which rises less — drawn in either direction (a young hand draws it from the top of
+ * the long arm down, then up the short one). A `√` drawn without its bar is the same shape: it is
+ * only taken for a tick at the end of an answer in arithmetic (`ownTicks`). A `7`, a `2`, an `L` end
+ * at their lowest point or at the bottom; a `v` or a `U` has arms of one length.
+ */
+export function isTickStroke(s: InkStroke): boolean {
+  if (s.segments.length !== 1) return false;
+  const pts = s.segments[0];
+  const { y, w, h } = s.bounds;
+  if (pts.length < 4 || w <= 0 || h <= 0 || w > 2.5 * h || h > 2.5 * w) return false;
+  let v = 0;
+  for (let i = 1; i < pts.length; i++) if (pts[i].y > pts[v].y) v = i;
+  if (v === 0 || v === pts.length - 1) return false;
+  const corner = pts[v];
+  const [left, right] = pts[0].x <= pts[pts.length - 1].x ? [pts[0], pts[pts.length - 1]] : [pts[pts.length - 1], pts[0]];
+  if (corner.x <= left.x || corner.x >= right.x || corner.x - left.x > 0.5 * (right.x - left.x)) return false;
+  if (right.y > y + 0.3 * h || left.y > corner.y - 0.2 * h || left.y <= right.y) return false;
+  const long = Math.hypot(right.x - corner.x, right.y - corner.y);
+  const short = Math.hypot(left.x - corner.x, left.y - corner.y);
+  return long >= 1.3 * short && strokeLength(s) <= 1.4 * (long + short);
+}
+
+/**
+ * The ticks a young student drew after her answer on this line (`isTickStroke`, its strokes): at its
+ * right end, nothing of the line further right than the tick's short arm. She ticks her own sums when
+ * she is done; read with her answer it is `\checkmark`, `\vee`, or — `= 11 ✓` — `=11^{2}`, and the
+ * right 11 was ringed. Only in arithmetic (the caller's to know): in algebra it may be a `√`.
+ */
+export function ownTicks(strokes: readonly InkStroke[]): InkStroke[] {
+  const rest = [...strokes];
+  const ticks: InkStroke[] = [];
+  for (;;) {
+    const last = rest.reduce<InkStroke | null>((m, s) => (!m || s.bounds.x + s.bounds.w > m.bounds.x + m.bounds.w ? s : m), null);
+    if (!last || !isTickStroke(last)) return ticks;
+    const others = rest.filter((s) => s !== last);
+    const reach = Math.max(-Infinity, ...others.map((s) => s.bounds.x + s.bounds.w));
+    if (reach > last.bounds.x + 0.35 * last.bounds.w) return ticks;
+    ticks.push(last);
+    rest.splice(rest.indexOf(last), 1);
+  }
+}
+
+/**
+ * A line of nothing but taps of the pen: every stroke a dot (`isDotStroke`) or no bigger, either way,
+ * than a quarter of the hand's glyphs (`glyph`: `medianStrokeHeight` of the screen's writing). Never
+ * read — Mathpix answers `\text{-}` for one dot and "content not found" for a few — so never given a
+ * "?" either. A dot that is part of a line (a decimal point, the dot of an `i`) is read with it.
+ */
+export function isSpeckLine(strokes: readonly InkStroke[], glyph: number): boolean {
+  return strokes.length > 0 && strokes.every((s) => isDotStroke(s) || Math.max(s.bounds.w, s.bounds.h) <= 0.25 * glyph);
 }
