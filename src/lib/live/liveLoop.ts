@@ -128,6 +128,7 @@ import {
 import { streamLiveSse as defaultStream, type StreamOptions } from "./sseClient";
 import { assignColumns, clusterLines, inkScale, rebuildFromMathShapes, unionRects, type ColumnOptions, type EchoShapeSeed } from "./strokeClusters";
 import { buildPayload, hashPayload } from "./strokePayload";
+import { readYoungHand } from "./youngHand";
 import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
 import { nextStep as stackNextStep, parseStacked, placesLeft, rowPlaces, workStacked, type StackedWork } from "./engine/columnArithmetic";
@@ -2238,13 +2239,22 @@ export class LiveLoop implements LiveController {
     this.learnFresh.add(lineId);
     forgetOldest(this.learnFresh);
     // a division bar and the number under it: Mathpix drops the bar and reads `2` — the line is
-    // "divide both sides by 2" (`engine/operationLine.ts`)
-    const read = reread ?? res.latex;
+    // "divide both sides by 2" (`engine/operationLine.ts`). A young hand's wobbly `=` is an `=`.
+    const read = this.youngRead(state, reread ?? res.latex);
     const latex = state.line.strokeIds.some((id) => this.barStrokeIds.has(id)) ? (barDivisionLatex(read) ?? read) : read;
     if (reread) setLine(lineId, { latex, confidence: Math.max(res.confidence, LIVE_LIMITS.minConfidence), provider: "reread" });
     else setLine(lineId, { latex, confidence: res.confidence, provider: res.provider });
     await this.ensureEngine();
     this.analyzeAndRender(lineId, { cascade: true });
+  }
+
+  /**
+   * A read of the student's line as they meant it (`youngHand.ts`): a young hand's wobbly `=` read as
+   * `\smile`, `\asymp`, `\approx 7` is an `=`, and in arithmetic the tick drawn after an answer is none
+   * of it. Every read goes through it: Mathpix's, the second reader's.
+   */
+  private youngRead(state: LiveLineState, latex: string): string {
+    return readYoungHand(latex, { arithmetic: this.arithmeticProblem(state) });
   }
 
   // ---------------------------------------------------------------- the second reader
@@ -2272,18 +2282,20 @@ export class LiveLoop implements LiveController {
     // (`stackAnalysis`) — and one misread as a fraction is not read again into a "plainer" fraction
     if (this.stackOf(line) || MISREAD_STACK.test(res.latex)) return;
     const state = liveStore.lines.get()[line.id];
-    if (!state || state.latex !== res.latex) return;
+    // the read as it stands on the board (a young hand's `=` put right: `youngRead`)
+    if (!state || state.latex !== this.youngRead(state, res.latex)) return;
+    const read = { latex: state.latex, confidence: res.confidence };
     const { above, below } = this.columnNeighbours(state);
     const others = [...above, ...below];
     const signal = rereadTrigger({
-      latex: res.latex,
-      confidence: res.confidence,
+      latex: read.latex,
+      confidence: read.confidence,
       analysis: state.analysis,
       strokeCount: line.strokeIds.length,
       others,
     });
     if (!signal) return;
-    await this.readAgain(line, res, { signal, above, below, others });
+    await this.readAgain(line, read, { signal, above, below, others });
   }
 
   /**
@@ -2547,7 +2559,8 @@ export class LiveLoop implements LiveController {
     // a "couldn't read this" chip waiting for the low-confidence read is not wanted any more
     if (rt.unreadableTimer) clearTimeout(rt.unreadableTimer);
     rt.unreadableTimer = null;
-    setLine(lineId, { latex, provider: "reread", confidence: Math.max(confidence, LIVE_LIMITS.minConfidence) });
+    const state = liveStore.lines.get()[lineId];
+    setLine(lineId, { latex: state ? this.youngRead(state, latex) : latex, provider: "reread", confidence: Math.max(confidence, LIVE_LIMITS.minConfidence) });
     this.analyzeAndRender(lineId, { cascade: true });
   }
 

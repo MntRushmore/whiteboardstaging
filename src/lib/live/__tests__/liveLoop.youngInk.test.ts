@@ -164,6 +164,39 @@ describe("live loop — a young student's answers beside the tutor's sums", () =
     expect(allMarks()).toEqual(["check", "check"]);
   });
 
+  it("Mathpix's reads of her wobbly `=` (`\\smile`, `\\asymp 11`) are an `=`: no raw LaTeX, no ?, the answer ticked", async () => {
+    start();
+    await run([{ type: "write_problems", problems: [["4+3"], ["7+2"], ["5+6"], ["8+1"]] }]);
+    reads.set(4, "=9");
+    await write(youngLine("=9", answerAt(2).x, answerAt(2).y));
+    const at = answerAt(3);
+    const answer = youngLine("=11", at.x, at.y);
+    reads.set(2, "\\smile").set(4, "\\asymp 11");
+    await write(answer.slice(0, 2));
+    await stop();
+    expect(lineAt(onEquals(at))?.latex).toBe("=");
+    expect(marksAt(onEquals(at))).toEqual([]);
+    await write(answer.slice(2));
+    await stop();
+    const line = lineAt(onEquals(at));
+    expect(line?.latex).toBe("= 11");
+    expect(line?.analysis).toMatchObject({ verdict: "ok", solved: true });
+    expect(marksAt(onEquals(at))).toEqual(["check"]);
+    // no readback on the board shows a LaTeX command
+    const echoes = editor.getCurrentPageShapes().filter((s) => s.type === "math").map((s) => (s.props as { latex: string }).latex);
+    expect(echoes.filter((l) => /\\[a-zA-Z]/.test(l))).toEqual([]);
+  });
+
+  it("…and on her own line of numbers too, with no problem of the tutor's above it", async () => {
+    start();
+    reads.set(4, "4+3 \\asymp 7");
+    // `4 + 3 = 7` on one line: a stroke standing in for `4+3`, her `=` and her `7`
+    const sum: Pt[] = [{ x: 60, y: 300 }, { x: 140, y: 300 }, { x: 140, y: 380 }];
+    await write([sum, ...youngLine("=7", 170, 280)]);
+    await stop();
+    expect(Object.values(liveStore.lines.get()).map((s) => s.latex)).toEqual(["4+3 = 7"]);
+  });
+
   it("an `=` alone on an empty screen waits, unread and unmarked, for its number", async () => {
     start();
     await run([{ type: "write_problems", problems: [["4+3"], ["7+2"], ["5+6"], ["8+1"]] }]);
