@@ -93,6 +93,8 @@ export type ClientErrorReport = {
  *  - `live.auth`      a sign-in, sign-up, reset that failed on our side (never a wrong password), the
  *                     sign-in service unreachable, a sign out that failed
  *  - `live.settings`  a Labs setting that could not be saved
+ *  - `live.app`       the app itself: a page reloaded for a new release (`chunk_reload`, info;
+ *                     src/lib/chunkReload.ts)
  */
 export type UserErrorKind =
   | "live.recognize"
@@ -112,7 +114,8 @@ export type UserErrorKind =
   | "live.pdf"
   | "live.report"
   | "live.auth"
-  | "live.settings";
+  | "live.settings"
+  | "live.app";
 
 /** The contract's EVENT_LEVELS (src/lib/admin/contracts.ts; not imported: it brings zod). */
 export type UserErrorLevel = "error" | "warn" | "info";

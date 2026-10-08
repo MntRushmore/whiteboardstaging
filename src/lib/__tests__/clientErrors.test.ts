@@ -321,6 +321,7 @@ const USER_KINDS: UserErrorKind[] = [
   "live.report",
   "live.auth",
   "live.settings",
+  "live.app",
 ];
 
 function userReporter(path = `/board/${BOARD}`, opts: { max?: number; windowMs?: number } = {}) {

@@ -48,7 +48,7 @@ function built(inputs: UserErrorInput[]): ClientErrorReport[] {
   return sent;
 }
 
-const KINDS: UserErrorKind[] = ["live.recognize", "live.check", "live.solve", "live.capabilities", "live.chat", "live.lecture", "live.save", "live.load", "live.practice", "live.progress", "live.ink", "live.account", "live.boards", "live.image", "live.pdf", "live.report", "live.auth", "live.settings"];
+const KINDS: UserErrorKind[] = ["live.recognize", "live.check", "live.solve", "live.capabilities", "live.chat", "live.lecture", "live.save", "live.load", "live.practice", "live.progress", "live.ink", "live.account", "live.boards", "live.image", "live.pdf", "live.report", "live.auth", "live.settings", "live.app"];
 
 describe("POST /api/client-errors takes the reports of errors a student saw", () => {
   it("every kind, every level, the longest code and words: 204", async () => {

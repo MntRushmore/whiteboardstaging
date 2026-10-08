@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CHUNK_RELOAD_COPY, useChunkReload } from "@/lib/chunkReload";
 import type { UserErrorInput } from "@/lib/clientErrors";
 import { reportAppError, reportUserError } from "@/lib/reportAppError";
 
@@ -127,11 +128,15 @@ export function BoardLoading({ label = BOARD_LOAD_COPY.loading }: { label?: stri
  * board's autosave has already backed up and flushed as the editor unmounted; a reload restores.
  */
 export function BoardCrashed({ error }: { error: unknown }) {
+  // A chunk of an older release (a deploy since the board opened): reload once, not a crash. The
+  // autosave has backed up and flushed already, as for Retry.
+  const reloading = useChunkReload(error);
   // tldraw's error boundary caught it, so it never reached the window's listeners: a crash report
   // (src/lib/clientErrors.ts), with its stack, from here
   useEffect(() => {
-    reportAppError("boundary", error);
-  }, [error]);
+    if (!reloading) reportAppError("boundary", error);
+  }, [error, reloading]);
+  if (reloading) return <BoardLoading label={CHUNK_RELOAD_COPY} />;
   return (
     <BoardLoadError
       state={{ kind: "error", message: BOARD_LOAD_COPY.crashTitle, detail: detailOf(error) }}
