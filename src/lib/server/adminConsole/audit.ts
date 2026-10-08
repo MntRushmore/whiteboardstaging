@@ -5,6 +5,9 @@
  * page) writes the row FIRST and answers 503 when it cannot (`AuditError`): no look goes unlogged.
  * A change (a bug triaged, an issue muted) is logged after it is made; a failed log line there is
  * an error in the server log, not a failed change.
+ *
+ * A look kept open is one look (`auditRepeatLook`): the board viewer following a board live writes
+ * again only after REPEAT_LOOK_MS; an open always writes.
  */
 import { logger } from "@/lib/logger";
 import type { Rest } from "./rest";
@@ -65,6 +68,40 @@ export async function auditLook(rest: Rest, entry: AuditEntry): Promise<void> {
     log.error({ action: entry.action, targetId: entry.targetId, error: err instanceof Error ? err.message : String(err) }, "admin audit row not written: the content is not shown");
     throw new AuditError(err);
   }
+}
+
+/**
+ * A look kept open is one look: the viewer's follow-live poll (a board read with `?since=`) logs at
+ * most one row per admin and board this often. Opening a board always logs.
+ */
+export const REPEAT_LOOK_MS = 10 * 60_000;
+
+/**
+ * Log a look again only when this admin's same look (action and target) has no row in the last
+ * `windowMs`: true when a row was written. Throws AuditError when it cannot tell, or when the row
+ * is needed and cannot be written: no look goes unlogged.
+ */
+export async function auditRepeatLook(rest: Rest, entry: AuditEntry, windowMs = REPEAT_LOOK_MS): Promise<boolean> {
+  let covered: unknown;
+  try {
+    covered = await rest.one({
+      table: "admin_audit",
+      params: {
+        select: "id",
+        admin_id: `eq.${entry.adminId}`,
+        action: `eq.${entry.action}`,
+        target_kind: entry.targetKind === null ? "is.null" : `eq.${entry.targetKind}`,
+        target_id: entry.targetId === null ? "is.null" : `eq.${entry.targetId.slice(0, 400)}`,
+        at: `gte.${new Date(rest.now - windowMs).toISOString()}`,
+      },
+    });
+  } catch (err) {
+    log.error({ action: entry.action, targetId: entry.targetId, error: err instanceof Error ? err.message : String(err) }, "admin audit not read: the content is not shown");
+    throw new AuditError(err);
+  }
+  if (covered) return false;
+  await auditLook(rest, entry);
+  return true;
 }
 
 /** Log a change after making it. Never throws. */

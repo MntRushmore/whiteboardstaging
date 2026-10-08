@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, RefreshCw, TriangleAlert } from "lucide-react";
 import { AuthErrorBanner, useAuth } from "@/components/AuthProvider";
 import { AppHeader, APP_CONTENT_CLASS } from "@/components/app/AppHeader";
+import { useDocumentTitle } from "@/components/admin/consoleHooks";
 import { useIsAdmin } from "@/components/admin/useIsAdmin";
 import { ADMIN_PAGES } from "@/lib/admin/contracts";
 import { ADMIN_COPY } from "@/lib/admin/view";
@@ -63,10 +64,7 @@ export function AdminBoardScreen({ id, notFound }: { id: string; notFound: React
   }, [signedOut, router]);
 
   const title = data.doc?.board.title?.trim() || ADMIN_BOARD_COPY.untitled;
-  useEffect(() => {
-    if (hidden) document.title = ADMIN_COPY.notFoundTitle;
-    else if (data.doc) document.title = ADMIN_BOARD_COPY.documentTitle(title);
-  }, [hidden, data.doc, title]);
+  useDocumentTitle(hidden ? ADMIN_COPY.notFoundTitle : data.doc ? ADMIN_BOARD_COPY.documentTitle(title) : null);
 
   if (!fixture && !user && authError) {
     return (

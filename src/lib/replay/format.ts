@@ -26,3 +26,13 @@ export function formatSize(kb: number): string {
   if (kb >= 1024) return `${(kb / 1024).toFixed(kb >= 10_240 ? 0 : 1)} MB`;
   return `${Math.max(0, Math.round(kb))} KB`;
 }
+
+/**
+ * "Screen 3": a screen's name in the switcher, by its place in the board (1-based), as the board's
+ * own strip says it ("Screen 3 of 5", src/components/screens/ScreenStrip.tsx). Never the stored
+ * page name: the first screen of every board is tldraw's "Page 1", and a screen keeps the number it
+ * was made with after one before it is deleted.
+ */
+export function screenName(position: number): string {
+  return `Screen ${position}`;
+}

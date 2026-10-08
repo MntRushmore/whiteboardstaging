@@ -3,7 +3,7 @@
 import { useEffect, useMemo, type KeyboardEvent } from "react";
 import { Pause, Play } from "lucide-react";
 import type { TLRecord } from "tldraw";
-import { formatClock, formatRealTime } from "@/lib/replay/format";
+import { formatClock, formatRealTime, screenName } from "@/lib/replay/format";
 import { pageThumbnailSvg, svgDataUrl } from "@/lib/replay/thumbnail";
 import { realToReplay, replayToReal, type Timeline } from "@/lib/replay/timeline";
 import { DEFAULT_SCREEN, readScreenMeta } from "@/lib/screens/screens";
@@ -40,7 +40,7 @@ export interface BoardReplayProps {
   className?: string;
 }
 
-/** A screen's name and thumbnail, for the switcher. */
+/** A screen's name (its place, as the board's strip says it) and thumbnail, for the switcher. */
 function usePageChips(records: readonly TLRecord[]) {
   return useMemo(() => {
     const pages = records
@@ -49,10 +49,10 @@ function usePageChips(records: readonly TLRecord[]) {
         const ia = String((a as { index?: string }).index);
         const ib = String((b as { index?: string }).index);
         return ia < ib ? -1 : ia > ib ? 1 : 0;
-      }) as unknown as { id: string; name: string; meta: unknown }[];
+      }) as unknown as { id: string; meta: unknown }[];
     return pages.map((p, i) => ({
       id: p.id,
-      name: p.name || `Screen ${i + 1}`,
+      name: screenName(i + 1),
       src: svgDataUrl(pageThumbnailSvg(records, p.id, readScreenMeta(p.meta) ?? DEFAULT_SCREEN, 128)),
     }));
   }, [records]);
