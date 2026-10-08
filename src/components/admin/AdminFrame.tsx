@@ -13,6 +13,7 @@ import { ADMIN_COPY } from "@/lib/admin/view";
 import { CONSOLE_COPY, consoleNav, type ConsolePage, type NavItemView } from "@/lib/admin/consoleView";
 import { attentionCounts, issuesUrl } from "@/lib/admin/issuesView";
 import { RefreshBar } from "./AdminSections";
+import { useDocumentTitle } from "./consoleHooks";
 import { fixtureMode } from "./devFixtures";
 import { useAdminResource } from "./useAdminResource";
 import { useIsAdmin } from "./useIsAdmin";
@@ -95,10 +96,7 @@ export function AdminFrame({ notFound, access, resource, page, documentTitle, mi
     if (signedOut) router.replace("/login");
   }, [signedOut, router]);
 
-  useEffect(() => {
-    if (hidden) document.title = ADMIN_COPY.notFoundTitle;
-    else if (resource.data || resource.notFound) document.title = documentTitle;
-  }, [hidden, resource.data, resource.notFound, documentTitle]);
+  useDocumentTitle(hidden ? ADMIN_COPY.notFoundTitle : resource.data || resource.notFound ? documentTitle : null);
 
   if (!access.fixtures && !access.user && access.authError) {
     return (
