@@ -163,6 +163,35 @@ describe("chatJsonWithFallback", () => {
   });
 });
 
+describe("chatJsonWithFallback: the route's deadline", () => {
+  const withDeadline = (deadline: number, attemptTimeoutMs = 10_000) =>
+    chatJsonWithFallback(PRIMARY, FALLBACK, { messages: [{ role: "user", content: "next row" }], schema: Reply, requestId: "req-4", title: "Agathon Live - chat", attemptTimeoutMs, deadline });
+
+  it("an attempt gets what is left of the route's time, not its full allowance", async () => {
+    answers[PRIMARY] = hang;
+    answers[FALLBACK] = hang;
+    const started = Date.now();
+    // 10 s allowed per attempt, but 2.3 s left: the primary is cut at ~2.3 s, and the fallback is not tried
+    await expect(withDeadline(started + 2_300)).rejects.toThrow(/did not answer within 2\d{3} ms/);
+    expect(Date.now() - started).toBeLessThan(3_500);
+    expect(asked).toEqual([PRIMARY]);
+    expect(events()).toEqual([expect.objectContaining({ level: "error", code: "timeout", message: `${PRIMARY} failed` })]);
+  });
+
+  it("no time left at all: not asked, a timeout said as one", async () => {
+    answers[PRIMARY] = reply('{"ok":true}');
+    await expect(withDeadline(Date.now() + 500)).rejects.toThrow(/route's time ran out/);
+    expect(asked).toEqual([]);
+    expect(events()).toEqual([expect.objectContaining({ code: "timeout" })]);
+  });
+
+  it("time enough: as before, the fallback answers a failed primary", async () => {
+    answers[PRIMARY] = status(500);
+    answers[FALLBACK] = reply('{"ok":true}');
+    await expect(withDeadline(Date.now() + 30_000)).resolves.toEqual({ data: { ok: true }, model: FALLBACK });
+  });
+});
+
 async function drain(stream: AsyncGenerator<unknown>): Promise<unknown[]> {
   const out: unknown[] = [];
   for await (const ev of stream) out.push(ev);

@@ -72,14 +72,14 @@ export function chatFailureReport(error: ChatError, err: unknown, boardId?: stri
 /**
  * The tutor's notes on a run that say something it promised could not be done ("I couldn't graph
  * that.", "2 of 5 problems couldn't be checked…"), as warnings for the admin page (`live.chat`,
- * `note_<action>`). Not the notes about the board or the student ("There's no room left", "I'm
+ * `note_<action>`, and why when the board said: `note_write_problems_unsolved`). Not the notes about the board or the student ("There's no room left", "I'm
  * still writing on problem 2"): those are not failures.
  */
 export function chatNoteReports(report: ChatRunReport | null, boardId?: string): UserErrorInput[] {
   if (!report) return [];
   return report.outcomes
     .filter((o): o is typeof o & { note: string } => typeof o.note === "string" && /\bcouldn't\b/i.test(o.note))
-    .map((o) => ({ kind: "live.chat" as const, code: `note_${o.type}`, message: o.note, level: "warn" as const, ...(boardId ? { boardId } : {}) }));
+    .map((o) => ({ kind: "live.chat" as const, code: `note_${o.type}${o.why ? `_${o.why}` : ""}`, message: o.note, level: "warn" as const, ...(boardId ? { boardId } : {}) }));
 }
 
 /** The practice problems' generators: loaded the first time the chip may show, never with the board. */

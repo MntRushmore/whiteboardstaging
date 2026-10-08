@@ -90,6 +90,13 @@ describe("the Ask panel (live.chat)", () => {
     }
   });
 
+  it("carries the failed request's id and Vercel's error (a chat killed at its maxDuration)", () => {
+    const killed = Object.assign(new ApiError("Request failed (504)", 504), { vercelError: "FUNCTION_INVOCATION_TIMEOUT" });
+    expect(chatFailureReport(chatErrorFor(killed), killed, BOARD)).toMatchObject({ code: "upstream", vercelError: "FUNCTION_INVOCATION_TIMEOUT" });
+    const ours = Object.assign(new ApiError("Something went wrong on our side", 502, "upstream_error"), { requestId: "4f1c2d3e-aaaa-4bbb-8ccc-123456789abc" });
+    expect(chatFailureReport(chatErrorFor(ours), ours, BOARD)).toMatchObject({ requestId: "4f1c2d3e-aaaa-4bbb-8ccc-123456789abc" });
+  });
+
   it("never what the student asked, never the server's message", () => {
     const err = new ApiError("Prompt 'solve 2x+5=17 for Mia' was refused", 500);
     const report = chatFailureReport(chatErrorFor(err), err);
@@ -101,7 +108,7 @@ describe("the Ask panel (live.chat)", () => {
       {
         outcomes: [
           { type: "graph", ok: false, note: "I couldn't graph that." },
-          { type: "write_problems", ok: true, note: "2 of 5 problems couldn't be checked, so I left them out." },
+          { type: "write_problems", ok: true, note: "2 of 5 problems couldn't be checked, so I left them out.", why: "unsolved" },
           { type: "write_lines", ok: false, note: "There's no room left on this board." },
           { type: "help_problem", ok: false, note: "I'm still writing on problem 2." },
           { type: "new_screen", ok: true },
@@ -114,7 +121,8 @@ describe("the Ask panel (live.chat)", () => {
     );
     expect(notes).toEqual([
       { kind: "live.chat", code: "note_graph", message: "I couldn't graph that.", level: "warn", boardId: BOARD },
-      { kind: "live.chat", code: "note_write_problems", message: "2 of 5 problems couldn't be checked, so I left them out.", level: "warn", boardId: BOARD },
+      // why the engine refused them rides on the code
+      { kind: "live.chat", code: "note_write_problems_unsolved", message: "2 of 5 problems couldn't be checked, so I left them out.", level: "warn", boardId: BOARD },
     ]);
     expect(chatNoteReports(null)).toEqual([]);
   });

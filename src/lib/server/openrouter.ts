@@ -581,7 +581,17 @@ export type ChatJsonFallbackOptions<S extends z.ZodTypeAny> = Omit<ChatJsonOptio
   reasoningFor?: (model: string) => ChatJsonOptions<S>["reasoningEffort"];
   /** abort one attempt after this long and try the fallback (the caller's signal still ends both) */
   attemptTimeoutMs: number;
+  /**
+   * The route's own deadline (epoch ms): each attempt gets the lesser of `attemptTimeoutMs` and
+   * what is left, and the fallback is not tried with less than `MIN_ATTEMPT_MS` left. Two full
+   * attempts (and a repair after them) could outlast the route's maxDuration, and the platform then
+   * kills the function: no event, no refund, and the student waits for nothing.
+   */
+  deadline?: number;
 };
+
+/** An attempt with less time than this left is not started (`deadline`). */
+export const MIN_ATTEMPT_MS = 2_000;
 
 /**
  * `chatJson` on `primary`, then once on `fallback` when the primary fails or times out — the
@@ -596,9 +606,11 @@ export async function chatJsonWithFallback<S extends z.ZodTypeAny>(
   fallback: string,
   opts: ChatJsonFallbackOptions<S>,
 ): Promise<{ data: z.infer<S>; model: string }> {
-  const { reasoningFor, attemptTimeoutMs, signal, ...rest } = opts;
+  const { reasoningFor, attemptTimeoutMs, signal, deadline, ...rest } = opts;
+  const left = () => (deadline !== undefined ? deadline - Date.now() : Infinity);
   const attempt = async (model: string) => {
-    const timeout = AbortSignal.timeout(attemptTimeoutMs);
+    const ms = Math.max(1, Math.round(Math.min(attemptTimeoutMs, left())));
+    const timeout = AbortSignal.timeout(ms);
     try {
       const data = await chatJson({
         ...rest,
@@ -609,17 +621,23 @@ export async function chatJsonWithFallback<S extends z.ZodTypeAny>(
       return { data, model };
     } catch (err) {
       // our own per-attempt timeout is the provider being slow (upstream), not the caller leaving
-      if (timeout.aborted && !signal?.aborted) throw new UpstreamError(504, `${model} did not answer within ${attemptTimeoutMs} ms`);
+      if (timeout.aborted && !signal?.aborted) throw new UpstreamError(504, `${model} did not answer within ${ms} ms`);
       throw err;
     }
   };
   const call: ModelCall = { primary, fallback, title: rest.title, requestId: rest.requestId, startedAt: Date.now() };
+  if (left() < MIN_ATTEMPT_MS) {
+    // the route's time is up before the call starts: a timeout, said as one
+    const err = new UpstreamError(504, `${primary} was not asked: the route's time ran out`);
+    recordModelFailure(call, primary, err, "only");
+    throw err;
+  }
   let primaryErr: unknown;
   try {
     return await attempt(primary);
   } catch (err) {
     if (signal?.aborted) throw err;
-    if (err instanceof CreditsExhaustedError || !fallback || fallback === primary) {
+    if (err instanceof CreditsExhaustedError || !fallback || fallback === primary || left() < MIN_ATTEMPT_MS) {
       recordModelFailure(call, primary, err, "only");
       throw err;
     }
