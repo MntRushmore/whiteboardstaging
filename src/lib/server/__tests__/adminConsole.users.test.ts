@@ -123,6 +123,13 @@ describe("buildUserList", () => {
     expect(errors.params.get("source")).toBe("neq.health");
   });
 
+  it("an auth server that pages smaller than asked is read to the end", async () => {
+    const db = consoleFake(consoleTables(), { authPageCap: 2 });
+    const list = await buildUserList(deps(db));
+    expect(list.users.every((u) => u.email)).toBe(true);
+    expect(db.calls.filter((c) => c.path.startsWith("/auth/v1/admin/users?")).map((c) => c.params.get("page"))).toEqual(["1", "2", "3"]);
+  });
+
   it("the auth list failing is a named failure", async () => {
     await expect(buildUserList(deps(consoleFake(consoleTables(), { authListStatus: 500 })))).rejects.toMatchObject({ name: "ConsoleQueryError", what: "auth" });
   });

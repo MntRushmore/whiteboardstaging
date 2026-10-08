@@ -30,6 +30,8 @@ export interface FakeOptions {
   onUpdate?: Record<string, (before: Row, after: Row) => Row>;
   /** the auth admin API's list answers this status */
   authListStatus?: number;
+  /** the auth admin API's list pages by at most this many, whatever is asked */
+  authPageCap?: number;
 }
 
 export interface FakeSupabase {
@@ -140,7 +142,7 @@ export function fakeSupabase(tables: Tables, opts: FakeOptions = {}): FakeSupaba
     if (url.pathname === "/auth/v1/admin/users") {
       if (opts.authListStatus) return Response.json({ msg: "auth fell over" }, { status: opts.authListStatus });
       const page = Number(url.searchParams.get("page") ?? 1);
-      const perPage = Number(url.searchParams.get("per_page") ?? 50);
+      const perPage = Math.min(Number(url.searchParams.get("per_page") ?? 50), opts.authPageCap ?? Infinity);
       const all = Object.keys(opts.users ?? {}).map(account);
       return Response.json({ users: all.slice((page - 1) * perPage, page * perPage), aud: "authenticated" }, { headers: { "x-total-count": String(all.length) } });
     }
