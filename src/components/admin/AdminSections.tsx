@@ -1,7 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { CircleCheck, CircleHelp, CircleX, Clock, OctagonAlert, RefreshCw, TriangleAlert } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, Camera, CircleCheck, CircleHelp, CircleX, Clock, OctagonAlert, RefreshCw, TriangleAlert } from "lucide-react";
+import { BUGS_COPY, bugHref, type NewBugsPreview } from "@/lib/admin/bugsView";
+import { ISSUES_COPY, type TopIssuesView } from "@/lib/admin/issuesView";
 import type { CheckState } from "./useAdminOverview";
 import {
   ADMIN_COPY,
@@ -16,7 +19,9 @@ import {
   type UpcomingDayView,
 } from "@/lib/admin/view";
 import { Button } from "@/registry/components/button/button";
+import { Pill, Sparkline } from "./ConsoleBits";
 import styles from "./admin.module.css";
+import c from "./console.module.css";
 
 /** A titled block of the page; its heading names the region. */
 export function Section({ id, title, hint, action, children }: { id: string; title: string; hint?: string; action?: ReactNode; children: ReactNode }) {
@@ -210,6 +215,109 @@ export function ErrorGroups({ groups }: { groups: readonly ErrorGroupView[] }) {
         <ErrorGroupItem key={g.key} group={g} />
       ))}
     </ul>
+  );
+}
+
+/** The overview's top open issues (regressed first), each to the issues page, and the way there. */
+export function TopIssues({ top }: { top: TopIssuesView }) {
+  return (
+    <div className={c.overviewList}>
+      {top.items.length === 0 ? (
+        <div className={styles.panel}>
+          <p className={styles.quiet}>
+            <CircleCheck size={16} strokeWidth={2} aria-hidden className={styles.inlineIconOk} />
+            {ISSUES_COPY.topEmpty}
+          </p>
+        </div>
+      ) : (
+        <ul className={c.compactList}>
+          {top.items.map((i) => (
+            <li key={i.fingerprint}>
+              <Link href={top.link} className={c.compactRow}>
+                <span className={c.compactMain}>
+                  <span className={c.compactTitle}>
+                    <span className={styles.levelPill} data-level={i.level}>
+                      <span aria-hidden className={styles.statePillIcon}>
+                        {LEVEL_ICONS[i.level]}
+                      </span>
+                      {i.levelLabel}
+                    </span>
+                    <span className={c.compactLabel}>{i.label}</span>
+                    {i.regressed && <Pill tone="danger">{ISSUES_COPY.regressed}</Pill>}
+                  </span>
+                  <span className={c.compactText}>{i.message}</span>
+                  <span className={c.compactFacts}>
+                    <span>{i.users}</span>
+                    <span>{i.lastSeen}</span>
+                  </span>
+                </span>
+                <span className={c.compactSide}>
+                  <span className={c.compactCount}>{i.count}</span>
+                  <Sparkline spark={i.spark} label={ISSUES_COPY.perDay} />
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Link href={top.link} className={c.moreLink}>
+        {top.linkLabel}
+        <ArrowRight size={15} strokeWidth={1.9} aria-hidden />
+      </Link>
+    </div>
+  );
+}
+
+/** The overview's newest new bug reports, each opening in the inbox, and the way there. */
+export function NewBugs({ preview }: { preview: NewBugsPreview }) {
+  return (
+    <div className={c.overviewList}>
+      {preview.items.length === 0 ? (
+        <div className={styles.panel}>
+          <p className={styles.quiet}>
+            <CircleCheck size={16} strokeWidth={2} aria-hidden className={styles.inlineIconOk} />
+            {BUGS_COPY.noneNew}
+          </p>
+        </div>
+      ) : (
+        <ul className={c.compactList}>
+          {preview.items.map((b) => (
+            <li key={b.id}>
+              <Link href={bugHref(b.id, "new")} className={c.compactRow}>
+                <span className={c.compactMain}>
+                  <span className={c.compactTitle}>
+                    <span className={c.newDot} aria-hidden />
+                    <span className={c.compactLabel} data-missing={b.whoMissing || undefined}>
+                      {b.who}
+                    </span>
+                    <span className={c.compactWhen} title={b.whenTitle}>
+                      {b.ago}
+                    </span>
+                  </span>
+                  <span className={c.compactText} data-missing={b.messageMissing || undefined}>
+                    {b.excerpt}
+                  </span>
+                  {(b.device.summary || b.hasScreenshot) && (
+                    <span className={c.compactFacts}>
+                      {b.device.summary && <span>{b.device.summary}</span>}
+                      {b.hasScreenshot && (
+                        <span>
+                          <Camera size={12} strokeWidth={2} aria-hidden /> {BUGS_COPY.screenshot}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Link href={preview.link} className={c.moreLink}>
+        {preview.linkLabel}
+        <ArrowRight size={15} strokeWidth={1.9} aria-hidden />
+      </Link>
+    </div>
   );
 }
 

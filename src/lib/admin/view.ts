@@ -25,6 +25,7 @@ export const AUTO_REFRESH_MS = 60_000;
 
 export const ADMIN_COPY = {
   title: "Admin",
+  overviewTitle: "Overview",
   documentTitle: "Admin · Agathon",
   notFoundTitle: "Not found · Agathon",
   back: "My whiteboards",
@@ -46,7 +47,9 @@ export const ADMIN_COPY = {
   liveCheckTitle: "Live check (just now)",
 
   errorsTitle: "Errors students saw",
-  errorsHint: "Errors on the board and in Ask, crashes in the browser, and server and AI failures, grouped over the last 24 hours. Health checks are under Status.",
+  errorsHint: "Errors on the board and in Ask, crashes in the browser, and server and AI failures. Health checks are under Status.",
+  topIssuesTitle: "Top open issues, last 7 days",
+  groupsTitle: "Grouped, last 24 hours",
   chartTitle: "Errors and warnings per hour, last 48 hours",
   groupsEmpty: "Nothing went wrong in the last 24 hours.",
   samplesToggle: (n: number) => (n === 1 ? "See the latest one" : `See the latest ${n}`),
@@ -67,7 +70,9 @@ export const ADMIN_COPY = {
   usersHint: "Active means an AI call or a problem worked on a board.",
 
   bugsTitle: "Bug reports",
-  bugsHint: "The latest 20.",
+  bugsHint: "The newest reports nobody has looked at yet.",
+  bugsFallbackHint: "The latest 20.",
+  liveTitle: "Live now",
   bugsEmpty: "No bug reports yet.",
   noMessage: "(no message)",
   noEmail: "no email",
