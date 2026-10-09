@@ -5,27 +5,25 @@ const mod = vi.hoisted(() => ({
   sayAuto: vi.fn(),
   sayNow: vi.fn(),
   stop: vi.fn(),
-  watchBoard: vi.fn(),
+  watchBoardWhileOn: vi.fn(),
 }));
 vi.mock("@/components/speech/readAloud", () => ({
   sayAuto: mod.sayAuto,
   sayNow: mod.sayNow,
-  watchBoard: mod.watchBoard,
+  watchBoardWhileOn: mod.watchBoardWhileOn,
 }));
-
-import { READ_ALOUD_EVENT, READ_ALOUD_KEY } from "../contracts";
 
 const editor = {} as Editor;
 const flush = async () => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
 };
 
-/** A window with storage, events and requestIdleCallback (run by hand). */
-function fakeWindow(stored: string | null) {
+/** A window with events and requestIdleCallback (run by hand). */
+function fakeWindow() {
   const target = new EventTarget();
   const idle: Array<() => void> = [];
   const w = Object.assign(target, {
-    localStorage: { getItem: (k: string) => (k === READ_ALOUD_KEY ? stored : null) },
+    localStorage: { getItem: () => null },
     requestIdleCallback: (cb: () => void) => idle.push(cb),
     cancelIdleCallback: vi.fn(),
   });
@@ -37,7 +35,7 @@ beforeEach(() => {
   mod.sayAuto.mockReset();
   mod.sayNow.mockReset();
   mod.stop.mockReset();
-  mod.watchBoard.mockReset().mockReturnValue(mod.stop);
+  mod.watchBoardWhileOn.mockReset().mockReturnValue(mod.stop);
 });
 
 afterEach(() => {
@@ -53,50 +51,36 @@ describe("say.ts: the board's front door to read aloud", () => {
     await flush();
     expect(mod.sayAuto).not.toHaveBeenCalled();
     expect(mod.sayNow).not.toHaveBeenCalled();
-    expect(mod.watchBoard).not.toHaveBeenCalled();
+    expect(mod.watchBoardWhileOn).not.toHaveBeenCalled();
   });
 
   it("say / sayNow hand the words on once the module is loaded; blank words are dropped", async () => {
-    vi.stubGlobal("window", fakeWindow(null).w);
+    vi.stubGlobal("window", fakeWindow().w);
     const { say, sayNow } = await import("../say");
     say("Try again");
     say("   ");
+    say("Nice!", { polite: true });
     sayNow("Say it again");
     await vi.waitFor(() => expect(mod.sayNow).toHaveBeenCalled());
-    expect(mod.sayAuto.mock.calls).toEqual([["Try again"]]);
+    expect(mod.sayAuto.mock.calls).toEqual([["Try again"], ["Nice!", { polite: true }]]);
     expect(mod.sayNow.mock.calls).toEqual([["Say it again"]]);
   });
 
-  it("the watcher starts in idle time, and its stop stops it", async () => {
-    const { w, runIdle } = fakeWindow(null);
+  it("the watcher starts in idle time, as the one that runs only while read aloud is on, and its stop stops it", async () => {
+    const { w, runIdle } = fakeWindow();
     vi.stubGlobal("window", w);
     const { watchReadAloud } = await import("../say");
     const stop = watchReadAloud(editor);
     await flush();
-    expect(mod.watchBoard).not.toHaveBeenCalled();
+    expect(mod.watchBoardWhileOn).not.toHaveBeenCalled();
     runIdle();
-    await vi.waitFor(() => expect(mod.watchBoard).toHaveBeenCalledWith(editor));
+    await vi.waitFor(() => expect(mod.watchBoardWhileOn).toHaveBeenCalledWith(editor));
     stop();
     expect(mod.stop).toHaveBeenCalled();
   });
 
-  it("switched off on this device: nothing loads until it is switched on", async () => {
-    const { w, runIdle } = fakeWindow("off");
-    vi.stubGlobal("window", w);
-    const { watchReadAloud } = await import("../say");
-    watchReadAloud(editor);
-    runIdle();
-    await flush();
-    expect(mod.watchBoard).not.toHaveBeenCalled();
-    w.dispatchEvent(new CustomEvent(READ_ALOUD_EVENT, { detail: "off" }));
-    await flush();
-    expect(mod.watchBoard).not.toHaveBeenCalled();
-    w.dispatchEvent(new CustomEvent(READ_ALOUD_EVENT, { detail: "on" }));
-    await vi.waitFor(() => expect(mod.watchBoard).toHaveBeenCalledTimes(1));
-  });
-
   it("stopped before idle time: the watcher never starts", async () => {
-    const { w, runIdle } = fakeWindow(null);
+    const { w, runIdle } = fakeWindow();
     vi.stubGlobal("window", w);
     const { watchReadAloud } = await import("../say");
     const stop = watchReadAloud(editor);
@@ -106,6 +90,6 @@ describe("say.ts: the board's front door to read aloud", () => {
     const { say } = await import("../say");
     say("x");
     await vi.waitFor(() => expect(mod.sayAuto).toHaveBeenCalled());
-    expect(mod.watchBoard).not.toHaveBeenCalled();
+    expect(mod.watchBoardWhileOn).not.toHaveBeenCalled();
   });
 });

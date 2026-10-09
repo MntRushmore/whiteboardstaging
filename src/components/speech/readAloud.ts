@@ -4,11 +4,14 @@
  * Never part of the board's first load (docs/BUNDLE.md).
  *
  *  - one shared Speaker (`src/lib/speech/speaker.ts`) with the browser's parts: one <audio>
- *    element, speechSynthesis, the speak route; unlocked by the first tap or key anywhere on the
+ *    element, speechSynthesis, the speak route; made only when there is something to say (read
+ *    aloud on, or a speaker button's tap), then unlocked by the next tap or key anywhere on the
  *    page (iOS plays sound only after one);
- *  - the setting: the device's choice, else the grade's default (`src/lib/speech/setting.ts`);
- *  - `watchBoard`: what the tutor writes on the board is said (a model's note on a ringed line, a
- *    hint card and its question), never the student's own work, and never while the pen moves.
+ *  - the setting: the student's choice on this device, else the grade's default
+ *    (`src/lib/speech/setting.ts`);
+ *  - `watchBoardWhileOn`: while the setting is on, `watchBoard`: what the tutor writes on the board
+ *    is said (a model's note on a ringed line, a hint card and its question), never the student's
+ *    own work, and never while the pen moves.
  */
 import { react, type Editor, type TLEventInfo } from "tldraw";
 import { penIsResting } from "@/lib/billing/inkDialog";
@@ -30,22 +33,29 @@ function storage(): ChoiceStorage | null {
   }
 }
 
+const signedInUser = async () => (await supabase.auth.getSession()).data.session?.user.id ?? null;
+
 /** On or off for this student on this device (the grade is read once, the first time it matters). */
 export const isReadAloudOn = createReadAloudResolver(storage, {
-  userId: async () => (await supabase.auth.getSession()).data.session?.user.id ?? null,
+  userId: signedInUser,
   grade: async (userId) => (await readLearnerProfile(userId)).grade,
 });
 
-/** The Board options checkbox: stores the choice; switched off, whatever is being said stops. */
+/** The Board options checkbox: stores this student's choice; switched off, whatever is being said stops. */
 export function setReadAloud(on: boolean): void {
-  storeChoice(storage(), on, window);
   if (!on) shared?.stop();
+  void signedInUser()
+    .then((userId) => {
+      if (userId) storeChoice(storage(), userId, on, window);
+    })
+    .catch(() => undefined);
 }
 
 /** Calls `fn` whenever the choice changes, here or in another tab. */
 export function onReadAloudChange(fn: () => void): () => void {
   const onStorage = (e: StorageEvent) => {
-    if (e.key === READ_ALOUD_KEY) fn();
+    // anyone's key: the resolver reads the signed-in student's
+    if (e.key === null || e.key === READ_ALOUD_KEY || e.key.startsWith(`${READ_ALOUD_KEY}.`)) fn();
   };
   window.addEventListener(READ_ALOUD_EVENT, fn);
   window.addEventListener("storage", onStorage);
@@ -63,11 +73,16 @@ let sharedAudio: HTMLAudioElement | null = null;
 /** Gestures that count as a user's (iOS: touchend and pointerup; a desktop: pointerdown, keys). */
 const GESTURES = ["pointerdown", "pointerup", "touchend", "keydown", "click"] as const;
 
-/** Tries the unlock on every gesture until the shared element has played once. */
+/**
+ * Tries the unlock on every gesture until the shared element has played once and the browser's
+ * voice has said its primer. A pointerdown unlocks the element only: a touch's is no gesture to
+ * iOS's speech, which drops a primer there without a word; the pointerup, touchend or click after
+ * it primes the voice.
+ */
 function unlockOnGestures(speaker: Speaker): void {
-  const onGesture = () => {
-    speaker.unlock();
-    if (!speaker.unlocked) return;
+  const onGesture = (e: Event) => {
+    speaker.unlock({ voice: e.type !== "pointerdown" });
+    if (!speaker.unlocked || !speaker.voiceUnlocked) return;
     for (const g of GESTURES) window.removeEventListener(g, onGesture, true);
   };
   for (const g of GESTURES) window.addEventListener(g, onGesture, { capture: true, passive: true });
@@ -96,12 +111,17 @@ export function getSpeaker(): Speaker {
   return shared;
 }
 
-/** The tutor's words, said if read aloud is on and once the pen rests. */
-export function sayAuto(text: string): void {
-  const speaker = getSpeaker();
-  void isReadAloudOn().then((on) => {
-    if (on) void speaker.speak(text, { waitForPause: true });
-  });
+/**
+ * The tutor's words, said if read aloud is on and once the pen rests. The speaker (and its
+ * listeners on every tap) is made only then: a student whose read aloud is off never has the page's
+ * audio touched. `polite`: not over a phrase being said (a cheer never cuts off the tutor's note).
+ */
+export function sayAuto(text: string, opts: { polite?: boolean } = {}): void {
+  void isReadAloudOn()
+    .then((on) => {
+      if (on) void getSpeaker().speak(text, { waitForPause: true, polite: opts.polite === true });
+    })
+    .catch(() => undefined);
 }
 
 /** A speaker button's tap: said now, whatever the setting (the tap unlocks audio on iOS too). */
@@ -114,12 +134,64 @@ export function sayNow(text: string): void {
 // ------------------------------------------------------------------ the board
 
 /**
+ * A check's notes arrive one after another within a second or so (at most 3, most important
+ * first): they are gathered this long from the first and said as one phrase, so the last, least
+ * important one does not cut off the first.
+ */
+export const NOTE_BURST_MS = 1_000;
+/** Notes of one burst said, at most (the rest are on the board). */
+const NOTES_SAID = 2;
+
+/**
+ * `watchBoard` while read aloud is on for this student (their choice on this device, else their
+ * grade's default), started and stopped as the setting changes. Off, nothing is made: no speaker,
+ * no listener on the page's taps. Returns the stop function.
+ */
+export function watchBoardWhileOn(editor: Editor): () => void {
+  let done = false;
+  let stopBoard: (() => void) | null = null;
+  const check = () => {
+    void isReadAloudOn()
+      .then((on) => {
+        if (done) return;
+        if (on && !stopBoard) stopBoard = watchBoard(editor);
+        else if (!on && stopBoard) {
+          stopBoard();
+          stopBoard = null;
+        }
+      })
+      .catch(() => undefined);
+  };
+  check();
+  const offSwitch = onReadAloudChange(check);
+  return () => {
+    done = true;
+    offSwitch();
+    stopBoard?.();
+    stopBoard = null;
+  };
+}
+
+/**
  * Watches one board while it is open: the pen (a phrase waits for it to rest, `penIsResting`), a
  * model's note appearing on a ringed line, and a hint card opening. Returns the stop function,
  * which also stops whatever is being said.
  */
 export function watchBoard(editor: Editor): () => void {
   const speaker = getSpeaker();
+
+  // a check's notes, gathered for one phrase (NOTE_BURST_MS); the same words twice are said once
+  let burst: string[] = [];
+  let flush: ReturnType<typeof setTimeout> | null = null;
+  const queueNote = (note: string) => {
+    if (!burst.includes(note)) burst.push(note);
+    flush ??= setTimeout(() => {
+      flush = null;
+      const words = burst.slice(0, NOTES_SAID).join(" ");
+      burst = [];
+      sayAuto(words);
+    }, NOTE_BURST_MS);
+  };
 
   let lastPenAt = 0;
   const penDown = () => editor.inputs.isPointing || editor.inputs.isDragging || editor.inputs.buttons.size > 0;
@@ -138,11 +210,11 @@ export function watchBoard(editor: Editor): () => void {
     ({ changes }) => {
       for (const [from, to] of Object.values(changes.updated)) {
         const note = newTutorNote(from, to);
-        if (note) sayAuto(note);
+        if (note) queueNote(note);
       }
       for (const rec of Object.values(changes.added)) {
         const note = newTutorNote(null, rec);
-        if (note) sayAuto(note);
+        if (note) queueNote(note);
       }
     },
     { scope: "document", source: "remote" },
@@ -170,6 +242,9 @@ export function watchBoard(editor: Editor): () => void {
     editor.off("event", onEvent);
     removeProbe();
     offNotes();
+    if (flush) clearTimeout(flush);
+    flush = null;
+    burst = [];
     offHints();
     offSwitch();
     speaker.stop();

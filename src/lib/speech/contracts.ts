@@ -19,8 +19,18 @@ export function readAloudByDefault(grade: number | null | undefined): boolean {
   return typeof grade === "number" && grade <= 2;
 }
 
-/** Device setting key: "on" | "off" (absent: the grade's default). */
+/**
+ * The setting's key on the device, one per user (`readAloudKey`): "on" | "off" (absent: the grade's
+ * default). A family's kids share a tablet and switch by picture (src/lib/family), so one kid's
+ * choice must not follow another onto it. Until 2026-10-09 this key alone held one choice for the
+ * whole device; the first user to read the setting after that takes it over, once.
+ */
 export const READ_ALOUD_KEY = "agathon.readAloud";
+
+/** `agathon.readAloud.<userId>`: this user's choice on this device. */
+export function readAloudKey(userId: string): string {
+  return `${READ_ALOUD_KEY}.${userId}`;
+}
 
 // ------------------------------------------------------------------ additions (feat/kcb3-voice)
 

@@ -7,7 +7,10 @@
  *    played once ("unlocked"); a fresh element per phrase would be blocked every time. `unlock()` is
  *    called inside the first tap on the board (it plays a few milliseconds of silence) and every
  *    later hint plays through the same element. A hint that came before any tap is kept a moment
- *    (`PENDING_MS`) and said once the tap unlocks the element.
+ *    (`PENDING_MS`) and said once the tap unlocks the element. The browser's voice is primed the
+ *    same way, and counts as primed only once the browser has said the primer: iOS drops a
+ *    speechSynthesis.speak() outside a real gesture (a touch's pointerdown is none) without a word,
+ *    so a dropped primer is tried again on the next gesture.
  *  - A new phrase cancels the one before: two hints never talk over each other, and a replay tap
  *    starts the phrase again.
  *  - Never while the student is writing: an automatic phrase (`waitForPause`) waits until the
@@ -123,6 +126,11 @@ export const ROUTE_DOWN_MS = 10 * 60_000;
 export const FETCH_TIMEOUT_MS = 6_000;
 /** Phrases kept as audio. */
 export const CACHE_PHRASES = 24;
+/**
+ * Primers for the browser's voice tried without the browser saying one, before the speaker stops
+ * trying: a browser that never reports the end of a silent primer must not get one on every tap.
+ */
+export const PRIME_TRIES = 6;
 /** The browser's voice: a little slower than its default, for young listeners. */
 const BROWSER_RATE = 0.95;
 
@@ -217,6 +225,7 @@ export class Speaker {
   private audioUnlocked = false;
   private unlocking = false;
   private synthUnlocked = false;
+  private synthPrimes = 0;
 
   private readonly now: () => number;
   private readonly setTimer: (fn: () => void, ms: number) => Timer;
@@ -231,6 +240,11 @@ export class Speaker {
   /** True once the shared element has played (a tap unlocked it, or the browser allowed it anyway). */
   get unlocked(): boolean {
     return this.audioUnlocked;
+  }
+
+  /** True once the browser's voice has said a primer (or there is none to prime, or it stopped trying). */
+  get voiceUnlocked(): boolean {
+    return this.synthUnlocked || !this.deps.synth;
   }
 
   /**
@@ -248,9 +262,11 @@ export class Speaker {
    * Says `text` (made speakable first: `spokenText`), cancelling whatever was being said. With
    * `waitForPause`, it starts only once the pen rests. Resolves with how it ended; never rejects.
    */
-  speak(text: string, opts: { waitForPause?: boolean } = {}): Promise<SpeakOutcome> {
+  speak(text: string, opts: { waitForPause?: boolean; polite?: boolean } = {}): Promise<SpeakOutcome> {
     const words = spokenText(text);
     if (!words) return Promise.resolve("skipped");
+    // `polite`: never over a phrase being said or about to be (a cheer, over the tutor's note)
+    if (opts.polite && this.active) return Promise.resolve("skipped");
     this.stop();
     const id = ++this.seq;
     const abort = new AbortController();
@@ -284,8 +300,10 @@ export class Speaker {
    * Call inside a user gesture (a tap, a key): plays a moment of silence through the shared element
    * so iOS lets it play later, and primes the browser's voice the same way. Then says a phrase the
    * browser blocked a moment ago, if there is one. Cheap to call on every gesture until it worked.
+   * `voice: false` leaves the browser's voice for a later gesture: an event iOS does not count as
+   * one for speech (a touch's pointerdown), where a primer would be dropped.
    */
-  unlock(): void {
+  unlock(opts: { voice?: boolean } = {}): void {
     const audio = this.deps.audio;
     if (audio && !this.audioUnlocked && !this.unlocking && !this.stopAudio) {
       this.unlocking = true;
@@ -303,14 +321,21 @@ export class Speaker {
         });
     }
     const synth = this.deps.synth;
-    if (synth && !this.synthUnlocked && !this.stopSynth) {
-      this.synthUnlocked = true;
+    if (opts.voice !== false && synth && !this.synthUnlocked && !this.stopSynth) {
       try {
         const u = this.deps.makeUtterance(" ");
         u.volume = 0;
+        // primed once the browser has said it; a primer dropped without a word is tried again
+        u.onend = () => {
+          if (this.synthUnlocked) return;
+          this.synthUnlocked = true;
+          this.sayPending();
+        };
+        u.onerror = () => undefined;
         synth.speak(u);
+        if (++this.synthPrimes >= PRIME_TRIES) this.synthUnlocked = true;
       } catch {
-        this.synthUnlocked = false;
+        // no voice to prime here
       }
     }
   }
