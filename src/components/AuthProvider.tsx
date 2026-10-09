@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { installClientLogCapture } from "@/lib/logger";
 import { reportUserError } from "@/lib/reportAppError";
 import { classifyAuthLoadError } from "@/lib/authState";
+import { watchAuthUser } from "@/lib/authUserChange";
 import { Button } from "@/components/ui/button";
 
 if (typeof window !== "undefined") {
@@ -51,6 +52,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    // Another tab switched profile (or someone else signed in): this page belongs to the user it
+    // loaded as, so it leaves for a fresh home as the new one, never showing or saving the old
+    // user's things as them (src/lib/authUserChange.ts). The board's device backup is written on
+    // pagehide, so unsaved strokes survive the trip.
+    const watch = watchAuthUser({ leave: () => window.location.replace("/") });
 
     function settle(err: unknown) {
       const outcome = classifyAuthLoadError(err);
@@ -75,6 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error) {
           settle(error);
         } else {
+          watch.settle(data.session);
           setSession(data.session);
           setAuthError(null);
         }
@@ -91,6 +98,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       if (cancelled) return;
+      // false: another user's session arrived from another tab, and this page is leaving
+      if (!watch.change(event, s)) return;
       if (event === "SIGNED_OUT") {
         setSession(null);
         setLoading(false);

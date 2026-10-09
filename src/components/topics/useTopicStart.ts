@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -50,52 +50,102 @@ export interface TopicActions {
   ask: (text: string) => void;
 }
 
+// ------------------------------------------------------------------ one board at a time, page-wide
+
+/**
+ * What is being opened, for every `useTopicActions` on the page. The home has two (the skill path's
+ * stops, and Up next / Ask / Pick a topic), and each tap makes a board before the page moves: a lock
+ * per hook let a tap on one start a second board while the other's was still being made. One lock
+ * for the page, read synchronously, so two quick taps anywhere open one board; every hook's `busy`
+ * is this, so the other card's buttons wait too. Released by its holder on a failure, or when the
+ * holder unmounts (a successful open keeps it while the page leaves).
+ */
+type TopicOpening = { owner: object; kind: TopicId | "ask" };
+let opening: TopicOpening | null = null;
+const openingListeners = new Set<() => void>();
+
+function setOpening(next: TopicOpening | null): void {
+  opening = next;
+  for (const listener of openingListeners) listener();
+}
+
+/** Take the page's lock for `owner`; false while anyone (this hook included) holds it. */
+export function claimTopicOpen(owner: object, kind: TopicId | "ask"): boolean {
+  if (opening) return false;
+  setOpening({ owner, kind });
+  return true;
+}
+
+/** Give the lock back, if `owner` holds it. */
+export function releaseTopicOpen(owner: object): void {
+  if (opening?.owner === owner) setOpening(null);
+}
+
+/** What the page is opening, or null. */
+export function topicOpening(): TopicId | "ask" | null {
+  return opening?.kind ?? null;
+}
+
+/** Tests only: drop the lock whoever holds it (a page unmounting does this through its holder). */
+export function resetTopicOpeningForTests(): void {
+  setOpening(null);
+}
+
+function subscribeOpening(listener: () => void): () => void {
+  openingListeners.add(listener);
+  return () => {
+    openingListeners.delete(listener);
+  };
+}
+
+const noOpening = () => null;
+
 /**
  * Opening a topic from the home, like the Progress page's Practice (`useBoardActions`): the board is
  * made first (`createFirstBoard`), the device marker left for it (a topic's problems, or the words
  * for Ask), then the board opens and does the rest. A failure says so in a toast and leaves the
- * buttons ready to try again.
+ * buttons ready to try again. One board at a time for the whole page (`claimTopicOpen`).
  */
 export function useTopicActions(userId: string | undefined, grade: Grade | null = null): TopicActions {
   const router = useRouter();
-  const [busy, setBusyState] = useState<TopicId | "ask" | null>(null);
-  // read synchronously: two quick taps open one board
-  const busyRef = useRef<TopicId | "ask" | null>(null);
-  const setBusy = useCallback((next: TopicId | "ask" | null) => {
-    busyRef.current = next;
-    setBusyState(next);
-  }, []);
+  // this hook's key to the page's lock
+  const [owner] = useState(() => ({}));
+  const busy = useSyncExternalStore(subscribeOpening, topicOpening, noOpening);
+  const release = useCallback(() => releaseTopicOpen(owner), [owner]);
+  // leaving the page (after a successful open, or mid-way) gives the lock back
+  useEffect(() => release, [release]);
 
   const open = useCallback(
     async (kind: TopicId | "ask", title: string, leave: (boardId: string) => boolean) => {
-      if (!userId) return;
-      setBusy(kind);
+      if (!userId) {
+        release();
+        return;
+      }
       const board = await createFirstBoard(client, userId, title);
       if (!board.ok) {
         toast.error(TOPIC_COPY.failedTitle, { description: describeError(new Error(board.error), TOPIC_COPY.failedFallback) });
         reportUserError({ kind: kind === "ask" ? "live.boards" : "live.practice", code: "create_failed", message: TOPIC_COPY.failedTitle });
-        setBusy(null);
+        release();
         return;
       }
       // no storage on this device (private mode): the board opens blank, named for what was asked
       if (!leave(board.value)) clientMetric("topics.markerFailed", { kind: kind === "ask" ? "ask" : "topic" });
-      // busy stays set: the page is leaving
+      // the lock stays held: the page is leaving (unmounting gives it back)
       router.push(`/board/${board.value}`);
     },
-    [userId, router, setBusy],
+    [userId, router, release],
   );
 
   const startTopic = useCallback(
     (id: TopicId) => {
-      if (busyRef.current) return;
-      setBusy(id);
+      if (!claimTopicOpen(owner, id)) return;
       void import("@/lib/learning/practiceSet").then(
         ({ topicSet }) => {
           const set = topicSet(id, TOPIC_PROBLEMS, topicSeed());
           if (set.problems.length === 0) {
             toast.error(TOPIC_COPY.failedTitle, { description: TOPIC_COPY.noProblems });
             reportUserError({ kind: "live.practice", code: "no_problems", message: TOPIC_COPY.failedTitle });
-            setBusy(null);
+            release();
             return;
           }
           clientMetric("topics.start", { skill: id, problems: set.problems.length, from: "home" });
@@ -103,26 +153,27 @@ export function useTopicActions(userId: string | undefined, grade: Grade | null 
         },
         () => {
           toast.error(TOPIC_COPY.failedTitle, { description: TOPIC_COPY.failedFallback });
-          setBusy(null);
+          release();
         },
       );
     },
-    [open, setBusy],
+    [owner, open, release],
   );
 
   const ask = useCallback(
     (text: string) => {
-      if (busyRef.current) return;
+      if (topicOpening()) return;
       const topic = matchTopic(text, grade);
       if (topic) {
         clientMetric("topics.ask", { routed: true });
         startTopic(topic);
         return;
       }
+      if (!claimTopicOpen(owner, "ask")) return;
       clientMetric("topics.ask", { routed: false });
       void open("ask", topicBoardTitle(text), (boardId) => writeAskKickoff({ boardId, message: text, createdAt: Date.now() }));
     },
-    [open, startTopic, grade],
+    [owner, open, startTopic, grade],
   );
 
   return { busy, startTopic, ask };

@@ -518,6 +518,10 @@
 .pickText {
   min-width: 0;
 }
+/* a kid's card has no button: their grown-up picks the grade */
+.card[data-kind="pick"][data-kid] {
+  grid-template-columns: auto minmax(0, 1fr);
+}
 @media (max-width: 639px) {
   .card[data-kind="pick"] {
     grid-template-columns: auto minmax(0, 1fr);

@@ -2,6 +2,8 @@
 
 import { useMemo } from "react";
 import { Trophy } from "lucide-react";
+import { useAuth } from "@/components/AuthProvider";
+import { isKidEmail } from "@/lib/family/contracts";
 import { pathFor, PATH_COPY } from "@/lib/path/pathView";
 import { PathCount, PathSkeleton, PathTrail, PickGrade } from "./PathTrail";
 import { usePathData, usePathOpen } from "./usePath";
@@ -21,13 +23,15 @@ export interface SkillPathCardProps {
 }
 
 export default function SkillPathCard({ userId }: SkillPathCardProps) {
+  // a kid profile's grade is their grown-up's to pick (on /family): Pick your grade says who to ask
+  const kid = isKidEmail(useAuth().user?.email);
   const data = usePathData(userId);
   const { busy, open } = usePathOpen(userId, "home");
   const view = useMemo(() => (data.status === "ready" ? pathFor(data.profile, data.levels) : null), [data]);
 
   if (data.status === "loading") return <PathSkeleton place="home" />;
   if (data.status === "failed") return null;
-  if (!view) return <PickGrade place="home" />;
+  if (!view) return <PickGrade place="home" kid={kid} />;
 
   return (
     <section className={styles.card} data-place="home" aria-labelledby="skill-path-title" data-skill-path={view.kind}>

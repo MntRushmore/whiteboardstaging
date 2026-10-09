@@ -19,6 +19,10 @@ export const FAMILY_COPY = {
   switching: "Switching…",
   manageFamily: "Manage family",
   switchFailed: "Couldn't switch profiles. Try again.",
+  /** the picker opened before the family was read, or the read failed */
+  pickerLoading: "Getting everyone's pictures…",
+  pickerFailed: "Couldn't load the profiles. Check your connection and try again.",
+  pickerRetry: "Try again",
 
   // ------------------------------------------------------------------ the PIN pad
   pinTitle: (name: string) => `${name}'s PIN`,
@@ -119,6 +123,16 @@ export const FAMILY_COPY = {
   kidPlanTitle: "Almost there!",
   kidPlanBody: "Ask them to start Agathon Unlimited from their profile, then you can practise.",
   kidPlanSwitch: "Tap your picture at the top to switch to your grown-up.",
+  /** the board's ink dialog and the Ask and lecture panels, for a kid whose help needs the grown-up's plan */
+  kidHelpPausedTitle: "Ask your grown-up",
+  kidHelpPaused: "Help is taking a break right now. Ask your grown-up to check Agathon on their profile.",
+  /** the account page, for a kid: no billing in its subtitle; the grown-up changes the cards on /family */
+  kidAccountSubtitle: "Your profile and grade.",
+  kidProfileDescription: "How you appear in the app.",
+  kidNameHint: "Your grown-up can change your name on their Family page.",
+  kidGradeDescription: "Your tutor picks problems for this grade.",
+  kidGradeHint: "Your grown-up can change your grade on their Family page.",
+  kidGradeNone: "Not picked yet",
   deleteAlsoKids: (names: string) => `It also deletes your kids' profiles (${names}), with their boards and progress.`,
   kidDeleteTitle: "Your profile",
   kidDelete: "Only your grown-up can remove this profile, from their Family page.",

@@ -234,21 +234,24 @@ export function StarsKey() {
 export type PathPlace = "home" | "progress";
 
 /** No grade and no high-school course yet: a friendly nudge to the account page's grade picker. */
-export function PickGrade({ place }: { place: PathPlace }) {
+export function PickGrade({ place, kid = false }: { place: PathPlace; kid?: boolean }) {
   return (
-    <section className={styles.card} data-kind="pick" data-place={place} aria-labelledby="path-pick-title" data-skill-path="pick">
+    <section className={styles.card} data-kind="pick" data-place={place} aria-labelledby="path-pick-title" data-skill-path="pick" data-kid={kid || undefined}>
       <span className={styles.pickIcon} aria-hidden>
         <GraduationCap size={26} strokeWidth={1.8} />
       </span>
       <div className={styles.pickText}>
         <h2 id="path-pick-title" className={styles.title}>
-          {PATH_COPY.pickTitle}
+          {kid ? PATH_COPY.kidPickTitle : PATH_COPY.pickTitle}
         </h2>
-        <p className={styles.hint}>{PATH_COPY.pickHint}</p>
+        <p className={styles.hint}>{kid ? PATH_COPY.kidPickHint : PATH_COPY.pickHint}</p>
       </div>
-      <ButtonLink href={PATH_COPY.pickHref} size="lg" className={styles.pickAction}>
-        {PATH_COPY.pickAction}
-      </ButtonLink>
+      {/* a kid's grade is set by their grown-up on /family: nothing for the kid to open */}
+      {!kid && (
+        <ButtonLink href={PATH_COPY.pickHref} size="lg" className={styles.pickAction}>
+          {PATH_COPY.pickAction}
+        </ButtonLink>
+      )}
     </section>
   );
 }

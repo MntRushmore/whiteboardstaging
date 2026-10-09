@@ -9,6 +9,13 @@
   max-width: 20rem;
 }
 
+/* a kid profile's grade: read, not picked (their grown-up changes it on the Family page) */
+.kidGrade {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
 .status {
   min-height: 1.25rem;
   margin: 0;

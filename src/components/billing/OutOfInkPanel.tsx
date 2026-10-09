@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CheckCircle2, ExternalLink, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { CheckCircle2, ExternalLink, HeartHandshake, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { ACCOUNT_PATH } from "@/lib/billing/inkSummary";
@@ -9,6 +9,8 @@ import { OUT_OF_INK_COPY, inkPanelMood } from "@/lib/billing/outOfInk";
 import { billingPortalUrl, unlimitedLink } from "@/lib/billing/unlimited";
 import { unlimitedPlanView } from "@/lib/billing/unlimitedPlan";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
+import { isKidEmail } from "@/lib/family/contracts";
+import { FAMILY_COPY } from "@/lib/family/copy";
 import { PLAN_PATH } from "@/lib/onboarding/planMarker";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +21,10 @@ import { cn } from "@/lib/utils";
  *    and Start the free trial, which opens the plan screen in this tab (the board is saved);
  *  - a plan whose help spends ink right now (a second plan before its first charge, a payment to
  *    fix, one being set up): what it is doing, and its fix (the billing portal, in a new tab);
- *  - the plan arrived while it was open: all set, back to the board.
+ *  - the plan arrived while it was open: all set, back to the board;
+ *  - a kid profile (src/lib/family), whose plan is their grown-up's: "Ask your grown-up", and
+ *    nothing else. Kids never see billing: no price, no plan screen, no portal (its sign-in would
+ *    be prefilled with the kid's address, which has no mailbox).
  * Loaded lazily: nothing here is in the board's first load.
  */
 export function OutOfInkPanel({
@@ -70,18 +75,34 @@ export function OutOfInkPanel({
     );
   }
 
+  const actions = (main: React.ReactNode) => (
+    <div className={cn("flex flex-wrap items-center gap-2", inline ? "" : "justify-end pt-1")}>
+      {footer}
+      {main}
+    </div>
+  );
+
+  if (isKidEmail(user?.email)) {
+    return (
+      <div className={cn("space-y-3", className)} data-testid="out-of-ink" data-variant={variant} data-state="kid">
+        <div className="space-y-1">
+          <Title className={titleClass}>
+            <HeartHandshake className="mr-1.5 inline size-4 align-[-2px] text-muted-foreground" aria-hidden />
+            {FAMILY_COPY.kidHelpPausedTitle}
+          </Title>
+          <Body className={cn("text-sm", inline ? "text-gray-700" : "text-muted-foreground")}>{FAMILY_COPY.kidHelpPaused}</Body>
+        </div>
+        {footer && actions(null)}
+      </div>
+    );
+  }
+
   const seePlan = (
     <Button asChild variant={inline ? "link" : "outline"} size="sm" className={inline ? "h-auto px-0 text-gray-900" : ""}>
       <a href={`${ACCOUNT_PATH}#billing`} target="_blank" rel="noopener noreferrer">
         {OUT_OF_INK_COPY.seePlan}
       </a>
     </Button>
-  );
-  const actions = (main: React.ReactNode) => (
-    <div className={cn("flex flex-wrap items-center gap-2", inline ? "" : "justify-end pt-1")}>
-      {footer}
-      {main}
-    </div>
   );
 
   if (mood === "offer") {

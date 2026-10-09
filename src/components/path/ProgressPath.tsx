@@ -2,6 +2,8 @@
 
 import { useMemo } from "react";
 import { Trophy } from "lucide-react";
+import { useAuth } from "@/components/AuthProvider";
+import { isKidEmail } from "@/lib/family/contracts";
 import type { SkillProgress } from "@/lib/learning/contracts";
 import { levelsOf } from "@/lib/learning/topics";
 import { pathFor, PATH_COPY } from "@/lib/path/pathView";
@@ -22,12 +24,14 @@ export interface ProgressPathProps {
  * board, as on the home. The levels come from the page's own read; only the grade is read here.
  */
 export function ProgressPath({ userId, skills }: ProgressPathProps) {
+  // a kid profile's grade is their grown-up's to pick (on /family): Pick your grade says who to ask
+  const kid = isKidEmail(useAuth().user?.email);
   const profile = usePathProfile(userId);
   const { busy, open } = usePathOpen(userId, "progress");
   const view = useMemo(() => (profile.status === "ready" ? pathFor(profile, levelsOf(skills)) : null), [profile, skills]);
 
   if (profile.status === "loading") return <PathSkeleton place="progress" />;
-  if (!view) return <PickGrade place="progress" />;
+  if (!view) return <PickGrade place="progress" kid={kid} />;
 
   return (
     <Section id="path-title" title={view.progressTitle} hint={PATH_COPY.progressHint} extra={<StarsKey />}>

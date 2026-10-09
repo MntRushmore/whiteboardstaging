@@ -70,4 +70,15 @@ describe("the count, the stars' key and Pick your grade", () => {
     expect(out).toMatch(/<a[^>]*href="\/account#grade"/);
     expect(out).toContain(PATH_COPY.pickAction);
   });
+
+  it("a kid's grade is their grown-up's to pick: who to ask, and no link to the account page", () => {
+    for (const place of ["home", "progress"] as const) {
+      const out = html(<PickGrade place={place} kid />);
+      expect(out).toContain(PATH_COPY.kidPickTitle);
+      expect(out).toContain(PATH_COPY.kidPickHint);
+      expect(out).not.toContain(PATH_COPY.pickAction);
+      expect(out).not.toContain("/account");
+      expect(out).not.toContain("<a ");
+    }
+  });
 });

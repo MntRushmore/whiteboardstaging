@@ -53,9 +53,10 @@ export function KidCard({ kid, busy, locked, onSwitch, onProgress, onEdit, onRem
         <p className={styles.noStats}>{FAMILY_COPY.noStats}</p>
       )}
 
-      <div className={styles.kidActions}>
-        <Button onClick={onSwitch} loading={busy === "switch"} disabled={locked || busy === "progress"} data-testid="kid-switch">
-          {FAMILY_COPY.switchTo(kid.displayName)}
+      <div className={`${styles.kidActions} ${styles.fitRow}`}>
+        <Button onClick={onSwitch} loading={busy === "switch"} disabled={locked || busy === "progress"} title={FAMILY_COPY.switchTo(kid.displayName)} data-testid="kid-switch">
+          {/* a long name ellipsizes at the card's width (a 390 px phone) */}
+          <span className={styles.fitLabel}>{FAMILY_COPY.switchTo(kid.displayName)}</span>
         </Button>
         <Button variant="secondary" onClick={onProgress} loading={busy === "progress"} disabled={locked || busy === "switch"}>
           <ChartColumn size={16} strokeWidth={1.9} aria-hidden />
