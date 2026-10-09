@@ -15,6 +15,7 @@ import { boardFromStore } from "./loadBoard";
 import { REPLAY_SPEEDS, SEEK_STEP_MS, speedFor, type ReplayPlayer } from "./player";
 import { ReplayCanvas, useReplayPlayer } from "./ReplayCanvas";
 import { Scrubber, type ScrubberMarker } from "./Scrubber";
+import { SaveVideoButton } from "./SaveVideo";
 
 /** A lively first speed: the whole replay in about 25 seconds (a short board at 1x). */
 export function kidSpeed(durationMs: number): number {
@@ -265,14 +266,18 @@ export default function KidReplay({ editor, boardId, onClose }: { editor: Editor
           <Sparkles className="size-5 text-amber-400" aria-hidden />
           {KID_REPLAY_COPY.title}
         </h2>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label={KID_REPLAY_COPY.close}
-          className="grid size-11 place-items-center rounded-full bg-white text-gray-700 shadow-md ring-1 ring-black/5 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-300"
-        >
-          <X className="size-5" aria-hidden />
-        </button>
+        <div className="flex items-center gap-2">
+          {/* the replay as a video to send (the recorder loads on the tap) */}
+          <SaveVideoButton player={player} disabled={empty} />
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={KID_REPLAY_COPY.close}
+            className="grid size-11 place-items-center rounded-full bg-white text-gray-700 shadow-md ring-1 ring-black/5 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-violet-300"
+          >
+            <X className="size-5" aria-hidden />
+          </button>
+        </div>
       </header>
 
       <main className="relative min-h-0 flex-1 px-3 sm:px-4">
