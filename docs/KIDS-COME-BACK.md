@@ -46,3 +46,42 @@ Each part's own migration gets its own timestamp:
 - The board's first load has about 10 KB of budget left (`docs/BUNDLE.md`), so anything new on the board loads with a dynamic import. The home's first load stays lean too.
 - Nothing ever emails a kid address, and kids never see billing.
 - Never touch prod. That means no Management API, no Vercel env, no live Stripe and no real emails.
+
+# Phases 2 and 3 (2026-10-09, overnight)
+
+**Phase 2, parents recommend it:**
+
+| Part | Branch | What it is |
+|---|---|---|
+| Weekly report | `feat/kcb2-report` | `/report` shows each child's week: problems, skills mastered, the next thing to work on, and a replay to watch. The Sunday email is built but OFF unless `WEEKLY_REPORT_EMAILS=on`, with one-tap opt-out. |
+| Share | `feat/kcb2-share` | A progress card picture to share or save, and the replay saved as a video. |
+| Referrals | `feat/kcb2-referral` | "Give a month, get a month": a code per grown-up, referrals recorded, a share link, and an admin list of rewards due. |
+| Yearly family plan | `feat/kcb2-annual` | $199/yr with every kid included, shown when its Payment Link is set. Monthly/yearly toggle on the plan screen, and the subscription's billing interval stored. |
+| Parent landing | `feat/kcb2-landing` | `/parents` for signed-out visitors: what it is, how it works, what kids practise, pricing, and an FAQ. No made-up testimonials or numbers. Signed-out `/` goes here. |
+
+**Phase 3, the board for little kids:**
+
+| Part | Branch | What it is |
+|---|---|---|
+| Read aloud | `feat/kcb3-voice` | Hints and questions spoken by ElevenLabs (`/api/live/speak`), falling back to the browser's voice. On by default for K–2. |
+| Simple board | `feat/kcb3-kidmode` | A board with fewer, bigger buttons for young kids (K–3 by default, switchable). |
+
+**Contract (Phases 2 and 3):**
+- Types:
+  - `src/lib/report/contracts.ts`
+  - `src/lib/referral/contracts.ts`
+  - `src/lib/billing/planChoice.ts` (a stub until the yearly plan is built)
+  - `src/lib/speech/contracts.ts`
+- `supabase/migrations/20261009100000_parents_recommend.sql`:
+  - `profiles.referral_code` and `profiles.weekly_report_opt_out`
+  - the `referrals` table
+  - `unlimited_subscriptions.billing_interval`
+
+Each part's own migration:
+- `20261009110000_referrals.sql`
+- `20261009120000_weekly_report.sql`
+- `20261009130000_annual.sql`
+
+**Stripe objects the owner makes, all optional:**
+- The yearly Payment Link → `NEXT_PUBLIC_UNLIMITED_ANNUAL_LINK`
+- The referral Payment Link (30-day trial) → `NEXT_PUBLIC_UNLIMITED_REFERRAL_LINK`
