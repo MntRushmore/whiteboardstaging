@@ -1,6 +1,7 @@
 /**
- * The referral pages' markup from finished views: the admin's Referrals list (the reward note, the
- * buttons each status allows, the same-person flag, the empty and failed states) and the friend's
+ * The referral pages' markup from finished views: the admin's Referrals list (the reward note with
+ * the plan's price, the buttons each row allows and why a paid one waits, the friend's plan, the
+ * same-person flag, the empty and failed states) and the friend's
  * invitation on the sign-up page (never naming the code, the free month only with its link).
  */
 import { describe, expect, it, vi } from "vitest";
@@ -13,6 +14,7 @@ import { ReferralsContent, type ReferralsContentProps } from "../AdminReferralsS
 import { ReferralInvite } from "../ReferralInvite";
 import { buildReferralsView, type AdminReferral, type AdminReferralList } from "@/lib/referral/admin";
 import { REFERRAL_ADMIN_COPY } from "@/lib/referral/copy";
+import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
 
 const NOW = Date.parse("2026-10-09T18:00:00Z");
 const CLOCK = { now: NOW, timeZone: "America/New_York" };
@@ -37,7 +39,7 @@ function referral(id: number, status: AdminReferral["status"], over: Partial<Adm
     updatedAt: "2026-10-09T17:00:00Z",
     rewardedByEmail: status === "rewarded" ? "owner@agathon.app" : null,
     referrer: { id: "a", email: "parent@example.com", createdAt: null, payerEmail: null, customerId: "cus_A1" },
-    referred: { id: `f${id}`, email: `friend${id}@example.com`, createdAt: null, payerEmail: null, planStatus: null },
+    referred: { id: `f${id}`, email: `friend${id}@example.com`, createdAt: null, payerEmail: null, planStatus: null, trialEnd: null },
     ...over,
   };
 }
@@ -47,9 +49,11 @@ const LIST: AdminReferralList = {
   counts: { signed_up: 1, trialing: 0, paid: 2, rewarded: 1, void: 0 },
   truncated: false,
   referrals: [
-    referral(4, "paid", { referred: { id: "f4", email: "parent+kid@example.com", createdAt: null, payerEmail: null, planStatus: "active" } }),
-    referral(3, "paid"),
-    referral(2, "rewarded"),
+    // paid four days ago and still active: rewardable
+    referral(4, "paid", { paidAt: "2026-10-05T16:00:00Z", referred: { id: "f4", email: "parent+kid@example.com", createdAt: null, payerEmail: null, planStatus: "active", trialEnd: null } }),
+    // paid two hours ago: the first charge may still fail
+    referral(3, "paid", { referred: { id: "f3", email: "friend3@example.com", createdAt: null, payerEmail: null, planStatus: "active", trialEnd: "2026-10-09T15:00:00Z" } }),
+    referral(2, "rewarded", { referred: { id: "f2", email: "friend2@example.com", createdAt: null, payerEmail: null, planStatus: "past_due", trialEnd: null } }),
     referral(1, "signed_up"),
   ],
 };
@@ -68,16 +72,34 @@ const props = (over: Partial<ReferralsContentProps> = {}): ReferralsContentProps
 });
 
 describe("the admin's Referrals list", () => {
-  it("says the Stripe credit comes first, above the list", () => {
+  it("says the Stripe checks and credit come first, above the list", () => {
     const html = text(render(<ReferralsContent {...props()} />));
     expect(html).toContain(REFERRAL_ADMIN_COPY.rewardNote);
     expect(html.indexOf(REFERRAL_ADMIN_COPY.rewardNote)).toBeLessThan(html.indexOf("friend3@example.com"));
   });
 
-  it("offers Mark rewarded on paid rows only, and Void until a row is final", () => {
+  it("names the credit at the plan's own price, and has the friend's invoice checked first", () => {
+    const price = `$${UNLIMITED_PLAN.monthlyUsd} credit`;
+    expect(REFERRAL_ADMIN_COPY.rewardNote).toContain(price);
+    expect(REFERRAL_ADMIN_COPY.rewardBody("parent@example.com")).toContain(price);
+    expect(REFERRAL_ADMIN_COPY.rewardNote).toMatch(/first real invoice .* says Paid/);
+    expect(REFERRAL_ADMIN_COPY.rewardBody("parent@example.com")).toMatch(/first real invoice .* says Paid/);
+  });
+
+  it("offers Mark rewarded only on a settled paid row, says when a paid one may be, and Void until a row is final", () => {
     const html = render(<ReferralsContent {...props()} />);
-    expect([...html.matchAll(/data-testid="referral-reward-(\d+)"/g)].map((m) => m[1])).toEqual(["4", "3"]);
+    expect([...html.matchAll(/data-testid="referral-reward-(\d+)"/g)].map((m) => m[1])).toEqual(["4"]);
+    expect([...html.matchAll(/data-testid="referral-wait-(\d+)"/g)].map((m) => m[1])).toEqual(["3"]);
+    expect(text(html)).toContain(REFERRAL_ADMIN_COPY.rewardFrom("Oct 12"));
     expect([...html.matchAll(/data-testid="referral-void-(\d+)"/g)].map((m) => m[1])).toEqual(["4", "3", "1"]);
+  });
+
+  it("shows the friend's plan, a failing one marked", () => {
+    const html = render(<ReferralsContent {...props()} />);
+    const plain = text(html);
+    expect(plain).toContain(REFERRAL_ADMIN_COPY.friendPlan(REFERRAL_ADMIN_COPY.planWords.active));
+    expect(plain).toContain(REFERRAL_ADMIN_COPY.noPlan);
+    expect(html).toMatch(new RegExp(`data-alarm="true"[^>]*>${REFERRAL_ADMIN_COPY.friendPlan(REFERRAL_ADMIN_COPY.planWords.past_due)}<`));
   });
 
   it("shows both emails, the referrer's Stripe customer, and who rewarded a row", () => {
@@ -98,7 +120,8 @@ describe("the admin's Referrals list", () => {
   it("renders the phone's cards with the same buttons", () => {
     const html = render(<ReferralsContent {...props({ layout: "list" })} />);
     expect(html).not.toContain("<table");
-    expect([...html.matchAll(/data-testid="referral-reward-(\d+)"/g)].map((m) => m[1])).toEqual(["4", "3"]);
+    expect([...html.matchAll(/data-testid="referral-reward-(\d+)"/g)].map((m) => m[1])).toEqual(["4"]);
+    expect([...html.matchAll(/data-testid="referral-wait-(\d+)"/g)].map((m) => m[1])).toEqual(["3"]);
   });
 
   it("is calm before anyone is invited, and says what failed when it cannot read", () => {

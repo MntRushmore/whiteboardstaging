@@ -1,7 +1,8 @@
 /**
  * The admin Referrals page as data (src/lib/referral/admin.ts): admin_referrals()'s answer checked
- * and renamed, the abuse flag, which buttons a row may show, the tiles and filters, and the change a
- * mark makes at once on the page.
+ * and renamed, the abuse flag, which buttons a row may show (a reward only once the friend's plan is
+ * active and its first payment has settled: rewardGate), the friend's plan, the tiles and filters,
+ * and the change a mark makes at once on the page.
  */
 import { describe, expect, it } from "vitest";
 import { REFERRAL_ADMIN_COPY } from "../copy";
@@ -15,7 +16,10 @@ import {
   defaultReferralFilter,
   looksLikeSamePerson,
   mailboxOf,
+  REFERRAL_SETTLE_DAYS,
   referralRow,
+  rewardFrom,
+  rewardGate,
   toAdminReferralList,
   type AdminReferral,
   type AdminReferralList,
@@ -37,7 +41,7 @@ function rpcEntry(id: number, status: string, over: Record<string, unknown> = {}
     updated_at: "2026-10-09T17:00:00Z",
     rewarded_by_email: status === "rewarded" ? "owner@agathon.app" : null,
     referrer: { id: A, email: "parent@example.com", created_at: "2026-09-01T00:00:00Z", customer_id: "cus_A", payer_email: "parent@example.com" },
-    referred: { id: B, email: `friend${id}@example.com`, created_at: "2026-10-09T15:00:00Z", payer_email: null, plan_status: status === "paid" ? "active" : null },
+    referred: { id: B, email: `friend${id}@example.com`, created_at: "2026-10-09T15:00:00Z", payer_email: null, plan_status: status === "paid" ? "active" : null, trial_end: null },
     ...over,
   };
 }
@@ -65,8 +69,17 @@ describe("admin_referrals()'s answer", () => {
       updatedAt: "2026-10-09T17:00:00Z",
       rewardedByEmail: null,
       referrer: { id: A, email: "parent@example.com", createdAt: "2026-09-01T00:00:00Z", payerEmail: "parent@example.com", customerId: "cus_A" },
-      referred: { id: B, email: "friend3@example.com", createdAt: "2026-10-09T15:00:00Z", payerEmail: null, planStatus: "active" },
+      referred: { id: B, email: "friend3@example.com", createdAt: "2026-10-09T15:00:00Z", payerEmail: null, planStatus: "active", trialEnd: null },
     });
+  });
+
+  it("reads the friend's trial end, and its absence (a database before 20261009140000) as unknown", () => {
+    const withTrial = ReferralRpcListSchema.parse({ ...RPC, referrals: [rpcEntry(3, "paid", { referred: { ...rpcEntry(3, "paid").referred, trial_end: "2026-10-09T15:00:00Z" } })] });
+    expect(toAdminReferralList(withTrial).referrals[0].referred.trialEnd).toBe("2026-10-09T15:00:00Z");
+    const { trial_end: _dropped, ...older } = rpcEntry(3, "paid").referred;
+    void _dropped;
+    const without = ReferralRpcListSchema.parse({ ...RPC, referrals: [rpcEntry(3, "paid", { referred: older })] });
+    expect(toAdminReferralList(without).referrals[0].referred.trialEnd).toBeNull();
   });
 
   it("refuses an unknown status, a bad code or a missing count", () => {
@@ -100,6 +113,48 @@ describe("what may be done", () => {
     for (const s of ["signed_up", "trialing", "rewarded", "void"] as const) expect(canMark(s, "rewarded")).toBe(false);
     for (const s of ["signed_up", "trialing", "paid"] as const) expect(canMark(s, "void")).toBe(true);
     for (const s of ["rewarded", "void"] as const) expect(canMark(s, "void")).toBe(false);
+  });
+
+  it("waits REFERRAL_SETTLE_DAYS (3) after the later of paid_at and the trial end", () => {
+    expect(REFERRAL_SETTLE_DAYS).toBe(3);
+    const paid = list().referrals[2];
+    expect(rewardFrom(paid)).toBe("2026-10-12T16:00:00.000Z");
+    expect(rewardFrom({ ...paid, referred: { ...paid.referred, trialEnd: "2026-10-10T00:00:00Z" } })).toBe("2026-10-13T00:00:00.000Z");
+    expect(rewardFrom({ ...paid, referred: { ...paid.referred, trialEnd: "2026-10-01T00:00:00Z" } })).toBe("2026-10-12T16:00:00.000Z");
+    expect(rewardFrom({ ...paid, paidAt: null, referred: { ...paid.referred, trialEnd: "2026-10-01T00:00:00Z" } })).toBe("2026-10-04T00:00:00.000Z");
+    expect(rewardFrom({ ...paid, paidAt: null })).toBeNull();
+  });
+
+  describe("rewardGate: the guard on Mark rewarded", () => {
+    const paid = list().referrals[2];
+    const settled = Date.parse("2026-10-12T16:00:00Z");
+
+    it("allows a paid referral whose friend's plan is active 3 days after it was paid", () => {
+      expect(rewardGate(paid, settled)).toEqual({ ok: true });
+      expect(rewardGate(paid, settled + 86_400_000)).toEqual({ ok: true });
+    });
+
+    it("waits while the first charge may still fail, and says until when", () => {
+      expect(rewardGate(paid, NOW)).toEqual({ ok: false, why: "settling", from: "2026-10-12T16:00:00.000Z" });
+      expect(rewardGate(paid, settled - 1)).toMatchObject({ ok: false, why: "settling" });
+      // the trial ended after it was marked paid: the later one counts
+      const lateTrial = { ...paid, referred: { ...paid.referred, trialEnd: "2026-10-11T00:00:00Z" } };
+      expect(rewardGate(lateTrial, settled)).toEqual({ ok: false, why: "settling", from: "2026-10-14T00:00:00.000Z" });
+      // no date to count from: never yet
+      expect(rewardGate({ ...paid, paidAt: null }, settled)).toEqual({ ok: false, why: "settling", from: null });
+    });
+
+    it("refuses while the friend's plan is not active, however long ago it was paid", () => {
+      for (const planStatus of ["past_due", "unpaid", "canceled", "incomplete_expired", "paused", "trialing", "incomplete", null]) {
+        expect(rewardGate({ ...paid, referred: { ...paid.referred, planStatus } }, settled + 30 * 86_400_000)).toEqual({ ok: false, why: "plan" });
+      }
+    });
+
+    it("refuses any referral that is not paid", () => {
+      for (const r of list().referrals.filter((x) => x.status !== "paid")) {
+        expect(rewardGate({ ...r, referred: { ...r.referred, planStatus: "active" } }, settled)).toEqual({ ok: false, why: "status" });
+      }
+    });
   });
 
   it("opens on the rewards due when there are some", () => {
@@ -148,20 +203,45 @@ describe("buildReferralsView", () => {
 });
 
 describe("referralRow", () => {
-  it("shows a paid referral as due, with the referrer's Stripe customer and both buttons", () => {
-    const row = referralRow(list().referrals[2], clock);
+  it("shows a settled paid referral as due, with the referrer's Stripe customer, the friend's plan and both buttons", () => {
+    const row = referralRow(list().referrals[2], { ...clock, now: Date.parse("2026-10-12T17:00:00Z") });
     expect(row).toMatchObject({
       statusLabel: REFERRAL_ADMIN_COPY.statuses.paid,
       statusTone: "warn",
       referrer: { email: "parent@example.com", payer: null, customerId: "cus_A" },
       friend: { email: "friend3@example.com", payer: null },
-      joined: "Today",
-      paid: "Today",
+      friendPlan: REFERRAL_ADMIN_COPY.friendPlan(REFERRAL_ADMIN_COPY.planWords.active),
+      friendPlanAlarm: false,
+      paid: "Oct 9",
       rewarded: null,
       samePerson: false,
       canReward: true,
+      rewardWait: null,
       canVoid: true,
     });
+  });
+
+  it("holds back Mark rewarded on a paid referral that has not settled, and says until when", () => {
+    const row = referralRow(list().referrals[2], clock);
+    expect(row).toMatchObject({ joined: "Today", paid: "Today", canReward: false, canVoid: true, rewardWait: REFERRAL_ADMIN_COPY.rewardFrom("Oct 12") });
+    expect(row.rewardWaitTitle).toContain("Oct 12");
+  });
+
+  it("holds it back while the friend's plan is failing, and marks the plan", () => {
+    const paid = list().referrals[2];
+    const row = referralRow({ ...paid, referred: { ...paid.referred, planStatus: "past_due" } }, { ...clock, now: Date.parse("2026-10-20T00:00:00Z") });
+    expect(row).toMatchObject({
+      canReward: false,
+      rewardWait: REFERRAL_ADMIN_COPY.rewardPlanNotActive,
+      friendPlan: REFERRAL_ADMIN_COPY.friendPlan(REFERRAL_ADMIN_COPY.planWords.past_due),
+      friendPlanAlarm: true,
+    });
+  });
+
+  it("says when the friend has no plan, or one in a status it does not know, and no wait off a paid row", () => {
+    const trial = list().referrals[3];
+    expect(referralRow(trial, clock)).toMatchObject({ friendPlan: REFERRAL_ADMIN_COPY.noPlan, friendPlanAlarm: false, rewardWait: null, canReward: false });
+    expect(referralRow({ ...trial, referred: { ...trial.referred, planStatus: "weird" } }, clock).friendPlan).toBe(REFERRAL_ADMIN_COPY.friendPlan("weird"));
   });
 
   it("names a checkout's other address, and who rewarded it and when", () => {

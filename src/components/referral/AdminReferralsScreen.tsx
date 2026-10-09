@@ -82,6 +82,15 @@ function SamePerson() {
   );
 }
 
+/** The friend's plan under their address: a failing or stopped one in the danger tone. */
+function FriendPlan({ row }: { row: ReferralRowView }) {
+  return (
+    <span className={r.plan} data-alarm={row.friendPlanAlarm || undefined}>
+      {row.friendPlan}
+    </span>
+  );
+}
+
 function Status({ row }: { row: ReferralRowView }) {
   return (
     <span className={c.planCell}>
@@ -92,9 +101,14 @@ function Status({ row }: { row: ReferralRowView }) {
 }
 
 function Actions({ row, onMark }: { row: ReferralRowView; onMark: (row: ReferralRowView, mark: ReferralMark) => void }) {
-  if (!row.canReward && !row.canVoid) return null;
+  if (!row.canReward && !row.canVoid && !row.rewardWait) return null;
   return (
     <span className={r.actions}>
+      {row.rewardWait && (
+        <span className={c.cellNote} title={row.rewardWaitTitle || undefined} data-testid={`referral-wait-${row.id}`}>
+          {row.rewardWait}
+        </span>
+      )}
       {row.canReward && (
         <Button size="sm" onClick={() => onMark(row, "rewarded")} data-testid={`referral-reward-${row.id}`}>
           {COPY.markRewarded}
@@ -141,6 +155,7 @@ function ReferralsTable({ rows, onMark }: { rows: readonly ReferralRowView[]; on
               </th>
               <td>
                 <Party email={row.friend.email} payer={row.friend.payer}>
+                  <FriendPlan row={row} />
                   {row.samePerson && <SamePerson />}
                 </Party>
               </td>
@@ -189,6 +204,7 @@ function ReferralsList({ rows, onMark }: { rows: readonly ReferralRowView[]; onM
               <dt>{col.friend}</dt>
               <dd>
                 <Party email={row.friend.email} payer={row.friend.payer}>
+                  <FriendPlan row={row} />
                   {row.samePerson && <SamePerson />}
                 </Party>
               </dd>

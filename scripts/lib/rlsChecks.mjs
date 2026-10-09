@@ -2722,7 +2722,7 @@ export const FAMILY_CHECKS = [
   { name: "family: families and family_members are the server's to write; members read their own row; kids share the grown-up's plan and go with their account", run: checkFamily },
 ];
 
-/** Referrals' internal and admin functions (20261009110000_referrals.sql): no client may call them. */
+/** Referrals' internal and admin functions (20261009110000_referrals.sql, 20261009140000_referral_hardening.sql): no client may call them. */
 export const REFERRAL_FUNCTIONS = [
   ["admin_referrals", { p_limit: 10 }],
   ["admin_referral_mark", { p_id: 1, p_status: "void", p_admin: ZERO_UUID }],
@@ -2735,7 +2735,8 @@ export const REFERRAL_FUNCTIONS = [
 
 /**
  * Referrals, "Give a month, get a month" (src/lib/referral; migrations
- * 20261009100000_parents_recommend.sql and 20261009110000_referrals.sql).
+ * 20261009100000_parents_recommend.sql, 20261009110000_referrals.sql and
+ * 20261009140000_referral_hardening.sql).
  *
  * Users: nobody but the service role writes `referrals`, and anon reads none; no user may call the
  * admin or internal functions; anon gets no code; nobody writes their own `profiles.referral_code`.
@@ -2744,9 +2745,12 @@ export const REFERRAL_FUNCTIONS = [
  * account's id (column not granted), while F reads none. A fresh account X saving its OWN code, B
  * (older than A's code) saving A's code, and grown-up P's kid K saving P's code all make none, and
  * their `ref` is dropped from the attribution; K gets no code
- * (42501, hint family_kid). F's subscription moves the referral to trialing, then paid, never back;
- * the service role marks it rewarded (once: a second mark is refused with hint referral_state), and
- * A's summary says 1 free month earned. Removes every row it wrote.
+ * (42501, hint family_kid). F's subscription moves the referral to trialing, then paid; a trial again
+ * keeps it paid, past_due takes it back to trialing (undated), active again makes it paid. The
+ * service role cannot mark it rewarded while the first payment may still fail (hint
+ * referral_unsettled); once it has settled (paid_at 4 days back) it can, once (a second mark is
+ * refused with hint referral_state), and A's summary says 1 free month earned. Removes every row
+ * it wrote.
  *
  * Kept out of ALL_CHECKS (the in-memory fake does not model these tables); scripts/verify-rls.mjs and
  * the DB integration test run REFERRAL_CHECKS last.
@@ -2841,15 +2845,32 @@ export async function checkReferrals({ anon, a, b, service, newUser }) {
     const paid = await status();
     await service.rest("PATCH", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${sub}` }, body: { status: "trialing" }, prefer: "return=minimal" });
     const back = await status();
+    // the first charge is declined, then a retry is paid
+    await service.rest("PATCH", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${sub}` }, body: { status: "past_due" }, prefer: "return=minimal" });
+    const failed = await status();
+    await service.rest("PATCH", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${sub}` }, body: { status: "active" }, prefer: "return=minimal" });
+    const repaid = await status();
     out.push(
       result(
-        "referrals: the friend's plan moves it to trialing, then paid (dated), never back",
-        trialing?.status === "trialing" && paid?.status === "paid" && Boolean(paid?.paid_at) && back?.status === "paid",
-        JSON.stringify([trialing, paid, back]).slice(0, 200),
+        "referrals: the friend's plan moves it to trialing, then paid (dated); a trial again keeps it paid; past_due takes it back to trialing (undated); active again, paid",
+        trialing?.status === "trialing" &&
+          paid?.status === "paid" &&
+          Boolean(paid?.paid_at) &&
+          back?.status === "paid" &&
+          failed?.status === "trialing" &&
+          failed?.paid_at === null &&
+          repaid?.status === "paid" &&
+          Boolean(repaid?.paid_at),
+        JSON.stringify([trialing, paid, back, failed, repaid]).slice(0, 300),
       ),
     );
 
     // ---------------------------------------------------------------- the admin's mark
+    const early = await rpc(service, "admin_referral_mark", { p_id: referralId, p_status: "rewarded", p_admin: p.userId });
+    out.push(result("referrals: no reward while the first payment may still fail (hint referral_unsettled)", !isOk(early) && hint(early) === "referral_unsettled", describe(early)));
+    // four days pass
+    const settled = await service.rest("PATCH", "referrals", { query: { id: `eq.${referralId}` }, body: { paid_at: new Date(Date.now() - 4 * 86_400_000).toISOString() }, prefer: "return=minimal" });
+    out.push(result("referrals: (the service role dates the payment 4 days back)", isOk(settled), describe(settled)));
     const marked = await rpc(service, "admin_referral_mark", { p_id: referralId, p_status: "rewarded", p_admin: p.userId });
     out.push(result("referrals: the service role marks it rewarded", isOk(marked) && asObject(marked.body)?.status === "rewarded", describe(marked)));
     const twice = await rpc(service, "admin_referral_mark", { p_id: referralId, p_status: "rewarded", p_admin: p.userId });

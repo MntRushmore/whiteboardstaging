@@ -39,7 +39,7 @@ const ENTRY = {
   updated_at: "2026-10-09T17:00:00Z",
   rewarded_by_email: "owner@example.com",
   referrer: { id: "11111111-1111-4111-8111-111111111111", email: "parent@example.com", created_at: "2026-09-01T00:00:00Z", customer_id: "cus_A", payer_email: null },
-  referred: { id: "22222222-2222-4222-8222-222222222222", email: "friend@example.com", created_at: "2026-10-09T15:00:00Z", payer_email: "friend@example.com", plan_status: "active" },
+  referred: { id: "22222222-2222-4222-8222-222222222222", email: "friend@example.com", created_at: "2026-10-09T15:00:00Z", payer_email: "friend@example.com", plan_status: "active", trial_end: "2026-10-02T15:00:00Z" },
 };
 const LIST = { generated_at: "2026-10-09T18:00:00Z", counts: { signed_up: 0, trialing: 0, paid: 0, rewarded: 1, void: 0 }, truncated: false, referrals: [ENTRY] };
 
@@ -87,7 +87,7 @@ describe("GET /api/admin/referrals", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
     const body = AdminReferralListSchema.parse(await res.json());
-    expect(body.referrals[0]).toMatchObject({ id: 7, status: "rewarded", referrer: { email: "parent@example.com", customerId: "cus_A" }, referred: { email: "friend@example.com" } });
+    expect(body.referrals[0]).toMatchObject({ id: 7, status: "rewarded", referrer: { email: "parent@example.com", customerId: "cus_A" }, referred: { email: "friend@example.com", planStatus: "active", trialEnd: "2026-10-02T15:00:00Z" } });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://proj.supabase.co/rest/v1/rpc/admin_referrals");
@@ -145,6 +145,13 @@ describe("PATCH /api/admin/referrals/<id>", () => {
     const conflict = await PATCH(patchReq({ status: "void" }), params("7"));
     expect(conflict.status).toBe(409);
     expect((await conflict.json()).message).toContain("cannot be marked void");
+  });
+
+  it("is 409 with the database's reason for a reward not yet due (the friend's first payment may still fail)", async () => {
+    fetchMock.mockResolvedValueOnce(json({ code: "P0001", hint: "referral_unsettled", message: "The friend's first payment may still fail: reward from Oct 12, 16:00 UTC." }, 400));
+    const res = await PATCH(patchReq({ status: "rewarded" }), params("7"));
+    expect(res.status).toBe(409);
+    expect((await res.json()).message).toContain("reward from Oct 12");
   });
 
   it("is 502 when the write fails", async () => {
