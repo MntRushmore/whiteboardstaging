@@ -26,6 +26,9 @@ export const metadata: Metadata = {
   title: copy.title,
   description: copy.description,
   alternates: { canonical: LANDING_PATH },
+  // The app's pages stay out of search (the root layout's noindex); this one page exists to be found
+  // by parents, so it opts back in. One line to revert if the owner wants the whole site hidden.
+  robots: { index: true, follow: true },
   openGraph: {
     type: "website",
     url: LANDING_PATH,
