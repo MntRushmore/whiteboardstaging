@@ -120,9 +120,55 @@ describe("AttemptTracker", () => {
       expect(latest()).toMatchObject({ outcome: "first_try" });
     });
 
-    it("answered, the outcome stays: a ring or help after the answer changes the counts only", () => {
-      feed(line(0, "a", "2x+3=11", null), line(20, "c", "x=4", "check", { solved: true }), line(30, "d", "x=5", "circle"), help(31, "next_step"));
-      expect(latest()).toMatchObject({ outcome: "first_try", linesRinged: 1, tutorSteps: 1 });
+    it("answered, it stays answered — but a ring or help after the answer is part of how it went, and when it finished stays", () => {
+      feed(line(0, "a", "2x+3=11", null), line(20, "c", "x=4", "check", { solved: true }));
+      expect(latest()).toMatchObject({ outcome: "first_try", finishedAt: new Date(T0 + 20 * SEC).toISOString() });
+      feed(line(30, "d", "x=5", "circle"));
+      expect(latest()).toMatchObject({ outcome: "self_corrected", linesRinged: 1, finishedAt: new Date(T0 + 20 * SEC).toISOString() });
+      feed(help(31, "next_step"));
+      expect(latest()).toMatchObject({ outcome: "with_help", linesRinged: 1, tutorSteps: 1, finishedAt: new Date(T0 + 20 * SEC).toISOString() });
+      // the answer read again as something else never takes the answer back
+      feed(line(40, "c", "x=9", "circle"));
+      expect(latest()).toMatchObject({ outcome: "with_help", linesRight: 0, linesRinged: 2 });
+    });
+
+    it("prod's rows, replayed: never `first_try` beside a ring (13 × 4, 5 + 8, 7 + 8)", () => {
+      // `13 \times 4`: the answer ticked, then two lines ringed under it and its tick taken off
+      const key = `${PAGE}#cell:hb_13x4`;
+      const at = (s: number, id: string, latex: string, mark: LineMark, solved = false) => line(s, id, latex, mark, { problemKey: key, problemLatex: [], solved });
+      feed({ type: "problem", at: T0, boardId: BOARD, pageId: PAGE, problemKey: key, problemLatex: ["13 \\times 4"], origin: "tutor_problem" });
+      feed(at(5, "p", "52", "check", true), at(10, "q", "40", "circle"), at(12, "r", "12", "circle"), at(14, "p", "32", "circle"));
+      expect(latest()).toMatchObject({ problemLatex: "13 \\times 4", outcome: "self_corrected", linesRight: 0, linesRinged: 3 });
+    });
+
+    it("the stored outcome is always outcomeOf over the stored counts, whatever order the signals come in", () => {
+      const marks: LineMark[] = [null, "check", "circle", "question"];
+      let seed = 7;
+      const rand = (n: number) => {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        return seed % n;
+      };
+      for (let run = 0; run < 60; run++) {
+        published = [];
+        tracker = make();
+        for (let i = 0; i < 12; i++) {
+          const roll = rand(10);
+          if (roll < 6) {
+            const mark = marks[rand(marks.length)];
+            feed(line(i, `l${rand(5)}`, `x=${rand(9)}`, mark, { solved: mark === "check" && rand(3) === 0 }));
+          } else if (roll < 8) feed(help(i, (["hint", "next_step", "solve", "ask"] as const)[rand(4)]));
+          else if (roll < 9) feed({ type: "tutor_solved", at: T0 + i * SEC, boardId: BOARD, pageId: PAGE, problemKey: INK, problemLatex: [] });
+          else feed({ type: "screen", at: T0 + i * SEC, boardId: BOARD, pageId: rand(2) === 0 ? PAGE2 : PAGE });
+        }
+        for (const r of published) {
+          const help = r.hints + r.tutorSteps + r.solves;
+          if (r.outcome === "first_try") expect(r.linesRinged === 0 && help === 0, JSON.stringify(r)).toBe(true);
+          if (r.outcome === "self_corrected") expect(r.linesRinged > 0 && help === 0, JSON.stringify(r)).toBe(true);
+          if (r.outcome === "with_help") expect(help > 0, JSON.stringify(r)).toBe(true);
+          if (r.outcome === "in_progress") expect(r.finishedAt).toBeNull();
+          else expect(r.finishedAt).not.toBeNull();
+        }
+      }
     });
 
     it("in progress until closed; unfinished when the screen is left; open again (in progress) when its screen comes back", () => {
