@@ -463,7 +463,10 @@ export function whose(names: readonly string[]): string | null {
 /** A learner's trial in short lines: problems, skills, Today's practice. Empty when there is nothing to say. */
 export function progressLines(p: LearnerProgress): string[] {
   const lines: string[] = [];
-  if (p.solved > 0) lines.push(`${p.solved} ${p.solved === 1 ? "problem" : "problems"} solved${p.alone > 0 ? `, ${p.alone} without help` : ""}`);
+  if (p.solved > 0) {
+    const alone = p.alone <= 0 ? "" : p.alone >= p.solved ? (p.solved === 1 ? ", without help" : ", all without help") : `, ${p.alone} without help`;
+    lines.push(`${p.solved} ${p.solved === 1 ? "problem" : "problems"} solved${alone}`);
+  }
   else if (p.tried > 0) lines.push(`${p.tried} ${p.tried === 1 ? "problem" : "problems"} started`);
   if (p.skills.length > 0) lines.push(`Practiced: ${listOf(p.skills)}`);
   if (p.streak >= 2) lines.push(`Today's practice: ${p.streak} days in a row`);
@@ -475,6 +478,7 @@ export function progressLines(p: LearnerProgress): string[] {
 function soFarLead(progress: readonly LearnerProgress[]): string {
   const names = progress.map((p) => p.name).filter((n): n is string => n !== null);
   if (progress.length === 1 && names.length === 1) return `Here's what ${names[0]} has done so far:`;
+  if (progress.length === 2 && names.length === 2) return `Here's what ${names[0]} and ${names[1]} have done so far:`;
   return "Here's what's been done so far:";
 }
 

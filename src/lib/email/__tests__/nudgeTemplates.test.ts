@@ -47,6 +47,8 @@ describe("the little words", () => {
   it("says a learner's trial in short lines", () => {
     expect(progressLines(p())).toEqual(["12 problems solved, 9 without help", "Practiced: Times tables and Adding fractions", "Today's practice: 3 days in a row"]);
     expect(progressLines(p({ solved: 1, alone: 0, skills: [], streak: 1, practiceDays: 1 }))).toEqual(["1 problem solved", "Today's practice: done on 1 day"]);
+    expect(progressLines(p({ solved: 1, alone: 1, skills: [], streak: 0, practiceDays: 0 }))).toEqual(["1 problem solved, without help"]);
+    expect(progressLines(p({ solved: 4, alone: 4, skills: [], streak: 0, practiceDays: 0 }))).toEqual(["4 problems solved, all without help"]);
     expect(progressLines(p({ solved: 0, alone: 0, tried: 2, skills: ["Long division"], streak: 0, practiceDays: 0 }))).toEqual(["2 problems started", "Practiced: Long division"]);
     expect(progressLines(p({ solved: 0, alone: 0, tried: 0, skills: [], streak: 0, practiceDays: 0 }))).toEqual([]);
   });
@@ -91,6 +93,12 @@ describe("trialProgressEmail", () => {
     expect(text).toContain("The free trial runs until Wednesday, October 14.");
     expect(hrefs(e.html)).toEqual([PORTAL, `${SITE}/`]);
     expect(e.text).toContain("- Maya: 12 problems solved, 9 without help. Practiced: Times tables and Adding fractions. Today's practice: 3 days in a row.");
+  });
+
+  it("names two children together", () => {
+    const e = trialProgressEmail({ ...base, progress: [p(), p({ name: "Leo" })] });
+    expect(e.subject).toBe("Maya and Leo's first days on Agathon");
+    expect(visible(e.html)).toContain("Here's what Maya and Leo have done so far:");
   });
 
   it("names nobody when a child has no safe name, and leaves out the quiet ones", () => {
