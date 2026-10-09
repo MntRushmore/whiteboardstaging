@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { homeView, needsProfile, welcomeDecision } from "../state";
 
-const NEW = { course: null, onboarded_at: null } as const;
-const DONE = { course: "algebra1", onboarded_at: "2026-09-28T10:00:00Z" } as const;
+const NEW = { course: null, grade: null, onboarded_at: null } as const;
+const DONE = { course: "algebra1", grade: null, onboarded_at: "2026-09-28T10:00:00Z" } as const;
 
 describe("when the welcome shows", () => {
   it("shows for a student who has not finished it and has no boards", () => {
     expect(welcomeDecision({ boards: 0, profile: NEW, localDone: false })).toBe("show");
     // a course chosen, then the tab closed before Start: still not done
-    expect(welcomeDecision({ boards: 0, profile: { course: "geometry", onboarded_at: null }, localDone: false })).toBe("show");
+    expect(welcomeDecision({ boards: 0, profile: { course: "geometry", grade: null, onboarded_at: null }, localDone: false })).toBe("show");
+    expect(welcomeDecision({ boards: 0, profile: { course: "other", grade: 2, onboarded_at: null }, localDone: false })).toBe("show");
   });
 
   it("never shows to a student with boards (existing users are never forced into it)", () => {
@@ -23,7 +24,7 @@ describe("when the welcome shows", () => {
   });
 
   it("an account backfilled by the migration (onboarded_at = created_at) with no boards does not see it", () => {
-    expect(welcomeDecision({ boards: 0, profile: { course: null, onboarded_at: "2026-09-01T00:00:00Z" }, localDone: false })).toBe("hide");
+    expect(welcomeDecision({ boards: 0, profile: { course: null, grade: null, onboarded_at: "2026-09-01T00:00:00Z" }, localDone: false })).toBe("hide");
   });
 
   it("waits (checking) while the boards or the profile are loading", () => {

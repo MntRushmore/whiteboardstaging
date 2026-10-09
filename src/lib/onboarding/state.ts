@@ -3,13 +3,20 @@
  * being decided. No React, no storage, no network — the components (`src/components/onboarding/**`)
  * drive these. The guided board's coach marks are `tour.ts` (only the tour's lazy chunk loads them).
  */
+import type { Grade } from "@/lib/learning/grades";
 import type { CourseId } from "./courseIds";
 
 // ---------------------------------------------------------------- the welcome
 
-/** The onboarding fields of `profiles` (migration 20260928100000_onboarding.sql). */
+/**
+ * The onboarding fields of `profiles` (migrations 20260928100000_onboarding.sql and
+ * 20261009000000_kids_come_back.sql). A student in Kindergarten to 8th grade has a `grade` and the
+ * course "other"; a high-school student has a course and no grade.
+ */
 export interface OnboardingProfile {
   course: CourseId | null;
+  /** 0..8 (0 is Kindergarten), or null: a high-school course, or not chosen */
+  grade: Grade | null;
   onboarded_at: string | null;
 }
 

@@ -1,7 +1,7 @@
 /**
  * The device-side half of onboarding, in localStorage (the profile holds the rest):
  *
- * - the guided board: `agathon.onboarding.tour.<userId>` = `{ boardId, course, starter, step }`,
+ * - the guided board: `agathon.onboarding.tour.<userId>` = `{ boardId, course, grade, starter, step }`,
  *   written by the welcome's Start and advanced by the tour. The board page reads only
  *   `isGuidedBoard` synchronously, so the tour's code loads (a dynamic import) on that one
  *   board and nowhere else.
@@ -10,8 +10,9 @@
  *   not bring the welcome back on this device.
  *
  * Kept tiny and import-free: this file is part of the board's first load (the plan screen's marker,
- * which the board never reads, is in `planMarker.ts`).
+ * which the board never reads, is in `planMarker.ts`). Types only from elsewhere: they are erased.
  */
+import type { Grade } from "@/lib/learning/grades";
 
 export type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
@@ -27,11 +28,18 @@ function stepOf(v: unknown): TourMarkerStep {
   return LEGACY_STEPS[v] ?? "problem";
 }
 
+/** 0..8, as `isGrade` (grades.ts) — spelled out so the board's first load does not carry that module. */
+function gradeOf(v: unknown): Grade | null {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 8 ? (v as Grade) : null;
+}
+
 export interface TourMarker {
   boardId: string;
   /** a course id (`courses.ts`), or null when none was chosen */
   course: string | null;
-  /** index of the student's starter within the course's list */
+  /** the student's grade (0 is Kindergarten), when they chose one: their starters are the grade's (`startersFor`) */
+  grade?: Grade;
+  /** index of the student's starter within the grade's or course's list */
   starter: number;
   step: TourMarkerStep;
   /** the student's Auto setting before the tour turned it on, given back at its end (`tourAutoAtEnd`) */
@@ -56,9 +64,11 @@ export function readTourMarker(storage: StorageLike | null | undefined, userId: 
     if (!raw) return null;
     const v = JSON.parse(raw) as Partial<TourMarker>;
     if (!v || typeof v.boardId !== "string" || !v.boardId) return null;
+    const grade = gradeOf(v.grade);
     return {
       boardId: v.boardId,
       course: typeof v.course === "string" ? v.course : null,
+      ...(grade === null ? {} : { grade }),
       starter: typeof v.starter === "number" && Number.isFinite(v.starter) ? v.starter : 0,
       step: stepOf(v.step),
       ...(typeof v.autoBefore === "boolean" ? { autoBefore: v.autoBefore } : {}),

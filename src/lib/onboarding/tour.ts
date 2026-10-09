@@ -3,6 +3,7 @@
  * a reload resumes, and how far the student's ask in the panel has got. No React, no storage, no
  * network. Its own module, so only the tour's lazy chunk carries it (not the home, not the board).
  */
+import type { StarterProblem } from "./courses";
 import type { TourMarkerStep } from "./marker";
 import type { MarkKind, QuestionWhy } from "./marks";
 
@@ -155,6 +156,24 @@ export function markerStepOf(step: TourStep): TourMarkerStep | null {
     case "done":
       return null;
   }
+}
+
+/**
+ * Coach mark 2 on a starter its first step solves (`oneStep`: `3 + 4`, then `7`): the problem the
+ * tour writes for Help me to work on, or null. Once the student's answer is ticked there is nothing
+ * left on that problem to help with — Help me said yes and wrote nothing, and the coach mark waited
+ * until "still working on it" — so the next starter of their set goes on the board (a fresh screen)
+ * as coach mark 2 opens. Only after a tick: a ringed answer is still Help me's to fix, and a
+ * student who skipped ahead with Next has the first problem still to do.
+ */
+export function helpProblemFor(
+  state: Pick<TourState, "step" | "outcome">,
+  starter: StarterProblem | null,
+  starters: readonly StarterProblem[],
+): StarterProblem | null {
+  if (state.step !== "help" || state.outcome !== "tick" || !starter?.oneStep) return null;
+  const key = starter.lines.join(";");
+  return starters.find((s) => s.lines.join(";") !== key) ?? null;
 }
 
 /**

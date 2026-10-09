@@ -6,7 +6,7 @@ import { clientMetric } from "@/lib/logger";
 import type { CourseId } from "@/lib/onboarding/courseIds";
 import { browserStorage, readLocalDone, writeLocalDone } from "@/lib/onboarding/marker";
 import { needsProfile, welcomeDecision, type OnboardingProfile, type WelcomeDecision } from "@/lib/onboarding/state";
-import { asOnboardingClient, fetchOnboardingProfile, saveOnboarding } from "@/lib/onboarding/storage";
+import { asOnboardingClient, fetchOnboardingProfile, saveOnboarding, type OnboardingSave } from "@/lib/onboarding/storage";
 import { sendWelcomeEmail } from "@/lib/email/client";
 
 const client = asOnboardingClient(supabase);
@@ -19,8 +19,8 @@ const client = asOnboardingClient(supabase);
  */
 export function useWelcome(userId: string | undefined, boards: "loading" | "error" | number): {
   decision: WelcomeDecision;
-  /** Skip: stores the course (when chosen) and completion; the home shows its empty state */
-  skip: (course: CourseId | null, step: number) => void;
+  /** Skip: stores the course, grade and source (when chosen) and completion; the home shows its empty state */
+  skip: (course: CourseId | null, step: number, more?: Pick<OnboardingSave, "grade" | "heardFrom">) => void;
 } {
   const [skipped, setSkipped] = useState(false);
   // read on render: the first client render has no user yet, so SSR and hydration agree
@@ -47,12 +47,12 @@ export function useWelcome(userId: string | undefined, boards: "loading" | "erro
   }, [decision]);
 
   const skip = useCallback(
-    (course: CourseId | null, step: number) => {
+    (course: CourseId | null, step: number, more: Pick<OnboardingSave, "grade" | "heardFrom"> = {}) => {
       if (!userId) return;
-      clientMetric("onboarding.welcome.skip", { step, course });
+      clientMetric("onboarding.welcome.skip", { step, course, grade: more.grade ?? null });
       writeLocalDone(browserStorage(), userId);
       setSkipped(true);
-      void saveOnboarding(client, { course, complete: true }).then((res) => {
+      void saveOnboarding(client, { course, ...more, complete: true }).then((res) => {
         if (!res.ok) clientMetric("onboarding.save.failed", { error: res.error });
         // a student who skips gets the welcome email too: it is where Help me and Ask are explained
         else void sendWelcomeEmail();

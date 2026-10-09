@@ -1,0 +1,17 @@
+/* The account page's Grade section: one picker and a quiet line under it that says it saved. */
+
+.body {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.field {
+  max-width: 20rem;
+}
+
+.status {
+  min-height: 1.25rem;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
