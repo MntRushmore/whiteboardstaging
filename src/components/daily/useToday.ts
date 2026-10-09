@@ -56,7 +56,10 @@ async function readToday(): Promise<Extract<TodayState, { status: "ready" }>> {
   const read = await loadDailyRows(today);
   const row: DailyRow | undefined = read.rows.find((r) => r.day === today);
   const marker = findDailyMarker(today);
-  const boardId = row?.boardId ?? marker?.boardId ?? null;
+  // the row is saved with its board the moment the board is made, so a row without one means the
+  // board was deleted (Start makes a new one); this device's marker counts only when there is no
+  // row at all (that first save failed) — never to reopen a deleted board
+  const boardId = row ? row.boardId : (marker?.boardId ?? null);
   const note = boardId ? readDailyNote(boardId) : null;
   const goal = row?.goal ?? marker?.goal ?? DAILY_GOAL;
   const done = Math.max(row?.done ?? 0, note?.done ?? 0);
