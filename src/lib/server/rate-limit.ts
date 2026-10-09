@@ -19,6 +19,7 @@
  */
 
 import { LIVE_RATE_LIMITS } from "@/lib/live/contracts";
+import { SPEAK_RATE_LIMITS } from "@/lib/speech/contracts";
 import { getRateLimitBackend, type RateLimitBackend } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { userClient, type RpcClient } from "@/lib/server/billing";
@@ -63,6 +64,9 @@ export const LIMITS = {
   liveListen: LIVE_RATE_LIMITS.liveListen,
   liveSketch: LIVE_RATE_LIMITS.liveSketch,
   liveTitle: LIVE_RATE_LIMITS.liveTitle,
+  // Read aloud (POST /api/live/speak): a minute's budget and a day's cap (src/lib/speech/contracts.ts).
+  liveSpeak: SPEAK_RATE_LIMITS.perMinute,
+  liveSpeakDay: SPEAK_RATE_LIMITS.perDay,
 } as const satisfies Record<string, RateLimitOptions>;
 
 export type RateLimitBucket = keyof typeof LIMITS;
@@ -76,14 +80,18 @@ const windows = new Map<string, number[]>();
 const PRUNE_EVERY_MS = MINUTE;
 const MAX_WINDOW_MS = Math.max(...Object.values(LIMITS).map((l) => l.windowMs));
 let lastPruneAt = 0;
+// key -> the window it is counted over: each key is kept only as long as its own window (a day's
+// cap, `liveSpeakDay`, must not keep every minute bucket's keys for a day)
+const windowOf = new Map<string, number>();
 
-function pruneStale(now: number, windowMs: number): void {
+function pruneStale(now: number): void {
   if (now - lastPruneAt < PRUNE_EVERY_MS) return;
   lastPruneAt = now;
-  const horizon = now - Math.max(windowMs, MAX_WINDOW_MS);
   for (const [key, stamps] of windows) {
+    const horizon = now - (windowOf.get(key) ?? MAX_WINDOW_MS);
     if (stamps.length === 0 || stamps[stamps.length - 1] <= horizon) {
       windows.delete(key);
+      windowOf.delete(key);
     }
   }
 }
@@ -94,7 +102,8 @@ function pruneStale(now: number, windowMs: number): void {
  */
 export function checkRateLimit(key: string, { limit, windowMs }: RateLimitOptions): RateLimitResult {
   const now = Date.now();
-  pruneStale(now, windowMs);
+  pruneStale(now);
+  windowOf.set(key, windowMs);
 
   const cutoff = now - windowMs;
   let stamps = windows.get(key);
@@ -238,6 +247,7 @@ export function rateLimitedResponse(retryAfterMs: number, backend?: RateLimitBac
 /** Clear all state (tests only). */
 export function resetRateLimits(): void {
   windows.clear();
+  windowOf.clear();
   lastPruneAt = 0;
 }
 

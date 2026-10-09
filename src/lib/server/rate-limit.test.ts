@@ -83,6 +83,16 @@ describe("checkRateLimit", () => {
     expect(trackedKeyCount()).toBe(1);
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it("keeps each key as long as its own window: a day's cap outlives the minute keys", () => {
+    checkRateLimit("u1:liveSpeak", LIMITS.liveSpeak);
+    checkRateLimit("u1:liveSpeakDay", LIMITS.liveSpeakDay);
+    vi.advanceTimersByTime(61_000);
+    checkRateLimit("u2:test", opts);
+    // the minute key went, the day's stayed (and still counts its hit)
+    expect(trackedKeyCount()).toBe(2);
+    expect(checkRateLimit("u1:liveSpeakDay", LIMITS.liveSpeakDay).remaining).toBe(LIMITS.liveSpeakDay.limit - 2);
+  });
 });
 
 describe("LIMITS", () => {

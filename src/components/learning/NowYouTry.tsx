@@ -11,6 +11,7 @@ import { initialNowYouTry, NOW_YOU_TRY_COPY, nowYouTryReducer, type Offer } from
 import type { LiveController } from "@/lib/live/contracts";
 import { clientMetric } from "@/lib/logger";
 import { reportUserError } from "@/lib/reportAppError";
+import { say } from "@/lib/speech/say";
 import { BOTTOM_UI_SELECTOR } from "@/components/live/hintPlacement";
 
 /**
@@ -107,6 +108,8 @@ export default function NowYouTry({ controller, tour }: NowYouTryProps) {
     if (!offer || shownFor.current === offer.attemptId) return;
     shownFor.current = offer.attemptId;
     clientMetric("learning.now_you_try.offer", { lines: offer.problem.length });
+    // read aloud (when on): the offer, for a child who cannot read the pill yet
+    say(NOW_YOU_TRY_COPY.announce);
   }, [offer]);
 
   const take = useCallback(

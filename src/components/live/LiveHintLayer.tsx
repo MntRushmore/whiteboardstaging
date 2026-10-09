@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { atom, useValue, type Atom, type Editor } from "tldraw";
 import { Button } from "@/components/ui/button";
+import { SpeakButton } from "@/components/speech/SpeakButton";
+import { watchReadAloud } from "@/lib/speech/say";
+import { hintSpeech } from "@/lib/speech/tutorWords";
 import type { LiveController, OpenHint } from "@/lib/live/contracts";
 import { clearLiveError, liveStore, retryLiveError, type LiveError } from "@/lib/live/liveStore";
 import { LIVE_COPY } from "./copy";
@@ -74,6 +77,8 @@ function useChromeInsets(editor: Editor): Atom<ChromeInsets> {
  */
 export function LiveHintLayer({ editor, controller }: LiveHintLayerProps) {
   const insets = useChromeInsets(editor);
+  // read aloud: the tutor's hints and notes said out loud (loaded in idle time, src/lib/speech/say.ts)
+  useEffect(() => watchReadAloud(editor), [editor]);
   const placed = useValue(
     "live.hintPlacement",
     (): PlacedCard[] => {
@@ -118,6 +123,7 @@ export function LiveHintLayer({ editor, controller }: LiveHintLayerProps) {
             <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-amber-700">
               <span className="live-hint-card__dot" aria-hidden />
               {LIVE_COPY.hint.levelLabel(card.hint.level)}
+              <SpeakButton text={hintSpeech(card.hint)} className="-my-1 ml-auto size-6" />
             </div>
             <p className="leading-snug">{card.hint.message}</p>
             {card.hint.question && <p className="mt-1 leading-snug text-gray-600">{card.hint.question}</p>}

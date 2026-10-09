@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
+import { SpeakButton } from "@/components/speech/SpeakButton";
+import { say } from "@/lib/speech/say";
 import { cn } from "@/lib/utils";
 import { TOUR_COPY } from "@/lib/onboarding/tourCopy";
 import { placeCoachMark, type Box, type Placement, type Side } from "@/lib/onboarding/placement";
@@ -46,6 +48,11 @@ export interface CoachMarkProps {
   onSkip: () => void;
   /** changes whenever the content does, so focus moves to the new message and it animates in */
   focusKey: string;
+  /**
+   * The words read aloud (the title and the line under it): said when the message changes if read
+   * aloud is on, and again from the card's speaker button. None: no speaker.
+   */
+  speech?: string;
 }
 
 const REMEASURE_MS = 250;
@@ -67,7 +74,7 @@ function sameBox(a: Box | null, b: Box | null): boolean {
   return Math.round(a.x) === Math.round(b.x) && Math.round(a.y) === Math.round(b.y) && Math.round(a.w) === Math.round(b.w) && Math.round(a.h) === Math.round(b.h);
 }
 
-export function CoachMark({ anchor, fallback, prefer, avoid, icon, tone = "blue", number, total, title, children, primary, pulse = false, onSkip, focusKey }: CoachMarkProps) {
+export function CoachMark({ anchor, fallback, prefer, avoid, icon, tone = "blue", number, total, title, children, primary, pulse = false, onSkip, focusKey, speech }: CoachMarkProps) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const bodyId = useId();
@@ -113,6 +120,11 @@ export function CoachMark({ anchor, fallback, prefer, avoid, icon, tone = "blue"
       window.removeEventListener("resize", measure);
     };
   }, [measure]);
+
+  // new content: said aloud for a young reader (when read aloud is on: src/lib/speech/say.ts)
+  useEffect(() => {
+    if (speech) say(speech);
+  }, [focusKey, speech]);
 
   // new content: measure again (its height changed) and move focus to it
   useEffect(() => {
@@ -167,13 +179,14 @@ export function CoachMark({ anchor, fallback, prefer, avoid, icon, tone = "blue"
             <span aria-hidden className={cn("grid size-12 shrink-0 place-items-center rounded-2xl [&_svg]:size-6", TONES[tone])}>
               {icon}
             </span>
-            <div className="min-w-0 pt-0.5">
+            <div className="min-w-0 flex-1 pt-0.5">
               <p className="sr-only">{TOUR_COPY.tip(number, total)}</p>
               <Dots number={number} total={total} />
               <h2 id={titleId} className="mt-1.5 text-lg leading-snug font-semibold text-balance">
                 {title}
               </h2>
             </div>
+            {speech && <SpeakButton text={speech} className="-mt-1 -mr-2 size-9 [&_svg]:size-5" />}
           </div>
           {children && (
             <div id={bodyId} className="mt-2.5 text-base leading-relaxed text-muted-foreground">

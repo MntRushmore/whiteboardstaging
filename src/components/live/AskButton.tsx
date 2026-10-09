@@ -5,6 +5,7 @@ import { Lightbulb, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { liveStore } from "@/lib/live/liveStore";
+import { say } from "@/lib/speech/say";
 import { LIVE_COPY } from "./copy";
 
 /** The tour's coach mark points here (`BoardTour`). */
@@ -44,7 +45,9 @@ export function AskButton({ kind, glow, onAsk, big = false }: { kind: "help" | "
       onFocus={(e) => point({ focus: e.currentTarget.matches(":focus-visible") })}
       onBlur={() => point({ focus: false })}
       onClick={() => {
-        if (!onAsk()) toast(LIVE_COPY.ask.nothingYet);
+        if (onAsk()) return;
+        toast(LIVE_COPY.ask.nothingYet);
+        say(LIVE_COPY.ask.nothingYet); // read aloud, when on
       }}
     >
       {solve ? <Sparkles className="h-4 w-4" aria-hidden /> : <Lightbulb className="h-4 w-4" aria-hidden />}

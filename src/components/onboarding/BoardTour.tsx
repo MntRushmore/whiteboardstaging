@@ -22,6 +22,7 @@ import { askProgress, COACH_COUNT, coachNumber, helpProblemFor, helpWordsFor, ma
 import { asOnboardingClient, saveOnboarding } from "@/lib/onboarding/storage";
 import { sendWelcomeEmail } from "@/lib/email/client";
 import { askCopy, helpCopy, MORE_LIKE_THESE, TOUR_COPY, writeCopy } from "@/lib/onboarding/tourCopy";
+import { coachSpeech } from "@/lib/speech/tutorWords";
 import { CoachMark } from "./CoachMark";
 import { TourFinish } from "./TourFinish";
 import styles from "./tour.module.css";
@@ -434,6 +435,7 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
           tone={state.step === "write" ? "blue" : ring ? "amber" : "green"}
           focusKey={`${state.step}:${state.outcome}:${state.unread}:${state.unjudged}`}
           title={copy.title}
+          speech={coachSpeech(copy.title, copy.body)}
           primary={{ label: copy.button, onClick: next, variant: copy.waiting ? "outline" : "default" }}
         >
           {copy.body}
@@ -455,6 +457,7 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
           pulse={!helped && state.help === "waiting"}
           focusKey={`${state.step}:${state.help}`}
           title={copy.title}
+          speech={coachSpeech(copy.title, copy.body)}
           primary={{ label: copy.button, onClick: next, variant: copy.waiting ? "outline" : "default" }}
         >
           {copy.body}
@@ -476,6 +479,7 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
           pulse={progress !== "busy"}
           focusKey={`${state.step}:${progress}:${messages.length === 0}`}
           title={copy.title}
+          speech={coachSpeech(copy.title, copy.body)}
           primary={{ label: copy.button, onClick: next, variant: "outline" }}
         >
           {copy.body}

@@ -1,6 +1,7 @@
 "use client";
 
 import { toast } from "sonner";
+import { say } from "@/lib/speech/say";
 import { Box, createShapeId } from "tldraw";
 import type {
   Editor,
@@ -655,6 +656,8 @@ function defaultDeps(): LiveLoopDeps {
     planFigure: (spec, opts) => defaultPlanFigure(spec, opts),
     notify: (message) => {
       toast(message);
+      // read aloud (when on): Help me's and Solve's notes are the tutor talking too
+      say(message);
     },
   };
 }
