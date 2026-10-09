@@ -357,11 +357,8 @@ export const PRIMARY: FormTable = {
       const k = r.int(3, 5);
       return [frac(k * n, k * d)];
     },
-    // a mixed number as a fraction: 2 1/3
-    (r) => {
-      const [n, d] = proper(r, SMALL_DENS);
-      return [mixed(r.int(1, 4), n, d)];
-    },
+    // (no lone mixed number such as 2 1/3: with no words on the board it asks nothing, and the engine
+    // reads it as already in its simplest form)
     // bigger numbers, and more than one whole: 24/36, 18/8
     (r) => {
       const d = r.int(2, 6);

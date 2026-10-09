@@ -56,8 +56,8 @@ const WHOLE: ReadonlySet<SkillId> = new Set<SkillId>([
 const FRACTION: ReadonlySet<SkillId> = new Set<SkillId>(["fractions", ...FINER_SKILLS.fractions]);
 const DECIMAL: ReadonlySet<SkillId> = new Set<SkillId>(["decimals_add_subtract", "decimals_multiply"]);
 
-/** Skills whose problems all have one shape (`a ÷ b`, `a × b`): their forms differ in their numbers only. */
-const ONE_SHAPE: ReadonlySet<SkillId> = new Set<SkillId>(["division_facts", "multiply_by_tens", "multiply_multi_digit", "long_division"]);
+/** Skills whose problems all have one shape (`a ÷ b`, `a × b`, `a/b`): their forms differ in their numbers only. */
+const ONE_SHAPE: ReadonlySet<SkillId> = new Set<SkillId>(["division_facts", "multiply_by_tens", "multiply_multi_digit", "long_division", "equivalent_fractions"]);
 
 describe("which skills have practice", () => {
   it("every skill but word problems, proofs and chemistry (words or a reaction on the board) and other", () => {
@@ -211,7 +211,7 @@ describe.each(PRACTISED)("practice: %s", (skill) => {
       expect(isCleanAnswer(answer), `${label} → ${answer}`).toBe(true);
       expect(answer, `${label} → ${answer}`).not.toMatch(/\\ln|\\log|\\approx|\\varnothing|\\emptyset/);
       if (WHOLE.has(skill)) expect(answer, label).toMatch(/^= \d+$/);
-      if (FRACTION.has(skill)) expect(answer, label).toMatch(/^= (\d+|\\frac\{\d+\}\{\d+\})$/);
+      if (FRACTION.has(skill)) expect(answer, label).toMatch(/^= (\d+|\\frac\{\d+\}\{\d+\}|\d+\\frac\{\d+\}\{\d+\})$/);
       if (DECIMAL.has(skill)) expect(answer, label).toMatch(/^= \d+(\.\d{1,2})?$/);
       if (skill === "percents") expect(answer, label).toMatch(/^(= |x = )\d+$/);
       if (skill === "proportions") expect(answer, label).toMatch(/^x = \d+$/);
