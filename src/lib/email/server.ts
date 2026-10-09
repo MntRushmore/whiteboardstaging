@@ -1,6 +1,7 @@
 /**
  * What the email routes read from outside the request: the env, the service-role email log, the
- * caller's profile, the subscriptions, an account's address, Resend, the clock. The routes
+ * caller's profile, the subscriptions, an account's address, a family's activity (the trial's
+ * emails), Resend, the clock. The routes
  * (src/app/api/email/welcome, src/app/api/cron/trial-reminders, and the billing webhook's
  * "free trial started" email) call `emailDeps`; tests replace it.
  * Route files may not read process.env or export helpers (routeProtection.test.ts), so all of this
@@ -10,7 +11,9 @@
  */
 import { getServerEnv } from "@/lib/env";
 import { LEGAL } from "@/lib/legal";
+import { readFamilyActivity, type FamilyActivity } from "@/lib/email/activity";
 import { supabaseEmailLog, type EmailLogStore } from "@/lib/email/log";
+import { trialsStartedSince, type NudgeTrialRow } from "@/lib/email/nudges";
 import { DEFAULT_EMAIL_FROM, sendEmail, type ResendConfig, type SendEmailInput, type SendEmailResult } from "@/lib/email/resend";
 import { trialsEndingBetween, type TrialRow } from "@/lib/email/trialReminders";
 import { startedSubscription, type StartedRow } from "@/lib/email/unlimitedStarted";
@@ -82,6 +85,10 @@ export type EmailDeps = {
   findSubscription: (subscriptionId: string) => Promise<StartedRow | null | { error: string }>;
   /** An account's email address (auth.users), through the service role; null when it has none. */
   emailOf: (userId: string) => Promise<{ email: string | null } | { error: string }>;
+  /** Trialing subscriptions started at or after `since` (the nudges), through the service role. */
+  findNudgeTrials: (since: Date) => Promise<NudgeTrialRow[] | { error: string }>;
+  /** What an account and its kids did since `since` (src/lib/email/activity.ts), through the service role. */
+  readFamilyActivity: (userId: string, since: Date) => Promise<FamilyActivity | { error: string }>;
   send: (message: SendEmailInput, config: ResendConfig) => Promise<SendEmailResult>;
   now: () => Date;
   sleep: (ms: number) => Promise<void>;
@@ -109,6 +116,8 @@ export const emailDeps: EmailDeps = {
     if (error) return { error: error.message };
     return { email: data.user?.email ?? null };
   },
+  findNudgeTrials: (since) => trialsStartedSince(admin(), since),
+  readFamilyActivity: (userId, since) => readFamilyActivity(admin(), userId, since),
   send: (message, config) => sendEmail(message, config),
   now: () => new Date(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),

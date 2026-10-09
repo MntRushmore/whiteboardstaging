@@ -5,6 +5,8 @@
  * Who gets it, decided on the server only:
  *  - the address is the signed-in account's own, from Supabase Auth (`requireUser`); the request
  *    carries no body, so a client cannot name another recipient;
+ *  - never a kid profile (its address is on the kid domain, src/lib/family/contracts.ts, and has no
+ *    mailbox): skipped as `kid_profile` before anything is read or claimed;
  *  - the profile must say onboarding is done (`profiles.onboarded_at`, written by save_onboarding),
  *    and recently (WELCOME_WINDOW_MS): accounts made before onboarding shipped were backfilled with
  *    onboarded_at = created_at (20260928100000_onboarding.sql), and a call from an old account (a
@@ -12,6 +14,7 @@
  *  - once: email_log (kind 'welcome', ref '') through `sendOnce`.
  */
 import type pino from "pino";
+import { isKidEmail } from "@/lib/family/contracts";
 import { sendOnce, type EmailLogKey } from "@/lib/email/log";
 import { isSendableAddress } from "@/lib/email/resend";
 import type { EmailDeps, EmailEnv } from "@/lib/email/server";
@@ -44,7 +47,7 @@ export function welcomeIdempotencyKey(userId: string): string {
 export type WelcomeOutcome =
   | { status: "sent"; id: string }
   | { status: "already_sent" }
-  | { status: "skipped"; reason: "no_email" | "not_onboarded" | "not_new" }
+  | { status: "skipped"; reason: "no_email" | "kid_profile" | "not_onboarded" | "not_new" }
   /** Resend refused or could not be reached; a later call retries. */
   | { status: "failed"; error: string }
   /** The profile or the email log could not be read or written; nothing was sent. */
@@ -55,6 +58,8 @@ export type WelcomeUser = { id: string; email: string | null; token: string };
 export async function runWelcome(deps: EmailDeps, env: EmailEnv, user: WelcomeUser, log: pino.Logger): Promise<WelcomeOutcome> {
   const email = user.email?.trim() ?? "";
   if (!email || !isSendableAddress(email)) return { status: "skipped", reason: "no_email" };
+  // a kid profile has no mailbox, and nothing ever emails one (src/lib/family/contracts.ts)
+  if (isKidEmail(email)) return { status: "skipped", reason: "kid_profile" };
 
   const profile = await deps.readOnboardedAt(user.token, user.id);
   if ("error" in profile) {

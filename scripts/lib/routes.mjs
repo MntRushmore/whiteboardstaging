@@ -69,6 +69,7 @@ export const NO_BODY_ROUTES = Object.freeze([
   "src/app/api/admin/boards/[id]/route.ts",
   "src/app/api/admin/bugs/route.ts",
   "src/app/api/admin/bugs/[id]/screenshot/route.ts",
+  "src/app/api/admin/funnel/route.ts",
 ]);
 
 export const API_ROUTES = Object.freeze([
@@ -169,6 +170,16 @@ export const API_ROUTES = Object.freeze([
     limit: "adminConsole",
     body: "zod",
     purpose: "Admin console: app_events grouped into issues (?days=1|7|30), and their state (open, muted, fixed, note); PATCH logged as issue.update",
+    status: "active",
+  },
+  {
+    path: "/api/admin/funnel",
+    file: "src/app/api/admin/funnel/route.ts",
+    methods: ["GET"],
+    auth: "user",
+    limit: "adminConsole",
+    body: "none",
+    purpose: "Admin console: the growth funnel (?tz=): sign-ups by week and by source, each stage to paying, MRR; counts only",
     status: "active",
   },
   {

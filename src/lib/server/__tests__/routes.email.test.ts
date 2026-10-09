@@ -46,6 +46,8 @@ vi.mock("@/lib/email/server", async (importOriginal) => {
       findTrials: (from: Date, to: Date) => pick().findTrials(from, to),
       findSubscription: (subscriptionId: string) => pick().findSubscription(subscriptionId),
       emailOf: (userId: string) => pick().emailOf(userId),
+      findNudgeTrials: (since: Date) => pick().findNudgeTrials(since),
+      readFamilyActivity: (userId: string, since: Date) => pick().readFamilyActivity(userId, since),
       send: (m: Parameters<typeof real.emailDeps.send>[0], c: Parameters<typeof real.emailDeps.send>[1]) => pick().send(m, c),
       now: () => pick().now(),
       sleep: (ms: number) => pick().sleep(ms),
@@ -154,6 +156,16 @@ describe("POST /api/email/welcome", () => {
     expect(d.send).not.toHaveBeenCalled();
   });
 
+  it("never welcomes a kid profile (its address on the kid domain)", async () => {
+    fake.EMAIL = "kid-3f2a@kids.agathon.app";
+    const d = use(fakeDeps());
+    const res = await welcome(welcomeRequest());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: "skipped", reason: "kid_profile" });
+    expect(d.log.store.claim).not.toHaveBeenCalled();
+    expect(d.send).not.toHaveBeenCalled();
+  });
+
   it("502 when Resend refuses, and the next call sends", async () => {
     const d = use(fakeDeps());
     d.sendReplies.push({ ok: false, error: "timed out" });
@@ -251,6 +263,21 @@ describe("GET /api/cron/trial-reminders", () => {
     const dry = use(fakeDeps({ now, trials: [trialRow], subscriptions: { sub_due: { ...trialRow, repeat: false } } }));
     expect(await (await trialReminders(cronRequest({ query: "?dryRun=1" }))).json()).toMatchObject({ started: { wouldSend: ["sub_due"], sent: 0 } });
     expect(dry.send).not.toHaveBeenCalled();
+  });
+
+  it("runs the free trial's nudges in the same run, once each, and reports them", async () => {
+    const started = { ...dueTrial(now), subscriptionId: "sub_new", trialEnd: new Date(now.getTime() + 6 * 24 * HOUR).toISOString(), createdAt: new Date(now.getTime() - 30 * HOUR).toISOString() };
+    const d = use(fakeDeps({ now, nudgeTrials: [started] }));
+    const res = await trialReminders(cronRequest());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ nudges: { found: 1, due: { firstPractice: 1 }, sent: 1, failed: 0 } });
+    expect(d.sent.map((m) => m.tags)).toContainEqual({ kind: "first_practice" });
+    expect(await (await trialReminders(cronRequest())).json()).toMatchObject({ nudges: { sent: 0, alreadySent: 1 } });
+    // a failed nudge run is reported, never a 500 for the reminders
+    use(fakeDeps({ now, nudgeTrials: { error: "down" } }));
+    const broken = await trialReminders(cronRequest());
+    expect(broken.status).toBe(200);
+    expect(await broken.json()).toMatchObject({ nudges: { error: "could not run" } });
   });
 
   it("500 when the subscriptions cannot be read", async () => {

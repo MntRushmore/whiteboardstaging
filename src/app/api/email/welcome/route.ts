@@ -23,7 +23,9 @@ const NO_STORE = { "Cache-Control": "no-store" } as const;
  * requireUser -> the `emailWelcome` budget -> 503 feature_unavailable without RESEND_API_KEY or the
  * service role (the email log needs it) -> 200 with what happened:
  *   { status: "sent" } | { status: "already_sent" }
- *   { status: "skipped", reason: "no_email" | "not_onboarded" | "not_new" }
+ *   { status: "skipped", reason: "no_email" | "kid_profile" | "not_onboarded" | "not_new" }
+ * A kid profile (its address on the kid domain, src/lib/family/contracts.ts) is always skipped:
+ * nothing ever emails one (and sendEmail itself refuses the address).
  * 502 upstream_error when Resend refused or could not be reached (the claim is released, so the
  * next call retries); 500 internal_error when the profile or the log could not be read.
  */
