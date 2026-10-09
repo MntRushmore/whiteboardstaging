@@ -50,12 +50,13 @@ export function RemoveKidDialog({ kid, onOpenChange, onRemoved }: { kid: FamilyM
             {error}
           </p>
         )}
-        <div className={styles.formActions}>
+        <div className={`${styles.formActions} ${styles.fitRow}`}>
           <Button variant="ghost" onClick={() => change(false)} disabled={removing}>
             {FAMILY_COPY.cancel}
           </Button>
-          <Button variant="danger" onClick={() => void remove()} loading={removing} data-testid="kid-remove-confirm">
-            {FAMILY_COPY.removeConfirm(name)}
+          <Button variant="danger" onClick={() => void remove()} loading={removing} title={FAMILY_COPY.removeConfirm(name)} data-testid="kid-remove-confirm">
+            {/* a long name ellipsizes at the dialog's width (a 390 px phone) */}
+            <span className={styles.fitLabel}>{FAMILY_COPY.removeConfirm(name)}</span>
           </Button>
         </div>
       </DialogContent>

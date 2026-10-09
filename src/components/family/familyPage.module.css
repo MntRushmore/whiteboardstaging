@@ -22,8 +22,12 @@
   max-width: 48rem;
   margin-inline: auto;
 }
+/* Every grid on the page has one column that can shrink (minmax(0, 1fr)), not an auto track that
+   grows to its content: a long kid name (up to NAME_MAX, 30 characters) then ellipsizes in its card
+   instead of pushing the card, and the page, wider than a 390 px phone. */
 .stack {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-6);
 }
 
@@ -65,6 +69,7 @@
 /* ---- sections ----------------------------------------------------------------------------------- */
 .section {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
   border: 1px solid var(--border);
   border-radius: var(--radius-surface);
@@ -164,6 +169,7 @@
 }
 .kids {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   margin: 0;
   padding: 0;
@@ -171,6 +177,7 @@
 }
 .kid {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
@@ -179,6 +186,7 @@
 }
 .kidHead {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: var(--space-3);
 }
@@ -258,6 +266,21 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+/* A button label with a kid's name in it ("Switch to <name>", "Remove <name>"): Arc's Button never
+   wraps, so the label ellipsizes at the width of its row (a size container, `fitRow`) less the
+   button's own padding and border. The full name stays in the text a screen reader reads, and in
+   the title. */
+.fitRow {
+  container-type: inline-size;
+}
+.fitLabel {
+  display: block;
+  max-width: calc(100cqi - 2 * var(--space-4) - 2px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---- add / edit a kid ---------------------------------------------------------------------------- */
