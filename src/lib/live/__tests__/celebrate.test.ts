@@ -1,5 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CHEERS, celebrate, INITIAL_CELEBRATE, inkExtendsLine, MarkSettler, markLine, MISS_SETTLE_MS, MISS_WORDS, SETTLE_MS, STREAK_FROM, streakText, type CelebrateState } from "../celebrate";
+import { CHEERS, celebrate, cheerWords, INITIAL_CELEBRATE, inkExtendsLine, MarkSettler, markLine, MISS_SETTLE_MS, MISS_WORDS, SETTLE_MS, STREAK_FROM, streakText, type CelebrateState, type Cheer } from "../celebrate";
+
+describe("cheerWords: what the bubble says to a screen reader and, when read aloud is on, aloud", () => {
+  it("the cheer, the kind word, and the streak from STREAK_FROM up", () => {
+    const { cheers } = run([["a", "check"], ["b", "circle"], ["c", "check"], ["d", "check"], ["e", "check"]]);
+    const words = (cheers as Cheer[]).map(cheerWords);
+    expect(words[0]).toBe(CHEERS[0]);
+    expect(words[1]).toBe(MISS_WORDS[0]);
+    expect(words[2]).toBe(CHEERS[1]);
+    expect(words[4]).toBe(`${CHEERS[3]} ${streakText(STREAK_FROM)}`);
+  });
+});
 
 function run(marks: Array<[string, "check" | "circle"]>) {
   let state: CelebrateState = INITIAL_CELEBRATE;

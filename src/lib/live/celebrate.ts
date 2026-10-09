@@ -41,6 +41,11 @@ export function streakText(streak: number): string {
   return `${streak} in a row!`;
 }
 
+/** A cheer's words as the board says them: to a screen reader, and aloud when read aloud is on. */
+export function cheerWords(cheer: Cheer): string {
+  return cheer.tone === "win" && cheer.streak >= STREAK_FROM ? `${cheer.text} ${streakText(cheer.streak)}` : cheer.text;
+}
+
 /** The tutor put `kind` on `lineId`: the next state, and what to say (null: nothing new). */
 export function celebrate(state: CelebrateState, lineId: string, kind: VerdictKind): { state: CelebrateState; cheer: Cheer | null } {
   if (state.verdicts[lineId] === kind) return { state, cheer: null };

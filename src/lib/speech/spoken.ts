@@ -9,13 +9,19 @@
  *
  * The rules, in order:
  *  1. markup goes: HTML tags, Markdown emphasis and code ticks, links (their words stay), the
- *     `$…$`, `\(…\)`, `\[…\]` around LaTeX;
- *  2. `3/4` between whole numbers becomes a fraction (dates like 10/08/2026 are left alone);
- *  3. one left-to-right pass reads LaTeX and symbols: fractions, powers, roots, subscripts,
+ *     `$…$`, `\(…\)`, `\[…\]` around LaTeX; a fill-in blank (`3 + __ = 5`) is "blank";
+ *  2. `|x − 3|` (and `\left|…\right|`, `\lvert…\rvert`) is "the absolute value of x minus 3";
+ *  3. `3/4` between whole numbers becomes a fraction, at the end of a sentence too (dates like
+ *     10/08/2026 and decimals like 1/2.5 are left alone);
+ *  4. one left-to-right pass reads LaTeX and symbols: fractions, powers, roots, subscripts,
  *     `\text{}`, the operators (`=`, `+`, `×`, `÷`, `<`, `≤`…), and `-` by its neighbours: a hyphen
- *     in `x-axis` or `one-step`, "negative" before a number nothing is taken from, "minus" between
- *     two things;
- *  4. spaces and stray punctuation are tidied, and the result is capped at `max` characters on a
+ *     in `x-axis` or `one-step`, "negative" before a number nothing is taken from (a new sentence
+ *     included), "minus" between two things. A bracket around a sum or a difference, or under a
+ *     power, is said ("open bracket 3 plus 4 close bracket times 2"); one around a single thing
+ *     (`(−2)`, `f(x)`) is not. A fraction's bottom, or an exponent, that is more than one thing is
+ *     said so the group is heard ("the fraction with 1 on top and x plus 1 on the bottom", "2 to
+ *     the x plus 1 power");
+ *  5. spaces and stray punctuation are tidied, and the result is capped at `max` characters on a
  *     sentence (else a word) boundary.
  */
 import { SPEAK_MAX_CHARS } from "./contracts";
@@ -80,6 +86,9 @@ const COMMANDS: Readonly<Record<string, string>> = {
   parallel: " is parallel to ",
   percent: " percent ",
   prime: " prime ",
+  // a box to fill in: `3 + \square = 5`
+  square: " blank ",
+  Box: " blank ",
   // layout only: nothing to say
   left: "",
   right: "",
@@ -157,13 +166,32 @@ const SYMBOLS: Readonly<Record<string, string>> = {
   "–": ", ",
   "—": ", ",
   "&": " and ",
+  "□": " blank ",
+  "☐": " blank ",
+  // an absolute-value bar without its pair (rule 2 reads the pairs)
+  "|": " ",
   $: "",
   "{": "",
   "}": "",
 };
 
-/** Before a `-` that takes nothing away: it says "negative" (`= -3`, `(-2)`, `× -2`, the start). */
-const UNARY_BEFORE = new Set(["=", "+", "-", "−", "×", "÷", "*", "/", "(", "[", "<", ">", "≤", "≥", "≠", ",", ":", "^", "{", "±", "·"]);
+/**
+ * Before a `-` that takes nothing away: it says "negative" (`= -3`, `(-2)`, `× -2`, the start, a
+ * new sentence as in `Good. -2 is right`, an opening quote as in `“-3”`).
+ */
+const UNARY_BEFORE = new Set(["=", "+", "-", "−", "×", "÷", "*", "/", "(", "[", "<", ">", "≤", "≥", "≠", ",", ":", "^", "{", "±", "·", ".", "?", "!", ";", "“", "‘"]);
+
+/** Spoken operators: words with one of these in them are more than one thing. */
+const COMPOUND_WORDS = / (plus|minus|times|over|divided by|equals|plus or minus|minus or plus) /;
+
+/** Already spoken words that are more than one term ("x plus 1"; never "negative 1" or "2 x"). */
+function compound(spoken: string): boolean {
+  return COMPOUND_WORDS.test(` ${spoken} `);
+}
+
+/** What makes a bracketed group more than one thing (a relation like `=` does not: that is prose). */
+const GROUPING_SYMBOLS = new Set(["+", "×", "÷", "*", "±", "·", "⋅", "∙"]);
+const GROUPING_COMMANDS = new Set(["times", "cdot", "ast", "div", "pm", "mp"]);
 
 const isDigit = (c: string | undefined) => c !== undefined && c >= "0" && c <= "9";
 const isLetter = (c: string | undefined) => c !== undefined && /\p{L}/u.test(c);
@@ -198,7 +226,9 @@ function nextNonSpace(src: string, i: number): { ch: string | undefined; at: num
 /**
  * A fraction as words: by name when both parts are whole numbers and the bottom is 2..12 ("one
  * half", "three quarters", "five eighths"), else "3 over 7" ("x plus 1, all over 2" when the top
- * is more than one thing, so the pause shows where the line is). The parts come already spoken.
+ * is more than one thing, so the pause shows where the line is; "the fraction with 12 on top and 4
+ * plus 2 on the bottom" when the bottom is, since "12 over 4 plus 2" is another number). The parts
+ * come already spoken.
  */
 export function fractionWords(num: string, den: string): string {
   const n = num.trim();
@@ -210,10 +240,15 @@ export function fractionWords(num: string, den: string): string {
     const names = DENOMINATORS[Number(d)];
     if (names && top >= 1 && top <= 12) return `${NUMBER_WORDS[top]} ${top === 1 ? names[0] : names[1]}`;
   }
+  if (compound(d)) return `the fraction with ${n} on top and ${d} on the bottom`;
   return /\s/.test(n) ? `${n}, all over ${d}` : `${n} over ${d}`;
 }
 
-/** A power as words, from the exponent as written and as spoken: "squared", "cubed", "to the power of 4". */
+/**
+ * A power as words, from the exponent as written and as spoken: "squared", "cubed", "to the power
+ * of 4", and "to the x plus 1 power" when the exponent is more than one thing (the closing word
+ * ends the group: "2 to the power of x plus 1" is 2^x + 1).
+ */
 export function powerWords(raw: string, spoken: string): string {
   const r = raw.trim();
   if (r === "\\circ" || r === "°" || r === "o") return "degrees";
@@ -221,7 +256,8 @@ export function powerWords(raw: string, spoken: string): string {
   const s = spoken.trim();
   if (s === "2") return "squared";
   if (s === "3") return "cubed";
-  return s ? `to the power of ${s}` : "";
+  if (!s) return "";
+  return compound(s) ? `to the ${s} power` : `to the power of ${s}`;
 }
 
 /** An argument after `^`, `_` or a command: a `{…}` group (balanced), a command, or one character. */
@@ -290,15 +326,72 @@ function dashWords(src: string, i: number): string {
   const prev = prevNonSpace(src, i);
   const next = nextNonSpace(src, i).ch;
   const startsSomething = isDigit(next) || isLetter(next) || next === "(" || next === "\\" || next === "{" || next === ".";
-  const unary = prev.ch === undefined || UNARY_BEFORE.has(prev.ch) || lettersBefore(src, prev.at + 1).length >= 2;
+  // a word before it (`is -3`), a contraction's or a possessive's (`What's -3`, `line 2's -5`), or
+  // an opening straight quote (`"-3"`); a bare `'` is a prime (`y' - 3`) and a closing `"` ends a
+  // quote (`"x" - 3`): both take something away
+  const word = lettersBefore(src, prev.at + 1);
+  const afterApostrophe = word.length >= 1 && /['’]/.test(src[prev.at - word.length] ?? "");
+  const openQuote = prev.ch === '"' && (prev.at === 0 || isSpace(src[prev.at - 1]));
+  const unary = prev.ch === undefined || UNARY_BEFORE.has(prev.ch) || openQuote || word.length >= 2 || afterApostrophe;
   if (unary && startsSomething) return " negative ";
   return " minus ";
 }
 
-/** The one pass over LaTeX and symbols (rule 3). Recursive for groups. */
+/** The `)` or `]` that closes the bracket at `open` (the brackets inside counted), or -1. */
+function closingBracket(src: string, open: number): number {
+  let depth = 0;
+  for (let j = open; j < src.length; j++) {
+    const ch = src[j];
+    if (ch === "\\") {
+      // a command's name is passed over (`\right` is, the `)` after it is not), as is an escaped character
+      const name = /^[A-Za-z]+/.exec(src.slice(j + 1))?.[0] ?? "";
+      j += Math.max(1, name.length);
+      continue;
+    }
+    if (ch === "(" || ch === "[") depth++;
+    else if (ch === ")" || ch === "]") {
+      depth--;
+      if (depth === 0) return j;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Whether the bracket from `open` to `close` is said: it groups a sum, a difference or a product
+ * (`(3 + 4) × 2`, `10 - (3 + 2)`), or a power is on it and it holds more than a lone letter or
+ * number (`(-3)^2`, `(2x)^2`). One around a single thing (`(−2) × 3`, `f'(x)`), an equation or
+ * prose ("(see line 2)") is not: nothing hangs on where it ends.
+ */
+function bracketSaid(src: string, open: number, close: number): boolean {
+  if (nextNonSpace(src, close).ch === "^") return !/^\s*(\p{L}|\d+(\.\d+)?)\s*$/u.test(src.slice(open + 1, close));
+  let depth = 0;
+  for (let j = open + 1; j < close; j++) {
+    const ch = src[j];
+    if (ch === "\\") {
+      const name = /^[A-Za-z]+/.exec(src.slice(j + 1))?.[0] ?? "";
+      if (depth === 0 && GROUPING_COMMANDS.has(name)) return true;
+      j += Math.max(1, name.length);
+      continue;
+    }
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") depth--;
+    else if (depth === 0 && (GROUPING_SYMBOLS.has(ch) || ((ch === "-" || ch === "−") && dashWords(src, j) === " minus "))) return true;
+  }
+  return false;
+}
+
+/** A blank to fill in, `?` standing alone beside an operator (`3 + ? = 5`). */
+const BLANK_NEIGHBOURS = /[=+\-−×÷*<>≤≥≠]/;
+/** Operators around a number that make a trailing `s` a variable (`4s = 20`), not a plural (`2s`). */
+const PLURAL_BREAKERS = /[=+\-−×÷*\/^<>≤≥≠·]/;
+
+/** The one pass over LaTeX and symbols (rule 4). Recursive for groups. */
 function speakPass(src: string): string {
   let out = "";
   let i = 0;
+  // the closing brackets to say ("close bracket"), found when their opening one was
+  const saidClose = new Set<number>();
   while (i < src.length) {
     const c = src[i];
 
@@ -312,7 +405,7 @@ function speakPass(src: string): string {
         const b = readArg(src, a.end);
         const whole = isDigit(prevNonSpace(src, i - 1 - name.length).ch);
         const words = fractionWords(tidy(speakPass(a.text)), tidy(speakPass(b.text)));
-        out += `${whole && /^(negative )?\p{L}/u.test(words) && !/ over /.test(words) ? " and " : " "}${words} `;
+        out += `${whole && /^(negative )?\p{L}/u.test(words) && !/ over /.test(words) && !words.startsWith("the fraction") ? " and " : " "}${words} `;
         i = b.end;
         continue;
       }
@@ -320,6 +413,14 @@ function speakPass(src: string): string {
         const opt = readOptional(src, i);
         const a = readArg(src, opt ? opt.end : i);
         out += rootWords(opt ? tidy(speakPass(opt.text)) : null, tidy(speakPass(a.text)));
+        i = a.end;
+        continue;
+      }
+      if (name === "abs") {
+        // rule 2's absolute value; more than one thing inside ends with a pause, as ", all over" does
+        const a = readArg(src, i);
+        const inner = tidy(speakPass(a.text));
+        out += ` the absolute value of ${inner}${compound(inner) ? "," : ""} `;
         i = a.end;
         continue;
       }
@@ -373,16 +474,37 @@ function speakPass(src: string): string {
     }
 
     if (c === "(" || c === "[") {
-      // `3(x + 2)`, `(x + 1)(x - 1)`: the brackets multiply
-      const prev = prevNonSpace(src, i).ch;
-      out += c === "(" && (isDigit(prev) || prev === ")") ? " times " : " ";
+      const close = closingBracket(src, i);
+      const said = close > i && bracketSaid(src, i, close);
+      // `3(x + 2)`, `(x + 1)(x - 1)`, `3\left(…`: the brackets multiply; a number before an aside
+      // in brackets ("line 2 (the one with x)") does not
+      const at = src.endsWith("\\left", i) ? i - "\\left".length : i;
+      const prev = prevNonSpace(src, at);
+      out += c === "(" && (isDigit(prev.ch) || prev.ch === ")") && (prev.at === at - 1 || said) ? " times " : " ";
+      if (said) {
+        out += " open bracket ";
+        saidClose.add(close);
+      }
       i++;
       continue;
     }
     if (c === ")" || c === "]") {
-      out += " ";
+      out += saidClose.has(i) ? " close bracket " : " ";
       i++;
       continue;
+    }
+
+    if (c === "?" && (i === 0 || isSpace(src[i - 1]))) {
+      // standing alone: a blank beside an operator (`3 + ? = 5`), the mark itself mid-sentence
+      // ("That ? means…"); a `?` ending a sentence touches its last word and is left alone
+      const p = prevNonSpace(src, i).ch;
+      const n = nextNonSpace(src, i).ch;
+      const blank = (p !== undefined && BLANK_NEIGHBOURS.test(p)) || (n !== undefined && BLANK_NEIGHBOURS.test(n));
+      if (blank || (isSpace(src[i + 1]) && n !== undefined && /\p{Ll}/u.test(n))) {
+        out += blank ? " blank " : " question mark ";
+        i++;
+        continue;
+      }
     }
 
     if (c === "'" && lettersBefore(src, i).length === 1 && !isLetter(src[i + 1])) {
@@ -405,16 +527,28 @@ function speakPass(src: string): string {
     }
 
     out += c;
-    // `2x` is "2 x" (a voice reads "2x" as "twice"); `2nd`, `10am` stay as they are
-    if (isDigit(c) && isLetter(src[i + 1]) && !isLetter(src[i + 2])) out += " ";
+    // `2x` is "2 x" (a voice reads "2x" as "twice"); `2nd`, `10am` stay as they are, and so does a
+    // plural number in words ("count by 2s", "the 10s place"), but not `4s = 20` or `P = 4s`
+    if (isDigit(c) && isLetter(src[i + 1]) && !isLetter(src[i + 2]) && !pluralNumber(src, i)) out += " ";
     i++;
   }
   return out;
 }
 
-/** Rule 1: markup that is no words. */
+/** `2s`, `10s`: the digit at `i` ends a number with a plural "s" after it, in words rather than maths. */
+function pluralNumber(src: string, i: number): boolean {
+  if (src[i + 1] !== "s") return false;
+  let start = i;
+  while (isDigit(src[start - 1])) start--;
+  const before = prevNonSpace(src, start).ch;
+  const after = nextNonSpace(src, i + 1).ch;
+  return !(before !== undefined && PLURAL_BREAKERS.test(before)) && !(after !== undefined && PLURAL_BREAKERS.test(after));
+}
+
+/** Rule 1: markup that is no words (and a fill-in blank's underscores, which are a word). */
 function stripMarkup(text: string): string {
   return text
+    .replace(/(^|[\s(=+−×÷-])_+(?=[\s)=+−×÷.,!?-]|$)/g, "$1 blank ")
     .replace(/<\/?[a-z][^<>]*>/gi, " ")
     .replace(/\[([^\]]+)\]\((?:https?:|\/)[^)]*\)/g, "$1")
     .replace(/(\*\*|__|~~|`)/g, "")
@@ -423,9 +557,20 @@ function stripMarkup(text: string): string {
     .replace(/\$\$?|\\\(|\\\)|\\\[|\\\]/g, " ");
 }
 
-/** Rule 2: `3/4` between whole numbers is a fraction (not inside a date or a longer run). */
+/**
+ * Rule 2: an absolute value's bars, as `\abs{…}` for the pass (which says "the absolute value of").
+ * `\left|`, `\right|`, `\lvert`, `\rvert` and `\vert` are bars first.
+ */
+function absoluteValues(text: string): string {
+  return text.replace(/\\left\s*\||\\right\s*\||\\[lr]?vert(?![A-Za-z])/g, "|").replace(/\|([^|\n]+)\|/g, " \\abs{$1} ");
+}
+
+/**
+ * Rule 3: `3/4` between whole numbers is a fraction (not inside a date or a longer run); a full stop
+ * after it ends the sentence, only a digit after the stop makes it a decimal (`1/2.5`).
+ */
 function plainFractions(text: string): string {
-  return text.replace(/(?<![\d./])(\d+)\s*\/\s*(\d+)(?![\d./])/g, "\\frac{$1}{$2}");
+  return text.replace(/(?<![\d./])(\d+)\s*\/\s*(\d+)(?![\d/]|\.\d)/g, "\\frac{$1}{$2}");
 }
 
 /** Spaces and punctuation after the pass: one space, none before a stop, no doubled commas. */
@@ -460,7 +605,7 @@ export function capSpoken(text: string, max: number = SPEAK_MAX_CHARS): string {
 export function spokenText(text: string, max: number = SPEAK_MAX_CHARS): string {
   if (typeof text !== "string" || !text.trim()) return "";
   try {
-    return capSpoken(tidy(speakPass(plainFractions(stripMarkup(text)))), max);
+    return capSpoken(tidy(speakPass(plainFractions(absoluteValues(stripMarkup(text))))), max);
   } catch {
     return capSpoken(tidy(text.replace(/[\\{}$^_]/g, " ")), max);
   }

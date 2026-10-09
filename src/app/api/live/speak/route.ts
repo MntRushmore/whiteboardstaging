@@ -1,10 +1,15 @@
-import { getServerEnv, hasElevenLabs } from "@/lib/env";
+import type pino from "pino";
+import { parseInkSummary } from "@/lib/billing/inkSummary";
+import { hasPlan, parseUnlimitedState } from "@/lib/billing/unlimited";
+import { billingEnforced, getServerEnv, hasElevenLabs } from "@/lib/env";
+import { SPEAK_STARTER_WINDOW_MS } from "@/lib/speech/contracts";
 import { spokenText } from "@/lib/speech/spoken";
 import { SpeakRequestSchema, TTS, ttsBody, ttsRefusal, ttsUrl, voiceIdOr } from "@/lib/speech/tts";
 import { json } from "@/lib/server/auth";
+import { userClient, type RpcClient } from "@/lib/server/billing";
 import { livePreamble, withRequestId } from "@/lib/server/live-route";
 import { UpstreamError } from "@/lib/server/openrouter";
-import { checkRateLimitDistributed, rateLimitedResponse } from "@/lib/server/rate-limit";
+import { checkRateLimitDistributed, rateLimitedResponse, spendGlobalBudget } from "@/lib/server/rate-limit";
 import { errorResponse, recordRouteEvent } from "@/lib/server/request";
 
 export const runtime = "nodejs";
@@ -12,10 +17,37 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 const UNAVAILABLE_MESSAGE = "Read aloud's voice is not set up on this deployment.";
+const NOT_ENTITLED_MESSAGE = "Read aloud's voice comes with Agathon Unlimited.";
+const BUDGET_MESSAGE = "Read aloud's voice is resting for today.";
 
 /** 503 `feature_unavailable`: the client says it with the browser's own voice instead. */
-function unavailable(): Response {
-  return json(503, "feature_unavailable", UNAVAILABLE_MESSAGE, undefined, { "Cache-Control": "no-store" });
+function unavailable(message: string = UNAVAILABLE_MESSAGE): Response {
+  return json(503, "feature_unavailable", message, undefined, { "Cache-Control": "no-store" });
+}
+
+/**
+ * Whether this account hears the ElevenLabs voice: it has Agathon Unlimited (`hasPlan` on
+ * ink_summary()'s plan, which is a kid's grown-up's through plan_owner_of), or it is on its guided
+ * first board (starter ink left, granted at most SPEAK_STARTER_WINDOW_MS ago: the voice spends no
+ * ink, so a balance alone would keep it for good on an account that never starts a plan). Always
+ * where billing is not enforced. A check that fails is a no: the browser's voice, never a free one.
+ */
+async function hearsTheVoice(client: RpcClient, log: pino.Logger): Promise<boolean> {
+  if (!billingEnforced()) return true;
+  try {
+    const { data, error } = await client.rpc("ink_summary");
+    const summary = error ? null : parseInkSummary(data);
+    if (!summary) {
+      log.warn({ error: error?.message ?? "unreadable" }, "read aloud: ink_summary failed; the browser's voice");
+      return false;
+    }
+    if (hasPlan(parseUnlimitedState(summary.unlimited))) return true;
+    const starterAt = summary.starter_at ? Date.parse(summary.starter_at) : Number.NaN;
+    return summary.balance > 0 && Number.isFinite(starterAt) && Date.now() - starterAt <= SPEAK_STARTER_WINDOW_MS;
+  } catch (err) {
+    log.warn({ error: err instanceof Error ? err.message : String(err) }, "read aloud: ink_summary threw; the browser's voice");
+    return false;
+  }
 }
 
 /**
@@ -26,14 +58,17 @@ function unavailable(): Response {
  *
  * requireUser → the `liveSpeak` minute budget → the body → the `liveSpeakDay` cap → without
  * ELEVENLABS_API_KEY a 503 `feature_unavailable` (the client falls back to the browser's voice) →
- * ElevenLabs. The text is made speakable again here (`spokenText`), so a client that sent LaTeX
- * still gets words.
+ * an account without Agathon Unlimited, past its guided first board, the same 503
+ * (`hearsTheVoice`) → the words → the day's characters for everyone together
+ * (`GLOBAL_BUDGETS.liveSpeakChars`; spent: the same 503, recorded for /admin) → ElevenLabs. The
+ * text is made speakable again here (`spokenText`), so a client that sent LaTeX still gets words.
  *
  * Not charged: a hint the tutor already wrote should not cost ink twice, and a five-year-old never
- * asked for it; the two budgets bound the bill instead. What it costs shows in the log line (the
- * characters sent). A refusal no retry fixes (a key without the Text to Speech permission, spent
- * quota, an unknown voice) is answered like a missing key and recorded for the /admin page
- * (`route.live.speak`); any other failure is a 502 through `errorResponse`, also recorded.
+ * asked for it; the plan check and the budgets bound the bill instead. What it costs shows in the
+ * log line (the characters sent). A refusal no retry fixes (a key without the Text to Speech
+ * permission, spent quota, an unknown voice) is answered like a missing key and recorded for the
+ * /admin page (`route.live.speak`); any other failure is a 502 through `errorResponse`, also
+ * recorded.
  */
 export async function POST(req: Request) {
   const ctx = await livePreamble(req, "speak", "liveSpeak", SpeakRequestSchema);
@@ -51,8 +86,25 @@ export async function POST(req: Request) {
     return withRequestId(unavailable(), requestId);
   }
 
+  if (!(await hearsTheVoice(userClient(token), log))) {
+    log.info("read aloud: not this account's (no plan, past the guided board, or the check failed): the browser's voice");
+    return withRequestId(unavailable(NOT_ENTITLED_MESSAGE), requestId);
+  }
+
   const text = spokenText(data.text);
   if (!text) return withRequestId(json(400, "invalid_request", "Nothing to say."), requestId);
+
+  const budget = await spendGlobalBudget("liveSpeakChars", text.length);
+  if (!budget.ok) {
+    log.warn({ chars: text.length, backend: budget.backend, retryAfterMs: budget.retryAfterMs }, "read aloud: the day's characters for everyone are spent: the browser's voice");
+    recordRouteEvent(log, {
+      level: "error",
+      code: "budget",
+      message: "Read aloud's day budget for everyone is spent: every student hears the browser's voice until it turns",
+      meta: { backend: budget.backend, retryAfterMs: budget.retryAfterMs },
+    });
+    return withRequestId(unavailable(BUDGET_MESSAGE), requestId);
+  }
 
   const env = getServerEnv();
   const voice = voiceIdOr(env.LIVE_VOICE_ID);

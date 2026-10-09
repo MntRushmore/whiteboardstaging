@@ -4,6 +4,7 @@ import {
   FETCH_TIMEOUT_MS,
   MAX_WAIT_MS,
   PENDING_MS,
+  PRIME_TRIES,
   ROUTE_DOWN_MS,
   Speaker,
   SpeechFetchError,
@@ -141,6 +142,21 @@ describe("Speaker: the ElevenLabs voice through one shared element", () => {
       await p;
     }
     expect(revoked).toEqual(["blob:1"]);
+  });
+
+  it("a polite phrase (a cheer) never cuts off one being said, and is said when nothing is", async () => {
+    const speaker = makeSpeaker();
+    const note = speaker.speak("Check the sign on line 2.");
+    await flush();
+    await expect(speaker.speak("So close! Try that step again.", { polite: true })).resolves.toBe("skipped");
+    expect(fetchSpeech).toHaveBeenCalledTimes(1);
+    audio.end();
+    await expect(note).resolves.toBe("voice");
+    const cheer = speaker.speak("Nice!", { polite: true });
+    await flush();
+    expect(fetchSpeech.mock.calls[1][0]).toBe("Nice!");
+    audio.end();
+    await expect(cheer).resolves.toBe("voice");
   });
 
   it("a new phrase cancels the one before", async () => {
@@ -324,6 +340,41 @@ describe("Speaker: iOS needs a tap before any sound", () => {
     speaker.unlock();
     await flush();
     expect(audio.played).toHaveLength(2); // the hint, then the silence: nothing after
+  });
+
+  it("unlock({ voice: false }) (a touch's pointerdown) leaves the browser's voice unprimed; the next gesture primes it", () => {
+    const speaker = makeSpeaker();
+    speaker.unlock({ voice: false });
+    expect(synth.spoken).toEqual([]);
+    expect(speaker.voiceUnlocked).toBe(false);
+    speaker.unlock();
+    expect(synth.spoken).toHaveLength(1);
+    expect(synth.spoken[0]).toMatchObject({ text: " ", volume: 0 });
+  });
+
+  it("a primer iOS drops without a word is tried again on the next gesture; primed once the browser has said one", async () => {
+    const speaker = makeSpeaker();
+    speaker.unlock();
+    await flush();
+    // the fake says nothing for " ": like iOS outside a real gesture, no end and no error
+    expect(speaker.voiceUnlocked).toBe(false);
+    speaker.unlock();
+    expect(synth.spoken).toHaveLength(2);
+    synth.spoken[1].onend?.();
+    expect(speaker.voiceUnlocked).toBe(true);
+    speaker.unlock();
+    expect(synth.spoken).toHaveLength(2);
+  });
+
+  it("a browser that never reports a primer's end gets PRIME_TRIES of them, not one on every tap", () => {
+    const speaker = makeSpeaker();
+    for (let i = 0; i < PRIME_TRIES + 5; i++) speaker.unlock();
+    expect(synth.spoken).toHaveLength(PRIME_TRIES);
+    expect(speaker.voiceUnlocked).toBe(true);
+  });
+
+  it("with no browser voice there is nothing to prime", () => {
+    expect(makeSpeaker({ synth: null }).voiceUnlocked).toBe(true);
   });
 
   it("unlock does nothing while a phrase is playing, or once unlocked", async () => {

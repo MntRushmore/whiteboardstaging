@@ -19,8 +19,18 @@ export function readAloudByDefault(grade: number | null | undefined): boolean {
   return typeof grade === "number" && grade <= 2;
 }
 
-/** Device setting key: "on" | "off" (absent: the grade's default). */
+/**
+ * The setting's key on the device, one per user (`readAloudKey`): "on" | "off" (absent: the grade's
+ * default). A family's kids share a tablet and switch by picture (src/lib/family), so one kid's
+ * choice must not follow another onto it. Until 2026-10-09 this key alone held one choice for the
+ * whole device; the first user to read the setting after that takes it over, once.
+ */
 export const READ_ALOUD_KEY = "agathon.readAloud";
+
+/** `agathon.readAloud.<userId>`: this user's choice on this device. */
+export function readAloudKey(userId: string): string {
+  return `${READ_ALOUD_KEY}.${userId}`;
+}
 
 // ------------------------------------------------------------------ additions (feat/kcb3-voice)
 
@@ -34,6 +44,22 @@ export const SPEAK_RATE_LIMITS = {
   perMinute: { limit: 30, windowMs: 60_000 },
   perDay: { limit: 300, windowMs: 86_400_000 },
 } as const;
+
+/**
+ * The ElevenLabs voice for everyone together, in characters a day (UTC): the backstop on the shared
+ * key's bill however many accounts there are (`GLOBAL_BUDGETS.liveSpeakChars` in
+ * src/lib/server/rate-limit.ts). About 2,000 hints of 100 characters, 100,000 Flash credits; past it
+ * every student hears the browser's voice until the day turns. Raise it with the ElevenLabs plan.
+ */
+export const SPEAK_GLOBAL_BUDGET = { limit: 200_000, windowMs: 86_400_000 } as const;
+
+/**
+ * Who hears the ElevenLabs voice (POST /api/live/speak): an account with Agathon Unlimited (a kid
+ * through their grown-up's plan), or one on its guided first board: starter ink left, granted at
+ * most this long ago. Starter ink is never spent by the voice, so without the window an account
+ * that never starts a plan would keep it for good. Everyone else hears the browser's voice.
+ */
+export const SPEAK_STARTER_WINDOW_MS = 2 * 86_400_000;
 
 /**
  * Window event when the device setting changes (`detail`: "on" | "off"), so the board's watcher
