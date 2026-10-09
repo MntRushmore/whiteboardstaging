@@ -61,6 +61,7 @@ export const NO_BODY_ROUTES = Object.freeze([
   "src/app/api/health/route.ts", // GET only
   "src/app/api/cron/trial-reminders/route.ts", // GET only (Vercel cron); ?dryRun=1 is a query param
   "src/app/api/email/welcome/route.ts", // POST with an empty body: the server decides who and whether
+  "src/app/api/family/route.ts", // GET (?tz= is a query param) and DELETE (every kid of the caller's family), no body
   "src/app/api/admin/overview/route.ts", // GET only
   // The admin console's reads (GET only; ids in the path, filters in the query string, zod-checked).
   "src/app/api/admin/users/route.ts",
@@ -257,6 +258,58 @@ export const API_ROUTES = Object.freeze([
     limit: "emailWelcome",
     body: "none",
     purpose: "The caller's welcome email, once per account, after onboarding (address from the verified account, never the client)",
+    status: "active",
+  },
+  // Families (src/lib/family): a grown-up's kid profiles. Service role behind requireUser; every id
+  // is checked against the caller's own family (src/lib/family/members.ts).
+  {
+    path: "/api/family",
+    file: "src/app/api/family/route.ts",
+    methods: ["DELETE", "GET"],
+    auth: "user",
+    limit: "family",
+    body: "none",
+    purpose: "The caller's family (members, the grown-up's view of each kid's numbers); DELETE removes every kid before the grown-up's account is deleted",
+    status: "active",
+  },
+  {
+    path: "/api/family/kids",
+    file: "src/app/api/family/kids/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "family",
+    body: "zod",
+    purpose: "A grown-up adds a kid profile (a server-made account with no email or password of its own)",
+    status: "active",
+  },
+  {
+    path: "/api/family/kids/[id]",
+    file: "src/app/api/family/kids/[id]/route.ts",
+    methods: ["DELETE", "PATCH"],
+    auth: "user",
+    limit: "family",
+    body: "zod",
+    purpose: "A grown-up edits (PATCH) or removes (DELETE: the account and its data) one of their own kids",
+    status: "active",
+  },
+  {
+    path: "/api/family/pin",
+    file: "src/app/api/family/pin/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "family",
+    body: "zod",
+    purpose: "The grown-up sets or changes their 4-digit PIN (stored as a scrypt hash)",
+    status: "active",
+  },
+  {
+    path: "/api/family/switch",
+    file: "src/app/api/family/switch/route.ts",
+    methods: ["POST"],
+    auth: "user",
+    limit: "familySwitch",
+    body: "zod",
+    purpose: "Switch to another profile of the caller's family: a server-minted session; to the grown-up only with their PIN (5 wrong tries per 15 min per family)",
     status: "active",
   },
   {
