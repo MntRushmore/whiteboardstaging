@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CACHE_PHRASES,
+  FETCH_TIMEOUT_MS,
   MAX_WAIT_MS,
   PENDING_MS,
   ROUTE_DOWN_MS,
@@ -203,6 +204,25 @@ describe("Speaker: the browser's voice when the route cannot", () => {
     const speaker = makeSpeaker();
     await expect(speaker.speak("One")).resolves.toBe("browser");
     const next = speaker.speak("Two");
+    await flush();
+    expect(fetchSpeech).toHaveBeenCalledTimes(2);
+    audio.end();
+    await expect(next).resolves.toBe("voice");
+  });
+
+  it("a route that does not answer in time: the browser's voice, and the request is dropped", async () => {
+    let signal: AbortSignal | undefined;
+    fetchSpeech.mockImplementationOnce((_t, s) => {
+      signal = s;
+      return new Promise(() => undefined);
+    });
+    const speaker = makeSpeaker();
+    const said = speaker.speak("Slow server");
+    await vi.advanceTimersByTimeAsync(FETCH_TIMEOUT_MS + 10);
+    await expect(said).resolves.toBe("browser");
+    expect(signal?.aborted).toBe(true);
+    // only that phrase: the next one asks the route again
+    const next = speaker.speak("Next one");
     await flush();
     expect(fetchSpeech).toHaveBeenCalledTimes(2);
     audio.end();

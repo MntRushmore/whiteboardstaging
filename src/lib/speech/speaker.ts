@@ -17,7 +17,9 @@
  *    costs no second ElevenLabs call.
  *  - The route says "unavailable" (no key on this deployment, or a key ElevenLabs refuses): the
  *    browser's voice for the next ROUTE_DOWN_MS, without asking again for every phrase. A rate
- *    limit waits out its Retry-After the same way.
+ *    limit waits out its Retry-After the same way. A route that has not answered within
+ *    FETCH_TIMEOUT_MS (a slow network, a busy server) is dropped for that phrase: a late hint is
+ *    worse than the browser's voice.
  *
  * The browser parts (the element, speechSynthesis, the fetch, object URLs, timers) are injected,
  * so all of this runs in node against fakes (`__tests__/speaker.test.ts`).
@@ -101,6 +103,7 @@ export interface SpeakerDeps {
   revokeUrl(url: string): void;
   now?(): number;
   setTimeout?(fn: () => void, ms: number): Timer;
+  clearTimeout?(timer: Timer): void;
   /** a counter for the bug report's log (`clientMetric`) */
   metric?(name: string, fields: Record<string, unknown>): void;
 }
@@ -113,6 +116,11 @@ export const MAX_WAIT_MS = 20_000;
 export const PENDING_MS = 10_000;
 /** After "unavailable", the browser's voice for this long before the route is asked again. */
 export const ROUTE_DOWN_MS = 10 * 60_000;
+/**
+ * No audio from the route after this long (a slow network, a cold or busy server): the request is
+ * dropped and the browser's voice says the phrase, while the hint is still on the screen.
+ */
+export const FETCH_TIMEOUT_MS = 6_000;
 /** Phrases kept as audio. */
 export const CACHE_PHRASES = 24;
 /** The browser's voice: a little slower than its default, for young listeners. */
@@ -212,10 +220,12 @@ export class Speaker {
 
   private readonly now: () => number;
   private readonly setTimer: (fn: () => void, ms: number) => Timer;
+  private readonly clearTimer: (timer: Timer) => void;
 
   constructor(private readonly deps: SpeakerDeps) {
     this.now = deps.now ?? (() => Date.now());
     this.setTimer = deps.setTimeout ?? ((fn, ms) => setTimeout(fn, ms));
+    this.clearTimer = deps.clearTimeout ?? ((t) => clearTimeout(t as ReturnType<typeof setTimeout>));
   }
 
   /** True once the shared element has played (a tap unlocked it, or the browser allowed it anyway). */
@@ -358,18 +368,36 @@ export class Speaker {
       return hit;
     }
     if (!this.deps.audio || this.now() < this.routeDownUntil) return null;
+    // the request ends with the phrase (cancelled) or after FETCH_TIMEOUT_MS, whichever is first
+    const request = new AbortController();
+    const cancel = () => request.abort();
+    signal.addEventListener("abort", cancel);
+    let timer: Timer | null = null;
+    const timedOut = new Promise<"timeout">((resolve) => {
+      timer = this.setTimer(() => {
+        request.abort();
+        resolve("timeout");
+      }, FETCH_TIMEOUT_MS);
+    });
     try {
-      const blob = await this.deps.fetchSpeech(words, signal);
+      const blob = await Promise.race([this.deps.fetchSpeech(words, request.signal), timedOut]);
+      if (blob === "timeout") {
+        this.deps.metric?.("speech.fallback", { reason: "timeout" });
+        return null;
+      }
       const url = this.deps.toUrl(blob);
       this.remember(words, url);
       return url;
     } catch (err) {
       if (signal.aborted) return null;
-      const kind = err instanceof SpeechFetchError ? err.kind : "failed";
+      const kind = request.signal.aborted ? "timeout" : err instanceof SpeechFetchError ? err.kind : "failed";
       if (kind === "unavailable") this.routeDownUntil = this.now() + ROUTE_DOWN_MS;
       if (kind === "limited") this.routeDownUntil = this.now() + Math.max(1_000, err instanceof SpeechFetchError ? (err.retryAfterMs ?? 60_000) : 60_000);
       this.deps.metric?.("speech.fallback", { reason: kind });
       return null;
+    } finally {
+      if (timer !== null) this.clearTimer(timer);
+      signal.removeEventListener("abort", cancel);
     }
   }
 
