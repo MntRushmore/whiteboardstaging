@@ -19,6 +19,10 @@ export const FAMILY_COPY = {
   switching: "Switching…",
   manageFamily: "Manage family",
   switchFailed: "Couldn't switch profiles. Try again.",
+  /** the picker opened before the family was read, or the read failed */
+  pickerLoading: "Getting everyone's pictures…",
+  pickerFailed: "Couldn't load the profiles. Check your connection and try again.",
+  pickerRetry: "Try again",
 
   // ------------------------------------------------------------------ the PIN pad
   pinTitle: (name: string) => `${name}'s PIN`,
