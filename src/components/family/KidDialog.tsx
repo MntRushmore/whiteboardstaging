@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { Check } from "lucide-react";
 import { describeError } from "@/lib/errorMessage";
 import { addKid, editKid } from "@/lib/family/client";
 import { AVATARS, NAME_MAX, type AvatarId, type FamilyMember } from "@/lib/family/contracts";
 import { FAMILY_COPY } from "@/lib/family/copy";
-import { GRADE_OPTIONS, gradeFromOption, nameError, optionFromGrade } from "@/lib/family/forms";
+import { GRADE_OPTIONS, gradeError, gradeFromOption, nameError, optionFromGrade } from "@/lib/family/forms";
 import { reportUserError } from "@/lib/reportAppError";
 import { Button } from "@/registry/components/button/button";
 import { Dialog, DialogContent } from "@/registry/components/dialog/dialog";
@@ -18,8 +19,10 @@ const AVATAR_IDS = Object.keys(AVATARS) as AvatarId[];
 
 /**
  * Add a kid, or edit one: a name, a grade (Kindergarten to 8th, or high school) and a picture from
- * AVATARS. The grade picks the kid's skill path and starter problems; the picture is what they tap to
- * switch in, so it is the biggest thing here. `kid` set = edit (only what changed is sent).
+ * AVATARS. The grade picks the kid's skill path and starter problems, so a new kid starts with none
+ * picked ("Pick a grade") and cannot be added without one: a skipped field never puts a 6-year-old on
+ * the high-school path. The picture is what they tap to switch in, so it is the biggest thing here.
+ * `kid` set = edit (only what changed is sent).
  */
 export function KidDialog({ open, kid, onOpenChange, onSaved }: { open: boolean; kid: FamilyMember | null; onOpenChange: (open: boolean) => void; onSaved: (name: string) => void }) {
   return (
@@ -33,17 +36,19 @@ export function KidDialog({ open, kid, onOpenChange, onSaved }: { open: boolean;
 
 function KidForm({ kid, onDone, onCancel }: { kid: FamilyMember | null; onDone: (name: string) => void; onCancel: () => void }) {
   const [name, setName] = useState(kid?.displayName ?? "");
-  const [grade, setGrade] = useState(optionFromGrade(kid?.grade ?? null));
+  // a new kid has no grade until one is picked; an existing kid's is what is stored
+  const [grade, setGrade] = useState(kid ? optionFromGrade(kid.grade) : "");
   const [avatar, setAvatar] = useState<AvatarId>(kid?.avatar ?? AVATAR_IDS[0]);
   const [tried, setTried] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const problem = nameError(name);
+  const gradeProblem = gradeError(grade);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setTried(true);
-    if (problem || saving) return;
+    if (problem || gradeProblem || saving) return;
     setSaving(true);
     setError(null);
     const displayName = name.trim();
@@ -84,7 +89,14 @@ function KidForm({ kid, onDone, onCancel }: { kid: FamilyMember | null; onDone: 
         autoFocus={!kid}
         data-testid="kid-name"
       />
-      <Select label={FAMILY_COPY.gradeLabel} options={GRADE_OPTIONS} value={grade} onValueChange={setGrade} data-testid="kid-grade" />
+      <div className={styles.gradeField} data-invalid={tried && gradeProblem ? "" : undefined}>
+        <Select label={FAMILY_COPY.gradeLabel} placeholder={FAMILY_COPY.gradePlaceholder} options={GRADE_OPTIONS} value={grade} onValueChange={setGrade} data-testid="kid-grade" />
+        {tried && gradeProblem && (
+          <p className={styles.fieldError} role="alert" data-testid="kid-grade-error">
+            {gradeProblem}
+          </p>
+        )}
+      </div>
       <fieldset className={styles.avatarField}>
         <legend className={styles.avatarLegend}>{FAMILY_COPY.avatarLabel}</legend>
         <div className={styles.avatarGrid} role="radiogroup" aria-label={FAMILY_COPY.avatarLabel}>
@@ -101,6 +113,11 @@ function KidForm({ kid, onDone, onCancel }: { kid: FamilyMember | null; onDone: 
               data-testid={`avatar-${id}`}
             >
               <FamilyAvatar name={id} avatar={id} size="lg" />
+              {avatar === id && (
+                <span className={styles.avatarCheck} aria-hidden>
+                  <Check size={12} strokeWidth={3} />
+                </span>
+              )}
             </button>
           ))}
         </div>

@@ -12,6 +12,8 @@ import { DangerZone } from "@/components/account/DangerZone";
 import { BillingCard } from "@/components/account/BillingCard";
 import { GradeSection } from "@/components/account/GradeSection";
 import { FamilySection } from "@/components/account/FamilySection";
+import { KidAccountCard } from "@/components/family/KidAccountCard";
+import { useFamily } from "@/components/family/useFamily";
 import { ReferralCard } from "@/components/referral/ReferralCard";
 import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { ACCOUNT_COPY, accountPageStateFor } from "@/lib/billing/accountState";
@@ -60,6 +62,9 @@ export default function AccountPage() {
   const { user, loading: authLoading, authError } = useAuth();
   // The plan is part of the ink summary (one shared read): Billing waits for it.
   const ink = useInkSummary();
+  // a grown-up with kids has no grade of their own to pick: each kid's is set on /family
+  const { state: family } = useFamily(user && !isKidEmail(user.email) ? user.id : null);
+  const hasKids = Boolean(family?.members.some((m) => !m.isParent));
 
   useEffect(() => {
     if (!authLoading && !user && !authError) {
@@ -87,6 +92,7 @@ export default function AccountPage() {
 
   const pageState = accountPageStateFor(ink.state);
   const email = user.email ?? "";
+  const kid = isKidEmail(email);
 
   return (
     <div className="grow bg-muted/40">
@@ -102,7 +108,7 @@ export default function AccountPage() {
             {ACCOUNT_COPY.back}
           </Link>
           <h1 className="mt-3 text-3xl font-bold tracking-tight">{ACCOUNT_COPY.title}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{isKidEmail(email) ? FAMILY_COPY.kidAccountSubtitle : ACCOUNT_COPY.subtitle}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{kid ? FAMILY_COPY.kidAccountSubtitle : ACCOUNT_COPY.subtitle}</p>
         </div>
 
         {pageState === "loading" ? (
@@ -123,11 +129,17 @@ export default function AccountPage() {
               {ACCOUNT_COPY.retry}
             </Button>
           </div>
+        ) : kid ? (
+          // a kid profile: one friendly card, nothing of the grown-up's (billing, email, delete)
+          <div className="space-y-6" data-state="ready">
+            <KidAccountCard userId={user.id} fallbackName={FAMILY_COPY.you} />
+          </div>
         ) : (
           <div className="space-y-6" data-state="ready">
             <BillingCard email={email} />
             <ProfileCard userId={user.id} email={email} />
-            <GradeSection userId={user.id} kid={isKidEmail(email)} />
+            {/* a grown-up with kids sets each kid's grade on /family (the Family card says so) */}
+            {!hasKids && <GradeSection userId={user.id} />}
             <FamilySection email={email} />
             <ReferralCard />
             <DangerZone email={email} />

@@ -97,18 +97,18 @@ export function BillingCard({ email }: { email: string }) {
         {view.action === "start" &&
           (checkout ? (
             // Same tab: the Payment Link comes back to /?unlimited=started, where the plan is watched for.
-            <Button asChild size="sm">
+            <Button asChild size="sm" className="pointer-coarse:h-11">
               <a href={checkout} data-testid="plan-start">
                 {view.actionLabel}
               </a>
             </Button>
           ) : waiting ? (
-            <Button size="sm" variant="outline" disabled aria-disabled aria-busy data-testid="plan-start-waiting">
+            <Button size="sm" variant="outline" disabled aria-disabled aria-busy data-testid="plan-start-waiting" className="pointer-coarse:h-11">
               <Loader2 className="size-4 animate-spin" aria-hidden />
               {view.actionLabel}
             </Button>
           ) : (
-            <Button size="sm" variant="outline" disabled aria-disabled>
+            <Button size="sm" variant="outline" disabled aria-disabled className="pointer-coarse:h-11">
               {PLAN_COPY.comingSoon}
             </Button>
           ))}
@@ -116,7 +116,7 @@ export function BillingCard({ email }: { email: string }) {
         {(view.action === "manage" || view.action === "fix-payment") &&
           (portal ? (
             <div className="space-y-1.5">
-              <Button asChild size="sm" variant={view.action === "fix-payment" ? "default" : "outline"}>
+              <Button asChild size="sm" variant={view.action === "fix-payment" ? "default" : "outline"} className="pointer-coarse:h-11">
                 <a href={portal} target="_blank" rel="noopener noreferrer" data-testid="plan-manage">
                   {view.actionLabel}
                   <ExternalLink className="size-3.5" />
@@ -129,19 +129,20 @@ export function BillingCard({ email }: { email: string }) {
           ))}
 
         {view.action === "refresh" && (
-          <Button size="sm" variant="outline" onClick={refresh} disabled={loading}>
+          <Button size="sm" variant="outline" onClick={refresh} disabled={loading} className="pointer-coarse:h-11">
             {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
             {view.actionLabel}
           </Button>
         )}
 
         {/* The plan's terms (renewal, cancelling, fair use) and refunds, for the grown-up who pays. */}
+        {/* on a phone each link is a 44 px row's height to tap, not a 15 px line of small print */}
         <p className="text-xs text-muted-foreground">
-          <Link href="/terms#unlimited" className="underline underline-offset-2 hover:text-foreground">
+          <Link href="/terms#unlimited" className="underline underline-offset-2 hover:text-foreground pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center">
             How the plan works
           </Link>
           {" · "}
-          <Link href="/refunds#subscriptions" className="underline underline-offset-2 hover:text-foreground">
+          <Link href="/refunds#subscriptions" className="underline underline-offset-2 hover:text-foreground pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center">
             Refunds
           </Link>
         </p>

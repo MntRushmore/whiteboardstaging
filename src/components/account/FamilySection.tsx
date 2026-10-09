@@ -27,7 +27,7 @@ export function FamilySection({ email }: { email: string }) {
     <Card data-testid="family-section">
       <SectionHeader title={FAMILY_COPY.accountCardTitle} description={kids > 0 ? FAMILY_COPY.accountCardBodyKids(kids) : FAMILY_COPY.accountCardBody} />
       <CardContent className={SECTION_BODY}>
-        <Button asChild size="sm" variant="outline">
+        <Button asChild size="sm" variant="outline" className="pointer-coarse:h-11">
           <Link href={FAMILY_PATH}>
             <Users className="size-4" aria-hidden />
             {FAMILY_COPY.accountCardLink}

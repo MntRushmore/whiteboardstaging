@@ -119,7 +119,7 @@ export function DangerZone({ email }: { email: string }) {
         description="Deleting your account removes your boards, saved images and usage history for good."
       />
       <CardContent className={SECTION_BODY}>
-        <Button variant="destructive" size="sm" onClick={() => setOpen(true)}>
+        <Button variant="destructive" size="sm" className="pointer-coarse:h-11" onClick={() => setOpen(true)}>
           <Trash2 className="w-4 h-4" />
           Delete account
         </Button>

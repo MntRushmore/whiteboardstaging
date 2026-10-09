@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CalendarCheck, RefreshCw, UserPlus, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarCheck, RefreshCw, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { AuthErrorBanner, useAuth } from "@/components/AuthProvider";
 import { AppHeader, APP_CONTENT_CLASS } from "@/components/app/AppHeader";
@@ -15,6 +15,7 @@ import { addKidBlock } from "@/lib/family/forms";
 import { PLAN_PATH } from "@/lib/onboarding/planMarker";
 import { openProfilePicker } from "@/lib/family/picker";
 import { REPORT_MENU } from "@/lib/report/menu";
+import { reportFocusPath } from "@/lib/report/focus";
 import { switchErrorView } from "@/lib/family/switchError";
 import { reportUserError } from "@/lib/reportAppError";
 import { Alert } from "@/registry/components/alert/alert";
@@ -31,12 +32,12 @@ import styles from "./familyPage.module.css";
 
 /**
  * /family: the grown-up's page for their kids. Set the PIN (first), add a kid (name, grade,
- * picture), and for each kid this week's numbers, "Switch to <name>", "See progress", edit and
- * remove. A kid who lands here is told it is for grown-ups, with a way to switch profile. Signed-in
+ * picture), and for each kid this week's numbers, "Switch to <name>", "See <name>'s week" (the
+ * weekly report at that kid: the grown-up stays on their own profile), edit and remove. A kid who lands here is told it is for grown-ups, with a way to switch profile. Signed-in
  * only (signed out goes to /login), never paywalled: a grown-up sets the PIN before or after the
  * plan, but adds kids only with Agathon Unlimited on (kids share it and have no ink of their own;
- * the server refuses otherwise), so without it the Kids section says "Start your free trial" with a
- * link to the plan screen. Reads GET /api/family fresh on every visit (the numbers move).
+ * the server refuses otherwise), so without it the Kids section's main button is "Start free trial"
+ * (the plan screen) in place of a disabled "Add a kid". Reads GET /api/family fresh on every visit (the numbers move).
  */
 export function FamilyScreen() {
   const router = useRouter();
@@ -46,17 +47,17 @@ export function FamilyScreen() {
   const plan = useUnlimited();
   const [dialog, setDialog] = useState<{ kid: FamilyMember | null } | null>(null);
   const [removing, setRemoving] = useState<FamilyMember | null>(null);
-  const [busy, setBusy] = useState<{ id: string; what: "switch" | "progress" } | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user && !authError) router.replace("/login");
   }, [user, authLoading, authError, router]);
 
-  async function become(kid: FamilyMember, what: "switch" | "progress") {
+  async function become(kid: FamilyMember) {
     if (busy) return;
-    setBusy({ id: kid.userId, what });
+    setBusy(kid.userId);
     try {
-      await switchProfile(kid.userId, { dest: what === "progress" ? "/progress" : "/" });
+      await switchProfile(kid.userId, { dest: "/" });
     } catch (err) {
       const view = switchErrorView(err);
       toast.error(view.message);
@@ -69,12 +70,7 @@ export function FamilyScreen() {
   const block = addKidBlock({ hasPin: state?.hasPin ?? false, kids: kids.length, plan: { known: plan.known, status: plan.state.status } });
   const kidsHint =
     block === "plan" ? (
-      <>
-        {FAMILY_COPY.kidsNeedPlan}{" "}
-        <Link href={PLAN_PATH} className={styles.planLink} data-testid="kids-need-plan">
-          {FAMILY_COPY.kidsNeedPlanLink}
-        </Link>
-      </>
+      FAMILY_COPY.kidsNeedPlan
     ) : block === "active_plan" ? (
       <>
         {FAMILY_COPY.kidsNeedActivePlan}{" "}
@@ -128,10 +124,18 @@ export function FamilyScreen() {
               </h2>
               <p className={styles.sectionHint}>{kidsHint}</p>
             </div>
-            <Button className={styles.sectionAction} onClick={() => setDialog({ kid: null })} disabled={block !== null} data-testid="add-kid">
-              <UserPlus size={16} strokeWidth={1.9} aria-hidden />
-              {FAMILY_COPY.addKid}
-            </Button>
+            {block === "plan" ? (
+              // no plan yet: the way on is the free trial, not a greyed-out "Add a kid"
+              <Button className={styles.sectionAction} onClick={() => router.push(PLAN_PATH)} data-testid="kids-need-plan">
+                {FAMILY_COPY.kidsNeedPlanButton}
+                <ArrowRight size={16} strokeWidth={1.9} aria-hidden />
+              </Button>
+            ) : (
+              <Button className={styles.sectionAction} onClick={() => setDialog({ kid: null })} disabled={block !== null} data-testid="add-kid">
+                <UserPlus size={16} strokeWidth={1.9} aria-hidden />
+                {FAMILY_COPY.addKid}
+              </Button>
+            )}
           </div>
 
           {kids.length === 0 ? (
@@ -142,10 +146,10 @@ export function FamilyScreen() {
                 <KidCard
                   key={kid.userId}
                   kid={kid}
-                  busy={busy?.id === kid.userId ? busy.what : null}
-                  locked={busy !== null && busy.id !== kid.userId}
-                  onSwitch={() => void become(kid, "switch")}
-                  onProgress={() => void become(kid, "progress")}
+                  busy={busy === kid.userId}
+                  locked={busy !== null && busy !== kid.userId}
+                  onSwitch={() => void become(kid)}
+                  onWeek={() => router.push(reportFocusPath(kid.userId))}
                   onEdit={() => setDialog({ kid })}
                   onRemove={() => setRemoving(kid)}
                 />
