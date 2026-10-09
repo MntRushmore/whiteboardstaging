@@ -63,7 +63,11 @@ export type MarkResult =
   | { kind: "ok"; referral: AdminReferral }
   /** no referral has that id */
   | { kind: "missing" }
-  /** the status does not allow it (rewarded and void are final; only a paid one is rewarded) */
+  /**
+   * the status does not allow it (rewarded and void are final; only a paid one is rewarded), or a
+   * paid one is not rewardable yet: the friend's plan is not active, or its first payment has not
+   * settled (hint `referral_unsettled`, 20261009140000_referral_hardening.sql)
+   */
   | { kind: "conflict"; message: string };
 
 /**
@@ -75,7 +79,7 @@ export async function markReferral(deps: ConsoleDeps, id: number, mark: Referral
   if (!res.ok) {
     const err = await errorBody(res);
     if (err.hint === "not_found") return { kind: "missing" };
-    if (err.hint === "referral_state") return { kind: "conflict", message: err.message || "This referral cannot be changed that way." };
+    if (err.hint === "referral_state" || err.hint === "referral_unsettled") return { kind: "conflict", message: err.message || "This referral cannot be changed that way." };
     if (MISSING.has(err.code)) throw new ConsoleQueryError(MARK_FUNCTION, res.status, "it does not exist (is migration 20261009110000_referrals.sql applied?)", "write");
     throw await failureOf(MARK_FUNCTION, res, false, "write");
   }

@@ -852,7 +852,8 @@ linked to nobody.
 
 "Share Agathon with another family. When they join, they get their first month free, and you get a
 free month too." (2026-10-09, Phase 2; `docs/KIDS-COME-BACK.md`.) Schema and rules:
-`supabase/migrations/20261009110000_referrals.sql`; code: `src/lib/referral`.
+`supabase/migrations/20261009110000_referrals.sql` and `20261009140000_referral_hardening.sql`;
+code: `src/lib/referral`.
 
 **How it works.**
 
@@ -864,19 +865,36 @@ free month too." (2026-10-09, Phase 2; `docs/KIDS-COME-BACK.md`.) Schema and rul
   `/login` they see "A friend invited you to Agathon" (plus "Your first month is free." only when
   the referral Payment Link below is set). It never says whose code it is.
 - When the new account's attribution is saved, the database records a referral, but only if the
-  code is another grown-up's, and the account was made after the code and is not a kid. That rules
-  out self-referral and a grown-up's own kids. Otherwise the `ref` is dropped from the attribution,
-  so `profiles.attribution.ref` present means "referred". The plan screen uses that to send the
+  code is another grown-up's, and the account is not a kid, was made after the code, was made
+  within the last 24 hours, and has no plan yet (no `unlimited_subscriptions` row). That rules out
+  self-referral, a grown-up's own kids, and an existing customer "referred" weeks later. The row
+  always starts at `signed_up`. Otherwise the `ref` is dropped from the attribution, so
+  `profiles.attribution.ref` present means "referred". The plan screen uses that to send the
   friend to the referral Payment Link (`planLink({ referred })`, `src/lib/billing/planChoice.ts`).
-- The friend's subscription moves the referral forward and never back: `signed_up` → `trialing`
-  (checkout done, free trial running) → `paid` (subscription `active`: the first charge succeeded).
-  The admin then sets it to `rewarded`; or to `void` for abuse. Both are final.
+- The friend's subscription moves the referral: `signed_up` → `trialing` (checkout done, free trial
+  running) → `paid` (subscription `active`). **`paid` is not proof of payment.** Stripe sets a
+  subscription `active` when its trial ends, about an hour *before* it tries the first charge. If
+  that charge fails, the plan goes `past_due` and the referral goes back to `trialing` (`paid_at`
+  cleared). The same happens on `unpaid`, `canceled`, `incomplete_expired` or `paused`, unless the
+  friend has another active plan. If a retry is paid, the plan is `active` again and the referral
+  is `paid` again, with a new date. The admin then sets it to `rewarded`, or to `void` for abuse.
+  Both are final: the friend's plan no longer moves them.
+- Voiding a referral, or deleting it (the referrer deleted their account), removes the `ref` from
+  the friend's attribution, so the plan screen stops offering them the free-month link.
+- A friend who pays the first month and then cancels before you credit the referrer also goes back
+  to `trialing`, so the console offers no reward for them. Credit promptly once a row is due.
 - **Admin → Referrals** (`/admin/referrals`) lists every referral: the referrer's and the friend's
   account emails, the emails the checkouts were paid with (known only after a checkout), the
   referrer's Stripe customer id (copyable), the status and its dates. It opens on **Reward due**
-  (the `paid` ones). A friend whose address matches the referrer's (ignoring case, `+tags` and
-  Gmail's dots) is flagged "Looks like the same person". Marks are written to `admin_audit`
-  (`referral.reward`, `referral.void`).
+  (the `paid` ones). Under the friend's address it shows their plan as Stripe has it ("Plan active",
+  "Plan past due: a charge is failing", "No plan yet"). A friend whose address matches the
+  referrer's (ignoring case, `+tags` and Gmail's dots) is flagged "Looks like the same person".
+  **Mark rewarded** shows only once the friend's plan is `active` and at least **3 days** have
+  passed since the later of its trial end and the referral's `paid_at`. Until then the row says
+  "Reward from Oct 12" (or "No reward while the plan is not active"). By then Stripe's first charge
+  and its first retries have played out. The database enforces the same rule
+  (`admin_referral_mark` refuses with hint `referral_unsettled`; the console shows the reason).
+  Marks are written to `admin_audit` (`referral.reward`, `referral.void`).
 
 ### The friend's free first month: the referral Payment Link (optional)
 
@@ -927,16 +945,25 @@ the variable does not change.
 ### Rewarding the referrer (their free month)
 
 The app has no Stripe secret key, so you give the month by hand when a referral shows **Paid:
-reward due**:
+reward due** and its **Mark rewarded** button:
 
 1. *Admin → Referrals*, filter **Reward due**. Check the row: the friend is a different family
-   (no "Looks like the same person" flag, different payer emails). If it is abuse, press **Void**.
-   That is final, and nothing is owed.
-2. In Stripe: *Customers* → search the referrer's **Stripe customer** id from the row (or their
-   payer email) → *Adjust balance* (*Balance* → *Adjust*) → **credit $25.00** with the description
-   "Referral: free month (Agathon)". The credit comes off their next invoice. A referrer with no
-   Stripe customer yet has no plan to credit: wait until they subscribe, then credit them.
-3. Back on the row, press **Mark rewarded**, then confirm "I applied the credit". This stamps
+   (no "Looks like the same person" flag, different payer emails), and their plan says "Plan
+   active". If it is abuse, press **Void**. That is final, nothing is owed, and the friend loses
+   the free-month link if they have not used it yet.
+2. **Confirm the friend paid.** In Stripe: *Customers* → search the friend's payer email (or their
+   account email) → open their Agathon Unlimited subscription → *Invoices*. The first invoice that
+   is **not $0** (the trial's invoice is $0) must say **Paid**. If it says Open, Past due, Failed or
+   Void, or there is none yet, do not credit. Wait, or void the referral if it is abuse. `paid` in
+   the console only means Stripe set the plan `active`, which happens about an hour before the
+   first charge.
+3. In Stripe: *Customers* → search the referrer's **Stripe customer** id from the row (or their
+   payer email) → *Adjust balance* (*Balance* → *Adjust*) → credit **one month's price** (today
+   **$25.00**, `UNLIMITED_PLAN.monthlyUsd`; the console's note says the current amount) with the
+   description "Referral: free month (Agathon)". The credit comes off their next invoice. A
+   referrer with no Stripe customer yet has no plan to credit: wait until they subscribe, then
+   credit them.
+4. Back on the row, press **Mark rewarded**, then confirm "I applied the credit". This stamps
    `rewarded_at` and `rewarded_by`, writes `referral.reward` to `admin_audit`, and their card now
    counts the month as earned.
 
@@ -950,10 +977,20 @@ join auth.users ru on ru.id = r.referrer_id
 join auth.users fu on fu.id = r.referred_id
 where r.status = 'paid' order by r.paid_at;
 
--- after the Stripe credit: the same as the console's button (audited); p_admin is your user id
+-- after the Stripe credit: the same as the console's button (audited); p_admin is your user id.
+-- Refused (hint referral_unsettled) until the friend's plan is active and 3 days past its trial
+-- end and paid_at, like the button.
 select public.admin_referral_mark(<id>, 'rewarded', (select id from auth.users where email = 'you@…'));
 ```
 
-**Deploy order:** apply `20261009110000_referrals.sql` (after `20261009100000_parents_recommend.sql`)
-before the code. It is idempotent. Then `node scripts/verify-rls.mjs` runs the "referrals" checks.
-Nothing needs the referral link: without it the friend gets the usual trial.
+**Why not Stripe's `invoice.paid`?** Marking `paid` from a paid invoice would be exact, but the
+webhook endpoint is not subscribed to invoice events (`WEBHOOK_EVENTS` in
+`scripts/stripe-setup.mjs`), and adding one means changing the live endpoint's events. Until then,
+the demotion on a failed charge, the 3-day wait and the invoice check in step 2 cover it.
+
+**Deploy order:** apply `20261009110000_referrals.sql` (after `20261009100000_parents_recommend.sql`),
+then `20261009140000_referral_hardening.sql`, before the code. Both are idempotent. The hardening
+migration also repairs old rows once: a `paid` referral whose friend has no active plan goes back
+to `trialing`, and a `ref` with no live referral behind it is removed. Then
+`node scripts/verify-rls.mjs` runs the "referrals" checks. Nothing needs the referral link: without
+it the friend gets the usual trial.

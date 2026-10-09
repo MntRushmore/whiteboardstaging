@@ -20,15 +20,15 @@ function parseReferralId(raw: string): number | null {
 
 /**
  * PATCH /api/admin/referrals/<id> `{ status: "rewarded" | "void" }` (ReferralMarkSchema,
- * src/lib/referral/admin.ts): "Mark rewarded" once the owner has applied the referrer's $25 credit
- * in Stripe (from `paid` only: rewarded_at, rewarded_by), or "Void" for abuse (from signed_up,
- * trialing or paid). Both are final. Answers the referral as it now stands (`AdminReferral`). The
+ * src/lib/referral/admin.ts): "Mark rewarded" once the owner has applied the referrer's month's
+ * credit in Stripe (from `paid` only, with the friend's plan active and settled: rewarded_at,
+ * rewarded_by), or "Void" for abuse (from signed_up, trialing or paid). Both are final. Answers the referral as it now stands (`AdminReferral`). The
  * database writes the admin_audit row ('referral.reward' / 'referral.void') in the same
  * transaction.
  *
  * `requireAdmin` first: requireUser(req) (401 signed out), then the admins table (404 for everyone
  * else), then the console's bucket (`adminConsole`). 400 for a bad id or body, 404 for no such
- * referral, 409 for a move its status does not allow, 503 without SUPABASE_SERVICE_ROLE_KEY, 502
+ * referral, 409 for a move its status does not allow (or a reward not yet due), 503 without SUPABASE_SERVICE_ROLE_KEY, 502
  * when the write fails.
  */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {

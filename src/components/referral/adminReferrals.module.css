@@ -28,6 +28,15 @@
 .flag {
   display: inline-flex;
 }
+/* the friend's plan, in Stripe's terms: a failing or stopped one in the danger tone */
+.plan {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+.plan[data-alarm] {
+  color: var(--danger);
+  font-weight: 500;
+}
 
 .actionsCell {
   width: 1%;
@@ -42,6 +51,7 @@
 /* in the table the cell is as narrow as its buttons, side by side */
 .actionsCell .actions {
   flex-wrap: nowrap;
+  align-items: center;
 }
 
 /* a phone: one card per referral */

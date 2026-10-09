@@ -9,6 +9,12 @@
  * that it was given. "Void" is for abuse; the page flags a friend whose address looks like the
  * referrer's own so it is checked before anyone is credited.
  *
+ * 'paid' means the friend's plan turned active, which Stripe does when the trial ends, about an hour
+ * BEFORE the first charge. So "Mark rewarded" waits (rewardGate) until the friend's plan is still
+ * active REFERRAL_SETTLE_DAYS after the later of its trial end and the referral's paid_at, by which
+ * time a declined first charge has moved the plan to past_due and the referral back to trialing
+ * (supabase/migrations/20261009140000_referral_hardening.sql, which checks the same again).
+ *
  * Pure (zod only): no React, no network, no browser API at module scope.
  */
 import { z } from "zod";
@@ -46,7 +52,7 @@ const RpcPartySchema = z.object({
   payer_email: z.string().nullable(),
 });
 
-/** One referral as referral_entry() answers it. */
+/** One referral as referral_entry() answers it (`referred.trial_end` from 20261009140000_referral_hardening.sql). */
 export const ReferralRpcEntrySchema = z.object({
   id: z.number().int().positive(),
   code: z.string().refine(isReferralCode, "a referral code"),
@@ -57,7 +63,7 @@ export const ReferralRpcEntrySchema = z.object({
   updated_at: iso,
   rewarded_by_email: z.string().nullable(),
   referrer: RpcPartySchema.extend({ customer_id: z.string().nullable() }),
-  referred: RpcPartySchema.extend({ plan_status: z.string().nullable() }),
+  referred: RpcPartySchema.extend({ plan_status: z.string().nullable(), trial_end: iso.nullable().optional() }),
 });
 export type ReferralRpcEntry = z.infer<typeof ReferralRpcEntrySchema>;
 
@@ -89,8 +95,11 @@ export const AdminReferralSchema = z.object({
   rewardedByEmail: z.string().nullable(),
   /** customerId: the referrer's Stripe customer, where the credit goes */
   referrer: PartySchema.extend({ customerId: z.string().nullable() }),
-  /** planStatus: the friend's latest subscription status as Stripe has it */
-  referred: PartySchema.extend({ planStatus: z.string().nullable() }),
+  /**
+   * planStatus: the friend's plan's status as Stripe has it (their active subscription when they
+   * have one, else their latest); trialEnd: that plan's trial end
+   */
+  referred: PartySchema.extend({ planStatus: z.string().nullable(), trialEnd: iso.nullable() }),
 });
 export type AdminReferral = z.infer<typeof AdminReferralSchema>;
 
@@ -114,7 +123,14 @@ export function toAdminReferral(e: ReferralRpcEntry): AdminReferral {
     updatedAt: e.updated_at,
     rewardedByEmail: e.rewarded_by_email,
     referrer: { id: e.referrer.id, email: e.referrer.email, createdAt: e.referrer.created_at, payerEmail: e.referrer.payer_email, customerId: e.referrer.customer_id },
-    referred: { id: e.referred.id, email: e.referred.email, createdAt: e.referred.created_at, payerEmail: e.referred.payer_email, planStatus: e.referred.plan_status },
+    referred: {
+      id: e.referred.id,
+      email: e.referred.email,
+      createdAt: e.referred.created_at,
+      payerEmail: e.referred.payer_email,
+      planStatus: e.referred.plan_status,
+      trialEnd: e.referred.trial_end ?? null,
+    },
   };
 }
 
@@ -168,9 +184,49 @@ export const REFERRAL_TONES: Record<ReferralStatus, Tone> = {
   void: "muted",
 };
 
-/** Whether the admin may make this move (the database checks it again). */
+/** Whether the status allows this move (the database checks it again). A reward also needs rewardGate. */
 export function canMark(status: ReferralStatus, mark: ReferralMark): boolean {
   return mark === "rewarded" ? status === "paid" : status === "signed_up" || status === "trialing" || status === "paid";
+}
+
+/**
+ * Days a paid referral waits before it may be rewarded, counted from the later of the friend's trial
+ * end and the referral's paid_at: Stripe charges about an hour after the trial ends, and a decline
+ * moves the plan to past_due (and the referral back to trialing) well within this. The same 3 days
+ * as admin_referral_mark() (20261009140000_referral_hardening.sql).
+ */
+export const REFERRAL_SETTLE_DAYS = 3;
+
+const DAY_MS = 86_400_000;
+
+/** When a paid referral may be rewarded (ISO): REFERRAL_SETTLE_DAYS after the later of its paid_at and the friend's trial end; null when neither is known. */
+export function rewardFrom(r: Pick<AdminReferral, "paidAt" | "referred">): string | null {
+  const times = [r.paidAt, r.referred.trialEnd].map((t) => (t ? Date.parse(t) : Number.NaN)).filter((t) => Number.isFinite(t));
+  if (times.length === 0) return null;
+  return new Date(Math.max(...times) + REFERRAL_SETTLE_DAYS * DAY_MS).toISOString();
+}
+
+export type RewardGate =
+  | { ok: true }
+  /** not 'paid' (not yet, or rewarded or void already) */
+  | { ok: false; why: "status" }
+  /** paid, but the friend's plan is not active now (back in a trial, or no plan read) */
+  | { ok: false; why: "plan" }
+  /** paid and active, but the first charge may still fail: from `from` (null: unknown) */
+  | { ok: false; why: "settling"; from: string | null };
+
+/**
+ * Whether "Mark rewarded" may be offered now: the referral is 'paid', the friend's plan is 'active',
+ * and REFERRAL_SETTLE_DAYS have passed since the later of the trial end and paid_at. The database
+ * refuses anything else (hint `referral_unsettled`), and the runbook still has the admin check the
+ * first invoice in Stripe.
+ */
+export function rewardGate(r: Pick<AdminReferral, "status" | "paidAt" | "referred">, now: number): RewardGate {
+  if (!canMark(r.status, "rewarded")) return { ok: false, why: "status" };
+  if (r.referred.planStatus !== "active") return { ok: false, why: "plan" };
+  const from = rewardFrom(r);
+  if (from === null || now < Date.parse(from)) return { ok: false, why: "settling", from };
+  return { ok: true };
 }
 
 /** The page opens on what needs doing: the rewards due when there are some, else everything. */
@@ -200,6 +256,10 @@ export interface ReferralRowView {
   statusTone: Tone;
   referrer: ReferralPartyView & { customerId: string | null };
   friend: ReferralPartyView;
+  /** the friend's plan as Stripe has it: "Plan active", "Plan past due: a charge is failing", "No plan yet" */
+  friendPlan: string;
+  /** a plan that is failing or stopped, said in the danger tone */
+  friendPlanAlarm: boolean;
   joined: string;
   joinedTitle: string;
   paid: string;
@@ -208,6 +268,9 @@ export interface ReferralRowView {
   rewarded: string | null;
   samePerson: boolean;
   canReward: boolean;
+  /** why a paid referral has no "Mark rewarded" yet ("Reward from Oct 12"); null otherwise */
+  rewardWait: string | null;
+  rewardWaitTitle: string;
   canVoid: boolean;
 }
 
@@ -218,6 +281,21 @@ export interface ReferralsView {
   /** nothing at all yet */
   empty: boolean;
   truncatedNote: string | null;
+}
+
+const FAILING_PLANS = new Set(["past_due", "unpaid", "canceled", "incomplete_expired", "paused"]);
+
+function friendPlan(status: string | null): string {
+  if (!status) return REFERRAL_ADMIN_COPY.noPlan;
+  return REFERRAL_ADMIN_COPY.friendPlan(REFERRAL_ADMIN_COPY.planWords[status as keyof typeof REFERRAL_ADMIN_COPY.planWords] ?? status);
+}
+
+function rewardWait(gate: RewardGate, clock: ViewClock): { text: string | null; title: string } {
+  if (gate.ok || gate.why === "status") return { text: null, title: "" };
+  if (gate.why === "plan") return { text: REFERRAL_ADMIN_COPY.rewardPlanNotActive, title: "" };
+  if (!gate.from) return { text: REFERRAL_ADMIN_COPY.rewardSettling, title: "" };
+  const day = formatDay(gate.from, clock);
+  return { text: REFERRAL_ADMIN_COPY.rewardFrom(day === "Today" ? "today" : day), title: exactTime(gate.from, clock) };
 }
 
 function party(email: string | null, payerEmail: string | null): ReferralPartyView {
@@ -231,6 +309,8 @@ export function referralRow(r: AdminReferral, clock: ViewClock): ReferralRowView
   // mid-sentence: "Rewarded today by …", "Rewarded Oct 3 by …"
   const day = r.rewardedAt ? formatDay(r.rewardedAt, clock) : null;
   const rewardedWhen = day === "Today" || day === "Yesterday" ? day.toLowerCase() : day;
+  const gate = rewardGate(r, clock.now);
+  const wait = rewardWait(gate, clock);
   return {
     id: r.id,
     code: r.code,
@@ -239,13 +319,17 @@ export function referralRow(r: AdminReferral, clock: ViewClock): ReferralRowView
     statusTone: REFERRAL_TONES[r.status],
     referrer: { ...party(r.referrer.email, r.referrer.payerEmail), customerId: r.referrer.customerId },
     friend: party(r.referred.email, r.referred.payerEmail),
+    friendPlan: friendPlan(r.referred.planStatus),
+    friendPlanAlarm: r.referred.planStatus !== null && FAILING_PLANS.has(r.referred.planStatus),
     joined: formatDay(r.createdAt, clock),
     joinedTitle: exactTime(r.createdAt, clock),
     paid: r.paidAt ? formatDay(r.paidAt, clock) : "—",
     paidTitle: r.paidAt ? exactTime(r.paidAt, clock) : "",
     rewarded: rewardedWhen ? (r.rewardedByEmail ? REFERRAL_ADMIN_COPY.rewardedBy(r.rewardedByEmail, rewardedWhen) : REFERRAL_ADMIN_COPY.rewardedWhen(rewardedWhen)) : null,
     samePerson: looksLikeSamePerson(r),
-    canReward: canMark(r.status, "rewarded"),
+    canReward: gate.ok,
+    rewardWait: wait.text,
+    rewardWaitTitle: wait.title,
     canVoid: canMark(r.status, "void"),
   };
 }

@@ -6,7 +6,13 @@
  *
  * The friend's free month is a Stripe Payment Link the owner may not have made yet
  * (NEXT_PUBLIC_UNLIMITED_REFERRAL_LINK): without it, nothing here promises the friend a free month.
+ * The referrer's month is a credit of one month's price, read from UNLIMITED_PLAN.monthlyUsd so a
+ * price change is one edit.
  */
+import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
+
+/** The referrer's free month, as the credit the admin applies in Stripe: "$25". */
+const MONTH_CREDIT = `$${UNLIMITED_PLAN.monthlyUsd}`;
 
 /** The grown-up's "Give a month, get a month" card. */
 export const REFERRAL_CARD_COPY = {
@@ -80,14 +86,14 @@ export const REFERRAL_ADMIN_COPY = {
     signedUp: "Signed up",
     signedUpHint: "Every referral, less voided",
   },
-  /** the note above the list: the credit comes first */
+  /** the note above the list: check the friend paid, then the credit, then the mark */
   rewardNoteTitle: "Before you mark a referral rewarded",
-  rewardNote: "Apply a $25 credit to the referrer's Stripe customer first (Stripe → Customers → Adjust balance). Mark rewarded only records that you did.",
+  rewardNote: `First open the friend's subscription in Stripe and check that its first real invoice (not the $0 trial one) says Paid. Then apply a ${MONTH_CREDIT} credit to the referrer's Stripe customer (Stripe → Customers → Adjust balance). Mark rewarded only records that you did.`,
   markRewarded: "Mark rewarded",
   void: "Void",
   rewardTitle: "Mark this referral rewarded?",
   rewardBody: (email: string) =>
-    `Apply a $25 credit to ${email}'s Stripe customer first (Stripe → Customers → Adjust balance). This only records that the free month was given.`,
+    `Check in Stripe that the friend's first real invoice (not the $0 trial one) says Paid, then apply a ${MONTH_CREDIT} credit to ${email}'s Stripe customer (Stripe → Customers → Adjust balance). This only records that the free month was given.`,
   rewardConfirm: "I applied the credit: mark rewarded",
   voidTitle: "Void this referral?",
   voidBody: "Use this for abuse: a friend who is really the same family, or a fake account. A voided referral earns nothing and cannot be undone.",
@@ -98,6 +104,23 @@ export const REFERRAL_ADMIN_COPY = {
   customer: "Stripe customer",
   noCustomer: "No Stripe customer yet",
   payer: (email: string) => `Paid as ${email}`,
+  /** the friend's plan under their address, in Stripe's terms */
+  friendPlan: (words: string) => `Plan ${words}`,
+  noPlan: "No plan yet",
+  planWords: {
+    trialing: "in its free trial",
+    active: "active",
+    past_due: "past due: a charge is failing",
+    unpaid: "unpaid: a charge failed",
+    canceled: "canceled",
+    incomplete: "waiting on its first payment",
+    incomplete_expired: "never started",
+    paused: "paused",
+  },
+  /** where "Mark rewarded" would be, while a paid referral cannot be rewarded yet */
+  rewardFrom: (day: string) => `Reward from ${day}`,
+  rewardSettling: "Reward once the first payment settles",
+  rewardPlanNotActive: "No reward while the plan is not active",
   samePerson: "Looks like the same person",
   samePersonHint: "The two addresses match once dots and +tags are ignored. Check before rewarding.",
   rewardedBy: (who: string, when: string) => `Rewarded ${when} by ${who}`,

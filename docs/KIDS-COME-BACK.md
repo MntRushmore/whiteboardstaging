@@ -77,7 +77,7 @@ Each part's own migration gets its own timestamp:
   - the `referrals` table
 
 Each part's own migration:
-- `20261009110000_referrals.sql`
+- `20261009110000_referrals.sql`, then `20261009140000_referral_hardening.sql` (its review fixes)
 - `20261009120000_weekly_report.sql`
 - `20261009130000_billing_followups.sql` (if needed)
 
