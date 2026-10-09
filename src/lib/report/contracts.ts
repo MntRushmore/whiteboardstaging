@@ -41,6 +41,8 @@ export interface ChildWeek {
   focus: { skill: string; name: string; tip: string } | null;
   /** the board with the most work this week, for "Watch them solve it" (a replay link); null without one */
   highlightBoardId: string | null;
+  /** problems worked each day, Monday first (7 numbers); added for the page's week strip */
+  days?: number[];
 }
 
 export interface WeeklyReport {
@@ -55,3 +57,26 @@ export interface WeeklyReport {
 
 /** profiles.weekly_report_opt_out: true stops the email (the page stays). */
 export const REPORT_EMAIL_FLAG = "WEEKLY_REPORT_EMAILS";
+
+/** GET /api/report?week=YYYY-MM-DD&tz=<IANA zone> */
+export const REPORT_API = "/api/report";
+/** The page (and the email's "See the full report"). */
+export const REPORT_PATH = "/report";
+
+/** Who is asking, as GET /api/report saw it: a kid profile sees only their own week. */
+export type ReportRole = "solo" | "parent" | "kid";
+
+/** The grown-up's weekly email, as the report page shows it (null for a kid profile). */
+export interface ReportEmailState {
+  /** profiles.weekly_report_opt_out */
+  optedOut: boolean;
+  /** WEEKLY_REPORT_EMAILS=on on this deployment: the page shows the email toggle only then */
+  sending: boolean;
+}
+
+/** GET /api/report's answer. */
+export interface ReportAnswer {
+  report: WeeklyReport;
+  role: ReportRole;
+  email: ReportEmailState | null;
+}
