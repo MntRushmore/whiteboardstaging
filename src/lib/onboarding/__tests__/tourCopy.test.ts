@@ -22,10 +22,19 @@ function writeStates(): Array<Pick<TourState, "step" | "outcome" | "unread" | "u
   ];
 }
 
+/** A Kindergarten starter's hint (`GRADE_STARTERS[0]`): a sum whose first step is the answer. */
+const KID_HINT = "Hold up 3 fingers, then 4 more.";
+
 function everyCopy(): CoachCopy[] {
   const all: CoachCopy[] = [];
-  for (const s of writeStates()) all.push(writeCopy(s, HINT), writeCopy(s, null));
-  for (const h of HELPS) for (const solve of [false, true]) all.push(helpCopy("help", h, solve), helpCopy("helped", h, solve));
+  for (const answer of [false, true]) {
+    for (const s of writeStates()) all.push(writeCopy(s, HINT, { answer }), writeCopy(s, KID_HINT, { answer }), writeCopy(s, null, { answer }));
+    for (const h of HELPS) {
+      for (const solve of [false, true]) {
+        for (const fresh of [false, true]) all.push(helpCopy("help", h, solve, { answer, fresh }), helpCopy("helped", h, solve, { answer, fresh }));
+      }
+    }
+  }
   for (const busy of [false, true]) for (const suggestion of [MORE_LIKE_THESE, null]) for (const step of ["ask", "asking"] as const) all.push(askCopy(step, { busy, suggestion }));
   return all;
 }
@@ -63,6 +72,31 @@ describe("the guided board's words", () => {
     expect(writeCopy({ ...initialTour("write"), unjudged: true }, HINT).body).toContain(HINT);
     expect(writeCopy({ ...initialTour("write"), step: "result", outcome: "tick" }, HINT).title).toMatch(/tick/);
     expect(writeCopy({ ...initialTour("write"), step: "result", outcome: "ring" }, HINT).title).toMatch(/ring/);
+  });
+
+  it("on a sum (the first step is the answer), asks a young child for the answer, never 'the next step'", () => {
+    const write = initialTour("write");
+    const answer = { answer: true };
+    expect(writeCopy(write, KID_HINT, answer).title).toBe("Grab the pen. Write the answer under the problem.");
+    expect(writeCopy(write, KID_HINT, answer).body).toContain(KID_HINT);
+    expect(writeCopy({ ...write, step: "result", outcome: "tick" }, KID_HINT, answer).title).toMatch(/tick.*right/);
+    expect(writeCopy({ ...write, step: "result", outcome: "ring" }, KID_HINT, answer).title).toMatch(/ring/);
+    expect(writeCopy({ ...write, unjudged: true }, null, answer).body).toMatch(/answer/);
+    expect(helpCopy("help", "waiting", false, answer).body).toMatch(/answer/);
+    expect(helpCopy("helped", "asked", false, answer).title).toMatch(/answer/);
+    for (const c of [
+      ...writeStates().map((s) => writeCopy(s, KID_HINT, answer)),
+      ...HELPS.flatMap((h) => [helpCopy("help", h, false, answer), helpCopy("helped", h, false, answer)]),
+    ]) {
+      expect(`${c.title} ${c.body}`, c.title).not.toMatch(/next step|your step/);
+    }
+  });
+
+  it("coach mark 2 says when the tour has written a new problem for it, until Help me is tapped", () => {
+    expect(helpCopy("help", "waiting", false, { answer: true, fresh: true }).title).toBe("Here's a new one. Stuck? Tap Help me.");
+    expect(helpCopy("help", "waiting", true, { answer: true, fresh: true }).title).toContain(LIVE_COPY.ask.solve);
+    expect(helpCopy("help", "asked", false, { answer: true, fresh: true }).title).toBe("Stuck? Tap Help me.");
+    expect(helpCopy("help", "waiting", false, { answer: true }).title).toBe("Stuck? Tap Help me.");
   });
 
   it("the button is outlined while the board waits for the student, solid once it has answered", () => {
