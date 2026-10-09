@@ -71,7 +71,7 @@ export type CheckDeps = { fetch: typeof fetch; now: () => Date; timeoutMs?: numb
 
 type Check = (env: CheckEnv, deps: CheckDeps, signal: AbortSignal) => Promise<CheckOutcome>;
 
-const UA = "agathon-health/1 (+https://whiteboard.rushilchopra.com)";
+const UA = "agathon-health/1 (+https://www.agathon.app)";
 
 // ------------------------------------------------------------------ helpers
 

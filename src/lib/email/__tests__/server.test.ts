@@ -9,7 +9,7 @@ import { PRODUCTION_SITE_URL, getEmailEnv, resolveManageUrl, resolveSiteUrl } fr
 
 describe("resolveSiteUrl / resolveManageUrl", () => {
   it("uses NEXT_PUBLIC_SITE_URL when it is an absolute http(s) URL, else production", () => {
-    expect(PRODUCTION_SITE_URL).toBe("https://whiteboard.rushilchopra.com");
+    expect(PRODUCTION_SITE_URL).toBe("https://agathon.app");
     expect(resolveSiteUrl("https://staging.example.com/")).toBe("https://staging.example.com");
     expect(resolveSiteUrl("http://localhost:3000")).toBe("http://localhost:3000");
     for (const bad of [undefined, null, "", "  ", "whiteboard.example.com", "javascript:alert(1)"]) {

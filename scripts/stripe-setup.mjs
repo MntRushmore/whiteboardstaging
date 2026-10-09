@@ -116,7 +116,7 @@ export const RETIRED_PLAN_IDS = Object.freeze(["plus", "pro"]);
 export const WEBHOOK_PATH = "/api/billing/webhook";
 export const DEFAULT_SITE = "http://localhost:3000";
 /** The production origin: test-mode objects must never point at it (a test webhook would post real-looking events there). */
-export const PRODUCTION_SITE = "https://whiteboard.rushilchopra.com";
+export const PRODUCTION_SITE = "https://www.agathon.app";
 
 /* ------------------------------------------------------------------------- */
 /* Arguments                                                                  */
@@ -151,7 +151,7 @@ export function parseArgs(argv) {
         }
         case "--site": {
           const site = normalizeSite(value());
-          if (!site) return { error: "--site must be an absolute http(s) URL, e.g. https://whiteboard.rushilchopra.com" };
+          if (!site) return { error: "--site must be an absolute http(s) URL, e.g. https://www.agathon.app" };
           opts.site = site;
           break;
         }

@@ -29,7 +29,7 @@ import { readCronSecret } from "@/lib/server/storageGc";
 export const healthLogger = logger.child({ module: "admin-health" });
 
 /** Where links point when NEXT_PUBLIC_SITE_URL is unset or unusable: production. */
-export const PRODUCTION_SITE_URL = "https://whiteboard.rushilchopra.com";
+export const PRODUCTION_SITE_URL = "https://www.agathon.app";
 
 /** The daily prune runs in the first five minutes of this UTC hour (08:00 UTC: 4 AM Eastern, the quietest hour). */
 export const PRUNE_HOUR_UTC = 8;
