@@ -161,6 +161,39 @@ const K8: Case[] = [
   ["7032 - 2847", "multi_digit_add_subtract"],
   ["999 + 2", "multi_digit_add_subtract"],
   ["34386 + 28947", "multi_digit_add_subtract"],
+  // thousands written with separators, as Mathpix reads them (`5,032`, `4{,}386`, a thin space): one number
+  ["5,032 - 687", "multi_digit_add_subtract"],
+  ["5,032 - 687 = 4,345", "multi_digit_add_subtract"],
+  ["8,000 - 3,500", "multi_digit_add_subtract"],
+  ["1,200 - 300 = 900", "multi_digit_add_subtract"],
+  ["1,000 - 250", "add_subtract_within_1000"],
+  ["4,386 + 2,947", "multi_digit_add_subtract"],
+  ["4{,}386 + 2{,}947", "multi_digit_add_subtract"],
+  ["5{,}032 - 687", "multi_digit_add_subtract"],
+  ["5\\,032 - 687", "multi_digit_add_subtract"],
+  ["1,250,000 + 750,000", "multi_digit_add_subtract"],
+  ["6,000 \\div 3", "long_division"],
+  ["12,345 \\times 6", "multiply_multi_digit"],
+  // column (stacked) sums, as Mathpix reads a 2nd–4th grader's (`parseStacked`): the sum they are,
+  // not three lines — a `-17` row is no negative number — and a wrong or missing answer changes nothing
+  ["\\begin{array}{c}\n52 \\\\\n-17 \\\\\n\\hline 35\n\\end{array}", "subtract_within_100"],
+  ["\\begin{array}{c}\n52 \\\\\n-17 \\\\\n\\hline\n\\end{array}", "subtract_within_100"],
+  ["\\begin{array}{c} 53 \\\\ -17 \\\\ \\hline 44 \\end{array}", "subtract_within_100"],
+  ["\\begin{array}{r} 503 \\\\ -178 \\\\ \\hline 325 \\end{array}", "add_subtract_within_1000"],
+  ["\\begin{array}{r}\n286 \\\\\n+680 \\\\\n\\hline 966\n\\end{array}", "add_subtract_within_1000"],
+  ["\\begin{array}{rr} & 286 \\\\ + & 680 \\\\ \\hline & 966 \\end{array}", "add_subtract_within_1000"],
+  ["\\begin{array}{r} 286 \\\\ \\underline{+680} \\\\ 966 \\end{array}", "add_subtract_within_1000"],
+  ["\\begin{array}{r} { }^{1} 286 \\\\ +680 \\\\ \\hline 966 \\end{array}", "add_subtract_within_1000"],
+  ["\\begin{array}{r}\n125 \\\\\n48 \\\\\n+302 \\\\\n\\hline 475\n\\end{array}", "add_subtract_within_1000"],
+  ["\\begin{array}{r} 4386 \\\\ +2947 \\\\ \\hline 7333 \\end{array}", "multi_digit_add_subtract"],
+  ["\\begin{array}{r} 1{,}250 \\\\ +750 \\\\ \\hline 2{,}000 \\end{array}", "multi_digit_add_subtract"],
+  ["\\begin{array}{r} 7 \\\\ +5 \\\\ \\hline 12 \\end{array}", "add_within_20"],
+  ["\\begin{array}{r}\n23 \\\\\n\\times 4 \\\\\n\\hline 92\n\\end{array}", "multiply_multi_digit"],
+  ["\\begin{array}{r} 23 \\\\ x 4 \\\\ \\hline 92 \\end{array}", "multiply_multi_digit"],
+  ["\\begin{array}{r} 46 \\\\ \\times 23 \\\\ \\hline 138 \\\\ 920 \\\\ \\hline 1058 \\end{array}", "multiply_multi_digit"],
+  ["\\begin{array}{r}\n3.50 \\\\\n+12.25 \\\\\n\\hline 15.75\n\\end{array}", "decimals_add_subtract"],
+  // two equations added under a rule (elimination) are not a column sum
+  ["\\begin{array}{r} x+y=10 \\\\ x-y=2 \\\\ \\hline 2x=12 \\end{array}", "systems"],
   // times and sharing
   ["6 \\times 7", "times_tables"],
   ["12 \\times 12", "times_tables"],
@@ -210,6 +243,15 @@ const K8: Case[] = [
   ["6 \\div \\frac{1}{3}", "divide_fractions"],
   ["\\frac{4}{5} \\div 2", "divide_fractions"],
   ["\\frac{1}{2} + \\frac{1}{3} \\times 6", "fractions"],
+  // the same written with slashes: a product or a quotient of fractions too, not only a sum
+  ["3/4 \\times 8", "multiply_fractions"],
+  ["2/3 \\times 3/5", "multiply_fractions"],
+  ["2/3 \\times 3/5 = 6/15", "multiply_fractions"],
+  ["1/2 \\cdot 1/3", "multiply_fractions"],
+  ["3/4 * 8", "multiply_fractions"],
+  ["3/4 \\div 1/2", "divide_fractions"],
+  ["6 \\div 1/3", "divide_fractions"],
+  ["1/2 + 1/3 \\times 6", "fractions"],
   // decimals, percents and ratios
   ["3.45 + 2.8", "decimals_add_subtract"],
   ["5 - 2.3", "decimals_add_subtract"],
@@ -571,6 +613,33 @@ describe("classifyProblem: behaviour", () => {
     expect(classifyProblem(["\\sin 45^{\\circ} = \\frac{x}{10}"], null)).toBe("trig_values");
     expect(classifyProblem(["x + 125 = 180"], "geometry")).toBe("angles");
     expect(classifyProblem(["x + 125 = 180"], "other")).toBe("one_step_equations");
+  });
+
+  it("a comma that is not a thousands separator stays: points and lists", () => {
+    // a point alone in brackets, with or without a space
+    expect(classifyProblem(["(1,250)"])).toBe(classifyProblem(["(1, 250)"]));
+    expect(classifyProblem(["(1,234), (5,678)"])).toBe("linear_functions");
+    expect(classifyProblem(["(-2,345)"])).toBe("linear_functions");
+    // lists whose items are not all groups of three
+    expect(classifyProblem(["2, 4, 6, 8"])).toBe("other");
+    expect(classifyProblem(["10,200,30"])).toBe("other");
+    expect(classifyProblem(["x + y = 5, x - y = 1"])).toBe("systems");
+  });
+
+  it("a fraction written with a slash files as the same fraction with a bar, in a product or a quotient too", () => {
+    for (const [slash, bar] of [
+      ["3/4 \\times 8", "\\frac{3}{4} \\times 8"],
+      ["2/3 \\times 3/5", "\\frac{2}{3} \\times \\frac{3}{5}"],
+      ["3/4 \\div 1/2", "\\frac{3}{4} \\div \\frac{1}{2}"],
+      ["6 \\div 1/3", "6 \\div \\frac{1}{3}"],
+      ["3/4 \\times 0.5", "\\frac{3}{4} \\times 0.5"],
+      ["3/4 + 1/6", "\\frac{3}{4} + \\frac{1}{6}"],
+    ]) {
+      expect(classifyProblem([slash]), slash).toBe(classifyProblem([bar]));
+    }
+    // a slash alone is still a division or a fraction to simplify
+    expect(classifyProblem(["84 / 7"])).toBe("division_facts");
+    expect(classifyProblem(["68 / 1000"])).toBe("equivalent_fractions");
   });
 
   it("a system's lines joined with \"; \" (as the record stores it) file the same", () => {

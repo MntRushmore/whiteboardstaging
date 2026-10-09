@@ -6,7 +6,9 @@
  * moment it starts. It reads the problem the way the board has it — LaTeX lines as Mathpix and the
  * tutor write them (`\frac`, `^{}`, `\left(`, `^{\circ}`), one line for most problems and two or
  * three for a system — with a small tree reader (`mathTree.ts`) for the problem's FORM and plain
- * patterns for what the reader does not read (calculus, units, chemistry, words).
+ * patterns for what the reader does not read (calculus, units, chemistry, words). A column sum
+ * (`\begin{array}` over a rule, `parseStacked`) is read as the sum written in a line, and a number
+ * with thousands separators (`5,032`, `4{,}386`) as one number.
  *
  * A problem practises the most specific thing it shows, so the rules are tried in this order and
  * the first that fits wins (`other` when none does):
@@ -70,6 +72,7 @@
  * `__tests__/skills.test.ts` holds the classifier to a labelled corpus of the repo's real problems.
  */
 import type { SkillId } from "./contracts";
+import { parseStacked } from "@/lib/live/engine/columnArithmetic";
 import { evaluate, hasVariable, normalizeLatex, polyDegree, readLatex, someNode, termsOf, textWords, unwrap, variablesOf, allNodes, type Node, type Reading, type Relation } from "./mathTree";
 
 // ------------------------------------------------------------------ the problem, read
@@ -159,15 +162,42 @@ function splitTop(s: string, chars: string): string[] {
   return parts;
 }
 
+/** A thousands separator as written by hand or read by Mathpix: `,`, `{,}`, or a thin space `\,`. */
+const GROUP_SEP = String.raw`(?:\{,\}|\\,|,)`;
+/** A whole number written in groups of three (`5,032`, `4{,}386`, `1,250,000`), not part of a decimal or a longer list. */
+const GROUPED = new RegExp(String.raw`(?<![\d.,])\d{1,3}(?:${GROUP_SEP}\d{3})+(?!\d|${GROUP_SEP}\d)`, "g");
+
+/**
+ * Thousands separators taken out, so `5,032 - 687` is one number take away another (4th-grade work)
+ * and not the list `5`, `032 - 687`. Only a separator before exactly three digits goes: a list
+ * (`2, 4, 6`, `10,200,30`) stays a list, and one number alone in brackets with a plain comma
+ * (`(1,250)`) stays a point, as `(1, 250)` is.
+ */
+function withoutGrouping(line: string): string {
+  return line.replace(GROUPED, (num: string, at: number, s: string) => {
+    if (/^\d+,\d{3}$/.test(num) && /\(\s*-?\s*$/.test(s.slice(0, at)) && /^\s*\)/.test(s.slice(at + num.length))) return num;
+    return num.replace(new RegExp(GROUP_SEP, "g"), "");
+  });
+}
+
 /**
  * The problem's lines as separate equations: an environment (`\begin{cases}`) split at `\\`, a
- * system written on one line split at "; " or commas, a leading label ("1)") dropped.
+ * system written on one line split at "; " or commas, a leading label ("1)") dropped. A column sum
+ * (`\begin{array}{r} 52 \\ -17 \\ \hline 35 \end{array}`, as Mathpix reads 2nd–4th graders' stacked
+ * adding, taking away and multiplying, `parseStacked`) is the sum it is, written in a line without
+ * the answer under the rule (`52 - 17`): its rows are not separate lines, and a `-17` row is not a
+ * negative number.
  */
 function splitLines(lines: readonly string[]): string[] {
   const out: string[] = [];
   for (const raw of lines) {
     const line = (raw ?? "").trim().replace(/^\(?\d{1,2}[.)]\s+(?=\S)/, "");
     if (!line) continue;
+    const stack = parseStacked(line);
+    if (stack) {
+      out.push(stack.operands.join(stack.op === "×" ? " \\times " : ` ${stack.op} `));
+      continue;
+    }
     const env = /\\begin\s*\{(?:cases|array|aligned|align\*?|gathered|matrix)\}(?:\s*\{[^{}]*\})?([\s\S]*?)\\end\s*\{[a-z*]+\}/.exec(line);
     if (env && !/=/.test(line.slice(0, env.index))) {
       out.push(...env[1].split(/\\\\/).map((l) => l.replace(/&/g, " ").trim()).filter(Boolean));
@@ -194,7 +224,7 @@ const QUESTION = /^\s*(?:[A-Za-z]{1,3}|\\[a-z]+|\([a-z]\s*,\s*[a-z]\))(?:_\{[^{}
 const TEMPLATE = /^\s*(?:Ax\s*\+\s*By\s*=\s*C|y\s*=\s*mx\s*\+\s*b|y\s*=\s*a\s*\(\s*x\s*-\s*h\s*\)\s*\^\s*\{?2\}?\s*\+\s*k|y\s*=\s*ax\s*\^\s*\{?2\}?\s*\+\s*bx\s*\+\s*c)\s*$/;
 
 function readProblem(problemLatex: readonly string[], course: string | null): Problem | null {
-  const texts = splitLines(problemLatex);
+  const texts = splitLines(problemLatex.map(withoutGrouping));
   if (texts.length === 0) return null;
   const words: string[] = [];
   const lines: Line[] = texts.map((raw) => {
@@ -933,6 +963,15 @@ function sumSkill(work: Node | null): SkillId {
   return biggest <= 1000 ? "add_subtract_within_1000" : "multi_digit_add_subtract";
 }
 
+/** `3/4`: a fraction of whole numbers written with a slash (not a bracket over a number, `(5 + 3)/2`, not `1/2.5`). */
+const SLASH_FRACTION = /(?<![\d)}])(\d+)\s*\/\s*(\d+)(?![\d.])/;
+
+/** The line with its slash fractions written as bars (`3/4 * 8` → `\frac{3}{4} * 8`), read again. */
+function withBars(line: Line): Line {
+  const tex = line.tex.replace(new RegExp(SLASH_FRACTION.source, "g"), "\\frac{$1}{$2}");
+  return { tex, reading: readLatex(tex) };
+}
+
 function arithmetic(p: Problem): SkillId | null {
   if (lettersOf(p).length > 0) return null;
   // a line the reader did not read must have no letters either (its commands are not letters)
@@ -947,7 +986,12 @@ function arithmetic(p: Problem): SkillId | null {
     return u.t === "num";
   };
   if (nodes.some((n) => n.t === "mixed" || (n.t === "frac" && isPlain(n.num) && isPlain(n.den))) || (!read && /\\frac\s*\{\s*\d+\s*\}\s*\{\s*\d+\s*\}/.test(p.all))) return fractionSkill(work);
-  if (/(?<![\d)}])\d+\s*\/\s*\d+(?![\d.])/.test(p.all) && /[+-]/.test(p.all)) return fractionSkill(work);
+  if (SLASH_FRACTION.test(p.all)) {
+    if (/[+-]/.test(p.all)) return fractionSkill(work);
+    // × or ÷ with a slash fraction (`3/4 \times 8`, `6 \div 1/3`): the reader takes the slash for
+    // one more ÷ (3 ÷ 4 × 8), so the line is read again with its fractions written as bars
+    if (/[*÷]/.test(p.all)) return fractionSkill(read ? workingOf(withBars(p.main)) : null);
+  }
   const negative =
     nodes.some((n) => n.t === "add" && n.terms[0].neg) ||
     p.lines.some((l) => l.reading?.items.some((it) => it.sides.some((s) => s !== null && evaluate(s, {}) < -1e-12))) ||
