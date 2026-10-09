@@ -8,13 +8,13 @@ import { waitPhrase } from "@/components/live/copy";
 import { CHAT_LIMITS, type ChatRunReport, type ChatTurn } from "@/lib/live/chat/contracts";
 import type { PracticeProblem, SkillId } from "@/lib/learning/contracts";
 import type { LearnerHint } from "@/lib/learning/hint";
+import { CHAT_BUTTON_COPY } from "./askButton";
 
 /** Ink per request: ROUTE_COSTS["live/chat"] on the server (pinned equal in the tests). */
 export const CHAT_INK = 3;
 
 export const CHAT_COPY = {
-  button: "Ask",
-  buttonHint: "Ask the tutor for problems, a graph or a figure",
+  ...CHAT_BUTTON_COPY,
   title: "Ask the tutor",
   close: "Close",
   intro: "Ask for practice problems, a graph or a figure. The tutor writes it on your board.",

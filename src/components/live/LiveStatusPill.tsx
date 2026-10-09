@@ -4,30 +4,21 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { atom, react, useValue, type Editor, type TLShape } from "tldraw";
 import { MoreHorizontal } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Root as DropdownMenu, Trigger as DropdownMenuTrigger } from "@radix-ui/react-dropdown-menu";
 import { isLiveMeta, LIVE_LIMITS, LIVE_TIMING, type LiveStatus } from "@/lib/live/contracts";
 import { clearLiveError, liveStore, retryLiveError, type LiveError } from "@/lib/live/liveStore";
 import { scheduleLiveWrite } from "@/lib/live/liveWrite";
 import { useLiveSettings } from "@/lib/live/liveSettings";
 import { openInkDialog } from "@/lib/billing/inkDialog";
-import { KID_COPY } from "@/components/kidmode/copy";
 import { LIVE_COPY } from "./copy";
 import { liveErrorView, pillError, pillPrimary, secondsLeftFor } from "./errorView";
 import { errorCardAnchor } from "./hintPlacement";
-import { boardMenuView, statusPillView } from "./toolbar";
-import { SPEECH_COPY } from "@/components/speech/copy";
+import { statusPillView } from "./toolbar";
 import { LiveErrorBoundary } from "./LiveErrorBoundary";
 
-// "Read hints aloud": the setting and the speaker load the first time the menu opens (docs/BUNDLE.md)
-const ReadAloudMenuItem = lazy(() => import("@/components/speech/ReadAloudMenuItem"));
+// Board options' items (the "…" menu): a chunk fetched as the pill mounts, just after the board, so
+// they are in place long before the first tap; the trigger is here (docs/BUNDLE.md)
+const BoardMenu = lazy(() => import("./BoardMenu"));
 
 interface LiveStatusPillProps {
   editor: Editor;
@@ -237,8 +228,7 @@ export function LiveStatusPill({
   const canRetry = useValue(liveStore.retryHandler) !== null;
   const now = useLiveErrorClock(lastError);
   const shown = useLingeringStatus();
-  const { settings, update } = useLiveSettings();
-  const hidden = settings.hideAiShapes;
+  const hidden = useLiveSettings().settings.hideAiShapes;
 
   // Apply "Hide AI shapes": flip opacity of every isLiveMeta shape, and keep newly created
   // live shapes hidden while the toggle stays on.
@@ -282,7 +272,6 @@ export function LiveStatusPill({
     error: lastError,
     atCap: shapeCount >= LIVE_LIMITS.maxLiveShapesPerBoard,
   });
-  const menu = boardMenuView({ liveEnabled: liveRunning, liveAvailable });
   const atCap = shapeCount >= LIVE_LIMITS.maxLiveShapesPerBoard;
 
   return (
@@ -325,91 +314,23 @@ export function LiveStatusPill({
             <MoreHorizontal size={14} strokeWidth={2} />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" side="bottom" className="w-60" data-testid="board-menu">
-          <DropdownMenuLabel className="text-xs text-gray-500">{LIVE_COPY.pill.groupCanvas}</DropdownMenuLabel>
-          <DropdownMenuItem
-            className="pl-8"
-            onSelect={onHelp}
-            disabled={!canHelp}
-            title={canHelp ? LIVE_COPY.pill.helpHint : LIVE_COPY.pill.helpOffHint}
-            data-testid="board-help-item"
-          >
-            {LIVE_COPY.pill.help}
-          </DropdownMenuItem>
-          <DropdownMenuItem className="pl-8" onSelect={onClearMarks}>
-            {LIVE_COPY.pill.clearMarks}
-          </DropdownMenuItem>
-          {onReplay && (
-            <DropdownMenuItem className="pl-8" onSelect={onReplay} title={LIVE_COPY.pill.replayHint} data-testid="board-replay-item">
-              {LIVE_COPY.pill.replay}
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuCheckboxItem
-            checked={hidden}
-            onCheckedChange={(v) => update({ hideAiShapes: v === true })}
-          >
-            {LIVE_COPY.pill.hideAiShapes}
-          </DropdownMenuCheckboxItem>
-          <DropdownMenuCheckboxItem
-            checked={settings.celebrations}
-            onCheckedChange={(v) => update({ celebrations: v === true })}
-            title={LIVE_COPY.pill.celebrationsHint}
-          >
-            {LIVE_COPY.pill.celebrations}
-          </DropdownMenuCheckboxItem>
-          {simpleBoard && (
-            <DropdownMenuCheckboxItem
-              checked={simpleBoard.on}
-              onCheckedChange={(v) => simpleBoard.onChange(v === true)}
-              title={KID_COPY.simpleBoardHint}
-              data-testid="simple-board-item"
-            >
-              {KID_COPY.simpleBoard}
-            </DropdownMenuCheckboxItem>
-          )}
-          {/* a chunk that fails to load hides this one item, not the menu */}
-          <LiveErrorBoundary>
-            <Suspense
-              fallback={
-                <DropdownMenuCheckboxItem checked={false} disabled>
-                  {SPEECH_COPY.toggle}
-                </DropdownMenuCheckboxItem>
-              }
-            >
-              <ReadAloudMenuItem />
-            </Suspense>
-          </LiveErrorBoundary>
-
-          <DropdownMenuSeparator />
-          <DropdownMenuLabel className="text-xs text-gray-500">{LIVE_COPY.pill.groupLive}</DropdownMenuLabel>
-          <DropdownMenuCheckboxItem
-            checked={menu.liveChecked}
-            disabled={menu.liveDisabled}
-            onCheckedChange={(v) => onLiveEnabledChange(v === true)}
-            title={menu.liveHint}
-            data-testid="live-enabled-item"
-          >
-            {LIVE_COPY.pill.liveOn}
-          </DropdownMenuCheckboxItem>
-          {menu.showHandwriting && (
-            <DropdownMenuCheckboxItem
-              checked={settings.handwriting}
-              onCheckedChange={(v) => update({ handwriting: v === true })}
-              title={LIVE_COPY.pill.handwritingHint}
-            >
-              {LIVE_COPY.pill.handwriting}
-            </DropdownMenuCheckboxItem>
-          )}
-
-          <DropdownMenuSeparator />
-          <DropdownMenuLabel className="text-xs text-gray-500">{LIVE_COPY.pill.groupHelp}</DropdownMenuLabel>
-          <DropdownMenuItem className="pl-8" onSelect={onShowModeInfo}>
-            {LIVE_COPY.pill.modeInfo}
-          </DropdownMenuItem>
-          <DropdownMenuItem className="pl-8" onSelect={onReportProblem}>
-            {LIVE_COPY.pill.report}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
+        {/* a chunk that fails to load leaves the menu shut, not the pill */}
+        <LiveErrorBoundary>
+          <Suspense fallback={null}>
+            <BoardMenu
+              liveRunning={liveRunning}
+              liveAvailable={liveAvailable}
+              onLiveEnabledChange={onLiveEnabledChange}
+              onHelp={onHelp}
+              canHelp={canHelp}
+              onClearMarks={onClearMarks}
+              onShowModeInfo={onShowModeInfo}
+              onReportProblem={onReportProblem}
+              onReplay={onReplay}
+              simpleBoard={simpleBoard}
+            />
+          </Suspense>
+        </LiveErrorBoundary>
       </DropdownMenu>
     </div>
   );

@@ -7,7 +7,7 @@ import { useReadAloud } from "./useReadAloud";
 
 /**
  * "Read hints aloud" under Board options, beside Celebrations. Loaded the first time the menu
- * opens (LiveStatusPill's lazy import), so neither the setting nor the speaker is in the board's
+ * opens (BoardMenu's lazy import), so neither the setting nor the speaker is in the board's
  * first load. Greyed out for the moment the grade's default takes to read. Ticking it says a short
  * line in the voice the student will hear — the tick is a tap, so it also unlocks audio on iOS.
  */

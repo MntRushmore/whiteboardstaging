@@ -17,12 +17,8 @@
  *  - Deleting the grown-up's account deletes their kids' accounts too.
  */
 
-/** Kid accounts' addresses: `kid-<uuid>@kids.agathon.app`. No mailbox; never sent to. */
-export const KID_EMAIL_DOMAIN = "kids.agathon.app";
-
-export function isKidEmail(email: string | null | undefined): boolean {
-  return typeof email === "string" && email.trim().toLowerCase().endsWith(`@${KID_EMAIL_DOMAIN}`);
-}
+/** Kid accounts' addresses (`kid-<uuid>@kids.agathon.app`) and the test for one: `kidEmail.ts`. */
+export { KID_EMAIL_DOMAIN, isKidEmail } from "./kidEmail";
 
 /** Kids under one grown-up. */
 export const MAX_KIDS = 6;

@@ -2,16 +2,7 @@
 
 import { useEffect } from "react";
 import { learningBus } from "@/lib/learning/bus";
-
-/** How long the board waits for an idle moment before loading the learning runtime anyway. */
-const IDLE_TIMEOUT_MS = 4_000;
-/** Without `requestIdleCallback` (Safari): this long after the board is up. */
-const FALLBACK_DELAY_MS = 1_500;
-
-type IdleWindow = Window & {
-  requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
-  cancelIdleCallback?: (handle: number) => void;
-};
+import { whenIdle } from "@/lib/whenIdle";
 
 /**
  * The board's learning record (`src/lib/learning`): once the board is up, in idle time, the runtime
@@ -22,7 +13,6 @@ type IdleWindow = Window & {
 export function useBoardLearning(boardId: string, userId: string | undefined): void {
   useEffect(() => {
     if (!userId || typeof window === "undefined") return;
-    const w = window as IdleWindow;
     let cancelled = false;
     let stop: (() => void) | null = null;
     const load = () => {
@@ -32,12 +22,10 @@ export function useBoardLearning(boardId: string, userId: string | undefined): v
         })
         .catch((err: unknown) => console.warn("[learning] the board's learning record did not load", err));
     };
-    const idle = typeof w.requestIdleCallback === "function" ? w.requestIdleCallback(load, { timeout: IDLE_TIMEOUT_MS }) : null;
-    const timer = idle === null ? setTimeout(load, FALLBACK_DELAY_MS) : null;
+    const cancelIdle = whenIdle(load);
     return () => {
       cancelled = true;
-      if (idle !== null) w.cancelIdleCallback?.(idle);
-      if (timer !== null) clearTimeout(timer);
+      cancelIdle();
       stop?.();
       // what this board said that no runtime heard (left before one started) is not the next board's
       learningBus.reset();

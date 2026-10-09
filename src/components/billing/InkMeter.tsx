@@ -9,7 +9,7 @@ import { INK_COPY, bottleFill, formatInk, inkTone } from "@/lib/billing/inkSumma
 import { UNLIMITED_METER_COPY, hasPlan, isUnlimited } from "@/lib/billing/unlimited";
 import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
-import { isKidEmail } from "@/lib/family/contracts";
+import { isKidEmail } from "@/lib/family/kidEmail";
 import { cn } from "@/lib/utils";
 
 const TONE_CLASS = {
