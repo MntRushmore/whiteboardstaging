@@ -4,23 +4,33 @@
  * (`SKILLS`, `practiceSet.ts`); choosing one opens a topic board (or a new screen on this board)
  * where the tutor works one example and then writes a few problems, easy to hard, for the student.
  *
- * Pure: the student's course and mastery in, what to offer out. No React, no network, no
+ * The student's GRADE (Kindergarten to 8th, 2026-10-09) leads when there is one: their grade's path
+ * (`gradePath`) is "their" list and Up next walks it, then the grades after it. A high-school
+ * student has a course instead, and the course's skills lead as before.
+ *
+ * Pure: the student's grade or course and mastery in, what to offer out. No React, no network, no
  * generators (the home lists topics before any problem is made), unit-tested in
  * `__tests__/topics.test.ts`.
  */
 import type { CourseId } from "@/lib/onboarding/courseIds";
 import { COURSES } from "@/lib/onboarding/courses";
-import { SKILL_AREAS, SKILLS, type MasteryLevel, type SkillArea, type SkillId, type SkillProgress } from "./contracts";
+import { isCoarseSkillId, SKILL_AREAS, SKILLS, type CoarseSkillId, type MasteryLevel, type SkillArea, type SkillId, type SkillProgress } from "./contracts";
+import { GRADE_IDS, gradeOfSkill, gradePath, isGrade, K8_SKILLS, type Grade } from "./grades";
 import { AREA_LABELS, LEVEL_LABELS } from "./progressView";
 
 // ------------------------------------------------------------------ which skills are topics
 
 /** The skills with no practice problems (words, a proof or a reaction on the board; the fallback). */
 export const NOT_TOPICS = ["word_problems", "proofs", "chemistry", "other"] as const satisfies readonly SkillId[];
-export type TopicId = Exclude<SkillId, (typeof NOT_TOPICS)[number]>;
+/** A skill a student can pick: one with practice problems, and not a coarse skill the K–8 ones replace. */
+export type TopicId = Exclude<SkillId, (typeof NOT_TOPICS)[number] | CoarseSkillId>;
 
-/** Every topic in teaching order (`SKILLS` order). `practice.test.ts` holds these to `hasPractice`. */
-export const TOPIC_IDS: readonly TopicId[] = SKILLS.map((s) => s.id).filter((id): id is TopicId => !(NOT_TOPICS as readonly string[]).includes(id));
+/**
+ * Every topic in teaching order (`SKILLS` order). `practice.test.ts` holds these to `hasPractice`.
+ * The coarse arithmetic skills (`COARSE_SKILL_IDS`) still have practice problems but are not topics:
+ * "Adding and subtracting" is now nine finer topics, from Adding to 10 up.
+ */
+export const TOPIC_IDS: readonly TopicId[] = SKILLS.map((s) => s.id).filter((id): id is TopicId => !(NOT_TOPICS as readonly string[]).includes(id) && !isCoarseSkillId(id));
 
 export function isTopicId(value: unknown): value is TopicId {
   return typeof value === "string" && (TOPIC_IDS as readonly string[]).includes(value);
@@ -33,13 +43,35 @@ export interface TopicInfo {
   aliases: readonly string[];
 }
 
+/** A K–8 topic's line: its blurb from `K8_SKILLS` (the one source), and the words a student types for it. */
+const k8 = (id: keyof typeof K8_SKILLS, aliases: readonly string[]): TopicInfo => ({ blurb: K8_SKILLS[id].blurb, aliases });
+
 export const TOPIC_INFO: Readonly<Record<TopicId, TopicInfo>> = {
-  add_subtract: { blurb: "Adding and taking away numbers", aliases: ["adding", "addition", "add", "plus", "sums", "subtracting", "subtraction", "subtract", "minus", "take away", "adding and subtracting"] },
-  multiply_divide: { blurb: "Times tables and sharing equally", aliases: ["multiplying", "multiplication", "multiply", "times", "times tables", "times table", "dividing", "division", "divide", "long division", "multiplying and dividing"] },
+  add_within_10: k8("add_within_10", ["adding to ten", "add to ten", "sums to ten", "number bonds", "number bonds to ten", "making ten", "make ten"]),
+  subtract_within_10: k8("subtract_within_10", ["taking away to ten", "take away to ten", "subtracting to ten", "subtract to ten"]),
+  add_within_20: k8("add_within_20", ["adding to twenty", "add to twenty", "addition facts", "adding facts", "number bonds to twenty", "doubles"]),
+  subtract_within_20: k8("subtract_within_20", ["subtracting to twenty", "subtract to twenty", "taking away to twenty", "subtraction facts", "take away facts"]),
+  add_tens: k8("add_tens", ["adding tens", "add tens", "counting by tens", "count by tens", "skip counting", "tens"]),
+  add_within_100: k8("add_within_100", ["adding two digit numbers", "two digit addition", "double digit addition", "carrying"]),
+  subtract_within_100: k8("subtract_within_100", ["subtracting two digit numbers", "two digit subtraction", "double digit subtraction", "borrowing", "regrouping"]),
+  add_subtract_within_1000: k8("add_subtract_within_1000", ["three digit addition", "three digit subtraction", "adding three digit numbers", "subtracting three digit numbers"]),
+  multi_digit_add_subtract: k8("multi_digit_add_subtract", ["big adding and subtracting", "multi digit addition", "multi digit subtraction", "four digit addition", "four digit subtraction", "column addition", "column subtraction"]),
+  times_tables: k8("times_tables", ["times tables", "times table", "multiplication facts", "multiplication tables", "multiplication table", "times facts"]),
+  division_facts: k8("division_facts", ["division facts", "sharing equally", "share equally", "sharing"]),
+  multiply_by_tens: k8("multiply_by_tens", ["multiplying by tens", "multiply by tens", "multiplying by ten", "times tens", "multiples of ten"]),
+  multiply_multi_digit: k8("multiply_multi_digit", ["long multiplication", "multi digit multiplication", "multiplying bigger numbers", "two digit multiplication", "column multiplication", "box method", "grid method"]),
+  long_division: k8("long_division", ["long division", "bus stop division", "short division"]),
   negative_numbers: { blurb: "Numbers below zero", aliases: ["negative numbers", "negative", "negatives", "integers", "minus numbers"] },
   order_of_operations: { blurb: "Which step comes first (PEMDAS)", aliases: ["order of operations", "pemdas", "bodmas", "bidmas", "gemdas"] },
-  fractions: { blurb: "Parts of a whole, like ¾ + ⅙", aliases: ["fractions", "fraction", "numerator", "denominator", "denominators", "common denominator", "mixed numbers"] },
-  decimals_percents: { blurb: "Decimals, and a percent of a number", aliases: ["decimals", "decimal", "percent", "percents", "percentage", "percentages", "decimals and percents"] },
+  equivalent_fractions: k8("equivalent_fractions", ["equivalent fractions", "equivalent fraction", "simplifying fractions", "simplify fractions", "simplest form", "lowest terms", "reducing fractions", "mixed numbers", "improper fractions"]),
+  add_fractions_like: k8("add_fractions_like", ["adding fractions", "add fractions", "subtracting fractions", "subtract fractions", "adding and subtracting fractions", "like fractions", "like denominators", "same denominator"]),
+  add_fractions_unlike: k8("add_fractions_unlike", ["adding unlike fractions", "unlike fractions", "unlike denominators", "different denominators", "common denominator", "common denominators"]),
+  multiply_fractions: k8("multiply_fractions", ["multiplying fractions", "multiply fractions", "fraction multiplication"]),
+  divide_fractions: k8("divide_fractions", ["dividing fractions", "divide fractions", "fraction division", "keep change flip", "flip and multiply"]),
+  decimals_add_subtract: k8("decimals_add_subtract", ["adding decimals", "add decimals", "subtracting decimals", "subtract decimals", "decimal addition"]),
+  decimals_multiply: k8("decimals_multiply", ["multiplying decimals", "multiply decimals", "dividing decimals", "decimal multiplication"]),
+  percents: k8("percents", ["percent", "percents", "percentage", "percentages", "percent of a number"]),
+  proportions: k8("proportions", ["proportions", "proportion", "ratios", "ratio", "ratios and proportions", "cross multiply", "cross multiplying", "rates"]),
   powers_roots: { blurb: "Squares, cubes and square roots", aliases: ["powers", "power", "squares", "squared", "cubes", "cubed", "square roots", "square root", "powers and roots"] },
   simplify_expressions: { blurb: "Collect like terms, like 3x + 2x", aliases: ["simplifying", "simplify", "simplifying expressions", "like terms", "combining like terms", "collecting like terms", "expressions", "distributive property"] },
   one_step_equations: { blurb: "Solve x + 5 = 12 in one step", aliases: ["one step equations", "one step equation", "one step"] },
@@ -81,15 +113,35 @@ function areaOf(id: SkillId): SkillArea {
   return SKILLS.find((s) => s.id === id)?.area ?? "algebra";
 }
 
-// ------------------------------------------------------------------ the student's course
+// ------------------------------------------------------------------ the student's grade or course
+
+/** The grade when it is one (0..8); null for none. */
+function gradeOrNull(grade: Grade | null | undefined): Grade | null {
+  return isGrade(grade) ? grade : null;
+}
 
 /**
- * The topics of a course, in teaching order. Course `other` (the youngest students, or "something
- * else") and an unknown course start with the numbers: every arithmetic topic.
+ * The student's own topics, in teaching order: their grade's path when they have a grade
+ * (`gradePath`: a 3rd grader's is 3-digit adding, times tables, division facts and multiplying by
+ * tens); else their course's. Course `other` (the youngest students, or "something else") and an
+ * unknown course, with no grade, start with the numbers: every arithmetic topic.
  */
-export function courseTopicIds(course: CourseId | null | undefined): TopicId[] {
+export function courseTopicIds(course: CourseId | null | undefined, grade?: Grade | null): TopicId[] {
+  const g = gradeOrNull(grade);
+  if (g !== null) return gradePath(g).filter(isTopicId);
   if (!course || course === "other") return TOPIC_IDS.filter((id) => areaOf(id) === "arithmetic");
   return TOPIC_IDS.filter((id) => (SKILLS.find((s) => s.id === id)?.courses as readonly CourseId[] | undefined)?.includes(course));
+}
+
+/**
+ * Where Up next looks, in order: the student's own topics, then (for a grade) the grades after it,
+ * path by path, then every other topic in teaching order. A 3rd grader who has mastered their grade
+ * goes on to 4th grade's skills, not back to Adding to 10.
+ */
+function nextOrder(course: CourseId | null | undefined, grade: Grade | null | undefined): TopicId[] {
+  const g = gradeOrNull(grade);
+  const later = g === null ? [] : GRADE_IDS.filter((x) => x > g).flatMap((x) => gradePath(x).filter(isTopicId));
+  return [...new Set([...courseTopicIds(course, g), ...later, ...TOPIC_IDS])];
 }
 
 /** "Algebra 1", or null for course `other` and an unknown one (their list is "Numbers"). */
@@ -132,14 +184,14 @@ export interface UpNextChoice {
 }
 
 /**
- * Up next: the first topic of the student's course they have not mastered, in teaching order
- * (`SKILLS`) — with every one of them mastered, the first not mastered of all the others — and their
- * weakest spot (`summary.weakSkills`, weakest first) as a second, smaller offer.
+ * Up next: the first topic of the student's grade path (or course) they have not mastered, in
+ * teaching order — with every one of them mastered, the next grade's, then the first not mastered
+ * of all the others — and their weakest spot (`summary.weakSkills`, weakest first) as a second,
+ * smaller offer.
  */
-export function upNext(course: CourseId | null | undefined, levels: ReadonlyMap<string, MasteryLevel>, weakSkills: readonly string[] = []): UpNextChoice {
+export function upNext(course: CourseId | null | undefined, levels: ReadonlyMap<string, MasteryLevel>, weakSkills: readonly string[] = [], grade?: Grade | null): UpNextChoice {
   const open = (id: TopicId) => levels.get(id) !== "mastered";
-  const mine = courseTopicIds(course);
-  const nextId = mine.find(open) ?? TOPIC_IDS.find((id) => !mine.includes(id) && open(id)) ?? null;
+  const nextId = nextOrder(course, grade).find(open) ?? null;
   const weakId = weakSkills.find((id): id is TopicId => isTopicId(id) && id !== nextId && open(id)) ?? null;
   return { next: nextId ? topicView(nextId, levels) : null, weakest: weakId ? topicView(weakId, levels) : null };
 }
@@ -160,12 +212,12 @@ function grouped(ids: readonly TopicId[], levels: ReadonlyMap<string, MasteryLev
 }
 
 /**
- * The topic list: the student's course first (`mine`, by area, in teaching order), and every other
- * topic under "Other topics" (`others`): a 4th grader sees the numbers first, an Algebra 1 student
- * can still pick Adding and subtracting.
+ * The topic list: the student's grade path or course first (`mine`, by area, in teaching order), and
+ * every other topic under "Other topics" (`others`): a 4th grader sees their grade's skills first,
+ * an Algebra 1 student can still pick Adding to 20.
  */
-export function topicGroups(course: CourseId | null | undefined, levels: ReadonlyMap<string, MasteryLevel>): { mine: TopicGroup[]; others: TopicGroup[] } {
-  const mine = courseTopicIds(course);
+export function topicGroups(course: CourseId | null | undefined, levels: ReadonlyMap<string, MasteryLevel>, grade?: Grade | null): { mine: TopicGroup[]; others: TopicGroup[] } {
+  const mine = courseTopicIds(course, grade);
   return { mine: grouped(mine, levels), others: grouped(TOPIC_IDS.filter((id) => !mine.includes(id)), levels) };
 }
 
@@ -191,27 +243,56 @@ const MATHS = /[0-9=+*^<>√∫π²³]/;
 /** More words than this is more than a topic: the tutor reads it. */
 const MAX_TOPIC_WORDS = 8;
 
+/**
+ * Words that name a kind of maths rather than one topic ("adding", "fractions", "times"): the topic
+ * of that kind for the student's grade (`familyTopic`), or `noGrade` for a student without one.
+ * Each family's topics are in the order a school teaches them.
+ */
+export const TOPIC_FAMILIES: readonly { words: readonly string[]; topics: readonly TopicId[]; noGrade: TopicId }[] = [
+  { words: ["adding", "addition", "add", "plus", "sums", "adding and subtracting"], topics: ["add_within_10", "add_within_20", "add_within_100", "add_subtract_within_1000", "multi_digit_add_subtract"], noGrade: "add_within_100" },
+  { words: ["subtracting", "subtraction", "subtract", "minus", "take away", "taking away"], topics: ["subtract_within_10", "subtract_within_20", "subtract_within_100", "add_subtract_within_1000", "multi_digit_add_subtract"], noGrade: "subtract_within_100" },
+  { words: ["multiplying", "multiplication", "multiply", "times", "tables"], topics: ["times_tables", "multiply_multi_digit"], noGrade: "times_tables" },
+  { words: ["dividing", "division", "divide"], topics: ["division_facts", "long_division"], noGrade: "division_facts" },
+  { words: ["fractions", "fraction", "numerator", "denominator", "denominators"], topics: ["equivalent_fractions", "add_fractions_unlike", "divide_fractions"], noGrade: "add_fractions_unlike" },
+  { words: ["decimals", "decimal", "decimal point"], topics: ["decimals_add_subtract"], noGrade: "decimals_add_subtract" },
+];
+
+/**
+ * A family's topic for a grade: the first of its topics in that grade's path, else the last one from
+ * a grade below, else its first (a 2nd grader's "adding" is Adding 2-digit numbers, a 3rd grader's
+ * 3-digit adding, a Kindergartener's Adding to 10). No grade: the family's `noGrade`.
+ */
+export function familyTopic(family: (typeof TOPIC_FAMILIES)[number], grade?: Grade | null): TopicId {
+  const g = gradeOrNull(grade);
+  if (g === null) return family.noGrade;
+  const at = (id: TopicId) => gradeOfSkill(id) ?? Number.POSITIVE_INFINITY;
+  return family.topics.find((id) => at(id) === g) ?? [...family.topics].reverse().find((id) => at(id) < g) ?? family.topics[0];
+}
+
 interface AliasHit {
   skill: TopicId;
   start: number;
   end: number;
 }
 
-function hitsIn(words: string): AliasHit[] {
+function hitsIn(words: string, grade: Grade | null): AliasHit[] {
   const padded = ` ${words} `;
   const hits: AliasHit[] = [];
-  for (const id of TOPIC_IDS) {
-    for (const alias of TOPIC_INFO[id].aliases) {
-      const a = normalizeWords(alias);
-      // the alias, or the alias with an s or es on the end, as whole words
-      for (const form of [a, `${a}s`, `${a}es`]) {
-        let at = padded.indexOf(` ${form} `);
-        while (at !== -1) {
-          hits.push({ skill: id, start: at, end: at + form.length });
-          at = padded.indexOf(` ${form} `, at + 1);
-        }
+  const find = (skill: TopicId, alias: string) => {
+    const a = normalizeWords(alias);
+    // the alias, or the alias with an s or es on the end, as whole words
+    for (const form of [a, `${a}s`, `${a}es`]) {
+      let at = padded.indexOf(` ${form} `);
+      while (at !== -1) {
+        hits.push({ skill, start: at, end: at + form.length });
+        at = padded.indexOf(` ${form} `, at + 1);
       }
     }
+  };
+  for (const id of TOPIC_IDS) for (const alias of TOPIC_INFO[id].aliases) find(id, alias);
+  for (const family of TOPIC_FAMILIES) {
+    const skill = familyTopic(family, grade);
+    for (const word of family.words) find(skill, word);
   }
   // a hit inside a longer one of another topic is that topic's word ("trig" in "trig equations")
   return hits.filter((h) => !hits.some((o) => o.skill !== h.skill && o.start <= h.start && o.end >= h.end && o.end - o.start > h.end - h.start));
@@ -221,14 +302,16 @@ function hitsIn(words: string): AliasHit[] {
  * The one topic a few typed words name ("fractions", "test on quadratics Friday", "times tables"),
  * or null: none named, two named ("area of triangles"), typed maths, a question for the tutor
  * ("how do I add fractions"), or too many words to be just a topic. Null sends the words to Ask.
+ * Words for a kind of maths ("adding", "fractions") name the topic of that kind for the student's
+ * grade (`TOPIC_FAMILIES`).
  */
-export function matchTopic(text: string): TopicId | null {
+export function matchTopic(text: string, grade?: Grade | null): TopicId | null {
   if (MATHS.test(text)) return null;
   const words = normalizeWords(text);
   if (!words) return null;
   const list = words.split(" ");
   if (list.length > MAX_TOPIC_WORDS || list.some((w) => ASK_WORDS.has(w))) return null;
-  const skills = new Set(hitsIn(words).map((h) => h.skill));
+  const skills = new Set(hitsIn(words, gradeOrNull(grade)).map((h) => h.skill));
   return skills.size === 1 ? [...skills][0] : null;
 }
 
@@ -270,6 +353,8 @@ export const TOPIC_COPY = {
   browse: "Pick a topic",
   browseHint: "Each topic starts with one worked example, then a few for you to try.",
   mine: (course: string | null) => (course ? `Your course: ${course}` : "Start with numbers"),
+  /** the list's head for a student with a grade: "For 3rd grade", "For Kindergarten" */
+  mineGrade: (grade: string) => `For ${grade}`,
   others: "Other topics",
   othersHint: "Anything else you want to work on",
   sheetTitle: "Pick a topic",

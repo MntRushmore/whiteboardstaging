@@ -15,6 +15,7 @@ import { normalizeStep } from "@/lib/live/liveLoop";
 import { difficultyOf, formsFor } from "../generators";
 import { drawLadderFrom, ladderRanks, rankForms } from "../generators/ladder";
 import type { Form } from "../generators/form";
+import { K8_SKILL_IDS } from "../grades";
 import { topicSet } from "../practiceSet";
 import { localWorkFor, pickLocalExample, sameStep } from "../topicExample";
 import { TOPIC_IDS, TOPIC_PROBLEMS } from "../topics";
@@ -55,6 +56,20 @@ describe("difficulty and the ladder", () => {
     // same denominators before anything else; x^a · x^b before a power of a power
     expect(rankForms("fractions", formsFor("fractions"))[0]).toBe(0);
     expect(rankForms("exponent_rules", formsFor("exponent_rules"))[0]).toBe(0);
+  });
+
+  it("the K–8 path's ladders are their forms as written, easy to hard (`primary.ts`)", () => {
+    for (const id of K8_SKILL_IDS) {
+      const forms = formsFor(id);
+      expect(forms.length, id).toBeGreaterThanOrEqual(3);
+      expect(rankForms(id, forms), id).toEqual(forms.map((_, i) => i));
+    }
+    // the first problem of a ladder is the classic one, the last the hardest form's
+    const tables = topicSet("times_tables", TOPIC_PROBLEMS, 1).problems.map((p) => p[0]);
+    expect(tables[0]).toMatch(/^([2-5]|10) \\times \d+$|^\d+ \\times ([2-5]|10)$/);
+    expect(tables[2]).toMatch(/^\d+ \\times \d+ \\times \d+$/);
+    const sums = topicSet("add_within_100", TOPIC_PROBLEMS, 1).problems.map((p) => p[0]);
+    expect(sums[TOPIC_PROBLEMS - 1]).toMatch(/^\d+ \+ \d+ \+ \d+$/);
   });
 
   it("a form that keeps missing hands its place to the next one", () => {

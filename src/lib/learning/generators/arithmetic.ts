@@ -1,6 +1,10 @@
 /**
  * Arithmetic for the youngest students up: small numbers, whole-number answers (fractions and
  * decimals only in their own skills), and negatives only in `negative_numbers`.
+ *
+ * The four coarse skills here (`add_subtract`, `multiply_divide`, `fractions`, `decimals_percents`,
+ * `COARSE_SKILL_IDS`) keep their mixed forms so a weak spot stored under one can still be practised;
+ * the K–8 path's finer skills have theirs in `primary.ts`.
  */
 import type { FormTable } from "./form";
 import type { Rng } from "./rng";

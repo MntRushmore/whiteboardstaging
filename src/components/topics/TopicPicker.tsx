@@ -3,6 +3,7 @@
 import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { ArrowRight, Calculator, ChartSpline, ChevronDown, ChevronRight, FlaskConical, Loader2, Shapes, Sigma, TriangleRight, Variable } from "lucide-react";
 import type { MasteryLevel, SkillArea } from "@/lib/learning/contracts";
+import type { Grade } from "@/lib/learning/grades";
 import { LEVEL_LABELS } from "@/lib/learning/progressView";
 import { matchTopic, TOPIC_COPY, TOPIC_INFO, type TopicGroup, type TopicId, type TopicView } from "@/lib/learning/topics";
 import { skillDef } from "@/lib/learning/contracts";
@@ -90,19 +91,21 @@ export interface TopicListProps {
   others: readonly TopicGroup[];
   /** the course's name ("Algebra 1"), or null: the list starts with the numbers */
   course: string | null;
+  /** the grade's name ("3rd grade"): the list is that grade's path, and says so (over `course`) */
+  grade?: string | null;
   busy: TopicId | null;
   onPick: (id: TopicId) => void;
   /** "Other topics" open from the start (the board's sheet keeps it closed, as the home does) */
   othersOpen?: boolean;
 }
 
-/** The student's course by area, then every other topic folded under "Other topics". */
-export function TopicList({ mine, others, course, busy, onPick, othersOpen = false }: TopicListProps) {
+/** The student's grade path or course by area, then every other topic folded under "Other topics". */
+export function TopicList({ mine, others, course, grade = null, busy, onPick, othersOpen = false }: TopicListProps) {
   const id = useId();
   const [open, setOpen] = useState(othersOpen);
   return (
     <div className={styles.list}>
-      <p className={styles.listHead}>{TOPIC_COPY.mine(course)}</p>
+      <p className={styles.listHead}>{grade ? TOPIC_COPY.mineGrade(grade) : TOPIC_COPY.mine(course)}</p>
       <Groups groups={mine} idPrefix={`${id}-mine`} busy={busy} onPick={onPick} />
       {others.length > 0 && (
         <div>
@@ -128,14 +131,16 @@ export interface AskBoxProps {
   busy: boolean;
   /** the visible label (the home's question; the board's "Or ask for anything") */
   label?: string;
+  /** the student's grade: "adding" names their grade's adding topic (`matchTopic`) */
+  grade?: Grade | null;
 }
 
 /** "What do you want to work on?": a box, Go, and a line saying what Go will do. */
-export function AskBox({ onSubmit, busy, label = TOPIC_COPY.askTitle }: AskBoxProps) {
+export function AskBox({ onSubmit, busy, label = TOPIC_COPY.askTitle, grade = null }: AskBoxProps) {
   const id = useId();
   const [text, setText] = useState("");
   const words = text.trim();
-  const topic = words ? matchTopic(words) : null;
+  const topic = words ? matchTopic(words, grade) : null;
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!words || busy) return;

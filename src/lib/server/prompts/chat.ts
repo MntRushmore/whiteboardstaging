@@ -310,7 +310,7 @@ export const CHAT_SYSTEM_PROMPT = [
  */
 export const WEAK_SPOTS_EXAMPLE = {
   request: "practice my weak spots",
-  weakSkills: ["two_step_equations", "fractions"],
+  weakSkills: ["two_step_equations", "add_fractions_unlike"],
   reply: "Here are some two-step equations and fractions to practise.",
   problems: ["3x + 4 = 19", "\\frac{x}{2} - 5 = 1", "\\frac{3}{4} + \\frac{1}{6}", "\\frac{2}{3} - \\frac{1}{4}"],
 } as const;
