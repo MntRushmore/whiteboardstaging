@@ -35,6 +35,10 @@ export const PATH_COPY = {
   allDone: "You did it! Every skill on your path is done.",
   allDoneProgress: "Every skill on this path is mastered.",
   listLabel: (label: string) => `${label} path`,
+  /** the home's "+10" stop at the end of a long path's one row: the whole path is on Progress */
+  moreName: "See all",
+  moreLabel: (total: number) => `See all ${total} skills`,
+  moreHref: "/progress",
   comingSoonTitle: "Coming soon",
   comingSoon: (name: string) => `${name} is almost ready. Try another skill for now!`,
   pickTitle: "Pick your grade",

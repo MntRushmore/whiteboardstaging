@@ -37,7 +37,7 @@ export default function SkillPathCard({ userId }: SkillPathCardProps) {
         </h2>
         <PathCount view={view} text={view.homeCount} />
       </div>
-      <PathTrail view={view} busy={busy} onOpen={open} />
+      <PathTrail view={view} busy={busy} onOpen={open} oneRow />
       {view.allDone && (
         <p className={styles.allDone}>
           <Trophy size={18} strokeWidth={2} aria-hidden />

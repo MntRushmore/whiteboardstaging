@@ -39,12 +39,12 @@ export function useTrailShape(ref: RefObject<HTMLElement | null>, count: number)
  * On a phone, the next stop in the middle of the scrolled row when the trail first shows, so a kid
  * halfway along sees where they are, not the start. Only the row scrolls, never the page.
  */
-export function useCenterCurrent(ref: RefObject<HTMLElement | null>, shape: TrailShape, currentIndex: number): void {
+export function useCenterCurrent(ref: RefObject<HTMLElement | null>, shape: TrailShape): void {
   useIsoLayoutEffect(() => {
     const el = ref.current;
-    if (!el || shape.mode !== "scroll" || currentIndex < 0) return;
-    const stop = el.querySelectorAll<HTMLElement>("[data-stop]")[currentIndex];
+    if (!el || shape.mode !== "scroll") return;
+    const stop = el.querySelector<HTMLElement>('[data-stop][data-state="current"]');
     if (!stop) return;
     el.scrollLeft = Math.max(0, stop.offsetLeft - (el.clientWidth - stop.offsetWidth) / 2);
-  }, [ref, shape.mode, currentIndex]);
+  }, [ref, shape.mode]);
 }

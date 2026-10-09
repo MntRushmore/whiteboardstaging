@@ -42,6 +42,8 @@ export function snakeLayout(count: number, cols: number): PathCell[] {
 export interface TrailShape {
   mode: "scroll" | "snake";
   cols: number;
+  /** how many stops fit side by side (every stop, in a scrolling row) */
+  fit: number;
 }
 
 /** Below this width the trail is one row that scrolls sideways (a phone). */
@@ -55,8 +57,36 @@ export const SNAKE_MIN_WIDTH = 600;
  */
 export function trailShape(width: number, count: number, cell: number, gap: number): TrailShape {
   const n = Math.max(1, Math.floor(count));
-  if (!(width >= SNAKE_MIN_WIDTH) || !(cell > 0)) return { mode: "scroll", cols: n };
+  if (!(width >= SNAKE_MIN_WIDTH) || !(cell > 0)) return { mode: "scroll", cols: n, fit: n };
   const fit = Math.max(1, Math.floor((width + Math.max(0, gap)) / (cell + Math.max(0, gap))));
   const rows = Math.ceil(n / fit);
-  return { mode: "snake", cols: Math.ceil(n / rows) };
+  return { mode: "snake", cols: Math.ceil(n / rows), fit };
+}
+
+/**
+ * The part of a long path the home shows in one row (an Algebra 1 path has 17 stops; the home keeps
+ * to one row so the topics stay near the top): `slots` places, one of them a "+11" stop for the rest,
+ * which the Progress page shows in full. The window starts one stop before the next one (where the
+ * kid has just been), or ends at the path's end; the "+" stop sits on the side that is cut.
+ */
+export interface TrailWindow {
+  /** the first stop shown */
+  start: number;
+  /** one past the last stop shown */
+  end: number;
+  /** stops cut before the window (the "+" stop comes first), or 0 */
+  before: number;
+  /** stops cut after the window (the "+" stop comes last), or 0 */
+  after: number;
+}
+
+export function trailWindow(count: number, currentIndex: number, slots: number): TrailWindow {
+  const n = Math.max(0, Math.floor(count));
+  const s = Math.max(2, Math.floor(slots));
+  if (n <= s) return { start: 0, end: n, before: 0, after: 0 };
+  const room = s - 1;
+  const anchor = currentIndex >= 0 && currentIndex < n ? currentIndex : n - 1;
+  const start = Math.min(Math.max(0, anchor - 1), n - room);
+  const end = start + room;
+  return end < n ? { start, end, before: 0, after: n - end } : { start, end, before: start, after: 0 };
 }

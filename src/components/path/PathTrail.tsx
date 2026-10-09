@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, type CSSProperties, type ReactNode } from "react";
+import Link from "next/link";
 import {
   Calculator,
   ChartPie,
@@ -25,7 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { ButtonLink } from "@/components/app/ButtonLink";
-import { snakeLayout } from "@/lib/path/pathLayout";
+import { snakeLayout, trailWindow } from "@/lib/path/pathLayout";
 import { linkWalked, MAX_STARS, PATH_COPY, type PathIcon, type PathNode, type PathView } from "@/lib/path/pathView";
 import { LEVEL_LABELS } from "@/lib/learning/progressView";
 import { useCenterCurrent, useTrailShape } from "./useTrail";
@@ -131,22 +132,68 @@ function Stop({ node, cell, walked, busy, onOpen }: { node: PathNode; cell: Retu
   );
 }
 
+/** The "+10" stop of the home's one row: the rest of a long path, on the Progress page. */
+function MoreStop({ count, total, cell, walked }: { count: number; total: number; cell: ReturnType<typeof snakeLayout>[number]; walked: boolean }) {
+  return (
+    <li
+      className={styles.stop}
+      data-more=""
+      data-state="more"
+      data-link={cell.link ?? undefined}
+      data-dir="forward"
+      data-walked={walked || undefined}
+      style={{ gridRow: cell.row + 1, gridColumn: cell.col + 1 }}
+    >
+      <Link href={PATH_COPY.moreHref} className={styles.node} aria-label={PATH_COPY.moreLabel(total)}>
+        <span className={styles.slot} aria-hidden>
+          <span className={styles.circle}>
+            <span className={styles.moreCount}>+{count}</span>
+          </span>
+        </span>
+        <span className={styles.stars} aria-hidden />
+        <span className={styles.name} aria-hidden>
+          {PATH_COPY.moreName}
+        </span>
+      </Link>
+    </li>
+  );
+}
+
+type TrailItem = { kind: "stop"; node: PathNode; index: number } | { kind: "more"; count: number; walked: boolean };
+
 /**
  * The trail: one row that scrolls sideways on a phone (the next stop in the middle), a snake on a
  * wider screen. Done stops are green with three stars, the next one is big and glowing with "Next
- * up", and the stops still to come look locked but open when tapped, like any other.
+ * up", and the stops still to come look locked but open when tapped, like any other. With `oneRow`
+ * (the home), a path too long for one row on a wide screen shows the part around the next stop and
+ * a "+10" stop that opens the whole path on the Progress page.
  */
-export function PathTrail({ view, busy, onOpen }: PathTrailProps) {
+export function PathTrail({ view, busy, onOpen, oneRow = false }: PathTrailProps & { oneRow?: boolean }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const shape = useTrailShape(scrollRef, view.nodes.length);
-  useCenterCurrent(scrollRef, shape, view.currentIndex);
-  const cells = snakeLayout(view.nodes.length, shape.cols);
+  const measured = useTrailShape(scrollRef, view.nodes.length);
+  useCenterCurrent(scrollRef, measured);
+
+  let items: TrailItem[] = view.nodes.map((node, index) => ({ kind: "stop", node, index }));
+  let shape = measured;
+  if (oneRow && measured.mode === "snake" && view.nodes.length > measured.fit) {
+    const w = trailWindow(view.nodes.length, view.currentIndex, measured.fit);
+    items = items.slice(w.start, w.end);
+    if (w.after > 0) items.push({ kind: "more", count: w.after, walked: false });
+    if (w.before > 0) items.unshift({ kind: "more", count: w.before, walked: linkWalked(view, w.start - 1) });
+    shape = { ...measured, cols: items.length };
+  }
+  const cells = snakeLayout(items.length, shape.cols);
+
   return (
     <div ref={scrollRef} className={styles.trailFrame} data-mode={shape.mode}>
       <ol className={styles.trail} aria-label={PATH_COPY.listLabel(view.label)} data-mode={shape.mode} style={{ "--cols": shape.cols } as CSSProperties}>
-        {view.nodes.map((node, i) => (
-          <Stop key={node.id} node={node} cell={cells[i]} walked={linkWalked(view, i)} busy={busy} onOpen={onOpen} />
-        ))}
+        {items.map((item, i) =>
+          item.kind === "stop" ? (
+            <Stop key={item.node.id} node={item.node} cell={cells[i]} walked={linkWalked(view, item.index)} busy={busy} onOpen={onOpen} />
+          ) : (
+            <MoreStop key={`more-${i}`} count={item.count} total={view.total} cell={cells[i]} walked={item.walked} />
+          ),
+        )}
       </ol>
     </div>
   );

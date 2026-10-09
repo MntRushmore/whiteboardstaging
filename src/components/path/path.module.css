@@ -249,6 +249,7 @@
   color: inherit;
   font: inherit;
   text-align: center;
+  text-decoration: none;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
@@ -343,6 +344,22 @@
   }
 }
 
+/* the home's "+10" stop: the rest of a long path, on the Progress page */
+.stop[data-state="more"] .circle {
+  --c-bg: var(--card-bg);
+  --c-ink: var(--text-secondary, #5e5e5e);
+  --c-lip: transparent;
+  border: 2px dashed var(--border-strong, #cfcfcf);
+}
+.moreCount {
+  font-size: var(--text-base, 1rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.stop[data-state="more"] .name {
+  color: var(--text-secondary, #5e5e5e);
+}
+
 /* a small mark on the circle's edge: a tick when done, a lock while still to come */
 .badge {
   position: absolute;
@@ -406,6 +423,7 @@
 
 .stars {
   display: inline-flex;
+  min-height: 14px;
   gap: 1px;
   margin-top: var(--space-1, 0.25rem);
 }
