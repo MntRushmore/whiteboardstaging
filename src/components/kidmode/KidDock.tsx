@@ -17,6 +17,7 @@ import {
 import { screenStripSlot } from "@/components/screens/ScreenStrip";
 import { addScreen, goToScreen, MAX_SCREENS, screenPosition } from "@/lib/screens/screens";
 import { DOCK_COPY, hitMarginFor, KID_COLORS, kidDockView, penSizeOnClose, penSizeOnOpen, type KidColor } from "./dockView";
+import { KID_PEN_ATTR } from "./tourAnchors";
 
 /**
  * The simple board's dock, in tldraw's toolbar slot (`BoardToolbar`): Pen, Eraser, Undo, four big
@@ -51,7 +52,8 @@ export default function KidDock() {
       className="pointer-events-none mx-2 mb-[max(10px,env(safe-area-inset-bottom))] flex flex-wrap-reverse items-end justify-center gap-2"
     >
       <div className={SHELL}>
-        <DockButton label={DOCK_COPY.pen} pressed={view.pen} onClick={() => editor.setCurrentTool("draw")}>
+        {/* the guided board's first coach mark ("Grab the pen…") points at it */}
+        <DockButton label={DOCK_COPY.pen} pressed={view.pen} anchor={KID_PEN_ATTR} onClick={() => editor.setCurrentTool("draw")}>
           <Pencil className="size-6" strokeWidth={2.25} aria-hidden />
         </DockButton>
         <DockButton label={DOCK_COPY.eraser} pressed={view.eraser} onClick={() => editor.setCurrentTool("eraser")}>
@@ -103,9 +105,10 @@ const BUTTON =
 const ARROW =
   "flex h-14 w-12 shrink-0 cursor-pointer items-center justify-center rounded-2xl text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent motion-reduce:transition-none";
 
-function DockButton({ label, title, pressed, disabled, onClick, children }: { label: string; title?: string; pressed?: boolean; disabled?: boolean; onClick: () => void; children: ReactNode }) {
+/** `anchor`: an attribute the button carries for the guided board's coach marks (`tourAnchors.ts`). */
+function DockButton({ label, title, pressed, disabled, anchor, onClick, children }: { label: string; title?: string; pressed?: boolean; disabled?: boolean; anchor?: string; onClick: () => void; children: ReactNode }) {
   return (
-    <button type="button" className={BUTTON} title={title ?? label} aria-pressed={pressed} disabled={disabled} onClick={onClick}>
+    <button type="button" className={BUTTON} title={title ?? label} aria-pressed={pressed} disabled={disabled} onClick={onClick} {...(anchor ? { [anchor]: "" } : {})}>
       {children}
       <span>{label}</span>
     </button>

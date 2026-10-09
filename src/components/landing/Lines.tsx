@@ -1,7 +1,7 @@
 import { Fragment } from "react";
 
 /**
- * A heading written as two short lines ("One plan.\nEvery kid in the family."): the copy marks where
+ * A heading written as two short lines ("One plan.\nUp to 6 kids."): the copy marks where
  * the line breaks, so a two-sentence headline never splits mid-sentence the way balancing alone
  * would split it.
  */

@@ -317,6 +317,9 @@ function BoardContent({ id, initialVersion, chat }: { id: string; initialVersion
   const simpleBoard = useSimpleBoard(userId) === true;
   const switchSimpleBoard = useCallback((on: boolean) => userId && setSimpleBoard(userId, on), [userId]);
   const [moreOpen, setMoreOpen] = useState(false);
+  // More goes with the simple board, however it was switched off (More's own switch, Board options,
+  // another tab): closed, so switched back on, the kid's board does not open with the grown-ups' card
+  if (moreOpen && !simpleBoard) setMoreOpen(false);
   // what brings the status pill out of More (`place.pill`); read only on the simple board
   const liveError = useValue("simple board: error", () => simpleBoard && liveStore.lastError.get() !== null, [simpleBoard]);
   const solving = useValue("simple board: solving", () => simpleBoard && liveStore.solving.get() > 0, [simpleBoard]);

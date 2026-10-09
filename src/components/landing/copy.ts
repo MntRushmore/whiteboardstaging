@@ -7,10 +7,15 @@
  * Every price, trial length and plan name comes from the plan (`planWords`, from UNLIMITED_PLAN), the
  * kid limit from MAX_KIDS, the day's set from DAILY_GOAL and the courses from COURSES, so the page
  * cannot drift from the app. `landingCopy(plan)` lets the tests check that with another price.
+ *
+ * The page is static, the same for everyone. A visitor a friend's invite link brought was promised a
+ * free first month (src/lib/referral), so the trial's words have a second version, `invited`, that a
+ * small island (`TrialWords`) puts in their place in the browser when checkout will give that month.
  */
 import { DAILY_GOAL } from "@/lib/daily/contracts";
 import { MAX_KIDS } from "@/lib/family/contracts";
-import { planWords, type LandingPlan } from "@/lib/landing/plan";
+import { dayCount, planWords, type LandingPlan } from "@/lib/landing/plan";
+import { PLAN_REFERRAL_COPY, REFERRAL_TRIAL_DAYS } from "@/lib/billing/planChoice";
 import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
 import { COURSES } from "@/lib/onboarding/courses";
 
@@ -20,9 +25,17 @@ function courseList(): string {
   return labels.length > 1 ? `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)}` : (labels[0] ?? "");
 }
 
+/** What happens before the first charge, for a free trial of `days` (`dayCount`'s words). */
+const fineFor = (days: string) => `Nothing is charged for ${days}. We email you before the trial ends, and you can cancel online in a few clicks.`;
+
+/** The card question's answer, for a free trial of `days`. */
+const cardFor = (days: string) => `Yes. A grown-up adds a card to start the trial, and nothing is charged for ${days}. We email you a reminder a few days before it ends.`;
+
 /** The page's words for a plan (UNLIMITED_PLAN unless a test passes another). */
 export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
   const p = planWords(plan);
+  // a friend's invite: the referral Payment Link's free first month (src/lib/billing/planChoice.ts)
+  const friendDays = dayCount(REFERRAL_TRIAL_DAYS);
   return {
     meta: {
       title: "Math practice kids actually do",
@@ -109,19 +122,19 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
     },
     pricing: {
       eyebrow: "Pricing",
-      title: "One plan.\nEvery kid in the family.",
+      title: `One plan.\nUp to ${MAX_KIDS} kids.`,
       plan: p.name,
       price: p.price,
       per: p.per,
       trial: `Free for the first ${p.days}.`,
       includes: [
-        "Every kid in the family included",
+        `Up to ${MAX_KIDS} kids, each with their own profile`,
         "Help from the tutor on every board",
         "Today's practice, the skill path and Progress",
         "A weekly report for you",
       ],
       start: p.start,
-      fine: `Nothing is charged for ${p.days}. We email you before the trial ends, and you can cancel online in a few clicks.`,
+      fine: fineFor(p.days),
     },
     faq: {
       eyebrow: "Questions",
@@ -141,12 +154,16 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
         },
         {
           q: "What happens to my child's data?",
-          a: "We never sell it, show ads, or share it for advertising. Their boards aren't used to train AI models, and the AI that reads their work never gets their email address or the name on their account. Our staff may look at a board to fix a problem, and every look is logged. Children under 13 need a parent's consent, and you can delete the account, and everything in it, at any time.",
+          // the Privacy Policy's own promises, no more: its summary, "When our staff look", and
+          // "Deleting a child's data" (src/app/(platform)/privacy/page.tsx)
+          a: "We never sell it, show ads, or share it for advertising. Their boards aren't used to train AI models, and the AI that reads their work never gets their email address or the name on their account. A few of our staff may look at their boards and progress to fix a problem or to make the tutor better; every look is logged, and what they see is never shared. Children under 13 need a parent's consent. You can delete the account, and everything in it, from your Account page at any time (if the plan is on, cancel it first).",
           link: { href: "/privacy", label: "Read the Privacy Policy" },
         },
         {
           q: `Do I need a card for the free ${p.trial}?`,
-          a: `Yes. A grown-up adds a card to start the trial, and nothing is charged for ${p.days}. We email you a reminder a few days before it ends.`,
+          a: cardFor(p.days),
+          /** for a visitor a friend invited (`TrialWords`) */
+          invited: { q: "Do I need a card for the free month?", a: cardFor(friendDays) },
         },
         {
           q: "How do I cancel?",
@@ -163,6 +180,19 @@ export function landingCopy(plan: LandingPlan = UNLIMITED_PLAN) {
       body: "Sign up with an email and a password, pick their grade, and the first problems are waiting on the board.",
       start: p.start,
       signIn: "Sign in",
+    },
+    /**
+     * The trial's words for a visitor a friend's invite link brought, in place of the usual ones
+     * above (hero, pricing, closing; the card question has its own), put there in the browser by
+     * `TrialWords` and only when the friend's free month is on sale. The usual trial's length is the
+     * plan's (UNLIMITED_PLAN.trialDays); this one is the referral link's (REFERRAL_TRIAL_DAYS).
+     */
+    invited: {
+      start: "Start your free month",
+      terms: `${PLAN_REFERRAL_COPY.friendLead} with a friend's invite, ${p.then}`,
+      trial: `${PLAN_REFERRAL_COPY.friendFree}, with a friend's invite.`,
+      fine: fineFor(friendDays),
+      closing: `${PLAN_REFERRAL_COPY.friendLead}.`,
     },
   } as const;
 }

@@ -12,6 +12,8 @@ import { clientMetric } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
 import { ASK_BUTTON_ATTR } from "@/components/live/AskButton";
 import { CHAT_TOGGLE_ATTR } from "@/components/chat/askButton";
+// the pen in either bar (tldraw's toolbar, or a K–3 kid's simple board's dock), and the simple board's More
+import { MORE_SELECTOR as MORE, PEN_SELECTOR as PEN } from "@/components/kidmode/tourAnchors";
 import { useChatMessages } from "@/components/chat/useBoardChat";
 import { startersFor, type StarterProblem } from "@/lib/onboarding/courses";
 import { browserStorage, clearTourMarker, readTourMarker, writeLocalDone, writeTourMarker } from "@/lib/onboarding/marker";
@@ -58,7 +60,6 @@ export interface BoardTourProps {
   onFinished: () => void;
 }
 
-const PEN = '[data-testid="tools.draw"]';
 const MODES = '[aria-label="How much help"]';
 const HELP = `[${ASK_BUTTON_ATTR}]`;
 const ASK = `[${CHAT_TOGGLE_ATTR}]`;
@@ -406,8 +407,9 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
   }, [editor]);
   // the tick or ring being explained, else the pen
   const markFallback = useCallback(() => shapesRect(editor, lastMark.current) ?? rectOfSelector(PEN) ?? penFallback(), [editor, penFallback]);
-  // no Help me in the bar (Live switched off): the dial, where help is turned on
-  const helpFallback = useCallback(() => rectOfSelector(MODES) ?? penFallback(), [penFallback]);
+  // no Help me in the bar (Live switched off): the dial, where help is turned on; on the simple
+  // board the dial is behind More (hidden, so not found), so More
+  const helpFallback = useCallback(() => rectOfSelector(MODES) ?? rectOfSelector(MORE) ?? penFallback(), [penFallback]);
   // the step the tutor wrote, else the button that asked for it
   const wroteFallback = useCallback(() => shapesRect(editor, wrote.current) ?? helpFallback(), [editor, helpFallback]);
   // "3 more like these" in the panel; its suggestions are gone once it has messages: its text box
