@@ -458,10 +458,21 @@ function problemSide(latex: string): string | null {
 
 const squash = (s: string) => tidyArithmetic(s).replace(/\s+/g, "");
 
+/** Problems read, by their line: every line of a column is judged against the same one, on every render. */
+const problemMemo = new Map<string, Problem | null>();
+
 /** The problem read for judging the working under it, or null when it is not arithmetic this reads. */
 export function readProblem(lines: readonly string[]): Problem | null {
   if (lines.length !== 1) return null;
-  const side = problemSide(lines[0]);
+  if (!problemMemo.has(lines[0])) {
+    problemMemo.set(lines[0], readProblemLine(lines[0]));
+    while (problemMemo.size > 64) problemMemo.delete(problemMemo.keys().next().value as string);
+  }
+  return problemMemo.get(lines[0]) ?? null;
+}
+
+function readProblemLine(line: string): Problem | null {
+  const side = problemSide(line);
   const tree = side ? parseArithmetic(side) : null;
   if (!side || !tree) return null;
   const answer = valueOf(tree);
