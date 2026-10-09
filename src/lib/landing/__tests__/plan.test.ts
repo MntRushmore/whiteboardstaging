@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
-import { freeTrialName, planWords, priceText } from "../plan";
+import { MAX_KIDS } from "@/lib/family/contracts";
+import { dayCount, freeTrialName, planWords, priceText } from "../plan";
 
 describe("freeTrialName", () => {
   it("says a week for 7 days, and weeks or days otherwise", () => {
@@ -21,12 +22,22 @@ describe("priceText", () => {
   });
 });
 
+describe("dayCount", () => {
+  it("counts days, one day singular", () => {
+    expect(dayCount(30)).toBe("30 days");
+    expect(dayCount(1)).toBe("1 day");
+  });
+});
+
 describe("planWords", () => {
-  it("takes every number from the plan", () => {
+  it("takes every number from the plan, and the kid limit from MAX_KIDS", () => {
     const words = planWords({ name: "Agathon Unlimited", monthlyUsd: 35, trialDays: 14 });
     expect(words.price).toBe("$35");
     expect(words.start).toBe("Start your free two weeks");
-    expect(words.terms).toBe("Free for 14 days, then $35 a month for the whole family. Cancel anytime.");
+    expect(words.then).toBe(`then $35 a month for up to ${MAX_KIDS} kids. Cancel anytime.`);
+    expect(words.terms).toBe(`Free for 14 days, then $35 a month for up to ${MAX_KIDS} kids. Cancel anytime.`);
+    // a family has at most MAX_KIDS kids (a 7th is refused): never "the whole family"
+    expect(words.terms).not.toMatch(/whole family|every kid/i);
   });
 
   it("reads UNLIMITED_PLAN by default", () => {

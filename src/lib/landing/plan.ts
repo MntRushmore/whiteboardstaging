@@ -7,6 +7,7 @@
  * Pure: no React, no network. Unit-tested in `__tests__/plan.test.ts`.
  */
 import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
+import { MAX_KIDS } from "@/lib/family/contracts";
 
 /** The plan facts the page uses: UNLIMITED_PLAN's, or another price in a test. */
 export interface LandingPlan {
@@ -34,11 +35,18 @@ export function priceText(usd: number): string {
   return Number.isInteger(usd) ? `$${usd}` : `$${usd.toFixed(2)}`;
 }
 
+/** "7 days", "1 day". */
+export function dayCount(days: number): string {
+  return `${days} ${days === 1 ? "day" : "days"}`;
+}
+
 /** The plan's words, from the plan (UNLIMITED_PLAN unless a test passes another). */
 export function planWords(plan: LandingPlan = UNLIMITED_PLAN) {
   const price = priceText(plan.monthlyUsd);
   const trial = freeTrialName(plan.trialDays);
-  const days = `${plan.trialDays} ${plan.trialDays === 1 ? "day" : "days"}`;
+  const days = dayCount(plan.trialDays);
+  // what the plan costs after its free days, and who it covers: a family of up to MAX_KIDS kids
+  const then = `then ${price} a month for up to ${MAX_KIDS} kids. Cancel anytime.`;
   return {
     name: plan.name,
     /** "$25" */
@@ -51,7 +59,9 @@ export function planWords(plan: LandingPlan = UNLIMITED_PLAN) {
     days,
     /** "Start your free week" */
     start: `Start your free ${trial}`,
-    /** "Free for 7 days, then $25 a month for the whole family. Cancel anytime." */
-    terms: `Free for ${days}, then ${price} a month for the whole family. Cancel anytime.`,
+    /** "then $25 a month for up to 6 kids. Cancel anytime.": after the free days, however long they are */
+    then,
+    /** "Free for 7 days, then $25 a month for up to 6 kids. Cancel anytime." */
+    terms: `Free for ${days}, ${then}`,
   };
 }

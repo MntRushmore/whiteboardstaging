@@ -10,15 +10,20 @@ vi.mock("@/lib/billing/unlimited", async (importOriginal) => {
 });
 
 const { default: ParentsPage, metadata } = await import("@/app/(platform)/parents/page");
-const { landingCopy } = await import("../copy");
+const { default: PrivacyPage } = await import("@/app/(platform)/privacy/page");
+const { landingCopy, LANDING_COPY } = await import("../copy");
+const { MAX_KIDS } = await import("@/lib/family/contracts");
+const { PLAN_REFERRAL_COPY, REFERRAL_TRIAL_DAYS } = await import("@/lib/billing/planChoice");
 
 const html = renderToStaticMarkup(<ParentsPage />);
-const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+/** the page's text, entities read back (apostrophes are escaped) */
+const plain = (markup: string) => markup.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/\s+/g, " ");
+const text = plain(html);
 
 describe("/parents", () => {
   it("takes the price, the trial and the plan's name from UNLIMITED_PLAN", () => {
     expect(text).toContain("$31");
-    expect(text).toContain("Free for 10 days, then $31 a month for the whole family.");
+    expect(text).toContain(`Free for 10 days, then $31 a month for up to ${MAX_KIDS} kids.`);
     expect(text).toContain("Agathon Test Plan");
     expect(text).toContain("Start your free 10 days");
     expect(text).not.toMatch(/\$25|7-day|7 days|free week/);
@@ -78,5 +83,54 @@ describe("/parents", () => {
 
   it("links the privacy answer to the Privacy Policy", () => {
     expect(html).toContain('href="/privacy"');
+  });
+
+  it("says the plan is for up to MAX_KIDS kids, never every kid in the family (a 7th profile is refused)", () => {
+    expect(text).not.toMatch(/every kid|whole family|unlimited kids/i);
+    expect(LANDING_COPY.pricing.title).toBe(`One plan.\nUp to ${MAX_KIDS} kids.`);
+    expect(LANDING_COPY.pricing.includes[0]).toContain(`Up to ${MAX_KIDS} kids`);
+    // the FAQ and the profiles feature say the same number
+    expect(text).toContain(`One plan covers up to ${MAX_KIDS} kids`);
+    expect(text).toContain(`Up to ${MAX_KIDS} kids, each with their own name`);
+  });
+
+  it("answers the data question with the Privacy Policy's promises, no fewer caveats", () => {
+    const policy = plain(renderToStaticMarkup(<PrivacyPage />));
+    const answer = LANDING_COPY.faq.items.find((i) => i.q === "What happens to my child's data?")?.a ?? "";
+    // why staff look: the policy says to fix problems AND to make the tutor better
+    expect(policy).toContain("We look to fix problems and to make the tutor better");
+    expect(answer).toMatch(/to fix a problem or to make the tutor better/);
+    expect(policy).toContain("Each look is logged");
+    expect(answer).toContain("every look is logged");
+    expect(policy).toContain("it is never shared");
+    expect(answer).toContain("never shared");
+    // deleting: from the Account page, and an active plan is cancelled first
+    expect(policy).toMatch(/delete the account at any time from the Account page \(Delete account; if .+ is on, cancel it first\)/);
+    expect(answer).toMatch(/delete the account, and everything in it, from your Account page at any time \(if the plan is on, cancel it first\)/);
+    expect(policy).toContain("need a parent’s consent");
+    expect(answer).toContain("Children under 13 need a parent's consent");
+    expect(policy).toContain("We do not use your boards to train AI models");
+    expect(answer).toContain("aren't used to train AI models");
+  });
+});
+
+describe("/parents for a visitor a friend invited", () => {
+  const invited = LANDING_COPY.invited;
+
+  it("the server's HTML says the usual trial: the page stays static, the friend's month is swapped in by the island", () => {
+    expect(text).toContain(LANDING_COPY.hero.terms);
+    for (const words of Object.values(invited)) expect(text).not.toContain(words);
+  });
+
+  it("offers the first month free, at the plan's price, for the referral link's trial length", () => {
+    expect(invited.terms).toBe(`${PLAN_REFERRAL_COPY.friendLead} with a friend's invite, then $31 a month for up to ${MAX_KIDS} kids. Cancel anytime.`);
+    expect(invited.trial).toContain(PLAN_REFERRAL_COPY.friendFree);
+    expect(invited.fine).toContain(`Nothing is charged for ${REFERRAL_TRIAL_DAYS} days.`);
+    expect(invited.start).toMatch(/free month/);
+    expect(invited.closing).toMatch(/first month is free/);
+    const card = LANDING_COPY.faq.items.find((i) => "invited" in i);
+    expect(card && "invited" in card ? card.invited.a : "").toContain(`nothing is charged for ${REFERRAL_TRIAL_DAYS} days`);
+    // nothing in the friend's words is the usual trial
+    expect(JSON.stringify(invited)).not.toMatch(/10 days|free 10/);
   });
 });
