@@ -87,8 +87,8 @@ export const LIVE_COPY = {
      * with the select tool (the arrow) — the outline shows which while it is hovered
      */
     pickHint: "Several problems? Tap one with the arrow tool to choose it",
-    /** tapped with nothing on the screen yet */
-    nothingYet: "Write a line of maths first, then tap Help me",
+    /** tapped with nothing to help with: nothing written yet, or every problem here already answered */
+    nothingYet: "Nothing to help with here yet. Write a problem or a step, then tap Help me",
   },
 
   /**
