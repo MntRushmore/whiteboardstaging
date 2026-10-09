@@ -25,8 +25,17 @@ export const REPLAY_START_SCRIPT =
   `if(!("IntersectionObserver" in window))return;` +
   `var s=document.createElement("style");s.id=${JSON.stringify(HOLD_ID)};` +
   `s.textContent="#${REPLAY_ID} path,#${REPLAY_ID} span{animation-play-state:paused!important}";document.head.appendChild(s);` +
-  `var o=new IntersectionObserver(function(e){for(var i=0;i<e.length;i++)if(e[i].intersectionRatio>=${REPLAY_VISIBLE}){o.disconnect();s.remove()}},{threshold:[0,${REPLAY_VISIBLE},1]});` +
+  `var o=new IntersectionObserver(function(e){for(var i=0;i<e.length;i++)if(e[i].intersectionRect.height>=${REPLAY_VISIBLE}*e[i].boundingClientRect.height){o.disconnect();s.remove()}},{threshold:[0,.1,.2,.3,.4,.5,.6,.7,.8,.9,1]});` +
   `o.observe(f)})();`;
+
+/**
+ * Half the iPad's height in view. Height, not area: on a phone the iPad runs off both edges, so its
+ * visible area never reaches half of its box however far a parent scrolls.
+ */
+function halfInView(entry: IntersectionObserverEntry): boolean {
+  return entry.intersectionRect.height >= REPLAY_VISIBLE * entry.boundingClientRect.height;
+}
+const THRESHOLDS = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1];
 
 /** Lets the replay go now (Watch again): drops the inline script's hold if it is still there. */
 export function releaseHold(): void {
@@ -53,12 +62,12 @@ export function holdUntilSeen(board: HTMLElement): () => void {
   }
   const observer = new IntersectionObserver(
     (entries) => {
-      if (!entries.some((entry) => entry.intersectionRatio >= REPLAY_VISIBLE)) return;
+      if (!entries.some(halfInView)) return;
       observer.disconnect();
       releaseHold();
       for (const animation of animations) animation.play();
     },
-    { threshold: [0, REPLAY_VISIBLE, 1] },
+    { threshold: THRESHOLDS },
   );
   observer.observe(board);
   return () => observer.disconnect();

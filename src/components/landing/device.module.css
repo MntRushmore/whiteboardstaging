@@ -17,6 +17,10 @@
     max-width: none;
     margin-inline: calc((100% - 37.5rem) / 2);
   }
+  /* the ring's note on two short lines, so it stays inside the screen's visible middle */
+  .canvas .miss {
+    max-width: 10em;
+  }
 }
 
 .ipad {
