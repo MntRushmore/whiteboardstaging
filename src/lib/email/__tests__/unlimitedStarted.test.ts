@@ -149,6 +149,13 @@ describe("billingRecipient", () => {
     expect(await billingRecipient({ payerEmail: null, userId: "u_none" }, emailOf)).toEqual({ email: null });
     expect(await billingRecipient({ payerEmail: null, userId: "u_err" }, emailOf)).toEqual({ error: "down" });
   });
+
+  it("is never a kid profile's address: the payer's or the account's", async () => {
+    const kidAccount = async () => ({ email: "kid-1@kids.agathon.app" });
+    expect(await billingRecipient({ payerEmail: "kid-2@kids.agathon.app", userId: "u1" }, emailOf)).toEqual({ email: "u1@example.com", source: "account" });
+    expect(await billingRecipient({ payerEmail: null, userId: "k1" }, kidAccount)).toEqual({ email: null });
+    expect(await billingRecipient({ payerEmail: "KID-2@Kids.Agathon.App", userId: "k1" }, kidAccount)).toEqual({ email: null });
+  });
 });
 
 describe("sendUnlimitedStarted", () => {

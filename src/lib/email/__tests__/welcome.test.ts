@@ -60,6 +60,14 @@ describe("runWelcome", () => {
     }
   });
 
+  it("never welcomes a kid profile, before reading or claiming anything", async () => {
+    const deps = fakeDeps({ now: NOW, onboardedAt: ago(30_000) });
+    expect(await runWelcome(deps, testEnv(), { ...USER, email: "kid-3f2a@kids.agathon.app" }, silentLog())).toEqual({ status: "skipped", reason: "kid_profile" });
+    expect(deps.readOnboardedAt).not.toHaveBeenCalled();
+    expect(deps.log.store.claim).not.toHaveBeenCalled();
+    expect(deps.send).not.toHaveBeenCalled();
+  });
+
   it("skips a student who has not finished onboarding, or finished long ago, without claiming", async () => {
     const notYet = fakeDeps({ now: NOW, onboardedAt: null });
     expect(await runWelcome(notYet, testEnv(), USER, silentLog())).toEqual({ status: "skipped", reason: "not_onboarded" });

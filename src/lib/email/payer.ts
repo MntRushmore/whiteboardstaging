@@ -7,9 +7,19 @@
  * free trial started, the free trial ending) go there, and fall back to the account's address only
  * when the row has none (a subscription linked before payer_email existed, or a checkout without
  * an email).
+ *
+ * A kid profile's address (src/lib/family/contracts.ts) is never a recipient: the plan is the
+ * grown-up's, and a kid address has no mailbox. Such an address counts as none here, so the caller
+ * skips it as "no email" (and sendEmail would refuse it anyway).
  */
+import { isKidEmail } from "@/lib/family/contracts";
 import type { EmailDeps } from "@/lib/email/server";
 import { isSendableAddress } from "@/lib/email/resend";
+
+/** One address a billing email may go to: a single plain address, never a kid profile's. */
+function usable(address: string): boolean {
+  return Boolean(address) && isSendableAddress(address) && !isKidEmail(address);
+}
 
 export type BillingRecipient =
   /** where to send, and whether it is the payer's (checkout) or the account's address */
@@ -21,9 +31,9 @@ export type BillingRecipient =
 /** The payer's email when it is one usable address, else the account's (looked up), else none. */
 export async function billingRecipient(row: { payerEmail: string | null; userId: string }, emailOf: EmailDeps["emailOf"]): Promise<BillingRecipient> {
   const payer = row.payerEmail?.trim() ?? "";
-  if (payer && isSendableAddress(payer)) return { email: payer, source: "payer" };
+  if (usable(payer)) return { email: payer, source: "payer" };
   const who = await emailOf(row.userId);
   if ("error" in who) return who;
   const account = who.email?.trim() ?? "";
-  return account && isSendableAddress(account) ? { email: account, source: "account" } : { email: null };
+  return usable(account) ? { email: account, source: "account" } : { email: null };
 }

@@ -11,6 +11,7 @@ vi.hoisted(() => {
 import { resetServerEnvCache } from "@/lib/env";
 import {
   DEFAULT_EMAIL_FROM,
+  KID_ADDRESS_REFUSED,
   NOT_CONFIGURED,
   RESEND_API_URL,
   emailConfigured,
@@ -80,6 +81,17 @@ describe("sendEmail", () => {
       expect(await sendEmail(message, config({ apiKey }))).toEqual({ ok: false, error: NOT_CONFIGURED });
     }
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("never sends to a kid profile's address, whoever asks, even without a key", async () => {
+    for (const to of ["kid-3f2a@kids.agathon.app", "  KID-3F2A@Kids.Agathon.App ", "anything@kids.agathon.app"]) {
+      expect(await sendEmail({ ...message, to }, config()), to).toEqual({ ok: false, error: KID_ADDRESS_REFUSED });
+      expect(await sendEmail({ ...message, to }, config({ apiKey: null })), to).toEqual({ ok: false, error: KID_ADDRESS_REFUSED });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+    // a grown-up on a look-alike domain is not a kid
+    reply(200, { id: "re_ok" });
+    expect(await sendEmail({ ...message, to: "parent@notkids.agathon.app" }, config())).toEqual({ ok: true, id: "re_ok" });
   });
 
   it("refuses a bad request before calling Resend", async () => {

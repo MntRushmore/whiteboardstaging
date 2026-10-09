@@ -14,8 +14,15 @@
  * down". Resend answers 409 when the same key arrives with a different body, or while the first
  * request with it is still in flight.
  *
+ * Kid profiles. Every email Agathon sends passes through `sendEmail`, so the rule "nothing ever
+ * emails a kid address" (src/lib/family/contracts.ts) is kept here, first: an address on the kid
+ * domain answers `{ ok: false, error: KID_ADDRESS_REFUSED }` and nothing reaches Resend, whatever the
+ * caller (welcome, reminders, nudges, alerts). The callers also skip such an address themselves
+ * (billingRecipient, runWelcome), so this is the net under them, not the only check.
+ *
  * Server-only (it reads the server env); the browser side is src/lib/email/client.ts.
  */
+import { isKidEmail } from "@/lib/family/contracts";
 import { getServerEnv } from "@/lib/env";
 import { logger } from "@/lib/logger";
 
@@ -31,6 +38,9 @@ export const MAX_IDEMPOTENCY_KEY_LENGTH = 256;
 export const SEND_TIMEOUT_MS = 10_000;
 
 export const NOT_CONFIGURED = "not configured";
+
+/** What `sendEmail` answers for a kid profile's address (src/lib/family/contracts.ts, isKidEmail). */
+export const KID_ADDRESS_REFUSED = "refused: a kid profile's address is never sent to";
 
 export const emailLogger = logger.child({ module: "email" });
 
@@ -124,6 +134,11 @@ function describeError(status: number, body: unknown): string {
  * result says what happened. `config` defaults to the server env; tests pass `fetchImpl`.
  */
 export async function sendEmail(input: SendEmailInput, config: ResendConfig = resendConfigFromEnv()): Promise<SendEmailResult> {
+  // First, before anything else: a kid profile's address is never sent to, whoever asks.
+  if (isKidEmail(input.to)) {
+    emailLogger.warn({ subject: input.subject, tags: input.tags }, "refused to email a kid profile's address");
+    return { ok: false, error: KID_ADDRESS_REFUSED };
+  }
   const apiKey = config.apiKey?.trim();
   if (!apiKey) {
     emailLogger.warn({ subject: input.subject }, "RESEND_API_KEY is not set: email not sent");
