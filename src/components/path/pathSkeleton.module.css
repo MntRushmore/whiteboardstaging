@@ -1,0 +1,51 @@
+/* The skill path loading: the card's frame (path.module.css) at the loaded trail's height. */
+.card {
+  display: grid;
+  min-height: 17.25rem; /* 276 px: a phone's one scrolling row */
+  box-sizing: border-box;
+  align-content: start;
+  gap: var(--space-3, 0.75rem);
+  margin: 0;
+  padding: var(--space-4, 1rem);
+  overflow: hidden;
+  border: 1px solid var(--border, #ececec);
+  border-radius: var(--radius-panel, 1.625rem);
+  background: var(--surface, #fff);
+}
+.card[data-place="home"] {
+  margin-bottom: var(--space-6, 1.5rem);
+}
+@media (min-width: 640px) {
+  .card {
+    min-height: 16.8125rem; /* 269 px */
+    padding: var(--space-6, 1.5rem);
+  }
+}
+.title {
+  width: min(16rem, 70%);
+  height: 1.625rem;
+  border-radius: 0.5rem;
+  background: color-mix(in oklab, var(--border, #ececec) 70%, transparent);
+}
+.row {
+  display: flex;
+  gap: var(--space-10, 2.5rem);
+  padding: var(--space-10, 2.5rem) 0 0 var(--space-4, 1rem);
+}
+.dot {
+  flex: none;
+  width: 3.75rem;
+  height: 3.75rem;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--border, #ececec) 70%, transparent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pulse {
+    animation: path-skeleton-pulse 1.6s var(--ease-in-out, ease-in-out) infinite;
+  }
+}
+@keyframes path-skeleton-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}

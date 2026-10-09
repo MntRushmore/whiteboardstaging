@@ -18,6 +18,7 @@ import { skillDef, type MasteryLevel, type SkillArea } from "@/lib/learning/cont
 import { GRADES, gradePath, isGrade, isK8SkillId, K8_SKILLS, type Grade, type K8SkillId, type PathSkillId } from "@/lib/learning/grades";
 import { LEVEL_LABELS } from "@/lib/learning/progressView";
 import { courseName, courseTopicIds, isTopicId, keepMathsTogether, TOPIC_INFO, type TopicId } from "@/lib/learning/topics";
+import { nextStepIndex } from "./nextStep";
 
 // ------------------------------------------------------------------ words
 
@@ -203,7 +204,8 @@ export function buildPathView(source: Exclude<PathSource, { kind: "pick" }>, lev
   const ids = pathSkillIds(source);
   const total = ids.length;
   const levelOf = (id: string): MasteryLevel => levels.get(id) ?? "new";
-  const currentIndex = ids.findIndex((id) => levelOf(id) !== "mastered");
+  // the first not mastered, past review the student has shown they can skip (`nextStepIndex`)
+  const currentIndex = nextStepIndex(ids.map(levelOf));
   const nodes = ids.map((id, i): PathNode => {
     const level = levelOf(id);
     const state: PathNodeState = level === "mastered" ? "done" : i === currentIndex ? "current" : "upcoming";

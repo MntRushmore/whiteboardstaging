@@ -144,7 +144,8 @@ function usePreview(ready: Extract<TodayState, { status: "ready" }> | null, plan
       void Promise.resolve().then(() => live && setPreview({ key, skills: namedSkills(note?.skills ?? []) }));
     } else {
       void Promise.all([import("@/lib/daily/plan"), planInput(ready.today)]).then(
-        ([{ planDailySet, planSkills }, input]) => live && setPreview({ key, skills: planSkills(planDailySet(input)) }),
+        ([{ planDailySet, planSkills, levelOf }, input]) =>
+          live && setPreview({ key, skills: planSkills(planDailySet(input)).map((s) => ({ ...s, level: levelOf(s.skill, input.levels) })) }),
         () => {},
       );
     }

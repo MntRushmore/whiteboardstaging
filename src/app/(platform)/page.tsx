@@ -30,6 +30,8 @@ import { asDeleteBoardClient, deleteBoardWithAssets } from '@/lib/assets/deleteB
 import { DEFAULT_BOARD_TITLE, isDefaultBoardTitle } from '@/lib/boards/boardTitle';
 import { settleExitWrites } from '@/lib/boards/exitWrites';
 import { EmptyBoards } from '@/components/boards/EmptyBoards';
+import { TodaySkeleton } from '@/components/daily/TodaySkeleton';
+import { PathSkeleton } from '@/components/path/PathSkeleton';
 import { useWelcome } from '@/components/onboarding/useWelcome';
 import { useHomeArrival } from '@/components/onboarding/useHomeArrival';
 import { usePlanGate } from '@/components/billing/usePlanGate';
@@ -392,24 +394,26 @@ export default function Dashboard() {
           <AuthErrorBanner />
         </div>
 
-        {/* Today's practice, then the skill path: first, whatever the boards list is doing */}
-        {user && (
-          <Suspense fallback={null}>
+        {/* Today's practice, then the skill path: first, whatever the boards list is doing. Their
+            fallbacks are the cards' own skeletons, as tall as the loaded cards, shown from the first
+            paint (while sign-in is still being read too): nothing below jumps when they arrive. */}
+        {user ? (
+          <Suspense fallback={<TodaySkeleton />}>
             <TodayCard userId={user.id} />
           </Suspense>
-        )}
-        {user && (
-          <Suspense fallback={null}>
+        ) : authLoading && <TodaySkeleton />}
+        {user ? (
+          <Suspense fallback={<PathSkeleton place="home" />}>
             <SkillPathCard userId={user.id} />
           </Suspense>
-        )}
+        ) : authLoading && <PathSkeleton place="home" />}
 
         {/* Pick a topic: at the top, whatever the boards list is doing (its own loading and errors) */}
-        {user && (
+        {user ? (
           <Suspense fallback={<div aria-hidden className={`${styles.topicFallback} ${styles.pulse}`} />}>
             <TopicStart userId={user.id} />
           </Suspense>
-        )}
+        ) : authLoading && <div aria-hidden className={`${styles.topicFallback} ${styles.pulse}`} />}
 
         <div className={styles.pageHeader}>
           <div>

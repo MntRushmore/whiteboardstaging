@@ -45,13 +45,20 @@ describe("calendar days", () => {
 });
 
 describe("dailyStreak", () => {
-  it("no rows: no streak, and this week is missed days, today and days to come", () => {
+  it("no rows: no streak, and this week is days before the first set (not missed), today and days to come", () => {
     const s = dailyStreak([], TODAY);
     expect(s.current).toBe(0);
     expect(s.best).toBe(0);
     expect(s.todayDone).toBe(false);
     expect(s.week.map((d) => d.day)).toEqual(["2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-10", "2026-10-11"]);
-    expect(s.week.map((d) => d.state)).toEqual(["missed", "missed", "missed", "today", "future", "future", "future"]);
+    expect(s.week.map((d) => d.state)).toEqual(["before", "before", "before", "today", "future", "future", "future"]);
+  });
+
+  it("missing starts counting from the first set: a day after it with nothing is missed, a day before it is not", () => {
+    const s = dailyStreak([done("2026-10-06")], TODAY);
+    expect(s.week.map((d) => d.state)).toEqual(["before", "done", "missed", "today", "future", "future", "future"]);
+    // a first set from an earlier week: every day of this one counts
+    expect(dailyStreak([done("2026-09-30")], TODAY).week[0].state).toBe("missed");
   });
 
   it("counts back from today when today is done", () => {

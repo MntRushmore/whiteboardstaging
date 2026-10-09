@@ -5,7 +5,7 @@ import { ArrowRight, Calculator, ChartSpline, ChevronDown, ChevronRight, FlaskCo
 import type { MasteryLevel, SkillArea } from "@/lib/learning/contracts";
 import type { Grade } from "@/lib/learning/grades";
 import { LEVEL_LABELS } from "@/lib/learning/progressView";
-import { matchTopic, TOPIC_COPY, TOPIC_INFO, type TopicGroup, type TopicId, type TopicView } from "@/lib/learning/topics";
+import { askPlaceholderFor, matchTopic, TOPIC_COPY, TOPIC_INFO, type TopicGroup, type TopicId, type TopicView } from "@/lib/learning/topics";
 import { skillDef } from "@/lib/learning/contracts";
 import styles from "./topics.module.css";
 
@@ -159,7 +159,7 @@ export function AskBox({ onSubmit, busy, label = TOPIC_COPY.askTitle, grade = nu
           maxLength={500}
           autoComplete="off"
           enterKeyHint="go"
-          placeholder={TOPIC_COPY.askPlaceholder}
+          placeholder={askPlaceholderFor(grade)}
           aria-describedby={`${id}-hint`}
           onChange={(e) => setText(e.target.value)}
         />

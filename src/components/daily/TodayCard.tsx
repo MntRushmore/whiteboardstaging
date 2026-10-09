@@ -2,19 +2,19 @@
 
 import { Check, Flame, Play, Sparkles, Star } from "lucide-react";
 import { Button } from "@/registry/components/button/button";
-import { Skeleton } from "@/registry/components/skeleton/skeleton";
 import { ConfettiBurst } from "@/components/onboarding/ConfettiBurst";
 import { TODAY_COPY } from "@/lib/daily/copy";
 import type { DailyStreak, DayState } from "@/lib/daily/contracts";
 import type { PlanSkill } from "@/lib/daily/names";
 import { useToday, type TodayActions, type TodayState } from "./useToday";
+import { TodaySkeleton } from "./TodaySkeleton";
 import styles from "./today.module.css";
 
 /**
  * Today's practice on the boards home (src/lib/daily/contracts.ts): the first thing a student sees,
  * because a short set every day is what brings them back. One big button — Start, then Continue —
  * the day's stars as they earn them, the streak's flame and this week as dots; once the set is done,
- * "You did it! Come back tomorrow!" and a small Practise more.
+ * "You did it! Come back tomorrow!" and a small Practice more.
  *
  * Loaded with a dynamic import, so the home's first load carries none of it. While the day loads
  * it shows a skeleton of its own shape; a read that fails still offers Start (no streak), so it
@@ -77,7 +77,7 @@ export function StreakPanel({ streak, today }: { streak: DailyStreak; today: str
                 {streak.current}
               </strong>
               <span className={styles.streakLabel} aria-hidden>
-                {TODAY_COPY.streakUnit(streak.current)}
+                {TODAY_COPY.streakUnit}
               </span>
             </>
           ) : (
@@ -91,7 +91,17 @@ export function StreakPanel({ streak, today }: { streak: DailyStreak; today: str
   );
 }
 
-/** "In today's set": each skill once, with why it is there (New, Practice, Warm-up). */
+/**
+ * Why a skill is in the set, in a word: a path skill is "New" only when the student has never tried
+ * it, else "Next up"; then Practice (a weak spot) and Warm-up (a mastered skill).
+ */
+export function whyLabel(s: Pick<PlanSkill, "why" | "level">): string | null {
+  if (!s.why) return null;
+  if (s.why === "next") return s.level === "new" ? TODAY_COPY.whyNew : TODAY_COPY.why.next;
+  return TODAY_COPY.why[s.why] ?? null;
+}
+
+/** "In today's set": each skill once, with why it is there (New or Next up, Practice, Warm-up). */
 export function SetMix({ skills }: { skills: readonly PlanSkill[] }) {
   return (
     <div className={styles.mix}>
@@ -105,7 +115,7 @@ export function SetMix({ skills }: { skills: readonly PlanSkill[] }) {
               <Star size={14} strokeWidth={2.4} />
             </span>
             <span className={styles.mixName}>{s.name}</span>
-            {s.why && <span className={styles.mixWhy}>{TODAY_COPY.why[s.why]}</span>}
+            {whyLabel(s) && <span className={styles.mixWhy}>{whyLabel(s)}</span>}
           </li>
         ))}
       </ul>
@@ -119,7 +129,7 @@ export function TodayView({ state, actions, preview = null }: { state: Extract<T
   const titleId = "today-practice-title";
   const mix = phase !== "done" && preview && preview.length > 0 ? preview : null;
   return (
-    <section className={styles.card} data-phase={phase} data-mix={mix ? "" : undefined} aria-labelledby={titleId} data-today-card="">
+    <section className={styles.card} data-phase={phase} data-mix={mix ? "" : undefined} data-awaiting-mix={phase !== "done" && preview === null ? "" : undefined} aria-labelledby={titleId} data-today-card="">
       <span className={styles.glow} aria-hidden />
       {phase === "done" && state.justFinished && <ConfettiBurst count={48} spread={200} className={styles.confetti} />}
       <div className={styles.main}>
@@ -161,11 +171,7 @@ export function TodayView({ state, actions, preview = null }: { state: Extract<T
 export default function TodayCard({ userId }: TodayCardProps) {
   const { state, actions, preview } = useToday(userId);
   if (state.status === "loading") {
-    return (
-      <div className={`${styles.card} ${styles.loading}`} data-today-card="">
-        <Skeleton label={TODAY_COPY.eyebrow} lines={4} className={styles.skeleton} />
-      </div>
-    );
+    return <TodaySkeleton />;
   }
   return <TodayView state={state} actions={actions} preview={preview} />;
 }

@@ -29,6 +29,7 @@ import { hashText } from "@/lib/learning/generators/rng";
 import { GRADE_IDS, GRADE_PATHS, type K8SkillId } from "@/lib/learning/grades";
 import { DAILY_GOAL, type DailyPlan, type DailyProblem, type DailyReason } from "./contracts";
 import { skillNameOf, type PlanSkill } from "./names";
+import { nextStepIndex } from "@/lib/path/nextStep";
 
 /** What the day's set is planned from. */
 export interface DailyPlanInput {
@@ -147,7 +148,8 @@ interface SkillPick {
 }
 
 /** A skill's level; a K–8 skill not in the record yet reads its stand-in's (old rows were filed there). */
-function levelOf(skill: string, levels: ReadonlyMap<string, MasteryLevel>): MasteryLevel {
+/** A skill's level in the record, else its stand-in's; `new` when neither has one. */
+export function levelOf(skill: string, levels: ReadonlyMap<string, MasteryLevel>): MasteryLevel {
   const own = levels.get(skill);
   if (own) return own;
   const standIn = standInOf(skill);
@@ -199,7 +201,9 @@ function allocate(input: DailyPlanInput, goal: number): Slot[] {
 
   const taken = new Set<string>();
   // next: the first two path skills not mastered (then the next grade's, once the path is done)
-  let next = all.filter((p) => p.level !== "mastered");
+  // from the path's next step on: a skill never tried behind one the student has reached is skipped
+  const step = nextStepIndex(all.map((p) => p.level));
+  let next = step === -1 ? [] : all.slice(step).filter((p) => p.level !== "mastered");
   if (next.length === 0) next = picksOf(input.beyond ?? [], levels, new Set(all.map((p) => p.draw))).filter((p) => p.level !== "mastered");
   next = next.slice(0, 2);
   for (const p of next) taken.add(p.draw);

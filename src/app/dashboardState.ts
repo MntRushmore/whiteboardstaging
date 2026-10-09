@@ -43,7 +43,7 @@ export const DASHBOARD_COPY = {
   deleteFallback: "The board is still here. Retry in a moment.",
   retry: "Retry",
   emptyTitle: "No boards yet",
-  emptyHint: "Write maths by hand on a board, and the tutor checks each step in its own handwriting.",
+  emptyHint: "Tap New Board, write your math by hand, and the tutor checks each step.",
   noMatchesTitle: "No boards match your search",
   noMatchesHint: "Try another word, or clear the search.",
 } as const;

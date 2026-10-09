@@ -96,9 +96,9 @@ describe("counts and words", () => {
     expect(independentWording(12, 10).percent).toBe(100);
   });
   it("streak", () => {
-    expect(streakWording(0)).toEqual({ label: "days in a row", hint: "Solve one today to start!" });
-    expect(streakWording(1)).toEqual({ label: "day in a row", hint: "Come back tomorrow!" });
-    expect(streakWording(6)).toEqual({ label: "days in a row", hint: "Keep it going!" });
+    expect(streakWording(0)).toEqual({ label: "days of math in a row", hint: "Solve one today to start!" });
+    expect(streakWording(1)).toEqual({ label: "day of math in a row", hint: "Come back tomorrow!" });
+    expect(streakWording(6)).toEqual({ label: "days of math in a row", hint: "Keep it going!" });
   });
   it("labels every level and outcome", () => {
     expect(Object.values(LEVEL_LABELS)).toEqual(["New", "Practicing", "Almost there", "Mastered"]);
@@ -365,7 +365,7 @@ describe("page state and view", () => {
       { key: "minutes", value: "45", label: "minutes of practice", hint: "on 4 days" },
       { key: "problems", value: "10", label: "problems worked on", hint: null },
       { key: "independent", value: "6", label: "solved on your own", hint: "60% · More than half" },
-      { key: "streak", value: "4", label: "days in a row", hint: "Keep it going!" },
+      { key: "streak", value: "4", label: "days of math in a row", hint: "Keep it going!" },
     ]);
     expect(view.skillsTitle).toBe("Your skills");
     expect(view.mistakes.map((m) => m.kind)).toEqual(["sign", "distribution", "arithmetic"]);

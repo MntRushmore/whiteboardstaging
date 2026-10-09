@@ -360,7 +360,7 @@
   color: var(--text-secondary, #5e5e5e);
 }
 
-/* a small mark on the circle's edge: a tick when done, a lock while still to come */
+/* a small mark on the circle's edge: a tick when done */
 .badge {
   position: absolute;
   right: -3px;
@@ -376,9 +376,17 @@
   background: var(--p-star);
   color: oklch(35% 0.08 70);
 }
-.badge[data-badge="locked"] {
-  background: var(--border-strong, #cfcfcf);
-  color: var(--card-bg);
+/* a skill further on that the student has already started: a ring in the path's violet, its stars
+   showing — not locked, and not grey like the ones not tried yet */
+.stop[data-started] .circle {
+  --c-bg: var(--card-bg);
+  --c-ink: var(--p-current-solid);
+  --c-lip: color-mix(in oklab, var(--p-current-solid) 45%, var(--card-bg));
+  border: 3px solid var(--p-current-solid);
+}
+.stop[data-started] .name {
+  color: var(--foreground, #1c1c1c);
+  font-weight: 600;
 }
 
 /* "Next up" over the next stop */
@@ -532,33 +540,4 @@
   }
 }
 
-/* ---- Loading ----------------------------------------------------------------------------------- */
-.skeletonTitle {
-  width: min(16rem, 70%);
-  height: 1.625rem;
-  border-radius: 0.5rem;
-  background: color-mix(in oklab, var(--border, #ececec) 70%, transparent);
-}
-.skeletonRow {
-  display: flex;
-  gap: var(--space-10, 2.5rem);
-  padding: var(--space-6, 1.5rem) 0 var(--space-10, 2.5rem) var(--space-4, 1rem);
-  overflow: hidden;
-}
-.skeletonDot {
-  flex: none;
-  width: 3.75rem;
-  height: 3.75rem;
-  border-radius: 50%;
-  background: color-mix(in oklab, var(--border, #ececec) 70%, transparent);
-}
-@media (prefers-reduced-motion: no-preference) {
-  .pulse {
-    animation: path-pulse 1.6s var(--ease-in-out, ease-in-out) infinite;
-  }
-}
-@keyframes path-pulse {
-  50% {
-    opacity: 0.55;
-  }
-}
+/* Loading: PathSkeleton.tsx (pathSkeleton.module.css), light enough for the home to load with the page */
