@@ -11,6 +11,9 @@ import { z } from "zod";
 import { isReferralCode, REFERRAL_COPY, type ReferralSummary } from "./contracts";
 import { REFERRAL_CARD_COPY } from "./copy";
 
+/** Where links point (the share card's footer uses the same): site.ts. */
+export { isPlaceholderHost, siteBase } from "./site";
+
 /** referral_summary()'s answer. */
 export const ReferralSummaryRpcSchema = z.object({
   code: z.string().refine(isReferralCode, "a referral code"),
@@ -20,36 +23,6 @@ export const ReferralSummaryRpcSchema = z.object({
   months_pending: z.number().int().nonnegative(),
 });
 export type ReferralSummaryRpc = z.infer<typeof ReferralSummaryRpcSchema>;
-
-/** A page on this machine (a dev server): its links should open on the same dev server. */
-function isLocalOrigin(origin: string | null | undefined): boolean {
-  try {
-    return typeof origin === "string" && ["localhost", "127.0.0.1", "[::1]"].includes(new URL(origin).hostname);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Where links point: NEXT_PUBLIC_SITE_URL when it is an absolute http(s) address (the canonical
- * site, whichever alias the grown-up is on), else the page's origin. A page on localhost uses its
- * own origin first, so a link made on a dev server can be tried there. Trailing slashes are
- * dropped. Null when neither is usable (no link is better than a broken one).
- */
-export function siteBase(siteUrl: string | null | undefined, origin: string | null | undefined): string | null {
-  const order = isLocalOrigin(origin) ? [origin, siteUrl] : [siteUrl, origin];
-  for (const candidate of order) {
-    if (typeof candidate !== "string" || !candidate.trim()) continue;
-    try {
-      const url = new URL(candidate.trim());
-      if (url.protocol !== "https:" && url.protocol !== "http:") continue;
-      return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
-    } catch {
-      // not a URL: try the next
-    }
-  }
-  return null;
-}
 
 /** `https://agathon.app/?ref=<code>`: the home, which keeps the code in the visitor's attribution. */
 export function referralUrl(code: string, base: string): string {

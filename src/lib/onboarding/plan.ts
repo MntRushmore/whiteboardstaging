@@ -11,6 +11,7 @@
  * checkout, `arrival.ts`.
  */
 import { UNLIMITED_PLAN, hasPlan, type UnlimitedState } from "@/lib/billing/unlimited";
+import { MAX_KIDS } from "@/lib/family/contracts";
 
 /**
  * - `checking`: the subscription is still being read (nothing shows: a subscriber is never pitched);
@@ -62,11 +63,13 @@ export const PLAN_COPY = {
   free: `Free for ${UNLIMITED_PLAN.trialDays} days`,
   then: `Then ${PRICE}/month. Cancel anytime.`,
   perksTitle: "What you get",
+  // for a K–8 family: what a kid does every day, and what the grown-up who pays gets to see
   perks: [
-    { id: "help", text: "Unlimited Help me and Solve" },
-    { id: "ask", text: "Ask your tutor anything" },
-    { id: "check", text: "Checks every line you write" },
-    { id: "courses", text: "Every course, from Algebra to Calculus" },
+    { id: "daily", text: "Today's practice, a few minutes a day" },
+    { id: "path", text: "A skill path for their grade, K to 8th" },
+    { id: "check", text: "A tutor that checks every line" },
+    { id: "kids", text: `Up to ${MAX_KIDS} kid profiles on one plan` },
+    { id: "report", text: "A weekly report for the grown-up" },
   ],
   // Said TO the grown-up, not "ask a grown-up": guidance on advertising to children (CARU) is
   // against urging a child to ask a parent to buy.
@@ -87,6 +90,6 @@ export const PLAN_COPY = {
   soon: "Coming soon",
   /** without a checkout, in place of the grown-up's line */
   soonTitle: "Unlimited isn't open yet",
-  soonNote: "Your starter ink is ready to use. Have fun!",
+  soonNote: "Sign-ups open soon. Until then, have a look around.",
   continue: "Continue",
 } as const;

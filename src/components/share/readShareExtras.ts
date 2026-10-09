@@ -6,6 +6,7 @@
  */
 import { supabase } from "@/lib/supabase";
 import { isReferralCode } from "@/lib/referral/contracts";
+import { siteBase } from "@/lib/referral/site";
 
 export interface ShareExtras {
   /** an AVATARS id, or null */
@@ -16,11 +17,15 @@ export interface ShareExtras {
 
 const NONE: ShareExtras = { avatar: null, link: null };
 
-/** This deployment's address: NEXT_PUBLIC_SITE_URL when it is an absolute http(s) URL, else the page's origin. */
+/**
+ * This deployment's address, as the Family page's referral card makes it (`siteBase`): the page's own
+ * origin on a dev server, else NEXT_PUBLIC_SITE_URL when it is a real http(s) address (never a
+ * template's "your-app…" placeholder), else the page's origin. So the card's footer and the referral
+ * card always show the same link.
+ */
 export function siteUrl(): string {
-  const env = process.env.NEXT_PUBLIC_SITE_URL;
-  if (env && /^https?:\/\/[^/]+/i.test(env)) return env.replace(/\/+$/, "");
-  return typeof window === "undefined" ? "https://agathon.app" : window.location.origin;
+  const origin = typeof window === "undefined" ? null : window.location.origin;
+  return siteBase(process.env.NEXT_PUBLIC_SITE_URL, origin) ?? "https://agathon.app";
 }
 
 /** A referral code's link on this deployment, as `ReferralSummary.link` is made. */
