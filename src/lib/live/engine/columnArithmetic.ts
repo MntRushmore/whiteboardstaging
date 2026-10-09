@@ -36,6 +36,7 @@
  *
  * Pure string and digit work: no mathjs, so it is small, and the loop calls it directly.
  */
+import type { LineAnalysis } from "../contracts";
 
 export type StackOp = "+" | "-" | "×";
 
@@ -288,6 +289,28 @@ export function workStacked(read: StackedRead, opts: WorkOptions = {}): StackedW
   const work: StackedWork = { ...read, result: written(digits, decimals), decimals, digits, width, carries, written: mine, wrong, right, note: "" };
   work.note = wrong === -1 ? "" : noteFor(work, nums, wrong, decimalsOf(answer));
   return work;
+}
+
+/**
+ * A stacked sum's line analysis, as the loop marks it (`LiveLoop.stackAnalysis`) and the young kids'
+ * scoreboard replays it: complete and right is `solved` (a tick); a wrong digit is a `mismatch` with
+ * its note (a ring) — only on a read the caller is `sure` of; empty or right so far is nothing yet. A
+ * sum this file cannot work (`work` null) is `unknown`: read back, never marked, never answered,
+ * never sent to a model.
+ */
+export function stackedAnalysis(work: StackedWork | null, sure: boolean): LineAnalysis {
+  const quiet: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
+  if (!work) return quiet;
+  const wrong = work.wrong !== -1;
+  if (wrong && !sure) return quiet;
+  return {
+    kind: wrong || work.right ? "equation" : "expression",
+    math: "",
+    resultLatex: "",
+    verdict: wrong ? "mismatch" : work.right ? "ok" : "none",
+    note: work.note,
+    ...(work.right ? { solved: true } : {}),
+  };
 }
 
 /** The note about the first wrong place: the classic slip when it is one, else where to look. */

@@ -380,6 +380,14 @@ export interface LiveEngine {
    * doubles need not implement it.
    */
   graphFor?(lines: readonly string[]): GraphIntent | null;
+  /**
+   * A line of a young student's working under a problem with no letters (`engine/primaryWork.ts`),
+   * judged against the PROBLEM rather than the line above: a true side calculation (`10 \times 7 =
+   * 70` under `18 \times 7`) is never ringed, a lone partial (`70`) is left unmarked, a remainder
+   * (`3 R 2`), a long-division bracket, a fraction step. Null when it is not such a line, and the
+   * column's own rules apply (`engine/columnWork.ts`). Optional so engine doubles need not implement it.
+   */
+  judgeWork?(work: { problem: readonly string[]; above: readonly string[]; latex: string; ctx: AnalyzeContext }): LineAnalysis | null;
   /** verifies an LLM `expected` claim (mathjs expr) against the student's line */
   verifyExpected(expected: string, latex: string): "equal" | "unequal" | "unknown";
   balance(equation: string): { coeffs: number[]; latex: string } | null;
