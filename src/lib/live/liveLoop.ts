@@ -3012,7 +3012,33 @@ export class LiveLoop implements LiveController {
   private problemState(cell: ProblemCell): ProblemState {
     const busy = this.problemBusy(cell);
     const work = this.tutorWorkOn(cell);
-    return { work: this.workUnder(cell) !== null, solved: work.solved || busy, started: work.solved || work.lines.length > 0 || busy, busy };
+    return { work: this.workUnder(cell) !== null, solved: work.solved || busy, started: work.solved || work.lines.length > 0 || busy, busy, done: this.problemDone(cell) };
+  }
+
+  /**
+   * The student has answered one of the chat's problems (`ProblemState.done`): their last line under
+   * it the tutor can judge is its answer, right — the `12` ticked under `9 + 3`.
+   */
+  private problemDone(cell: ProblemCell): boolean {
+    const mine = Object.values(liveStore.lines.get()).filter((s) => this.columnHeads.get(s.line.column)?.key === cell.key && this.judgeable(s));
+    const last = mine.sort((a, b) => a.line.bounds.y + a.line.bounds.h - (b.line.bounds.y + b.line.bounds.h))[mine.length - 1];
+    return Boolean(last?.analysis?.solved) && !this.modelFlagged(last);
+  }
+
+  /**
+   * `state` is a line of the student's under one of the chat's problems, which they have answered
+   * (`problemDone`): Help me and Solve it are about the next problem, not this one again.
+   */
+  private onAnsweredProblem(state: LiveLineState | undefined): boolean {
+    const head = state ? this.columnHeads.get(state.line.column) : undefined;
+    return Boolean(head) && this.problemDone(head!);
+  }
+
+  /** The chat's problem the pen's last stroke is in (a cell key), whether or not that stroke is a line yet. */
+  private penCell(cells: readonly ProblemCell[]): string | null {
+    const shape = this.penStrokeId ? this.editor.getShape(this.penStrokeId as TLShapeId) : undefined;
+    const b = shape ? this.editor.getShapePageBounds(shape) : undefined;
+    return b ? (cellOf(boxToRect(b), cells)?.key ?? null) : null;
   }
 
   /** Which of the chat's problems an ask is about (`chat/work.ts`); null with none on this screen. */
@@ -3021,7 +3047,9 @@ export class LiveLoop implements LiveController {
     if (cells.length === 0) return null;
     const state = (c: ProblemCell) => this.problemState(c);
     const touched = this.targetProblem();
-    return depth === "solve" ? pickForSolve(cells, touched, state) : pickForStep(cells, touched, state);
+    // where the pen last wrote, for a problem answered: the next one is the one the student is on
+    const pen = this.picked() ? null : this.penCell(cells);
+    return depth === "solve" ? pickForSolve(cells, touched, state, pen) : pickForStep(cells, touched, state, pen);
   }
 
   /**
@@ -6825,8 +6853,9 @@ export class LiveLoop implements LiveController {
     const line = this.helpTargetLine();
     let column = line ? line.line.column : null;
     let cell: ProblemCell | null = null;
-    // a line still being read is the one Help waits for; one read that it cannot act on hands over to the chat's problems
-    if (cells.length > 0 && (!line || (line.analysis && !this.actsOn(line)))) {
+    // a line still being read is the one Help waits for; one read that it cannot act on, or the
+    // answer to a problem the student has finished, hands over to the chat's problems
+    if (cells.length > 0 && (!line || (line.analysis && (!this.actsOn(line) || this.onAnsweredProblem(line))))) {
       const pick = this.problemPick(this.opts.mode === "answer" ? "solve" : "step");
       if (pick && pick.kind !== "none") {
         const work = pick.kind === "student" ? this.workUnder(pick.cell) : null;
@@ -6883,7 +6912,9 @@ export class LiveLoop implements LiveController {
     let target = this.askedLine(lineId ? liveStore.lines.get()[lineId] : this.helpTargetLine());
     // The chat's problems: with no line of the student's to act on, Solve steps is about the current
     // problem — worked out under it; pressed again once it is, the next one (`chat/work.ts`).
-    if (!lineId && this.opts.enabled && this.opts.mode === "answer" && !this.actsOn(target)) {
+    // A problem the student has answered is not asked about again: the next one still to do is.
+    const answered = !lineId && this.onAnsweredProblem(target);
+    if (!lineId && this.opts.enabled && this.opts.mode === "answer" && (answered || !this.actsOn(target))) {
       const pick = this.problemPick("solve");
       // the tutor is writing the current problem's work already: that is the answer to this ask
       if (pick?.kind === "busy") return;
@@ -6895,6 +6926,7 @@ export class LiveLoop implements LiveController {
       // every problem worked out, and the last ink is a stray mark under one: nothing to do
       else if (pick && (!target || this.columnHeads.has(target.line.column))) return;
     }
+    if (answered && target && this.onAnsweredProblem(target)) return;
     if (!target || !target.latex) return;
     if (this.opts.mode !== "answer") {
       this.requestCheck(target.line.id);
@@ -7000,10 +7032,13 @@ export class LiveLoop implements LiveController {
     }
     // asked on the `x = 3` under `3x + 24 =` (or the lone `3` of an `x =` read apart): that line (`askedLine`)
     const target = this.askedLine(this.helpTargetLine());
-    // The chat's problems: with no line of the student's to help with, Help is about the current one.
-    if (!this.actsOn(target) && this.helpWithProblem(target)) return true;
-    // nothing on this screen to help with: the button says so
-    if (!target) return false;
+    // The chat's problems: with no line of the student's to help with, Help is about the current one
+    // — and after a right answer to one of them, about the next one still to do: never the answered
+    // one again (it asked the model to solve it, and showed "Solving…" for nothing).
+    const answered = this.onAnsweredProblem(target);
+    if ((answered || !this.actsOn(target)) && this.helpWithProblem(answered ? undefined : target)) return true;
+    // nothing on this screen to help with (every problem on it answered): the button says so
+    if (!target || answered) return false;
     if (needsLook(target)) {
       // No sentences on the board: ink the tutor cannot read as maths gets a "?" beside it
       // (write it again, larger or clearer) — not a model's paragraph about the picture.
