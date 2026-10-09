@@ -37,7 +37,6 @@ export const SpeakRequestSchema = z
       .trim()
       .min(1, "Nothing to say.")
       .max(SPEAK_MAX_CHARS, `At most ${SPEAK_MAX_CHARS} characters.`)
-      // eslint-disable-next-line no-control-regex
       .refine((t) => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(t), "Plain text only."),
   })
   .strict();
