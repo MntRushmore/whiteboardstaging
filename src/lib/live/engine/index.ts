@@ -76,6 +76,11 @@ function sameValueSet(values: readonly number[], solutions: readonly number[]): 
   return values.every((v) => solutions.some((s) => near(v, s))) && solutions.every((s) => values.some((v) => near(v, s)));
 }
 
+/** Two solutions the same, to 1e-6. */
+function nearRoot(x: number, y: number): boolean {
+  return Math.abs(x - y) <= 1e-6 * Math.max(1, Math.abs(x), Math.abs(y));
+}
+
 /** Notes attached to parsed chemical equations (the shape renders `Balanced…` notes as a secondary line). */
 export const CHEM_BALANCED_NOTE = "Balanced";
 export const CHEM_UNBALANCED_NOTE = "Count the atoms on each side";
@@ -1162,9 +1167,99 @@ export function createEngine(mod: MathModule): LiveEngine {
     return inherited && !a.domain && !SILENT_FOR_DOMAIN.has(a.kind) ? { ...a, domain: inherited } : a;
   };
 
+  /** A polynomial equation's real solutions, each once; null when it is not one or has a complex one. */
+  const polynomialRoots = (rel: Relation, variable: string): number[] | null => {
+    if (rel.op !== "==") return null;
+    const info = equationRoots(math, rel, variable);
+    if (!info.roots || info.identity || info.contradiction || info.degree === null || info.degree < 1) return null;
+    const out: number[] = [];
+    for (const r of info.roots) {
+      const n = rootToNumber(r);
+      if (n === null) return null;
+      if (!out.some((v) => nearRoot(v, n))) out.push(n);
+    }
+    return out;
+  };
+
+  /**
+   * `x = 7`, `-2 = x`, `x = 7 \quad x = 8`: answers, the unknown alone on one side of each and not on
+   * the other. Read from the line as written too: answers on one line are kept as the product they
+   * make (`(x - 7) * (x - 8) == 0`), which is also how the factored line above them reads.
+   */
+  const answerForm = (rel: Relation, latex: string, variable: string): boolean => {
+    const has = (side: string) => new RegExp(`(^|[^A-Za-z0-9_])${variable}($|[^A-Za-z0-9_])`).test(side);
+    const alone = (a: string, b: string) => a.replace(/[{}\s]/g, "") === variable && !has(b);
+    if (alone(rel.lhs.trim(), rel.rhs) || alone(rel.rhs.trim(), rel.lhs)) return true;
+    const pieces = latex.split(/\\q?quad|,|;|\\text\{\s*(?:or|and)\s*\}|\bor\b/).map((p) => p.trim()).filter(Boolean);
+    return pieces.length > 0 && pieces.every((piece) => {
+      const sides = piece.split("=");
+      return sides.length === 2 && (alone(sides[0], sides[1]) || alone(sides[1], sides[0]));
+    });
+  };
+
+  /**
+   * `(x - 7)(x - 8) = 0`, `x(x + 9) = 0`, `2(x - 1)(x + 3) = 0`: a product of two or more factors in
+   * the unknown, equal to 0, which the zero-product rule splits into one equation per factor.
+   */
+  const zeroProduct = (rel: Relation, variable: string): boolean => {
+    if (rel.op !== "==") return false;
+    const zero = (side: string) => /^\s*0\s*$/.test(side);
+    const side = zero(rel.rhs) ? rel.lhs : zero(rel.lhs) ? rel.rhs : null;
+    const node = side === null ? null : safeParse(math, side);
+    if (!node) return false;
+    const factors: MathNode[] = [];
+    const take = (n: MathNode): void => {
+      const inner = n.type === "ParenthesisNode" ? (n as unknown as { content: MathNode }).content : n;
+      const op = inner as unknown as { type: string; fn?: string; args?: MathNode[] };
+      if (op.type === "OperatorNode" && op.fn === "multiply" && op.args) op.args.forEach(take);
+      else factors.push(inner);
+    };
+    take(node);
+    const hasVariable = (n: MathNode) => n.filter((m) => m.type === "SymbolNode" && (m as unknown as { name: string }).name === variable).length > 0;
+    return factors.filter(hasVariable).length >= 2;
+  };
+
+  /**
+   * A line that keeps some of the solutions of a factored equation equal to 0 and adds none is one
+   * branch of the zero-product rule, and right: `x = 7` or `x - 7 = 0` under `(x - 7)(x - 8) = 0`,
+   * `x + 9 = 0` under `x(x + 9) = 0`. Judged as a rewrite it is a mismatch (it lost a solution), and
+   * a student who wrote `x = 7` and then `x = 8` beside it had both ringed (bug report 2026-10-09).
+   * Only a factored equation splits so: `x = 2` alone under `x^{2} = 4` still dropped a root, and a
+   * length's negative root is still wrong. The equation is the line above, or the one the line above
+   * or the lines beside it are branches of (`x = 8` under or beside `x = 7`). A line that follows
+   * from a branch carries it on (`x = -9` under `x + 9 = 0`). The problem is solved once the branches
+   * cover every solution with an answer.
+   */
+  const asBranch = (out: LineAnalysis, latex: string, ctx: AnalyzeContext): LineAnalysis => {
+    if (out.kind !== "equation" || !out.variable || out.note || out.domain) return out;
+    if (out.verdict !== "mismatch" && !(out.verdict === "ok" && ctx.previous?.branch)) return out;
+    const variable = out.variable;
+    const rel = relationFromAnalysis(math, out, variable);
+    const own = rel ? polynomialRoots(rel, variable) : null;
+    if (!rel || !own || own.length === 0) return out;
+    const branches = [ctx.previous, ...(ctx.beside ?? [])].flatMap((a) => (a?.branch && a.branch.variable === variable ? [a.branch] : []));
+    const parents: string[] = [];
+    if (out.verdict === "mismatch" && ctx.previous?.kind === "equation" && ctx.previous.variable === variable && ctx.previous.math) parents.push(ctx.previous.math);
+    for (const b of branches) if (!parents.includes(b.of)) parents.push(b.of);
+    for (const of of parents) {
+      const parent = parseRelation(math, of);
+      const all = parent && parent.variables.includes(variable) ? polynomialRoots(parent, variable) : null;
+      if (!parent || !zeroProduct(parent, variable) || !all || all.length < 2 || !own.every((v) => all.some((r) => nearRoot(v, r)))) continue;
+      const covers = [...own];
+      for (const b of branches) if (b.of === of) for (const v of b.covers) if (!covers.some((c) => nearRoot(c, v))) covers.push(v);
+      const complete = all.every((r) => covers.some((v) => nearRoot(v, r)));
+      const target = relationFromAnalysis(math, ctx.original, variable) ?? parent;
+      // solved by an answer (`x = -9`), not by the factor it comes from (`x + 9 = 0`)
+      const solved = out.solved === true || (complete && answerForm(rel, latex, variable) && isSolutionSet(math, target, variable, all));
+      return { ...out, verdict: "ok", solved, branch: { of, variable, covers } };
+    }
+    return out;
+  };
+
   const analyzeLine = (latex: string, ctx: AnalyzeContext): LineAnalysis => {
     try {
-      return analyzeInDomain(latex ?? "", ctx ?? { mode: "feedback" });
+      const context = ctx ?? { mode: "feedback" };
+      return asBranch(analyzeInDomain(latex ?? "", context), latex ?? "", context);
     } catch (e) {
       const out: LineAnalysis = { ...UNKNOWN, error: errorMessage(e) };
       if (e instanceof UnsupportedLatex) out.note = "";

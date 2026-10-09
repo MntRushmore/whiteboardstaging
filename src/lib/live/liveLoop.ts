@@ -2715,7 +2715,7 @@ export class LiveLoop implements LiveController {
       .sort((a, b) => a.line.row - b.line.row);
   }
 
-  private columnContext(state: LiveLineState): { previous?: LineAnalysis; original?: LineAnalysis; givens?: Record<string, string> } {
+  private columnContext(state: LiveLineState): { previous?: LineAnalysis; original?: LineAnalysis; givens?: Record<string, string>; beside?: LineAnalysis[] } {
     const col = this.columnLines(state.line.column);
     let previous: LineAnalysis | undefined;
     let original: LineAnalysis | undefined;
@@ -2741,7 +2741,10 @@ export class LiveLoop implements LiveController {
     // `3x + 24 =` over `x = 3` asks for 33
     const index = col.findIndex((s) => s.line.id === state.line.id);
     const givens = index === -1 ? undefined : givensFor(this.columnGivens(col), index);
-    return givens ? { previous, original, givens } : { previous, original };
+    // the lines beside it on its row: `x = 7` and `x = 8` under `(x - 7)(x - 8) = 0`, branches of one
+    // split, read each other's answers so the last one written solves the problem (`AnalyzeContext.beside`)
+    const beside = col.flatMap((s) => (s.line.row === state.line.row && s.line.id !== state.line.id && s.analysis && !isSlip(s.analysis) ? [s.analysis] : []));
+    return { previous, original, ...(givens ? { givens } : {}), ...(beside.length > 0 ? { beside } : {}) };
   }
 
   /** The values a column's lines give its letters (`givens.ts`), indexed as `col`. */

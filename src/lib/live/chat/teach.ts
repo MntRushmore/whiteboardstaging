@@ -906,7 +906,10 @@ function checkAnswer(
   const columnTicks = (): LineAnalysis["verdict"] | undefined => {
     if (ctx.column.length === 0) return undefined;
     try {
-      return analyzeColumn(engine, [...ctx.column, answer], "answer").pop()?.verdict;
+      const a = analyzeColumn(engine, [...ctx.column, answer], "answer").pop();
+      // one branch of a factored equation (`x = 2` under `(x - 2)(x - 3) = 0`) is right as a step,
+      // but an answer with a root missing is not the answer
+      return a?.branch && !a.solved ? "mismatch" : a?.verdict;
     } catch {
       return undefined;
     }

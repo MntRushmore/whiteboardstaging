@@ -231,6 +231,15 @@ export interface LineAnalysis {
    * working ends (`x^{2} - x - 6`, `33`).
    */
   nextStep?: string;
+  /**
+   * One branch of a split: the line keeps some of the solutions of the equation it comes from and
+   * adds none — `x = 7`, or `x - 7 = 0`, under `(x - 7)(x - 8) = 0` (the zero-product rule), `x = 2`
+   * under `x^{2} = 4`. Ticked, though not the line above rewritten. `of` is that equation (mathjs, as
+   * `math`), `covers` the solutions written so far down its branches: this one's, and those of the
+   * branch above it or beside it on its row. Solved once they are every one of them
+   * (`engine/index.ts`, `asBranch`).
+   */
+  branch?: { of: string; variable: string; covers: number[] };
 }
 /**
  * A domain in the measure the unknown is read in: radians for an angle (`0^{\circ}` → 0,
@@ -272,6 +281,12 @@ export interface AnalyzeContext {
    * (`LineAnalysis.substituted`). Absent: no line gives any.
    */
   givens?: Readonly<Record<string, string>>;
+  /**
+   * The lines written beside this one on its row (the loop's same column and row), as analysed:
+   * `x = 7` before `x = 8` under `(x - 7)(x - 8) = 0`. Branches of one split (`LineAnalysis.branch`)
+   * read each other's answers, so the last one written solves the problem. Absent: none.
+   */
+  beside?: readonly LineAnalysis[];
 }
 
 /**
