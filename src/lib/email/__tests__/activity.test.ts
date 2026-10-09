@@ -112,6 +112,26 @@ describe("the numbers", () => {
     expect(familyProgress({ learners: [learner()] }, SINCE, NOW)).toEqual([]);
   });
 
+  it("counts the account's own work alongside its kids', as 'practiced since the welcome' does", () => {
+    // Priya practises on the grown-up's login; her brother Leo, a kid profile, has not started
+    const priya = learner({ displayName: "Priya", attempts: [attempt("times_tables", "first_try", "2026-10-09T20:00:00Z")], practice: [day("2026-10-09")] });
+    const leo = learner({ userId: "k1", displayName: "Leo", isKid: true });
+    const family: FamilyActivity = { learners: [priya, leo] };
+    expect(practicedSinceOnboarding(family)).toBe(true);
+    expect(familyProgress(family, SINCE, NOW)).toEqual([{ name: "Priya", tried: 1, solved: 1, alone: 1, skills: ["Times tables"], streak: 0, practiceDays: 1 }]);
+    // the emails still name the kids
+    expect(learnerNames(family)).toEqual(["Leo"]);
+
+    // both at it: the kids first, then the account
+    const both: FamilyActivity = { learners: [priya, { ...leo, attempts: [attempt("long_division", "with_help")] }] };
+    expect(familyProgress(both, SINCE, NOW).map((p) => p.name)).toEqual(["Leo", "Priya"]);
+
+    // the account's welcome problem only (before the trial, before onboarding): neither counts it
+    const welcomeOnly: FamilyActivity = { learners: [learner({ attempts: [attempt("times_tables", "first_try", "2026-10-08T14:50:00Z")] }), leo] };
+    expect(practicedSinceOnboarding(welcomeOnly)).toBe(false);
+    expect(familyProgress(welcomeOnly, SINCE, NOW)).toEqual([]);
+  });
+
   it("knows whether anyone practiced since the welcome", () => {
     const onboarded = "2026-10-08T15:00:00Z";
     expect(practicedSinceOnboarding({ learners: [learner({ onboardedAt: onboarded, attempts: [attempt("times_tables", "first_try", "2026-10-08T14:50:00Z")] })] })).toBe(false); // the welcome's own problem

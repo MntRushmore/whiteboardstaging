@@ -5,8 +5,9 @@
  *
  *   first_practice   about a day in, when nobody in the family has practiced since the welcome:
  *                    "<Name>'s first practice is ready: 5 problems, about 10 minutes".
- *   trial_progress   on day 2 to 4, when the family has done something: what each child did
- *                    (problems solved, skills, Today's practice), before the card is charged.
+ *   trial_progress   on day 2 to 4, when the family has done something: what each child did, and
+ *                    the account itself when it was used too (problems solved, skills, Today's
+ *                    practice; activity.ts, familyProgress), before the card is charged.
  *
  * Why. Trials end Oct 9 to 15 with $0 MRR so far, and only 5 of 14 trial users came back a second
  * day. A family that never started needs a reason to open the app; a family that did needs to see

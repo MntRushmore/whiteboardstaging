@@ -173,6 +173,30 @@ describe("runTrialNudges", () => {
     expect(await runTrialNudges(quiet, testEnv(), { dryRun: false }, silentLog())).toMatchObject({ sent: 0, skipped: { quiet: 1 } });
   });
 
+  it("tells a family whose student practises on the grown-up's login what she did, though a kid profile has not started", async () => {
+    // Priya uses the account itself; Leo was added as a kid profile and has done nothing yet
+    const fam = busyFamily();
+    fam.learners[0].attempts = fam.learners[1].attempts;
+    fam.learners[0].practice = fam.learners[1].practice;
+    fam.learners[1].attempts = [];
+    fam.learners[1].practice = [];
+    // first practice: someone has practiced, so no nudge
+    const early = fakeDeps({ now: NOW, nudgeTrials: [trialAged(30)], activity: { [USER]: fam } });
+    expect(await runTrialNudges(early, testEnv(), { dryRun: false }, silentLog())).toMatchObject({ sent: 0, skipped: { practicing: 1 } });
+    // progress: what Priya did, rather than "quiet"
+    const later = fakeDeps({ now: NOW, nudgeTrials: [trialAged(80)], activity: { [USER]: fam } });
+    expect(await runTrialNudges(later, testEnv(), { dryRun: false }, silentLog())).toMatchObject({ sent: 1, skipped: { quiet: 0 } });
+    expect(later.sent[0].text).toContain("- Priya: 2 problems solved, 1 without help. Practiced: Times tables. Today's practice: done on 1 day.");
+    // and the "trial ends" reminder carries it too
+    const reminder = fakeDeps({
+      now: NOW,
+      trials: [{ subscriptionId: "sub_r", userId: USER, status: "trialing", trialEnd: inHours(60), cancelAtPeriodEnd: false, cancelAt: null, payerEmail: "parent@example.com" }],
+      activity: { [USER]: fam },
+    });
+    expect(await runTrialReminders(reminder, testEnv(), { dryRun: false }, silentLog())).toMatchObject({ sent: 1 });
+    expect(reminder.sent[0].text).toContain("Here's what Priya has done so far:");
+  });
+
   it("never reaches a kid address, a trial set to cancel, or one ending soon", async () => {
     const deps = fakeDeps({
       now: NOW,
