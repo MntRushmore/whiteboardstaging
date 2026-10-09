@@ -52,11 +52,20 @@ describe("a grade's path", () => {
     expect(view.homeCount).toBe("2 of 4 done");
   });
 
-  it("a skill mastered further on is done where it is; the next is still the first not mastered", () => {
+  it("a skill mastered further on is done where it is; the next is the first not mastered that the student has not already shown they can skip", () => {
     const view = buildPathView({ kind: "grade", grade: 3 }, levels({ multiply_by_tens: "mastered", times_tables: "almost" }));
-    expect(view.nodes.map((n) => n.state)).toEqual(["current", "upcoming", "upcoming", "done"]);
+    // 3-digit adding was never tried, but sits behind skills the student has reached: Times tables is next
+    expect(view.nodes.map((n) => n.state)).toEqual(["upcoming", "current", "upcoming", "done"]);
     expect(view.nodes.map((n) => n.stars)).toEqual([0, 2, 0, 3]);
     expect(view.mastered).toBe(1);
+    // with only practice further on, the first not mastered is still next
+    const early = buildPathView({ kind: "grade", grade: 3 }, levels({ times_tables: "practicing" }));
+    expect(early.currentIndex).toBe(0);
+  });
+
+  it("an Algebra 1 student Almost there on Two-step equations is not sent back to the pre-algebra review first", () => {
+    const view = buildPathView({ kind: "course", course: "algebra1" }, levels({ two_step_equations: "almost", inequalities: "practicing", multi_step_equations: "practicing" }));
+    expect(view.nodes[view.currentIndex].id).toBe("two_step_equations");
   });
 
   it("every skill mastered: no next, all done", () => {

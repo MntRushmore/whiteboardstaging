@@ -3,7 +3,7 @@
  * Apart from the planner so the card can name a set it did not plan (Continue, from this device's
  * note) without fetching every generator. Pure data lookups.
  */
-import { skillDef } from "@/lib/learning/contracts";
+import { skillDef, type MasteryLevel } from "@/lib/learning/contracts";
 import { isK8SkillId, K8_SKILLS } from "@/lib/learning/grades";
 import type { DailyReason } from "./contracts";
 
@@ -14,6 +14,8 @@ export interface PlanSkill {
   name: string;
   /** why its first problem is in the set; unknown for a set read back from a note */
   why?: DailyReason;
+  /** the student's level on it when the set was planned: "New" is said only of a `new` skill */
+  level?: MasteryLevel;
   problems: number;
 }
 

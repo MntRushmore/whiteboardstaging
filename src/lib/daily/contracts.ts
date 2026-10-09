@@ -48,7 +48,8 @@ export interface DailyRow {
   completedAt: string | null;
 }
 
-export type DayState = "done" | "started" | "missed" | "today" | "future";
+/** `before`: a day before the student's first Today's practice (a new student's week is not "missed"). */
+export type DayState = "done" | "started" | "missed" | "today" | "future" | "before";
 
 export interface DailyStreak {
   /** consecutive local days with the set completed, ending today or yesterday */

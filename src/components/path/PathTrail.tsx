@@ -13,7 +13,6 @@ import {
   FlaskConical,
   GraduationCap,
   Loader2,
-  Lock,
   Minus,
   Percent,
   Plus,
@@ -91,6 +90,7 @@ function Stop({ node, cell, walked, busy, onOpen }: { node: PathNode; cell: Retu
       data-link={cell.link ?? undefined}
       data-dir={cell.forward ? "forward" : "back"}
       data-walked={walked || undefined}
+      data-started={node.state === "upcoming" && node.level !== "new" ? "" : undefined}
       style={{ gridRow: cell.row + 1, gridColumn: cell.col + 1 }}
     >
       <button
@@ -114,11 +114,6 @@ function Stop({ node, cell, walked, busy, onOpen }: { node: PathNode; cell: Retu
             {node.state === "done" && (
               <span className={styles.badge} data-badge="done">
                 <Check size={12} strokeWidth={3.2} />
-              </span>
-            )}
-            {node.state === "upcoming" && (
-              <span className={styles.badge} data-badge="locked">
-                <Lock size={11} strokeWidth={2.6} />
               </span>
             )}
           </span>
@@ -164,7 +159,8 @@ type TrailItem = { kind: "stop"; node: PathNode; index: number } | { kind: "more
 /**
  * The trail: one row that scrolls sideways on a phone (the next stop in the middle), a snake on a
  * wider screen. Done stops are green with three stars, the next one is big and glowing with "Next
- * up", and the stops still to come look locked but open when tapped, like any other. With `oneRow`
+ * up", a skill already started further on has a coloured ring and its stars, and the stops not tried
+ * yet are quiet grey. None is locked: every stop opens its topic when tapped, so none looks it. With `oneRow`
  * (the home), a path too long for one row on a wide screen shows the part around the next stop and
  * a "+10" stop that opens the whole path on the Progress page.
  */
@@ -230,8 +226,8 @@ export function StarsKey() {
   );
 }
 
-/** Where a card sits: the home spaces it from what comes next; the Progress page's grid does that itself. */
-export type PathPlace = "home" | "progress";
+import type { PathPlace } from "./PathSkeleton";
+export { PathSkeleton, type PathPlace } from "./PathSkeleton";
 
 /** No grade and no high-school course yet: a friendly nudge to the account page's grade picker. */
 export function PickGrade({ place, kid = false }: { place: PathPlace; kid?: boolean }) {
@@ -256,16 +252,3 @@ export function PickGrade({ place, kid = false }: { place: PathPlace; kid?: bool
   );
 }
 
-/** Shaped like the card (a title and a row of stops), so nothing jumps when the path arrives. */
-export function PathSkeleton({ place }: { place: PathPlace }) {
-  return (
-    <div className={styles.card} data-place={place} data-skill-path="loading" role="status" aria-label={PATH_COPY.loading} aria-busy>
-      <div className={`${styles.skeletonTitle} ${styles.pulse}`} />
-      <div className={styles.skeletonRow}>
-        {[0, 1, 2, 3].map((i) => (
-          <span key={i} className={`${styles.skeletonDot} ${styles.pulse}`} />
-        ))}
-      </div>
-    </div>
-  );
-}

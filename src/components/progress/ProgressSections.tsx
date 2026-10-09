@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ChevronRight, Clock, Flame, HeartHandshake, Lightbulb, PencilLine, Star, ThumbsUp } from "lucide-react";
+import { CalendarCheck, ChevronRight, Clock, HeartHandshake, Lightbulb, PencilLine, Star, ThumbsUp } from "lucide-react";
 import type { SkillId } from "@/lib/learning/contracts";
 import { LEVEL_LABELS, PROGRESS_COPY, type MistakeView, type SkillGroup, type SkillView, type WeekTile } from "@/lib/learning/progressView";
 import { Badge, type BadgeTone } from "@/registry/components/badge/badge";
@@ -30,7 +30,8 @@ const TILE_ICONS: Record<WeekTile["key"], ReactNode> = {
   minutes: <Clock size={20} strokeWidth={1.9} />,
   problems: <PencilLine size={20} strokeWidth={1.9} />,
   independent: <ThumbsUp size={20} strokeWidth={1.9} />,
-  streak: <Flame size={20} strokeWidth={1.9} />,
+  // a calendar, not the home's flame: this counts days with any problem, the flame Today's practice sets
+  streak: <CalendarCheck size={20} strokeWidth={1.9} />,
 };
 
 /** Four big numbers: minutes, problems, solved on your own, and the day streak. */
@@ -137,6 +138,7 @@ function SkillCard({ skill, busy, canPractice, onPractice }: { skill: SkillView 
           <Button
             size="sm"
             variant="secondary"
+            className={styles.practice}
             onClick={() => onPractice(skill)}
             disabled={busy !== null && busy !== skill.skill}
             aria-busy={busy === skill.skill || undefined}

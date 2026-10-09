@@ -216,6 +216,12 @@
 .tile[data-tile="independent"] {
   --tile-color: var(--success);
 }
+/* a finger's tap: 44 px and up on a touch screen */
+@media (pointer: coarse) {
+  .practice.practice {
+    min-height: 44px;
+  }
+}
 .tile[data-tile="streak"] {
   --tile-color: oklch(60% 0.18 45);
 }

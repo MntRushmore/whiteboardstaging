@@ -17,6 +17,7 @@ import { COURSES } from "@/lib/onboarding/courses";
 import { isCoarseSkillId, SKILL_AREAS, SKILLS, type CoarseSkillId, type MasteryLevel, type SkillArea, type SkillId, type SkillProgress } from "./contracts";
 import { GRADE_IDS, gradeOfSkill, gradePath, isGrade, K8_SKILLS, type Grade } from "./grades";
 import { AREA_LABELS, LEVEL_LABELS } from "./progressView";
+import { nextStepIndex } from "@/lib/path/nextStep";
 
 // ------------------------------------------------------------------ which skills are topics
 
@@ -191,7 +192,9 @@ export interface UpNextChoice {
  */
 export function upNext(course: CourseId | null | undefined, levels: ReadonlyMap<string, MasteryLevel>, weakSkills: readonly string[] = [], grade?: Grade | null): UpNextChoice {
   const open = (id: TopicId) => levels.get(id) !== "mastered";
-  const nextId = nextOrder(course, grade).find(open) ?? null;
+  // the path's next step: past review the student has shown they can skip (`nextStepIndex`)
+  const order = nextOrder(course, grade);
+  const nextId = order[nextStepIndex(order.map((id) => levels.get(id) ?? "new"))] ?? null;
   const weakId = weakSkills.find((id): id is TopicId => isTopicId(id) && id !== nextId && open(id)) ?? null;
   return { next: nextId ? topicView(nextId, levels) : null, weakest: weakId ? topicView(weakId, levels) : null };
 }
@@ -333,6 +336,13 @@ export function topicBoardTitle(text: string): string {
 
 // ------------------------------------------------------------------ words
 
+/** The words box's example for a grade: K–2 "Adding", 3rd–5th "Times tables", older (or no grade) a test. */
+export function askPlaceholderFor(grade?: Grade | null): string {
+  const g = gradeOrNull(grade);
+  if (g === null || g >= 6) return TOPIC_COPY.askPlaceholder;
+  return g <= 2 ? TOPIC_COPY.askPlaceholderYoung : TOPIC_COPY.askPlaceholderMiddle;
+}
+
 /** How many problems a topic board writes after its worked example. */
 export const TOPIC_PROBLEMS = 4;
 
@@ -341,10 +351,13 @@ export const TOPIC_COPY = {
   weakest: "Keep at it",
   weakestHint: "Your trickiest topic lately",
   start: "Start",
-  practise: "Practise",
+  practise: "Practice",
   allDone: "You've mastered every topic. Pick any one to keep it fresh!",
   askTitle: "What do you want to work on?",
+  /** the box's example, by grade (`askPlaceholderFor`): a young kid's own words, a teen's test */
   askPlaceholder: "Fractions, or “test on quadratics Friday”",
+  askPlaceholderYoung: "Adding, or “take away”",
+  askPlaceholderMiddle: "Times tables, or “fractions”",
   askGo: "Go",
   /** under the box, when the words name one topic: it opens that topic's board */
   askTopic: (name: string) => `We'll start you on ${name}.`,

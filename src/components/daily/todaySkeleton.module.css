@@ -1,0 +1,101 @@
+/* Today's practice loading: the card's warm shape at the loaded card's height for each width (a
+   student mid-week with a streak and "In today's set": today.module.css), so the path, the topics
+   and the boards under it never move when it arrives. */
+
+.card {
+  --s-bar: oklch(90% 0.04 65 / 0.8);
+  position: relative;
+  display: grid;
+  min-height: 26.625rem; /* 426 px: a phone, the card in one column without its set */
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--space-5, 1.25rem);
+  margin-bottom: var(--space-6, 1.5rem);
+  padding: var(--space-5, 1.25rem);
+  box-sizing: border-box;
+  border: 1px solid oklch(89% 0.05 65);
+  border-radius: var(--radius-panel, 1.625rem);
+  background: linear-gradient(135deg, oklch(97.6% 0.035 92) 0%, oklch(95.6% 0.05 64) 55%, oklch(95.2% 0.045 22) 100%);
+}
+:global(:root[data-theme="dark"]) .card {
+  --s-bar: oklch(40% 0.03 60 / 0.8);
+  border-color: oklch(38% 0.05 52);
+  background: linear-gradient(135deg, oklch(29% 0.04 78) 0%, oklch(27% 0.05 48) 55%, oklch(26% 0.05 18) 100%);
+}
+@media (min-width: 640px) {
+  .card {
+    min-height: 36.8125rem; /* 589 px: one column, with the set */
+    padding: var(--space-6, 1.5rem) var(--space-6, 1.5rem) var(--space-6, 1.5rem) var(--space-8, 2rem);
+  }
+}
+@media (min-width: 900px) {
+  .card {
+    min-height: 26.25rem; /* 420 px: the button and the streak side by side, the set under them */
+    grid-template-columns: minmax(0, 1fr) minmax(17rem, 21rem);
+    gap: var(--space-5, 1.25rem) var(--space-8, 2rem);
+  }
+}
+@media (min-width: 1180px) {
+  .card {
+    min-height: 17.375rem; /* 278 px: all three in a row */
+    align-content: center;
+  }
+}
+
+.main {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3, 0.75rem);
+}
+.bar {
+  display: block;
+  height: 1rem;
+  border-radius: 0.5rem;
+  background: var(--s-bar);
+}
+.eyebrow {
+  width: 9rem;
+  height: 0.75rem;
+}
+.title {
+  width: min(14rem, 70%);
+  height: 2.25rem;
+}
+.sub {
+  width: 10rem;
+}
+.go {
+  display: block;
+  width: 100%;
+  height: 3.5rem;
+  margin-top: var(--space-4, 1rem);
+  border-radius: var(--radius-control, 1.125rem);
+  background: var(--s-bar);
+}
+@media (min-width: 640px) {
+  .go {
+    width: 11rem;
+  }
+}
+.panel {
+  display: block;
+  min-height: 8.5rem;
+  border-radius: 1.25rem;
+  background: oklch(100% 0 0 / 0.45);
+}
+:global(:root[data-theme="dark"]) .panel {
+  background: oklch(100% 0 0 / 0.06);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .bar,
+  .go,
+  .panel {
+    animation: today-skeleton-pulse 1.6s var(--ease-in-out, ease-in-out) infinite;
+  }
+}
+@keyframes today-skeleton-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}

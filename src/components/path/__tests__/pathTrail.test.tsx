@@ -26,12 +26,19 @@ describe("the trail", () => {
     expect(out.match(/aria-current="step"/g)?.length).toBe(1);
   });
 
-  it("done is marked done, the next says Next up, the rest look locked (and still open)", () => {
+  it("done is marked done, the next says Next up, the rest are still to come but never look locked (they open)", () => {
     expect(out).toMatch(/<li[^>]*data-state="done"[\s\S]*?data-badge="done"/);
     expect(out).toContain(`>${PATH_COPY.nextUp}<`);
     expect(out.match(/data-state="upcoming"/g)?.length).toBe(2);
-    expect(out.match(/data-badge="locked"/g)?.length).toBe(2);
+    expect(out).not.toContain("locked");
     expect(out).not.toMatch(/<button[^>]*disabled/);
+  });
+
+  it("a skill further on that the student has started looks started, not locked", () => {
+    const started = buildPathView({ kind: "grade", grade: 3 }, levels({ add_subtract_within_1000: "mastered", times_tables: "almost", division_facts: "practicing" }));
+    const markup = html(<PathTrail view={started} busy={null} onOpen={vi.fn()} />);
+    expect(markup).toMatch(/<li[^>]*data-state="upcoming"[^>]*data-started=""[^>]*>[\s\S]*?data-node="division_facts"/);
+    expect(markup.match(/data-started/g)?.length).toBe(1);
   });
 
   it("the trail is walked up to the next stop", () => {

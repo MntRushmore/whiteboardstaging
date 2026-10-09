@@ -17,8 +17,10 @@ import {
   displayNameError,
   normalizeDisplayName,
 } from "@/lib/billing/accountState";
+import { forgetFamily } from "@/lib/family/client";
 import { isKidEmail } from "@/lib/family/contracts";
 import { FAMILY_COPY } from "@/lib/family/copy";
+import { announceProfileChange } from "@/lib/profile/displayName";
 import { cn } from "@/lib/utils";
 
 type Profile = { display_name: string | null };
@@ -30,8 +32,11 @@ const PROFILE_MISSING = "Your profile isn't set up yet. Retry in a moment.";
  *
  * A kid profile (src/lib/family) sees neither: their address (`kid-<uuid>@kids.agathon.app`) is
  * nobody's sign-in, and their name is their grown-up's to change on the Family page, which writes it
- * to the profile and to the user metadata the app bar reads. Editing it here would write only the
- * profile, and the two names would drift. So a kid sees their name and who can change it.
+ * to the profile and to the user metadata. Editing it here would write only the profile, and the two
+ * names would drift. So a kid sees their name and who can change it.
+ *
+ * A saved name reaches the app bar's account menu at once (PROFILE_CHANGED_EVENT,
+ * src/lib/profile/displayName.ts) and the family switcher re-reads, so neither shows the old name.
  */
 export function ProfileCard({ userId, email }: { userId: string; email: string }) {
   const kid = isKidEmail(email);
@@ -85,8 +90,13 @@ export function ProfileCard({ userId, email }: { userId: string; email: string }
         .maybeSingle();
       if (error) throw error;
       if (!data) throw new Error(PROFILE_MISSING);
-      setSaved((data as Profile).display_name ?? null);
+      const name = (data as Profile).display_name ?? null;
+      setSaved(name);
       setEditing(false);
+      // the app bar's account menu takes the new name at once, and the family switcher re-reads
+      // (it shows the same name's initial), so the two never disagree
+      announceProfileChange({ userId, displayName: name });
+      forgetFamily();
     } catch (err) {
       console.warn("Display name not saved:", err);
       setSaveError(describeError(err, ACCOUNT_COPY.saveNameFallback));

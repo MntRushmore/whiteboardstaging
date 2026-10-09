@@ -18,21 +18,27 @@ export const TODAY_COPY = {
   progress: (done: number, goal: number) => `${done} of ${goal} done`,
   /** the set's skills, beside the big button */
   mixTitle: "In today's set",
-  why: { next: "New", weak: "Practice", review: "Warm-up" } as Record<string, string>,
+  /** why a skill is in the set: "next" reads "New" only for a skill the student has not tried yet */
+  why: { next: "Next up", weak: "Practice", review: "Warm-up" } as Record<string, string>,
+  whyNew: "New",
   /** done for the day */
   doneTitle: "You did it!",
   doneLine: "Come back tomorrow!",
-  more: "Practise more",
-  /** the streak's flame */
-  streak: (n: number) => (n === 1 ? "1 day in a row" : `${n} days in a row`),
+  more: "Practice more",
+  /**
+   * the streak's flame: days in a row with Today's practice FINISHED. Called a "streak" here and on
+   * the board's celebration, never "days in a row": the Progress page's "days of math in a row"
+   * counts any day with a problem (`streakWording`), a different number.
+   */
+  streak: (n: number) => `${n}-day practice streak`,
   /** the words beside the flame's big number */
-  streakUnit: (n: number) => (n === 1 ? "day in a row" : "days in a row"),
+  streakUnit: "day streak",
   streakNone: "Start a streak today!",
   best: (n: number) => `Best: ${n}`,
   weekLabel: "This week",
   /** a day dot, read out */
   dayLabel: (weekday: string, state: string) => `${weekday}: ${state}`,
-  dayStates: { done: "done", started: "started", missed: "not done", today: "today", future: "coming up" } as Record<string, string>,
+  dayStates: { done: "done", started: "started", missed: "not done", today: "today", future: "coming up", before: "before your first practice" } as Record<string, string>,
   /** the stars, read out */
   starsLabel: (stars: number, done: number, goal: number) => `${stars} ${stars === 1 ? "star" : "stars"}, ${done} of ${goal} done`,
   /** the board's name: "Today's practice · Thursday" */
@@ -51,13 +57,13 @@ export const DAILY_BOARD_COPY = {
   /** the celebration */
   title: "You did it!",
   /** beside a flame */
-  streak: (n: number) => (n >= 2 ? `${n} days in a row!` : "Day 1! Come back tomorrow."),
+  streak: (n: number) => (n >= 2 ? `${n}-day streak!` : "Day 1! Come back tomorrow."),
   stars: (stars: number, goal: number) => (stars >= goal ? "All stars! Amazing!" : `${stars} ${stars === 1 ? "star" : "stars"} today`),
   home: "Back home",
   keepGoing: "Keep going",
   close: "Close",
   /** read out when the goal is reached */
-  announce: (n: number) => (n >= 2 ? `You did it! ${n} days in a row.` : "You did it! Day 1 of your streak."),
+  announce: (n: number) => (n >= 2 ? `You did it! A ${n}-day streak.` : "You did it! Day 1 of your streak."),
   bonusToast: "3 more for you!",
   bonusFailed: "Couldn't write more problems. Try again in a moment.",
   /** the rest of a set whose writing was cut short */

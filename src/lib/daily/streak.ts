@@ -92,10 +92,14 @@ export function dailyStreak(rows: readonly DailyRow[], today: string): DailyStre
   }
   best = Math.max(best, current);
 
+  // a day before the student's first set (a new student, or one from before Today's practice) is
+  // not a missed one: missing starts counting from their first set, today for someone with none yet
+  const first = [...days.keys()].filter((d) => d <= today).sort()[0] ?? today;
   const monday = mondayOf(today);
   const week = Array.from({ length: 7 }, (_, i) => {
     const day = addDays(monday, i);
-    return { day, state: dayState(day, today, days.get(day)) };
+    const row = days.get(day);
+    return { day, state: day < first && !row ? ("before" as const) : dayState(day, today, row) };
   });
 
   return { current, best, todayDone, week };
