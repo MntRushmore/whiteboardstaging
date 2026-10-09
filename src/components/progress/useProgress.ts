@@ -8,7 +8,8 @@ import { describeError } from "@/lib/errorMessage";
 import { clientMetric } from "@/lib/logger";
 import { reportUserError } from "@/lib/reportAppError";
 import { DEFAULT_BOARD_TITLE } from "@/lib/boards/boardTitle";
-import { isCourseId, type CourseId } from "@/lib/onboarding/courseIds";
+import type { CourseId } from "@/lib/onboarding/courseIds";
+import { readLearnerProfile } from "@/lib/learning/profile";
 import { asOnboardingClient, createFirstBoard } from "@/lib/onboarding/storage";
 import type { AttemptRecord, LearningSummary, SkillId } from "@/lib/learning/contracts";
 import { hasPractice, practiceProblems } from "@/lib/learning/practiceSet";
@@ -44,19 +45,7 @@ export type ProgressData =
  * The course and display name, as the account page reads its profile (the owner's select policy).
  * Never fails the page: without them the title has no course and the paragraph no name.
  */
-async function readProfile(userId: string): Promise<ProgressProfile> {
-  try {
-    const { data, error } = await supabase.from("profiles").select("display_name, course").eq("user_id", userId).maybeSingle();
-    if (error || !data) return { course: null, displayName: null };
-    const row = data as { display_name?: unknown; course?: unknown };
-    return {
-      course: isCourseId(row.course) ? row.course : null,
-      displayName: typeof row.display_name === "string" ? row.display_name : null,
-    };
-  } catch {
-    return { course: null, displayName: null };
-  }
-}
+const readProfile = (userId: string): Promise<ProgressProfile> => readLearnerProfile(userId);
 
 /** The record and profile, summarized in the browser's time zone. Never throws. */
 async function fetchProgress(userId: string): Promise<ProgressData> {

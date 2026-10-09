@@ -5,7 +5,7 @@
  * `variantOf` ("Now you try"), which checks candidates with the engine, stays in `practice.ts`.
  */
 import type { PracticeProblem, SkillId } from "./contracts";
-import { drawProblems, formsFor } from "./generators";
+import { drawLadder, drawProblems, formsFor } from "./generators";
 
 /** True when `practiceProblems` can make problems for this skill. */
 export function hasPractice(skill: string): boolean {
@@ -23,5 +23,27 @@ export function practiceProblems(skill: SkillId, count: number, seed: number): P
     return drawProblems(skill, count, seed);
   } catch {
     return [];
+  }
+}
+
+/** A topic board's problems: a worked example to show first, then the problems, easy to hard. */
+export interface TopicSet {
+  skill: SkillId;
+  /** easy to hard: the first is like the worked example, the last the hardest the skill has */
+  problems: PracticeProblem[];
+  /** worked-example candidates, easiest first (the board works the first its engine solves) */
+  examples: PracticeProblem[];
+}
+
+/**
+ * A topic's set (`generators/ladder.ts`): free and instant like `practiceProblems`, clean by
+ * construction. Empty problems when the skill has no generator.
+ */
+export function topicSet(skill: SkillId, count: number, seed: number): TopicSet {
+  try {
+    const ladder = drawLadder(skill, count, seed);
+    return { skill, problems: ladder.problems, examples: ladder.examples };
+  } catch {
+    return { skill, problems: [], examples: [] };
   }
 }
