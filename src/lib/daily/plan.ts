@@ -45,6 +45,8 @@ export interface DailyPlanInput {
   weakSkills: readonly string[];
   /** problems in the set; DAILY_GOAL */
   goal?: number;
+  /** another set for the same day ("Practise more"): any words, mixed into the seed */
+  salt?: string;
 }
 
 /** How many of each reason a full set has (they add up to DAILY_GOAL). */
@@ -99,9 +101,9 @@ function standInOf(skill: string): string | undefined {
   return Object.prototype.hasOwnProperty.call(STAND_INS, skill) ? (STAND_INS as Readonly<Record<string, string>>)[skill] : undefined;
 }
 
-/** The seed of a student's day: the same student on the same day draws the same set. */
-export function dailySeed(userId: string, day: string): number {
-  return hashText(`daily:${userId}:${day}`);
+/** The seed of a student's day: the same student on the same day draws the same set (a `salt`, another one). */
+export function dailySeed(userId: string, day: string, salt?: string): number {
+  return hashText(salt ? `daily:${userId}:${day}:${salt}` : `daily:${userId}:${day}`);
 }
 
 /** The skill whose generator draws `skill`'s problems: itself, its stand-in, or null (none can). */
@@ -185,7 +187,7 @@ function allocate(input: DailyPlanInput, goal: number): Slot[] {
   const { levels } = input;
   const path = input.path.length > 0 ? input.path : FALLBACK_PATH;
   const all = picksOf(path, levels);
-  const seed = dailySeed(input.userId, input.day);
+  const seed = dailySeed(input.userId, input.day, input.salt);
 
   const brandNew = input.weakSkills.length === 0 && ![...levels.values()].some((l) => l !== "new");
   if (brandNew) {
@@ -249,7 +251,7 @@ interface Drawn extends DailyProblem {
  */
 export function planDailySet(input: DailyPlanInput): DailyPlan {
   const goal = Math.max(1, Math.min(20, Math.floor(typeof input.goal === "number" && Number.isFinite(input.goal) ? input.goal : DAILY_GOAL)));
-  const seed = dailySeed(input.userId, input.day);
+  const seed = dailySeed(input.userId, input.day, input.salt);
   const ladders = new Map<string, string[][]>();
   const ladderOf = (draw: string): string[][] => {
     let ladder = ladders.get(draw);

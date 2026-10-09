@@ -1,0 +1,298 @@
+/* Today's practice on the board: the progress pill and the celebration. The board loads no Arc
+   foundation (it is light), so every colour here is its own, matching the home card's warm palette.
+   The pill lets every touch through; the celebration takes taps only on its card. Motion is off
+   under prefers-reduced-motion. */
+
+.pill,
+.overlay {
+  --b-fg: #1c1c1c;
+  --b-secondary: #5e5e5e;
+  --b-gold: oklch(83% 0.16 85);
+  --b-gold-edge: oklch(68% 0.16 68);
+  --b-gold-soft: oklch(92% 0.07 88);
+  --b-empty: oklch(80% 0.03 70);
+  --b-hot-from: oklch(70% 0.19 55);
+  --b-hot-to: oklch(60% 0.215 27);
+  --b-hot-shadow: oklch(60% 0.2 35 / 0.45);
+  --b-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ---- the pill -------------------------------------------------------------------------------- */
+.pill {
+  position: absolute;
+  /* under the board's bar (1000), over the canvas */
+  z-index: 990;
+  display: inline-flex;
+  height: 36px;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 10px;
+  border: 1px solid oklch(90% 0.05 70);
+  border-radius: 999px;
+  background: linear-gradient(135deg, oklch(98.5% 0.025 90 / 0.94), oklch(97% 0.035 50 / 0.94));
+  box-shadow:
+    0 6px 16px -8px oklch(50% 0.1 50 / 0.35),
+    0 1px 2px oklch(40% 0.05 50 / 0.1);
+  color: var(--b-fg);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+.pill[data-complete] {
+  border-color: oklch(85% 0.1 80);
+  background: linear-gradient(135deg, oklch(96% 0.07 92 / 0.96), oklch(93% 0.08 70 / 0.96));
+}
+.count {
+  font-variant-numeric: tabular-nums;
+}
+.extra {
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--b-hot-from), var(--b-hot-to));
+  color: #fff;
+  font-size: 12px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pill {
+    animation: daily-pill-in 420ms var(--b-ease) both;
+  }
+}
+@keyframes daily-pill-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+}
+
+/* the stars, in the pill and the celebration */
+.stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.star {
+  display: grid;
+  place-items: center;
+  color: var(--b-empty);
+  line-height: 0;
+}
+.star svg {
+  fill: transparent;
+  stroke: currentColor;
+}
+.star[data-star="star"],
+.star[data-star="done"] {
+  color: var(--b-gold-edge);
+}
+.star[data-star="star"] svg {
+  fill: var(--b-gold);
+}
+.star[data-star="done"] svg {
+  fill: var(--b-gold-soft);
+}
+@media (prefers-reduced-motion: no-preference) {
+  /* a star that fills pops (the attribute change starts the animation) */
+  .star[data-star="star"],
+  .star[data-star="done"] {
+    animation: daily-star-pop 560ms var(--b-ease) both;
+  }
+  .celebrate .star {
+    animation-delay: calc(var(--i, 0) * 90ms + 250ms);
+  }
+}
+@keyframes daily-star-pop {
+  0% {
+    transform: scale(0.3) rotate(-30deg);
+    opacity: 0;
+  }
+  55% {
+    transform: scale(1.35) rotate(8deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0);
+  }
+}
+
+/* ---- the celebration --------------------------------------------------------------------------- */
+.overlay {
+  position: absolute;
+  z-index: 1100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  pointer-events: none;
+}
+.confetti {
+  left: 50%;
+  top: 42%;
+  z-index: 1;
+}
+.celebrate {
+  position: relative;
+  display: flex;
+  width: min(100%, 360px);
+  box-sizing: border-box;
+  flex-direction: column;
+  align-items: center;
+  padding: 28px 24px 22px;
+  border: 1px solid oklch(89% 0.05 65);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 50% -10%, oklch(93% 0.12 88 / 0.9), transparent 55%),
+    linear-gradient(160deg, oklch(98% 0.03 92), oklch(96% 0.045 60) 60%, oklch(95.5% 0.04 25));
+  box-shadow:
+    0 30px 60px -24px oklch(40% 0.1 40 / 0.45),
+    0 2px 6px oklch(40% 0.05 40 / 0.12);
+  color: var(--b-fg);
+  text-align: center;
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .celebrate {
+    animation: daily-celebrate-in 560ms var(--b-ease) both;
+  }
+  .badge svg {
+    animation: daily-badge-spin 900ms var(--b-ease) 120ms both;
+  }
+}
+@keyframes daily-celebrate-in {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.86);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.02);
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes daily-badge-spin {
+  from {
+    transform: scale(0.2) rotate(-160deg);
+  }
+}
+.close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--b-secondary);
+  cursor: pointer;
+}
+.close:hover {
+  background: oklch(0% 0 0 / 0.05);
+}
+.badge {
+  display: grid;
+  width: 76px;
+  height: 76px;
+  place-items: center;
+  border-radius: 999px;
+  background: linear-gradient(160deg, oklch(86% 0.15 88), var(--b-hot-from) 60%, var(--b-hot-to));
+  box-shadow:
+    0 14px 26px -12px var(--b-hot-shadow),
+    inset 0 2px 0 oklch(100% 0 0 / 0.35);
+  color: #fff;
+}
+.badge svg {
+  fill: #fff;
+}
+.title {
+  margin: 14px 0 0;
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.streakLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 14px;
+  font-size: 18px;
+  font-weight: 700;
+}
+.flame {
+  color: oklch(64% 0.21 38);
+  fill: oklch(80% 0.16 75);
+}
+.starsLine {
+  margin: 8px 0 0;
+  color: var(--b-secondary);
+  font-size: 15px;
+  font-weight: 600;
+}
+.actions {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  margin-top: 20px;
+}
+.home,
+.keep {
+  display: inline-flex;
+  min-height: 52px;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.home {
+  border: 1px solid oklch(85% 0.03 60);
+  background: oklch(100% 0 0 / 0.75);
+  color: var(--b-fg);
+}
+.keep {
+  border: 0;
+  background: linear-gradient(135deg, var(--b-hot-from), var(--b-hot-to));
+  box-shadow: 0 10px 20px -10px var(--b-hot-shadow);
+  color: #fff;
+}
+.keep:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+.home:focus-visible,
+.keep:focus-visible,
+.close:focus-visible {
+  outline: 3px solid oklch(62% 0.2 35 / 0.55);
+  outline-offset: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .home:hover {
+    background: #fff;
+  }
+  .keep:hover:not(:disabled) {
+    filter: brightness(1.06);
+  }
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

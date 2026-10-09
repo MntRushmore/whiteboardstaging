@@ -20,6 +20,8 @@ export const TODAY_COPY = {
   more: "Practise more",
   /** the streak's flame */
   streak: (n: number) => (n === 1 ? "1 day in a row" : `${n} days in a row`),
+  /** the words beside the flame's big number */
+  streakUnit: (n: number) => (n === 1 ? "day in a row" : "days in a row"),
   streakNone: "Start a streak today!",
   best: (n: number) => `Best: ${n}`,
   weekLabel: "This week",
@@ -43,7 +45,8 @@ export const DAILY_BOARD_COPY = {
   extra: (n: number) => `+${n}`,
   /** the celebration */
   title: "You did it!",
-  streak: (n: number) => (n >= 2 ? `🔥 ${n} days in a row` : "🔥 Day 1! Come back tomorrow."),
+  /** beside a flame */
+  streak: (n: number) => (n >= 2 ? `${n} days in a row!` : "Day 1! Come back tomorrow."),
   stars: (stars: number, goal: number) => (stars >= goal ? "All stars! Amazing!" : `${stars} ${stars === 1 ? "star" : "stars"} today`),
   home: "Back home",
   keepGoing: "Keep going",
