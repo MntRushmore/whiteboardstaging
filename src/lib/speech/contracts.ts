@@ -36,6 +36,22 @@ export const SPEAK_RATE_LIMITS = {
 } as const;
 
 /**
+ * The ElevenLabs voice for everyone together, in characters a day (UTC): the backstop on the shared
+ * key's bill however many accounts there are (`GLOBAL_BUDGETS.liveSpeakChars` in
+ * src/lib/server/rate-limit.ts). About 2,000 hints of 100 characters, 100,000 Flash credits; past it
+ * every student hears the browser's voice until the day turns. Raise it with the ElevenLabs plan.
+ */
+export const SPEAK_GLOBAL_BUDGET = { limit: 200_000, windowMs: 86_400_000 } as const;
+
+/**
+ * Who hears the ElevenLabs voice (POST /api/live/speak): an account with Agathon Unlimited (a kid
+ * through their grown-up's plan), or one on its guided first board: starter ink left, granted at
+ * most this long ago. Starter ink is never spent by the voice, so without the window an account
+ * that never starts a plan would keep it for good. Everyone else hears the browser's voice.
+ */
+export const SPEAK_STARTER_WINDOW_MS = 2 * 86_400_000;
+
+/**
  * Window event when the device setting changes (`detail`: "on" | "off"), so the board's watcher
  * starts or stops without polling and the menu's checkbox follows a change made elsewhere.
  */

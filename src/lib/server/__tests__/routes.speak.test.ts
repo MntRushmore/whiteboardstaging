@@ -1,9 +1,11 @@
 /**
  * POST /api/live/speak (read aloud), driven through its real handler with fakes for supabase-js
- * (auth + the rate-limit RPC), app events and `fetch` (ElevenLabs). The contract: 401 before
- * anything, 429 from the minute budget and from the day's cap, zod 400, 503 `feature_unavailable`
- * without a key (and for a key ElevenLabs refuses, recorded for /admin), never charged, the text
- * made speakable before it leaves, `audio/mpeg` streamed back with X-Request-Id, and a 502 on an
+ * (auth, the rate-limit RPC, ink_summary, the global budget's RPC), app events and `fetch`
+ * (ElevenLabs). The contract: 401 before anything, 429 from the minute budget and from the day's
+ * cap, zod 400, 503 `feature_unavailable` without a key (and for a key ElevenLabs refuses, recorded
+ * for /admin), for an account without a plan past its guided first board, when that check fails,
+ * and once the day's characters for everyone are spent (recorded), never charged, the text made
+ * speakable before it leaves, `audio/mpeg` streamed back with X-Request-Id, and a 502 on an
  * ElevenLabs failure (recorded).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,7 +38,7 @@ vi.mock("@/lib/server/events", () => ({ recordEvent: vi.fn(), recordEventNow: vi
 
 import { resetServerEnvCache } from "@/lib/env";
 import { logger } from "@/lib/logger";
-import { SPEAK_MAX_CHARS, SPEAK_RATE_LIMITS } from "@/lib/speech/contracts";
+import { SPEAK_GLOBAL_BUDGET, SPEAK_MAX_CHARS, SPEAK_RATE_LIMITS, SPEAK_STARTER_WINDOW_MS } from "@/lib/speech/contracts";
 import { TTS } from "@/lib/speech/tts";
 import { recordEvent } from "@/lib/server/events";
 import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rate-limit";
@@ -61,6 +63,24 @@ const audioReply = () => fetchMock.mockResolvedValueOnce(new Response(MP3, { sta
 const upstream = (status: number, body: unknown) => fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }));
 const sentBody = () => JSON.parse(String(fetchMock.mock.calls[0][1]?.body)) as { text: string; model_id: string };
 const events = () => vi.mocked(recordEvent).mock.calls.map(([e]) => e);
+const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+
+/** ink_summary()'s payload: a paying account by default (its starter ink long spent). */
+function inkSummary(over: Record<string, unknown> = {}) {
+  return {
+    balance: 0,
+    granted: 100,
+    purchased: 0,
+    refunded: 0,
+    used: 100,
+    starter: 100,
+    starter_at: hoursAgo(24 * 30),
+    purchases: 0,
+    last_purchase: null,
+    unlimited: { status: "active", unlimited: true, trial_end: null, current_period_end: null, cancel_at_period_end: false, cancel_at: null, repeat_trial: false },
+    ...over,
+  };
+}
 
 beforeEach(() => {
   for (const name of ENV_VARS) {
@@ -78,6 +98,8 @@ beforeEach(() => {
   fake.calls.length = 0;
   for (const k of Object.keys(fake.replies)) delete fake.replies[k];
   fake.replies.rate_limit_hit = () => ({ data: { allowed: true, remaining: 5, retry_after_ms: 0, backend: "db" } });
+  fake.replies.ink_summary = () => ({ data: inkSummary() });
+  fake.replies.global_budget_spend = () => ({ data: { allowed: true, remaining: 1_000, retry_after_ms: 0, backend: "db" } });
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
   vi.mocked(recordEvent).mockReset();
@@ -230,5 +252,93 @@ describe("POST /api/live/speak", () => {
     const res = await speak(request({ text: "$$ {} $$" }));
     expect(res.status).toBe(400);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/live/speak: who hears the ElevenLabs voice", () => {
+  const unavailableAndSilent = async (res: Response) => {
+    expect(res.status).toBe(503);
+    expect(((await res.json()) as { error: string }).error).toBe("feature_unavailable");
+    expect(fetchMock).not.toHaveBeenCalled();
+  };
+
+  it("a plan hears it: ink_summary read as the user, after the caps and before ElevenLabs", async () => {
+    audioReply();
+    const res = await speak(request({ text: "Hello" }));
+    expect(res.status).toBe(200);
+    expect(fake.calls.map((c) => c.fn)).toEqual(["rate_limit_hit", "rate_limit_hit", "ink_summary", "global_budget_spend"]);
+  });
+
+  it.each(["trialing", "past_due", "incomplete"])("a plan that is %s hears it too (a kid's comes from their grown-up's, through plan_owner_of)", async (status) => {
+    fake.replies.ink_summary = () => ({ data: inkSummary({ unlimited: { status, unlimited: status === "trialing" } }) });
+    audioReply();
+    expect((await speak(request({ text: "Hello" }))).status).toBe(200);
+  });
+
+  it("no plan and no starter ink: 503, so the browser's voice; nothing sent", async () => {
+    fake.replies.ink_summary = () => ({ data: inkSummary({ unlimited: { status: "none", unlimited: false } }) });
+    await unavailableAndSilent(await speak(request({ text: "Hello" })));
+    expect(callsTo("global_budget_spend")).toEqual([]);
+  });
+
+  it("a cancelled plan: 503", async () => {
+    fake.replies.ink_summary = () => ({ data: inkSummary({ balance: 40, unlimited: { status: "canceled", unlimited: false } }) });
+    await unavailableAndSilent(await speak(request({ text: "Hello" })));
+  });
+
+  it("the guided first board keeps its voice: starter ink left, granted lately", async () => {
+    fake.replies.ink_summary = () => ({ data: inkSummary({ balance: 60, starter_at: hoursAgo(3), unlimited: { status: "none", unlimited: false } }) });
+    audioReply();
+    expect((await speak(request({ text: "Grab the pen. Write a line of maths." }))).status).toBe(200);
+  });
+
+  it("starter ink alone, long after sign-up, is not a free voice for good", async () => {
+    const old = new Date(Date.now() - SPEAK_STARTER_WINDOW_MS - 3_600_000).toISOString();
+    fake.replies.ink_summary = () => ({ data: inkSummary({ balance: 100, starter_at: old, unlimited: { status: "none", unlimited: false } }) });
+    await unavailableAndSilent(await speak(request({ text: "Hello" })));
+    // ink from a pack, with no starter grant on record, is no guided board either
+    fetchMock.mockReset();
+    fake.replies.ink_summary = () => ({ data: inkSummary({ balance: 900, starter_at: null, unlimited: { status: "none", unlimited: false } }) });
+    await unavailableAndSilent(await speak(request({ text: "Hello" })));
+  });
+
+  it("the check failing is a 503 too, never a free voice: an error, a throw, a payload it cannot read", async () => {
+    fake.replies.ink_summary = () => ({ error: { message: "connection refused" } });
+    await unavailableAndSilent(await speak(request({ text: "Hello" })));
+    fake.replies.ink_summary = () => new Error("socket hang up");
+    await unavailableAndSilent(await speak(request({ text: "Hello" })));
+    fake.replies.ink_summary = () => ({ data: { balance: "lots" } });
+    await unavailableAndSilent(await speak(request({ text: "Hello" })));
+  });
+
+  it("BILLING_ENFORCE=0: no plan check at all", async () => {
+    process.env.BILLING_ENFORCE = "0";
+    resetServerEnvCache();
+    fake.replies.ink_summary = () => ({ data: inkSummary({ unlimited: { status: "none" } }) });
+    audioReply();
+    expect((await speak(request({ text: "Hello" }))).status).toBe(200);
+    expect(callsTo("ink_summary")).toEqual([]);
+  });
+
+  it("the day's characters for everyone together: the spoken words are counted, and once spent it is a 503, recorded", async () => {
+    audioReply();
+    await speak(request({ text: "Try \\frac{3}{4}." }));
+    expect(callsTo("global_budget_spend")[0].args).toEqual({
+      p_bucket: "liveSpeakChars",
+      p_amount: "Try three quarters.".length,
+      p_limit: SPEAK_GLOBAL_BUDGET.limit,
+      p_window_ms: SPEAK_GLOBAL_BUDGET.windowMs,
+    });
+
+    fetchMock.mockReset();
+    fake.replies.global_budget_spend = () => ({ data: { allowed: false, remaining: 0, retry_after_ms: 3_600_000, backend: "db" } });
+    await unavailableAndSilent(await speak(request({ text: "Hello" })));
+    expect(events()).toEqual([expect.objectContaining({ kind: "route.live.speak", code: "budget", level: "error" })]);
+  });
+
+  it("the budget still holds without its RPC (a database without the migration): counted on this instance", async () => {
+    fake.replies.global_budget_spend = () => ({ error: { message: "Could not find the function public.global_budget_spend" } });
+    audioReply();
+    expect((await speak(request({ text: "Hello" }))).status).toBe(200);
   });
 });

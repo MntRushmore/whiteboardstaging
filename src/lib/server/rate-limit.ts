@@ -16,13 +16,16 @@
  *    budget holds across every instance. When the RPC is missing or errors the call falls
  *    back to the in-memory limiter (logged once per process) — a degraded limiter, never an
  *    open gate. `RATE_LIMIT_BACKEND=memory` skips the database entirely.
+ *
+ * And one budget for everyone together, `spendGlobalBudget` (below): units a call spends (read
+ * aloud's characters), counted for the whole app rather than per user.
  */
 
 import { LIVE_RATE_LIMITS } from "@/lib/live/contracts";
-import { SPEAK_RATE_LIMITS } from "@/lib/speech/contracts";
+import { SPEAK_GLOBAL_BUDGET, SPEAK_RATE_LIMITS } from "@/lib/speech/contracts";
 import { getRateLimitBackend, type RateLimitBackend } from "@/lib/env";
 import { logger } from "@/lib/logger";
-import { userClient, type RpcClient } from "@/lib/server/billing";
+import { serviceClient, userClient, type RpcClient } from "@/lib/server/billing";
 
 export type RateLimitOptions = { limit: number; windowMs: number };
 
@@ -218,6 +221,72 @@ export async function checkRateLimitDistributed(input: DistributedRateLimitInput
 /** Tests only: forget that the fallback warning was already logged. */
 export function resetRateLimitFallbackWarning(): void {
   warnedFallback = false;
+  warnedBudgetFallback = false;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Budgets for everyone together                                              */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Budgets for the whole app, in units each call spends: a ceiling on a shared account's bill
+ * however many accounts call. `liveSpeakChars`: the characters read aloud sends to ElevenLabs in a
+ * day (SPEAK_GLOBAL_BUDGET).
+ */
+export const GLOBAL_BUDGETS = {
+  liveSpeakChars: SPEAK_GLOBAL_BUDGET,
+} as const satisfies Record<string, RateLimitOptions>;
+
+export type GlobalBudget = keyof typeof GLOBAL_BUDGETS;
+
+/**
+ * `global_budget_spend(p_bucket, p_amount, p_limit, p_window_ms)`, SECURITY DEFINER, the service
+ * role only (supabase/migrations/20261009140000_global_budget.sql): adds the units to one fixed
+ * window in rate_limit_counters for the whole app and answers like `rate_limit_hit`.
+ */
+export const GLOBAL_BUDGET_RPC = "global_budget_spend";
+
+let warnedBudgetFallback = false;
+// bucket -> this instance's own count of the current fixed window (the fallback)
+const budgetWindows = new Map<string, { start: number; used: number }>();
+
+function memoryBudget(bucket: GlobalBudget, units: number, { limit, windowMs }: RateLimitOptions, reason: string | null): DistributedRateLimitResult {
+  if (reason !== null && !warnedBudgetFallback) {
+    warnedBudgetFallback = true;
+    rateLimitLogger.warn({ bucket, error: reason }, "global_budget_spend unavailable; counting the budget per instance for this process");
+  }
+  const now = Date.now();
+  const start = now - (now % windowMs);
+  let w = budgetWindows.get(bucket);
+  if (!w || w.start !== start) {
+    w = { start, used: 0 };
+    budgetWindows.set(bucket, w);
+  }
+  w.used += units;
+  const ok = w.used <= limit;
+  return { ok, remaining: Math.max(0, limit - w.used), retryAfterMs: ok ? 0 : Math.max(1, start + windowMs - now), backend: "memory" };
+}
+
+/**
+ * Spends `amount` units of a budget for everyone together; `ok: false` once the window's units are
+ * spent (they count even then: the day stays spent). Across every instance through the service
+ * role; without SUPABASE_SERVICE_ROLE_KEY, with `RATE_LIMIT_BACKEND=memory`, or when the RPC fails
+ * (a database without the migration), each instance keeps the budget itself, logged once: a looser
+ * ceiling, never none. Never throws.
+ */
+export async function spendGlobalBudget(bucket: GlobalBudget, amount: number, client?: RpcClient | null): Promise<DistributedRateLimitResult> {
+  const cfg = GLOBAL_BUDGETS[bucket];
+  const units = Math.max(1, Math.round(amount));
+  if (getRateLimitBackend() === "memory") return memoryBudget(bucket, units, cfg, null);
+  try {
+    const rpcClient = client === undefined ? serviceClient() : client;
+    if (!rpcClient) return memoryBudget(bucket, units, cfg, "no SUPABASE_SERVICE_ROLE_KEY");
+    const { data, error } = await rpcClient.rpc(GLOBAL_BUDGET_RPC, { p_bucket: bucket, p_amount: units, p_limit: cfg.limit, p_window_ms: cfg.windowMs });
+    if (error) return memoryBudget(bucket, units, cfg, `global_budget_spend failed: ${error.message}`);
+    return normalizeRateLimitHit(data, cfg) ?? memoryBudget(bucket, units, cfg, "global_budget_spend returned an unexpected shape");
+  } catch (err) {
+    return memoryBudget(bucket, units, cfg, `global_budget_spend threw: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 /* ------------------------------------------------------------------------- */
@@ -248,6 +317,7 @@ export function rateLimitedResponse(retryAfterMs: number, backend?: RateLimitBac
 export function resetRateLimits(): void {
   windows.clear();
   windowOf.clear();
+  budgetWindows.clear();
   lastPruneAt = 0;
 }
 

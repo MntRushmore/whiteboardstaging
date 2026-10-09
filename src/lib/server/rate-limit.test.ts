@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetServerEnvCache } from "@/lib/env";
 import type { RpcClient, RpcError } from "@/lib/server/billing";
 import {
+  GLOBAL_BUDGETS,
   LIMITS,
   checkRateLimit,
   checkRateLimitDistributed,
@@ -10,8 +11,10 @@ import {
   rateLimitedResponse,
   resetRateLimitFallbackWarning,
   resetRateLimits,
+  spendGlobalBudget,
   trackedKeyCount,
 } from "@/lib/server/rate-limit";
+import { SPEAK_GLOBAL_BUDGET } from "@/lib/speech/contracts";
 
 const opts = { limit: 3, windowMs: 1_000 };
 
@@ -246,5 +249,70 @@ describe("checkRateLimitDistributed", () => {
     const client = fakeRpc({ data: { allowed: true, remaining: 4, retry_after_ms: 0 } });
     await expect(checkRateLimitDistributed(input, client)).resolves.toMatchObject({ backend: "db" });
     expect(client.calls.length).toBe(1);
+  });
+});
+
+describe("spendGlobalBudget: one budget for everyone together", () => {
+  const DAY = 86_400_000;
+
+  beforeEach(() => {
+    for (const name of ENV_VARS) {
+      savedEnv[name] = process.env[name];
+      delete process.env[name];
+    }
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "http://127.0.0.1:54321";
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    resetServerEnvCache();
+    resetRateLimits();
+    resetRateLimitFallbackWarning();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-09T12:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    for (const name of ENV_VARS) {
+      if (savedEnv[name] === undefined) delete process.env[name];
+      else process.env[name] = savedEnv[name];
+    }
+    resetServerEnvCache();
+  });
+
+  it("read aloud's characters a day are the speech contract's", () => {
+    expect(GLOBAL_BUDGETS.liveSpeakChars).toEqual(SPEAK_GLOBAL_BUDGET);
+    expect(SPEAK_GLOBAL_BUDGET.windowMs).toBe(DAY);
+  });
+
+  it("spends the units through global_budget_spend and reports what the database says", async () => {
+    const client = fakeRpc({ data: { allowed: true, remaining: 199_880, retry_after_ms: 0, backend: "db" } });
+    await expect(spendGlobalBudget("liveSpeakChars", 120, client)).resolves.toEqual({ ok: true, remaining: 199_880, retryAfterMs: 0, backend: "db" });
+    expect(client.calls).toEqual([{ fn: "global_budget_spend", args: { p_bucket: "liveSpeakChars", p_amount: 120, p_limit: SPEAK_GLOBAL_BUDGET.limit, p_window_ms: DAY } }]);
+    const spent = fakeRpc({ data: { allowed: false, remaining: 0, retry_after_ms: 43_200_000, backend: "db" } });
+    await expect(spendGlobalBudget("liveSpeakChars", 120, spent)).resolves.toMatchObject({ ok: false, retryAfterMs: 43_200_000, backend: "db" });
+  });
+
+  it.each([
+    ["no service role key", null],
+    ["a database without the migration", fakeRpc({ error: { message: "Could not find the function public.global_budget_spend", code: "PGRST202" } })],
+    ["a thrown error", fakeRpc(new Error("fetch failed"))],
+    ["an unexpected shape", fakeRpc({ data: { nope: true } })],
+  ])("with %s, each instance keeps the budget itself: units add up, and the day's end resets it", async (_label, client) => {
+    const limit = SPEAK_GLOBAL_BUDGET.limit;
+    expect(await spendGlobalBudget("liveSpeakChars", limit - 100, client)).toMatchObject({ ok: true, remaining: 100, backend: "memory" });
+    expect(await spendGlobalBudget("liveSpeakChars", 100, client)).toMatchObject({ ok: true, remaining: 0 });
+    const over = await spendGlobalBudget("liveSpeakChars", 1, client);
+    expect(over).toMatchObject({ ok: false, remaining: 0, backend: "memory" });
+    expect(over.retryAfterMs).toBe(12 * 3_600_000); // noon UTC: the day's window ends at midnight
+    vi.advanceTimersByTime(12 * 3_600_000);
+    expect(await spendGlobalBudget("liveSpeakChars", 50, client)).toMatchObject({ ok: true, remaining: limit - 50 });
+  });
+
+  it("RATE_LIMIT_BACKEND=memory never calls the database", async () => {
+    process.env.RATE_LIMIT_BACKEND = "memory";
+    resetServerEnvCache();
+    const client = fakeRpc({ error: { message: "must not be called" } });
+    await expect(spendGlobalBudget("liveSpeakChars", 10, client)).resolves.toMatchObject({ ok: true, backend: "memory" });
+    expect(client.calls).toEqual([]);
   });
 });
