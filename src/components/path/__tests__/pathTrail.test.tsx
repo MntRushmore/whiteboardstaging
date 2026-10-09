@@ -41,10 +41,13 @@ describe("the trail", () => {
 
   it("while a topic board is made, that stop is busy and every stop waits", () => {
     const algebra1 = buildPathView({ kind: "course", course: "algebra1" }, levels());
-    const busy = html(<PathTrail view={algebra1} busy="fractions" onOpen={vi.fn()} />);
+    // Algebra 1's fractions stop is the K-8 skill `add_fractions_unlike` since the catalog's split
+    const stop = "add_fractions_unlike";
+    expect(algebra1.nodes.some((n) => n.id === stop)).toBe(true);
+    const busy = html(<PathTrail view={algebra1} busy={stop} onOpen={vi.fn()} />);
     expect(busy.match(/<button[^>]*disabled=""/g)?.length).toBe(algebra1.total);
     expect(busy.match(/aria-busy="true"/g)?.length).toBe(1);
-    expect(busy).toMatch(/<button[^>]*data-node="fractions"[^>]*aria-busy="true"/);
+    expect(busy).toMatch(new RegExp(`<button[^>]*data-node="${stop}"[^>]*aria-busy="true"`));
   });
 });
 
