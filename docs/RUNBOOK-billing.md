@@ -792,7 +792,10 @@ webhook and the database treat its subscriptions like any other Agathon Unlimite
   "First month free" and "Your first month is free (a friend invited you)" and dates the first charge
   30 days out; the account page's Billing card opens the same link and says why. Everyone else, a
   plan started again (the free trial is for a first plan only) and a deployment without the variable
-  get the monthly link and the usual 7 days. Kids never see billing.
+  get the monthly link and the usual 7 days. Kids never see billing. The referral part's trigger on
+  `profiles` (`profiles_record_referral`, `feat/kcb2-referral`) keeps `ref` in the attribution only
+  when it recorded a real referral (a grown-up's code, issued before this account), so a made-up
+  `?ref=` gets the usual trial; turn the link on only once that part is live.
 - **The friend who invited them** gets their free month by hand: a credit you apply in Stripe once
   the new family's first payment succeeds (the admin console lists the referrals due one).
 - **Trade-off.** Like every `NEXT_PUBLIC_*` link, its URL is in the page's code once set, so someone
