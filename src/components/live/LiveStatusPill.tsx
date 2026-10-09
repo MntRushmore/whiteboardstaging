@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { atom, react, useValue, type Editor, type TLShape } from "tldraw";
 import { MoreHorizontal } from "lucide-react";
@@ -22,6 +22,11 @@ import { LIVE_COPY } from "./copy";
 import { liveErrorView, pillError, pillPrimary, secondsLeftFor } from "./errorView";
 import { errorCardAnchor } from "./hintPlacement";
 import { boardMenuView, statusPillView } from "./toolbar";
+import { SPEECH_COPY } from "@/components/speech/copy";
+import { LiveErrorBoundary } from "./LiveErrorBoundary";
+
+// "Read hints aloud": the setting and the speaker load the first time the menu opens (docs/BUNDLE.md)
+const ReadAloudMenuItem = lazy(() => import("@/components/speech/ReadAloudMenuItem"));
 
 interface LiveStatusPillProps {
   editor: Editor;
@@ -348,6 +353,18 @@ export function LiveStatusPill({
           >
             {LIVE_COPY.pill.celebrations}
           </DropdownMenuCheckboxItem>
+          {/* a chunk that fails to load hides this one item, not the menu */}
+          <LiveErrorBoundary>
+            <Suspense
+              fallback={
+                <DropdownMenuCheckboxItem checked={false} disabled>
+                  {SPEECH_COPY.toggle}
+                </DropdownMenuCheckboxItem>
+              }
+            >
+              <ReadAloudMenuItem />
+            </Suspense>
+          </LiveErrorBoundary>
 
           <DropdownMenuSeparator />
           <DropdownMenuLabel className="text-xs text-gray-500">{LIVE_COPY.pill.groupLive}</DropdownMenuLabel>
