@@ -19,10 +19,13 @@ import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { ACCOUNT_PATH, BILLING_PATH, INK_COPY, bottleFill, formatInk, inkTone, type InkTone } from "@/lib/billing/inkSummary";
 import { UNLIMITED_METER_COPY, hasPlan, isUnlimited } from "@/lib/billing/unlimited";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
-// Families: a kid profile's menu (Progress, Switch profile) and name; tiny, pure modules.
+// Families: a kid profile's menu (Progress, Switch profile); tiny, pure modules.
 import { isKidEmail } from "@/lib/family/contracts";
-import { FAMILY_MENU, kidDisplayName } from "@/lib/family/menu";
+import { FAMILY_MENU } from "@/lib/family/menu";
 import { openProfilePicker } from "@/lib/family/picker";
+// The menu's name and picture: the profile's own (one small read of `profiles`, kept for the tab).
+import { avatarImage, headerName } from "@/lib/profile/displayName";
+import { useOwnProfile } from "@/lib/profile/useOwnProfile";
 // The weekly report's menu entry (grown-ups and solo students): a label and a path, nothing more.
 import { REPORT_MENU } from "@/lib/report/menu";
 import { Badge, type BadgeTone } from "@/registry/components/badge/badge";
@@ -97,9 +100,12 @@ export function AppHeader({ className }: { className?: string }) {
   const email = user?.email ?? "";
   // A kid profile (src/lib/family): no billing, no meter, and a menu of Progress and Switch profile.
   const kid = isKidEmail(email);
-  // No display name in the session; the address before the @ stands in (initial on the avatar). A
-  // kid's address has no name in it: theirs is in the metadata the server wrote.
-  const name = kid ? kidDisplayName(user) : email.split("@")[0] || "Account";
+  // The profile's display name and picture (what the family switcher and /account show), for a solo
+  // student, a grown-up and a kid alike; the session's name until it is read, and the address
+  // before the @ only when there is no name at all. ProfileCard's save updates it at once.
+  const profile = useOwnProfile(user?.id);
+  const name = headerName({ profile, user, email, kid });
+  const avatarSrc = avatarImage(profile?.avatar);
 
   // The menu shows "Signing out" until this settles, then closes.
   async function signOut() {
@@ -133,9 +139,11 @@ export function AppHeader({ className }: { className?: string }) {
                 for a kid, since the meter links to Billing */}
             {summary && !kid && (unlimited ? <UnlimitedLink /> : hasPlan(plan) ? <InkLink balance={summary.balance} /> : null)}
             <UserMenu
-              user={{ name, email: kid ? FAMILY_MENU.kidSubtitle : email }}
+              // the open menu keeps the address under the name: which account a grown-up is in
+              user={{ name, email: kid ? FAMILY_MENU.kidSubtitle : email, ...(avatarSrc ? { avatarSrc } : {}) }}
               showName
               showTheme={false}
+              className={styles.account}
               items={[
                 {
                   // the path only: importing the Progress page's modules here would load them on every page

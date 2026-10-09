@@ -72,7 +72,7 @@ export function GradeSection({ userId, kid = false }: { userId: string; kid?: bo
   }
 
   return (
-    <Card id="grade" ref={cardRef} className="scroll-mt-6" data-testid="grade-section">
+    <Card id="grade" ref={cardRef} className={styles.card} data-testid="grade-section">
       <SectionHeader title={GRADE_SECTION_COPY.title} description={kid ? FAMILY_COPY.kidGradeDescription : GRADE_SECTION_COPY.description} />
       <CardContent className={SECTION_BODY}>
         {!loaded && state.status === "loading" ? (
@@ -85,7 +85,7 @@ export function GradeSection({ userId, kid = false }: { userId: string; kid?: bo
             <p className={styles.status}>{FAMILY_COPY.kidGradeHint}</p>
           </div>
         ) : (
-          <div className={styles.body}>
+          <div className={`${styles.body} ${styles.picker}`}>
             <div className={styles.field}>
               <Select
                 label={GRADE_SECTION_COPY.label}

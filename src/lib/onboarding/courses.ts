@@ -34,7 +34,7 @@ export const COURSES: readonly Course[] = [
   { id: "geometry", label: "Geometry", blurb: "Angles, triangles and proofs" },
   { id: "algebra2", label: "Algebra 2", blurb: "Quadratics, radicals and exponentials" },
   { id: "precalc_calc", label: "Pre-calculus / Calculus", blurb: "Logs, trig and derivatives" },
-  { id: "other", label: "Something else", blurb: "Any maths you're working on" },
+  { id: "other", label: "Something else", blurb: "Any math you're working on" },
 ];
 
 export interface StarterProblem {

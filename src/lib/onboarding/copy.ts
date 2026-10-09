@@ -8,7 +8,7 @@ export const WELCOME_COPY = {
   kicker: "Welcome to Agathon",
   title: "The whiteboard that writes back.",
   /** what it does, in two lines */
-  lines: ["Write your maths by hand, one step on each line.", "Your tutor checks every step and cheers you on."],
+  lines: ["Write your math by hand, one step on each line.", "Your tutor checks every step and cheers you on."],
   /** under the buttons: we are in beta, and where to tell us about a bug */
   beta: "Agathon is brand new and still in beta. If something looks wrong, tap Report a bug at the top. We read every report.",
   getStarted: "Let's go",
