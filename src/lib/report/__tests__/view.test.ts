@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChildWeek } from "../contracts";
-import { dayLevel, earlierWeeks, gradeText, joinNames, parseReportAnswer, practisedBars, reportIsQuiet, weekChoice, weekForChoice, weekLabel } from "../view";
+import { afterFailedRead, dayLevel, earlierWeekOptions, earlierWeeks, gradeText, joinNames, parseReportAnswer, practisedBars, reportIsQuiet, weekChoice, weekForChoice, weekLabel } from "../view";
 
 const NOW = Date.parse("2026-10-08T15:00:00Z");
 const TZ = "America/New_York";
@@ -55,6 +55,34 @@ describe("the week picker", () => {
       { value: "2026-09-14", label: "Sep 14 – 20" },
       { value: "2026-09-07", label: "Sep 7 – 13" },
     ]);
+  });
+
+  it("names an older week a link opened, after the listed ones, so the list is never blank", () => {
+    const listed = earlierWeeks(NOW, TZ);
+    expect(listed).toHaveLength(10);
+    // 20 weeks back: still a week the page shows, past the list
+    expect(earlierWeekOptions("2026-05-18", NOW, TZ)).toEqual([...listed, { value: "2026-05-18", label: "May 18 – 24" }]);
+    // in the list already, or not an earlier week at all: the list as it is
+    expect(earlierWeekOptions("2026-09-14", NOW, TZ)).toEqual(listed);
+    expect(earlierWeekOptions("2026-10-05", NOW, TZ)).toEqual(listed);
+    expect(earlierWeekOptions("2026-09-28", NOW, TZ)).toEqual(listed);
+  });
+});
+
+describe("afterFailedRead", () => {
+  type Read = { key: string; answer: string | null };
+  const good = (r: Read) => r.answer !== null;
+
+  it("keeps a good read on screen when a re-read of the same thing fails", () => {
+    const shown: Read = { key: "u|2026-10-05|0", answer: "the report" };
+    expect(afterFailedRead(shown, { key: "u|2026-10-05|0", answer: null }, good)).toBe(shown);
+  });
+
+  it("shows the failure for a first read, a read of something else, or after a failure", () => {
+    const failed: Read = { key: "u|2026-10-05|1", answer: null };
+    expect(afterFailedRead(null, failed, good)).toBe(failed);
+    expect(afterFailedRead({ key: "u|2026-10-05|0", answer: "the report" }, failed, good)).toBe(failed);
+    expect(afterFailedRead({ key: "u|2026-10-05|1", answer: null }, failed, good)).toBe(failed);
   });
 });
 

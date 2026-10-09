@@ -85,13 +85,26 @@ export function signUpRequest(email: string, password: string) {
 }
 
 /**
- * Where to go once signed in: the board a signed-out visit (or an expired session) was sent to
- * /login from (`?next=/board/<id>`), else the boards home. Only a board path on this site is
- * honoured, never an absolute URL or `//host`, so the parameter cannot redirect anywhere else.
+ * The pages a signed-out visit (or an expired session) comes back to after sign-in: a board, the
+ * weekly report on a week (the Sunday email's "See the full report"), and a replay from it. Each is
+ * a whole path on this site, anchored, so `next` can never send anyone to an absolute URL, `//host`,
+ * `..`, or a query of its own making.
  */
+const RETURN_PATHS = [/^\/board\/[\w-]+$/, /^\/report(?:\?week=\d{4}-\d{2}-\d{2})?$/, /^\/report\/replay\/[\w-]+$/];
+
+function isReturnPath(path: string): boolean {
+  return RETURN_PATHS.some((re) => re.test(path));
+}
+
+/** Where to go once signed in: the page /login was opened from (`?next=`, RETURN_PATHS only), else the boards home. */
 export function afterSignInPath(search: string): string {
   const next = new URLSearchParams(search).get("next");
-  return next && /^\/board\/[\w-]+$/.test(next) ? next : "/";
+  return next && isReturnPath(next) ? next : "/";
+}
+
+/** /login for a signed-out visit to `path`: with `?next=` when sign-in may return there, else plain. */
+export function signInPath(path: string): string {
+  return isReturnPath(path) ? `/login?next=${encodeURIComponent(path)}` : "/login";
 }
 
 export const RESET_LINK_COPY = {
