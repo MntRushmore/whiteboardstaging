@@ -231,20 +231,28 @@ export function buildWorld(now: number): ConsoleWorld {
   });
   const logs = (items: [string, string, number][]) => items.map(([level, text, minAgo]) => ({ level, text, time: iso(now - minAgo * MIN) }));
   const boardOf = (ui: number) => boards.find((b) => b.userId === users[ui].id)?.id ?? null;
-  const bug = (i: number, ui: number | null, b: Partial<AdminBug> & Pick<AdminBug, "message" | "status">, minAgo: number): AdminBug => ({
-    id: `bug_${String(i).padStart(3, "0")}`,
-    at: iso(now - minAgo * MIN),
-    userId: ui === null ? null : users[ui].id,
-    email: ui === null ? null : users[ui].email,
-    boardId: null,
-    path: "/",
-    note: null,
-    resolvedAt: null,
-    hasScreenshot: false,
-    diagnostics: null,
-    logs: [],
-    ...b,
-  });
+  const bug = (i: number, ui: number | null, b: Partial<AdminBug> & Pick<AdminBug, "message" | "status">, minAgo: number): AdminBug => {
+    const made: AdminBug = {
+      id: `bug_${String(i).padStart(3, "0")}`,
+      at: iso(now - minAgo * MIN),
+      userId: ui === null ? null : users[ui].id,
+      email: ui === null ? null : users[ui].email,
+      boardId: null,
+      path: "/",
+      note: null,
+      resolvedAt: null,
+      hasScreenshot: false,
+      diagnostics: null,
+      logs: [],
+      thread: [],
+      waiting: false,
+      reporterSeenAt: null,
+      ...b,
+    };
+    return { ...made, waiting: made.thread.at(-1)?.author === "reporter" };
+  };
+  /** A message in a report's thread, `minAgo` minutes ago. */
+  const said = (id: string, author: "admin" | "reporter", body: string, minAgo: number) => ({ id, author, body, at: iso(now - minAgo * MIN) });
   const bugs: AdminBug[] = [
     bug(
       1,
@@ -296,8 +304,39 @@ export function buildWorld(now: number): ConsoleWorld {
       },
       60 * 20,
     ),
-    bug(5, 3, { status: "seen", message: "Payment didn't go through but my card is fine", path: "/account", diagnostics: diag(ua.mac, 1440, 789, "MacIntel"), note: "Stripe says card_declined (insufficient funds). Emailed the parent." }, 60 * 30),
-    bug(6, 1, { status: "seen", message: "Ask answered in Spanish once, weird", boardId: boardOf(1), path: `/board/${boardOf(1)}`, diagnostics: diag(ua.ipad, 1180, 820, "MacIntel") }, 60 * 50),
+    bug(
+      5,
+      3,
+      {
+        status: "seen",
+        message: "Payment didn't go through but my card is fine",
+        path: "/account",
+        diagnostics: diag(ua.mac, 1440, 789, "MacIntel"),
+        note: "Stripe says card_declined (insufficient funds). Emailed the parent.",
+        // answered, then they wrote back: waiting on us
+        thread: [
+          said("msg_005_1", "admin", "Thanks for telling us. Stripe says the bank declined the charge. Could you try again, or with another card?", 60 * 29),
+          said("msg_005_2", "reporter", "ok my mom tried another card and it worked.\nthanks!", 60 * 2),
+        ],
+        reporterSeenAt: iso(now - 2 * HOUR),
+      },
+      60 * 30,
+    ),
+    bug(
+      6,
+      1,
+      {
+        status: "seen",
+        message: "Ask answered in Spanish once, weird",
+        boardId: boardOf(1),
+        path: `/board/${boardOf(1)}`,
+        diagnostics: diag(ua.ipad, 1180, 820, "MacIntel"),
+        // answered and read
+        thread: [said("msg_006_1", "admin", "Sorry about that. We found why, and the tutor now always answers in English. Tell us if you see it again.", 60 * 47)],
+        reporterSeenAt: iso(now - 40 * HOUR),
+      },
+      60 * 50,
+    ),
     bug(7, null, { status: "seen", message: "The sign up page is blank on my school laptop", path: "/login", diagnostics: diag(ua.chromebook, 1280, 609, "Linux x86_64") }, 60 * 70),
     bug(
       8,
@@ -751,6 +790,20 @@ export class FixtureServer {
     if (shot) {
       const i = this.world.bugs.findIndex((b) => b.id === shot[1]);
       return i >= 0 && this.world.bugs[i].hasScreenshot ? { status: 200, svg: bugScreenshotSvg(i) } : { status: 404 };
+    }
+    // a reply: kept in the thread, new moves to seen; "fail" in it makes it fail (to see the error)
+    const reply = /^\/api\/admin\/bugs\/([^/]+)\/messages$/.exec(path);
+    if (reply && method === "POST") {
+      const text = typeof (body as { body?: unknown } | null)?.body === "string" ? (body as { body: string }).body.trim() : "";
+      if (!text) return { status: 400, json: { error: "invalid_request", message: "Invalid request: body: Write a reply first." } };
+      if (/\bfail\b/i.test(text)) return { status: 500, json: { error: "internal", message: "the fixture server said no" } };
+      const i = this.world.bugs.findIndex((b) => b.id === reply[1]);
+      if (i < 0) return { status: 404 };
+      const was = this.world.bugs[i];
+      const thread = [...was.thread, { id: `msg_${now}`, author: "admin" as const, body: text, at: generatedAt }];
+      const next: AdminBug = { ...was, status: was.status === "new" ? "seen" : was.status, thread, waiting: false };
+      this.world.bugs[i] = next;
+      return { status: 200, json: { bug: next, email: next.userId ? { status: "skipped", reason: "not_configured" } : { status: "skipped", reason: "no_reporter" } } };
     }
     const one = /^\/api\/admin\/bugs\/([^/]+)$/.exec(path);
     if (one && method === "PATCH") {

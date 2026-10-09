@@ -2902,6 +2902,191 @@ export const REFERRAL_CHECKS = [
   { name: "referrals: the server's to write; a grown-up reads their own (never the friend's id); recorded only for a new, other, grown-up account; follows the friend's plan forward", run: checkReferrals },
 ];
 
+/** The reporter's functions (20261009160000_bug_replies.sql): authenticated only, each about the caller alone. */
+export const BUG_REPLY_FUNCTIONS = [
+  ["my_bug_reports", {}],
+  ["bug_report_reply", { p_report_id: ZERO_UUID, p_body: "rls-verify" }],
+  ["bug_reports_mark_seen", { p_report_id: null }],
+  ["my_bug_unread_count", {}],
+];
+
+/**
+ * Bug report replies (src/lib/bugReports; migration 20261009160000_bug_replies.sql).
+ *
+ * Nobody but the service role reads or writes `bug_report_messages`: anon and A are refused a select
+ * and an insert (an 'admin' message included). Anon can call none of BUG_REPLY_FUNCTIONS. A gets a
+ * list and a count of their own; a reply on no report is P0002, an empty one 22023. With the service
+ * role (the admin's half): A and B each file a report; A's my_bug_reports() lists A's alone, without
+ * the screenshot, logs, diagnostics or who wrote; A's report is stored with no reporter_seen_at
+ * whatever A sent; an admin message makes A's count 1 and B's 0; A replies on their own report
+ * (trimmed, author 'reporter', which also reads the reply: count 0), never on B's (the same P0002 as
+ * no report), never as 'admin' (no such argument); B's mark_seen on A's report marks nothing, A's
+ * own marks it and the count is 0; the database refuses an unknown author and a blank body (23514),
+ * a body over 4,000 characters (22023), and a report's 21st reply in a day (P0001, bug_reply_limit).
+ * Removes every row it wrote.
+ *
+ * Kept out of ALL_CHECKS (the in-memory fake does not model these); scripts/verify-rls.mjs and the
+ * DB integration test run BUG_REPLY_CHECKS last.
+ * @param {CheckContext} ctx
+ */
+export async function checkBugReplies({ anon, a, b, service }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const code = (/** @type {HttpResult} */ res) => String(asObject(res.body)?.code ?? "");
+  const hint = (/** @type {HttpResult} */ res) => String(asObject(res.body)?.hint ?? "");
+
+  // ---------------------------------------------------------------- anon and users: no table, only their own functions
+  for (const [who, client] of /** @type {Array<[string, RlsClient]>} */ ([["anon", anon], ["A", a]])) {
+    const sel = await client.rest("GET", "bug_report_messages", { query: { select: "*", limit: "1" } });
+    out.push(result(`bug replies: ${who} cannot select bug_report_messages`, isDenied(sel), describe(sel)));
+    const ins = await client.rest("POST", "bug_report_messages", {
+      body: { report_id: ZERO_UUID, author: "admin", author_id: client.userId, body: "rls-verify forged" },
+      prefer: "return=minimal",
+    });
+    out.push(result(`bug replies: ${who} cannot insert into bug_report_messages (not even as 'admin')`, isDenied(ins), describe(ins)));
+  }
+  for (const [fn, args] of BUG_REPLY_FUNCTIONS) {
+    const res = await rpc(anon, /** @type {string} */ (fn), /** @type {Record<string, unknown>} */ (args));
+    out.push(result(`bug replies: anon cannot call ${fn}()`, isDenied(res), describe(res)));
+  }
+  const list = await rpc(a, "my_bug_reports");
+  out.push(result("bug replies: A calls my_bug_reports() (a list)", isOk(list) && Array.isArray(list.body), describe(list)));
+  const count = await rpc(a, "my_bug_unread_count");
+  out.push(result("bug replies: A calls my_bug_unread_count() (a whole number)", isOk(count) && Number.isInteger(count.body), describe(count)));
+  const none = await rpc(a, "bug_report_reply", { p_report_id: uuid(), p_body: "rls-verify" });
+  out.push(result("bug replies: A's reply on no report is refused (P0002, bug_report_missing)", !isOk(none) && code(none) === "P0002" && hint(none) === "bug_report_missing", describe(none)));
+
+  if (!service) {
+    out.push(result("bug replies: the conversation's half (skipped: no service role client)", true));
+    return out;
+  }
+
+  const tagA = `rls-verify-reply-a-${uuid()}`;
+  const tagB = `rls-verify-reply-b-${uuid()}`;
+  try {
+    // ---------------------------------------------------------------- two reports, A's and B's
+    const fileA = await a.rest("POST", "bug_reports", {
+      body: { user_id: a.userId, message: tagA, diagnostics: { secret: "rls-verify" }, logs: [], reporter_seen_at: "2999-01-01T00:00:00Z" },
+      prefer: "return=minimal",
+    });
+    const fileB = await b.rest("POST", "bug_reports", { body: { user_id: b.userId, message: tagB, diagnostics: {}, logs: [] }, prefer: "return=minimal" });
+    const storedA = rows(await service.rest("GET", "bug_reports", { query: { message: `eq.${tagA}`, select: "id,reporter_seen_at" } }))[0];
+    const storedB = rows(await service.rest("GET", "bug_reports", { query: { message: `eq.${tagB}`, select: "id" } }))[0];
+    const idA = String(storedA?.id ?? "");
+    const idB = String(storedB?.id ?? "");
+    out.push(result("bug replies: A and B each file a report", isOk(fileA) && isOk(fileB) && Boolean(idA) && Boolean(idB), `${describe(fileA)} / ${describe(fileB)}`));
+    out.push(result("bug replies: A's report is stored with no reporter_seen_at, whatever A sent", storedA?.reporter_seen_at === null, JSON.stringify(storedA ?? null)));
+
+    const mineA = rows(await rpc(a, "my_bug_reports"));
+    const rowA = mineA.find((r) => r.id === idA);
+    out.push(
+      result(
+        "bug replies: A's my_bug_reports() lists A's report and not B's",
+        Boolean(rowA) && !mineA.some((r) => r.id === idB) && rowA?.message === tagA && rowA?.status === "new",
+        JSON.stringify(mineA.map((r) => r.id)).slice(0, 200),
+      ),
+    );
+    out.push(
+      result(
+        "bug replies: my_bug_reports() never carries the screenshot, logs, diagnostics or the admin's note",
+        Boolean(rowA) && ["screenshot", "logs", "diagnostics", "admin_note", "user_email"].every((k) => !(k in (rowA ?? {}))),
+        JSON.stringify(Object.keys(rowA ?? {})),
+      ),
+    );
+    const mineB = rows(await rpc(b, "my_bug_reports"));
+    out.push(result("bug replies: B's my_bug_reports() does not list A's report", !mineB.some((r) => r.id === idA), JSON.stringify(mineB.map((r) => r.id)).slice(0, 200)));
+
+    // ---------------------------------------------------------------- an admin replies (the service role)
+    const adminSays = await service.rest("POST", "bug_report_messages", {
+      body: { report_id: idA, author: "admin", body: "rls-verify: thanks, looking", author_id: null },
+      prefer: "return=representation",
+    });
+    out.push(result("bug replies: the service role writes an admin message", isOk(adminSays) && rows(adminSays).length === 1, describe(adminSays)));
+    const countA = await rpc(a, "my_bug_unread_count");
+    const countB = await rpc(b, "my_bug_unread_count");
+    out.push(result("bug replies: A's unread count is 1, B's is 0", countA.body === 1 && countB.body === 0, `${describe(countA)} / ${describe(countB)}`));
+    const threadA = rows(await rpc(a, "my_bug_reports")).find((r) => r.id === idA);
+    const first = Array.isArray(threadA?.thread) ? threadA.thread[0] : null;
+    out.push(
+      result(
+        "bug replies: A sees the reply in their thread (id, author, body, at; never who wrote it), unread 1",
+        threadA?.unread === 1 && first?.author === "admin" && first?.body === "rls-verify: thanks, looking" && Object.keys(first ?? {}).sort().join(",") === "at,author,body,id",
+        JSON.stringify(threadA ?? null).slice(0, 300),
+      ),
+    );
+    const bSees = rows(await rpc(b, "my_bug_reports")).find((r) => r.id === idA);
+    out.push(result("bug replies: B never sees A's thread", !bSees, JSON.stringify(bSees ?? null).slice(0, 200)));
+
+    // ---------------------------------------------------------------- the reporter answers
+    const replyA = await rpc(a, "bug_report_reply", { p_report_id: idA, p_body: "  rls-verify: it happens again  \n" });
+    out.push(
+      result(
+        "bug replies: A replies on their own report (trimmed, author 'reporter')",
+        isOk(replyA) && asObject(replyA.body)?.author === "reporter" && asObject(replyA.body)?.body === "rls-verify: it happens again",
+        describe(replyA),
+      ),
+    );
+    const afterReply = await rpc(a, "my_bug_unread_count");
+    out.push(result("bug replies: replying reads the replies before it (A's count is 0)", afterReply.body === 0, describe(afterReply)));
+    const onB = await rpc(a, "bug_report_reply", { p_report_id: idB, p_body: "rls-verify: not mine" });
+    out.push(result("bug replies: A cannot reply on B's report (the same P0002 as no report)", !isOk(onB) && code(onB) === "P0002", describe(onB)));
+    const bWrote = await service.rest("GET", "bug_report_messages", { query: { report_id: `eq.${idB}`, select: "id" } });
+    out.push(result("bug replies: nothing was written on B's report", affectedNoRows(bWrote), describe(bWrote)));
+    const asAdmin = await rpc(a, "bug_report_reply", { p_report_id: idA, p_body: "rls-verify", p_author: "admin" });
+    out.push(result("bug replies: A cannot reply as 'admin' (the function takes no author)", !isOk(asAdmin), describe(asAdmin)));
+    const blank = await rpc(a, "bug_report_reply", { p_report_id: idA, p_body: " \n\t " });
+    const long = await rpc(a, "bug_report_reply", { p_report_id: idA, p_body: "x".repeat(4001) });
+    out.push(result("bug replies: a blank reply and one over 4,000 characters are refused (22023)", code(blank) === "22023" && code(long) === "22023", `${describe(blank)} / ${describe(long)}`));
+    const authors = rows(await service.rest("GET", "bug_report_messages", { query: { report_id: `eq.${idA}`, select: "author,author_id", order: "created_at.asc" } }));
+    out.push(
+      result(
+        "bug replies: A's thread is the admin's message, then A's own (author_id A), nothing else",
+        authors.length === 2 && authors[0]?.author === "admin" && authors[1]?.author === "reporter" && authors[1]?.author_id === a.userId,
+        JSON.stringify(authors),
+      ),
+    );
+
+    // ---------------------------------------------------------------- read tracking
+    await service.rest("POST", "bug_report_messages", { body: { report_id: idA, author: "admin", body: "rls-verify: fixed now" }, prefer: "return=minimal" });
+    const again = await rpc(a, "my_bug_unread_count");
+    const bMarks = await rpc(b, "bug_reports_mark_seen", { p_report_id: idA });
+    const stillA = await rpc(a, "my_bug_unread_count");
+    out.push(result("bug replies: a second admin message is unread (1); B's mark_seen on A's report marks nothing", again.body === 1 && bMarks.body === 0 && stillA.body === 1, `${describe(again)} / ${describe(bMarks)} / ${describe(stillA)}`));
+    const aMarks = await rpc(a, "bug_reports_mark_seen", { p_report_id: null });
+    const zero = await rpc(a, "my_bug_unread_count");
+    const seenRow = rows(await rpc(a, "my_bug_reports")).find((r) => r.id === idA);
+    out.push(
+      result(
+        "bug replies: A's mark_seen marks their report (1), the count is 0, the report's seen_at is set",
+        aMarks.body === 1 && zero.body === 0 && seenRow?.unread === 0 && typeof seenRow?.seen_at === "string",
+        `${describe(aMarks)} / ${describe(zero)}`,
+      ),
+    );
+
+    // ---------------------------------------------------------------- what the table refuses, and the day's cap
+    const badAuthor = await service.rest("POST", "bug_report_messages", { body: { report_id: idA, author: "staff", body: "rls-verify" }, prefer: "return=minimal" });
+    const blankRow = await service.rest("POST", "bug_report_messages", { body: { report_id: idA, author: "admin", body: "   " }, prefer: "return=minimal" });
+    out.push(result("bug replies: the database refuses an unknown author and a blank body (23514)", code(badAuthor) === "23514" && code(blankRow) === "23514", `${describe(badAuthor)} / ${describe(blankRow)}`));
+    // A has written 1 reply today: 19 more reach the cap of 20, the next is refused
+    let capped = true;
+    for (let i = 0; i < 19 && capped; i++) capped = isOk(await rpc(a, "bug_report_reply", { p_report_id: idA, p_body: `rls-verify ${i}` }));
+    const over = await rpc(a, "bug_report_reply", { p_report_id: idA, p_body: "rls-verify: one too many" });
+    out.push(result("bug replies: 20 replies on a report in a day, then P0001 (bug_reply_limit)", capped && !isOk(over) && code(over) === "P0001" && hint(over) === "bug_reply_limit", describe(over)));
+  } finally {
+    // the messages go with their reports
+    await service.rest("DELETE", "bug_reports", { query: { message: `in.(${tagA},${tagB})` } });
+  }
+  return out;
+}
+
+/**
+ * The bug reply checks, run last by scripts/verify-rls.mjs and src/__tests__/db-rls.integration.test.ts.
+ * @type {CheckDef[]}
+ */
+export const BUG_REPLY_CHECKS = [
+  { name: "bug replies: bug_report_messages is the server's; a reporter reads, answers and marks read only their own reports' threads", run: checkBugReplies },
+];
+
 /**
  * Run one check, converting a thrown error into a single failing result.
  * @param {CheckDef} check

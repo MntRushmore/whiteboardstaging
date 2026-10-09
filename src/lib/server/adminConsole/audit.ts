@@ -3,7 +3,7 @@
  * content or changes the console's state. The privacy policy says each look is logged, so a route
  * that answers with content (a board's snapshot, a screenshot, a page of board thumbnails, a user's
  * page) writes the row FIRST and answers 503 when it cannot (`AuditError`): no look goes unlogged.
- * A change (a bug triaged, an issue muted) is logged after it is made; a failed log line there is
+ * A change (a bug triaged or answered, an issue muted) is logged after it is made; a failed log line there is
  * an error in the server log, not a failed change.
  *
  * A look kept open is one look (`auditRepeatLook`): the board viewer following a board live writes
@@ -28,6 +28,8 @@ export type AuditAction =
   | "bug.screenshot"
   /** a bug report's status or note changed */
   | "bug.update"
+  /** a reply sent to a bug report's reporter (its length; never its words) */
+  | "bug.reply"
   /** an issue opened, muted or marked fixed, or its note changed */
   | "issue.update";
 

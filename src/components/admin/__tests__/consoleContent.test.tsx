@@ -163,7 +163,8 @@ describe("Boards", () => {
 });
 
 describe("Bugs", () => {
-  const props = { bugs: world.bugs, clock: CLOCK, tab: "new" as const, onTab: noop, onSelect: noop, onStatus: noop, onNote: noop, loading: false, error: null, updated: "Updated just now", onRefresh: noop };
+  const onReply = async () => ({ ok: true as const });
+  const props = { bugs: world.bugs, clock: CLOCK, tab: "new" as const, onTab: noop, onSelect: noop, onStatus: noop, onNote: noop, onReply, loading: false, error: null, updated: "Updated just now", onRefresh: noop };
 
   it("side by side: the tabs with counts, the list, and the open report in full", () => {
     const html = render(<BugsContent {...props} selectedId="bug_001" layout="split" />);
@@ -193,6 +194,33 @@ describe("Bugs", () => {
     expect(one).not.toContain('id="bug-row-bug_001"');
     expect(text(one)).toContain("All reports");
     expect(text(one)).toContain("No screenshot with this one.");
+  });
+
+  it("the conversation: theirs on the left, ours on the right, Waiting on you, whether they read it, and the reply box", () => {
+    const html = render(<BugsContent {...props} tab="seen" selectedId="bug_005" layout="split" />);
+    const t = text(html);
+    // the list: the chip and the message count on the row that waits on us, and no chip on one that doesn't
+    expect(html).toMatch(/id="bug-row-bug_005"[\s\S]*?Waiting on you[\s\S]*?2 messages/);
+    expect(html).not.toMatch(/id="bug-row-bug_006"[^>]*>(?:(?!<\/button>)[\s\S])*Waiting on you/);
+    // the thread, oldest first, by author
+    expect([...html.matchAll(/<li class="[^"]*" data-author="(admin|reporter)">/g)].map((m) => m[1])).toEqual(["admin", "reporter"]);
+    expect(t).toContain("Agathon");
+    expect(t).toContain("ok my mom tried another card and it worked.");
+    expect(t).toContain("They read it 2 h ago");
+    // the reply box: a labelled field (up to 4,000 characters), Send disabled while empty, the keys
+    expect(html).toMatch(/<label for="bug-bug_005-reply"[^>]*>Reply to them<\/label>/);
+    expect(html).toMatch(/<textarea id="bug-bug_005-reply"[^>]*maxLength="4000"/);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*data-testid="bug-reply-send"|<button[^>]*data-testid="bug-reply-send"[^>]*disabled=""/);
+    expect(t).toContain("Ctrl or ⌘ + Enter sends");
+  });
+
+  it("no replies yet; a report from no account cannot be answered", () => {
+    const fresh = text(render(<BugsContent {...props} selectedId="bug_001" layout="split" />));
+    expect(fresh).toContain("No replies yet.");
+    expect(fresh).toContain("Reply to them");
+    const nobody = render(<BugsContent {...props} tab="seen" selectedId="bug_007" layout="split" />);
+    expect(text(nobody)).toContain("This report came from no account, so there's no one to reply to.");
+    expect(nobody).not.toContain('id="bug-bug_007-reply"');
   });
 
   it("an empty tab, no reports at all, a failed read", () => {

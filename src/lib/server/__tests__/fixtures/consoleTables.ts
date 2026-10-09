@@ -156,10 +156,14 @@ export function consoleTables(): Tables {
         status: "new",
         admin_note: null,
         resolved_at: null,
+        reporter_seen_at: null,
         created_at: iso(HOUR),
       },
-      { id: BUG2, user_id: SAM, user_email: "sam@example.com", board_id: null, message: null, screenshot: null, diagnostics: {}, logs: [], status: "seen", admin_note: "asked for more", resolved_at: null, created_at: iso(3 * DAY) },
+      { id: BUG2, user_id: SAM, user_email: "sam@example.com", board_id: null, message: null, screenshot: null, diagnostics: {}, logs: [], status: "seen", admin_note: "asked for more", resolved_at: null, reporter_seen_at: null, created_at: iso(3 * DAY) },
     ],
+    // no replies yet (20261009160000_bug_replies.sql); tests add their own
+    bug_report_messages: [],
+    family_members: [],
     email_log: [
       { user_id: MAYA, kind: "welcome", ref: "", claimed_at: iso(20 * DAY), sent_at: iso(20 * DAY) },
       { user_id: MAYA, kind: "trial_started", ref: "sub_1", claimed_at: iso(4 * DAY), sent_at: null },
@@ -255,6 +259,8 @@ export function consoleFake(tables: Tables = consoleTables(), opts: FakeOptions 
       admin_user_days: { args: ["p_user", "p_since"], run: userDays },
     },
     onUpdate: { bug_reports: bugTriage },
+    // bug_report_messages.created_at defaults to now()
+    onInsert: { bug_report_messages: (row) => ({ created_at: new Date().toISOString(), ...row }) },
     ...opts,
   });
 }

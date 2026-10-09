@@ -60,7 +60,7 @@ const PROVIDERS = [
   },
   {
     name: "Resend",
-    role: "Sends our emails: password resets, the welcome email, and the confirmation and reminder for a free trial.",
+    role: "Sends our emails: password resets, the welcome email, the confirmation and reminder for a free trial, and our replies to bug reports.",
     data: "Your email address (for a plan’s emails, the email used at checkout) and the email we send.",
   },
   {
@@ -279,6 +279,10 @@ export default function PrivacyPage() {
           <li>
             <strong>Free trial ending:</strong> if you start {plan}, one reminder about 2 to 3 days before the free trial
             ends, with the date of the first charge and a link to cancel. None if the plan is already set to cancel.
+          </li>
+          <li>
+            <strong>A reply to your bug report:</strong> when we answer a bug report you sent, we may email you our reply
+            (for a kid profile, to their grown-up), and you can read it and write back on Your bug reports.
           </li>
         </ul>
         <p>

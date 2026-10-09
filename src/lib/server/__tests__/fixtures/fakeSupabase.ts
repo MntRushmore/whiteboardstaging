@@ -3,7 +3,7 @@
  * tests: the filters they send (eq, neq, gt, gte, lt, in, is.null, not.is.null; a key repeated is
  * two filters), order (one or more columns), limit, offset, select with `alias:col` and
  * `alias:col->>key`, HEAD with `Prefer: count=exact`, `Accept: application/vnd.pgrst.object+json`
- * (one row, else 406 PGRST116), writes (POST insert, POST upsert with `on_conflict`, PATCH), views
+ * (one row, else 406 PGRST116), writes (POST insert with column defaults, POST upsert with `on_conflict`, PATCH), views
  * and functions computed from the tables (`views`, `rpc`), a 1,000-row page cap, a missing table's
  * PGRST205 (a missing function's PGRST202), /auth/v1/admin/users/<id> and the paged
  * /auth/v1/admin/users list. Every request is recorded.
@@ -28,6 +28,8 @@ export interface FakeOptions {
   rpc?: Record<string, { args: string[]; run: (args: Record<string, string>, tables: Tables) => Row[] }>;
   /** table -> a BEFORE UPDATE trigger: the row as it will be stored */
   onUpdate?: Record<string, (before: Row, after: Row) => Row>;
+  /** table -> its column defaults and BEFORE INSERT trigger: the row as it will be stored */
+  onInsert?: Record<string, (row: Row) => Row>;
   /** the auth admin API's list answers this status */
   authListStatus?: number;
   /** the auth admin API's list pages by at most this many, whatever is asked */
@@ -171,7 +173,8 @@ export function fakeSupabase(tables: Tables, opts: FakeOptions = {}): FakeSupaba
         } else if (existing) {
           return Response.json({ code: "23505", message: "duplicate key value" }, { status: 409 });
         } else {
-          const row = { id: nextId++, at: new Date().toISOString(), ...raw };
+          const given = { id: nextId++, at: new Date().toISOString(), ...raw };
+          const row = opts.onInsert?.[table] ? opts.onInsert[table](given) : given;
           tables[table].push(row);
           stored.push(row);
         }

@@ -1955,6 +1955,80 @@
   display: flex;
   gap: var(--space-2);
 }
+.textarea[readonly] {
+  color: var(--text-secondary);
+}
+
+/* ---- A report's conversation (replies, 2026-10-09) ------------------------------------------------ */
+.thread {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* the reporter's on the left, on the muted surface; ours on the right in the series tint (flat, like a pill) */
+.message {
+  display: grid;
+  max-width: min(36rem, 92%);
+  justify-self: start;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-muted);
+}
+.message[data-author="admin"] {
+  justify-self: end;
+  border-color: color-mix(in oklch, var(--series-1) 28%, var(--border));
+  background: color-mix(in oklch, var(--series-1) 9%, var(--surface));
+}
+.messageHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.messageWho {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.messageBody {
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.replyBox {
+  display: grid;
+  gap: var(--space-2);
+}
+.replyActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.replyKeys {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+/* no keyboard shortcut to speak of on a touch screen */
+@media not ((hover: hover) and (pointer: fine)) {
+  .replyKeys {
+    display: none;
+  }
+}
+.replyError {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
 
 /* ---- Issues -------------------------------------------------------------------------------------- */
 .issues {

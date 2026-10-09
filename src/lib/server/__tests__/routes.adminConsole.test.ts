@@ -12,6 +12,7 @@ vi.mock("@/lib/server/admin", () => ({ requireAdmin: gate.requireAdmin }));
 
 import { GET as boardGet } from "@/app/api/admin/boards/[id]/route";
 import { GET as boardsGet } from "@/app/api/admin/boards/route";
+import { POST as bugReply } from "@/app/api/admin/bugs/[id]/messages/route";
 import { PATCH as bugPatch } from "@/app/api/admin/bugs/[id]/route";
 import { GET as screenshotGet } from "@/app/api/admin/bugs/[id]/screenshot/route";
 import { GET as bugsGet } from "@/app/api/admin/bugs/route";
@@ -58,6 +59,7 @@ const CALLS: Array<[string, () => Promise<Response>]> = [
   ["GET boards/[id]", () => boardGet(req(`/boards/${B1}`), ctx(B1))],
   ["GET bugs", () => bugsGet(req("/bugs"))],
   ["PATCH bugs/[id]", () => bugPatch(patch(`/bugs/${BUG}`, { status: "seen" }), ctx(BUG))],
+  ["POST bugs/[id]/messages", () => bugReply(req(`/bugs/${BUG}/messages`, { method: "POST", body: JSON.stringify({ body: "Thanks, looking." }), headers: { "Content-Type": "application/json" } }), ctx(BUG))],
   ["GET bugs/[id]/screenshot", () => screenshotGet(req(`/bugs/${BUG}/screenshot`), ctx(BUG))],
   ["GET issues", () => issuesGet(req("/issues"))],
   ["PATCH issues", () => issuesPatch(patch("/issues", { fingerprint: "live.solve||x", status: "muted" }))],

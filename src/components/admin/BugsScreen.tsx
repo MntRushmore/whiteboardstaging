@@ -3,16 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowUpRight, Ban, Camera, CircleCheck, Eye, Inbox, LayoutGrid, RotateCcw, ScrollText } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Ban, Camera, CircleCheck, Eye, Inbox, LayoutGrid, MessagesSquare, RotateCcw, ScrollText, Send } from "lucide-react";
 import { ADMIN_API, AdminBugListSchema, BUG_STATUSES, type AdminBug, type BugStatus } from "@/lib/admin/contracts";
 import { BUGS_COPY, BUG_STATUS_LABELS, bugKeyAction, bugTabs, bugView, bugsInTab, moveSelection, selectionAfterLeaving, type BugView } from "@/lib/admin/bugsView";
 import { CONSOLE_COPY } from "@/lib/admin/consoleView";
 import { ADMIN_COPY, formatWhen, relativeTime, type ViewClock } from "@/lib/admin/view";
+import { BUG_MESSAGE_MAX } from "@/lib/bugReports/contracts";
 import { Button } from "@/registry/components/button/button";
 import { Dialog, DialogContent } from "@/registry/components/dialog/dialog";
 import { AdminFrame, PageHeader, useAdminAccess } from "./AdminFrame";
 import { ChoiceRow, Empty, LoadFailed, Pill, SkeletonRows } from "./ConsoleBits";
-import { updateBug } from "./adminActions";
+import { replyToBug, updateBug, type ActionResult } from "./adminActions";
 import { readAdminBlob } from "./adminData";
 import { isTyping, useWide } from "./consoleHooks";
 import { useAdminResource } from "./useAdminResource";
@@ -66,8 +67,115 @@ const STATUS_ACTIONS: { status: BugStatus; label: string; icon: ReactNode; key: 
   { status: "wontfix", label: BUGS_COPY.markWontfix, icon: <Ban size={15} strokeWidth={1.9} aria-hidden />, key: "w" },
 ];
 
-/** One report, read in full: its words, who and from where, the board, the screenshot, the logs, and what to do with it. */
-export function BugDetail({ bug, onStatus, onNote, onBack }: { bug: BugView; onStatus: (status: BugStatus, note?: string) => void; onNote: (note: string) => void; onBack?: () => void }) {
+/**
+ * The reply box under the conversation: Send (or Ctrl / ⌘ + Enter) posts it; the box is kept while it
+ * is on its way and cleared once it is saved; a failure says why under the box and keeps the words.
+ */
+export function BugReplyBox({ bugId, onReply }: { bugId: string; onReply: (body: string) => Promise<ActionResult> }) {
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const body = text.trim();
+  const fieldId = `bug-${bugId}-reply`;
+
+  async function send() {
+    if (!body || sending) return;
+    setSending(true);
+    setError(null);
+    const r = await onReply(body);
+    setSending(false);
+    if (r.ok) setText("");
+    else setError(BUGS_COPY.replyFailed(r.error));
+  }
+
+  return (
+    <div className={c.replyBox}>
+      <label htmlFor={fieldId} className={styles.chartTitle}>
+        {BUGS_COPY.replyLabel}
+      </label>
+      <textarea
+        id={fieldId}
+        className={c.textarea}
+        rows={3}
+        value={text}
+        placeholder={BUGS_COPY.replyPlaceholder}
+        maxLength={BUG_MESSAGE_MAX}
+        readOnly={sending}
+        aria-busy={sending || undefined}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? `${fieldId}-error` : `${fieldId}-keys`}
+        onChange={(e) => {
+          setText(e.target.value);
+          if (error) setError(null);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            void send();
+          }
+        }}
+      />
+      {error && (
+        <p id={`${fieldId}-error`} role="alert" className={c.replyError}>
+          {error}
+        </p>
+      )}
+      <div className={c.replyActions}>
+        <Button variant="primary" size="sm" onClick={() => void send()} disabled={!body || sending} data-testid="bug-reply-send">
+          <Send size={15} strokeWidth={1.9} aria-hidden />
+          {sending ? BUGS_COPY.sending : BUGS_COPY.send}
+        </Button>
+        <span id={`${fieldId}-keys`} className={c.replyKeys}>
+          {BUGS_COPY.sendKeys}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** The conversation with the reporter, oldest first (ours on the right), and the reply box. */
+function BugThread({ bug, onReply }: { bug: BugView; onReply: (body: string) => Promise<ActionResult> }) {
+  const titleId = `bug-${bug.id}-thread`;
+  return (
+    <section className={c.bugBlock} aria-labelledby={titleId}>
+      <h3 id={titleId} className={styles.chartTitle}>
+        <MessagesSquare size={14} strokeWidth={1.9} aria-hidden /> {BUGS_COPY.conversation}
+      </h3>
+      {bug.thread.length > 0 ? (
+        <ol className={c.thread}>
+          {bug.thread.map((m) => (
+            <li key={m.id} className={c.message} data-author={m.author}>
+              <span className={c.messageHead}>
+                <span className={c.messageWho}>{m.who}</span>
+                <span title={m.whenTitle}>{m.when}</span>
+              </span>
+              <p className={c.messageBody}>{m.body}</p>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        bug.canReply && <p className={styles.quiet}>{BUGS_COPY.conversationEmpty}</p>
+      )}
+      {bug.seenByThem && <p className={c.blockHint}>{bug.seenByThem}</p>}
+      {bug.canReply ? <BugReplyBox bugId={bug.id} onReply={onReply} /> : <p className={styles.quiet}>{BUGS_COPY.noReporter}</p>}
+    </section>
+  );
+}
+
+/** One report, read in full: its words, who and from where, the board, the conversation, the screenshot, the logs, and what to do with it. */
+export function BugDetail({
+  bug,
+  onStatus,
+  onNote,
+  onReply,
+  onBack,
+}: {
+  bug: BugView;
+  onStatus: (status: BugStatus, note?: string) => void;
+  onNote: (note: string) => void;
+  onReply: (body: string) => Promise<ActionResult>;
+  onBack?: () => void;
+}) {
   const [note, setNote] = useState(bug.note);
   const edited = note.trim() !== bug.note.trim();
   return (
@@ -80,6 +188,7 @@ export function BugDetail({ bug, onStatus, onNote, onBack }: { bug: BugView; onS
       )}
       <div className={c.bugDetailHead}>
         <Pill tone={bug.statusTone}>{bug.statusLabel}</Pill>
+        {bug.waiting && <Pill tone="warn">{BUGS_COPY.waiting}</Pill>}
         <span className={c.bugDetailWhen} title={bug.whenTitle}>
           {bug.when} · {bug.ago}
         </span>
@@ -150,6 +259,8 @@ export function BugDetail({ bug, onStatus, onNote, onBack }: { bug: BugView; onS
         )}
       </dl>
 
+      <BugThread bug={bug} onReply={onReply} />
+
       <section className={c.bugBlock} aria-label={BUGS_COPY.screenshot}>
         <h3 className={styles.chartTitle}>
           <Camera size={14} strokeWidth={1.9} aria-hidden /> {BUGS_COPY.screenshot}
@@ -208,6 +319,7 @@ function BugRow({ bug, selected, onSelect }: { bug: BugView; selected: boolean; 
           <span className={c.bugRowWho} data-missing={bug.whoMissing || undefined}>
             {bug.who}
           </span>
+          {bug.waiting && <Pill tone="warn">{BUGS_COPY.waiting}</Pill>}
           <span className={c.bugRowWhen} title={bug.whenTitle}>
             {bug.ago}
           </span>
@@ -216,6 +328,11 @@ function BugRow({ bug, selected, onSelect }: { bug: BugView; selected: boolean; 
           {bug.excerpt}
         </span>
         <span className={c.bugRowMeta}>
+          {bug.thread.length > 0 && (
+            <span>
+              <MessagesSquare size={12} strokeWidth={2} aria-hidden /> {BUGS_COPY.messages(bug.thread.length)}
+            </span>
+          )}
           {bug.device.summary && <span>{bug.device.summary}</span>}
           {bug.hasScreenshot && (
             <span>
@@ -242,6 +359,8 @@ export interface BugsContentProps {
   onSelect: (id: string | null) => void;
   onStatus: (bug: AdminBug, status: BugStatus, note?: string) => void;
   onNote: (bug: AdminBug, note: string) => void;
+  /** a reply to the report's reporter: resolves once it is saved (or why not) */
+  onReply: (bug: AdminBug, body: string) => Promise<ActionResult>;
   loading: boolean;
   error: string | null;
   updated: string | null;
@@ -251,7 +370,7 @@ export interface BugsContentProps {
 }
 
 /** The inbox under its header: the status tabs with counts, the reports, and the open one. */
-export function BugsContent({ bugs, clock, tab, onTab, selectedId, onSelect, onStatus, onNote, loading, error, updated, onRefresh, layout }: BugsContentProps) {
+export function BugsContent({ bugs, clock, tab, onTab, selectedId, onSelect, onStatus, onNote, onReply, loading, error, updated, onRefresh, layout }: BugsContentProps) {
   const list = useMemo(() => (bugs ? bugsInTab(bugs, tab).map((b) => bugView(b, clock)) : []), [bugs, tab, clock]);
   const tabs = useMemo(() => (bugs ? bugTabs(bugs) : null), [bugs]);
   const selectedBug = bugs?.find((b) => b.id === selectedId) ?? null;
@@ -268,6 +387,7 @@ export function BugsContent({ bugs, clock, tab, onTab, selectedId, onSelect, onS
         bug={selected}
         onStatus={(status, note) => onStatus(selectedBug, status, note)}
         onNote={(note) => onNote(selectedBug, note)}
+        onReply={(body) => onReply(selectedBug, body)}
         onBack={layout === "stack" ? () => onSelect(null) : undefined}
       />
     );
@@ -312,8 +432,8 @@ export function BugsContent({ bugs, clock, tab, onTab, selectedId, onSelect, onS
   );
 }
 
-/** Reads ?id= and ?tab= once; writes them back as the selection changes (no new history entries). */
-function useInboxAddress(): [BugStatus, (t: BugStatus) => void, string | null, (id: string | null) => void] {
+/** Reads ?id= and ?tab= once; writes them back as the selection changes (no new history entries). The last: a tab with one report open in it. */
+function useInboxAddress(): [BugStatus, (t: BugStatus) => void, string | null, (id: string | null) => void, (t: BugStatus, id: string) => void] {
   const [state, setState] = useState<{ tab: BugStatus; id: string | null }>(() => {
     if (typeof window === "undefined") return { tab: "new", id: null };
     const p = new URLSearchParams(window.location.search);
@@ -329,7 +449,8 @@ function useInboxAddress(): [BugStatus, (t: BugStatus) => void, string | null, (
   }, [state]);
   const setTab = useCallback((tab: BugStatus) => setState({ tab, id: null }), []);
   const setId = useCallback((id: string | null) => setState((s) => ({ ...s, id })), []);
-  return [state.tab, setTab, state.id, setId];
+  const show = useCallback((tab: BugStatus, id: string) => setState({ tab, id }), []);
+  return [state.tab, setTab, state.id, setId, show];
 }
 
 /** /admin/bugs: the inbox. Admins only (see AdminFrame). */
@@ -338,19 +459,20 @@ export function BugsScreen({ notFound }: { notFound: ReactNode }) {
   const res = useAdminResource(access.canRead ? ADMIN_API.bugs : null, AdminBugListSchema, { pollMs: 60_000 });
   const now = useNow();
   const clock = useMemo(() => ({ now }), [now]);
-  const [tab, setTab, selectedId, setSelected] = useInboxAddress();
+  const [tab, setTab, selectedId, setSelected, showInTab] = useInboxAddress();
   const split = useWide(1000);
   const bugs = res.data?.bugs ?? null;
   const updated = res.data ? ADMIN_COPY.updated(relativeTime(res.data.generatedAt, now) ?? formatWhen(res.data.generatedAt, clock)) : null;
 
-  // a report opened by its address in another tab: show that tab
+  // a report opened by its address in another tab: show that tab, with the report still open (the
+  // reporter-replied email links to ?id= alone)
   const opened = useRef(false);
   useEffect(() => {
     if (opened.current || !bugs || !selectedId) return;
     opened.current = true;
     const b = bugs.find((x) => x.id === selectedId);
-    if (b && b.status !== tab) setTab(b.status);
-  }, [bugs, selectedId, tab, setTab]);
+    if (b && b.status !== tab) showInTab(b.status, b.id);
+  }, [bugs, selectedId, tab, showInTab]);
 
   const ids = useMemo(() => (bugs ? bugsInTab(bugs, tab).map((b) => b.id) : []), [bugs, tab]);
   // the split view always has one open: the first, until another is picked
@@ -385,6 +507,17 @@ export function BugsScreen({ notFound }: { notFound: ReactNode }) {
       else toast(CONSOLE_COPY.saved);
     });
   }, []);
+  // A reply to a new report moves it to Seen (the server does): follow it there, still open.
+  const reply = useCallback(
+    async (bug: AdminBug, body: string): Promise<ActionResult> => {
+      const r = await replyToBug(bug, body);
+      if (!r.ok) return r;
+      if (bug.status === "new" && tab === "new") showInTab("seen", bug.id);
+      toast(BUGS_COPY.replySent, r.email ? { description: BUGS_COPY.replyEmail(r.email) } : undefined);
+      return { ok: true };
+    },
+    [tab, showInTab],
+  );
 
   // j / k move, s / f / w set the open report's status (not while typing, nor with a dialog open)
   useEffect(() => {
@@ -418,6 +551,7 @@ export function BugsScreen({ notFound }: { notFound: ReactNode }) {
         onSelect={setSelected}
         onStatus={setStatus}
         onNote={setNote}
+        onReply={reply}
         loading={res.loading}
         error={res.error}
         updated={updated}

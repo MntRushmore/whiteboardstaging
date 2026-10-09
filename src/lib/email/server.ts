@@ -2,8 +2,9 @@
  * What the email routes read from outside the request: the env, the service-role email log, the
  * caller's profile, the subscriptions, an account's address, a family's activity (the trial's
  * emails), Resend, the clock. The routes
- * (src/app/api/email/welcome, src/app/api/cron/trial-reminders, and the billing webhook's
- * "free trial started" email) call `emailDeps`; tests replace it.
+ * (src/app/api/email/welcome, src/app/api/cron/trial-reminders, the billing webhook's
+ * "free trial started" email, and both sides of a bug report's replies: src/lib/email/bugReply.ts)
+ * call `emailDeps`; tests replace it.
  * Route files may not read process.env or export helpers (routeProtection.test.ts), so all of this
  * lives here.
  *
@@ -14,7 +15,7 @@ import { LEGAL } from "@/lib/legal";
 import { readFamilyActivity, type FamilyActivity } from "@/lib/email/activity";
 import { supabaseEmailLog, type EmailLogStore } from "@/lib/email/log";
 import { trialsStartedSince, type NudgeTrialRow } from "@/lib/email/nudges";
-import { DEFAULT_EMAIL_FROM, sendEmail, type ResendConfig, type SendEmailInput, type SendEmailResult } from "@/lib/email/resend";
+import { DEFAULT_EMAIL_FROM, isSendableAddress, sendEmail, type ResendConfig, type SendEmailInput, type SendEmailResult } from "@/lib/email/resend";
 import { trialsEndingBetween, type TrialRow } from "@/lib/email/trialReminders";
 import { startedSubscription, type StartedRow } from "@/lib/email/unlimitedStarted";
 import { reportLinkSecrets } from "@/lib/report/unsubscribe";
@@ -38,6 +39,8 @@ export type EmailEnv = {
   manageUrl: string;
   /** False when manageUrl fell back to the account page (logged by the cron). */
   manageIsPortal: boolean;
+  /** ALERT_EMAIL when it is one plain address, else null: the operator's emails (a reporter wrote back) are then logged, not sent. */
+  alertEmail: string | null;
 };
 
 /** An absolute http(s) URL without a trailing slash, or null. */
@@ -74,6 +77,7 @@ export function getEmailEnv(): EmailEnv {
     siteUrl,
     manageUrl: manage.url,
     manageIsPortal: manage.portal,
+    alertEmail: env.ALERT_EMAIL?.trim() && isSendableAddress(env.ALERT_EMAIL.trim()) ? env.ALERT_EMAIL.trim() : null,
   };
 }
 

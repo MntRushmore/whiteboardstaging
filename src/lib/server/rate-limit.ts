@@ -48,6 +48,9 @@ export const LIMITS = {
   adminScreenshot: { limit: 240, windowMs: MINUTE },
   // POST /api/email/welcome: the app asks once, at the end of the tour; the email itself goes at most once.
   emailWelcome: { limit: 5, windowMs: MINUTE },
+  // A reporter writing back on their bug report (POST /api/bug-reports/<id>/messages): each one emails
+  // the operator. bug_report_reply() also caps a report at 20 replies a day, however it is called.
+  bugReply: { limit: 6, windowMs: MINUTE },
   // The family routes (src/app/api/family): the Family page's reads and a grown-up's edits.
   family: { limit: 30, windowMs: MINUTE },
   // Switching profiles, per caller. The grown-up's PIN has its own budget per FAMILY (PIN_ATTEMPTS,
