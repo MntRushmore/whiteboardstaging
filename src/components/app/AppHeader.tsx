@@ -3,7 +3,7 @@
 import { lazy, Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeftRight, ChartColumn, CreditCard, FlaskConical, InfinityIcon, ShieldCheck, UserRound, Users } from "lucide-react";
+import { ArrowLeftRight, CalendarCheck, ChartColumn, CreditCard, FlaskConical, InfinityIcon, ShieldCheck, UserRound, Users } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { reportUserError } from "@/lib/reportAppError";
@@ -23,6 +23,8 @@ import { useUnlimited } from "@/lib/billing/useUnlimited";
 import { isKidEmail } from "@/lib/family/contracts";
 import { FAMILY_MENU, kidDisplayName } from "@/lib/family/menu";
 import { openProfilePicker } from "@/lib/family/picker";
+// The weekly report's menu entry (grown-ups and solo students): a label and a path, nothing more.
+import { REPORT_MENU } from "@/lib/report/menu";
 import { Badge, type BadgeTone } from "@/registry/components/badge/badge";
 import { UserMenu } from "@/registry/components/user-menu/user-menu";
 import styles from "./appShell.module.css";
@@ -75,7 +77,7 @@ function UnlimitedLink() {
 
 /**
  * The app bar for signed-in pages: product name and the beta badge on the left; Report a bug,
- * the plan's meter and the account menu (Progress, Account, Billing, Family, Feature Labs, Admin for
+ * the plan's meter and the account menu (Progress, Account, Billing, Family, Weekly report, Feature Labs, Admin for
  * admins, Sign out) on the right; a kid profile's menu is Progress and Switch profile, with no meter
  * (kids never see billing). Self-contained
  * (reads the session and the ink summary itself), so any page can drop it in above an
@@ -165,6 +167,11 @@ export function AppHeader({ className }: { className?: string }) {
                         label: FAMILY_MENU.family,
                         icon: <Users size={16} strokeWidth={1.75} />,
                         onSelect: () => router.push("/family"),
+                      },
+                      {
+                        label: REPORT_MENU.label,
+                        icon: <CalendarCheck size={16} strokeWidth={1.75} />,
+                        onSelect: () => router.push(REPORT_MENU.path),
                       },
                       {
                         label: "Feature Labs",

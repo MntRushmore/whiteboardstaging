@@ -136,6 +136,7 @@ describe("allow-lists", () => {
       "src/app/api/config/status/route.ts",
       "src/app/api/cron/trial-reminders/route.ts",
       "src/app/api/health/route.ts",
+      "src/app/api/report/unsubscribe/route.ts",
     ]);
   });
 
