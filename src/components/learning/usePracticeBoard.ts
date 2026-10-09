@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { ChatRunOrigin } from "@/lib/learning/contracts";
-import { clearPracticeMarker, readPracticeMarker, type StorageLike } from "@/lib/learning/practiceMarker";
+import { clearPracticeMarker, hasPracticeMarker, readPracticeMarker, type StorageLike } from "@/lib/learning/practiceMarker";
 import type { ChatAction, ChatRunReport, ChatScreen } from "@/lib/live/chat/contracts";
 import type { LiveController } from "@/lib/live/contracts";
 import { reportUserError } from "@/lib/reportAppError";
@@ -45,6 +45,26 @@ export const TOPIC_PAUSE_MS = 4000;
 
 /** Boards whose practice has started in this tab. */
 const started = new Set<string>();
+/** Boards whose practice problems are being written in this tab, and who waits for that to end. */
+const writing = new Set<string>();
+const runEndListeners = new Set<(boardId: string) => void>();
+
+/**
+ * True while this board's practice problems are still to be written in this tab: its marker is
+ * there (the run has not started) or the run is writing. A Today's practice board (`DailyBoard`)
+ * waits for this before it decides its set came up short.
+ */
+export function practicePending(boardId: string, storage?: StorageLike | null): boolean {
+  return writing.has(boardId) || hasPracticeMarker(boardId, storage);
+}
+
+/** Called with the board's id each time a practice run ends in this tab (written or not). */
+export function onPracticeRunEnd(fn: (boardId: string) => void): () => void {
+  runEndListeners.add(fn);
+  return () => {
+    runEndListeners.delete(fn);
+  };
+}
 
 export type PracticeRunResult = "none" | "already" | "written" | "failed";
 
@@ -174,21 +194,34 @@ export async function runPracticeMarker(deps: PracticeRunDeps): Promise<Practice
   const marker = readPracticeMarker(boardId, (deps.now ?? Date.now)(), storage);
   if (!marker) return "none";
   started.add(boardId);
-  // first: a reload from here on finds no marker, whatever happens to the writing
-  clearPracticeMarker(boardId, storage);
+  writing.add(boardId);
+  try {
+    // first: a reload from here on finds no marker, whatever happens to the writing
+    clearPracticeMarker(boardId, storage);
 
-  const screen = deps.screen?.();
-  const onScreen = new Set(screen?.problems ?? []);
-  const problems = marker.problems.filter((p) => !onScreen.has(p.join("; "))).map((p) => [...p]);
-  if (problems.length === 0) return "already";
-  // a topic's example only on a fresh board (a marker that could not be cleared finds work there)
-  const examples = marker.examples && (!screen || screen.empty) ? marker.examples : undefined;
-  return writePracticeSet({ skill: marker.skill, problems, ...(examples ? { examples } : {}) }, deps);
+    const screen = deps.screen?.();
+    const onScreen = new Set(screen?.problems ?? []);
+    const problems = marker.problems.filter((p) => !onScreen.has(p.join("; "))).map((p) => [...p]);
+    if (problems.length === 0) return "already";
+    // a topic's example only on a fresh board (a marker that could not be cleared finds work there)
+    const examples = marker.examples && (!screen || screen.empty) ? marker.examples : undefined;
+    return await writePracticeSet({ skill: marker.skill, problems, ...(examples ? { examples } : {}) }, deps);
+  } finally {
+    writing.delete(boardId);
+    for (const fn of [...runEndListeners]) {
+      try {
+        fn(boardId);
+      } catch {
+        // a listener is never worth the run
+      }
+    }
+  }
 }
 
 /** Forget the boards started in this tab (tests). */
 export function resetPracticeBoards(): void {
   started.clear();
+  writing.clear();
 }
 
 /** Runs this board's practice marker once the board (editor and controller) is up. */

@@ -1,13 +1,15 @@
 /**
  * Opening the day's board from the home: the board first, then its notes (the problems for the
- * tutor's hand, the daily marker, the progress note), then the row; and Continue putting the daily
- * marker back on a device that has none.
+ * tutor's hand, the daily marker naming the student, the progress note), then the row; and Continue
+ * putting the daily marker back on a device that has none of this student's for today.
  */
 import { describe, expect, it, vi } from "vitest";
 import type { DailyPlan } from "../contracts";
+import type { DailyMarker } from "../dailyMarker";
 import { continueDailyBoard, DAILY_MARKER_SKILL, startDailyBoard, weekdayName, type StartDeps } from "../start";
 
 const BOARD = "b1000000-0000-4000-8000-000000000001";
+const KID = "u-kid";
 const PLAN: DailyPlan = {
   day: "2026-10-08",
   goal: 3,
@@ -21,6 +23,7 @@ const PLAN: DailyPlan = {
 function deps(over: Partial<StartDeps> = {}) {
   const order: string[] = [];
   const d: StartDeps = {
+    userId: KID,
     createBoard: vi.fn(async () => {
       order.push("board");
       return { ok: true as const, value: BOARD };
@@ -43,7 +46,7 @@ describe("startDailyBoard", () => {
     expect(order).toEqual(["board", "practice", "daily", "note", "save"]);
     expect(d.createBoard).toHaveBeenCalledWith("Today's practice · Thursday");
     expect(d.writePracticeMarker).toHaveBeenCalledWith({ boardId: BOARD, skill: DAILY_MARKER_SKILL, problems: PLAN.problems.map((p) => p.lines), createdAt: 1_000 });
-    expect(d.writeDailyMarker).toHaveBeenCalledWith({ boardId: BOARD, day: "2026-10-08", goal: 3, createdAt: 1_000 });
+    expect(d.writeDailyMarker).toHaveBeenCalledWith({ boardId: BOARD, userId: KID, day: "2026-10-08", goal: 3, createdAt: 1_000 });
     expect(d.writeNote).toHaveBeenCalledWith(expect.objectContaining({ boardId: BOARD, day: "2026-10-08", done: 0, stars: 0, counted: [], skills: ["add_subtract", "fractions"] }));
     expect(d.save).toHaveBeenCalledWith({ day: "2026-10-08", boardId: BOARD, goal: 3, done: 0, stars: 0 });
   });
@@ -67,12 +70,27 @@ describe("startDailyBoard", () => {
 });
 
 describe("continueDailyBoard", () => {
-  it("puts the daily marker back only when this device has none", () => {
+  const today = { boardId: BOARD, day: "2026-10-08", goal: 5 };
+  const mine: DailyMarker = { boardId: BOARD, userId: KID, day: "2026-10-08", goal: 5, createdAt: 1 };
+  const cont = (marker: DailyMarker | null) => {
     const write = vi.fn(() => true);
-    expect(continueDailyBoard({ boardId: BOARD, day: "2026-10-08", goal: 5 }, { hasDailyMarker: () => true, writeDailyMarker: write, now: () => 5 })).toBe(BOARD);
+    const boardId = continueDailyBoard(today, { userId: KID, readDailyMarker: () => marker, writeDailyMarker: write, now: () => 5 });
+    return { boardId, write };
+  };
+
+  it("keeps this student's marker for today as it is", () => {
+    const { boardId, write } = cont(mine);
+    expect(boardId).toBe(BOARD);
     expect(write).not.toHaveBeenCalled();
-    continueDailyBoard({ boardId: BOARD, day: "2026-10-08", goal: 5 }, { hasDailyMarker: () => false, writeDailyMarker: write, now: () => 5 });
-    expect(write).toHaveBeenCalledWith({ boardId: BOARD, day: "2026-10-08", goal: 5, createdAt: 5 });
+  });
+
+  it("puts one back, naming the student, when this device has none (another device, cleared storage)", () => {
+    expect(cont(null).write).toHaveBeenCalledWith({ boardId: BOARD, userId: KID, day: "2026-10-08", goal: 5, createdAt: 5 });
+  });
+
+  it("replaces one from before markers named their student, or one for another day", () => {
+    expect(cont({ boardId: BOARD, day: "2026-10-08", goal: 5, createdAt: 1 }).write).toHaveBeenCalledWith(expect.objectContaining({ userId: KID, day: "2026-10-08" }));
+    expect(cont({ ...mine, day: "2026-10-07" }).write).toHaveBeenCalledWith(expect.objectContaining({ userId: KID, day: "2026-10-08" }));
   });
 });
 

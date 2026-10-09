@@ -42,8 +42,8 @@ function topicSeed(): number {
 }
 
 export interface TopicActions {
-  /** what is being opened: a topic, or "ask" for the words box */
-  busy: TopicId | "ask" | null;
+  /** what is being opened: a topic, "ask" for the words box, or "daily" for Today's practice (`useToday`) */
+  busy: OpeningKind | null;
   /** a topic board: named for the topic, its worked example and problems left in its marker */
   startTopic: (id: TopicId) => void;
   /** the words box: a topic they name opens that topic; else a board named after them, with Ask sent them */
@@ -53,14 +53,16 @@ export interface TopicActions {
 // ------------------------------------------------------------------ one board at a time, page-wide
 
 /**
- * What is being opened, for every `useTopicActions` on the page. The home has two (the skill path's
- * stops, and Up next / Ask / Pick a topic), and each tap makes a board before the page moves: a lock
- * per hook let a tap on one start a second board while the other's was still being made. One lock
- * for the page, read synchronously, so two quick taps anywhere open one board; every hook's `busy`
- * is this, so the other card's buttons wait too. Released by its holder on a failure, or when the
- * holder unmounts (a successful open keeps it while the page leaves).
+ * What is being opened, for every `useTopicActions` on the page — and Today's practice (`useToday`:
+ * Start, Continue, Practise more). The home has three cards that make boards (Today's practice, the
+ * skill path's stops, and Up next / Ask / Pick a topic), and each tap makes a board before the page
+ * moves: a lock per hook let a tap on one start a second board while the other's was still being
+ * made. One lock for the page, read synchronously, so two quick taps anywhere open one board; every
+ * hook's `busy` is this, so the other cards' buttons wait too. Released by its holder on a failure,
+ * or when the holder unmounts (a successful open keeps it while the page leaves).
  */
-type TopicOpening = { owner: object; kind: TopicId | "ask" };
+export type OpeningKind = TopicId | "ask" | "daily";
+type TopicOpening = { owner: object; kind: OpeningKind };
 let opening: TopicOpening | null = null;
 const openingListeners = new Set<() => void>();
 
@@ -70,7 +72,7 @@ function setOpening(next: TopicOpening | null): void {
 }
 
 /** Take the page's lock for `owner`; false while anyone (this hook included) holds it. */
-export function claimTopicOpen(owner: object, kind: TopicId | "ask"): boolean {
+export function claimTopicOpen(owner: object, kind: OpeningKind): boolean {
   if (opening) return false;
   setOpening({ owner, kind });
   return true;
@@ -82,7 +84,7 @@ export function releaseTopicOpen(owner: object): void {
 }
 
 /** What the page is opening, or null. */
-export function topicOpening(): TopicId | "ask" | null {
+export function topicOpening(): OpeningKind | null {
   return opening?.kind ?? null;
 }
 
@@ -91,7 +93,8 @@ export function resetTopicOpeningForTests(): void {
   setOpening(null);
 }
 
-function subscribeOpening(listener: () => void): () => void {
+/** Called whenever the lock is taken or given back (for `useSyncExternalStore`). */
+export function subscribeOpening(listener: () => void): () => void {
   openingListeners.add(listener);
   return () => {
     openingListeners.delete(listener);
@@ -116,7 +119,7 @@ export function useTopicActions(userId: string | undefined, grade: Grade | null 
   useEffect(() => release, [release]);
 
   const open = useCallback(
-    async (kind: TopicId | "ask", title: string, leave: (boardId: string) => boolean) => {
+    async (kind: OpeningKind, title: string, leave: (boardId: string) => boolean) => {
       if (!userId) {
         release();
         return;

@@ -11,29 +11,43 @@
  * nothing and gets the shared Supabase client.
  */
 import { supabase } from "@/lib/supabase";
+import type { AttemptOrigin, Outcome } from "@/lib/learning/contracts";
 import type { DailyRow } from "./contracts";
-import { addDays, isDay } from "./streak";
+import { countsForDaily, dailyProblemKey } from "./progress";
+import { addDays, dailyStreak, isDay } from "./streak";
 
 interface QueryResult<T> {
   data: T | null;
   error: { message?: string; code?: string } | null;
 }
 
+type Limited = { limit(n: number): PromiseLike<QueryResult<unknown[]>> };
+type Ordered = { order(column: string, opts: { ascending: boolean }): Limited };
+
 export interface DailyClient {
   from(table: string): {
     select(columns: string): {
-      gte(column: string, value: string): {
-        order(column: string, opts: { ascending: boolean }): { limit(n: number): PromiseLike<QueryResult<unknown[]>> };
-      };
+      gte(column: string, value: string): Ordered & { lt(column: string, value: string): Ordered };
+      eq(column: string, value: string): Limited;
     };
   };
   rpc(fn: string, args: Record<string, unknown>): PromiseLike<QueryResult<unknown>>;
 }
 
-/** How far back the home reads: enough for a best streak worth showing, and this week. */
+/** How far back the home reads first: this week, and a best streak worth showing. */
 export const DAILY_READ_DAYS = 60;
+/**
+ * A current streak that runs back past that is read further back, a page of this many days at a
+ * time, until it breaks: the flame shows the true run (one small read more, only for a student on
+ * a run of two months or more).
+ */
+export const DAILY_PAGE_DAYS = 365;
+/** At most this many pages back (ten years): a bound on the loop, not a ceiling anyone reaches. */
+const DAILY_MAX_PAGES = 10;
 
 const COLUMNS = "day, board_id, goal, done, stars, completed_at";
+/** A day's board never has nearly this many attempts. */
+const BOARD_ATTEMPTS = 200;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function defaultClient(): DailyClient {
@@ -70,16 +84,79 @@ export interface DailyRead {
   ok: boolean;
 }
 
-/** The student's rows of the last DAILY_READ_DAYS days up to `today`'s, newest first. Never throws. */
-export async function loadDailyRows(today: string, client: DailyClient = defaultClient()): Promise<DailyRead> {
+/** Rows from `from` (inclusive) up to `before` (exclusive; open-ended without), newest first; null when the read failed. Never throws. */
+async function readRows(client: DailyClient, from: string, before: string | null, limit: number): Promise<DailyRow[] | null> {
   try {
-    const since = addDays(today, -DAILY_READ_DAYS);
-    const { data, error } = await client.from("daily_practice").select(COLUMNS).gte("day", since).order("day", { ascending: false }).limit(DAILY_READ_DAYS + 7);
-    if (error) return { rows: [], ok: false };
-    const rows = (Array.isArray(data) ? data : []).map(toDailyRow).filter((r): r is DailyRow => r !== null);
-    return { rows, ok: true };
+    const since = client.from("daily_practice").select(COLUMNS).gte("day", from);
+    const { data, error } = await (before ? since.lt("day", before) : since).order("day", { ascending: false }).limit(limit);
+    if (error) return null;
+    return (Array.isArray(data) ? data : []).map(toDailyRow).filter((r): r is DailyRow => r !== null);
   } catch {
-    return { rows: [], ok: false };
+    return null;
+  }
+}
+
+/** True when the current streak (`dailyStreak`) runs back to `oldest`, the first day read: it may go on before it. */
+export function streakReaches(rows: readonly DailyRow[], today: string, oldest: string): boolean {
+  const { current, todayDone } = dailyStreak(rows, today);
+  if (current === 0) return false;
+  return addDays(todayDone ? today : addDays(today, -1), -(current - 1)) <= oldest;
+}
+
+/**
+ * The student's rows up to `today`'s, newest first: the last DAILY_READ_DAYS days, and further back
+ * while the current streak runs into the oldest day read (so it is never cut at the window). `best`
+ * is the longest run in what was read. Never throws.
+ */
+export async function loadDailyRows(today: string, client: DailyClient = defaultClient()): Promise<DailyRead> {
+  let oldest = addDays(today, -DAILY_READ_DAYS);
+  // a few rows after today too (a clock that was wrong): the streak ignores them
+  const rows = await readRows(client, oldest, null, DAILY_READ_DAYS + 7);
+  if (!rows) return { rows: [], ok: false };
+  for (let page = 0; page < DAILY_MAX_PAGES && streakReaches(rows, today, oldest); page++) {
+    const from = addDays(oldest, -DAILY_PAGE_DAYS);
+    const more = await readRows(client, from, oldest, DAILY_PAGE_DAYS + 1);
+    // a page that fails: the streak is what was read so far
+    if (!more) break;
+    rows.push(...more);
+    oldest = from;
+    if (more.length === 0) break;
+  }
+  return { rows, ok: true };
+}
+
+export interface BoardCounted {
+  /** the set's problems finished on the board (each once) */
+  done: number;
+  /** their problem keys and attempt ids (`DailyProgress.known`) */
+  counted: string[];
+}
+
+/**
+ * The set's problems already finished on a day's board, from the student's own learning record
+ * (`learning_attempts`, owner-only): what another device counted, so answering one of them again
+ * here is not counted twice (the tracker there gave it an attempt id this device never saw). Null
+ * when it could not be read. Never throws.
+ */
+export async function loadBoardCounted(boardId: string, client: DailyClient = defaultClient()): Promise<BoardCounted | null> {
+  if (!UUID.test(boardId)) return null;
+  try {
+    const { data, error } = await client.from("learning_attempts").select("id, problem_latex, origin, outcome").eq("board_id", boardId).limit(BOARD_ATTEMPTS);
+    if (error) return null;
+    const problems = new Set<string>();
+    const counted = new Set<string>();
+    for (const raw of Array.isArray(data) ? data : []) {
+      const r = (raw ?? {}) as Record<string, unknown>;
+      if (typeof r.id !== "string" || typeof r.origin !== "string" || typeof r.outcome !== "string") continue;
+      const record = { id: r.id, boardId, origin: r.origin as AttemptOrigin, outcome: r.outcome as Outcome, problemLatex: typeof r.problem_latex === "string" ? r.problem_latex : "" };
+      if (!countsForDaily(record, boardId)) continue;
+      const key = dailyProblemKey(record);
+      problems.add(key);
+      counted.add(key).add(record.id);
+    }
+    return { done: problems.size, counted: [...counted] };
+  } catch {
+    return null;
   }
 }
 

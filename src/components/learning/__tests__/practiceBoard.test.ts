@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { hasPracticeMarker, writePracticeMarker, type StorageLike } from "@/lib/learning/practiceMarker";
 import type { ChatRunReport, ChatScreen } from "@/lib/live/chat/contracts";
-import { PRACTICE_COPY, resetPracticeBoards, runPracticeMarker, TOPIC_PAUSE_MS, writePracticeSet, type PracticeRunDeps } from "../usePracticeBoard";
+import { onPracticeRunEnd, practicePending, PRACTICE_COPY, resetPracticeBoards, runPracticeMarker, TOPIC_PAUSE_MS, writePracticeSet, type PracticeRunDeps } from "../usePracticeBoard";
 
 function memory(): StorageLike & { map: Map<string, string> } {
   const map = new Map<string, string>();
@@ -127,6 +127,38 @@ describe("practice board: the Progress page's marker", () => {
   it("the toast without a known skill name", () => {
     expect(PRACTICE_COPY.start(null)).toBe("Let's practise!");
     expect(PRACTICE_COPY.start("Fractions")).toBe("Let's practise Fractions!");
+  });
+
+  it("pending from the marker until the run ends (a Today's practice board waits for it), then says so", async () => {
+    let finish: (r: ChatRunReport) => void = () => {};
+    const run = vi.fn(() => new Promise<ChatRunReport>((resolve) => (finish = resolve)));
+    const { deps, storage } = setup({ run });
+    const ended = vi.fn();
+    const stop = onPracticeRunEnd(ended);
+    // the marker is there: the run is still to come
+    expect(practicePending("b1", storage)).toBe(true);
+    const running = runPracticeMarker(deps);
+    // the marker is gone, the problems are being written: still pending
+    expect(practicePending("b1", storage)).toBe(true);
+    await Promise.resolve();
+    expect(ended).not.toHaveBeenCalled();
+    finish(report(2));
+    await expect(running).resolves.toBe("written");
+    expect(practicePending("b1", storage)).toBe(false);
+    expect(ended).toHaveBeenCalledWith("b1");
+    stop();
+    // another board's run, or none at all: never pending
+    expect(practicePending("b2", storage)).toBe(false);
+  });
+
+  it("a run that fails still ends (nothing waits for it forever)", async () => {
+    const { deps, storage } = setup({ run: vi.fn(async (): Promise<ChatRunReport> => Promise.reject(new Error("The board is not ready yet."))) });
+    const ended = vi.fn();
+    const stop = onPracticeRunEnd(ended);
+    await expect(runPracticeMarker(deps)).resolves.toBe("failed");
+    expect(ended).toHaveBeenCalledWith("b1");
+    expect(practicePending("b1", storage)).toBe(false);
+    stop();
   });
 });
 

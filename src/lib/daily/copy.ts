@@ -60,4 +60,7 @@ export const DAILY_BOARD_COPY = {
   announce: (n: number) => (n >= 2 ? `You did it! ${n} days in a row.` : "You did it! Day 1 of your streak."),
   bonusToast: "3 more for you!",
   bonusFailed: "Couldn't write more problems. Try again in a moment.",
+  /** the rest of a set whose writing was cut short */
+  topUpToast: (n: number) => (n === 1 ? "One more to finish today's set!" : `${n} more to finish today's set!`),
+  topUpFailed: "Couldn't write the rest of today's set. Open this board again in a moment.",
 } as const;
