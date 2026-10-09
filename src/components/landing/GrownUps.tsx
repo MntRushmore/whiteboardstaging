@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { CalendarCheck, ChartColumn, Mail, UsersRound } from "lucide-react";
 import { LANDING_COPY } from "./copy";
+import { DARK_BAND_ATTR } from "./bands";
 import { Lines } from "./Lines";
 import styles from "./landing.module.css";
 
@@ -14,7 +15,7 @@ const ICONS = [CalendarCheck, ChartColumn, UsersRound, Mail] as const;
 export function GrownUps() {
   const copy = LANDING_COPY.grownUps;
   return (
-    <section className={`${styles.band} ${styles.dark}`} aria-labelledby="lp-grown-ups-title">
+    <section className={`${styles.band} ${styles.dark}`} aria-labelledby="lp-grown-ups-title" {...{ [DARK_BAND_ATTR]: "" }}>
       <div className={styles.inner}>
         <div className={`${styles.head} ${styles.reveal}`}>
           <p className={styles.eyebrow}>{copy.eyebrow}</p>
@@ -29,7 +30,7 @@ export function GrownUps() {
             alt={copy.alt}
             width={1958}
             height={1224}
-            sizes="(max-width: 1199px) calc(100vw - 32px), 1152px"
+            sizes="(max-width: 959px) calc(100vw - 32px), 928px"
           />
         </figure>
         <ul className={styles.features}>

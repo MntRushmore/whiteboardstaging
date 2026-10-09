@@ -24,7 +24,7 @@ import landing from "./landing.module.css";
 import styles from "./practice.module.css";
 
 /**
- * What they'll practise: a grade picker (Kindergarten to 8th, and High school) over each grade's
+ * What they'll practice: a grade picker (Kindergarten to 8th, and High school) over each grade's
  * real skill path. It needs no script: the chips are a native radio group (arrow keys move between
  * grades) and CSS shows the chosen grade's path (`practice.module.css`). Without `:has()` every
  * path is simply listed.
@@ -60,14 +60,18 @@ function Panel({ tab }: { tab: PracticeTab }) {
           <h3 id={`lp-panel-${tab.id}`} className={styles.panelTitle}>
             {tab.title}
           </h3>
-          <p className={styles.panelNote}>{PRACTICE_COPY.courseCount(tab.courses.length)}</p>
+          <p className={styles.panelNote}>{PRACTICE_COPY.courseNote}</p>
         </div>
         <ul className={styles.courses}>
           {tab.courses.map((course) => (
             <li key={course.id} className={styles.course}>
               <p className={styles.courseName}>{course.label}</p>
               <p className={styles.courseBlurb}>{course.blurb}</p>
-              <p className={styles.courseTopics}>{course.topics.join(" · ")}</p>
+              <ul className={styles.courseTopics} aria-label={`${course.label} topics`}>
+                {course.topics.map((topic) => (
+                  <li key={topic}>{topic}</li>
+                ))}
+              </ul>
             </li>
           ))}
         </ul>
@@ -80,7 +84,7 @@ function Panel({ tab }: { tab: PracticeTab }) {
         <h3 id={`lp-panel-${tab.id}`} className={styles.panelTitle}>
           {tab.title}
         </h3>
-        <p className={styles.panelNote}>{PRACTICE_COPY.skillCount(tab.skills.length)}</p>
+        <p className={styles.panelNote}>{PRACTICE_COPY.gradeNote}</p>
       </div>
       <ol className={styles.trail} style={{ "--n": tab.skills.length } as CSSProperties}>
         {tab.skills.map((skill) => (
