@@ -5,6 +5,7 @@ import { FamilyAvatar } from "@/components/family/FamilyAvatar";
 import { ShareProgressButton } from "@/components/share/ShareProgressButton";
 import type { ChildWeek } from "@/lib/report/contracts";
 import { REPORT_COPY } from "@/lib/report/copy";
+import { childCardId } from "@/lib/report/focus";
 import { DAY_LETTERS, DAY_NAMES, dayLevel, gradeText, joinNames, practisedBars } from "@/lib/report/view";
 import { Button } from "@/registry/components/button/button";
 import styles from "./report.module.css";
@@ -15,6 +16,10 @@ export interface ChildWeekCardProps {
   self: boolean;
   /** this week (a quiet week then nudges to Today's practice; a past one just says so) */
   current: boolean;
+  /** this week or last week: "Next week, try" is shown only then (advice for a long-past week is not) */
+  recent?: boolean;
+  /** the Family page's "See <name>'s week" opened the report at this card: it is marked */
+  focused?: boolean;
   /** 0..6, today's place in the week strip (this week only) */
   todayIndex: number | null;
   /** "Watch them solve it": open the replay of the highlight board */
@@ -39,8 +44,11 @@ function Stat({ id, value, label, hint }: { id: string; value: number; label: st
   );
 }
 
-/** "Next week, try": the skill and one thing a grown-up can do about it. */
-function NextWeek({ focus }: { focus: NonNullable<ChildWeek["focus"]> }) {
+/**
+ * "Next week, try": the skill and one thing a grown-up can do about it. On the reader's own week
+ * (`self`) only the skill: the tip is written to a grown-up about a child ("Ask them to…").
+ */
+function NextWeek({ focus, self }: { focus: NonNullable<ChildWeek["focus"]>; self: boolean }) {
   return (
     <section className={styles.next} aria-label={REPORT_COPY.nextWeekTitle}>
       <span className={styles.nextHead}>
@@ -48,7 +56,7 @@ function NextWeek({ focus }: { focus: NonNullable<ChildWeek["focus"]> }) {
         {REPORT_COPY.nextWeekTitle}
       </span>
       <p className={styles.nextSkill}>{focus.name}</p>
-      <p className={styles.nextTip}>{focus.tip}</p>
+      {!self && <p className={styles.nextTip}>{focus.tip}</p>}
     </section>
   );
 }
@@ -59,14 +67,16 @@ function NextWeek({ focus }: { focus: NonNullable<ChildWeek["focus"]> }) {
  * with a tip, and the replay of the board they worked hardest on. A week with nothing in it says so
  * kindly and offers Today's practice instead of a page of zeros.
  */
-export function ChildWeekCard({ week, self, current, todayIndex, onWatch, onPractice, practiceBusy, shareAs }: ChildWeekCardProps) {
+export function ChildWeekCard({ week, self, current, recent = true, focused = false, todayIndex, onWatch, onPractice, practiceBusy, shareAs }: ChildWeekCardProps) {
   const quiet = week.problems === 0 && week.activeDays === 0 && week.dailySets === 0;
+  const words = self ? { ...REPORT_COPY, ...REPORT_COPY.self, stats: { ...REPORT_COPY.stats, independent: REPORT_COPY.self.independent } } : REPORT_COPY;
+  const focus = recent ? week.focus : null;
   const bars = practisedBars(week.practised);
   const days = week.days ?? [];
   const headingId = `report-child-${week.userId}`;
 
   return (
-    <li className={styles.child} aria-labelledby={headingId} data-testid="report-child">
+    <li id={childCardId(week.userId)} className={styles.child} aria-labelledby={headingId} data-focused={focused ? "" : undefined} data-testid="report-child">
       <div className={styles.who}>
         <FamilyAvatar name={week.displayName} avatar={week.avatar} size="lg" />
         <div className={styles.whoText}>
@@ -86,6 +96,7 @@ export function ChildWeekCard({ week, self, current, todayIndex, onWatch, onPrac
         {!quiet && shareAs && (
           <ShareProgressButton
             size="sm"
+            className={styles.share}
             userId={shareAs}
             card={{
               name: week.displayName,
@@ -111,7 +122,7 @@ export function ChildWeekCard({ week, self, current, todayIndex, onWatch, onPrac
               </Button>
             )}
           </div>
-          {week.focus && <NextWeek focus={week.focus} />}
+          {focus && <NextWeek focus={focus} self={self} />}
         </div>
       ) : (
         <>
@@ -129,9 +140,9 @@ export function ChildWeekCard({ week, self, current, todayIndex, onWatch, onPrac
 
           <ul className={styles.stats} aria-label={`${week.displayName}'s numbers`}>
             <Stat id="problems" value={week.problems} label={REPORT_COPY.stats.problems} />
-            <Stat id="independent" value={week.independent} label={REPORT_COPY.stats.independent} hint={REPORT_COPY.ofProblems(week.independent, week.problems)} />
+            <Stat id="independent" value={week.independent} label={words.stats.independent} hint={REPORT_COPY.ofProblems(week.independent, week.problems)} />
             <Stat id="minutes" value={week.minutes} label={REPORT_COPY.stats.minutes} />
-            <Stat id="streak" value={week.streak} label={REPORT_COPY.stats.streak} hint={REPORT_COPY.streakHint(week.dailySets)} />
+            <Stat id="streak" value={week.streak} label={REPORT_COPY.stats.streak} hint={REPORT_COPY.streakHint(week.dailySets, current)} />
           </ul>
 
           <div className={styles.days}>
@@ -156,10 +167,10 @@ export function ChildWeekCard({ week, self, current, todayIndex, onWatch, onPrac
           </div>
 
           <div className={styles.split}>
-            <section aria-label={REPORT_COPY.practisedTitle}>
-              <h3 className={styles.blockTitle}>{REPORT_COPY.practisedTitle}</h3>
+            <section aria-label={words.practisedTitle}>
+              <h3 className={styles.blockTitle}>{words.practisedTitle}</h3>
               {week.practised.length === 0 ? (
-                <p className={styles.noPractice}>{REPORT_COPY.streakHint(week.dailySets)}</p>
+                <p className={styles.noPractice}>{REPORT_COPY.streakHint(week.dailySets, current)}</p>
               ) : (
                 <>
                   <ul className={styles.bars}>
@@ -167,7 +178,7 @@ export function ChildWeekCard({ week, self, current, todayIndex, onWatch, onPrac
                       <li key={p.skill} className={styles.bar}>
                         <div className={styles.barHead}>
                           <span className={styles.barName}>{p.name}</span>
-                          <span className={styles.barNumbers}>{REPORT_COPY.practisedLine(p.problems, p.independent)}</span>
+                          <span className={styles.barNumbers}>{words.practisedLine(p.problems, p.independent)}</span>
                         </div>
                         <div className={styles.barTrack} aria-hidden>
                           <div className={styles.barFill} style={{ width: `${bars[i].width}%` }}>
@@ -180,7 +191,7 @@ export function ChildWeekCard({ week, self, current, todayIndex, onWatch, onPrac
                   <ul className={styles.legend} aria-hidden>
                     <li>
                       <span className={styles.swatch} />
-                      {REPORT_COPY.practisedLegendAlone}
+                      {words.stats.independent}
                     </li>
                     <li>
                       <span className={styles.swatch} data-kind="help" />
@@ -192,12 +203,12 @@ export function ChildWeekCard({ week, self, current, todayIndex, onWatch, onPrac
             </section>
 
             <div className={styles.side}>
-              {week.focus && <NextWeek focus={week.focus} />}
+              {focus && <NextWeek focus={focus} self={self} />}
               {week.highlightBoardId && (
                 <div className={styles.watch}>
                   <Button onClick={() => onWatch(week.highlightBoardId!)} data-testid="report-watch">
                     <Play size={16} strokeWidth={2} aria-hidden />
-                    {REPORT_COPY.watch}
+                    {words.watch}
                   </Button>
                   <p className={styles.watchHint}>{REPORT_COPY.watchHint}</p>
                 </div>

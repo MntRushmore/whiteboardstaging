@@ -112,6 +112,12 @@
 .pickerEarlier {
   min-width: 11rem;
 }
+/* a phone: the week tabs are 44 px tall (Arc's segmented control is 36) */
+@media (pointer: coarse) {
+  .weekTabs button {
+    min-height: 2.75rem;
+  }
+}
 /* the Select's own label stays for screen readers; the segmented control above names it already */
 .pickerEarlier label {
   position: absolute;
@@ -144,6 +150,16 @@
   background: var(--surface);
   box-shadow: var(--shadow-resting);
   animation: report-rise var(--duration-considered) var(--ease-enter) both;
+}
+/* the kid the Family page's "See <name>'s week" asked for: scrolled to, and ringed */
+.child {
+  scroll-margin-top: var(--space-6);
+}
+.child[data-focused] {
+  border-color: var(--border-strong);
+  box-shadow:
+    0 0 0 4px var(--accent-subtle),
+    var(--shadow-resting);
 }
 .child:nth-child(2) {
   animation-delay: 60ms;
@@ -208,8 +224,15 @@
   color: var(--warm-ink);
   font-size: var(--text-sm);
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  /* prose ("7-day streak"): tabular digits would space the hyphen out */
+  font-variant-numeric: normal;
   white-space: nowrap;
+}
+/* a phone: Share progress (Arc's small button) is 44 px tall */
+@media (pointer: coarse) {
+  .who .share {
+    min-height: 2.75rem;
+  }
 }
 .streakChip svg {
   color: var(--warm);
