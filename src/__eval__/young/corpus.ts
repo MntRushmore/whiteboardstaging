@@ -236,6 +236,51 @@ export const YOUNG_CORPUS: readonly YoungCase[] = [
   { id: "right-9x8-tens", grade: "3-4", topic: "mul", problem: "9 \\times 8", work: [["10 \\times 8 = 80", "calm"], ["80 - 8 = 72", "tick"]], solved: true },
   { id: "right-copy", grade: "K-2", topic: "add", problem: "4+3", work: [["4 + 3", "calm"], ["= 7", "tick"]], solved: true, note: "the problem copied, then answered" },
 
+  // ---------------------------------------------------------------- review, 2026-10-09: mistakes that were ticked or let be
+  // a line starting with = says the problem is worth what follows it
+  { id: "claim-18x7-chain", grade: "3-4", topic: "mul", problem: "18 \\times 7", work: [["= 70 + 8 = 78", "ring"], ["78", "none"]], solved: false, note: "the 8 never multiplied; ringed where it is made" },
+  { id: "claim-18x7-own", grade: "3-4", topic: "mul", work: [["18 \\times 7", "none"], ["= 10 \\times 7 + 8 = 78", "ring"]], solved: false, note: "the child's own problem" },
+  { id: "claim-6x7-doubles", grade: "3-4", topic: "mul", problem: "6 \\times 7", work: [["= 6 \\times 6 = 36", "ring"]], solved: false },
+  { id: "claim-18x7-then", grade: "3-4", topic: "mul", problem: "18 \\times 7", work: [["= 10 \\times 7 = 70", "calm"], ["= 8 \\times 7 = 56", "calm"], ["= 70 + 56 = 126", "tick"]], solved: true, note: "= used as 'then'" },
+  // a true line that is no step of the problem: no tick, and the wrong answer under it is ringed
+  { id: "mul-18x7-tens-as-ones", grade: "3-4", topic: "mul", problem: "18 \\times 7", work: [["1 \\times 7 = 7", "calm"], ["8 \\times 7 = 56", "tick"], ["7 + 56 = 63", "none"], ["63", "ring"]], solved: false, note: "the 1 ten taken as 1" },
+  { id: "mul-18x7-unmultiplied", grade: "3-4", topic: "mul", problem: "18 \\times 7", work: [["10 \\times 7 = 70", "tick"], ["70 + 8 = 78", "none"], ["78", "ring"]], solved: false },
+  { id: "mul-18x7-running-slip", grade: "3-4", topic: "mul", problem: "18 \\times 7", work: [["10 \\times 7 = 70 + 8 = 78", "none"], ["78", "ring"]], solved: false },
+  { id: "sub-52m17-flip-steps", grade: "K-2", topic: "sub", problem: "52 - 17", work: [["7 - 2 = 5", "calm"], ["50 - 10 = 40", "calm"], ["40 + 5 = 45", "none"], ["45", "ring"]], solved: false, note: "the smaller digit from the bigger, worked in steps" },
+  { id: "mul-23x14-placeholder", grade: "3-4", topic: "mul", problem: "23 \\times 14", work: [["23 \\times 4 = 92", "tick"], ["92 + 23 = 115", "none"], ["115", "ring"]], solved: false, note: "the zero holding the place left out" },
+  { id: "mul-18x7-wrong-op", grade: "3-4", topic: "mul", problem: "18 \\times 7", work: [["18 + 7 = 25", "none"], ["25", "ring"]], solved: false, note: "added, not multiplied" },
+  { id: "sub-52m17-wrong-op", grade: "K-2", topic: "sub", problem: "52 - 17", work: [["52 + 17 = 69", "none"], ["69", "ring"]], solved: false },
+  { id: "add-9p5-wrong-op", grade: "K-2", topic: "add", problem: "9 + 5", work: [["9 - 5 = 4", "none"], ["= 4", "ring"]], solved: false },
+  { id: "div-24d6-repeated", grade: "3-4", topic: "div", problem: "24 \\div 6", work: [["24 - 6 = 18", "calm"], ["18 - 6 = 12", "calm"], ["12 - 6 = 6", "calm"], ["6 - 6 = 0", "calm"], ["4", "tick"]], solved: true, note: "repeated subtraction: still steps" },
+  // the answer with its sign turned, where negative numbers are the work
+  { id: "sign-m3xm4", grade: "5-6", topic: "mul", problem: "-3 \\times -4", work: [["-12", "ring"]], solved: false },
+  { id: "sign-m3xm4-right", grade: "5-6", topic: "mul", problem: "-3 \\times -4", work: [["12", "tick"]], solved: true },
+  { id: "sign-m7p10", grade: "5-6", topic: "add", problem: "-7 + 10", work: [["= -3", "ring"]], solved: false },
+  { id: "sign-m24dm6", grade: "5-6", topic: "div", problem: "-24 \\div -6", work: [["-4", "ring"]], solved: false },
+  { id: "sign-m3-squared", grade: "5-6", topic: "order", problem: "(-3)^{2}", work: [["-9", "ring"]], solved: false },
+  // a decimal product's point lost or moved
+  { id: "dec-mul-0.3x0.2-point", grade: "5-6", topic: "dec", problem: "0.3 \\times 0.2", work: [["0.6", "ring"]], solved: false, note: "decimals_multiply: one point counted, not two" },
+  { id: "dec-mul-0.3x0.2-eq", grade: "5-6", topic: "dec", problem: "0.3 \\times 0.2", work: [["= 0.6", "ring"]], solved: false },
+  { id: "dec-mul-0.3x0.2-lost", grade: "5-6", topic: "dec", problem: "0.3 \\times 0.2", work: [["6", "ring"]], solved: false },
+  { id: "dec-mul-0.5x0.5", grade: "5-6", topic: "dec", problem: "0.5 \\times 0.5", work: [["2.5", "ring"]], solved: false },
+  { id: "dec-mul-5.4x0.1-same", grade: "5-6", topic: "dec", problem: "5.4 \\times 0.1", work: [["5.4", "ring"]], solved: false, note: "the × 0.1 left out" },
+  { id: "dec-mul-0.3x0.2-steps", grade: "5-6", topic: "dec", problem: "0.3 \\times 0.2", work: [["3 \\times 2 = 6", "calm"], ["0.06", "tick"]], solved: true },
+  { id: "dec-mul-2.4x0.3-partials", grade: "5-6", topic: "dec", problem: "2.4 \\times 0.3", work: [["0.6", "none"], ["0.12", "none"], ["0.72", "tick"]], solved: true, note: "2 × 0.3 and 0.4 × 0.3 alone are steps" },
+  // a fraction written with a slash
+  { id: "frac-half-third-slash", grade: "5-6", topic: "frac", problem: "\\frac{1}{2} + \\frac{1}{3}", work: [["5/6", "tick"]], solved: true },
+  { id: "frac-half-third-slash-wrong", grade: "5-6", topic: "frac", problem: "\\frac{1}{2} + \\frac{1}{3}", work: [["2/5", "ring"]], solved: false, note: "tops and bottoms added" },
+  { id: "frac-half-third-slash-end", grade: "5-6", topic: "frac", problem: "\\frac{1}{2} + \\frac{1}{3}", work: [["\\frac{3}{6} + \\frac{2}{6} = 5/6", "tick"]], solved: true },
+  { id: "div-6d4-slash", grade: "5-6", topic: "frac", problem: "6 \\div 4", work: [["3/2", "tick"]], solved: true },
+  // a long-division bracket inside a bigger problem
+  { id: "order-144d9p3-bracket", grade: "5-6", topic: "order", problem: "144 \\div 9 + 3", work: [["\\frac{16}{9 \\longdiv { 144 }}", "tick"], ["16 + 3 = 19", "tick"]], solved: true, note: "the bracket is the first step, not the answer" },
+  { id: "order-144d9p3-bracket-only", grade: "5-6", topic: "order", problem: "144 \\div 9 + 3", work: [[STACK("16 \\\\ 9 \\longdiv { 144 }"), "tick"]], solved: false },
+  { id: "dec-14.4d9-bracket", grade: "5-6", topic: "dec", problem: "14.4 \\div 9", work: [[STACK("16 \\\\ 9 \\longdiv { 144 }"), "tick"], ["1.6", "tick"]], solved: true, note: "the digits divided, then the point put back" },
+  // a fraction taken across, its value a numerator on the way
+  { id: "frac-3q-m-half-across", grade: "5-6", topic: "frac", problem: "\\frac{3}{4} - \\frac{1}{2}", work: [["\\frac{2}{2}", "ring"]], solved: false, note: "tops and bottoms taken away" },
+  { id: "frac-7e-m-3q-across", grade: "5-6", topic: "frac", problem: "\\frac{7}{8} - \\frac{3}{4}", work: [["\\frac{4}{4}", "ring"]], solved: false },
+  { id: "frac-quarters-across", grade: "5-6", topic: "frac", problem: "\\frac{1}{4} + \\frac{1}{4}", work: [["\\frac{2}{8}", "ring"]], solved: false, note: "tops and bottoms added" },
+  { id: "frac-3q-m-half-steps", grade: "5-6", topic: "frac", problem: "\\frac{3}{4} - \\frac{1}{2}", work: [["\\frac{2}{4}", "calm"], ["\\frac{1}{4}", "tick"]], solved: true },
+
   // ---------------------------------------------------------------- algebra under the same rules (unchanged)
   { id: "alg-2x+3", grade: "5-6", topic: "algebra", problem: "2x + 3 = 11", work: [["2x = 8", "tick"], ["x = 4", "tick"]], solved: true },
   { id: "alg-2x+3-wrong", grade: "5-6", topic: "algebra", problem: "2x + 3 = 11", work: [["2x = 7", "ring"]], solved: false },
