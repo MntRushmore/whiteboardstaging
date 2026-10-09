@@ -398,15 +398,21 @@ describe("live loop — stacked sums", () => {
     });
   });
 
-  describe("out of scope: quiet, never a wrong answer", () => {
-    it("long multiplication's partial products: nothing marked, nothing written, no model", async () => {
+  describe("long multiplication: one block, its rows checked, never written into", () => {
+    /** 23 × 45 in columns: the rows 115 and 920, and (when given) a second rule and their sum */
+    function longMultiplication(rows: [string, string], total: string | null, read: string): TLDrawShape[] {
+      const ink = writeStack(["23", "\\times 45"], rows[0]);
+      const bottom = (shapes: TLDrawShape[]) => Math.max(...toInkStrokes(shapes).map((s) => s.bounds.y + s.bounds.h));
+      const second = handRow(rows[1], 400, bottom(ink.answer) + 10, 40, 30);
+      const sum = total === null ? [] : [handRule(330, 406, bottom(second) + 8), ...handRow(total, 400, bottom(second) + 18, 40, 31)];
+      const all = [...ink.all, ...second, ...sum];
+      reads.set(all.length, { latex: read });
+      return all;
+    }
+
+    it("the rows without their sum: right so far — nothing marked, nothing written, no model", async () => {
       start("answer");
-      const ink = writeStack(["23", "\\times 45"], "115");
-      const answerBottom = Math.max(...toInkStrokes(ink.answer).map((s) => s.bounds.y + s.bounds.h));
-      const second = handRow("920", 400, answerBottom + 10, 40, 30);
-      const n = ink.all.length + second.length;
-      reads.set(n, { latex: "\\begin{array}{r}\n23 \\\\\n\\times 45 \\\\\n\\hline 115 \\\\\n920\n\\end{array}" });
-      await pen([...ink.all, ...second]);
+      await pen(longMultiplication(["115", "920"], null, "\\begin{array}{r}\n23 \\\\\n\\times 45 \\\\\n\\hline 115 \\\\\n920\n\\end{array}"));
       await wait(ANSWER_SETTLE_MS + LIVE_TIMING.stuckMs);
       loop.noteAsked();
       loop.requestSolve();
@@ -414,6 +420,35 @@ describe("live loop — stacked sums", () => {
       await wait(1000);
       expect(Object.keys(liveStore.lines.get())).toHaveLength(1);
       expect(marks()).toEqual([]);
+      expect(written()).toEqual([]);
+      expect(calls).toEqual([]);
+    });
+
+    it("the rows and their sum, right (read with the last row over the sum as a fraction): a tick, and nothing written", async () => {
+      start("answer");
+      await pen(longMultiplication(["115", "920"], "1035", "\\begin{array}{r}\n23 \\\\\n\\times 45 \\\\\n\\hline 115 \\\\\n\\frac{920}{1035}\n\\end{array}"));
+      await wait(ANSWER_SETTLE_MS + LIVE_TIMING.stuckMs);
+      expect(stackLine().analysis).toMatchObject({ verdict: "ok", solved: true });
+      expect(marks()).toEqual(["check"]);
+      expect(written()).toEqual([]);
+      expect(calls).toEqual([]);
+    });
+
+    it("a wrong row: ringed — round the whole block — with what to check; Solve and Help write nothing into it", async () => {
+      start("answer");
+      await pen(longMultiplication(["115", "820"], "935", "\\begin{array}{r}\n23 \\\\\n\\times 45 \\\\\n\\hline 115 \\\\\n820 \\\\\n\\hline 935\n\\end{array}"));
+      await wait(1500);
+      expect(stackLine().analysis).toMatchObject({ verdict: "mismatch", note: "Check the row for the 4 tens: 23 × 40." });
+      expect(marks()).toEqual(["circle"]);
+      const ring = tutorInk().find((s) => String(metaOf(s).mark).startsWith("circle"))!;
+      const block = stackLine().line.bounds;
+      const box = editor.getShapePageBounds(ring)!;
+      expect(box.x).toBeLessThan(block.x);
+      expect(box.y + box.h).toBeGreaterThan(block.y + block.h);
+      loop.noteAsked();
+      loop.requestSolve();
+      loop.requestHelp();
+      await wait(1000);
       expect(written()).toEqual([]);
       expect(calls).toEqual([]);
     });
