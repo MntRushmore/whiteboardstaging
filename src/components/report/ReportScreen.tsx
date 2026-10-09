@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, RefreshCw, Users } from "lucide-react";
@@ -8,11 +8,13 @@ import { toast } from "sonner";
 import { AuthErrorBanner, useAuth } from "@/components/AuthProvider";
 import { AppHeader, APP_CONTENT_CLASS } from "@/components/app/AppHeader";
 import { FAMILY_PATH, switchProfile } from "@/lib/family/client";
+import { isKidEmail } from "@/lib/family/contracts";
 import { switchErrorView } from "@/lib/family/switchError";
 import { browserTimeZone, loadReport } from "@/lib/report/client";
 import { REPORT_PATH, type ChildWeek, type ReportAnswer } from "@/lib/report/contracts";
 import { REPORT_COPY } from "@/lib/report/copy";
-import { afterFailedRead, weekLabel } from "@/lib/report/view";
+import { childCardId, parseFocusKid } from "@/lib/report/focus";
+import { afterFailedRead, isRecentWeek, weekFromOldest, weekLabel } from "@/lib/report/view";
 import { isReportableWeek, localDayIn, parseWeek, weekDays, weekStartAt } from "@/lib/report/week";
 import { signInPath } from "@/lib/loginForm";
 import { reportUserError } from "@/lib/reportAppError";
@@ -26,10 +28,12 @@ import styles from "./report.module.css";
 
 /**
  * /report: the weekly report, for the grown-up who pays. One card per kid (their own week too when
- * they practised), a week picker (this week, last week, earlier), and, where the Sunday email is
- * sent, its on/off switch. A kid profile that opens it sees their own week. Signed-in only (signed
- * out goes to /login, which comes back here on the same week). The week is in the URL (`?week=`),
- * so the email's "See the full report" opens the week it was about; weeks are the browser's own
+ * they practiced), a week picker (this week, last week, earlier: no week before the account was
+ * made), and, where the Sunday email is sent, its on/off switch. A kid profile is sent to their own
+ * Progress page, which talks to them (this page talks to a grown-up about a child). Signed-in only
+ * (signed out goes to /login, which comes back here on the same week). The week is in the URL
+ * (`?week=`), so the email's "See the full report" opens the week it was about; `?kid=` (the Family
+ * page's "See <name>'s week") scrolls to that kid's card and marks it. Weeks are the browser's own
  * zone, Monday to Sunday.
  */
 export function ReportScreen() {
@@ -39,8 +43,14 @@ export function ReportScreen() {
   const [timeZone] = useState(browserTimeZone);
   const [now] = useState(() => Date.now());
   const asked = parseWeek(params.get("week"));
-  // a week from a link that is in the future or over a year back reads as this week
-  const weekStart = asked && isReportableWeek(asked, now, timeZone) ? asked : weekStartAt(now, timeZone);
+  const focusKid = parseFocusKid(params.get("kid"));
+  // the week the account was made: nobody practiced before it, so the picker stops there
+  const createdMs = user?.created_at ? Date.parse(user.created_at) : NaN;
+  const oldest = Number.isFinite(createdMs) ? weekStartAt(createdMs, timeZone) : null;
+  // a week from a link that is in the future or over a year back reads as this week; one before the
+  // account, as the account's first week
+  const weekStart = asked && isReportableWeek(asked, now, timeZone) ? weekFromOldest(asked, oldest) : weekStartAt(now, timeZone);
+  const kidProfile = isKidEmail(user?.email);
 
   const [version, setVersion] = useState(0);
   const [busyKid, setBusyKid] = useState<string | null>(null);
@@ -57,9 +67,14 @@ export function ReportScreen() {
     if (!authLoading && !user && !authError) router.replace(signInPath(asked ? `${REPORT_PATH}?week=${asked}` : REPORT_PATH));
   }, [user, authLoading, authError, router, asked]);
 
+  // a kid profile: their own Progress page says it to them ("you"), this one is a grown-up's
+  useEffect(() => {
+    if (kidProfile) router.replace("/progress");
+  }, [kidProfile, router]);
+
   // Keyed on the account's id, not the user object: auth-js hands over a new object on every
   // SIGNED_IN / TOKEN_REFRESHED (each return to the tab, and hourly), which must not read again.
-  const userId = user?.id ?? null;
+  const userId = kidProfile ? null : (user?.id ?? null);
   useEffect(() => {
     if (!userId) return;
     const abort = new AbortController();
@@ -88,6 +103,17 @@ export function ReportScreen() {
   const todayIndex = useMemo(() => (current ? weekDays(weekStart).indexOf(localDayIn(now, timeZone)) : null), [current, weekStart, now, timeZone]);
   // while another week loads, the last one stays (dimmed) rather than flashing a skeleton
   const shown = answer && (answer.report.weekStart === weekStart || loading) ? answer : null;
+  const recent = isRecentWeek(weekStart, now, timeZone);
+
+  // "See <name>'s week" from the Family page: once that kid's card is on screen, bring it into view
+  const scrolledTo = useRef<string | null>(null);
+  const focusShown = Boolean(focusKid && shown?.report.children.some((c) => c.userId === focusKid));
+  useEffect(() => {
+    if (!focusKid || !focusShown || scrolledTo.current === focusKid) return;
+    scrolledTo.current = focusKid;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    document.getElementById(childCardId(focusKid))?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  }, [focusKid, focusShown]);
 
   async function practise(child: ChildWeek) {
     if (!shown) return;
@@ -107,7 +133,7 @@ export function ReportScreen() {
   }
 
   let body: React.ReactNode;
-  if (authLoading || !user || (!shown && loading && !failed)) {
+  if (authLoading || !user || kidProfile || (!shown && loading && !failed)) {
     body = <Skeleton lines={8} avatar label={REPORT_COPY.loading} />;
   } else if (failed) {
     body = (
@@ -130,6 +156,8 @@ export function ReportScreen() {
               week={c}
               self={c.userId === user.id}
               current={current}
+              recent={recent}
+              focused={focusKid === c.userId}
               todayIndex={todayIndex !== null && todayIndex >= 0 ? todayIndex : null}
               onWatch={(boardId) => router.push(`${REPORT_PATH}/replay/${boardId}`)}
               onPractice={() => void practise(c)}
@@ -167,7 +195,7 @@ export function ReportScreen() {
               <h1 className={styles.title}>{REPORT_COPY.pageTitle}</h1>
               <p className={styles.subtitle}>{REPORT_COPY.subtitle(weekLabel(weekStart))}</p>
             </div>
-            <WeekPicker weekStart={weekStart} now={now} timeZone={timeZone} onChange={pickWeek} />
+            <WeekPicker weekStart={weekStart} now={now} timeZone={timeZone} oldest={oldest} onChange={pickWeek} />
           </div>
           {body}
         </div>

@@ -1,13 +1,13 @@
 "use client";
 
-import { ArrowRight, CheckCheck, Gift, GraduationCap, HeartHandshake, Hourglass, Lightbulb, MessageSquare, Sparkles } from "lucide-react";
+import { ArrowRight, CalendarCheck, ChartColumn, CheckCheck, Gift, HeartHandshake, Hourglass, Route, Sparkles, Users } from "lucide-react";
 import { PLAN_COPY } from "@/lib/onboarding/plan";
 import { PLAN_REFERRAL_COPY } from "@/lib/billing/planChoice";
 import { FAMILY_COPY } from "@/lib/family/copy";
 import { Button } from "@/registry/components/button/button";
 import styles from "./plan.module.css";
 
-const PERK_ICONS = { help: Lightbulb, ask: MessageSquare, check: CheckCheck, courses: GraduationCap } as const;
+const PERK_ICONS = { daily: CalendarCheck, path: Route, check: CheckCheck, kids: Users, report: ChartColumn } as const;
 
 /** The plan screen for a kid profile: what the plan gives, and that their grown-up looks after it. */
 function KidPlanOffer({ soon, onContinue }: { soon: boolean; onContinue: () => void }) {
@@ -89,7 +89,7 @@ export interface PlanOfferProps {
 
 /**
  * The plan screen's card (the route is src/app/(platform)/welcome/plan): Agathon Unlimited, its
- * price crossed out under "Free for 7 days", what it gives in four pictures, and — because the
+ * price crossed out under "Free for 7 days", what it gives in five lines, and — because the
  * student is a child and the card is a grown-up's — "This part is for a grown-up" above the one
  * button, with the auto-renewal said plainly right under it. There is no free plan, so there is no
  * "Maybe later" (the app header's menu still has Account and Sign out). A plan that ended is

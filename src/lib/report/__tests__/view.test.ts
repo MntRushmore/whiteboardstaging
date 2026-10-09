@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ChildWeek } from "../contracts";
-import { afterFailedRead, dayLevel, earlierWeekOptions, earlierWeeks, gradeText, joinNames, parseReportAnswer, practisedBars, reportIsQuiet, weekChoice, weekForChoice, weekLabel } from "../view";
+import { REPORT_COPY } from "../copy";
+import { childCardId, parseFocusKid, reportFocusPath } from "../focus";
+import { afterFailedRead, dayLevel, earlierWeekOptions, earlierWeeks, gradeText, isRecentWeek, joinNames, parseReportAnswer, practisedBars, reportIsQuiet, weekChoice, weekChoices, weekForChoice, weekFromOldest, weekLabel } from "../view";
 
 const NOW = Date.parse("2026-10-08T15:00:00Z");
 const TZ = "America/New_York";
@@ -66,6 +68,54 @@ describe("the week picker", () => {
     expect(earlierWeekOptions("2026-09-14", NOW, TZ)).toEqual(listed);
     expect(earlierWeekOptions("2026-10-05", NOW, TZ)).toEqual(listed);
     expect(earlierWeekOptions("2026-09-28", NOW, TZ)).toEqual(listed);
+  });
+
+  it("stops at the week the account was made: no empty weeks from before there was anyone", () => {
+    // made this week: no picker at all; last week: no "Earlier"; before that: all three
+    expect(weekChoices(NOW, TZ, "2026-10-05")).toEqual(["this"]);
+    expect(weekChoices(NOW, TZ, "2026-09-28")).toEqual(["this", "last"]);
+    expect(weekChoices(NOW, TZ, "2026-09-14")).toEqual(["this", "last", "earlier"]);
+    expect(weekChoices(NOW, TZ, null)).toEqual(["this", "last", "earlier"]);
+    // the "Earlier" list ends at that week
+    expect(earlierWeeks(NOW, TZ, 10, "2026-09-14").map((w) => w.value)).toEqual(["2026-09-21", "2026-09-14"]);
+    expect(earlierWeekOptions("2026-09-21", NOW, TZ, 10, "2026-09-21").map((w) => w.value)).toEqual(["2026-09-21"]);
+    // a link to a week before the account opens the account's first week
+    expect(weekFromOldest("2026-05-18", "2026-09-14")).toBe("2026-09-14");
+    expect(weekFromOldest("2026-09-21", "2026-09-14")).toBe("2026-09-21");
+    expect(weekFromOldest("2026-05-18", null)).toBe("2026-05-18");
+  });
+
+  it("gives next week's tip only for this week and last week", () => {
+    expect(isRecentWeek("2026-10-05", NOW, TZ)).toBe(true);
+    expect(isRecentWeek("2026-09-28", NOW, TZ)).toBe(true);
+    expect(isRecentWeek("2026-09-21", NOW, TZ)).toBe(false);
+  });
+});
+
+describe("the report's words", () => {
+  it("says the streak's practice days in plain English", () => {
+    expect(REPORT_COPY.streakHint(4)).toBe("4 practice days this week");
+    expect(REPORT_COPY.streakHint(1)).toBe("1 practice day this week");
+    expect(REPORT_COPY.streakHint(0)).toBe("No practice days yet");
+    expect(REPORT_COPY.streakHint(3, false)).toBe("3 practice days that week");
+    expect(REPORT_COPY.streakHint(0, false)).toBe("No practice days");
+  });
+
+  it("is US English", () => {
+    const words = Object.values(REPORT_COPY).flatMap((v) => (typeof v === "string" ? [v] : v && typeof v === "object" ? Object.values(v).filter((x) => typeof x === "string") : []));
+    expect(words.join(" ")).not.toMatch(/practis/);
+    expect(REPORT_COPY.self.practisedTitle).toBe("What you practiced");
+  });
+});
+
+describe("the Family page's link to one kid's week", () => {
+  const KID = "11111111-2222-4333-8444-555555555555";
+  it("opens the report at that kid, and reads only a user id back", () => {
+    expect(reportFocusPath(KID)).toBe(`/report?kid=${KID}`);
+    expect(parseFocusKid(KID)).toBe(KID);
+    expect(parseFocusKid("not-an-id")).toBeNull();
+    expect(parseFocusKid(null)).toBeNull();
+    expect(childCardId(KID)).toBe(`report-kid-${KID}`);
   });
 });
 

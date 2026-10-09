@@ -38,11 +38,36 @@ export function weekChoice(weekStart: string, now: number, timeZone: string): We
   return weekStart === current ? "this" : weekStart === last ? "last" : "earlier";
 }
 
-/** The earlier weeks the picker lists (two weeks ago and before), labelled. */
-export function earlierWeeks(now: number, timeZone: string, count = EARLIER_WEEKS): { value: string; label: string }[] {
+/**
+ * The earlier weeks the picker lists (two weeks ago and before), labelled; none before `oldest` (the
+ * week the account was made: nobody practiced before there was a profile to practice on).
+ */
+export function earlierWeeks(now: number, timeZone: string, count = EARLIER_WEEKS, oldest: string | null = null): { value: string; label: string }[] {
   return recentWeeks(now, timeZone, count + 2)
     .slice(2)
+    .filter((w) => !oldest || w >= oldest)
     .map((w) => ({ value: w, label: weekLabel(w) }));
+}
+
+/**
+ * Which of the picker's choices there are with weeks from `oldest` on: just this week for an account
+ * made this week (no picker at all), this and last week for one made last week, all three before.
+ */
+export function weekChoices(now: number, timeZone: string, oldest: string | null): WeekChoice[] {
+  const [current, last] = recentWeeks(now, timeZone, 2);
+  if (oldest && oldest >= current) return ["this"];
+  if (oldest && oldest >= last) return ["this", "last"];
+  return ["this", "last", "earlier"];
+}
+
+/** `weekStart`, moved up to `oldest` when it is before it (a link to a week before the account). */
+export function weekFromOldest(weekStart: string, oldest: string | null): string {
+  return oldest && weekStart < oldest ? oldest : weekStart;
+}
+
+/** Whether a week is this week or last week: "Next week, try" is advice only for those. */
+export function isRecentWeek(weekStart: string, now: number, timeZone: string): boolean {
+  return weekChoice(weekStart, now, timeZone) !== "earlier";
 }
 
 /**
@@ -50,8 +75,8 @@ export function earlierWeeks(now: number, timeZone: string, count = EARLIER_WEEK
  * shown week at the end when it is older than those (a link may open any week up to a year back),
  * so the list always names the week on screen.
  */
-export function earlierWeekOptions(weekStart: string, now: number, timeZone: string, count = EARLIER_WEEKS): { value: string; label: string }[] {
-  const list = earlierWeeks(now, timeZone, count);
+export function earlierWeekOptions(weekStart: string, now: number, timeZone: string, count = EARLIER_WEEKS, oldest: string | null = null): { value: string; label: string }[] {
+  const list = earlierWeeks(now, timeZone, count, oldest);
   if (weekChoice(weekStart, now, timeZone) !== "earlier" || list.some((w) => w.value === weekStart)) return list;
   return [...list, { value: weekStart, label: weekLabel(weekStart) }];
 }

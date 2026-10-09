@@ -24,6 +24,13 @@ describe("siteBase", () => {
     expect(siteBase("ftp://agathon.app", "https://agathon.app")).toBe("https://agathon.app");
   });
 
+  it("skips a template's placeholder site for the page's own origin (the share card's footer too)", () => {
+    expect(siteBase("https://your-app.up.railway.app", "https://agathon.app")).toBe("https://agathon.app");
+    expect(siteBase("https://your-app.up.railway.app", null)).toBeNull();
+    // a real site is still honored first
+    expect(siteBase("https://agathon.app", "https://agathon-git-main.vercel.app")).toBe("https://agathon.app");
+  });
+
   it("hands out the dev server's own address on localhost", () => {
     expect(siteBase("https://agathon.app", "http://localhost:3216")).toBe("http://localhost:3216");
     expect(siteBase("https://agathon.app", "http://127.0.0.1:3000")).toBe("http://127.0.0.1:3000");

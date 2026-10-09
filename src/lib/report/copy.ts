@@ -1,8 +1,9 @@
 /**
  * Every word the weekly report page says, in one place. The reader is a grown-up checking whether the
  * $25 is working, often on a phone, often in a minute between other things: plain, calm, specific,
- * no exclamation marks, no made-up claims, and nothing that scolds a quiet week. A kid who opens it
- * on their own profile reads the same words about themselves. Pure data.
+ * no exclamation marks, no made-up claims, and nothing that scolds a quiet week. A grown-up's (or a
+ * solo student's) own week says "you" (`self`); a kid profile is sent to their own Progress page
+ * instead. US English. Pure data.
  */
 import { REPORT_MENU } from "./menu";
 
@@ -34,7 +35,9 @@ export const REPORT_COPY = {
   ofProblems: (independent: number, problems: number) => (problems > 0 ? `${Math.round((independent / problems) * 100)}% of problems` : "No problems yet"),
   daysOf: "of 7",
   streakChip: (days: number) => `${days}-day streak`,
-  streakHint: (sets: number) => (sets === 0 ? "No Today's practice sets" : `${sets} Today's practice ${sets === 1 ? "set" : "sets"}`),
+  /** the Day streak's line: days Today's practice was finished in the shown week (`current`: this week) */
+  streakHint: (days: number, current = true) =>
+    days === 0 ? (current ? "No practice days yet" : "No practice days") : `${days} practice ${days === 1 ? "day" : "days"} ${current ? "this week" : "that week"}`,
   weekStripLabel: (name: string) => `${name}'s days this week`,
   dayProblems: (day: string, n: number) => `${day}: ${n === 0 ? "no problems" : `${n} ${n === 1 ? "problem" : "problems"}`}`,
   newThisWeek: "New this week",
@@ -45,6 +48,13 @@ export const REPORT_COPY = {
   practisedLegendHelp: "With help",
   nextWeekTitle: "Next week, try",
   watch: "Watch them solve it",
+  /** the same card about the reader's own week */
+  self: {
+    independent: "On your own",
+    practisedTitle: "What you practiced",
+    practisedLine: (problems: number, independent: number) => `${problems} ${problems === 1 ? "problem" : "problems"} · ${independent} on your own`,
+    watch: "Replay your board",
+  },
   watchHint: "Replays the board with the most work this week, stroke by stroke.",
   gradeNone: "No grade set",
 
@@ -58,7 +68,7 @@ export const REPORT_COPY = {
 
   // nobody did anything
   emptyTitle: "Nothing to report for this week yet",
-  emptyBody: "Each kid's week shows up here as soon as they practise: problems solved, skills mastered and what to try next.",
+  emptyBody: "Each kid's week shows up here as soon as they practice: problems solved, skills mastered and what to try next.",
   noKids: "Add a kid on the Family page to see their week here.",
   familyLink: "Go to Family",
 

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FAMILY_COPY } from "../copy";
 import type { UnlimitedStatus } from "@/lib/billing/unlimited";
-import { GRADE_OPTIONS, NO_GRADE, addKidBlock, gradeFromOption, nameError, optionFromGrade, pinFormError, pinInput } from "../forms";
+import { GRADE_OPTIONS, NO_GRADE, addKidBlock, gradeError, gradeFromOption, nameError, optionFromGrade, pinFormError, pinInput } from "../forms";
 import { FAMILY_MENU, kidDisplayName } from "../menu";
 import { OPEN_PICKER_EVENT, onOpenProfilePicker, openProfilePicker } from "../picker";
 import { switchErrorView } from "../switchError";
@@ -53,7 +53,9 @@ describe("what stops adding a kid (the Family page)", () => {
     for (const status of ["repeat_trial", "past_due", "incomplete"] as const) {
       expect(addKidBlock({ hasPin: true, kids: 0, plan: plan(status) }), status).toBe("active_plan");
     }
-    expect(FAMILY_COPY.kidsNeedPlan).toBe("Start your free trial to add kids.");
+    // the hint says why; the button (not a repeat of it in the hint) is the way on
+    expect(FAMILY_COPY.kidsNeedPlan).toMatch(/share your Agathon Unlimited plan/);
+    expect(FAMILY_COPY.kidsNeedPlanButton).toBe("Start free trial");
   });
 
   it("then the PIN, then MAX_KIDS; nothing with Unlimited, a PIN and room", () => {
@@ -92,6 +94,20 @@ describe("the Family page's forms", () => {
     expect(gradeFromOption("9")).toBeNull();
     expect(optionFromGrade(null)).toBe(NO_GRADE);
     expect(optionFromGrade(0)).toBe("0");
+  });
+
+  it("wants a grade picked: a new kid starts with none, never on the high-school path by default", () => {
+    expect(gradeError("")).toBe(FAMILY_COPY.gradeMissing);
+    expect(gradeError("12")).toBe(FAMILY_COPY.gradeMissing);
+    expect(gradeError("0")).toBeNull();
+    expect(gradeError(NO_GRADE)).toBeNull();
+    // the kid card's short line for no grade (fits beside the edit tools on a phone)
+    expect(FAMILY_COPY.gradeNoneShort).toBe("No grade set");
+  });
+
+  it("is US English where kids and parents read it", () => {
+    expect(FAMILY_COPY.pickerTitle).toBe("Who's practicing?");
+    expect(FAMILY_COPY.addKidAdded("Leo")).toBe("Leo is ready to practice.");
   });
 });
 

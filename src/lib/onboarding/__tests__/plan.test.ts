@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NO_UNLIMITED, UNLIMITED_PLAN, trialEndsOn } from "@/lib/billing/unlimited";
 import { ARRIVAL_COPY, withoutUnlimitedReturn } from "../arrival";
+import { MAX_KIDS } from "@/lib/family/contracts";
 import { chargeDateText, dollars, PLAN_COPY, planView } from "../plan";
 import { HOME_PATH, PLAN_PATH, planDue } from "../planMarker";
 
@@ -68,10 +69,18 @@ describe("the plan screen's words", () => {
     expect(Object.values(PLAN_COPY).filter((v) => typeof v === "string").join(" ")).not.toMatch(/maybe later|not now|skip/i);
   });
 
-  it("lists four perks, short enough for one line on a phone", () => {
-    expect(PLAN_COPY.perks).toHaveLength(4);
+  it("lists five perks for a K–8 family, short enough for one line on a phone", () => {
+    expect(PLAN_COPY.perks.map((p) => p.id)).toEqual(["daily", "path", "check", "kids", "report"]);
     for (const p of PLAN_COPY.perks) expect(p.text.length).toBeLessThanOrEqual(40);
-    expect(PLAN_COPY.perks.map((p) => p.text).join(" ")).toMatch(/Help me and Solve/);
+    const all = PLAN_COPY.perks.map((p) => p.text).join(" ");
+    expect(all).toMatch(/Today's practice/);
+    expect(all).toContain(`Up to ${MAX_KIDS} kid profiles`);
+    // nothing left over from the high-school product
+    expect(all).not.toMatch(/Algebra|Calculus|course/i);
+  });
+
+  it("never promises starter ink when checkout is not open (there is no free plan)", () => {
+    expect(`${PLAN_COPY.soonTitle} ${PLAN_COPY.soonNote}`).not.toMatch(/ink|free/i);
   });
 
   it("links the plan's terms and its fair-use limit beside the disclosure", () => {

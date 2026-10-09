@@ -50,6 +50,11 @@ export function nameError(name: string): string | null {
 export const NO_GRADE = "none";
 export const GRADE_OPTIONS: { value: string; label: string }[] = [...GRADES.map((g) => ({ value: String(g.id), label: g.label })), { value: NO_GRADE, label: FAMILY_COPY.gradeNone }];
 
+/** Why the grade picker cannot be sent yet: nothing picked (a new kid starts with no grade), or null. */
+export function gradeError(value: string): string | null {
+  return value === NO_GRADE || GRADE_OPTIONS.some((o) => o.value === value) ? null : FAMILY_COPY.gradeMissing;
+}
+
 export function gradeFromOption(value: string): number | null {
   const n = Number(value);
   return value !== NO_GRADE && Number.isInteger(n) && n >= 0 && n <= 8 ? n : null;
