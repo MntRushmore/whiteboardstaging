@@ -17,14 +17,24 @@ import {
   displayNameError,
   normalizeDisplayName,
 } from "@/lib/billing/accountState";
+import { isKidEmail } from "@/lib/family/contracts";
+import { FAMILY_COPY } from "@/lib/family/copy";
 import { cn } from "@/lib/utils";
 
 type Profile = { display_name: string | null };
 
 const PROFILE_MISSING = "Your profile isn't set up yet. Retry in a moment.";
 
-/** Email (read-only) and an inline display-name editor backed by `profiles.display_name`. */
+/**
+ * Email (read-only) and an inline display-name editor backed by `profiles.display_name`.
+ *
+ * A kid profile (src/lib/family) sees neither: their address (`kid-<uuid>@kids.agathon.app`) is
+ * nobody's sign-in, and their name is their grown-up's to change on the Family page, which writes it
+ * to the profile and to the user metadata the app bar reads. Editing it here would write only the
+ * profile, and the two names would drift. So a kid sees their name and who can change it.
+ */
 export function ProfileCard({ userId, email }: { userId: string; email: string }) {
+  const kid = isKidEmail(email);
   const read = useCallback(async (): Promise<Profile> => {
     const { data, error } = await supabase.from("profiles").select("display_name").eq("user_id", userId).maybeSingle();
     if (error) throw error;
@@ -58,7 +68,7 @@ export function ProfileCard({ userId, email }: { userId: string; email: string }
   }
 
   async function save() {
-    if (saving) return;
+    if (saving || kid) return;
     const problem = displayNameError(draft);
     setValidation(problem);
     if (problem) return;
@@ -91,16 +101,18 @@ export function ProfileCard({ userId, email }: { userId: string; email: string }
     <Card>
       <SectionHeader
         title="Profile"
-        description="How you appear in the app. Your email is your sign-in and can't be changed here."
+        description={kid ? FAMILY_COPY.kidProfileDescription : "How you appear in the app. Your email is your sign-in and can't be changed here."}
       />
       <CardContent className={SECTION_BODY}>
         <dl className="divide-y rounded-lg border text-sm">
-          <div className={cn(row, "sm:items-center")}>
-            <dt className="text-muted-foreground">Email</dt>
-            <dd className="font-medium break-all" data-testid="profile-email">
-              {email}
-            </dd>
-          </div>
+          {!kid && (
+            <div className={cn(row, "sm:items-center")}>
+              <dt className="text-muted-foreground">Email</dt>
+              <dd className="font-medium break-all" data-testid="profile-email">
+                {email}
+              </dd>
+            </div>
+          )}
           <div className={cn(row, editing ? "sm:items-start" : "sm:items-center")}>
             <dt className={cn("text-muted-foreground", editing && "sm:pt-2")}>Display name</dt>
             <dd className="min-w-0">
@@ -108,6 +120,13 @@ export function ProfileCard({ userId, email }: { userId: string; email: string }
                 <div className="h-8 w-40 animate-pulse rounded bg-muted/60" data-state="loading" />
               ) : state.status === "error" && !state.data && saved === undefined ? (
                 <SectionError code="profile_load_failed" title={ACCOUNT_COPY.profileFailedTitle} message={state.error} onRetry={retry} />
+              ) : kid ? (
+                <div className="space-y-1" data-testid="kid-profile-name">
+                  <p className="min-w-0 truncate font-medium" data-testid="profile-display-name">
+                    {displayName ?? <span className="font-normal text-muted-foreground">Not set</span>}
+                  </p>
+                  <p className="text-muted-foreground">{FAMILY_COPY.kidNameHint}</p>
+                </div>
               ) : editing ? (
                 <form
                   className="space-y-2"

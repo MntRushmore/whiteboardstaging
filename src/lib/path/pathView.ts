@@ -46,6 +46,9 @@ export const PATH_COPY = {
   pickAction: "Pick my grade",
   /** where "Pick my grade" goes: the account page's grade section (the onboarding work adds it) */
   pickHref: "/account#grade",
+  /** a kid profile's grade is their grown-up's to set, on the Family page: no link, who to ask */
+  kidPickTitle: "Ask your grown-up to pick your grade",
+  kidPickHint: "They can set it on their Family page. Then you'll get a path of skills.",
   loading: "Loading your path",
 } as const;
 

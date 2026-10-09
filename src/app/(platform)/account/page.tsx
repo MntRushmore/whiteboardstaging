@@ -14,6 +14,7 @@ import { GradeSection } from "@/components/account/GradeSection";
 import { FamilySection } from "@/components/account/FamilySection";
 import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { ACCOUNT_COPY, accountPageStateFor } from "@/lib/billing/accountState";
+import { isKidEmail } from "@/lib/family/contracts";
 
 /** Shaped like the ink and usage cards, so the page does not jump when they arrive. */
 function AccountSkeleton() {
@@ -124,7 +125,7 @@ export default function AccountPage() {
           <div className="space-y-6" data-state="ready">
             <BillingCard email={email} />
             <ProfileCard userId={user.id} email={email} />
-            <GradeSection userId={user.id} />
+            <GradeSection userId={user.id} kid={isKidEmail(email)} />
             <FamilySection email={email} />
             <DangerZone email={email} />
           </div>

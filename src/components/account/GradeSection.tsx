@@ -10,6 +10,7 @@ import { SECTION_BODY, SectionHeader } from "@/components/account/SectionHeader"
 import { useSection } from "@/components/account/useSection";
 import { accountChoices, choiceKey, choiceLabel, choiceOf, choiceSave, GRADE_SECTION_COPY, parseChoiceKey, type WelcomeChoice } from "@/lib/onboarding/choice";
 import { asOnboardingClient, fetchOnboardingProfile, saveOnboarding } from "@/lib/onboarding/storage";
+import { FAMILY_COPY } from "@/lib/family/copy";
 import { Select } from "@/registry/components/select/select";
 import styles from "./gradeSection.module.css";
 
@@ -22,8 +23,12 @@ const client = asOnboardingClient(supabase);
  * saves it at once through save_onboarding (a grade as "other" plus the grade, a course alone),
  * and the next problems the tutor picks follow it (the skill path and Today's practice read the
  * profile's grade).
+ *
+ * A kid profile (`kid`, src/lib/family) sees their grade but does not change it: their grown-up
+ * does, on the Family page (a kid's grade picks their path and starter problems, and the family is
+ * the grown-up's to manage).
  */
-export function GradeSection({ userId }: { userId: string }) {
+export function GradeSection({ userId, kid = false }: { userId: string; kid?: boolean }) {
   const read = useCallback(async (): Promise<WelcomeChoice | null> => {
     const res = await fetchOnboardingProfile(client, userId);
     if (!res.ok) throw new Error(res.error);
@@ -49,6 +54,7 @@ export function GradeSection({ userId }: { userId: string }) {
   }, [loaded]);
 
   async function save(next: WelcomeChoice) {
+    if (kid) return;
     setSaving(next);
     setFailed(null);
     setSavedNote(null);
@@ -67,12 +73,17 @@ export function GradeSection({ userId }: { userId: string }) {
 
   return (
     <Card id="grade" ref={cardRef} className="scroll-mt-6" data-testid="grade-section">
-      <SectionHeader title={GRADE_SECTION_COPY.title} description={GRADE_SECTION_COPY.description} />
+      <SectionHeader title={GRADE_SECTION_COPY.title} description={kid ? FAMILY_COPY.kidGradeDescription : GRADE_SECTION_COPY.description} />
       <CardContent className={SECTION_BODY}>
         {!loaded && state.status === "loading" ? (
           <div className="h-16 w-full max-w-xs animate-pulse rounded bg-muted/60" data-state="loading" />
         ) : !loaded && state.status === "error" ? (
           <SectionError code="grade_load_failed" title={GRADE_SECTION_COPY.loadFailedTitle} message={state.error ?? GRADE_SECTION_COPY.loadFallback} onRetry={retry} />
+        ) : kid ? (
+          <div className={styles.body} data-testid="kid-grade">
+            <p className={styles.kidGrade}>{choiceLabel(current) ?? FAMILY_COPY.kidGradeNone}</p>
+            <p className={styles.status}>{FAMILY_COPY.kidGradeHint}</p>
+          </div>
         ) : (
           <div className={styles.body}>
             <div className={styles.field}>
