@@ -230,6 +230,16 @@ describe("the guided-board marker", () => {
     expect(readTourMarker(odd, "u1")).toEqual(MARKER);
   });
 
+  it("keeps coach mark 1's tick, for coach mark 2 after a reload — only a real one", () => {
+    const s = memoryStorage();
+    writeTourMarker(s, "u1", { ...MARKER, step: "help", ticked: true });
+    expect(readTourMarker(s, "u1")).toEqual({ ...MARKER, step: "help", ticked: true });
+    for (const ticked of [false, "yes", 1, null]) {
+      const odd = memoryStorage({ [tourKey("u1")]: JSON.stringify({ ...MARKER, ticked }) });
+      expect(readTourMarker(odd, "u1"), String(ticked)).toEqual(MARKER);
+    }
+  });
+
   it("keeps the grade the welcome chose (Kindergarten included), and drops one that is not a grade", () => {
     const s = memoryStorage();
     writeTourMarker(s, "u1", { ...MARKER, course: "other", grade: 0 });

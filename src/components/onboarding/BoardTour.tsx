@@ -18,7 +18,7 @@ import { browserStorage, clearTourMarker, readTourMarker, writeLocalDone, writeT
 import { HOME_PATH, PLAN_PATH, writePlanMarker } from "@/lib/onboarding/planMarker";
 import type { Box } from "@/lib/onboarding/placement";
 import { isTutorWork, markKindOf, questionWhyOf } from "@/lib/onboarding/marks";
-import { askProgress, COACH_COUNT, coachNumber, helpProblemFor, initialTour, markerStepOf, tourAutoAtEnd, tourAutoBefore, tourReducer } from "@/lib/onboarding/tour";
+import { askProgress, COACH_COUNT, coachNumber, helpProblemFor, helpWordsFor, markerStepOf, resumeTour, tourAutoAtEnd, tourAutoBefore, tourReducer } from "@/lib/onboarding/tour";
 import { asOnboardingClient, saveOnboarding } from "@/lib/onboarding/storage";
 import { sendWelcomeEmail } from "@/lib/email/client";
 import { askCopy, helpCopy, MORE_LIKE_THESE, TOUR_COPY, writeCopy } from "@/lib/onboarding/tourCopy";
@@ -81,7 +81,22 @@ function problemOnPage(editor: Editor): string[] | null {
   return null;
 }
 
-function matchStarter(starters: readonly StarterProblem[], lines: string[] | null): StarterProblem | null {
+/**
+ * Every problem on the board, screen by screen (a reload mid-tour): each one's lines, once. The
+ * starter is on the first screen; the problem the tour writes for coach mark 2 goes on a new one.
+ */
+function problemsOnBoard(editor: Editor): string[][] {
+  const out = new Map<string, string[]>();
+  for (const page of editor.getPages()) {
+    for (const id of editor.getPageShapeIds(page.id)) {
+      const p = problemMetaOf(editor.getShape(id)?.meta);
+      if (p && !out.has(p.lines.join(";"))) out.set(p.lines.join(";"), p.lines);
+    }
+  }
+  return [...out.values()];
+}
+
+function matchStarter(starters: readonly StarterProblem[], lines: readonly string[] | null | undefined): StarterProblem | null {
   if (!lines) return null;
   return starters.find((s) => s.lines.join(";") === lines.join(";")) ?? null;
 }
@@ -156,10 +171,11 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
   const editor = useEditor();
   const router = useRouter();
   const marker = useMemo(() => readTourMarker(browserStorage(), userId), [userId]);
-  const [state, dispatch] = useReducer(tourReducer, marker?.step ?? "problem", initialTour);
+  const [state, dispatch] = useReducer(tourReducer, marker, resumeTour);
   const starters = useMemo(() => startersFor(marker?.course, marker?.starter ?? 0, marker?.grade), [marker]);
-  // the starter on the board (its hint goes in the first coach mark); a resumed tour finds it on the page
-  const [starter, setStarter] = useState<StarterProblem | null>(() => matchStarter(starters, problemOnPage(editor)));
+  // the starter on the board (its hint goes in the first coach mark); a resumed tour finds it on the
+  // board's first screen (coach mark 2's problem may be on the screen it reloads on)
+  const [starter, setStarter] = useState<StarterProblem | null>(() => matchStarter(starters, problemsOnBoard(editor)[0]));
   const messages = useChatMessages(boardId);
   const mounted = useRef(false);
   const writing = useRef(false);
@@ -222,8 +238,12 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
   // Coach mark 2 after a ticked answer to a one-step starter (`3 + 4`, `7`): Help me would find
   // nothing left to do, so the next starter of the set goes on the board for it, once.
   const helpProblem = helpProblemFor(state, starter, starters);
-  const helpWritten = useRef(false);
-  const [fresh, setFresh] = useState(false);
+  // the problem written for it, which coach mark 2's words are about; a reload finds it on the board
+  // (and does not write it twice)
+  const [freshProblem, setFreshProblem] = useState<StarterProblem | null>(() =>
+    helpProblem && problemsOnBoard(editor).some((lines) => lines.join(";") === helpProblem.lines.join(";")) ? helpProblem : null,
+  );
+  const helpWritten = useRef(freshProblem !== null);
   useEffect(() => {
     if (!helpProblem || helpWritten.current || !controller.runChatActions) return;
     helpWritten.current = true;
@@ -231,7 +251,7 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
       .runChatActions([{ type: "write_problems", problems: [[...helpProblem.lines]] }], { origin: "starter" })
       .then((report) => {
         clientMetric("onboarding.tour.helpProblem", { problem: helpProblem.lines.join("; "), written: report.problemsWritten > 0 });
-        if (report.problemsWritten > 0 && mounted.current) setFresh(true);
+        if (report.problemsWritten > 0 && mounted.current) setFreshProblem(helpProblem);
       })
       .catch((e) => clientMetric("onboarding.tour.problem.failed", { error: e instanceof Error ? e.message : String(e) }));
   }, [helpProblem, controller]);
@@ -340,7 +360,13 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
     clientMetric("onboarding.tour.step", { step: state.step, outcome: state.outcome });
     const step = markerStepOf(state.step);
     if (step && marker) {
-      writeTourMarker(browserStorage(), userId, { ...marker, boardId, step, ...(autoBefore.current === undefined ? {} : { autoBefore: autoBefore.current }) });
+      writeTourMarker(browserStorage(), userId, {
+        ...marker,
+        boardId,
+        step,
+        ...(autoBefore.current === undefined ? {} : { autoBefore: autoBefore.current }),
+        ...(state.outcome === "tick" ? { ticked: true as const } : {}),
+      });
       return;
     }
     if ((state.step === "finish" || state.step === "done") && !completed.current) {
@@ -416,7 +442,7 @@ export default function BoardTour({ boardId, userId, controller, mode, onModeCha
     }
     case "help":
     case "helped": {
-      const copy = helpCopy(state.step, state.help, mode === "answer", { ...words, fresh });
+      const copy = helpCopy(state.step, state.help, mode === "answer", helpWordsFor(starter, freshProblem));
       const helped = state.step === "helped";
       return (
         <CoachMark
