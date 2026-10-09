@@ -12,9 +12,11 @@ import {
   nudgeIdempotencyKey,
   runTrialNudges,
   trialsStartedSince,
+  type NudgeKind,
   type NudgeTrialRow,
 } from "@/lib/email/nudges";
-import { runTrialReminders } from "@/lib/email/trialReminders";
+import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
+import { TRIAL_REMINDER_WINDOW, runTrialReminders } from "@/lib/email/trialReminders";
 import { fakeDeps, quietFamily, silentLog, testEnv } from "./fakes";
 
 const HOUR = 60 * 60 * 1000;
@@ -23,18 +25,26 @@ const USER = "11111111-2222-4333-8444-555555555555";
 const hoursAgo = (h: number) => new Date(NOW.getTime() - h * HOUR).toISOString();
 const inHours = (h: number) => new Date(NOW.getTime() + h * HOUR).toISOString();
 
+/** The trial is 7 days: the row is made at the checkout, and the trial ends 168 hours later. */
+const TRIAL_HOURS = 7 * 24;
+
 function trial(over: Partial<NudgeTrialRow> = {}): NudgeTrialRow {
   return {
     subscriptionId: "sub_1",
     userId: USER,
     status: "trialing",
-    trialEnd: inHours(7 * 24 - 30),
+    trialEnd: inHours(TRIAL_HOURS - 30),
     cancelAtPeriodEnd: false,
     cancelAt: null,
     payerEmail: "parent@example.com",
     createdAt: hoursAgo(30),
     ...over,
   };
+}
+
+/** A real 7-day trial `age` hours old (its row made at the checkout, its end 168 hours after). */
+function trialAged(age: number, over: Partial<NudgeTrialRow> = {}): NudgeTrialRow {
+  return trial({ createdAt: hoursAgo(age), trialEnd: inHours(TRIAL_HOURS - age), ...over });
 }
 
 /** A grown-up with one kid, Leo, who did some practice. */
@@ -58,13 +68,53 @@ function busyFamily(userId = USER): FamilyActivity {
 }
 
 describe("nudgeDue", () => {
-  it("first practice from 20 to 72 hours in, progress from 72 to 120", () => {
-    expect(nudgeDue(trial({ createdAt: hoursAgo(19) }), NOW)).toEqual({ skip: "outside_window" });
-    expect(nudgeDue(trial({ createdAt: hoursAgo(20) }), NOW)).toEqual({ kind: "first_practice" });
-    expect(nudgeDue(trial({ createdAt: hoursAgo(71) }), NOW)).toEqual({ kind: "first_practice" });
-    expect(nudgeDue(trial({ createdAt: hoursAgo(72), trialEnd: inHours(96) }), NOW)).toEqual({ kind: "trial_progress" });
-    expect(nudgeDue(trial({ createdAt: hoursAgo(119), trialEnd: inHours(73) }), NOW)).toEqual({ kind: "trial_progress" });
-    expect(nudgeDue(trial({ createdAt: hoursAgo(120) }), NOW)).toEqual({ skip: "outside_window" });
+  it("on a 7-day trial: first practice from 18 to 44 hours in, progress from 44 until 72 hours are left", () => {
+    expect(UNLIMITED_PLAN.trialDays).toBe(7);
+    expect(nudgeDue(trialAged(17.9), NOW)).toEqual({ skip: "outside_window" });
+    expect(nudgeDue(trialAged(18), NOW)).toEqual({ kind: "first_practice" });
+    expect(nudgeDue(trialAged(43.9), NOW)).toEqual({ kind: "first_practice" });
+    expect(nudgeDue(trialAged(44), NOW)).toEqual({ kind: "trial_progress" });
+    expect(nudgeDue(trialAged(95), NOW)).toEqual({ kind: "trial_progress" });
+    // 72 hours left: the "trial ends" reminder's turn, with the same summary
+    expect(nudgeDue(trialAged(96.1), NOW)).toEqual({ skip: "ending_soon" });
+    expect(nudgeDue(trialAged(97), NOW)).toEqual({ skip: "ending_soon" });
+    // the row made a few minutes after Stripe started the trial: the window still ends at 72 hours left
+    expect(nudgeDue(trial({ createdAt: hoursAgo(95.9), trialEnd: inHours(72.05) }), NOW)).toEqual({ kind: "trial_progress" });
+    expect(nudgeDue(trialAged(120), NOW)).toEqual({ skip: "outside_window" });
+  });
+
+  it("puts every 7-day trial in the progress window on two daily runs, and in first practice on one, whatever the cron's jitter", () => {
+    // Vercel Hobby fires a daily cron anywhere in its hour: runs at 15:00 + up to 59 minutes, 23 to 25 hours apart.
+    const MIN = 60_000;
+    const jitters: Array<(day: number) => number> = [
+      () => 0,
+      () => 59,
+      (d) => (d % 2 ? 59 : 0),
+      (d) => (d % 2 ? 0 : 59),
+      (d) => (d * 37) % 60,
+    ];
+    const firstRun = Date.parse("2026-10-01T15:00:00Z");
+    for (const jitter of jitters) {
+      for (const delayMin of [0, 5, 60]) {
+        // a trial started at every 10 minutes of a day
+        for (let offset = 0; offset < 24 * 60; offset += 10) {
+          const stripeStart = firstRun + offset * MIN;
+          const row = trial({ createdAt: new Date(stripeStart + delayMin * MIN).toISOString(), trialEnd: new Date(stripeStart + TRIAL_HOURS * HOUR).toISOString() });
+          const seen: Record<NudgeKind, number> = { first_practice: 0, trial_progress: 0 };
+          for (let day = 0; day <= 8; day++) {
+            const run = new Date(firstRun + day * 24 * HOUR + jitter(day) * MIN);
+            const due = nudgeDue(row, run);
+            if (!("kind" in due)) continue;
+            seen[due.kind]++;
+            // never on the same run as the "trial ends" reminder
+            const left = Date.parse(row.trialEnd!) - run.getTime();
+            expect(left >= TRIAL_REMINDER_WINDOW.fromMs && left < TRIAL_REMINDER_WINDOW.toMs).toBe(false);
+          }
+          expect(seen.first_practice, `start +${offset} min, delay ${delayMin} min`).toBeGreaterThanOrEqual(1);
+          expect(seen.trial_progress, `start +${offset} min, delay ${delayMin} min`).toBeGreaterThanOrEqual(2);
+        }
+      }
+    }
   });
 
   it("sends nothing to a trial set to cancel, ended, unlinked, undated, or ending within 72 hours", () => {
@@ -74,8 +124,8 @@ describe("nudgeDue", () => {
     expect(nudgeDue(trial({ status: "active" }), NOW)).toEqual({ skip: "not_trialing" });
     expect(nudgeDue(trial({ userId: null }), NOW)).toEqual({ skip: "no_user" });
     expect(nudgeDue(trial({ createdAt: null }), NOW)).toEqual({ skip: "no_start" });
-    // a 3-day trial on day 4: the reminder covers it
-    expect(nudgeDue(trial({ createdAt: hoursAgo(80), trialEnd: inHours(40) }), NOW)).toEqual({ skip: "ending_soon" });
+    // a 3-day trial on day 3: the reminder covers it
+    expect(nudgeDue(trial({ createdAt: hoursAgo(50), trialEnd: inHours(22) }), NOW)).toEqual({ skip: "ending_soon" });
   });
 
   it("keys Resend's idempotency on the nudge and the subscription", () => {
@@ -111,8 +161,8 @@ describe("runTrialNudges", () => {
     expect(quietKid.sent[0].subject).toBe("Leo's first practice is ready: 5 problems, about 10 minutes");
   });
 
-  it("sends the progress email around day 4 with what the kid did, and skips a quiet family", async () => {
-    const row = trial({ createdAt: hoursAgo(80), trialEnd: inHours(88) });
+  it("sends the progress email on day 2 to 4 with what the kid did, and skips a quiet family", async () => {
+    const row = trialAged(80);
     const deps = fakeDeps({ now: NOW, nudgeTrials: [row], activity: { [USER]: busyFamily() } });
     expect(await runTrialNudges(deps, testEnv(), { dryRun: false }, silentLog())).toMatchObject({ due: { trialProgress: 1 }, sent: 1 });
     expect(deps.sent[0].subject).toBe("Leo's first days on Agathon");
@@ -121,6 +171,30 @@ describe("runTrialNudges", () => {
 
     const quiet = fakeDeps({ now: NOW, nudgeTrials: [row] });
     expect(await runTrialNudges(quiet, testEnv(), { dryRun: false }, silentLog())).toMatchObject({ sent: 0, skipped: { quiet: 1 } });
+  });
+
+  it("tells a family whose student practises on the grown-up's login what she did, though a kid profile has not started", async () => {
+    // Priya uses the account itself; Leo was added as a kid profile and has done nothing yet
+    const fam = busyFamily();
+    fam.learners[0].attempts = fam.learners[1].attempts;
+    fam.learners[0].practice = fam.learners[1].practice;
+    fam.learners[1].attempts = [];
+    fam.learners[1].practice = [];
+    // first practice: someone has practiced, so no nudge
+    const early = fakeDeps({ now: NOW, nudgeTrials: [trialAged(30)], activity: { [USER]: fam } });
+    expect(await runTrialNudges(early, testEnv(), { dryRun: false }, silentLog())).toMatchObject({ sent: 0, skipped: { practicing: 1 } });
+    // progress: what Priya did, rather than "quiet"
+    const later = fakeDeps({ now: NOW, nudgeTrials: [trialAged(80)], activity: { [USER]: fam } });
+    expect(await runTrialNudges(later, testEnv(), { dryRun: false }, silentLog())).toMatchObject({ sent: 1, skipped: { quiet: 0 } });
+    expect(later.sent[0].text).toContain("- Priya: 2 problems solved, 1 without help. Practiced: Times tables. Today's practice: done on 1 day.");
+    // and the "trial ends" reminder carries it too
+    const reminder = fakeDeps({
+      now: NOW,
+      trials: [{ subscriptionId: "sub_r", userId: USER, status: "trialing", trialEnd: inHours(60), cancelAtPeriodEnd: false, cancelAt: null, payerEmail: "parent@example.com" }],
+      activity: { [USER]: fam },
+    });
+    expect(await runTrialReminders(reminder, testEnv(), { dryRun: false }, silentLog())).toMatchObject({ sent: 1 });
+    expect(reminder.sent[0].text).toContain("Here's what Priya has done so far:");
   });
 
   it("never reaches a kid address, a trial set to cancel, or one ending soon", async () => {
@@ -140,7 +214,7 @@ describe("runTrialNudges", () => {
   });
 
   it("lists what it would send on a dry run, and sends nothing", async () => {
-    const deps = fakeDeps({ now: NOW, nudgeTrials: [trial(), trial({ subscriptionId: "sub_2", createdAt: hoursAgo(80), trialEnd: inHours(88) })], activity: { [USER]: quietFamily(USER) } });
+    const deps = fakeDeps({ now: NOW, nudgeTrials: [trial(), trialAged(80, { subscriptionId: "sub_2" })], activity: { [USER]: quietFamily(USER) } });
     const summary = await runTrialNudges(deps, testEnv(), { dryRun: true }, silentLog());
     expect(summary.wouldSend).toEqual(["first_practice:sub_1"]);
     expect(summary.skipped.quiet).toBe(1);
@@ -157,6 +231,26 @@ describe("runTrialNudges", () => {
     expect(await runTrialNudges(deps, testEnv(), { dryRun: false }, silentLog())).toMatchObject({ failed: 2, sent: 0 });
     expect(deps.log.rows).toEqual([]);
     expect(await runTrialNudges(deps, testEnv(), { dryRun: false }, silentLog())).toMatchObject({ failed: 1, sent: 1 });
+  });
+
+  it("retries a failed or deferred progress email on the next day's run of a 7-day trial", async () => {
+    const DAY = 24 * HOUR;
+    const failed = trialAged(50, { subscriptionId: "sub_fail" });
+    const deferred = trialAged(51, { subscriptionId: "sub_cap", userId: "b" });
+    const deps = fakeDeps({ now: NOW, nudgeTrials: [failed, deferred], activity: { [USER]: busyFamily(), b: busyFamily("b") } });
+    deps.sendReplies.push({ ok: false, error: "upstream", status: 500 });
+    expect(await runTrialNudges(deps, testEnv(), { dryRun: false, maxSends: 1 }, silentLog())).toMatchObject({ due: { trialProgress: 2 }, failed: 1, deferred: 1, sent: 0 });
+    expect(deps.log.rows).toEqual([]);
+
+    // the next day (25 hours later: the cron's latest): both still inside the window, both sent once
+    deps.now = () => new Date(NOW.getTime() + DAY + HOUR);
+    expect(await runTrialNudges(deps, testEnv(), { dryRun: false }, silentLog())).toMatchObject({ due: { trialProgress: 2 }, sent: 2, failed: 0 });
+    expect(deps.sent.map((m) => m.idempotencyKey)).toEqual(["trial-progress/sub_fail", "trial-progress/sub_cap"]);
+
+    // the day after: past 72 hours left, the reminder's turn, and nothing is sent twice
+    deps.now = () => new Date(NOW.getTime() + 2 * DAY);
+    expect(await runTrialNudges(deps, testEnv(), { dryRun: false }, silentLog())).toMatchObject({ due: { trialProgress: 0 }, skipped: { endingSoon: 2 }, sent: 0 });
+    expect(deps.send).toHaveBeenCalledTimes(3);
   });
 
   it("stops at the per-run cap and throws only when the subscriptions or the log cannot be read", async () => {

@@ -5,18 +5,28 @@
  *
  *   first_practice   about a day in, when nobody in the family has practiced since the welcome:
  *                    "<Name>'s first practice is ready: 5 problems, about 10 minutes".
- *   trial_progress   around day 4, when the family has done something: what each child did
- *                    (problems solved, skills, Today's practice), before the card is charged.
+ *   trial_progress   on day 2 to 4, when the family has done something: what each child did, and
+ *                    the account itself when it was used too (problems solved, skills, Today's
+ *                    practice; activity.ts, familyProgress), before the card is charged.
  *
  * Why. Trials end Oct 9 to 15 with $0 MRR so far, and only 5 of 14 trial users came back a second
  * day. A family that never started needs a reason to open the app; a family that did needs to see
  * what they are paying for before the charge, not after.
  *
  * When. The trial's start is when its subscription row was made (the checkout). A daily run sends
- * `first_practice` to trials 20 to 72 hours old and `trial_progress` to trials 72 to 120 hours old:
- * each trial is in a window on one or two runs, so a failed send is retried the next day. A
- * progress email is not sent to a trial ending within 72 hours: the "your trial ends" reminder
- * (trialReminders.ts) goes out then, with the same summary, and one email a day is enough.
+ * `first_practice` to trials 18 to 44 hours old and `trial_progress` to trials 44 to 120 hours old.
+ * A progress email is not sent to a trial ending within 72 hours: the "your trial ends" reminder
+ * (trialReminders.ts) goes out then, with the same summary, and one email a day is enough. So on
+ * the 7-day trial the progress window really ends at about 96 hours (168 less 72, less the few
+ * seconds between Stripe's start and the row), not 120. The cron runs once a day and Vercel's
+ * Hobby crons fire anywhere in their hour, so two runs are 23 to 25 hours apart:
+ *   - first_practice, 26 hours wide, is longer than any gap: every trial is in it on one run (two
+ *     when the jitter allows);
+ *   - trial_progress, about 52 hours wide on a 7-day trial, is longer than any two gaps: every
+ *     trial is in it on at least two runs, so a failed or deferred send, or a family still quiet
+ *     on the first, is tried again the next day.
+ * (Until 2026-10-08 the boundary was 72 hours, which left the progress email one run, 72 to 96
+ * hours, and no retry; the tests pin the windows against a real 7-day trial and the cron's jitter.)
  *
  * Who. The payer, else the account's address (`billingRecipient`; never a kid profile's). Nothing
  * goes to a trial set to cancel (`cancel_at_period_end`, or any `cancel_at`) or no longer trialing.
@@ -42,8 +52,9 @@ export type NudgeKind = (typeof NUDGE_KINDS)[number];
 
 /** How old a trial is when each nudge is due: [fromMs, toMs) after the trial started. */
 export const NUDGE_WINDOWS: Record<NudgeKind, { fromMs: number; toMs: number }> = {
-  first_practice: { fromMs: 20 * HOUR_MS, toMs: 72 * HOUR_MS },
-  trial_progress: { fromMs: 72 * HOUR_MS, toMs: 120 * HOUR_MS },
+  first_practice: { fromMs: 18 * HOUR_MS, toMs: 44 * HOUR_MS },
+  // ends at 120 h only on a trial longer than 7 days: PROGRESS_MIN_LEFT_MS closes it at about 96 h on ours
+  trial_progress: { fromMs: 44 * HOUR_MS, toMs: 120 * HOUR_MS },
 };
 
 /** No progress email to a trial ending sooner than this: the trial reminder (with the same summary) is due. */

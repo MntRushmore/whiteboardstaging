@@ -1,7 +1,8 @@
 /**
  * Sign-up attribution, the browser's half (2026-10-09, "kids come back"): where a visitor first
  * arrived from, kept on this device until they have an account, then saved to their profile once
- * (`save_attribution`, which itself only writes a profile that has none). The admin Funnel groups
+ * when it says where they came from (`save_attribution`, which itself only writes a profile that
+ * has none, so an empty one is never sent: it would shut out a real one). The admin Funnel groups
  * sign-ups by it (src/lib/funnel/contracts.ts).
  *
  * What is kept, and nothing more: the utm_* values of the first address, the referrer's ORIGIN
@@ -25,9 +26,24 @@ export const ATTRIBUTION_FIELD_MAX = 200;
 /**
  * An account made more than this long before the device first saw anyone did not come from this
  * visit: an older account signing in on a new device. Its attribution is not saved (it would date
- * the account's arrival to today). Within the slack, sign-up and first visit are the same visit.
+ * the account's arrival to today).
+ *
+ * On the device someone signs up on, the first visit is captured before the form can be sent, so
+ * the account is never older than the visit but for the device's clock running ahead of the
+ * server's: this is that allowance, nothing more. A wider one (it was an hour until 2026-10-08)
+ * took a second device, the phone where the sign-up email's link was opened minutes later, for the
+ * sign-up visit; its attribution was saved first and `save_attribution`'s first-one-wins then
+ * refused the real one from the device the visitor arrived on.
  */
-export const SIGNUP_SLACK_MS = 60 * 60_000;
+export const SIGNUP_SLACK_MS = 2 * 60_000;
+
+/** The fields that say where a visitor came from; an attribution with none of them says nothing. */
+const SOURCE_FIELDS = ["utmSource", "utmMedium", "utmCampaign", "utmContent", "referrer", "ref"] as const;
+
+/** Whether an attribution says where the visitor came from: a utm_* value, another site, or a ?ref= code. */
+export function hasSource(attribution: Attribution): boolean {
+  return SOURCE_FIELDS.some((f) => typeof attribution[f] === "string" && attribution[f] !== "");
+}
 
 /** What the device keeps: the attribution, and when it was saved to an account (or found not to belong to one). */
 export interface StoredAttribution {
@@ -152,14 +168,16 @@ export type AttributionDecision =
   | { kind: "send"; attribution: Attribution }
   /** this account did not come from this visit: mark it done without saving */
   | { kind: "skip" }
-  /** nothing to do (no attribution, already sent, or a kid profile) */
+  /** nothing to do (no attribution, already sent, a kid profile, or one that says nothing) */
   | { kind: "none" };
 
 /**
  * Whether to save the device's attribution for `user`. Not for a kid profile (its grown-up's visit
  * is the family's arrival; the funnel leaves kids out), not twice, and not for an account made
  * before the device first saw anyone (an old account on a new device: `skip`, so it is not asked
- * again).
+ * again). Never one that says nothing (no utm_*, no referrer, no ?ref=: a typed address, or the
+ * sign-up email opened in another browser): the profile keeps only the first attribution it gets,
+ * and an empty one would shut out the real one from the device the visitor arrived on.
  */
 export function attributionDecision(stored: StoredAttribution | null, user: AttributionUser | null): AttributionDecision {
   if (!stored || stored.sentAt || !user?.id) return { kind: "none" };
@@ -167,6 +185,7 @@ export function attributionDecision(stored: StoredAttribution | null, user: Attr
   const created = user.created_at ? Date.parse(user.created_at) : NaN;
   const firstSeen = Date.parse(stored.attribution.firstSeenAt);
   if (Number.isFinite(created) && Number.isFinite(firstSeen) && created < firstSeen - SIGNUP_SLACK_MS) return { kind: "skip" };
+  if (!hasSource(stored.attribution)) return { kind: "none" };
   return { kind: "send", attribution: stored.attribution };
 }
 

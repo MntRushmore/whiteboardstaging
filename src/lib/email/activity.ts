@@ -5,8 +5,12 @@
  * charged; and a family that has not started yet needs a nudge, not a bill.
  *
  * A family is the account that holds the plan and its kid profiles (`family_members`, the kids
- * share the grown-up's plan). The emails speak about the kids when there are any, else about the
- * account itself (a student's own account, paid for by a parent).
+ * share the grown-up's plan). The emails name the kids when there are any, else the account itself
+ * (a student's own account, paid for by a parent). What was done is everyone's, the account's own
+ * work included even when it has kids (a student on the grown-up's login, with a sibling added as a
+ * kid): "has anyone practiced" (`practicedSinceOnboarding`) and "what was done"
+ * (`familyProgress`) read the same people, so a family that skips the first-practice nudge because
+ * someone practiced is the one the progress email and the reminder tell about.
  *
  * The pure half (summaries, names, the streak) is tested on its own; `readFamilyActivity` is the one
  * reader, through the service role, and never throws.
@@ -133,10 +137,20 @@ export function summarizeLearner(learner: LearnerActivity, since: Date, now: Dat
   };
 }
 
-/** Who the emails talk about: the kids when the account has any, else the account itself. */
+/** Who the emails name: the kids when the account has any, else the account itself. */
 export function shownLearners(activity: FamilyActivity): LearnerActivity[] {
   const kids = activity.learners.filter((l) => l.isKid);
   return kids.length ? kids : activity.learners.filter((l) => !l.isKid).slice(0, 1);
+}
+
+/**
+ * Whose work the summaries count: the shown learners, then the account itself when it has kids
+ * (its own work is shown when there is any, like everyone's; `practicedSinceOnboarding` counts it).
+ */
+function progressLearners(activity: FamilyActivity): LearnerActivity[] {
+  const shown = shownLearners(activity);
+  const account = activity.learners.filter((l) => !l.isKid).slice(0, 1);
+  return [...shown, ...account.filter((a) => !shown.includes(a))];
 }
 
 /** Did something: a problem tried, or a day of Today's practice started. */
@@ -144,20 +158,24 @@ export function hasProgress(p: LearnerProgress): boolean {
   return progressLines(p).length > 0;
 }
 
-/** The family's progress since `since`: one entry per shown learner who did something; [] when nobody did. */
+/**
+ * The family's progress since `since`: one entry per learner who did something, the kids first and
+ * then the account's own work when it has any; [] when nobody did.
+ */
 export function familyProgress(activity: FamilyActivity, since: Date, now: Date): LearnerProgress[] {
-  return shownLearners(activity)
+  return progressLearners(activity)
     .map((l) => summarizeLearner(l, since, now))
     .filter(hasProgress);
 }
 
 /**
- * Whether anyone in the family has practiced since they finished the welcome: a day of Today's
- * practice, or a problem started after onboarding (one started during the welcome's guided board
- * does not count). Without an onboarding time, any problem counts.
+ * Whether anyone in the family (the kids or the account itself, as `familyProgress` counts) has
+ * practiced since they finished the welcome: a day of Today's practice, or a problem started after
+ * onboarding (one started during the welcome's guided board does not count). Without an
+ * onboarding time, any problem counts.
  */
 export function practicedSinceOnboarding(activity: FamilyActivity): boolean {
-  return activity.learners.some((l) => {
+  return progressLearners(activity).some((l) => {
     if (l.practice.some((p) => p.done > 0 || p.completedAt !== null)) return true;
     const after = l.onboardedAt ? Date.parse(l.onboardedAt) : NaN;
     return l.attempts.some((a) => !Number.isFinite(after) || Date.parse(a.startedAt) > after);

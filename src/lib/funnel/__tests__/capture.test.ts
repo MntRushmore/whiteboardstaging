@@ -11,6 +11,7 @@ import {
   attributionDecision,
   attributionFromPage,
   captureAttribution,
+  hasSource,
   markAttributionSent,
   readStoredAttribution,
   type AttributionStorage,
@@ -107,7 +108,7 @@ describe("attributionDecision / markAttributionSent", () => {
   it("sends once for an account made after (or with) the visit", () => {
     const user = { id: "u1", email: "parent@example.com", created_at: new Date(NOW.getTime() + 600_000).toISOString() };
     expect(attributionDecision(stored, user)).toEqual({ kind: "send", attribution: stored.attribution });
-    // signed up a little before the capture ran on this page (the same visit)
+    // the account looks a little older than the visit: this device's clock runs ahead of the server's
     expect(attributionDecision(stored, { ...user, created_at: new Date(NOW.getTime() - SIGNUP_SLACK_MS + 1000).toISOString() }).kind).toBe("send");
     expect(attributionDecision({ ...stored, sentAt: NOW.toISOString() }, user)).toEqual({ kind: "none" });
   });
@@ -119,6 +120,67 @@ describe("attributionDecision / markAttributionSent", () => {
     expect(attributionDecision(null, { id: "u1" })).toEqual({ kind: "none" });
     // no created_at: the server keeps the first one it gets anyway
     expect(attributionDecision(stored, { id: "u1" }).kind).toBe("send");
+  });
+
+  it("allows only a few minutes of clock skew: a second device opened after sign-up is not the sign-up visit", () => {
+    expect(SIGNUP_SLACK_MS).toBeLessThanOrEqual(5 * 60_000);
+    // the sign-up email's link opened on the phone 10 minutes after the account was made on the laptop
+    const tenMinutesBefore = { id: "u1", email: "parent@example.com", created_at: new Date(NOW.getTime() - 10 * 60_000).toISOString() };
+    const phone = { attribution: { firstSeenAt: NOW.toISOString(), landingPath: "/", referrer: "https://outlook.live.com" } };
+    expect(attributionDecision(phone, tenMinutesBefore)).toEqual({ kind: "skip" });
+    expect(attributionDecision({ attribution: { firstSeenAt: NOW.toISOString(), landingPath: "/" } }, tenMinutesBefore)).toEqual({ kind: "skip" });
+    expect(attributionDecision(phone, { ...tenMinutesBefore, created_at: new Date(NOW.getTime() - SIGNUP_SLACK_MS - 1000).toISOString() })).toEqual({ kind: "skip" });
+  });
+
+  it("never sends an attribution that says nothing, so it cannot shut out a real one", () => {
+    const user = { id: "u1", email: "parent@example.com", created_at: new Date(NOW.getTime() + 600_000).toISOString() };
+    const empty = { attribution: { firstSeenAt: NOW.toISOString(), landingPath: "/" } };
+    expect(attributionDecision(empty, user)).toEqual({ kind: "none" });
+    expect(attributionDecision({ attribution: { firstSeenAt: NOW.toISOString() } }, user)).toEqual({ kind: "none" });
+    // within the clock's allowance, and with no account time at all: still nothing to send
+    expect(attributionDecision(empty, { ...user, created_at: new Date(NOW.getTime() - 60_000).toISOString() })).toEqual({ kind: "none" });
+    expect(attributionDecision(empty, { id: "u1" })).toEqual({ kind: "none" });
+    // any one source is enough
+    for (const source of [{ utmSource: "tiktok" }, { utmMedium: "video" }, { utmCampaign: "fall" }, { utmContent: "clip3" }, { referrer: "https://www.google.com" }, { ref: "MAYA7" }]) {
+      const one = { attribution: { firstSeenAt: NOW.toISOString(), landingPath: "/", ...source } };
+      expect(hasSource(one.attribution)).toBe(true);
+      expect(attributionDecision(one, user)).toEqual({ kind: "send", attribution: one.attribution });
+    }
+    expect(hasSource(empty.attribution)).toBe(false);
+  });
+
+  it("keeps the real source when the sign-up is confirmed on another device first", async () => {
+    // save_attribution: the profile keeps the first attribution it is given
+    let saved: unknown = null;
+    const rpc = vi.fn(async (_fn: string, args: { p: unknown }) => {
+      if (saved === null) saved = args.p;
+      return { data: saved === args.p, error: null };
+    });
+    const client = { rpc } as never;
+    const signUp = new Date(NOW.getTime() + 5 * 60_000);
+    const user = { id: "u1", email: "parent@example.com", created_at: signUp.toISOString() };
+    /** What AttributionCapture does once someone is signed in on a device. */
+    async function signedIn(storage: AttributionStorage, at: Date) {
+      const decision = attributionDecision(readStoredAttribution(storage), user);
+      if (decision.kind === "skip") markAttributionSent(storage, at);
+      if (decision.kind !== "send") return;
+      if ((await saveAttribution(client, decision.attribution)).done) markAttributionSent(storage, at);
+    }
+
+    // the laptop: arrived from TikTok, signed up five minutes later
+    const laptop = memoryStorage();
+    captureAttribution(laptop, { href: "https://agathon.app/?utm_source=tiktok", referrer: "" }, NOW);
+    // the phone: the confirmation link opened a minute after sign-up (inside the clock allowance), nothing to say
+    const phone = memoryStorage();
+    const opened = new Date(signUp.getTime() + 60_000);
+    captureAttribution(phone, { href: "https://agathon.app/", referrer: "" }, opened);
+    await signedIn(phone, opened);
+    expect(rpc).not.toHaveBeenCalled();
+
+    // back on the laptop: TikTok is the one saved
+    await signedIn(laptop, new Date(opened.getTime() + 3_600_000));
+    expect(saved).toMatchObject({ utmSource: "tiktok" });
+    expect(readStoredAttribution(laptop)?.sentAt).toBeDefined();
   });
 
   it("marks it sent, keeping the attribution", () => {
