@@ -761,6 +761,16 @@ export function createEngine(mod: MathModule): LiveEngine {
     if (out.verdict === "none" && out.math && !/\d\.\d/.test(rest) && closed(out.math) && closed(ctx.previous.math) && !/\d\.\d/.test(ctx.previous.math)) {
       if (expressionsEquivalent(math, ctx.previous.math, out.math, []) === "mismatch") out.verdict = "mismatch";
     }
+    // ...but a decimal that is not even the value rounded to its places is a wrong claim, as a wrong
+    // whole number is: `= 5.25` under `3.45 + 2.8` (6.25) is ringed; `= 7.07` under `\sqrt{50}` is not
+    const places = decimalsIn(rest);
+    if (out.verdict === "none" && out.math && places !== null && closed(out.math) && closed(ctx.previous.math)) {
+      const claimed = safeEvaluate(math, out.math);
+      const actual = safeEvaluate(math, ctx.previous.math);
+      const c = claimed.ok ? toNumber(claimed.value) : null;
+      const a = actual.ok ? toNumber(actual.value) : null;
+      if (c !== null && a !== null && Number.isFinite(c) && Number.isFinite(a) && Math.abs(c - a) > 0.5 * 10 ** -places + 1e-9 * Math.max(1, Math.abs(a))) out.verdict = "mismatch";
+    }
     return out;
   };
 

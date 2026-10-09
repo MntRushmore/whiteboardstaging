@@ -95,20 +95,20 @@ Skills per course and what the engine covers: `docs/eval/courses.md`. Course pro
 > Feedback, Auto on) and compared with a teacher's marks, line by line. Corpus: `src/__eval__/young/corpus.ts`.
 > A wrong ring is a ring on right work.
 
-**156 / 156 columns marked as a teacher would (100.0%).**
+**172 / 172 columns marked as a teacher would (100.0%).**
 
 | | columns | pass | lines marked right | wrong rings | missed rings | ? on work | false solved | missed solved |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| all | 156 | **156** (100.0%) | 248/248 | 0 | 0 | 0 | 0 | 0 |
+| all | 172 | **172** (100.0%) | 266/266 | 0 | 0 | 0 | 0 | 0 |
 | grades K-2 | 37 | **37** (100.0%) | 51/51 | 0 | 0 | 0 | 0 | 0 |
 | grades 3-4 | 75 | **75** (100.0%) | 131/131 | 0 | 0 | 0 | 0 | 0 |
-| grades 5-6 | 44 | **44** (100.0%) | 66/66 | 0 | 0 | 0 | 0 | 0 |
+| grades 5-6 | 60 | **60** (100.0%) | 84/84 | 0 | 0 | 0 | 0 | 0 |
 | add | 30 | **30** (100.0%) | 41/41 | 0 | 0 | 0 | 0 | 0 |
 | sub | 7 | **7** (100.0%) | 10/10 | 0 | 0 | 0 | 0 | 0 |
 | mul | 41 | **41** (100.0%) | 84/84 | 0 | 0 | 0 | 0 | 0 |
 | div | 34 | **34** (100.0%) | 47/47 | 0 | 0 | 0 | 0 | 0 |
 | frac | 23 | **23** (100.0%) | 36/36 | 0 | 0 | 0 | 0 | 0 |
-| dec | 14 | **14** (100.0%) | 16/16 | 0 | 0 | 0 | 0 | 0 |
+| dec | 30 | **30** (100.0%) | 34/34 | 0 | 0 | 0 | 0 | 0 |
 | order | 4 | **4** (100.0%) | 8/8 | 0 | 0 | 0 | 0 | 0 |
 | algebra | 3 | **3** (100.0%) | 6/6 | 0 | 0 | 0 | 0 | 0 |
 

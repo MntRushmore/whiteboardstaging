@@ -177,6 +177,24 @@ export const YOUNG_CORPUS: readonly YoungCase[] = [
   { id: "dec-times", grade: "5-6", topic: "dec", problem: "2.4 \\times 3", work: [["24 \\times 3 = 72", "calm"], ["7.2", "tick"]], solved: true },
   { id: "dec-sub", grade: "5-6", topic: "dec", problem: "1.2 - 0.35", work: [["0.85", "tick"]], solved: true },
   { id: "dec-stack", grade: "5-6", topic: "dec", work: [[STACK("3.50 \\\\ +12.25 \\\\ \\hline 15.75"), "tick"]], solved: true },
+  // wrong decimal answers are ringed as wrong whole numbers are (the grade starters' skills:
+  // decimals_add_subtract, decimals_multiply — a wrong decimal used to be left unmarked)
+  { id: "dec-addsub-3.45p2.8-right", grade: "5-6", topic: "dec", problem: "3.45 + 2.8", work: [["= 6.25", "tick"]], solved: true, note: "decimals_add_subtract" },
+  { id: "dec-addsub-3.45p2.8-wrong", grade: "5-6", topic: "dec", problem: "3.45 + 2.8", work: [["= 5.25", "ring"]], solved: false, note: "decimals_add_subtract: 5.25 for 6.25" },
+  { id: "dec-addsub-3.45p2.8-bare", grade: "5-6", topic: "dec", problem: "3.45 + 2.8", work: [["5.25", "ring"]], solved: false },
+  { id: "dec-addsub-3.45p2.8-unaligned", grade: "5-6", topic: "dec", problem: "3.45 + 2.8", work: [["3.73", "ring"]], solved: false, note: "the 8 added to the hundredths" },
+  { id: "dec-addsub-3.45p2.8-point", grade: "5-6", topic: "dec", problem: "3.45 + 2.8", work: [["625", "ring"]], solved: false, note: "the point lost" },
+  { id: "dec-addsub-3.45p2.8-step", grade: "5-6", topic: "dec", problem: "3.45 + 2.8", work: [["3.45 + 2.80", "tick"], ["= 6.25", "tick"]], solved: true },
+  { id: "dec-addsub-3.45p2.8-wrong-step", grade: "5-6", topic: "dec", problem: "3.45 + 2.8", work: [["3.45 + 2.8 = 5.25", "ring"]], solved: false },
+  { id: "dec-addsub-5.6m2.75-right", grade: "5-6", topic: "dec", problem: "5.6 - 2.75", work: [["5.60 - 2.75 = 2.85", "tick"]], solved: true, note: "decimals_add_subtract" },
+  { id: "dec-addsub-5.6m2.75-wrong", grade: "5-6", topic: "dec", problem: "5.6 - 2.75", work: [["= 2.95", "ring"]], solved: false },
+  { id: "dec-addsub-5.6m2.75-flip", grade: "5-6", topic: "dec", problem: "5.6 - 2.75", work: [["3.15", "ring"]], solved: false, note: "the smaller digit taken from the bigger" },
+  { id: "dec-mul-1.2x3-right", grade: "5-6", topic: "dec", problem: "1.2 \\times 3", work: [["= 3.6", "tick"]], solved: true, note: "decimals_multiply" },
+  { id: "dec-mul-1.2x3-wrong", grade: "5-6", topic: "dec", problem: "1.2 \\times 3", work: [["3.06", "ring"]], solved: false },
+  { id: "dec-mul-1.2x3-point", grade: "5-6", topic: "dec", problem: "1.2 \\times 3", work: [["36", "ring"]], solved: false, note: "the point lost" },
+  { id: "dec-mul-1.2x3-steps", grade: "5-6", topic: "dec", problem: "1.2 \\times 3", work: [["12 \\times 3 = 36", "calm"], ["3.6", "tick"]], solved: true },
+  { id: "dec-mul-5.4x0.1-moved", grade: "5-6", topic: "dec", problem: "5.4 \\times 0.1", work: [["0.054", "ring"]], solved: false, note: "decimals_multiply: the point moved twice" },
+  { id: "dec-mul-5.4x0.1-eq-wrong", grade: "5-6", topic: "dec", problem: "5.4 \\times 0.1", work: [["= 54", "ring"]], solved: false },
 
   // ---------------------------------------------------------------- 5–6: order of operations
   { id: "order-3p4x2", grade: "5-6", topic: "order", problem: "3 + 4 \\times 2", work: [["4 \\times 2 = 8", "tick"], ["3 + 8 = 11", "tick"]], solved: true },

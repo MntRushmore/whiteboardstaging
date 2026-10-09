@@ -289,15 +289,17 @@ function strategies(op: string, a: Q, b: Q, writing: Writing, k: (v: Q | null) =
     // place by place: tens with tens, ones with ones
     const shape = (x: Q) => (decimalString(x) ?? "").replace(/[1-9]/g, "0");
     for (const x of pa) for (const y of pb) if (shape(x) === shape(y)) both(op === "+" ? add(x, y) : sub(x, y));
-    // a column's digits, with or without the carry / borrow
+    // a column's digits, with or without the carry / borrow (with decimals, a whole number alone is
+    // no column of a decimal answer: a step's numbers only)
+    const column = decimals ? k : both;
     for (const [x, y] of columnsOf(a, b)) {
       if (op === "+") {
-        both(q(x + y));
-        both(q(x + y + 1));
+        column(q(x + y));
+        column(q(x + y + 1));
       } else {
-        both(q(x - y));
-        both(q(10 + x - y));
-        both(q(x - 1 - y));
+        column(q(x - y));
+        column(q(10 + x - y));
+        column(q(x - 1 - y));
       }
     }
     // on from the first number, a place of the second at a time (and the other way round, adding)
@@ -313,14 +315,16 @@ function strategies(op: string, a: Q, b: Q, writing: Writing, k: (v: Q | null) =
     // a round number taken away, then the difference given back
     for (const r of roundsNear(b)) both(op === "+" ? add(a, r) : sub(a, r));
     if (decimals) {
+      // the sum in hundredths (345 + 280 = 625): a step a line may be made of, but written alone it
+      // is the answer with its point lost — a wrong answer, ringed
       const places = Math.max(...[a, b].map((x) => (decimalString(x)?.split(".")[1] ?? "").length));
       const scale = q(10 ** places)!;
       const A = mul(a, scale);
       const B = mul(b, scale);
       if (A && B) {
-        both(A);
-        both(B);
-        both(op === "+" ? add(A, B) : sub(A, B));
+        k(A);
+        k(B);
+        k(op === "+" ? add(A, B) : sub(A, B));
       }
     }
     return;
@@ -330,17 +334,19 @@ function strategies(op: string, a: Q, b: Q, writing: Writing, k: (v: Q | null) =
     const A = withoutPoint(a);
     const B = withoutPoint(b);
     if (decimals && A && B) {
-      // the digits multiplied, the point put back after
-      both(mul(A, B));
+      // the digits multiplied, the point put back after (`12 \times 3 = 36`, then 3.6), and a tenth
+      // as a tenth of it (`5.4 \div 10`): steps a line may be made of — but a number alone that is
+      // one of them is the answer with its point lost or moved (`36`, `0.054`): a wrong answer
+      k(mul(A, B));
       for (const [x, y] of [
         [A, B],
         [B, A],
       ] as const)
-        for (const part of placeParts(y)) both(mul(x, part));
+        for (const part of placeParts(y)) k(mul(x, part));
       for (const e of [10, 100, 1000]) {
         for (const x of [a, b]) {
-          both(mul(x, q(e)!));
-          both(div(x, q(e)!));
+          k(mul(x, q(e)!));
+          k(div(x, q(e)!));
         }
       }
     }

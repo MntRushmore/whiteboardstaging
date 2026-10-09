@@ -206,6 +206,19 @@ describe("fractions and decimals, grades 4–6", () => {
     expect(column("5.4 \\times 0.1", ["5.04"])).toEqual([RING]);
   });
 
+  it("a wrong decimal answer is ringed, as a wrong whole number is (the grade starters' decimals)", () => {
+    // decimals_add_subtract
+    expect(column("3.45 + 2.8", ["= 6.25"])).toEqual([SOLVED]);
+    for (const wrong of ["= 5.25", "5.25", "3.73", "625", "3.45 + 2.8 = 5.25"]) expect(column("3.45 + 2.8", [wrong]), wrong).toEqual([RING]);
+    expect(column("5.6 - 2.75", ["5.60 - 2.75 = 2.85"])).toEqual([SOLVED]);
+    for (const wrong of ["= 2.95", "3.15"]) expect(column("5.6 - 2.75", [wrong]), wrong).toEqual([RING]);
+    // decimals_multiply: the point lost or moved is a wrong answer; the digits multiplied is a step
+    expect(column("1.2 \\times 3", ["= 3.6"])).toEqual([SOLVED]);
+    for (const wrong of ["3.06", "36"]) expect(column("1.2 \\times 3", [wrong]), wrong).toEqual([RING]);
+    expect(column("1.2 \\times 3", ["12 \\times 3 = 36", "3.6"])).toEqual([TICK, SOLVED]);
+    for (const wrong of ["0.054", "= 54", "5.04"]) expect(column("5.4 \\times 0.1", [wrong]), wrong).toEqual([RING]);
+  });
+
   it("decimal place value in sums and products", () => {
     expect(column("3.5 + 1.25", ["3.50 + 1.25 = 4.75"])).toEqual([SOLVED]);
     expect(column("3.5 + 1.25", ["1.60"])).toEqual([RING]);

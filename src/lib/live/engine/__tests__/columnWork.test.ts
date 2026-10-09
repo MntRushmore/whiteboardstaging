@@ -84,6 +84,24 @@ describe("a young student's column, judged against the problem", () => {
   });
 });
 
+describe("the engine's own rule for a claimed decimal (`= 5.25` under a line)", () => {
+  const claim = (above: string, line: string) => engine.analyzeLine(line, { previous: engine.analyzeLine(above, { mode: "feedback" }), mode: "feedback" }).verdict;
+
+  it("a decimal that is not the value, even rounded to its places, is ringed", () => {
+    expect(claim("3.45 + 2.8", "= 5.25")).toBe("mismatch");
+    expect(claim("5.6 - 2.75", "= 2.95")).toBe("mismatch");
+    expect(claim("5.4 \\times 0.1", "= 5.04")).toBe("mismatch");
+    expect(claim("\\sqrt{50}", "= 8.07")).toBe("mismatch");
+  });
+
+  it("the value rounded is the calculator's rounding, never ringed; the value itself is ticked", () => {
+    expect(claim("\\sqrt{50}", "= 7.07")).not.toBe("mismatch");
+    expect(claim("\\sqrt{50}", "= 7.1")).not.toBe("mismatch");
+    expect(claim("3.45 + 2.8", "= 6.25")).toBe("ok");
+    expect(claim("1.2 \\times 3", "= 3.6")).toBe("ok");
+  });
+});
+
 describe("algebra keeps its rules", () => {
   it("a slip is ringed, the step carried on from it is not ringed again, the fix is ticked", () => {
     expect(marks({ lines: ["3x - 5 = 10", "3x = 5", "x = \\frac{5}{3}", "3x = 15", "x = 5"] })).toEqual(["none", "mismatch", "none+carried", "ok", "ok+solved"]);

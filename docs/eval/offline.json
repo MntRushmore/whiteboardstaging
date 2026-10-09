@@ -1042,7 +1042,7 @@
       "note": "mixed numbers: 2½ is 2 + ½, not 2 × ½",
       "source": "localAnswer",
       "steps": [
-        "= \\frac{17}{4}"
+        "= 4\\frac{1}{4}"
       ],
       "stages": {
         "local": true,
@@ -1058,7 +1058,7 @@
       "transitions": [
         {
           "from": "2 \\frac{1}{2} + 1 \\frac{3}{4} =",
-          "to": "= \\frac{17}{4}",
+          "to": "= 4\\frac{1}{4}",
           "status": "ok",
           "reason": ""
         }
@@ -11906,7 +11906,7 @@
       "note": "mixed numbers",
       "source": "localAnswer",
       "steps": [
-        "= \\frac{5}{3}"
+        "= 1\\frac{2}{3}"
       ],
       "stages": {
         "local": true,
@@ -11922,7 +11922,7 @@
       "transitions": [
         {
           "from": "3\\frac{1}{3} - 1\\frac{2}{3} =",
-          "to": "= \\frac{5}{3}",
+          "to": "= 1\\frac{2}{3}",
           "status": "ok",
           "reason": ""
         }
@@ -39530,10 +39530,10 @@
   ],
   "young": {
     "summary": {
-      "total": 156,
-      "passed": 156,
-      "lines": 248,
-      "linesRight": 248,
+      "total": 172,
+      "passed": 172,
+      "lines": 266,
+      "linesRight": 266,
       "wrongRings": 0,
       "missedRings": 0,
       "questions": 0,
@@ -39566,10 +39566,10 @@
         },
         {
           "grade": "5-6",
-          "total": 44,
-          "passed": 44,
-          "lines": 66,
-          "linesRight": 66,
+          "total": 60,
+          "passed": 60,
+          "lines": 84,
+          "linesRight": 84,
           "wrongRings": 0,
           "missedRings": 0,
           "questions": 0,
@@ -39640,10 +39640,10 @@
         },
         {
           "topic": "dec",
-          "total": 14,
-          "passed": 14,
-          "lines": 16,
-          "linesRight": 16,
+          "total": 30,
+          "passed": 30,
+          "lines": 34,
+          "linesRight": 34,
           "wrongRings": 0,
           "missedRings": 0,
           "questions": 0,
@@ -42599,6 +42599,331 @@
         "solved": {
           "expected": true,
           "got": true
+        },
+        "pass": true
+      },
+      {
+        "id": "dec-addsub-3.45p2.8-right",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "3.45 + 2.8",
+        "lines": [
+          {
+            "latex": "= 6.25",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true,
+        "note": "decimals_add_subtract"
+      },
+      {
+        "id": "dec-addsub-3.45p2.8-wrong",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "3.45 + 2.8",
+        "lines": [
+          {
+            "latex": "= 5.25",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true,
+        "note": "decimals_add_subtract: 5.25 for 6.25"
+      },
+      {
+        "id": "dec-addsub-3.45p2.8-bare",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "3.45 + 2.8",
+        "lines": [
+          {
+            "latex": "5.25",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true
+      },
+      {
+        "id": "dec-addsub-3.45p2.8-unaligned",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "3.45 + 2.8",
+        "lines": [
+          {
+            "latex": "3.73",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true,
+        "note": "the 8 added to the hundredths"
+      },
+      {
+        "id": "dec-addsub-3.45p2.8-point",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "3.45 + 2.8",
+        "lines": [
+          {
+            "latex": "625",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true,
+        "note": "the point lost"
+      },
+      {
+        "id": "dec-addsub-3.45p2.8-step",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "3.45 + 2.8",
+        "lines": [
+          {
+            "latex": "3.45 + 2.80",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          },
+          {
+            "latex": "= 6.25",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true
+      },
+      {
+        "id": "dec-addsub-3.45p2.8-wrong-step",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "3.45 + 2.8",
+        "lines": [
+          {
+            "latex": "3.45 + 2.8 = 5.25",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true
+      },
+      {
+        "id": "dec-addsub-5.6m2.75-right",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "5.6 - 2.75",
+        "lines": [
+          {
+            "latex": "5.60 - 2.75 = 2.85",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true,
+        "note": "decimals_add_subtract"
+      },
+      {
+        "id": "dec-addsub-5.6m2.75-wrong",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "5.6 - 2.75",
+        "lines": [
+          {
+            "latex": "= 2.95",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true
+      },
+      {
+        "id": "dec-addsub-5.6m2.75-flip",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "5.6 - 2.75",
+        "lines": [
+          {
+            "latex": "3.15",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true,
+        "note": "the smaller digit taken from the bigger"
+      },
+      {
+        "id": "dec-mul-1.2x3-right",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "1.2 \\times 3",
+        "lines": [
+          {
+            "latex": "= 3.6",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true,
+        "note": "decimals_multiply"
+      },
+      {
+        "id": "dec-mul-1.2x3-wrong",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "1.2 \\times 3",
+        "lines": [
+          {
+            "latex": "3.06",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true
+      },
+      {
+        "id": "dec-mul-1.2x3-point",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "1.2 \\times 3",
+        "lines": [
+          {
+            "latex": "36",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true,
+        "note": "the point lost"
+      },
+      {
+        "id": "dec-mul-1.2x3-steps",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "1.2 \\times 3",
+        "lines": [
+          {
+            "latex": "12 \\times 3 = 36",
+            "expected": "calm",
+            "got": "tick",
+            "pass": true
+          },
+          {
+            "latex": "3.6",
+            "expected": "tick",
+            "got": "tick",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": true,
+          "got": true
+        },
+        "pass": true
+      },
+      {
+        "id": "dec-mul-5.4x0.1-moved",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "5.4 \\times 0.1",
+        "lines": [
+          {
+            "latex": "0.054",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
+        },
+        "pass": true,
+        "note": "decimals_multiply: the point moved twice"
+      },
+      {
+        "id": "dec-mul-5.4x0.1-eq-wrong",
+        "grade": "5-6",
+        "topic": "dec",
+        "problem": "5.4 \\times 0.1",
+        "lines": [
+          {
+            "latex": "= 54",
+            "expected": "ring",
+            "got": "ring",
+            "pass": true
+          }
+        ],
+        "solved": {
+          "expected": false,
+          "got": false
         },
         "pass": true
       },
