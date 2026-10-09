@@ -12,6 +12,9 @@
  *    or only when you tap Help me / Solve it (off). A per-device preference like Live.
  *  - LIVE (typeset echo + instant checking) is a per-device preference, not a mode. It lives
  *    in the menu; the pill reports what it is doing right now.
+ *  - SIMPLE, the board for young kids (src/components/kidmode): the bar is Back, a big Help me and a
+ *    small grown-up More; everything else here moves behind More (`place`), and tldraw's tools give
+ *    way to the kid dock at the foot (`kidDockView`).
  */
 import type { AssistanceMode } from "@/hooks/useAssistanceMode";
 import type { LiveStatus, RecognizerKind } from "@/lib/live/contracts";
@@ -29,6 +32,33 @@ export interface BoardToolbarState {
   auto: boolean;
   /** "Hide AI shapes" is on: Auto is paused (`autoActs`), whatever the switch says */
   hideAiShapes?: boolean;
+  /** the simple board for young kids (`useSimpleBoard`): on for K–3 by default, switchable */
+  simple?: boolean;
+  /** the guided first board's tour is running: its last coach mark points at Ask */
+  tour?: boolean;
+  /** the status pill has an error to show (`liveStore.lastError`) */
+  liveError?: boolean;
+  /** the tutor is working out steps, as after a tap on Help me (`liveStore.solving`): the pill says "Solving…" */
+  solving?: boolean;
+}
+
+/** Where a control sits: in the bar itself, or behind the simple board's More button. */
+export type BarPlace = "bar" | "more";
+
+/** The grown-up controls `place` decides for (Back, the ask button and the save pill are always in the bar). */
+export interface BarPlaces {
+  /** the help dial (Off / Feedback / Suggest / Solve) */
+  dial: BarPlace;
+  /** the Auto switch, when there is one (`autoSwitch`) */
+  auto: BarPlace;
+  /** Ask, the board chat's button */
+  ask: BarPlace;
+  /** the status pill, and with it Board options (its "…") */
+  pill: BarPlace;
+  /** the plan's ink meter */
+  ink: BarPlace;
+  /** Report a bug, and Feature Labs' extras (stickers, PDF) */
+  report: BarPlace;
 }
 
 export interface BoardToolbarView {
@@ -55,17 +85,47 @@ export interface BoardToolbarView {
    * pipeline is gone), so it needs Live running and a help mode other than Off.
    */
   canHelp: boolean;
+  /**
+   * The simple board: a kid sees Back, the ask button (big) and the save pill, and a grown-up a small
+   * More at the top right; tldraw's tools, the pen's style panel and the screen strip give way to the
+   * kid dock (pen, eraser, undo, a few colours, pages).
+   */
+  simple: boolean;
+  /**
+   * Where each grown-up control sits. All in the bar on the ordinary board. On the simple board all
+   * behind More, mounted there and hidden until it opens (the pill keeps "Hide AI shapes" applied,
+   * the ink meter keeps Live told the balance), but for two a kid must see: Ask while the tour's
+   * last coach mark points at it, and the pill while it has something to say to a kid who just
+   * tapped Help me — "Solving…" (or the tap does nothing they can see for seconds), or an error
+   * and its Retry.
+   */
+  place: BarPlaces;
 }
+
+const ALL_IN_BAR: BarPlaces = { dial: "bar", auto: "bar", ask: "bar", pill: "bar", ink: "bar", report: "bar" };
 
 export function boardToolbarView(state: BoardToolbarState): BoardToolbarView {
   const liveRunning = state.liveEnabled && state.liveAvailable;
   const helping = liveRunning && state.mode !== "off";
+  const simple = state.simple === true;
   return {
     autoSwitch: helping ? { on: state.auto, hint: !state.auto ? LIVE_COPY.auto.offHint : state.hideAiShapes ? LIVE_COPY.auto.pausedHint : LIVE_COPY.auto.onHint } : null,
     askButton: !helping ? null : state.mode === "answer" ? "solve" : "help",
     showHintLayer: liveRunning,
     liveRunning,
     canHelp: helping,
+    simple,
+    place: !simple
+      ? ALL_IN_BAR
+      : {
+          dial: "more",
+          auto: "more",
+          ask: state.tour ? "bar" : "more",
+          // with Live off the pill rests at "Live off" (`statusPillView`): nothing to bring out
+          pill: (state.liveError || state.solving) && liveRunning ? "bar" : "more",
+          ink: "more",
+          report: "more",
+        },
   };
 }
 

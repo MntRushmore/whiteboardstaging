@@ -18,6 +18,7 @@ import { clearLiveError, liveStore, retryLiveError, type LiveError } from "@/lib
 import { scheduleLiveWrite } from "@/lib/live/liveWrite";
 import { useLiveSettings } from "@/lib/live/liveSettings";
 import { openInkDialog } from "@/lib/billing/inkDialog";
+import { KID_COPY } from "@/components/kidmode/copy";
 import { LIVE_COPY } from "./copy";
 import { liveErrorView, pillError, pillPrimary, secondsLeftFor } from "./errorView";
 import { errorCardAnchor } from "./hintPlacement";
@@ -44,6 +45,8 @@ interface LiveStatusPillProps {
   meterOffersInk?: boolean;
   /** opens "Replay my board" (the board drawn again, stroke by stroke); no item without it */
   onReplay?: () => void;
+  /** the "Simple board" switch (src/components/kidmode); no item without it */
+  simpleBoard?: { on: boolean; onChange: (on: boolean) => void };
 }
 
 /** meta key that remembers a shape's opacity while "Hide AI shapes" is on */
@@ -208,6 +211,7 @@ export function LiveStatusPill({
   onReportProblem,
   meterOffersInk = false,
   onReplay,
+  simpleBoard,
 }: LiveStatusPillProps) {
   const status = useValue(liveStore.status);
   const recognizer = useValue(liveStore.recognizer);
@@ -348,6 +352,16 @@ export function LiveStatusPill({
           >
             {LIVE_COPY.pill.celebrations}
           </DropdownMenuCheckboxItem>
+          {simpleBoard && (
+            <DropdownMenuCheckboxItem
+              checked={simpleBoard.on}
+              onCheckedChange={(v) => simpleBoard.onChange(v === true)}
+              title={KID_COPY.simpleBoardHint}
+              data-testid="simple-board-item"
+            >
+              {KID_COPY.simpleBoard}
+            </DropdownMenuCheckboxItem>
+          )}
 
           <DropdownMenuSeparator />
           <DropdownMenuLabel className="text-xs text-gray-500">{LIVE_COPY.pill.groupLive}</DropdownMenuLabel>
