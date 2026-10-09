@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useEditor, type Editor } from "tldraw";
-import { Flame, Home, Pencil, Star, X } from "lucide-react";
+import { CircleCheck, Flame, Home, Pencil, Star, X } from "lucide-react";
 import { ConfettiBurst } from "@/components/onboarding/ConfettiBurst";
 import { BOARD_BAR_ATTR } from "@/components/live/hintPlacement";
 import type { LiveController } from "@/lib/live/contracts";
@@ -37,28 +37,54 @@ export interface DailyBoardProps {
 /** The celebration closes itself after this long: the board is the student's again. */
 export const CELEBRATION_MS = 20_000;
 
-/** Where the pill goes, measured against the board's top bar as it wraps and the board resizes. */
+/** The simple board's More (`GrownUpMore`), in the top-right corner beside the bar. */
+const MORE_SELECTOR = "[aria-controls=grown-up-more]";
+
+/**
+ * Where the pill goes, measured against the board's top bar as it wraps and the board resizes, and
+ * against the simple board's More as it comes and goes (lazy, and with the Simple board switch).
+ */
 function usePillSpot(editor: Editor, active: boolean): PillSpot {
   const [spot, setSpot] = useState<PillSpot>({ top: PILL.top, right: PILL.gap, inline: false });
   useLayoutEffect(() => {
     if (!active) return;
     const container = editor.getContainer();
     const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => measure());
-    let watched: Element | null = null;
+    // More mounts beside the bar, in the bar's own layer: watched for it coming and going
+    const mo = typeof MutationObserver === "undefined" ? null : new MutationObserver(() => measure());
+    const watched = new Set<Element>();
+    const watch = (el: Element | null | undefined) => {
+      if (el && !watched.has(el) && ro) {
+        watched.add(el);
+        ro.observe(el);
+      }
+    };
     function measure() {
       const bar = container.querySelector(`[${BOARD_BAR_ATTR}]`) ?? document.querySelector(`[${BOARD_BAR_ATTR}]`);
-      if (bar && bar !== watched && ro) {
-        watched = bar;
-        ro.observe(bar);
+      const layer = bar?.parentElement;
+      if (layer && mo && !watched.has(layer)) {
+        watched.add(layer);
+        mo.observe(layer, { childList: true });
       }
+      watch(bar);
+      const more = layer?.querySelector(MORE_SELECTOR);
+      watch(more);
       const box = container.getBoundingClientRect();
       const b = bar?.getBoundingClientRect();
-      const next = pillSpot({ width: box.width, bar: b ? { top: b.top - box.top, right: b.right - box.left, bottom: b.bottom - box.top } : null });
+      const m = more?.getBoundingClientRect();
+      const next = pillSpot({
+        width: box.width,
+        bar: b ? { top: b.top - box.top, right: b.right - box.left, bottom: b.bottom - box.top } : null,
+        corner: m && m.width > 0 ? { left: m.left - box.left, bottom: m.bottom - box.top } : null,
+      });
       setSpot((prev) => (prev.top === next.top && prev.right === next.right && prev.inline === next.inline ? prev : next));
     }
     ro?.observe(container);
     measure();
-    return () => ro?.disconnect();
+    return () => {
+      ro?.disconnect();
+      mo?.disconnect();
+    };
   }, [editor, active]);
   return spot;
 }
@@ -79,15 +105,21 @@ export function problemsOnBoard(editor: Pick<Editor, "getPages" | "getPageShapeI
   }
 }
 
-/** The star slots: gold for solved alone, filled for done with help, empty for still to do. */
+/**
+ * The slots: a gold star for each problem solved alone, a blue tick for one done with help (Help me
+ * is blue: not a star, so a kid counting stars counts only their own), an empty star still to do.
+ */
 function Stars({ goal, done, stars, size }: { goal: number; done: number; stars: number; size: number }) {
   return (
     <span className={styles.stars} aria-hidden>
-      {Array.from({ length: goal }, (_, i) => (
-        <span key={i} className={styles.star} data-star={i < stars ? "star" : i < done ? "done" : "empty"} style={{ "--i": i } as CSSProperties}>
-          <Star size={size} strokeWidth={2.2} />
-        </span>
-      ))}
+      {Array.from({ length: goal }, (_, i) => {
+        const kind = i < stars ? "star" : i < done ? "done" : "empty";
+        return (
+          <span key={i} className={styles.star} data-star={kind} style={{ "--i": i } as CSSProperties}>
+            {kind === "done" ? <CircleCheck size={size} strokeWidth={2.4} /> : <Star size={size} strokeWidth={2.2} />}
+          </span>
+        );
+      })}
     </span>
   );
 }
