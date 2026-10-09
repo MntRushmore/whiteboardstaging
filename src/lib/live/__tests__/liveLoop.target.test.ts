@@ -277,11 +277,12 @@ describe("live loop — which problem Help acts on", () => {
 
     it("the current problem follows the pen too: work under 1, then 2, a rub-out under 1 — Help is about 2", async () => {
       start("feedback");
-      await run([{ type: "write_problems", problems: [["2x + 3 = 11"], ["3x = 12"]] }]);
+      // a step under each, neither answered yet (an answered problem is never Help's: the next one is)
+      await run([{ type: "write_problems", problems: [["2x + 3 = 11"], ["4x + 4 = 12"]] }]);
       const p1 = under(1);
       const one = await pen("2x=8", p1.x, p1.y, "2x=8");
       const p2 = under(2);
-      const two = await pen("x=4", p2.x, p2.y, "x=4");
+      const two = await pen("4x=8", p2.x, p2.y, "4x=8");
       expect(helpLine()).toBe(two.id);
       editor.removeUser([one.strokes.at(-1)!.id]);
       await quiet();

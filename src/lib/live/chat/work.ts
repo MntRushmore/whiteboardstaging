@@ -51,6 +51,13 @@ export interface ProblemState {
    * problem 1 left it at its first line and worked problem 2). Absent: false.
    */
   busy?: boolean;
+  /**
+   * the student has answered it: their last line under it is the answer, right (`analysis.solved`,
+   * ticked). Nothing is left to help with there, so an ask is about the next problem — a child who
+   * got problem 1 right and taps Help me is stuck on problem 2, and Help me outlined problem 1 and
+   * asked the model to solve it again (2026-10-09). Absent: false.
+   */
+  done?: boolean;
 }
 
 /**
@@ -71,10 +78,14 @@ const NONE: ProblemPick = { kind: "none" };
  * "The current problem": the one whose cell the student last wrote in (`touched`, a cell key), else
  * the first in reading order the tutor is writing now (`busy`) or with no work of the student's
  * under it and no solution of the tutor's. Null when there is none.
+ *
+ * A touched problem the student has answered (`done`) is not the current one any more: the next one
+ * still to do is (`nextUnsolved`). `pen`: the cell the pen's last stroke is in, when that is not a
+ * line yet (an `=` started under the next problem).
  */
-export function currentProblem(cells: readonly ProblemCell[], touched: string | null, state: (cell: ProblemCell) => ProblemState): ProblemCell | null {
+export function currentProblem(cells: readonly ProblemCell[], touched: string | null, state: (cell: ProblemCell) => ProblemState, pen: string | null = null): ProblemCell | null {
   const mine = touched ? cells.find((c) => c.key === touched) : undefined;
-  if (mine) return mine;
+  if (mine) return state(mine).done ? nextUnsolved(cells, mine, state, pen) : mine;
   return cells.find((c) => {
     const s = state(c);
     return Boolean(s.busy) || (!s.work && !s.solved);
@@ -82,12 +93,34 @@ export function currentProblem(cells: readonly ProblemCell[], touched: string | 
 }
 
 /**
+ * The problem to help with after `from`, which the student has answered: one still to do — not
+ * answered by them, not worked out by the tutor (or being written by it now) — nearest the student's
+ * last strokes: the one the pen last wrote in, when it is still to do (`pen`, a cell key); else the
+ * next one after `from` in reading order, the one a child works next; else, round the screen, the
+ * first one still to do. Null when every problem on the screen is answered or worked out.
+ */
+export function nextUnsolved(cells: readonly ProblemCell[], from: ProblemCell, state: (cell: ProblemCell) => ProblemState, pen: string | null = null): ProblemCell | null {
+  const unsolved = (c: ProblemCell) => {
+    const s = state(c);
+    return Boolean(s.busy) || (!s.done && !s.solved);
+  };
+  const near = pen ? cells.find((c) => c.key === pen) : undefined;
+  if (near && near !== from && unsolved(near)) return near;
+  const at = cells.indexOf(from);
+  for (let k = 1; k < cells.length; k++) {
+    const c = cells[(at + k) % cells.length];
+    if (unsolved(c)) return c;
+  }
+  return null;
+}
+
+/**
  * Solve (Solve steps, the dial moved to Solve, Help in Solve): the current problem — the student's
  * work under it when they have some, else the problem worked out. Asked again once it is solved,
  * the next problem that is not, after it in reading order; none left, nothing.
  */
-export function pickForSolve(cells: readonly ProblemCell[], touched: string | null, state: (cell: ProblemCell) => ProblemState): ProblemPick {
-  const cur = currentProblem(cells, touched, state);
+export function pickForSolve(cells: readonly ProblemCell[], touched: string | null, state: (cell: ProblemCell) => ProblemState, pen: string | null = null): ProblemPick {
+  const cur = currentProblem(cells, touched, state, pen);
   if (!cur) return NONE;
   const s = state(cur);
   if (s.busy) return { kind: "busy", cell: cur };
@@ -105,10 +138,11 @@ export function pickForSolve(cells: readonly ProblemCell[], touched: string | nu
 /**
  * A step (the dial moved to Suggest, Help in Feedback / Suggest): the current problem — the
  * student's work under it when they have some, else the problem. It never moves on to another
- * problem: a step the student has not used yet is the help, not a step of the next problem.
+ * problem: a step the student has not used yet is the help, not a step of the next problem. (One
+ * the student has answered is not the current problem: `currentProblem`.)
  */
-export function pickForStep(cells: readonly ProblemCell[], touched: string | null, state: (cell: ProblemCell) => ProblemState): ProblemPick {
-  const cur = currentProblem(cells, touched, state);
+export function pickForStep(cells: readonly ProblemCell[], touched: string | null, state: (cell: ProblemCell) => ProblemState, pen: string | null = null): ProblemPick {
+  const cur = currentProblem(cells, touched, state, pen);
   if (!cur) return NONE;
   const s = state(cur);
   if (s.busy) return { kind: "busy", cell: cur };
