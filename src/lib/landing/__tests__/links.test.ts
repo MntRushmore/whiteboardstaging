@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { LANDING_PATH, PRODUCTION_ORIGIN, SIGN_IN_HREF, SIGN_UP_HREF, signedOutDestination, siteOrigin, wantsSignUp } from "../links";
+import {
+  earlySignedOutDestination,
+  hasStoredSession,
+  LANDING_PATH,
+  PRODUCTION_ORIGIN,
+  SIGN_IN_HREF,
+  SIGN_UP_HREF,
+  SIGNED_OUT_GATE_SCRIPT,
+  signedOutDestination,
+  siteOrigin,
+  wantsSignUp,
+} from "../links";
 
 describe("signedOutDestination", () => {
   it("sends a signed-out visitor to the landing page", () => {
@@ -46,5 +57,51 @@ describe("siteOrigin", () => {
     expect(siteOrigin("  ")).toBe(PRODUCTION_ORIGIN);
     expect(siteOrigin("agathon.app")).toBe(PRODUCTION_ORIGIN);
     expect(siteOrigin("javascript:alert(1)")).toBe(PRODUCTION_ORIGIN);
+  });
+
+  it("never puts .env.example's placeholder host in a link preview", () => {
+    expect(siteOrigin("https://your-app.up.railway.app")).toBe(PRODUCTION_ORIGIN);
+    expect(siteOrigin("https://agathon.app/parents")).toBe("https://agathon.app");
+  });
+});
+
+describe("the signed-out gate before paint", () => {
+  /** Runs SIGNED_OUT_GATE_SCRIPT against a fake page: where it went, and whether it hid the page. */
+  function runGate(keys: string[], search: string, hash: string) {
+    const replaced: string[] = [];
+    const style: { visibility?: string } = {};
+    const window = { localStorage: { length: keys.length, key: (i: number) => keys[i] ?? null } };
+    const location = { search, hash, replace: (to: string) => replaced.push(to) };
+    const document = { documentElement: { style } };
+    new Function("window", "location", "document", "URLSearchParams", SIGNED_OUT_GATE_SCRIPT)(window, location, document, URLSearchParams);
+    return { to: replaced[0] ?? null, hidden: style.visibility === "hidden" };
+  }
+
+  const cases: [string[], string, string][] = [
+    [[], "?ref=ABC234&utm_source=x", ""],
+    [[], "", ""],
+    [[], "?ref=ABC234", "#pricing"],
+    [["agathon.attribution", "sb-127-auth-token"], "?ref=ABC234", ""],
+    [["sb-abcdefgh-auth-token"], "", ""],
+    [[], "?code=abc", ""],
+    [[], "", "#access_token=x&refresh_token=y&type=signup"],
+    [[], "", "#error=access_denied&error_code=otp_expired"],
+    [["agathon.simpleBoard"], "?ref=ABC234", ""],
+  ];
+
+  it("leaves for the landing page, query and hash kept, only with no stored session and no email link in the address", () => {
+    expect(earlySignedOutDestination([], "?ref=ABC234&utm_source=x", "")).toBe("/parents?ref=ABC234&utm_source=x");
+    expect(earlySignedOutDestination([], "?ref=ABC234", "#pricing")).toBe("/parents?ref=ABC234#pricing");
+    expect(earlySignedOutDestination(["sb-127-auth-token"], "?ref=ABC234", "")).toBeNull();
+    expect(earlySignedOutDestination([], "?code=abc", "")).toBeNull();
+    expect(earlySignedOutDestination([], "", "#access_token=x")).toBeNull();
+    expect(hasStoredSession(["agathon.attribution", null])).toBe(false);
+  });
+
+  it("the inline script follows the same rules, and hides the page only when it leaves", () => {
+    for (const [keys, search, hash] of cases) {
+      const want = earlySignedOutDestination(keys, search, hash);
+      expect(runGate(keys, search, hash)).toEqual({ to: want, hidden: want !== null });
+    }
   });
 });
