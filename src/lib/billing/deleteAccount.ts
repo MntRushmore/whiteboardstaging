@@ -26,6 +26,14 @@
  * (a refused deletion must not have deleted anything), with a fresh read of the
  * caller's own unlimited_subscriptions rows; delete_own_account() refuses too
  * (supabase/migrations/20261003020000_unlimited.sql), as the backstop.
+ *
+ * Families (2026-10-09): a grown-up's kid profiles are accounts of their own, so deleting the
+ * grown-up deletes the kids first: `removeFamily` (DELETE /api/family, src/lib/family/client.ts)
+ * removes each kid's saved images and account on the server, right after the plan check and before
+ * the RPC. Best effort, like the images: delete_own_account() deletes any kid still there in the
+ * same transaction as the grown-up (supabase/migrations/20261009010000_family_plan.sql), so no kid
+ * account outlives its grown-up. A kid profile cannot delete itself (the RPC refuses, hint
+ * `family_kid`); their grown-up removes them from the Family page.
  */
 
 export const BOARD_ASSETS_BUCKET = "board-assets";
@@ -221,21 +229,33 @@ export async function assertNoChargingPlan(client: DeleteAccountClient): Promise
   if (planBlocksDeletion(data)) throw new PlanStillActiveError();
 }
 
+/** What happened to the grown-up's kid profiles (`removeFamily`), when there was a family step. */
+export type RemoveFamilyResult = { removed: number; error: string | null };
+
 /**
- * Check the plan (nothing is touched while it would charge again), remove own Storage
- * objects (best effort), delete the account via the RPC, then forget the session
- * locally (no network — the user no longer exists).
+ * Check the plan (nothing is touched while it would charge again), delete the kid profiles
+ * (`removeFamily`, best effort), remove own Storage objects (best effort), delete the account via
+ * the RPC, then forget the session locally (no network — the user no longer exists).
  * Throws PlanStillActiveError, or the RPC error, so the caller can show it; on that
- * path the session is kept so the user can retry. Asset problems come back in `assets`.
+ * path the session is kept so the user can retry. Asset problems come back in `assets`, the
+ * family step's in `family` (absent without one).
  */
 export async function deleteOwnAccount(
   client: DeleteAccountClient,
-  options: { storage?: KeyValueStorage | null } = {},
-): Promise<{ assets: RemoveAssetsResult; clearedKeys: string[] }> {
+  options: { storage?: KeyValueStorage | null; removeFamily?: () => PromiseLike<{ removed: number }> } = {},
+): Promise<{ assets: RemoveAssetsResult; family?: RemoveFamilyResult; clearedKeys: string[] }> {
   await assertNoChargingPlan(client);
+  let family: RemoveFamilyResult | null = null;
+  if (options.removeFamily) {
+    try {
+      family = { removed: (await options.removeFamily()).removed, error: null };
+    } catch (err) {
+      family = { removed: 0, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
   const assets = await removeOwnBoardAssets(client);
   const { error } = await client.rpc("delete_own_account");
   if (error) throw isPlanStillActiveError(error) ? new PlanStillActiveError() : error;
   const clearedKeys = await clearLocalSession(client, options.storage === undefined ? defaultStorage() : options.storage);
-  return { assets, clearedKeys };
+  return { assets, clearedKeys, ...(family ? { family } : {}) };
 }

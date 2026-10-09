@@ -8,6 +8,8 @@ import { SECTION_BODY, SectionHeader } from "@/components/account/SectionHeader"
 import { billingPortalUrl, unlimitedCheckoutUrl } from "@/lib/billing/unlimited";
 import { PLAN_COPY, billingFacts, unlimitedPlanView } from "@/lib/billing/unlimitedPlan";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
+import { isKidEmail } from "@/lib/family/contracts";
+import { KidBillingCard } from "@/components/family/KidBillingCard";
 import { cn } from "@/lib/utils";
 
 const BADGE_CLASS: Record<string, string> = {
@@ -34,6 +36,9 @@ export function BillingCard({ email }: { email: string }) {
   const facts = billingFacts(state);
   const checkout = unlimitedCheckoutUrl({ checkoutRef: state.checkoutRef, email });
   const portal = billingPortalUrl(email);
+
+  // A kid profile shares the grown-up's plan and never sees billing (src/lib/family).
+  if (isKidEmail(email)) return <KidBillingCard />;
 
   return (
     <Card id="billing" className="scroll-mt-6" data-plan={view.kind}>

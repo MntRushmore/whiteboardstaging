@@ -11,6 +11,7 @@ import { ProfileCard } from "@/components/account/ProfileCard";
 import { DangerZone } from "@/components/account/DangerZone";
 import { BillingCard } from "@/components/account/BillingCard";
 import { GradeSection } from "@/components/account/GradeSection";
+import { FamilySection } from "@/components/account/FamilySection";
 import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { ACCOUNT_COPY, accountPageStateFor } from "@/lib/billing/accountState";
 
@@ -124,6 +125,7 @@ export default function AccountPage() {
             <BillingCard email={email} />
             <ProfileCard userId={user.id} email={email} />
             <GradeSection userId={user.id} />
+            <FamilySection email={email} />
             <DangerZone email={email} />
           </div>
         )}

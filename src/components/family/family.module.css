@@ -1,0 +1,328 @@
+/* Families: the app bar's profile switcher, "Who's practising?" and the PIN pad. Arc tokens only.
+   The readers are young kids: big targets (tiles and keys at least 64 px), few words. */
+
+/* ---- a profile's picture ---------------------------------------------------------------------- */
+.avatar {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--avatar-bg, var(--accent-subtle));
+  color: var(--foreground);
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+.avatar[data-size="sm"] {
+  width: 2rem;
+  height: 2rem;
+  font-size: 1.15rem;
+}
+.avatar[data-size="md"] {
+  width: 3rem;
+  height: 3rem;
+  font-size: 1.6rem;
+}
+.avatar[data-size="lg"] {
+  width: 4rem;
+  height: 4rem;
+  font-size: 2.2rem;
+}
+.avatar[data-size="xl"] {
+  width: 5.5rem;
+  height: 5.5rem;
+  font-size: 3rem;
+}
+/* a soft wash per picture, so siblings tell their tiles apart at a glance */
+.avatar[data-avatar="fox"] { --avatar-bg: oklch(93% 0.05 55); }
+.avatar[data-avatar="owl"] { --avatar-bg: oklch(93% 0.04 85); }
+.avatar[data-avatar="cat"] { --avatar-bg: oklch(94% 0.05 95); }
+.avatar[data-avatar="dog"] { --avatar-bg: oklch(93% 0.035 60); }
+.avatar[data-avatar="panda"] { --avatar-bg: oklch(94% 0.01 260); }
+.avatar[data-avatar="rabbit"] { --avatar-bg: oklch(94% 0.04 350); }
+.avatar[data-avatar="tiger"] { --avatar-bg: oklch(93% 0.06 70); }
+.avatar[data-avatar="frog"] { --avatar-bg: oklch(94% 0.06 140); }
+.avatar[data-avatar="penguin"] { --avatar-bg: oklch(93% 0.04 240); }
+.avatar[data-avatar="koala"] { --avatar-bg: oklch(93% 0.015 250); }
+.avatar[data-avatar="lion"] { --avatar-bg: oklch(93% 0.06 80); }
+.avatar[data-avatar="unicorn"] { --avatar-bg: oklch(93% 0.05 310); }
+
+/* ---- the app bar's button ---------------------------------------------------------------------- */
+.trigger {
+  display: inline-grid;
+  min-width: var(--control-height-sm);
+  min-height: var(--control-height-sm);
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-pill);
+  padding: 2px;
+  background: transparent;
+  cursor: pointer;
+}
+.trigger:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .trigger:hover .avatar {
+    box-shadow: 0 0 0 2px var(--border-strong);
+  }
+}
+
+/* ---- the dialog --------------------------------------------------------------------------------- */
+.dialog {
+  width: min(36rem, calc(100vw - 2 * var(--space-4)));
+  max-width: 36rem;
+}
+
+/* ---- Who's practising? -------------------------------------------------------------------------- */
+.picker {
+  display: grid;
+  gap: var(--space-4);
+}
+.pickerHint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+}
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* every tile in a row as tall as the tallest ("You" adds a line) */
+.tiles > li {
+  display: flex;
+}
+.tile {
+  position: relative;
+  display: flex;
+  width: 100%;
+  flex: 1;
+  min-height: 10rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-panel);
+  padding: var(--space-4) var(--space-2);
+  background: var(--surface);
+  color: var(--foreground);
+  cursor: pointer;
+  font: inherit;
+  transition:
+    transform var(--duration-fast, 150ms) var(--ease-standard),
+    border-color var(--duration-fast, 150ms) var(--ease-standard),
+    box-shadow var(--duration-fast, 150ms) var(--ease-standard);
+}
+.tile:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .tile:not(:disabled):hover {
+    border-color: var(--accent);
+    box-shadow: var(--shadow-raised);
+    transform: translateY(-2px);
+  }
+}
+.tile:not(:disabled):active {
+  transform: scale(0.97);
+}
+.tile:disabled {
+  cursor: default;
+}
+.tile:disabled:not([data-me]):not([data-busy]) {
+  opacity: 0.55;
+}
+.tile[data-me] {
+  border-style: dashed;
+  background: var(--surface-muted);
+}
+.tile[data-busy] {
+  border-color: var(--accent);
+}
+.tileFace {
+  position: relative;
+  display: inline-grid;
+}
+.tileLock {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: grid;
+  width: 1.9rem;
+  height: 1.9rem;
+  place-items: center;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--foreground);
+  color: var(--background);
+}
+.tileSpinner {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--surface) 70%, transparent);
+  color: var(--accent);
+}
+.tileName {
+  max-width: 100%;
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tileYou {
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+.pickerError {
+  min-height: 1.25rem;
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+.pickerError:empty {
+  min-height: 0;
+}
+.manage {
+  display: inline-flex;
+  align-items: center;
+  justify-self: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-pill);
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-decoration: none;
+}
+.manage:hover {
+  color: var(--foreground);
+}
+
+/* ---- the PIN pad --------------------------------------------------------------------------------- */
+.pinPad {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+}
+.pinHint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+.pinDots {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-2) 0;
+}
+.pinDots[data-shake] {
+  animation: shake 360ms var(--ease-standard);
+}
+@media (prefers-reduced-motion: reduce) {
+  .pinDots[data-shake] {
+    animation: none;
+  }
+}
+@keyframes shake {
+  20% { transform: translateX(-10px); }
+  40% { transform: translateX(9px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(4px); }
+}
+.pinDot {
+  width: 1.1rem;
+  height: 1.1rem;
+  border: 2px solid var(--border-strong);
+  border-radius: 50%;
+  transition: background-color 120ms var(--ease-standard), transform 120ms var(--ease-standard);
+}
+.pinDot[data-filled] {
+  border-color: var(--foreground);
+  background: var(--foreground);
+  transform: scale(1.1);
+}
+.pinStatus {
+  display: inline-flex;
+  min-height: 1.5rem;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+.pinStatus[data-tone="error"] {
+  color: var(--danger);
+  font-weight: 500;
+}
+.keys {
+  display: grid;
+  grid-template-columns: repeat(3, 4.5rem);
+  gap: var(--space-3);
+}
+@media (min-width: 480px) {
+  .keys {
+    grid-template-columns: repeat(3, 5rem);
+  }
+}
+.key {
+  display: grid;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-resting);
+  color: var(--foreground);
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  touch-action: manipulation;
+  transition: transform 100ms var(--ease-standard), background-color 100ms var(--ease-standard);
+}
+.key:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.key:not(:disabled):active {
+  background: var(--surface-muted);
+  transform: scale(0.94);
+}
+.key:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.keyQuiet {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-secondary);
+}
+
+.spin {
+  animation: spin 900ms linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

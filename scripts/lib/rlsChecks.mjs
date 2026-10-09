@@ -2515,6 +2515,165 @@ export const ADMIN_CHECKS = [
   { name: "admin console: admin_audit, admin_issues, the views and the stats functions are the service role's alone; a student's bug report is always filed new", run: checkAdminConsole },
 ];
 
+/** The family tables (20261009000000_kids_come_back.sql): the server's (service role) to write. */
+export const FAMILY_TABLES = ["families", "family_members"];
+/** The family plan's internal functions (20261009010000_family_plan.sql): no client may call them. */
+export const FAMILY_FUNCTIONS = [
+  ["plan_owner_of", { p_uid: ZERO_UUID }],
+  ["family_pin_attempt", { p_parent: ZERO_UUID, p_limit: 5, p_window_ms: 900000 }],
+  ["family_pin_forgive", { p_parent: ZERO_UUID, p_window_start: "2026-01-01T00:00:00Z" }],
+];
+
+/**
+ * Families (src/lib/family; migrations 20261009000000_kids_come_back.sql and
+ * 20261009010000_family_plan.sql). A grown-up's kid profiles are accounts of their own, linked by
+ * family_members; every write goes through the /api/family routes with the service role.
+ *
+ * Users: nobody but the service role writes `families` or `family_members`, and nobody reads
+ * `families` (the PIN's hash) at all. A family's grown-up P and kid K read their own family_members
+ * row; anyone else (A) reads none. No user may call plan_owner_of(), family_pin_attempt() or
+ * family_pin_forgive(). With the service role (P and K are made with `newUser`): the kid shares the
+ * grown-up's plan (ink_summary().unlimited, consume_credits() through the Unlimited path, counted on
+ * the kid's own fair-use rows) while A does not, the kid keeps their own checkout_ref; the PIN's
+ * budget is per family (5, then refused; a forgiven try comes back); the triggers keep a kid from
+ * having kids and a grown-up from being a kid; a kid cannot delete their own account; and the
+ * grown-up's deletion takes the kid's account with it. Removes every row it wrote.
+ *
+ * Kept out of ALL_CHECKS (the in-memory fake does not model these tables); scripts/verify-rls.mjs and
+ * the DB integration test run FAMILY_CHECKS after ADMIN_CHECKS.
+ * @param {CheckContext} ctx
+ */
+export async function checkFamily({ anon, a, service, newUser }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const code = (/** @type {HttpResult} */ res) => String(asObject(res.body)?.code ?? "");
+  const hint = (/** @type {HttpResult} */ res) => String(asObject(res.body)?.hint ?? "");
+
+  for (const [who, client] of /** @type {Array<[string, RlsClient]>} */ ([["anon", anon], ["A", a]])) {
+    const fam = await client.rest("GET", "families", { query: { select: "*", limit: "1" } });
+    out.push(result(`family: ${who} cannot read families (the PIN's hash)`, isDenied(fam), describe(fam)));
+    const famIns = await client.rest("POST", "families", { body: { parent_id: client.userId ?? ZERO_UUID, pin_hash: "scrypt$x$y" }, prefer: "return=minimal" });
+    out.push(result(`family: ${who} cannot insert into families`, isDenied(famIns), describe(famIns)));
+    const memIns = await client.rest("POST", "family_members", { body: { child_id: ZERO_UUID, parent_id: client.userId ?? ZERO_UUID }, prefer: "return=minimal" });
+    out.push(result(`family: ${who} cannot insert into family_members`, isDenied(memIns), describe(memIns)));
+    for (const [fn, args] of FAMILY_FUNCTIONS) {
+      const res = await rpc(client, /** @type {string} */ (fn), /** @type {Record<string, unknown>} */ (args));
+      out.push(result(`family: ${who} cannot call ${fn}()`, isDenied(res), describe(res)));
+    }
+  }
+  const anonMem = await anon.rest("GET", "family_members", { query: { select: "*", limit: "1" } });
+  out.push(result("family: anon cannot read family_members", isDenied(anonMem), describe(anonMem)));
+
+  if (!service || !newUser) {
+    out.push(result("family: a family's half (skipped: no service role client or newUser)", true));
+    return out;
+  }
+
+  const p = await newUser();
+  const k = await newUser();
+  const tag = uuid().slice(0, 8);
+  const sub = `sub_rls_verify_family_${tag}`;
+  try {
+    // ---------------------------------------------------------------- a family, made by the server
+    const fam = await service.rest("POST", "families", { body: { parent_id: p.userId, pin_hash: "scrypt$rls$verify" }, prefer: "return=minimal" });
+    const mem = await service.rest("POST", "family_members", { body: { child_id: k.userId, parent_id: p.userId }, prefer: "return=minimal" });
+    out.push(result("family: the service role makes a family (grown-up P, kid K)", isOk(fam) && isOk(mem), `${describe(fam)} / ${describe(mem)}`));
+
+    const pRows = await p.rest("GET", "family_members", { query: { select: "child_id,parent_id" } });
+    out.push(result("family: P reads their kid's family_members row", isOk(pRows) && rows(pRows).length === 1 && rows(pRows)[0]?.child_id === k.userId, describe(pRows)));
+    const kRows = await k.rest("GET", "family_members", { query: { select: "child_id,parent_id" } });
+    out.push(result("family: K reads their own family_members row", isOk(kRows) && rows(kRows).length === 1 && rows(kRows)[0]?.parent_id === p.userId, describe(kRows)));
+    const aRows = await a.rest("GET", "family_members", { query: { select: "child_id", parent_id: `eq.${p.userId}` } });
+    out.push(result("family: A (not a member) reads none of P's family_members (select returns [])", affectedNoRows(aRows), describe(aRows)));
+    for (const [who, client] of /** @type {Array<[string, RlsClient]>} */ ([["P", p], ["K", k]])) {
+      const fr = await client.rest("GET", "families", { query: { select: "pin_hash" } });
+      out.push(result(`family: ${who} cannot read families, not even their own (the PIN's hash)`, isDenied(fr), describe(fr)));
+      const upd = await client.rest("PATCH", "family_members", { query: { child_id: `eq.${k.userId}` }, body: { parent_id: a.userId }, prefer: "return=representation" });
+      out.push(result(`family: ${who} cannot move the kid to another family (update denied)`, isDenied(upd), describe(upd)));
+      const del = await client.rest("DELETE", "family_members", { query: { child_id: `eq.${k.userId}` }, prefer: "return=representation" });
+      out.push(result(`family: ${who} cannot delete the family_members row`, isDenied(del), describe(del)));
+      const pin = await client.rest("PATCH", "families", { query: { parent_id: `eq.${p.userId}` }, body: { pin_hash: null }, prefer: "return=representation" });
+      out.push(result(`family: ${who} cannot change the PIN's hash`, isDenied(pin), describe(pin)));
+    }
+    const join = await a.rest("POST", "family_members", { body: { child_id: a.userId, parent_id: p.userId }, prefer: "return=minimal" });
+    out.push(result("family: A cannot join P's family as a kid (insert denied)", isDenied(join), describe(join)));
+
+    // ---------------------------------------------------------------- the family's shape
+    const kidParent = await service.rest("POST", "families", { body: { parent_id: k.userId }, prefer: "return=minimal" });
+    out.push(result("family: a kid cannot have kids (23514)", !isOk(kidParent) && code(kidParent) === "23514", describe(kidParent)));
+    // A as another family's grown-up, for a moment: P (a grown-up) cannot become A's kid.
+    await service.rest("POST", "families", { body: { parent_id: a.userId }, prefer: "return=minimal" });
+    const parentKid = await service.rest("POST", "family_members", { body: { child_id: p.userId, parent_id: a.userId }, prefer: "return=minimal" });
+    out.push(result("family: a grown-up cannot be someone's kid profile (23514)", !isOk(parentKid) && code(parentKid) === "23514", describe(parentKid)));
+    await service.rest("DELETE", "families", { query: { parent_id: `eq.${a.userId}` } });
+
+    // ---------------------------------------------------------------- the plan, shared
+    const kRef = await k.rest("GET", "profiles", { query: { select: "checkout_ref" } });
+    const refK = rows(kRef)[0]?.checkout_ref ?? null;
+    const before = asObject((await rpc(k, "ink_summary")).body);
+    out.push(result("family: K has no plan while P has none", before?.unlimited?.status === "none" && before?.unlimited?.unlimited === false, JSON.stringify(before?.unlimited ?? null).slice(0, 200)));
+    const planned = await service.rest("POST", "unlimited_subscriptions", {
+      body: { stripe_subscription_id: sub, user_id: p.userId, status: "trialing", trial_end: new Date(Date.now() + 7 * 86_400_000).toISOString(), livemode: false },
+      prefer: "return=minimal",
+    });
+    out.push(result("family: the service role gives P a plan (trialing)", isOk(planned), describe(planned)));
+    const kSum = asObject((await rpc(k, "ink_summary")).body);
+    out.push(
+      result(
+        "family: K's ink_summary shows P's plan (trialing, unlimited) and K's own checkout_ref",
+        kSum?.unlimited?.status === "trialing" && kSum?.unlimited?.unlimited === true && refK !== null && kSum?.unlimited?.checkout_ref === refK,
+        JSON.stringify(kSum?.unlimited ?? null).slice(0, 200),
+      ),
+    );
+    const aSum = asObject((await rpc(a, "ink_summary")).body);
+    out.push(result("family: A (not in the family) still has no plan", aSum?.unlimited?.status === "none" && aSum?.unlimited?.unlimited === false, JSON.stringify(aSum?.unlimited ?? null).slice(0, 200)));
+    const request = `rls-verify-family-${tag}`;
+    const spend = await rpc(k, "consume_credits", { p_route: "rls-verify-family", p_units: 5, p_request_id: request });
+    const spent = asObject(spend.body);
+    out.push(result("family: K's help goes through the Unlimited path (ok, unlimited, no ink)", isOk(spend) && spent?.ok === true && spent?.unlimited === true, describe(spend)));
+    const usage = await service.rest("GET", "unlimited_usage", { query: { request_id: `eq.${request}`, select: "user_id" } });
+    out.push(result("family: K's fair use is counted on K's own rows", rows(usage).length === 1 && rows(usage)[0]?.user_id === k.userId, describe(usage)));
+
+    // ---------------------------------------------------------------- the PIN's budget, per family
+    const hits = [];
+    for (let i = 0; i < 6; i++) hits.push(asObject((await rpc(service, "family_pin_attempt", { p_parent: p.userId, p_limit: 5, p_window_ms: 900000 })).body));
+    out.push(result("family: family_pin_attempt allows 5 tries, then refuses", hits.slice(0, 5).every((h) => h?.allowed === true) && hits[5]?.allowed === false && Number(hits[5]?.retry_after_ms) > 0, JSON.stringify(hits.at(-1)).slice(0, 200)));
+    await rpc(service, "family_pin_forgive", { p_parent: p.userId, p_window_start: hits[0]?.window_start });
+    await rpc(service, "family_pin_forgive", { p_parent: p.userId, p_window_start: hits[0]?.window_start });
+    const again = asObject((await rpc(service, "family_pin_attempt", { p_parent: p.userId, p_limit: 5, p_window_ms: 900000 })).body);
+    out.push(result("family: a forgiven try (a right PIN) comes back", again?.allowed === true, JSON.stringify(again).slice(0, 200)));
+
+    // ---------------------------------------------------------------- deletion
+    const kDel = await rpc(k, "delete_own_account");
+    out.push(result("family: K cannot delete their own account (hint family_kid)", !isOk(kDel) && hint(kDel) === "family_kid", describe(kDel)));
+    const blocked = await rpc(p, "delete_own_account");
+    out.push(result("family: P's deletion still waits for the plan to be cancelled", !isOk(blocked) && hint(blocked) === "unlimited_active", describe(blocked)));
+    await service.rest("PATCH", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${sub}` }, body: { cancel_at_period_end: true }, prefer: "return=minimal" });
+    const pDel = await rpc(p, "delete_own_account");
+    out.push(result("family: P deletes their account once the plan is set to cancel", isOk(pDel), describe(pDel)));
+    const kProfile = await service.rest("GET", "profiles", { query: { user_id: `eq.${k.userId}`, select: "user_id" } });
+    const kMember = await service.rest("GET", "family_members", { query: { child_id: `eq.${k.userId}`, select: "child_id" } });
+    out.push(result("family: K's account went with P's (no profile, no family row left)", affectedNoRows(kProfile) && affectedNoRows(kMember), `${describe(kProfile)} / ${describe(kMember)}`));
+    const aProf = await a.rest("GET", "profiles", { query: { select: "user_id" } });
+    out.push(result("family: A's account is untouched", isOk(aProf) && rows(aProf).length === 1, describe(aProf)));
+  } finally {
+    await service.rest("DELETE", "unlimited_usage", { query: { request_id: `like.rls-verify-family-*` } });
+    await service.rest("DELETE", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${sub}` } });
+    await service.rest("DELETE", "rate_limit_counters", { query: { user_id: `eq.${p.userId}`, bucket: "eq.family_pin" } });
+    await service.rest("DELETE", "families", { query: { parent_id: `in.(${p.userId},${k.userId},${a.userId})` } });
+  }
+  return out;
+}
+
+/**
+ * The family checks, run after ADMIN_CHECKS by scripts/verify-rls.mjs and
+ * src/__tests__/db-rls.integration.test.ts.
+ * @type {CheckDef[]}
+ */
+export const FAMILY_CHECKS = [
+  { name: "family: families and family_members are the server's to write; members read their own row; kids share the grown-up's plan and go with their account", run: checkFamily },
+];
+
 /**
  * Run one check, converting a thrown error into a single failing result.
  * @param {CheckDef} check

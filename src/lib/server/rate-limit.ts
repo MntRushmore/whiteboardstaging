@@ -44,6 +44,11 @@ export const LIMITS = {
   adminScreenshot: { limit: 240, windowMs: MINUTE },
   // POST /api/email/welcome: the app asks once, at the end of the tour; the email itself goes at most once.
   emailWelcome: { limit: 5, windowMs: MINUTE },
+  // The family routes (src/app/api/family): the Family page's reads and a grown-up's edits.
+  family: { limit: 30, windowMs: MINUTE },
+  // Switching profiles, per caller. The grown-up's PIN has its own budget per FAMILY (PIN_ATTEMPTS,
+  // src/lib/family/server/pin.ts), counted in the database.
+  familySwitch: { limit: 20, windowMs: MINUTE },
   // Live Math routes (budgets are defined once, in the shared contracts).
   liveRecognize: LIVE_RATE_LIMITS.liveRecognize,
   liveCheck: LIVE_RATE_LIMITS.liveCheck,

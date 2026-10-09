@@ -2,10 +2,62 @@
 
 import { ArrowRight, CheckCheck, GraduationCap, HeartHandshake, Hourglass, Lightbulb, MessageSquare, Sparkles } from "lucide-react";
 import { PLAN_COPY } from "@/lib/onboarding/plan";
+import { FAMILY_COPY } from "@/lib/family/copy";
 import { Button } from "@/registry/components/button/button";
 import styles from "./plan.module.css";
 
 const PERK_ICONS = { help: Lightbulb, ask: MessageSquare, check: CheckCheck, courses: GraduationCap } as const;
+
+/** The plan screen for a kid profile: what the plan gives, and that their grown-up looks after it. */
+function KidPlanOffer({ soon, onContinue }: { soon: boolean; onContinue: () => void }) {
+  return (
+    <section aria-labelledby="plan-title" data-onboarding="plan" data-view="kid" className={styles.card}>
+      <div className={styles.hero}>
+        <p className={`${styles.kicker} ${styles.rise}`}>
+          <Sparkles size={16} strokeWidth={2} aria-hidden />
+          {FAMILY_COPY.kidPlanTitle}
+        </p>
+        <h1 id="plan-title" className={`${styles.title} ${styles.rise}`}>
+          {PLAN_COPY.title}
+        </h1>
+      </div>
+      <div className={styles.body}>
+        <h2 className={styles.srOnly}>{PLAN_COPY.perksTitle}</h2>
+        <ul className={styles.perks}>
+          {PLAN_COPY.perks.map((p) => {
+            const Icon = PERK_ICONS[p.id];
+            return (
+              <li key={p.id} className={`${styles.perk} ${styles.rise}`}>
+                <span aria-hidden className={styles.perkIcon}>
+                  <Icon size={20} strokeWidth={1.9} />
+                </span>
+                {p.text}
+              </li>
+            );
+          })}
+        </ul>
+        <div className={`${styles.grownUp} ${styles.rise}`} data-testid="kid-plan">
+          <span aria-hidden className={styles.grownUpIcon}>
+            <HeartHandshake size={22} strokeWidth={1.8} />
+          </span>
+          <div>
+            <p className={styles.grownUpTitle}>{FAMILY_COPY.kidBilling}</p>
+            <p className={styles.grownUpHint}>{FAMILY_COPY.kidPlanBody}</p>
+          </div>
+        </div>
+        <div className={`${styles.actions} ${styles.rise}`}>
+          {soon ? (
+            <Button size="lg" variant="secondary" className={styles.later} onClick={onContinue}>
+              {PLAN_COPY.continue}
+            </Button>
+          ) : (
+            <p className={styles.disclosure}>{FAMILY_COPY.kidPlanSwitch}</p>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 export interface PlanOfferProps {
   /**
@@ -20,6 +72,12 @@ export interface PlanOfferProps {
   onStart: () => void;
   /** Continue (`soon` only): on to the home */
   onContinue: () => void;
+  /**
+   * A kid profile (src/lib/family): the plan is their grown-up's, so no price, no checkout and no
+   * disclosure, only "Your grown-up looks after this" (the app bar's switcher takes them to the
+   * grown-up).
+   */
+  kid?: boolean;
 }
 
 /**
@@ -33,9 +91,10 @@ export interface PlanOfferProps {
  *
  * Presentational: the route reads the session and the subscription and decides `view`.
  */
-export function PlanOffer({ view, chargeDate, starting = false, onStart, onContinue }: PlanOfferProps) {
+export function PlanOffer({ view, chargeDate, starting = false, onStart, onContinue, kid = false }: PlanOfferProps) {
   const soon = view === "soon";
   const restart = view === "restart";
+  if (kid) return <KidPlanOffer soon={soon} onContinue={onContinue} />;
   return (
     <section aria-labelledby="plan-title" data-onboarding="plan" data-view={view} className={styles.card}>
       <div className={styles.hero}>
