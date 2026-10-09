@@ -47,6 +47,7 @@ import { isGeometryName } from "./geometryNotation";
 import { judgeOperation, operandMath, parseOperationLine, plainRelation } from "./operationLine";
 import { linearRelation, operationResult } from "./operationResult";
 import { domainChain, isTrigLine, parseDomainPiece, splitDomain, type DomainBounds } from "./domain";
+import { judgePrimaryLine } from "./primaryWork";
 
 const UNKNOWN: LineAnalysis = { kind: "unknown", math: "", resultLatex: "", verdict: "unknown", note: "" };
 
@@ -1612,8 +1613,31 @@ export function createEngine(mod: MathModule): LiveEngine {
     normalize: normalizeLatex,
   };
 
+  /**
+   * A young student's line of working under a problem with no letters (`primaryWork.ts`), as a line
+   * analysis: the line's own analysis (its kind and maths, as any line's), its mark and whether it
+   * solves the problem judged against the problem. Null when it is not such a line.
+   */
+  const judgeWork: NonNullable<LiveEngine["judgeWork"]> = ({ problem, above, latex, ctx }) => {
+    try {
+      const judged = judgePrimaryLine(problem, above, latex);
+      if (!judged) return null;
+      const kind = judged.relation ? "equation" : "expression";
+      const own = analyzeLine(latex, ctx);
+      const same = own.kind === kind;
+      const out: LineAnalysis = { kind, math: same && own.math ? own.math : judged.math, resultLatex: same ? own.resultLatex : "", verdict: judged.verdict, note: judged.note };
+      if (judged.solved) out.solved = true;
+      if (judged.bare) out.bareAnswer = true;
+      if (judged.carried) out.carried = true;
+      return out;
+    } catch {
+      return null;
+    }
+  };
+
   return {
     analyzeLine,
+    judgeWork,
     solveFromLines: (lines: readonly string[]) => {
       try {
         // `\frac{dy}{dx}` / `f'(2)` under a definition, or a calculus line under a system: calculus answers

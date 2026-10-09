@@ -204,7 +204,9 @@ export interface LineAnalysis {
   /**
    * A lone number under a problem with no letters (`14` under `18 + 15 - 19`, `4` under `2 + 2`): the
    * student's answer, judged as `= 14` — a young student writes the answer, not `= 14`. Ticked (and
-   * `solved`) or ringed like any step; never silent as a lone symbol, never a label.
+   * `solved`) or ringed like any step; never silent as a lone symbol, never a label. A number the
+   * working makes on the way (`70` under `18 \times 7`, `engine/primaryWork.ts`) is one too, with no
+   * mark (verdict `none`): judged, so never given a "?".
    */
   bareAnswer?: boolean;
   /**

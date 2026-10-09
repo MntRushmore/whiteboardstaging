@@ -95,90 +95,26 @@ Skills per course and what the engine covers: `docs/eval/courses.md`. Course pro
 > Feedback, Auto on) and compared with a teacher's marks, line by line. Corpus: `src/__eval__/young/corpus.ts`.
 > A wrong ring is a ring on right work.
 
-**70 / 133 columns marked as a teacher would (52.6%).**
+**156 / 156 columns marked as a teacher would (100.0%).**
 
 | | columns | pass | lines marked right | wrong rings | missed rings | ? on work | false solved | missed solved |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| all | 133 | **70** (52.6%) | 152/216 | 17 | 12 | 20 | 7 | 28 |
-| grades K-2 | 31 | **21** (67.7%) | 34/44 | 5 | 1 | 4 | 1 | 7 |
-| grades 3-4 | 62 | **22** (35.5%) | 66/110 | 12 | 7 | 14 | 4 | 18 |
-| grades 5-6 | 40 | **27** (67.5%) | 52/62 | 0 | 4 | 2 | 2 | 3 |
-| add | 25 | **16** (64.0%) | 26/35 | 4 | 1 | 4 | 1 | 7 |
-| sub | 6 | **5** (83.3%) | 8/9 | 1 | 0 | 0 | 0 | 0 |
-| mul | 31 | **15** (48.4%) | 49/66 | 7 | 4 | 2 | 4 | 5 |
-| div | 31 | **7** (22.6%) | 17/44 | 5 | 3 | 12 | 0 | 13 |
-| frac | 21 | **15** (71.4%) | 30/34 | 0 | 1 | 1 | 1 | 1 |
-| dec | 13 | **7** (53.8%) | 10/15 | 0 | 2 | 0 | 0 | 2 |
-| order | 3 | **2** (66.7%) | 6/7 | 0 | 1 | 1 | 1 | 0 |
+| all | 156 | **156** (100.0%) | 248/248 | 0 | 0 | 0 | 0 | 0 |
+| grades K-2 | 37 | **37** (100.0%) | 51/51 | 0 | 0 | 0 | 0 | 0 |
+| grades 3-4 | 75 | **75** (100.0%) | 131/131 | 0 | 0 | 0 | 0 | 0 |
+| grades 5-6 | 44 | **44** (100.0%) | 66/66 | 0 | 0 | 0 | 0 | 0 |
+| add | 30 | **30** (100.0%) | 41/41 | 0 | 0 | 0 | 0 | 0 |
+| sub | 7 | **7** (100.0%) | 10/10 | 0 | 0 | 0 | 0 | 0 |
+| mul | 41 | **41** (100.0%) | 84/84 | 0 | 0 | 0 | 0 | 0 |
+| div | 34 | **34** (100.0%) | 47/47 | 0 | 0 | 0 | 0 | 0 |
+| frac | 23 | **23** (100.0%) | 36/36 | 0 | 0 | 0 | 0 | 0 |
+| dec | 14 | **14** (100.0%) | 16/16 | 0 | 0 | 0 | 0 | 0 |
+| order | 4 | **4** (100.0%) | 8/8 | 0 | 0 | 0 | 0 | 0 |
 | algebra | 3 | **3** (100.0%) | 6/6 | 0 | 0 | 0 | 0 | 0 |
 
 ### Columns marked differently
 
-| id | problem | marks | note |
-| --- | --- | --- | --- |
-| add-4p3-dot | `4+3` | `7.` **?** (want tick) — solved **false** (want true) | a wobbly 7 with a stray dot |
-| add-8p1-stray | `8+1` | `= 9.` tick — solved **false** (want true) | prod: 8+1 ticked but unfinished — a stray dot after the 9 |
-| add-8p1-comma | `8+1` | `9,` **none** (want tick) — solved **false** (want true) |  |
-| add-8p1-prime | `8+1` | `9^{\prime}` **?** (want tick) — solved **false** (want true) | a stray mark read as a prime |
-| add-8p1-cdot | `8+1` | `9 \cdot` **?** (want tick) — solved **false** (want true) |  |
-| add-5p6-minus | `5+6` | `-11` **ring** (want tick) — solved **false** (want true) | prod: 5+6 ringed as a sign mistake — a wobbly = read as a minus |
-| add-47p38-bare | `47 + 38` | `70` **ring** (want none); `15` **ring** (want none); `85` tick | the partial sums alone are no wrong answers |
-| add-47p38-slip | `47 + 38` | `40 + 30 = 70` tick; `7 + 8 = 15` tick; `70 + 5 = 75` tick; `75` **?** (want ring) — solved **true** (want false) | a true line with the wrong number in it; the wrong answer ringed |
-| add-25p17-running | `25 + 17` | `20 + 10 = 30 + 12 = 42` **ring** (want calm) — solved **false** (want true) | a running chain: = used as 'then' |
-| sub-52m17-bare | `52 - 17` | `42` **ring** (want none); `35` tick |  |
-| mul-18x7-bare | `18 \times 7` | `70` **ring** (want none); `56` **ring** (want none); `126` tick | prod: the partial products alone |
-| mul-18x7-mixed | `18 \times 7` | `10 \times 7 = 70` tick; `8 \times 7 = 56` tick; `126` **none** (want tick) |  |
-| mul-18x7-carried | `18 \times 7` | `10 \times 7 = 70` tick; `8 \times 7 = 54` ring; `70 + 54 = 124` tick; `124` none — solved **true** (want false) | carried on from the slip: ringed once, where it was made |
-| mul-18x7-other | `18 \times 7` | `6 \times 21 = 126` tick — solved **true** (want false) | true, the same number, but not this problem: it does not solve it |
-| mul-18x7-wrong | `18 \times 7` | `10 \times 7 = 70` tick; `8 \times 7 = 56` tick; `116` **none** (want ring) — solved **true** (want false) |  |
-| mul-27x9-bare | `27 \times 9` | `180` **ring** (want none); `63` **ring** (want none); `243` tick |  |
-| mul-34x7-bare | `34 \times 7` | `210` **ring** (want none); `28` **ring** (want none); `238` tick |  |
-| mul-13x4-wrong | `13 \times 4` | `10 \times 4 = 40` tick; `3 \times 4 = 12` tick; `42` **?** (want ring) — solved **true** (want false) |  |
-| mul-long-46x23 | (own) | `\begin{array}{r} 46 \\ \times 23 \\ \hline 138 \\ 920 \\ \hline 1058 \end{array}` **none** (want tick) — solved **false** (want true) |  |
-| mul-long-46x23-placeholder | (own) | `\begin{array}{r} 46 \\ \times 23 \\ \hline 138 \\ 92 \\ \hline 1058 \end{array}` **none** (want tick) — solved **false** (want true) | the second row shifted, its 0 left out |
-| mul-long-46x23-plus | (own) | `\begin{array}{r} 46 \\ \times 23 \\ \hline 138 \\ +920 \\ \hline 1058 \end{array}` **none** (want tick) — solved **false** (want true) |  |
-| mul-long-46x23-row-wrong | (own) | `\begin{array}{r} 46 \\ \times 23 \\ \hline 138 \\ 820 \\ \hline 958 \end{array}` **none** (want ring) |  |
-| mul-long-46x23-total-wrong | (own) | `\begin{array}{r} 46 \\ \times 23 \\ \hline 138 \\ 920 \\ \hline 1048 \end{array}` **none** (want ring) |  |
-| mul-long-46x23-first-row | (own) | `\begin{array}{r} 46 \\ \times 23 \\ \hline 138 \end{array}` **ring** (want none) | the first partial product, not a wrong answer |
-| mul-long-123x45 | (own) | `\begin{array}{r} 123 \\ \times 45 \\ \hline 615 \\ 4920 \\ \hline 5535 \end{array}` **none** (want tick) — solved **false** (want true) |  |
-| mul-long-under-problem | `46 \times 23` | `\begin{array}{r} 46 \\ \times 23 \\ \hline 138 \\ 920 \\ \hline 1058 \end{array}` **?** (want tick) — solved **false** (want true) |  |
-| div-144d9-check | `144 \div 9` | `9 \times 16 = 144` tick; `16` **?** (want tick) |  |
-| div-144d9-bracket | `144 \div 9` | `\begin{array}{r} 16 \\ 9 \longdiv { 144 } \end{array}` **?** (want tick) — solved **false** (want true) | the bracket, its quotient over it |
-| div-144d9-bracket-own | (own) | `\begin{array}{r} 16 \\ 9 \longdiv { 144 } \end{array}` **none** (want tick) — solved **false** (want true) |  |
-| div-144d9-bracket-empty | `144 \div 9` | `9 \longdiv { 144 }` **?** (want none) | the bracket drawn, nothing over it yet |
-| div-144d9-bracket-working | `144 \div 9` | `9 \longdiv { 144 }` **?** (want none); `-9` **ring** (want none); `54` **ring** (want none); `-54` **ring** (want none); `0` **ring** (want none); `16` tick | the working under the bracket, line by line |
-| div-144d9-bracket-block | `144 \div 9` | `\begin{array}{r} 16 \\ 9 \longdiv { 144 } \\ \underline{9} \\ 54 \\ \underline{54} \\ 0 \end{array}` **?** (want tick) — solved **false** (want true) | the whole layout read as one block |
-| div-144d9-bracket-frac | `144 \div 9` | `\frac{16}{9 \longdiv { 144 }}` **?** (want tick) — solved **false** (want true) | the quotient over the bracket read as a fraction |
-| div-144d9-enclose | `144 \div 9` | `\begin{array}{r} 16 \\ 9 \enclose{longdiv}{144} \end{array}` **?** (want tick) — solved **false** (want true) |  |
-| div-144d9-bracket-wrong | `144 \div 9` | `\begin{array}{r} 14 \\ 9 \longdiv { 144 } \end{array}` **?** (want ring) |  |
-| div-144d9-bracket-started | `144 \div 9` | `\begin{array}{r} 1 \\ 9 \longdiv { 144 } \end{array}` **?** (want none) | the quotient's first digit, right so far |
-| div-42d7-check | `42 \div 7` | `7 \times 6 = 42` tick; `6` **?** (want tick) |  |
-| div-30d5-check | `30 \div 5` | `5 \times 6 = 30` tick; `= 6` **?** (want tick) |  |
-| div-17d5-R | `17 \div 5` | `3 R 2` **none** (want tick) — solved **false** (want true) | a remainder |
-| div-17d5-R-whole | `17 \div 5` | `17 \div 5 = 3 R 2` **none** (want tick) — solved **false** (want true) |  |
-| div-17d5-R-text | `17 \div 5` | `3 \text { R } 2` **none** (want tick) — solved **false** (want true) |  |
-| div-17d5-R-mathrm | `17 \div 5` | `3 \mathrm{R} 2` **none** (want tick) — solved **false** (want true) |  |
-| div-17d5-r | `17 \div 5` | `3 r 2` **none** (want tick) — solved **false** (want true) |  |
-| div-17d5-mixed | `17 \div 5` | `3\frac{2}{5}` tick — solved **false** (want true) |  |
-| div-17d5-worked | `17 \div 5` | `5 \times 3 = 15` tick; `17 - 15 = 2` tick; `3 R 2` **none** (want tick) |  |
-| div-17d5-R-wrong | `17 \div 5` | `3 R 3` **none** (want ring) |  |
-| div-17d5-R-big | `17 \div 5` | `2 R 7` **none** (want ring) | true, but a remainder must be less than 5 |
-| div-17d5-quotient | `17 \div 5` | `3` **ring** (want none) | the quotient, the remainder still to come |
-| div-29d4-R | `29 \div 4` | `7 R 1` **none** (want tick) — solved **false** (want true) |  |
-| div-100d7-bracket-R | `100 \div 7` | `\begin{array}{r} 14 R 2 \\ 7 \longdiv { 100 } \end{array}` **?** (want tick) — solved **false** (want true) |  |
-| frac-half-third-numerators | `\frac{1}{2} + \frac{1}{3}` | `\frac{3}{6} + \frac{2}{6}` tick; `3 + 2 = 5` tick; `\frac{5}{6}` **none** (want tick) |  |
-| frac-simplify-end | `\frac{5}{6} - \frac{1}{3}` | `\frac{5}{6} - \frac{2}{6} = \frac{3}{6}` tick; `= \frac{1}{2}` **?** (want tick) | simplified at the end |
-| frac-not-simplified | `\frac{5}{6} - \frac{1}{3}` | `\frac{3}{6}` tick — solved **true** (want false) | right, not in its simplest form yet |
-| mixed-add-steps | `2\frac{1}{3} + 1\frac{1}{2}` | `2\frac{2}{6} + 1\frac{3}{6}` tick; `= 3\frac{5}{6}` tick — solved **false** (want true) | mixed numbers |
-| mixed-add-parts | `2\frac{1}{3} + 1\frac{1}{2}` | `2 + 1 = 3` tick; `\frac{1}{3} + \frac{1}{2} = \frac{5}{6}` tick; `3\frac{5}{6}` **none** (want tick) | wholes and parts apart |
-| mixed-add-wrong | `2\frac{1}{3} + 1\frac{1}{2}` | `3\frac{2}{5}` **none** (want ring) |  |
-| dec-5.4x0.1-point | `5.4 \times 0.1` | `.54` tick — solved **false** (want true) |  |
-| dec-5.4x0.1-places | `5.4 \times 0.1` | `54 \times 1 = 54` tick; `0.54` **none** (want tick) | the digits, then the point put back |
-| dec-5.4x0.1-dot | `5.4 \times 0.1` | `0 \cdot 54` **none** (want tick) — solved **false** (want true) | a big decimal point read as a times dot |
-| dec-5.4x0.1-wrong | `5.4 \times 0.1` | `5.04` **none** (want ring) |  |
-| dec-add-misaligned | `3.5 + 1.25` | `1.60` **none** (want ring) | the points not lined up |
-| dec-times | `2.4 \times 3` | `24 \times 3 = 72` tick; `7.2` **none** (want tick) |  |
-| order-3p4x2-wrong | `3 + 4 \times 2` | `3 + 4 = 7` tick; `7 \times 2 = 14` tick; `14` **?** (want ring) — solved **true** (want false) | true lines in the wrong order: the answer is what is ringed |
+None.
 
 ## Failure patterns
 

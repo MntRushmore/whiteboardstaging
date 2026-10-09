@@ -44,9 +44,16 @@ function withoutRelation(step: string): string {
   return step.replace(/^\s*=\s*/, "").trim() || step;
 }
 
-/** Maths with digits and no letters: arithmetic (`18 + 15 - 19`, `6 \times 4 = 24`, `\frac{1}{2} + \frac{1}{4}`). */
+/**
+ * Maths with digits and no letters: arithmetic (`18 + 15 - 19`, `6 \times 4 = 24`, `\frac{1}{2} +
+ * \frac{1}{4}`, `8 x 7`) — and a young student's ways of writing it: a long-division bracket
+ * (`9 \longdiv{144}`), a remainder (`3 R 2`), a block of rows.
+ */
 export function isArithmetic(latex: string): boolean {
-  const bare = latex.replace(/\\(?:frac|dfrac|tfrac|times|div|cdot|left|right|quad|qquad|,|;|:|!)/g, " ");
+  const bare = latex
+    .replace(/\\begin\{(?:array|aligned|gathered)\}(?:\{[^{}]*\})?|\\end\{(?:array|aligned|gathered)\}|\\\\|\\enclose\s*\{\s*longdiv\s*\}/g, " ")
+    .replace(/\\(?:frac|dfrac|tfrac|times|div|cdot|left|right|quad|qquad|longdiv|overline|underline|hline|,|;|:|!)/g, " ")
+    .replace(/(?<=\d)\s*(?:\\(?:text|mathrm)\s*\{\s*[Rr]\s*\}|[Rr]|[xX])\s*(?=\d)/g, " ");
   return /\d/.test(bare) && !/[a-zA-Z\\]/.test(bare);
 }
 
@@ -110,11 +117,22 @@ export function judgeLine(engine: LiveEngine, latex: string, input: WorkInput): 
  * a sum `columnArithmetic.ts` works, else — a long-division bracket read as a block — the engine's
  * young-work judge, else quiet.
  */
-function stackedLine(engine: LiveEngine, latex: string, sure: boolean, mode: HelpMode): LineAnalysis {
+function stackedLine(engine: LiveEngine, latex: string, problem: readonly string[] | null, sure: boolean, mode: HelpMode): LineAnalysis {
   const read = parseStacked(latex);
-  const work = read ? workStacked(read) : null;
-  if (work) return stackedAnalysis(work, sure);
-  return engine.judgeWork?.({ problem: [], above: [], latex, ctx: { mode } }) ?? stackedAnalysis(null, sure);
+  return read ? stackedAnalysis(workStacked(read), sure) : bracketLine(engine, latex, problem, sure, mode);
+}
+
+/** A long-division bracket in a read: `\longdiv`, `\enclose{longdiv}`, `\overline{)144}`, `9)\overline{144}`, `\right)`. */
+export const LONG_DIVISION = /\\longdiv(?![a-zA-Z])|\\enclose\s*\{\s*longdiv\s*\}|\\overline\s*\{\s*\\?\)|\)\s*\\overline|\\right\s*\)/;
+
+/**
+ * A block that is no sum — a long-division bracket with its working, read as one — judged by the
+ * engine's young-work judge (`LiveEngine.judgeWork`); quiet when it is not a bracket, or when its
+ * ring would rest on a read the caller is not `sure` of (a block is a read of a whole layout).
+ */
+export function bracketLine(engine: LiveEngine, latex: string, problem: readonly string[] | null, sure: boolean, mode: HelpMode): LineAnalysis {
+  const judged = LONG_DIVISION.test(latex) ? engine.judgeWork?.({ problem: problem ?? [], above: [], latex, ctx: { mode } }) : null;
+  return judged && (sure || judged.verdict !== "mismatch") ? judged : stackedAnalysis(null, sure);
 }
 
 /** A read that is a stacked (column) sum: an array with a rule in it — what `stackedSums.ts` sends as one line. */
@@ -160,7 +178,7 @@ export function judgeColumn(engine: LiveEngine, column: WorkColumn, mode: HelpMo
       continue;
     }
     if (isStackRead(latex) || MISREAD_STACK.test(latex)) {
-      out.push(stackedLine(engine, latex, true, mode));
+      out.push(stackedLine(engine, latex, problem, true, mode));
       continue;
     }
     let previous: LineAnalysis | undefined;

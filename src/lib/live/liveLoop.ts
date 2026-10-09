@@ -134,7 +134,7 @@ import { answerAfterRestatedEnd, isSignsOnly, isSpeckLine, leadingSigns, ownTick
 import { barGroups, DIAGRAM_RULES, diagramNear, labelStack, parseLabelRead, splitInk, strokeLooksDrawn, type Diagram, type DiagramKind, type InkSplit } from "./diagrams";
 import { barDivisionLatex } from "./engine/operationLine";
 import { nextStep as stackNextStep, parseStacked, placesLeft, rowPlaces, stackedAnalysis, workStacked, type StackedWork } from "./engine/columnArithmetic";
-import { isArithmetic, isSlip, judgeLine, MISREAD_STACK } from "./engine/columnWork";
+import { bracketLine, isArithmetic, isSlip, judgeLine, MISREAD_STACK } from "./engine/columnWork";
 import { stackGrid, stackGroups, type StackGrid, type StackedSum } from "./stackedSums";
 import { parseDomainPiece } from "./engine/domain";
 import { figureAnswer, isValueLabel, labelKey, looksLikeUnknown } from "./figure";
@@ -7298,10 +7298,12 @@ export class LiveLoop implements LiveController {
    */
   private stackWork(state: LiveLineState): StackState | null {
     const sum = this.stackOf(state.line);
-    const read = sum && !sum.more ? parseStacked(state.latex) : null;
-    if (!sum || !read || read.operands.length !== sum.rows.length) return null;
+    const read = sum ? parseStacked(state.latex) : null;
+    // rows under the answer row are long multiplication's, or a block this cannot work
+    if (!sum || !read || (sum.more && !read.rows) || read.operands.length !== sum.rows.length) return null;
     const grid = stackGrid(sum, rowPlaces(read));
-    const work = workStacked(read, grid.answerLast === null ? {} : { answerLast: grid.answerLast });
+    // long multiplication's sum is not on the row under the rule: it is lined up as the numbers are
+    const work = workStacked(read, grid.answerLast === null || read.rows ? {} : { answerLast: grid.answerLast });
     return work ? { sum, grid, work, key: `${read.op} ${read.operands.join(" ")}` } : null;
   }
 
@@ -7312,7 +7314,12 @@ export class LiveLoop implements LiveController {
    * answered, never sent to a model.
    */
   private stackAnalysis(state: LiveLineState): LineAnalysis {
-    return stackedAnalysis(this.stackWork(state)?.work ?? null, state.confidence >= STACK_RING_CONFIDENCE);
+    const sure = state.confidence >= STACK_RING_CONFIDENCE;
+    const s = this.stackWork(state);
+    if (s || parseStacked(state.latex) || !this.engine) return stackedAnalysis(s?.work ?? null, sure);
+    // no sum: a long-division bracket with its working under it, read as one block — its quotient
+    // judged against the problem; anything else stays quiet
+    return bracketLine(this.engine, state.latex, this.arithmeticLines(state), sure, this.opts.mode);
   }
 
   /** What the tutor has written into this sum already, by row (`STACK_META`, `HAND_PART_META`). */
@@ -7352,7 +7359,8 @@ export class LiveLoop implements LiveController {
   private markRect(state: LiveLineState, kind: MarkKind): Rect {
     const sum = kind === "question" ? null : this.stackOf(state.line);
     const answer = sum?.answer?.rect;
-    if (!answer) return state.line.bounds;
+    // long multiplication (its rows under the rule): the mark goes round, or after, the whole block
+    if (!answer || sum?.more) return state.line.bounds;
     if (kind === "check") return { ...answer, w: rectMaxX(state.line.bounds) - answer.x };
     const s = this.stackWork(state);
     return (s && s.work.wrong !== -1 && s.grid.answerGlyph(s.work.wrong)) || answer;
@@ -7362,7 +7370,8 @@ export class LiveLoop implements LiveController {
   private stackLeft(state: LiveLineState, step: boolean): boolean {
     const id = state.line.id;
     const s = this.reading.has(id) || this.rt.get(id)?.checkAbort ? null : this.stackWork(state);
-    if (!s || s.work.wrong !== -1) return false;
+    // long multiplication's rows are the student's to write: the tutor marks them, never fills them in
+    if (!s || s.work.wrong !== -1 || s.work.long) return false;
     const tutor = this.tutorStackPlaces(state, s.key).a;
     return step ? stackNextStep(s.work, tutor) !== null : placesLeft(s.work, tutor).length > 0;
   }
@@ -7375,7 +7384,8 @@ export class LiveLoop implements LiveController {
    */
   private helpStack(state: LiveLineState): void {
     const s = this.stackWork(state);
-    if (!s) return;
+    // long multiplication: marked, never written into
+    if (!s || s.work.long) return;
     if (s.work.wrong !== -1) {
       if (state.analysis?.verdict === "mismatch") this.suggestNextStep(state.line.id, { now: true });
       return;
@@ -7395,7 +7405,8 @@ export class LiveLoop implements LiveController {
    */
   private solveStack(state: LiveLineState): void {
     const s = this.stackWork(state);
-    if (!s) return;
+    // long multiplication: marked, never written into (its sum is not on the row under the rule)
+    if (!s || s.work.long) return;
     const { work, grid } = s;
     if (work.wrong !== -1 && state.analysis?.verdict !== "mismatch") return;
     const tutor = this.tutorStackPlaces(state, s.key);
@@ -7417,7 +7428,7 @@ export class LiveLoop implements LiveController {
   private stackFix(state: LiveLineState): { s: StackState; items: StackItem[] } | null {
     const s = state.analysis?.verdict === "mismatch" ? this.stackWork(state) : null;
     const p = s?.work.wrong ?? -1;
-    if (!s || p < 0 || p >= s.work.digits.length || this.tutorStackPlaces(state, s.key).f.has(p)) return null;
+    if (!s || s.work.long || p < 0 || p >= s.work.digits.length || this.tutorStackPlaces(state, s.key).f.has(p)) return null;
     return { s, items: [{ row: "f", place: p, digit: String(s.work.digits[p]) }] };
   }
 
