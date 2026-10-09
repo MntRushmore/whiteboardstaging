@@ -9,9 +9,11 @@ import { AuthErrorBanner, useAuth } from "@/components/AuthProvider";
 import { AppHeader, APP_CONTENT_CLASS } from "@/components/app/AppHeader";
 import { FamilyAvatar } from "@/components/family/FamilyAvatar";
 import { ApiError } from "@/lib/api-client";
+import { signInPath } from "@/lib/loginForm";
 import { loadReplay, type ReplayAnswer } from "@/lib/report/client";
 import { REPORT_PATH } from "@/lib/report/contracts";
 import { REPORT_COPY } from "@/lib/report/copy";
+import { afterFailedRead } from "@/lib/report/view";
 import { Alert } from "@/registry/components/alert/alert";
 import { Button } from "@/registry/components/button/button";
 import { EmptyState } from "@/registry/components/empty-state/empty-state";
@@ -38,21 +40,27 @@ export function ReplayScreen({ boardId }: { boardId: string }) {
   const state = read && read.key === key ? read.state : "loading";
   const board = state === "ready" ? read!.board : null;
 
+  // signed out: sign in, then back to this replay
   useEffect(() => {
-    if (!authLoading && !user && !authError) router.replace("/login");
-  }, [user, authLoading, authError, router]);
+    if (!authLoading && !user && !authError) router.replace(signInPath(`${REPORT_PATH}/replay/${boardId}`));
+  }, [user, authLoading, authError, router, boardId]);
 
+  // Keyed on the account's id, not the user object: auth-js hands over a new object on every
+  // SIGNED_IN / TOKEN_REFRESHED (each return to the tab, and hourly), and a board can be megabytes.
+  const userId = user?.id ?? null;
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
     const abort = new AbortController();
     loadReplay(boardId, abort.signal)
       .then((b) => setRead({ key, board: b, state: "ready" }))
       .catch((err) => {
         if (abort.signal.aborted) return;
-        setRead({ key, board: null, state: err instanceof ApiError && (err.status === 404 || err.status === 400) ? "missing" : "failed" });
+        const state = err instanceof ApiError && (err.status === 404 || err.status === 400) ? "missing" : "failed";
+        // a re-read that fails keeps the replay being watched; only a first read shows the error
+        setRead((prev) => afterFailedRead(prev, { key, board: null, state }, (r) => r.state === "ready"));
       });
     return () => abort.abort();
-  }, [user, boardId, key]);
+  }, [userId, boardId, key]);
 
   const own = board?.ownerId === user?.id;
   const title = board ? (own ? REPORT_COPY.replayTitleSelf : REPORT_COPY.replayTitle(board.ownerName)) : REPORT_COPY.replayLoading;

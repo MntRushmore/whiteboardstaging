@@ -38,7 +38,7 @@ vi.mock("@/lib/report/server", async (importOriginal) => {
 
 import { GET as boardGet } from "@/app/api/report/boards/[id]/route";
 import { GET as reportGet } from "@/app/api/report/route";
-import { GET as unsubscribeGet } from "@/app/api/report/unsubscribe/route";
+import { GET as unsubscribeGet, POST as unsubscribePost } from "@/app/api/report/unsubscribe/route";
 import { resetServerEnvCache } from "@/lib/env";
 import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rate-limit";
 import type { ReportAnswer } from "../contracts";
@@ -52,7 +52,7 @@ const TOKENS = {
   solo: "solo.token.aaaa",
 } as const;
 
-const ENV_VARS = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "RATE_LIMIT_BACKEND", "CRON_SECRET", "WEEKLY_REPORT_EMAILS"];
+const ENV_VARS = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "OPENROUTER_API_KEY", "RATE_LIMIT_BACKEND", "CRON_SECRET", "REPORT_LINK_SECRET", "REPORT_LINK_SECRET_PREVIOUS", "WEEKLY_REPORT_EMAILS"];
 const saved: Record<string, string | undefined> = {};
 let store: FakeReportStore;
 const SECRET = "unit-cron-secret";
@@ -63,6 +63,8 @@ beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
   process.env.OPENROUTER_API_KEY = "sk-or-test";
   process.env.CRON_SECRET = SECRET;
+  delete process.env.REPORT_LINK_SECRET;
+  delete process.env.REPORT_LINK_SECRET_PREVIOUS;
   delete process.env.RATE_LIMIT_BACKEND;
   delete process.env.WEEKLY_REPORT_EMAILS;
   resetServerEnvCache();
@@ -195,49 +197,101 @@ describe("GET /api/report/boards/<id>", () => {
   });
 });
 
-describe("GET /api/report/unsubscribe", () => {
-  const link = (u: string, t: string) => new Request(`http://localhost/api/report/unsubscribe?u=${u}&t=${t}`, { headers: { "x-forwarded-for": "198.51.100.7" } });
+describe("/api/report/unsubscribe", () => {
+  const url = (u: string, t: string) => `http://localhost/api/report/unsubscribe?u=${u}&t=${t}`;
+  const link = (u: string, t: string) => new Request(url(u, t), { headers: { "x-forwarded-for": "198.51.100.7" } });
+  /** The confirm page's button, or a mail app's RFC 8058 one-click (its body is never read). */
+  const click = (u: string, t: string, oneClick = false) =>
+    new Request(url(u, t), {
+      method: "POST",
+      headers: { "x-forwarded-for": "198.51.100.7", "content-type": "application/x-www-form-urlencoded" },
+      body: oneClick ? "List-Unsubscribe=One-Click" : "",
+    });
+  const formAction = (html: string) => html.match(/<form method="post" action="([^"]+)"/)?.[1]?.replace(/&amp;/g, "&") ?? null;
 
-  it("turns off the email of exactly the account the link was signed for", async () => {
-    const res = await unsubscribeGet(link(IDS.parent, unsubscribeTag(IDS.parent, SECRET)));
+  it("opening the link only asks: nothing changes, and the page's one button posts back to the same link", async () => {
+    const t = unsubscribeTag(IDS.parent, SECRET);
+    const res = await unsubscribeGet(link(IDS.parent, t));
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/html");
-    expect(res.headers.get("content-security-policy")).toContain("default-src 'none'");
+    const csp = res.headers.get("content-security-policy") ?? "";
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain("form-action 'self'");
+    const html = await res.text();
+    expect(html).toContain("Stop the weekly email?");
+    expect(html).toContain(">Stop the weekly email</button>");
+    expect(formAction(html)).toBe(`/api/report/unsubscribe?u=${IDS.parent}&t=${t}`);
+    // a mail scanner that opens every link turns nothing off
+    expect(store.setOptOut).not.toHaveBeenCalled();
+    expect(store.profileRows.get(IDS.parent)!.optedOut).toBe(false);
+  });
+
+  it("the button turns off the email of exactly the account the link was signed for", async () => {
+    const res = await unsubscribePost(click(IDS.parent, unsubscribeTag(IDS.parent, SECRET)));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
     expect(await res.text()).toContain("You're unsubscribed");
     expect(store.setOptOut).toHaveBeenCalledWith(IDS.parent, true);
+    expect(store.setOptOut).toHaveBeenCalledTimes(1);
     expect(store.profileRows.get(IDS.parent)!.optedOut).toBe(true);
   });
 
-  it("400 for a link that does not verify: another account's tag, a cut-off tag, another secret", async () => {
+  it("a mail app's one-click (RFC 8058) POST turns it off with no page to confirm", async () => {
+    const res = await unsubscribePost(click(IDS.parent, unsubscribeTag(IDS.parent, SECRET), true));
+    expect(res.status).toBe(200);
+    expect(store.profileRows.get(IDS.parent)!.optedOut).toBe(true);
+  });
+
+  it("400 for a link that does not verify: another account's tag, a cut-off tag, another secret; both methods", async () => {
     for (const [u, t] of [
       [IDS.otherParent, unsubscribeTag(IDS.parent, SECRET)],
       [IDS.parent, unsubscribeTag(IDS.parent, SECRET).slice(0, 20)],
       [IDS.parent, unsubscribeTag(IDS.parent, "another-secret")],
       ["not-a-uuid", unsubscribeTag(IDS.parent, SECRET)],
     ]) {
-      const res = await unsubscribeGet(link(u, t));
-      expect(res.status).toBe(400);
-      expect(await res.text()).toContain("This link didn't work");
+      for (const res of [await unsubscribeGet(link(u, t)), await unsubscribePost(click(u, t))]) {
+        expect(res.status).toBe(400);
+        const html = await res.text();
+        expect(html).toContain("This link didn't work");
+        expect(html).not.toContain("<form");
+      }
     }
     expect(store.setOptOut).not.toHaveBeenCalled();
   });
 
-  it("503 without CRON_SECRET or the service role; 502 when the write fails", async () => {
+  it("signs with REPORT_LINK_SECRET when set; a link signed with REPORT_LINK_SECRET_PREVIOUS still works", async () => {
+    process.env.REPORT_LINK_SECRET = "unit-link-secret";
+    process.env.REPORT_LINK_SECRET_PREVIOUS = SECRET;
+    resetServerEnvCache();
+    expect((await unsubscribePost(click(IDS.kidA, unsubscribeTag(IDS.kidA, "unit-link-secret")))).status).toBe(200);
+    // an email sent before the rotation, signed with the old (here: the cron's) secret
+    expect((await unsubscribePost(click(IDS.parent, unsubscribeTag(IDS.parent, SECRET)))).status).toBe(200);
+    expect(store.setOptOut).toHaveBeenCalledTimes(2);
+    // once the old value is dropped, its links stop verifying (and the cron's secret alone signs nothing)
+    delete process.env.REPORT_LINK_SECRET_PREVIOUS;
+    resetServerEnvCache();
+    expect((await unsubscribePost(click(IDS.otherParent, unsubscribeTag(IDS.otherParent, SECRET)))).status).toBe(400);
+  });
+
+  it("503 without a signing secret or the service role; 502 when the write fails", async () => {
     delete process.env.CRON_SECRET;
     resetServerEnvCache();
     expect((await unsubscribeGet(link(IDS.parent, unsubscribeTag(IDS.parent, SECRET)))).status).toBe(503);
+    expect((await unsubscribePost(click(IDS.parent, unsubscribeTag(IDS.parent, SECRET)))).status).toBe(503);
     process.env.CRON_SECRET = SECRET;
     resetServerEnvCache();
     deps.missing = true;
-    expect((await unsubscribeGet(link(IDS.parent, unsubscribeTag(IDS.parent, SECRET)))).status).toBe(503);
+    expect((await unsubscribePost(click(IDS.parent, unsubscribeTag(IDS.parent, SECRET)))).status).toBe(503);
     deps.missing = false;
     (store.setOptOut as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("down"));
-    expect((await unsubscribeGet(link(IDS.parent, unsubscribeTag(IDS.parent, SECRET)))).status).toBe(502);
+    expect((await unsubscribePost(click(IDS.parent, unsubscribeTag(IDS.parent, SECRET)))).status).toBe(502);
   });
 
-  it("is rate limited per IP", async () => {
+  it("is rate limited per IP, both methods on one budget", async () => {
     const t = unsubscribeTag(IDS.parent, SECRET);
-    for (let i = 0; i < 20; i++) expect((await unsubscribeGet(link(IDS.parent, t))).status).toBe(200);
+    for (let i = 0; i < 10; i++) expect((await unsubscribeGet(link(IDS.parent, t))).status).toBe(200);
+    for (let i = 0; i < 10; i++) expect((await unsubscribePost(click(IDS.parent, t))).status).toBe(200);
     expect((await unsubscribeGet(link(IDS.parent, t))).status).toBe(429);
+    expect((await unsubscribePost(click(IDS.parent, t))).status).toBe(429);
   });
 });

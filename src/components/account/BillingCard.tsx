@@ -34,6 +34,8 @@ const BADGE_CLASS: Record<string, string> = {
  * same read (never the user id), so the start button shows "Coming soon" until that read has landed.
  * A family a friend invited starts at the referral Payment Link (its first month free) when that
  * link is set, and is told why (src/lib/billing/planChoice.ts); a plan started again never is.
+ * Until that read (useReferred) has answered, a first plan's offer is not shown and its start button
+ * waits, disabled, so nobody taps through to the usual trial's link before the free month is known.
  */
 export function BillingCard({ email }: { email: string }) {
   const { state, loading, refresh } = useUnlimited();
@@ -41,12 +43,15 @@ export function BillingCard({ email }: { email: string }) {
   const { user } = useAuth();
   // a kid has no billing, so nothing is read for one
   const referral = useReferred(kid ? null : user?.id);
-  // a friend's free month is for a first plan only
+  // a friend's free month is for a first plan only; until the referral read lands, the first plan's
+  // offer and checkout wait for it (as the plan screen does), so a referred family is never sent to
+  // the usual trial's link, nor shown it and then the free month
+  const waiting = state.status === "none" && !referral.known;
   const choice = { referred: referral.referred && state.status === "none" };
   const friendMonth = referralApplies(choice);
   const view = unlimitedPlanView(state, { now: new Date(), friendMonth });
   const facts = billingFacts(state);
-  const checkout = planCheckoutUrl({ checkoutRef: state.checkoutRef, email }, choice);
+  const checkout = waiting ? null : planCheckoutUrl({ checkoutRef: state.checkoutRef, email }, choice);
   const portal = billingPortalUrl(email);
 
   // A kid profile shares the grown-up's plan and never sees billing (src/lib/family).
@@ -73,12 +78,14 @@ export function BillingCard({ email }: { email: string }) {
           ))}
         </dl>
 
-        <div className="space-y-1">
-          <p className="text-sm font-medium" data-testid="plan-headline">
-            {view.headline}
-          </p>
-          {view.detail && <p className="text-sm text-muted-foreground">{view.detail}</p>}
-        </div>
+        {!waiting && (
+          <div className="space-y-1">
+            <p className="text-sm font-medium" data-testid="plan-headline">
+              {view.headline}
+            </p>
+            {view.detail && <p className="text-sm text-muted-foreground">{view.detail}</p>}
+          </div>
+        )}
 
         {view.action === "start" && friendMonth && checkout && (
           <p className="flex items-center gap-1.5 text-sm text-muted-foreground" data-testid="billing-friend">
@@ -94,6 +101,11 @@ export function BillingCard({ email }: { email: string }) {
               <a href={checkout} data-testid="plan-start">
                 {view.actionLabel}
               </a>
+            </Button>
+          ) : waiting ? (
+            <Button size="sm" variant="outline" disabled aria-disabled aria-busy data-testid="plan-start-waiting">
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+              {view.actionLabel}
             </Button>
           ) : (
             <Button size="sm" variant="outline" disabled aria-disabled>

@@ -6,11 +6,14 @@ import { runTrialNudges, type NudgeSummary } from "@/lib/email/nudges";
 import { emailDeps, type EmailEnv } from "@/lib/email/server";
 import { runTrialReminders, type TrialReminderSummary } from "@/lib/email/trialReminders";
 import { runStartedSweep, type StartedSweepSummary } from "@/lib/email/unlimitedStarted";
-import { runWeeklyReports, type WeeklyReportSummary } from "@/lib/email/weeklyReportSend";
+import { runWeeklyReports, WEEKLY_RUN_BUDGET_MS, type WeeklyReportSummary } from "@/lib/email/weeklyReportSend";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-/** Up to MAX_SENDS_PER_RUN reminders and NUDGE_MAX_SENDS_PER_RUN nudges, spaced for Resend's rate limit. */
+/**
+ * Up to MAX_SENDS_PER_RUN reminders and NUDGE_MAX_SENDS_PER_RUN nudges, spaced for Resend's rate
+ * limit, then the weekly emails until WEEKLY_RUN_BUDGET_MS after the run began.
+ */
 export const maxDuration = 60;
 
 /**
@@ -39,7 +42,9 @@ export const maxDuration = 60;
  *
  * And the Sunday weekly report (`runWeeklyReports`, src/lib/email/weeklyReportSend.ts, 2026-10-09),
  * OFF unless WEEKLY_REPORT_EMAILS=on (`{ enabled: false }` then, nothing read): each plan holder's
- * family week, once per week (email_log), never to an opted-out account or a kid. Same rules again.
+ * family week, once per week (email_log), never to an opted-out account or a kid. Same rules again,
+ * but no fixed count: every due family, oldest last email first, until WEEKLY_RUN_BUDGET_MS after
+ * this run began; the rest go on the next day's run while the week is due (Sunday to Tuesday).
  *
  * Body: `{ dryRun, window, found, due, alreadySent, sent, failed, skipped, deferred, wouldSend?,
  * started: { found, alreadySent, sent, failed, skipped, wouldSend? } | { error },
@@ -83,6 +88,8 @@ export async function GET(req: Request) {
   }
 
   const startedAt = Date.now();
+  // on the senders' own clock: the weekly emails start no new family after this
+  const weeklyDeadline = emailDeps.now().getTime() + WEEKLY_RUN_BUDGET_MS;
   let summary: TrialReminderSummary;
   try {
     summary = await runTrialReminders(emailDeps, env, { dryRun }, log.child({ requestId }));
@@ -106,7 +113,7 @@ export async function GET(req: Request) {
   }
   let weeklyReport: WeeklyReportSummary | { error: string };
   try {
-    weeklyReport = await runWeeklyReports(emailDeps, env, { dryRun }, log.child({ requestId }));
+    weeklyReport = await runWeeklyReports(emailDeps, env, { dryRun, deadline: weeklyDeadline }, log.child({ requestId }));
   } catch (err) {
     weeklyReport = { error: "could not run" };
     log.error({ requestId, dryRun, error: err instanceof Error ? err.message : String(err) }, "weekly report emails failed");

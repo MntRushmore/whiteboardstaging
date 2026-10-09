@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mayWatch, reportScope } from "../access";
-import { unsubscribeTag, unsubscribeUrl, verifyUnsubscribe } from "../unsubscribe";
+import { reportLinkSecrets, unsubscribePath, unsubscribeTag, unsubscribeUrl, verifyUnsubscribe } from "../unsubscribe";
 
 const P = "10000000-0000-4000-8000-000000000001";
 const A = "10000000-0000-4000-8000-000000000002";
@@ -68,5 +68,27 @@ describe("the unsubscribe link", () => {
     const url = new URL(unsubscribeUrl("https://agathon.app", P, "s3cret"));
     expect(url.origin + url.pathname).toBe("https://agathon.app/api/report/unsubscribe");
     expect(verifyUnsubscribe(url.searchParams.get("u"), url.searchParams.get("t"), "s3cret")).toBe(P);
+    expect(unsubscribePath(P, "tag")).toBe(`/api/report/unsubscribe?u=${P}&t=tag`);
+  });
+
+  it("keeps an old link working after a rotation: any accepted secret verifies it, none other", () => {
+    const old = unsubscribeTag(P, "old-secret");
+    expect(verifyUnsubscribe(P, old, ["new-secret", "old-secret"])).toBe(P);
+    expect(verifyUnsubscribe(P, unsubscribeTag(P, "new-secret"), ["new-secret", "old-secret"])).toBe(P);
+    expect(verifyUnsubscribe(P, old, ["new-secret"])).toBeNull();
+    expect(verifyUnsubscribe(A, old, ["new-secret", "old-secret"])).toBeNull();
+    expect(verifyUnsubscribe(P, old, [])).toBeNull();
+    expect(verifyUnsubscribe(P, old, ["", "old-secret"])).toBe(P);
+  });
+
+  it("signs with REPORT_LINK_SECRET, else CRON_SECRET, and also accepts REPORT_LINK_SECRET_PREVIOUS", () => {
+    expect(reportLinkSecrets({ CRON_SECRET: " cron " })).toEqual({ sign: "cron", accept: ["cron"] });
+    expect(reportLinkSecrets({ CRON_SECRET: "cron", REPORT_LINK_SECRET: "link" })).toEqual({ sign: "link", accept: ["link"] });
+    expect(reportLinkSecrets({ CRON_SECRET: "cron", REPORT_LINK_SECRET: "link", REPORT_LINK_SECRET_PREVIOUS: " cron " })).toEqual({ sign: "link", accept: ["link", "cron"] });
+    // the same value twice is one secret
+    expect(reportLinkSecrets({ REPORT_LINK_SECRET: "link", REPORT_LINK_SECRET_PREVIOUS: "link" })).toEqual({ sign: "link", accept: ["link"] });
+    // nothing to sign with: no link at all, even with an old value
+    expect(reportLinkSecrets({ REPORT_LINK_SECRET_PREVIOUS: "old" })).toBeNull();
+    expect(reportLinkSecrets({ CRON_SECRET: "  " })).toBeNull();
   });
 });

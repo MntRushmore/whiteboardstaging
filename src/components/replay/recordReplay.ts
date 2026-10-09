@@ -11,6 +11,8 @@
  *     Only the small JPEGs are kept, not bitmaps, so a long board stays a few MB.
  *  2. Record. The frames are painted onto a canvas at the video's frame rate, each decoded just
  *     before its turn, while MediaRecorder records the canvas: MP4 where the browser can, else WebM.
+ *     A hidden page pauses the recording until it is back (recordPacer.ts), so switching apps
+ *     mid-way never leaves a frozen-then-skipping video.
  * The camera holds each screen's whole ink from start to end, so the video never jumps about.
  */
 import { Box, DefaultColorThemePalette, type Editor, type TLPageId, type TLShape } from "tldraw";
@@ -20,6 +22,7 @@ import { canRecordVideo, fitInside, pickVideoFormat, planVideo, videoSize, VIDEO
 import { frameAt, type Timeline } from "@/lib/replay/timeline";
 import { cardFamilies, loadCardFonts, strokeTick } from "@/components/share/renderCard";
 import type { ReplayPlayer } from "./player";
+import { createRecordPacer, RecordingInterruptedError } from "./recordPacer";
 
 export interface RecordProgress {
   phase: "drawing" | "recording";
@@ -256,10 +259,14 @@ export async function recordReplayVideo(player: ReplayPlayer, opts: { signal?: A
     };
     let shown: Blob | null | undefined;
     let bitmap: ImageBitmap | null = null;
+    // pauses the recorder while the page is hidden, and keeps the frames on time (recordPacer.ts)
+    const pacer = createRecordPacer({ recorder, doc: document, frameMs });
     recorder.start(500);
-    const t0 = performance.now();
+    pacer.start();
     try {
       for (let i = 0; i < total; i++) {
+        if (signal?.aborted) throw abortError();
+        await pacer.beforeFrame(signal);
         if (signal?.aborted) throw abortError();
         if (i < frames.length || i < frames.length + plan.holdFrames) {
           const blob = frames[Math.min(i, frames.length - 1)];
@@ -279,10 +286,15 @@ export async function recordReplayVideo(player: ReplayPlayer, opts: { signal?: A
           paintEndCard(ctx, layout, (i - frames.length - plan.holdFrames) / Math.max(1, plan.endFrames), families);
         }
         onProgress?.({ phase: "recording", share: DRAW_SHARE + ((1 - DRAW_SHARE) * (i + 1)) / total });
-        const wait = t0 + (i + 1) * frameMs - performance.now();
+        const wait = pacer.waitAfter(i);
         if (wait > 0) await sleep(wait);
       }
+    } catch (error) {
+      // hidden mid-recording where the recorder cannot pause: no spoiled video offered as ready
+      if (error instanceof RecordingInterruptedError) throw new VideoUnavailableError(REPLAY_VIDEO_COPY.keepOpen);
+      throw error;
     } finally {
+      pacer.dispose();
       if (recorder.state !== "inactive") recorder.stop();
       for (const track of stream.getTracks()) track.stop();
       bitmap?.close();

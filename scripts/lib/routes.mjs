@@ -38,8 +38,9 @@ export const PUBLIC_ROUTES = Object.freeze([
   "src/app/api/health/route.ts",
   // Trial-reminder cron: no user JWT exists; the shared CRON_SECRET bearer token is the auth.
   "src/app/api/cron/trial-reminders/route.ts",
-  // The weekly report email's one-tap unsubscribe: opened from a mail app, signed out; the link's
-  // HMAC (under CRON_SECRET) is the auth, and all it can do is turn that account's email off.
+  // The weekly report email's unsubscribe: opened from a mail app, signed out; the link's HMAC
+  // (under REPORT_LINK_SECRET, else CRON_SECRET) is the auth. GET only asks; POST (the page's
+  // button, or RFC 8058 one-click) turns that account's email off, and that is all it can do.
   "src/app/api/report/unsubscribe/route.ts",
 ]);
 
@@ -52,7 +53,7 @@ export const PUBLIC_ROUTE_REASONS = Object.freeze({
   "src/app/api/client-errors/route.ts": "browser error reports, sent signed out too; per-IP limit, 16 KB body cap, zod; logs only",
   "src/app/api/health/route.ts": "uptime monitor probe; answers { ok, db, release } only",
   "src/app/api/cron/trial-reminders/route.ts": "Vercel cron; requires Authorization: Bearer CRON_SECRET",
-  "src/app/api/report/unsubscribe/route.ts": "email unsubscribe link; requires an HMAC of the user id under CRON_SECRET; only turns the weekly email off",
+  "src/app/api/report/unsubscribe/route.ts": "email unsubscribe link; requires an HMAC of the user id under REPORT_LINK_SECRET (else CRON_SECRET); GET only asks, POST only turns the weekly email off",
 });
 
 /** Routes whose handlers legitimately have no zod body schema. */
@@ -78,6 +79,7 @@ export const NO_BODY_ROUTES = Object.freeze([
   // The weekly report (GET only; the week and zone, and the board id, are in the URL, zod-checked).
   "src/app/api/report/route.ts",
   "src/app/api/report/boards/[id]/route.ts",
+  // GET, and POST whose body (RFC 8058's `List-Unsubscribe=One-Click`, or the page's empty form) is never read
   "src/app/api/report/unsubscribe/route.ts",
   "src/app/api/admin/referrals/route.ts",
 ]);
@@ -377,13 +379,13 @@ export const API_ROUTES = Object.freeze([
   {
     path: "/api/report/unsubscribe",
     file: "src/app/api/report/unsubscribe/route.ts",
-    methods: ["GET"],
+    methods: ["GET", "POST"],
     auth: "public",
     limit: "ip:reportUnsubscribe",
     body: "none",
-    // 400 without a signed link; 503 when CRON_SECRET / the service role key are unset.
+    // 400 without a signed link; 503 when REPORT_LINK_SECRET and CRON_SECRET / the service role key are unset.
     withoutTokenStatus: [400, 503],
-    purpose: "The weekly report email's one-tap unsubscribe (signed link): turns that account's email off and answers a small HTML page",
+    purpose: "The weekly report email's unsubscribe (signed link): GET answers a confirm page, POST (its button, or RFC 8058 one-click) turns that account's email off; small HTML pages",
     status: "active",
   },
   {

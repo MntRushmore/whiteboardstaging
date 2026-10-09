@@ -6,6 +6,7 @@ import {
   afterSignInPath,
   hasFieldErrors,
   hashHasAuthError,
+  signInPath,
   signUpRequest,
   validateEmail,
   validateLoginForm,
@@ -124,5 +125,44 @@ describe("afterSignInPath", () => {
     expect(afterSignInPath("?next=//evil.example/board/x")).toBe("/");
     expect(afterSignInPath("?next=/board/x/../../account")).toBe("/");
     expect(afterSignInPath("?next=/account")).toBe("/");
+  });
+
+  it("returns to the weekly report on its week, and to a replay from it (the Sunday email's links)", () => {
+    expect(afterSignInPath("?next=%2Freport%3Fweek%3D2026-10-05")).toBe("/report?week=2026-10-05");
+    expect(afterSignInPath("?next=%2Freport")).toBe("/report");
+    expect(afterSignInPath("?next=%2Freport%2Freplay%2F2996105e-695e-494b-86ea-3f7eb4dbacc9")).toBe("/report/replay/2996105e-695e-494b-86ea-3f7eb4dbacc9");
+  });
+
+  it("never follows a report path with anything else in it", () => {
+    for (const next of [
+      "//evil.example/report",
+      "/report?week=x",
+      "/report?week=2026-10-05&next=//evil.example",
+      "/report?week=2026-10-05#x",
+      "/report/../account",
+      "/report/replay/x/../../account",
+      "/reports",
+      "/report/replay/",
+      "https://evil.example/report?week=2026-10-05",
+      "/\\evil.example/report",
+    ]) {
+      expect(afterSignInPath(`?next=${encodeURIComponent(next)}`), next).toBe("/");
+    }
+  });
+});
+
+describe("signInPath", () => {
+  it("carries a page sign-in returns to, and round-trips through afterSignInPath", () => {
+    for (const path of ["/report", "/report?week=2026-10-05", "/report/replay/2996105e-695e-494b-86ea-3f7eb4dbacc9", "/board/abc"]) {
+      const login = signInPath(path);
+      expect(login.startsWith("/login?next=")).toBe(true);
+      expect(afterSignInPath(new URL(login, "https://agathon.app").search)).toBe(path);
+    }
+  });
+
+  it("is plain /login for anything sign-in would not return to", () => {
+    expect(signInPath("/report?week=soon")).toBe("/login");
+    expect(signInPath("//evil.example")).toBe("/login");
+    expect(signInPath("/account")).toBe("/login");
   });
 });

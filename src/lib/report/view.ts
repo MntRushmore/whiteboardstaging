@@ -45,6 +45,26 @@ export function earlierWeeks(now: number, timeZone: string, count = EARLIER_WEEK
     .map((w) => ({ value: w, label: weekLabel(w) }));
 }
 
+/**
+ * The "Earlier" list for the picker while `weekStart` is shown: the EARLIER_WEEKS weeks, and the
+ * shown week at the end when it is older than those (a link may open any week up to a year back),
+ * so the list always names the week on screen.
+ */
+export function earlierWeekOptions(weekStart: string, now: number, timeZone: string, count = EARLIER_WEEKS): { value: string; label: string }[] {
+  const list = earlierWeeks(now, timeZone, count);
+  if (weekChoice(weekStart, now, timeZone) !== "earlier" || list.some((w) => w.value === weekStart)) return list;
+  return [...list, { value: weekStart, label: weekLabel(weekStart) }];
+}
+
+/**
+ * What a failed read leaves in place of `prev`: a good read already shown for the same `failed.key`
+ * stays (a background re-read that fails never swaps a report on screen for the error); anything
+ * else becomes `failed`.
+ */
+export function afterFailedRead<R extends { key: string }>(prev: R | null, failed: R, good: (read: R) => boolean): R {
+  return prev && prev.key === failed.key && good(prev) ? prev : failed;
+}
+
 /** The Monday for a picker choice ("earlier" opens two weeks back). */
 export function weekForChoice(choice: WeekChoice, now: number, timeZone: string): string {
   const weeks = recentWeeks(now, timeZone, 3);

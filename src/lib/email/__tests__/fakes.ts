@@ -46,6 +46,7 @@ export const PORTAL = "https://billing.stripe.com/p/login/test_123";
 export function testEnv(over: Partial<EmailEnv> = {}): EmailEnv {
   return {
     cronSecret: "unit-cron-secret",
+    reportLinkSecret: "unit-link-secret",
     hasServiceRole: true,
     resend: { apiKey: "re_unit_test", from: "Agathon <hello@mail.agathon.app>" },
     siteUrl: SITE,

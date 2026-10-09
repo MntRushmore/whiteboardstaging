@@ -56,6 +56,11 @@ export type SendEmailInput = {
   idempotencyKey?: string;
   /** For filtering in Resend's dashboard; names and values are reduced to [A-Za-z0-9_-]. */
   tags?: Record<string, string> | EmailTag[];
+  /**
+   * Extra headers on the email itself (Resend's `headers`), such as List-Unsubscribe and
+   * List-Unsubscribe-Post (RFC 8058). A name must be a header token and a value one line, or nothing is sent.
+   */
+  headers?: Record<string, string>;
 };
 
 export type SendEmailResult =
@@ -108,6 +113,18 @@ export function isSendableAddress(value: string): boolean {
   return value.length <= 320 && ADDRESS_RE.test(value);
 }
 
+/** An email header's name (RFC 5322 field name: printable ASCII but `:`) and a one-line value. */
+const HEADER_NAME_RE = /^[!-9;-~]{1,76}$/;
+const HEADER_VALUE_RE = /^[^\r\n\0]{0,2000}$/;
+
+/** The headers when every one is well formed (none set: undefined), else null. */
+function emailHeaders(headers: SendEmailInput["headers"]): Record<string, string> | undefined | null {
+  if (!headers) return undefined;
+  const entries = Object.entries(headers);
+  if (entries.length === 0) return undefined;
+  return entries.every(([name, value]) => HEADER_NAME_RE.test(name) && typeof value === "string" && HEADER_VALUE_RE.test(value)) ? Object.fromEntries(entries) : null;
+}
+
 /** Resend's `Retry-After` (seconds) or `ratelimit-reset` (seconds), in ms. */
 function retryAfterMsOf(headers: Headers): number | undefined {
   for (const name of ["retry-after", "ratelimit-reset"]) {
@@ -152,6 +169,8 @@ export async function sendEmail(input: SendEmailInput, config: ResendConfig = re
   if (key !== undefined && (key.length === 0 || key.length > MAX_IDEMPOTENCY_KEY_LENGTH)) {
     return { ok: false, error: `invalid request: the idempotency key must be 1-${MAX_IDEMPOTENCY_KEY_LENGTH} characters` };
   }
+  const extraHeaders = emailHeaders(input.headers);
+  if (extraHeaders === null) return { ok: false, error: "invalid request: a header name or value is not allowed" };
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${apiKey}`,
@@ -167,6 +186,7 @@ export async function sendEmail(input: SendEmailInput, config: ResendConfig = re
     html: input.html,
     text: input.text,
     tags: tagList(input.tags),
+    headers: extraHeaders,
   });
 
   const doFetch = config.fetchImpl ?? fetch;

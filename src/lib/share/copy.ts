@@ -45,6 +45,8 @@ export const REPLAY_VIDEO_COPY = {
   shareFailed: "Couldn't open sharing here. Save the video instead.",
   unsupported: "This browser can't make videos. Try Chrome or Safari.",
   empty: "There's nothing on this board to make a video of yet.",
+  /** the page was hidden mid-recording and this browser could not pause it */
+  keepOpen: "Keep this tab open while the video is made, then try again.",
   shareTitle: "My board on Agathon",
   brand: "Agathon",
   site: "agathon.app",

@@ -12,8 +12,9 @@ import { switchErrorView } from "@/lib/family/switchError";
 import { browserTimeZone, loadReport } from "@/lib/report/client";
 import { REPORT_PATH, type ChildWeek, type ReportAnswer } from "@/lib/report/contracts";
 import { REPORT_COPY } from "@/lib/report/copy";
-import { weekLabel } from "@/lib/report/view";
+import { afterFailedRead, weekLabel } from "@/lib/report/view";
 import { isReportableWeek, localDayIn, parseWeek, weekDays, weekStartAt } from "@/lib/report/week";
+import { signInPath } from "@/lib/loginForm";
 import { reportUserError } from "@/lib/reportAppError";
 import { Alert } from "@/registry/components/alert/alert";
 import { Button } from "@/registry/components/button/button";
@@ -27,8 +28,9 @@ import styles from "./report.module.css";
  * /report: the weekly report, for the grown-up who pays. One card per kid (their own week too when
  * they practised), a week picker (this week, last week, earlier), and, where the Sunday email is
  * sent, its on/off switch. A kid profile that opens it sees their own week. Signed-in only (signed
- * out goes to /login). The week is in the URL (`?week=`), so the email's "See the full report"
- * opens the week it was about; weeks are the browser's own zone, Monday to Sunday.
+ * out goes to /login, which comes back here on the same week). The week is in the URL (`?week=`),
+ * so the email's "See the full report" opens the week it was about; weeks are the browser's own
+ * zone, Monday to Sunday.
  */
 export function ReportScreen() {
   const router = useRouter();
@@ -50,12 +52,16 @@ export function ReportScreen() {
   const failed = !loading && read.answer === null;
   const answer = !loading ? read.answer : kept;
 
+  // signed out: sign in, then back to this page on this week (the Sunday email's link)
   useEffect(() => {
-    if (!authLoading && !user && !authError) router.replace("/login");
-  }, [user, authLoading, authError, router]);
+    if (!authLoading && !user && !authError) router.replace(signInPath(asked ? `${REPORT_PATH}?week=${asked}` : REPORT_PATH));
+  }, [user, authLoading, authError, router, asked]);
 
+  // Keyed on the account's id, not the user object: auth-js hands over a new object on every
+  // SIGNED_IN / TOKEN_REFRESHED (each return to the tab, and hourly), which must not read again.
+  const userId = user?.id ?? null;
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
     const abort = new AbortController();
     loadReport(weekStart, timeZone, abort.signal)
       .then((a) => {
@@ -64,11 +70,12 @@ export function ReportScreen() {
       })
       .catch((err) => {
         if (abort.signal.aborted) return;
-        setRead({ key, answer: null });
+        // a re-read that fails keeps the report on screen; only a first read shows the error
+        setRead((prev) => afterFailedRead(prev, { key, answer: null }, (r) => r.answer !== null));
         reportUserError({ kind: "live.account", code: "report_load", message: err instanceof Error ? err.message : String(err) });
       });
     return () => abort.abort();
-  }, [user, weekStart, timeZone, key]);
+  }, [userId, weekStart, timeZone, key]);
 
   const pickWeek = useCallback(
     (next: string) => {
