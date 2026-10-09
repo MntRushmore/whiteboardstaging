@@ -15,6 +15,7 @@ import { loadDailyRows, saveDailyPractice } from "@/lib/daily/store";
 import { dailyStreak, isDayDone, withProgress } from "@/lib/daily/streak";
 import { writePracticeMarker } from "@/lib/learning/practiceMarker";
 import { asOnboardingClient, createFirstBoard } from "@/lib/onboarding/storage";
+import { namedSkills, type PlanSkill } from "@/lib/daily/names";
 import type { DailyPlanInput } from "@/lib/daily/plan";
 
 /**
@@ -113,7 +114,35 @@ export interface TodayActions {
   practiseMore: () => void;
 }
 
-export function useToday(userId: string): { state: TodayState; actions: TodayActions } {
+/**
+ * "In today's set": a set not started yet is planned now (the same seed and record Start will use,
+ * so the same set); a started one is named from this device's note. Null until known, or when it
+ * cannot be (another device's board, a failed read): the card simply leaves it out.
+ */
+function usePreview(ready: Extract<TodayState, { status: "ready" }> | null, planInput: (day: string) => Promise<DailyPlanInput>): PlanSkill[] | null {
+  const [preview, setPreview] = useState<{ key: string; skills: PlanSkill[] } | null>(null);
+  const key = ready ? `${ready.today}:${ready.phase}:${ready.boardId ?? ""}` : "";
+  useEffect(() => {
+    if (!ready || ready.phase === "done") return;
+    let live = true;
+    if (ready.phase === "continue") {
+      const note = ready.boardId ? readDailyNote(ready.boardId) : null;
+      // a state update after the effect, as the planned branch does
+      void Promise.resolve().then(() => live && setPreview({ key, skills: namedSkills(note?.skills ?? []) }));
+    } else {
+      void Promise.all([import("@/lib/daily/plan"), planInput(ready.today)]).then(
+        ([{ planDailySet, planSkills }, input]) => live && setPreview({ key, skills: planSkills(planDailySet(input)) }),
+        () => {},
+      );
+    }
+    return () => {
+      live = false;
+    };
+  }, [ready, key, planInput]);
+  return preview && preview.key === key && preview.skills.length > 0 ? preview.skills : null;
+}
+
+export function useToday(userId: string): { state: TodayState; actions: TodayActions; preview: PlanSkill[] | null } {
   const router = useRouter();
   const [state, setState] = useState<TodayState>({ status: "loading" });
   const [busy, setBusyState] = useState<TodayActions["busy"]>(null);
@@ -158,6 +187,7 @@ export function useToday(userId: string): { state: TodayState; actions: TodayAct
 
   const ready = state.status === "ready" ? state : null;
   const planInput = usePlanInput(userId, ready?.today ?? null, Boolean(ready));
+  const preview = usePreview(ready, planInput);
 
   const fail = useCallback(
     (code: string, description: string) => {
@@ -220,5 +250,5 @@ export function useToday(userId: string): { state: TodayState; actions: TodayAct
       .catch(() => fail("daily_more_failed", TODAY_COPY.failedLine));
   }, [planInput, fail, router, setBusy, userId]);
 
-  return { state, actions: { busy, start, continueToday, practiseMore } };
+  return { state, actions: { busy, start, continueToday, practiseMore }, preview };
 }

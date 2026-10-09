@@ -28,6 +28,7 @@ import { drawLadder, formsFor } from "@/lib/learning/generators";
 import { hashText } from "@/lib/learning/generators/rng";
 import { GRADE_IDS, GRADE_PATHS, type K8SkillId } from "@/lib/learning/grades";
 import { DAILY_GOAL, type DailyPlan, type DailyProblem, type DailyReason } from "./contracts";
+import { skillNameOf, type PlanSkill } from "./names";
 
 /** What the day's set is planned from. */
 export interface DailyPlanInput {
@@ -309,6 +310,21 @@ export function planDailySet(input: DailyPlanInput): DailyPlan {
     .sort((a, b) => a.p.rank - b.p.rank || a.p.rung - b.p.rung || a.i - b.i)
     .map(({ p }) => ({ skill: p.skill, lines: p.lines, why: p.why }));
   return { day: input.day, goal: problems.length > 0 ? problems.length : goal, problems };
+}
+
+/** The set's skills in the order they come, each once, for the home card's "In today's set". */
+export function planSkills(plan: DailyPlan): PlanSkill[] {
+  const out: PlanSkill[] = [];
+  for (const p of plan.problems) {
+    const seen = out.find((s) => s.skill === p.skill);
+    if (seen) {
+      seen.problems++;
+      continue;
+    }
+    const name = skillNameOf(p.skill);
+    if (name) out.push({ skill: p.skill, name, why: p.why, problems: 1 });
+  }
+  return out;
 }
 
 /** How many problems "Keep going" adds after the day's goal. */

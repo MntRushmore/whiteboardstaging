@@ -6,6 +6,7 @@ import { Skeleton } from "@/registry/components/skeleton/skeleton";
 import { ConfettiBurst } from "@/components/onboarding/ConfettiBurst";
 import { TODAY_COPY } from "@/lib/daily/copy";
 import type { DailyStreak, DayState } from "@/lib/daily/contracts";
+import type { PlanSkill } from "@/lib/daily/names";
 import { useToday, type TodayActions, type TodayState } from "./useToday";
 import styles from "./today.module.css";
 
@@ -90,12 +91,35 @@ export function StreakPanel({ streak, today }: { streak: DailyStreak; today: str
   );
 }
 
+/** "In today's set": each skill once, with why it is there (New, Practice, Warm-up). */
+export function SetMix({ skills }: { skills: readonly PlanSkill[] }) {
+  return (
+    <div className={styles.mix}>
+      <p className={styles.mixTitle} id="today-mix-title">
+        {TODAY_COPY.mixTitle}
+      </p>
+      <ul className={styles.mixList} aria-labelledby="today-mix-title">
+        {skills.map((s, i) => (
+          <li key={s.skill} className={styles.mixItem} data-why={s.why ?? "set"} style={{ ["--i" as string]: i }}>
+            <span className={styles.mixIcon} aria-hidden>
+              <Star size={14} strokeWidth={2.4} />
+            </span>
+            <span className={styles.mixName}>{s.name}</span>
+            {s.why && <span className={styles.mixWhy}>{TODAY_COPY.why[s.why]}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** The card for a day that has loaded. Exported for its markup test. */
-export function TodayView({ state, actions }: { state: Extract<TodayState, { status: "ready" }>; actions: TodayActions }) {
+export function TodayView({ state, actions, preview = null }: { state: Extract<TodayState, { status: "ready" }>; actions: TodayActions; preview?: readonly PlanSkill[] | null }) {
   const { phase, goal, done, stars } = state;
   const titleId = "today-practice-title";
+  const mix = phase !== "done" && preview && preview.length > 0 ? preview : null;
   return (
-    <section className={styles.card} data-phase={phase} aria-labelledby={titleId} data-today-card="">
+    <section className={styles.card} data-phase={phase} data-mix={mix ? "" : undefined} aria-labelledby={titleId} data-today-card="">
       <span className={styles.glow} aria-hidden />
       {phase === "done" && state.justFinished && <ConfettiBurst count={48} spread={200} className={styles.confetti} />}
       <div className={styles.main}>
@@ -128,13 +152,14 @@ export function TodayView({ state, actions }: { state: Extract<TodayState, { sta
           )}
         </div>
       </div>
+      {mix ? <SetMix skills={mix} /> : <span className={styles.mixSpacer} aria-hidden />}
       {state.streak && <StreakPanel streak={state.streak} today={state.today} />}
     </section>
   );
 }
 
 export default function TodayCard({ userId }: TodayCardProps) {
-  const { state, actions } = useToday(userId);
+  const { state, actions, preview } = useToday(userId);
   if (state.status === "loading") {
     return (
       <div className={`${styles.card} ${styles.loading}`} data-today-card="">
@@ -142,5 +167,5 @@ export default function TodayCard({ userId }: TodayCardProps) {
       </div>
     );
   }
-  return <TodayView state={state} actions={actions} />;
+  return <TodayView state={state} actions={actions} preview={preview} />;
 }

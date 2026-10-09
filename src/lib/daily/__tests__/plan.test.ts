@@ -10,7 +10,8 @@ import { drawLadder, formsFor } from "@/lib/learning/generators";
 import { difficultyOf } from "@/lib/learning/generators/ladder";
 import { K8_SKILL_IDS } from "@/lib/learning/grades";
 import { DAILY_GOAL } from "../contracts";
-import { BONUS_PROBLEMS, bonusProblems, dailySeed, drawSkillFor, LADDER_RUNGS, planDailySet, STAND_INS, type DailyPlanInput } from "../plan";
+import { namedSkills, skillNameOf } from "../names";
+import { BONUS_PROBLEMS, bonusProblems, dailySeed, drawSkillFor, LADDER_RUNGS, planDailySet, planSkills, STAND_INS, type DailyPlanInput } from "../plan";
 
 const PATH = ["add_subtract", "multiply_divide", "fractions", "two_step_equations"];
 const levels = (entries: Record<string, MasteryLevel>) => new Map(Object.entries(entries)) as Map<string, MasteryLevel>;
@@ -145,6 +146,23 @@ describe("planDailySet", () => {
     const plan = planDailySet(input({ goal: 3, levels: levels({ add_subtract: "mastered", multiply_divide: "practicing" }), weakSkills: ["fractions"] }));
     expect(plan.problems).toHaveLength(3);
     expect(plan.goal).toBe(3);
+  });
+});
+
+describe("planSkills", () => {
+  it("the set's skills once each, in order, named for a student, with why and how many", () => {
+    const plan = planDailySet(input({ path: ["add_within_10", "add_subtract", "multiply_divide"], levels: levels({ multiply_divide: "practicing", add_subtract: "mastered" }) }));
+    const skills = planSkills(plan);
+    expect(skills.map((s) => s.problems).reduce((a, b) => a + b, 0)).toBe(plan.problems.length);
+    expect(new Set(skills.map((s) => s.skill)).size).toBe(skills.length);
+    for (const s of skills) expect(s.name).toBe(skillNameOf(s.skill));
+    expect(skillNameOf("add_within_10")).toBe("Adding to 10");
+    expect(skillNameOf("multiply_divide")).toBe("Multiplying and dividing");
+    expect(skillNameOf("nope")).toBeNull();
+    expect(namedSkills(["fractions", "nope", "fractions", "times_tables"])).toEqual([
+      { skill: "fractions", name: "Fractions", problems: 1 },
+      { skill: "times_tables", name: "Times tables", problems: 1 },
+    ]);
   });
 });
 

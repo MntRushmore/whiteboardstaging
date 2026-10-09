@@ -16,6 +16,9 @@ export const TODAY_COPY = {
   continue: "Continue",
   continueLabel: (done: number, goal: number) => `Continue today's practice: ${done} of ${goal} done`,
   progress: (done: number, goal: number) => `${done} of ${goal} done`,
+  /** the set's skills, beside the big button */
+  mixTitle: "In today's set",
+  why: { next: "New", weak: "Practice", review: "Warm-up" } as Record<string, string>,
   /** done for the day */
   doneTitle: "You did it!",
   doneLine: "Come back tomorrow!",
