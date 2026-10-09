@@ -243,6 +243,7 @@ describe("what it leaves to the column's own rules (null)", () => {
   it("reads the problem without the place for its answer", () => {
     expect(readProblem(["18 \\times 7 ="])).not.toBeNull();
     expect(readProblem(["18 \\times 7 = ?"])).not.toBeNull();
+    expect(readProblem(["18 \\times 7 = \\underline{\\quad}"])).not.toBeNull();
     expect(readProblem(["18 \\times 7 = 126"])).toBeNull();
   });
 });

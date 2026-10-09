@@ -450,9 +450,9 @@ function writingOf(tree: Node): Writing {
   return forms.includes("dec") ? "decimal" : "whole";
 }
 
-/** `18 \times 7 =`, `18 \times 7 = ?`, `= \square`: the problem without the place for its answer. */
+/** `18 \times 7 =`, `18 \times 7 = ?`, `= \square`, `= \underline{\quad}`: the problem without the place for its answer. */
 function problemSide(latex: string): string | null {
-  const s = latex.replace(/=\s*(?:\?|\\square|\\Box|\\boxed\s*\{\s*\}|\\_+|_+|\\ldots|\.\.\.)?\s*$/, "").trim();
+  const s = latex.replace(/=\s*(?:\?|\\square|\\Box|\\boxed\s*\{\s*\}|\\underline\s*\{[^{}]*\}|\\_+|_+|\\ldots|\.\.\.)?\s*$/, "").trim();
   return s && !s.includes("=") ? s : null;
 }
 
