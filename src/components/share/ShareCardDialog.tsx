@@ -74,8 +74,10 @@ export default function ShareCardDialog({ open, onOpenChange, card, userId }: Sh
   // one asked for comes, the last one stays up, dimmed
   const want = data ? `${JSON.stringify(data)}|${hideName}|${attempt}` : null;
   const shown = useRef<string | null>(null);
+  const drawn = useRef<string | null>(null);
   useEffect(() => {
-    if (!open || !data || !want) return;
+    // reopened with the same numbers: the picture already drawn is the one
+    if (!open || !data || !want || drawn.current === want) return;
     let live = true;
     renderShareCard(data, { hideName })
       .then(({ blob, layout }) => {
@@ -83,6 +85,7 @@ export default function ShareCardDialog({ open, onOpenChange, card, userId }: Sh
         const url = URL.createObjectURL(blob);
         if (shown.current) URL.revokeObjectURL(shown.current);
         shown.current = url;
+        drawn.current = want;
         setPicture({ key: want, status: "ready", blob, url, sentence: layout.sentence });
       })
       .catch((error: unknown) => {
