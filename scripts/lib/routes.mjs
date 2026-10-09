@@ -71,6 +71,7 @@ export const NO_BODY_ROUTES = Object.freeze([
   "src/app/api/admin/bugs/route.ts",
   "src/app/api/admin/bugs/[id]/screenshot/route.ts",
   "src/app/api/admin/funnel/route.ts",
+  "src/app/api/admin/referrals/route.ts",
 ]);
 
 export const API_ROUTES = Object.freeze([
@@ -181,6 +182,26 @@ export const API_ROUTES = Object.freeze([
     limit: "adminConsole",
     body: "none",
     purpose: "Admin console: the growth funnel (?tz=): sign-ups by week and by source, each stage to paying, MRR; counts only",
+    status: "active",
+  },
+  {
+    path: "/api/admin/referrals",
+    file: "src/app/api/admin/referrals/route.ts",
+    methods: ["GET"],
+    auth: "user",
+    limit: "adminConsole",
+    body: "none",
+    purpose: "Admin console: every referral (give a month, get a month), both accounts' emails, the referrer's Stripe customer, status and dates",
+    status: "active",
+  },
+  {
+    path: "/api/admin/referrals/[id]",
+    file: "src/app/api/admin/referrals/[id]/route.ts",
+    methods: ["PATCH"],
+    auth: "user",
+    limit: "adminConsole",
+    body: "zod",
+    purpose: "Admin console: mark a referral rewarded (after the Stripe credit) or void; logged as referral.reward / referral.void",
     status: "active",
   },
   {
