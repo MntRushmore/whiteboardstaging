@@ -69,7 +69,7 @@ export function ReplayScreen({ boardId }: { boardId: string }) {
               {REPORT_COPY.replayBack}
             </Link>
             <div className={styles.replayHead}>
-              {board && !own && <FamilyAvatar name={board.ownerName} avatar={null} size="md" />}
+              {board && !own && <FamilyAvatar name={board.ownerName} avatar={board.ownerAvatar} size="md" />}
               <div>
                 <h1 className={styles.title}>{title}</h1>
                 {board?.title && <p className={styles.subtitle}>{board.title}</p>}

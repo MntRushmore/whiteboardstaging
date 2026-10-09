@@ -38,6 +38,8 @@ export interface ReplayAnswer {
   id: string;
   ownerId: string;
   ownerName: string;
+  /** an AVATARS id, or null */
+  ownerAvatar: string | null;
   title: string;
   updatedAt: string;
   snapshot: unknown;
@@ -48,7 +50,7 @@ export async function loadReplay(boardId: string, signal?: AbortSignal): Promise
   if (!res.ok) throw await apiErrorFromResponse(res);
   const body = (await res.json()) as Partial<ReplayAnswer>;
   if (typeof body.id !== "string" || typeof body.ownerId !== "string") throw new ApiError("The board came back in a shape this page can't read.", 502, "upstream_error");
-  return { id: body.id, ownerId: body.ownerId, ownerName: String(body.ownerName ?? ""), title: String(body.title ?? ""), updatedAt: String(body.updatedAt ?? ""), snapshot: body.snapshot ?? null };
+  return { id: body.id, ownerId: body.ownerId, ownerName: String(body.ownerName ?? ""), ownerAvatar: typeof body.ownerAvatar === "string" ? body.ownerAvatar : null, title: String(body.title ?? ""), updatedAt: String(body.updatedAt ?? ""), snapshot: body.snapshot ?? null };
 }
 
 /** Turn the weekly email off (`true`) or back on; answers the value now stored. */

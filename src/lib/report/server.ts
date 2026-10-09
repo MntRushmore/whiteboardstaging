@@ -224,7 +224,7 @@ export async function readReport(store: ReportStore, caller: Caller, opts: { wee
 }
 
 /** A board's replay for the caller, or null when it is not theirs to watch (the same answer as no board). */
-export async function readReplay(store: ReportStore, caller: Caller, boardId: string): Promise<(ReplayBoard & { ownerName: string }) | null> {
+export async function readReplay(store: ReportStore, caller: Caller, boardId: string): Promise<(ReplayBoard & { ownerName: string; ownerAvatar: string | null }) | null> {
   const ownerId = await store.boardOwner(boardId);
   if (!ownerId) return null;
   const links = await store.links(caller.id);
@@ -233,5 +233,5 @@ export async function readReplay(store: ReportStore, caller: Caller, boardId: st
   // deleted between the two reads: gone (a board never changes owner; checked again all the same)
   if (!board || board.ownerId !== ownerId) return null;
   const profile = (await store.profiles([board.ownerId])).get(board.ownerId);
-  return { ...board, ownerName: nameOf(profile, board.ownerId === caller.id) };
+  return { ...board, ownerName: nameOf(profile, board.ownerId === caller.id), ownerAvatar: profile?.avatar ?? null };
 }

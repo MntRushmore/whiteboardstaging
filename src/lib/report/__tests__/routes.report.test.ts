@@ -170,7 +170,7 @@ describe("GET /api/report/boards/<id>", () => {
   it("opens a kid's board for their grown-up", async () => {
     const res = await boardGet(get(`/api/report/boards/${BOARDS.kidA}`, TOKENS.parent), boardCtx(BOARDS.kidA));
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ id: BOARDS.kidA, ownerId: IDS.kidA, ownerName: "Maya", title: "Times tables" });
+    expect(await res.json()).toMatchObject({ id: BOARDS.kidA, ownerId: IDS.kidA, ownerName: "Maya", ownerAvatar: "fox", title: "Times tables" });
   });
 
   it("opens a kid's own board for them, but never a sibling's", async () => {

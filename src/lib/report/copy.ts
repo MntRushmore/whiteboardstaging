@@ -77,5 +77,5 @@ export const REPORT_COPY = {
   replayLoading: "Loading the board",
   replayMissingTitle: "This board isn't available",
   replayMissing: "It may have been deleted, or it isn't one of your family's boards.",
-  replayHint: "Press play to watch the work appear in the order it was written. Drag the bar to jump.",
+  replayHint: "The work appears in the order it was written, with the tutor's ticks and rings. Pause, or drag the bar to jump.",
 } as const;
