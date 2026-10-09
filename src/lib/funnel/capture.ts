@@ -135,12 +135,22 @@ function write(storage: AttributionStorage, stored: StoredAttribution): void {
 
 /**
  * The first visit's attribution: stored now if the device has none, never overwriting one already
- * there (a later visit from another link is not where the visitor first came from). Answers what
- * the device keeps. Never throws.
+ * there (a later visit from another link is not where the visitor first came from). One exception:
+ * a friend's `?ref=` seen on a later visit, before any account has been saved from this device and
+ * when the first visit had none, is added (src/lib/referral: the invitation still counts if the
+ * visitor looked around first). Answers what the device keeps. Never throws.
  */
 export function captureAttribution(storage: AttributionStorage | null, page: PageInfo, now: Date): StoredAttribution | null {
   if (!storage) return null;
   const existing = readStoredAttribution(storage);
+  if (existing && !existing.sentAt && !existing.attribution.ref) {
+    const ref = attributionFromPage(page, now).ref;
+    if (ref) {
+      const invited: StoredAttribution = { ...existing, attribution: { ...existing.attribution, ref } };
+      write(storage, invited);
+      return invited;
+    }
+  }
   if (existing) return existing;
   const fresh: StoredAttribution = { attribution: attributionFromPage(page, now) };
   write(storage, fresh);

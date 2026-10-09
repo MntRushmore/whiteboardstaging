@@ -19,6 +19,7 @@ import { EmptyState } from "@/registry/components/empty-state/empty-state";
 import { Skeleton } from "@/registry/components/skeleton/skeleton";
 import { KidCard } from "./KidCard";
 import { KidDialog } from "./KidDialog";
+import { ReferralCard } from "@/components/referral/ReferralCard";
 import { PinCard } from "./PinCard";
 import { RemoveKidDialog } from "./RemoveKidDialog";
 import { useFamily } from "./useFamily";
@@ -123,6 +124,8 @@ export function FamilyScreen() {
             </ul>
           )}
         </section>
+
+        <ReferralCard />
       </div>
     );
   }
