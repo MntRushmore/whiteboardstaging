@@ -7,9 +7,12 @@ import { ArrowLeft, RefreshCw, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { AuthErrorBanner, useAuth } from "@/components/AuthProvider";
 import { AppHeader, APP_CONTENT_CLASS } from "@/components/app/AppHeader";
+import { useUnlimited } from "@/lib/billing/useUnlimited";
 import { switchProfile } from "@/lib/family/client";
-import { MAX_KIDS, type FamilyMember } from "@/lib/family/contracts";
+import type { FamilyMember } from "@/lib/family/contracts";
 import { FAMILY_COPY } from "@/lib/family/copy";
+import { addKidBlock } from "@/lib/family/forms";
+import { PLAN_PATH } from "@/lib/onboarding/planMarker";
 import { openProfilePicker } from "@/lib/family/picker";
 import { switchErrorView } from "@/lib/family/switchError";
 import { reportUserError } from "@/lib/reportAppError";
@@ -28,14 +31,17 @@ import styles from "./familyPage.module.css";
  * /family: the grown-up's page for their kids. Set the PIN (first), add a kid (name, grade,
  * picture), and for each kid this week's numbers, "Switch to <name>", "See progress", edit and
  * remove. A kid who lands here is told it is for grown-ups, with a way to switch profile. Signed-in
- * only (signed out goes to /login), never paywalled: a grown-up sets up the family before or after
- * the plan. Reads GET /api/family fresh on every visit (the numbers move).
+ * only (signed out goes to /login), never paywalled: a grown-up sets the PIN before or after the
+ * plan, but adds kids only with Agathon Unlimited on (kids share it and have no ink of their own;
+ * the server refuses otherwise), so without it the Kids section says "Start your free trial" with a
+ * link to the plan screen. Reads GET /api/family fresh on every visit (the numbers move).
  */
 export function FamilyScreen() {
   const router = useRouter();
   const { user, loading: authLoading, authError } = useAuth();
   // the numbers move: read fresh on arrival, past the tab's kept copy
   const { state, loading, failed, reload } = useFamily(user?.id, { fresh: true });
+  const plan = useUnlimited();
   const [dialog, setDialog] = useState<{ kid: FamilyMember | null } | null>(null);
   const [removing, setRemoving] = useState<FamilyMember | null>(null);
   const [busy, setBusy] = useState<{ id: string; what: "switch" | "progress" } | null>(null);
@@ -58,7 +64,29 @@ export function FamilyScreen() {
   }
 
   const kids = state?.members.filter((m) => !m.isParent) ?? [];
-  const full = kids.length >= MAX_KIDS;
+  const block = addKidBlock({ hasPin: state?.hasPin ?? false, kids: kids.length, plan: { known: plan.known, status: plan.state.status } });
+  const kidsHint =
+    block === "plan" ? (
+      <>
+        {FAMILY_COPY.kidsNeedPlan}{" "}
+        <Link href={PLAN_PATH} className={styles.planLink} data-testid="kids-need-plan">
+          {FAMILY_COPY.kidsNeedPlanLink}
+        </Link>
+      </>
+    ) : block === "active_plan" ? (
+      <>
+        {FAMILY_COPY.kidsNeedActivePlan}{" "}
+        <Link href="/account" className={styles.planLink}>
+          {FAMILY_COPY.kidsNeedActivePlanLink}
+        </Link>
+      </>
+    ) : block === "pin" ? (
+      FAMILY_COPY.kidsNeedPin
+    ) : block === "full" ? (
+      FAMILY_COPY.tooMany
+    ) : (
+      FAMILY_COPY.kidsEmptyHint
+    );
 
   let body: React.ReactNode;
   if (authLoading || !user || (loading && !state)) {
@@ -96,9 +124,9 @@ export function FamilyScreen() {
               <h2 id="family-kids-title" className={styles.sectionTitle}>
                 {FAMILY_COPY.kidsTitle}
               </h2>
-              <p className={styles.sectionHint}>{!state.hasPin ? FAMILY_COPY.kidsNeedPin : full ? FAMILY_COPY.tooMany : FAMILY_COPY.kidsEmptyHint}</p>
+              <p className={styles.sectionHint}>{kidsHint}</p>
             </div>
-            <Button className={styles.sectionAction} onClick={() => setDialog({ kid: null })} disabled={!state.hasPin || full} data-testid="add-kid">
+            <Button className={styles.sectionAction} onClick={() => setDialog({ kid: null })} disabled={block !== null} data-testid="add-kid">
               <UserPlus size={16} strokeWidth={1.9} aria-hidden />
               {FAMILY_COPY.addKid}
             </Button>

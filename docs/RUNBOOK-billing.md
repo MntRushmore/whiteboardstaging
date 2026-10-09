@@ -632,10 +632,14 @@ group by u.email order by ink_equivalent desc;
 
 - **Change the fair-use cap** with a new migration: `create or replace function
   public.unlimited_fair_use_per_day() returns integer language sql immutable set search_path =
-  public as $$ select 2000 $$;` (no deploy needed).
+  public as $$ select 2000 $$;` (no deploy needed). The cap is per FAMILY: a kid's actions are
+  recorded on their grown-up's `unlimited_usage` rows (20261009040000_family_hardening.sql), so
+  the "what subscribers actually use" query above shows a family under the grown-up's email.
 - **Delete an account by hand** (*Authentication → Users*) only after cancelling its subscription
   in the Dashboard: the app's own deletion refuses while a plan would charge again, the
-  Dashboard's does not.
+  Dashboard's does not. Deleting a grown-up deletes their kid profiles' accounts too (a trigger on
+  `families`, 20261009040000_family_hardening.sql). The kids' saved images are then left for the
+  storage GC, because SQL cannot remove files.
 - **A grown-up who cannot sign in to the portal** (they used another email at checkout): cancel
   the subscription for them in the Dashboard (*Customers → the customer → the subscription →
   Cancel*, at the period end); the webhook updates the app.

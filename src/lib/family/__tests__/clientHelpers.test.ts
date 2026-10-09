@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FAMILY_COPY } from "../copy";
-import { GRADE_OPTIONS, NO_GRADE, gradeFromOption, nameError, optionFromGrade, pinFormError, pinInput } from "../forms";
+import type { UnlimitedStatus } from "@/lib/billing/unlimited";
+import { GRADE_OPTIONS, NO_GRADE, addKidBlock, gradeFromOption, nameError, optionFromGrade, pinFormError, pinInput } from "../forms";
 import { FAMILY_MENU, kidDisplayName } from "../menu";
 import { OPEN_PICKER_EVENT, onOpenProfilePicker, openProfilePicker } from "../picker";
 import { switchErrorView } from "../switchError";
-import { isKidEmail } from "../contracts";
+import { MAX_KIDS, isKidEmail } from "../contracts";
 
 describe("switchErrorView", () => {
   it("says a wrong PIN with the tries left, and does not report it", () => {
@@ -19,10 +20,52 @@ describe("switchErrorView", () => {
     expect(view.message).toMatch(/10 minutes/);
   });
 
+  it("says the day's lock kindly, with no countdown: the grown-up's sign-in opens it", () => {
+    // the wrong PIN that spent the day's last try
+    expect(switchErrorView({ status: 403, body: { reason: "wrong_pin", triesLeft: 0, locked: true } })).toEqual({ message: FAMILY_COPY.pinWrongLocked, code: "pin_locked", expected: true });
+    // every try after it
+    const view = switchErrorView({ status: 429, retryAfterMs: 20 * 60 * 60_000, body: { reason: "pin_locked" } });
+    expect(view).toEqual({ message: FAMILY_COPY.pinLockedDay, code: "pin_locked", expected: true });
+    expect(view.message).not.toMatch(/minute/);
+    expect(FAMILY_COPY.pinLockedDay).toMatch(/grown-up/);
+  });
+
+  it("says a counter that could not be asked as 'try again in a moment', and reports it", () => {
+    expect(switchErrorView({ status: 503, body: { reason: "pin_unavailable" } })).toEqual({ message: FAMILY_COPY.pinUnavailable, code: "pin_unavailable", expected: false });
+  });
+
   it("reports anything else as a failed switch", () => {
     expect(switchErrorView({ status: 502 })).toEqual({ message: FAMILY_COPY.switchFailed, code: "switch_502", expected: false });
     expect(switchErrorView(new Error("offline"))).toMatchObject({ code: "switch_failed", expected: false });
     expect(switchErrorView(null)).toMatchObject({ expected: false });
+  });
+});
+
+describe("what stops adding a kid (the Family page)", () => {
+  const plan = (status: UnlimitedStatus, known = true) => ({ known, status });
+
+  it("is the plan first: kids share the grown-up's Unlimited", () => {
+    for (const status of ["none", "canceled"] as const) {
+      expect(addKidBlock({ hasPin: true, kids: 0, plan: plan(status) }), status).toBe("plan");
+      expect(addKidBlock({ hasPin: false, kids: 0, plan: plan(status) }), status).toBe("plan");
+    }
+    // a plan that is not giving Unlimited right now
+    for (const status of ["repeat_trial", "past_due", "incomplete"] as const) {
+      expect(addKidBlock({ hasPin: true, kids: 0, plan: plan(status) }), status).toBe("active_plan");
+    }
+    expect(FAMILY_COPY.kidsNeedPlan).toBe("Start your free trial to add kids.");
+  });
+
+  it("then the PIN, then MAX_KIDS; nothing with Unlimited, a PIN and room", () => {
+    for (const status of ["trialing", "active"] as const) {
+      expect(addKidBlock({ hasPin: false, kids: 0, plan: plan(status) })).toBe("pin");
+      expect(addKidBlock({ hasPin: true, kids: MAX_KIDS, plan: plan(status) })).toBe("full");
+      expect(addKidBlock({ hasPin: true, kids: MAX_KIDS - 1, plan: plan(status) })).toBeNull();
+    }
+  });
+
+  it("does not block on a plan it could not read (the server's answer says it)", () => {
+    expect(addKidBlock({ hasPin: true, kids: 0, plan: plan("none", false) })).toBeNull();
   });
 });
 

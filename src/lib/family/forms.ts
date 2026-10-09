@@ -3,9 +3,28 @@
  * slip of the finger cannot lock the grown-up out of their own profile), a kid's name, and the grade
  * picker's options. The server checks the same rules again (src/lib/family/schemas.ts). Pure.
  */
+import { hasPlan, isUnlimited, type UnlimitedStatus } from "@/lib/billing/unlimited";
 import { GRADES } from "@/lib/learning/grades";
-import { NAME_MAX, PIN_PATTERN } from "./contracts";
+import { MAX_KIDS, NAME_MAX, PIN_PATTERN } from "./contracts";
 import { FAMILY_COPY } from "./copy";
+
+/**
+ * What stops the grown-up adding a kid right now, the first that applies, or null:
+ *  - `plan`: no plan (or a cancelled one). Kids share the grown-up's Agathon Unlimited and have no
+ *    ink of their own, so the server refuses a kid without it (409 `plan_required`);
+ *  - `active_plan`: a plan that is not giving Unlimited right now (a second trial waiting for its
+ *    first charge, a payment to fix, one still being set up): refused the same way;
+ *  - `pin`: no PIN yet; `full`: MAX_KIDS already.
+ * A plan the page could not read (`known` false) blocks nothing here: the server's answer says it.
+ */
+export type AddKidBlock = "plan" | "active_plan" | "pin" | "full";
+
+export function addKidBlock(input: { hasPin: boolean; kids: number; plan: { known: boolean; status: UnlimitedStatus } }): AddKidBlock | null {
+  if (input.plan.known && !isUnlimited(input.plan)) return hasPlan(input.plan) ? "active_plan" : "plan";
+  if (!input.hasPin) return "pin";
+  if (input.kids >= MAX_KIDS) return "full";
+  return null;
+}
 
 /** Why the PIN form cannot be sent yet, or null. */
 export function pinFormError(pin: string, confirm: string): string | null {

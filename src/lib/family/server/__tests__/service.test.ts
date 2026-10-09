@@ -5,9 +5,10 @@
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import { MAX_KIDS } from "@/lib/family/contracts";
-import { addKid, editKid, readFamily, removeAllKids, removeKid, setFamilyPin } from "../service";
-import { verifyPin } from "../pin";
-import { IDS, makeFakeStore, type FakeStore } from "./fakeStore";
+import { FAMILY_ERRORS, addKid, editKid, readFamily, removeKid, removeKidsImages, setFamilyPin, switchProfile } from "../service";
+import { PIN_ATTEMPTS, PIN_DAILY_LIMIT, verifyPin } from "../pin";
+import { KID_ADDS } from "../store";
+import { IDS, PIN, makeFakeStore, type FakeStore } from "./fakeStore";
 
 const user = (id: string, email: string | null = `${id}@example.com`) => ({ id, email });
 const kidUser = (id: string) => user(id, `kid-${id}@kids.agathon.app`);
@@ -64,6 +65,42 @@ describe("adding a kid", () => {
     expect(await addKid(store, kidUser(IDS.kidA), NEW_KID)).toMatchObject({ ok: false, status: 403 });
     expect(store.created).toEqual([]);
   });
+
+  it("needs the grown-up's Unlimited (409 plan_required): no plan, no kid, and no add counted", async () => {
+    store.noPlan.add(IDS.parent);
+    const out = await addKid(store, user(IDS.parent), NEW_KID);
+    expect(out).toMatchObject({ ok: false, status: 409, code: "invalid_request", reason: "plan_required", message: FAMILY_ERRORS.planRequired });
+    expect(out.ok === false && out.extra).toEqual({ reason: "plan_required" });
+    expect(FAMILY_ERRORS.planRequired).toBe("Start your free trial to add kids.");
+    expect(store.created).toEqual([]);
+    expect(store.kidAdds.size).toBe(0);
+    // a solo account with no plan hears about the plan before the PIN
+    store.noPlan.add(IDS.solo);
+    expect(await addKid(store, user(IDS.solo), NEW_KID)).toMatchObject({ ok: false, reason: "plan_required" });
+  });
+
+  it(`allows ${KID_ADDS.limit} adds a day per family, however many are removed in between (429 kid_add_limit)`, async () => {
+    store.families.get(IDS.parent)!.kids = [];
+    for (let i = 0; i < KID_ADDS.limit; i++) {
+      const out = await addKid(store, user(IDS.parent), { ...NEW_KID, displayName: `Kid ${i}` });
+      expect(out.ok, `add ${i}`).toBe(true);
+      // removed again at once: the family is never full, so only the day's budget can stop it
+      if (out.ok) await removeKid(store, user(IDS.parent), out.value.userId);
+    }
+    const refused = await addKid(store, user(IDS.parent), NEW_KID);
+    expect(refused).toMatchObject({ ok: false, status: 429, code: "rate_limited", reason: "kid_add_limit", message: FAMILY_ERRORS.kidAddLimit });
+    expect(refused.ok === false && refused.retryAfterMs).toBeGreaterThan(0);
+    expect(store.created).toHaveLength(KID_ADDS.limit);
+    // another family's budget is its own
+    expect((await addKid(store, user(IDS.otherParent), NEW_KID)).ok).toBe(true);
+  });
+
+  it("counts an add only once every other check passed", async () => {
+    store.families.get(IDS.parent)!.kids = Array.from({ length: MAX_KIDS }, (_, i) => `99999999-9999-4999-8999-${String(i).padStart(12, "0")}`);
+    await addKid(store, user(IDS.parent), NEW_KID); // full
+    await addKid(store, user(IDS.solo), NEW_KID); // no PIN
+    expect(store.kidAdds.size).toBe(0);
+  });
 });
 
 describe("editing and removing a kid", () => {
@@ -85,14 +122,75 @@ describe("editing and removing a kid", () => {
   it("is refused for a kid, even about a sibling", async () => {
     expect(await editKid(store, kidUser(IDS.kidA), IDS.kidB, { grade: 1 })).toMatchObject({ ok: false, status: 403 });
     expect(await removeKid(store, kidUser(IDS.kidA), IDS.kidB)).toMatchObject({ ok: false, status: 403 });
-    expect(await removeAllKids(store, kidUser(IDS.kidA))).toMatchObject({ ok: false, status: 403 });
+    expect(await removeKidsImages(store, kidUser(IDS.kidA))).toMatchObject({ ok: false, status: 403 });
     expect(store.deleted).toEqual([]);
+    expect(store.imagesCleared).toEqual([]);
   });
 
-  it("removes every kid before the grown-up's account goes, and nobody else's", async () => {
-    expect(await removeAllKids(store, user(IDS.parent))).toEqual({ ok: true, value: { removed: 2 } });
-    expect(store.deleted).toEqual([IDS.kidA, IDS.kidB]);
-    expect(await removeAllKids(store, user(IDS.solo))).toEqual({ ok: true, value: { removed: 0 } });
+  it("before the grown-up's account goes, removes every kid's images but no kid's account (the RPC deletes them with the grown-up)", async () => {
+    expect(await removeKidsImages(store, user(IDS.parent))).toEqual({ ok: true, value: { removed: 2 } });
+    expect(store.imagesCleared).toEqual([IDS.kidA, IDS.kidB]);
+    // the accounts are all still there: a refused or failed delete_own_account() loses no kid
+    expect(store.deleted).toEqual([]);
+    expect(store.families.get(IDS.parent)?.kids).toEqual([IDS.kidA, IDS.kidB]);
+    expect(await removeKidsImages(store, user(IDS.solo))).toEqual({ ok: true, value: { removed: 0 } });
+  });
+});
+
+describe("the PIN's budgets", () => {
+  const wrong = (n: number) => String(n).padStart(4, "0");
+  const toParent = (pin: string, from: string = IDS.kidA) => switchProfile(store, kidUser(from), `token-${from}`, { to: IDS.parent, pin });
+
+  it(`locks switching to the grown-up at the day's ${PIN_DAILY_LIMIT}th wrong PIN, and says so once (an app event)`, async () => {
+    let tries = 0;
+    for (; tries < PIN_DAILY_LIMIT - 1; tries++) {
+      // a fresh 15-minute window every few tries: only the day's budget is left to stop the guessing
+      if (tries % PIN_ATTEMPTS.limit === 0) store.pinHits.clear();
+      const out = await toParent(wrong(tries));
+      expect(out).toMatchObject({ ok: false, status: 403, reason: "wrong_pin" });
+      expect(out.ok === false && out.event).toBeUndefined();
+    }
+    store.pinHits.clear();
+    const last = await toParent(wrong(tries));
+    expect(last).toMatchObject({ ok: false, status: 403, reason: "wrong_pin", extra: { triesLeft: 0, locked: true } });
+    expect(last.ok === false && last.event).toMatchObject({ code: "pin_locked", meta: { parentId: IDS.parent, by: IDS.kidA } });
+
+    // from now on even the right PIN is refused, for every kid, and nothing is counted or minted
+    const locked = await toParent(PIN, IDS.kidB);
+    expect(locked).toMatchObject({ ok: false, status: 429, code: "rate_limited", reason: "pin_locked", message: FAMILY_ERRORS.pinLocked });
+    expect(locked.ok === false && locked.event).toBeUndefined();
+    expect(store.minted).toEqual([]);
+    // switching between kids needs no PIN, so it still works
+    expect((await switchProfile(store, kidUser(IDS.kidA), "t", { to: IDS.kidB })).ok).toBe(true);
+  }, 30_000); // ten scrypt checks
+
+  it("a right PIN on the day's last try is no lock: that try is given back", async () => {
+    store.pinDayHits.set(IDS.parent, PIN_DAILY_LIMIT - 1);
+    expect((await toParent(PIN)).ok).toBe(true);
+    expect(store.pinLocked.has(IDS.parent)).toBe(false);
+    expect(store.pinDayHits.get(IDS.parent)).toBe(PIN_DAILY_LIMIT - 1);
+  });
+
+  it("the grown-up setting a new PIN lifts the lock", async () => {
+    store.pinLocked.add(IDS.parent);
+    expect(await toParent(PIN)).toMatchObject({ status: 429, reason: "pin_locked" });
+    await setFamilyPin(store, user(IDS.parent), "2468");
+    expect((await toParent("2468")).ok).toBe(true);
+  });
+
+  it("fails CLOSED when the database's counter cannot be asked: no PIN is checked, not even the right one", async () => {
+    store.pinUnavailable = true;
+    for (const pin of [PIN, "0000"]) {
+      expect(await toParent(pin)).toMatchObject({ ok: false, status: 503, code: "feature_unavailable", reason: "pin_unavailable", message: FAMILY_ERRORS.pinUnavailable });
+    }
+    expect(store.minted).toEqual([]);
+  });
+
+  it("the 15-minute budget still answers 429 with no reason (a wait, not the lock)", async () => {
+    for (let i = 0; i < PIN_ATTEMPTS.limit; i++) await toParent(wrong(i));
+    const out = await toParent(PIN);
+    expect(out).toMatchObject({ ok: false, status: 429, message: FAMILY_ERRORS.tooManyTries });
+    expect(out.ok === false && out.reason).toBeUndefined();
   });
 });
 

@@ -109,6 +109,13 @@
   font-size: var(--text-sm);
   line-height: var(--leading-body);
 }
+/* "Start free trial" in the Kids hint, when adding a kid needs the plan */
+.planLink {
+  color: var(--foreground);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .sectionAction {
   grid-column: 1 / -1;
   justify-self: start;

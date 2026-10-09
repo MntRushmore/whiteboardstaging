@@ -156,8 +156,12 @@ export function removeKid(kidId: string): Promise<{ removed: true }> {
   return send(`${FAMILY_API}/kids/${encodeURIComponent(kidId)}`, "DELETE");
 }
 
-/** Delete every kid of the caller's family (the first step of deleting the grown-up's account). */
-export function removeAllKids(): Promise<{ removed: number }> {
+/**
+ * Remove the saved images of every kid of the caller's family: the first step of deleting the
+ * grown-up's account (src/lib/billing/deleteAccount.ts). The kids' accounts go with the grown-up's,
+ * in delete_own_account().
+ */
+export function removeKidsImages(): Promise<{ removed: number }> {
   return send(FAMILY_API, "DELETE");
 }
 
