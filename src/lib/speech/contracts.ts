@@ -21,3 +21,22 @@ export function readAloudByDefault(grade: number | null | undefined): boolean {
 
 /** Device setting key: "on" | "off" (absent: the grade's default). */
 export const READ_ALOUD_KEY = "agathon.readAloud";
+
+// ------------------------------------------------------------------ additions (feat/kcb3-voice)
+
+/**
+ * Per-user budgets for POST /api/live/speak (`LIMITS.liveSpeak` and `LIMITS.liveSpeakDay` in
+ * src/lib/server/rate-limit.ts). A board says a phrase every few seconds at the most (a hint, a
+ * coach mark, a replay tap), so 30 a minute is ample; the day's cap bounds what one account can
+ * cost on the ElevenLabs bill (~300 short phrases), since the route spends no ink.
+ */
+export const SPEAK_RATE_LIMITS = {
+  perMinute: { limit: 30, windowMs: 60_000 },
+  perDay: { limit: 300, windowMs: 86_400_000 },
+} as const;
+
+/**
+ * Window event when the device setting changes (`detail`: "on" | "off"), so the board's watcher
+ * starts or stops without polling and the menu's checkbox follows a change made elsewhere.
+ */
+export const READ_ALOUD_EVENT = "agathon:read-aloud";
