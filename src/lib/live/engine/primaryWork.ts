@@ -416,9 +416,11 @@ function strategies(op: string, a: Q, b: Q, writing: Writing, k: (v: Q | null) =
       left -= part.n * b.n;
       both(q(left));
     }
-    for (let m = 1; m <= 12; m++) both(q(b.n * m));
-    both(q(b.n * 10));
-    both(q(b.n * 100));
+    // the divisor's table, counted up (`9 \times 6 = 54`): a step's numbers — but a multiple written
+    // alone is no step of the division (`6` under `42 \div 6` is a wrong answer)
+    for (let m = 1; m <= 12; m++) k(q(b.n * m));
+    k(q(b.n * 10));
+    k(q(b.n * 100));
     return;
   }
 

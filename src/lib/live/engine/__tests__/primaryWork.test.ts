@@ -129,6 +129,45 @@ describe("division", () => {
     expect(column("42 \\div 7", ["7 \\times 6 = 42", "6"])).toEqual([TICK, SOLVED]);
     expect(column("30 \\div 5", ["5 \\times 6 = 30", "= 6"])).toEqual([TICK, SOLVED]);
     expect(column("144 \\div 9", ["15"])).toEqual([RING]);
+    // the divisor (a multiple of it) written alone is no step: a wrong answer
+    expect(column("42 \\div 6", ["6"])).toEqual([RING]);
+    expect(column("42 \\div 6", ["7"])).toEqual([SOLVED]);
+  });
+
+  it("the grade starters' slips are ringed (feat/kcb-onboarding's starters.board.test.ts)", () => {
+    const slips: Array<[string, string]> = [
+      ["3 + 4", "8"],
+      ["5 + 2", "6"],
+      ["7 - 3", "5"],
+      ["8 + 7", "16"],
+      ["15 - 8", "8"],
+      ["40 + 30", "60"],
+      ["47 + 38", "75"],
+      ["72 - 35", "47"],
+      ["56 + 27", "73"],
+      ["6 \\times 7", "36"],
+      ["42 \\div 6", "6"],
+      ["4 \\times 60", "2400"],
+      ["\\frac{2}{7} + \\frac{3}{7}", "\\frac{5}{14}"],
+      ["46 \\times 7", "282"],
+      ["864 \\div 4", "226"],
+      ["\\frac{1}{2} + \\frac{1}{3}", "= \\frac{2}{5}"],
+      ["\\frac{2}{3} \\times \\frac{3}{5}", "= \\frac{5}{8}"],
+      ["\\frac{3}{4} + \\frac{1}{6}", "= \\frac{4}{10}"],
+      ["\\frac{3}{4} \\div \\frac{1}{2}", "= \\frac{3}{8}"],
+    ];
+    for (const [problem, slip] of slips) expect(column(problem, [slip]), `${problem}: ${slip}`).toEqual([RING]);
+    // ...and their first steps are ticked
+    const steps: Array<[string, string]> = [
+      ["\\frac{1}{2} + \\frac{1}{3}", "\\frac{3}{6} + \\frac{2}{6}"],
+      ["\\frac{2}{3} \\times \\frac{3}{5}", "\\frac{6}{15}"],
+      ["\\frac{3}{4} + \\frac{1}{6}", "\\frac{9}{12} + \\frac{2}{12}"],
+      ["\\frac{3}{4} \\div \\frac{1}{2}", "\\frac{3}{4} \\times \\frac{2}{1}"],
+      ["4 \\times 60", "240"],
+      ["864 \\div 4", "216"],
+      ["46 \\times 7", "322"],
+    ];
+    for (const [problem, step] of steps) expect(judgePrimaryLine([problem], [], step)?.verdict, `${problem}: ${step}`).toBe("ok");
   });
 
   it("chunking: the quotient a place at a time", () => {
