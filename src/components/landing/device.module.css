@@ -1,0 +1,225 @@
+/* The hero's iPad, drawn in CSS around a real screenshot of the board (public/landing/board-ipad.webp,
+   the board at 1180 × 820, an iPad Air held sideways), with the replay's ink drawn over the board's
+   canvas. Everything inside scales with the frame (container units), so the ink, the cheers and the
+   bezel keep their proportions from a phone to a wide screen. */
+
+.frame {
+  container-type: inline-size;
+  width: 100%;
+  max-width: 66rem;
+  margin-inline: auto;
+}
+/* On a phone the iPad stays big enough to read and runs off the right edge (the band clips it). */
+@media (max-width: 639px) {
+  .frame {
+    width: 37.5rem;
+    max-width: none;
+    margin-left: 0;
+  }
+}
+
+.ipad {
+  position: relative;
+  border-radius: 4.6cqw;
+  padding: 1.9cqw;
+  background: #0b0b0d;
+  box-shadow:
+    0 0 0 max(1px, 0.2cqw) #c7c8cc,
+    0 0 0 max(2px, 0.42cqw) #e3e4e7,
+    0 3.2cqw 6.4cqw -1.6cqw oklch(0% 0 0 / 0.24),
+    0 0.8cqw 1.6cqw oklch(0% 0 0 / 0.08);
+}
+/* the front camera, on the long edge as on an iPad Air */
+.camera {
+  position: absolute;
+  top: 0.72cqw;
+  left: 50%;
+  width: 0.5cqw;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #1c1c22;
+  box-shadow: inset 0 0 0 0.1cqw #2e2e36;
+  transform: translateX(-50%);
+}
+.screen {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 1180 / 820;
+  border-radius: 2.7cqw;
+  background: #fff;
+}
+.screenImage {
+  object-fit: cover;
+}
+
+/* The board's canvas in the screenshot: (16, 88) to (1163, 732) of 1180 × 820. */
+.canvas {
+  position: absolute;
+  top: 10.7317%;
+  left: 1.3559%;
+  width: 97.2034%;
+  height: 78.5366%;
+}
+.ink {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.stroke {
+  fill: none;
+  stroke-dasharray: 1 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* tldraw's black and blue, at the board's pen sizes */
+.student {
+  stroke: #1d1d1d;
+  stroke-width: 6.4;
+}
+.tutor {
+  stroke: #4465e9;
+  stroke-width: 4.2;
+}
+
+/* What the board says as it marks a line (the board's own Celebrations, src/components/live). */
+.cheer {
+  position: absolute;
+  border-radius: 1.1em;
+  padding: 0.42em 0.85em;
+  font-family: var(--font-body);
+  font-size: 1.45cqw;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+.win {
+  display: none;
+  background: #047857;
+  box-shadow: 0 0.4cqw 1.2cqw oklch(0% 0 0 / 0.14);
+  color: #fff;
+  font-weight: 700;
+}
+.streak {
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  margin-top: 0.1em;
+  color: #d1fae5;
+  font-size: 0.78em;
+  font-weight: 600;
+}
+.streak svg {
+  width: 1.1em;
+  height: 1.1em;
+  color: #fcd34d;
+}
+.miss {
+  max-width: 16em;
+  border: 1px solid #fde68a;
+  background: #fffbeb;
+  box-shadow: 0 0.4cqw 1.2cqw oklch(0% 0 0 / 0.08);
+  color: #78350f;
+  font-size: 1.27cqw;
+  font-weight: 500;
+  white-space: normal;
+}
+
+/* The replay. Without motion (or before CSS loads) the board is simply finished: every stroke
+   drawn, the "try again" up, the cheers gone. */
+@media (prefers-reduced-motion: no-preference) {
+  .stroke {
+    animation: replay-draw linear both;
+    animation-delay: var(--at);
+    animation-duration: var(--for);
+  }
+  .win {
+    display: block;
+    animation:
+      replay-pop 300ms var(--ease-spring) var(--show) both,
+      replay-fade 260ms var(--ease-standard) var(--hide) forwards;
+  }
+  .miss {
+    animation: replay-pop 300ms var(--ease-spring) var(--show) both;
+  }
+}
+@keyframes replay-draw {
+  from {
+    stroke-dashoffset: 1.01;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes replay-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+}
+@keyframes replay-fade {
+  to {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.96);
+  }
+}
+
+/* Under the iPad: what the marks mean, and Watch again. */
+.caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 2rem;
+  margin-top: 2rem;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+}
+.key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.keyIcon {
+  width: 1.75rem;
+  height: 1.25rem;
+  overflow: visible;
+}
+.again {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.375rem;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 0.875rem;
+  background: none;
+  color: #0562ef;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.again:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+@media (hover: hover) and (pointer: fine) {
+  .again:not(:disabled):hover {
+    background: var(--neutral-2);
+  }
+}
+.again:focus-visible {
+  outline: 2px solid #0562ef;
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .again {
+    display: none;
+  }
+}
