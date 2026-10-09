@@ -116,7 +116,8 @@ describe("boardToolbarView", () => {
     expect(view.simple).toBe(false);
     expect(Object.values(view.place).every((p) => p === "bar")).toBe(true);
     // what turns the simple board's exceptions on changes nothing here
-    expect(toolbar({ tour: true, liveError: true, solving: true }).place).toEqual(view.place);
+    expect(toolbar({ tour: true }).place).toEqual(view.place);
+    expect(view.kidStatus).toBe(false);
   });
 
   it("simple board: a kid's bar is Help me (Back and the save pill are always there), the rest behind More", () => {
@@ -137,13 +138,13 @@ describe("boardToolbarView", () => {
     expect(toolbar({ simple: true, mode: "off" }).askButton).toBe(null);
   });
 
-  it("simple board: the pill comes out for a kid who tapped Help me — Solving… or an error and its Retry", () => {
-    expect(toolbar({ simple: true, solving: true }).place.pill).toBe("bar");
-    expect(toolbar({ simple: true, liveError: true }).place.pill).toBe("bar");
-    // with Live off the pill only rests at "Live off": nothing worth the space
-    expect(toolbar({ simple: true, liveError: true, liveEnabled: false }).place.pill).toBe("more");
-    // and nothing else comes with it
-    expect(toolbar({ simple: true, liveError: true }).place).toMatchObject({ dial: "more", auto: "more", ask: "more", ink: "more", report: "more" });
+  it("simple board: a kid who tapped Help me sees the kid's own status in the bar (Thinking…, Try again), never the grown-up pill and its menu", () => {
+    const view = toolbar({ simple: true });
+    expect(view.kidStatus).toBe(true);
+    expect(view.place.pill).toBe("more");
+    // with Live off nothing reads, so nothing fails: no status at all
+    expect(toolbar({ simple: true, liveEnabled: false }).kidStatus).toBe(false);
+    expect(toolbar({ simple: true, liveAvailable: false }).kidStatus).toBe(false);
   });
 
   it("simple board: Ask stays in the bar while the guided tour's coach mark points at it", () => {

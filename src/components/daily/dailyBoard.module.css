@@ -11,6 +11,7 @@
   --b-gold-edge: oklch(68% 0.16 68);
   --b-gold-soft: oklch(92% 0.07 88);
   --b-empty: oklch(80% 0.03 70);
+  --b-helped: oklch(62% 0.17 258);
   --b-hot-from: oklch(70% 0.19 55);
   --b-hot-to: oklch(60% 0.215 27);
   --b-hot-shadow: oklch(60% 0.2 35 / 0.45);
@@ -84,15 +85,18 @@
   fill: transparent;
   stroke: currentColor;
 }
-.star[data-star="star"],
-.star[data-star="done"] {
+.star[data-star="star"] {
   color: var(--b-gold-edge);
 }
 .star[data-star="star"] svg {
   fill: var(--b-gold);
 }
+/* done with help: a tick in Help me's blue, not a star (a kid counts only the stars) */
+.star[data-star="done"] {
+  color: #fff;
+}
 .star[data-star="done"] svg {
-  fill: var(--b-gold-soft);
+  fill: var(--b-helped);
 }
 @media (prefers-reduced-motion: no-preference) {
   /* a star that fills pops (the attribute change starts the animation) */

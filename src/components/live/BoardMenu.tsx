@@ -24,7 +24,8 @@ export interface BoardMenuProps {
   /** false when the deploy-time kill switch has taken Live away entirely */
   liveAvailable: boolean;
   onLiveEnabledChange: (enabled: boolean) => void;
-  onHelp: () => void;
+  /** no "Help" item without it (the simple board's More: Help me is the kid's, in the bar) */
+  onHelp?: () => void;
   canHelp: boolean;
   onClearMarks: () => void;
   onShowModeInfo: () => void;
@@ -34,9 +35,10 @@ export interface BoardMenuProps {
 }
 
 /**
- * Board options, the status pill's "…" menu (`LiveStatusPill` has what each prop is): its items, as
- * the menu's content. A chunk of its own, fetched as the pill mounts, just after the board: there is
- * nothing to show before the first tap on "…" (docs/BUNDLE.md).
+ * Board options, the status pill's "…" menu (`LiveStatusPill` has what each prop is), and the simple
+ * board's More's Board options row: its items, as the menu's content. A chunk of its own, fetched as
+ * the pill mounts, just after the board: there is nothing to show before the first tap on "…"
+ * (docs/BUNDLE.md). Kept 16 px off the screen's edges (scrolling when taller than the room there), its rows 44 px tall under a finger.
  */
 export default function BoardMenu({
   liveRunning,
@@ -53,17 +55,25 @@ export default function BoardMenu({
   const { settings, update } = useLiveSettings();
   const menu = boardMenuView({ liveEnabled: liveRunning, liveAvailable });
   return (
-    <DropdownMenuContent align="start" side="bottom" className="w-60" data-testid="board-menu">
+    <DropdownMenuContent
+      align="start"
+      side="bottom"
+      collisionPadding={16}
+      className="max-h-(--radix-dropdown-menu-content-available-height) w-60 overflow-y-auto pointer-coarse:[&_[role^=menuitem]]:min-h-11"
+      data-testid="board-menu"
+    >
       <DropdownMenuLabel className="text-xs text-gray-500">{LIVE_COPY.pill.groupCanvas}</DropdownMenuLabel>
-      <DropdownMenuItem
-        className="pl-8"
-        onSelect={onHelp}
-        disabled={!canHelp}
-        title={canHelp ? LIVE_COPY.pill.helpHint : LIVE_COPY.pill.helpOffHint}
-        data-testid="board-help-item"
-      >
-        {LIVE_COPY.pill.help}
-      </DropdownMenuItem>
+      {onHelp && (
+        <DropdownMenuItem
+          className="pl-8"
+          onSelect={onHelp}
+          disabled={!canHelp}
+          title={canHelp ? LIVE_COPY.pill.helpHint : LIVE_COPY.pill.helpOffHint}
+          data-testid="board-help-item"
+        >
+          {LIVE_COPY.pill.help}
+        </DropdownMenuItem>
+      )}
       <DropdownMenuItem className="pl-8" onSelect={onClearMarks}>
         {LIVE_COPY.pill.clearMarks}
       </DropdownMenuItem>

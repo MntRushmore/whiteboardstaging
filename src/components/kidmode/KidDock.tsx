@@ -45,13 +45,15 @@ export default function KidDock() {
     });
 
   return (
+    // `relative`: a phone's Colour popover opens over the whole dock (`ColourButton`)
     <div
       role="toolbar"
       aria-label={DOCK_COPY.dock}
       data-kid-dock=""
-      className="pointer-events-none mx-2 mb-[max(10px,env(safe-area-inset-bottom))] flex flex-wrap-reverse items-end justify-center gap-2"
+      data-stack={view.stack || undefined}
+      className={`pointer-events-none relative mx-2 mb-[max(10px,env(safe-area-inset-bottom))] gap-2 ${view.stack ? "grid justify-center" : "flex flex-wrap-reverse items-end justify-center"}`}
     >
-      <div className={SHELL}>
+      <div className={`${SHELL} justify-center`}>
         {/* the guided board's first coach mark ("Grab the pen…") points at it */}
         <DockButton label={DOCK_COPY.pen} pressed={view.pen} anchor={KID_PEN_ATTR} onClick={() => editor.setCurrentTool("draw")}>
           <Pencil className="size-6" strokeWidth={2.25} aria-hidden />
@@ -73,7 +75,7 @@ export default function KidDock() {
           <ColourButton current={view.colours.current} onPick={pick} />
         )}
       </div>
-      <nav aria-label={DOCK_COPY.pages} className={SHELL}>
+      <nav aria-label={DOCK_COPY.pages} className={`${SHELL} ${view.stack ? "order-first justify-between" : ""}`}>
         {view.pages.arrows && (
           <>
             <button type="button" className={ARROW} aria-label={DOCK_COPY.prev} title={DOCK_COPY.prev} disabled={!view.pages.canPrev} onClick={() => goToScreen(editor, -1)}>
@@ -139,7 +141,12 @@ function Swatch({ color, selected, onPick }: { color: KidColor; selected: boolea
   );
 }
 
-/** A phone's dock: the colours behind one button, opening above it. Closes on a pick, a tap elsewhere or Escape. */
+/**
+ * A phone's dock: the colours behind one button. They open over the whole dock (its `relative`
+ * root), centred and on top: with several pages the pages' shelf is over the tools, and a popover
+ * over that shelf had its arrows drawn on top of it, taking the tap meant for a colour (QA,
+ * 2026-10-09). Closes on a pick, a tap elsewhere or Escape.
+ */
 function ColourButton({ current, onPick }: { current: KidColor | null; onPick: (c: KidColor) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -162,12 +169,12 @@ function ColourButton({ current, onPick }: { current: KidColor | null; onPick: (
     };
   }, [open]);
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref}>
       <DockButton label={DOCK_COPY.colour} pressed={open} onClick={() => setOpen((o) => !o)}>
         <span className="block size-6 rounded-full" style={{ background: dotOf(current ?? "black"), boxShadow: "inset 0 0 0 1px rgba(15,23,42,0.1)" }} />
       </DockButton>
       {open && (
-        <div role="group" aria-label={DOCK_COPY.colours} className={`${SHELL} absolute bottom-full right-0 mb-2`}>
+        <div role="group" aria-label={DOCK_COPY.colours} data-kid-colours="" className={`${SHELL} absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2`}>
           {KID_COLORS.map((c) => (
             <Swatch
               key={c}

@@ -58,7 +58,13 @@ export const DAILY_BOARD_COPY = {
   title: "You did it!",
   /** beside a flame */
   streak: (n: number) => (n >= 2 ? `${n}-day streak!` : "Day 1! Come back tomorrow."),
-  stars: (stars: number, goal: number) => (stars >= goal ? "All stars! Amazing!" : `${stars} ${stars === 1 ? "star" : "stars"} today`),
+  /** under the slots: as many stars as there are star shapes, and the ticks (done with help) said apart */
+  stars: (stars: number, goal: number) => {
+    const helped = Math.max(0, goal - stars);
+    if (helped === 0) return "All stars! Amazing!";
+    if (stars <= 0) return goal === 1 ? "Done with help!" : `All ${goal} done with help!`;
+    return `${stars} ${stars === 1 ? "star" : "stars"} by yourself, ${helped} with help`;
+  },
   home: "Back home",
   keepGoing: "Keep going",
   close: "Close",

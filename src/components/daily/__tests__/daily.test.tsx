@@ -135,6 +135,18 @@ describe("DailyBoard", () => {
     expect(out.match(/<button\b/g)).toHaveLength(3);
   });
 
+  it("the celebration's shapes match its words: a star for each solved alone, a tick (not a star) for each done with help", () => {
+    const out = html(<Celebration goal={5} stars={4} streak={2} writing={false} onHome={vi.fn()} onKeepGoing={vi.fn()} onClose={vi.fn()} />);
+    expect(out.match(/data-star="star"/g)).toHaveLength(4);
+    expect(out.match(/data-star="done"/g)).toHaveLength(1);
+    expect(out.match(/lucide-star\b/g)).toHaveLength(5); // 4 slots and the badge's
+    expect(out.match(/lucide-circle-check\b/g)).toHaveLength(1);
+    expect(out).toContain("4 stars by yourself, 1 with help");
+    expect(DAILY_BOARD_COPY.stars(1, 5)).toBe("1 star by yourself, 4 with help");
+    expect(DAILY_BOARD_COPY.stars(0, 5)).toBe("All 5 done with help!");
+    expect(DAILY_BOARD_COPY.stars(5, 5)).toBe("All stars! Amazing!");
+  });
+
   it("a first day says so, and all five solved alone says that too", () => {
     const out = html(<Celebration goal={5} stars={5} streak={1} writing onHome={vi.fn()} onKeepGoing={vi.fn()} onClose={vi.fn()} />);
     expect(out).toContain(DAILY_BOARD_COPY.streak(1));
