@@ -280,7 +280,7 @@ export const API_ROUTES = Object.freeze([
     auth: "user",
     limit: "family",
     body: "none",
-    purpose: "The caller's family (members, the grown-up's view of each kid's numbers); DELETE removes every kid before the grown-up's account is deleted",
+    purpose: "The caller's family (members, the grown-up's view of each kid's numbers); DELETE removes the kids' saved images before the grown-up's account (and the kids' with it) is deleted",
     status: "active",
   },
   {
@@ -290,7 +290,7 @@ export const API_ROUTES = Object.freeze([
     auth: "user",
     limit: "family",
     body: "zod",
-    purpose: "A grown-up adds a kid profile (a server-made account with no email or password of its own)",
+    purpose: "A grown-up with Agathon Unlimited adds a kid profile (a server-made account with no email, password or ink of its own; 6 adds a day per family)",
     status: "active",
   },
   {
@@ -320,7 +320,7 @@ export const API_ROUTES = Object.freeze([
     auth: "user",
     limit: "familySwitch",
     body: "zod",
-    purpose: "Switch to another profile of the caller's family: a server-minted session; to the grown-up only with their PIN (5 wrong tries per 15 min per family)",
+    purpose: "Switch to another profile of the caller's family: a server-minted session; to the grown-up only with their PIN (5 tries per 15 min, and 10 wrong a day per family, then locked until the grown-up signs in)",
     status: "active",
   },
   {

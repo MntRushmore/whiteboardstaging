@@ -17,8 +17,10 @@ const log = logger.child({ module: "family", route: "kids" });
  * POST /api/family/kids `{ displayName, grade, avatar }` (AddKidInput) — add a kid profile under the
  * signed-in grown-up: a real account made by the server (no email of its own, no password anyone
  * knows; src/lib/family/server/store.ts), with the kid's name, grade and picture, already past the
- * welcome. Refused for a kid profile (403), before the PIN is set (409 `pin_required`) and past
- * MAX_KIDS (409 `too_many`). Answers the new `FamilyMember` (201).
+ * welcome. Refused for a kid profile (403), unless the grown-up's plan gives Unlimited (409
+ * `plan_required`: a kid has no ink of their own, so without the plan they could do nothing), before
+ * the PIN is set (409 `pin_required`), past MAX_KIDS (409 `too_many`) and past KID_ADDS a day per
+ * family (429 `kid_add_limit`: removing a kid gives no add back). Answers the new `FamilyMember` (201).
  *
  * requireUser (401) -> the `family` bucket (429) -> zod (400) -> 503 without the service role ->
  * 201, or 502 when Auth or a write failed (a half-made account is deleted again).

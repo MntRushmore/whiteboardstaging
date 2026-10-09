@@ -2,7 +2,7 @@ import { logger } from "@/lib/logger";
 import { requireUser } from "@/lib/server/auth";
 import { checkRateLimitDistributed, rateLimitedResponse } from "@/lib/server/rate-limit";
 import { answer, familyFailure, familyStore, tzOffsetOf } from "@/lib/family/server/http";
-import { readFamily, removeAllKids } from "@/lib/family/server/service";
+import { readFamily, removeKidsImages } from "@/lib/family/server/service";
 import { familyDeps } from "@/lib/family/server/store";
 
 export const runtime = "nodejs";
@@ -41,10 +41,12 @@ export async function GET(req: Request) {
 }
 
 /**
- * DELETE /api/family — delete every kid account of the caller's family, with their saved images: the
- * first step of deleting the grown-up's own account (src/lib/billing/deleteAccount.ts), before
- * delete_own_account() (which deletes any kid left, as the backstop). Answers `{ removed }`; nothing
- * to do for a solo account; 403 for a kid profile. No body.
+ * DELETE /api/family — remove the saved images of every kid of the caller's family: the first step of
+ * deleting the grown-up's own account (src/lib/billing/deleteAccount.ts), because SQL cannot remove
+ * files. The kids' accounts are NOT deleted here: delete_own_account() deletes them in the same
+ * transaction as the grown-up's, so a refused or failed deletion keeps every kid. Answers
+ * `{ removed }` (the kids whose images were cleared); nothing to do for a solo account; 403 for a kid
+ * profile. No body.
  */
 export async function DELETE(req: Request) {
   const requestId = crypto.randomUUID();
@@ -59,8 +61,8 @@ export async function DELETE(req: Request) {
   if ("response" in env) return env.response;
 
   try {
-    const outcome = await removeAllKids(env.store, user);
-    if (outcome.ok) log.info({ requestId, userId: user.id, removed: outcome.value.removed }, "family removed before account deletion");
+    const outcome = await removeKidsImages(env.store, user);
+    if (outcome.ok) log.info({ requestId, userId: user.id, removed: outcome.value.removed }, "kids' images removed before account deletion");
     return answer(outcome, requestId);
   } catch (err) {
     return familyFailure(err, { log, requestId, userId: user.id, what: "removal" });

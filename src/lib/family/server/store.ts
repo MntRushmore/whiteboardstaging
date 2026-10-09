@@ -14,6 +14,11 @@
  * verifyOtp({type: 'magiclink', token_hash}) on a fresh anon client turns it into the member's
  * session, exactly as following the link would. The token is single use.
  *
+ * The family's counters live in the database (supabase/migrations/20261009040000_family_hardening.sql):
+ * the PIN's budgets and lock (`family_pin_attempt`), which fail CLOSED when the database cannot be
+ * asked (no per-instance fallback: every instance would be a fresh budget), and the budget for adding
+ * kids (`family_kid_add_attempt`, KID_ADDS).
+ *
  * `familyDeps` is the seam the route tests replace (like emailDeps in src/lib/email/server.ts).
  */
 import { randomBytes, randomUUID } from "node:crypto";
@@ -24,12 +29,11 @@ import { TERMS_VERSION } from "@/lib/legal";
 import { LEARNING_LIMITS } from "@/lib/learning/contracts";
 import { BOARD_ASSETS_BUCKET, REMOVE_BATCH_SIZE } from "@/lib/billing/deleteAccount";
 import { serviceClient } from "@/lib/server/billing";
-import { checkRateLimit } from "@/lib/server/rate-limit";
 import { KID_EMAIL_DOMAIN, type AddKidInput, type SwitchResult } from "@/lib/family/contracts";
 import type { FamilyLinks, KidStats, MemberProfile } from "@/lib/family/members";
 import type { EditKidInput } from "@/lib/family/schemas";
 import { kidStats, type AttemptStatRow, type DailyStatRow } from "@/lib/family/stats";
-import { PIN_ATTEMPTS } from "./pin";
+import { PIN_ATTEMPTS, PIN_DAILY_LIMIT } from "./pin";
 
 const log = logger.child({ module: "family" });
 
@@ -38,15 +42,24 @@ export interface ProfileRow extends MemberProfile {
   termsVersion: string | null;
 }
 
-/** One PIN try counted against the family (`family_pin_attempt`, or the in-memory fallback). */
-export interface PinAttempt {
-  ok: boolean;
-  remaining: number;
-  retryAfterMs: number;
-  /** the window the try was counted in; null from the in-memory fallback (no forgiving there) */
-  windowStart: string | null;
-  backend: "db" | "memory";
-}
+/** Kids a family may add per day (removing one gives nothing back), so accounts cannot be churned. */
+export const KID_ADDS = { limit: 6, windowMs: 24 * 60 * 60_000 } as const;
+
+/** One PIN try counted against the family (`family_pin_attempt`), before the PIN is checked. */
+export type PinAttempt =
+  | {
+      ok: true;
+      /** tries left after this one: the smaller of the 15-minute budget and the day's */
+      remaining: number;
+      /** the 15-minute window the try was counted in (family_pin_forgive takes it back) */
+      windowStart: string;
+      /** this try spent the day's last one: if the PIN is wrong, switching to the grown-up is now locked */
+      last: boolean;
+    }
+  /** `too_many`: the 15-minute budget; `locked`: the day's, until the grown-up signs in or 24 hours pass */
+  | { ok: false; reason: "too_many" | "locked"; retryAfterMs: number }
+  /** the counter could not be asked: the try is refused (fail closed), never let through uncounted */
+  | { ok: false; reason: "unavailable" };
 
 export interface FamilyStore {
   /** The family `userId` is in (as grown-up or kid), or null for a solo account. */
@@ -61,10 +74,17 @@ export interface FamilyStore {
   editKid(kidId: string, patch: EditKidInput): Promise<void>;
   /** The kid's saved images, then their account (everything else cascades). */
   deleteKid(kidId: string): Promise<{ assetsRemoved: number; assetsError: string | null }>;
+  /** Only the kid's saved images (the account stays): before the grown-up's account is deleted. */
+  removeKidAssets(kidId: string): Promise<{ assetsRemoved: number; assetsError: string | null }>;
+  /** Whether `parentId`'s plan gives Unlimited now (`has_unlimited`): kids are added only then. Throws when unread. */
+  hasPlan(parentId: string): Promise<boolean>;
+  /** One kid added, counted against the family's KID_ADDS. Throws when the counter cannot be asked. */
+  kidAddAttempt(parentId: string): Promise<{ ok: boolean; retryAfterMs: number }>;
   stats(kidIds: readonly string[], now: number, tzOffsetMinutes: number): Promise<Map<string, KidStats>>;
+  /** One PIN try counted against the family. Never throws: a counter it cannot ask is `unavailable`. */
   pinAttempt(parentId: string): Promise<PinAttempt>;
-  /** The PIN was right: give that try back. Never throws. */
-  pinForgive(parentId: string, windowStart: string | null): Promise<void>;
+  /** The PIN was right: give that try back (and lift the lock it may have set). Never throws. */
+  pinForgive(parentId: string, windowStart: string): Promise<void>;
   emailOf(userId: string): Promise<string | null>;
   mintSession(email: string): Promise<SwitchResult>;
   /** Ends the session `accessToken` belongs to (its refresh token stops working). Never throws. */
@@ -73,6 +93,28 @@ export interface FamilyStore {
 
 function fail(what: string, error: { message?: string } | null | undefined): never {
   throw new Error(`${what}: ${error?.message ?? "no answer"}`);
+}
+
+/**
+ * family_pin_attempt's answer as a PinAttempt, or null for anything unexpected (the caller then
+ * refuses the try: an answer it cannot read is no permission). Exported for tests.
+ */
+export function parsePinAttempt(data: unknown): PinAttempt | null {
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || typeof row !== "object") return null;
+  const r = row as Record<string, unknown>;
+  if (r.allowed === true) {
+    if (typeof r.window_start !== "string" || !r.window_start) return null;
+    const remaining = typeof r.remaining === "number" && Number.isFinite(r.remaining) ? Math.max(0, Math.floor(r.remaining)) : 0;
+    return { ok: true, remaining, windowStart: r.window_start, last: r.last === true };
+  }
+  if (r.allowed === false) {
+    const locked = r.locked === true;
+    const retry = Number(r.retry_after_ms);
+    const fallback = locked ? 24 * 60 * 60_000 : PIN_ATTEMPTS.windowMs;
+    return { ok: false, reason: locked ? "locked" : "too_many", retryAfterMs: Number.isFinite(retry) && retry > 0 ? Math.round(retry) : fallback };
+  }
+  return null;
 }
 
 /** The service-role store, or null without SUPABASE_SERVICE_ROLE_KEY (the routes answer 503). */
@@ -89,6 +131,23 @@ export function createFamilyStore(): FamilyStore | null {
 
 /** The store over a service-role client; `anon` makes a fresh anon client per session minted. */
 export function storeOver(svc: SupabaseClient, anon: () => SupabaseClient): FamilyStore {
+  // A kid's saved images: the database cascade cannot remove files (src/lib/billing/deleteAccount.ts).
+  async function removeKidAssets(kidId: string): Promise<{ assetsRemoved: number; assetsError: string | null }> {
+    let assetsRemoved = 0;
+    let assetsError: string | null = null;
+    const assets = await svc.from("board_assets").select("object_path").eq("user_id", kidId);
+    if (assets.error) assetsError = assets.error.message;
+    const paths = ((assets.data ?? []) as Array<{ object_path: unknown }>).map((r) => r.object_path).filter((p): p is string => typeof p === "string" && p.length > 0);
+    for (let i = 0; i < paths.length; i += REMOVE_BATCH_SIZE) {
+      const batch = paths.slice(i, i + REMOVE_BATCH_SIZE);
+      const removed = await svc.storage.from(BOARD_ASSETS_BUCKET).remove(batch);
+      if (removed.error) assetsError ??= removed.error.message;
+      else assetsRemoved += batch.length;
+    }
+    if (assetsError) log.warn({ kidId, error: assetsError }, "some of a kid's images were left for the GC");
+    return { assetsRemoved, assetsError };
+  }
+
   return {
     async links(userId) {
       const asKid = await svc.from("family_members").select("parent_id").eq("child_id", userId).maybeSingle();
@@ -176,22 +235,26 @@ export function storeOver(svc: SupabaseClient, anon: () => SupabaseClient): Fami
     },
 
     async deleteKid(kidId) {
-      // Saved images first: the database cascade cannot remove files (src/lib/billing/deleteAccount.ts).
-      let assetsRemoved = 0;
-      let assetsError: string | null = null;
-      const assets = await svc.from("board_assets").select("object_path").eq("user_id", kidId);
-      if (assets.error) assetsError = assets.error.message;
-      const paths = ((assets.data ?? []) as Array<{ object_path: unknown }>).map((r) => r.object_path).filter((p): p is string => typeof p === "string" && p.length > 0);
-      for (let i = 0; i < paths.length; i += REMOVE_BATCH_SIZE) {
-        const batch = paths.slice(i, i + REMOVE_BATCH_SIZE);
-        const removed = await svc.storage.from(BOARD_ASSETS_BUCKET).remove(batch);
-        if (removed.error) assetsError ??= removed.error.message;
-        else assetsRemoved += batch.length;
-      }
-      if (assetsError) log.warn({ kidId, error: assetsError }, "some of a removed kid's images were left for the GC");
+      // Saved images first, while the board_assets rows that list them still exist.
+      const assets = await removeKidAssets(kidId);
       const { error } = await svc.auth.admin.deleteUser(kidId);
       if (error && !/not.?found/i.test(error.message)) fail("kid account not deleted", error);
-      return { assetsRemoved, assetsError };
+      return assets;
+    },
+
+    removeKidAssets,
+
+    async hasPlan(parentId) {
+      const { data, error } = await svc.rpc("has_unlimited", { p_uid: parentId });
+      if (error) fail("plan not read", error);
+      return data === true;
+    },
+
+    async kidAddAttempt(parentId) {
+      const { data, error } = await svc.rpc("family_kid_add_attempt", { p_parent: parentId, p_limit: KID_ADDS.limit, p_window_ms: KID_ADDS.windowMs });
+      const r = (data ?? null) as Record<string, unknown> | null;
+      if (error || !r || typeof r.allowed !== "boolean") fail("kid budget not read", error ?? { message: "unexpected shape" });
+      return { ok: r.allowed === true, retryAfterMs: r.allowed === true ? 0 : Math.max(1, Number(r.retry_after_ms) || KID_ADDS.windowMs) };
     },
 
     async stats(kidIds, now, tzOffsetMinutes) {
@@ -221,25 +284,24 @@ export function storeOver(svc: SupabaseClient, anon: () => SupabaseClient): Fami
     },
 
     async pinAttempt(parentId) {
-      const { data, error } = await svc.rpc("family_pin_attempt", { p_parent: parentId, p_limit: PIN_ATTEMPTS.limit, p_window_ms: PIN_ATTEMPTS.windowMs });
-      const r = (data ?? null) as Record<string, unknown> | null;
-      if (!error && r && typeof r.allowed === "boolean") {
-        return {
-          ok: r.allowed,
-          remaining: typeof r.remaining === "number" ? r.remaining : 0,
-          retryAfterMs: r.allowed ? 0 : Math.max(1, Number(r.retry_after_ms) || PIN_ATTEMPTS.windowMs),
-          windowStart: typeof r.window_start === "string" ? r.window_start : null,
-          backend: "db",
-        };
+      try {
+        const { data, error } = await svc.rpc("family_pin_attempt", {
+          p_parent: parentId,
+          p_limit: PIN_ATTEMPTS.limit,
+          p_window_ms: PIN_ATTEMPTS.windowMs,
+          p_day_limit: PIN_DAILY_LIMIT,
+        });
+        const attempt = error ? null : parsePinAttempt(data);
+        if (attempt) return attempt;
+        log.warn({ error: error?.message ?? "unexpected shape" }, "family_pin_attempt unavailable; PIN tries are refused until it answers");
+      } catch (err) {
+        log.warn({ error: err instanceof Error ? err.message : String(err) }, "family_pin_attempt unavailable; PIN tries are refused until it answers");
       }
-      // Never an open gate: without the database's counter, this instance's own (per family).
-      log.warn({ error: error?.message ?? "unexpected shape" }, "family_pin_attempt unavailable; counting PIN tries in memory");
-      const mem = checkRateLimit(`family:${parentId}:pin`, PIN_ATTEMPTS);
-      return { ...mem, windowStart: null, backend: "memory" };
+      // Never an open gate, and no per-instance count either (each instance would be a fresh budget).
+      return { ok: false, reason: "unavailable" };
     },
 
     async pinForgive(parentId, windowStart) {
-      if (!windowStart) return;
       try {
         const { error } = await svc.rpc("family_pin_forgive", { p_parent: parentId, p_window_start: windowStart });
         if (error) log.warn({ error: error.message }, "a right PIN's try was not given back");

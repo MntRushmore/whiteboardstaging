@@ -1,10 +1,11 @@
 /**
  * An in-memory FamilyStore for the family service and route tests: families, kids, profiles, PIN
- * hashes, a per-family PIN counter that behaves like family_pin_attempt / family_pin_forgive, and a
+ * hashes, per-family PIN counters that behave like family_pin_attempt / family_pin_forgive (the
+ * 15-minute budget, the day's budget and its lock), the plan and the kids-added budget, and a
  * record of every session minted and revoked, so a test can say exactly what the server did.
  */
-import { PIN_ATTEMPTS, hashPin } from "../pin";
-import type { FamilyStore, PinAttempt, ProfileRow } from "../store";
+import { PIN_ATTEMPTS, PIN_DAILY_LIMIT, hashPin } from "../pin";
+import { KID_ADDS, type FamilyStore, type PinAttempt, type ProfileRow } from "../store";
 import type { FamilyLinks, KidStats } from "@/lib/family/members";
 
 export const IDS = {
@@ -27,7 +28,20 @@ export interface FakeStore extends FamilyStore {
   minted: string[];
   revoked: string[];
   deleted: string[];
+  /** kids whose images alone were removed (removeKidAssets), their accounts kept */
+  imagesCleared: string[];
+  /** tries counted in the 15-minute window, per family */
   pinHits: Map<string, number>;
+  /** tries counted in the day, per family (a right PIN is given back in both) */
+  pinDayHits: Map<string, number>;
+  /** families whose switching to the grown-up is locked (the day's budget ran out) */
+  pinLocked: Set<string>;
+  /** the database's counter cannot be asked */
+  pinUnavailable: boolean;
+  /** grown-ups WITHOUT Unlimited (everyone else has it) */
+  noPlan: Set<string>;
+  /** kids added per family today (KID_ADDS) */
+  kidAdds: Map<string, number>;
   created: Array<{ parentId: string; termsVersion: string | null }>;
 }
 
@@ -60,7 +74,12 @@ export async function makeFakeStore(): Promise<FakeStore> {
   const minted: string[] = [];
   const revoked: string[] = [];
   const deleted: string[] = [];
+  const imagesCleared: string[] = [];
   const pinHits = new Map<string, number>();
+  const pinDayHits = new Map<string, number>();
+  const pinLocked = new Set<string>();
+  const noPlan = new Set<string>();
+  const kidAdds = new Map<string, number>();
   const created: Array<{ parentId: string; termsVersion: string | null }> = [];
 
   const linksOf = (userId: string): FamilyLinks | null => {
@@ -77,7 +96,13 @@ export async function makeFakeStore(): Promise<FakeStore> {
     minted,
     revoked,
     deleted,
+    imagesCleared,
     pinHits,
+    pinDayHits,
+    pinLocked,
+    pinUnavailable: false,
+    noPlan,
+    kidAdds,
     created,
     async links(userId) {
       return linksOf(userId);
@@ -93,6 +118,10 @@ export async function makeFakeStore(): Promise<FakeStore> {
       const f = families.get(parentId);
       if (f) f.pinHash = pinHash;
       else families.set(parentId, { pinHash, kids: [] });
+      // families_pin_changed: a new PIN lifts the lock and starts both budgets over
+      pinLocked.delete(parentId);
+      pinHits.delete(parentId);
+      pinDayHits.delete(parentId);
     },
     async createKid(parentId, input, termsVersion) {
       const id = `88888888-8888-4888-8888-${String(created.length).padStart(12, "0")}`;
@@ -113,17 +142,37 @@ export async function makeFakeStore(): Promise<FakeStore> {
       emails.delete(kidId);
       return { assetsRemoved: 0, assetsError: null };
     },
+    async removeKidAssets(kidId) {
+      imagesCleared.push(kidId);
+      return { assetsRemoved: 1, assetsError: null };
+    },
+    async hasPlan(parentId) {
+      return !noPlan.has(parentId);
+    },
+    async kidAddAttempt(parentId) {
+      const n = (kidAdds.get(parentId) ?? 0) + 1;
+      kidAdds.set(parentId, n);
+      return n <= KID_ADDS.limit ? { ok: true, retryAfterMs: 0 } : { ok: false, retryAfterMs: 3_600_000 };
+    },
     async stats(kidIds) {
       return new Map<string, KidStats>(kidIds.map((id, i) => [id, { streak: i + 1, problemsThisWeek: 10 + i, mastered: i }]));
     },
     async pinAttempt(parentId): Promise<PinAttempt> {
+      if (store.pinUnavailable) return { ok: false, reason: "unavailable" };
+      // like family_pin_attempt: a locked family's tries are refused and not counted
+      if (pinLocked.has(parentId)) return { ok: false, reason: "locked", retryAfterMs: 20 * 60 * 60_000 };
       const hits = (pinHits.get(parentId) ?? 0) + 1;
       pinHits.set(parentId, hits);
-      const allowed = hits <= PIN_ATTEMPTS.limit;
-      return { ok: allowed, remaining: Math.max(0, PIN_ATTEMPTS.limit - hits), retryAfterMs: allowed ? 0 : 600_000, windowStart: "2026-10-09T00:00:00.000Z", backend: "db" };
+      if (hits > PIN_ATTEMPTS.limit) return { ok: false, reason: "too_many", retryAfterMs: 600_000 };
+      const day = (pinDayHits.get(parentId) ?? 0) + 1;
+      pinDayHits.set(parentId, day);
+      if (day >= PIN_DAILY_LIMIT) pinLocked.add(parentId);
+      return { ok: true, remaining: Math.min(PIN_ATTEMPTS.limit - hits, PIN_DAILY_LIMIT - day), windowStart: "2026-10-09T00:00:00.000Z", last: day >= PIN_DAILY_LIMIT };
     },
     async pinForgive(parentId) {
       pinHits.set(parentId, Math.max(0, (pinHits.get(parentId) ?? 0) - 1));
+      pinDayHits.set(parentId, Math.max(0, (pinDayHits.get(parentId) ?? 0) - 1));
+      pinLocked.delete(parentId);
     },
     async emailOf(userId) {
       return emails.get(userId) ?? null;

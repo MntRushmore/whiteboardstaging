@@ -30,6 +30,13 @@ vi.mock("@supabase/supabase-js", () => ({
   }),
 }));
 
+// the app events the routes record (recordRouteEvent), kept instead of written
+const events = vi.hoisted(() => [] as Array<{ level: string; code: string; message: string; meta?: Record<string, unknown> }>);
+vi.mock("@/lib/server/request", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/server/request")>();
+  return { ...real, recordRouteEvent: (_log: unknown, event: (typeof events)[number]) => void events.push(event) };
+});
+
 const deps = vi.hoisted(() => ({ store: null as import("../store").FamilyStore | null, missing: false }));
 vi.mock("@/lib/family/server/store", async (importOriginal) => {
   const real = await importOriginal<typeof import("../store")>();
@@ -43,6 +50,8 @@ import { POST as pinPost } from "@/app/api/family/pin/route";
 import { POST as switchPost } from "@/app/api/family/switch/route";
 import { resetServerEnvCache } from "@/lib/env";
 import { resetRateLimitFallbackWarning, resetRateLimits } from "@/lib/server/rate-limit";
+import { PIN_ATTEMPTS, PIN_DAILY_LIMIT } from "../pin";
+import { KID_ADDS } from "../store";
 import { IDS, OTHER_PIN, PIN, makeFakeStore, type FakeStore } from "./fakeStore";
 
 const TOKENS = {
@@ -68,6 +77,7 @@ beforeEach(async () => {
   resetRateLimits();
   resetRateLimitFallbackWarning();
   fake.rateLimit = { allowed: true, remaining: 19, retry_after_ms: 0, backend: "db" };
+  events.length = 0;
   store = await makeFakeStore();
   deps.store = store;
   deps.missing = false;
@@ -218,6 +228,38 @@ describe("POST /api/family/switch: the grown-up's PIN", () => {
     expect((await sw(TOKENS.kidA, { to: IDS.kidB })).status).toBe(200);
   });
 
+  it(`the day's ${PIN_DAILY_LIMIT}th wrong PIN locks the family: 403 locked:true and one app event, then 429 pin_locked even for the right PIN`, async () => {
+    for (let i = 0; i < PIN_DAILY_LIMIT; i++) {
+      if (i % PIN_ATTEMPTS.limit === 0) store.pinHits.clear(); // a new 15-minute window
+      const res = await sw(i % 2 ? TOKENS.kidB : TOKENS.kidA, { to: IDS.parent, pin: `00${String(i).padStart(2, "0")}` });
+      expect(res.status).toBe(403);
+      const body = await json(res);
+      expect(body.reason).toBe("wrong_pin");
+      expect(body.locked).toBe(i === PIN_DAILY_LIMIT - 1 ? true : undefined);
+    }
+    expect(events).toEqual([expect.objectContaining({ level: "warn", code: "pin_locked", meta: expect.objectContaining({ parentId: IDS.parent }) })]);
+
+    store.pinHits.clear();
+    const res = await sw(TOKENS.kidA, { to: IDS.parent, pin: PIN });
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toMatch(/^\d+$/);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    const body = await json(res);
+    expect(body).toMatchObject({ error: "rate_limited", reason: "pin_locked" });
+    expect(body.retryAfterMs).toBeGreaterThan(60 * 60_000);
+    expect(store.minted).toEqual([]);
+    // the lockout is recorded once, not on every refused try
+    expect(events).toHaveLength(1);
+  }, 30_000); // eleven scrypt checks
+
+  it("refuses the PIN (503 pin_unavailable) when the database's counter cannot be asked: never an uncounted try", async () => {
+    store.pinUnavailable = true;
+    const res = await sw(TOKENS.kidA, { to: IDS.parent, pin: PIN });
+    expect(res.status).toBe(503);
+    expect(await json(res)).toMatchObject({ error: "feature_unavailable", reason: "pin_unavailable" });
+    expect(store.minted).toEqual([]);
+  });
+
   it("the per-caller budget answers 429 before anything is read", async () => {
     fake.rateLimit = { allowed: false, remaining: 0, retry_after_ms: 30_000, backend: "db" };
     const res = await sw(TOKENS.kidA, { to: IDS.parent, pin: PIN });
@@ -265,6 +307,31 @@ describe("the other /api/family routes", () => {
   it("a grown-up cannot edit or remove another family's kid (404)", async () => {
     expect((await kidPatch(post(`/api/family/kids/${IDS.otherKid}`, TOKENS.parent, { grade: 2 }, "PATCH"), { params: Promise.resolve({ id: IDS.otherKid }) })).status).toBe(404);
     expect((await kidDelete(post(`/api/family/kids/${IDS.otherKid}`, TOKENS.parent, undefined, "DELETE"), { params: Promise.resolve({ id: IDS.otherKid }) })).status).toBe(404);
+    expect(store.deleted).toEqual([]);
+  });
+
+  it("adding a kid without the grown-up's Unlimited is 409 plan_required, with the words the Family page shows", async () => {
+    store.noPlan.add(IDS.parent);
+    const res = await kidsPost(post("/api/family/kids", TOKENS.parent, { displayName: "Cleo", grade: 2, avatar: "panda" }));
+    expect(res.status).toBe(409);
+    expect(await json(res)).toMatchObject({ error: "invalid_request", reason: "plan_required", message: "Start your free trial to add kids." });
+    expect(store.created).toEqual([]);
+  });
+
+  it("past the day's kid adds, 429 kid_add_limit with its own words", async () => {
+    store.kidAdds.set(IDS.parent, KID_ADDS.limit);
+    const res = await kidsPost(post("/api/family/kids", TOKENS.parent, { displayName: "Cleo", grade: 2, avatar: "panda" }));
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toMatch(/^\d+$/);
+    expect(await json(res)).toMatchObject({ error: "rate_limited", reason: "kid_add_limit", message: expect.stringMatching(/tomorrow/) });
+    expect(store.created).toEqual([]);
+  });
+
+  it("DELETE /api/family removes the kids' images, never their accounts", async () => {
+    const res = await familyDelete(post("/api/family", TOKENS.parent, undefined, "DELETE"));
+    expect(res.status).toBe(200);
+    expect(await json(res)).toEqual({ removed: 2 });
+    expect(store.imagesCleared).toEqual([IDS.kidA, IDS.kidB]);
     expect(store.deleted).toEqual([]);
   });
 

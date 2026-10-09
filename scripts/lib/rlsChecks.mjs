@@ -2517,27 +2517,37 @@ export const ADMIN_CHECKS = [
 
 /** The family tables (20261009000000_kids_come_back.sql): the server's (service role) to write. */
 export const FAMILY_TABLES = ["families", "family_members"];
-/** The family plan's internal functions (20261009010000_family_plan.sql): no client may call them. */
+/**
+ * The family plan's internal functions (20261009010000_family_plan.sql, 20261009040000_family_hardening.sql):
+ * no client may call them.
+ */
 export const FAMILY_FUNCTIONS = [
   ["plan_owner_of", { p_uid: ZERO_UUID }],
   ["family_pin_attempt", { p_parent: ZERO_UUID, p_limit: 5, p_window_ms: 900000 }],
+  ["family_pin_attempt", { p_parent: ZERO_UUID, p_limit: 5, p_window_ms: 900000, p_day_limit: 10 }],
   ["family_pin_forgive", { p_parent: ZERO_UUID, p_window_start: "2026-01-01T00:00:00Z" }],
+  ["family_kid_add_attempt", { p_parent: ZERO_UUID, p_limit: 6, p_window_ms: 86400000 }],
+  ["family_counter_hit", { p_parent: ZERO_UUID, p_bucket: "family_pin", p_window_ms: 900000 }],
+  ["is_kid_signup", { p_meta: { kid: true } }],
 ];
 
 /**
- * Families (src/lib/family; migrations 20261009000000_kids_come_back.sql and
- * 20261009010000_family_plan.sql). A grown-up's kid profiles are accounts of their own, linked by
- * family_members; every write goes through the /api/family routes with the service role.
+ * Families (src/lib/family; migrations 20261009000000_kids_come_back.sql,
+ * 20261009010000_family_plan.sql and 20261009040000_family_hardening.sql). A grown-up's kid profiles
+ * are accounts of their own, linked by family_members; every write goes through the /api/family
+ * routes with the service role.
  *
  * Users: nobody but the service role writes `families` or `family_members`, and nobody reads
  * `families` (the PIN's hash) at all. A family's grown-up P and kid K read their own family_members
- * row; anyone else (A) reads none. No user may call plan_owner_of(), family_pin_attempt() or
- * family_pin_forgive(). With the service role (P and K are made with `newUser`): the kid shares the
- * grown-up's plan (ink_summary().unlimited, consume_credits() through the Unlimited path, counted on
- * the kid's own fair-use rows) while A does not, the kid keeps their own checkout_ref; the PIN's
- * budget is per family (5, then refused; a forgiven try comes back); the triggers keep a kid from
- * having kids and a grown-up from being a kid; a kid cannot delete their own account; and the
- * grown-up's deletion takes the kid's account with it. Removes every row it wrote.
+ * row; anyone else (A) reads none. No user may call FAMILY_FUNCTIONS. With the service role (P and K
+ * are made with `newUser`): a kid never spends ink of their own (refused, plan_required, while P has
+ * no plan); the kid shares the grown-up's plan (ink_summary().unlimited, consume_credits() through
+ * the Unlimited path, counted on the GROWN-UP's fair-use rows: one allowance per family) while A does
+ * not, the kid keeps their own checkout_ref; the PIN's budgets are per family (5 per 15 minutes, then
+ * refused; a forgiven try comes back; the day's 10th try locks, a new PIN unlocks); adding kids has
+ * its own per-family budget; the triggers keep a kid from having kids and a grown-up from being a kid;
+ * a kid cannot delete their own account; and the grown-up's deletion takes the kid's account with it.
+ * Removes every row it wrote.
  *
  * Kept out of ALL_CHECKS (the in-memory fake does not model these tables); scripts/verify-rls.mjs and
  * the DB integration test run FAMILY_CHECKS after ADMIN_CHECKS.
@@ -2612,6 +2622,17 @@ export async function checkFamily({ anon, a, service, newUser }) {
     const refK = rows(kRef)[0]?.checkout_ref ?? null;
     const before = asObject((await rpc(k, "ink_summary")).body);
     out.push(result("family: K has no plan while P has none", before?.unlimited?.status === "none" && before?.unlimited?.unlimited === false, JSON.stringify(before?.unlimited ?? null).slice(0, 200)));
+    // K was made as an ordinary account (newUser), so K HAS ink: a kid still never spends it.
+    const kidSpend = await rpc(k, "consume_credits", { p_route: "rls-verify-family", p_units: 1, p_request_id: `rls-verify-family-noplan-${tag}` });
+    const kidSpent = asObject(kidSpend.body);
+    const kidUsage = await service.rest("GET", "usage_events", { query: { user_id: `eq.${k.userId}`, select: "id" } });
+    out.push(
+      result(
+        "family: K cannot spend ink of their own while P has no plan (insufficient_credits, plan_required, nothing written)",
+        isOk(kidSpend) && kidSpent?.ok === false && kidSpent?.reason === "insufficient_credits" && kidSpent?.plan_required === true && affectedNoRows(kidUsage),
+        `${describe(kidSpend)} / ${describe(kidUsage)}`,
+      ),
+    );
     const planned = await service.rest("POST", "unlimited_subscriptions", {
       body: { stripe_subscription_id: sub, user_id: p.userId, status: "trialing", trial_end: new Date(Date.now() + 7 * 86_400_000).toISOString(), livemode: false },
       prefer: "return=minimal",
@@ -2632,7 +2653,9 @@ export async function checkFamily({ anon, a, service, newUser }) {
     const spent = asObject(spend.body);
     out.push(result("family: K's help goes through the Unlimited path (ok, unlimited, no ink)", isOk(spend) && spent?.ok === true && spent?.unlimited === true, describe(spend)));
     const usage = await service.rest("GET", "unlimited_usage", { query: { request_id: `eq.${request}`, select: "user_id" } });
-    out.push(result("family: K's fair use is counted on K's own rows", rows(usage).length === 1 && rows(usage)[0]?.user_id === k.userId, describe(usage)));
+    out.push(result("family: K's fair use is counted on P's rows (one allowance per family, kept when a kid is deleted)", rows(usage).length === 1 && rows(usage)[0]?.user_id === p.userId, describe(usage)));
+    const kUsage = await k.rest("GET", "unlimited_usage", { query: { select: "id" } });
+    out.push(result("family: K reads no fair-use rows (they are the family's, on P)", affectedNoRows(kUsage), describe(kUsage)));
 
     // ---------------------------------------------------------------- the PIN's budget, per family
     const hits = [];
@@ -2642,6 +2665,31 @@ export async function checkFamily({ anon, a, service, newUser }) {
     await rpc(service, "family_pin_forgive", { p_parent: p.userId, p_window_start: hits[0]?.window_start });
     const again = asObject((await rpc(service, "family_pin_attempt", { p_parent: p.userId, p_limit: 5, p_window_ms: 900000 })).body);
     out.push(result("family: a forgiven try (a right PIN) comes back", again?.allowed === true, JSON.stringify(again).slice(0, 200)));
+
+    // the day's budget: a 15-minute budget too big to matter, so only the day's can stop the tries
+    await service.rest("DELETE", "rate_limit_counters", { query: { user_id: `eq.${p.userId}`, bucket: "in.(family_pin,family_pin_day)" } });
+    const day = [];
+    for (let i = 0; i < 11; i++) day.push(asObject((await rpc(service, "family_pin_attempt", { p_parent: p.userId, p_limit: 1000, p_window_ms: 900000, p_day_limit: 10 })).body));
+    out.push(
+      result(
+        "family: the day's 10th try is the last (last: true) and the 11th is refused as locked, for about 24 hours",
+        day.slice(0, 9).every((h) => h?.allowed === true && h?.last === false) &&
+          day[9]?.allowed === true &&
+          day[9]?.last === true &&
+          day[10]?.allowed === false &&
+          day[10]?.locked === true &&
+          Number(day[10]?.retry_after_ms) > 23 * 3_600_000,
+        JSON.stringify(day.slice(9)).slice(0, 300),
+      ),
+    );
+    const newPin = await service.rest("PATCH", "families", { query: { parent_id: `eq.${p.userId}` }, body: { pin_hash: "scrypt$rls$verify2" }, prefer: "return=minimal" });
+    const unlocked = asObject((await rpc(service, "family_pin_attempt", { p_parent: p.userId, p_limit: 1000, p_window_ms: 900000, p_day_limit: 10 })).body);
+    out.push(result("family: a new PIN (the grown-up's own session) lifts the lock and starts the day over", isOk(newPin) && unlocked?.allowed === true && unlocked?.remaining === 9, JSON.stringify(unlocked).slice(0, 200)));
+
+    // adding kids: a budget per family, kept in the database
+    const adds = [];
+    for (let i = 0; i < 3; i++) adds.push(asObject((await rpc(service, "family_kid_add_attempt", { p_parent: p.userId, p_limit: 2, p_window_ms: 86400000 })).body));
+    out.push(result("family: family_kid_add_attempt allows its limit, then refuses with a wait", adds[0]?.allowed === true && adds[1]?.allowed === true && adds[2]?.allowed === false && Number(adds[2]?.retry_after_ms) > 0, JSON.stringify(adds).slice(0, 300)));
 
     // ---------------------------------------------------------------- deletion
     const kDel = await rpc(k, "delete_own_account");
@@ -2659,7 +2707,7 @@ export async function checkFamily({ anon, a, service, newUser }) {
   } finally {
     await service.rest("DELETE", "unlimited_usage", { query: { request_id: `like.rls-verify-family-*` } });
     await service.rest("DELETE", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${sub}` } });
-    await service.rest("DELETE", "rate_limit_counters", { query: { user_id: `eq.${p.userId}`, bucket: "eq.family_pin" } });
+    await service.rest("DELETE", "rate_limit_counters", { query: { user_id: `eq.${p.userId}`, bucket: "in.(family_pin,family_pin_day,family_kid_add)" } });
     await service.rest("DELETE", "families", { query: { parent_id: `in.(${p.userId},${k.userId},${a.userId})` } });
   }
   return out;

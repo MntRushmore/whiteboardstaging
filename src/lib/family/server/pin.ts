@@ -1,9 +1,11 @@
 /**
  * The grown-up's PIN, as the server keeps it (`families.pin_hash`). A PIN is only 4 digits, so the
  * hash is no wall against someone holding the table: what protects it is that nobody but the server
- * can read `families` (no client grant at all) and that guesses are rate limited per family
- * (`PIN_ATTEMPTS`). The hash still matters: the PIN is often a grown-up's bank or phone PIN too, and
- * it must never sit in the database, a log or a backup as the digits themselves.
+ * can read `families` (no client grant at all) and that guesses are limited per family, in the
+ * database (`PIN_ATTEMPTS` and `PIN_DAILY_LIMIT`, family_pin_attempt in
+ * supabase/migrations/20261009040000_family_hardening.sql). The hash still matters: the PIN is often
+ * a grown-up's bank or phone PIN too, and it must never sit in the database, a log or a backup as the
+ * digits themselves.
  *
  * Format: `scrypt$<salt>$<hash>`, both base64url; a random 16-byte salt per PIN, Node's scrypt with
  * N=16384, r=8, p=1 and a 32-byte key. Compared with timingSafeEqual. Server only (node:crypto).
@@ -16,8 +18,15 @@ const SALT_BYTES = 16;
 const KEY_BYTES = 32;
 const PARAMS: ScryptOptions = { N: 16384, r: 8, p: 1 };
 
-/** Wrong PIN tries a family gets in a window before it waits: a kid can't guess their way in. */
+/** PIN tries a family gets in 15 minutes before it waits (a right PIN is given back). */
 export const PIN_ATTEMPTS = { limit: 5, windowMs: 15 * 60_000 } as const;
+
+/**
+ * Wrong PINs a family gets in 24 hours. The last one locks switching to the grown-up until they
+ * sign in with their own password (or 24 hours pass), so guessing all 10,000 PINs would take years,
+ * not the three weeks 5 tries per 15 minutes allowed (about 480 guesses a day).
+ */
+export const PIN_DAILY_LIMIT = 10;
 
 /** True for exactly 4 digits (`PIN_PATTERN`). */
 export function isPin(value: unknown): value is string {

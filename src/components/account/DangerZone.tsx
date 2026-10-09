@@ -26,7 +26,7 @@ import { deleteOwnAccount, isPlanStillActiveError } from "@/lib/billing/deleteAc
 import { billingPortalUrl, mustCancelBeforeDeleting } from "@/lib/billing/unlimited";
 import { PLAN_COPY } from "@/lib/billing/unlimitedPlan";
 import { useUnlimited } from "@/lib/billing/useUnlimited";
-import { removeAllKids } from "@/lib/family/client";
+import { removeKidsImages } from "@/lib/family/client";
 import { isKidEmail } from "@/lib/family/contracts";
 import { FAMILY_COPY } from "@/lib/family/copy";
 
@@ -43,8 +43,9 @@ import { FAMILY_COPY } from "@/lib/family/copy";
  * could never stop the charges. deleteOwnAccount checks the plan again before
  * touching anything (another tab may have started one), and that refusal lands here too.
  *
- * A grown-up's kid profiles go first (DELETE /api/family; the dialog says so when there are kids).
- * A kid profile sees no Delete button: only their grown-up removes them, from the Family page.
+ * A grown-up's kid profiles go with the account (the dialog says so when there are kids): their
+ * saved images first (DELETE /api/family), their accounts in the same RPC as the grown-up's. A kid
+ * profile sees no Delete button: only their grown-up removes them, from the Family page.
  */
 export function DangerZone({ email }: { email: string }) {
   const router = useRouter();
@@ -77,11 +78,12 @@ export function DangerZone({ email }: { email: string }) {
     setDeleting(true);
     setError(null);
     try {
-      // The kids' profiles and own Storage objects go first (the DB cascade cannot remove
-      // files), then the RPC, then the local session is dropped without a /logout round-trip.
-      const { assets, family } = await deleteOwnAccount(supabase, { removeFamily: removeAllKids });
+      // The kids' and own Storage objects go first (the DB cascade cannot remove files), then the
+      // RPC (the kids' accounts with this one), then the local session is dropped without a
+      // /logout round-trip.
+      const { assets, kidImages } = await deleteOwnAccount(supabase, { removeKidImages: removeKidsImages });
       if (assets.error) console.warn("Some saved images could not be removed:", assets);
-      if (family?.error) console.warn("The kids' profiles were left to the database's own deletion:", family);
+      if (kidImages?.error) console.warn("Some of the kids' saved images were left for the cleanup:", kidImages);
       // Full page load, not router.replace: the account is gone, so a fresh provider (and a
       // fresh React tree) is the only state we can trust. Falls back to the router when
       // `window` is unavailable.
@@ -90,7 +92,8 @@ export function DangerZone({ email }: { email: string }) {
     } catch (err) {
       setDeleting(false);
       if (isPlanStillActiveError(err)) {
-        // nothing was removed: the plan was checked first
+        // The plan was checked first, so nothing was removed. (Had the RPC itself refused, for a
+        // plan started in another tab meanwhile, only saved images went: never an account.)
         setPlanRefused(true);
         plan.refresh();
         return;

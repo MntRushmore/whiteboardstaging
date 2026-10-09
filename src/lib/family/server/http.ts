@@ -30,10 +30,14 @@ export function familyStore(log: pino.Logger, requestId: string): { store: Famil
 export function answer<T>(outcome: Outcome<T>, requestId: string, status = 200): Response {
   if (outcome.ok) return Response.json(outcome.value, { status, headers: { ...NO_STORE, "X-Request-Id": requestId } });
   if (outcome.status === 429) {
-    const res = rateLimitedResponse(outcome.retryAfterMs ?? 60_000, outcome.backend);
+    const retryAfterMs = outcome.retryAfterMs ?? 60_000;
+    const res = rateLimitedResponse(retryAfterMs, outcome.backend);
     res.headers.set("Cache-Control", "no-store");
     res.headers.set("X-Request-Id", requestId);
-    return res;
+    if (!outcome.extra) return res;
+    // A family limit with its own words and `reason` (a locked PIN, the kids added today): the same
+    // 429 shape and Retry-After, with the refusal's message and extra.
+    return json(429, "rate_limited", outcome.message, { retryAfterMs, ...(outcome.backend ? { backend: outcome.backend } : {}), requestId, ...outcome.extra }, res.headers);
   }
   return json(outcome.status, outcome.code, outcome.message, { requestId, ...(outcome.extra ?? {}) }, { ...NO_STORE, "X-Request-Id": requestId });
 }

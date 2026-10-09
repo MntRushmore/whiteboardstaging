@@ -29,6 +29,10 @@ export const FAMILY_COPY = {
   pinWrong: (triesLeft: number | null) =>
     triesLeft === null ? "That PIN isn't right." : triesLeft === 0 ? "That PIN isn't right. No tries left for now." : `That PIN isn't right. ${triesLeft} ${triesLeft === 1 ? "try" : "tries"} left.`,
   pinLocked: (retryAfterMs: number) => `Too many tries. Try again in ${minutes(retryAfterMs)} minute${minutes(retryAfterMs) === 1 ? "" : "s"}.`,
+  // the day's last wrong PIN, and every try after it: only the grown-up's own sign-in opens it again
+  pinWrongLocked: "That PIN isn't right. No more tries today. Ask your grown-up to sign in with their password.",
+  pinLockedDay: "Too many tries today. Ask your grown-up to sign in with their password.",
+  pinUnavailable: "Couldn't check the PIN just now. Try again in a moment.",
   pinNoPin: "Your grown-up hasn't set a PIN yet. Ask them to sign in.",
   pinChecking: "Checking…",
 
@@ -62,6 +66,12 @@ export const FAMILY_COPY = {
   kidsEmpty: "No kids yet",
   kidsEmptyHint: "Add a profile for each kid. They share your plan.",
   kidsNeedPin: "Set your PIN above, then add your kids.",
+  // adding a kid needs the plan (Agathon Unlimited, free for its first week): kids share it
+  kidsNeedPlan: "Start your free trial to add kids.",
+  kidsNeedPlanLink: "Start free trial",
+  // a plan that is not giving Unlimited right now (a second trial, a payment to fix, still setting up)
+  kidsNeedActivePlan: "Kids can be added once your Agathon Unlimited plan is active.",
+  kidsNeedActivePlanLink: "See your plan",
   addKid: "Add a kid",
   addKidTitle: "Add a kid",
   addKidHint: "They'll switch in by tapping their picture. No email or password needed.",

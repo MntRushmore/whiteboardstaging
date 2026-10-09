@@ -1,7 +1,7 @@
 import { logger } from "@/lib/logger";
 import { requireUser } from "@/lib/server/auth";
 import { checkRateLimitDistributed, rateLimitedResponse } from "@/lib/server/rate-limit";
-import { parseJsonBody } from "@/lib/server/request";
+import { parseJsonBody, recordRouteEvent } from "@/lib/server/request";
 import { SwitchSchema } from "@/lib/family/schemas";
 import { answer, familyFailure, familyStore } from "@/lib/family/server/http";
 import { switchProfile } from "@/lib/family/server/service";
@@ -23,7 +23,11 @@ const log = logger.child({ module: "family", route: "switch" });
  * anything else — a solo account, another family's profile, a made-up id — is 404, the same answer
  * whether or not that account exists. Switching TO the grown-up needs their PIN (400 `pin_required`
  * without one), checked here against the hash, every try counted per family first: 403 `wrong_pin`
- * (with `triesLeft`), and past 5 wrong tries in 15 minutes 429. A kid to a sibling, or the grown-up
+ * (with `triesLeft`), past 5 tries in 15 minutes 429, and the day's 10th wrong PIN (PIN_DAILY_LIMIT)
+ * locks switching to the grown-up: that answer says `locked: true` and is recorded as an app event
+ * (warn, `pin_locked`), and every try after it is 429 `reason: "pin_locked"` until the grown-up signs
+ * in with their password or 24 hours pass. When the database's counter cannot be asked, the try is
+ * refused (503 `pin_unavailable`), never let through uncounted. A kid to a sibling, or the grown-up
  * to a kid, needs no PIN. The PIN is never logged.
  *
  * requireUser (401) -> the `familySwitch` bucket (429) -> zod (400) -> 503 without the service role
@@ -48,6 +52,7 @@ export async function POST(req: Request) {
     const outcome = await switchProfile(env.store, user, token, body.data);
     if (outcome.ok) log.info({ requestId, userId: user.id, to: body.data.to }, "profile switched");
     else log.info({ requestId, userId: user.id, status: outcome.status, reason: outcome.extra?.reason ?? null }, "profile switch refused");
+    if (!outcome.ok && outcome.event) recordRouteEvent(log.child({ requestId, userId: user.id }), { level: "warn", ...outcome.event });
     return answer(outcome, requestId);
   } catch (err) {
     return familyFailure(err, { log, requestId, userId: user.id, what: "switch" });

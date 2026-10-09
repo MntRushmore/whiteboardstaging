@@ -27,13 +27,16 @@
  * caller's own unlimited_subscriptions rows; delete_own_account() refuses too
  * (supabase/migrations/20261003020000_unlimited.sql), as the backstop.
  *
- * Families (2026-10-09): a grown-up's kid profiles are accounts of their own, so deleting the
- * grown-up deletes the kids first: `removeFamily` (DELETE /api/family, src/lib/family/client.ts)
- * removes each kid's saved images and account on the server, right after the plan check and before
- * the RPC. Best effort, like the images: delete_own_account() deletes any kid still there in the
- * same transaction as the grown-up (supabase/migrations/20261009010000_family_plan.sql), so no kid
- * account outlives its grown-up. A kid profile cannot delete itself (the RPC refuses, hint
- * `family_kid`); their grown-up removes them from the Family page.
+ * Families (2026-10-09): a grown-up's kid profiles are accounts of their own, and they go with the
+ * grown-up's: delete_own_account() deletes the kids' accounts in the SAME transaction as the
+ * grown-up's (supabase/migrations/20261009010000_family_plan.sql, and the families trigger of
+ * 20261009040000_family_hardening.sql for any other deletion). So nothing here deletes a kid's
+ * account: a refused or failed RPC leaves every kid as they were. Only the kids' saved images go
+ * first, for the same reason as the grown-up's own (SQL cannot remove files): `removeKidImages`
+ * (DELETE /api/family, src/lib/family/client.ts), right after the plan check and before the RPC,
+ * best effort like the images. A kid profile cannot delete itself (the RPC refuses, hint
+ * `family_kid`, and the account page shows a kid no Delete button); their grown-up removes them
+ * from the Family page.
  */
 
 export const BOARD_ASSETS_BUCKET = "board-assets";
@@ -229,33 +232,34 @@ export async function assertNoChargingPlan(client: DeleteAccountClient): Promise
   if (planBlocksDeletion(data)) throw new PlanStillActiveError();
 }
 
-/** What happened to the grown-up's kid profiles (`removeFamily`), when there was a family step. */
-export type RemoveFamilyResult = { removed: number; error: string | null };
+/** What happened to the kids' saved images (`removeKidImages`), when there was a family step. */
+export type KidImagesResult = { removed: number; error: string | null };
 
 /**
- * Check the plan (nothing is touched while it would charge again), delete the kid profiles
- * (`removeFamily`, best effort), remove own Storage objects (best effort), delete the account via
- * the RPC, then forget the session locally (no network — the user no longer exists).
- * Throws PlanStillActiveError, or the RPC error, so the caller can show it; on that
- * path the session is kept so the user can retry. Asset problems come back in `assets`, the
- * family step's in `family` (absent without one).
+ * Check the plan (nothing is touched while it would charge again), remove the kids' saved images
+ * (`removeKidImages`, best effort) and own Storage objects (best effort), delete the account via the
+ * RPC (the kids' accounts with it, in one transaction), then forget the session locally (no network —
+ * the user no longer exists). Throws PlanStillActiveError, or the RPC error, so the caller can show
+ * it; on that path the session is kept so the user can retry, and every kid's account is still
+ * there. Asset problems come back in `assets`, the kids' images step's in `kidImages` (absent
+ * without one).
  */
 export async function deleteOwnAccount(
   client: DeleteAccountClient,
-  options: { storage?: KeyValueStorage | null; removeFamily?: () => PromiseLike<{ removed: number }> } = {},
-): Promise<{ assets: RemoveAssetsResult; family?: RemoveFamilyResult; clearedKeys: string[] }> {
+  options: { storage?: KeyValueStorage | null; removeKidImages?: () => PromiseLike<{ removed: number }> } = {},
+): Promise<{ assets: RemoveAssetsResult; kidImages?: KidImagesResult; clearedKeys: string[] }> {
   await assertNoChargingPlan(client);
-  let family: RemoveFamilyResult | null = null;
-  if (options.removeFamily) {
+  let kidImages: KidImagesResult | null = null;
+  if (options.removeKidImages) {
     try {
-      family = { removed: (await options.removeFamily()).removed, error: null };
+      kidImages = { removed: (await options.removeKidImages()).removed, error: null };
     } catch (err) {
-      family = { removed: 0, error: err instanceof Error ? err.message : String(err) };
+      kidImages = { removed: 0, error: err instanceof Error ? err.message : String(err) };
     }
   }
   const assets = await removeOwnBoardAssets(client);
   const { error } = await client.rpc("delete_own_account");
   if (error) throw isPlanStillActiveError(error) ? new PlanStillActiveError() : error;
   const clearedKeys = await clearLocalSession(client, options.storage === undefined ? defaultStorage() : options.storage);
-  return { assets, clearedKeys, ...(family ? { family } : {}) };
+  return { assets, clearedKeys, ...(kidImages ? { kidImages } : {}) };
 }
