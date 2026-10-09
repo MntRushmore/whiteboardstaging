@@ -15,6 +15,7 @@ import { FamilySection } from "@/components/account/FamilySection";
 import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { ACCOUNT_COPY, accountPageStateFor } from "@/lib/billing/accountState";
 import { isKidEmail } from "@/lib/family/contracts";
+import { FAMILY_COPY } from "@/lib/family/copy";
 
 /** Shaped like the ink and usage cards, so the page does not jump when they arrive. */
 function AccountSkeleton() {
@@ -100,7 +101,7 @@ export default function AccountPage() {
             {ACCOUNT_COPY.back}
           </Link>
           <h1 className="mt-3 text-3xl font-bold tracking-tight">{ACCOUNT_COPY.title}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{ACCOUNT_COPY.subtitle}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{isKidEmail(email) ? FAMILY_COPY.kidAccountSubtitle : ACCOUNT_COPY.subtitle}</p>
         </div>
 
         {pageState === "loading" ? (

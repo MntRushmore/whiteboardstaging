@@ -116,7 +116,8 @@ export const FAMILY_COPY = {
   /** the board's ink dialog and the Ask and lecture panels, for a kid whose help needs the grown-up's plan */
   kidHelpPausedTitle: "Ask your grown-up",
   kidHelpPaused: "Help is taking a break right now. Ask your grown-up to check Agathon on their profile.",
-  /** the account page's Profile and Grade cards, for a kid: the grown-up changes these on /family */
+  /** the account page, for a kid: no billing in its subtitle; the grown-up changes the cards on /family */
+  kidAccountSubtitle: "Your profile and grade.",
   kidProfileDescription: "How you appear in the app.",
   kidNameHint: "Your grown-up can change your name on their Family page.",
   kidGradeDescription: "Your tutor picks problems for this grade.",
