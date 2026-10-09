@@ -104,6 +104,16 @@ export const YOUNG_CORPUS: readonly YoungCase[] = [
   { id: "mul-long-46x23-rows", grade: "3-4", topic: "mul", work: [[STACK("46 \\\\ \\times 23 \\\\ \\hline 138 \\\\ 920"), "none"]], solved: false, note: "both rows, the total still to come" },
   { id: "mul-long-123x45", grade: "3-4", topic: "mul", work: [[STACK("123 \\\\ \\times 45 \\\\ \\hline 615 \\\\ 4920 \\\\ \\hline 5535"), "tick"]], solved: true },
   { id: "mul-long-under-problem", grade: "3-4", topic: "mul", problem: "46 \\times 23", work: [[STACK("46 \\\\ \\times 23 \\\\ \\hline 138 \\\\ 920 \\\\ \\hline 1058"), "tick"]], solved: true },
+  // ...set out the other ways a class sets it out (review, 2026-10-09: each of these was ringed)
+  { id: "mul-long-46x23-partials", grade: "3-4", topic: "mul", work: [[STACK("46 \\\\ \\times 23 \\\\ \\hline 18 \\\\ 120 \\\\ 120 \\\\ +800 \\\\ \\hline 1058"), "tick"]], solved: true, note: "partial products: 6 × 3, 40 × 3, 6 × 20, 40 × 20" },
+  { id: "mul-long-46x23-reversed", grade: "3-4", topic: "mul", work: [[STACK("46 \\\\ \\times 23 \\\\ \\hline 920 \\\\ +138 \\\\ \\hline 1058"), "tick"]], solved: true, note: "the tens row first" },
+  { id: "mul-long-46x105-zeros", grade: "3-4", topic: "mul", work: [[STACK("46 \\\\ \\times 105 \\\\ \\hline 230 \\\\ 000 \\\\ +4600 \\\\ \\hline 4830"), "tick"]], solved: true, note: "a row of zeros for the 0 tens" },
+  { id: "mul-long-46x205-zeros", grade: "3-4", topic: "mul", work: [[STACK("46 \\\\ \\times 205 \\\\ \\hline 230 \\\\ 000 \\\\ 9200 \\\\ \\hline 9430"), "tick"]], solved: true },
+  { id: "mul-long-46x20-zeros", grade: "3-4", topic: "mul", work: [[STACK("46 \\\\ \\times 20 \\\\ \\hline 00 \\\\ 920 \\\\ \\hline 920"), "tick"]], solved: true, note: "a row of zeros for the 0 ones" },
+  { id: "mul-long-46x23-partials-total-wrong", grade: "3-4", topic: "mul", work: [[STACK("46 \\\\ \\times 23 \\\\ \\hline 18 \\\\ 120 \\\\ 120 \\\\ 800 \\\\ \\hline 1048"), "ring"]], solved: false },
+  { id: "mul-long-46x23-partials-row-wrong", grade: "3-4", topic: "mul", work: [[STACK("46 \\\\ \\times 23 \\\\ \\hline 18 \\\\ 120 \\\\ 120 \\\\ 700 \\\\ \\hline 958"), "ring"]], solved: false, note: "40 × 20 written 700, the rows added right" },
+  { id: "mul-long-46x23-partials-so-far", grade: "3-4", topic: "mul", work: [[STACK("46 \\\\ \\times 23 \\\\ \\hline 18 \\\\ 120"), "none"]], solved: false, note: "two partial products, the rest still to come" },
+  { id: "mul-long-46x23-reversed-row-wrong", grade: "3-4", topic: "mul", work: [[STACK("46 \\\\ \\times 23 \\\\ \\hline 920 \\\\ 128 \\\\ \\hline 1048"), "ring"]], solved: false },
   { id: "mul-stack-direct", grade: "3-4", topic: "mul", work: [[STACK("46 \\\\ \\times 23 \\\\ \\hline 1058"), "tick"]], solved: true },
   { id: "mul-stack-1digit", grade: "3-4", topic: "mul", work: [[STACK("23 \\\\ \\times 4 \\\\ \\hline 92"), "tick"]], solved: true },
 

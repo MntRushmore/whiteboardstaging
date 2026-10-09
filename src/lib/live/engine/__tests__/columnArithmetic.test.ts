@@ -252,6 +252,38 @@ describe("long multiplication: a row for each digit, then their sum", () => {
     expect(w).toMatchObject({ right: true, long: { want: [615, 24600], wrong: -1 } });
   });
 
+  it("the other ways a class sets it out are right too: partial products, the rows the other way round, a row of zeros", () => {
+    const ok = { verdict: "ok", solved: true };
+    // partial products (the four-row method): 6 × 3, 40 × 3, 6 × 20, 40 × 20
+    expect(stackedAnalysis(work(LONG("18 \\\\ 120 \\\\ 120 \\\\ +800 \\\\ \\hline 1058")), true)).toMatchObject(ok);
+    expect(stackedAnalysis(work(LONG("18 \\\\ 120 \\\\ 120 \\\\ \\frac{+800}{1058}")), true)).toMatchObject(ok);
+    expect(stackedAnalysis(work(LONG("800 \\\\ 120 \\\\ 120 \\\\ 18 \\\\ \\hline 1058")), true)).toMatchObject(ok);
+    // the tens row first
+    expect(stackedAnalysis(work(LONG("920 \\\\ +138 \\\\ \\hline 1058")), true)).toMatchObject(ok);
+    // a row of zeros for a 0 in the bottom number
+    const BY = (bottom: string, rows: string) => `\\begin{array}{r} 46 \\\\ \\times ${bottom} \\\\ \\hline ${rows} \\end{array}`;
+    expect(stackedAnalysis(work(BY("105", "230 \\\\ 000 \\\\ +4600 \\\\ \\hline 4830")), true)).toMatchObject(ok);
+    expect(stackedAnalysis(work(BY("205", "230 \\\\ 000 \\\\ 9200 \\\\ \\hline 9430")), true)).toMatchObject(ok);
+    expect(stackedAnalysis(work(BY("20", "00 \\\\ 920 \\\\ \\hline 920")), true)).toMatchObject(ok);
+    expect(stackedAnalysis(work(BY("30", "000 \\\\ 1380 \\\\ \\hline 1380")), true)).toMatchObject(ok);
+    expect(stackedAnalysis(work(BY("30", "00 \\\\ 138 \\\\ \\hline 1380")), true)).toMatchObject(ok);
+  });
+
+  it("set out another way, a wrong answer is still ringed, and right so far is still no mark", () => {
+    // partial products, the total wrong
+    expect(stackedAnalysis(work(LONG("18 \\\\ 120 \\\\ 120 \\\\ 800 \\\\ \\hline 1048")), true)).toMatchObject({ verdict: "mismatch" });
+    // a partial product wrong, and the total its sum
+    const slip = work(LONG("18 \\\\ 120 \\\\ 120 \\\\ 700 \\\\ \\hline 958"));
+    expect(stackedAnalysis(slip, true)).toMatchObject({ verdict: "mismatch", note: "Check the rows: together they are 46 × 23." });
+    // the rows the other way round, one of them wrong: the row is named
+    expect(stackedAnalysis(work(LONG("920 \\\\ 128 \\\\ \\hline 1048")), true)).toMatchObject({ verdict: "mismatch", note: "Check the row for the 3 ones: 46 × 3." });
+    // a zero row where a row should be: the total is wrong
+    expect(stackedAnalysis(work(LONG("138 \\\\ 000 \\\\ \\hline 138")), true)).toMatchObject({ verdict: "mismatch" });
+    // two partial products, the total still to come
+    expect(stackedAnalysis(work(LONG("18 \\\\ 120")), true)).toMatchObject({ verdict: "none" });
+    expect(stackedAnalysis(work(LONG("18 \\\\ 120 \\\\ \\hline")), true)).toMatchObject({ verdict: "none" });
+  });
+
   it("nothing for Help to write into it: the rows are the student's", () => {
     expect(nextStep(work(LONG("138")), new Set())).toBeNull();
   });

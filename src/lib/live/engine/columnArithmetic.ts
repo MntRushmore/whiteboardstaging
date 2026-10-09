@@ -39,6 +39,9 @@
  *     -----        rule, and their sum — which Mathpix also reads with the last row as a fraction
  *      1058        over it (`\frac{920}{1058}`). Each row is checked, then the sum column by column.
  *
+ * The rows may come the other way round (920, then 138), with a row of zeros for a 0 digit, or as
+ * the partial products (18, 120, 120, 800): rows that make the product are right (`workRows`).
+ *
  * A single row under the rule of a product by two digits or more is the answer when it is the
  * product, and the first row of the working when it is that row (right so far: no mark).
  * Out of scope, and quiet (`null`): long division (`primaryWork.ts` reads its bracket), a
@@ -359,15 +362,50 @@ export function workStacked(read: StackedRead, opts: WorkOptions = {}): StackedW
 }
 
 /**
- * Long multiplication's rows checked (`StackedRead.rows`): row i is the top number times the i-th
- * nonzero digit of the bottom one from the right, with its place's zeros or written shifted without
- * them (`92` for 46 × 20). The first wrong row is the mistake; with every row right, the sum under
- * them is judged column by column as any answer (`work`). Right when every row is there and right,
- * and the sum is complete and right.
+ * Each row matched to a different one of `n` wanted rows it `fits` (Kuhn's augmenting paths; a row
+ * tries its own place first, so rows in order stay in order): for each row, its wanted row, or -1.
+ */
+function matchRows(rows: readonly number[], n: number, fits: (row: number, j: number) => boolean): number[] {
+  const owner = new Array<number>(n).fill(-1);
+  const place = (i: number, seen: boolean[]): boolean => {
+    const order = i < n ? [i, ...[...Array(n).keys()].filter((j) => j !== i)] : [...Array(n).keys()];
+    for (const j of order) {
+      if (seen[j] || !fits(rows[i], j)) continue;
+      seen[j] = true;
+      if (owner[j] === -1 || place(owner[j], seen)) {
+        owner[j] = i;
+        return true;
+      }
+    }
+    return false;
+  };
+  rows.forEach((_, i) => place(i, new Array<boolean>(n).fill(false)));
+  const of = new Array<number>(rows.length).fill(-1);
+  owner.forEach((i, j) => {
+    if (i !== -1) of[i] = j;
+  });
+  return of;
+}
+
+/**
+ * Long multiplication's rows checked (`StackedRead.rows`), set out as a class sets them out: a row
+ * for each nonzero digit of the bottom number — the top number times it, in its place, its zeros
+ * written or left out (`92` for 46 × 20) — ones first or the other way round, with a row of zeros
+ * for a 0 digit or without; or the partial products, a place of one number times a place of the
+ * other (18, 120, 120, 800 for 46 × 23; or 920 and 138 as 40 × 23 and 6 × 23). Rows that make the
+ * product are right, and the sum under them is judged column by column as any answer (`work`). Rows
+ * that make part of it are right so far. A wrong row is named only when the rows are the standard
+ * ones (as many as the digits, or every one there and one too many); set out any other way, the sum
+ * under them is what is ringed when it is wrong — never a row while the sum is still to come. Right
+ * when the rows make the product and the sum is complete and right.
  */
 function workRows(work: StackedWork, rows: readonly string[]): StackedWork {
-  const top = Number(work.operands[0]);
-  const bottom = [...work.operands[1]].reverse().map(Number);
+  const [topWritten, bottomWritten] = work.operands;
+  const top = Number(topWritten);
+  const bottomNumber = Number(bottomWritten);
+  const product = top * bottomNumber;
+  const bottom = [...bottomWritten].reverse().map(Number);
+  const topDigits = [...topWritten].reverse().map(Number);
   const want: number[] = [];
   const at: number[] = [];
   bottom.forEach((d, place) => {
@@ -375,21 +413,49 @@ function workRows(work: StackedWork, rows: readonly string[]): StackedWork {
     want.push(top * d * 10 ** place);
     at.push(place);
   });
-  let wrong = -1;
-  for (let i = 0; i < rows.length && wrong === -1; i++) {
-    const n = Number(rows[i]);
-    if (i >= want.length || (n !== want[i] && !(at[i] > 0 && n * 10 ** at[i] === want[i]))) wrong = i;
+  // a place of one times a place of the other, and the top number's places times the bottom one
+  const cells: number[] = [];
+  topDigits.forEach((x, i) =>
+    bottom.forEach((y, j) => {
+      if (x && y) cells.push(x * 10 ** i * y * 10 ** j);
+    }),
+  );
+  const pieces = new Set([...cells, ...want, ...topDigits.map((x, i) => x * 10 ** i * bottomNumber).filter((n) => n > 0)]);
+  // a row of zeros holds the place of a 0 digit (or of a partial product with a 0 in it): one each
+  let zeros = Math.max(bottom.filter((d) => d === 0).length, topDigits.length * bottom.length - cells.length);
+  const kept = rows.map(Number).filter((n) => !(n === 0 && zeros-- > 0));
+
+  const fits = (n: number, j: number) => n === want[j] || (at[j] > 0 && n * 10 ** at[j] === want[j]);
+  const matched = matchRows(kept, want.length, fits);
+  const known = kept.every((n, i) => matched[i] !== -1 || pieces.has(n));
+  const made = kept.reduce((sum, n, i) => sum + (matched[i] !== -1 ? want[matched[i]] : n), 0);
+  const quiet: LongRows = { want, wrong: -1 };
+  const rowsNote = `Check the rows: together they are ${topWritten} × ${bottomWritten}.`;
+  // the standard rows in any order, or rows of the working that make the product
+  if ((kept.length === want.length && matched.every((j) => j !== -1)) || (known && made === product)) {
+    return { ...work, long: quiet, right: work.right };
   }
-  const long: LongRows = { want, wrong };
-  if (wrong !== -1) {
-    const place = at[wrong];
+  // rows of the working that make part of it: right so far (a sum under them is judged)
+  if (known && made < product) {
+    const note = work.wrong === -1 ? "" : matched.every((j) => j !== -1) ? `There is one row for each digit of ${bottomWritten}.` : rowsNote;
+    return { ...work, long: quiet, right: false, note };
+  }
+  // the standard rows, one of them wrong (or one too many): that row is the mistake
+  const unmatched = kept.map((_, i) => i).filter((i) => matched[i] === -1);
+  const missing = want.map((_, j) => j).filter((j) => !matched.includes(j));
+  if (kept.length === want.length || (kept.length > want.length && missing.length === 0)) {
+    const wrong = unmatched[0];
+    // written the other way round: the rows that are right say so
+    const reversed = matched.some((j, i) => j !== -1 && j !== i && j === want.length - 1 - i);
+    const pair = reversed ? [...missing].reverse()[0] : missing[0];
     const note =
-      wrong >= want.length
-        ? `There is one row for each digit of ${work.operands[1]}.`
-        : `Check the row for the ${bottom[place]} ${placeName(place, 0)}: ${work.operands[0]} × ${bottom[place] * 10 ** place}.`;
-    return { ...work, long, wrong: -1, right: false, note };
+      pair === undefined
+        ? `There is one row for each digit of ${bottomWritten}.`
+        : `Check the row for the ${bottom[at[pair]]} ${placeName(at[pair], 0)}: ${topWritten} × ${bottom[at[pair]] * 10 ** at[pair]}.`;
+    return { ...work, long: { want, wrong }, wrong: -1, right: false, note };
   }
-  return { ...work, long, right: work.right && rows.length === want.length };
+  // set out some other way: the rows are not judged, the sum under them is
+  return { ...work, long: quiet, right: false, note: work.wrong === -1 ? "" : made !== product ? rowsNote : work.note };
 }
 
 /**
