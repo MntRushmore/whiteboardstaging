@@ -34,12 +34,12 @@ export type RenderedEmail = { subject: string; html: string; text: string };
 /** The app's blue: the Help me button and every primary button (Tailwind blue-600). */
 export const BRAND_BLUE = "#2563eb";
 
-const FONT_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
-const INK = "#111827"; // body text (gray-900)
-const MUTED = "#4b5563"; // secondary text (gray-600)
-const FAINT = "#6b7280"; // footer (gray-500)
+export const FONT_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+export const INK = "#111827"; // body text (gray-900)
+export const MUTED = "#4b5563"; // secondary text (gray-600)
+export const FAINT = "#6b7280"; // footer (gray-500)
 const PAGE_BG = "#f3f4f6"; // gray-100
-const CARD_BORDER = "#e5e7eb"; // gray-200
+export const CARD_BORDER = "#e5e7eb"; // gray-200
 
 /* ------------------------------------------------------------------------- */
 /* Escaping and links                                                         */
@@ -105,13 +105,13 @@ export function formatEmailDate(date: Date, timeZone: string = EMAIL_TIME_ZONE):
 /* ------------------------------------------------------------------------- */
 
 /** A paragraph of body text. `html` is trusted markup built here, never user input. */
-function paragraph(html: string, opts: { muted?: boolean; size?: number; margin?: string } = {}): string {
+export function paragraph(html: string, opts: { muted?: boolean; size?: number; margin?: string } = {}): string {
   const size = opts.size ?? 16;
   return `<p style="margin:${opts.margin ?? "0 0 16px"};font-family:${FONT_STACK};font-size:${size}px;line-height:${Math.round(size * 1.55)}px;color:${opts.muted ? MUTED : INK};">${html}</p>`;
 }
 
 /** The main heading inside the card. */
-function heading(text: string): string {
+export function heading(text: string): string {
   return `<h1 style="margin:0 0 16px;font-family:${FONT_STACK};font-size:24px;line-height:32px;font-weight:700;color:${INK};">${escapeHtml(text)}</h1>`;
 }
 
@@ -144,7 +144,7 @@ ${paragraph(bodyHtml, { margin: "0" })}
 }
 
 /** The bulletproof primary button. */
-function button(label: string, href: string): string {
+export function button(label: string, href: string): string {
   const url = escapeHtml(emailHref(href));
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 8px;">
 <tr><td align="center" bgcolor="${BRAND_BLUE}" style="border-radius:8px;background-color:${BRAND_BLUE};">
@@ -154,7 +154,7 @@ function button(label: string, href: string): string {
 }
 
 /** A plain inline link in body text. */
-function link(label: string, href: string): string {
+export function link(label: string, href: string): string {
   return `<a href="${escapeHtml(emailHref(href))}" target="_blank" style="color:${BRAND_BLUE};text-decoration:underline;">${escapeHtml(label)}</a>`;
 }
 
@@ -162,7 +162,7 @@ function link(label: string, href: string): string {
  * The page around a card: wordmark, white card, footer. `preheader` is the inbox preview line;
  * the zero-width filler after it stops clients from pulling body text into the preview.
  */
-function layout({ title, preheader, card, footer }: { title: string; preheader: string; card: string; footer: string }): string {
+export function layout({ title, preheader, card, footer }: { title: string; preheader: string; card: string; footer: string }): string {
   const filler = "&#847;&zwnj;&nbsp;".repeat(40);
   return `<!doctype html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
@@ -200,7 +200,7 @@ ${footer}
 }
 
 /** Plain-text paragraphs, wrapped by the reader's client. */
-function textBody(parts: string[]): string {
+export function textBody(parts: string[]): string {
   return `${parts.map((p) => p.trim()).join("\n\n")}\n`;
 }
 

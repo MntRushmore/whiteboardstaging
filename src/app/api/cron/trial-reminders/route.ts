@@ -6,6 +6,7 @@ import { runTrialNudges, type NudgeSummary } from "@/lib/email/nudges";
 import { emailDeps, type EmailEnv } from "@/lib/email/server";
 import { runTrialReminders, type TrialReminderSummary } from "@/lib/email/trialReminders";
 import { runStartedSweep, type StartedSweepSummary } from "@/lib/email/unlimitedStarted";
+import { runWeeklyReports, type WeeklyReportSummary } from "@/lib/email/weeklyReportSend";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,9 +37,14 @@ export const maxDuration = 60;
  * did around day 4. Here rather than in a cron of their own because Vercel Hobby allows few crons.
  * Same rules: once each (email_log), never to a trial set to cancel, failures reported, never a 500.
  *
+ * And the Sunday weekly report (`runWeeklyReports`, src/lib/email/weeklyReportSend.ts, 2026-10-09),
+ * OFF unless WEEKLY_REPORT_EMAILS=on (`{ enabled: false }` then, nothing read): each plan holder's
+ * family week, once per week (email_log), never to an opted-out account or a kid. Same rules again.
+ *
  * Body: `{ dryRun, window, found, due, alreadySent, sent, failed, skipped, deferred, wouldSend?,
  * started: { found, alreadySent, sent, failed, skipped, wouldSend? } | { error },
- * nudges: { found, due, sent, alreadySent, failed, deferred, skipped, wouldSend? } | { error } }`.
+ * nudges: { found, due, sent, alreadySent, failed, deferred, skipped, wouldSend? } | { error },
+ * weeklyReport: { enabled: false } | { enabled, weekStart, found, sent, ... } | { error } }`.
  */
 
 /** Per-IP budget: the cron fires once a day; 10/min stops a leaked URL from being hammered. */
@@ -98,7 +104,14 @@ export async function GET(req: Request) {
     nudges = { error: "could not run" };
     log.error({ requestId, dryRun, error: err instanceof Error ? err.message : String(err) }, "trial nudges failed");
   }
+  let weeklyReport: WeeklyReportSummary | { error: string };
+  try {
+    weeklyReport = await runWeeklyReports(emailDeps, env, { dryRun }, log.child({ requestId }));
+  } catch (err) {
+    weeklyReport = { error: "could not run" };
+    log.error({ requestId, dryRun, error: err instanceof Error ? err.message : String(err) }, "weekly report emails failed");
+  }
   const { wouldSend, ...counts } = summary;
-  log.info({ requestId, durationMs: Date.now() - startedAt, ...counts, wouldSend: wouldSend?.length, started, nudges }, "trial reminders summary");
-  return Response.json({ ...summary, started, nudges }, { headers: { "Cache-Control": "no-store" } });
+  log.info({ requestId, durationMs: Date.now() - startedAt, ...counts, wouldSend: wouldSend?.length, started, nudges, weeklyReport }, "trial reminders summary");
+  return Response.json({ ...summary, started, nudges, weeklyReport }, { headers: { "Cache-Control": "no-store" } });
 }
