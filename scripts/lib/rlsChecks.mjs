@@ -2674,6 +2674,165 @@ export const FAMILY_CHECKS = [
   { name: "family: families and family_members are the server's to write; members read their own row; kids share the grown-up's plan and go with their account", run: checkFamily },
 ];
 
+/** Referrals' internal and admin functions (20261009110000_referrals.sql): no client may call them. */
+export const REFERRAL_FUNCTIONS = [
+  ["admin_referrals", { p_limit: 10 }],
+  ["admin_referral_mark", { p_id: 1, p_status: "void", p_admin: ZERO_UUID }],
+  ["referral_code_for", { p_uid: ZERO_UUID }],
+  ["referral_new_code", {}],
+  ["referral_is_kid", { p_uid: ZERO_UUID }],
+  ["referral_plan_status", { p_uid: ZERO_UUID }],
+  ["referral_entry", { p_id: 1 }],
+];
+
+/**
+ * Referrals, "Give a month, get a month" (src/lib/referral; migrations
+ * 20261009100000_parents_recommend.sql and 20261009110000_referrals.sql).
+ *
+ * Users: nobody but the service role writes `referrals`, and anon reads none; no user may call the
+ * admin or internal functions; anon gets no code; nobody writes their own `profiles.referral_code`.
+ * A grown-up (A) gets one code, the same every time. With the service role and `newUser`: a new
+ * account F saving A's code (typed in lower case) makes one referral A reads, without the referred
+ * account's id (column not granted), while F reads none. A fresh account X saving its OWN code, B
+ * (older than A's code) saving A's code, and grown-up P's kid K saving P's code all make none, and
+ * their `ref` is dropped from the attribution; K gets no code
+ * (42501, hint family_kid). F's subscription moves the referral to trialing, then paid, never back;
+ * the service role marks it rewarded (once: a second mark is refused with hint referral_state), and
+ * A's summary says 1 free month earned. Removes every row it wrote.
+ *
+ * Kept out of ALL_CHECKS (the in-memory fake does not model these tables); scripts/verify-rls.mjs and
+ * the DB integration test run REFERRAL_CHECKS last.
+ * @param {CheckContext} ctx
+ */
+export async function checkReferrals({ anon, a, b, service, newUser }) {
+  /** @type {CheckResult[]} */
+  const out = [];
+  const code = (/** @type {HttpResult} */ res) => String(asObject(res.body)?.code ?? "");
+  const hint = (/** @type {HttpResult} */ res) => String(asObject(res.body)?.hint ?? "");
+  const CODE = /^[BCDFGHJKMNPQRSTVWXYZ2-9]{8}$/;
+
+  for (const [who, client] of /** @type {Array<[string, RlsClient]>} */ ([["anon", anon], ["A", a]])) {
+    const ins = await client.rest("POST", "referrals", { body: { referrer_id: client.userId ?? ZERO_UUID, referred_id: ZERO_UUID, code: "BCDFGHJK" }, prefer: "return=minimal" });
+    out.push(result(`referrals: ${who} cannot insert into referrals`, isDenied(ins), describe(ins)));
+    const upd = await client.rest("PATCH", "referrals", { query: { id: "gt.0" }, body: { status: "rewarded" }, prefer: "return=representation" });
+    out.push(result(`referrals: ${who} cannot update referrals`, isDenied(upd), describe(upd)));
+    const del = await client.rest("DELETE", "referrals", { query: { id: "gt.0" }, prefer: "return=representation" });
+    out.push(result(`referrals: ${who} cannot delete referrals`, isDenied(del), describe(del)));
+    for (const [fn, args] of REFERRAL_FUNCTIONS) {
+      const res = await rpc(client, /** @type {string} */ (fn), /** @type {Record<string, unknown>} */ (args));
+      out.push(result(`referrals: ${who} cannot call ${fn}()`, isDenied(res), describe(res)));
+    }
+  }
+  const anonRead = await anon.rest("GET", "referrals", { query: { select: "id", limit: "1" } });
+  out.push(result("referrals: anon cannot read referrals", isDenied(anonRead), describe(anonRead)));
+  const anonCode = await rpc(anon, "my_referral_code");
+  out.push(result("referrals: anon gets no code", isDenied(anonCode), describe(anonCode)));
+
+  const first = await rpc(a, "my_referral_code");
+  const again = await rpc(a, "my_referral_code");
+  const aCode = typeof first.body === "string" ? first.body : "";
+  out.push(result("referrals: A gets a code (8 characters, no vowels or look-alikes), the same every time", isOk(first) && CODE.test(aCode) && again.body === aCode, `${describe(first)} / ${describe(again)}`));
+  const write = await a.rest("PATCH", "profiles", { query: { user_id: `eq.${a.userId}` }, body: { referral_code: "BCDFGHJK" }, prefer: "return=representation" });
+  out.push(result("referrals: A cannot write their own referral_code", isDenied(write), describe(write)));
+
+  if (!service || !newUser) {
+    out.push(result("referrals: recording and the plan's moves (skipped: no service role client or newUser)", true));
+    return out;
+  }
+
+  const p = await newUser();
+  const tag = uuid().slice(0, 8);
+  const sub = `sub_rls_verify_referral_${tag}`;
+  /** @type {number | null} */
+  let referralId = null;
+  try {
+    const pCode = String((await rpc(p, "my_referral_code")).body ?? "");
+    // made after both codes: F (A's friend), K (P's kid), X (refers itself)
+    const f = await newUser();
+    const k = await newUser();
+    const x = await newUser();
+    const attribution = (/** @type {string} */ ref) => ({ p: { firstSeenAt: new Date().toISOString(), ref } });
+
+    // ---------------------------------------------------------------- recorded
+    const saved = await rpc(f, "save_attribution", attribution(` ${aCode.toLowerCase()} `));
+    const aRows = await a.rest("GET", "referrals", { query: { select: "id,code,status,paid_at" } });
+    const mine = rows(aRows).filter((r) => r.code === aCode);
+    referralId = mine[0]?.id ?? null;
+    out.push(result("referrals: a new account saving A's code (lower case) makes one referral A reads, signed_up", isOk(saved) && mine.length === 1 && mine[0]?.status === "signed_up", `${describe(saved)} / ${describe(aRows)}`));
+    const hidden = await a.rest("GET", "referrals", { query: { select: "referred_id" } });
+    out.push(result("referrals: A never reads the referred account's id (column not granted)", isDenied(hidden), describe(hidden)));
+    const fRows = await f.rest("GET", "referrals", { query: { select: "id" } });
+    out.push(result("referrals: the referred account reads no referral rows", affectedNoRows(fRows), describe(fRows)));
+    const fAttr = rows(await f.rest("GET", "profiles", { query: { select: "attribution" } }))[0]?.attribution;
+    out.push(result("referrals: the referred account's attribution keeps the code (upper case): `referred` for the plan screen", fAttr?.ref === aCode, JSON.stringify(fAttr ?? null).slice(0, 200)));
+
+    // ---------------------------------------------------------------- refused
+    await rpc(x, "save_attribution", attribution(String((await rpc(x, "my_referral_code")).body ?? "")));
+    const xRef = rows(await x.rest("GET", "profiles", { query: { select: "attribution" } }))[0]?.attribution;
+    out.push(result("referrals: an account saving its own code makes no referral, and its ref is dropped", xRef && !("ref" in xRef), JSON.stringify(xRef ?? null).slice(0, 200)));
+    await rpc(b, "save_attribution", attribution(aCode));
+    const bRef = rows(await b.rest("GET", "profiles", { query: { select: "attribution" } }))[0]?.attribution;
+    const aAfterB = rows(await a.rest("GET", "referrals", { query: { select: "id", code: `eq.${aCode}` } }));
+    out.push(result("referrals: an account older than the code makes no referral (A still has one), its ref dropped", aAfterB.length === 1 && bRef && !("ref" in bRef), JSON.stringify(bRef ?? null).slice(0, 200)));
+
+    const fam = await service.rest("POST", "families", { body: { parent_id: p.userId, pin_hash: "scrypt$rls$verify" }, prefer: "return=minimal" });
+    const mem = await service.rest("POST", "family_members", { body: { child_id: k.userId, parent_id: p.userId }, prefer: "return=minimal" });
+    await rpc(k, "save_attribution", attribution(pCode));
+    const pRows = await p.rest("GET", "referrals", { query: { select: "id" } });
+    out.push(result("referrals: a grown-up's own kid saving their code makes no referral", isOk(fam) && isOk(mem) && affectedNoRows(pRows), `${describe(fam)} / ${describe(mem)} / ${describe(pRows)}`));
+    const kCode = await rpc(k, "my_referral_code");
+    out.push(result("referrals: a kid gets no code (42501, hint family_kid)", isDenied(kCode) && code(kCode) === "42501" && hint(kCode) === "family_kid", describe(kCode)));
+    const kSummary = await rpc(k, "referral_summary");
+    out.push(result("referrals: a kid gets no summary", isDenied(kSummary) && hint(kSummary) === "family_kid", describe(kSummary)));
+
+    // ---------------------------------------------------------------- the friend's plan
+    const status = async () => rows(await a.rest("GET", "referrals", { query: { select: "status,paid_at", id: `eq.${referralId}` } }))[0] ?? null;
+    await service.rest("POST", "unlimited_subscriptions", { body: { stripe_subscription_id: sub, user_id: f.userId, status: "trialing", livemode: false }, prefer: "return=minimal" });
+    const trialing = await status();
+    await service.rest("PATCH", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${sub}` }, body: { status: "active" }, prefer: "return=minimal" });
+    const paid = await status();
+    await service.rest("PATCH", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${sub}` }, body: { status: "trialing" }, prefer: "return=minimal" });
+    const back = await status();
+    out.push(
+      result(
+        "referrals: the friend's plan moves it to trialing, then paid (dated), never back",
+        trialing?.status === "trialing" && paid?.status === "paid" && Boolean(paid?.paid_at) && back?.status === "paid",
+        JSON.stringify([trialing, paid, back]).slice(0, 200),
+      ),
+    );
+
+    // ---------------------------------------------------------------- the admin's mark
+    const marked = await rpc(service, "admin_referral_mark", { p_id: referralId, p_status: "rewarded", p_admin: p.userId });
+    out.push(result("referrals: the service role marks it rewarded", isOk(marked) && asObject(marked.body)?.status === "rewarded", describe(marked)));
+    const twice = await rpc(service, "admin_referral_mark", { p_id: referralId, p_status: "rewarded", p_admin: p.userId });
+    out.push(result("referrals: rewarded is final (hint referral_state)", !isOk(twice) && hint(twice) === "referral_state", describe(twice)));
+    const audit = await service.rest("GET", "admin_audit", { query: { select: "action,target_kind", target_kind: "eq.referral", target_id: `eq.${referralId}` } });
+    out.push(result("referrals: the mark is in admin_audit (referral.reward)", rows(audit).length === 1 && rows(audit)[0]?.action === "referral.reward", describe(audit)));
+    const summary = asObject((await rpc(a, "referral_summary")).body);
+    out.push(
+      result(
+        "referrals: A's summary says 1 friend joined, 1 free month earned",
+        summary?.code === aCode && summary?.signed_up === 1 && summary?.paid === 1 && summary?.months_earned === 1 && summary?.months_pending === 0,
+        JSON.stringify(summary).slice(0, 200),
+      ),
+    );
+  } finally {
+    await service.rest("DELETE", "unlimited_subscriptions", { query: { stripe_subscription_id: `eq.${sub}` } });
+    if (referralId !== null) await service.rest("DELETE", "admin_audit", { query: { target_kind: "eq.referral", target_id: `eq.${referralId}` } });
+    await service.rest("DELETE", "referrals", { query: { referrer_id: `in.(${a.userId},${p.userId})` } });
+    await service.rest("DELETE", "families", { query: { parent_id: `eq.${p.userId}` } });
+  }
+  return out;
+}
+
+/**
+ * The referral checks, run last by scripts/verify-rls.mjs and src/__tests__/db-rls.integration.test.ts.
+ * @type {CheckDef[]}
+ */
+export const REFERRAL_CHECKS = [
+  { name: "referrals: the server's to write; a grown-up reads their own (never the friend's id); recorded only for a new, other, grown-up account; follows the friend's plan forward", run: checkReferrals },
+];
+
 /**
  * Run one check, converting a thrown error into a single failing result.
  * @param {CheckDef} check
