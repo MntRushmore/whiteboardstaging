@@ -3,10 +3,13 @@
  * makes, as plain data and pure functions so the route stays thin and the choices are tested.
  *
  * Why these choices:
- *  - `eleven_flash_v2_5`: ElevenLabs' lowest-latency model (~75 ms to the first audio), at half the
- *    characters' cost of their multilingual models. A hint must sound while it is still on screen.
- *  - "Jessica" (premade, young, warm, bright, American): friendly to a five-year-old without being
- *    a cartoon. The owner prefers ElevenLabs voices to the browser's; LIVE_VOICE_ID picks another.
+ *  - `eleven_v4_turbo`: ElevenLabs' newest, most natural model in its low-latency form (~0.25 s to
+ *    the first audio, measured 2026-10-09), at the same half-credit price as Flash v2.5. A hint must
+ *    sound while it is still on screen, and sound like a person.
+ *  - "Hope" (natural, clear and calm; young, American): one of the most-used voices in the
+ *    ElevenLabs library (~8.7B characters in the last year) and among the account's own voices.
+ *    Warm to a five-year-old without being a cartoon or a customer-service bot. The owner wants a
+ *    voice that sounds really good, not a stock one; LIVE_VOICE_ID picks another.
  *  - `mp3_44100_64`: every browser plays MP3 in an <audio> element (iOS Safari included), and 64
  *    kbit/s is clear for one voice at a third of the bytes of 192.
  *  - speed 0.95 and steady settings: a touch slower than a grown-up's pace, the same voice every
@@ -19,9 +22,9 @@ import { SPEAK_MAX_CHARS, type SpeakRequest } from "./contracts";
 
 export const TTS = {
   baseUrl: "https://api.elevenlabs.io/v1/text-to-speech",
-  model: "eleven_flash_v2_5",
-  /** Jessica: premade, so every ElevenLabs account has it */
-  defaultVoiceId: "cgSgspJ2msm6clMCkdW9",
+  model: "eleven_v4_turbo",
+  /** Hope: listed by GET /v2/voices on the account (2026-10-09) */
+  defaultVoiceId: "OYTbf65OHHFELVut7v2H",
   outputFormat: "mp3_44100_64",
   language: "en",
   voiceSettings: { stability: 0.55, similarity_boost: 0.75, style: 0, use_speaker_boost: true, speed: 0.95 },

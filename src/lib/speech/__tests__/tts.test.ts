@@ -3,10 +3,10 @@ import { SPEAK_MAX_CHARS } from "../contracts";
 import { SpeakRequestSchema, TTS, ttsBody, ttsRefusal, ttsUrl, voiceIdOr } from "../tts";
 
 describe("read aloud's ElevenLabs request", () => {
-  it("the low-latency model, MP3, English", () => {
-    expect(TTS.model).toBe("eleven_flash_v2_5");
+  it("the natural low-latency model, MP3, English", () => {
+    expect(TTS.model).toBe("eleven_v4_turbo");
     expect(ttsUrl("abcDEF0123456789wxyz")).toBe("https://api.elevenlabs.io/v1/text-to-speech/abcDEF0123456789wxyz/stream?output_format=mp3_44100_64");
-    expect(ttsBody("Hello")).toEqual({ text: "Hello", model_id: "eleven_flash_v2_5", language_code: "en", voice_settings: TTS.voiceSettings });
+    expect(ttsBody("Hello")).toEqual({ text: "Hello", model_id: "eleven_v4_turbo", language_code: "en", voice_settings: TTS.voiceSettings });
   });
 
   it("voiceIdOr: the configured voice when it looks like one, else the default", () => {

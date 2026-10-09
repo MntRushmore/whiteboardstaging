@@ -175,7 +175,7 @@ describe("POST /api/live/speak", () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toBe(`${TTS.baseUrl}/${TTS.defaultVoiceId}/stream?output_format=${TTS.outputFormat}`);
     expect(new Headers(init?.headers).get("xi-api-key")).toBe(KEY);
-    expect(sentBody()).toMatchObject({ text: "Try three quarters of x squared minus 1.", model_id: "eleven_flash_v2_5", language_code: "en" });
+    expect(sentBody()).toMatchObject({ text: "Try three quarters of x squared minus 1.", model_id: "eleven_v4_turbo", language_code: "en" });
     expect(res.headers.get("X-Speech-Chars")).toBe(String(sentBody().text.length));
     expect(callsTo("consume_credits")).toEqual([]);
     // the key never comes back

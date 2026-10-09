@@ -48,8 +48,9 @@ export const SPEAK_RATE_LIMITS = {
 /**
  * The ElevenLabs voice for everyone together, in characters a day (UTC): the backstop on the shared
  * key's bill however many accounts there are (`GLOBAL_BUDGETS.liveSpeakChars` in
- * src/lib/server/rate-limit.ts). About 2,000 hints of 100 characters, 100,000 Flash credits; past it
- * every student hears the browser's voice until the day turns. Raise it with the ElevenLabs plan.
+ * src/lib/server/rate-limit.ts). About 2,000 hints of 100 characters, 100,000 credits (v4 Turbo
+ * costs half a credit a character); past it every student hears the browser's voice until the day
+ * turns. Raise it with the ElevenLabs plan.
  */
 export const SPEAK_GLOBAL_BUDGET = { limit: 200_000, windowMs: 86_400_000 } as const;
 
