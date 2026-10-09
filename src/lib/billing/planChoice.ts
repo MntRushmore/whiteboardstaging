@@ -72,10 +72,16 @@ export function planCheckoutUrl(payer: UnlimitedPayer | null | undefined, choice
   return link ? unlimitedCheckoutUrl(payer, link) : null;
 }
 
+const FRIEND_LEAD = "Your first month is free";
+const FRIEND_WHY = "(a friend invited you)";
+
 /** What the plan screen and the Billing card say about a friend's free month. */
 export const PLAN_REFERRAL_COPY = {
-  /** why the first month is free, in the brief's words */
-  friend: "Your first month is free (a friend invited you)",
+  /** why the first month is free, as one line */
+  friend: `${FRIEND_LEAD} ${FRIEND_WHY}`,
+  /** the same in its two halves, so a narrow screen breaks it before the reason, never inside it */
+  friendLead: FRIEND_LEAD,
+  friendWhy: FRIEND_WHY,
   /** the plan screen's big line, in place of "Free for 7 days" */
   friendFree: "First month free",
 } as const;

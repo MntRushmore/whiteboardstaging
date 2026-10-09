@@ -91,7 +91,13 @@ describe("a friend's free first month", () => {
   });
 
   it("is said plainly, with no price in it (the price is UNLIMITED_PLAN's, wherever it is said)", () => {
-    expect(PLAN_REFERRAL_COPY).toEqual({ friend: "Your first month is free (a friend invited you)", friendFree: "First month free" });
+    expect(PLAN_REFERRAL_COPY).toEqual({
+      friend: "Your first month is free (a friend invited you)",
+      friendLead: "Your first month is free",
+      friendWhy: "(a friend invited you)",
+      friendFree: "First month free",
+    });
+    expect(`${PLAN_REFERRAL_COPY.friendLead} ${PLAN_REFERRAL_COPY.friendWhy}`).toBe(PLAN_REFERRAL_COPY.friend);
     expect(JSON.stringify(PLAN_REFERRAL_COPY)).not.toMatch(/\$|!/);
   });
 });

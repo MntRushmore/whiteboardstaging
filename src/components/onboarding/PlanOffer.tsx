@@ -134,7 +134,8 @@ export function PlanOffer({ view, chargeDate, starting = false, onStart, onConti
             {friend && (
               <p className={`${styles.friend} ${styles.rise}`} data-testid="plan-friend">
                 <Gift size={16} strokeWidth={2} aria-hidden />
-                {PLAN_REFERRAL_COPY.friend}
+                {/* two unbreakable halves: a narrow screen breaks before the reason, never inside either */}
+                <span className={styles.nowrap}>{PLAN_REFERRAL_COPY.friendLead}</span> <span className={styles.nowrap}>{PLAN_REFERRAL_COPY.friendWhy}</span>
               </p>
             )}
           </>

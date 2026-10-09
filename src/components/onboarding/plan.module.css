@@ -102,20 +102,30 @@
   font-size: var(--text-base);
 }
 
-/* a friend's free month: why, under the price (a referred family only) */
+/*
+ * A friend's free month: why, under the price (a referred family only). One line on a wide screen;
+ * on a phone it wraps to two centred lines, the gift icon inline with the first, so it reads as one
+ * note rather than an icon beside a paragraph.
+ */
 .friend {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
+  display: inline-block;
   margin: var(--space-3) 0 0;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-control);
   padding: var(--space-1) var(--space-3);
   background: var(--surface);
   box-shadow: var(--shadow-resting);
   color: var(--text-secondary);
   font-size: var(--text-sm);
   font-weight: 500;
-  text-wrap: balance;
+  line-height: 1.45;
+}
+.friend svg {
+  display: inline;
+  margin-right: var(--space-2);
+  vertical-align: -3px;
+}
+.nowrap {
+  white-space: nowrap;
 }
 
 /* ---- what it gives ---------------------------------------------------------------------------- */

@@ -60,7 +60,13 @@ describe("the plan card with a friend's month", () => {
     expect(html).toContain(`<s>${PRICE}/month</s>`);
     expect(html).toContain(PLAN_REFERRAL_COPY.friendFree);
     expect(html).not.toContain(PLAN_COPY.free);
-    expect(html).toMatch(/data-testid="plan-friend"[^>]*>[\s\S]*?Your first month is free \(a friend invited you\)/);
+    const friendLine = html.match(/<p[^>]*data-testid="plan-friend"[^>]*>([\s\S]*?)<\/p>/)?.[1] ?? "";
+    expect(friendLine.replace(/<[^>]+>/g, "").trim()).toBe(PLAN_REFERRAL_COPY.friend);
+    // two unbreakable halves: a phone breaks it before the reason, never inside it
+    expect(friendLine.match(/<span[^>]*>[^<]*<\/span>/g)).toEqual([
+      expect.stringContaining(">Your first month is free<"),
+      expect.stringContaining(">(a friend invited you)<"),
+    ]);
     expect(html).toContain(PLAN_COPY.then);
     for (const p of PLAN_COPY.perks) expect(html).toContain(p.text);
     expect(html).toContain(PLAN_COPY.disclosure(DATE));
