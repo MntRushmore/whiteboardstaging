@@ -2,6 +2,7 @@
 
 import { Flame, Lightbulb, Play } from "lucide-react";
 import { FamilyAvatar } from "@/components/family/FamilyAvatar";
+import { ShareProgressButton } from "@/components/share/ShareProgressButton";
 import type { ChildWeek } from "@/lib/report/contracts";
 import { REPORT_COPY } from "@/lib/report/copy";
 import { DAY_LETTERS, DAY_NAMES, dayLevel, gradeText, joinNames, practisedBars } from "@/lib/report/view";
@@ -21,6 +22,11 @@ export interface ChildWeekCardProps {
   /** the quiet week's nudge: open Today's practice (switching to the kid first, for a grown-up) */
   onPractice: () => void;
   practiceBusy: boolean;
+  /**
+   * The signed-in user, whose referral link the share card carries (a grown-up's: a kid's profile
+   * row is theirs alone to read). Absent, the week has no Share button.
+   */
+  shareAs?: string;
 }
 
 function Stat({ id, value, label, hint }: { id: string; value: number; label: string; hint?: string }) {
@@ -53,7 +59,7 @@ function NextWeek({ focus }: { focus: NonNullable<ChildWeek["focus"]> }) {
  * with a tip, and the replay of the board they worked hardest on. A week with nothing in it says so
  * kindly and offers Today's practice instead of a page of zeros.
  */
-export function ChildWeekCard({ week, self, current, todayIndex, onWatch, onPractice, practiceBusy }: ChildWeekCardProps) {
+export function ChildWeekCard({ week, self, current, todayIndex, onWatch, onPractice, practiceBusy, shareAs }: ChildWeekCardProps) {
   const quiet = week.problems === 0 && week.activeDays === 0 && week.dailySets === 0;
   const bars = practisedBars(week.practised);
   const days = week.days ?? [];
@@ -75,6 +81,22 @@ export function ChildWeekCard({ week, self, current, todayIndex, onWatch, onPrac
             <Flame size={16} strokeWidth={2.2} aria-hidden />
             {REPORT_COPY.streakChip(week.streak)}
           </span>
+        )}
+        {/* a week worth showing off: the share card with these numbers (it all loads on the tap) */}
+        {!quiet && shareAs && (
+          <ShareProgressButton
+            size="sm"
+            userId={shareAs}
+            card={{
+              name: week.displayName,
+              avatar: week.avatar,
+              grade: week.grade,
+              problems: week.problems,
+              independent: week.independent,
+              streak: week.streak,
+              mastered: week.newlyMastered,
+            }}
+          />
         )}
       </div>
 

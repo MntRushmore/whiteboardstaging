@@ -12,6 +12,7 @@ import { Button } from "@/registry/components/button/button";
 import { EmptyState } from "@/registry/components/empty-state/empty-state";
 import { ProgressPath } from "@/components/path/ProgressPath";
 import { ShareProgressButton } from "@/components/share/ShareProgressButton";
+import { isKidEmail } from "@/lib/family/contracts";
 import { ActivityChart } from "./ActivityChart";
 import { GrownUps, LevelLadder, MistakeList, ProgressSkeleton, Section, SkillMap, WeekTiles } from "./ProgressSections";
 import { RecentProblems } from "./RecentProblems";
@@ -194,7 +195,8 @@ export function ProgressScreen() {
           actions={actions}
           path={data.status === "ready" && user ? <ProgressPath userId={user.id} skills={data.summary.skills} /> : null}
           share={
-            data.status === "ready" && view && user ? (
+            // not for a kid profile: sharing to the world is the grown-up's call (they share each kid's week from /report)
+            data.status === "ready" && view && user && !isKidEmail(user.email) ? (
               <ShareProgressButton
                 placement="end"
                 userId={user.id}

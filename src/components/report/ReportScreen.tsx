@@ -127,6 +127,7 @@ export function ReportScreen() {
               onWatch={(boardId) => router.push(`${REPORT_PATH}/replay/${boardId}`)}
               onPractice={() => void practise(c)}
               practiceBusy={busyKid === c.userId}
+              shareAs={shown.role === "kid" ? undefined : user.id}
             />
           ))}
         </ul>
