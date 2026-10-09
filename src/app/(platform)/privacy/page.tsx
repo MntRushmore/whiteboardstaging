@@ -4,6 +4,7 @@ import { ContactBlock, ContactEmail, LegalPage, LegalSection } from "@/component
 import styles from "@/components/legal/legal.module.css";
 import { UNLIMITED_PLAN } from "@/lib/billing/unlimited";
 import { LEGAL } from "@/lib/legal";
+import { SPEAK_MAX_CHARS } from "@/lib/speech/contracts";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
@@ -22,6 +23,8 @@ const plan = UNLIMITED_PLAN.name;
  *  - Resend (src/lib/email/resend.ts; also Supabase Auth's SMTP for password resets)
  *  - ElevenLabs (src/app/api/live/lecture/token) and the browser's recognizer
  *    (src/lib/live/lecture/speech/browser.ts): lecture mode, hidden from the board for now
+ *  - ElevenLabs text-to-speech (src/app/api/live/speak/route.ts) and the browser's speechSynthesis
+ *    (src/lib/speech/speaker.ts): read aloud, the tutor's words only (src/lib/speech/tutorWords.ts)
  *  - tldraw's CDN (fonts, icons) and unpkg (the PDF.js worker, src/lib/pdf.ts)
  */
 const PROVIDERS = [
@@ -62,13 +65,13 @@ const PROVIDERS = [
   },
   {
     name: "ElevenLabs",
-    role: "Speech-to-text for lecture mode, which is switched off for now; only while it is listening.",
-    data: "Microphone audio, streamed straight from your browser.",
+    role: "Reads the tutor’s hints and questions aloud (read aloud: on for Kindergarten to 2nd grade unless it is switched off, and off for everyone else unless it is switched on). Also speech-to-text for lecture mode, which is switched off for now; only while it is listening.",
+    data: `For read aloud: the words the tutor is about to say (a hint, a question or a word of praise, at most ${SPEAK_MAX_CHARS} characters), sent from our server without your name or email address, and never your handwriting. For lecture mode: microphone audio, streamed straight from your browser.`,
   },
   {
-    name: "Your browser’s speech recognition",
-    role: "Lecture mode’s fallback when ElevenLabs is not available.",
-    data: "Microphone audio. Some browsers (for example Chrome) send it to their maker (Google) to recognise it.",
+    name: "Your browser’s speech features",
+    role: "Read aloud’s voice when ElevenLabs is not available, and lecture mode’s fallback recognizer.",
+    data: "The tutor’s words to be said, or microphone audio. Some browsers send them to their maker: for example Chrome’s Google voices and its recognizer (Google), and Edge’s online voices (Microsoft).",
   },
   {
     name: "tldraw and unpkg",
@@ -243,6 +246,12 @@ export default function PrivacyPage() {
           These requests go through OpenRouter to models from Google (Gemini), OpenAI (GPT), Anthropic (Claude) and
           DeepSeek. They never include your email address, your display name or your payment details, although
           anything you write on a board (your name, say) is sent along with the rest of the board.
+        </p>
+        <p>
+          <strong>Read aloud:</strong> when it is on, the words the tutor is about to say (a hint, a question, a word of
+          praise) go to ElevenLabs to be turned into speech, without your name or email address. Your handwriting is
+          never sent to ElevenLabs. When ElevenLabs is not available, your browser’s own voice says them instead (see{" "}
+          <a href="#providers">below</a>).
         </p>
         <p>
           We do not use your boards to train AI models. {LEGAL.aiProviderTraining} Mathpix keeps only a record that a
