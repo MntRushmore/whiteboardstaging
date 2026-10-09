@@ -152,8 +152,9 @@
   animation: report-rise var(--duration-considered) var(--ease-enter) both;
 }
 /* the kid the Family page's "See <name>'s week" asked for: scrolled to, and ringed */
+/* clear of the sticky app bar (4 rem) with room to see the ring */
 .child {
-  scroll-margin-top: var(--space-6);
+  scroll-margin-top: calc(4rem + var(--space-6));
 }
 .child[data-focused] {
   border-color: var(--border-strong);
