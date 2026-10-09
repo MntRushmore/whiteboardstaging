@@ -2,6 +2,9 @@ import { execSync } from "node:child_process";
 import type { NextConfig } from "next";
 import { SECURITY_HEADERS } from "./src/lib/securityHeaders";
 
+/** Where every page lives (`redirects`): the old host sends people here. */
+const CANONICAL_ORIGIN = "https://www.agathon.app";
+
 /**
  * The release name of this build (src/lib/release.ts): NEXT_PUBLIC_RELEASE when set by hand, else
  * the commit Vercel is building (short SHA, as the dashboard and GitHub show it), else the local
@@ -37,6 +40,19 @@ const nextConfig: NextConfig = {
   // Anti-framing and the other headers that cannot break the board (src/lib/securityHeaders.ts).
   async headers() {
     return [{ source: "/:path*", headers: [...SECURITY_HEADERS] }];
+  },
+  // One home: www.agathon.app (2026-10-09). A sign-in lives on one origin, so a grown-up who signed
+  // in on agathon.app and came back from checkout on the old host looked signed out. Every page on
+  // the old host moves for good, query kept; /api still answers there for anything pointed at it.
+  async redirects() {
+    return [
+      {
+        source: "/:path((?!api/).*)",
+        has: [{ type: "host", value: "whiteboard.rushilchopra.com" }],
+        destination: `${CANONICAL_ORIGIN}/:path`,
+        permanent: true,
+      },
+    ];
   },
 };
 

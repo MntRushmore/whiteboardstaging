@@ -42,7 +42,7 @@ export const LEGAL = {
 
   // Facts, not placeholders (from the product; change them with the product).
   productName: "Agathon",
-  siteHost: "whiteboard.rushilchopra.com",
+  siteHost: "agathon.app",
   /** The seller name Stripe shows at checkout and on receipts (the Stripe account is shared with Fuime). */
   stripeSellerName: "Fuime",
   /**

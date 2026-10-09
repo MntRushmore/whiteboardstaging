@@ -61,9 +61,9 @@ describe("parseArgs", () => {
     expect(parseArgs([])).toEqual({ mode: "test", site: "http://localhost:3000", dryRun: false, secretFile: null, help: false });
   });
   it("reads --mode, --site (origin only), --dry-run and --secret-file, with = or a space", () => {
-    expect(parseArgs(["--mode=live", "--site", "https://whiteboard.rushilchopra.com/account/", "--dry-run", "--secret-file", "/tmp/x"])).toEqual({
+    expect(parseArgs(["--mode=live", "--site", "https://www.agathon.app/account/", "--dry-run", "--secret-file", "/tmp/x"])).toEqual({
       mode: "live",
-      site: "https://whiteboard.rushilchopra.com",
+      site: "https://www.agathon.app",
       dryRun: true,
       secretFile: "/tmp/x",
       help: false,
@@ -78,9 +78,9 @@ describe("parseArgs", () => {
     expect(parseArgs(["--mode", "live"])).toMatchObject({ error: /public --site/ });
   });
   it("refuses test-mode objects that point at production (a test webhook endpoint there), except as a read-only dry run", () => {
-    expect(parseArgs(["--mode", "test", "--site", "https://whiteboard.rushilchopra.com"])).toMatchObject({ error: /must not point at https:\/\/whiteboard\.rushilchopra\.com/ });
-    expect(parseArgs(["--site", "https://whiteboard.rushilchopra.com/"])).toMatchObject({ error: /must not point at/ });
-    expect(parseArgs(["--mode", "test", "--site", "https://whiteboard.rushilchopra.com", "--dry-run"])).toMatchObject({ mode: "test", dryRun: true });
+    expect(parseArgs(["--mode", "test", "--site", "https://www.agathon.app"])).toMatchObject({ error: /must not point at https:\/\/www\.agathon\.app/ });
+    expect(parseArgs(["--site", "https://www.agathon.app/"])).toMatchObject({ error: /must not point at/ });
+    expect(parseArgs(["--mode", "test", "--site", "https://www.agathon.app", "--dry-run"])).toMatchObject({ mode: "test", dryRun: true });
     expect(parseArgs(["--mode", "test", "--site", "https://preview-abc.vercel.app"])).toMatchObject({ mode: "test", site: "https://preview-abc.vercel.app" });
   });
 });
@@ -91,7 +91,7 @@ describe("site helpers", () => {
     expect(normalizeSite("javascript:alert(1)")).toBeNull();
     expect(isLocalSite("http://localhost:3112")).toBe(true);
     expect(isLocalSite("http://127.0.0.1:3000")).toBe(true);
-    expect(isLocalSite("https://whiteboard.rushilchopra.com")).toBe(false);
+    expect(isLocalSite("https://www.agathon.app")).toBe(false);
     expect(inkReturnUrl("https://a.example.com", "medium")).toBe("https://a.example.com/account?ink=medium");
   });
 });

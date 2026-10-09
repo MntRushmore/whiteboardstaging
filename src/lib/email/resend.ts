@@ -175,7 +175,7 @@ export async function sendEmail(input: SendEmailInput, config: ResendConfig = re
   const headers: Record<string, string> = {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
-    "User-Agent": "agathon-whiteboard/1 (+https://whiteboard.rushilchopra.com)",
+    "User-Agent": "agathon-whiteboard/1 (+https://www.agathon.app)",
   };
   if (key) headers["Idempotency-Key"] = key;
 
