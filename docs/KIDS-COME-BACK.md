@@ -56,7 +56,7 @@ Each part's own migration gets its own timestamp:
 | Weekly report | `feat/kcb2-report` | `/report` shows each child's week: problems, skills mastered, the next thing to work on, and a replay to watch. The Sunday email is built but OFF unless `WEEKLY_REPORT_EMAILS=on`, with one-tap opt-out. |
 | Share | `feat/kcb2-share` | A progress card picture to share or save, and the replay saved as a video. |
 | Referrals | `feat/kcb2-referral` | "Give a month, get a month": a code per grown-up, referrals recorded, a share link, and an admin list of rewards due. |
-| Yearly family plan | `feat/kcb2-annual` | $199/yr with every kid included, shown when its Payment Link is set. Monthly/yearly toggle on the plan screen, and the subscription's billing interval stored. |
+| Plan choice | `feat/kcb2-annual` | One monthly plan; the yearly plan was dropped on 2026-10-09 because the owner will raise the monthly price instead. A referred family is sent to the referral Payment Link, and the funnel's MRR leaves out admins. Every price on every screen comes from `UNLIMITED_PLAN`, so a price change is one edit. |
 | Parent landing | `feat/kcb2-landing` | `/parents` for signed-out visitors: what it is, how it works, what kids practise, pricing, and an FAQ. No made-up testimonials or numbers. Signed-out `/` goes here. |
 
 **Phase 3, the board for little kids:**
@@ -70,18 +70,16 @@ Each part's own migration gets its own timestamp:
 - Types:
   - `src/lib/report/contracts.ts`
   - `src/lib/referral/contracts.ts`
-  - `src/lib/billing/planChoice.ts` (a stub until the yearly plan is built)
+  - `src/lib/billing/planChoice.ts`
   - `src/lib/speech/contracts.ts`
 - `supabase/migrations/20261009100000_parents_recommend.sql`:
   - `profiles.referral_code` and `profiles.weekly_report_opt_out`
   - the `referrals` table
-  - `unlimited_subscriptions.billing_interval`
 
 Each part's own migration:
 - `20261009110000_referrals.sql`
 - `20261009120000_weekly_report.sql`
-- `20261009130000_annual.sql`
+- `20261009130000_billing_followups.sql` (if needed)
 
-**Stripe objects the owner makes, all optional:**
-- The yearly Payment Link → `NEXT_PUBLIC_UNLIMITED_ANNUAL_LINK`
+**Stripe objects the owner makes, optional:**
 - The referral Payment Link (30-day trial) → `NEXT_PUBLIC_UNLIMITED_REFERRAL_LINK`

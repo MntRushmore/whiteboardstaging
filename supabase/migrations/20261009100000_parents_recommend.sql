@@ -2,7 +2,7 @@
 -- Parents recommend it (2026-10-09, Phase 2). Idempotent; additive. docs/KIDS-COME-BACK.md.
 --
 -- The shared schema of Phase 2; each part's functions come in its own migration
--- (20261009110000_referrals.sql, 20261009120000_weekly_report.sql, 20261009130000_annual.sql):
+-- (20261009110000_referrals.sql, 20261009120000_weekly_report.sql):
 --
 --   profiles.referral_code          a grown-up's code for "Give a month, get a month"
 --                                   (src/lib/referral/contracts.ts REFERRAL_CODE_PATTERN), unique,
@@ -15,10 +15,9 @@
 --                                   and how far it got (signed_up, trialing, paid, rewarded, void).
 --                                   The referrer reads their own rows' status and dates (never the
 --                                   referred account's id is shown to them); writes are server-side.
---   unlimited_subscriptions.billing_interval
---                                   'month' or 'year' (the yearly family plan), written by the
---                                   Stripe webhook from the subscription's price; null on rows from
---                                   before it (all monthly).
+--
+-- (A yearly plan was planned here and dropped the same night: the owner will raise the monthly
+-- price instead, so there is one plan, monthly.)
 -- =============================================================================
 
 alter table public.profiles add column if not exists referral_code text;
@@ -55,10 +54,5 @@ drop policy if exists "referrals: referrer select" on public.referrals;
 create policy "referrals: referrer select"
   on public.referrals for select to authenticated
   using (referrer_id = auth.uid());
-
-alter table public.unlimited_subscriptions add column if not exists billing_interval text;
-alter table public.unlimited_subscriptions drop constraint if exists unlimited_subscriptions_interval_known;
-alter table public.unlimited_subscriptions add constraint unlimited_subscriptions_interval_known
-  check (billing_interval is null or billing_interval in ('month', 'year'));
 
 notify pgrst, 'reload schema';
