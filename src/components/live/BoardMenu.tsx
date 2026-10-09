@@ -38,7 +38,7 @@ export interface BoardMenuProps {
  * Board options, the status pill's "…" menu (`LiveStatusPill` has what each prop is), and the simple
  * board's More's Board options row: its items, as the menu's content. A chunk of its own, fetched as
  * the pill mounts, just after the board: there is nothing to show before the first tap on "…"
- * (docs/BUNDLE.md). Kept 16 px off the screen's edges, and its rows 44 px tall under a finger.
+ * (docs/BUNDLE.md). Kept 16 px off the screen's edges (scrolling when taller than the room there), its rows 44 px tall under a finger.
  */
 export default function BoardMenu({
   liveRunning,
@@ -59,7 +59,7 @@ export default function BoardMenu({
       align="start"
       side="bottom"
       collisionPadding={16}
-      className="w-60 pointer-coarse:[&_[role^=menuitem]]:min-h-11"
+      className="max-h-(--radix-dropdown-menu-content-available-height) w-60 overflow-y-auto pointer-coarse:[&_[role^=menuitem]]:min-h-11"
       data-testid="board-menu"
     >
       <DropdownMenuLabel className="text-xs text-gray-500">{LIVE_COPY.pill.groupCanvas}</DropdownMenuLabel>
