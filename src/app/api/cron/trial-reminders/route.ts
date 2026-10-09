@@ -2,13 +2,14 @@ import { json } from "@/lib/server/auth";
 import { checkRateLimit, clientIp, rateLimitedResponse } from "@/lib/server/rate-limit";
 import { bearerMatches } from "@/lib/server/storageGc";
 import { emailLogger } from "@/lib/email/resend";
+import { runTrialNudges, type NudgeSummary } from "@/lib/email/nudges";
 import { emailDeps, type EmailEnv } from "@/lib/email/server";
 import { runTrialReminders, type TrialReminderSummary } from "@/lib/email/trialReminders";
 import { runStartedSweep, type StartedSweepSummary } from "@/lib/email/unlimitedStarted";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-/** Up to MAX_SENDS_PER_RUN sends, spaced for Resend's rate limit. */
+/** Up to MAX_SENDS_PER_RUN reminders and NUDGE_MAX_SENDS_PER_RUN nudges, spaced for Resend's rate limit. */
 export const maxDuration = 60;
 
 /**
@@ -30,8 +31,14 @@ export const maxDuration = 60;
  * (`runStartedSweep`, src/lib/email/unlimitedStarted.ts: trials with more than a day left and no
  * such email in email_log). Its failure is logged and reported, never a 500 for the reminders.
  *
+ * And the free trial's nudges (`runTrialNudges`, src/lib/email/nudges.ts, 2026-10-09): "<Name>'s
+ * first practice is ready" about a day into a trial nobody has practiced in yet, and what the kids
+ * did around day 4. Here rather than in a cron of their own because Vercel Hobby allows few crons.
+ * Same rules: once each (email_log), never to a trial set to cancel, failures reported, never a 500.
+ *
  * Body: `{ dryRun, window, found, due, alreadySent, sent, failed, skipped, deferred, wouldSend?,
- * started: { found, alreadySent, sent, failed, skipped, wouldSend? } | { error } }`.
+ * started: { found, alreadySent, sent, failed, skipped, wouldSend? } | { error },
+ * nudges: { found, due, sent, alreadySent, failed, deferred, skipped, wouldSend? } | { error } }`.
  */
 
 /** Per-IP budget: the cron fires once a day; 10/min stops a leaked URL from being hammered. */
@@ -84,7 +91,14 @@ export async function GET(req: Request) {
     started = { error: "could not run" };
     log.error({ requestId, dryRun, error: err instanceof Error ? err.message : String(err) }, "free trial started catch-up failed");
   }
+  let nudges: NudgeSummary | { error: string };
+  try {
+    nudges = await runTrialNudges(emailDeps, env, { dryRun }, log.child({ requestId }));
+  } catch (err) {
+    nudges = { error: "could not run" };
+    log.error({ requestId, dryRun, error: err instanceof Error ? err.message : String(err) }, "trial nudges failed");
+  }
   const { wouldSend, ...counts } = summary;
-  log.info({ requestId, durationMs: Date.now() - startedAt, ...counts, wouldSend: wouldSend?.length, started }, "trial reminders summary");
-  return Response.json({ ...summary, started }, { headers: { "Cache-Control": "no-store" } });
+  log.info({ requestId, durationMs: Date.now() - startedAt, ...counts, wouldSend: wouldSend?.length, started, nudges }, "trial reminders summary");
+  return Response.json({ ...summary, started, nudges }, { headers: { "Cache-Control": "no-store" } });
 }
