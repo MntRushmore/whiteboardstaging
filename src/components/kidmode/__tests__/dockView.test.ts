@@ -9,6 +9,12 @@ function dock(partial: Partial<KidDockState> = {}) {
 }
 
 describe("kidDockView", () => {
+  it("a phone with several pages stacks two even shelves (the pages over the tools); one page or a wide board, one row", () => {
+    expect(dock({ narrow: true, pages: 2, page: 2 }).stack).toBe(true);
+    expect(dock({ narrow: true, pages: 1 }).stack).toBe(false);
+    expect(dock({ narrow: false, pages: 3 }).stack).toBe(false);
+  });
+
   it("shows which of Pen and Eraser is in hand, and neither for a grown-up's tool", () => {
     expect(dock({ tool: "draw" })).toMatchObject({ pen: true, eraser: false });
     expect(dock({ tool: "eraser" })).toMatchObject({ pen: false, eraser: true });

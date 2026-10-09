@@ -115,6 +115,12 @@ export interface KidDockView {
    * page before), and New page always, greyed out when the board is full.
    */
   pages: { arrows: boolean; label: string | null; canPrev: boolean; canNext: boolean; canAdd: boolean };
+  /**
+   * A phone with several pages: the tools and the pages do not fit one row at 48 px a target, so
+   * the dock is two shelves of one width, the pages over the tools — not two odd shelves wrapped
+   * any which way. (Its Colour popover opens over the whole dock, never over the page arrows.)
+   */
+  stack: boolean;
 }
 
 export function kidDockView(state: KidDockState): KidDockView {
@@ -131,5 +137,6 @@ export function kidDockView(state: KidDockState): KidDockView {
       canNext: several && state.page < state.pages,
       canAdd: state.pages < state.maxPages,
     },
+    stack: state.narrow && several,
   };
 }
