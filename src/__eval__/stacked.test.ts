@@ -40,7 +40,9 @@ const LAYOUTS: Array<[string, () => StackShapes, string | null]> = [
   ["three numbers", () => writeStack(["125", "48", "+302"], "475"), "475"],
   ["decimals", () => writeStack(["3.50", "+12.25"], "15.75"), "15.75"],
   ["four digits, two carries", () => writeStack(["4807", "+3295"], "8102", { carries: [{ place: 1, digit: "1" }, { place: 2, digit: "1" }] }), "8102"],
-  ["long multiplication (out of scope: must not parse)", longMultiplication, null],
+  // read before as `115 \\ \frac{920}{1035}` under the rule: the second rule taken for a fraction's bar,
+  // which `parseStacked` now reads as the last row over the sum
+  ["long multiplication: two rows, then their sum", longMultiplication, "1035"],
 ];
 
 describe.skipIf(!LIVE)("eval: stacked sums → Mathpix (RUN_LIVE_EVAL=1)", () => {

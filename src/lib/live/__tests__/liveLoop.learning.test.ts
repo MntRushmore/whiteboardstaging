@@ -363,6 +363,26 @@ describe("live loop — the learning record's signals", () => {
     expect(signals.at(-1)).toMatchObject({ problemLatex: ["2x + 3 = 11"] });
   });
 
+  it("a young student's side calculations under 18 × 7 (prod: 8 lines, 3 rings, none right): ticks, the partial alone unmarked, solved once — by the answer", async () => {
+    start("feedback");
+    await run([{ type: "write_problems", problems: [["18 \\times 7"]] }]);
+    signals.length = 0;
+    await penLine(0, "10 \\times 7 = 70", { y: 200 });
+    await penLine(1, "8 \\times 7 = 56", { y: 280 });
+    await penLine(2, "70", { y: 360 });
+    await penLine(3, "126", { y: 440 });
+    await wait(3000);
+    // each line's last word to the record: no ring, no "?", and only the answer solves it
+    const last = new Map(lineSignals().map((s) => [s.latex, `${s.mark ?? "-"}${s.solved ? " solved" : ""}`]));
+    expect([...last]).toEqual([
+      ["10 \\times 7 = 70", "check"],
+      ["8 \\times 7 = 56", "check"],
+      ["70", "-"],
+      ["126", "check solved"],
+    ]);
+    expect(lineSignals().filter((s) => s.solved).map((s) => s.latex)).toEqual(["126"]);
+  });
+
   it("with the dial at Off, nothing is drawn — the record still takes each line's verdict", async () => {
     start("off");
     await penLine(0, "2x+3=11");

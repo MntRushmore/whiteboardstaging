@@ -25,9 +25,14 @@
  *  - Active time is the gaps between events, each capped at `maxGapMs` — and never earlier than the
  *    board's previous event: time spent on another problem (or on the tutor writing a problem set)
  *    is not this one's. A `problem` signal starts the clock without adding to it.
- *  - The outcome is `outcomeOf`. The tutor finishing (`tutor_solved`) counts only before the student
- *    reached the answer. Once answered (by either), the outcome stays: later lines and help change
- *    the counts, not how the problem went. `finishedAt` is set when the outcome leaves `in_progress`.
+ *  - The outcome is `outcomeOf` over the counts the record carries, always: a record never says
+ *    `first_try` beside a ring. (It used to be frozen at the answer, so a ring or a hint after it
+ *    left prod rows like `13 \times 4`: `first_try` with 0 lines right and 2 ringed.) Who answered
+ *    stays: the student answering (`solvedByStudent`) or the tutor finishing first (`tutorFinished`,
+ *    which counts only before the student reached the answer) is never undone, so an answered problem
+ *    never goes back to in progress — but a ring or help after the answer is part of how it went.
+ *    `finishedAt` is set when the outcome leaves `in_progress`, and stays when one answered outcome
+ *    gives way to another.
  *  - An attempt closes when its screen is left (`screen`), the board closes (`closed`) or after
  *    `idleCloseMs` with no event (`tick`); a closed one that gets a new signal opens again.
  *  - An attempt is recorded (published, saved) only once it holds something: a line the tutor judged
@@ -125,8 +130,6 @@ interface Attempt {
   closed: boolean;
   solvedByStudent: boolean;
   tutorFinished: boolean;
-  /** how it went, once answered (by the student or the tutor): it no longer changes */
-  answered: Outcome | null;
   /** the problem was given (`problem`, `tutor_solved`), not taken from a line of it */
   given: boolean;
   recordable: boolean;
@@ -153,8 +156,17 @@ export interface SavedAttempt {
   active: number;
   solvedByStudent: boolean;
   tutorFinished: boolean;
-  answered: Outcome | null;
+  /**
+   * How it went when a version that froze the outcome at the answer saved it. Kept so those snapshots
+   * still load; never read — the outcome is worked out from the counts again (`commit`).
+   */
+  answered?: Outcome | null;
   given: boolean;
+}
+
+/** An outcome that says the problem was answered — by the student or by the tutor. */
+function isAnswered(outcome: Outcome): boolean {
+  return outcome !== "in_progress" && outcome !== "unfinished";
 }
 
 function iso(ms: number): string {
@@ -248,7 +260,6 @@ export class AttemptTracker {
         active: a.active,
         solvedByStudent: a.solvedByStudent,
         tutorFinished: a.tutorFinished,
-        answered: a.answered,
         given: a.given,
       }));
   }
@@ -276,7 +287,6 @@ export class AttemptTracker {
           closed: true,
           solvedByStudent: Boolean(s.solvedByStudent),
           tutorFinished: Boolean(s.tutorFinished),
-          answered: s.answered ?? null,
           given: Boolean(s.given),
           recordable: true,
           dirty: false,
@@ -445,7 +455,6 @@ export class AttemptTracker {
       closed: false,
       solvedByStudent: false,
       tutorFinished: false,
-      answered: null,
       given: from.given,
       recordable: false,
       dirty: false,
@@ -521,24 +530,23 @@ export class AttemptTracker {
     return a.recordable;
   }
 
-  /** Its record from its state now; published (and to be saved) when it changed and is worth a record. */
+  /**
+   * Its record from its state now; published (and to be saved) when it changed and is worth a record.
+   * The outcome is `outcomeOf` over exactly the counts written beside it, so the two never disagree.
+   */
   private commit(a: Attempt, at: number): void {
     const counts = this.counts(a);
-    let outcome: Outcome;
-    if (a.answered) outcome = a.answered;
-    else {
-      outcome = outcomeOf(counts, a.solvedByStudent, a.tutorFinished, a.closed);
-      if (outcome !== "in_progress" && outcome !== "unfinished") a.answered = outcome;
-    }
+    const outcome = outcomeOf(counts, a.solvedByStudent, a.tutorFinished, a.closed);
     // each kind once per line, however often the line was read with it
     const mistakes: Partial<Record<MistakeKind, number>> = {};
     for (const reads of a.mistakes.values()) {
       for (const kind of new Set([...reads.values()].map((m) => m.kind))) mistakes[kind] = cap((mistakes[kind] ?? 0) + 1);
     }
     const r = a.record;
-    // when it stopped being in progress — unfinished then answered, it was finished when answered
+    // when it stopped being in progress — unfinished then answered, it was finished when answered; a
+    // ring after the answer (first try → self-corrected) does not move when it was finished
     if (outcome === "in_progress") r.finishedAt = null;
-    else if (outcome !== r.outcome || !r.finishedAt) r.finishedAt = iso(at);
+    else if (!r.finishedAt || (outcome !== r.outcome && isAnswered(outcome) !== isAnswered(r.outcome))) r.finishedAt = iso(at);
     Object.assign(r, counts, { outcome, mistakes, activeMs: Math.round(Math.min(a.active, LEARNING_LIMITS.maxActiveMs)) });
     const said = JSON.stringify({ ...r, updatedAt: "" });
     const wasRecordable = a.recordable;
