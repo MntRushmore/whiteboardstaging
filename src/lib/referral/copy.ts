@@ -44,6 +44,8 @@ export const REFERRAL_ADMIN_COPY = {
   title: "Referrals",
   hint: "Give a month, get a month: who invited whom, and the free months the referrers are due.",
   loadWhat: "the referrals",
+  /** the list's own heading, under the page's title */
+  listTitle: "Who invited whom",
   caption: "Referrals, newest first",
   filterLabel: "Show",
   filters: {

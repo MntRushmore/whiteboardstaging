@@ -232,10 +232,11 @@ export function ReferralsContent({ view, filter, onFilter, loading, error, updat
     body = (
       <div className={styles.sections}>
         <Tiles view={view} />
+        {/* a string: the Alert sets its details in a <p> of its own */}
         <Alert tone="warning" title={COPY.rewardNoteTitle}>
-          <p>{COPY.rewardNote}</p>
+          {COPY.rewardNote}
         </Alert>
-        <Section id="referrals-list" title={COPY.title} action={view.truncatedNote ? <span className={c.cellNote}>{view.truncatedNote}</span> : undefined}>
+        <Section id="referrals-list" title={COPY.listTitle} action={view.truncatedNote ? <span className={c.cellNote}>{view.truncatedNote}</span> : undefined}>
           <div className={r.filters}>
             <ChoiceRow label={COPY.filterLabel} options={view.filters} value={filter} onChange={onFilter} />
           </div>

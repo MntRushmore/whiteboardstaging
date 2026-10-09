@@ -228,7 +228,9 @@ function party(email: string | null, payerEmail: string | null): ReferralPartyVi
 
 /** One referral's row. */
 export function referralRow(r: AdminReferral, clock: ViewClock): ReferralRowView {
-  const rewardedWhen = r.rewardedAt ? formatDay(r.rewardedAt, clock) : null;
+  // mid-sentence: "Rewarded today by …", "Rewarded Oct 3 by …"
+  const day = r.rewardedAt ? formatDay(r.rewardedAt, clock) : null;
+  const rewardedWhen = day === "Today" || day === "Yesterday" ? day.toLowerCase() : day;
   return {
     id: r.id,
     code: r.code,

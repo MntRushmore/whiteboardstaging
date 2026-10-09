@@ -85,7 +85,7 @@ describe("the admin's Referrals list", () => {
     expect(html).toContain("parent@example.com");
     expect(html).toContain("friend3@example.com");
     expect(html).toContain("cus_A1");
-    expect(html).toContain(REFERRAL_ADMIN_COPY.rewardedBy("owner@agathon.app", "Today"));
+    expect(html).toContain(REFERRAL_ADMIN_COPY.rewardedBy("owner@agathon.app", "today"));
   });
 
   it("flags a friend whose address is the referrer's own", () => {

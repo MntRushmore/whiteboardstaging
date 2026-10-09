@@ -5,8 +5,9 @@
   color: var(--warning, oklch(52% 0.14 70));
 }
 
+/* min-width 0: on a phone the choices scroll sideways instead of widening the page */
 .filters {
-  margin-bottom: var(--space-4);
+  min-width: 0;
 }
 
 /* one account in a cell: the address, the checkout's address when it differs, then a note */
@@ -38,6 +39,10 @@
   justify-content: flex-end;
   gap: var(--space-2);
 }
+/* in the table the cell is as narrow as its buttons, side by side */
+.actionsCell .actions {
+  flex-wrap: nowrap;
+}
 
 /* a phone: one card per referral */
 .card {
@@ -45,11 +50,13 @@
   gap: var(--space-3);
   padding: var(--space-4);
 }
+/* the status (and who rewarded it) beside the day it joined; the day wraps below when both don't fit */
 .cardTop {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--space-3);
+  gap: var(--space-1) var(--space-3);
 }
 .cardFacts {
   display: grid;

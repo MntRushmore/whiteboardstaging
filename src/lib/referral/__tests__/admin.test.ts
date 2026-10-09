@@ -168,7 +168,7 @@ describe("referralRow", () => {
     const rewarded = list().referrals[1];
     const row = referralRow({ ...rewarded, referred: { ...rewarded.referred, payerEmail: "billing@example.com" } }, clock);
     expect(row.friend.payer).toBe(REFERRAL_ADMIN_COPY.payer("billing@example.com"));
-    expect(row.rewarded).toBe(REFERRAL_ADMIN_COPY.rewardedBy("owner@agathon.app", "Today"));
+    expect(row.rewarded).toBe(REFERRAL_ADMIN_COPY.rewardedBy("owner@agathon.app", "today"));
     expect(row.canReward || row.canVoid).toBe(false);
   });
 

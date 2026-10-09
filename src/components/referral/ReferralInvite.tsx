@@ -13,7 +13,7 @@ const FRIEND_OFFER = referralLink() !== null;
 const subscribeNever = () => () => {};
 
 /** The invite this device arrived with (read once the page is in the browser; none on the server). */
-function readInvite(): string | null {
+export function readInvite(): string | null {
   return inviteCode(readStoredAttribution(browserStorage()), window.location.href);
 }
 
