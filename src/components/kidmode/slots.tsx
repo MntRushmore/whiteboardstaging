@@ -19,10 +19,13 @@ const KidDock = React.lazy(loadKidDock);
 const loadGrownUpMore = () => import("./GrownUpMore");
 /** The simple board's More (the board page's bar): lazy like the dock, so a grown-up board pays for neither. */
 export const GrownUpMore = React.lazy(loadGrownUpMore);
+const loadKidStatus = () => import("./KidStatus");
+/** The simple board's status in the bar (Thinking…, Try again): fetched with the dock, so it is there before a failure. */
+export const KidStatus = React.lazy(loadKidStatus);
 
-/** Fetches the kid dock's and More's chunks ahead of time (the board page calls it while the board loads). */
+/** Fetches the kid dock's, More's and the kid status's chunks ahead of time (the board page calls it while the board loads). */
 export function preloadKidDock(): void {
-  for (const load of [loadKidDock, loadGrownUpMore]) {
+  for (const load of [loadKidDock, loadGrownUpMore, loadKidStatus]) {
     void load().catch(() => {
       /* tried again when it mounts */
     });

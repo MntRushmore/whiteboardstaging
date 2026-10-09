@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import GrownUpMore, { inLayerOverMore, layerOverMore, type LayerNode } from "../GrownUpMore";
+import GrownUpMore, { inLayerOverMore, layerOverMore, MORE_COPY, type LayerNode, type MoreControls } from "../GrownUpMore";
 import { GROWN_UP_MORE_ATTR } from "../tourAnchors";
 
 /**
@@ -57,12 +57,20 @@ describe("inLayerOverMore", () => {
 });
 
 describe("GrownUpMore", () => {
-  const render = (open: boolean) =>
-    renderToStaticMarkup(
-      <GrownUpMore open={open} onOpenChange={vi.fn()} simpleOn onSimpleChange={vi.fn()}>
-        <span>controls</span>
-      </GrownUpMore>,
-    );
+  const controls = (patch: Partial<MoreControls> = {}): MoreControls => ({
+    dial: <span>the dial</span>,
+    auto: { on: true, hint: "Auto is on" },
+    onAutoChange: vi.fn(),
+    ask: false,
+    onAsk: vi.fn(),
+    onTopic: vi.fn(),
+    status: <span>the status pill</span>,
+    ink: <span data-testid="ink-meter">∞</span>,
+    menu: { liveRunning: true, liveAvailable: true, onLiveEnabledChange: vi.fn(), canHelp: true, onClearMarks: vi.fn(), onShowModeInfo: vi.fn(), onReportProblem: vi.fn() },
+    ...patch,
+  });
+  const render = (open: boolean, patch: Partial<MoreControls> = {}) =>
+    renderToStaticMarkup(<GrownUpMore open={open} onOpenChange={vi.fn()} simpleOn onSimpleChange={vi.fn()} controls={controls(patch)} />);
 
   it("its button carries the hook the tour's coach marks find More by", () => {
     const button = render(false).match(/<button\b[^>]*aria-controls="grown-up-more"[^>]*>/)?.[0] ?? "";
@@ -71,7 +79,37 @@ describe("GrownUpMore", () => {
 
   it("keeps the card mounted but hidden while closed (the pill and the ink meter in it keep working)", () => {
     expect(render(false)).toMatch(/<section[^>]*id="grown-up-more"[^>]*hidden=""/);
-    expect(render(false)).toContain("controls");
+    expect(render(false)).toContain("the status pill");
+    expect(render(false)).toContain('data-testid="ink-meter"');
     expect(render(true)).not.toMatch(/<section[^>]*hidden=""/);
+  });
+
+  it("labels every row: how much help, Auto and what it does, the plan, and Board options as a row of its own", () => {
+    const out = render(true);
+    expect(out).toContain(MORE_COPY.help);
+    expect(out).toContain(">Auto<");
+    expect(out).toContain(MORE_COPY.autoOn);
+    expect(render(true, { auto: { on: false, hint: "off" } })).toContain(MORE_COPY.autoOff);
+    expect(out).toContain(`>${MORE_COPY.plan}`);
+    expect(out).toMatch(/<button[^>]*data-testid="more-board-options"[^>]*>[\s\S]*Board options/);
+    // two switches: Simple board and Auto, each a whole row
+    expect(out.match(/role="switch"/g)).toHaveLength(2);
+    // Report a bug lives in Board options, not twice
+    expect(out).not.toContain("Report a bug");
+  });
+
+  it("no Auto row where Auto would do nothing, and no Ask while the tour keeps it in the bar", () => {
+    const out = render(true, { auto: null, ask: null });
+    expect(out.match(/role="switch"/g)).toHaveLength(1);
+    expect(out).not.toContain(">Ask<");
+    expect(out).toContain("New topic");
+  });
+
+  it("every button in it is at least 44 px tall", () => {
+    const out = render(true);
+    for (const button of out.match(/<button\b[^>]*>/g) ?? []) {
+      if (button.includes('aria-controls="grown-up-more"')) continue; // More itself: 48 px (h-12)
+      expect(button).toMatch(/\b(min-h-11|min-h-14|size-11)\b/);
+    }
   });
 });

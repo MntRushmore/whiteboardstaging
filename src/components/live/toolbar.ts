@@ -36,10 +36,6 @@ export interface BoardToolbarState {
   simple?: boolean;
   /** the guided first board's tour is running: its last coach mark points at Ask */
   tour?: boolean;
-  /** the status pill has an error to show (`liveStore.lastError`) */
-  liveError?: boolean;
-  /** the tutor is working out steps, as after a tap on Help me (`liveStore.solving`): the pill says "Solving…" */
-  solving?: boolean;
 }
 
 /** Where a control sits: in the bar itself, or behind the simple board's More button. */
@@ -53,7 +49,7 @@ export interface BarPlaces {
   auto: BarPlace;
   /** Ask, the board chat's button */
   ask: BarPlace;
-  /** the status pill, and with it Board options (its "…") */
+  /** the status pill, and with it Board options (its "…"; More has its own Board options row) */
   pill: BarPlace;
   /** the plan's ink meter */
   ink: BarPlace;
@@ -94,12 +90,17 @@ export interface BoardToolbarView {
   /**
    * Where each grown-up control sits. All in the bar on the ordinary board. On the simple board all
    * behind More, mounted there and hidden until it opens (the pill keeps "Hide AI shapes" applied,
-   * the ink meter keeps Live told the balance), but for two a kid must see: Ask while the tour's
-   * last coach mark points at it, and the pill while it has something to say to a kid who just
-   * tapped Help me — "Solving…" (or the tap does nothing they can see for seconds), or an error
-   * and its Retry.
+   * the ink meter keeps Live told the balance), but for Ask while the tour's last coach mark points
+   * at it.
    */
   place: BarPlaces;
+  /**
+   * The simple board's own status in the bar (`KidStatus`), in place of the grown-up pill: what a kid
+   * who just tapped Help me must see — "Thinking…" (or the tap does nothing they can see for
+   * seconds), or a failure as one calm line and one big Try again. Never the pill's small red words,
+   * Dismiss or "…". Only with Live running: with Live off nothing reads, so nothing fails.
+   */
+  kidStatus: boolean;
 }
 
 const ALL_IN_BAR: BarPlaces = { dial: "bar", auto: "bar", ask: "bar", pill: "bar", ink: "bar", report: "bar" };
@@ -121,11 +122,11 @@ export function boardToolbarView(state: BoardToolbarState): BoardToolbarView {
           dial: "more",
           auto: "more",
           ask: state.tour ? "bar" : "more",
-          // with Live off the pill rests at "Live off" (`statusPillView`): nothing to bring out
-          pill: (state.liveError || state.solving) && liveRunning ? "bar" : "more",
+          pill: "more",
           ink: "more",
           report: "more",
         },
+    kidStatus: simple && liveRunning,
   };
 }
 

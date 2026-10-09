@@ -69,9 +69,23 @@ describe("the guided board's coach marks on the simple board", () => {
     // the dial is in More (hidden while it is closed): the help fallback goes on to More
     expect(boardToolbarView({ mode: "feedback", liveEnabled: false, liveAvailable: true, auto: true, simple: true, tour: true }).place.dial).toBe("more");
     const more = renderToStaticMarkup(
-      <GrownUpMore open={false} onOpenChange={() => {}} simpleOn onSimpleChange={() => {}}>
-        {null}
-      </GrownUpMore>,
+      <GrownUpMore
+        open={false}
+        onOpenChange={() => {}}
+        simpleOn
+        onSimpleChange={() => {}}
+        controls={{
+          dial: null,
+          auto: null,
+          onAutoChange: () => {},
+          ask: null,
+          onAsk: () => {},
+          onTopic: () => {},
+          status: null,
+          ink: null,
+          menu: { liveRunning: false, liveAvailable: true, onLiveEnabledChange: () => {}, canHelp: false, onClearMarks: () => {}, onShowModeInfo: () => {}, onReportProblem: () => {} },
+        }}
+      />,
     );
     const found = openingTags(more).filter((t) => matches(t, MORE_SELECTOR));
     // More's own button, the one in view while the card is closed

@@ -43,6 +43,8 @@ interface LiveStatusPillProps {
   onReplay?: () => void;
   /** the "Simple board" switch (src/components/kidmode); no item without it */
   simpleBoard?: { on: boolean; onChange: (on: boolean) => void };
+  /** false: no "…" (in the simple board's More, whose own Board options row opens the menu) */
+  menu?: boolean;
 }
 
 /** meta key that remembers a shape's opacity while "Hide AI shapes" is on */
@@ -208,6 +210,7 @@ export function LiveStatusPill({
   meterOffersInk = false,
   onReplay,
   simpleBoard,
+  menu = true,
 }: LiveStatusPillProps) {
   const status = useValue(liveStore.status);
   const recognizer = useValue(liveStore.recognizer);
@@ -276,7 +279,7 @@ export function LiveStatusPill({
 
   return (
     <div
-      className={`live-pill flex items-center gap-1.5 rounded-full border bg-white pl-2.5 pr-1 py-1 text-xs font-medium text-gray-700 shadow-sm ${
+      className={`live-pill flex items-center gap-1.5 rounded-full border bg-white pl-2.5 ${menu ? "pr-1" : "pr-2.5"} py-1 text-xs font-medium text-gray-700 shadow-sm ${
         view.showError ? "border-red-200" : ""
       } ${view.dataStatus === "off" ? "text-gray-400" : ""}`}
       data-status={view.dataStatus}
@@ -301,7 +304,7 @@ export function LiveStatusPill({
           {LIVE_COPY.pill.clearMarks}
         </button>
       )}
-      <DropdownMenu>
+      {menu && <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
@@ -331,7 +334,7 @@ export function LiveStatusPill({
             />
           </Suspense>
         </LiveErrorBoundary>
-      </DropdownMenu>
+      </DropdownMenu>}
     </div>
   );
 }
