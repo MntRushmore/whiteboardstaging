@@ -1,0 +1,316 @@
+/* The Family page (src/app/(platform)/family): Arc tokens only, light like every platform page. Read
+   by the grown-up; each kid's card is big and plain so a kid looking over a shoulder finds theirs. */
+
+.page {
+  /* fills the platform layout above the legal footer (platform.css) */
+  flex: 1 0 auto;
+  background: var(--surface-muted);
+}
+.main {
+  padding-top: var(--space-6);
+  padding-bottom: var(--space-16);
+}
+@media (min-width: 640px) {
+  .main {
+    padding-top: var(--space-8);
+  }
+}
+.inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  max-width: 48rem;
+  margin-inline: auto;
+}
+.stack {
+  display: grid;
+  gap: var(--space-6);
+}
+
+/* ---- title ------------------------------------------------------------------------------------- */
+.titleBlock {
+  display: grid;
+  gap: var(--space-1);
+}
+.back {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-decoration: none;
+}
+.back:hover {
+  color: var(--foreground);
+}
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-display);
+}
+.subtitle {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+.retry {
+  margin-top: var(--space-3);
+}
+
+/* ---- sections ----------------------------------------------------------------------------------- */
+.section {
+  display: grid;
+  gap: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  padding: var(--space-5);
+  background: var(--surface);
+  box-shadow: var(--shadow-resting);
+}
+@media (min-width: 640px) {
+  .section {
+    padding: var(--space-6);
+  }
+}
+.sectionHead {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-3);
+}
+@media (min-width: 640px) {
+  .sectionHead {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+}
+.sectionIcon {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  border-radius: var(--radius-control);
+  background: var(--accent-subtle);
+  color: var(--accent-strong, var(--accent));
+}
+.sectionTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+.sectionHint {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+.sectionAction {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+@media (min-width: 640px) {
+  .sectionAction {
+    grid-column: auto;
+    justify-self: end;
+  }
+}
+
+/* ---- the PIN form -------------------------------------------------------------------------------- */
+.pinForm {
+  display: grid;
+  gap: var(--space-4);
+}
+@media (min-width: 640px) {
+  .pinForm {
+    grid-template-columns: repeat(2, minmax(0, 12rem)) 1fr;
+    align-items: start;
+  }
+  .pinForm .formActions {
+    align-self: end;
+    padding-bottom: 2px;
+  }
+}
+.pinInput {
+  font-size: var(--text-lg);
+  letter-spacing: 0.5em;
+  font-variant-numeric: tabular-nums;
+}
+.formActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+.formError {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+/* ---- kids ---------------------------------------------------------------------------------------- */
+.emptyKids {
+  margin: 0;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-panel);
+  padding: var(--space-6);
+  color: var(--text-muted);
+  text-align: center;
+}
+.kids {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kid {
+  display: grid;
+  gap: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  padding: var(--space-4);
+  background: var(--surface);
+}
+.kidHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.kidWho {
+  min-width: 0;
+  flex: 1;
+}
+.kidName {
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kidGrade {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+.kidTools {
+  display: flex;
+  gap: var(--space-1);
+}
+.iconButton {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.iconButton:hover {
+  border-color: var(--border);
+  color: var(--foreground);
+}
+.iconButton:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.iconDanger:hover {
+  color: var(--danger);
+}
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.stat {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.stat[data-tone="warm"] {
+  background: oklch(95% 0.05 70);
+  color: oklch(45% 0.12 55);
+}
+.noStats {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.kidActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* ---- add / edit a kid ---------------------------------------------------------------------------- */
+.kidDialog {
+  width: min(34rem, calc(100vw - 2 * var(--space-4)));
+  max-width: 34rem;
+}
+.kidForm {
+  display: grid;
+  gap: var(--space-4);
+}
+.kidPreview {
+  display: flex;
+  justify-content: center;
+}
+.avatarField {
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+.avatarLegend {
+  margin-bottom: var(--space-2);
+  padding: 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.avatarGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
+  gap: var(--space-2);
+}
+.avatarOption {
+  display: grid;
+  place-items: center;
+  border: 2px solid transparent;
+  border-radius: var(--radius-panel);
+  padding: var(--space-1);
+  background: transparent;
+  cursor: pointer;
+}
+.avatarOption:hover {
+  border-color: var(--border);
+}
+.avatarOption[data-selected] {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+.avatarOption:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.consent {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}

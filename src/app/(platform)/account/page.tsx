@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { ProfileCard } from "@/components/account/ProfileCard";
 import { DangerZone } from "@/components/account/DangerZone";
 import { BillingCard } from "@/components/account/BillingCard";
+import { FamilySection } from "@/components/account/FamilySection";
 import { useInkSummary } from "@/lib/billing/useInkSummary";
 import { ACCOUNT_COPY, accountPageStateFor } from "@/lib/billing/accountState";
 
@@ -122,6 +123,7 @@ export default function AccountPage() {
           <div className="space-y-6" data-state="ready">
             <BillingCard email={email} />
             <ProfileCard userId={user.id} email={email} />
+            <FamilySection email={email} />
             <DangerZone email={email} />
           </div>
         )}
